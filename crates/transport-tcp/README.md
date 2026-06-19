@@ -3,46 +3,46 @@
 [![docs.rs](https://img.shields.io/docsrs/zerodds-transport-tcp)](https://docs.rs/zerodds-transport-tcp)
 [![crates.io](https://img.shields.io/crates/v/zerodds-transport-tcp)](https://crates.io/crates/zerodds-transport-tcp)
 
-ZeroDDS-TCP-Transport: RTPS-over-TCP-Implementation. Layer 2 (Wire-Implementation).
+ZeroDDS TCP transport: RTPS-over-TCP implementation. Layer 2 (wire implementation).
 
-`std`-only, `forbid(unsafe_code)`, Safety-Klasse **STANDARD**.
+`std`-only, `forbid(unsafe_code)`, safety class **STANDARD**.
 
-## Spec-Status
+## Spec status
 
-Dieser Transport ist **OMG-konform auf Wire-Mapping-Ebene**:
+This transport is **OMG-conformant at the wire-mapping level**:
 
-- **DDSI-RTPS 2.5 §9.4** — Locator-Kinds `TCPv4` (4) / `TCPv6` (8)
-- **DDSI-RTPS 2.5 §9.5** — Wire-Bytes-Mapping (RTPS-Header + Submessages,
-  identisch zum UDP-PSM)
+- **DDSI-RTPS 2.5 §9.4** — locator kinds `TCPv4` (4) / `TCPv6` (8)
+- **DDSI-RTPS 2.5 §9.5** — wire-bytes mapping (RTPS header + submessages,
+  identical to the UDP PSM)
 
-OMG normiert **keinen** TCP-Connection-Bring-up-Handshake. Vendoren
-haben jeweils eigene Formate (Cyclone: kein Handshake; FastDDS:
-0x71/0x72 Submessages; RTI: TLS-orientiert).
+OMG standardizes **no** TCP connection bring-up handshake. Vendors
+each have their own formats (Cyclone: no handshake; FastDDS:
+0x71/0x72 submessages; RTI: TLS-oriented).
 
-ZeroDDS definiert seinen eigenen Handshake explizit als eigene Spec:
-**ZeroDDS-TCP-Transport 1.0**, dokumentiert in
+ZeroDDS defines its own handshake explicitly as its own spec:
+**ZeroDDS TCP Transport 1.0**, documented in
 [`docs/spec-coverage/zerodds-tcp-transport-1.0.md`](../../docs/spec-coverage/zerodds-tcp-transport-1.0.md).
 
-## Was liefert dieses Crate
+## What this crate provides
 
-- `TcpTransport` — `Transport`-Trait-Implementation mit Connection-Pool
-- `TcpTransport::without_handshake` — Cyclone-`ddsi_tcp`-Compat-Mode
-- `TcpTransportError` — typisierte Fehler
-- `framing` — Length-Prefix-Frame-Encoder/Decoder (§2.1)
-- `handshake` — BindConnection-Request/Response (§3.1+§3.2)
+- `TcpTransport` — `Transport` trait implementation with a connection pool
+- `TcpTransport::without_handshake` — Cyclone `ddsi_tcp` compat mode
+- `TcpTransportError` — typed errors
+- `framing` — length-prefix frame encoder/decoder (§2.1)
+- `handshake` — BindConnection request/response (§3.1+§3.2)
 
-## Cross-Vendor-Interop
+## Cross-vendor interop
 
 | Peer | Status |
 |---|---|
-| ZeroDDS ↔ ZeroDDS | ✅ voll (Handshake + RTPS-Frames) |
-| ZeroDDS ↔ Cyclone | ✅ via `without_handshake` (raw RTPS-Frames) |
-| ZeroDDS ↔ FastDDS | optionaler Erweiterungspunkt (vendor-spezifischer Handshake) |
-| ZeroDDS ↔ RTI | optionaler Erweiterungspunkt (TLS-Handshake) |
+| ZeroDDS ↔ ZeroDDS | ✅ full (handshake + RTPS frames) |
+| ZeroDDS ↔ Cyclone | ✅ via `without_handshake` (raw RTPS frames) |
+| ZeroDDS ↔ FastDDS | optional extension point (vendor-specific handshake) |
+| ZeroDDS ↔ RTI | optional extension point (TLS handshake) |
 
-Cross-Vendor-Erweiterungen sind in der ZeroDDS-TCP-Transport-1.0-Spec
-§6 als optional dokumentiert — kein Spec-Gap, da OMG keinen
-TCP-Handshake normiert.
+Cross-vendor extensions are documented as optional in the
+ZeroDDS TCP Transport 1.0 spec §6 — no spec gap, since OMG
+standardizes no TCP handshake.
 
 ## Tests
 
@@ -50,9 +50,9 @@ TCP-Handshake normiert.
 cargo test -p zerodds-transport-tcp
 ```
 
-55 Tests grün (50 lib + 5 integration), abgedeckte Spec-Sektionen siehe
+55 tests green (50 lib + 5 integration); for the covered spec sections see
 [`zerodds-tcp-transport-1.0.md §7`](../../docs/spec-coverage/zerodds-tcp-transport-1.0.md).
 
-## Lizenz
+## License
 
-Apache-2.0 OR MIT — siehe Workspace-Root.
+Apache-2.0 OR MIT — see the workspace root.

@@ -58,9 +58,9 @@ fn decode_complete_collection_element(
 pub struct CompleteSequenceType {
     /// Flags.
     pub collection_flag: CollectionTypeFlag,
-    /// Max-Groesse.
+    /// Max size.
     pub bound: u32,
-    /// Header-Detail.
+    /// Header detail.
     pub detail: CompleteTypeDetail,
     /// Element.
     pub element: CompleteCollectionElement,
@@ -128,7 +128,7 @@ impl CompleteArrayType {
 pub struct CompleteMapType {
     /// Flags.
     pub collection_flag: CollectionTypeFlag,
-    /// Max-Groesse.
+    /// Max size.
     pub bound: u32,
     /// Detail.
     pub detail: CompleteTypeDetail,

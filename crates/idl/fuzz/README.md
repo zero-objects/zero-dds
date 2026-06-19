@@ -8,5 +8,5 @@ cargo +nightly fuzz run parse
 ```
 
 Bekannte Findings (siehe `docs/test-harness/plan.md`):
-* Finding 1: Stack-Overflow bei tiefer Modul-Verschachtelung (~128).
-* Finding 2: Quadratisches Verhalten bei vielen Annotations.
+* Finding 1: stack overflow on deep module nesting (~128).
+* Finding 2: quadratic behavior with many annotations.

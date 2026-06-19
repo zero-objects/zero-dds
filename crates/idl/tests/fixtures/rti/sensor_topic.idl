@@ -1,5 +1,5 @@
-// sensor_topic.idl — RTI Connext-Style Topic mit keylist-Direktive.
-// Hand-kuratiert; siehe LICENSES.md.
+// sensor_topic.idl — RTI Connext-style topic with a keylist directive.
+// Hand-curated; see LICENSES.md.
 
 module sensors {
 
@@ -16,7 +16,7 @@ module sensors {
         long long timestamp_ns;
     };
 
-    // RTI-spezifische Topic-Schluessel-Direktive (Delta).
+    // RTI-specific topic key directive (delta).
     keylist SensorReading (sensor_id);
 
     struct SensorEvent {

@@ -26,15 +26,24 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps" }
-zerodds-transport = { version = "1.0.0-rc.1", path = "../transport" }
+zerodds-rtps = { version = "1.0.0-rc.3", path = "../rtps" }
+zerodds-transport = { version = "1.0.0-rc.3", path = "../transport" }
 # POSIX shared-memory segment management (shm_open/mmap + Windows
 # CreateFileMapping). We wrap only the primitives; the ring-buffer
 # protocol on top is our own. Pinning 0.12 for the stable API.
 shared_memory = "0.12"
-# libc für POSIX advisory-flock (Race-Protection beim Owner-Create).
-# Transitive Dep via shared_memory, explizit gepinnt für Stabilität.
+# libc for POSIX advisory flock (race protection on owner-create).
+# Transitive dep via shared_memory, explicitly pinned for stability.
 libc = { workspace = true, features = ["std"] }
+
+# Windows: LockFileEx for the owner-create race protection (the flock
+# equivalent). Auto-released on handle close / process death, like flock.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = [
+  "Win32_Foundation",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,13 +1,13 @@
-//! Integration-Tests fuer C4.2-b: TypeLookup Auto-Trigger via
-//! SEDP-Discovery.
+//! Integration tests for C4.2-b: TypeLookup auto-trigger via SEDP
+//! discovery.
 //!
-//! Spec: XTypes 1.3 §7.6.3.3.4. Wenn eine eingehende
-//! Pub/SubBuiltinTopicData einen TypeID-Hash mitbringt, der lokal
-//! nicht aufloesbar ist, queued der Participant einen
-//! TypeLookup-`getTypes`-Request.
+//! Spec: XTypes 1.3 §7.6.3.3.4. When an incoming
+//! Pub/SubBuiltinTopicData carries a TypeID hash that cannot be
+//! resolved locally, the participant queues a TypeLookup `getTypes`
+//! request.
 //!
-//! Backoff: pro unbekanntem Hash max alle 5s ein Request, max 3
-//! Versuche.
+//! Backoff: per unknown hash at most one request every 5s, max 3
+//! attempts.
 
 #![allow(
     clippy::expect_used,
@@ -47,7 +47,7 @@ fn enqueue_same_hash_twice_within_backoff_only_first_queued() {
     let p = participant();
     let h = EquivalenceHash([0x22; 14]);
     assert!(p.enqueue_type_lookup(h));
-    // Sofort wieder → Backoff (5s) suppressed.
+    // Immediately again → backoff (5s) suppressed.
     assert!(!p.enqueue_type_lookup(h));
     assert!(!p.enqueue_type_lookup(h));
     let drained = p.drain_type_lookup_requests();
@@ -81,7 +81,7 @@ fn type_lookup_exhausted_returns_false_initially() {
     let h = EquivalenceHash([4; 14]);
     assert!(!p.type_lookup_exhausted(h));
     p.enqueue_type_lookup(h);
-    // Nach 1 Versuch: nicht exhausted.
+    // After 1 attempt: not exhausted.
     assert!(!p.type_lookup_exhausted(h));
 }
 
@@ -99,7 +99,7 @@ fn ingest_reply_clears_attempts() {
     );
     let count = p.ingest_type_lookup_reply(vec![(h, mto)]);
     assert_eq!(count, 1);
-    // Re-enqueue sollte jetzt wieder gehen (attempts entfernt).
+    // Re-enqueue should work again now (attempts removed).
     assert!(p.enqueue_type_lookup(h));
 }
 
@@ -117,7 +117,7 @@ fn on_remote_publication_with_unknown_hash_queues_lookup() {
     use zerodds_types::type_information::TypeInformation;
     use zerodds_types::{MinimalTypeObject, PrimitiveKind, TypeIdentifier};
     let p = participant();
-    // Bauer Test-TypeInformation.
+    // Build test TypeInformation.
     let minimal = MinimalTypeObject::Struct(
         TypeObjectBuilder::struct_type("::Remote")
             .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int64), |m| m)
@@ -180,7 +180,7 @@ fn backoff_burst_only_first_request_goes_through() {
     assert!(!p.enqueue_type_lookup(h));
     assert!(!p.enqueue_type_lookup(h));
     assert!(!p.enqueue_type_lookup(h));
-    // 4 Aufrufe → 1 outgoing.
+    // 4 calls → 1 outgoing.
     assert_eq!(p.drain_type_lookup_requests().len(), 1);
 }
 

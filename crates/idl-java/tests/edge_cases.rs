@@ -1,13 +1,13 @@
-//! Edge-Case-Integration-Tests fuer den IDL→Java-Codegen.
+//! Edge-case integration tests for the IDL→Java codegen.
 //!
-//! - Empty IDL → leere Datei-Liste
-//! - Reserved Java-Keyword als IDL-Field-Name → Underscore-Suffix
-//! - Inheritance-Cycle → Error
-//! - Java-Konstrukt-Negative: interface, valuetype, fixed, any, bitset,
+//! - Empty IDL → empty file list
+//! - Reserved Java keyword as an IDL field name → underscore suffix
+//! - Inheritance cycle → error
+//! - Java construct negatives: interface, valuetype, fixed, any, bitset,
 //!   bitmask
-//! - Multi-File-Layout: 3 structs → 3 .java-Files
-//! - Indent-Width-Option
-//! - root_package-Option
+//! - Multi-file layout: 3 structs → 3 .java files
+//! - Indent-width option
+//! - root_package option
 
 #![allow(
     clippy::expect_used,
@@ -39,11 +39,11 @@ fn empty_ast_produces_no_files() {
 
 #[test]
 fn struct_with_reserved_field_name_uses_underscore_suffix() {
-    // `class` ist in Java reserviert. Java erlaubt kein `@`-Escape — wir
-    // erwarten den Identifier mit `_`-Suffix.
+    // `class` is reserved in Java. Java does not allow an `@` escape — we
+    // expect the identifier with a `_` suffix.
     let ast = parse("struct Foo { long class; };");
     let files = generate_java_files(&ast, &JavaGenOptions::default()).expect("gen");
-    // 1 POJO + 1 TypeSupport pro struct (zerodds-xcdr2-java-1.0 §4).
+    // 1 POJO + 1 TypeSupport per struct (zerodds-xcdr2-java-1.0 §4).
     assert_eq!(files.len(), 2);
     let pojo = files
         .iter()
@@ -51,8 +51,8 @@ fn struct_with_reserved_field_name_uses_underscore_suffix() {
         .expect("POJO file");
     let src = &pojo.source;
     assert!(src.contains("private int class_;"));
-    // Bean-Pattern: Getter-Name ist `getClass_` (NICHT `getClass`, das
-    // mit `Object.getClass()` kollidieren wuerde).
+    // Bean pattern: the getter name is `getClass_` (NOT `getClass`, which
+    // would collide with `Object.getClass()`).
     assert!(src.contains("public int getClass_()"));
 }
 
@@ -103,7 +103,7 @@ fn three_top_level_structs_produce_three_files() {
 fn nested_three_modules_become_three_packages() {
     let ast = parse("module A { module B { module C { struct S { long x; }; }; }; };");
     let files = generate_java_files(&ast, &JavaGenOptions::default()).expect("gen");
-    // POJO + TypeSupport im selben Package.
+    // POJO + TypeSupport in the same package.
     assert_eq!(files.len(), 2);
     assert!(files.iter().all(|f| f.package_path == "a.b.c"));
 }
@@ -134,7 +134,7 @@ fn fixed_type_emits_bigdecimal() {
 
 #[test]
 fn bitset_is_now_supported_in_cluster_e() {
-    // C5.4-b liefert Bitset-Mapping → Wrapper-Class mit `long bits`.
+    // C5.4-b provides bitset mapping → wrapper class with `long bits`.
     let ast = parse("bitset Flags { bitfield<3> a; };");
     let files = generate_java_files(&ast, &JavaGenOptions::default()).expect("gen");
     assert_eq!(files.len(), 1);
@@ -144,7 +144,7 @@ fn bitset_is_now_supported_in_cluster_e() {
 
 #[test]
 fn bitmask_is_now_supported_in_cluster_e() {
-    // C5.4-b liefert Bitmask-Mapping → Inner-Enum + EnumSet-Wrapper.
+    // C5.4-b provides bitmask mapping → inner enum + EnumSet wrapper.
     let ast = parse("bitmask Flags { F0, F1 };");
     let files = generate_java_files(&ast, &JavaGenOptions::default()).expect("gen");
     assert_eq!(files.len(), 1);
@@ -154,7 +154,7 @@ fn bitmask_is_now_supported_in_cluster_e() {
 
 #[test]
 fn bitset_too_wide_is_unsupported() {
-    // Sum > 64 → harter Fehler.
+    // Sum > 64 → hard error.
     let ast = parse("bitset Big { bitfield<40> a; bitfield<30> b; };");
     match generate_java_files(&ast, &JavaGenOptions::default()) {
         Err(JavaGenError::UnsupportedConstruct { construct, .. }) => {
@@ -201,8 +201,8 @@ fn root_package_alone_without_modules() {
 
 #[test]
 fn forward_struct_does_not_emit_file() {
-    // Forward-decl + def → 1 POJO + 1 TypeSupport (Forward-Decl
-    // erzeugt selbst keine Files).
+    // Forward-decl + def → 1 POJO + 1 TypeSupport (a forward-decl
+    // produces no files itself).
     let files = generate_java_files(
         &parse("struct Forward; struct Forward { long x; };"),
         &JavaGenOptions::default(),
@@ -249,7 +249,7 @@ fn unsigned_workaround_widens_correctly() {
 
 #[test]
 fn module_name_lowercased_in_package() {
-    // IDL-Konvention erlaubt `module FooBar`, Java-Konvention ist
+    // The IDL convention allows `module FooBar`, the Java convention is
     // package = lowercase.
     let files = generate_java_files(
         &parse("module FooBar { struct S { long x; }; };"),

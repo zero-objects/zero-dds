@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! SHM-Slot-Header (Spec §2 zerodds-flatdata-1.0).
+//! SHM slot header (Spec §2 zerodds-flatdata-1.0).
 //!
 //! Layout:
 //!
@@ -14,37 +14,37 @@
 //! +-----------------------------+
 //! ```
 //!
-//! Header-Size: 16 byte. Der Header lebt **ausserhalb** des
-//! FlatStruct-Datenbereichs und ist nicht Teil von `FlatStruct::WIRE_SIZE`.
+//! Header size: 16 bytes. The header lives **outside** the
+//! FlatStruct data region and is not part of `FlatStruct::WIRE_SIZE`.
 
-/// Groesse des Slot-Headers in Bytes.
+/// Size of the slot header in bytes.
 pub const SLOT_HEADER_SIZE: usize = 16;
 
-/// Bitmap (32 bit) — pro Reader-Slot ein Bit. Bit gesetzt = Reader hat
-/// gelesen. Slot wird wieder reservierbar wenn alle aktiven Reader-Bits
-/// gesetzt sind, oder Timeout abgelaufen.
+/// Bitmap (32 bit) — one bit per reader slot. Bit set = reader has
+/// read. The slot becomes reservable again when all active reader bits
+/// are set, or the timeout has elapsed.
 pub type ReaderMask = u32;
 
-/// Slot-Header — wird vom Writer beim `commit_slot` gesetzt und vom
-/// Reader beim `read_flat` interpretiert.
+/// Slot header — set by the writer in `commit_slot` and interpreted by
+/// the reader in `read_flat`.
 ///
-/// Layout ist `repr(C, packed(4))` damit das Wire-Format byte-stable
-/// auf allen Plattformen ist.
+/// The layout is `repr(C, packed(4))` so the wire format is byte-stable
+/// across all platforms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C, align(4))]
 pub struct SlotHeader {
-    /// Writer-lokale Sequenz-Nummer.
+    /// Writer-local sequence number.
     pub sequence_number: u32,
-    /// Sample-Size in Bytes (= `T::WIRE_SIZE` fuer `FlatStruct<T>`).
+    /// Sample size in bytes (= `T::WIRE_SIZE` for `FlatStruct<T>`).
     pub sample_size: u32,
-    /// Bitmap: welche Reader haben gelesen. 0 = neu, alle 1-Bits = frei.
+    /// Bitmap: which readers have read. 0 = new, all 1-bits = free.
     pub reader_mask: ReaderMask,
-    /// Padding fuer Cache-Line-Alignment + zukuenftige Erweiterungen.
+    /// Padding for cache-line alignment + future extensions.
     pub _reserved: u32,
 }
 
 impl SlotHeader {
-    /// Konstruktor fuer neuen Slot beim commit.
+    /// Constructor for a new slot on commit.
     #[must_use]
     pub const fn new(sn: u32, sample_size: u32) -> Self {
         Self {
@@ -55,23 +55,23 @@ impl SlotHeader {
         }
     }
 
-    /// `true` wenn alle Bits in `active_readers` gesetzt sind ⇒ Slot
-    /// ist frei (alle Reader haben gelesen).
+    /// `true` when all bits in `active_readers` are set ⇒ the slot
+    /// is free (all readers have read).
     #[must_use]
     pub const fn all_read(&self, active_readers_mask: ReaderMask) -> bool {
-        // Slot ist frei wenn alle aktiven Reader ihren Bit gesetzt haben.
-        // Inactive-Reader (kein Bit in active_readers_mask) zaehlen
-        // automatisch als "gelesen".
+        // The slot is free when all active readers have set their bit.
+        // Inactive readers (no bit in active_readers_mask) count
+        // automatically as "read".
         (self.reader_mask & active_readers_mask) == active_readers_mask
     }
 
-    /// Setzt Bit `reader_index` im reader_mask (Reader hat gelesen).
+    /// Sets bit `reader_index` in reader_mask (the reader has read).
     pub fn mark_read(&mut self, reader_index: u8) {
-        debug_assert!(reader_index < 32, "max 32 Reader pro Topic");
+        debug_assert!(reader_index < 32, "max 32 readers per topic");
         self.reader_mask |= 1u32 << reader_index;
     }
 
-    /// Wire-Encoding: 16 byte little-endian.
+    /// Wire encoding: 16 bytes little-endian.
     #[must_use]
     pub fn to_bytes_le(&self) -> [u8; SLOT_HEADER_SIZE] {
         let mut out = [0u8; SLOT_HEADER_SIZE];
@@ -82,10 +82,10 @@ impl SlotHeader {
         out
     }
 
-    /// Wire-Decoding aus 16 byte little-endian.
+    /// Wire decoding from 16 bytes little-endian.
     ///
     /// # Errors
-    /// Liefert `None` wenn `bytes` zu kurz ist.
+    /// Returns `None` when `bytes` is too short.
     #[must_use]
     pub fn from_bytes_le(bytes: &[u8]) -> Option<Self> {
         if bytes.len() < SLOT_HEADER_SIZE {
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn all_read_with_two_active_readers() {
         let mut h = SlotHeader::new(1, 24);
-        // Aktive Reader: Bit 0 + Bit 1.
+        // Active readers: bit 0 + bit 1.
         let active = 0b011;
         assert!(!h.all_read(active));
         h.mark_read(0);
@@ -142,8 +142,8 @@ mod tests {
     #[test]
     fn inactive_reader_bits_dont_block() {
         let mut h = SlotHeader::new(1, 24);
-        // Nur Reader 0 ist aktiv. Reader 5 hat sein Bit auch nicht
-        // gesetzt — soll nicht blockieren.
+        // Only reader 0 is active. Reader 5 has not set its bit
+        // either — it must not block.
         let active = 0b001;
         h.mark_read(0);
         assert!(h.all_read(active));

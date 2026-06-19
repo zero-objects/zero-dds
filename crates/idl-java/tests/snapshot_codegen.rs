@@ -1,7 +1,7 @@
-//! Snapshot-Tests fuer den Java Codegen-Output.
+//! Snapshot tests for the Java codegen output.
 //!
-//! Vergleicht die emittierten `.java`-Files gegen Snapshot-Files.
-//! Aenderungen via `cargo insta review`.
+//! Compares the emitted `.java` files against snapshot files.
+//! Changes via `cargo insta review`.
 
 #![allow(
     clippy::expect_used,
@@ -22,8 +22,8 @@ use zerodds_idl::config::ParserConfig;
 use zerodds_idl_java::{JavaGenOptions, generate_java_files, generate_java_files_with_amqp};
 
 fn gen_default(src: &str) -> String {
-    // Snapshots fokussieren auf POJO-Output. TypeSupport-Snapshots
-    // leben in separaten Tests (siehe `snapshot_typesupport_*`).
+    // Snapshots focus on POJO output. TypeSupport snapshots
+    // live in separate tests (see `snapshot_typesupport_*`).
     let opts = JavaGenOptions {
         emit_typesupport: false,
         ..Default::default()
@@ -74,6 +74,15 @@ fn snapshot_struct_with_string_and_sequence() {
 }
 
 #[test]
+fn snapshot_typesupport_sequence_of_string_dheader() {
+    // XCDR2 §7.4.3.5: seq<string> (non-primitive) → DHEADER (beginAppendable
+    // / readDHeader); seq<long> has none. Cyclone-DDS-verified.
+    insta::assert_snapshot!(gen_typesupport(
+        "@final struct Tags { sequence<string> tags; };"
+    ));
+}
+
+#[test]
 fn snapshot_module_nesting() {
     insta::assert_snapshot!(gen_default(
         "module Outer { module Inner { struct S { long x; }; }; };"
@@ -112,7 +121,7 @@ fn snapshot_amqp_helpers_union() {
 }
 
 fn gen_typesupport(src: &str) -> String {
-    // Nur die TypeSupport-Files (zerodds-xcdr2-java-1.0 §4).
+    // Only the TypeSupport files (zerodds-xcdr2-java-1.0 §4).
     let ast = zerodds_idl::parse(src, &ParserConfig::default()).expect("parse");
     let files = generate_java_files(&ast, &JavaGenOptions::default()).expect("gen");
     let mut combined = String::new();
@@ -132,13 +141,13 @@ fn gen_typesupport(src: &str) -> String {
 
 #[test]
 fn snapshot_typesupport_final_struct() {
-    // V-2 aus zerodds-xcdr2-bindings-conformance-1.0 §6.
+    // V-2 from zerodds-xcdr2-bindings-conformance-1.0 §6.
     insta::assert_snapshot!(gen_typesupport("@final struct Point { long x; long y; };"));
 }
 
 #[test]
 fn snapshot_typesupport_keyed_struct() {
-    // V-8 aus Conformance-Spec.
+    // V-8 from the conformance spec.
     insta::assert_snapshot!(gen_typesupport(
         "@final struct Sensor { @key long id; double value; };"
     ));
@@ -146,7 +155,7 @@ fn snapshot_typesupport_keyed_struct() {
 
 #[test]
 fn snapshot_typesupport_mutable_struct() {
-    // V-10 aus Conformance-Spec.
+    // V-10 from the conformance spec.
     insta::assert_snapshot!(gen_typesupport(
         "@mutable struct M { @id(1) long a; @id(2) string b; };"
     ));

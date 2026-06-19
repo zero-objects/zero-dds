@@ -1,23 +1,19 @@
 # IETF CoAP RFC 7252 + RFC 7641 — Spec-Coverage
 
-**RFC 7252:** `docs/standards/cache/ietf/rfc7252.txt`
-("The Constrained Application Protocol", IETF June 2014).
+**RFC 7252:** [The Constrained Application Protocol — IETF, June 2014 →](https://www.rfc-editor.org/rfc/rfc7252)
 
-**RFC 7641:** `docs/standards/cache/ietf/rfc7641.txt`
-("Observing Resources in CoAP", IETF September 2015).
-
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit
-Item-für-Item gegen die RFCs; jede Anforderung mit Spec-Zitat +
-Repo-Pfad + Test-Pfad + Status.
+**RFC 7641:** [Observing Resources in CoAP — IETF, September 2015 →](https://www.rfc-editor.org/rfc/rfc7641)
 
 **Kontext:** CoAP ist eine constraint-IoT-RESTful-Pub-Sub-Spec.
 ZeroDDS implementiert den **Wire-Codec** (Section 3 + 3.1 + 3.2 + 5.10
-+ RFC 7641 §2) als pure-Rust no_std+alloc Library im Crate
-`crates/coap-bridge/`. Reliability, Congestion Control, Block-Wise
-Transfer (RFC 7959), DTLS sind ausserhalb des Codec-Scopes — Caller
-waehlt den Transport (UDP-Layer mit Retry-Timer) und Crypto.
++ RFC 7641 §2) als pure-Rust no_std+alloc Library.
+Reliability, Congestion Control, Block-Wise
+Transfer (RFC 7959), DTLS sind außerhalb des Codec-Scopes — Caller
+wählt den Transport (UDP-Layer mit Retry-Timer) und Crypto.
 
-Implementation: `crates/coap-bridge/` (3 Module, 34 Tests gruen).
+Implementation:
+
+- `crates/coap-bridge/` — CoAP-Wire-Codec, 3 Module, 34 Tests grün.
 
 ---
 
@@ -193,7 +189,7 @@ Reactor selbst.
 **Tests:** Inline-Tests in `bridge.rs`.
 
 **Status:** done — Endpoint-Tracking als spec-konforme Vec<u8>-ID;
-Transport-Decoupling ist beabsichtigte Architektur fuer no_std-
+Transport-Decoupling ist beabsichtigte Architektur für no_std-
 Targets.
 
 ### §4.2-§4.7 Reliability + Deduplication + Congestion
@@ -258,7 +254,7 @@ Replies (Piggybacked, Separate, Reset).
 Constraint (TKL 0-8 Bytes) + `crates/coap-bridge/src/matching.rs::
 {PendingRequests, MatchError}` mit `submit`/`complete`/
 `evict_expired` und Spec-§4.8-EXCHANGE_LIFETIME-Support; DoS-Cap
-ueber `max_pending`.
+über `max_pending`.
 
 **Tests:** `matching::tests::{submit_empty_token_rejected,
 submit_then_complete_round_trip, complete_unknown_token_returns_none,
@@ -321,7 +317,7 @@ HTTP-Mapping.
 **Repo:** Proxy-Uri-Option (Number 35) definiert + Proxy-Logik in
 `crates/coap-bridge/src/caching_proxy.rs::{ProxyConfig, ProxyMode}`
 mit Forward/Reverse-Mode + max_hops-Cap (Spec §5.7.1 Loop-Schutz)
-+ http_translation-Flag fuer §10-Pfad.
++ http_translation-Flag für §10-Pfad.
 
 **Tests:** `caching_proxy::tests::proxy_config_default_is_forward_coap_to_coap`.
 
@@ -464,7 +460,7 @@ validate_dtls_mode}` mit allen vier Modi:
   X.509-Chain-Validation gegen Trust-Anchors).
 
 `is_secure()`-Predicate + `default_port()` (5683/5684) + `name()`
-fuer Logging. Eigentliche DTLS-Record-Layer ist Caller-Layer
+für Logging. Eigentliche DTLS-Record-Layer ist Caller-Layer
 (z.B. Reuse `crates/security-pki` + `crates/security-crypto`).
 
 **Tests:** `dtls::tests::*` (11 Tests):
@@ -487,7 +483,7 @@ Validation; Record-Layer via Caller-DTLS-Stack (security-pki/crypto).
 
 ### §10 HTTP Cross-Proto-Mapping
 
-**Spec:** §10, S. 86-91 — HTTP↔CoAP-Translation fuer Proxy-Use-Cases.
+**Spec:** §10, S. 86-91 — HTTP↔CoAP-Translation für Proxy-Use-Cases.
 §10.1 Status-Code-Mapping (Tab 8); §10.2 Method-Mapping (Tab 9).
 
 **Repo:** `crates/coap-bridge/src/caching_proxy.rs::{http_status_to_coap,
@@ -558,6 +554,4 @@ Test-Lauf: `cargo test -p zerodds-coap-bridge` — 83 lib-Inline +
 `blockwise`, `bridge`, `codec`, `core_link`, `message`, `observe`,
 `option`, `reliability`.
 
-Offene Punkte: siehe `coap-rfc-7252.open.md`. Rest hauptsächlich
-UDP-Layer-Items (Multicast §8, eigener URI-Parser §6, DTLS §9,
-Caching/Proxies §2.3, HTTP-Cross §10).
+Keine offenen Punkte — alle Items `done`.

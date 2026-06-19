@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `CryptoTransformIdentifier` und Builtin-Crypto-Plugin-IDs —
+//! `CryptoTransformIdentifier` and built-in crypto plugin IDs —
 //! DDS-Security 1.2 §7.3.20 + §10.5.2-3 + §10.3.2.1.
 //!
-//! Spec §7.3.20 (S. 73) listet die builtin Cryptographic-Plugin-IDs;
-//! §10.5.2 spezifiziert die `CryptoTransformIdentifier`-Struktur, die
-//! in jeder verschluesselten RTPS-Submessage als Identifier-Header
-//! mitlaeuft.
+//! Spec §7.3.20 (p. 73) lists the built-in cryptographic plugin IDs;
+//! §10.5.2 specifies the `CryptoTransformIdentifier` structure that
+//! travels along in every encrypted RTPS submessage as an identifier
+//! header.
 
 use alloc::format;
 use alloc::vec::Vec;
@@ -27,9 +27,9 @@ pub const BUILTIN_CRYPTO_PLUGIN: &str = "DDS:Crypto:AES_GCM_GMAC";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
 pub enum CryptoTransformKind {
-    /// Kein Transform — Submessage unsigned.
+    /// No transform — submessage unsigned.
     None = 0,
-    /// AES-128-GMAC (nur Authentication, kein Encrypt).
+    /// AES-128-GMAC (authentication only, no encrypt).
     Aes128Gmac = 1,
     /// AES-128-GCM (Authentication + Encrypt).
     Aes128Gcm = 2,
@@ -46,10 +46,10 @@ impl CryptoTransformKind {
         (self as u32).to_be_bytes()
     }
 
-    /// Decode aus 4 BE Bytes.
+    /// Decode from 4 BE bytes.
     ///
     /// # Errors
-    /// Static-String wenn Wert nicht in 0..=4 liegt.
+    /// A static string if the value is not in 0..=4.
     pub fn from_be_bytes(bytes: [u8; 4]) -> Result<Self, &'static str> {
         match u32::from_be_bytes(bytes) {
             0 => Ok(Self::None),
@@ -61,7 +61,7 @@ impl CryptoTransformKind {
         }
     }
 
-    /// `true` wenn der Transform Encryption macht (sonst nur Auth).
+    /// `true` if the transform does encryption (otherwise auth only).
     #[must_use]
     pub const fn encrypts(self) -> bool {
         matches!(self, Self::Aes128Gcm | Self::Aes256Gcm)
@@ -97,14 +97,14 @@ impl CryptoTransformKind {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CryptoTransformIdentifier {
-    /// 4-Byte-Wire-Form.
+    /// 4-byte wire form.
     pub kind: CryptoTransformKind,
-    /// 4-Byte Key-Identifier (vom Plugin vergeben).
+    /// 4-byte key identifier (assigned by the plugin).
     pub key_id: [u8; 4],
 }
 
 impl CryptoTransformIdentifier {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(kind: CryptoTransformKind, key_id: [u8; 4]) -> Self {
         Self { kind, key_id }
@@ -119,11 +119,11 @@ impl CryptoTransformIdentifier {
         out
     }
 
-    /// Decode 8 Bytes.
+    /// Decode 8 bytes.
     ///
     /// # Errors
-    /// Static-String wenn der Wire-Buffer nicht 8 Bytes hat oder
-    /// die `transformation_kind` ungueltig ist.
+    /// A static string if the wire buffer is not 8 bytes or
+    /// the `transformation_kind` is invalid.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
         if bytes.len() != 8 {
             return Err("CryptoTransformIdentifier needs 8 bytes");
@@ -148,11 +148,11 @@ impl CryptoTransformIdentifier {
 /// Total 8 + 4 + 8 = 20 Bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CryptoHeader {
-    /// Transform-Identifier.
+    /// Transform identifier.
     pub transformation_id: CryptoTransformIdentifier,
-    /// Session-Id (vom Plugin vergeben, 4 Byte).
+    /// Session ID (assigned by the plugin, 4 bytes).
     pub session_id: [u8; 4],
-    /// IV-Suffix (8 Byte). Volles IV = session_id || init_vector_suffix.
+    /// IV suffix (8 bytes). Full IV = session_id || init_vector_suffix.
     pub init_vector_suffix: [u8; 8],
 }
 
@@ -160,7 +160,7 @@ impl CryptoHeader {
     /// Wire-Size (Spec).
     pub const WIRE_SIZE: usize = 20;
 
-    /// Encode zu Wire-Bytes (20 Byte).
+    /// Encode to wire bytes (20 bytes).
     #[must_use]
     pub fn to_bytes(&self) -> [u8; Self::WIRE_SIZE] {
         let mut out = [0u8; Self::WIRE_SIZE];
@@ -170,10 +170,10 @@ impl CryptoHeader {
         out
     }
 
-    /// Decode 20 Wire-Bytes.
+    /// Decode 20 wire bytes.
     ///
     /// # Errors
-    /// Static-String wenn Wire-Buffer falscher Laenge.
+    /// A static string if the wire buffer is the wrong length.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
         if bytes.len() < Self::WIRE_SIZE {
             return Err("CryptoHeader needs 20 bytes");
@@ -190,8 +190,8 @@ impl CryptoHeader {
         })
     }
 
-    /// Berechnet das volle 12-Byte-IV (Spec §10.5.2.3): `session_id ||
-    /// init_vector_suffix`. Wird in AES-GCM als Nonce verwendet.
+    /// Computes the full 12-byte IV (spec §10.5.2.3): `session_id ||
+    /// init_vector_suffix`. Used as the nonce in AES-GCM.
     #[must_use]
     pub fn full_iv(&self) -> [u8; 12] {
         let mut iv = [0u8; 12];
@@ -201,14 +201,14 @@ impl CryptoHeader {
     }
 }
 
-/// Spec §10.5.2.4 `CryptoFooter` — enthaelt Auth-Tag + Receiver-
-/// Specific-MAC-Liste. Wir liefern nur den minimalen Common-Tag.
+/// Spec §10.5.2.4 `CryptoFooter` — contains the auth tag + receiver-
+/// specific MAC list. We provide only the minimal common tag.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CryptoFooter {
-    /// Common 16-Byte AES-GCM/GMAC Authentication-Tag.
+    /// Common 16-byte AES-GCM/GMAC authentication tag.
     pub common_mac: [u8; 16],
-    /// Receiver-Specific-MACs (Spec §10.5.2.4 — pro Empfaenger ein
-    /// 4-Byte-Key-Id + 16-Byte-Tag; voll abgedeckt in WP A.6).
+    /// Receiver-specific MACs (spec §10.5.2.4 — one 4-byte key id +
+    /// 16-byte tag per receiver; fully covered in WP A.6).
     pub receiver_specific_macs: Vec<([u8; 4], [u8; 16])>,
 }
 
@@ -227,10 +227,10 @@ impl CryptoFooter {
         out
     }
 
-    /// Decode aus Wire-Bytes.
+    /// Decode from wire bytes.
     ///
     /// # Errors
-    /// Static-String bei falscher Laenge.
+    /// A static string on a wrong length.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
         if bytes.len() < 20 {
             return Err("CryptoFooter needs >= 20 bytes");
@@ -259,16 +259,16 @@ impl CryptoFooter {
     }
 }
 
-/// Cross-Vendor-Plugin-Negotiation. Caller liefert die Liste der
-/// vom Remote angekuendigten Plugin-Class-Ids; wir liefern den
-/// hoechsten gemeinsam unterstuetzten Builtin-Algorithmus zurueck.
+/// Cross-vendor plugin negotiation. The caller provides the list of
+/// plugin class IDs announced by the remote; we return the
+/// highest commonly supported built-in algorithm.
 ///
 /// # Errors
-/// `format!` String wenn kein gemeinsamer Algorithmus.
+/// A `format!` string if there is no common algorithm.
 pub fn negotiate_transform(
     remote_kinds: &[CryptoTransformKind],
 ) -> Result<CryptoTransformKind, alloc::string::String> {
-    // Praeferenz: AES-256-GCM > AES-128-GCM > AES-256-GMAC > AES-128-GMAC.
+    // Preference: AES-256-GCM > AES-128-GCM > AES-256-GMAC > AES-128-GMAC.
     let pref = [
         CryptoTransformKind::Aes256Gcm,
         CryptoTransformKind::Aes128Gcm,

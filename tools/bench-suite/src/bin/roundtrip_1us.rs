@@ -286,13 +286,16 @@ fn read_seq_t(buf: &[u8]) -> Option<(u64, u64)> {
 // DCPS-Roundtrip (D.5b) — gleicher Bench durch zerodds-c-api.
 // ============================================================================
 
-/// Topic-Default basierend auf der PID, damit parallele Test-Runs sich
-/// nicht stoeren.
+/// Topic-Default. ACHTUNG: PID war frueher Suffix-Quelle — falsche
+/// Wahl, weil Ping und Pong in separaten Prozessen laufen und damit
+/// unterschiedliche Topic-Namen bekamen (silent no-match,
+/// busy-loop ohne Daten). Default jetzt fest "roundtrip" — Caller
+/// kann via `--dcps-topic` ueberschreiben fuer parallele Runs.
 fn dcps_topics(args: &Args) -> (String, String) {
     let suffix = args
         .dcps_topic
         .clone()
-        .unwrap_or_else(|| format!("roundtrip-{}", std::process::id()));
+        .unwrap_or_else(|| "roundtrip".to_string());
     (format!("{suffix}/req"), format!("{suffix}/echo"))
 }
 
@@ -339,7 +342,7 @@ fn run_pong_dcps(args: &Args) -> std::io::Result<()> {
             }
             let mut buf: *mut u8 = std::ptr::null_mut();
             let mut len: usize = 0;
-            let rc = zerodds::zerodds_reader_take(reader, &mut buf, &mut len);
+            let rc = zerodds::zerodds_reader_take(reader, &mut buf, &mut len, std::ptr::null_mut());
             if rc != 0 {
                 continue;
             }
@@ -410,7 +413,7 @@ fn run_ping_dcps(args: &Args) -> std::io::Result<Stats> {
         loop {
             let mut b: *mut u8 = std::ptr::null_mut();
             let mut l: usize = 0;
-            let rc = zerodds::zerodds_reader_take(reader, &mut b, &mut l);
+            let rc = zerodds::zerodds_reader_take(reader, &mut b, &mut l, std::ptr::null_mut());
             if rc != 0 || b.is_null() || l == 0 {
                 break;
             }
@@ -447,7 +450,8 @@ fn run_ping_dcps(args: &Args) -> std::io::Result<Stats> {
             }
             let mut rxbuf: *mut u8 = std::ptr::null_mut();
             let mut rxlen: usize = 0;
-            let rc = zerodds::zerodds_reader_take(reader, &mut rxbuf, &mut rxlen);
+            let rc =
+                zerodds::zerodds_reader_take(reader, &mut rxbuf, &mut rxlen, std::ptr::null_mut());
             if rc != 0 {
                 continue;
             }
@@ -515,7 +519,12 @@ fn run_pong_dcps_listener(args: &Args) -> std::io::Result<()> {
         let writer_box: Box<usize> = Box::new(writer as usize);
         let user_data = Box::into_raw(writer_box) as *mut core::ffi::c_void;
 
-        extern "C" fn pong_cb(user_data: *mut core::ffi::c_void, payload: *const u8, len: usize) {
+        extern "C" fn pong_cb(
+            user_data: *mut core::ffi::c_void,
+            payload: *const u8,
+            len: usize,
+            _representation: u8,
+        ) {
             // SAFETY: writer_addr lebt bis pong_cb deregistriert ist.
             let writer_addr = unsafe { *(user_data as *const usize) };
             let writer = writer_addr as *mut zerodds::ZeroDdsWriter;
@@ -627,7 +636,7 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
         loop {
             let mut b: *mut u8 = std::ptr::null_mut();
             let mut l: usize = 0;
-            let rc = zerodds::zerodds_reader_take(reader, &mut b, &mut l);
+            let rc = zerodds::zerodds_reader_take(reader, &mut b, &mut l, std::ptr::null_mut());
             if rc != 0 || b.is_null() || l == 0 {
                 break;
             }
@@ -638,7 +647,12 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
         // Listener registrieren.
         let state_for_cb = Arc::into_raw(Arc::clone(&state)) as *mut core::ffi::c_void;
 
-        extern "C" fn ping_cb(user_data: *mut core::ffi::c_void, payload: *const u8, len: usize) {
+        extern "C" fn ping_cb(
+            user_data: *mut core::ffi::c_void,
+            payload: *const u8,
+            len: usize,
+            _representation: u8,
+        ) {
             // SAFETY: state lebt bis Listener deregistriert + Arc::from_raw cleanup.
             let state = unsafe { &*(user_data as *const PingState) };
             // SAFETY: payload + len kommen vom Runtime-Recv-Thread.

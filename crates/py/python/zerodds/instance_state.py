@@ -1,4 +1,4 @@
-"""InstanceStateMask-Konstanten (DDS 1.4 §2.2.2.5.1.4)."""
+"""InstanceStateMask constants (DDS 1.4 §2.2.2.5.1.4)."""
 from __future__ import annotations
 
 from . import _core

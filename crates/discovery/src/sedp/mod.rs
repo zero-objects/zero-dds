@@ -2,18 +2,18 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Simple Endpoint Discovery Protocol (SEDP) — DDSI-RTPS 2.5 §8.5.4.
 //!
-//! SEDP sendet `PublicationBuiltinTopicData` /
-//! `SubscriptionBuiltinTopicData` über Reliable-Builtin-Endpoints,
-//! damit Participants ihre DataWriter und DataReader gegenseitig
-//! entdecken können.
+//! SEDP sends `PublicationBuiltinTopicData` /
+//! `SubscriptionBuiltinTopicData` over reliable builtin endpoints so
+//! that participants can discover each other's DataWriters and
+//! DataReaders.
 //!
-//! ## Module
+//! ## Modules
 //!
 //! - [`cache`] — `DiscoveredEndpointsCache`.
-//! - [`reader`] — SEDP-Publication/Subscription-Reader.
-//! - [`writer`] — SEDP-Publication/Subscription-Writer.
-//! - [`stack`] — integrierte SEDP-State-Machine
-//!   (Participant-Lifecycle → SEDP-Proxy-Wiring).
+//! - [`reader`] — SEDP publication/subscription reader.
+//! - [`writer`] — SEDP publication/subscription writer.
+//! - [`stack`] — integrated SEDP state machine
+//!   (participant lifecycle → SEDP proxy wiring).
 
 pub mod cache;
 pub mod reader;

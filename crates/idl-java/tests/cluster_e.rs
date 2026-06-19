@@ -1,8 +1,7 @@
-//! Cluster-E-Tests fuer C5.4-b — Bitset/Bitmask, Multi-Inheritance,
-//! `@value`-Enum, Annotation-Bridge, TopicType-Marker.
+//! Cluster E tests for C5.4-b — Bitset/Bitmask, multi-inheritance,
+//! `@value` enum, annotation bridge, TopicType marker.
 //!
-//! Markerbasierte Snapshots — siehe `tests/fixtures.rs` fuer das
-//! Pattern.
+//! Marker-based snapshots — see `tests/fixtures.rs` for the pattern.
 
 #![allow(
     clippy::expect_used,
@@ -294,19 +293,19 @@ fn nested_struct_does_not_implement_topic_type() {
 
 #[test]
 fn struct_with_base_inherits_topic_type_from_parent() {
-    // TS-3-Finding 4 (gefixt 2026-05-01): bei Inheritance wird
-    // `TopicType<T>` nur am Wurzel-Type emittiert. Java verbietet
-    // `Child extends Base<Base> implements TopicType<Child>` weil
-    // beide TopicType-Generic-Args kollidieren. Spec DDS-Java-PSM
-    // betrachtet TopicType als Marker-Interface — Sub-Classes erben
-    // den Marker via `extends Parent` und sind weiterhin
+    // TS-3-Finding 4 (fixed 2026-05-01): with inheritance,
+    // `TopicType<T>` is only emitted on the root type. Java forbids
+    // `Child extends Base<Base> implements TopicType<Child>` because
+    // both TopicType generic args collide. The DDS-Java-PSM spec
+    // treats TopicType as a marker interface — subclasses inherit
+    // the marker via `extends Parent` and remain
     // `instanceof TopicType<Parent>`.
     let files = genfiles("struct Parent { long x; }; struct Child : Parent { long y; };");
     let parent = find(&files, "Parent");
     let child = find(&files, "Child");
     assert!(
         parent.source.contains("TopicType<Parent>"),
-        "Parent must implement TopicType (Wurzel der Kette)"
+        "Parent must implement TopicType (root of the chain)"
     );
     assert!(child.source.contains("extends Parent"));
     assert!(

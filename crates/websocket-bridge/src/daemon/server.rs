@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! WebSocket-Server + DDS-Pump fuer den `zerodds-ws-bridged`-Daemon.
+//! WebSocket server + DDS pump for the `zerodds-ws-bridged` daemon.
 //!
 //! Spec: `zerodds-ws-bridge-1.0.md` §4 + §9.
 //!
-//! `eprintln!`-Logging im Daemon-Pfad: Spec §8.1 ueberlaesst dem
-//! Daemon strukturiertes Logging. Bis ein workspace-tracing-Stack
-//! gewired ist, ist `eprintln` die Senke; lokal als clippy-allow
-//! auf den betroffenen Funktionen markiert.
+//! `eprintln!` logging in the daemon path: Spec §8.1 leaves
+//! structured logging to the daemon. Until a workspace tracing stack
+//! is wired in, `eprintln` is the sink; marked locally as a clippy-allow
+//! on the affected functions.
 //!
-//! Sync, blockierendes I/O auf `std::net`. Pro Connection ein
-//! Reader-Thread (TCP→WS-Frames→Router) plus ein Writer-Thread
-//! (Router-Channel→WS-Frames→TCP). Der DDS-Pump-Thread konsumiert
-//! `mpsc::Receiver<UserSample>` aus jedem registrierten Reader und
-//! dispatcht ueber den `Router`.
+//! Sync, blocking I/O on `std::net`. One reader thread per connection
+//! (TCP→WS frames→router) plus one writer thread
+//! (router channel→WS frames→TCP). The DDS pump thread consumes
+//! `mpsc::Receiver<UserSample>` from each registered reader and
+//! dispatches via the `Router`.
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -53,14 +53,14 @@ use zerodds_dcps::runtime::{
 #[cfg(feature = "daemon")]
 use zerodds_rtps::wire_types::{EntityId, GuidPrefix};
 
-/// Top-Level-Fehler des Daemons.
+/// Top-level error of the daemon.
 #[derive(Debug)]
 pub enum ServerError {
-    /// Bind-Fehler (Exit-Code 2).
+    /// Bind error (exit code 2).
     Bind(String),
-    /// DCPS-Init-Fehler (Exit-Code 3).
+    /// DCPS init error (exit code 3).
     Dds(String),
-    /// IO-Fehler waehrend Operation.
+    /// I/O error during operation.
     Io(String),
 }
 
@@ -76,7 +76,7 @@ impl core::fmt::Display for ServerError {
 
 impl std::error::Error for ServerError {}
 
-/// Daemon-Handle. Beim Drop wird shutdown aufgerufen.
+/// Daemon handle. On drop, shutdown is invoked.
 pub struct DaemonHandle {
     stop: Arc<AtomicBool>,
     accept_thread: Option<JoinHandle<()>>,
@@ -86,36 +86,36 @@ pub struct DaemonHandle {
     #[cfg(feature = "daemon")]
     otlp_thread: Option<JoinHandle<()>>,
     router: Arc<Mutex<Router>>,
-    /// Bound-Address (kann von Config-listen abweichen wenn Port=0).
+    /// Bound address (may differ from the configured listen if port=0).
     pub local_addr: String,
-    /// Bound Admin-Address (Prometheus + Catalog + Healthz).
+    /// Bound admin address (Prometheus + catalog + healthz).
     #[cfg(feature = "daemon")]
     pub admin_addr: Option<String>,
-    /// Lifecycle: SIGHUP setzt das hier; Server-Loop kann reagieren.
+    /// Lifecycle: SIGHUP sets this; the server loop can react.
     #[cfg(feature = "daemon")]
     pub reload_flag: Arc<AtomicBool>,
-    /// Healthz-Flag — DCPS-Runtime up == true.
+    /// Healthz flag — DCPS runtime up == true.
     #[cfg(feature = "daemon")]
     pub healthy: Arc<AtomicBool>,
-    /// Metric-Set fuer §8.2-Wireup. Reader-side fuer Tests.
+    /// Metric set for the §8.2 wireup. Reader-side for tests.
     #[cfg(feature = "daemon")]
     pub metrics: Option<BridgeMetrics>,
-    /// Bridge-interner DCPS-Runtime — exportiert für E2E-Tests, die
-    /// synthetisch Samples in den Daemon-Reader-Channel injizieren
-    /// (via `DcpsRuntime::test_inject_user_alive`) ohne den Wire-Pfad
-    /// zu durchlaufen.
+    /// Bridge-internal DCPS runtime — exported for E2E tests that
+    /// synthetically inject samples into the daemon reader channel
+    /// (via `DcpsRuntime::test_inject_user_alive`) without going through
+    /// the wire path.
     #[cfg(feature = "daemon")]
     pub runtime: Arc<DcpsRuntime>,
-    /// Topic-Name → registrierte Writer-EntityId.
+    /// Topic name → registered writer EntityId.
     #[cfg(feature = "daemon")]
     pub user_writers: std::collections::BTreeMap<String, EntityId>,
-    /// Topic-Name → registrierte Reader-EntityId.
+    /// Topic name → registered reader EntityId.
     #[cfg(feature = "daemon")]
     pub user_readers: std::collections::BTreeMap<String, EntityId>,
 }
 
 impl DaemonHandle {
-    /// Initiiert graceful Shutdown.
+    /// Initiates a graceful shutdown.
     pub fn shutdown(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
         #[cfg(feature = "daemon")]
@@ -127,7 +127,7 @@ impl DaemonHandle {
             // Self-connect to wake accept().
             let _ = TcpStream::connect_timeout(&addr, Duration::from_millis(200));
         }
-        // Self-connect Admin-Server (so der accept-loop blockt).
+        // Self-connect the admin server (so the accept loop unblocks).
         #[cfg(feature = "daemon")]
         if let Some(admin) = self.admin_addr.as_deref() {
             if let Ok(addr) = admin.parse::<std::net::SocketAddr>() {
@@ -161,13 +161,13 @@ impl Drop for DaemonHandle {
     }
 }
 /// zerodds-lint: recursion-depth 64 (start bounded by AST depth)
-/// Startet den Daemon mit der gegebenen Config. Blockiert NICHT —
-/// gibt einen `DaemonHandle` zurueck ueber den der Caller (entweder
-/// das Binary oder ein E2E-Test) das Lifecycle steuert.
+/// Starts the daemon with the given config. Does NOT block —
+/// returns a `DaemonHandle` through which the caller (either
+/// the binary or an E2E test) controls the lifecycle.
 ///
 /// # Errors
-/// `Bind` wenn der TCP-Listener nicht binden kann (Spec Exit-Code 2).
-/// `Dds` wenn der `DcpsRuntime` nicht starten kann (Spec Exit-Code 3).
+/// `Bind` if the TCP listener cannot bind (Spec exit code 2).
+/// `Dds` if the `DcpsRuntime` cannot start (Spec exit code 3).
 #[cfg(feature = "daemon")]
 #[allow(clippy::too_many_lines)]
 pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
@@ -178,12 +178,12 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         cfg.topics.len()
     );
 
-    // 0. Metrics-Registry + Standard-Counter-Set (§8.2).
+    // 0. Metrics registry + standard counter set (§8.2).
     let registry = Arc::new(Registry::new());
     let metrics = BridgeMetrics::register(&registry);
 
-    // 0b. Bridge-Security: Security-Ctx + ggf. RotatingTlsConfig für
-    //     SIGHUP-Hot-Reload (§7.1 TLS / §7.2 Auth / §7.3 ACL).
+    // 0b. Bridge security: security ctx + optional RotatingTlsConfig for
+    //     SIGHUP hot-reload (§7.1 TLS / §7.2 auth / §7.3 ACL).
     let (security_ctx, rotating_tls) = ctx_from_daemon_config(&cfg)
         .map_err(|e| ServerError::Bind(alloc_format(format_args!("security: {e}"))))?;
     let security_ctx = Arc::new(security_ctx);
@@ -201,13 +201,13 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         cfg.topic_acl.len()
     );
 
-    // 1. DCPS-Runtime hochfahren.
+    // 1. Bring up the DCPS runtime.
     let prefix = stable_prefix_for(&cfg.listen);
     let runtime = DcpsRuntime::start(cfg.domain, prefix, RuntimeConfig::default())
         .map_err(|e| ServerError::Dds(alloc_format(format_args!("{e:?}"))))?;
     let healthy = Arc::new(AtomicBool::new(true));
 
-    // 2. Pro Topic Reader+Writer registrieren.
+    // 2. Register a reader+writer per topic.
     let mut writers: std::collections::BTreeMap<String, EntityId> =
         std::collections::BTreeMap::new();
     let mut reader_eids: std::collections::BTreeMap<String, EntityId> =
@@ -224,7 +224,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         }
     }
 
-    // 3. Router + TCP-Listener.
+    // 3. Router + TCP listener.
     let router = Arc::new(Mutex::new(Router::new()));
     let listener = TcpListener::bind(&cfg.listen)
         .map_err(|e| ServerError::Bind(alloc_format(format_args!("{e}"))))?;
@@ -241,7 +241,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     let stop = Arc::new(AtomicBool::new(false));
     let reload_flag = Arc::new(AtomicBool::new(false));
 
-    // 4. Pump-Threads pro Reader.
+    // 4. Pump threads per reader.
     let mut pump_threads = Vec::new();
     for (topic_name, rx) in readers {
         let router_c = Arc::clone(&router);
@@ -258,9 +258,8 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
                         }
                     }
                     Ok(UserSample::Lifecycle { .. }) => {
-                        // Lifecycle-Events: wir koennten dispose-Frames
-                        // pushen — fuer L1-L4-Wireup reicht der Alive-
-                        // Pfad.
+                        // Lifecycle events: we could push dispose frames —
+                        // for the L1-L4 wireup the alive path is enough.
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
@@ -270,12 +269,12 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         pump_threads.push(h);
     }
 
-    // 5. Accept-Thread.
+    // 5. Accept thread.
     let next_conn_id = Arc::new(AtomicU64::new(1));
     let stop_acc = Arc::clone(&stop);
     let router_acc = Arc::clone(&router);
-    // Snapshot der Writer-Map für DaemonHandle-Export, bevor `writers`
-    // in den Arc moved wird (akzeptiert von dispatch-Pfad).
+    // Snapshot of the writer map for the DaemonHandle export, before `writers`
+    // is moved into the Arc (accepted by the dispatch path).
     let writers_export = writers.clone();
     let writers_arc = Arc::new(writers);
     let runtime_acc = Arc::clone(&runtime);
@@ -301,7 +300,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
                     let security_h = Arc::clone(&security_acc);
                     let rot_h = rotating_acc.clone();
                     thread::spawn(move || {
-                        // Wenn TLS konfiguriert ist: rustls-Handshake. Sonst Plain.
+                        // If TLS is configured: rustls handshake. Otherwise plain.
                         let (stream, mtls_subj) = if let Some(rot) = rot_h.as_ref() {
                             let cfg = rot.current();
                             match serve_tls_handshake(cfg, tcp, Duration::from_secs(5)) {
@@ -333,7 +332,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         }
     });
 
-    // 6. Admin-Endpoint (§8.2 Prometheus + §5.2 Catalog/Healthz).
+    // 6. Admin endpoint (§8.2 Prometheus + §5.2 catalog/healthz).
     let mut admin_thread: Option<JoinHandle<()>> = None;
     let mut admin_addr: Option<String> = None;
     if cfg.metrics_enabled || !cfg.metrics_addr.is_empty() {
@@ -370,13 +369,13 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         }
     }
 
-    // 7. Signal-Watcher (§9.2 Graceful Shutdown).
+    // 7. Signal watcher (§9.2 graceful shutdown).
     if let Err(e) = install_signal_watcher(Arc::clone(&stop), Arc::clone(&reload_flag)) {
         eprintln!("[{SERVICE_NAME}] signal watcher init failed: {e}");
     }
 
-    // 7b. Bridge-Security: SIGHUP-Hook für TLS-Cert-Hot-Reload. Polled das
-    //     reload_flag und ruft RotatingTlsConfig::reload() auf.
+    // 7b. Bridge security: SIGHUP hook for TLS cert hot-reload. Polls the
+    //     reload_flag and calls RotatingTlsConfig::reload().
     if let Some(rot) = rotating_tls.clone() {
         let stop_r = Arc::clone(&stop);
         let reload_r = Arc::clone(&reload_flag);
@@ -400,7 +399,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
             .ok();
     }
 
-    // 8. OTLP-Span-Exporter (§8.3) wenn ENV gesetzt.
+    // 8. OTLP span exporter (§8.3) if the env var is set.
     let otlp_thread = if let Some(otlp_cfg) = otlp_config_from_env(SERVICE_NAME) {
         let exporter = Arc::new(OtlpExporter::new(otlp_cfg));
         match spawn_otlp_flush_loop(exporter, Arc::clone(&stop), Duration::from_secs(5)) {
@@ -543,7 +542,7 @@ fn serve_connection(
         .set_read_timeout(Some(Duration::from_millis(500)))
         .ok();
 
-    // 1. HTTP-Upgrade-Handshake einlesen.
+    // 1. Read in the HTTP upgrade handshake.
     let mut buf = [0u8; 4096];
     let mut accumulated = Vec::new();
     let req_str = loop {
@@ -574,7 +573,7 @@ fn serve_connection(
         }
     };
 
-    // §7.2 — Authentication. Bei Reject: HTTP 401 + close.
+    // §7.2 — authentication. On reject: HTTP 401 + close.
     let auth_header = extract_authorization_header(&req_str);
     let auth_headers: Vec<(String, String)> = if let Some(v) = auth_header {
         vec![("authorization".to_string(), v)]
@@ -598,7 +597,7 @@ fn serve_connection(
         }
     };
 
-    // Auto-Subscribe wenn Pfad einem Topic entspricht (Spec §4.2).
+    // Auto-subscribe if the path matches a topic (Spec §4.2).
     let mut auto_topic: Option<String> = None;
     for t in topics.iter() {
         if t.ws_path == req.path || super::config::default_ws_path(&t.name) == req.path {
@@ -607,7 +606,7 @@ fn serve_connection(
         }
     }
 
-    // §7.3 — Auto-Subscribe-Topic ACL-Check (Read).
+    // §7.3 — auto-subscribe topic ACL check (read).
     if let Some(topic) = &auto_topic {
         if !authorize(&security.acl, &subject, AclOp::Read, topic) {
             metrics.errors_total.inc();
@@ -633,7 +632,7 @@ fn serve_connection(
         .write_all(resp_bytes.as_bytes())
         .map_err(|e| ServerError::Io(e.to_string()))?;
 
-    // 2. Connection an Router registrieren.
+    // 2. Register the connection with the router.
     let (tx, rx) = std::sync::mpsc::channel::<RouterMsg>();
     if let Ok(mut r) = router.lock() {
         r.register_connection(conn_id, tx);
@@ -642,29 +641,29 @@ fn serve_connection(
         }
     }
 
-    // 3. Writer-Thread (Router-Channel → WS-Frames). Der Stream ist
-    //    Arc<Mutex<>>-shared zwischen Reader-Loop und Writer-Thread,
-    //    weil TLS-Streams sich nicht via `try_clone` duplizieren lassen
-    //    (rustls-Session-State). Plain-TCP würde via try_clone gehen,
-    //    aber wir nehmen einheitlich den Mutex-Pfad.
+    // 3. Writer thread (router channel → WS frames). The stream is
+    //    Arc<Mutex<>>-shared between the reader loop and the writer thread,
+    //    because TLS streams cannot be duplicated via `try_clone`
+    //    (rustls session state). Plain TCP would work via try_clone,
+    //    but we use the mutex path uniformly.
     let stream = Arc::new(Mutex::new(stream));
     let stop_w = Arc::clone(&stop);
     let frames_out = Arc::clone(&metrics.frames_out_total);
     let bytes_out = Arc::clone(&metrics.bytes_out_total);
     let errors_out = Arc::clone(&metrics.errors_total);
     let stream_w = Arc::clone(&stream);
-    // Per-Connection ACL-State: pro Topic wird der Read-Check gemacht
-    // bevor wir zu router.dispatch reichen. Hier vor dem Send: Subject
-    // + Acl haben wir per Closure-Move.
+    // Per-connection ACL state: the read check is done per topic
+    // before we hand off to router.dispatch. Here before the send: we
+    // have the subject + ACL via closure move.
     let security_w = Arc::clone(&security);
     let subject_w = subject.clone();
     let writer_thread = thread::spawn(move || {
         while !stop_w.load(Ordering::SeqCst) {
             match rx.recv_timeout(Duration::from_millis(200)) {
                 Ok(RouterMsg::Sample { topic, payload }) => {
-                    // §7.3 — Read-ACL (post-subscribe gate): wenn die
-                    // ACL für diesen Subject + Topic auf Deny steht,
-                    // droppe das Sample (kein Disclose).
+                    // §7.3 — read ACL (post-subscribe gate): if the
+                    // ACL for this subject + topic is deny,
+                    // drop the sample (no disclosure).
                     if !authorize(&security_w.acl, &subject_w, AclOp::Read, &topic) {
                         continue;
                     }
@@ -702,7 +701,7 @@ fn serve_connection(
         }
     });
 
-    // 4. Reader-Loop (TCP/TLS → WS-Frames → Router/DDS-Writer).
+    // 4. Reader loop (TCP/TLS → WS frames → router/DDS writer).
     let mut frame_buf: Vec<u8> = Vec::new();
     'reader: loop {
         if stop.load(Ordering::SeqCst) {
@@ -715,12 +714,12 @@ fn serve_connection(
             };
             guard.read(&mut buf)
         };
-        // Mutex-Fairness: Stream-Lock wird zwischen Reader-Loop und
-        // Writer-Thread geteilt. Ohne Yield reißt der Reader nach jedem
-        // Lock-Release (post-read_timeout) den Lock sofort wieder an
-        // sich; der Writer-Thread (Notify-Frames) kommt unter
-        // Mutex-Starvation nicht durch. 1 ms Sleep gibt dem OS-Scheduler
-        // die Chance dem wartenden Writer den Lock zuzuteilen.
+        // Mutex fairness: the stream lock is shared between the reader loop
+        // and the writer thread. Without a yield the reader grabs the lock
+        // again immediately after each lock release (post-read_timeout);
+        // the writer thread (notify frames) does not get through under
+        // mutex starvation. A 1 ms sleep gives the OS scheduler a chance
+        // to assign the lock to the waiting writer.
         thread::sleep(Duration::from_millis(1));
         match read_result {
             Ok(0) => break,
@@ -780,14 +779,14 @@ fn serve_connection(
     Ok(())
 }
 
-/// Eine Connection ist entweder Plain-TCP oder TLS-gewrapped.
-/// Read/Write-Operationen gehen durch denselben Trait, damit der WS-
-/// Reader/Writer-Loop dieselbe Logik für beide Pfade hat.
+/// A connection is either plain TCP or TLS-wrapped.
+/// Read/write operations go through the same trait so the WS
+/// reader/writer loop has the same logic for both paths.
 #[cfg(feature = "daemon")]
 enum WsStream {
     /// Plain `TcpStream` — `tls_enabled=false`.
     Plain(TcpStream),
-    /// Server-Side TLS-Stream auf einer akzeptierten Connection.
+    /// Server-side TLS stream on an accepted connection.
     Tls(Box<StreamOwned<ServerConnection, TcpStream>>),
 }
 
@@ -827,7 +826,7 @@ impl Write for WsStream {
     }
 }
 
-/// RAII-Guard, der `connections_active` beim Drop dekrementiert.
+/// RAII guard that decrements `connections_active` on drop.
 #[cfg(feature = "daemon")]
 struct ConnectionLifetime {
     active: Arc<zerodds_monitor::Gauge>,
@@ -855,7 +854,7 @@ fn handle_inbound_frame(
     stream: &Arc<Mutex<WsStream>>,
 ) -> Result<(), String> {
     use crate::dds_bridge::{BridgeOp, parse_op};
-    // Versuche JSON-Op zu parsen.
+    // Try to parse a JSON op.
     let text =
         core::str::from_utf8(payload).map_err(|e| alloc_format(format_args!("utf8: {e}")))?;
     if let Ok(op) = parse_op(text) {
@@ -907,8 +906,8 @@ fn handle_inbound_frame(
             }
         }
     }
-    // Fallback: wenn Connection an einen einzelnen Topic-Pfad gebunden
-    // ist, behandle das ganze Frame als opaque Payload-Publish.
+    // Fallback: if the connection is bound to a single topic path,
+    // treat the whole frame as an opaque payload publish.
     if let Some(topic) = auto_topic {
         if !authorize(&security.acl, subject, AclOp::Write, topic) {
             metrics.errors_total.inc();
@@ -990,7 +989,7 @@ fn stable_prefix_for(addr: &str) -> GuidPrefix {
     for (i, b) in src.iter().take(12).enumerate() {
         bytes[i] = *b;
     }
-    bytes[0] ^= 0x42; // damit ein Prefix von 0x00 ausgeschlossen ist
+    bytes[0] ^= 0x42; // so that a prefix of 0x00 is ruled out
     GuidPrefix::from_bytes(bytes)
 }
 

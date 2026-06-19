@@ -2,11 +2,15 @@
 
 **Quelle:** `docs/specs/zerodds-xcdr2-rust-1.0.md` (220 Zeilen) -- ZeroDDS Rust TypeSupport-Codegen-Spec.
 
+Implementation:
+
+- `crates/idl-rust/` — Rust XCDR2-TypeSupport-Codegen (DdsType-Trait in `crates/dcps/`).
+
 ## §1 Motivation
 
 ### §1 Keine OMG-DDS-Rust-PSM-Spec
 
-**Spec:** §1 -- "Es existiert keine OMG-DDS-Rust-PSM-Spec. Rust-Bindings fuer DDS-Vendoren (RustDDS, dust-dds) haben jeweils proprietaere Patterns. ZeroDDS hat seit RC1 ein voll funktionsfaehiges DdsType-Trait; diese Spec dokumentiert es formal als normative Pflicht."
+**Spec:** §1 -- "Es existiert keine OMG-DDS-Rust-PSM-Spec. Rust-Bindings für DDS-Vendoren (RustDDS, dust-dds) haben jeweils proprietäre Patterns. ZeroDDS hat seit RC1 ein voll funktionsfähiges DdsType-Trait; diese Spec dokumentiert es formal als normative Pflicht."
 
 **Repo:** Motivations-Text der Vendor-Spec.
 
@@ -22,7 +26,7 @@
 
 **Repo:** `crates/dcps/src/dds_type.rs` (Zeile 51 `pub trait DdsType: Sized`, plus Konstanten ab 54, Methoden im trait-body). `crates/dcps/src/dds_type.rs::Extensibility`-Enum.
 
-**Tests:** `crates/dcps/`-Unit-Tests im trait-File, Integration ueber `crates/cdr/tests/integration_topic.rs` (7 tests).
+**Tests:** `crates/dcps/`-Unit-Tests im trait-File, Integration über `crates/cdr/tests/integration_topic.rs` (7 tests).
 
 **Status:** done
 
@@ -42,9 +46,9 @@
 
 ### §4 Struct + impl + key_holder_be + Compile-Zeit-TYPE_IDENTIFIER
 
-**Spec:** §4 -- "Pro IDL-`struct` MUSS idl-rust emittieren: 1) `pub struct Point`, 2) `impl DdsType`, 3) `key_holder_be()` fuer @key-Members in BE-PlainCDR2, 4) Compile-Zeit-TYPE_IDENTIFIER."
+**Spec:** §4 -- "Pro IDL-`struct` MUSS idl-rust emittieren: 1) `pub struct Point`, 2) `impl DdsType`, 3) `key_holder_be()` für @key-Members in BE-PlainCDR2, 4) Compile-Zeit-TYPE_IDENTIFIER."
 
-**Repo:** `crates/idl-rust/src/struct_emit.rs` (`emit_struct_decl`, `emit_dds_type_impl`, `emit_key_holder_be`). `crates/idl-rust/src/type_identifier.rs` haelt const-fn-Hashing fuer TYPE_IDENTIFIER.
+**Repo:** `crates/idl-rust/src/struct_emit.rs` (`emit_struct_decl`, `emit_dds_type_impl`, `emit_key_holder_be`). `crates/idl-rust/src/type_identifier.rs` hält const-fn-Hashing für TYPE_IDENTIFIER.
 
 **Tests:** Snapshot-Coverage via `idl-rust` lib unit tests + downstream `xcdr2_wire_vectors.rs`.
 
@@ -76,7 +80,7 @@
 
 ### §6 Final / Appendable / Mutable Mode-Encoder
 
-**Spec:** §6 -- "`zerodds_cdr::struct_enc` haelt die drei Mode-Encoder bereits implementiert (`encode_appendable`, `encode_mutable_member_lc`)."
+**Spec:** §6 -- "`zerodds_cdr::struct_enc` hält die drei Mode-Encoder bereits implementiert (`encode_appendable`, `encode_mutable_member_lc`)."
 
 **Repo:** `crates/cdr/src/struct_enc.rs` (Zeile 42 `encode_appendable`, Zeile 167 `encode_mutable_member_lc`).
 
@@ -88,9 +92,9 @@
 
 ### §7 PlainCdr2BeKeyHolder + finalize_md5
 
-**Spec:** §7 -- "PlainCdr2BeKeyHolder in `crates/cdr` haelt Big-Endian-Plain-CDR2-Buffer + finalize → MD5 (RFC 1321 via md5-crate, optional-disabled fuer no_std-Targets)."
+**Spec:** §7 -- "PlainCdr2BeKeyHolder in `crates/cdr` hält Big-Endian-Plain-CDR2-Buffer + finalize → MD5 (RFC 1321 via md5-crate, optional-disabled für no_std-Targets)."
 
-**Repo:** `crates/cdr/src/key_hash.rs::PlainCdr2BeKeyHolder` (Zeile 86), `finalize_md5` Methode mit Holder-Size-Pruefung gemaess XTypes §7.6.8.4.
+**Repo:** `crates/cdr/src/key_hash.rs::PlainCdr2BeKeyHolder` (Zeile 86), `finalize_md5` Methode mit Holder-Size-Prüfung gemäß XTypes §7.6.8.4.
 
 **Tests:** V-8 Keyed Struct Test (Holder=4 Byte → zero-padded, kein MD5); MD5-Self-Tests in `crates/cdr/src/key_hash.rs` unit-Tests (Zeile 311ff).
 
@@ -102,9 +106,9 @@
 
 **Spec:** §8, Tabelle 3 Crates -- `crates/cdr` (Encoder/Decoder, struct_enc, Xcdr2Writer/Reader, PlainCdr2BeKeyHolder), `crates/dcps` (DdsType-Trait, Errors, ExtensibilityKind), `crates/idl-rust` (Codegen).
 
-**Repo:** Alle drei Crates praesent: `crates/cdr/src/{encode,struct_enc,key_hash,buffer,fixed,xcdr1,composite,endianness,error}.rs`, `crates/dcps/src/dds_type.rs`, `crates/idl-rust/src/{struct_emit,enum_emit,bitset_emit,type_identifier,type_map,emitter,annotations}.rs`.
+**Repo:** Alle drei Crates präsent: `crates/cdr/src/{encode,struct_enc,key_hash,buffer,fixed,xcdr1,composite,endianness,error}.rs`, `crates/dcps/src/dds_type.rs`, `crates/idl-rust/src/{struct_emit,enum_emit,bitset_emit,type_identifier,type_map,emitter,annotations}.rs`.
 
-**Tests:** `cargo test -p zerodds-cdr -p zerodds-idl-rust` -- alle gruen.
+**Tests:** `cargo test -p zerodds-cdr -p zerodds-idl-rust` -- alle grün.
 
 **Status:** done
 
@@ -114,7 +118,7 @@
 
 **Repo:** `crates/cdr/src/lib.rs` und `crates/dcps/src/lib.rs` mit `#![no_std]` + `extern crate alloc`. md5-Feature optional-disabled.
 
-**Tests:** Build mit `--no-default-features` per CI; embedded-Target-Smoke-Test indirekt ueber Crate-Konfiguration.
+**Tests:** Build mit `--no-default-features` per CI; embedded-Target-Smoke-Test indirekt über Crate-Konfiguration.
 
 **Status:** done
 
@@ -122,7 +126,7 @@
 
 ### §9 L1 Wire (V-1..V-12)
 
-**Spec:** §9 -- "L1 (Wire): `crates/cdr/tests/xcdr2_wire_vectors.rs` prueft V-1..V-12."
+**Spec:** §9 -- "L1 (Wire): `crates/cdr/tests/xcdr2_wire_vectors.rs` prüft V-1..V-12."
 
 **Repo:** `crates/cdr/tests/xcdr2_wire_vectors.rs` mit 16 #[test]-Funktionen.
 
@@ -134,7 +138,7 @@
 
 **Spec:** §9 -- "L2 (Codegen): `crates/idl-rust/tests/snapshots/` mit generierten *.rs-Files."
 
-**Repo:** `crates/idl-rust/tests/snapshot_xcdr2_vectors.rs` haelt 11 V-i-Snapshots als eigenstaendigen Test-Tree.
+**Repo:** `crates/idl-rust/tests/snapshot_xcdr2_vectors.rs` hält 11 V-i-Snapshots als eigenständigen Test-Tree.
 
 **Tests:** `crates/idl-rust/tests/snapshot_xcdr2_vectors.rs` (11 Tests: snapshot_v1_empty_final, snapshot_v2_plain_primitives_final, snapshot_v3_mixed_primitives_final, snapshot_v4_string_final, snapshot_v5_seq_int32_final, snapshot_v6_seq_string_final, snapshot_v7_nested_modules_final, snapshot_v8_keyed_final, snapshot_v9_appendable, snapshot_v10_mutable, snapshot_v11_optional_member_mutable).
 
@@ -152,9 +156,9 @@
 
 ### §9 L4 Cross-Vendor
 
-**Spec:** §9 -- "L4 (Cross-Vendor): bereits live ueber `crates/discovery/tests/cyclone_*.rs`."
+**Spec:** §9 -- "L4 (Cross-Vendor): bereits live über `crates/discovery/tests/cyclone_*.rs`."
 
-**Repo:** `crates/discovery/tests/cyclone_*.rs` deckt Discovery (SPDP/SEDP) gegen Cyclone live; xcdr2-Wire-Format-Equivalenz wird mittransportiert. Eine xcdr2-spezifische V-1..V-12-Cyclone-Fixture-Validierung ist nicht praesent, der Live-RTPS-Pfad deckt aber den End-to-End-Wire-Pfad.
+**Repo:** `crates/discovery/tests/cyclone_*.rs` deckt Discovery (SPDP/SEDP) gegen Cyclone live; xcdr2-Wire-Format-Äquivalenz wird mittransportiert. Eine xcdr2-spezifische V-1..V-12-Cyclone-Fixture-Validierung ist nicht präsent, der Live-RTPS-Pfad deckt aber den End-to-End-Wire-Pfad.
 
 **Tests:** `crates/discovery/tests/cyclone_*.rs` Live-Tests.
 
@@ -168,7 +172,7 @@
 
 **Repo:** `crates/dcps/examples/hello_dds_publisher.rs` (Smoke-Demo).
 
-**Tests:** Lauf ist Demo-only; Compile-Pfad ueber `cargo build --example hello_dds_publisher`.
+**Tests:** Lauf ist Demo-only; Compile-Pfad über `cargo build --example hello_dds_publisher`.
 
 **Status:** done
 
@@ -196,9 +200,9 @@
 
 ### §11.3 serde-Bridge
 
-**Spec:** §11.3 -- "Optional-Feature `serde-bridge` als zusaetzliche Form fuer serde-konsumierende Anwendungen."
+**Spec:** §11.3 -- "Optional-Feature `serde-bridge` als zusätzliche Form für serde-konsumierende Anwendungen."
 
-**Repo:** `crates/cdr/Cargo.toml` haelt `serde-bridge`-Feature-Gate; Implementation in `crates/cdr/src/serde_bridge.rs`.
+**Repo:** `crates/cdr/Cargo.toml` hält `serde-bridge`-Feature-Gate; Implementation in `crates/cdr/src/serde_bridge.rs`.
 
 **Tests:** `crates/cdr/tests/serde_bridge.rs` (3 Tests: serde_roundtrip_primitives, serde_roundtrip_struct, serde_decoded_json_repr_is_xcdr2_string_payload), `cargo test -p zerodds-cdr --test serde_bridge --features serde-bridge`.
 
@@ -206,7 +210,7 @@
 
 ### §11.4 const-Generic-Bounds
 
-**Spec:** §11.4 -- "`sequence<T, N>`-Bounds via `ConstSize<N>`-Trait waeren ideal, aber stable-Rust unterstuetzt const-generic-exprs noch nicht voll. Codegen prueft Bound zur Laufzeit, nicht zur Compile-Zeit."
+**Spec:** §11.4 -- "`sequence<T, N>`-Bounds via `ConstSize<N>`-Trait wären ideal, aber stable-Rust unterstützt const-generic-exprs noch nicht voll. Codegen prüft Bound zur Laufzeit, nicht zur Compile-Zeit."
 
 **Repo:** `crates/idl-rust/src/struct_emit.rs` emit Runtime-Bound-Check.
 
@@ -220,6 +224,4 @@
 
 18 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-cdr -p zerodds-idl-rust -p zerodds-cdr-derive` -- 170 unit + integration + 6 derive_smoke + 11 snapshot_xcdr2_vectors = 232+ Tests gruen, 0 failed; `cargo test -p zerodds-cdr --test serde_bridge --features serde-bridge` -- 3 Tests gruen; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_1_rust_reference_encoder` -- 1 Test gruen.
-
-Offene Items + Decision-Records: `zerodds-xcdr2-rust-1.0.open.md`.
+Test-Lauf: `cargo test -p zerodds-cdr -p zerodds-idl-rust -p zerodds-cdr-derive` -- 170 unit + integration + 6 derive_smoke + 11 snapshot_xcdr2_vectors = 232+ Tests grün, 0 failed; `cargo test -p zerodds-cdr --test serde_bridge --features serde-bridge` -- 3 Tests grün; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_1_rust_reference_encoder` -- 1 Test grün.

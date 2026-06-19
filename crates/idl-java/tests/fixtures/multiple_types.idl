@@ -1,4 +1,4 @@
-// Fixture: mehrere Top-Level-Types → mehrere Java-Files.
+// Fixture: multiple top-level types → multiple Java files.
 enum Status {
     ACTIVE,
     INACTIVE

@@ -1,5 +1,5 @@
-// listener.idl — Cyclone-DDS-Style Listener-Topic, hand-kuratiert.
-// Demonstriert @appendable + nested module-Hierarchien.
+// listener.idl — Cyclone-DDS-style listener topic, hand-curated.
+// Demonstrates @appendable + nested module hierarchies.
 
 module com {
     module example {

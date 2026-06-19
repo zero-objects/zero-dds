@@ -1,7 +1,7 @@
-//! Integrationstests fuer C6.2.C — XRCE-XML-Configuration.
+//! Integration tests for C6.2.C — XRCE XML configuration.
 //!
-//! Deckt das End-to-End-Szenario "XML-File → CREATE-Submessage-Stream"
-//! ab und validiert die Bridge zur DDS-XML-Library.
+//! Covers the end-to-end scenario "XML file → CREATE submessage stream"
+//! and validates the bridge to the DDS-XML library.
 
 #![allow(
     clippy::expect_used,
@@ -66,7 +66,7 @@ fn end_to_end_load_and_emit_creates() {
 fn create_messages_can_be_packed_into_submessages() {
     let cfg = load_xrce_config(SHAPES_XML).unwrap();
     let msgs = cfg.to_create_messages().unwrap();
-    // Jedes CreatePayload muss in eine valide Submessage gepackt werden.
+    // Each CreatePayload must be packed into a valid submessage.
     let submessages: Vec<Submessage> = msgs
         .into_iter()
         .map(|m| m.payload.into_submessage().unwrap())
@@ -80,8 +80,8 @@ fn create_messages_can_be_packed_into_submessages() {
 fn object_variant_decode_roundtrips_xml_string() {
     let cfg = load_xrce_config(SHAPES_XML).unwrap();
     let msgs = cfg.to_create_messages().unwrap();
-    // Erste Submessage (Type) muss als ObjectVariant::ByXmlString
-    // dekodierbar sein.
+    // The first submessage (Type) must be decodable as
+    // ObjectVariant::ByXmlString.
     let payload: &CreatePayload = &msgs[0].payload;
     let (variant, _) = ObjectVariant::decode(
         &payload.representation,
@@ -122,8 +122,8 @@ fn missing_qos_profile_in_resolver_yields_error() {
     }
 }
 
-/// Verifies that a config with NO Type (nur Topic mit pre-shared Type)
-/// rejected wird — Topic.type_name muss gegen <type>-Section matchen.
+/// Verifies that a config with NO type (only a topic with a pre-shared type)
+/// is rejected — Topic.type_name must match against the <type> section.
 #[test]
 fn topic_without_type_section_rejected() {
     let xml = r#"<dds>

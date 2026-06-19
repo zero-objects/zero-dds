@@ -2,43 +2,43 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Crate `zerodds-transport-tcp`. Safety classification: **STANDARD**.
 //!
-//! ZeroDDS-TCP-Transport — RTPS-over-TCP mit Length-Prefix-Framing
-//! und optionalem ZeroDDS-eigenem 16-Byte-Handshake.
+//! ZeroDDS TCP transport — RTPS-over-TCP with length-prefix framing
+//! and an optional ZeroDDS-own 16-byte handshake.
 //!
 //! ## Spec
 //!
-//! - **DDSI-RTPS 2.5 §9.4** — Locator-Kinds `TCPv4`=4, `TCPv6`=8.
-//! - **DDSI-RTPS 2.5 §9.5** — Wire-Bytes-Mapping (RTPS-Header +
-//!   Submessages, identisch zum UDP-PSM).
-//! - **ZeroDDS-TCP-Transport 1.0** — vendor-spezifischer Transport-
-//!   Spec (Length-Prefix-Framing + Handshake),
+//! - **DDSI-RTPS 2.5 §9.4** — locator kinds `TCPv4`=4, `TCPv6`=8.
+//! - **DDSI-RTPS 2.5 §9.5** — wire-bytes mapping (RTPS header +
+//!   submessages, identical to the UDP PSM).
+//! - **ZeroDDS TCP Transport 1.0** — vendor-specific transport spec
+//!   (length-prefix framing + handshake),
 //!   `docs/spec-coverage/zerodds-tcp-transport-1.0.md`.
 //!
-//! ## Hinweis zur OMG-Normativität
+//! ## Note on OMG normativity
 //!
-//! OMG normiert nur Locator-Kind + Wire-Mapping (s.o.). Es gibt
-//! **keinen** normativen "DDS-TCP-PSM"-Handshake-Spec. Cyclone's
-//! `ddsi_tcp` nutzt raw RTPS-Frames ohne Handshake; FastDDS und RTI
-//! haben jeweils eigene vendor-spezifische BindConnection-Formate.
-//! ZeroDDS definiert seine eigene Variante explizit als
-//! ZeroDDS-TCP-Transport-1.0-Spec (siehe oben).
+//! OMG standardizes only the locator kind + wire mapping (see above).
+//! There is **no** normative "DDS-TCP-PSM" handshake spec. Cyclone's
+//! `ddsi_tcp` uses raw RTPS frames without a handshake; FastDDS and RTI
+//! each have their own vendor-specific BindConnection formats.
+//! ZeroDDS defines its own variant explicitly as the
+//! ZeroDDS TCP Transport 1.0 spec (see above).
 //!
-//! ## Implementiert (RC1)
+//! ## Implemented (RC1)
 //!
-//! - Length-Prefix-Frame (4 Byte BE) — DDSI-RTPS-§9.5-konform.
-//! - 16-Byte ZeroDDS-Handshake mit Magic + Version + Vendor-Id +
-//!   Logical-Port + Reason-Code.
-//! - Cyclone-`ddsi_tcp`-Compat: Handshake-Skip-Mode für raw RTPS-
-//!   Frames.
-//! - `TcpTransport`-Pool mit Connection-Reuse + Backoff.
+//! - Length-prefix frame (4 bytes BE) — DDSI-RTPS §9.5 conformant.
+//! - 16-byte ZeroDDS handshake with magic + version + vendor id +
+//!   logical port + reason code.
+//! - Cyclone `ddsi_tcp` compat: handshake-skip mode for raw RTPS
+//!   frames.
+//! - `TcpTransport` pool with connection reuse + backoff.
 //!
-//! ## Cross-Vendor-Interop
+//! ## Cross-vendor interop
 //!
-//! - ZeroDDS ↔ ZeroDDS: voll (Handshake aktiv).
-//! - ZeroDDS ↔ Cyclone: voll via Handshake-Skip-Mode.
-//! - ZeroDDS ↔ FastDDS/RTI: Erweiterungspunkt (vendor-spezifische
-//!   Handshake-Formate; nicht-OMG-normativ). Siehe
-//!   ZeroDDS-TCP-Transport-1.0-Spec §6.
+//! - ZeroDDS ↔ ZeroDDS: full (handshake active).
+//! - ZeroDDS ↔ Cyclone: full via handshake-skip mode.
+//! - ZeroDDS ↔ FastDDS/RTI: extension point (vendor-specific
+//!   handshake formats; non-OMG-normative). See the
+//!   ZeroDDS TCP Transport 1.0 spec §6.
 
 #![deny(unsafe_code)]
 #![warn(missing_docs)]

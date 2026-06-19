@@ -1,41 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Fehler-Typen fuer den IDL→Java-Codegen.
+//! Error types for the IDL→Java codegen.
 
 use core::fmt;
 
-/// Top-Level-Fehler des Java-Code-Generators.
+/// Top-level error of the Java code generator.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JavaGenError {
-    /// IDL-Konstrukt ist im aktuellen Foundation-Scope (C5.4-a/-b)
-    /// nicht unterstuetzt. `construct` ist eine kurze Bezeichnung
-    /// (z.B. `"interface"`, `"valuetype"`, `"fixed"`, `"any"`,
-    /// `"map"`); seit C5.4-b kann es auch eine Bitset/Bitmask-
-    /// Constraint-Verletzung sein (z.B. `"bitset width > 64"`).
+    /// The IDL construct is not supported in the current foundation
+    /// scope (C5.4-a/-b). `construct` is a short label
+    /// (e.g. `"interface"`, `"valuetype"`, `"fixed"`, `"any"`,
+    /// `"map"`); since C5.4-b it can also be a bitset/bitmask
+    /// constraint violation (e.g. `"bitset width > 64"`).
     UnsupportedConstruct {
-        /// Name des nicht-unterstuetzten Konstrukts.
+        /// Name of the unsupported construct.
         construct: String,
-        /// Optional: Identifier-Name (Type-Name oder Member-Name).
+        /// Optional: identifier name (type name or member name).
         context: Option<String>,
     },
-    /// Identifier kollidiert mit einem reservierten Java-Keyword.
-    /// Java erlaubt keine `@`-Escape-Syntax, daher wird der Identifier
-    /// vom Emitter mit `_`-Suffix umbenannt; dieser Fehler tritt nur
-    /// auf, wenn der bereinigte Name selbst kollidiert oder leer ist.
+    /// Identifier collides with a reserved Java keyword.
+    /// Java has no `@`-escape syntax, so the identifier is
+    /// renamed with a `_` suffix by the emitter; this error only
+    /// occurs if the sanitized name itself collides or is empty.
     InvalidName {
-        /// Der unzulaessige Identifier.
+        /// The invalid identifier.
         name: String,
-        /// Grund der Ablehnung.
+        /// Reason for the rejection.
         reason: String,
     },
-    /// Inheritance-Cycle im Struct-Graphen (Self-Reference oder
-    /// indirekte Schleife). Wird vor der Emission erkannt.
+    /// Inheritance cycle in the struct graph (self-reference or
+    /// indirect loop). Detected before emission.
     InheritanceCycle {
-        /// Beteiligter Type-Name am Cycle.
+        /// Type name involved in the cycle.
         type_name: String,
     },
-    /// Generierter Output ist intern inkonsistent (sollte nicht
-    /// auftreten — Bug-Indikator).
+    /// The generated output is internally inconsistent (should not
+    /// happen — bug indicator).
     Internal(String),
 }
 

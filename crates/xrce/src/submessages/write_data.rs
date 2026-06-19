@@ -3,14 +3,14 @@
 
 //! `WRITE_DATA` Submessage (id=7, Spec §8.3.5.8).
 //!
-//! Direction: Client → Agent. Flags Bits 1..3 kodieren das `DataFormat`:
+//! Direction: Client → Agent. Flags bits 1..3 encode the `DataFormat`:
 //! - `FORMAT_DATA = 0b000`
 //! - `FORMAT_SAMPLE = 0b001`
 //! - `FORMAT_DATA_SEQ = 0b100`
 //! - `FORMAT_SAMPLE_SEQ = 0b101`
 //! - `FORMAT_PACKED_SAMPLES = 0b111`
 //!
-//! Bit 0 ist E-Flag (LE). Bits 4..7 sind reserved.
+//! Bit 0 is the E-flag (LE). Bits 4..7 are reserved.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -18,7 +18,7 @@ use alloc::vec::Vec;
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// `DataFormat`-Werte (3-Bit-Feld in Bits 1..3 der Submessage-Flags).
+/// `DataFormat` values (3-bit field in bits 1..3 of the submessage flags).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(u8)]
 #[allow(missing_docs)]
@@ -32,19 +32,19 @@ pub enum DataFormat {
 }
 
 impl DataFormat {
-    /// Encodiert in Flag-Byte (Bits 1..3).
+    /// Encodes into the flag byte (bits 1..3).
     #[must_use]
     pub fn to_flag_bits(self) -> u8 {
         (self as u8) << 1
     }
 
-    /// Extrahiert aus Flag-Byte (Bits 1..3). Reserved-Werte
-    /// (z.B. `0b010`) werden auf `Data` gemappt mit Fehler-Result —
-    /// hier konservativ lesen wir alle 8 Bit-Kombinationen, melden
-    /// Reserved als `ValueOutOfRange`.
+    /// Extracts from the flag byte (bits 1..3). Reserved values
+    /// (e.g. `0b010`) are reported as an error result —
+    /// here we conservatively read all 8 bit combinations and report
+    /// reserved as `ValueOutOfRange`.
     ///
     /// # Errors
-    /// `ValueOutOfRange` bei reservierten Bit-Kombinationen.
+    /// `ValueOutOfRange` for reserved bit combinations.
     pub fn from_flag_bits(flags: u8) -> Result<Self, XrceError> {
         match (flags >> 1) & 0b111 {
             0b000 => Ok(Self::Data),
@@ -59,23 +59,23 @@ impl DataFormat {
     }
 }
 
-/// Opaker Body + DataFormat.
+/// Opaque body + DataFormat.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct WriteDataPayload {
-    /// XCDR2-Body fuer das gewaehlte Format.
+    /// XCDR2 body for the chosen format.
     pub representation: Vec<u8>,
-    /// DataFormat-Tag.
+    /// DataFormat tag.
     pub data_format: DataFormat,
 }
 
 impl WriteDataPayload {
-    /// Berechnet das Flag-Byte.
+    /// Computes the flag byte.
     #[must_use]
     pub fn flags(&self) -> u8 {
         FLAG_E_LITTLE_ENDIAN | self.data_format.to_flag_bits()
     }
 
-    /// Verpackt in `Submessage`.
+    /// Packs into a `Submessage`.
     ///
     /// # Errors
     /// `PayloadTooLarge`.
@@ -84,10 +84,10 @@ impl WriteDataPayload {
         Submessage::new(SubmessageId::WriteData, flags, self.representation)
     }
 
-    /// Extrahiert aus `Submessage`.
+    /// Extracts from a `Submessage`.
     ///
     /// # Errors
-    /// `ValueOutOfRange`, wenn ID falsch oder DataFormat reserved.
+    /// `ValueOutOfRange` if the ID is wrong or DataFormat is reserved.
     pub fn try_from_submessage(sm: &Submessage) -> Result<Self, XrceError> {
         if sm.header.submessage_id != SubmessageId::WriteData {
             return Err(XrceError::ValueOutOfRange {
@@ -139,7 +139,7 @@ mod tests {
 
     #[test]
     fn write_data_reserved_format_rejected() {
-        // 0b010 ist reserved
+        // 0b010 is reserved
         let bad_flags = FLAG_E_LITTLE_ENDIAN | (0b010 << 1);
         let sm = Submessage::new(SubmessageId::WriteData, bad_flags, alloc::vec![]).unwrap();
         let res = WriteDataPayload::try_from_submessage(&sm);

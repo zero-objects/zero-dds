@@ -1,11 +1,11 @@
-# Cyclone-DDS-Fixture-Lizenzen
+# Cyclone-DDS fixture licenses
 
-Die IDL-Files in diesem Verzeichnis sind **nicht** aus dem Eclipse Cyclone
-DDS Repo kopiert. Sie sind handgepflegte Repraesentanten typischer
-Cyclone-DDS-IDL-Konstrukte (OMG-Standard-IDL-4.2 + Standard-Annotations
-@final/@appendable/@key) fuer Grammar-Coverage-Tests.
+The IDL files in this directory are **not** copied from the Eclipse Cyclone
+DDS repo. They are hand-maintained representatives of typical
+Cyclone-DDS IDL constructs (OMG standard IDL 4.2 + standard annotations
+@final/@appendable/@key) for grammar-coverage tests.
 
-Cyclone DDS nutzt **keine** Vendor-spezifischen Grammar-Erweiterungen —
-diese Fixtures parsen mit der Base-Grammar (`IDL_42`) ohne Delta.
+Cyclone DDS uses **no** vendor-specific grammar extensions —
+these fixtures parse with the base grammar (`IDL_42`) without a delta.
 
-Lizenz: dieselbe Lizenz wie das umgebende `zerodds-idl`-Crate.
+License: the same license as the surrounding `zerodds-idl` crate.

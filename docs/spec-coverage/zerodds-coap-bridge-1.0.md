@@ -2,6 +2,10 @@
 
 **Quelle:** `docs/specs/zerodds-coap-bridge-1.0.md`
 
+Implementation:
+
+- `crates/coap-bridge/` — DDS↔CoAP-Bridge.
+
 ## §1 Conformance-Levels
 
 ### §1 L1-L6 Conformance-Matrix
@@ -171,36 +175,44 @@ Reliability/Durability/Lifespan/Deadline/Liveliness/Partition).
 ### §7.1 DTLS coaps:// + Cipher-Suites
 
 **Spec:** §7.1 — `coaps://`-Mode per `coap.dtls.enabled`, PSK/Cert/
-Hybrid-Cipher; SIGHUP-Cert-Rotation. Decision-Record:
-`docs/adr/0007-coap-oscore-rejected-rc1.md` deckt OSCORE; DTLS-eigener
-ADR im RC1-Closeout: Pure-Rust-DTLS-Stack 2026 nicht audit-ready, daher
-volle Wire-DTLS-Pfad als `n/a (rejected)`. Auth+ACL über Vendor-Option
-65000 (CoAP-Application-Auth-Token) Cluster-B-wired.
+Hybrid-Cipher; SIGHUP-Cert-Rotation. Der Wire-DTLS-Pfad ist als opt-in-
+Feature `dtls` verfügbar (DTLS 1.2 via `webrtc-dtls`, crates.io/
+MIT-Apache) und als experimentelles Profil gelabelt — kein Default
+(ADR 0011). Auth+ACL laufen über Vendor-Option 65000 (CoAP-Application-
+Auth-Token) Cluster-B-wired.
 
-**Repo:** `crates/coap-bridge/src/dtls.rs` (DTLS-Codec, deferred
-Wire-Bind), `crates/coap-bridge/src/daemon/server.rs`,
-`crates/coap-bridge/src/daemon/security.rs` (Option-65000-Auth-Wireup).
+**Repo:** `crates/coap-bridge/src/dtls.rs` (DTLS-Mode/Config),
+`crates/coap-bridge/src/dtls_transport.rs` (Feature `dtls`:
+`DtlsCoapServer`/`DtlsCoapClient`/`DtlsCoapSession` — echter DTLS-1.2-
+Handshake + CoAP-over-DTLS), `crates/coap-bridge/src/daemon/security.rs`
+(Option-65000-Auth-Wireup).
 
-**Tests:** Inline `#[cfg(test)] mod tests` in `dtls.rs` deckt
-Codec-Roundtrip; `crates/coap-bridge/tests/security_e2e.rs` deckt
-Option-65000-Auth-Wireup.
+**Tests:** Inline `#[cfg(test)] mod tests` in `dtls.rs` (Codec-Roundtrip);
+`crates/coap-bridge/tests/dtls_coap_e2e.rs` (DTLS-Handshake + CoAP-GET→
+2.05-Content über verschlüsselten Kanal, Feature `dtls`);
+`crates/coap-bridge/tests/security_e2e.rs` (Option-65000-Auth).
 
-**Status:** n/a (rejected) — Pure-Rust-DTLS RC1 nicht audit-ready;
-Auth+ACL via Cluster-B-Option-65000-Wireup voll abgedeckt.
+**Status:** done (opt-in, experimentell) — DTLS-1.2-Wire-Pfad via
+`webrtc-dtls` (ADR 0011); Auth+ACL via Option-65000 voll abgedeckt.
 
 ### §7.2 OSCORE (RFC 8613)
 
 **Spec:** §7.2 — Master-Secret/Salt/ID-Context, HKDF-Sender/Recipient-
-Context, Replay-Window 32. Decision-Record:
-`docs/adr/0007-coap-oscore-rejected-rc1.md` — OSCORE in RC1-Markt
-(LwM2M-nische) nicht relevant, COSE-Stack-Aufwand ohne Customer-Pull.
+Context, Replay-Window 32.
 
-**Repo:** `crates/coap-bridge/src/daemon/config.rs` (oscore-Block,
-Spec-Schema).
+**Repo:** `crates/coap-bridge/src/oscore/` — `mod.rs` (Security-Context +
+HKDF-Key-Derivation, RFC 8613 §3.2 / RFC 5869), `aead.rs` (AES-CCM-16-64-
+128, Nonce §5.2, AAD §5.4), `message.rs` (Protect/Unprotect §8.1/§8.2),
+`wire.rs` (OSCORE-Option-Codec §6.1 + Anti-Replay-Window §3.2.2);
+`crates/coap-bridge/src/daemon/config.rs` (oscore-Block, Spec-Schema).
 
-**Tests:** —
+**Tests:** Inline `#[cfg(test)] mod tests` in den `oscore`-Submodulen:
+RFC-8613-Appendix-C.1.1-Vektor (`mod.rs`), §6.3-Option-Vektoren (`wire.rs`),
+§5.2-Nonce + §5.4-AAD-Roundtrips (`aead.rs`), Protect/Unprotect-Roundtrip
+(`message.rs`).
 
-**Status:** n/a (rejected) — siehe ADR-0007.
+**Status:** done — volle OSCORE-Implementation (ADR 0010); Korrektheit
+gegen RFC-8613-Appendix-C-Vektoren verankert.
 
 ### §7.3 ACL pro Topic
 
@@ -390,8 +402,6 @@ Content-Format-IDs), Major=Wire-Protocol-Change.
 
 ## Audit-Status
 
-21 done / 0 partial / 0 open / 3 n/a (informative) / 2 n/a (rejected).
+23 done / 0 partial / 0 open / 3 n/a (informative) / 0 n/a (rejected).
 
 Test-Lauf: `cargo test -p zerodds-coap-bridge` — Tests grün, 0 failed.
-
-Offene Punkte und Decision-Records: siehe `zerodds-coap-bridge-1.0.open.md`.

@@ -3,9 +3,9 @@
 
 //! ExecutionManager / DomainApplicationManager — D&C §9.
 //!
-//! Spec §9.1.1: `ExecutionManager` ist das Top-Level-Objekt; bietet
+//! Spec §9.1.1: `ExecutionManager` is the top-level object; it offers
 //! `preparePlan(DPD) -> DomainApplicationManager`. Spec §9.1.2:
-//! `DomainApplicationManager` startet einen Plan auf den Nodes mit
+//! `DomainApplicationManager` launches a plan on the nodes via
 //! `startLaunch` + `finishLaunch`.
 
 use alloc::collections::BTreeMap;
@@ -14,29 +14,29 @@ use alloc::vec::Vec;
 
 use crate::plan::{DeploymentPlan, PlanError};
 
-/// `DomainApplication` — D&C §9.1.3. Ein laufender Plan-Run.
+/// `DomainApplication` — D&C §9.1.3. A running plan run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainApplication {
-    /// Plan-Label.
+    /// Plan label.
     pub plan_label: String,
-    /// Plan-UUID.
+    /// Plan UUID.
     pub plan_uuid: String,
-    /// Aktive Instances + Nodes (instance_name → node_name).
+    /// Active instances + nodes (instance_name → node_name).
     pub running_instances: BTreeMap<String, String>,
-    /// Lifecycle-Status (`Prepared`, `Launched`, `Finished`).
+    /// Lifecycle status (`Prepared`, `Launched`, `Finished`).
     pub state: AppState,
 }
 
-/// Lifecycle-State einer DomainApplication.
+/// Lifecycle state of a DomainApplication.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppState {
-    /// Plan ist `prepared` (D&C §9.1.1 `preparePlan`).
+    /// Plan is `prepared` (D&C §9.1.1 `preparePlan`).
     Prepared,
-    /// `startLaunch` wurde gerufen.
+    /// `startLaunch` has been called.
     Launched,
-    /// `finishLaunch` ist abgeschlossen.
+    /// `finishLaunch` has completed.
     Running,
-    /// `destroyApplication` ist abgeschlossen.
+    /// `destroyApplication` has completed.
     Finished,
 }
 
@@ -48,11 +48,10 @@ pub struct DomainApplicationManager {
 }
 
 impl DomainApplicationManager {
-    /// Konstruktor — D&C §9.1.1 `preparePlan`.
+    /// Constructor — D&C §9.1.1 `preparePlan`.
     ///
     /// # Errors
-    /// `PlanError`, wenn der Plan inkonsistent ist (Validation
-    /// fehlschlaegt).
+    /// `PlanError` if the plan is inconsistent (validation fails).
     pub fn prepare_plan(plan: DeploymentPlan) -> Result<Self, PlanError> {
         plan.validate()?;
         Ok(Self {
@@ -61,11 +60,11 @@ impl DomainApplicationManager {
         })
     }
 
-    /// Spec D&C §9.1.2 `startLaunch` — bereitet die Instances vor,
-    /// fordert Resources auf den Nodes an.
+    /// Spec D&C §9.1.2 `startLaunch` — prepares the instances and
+    /// requests resources on the nodes.
     ///
     /// # Errors
-    /// Static-String wenn der Manager nicht im `Prepared`-State ist.
+    /// Static string if the manager is not in the `Prepared` state.
     pub fn start_launch(&mut self) -> Result<DomainApplication, &'static str> {
         if self.state != AppState::Prepared {
             return Err("startLaunch requires Prepared state");
@@ -83,11 +82,11 @@ impl DomainApplicationManager {
         })
     }
 
-    /// Spec D&C §9.1.2 `finishLaunch` — schliesst die Connection-Phase
-    /// ab und gibt `running` als finalen Zustand zurueck.
+    /// Spec D&C §9.1.2 `finishLaunch` — completes the connection phase
+    /// and returns `running` as the final state.
     ///
     /// # Errors
-    /// Static-String wenn nicht im `Launched`-State.
+    /// Static string if not in the `Launched` state.
     pub fn finish_launch(&mut self, app: &mut DomainApplication) -> Result<(), &'static str> {
         if self.state != AppState::Launched {
             return Err("finishLaunch requires Launched state");
@@ -97,10 +96,10 @@ impl DomainApplicationManager {
         Ok(())
     }
 
-    /// Spec D&C §9.1.2 `destroyApplication` — Tear-down.
+    /// Spec D&C §9.1.2 `destroyApplication` — tear-down.
     ///
     /// # Errors
-    /// Static-String wenn nicht im `Running`-State.
+    /// Static string if not in the `Running` state.
     pub fn destroy_application(&mut self, app: &mut DomainApplication) -> Result<(), &'static str> {
         if self.state != AppState::Running {
             return Err("destroyApplication requires Running state");
@@ -111,37 +110,37 @@ impl DomainApplicationManager {
         Ok(())
     }
 
-    /// Aktueller Lifecycle-State.
+    /// Current lifecycle state.
     #[must_use]
     pub fn state(&self) -> AppState {
         self.state
     }
 
-    /// Plan-Reference.
+    /// Plan reference.
     #[must_use]
     pub fn plan(&self) -> &DeploymentPlan {
         &self.plan
     }
 }
 
-/// `ExecutionManager` — D&C §9.1.1. Top-Level-Service.
+/// `ExecutionManager` — D&C §9.1.1. Top-level service.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ExecutionManager {
     plans: Vec<String>,
 }
 
 impl ExecutionManager {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Spec §9.1.1 `preparePlan(DeploymentPlan)` — erzeugt einen
+    /// Spec §9.1.1 `preparePlan(DeploymentPlan)` — creates a
     /// `DomainApplicationManager`.
     ///
     /// # Errors
-    /// `PlanError` wenn der Plan inkonsistent ist.
+    /// `PlanError` if the plan is inconsistent.
     pub fn prepare_plan(
         &mut self,
         plan: DeploymentPlan,
@@ -152,8 +151,8 @@ impl ExecutionManager {
         Ok(mgr)
     }
 
-    /// Spec §9.1.1 `getManagers` — Liste aller Plan-Labels, fuer die
-    /// dieses ExecutionManager preparePlan aufgerufen hat.
+    /// Spec §9.1.1 `getManagers` — list of all plan labels for which
+    /// this ExecutionManager has called preparePlan.
     #[must_use]
     pub fn managed_plans(&self) -> &[String] {
         &self.plans

@@ -1,9 +1,9 @@
-//! Stufe-1 E2E-Test: zwei ZeroDDS-Participants tauschen `ShapeType`-
-//! Samples über die Public-API. Validiert die komplette Kette
-//! Factory → Participant → Pub/Sub → Writer/Reader **mit einem echten
-//! XCDR2-kodierten Application-Typ** (nicht RawBytes).
+//! Stage-1 E2E test: two ZeroDDS participants exchange `ShapeType`
+//! samples via the public API. Validates the full chain
+//! Factory → Participant → Pub/Sub → Writer/Reader **with a real
+//! XCDR2-encoded application type** (not RawBytes).
 //!
-//! Linux-only wegen Multicast-Loopback-Limitierungen auf macOS.
+//! Linux-only because of multicast-loopback limitations on macOS.
 
 #![allow(
     clippy::expect_used,
@@ -39,7 +39,7 @@ mod linux {
 
     #[test]
     fn shape_type_roundtrip_through_full_dcps_stack() {
-        // Eigene Domain (30) — kollisionsfrei zu allen anderen Tests.
+        // Dedicated domain (30) — collision-free with all other tests.
         let cfg = RuntimeConfig {
             tick_period: Duration::from_millis(20),
             spdp_period: Duration::from_millis(100),
@@ -72,7 +72,7 @@ mod linux {
             .create_datareader::<ShapeType>(&sub_topic, DataReaderQos::default())
             .expect("reader");
 
-        // Discovery-Sync — 5 s deckt CI-Jitter.
+        // Discovery sync — 5 s covers CI jitter.
         writer
             .wait_for_matched_subscription(1, super::common::match_timeout())
             .expect("writer sees sub");
@@ -80,11 +80,11 @@ mod linux {
             .wait_for_matched_publication(1, super::common::match_timeout())
             .expect("reader sees pub");
 
-        // Referenz-Sample — wurde auch in den Wire-Tests validiert.
+        // Reference sample — also validated in the wire tests.
         let sent = ShapeType::new("RED", 42, 77, 30);
         writer.write(&sent).expect("write");
 
-        // wait_for_data mit 3 s fuer Heartbeat/AckNack/Resend.
+        // wait_for_data with 3 s for Heartbeat/AckNack/Resend.
         match reader.wait_for_data(Duration::from_secs(3)) {
             Ok(()) => {}
             Err(DdsError::Timeout) => panic!("no sample arrived in 3 s"),
@@ -98,10 +98,10 @@ mod linux {
 
     #[test]
     fn multiple_colors_on_same_topic_all_delivered() {
-        // Testet, dass verschiedene "Instanzen" (unterschiedliche Farben
-        // → unterschiedliche Keys in Vendor-ShapesDemo) alle ankommen.
-        // Instance-Map im Reader kommt erst in v1.3; hier reicht uns
-        // "alle N Samples werden zugestellt, Reihenfolge egal".
+        // Tests that different "instances" (different colors → different
+        // keys in vendor ShapesDemo) all arrive. The instance map in the
+        // reader only lands in v1.3; here it is enough that "all N samples
+        // are delivered, order irrelevant".
         let cfg = RuntimeConfig {
             tick_period: Duration::from_millis(20),
             spdp_period: Duration::from_millis(100),
@@ -151,7 +151,7 @@ mod linux {
             writer.write(s).expect("write");
         }
 
-        // Sammle innerhalb 5 s alle 4 Samples.
+        // Collect all 4 samples within 5 s.
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let mut received = Vec::new();
         while received.len() < sent_samples.len() && std::time::Instant::now() < deadline {
@@ -164,7 +164,7 @@ mod linux {
             sent_samples.len(),
             "not all samples delivered: got {received:?}"
         );
-        // Reihenfolge ist bei parallelen Writes nicht garantiert, also Set-Check.
+        // Order is not guaranteed with parallel writes, so do a set check.
         for sent in &sent_samples {
             assert!(
                 received.contains(sent),

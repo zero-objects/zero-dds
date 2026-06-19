@@ -1,23 +1,23 @@
-# System-Architektur und Crate-Workspace
+# System architecture and crate workspace
 
 > **Status:** Draft v0.2
-> **Abhängigkeiten:** `00_overview.md`, `01_scope_and_specs.md`
+> **Dependencies:** `00_overview.md`, `01_scope_and_specs.md`
 
-## 1 Architektur-Prinzipien
+## 1 Architecture principles
 
-Die folgenden Prinzipien sind für alle Architektur-Entscheidungen verbindlich. Konflikte sind in dieser Reihenfolge aufzulösen:
+The following principles are binding for all architecture decisions. Conflicts are resolved in this order:
 
-1. **Korrektheit vor Performance.** RTPS-Interop und QoS-Semantik dürfen nicht für Mikrosekunden geopfert werden.
-2. **Safety-Qualifizierbarkeit vor Komfort.** Kern-Module werden so geschrieben, dass sie safety-qualifizierbar bleiben, auch wenn die aktuelle Build-Variante das nicht verlangt.
-3. **Spec-Konformität vor Feature-Innovation.** OMG-Abweichungen nur bei dokumentierter Begründung und Interop-Test-Nachweis.
-4. **Modulare Trennung vor Monolithen.** Jedes Crate hat klare Verantwortung und Abhängigkeiten. Keine zirkulären Dependencies.
-5. **Feature-Flags vor Forks.** Unterschiede zwischen Profilen werden durch Feature-Gates realisiert, nicht durch separate Code-Bäume.
-6. **Generics vor Dynamic Dispatch.** In Safe-qualifizierbaren Crates ist `dyn Trait` nur in expliziter Begründung erlaubt. Devirtualisierung soll für den Compiler immer möglich sein.
-7. **No-Panic-Kontrakt.** In allen Crates oberhalb `dds-tools` und `zerodds-dashboard` ist `.unwrap()`, `.expect()`, `panic!()`, `unreachable!()` (außerhalb von `#[cfg(debug_assertions)]`) durch CI-Lint verboten.
+1. **Correctness before performance.** RTPS interop and QoS semantics must not be sacrificed for microseconds.
+2. **Safety qualifiability before convenience.** Core modules are written so that they remain safety-qualifiable, even when the current build variant does not require it.
+3. **Spec conformance before feature innovation.** OMG deviations only with documented rationale and interop-test evidence.
+4. **Modular separation before monoliths.** Every crate has a clear responsibility and dependencies. No circular dependencies.
+5. **Feature flags before forks.** Differences between profiles are realized through feature gates, not through separate code trees.
+6. **Generics before dynamic dispatch.** In safe-qualifiable crates, `dyn Trait` is only allowed with explicit justification. Devirtualization should always be possible for the compiler.
+7. **No-panic contract.** In all crates above `dds-tools` and `zerodds-dashboard`, `.unwrap()`, `.expect()`, `panic!()`, `unreachable!()` (outside `#[cfg(debug_assertions)]`) are forbidden by a CI lint.
 
-## 2 Schichten-Architektur
+## 2 Layered architecture
 
-Das System ist in fünf Schichten organisiert. Abhängigkeiten fließen strikt von oben nach unten; Querabhängigkeiten innerhalb einer Schicht sind erlaubt, Aufwärts-Abhängigkeiten verboten.
+The system is organized into five layers. Dependencies flow strictly top to bottom; cross-dependencies within a layer are allowed, upward dependencies forbidden.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -41,162 +41,162 @@ Das System ist in fünf Schichten organisiert. Abhängigkeiten fließen strikt v
           + certified core subset (Safe profile)
 ```
 
-## 3 Crate-Katalog
+## 3 Crate catalog
 
-Der Workspace umfasst folgende Crates. Jede Zeile markiert Safety-Klassifikation, ob no_std-tauglich und die primäre Verantwortung.
+The workspace comprises the following crates. Each row marks the safety classification, whether it is no_std-capable, and the primary responsibility.
 
-### 3.1 Foundation Layer
+### 3.1 Foundation layer
 
-| Crate | Safety-Klasse | no_std | Verantwortung |
+| Crate | Safety class | no_std | Responsibility |
 |---|---|---|---|
-| `zerodds-foundation` | Safe | Ja | Kern-Typen (InstanceHandle, Time, Duration, SequenceNumber, GUID), Error-Enum-Familie, Result-Aliasse |
+| `zerodds-foundation` | Safe | Yes | Core types (InstanceHandle, Time, Duration, SequenceNumber, GUID), error-enum family, Result aliases |
 
-### 3.2 Transport Layer
+### 3.2 Transport layer
 
-| Crate | Safety-Klasse | no_std | Verantwortung |
+| Crate | Safety class | no_std | Responsibility |
 |---|---|---|---|
-| `zerodds-transport` | Safe | Ja | Transport-Trait (`Transport`, `Listener`, `Locator`), abstrakte Send/Receive |
-| `zerodds-transport-udp` | Safe | Optional | UDP/IP PSM, Raw-Socket, Multicast |
-| `zerodds-transport-tcp` | Standard | Nein | DDSI TCP/IP PSM, Connection-Pool |
-| `zerodds-transport-shm` | Safe | Optional | Shared-Memory-Segment-Management, Zero-Copy-Path |
+| `zerodds-transport` | Safe | Yes | Transport trait (`Transport`, `Listener`, `Locator`), abstract send/receive |
+| `zerodds-transport-udp` | Safe | Optional | UDP/IP PSM, raw socket, multicast |
+| `zerodds-transport-tcp` | Standard | No | DDSI TCP/IP PSM, connection pool |
+| `zerodds-transport-shm` | Safe | Optional | Shared-memory segment management, zero-copy path |
 
-### 3.3 Protocol Layer
+### 3.3 Protocol layer
 
-| Crate | Safety-Klasse | no_std | Verantwortung |
+| Crate | Safety class | no_std | Responsibility |
 |---|---|---|---|
-| `zerodds-cdr` | Safe | Ja | XCDR1/XCDR2 Encoder/Decoder, Endianness, Alignment |
-| `zerodds-types` | Safe | Ja | XTypes Type System, TypeObject, TypeIdentifier, Compatibility |
-| `zerodds-qos` | Safe | Ja | QoS Policies, Request/Offered-Compatibility-Matrix, Typestate-Kompatibilität |
-| `zerodds-idl` | Safe | Nein (std-only) | IDL4-Parser, AST, Semantik-Modell (OMG IDL 4.2). Grammar-driven (Earley-Engine), Build-Zeit-Tool — kein embedded-Use-Case. Konsumiert von `zerodds-idlc`. Siehe `docs/rfcs/0001-idl-parser-architecture.md` |
-| `zerodds-rtps` | Safe | Ja | Writer/Reader State Machines, Heartbeat/Acknack/Gap/Data-Submessages, Fragmentation |
-| `zerodds-discovery` | Safe | Ja | SPDP, SEDP, TypeLookup Service |
+| `zerodds-cdr` | Safe | Yes | XCDR1/XCDR2 encoder/decoder, endianness, alignment |
+| `zerodds-types` | Safe | Yes | XTypes type system, TypeObject, TypeIdentifier, compatibility |
+| `zerodds-qos` | Safe | Yes | QoS policies, request/offered compatibility matrix, typestate compatibility |
+| `zerodds-idl` | Safe | No (std-only) | IDL4 parser, AST, semantic model (OMG IDL 4.2). Grammar-driven (Earley engine), build-time tool — no embedded use case. Consumed by `zerodds-idlc`. See `docs/rfcs/0001-idl-parser-architecture.md` |
+| `zerodds-rtps` | Safe | Yes | Writer/reader state machines, Heartbeat/Acknack/Gap/Data submessages, fragmentation |
+| `zerodds-discovery` | Safe | Yes | SPDP, SEDP, TypeLookup service |
 
-### 3.4 Core Services Layer
+### 3.4 Core services layer
 
-| Crate | Safety-Klasse | no_std | Verantwortung |
+| Crate | Safety class | no_std | Responsibility |
 |---|---|---|---|
-| `zerodds-dcps` | Standard | Nein | DomainParticipant, Publisher, Subscriber, Topic, DataReader, DataWriter |
-| `zerodds-rpc` | Standard | Nein | Request/Reply Framework, Service-Definition-Runtime |
-| `zerodds-security` | Safe (Kern) / Standard (Plugins) | Teilweise | Authentication/AccessControl/Cryptographic Plugin-Trait + Default-Implementierungen |
-| `zerodds-xml` | Standard | Nein | DDS-XML-Parser, QoS-Profile-Loader, Schema-Validator |
-| `zerodds-xrce-client` | Safe | Ja (no alloc) | XRCE-Client für Micro-Profile, transport-agnostisch |
-| `zerodds-xrce-agent` | Standard | Nein | XRCE-Agent, läuft im Full/Standard-Profile |
-| `zerodds-recorder` | Comfort | Nein | Deterministic Record/Replay Service |
-| `zerodds-monitor` | Comfort | Nein | OpenTelemetry-Instrumentierung, Prometheus-Exporter, Wire-Probe |
-| `dds-tools` | Comfort | Nein | Admin-CLI, Config-Validator |
+| `zerodds-dcps` | Standard | No | DomainParticipant, Publisher, Subscriber, Topic, DataReader, DataWriter |
+| `zerodds-rpc` | Standard | No | Request/reply framework, service-definition runtime |
+| `zerodds-security` | Safe (core) / Standard (plugins) | Partial | Authentication/AccessControl/Cryptographic plugin trait + default implementations |
+| `zerodds-xml` | Standard | No | DDS-XML parser, QoS-profile loader, schema validator |
+| `zerodds-xrce-client` | Safe | Yes (no alloc) | XRCE client for the micro profile, transport-agnostic |
+| `zerodds-xrce-agent` | Standard | No | XRCE agent, runs in the full/standard profile |
+| `zerodds-recorder` | Comfort | No | Deterministic record/replay service |
+| `zerodds-monitor` | Comfort | No | OpenTelemetry instrumentation, Prometheus exporter, wire probe |
+| `dds-tools` | Comfort | No | Admin CLI, config validator |
 
-### 3.5 Binding/API Layer
+### 3.5 Binding/API layer
 
-| Crate | Safety-Klasse | no_std | Verantwortung |
+| Crate | Safety class | no_std | Responsibility |
 |---|---|---|---|
-| `zerodds-rs` | Standard | Nein | Idiomatisches Rust-SDK, async/await, Streams |
-| `zerodds-sys` | Safe (Kern) / Binding (FFI-Modul) | Ja (Kern) | Stabile C-ABI, Basis für alle Nicht-Rust-Bindings. `lib.rs`-Kern ist Safe/no_std; C-ABI-Exports leben isoliert in `mod ffi` (siehe §4.4.3/§4.4.4) |
-| `zerodds-cpp` | Standard | Nein | C++-Wrapper, IDL4-C++-Runtime |
-| `zerodds-cs` | Standard | Nein | C# P/Invoke, NativeAOT-kompatibel, IDL4-C#-Runtime |
-| `zerodds-java-omgdds` | Standard | Nein | Pure-Java DDS-Java-PSM (`org.omg.dds.*`) + IDL4-Java-Runtime; kein JNI, kein Native-Lib auf der Java-Seite |
-| `zerodds-py` | Comfort | Nein | PyO3-Bindings, pandas/numpy-freundlich |
+| `zerodds-rs` | Standard | No | Idiomatic Rust SDK, async/await, streams |
+| `zerodds-sys` | Safe (core) / Binding (FFI module) | Yes (core) | Stable C-ABI, basis for all non-Rust bindings. The `lib.rs` core is Safe/no_std; the C-ABI exports live isolated in `mod ffi` (see §4.4.3/§4.4.4) |
+| `zerodds-cpp` | Standard | No | C++ wrapper, IDL4-C++ runtime |
+| `zerodds-cs` | Standard | No | C# P/Invoke, NativeAOT-compatible, IDL4-C# runtime |
+| `zerodds-java-omgdds` | Standard | No | Pure-Java DDS-Java-PSM (`org.omg.dds.*`) + IDL4-Java runtime; no JNI, no native lib on the Java side |
+| `zerodds-py` | Comfort | No | PyO3 bindings, pandas/numpy-friendly |
 
-### 3.6 Tooling (Binary-Crates)
+### 3.6 Tooling (binary crates)
 
-| Crate | Typ | Verantwortung |
+| Crate | Type | Responsibility |
 |---|---|---|
-| `zerodds-idlc` | bin | IDL4-Compiler, Backends: C, C++, C#, Java, Python, Rust. Nutzt `zerodds-idl` fuer Parser/AST |
-| `zerodds-admin` | bin | Admin-CLI: Domain-Inspector, QoS-Validator, Discovery-Snapshot |
-| `zerodds-xmlc` | bin | DDS-XML-Validator, Schema-Checker, Deployment-Renderer |
-| `zerodds-dashboard` | bin | Tauri-App für Live-Monitoring, Discovery-Graph, Replay-Browser |
-| `zerodds-perf` | bin | Load-Generator, Latency-Profiler, Benchmark-Suite |
-| `zerodds-traceability` | bin | Requirements-zu-Code-Matrix-Generator |
+| `zerodds-idlc` | bin | IDL4 compiler, backends: C, C++, C#, Java, Python, Rust. Uses `zerodds-idl` for parser/AST |
+| `zerodds-admin` | bin | Admin CLI: domain inspector, QoS validator, discovery snapshot |
+| `zerodds-xmlc` | bin | DDS-XML validator, schema checker, deployment renderer |
+| `zerodds-dashboard` | bin | Tauri app for live monitoring, discovery graph, replay browser |
+| `zerodds-perf` | bin | Load generator, latency profiler, benchmark suite |
+| `zerodds-traceability` | bin | Requirements-to-code matrix generator |
 
-### 3.7 Meta-Tooling (Lint-Plugin)
+### 3.7 Meta-tooling (lint plugin)
 
-| Crate | Typ | Verantwortung |
+| Crate | Type | Responsibility |
 |---|---|---|
-| `zerodds-lint` | lib | Custom Clippy-Lints (Projekt-Regeln gemaess `04_safety_by_architecture.md §3.4`). Kein Runtime-Code, nicht Safety-klassifiziert. Wird von CI als Clippy-Plugin geladen |
+| `zerodds-lint` | lib | Custom clippy lints (project rules per `04_safety_by_architecture.md §3.4`). No runtime code, not safety-classified. Loaded by CI as a clippy plugin |
 
-## 4 Abhängigkeits-Regeln
+## 4 Dependency rules
 
-### 4.1 Erlaubte Abhängigkeitsrichtungen
+### 4.1 Allowed dependency directions
 
-- Jede Schicht darf von Schichten **unter** sich abhängen.
-- Innerhalb einer Schicht dürfen Crates von anderen Crates derselben Schicht abhängen, solange keine Zyklen entstehen.
-- `zerodds-sys` darf nur von `zerodds-rs`-Re-Export-Crates und `zerodds-dcps` direkt verwendet werden, um die C-ABI-Oberfläche sauber zu halten.
+- Every layer may depend on layers **below** it.
+- Within a layer, crates may depend on other crates of the same layer, as long as no cycles arise.
+- `zerodds-sys` may only be used directly by `zerodds-rs` re-export crates and `zerodds-dcps`, to keep the C-ABI surface clean.
 
-### 4.2 Verbotene Muster
+### 4.2 Forbidden patterns
 
-- Binding-Crates (`zerodds-cpp`, `zerodds-cs`, `zerodds-java`, `zerodds-py`) dürfen **nicht** direkt auf Protocol- oder Transport-Crates zugreifen. Nur über `zerodds-sys` oder `zerodds-rs`.
-- Safety-Crates dürfen **keine** Dependencies auf Standard- oder Comfort-Crates haben.
-- Keine Crate darf direkt `tokio` als mandatory dep haben; stattdessen Executor-agnostisch via `futures::Stream`-Traits. Tokio ist nur in Comfort- und optionalen Standard-Builds verlinkt.
+- Binding crates (`zerodds-cpp`, `zerodds-cs`, `zerodds-java`, `zerodds-py`) may **not** access protocol or transport crates directly. Only via `zerodds-sys` or `zerodds-rs`.
+- Safety crates may have **no** dependencies on standard or comfort crates.
+- No crate may have `tokio` directly as a mandatory dep; instead executor-agnostic via `futures::Stream` traits. Tokio is only linked in comfort and optional standard builds.
 
-### 4.3 Third-Party-Dependency-Politik
+### 4.3 Third-party dependency policy
 
-- **Safe-Crates:** Whitelist-basiert. Erlaubte Crates: `heapless`, `bytes` (Safe-Subset), `zerocopy`, `byteorder`. Jede neue Dep erfordert explizite Begründung und Security-Review.
-- **Standard-Crates:** Kuratierte Liste. Erlaubt: `serde`, `tokio` (optional feature), `tracing`, `thiserror`, `hex`, `sha2`, `ring` oder `rustls` je nach Security-Plugin. Neue Deps per Pull-Request-Review.
-- **Comfort-Crates:** Offener, aber jede Dep in CI mit `cargo-audit`, `cargo-deny` und License-Check durchlaufen.
+- **Safe crates:** whitelist-based. Allowed crates: `heapless`, `bytes` (safe subset), `zerocopy`, `byteorder`. Every new dep requires explicit justification and a security review.
+- **Standard crates:** curated list. Allowed: `serde`, `tokio` (optional feature), `tracing`, `thiserror`, `hex`, `sha2`, `ring` or `rustls` depending on the security plugin. New deps via pull-request review.
+- **Comfort crates:** more open, but every dep is run through `cargo-audit`, `cargo-deny` and a license check in CI.
 
-**`deny.toml`-Konventionen** (Quelle: Projekt-Root; Tweaks begruendet mit Inline-Kommentaren):
+**`deny.toml` conventions** (source: project root; tweaks justified with inline comments):
 
-- `[licenses] allow = [...]` ist eine **Vorrats-Allowlist** (Apache-2.0, MIT, BSD-2/3, ISC, Unicode-3.0, Unicode-DFS-2016, CC0-1.0, Zlib, Apache-2.0-WITH-LLVM-exception). Eintraege bleiben, auch wenn aktuell kein Crate sie nutzt; `unused-allowed-license = "allow"` unterdrueckt die sonst ausgeloesten Warnings. GPL/AGPL sind implizit verboten — siehe `07_risks_and_strategy.md` §2.3.
-- `[bans] wildcards = "deny"` bleibt aktiv, aber `allow-wildcard-paths = true` nimmt **workspace-interne `path = "../..."`-Deps** aus. Das ist die uebliche Cargo-Praxis fuer unveroeffentlichte Sub-Crates: sie haben keine `version = "..."` und wuerden sonst als Wildcard abgelehnt. Registry-Wildcards (`foo = "*"`) bleiben geblockt.
-- `[advisories] yanked = "deny"`, `[sources] unknown-registry = "deny"`, `unknown-git = "deny"` bleiben hart — keine Software aus nicht-verifizierten Quellen, keine zurueckgezogenen Crates.
+- `[licenses] allow = [...]` is a **stock allowlist** (Apache-2.0, MIT, BSD-2/3, ISC, Unicode-3.0, Unicode-DFS-2016, CC0-1.0, Zlib, Apache-2.0-WITH-LLVM-exception). Entries remain even if no crate currently uses them; `unused-allowed-license = "allow"` suppresses the otherwise triggered warnings. GPL/AGPL are implicitly forbidden — see `07_risks_and_strategy.md` §2.3.
+- `[bans] wildcards = "deny"` stays active, but `allow-wildcard-paths = true` exempts **workspace-internal `path = "../..."` deps**. This is the usual Cargo practice for unpublished sub-crates: they have no `version = "..."` and would otherwise be rejected as a wildcard. Registry wildcards (`foo = "*"`) stay blocked.
+- `[advisories] yanked = "deny"`, `[sources] unknown-registry = "deny"`, `unknown-git = "deny"` stay hard — no software from unverified sources, no yanked crates.
 
-### 4.4 Unsafe-Code-Politik
+### 4.4 Unsafe-code policy
 
-Jede Safety-Klasse setzt ihren eigenen crate-weiten Default, der durch das
-entsprechende Inner-Attribute in `src/lib.rs` durchgesetzt wird. Ausnahmen
-sind nur in klar benannten, isolierten Modulen zulaessig — typischerweise
-`mod ffi;` — und fordern dort einen lokalen Lint-Override **plus**
-SAFETY-Kommentar pro `unsafe`-Block.
+Each safety class sets its own crate-wide default, enforced by the
+corresponding inner attribute in `src/lib.rs`. Exceptions
+are only permissible in clearly named, isolated modules — typically
+`mod ffi;` — and there require a local lint override **plus**
+a SAFETY comment per `unsafe` block.
 
-#### 4.4.1 Crate-weite Defaults nach Safety-Klasse
+#### 4.4.1 Crate-wide defaults by safety class
 
-| Safety-Klasse | `lib.rs` Default | Ausnahmen erlaubt? |
+| Safety class | `lib.rs` default | Exceptions allowed? |
 |---|---|---|
-| **Safe** | `#![forbid(unsafe_code)]` | Nein auf Crate-Ebene. Nur ueber strukturell separierte FFI-/Plugin-Module (siehe §4.4.3). |
-| **Standard** | `#![deny(unsafe_code)]` | Ja, in `#[allow(unsafe_code)]`-markierten Modulen mit SAFETY-Kommentar-Pflicht. |
-| **Comfort** | `#![warn(unsafe_code)]` | Ja, jeder `unsafe`-Block benoetigt SAFETY-Kommentar, CI-Lint `dds_require_safety_comment` (siehe `04_safety_by_architecture.md §3.4`). |
+| **Safe** | `#![forbid(unsafe_code)]` | No at crate level. Only via structurally separated FFI/plugin modules (see §4.4.3). |
+| **Standard** | `#![deny(unsafe_code)]` | Yes, in `#[allow(unsafe_code)]`-marked modules with a SAFETY-comment obligation. |
+| **Comfort** | `#![warn(unsafe_code)]` | Yes, every `unsafe` block needs a SAFETY comment, CI lint `dds_require_safety_comment` (see `04_safety_by_architecture.md §3.4`). |
 
-#### 4.4.2 SAFETY-Kommentar-Konvention
+#### 4.4.2 SAFETY-comment convention
 
-Jeder `unsafe`-Block, `unsafe fn`-Deklaration oder `unsafe impl` erfordert
-einen unmittelbar davor stehenden `// SAFETY:`-Kommentar mit mindestens
-einem Satz, der die Invarianten begruendet. Diese Regel wird durch
-`dds_require_safety_comment` (Custom-Lint, `crates/lint`) erzwungen.
+Every `unsafe` block, `unsafe fn` declaration or `unsafe impl` requires
+an immediately preceding `// SAFETY:` comment with at least
+one sentence that justifies the invariants. This rule is enforced by
+`dds_require_safety_comment` (custom lint, `crates/lint`).
 
-#### 4.4.3 FFI-Modul-Pattern
+#### 4.4.3 FFI-module pattern
 
-Crates mit C-ABI-Oberflaeche oder Sprach-Binding (`zerodds-sys`, `zerodds-cpp`,
-`zerodds-cs`, `zerodds-java`, `zerodds-py`) trennen **Safe-Kern** von **FFI-Oberflaeche**
-physisch:
+Crates with a C-ABI surface or a language binding (`zerodds-sys`, `zerodds-cpp`,
+`zerodds-cs`, `zerodds-java`, `zerodds-py`) separate the **safe core** from the **FFI surface**
+physically:
 
-- `src/lib.rs` behaelt den der Safety-Klasse entsprechenden Default
-  (`forbid` fuer `zerodds-sys`, `deny` fuer Standard-Bindings, `warn` fuer
-  Comfort-Bindings). Im `lib.rs` lebt nur sicher analysierbarer Rust-Code
-  (Typen, Enum-Konstanten, Helper).
-- `src/ffi.rs` (oder `src/ffi/` fuer groessere Oberflaechen) traegt auf
-  Modul-Ebene `#![allow(unsafe_code)]` und exportiert die tatsaechlichen
-  `extern "C"`-Funktionen, `#[no_mangle]`-Symbole, PyO3-Module oder
-  P/Invoke-Stubs. Java braucht keine FFI-Schicht: ZeroDDS' Java-PSM
-  (`zerodds-java-omgdds`) ist Pure-Java.
-- Innerhalb des FFI-Moduls ist die SAFETY-Kommentar-Konvention (§4.4.2)
-  weiterhin bindend. Zusaetzlich gilt in Safe-Crates und im Safe-Kern von
-  `zerodds-sys`: der Aufruf-Pfad vom Safe-Kern ins FFI-Modul muss
-  aufwaerts-frei sein (FFI darf Safe-Kern nutzen, Safe-Kern ruft nicht ins
-  FFI-Modul).
+- `src/lib.rs` keeps the default corresponding to the safety class
+  (`forbid` for `zerodds-sys`, `deny` for standard bindings, `warn` for
+  comfort bindings). Only safely analyzable Rust code lives in `lib.rs`
+  (types, enum constants, helpers).
+- `src/ffi.rs` (or `src/ffi/` for larger surfaces) carries
+  `#![allow(unsafe_code)]` at the module level and exports the actual
+  `extern "C"` functions, `#[no_mangle]` symbols, PyO3 modules or
+  P/Invoke stubs. Java needs no FFI layer: ZeroDDS' Java PSM
+  (`zerodds-java-omgdds`) is pure Java.
+- Within the FFI module the SAFETY-comment convention (§4.4.2)
+  remains binding. Additionally, in safe crates and the safe core of
+  `zerodds-sys`: the call path from the safe core into the FFI module must
+  be upward-free (FFI may use the safe core, the safe core does not call into
+  the FFI module).
 
-#### 4.4.4 Sonderfall `zerodds-sys`
+#### 4.4.4 Special case `zerodds-sys`
 
-`zerodds-sys` traegt die Klassifikation **Safe (Kern)** trotz eingebauter
-C-ABI. Aufloesung: der `lib.rs`-Kern (Typen, Opaque-Handles, Error-Codes)
-ist vollstaendig Safe (`#![forbid(unsafe_code)]`, `#![no_std]`-faehig).
-Die C-ABI-Exports leben in einem separaten `ffi`-Modul mit
-`#![allow(unsafe_code)]` und gelten als **Binding-Oberflaeche** — nicht
-als Teil des zertifizierbaren Kerns. Safety-Audits des `zerodds-sys`-Kerns
-umfassen damit den `lib.rs`-Anteil; das `ffi`-Modul wird wie andere
-Binding-Crates behandelt.
+`zerodds-sys` carries the classification **Safe (core)** despite a built-in
+C-ABI. Resolution: the `lib.rs` core (types, opaque handles, error codes)
+is fully Safe (`#![forbid(unsafe_code)]`, `#![no_std]`-capable).
+The C-ABI exports live in a separate `ffi` module with
+`#![allow(unsafe_code)]` and count as the **binding surface** — not
+as part of the certifiable core. Safety audits of the `zerodds-sys` core
+thus cover the `lib.rs` part; the `ffi` module is treated like other
+binding crates.
 
-## 5 Workspace-Organisation
+## 5 Workspace organization
 
-Der Root-`Cargo.toml` ist ein Virtual Workspace:
+The root `Cargo.toml` is a virtual workspace:
 
 ```toml
 [workspace]
@@ -254,64 +254,64 @@ todo = "deny"
 unimplemented = "deny"
 ```
 
-Crates haben konsistente `Cargo.toml`-Struktur mit gemeinsamen Package-Metadaten über `workspace = true`.
+Crates have a consistent `Cargo.toml` structure with shared package metadata via `workspace = true`.
 
-## 6 Feature-Flag-Grundregime
+## 6 Feature-flag baseline regime
 
-Globale Feature-Flags werden auf Workspace-Ebene konsistent genutzt:
+Global feature flags are used consistently at the workspace level:
 
-| Flag | Bedeutung | Gated Crates |
+| Flag | Meaning | Gated crates |
 |---|---|---|
-| `std` | Nutzung von `std` erlaubt | Alle außer Safe-Kern |
-| `alloc` | Nutzung von `alloc` erlaubt | Wie `std`, aber strenger |
-| `safety` | Aktiviert alle No-Panic/No-Alloc-Regeln | Safe-Crates |
-| `security` | DDS-Security aktiviert | `zerodds-dcps`, `zerodds-rtps` |
-| `xtypes` | XTypes-Support | `zerodds-types`, `zerodds-rtps` |
-| `tcp` | TCP-Transport aktiviert | `zerodds-transport-tcp` |
-| `shm` | Shared-Memory-Transport | `zerodds-transport-shm` |
-| `async-tokio` | Tokio-Runtime | Standard-Builds |
-| `async-embassy` | Embassy-Runtime | Embedded |
-| `otel` | OpenTelemetry-Emission | `zerodds-monitor` |
-| `recording` | Wire-Recorder | `zerodds-monitor` |
+| `std` | Use of `std` allowed | All except the safe core |
+| `alloc` | Use of `alloc` allowed | Like `std`, but stricter |
+| `safety` | Enables all no-panic/no-alloc rules | Safe crates |
+| `security` | DDS-Security enabled | `zerodds-dcps`, `zerodds-rtps` |
+| `xtypes` | XTypes support | `zerodds-types`, `zerodds-rtps` |
+| `tcp` | TCP transport enabled | `zerodds-transport-tcp` |
+| `shm` | Shared-memory transport | `zerodds-transport-shm` |
+| `async-tokio` | Tokio runtime | Standard builds |
+| `async-embassy` | Embassy runtime | Embedded |
+| `otel` | OpenTelemetry emission | `zerodds-monitor` |
+| `recording` | Wire recorder | `zerodds-monitor` |
 
-Details der Profile-zu-Feature-Mapping in `03_profiles_and_platforms.md`.
+Details of the profile-to-feature mapping in `03_profiles_and_platforms.md`.
 
-## 7 API-Stabilitäts-Tiers
+## 7 API stability tiers
 
-Nicht alle Public-APIs haben gleiche Stabilitäts-Garantien. Drei Tiers sind definiert:
+Not all public APIs have the same stability guarantees. Three tiers are defined:
 
-| Tier | Crates | SemVer-Policy |
+| Tier | Crates | SemVer policy |
 |---|---|---|
-| **Tier 1: Stabile Binding-APIs** | `zerodds-sys`, `zerodds-cpp`, `zerodds-cs`, `zerodds-java`, `zerodds-rs` | Strikte SemVer. Breaking-Changes nur in Major-Releases. |
-| **Tier 2: Kern-Runtime-APIs** | `zerodds-dcps`, `zerodds-security`, `zerodds-rpc` | SemVer, aber Breaking-Changes in Minor-Releases erlaubt vor 1.0. |
-| **Tier 3: Interne APIs** | Alle anderen Protocol-, Transport-, Foundation-Crates | Interne Änderungen jederzeit möglich. User, die direkt auf diese Crates zugreifen, übernehmen Wartungs-Risiko. |
+| **Tier 1: stable binding APIs** | `zerodds-sys`, `zerodds-cpp`, `zerodds-cs`, `zerodds-java`, `zerodds-rs` | Strict SemVer. Breaking changes only in major releases. |
+| **Tier 2: core runtime APIs** | `zerodds-dcps`, `zerodds-security`, `zerodds-rpc` | SemVer, but breaking changes in minor releases allowed before 1.0. |
+| **Tier 3: internal APIs** | All other protocol, transport, foundation crates | Internal changes possible at any time. Users who access these crates directly assume the maintenance risk. |
 
-## 8 Test-Architektur
+## 8 Test architecture
 
-Jedes Crate hat drei Test-Ebenen:
+Every crate has three test levels:
 
-1. **Unit-Tests in `src/`:** private Implementierungs-Tests, `#[cfg(test)]`-Module.
-2. **Integration-Tests in `tests/`:** public-API-Tests, auch Compliance-Tests gegen OMG-Spec-Vektoren.
-3. **Workspace-Ebene `xtests/`:** Cross-Crate-Integration, Interop-Tests gegen echte DDS-Peers (CycloneDDS, Fast DDS, RTI), End-to-End-Szenarien.
+1. **Unit tests in `src/`:** private implementation tests, `#[cfg(test)]` modules.
+2. **Integration tests in `tests/`:** public-API tests, also compliance tests against OMG spec vectors.
+3. **Workspace level `xtests/`:** cross-crate integration, interop tests against real DDS peers (CycloneDDS, Fast DDS, RTI), end-to-end scenarios.
 
-Test-Kategorien:
+Test categories:
 
-| Kategorie | Tool | Wann |
+| Category | Tool | When |
 |---|---|---|
-| Unit | `cargo test` | Bei jedem Commit, CI |
+| Unit | `cargo test` | On every commit, CI |
 | Integration | `cargo test --test ...` | CI |
-| Property-Based | `proptest`, `quickcheck` | CI, speziell für CDR und RTPS |
-| Fuzz | `cargo-fuzz`, `AFL` | Nightly CI, speziell für Wire-Parser |
-| Model-Checking | `kani` | Für Safe-Crates, Nightly CI |
-| Interop | eigenes Harness mit Docker-compose | PR + nightly |
-| Performance-Regression | Criterion.rs + Custom-Harness | Nightly, Alerts bei >5% Regression |
+| Property-based | `proptest`, `quickcheck` | CI, especially for CDR and RTPS |
+| Fuzz | `cargo-fuzz`, `AFL` | Nightly CI, especially for the wire parser |
+| Model checking | `kani` | For safe crates, nightly CI |
+| Interop | own harness with docker-compose | PR + nightly |
+| Performance regression | Criterion.rs + custom harness | Nightly, alerts on >5% regression |
 
-## 9 Claude-Teams-Kollaborations-Modell
+## 9 Claude-Teams collaboration model
 
-Die Codebase ist explizit so strukturiert, dass agentische Entwicklung skaliert:
+The codebase is explicitly structured so that agentic development scales:
 
-- **Crate-Level-Agents:** Je Crate kann ein dedizierter Claude-Agent arbeiten, ohne Konflikte mit anderen Crates. Crate-interne API-Änderungen bleiben lokal.
-- **Spec-Sections als Arbeitspakete:** OMG-Spec-Sektionen mappen auf Code-Module mit `#[spec(...)]`-Annotationen. Ein Agent übernimmt eine Sektion, implementiert, testet gegen Spec-Vektoren.
-- **Test-first-Workflow:** Agent liest OMG-Spec-Kapitel, generiert Conformance-Tests (property-based + example-based), implementiert gegen grüne Tests.
-- **Review-Layer:** Menschliche Senior-Engineers reviewen architektonische Entscheidungen, Protocol-State-Machines und Safety-kritische Änderungen. Routine-Implementierungen werden Agent-to-Agent reviewt.
-- **Dokumentations-Sync:** Claude-Teams halten diese Architektur-Dokumente mit Code synchron. Bei jedem relevanten Commit wird automatisch geprüft, ob Dokumentation aktualisiert werden muss.
+- **Crate-level agents:** a dedicated Claude agent can work per crate without conflicts with other crates. Crate-internal API changes stay local.
+- **Spec sections as work packages:** OMG spec sections map to code modules with `#[spec(...)]` annotations. An agent takes a section, implements, tests against spec vectors.
+- **Test-first workflow:** the agent reads an OMG spec chapter, generates conformance tests (property-based + example-based), implements against green tests.
+- **Review layer:** human senior engineers review architectural decisions, protocol state machines and safety-critical changes. Routine implementations are reviewed agent-to-agent.
+- **Documentation sync:** Claude Teams keep these architecture documents in sync with the code. On every relevant commit it is checked automatically whether documentation needs updating.

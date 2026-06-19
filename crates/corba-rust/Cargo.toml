@@ -21,10 +21,10 @@ workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.1", path = "../idl" }
-zerodds-idl-rust = { version = "1.0.0-rc.1", path = "../idl-rust" }
-zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr" }
-zerodds-corba-codegen = { version = "1.0.0-rc.1", path = "../corba-codegen" }
+zerodds-idl = { version = "1.0.0-rc.3", path = "../idl" }
+zerodds-idl-rust = { version = "1.0.0-rc.3", path = "../idl-rust" }
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr" }
+zerodds-corba-codegen = { version = "1.0.0-rc.3", path = "../corba-codegen" }
 
 [dev-dependencies]
 insta = { workspace = true }

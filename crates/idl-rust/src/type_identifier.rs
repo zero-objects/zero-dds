@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! F-TYPES-3 Codegen: berechnet eine spec-konforme `TypeIdentifier`
-//! (XTypes 1.3 §7.3.4.2) für eine IDL-Struct-Definition und emittiert
-//! sie als const-Expression im DdsType-Impl.
+//! F-TYPES-3 codegen: computes a spec-conformant `TypeIdentifier`
+//! (XTypes 1.3 §7.3.4.2) for an IDL struct definition and emits it as a
+//! const expression in the DdsType impl.
 //!
-//! Strategie:
-//! - Primitive Member-Types → `TypeIdentifier::Primitive(PrimitiveKind::X)`.
+//! Strategy:
+//! - Primitive member types → `TypeIdentifier::Primitive(PrimitiveKind::X)`.
 //! - Strings → `TypeIdentifier::String8Small/Large`.
-//! - Composite (struct/sequence/array/map) → als
-//!   `TypeIdentifier::None` markiert; volle Hash-Berechnung erfordert
-//!   Cross-Crate-Auflösung (folgt im idl-rust-Layer-3-Review).
+//! - Composite (struct/sequence/array/map) → marked as
+//!   `TypeIdentifier::None`; full hash computation requires
+//!   cross-crate resolution (follows in the idl-rust layer-3 review).
 //!
-//! Der TypeIdentifier des STRUCTS selbst wird als
-//! `TypeIdentifier::EquivalenceHash` mit dem MD5-Hash der CDR-encoded
-//! `CompleteStructType` berechnet — codegen-time deterministisch.
+//! The TypeIdentifier of the STRUCT itself is computed as a
+//! `TypeIdentifier::EquivalenceHash` with the MD5 hash of the
+//! CDR-encoded `CompleteStructType` — codegen-time deterministic.
 
 use zerodds_idl::ast::types::{
     Declarator, IntegerType, Member, PrimitiveType, StringType, StructDef, TypeSpec,
 };
 
-/// Liefert den Rust-Source-Ausdruck für den `TypeIdentifier`-Const
-/// einer Struct-Definition. Format:
+/// Returns the Rust source expression for the `TypeIdentifier` const of
+/// a struct definition. Format:
 ///
 /// ```text
 /// zerodds_types::TypeIdentifier::EquivalenceHash {
@@ -29,9 +29,9 @@ use zerodds_idl::ast::types::{
 /// }
 /// ```
 ///
-/// Wenn die Struct member-types enthält, deren TypeIdentifier nicht
-/// codegen-time-bekannt ist (verschachtelte Composites), liefert die
-/// Funktion `TypeIdentifier::None` (Default-Path).
+/// If the struct contains member types whose TypeIdentifier is not
+/// known at codegen time (nested composites), the function returns
+/// `TypeIdentifier::None` (default path).
 #[must_use]
 pub fn struct_type_identifier_expr(s: &StructDef) -> String {
     match build_complete_struct_type_bytes(s) {
@@ -61,9 +61,9 @@ fn md5_truncated(bytes: &[u8]) -> [u8; 14] {
     out
 }
 
-/// Baut die `CompleteStructType`-Wire-Bytes (CDR-LE) der Struct.
-/// Liefert `None` wenn ein Member-Type ausserhalb des codegen-time-
-/// bekannten Bereichs liegt.
+/// Builds the `CompleteStructType` wire bytes (CDR-LE) of the struct.
+/// Returns `None` if a member type lies outside the codegen-time-known
+/// range.
 fn build_complete_struct_type_bytes(s: &StructDef) -> Option<Vec<u8>> {
     use zerodds_types::TypeIdentifier;
     use zerodds_types::type_object::common::{
@@ -98,7 +98,10 @@ fn build_complete_struct_type_bytes(s: &StructDef) -> Option<Vec<u8>> {
             },
             detail: CompleteMemberDetail {
                 name,
-                ann_builtin: AppliedBuiltinMemberAnnotations::default(),
+                ann_builtin: AppliedBuiltinMemberAnnotations {
+                    unit: crate::annotations::member_unit(&member.annotations),
+                    ..AppliedBuiltinMemberAnnotations::default()
+                },
                 ann_custom: OptionalAppliedAnnotationSeq::default(),
             },
         });
@@ -118,21 +121,21 @@ fn build_complete_struct_type_bytes(s: &StructDef) -> Option<Vec<u8>> {
         member_seq,
     };
 
-    // Wrap in TypeObject::Complete für public encode-API.
+    // Wrap in TypeObject::Complete for the public encode API.
     let to = zerodds_types::type_object::TypeObject::Complete(
         zerodds_types::type_object::CompleteTypeObject::Struct(cs),
     );
     to.to_bytes_le().ok()
 }
 
-/// Map IDL-TypeSpec → zerodds_types::TypeIdentifier (für codegen-time-
-/// bekannte primitive/string Member). Composite/Sequence/Array → None.
+/// Map IDL TypeSpec → zerodds_types::TypeIdentifier (for codegen-time-
+/// known primitive/string members). Composite/sequence/array → None.
 fn type_spec_to_type_identifier(ts: &TypeSpec) -> Option<zerodds_types::TypeIdentifier> {
     use zerodds_types::TypeIdentifier;
     match ts {
         TypeSpec::Primitive(p) => primitive_to_type_identifier(*p).map(TypeIdentifier::Primitive),
         TypeSpec::String(s) => string_type_to_type_identifier(s),
-        // Composite/Constructed/Scoped → None (Cross-Type-Auflösung benötigt).
+        // Composite/Constructed/Scoped → None (cross-type resolution needed).
         _ => None,
     }
 }
@@ -164,7 +167,7 @@ fn primitive_to_type_identifier(p: PrimitiveType) -> Option<zerodds_types::Primi
 
 fn string_type_to_type_identifier(s: &StringType) -> Option<zerodds_types::TypeIdentifier> {
     use zerodds_types::TypeIdentifier;
-    // bound = 0 = unbounded; sonst codegen-time auswertbarer Literal-Wert.
+    // bound = 0 = unbounded; otherwise a codegen-time-evaluable literal value.
     let bound_usize = match &s.bound {
         Some(expr) => crate::type_map::const_expr_as_usize(expr).unwrap_or(0),
         None => 0,
@@ -188,4 +191,50 @@ fn member_id_for(member: &Member, fallback_index: usize) -> Option<u32> {
         return Some(id);
     }
     u32::try_from(fallback_index).ok()
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use zerodds_idl::ast::{ConstrTypeDecl, Definition, StructDcl, TypeDecl};
+    use zerodds_idl::config::ParserConfig;
+    use zerodds_types::type_object::{CompleteTypeObject, TypeObject};
+
+    fn first_struct(src: &str) -> StructDef {
+        let ast = zerodds_idl::parse(src, &ParserConfig::default()).expect("parse");
+        for d in &ast.definitions {
+            if let Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) = d
+            {
+                return s.clone();
+            }
+        }
+        panic!("no struct found");
+    }
+
+    /// Builds the complete-TypeObject bytes, decodes them back and returns
+    /// the unit of the first member — the round-trip proves that `@unit`
+    /// actually lands in the wire format.
+    fn member0_unit_via_wire(src: &str) -> Option<String> {
+        let s = first_struct(src);
+        let bytes = build_complete_struct_type_bytes(&s).expect("complete bytes");
+        let to = TypeObject::from_bytes_le(&bytes).expect("decode");
+        let TypeObject::Complete(CompleteTypeObject::Struct(cs)) = to else {
+            panic!("expected Complete struct TypeObject");
+        };
+        cs.member_seq[0].detail.ann_builtin.unit.clone()
+    }
+
+    #[test]
+    fn unit_annotation_lands_in_complete_typeobject() {
+        assert_eq!(
+            member0_unit_via_wire("struct S { @unit(\"meters\") double d; };"),
+            Some("meters".to_string())
+        );
+    }
+
+    #[test]
+    fn absent_unit_leaves_wire_field_empty() {
+        assert_eq!(member0_unit_via_wire("struct S { double d; };"), None);
+    }
 }

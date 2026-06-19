@@ -229,15 +229,14 @@ immer `Result<T, DdsError>`.
 - Allokation pro `write`: 0 (gleicher Pfad wie sync; Future ist
   stack-allocated wenn `async fn` inlined).
 
-## §10 Roadmap
+## §10 Lieferumfang
 
-| Sprint | Inhalt |
-|--------|--------|
-| **A1** | Crate-Skeleton + Newtypes + Sync-Reuse |
-| **A2** | `take_stream` + Waker-Wiring im Reader-Slot |
-| **A3** | `write().await` mit Drain-Backpressure |
-| **A4** | Listener-Streams |
-| **A5** | Tokio-Glue feature + spawn_in_tokio |
-| **A6** | Bench-Suite + Spec-Compliance-Test |
+- Crate-Struktur + Newtypes + Sync-API-Reuse
+- `take_stream` + Waker-Wiring im Reader-Slot
+- `write().await` mit Drain-Backpressure
+- Listener-Streams
+- Tokio-Glue-Feature (`spawn_in_tokio`)
+- Bench-Suite + Spec-Compliance-Test
 
-Aufwand: ~5-7 PT.
+Der aktuelle Implementierungs-Stand pro Punkt steht im Coverage-Audit
+`docs/spec-coverage/zerodds-async-1.0.md`.

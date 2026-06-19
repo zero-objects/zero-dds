@@ -1,56 +1,56 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [1.0.0-rc.1] — 2026-05-07
 
-Initiale Release-Materialisierung der `zerodds-corba-dnc`-Crate.
+Initial release materialization of the `zerodds-corba-dnc` crate.
 
-### Spec-Referenzen
+### Spec references
 
 - **OMG Deployment & Configuration 4.0** (`formal/2006-04-02`):
-  §6 (Domain-Level Data Models), §7 (Component-Data),
+  §6 (Domain-Level Data Models), §7 (Component Data),
   §8 (RepositoryManager), §9 (ExecutionManager / NodeManager /
   DomainApplicationManager / NodeApplicationManager),
-  §10 (XML-Encoding der Plan-Files).
+  §10 (XML encoding of the plan files).
 
-### Public-API
+### Public API
 
 - `plan::{DeploymentPlan, ComponentPackageDescription,
   ImplementationDescription, ImplementationDependency,
   InstanceDeploymentDescription, PackageConfiguration,
-  PackagedComponentImplementation, PlanError}` — Datenmodell fuer
+  PackagedComponentImplementation, PlanError}` — data model for
   DPD/CPD/IDD/PSD/PSD (D&C §6 + §7).
-- `xml::{ParseError, parse_plan_xml}` — XML-Loader gemaess §10
-  XML-Encoding.
+- `xml::{ParseError, parse_plan_xml}` — XML loader per §10
+  XML encoding.
 - `repository::RepositoryManager` — RepositoryManager (§8).
 - `execution::{ExecutionManager, DomainApplication,
-  DomainApplicationManager}` — Execution-Layer (§9).
+  DomainApplicationManager}` — execution layer (§9).
 - `node::{NodeManager, NodeApplication, NodeApplicationManager}` —
-  Node-Layer (§9).
-- `container_host::{ContainerHost, HostError}` — Bridge zwischen
-  D&C-Plan-Application und `corba-ccm::Container`.
+  node layer (§9).
+- `container_host::{ContainerHost, HostError}` — bridge between the
+  D&C plan application and `corba-ccm::Container`.
 
-### Implementierung
+### Implementation
 
-`#![no_std]` mit `extern crate alloc`; `#![forbid(unsafe_code)]`.
-XML-Loader voll spec-konform fuer §10-Encoding mit Attribute- und
-Element-Mapping.
+`#![no_std]` with `extern crate alloc`; `#![forbid(unsafe_code)]`.
+The XML loader is fully spec-compliant for §10 encoding with attribute
+and element mapping.
 
-`ContainerHost` schlaegt die Bruecke: ein Plan-Application-Run
-instanziiert via Repository-Implementations einen `Container` und
-mappt Instances→Components mittels CCM-Lifecycle.
+`ContainerHost` bridges the gap: a plan-application run instantiates a
+`Container` via the repository implementations and maps
+instances→components through the CCM lifecycle.
 
-### Architektur
+### Architecture
 
-- **Layer:** 8 (CORBA-Stack, Tier-B).
+- **Layer:** 8 (CORBA stack, Tier B).
 - **Dependencies (in):** `zerodds-corba-ccm`.
-- **Dependents (out):** Hosting-Anwendungen (Caller-Layer fuer
-  Plan-Bootstrap).
-- **Feature-Flags:** `std` (default), `alloc` (via std).
+- **Dependents (out):** hosting applications (caller layer for the
+  plan bootstrap).
+- **Feature flags:** `std` (default), `alloc` (via std).
 
-### Stabilitaet
+### Stability
 
-- Public-API: RC1-stabil.
-- Plan-Datenmodell folgt strikt §6/§7-Schema.
-- §10-XML-Roundtrip-getestet.
+- Public API: RC1-stable.
+- The plan data model strictly follows the §6/§7 schema.
+- §10 XML roundtrip-tested.

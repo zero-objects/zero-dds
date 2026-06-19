@@ -1,75 +1,75 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Mapping-Konfiguration zwischen CORBA-Objects und DDS-Topics.
+//! Mapping configuration between CORBA objects and DDS topics.
 //!
-//! Ein `BridgeMapping` aggregiert mehrere `BridgeRoute`-Eintraege.
-//! Jede Route bindet ein CORBA-Object (per `repository_id` +
-//! `object_key`) bidirektional an ein oder mehrere DDS-Topics.
+//! A `BridgeMapping` aggregates several `BridgeRoute` entries. Each
+//! route binds a CORBA object (by `repository_id` + `object_key`)
+//! bidirectionally to one or more DDS topics.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Richtung einer Bridge-Route.
+/// Direction of a bridge route.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Direction {
-    /// CORBA-Request → DDS-Sample (Servant-Modus).
+    /// CORBA request → DDS sample (servant mode).
     CorbaToDds,
-    /// DDS-Sample → CORBA-Request (Forwarder-Modus).
+    /// DDS sample → CORBA request (forwarder mode).
     DdsToCorba,
-    /// Bidirektional (`request topic` + `reply topic`).
+    /// Bidirectional (`request topic` + `reply topic`).
     Bidirectional,
 }
 
-/// QoS-Profile-Referenz fuer ein Topic — Caller-Layer-Resolution
-/// (z.B. ueber `crates/qos/`).
+/// QoS profile reference for a topic — resolved by the caller layer
+/// (e.g. via `crates/qos/`).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicQosRef {
-    /// Optional: Reliability-Kind ("RELIABLE"/"BEST_EFFORT").
+    /// Optional: reliability kind ("RELIABLE"/"BEST_EFFORT").
     pub reliability: Option<String>,
-    /// Optional: Durability-Kind ("VOLATILE"/"TRANSIENT_LOCAL"/...).
+    /// Optional: durability kind ("VOLATILE"/"TRANSIENT_LOCAL"/...).
     pub durability: Option<String>,
-    /// Optional: Profile-Name aus einem QoS-XML-Profile.
+    /// Optional: profile name from a QoS XML profile.
     pub profile_name: Option<String>,
 }
 
-/// Mapping einer einzelnen IDL-Operation auf ein Topic.
+/// Mapping of a single IDL operation onto a topic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationMapping {
-    /// IDL-Operation-Name (Wire-Form).
+    /// IDL operation name (wire form).
     pub operation: String,
-    /// DDS-Topic fuer Request-Sample.
+    /// DDS topic for the request sample.
     pub request_topic: String,
-    /// DDS-Topic fuer Reply-Sample (oder leer fuer fire-and-forget).
+    /// DDS topic for the reply sample (or empty for fire-and-forget).
     pub reply_topic: String,
-    /// QoS fuer beide Topics.
+    /// QoS for both topics.
     pub qos: TopicQosRef,
 }
 
-/// Eine Bridge-Route — bindet ein CORBA-Object an Operations-Topics.
+/// A bridge route — binds a CORBA object to operation topics.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeRoute {
-    /// CORBA-Repository-ID des Object-Types (z.B.
+    /// CORBA repository ID of the object type (e.g.
     /// `IDL:demo/Echo:1.0`).
     pub repository_id: String,
-    /// CORBA-Object-Key (POA-Erstellt).
+    /// CORBA object key (POA-created).
     pub object_key: Vec<u8>,
-    /// Richtung der Bruecke.
+    /// Direction of the bridge.
     pub direction: Direction,
-    /// Operation-Mapping pro IDL-Methode.
+    /// Operation mapping per IDL method.
     pub operations: Vec<OperationMapping>,
 }
 
 impl BridgeRoute {
-    /// Liefert das `OperationMapping` fuer einen Operation-Name.
+    /// Returns the `OperationMapping` for an operation name.
     #[must_use]
     pub fn operation(&self, name: &str) -> Option<&OperationMapping> {
         self.operations.iter().find(|o| o.operation == name)
     }
 }
 
-/// Top-Level-Mapping mit O(1)-Lookup nach `(repository_id, object_key)`.
+/// Top-level mapping with O(1) lookup by `(repository_id, object_key)`.
 #[derive(Debug, Clone, Default)]
 pub struct BridgeMapping {
     routes: BTreeMap<RouteKey, BridgeRoute>,
@@ -82,13 +82,13 @@ struct RouteKey {
 }
 
 impl BridgeMapping {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Registriert eine Route.
+    /// Registers a route.
     pub fn add_route(&mut self, route: BridgeRoute) {
         let key = RouteKey {
             repository_id: route.repository_id.clone(),
@@ -97,7 +97,7 @@ impl BridgeMapping {
         self.routes.insert(key, route);
     }
 
-    /// Lookup einer Route.
+    /// Looks up a route.
     #[must_use]
     pub fn lookup(&self, repository_id: &str, object_key: &[u8]) -> Option<&BridgeRoute> {
         let key = RouteKey {
@@ -107,19 +107,19 @@ impl BridgeMapping {
         self.routes.get(&key)
     }
 
-    /// Anzahl Routes.
+    /// Number of routes.
     #[must_use]
     pub fn len(&self) -> usize {
         self.routes.len()
     }
 
-    /// `true` wenn leer.
+    /// `true` if empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.routes.is_empty()
     }
 
-    /// Liste aller Routes.
+    /// List of all routes.
     #[must_use]
     pub fn all_routes(&self) -> Vec<&BridgeRoute> {
         self.routes.values().collect()

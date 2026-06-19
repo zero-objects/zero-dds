@@ -1,4 +1,4 @@
-// Fixture: alle primitives in einem struct.
+// Fixture: all primitives in one struct.
 struct Primitives {
     boolean a_bool;
     octet a_octet;

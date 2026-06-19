@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! IOR Component-Tags — Spec §13.6.7.3.
+//! IOR component tags — spec §13.6.7.3.
 //!
-//! `ComponentId` ist ein `unsigned long`. Wir modellieren ueber 30
-//! OMG-registrierte Tag-Werte als Enum-Varianten plus einen
-//! `Other(u32)`-Sentinel fuer Vendor-/Unbekannt-Tags.
+//! `ComponentId` is an `unsigned long`. We model over 30 OMG-registered
+//! tag values as enum variants plus an `Other(u32)` sentinel for
+//! vendor/unknown tags.
 
 /// `ComponentId` — Spec §13.6.7.3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -84,12 +84,12 @@ pub enum ComponentId {
     DceSecMech,
     /// `TAG_INET_SEC_TRANS = 123`.
     InetSecTrans,
-    /// Andere/Vendor-spezifische Tag.
+    /// Other/vendor-specific tag.
     Other(u32),
 }
 
 impl ComponentId {
-    /// Roher `unsigned long`-Wert.
+    /// Raw `unsigned long` value.
     #[must_use]
     pub const fn as_u32(self) -> u32 {
         match self {
@@ -134,8 +134,8 @@ impl ComponentId {
         }
     }
 
-    /// Konstruiert aus einem `unsigned long` (alle Werte zulaessig —
-    /// unbekannte landen in `Other`).
+    /// Constructs from an `unsigned long` (all values are valid —
+    /// unknown ones land in `Other`).
     #[must_use]
     pub const fn from_u32(value: u32) -> Self {
         match value {
@@ -219,9 +219,9 @@ mod tests {
 
     #[test]
     fn at_least_32_well_known_tags_modelled() {
-        // Spec-Konformitaets-Anforderung: alle 32 Standard-Component-
-        // Tags sind als eigene Enum-Varianten praesent, nicht als
-        // Other(_). Wir zaehlen die known-Liste oben.
+        // Spec conformance requirement: all 32 standard component tags
+        // are present as their own enum variants, not as Other(_). We
+        // count the known list above.
         let known = [
             0u32, 1, 2, 3, 5, 6, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 30,
             31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 100, 101, 102, 103, 123,

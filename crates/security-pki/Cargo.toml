@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "PKI/X.509-Backend fuer DDS-Security 1.1 §8.3 AuthenticationPlugin: Identity-Validation + Handshake-State-Machine + OCSP/CRL + Delegation-Chain. rustls-webpki + ring."
+description = "PKI/X.509 backend for the DDS-Security 1.1 §8.3 AuthenticationPlugin: identity validation + handshake state machine + OCSP/CRL + delegation chain. rustls-webpki + ring."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-security-pki"
 readme = "README.md"
@@ -21,28 +21,29 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std"]
 std = []
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
-# X.509-Cert-DER + Trust-Anchor-Typen + PEM-Parser (seit 1.9 integriert,
-# RUSTSEC-2025-0134 — rustls-pemfile ist dafuer unmaintained). Pure-Rust,
-# no-std-faehig. Apache-2.0 / ISC / MIT.
+zerodds-security = { version = "1.0.0-rc.3", path = "../security" }
+# X.509 cert DER + trust-anchor types + PEM parser (integrated since 1.9,
+# RUSTSEC-2025-0134 — rustls-pemfile is unmaintained for this). Pure Rust,
+# no-std-capable. Apache-2.0 / ISC / MIT.
 rustls-pki-types = { workspace = true }
-# Chain-Validation + Signature-Verification. ISC.
+# Chain validation + signature verification. ISC.
 rustls-webpki = { workspace = true }
-# X25519/P-256-Ephemeral-DH fuer den Handshake-Secret.
-zerodds-security-keyexchange = { version = "1.0.0-rc.1", path = "../security-keyexchange" }
-# Delegation-Link Sign/Verify (ECDSA-P256/P384, RSA-PSS, Ed25519).
+# X25519/P-256 ephemeral DH for the handshake secret.
+zerodds-security-keyexchange = { version = "1.0.0-rc.3", path = "../security-keyexchange" }
+# Delegation-link sign/verify (ECDSA-P256/P384, RSA-PSS, Ed25519).
 ring = { workspace = true }
-# X.509-Subject-Extraction fuer IdentityToken (Spec §10.3.2.1 `dds.cert.sn`).
-# Pure-Rust, MIT/Apache-2.0.
+# X.509 subject extraction for IdentityToken (spec §10.3.2.1 `dds.cert.sn`).
+# Pure Rust, MIT/Apache-2.0.
 x509-cert = { version = "0.2", default-features = false, features = ["pem", "std"] }
 
 [dev-dependencies]
-# Self-signed Test-Certs generieren. MIT/Apache-2.0.
+# Generate self-signed test certs. MIT/Apache-2.0.
 rcgen = "0.13"
-# Integration-Tests: SharedSecretProvider-Bruecke zwischen Handshake
-# (PKI) und symmetric Crypto (AES-GCM-Plugin).
+# Integration tests: SharedSecretProvider bridge between the handshake
+# (PKI) and symmetric crypto (AES-GCM plugin).
 zerodds-security-crypto = { path = "../security-crypto" }

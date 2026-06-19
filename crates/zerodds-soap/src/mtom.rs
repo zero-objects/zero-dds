@@ -7,7 +7,7 @@
 //! + XOP (`http://www.w3.org/TR/xop10/`).
 //!
 //! Erlaubt das Anhaengen binaerer Daten an SOAP-Messages via
-//! MIME-Multipart/Related-Container statt Base64-Inlining.
+//! MIME multipart/related container instead of Base64 inlining.
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -27,15 +27,15 @@ pub struct Attachment {
 /// Komplette MTOM-Message: SOAP-Envelope + Attachments.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MtomMessage {
-    /// Boundary-String fuer den Multipart-Container.
+    /// Boundary string for the multipart container.
     pub boundary: String,
     /// SOAP-Envelope-XML (Root-Part).
     pub envelope_xml: String,
-    /// Anhang-Liste.
+    /// Attachment list.
     pub attachments: Vec<Attachment>,
 }
 
-/// Encode eine MTOM-Message zu einem Multipart/Related-Body.
+/// Encodes an MTOM message into a multipart/related body.
 /// Spec MTOM §4.
 #[must_use]
 pub fn encode_mtom_packaging(msg: &MtomMessage) -> String {
@@ -57,8 +57,8 @@ pub fn encode_mtom_packaging(msg: &MtomMessage) -> String {
         out.push_str("Content-Transfer-Encoding: binary\r\n");
         out.push_str(&format!("Content-ID: {}\r\n\r\n", att.content_id));
         // We can't push raw bytes through String, so we use base64-equivalent
-        // representation: hex. Caller-Layer kann die echte Binary-
-        // Serialisierung bei Bedarf substitueren.
+        // representation: hex. The caller layer can substitute the real
+        // binary serialization on demand.
         out.push_str(&hex_encode(&att.bytes));
         out.push_str("\r\n");
     }
@@ -66,8 +66,8 @@ pub fn encode_mtom_packaging(msg: &MtomMessage) -> String {
     out
 }
 
-/// Erzeugt eine `<xop:Include href="cid:...">`-Element-Referenz in
-/// einem Body-XML, wo ein Binaer-Feld eingehaengt waere.
+/// Creates a `<xop:Include href="cid:...">` element reference in
+/// a body XML where a binary field would be inlined.
 /// Spec XOP §4.1.
 #[must_use]
 pub fn xop_include(content_id: &str) -> String {
@@ -97,7 +97,7 @@ fn hex_digit(n: u8) -> char {
 }
 
 impl MtomMessage {
-    /// Konstruktor mit Default-Boundary.
+    /// Constructor with a default boundary.
     #[must_use]
     pub fn new(envelope_xml: String) -> Self {
         Self {
@@ -107,7 +107,7 @@ impl MtomMessage {
         }
     }
 
-    /// Anhang hinzufuegen.
+    /// Add an attachment.
     pub fn attach(&mut self, att: Attachment) {
         self.attachments.push(att);
     }

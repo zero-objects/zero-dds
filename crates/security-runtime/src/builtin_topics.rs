@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! C3.4-b — API-Bridge fuer die DDS-Security 1.2 §7.5.3/§7.5.4 Builtin-
-//! Topics (`DCPSParticipantStatelessMessage` + `DCPSParticipantVolatileMessage-
-//! Secure`). Wraps das Spec-Datenmodell aus `zerodds_security::generic_message`
-//! in eine DCPS-fertige Form:
+//! C3.4-b — API bridge for the DDS-Security 1.2 §7.5.3/§7.5.4 builtin
+//! topics (`DCPSParticipantStatelessMessage` + `DCPSParticipantVolatileMessage-
+//! Secure`). Wraps the spec data model from `zerodds_security::generic_message`
+//! into a DCPS-ready form:
 //!
-//! - 4-byte PL_CDR-Encapsulation-Header (Spec RTPS 2.5 §10) vor den
-//!   Bytes — gleiche Hülle wie `ParticipantBuiltinTopicData`-DATA-
-//!   Submessages.
-//! - QoS-Defaults pro Topic (Spec §7.5.3 BestEffort, §7.5.4 Reliable +
+//! - 4-byte PL_CDR encapsulation header (spec RTPS 2.5 §10) before the
+//!   bytes — the same envelope as `ParticipantBuiltinTopicData` DATA
+//!   submessages.
+//! - QoS defaults per topic (spec §7.5.3 BestEffort, §7.5.4 Reliable +
 //!   VOLATILE + KEEP_ALL).
 //!
-//! **Was hier nicht passiert (C3.4-c):** Tatsaechliche DataWriter/
-//! DataReader-Erzeugung im DCPS-Runtime. Der Caller nutzt diese
-//! Helpers, um die Wire-Bytes ueber einen Standard-RawBytes-DataWriter
-//! mit den passenden EntityIds (siehe `zerodds_rtps::wire_types::EntityId::
-//! BUILTIN_PARTICIPANT_STATELESS_MESSAGE_*` aus C3.8) zu pushen.
+//! **What does not happen here (C3.4-c):** the actual DataWriter/
+//! DataReader creation in the DCPS runtime. The caller uses these
+//! helpers to push the wire bytes via a standard RawBytes DataWriter
+//! with the matching EntityIds (see `zerodds_rtps::wire_types::EntityId::
+//! BUILTIN_PARTICIPANT_STATELESS_MESSAGE_*` from C3.8).
 
 use alloc::vec::Vec;
 
@@ -26,9 +26,9 @@ use zerodds_qos::{
 };
 use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};
 
-/// Schicht-neutraler QoS-Trio fuer die zwei Builtin-Topics. Caller im
-/// DCPS-Layer mappt diese auf seine `DataWriterQos`/`DataReaderQos`-
-/// Aggregat-Typen.
+/// Layer-neutral QoS trio for the two builtin topics. The caller in the
+/// DCPS layer maps these onto its `DataWriterQos`/`DataReaderQos`
+/// aggregate types.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuiltinTopicQos {
     /// `RELIABILITY`-Policy.
@@ -40,18 +40,18 @@ pub struct BuiltinTopicQos {
 }
 use zerodds_security::generic_message::ParticipantGenericMessage;
 
-/// CDR-LE Encapsulation-Kind (Spec RTPS 2.5 §10.2). Gleiche 4-Byte-Hülle
-/// wie ParticipantBuiltinTopicData (CDR_LE statt PL_CDR_LE — die
-/// ParticipantGenericMessage ist eine **strukturierte CDR**, nicht
+/// CDR-LE encapsulation kind (spec RTPS 2.5 §10.2). The same 4-byte envelope
+/// as ParticipantBuiltinTopicData (CDR_LE instead of PL_CDR_LE — the
+/// ParticipantGenericMessage is a **structured CDR**, not a
 /// ParameterList).
 pub const ENCAPSULATION_CDR_LE: [u8; 2] = [0x00, 0x01];
 
-/// Encapsulation-Header-Laenge (Spec §10.1: 2 byte kind + 2 byte options).
+/// Encapsulation header length (spec §10.1: 2 byte kind + 2 byte options).
 pub const ENCAPSULATION_HEADER_LEN: usize = 4;
 
-/// Encoded eine `ParticipantGenericMessage` als
-/// `serialized_payload`-Bytes fuer eine DATA-Submessage (mit 4-byte
-/// CDR-LE-Encapsulation-Header + XCDR1-Body).
+/// Encodes a `ParticipantGenericMessage` as
+/// `serialized_payload` bytes for a DATA submessage (with a 4-byte
+/// CDR-LE encapsulation header + XCDR1 body).
 #[must_use]
 pub fn encode_generic_message(msg: &ParticipantGenericMessage) -> Vec<u8> {
     let body = msg.to_cdr_le();
@@ -62,13 +62,13 @@ pub fn encode_generic_message(msg: &ParticipantGenericMessage) -> Vec<u8> {
     out
 }
 
-/// Decoded eine `ParticipantGenericMessage` aus
-/// `serialized_payload`-Bytes (mit 4-byte Encapsulation-Header).
+/// Decodes a `ParticipantGenericMessage` from
+/// `serialized_payload` bytes (with a 4-byte encapsulation header).
 ///
 /// # Errors
-/// `BadArgument` wenn der Encapsulation-Header fehlt oder ein anderes
-/// Kind als CDR_LE / CDR_BE traegt; CDR-Decode-Fehler werden
-/// durchgereicht.
+/// `BadArgument` if the encapsulation header is missing or carries a
+/// kind other than CDR_LE / CDR_BE; CDR decode errors are
+/// passed through.
 pub fn decode_generic_message(bytes: &[u8]) -> SecurityResult<ParticipantGenericMessage> {
     if bytes.len() < ENCAPSULATION_HEADER_LEN {
         return Err(SecurityError::new(
@@ -87,9 +87,9 @@ pub fn decode_generic_message(bytes: &[u8]) -> SecurityResult<ParticipantGeneric
     ParticipantGenericMessage::from_cdr_le(&bytes[ENCAPSULATION_HEADER_LEN..])
 }
 
-/// Spec §7.5.3 — BestEffort-Reliability fuer DCPSParticipantStateless-
-/// Message-Topic. Stateless = kein Sequence-Tracking, jede DATA-
-/// Submessage ist standalone.
+/// Spec §7.5.3 — BestEffort reliability for the DCPSParticipantStateless-
+/// Message topic. Stateless = no sequence tracking, every DATA
+/// submessage is standalone.
 #[must_use]
 pub fn stateless_message_qos() -> BuiltinTopicQos {
     BuiltinTopicQos {
@@ -107,8 +107,8 @@ pub fn stateless_message_qos() -> BuiltinTopicQos {
     }
 }
 
-/// Spec §7.5.4 Tab.19/20 — Reliable + VOLATILE + KEEP_ALL fuer
-/// DCPSParticipantVolatileMessageSecure-Topic.
+/// Spec §7.5.4 Tab.19/20 — Reliable + VOLATILE + KEEP_ALL for the
+/// DCPSParticipantVolatileMessageSecure topic.
 #[must_use]
 pub fn volatile_secure_qos() -> BuiltinTopicQos {
     BuiltinTopicQos {
@@ -195,8 +195,8 @@ mod tests {
 
     #[test]
     fn stateless_and_volatile_qos_differ() {
-        // Spec §7.5.3 vs §7.5.4 — die zwei Topics MÜSSEN unterschiedliche
-        // Reliability haben, sonst hat sich jemand verlesen.
+        // Spec §7.5.3 vs §7.5.4 — the two topics MUST have different
+        // reliability, otherwise someone misread it.
         assert_ne!(
             stateless_message_qos().reliability.kind,
             volatile_secure_qos().reliability.kind
@@ -205,9 +205,9 @@ mod tests {
 
     #[test]
     fn full_handshake_token_through_bridge() {
-        // E2E: Auth-Plugin baut HandshakeRequest → ParticipantGeneric-
-        // Message → encapsulated bytes; Empfanger dekodiert wieder
-        // zum DataHolder.
+        // E2E: the auth plugin builds a HandshakeRequest → ParticipantGeneric-
+        // Message → encapsulated bytes; the receiver decodes back
+        // to the DataHolder.
         let token = DataHolder::new("DDS:Auth:PKI-DH:1.2+AuthReq")
             .with_property("c.dsign_algo", "ECDSA-SHA256")
             .with_binary_property("c.id", vec![0x30, 0x82, 0x01, 0x23]);

@@ -4,45 +4,45 @@
 //!
 //! Spec-Referenz: OMG DDS-RPC 1.0 (formal/16-12-04), §10 — C++ PSM.
 //!
-//! Diese Schicht emittiert pro [`zerodds_rpc::ServiceDef`] vier Bausteine:
+//! This layer emits four building blocks per [`zerodds_rpc::ServiceDef`]:
 //!
-//! * **Service-Interface** — abstrakte Klasse `<Service>` mit pro-Methode
-//!   sync + `_async`-Signaturen plus `<Service>HandlerInterface` fuer die
-//!   Server-Seite.
-//! * **Requester-Klasse** — typisierter `<Service>_Requester`-Wrapper, der
-//!   vom Generic [`dds::rpc::Requester<TIn, TOut>`]-Template erbt und pro
-//!   Methode eine `Future<TOut> name_async(TIn)` plus `TOut name(TIn)`-API
-//!   exportiert.
-//! * **Replier-Klasse** — typisierter `<Service>_Replier`-Wrapper mit
-//!   `dispatch_to_handler`, der einen [`<Service>HandlerInterface`] an
-//!   Methoden-Dispatch bindet.
-//! * **ServiceTraits** — `dds::rpc::ServiceTraits<<Service>>`-Spezialisierung
-//!   mit Topic-Names + Mapping-Variante.
+//! * **Service interface** — abstract class `<Service>` with per-method
+//!   sync + `_async` signatures plus `<Service>HandlerInterface` for the
+//!   server side.
+//! * **Requester class** — typed `<Service>_Requester` wrapper that
+//!   inherits from the generic [`dds::rpc::Requester<TIn, TOut>`] template and
+//!   exports a `Future<TOut> name_async(TIn)` plus `TOut name(TIn)` API
+//!   per method.
+//! * **Replier class** — typed `<Service>_Replier` wrapper with
+//!   `dispatch_to_handler`, which binds a [`<Service>HandlerInterface`] to
+//!   method dispatch.
+//! * **ServiceTraits** — `dds::rpc::ServiceTraits<<Service>>` specialization
+//!   with topic names + mapping variant.
 //!
-//! Die generischen Templates liegen unter
+//! The generic templates live under
 //! `templates/dds-psm-cxx/rpc/{requester,replier,exception,service_traits}.hpp.tmpl`
-//! und werden via `include_str!` eingebettet.
+//! and are embedded via `include_str!`.
 //!
-//! # Spec §10 Coverage
+//! # Spec §10 coverage
 //!
-//! | §10-Item | Coverage |
+//! | §10 item | Coverage |
 //! |---|---|
-//! | §10.2 `dds::rpc`-Namespace | done — alle generierten Klassen liegen unter `dds::rpc::*`. |
-//! | §10.3 ServiceTraits | done — pro Service spezialisiert. |
-//! | §10.4 Requester-Template | done — Generic + typisierter Per-Service-Wrapper. |
-//! | §10.5 Replier-Template | done — Generic + typisierter Per-Service-Wrapper + HandlerInterface. |
-//! | §10.5 Operation-Naming | done — `<Service>_<method>_In/Out` direkt aus C6.1.B. |
-//! | §10.6 RemoteException | done — Hierarchie + Mapping pro IDL-Exception via [`emit_remote_exception_class`]. |
-//! | §10.7 Promise/Future | done — `dds::rpc::Future<T>` + `Promise<T>` als `std::future`-Wrapper. |
-//! | §10.7 Async-API | done — `<method>_async` liefert `Future<TOut>`. |
+//! | §10.2 `dds::rpc` namespace | done — all generated classes live under `dds::rpc::*`. |
+//! | §10.3 ServiceTraits | done — specialized per service. |
+//! | §10.4 Requester template | done — generic + typed per-service wrapper. |
+//! | §10.5 Replier template | done — generic + typed per-service wrapper + HandlerInterface. |
+//! | §10.5 operation naming | done — `<Service>_<method>_In/Out` directly from C6.1.B. |
+//! | §10.6 RemoteException | done — hierarchy + mapping per IDL exception via [`emit_remote_exception_class`]. |
+//! | §10.7 Promise/Future | done — `dds::rpc::Future<T>` + `Promise<T>` as a `std::future` wrapper. |
+//! | §10.7 async API | done — `<method>_async` returns `Future<TOut>`. |
 //!
-//! # Bewusst nicht im Crate
+//! # Deliberately not in the crate
 //!
-//! * Live-FFI-Anbindung an die Rust-RPC-Runtime — nur Quelltext.
-//! * Promise/Future-Optimierung (Skeleton ohne Listener-Style-API).
-//! * `attribute T name`-Mapping (§7.5.1.1.3) — keine Attribute-Slots im
-//!   aktuellen [`zerodds_rpc::ServiceDef`].
-//! * `g++`/`clang++`-Compile-Test — nicht Teil der CI.
+//! * Live-FFI binding to the Rust RPC runtime — source only.
+//! * Promise/Future optimization (skeleton without a listener-style API).
+//! * `attribute T name` mapping (§7.5.1.1.3) — no attribute slots in the
+//!   current [`zerodds_rpc::ServiceDef`].
+//! * `g++`/`clang++` compile test — not part of CI.
 
 use core::fmt::Write;
 
@@ -53,7 +53,7 @@ use zerodds_rpc::{MethodDef, ParamDef, ParamDirection, ServiceDef};
 
 use crate::error::CppGenError;
 
-/// Statische Templates (eingebettet via `include_str!`).
+/// Static templates (embedded via `include_str!`).
 const TPL_REQUESTER_HPP: &str = include_str!("../templates/dds-psm-cxx/rpc/requester.hpp.tmpl");
 const TPL_REPLIER_HPP: &str = include_str!("../templates/dds-psm-cxx/rpc/replier.hpp.tmpl");
 const TPL_EXCEPTION_HPP: &str = include_str!("../templates/dds-psm-cxx/rpc/exception.hpp.tmpl");
@@ -61,12 +61,12 @@ const TPL_SERVICE_TRAITS_HPP: &str =
     include_str!("../templates/dds-psm-cxx/rpc/service_traits.hpp.tmpl");
 
 // ---------------------------------------------------------------------------
-// Public API — Top-Level-Emitter
+// Public API — top-level emitter
 // ---------------------------------------------------------------------------
 
-/// Emittiert das **Service-Interface** (abstrakte Klasse + HandlerInterface).
+/// Emits the **service interface** (abstract class + HandlerInterface).
 ///
-/// Output (vereinfacht):
+/// Output (simplified):
 ///
 /// ```cpp
 /// namespace dds { namespace rpc {
@@ -89,12 +89,12 @@ pub fn emit_service_interface(svc: &ServiceDef) -> String {
     let svc_name = &svc.name;
     let _ = writeln!(
         out,
-        "// zerodds-rpc-1.0 — Service-Interface fuer '{svc_name}' (Spec §10.4)."
+        "// zerodds-rpc-1.0 — service interface for '{svc_name}' (spec §10.4)."
     );
     let _ = writeln!(out, "namespace dds {{ namespace rpc {{");
     let _ = writeln!(out);
 
-    // Abstract Service-Interface.
+    // Abstract service interface.
     let _ = writeln!(out, "class {svc_name} {{");
     let _ = writeln!(out, "public:");
     let _ = writeln!(out, "    virtual ~{svc_name}() = default;");
@@ -111,7 +111,7 @@ pub fn emit_service_interface(svc: &ServiceDef) -> String {
     // HandlerInterface (Server-side).
     let _ = writeln!(
         out,
-        "/// Server-side Handler-Interface fuer '{svc_name}' (Spec §10.5)."
+        "/// Server-side handler interface for '{svc_name}' (spec §10.5)."
     );
     let _ = writeln!(out, "class {svc_name}HandlerInterface {{");
     let _ = writeln!(out, "public:");
@@ -127,12 +127,12 @@ pub fn emit_service_interface(svc: &ServiceDef) -> String {
     out
 }
 
-/// Emittiert die typisierte **Requester-Klasse** fuer einen Service.
+/// Emits the typed **requester class** for a service.
 ///
-/// Erbt vom Generic `dds::rpc::Requester<TIn, TOut>` (Spec §10.4) und
-/// liefert pro Methode `Future<TOut> name_async(TIn)` + `TOut name(TIn)`.
+/// Inherits from the generic `dds::rpc::Requester<TIn, TOut>` (spec §10.4) and
+/// provides `Future<TOut> name_async(TIn)` + `TOut name(TIn)` per method.
 ///
-/// Oneway-Methoden liefern `void` und kein Future (Spec §10.7
+/// Oneway methods return `void` and no future (spec §10.7
 /// "no reply for oneway operations").
 #[must_use]
 pub fn emit_requester_class(svc: &ServiceDef) -> String {
@@ -141,7 +141,7 @@ pub fn emit_requester_class(svc: &ServiceDef) -> String {
     let req_class = format!("{svc_name}_Requester");
     let _ = writeln!(
         out,
-        "// zerodds-rpc-1.0 — typisierter Requester fuer '{svc_name}' (Spec §10.4)."
+        "// zerodds-rpc-1.0 — typed requester for '{svc_name}' (spec §10.4)."
     );
     let _ = writeln!(out, "namespace dds {{ namespace rpc {{");
     let _ = writeln!(out);
@@ -153,8 +153,8 @@ pub fn emit_requester_class(svc: &ServiceDef) -> String {
     for m in &svc.methods {
         emit_doxygen_for_method(&mut out, m, "    ");
         if m.oneway {
-            // Oneway: fire-and-forget, kein Reply.
-            let _ = writeln!(out, "    /// Oneway — kein Reply, kein Future.");
+            // Oneway: fire-and-forget, no reply.
+            let _ = writeln!(out, "    /// Oneway — no reply, no future.");
             emit_oneway_send_signature(&mut out, m, "    ");
         } else {
             emit_async_method_signature_pure(&mut out, m, "    ");
@@ -168,10 +168,10 @@ pub fn emit_requester_class(svc: &ServiceDef) -> String {
     out
 }
 
-/// Emittiert die typisierte **Replier-Klasse** fuer einen Service.
+/// Emits the typed **replier class** for a service.
 ///
-/// Spec §10.5 — der Replier dispatcht eingehende Requests an den
-/// HandlerInterface-Implementor.
+/// Spec §10.5 — the replier dispatches incoming requests to the
+/// HandlerInterface implementor.
 #[must_use]
 pub fn emit_replier_class(svc: &ServiceDef) -> String {
     let mut out = String::new();
@@ -180,7 +180,7 @@ pub fn emit_replier_class(svc: &ServiceDef) -> String {
     let handler_iface = format!("{svc_name}HandlerInterface");
     let _ = writeln!(
         out,
-        "// zerodds-rpc-1.0 — typisierter Replier fuer '{svc_name}' (Spec §10.5)."
+        "// zerodds-rpc-1.0 — typed replier for '{svc_name}' (spec §10.5)."
     );
     let _ = writeln!(out, "namespace dds {{ namespace rpc {{");
     let _ = writeln!(out);
@@ -195,11 +195,11 @@ pub fn emit_replier_class(svc: &ServiceDef) -> String {
     let _ = writeln!(out);
     let _ = writeln!(
         out,
-        "    /// Dispatcht eine eingegangene Anfrage anhand des Methoden-Tokens"
+        "    /// Dispatches an incoming request by the method token"
     );
     let _ = writeln!(
         out,
-        "    /// an den registrierten Handler. Spec §10.5 — Operation-Naming."
+        "    /// to the registered handler. Spec §10.5 — operation naming."
     );
     let _ = writeln!(
         out,
@@ -218,7 +218,7 @@ pub fn emit_replier_class(svc: &ServiceDef) -> String {
             if m.oneway {
                 let _ = writeln!(
                     out,
-                    "            // Oneway: invoke handler, kein Reply (Spec §10.7)."
+                    "            // Oneway: invoke handler, no reply (Spec §10.7)."
                 );
                 let args = handler_call_args(m);
                 let _ = writeln!(out, "            handler_->{}({args});", m.name);
@@ -253,9 +253,9 @@ pub fn emit_replier_class(svc: &ServiceDef) -> String {
     out
 }
 
-/// Emittiert die `ServiceTraits<<Service>>`-Spezialisierung (Spec §10.3).
+/// Emits the `ServiceTraits<<Service>>` specialization (spec §10.3).
 ///
-/// Liefert `request_topic_name`, `reply_topic_name` und das
+/// Provides `request_topic_name`, `reply_topic_name` and the
 /// [`ServiceMapping`](super) (Basic vs Enhanced).
 #[must_use]
 pub fn emit_service_traits(svc: &ServiceDef) -> String {
@@ -265,7 +265,7 @@ pub fn emit_service_traits(svc: &ServiceDef) -> String {
     let rep_topic = format!("{svc_name}_Reply");
     let _ = writeln!(
         out,
-        "// zerodds-rpc-1.0 — ServiceTraits-Spezialisierung fuer '{svc_name}' (Spec §10.3)."
+        "// zerodds-rpc-1.0 — ServiceTraits specialization for '{svc_name}' (spec §10.3)."
     );
     let _ = writeln!(out, "namespace dds {{ namespace rpc {{");
     let _ = writeln!(out);
@@ -300,24 +300,24 @@ pub fn emit_service_traits(svc: &ServiceDef) -> String {
     out
 }
 
-/// Emittiert eine konkrete RemoteException-Subklasse aus einer IDL-
-/// `exception E { ... }`-Deklaration (Spec §10.6).
+/// Emits a concrete RemoteException subclass from an IDL
+/// `exception E { ... }` declaration (spec §10.6).
 ///
-/// Die generierte Klasse erbt von `::dds::rpc::RemoteException` und
-/// liefert pro Member ein privates Feld + Getter/Setter.
+/// The generated class inherits from `::dds::rpc::RemoteException` and
+/// provides a private field + getter/setter per member.
 ///
 /// # Errors
-/// * [`CppGenError::InvalidName`], wenn der Exception-Name oder ein Member-
-///   Name reserviert ist.
-/// * [`CppGenError::UnsupportedConstruct`], wenn ein Member einen
-///   nicht-unterstuetzten Typ verwendet (z.B. `any`/`fixed`).
+/// * [`CppGenError::InvalidName`], if the exception name or a member
+///   name is reserved.
+/// * [`CppGenError::UnsupportedConstruct`], if a member uses an
+///   unsupported type (e.g. `any`/`fixed`).
 pub fn emit_remote_exception_class(except: &ExceptDecl) -> Result<String, CppGenError> {
     crate::type_map::check_identifier(&except.name.text)?;
     let mut out = String::new();
     let name = &except.name.text;
     let _ = writeln!(
         out,
-        "// zerodds-rpc-1.0 — RemoteException-Subklasse '{name}' (Spec §10.6)."
+        "// zerodds-rpc-1.0 — RemoteException subclass '{name}' (Spec §10.6)."
     );
     let _ = writeln!(out, "namespace dds {{ namespace rpc {{");
     let _ = writeln!(out);
@@ -362,12 +362,12 @@ pub fn emit_remote_exception_class(except: &ExceptDecl) -> Result<String, CppGen
     Ok(out)
 }
 
-/// Emittiert die generischen RPC-Header-Templates (Requester/Replier/
-/// Exception/ServiceTraits) als zusammengefuegten Header-Block.
+/// Emits the generic RPC header templates (Requester/Replier/
+/// Exception/ServiceTraits) as a merged header block.
 ///
-/// Wird typischerweise einmal pro Compilation-Unit emittiert; die
-/// per-Service-Header (siehe [`emit_service_full_header`]) ziehen diesen
-/// Block per `#include` ein.
+/// Typically emitted once per compilation unit; the
+/// per-service header (see [`emit_service_full_header`]) pulls in this
+/// block via `#include`.
 #[must_use]
 pub fn emit_rpc_runtime_headers() -> String {
     let mut out = String::new();
@@ -404,14 +404,14 @@ pub fn emit_rpc_runtime_headers() -> String {
     out
 }
 
-/// Emittiert einen vollstaendigen RPC-Service-Header
-/// (Interface + Requester + Replier + ServiceTraits) fuer einen einzelnen
-/// Service.
+/// Emits a complete RPC service header
+/// (interface + requester + replier + ServiceTraits) for a single
+/// service.
 ///
-/// Reihenfolge folgt der Header-Konvention aus dds-psm-cxx — zuerst die
-/// Top-Level-Service-Klasse, dann die Endpoint-Wrapper, am Ende das
-/// `ServiceTraits`-Template (Spec §10.3 verlangt vollstaendige Sicht-
-/// barkeit der typisierten Wrapper, bevor das Trait spezialisiert wird).
+/// The order follows the header convention from dds-psm-cxx — first the
+/// top-level service class, then the endpoint wrappers, and finally the
+/// `ServiceTraits` template (spec §10.3 requires full visibility
+/// of the typed wrappers before the trait is specialized).
 #[must_use]
 pub fn emit_service_full_header(svc: &ServiceDef) -> String {
     let mut out = String::new();
@@ -454,9 +454,9 @@ fn method_param_list(m: &MethodDef) -> String {
     parts.join(", ")
 }
 
-/// Liefert die Parameter so, dass `inout` und `out` als nicht-const-Referenz
-/// emittiert werden (klassisches IDL→C++-Mapping fuer veraenderliche
-/// Parameter, siehe DDS-RPC §10.4 + IDL4-CPP §7.6.7).
+/// Provides the parameters such that `inout` and `out` are emitted as a
+/// non-const reference (the classic IDL→C++ mapping for mutable
+/// parameters, see DDS-RPC §10.4 + IDL4-CPP §7.6.7).
 fn format_param_decl(p: &ParamDef) -> String {
     let ty = idl_typespec_to_cpp(&p.type_ref).unwrap_or_else(|_| "void".to_string());
     match p.direction {
@@ -465,7 +465,7 @@ fn format_param_decl(p: &ParamDef) -> String {
     }
 }
 
-/// Argument-Liste fuer Handler-Calls — gleiche Param-Namen, ohne Typ.
+/// Argument list for handler calls — same param names, without the type.
 fn handler_call_args(m: &MethodDef) -> String {
     m.params
         .iter()
@@ -499,7 +499,7 @@ fn emit_async_method_signature_pure(out: &mut String, m: &MethodDef, indent: &st
         m.name
     );
     let _ = writeln!(out, "{indent}    ::dds::rpc::Promise<{ret}> _promise{{}};");
-    // Argumente "verwenden" (Skeleton, kein realer Send).
+    // "use" the arguments (skeleton, no real send).
     for p in &m.params {
         let _ = writeln!(out, "{indent}    (void){};", p.name);
     }
@@ -533,7 +533,7 @@ fn emit_oneway_send_signature(out: &mut String, m: &MethodDef, indent: &str) {
 fn emit_doxygen_for_method(out: &mut String, m: &MethodDef, indent: &str) {
     let _ = writeln!(out, "{indent}/// Operation '{}'.", m.name);
     if m.oneway {
-        let _ = writeln!(out, "{indent}/// @oneway — kein Reply (Spec §10.7).");
+        let _ = writeln!(out, "{indent}/// @oneway — no reply (Spec §10.7).");
     }
     if !m.params.is_empty() {
         for p in &m.params {
@@ -546,19 +546,19 @@ fn emit_doxygen_for_method(out: &mut String, m: &MethodDef, indent: &str) {
         }
     }
     if let Some(_r) = &m.return_type {
-        let _ = writeln!(out, "{indent}/// @return Reply-Wert.");
+        let _ = writeln!(out, "{indent}/// @return reply value.");
     }
 }
 
 // ---------------------------------------------------------------------------
-// IDL → C++-Type-Mapping (lokaler Subset von emitter::typespec_to_cpp).
+// IDL → C++ type mapping (local subset of emitter::typespec_to_cpp).
 // ---------------------------------------------------------------------------
 
 /// zerodds-lint: recursion-depth 16
 ///
-/// Sequenz/Array-Verschachtelung: IDL-Spec erlaubt theoretisch beliebige
-/// Tiefe, in der Praxis sind 4-8 Ebenen das Maximum (z.B. `sequence<sequence<
-/// sequence<long>>>`). Cap auf 16 schuetzt vor pathologischen Eingaben.
+/// Sequence/array nesting: the IDL spec theoretically allows arbitrary
+/// depth, in practice 4-8 levels is the maximum (e.g. `sequence<sequence<
+/// sequence<long>>>`). A cap of 16 protects against pathological inputs.
 fn idl_typespec_to_cpp(ts: &TypeSpec) -> Result<String, CppGenError> {
     match ts {
         TypeSpec::Primitive(p) => Ok(primitive_str(*p).to_string()),

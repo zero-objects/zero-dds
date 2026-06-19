@@ -6,7 +6,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// `BuiltinTypeKind` (Spec §8.2 enum, S. 11-12) — alle 25 OPC-UA
+/// `BuiltinTypeKind` (Spec §8.2 enum, pp. 11-12) — all 25 OPC-UA
 /// Built-in-Type-IDs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BuiltinTypeKind {
@@ -63,7 +63,7 @@ pub enum BuiltinTypeKind {
 }
 
 impl BuiltinTypeKind {
-    /// `@value(N)` aus Spec — kanonischer Wert.
+    /// `@value(N)` from spec — canonical value.
     #[must_use]
     pub const fn value(self) -> u8 {
         match self {
@@ -95,12 +95,12 @@ impl BuiltinTypeKind {
         }
     }
 
-    /// Liefert die DDS-IDL-Equivalent-Type-Bezeichnung als String
-    /// gemaess Spec §8.2.1 Tab 8.1 (Primitive-Mapping).
+    /// Returns the DDS-IDL equivalent type designation as a string
+    /// per Spec §8.2.1 Tab 8.1 (primitive mapping).
     ///
-    /// Liefert `None` fuer Composite-Types — diese haben strukturierte
-    /// IDL-Equivalents (siehe Tab 8.2), die ueber spezielle Module
-    /// (`Guid`, `NodeId`, etc.) abgebildet werden.
+    /// Returns `None` for composite types — these have structured
+    /// IDL equivalents (see Tab 8.2) that are mapped via special modules
+    /// (`Guid`, `NodeId`, etc.).
     #[must_use]
     pub const fn dds_idl_primitive(self) -> Option<&'static str> {
         match self {
@@ -120,8 +120,8 @@ impl BuiltinTypeKind {
         }
     }
 
-    /// Liefert das DDS-XTYPES-Equivalent-Token gemaess Tab 8.1.
-    /// Composite-Types liefern den Type-Namen (z.B. `"Guid"`).
+    /// Returns the DDS-XTYPES equivalent token per Tab 8.1.
+    /// Composite types return the type name (e.g. `"Guid"`).
     #[must_use]
     pub const fn dds_xtypes_name(self) -> &'static str {
         match self {
@@ -153,14 +153,14 @@ impl BuiltinTypeKind {
     }
 }
 
-/// Spec §8.2.1 Tab 8.1 — direktes Primitive-Mapping als ergonomische
-/// Funktion. Liefert `None` fuer non-Primitive-Types.
+/// Spec §8.2.1 Tab 8.1 — direct primitive mapping as an ergonomic
+/// function. Returns `None` for non-primitive types.
 #[must_use]
 pub const fn map_primitive_to_dds(t: BuiltinTypeKind) -> Option<&'static str> {
     t.dds_idl_primitive()
 }
 
-/// Spec §8.3.1 Tab 8.3 — `NodeClass` Enum (8 Werte).
+/// Spec §8.3.1 Tab 8.3 — `NodeClass` enum (8 values).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NodeClass {
     /// `1` ObjectNode.
@@ -182,7 +182,7 @@ pub enum NodeClass {
 }
 
 impl NodeClass {
-    /// Spec @value(N) — bit-flag-style Werte.
+    /// Spec @value(N) — bit-flag-style values.
     #[must_use]
     pub const fn value(self) -> u8 {
         match self {
@@ -198,8 +198,8 @@ impl NodeClass {
     }
 }
 
-/// Spec §8.2.2 — `Guid` als Struct (data1 + data2 + data3 + data4[8])
-/// gemaess RFC 4122-Layout.
+/// Spec §8.2.2 — `Guid` as a struct (data1 + data2 + data3 + data4[8])
+/// per the RFC 4122 layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Guid {
     /// `data1`: uint32.
@@ -213,7 +213,7 @@ pub struct Guid {
 }
 
 impl Guid {
-    /// Konstruiert einen Guid aus 16 Bytes (RFC 4122 Big-Endian-Layout).
+    /// Constructs a Guid from 16 bytes (RFC 4122 big-endian layout).
     #[must_use]
     pub fn from_bytes(b: [u8; 16]) -> Self {
         Self {
@@ -224,7 +224,7 @@ impl Guid {
         }
     }
 
-    /// Liefert die 16-Byte-Wire-Form (RFC 4122 BE-Layout).
+    /// Returns the 16-byte wire form (RFC 4122 BE layout).
     #[must_use]
     pub fn to_bytes(self) -> [u8; 16] {
         let mut out = [0u8; 16];
@@ -236,13 +236,13 @@ impl Guid {
     }
 }
 
-/// `StatusCode` (Spec §8.2.2) — `uint32` Bitfeld.
+/// `StatusCode` (Spec §8.2.2) — `uint32` bitfield.
 pub type StatusCode = u32;
 
 /// Spec §8.2.2 — `ByteString` = `sequence<octet>`.
 pub type ByteString = Vec<u8>;
 
-/// Spec §8.2.2 — `QualifiedName` mit namespace_index + name.
+/// Spec §8.2.2 — `QualifiedName` with namespace_index + name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QualifiedName {
     /// Namespace-Index.
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn builtin_type_kind_values_match_spec() {
-        // Spec §8.2 Enum-Werte 1..=25.
+        // Spec §8.2 enum values 1..=25.
         assert_eq!(BuiltinTypeKind::Boolean.value(), 1);
         assert_eq!(BuiltinTypeKind::SByte.value(), 2);
         assert_eq!(BuiltinTypeKind::Byte.value(), 3);
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn composite_types_have_no_primitive_mapping() {
-        // Spec §8.2.2 — Composite gehen ueber spezielle Mappings.
+        // Spec §8.2.2 — composites go through special mappings.
         assert_eq!(BuiltinTypeKind::Guid.dds_idl_primitive(), None);
         assert_eq!(BuiltinTypeKind::NodeId.dds_idl_primitive(), None);
         assert_eq!(BuiltinTypeKind::Variant.dds_idl_primitive(), None);
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn node_class_values_match_bit_flags() {
-        // Spec Tab 8.3 — Bit-Flag-Werte.
+        // Spec Tab 8.3 — bit-flag values.
         assert_eq!(NodeClass::Object.value(), 1);
         assert_eq!(NodeClass::Variable.value(), 2);
         assert_eq!(NodeClass::Method.value(), 4);

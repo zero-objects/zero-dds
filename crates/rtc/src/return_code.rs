@@ -5,9 +5,9 @@
 
 use core::fmt;
 
-/// `ReturnCode_t` (Spec §5.2.1.1-§5.2.1.6, S. 9-10) — Status-Codes
-/// fuer alle RTC-Operationen, die nicht von Natur aus einen anderen
-/// Wert zurueckgeben.
+/// `ReturnCode_t` (spec §5.2.1.1-§5.2.1.6, p. 9-10) — status codes
+/// for all RTC operations that do not by nature return another
+/// value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ReturnCode {
     /// `OK` (§5.2.1.1) — Operation completed successfully.
@@ -21,22 +21,22 @@ pub enum ReturnCode {
     /// `OUT_OF_RESOURCES` (§5.2.1.5) — Resource exhausted.
     OutOfResources,
     /// `PRECONDITION_NOT_MET` (§5.2.1.6) — State-Machine-Violation
-    /// (z.B. `initialize` waehrend nicht in `Created`-State).
+    /// (e.g. `initialize` while not in the `Created` state).
     PreconditionNotMet,
 }
 
 impl ReturnCode {
-    /// Spec §5.2.1.1 — `true`, wenn `Ok`.
+    /// Spec §5.2.1.1 — `true` if `Ok`.
     #[must_use]
     pub const fn is_ok(self) -> bool {
         matches!(self, Self::Ok)
     }
 
-    /// Konvertiert zu `Result<(), ReturnCode>` fuer ergonomischen
-    /// `?`-Operator-Einsatz im Caller.
+    /// Converts to `Result<(), ReturnCode>` for ergonomic
+    /// use of the `?` operator in the caller.
     ///
     /// # Errors
-    /// Liefert `Err(self)` wenn nicht `Ok`.
+    /// Returns `Err(self)` if not `Ok`.
     pub const fn into_result(self) -> Result<(), Self> {
         match self {
             Self::Ok => Ok(()),

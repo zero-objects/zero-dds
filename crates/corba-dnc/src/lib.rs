@@ -6,18 +6,18 @@
 //!
 //! Crate `zerodds-corba-dnc`. Safety classification: **STANDARD**.
 //!
-//! # Module
+//! # Modules
 //!
-//! * [`plan`] — Datenmodell fuer DPD/CPD/IDD/PSD (D&C §6 + §7).
-//! * [`xml`] — XML-Loader fuer Plan-Files (D&C §10 XML-Encoding).
+//! * [`plan`] — data model for DPD/CPD/IDD/PSD (D&C §6 + §7).
+//! * [`xml`] — XML loader for plan files (D&C §10 XML encoding).
 //! * [`repository`] — RepositoryManager (D&C §8).
 //! * [`execution`] — ExecutionManager / DomainApplicationManager
 //!   (D&C §9).
 //! * [`node`] — NodeManager / NodeApplicationManager (D&C §9).
-//! * [`container_host`] — ContainerHost: bindet einen
-//!   `zerodds-corba-ccm::Container` an einen Plan-Application-Run.
+//! * [`container_host`] — ContainerHost: binds a
+//!   `zerodds-corba-ccm::Container` to a plan application run.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```
 //! use zerodds_corba_dnc::DeploymentPlan;

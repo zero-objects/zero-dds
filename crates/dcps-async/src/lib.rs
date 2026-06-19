@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! ZeroDDS async-DCPS-API (zerodds-async-1.0).
+//! ZeroDDS async DCPS API (zerodds-async-1.0).
 //!
 //! Crate `zerodds-dcps-async`. Safety classification: **STANDARD**.
 //!
-//! Runtime-agnostische async-Wrappers um die DCPS-Sync-API. Newtypes
-//! teilen den internen `Arc<...>` mit den Sync-Pendants — kein
-//! State-Duplikat, kein Performance-Overhead.
+//! Runtime-agnostic async wrappers around the DCPS sync API. Newtypes
+//! share the internal `Arc<...>` with the sync counterparts — no
+//! state duplicate, no performance overhead.
 //!
-//! # Beispiel
+//! # Example
 //!
 //! ```ignore
 //! use zerodds_dcps_async::AsyncDomainParticipantFactory;
@@ -19,11 +19,11 @@
 //! async fn main() {
 //!     let factory = AsyncDomainParticipantFactory::instance();
 //!     let participant = factory.create_participant_offline(0);
-//!     // ... topic + reader + writer wie sync.
+//!     // ... topic + reader + writer like sync.
 //!     let writer = /* ... */;
 //!     let reader = /* ... */;
 //!
-//!     // write & take laufen ohne Thread-Block.
+//!     // write & take run without thread block.
 //!     writer.write(&sample).await.unwrap();
 //!     let samples = reader.take(Duration::from_secs(1)).await.unwrap();
 //! }
@@ -51,18 +51,18 @@ pub use reader::{AsyncDataReader, DataAvailableStream, PublicationMatchedStream,
 pub use subscriber::AsyncSubscriber;
 pub use writer::AsyncDataWriter;
 
-// Re-Exports der Sync-Types die der Caller weiterhin braucht.
+// Re-exports of the sync types the caller still needs.
 pub use zerodds_dcps::status::SubscriptionMatchedStatus;
 pub use zerodds_dcps::{
     DataReaderQos, DataWriterQos, DdsError, DdsType, DomainParticipantQos, InstanceHandle,
     PublisherQos, Result, SubscriberQos, Topic, TopicQos,
 };
 
-/// Runtime-agnostischer Sleep-Helper. Polled bis Deadline; Wakeup
-/// kommt durch einen detached thread (kein tokio-Hard-Dep).
+/// Runtime-agnostic sleep helper. Polls until deadline; wakeup
+/// comes from a detached thread (no hard tokio dependency).
 ///
-/// Mit `--features tokio-glue` wird tokio::time::sleep verwendet,
-/// das Wakeup vom Tokio-Reactor kommt — kein Thread-Spawn-Overhead.
+/// With `--features tokio-glue`, tokio::time::sleep is used,
+/// where the wakeup comes from the Tokio reactor — no thread-spawn overhead.
 #[cfg(feature = "std")]
 pub(crate) async fn yield_for(d: core::time::Duration) {
     #[cfg(feature = "tokio-glue")]
@@ -71,7 +71,7 @@ pub(crate) async fn yield_for(d: core::time::Duration) {
     }
     #[cfg(not(feature = "tokio-glue"))]
     {
-        // Default-Pfad: detached-thread-Sleep + Waker.
+        // Default path: detached-thread sleep + waker.
         SleepFuture::new(d).await
     }
 }

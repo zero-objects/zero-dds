@@ -1,5 +1,5 @@
-//! Smoke-Tests fuer die Flatdata-DCPS-Integration (ADR-0005).
-//! Nur aktiv mit `--features flatdata-integration`.
+//! Smoke tests for the Flatdata-DCPS integration (ADR-0005).
+//! Only active with `--features flatdata-integration`.
 
 #![cfg(feature = "flatdata-integration")]
 #![allow(
@@ -35,7 +35,7 @@ struct Pose {
     z: f64,
 }
 
-// SAFETY: Pose ist repr(C) + Copy + 'static, alle Felder sind f64.
+// SAFETY: Pose is repr(C) + Copy + 'static, all fields are f64.
 unsafe impl FlatStruct for Pose {
     const TYPE_HASH: [u8; 16] = [0xAA; 16];
 }
@@ -69,7 +69,7 @@ impl DdsType for Pose {
 
 #[test]
 fn flat_writer_ext_writes_to_backend() {
-    // Setup: offline-Participant mit Pose-Topic.
+    // Setup: offline participant with Pose topic.
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(0, DomainParticipantQos::default());
     let topic = p
@@ -91,7 +91,7 @@ fn flat_writer_ext_writes_to_backend() {
     };
     flat_writer.write_flat(&p1).expect("write_flat");
 
-    // Verify: Backend hat das Sample gespeichert.
+    // Verify: backend stored the sample.
     let h = zerodds_flatdata::SlotHandle {
         segment_id: 0,
         slot_index: 0,
@@ -109,7 +109,7 @@ fn flat_reader_ext_reads_from_backend() {
         .create_topic::<Pose>("PoseFlatR", TopicQos::default())
         .expect("topic");
 
-    // Writer + Reader auf gleichem Backend.
+    // Writer + reader on the same backend.
     let backend: Arc<dyn SlotBackend> = Arc::new(InMemorySlotAllocator::new(0, 4, Pose::WIRE_SIZE));
     let pubr = p.create_publisher(PublisherQos::default());
     let writer = Arc::new(
@@ -145,7 +145,7 @@ fn flat_reader_rejects_type_hash_mismatch() {
         .create_topic::<Pose>("PoseFlatHash", TopicQos::default())
         .expect("topic");
 
-    // Backend mit FALSCHEM Type-Hash.
+    // Backend with WRONG type hash.
     let wrong_hash = [0xBB; 16];
     let backend: Arc<dyn SlotBackend> =
         Arc::new(InMemorySlotAllocator::new(0, 4, Pose::WIRE_SIZE).with_type_hash(wrong_hash));
@@ -180,7 +180,7 @@ fn flat_reader_accepts_matching_type_hash() {
     );
     let flat_reader = FlatReaderExt::new(Arc::clone(&reader), Arc::clone(&backend), 0);
 
-    // Kein Sample da — read_flat liefert Ok(None), nicht Err.
+    // No sample present — read_flat returns Ok(None), not Err.
     let res = flat_reader.read_flat();
     assert!(matches!(res, Ok(None)));
 }
@@ -217,7 +217,7 @@ fn flat_reader_does_not_re_read_same_slot() {
 }
 
 // ============================================================================
-// Spec-konforme Direkt-Methoden auf DataWriter/DataReader (Spec §8.1, §9.1)
+// Spec-conformant direct methods on DataWriter/DataReader (Spec §8.1, §9.1)
 // ============================================================================
 
 #[test]
@@ -242,7 +242,7 @@ fn datawriter_write_flat_uses_configured_backend() {
     };
     writer.write_flat(&sample).expect("write_flat");
 
-    // Backend hat das Sample direkt gespeichert.
+    // Backend stored the sample directly.
     let h = zerodds_flatdata::SlotHandle {
         segment_id: 0,
         slot_index: 0,
@@ -254,8 +254,8 @@ fn datawriter_write_flat_uses_configured_backend() {
 
 #[test]
 fn datawriter_write_flat_falls_back_to_udp_without_backend() {
-    // Ohne `set_flat_backend(Some(_))` muss `write_flat` aequivalent
-    // zu `write` sein (Spec §4.2: Cross-Host-Fallback ist immer aktiv).
+    // Without `set_flat_backend(Some(_))`, `write_flat` must be equivalent
+    // to `write` (Spec §4.2: cross-host fallback is always active).
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(0, DomainParticipantQos::default());
     let topic = p
@@ -266,7 +266,7 @@ fn datawriter_write_flat_falls_back_to_udp_without_backend() {
         .create_datawriter::<Pose>(&topic, DataWriterQos::default())
         .expect("writer");
 
-    // Kein Backend → write_flat darf nicht panicen.
+    // No backend → write_flat must not panic.
     writer
         .write_flat(&Pose {
             x: 1.0,
@@ -321,8 +321,8 @@ fn datareader_read_flat_returns_none_without_backend() {
         .create_datareader::<Pose>(&topic, DataReaderQos::default())
         .expect("reader");
 
-    // Kein Backend gesetzt → read_flat liefert Ok(None) (Caller faellt
-    // auf take() zurueck).
+    // No backend set → read_flat returns Ok(None) (caller falls
+    // back to take()).
     let res = reader.read_flat().expect("read_flat");
     assert!(res.is_none());
 }
@@ -373,7 +373,7 @@ fn datawriter_set_flat_backend_none_disables_shm_path() {
         })
         .expect("write_flat with backend");
 
-    // Slot 0 wurde belegt.
+    // Slot 0 was occupied.
     let h0 = zerodds_flatdata::SlotHandle {
         segment_id: 0,
         slot_index: 0,
@@ -381,8 +381,8 @@ fn datawriter_set_flat_backend_none_disables_shm_path() {
     let (header_after_first, _) = backend.read_slot(h0).expect("read");
     assert_eq!(header_after_first.sample_size as usize, Pose::WIRE_SIZE);
 
-    // Backend deaktivieren — naechster write_flat darf nichts mehr ins
-    // Backend schreiben (kein neuer Slot belegt).
+    // Disable the backend — the next write_flat must no longer write
+    // anything into the backend (no new slot occupied).
     writer.set_flat_backend(None, 0);
     writer
         .write_flat(&Pose {
@@ -398,6 +398,6 @@ fn datawriter_set_flat_backend_none_disables_shm_path() {
     let (header_slot1, _) = backend.read_slot(h1).expect("read slot1");
     assert_eq!(
         header_slot1.sample_size, 0,
-        "Slot 1 darf nicht belegt sein wenn Backend deaktiviert"
+        "Slot 1 must not be occupied when backend is disabled"
     );
 }

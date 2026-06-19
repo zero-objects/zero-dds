@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
-assertion_line: 159
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -25,7 +24,7 @@ impl zerodds_dcps::DdsType for UserRecord {
     const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x6b, 0xe4, 0x35, 0xc9, 0x54, 0x08, 0x4f, 0x59, 0xba, 0x6a, 0xab, 0xfa, 0x56, 0x68]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
-        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
         <_ as zerodds_cdr::CdrEncode>::encode(&self.user_id, &mut writer)?;
         <_ as zerodds_cdr::CdrEncode>::encode(&self.age, &mut writer)?;
         out.extend_from_slice(&writer.into_bytes());
@@ -33,7 +32,7 @@ impl zerodds_dcps::DdsType for UserRecord {
     }
 
     fn decode(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
-        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little).xcdr2();
         let user_id = <String as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         let age = <i32 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         Ok(Self {
@@ -52,5 +51,24 @@ impl zerodds_dcps::DdsType for UserRecord {
             "age" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.age as i64)),
             _ => ::core::option::Option::None,
         }
+    }
+}
+
+impl zerodds_cdr::CdrEncode for UserRecord {
+    fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.user_id, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.age, writer)?;
+        ::core::result::Result::Ok(())
+    }
+}
+
+impl zerodds_cdr::CdrDecode for UserRecord {
+    fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
+        let user_id = <String as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let age = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        ::core::result::Result::Ok(Self {
+            user_id,
+            age,
+        })
     }
 }

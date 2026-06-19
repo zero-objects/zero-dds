@@ -23,7 +23,7 @@ impl zerodds_dcps::DdsType for Point {
     const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x15, 0x88, 0xa9, 0x4d, 0x86, 0xb2, 0x0c, 0x3b, 0x0d, 0x45, 0x35, 0x5d, 0xe1, 0x34]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
-        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
         <_ as zerodds_cdr::CdrEncode>::encode(&self.x, &mut writer)?;
         <_ as zerodds_cdr::CdrEncode>::encode(&self.y, &mut writer)?;
         out.extend_from_slice(&writer.into_bytes());
@@ -31,7 +31,7 @@ impl zerodds_dcps::DdsType for Point {
     }
 
     fn decode(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
-        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little).xcdr2();
         let x = <i32 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         let y = <i32 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         Ok(Self {
@@ -46,5 +46,24 @@ impl zerodds_dcps::DdsType for Point {
             "y" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.y as i64)),
             _ => ::core::option::Option::None,
         }
+    }
+}
+
+impl zerodds_cdr::CdrEncode for Point {
+    fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.x, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.y, writer)?;
+        ::core::result::Result::Ok(())
+    }
+}
+
+impl zerodds_cdr::CdrDecode for Point {
+    fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
+        let x = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let y = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        ::core::result::Result::Ok(Self {
+            x,
+            y,
+        })
     }
 }

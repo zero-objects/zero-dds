@@ -1,57 +1,57 @@
-//! `cert.d`-Loader fuer Inspect-Endpoint-Auth (R-100..R-104).
+//! `cert.d` loader for inspect-endpoint auth (R-100..R-104).
 //!
-//! Self-signed X.509-PEM-Certs in einem Folder. Bootup-only — keine
-//! Live-Watch (R-103). Eine Stufe "Access" pro Cert (R-102).
+//! Self-signed X.509 PEM certs in a folder. Boot-up only — no
+//! live watch (R-103). One "access" level per cert (R-102).
 
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-/// Eine geladene Cert-Identitaet.
+/// A loaded cert identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoadedCert {
-    /// Quelldatei (relativ zum cert.d-Folder).
+    /// Source file (relative to the cert.d folder).
     pub source: PathBuf,
-    /// SHA-256-Fingerprint des PEM-Inhalts (32 Bytes).
+    /// SHA-256 fingerprint of the PEM content (32 bytes).
     pub fingerprint: [u8; 32],
-    /// Roher PEM-Inhalt (fuer mTLS-Vergleich).
+    /// Raw PEM content (for the mTLS comparison).
     pub pem: Vec<u8>,
 }
 
-/// Resultate eines `cert.d`-Loaders.
+/// Result of a `cert.d` loader.
 #[derive(Clone, Debug, Default)]
 pub struct CertSet {
-    /// Geladene Certs.
+    /// Loaded certs.
     pub certs: Vec<LoadedCert>,
 }
 
 impl CertSet {
-    /// Pruefen ob ein gegebener Fingerprint in diesem Set ist.
+    /// Checks whether a given fingerprint is in this set.
     #[must_use]
     pub fn contains_fingerprint(&self, fp: &[u8; 32]) -> bool {
         self.certs.iter().any(|c| &c.fingerprint == fp)
     }
 
-    /// Anzahl Certs.
+    /// Number of certs.
     #[must_use]
     pub fn len(&self) -> usize {
         self.certs.len()
     }
 
-    /// Set leer?
+    /// Set empty?
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.certs.is_empty()
     }
 }
 
-/// Laed alle PEM-Files aus einem `cert.d`-Folder. Bootup-only,
-/// alphanumerisch sortiert (analog zur PDE config.d-Konvention).
+/// Loads all PEM files from a `cert.d` folder. Boot-up only,
+/// alphanumerically sorted (analogous to the PDE config.d convention).
 ///
 /// # Errors
 ///
-/// Liefert `Err` wenn das Verzeichnis nicht lesbar ist. Einzelne
-/// nicht-PEM-Files werden ignoriert (kein Fehler).
+/// Returns `Err` if the directory is not readable. Individual
+/// non-PEM files are ignored (not an error).
 pub fn load_cert_dir(dir: &Path) -> std::io::Result<CertSet> {
     let mut set = CertSet::default();
     if !dir.exists() {

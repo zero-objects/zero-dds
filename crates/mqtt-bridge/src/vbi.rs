@@ -5,14 +5,14 @@
 
 use alloc::vec::Vec;
 
-/// Maximaler VBI-Wert: 268 435 455 (Spec §1.5.5).
+/// Maximum VBI value: 268 435 455 (Spec §1.5.5).
 pub const MAX_VBI: u32 = 0x0FFF_FFFF;
 
-/// Spec §1.5.5 — Encodes ein VBI mit 1..=4 Bytes (7-bit-Gruppen +
-/// continuation-Flag im MSB).
+/// Spec §1.5.5 — encodes a VBI with 1..=4 bytes (7-bit groups +
+/// continuation flag in the MSB).
 ///
 /// # Errors
-/// Liefert `None` wenn `value > MAX_VBI`.
+/// Returns `None` if `value > MAX_VBI`.
 #[must_use]
 pub fn encode_vbi(value: u32) -> Option<Vec<u8>> {
     if value > MAX_VBI {
@@ -35,13 +35,13 @@ pub fn encode_vbi(value: u32) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// Spec §1.5.5 — Decodes ein VBI ab `bytes[offset]`. Liefert
+/// Spec §1.5.5 — decodes a VBI from `bytes[offset]`. Returns
 /// `Ok((value, consumed_bytes))`.
 ///
 /// # Errors
-/// * `Err(VbiError::Truncated)` wenn weniger als die noetigen Bytes.
-/// * `Err(VbiError::Malformed)` wenn 5+ continuation-Bytes (Spec
-///   verlangt max 4).
+/// * `Err(VbiError::Truncated)` if fewer than the required bytes.
+/// * `Err(VbiError::Malformed)` if 5+ continuation bytes (the spec
+///   requires max 4).
 pub fn decode_vbi(bytes: &[u8]) -> Result<(u32, usize), VbiError> {
     let mut value: u32 = 0;
     let mut multiplier: u32 = 1;
@@ -58,11 +58,11 @@ pub fn decode_vbi(bytes: &[u8]) -> Result<(u32, usize), VbiError> {
         }
         multiplier = multiplier.checked_mul(128).ok_or(VbiError::Malformed)?;
     }
-    // 5. Byte: continuation-Bit gesetzt → spec-violation.
+    // 5th byte: continuation bit set → spec violation.
     Err(VbiError::Malformed)
 }
 
-/// Liefert Anzahl Bytes die `encode_vbi(value)` produzieren wuerde.
+/// Returns the number of bytes `encode_vbi(value)` would produce.
 #[must_use]
 pub const fn vbi_size(value: u32) -> Option<usize> {
     if value > MAX_VBI {
@@ -80,12 +80,12 @@ pub const fn vbi_size(value: u32) -> Option<usize> {
     Some(n)
 }
 
-/// VBI-Codec-Fehler.
+/// VBI codec error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VbiError {
-    /// Input bytes nicht gross genug.
+    /// Input bytes not large enough.
     Truncated,
-    /// VBI hat 5+ continuation-Bytes oder Overflow (Spec §1.5.5).
+    /// VBI has 5+ continuation bytes or overflow (Spec §1.5.5).
     Malformed,
 }
 
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn decode_rejects_truncated_input() {
-        // 0x80 = continuation gesetzt aber kein folgendes Byte.
+        // 0x80 = continuation set but no following byte.
         assert_eq!(decode_vbi(&[0x80]), Err(VbiError::Truncated));
         assert_eq!(decode_vbi(&[]), Err(VbiError::Truncated));
     }

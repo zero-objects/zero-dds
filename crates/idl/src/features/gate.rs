@@ -1,40 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Feature-Gate-Validator (A2 Spec-Check 2.0).
+//! Feature-gate validator (A2 spec-check 2.0).
 //!
-//! Walks ein CST nach Recognition und prueft pro Production-ID ob das
-//! korrespondierende Feature in [`IdlFeatures`] aktiv ist. Wenn nicht,
-//! liefert er einen [`FeatureGateError`] mit klarer Fehlermeldung.
+//! Walks a CST after recognition and checks per production ID whether the
+//! corresponding feature in [`IdlFeatures`] is active. If not,
+//! it returns a [`FeatureGateError`] with a clear error message.
 //!
-//! # Architektur
+//! # Architecture
 //!
-//! Der Validator betreibt eine statische Lookup-Tabelle `Production-ID
-//! → Required-Feature`. Productions ohne Feature-Gate werden ignoriert
-//! (die meisten Plain-DDS- und XTypes-Konstrukte sind feature-frei).
-//! CORBA/CCM-Konstrukte und Vendor-Erweiterungen sind feature-gated.
+//! The validator runs a static lookup table `production-ID
+//! → required-feature`. Productions without a feature gate are ignored
+//! (most plain-DDS and XTypes constructs are feature-free).
+//! CORBA/CCM constructs and vendor extensions are feature-gated.
 //!
-//! # Fehlerbehandlung
+//! # Error handling
 //!
-//! Der Validator akkumuliert *alle* Verletzungen — der Caller bekommt
-//! eine Liste, nicht nur den ersten Fehler. So sieht der User in einem
-//! Pass alle disabled Features auf einmal.
+//! The validator accumulates *all* violations — the caller gets
+//! a list, not just the first error. This way the user sees all
+//! disabled features at once in a single pass.
 
 use crate::cst::CstNode;
 use crate::errors::Span;
 use crate::features::IdlFeatures;
 use crate::grammar::ProductionId;
 
-/// Gate-Verletzung: ein verwendetes Konstrukt benoetigt ein Feature
-/// das in [`IdlFeatures`] aus ist.
+/// Gate violation: a used construct requires a feature
+/// that is off in [`IdlFeatures`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureGateError {
-    /// Production-ID des verwendeten Konstrukts.
+    /// Production ID of the used construct.
     pub production_id: ProductionId,
-    /// Name der Production (Spec-BNF-Bezeichnung).
+    /// Name of the production (spec BNF designation).
     pub production_name: &'static str,
-    /// Name des inaktiven Features (Feld in [`IdlFeatures`]).
+    /// Name of the inactive feature (field in [`IdlFeatures`]).
     pub required_feature: &'static str,
-    /// Span im Source.
+    /// Span in the source.
     pub span: Span,
 }
 
@@ -50,12 +50,12 @@ impl core::fmt::Display for FeatureGateError {
 
 impl std::error::Error for FeatureGateError {}
 
-/// Mappt eine `(Production-ID, Alternative-Index)`-Kombi auf das Feature
-/// das sie aktiv haben muss. `None` heisst "kein Gate".
+/// Maps a `(production-ID, alternative-index)` combination to the feature
+/// it must have active. `None` means "no gate".
 ///
-/// Wird vom Validator konsultiert *nach* `production_required_feature`,
-/// um auch einzelne Alternativen einer ungated Production zu gaten
-/// (z.B. `oneway`-Variante von `op_dcl`).
+/// Consulted by the validator *after* `production_required_feature`,
+/// to also gate individual alternatives of an ungated production
+/// (e.g. the `oneway` variant of `op_dcl`).
 #[must_use]
 pub fn alternative_required_feature(prod_id: ProductionId, alt_idx: usize) -> Option<&'static str> {
     use crate::grammar::idl42::{
@@ -86,8 +86,8 @@ pub fn alternative_required_feature(prod_id: ProductionId, alt_idx: usize) -> Op
     }
 }
 
-/// Mappt eine Production-ID auf das Feature, das sie aktiv haben muss.
-/// `None` heisst "kein Gate" (Plain-DDS-Konstrukt, immer erlaubt).
+/// Maps a production ID to the feature it must have active.
+/// `None` means "no gate" (plain-DDS construct, always allowed).
 #[must_use]
 pub fn production_required_feature(prod_id: ProductionId) -> Option<&'static str> {
     use crate::grammar::idl42::{
@@ -175,10 +175,10 @@ pub fn production_required_feature(prod_id: ProductionId) -> Option<&'static str
         {
             Some("corba_ports")
         }
-        // §7.4.12 Template Modules — nur Top-Level-Wrapper gaten,
-        // weil Sub-Productions (formal/actual_parameter) Earley-State-
-        // Knoten via type_spec/const_expr in nicht-Template-Kontexten
-        // produzieren koennen (false-positive auf normales `long x`).
+        // §7.4.12 Template Modules — only gate the top-level wrapper,
+        // because sub-productions (formal/actual_parameter) can produce
+        // Earley state nodes via type_spec/const_expr in non-template contexts
+        // (false positive on a normal `long x`).
         id if id == ID_TEMPLATE_MODULE_DCL || id == ID_TEMPLATE_MODULE_INST => {
             Some("corba_template_modules")
         }
@@ -186,11 +186,11 @@ pub fn production_required_feature(prod_id: ProductionId) -> Option<&'static str
     }
 }
 
-/// Prueft ein Feature-Flag in [`IdlFeatures`] anhand seines Namens.
+/// Checks a feature flag in [`IdlFeatures`] by its name.
 ///
-/// Liefert `true` wenn das benannte Flag aktiv ist; `false` sonst
-/// inkl. unbekannte Namen (defensive: unbekannte Namen werden als
-/// "deaktiviert" interpretiert, sodass der Caller den Konflikt sieht).
+/// Returns `true` if the named flag is active; `false` otherwise
+/// incl. unknown names (defensive: unknown names are interpreted as
+/// "disabled" so that the caller sees the conflict).
 #[must_use]
 pub fn is_feature_enabled(features: &IdlFeatures, name: &str) -> bool {
     match name {
@@ -220,14 +220,14 @@ pub fn is_feature_enabled(features: &IdlFeatures, name: &str) -> bool {
     }
 }
 
-/// Walks das CST und sammelt alle Feature-Gate-Verletzungen.
+/// Walks the CST and collects all feature-gate violations.
 ///
-/// Pro CstNode wird die Production-ID auf [`production_required_feature`]
-/// gemapped; ist das Feature inaktiv → ein [`FeatureGateError`] wird
-/// emittiert.
+/// For each CstNode the production ID is mapped to [`production_required_feature`];
+/// if the feature is inactive → a [`FeatureGateError`] is
+/// emitted.
 ///
-/// Iterative Implementation (Stack-explicit), weil Earley-CSTs sehr
-/// tief verschachtelt sein koennen (Recursion-Limit-Risiko).
+/// Iterative implementation (explicit stack), because Earley CSTs can be very
+/// deeply nested (recursion-limit risk).
 #[must_use]
 pub fn validate<'a>(cst: &'a CstNode<'a>, features: &IdlFeatures) -> Vec<FeatureGateError> {
     let mut errors = Vec::new();
@@ -245,7 +245,7 @@ pub fn validate<'a>(cst: &'a CstNode<'a>, features: &IdlFeatures) -> Vec<Feature
                     });
                 }
             }
-            // Alternative-Level-Gate (z.B. `oneway`-Variante von op_dcl).
+            // Alternative-level gate (e.g. the `oneway` variant of op_dcl).
             if let Some(alt_idx) = node.alternative_index() {
                 if let Some(required) = alternative_required_feature(prod_id, alt_idx) {
                     if !is_feature_enabled(features, required) {
@@ -284,8 +284,8 @@ mod tests {
     use crate::lexer::Tokenizer;
 
     fn check(src: &str, features: IdlFeatures) -> Vec<FeatureGateError> {
-        // CST-Reconstruction kann sehr tief rekursiv sein (Earley-Engine);
-        // wir laufen daher in einem Thread mit grosszuegigem Stack.
+        // CST reconstruction can be very deeply recursive (Earley engine);
+        // we therefore run in a thread with a generous stack.
         let src = src.to_string();
         std::thread::Builder::new()
             .stack_size(64 * 1024 * 1024)
@@ -294,9 +294,9 @@ mod tests {
                 let stream = tokenizer.tokenize(&src).expect("lex");
                 let engine = Engine::new(&IDL_42);
                 let result = engine.recognize(stream.tokens()).expect("recognize");
-                // compiled_grammar() liefert die desugarte Form mit
-                // synthetisierten `_rep_X`-Productions, identisch zum
-                // Pfad des Public-`parse()` API.
+                // compiled_grammar() returns the desugared form with
+                // synthesized `_rep_X` productions, identical to the
+                // path of the public `parse()` API.
                 let cst =
                     build_cst(engine.compiled_grammar(), stream.tokens(), &result).expect("cst");
                 validate(&cst, &features)
@@ -308,8 +308,8 @@ mod tests {
 
     #[test]
     fn no_corba_use_no_errors_in_dds_basic() {
-        // Plain-DDS-IDL ohne CORBA-Konstrukte → keine Gate-Verletzung
-        // selbst in dds_basic.
+        // Plain-DDS IDL without CORBA constructs → no gate violation
+        // even in dds_basic.
         let src = "module svc { struct Topic { long id; }; };";
         let errors = check(src, IdlFeatures::dds_basic());
         assert!(errors.is_empty(), "got {errors:?}");
@@ -403,12 +403,9 @@ mod tests {
 
     #[test]
     fn dds_basic_allows_value_box() {
-        // value_box ist nicht gated → bleibt erlaubt auch in dds_basic.
+        // value_box is not gated → stays allowed even in dds_basic.
         let errors = check("valuetype Box long;", IdlFeatures::dds_basic());
-        assert!(
-            errors.is_empty(),
-            "value_box bleibt ungated, got {errors:?}"
-        );
+        assert!(errors.is_empty(), "value_box stays ungated, got {errors:?}");
     }
 
     // -----------------------------------------------------------------
@@ -525,7 +522,7 @@ mod tests {
 
     #[test]
     fn dds_extensible_allows_plain_op() {
-        // Normal-Op ohne oneway → kein Gate, geht in jedem Profil.
+        // Normal op without oneway → no gate, works in every profile.
         let errors = check(
             "interface S { void log(in string m); };",
             IdlFeatures::dds_extensible(),
@@ -548,7 +545,7 @@ mod tests {
 
     #[test]
     fn corba_full_minus_extras_rejects_custom_valuetype() {
-        // Mit corba_full (extras=on) sollte custom gehen.
+        // With corba_full (extras=on), custom should work.
         let mut f = IdlFeatures::corba_full();
         f.corba_value_types_extras = false;
         let errors = check("custom valuetype V {};", f);

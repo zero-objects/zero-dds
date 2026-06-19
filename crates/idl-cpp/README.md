@@ -1,12 +1,12 @@
 # `zerodds-idl-cpp`
 
-IDL4 → **C++17- und C-Header-Codegen** fuer ZeroDDS (OMG IDL4-CPP
-formal/2018-07-01 + DDS-PSM-CXX 1.0 + DDS-RPC C++ PSM). Liefert
-Standalone-Headers, die ueber `zerodds-c-api` an die Runtime andocken.
+IDL4 → **C++17 and C header codegen** for ZeroDDS (OMG IDL4-CPP
+formal/2018-07-01 + DDS-PSM-CXX 1.0 + DDS-RPC C++ PSM). Produces
+standalone headers that dock onto the runtime via `zerodds-c-api`.
 
-Teil des Projekts [**ZeroDDS**](../../README.md). Safety-Klasse
-**SAFE (std-only)** — `forbid(unsafe_code)`, Build-Zeit-Tool ohne
-no_std-Use-Case.
+Part of the [**ZeroDDS**](../../README.md) project. Safety class
+**SAFE (std-only)** — `forbid(unsafe_code)`, a build-time tool with no
+no_std use case.
 
 ---
 
@@ -27,7 +27,7 @@ assert!(header.contains("class S"));
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-## Quick Start — reines C
+## Quick Start — pure C
 
 ```rust
 use zerodds_idl::config::ParserConfig;
@@ -43,45 +43,45 @@ assert!(c_header.contains("Greeting"));
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-Im CLI uebernimmt das `zerodds-idlc` Tool die beiden Pfade als
-`--cpp` bzw. `--c` Backend. Output landet als `<basename>.hpp`
-beziehungsweise `<basename>.h`.
+On the CLI, the `zerodds-idlc` tool exposes the two paths as the
+`--cpp` and `--c` backends respectively. Output is written as
+`<basename>.hpp` or `<basename>.h` respectively.
 
 ## Scope
 
-| Block | Was wird emittiert | Spec |
+| Block | What is emitted | Spec |
 | --- | --- | --- |
 | C5.1-a | Header-Layout, Primitive-Mapping, struct/enum/union/typedef/sequence/array/inheritance, Exception | IDL4-CPP §7 |
-| C5.1-b | Status-Klassen (13), QoS-Policies (22), DCPS-Entity-Header-Stubs | DCPS §7, §8 |
-| C5.2 | DDS-PSM-CXX-Header-Skeleton-Layer | DDS-PSM-CXX 1.0 |
-| C6.1.D-cpp | DDS-RPC C++ PSM: Service-Interface, Requester, Replier, RemoteException-Hierarchie | DDS-RPC 1.0 §10 |
-| C-Mode | Reine C-Header mit ZeroDDS-Konventionen | `c_mode.rs` |
+| C5.1-b | Status classes (13), QoS policies (22), DCPS entity header stubs | DCPS §7, §8 |
+| C5.2 | DDS-PSM-CXX header skeleton layer | DDS-PSM-CXX 1.0 |
+| C6.1.D-cpp | DDS-RPC C++ PSM: service interface, Requester, Replier, RemoteException hierarchy | DDS-RPC 1.0 §10 |
+| C-Mode | Pure C headers with ZeroDDS conventions | `c_mode.rs` |
 
 ## Spec-Mapping
 
-| Spec-Dokument | Abschnitt |
+| Spec document | Section |
 | --- | --- |
-| OMG IDL 4.2 (ISO/IEC 19516) | §7 — Konstrukt-Mapping |
-| OMG IDL4-CPP 1.0 | §7 — Header-Layout |
-| OMG DDS-PSM-CXX 1.0 | §3-§5 — Entity-API |
+| OMG IDL 4.2 (ISO/IEC 19516) | §7 — construct mapping |
+| OMG IDL4-CPP 1.0 | §7 — header layout |
+| OMG DDS-PSM-CXX 1.0 | §3-§5 — entity API |
 | OMG DDS-RPC 1.0 | §10 — C++ PSM |
-| OMG DDS-XTypes 1.3 | §7.2.3 — Annotations + Extensibility |
+| OMG DDS-XTypes 1.3 | §7.2.3 — annotations + extensibility |
 
-## Bewusst NICHT im Crate
+## Deliberately NOT in the crate
 
-- **Bitset/Bitmask, Map, Fixed, Any, Interface, Valuetype** — Phase-2-Material.
-- **Linker-Tests** — statische Header-Generation reicht; Roundtrip-Tests laufen in `crates/cpp/tests/`.
+- **Bitset/bitmask, map, fixed, any, interface, valuetype** — Phase-2 material.
+- **Linker tests** — static header generation suffices; round-trip tests run in `crates/cpp/tests/`.
 
 ## Features
 
-* `default = []` — std-only, kein Feature noetig.
+* `default = []` — std-only, no feature needed.
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.2` — Wire-byte-identisch zu Cyclone DDS / RTI Connext /
-Fast-DDS. API kann bis 1.0.0-final noch in Detail-Punkten brechen
-(Options-Field-Reihenfolge, Error-Varianten); generierte Header bleiben
-ABI-stabil.
+`1.0.0-rc.2` — wire-byte-identical to Cyclone DDS / RTI Connext /
+Fast-DDS. The API may still break in detail points before 1.0.0-final
+(options field order, error variants); generated headers stay
+ABI-stable.
 
 ## Tests
 
@@ -89,12 +89,12 @@ ABI-stabil.
 cargo test -p zerodds-idl-cpp
 ```
 
-Fixture-IDLs unter `tests/fixtures/`, Snapshot-Tests pro Konstrukt.
+Fixture IDLs under `tests/fixtures/`, snapshot tests per construct.
 
 ## See also
 
-- [`zerodds-idl`](../idl/README.md) — Parser + AST (Input-Seite).
-- [`zerodds-cpp`](../cpp/README.md) — C++17-RAII-Wrapper, Runtime-Seite des Bindings.
-- [`zerodds-c-api`](../zerodds-c-api/README.md) — C-FFI, das die Header gegen die Rust-Runtime anbindet.
-- [`zerodds-idlc`](../../tools/idlc/README.md) — CLI mit `--cpp` und `--c` Flag.
-- [`packaging/docker/cpp-runtime/`](../../packaging/docker/cpp-runtime/) — Sandbox-Image mit Toolchain + Headern.
+- [`zerodds-idl`](../idl/README.md) — parser + AST (input side).
+- [`zerodds-cpp`](../cpp/README.md) — C++17 RAII wrapper, runtime side of the binding.
+- [`zerodds-c-api`](../zerodds-c-api/README.md) — C FFI that binds the headers against the Rust runtime.
+- [`zerodds-idlc`](../../tools/idlc/README.md) — CLI with `--cpp` and `--c` flags.
+- [`packaging/docker/cpp-runtime/`](../../packaging/docker/cpp-runtime/) — sandbox image with toolchain + headers.

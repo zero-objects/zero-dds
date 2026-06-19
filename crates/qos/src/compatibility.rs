@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Request/Offered QoS-Compatibility (DDS 1.4 §2.2.3).
+//! Request/offered QoS compatibility (DDS 1.4 §2.2.3).
 //!
-//! Jede Policy, die sowohl auf DataWriter- als auch auf DataReader-Seite
-//! gesetzt wird, hat im DDS-Sinne eine *Compatibility-Rule*: der Writer
-//! "offers" einen Wert, der Reader "requests" einen Wert, und das
-//! Matching-Verfahren vergleicht beide. Scheitern solcher Checks triggert
-//! `OFFERED_INCOMPATIBLE_QOS`/`REQUESTED_INCOMPATIBLE_QOS`-Listener-Events.
+//! Each policy that is set on both the DataWriter and DataReader side
+//! has, in the DDS sense, a *compatibility rule*: the writer
+//! "offers" a value, the reader "requests" a value, and the
+//! matching procedure compares the two. Failure of such checks triggers
+//! `OFFERED_INCOMPATIBLE_QOS`/`REQUESTED_INCOMPATIBLE_QOS` listener events.
 
 use alloc::vec::Vec;
 
@@ -16,13 +16,13 @@ use crate::policies::{
     ReliabilityQosPolicy, WriterQos,
 };
 
-/// Einzelner Grund, warum Writer-QoS und Reader-QoS nicht matchen.
+/// A single reason why writer QoS and reader QoS do not match.
 ///
-/// Die Varianten entsprechen der `QosPolicyId_t`-Enumeration aus DDS 1.4
-/// §2.2.3, beschraenkt auf Policies mit Request/Offered-Semantik.
+/// The variants correspond to the `QosPolicyId_t` enumeration from DDS 1.4
+/// §2.2.3, restricted to policies with request/offered semantics.
 ///
-/// `Ord`/`PartialOrd` nach Deklarations-Reihenfolge — erlaubt stabile
-/// Reports in [`CompatibilityResult::from_reasons`].
+/// `Ord`/`PartialOrd` by declaration order — enables stable
+/// reports in [`CompatibilityResult::from_reasons`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum IncompatibleReason {
@@ -34,47 +34,47 @@ pub enum IncompatibleReason {
     Deadline,
     /// `LatencyBudgetQosPolicy` — offered > requested.
     LatencyBudget,
-    /// `LivelinessQosPolicy` — offered Kind < requested Kind oder
-    /// lease_duration offered > requested.
+    /// `LivelinessQosPolicy` — offered kind < requested kind, or
+    /// offered lease_duration > requested.
     Liveliness,
     /// `DestinationOrderQosPolicy` — offered < requested.
     DestinationOrder,
-    /// `PresentationQosPolicy` — Scope zu schwach oder coherent/ordered
-    /// nicht abgedeckt.
+    /// `PresentationQosPolicy` — scope too weak or coherent/ordered
+    /// not covered.
     Presentation,
-    /// `OwnershipQosPolicy` — Shared/Exclusive muessen matchen.
+    /// `OwnershipQosPolicy` — Shared/Exclusive must match.
     Ownership,
-    /// `PartitionQosPolicy` — keine Partition-Ueberschneidung.
+    /// `PartitionQosPolicy` — no partition overlap.
     Partition,
 }
 
-/// Ergebnis eines Compatibility-Checks.
+/// Result of a compatibility check.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompatibilityResult {
-    /// QoS-Sets sind kompatibel.
+    /// The QoS sets are compatible.
     Compatible,
-    /// QoS-Sets sind nicht kompatibel mit Reason-Liste.
+    /// The QoS sets are incompatible, with a reason list.
     Incompatible(Vec<IncompatibleReason>),
 }
 
 impl CompatibilityResult {
-    /// `true` wenn die QoS-Sets kompatibel sind.
+    /// `true` if the QoS sets are compatible.
     #[must_use]
     pub fn is_compatible(&self) -> bool {
         matches!(self, Self::Compatible)
     }
 
-    /// Aus einer Reason-Liste bauen. Dedupliziert und sortiert nach
-    /// kanonischer Discriminator-Reihenfolge — so sind Log-Ausgaben
-    /// stabil und Tests koennen per `==` vergleichen statt `.contains`.
-    /// Leere Liste ⇒ `Compatible`.
+    /// Build from a reason list. Deduplicates and sorts by
+    /// canonical discriminator order — so log output is
+    /// stable and tests can compare with `==` instead of `.contains`.
+    /// Empty list ⇒ `Compatible`.
     #[must_use]
     pub fn from_reasons(mut reasons: Vec<IncompatibleReason>) -> Self {
         if reasons.is_empty() {
             return Self::Compatible;
         }
-        // Stable sort + dedup. Ord-Impl kommt vom derive; Varianten-
-        // Reihenfolge ist die kanonische Sortier-Reihenfolge.
+        // Stable sort + dedup. The Ord impl comes from the derive; the
+        // variant order is the canonical sort order.
         reasons.sort();
         reasons.dedup();
         Self::Incompatible(reasons)
@@ -82,7 +82,7 @@ impl CompatibilityResult {
 }
 
 // ============================================================================
-// Pro-Policy-Checks. Signatur: (offered, requested) -> bool (true = ok).
+// Per-policy checks. Signature: (offered, requested) -> bool (true = ok).
 // ============================================================================
 
 impl DurabilityQosPolicy {
@@ -94,7 +94,7 @@ impl DurabilityQosPolicy {
 }
 
 impl ReliabilityQosPolicy {
-    /// §2.2.3 Table: `offered.kind >= requested.kind`. Kind-Ordering
+    /// §2.2.3 Table: `offered.kind >= requested.kind`. Kind ordering
     /// `BestEffort < Reliable`.
     #[must_use]
     pub fn is_compatible_with(self, requested: Self) -> bool {
@@ -103,8 +103,8 @@ impl ReliabilityQosPolicy {
 }
 
 impl DeadlineQosPolicy {
-    /// §2.2.3.7.4: `offered.period <= requested.period` (Writer kann
-    /// mindestens so haeufig liefern wie Reader verlangt).
+    /// §2.2.3.7.4: `offered.period <= requested.period` (the writer can
+    /// deliver at least as often as the reader requires).
     #[must_use]
     pub fn is_compatible_with(self, requested: Self) -> bool {
         self.period <= requested.period
@@ -112,8 +112,8 @@ impl DeadlineQosPolicy {
 }
 
 impl LatencyBudgetQosPolicy {
-    /// §2.2.3.10.4: `offered.duration <= requested.duration` (Writer
-    /// verspricht mindestens so schnell wie Reader tolerieren kann).
+    /// §2.2.3.10.4: `offered.duration <= requested.duration` (the writer
+    /// promises at least as fast as the reader can tolerate).
     #[must_use]
     pub fn is_compatible_with(self, requested: Self) -> bool {
         self.duration <= requested.duration
@@ -122,7 +122,7 @@ impl LatencyBudgetQosPolicy {
 
 impl LivelinessQosPolicy {
     /// §2.2.3.11.4:
-    /// - `offered.kind >= requested.kind`, UND
+    /// - `offered.kind >= requested.kind`, AND
     /// - `offered.lease_duration <= requested.lease_duration`.
     #[must_use]
     pub fn is_compatible_with(self, requested: Self) -> bool {
@@ -139,7 +139,7 @@ impl DestinationOrderQosPolicy {
 }
 
 impl OwnershipQosPolicy {
-    /// §2.2.3.23: `offered.kind == requested.kind`. Kein Ordering.
+    /// §2.2.3.23: `offered.kind == requested.kind`. No ordering.
     #[must_use]
     pub fn is_compatible_with(self, requested: Self) -> bool {
         self.kind == requested.kind
@@ -148,11 +148,11 @@ impl OwnershipQosPolicy {
 
 impl PresentationQosPolicy {
     /// §2.2.3.6.6:
-    /// - `offered.access_scope >= requested.access_scope`, UND
-    /// - `offered.coherent_access >= requested.coherent_access`, UND
+    /// - `offered.access_scope >= requested.access_scope`, AND
+    /// - `offered.coherent_access >= requested.coherent_access`, AND
     /// - `offered.ordered_access >= requested.ordered_access`.
     ///
-    /// Fuer bool gilt `true >= false`.
+    /// For bool, `true >= false` holds.
     #[must_use]
     pub fn is_compatible_with(self, requested: Self) -> bool {
         self.access_scope >= requested.access_scope
@@ -162,19 +162,19 @@ impl PresentationQosPolicy {
 }
 
 // ============================================================================
-// Aggregat: alle Request/Offered-Policies in einem Aufruf
+// Aggregate: all request/offered policies in a single call
 // ============================================================================
 
-/// Vollstaendiger DataWriter↔DataReader Compatibility-Check.
+/// Full DataWriter↔DataReader compatibility check.
 ///
-/// WP 2.8 (C2.8) — kombiniert alle 9 Pro-Policy-Checks zu einem
-/// einzigen Aufruf. Caller (DCPS-Match-Pfad in publisher.rs /
-/// subscriber.rs) ruft diesen, bevor er das Pairing erlaubt; bei
-/// Inkompatibilitaet werden die Listener-Statuses
-/// `OFFERED_INCOMPATIBLE_QOS` (auf Writer-Seite) bzw.
-/// `REQUESTED_INCOMPATIBLE_QOS` (auf Reader-Seite) gefeuert.
+/// WP 2.8 (C2.8) — combines all 9 per-policy checks into a
+/// single call. The caller (DCPS match path in publisher.rs /
+/// subscriber.rs) calls this before allowing the pairing; on
+/// incompatibility the listener statuses
+/// `OFFERED_INCOMPATIBLE_QOS` (on the writer side) and
+/// `REQUESTED_INCOMPATIBLE_QOS` (on the reader side) are fired.
 ///
-/// Spec-Referenzen: DDS 1.4 §2.2.3 Compatibility-Tabellen,
+/// Spec references: DDS 1.4 §2.2.3 compatibility tables,
 /// §2.2.4.1 OFFERED_INCOMPATIBLE_QOS_STATUS / REQUESTED_INCOMPATIBLE_QOS_STATUS.
 #[must_use]
 pub fn compute_compatibility(offered: &WriterQos, requested: &ReaderQos) -> CompatibilityResult {
@@ -222,13 +222,13 @@ pub fn compute_compatibility(offered: &WriterQos, requested: &ReaderQos) -> Comp
 }
 
 impl PartitionQosPolicy {
-    /// §2.2.3.13.6: Es muss mindestens einen gemeinsamen Partition-Namen
-    /// geben. Matching ist **fnmatch-Glob-basiert** (`*`, `?`, `[...]`):
-    /// offered-Pattern kann requested-Namen matchen oder umgekehrt.
+    /// §2.2.3.13.6: there must be at least one common partition name.
+    /// Matching is **fnmatch-glob-based** (`*`, `?`, `[...]`):
+    /// an offered pattern can match a requested name or vice versa.
     ///
-    /// Leer/Leer matcht (Default-Partition). Leer vs. nicht-leer
-    /// matcht **nicht** (spec-konform: Default-Partition ist ein
-    /// separater Namensraum).
+    /// Empty/empty matches (default partition). Empty vs non-empty
+    /// does **not** match (spec-conformant: the default partition is a
+    /// separate namespace).
     #[must_use]
     pub fn is_compatible_with(&self, requested: &Self) -> bool {
         if self.names.is_empty() && requested.names.is_empty() {
@@ -237,8 +237,8 @@ impl PartitionQosPolicy {
         if self.names.is_empty() || requested.names.is_empty() {
             return false;
         }
-        // fnmatch ist symmetrisch relevant: entweder offered-Pattern
-        // matched requested-Text oder umgekehrt.
+        // fnmatch is symmetrically relevant: either the offered pattern
+        // matches the requested text or vice versa.
         self.names.iter().any(|o| {
             requested.names.iter().any(|rq| {
                 super::policies::partition::fnmatch(o, rq)
@@ -280,7 +280,7 @@ mod tests {
             kind: DurabilityKind::TransientLocal,
         };
         assert!(offered.is_compatible_with(req));
-        // Umgekehrt nicht.
+        // Not the other way around.
         assert!(!req.is_compatible_with(offered));
     }
 
@@ -380,7 +380,7 @@ mod tests {
         };
         assert!(offered.is_compatible_with(req));
 
-        // Reader verlangt coherent, Writer bietet nicht ⇒ fail.
+        // Reader requests coherent, writer does not offer ⇒ fail.
         let offered_weak = PresentationQosPolicy {
             access_scope: PresentationAccessScope::Group,
             coherent_access: false,
@@ -419,7 +419,7 @@ mod tests {
     }
 
     // ========================================================================
-    // WP 2.8: compute_compatibility (Aggregat aller 9 Policy-Checks)
+    // WP 2.8: compute_compatibility (aggregate of all 9 policy checks)
     // ========================================================================
 
     #[test]
@@ -427,7 +427,7 @@ mod tests {
         let w = crate::policies::WriterQos::default();
         let r = crate::policies::ReaderQos::default();
         let result = compute_compatibility(&w, &r);
-        // Default-Writer ist Reliable, Default-Reader BestEffort → Reliable >= BestEffort
+        // Default writer is Reliable, default reader BestEffort → Reliable >= BestEffort
         assert!(result.is_compatible(), "got {result:?}");
     }
 

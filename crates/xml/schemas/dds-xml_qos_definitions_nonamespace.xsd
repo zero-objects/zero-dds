@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
     DDS-XML 1.0 §7.3.2 — Building Block QoS (chameleon, no targetNamespace).
-    Spec §7.3.1.2 / §7.3.2.3 — File-Naming-Konvention
+    Spec §7.3.1.2 / §7.3.2.3 — file naming convention
     `dds-xml_<bb>_definitions_nonamespace.xsd`.
 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DDS-RPC Common-Types — Spec §7.5.1.1.1.
+//! DDS-RPC common types — Spec §7.5.1.1.1.
 //!
-//! Diese Datei stellt die Wire-Strukturen bereit, die jede RPC-Anfrage
-//! bzw. -Antwort begleiten:
+//! This file provides the wire structures that accompany every RPC
+//! request or reply:
 //!
 //! ```text
 //! struct SampleIdentity {
@@ -30,16 +30,16 @@
 //! };
 //! ```
 //!
-//! Encoding: **XCDR2** mit `Final`-Extensibility. Spec §7.5.1.1.1 gibt
-//! nur das Wire-Layout vor (kein DHEADER, kein EMHEADER); wir nehmen
-//! Final wegen niedriger Overhead-Kosten und weil RPC-Header fuer
-//! Forward-Compat-Erweiterungen nicht vorgesehen sind.
+//! Encoding: **XCDR2** with `Final` extensibility. Spec §7.5.1.1.1 only
+//! prescribes the wire layout (no DHEADER, no EMHEADER); we choose
+//! Final because of its low overhead cost and because RPC headers are
+//! not intended for forward-compat extensions.
 //!
-//! Wire-Layout (Final-XCDR2, Little-Endian Beispiel):
+//! Wire layout (Final XCDR2, little-endian example):
 //!
 //! ```text
 //! SampleIdentity:
-//!   octet[16] writer_guid    -- 16 byte, kein Padding
+//!   octet[16] writer_guid    -- 16 byte, no padding
 //!   align(8)
 //!   uint64    sequence_number
 //!
@@ -82,7 +82,7 @@ pub struct SampleIdentity {
 }
 
 impl SampleIdentity {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new(writer_guid: [u8; 16], sequence_number: u64) -> Self {
         Self {
@@ -91,7 +91,7 @@ impl SampleIdentity {
         }
     }
 
-    /// Reservierter "unknown"-Wert (Spec §7.5.1.1.1 — alles 0).
+    /// Reserved "unknown" value (Spec §7.5.1.1.1 — all 0).
     pub const UNKNOWN: Self = Self {
         writer_guid: [0u8; 16],
         sequence_number: 0,
@@ -116,7 +116,7 @@ impl SampleIdentity {
     /// XCDR2-Decoder, Little-Endian.
     ///
     /// # Errors
-    /// `RpcError::Codec` bei zu kurzem Buffer.
+    /// `RpcError::Codec` on a too-short buffer.
     pub fn from_cdr_le(bytes: &[u8]) -> RpcResult<Self> {
         check_cap(bytes)?;
         let mut cur = Cursor::new(bytes);
@@ -126,7 +126,7 @@ impl SampleIdentity {
     /// XCDR2-Decoder, Big-Endian.
     ///
     /// # Errors
-    /// `RpcError::Codec` bei zu kurzem Buffer.
+    /// `RpcError::Codec` on a too-short buffer.
     pub fn from_cdr_be(bytes: &[u8]) -> RpcResult<Self> {
         check_cap(bytes)?;
         let mut cur = Cursor::new(bytes);
@@ -142,29 +142,29 @@ impl SampleIdentity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(u32)]
 pub enum RemoteExceptionCode {
-    /// Operation lief erfolgreich durch.
+    /// The operation completed successfully.
     #[default]
     Ok = 0,
-    /// Service unterstuetzt diese Operation nicht.
+    /// The service does not support this operation.
     Unsupported = 1,
-    /// Argument war nicht spec-konform.
+    /// The argument was not spec-conformant.
     InvalidArgument = 2,
-    /// Server hat nicht genug Resources.
+    /// The server does not have enough resources.
     OutOfResources = 3,
-    /// Operation gibt es nicht im Service.
+    /// The operation does not exist in the service.
     UnknownOperation = 4,
-    /// Operation hat eine User-Exception geworfen, die der Stub nicht
-    /// kennt.
+    /// The operation threw a user exception that the stub does not
+    /// know.
     UnknownException = 5,
-    /// Service-Interface ist dem Server unbekannt.
+    /// The service interface is unknown to the server.
     UnknownInterface = 6,
 }
 
 impl RemoteExceptionCode {
-    /// Konvertiert die Wire-Diskriminator-`u32` in das Enum.
+    /// Converts the wire discriminator `u32` into the enum.
     ///
     /// # Errors
-    /// `RpcError::UnknownExceptionCode` bei unbekanntem Diskriminator.
+    /// `RpcError::UnknownExceptionCode` on an unknown discriminator.
     pub fn from_u32(v: u32) -> RpcResult<Self> {
         match v {
             0 => Ok(Self::Ok),
@@ -178,7 +178,7 @@ impl RemoteExceptionCode {
         }
     }
 
-    /// Liefert den Wire-Diskriminator.
+    /// Returns the wire discriminator.
     #[must_use]
     pub const fn as_u32(self) -> u32 {
         self as u32
@@ -192,14 +192,14 @@ impl RemoteExceptionCode {
 /// Spec §7.5.1.1.1 — Pro Sample im Request-Topic prepended.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RequestHeader {
-    /// Eindeutige ID dieser Request.
+    /// Unique ID of this request.
     pub request_id: SampleIdentity,
-    /// Optionaler Service-Instance-Name (leer wenn nicht gesetzt).
+    /// Optional service instance name (empty if not set).
     pub instance_name: String,
 }
 
 impl RequestHeader {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(request_id: SampleIdentity, instance_name: impl Into<String>) -> Self {
         Self {
@@ -223,7 +223,7 @@ impl RequestHeader {
     /// XCDR2-Decoder, Little-Endian.
     ///
     /// # Errors
-    /// `RpcError::Codec` bei zu kurzem oder ungueltigem Buffer.
+    /// `RpcError::Codec` on a too-short or invalid buffer.
     pub fn from_cdr_le(bytes: &[u8]) -> RpcResult<Self> {
         check_cap(bytes)?;
         let mut cur = Cursor::new(bytes);
@@ -238,7 +238,7 @@ impl RequestHeader {
     /// XCDR2-Decoder, Big-Endian.
     ///
     /// # Errors
-    /// `RpcError::Codec` bei zu kurzem oder ungueltigem Buffer.
+    /// `RpcError::Codec` on a too-short or invalid buffer.
     pub fn from_cdr_be(bytes: &[u8]) -> RpcResult<Self> {
         check_cap(bytes)?;
         let mut cur = Cursor::new(bytes);
@@ -258,14 +258,14 @@ impl RequestHeader {
 /// Spec §7.5.1.1.1 — Pro Sample im Reply-Topic prepended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ReplyHeader {
-    /// Verweist auf das `request_id` der zugehoerigen Request.
+    /// References the `request_id` of the corresponding request.
     pub related_request_id: SampleIdentity,
     /// Server-Side Result-Code.
     pub remote_ex: RemoteExceptionCode,
 }
 
 impl ReplyHeader {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new(related_request_id: SampleIdentity, remote_ex: RemoteExceptionCode) -> Self {
         Self {
@@ -289,8 +289,8 @@ impl ReplyHeader {
     /// XCDR2-Decoder, Little-Endian.
     ///
     /// # Errors
-    /// `RpcError::Codec` bei zu kurzem oder ungueltigem Buffer.
-    /// `RpcError::UnknownExceptionCode` bei unbekanntem Diskriminator.
+    /// `RpcError::Codec` on a too-short or invalid buffer.
+    /// `RpcError::UnknownExceptionCode` on an unknown discriminator.
     pub fn from_cdr_le(bytes: &[u8]) -> RpcResult<Self> {
         check_cap(bytes)?;
         let mut cur = Cursor::new(bytes);
@@ -306,8 +306,8 @@ impl ReplyHeader {
     /// XCDR2-Decoder, Big-Endian.
     ///
     /// # Errors
-    /// `RpcError::Codec` bei zu kurzem oder ungueltigem Buffer.
-    /// `RpcError::UnknownExceptionCode` bei unbekanntem Diskriminator.
+    /// `RpcError::Codec` on a too-short or invalid buffer.
+    /// `RpcError::UnknownExceptionCode` on an unknown discriminator.
     pub fn from_cdr_be(bytes: &[u8]) -> RpcResult<Self> {
         check_cap(bytes)?;
         let mut cur = Cursor::new(bytes);
@@ -325,15 +325,15 @@ impl ReplyHeader {
 // XCDR2-Codec (Final-Extensibility, primitive-only)
 // ---------------------------------------------------------------------
 //
-// XCDR2-Spezifika gegenueber XCDR1:
-//   * Alignment-Cap = 4 byte (statt 8). uint64 ist daher auf 8 alignment
-//     -> in XCDR2 auf 4 reduziert.
-//   * String: uint32 length inkl. trailing NUL + UTF-8-Bytes + NUL.
-//   * Final-Extensibility: kein DHEADER vor der Struktur.
+// XCDR2 specifics vs XCDR1:
+//   * Alignment cap = 4 bytes (instead of 8). uint64 is therefore reduced
+//     from 8-byte alignment -> 4 in XCDR2.
+//   * String: uint32 length incl. trailing NUL + UTF-8 bytes + NUL.
+//   * Final extensibility: no DHEADER before the struct.
 //
-// Wir implementieren das hand-rolled (analog crates/security/src/token.rs)
-// statt zerodds-cdr zu konsumieren — zerodds-cdr ist no_std und der Foundation-
-// Stub hier braucht nichts darueber Hinausgehendes.
+// We implement this hand-rolled (analogous to crates/security/src/token.rs)
+// instead of consuming zerodds-cdr — zerodds-cdr is no_std and the foundation
+// stub here needs nothing beyond that.
 
 fn check_cap(bytes: &[u8]) -> RpcResult<()> {
     if bytes.len() > MAX_HEADER_BYTES {
@@ -648,8 +648,8 @@ mod tests {
 
     #[test]
     fn xcdr2_layout_sample_identity_le_is_24_bytes_no_padding() {
-        // GUID 16 byte + uint64 8 byte (XCDR2 cap=4, also keine
-        // zusaetzlichen 4 byte Padding).
+        // GUID 16 bytes + uint64 8 bytes (XCDR2 cap=4, so no
+        // additional 4 bytes of padding).
         let id = SampleIdentity::new([0xAB; 16], 0x0102_0304_0506_0708);
         let bytes = id.to_cdr_le();
         assert_eq!(bytes.len(), 24);
@@ -659,7 +659,7 @@ mod tests {
 
     #[test]
     fn xcdr2_layout_string_includes_nul() {
-        // class_id="A" (1 char + NUL = len=2) ueber RequestHeader.
+        // class_id="A" (1 char + NUL = len=2) via RequestHeader.
         let h = RequestHeader::new(SampleIdentity::UNKNOWN, "A");
         let bytes = h.to_cdr_le();
         // Layout: 16 byte GUID + 8 byte uint64 + uint32 len=2 + 'A' + NUL

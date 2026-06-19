@@ -2,40 +2,40 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Crate `zerodds-transport`. Safety classification: **SAFE**.
 //!
-//! Transport-Trait + Locator-Re-Export + abstrakte send/receive-
-//! Schnittstelle. Pure-Rust no_std + alloc, `forbid(unsafe_code)`.
+//! Transport trait + Locator re-export + abstract send/receive
+//! interface. Pure-Rust no_std + alloc, `forbid(unsafe_code)`.
 //!
 //! ## Spec
 //!
-//! - **DDSI-RTPS 2.5** §8.3.2 — Locator (re-exportiert aus
+//! - **DDSI-RTPS 2.5** §8.3.2 — Locator (re-exported from
 //!   `zerodds-rtps::wire_types::Locator`).
-//! - ZeroDDS-eigenes [`Transport`]-Trait — abstrakte Schicht zwischen
-//!   RTPS-State-Machines und konkreten Wire-Protokollen.
+//! - ZeroDDS's own [`Transport`] trait — abstract layer between
+//!   RTPS state machines and concrete wire protocols.
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 2 — Wire (Trait-Crate). Implementations: `zerodds-transport-udp`,
+//! Layer 2 — Wire (trait crate). Implementations: `zerodds-transport-udp`,
 //! `zerodds-transport-tcp`, `zerodds-transport-shm`, `zerodds-transport-uds`,
-//! `zerodds-transport-tsn`. Direkte Konsumenten: `zerodds-dcps`,
+//! `zerodds-transport-tsn`. Direct consumers: `zerodds-dcps`,
 //! `zerodds-discovery`.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! - [`Transport`] — Trait für send/receive-Operationen mit Locator-
-//!   Adressierung.
-//! - [`SendError`] / [`RecvError`] — typisierte Fehler.
-//! - [`ReceivedDatagram`] — Empfangenes Datagramm + Source-Locator.
-//! - `Locator` — re-exportiert aus `zerodds-rtps::wire_types`
-//!   (Spec-Anker DDSI-RTPS §8.3.2).
+//! - [`Transport`] — trait for send/receive operations with Locator
+//!   addressing.
+//! - [`SendError`] / [`RecvError`] — typed errors.
+//! - [`ReceivedDatagram`] — received datagram + source Locator.
+//! - `Locator` — re-exported from `zerodds-rtps::wire_types`
+//!   (spec anchor DDSI-RTPS §8.3.2).
 //!
-//! ## Architektur-Hinweis
+//! ## Architecture note
 //!
-//! `Locator` lebt **bewusst** in `zerodds-rtps` (DDSI-RTPS-Spec definiert
-//! das Wire-Format dort) und wird via `pub use` re-exportiert. Die
-//! resultierende `transport → rtps` Crate-Dep ist ZeroDDS-deliberat
-//! und stellt keinen Layer-Inversion-Bug dar — RTPS-Wire-Format-Types
-//! gehören in die rtps-Crate, das Transport-Trait abstrahiert das
-//! send/receive darüber.
+//! `Locator` lives **deliberately** in `zerodds-rtps` (the DDSI-RTPS spec
+//! defines the wire format there) and is re-exported via `pub use`. The
+//! resulting `transport → rtps` crate dependency is deliberate in ZeroDDS
+//! and is not a layer-inversion bug — RTPS wire-format types
+//! belong in the rtps crate; the transport trait abstracts the
+//! send/receive on top of it.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -51,27 +51,27 @@ use core::fmt;
 
 pub use zerodds_rtps::wire_types::Locator;
 
-// Vec wird intern nicht mehr genutzt (ReceivedDatagram::data ist jetzt
-// Arc<[u8]>). Tests im alloc-Modul referenzieren ihn ueber alloc::vec.
+// Vec is no longer used internally (ReceivedDatagram::data is now
+// Arc<[u8]>). Tests in the alloc module reference it via alloc::vec.
 
-/// Fehler beim Senden ueber einen Transport.
+/// Error when sending over a transport.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SendError {
-    /// Datagram zu gross fuer den Pfad-MTU.
+    /// Datagram too large for the path MTU.
     PayloadTooLarge {
-        /// Tatsaechliche Datagram-Laenge.
+        /// Actual datagram length.
         size: usize,
-        /// Konfiguriertes Limit.
+        /// Configured limit.
         limit: usize,
     },
-    /// Locator kann von diesem Transport nicht bedient werden
-    /// (z.B. UDPv6-Locator an einen UDPv4-only-Transport).
+    /// Locator cannot be served by this transport
+    /// (e.g. a UDPv6 locator to a UDPv4-only transport).
     UnsupportedLocator,
-    /// I/O-Fehler bei der zugrundeliegenden Operation. Detail-Text
-    /// transport-spezifisch.
+    /// I/O error in the underlying operation. The detail text is
+    /// transport-specific.
     Io {
-        /// Beschreibung.
+        /// Description.
         message: &'static str,
     },
 }
@@ -91,23 +91,23 @@ impl fmt::Display for SendError {
 #[cfg(feature = "std")]
 impl std::error::Error for SendError {}
 
-/// Fehler beim Empfangen.
+/// Error when receiving.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RecvError {
-    /// Recv-Operation lief in Timeout.
+    /// Recv operation timed out.
     Timeout,
-    /// Empfangs-Buffer war zu klein. Datagramm wurde getruncated oder
-    /// verworfen — transport-spezifisch.
+    /// Receive buffer was too small. The datagram was truncated or
+    /// dropped — transport-specific.
     BufferTooSmall {
-        /// Datagram-Groesse, die nicht passte.
+        /// Datagram size that did not fit.
         datagram_size: usize,
-        /// Buffer-Kapazitaet.
+        /// Buffer capacity.
         buffer_size: usize,
     },
-    /// I/O-Fehler.
+    /// I/O error.
     Io {
-        /// Beschreibung.
+        /// Description.
         message: &'static str,
     },
 }
@@ -133,41 +133,41 @@ impl fmt::Display for RecvError {
 #[cfg(feature = "std")]
 impl std::error::Error for RecvError {}
 
-/// Empfangenes Datagram + Quell-Locator.
+/// Received datagram + source locator.
 ///
-/// `data` ist ein refcounted `Arc<[u8]>` damit downstream-Consumer den
-/// Buffer ohne Heap-Copy teilen koennen (Spec: zerodds-zero-copy-1.0 §6
-/// Welle 3). Konstruktion via `Arc::from(vec.into_boxed_slice())` oder
+/// `data` is a refcounted `Arc<[u8]>` so that downstream consumers can
+/// share the buffer without a heap copy (spec: zerodds-zero-copy-1.0 §6
+/// wave 3). Construct via `Arc::from(vec.into_boxed_slice())` or
 /// `Arc::from(&slice[..])`.
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceivedDatagram {
-    /// Quell-Locator (z.B. UDP-Quelladresse).
+    /// Source locator (e.g. the UDP source address).
     pub source: Locator,
-    /// Datagram-Bytes (refcounted, zero-copy-shareable).
+    /// Datagram bytes (refcounted, zero-copy shareable).
     pub data: alloc::sync::Arc<[u8]>,
 }
 
-/// Abstrakter Transport: sendet/empfaengt Datagramme zu/von Locatoren.
+/// Abstract transport: sends/receives datagrams to/from locators.
 ///
-/// Implementations sind synchron und blocking. Async-Wrapper koennen
-/// in einem hoeheren Layer aufgesetzt werden.
+/// Implementations are synchronous and blocking. Async wrappers can
+/// be layered on top.
 #[cfg(feature = "alloc")]
 pub trait Transport {
-    /// Sendet ein Datagram an den gegebenen Locator.
+    /// Sends a datagram to the given locator.
     ///
     /// # Errors
     /// [`SendError`].
     fn send(&self, dest: &Locator, data: &[u8]) -> Result<(), SendError>;
 
-    /// Empfaengt das naechste Datagram. Blocking; konkrete
-    /// Implementations koennen Timeout via internem Setting konfigurieren.
+    /// Receives the next datagram. Blocking; concrete
+    /// implementations can configure a timeout via an internal setting.
     ///
     /// # Errors
     /// [`RecvError`].
     fn recv(&self) -> Result<ReceivedDatagram, RecvError>;
 
-    /// Lokaler Locator (an dem dieser Transport empfangt).
+    /// Local locator (where this transport receives).
     fn local_locator(&self) -> Locator;
 }
 

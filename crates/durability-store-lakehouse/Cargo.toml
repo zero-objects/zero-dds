@@ -1,0 +1,29 @@
+[package]
+name = "zerodds-durability-store-lakehouse"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "DuckDB lakehouse cold adapter for the ZeroDDS Durability-Service: in-process SQL (warehouse) + Parquet export (lake). Implements zerodds-durability-store::DurabilityStore."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-durability-store-lakehouse"
+readme = "README.md"
+keywords = ["dds", "durability", "duckdb", "parquet"]
+categories = ["network-programming", "database"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-durability-store = { version = "1.0.0-rc.3", path = "../durability-store" }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos" }
+duckdb = { workspace = true }
+
+[dev-dependencies]
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos" }

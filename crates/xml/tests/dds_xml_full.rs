@@ -1,15 +1,15 @@
-//! Integrations-Tests fuer DDS-XML 1.0 §7.3.4-7.3.6 (C7.C).
+//! Integration tests for DDS-XML 1.0 §7.3.4-7.3.6 (C7.C).
 //!
-//! Deckt:
-//! * §7.3.4 Domain Library: Topic-Definitionen, register_type-Lookup,
-//!   Cross-Library-domain_ref, Topic-Filter, Topic-Inline-QoS vs.
+//! Covers:
+//! * §7.3.4 Domain Library: topic definitions, register_type lookup,
+//!   cross-library domain_ref, topic filter, topic inline QoS vs.
 //!   qos_profile_ref.
-//! * §7.3.5 Domain Participant Library: domain_ref-Resolve, Multi-Level
-//!   Participant-Inheritance, Inheritance-Zyklus, Publisher/Subscriber-
-//!   Hierarchie, DataWriter/Reader QoS-Praezedenz.
-//! * §7.3.6 Application Library: Cross-Library Application-zu-Participant.
-//! * Top-Level: empty <dds/>, mixed Libraries, DTD-Verbot, mehrere
-//!   Domain-Libraries pro Dokument, Snapshot-Resolve.
+//! * §7.3.5 Domain Participant Library: domain_ref resolve, multi-level
+//!   participant inheritance, inheritance cycle, publisher/subscriber
+//!   hierarchy, DataWriter/Reader QoS precedence.
+//! * §7.3.6 Application Library: cross-library application-to-participant.
+//! * Top-level: empty <dds/>, mixed libraries, DTD prohibition, multiple
+//!   domain libraries per document, snapshot resolve.
 
 #![allow(
     clippy::expect_used,
@@ -82,7 +82,7 @@ fn cyclone_default_roundtrip_all_four_libraries() {
 }
 
 // ============================================================================
-// 2. Domain mit zwei Topics + register_type-Lookup.
+// 2. Domain with two topics + register_type lookup.
 // ============================================================================
 #[test]
 fn domain_with_two_topics_and_register_types() {
@@ -126,7 +126,7 @@ fn cross_library_domain_ref_resolves() {
 }
 
 // ============================================================================
-// 4. Cross-Library-Ref nicht-auffindbar -> UnresolvedReference.
+// 4. Cross-library ref not found -> UnresolvedReference.
 // ============================================================================
 #[test]
 fn unresolved_domain_ref_errors() {
@@ -141,8 +141,8 @@ fn unresolved_domain_ref_errors() {
 }
 
 // ============================================================================
-// 5. Participant-Inheritance: Child erbt Reliability vom Parent, kann
-//    domain_ref ueberschreiben.
+// 5. Participant inheritance: child inherits reliability from the parent, can
+//    override domain_ref.
 // ============================================================================
 #[test]
 fn participant_inheritance_one_level() {
@@ -196,7 +196,7 @@ fn participant_inheritance_three_levels() {
     let d = parse_dds_xml(xml).expect("parse");
     let r = d.resolve_participant("dpl::C").expect("resolve");
     assert_eq!(r.inheritance_chain.len(), 3);
-    // Drei Publisher (alle drei Ebenen)
+    // Three publishers (all three levels)
     assert_eq!(r.publishers.len(), 3);
     let names: Vec<&str> = r.publishers.iter().map(|p| p.name.as_str()).collect();
     assert!(names.contains(&"P1"));
@@ -224,7 +224,7 @@ fn participant_inheritance_cycle_detected() {
 }
 
 // ============================================================================
-// 8. Application referenziert non-existing Participant -> UnresolvedReference.
+// 8. Application references a non-existing participant -> UnresolvedReference.
 // ============================================================================
 #[test]
 fn application_unresolved_participant() {
@@ -241,7 +241,7 @@ fn application_unresolved_participant() {
 }
 
 // ============================================================================
-// 9. Topic-Filter-Glob auf Topic-Ebene matched korrekt.
+// 9. Topic filter glob at the topic level matches correctly.
 // ============================================================================
 #[test]
 fn topic_filter_glob_matches() {
@@ -264,7 +264,7 @@ fn topic_filter_glob_matches() {
 }
 
 // ============================================================================
-// 10. DataWriter ohne explizite QoS erbt vom Publisher-QoS.
+// 10. DataWriter without explicit QoS inherits from the publisher QoS.
 // ============================================================================
 #[test]
 fn datawriter_inherits_publisher_qos() {
@@ -295,10 +295,10 @@ fn datawriter_inherits_publisher_qos() {
 }
 
 // ============================================================================
-// 11. Publisher ohne explizite QoS — Participant-QoS gilt fuer den Publisher
-//     nicht direkt (Spec: Publisher-QoS hat eigenes Default-Set), aber das
-//     "merge from participant" wird nicht angewendet — der Resolver liefert
-//     None, was beim Materialisieren in Spec-Defaults uebergeht.
+// 11. Publisher without explicit QoS — the participant QoS does not apply to
+//     the publisher directly (spec: publisher QoS has its own default set), but
+//     the "merge from participant" is not applied — the resolver returns
+//     None, which on materialization transitions to spec defaults.
 // ============================================================================
 #[test]
 fn publisher_without_qos_yields_none() {
@@ -318,7 +318,7 @@ fn publisher_without_qos_yields_none() {
 }
 
 // ============================================================================
-// 12. Inline `<topic_qos>` vs `qos_profile_ref` werden beide aufgeloest.
+// 12. Inline `<topic_qos>` vs `qos_profile_ref` are both resolved.
 // ============================================================================
 #[test]
 fn topic_qos_inline_and_profile_ref_both_resolve() {
@@ -373,7 +373,7 @@ fn empty_dds_root_is_valid() {
 }
 
 // ============================================================================
-// 14. DTD-Verbot.
+// 14. DTD prohibition.
 // ============================================================================
 #[test]
 fn dtd_rejected_in_dds_xml() {
@@ -385,7 +385,7 @@ fn dtd_rejected_in_dds_xml() {
 }
 
 // ============================================================================
-// 15. Mehrere `<domain_library>` im selben `<dds>` koexistieren.
+// 15. Multiple `<domain_library>` coexist in the same `<dds>`.
 // ============================================================================
 #[test]
 fn multiple_domain_libraries_coexist() {
@@ -400,8 +400,8 @@ fn multiple_domain_libraries_coexist() {
 }
 
 // ============================================================================
-// 16. Mixed-Top-Level: QoS+Domain+Participant+Application im selben File
-//     mit Cross-Refs zueinander.
+// 16. Mixed top-level: QoS+Domain+Participant+Application in the same file
+//     with cross-refs to each other.
 // ============================================================================
 #[test]
 fn mixed_top_level_with_cross_refs() {
@@ -446,8 +446,8 @@ fn mixed_top_level_with_cross_refs() {
 }
 
 // ============================================================================
-// 17. Spec-Annex-C-style Beispiel: Konkrete deployment-Datei mit Inheritance,
-//     Cross-Library-Refs, und QoS-Profile-Resolution kombiniert.
+// 17. Spec-Annex-C-style example: a concrete deployment file combining
+//     inheritance, cross-library refs, and QoS profile resolution.
 // ============================================================================
 #[test]
 fn spec_example_deployment_file() {
@@ -498,7 +498,7 @@ fn spec_example_deployment_file() {
 }
 
 // ============================================================================
-// 18. Resolve-Snapshot: DdsXml::resolve_participant liefert flache Sicht.
+// 18. Resolve snapshot: DdsXml::resolve_participant returns a flat view.
 // ============================================================================
 #[test]
 fn resolve_participant_returns_flat_snapshot() {
@@ -528,8 +528,8 @@ fn resolve_participant_returns_flat_snapshot() {
 }
 
 // ============================================================================
-// 19. ParticipantFactoryAdapter-Trait skeleton: apply_to_factory ruft den
-//     Adapter durch.
+// 19. ParticipantFactoryAdapter trait skeleton: apply_to_factory calls
+//     through to the adapter.
 // ============================================================================
 #[test]
 fn factory_adapter_skeleton_invocation() {
@@ -563,9 +563,9 @@ fn factory_adapter_skeleton_invocation() {
 }
 
 // ============================================================================
-// 20. Stand-alone Library-Loader: parse_application_libraries und
-//     parse_domain_participant_libraries akzeptieren auch Dokumente, die
-//     nur eine Library-Sorte enthalten.
+// 20. Standalone library loaders: parse_application_libraries and
+//     parse_domain_participant_libraries also accept documents that
+//     contain only one kind of library.
 // ============================================================================
 #[test]
 fn standalone_loaders_work_in_isolation() {
@@ -589,7 +589,7 @@ fn standalone_loaders_work_in_isolation() {
 }
 
 // ============================================================================
-// 21. Topic ohne register_type_ref-Match -> UnresolvedReference beim Resolve.
+// 21. Topic without a register_type_ref match -> UnresolvedReference on resolve.
 // ============================================================================
 #[test]
 fn topic_with_unknown_register_type_ref_errors() {
@@ -609,7 +609,7 @@ fn topic_with_unknown_register_type_ref_errors() {
 }
 
 // ============================================================================
-// 22. DataWriter mit qos_profile_ref auf nicht-existierendes Profile.
+// 22. DataWriter with a qos_profile_ref to a non-existent profile.
 // ============================================================================
 #[test]
 fn datawriter_qos_profile_ref_unresolved() {

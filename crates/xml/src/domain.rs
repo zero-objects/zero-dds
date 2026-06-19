@@ -2,15 +2,15 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DDS-XML 1.0 §7.3.4 Building Block "Domain Library".
 //!
-//! Ein `<domain_library>` traegt 1+ `<domain>`-Eintraege; jeder traegt
-//! eine numerische `domain_id`, sowie 0+ `<register_type>` und 0+
-//! `<topic>`-Eintraege. Topics tragen einen `register_type_ref` (Verweis
-//! auf das `<register_type>`-Element innerhalb derselben Domain) und
-//! optional ein inline `<topic_qos>` oder ein `qos_profile_ref`-Attribut.
+//! A `<domain_library>` carries 1+ `<domain>` entries; each carries
+//! a numeric `domain_id`, plus 0+ `<register_type>` and 0+
+//! `<topic>` entries. Topics carry a `register_type_ref` (a reference
+//! to the `<register_type>` element within the same domain) and
+//! optionally an inline `<topic_qos>` or a `qos_profile_ref` attribute.
 //!
-//! Spec-Quelle: OMG DDS-XML 1.0 §7.3.4 (Domain Library Building Block).
+//! Spec source: OMG DDS-XML 1.0 §7.3.4 (Domain Library Building Block).
 //!
-//! # XML → Rust-Type Mapping
+//! # XML → Rust type mapping
 //!
 //! ```text
 //! <domain_library name=…>          | DomainLibrary
@@ -32,48 +32,48 @@ use crate::qos::EntityQos;
 use crate::qos_parser::parse_entity_qos_public;
 use crate::types::parse_ulong;
 
-/// Container fuer 1+ Domain-Definitionen (§7.3.4.4.1).
+/// Container for 1+ domain definitions (§7.3.4.4.1).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DomainLibrary {
-    /// Name der Library (`<domain_library name="…">`).
+    /// Name of the library (`<domain_library name="…">`).
     pub name: String,
-    /// Domain-Definitionen in Dokument-Reihenfolge.
+    /// Domain definitions in document order.
     pub domains: Vec<DomainEntry>,
 }
 
 impl DomainLibrary {
-    /// Lookup einer Domain anhand ihres Namens.
+    /// Looks up a domain by its name.
     #[must_use]
     pub fn domain(&self, name: &str) -> Option<&DomainEntry> {
         self.domains.iter().find(|d| d.name == name)
     }
 }
 
-/// Einzelne `<domain>`-Definition (§7.3.4.4.2).
+/// A single `<domain>` definition (§7.3.4.4.2).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DomainEntry {
-    /// Name der Domain (Attribut `name`).
+    /// Name of the domain (attribute `name`).
     pub name: String,
-    /// Numerische Domain-ID (Attribut `domain_id`, 0..=232).
+    /// Numeric domain ID (attribute `domain_id`, 0..=232).
     pub domain_id: u32,
-    /// Spec §7.3.4.4.2: Optionaler `base_name`-Verweis auf eine zuvor
-    /// definierte Domain. Inheritance-Resolver kombiniert
-    /// `register_types` und `topics` der Eltern-Kette mit den lokalen
-    /// Definitionen.
+    /// Spec §7.3.4.4.2: optional `base_name` reference to a previously
+    /// defined domain. The inheritance resolver combines the
+    /// `register_types` and `topics` of the parent chain with the local
+    /// definitions.
     pub base_name: Option<String>,
-    /// Type-Registrierungen innerhalb dieser Domain.
+    /// Type registrations within this domain.
     pub register_types: Vec<RegisterType>,
-    /// Topic-Definitionen innerhalb dieser Domain.
+    /// Topic definitions within this domain.
     pub topics: Vec<TopicEntry>,
 }
 
 impl DomainEntry {
-    /// Liefert die Type-Registrierung mit dem angegebenen Namen.
+    /// Returns the type registration with the given name.
     #[must_use]
     pub fn register_type(&self, name: &str) -> Option<&RegisterType> {
         self.register_types.iter().find(|r| r.name == name)
     }
-    /// Liefert das Topic mit dem angegebenen Namen.
+    /// Returns the topic with the given name.
     #[must_use]
     pub fn topic(&self, name: &str) -> Option<&TopicEntry> {
         self.topics.iter().find(|t| t.name == name)
@@ -82,39 +82,39 @@ impl DomainEntry {
 
 /// `<register_type name="…" type_ref="…"/>` (§7.3.4.4.4).
 ///
-/// `type_ref` verweist auf eine XTypes-Type-Definition aus dem
-/// `types`-Building-Block (Cluster H — separater C7.D-Auftrag).
+/// `type_ref` refers to an XTypes type definition from the
+/// `types` building block (Cluster H — separate C7.D task).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RegisterType {
-    /// Name unter dem der Type registriert wird.
+    /// Name under which the type is registered.
     pub name: String,
-    /// Verweis auf eine `<type>`-Definition (`module::TypeName`).
+    /// Reference to a `<type>` definition (`module::TypeName`).
     pub type_ref: String,
 }
 
 /// `<topic name="…" register_type_ref="…">` (§7.3.4.4.3).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TopicEntry {
-    /// Topic-Name (Attribut `name`).
+    /// Topic name (attribute `name`).
     pub name: String,
-    /// Name der Type-Registrierung in derselben Domain.
+    /// Name of the type registration in the same domain.
     pub register_type_ref: String,
-    /// Inline `<topic_qos>`-Container (kann mit `qos_profile_ref`
-    /// ko-existieren; bei Konflikt gewinnt der Inline-Container).
+    /// Inline `<topic_qos>` container (may co-exist with `qos_profile_ref`;
+    /// on conflict the inline container wins).
     pub topic_qos: Option<EntityQos>,
-    /// Optionaler `qos_profile_ref`-Attribut-Verweis (`library::profile`).
+    /// Optional `qos_profile_ref` attribute reference (`library::profile`).
     pub qos_profile_ref: Option<String>,
-    /// Optionaler Topic-Filter-Glob (Spec Annex C, Cyclone-/FastDDS-
-    /// Konvention; `<topic_filter>` als Kind oder Attribut).
+    /// Optional topic filter glob (Spec Annex C, Cyclone/FastDDS
+    /// convention; `<topic_filter>` as a child or attribute).
     pub topic_filter: Option<String>,
 }
 
-/// Parsed alle `<domain_library>`-Eintraege aus einem `<dds>`-Wurzel-Element.
+/// Parses all `<domain_library>` entries from a `<dds>` root element.
 ///
 /// # Errors
-/// * [`XmlError::InvalidXml`] — keine `<dds>`-Wurzel oder XML nicht
-///   wohlgeformt.
-/// * Weitere Fehler aus den per-Element-Parsern.
+/// * [`XmlError::InvalidXml`] — no `<dds>` root or XML not
+///   well-formed.
+/// * Further errors from the per-element parsers.
 pub fn parse_domain_libraries(xml: &str) -> Result<Vec<DomainLibrary>, XmlError> {
     let doc = parse_xml_tree(xml)?;
     if doc.root.name != "dds" {
@@ -183,10 +183,10 @@ fn parse_register_type(el: &XmlElement) -> Result<RegisterType, XmlError> {
         .attribute("name")
         .ok_or_else(|| XmlError::MissingRequiredElement("register_type@name".into()))?
         .to_string();
-    // type_ref ist in der Spec optional — manche Schreibweisen nutzen
-    // einfach `<register_type name="…"/>` und referenzieren die Type
-    // implizit ueber den `name`. Wir akzeptieren beides; bei fehlendem
-    // type_ref fallen wir auf `name` zurueck.
+    // type_ref is optional in the spec — some spellings simply use
+    // `<register_type name="…"/>` and reference the type
+    // implicitly via the `name`. We accept both; if type_ref is
+    // missing we fall back to `name`.
     let type_ref = el
         .attribute("type_ref")
         .map_or_else(|| name.clone(), ToString::to_string);
@@ -342,8 +342,8 @@ mod tests {
 
     #[test]
     fn domain_inheritance_chain_resolves_via_resolve_chain() {
-        // Spec §7.3.4.4.2: Domain-Inheritance nutzt denselben
-        // resolve_chain-Mechanismus wie qos_profile.
+        // Spec §7.3.4.4.2: domain inheritance uses the same
+        // resolve_chain mechanism as qos_profile.
         use crate::inheritance::resolve_chain;
         use alloc::collections::BTreeMap;
 

@@ -1,39 +1,39 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-hpack`-Crate.
+Initial release materialization of the `zerodds-hpack` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **RFC 7541** §2.3 (Indexing-Tables), §4 (Dynamic-Table-Management), §5.1 (Integer-Representation), §5.2 (String-Literal-Representation), §6.1 (Indexed-Header-Field), §6.2.1 (Literal-Header-Field-with-Incremental-Indexing), §6.2.2 (Literal-Header-Field-without-Indexing), §6.2.3 (Literal-Header-Field-Never-Indexed), §6.3 (Dynamic-Table-Size-Update), Appendix A (Static-Table, 61 Eintraege), Appendix B (Static-Huffman-Code).
+- **RFC 7541** §2.3 (indexing tables), §4 (dynamic-table management), §5.1 (integer representation), §5.2 (string-literal representation), §6.1 (indexed header field), §6.2.1 (literal header field with incremental indexing), §6.2.2 (literal header field without indexing), §6.2.3 (literal header field never indexed), §6.3 (dynamic-table size update), Appendix A (static table, 61 entries), Appendix B (static Huffman code).
 
-### Public-API
+### Public API
 
 **Encoder/Decoder:**
 
-- `Encoder::{new, with_max_size, table, table_mut, encode}`, `Encoder::use_huffman` (Field).
-- `EncoderError` (reserviert; aktuell unused — RFC 7541 §6 erlaubt Encoder-Fehlerfreiheit, weil jeder Header-Set codierbar ist).
+- `Encoder::{new, with_max_size, table, table_mut, encode}`, `Encoder::use_huffman` (field).
+- `EncoderError` (reserved; currently unused — RFC 7541 §6 allows the encoder to be error-free because every header set is encodable).
 - `Decoder::{new, with_max_size, table, table_mut, decode}`.
-- `DecoderError::{InvalidIndex, Integer, String, Truncated}` mit `Display` + `From<IntegerError>` + `From<StringError>` + `std::error::Error` (Feature `std`).
+- `DecoderError::{InvalidIndex, Integer, String, Truncated}` with `Display` + `From<IntegerError>` + `From<StringError>` + `std::error::Error` (feature `std`).
 
-**Table-Modell:**
+**Table model:**
 
 - `STATIC_TABLE: [StaticTableEntry; 61]` — Appendix A.
-- `StaticTableEntry { name, value }` (`&'static str` Felder).
-- `HeaderField { name, value }` (`String` Felder), `HeaderField::size` (Spec §4.1: 32 + name.len + value.len).
-- `Table::{new, default, add, get, find, size, max_size, set_max_size, len, is_empty}` — Combined-Lookup + FIFO-Eviction.
+- `StaticTableEntry { name, value }` (`&'static str` fields).
+- `HeaderField { name, value }` (`String` fields), `HeaderField::size` (spec §4.1: 32 + name.len + value.len).
+- `Table::{new, default, add, get, find, size, max_size, set_max_size, len, is_empty}` — combined lookup + FIFO eviction.
 
-**Primitiv-Codec:**
+**Primitive codec:**
 
 - `encode_integer(value: u64, prefix_bits: u8, out_byte_prefix_bits: u8) -> Vec<u8>` (§5.1).
 - `decode_integer(input: &[u8], prefix_bits: u8) -> Result<(u64, usize), IntegerError>`.
 - `IntegerError::{Truncated, TooLarge}`.
 - `encode_string(s: &str, huffman_compress: bool) -> Vec<u8>` (§5.2).
 - `decode_string(input: &[u8]) -> Result<(String, usize), StringError>`.
-- `decode_bytes(input: &[u8]) -> Result<(Vec<u8>, usize), StringError>` — Octet-Pfad (HPACK erlaubt non-UTF8).
+- `decode_bytes(input: &[u8]) -> Result<(Vec<u8>, usize), StringError>` — octet path (HPACK allows non-UTF8).
 - `StringError::{Integer, Truncated, Huffman, NotUtf8}`.
 
 **Huffman:**
@@ -42,29 +42,29 @@ Initiale Release-Materialisierung der `zerodds-hpack`-Crate.
 - `huffman::decode(bytes: &[u8]) -> Result<Vec<u8>, HuffmanError>`.
 - `HuffmanError`.
 
-### Implementierung
+### Implementation
 
-`Encoder` und `Decoder` halten je eine eigene `Table`, weil Sender und Receiver ihre Dynamic-Tabellen unabhaengig syncen — geteiltes State waere ein Spec-Verstoss (§4.1, „kept independent in encoder and decoder"). Encoder-Strategie: `Table::find` liefert `(index, full_match)`; Voll-Match → 7-Bit-Indexed (§6.1, MSB=1), Name-Only-Match → 6-Bit-Indexed-Name + Value-Literal (§6.2.1), kein Match → 0x40 + Name-Literal + Value-Literal. Beide Literal-Pfade adden in die Dynamic-Table (Incremental-Indexing).
+`Encoder` and `Decoder` each hold their own `Table`, because the sender and receiver sync their dynamic tables independently — shared state would be a spec violation (§4.1, "kept independent in encoder and decoder"). Encoder strategy: `Table::find` returns `(index, full_match)`; full match → 7-bit indexed (§6.1, MSB=1), name-only match → 6-bit indexed name + value literal (§6.2.1), no match → 0x40 + name literal + value literal. Both literal paths add to the dynamic table (incremental indexing).
 
-Decoder dispatcht auf den ersten Byte: `0b1xxxxxxx` = Indexed (§6.1), `0b01xxxxxx` = Literal-Incremental (§6.2.1), `0b001xxxxx` = Dynamic-Table-Size-Update (§6.3), `0b0000xxxx` = Literal-without-Indexing (§6.2.2), `0b0001xxxx` = Literal-Never-Indexed (§6.2.3, semantisch identisch zu §6.2.2 fuer den Codec — die „never indexed"-Direktive ist eine Hop-by-Hop-Hint fuer Proxies, semantisch fuer den Codec aequivalent).
+The decoder dispatches on the first byte: `0b1xxxxxxx` = indexed (§6.1), `0b01xxxxxx` = literal incremental (§6.2.1), `0b001xxxxx` = dynamic-table size update (§6.3), `0b0000xxxx` = literal without indexing (§6.2.2), `0b0001xxxx` = literal never indexed (§6.2.3, semantically identical to §6.2.2 for the codec — the "never indexed" directive is a hop-by-hop hint for proxies, semantically equivalent for the codec).
 
-Variable-Length-Integer-Decode rejected `shift >= 56` als `TooLarge` (= Continuation > 8 Bytes), weil RFC 7541 §5.1 Implementations explizit erlaubt einen Limit zu enforcen. Truncated-Continuation (kein Folge-Byte mit MSB=0) wird als `Truncated` zurueckgegeben.
+Variable-length integer decode rejects `shift >= 56` as `TooLarge` (= continuation > 8 bytes), because RFC 7541 §5.1 explicitly allows implementations to enforce a limit. A truncated continuation (no following byte with MSB=0) is returned as `Truncated`.
 
-Static-Huffman-Code aus Appendix B ist als 257-Eintrags-Konstanten-Tabelle `[(code: u32, bit_length: u8); 257]` materialisiert (Index 256 = EOS, nur fuer Padding). Decoder akzeptiert Trailing-Padding bis zu 7 EOS-Bits. Truncated- oder zu-lange-Padding-Codes werden als `HuffmanError` rejected.
+The static Huffman code from Appendix B is materialized as a 257-entry constant table `[(code: u32, bit_length: u8); 257]` (index 256 = EOS, only for padding). The decoder accepts trailing padding of up to 7 EOS bits. Truncated or overlong padding codes are rejected as `HuffmanError`.
 
-`Table::add` implementiert Spec §4.4 streng: ein Entry der allein die Max-Size ueberschreitet leert die ganze Tabelle (statt nur ihn selbst zu skippen). Eviction passiert FIFO vom Tabel-Ende.
+`Table::add` implements spec §4.4 strictly: an entry that alone exceeds the max size clears the entire table (instead of just skipping it). Eviction happens FIFO from the end of the table.
 
-`#![no_std]` + `extern crate alloc;` erlaubt Embedded-Builds; `std`-Feature aktiviert nur die `std::error::Error`-Impls.
+`#![no_std]` + `extern crate alloc;` allows embedded builds; the `std` feature only enables the `std::error::Error` impls.
 
-### Architektur
+### Architecture
 
 - **Layer:** 5 (Bridges).
-- **Dependencies (in):** keine (Substrat-Crate). Nur `core` + `alloc`.
-- **Dependents (out):** `zerodds-http2` (HEADERS-/CONTINUATION-Frame-Bodies), `zerodds-grpc-bridge` (HTTP/2-Header-Block fuer gRPC-Frames), `zerodds-conformance` (Cross-Vendor-Test-Harness).
-- **Feature-Flags:** `std` (default, aktiviert `std::error::Error`-Impls), `alloc` (via std, immer noetig).
+- **Dependencies (in):** none (substrate crate). Only `core` + `alloc`.
+- **Dependents (out):** `zerodds-http2` (HEADERS/CONTINUATION frame bodies), `zerodds-grpc-bridge` (HTTP/2 header block for gRPC frames), `zerodds-conformance` (cross-vendor test harness).
+- **Feature flags:** `std` (default, enables the `std::error::Error` impls), `alloc` (via std, always required).
 
-### Stabilitaet
+### Stability
 
-- Public-API: RC1-stabil. Module-Pfade `decoder`, `encoder`, `huffman`, `integer`, `string`, `table` sind explizit `pub mod` und Teil des stabilen Surface (Caller darf direkt auf z.B. `huffman::encode` zugreifen ohne Re-Export).
-- Wire-Format: durch RFC 7541 fixiert; Aenderung waere Spec-Breaking.
-- Fehler-Diskriminanten: stabil; neue Diskriminanten sind Major-additive (Caller pattern-matched moeglicherweise erschoepfend).
+- Public API: RC1-stable. The module paths `decoder`, `encoder`, `huffman`, `integer`, `string`, `table` are explicitly `pub mod` and part of the stable surface (callers may access e.g. `huffman::encode` directly without a re-export).
+- Wire format: fixed by RFC 7541; a change would be spec-breaking.
+- Error discriminants: stable; new discriminants are major-additive (callers may pattern-match exhaustively).

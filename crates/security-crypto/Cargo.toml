@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "AES-GCM / HMAC `CryptographicPlugin` fuer DDS-Security 1.1 §8.5: AES-128-GCM + AES-256-GCM + HMAC-SHA256 + Receiver-Specific-MACs + HW-Capabilities-Detection."
+description = "AES-GCM / HMAC `CryptographicPlugin` for DDS-Security 1.1 §8.5: AES-128-GCM + AES-256-GCM + HMAC-SHA256 + receiver-specific MACs + HW capabilities detection."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-security-crypto"
 readme = "README.md"
@@ -21,16 +21,17 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std", "metrics"]
 std = []
-# Hook-Points fuer zerodds-monitor-1.0 §2.5 (Security-Domain). Default an.
+# Hook points for zerodds-monitor-1.1 §2.5 (security domain). On by default.
 metrics = ["std", "dep:zerodds-monitor"]
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
-# AEAD + HMAC-Primitives. ISC. Wird bereits transitiv von
-# `zerodds-security-pki` (rustls-webpki) gezogen — kein zusaetzlicher
-# Fussabdruck.
+zerodds-security = { version = "1.0.0-rc.3", path = "../security" }
+# AEAD + HMAC primitives. ISC. Already pulled transitively by
+# `zerodds-security-pki` (rustls-webpki) — no additional
+# footprint.
 ring = { workspace = true }
-# Hook-Points fuer zerodds-monitor-1.0 §2.5. Optional.
-zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+# Hook points for zerodds-monitor-1.1 §2.5. Optional.
+zerodds-monitor = { version = "1.0.0-rc.3", path = "../monitor", optional = true, default-features = false, features = ["std"] }

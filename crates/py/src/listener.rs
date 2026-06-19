@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! PyO3-Listener-Callbacks (§6.5 Vendor-Spec `zerodds-py-1.0`).
+//! PyO3 listener callbacks (§6.5 vendor spec `zerodds-py-1.0`).
 //!
-//! Verbindet Python-Callbacks mit den Rust-Listener-Traits aus
-//! `crates/dcps/src/listener.rs`. Jeder DataReader/DataWriter kann
-//! einen Listener mit beliebigen Callback-Subsets registrieren; die
-//! Bridge ruft die Python-Funktionen unter GIL-Acquire.
+//! Connects Python callbacks with the Rust listener traits from
+//! `crates/dcps/src/listener.rs`. Each DataReader/DataWriter can
+//! register a listener with arbitrary callback subsets; the
+//! bridge calls the Python functions under a GIL acquire.
 
 #![allow(clippy::missing_errors_doc)]
 #![allow(unsafe_code)]
@@ -13,7 +13,7 @@
 #![allow(clippy::useless_conversion)]
 #![allow(clippy::needless_lifetimes)]
 #![allow(clippy::new_without_default)]
-// PyO3 macro-expansion + Python-Callback-Bridge nutzen unwrap/expect intern.
+// PyO3 macro expansion + the Python callback bridge use unwrap/expect internally.
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::expect_used)]
 
@@ -49,12 +49,12 @@ struct PyListenerSlots {
 }
 
 // ---------------------------------------------------------------------------
-// PyDataWriterListener — gehoert via `Arc` an einen `DataWriter`.
+// PyDataWriterListener — belongs to a `DataWriter` via `Arc`.
 // ---------------------------------------------------------------------------
 
-/// Listener fuer einen `DataWriter`. Vier Callback-Slots, jeder optional
-/// (siehe DDS 1.4 §2.2.4.2.5). Slots werden ueber `on_*`-Setter im Python-
-/// Layer befuellt.
+/// Listener for a `DataWriter`. Four callback slots, each optional
+/// (see DDS 1.4 §2.2.4.2.5). Slots are filled via `on_*` setters in the
+/// Python layer.
 #[pyclass(name = "DataWriterListener", module = "zerodds_py")]
 pub struct PyDataWriterListener {
     slots: Mutex<PyListenerSlots>,
@@ -82,22 +82,22 @@ impl PyDataWriterListener {
     }
 }
 
-/// Bridge-Type: implementiert `DataWriterListener` indem es die
-/// Python-Callbacks ruft. Wird vom Python-Layer per
-/// `Arc::new(PyDataWriterListenerBridge { slots })` instanziiert
-/// und an `DataWriter::set_listener` weitergegeben.
+/// Bridge type: implements `DataWriterListener` by calling the
+/// Python callbacks. Instantiated by the Python layer via
+/// `Arc::new(PyDataWriterListenerBridge { slots })`
+/// and passed to `DataWriter::set_listener`.
 pub struct PyDataWriterListenerBridge {
     slots: std::sync::Arc<Mutex<PyListenerSlots>>,
 }
 
 impl PyDataWriterListenerBridge {
     pub fn from_pyclass(listener: &PyDataWriterListener) -> std::sync::Arc<Self> {
-        // Snapshot der aktuellen Callbacks; Setter nach `set_listener`
-        // werden nicht propagiert (Caller setzt erst alle Callbacks,
-        // dann `set_listener`). `Py::clone_ref` braucht den GIL —
-        // an dieser Stelle besitzt das Caller-Frame ihn schon
-        // (PyO3-Methode), aber wir holen ihn explizit, um die
-        // Abhaengigkeit lokal zu zeigen.
+        // Snapshot of the current callbacks; setters after `set_listener`
+        // are not propagated (the caller first sets all callbacks,
+        // then `set_listener`). `Py::clone_ref` needs the GIL —
+        // at this point the caller frame already owns it
+        // (a PyO3 method), but we acquire it explicitly to show the
+        // dependency locally.
         let snapshot = Python::with_gil(|py| {
             let g = listener.slots.lock().unwrap();
             PyListenerSlots {
@@ -125,9 +125,9 @@ fn call_with_handle_and_status<F>(callback: &Py<PyAny>, build_args: F)
 where
     F: for<'py> FnOnce(Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyTuple>>,
 {
-    // Python-Callback unter GIL-Acquire aufrufen. Exceptions werden in
-    // stderr geschrieben (PyErr::print) — Rust-Side darf keine
-    // Listener-Exception propagieren.
+    // Call the Python callback under a GIL acquire. Exceptions are written
+    // to stderr (PyErr::print) — the Rust side must not propagate a
+    // listener exception.
     Python::with_gil(|py| match build_args(py) {
         Ok(args) => {
             if let Err(e) = callback.call1(py, args) {

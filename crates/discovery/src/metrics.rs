@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Hot-Path-Hook-Points fuer `zerodds-monitor` (zerodds-monitor-1.0 §2.4).
+//! Hot-path hook points for `zerodds-monitor` (zerodds-monitor-1.1 §2.4).
 //!
-//! Existiert nur unter `cfg(feature = "metrics")`. Call-Sites in
-//! `spdp.rs`/`sedp/*.rs` tragen jeweils ein eigenes
-//! `#[cfg(feature = "metrics")]`-Attribut, sodass im no_std-Build kein
-//! Counter-Funktionsaufruf compiliert.
+//! Exists only under `cfg(feature = "metrics")`. Call sites in
+//! `spdp.rs`/`sedp/*.rs` each carry their own
+//! `#[cfg(feature = "metrics")]` attribute, so that no counter function
+//! call is compiled in the no_std build.
 
 use std::sync::{Arc, OnceLock};
 
@@ -28,23 +28,23 @@ fn counters() -> &'static DiscoveryCounters {
         let r = default_registry();
         r.set_help(
             metric_names::DDS_DISCOVERY_PARTICIPANTS_KNOWN,
-            "Bekannte Participants (zerodds-monitor-1.0 §2.4)",
+            "Bekannte Participants (zerodds-monitor-1.1 §2.4)",
         );
         r.set_help(
             metric_names::DDS_DISCOVERY_ENDPOINTS_KNOWN,
-            "Bekannte Endpoints (zerodds-monitor-1.0 §2.4)",
+            "Bekannte Endpoints (zerodds-monitor-1.1 §2.4)",
         );
         r.set_help(
             metric_names::DDS_DISCOVERY_SPDP_ANNOUNCEMENTS_SENT_TOTAL,
-            "SPDP-Announcements (zerodds-monitor-1.0 §2.4)",
+            "SPDP-Announcements (zerodds-monitor-1.1 §2.4)",
         );
         r.set_help(
             metric_names::DDS_DISCOVERY_SEDP_UPDATES_TOTAL,
-            "SEDP-Updates (zerodds-monitor-1.0 §2.4)",
+            "SEDP-Updates (zerodds-monitor-1.1 §2.4)",
         );
         r.set_help(
             metric_names::DDS_DISCOVERY_TYPE_LOOKUPS_TOTAL,
-            "TypeLookup-Requests (zerodds-monitor-1.0 §2.4)",
+            "TypeLookup-Requests (zerodds-monitor-1.1 §2.4)",
         );
         let domain = || Labels::new().with("domain_id", "0");
         DiscoveryCounters {
@@ -78,37 +78,37 @@ fn counters() -> &'static DiscoveryCounters {
     })
 }
 
-/// SPDP-Beacon serialisiert + im Begriff zu senden.
+/// SPDP beacon serialized and about to be sent.
 pub fn inc_spdp_announcement_sent() {
     counters().spdp_announcements_sent.inc();
 }
 
-/// SEDP Publication-Update gesendet.
+/// SEDP publication update sent.
 pub fn inc_sedp_pub_update() {
     counters().sedp_pub_updates.inc();
 }
 
-/// SEDP Subscription-Update gesendet.
+/// SEDP subscription update sent.
 pub fn inc_sedp_sub_update() {
     counters().sedp_sub_updates.inc();
 }
 
-/// TypeLookup-Request gestellt.
+/// TypeLookup request issued.
 pub fn inc_type_lookup() {
     counters().type_lookups.inc();
 }
 
-/// Participants-Known-Gauge auf den aktuellen Wert setzen.
+/// Set the participants-known gauge to the current value.
 pub fn set_participants_known(count: usize) {
     counters().participants_known.set(count as i64);
 }
 
-/// Writer-Endpoints-Known-Gauge setzen.
+/// Set the writer-endpoints-known gauge.
 pub fn set_writer_endpoints_known(count: usize) {
     counters().endpoints_writers.set(count as i64);
 }
 
-/// Reader-Endpoints-Known-Gauge setzen.
+/// Set the reader-endpoints-known gauge.
 pub fn set_reader_endpoints_known(count: usize) {
     counters().endpoints_readers.set(count as i64);
 }

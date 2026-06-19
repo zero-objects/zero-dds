@@ -1,35 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! WebSocket Payload Masking — RFC 6455 §5.3.
+//! WebSocket payload masking — RFC 6455 §5.3.
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-/// Spec §5.3 (S. 32): "octet i of the transformed data ('transformed-
+/// Spec §5.3 (p. 32): "octet i of the transformed data ('transformed-
 /// octet-i') is the XOR of octet i of the original data ('original-
 /// octet-i') with octet at index i modulo 4 of the masking key
 /// ('masking-key-octet-j')".
 ///
-/// Diese Operation ist symmetrisch — derselbe Aufruf masked **und**
-/// unmasked.
+/// This operation is symmetric — the same call masks **and**
+/// unmasks.
 pub fn apply_mask(data: &mut [u8], key: [u8; 4]) {
     for (i, b) in data.iter_mut().enumerate() {
         *b ^= key[i & 0x3];
     }
 }
 
-/// Generiert einen Masking-Key. Spec §5.3 (S. 32): "The masking key is
+/// Generates a masking key. Spec §5.3 (p. 32): "The masking key is
 /// a 32-bit value chosen at random by the client. [...] The masking
 /// key needs to be unpredictable; thus, the masking key MUST be
 /// derived from a strong source of entropy."
 ///
-/// Diese Library liefert eine Default-Implementation auf Basis eines
-/// Splitmix64-PRNG mit Seed aus einer monoton wachsenden Counter +
-/// `core::ptr::addr_of!`-Position-Hash. Spec-Komformitaet **fordert**
-/// eine kryptographisch starke Quelle — Anwendungen mit Security-
-/// Bedarf MUESSEN ein eigenes Key-Generation-Verfahren einsetzen
-/// (z.B. `getrandom`-Crate oder OS-RNG). Diese Funktion ist nur
-/// als Codec-Convenience gedacht; sie ist explizit `not for security`.
+/// This library provides a default implementation based on a
+/// Splitmix64 PRNG with a seed from a monotonically increasing counter +
+/// `core::ptr::addr_of!` position hash. Spec conformance **requires**
+/// a cryptographically strong source — applications with security
+/// requirements MUST use their own key generation scheme
+/// (e.g. the `getrandom` crate or an OS RNG). This function is meant
+/// only as a codec convenience; it is explicitly `not for security`.
 #[must_use]
 pub fn generate_masking_key() -> [u8; 4] {
     static COUNTER: AtomicU64 = AtomicU64::new(0xCAFE_F00D_DEAD_BEEF);
@@ -42,21 +42,21 @@ pub fn generate_masking_key() -> [u8; 4] {
     [bytes[0], bytes[1], bytes[2], bytes[3]]
 }
 
-/// Spec §5.3 — `MaskingKeyProvider`-Trait fuer caller-injected
+/// Spec §5.3 — `MaskingKeyProvider` trait for caller-injected
 /// secure RNGs.
 ///
-/// Anwendungen mit Security-Bedarf MUESSEN diesen Trait implementieren
-/// und einen kryptographisch starken RNG (z.B. `getrandom`,
-/// `rand::rngs::OsRng`) anbinden. Die Default-Implementation
-/// [`InsecureSplitmixProvider`] ist `not for security`.
+/// Applications with security requirements MUST implement this trait
+/// and wire in a cryptographically strong RNG (e.g. `getrandom`,
+/// `rand::rngs::OsRng`). The default implementation
+/// [`InsecureSplitmixProvider`] is `not for security`.
 pub trait MaskingKeyProvider {
-    /// Liefert einen 32-bit Masking-Key.
+    /// Returns a 32-bit masking key.
     fn next_key(&mut self) -> [u8; 4];
 }
 
-/// Default-Provider — explicit `not for security`.
+/// Default provider — explicitly `not for security`.
 ///
-/// Wraps die Library-internal `generate_masking_key`-Funktion.
+/// Wraps the library-internal `generate_masking_key` function.
 #[derive(Debug, Default)]
 pub struct InsecureSplitmixProvider;
 
@@ -66,9 +66,9 @@ impl MaskingKeyProvider for InsecureSplitmixProvider {
     }
 }
 
-/// Caller-supplied Provider — wraps eine `FnMut` die einen Key
-/// liefert. Erlaubt Anwendungen, eigene Sources (OsRng, getrandom,
-/// Hardware-RNG) ohne eigene Trait-Impl zu injizieren.
+/// Caller-supplied provider — wraps an `FnMut` that returns a key.
+/// Lets applications inject their own sources (OsRng, getrandom,
+/// hardware RNG) without writing their own trait impl.
 pub struct ClosureMaskingKeyProvider<F: FnMut() -> [u8; 4]>(pub F);
 
 impl<F: FnMut() -> [u8; 4]> MaskingKeyProvider for ClosureMaskingKeyProvider<F> {
@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn apply_mask_is_symmetric() {
-        // Spec §5.3 — XOR ist self-inverse.
+        // Spec §5.3 — XOR is self-inverse.
         let key = [0x01, 0x02, 0x03, 0x04];
         let original: alloc::vec::Vec<u8> = (0..16).collect();
         let mut masked = original.clone();
@@ -104,8 +104,8 @@ mod tests {
 
     #[test]
     fn apply_mask_handles_partial_key_alignment() {
-        // Spec §5.3 — payload-len kein Vielfaches von 4 muss korrekt
-        // funktionieren.
+        // Spec §5.3 — a payload length that is not a multiple of 4 must
+        // work correctly.
         let key = [0x01, 0x02, 0x03, 0x04];
         let mut data = [0x10, 0x20, 0x30, 0x40, 0x50];
         apply_mask(&mut data, key);
@@ -132,8 +132,8 @@ mod tests {
 
     #[test]
     fn generate_masking_key_returns_distinct_values_across_calls() {
-        // Spec §5.3 verlangt unpredictable; minimal Sanity: Counter
-        // produziert unterschiedliche Werte.
+        // Spec §5.3 requires unpredictability; minimal sanity: the counter
+        // produces distinct values.
         let k1 = generate_masking_key();
         let k2 = generate_masking_key();
         assert_ne!(k1, k2);

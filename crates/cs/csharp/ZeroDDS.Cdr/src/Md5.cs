@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// MD5-Hash fuer DDS-Key-Hash gemaess XTypes 1.3 §7.6.8.
+// MD5 hash for the DDS key hash per XTypes 1.3 §7.6.8.
 // Spec: zerodds-xcdr2-csharp-1.0 §7.
 
 using System;
@@ -9,17 +9,17 @@ using System;
 namespace ZeroDDS.Cdr;
 
 /// <summary>
-/// RFC 1321 MD5-Hash, deterministisch.  Wird ausschliesslich als
-/// Key-Hash-Berechnung im DDS-XCDR2-Stack verwendet (nicht als
-/// kryptographisch starke Funktion).
+/// RFC 1321 MD5 hash, deterministic. Used exclusively for
+/// key-hash computation in the DDS XCDR2 stack (not as a
+/// cryptographically strong function).
 ///
-/// Implementation laut RFC 1321; vendor-side damit FIPS-mode-Hosts
-/// (in denen `System.Security.Cryptography.MD5` deaktiviert ist)
-/// das DDS-Binding weiter benutzen koennen.
+/// Implementation per RFC 1321; vendor-side so that FIPS-mode hosts
+/// (where `System.Security.Cryptography.MD5` is disabled)
+/// can still use the DDS binding.
 /// </summary>
 public static class Md5
 {
-    /// <summary>Hashed `data` und liefert die 16 Output-Bytes.</summary>
+    /// <summary>Hashes `data` and returns the 16 output bytes.</summary>
     public static byte[] Hash(ReadOnlySpan<byte> data)
     {
         // Initial state per RFC 1321 §3.3.
@@ -28,8 +28,8 @@ public static class Md5
         uint c = 0x98badcfeu;
         uint d = 0x10325476u;
 
-        // Padding berechnen: append 0x80, dann 0x00 bis len % 64 == 56,
-        // dann 8-Byte little-endian original-bit-length.
+        // Compute padding: append 0x80, then 0x00 until len % 64 == 56,
+        // then the 8-byte little-endian original bit length.
         long bitLen = (long)data.Length * 8;
         int padLen;
         int rem = data.Length % 64;
@@ -40,14 +40,14 @@ public static class Md5
         var padded = new byte[totalLen];
         data.CopyTo(padded);
         padded[data.Length] = 0x80;
-        // padLen-1 weitere Null-Bytes sind bereits 0 (default).
-        // 8-Byte Bit-Length LE:
+        // padLen-1 further zero bytes are already 0 (default).
+        // 8-byte bit length, LE:
         for (int i = 0; i < 8; i++)
         {
             padded[data.Length + padLen + i] = (byte)((bitLen >> (8 * i)) & 0xff);
         }
 
-        // 64-Byte-Bloecke verarbeiten.
+        // Process 64-byte blocks.
         for (int blockStart = 0; blockStart < totalLen; blockStart += 64)
         {
             ProcessBlock(padded, blockStart, ref a, ref b, ref c, ref d);
@@ -63,7 +63,7 @@ public static class Md5
 
     private static void ProcessBlock(byte[] block, int offset, ref uint a, ref uint b, ref uint c, ref uint d)
     {
-        // 16 32-bit-Worte LE.
+        // 16 32-bit words, LE.
         Span<uint> m = stackalloc uint[16];
         for (int i = 0; i < 16; i++)
         {

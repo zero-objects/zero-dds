@@ -1,7 +1,7 @@
-//! C4.2 — TypeLookup-Service Integration-Tests im Discovery-Layer.
+//! C4.2 — TypeLookup service integration tests in the discovery layer.
 //!
-//! Cross-Plugin: Server-Side build → Wire-Roundtrip → Client-Side parse
-//! mit Callback-Trigger. Spec §7.6.3.3.4.
+//! Cross-plugin: server-side build → wire roundtrip → client-side parse
+//! with callback trigger. Spec §7.6.3.3.4.
 
 #![allow(
     clippy::expect_used,
@@ -83,7 +83,7 @@ fn server_handle_get_types_with_100_types_no_pagination() {
         type_ids: hashes_to_minimal_ids(&hashes),
     };
     let reply = server.handle_get_types(&req);
-    // getTypes hat keine Pagination — alle 100 muessen drin sein.
+    // getTypes has no pagination — all 100 must be present.
     assert_eq!(reply.types.len(), 100);
 }
 
@@ -113,7 +113,7 @@ fn server_handle_get_type_dependencies_struct_with_5_deps() {
     };
     let reply = server.handle_get_type_dependencies(&req);
     assert_eq!(reply.dependent_typeids.len(), 5);
-    assert!(reply.continuation_point.0.is_empty()); // alles in einer Page
+    assert!(reply.continuation_point.0.is_empty()); // all in one page
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn server_continuation_point_paginates_200_dependencies() {
     let root_hash = zerodds_types::compute_minimal_hash(&root).unwrap();
     server.registry.insert_minimal(root_hash, root);
 
-    // Iter-Schleife bis CP leer ist.
+    // Iterate until the CP is empty.
     let mut total = 0;
     let mut cp = ContinuationPoint::default();
     let mut iters = 0;
@@ -227,7 +227,7 @@ fn typelookup_endpoints_4_distinct_guids_per_participant() {
     for g in &guids {
         assert_eq!(g.prefix, prefix);
     }
-    // Alle vier EntityIds sind unterschiedlich.
+    // All four EntityIds are distinct.
     let mut seen = std::collections::HashSet::new();
     for g in &guids {
         assert!(seen.insert(g.entity_id), "duplicate entity_id: {g:?}");
@@ -236,14 +236,14 @@ fn typelookup_endpoints_4_distinct_guids_per_participant() {
 
 #[test]
 fn cross_plugin_server_emits_reply_client_parses_typeobject() {
-    // Server-Side hat den Type, Client nicht.
+    // The server side has the type, the client does not.
     let mut server = TypeLookupServer::new();
     let m = sample_struct("::Cross");
     let h = zerodds_types::compute_minimal_hash(&m).unwrap();
     server.registry.insert_minimal(h, m);
 
-    // Client baut Request, schickt zum Server (simuliert via direkter
-    // Funktionsaufruf).
+    // Client builds the request, sends it to the server (simulated via
+    // a direct function call).
     let mut client = TypeLookupClient::new();
     let collected: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
     let collected_clone = Arc::clone(&collected);
@@ -256,29 +256,29 @@ fn cross_plugin_server_emits_reply_client_parses_typeobject() {
         }),
     );
 
-    // Wire-Roundtrip: Request-Bytes → Server.
+    // Wire roundtrip: request bytes → server.
     let req_bytes = request_types_payload(&[TypeIdentifier::EquivalenceHashMinimal(h)]).unwrap();
     let mut r = BufferReader::new(&req_bytes, Endianness::Little);
     let req = GetTypesRequest::decode_from(&mut r).unwrap();
     let reply = server.handle_get_types(&req);
 
-    // Wire-Roundtrip: Reply-Bytes → Client.
+    // Wire roundtrip: reply bytes → client.
     let mut w = BufferWriter::new(Endianness::Little);
     reply.encode_into(&mut w).unwrap();
     let reply_bytes = w.into_bytes();
     let mut r = BufferReader::new(&reply_bytes, Endianness::Little);
     let decoded_reply = GetTypesReply::decode_from(&mut r).unwrap();
 
-    // Callback feuert.
+    // Callback fires.
     client.handle_reply(id, TypeLookupReply::Types(decoded_reply));
     assert_eq!(*collected.lock().unwrap(), 1);
 }
 
 #[test]
 fn typeidentifier_with_minimal_hash_yields_complete_to_minimal_pair() {
-    // Spec-§7.6.3.3.4 §a: when client requests Complete and server has
-    // both, server includes a complete_to_minimal mapping. Wir testen
-    // dass beide Hash-Varianten unabhaengig auflosbar sind.
+    // Spec §7.6.3.3.4 §a: when client requests Complete and server has
+    // both, server includes a complete_to_minimal mapping. We test
+    // that both hash variants are independently resolvable.
     let mut server = TypeLookupServer::new();
     let m = sample_struct("::Both");
     let h_min = zerodds_types::compute_minimal_hash(&m).unwrap();
@@ -291,7 +291,7 @@ fn typeidentifier_with_minimal_hash_yields_complete_to_minimal_pair() {
     assert_eq!(reply.types.len(), 1);
     assert!(matches!(reply.types[0], ReplyTypeObject::Minimal(_)));
 
-    // Complete-Hash NICHT in Registry → leerer Reply.
+    // Complete hash NOT in registry → empty reply.
     let req_complete = GetTypesRequest {
         type_ids: vec![TypeIdentifier::EquivalenceHashComplete(EquivalenceHash(
             [0xCC; 14],

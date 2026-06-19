@@ -5,19 +5,19 @@
 //! Crate `zerodds-idl`.
 //!
 //! Safety classification: **SAFE (std-only)**.
-//! Siehe `docs/architecture/02_architecture.md §3` und
+//! See `docs/architecture/02_architecture.md §3` and
 //! `docs/architecture/04_safety_by_architecture.md §2`.
 //!
-//! Diese Bibliothek liefert Parser, AST-Typen und Semantik-Analyse fuer
-//! OMG IDL 4.2. Backend-Code-Generatoren (C, C++, C#, Java, Python, Rust)
-//! leben im Binary-Crate `zerodds-idlc`, der diese Bibliothek konsumiert.
+//! This library provides the parser, AST types and semantic analysis for
+//! OMG IDL 4.2. Backend code generators (C, C++, C#, Java, Python, Rust)
+//! live in the binary crate `zerodds-idlc`, which consumes this library.
 //!
-//! **Keine no_std-Unterstuetzung:** IDL-Parsing ist eine Build-Zeit-Operation
-//! (Tool-Pipeline, Code-Generator). IDL-Strukturen werden zu fertigen Binaries
-//! kompiliert, bevor sie auf embedded-Targets deployed werden. Ein no_std-IDL-
-//! Parser hat keinen realen Use-Case. Safety-Qualitaet wird ueber
-//! `forbid(unsafe_code)` + Workspace-Clippy-Regeln (no panic/unwrap/expect)
-//! gesichert, nicht ueber embedded-Faehigkeit. Siehe RFC 0001
+//! **No no_std support:** IDL parsing is a build-time operation
+//! (tool pipeline, code generator). IDL structures are compiled into finished
+//! binaries before they are deployed to embedded targets. A no_std IDL
+//! parser has no real use case. Safety quality is ensured via
+//! `forbid(unsafe_code)` + workspace clippy rules (no panic/unwrap/expect),
+//! not via embedded capability. See RFC 0001
 //! (`docs/rfcs/0001-idl-parser-architecture.md`).
 
 #![forbid(unsafe_code)]
@@ -35,4 +35,4 @@ pub mod parser;
 pub mod preprocessor;
 pub mod semantics;
 
-pub use parser::{Error, parse};
+pub use parser::{Error, parse, parse_source};

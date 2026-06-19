@@ -1,13 +1,13 @@
-//! E2E-Multi-Bridge-Hop-Test fuer DDS-AMQP §7.11 Coexistence.
+//! E2E multi-bridge-hop test for DDS-AMQP §7.11 coexistence.
 //!
-//! Simuliert eine Kette von 3+ Bridges, durch die ein Sample
-//! propagiert wird. Verifiziert dass:
+//! Simulates a chain of 3+ bridges through which a sample is
+//! propagated. Verifies that:
 //!
-//! 1. Self-Tag-Drop greift wenn das Sample zur Ursprungs-Bridge
-//!    zurueckkommt.
-//! 2. Hop-Cap greift bei zu langer Kette.
-//! 3. Outbound-Stamp inkrementiert `dds:bridge-hop` korrekt.
-//! 4. Bridge-ID-Liste wird beim Durchlauf akkumuliert.
+//! 1. Self-tag drop takes effect when the sample returns to the
+//!    originating bridge.
+//! 2. The hop cap takes effect for an overly long chain.
+//! 3. The outbound stamp increments `dds:bridge-hop` correctly.
+//! 4. The bridge ID list is accumulated along the traversal.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
@@ -70,13 +70,13 @@ fn three_bridge_linear_chain_propagates() {
     let bridge_b = cfg("bridge-B");
     let bridge_c = cfg("bridge-C");
 
-    // Bridge A startet das Sample.
+    // Bridge A starts the sample.
     let mut props = empty_props();
     stamp_outbound(&bridge_a, &mut props);
     assert_eq!(read_hop(&props), Some(1));
     assert_eq!(read_bridge_ids(&props).as_deref(), Some("bridge-A"));
 
-    // Bridge B inspect → Forward, dann stamp.
+    // Bridge B inspect → Forward, then stamp.
     assert_eq!(inspect_inbound(&bridge_b, &props), InboundDecision::Forward);
     stamp_outbound(&bridge_b, &mut props);
     assert_eq!(read_hop(&props), Some(2));
@@ -85,7 +85,7 @@ fn three_bridge_linear_chain_propagates() {
         Some("bridge-A,bridge-B")
     );
 
-    // Bridge C inspect → Forward, dann stamp.
+    // Bridge C inspect → Forward, then stamp.
     assert_eq!(inspect_inbound(&bridge_c, &props), InboundDecision::Forward);
     stamp_outbound(&bridge_c, &mut props);
     assert_eq!(read_hop(&props), Some(3));
@@ -100,13 +100,13 @@ fn loop_back_to_origin_drops_self_tag() {
     let bridge_a = cfg("bridge-A");
     let bridge_b = cfg("bridge-B");
 
-    // A stamps, B forwards + stamps, dann A inspect das gleiche Sample
-    // wieder → Self-Tag-Drop.
+    // A stamps, B forwards + stamps, then A inspects the same sample
+    // again → self-tag drop.
     let mut props = empty_props();
     stamp_outbound(&bridge_a, &mut props);
     assert_eq!(inspect_inbound(&bridge_b, &props), InboundDecision::Forward);
     stamp_outbound(&bridge_b, &mut props);
-    // Nun zurueck nach A.
+    // Now back to A.
     assert_eq!(
         inspect_inbound(&bridge_a, &props),
         InboundDecision::DropLoop
@@ -125,7 +125,7 @@ fn hop_cap_drops_after_default_8_hops() {
             last_decision = decision;
             break;
         }
-        // Nach DEFAULT_HOP_CAP=8 Hops + 1 Inspektion sollte gedroppt werden.
+        // After DEFAULT_HOP_CAP=8 hops + 1 inspection it should be dropped.
         assert!(
             i <= DEFAULT_HOP_CAP as usize,
             "expected hop-cap drop within {DEFAULT_HOP_CAP} hops"
@@ -151,8 +151,8 @@ fn explicit_hop_cap_3_drops_at_4th_bridge() {
         visited.push(br.bridge_id.clone());
         stamp_outbound(br, &mut props);
     }
-    // Mit hop_cap=3 erlaubt der Filter Hops 0,1,2,3 — d.h. 4 Bridges
-    // bevor der naechste inspect den Hop=4 als > 3 droppt.
+    // With hop_cap=3 the filter allows hops 0,1,2,3 — i.e. 4 bridges
+    // before the next inspect drops hop=4 as > 3.
     assert!(
         (3..=4).contains(&visited.len()),
         "expected 3-4 bridges before drop, got {}",
@@ -172,8 +172,8 @@ fn hop_count_matches_chain_length() {
 
 #[test]
 fn diamond_topology_drops_self_loop_at_re_entry() {
-    // A → B → C, dann C → A direkt (Diamond/Loop): A muss eigenes
-    // bridge-id im Sample erkennen → DropLoop.
+    // A → B → C, then C → A directly (diamond/loop): A must recognize
+    // its own bridge-id in the sample → DropLoop.
     let bridge_a = cfg("origin-A");
     let bridge_b = cfg("middle-B");
     let bridge_c = cfg("middle-C");

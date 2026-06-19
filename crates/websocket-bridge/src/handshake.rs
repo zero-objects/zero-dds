@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! WebSocket Opening-Handshake — RFC 6455 §4.
+//! WebSocket opening handshake — RFC 6455 §4.
 //!
-//! Spec §4.1 (Client) + §4.2 (Server): HTTP/1.1-Upgrade-Sequence.
+//! Spec §4.1 (client) + §4.2 (server): HTTP/1.1 upgrade sequence.
 //!
 //! Client → Server:
 //! ```text
@@ -28,28 +28,28 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// RFC 6455 §1.3 — Magic-GUID fuer den Accept-Hash.
+/// RFC 6455 §1.3 — magic GUID for the accept hash.
 pub const WEBSOCKET_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-/// RFC 6455 §4.1 — Spec-Wert fuer `Sec-WebSocket-Version`.
+/// RFC 6455 §4.1 — spec value for `Sec-WebSocket-Version`.
 pub const WEBSOCKET_VERSION: &str = "13";
 
-/// Handshake-Fehler.
+/// Handshake error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HandshakeError {
-    /// HTTP-Header parsing fehlgeschlagen.
+    /// HTTP header parsing failed.
     MalformedRequest,
-    /// `Sec-WebSocket-Key` fehlt.
+    /// `Sec-WebSocket-Key` is missing.
     MissingKey,
-    /// `Upgrade: websocket` fehlt.
+    /// `Upgrade: websocket` is missing.
     NotWebSocketUpgrade,
-    /// `Connection: Upgrade` fehlt.
+    /// `Connection: Upgrade` is missing.
     NotUpgradeConnection,
     /// `Sec-WebSocket-Version` != 13.
     UnsupportedVersion(String),
-    /// Server-Response hatte unerwarteten Status-Code.
+    /// The server response had an unexpected status code.
     UnexpectedStatus(u16),
-    /// `Sec-WebSocket-Accept` passt nicht zum erwarteten Hash.
+    /// `Sec-WebSocket-Accept` does not match the expected hash.
     AcceptMismatch,
 }
 
@@ -70,14 +70,14 @@ impl core::fmt::Display for HandshakeError {
 #[cfg(feature = "std")]
 impl std::error::Error for HandshakeError {}
 
-/// Geparste Client-Request.
+/// Parsed client request.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ClientHandshake {
-    /// Request-Path (z.B. `/chat`).
+    /// Request path (e.g. `/chat`).
     pub path: String,
-    /// Host-Header.
+    /// Host header.
     pub host: String,
-    /// Sec-WebSocket-Key (Base64).
+    /// Sec-WebSocket-Key (base64).
     pub key: String,
     /// Optional `Sec-WebSocket-Protocol`.
     pub protocols: Vec<String>,
@@ -85,20 +85,20 @@ pub struct ClientHandshake {
     pub extensions: Vec<String>,
 }
 
-/// Server-Response-Builder.
+/// Server response builder.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ServerHandshake {
-    /// Status-Code (immer 101 fuer Success).
+    /// Status code (always 101 for success).
     pub status: u16,
-    /// `Sec-WebSocket-Accept`-Hash.
+    /// `Sec-WebSocket-Accept` hash.
     pub accept: String,
-    /// Optional `Sec-WebSocket-Protocol` (eines der Client-angebotenen).
+    /// Optional `Sec-WebSocket-Protocol` (one of those offered by the client).
     pub protocol: Option<String>,
     /// Optional `Sec-WebSocket-Extensions`.
     pub extensions: Vec<String>,
 }
 
-/// Berechnet `Sec-WebSocket-Accept` aus dem Client-Key. RFC 6455 §4.2.2.
+/// Computes `Sec-WebSocket-Accept` from the client key. RFC 6455 §4.2.2.
 #[must_use]
 pub fn compute_accept(client_key: &str) -> String {
     let mut concatenated = String::with_capacity(client_key.len() + WEBSOCKET_GUID.len());
@@ -108,10 +108,10 @@ pub fn compute_accept(client_key: &str) -> String {
     base64_encode(&digest)
 }
 
-/// Parst eine Client-Handshake-HTTP-Request.
+/// Parses a client-handshake HTTP request.
 ///
 /// # Errors
-/// Siehe [`HandshakeError`].
+/// See [`HandshakeError`].
 pub fn parse_client_request(input: &str) -> Result<ClientHandshake, HandshakeError> {
     let mut lines = input.split("\r\n");
     let request_line = lines.next().ok_or(HandshakeError::MalformedRequest)?;
@@ -179,7 +179,7 @@ pub fn parse_client_request(input: &str) -> Result<ClientHandshake, HandshakeErr
     Ok(hs)
 }
 
-/// Erzeugt die Server-Response-Bytes. RFC 6455 §4.2.2.
+/// Produces the server response bytes. RFC 6455 §4.2.2.
 #[must_use]
 pub fn build_server_response(req: &ClientHandshake) -> ServerHandshake {
     ServerHandshake {
@@ -212,10 +212,10 @@ pub fn render_server_response(resp: &ServerHandshake) -> String {
 }
 
 // ============================================================================
-// Minimal SHA-1 + Base64 (no external deps fuer no_std).
+// Minimal SHA-1 + Base64 (no external deps for no_std).
 // ============================================================================
 
-/// Minimaler SHA-1 ueber `bytes`. Spec FIPS-180-4 §6.1.
+/// Minimal SHA-1 over `bytes`. Spec FIPS-180-4 §6.1.
 fn sha1(bytes: &[u8]) -> [u8; 20] {
     let mut h: [u32; 5] = [
         0x6745_2301,
@@ -274,7 +274,7 @@ fn sha1(bytes: &[u8]) -> [u8; 20] {
     out
 }
 
-/// Base64-Encode laut RFC 4648 (Standard-Alphabet).
+/// Base64 encode per RFC 4648 (standard alphabet).
 fn base64_encode(bytes: &[u8]) -> String {
     const ALPHA: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
@@ -440,8 +440,8 @@ mod tests {
 
     #[test]
     fn connection_header_with_keep_alive_still_detects_upgrade() {
-        // Spec §4.1: Connection MUST contain `Upgrade` token (case-
-        // insensitive). Browser senden oft `Connection: keep-alive,
+        // Spec §4.1: Connection MUST contain the `Upgrade` token (case-
+        // insensitive). Browsers often send `Connection: keep-alive,
         // Upgrade`.
         let req = "GET / HTTP/1.1\r\n\
                    Host: x\r\n\

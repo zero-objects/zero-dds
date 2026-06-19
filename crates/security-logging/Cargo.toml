@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Security-Logging-Backends fuer DDS-Security 1.1 §8.6: stderr + JSON-lines + RFC-5424-UDP-Syslog + FanOut."
+description = "Security logging backends for DDS-Security 1.1 §8.6: stderr + JSON-lines + RFC-5424 UDP syslog + FanOut."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-security-logging"
 readme = "README.md"
@@ -21,8 +21,9 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std"]
 std = []
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.3", path = "../security" }

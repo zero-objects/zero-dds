@@ -10,13 +10,13 @@ use crate::type_object::flags::{AliasMemberFlag, AliasTypeFlag};
 /// CommonAliasBody.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommonAliasBody {
-    /// Flags auf dem Alias-Target.
+    /// Flags on the alias target.
     pub related_flags: AliasMemberFlag,
-    /// Ziel-Typ.
+    /// Target type.
     pub related_type: TypeIdentifier,
 }
 
-/// MinimalAliasBody = common + (kein detail).
+/// MinimalAliasBody = common + (no detail).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MinimalAliasBody {
     /// Common.

@@ -2,42 +2,42 @@
 // Copyright 2026 ZeroDDS Contributors
 
 //! Crate `zerodds-security-crypto`. Safety classification: **SAFE**
-//! (Wrapper um `ring`; kein eigener Primitive-Code).
+//! (a wrapper around `ring`; no own primitive code).
 //!
-//! AES-GCM + HMAC `CryptographicPlugin`-Implementation fuer
-//! DDS-Security 1.1 §8.5 (Spec `formal/2018-04-01`).
+//! AES-GCM + HMAC `CryptographicPlugin` implementation for
+//! DDS-Security 1.1 §8.5 (spec `formal/2018-04-01`).
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 4 — Core Services. Implementiert die SPI aus
+//! Layer 4 — Core Services. Implements the SPI from
 //! `zerodds-security::crypto::CryptographicPlugin`.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! - [`AesGcmCryptoPlugin`] — AES-GCM-128/256 + HMAC-SHA256 Plugin-Impl.
-//! - [`PskCryptoPlugin`] — Pre-Shared-Key-Plugin fuer Out-of-Band-Setups.
-//! - [`Suite`] — Suite-Diskriminator (AES-128-GCM / AES-256-GCM).
-//! - [`crypto_transform`]-Modul — `CryptoHeader`/`CryptoFooter` Wire-Codec
+//! - [`AesGcmCryptoPlugin`] — AES-GCM-128/256 + HMAC-SHA256 plugin impl.
+//! - [`PskCryptoPlugin`] — pre-shared-key plugin for out-of-band setups.
+//! - [`Suite`] — suite discriminator (AES-128-GCM / AES-256-GCM).
+//! - [`crypto_transform`] module — `CryptoHeader`/`CryptoFooter` wire codec
 //!   plus `CryptoTransformKind` + `CryptoTransformIdentifier`.
-//! - [`session_key`]-Modul — `derive_session_key` + `derive_session_hmac_key`
-//!   + `compute_aad` + Tag-Konstanten (Spec §10.5.2 Tab.74).
-//! - [`aes_gcm_hw`]-Modul — HW-Capabilities-Detection (`Arch`, `HwCapabilities`).
-//! - `metrics` (Feature `metrics`) — Hook-Points fuer `zerodds-monitor` §2.5.
+//! - [`session_key`] module — `derive_session_key` + `derive_session_hmac_key`
+//!   + `compute_aad` + tag constants (spec §10.5.2 Tab.74).
+//! - [`aes_gcm_hw`] module — HW capabilities detection (`Arch`, `HwCapabilities`).
+//! - `metrics` (feature `metrics`) — hook points for `zerodds-monitor` §2.5.
 //!
-//! ## Suite-Coverage
+//! ## Suite coverage
 //!
-//! | Suite | Wire-Kind | Use-Case |
+//! | Suite | Wire kind | Use case |
 //! |-------|-----------|----------|
-//! | AES-128-GCM | 0x01 | Default-Production |
-//! | AES-256-GCM | 0x02 | High-Assurance |
-//! | HMAC-SHA256 (Auth-only) | 0x03 | Governance `metadata_protection_kind=SIGN` |
+//! | AES-128-GCM | 0x01 | Default production |
+//! | AES-256-GCM | 0x02 | High assurance |
+//! | HMAC-SHA256 (auth-only) | 0x03 | Governance `metadata_protection_kind=SIGN` |
 //!
-//! 12-byte-Nonce = 4 byte Session-ID + 8 byte Counter (Spec §9.5.3.3.4.4).
-//! Wire-Token: `[kind_id(1) | session_id(4) | master_key(16|32)]`.
+//! 12-byte nonce = 4-byte session ID + 8-byte counter (spec §9.5.3.3.4.4).
+//! Wire token: `[kind_id(1) | session_id(4) | master_key(16|32)]`.
 //!
-//! Nonce-Wrap-around-Protection: bei 2^63 Encrypts pro Session lehnt der
-//! Plugin neue Encrypt-Calls mit "key-refresh required" ab — Caller muss
-//! ein neues `register_local_*`-Roundtrip ausloesen.
+//! Nonce wrap-around protection: at 2^63 encrypts per session the
+//! plugin rejects new encrypt calls with "key-refresh required" — the caller must
+//! trigger a new `register_local_*` roundtrip.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]

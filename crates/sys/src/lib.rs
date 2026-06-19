@@ -5,15 +5,15 @@
 //!
 //! Crate `zerodds-sys`.
 //!
-//! Safety classification: **SAFE (Kern) / BINDING (FFI-Modul)**.
-//! Siehe `docs/architecture/02_architecture.md §3`, §4.4.3, §4.4.4 und
+//! Safety classification: **SAFE (core) / BINDING (FFI module)**.
+//! See `docs/architecture/02_architecture.md §3`, §4.4.3, §4.4.4 and
 //! `docs/architecture/04_safety_by_architecture.md §2`.
 //!
-//! Der `lib.rs`-Kern ist Safe/no_std und `#![forbid(unsafe_code)]`. Die
-//! tatsaechliche C-ABI-Oberflaeche (`extern "C"` Exports, `#[no_mangle]`
-//! Symbole) wird in einem separaten `mod ffi;` angelegt, das per
-//! `#![allow(unsafe_code)]` die Ausnahme lokal traegt. Safe-Audits des
-//! Kerns umfassen nicht das FFI-Modul.
+//! The `lib.rs` core is safe/no_std and `#![forbid(unsafe_code)]`. The
+//! actual C-ABI surface (`extern "C"` exports, `#[no_mangle]`
+//! symbols) is placed in a separate `mod ffi;`, which carries the
+//! exception locally via `#![allow(unsafe_code)]`. Safe audits of the
+//! core do not cover the FFI module.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
@@ -22,21 +22,21 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-// ZeroDDS-Sys-Crate ist die historische C-ABI-Surface. Mit der
-// Veroeffentlichung von `zerodds-c-api` (Layer 6, RC1) ist die
-// vollstaendige spec-konforme C-FFI-Schnittstelle dort gebuendelt
-// (~115 Funktionen, ~4100 LOC, Spec-konform DDS 1.4 §2.2.2 +
+// The zerodds-sys crate is the historical C-ABI surface. With the
+// release of `zerodds-c-api` (Layer 6, RC1), the complete
+// spec-compliant C-FFI interface is bundled there
+// (~115 functions, ~4100 LOC, spec-compliant DDS 1.4 §2.2.2 +
 // DDS-PSM-Cxx 1.0 §7.5).
 //
-// Diese Crate bleibt als Workspace-Member bestehen, exportiert aber
-// keine Symbole — Konsumenten verlinken stattdessen gegen
-// `zerodds-c-api` (cdylib `libzerodds.dylib` / `.so` / `.dll`).
+// This crate remains a workspace member but exports no
+// symbols — consumers link against
+// `zerodds-c-api` instead (cdylib `libzerodds.dylib` / `.so` / `.dll`).
 //
-// Siehe `crates/zerodds-c-api/include/zerodds.h` und
-// `docs/specs/zerodds-c-api-1.0.md` fuer die vollstaendige API.
+// See `crates/zerodds-c-api/include/zerodds.h` and
+// `docs/specs/zerodds-c-api-1.0.md` for the complete API.
 
-/// Marker-Konstante: weist auf die voll spec-konforme C-FFI in
-/// `zerodds-c-api` hin.
+/// Marker constant: points to the fully spec-compliant C-FFI in
+/// `zerodds-c-api`.
 pub const REFERENCE_C_API_CRATE: &str = "zerodds-c-api";
 
 #[cfg(test)]

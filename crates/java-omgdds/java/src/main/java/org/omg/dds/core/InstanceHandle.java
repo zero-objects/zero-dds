@@ -39,7 +39,8 @@ public final class InstanceHandle {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof InstanceHandle other)) return false;
+        if (!(o instanceof InstanceHandle)) return false;
+        InstanceHandle other = (InstanceHandle) o;
         return Arrays.equals(bytes, other.bytes);
     }
 

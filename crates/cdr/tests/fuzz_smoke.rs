@@ -1,11 +1,11 @@
-//! Stable-Rust Fuzz-Smoke-Tests fuer XCDR1 / PL_CDR1-Decoder.
+//! Stable-Rust fuzz smoke tests for the XCDR1 / PL_CDR1 decoder.
 //!
-//! Pseudo-random Byte-Streams in `read_pl_cdr1_member` und
-//! `read_all_pl_cdr1_members`. Kein Decoder darf auf irgendeinem
-//! Input panicen — nur `Ok(..)` oder `Err(..)` sind erlaubt.
+//! Pseudo-random byte streams into `read_pl_cdr1_member` and
+//! `read_all_pl_cdr1_members`. No decoder may panic on any input —
+//! only `Ok(..)` or `Err(..)` are allowed.
 //!
-//! Spec-Anker: XTypes 1.3 §7.4.1.2 (Parameter-ID Layout) und §7.4.2
-//! (PL_CDR1-Listen-Format).
+//! Spec anchor: XTypes 1.3 §7.4.1.2 (parameter-ID layout) and §7.4.2
+//! (PL_CDR1 list format).
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
@@ -102,10 +102,10 @@ fn single_byte_inputs_no_panic() {
     }
 }
 
-/// PID_EXTENDED mit absurder Body-Length (Spec §7.4.1.2.2):
+/// PID_EXTENDED with an absurd body length (spec §7.4.1.2.2):
 /// `[0x01 0x3F 0x08 0x00] [member_id=0xFFFFFFFF] [body_len=0xFFFFFFFF]`
-/// Decoder MUSS `LengthExceeded` liefern, nicht panicen oder
-/// Speicher allokieren.
+/// The decoder MUST return `LengthExceeded`, not panic or allocate
+/// memory.
 #[test]
 fn extended_header_oversize_length_no_panic_no_oom() {
     let buf = [
@@ -118,8 +118,8 @@ fn extended_header_oversize_length_no_panic_no_oom() {
     assert!(res.is_err(), "expected Err for oversize body_len");
 }
 
-/// 1000 PL_CDR1-Member-Heads ohne Sentinel — Decoder muss
-/// terminieren ohne in unbegrenzte Allokation zu laufen.
+/// 1000 PL_CDR1 member heads without a sentinel — the decoder must
+/// terminate without running into unbounded allocation.
 #[test]
 fn long_unterminated_pl_cdr1_no_runaway() {
     let mut buf = Vec::new();

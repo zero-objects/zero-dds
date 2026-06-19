@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! YAML-Subset-Parser fuer Daemon-Configs. Identisches Format wie
-//! `mqtt-bridge::daemon::yaml` und `websocket-bridge::daemon::config`,
-//! pro Vendor-Spec eigenstaendig dupliziert.
+//! YAML-subset parser for daemon configs. Identical format to
+//! `mqtt-bridge::daemon::yaml` and `websocket-bridge::daemon::config`,
+//! duplicated independently per vendor spec.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -12,22 +12,22 @@ use std::vec::Vec;
 
 use super::config::ConfigError;
 
-/// AST-Knoten.
+/// AST node.
 #[derive(Debug, Clone)]
 pub enum YamlNode {
-    /// Skalar.
+    /// Scalar.
     Scalar(String),
-    /// Sequenz.
+    /// Sequence.
     Seq(Vec<YamlNode>),
     /// Map.
     Map(BTreeMap<String, YamlNode>),
 }
 
 impl YamlNode {
-    /// Liefert Skalar.
+    /// Returns the scalar.
     ///
     /// # Errors
-    /// `Syntax` wenn nicht-Skalar.
+    /// `Syntax` if not a scalar.
     pub fn as_scalar(&self) -> Result<String, ConfigError> {
         match self {
             Self::Scalar(s) => Ok(s.clone()),
@@ -36,7 +36,7 @@ impl YamlNode {
     }
 }
 
-/// `${VAR}` und `${VAR:-default}` Substitution.
+/// `${VAR}` and `${VAR:-default}` substitution.
 #[must_use]
 pub fn expand_env_vars(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
@@ -62,7 +62,7 @@ pub fn expand_env_vars(input: &str) -> String {
     out
 }
 
-/// Parst YAML-Subset-String zu Top-Level-Map.
+/// Parses a YAML-subset string into a top-level map.
 ///
 /// # Errors
 /// `Syntax`.

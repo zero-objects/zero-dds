@@ -3,32 +3,34 @@
 Format follows [Keep a Changelog 1.1](https://keepachangelog.com/en/1.1.0/),
 versioning follows [SemVer 2.0](https://semver.org/).
 
-## [1.0.0-rc.1] — 2026-05-07
+## [1.0.0-rc.3] — 2026-06-18
 
-Initial Release Candidate for the `zerodds-xmlc` DDS-XML CLI.
+First working release of the `zerodds-xmlc` DDS-XML CLI (the earlier release
+candidates carried only a scaffold). A thin front-end over the `zerodds-xml`
+parsers (OMG DDS-XML 1.0); it parses a deployment file and reports, never
+touching the network.
 
 ### Subcommands
 
-- `zerodds-xmlc validate <file.xml>` — validate a DDS-XML deployment
-  descriptor against the OMG DDS-XML 1.0 XSD suite (14 normative XSDs).
-- `zerodds-xmlc render <file.xml>` — render a deployment descriptor
-  into per-participant runtime configuration files (YAML).
-- `zerodds-xmlc lint <file.xml>` — apply best-practice lints (unused
-  profiles, conflicting QoS combinations).
+- `zerodds-xmlc validate <file.xml>` — check well-formedness and parse every
+  DDS-XML library (types, qos, domain, participant, application); print a
+  one-line tally. Exit 1 on a parse or validation error.
+- `zerodds-xmlc render <file.xml>` — print a structured deployment summary:
+  domains and their topics, participants and their publishers/subscribers
+  with the data writers/readers underneath.
+- `zerodds-xmlc types <file.xml>` — list the `<types>` (XTypes) definitions,
+  recursing into modules.
 
-### Spec References
+### Implementation
 
-- OMG DDS-XML 1.0 (`formal/2024-09-01`) — full schema coverage
-- OMG DDS-DCPS 1.4 §7.1 — QoS-policy semantics
-- OMG DDS-Security 1.2 §9.2 — governance + permissions schemas
+Single binary over `zerodds-xml`. Manual argument parsing (no `clap`).
 
 ### Architecture
 
 - Layer: Tools
-- Dependencies: `zerodds-qos`, `zerodds-types`, `quick-xml` (parser),
-  `clap` (CLI)
+- Dependencies: `zerodds-xml`
 
 ### Stability
 
-CLI surface stable for `1.0.x`. Schema-version detection means inputs
-targeting future XSD revisions remain readable.
+CLI surface stable for `1.0.x`. New subcommands are additive minor bumps;
+flag removals require a major bump.

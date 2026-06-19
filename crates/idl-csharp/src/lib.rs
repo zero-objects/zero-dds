@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! IDL4 → C# 12.0 Source-Code-Generator (OMG IDL4-CSharp-Mapping,
+//! IDL4 → C# 12.0 source code generator (OMG IDL4-CSharp mapping,
 //! formal/2024-12-01).
 //!
-//! Crate `zerodds-idl-csharp` — Foundation des Sprach-Bindings (Cluster C5.3-a).
+//! Crate `zerodds-idl-csharp` — foundation of the language binding (cluster C5.3-a).
 //!
-//! Safety classification: **SAFE (std-only)**. Reines Build-Zeit-Tool —
-//! `forbid(unsafe_code)`, kein no_std-Use-Case.
+//! Safety classification: **SAFE (std-only)**. Pure build-time tool —
+//! `forbid(unsafe_code)`, no no_std use case.
 //!
-//! # Scope (C5.3-a / Phase 3.1-3.3)
-//! - Phase 3.1: Header-Layout (`#nullable enable`, `using`, `namespace`).
-//! - Phase 3.2: Primitive-Mapping
+//! # Scope (C5.3-a / phase 3.1-3.3)
+//! - Phase 3.1: header layout (`#nullable enable`, `using`, `namespace`).
+//! - Phase 3.2: primitive mapping
 //!   (boolean → bool, octet → byte, char/wchar → char,
 //!   short → short, ushort → ushort, long → int, ulong → uint,
 //!   long long → long, ulong long → ulong, float/double, string → string).
-//! - Phase 3.3: Aggregate-Types — struct → `record class` mit init-only
-//!   Properties, enum → `enum`, union → discriminated record,
-//!   typedef → `record class`-Wrapper (Spec-konformes file-scoped
-//!   using-alias kommt mit C5.3-b), sequence → `IList<T>`, array → `T[]`,
+//! - Phase 3.3: aggregate types — struct → `record class` with init-only
+//!   properties, enum → `enum`, union → discriminated record,
+//!   typedef → `record class` wrapper (spec-compliant file-scoped
+//!   using-alias arrives with C5.3-b), sequence → `IList<T>`, array → `T[]`,
 //!   inheritance → `record class : Parent`.
 //!
 //! # C5.3-b additions (this revision)
@@ -29,13 +29,13 @@
 //!   C# attributes from `Omg.Types`.
 //! - `ITopicType<T>` marker on every top-level (non-`@nested`) struct.
 //!
-//! # Bewusst nicht im Crate
-//! - Phase 3.4: DDS-CSharp-Integration (P/Invoke zu Rust-Core).
-//! - Time/Duration/Status/QoS/Listener-Codegen.
-//! - File-scoped namespace + `using <Alias> = <Type>;` Top-Level-Form.
+//! # Deliberately not in this crate
+//! - Phase 3.4: DDS-CSharp integration (P/Invoke to the Rust core).
+//! - Time/Duration/Status/QoS/Listener codegen.
+//! - File-scoped namespace + `using <Alias> = <Type>;` top-level form.
 //! - Bitset/Bitmask/Map/Fixed/Any/Interface/Valuetype.
 //!
-//! # Beispiel
+//! # Example
 //!
 //! ```
 //! use zerodds_idl::config::ParserConfig;
@@ -68,21 +68,21 @@ pub use error::CsGenError;
 
 use zerodds_idl::ast::Specification;
 
-/// Konfiguration des C#-Code-Generators.
+/// Configuration of the C# code generator.
 #[derive(Debug, Clone)]
 pub struct CsGenOptions {
-    /// Optionaler aeusserer Namespace, in den der gesamte Output gewickelt
-    /// wird. `None` oder leer = kein Wrapper.
+    /// Optional outer namespace that wraps the entire output. `None`
+    /// or empty = no wrapper.
     pub root_namespace: Option<String>,
-    /// Indent-Breite in Leerzeichen. Default 4 (C# Coding-Conventions).
+    /// Indent width in spaces. Default 4 (C# coding conventions).
     pub indent_width: usize,
-    /// Wenn `true`: struct-Mapping verwendet `record class` (Spec-konform).
-    /// Wenn `false`: struct-Mapping verwendet plain `class` (Legacy-CCM).
+    /// If `true`: struct mapping uses `record class` (spec-compliant).
+    /// If `false`: struct mapping uses plain `class` (legacy CCM).
     /// Default `true`.
     pub use_records: bool,
-    /// Annex A.1 (idl4-csharp-1.0) — opt-in: emittiert pro
-    /// Top-Level-Type CORBA-Marker (`Corba.ValueTypeAttribute`)
-    /// + statischen `Corba.Traits`-Helper. Default `false`.
+    /// Annex A.1 (idl4-csharp-1.0) — opt-in: emits a CORBA marker
+    /// (`Corba.ValueTypeAttribute`) plus a static `Corba.Traits` helper
+    /// per top-level type. Default `false`.
     pub emit_corba_traits: bool,
 }
 
@@ -97,15 +97,15 @@ impl Default for CsGenOptions {
     }
 }
 
-/// Erzeugt einen vollstaendigen C# 12.0-Quelltext aus einer IDL-Specification.
+/// Produces a complete C# 12.0 source text from an IDL specification.
 ///
 /// # Errors
-/// - [`CsGenError::UnsupportedConstruct`]: IDL-Konstrukt außerhalb des aktuellen Scopes
-///   (z.B. `interface`, `valuetype`, `fixed`, `any`, `bitset`, `bitmask`).
-/// - [`CsGenError::InvalidName`]: Ein Identifier ist leer oder bereits
-///   `@`-prefixed (Doppel-Escape).
-/// - [`CsGenError::InheritanceCycle`]: Direkte oder indirekte
-///   Self-Inheritance im Struct-Graphen.
+/// - [`CsGenError::UnsupportedConstruct`]: IDL construct outside the current scope
+///   (e.g. `interface`, `valuetype`, `fixed`, `any`, `bitset`, `bitmask`).
+/// - [`CsGenError::InvalidName`]: an identifier is empty or already
+///   `@`-prefixed (double-escape).
+/// - [`CsGenError::InheritanceCycle`]: direct or indirect
+///   self-inheritance in the struct graph.
 pub fn generate_csharp(ast: &Specification, opts: &CsGenOptions) -> Result<String, CsGenError> {
     let mut out = emitter::emit_source(ast, opts)?;
     if opts.emit_corba_traits {
@@ -114,12 +114,12 @@ pub fn generate_csharp(ast: &Specification, opts: &CsGenOptions) -> Result<Strin
     Ok(out)
 }
 
-/// Convenience-Variante mit aktiviertem `emit_corba_traits`-Flag.
+/// Convenience variant with the `emit_corba_traits` flag enabled.
 ///
-/// Cross-Ref: `idl4-csharp-1.0` Annex A.1.
+/// Cross-ref: `idl4-csharp-1.0` Annex A.1.
 ///
 /// # Errors
-/// Wie [`generate_csharp`].
+/// As for [`generate_csharp`].
 pub fn generate_csharp_with_corba_traits(
     ast: &Specification,
     opts: &CsGenOptions,
@@ -211,7 +211,7 @@ mod tests {
     #[test]
     fn array_member_uses_jagged_array() {
         let cs = gen_cs("struct S { long matrix[3][4]; };");
-        // Jagged: int[][] (Spec laesst beide Varianten zu).
+        // Jagged: int[][] (the spec allows both variants).
         assert!(cs.contains("int[][]"));
     }
 

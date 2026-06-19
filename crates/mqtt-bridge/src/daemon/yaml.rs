@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! YAML-Subset-Parser fuer Daemon-Configs.
+//! YAML subset parser for daemon configs.
 //!
-//! Unterstuetzt:
-//! * Block-Maps mit 2-Space-Indent.
-//! * Block-Sequenzen via `- ` Prefix.
-//! * Skalare als String/Integer/Bool (alle als `String` gespeichert,
-//!   Caller parsed weiter).
-//! * `#`-Kommentare bis EOL (ausserhalb von Quotes).
-//! * `${VAR}` und `${VAR:-default}` ENV-Substitution.
+//! Supports:
+//! * block maps with 2-space indent.
+//! * block sequences via the `- ` prefix.
+//! * scalars as String/Integer/Bool (all stored as `String`, the
+//!   caller parses further).
+//! * `#` comments up to EOL (outside of quotes).
+//! * `${VAR}` and `${VAR:-default}` env substitution.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -18,22 +18,22 @@ use std::vec::Vec;
 
 use super::config::ConfigError;
 
-/// AST-Knoten.
+/// AST node.
 #[derive(Debug, Clone)]
 pub enum YamlNode {
-    /// Skalar.
+    /// Scalar.
     Scalar(String),
-    /// Sequenz.
+    /// Sequence.
     Seq(Vec<YamlNode>),
     /// Map.
     Map(BTreeMap<String, YamlNode>),
 }
 
 impl YamlNode {
-    /// Liefert Skalar oder `Syntax`-Fehler.
+    /// Returns a scalar or a `Syntax` error.
     ///
     /// # Errors
-    /// `ConfigError::Syntax` wenn nicht-Skalar.
+    /// `ConfigError::Syntax` if not a scalar.
     pub fn as_scalar(&self) -> Result<String, ConfigError> {
         match self {
             Self::Scalar(s) => Ok(s.clone()),
@@ -42,7 +42,7 @@ impl YamlNode {
     }
 }
 
-/// `${VAR}` und `${VAR:-default}` Substitution.
+/// `${VAR}` and `${VAR:-default}` substitution.
 #[must_use]
 pub fn expand_env_vars(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
@@ -68,7 +68,7 @@ pub fn expand_env_vars(input: &str) -> String {
     out
 }
 
-/// Parst einen YAML-Subset-String zu einer Top-Level-Map.
+/// Parses a YAML-subset string into a top-level map.
 ///
 /// # Errors
 /// [`ConfigError::Syntax`].

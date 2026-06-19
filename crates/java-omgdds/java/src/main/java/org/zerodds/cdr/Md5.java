@@ -5,24 +5,24 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 /**
- * MD5-Hash-Helper fuer XTypes §7.6.8 Key-Hash-Berechnung.
+ * MD5 hash helper for XTypes §7.6.8 key hash computation.
  *
- * <p>Wraps {@link java.security.MessageDigest}. Liefert immer 16 Bytes;
- * MD5 ist als XTypes-Spec-Anforderung gewaehlt — nicht als
- * Crypto-Funktion (Key-Hash dient ausschliesslich der Topic-Instance-
- * Identifikation).
+ * <p>Wraps {@link java.security.MessageDigest}. Always returns 16 bytes;
+ * MD5 is chosen as an XTypes spec requirement — not as a
+ * crypto function (the key hash serves exclusively for topic-instance
+ * identification).
  */
 public final class Md5 {
 
     private Md5() {}
 
     /**
-     * Berechnet MD5 ueber {@code data}. Liefert 16 Bytes.
+     * Computes MD5 over {@code data}. Returns 16 bytes.
      *
-     * @throws XcdrException falls die JVM keinen MD5-Provider hat
-     *         (sollte nie eintreten — MD5 ist seit Java 1.4
-     *         garantiert; {@link MessageDigest#getInstance(String)}
-     *         throwt {@link NoSuchAlgorithmException} nur theoretisch).
+     * @throws XcdrException if the JVM has no MD5 provider
+     *         (should never happen — MD5 has been guaranteed since
+     *         Java 1.4; {@link MessageDigest#getInstance(String)}
+     *         throws {@link NoSuchAlgorithmException} only theoretically).
      */
     public static byte[] hash(byte[] data) {
         try {

@@ -2,6 +2,10 @@
 
 **Quelle:** `docs/specs/zerodds-ros2-bridge-1.0.md`
 
+Implementation:
+
+- `crates/rmw-zerodds-shim/` — ROS-2-RMW-Shim (rmw_zerodds).
+
 ## §1 Conformance-Levels
 
 ### §1 L1-L6 Conformance-Matrix
@@ -163,34 +167,42 @@ default-Profile-Map.
 ### §7.1 SROS2-Enclaves → DDS-Security 1.2
 
 **Spec:** §7.1 — Enclave-Cert/Key/Permissions/Governance auf
-`dds.sec.*`-Plugin-Properties. Decision-Record:
-`docs/adr/0008-ros2-sros2-rejected-rc1.md` — DDS-Security 1.2 (K6
-closed) deckt das gleiche Bedrohungsmodell direkt; SROS2-Enclave-
-Mapping ist alternative Format-Form ohne Customer-Pull.
+`dds.sec.*`-Plugin-Properties.
 
-**Repo:** `crates/rmw-zerodds-shim/src/lib.rs` (enclave-Hook,
-Spec-Schema), `crates/ros2-rmw/`,
-`crates/security-permissions/` (DDS-Security 1.2 §9.4 deckt
-Permissions-Schema direkt).
+**Repo:** `crates/security-runtime/src/profile.rs` —
+`SecurityProfile::from_enclave_dir` mappt das sros2-keystore-Format
+(identity_ca/cert/key/permissions_ca/`governance.p7s`/`permissions.p7s`)
+auf einen DDS-Security-`SecurityProfile`; `from_env` lädt via
+`ZERODDS_SECURITY_DIR` + `ROS_DOMAIN_ID` (C7 secure-by-default).
+`crates/rmw-zerodds-shim/src/lib.rs` verdrahtet es (gesetzt →
+Security-Participant, gesetzt-aber-invalid → harter Fehler);
+`crates/security-permissions/` deckt Governance/Permissions (DDS-Security
+1.2 §9.4).
 
-**Tests:** —
+**Tests:** `security-runtime` `enclave_dir_resolves_all_sros2_filenames`,
+`enclave_dir_missing_cert_is_io_naming_cert`; `rmw-zerodds-shim`
+`shim_cli_e2e` (`ZERODDS_SECURITY_DIR`-Pfad).
 
-**Status:** n/a (rejected) — siehe ADR-0008.
+**Status:** done — SROS2-Enclave wird als Mapping-Layer auf DDS-Security 1.2
+geladen (ADR 0012).
 
 ### §7.2 ACL via Permissions-XML
 
 **Spec:** §7.2 — Permissions-XML-Driven allow/deny pro Topic via
-`dds.sec.access`. Decision-Record:
-`docs/adr/0008-ros2-sros2-rejected-rc1.md` — Permissions-XML-Mapping
-aus ROS-2-Sicht deferred; DDS-Security 1.2 Permissions-Plugin direkt
-nutzbar.
+`dds.sec.access`.
 
-**Repo:** delegiert an `crates/security-permissions/` über
-`dds.sec.access`-Plugin.
+**Repo:** `crates/security-permissions/` — CMS-verifiziertes Permissions-XML
+(DDS-Security 1.2 §9.4) über das `dds.sec.access`-Plugin
+(`is_publish_allowed`/`is_subscribe_allowed`, `check_create_datawriter`/
+`check_create_datareader`); das Enclave-Permissions-Material
+(`permissions.p7s`/`governance.p7s`) kommt aus `from_enclave_dir` (§7.1).
 
-**Tests:** —
+**Tests:** `security-permissions` `default_deny_without_explicit_tag`,
+`deny_rule_overrides_allow_for_publish`/`_subscribe`,
+`deny_only_grant_blocks_specific_topics`, `deny_on_non_matching_topic`.
 
-**Status:** n/a (rejected) — siehe ADR-0008.
+**Status:** done — Permissions-XML wird via DDS-Security-1.2-Access-Control
+pro Topic durchgesetzt (ADR 0012).
 
 ## §8 Operations + Observability
 
@@ -361,8 +373,6 @@ Major=RMW-API-Breaking.
 
 ## Audit-Status
 
-19 done / 0 partial / 0 open / 3 n/a (informative) / 2 n/a (rejected).
+21 done / 0 partial / 0 open / 3 n/a (informative) / 0 n/a (rejected).
 
 Test-Lauf: `cargo test -p rmw-zerodds-shim` — Tests grün, 0 failed.
-
-Offene Punkte und Decision-Records: siehe `zerodds-ros2-bridge-1.0.open.md`.

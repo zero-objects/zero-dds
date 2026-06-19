@@ -1,0 +1,9 @@
+usr/bin/dds-admin
+usr/bin/dds-perf
+usr/bin/dds-idlc
+usr/bin/dds-xmlc
+usr/bin/dds-traceability
+usr/bin/dds-chaos
+usr/bin/amqp-dds-endpoint
+usr/bin/isolation-smoke
+usr/bin/roundtrip-1us

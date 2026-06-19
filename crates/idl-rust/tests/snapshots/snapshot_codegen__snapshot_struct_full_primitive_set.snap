@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
-assertion_line: 45
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -26,7 +25,7 @@ pub struct AllPrimitives {
     pub d: f64,
     pub b: bool,
     pub o: u8,
-    pub c: char,
+    pub c: u8,
 }
 
 impl zerodds_dcps::DdsType for AllPrimitives {
@@ -35,7 +34,7 @@ impl zerodds_dcps::DdsType for AllPrimitives {
     const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x28, 0xf4, 0x80, 0x83, 0x96, 0x76, 0x3f, 0x49, 0xd7, 0xb3, 0x5f, 0xd5, 0x81, 0xf8]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
-        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
         <_ as zerodds_cdr::CdrEncode>::encode(&self.i8, &mut writer)?;
         <_ as zerodds_cdr::CdrEncode>::encode(&self.u8, &mut writer)?;
         <_ as zerodds_cdr::CdrEncode>::encode(&self.s, &mut writer)?;
@@ -54,7 +53,7 @@ impl zerodds_dcps::DdsType for AllPrimitives {
     }
 
     fn decode(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
-        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little).xcdr2();
         let i8 = <i8 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         let u8 = <u8 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         let s = <i16 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
@@ -67,7 +66,7 @@ impl zerodds_dcps::DdsType for AllPrimitives {
         let d = <f64 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         let b = <bool as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         let o = <u8 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
-        let c = <char as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
+        let c = <u8 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         Ok(Self {
             i8,
             u8,
@@ -102,5 +101,57 @@ impl zerodds_dcps::DdsType for AllPrimitives {
             "c" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.c as i64)),
             _ => ::core::option::Option::None,
         }
+    }
+}
+
+impl zerodds_cdr::CdrEncode for AllPrimitives {
+    fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.i8, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.u8, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.s, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.us, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.l, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.ul, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.ll, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.ull, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.f, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.d, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.b, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.o, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.c, writer)?;
+        ::core::result::Result::Ok(())
+    }
+}
+
+impl zerodds_cdr::CdrDecode for AllPrimitives {
+    fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
+        let i8 = <i8 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let u8 = <u8 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let s = <i16 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let us = <u16 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let l = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let ul = <u32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let ll = <i64 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let ull = <u64 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let f = <f32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let d = <f64 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let b = <bool as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let o = <u8 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let c = <u8 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        ::core::result::Result::Ok(Self {
+            i8,
+            u8,
+            s,
+            us,
+            l,
+            ul,
+            ll,
+            ull,
+            f,
+            d,
+            b,
+            o,
+            c,
+        })
     }
 }

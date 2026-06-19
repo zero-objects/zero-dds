@@ -6,8 +6,8 @@
 //! zerodds-lint check [--root <path>] [--fail-on-warning]
 //! ```
 
-// CLI-Binary darf logischerweise stdout/stderr nutzen; workspace-deny wird
-// nur hier oben aufgehoben.
+// A CLI binary may logically use stdout/stderr; workspace-deny is
+// kept up here only.
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
 use std::path::PathBuf;
@@ -27,12 +27,12 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Lint den gesamten Workspace.
+    /// Lint the entire workspace.
     Check {
-        /// Workspace-Wurzel (default: aktuelles Verzeichnis nach oben suchen).
+        /// Workspace root (default: search upward from the current directory).
         #[arg(long)]
         root: Option<PathBuf>,
-        /// Auch Warnings lassen den Run mit Exit-1 enden.
+        /// Warnings also make the run end with exit 1.
         #[arg(long)]
         fail_on_warning: bool,
     },

@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! RTI Connext DDS Grammar-Delta (Proof-of-Concept, T6.5).
+//! RTI Connext DDS grammar delta (proof-of-concept, T6.5).
 //!
-//! Erweitert die OMG-IDL-4.2-Base-Grammar um RTI-spezifische Konstrukte.
-//! In Phase 0 demonstriert dieses Modul die Delta-Architektur an einem
-//! charakteristischen Vendor-Feature:
+//! Extends the OMG-IDL-4.2 base grammar with RTI-specific constructs.
+//! In phase 0 this module demonstrates the delta architecture on a
+//! characteristic vendor feature:
 //!
-//! - **`keylist <Type> ( <field>+ );`** — Top-Level-Direktive zur
-//!   Markierung von Schluessel-Feldern eines Topics. RTI nutzt
-//!   historisch `#pragma keylist <Type> <field>...` (Preprocessor-
-//!   Variante, kommt mit T6.1). Die Parser-Variante mit Klammern und
-//!   Komma-Trennung wird hier als kanonisches Beispiel modelliert,
-//!   weil sie keinen Preprocessor benoetigt und damit isoliert die
-//!   Delta-Architektur testet.
+//! - **`keylist <Type> ( <field>+ );`** — top-level directive to
+//!   mark the key fields of a topic. RTI historically uses
+//!   `#pragma keylist <Type> <field>...` (the preprocessor
+//!   variant, comes with T6.1). The parser variant with parentheses and
+//!   comma separation is modeled here as the canonical example,
+//!   because it needs no preprocessor and thus tests the
+//!   delta architecture in isolation.
 //!
-//! Die Production-IDs ab `1000` sind reserviert fuer Vendor-Deltas
-//! (Konvention, nicht enforced). Mehrere Deltas koennen koexistieren,
-//! solange ihre IDs nicht kollidieren.
+//! The production IDs from `1000` are reserved for vendor deltas
+//! (convention, not enforced). Multiple deltas can coexist,
+//! as long as their IDs do not collide.
 
 use super::{AlternativeExtension, GrammarDelta};
 use crate::grammar::idl42::{ID_DEFINITION, ID_IDENTIFIER};
@@ -27,10 +27,10 @@ const RTI_SPEC: SpecRef = SpecRef {
     section: "vendor-extensions",
 };
 
-/// Production-ID fuer `<rti_keylist>`.
-/// Vendor-Deltas reservieren IDs ab `1000` (Konvention).
+/// Production ID for `<rti_keylist>`.
+/// Vendor deltas reserve IDs from `1000` (convention).
 pub const ID_RTI_KEYLIST: ProductionId = ProductionId(1000);
-/// Production-ID fuer `<rti_key_field_list>`.
+/// Production ID for `<rti_key_field_list>`.
 pub const ID_RTI_KEY_FIELD_LIST: ProductionId = ProductionId(1001);
 
 const KEYLIST_ALTS: &[Alternative] = &[Alternative {
@@ -42,7 +42,7 @@ const KEYLIST_ALTS: &[Alternative] = &[Alternative {
         Symbol::Nonterminal(ID_RTI_KEY_FIELD_LIST),
         Symbol::Terminal(TokenKind::Punct(")")),
     ],
-    note: Some("RTI Connext: Schluessel-Felder eines Topics"),
+    note: Some("RTI Connext: the key fields of a topic"),
 }];
 
 const KEY_FIELD_LIST_ALTS: &[Alternative] = &[
@@ -79,10 +79,10 @@ const ADDITIONAL_PRODS: &[Production] = &[
     },
 ];
 
-/// Neue `<definition>`-Alternative: erlaubt `keylist Type (fields);`
-/// als Top-Level-Statement. Annotation-Prefix wird **nicht** geforked,
-/// um die Delta minimal zu halten — RTI-keylist ist konventionell
-/// nicht annotierbar.
+/// New `<definition>` alternative: allows `keylist Type (fields);`
+/// as a top-level statement. The annotation prefix is **not** forked,
+/// to keep the delta minimal — RTI keylist is conventionally
+/// not annotatable.
 const DEFINITION_RTI_KEYLIST_ALT: &[Alternative] = &[Alternative {
     name: Some("rti_keylist"),
     symbols: &[
@@ -139,10 +139,10 @@ mod tests {
             .iter()
             .find(|p| p.id == ID_DEFINITION)
             .expect("definition present");
-        // Base hat 19 Alternativen (module/type/const/except/interface/
+        // The base has 19 alternatives (module/type/const/except/interface/
         // value_box/value_forward/value_def/typeid/typeprefix/import/
         // component/home/event/porttype/connector/template_module/
-        // template_inst/annotation_dcl); Delta fuegt 1 hinzu = 20.
+        // template_inst/annotation_dcl); the delta adds 1 = 20.
         assert_eq!(def.alternatives.len(), 20);
         assert!(
             def.alternatives
@@ -163,14 +163,14 @@ mod tests {
 
     #[test]
     fn rti_delta_composition_validates_clean() {
-        // T6.9: nach Base+Delta-Komposition keine Errors
-        // (Invalid-Start oder Dangling-Reference).
+        // T6.9: no errors after base+delta composition
+        // (invalid-start or dangling-reference).
         use crate::grammar::validate::validate_compiled;
         let composed = compose(&IDL_42, &[&RTI_CONNEXT]);
         let report = validate_compiled(&composed);
         assert!(
             !report.has_errors(),
-            "RTI-Delta darf keine Validation-Errors einfuehren: {:?}",
+            "RTI delta must not introduce validation errors: {:?}",
             report.errors().collect::<Vec<_>>()
         );
     }

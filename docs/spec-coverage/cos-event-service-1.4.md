@@ -1,7 +1,6 @@
 # OMG CORBAservices: Event Service v1.2 — Spec-Coverage (WP COS-EventService)
 
-**Quelle:** OMG CORBA Event Service v1.2 — `formal/04-10-02`, Oktober 2004,
-65 Seiten. Ablage: `docs/standards/cache/omg/event-service-1.4.pdf`.
+**Spec:** [OMG CORBA Event Service v1.2 — formal/04-10-02 →](https://www.omg.org/spec/EVNT/) (Oktober 2004, 65 Seiten).
 
 **Hinweis Filename-Versionierung:** Der Spec-Coverage-Filename trägt
 historisch das Suffix `1.4`, die OMG-veröffentlichte Spec ist
@@ -9,22 +8,22 @@ v1.2 (es gibt keine 1.3 / 1.4 publiziert). Filename bleibt aus
 Diff-/Referenz-Stabilität erhalten; Spec-Versionsangabe oben ist
 maßgeblich.
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`.
-
 **Kontext.** Der CORBA Event Service ist Voraussetzung für den
 TimerEventService aus `omg-time-1.1.md` §2.2-§2.4 (TimerEventService
 arbeitet mit `CosEventChannelAdmin::EventChannel`-Push-Channels) und
 liefert das Event-Backend für die Event-Ports im CCM-Komponentenmodell
 (siehe `corba-3.3.md` Part 3 §6.7).
 
+Implementation:
+
+- `crates/corba-cos-event/` — CosEventComm, CosEventChannelAdmin und Typed-Event (§2.1/§2.3/§2.5/§2.7).
+
 **Crate-Mapping:**
 
-| Spec-Modul | Crate-File |
-|---|---|
-| §2.1 CosEventComm | `crates/corba-cos-event/src/comm.rs` |
-| §2.3 CosEventChannelAdmin | `crates/corba-cos-event/src/channel.rs` |
-| §2.5/§2.7 Typed Event | `crates/corba-cos-event/src/typed.rs` |
-| §3 Lightweight Event Service | — (open) |
+- §2.1 CosEventComm — `crates/corba-cos-event/src/comm.rs`
+- §2.3 CosEventChannelAdmin — `crates/corba-cos-event/src/channel.rs`
+- §2.5/§2.7 Typed Event — `crates/corba-cos-event/src/typed.rs`
+- §3 Lightweight Event Service — *(open)*
 
 ---
 
@@ -298,7 +297,7 @@ TypedConsumerAdmin/TypedSupplierAdmin + Typed-Proxies.
 **Repo:** `typed.rs` `TypedEventChannel` mit `for_consumers()`/
 `for_suppliers()`/`destroy()` + getrennte `TypedConsumerAdmin`
 und `TypedSupplierAdmin` Strukturen + `TypedPullSupplier`-Trait
-fuer den Pull-Proxy-Pfad.
+für den Pull-Proxy-Pfad.
 
 **Tests:** Inline (siehe Sub-Sections).
 
@@ -327,7 +326,7 @@ TypedProxyPushConsumer, TypedProxyPullSupplier.
 `register_consumer`/`register_pull_supplier`/`try_pull`/Counter-
 Operationen. `TypedProxyPushConsumer` ist via existierender
 `TypedPushConsumer`-Trait abgedeckt; `TypedProxyPullSupplier`
-ueber den neuen `TypedPullSupplier`-Trait.
+über den neuen `TypedPullSupplier`-Trait.
 
 **Tests:** `typed::tests::{typed_consumer_admin_register_count_roundtrip,
 typed_supplier_admin_register_count_roundtrip,
@@ -394,7 +393,7 @@ lightweight_is_lightweight_recognizes_both_profiles}`.
 **Spec:** §3.1.3 — Lightweight-Variante von §2.3.
 
 **Repo:** `crates/corba-cos-event/src/typed.rs::lightweight::
-CHANNEL_PROFILE_NAME` Marker; Channel-Lifecycle ueber
+CHANNEL_PROFILE_NAME` Marker; Channel-Lifecycle über
 `TypedEventChannel::destroy()` ohne separates
 ConsumerAdmin/SupplierAdmin-Sub-Profil (Profile-Subset von §2.7.1).
 
@@ -468,5 +467,3 @@ failed:
   `dispatch_reaches_registered_consumers`,
   `disconnected_consumers_are_skipped_in_count`,
   `unknown_repo_id_dispatches_to_zero`.
-
-Offene Punkte und Decision-Records: siehe `cos-event-service-1.4.open.md`.

@@ -17,8 +17,8 @@ name = "zerodds-perf"
 path = "src/main.rs"
 
 [dependencies]
-zerodds-security-crypto = { version = "1.0.0-rc.1", path = "../../crates/security-crypto" }
-zerodds-monitor = { version = "1.0.0-rc.1", path = "../../crates/monitor", default-features = false, features = ["std"] }
+zerodds-security-crypto = { version = "1.0.0-rc.3", path = "../../crates/security-crypto" }
+zerodds-monitor = { version = "1.0.0-rc.3", path = "../../crates/monitor", default-features = false, features = ["std"] }
 ring = { workspace = true }
 
 [dev-dependencies]

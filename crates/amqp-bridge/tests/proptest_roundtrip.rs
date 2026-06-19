@@ -1,7 +1,7 @@
-//! Property-Tests fuer AMQP-Wire-Roundtrips.
+//! Property tests for AMQP wire roundtrips.
 //!
-//! Invariante: `decode_value(encode_*(x))` decodiert byte-fuer-byte
-//! korrekt zurueck. OASIS amqp-1.0-types §1.3-§1.6.
+//! Invariant: `decode_value(encode_*(x))` decodes back byte-for-byte
+//! correctly. OASIS amqp-1.0-types §1.3-§1.6.
 
 #![allow(
     clippy::expect_used,
@@ -109,9 +109,9 @@ proptest! {
         doff in 2u8..=63,
         channel in any::<u16>(),
     ) {
-        // AMQP-1.0 §2.3.1: body offset (doff*4) muss <= size sein,
-        // sonst ist der Frame strukturell invalid und decode_frame_header
-        // gibt korrekt BodyOffsetExceedsSize zurueck. Filter den Fall.
+        // AMQP-1.0 §2.3.1: the body offset (doff*4) must be <= size,
+        // otherwise the frame is structurally invalid and decode_frame_header
+        // correctly returns BodyOffsetExceedsSize. Filter that case.
         prop_assume!(size >= u32::from(doff) * 4);
         let h = FrameHeader::new_amqp(size, doff, channel);
         let bytes = encode_frame_header(h);

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DDS for Lightweight CCM 1.1 — Connector-Stub-Layer.
+//! DDS for Lightweight CCM 1.1 — connector stub layer.
 //!
-//! Spec-Quelle: `omg-ccm/dds4ccm-1.1.pdf`. Wir implementieren die
-//! Connector-Datenmodelle + Codegen-Datenstrukturen + QoS-Profile-
-//! Defaults als Stub-Layer fuer Migrations-Tooling. Die echte
-//! Wire-Bindung erfolgt durch den ZeroDDS-DCPS-Stack
-//! (`crates/dcps/`).
+//! Spec source: `omg-ccm/dds4ccm-1.1.pdf`. We implement the connector
+//! data models + codegen data structures + QoS profile defaults as a
+//! stub layer for migration tooling. The actual wire binding is done by
+//! the ZeroDDS DCPS stack (`crates/dcps/`).
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -16,31 +15,31 @@ use alloc::vec::Vec;
 // §7.2.2.1 DDS-DCPS Basic Port Interfaces (Reader/Writer/Updater)
 // ===========================================================================
 
-/// Spec §7.2.2.1 — Connector-Port-Kind.
+/// Spec §7.2.2.1 — connector port kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BasicPortKind {
     /// `CCM_DDS::Reader<T>` — DDS-DataReader-Wrapper.
     Reader,
     /// `CCM_DDS::Writer<T>` — DDS-DataWriter-Wrapper.
     Writer,
-    /// `CCM_DDS::Updater<T>` — Updater-Variant (write+update Ops).
+    /// `CCM_DDS::Updater<T>` — updater variant (write+update ops).
     Updater,
-    /// `CCM_DDS::Getter<T>` — Pull-Style-Getter.
+    /// `CCM_DDS::Getter<T>` — pull-style getter.
     Getter,
-    /// `CCM_DDS::Listener<T>` — Listener-Pattern.
+    /// `CCM_DDS::Listener<T>` — listener pattern.
     Listener,
-    /// `CCM_DDS::StateListener<T>` — State-Listener-Variant.
+    /// `CCM_DDS::StateListener<T>` — state-listener variant.
     StateListener,
 }
 
-/// Spec §7.2.2.1 — Basic-Port-Definition (typed by T).
+/// Spec §7.2.2.1 — basic port definition (typed by T).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BasicPort {
-    /// Port-Name (z.B. `"sensor_data"`).
+    /// Port name (e.g. `"sensor_data"`).
     pub name: String,
-    /// Port-Kind.
+    /// Port kind.
     pub kind: BasicPortKind,
-    /// Type-Parameter T (Repository-ID).
+    /// Type parameter T (repository ID).
     pub type_id: String,
 }
 
@@ -48,7 +47,7 @@ pub struct BasicPort {
 // §7.2.2.2 DDS-DCPS Extended Ports
 // ===========================================================================
 
-/// Spec §7.2.2.2 — Extended-Port-Kind (Multi-Topic-/Filtered-Variants).
+/// Spec §7.2.2.2 — extended port kind (multi-topic / filtered variants).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExtendedPortKind {
     /// `MultiTopicReader<T>`.
@@ -61,14 +60,14 @@ pub enum ExtendedPortKind {
     WaitsetReader,
 }
 
-/// Spec §7.2.2.2 — Extended-Port-Definition.
+/// Spec §7.2.2.2 — extended port definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtendedPort {
-    /// Port-Name.
+    /// Port name.
     pub name: String,
-    /// Port-Kind.
+    /// Port kind.
     pub kind: ExtendedPortKind,
-    /// Type-Parameter T.
+    /// Type parameter T.
     pub type_id: String,
 }
 
@@ -76,40 +75,40 @@ pub struct ExtendedPort {
 // §7.3 Connectors
 // ===========================================================================
 
-/// Spec §7.3.1-§7.3.3 — Connector-Pattern.
+/// Spec §7.3.1-§7.3.3 — connector pattern.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectorPattern {
-    /// `Base` — generischer DCPS-Connector.
+    /// `Base` — generic DCPS connector.
     Base,
-    /// `StateTransfer` — Pattern §7.3.2 (TransientLocal+KeepLast(1)).
+    /// `StateTransfer` — pattern §7.3.2 (TransientLocal+KeepLast(1)).
     StateTransfer,
-    /// `EventTransfer` — Pattern §7.3.3 (Volatile+KeepAll).
+    /// `EventTransfer` — pattern §7.3.3 (Volatile+KeepAll).
     EventTransfer,
-    /// `DLRL` — DLRL-Cache-Connector (Spec §8.3).
+    /// `DLRL` — DLRL cache connector (Spec §8.3).
     Dlrl,
 }
 
-/// Spec §7.3 — Connector-Definition.
+/// Spec §7.3 — connector definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Connector {
-    /// Connector-Name.
+    /// Connector name.
     pub name: String,
-    /// Connector-Pattern.
+    /// Connector pattern.
     pub pattern: ConnectorPattern,
-    /// Topic-Type (Repository-ID).
+    /// Topic type (repository ID).
     pub type_id: String,
-    /// Domain-ID.
+    /// Domain ID.
     pub domain_id: u32,
-    /// QoS-Profile-Name (Cross-Ref §7.4.3).
+    /// QoS profile name (cross-ref §7.4.3).
     pub qos_profile: Option<String>,
-    /// Provided Basic-Ports.
+    /// Provided basic ports.
     pub basic_ports: Vec<BasicPort>,
-    /// Provided Extended-Ports.
+    /// Provided extended ports.
     pub extended_ports: Vec<ExtendedPort>,
 }
 
 impl Connector {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(
         name: impl Into<String>,
@@ -127,30 +126,30 @@ impl Connector {
         }
     }
 
-    /// Spec §7.4.3 — QoS-Profile binden.
+    /// Spec §7.4.3 — bind a QoS profile.
     pub fn with_qos_profile(mut self, profile: impl Into<String>) -> Self {
         self.qos_profile = Some(profile.into());
         self
     }
 
-    /// Spec §7.4.1 — Domain-ID setzen.
+    /// Spec §7.4.1 — set the domain ID.
     #[must_use]
     pub fn with_domain(mut self, domain_id: u32) -> Self {
         self.domain_id = domain_id;
         self
     }
 
-    /// Fuegt einen Basic-Port hinzu.
+    /// Adds a basic port.
     pub fn add_basic_port(&mut self, p: BasicPort) {
         self.basic_ports.push(p);
     }
 
-    /// Fuegt einen Extended-Port hinzu.
+    /// Adds an extended port.
     pub fn add_extended_port(&mut self, p: ExtendedPort) {
         self.extended_ports.push(p);
     }
 
-    /// Anzahl Ports gesamt.
+    /// Total number of ports.
     #[must_use]
     pub fn port_count(&self) -> usize {
         self.basic_ports.len() + self.extended_ports.len()
@@ -161,36 +160,36 @@ impl Connector {
 // §7.4.4 Threading Policy
 // ===========================================================================
 
-/// Spec §7.4.4 — Threading-Policy fuer Connector-Operations.
+/// Spec §7.4.4 — threading policy for connector operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectorThreadingPolicy {
-    /// `THREAD_PER_CONNECTOR` — separater Thread pro Connector.
+    /// `THREAD_PER_CONNECTOR` — separate thread per connector.
     ThreadPerConnector,
-    /// `SHARED_THREAD_POOL` — globaler Worker-Pool.
+    /// `SHARED_THREAD_POOL` — global worker pool.
     SharedThreadPool,
-    /// `INVOKE_INLINE` — auf dem Caller-Thread.
+    /// `INVOKE_INLINE` — on the caller thread.
     InvokeInline,
 }
 
 // ===========================================================================
-// Annex E — Pattern-spezifische QoS-Profile
+// Annex E — pattern-specific QoS profiles
 // ===========================================================================
 
-/// Spec Annex E — Default-QoS-Profile pro Pattern.
+/// Spec Annex E — default QoS profile per pattern.
 pub mod qos_profiles {
-    /// Spec §7.3.2 — State-Transfer-Default: TransientLocal +
+    /// Spec §7.3.2 — state-transfer default: TransientLocal +
     /// KeepLast(1) + Reliable.
     pub const STATE_TRANSFER_DEFAULT: &str = "DDS4CCM:StateTransfer:Default";
 
-    /// Spec §7.3.3 — Event-Transfer-Default: Volatile + KeepAll +
+    /// Spec §7.3.3 — event-transfer default: Volatile + KeepAll +
     /// Reliable.
     pub const EVENT_TRANSFER_DEFAULT: &str = "DDS4CCM:EventTransfer:Default";
 
-    /// Spec §7.3.1 — Base-Connector-Default: Volatile + KeepLast(10)
+    /// Spec §7.3.1 — base-connector default: Volatile + KeepLast(10)
     /// + BestEffort.
     pub const BASE_DEFAULT: &str = "DDS4CCM:Base:Default";
 
-    /// Spec §8.3 — DLRL-Connector-Default.
+    /// Spec §8.3 — DLRL connector default.
     pub const DLRL_DEFAULT: &str = "DDS4CCM:DLRL:Default";
 }
 
@@ -198,7 +197,7 @@ pub mod qos_profiles {
 // §8 DLRL Ports + Connectors
 // ===========================================================================
 
-/// Spec §8.2.1.1 / §8.2.1.2 — DLRL-Port-Kind.
+/// Spec §8.2.1.1 / §8.2.1.2 — DLRL port kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DlrlPortKind {
     /// `CacheOperation` (§8.2.1.1).
@@ -207,14 +206,14 @@ pub enum DlrlPortKind {
     ObjectHome,
 }
 
-/// Spec §8 — DLRL-Port-Definition.
+/// Spec §8 — DLRL port definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DlrlPort {
-    /// Port-Name.
+    /// Port name.
     pub name: String,
-    /// Port-Kind.
+    /// Port kind.
     pub kind: DlrlPortKind,
-    /// Type-Parameter (DLRL-Object-Type).
+    /// Type parameter (DLRL object type).
     pub type_id: String,
 }
 
@@ -222,12 +221,12 @@ pub struct DlrlPort {
 // Annex A/B — IDL3+ Stub
 // ===========================================================================
 
-/// Spec Annex A/B — IDL3+-Output-Form fuer DCPS-/DLRL-Ports.
+/// Spec Annex A/B — IDL3+ output form for DCPS / DLRL ports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdlOutputForm {
-    /// IDL3-Compatible (Templated-Modules ausgespiegelt).
+    /// IDL3-compatible (templated modules expanded out).
     Idl3Compatible,
-    /// IDL3+ (mit Templated-Modules).
+    /// IDL3+ (with templated modules).
     Idl3Plus,
 }
 

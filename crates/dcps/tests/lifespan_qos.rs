@@ -4,15 +4,15 @@
 //! elapses and the sample is still in the writer's cache, the sample
 //! is no longer available to any future DataReaders."
 //!
-//! Implementiert als Writer-seitiger Cache-Scan alle ~20 ms. Reader-
-//! seitiger Lifespan-Filter (auf empfangene Samples) ist Reader-Lifespan-Track.
+//! Implemented as a writer-side cache scan every ~20 ms. The reader-
+//! side lifespan filter (on received samples) is the reader-lifespan track.
 //!
-//! Test-Strategie: Writer schreibt N Samples bei t=0 mit Lifespan
-//! kuerzer als der Wartezeit, joined **spaet** der Reader. Bei korrekter
-//! Expiration: Reader empfaengt nichts (oder nur Samples die nach dem
-//! Match entstanden sind). Das funktioniert gut mit TransientLocal
-//! Durability — sonst wuerde Volatile den Replay eh verhindern und
-//! der Test wuerde nichts ueber Lifespan aussagen.
+//! Test strategy: the writer writes N samples at t=0 with a lifespan
+//! shorter than the wait time, then the reader joins **late**. On correct
+//! expiration: the reader receives nothing (or only samples produced after
+//! the match). This works well with TransientLocal
+//! durability — otherwise Volatile would prevent replay anyway and
+//! the test would say nothing about lifespan.
 
 #![allow(
     clippy::expect_used,
@@ -57,12 +57,12 @@ mod linux {
         }
     }
 
-    /// Wartet bis beide Participants sich auf SPDP-Ebene gegenseitig
-    /// gesehen haben. Ohne diesen Warm-up startet der spaete Reader
-    /// im Late-Joiner-Test mit kalter SPDP-Cache-Tabelle, dann muss
-    /// SEDP-Match Discovery- + SEDP-Roundtrip in 5 s erledigen — auf
-    /// stark ausgelasteten CI-Runnern reicht das nicht. Mit Warm-up
-    /// ist nur noch SEDP zu uebertragen.
+    /// Waits until both participants have seen each other at the SPDP
+    /// level. Without this warm-up, the late reader in the late-joiner
+    /// test starts with a cold SPDP cache table, then the SEDP match must
+    /// complete the discovery + SEDP roundtrip within 5 s — on
+    /// heavily loaded CI runners that is not enough. With warm-up,
+    /// only SEDP remains to be transferred.
     fn wait_spdp_bidirectional(
         a: &zerodds_dcps::DomainParticipant,
         b: &zerodds_dcps::DomainParticipant,
@@ -84,9 +84,9 @@ mod linux {
 
     #[test]
     fn lifespan_expires_samples_before_late_joiner_arrives() {
-        // Setup: Writer mit Durability=TransientLocal + Lifespan=150ms.
-        // Schreibt 3 Samples, wartet 1 s (alle expiren) → neuer
-        // Reader joined → bekommt nichts.
+        // Setup: writer with Durability=TransientLocal + Lifespan=150ms.
+        // Writes 3 samples, waits 1 s (all expire) → a new
+        // reader joins → receives nothing.
         let factory = DomainParticipantFactory::instance();
         let domain = unique_domain(5);
         let pub_p = factory
@@ -114,23 +114,23 @@ mod linux {
             .create_datawriter::<ShapeType>(&pub_topic, wqos)
             .expect("writer");
 
-        // SPDP bidirektional bootstrappen, bevor das Lifespan-Fenster
-        // startet. Damit ist der spaete Reader-Match ein reiner SEDP-
-        // Roundtrip und passt sicher in 5 s auf CI-Runnern unter Last.
+        // Bootstrap SPDP bidirectionally before the lifespan window
+        // starts. That makes the late reader match a pure SEDP
+        // roundtrip and fits safely within 5 s on CI runners under load.
         wait_spdp_bidirectional(&pub_p, &sub_p, Duration::from_secs(5));
 
-        // 3 Samples im selben Moment.
+        // 3 samples at the same moment.
         for i in 0i32..3 {
             writer
                 .write(&ShapeType::new(format!("EXP{i}"), i, 0, 30))
                 .expect("write");
         }
 
-        // 1 s warten — alle Samples muessen expiren (150 ms Lifespan).
+        // Wait 1 s — all samples must expire (150 ms lifespan).
         thread::sleep(Duration::from_millis(1_000));
 
-        // Jetzt kommt der Reader. Auch TransientLocal damit er
-        // Replay erwarten wuerde, falls Lifespan nicht gezogen haette.
+        // Now the reader arrives. Also TransientLocal so that it
+        // would expect replay if lifespan had not taken effect.
         let sub_topic = sub_p
             .create_topic::<ShapeType>("Square", TopicQos::default())
             .expect("sub topic");
@@ -145,11 +145,11 @@ mod linux {
             .create_datareader::<ShapeType>(&sub_topic, rqos)
             .expect("reader");
 
-        // SEDP-DATA(r) fuer den spaeten Reader laeuft ueber Reliable-
-        // RTPS mit `SEDP_HEARTBEAT_PERIOD = 500ms`. Bei Multicast-
-        // Loss unter CI-Last braucht die Recovery mehrere HB-Zyklen
-        // — 5 s reichen nicht reproduzierbar. 15 s deckt den
-        // Worst-Case (3 dropped DATA + 3 HB-Recovery-Roundtrips).
+        // SEDP-DATA(r) for the late reader runs over reliable
+        // RTPS with `SEDP_HEARTBEAT_PERIOD = 500ms`. Under multicast
+        // loss with CI load, recovery needs several HB cycles
+        // — 5 s is not reproducibly enough. 15 s covers the
+        // worst case (3 dropped DATA + 3 HB recovery roundtrips).
         writer
             .wait_for_matched_subscription(1, Duration::from_secs(15))
             .expect("match");
@@ -157,25 +157,25 @@ mod linux {
             .wait_for_matched_publication(1, Duration::from_secs(15))
             .expect("match");
 
-        // 500 ms sollten mehr als genug sein fuer Heartbeat/AckNack
-        // wenn da was nachgeliefert wuerde.
+        // 500 ms should be more than enough for heartbeat/AckNack
+        // if anything were to be delivered late.
         thread::sleep(Duration::from_millis(500));
         let received = reader.take().expect("take");
 
-        // KEINE "EXP*"-Samples duerfen ankommen — alle expired.
+        // NO "EXP*" samples may arrive — all expired.
         for s in &received {
             assert!(
                 !s.color.starts_with("EXP"),
-                "Lifespan=150ms sollte alle EXP-Samples nach 1s entfernt haben, \
-                 bekam aber {s:?}"
+                "Lifespan=150ms should have removed all EXP samples after 1s, \
+                 but got {s:?}"
             );
         }
     }
 
     #[test]
     fn lifespan_keeps_fresh_samples_available_to_late_joiner() {
-        // Gegenbeispiel: Writer schreibt, wartet **weniger** als Lifespan,
-        // Reader joined → muss Samples sehen.
+        // Counter-example: writer writes, waits **less** than lifespan,
+        // reader joins → must see samples.
         let factory = DomainParticipantFactory::instance();
         let domain = unique_domain(5);
         let pub_p = factory
@@ -207,7 +207,7 @@ mod linux {
             .write(&ShapeType::new("FRESH", 1, 2, 30))
             .expect("write");
 
-        // 100ms warten — Sample muss noch frisch sein (Lifespan 10s).
+        // Wait 100ms — sample must still be fresh (lifespan 10s).
         thread::sleep(Duration::from_millis(100));
 
         let sub_topic = sub_p
@@ -236,7 +236,7 @@ mod linux {
 
         assert!(
             received.iter().any(|s| s.color == "FRESH"),
-            "Lifespan=10s + TL sollte FRESH liefern, got {received:?}"
+            "Lifespan=10s + TL should deliver FRESH, got {received:?}"
         );
     }
 }

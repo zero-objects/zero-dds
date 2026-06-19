@@ -2,41 +2,41 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Crate `zerodds-idl-rust`. Safety classification: **STANDARD**.
 //!
-//! IDL4 → Rust-Code-Generator fuer ZeroDDS-DataTypes. Liest den IDL-AST
-//! aus `zerodds-idl` und emittiert `pub struct ... { ... }` plus
-//! `impl zerodds_dcps::DdsType for ...` plus die noetigen
-//! `zerodds_cdr::CdrEncode`/`CdrDecode`-Helper.
+//! IDL4 → Rust code generator for ZeroDDS data types. Reads the IDL AST
+//! from `zerodds-idl` and emits `pub struct ... { ... }` plus
+//! `impl zerodds_dcps::DdsType for ...` plus the necessary
+//! `zerodds_cdr::CdrEncode`/`CdrDecode` helpers.
 //!
-//! Build-Zeit-Tool — `forbid(unsafe_code)`, std-only, kein no_std-Use-Case.
+//! Build-time tool — `forbid(unsafe_code)`, std-only, no no_std use case.
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 3 (Schema) — analog zu `zerodds-idl-cpp`/`-csharp`/`-java`/`-ts`,
-//! aber emittiert Rust-Code fuer den ZeroDDS-eigenen Stack.
+//! Layer 3 (schema) — analogous to `zerodds-idl-cpp`/`-csharp`/`-java`/`-ts`,
+//! but emits Rust code for the ZeroDDS-native stack.
 //!
 //! ## Public API
 //!
-//! - [`generate_rust_module`] — AST + Optionen → Rust-Modul-Code.
-//! - [`RustGenOptions`] — Codegen-Optionen.
-//! - [`error::RustGenError`] — Fehler-Familie.
+//! - [`generate_rust_module`] — AST + options → Rust module code.
+//! - [`RustGenOptions`] — codegen options.
+//! - [`error::RustGenError`] — error family.
 //!
-//! ## Was wird emittiert
+//! ## What is emitted
 //!
-//! Pro IDL-Konstrukt:
+//! Per IDL construct:
 //!
 //! | IDL | Rust |
 //! |-----|------|
-//! | `struct` (final) | `pub struct` + `impl DdsType` mit XCDR2-Final-Wire |
-//! | `struct` (appendable) | mit `zerodds_cdr::struct_enc::encode_appendable` |
-//! | `struct` (mutable) | mit `zerodds_cdr::struct_enc::MutableStructEncoder` |
+//! | `struct` (final) | `pub struct` + `impl DdsType` with XCDR2-final wire |
+//! | `struct` (appendable) | with `zerodds_cdr::struct_enc::encode_appendable` |
+//! | `struct` (mutable) | with `zerodds_cdr::struct_enc::MutableStructEncoder` |
 //! | `enum` | `pub enum #[repr(i32)]` + `from_wire` + `CdrEncode/Decode` |
-//! | `union` | `pub enum` mit Variants pro Case |
+//! | `union` | `pub enum` with variants per case |
 //! | `typedef` | `pub type X = Y;` |
-//! | `module` | `pub mod m { ... }` mit nested Definitions |
-//! | `@key` | `encode_key_holder_be` Implementation |
-//! | `@id(N)` | Member-ID fuer mutable extensibility |
+//! | `module` | `pub mod m { ... }` with nested definitions |
+//! | `@key` | `encode_key_holder_be` implementation |
+//! | `@id(N)` | member ID for mutable extensibility |
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust
 //! use zerodds_idl::config::ParserConfig;

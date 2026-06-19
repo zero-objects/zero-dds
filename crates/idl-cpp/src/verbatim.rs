@@ -3,9 +3,9 @@
 //! `@verbatim`-Codegen-Hook (XTypes 1.3 §7.2.2.4.8 + IDL 4.2 §8.3.5.1).
 //!
 //! `@verbatim(language="c++", text="...", placement=BEFORE_DECLARATION)`
-//! laesst Anwender literal-Text in den C++-Output einbetten. Diese
-//! Bridge filtert pro `Annotation`-Liste auf C++-relevante Sprach-Tags
-//! und emittiert Text fuer ein gegebenes [`PlacementKind`].
+//! lets users embed literal text into the C++ output. This
+//! bridge filters per `Annotation` list for C++-relevant language tags
+//! and emits text for a given [`PlacementKind`].
 //!
 //! Akzeptierte Sprach-Tags: `c++`, `cpp`, `cxx`, plus `*` (Wildcard).
 
@@ -16,18 +16,18 @@ use zerodds_idl::semantics::annotations::{PlacementKind, lower_annotations};
 
 use crate::error::CppGenError;
 
-/// C++-Codegen-Sprach-Aliase fuer `@verbatim(language="...")`.
+/// C++ codegen language aliases for `(language="...")`.
 pub(crate) const CXX_LANG_ALIASES: &[&str] = &["c++", "cpp", "cxx"];
 
 fn fmt_err(_e: std::fmt::Error) -> CppGenError {
     CppGenError::Internal("string formatting failed".into())
 }
 
-/// Emittiert alle `@verbatim(language="c++"|"*", placement=<placement>)`-
-/// Bloecke aus `anns` mit der `indent`-Praefix.
+/// Emits all `(language="c++"|"*", placement=<placement>)`
+/// blocks from `anns` with the `indent` prefix.
 ///
-/// Reihenfolge folgt der Source-Reihenfolge der Annotations.
-/// Mehrzeilige Texte werden zeilenweise ausgegeben (Indent jeder Zeile).
+/// The order follows the source order of the annotations.
+/// Multi-line texts are output line by line (each line indented).
 pub(crate) fn emit_verbatim_at(
     out: &mut String,
     indent: &str,

@@ -1,36 +1,36 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1]
 
-Initiale Release-Materialisierung der `zerodds-qos`-Crate.
+Initial release materialization of the `zerodds-qos` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **OMG DDS 1.4** §2.2.3 — alle 22 Standard-QoS-Policies (Durability, Durability-Service, Deadline, Latency-Budget, Liveliness, Reliability, Destination-Order, History, Resource-Limits, Transport-Priority, Lifespan, User-Data, Topic-Data, Group-Data, Ownership, Ownership-Strength, Presentation, Partition, Time-Based-Filter, Reader/Writer-Data-Lifecycle, Entity-Factory).
-- **OMG DDS 1.4** §2.2.3 Table "QoS compatibility" — Request/Offered-Compatibility-Matrix.
-- **OMG DDS 1.4** §2.2.3.23 / §2.2.2.5.5 — Exclusive-Ownership-Resolver-Logik.
-- **OMG DDSI-RTPS 2.5** §9.6.3.2 — Wire-PIDs für ParameterList-Encoding.
+- **OMG DDS 1.4** §2.2.3 — all 22 standard QoS policies (Durability, Durability-Service, Deadline, Latency-Budget, Liveliness, Reliability, Destination-Order, History, Resource-Limits, Transport-Priority, Lifespan, User-Data, Topic-Data, Group-Data, Ownership, Ownership-Strength, Presentation, Partition, Time-Based-Filter, Reader/Writer-Data-Lifecycle, Entity-Factory).
+- **OMG DDS 1.4** §2.2.3 table "QoS compatibility" — request/offered compatibility matrix.
+- **OMG DDS 1.4** §2.2.3.23 / §2.2.2.5.5 — exclusive-ownership resolver logic.
+- **OMG DDSI-RTPS 2.5** §9.6.3.2 — wire PIDs for ParameterList encoding.
 
-### Public-API
+### Public API
 
-**Top-Level:**
+**Top-level:**
 
-- `Duration` — DDS-Duration `(seconds: i32, nanoseconds: u32)` mit Zero/Infinite-Konstruktoren.
-- `Pid` — Newtype für DDSI-RTPS §9.6.3.2 PID-Konstanten der QoS-Policy-Slice.
-- `CompatibilityResult::{Compatible, Incompatible(reasons)}` + `IncompatibleReason` — Request/Offered-Matrix-Output.
+- `Duration` — DDS duration `(seconds: i32, nanoseconds: u32)` with zero/infinite constructors.
+- `Pid` — newtype for DDSI-RTPS §9.6.3.2 PID constants of the QoS policy slice.
+- `CompatibilityResult::{Compatible, Incompatible(reasons)}` + `IncompatibleReason` — request/offered matrix output.
 - `check_compatibility(&WriterQos, &ReaderQos) -> CompatibilityResult`.
 
-**22 Standard-Policies** (`policies`-Modul + Top-Level re-export):
+**22 standard policies** (`policies` module + top-level re-export):
 
 - `DurabilityQosPolicy`, `DurabilityServiceQosPolicy`, `DeadlineQosPolicy`, `LatencyBudgetQosPolicy`, `LivelinessQosPolicy`, `ReliabilityQosPolicy`, `DestinationOrderQosPolicy`, `HistoryQosPolicy`, `ResourceLimitsQosPolicy`, `TransportPriorityQosPolicy`, `LifespanQosPolicy`, `UserDataQosPolicy`, `TopicDataQosPolicy`, `GroupDataQosPolicy`, `OwnershipQosPolicy`, `OwnershipStrengthQosPolicy`, `PresentationQosPolicy`, `PartitionQosPolicy`, `TimeBasedFilterQosPolicy`, `ReaderDataLifecycleQosPolicy`, `WriterDataLifecycleQosPolicy`, `EntityFactoryQosPolicy`.
 
-**QoS-Aggregate:**
+**QoS aggregates:**
 
-- `ReaderQos`, `WriterQos` — pro-Reader/Writer Vollständige QoS-Set-Aggregate.
+- `ReaderQos`, `WriterQos` — per-reader/writer complete QoS-set aggregates.
 
-**Kind-Enums:**
+**Kind enums:**
 
 - `DurabilityKind` (Volatile / TransientLocal / Transient / Persistent).
 - `ReliabilityKind` (BestEffort / Reliable).
@@ -40,23 +40,23 @@ Initiale Release-Materialisierung der `zerodds-qos`-Crate.
 - `DestinationOrderKind` (ByReceptionTimestamp / BySourceTimestamp).
 - `PresentationAccessScope` (Instance / Topic / Group).
 
-**Exclusive-Ownership-Resolver** (`exclusive_ownership`-Modul):
+**Exclusive-ownership resolver** (`exclusive_ownership` module):
 
-- `OwnershipResolver` — State-Holder pro Instanz für Strongest-Writer-Tracking.
-- `OwnershipCandidate { guid, strength }` — Kandidat-Entry.
-- `resolve_strongest(&[OwnershipCandidate]) -> Option<OwnershipCandidate>` — zustandslose Resolver-Funktion.
-- `WriterGuidBytes` — `[u8; 16]` GUID-Alias.
+- `OwnershipResolver` — state holder per instance for strongest-writer tracking.
+- `OwnershipCandidate { guid, strength }` — candidate entry.
+- `resolve_strongest(&[OwnershipCandidate]) -> Option<OwnershipCandidate>` — stateless resolver function.
+- `WriterGuidBytes` — `[u8; 16]` GUID alias.
 
-### Implementierung
+### Implementation
 
-- `forbid(unsafe_code)` über die ganze Crate.
-- `#![cfg_attr(not(feature = "std"), no_std)]` mit mandatory `alloc`.
-- 200 Tests grün (199 unit + 1 compliance_qos_pid + 1 doctest).
-- Wire-Roundtrip pro Policy via `encode_into` / `decode_from`-Methoden gegen Cyclone-DDS-PL_CDR_LE-Golden-Vectors.
+- `forbid(unsafe_code)` across the whole crate.
+- `#![cfg_attr(not(feature = "std"), no_std)]` with mandatory `alloc`.
+- 200 tests green (199 unit + 1 compliance_qos_pid + 1 doctest).
+- Wire roundtrip per policy via `encode_into` / `decode_from` methods against Cyclone DDS PL_CDR_LE golden vectors.
 
-### Feature-Flags
+### Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std`   | ✅      | std-Re-Exports, implies `alloc` |
-| `alloc` | ✅      | mandatory (Vec/String); Feature bleibt aus Konsistenz mit Workspace-Pattern |
+| `std`   | ✅      | std re-exports, implies `alloc` |
+| `alloc` | ✅      | mandatory (Vec/String); kept for consistency with the workspace pattern |

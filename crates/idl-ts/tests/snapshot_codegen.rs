@@ -1,4 +1,4 @@
-//! Snapshot-Tests fuer den TypeScript Codegen-Output.
+//! Snapshot tests for the TypeScript codegen output.
 
 #![allow(
     clippy::expect_used,

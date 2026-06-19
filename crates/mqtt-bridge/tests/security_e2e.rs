@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! E2E-Tests fuer `zerodds-mqtt-bridged` §7.x Security-Wireup.
+//! E2E tests for `zerodds-mqtt-bridged` §7.x security wireup.
 //!
-//! Deckt:
-//! * §7.1 TLS — Bridge-Client connect via `mqtts://` mit rustls-Wrap.
-//! * §7.2 Auth — Bearer-Token + SASL-PLAIN als CONNECT-Username/Password.
-//! * §7.3 Topic-ACL — Subscribe-Skip + Publish-Drop bei deny.
+//! Covers:
+//! * §7.1 TLS — bridge-client connect via `mqtts://` with a rustls wrap.
+//! * §7.2 Auth — bearer token + SASL-PLAIN as CONNECT username/password.
+//! * §7.3 topic ACL — subscribe-skip + publish-drop on deny.
 //!
-//! Mock-Broker: rustls-Server auf `127.0.0.1:0` der einen einzigen
-//! MQTT-CONNECT-Frame liest, das CONNECT-Body in einen Channel pusht
-//! und mit CONNACK Reason 0x00 antwortet. Test-Side liest dann das
-//! User-/Password-Feld aus.
+//! Mock broker: a rustls server on `127.0.0.1:0` that reads a single
+//! MQTT CONNECT frame, pushes the CONNECT body into a channel
+//! and answers with CONNACK reason 0x00. The test side then reads the
+//! user/password field.
 
 #![cfg(feature = "daemon")]
 #![allow(
@@ -431,8 +431,8 @@ fn outbound_credentials_sasl_yields_user_and_password() {
 
 #[test]
 fn acl_skip_subscribe_when_subject_not_in_read_list() {
-    // Synthetisches ACL-Setup; deckt das Verhalten ab, das in
-    // server.rs fuer SUBSCRIBE-Filter genutzt wird.
+    // Synthetic ACL setup; covers the behavior used in
+    // server.rs for SUBSCRIBE filters.
     let mut sec = SecurityConfig::default();
     sec.topic_acl.insert(
         "Allowed".into(),

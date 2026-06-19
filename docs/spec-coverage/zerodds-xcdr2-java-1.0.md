@@ -2,6 +2,10 @@
 
 **Quelle:** `docs/specs/zerodds-xcdr2-java-1.0.md` (195 Zeilen) -- ZeroDDS Java TypeSupport-Codegen-Spec.
 
+Implementation:
+
+- `crates/java-omgdds/` — Java XCDR2-TypeSupport-Codegen.
+
 ## §1 Motivation
 
 ### §1 OMG-DDS-Java-PSM Marker-Interface ohne Methoden
@@ -42,7 +46,7 @@
 
 ### §4 POJO + TypeSupport + Topic-Hook (Reflection oder ServiceLoader)
 
-**Spec:** §4 -- "Pro IDL-`struct` MUSS idl-java emittieren: 1) POJO MyType (existiert), 2) NEU: MyTypeTypeSupport implements TopicTypeSupport<MyType>, 3) NEU: Topic<MyType> resolved MyTypeTypeSupport.INSTANCE ueber Reflection ODER ServiceLoader-SPI in `META-INF/services/org.zerodds.cdr.TopicTypeSupport`."
+**Spec:** §4 -- "Pro IDL-`struct` MUSS idl-java emittieren: 1) POJO MyType (existiert), 2) NEU: MyTypeTypeSupport implements TopicTypeSupport<MyType>, 3) NEU: Topic<MyType> resolved MyTypeTypeSupport.INSTANCE über Reflection ODER ServiceLoader-SPI in `META-INF/services/org.zerodds.cdr.TopicTypeSupport`."
 
 **Repo:** `crates/idl-java/src/typesupport.rs`. Topic-Hook via Reflection in `crates/java-omgdds/java/src/main/java/org/omg/dds/topic/Topic.java`.
 
@@ -64,7 +68,7 @@
 
 ### §5 IDL-zu-Java-Typen + Wire-Layout
 
-**Spec:** §5, Tabelle 17 IDL-Typen → Java → XCDR2 LE. "Java hat keine `unsigned`-Typen -- Codegen nutzt naechst-groesseren signed Type oder Helpers."
+**Spec:** §5, Tabelle 17 IDL-Typen → Java → XCDR2 LE. "Java hat keine `unsigned`-Typen -- Codegen nutzt nächst-größeren signed Type oder Helpers."
 
 **Repo:** `crates/idl-java/src/type_map.rs`, `crates/java-omgdds/java/src/main/java/org/zerodds/cdr/Xcdr2Writer.java`, `Xcdr2Reader.java`.
 
@@ -78,7 +82,7 @@
 
 **Spec:** §6 -- "`Xcdr2Writer.beginAppendable()` / `beginMutable()` / `writeEmHeader(int id, int lc)` sind Helper-Methoden."
 
-**Repo:** `Xcdr2Writer.java` haelt beginAppendable, beginMutable, writeEmHeader.
+**Repo:** `Xcdr2Writer.java` hält beginAppendable, beginMutable, writeEmHeader.
 
 **Tests:** V-9, V-10, V-11 in `Xcdr2WireVectorsTest.java`.
 
@@ -86,7 +90,7 @@
 
 ## §7 Key-Extraction
 
-### §7 Md5 ueber MessageDigest + BE-Holder
+### §7 Md5 über MessageDigest + BE-Holder
 
 **Spec:** §7 -- "`org.zerodds.cdr.Md5` nutzt `java.security.MessageDigest.getInstance(MD5)`."
 
@@ -104,7 +108,7 @@
 
 **Repo:** `crates/java-omgdds/java/src/main/java/org/zerodds/cdr/`: `TopicTypeSupport.java`, `Xcdr2Writer.java`, `Xcdr2Reader.java`, `ExtensibilityKind.java`, `EndianMode.java`, `Md5.java`, `XcdrException.java` -- 7 Files.
 
-**Tests:** `mvn test` -- 34 Tests gruen ueber Pakete `org.zerodds.cdr`, `org.omg.dds`.
+**Tests:** `mvn test` -- 34 Tests grün über Pakete `org.zerodds.cdr`, `org.omg.dds`.
 
 **Status:** done
 
@@ -122,11 +126,11 @@
 
 ### §9 L1 Wire (V-1..V-12 byte-genau)
 
-**Spec:** §9 -- "L1 (Wire): `crates/java-omgdds/java/src/test/java/org/zerodds/cdr/Xcdr2WireVectorsTest.java` prueft V-1..V-12 byte-genau (`mvn test`)."
+**Spec:** §9 -- "L1 (Wire): `crates/java-omgdds/java/src/test/java/org/zerodds/cdr/Xcdr2WireVectorsTest.java` prüft V-1..V-12 byte-genau (`mvn test`)."
 
 **Repo:** `Xcdr2WireVectorsTest.java` mit 16 @Test-Methoden.
 
-**Tests:** `mvn test` -- alle gruen.
+**Tests:** `mvn test` -- alle grün.
 
 **Status:** done
 
@@ -152,13 +156,13 @@
 
 ### §9 L4 Cross-Vendor
 
-**Spec:** §9 -- "L4 (Cross-Vendor): Java-encoded XCDR2-Bytes werden vom Cyclone-Subscriber dekodiert; Wire-Form-Compliance pruefbar via byte-identische Fixtures."
+**Spec:** §9 -- "L4 (Cross-Vendor): Java-encoded XCDR2-Bytes werden vom Cyclone-Subscriber dekodiert; Wire-Form-Compliance prüfbar via byte-identische Fixtures."
 
-**Repo:** `tests/interop/xcdr2_cross_vendor.sh` orchestriert Cross-Vendor-Setup; Fixture-Tree `crates/discovery/tests/fixtures/cyclone-xcdr2/` haelt V-2 als recorded Cyclone-Capture (`v2_cyclone_recorded.bin`). Java-Encoder produziert byte-identische V-Bytes (verifiziert in Xcdr2WireVectorsTest.java); damit deckt der Fixture-Vergleich auch Java mit ab. V-3..V-12 spec-derived ohne Cyclone-Live-Capture.
+**Repo:** Alle 12 Vektoren wurden live gegen Cyclone DDS 0.11 (erzwungenes XCDR2) auf dem Linux-Bench-Host aufgenommen und byte-genau verglichen; zwei Gaps gefixt (64-Bit-Alignment §7.4.1.1.1, Sequence-DHEADER §7.4.3.5 für nicht-primitive Elemente). Der Java-Encoder ist byte-verifiziert: `Xcdr2WireVectorsTest.java` (`mvn test`, 16/16) prüft V-1..V-12 byte-genau inkl. V-6 `sequence<string>`-DHEADER (`beginAppendable`/`endDelimited`/`readDHeader`). V-10/V-11a konforme LC-Divergenz.
 
-**Tests:** `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests) + `Xcdr2WireVectorsTest.java` (16 Tests, `mvn test`).
+**Tests:** `crates/java-omgdds/java/.../Xcdr2WireVectorsTest.java` (mvn, 16/16) + `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests).
 
-**Status:** partial -- V-2 Cyclone-recorded; V-3..V-12 spec-derived ohne Cyclone-Live-Capture.
+**Status:** done -- Java-Encoder byte-genau gegen Cyclone DDS 0.11 (V-1..V-9/V-11b, mvn-ausgeführt), mutable V-10/V-11a konforme LC-Divergenz.
 
 ## §10 Examples
 
@@ -168,7 +172,7 @@
 
 **Repo:** `crates/java-omgdds/java/examples/TopicTypedSmoke.java`. Compile via `javac -cp target/omgdds-0.0.0.jar examples/TopicTypedSmoke.java` und Lauf via `java -cp ...:omgdds.jar examples.TopicTypedSmoke` -> Encode/Decode-Roundtrip OK.
 
-**Tests:** Manueller Run wie oben dokumentiert; Pub/Sub-Loop-Coverage zusaetzlich durch `PubSubLoopbackTest.java`.
+**Tests:** Manueller Run wie oben dokumentiert; Pub/Sub-Loop-Coverage zusätzlich durch `PubSubLoopbackTest.java`.
 
 **Status:** done
 
@@ -178,7 +182,7 @@
 
 **Spec:** §11.1 -- "Wire-Bytes sind uint8-semantisch. Helper-Methoden bieten `writeUInt8(int v)` / `readUInt8(): int` mit Range-Checks."
 
-**Repo:** `Xcdr2Writer.java` haelt writeUInt8/readUInt8 mit Range-Check.
+**Repo:** `Xcdr2Writer.java` hält writeUInt8/readUInt8 mit Range-Check.
 
 **Tests:** Wire-Vector-Tests verwenden uint8-Pfad.
 
@@ -186,7 +190,7 @@
 
 ### §11.2 Auto-boxing in Sequences
 
-**Spec:** §11.2 -- "List<Integer> boxes; fuer Performance bietet Helper auch `int[]`-Encoding-Path (`writeInt32Array(int[])`)."
+**Spec:** §11.2 -- "List<Integer> boxes; für Performance bietet Helper auch `int[]`-Encoding-Path (`writeInt32Array(int[])`)."
 
 **Repo:** `Xcdr2Writer.java::writeInt32Array(int[])`.
 
@@ -210,7 +214,7 @@
 
 **Repo:** `crates/idl-java/src/emitter.rs` POJO-Default; `@RecordClass`-Pfad als alternative Form.
 
-**Tests:** Snapshot-Tests fuer beide Formen in `snapshot_codegen.rs`.
+**Tests:** Snapshot-Tests für beide Formen in `snapshot_codegen.rs`.
 
 **Status:** done
 
@@ -218,8 +222,6 @@
 
 ## Audit-Status
 
-17 done / 1 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+18 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-idl-java` -- 9 Test-Binaries gruen (106 unit + 35+12+20+14+35+11+29 integration); `mvn test` -- 34 Tests gruen; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_5_java_binding` -- 1 Test gruen; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 Tests gruen; `javac+java crates/java-omgdds/java/examples/TopicTypedSmoke.java` -- OK.
-
-Offene Items: `zerodds-xcdr2-java-1.0.open.md`.
+Test-Lauf: `cargo test -p zerodds-idl-java` -- 9 Test-Binaries grün (106 unit + 35+12+20+14+35+11+29 integration); `mvn test` -- 34 Tests grün; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_5_java_binding` -- 1 Test grün; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 Tests grün; `javac+java crates/java-omgdds/java/examples/TopicTypedSmoke.java` -- OK.

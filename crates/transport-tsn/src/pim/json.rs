@@ -2,12 +2,12 @@
 // Copyright 2026 ZeroDDS Contributors
 //! JSON PSM — Spec §7.3.2.
 //!
-//! Wir liefern einen **Renderer** in JSON nach dem Spec-Schema (das
-//! XSD-Schema spiegelt sich 1:1 in der JSON-Object-Struktur). Ein
-//! Reader-Pfad braeuchte einen JSON-Parser im Workspace; das ist ein
-//! separater Aufwand und wird hier explizit ausgelassen — der
-//! XML-Pfad ist die kanonische Loader-Form, JSON ist primaer ein
-//! Render-Output (z.B. fuer REST-APIs oder Tooling).
+//! We provide a **renderer** to JSON following the spec schema (the
+//! XSD schema maps one-to-one onto the JSON object structure). A
+//! reader path would need a JSON parser in the workspace; that is a
+//! separate effort and is deliberately omitted here — the
+//! XML path is the canonical loader form, JSON is primarily a
+//! render output (e.g. for REST APIs or tooling).
 
 use alloc::format;
 use alloc::string::String;
@@ -19,18 +19,18 @@ use super::application::{
 };
 use super::deployment::{Deployment, DeploymentLibrary, IpV4, IpV6, MacAddr, Node, NodeLibrary};
 
-/// Renderer-Fehler — derzeit kein Fall noetig (Strings + Bytes
-/// koennen nicht scheitern), aber wir definieren den Type fuer
-/// Forward-Compat zu einem JSON-Numeric-Encoder.
+/// Renderer error — currently no case needed (strings + bytes
+/// cannot fail), but we define the type for
+/// forward compatibility with a JSON numeric encoder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderJsonError {}
 
-/// Rendert eine `DdsTsnConfig` als JSON-Objekt mit den Spec-Feld-
-/// Namen `qos_library`, `domain_library`, `domain_participant_library`,
+/// Renders a `DdsTsnConfig` as a JSON object with the spec field
+/// names `qos_library`, `domain_library`, `domain_participant_library`,
 /// `application_library`, `node_library`, `deployment_library`.
 ///
 /// # Errors
-/// Aktuell kein Fail-Pfad; siehe [`RenderJsonError`].
+/// Currently no fail path; see [`RenderJsonError`].
 pub fn render_dds_tsn_json(cfg: &DdsTsnConfig) -> Result<String, RenderJsonError> {
     let mut out = String::new();
     out.push('{');

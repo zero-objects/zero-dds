@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Embedded normative XSD-Schema-Files fuer DDS-XML 1.0 §7.1.2 + §8.1.2.
+//! Embedded normative XSD schema files for DDS-XML 1.0 §7.1.2 + §8.1.2.
 //!
-//! Pro Building-Block liefert die Spec zwei XSD-Files:
-//! `dds-xml_<bb>_definitions_nonamespace.xsd` (chameleon, ohne
-//! targetNamespace) und `dds-xml_<bb>_definitions.xsd` (mit
+//! Per building block the spec provides two XSD files:
+//! `dds-xml_<bb>_definitions_nonamespace.xsd` (chameleon, without
+//! targetNamespace) and `dds-xml_<bb>_definitions.xsd` (with
 //! `targetNamespace="http://www.omg.org/spec/DDS-XML"`).
 //!
-//! Wir embedden die Schemas via `include_str!`, sodass das Crate
-//! self-contained ist — der Build benoetigt keine externen
-//! Schema-Files.
+//! We embed the schemas via `include_str!`, so that the crate
+//! is self-contained — the build needs no external
+//! schema files.
 //!
-//! # Building-Block-Liste (Spec §7.3.1.1 + §8.1)
+//! # Building-block list (Spec §7.3.1.1 + §8.1)
 //!
 //! | Block              | Top-Level Element             |
 //! |--------------------|-------------------------------|
@@ -28,33 +28,33 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Common Datatypes (chameleon, von allen Building-Block-Schemas
-/// includiert). Spec §7.2.2 + §7.1.4.
+/// Common datatypes (chameleon, included by all building-block
+/// schemas). Spec §7.2.2 + §7.1.4.
 pub const COMMON_XSD: &str = include_str!("../schemas/dds-xml_common.xsd");
 
-/// QoS Building Block — Chameleon-XSD ohne targetNamespace.
+/// QoS Building Block — chameleon XSD without targetNamespace.
 pub const QOS_NONAMESPACE_XSD: &str =
     include_str!("../schemas/dds-xml_qos_definitions_nonamespace.xsd");
 
-/// QoS Building Block — XSD mit targetNamespace + Top-Level
+/// QoS Building Block — XSD with targetNamespace + top-level
 /// `<qos_library>`.
 pub const QOS_NAMESPACED_XSD: &str = include_str!("../schemas/dds-xml_qos_definitions.xsd");
 
-/// Types Building Block — Chameleon.
+/// Types Building Block — chameleon.
 pub const TYPES_NONAMESPACE_XSD: &str =
     include_str!("../schemas/dds-xml_types_definitions_nonamespace.xsd");
 
 /// Types Building Block — Namespaced.
 pub const TYPES_NAMESPACED_XSD: &str = include_str!("../schemas/dds-xml_types_definitions.xsd");
 
-/// Domains Building Block — Chameleon.
+/// Domains Building Block — chameleon.
 pub const DOMAINS_NONAMESPACE_XSD: &str =
     include_str!("../schemas/dds-xml_domains_definitions_nonamespace.xsd");
 
 /// Domains Building Block — Namespaced.
 pub const DOMAINS_NAMESPACED_XSD: &str = include_str!("../schemas/dds-xml_domains_definitions.xsd");
 
-/// DomainParticipants Building Block — Chameleon.
+/// DomainParticipants Building Block — chameleon.
 pub const DOMAIN_PARTICIPANTS_NONAMESPACE_XSD: &str =
     include_str!("../schemas/dds-xml_domain_participants_definitions_nonamespace.xsd");
 
@@ -62,7 +62,7 @@ pub const DOMAIN_PARTICIPANTS_NONAMESPACE_XSD: &str =
 pub const DOMAIN_PARTICIPANTS_NAMESPACED_XSD: &str =
     include_str!("../schemas/dds-xml_domain_participants_definitions.xsd");
 
-/// Applications Building Block — Chameleon.
+/// Applications Building Block — chameleon.
 pub const APPLICATIONS_NONAMESPACE_XSD: &str =
     include_str!("../schemas/dds-xml_applications_definitions_nonamespace.xsd");
 
@@ -70,7 +70,7 @@ pub const APPLICATIONS_NONAMESPACE_XSD: &str =
 pub const APPLICATIONS_NAMESPACED_XSD: &str =
     include_str!("../schemas/dds-xml_applications_definitions.xsd");
 
-/// Data Samples Building Block — Chameleon.
+/// Data Samples Building Block — chameleon.
 pub const DATA_SAMPLES_NONAMESPACE_XSD: &str =
     include_str!("../schemas/dds-xml_data_samples_definitions_nonamespace.xsd");
 
@@ -133,8 +133,8 @@ pub const ALL_SCHEMAS: &[(&str, &str, &str, &str)] = &[
     ),
 ];
 
-/// Liefert die Liste aller Building-Block-Namen, fuer die ein
-/// XSD-File-Paerchen embedded ist.
+/// Returns the list of all building-block names for which an
+/// XSD file pair is embedded.
 #[must_use]
 pub fn embedded_block_names() -> Vec<String> {
     ALL_SCHEMAS
@@ -156,51 +156,51 @@ mod tests {
 
     #[test]
     fn nonamespace_xsds_omit_target_namespace() {
-        // Spec §7.3.1.2 — Chameleon-XSD darf kein
-        // `targetNamespace="..."`-Attribut auf dem <xs:schema>-Tag
-        // tragen. Wir parsen das XML und pruefen das root-Element.
+        // Spec §7.3.1.2 — a chameleon XSD may not carry a
+        // `targetNamespace="..."` attribute on the <xs:schema> tag.
+        // We parse the XML and check the root element.
         for (name, nons, _ns, _root) in ALL_SCHEMAS {
             let doc = roxmltree::Document::parse(nons)
-                .unwrap_or_else(|e| panic!("Block `{name}` chameleon-XSD parse: {e}"));
+                .unwrap_or_else(|e| panic!("block `{name}` chameleon XSD parse: {e}"));
             assert!(
                 doc.root_element().attribute("targetNamespace").is_none(),
-                "Block `{name}` chameleon-XSD <xs:schema> hat targetNamespace-Attribut"
+                "block `{name}` chameleon XSD <xs:schema> has a targetNamespace attribute"
             );
         }
     }
 
     #[test]
     fn namespaced_xsds_include_target_namespace() {
-        // Spec §7.3.1.3 — namespaced-XSD setzt
+        // Spec §7.3.1.3 — the namespaced XSD sets
         // targetNamespace="http://www.omg.org/spec/DDS-XML".
         for (name, _nons, ns, _root) in ALL_SCHEMAS {
             let doc = roxmltree::Document::parse(ns)
-                .unwrap_or_else(|e| panic!("Block `{name}` namespaced-XSD parse: {e}"));
+                .unwrap_or_else(|e| panic!("block `{name}` namespaced XSD parse: {e}"));
             assert_eq!(
                 doc.root_element().attribute("targetNamespace"),
                 Some("http://www.omg.org/spec/DDS-XML"),
-                "Block `{name}` namespaced-XSD <xs:schema> ohne korrekten targetNamespace"
+                "block `{name}` namespaced XSD <xs:schema> without the correct targetNamespace"
             );
         }
     }
 
     #[test]
     fn namespaced_xsds_define_top_level_element() {
-        // Pro Block muss das namespaced-XSD ein <xs:element name="..."> mit
-        // dem erwarteten Top-Level-Tag enthalten.
+        // Per block the namespaced XSD must contain an <xs:element name="..."> with
+        // the expected top-level tag.
         for (name, _nons, ns, root) in ALL_SCHEMAS {
             let needle = alloc::format!("name=\"{root}\"");
             assert!(
                 ns.contains(&needle),
-                "Block `{name}` namespaced-XSD definiert kein xs:element {root}"
+                "block `{name}` namespaced XSD defines no xs:element {root}"
             );
         }
     }
 
     #[test]
     fn all_schemas_includes_six_building_blocks_plus_system() {
-        // Spec §7.3.1.1: 6 Building-Blocks. §8.1: 1 zusaetzlicher
-        // System-Block-Set.
+        // Spec §7.3.1.1: 6 building blocks. §8.1: 1 additional
+        // system block set.
         assert_eq!(ALL_SCHEMAS.len(), 7);
         let names = embedded_block_names();
         for required in [
@@ -212,15 +212,15 @@ mod tests {
             "DataSamples",
             "DDSSystem",
         ] {
-            assert!(names.iter().any(|n| n == required), "fehlt: {required}");
+            assert!(names.iter().any(|n| n == required), "missing: {required}");
         }
     }
 
     #[test]
     fn nonamespace_xsds_can_be_loaded_by_xsd_loader() {
-        // Sanity: jedes embedded chameleon-XSD ist syntaktisch
-        // wohlgeformtes XML — durchquert den existierenden xsd_loader-
-        // Pfad ohne Fehler.
+        // Sanity: each embedded chameleon XSD is syntactically
+        // well-formed XML — passes through the existing xsd_loader
+        // path without error.
         for (name, nons, _ns, _root) in ALL_SCHEMAS {
             let _ = roxmltree::Document::parse(nons)
                 .unwrap_or_else(|e| panic!("Block `{name}` chameleon-XSD parsefehler: {e}"));

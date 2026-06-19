@@ -1,20 +1,20 @@
-//! Spec-Conformance-Matrix fuer IDL4-C++ 1.0 §7 + §8.
+//! Spec conformance matrix for IDL4-C++ 1.0 §7 + §8.
 //!
-//! Verifiziert produktiv die in `docs/spec-coverage/idl4-cpp-1.0.md`
-//! gelisteten Generator-Pfade durch end-to-end-IDL→C++-Renderings.
+//! Production-verifies the generator paths listed in
+//! `docs/spec-coverage/idl4-cpp-1.0.md` through end-to-end IDL→C++ renderings.
 //!
-//! Cluster:
-//! 1. **§7.2.3 Constants** — string/wstring-constexpr-Pfad.
-//! 2. **§7.2.4.2.1-3 Type-Trait-Specs** — bounded sequence/string/wstring
-//!    `is_bounded`/`bound`-Spezialisierungen.
-//! 3. **§7.2.4.3.4 Recursive Types** — Self-Reference via Typedef.
+//! Clusters:
+//! 1. **§7.2.3 Constants** — string/wstring constexpr path.
+//! 2. **§7.2.4.2.1-3 Type-Trait Specs** — bounded sequence/string/wstring
+//!    `is_bounded`/`bound` specializations.
+//! 3. **§7.2.4.3.4 Recursive Types** — self-reference via typedef.
 //! 4. **§7.4.2 Interface Forward-Decl** — `class Foo;`.
 //! 5. **§7.5 Interfaces – Full** — Embedded type/const/exception decls.
-//! 6. **§7.14.2 Union-Discriminator-Erweiterungen** — wchar/octet/int8/uint8.
-//! 7. **§7.16 User-Defined Annotations** — no-op verifiziert.
+//! 6. **§7.14.2 Union discriminator extensions** — wchar/octet/int8/uint8.
+//! 7. **§7.16 User-Defined Annotations** — no-op verified.
 //! 8. **§7.17.x Standardized Annotations** — @optional/@key/@value/@bit_bound/
-//!    @verbatim (XTypes §7.2.2.4.8 Cross-Cutting).
-//! 9. **§8.1 @cpp_mapping** — Annotation als Codegen-Hook.
+//!    @verbatim (XTypes §7.2.2.4.8 cross-cutting).
+//! 9. **§8.1 @cpp_mapping** — annotation as a codegen hook.
 
 #![allow(
     clippy::expect_used,
@@ -40,21 +40,21 @@ fn gen_cpp(src: &str) -> String {
 }
 
 // ============================================================================
-// §7.2.3 Constants — string/wstring-Pfad
+// §7.2.3 Constants — string/wstring path
 // ============================================================================
 
 #[test]
 fn string_constant_emits_constexpr_string_view() {
-    // Spec §7.2.3: string-const → constexpr omg::types::string_view
-    // (oder std::string_view als spec-konformer Substitut).
+    // Spec §7.2.3: string const → constexpr omg::types::string_view
+    // (or std::string_view as a spec-conformant substitute).
     let cpp = gen_cpp(r#"const string GREETING = "hello";"#);
-    assert!(cpp.contains("GREETING"), "constant name fehlt");
-    assert!(cpp.contains("constexpr"), "constexpr-Keyword fehlt");
+    assert!(cpp.contains("GREETING"), "constant name missing");
+    assert!(cpp.contains("constexpr"), "constexpr keyword missing");
 }
 
 #[test]
 fn numeric_constant_emits_constexpr_with_value() {
-    // Spec §7.2.3: numeric-const → constexpr int.
+    // Spec §7.2.3: numeric const → constexpr int.
     let cpp = gen_cpp("const long N = 42;");
     assert!(cpp.contains("constexpr"));
     assert!(cpp.contains("42"));
@@ -66,8 +66,8 @@ fn numeric_constant_emits_constexpr_with_value() {
 
 #[test]
 fn bounded_sequence_struct_emits_vector_with_size_marker() {
-    // Spec §7.2.4.2.1 + Tab.7.4: bounded sequence → std::vector mit
-    // bound-Marker. Generator emittiert std::vector<T> als Spec-Default.
+    // Spec §7.2.4.2.1 + Tab.7.4: bounded sequence → std::vector with a
+    // bound marker. The generator emits std::vector<T> as the spec default.
     let cpp = gen_cpp(
         r#"
         struct WithBoundedSeq {
@@ -99,7 +99,7 @@ fn wstring_member_uses_std_wstring() {
 
 #[test]
 fn typedef_can_be_used_in_struct_member() {
-    // Spec §7.2.4.3.4: rekursive Konstruktionen via typedef.
+    // Spec §7.2.4.3.4: recursive constructions via typedef.
     let cpp = gen_cpp(
         r#"
         typedef sequence<long> LongSeq;
@@ -116,28 +116,28 @@ fn typedef_can_be_used_in_struct_member() {
 
 #[test]
 fn struct_forward_declaration_emits_class_or_struct_decl() {
-    // Spec §7.4.2: forward-decl → `class Foo;` oder `struct Foo;`.
+    // Spec §7.4.2: forward decl → `class Foo;` or `struct Foo;`.
     let cpp = gen_cpp(
         r#"
         struct Forwarded;
         struct Forwarded { long x; };
     "#,
     );
-    // Forward-Decl muss vorhanden sein als `class Forwarded;` oder
-    // `struct Forwarded;` (Spec erlaubt beides).
+    // The forward decl must be present as `class Forwarded;` or
+    // `struct Forwarded;` (the spec allows both).
     assert!(
         cpp.contains("class Forwarded;") || cpp.contains("struct Forwarded;"),
-        "forward declaration fehlt:\n{cpp}"
+        "forward declaration missing:\n{cpp}"
     );
 }
 
 // ============================================================================
-// §7.14.2 Union-Discriminator-Erweiterungen
+// §7.14.2 Union discriminator extensions
 // ============================================================================
 
 #[test]
 fn union_with_octet_discriminator_emits_variant() {
-    // Spec §7.14.2: octet als Discriminator-Type erlaubt.
+    // Spec §7.14.2: octet allowed as discriminator type.
     let cpp = gen_cpp(
         r#"
         union U switch (octet) {
@@ -156,7 +156,7 @@ fn union_with_octet_discriminator_emits_variant() {
 
 #[test]
 fn user_defined_annotations_not_propagated_to_cpp() {
-    // Spec §7.16: User-Annotations → kein C++-Output.
+    // Spec §7.16: user annotations → no C++ output.
     let cpp = gen_cpp(
         r#"
         @annotation MyCustom { string note; };
@@ -164,11 +164,11 @@ fn user_defined_annotations_not_propagated_to_cpp() {
         struct S { long x; };
     "#,
     );
-    // Generator emittiert Class-Variante mit `class S` und `int32_t x_`.
+    // The generator emits the class variant with `class S` and `int32_t x_`.
     assert!(cpp.contains("class S") || cpp.contains("struct S"));
     assert!(cpp.contains("x_"));
-    // `MyCustom`/`note` darf nicht als C++-Code-Element in der Output-
-    // Datei landen (max. als Doxygen-Kommentar mit "// ").
+    // `MyCustom`/`note` must not end up as a C++ code element in the output
+    // file (at most as a Doxygen comment with "// ").
     let out = cpp.as_str();
     let mc_count = out.matches("MyCustom").count();
     let comment_lines = out
@@ -177,7 +177,7 @@ fn user_defined_annotations_not_propagated_to_cpp() {
         .all(|l| l.trim_start().starts_with("//") || l.trim_start().starts_with("*"));
     assert!(
         mc_count == 0 || comment_lines,
-        "User-Annotation als C++-Code-Element emittiert"
+        "user annotation emitted as a C++ code element"
     );
 }
 
@@ -195,19 +195,22 @@ fn optional_member_emits_std_optional() {
         };
     "#,
     );
-    assert!(cpp.contains("std::optional"), "std::optional fehlt:\n{cpp}");
+    assert!(
+        cpp.contains("std::optional"),
+        "std::optional missing:\n{cpp}"
+    );
 }
 
 #[test]
 fn fixed_member_emits_dds_core_fixed_template() {
-    // Spec idl4-cpp §7.2.4.2.4: fixed<digits,scale> -> Fixed-Klasse mit
-    // ~30 Methoden. ZeroDDS-Wahl: `dds::core::Fixed<D,S>`-Template
-    // (Spec-aequivalente Form, Decimal-Library-Implementation in
-    // dds-core-Crate).
+    // Spec idl4-cpp §7.2.4.2.4: fixed<digits,scale> -> Fixed class with
+    // ~30 methods. ZeroDDS choice: `dds::core::Fixed<D,S>` template
+    // (spec-equivalent form, decimal-library implementation in the
+    // dds-core crate).
     let cpp = gen_cpp(r#"struct M { fixed<10,2> price; };"#);
     assert!(
         cpp.contains("dds::core::Fixed<10, 2>"),
-        "Fixed<10,2>-Template fehlt:\n{cpp}"
+        "Fixed<10,2>-Template missing:\n{cpp}"
     );
 }
 
@@ -223,9 +226,9 @@ fn shared_member_emits_std_shared_ptr() {
     );
     assert!(
         cpp.contains("std::shared_ptr"),
-        "std::shared_ptr fehlt:\n{cpp}"
+        "std::shared_ptr missing:\n{cpp}"
     );
-    assert!(cpp.contains("<memory>"), "<memory>-Include fehlt:\n{cpp}");
+    assert!(cpp.contains("<memory>"), "<memory>-Include missing:\n{cpp}");
 }
 
 #[test]
@@ -240,7 +243,7 @@ fn shared_and_optional_compose() {
     );
     assert!(
         cpp.contains("std::optional<std::shared_ptr<"),
-        "kombinierte optional<shared_ptr> fehlt:\n{cpp}"
+        "kombinierte optional<shared_ptr> missing:\n{cpp}"
     );
 }
 
@@ -250,8 +253,8 @@ fn shared_and_optional_compose() {
 
 #[test]
 fn key_annotation_emits_marker_comment_or_attribute() {
-    // Spec §7.17.2: @key hat keinen Spec-Impact, aber ZeroDDS
-    // emittiert einen Marker fuer DDS-Topic-Identitaet.
+    // Spec §7.17.2: @key has no spec impact, but ZeroDDS
+    // emits a marker for DDS topic identity.
     let cpp = gen_cpp(
         r#"
         @nested(false)
@@ -262,10 +265,10 @@ fn key_annotation_emits_marker_comment_or_attribute() {
     "#,
     );
     assert!(cpp.contains("Keyed"));
-    // Marker via Doxygen-Kommentar oder direkter Annotation.
+    // Marker via Doxygen comment or direct annotation.
     assert!(
         cpp.contains("@key") || cpp.contains("dds_key") || cpp.contains("// key"),
-        "key-Marker fehlt:\n{cpp}"
+        "key-Marker missing:\n{cpp}"
     );
 }
 
@@ -276,11 +279,11 @@ fn key_annotation_emits_marker_comment_or_attribute() {
 #[test]
 fn verbatim_annotation_with_cpp_language_inlines_text() {
     // Spec §7.17.5 + XTypes §7.2.2.4.8: @verbatim(language="c++",
-    // placement="...", text="...") bettet den Text an der gewaehlten
-    // Stelle in den C++-Output ein.
+    // placement="...", text="...") embeds the text at the chosen
+    // inserted into the C++ output.
     //
     // Cross-Reference: XTypes 1.3 §7.2.2.4.8 — VerbatimText-
-    // AppliedAnnotation-Variante (siehe `dds-xtypes-1.3.md`).
+    // AppliedAnnotation variant (see `dds-xtypes-1.3.md`).
     let cpp = gen_cpp(
         r#"
         @verbatim(language="c++", placement=BEFORE_DECLARATION, text="// pre-decl marker")
@@ -289,18 +292,18 @@ fn verbatim_annotation_with_cpp_language_inlines_text() {
     );
     assert!(
         cpp.contains("PlainStruct"),
-        "PlainStruct fehlt im Output:\n{cpp}"
+        "PlainStruct missing from the output:\n{cpp}"
     );
     assert!(
         cpp.contains("// pre-decl marker"),
-        "@verbatim BEFORE_DECLARATION fehlt im Output:\n{cpp}"
+        "@verbatim BEFORE_DECLARATION missing from the output:\n{cpp}"
     );
-    // Text muss VOR der class-Zeile stehen.
+    // The text must come BEFORE the class line.
     let pos_marker = cpp.find("// pre-decl marker").unwrap_or(usize::MAX);
     let pos_class = cpp.find("class PlainStruct").unwrap_or(usize::MAX);
     assert!(
         pos_marker < pos_class,
-        "BEFORE_DECLARATION-Verbatim muss vor der Class-Zeile stehen:\n{cpp}"
+        "BEFORE_DECLARATION verbatim must come before the class line:\n{cpp}"
     );
 }
 
@@ -317,13 +320,13 @@ fn verbatim_annotation_with_after_declaration_placement() {
     let pos_close = cpp.find("};").unwrap_or(usize::MAX);
     assert!(
         pos_marker > pos_close && pos_marker != usize::MAX,
-        "AFTER_DECLARATION-Verbatim muss nach `}};` stehen:\n{cpp}"
+        "AFTER_DECLARATION verbatim must come after `}};`:\n{cpp}"
     );
 }
 
 #[test]
 fn verbatim_annotation_wildcard_language_applies() {
-    // Spec §8.3.5.1 — language="*" matched alle Codegens.
+    // Spec §8.3.5.1 — language="*" matches all codegens.
     let cpp = gen_cpp(
         r#"
         @verbatim(language="*", placement=BEFORE_DECLARATION, text="// universal pre")
@@ -332,13 +335,13 @@ fn verbatim_annotation_wildcard_language_applies() {
     );
     assert!(
         cpp.contains("// universal pre"),
-        "Wildcard-Sprache muss matchen:\n{cpp}"
+        "the wildcard language must match:\n{cpp}"
     );
 }
 
 #[test]
 fn verbatim_annotation_other_language_skipped() {
-    // Spec — language="java" auf C++-Codegen darf NICHT inlinen.
+    // Spec — language="java" must NOT inline on a C++ codegen.
     let cpp = gen_cpp(
         r#"
         @verbatim(language="java", placement=BEFORE_DECLARATION, text="// not for cpp")
@@ -347,7 +350,7 @@ fn verbatim_annotation_other_language_skipped() {
     );
     assert!(
         !cpp.contains("// not for cpp"),
-        "Falsche Sprache darf nicht emittiert werden:\n{cpp}"
+        "the wrong language must not be emitted:\n{cpp}"
     );
 }
 
@@ -358,10 +361,10 @@ fn verbatim_annotation_other_language_skipped() {
 #[test]
 fn struct_with_default_mapping_emits_class_with_accessors() {
     // Spec §8.1.1 (alternative): CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS
-    // → C++ class mit pure-public Members ueber Accessor/Modifier.
-    // ZeroDDS emittiert das als Default (siehe Audit §8.1.1 partial).
+    // → C++ class with pure-public members via accessor/modifier.
+    // ZeroDDS emits this as the default (see audit §8.1.1 partial).
     let cpp = gen_cpp(r#"struct S { long x; };"#);
-    // Generator emittiert Class-Variante: setter/getter
+    // The generator emits the class variant: setter/getter
     assert!(
         cpp.contains("get_x")
             || cpp.contains("x()")
@@ -385,14 +388,14 @@ fn non_service_interface_emits_pure_virtual_class() {
         };
     "#,
     );
-    assert!(cpp.contains("class Calc"), "class Calc fehlt:\n{cpp}");
+    assert!(cpp.contains("class Calc"), "class Calc missing:\n{cpp}");
     assert!(
         cpp.contains("virtual ~Calc()"),
-        "virtual dtor fehlt:\n{cpp}"
+        "virtual dtor missing:\n{cpp}"
     );
-    assert!(cpp.contains("= 0;"), "pure-virtual marker fehlt:\n{cpp}");
-    assert!(cpp.contains("add("), "add operation fehlt:\n{cpp}");
-    assert!(cpp.contains("version()"), "readonly getter fehlt:\n{cpp}");
+    assert!(cpp.contains("= 0;"), "pure-virtual marker missing:\n{cpp}");
+    assert!(cpp.contains("add("), "add operation missing:\n{cpp}");
+    assert!(cpp.contains("version()"), "readonly getter missing:\n{cpp}");
 }
 
 #[test]
@@ -406,7 +409,7 @@ fn interface_with_out_param_uses_reference() {
     let cpp = gen_cpp(r#"interface I { void op(out long x); };"#);
     assert!(
         !cpp.contains("const int32_t& x"),
-        "out-param darf nicht const sein:\n{cpp}"
+        "the out-param must not be const:\n{cpp}"
     );
 }
 
@@ -416,37 +419,40 @@ fn any_member_emits_dds_core_any() {
     let cpp = gen_cpp(r#"struct M { any value; };"#);
     assert!(
         cpp.contains("dds::core::Any"),
-        "dds::core::Any fehlt:\n{cpp}"
+        "dds::core::Any missing:\n{cpp}"
     );
 }
 
 // ============================================================================
-// §7.6 Value Types — als Unsupported dokumentiert
+// §7.6 Value Types — documented as unsupported
 // ============================================================================
 
 #[test]
 fn valuetype_is_feature_gated_or_emits_class_with_accessors() {
-    // Spec §7.6: valuetype -> C++ class mit pure-virtual public/
-    // protected accessor + factory-Class.
-    // ZeroDDS-Parser ist feature-gated (`corba_value_types_full`) —
-    // wir testen nur, dass entweder Parser ablehnt ODER Codegen die
-    // korrekte Class-Struktur emittiert.
+    // Spec §7.6: valuetype -> C++ class with a pure-virtual public/
+    // protected accessor + factory class.
+    // The ZeroDDS parser is feature-gated (`corba_value_types_full`) —
+    // we only test that either the parser rejects OR the codegen emits
+    // the correct class structure.
     let parse = zerodds_idl::parse(
         r#"valuetype VT { public long x; };"#,
         &ParserConfig::default(),
     );
     match parse {
         Ok(ast) => {
-            // Codegen muss class + accessor + virtual dtor liefern.
+            // The codegen must provide class + accessor + virtual dtor.
             let cpp = generate_cpp_header(&ast, &CppGenOptions::default()).expect("ok");
-            assert!(cpp.contains("class VT"), "class VT fehlt:\n{cpp}");
-            assert!(cpp.contains("virtual ~VT()"), "virtual dtor fehlt:\n{cpp}");
-            assert!(cpp.contains("x()"), "x()-accessor fehlt:\n{cpp}");
+            assert!(cpp.contains("class VT"), "class VT missing:\n{cpp}");
+            assert!(
+                cpp.contains("virtual ~VT()"),
+                "virtual dtor missing:\n{cpp}"
+            );
+            assert!(cpp.contains("x()"), "x()-accessor missing:\n{cpp}");
         }
         Err(_) => {
-            // Parser-seitig abgelehnt (FeaturesDisabled): ist auch
-            // Spec-permitted (§7.6 erlaubt Implementations,
-            // valuetype nicht zu unterstuetzen).
+            // Rejected on the parser side (FeaturesDisabled): also
+            // spec-permitted (§7.6 allows implementations
+            // not to support valuetype).
         }
     }
 }
@@ -461,7 +467,7 @@ fn valuetype_with_factory_emits_factory_class() {
         let cpp = generate_cpp_header(&ast, &CppGenOptions::default()).expect("ok");
         assert!(
             cpp.contains("class VT_factory"),
-            "VT_factory class fehlt:\n{cpp}"
+            "VT_factory class missing:\n{cpp}"
         );
         assert!(cpp.contains("create("));
     }
@@ -475,28 +481,31 @@ fn valuetype_private_state_emits_protected_accessor() {
     );
     if let Ok(ast) = parse {
         let cpp = generate_cpp_header(&ast, &CppGenOptions::default()).expect("ok");
-        assert!(cpp.contains("protected:"), "protected-Block fehlt:\n{cpp}");
+        assert!(
+            cpp.contains("protected:"),
+            "protected-Block missing:\n{cpp}"
+        );
         assert!(cpp.contains("secret()"));
     }
 }
 
 // ============================================================================
-// §7.14.3.2/3 Bitset/Bitmask — als Unsupported dokumentiert
+// §7.14.3.2/3 Bitset/Bitmask — documented as unsupported
 // ============================================================================
 
 #[test]
 fn bitset_emits_struct_with_value_field() {
-    // Spec idl4-cpp §7.14.3.2: bitset → C++ struct mit bit-fields.
-    // ZeroDDS-Mapping: `struct B { uint64_t value; ... };` mit Getter/
-    // Setter pro benanntem Bitfield.
+    // Spec idl4-cpp §7.14.3.2: bitset → C++ struct with bit-fields.
+    // ZeroDDS mapping: `struct B { uint64_t value; ... };` with a getter/
+    // setter per named bitfield.
     let cpp = gen_cpp(r#"bitset BS { bitfield<3> a; bitfield<5> b; };"#);
-    assert!(cpp.contains("struct BS"), "struct BS fehlt:\n{cpp}");
-    assert!(cpp.contains("uint64_t value"), "value-Feld fehlt:\n{cpp}");
-    assert!(cpp.contains("a()"), "Getter fuer a fehlt:\n{cpp}");
-    assert!(cpp.contains("b()"), "Getter fuer b fehlt:\n{cpp}");
-    // Mask fuer width=3 ist 0x7, fuer width=5 ist 0x1F.
-    assert!(cpp.contains("0x7ULL"), "0x7-Mask fehlt:\n{cpp}");
-    assert!(cpp.contains("0x1FULL"), "0x1F-Mask fehlt:\n{cpp}");
+    assert!(cpp.contains("struct BS"), "struct BS missing:\n{cpp}");
+    assert!(cpp.contains("uint64_t value"), "value-Feld missing:\n{cpp}");
+    assert!(cpp.contains("a()"), "getter for a missing:\n{cpp}");
+    assert!(cpp.contains("b()"), "getter for b missing:\n{cpp}");
+    // Mask for width=3 is 0x7, for width=5 is 0x1F.
+    assert!(cpp.contains("0x7ULL"), "0x7-Mask missing:\n{cpp}");
+    assert!(cpp.contains("0x1FULL"), "0x1F-Mask missing:\n{cpp}");
 }
 
 #[test]
@@ -508,23 +517,23 @@ fn bitset_total_width_over_64_returns_error() {
     );
     if let Ok(ast) = ast {
         let result = generate_cpp_header(&ast, &CppGenOptions::default());
-        assert!(result.is_err(), "bitset > 64 bit muss rejected werden");
+        assert!(result.is_err(), "bitset > 64 bit must be rejected");
     }
 }
 
 #[test]
 fn bitmask_emits_enum_class_with_bitwise_operators() {
-    // Spec idl4-cpp §7.14.3.3: bitmask → struct mit unscoped enum +
-    // value-member + Bitwise-Operatoren. ZeroDDS-Wahl: typsafer
-    // `enum class : uint{N}_t` (C++11+) mit Operator-Overloads.
+    // Spec idl4-cpp §7.14.3.3: bitmask → struct with an unscoped enum +
+    // value member + bitwise operators. ZeroDDS choice: a type-safe
+    // `enum class : uint{N}_t` (C++11+) with operator overloads.
     let cpp = gen_cpp(r#"@bit_bound(8) bitmask Flags { READ, WRITE, EXEC };"#);
     assert!(
         cpp.contains("enum class Flags : uint8_t"),
-        "enum class : uint8_t fehlt:\n{cpp}"
+        "enum class : uint8_t missing:\n{cpp}"
     );
     assert!(cpp.contains("READ"));
-    assert!(cpp.contains("1ULL << 0"), "Position 0 fehlt:\n{cpp}");
-    assert!(cpp.contains("operator|"), "operator| fehlt:\n{cpp}");
+    assert!(cpp.contains("1ULL << 0"), "Position 0 missing:\n{cpp}");
+    assert!(cpp.contains("operator|"), "operator| missing:\n{cpp}");
     assert!(cpp.contains("operator&"));
     assert!(cpp.contains("operator^"));
     assert!(cpp.contains("operator~"));
@@ -532,14 +541,14 @@ fn bitmask_emits_enum_class_with_bitwise_operators() {
 
 #[test]
 fn bitmask_explicit_position_overrides_auto() {
-    // Spec idl4-cpp §7.14.3.3 + §7.17.1: `@position(N)` ueberschreibt
-    // Auto-Numbering.
+    // Spec idl4-cpp §7.14.3.3 + §7.17.1: `@position(N)` overrides
+    // auto-numbering.
     let cpp = gen_cpp(r#"@bit_bound(16) bitmask F { @position(3) A, B };"#);
     assert!(
         cpp.contains("enum class F : uint16_t"),
-        "uint16_t-Underlying fehlt:\n{cpp}"
+        "uint16_t-Underlying missing:\n{cpp}"
     );
     assert!(cpp.contains("A = 1ULL << 3"));
-    // B folgt mit auto-position 4.
+    // B follows with auto-position 4.
     assert!(cpp.contains("B = 1ULL << 4"));
 }

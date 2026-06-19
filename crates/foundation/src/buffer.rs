@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Fixed-Capacity Stack-Buffer fuer Hot-Path-Allokationen.
+//! Fixed-capacity stack buffer for hot-path allocations.
 //!
-//! `PoolBuffer<CAP>` ist ein on-stack array-basierter Buffer mit
-//! fester Kapazitaet `CAP`. Append-Operationen sind O(1) ohne
-//! Heap-Touch; Overflow wird als `PoolBufferError::Overflow`
-//! signalisiert statt zu panicen. `no_std`-tauglich.
+//! `PoolBuffer<CAP>` is an on-stack array-based buffer with
+//! fixed capacity `CAP`. Append operations are O(1) without
+//! touching the heap; overflow is signalled as `PoolBufferError::Overflow`
+//! instead of panicking. `no_std`-capable.
 //!
-//! ## Spec-Bezug
+//! ## Spec relation
 //!
-//! Dieses Modul ist kein OMG-Spec-Mapping — es ist ein internes
-//! Performance-Primitive fuer den Hot-Path
-//! `Writer::write`/`Reader::take`, der ohne Pro-Sample-Realloc
-//! arbeiten soll.
+//! This module is not an OMG spec mapping — it is an internal
+//! performance primitive for the hot path
+//! `Writer::write`/`Reader::take`, which is meant to work without
+//! a per-sample realloc.
 
 #![allow(clippy::module_name_repetitions)]
 
@@ -20,13 +20,13 @@
 // PoolBuffer<CAP> — fixed-capacity byte buffer
 // ============================================================================
 
-/// Fixed-Capacity Byte-Buffer, der wie `Vec<u8>` befuellt werden kann
-/// — aber keinen Heap-Realloc macht. Ueberlauf wird per
-/// [`Result`] gemeldet, nicht per `panic!`.
+/// Fixed-capacity byte buffer that can be filled like `Vec<u8>`
+/// — but does not do a heap realloc. Overflow is reported via
+/// [`Result`], not via `panic!`.
 ///
-/// Layout: `[u8; CAP]` + `len: u16` (max 65 535 Bytes pro Buffer).
-/// Fuer DDS-Hot-Path-Samples bis 1.5 kB ist das genug; groessere
-/// Samples laufen weiter ueber den `alloc`-Pfad.
+/// Layout: `[u8; CAP]` + `len: u16` (max 65 535 bytes per buffer).
+/// This is enough for DDS hot-path samples up to 1.5 kB; larger
+/// samples continue to go through the `alloc` path.
 #[derive(Debug)]
 pub struct PoolBuffer<const CAP: usize> {
     bytes: [u8; CAP],
@@ -34,10 +34,10 @@ pub struct PoolBuffer<const CAP: usize> {
 }
 
 impl<const CAP: usize> PoolBuffer<CAP> {
-    /// Erzeugt einen leeren Buffer.
+    /// Creates an empty buffer.
     ///
-    /// `CAP` muss `<= u16::MAX as usize` sein — bei groesseren
-    /// Werten lehnt jede Mutation mit [`PoolBufferError::CapacityTooLarge`] ab.
+    /// `CAP` must be `<= u16::MAX as usize` — for larger
+    /// values every mutation is rejected with [`PoolBufferError::CapacityTooLarge`].
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -46,49 +46,49 @@ impl<const CAP: usize> PoolBuffer<CAP> {
         }
     }
 
-    /// Aktuelle Laenge (Bytes geschrieben).
+    /// Current length (bytes written).
     #[must_use]
     pub const fn len(&self) -> usize {
         self.len as usize
     }
 
-    /// `true` wenn keine Bytes geschrieben sind.
+    /// `true` when no bytes have been written.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
 
-    /// Statische Kapazitaet.
+    /// Static capacity.
     #[must_use]
     pub const fn capacity(&self) -> usize {
         CAP
     }
 
-    /// Lesender Slice ueber die geschriebenen Bytes.
+    /// Read-only slice over the written bytes.
     #[must_use]
     pub fn as_slice(&self) -> &[u8] {
-        // `len` ist immer <= CAP per Konstruktion — alle Mutations-APIs
-        // cappen ihn.
+        // `len` is always <= CAP by construction — all mutation APIs
+        // cap it.
         self.bytes.get(..self.len()).unwrap_or(&[])
     }
 
-    /// Mutabler Slice ueber den uninitialisierten Tail (Capacity-len).
+    /// Mutable slice over the uninitialized tail (capacity − len).
     #[must_use]
     pub fn spare_capacity_mut(&mut self) -> &mut [u8] {
         let start = self.len();
         self.bytes.get_mut(start..).unwrap_or(&mut [])
     }
 
-    /// Setzt den Inhalt zurueck auf `len = 0`. O(1), kein Memzero.
+    /// Resets the contents to `len = 0`. O(1), no memzero.
     pub fn clear(&mut self) {
         self.len = 0;
     }
 
-    /// Haengt `data` ans Ende. Fehler wenn der Buffer voll waere.
+    /// Appends `data` to the end. Errors if the buffer would be full.
     ///
     /// # Errors
-    /// [`PoolBufferError::Overflow`] wenn `self.len() + data.len() > CAP`.
-    /// [`PoolBufferError::CapacityTooLarge`] wenn `CAP > u16::MAX`.
+    /// [`PoolBufferError::Overflow`] when `self.len() + data.len() > CAP`.
+    /// [`PoolBufferError::CapacityTooLarge`] when `CAP > u16::MAX`.
     pub fn extend_from_slice(&mut self, data: &[u8]) -> Result<(), PoolBufferError> {
         if CAP > u16::MAX as usize {
             return Err(PoolBufferError::CapacityTooLarge);
@@ -106,29 +106,29 @@ impl<const CAP: usize> PoolBuffer<CAP> {
             .get_mut(start..needed)
             .ok_or(PoolBufferError::Overflow)?;
         dst.copy_from_slice(data);
-        // needed <= CAP <= u16::MAX, kein truncate-Risiko.
+        // needed <= CAP <= u16::MAX, no truncation risk.
         self.len = needed as u16;
         Ok(())
     }
 
-    /// Schreibt ein einzelnes Byte. Fehler bei Vollheit.
+    /// Writes a single byte. Errors when full.
     ///
     /// # Errors
-    /// [`PoolBufferError::Overflow`] wenn der Buffer voll ist.
+    /// [`PoolBufferError::Overflow`] when the buffer is full.
     pub fn push(&mut self, byte: u8) -> Result<(), PoolBufferError> {
         self.extend_from_slice(&[byte])
     }
 
-    /// Setzt die Laenge explizit. Genutzt nach einem `spare_capacity_mut`-
-    /// Schreibzugriff durch ein Codec-Backend.
+    /// Sets the length explicitly. Used after a `spare_capacity_mut`
+    /// write access by a codec backend.
     ///
     /// # Errors
-    /// [`PoolBufferError::Overflow`] wenn `new_len > CAP`.
+    /// [`PoolBufferError::Overflow`] when `new_len > CAP`.
     pub fn set_len(&mut self, new_len: usize) -> Result<(), PoolBufferError> {
         if new_len > CAP || CAP > u16::MAX as usize {
             return Err(PoolBufferError::Overflow);
         }
-        // Cast ist nach der Range-Validation safe.
+        // The cast is safe after the range validation.
         self.len = new_len as u16;
         Ok(())
     }
@@ -150,14 +150,13 @@ impl<const CAP: usize> AsRef<[u8]> for PoolBuffer<CAP> {
 // Error
 // ============================================================================
 
-/// Fehler-Familie fuer `PoolBuffer`.
+/// Error family for `PoolBuffer`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PoolBufferError {
-    /// Schreibende Operation wuerde die statische Kapazitaet
-    /// ueberschreiten.
+    /// A write operation would exceed the static capacity.
     Overflow,
-    /// `CAP > u16::MAX`. Diese Variante existiert weil `len` als
-    /// `u16` modelliert ist.
+    /// `CAP > u16::MAX`. This variant exists because `len` is
+    /// modeled as a `u16`.
     CapacityTooLarge,
 }
 

@@ -49,7 +49,8 @@ public final class Duration {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof Duration other)) return false;
+        if (!(o instanceof Duration)) return false;
+        Duration other = (Duration) o;
         return sec == other.sec && nanosec == other.nanosec;
     }
 

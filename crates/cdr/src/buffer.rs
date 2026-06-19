@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Alignment-tracking Buffer-Reader/-Writer fuer XCDR.
+//! Alignment-tracking buffer reader/writer for XCDR.
 //!
-//! XCDR-Daten sind alignment-pflichtig: ein `u32`-Feld muss an einer
-//! 4-Byte-Boundary beginnen, ein `u64` an 8-Byte-Boundary etc. Der
-//! Encoder fuegt vor jedem Write die noetigen Padding-Bytes (Wert 0)
-//! ein; der Decoder skipped sie.
+//! XCDR data is alignment-sensitive: a `u32` field must start at a
+//! 4-byte boundary, a `u64` at an 8-byte boundary, etc. The encoder
+//! inserts the necessary padding bytes (value 0) before each write;
+//! the decoder skips them.
 //!
-//! Alignment wird relativ zum **Stream-Anfang** (Offset 0) berechnet,
-//! nicht relativ zur aktuellen Position innerhalb eines verschachtelten
-//! Members. Das entspricht OMG-XTypes §7.4.1: "All elements are aligned
-//! to a multiple of their alignment requirement, relative to the
-//! beginning of the encapsulation".
+//! Alignment is computed relative to the **stream start** (offset 0),
+//! not relative to the current position inside a nested member. This
+//! matches OMG XTypes §7.4.1: "All elements are aligned to a multiple
+//! of their alignment requirement, relative to the beginning of the
+//! encapsulation".
 //!
-//! Bewusste Architektur-Wahl: nur dynamischer Vec-basierter Writer
-//! (alloc-Feature). Slice-basierter Writer für no_std-without-alloc
-//! ist nicht implementiert — `alloc` ist via `zerodds-foundation`
-//! ohnehin transitive Mandatory-Dep.
+//! Deliberate architectural choice: only the dynamic Vec-based writer
+//! (alloc feature). A slice-based writer for no_std-without-alloc is
+//! not implemented — `alloc` is a transitive mandatory dependency via
+//! `zerodds-foundation` anyway.
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -32,130 +32,195 @@ use crate::error::EncodeError;
 // BufferWriter
 // ============================================================================
 
-/// Schreib-Buffer mit Alignment-Tracking und konfigurierbarer Endianness.
+/// Write buffer with alignment tracking and configurable endianness.
 ///
-/// Phase 0 nutzt `Vec<u8>` als Backing — wachsendes alloc-Feature.
+/// Phase 0 uses `Vec<u8>` as backing — a growing alloc feature.
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone)]
 pub struct BufferWriter {
     bytes: Vec<u8>,
     endianness: Endianness,
+    /// Maximum alignment that [`Self::align`] caps at. XCDR1
+    /// (PLAIN_CDR) = 8 (default), XCDR2 (PLAIN_CDR2) = 4.
+    /// OMG XTypes 1.3 §7.4.1.1.1: XCDR2 limits alignment to
+    /// `min(sizeof, 4)` — 64-bit primitives (double/i64/u64) are aligned
+    /// to **4**, NOT 8. Wrong alignment breaks byte-wire interop with
+    /// Cyclone/RTI/FastDDS (whose XCDR2 caps correctly).
+    max_alignment: usize,
+    /// Virtual alignment origin: [`Self::align`] aligns to
+    /// `(position + align_origin)` instead of just `position`. Default 0.
+    ///
+    /// Needed for GIOP 1.2 (CORBA §15.4.2/§15.4.4): the request/reply body
+    /// is encoded into a sub-stream that is assembled **separately** from
+    /// the 12-byte GIOP header — but the CDR alignment origin is the
+    /// message start (byte 0 of the header). `align_origin = 12` restores
+    /// continuous alignment, otherwise the unconditionally 8-aligned GIOP
+    /// 1.2 body lands at absolute offset ≡4 mod 8 → interop break with
+    /// omniORB/TAO. Affects only 8-byte alignments; ≤4-byte stays identical
+    /// (12 is divisible by 4), hence no effect on XCDR2/RTPS (origin 0).
+    align_origin: usize,
 }
+
+/// Default max alignment for XCDR1 (PLAIN_CDR): 64-bit to 8.
+const XCDR1_MAX_ALIGNMENT: usize = 8;
+/// Max alignment for XCDR2 (PLAIN_CDR2): 64-bit to 4 (§7.4.1.1.1).
+pub(crate) const XCDR2_MAX_ALIGNMENT: usize = 4;
 
 #[cfg(feature = "alloc")]
 impl BufferWriter {
-    /// Erstellt einen leeren Writer mit der gegebenen Endianness.
+    /// Creates an empty writer with the given endianness
+    /// (XCDR1 alignment, cap 8 — default + backward-compat).
     #[must_use]
     pub fn new(endianness: Endianness) -> Self {
         Self {
             bytes: Vec::new(),
             endianness,
+            max_alignment: XCDR1_MAX_ALIGNMENT,
+            align_origin: 0,
         }
     }
 
-    /// Erstellt einen Writer mit vor-allokierter Kapazitaet.
+    /// Creates a writer with pre-allocated capacity (XCDR1 cap 8).
     #[must_use]
     pub fn with_capacity(endianness: Endianness, cap: usize) -> Self {
         Self {
             bytes: Vec::with_capacity(cap),
             endianness,
+            max_alignment: XCDR1_MAX_ALIGNMENT,
+            align_origin: 0,
         }
     }
 
-    /// Liefert die aktuelle Endianness.
+    /// Builder: sets the virtual [`Self::align`] origin (default 0).
+    /// For GIOP 1.2 = `12` (header size), see the `align_origin` field doc.
+    #[must_use]
+    pub fn with_align_origin(mut self, origin: usize) -> Self {
+        self.align_origin = origin;
+        self
+    }
+
+    /// Builder: sets the alignment cap (XCDR1=8, XCDR2=4). Inherited by
+    /// nested member writers (see `struct_enc`).
+    #[must_use]
+    pub fn with_max_alignment(mut self, max_alignment: usize) -> Self {
+        debug_assert!(
+            max_alignment.is_power_of_two(),
+            "max_alignment must be a power of two"
+        );
+        self.max_alignment = max_alignment;
+        self
+    }
+
+    /// Builder: switches to XCDR2 alignment (cap 4, §7.4.1.1.1).
+    #[must_use]
+    pub fn xcdr2(self) -> Self {
+        self.with_max_alignment(XCDR2_MAX_ALIGNMENT)
+    }
+
+    /// The current alignment cap (8 = XCDR1, 4 = XCDR2).
+    #[must_use]
+    pub fn max_alignment(&self) -> usize {
+        self.max_alignment
+    }
+
+    /// Returns the current endianness.
     #[must_use]
     pub fn endianness(&self) -> Endianness {
         self.endianness
     }
 
-    /// Aktuelle Position (== bisher geschriebene Byte-Anzahl).
+    /// Current position (== number of bytes written so far).
     #[must_use]
     pub fn position(&self) -> usize {
         self.bytes.len()
     }
 
-    /// Konsumiert den Writer und liefert den geschriebenen Buffer.
+    /// Consumes the writer and returns the written buffer.
     #[must_use]
     pub fn into_bytes(self) -> Vec<u8> {
         self.bytes
     }
 
-    /// Read-only Sicht auf den bisher geschriebenen Buffer.
+    /// Read-only view of the buffer written so far.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
     }
 
-    /// Fuegt Null-Padding ein, bis die aktuelle Position ein Vielfaches
-    /// von `alignment` ist. Alignment muss eine Zweierpotenz sein
-    /// (1, 2, 4, 8); andere Werte sind in XCDR nicht definiert.
+    /// Inserts null padding until the current position is a multiple
+    /// of `alignment`. Alignment must be a power of two
+    /// (1, 2, 4, 8); other values are undefined in XCDR.
     pub fn align(&mut self, alignment: usize) {
         debug_assert!(
             alignment.is_power_of_two(),
             "alignment must be a power of two"
         );
-        let pos = self.bytes.len();
-        let pad = padding_for(pos, alignment);
+        // XCDR2 (§7.4.1.1.1) caps the alignment at `max_alignment` (4):
+        // a u64/double aligns to 4, not 8. XCDR1 has cap 8
+        // (= no-op for all XCDR types).
+        let effective = alignment.min(self.max_alignment);
+        let pos = self.bytes.len() + self.align_origin;
+        let pad = padding_for(pos, effective);
         for _ in 0..pad {
             self.bytes.push(0);
         }
     }
 
-    /// Schreibt rohe Bytes ohne Alignment.
+    /// Writes raw bytes without alignment.
     ///
     /// # Errors
-    /// Liefert nie einen Fehler bei `Vec`-basiertem Backing — die
-    /// Signatur ist symmetrisch zum Slice-basierten Writer (Phase 1).
+    /// Never returns an error with `Vec`-based backing — the signature
+    /// is symmetric to the slice-based writer (Phase 1).
     pub fn write_bytes(&mut self, data: &[u8]) -> Result<(), EncodeError> {
         self.bytes.extend_from_slice(data);
         Ok(())
     }
 
-    /// Schreibt ein einzelnes Byte (1-Byte Alignment).
+    /// Writes a single byte (1-byte alignment).
     ///
     /// # Errors
-    /// Wie `write_bytes`.
+    /// As `write_bytes`.
     pub fn write_u8(&mut self, value: u8) -> Result<(), EncodeError> {
         self.bytes.push(value);
         Ok(())
     }
 
-    /// Aligned + schreibt `u16`.
+    /// Aligns + writes `u16`.
     ///
     /// # Errors
-    /// Wie `write_bytes`.
+    /// As `write_bytes`.
     pub fn write_u16(&mut self, value: u16) -> Result<(), EncodeError> {
         self.align(2);
         self.write_bytes(&self.endianness.write_u16(value))
     }
 
-    /// Aligned + schreibt `u32`.
+    /// Aligns + writes `u32`.
     ///
     /// # Errors
-    /// Wie `write_bytes`.
+    /// As `write_bytes`.
     pub fn write_u32(&mut self, value: u32) -> Result<(), EncodeError> {
         self.align(4);
         self.write_bytes(&self.endianness.write_u32(value))
     }
 
-    /// Aligned + schreibt `u64`.
+    /// Aligns + writes `u64`.
     ///
     /// # Errors
-    /// Wie `write_bytes`.
+    /// As `write_bytes`.
     pub fn write_u64(&mut self, value: u64) -> Result<(), EncodeError> {
         self.align(8);
         self.write_bytes(&self.endianness.write_u64(value))
     }
 
-    /// Schreibt einen CDR-String (§9.3.2.7): 4-byte length (inkl.
-    /// Null-Terminator) + UTF-8 Bytes + 1 Null-Byte. Kein Trailing-
-    /// Padding — das naechste Feld aligned sich selbst.
+    /// Writes a CDR string (§9.3.2.7): 4-byte length (incl.
+    /// null terminator) + UTF-8 bytes + 1 null byte. No trailing
+    /// padding — the next field aligns itself.
     ///
     /// # Errors
-    /// Wie `write_bytes`.
+    /// As `write_bytes`.
     pub fn write_string(&mut self, s: &str) -> Result<(), EncodeError> {
         let bytes = s.as_bytes();
-        // Laenge = s.len() + 1 fuer null-terminator
+        // Length = s.len() + 1 for the null terminator
         let len = u32::try_from(bytes.len().saturating_add(1)).map_err(|_| {
             EncodeError::ValueOutOfRange {
                 message: "CDR string length exceeds u32::MAX",
@@ -171,53 +236,98 @@ impl BufferWriter {
 // BufferReader
 // ============================================================================
 
-/// Lese-Buffer mit Alignment-Tracking.
+/// Read buffer with alignment tracking.
 #[derive(Debug, Clone)]
 pub struct BufferReader<'a> {
     bytes: &'a [u8],
     pos: usize,
     endianness: Endianness,
+    /// Alignment cap analogous to [`BufferWriter`] — MUST match the
+    /// encode side, otherwise the reader skips wrong padding. XCDR1=8,
+    /// XCDR2=4.
+    max_alignment: usize,
+    /// Virtual alignment origin, mirroring [`BufferWriter`]:
+    /// [`Self::align`] skips padding until `(pos + align_origin)` is
+    /// aligned. GIOP 1.2 body = 12, otherwise 0. See
+    /// `BufferWriter::align_origin`.
+    align_origin: usize,
 }
 
 impl<'a> BufferReader<'a> {
-    /// Konstruiert einen Reader ueber den gegebenen Slice.
+    /// Constructs a reader over the given slice (XCDR1 cap 8).
     #[must_use]
     pub fn new(bytes: &'a [u8], endianness: Endianness) -> Self {
         Self {
             bytes,
             pos: 0,
             endianness,
+            max_alignment: XCDR1_MAX_ALIGNMENT,
+            align_origin: 0,
         }
     }
 
-    /// Aktuelle Endianness.
+    /// Builder: sets the virtual [`Self::align`] origin (default 0).
+    /// For GIOP 1.2 = `12` (header size), MUST match the encode side.
+    #[must_use]
+    pub fn with_align_origin(mut self, origin: usize) -> Self {
+        self.align_origin = origin;
+        self
+    }
+
+    /// Builder: sets the alignment cap (XCDR1=8, XCDR2=4). Inherited by
+    /// nested member readers.
+    #[must_use]
+    pub fn with_max_alignment(mut self, max_alignment: usize) -> Self {
+        debug_assert!(
+            max_alignment.is_power_of_two(),
+            "max_alignment must be a power of two"
+        );
+        self.max_alignment = max_alignment;
+        self
+    }
+
+    /// Builder: switches to XCDR2 alignment (cap 4, §7.4.1.1.1).
+    #[must_use]
+    pub fn xcdr2(self) -> Self {
+        self.with_max_alignment(XCDR2_MAX_ALIGNMENT)
+    }
+
+    /// The current alignment cap (8 = XCDR1, 4 = XCDR2).
+    #[must_use]
+    pub fn max_alignment(&self) -> usize {
+        self.max_alignment
+    }
+
+    /// Current endianness.
     #[must_use]
     pub fn endianness(&self) -> Endianness {
         self.endianness
     }
 
-    /// Aktuelle Position im Stream.
+    /// Current position in the stream.
     #[must_use]
     pub fn position(&self) -> usize {
         self.pos
     }
 
-    /// Verbleibende Bytes bis zum Ende.
+    /// Remaining bytes until the end.
     #[must_use]
     pub fn remaining(&self) -> usize {
         self.bytes.len().saturating_sub(self.pos)
     }
 
-    /// Skipt Padding bis zur naechsten `alignment`-Boundary.
+    /// Skips padding until the next `alignment` boundary.
     ///
     /// # Errors
-    /// `UnexpectedEof`, wenn nicht genug Bytes fuer das Padding da sind.
+    /// `UnexpectedEof` when not enough bytes remain for the padding.
     pub fn align(&mut self, alignment: usize) -> Result<(), DecodeError> {
         debug_assert!(
             alignment.is_power_of_two(),
             "alignment must be power of two"
         );
-        let pad = padding_for(self.pos, alignment);
+        // XCDR2 cap (§7.4.1.1.1), mirroring the BufferWriter.
+        let alignment = alignment.min(self.max_alignment);
+        let pad = padding_for(self.pos + self.align_origin, alignment);
         if self.remaining() < pad {
             return Err(DecodeError::UnexpectedEof {
                 needed: pad,
@@ -228,7 +338,7 @@ impl<'a> BufferReader<'a> {
         Ok(())
     }
 
-    /// Liest exakt `n` Bytes als Slice (ohne Alignment).
+    /// Reads exactly `n` bytes as a slice (without alignment).
     ///
     /// # Errors
     /// `UnexpectedEof`.
@@ -244,7 +354,7 @@ impl<'a> BufferReader<'a> {
         Ok(slice)
     }
 
-    /// Liest ein einzelnes Byte.
+    /// Reads a single byte.
     ///
     /// # Errors
     /// `UnexpectedEof`.
@@ -253,7 +363,7 @@ impl<'a> BufferReader<'a> {
         Ok(slice[0])
     }
 
-    /// Aligned + liest `u16`.
+    /// Aligns + reads `u16`.
     ///
     /// # Errors
     /// `UnexpectedEof`.
@@ -265,7 +375,7 @@ impl<'a> BufferReader<'a> {
         Ok(self.endianness.read_u16(buf))
     }
 
-    /// Aligned + liest `u32`.
+    /// Aligns + reads `u32`.
     ///
     /// # Errors
     /// `UnexpectedEof`.
@@ -277,7 +387,7 @@ impl<'a> BufferReader<'a> {
         Ok(self.endianness.read_u32(buf))
     }
 
-    /// Aligned + liest `u64`.
+    /// Aligns + reads `u64`.
     ///
     /// # Errors
     /// `UnexpectedEof`.
@@ -289,13 +399,13 @@ impl<'a> BufferReader<'a> {
         Ok(self.endianness.read_u64(buf))
     }
 
-    /// Liest einen CDR-String (§9.3.2.7): 4-byte length (inkl. Null-
-    /// Terminator) + UTF-8 Bytes + 1 Null-Byte. Gibt den String **ohne**
-    /// Terminator zurueck.
+    /// Reads a CDR string (§9.3.2.7): 4-byte length (incl. null
+    /// terminator) + UTF-8 bytes + 1 null byte. Returns the string
+    /// **without** the terminator.
     ///
     /// # Errors
-    /// `UnexpectedEof` bei zu kurzen Daten; `InvalidData` bei nicht-UTF-8
-    /// Bytes, fehlendem Null-Terminator oder `length == 0`.
+    /// `UnexpectedEof` for too-short data; `InvalidData` for non-UTF-8
+    /// bytes, a missing null terminator, or `length == 0`.
     #[cfg(feature = "alloc")]
     pub fn read_string(&mut self) -> Result<alloc::string::String, DecodeError> {
         use alloc::string::String;
@@ -324,8 +434,8 @@ impl<'a> BufferReader<'a> {
 // Helpers
 // ============================================================================
 
-/// Berechnet die Anzahl Padding-Bytes, um `pos` an die naechste
-/// Vielfaches-von-`alignment`-Boundary zu schieben.
+/// Computes the number of padding bytes to push `pos` to the next
+/// multiple-of-`alignment` boundary.
 #[must_use]
 pub fn padding_for(pos: usize, alignment: usize) -> usize {
     let mask = alignment - 1;
@@ -346,6 +456,38 @@ mod tests {
     fn padding_for_zero_position_is_zero() {
         assert_eq!(padding_for(0, 4), 0);
         assert_eq!(padding_for(0, 8), 0);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn xcdr2_caps_u64_alignment_at_4_not_8() {
+        // OMG XTypes 1.3 §7.4.1.1.1: XCDR2 caps alignment at 4 —
+        // a u64 after a u8 aligns to offset 4 (3 pad), NOT 8.
+        // Cyclone/RTI/FastDDS do it this way; without the cap the
+        // byte-wire comparison breaks (capture V-3/V-8).
+        let mut w = BufferWriter::new(Endianness::Little).xcdr2();
+        w.write_u8(1).unwrap();
+        w.write_u64(0x4242_4242_4242_4242).unwrap();
+        assert_eq!(w.position(), 4 + 8, "u64 at offset 4, not 8");
+        assert_eq!(&w.as_bytes()[1..4], &[0, 0, 0], "exactly 3 pad bytes");
+
+        // Reader mirrored: u8 then u64 @ offset 4.
+        let bytes = w.into_bytes();
+        let mut r = BufferReader::new(&bytes, Endianness::Little).xcdr2();
+        assert_eq!(r.read_u8().unwrap(), 1);
+        assert_eq!(r.read_u64().unwrap(), 0x4242_4242_4242_4242);
+        assert_eq!(r.position(), 12);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn xcdr1_default_keeps_u64_alignment_at_8() {
+        // Default (XCDR1, PLAIN_CDR): u64 still 8-aligned —
+        // backward-compat, no regression for the XCDR1 wire.
+        let mut w = BufferWriter::new(Endianness::Little);
+        w.write_u8(1).unwrap();
+        w.write_u64(7).unwrap();
+        assert_eq!(w.position(), 8 + 8, "XCDR1: u64 at offset 8");
     }
 
     #[test]
@@ -443,7 +585,7 @@ mod tests {
         let bytes = [0u8; 2];
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let res = r.read_u32();
-        // u32 verlangt 4 Byte ab Position 0; nur 2 verfuegbar.
+        // u32 requires 4 bytes from position 0; only 2 available.
         match res {
             Err(DecodeError::UnexpectedEof {
                 needed: 4,
@@ -529,7 +671,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn read_string_rejects_missing_null_terminator() {
-        // length=4, aber nur ASCII ohne null-terminator
+        // length=4, but only ASCII without null terminator
         let bytes = [4u8, 0, 0, 0, b'A', b'B', b'C', b'D'];
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         assert!(matches!(
@@ -541,7 +683,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn read_string_rejects_invalid_utf8() {
-        // length=3, bytes = 0xFF, 0xFE, null → invalid UTF-8
+        // length=3, bytes = 0xFF, 0xFE, null -> invalid UTF-8
         let bytes = [3u8, 0, 0, 0, 0xFF, 0xFE, 0];
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         assert!(matches!(
@@ -550,11 +692,11 @@ mod tests {
         ));
     }
 
-    // ---- Mutation-Killer fuer BufferReader ----
+    // ---- Mutation killers for BufferReader ----
 
-    /// Faengt Mutation `endianness -> Default::default()`. Reader muss
-    /// die Endianness aus dem Konstruktor zurueckgeben, nicht Default.
-    /// Default::default() ist Little — wir testen mit Big.
+    /// Catches mutation `endianness -> Default::default()`. The reader
+    /// must return the endianness from the constructor, not the default.
+    /// Default::default() is Little — we test with Big.
     #[test]
     fn reader_endianness_getter_returns_construction_value() {
         let r_be = BufferReader::new(&[0u8; 4], Endianness::Big);
@@ -563,15 +705,15 @@ mod tests {
         assert_eq!(r_le.endianness(), Endianness::Little);
     }
 
-    /// Faengt Mutation `< -> <=` in `align`. align() darf NICHT erroren
-    /// wenn `remaining()` exakt `pad` Bytes hat.
+    /// Catches mutation `< -> <=` in `align`. align() must NOT error
+    /// when `remaining()` has exactly `pad` bytes.
     #[test]
     fn reader_align_succeeds_when_remaining_equals_pad() {
-        // pos=1, align=4 → pad=3, remaining muss >= 3 sein.
-        // Genau 4 Bytes Puffer: read_u8 ueber 1 Byte, dann align(4)
-        // braucht 3 pad-Bytes. Buffer hat nach read_u8 noch 3 Bytes
-        // → remaining == pad (3). Original `<`: 3<3 false, kein Error.
-        // Mutation `<=`: 3<=3 true, Error.
+        // pos=1, align=4 -> pad=3, remaining must be >= 3.
+        // Exactly 4-byte buffer: read_u8 over 1 byte, then align(4)
+        // needs 3 pad bytes. After read_u8 the buffer still has 3 bytes
+        // -> remaining == pad (3). Original `<`: 3<3 false, no error.
+        // Mutation `<=`: 3<=3 true, error.
         let bytes = [0xAA, 0, 0, 0];
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         r.read_u8().unwrap();
@@ -579,8 +721,8 @@ mod tests {
         assert_eq!(r.position(), 4);
     }
 
-    /// Faengt Mutation `+= -> *=` auf `self.pos += pad` in align().
-    /// align() muss pos VORWAERTS bewegen.
+    /// Catches mutation `+= -> *=` on `self.pos += pad` in align().
+    /// align() must advance pos FORWARD.
     #[test]
     fn reader_align_advances_position_strictly() {
         let bytes = [0xAA, 0, 0, 0, 1, 2, 3, 4];
@@ -588,26 +730,26 @@ mod tests {
         r.read_u8().unwrap();
         assert_eq!(r.position(), 1);
         r.align(4).unwrap();
-        // pos *= pad = 1*3 = 3 mit Mutation; pos = 1+3 = 4 ohne Mutation.
+        // pos *= pad = 1*3 = 3 with the mutation; pos = 1+3 = 4 without it.
         assert_eq!(r.position(), 4);
     }
 
-    /// Faengt Mutation `+= -> *=` auf `self.pos += n` in read_bytes().
-    /// read_bytes() muss pos um genau n vorwaerts bewegen.
+    /// Catches mutation `+= -> *=` on `self.pos += n` in read_bytes().
+    /// read_bytes() must advance pos forward by exactly n.
     #[test]
     fn reader_read_bytes_advances_position_strictly() {
         let bytes = [1, 2, 3, 4, 5, 6, 7, 8];
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let _ = r.read_bytes(3).unwrap();
-        // pos *= n = 0*3 = 0 mit Mutation; pos = 0+3 = 3 ohne Mutation.
+        // pos *= n = 0*3 = 0 with the mutation; pos = 0+3 = 3 without it.
         assert_eq!(r.position(), 3);
         let _ = r.read_bytes(2).unwrap();
-        // pos *= 2 = 3*2 = 6 mit Mutation; pos = 3+2 = 5 ohne Mutation.
+        // pos *= 2 = 3*2 = 6 with the mutation; pos = 3+2 = 5 without it.
         assert_eq!(r.position(), 5);
     }
 
-    /// Faengt Mutation `read_u16 -> Ok(0)`. read_u16 muss tatsaechlich
-    /// die Bytes lesen, nicht pauschal 0 zurueckgeben.
+    /// Catches mutation `read_u16 -> Ok(0)`. read_u16 must actually
+    /// read the bytes, not just return 0.
     #[test]
     fn reader_read_u16_returns_actual_bytes_not_zero() {
         let bytes = [0x12, 0x34];
@@ -617,38 +759,38 @@ mod tests {
         assert_eq!(r_be.read_u16().unwrap(), 0x1234);
     }
 
-    /// Faengt Mutation `+ -> *` auf `start + 4` in der read_string-
-    /// Fehler-Offset-Berechnung.
+    /// Catches mutation `+ -> *` on `start + 4` in the read_string
+    /// error-offset computation.
     ///
-    /// Spec: offset zeigt auf den Beginn der utf-8-Daten = start + 4
-    /// (nach dem 4-Byte-Length-Prefix). `start` wird VOR dem
-    /// `read_u32`/Alignment gesetzt; bei pos=1 zu Beginn ist start=1
-    /// und offset=5. Mutation `*` wuerde 1*4=4 liefern.
+    /// Spec: offset points to the start of the UTF-8 data = start + 4
+    /// (after the 4-byte length prefix). `start` is set BEFORE the
+    /// `read_u32`/alignment; with pos=1 at the start, start=1 and
+    /// offset=5. Mutation `*` would yield 1*4=4.
     #[test]
     fn reader_read_string_invalid_utf8_offset_is_start_plus_four() {
-        // Vorgaenger-u8 verschiebt start auf 1 (nicht 0), damit `+` vs
-        // `*` differenzieren: 1+4=5 vs 1*4=4.
+        // A preceding u8 shifts start to 1 (not 0) so that `+` vs
+        // `*` differentiate: 1+4=5 vs 1*4=4.
         let mut bytes = vec![0xAB]; // pos=0
         // pad to 4: 3 zero bytes
         bytes.extend_from_slice(&[0, 0, 0]);
-        // length=3 LE (inkl. Null-Terminator-Slot)
+        // length=3 LE (incl. null-terminator slot)
         bytes.extend_from_slice(&3u32.to_le_bytes());
-        // 3 Bytes, letztes ist NUL — die ersten zwei sind invalid utf-8.
+        // 3 bytes, last is NUL — the first two are invalid UTF-8.
         bytes.extend_from_slice(&[0xFF, 0xFE, 0]);
 
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         r.read_u8().unwrap();
         let err = r.read_string().unwrap_err();
-        // `start = self.pos` BEVOR read_u32. Nach read_u8 ist pos=1.
-        // Also start=1, start+4=5. Mutation `*`: 1*4=4. Differenz reicht.
+        // `start = self.pos` BEFORE read_u32. After read_u8, pos=1.
+        // So start=1, start+4=5. Mutation `*`: 1*4=4. The difference suffices.
         match err {
             DecodeError::InvalidUtf8 { offset } => assert_eq!(offset, 5),
             other => panic!("expected InvalidUtf8, got {other:?}"),
         }
     }
 
-    /// Zweite Variante mit start=2: 2+4=6 vs 2*4=8 — beidseitige
-    /// Differenzierung (oben start=1: +1, unten start=2: +4).
+    /// Second variant with start=2: 2+4=6 vs 2*4=8 — two-sided
+    /// differentiation (above start=1: +1, here start=2: +4).
     #[test]
     fn reader_read_string_invalid_utf8_offset_with_start_two() {
         let mut bytes = vec![0xAB, 0xCD]; // pos=0..2

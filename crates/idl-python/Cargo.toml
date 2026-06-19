@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "OMG IDL4 → Python Code-Generator fuer ZeroDDS (@idl_struct + @dataclass-Mapping per zerodds-py 1.0)."
+description = "OMG IDL4 → Python code generator for ZeroDDS (@idl_struct + @dataclass mapping per zerodds-py 1.0)."
 repository = "https://github.com/zero-objects/zero-dds"
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-idl-python"
@@ -21,4 +21,4 @@ workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.1", path = "../idl" }
+zerodds-idl = { version = "1.0.0-rc.3", path = "../idl" }

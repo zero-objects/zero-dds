@@ -1,4 +1,4 @@
-// Fixture: enum mit drei Werten.
+// Fixture: enum with three values.
 enum Color {
     RED,
     GREEN,

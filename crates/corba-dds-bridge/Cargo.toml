@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Bidirektionale CORBA-Object ↔ DDS-Topic-Bridge: GIOP-Request → DDS-Sample (Servant-Modus) und DDS-Sample → GIOP-Request (Forwarder-Modus). Many-to-Many BridgeMapping mit BridgeServant + LifecycleSync; Wire-Helpers zu corba-giop + corba-ior. no_std + alloc."
+description = "Bidirectional CORBA-Object ↔ DDS-Topic bridge: GIOP request → DDS sample (servant mode) and DDS sample → GIOP request (forwarder mode). Many-to-many BridgeMapping with BridgeServant + LifecycleSync; wire helpers to corba-giop + corba-ior. no_std + alloc."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-corba-dds-bridge"
 readme = "README.md"
@@ -20,7 +20,7 @@ workspace = true
 [lib]
 path = "src/lib.rs"
 
-# Spec `zerodds-corba-bridge-1.0` §2 — Daemon-Binary.
+# Spec `zerodds-corba-bridge-1.0` §2 — daemon binary.
 [[bin]]
 name = "zerodds-corba-bridged"
 path = "src/bin/zerodds-corba-bridged.rs"
@@ -38,32 +38,32 @@ std = [
     "dep:signal-hook",
 ]
 alloc = []
-# Cross-Vendor-Interop-Tests gegen omniORB (Spec §10 + §12.3).
+# Cross-vendor interop tests against omniORB (Spec §10 + §12.3).
 cross-vendor-tests = ["std"]
 
 [dependencies]
-zerodds-corba-giop = { version = "1.0.0-rc.1", path = "../corba-giop" }
-zerodds-corba-ior = { version = "1.0.0-rc.1", path = "../corba-ior" }
-zerodds-corba-iiop = { version = "1.0.0-rc.1", path = "../corba-iiop" }
-zerodds-corba-poa = { version = "1.0.0-rc.1", path = "../corba-poa" }
-zerodds-corba-csiv2 = { version = "1.0.0-rc.1", path = "../corba-csiv2" }
-zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr" }
+zerodds-corba-giop = { version = "1.0.0-rc.3", path = "../corba-giop" }
+zerodds-corba-ior = { version = "1.0.0-rc.3", path = "../corba-ior" }
+zerodds-corba-iiop = { version = "1.0.0-rc.3", path = "../corba-iiop" }
+zerodds-corba-poa = { version = "1.0.0-rc.3", path = "../corba-poa" }
+zerodds-corba-csiv2 = { version = "1.0.0-rc.3", path = "../corba-csiv2" }
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr" }
 sha2 = { workspace = true, features = ["std"] }
-# Bridge-Security-Substrat (SSLIOP TaggedComponent 0x06 via rustls,
-# CSIv2-Token + mTLS-Auth, Topic-ACL — Bridge-Spec §7.1/§7.2/§7.3).
-zerodds-bridge-security = { version = "1.0.0-rc.1", path = "../bridge-security", optional = true }
+# Bridge-security substrate (SSLIOP TaggedComponent 0x06 via rustls,
+# CSIv2 token + mTLS auth, topic ACL — Bridge-Spec §7.1/§7.2/§7.3).
+zerodds-bridge-security = { version = "1.0.0-rc.3", path = "../bridge-security", optional = true }
 rustls = { workspace = true, optional = true }
-# Cross-Cutting Daemon-Observability: Prometheus + OTLP + Shutdown + QoS-Mapper.
-zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
-zerodds-observability-otlp = { version = "1.0.0-rc.1", path = "../observability-otlp", optional = true }
-zerodds-qos = { version = "1.0.0-rc.1", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+# Cross-cutting daemon observability: Prometheus + OTLP + shutdown + QoS mapper.
+zerodds-monitor = { version = "1.0.0-rc.3", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "1.0.0-rc.3", path = "../observability-otlp", optional = true }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
 signal-hook = { workspace = true, optional = true }
 
 [dev-dependencies]
-# Self-signed Certs fuer §7.1 TLS-Tests in `tests/security_e2e.rs`.
+# Self-signed certs for §7.1 TLS tests in `tests/security_e2e.rs`.
 rcgen = "0.13"
 
-# SIGTERM-graceful Shutdown im DaemonGuard (sonst SIGKILL → korrupte
-# `.profraw` unter cargo-llvm-cov). Unix-only via cfg-Gate.
+# SIGTERM-graceful shutdown in the DaemonGuard (otherwise SIGKILL →
+# corrupt `.profraw` under cargo-llvm-cov). Unix-only via cfg gate.
 [target.'cfg(unix)'.dev-dependencies]
 libc = { workspace = true, features = ["std"] }

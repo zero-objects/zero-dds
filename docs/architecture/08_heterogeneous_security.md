@@ -1,59 +1,59 @@
-# Heterogeneous Security — System-of-Systems-Policy
+# Heterogeneous security — system-of-systems policy
 
 > **Status:** Draft v0.1 (2026-04-24)
-> **Abhängigkeiten:** `02_architecture.md`, `04_safety_by_architecture.md`,
-> `docs/plans/release-plan-v1.2-to-v2.0.md` §1.4 (v1.4-Security-Track)
+> **Dependencies:** `02_architecture.md`, `04_safety_by_architecture.md`,
+> `docs/plans/release-plan-v1.2-to-v2.0.md` §1.4 (v1.4 security track)
 
 ## 1 Motivation
 
-Die OMG-DDS-Security-1.1-Spec nimmt ein **homogenes** Security-Modell an:
-eine Domain, eine Governance, eine Suite pro Policy-Klasse. Das passt
-für monolithische Deployments (ein Cluster, eine CA, eine Suite).
+The OMG DDS-Security 1.1 spec assumes a **homogeneous** security model:
+one domain, one governance, one suite per policy class. That fits
+monolithic deployments (one cluster, one CA, one suite).
 
-ZeroDDS zielt auf **System-of-Systems**: Vehicle Networks, Tactical Mesh,
-Industrie-Edge-Gateways. Da teilen sich auf **einem Interface** typischerweise:
+ZeroDDS targets **systems-of-systems**: vehicle networks, tactical mesh,
+industrial edge gateways. There, the following typically share **one interface**:
 
-| Peer-Klasse             | Sicherheits-Level            | Grund                           |
+| Peer class             | Security level               | Reason                          |
 |-------------------------|-----------------------------|---------------------------------|
-| Legacy-ECU ohne Cert    | Plain (kein Security-Plugin) | Zulieferer kann kein X.509      |
-| Fast-Subsystem          | HMAC-SHA256 (SIGN only)      | Latenz-Budget verbietet Encrypt |
-| Regular-Peer            | AES-GCM-128                  | Default-Suite v1.4              |
-| High-Assurance-Peer     | AES-GCM-256 + OCSP           | Compliance / safety-cert        |
-| Intra-Host-Loopback     | Plain (kein Netz verlassen)  | Performance                     |
+| Legacy ECU without cert | Plain (no security plugin)   | The supplier cannot do X.509    |
+| Fast subsystem          | HMAC-SHA256 (SIGN only)      | The latency budget forbids encrypt |
+| Regular peer            | AES-GCM-128                  | Default suite v1.4              |
+| High-assurance peer     | AES-GCM-256 + OCSP           | Compliance / safety cert        |
+| Intra-host loopback     | Plain (never leaves the host) | Performance                    |
 
-Kein einzelner Vendor bietet heute dieses Muster out-of-the-box.
-`SharedSecurityGate` (v1.4 Stand) macht **participant-global** — ein Level
-für alles. Das soll der **Heterogeneous-Track** WP 4H aufbrechen.
+No single vendor offers this pattern out of the box today.
+`SharedSecurityGate` (v1.4 state) is **participant-global** — one level
+for everything. The **heterogeneous track** WP 4H is meant to break that open.
 
-## 2 Anforderungen
+## 2 Requirements
 
-### 2.1 Funktional
+### 2.1 Functional
 
-1. **Policy-Granularität** bis auf `(peer, topic, interface)`-Tripel.
-2. **Peer-Capability-Awareness**: ein Peer ohne `auth_plugin_class` in
-   SPDP wird als Legacy klassifiziert, nicht gedroppt.
-3. **Per-Reader-Encoding am Writer**: derselbe `DataWriter` sendet an
-   Reader A plain, an Reader B encrypted — simultan, ohne doppelte
-   Topic-Bindings.
-4. **Interface-Routing**: Outgoing-Datagram wird pro Ziel-Locator auf
-   das "richtige" Interface-Socket gelegt; die Interface-Klasse ist
-   Policy-Input.
-5. **Dynamic Upgrade**: Peer kann nach erfolgreichem Handshake
-   nachträglich in höhere Klasse wechseln (SIGN → ENCRYPT).
-6. **Fail-Safe-Defaults**: unbekannte Peers → restriktivste Policy aus
-   `<domain_rule>` (nicht der freizügigste).
+1. **Policy granularity** down to the `(peer, topic, interface)` triple.
+2. **Peer-capability awareness**: a peer without an `auth_plugin_class` in
+   SPDP is classified as legacy, not dropped.
+3. **Per-reader encoding at the writer**: the same `DataWriter` sends to
+   reader A plain, to reader B encrypted — simultaneously, without duplicate
+   topic bindings.
+4. **Interface routing**: an outgoing datagram is placed per destination locator on
+   the "right" interface socket; the interface class is a
+   policy input.
+5. **Dynamic upgrade**: a peer can, after a successful handshake,
+   subsequently move to a higher class (SIGN → ENCRYPT).
+6. **Fail-safe defaults**: unknown peers → the most restrictive policy from
+   `<domain_rule>` (not the most permissive).
 
-### 2.2 Nicht-funktional
+### 2.2 Non-functional
 
-* **OMG-Kompatibilität als Subset**: Wenn Governance-XML nur OMG-Elemente
-  nutzt, verhält sich ZeroDDS identisch zu Fast-DDS/Connext.
-  Heterogene-Erweiterung ist opt-in über eigenen Namespace.
-* **Zero-Overhead ohne Security**: Ohne `security`-Feature oder mit
-  allen-plain-Policy, darf der Hot-Path nicht teurer werden als heute.
-* **Branch-Coverage ≥ 99 %** im `security-runtime`-Crate
-  (Safety-Crate-Klasse).
+* **OMG compatibility as a subset**: when the governance XML uses only OMG elements,
+  ZeroDDS behaves identically to Fast-DDS/Connext.
+  The heterogeneous extension is opt-in via its own namespace.
+* **Zero overhead without security**: without the `security` feature or with
+  an all-plain policy, the hot path must not become more expensive than today.
+* **Branch coverage ≥ 99 %** in the `security-runtime` crate
+  (safety-crate class).
 
-## 3 Kern-Datenstrukturen
+## 3 Core data structures
 
 ### 3.1 `PolicyEngine`
 
@@ -77,20 +77,20 @@ pub struct InboundCtx<'a> {
     pub domain_id:   u32,
     pub source_peer: &'a PeerKey,
     pub source_iface:&'a NetInterface,
-    pub source_caps: Option<&'a PeerCapabilities>, // None bei Fremd-Vendor
+    pub source_caps: Option<&'a PeerCapabilities>, // None for a foreign vendor
     pub is_sec_prefixed: bool,
 }
 
 pub struct PolicyDecision {
     pub protection: ProtectionLevel,   // None | Sign | Encrypt
     pub suite:      Option<SuiteHint>, // Aes128 | Aes256 | HmacOnly
-    pub drop:       bool,              // hard drop (nicht akzeptiert)
+    pub drop:       bool,              // hard drop (not accepted)
 }
 ```
 
-Default-Impl liest Governance-XML (kompatibel zu OMG). Nutzer kann
-eigenen Impl einstecken (z.B. aus externer Policy-Datenbank, LDAP, oder
-aus einem Vehicle-Network-Certification-Manager).
+The default impl reads governance XML (compatible with OMG). The user can
+plug in their own impl (e.g. from an external policy database, LDAP, or
+from a vehicle-network certification manager).
 
 ### 3.2 `PeerCapabilities`
 
@@ -101,14 +101,14 @@ pub struct PeerCapabilities {
     pub access_plugin_class:  Option<String>,
     pub supported_suites:     Vec<SuiteHint>,
     pub offered_protection:   ProtectionLevel,
-    pub has_valid_cert:       bool,            // aus OCSP + Chain
+    pub has_valid_cert:       bool,            // from OCSP + chain
     pub validity_window:      Option<Validity>,
-    pub vendor_hint:          Option<String>,  // fuer Vendor-Quirks
+    pub vendor_hint:          Option<String>,  // for vendor quirks
 }
 ```
 
-Gefüllt aus SPDP (Auth-Plugin-Class, Crypto-Plugin-Class, etc.) und
-aus SEDP-Permissions-Token.
+Filled from SPDP (auth-plugin class, crypto-plugin class, etc.) and
+from the SEDP permissions token.
 
 ### 3.3 `NetInterface`
 
@@ -116,18 +116,18 @@ aus SEDP-Permissions-Token.
 pub enum NetInterface {
     Loopback,                      // 127.0.0.0/8, ::1
     LocalHost(SharedMem | UnixDomainSocket),
-    LocalSubnet(IpRange),          // z.B. 10.0.0.0/24
-    Wan,                           // alles andere
-    Named(String),                 // "eth0", "can0"-Bridge, "tun0"
+    LocalSubnet(IpRange),          // e.g. 10.0.0.0/24
+    Wan,                           // everything else
+    Named(String),                 // "eth0", "can0"-bridge, "tun0"
 }
 ```
 
-Die Klassifikation geschieht am Send-Point aus der Locator-IP + Runtime-
-Konfiguration (Nutzer gibt `local_subnets: Vec<IpRange>` an).
+The classification happens at the send point from the locator IP + runtime
+configuration (the user provides `local_subnets: Vec<IpRange>`).
 
-## 4 Datenfluss
+## 4 Data flow
 
-### 4.1 Outbound (ein Writer, N Reader)
+### 4.1 Outbound (one writer, N readers)
 
 ```
 DataWriter.write(sample)
@@ -142,17 +142,17 @@ DataWriter.write(sample)
     │       }
     │       socket_for(reader.interface).send(reader.locator, wire)
     │
-    └─> (N Wire-Pakete, einer pro Reader, versch. Protection-Level)
+    └─> (N wire packets, one per reader, different protection levels)
 ```
 
-Konsequenz: **1 Sample → bis zu N Wire-Pakete**. Statt Multicast (ein
-Paket) geht bei heterogener Policy Unicast-Fan-Out pro Reader. Das ist
-die **Kostenseite** der System-of-Systems-Flexibilität.
+Consequence: **1 sample → up to N wire packets**. Instead of multicast (one
+packet), heterogeneous policy uses a unicast fan-out per reader. That is
+the **cost side** of system-of-systems flexibility.
 
-OMG-Optimierung `ReceiverSpecificMACs` (WP 4H-g) reduziert das zum
-"ein Ciphertext + N MACs" wenn **alle** Reader gleiche Suite nutzen,
-aber unterschiedliche Auth-Tokens erwarten — spart Encryption-Kosten,
-nicht Socket-Traffic.
+The OMG optimization `ReceiverSpecificMACs` (WP 4H-g) reduces this to
+"one ciphertext + N MACs" when **all** readers use the same suite
+but expect different auth tokens — it saves encryption cost,
+not socket traffic.
 
 ### 4.2 Inbound
 
@@ -174,7 +174,7 @@ UDP-socket.recv() → (bytes, source_addr)
         }
 ```
 
-### 4.3 Peer-Capability-Update (SPDP)
+### 4.3 Peer-capability update (SPDP)
 
 ```
 spdp.receive(datagram)
@@ -191,15 +191,15 @@ spdp.receive(datagram)
     └─> peer_cache.insert(guid_prefix, caps)
 ```
 
-Ab diesem Moment trifft jede Folge-Policy-Entscheidung auf die frischen
-Caps. **Uprade-Pfad**: Peer war initial als `auth_plugin=None` klassifiziert,
-schickt nach Handshake ein Extended-SPDP → Cache wird aktualisiert,
-nächster Send an diesen Peer ist encrypted.
+From this moment, every subsequent policy decision hits the fresh
+caps. **Upgrade path**: the peer was initially classified as `auth_plugin=None`,
+sends an extended SPDP after the handshake → the cache is updated,
+the next send to this peer is encrypted.
 
-## 5 Governance-XML-Erweiterungen
+## 5 Governance-XML extensions
 
-Zusätzlich zu den OMG-Standard-Elementen definieren wir einen
-ZeroDDS-Namespace:
+In addition to the OMG standard elements we define a
+ZeroDDS namespace:
 
 ```xml
 <dds xmlns:zerodds="https://zerodds.org/schema/security/heterogeneous">
@@ -207,13 +207,13 @@ ZeroDDS-Namespace:
     <domain_rule>
       <domains><id>0</id></domains>
 
-      <!-- OMG-Standard -->
+      <!-- OMG standard -->
       <rtps_protection_kind>SIGN</rtps_protection_kind>
 
-      <!-- ZeroDDS-Erweiterung: Peer-Klassen -->
+      <!-- ZeroDDS extension: peer classes -->
       <zerodds:peer_classes>
         <peer_class name="legacy" protection="NONE">
-          <match auth_plugin_class="" />          <!-- leer = keiner -->
+          <match auth_plugin_class="" />          <!-- empty = none -->
         </peer_class>
         <peer_class name="fast" protection="SIGN">
           <match cert_cn_pattern="*.fast.example" />
@@ -226,7 +226,7 @@ ZeroDDS-Namespace:
         </peer_class>
       </zerodds:peer_classes>
 
-      <!-- ZeroDDS-Erweiterung: Interface-Bindings -->
+      <!-- ZeroDDS extension: interface bindings -->
       <zerodds:interface_bindings>
         <interface name="loopback" protection_override="NONE" />
         <interface name="shm"      protection_override="NONE" />
@@ -239,16 +239,16 @@ ZeroDDS-Namespace:
 </dds>
 ```
 
-Vendor-Interop: andere Vendors **ignorieren** den `zerodds:`-Namespace
-still und fallen zurück auf das OMG-Standard-Element — dadurch bleibt
-ein ZeroDDS-Governance mit Fallback spec-kompatibel.
+Vendor interop: other vendors **ignore** the `zerodds:` namespace
+silently and fall back to the OMG standard element — so a
+ZeroDDS governance with a fallback stays spec-compatible.
 
-## 6 Runtime-Integration
+## 6 Runtime integration
 
-### 6.1 Multi-Socket-Binding
+### 6.1 Multi-socket binding
 
-Aktuell bindet `DcpsRuntime` genau **einen** UDP-Unicast-Socket pro
-Port. Für Interface-Routing brauchen wir:
+Currently `DcpsRuntime` binds exactly **one** UDP unicast socket per
+port. For interface routing we need:
 
 ```
 RuntimeConfig {
@@ -259,98 +259,98 @@ RuntimeConfig {
 InterfaceBinding {
     name:      String,           // "eth0", "lo"
     bind_addr: Ipv4Addr,
-    kind:      NetInterface,     // logische Klasse
+    kind:      NetInterface,     // logical class
 }
 ```
 
-Beim Start: pro Binding einen Socket. Outbound-Router schaut per
-Ziel-Locator + Interface-Klasse nach dem richtigen Socket.
+At startup: one socket per binding. The outbound router looks up the right socket
+by destination locator + interface class.
 
 ### 6.2 `SharedSecurityGate` → `PolicyDrivenGate`
 
-Der bestehende `SharedSecurityGate` (v1.4-a) wird zum ersten Default-
-`PolicyEngine`-Impl. Sein `transform_outbound`-Contract wird ersetzt
-durch `transform_outbound_for(peer_key, &wire)` — das Gate entscheidet
-anhand Peer-Key.
+The existing `SharedSecurityGate` (v1.4-a) becomes the first default
+`PolicyEngine` impl. Its `transform_outbound` contract is replaced
+by `transform_outbound_for(peer_key, &wire)` — the gate decides
+based on the peer key.
 
-Bestands-Tests bleiben grün: wenn nur eine Peer-Klasse in der
-Governance gelistet ist, ist das Verhalten identisch zum aktuellen
-Ein-Policy-Gate.
+Existing tests stay green: when only one peer class is listed in the
+governance, the behavior is identical to the current
+single-policy gate.
 
-### 6.3 Hot-Path-Hook-Änderungen
+### 6.3 Hot-path-hook changes
 
-Die 6 Inject-Punkte aus WP 4.4-b.4 werden erweitert:
+The 6 inject points from WP 4.4-b.4 are extended:
 
-| Alter Hook                                  | Neuer Hook                                   |
+| Old hook                                    | New hook                                     |
 |---------------------------------------------|----------------------------------------------|
 | `secure_outbound_bytes(rt, bytes)`          | `secure_outbound_for(rt, peer, iface, bytes)`|
 | `secure_inbound_bytes(rt, bytes)`           | `secure_inbound_from(rt, peer, iface, bytes)`|
 
-Der Writer-Tick-Loop muss **iterieren über matched Readers** statt
-einmalig-Broadcast.
+The writer tick loop must **iterate over matched readers** instead of
+a one-time broadcast.
 
-## 7 Safety- und Coverage-Grenzen
+## 7 Safety and coverage boundaries
 
-Der neue `PolicyEngine`-Trait und `peer_cache` liegen in
-`zerodds-security-runtime`. Dieser Crate bleibt **SAFE**-klassifiziert
-(Safety-qualifizierbar). Die `dyn PolicyEngine`-Polymorphie ist der
-einzige Punkt mit `zerodds-lint: allow no_dyn_in_safe` — architekturbedingt.
+The new `PolicyEngine` trait and `peer_cache` live in
+`zerodds-security-runtime`. This crate stays **SAFE**-classified
+(safety-qualifiable). The `dyn PolicyEngine` polymorphism is the
+only point with `zerodds-lint: allow no_dyn_in_safe` — by architecture.
 
-Branch-Coverage-Ziel: **99 %** für
-* `PolicyEngine`-Default-Impl
-* `PeerCapabilities`-Parser
-* Interface-Classifier
+Branch-coverage goal: **99 %** for
+* the `PolicyEngine` default impl
+* the `PeerCapabilities` parser
+* the interface classifier
 
-## 8 Interop-Risiken
+## 8 Interop risks
 
-1. **Cross-Vendor-Communication** mit ZeroDDS-Heterogeneous-Peer:
-   * Cyclone sieht `<peer_classes>` nicht → nimmt `<rtps_protection_kind>`.
-   * Wenn ZeroDDS per Peer-Class `NONE` schickt wo Cyclone `SIGN`
-     erwartet → Cyclone droppt. Dokumentiert als **Interop-Constraint**.
-2. **Gate-Routing-Bugs** könnten plaintext-Leak produzieren —
-   Mitigations:
-   * Default-Policy beim Unknown-Peer ist **restriktivste** Class aus XML.
-   * Fuzz-Test mit zufälligen PeerCaps und Interface-Combis.
-3. **Upgrade-Pfad im laufenden Session**: Peer wechselt von
-   Legacy→Secure. Writer muss alte Sequence-Numbers nicht
-   retransmit-verschlüsseln (sonst Replay-Attack-Window).
+1. **Cross-vendor communication** with a ZeroDDS heterogeneous peer:
+   * Cyclone does not see `<peer_classes>` → takes `<rtps_protection_kind>`.
+   * When ZeroDDS sends `NONE` per peer class where Cyclone expects `SIGN`
+     → Cyclone drops. Documented as an **interop constraint**.
+2. **Gate-routing bugs** could produce a plaintext leak —
+   mitigations:
+   * The default policy for an unknown peer is the **most restrictive** class from the XML.
+   * Fuzz test with random PeerCaps and interface combinations.
+3. **Upgrade path during a running session**: a peer switches from
+   legacy→secure. The writer must not retransmit-encrypt old sequence numbers
+   (otherwise a replay-attack window).
 
-## 9 Nicht-Ziele
+## 9 Non-goals
 
-* **Ad-hoc-Peer-Classes** (JSON/YAML Runtime-Config) — Heterogeneous-
-  Config ist Build-time-deklarativ, kein dynamisches
-  Attribute-Based-Access-Control.
-* **Crypto-Agility** (Ciphersuite-Negotiation auf dem Wire) —
-  OMG-Spec unterstützt das nicht, wir planen es nicht.
-* ~~**Delegation** (Peer-X-signiert-für-Peer-Y) — v2.0-Feature.~~
-  **Aufgenommen in WP 4H-j** — siehe `09_delegation.md`. Anforderung
-  aus Planning 2026-04: Gateway/Bridge-Identity für Vehicle-Mesh
-  (Wanne+Turm) mit Edge-Peers ohne eigenen Cert und Inter-Fahrzeug-
-  Kommunikation via C4I-Broker.
+* **Ad-hoc peer classes** (JSON/YAML runtime config) — heterogeneous
+  config is build-time declarative, not dynamic
+  attribute-based access control.
+* **Crypto agility** (ciphersuite negotiation on the wire) —
+  the OMG spec does not support that, we do not plan it.
+* ~~**Delegation** (peer X signs for peer Y) — a v2.0 feature.~~
+  **Included in WP 4H-j** — see `09_delegation.md`. Requirement
+  from Planning 2026-04: gateway/bridge identity for a vehicle mesh
+  (hull+turret) with edge peers without their own cert and inter-vehicle
+  communication via a C4I broker.
 
-## 10 Umgesetzte Produktions-Integration (WP 4H-i)
+## 10 Implemented production integration (WP 4H-i)
 
-Der ursprüngliche Plan nannte Receiver-Specific-MACs als
-Crypto-Plugin-Feature — die End-to-End-Verdrahtung mit PKI-Handshake-
-Shared-Secrets war dort nicht explizit spezifiziert. Der Nachtrag
-WP 4H-i schließt die Lücke:
+The original plan named receiver-specific MACs as a
+crypto-plugin feature — the end-to-end wiring with PKI-handshake
+shared secrets was not explicitly specified there. The addendum
+WP 4H-i closes the gap:
 
-* `zerodds-security::authentication::SharedSecretProvider`-Trait — eine
-  schlanke Lookup-Brücke von `AuthenticationPlugin` (liefert die DH-
-  abgeleiteten 32-byte-Secrets via `secret_bytes(handle)`) zu
+* `zerodds-security::authentication::SharedSecretProvider` trait — a
+  lean lookup bridge from `AuthenticationPlugin` (delivers the DH-
+  derived 32-byte secrets via `secret_bytes(handle)`) to
   `CryptographicPlugin`.
-* `PkiAuthenticationPlugin` implementiert den Trait.
-* `AesGcmCryptoPlugin::with_secret_provider(suite, provider)` — wenn
-  konfiguriert, leitet `register_matched_remote_participant` den
-  Per-Peer-Master-Key via HKDF-SHA256 aus dem DH-Secret ab statt einen
-  Random-Key zu generieren und per Token-Exchange zu verteilen.
-* Gemischter Betrieb: wenn der Provider ein `SharedSecretHandle` nicht
-  kennt, fällt der Plugin auf den v1.4-Random-Slot-Pfad zurück. Damit
-  können per-Peer-MAC-Keys (DH) parallel zu Broadcast-Cipher-Keys
-  (klassischer Token-Exchange) im gleichen Plugin-Objekt existieren —
-  genau das Muster von Multi-MAC aus §4.1.
+* `PkiAuthenticationPlugin` implements the trait.
+* `AesGcmCryptoPlugin::with_secret_provider(suite, provider)` — when
+  configured, `register_matched_remote_participant` derives the
+  per-peer master key via HKDF-SHA256 from the DH secret instead of generating a
+  random key and distributing it via token exchange.
+* Mixed operation: when the provider does not know a `SharedSecretHandle`,
+  the plugin falls back to the v1.4 random-slot path. Thus
+  per-peer MAC keys (DH) can exist in parallel to broadcast cipher keys
+  (classic token exchange) in the same plugin object —
+  exactly the multi-MAC pattern from §4.1.
 
-**Verifiziert in** `crates/security-pki/tests/pki_crypto_integration.rs`:
+**Verified in** `crates/security-pki/tests/pki_crypto_integration.rs`:
 * `x25519_handshake_shared_secret_drives_aes_gcm_roundtrip`
 * `three_peers_each_own_handshake_yield_distinct_per_peer_keys`
 * `multi_mac_group_broadcast_with_real_dh_derived_mac_keys`

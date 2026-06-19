@@ -25,9 +25,9 @@ pub struct CompleteEnumeratedHeader {
 /// CompleteEnumeratedLiteral = common + CompleteMemberDetail.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompleteEnumeratedLiteral {
-    /// Ordinal + Flags.
+    /// Ordinal + flags.
     pub common: CommonEnumeratedLiteral,
-    /// Name + Annotationen.
+    /// Name + annotations.
     pub detail: CompleteMemberDetail,
 }
 

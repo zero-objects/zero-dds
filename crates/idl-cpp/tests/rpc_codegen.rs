@@ -1,9 +1,9 @@
-//! Integrationstests fuer C6.1.D-cpp — DDS-RPC C++ PSM-Codegen.
+//! Integration tests for C6.1.D-cpp — DDS-RPC C++ PSM codegen.
 //!
 //! Spec-Referenz: OMG DDS-RPC 1.0 §10 (C++ PSM).
 //!
-//! Die Tests pruefen die emittierten Header pro Service-Typ als Marker-
-//! Snapshots — kein realer C++-Compile (siehe `nicht-Ziele` im Plan).
+//! The tests check the emitted headers per service type as marker-
+//! Snapshots — no real C++ compile (see "non-goals" in the plan).
 
 #![allow(
     clippy::expect_used,
@@ -158,7 +158,7 @@ fn except_decl(name: &str, members: Vec<Member>) -> ExceptDecl {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Service mit 1 Methode — Snapshot des Service-Interface
+// 1. Service with 1 method — snapshot of the service interface
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -175,7 +175,7 @@ fn service_interface_one_method_snapshot() {
 
 #[test]
 fn service_interface_methods_count_matches_signatures() {
-    // 1 Methode → 1 sync + 1 async = 2 `virtual ... = 0` im Interface,
+    // 1 method → 1 sync + 1 async = 2 `virtual ... = 0` in the interface,
     // plus 1 sync im HandlerInterface. Gesamt = 3.
     let s = emit_service_interface(&calc_service());
     let count = s.matches("= 0;").count();
@@ -183,13 +183,13 @@ fn service_interface_methods_count_matches_signatures() {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Service mit oneway-Methode — kein Reply, kein Future
+// 2. Service with a oneway method — no reply, no future
 // ---------------------------------------------------------------------------
 
 #[test]
 fn oneway_method_has_no_async_in_interface() {
     let s = emit_service_interface(&logger_service());
-    // sync log() ist da, aber kein `log_async` (oneway).
+    // sync log() is there, but no `log_async` (oneway).
     assert!(s.contains("virtual void log("));
     assert!(!s.contains("log_async"));
 }
@@ -198,7 +198,7 @@ fn oneway_method_has_no_async_in_interface() {
 fn oneway_method_emits_fire_and_forget_in_requester() {
     let s = emit_requester_class(&logger_service());
     assert!(s.contains("class Logger_Requester"));
-    // Oneway: void-Return, kein Future, kein Promise.
+    // Oneway: void return, no future, no promise.
     assert!(s.contains("virtual void log("));
     assert!(!s.contains("Promise<"));
     assert!(s.contains("// oneway: fire-and-forget"));
@@ -208,12 +208,12 @@ fn oneway_method_emits_fire_and_forget_in_requester() {
 fn oneway_replier_dispatch_invokes_handler_without_return() {
     let s = emit_replier_class(&logger_service());
     assert!(s.contains("if (method_name == \"log\")"));
-    // Oneway: kein `(void)handler_->log` Cast — direkter Call.
+    // Oneway: no `(void)handler_->log` cast — direct call.
     assert!(s.contains("handler_->log(msg);"));
 }
 
 // ---------------------------------------------------------------------------
-// 3. Service mit raises — RemoteException-Hierarchie
+// 3. Service with raises — RemoteException hierarchy
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -230,7 +230,7 @@ fn empty_idl_exception_still_inherits_remote_exception() {
     let e = except_decl("EmptyEx", vec![]);
     let s = emit_remote_exception_class(&e).unwrap();
     assert!(s.contains("class EmptyEx : public ::dds::rpc::RemoteException"));
-    // Kein `private:`-Block, da keine Member.
+    // No `private:` block, since there are no members.
     assert!(!s.contains("private:"));
 }
 
@@ -250,13 +250,13 @@ fn remote_exception_member_getters_and_setters() {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Service mit out/inout-Params — Reference-Mapping
+// 4. Service with out/inout params — reference mapping
 // ---------------------------------------------------------------------------
 
 #[test]
 fn inout_params_emit_nonconst_reference() {
     let s = emit_service_interface(&swap_service());
-    // inout → `int32_t&`; nicht `const int32_t&`.
+    // inout → `int32_t&`; not `const int32_t&`.
     assert!(s.contains("virtual void swap(int32_t& a, int32_t& b) = 0;"));
     assert!(!s.contains("const int32_t& a"));
 }
@@ -303,7 +303,7 @@ fn service_traits_default_mapping_is_basic() {
 }
 
 // ---------------------------------------------------------------------------
-// 6. Multi-Service in einem IDL-File / Namespace-Hierarchie
+// 6. Multi-service in one IDL file / namespace hierarchy
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -397,7 +397,7 @@ fn empty_service_emits_minimal_interface_and_traits() {
     assert!(s.contains("class Empty_Requester"));
     assert!(s.contains("class Empty_Replier"));
     assert!(s.contains("ServiceTraits<Empty>"));
-    // Replier hat keinen if-branch.
+    // The replier has no if-branch.
     assert!(s.contains("(void)method_name;"));
 }
 
@@ -432,9 +432,9 @@ fn requester_async_for_void_returning_method() {
         )],
     };
     let s = emit_requester_class(&svc);
-    // Nicht-oneway, void return → `Future<void>` async + sync `void ping(...)`.
+    // Non-oneway, void return → `Future<void>` async + sync `void ping(...)`.
     assert!(s.contains("::dds::rpc::Future<void> ping_async"));
-    // Sync-Variante darf nicht `return` haben.
+    // The sync variant must not have `return`.
     assert!(s.contains("ping_async(seq).get();"));
     assert!(!s.contains("return ping_async"));
 }

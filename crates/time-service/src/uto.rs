@@ -16,8 +16,8 @@
 //! };
 //! ```
 //!
-//! Wir bilden das ohne CORBA-Interface ab — die "Operations" werden als
-//! Rust-Methods auf [`Uto`] realisiert.
+//! We model this without a CORBA interface — the "operations" are realized
+//! as Rust methods on [`Uto`].
 
 #[cfg(feature = "std")]
 use crate::time_base::current_time;
@@ -27,7 +27,7 @@ use crate::tio::Tio;
 /// `CosTime::ComparisonType` (Spec §1.3.2.6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComparisonType {
-    /// IntervalC — vergleicht mit Beruecksichtigung der Inaccuracy-Range.
+    /// IntervalC — compares taking the inaccuracy range into account.
     IntervalC,
     /// MidC — vergleicht nur die Base-Times. Spec §1.3.2.6: "MidC
     /// comparison can never return TCIndeterminate".
@@ -43,7 +43,7 @@ pub enum TimeComparison {
     LessThan,
     /// `TCGreaterThan`.
     GreaterThan,
-    /// `TCIndeterminate` — wenn die Inaccuracy-Envelopes ueberlappen.
+    /// `TCIndeterminate` — when the inaccuracy envelopes overlap.
     Indeterminate,
 }
 
@@ -55,13 +55,13 @@ pub struct Uto {
 }
 
 impl Uto {
-    /// Konstruiert ein UTO aus `UtcT`. Spec §2.1.2.2 (`uto_from_utc`).
+    /// Constructs a UTO from `UtcT`. Spec §2.1.2.2 (`uto_from_utc`).
     #[must_use]
     pub const fn from_utc(utc: UtcT) -> Self {
         Self { inner: utc }
     }
 
-    /// Konstruktor aus den Einzelfeldern (Spec §2.1.2.1
+    /// Constructor from the individual fields (Spec §2.1.2.1
     /// `new_universal_time`).
     #[must_use]
     pub const fn new(time: TimeT, inaccuracy: InaccuracyT, tdf: TdfT) -> Self {
@@ -94,9 +94,9 @@ impl Uto {
         self.inner
     }
 
-    /// Spec §1.3.4.5 — `absolute_time()`. Wandelt einen relativen UTO
-    /// in einen absoluten um: `absolute = current + relative.time`.
-    /// Raises `DATA_CONVERSION` bei Overflow — wir liefern `None`.
+    /// Spec §1.3.4.5 — `absolute_time()`. Converts a relative UTO
+    /// into an absolute one: `absolute = current + relative.time`.
+    /// Raises `DATA_CONVERSION` on overflow — we return `None`.
     #[cfg(feature = "std")]
     #[must_use]
     pub fn absolute_time(self) -> Option<Self> {
@@ -110,12 +110,12 @@ impl Uto {
     }
 
     /// Spec §1.3.4.6 — `compare_time(comparison_type, uto)`.
-    /// Self ist erster Parameter, `other` der zweite.
+    /// Self is the first parameter, `other` the second.
     #[must_use]
     pub fn compare_time(self, comparison_type: ComparisonType, other: Self) -> TimeComparison {
         match comparison_type {
             ComparisonType::MidC => {
-                // Spec §1.3.2.6: MidC vergleicht nur Base-Times.
+                // Spec §1.3.2.6: MidC compares only base times.
                 match self.inner.time.cmp(&other.inner.time) {
                     core::cmp::Ordering::Less => TimeComparison::LessThan,
                     core::cmp::Ordering::Greater => TimeComparison::GreaterThan,
@@ -123,9 +123,9 @@ impl Uto {
                 }
             }
             ComparisonType::IntervalC => {
-                // Spec §1.3.2.7: IntervalC mit Inaccuracy-Envelope.
-                // Equal nur wenn Time + beide Inaccuracies = 0
-                // (genaues Match) — sonst Indeterminate bei Overlap.
+                // Spec §1.3.2.7: IntervalC with an inaccuracy envelope.
+                // Equal only when Time + both inaccuracies = 0
+                // (exact match) — otherwise Indeterminate on overlap.
                 let self_lo = self.inner.time.saturating_sub(self.inaccuracy());
                 let self_hi = self.inner.time.saturating_add(self.inaccuracy());
                 let other_lo = other.inner.time.saturating_sub(other.inaccuracy());
@@ -141,16 +141,16 @@ impl Uto {
                 } else if self_lo > other_hi {
                     TimeComparison::GreaterThan
                 } else {
-                    // Envelopes ueberlappen sich -> Indeterminate.
+                    // Envelopes overlap -> Indeterminate.
                     TimeComparison::Indeterminate
                 }
             }
         }
     }
 
-    /// Spec §1.3.4.7 — `time_to_interval(uto)`. Liefert TIO mit
-    /// Mid-Punkten der beiden UTOs als Bounds. Inaccuracies werden
-    /// nicht beruecksichtigt.
+    /// Spec §1.3.4.7 — `time_to_interval(uto)`. Returns a TIO with the
+    /// midpoints of the two UTOs as bounds. Inaccuracies are
+    /// not taken into account.
     #[must_use]
     pub fn time_to_interval(self, other: Self) -> Option<Tio> {
         let (lo, hi) = if self.inner.time <= other.inner.time {
@@ -161,8 +161,8 @@ impl Uto {
         IntervalT::new(lo, hi).map(Tio::from_interval)
     }
 
-    /// Spec §1.3.4.8 — `interval()`. Liefert die Inaccuracy-Envelope
-    /// als TIO: `[time-inaccuracy, time+inaccuracy]`.
+    /// Spec §1.3.4.8 — `interval()`. Returns the inaccuracy envelope
+    /// as a TIO: `[time-inaccuracy, time+inaccuracy]`.
     #[must_use]
     pub fn interval(self) -> Tio {
         let lo = self.inner.time.saturating_sub(self.inaccuracy());
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn compare_time_intervalc_indeterminate_on_envelope_overlap() {
-        // Spec §1.3.2.7: TCIndeterminate wenn Envelopes ueberlappen.
+        // Spec §1.3.2.7: TCIndeterminate when envelopes overlap.
         let a = Uto::new(100, 50, 0); // [50, 150]
         let b = Uto::new(120, 50, 0); // [70, 170]
         assert_eq!(
@@ -264,8 +264,8 @@ mod tests {
 
     #[test]
     fn time_to_interval_uses_midpoints() {
-        // Spec §1.3.4.7: Interval zwischen den Midpoints, Inaccuracies
-        // werden nicht beruecksichtigt.
+        // Spec §1.3.4.7: interval between the midpoints, inaccuracies
+        // are not taken into account.
         let a = Uto::new(100, 9999, 0);
         let b = Uto::new(200, 9999, 0);
         let tio = a.time_to_interval(b).expect("ok");
@@ -287,7 +287,7 @@ mod tests {
     fn absolute_time_adds_current_to_relative() {
         let relative = Uto::new(1_000, 0, 0);
         let absolute = relative.absolute_time().expect("ok");
-        // Absolute > current_time (sollte zumindest > base time sein).
+        // Absolute > current_time (should at least be > base time).
         assert!(absolute.time() > 1_000);
     }
 }

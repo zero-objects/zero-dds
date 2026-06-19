@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! §6 — DDS-QoS → MQTT-Behavior-Translation.
+//! §6 — DDS QoS → MQTT behavior translation.
 //!
 //! Mapping per Spec `zerodds-mqtt-bridge-1.0.md` §6:
 //!
-//! * `Reliability::Reliable`   → MQTT-QoS-1 (at-least-once); `BestEffort` → QoS-0.
-//!   `Reliable` mit `History::KeepAll` → QoS-2 (exactly-once).
+//! * `Reliability::Reliable`   → MQTT QoS-1 (at-least-once); `BestEffort` → QoS-0.
+//!   `Reliable` with `History::KeepAll` → QoS-2 (exactly-once).
 //! * `Durability::Volatile`           → retain=false.
-//! * `Durability::TransientLocal+`    → retain=true (Broker-side cache).
-//! * `Deadline`                       → ignored on MQTT-side
-//!   (MQTT-5 hat keinen Deadline-Begriff; tracking erfolgt DDS-seitig).
+//! * `Durability::TransientLocal+`    → retain=true (broker-side cache).
+//! * `Deadline`                       → ignored on the MQTT side
+//!   (MQTT-5 has no deadline concept; tracking happens on the DDS side).
 
 use zerodds_qos::{
     DurabilityKind, HistoryKind, HistoryQosPolicy, ReaderQos, ReliabilityKind, WriterQos,
 };
 
-/// MQTT-Behavior fuer Topic.
+/// MQTT behavior for a topic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MqttBehavior {
     /// MQTT-QoS-Level (0/1/2).
@@ -38,7 +38,7 @@ impl Default for MqttBehavior {
 }
 
 impl MqttBehavior {
-    /// Default-Behavior gemaess `WriterQos::default()` (Reliable+Volatile).
+    /// Default behavior per `WriterQos::default()` (Reliable+Volatile).
     #[must_use]
     pub fn default_for_topic() -> Self {
         let w = WriterQos::default();

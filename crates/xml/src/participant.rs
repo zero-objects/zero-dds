@@ -2,16 +2,16 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DDS-XML 1.0 §7.3.5 Building Block "Domain Participant Library".
 //!
-//! Ein `<domain_participant_library>` traegt 1+ `<domain_participant>`-
-//! Eintraege; jeder traegt `domain_ref` (Verweis auf eine Domain in einer
-//! `<domain_library>`), optional `base_name` (Participant-Inheritance),
-//! optional inline `<domain_participant_qos>`, sowie Listen von
-//! Publishers/Subscribers mit eingebetteten DataWriters/DataReaders.
+//! A `<domain_participant_library>` carries 1+ `<domain_participant>`
+//! entries; each carries `domain_ref` (a reference to a domain in a
+//! `<domain_library>`), optional `base_name` (participant inheritance),
+//! optional inline `<domain_participant_qos>`, plus lists of
+//! publishers/subscribers with embedded DataWriters/DataReaders.
 //!
-//! Spec-Quelle: OMG DDS-XML 1.0 §7.3.5 (Domain Participant Library Building
+//! Spec source: OMG DDS-XML 1.0 §7.3.5 (Domain Participant Library Building
 //! Block).
 //!
-//! # XML → Rust-Type Mapping
+//! # XML → Rust type mapping
 //!
 //! ```text
 //! <domain_participant_library name=…> | DomainParticipantLibrary
@@ -37,95 +37,95 @@ use crate::parser::{XmlElement, parse_xml_tree};
 use crate::qos::EntityQos;
 use crate::qos_parser::parse_entity_qos_public;
 
-/// Container fuer 1+ Participant-Definitionen (§7.3.5.4.1).
+/// Container for 1+ participant definitions (§7.3.5.4.1).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DomainParticipantLibrary {
-    /// Library-Name.
+    /// Library name.
     pub name: String,
-    /// Participant-Definitionen in Dokument-Reihenfolge.
+    /// Participant definitions in document order.
     pub participants: Vec<DomainParticipantEntry>,
 }
 
 impl DomainParticipantLibrary {
-    /// Sucht einen Participant innerhalb dieser Library.
+    /// Looks up a participant within this library.
     #[must_use]
     pub fn participant(&self, name: &str) -> Option<&DomainParticipantEntry> {
         self.participants.iter().find(|p| p.name == name)
     }
 }
 
-/// Einzelner `<domain_participant>` (§7.3.5.4.2).
+/// A single `<domain_participant>` (§7.3.5.4.2).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DomainParticipantEntry {
-    /// Participant-Name (Attribut `name`).
+    /// Participant name (attribute `name`).
     pub name: String,
-    /// Verweis auf eine Domain (`library::name`).
+    /// Reference to a domain (`library::name`).
     pub domain_ref: String,
-    /// Optionaler `base_name`-Verweis fuer Inheritance.
+    /// Optional `base_name` reference for inheritance.
     pub base_name: Option<String>,
-    /// Inline-`<domain_participant_qos>`.
+    /// Inline `<domain_participant_qos>`.
     pub qos: Option<EntityQos>,
-    /// Verweise auf `<register_type>`-Eintraege in der Domain
-    /// (`<register_type ref="…"/>`-Children).
+    /// References to `<register_type>` entries in the domain
+    /// (`<register_type ref="…"/>` children).
     pub register_types_ref: Vec<String>,
-    /// Verweise auf `<topic>`-Eintraege in der Domain (`<topic ref="…"/>`).
+    /// References to `<topic>` entries in the domain (`<topic ref="…"/>`).
     pub topics_ref: Vec<String>,
-    /// Eingebettete Publisher.
+    /// Embedded publishers.
     pub publishers: Vec<PublisherEntry>,
-    /// Eingebettete Subscriber.
+    /// Embedded subscribers.
     pub subscribers: Vec<SubscriberEntry>,
 }
 
 /// `<publisher>` (§7.3.5.4.4).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PublisherEntry {
-    /// Publisher-Name.
+    /// Publisher name.
     pub name: String,
-    /// Inline-`<publisher_qos>`.
+    /// Inline `<publisher_qos>`.
     pub qos: Option<EntityQos>,
-    /// DataWriter-Liste.
+    /// DataWriter list.
     pub data_writers: Vec<DataWriterEntry>,
 }
 
 /// `<subscriber>` (§7.3.5.4.5).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SubscriberEntry {
-    /// Subscriber-Name.
+    /// Subscriber name.
     pub name: String,
-    /// Inline-`<subscriber_qos>`.
+    /// Inline `<subscriber_qos>`.
     pub qos: Option<EntityQos>,
-    /// DataReader-Liste.
+    /// DataReader list.
     pub data_readers: Vec<DataReaderEntry>,
 }
 
 /// `<data_writer>` (§7.3.5.4.6).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DataWriterEntry {
-    /// Writer-Name.
+    /// Writer name.
     pub name: String,
-    /// Verweis auf einen `<topic>`-Eintrag in der Domain.
+    /// Reference to a `<topic>` entry in the domain.
     pub topic_ref: String,
-    /// Inline-`<datawriter_qos>`.
+    /// Inline `<datawriter_qos>`.
     pub qos: Option<EntityQos>,
-    /// Optionaler `qos_profile_ref`.
+    /// Optional `qos_profile_ref`.
     pub qos_profile_ref: Option<String>,
 }
 
 /// `<data_reader>` (§7.3.5.4.7).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DataReaderEntry {
-    /// Reader-Name.
+    /// Reader name.
     pub name: String,
-    /// Verweis auf einen `<topic>`-Eintrag in der Domain.
+    /// Reference to a `<topic>` entry in the domain.
     pub topic_ref: String,
-    /// Inline-`<datareader_qos>`.
+    /// Inline `<datareader_qos>`.
     pub qos: Option<EntityQos>,
-    /// Optionaler `qos_profile_ref`.
+    /// Optional `qos_profile_ref`.
     pub qos_profile_ref: Option<String>,
 }
 
-/// Parsed alle `<domain_participant_library>`-Eintraege aus einem
-/// `<dds>`-Wurzel-Element.
+/// Parses all `<domain_participant_library>` entries from a
+/// `<dds>` root element.
 ///
 /// # Errors
 /// Wie [`crate::parse_xml_tree`] plus Spec-Validierung.

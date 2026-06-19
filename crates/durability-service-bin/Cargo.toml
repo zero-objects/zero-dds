@@ -1,0 +1,34 @@
+[package]
+name = "zerodds-durability-service-bin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Standalone ZeroDDS Durability-Service daemon binary (zerodds-durability-svc): one process per domain, pluggable store adapter (sqlite/file/lakehouse), auto-discovery of TRANSIENT/PERSISTENT topics."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-durability-service-bin"
+readme = "README.md"
+keywords = ["dds", "durability", "daemon", "persistence"]
+categories = ["network-programming", "command-line-utilities"]
+publish = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-durability-svc"
+path = "src/main.rs"
+
+[dependencies]
+zerodds-durability-service = { version = "1.0.0-rc.3", path = "../durability-service" }
+zerodds-durability-store = { version = "1.0.0-rc.3", path = "../durability-store" }
+zerodds-durability-store-sqlite = { version = "1.0.0-rc.3", path = "../durability-store-sqlite" }
+zerodds-durability-store-file = { version = "1.0.0-rc.3", path = "../durability-store-file" }
+zerodds-durability-store-lakehouse = { version = "1.0.0-rc.3", path = "../durability-store-lakehouse" }
+ctrlc = { workspace = true }
+
+[dev-dependencies]
+zerodds-dcps = { version = "1.0.0-rc.3", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos" }

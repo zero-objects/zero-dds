@@ -1,50 +1,50 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Earley-Engine-Datentypen: [`EarleyItem`] und [`StateSet`].
+//! Earley-engine data types: [`EarleyItem`] and [`StateSet`].
 //!
-//! Ein **Earley-Item** ist die Triple `[A → α · β, i]`:
+//! An **Earley item** is the triple `[A → α · β, i]`:
 //!
-//! - `A` ist die linke Seite einer Production,
-//! - `α · β` ist die rechte Seite mit einem **Dot**, der die aktuelle
-//!   Parser-Position innerhalb der Alternative markiert,
-//! - `i` ist die **Origin** — die Position im Input-Token-Stream, an der
-//!   das Parsing dieser Production gestartet wurde.
+//! - `A` is the left-hand side of a production,
+//! - `α · β` is the right-hand side with a **dot** that marks the current
+//!   parser position within the alternative,
+//! - `i` is the **origin** — the position in the input token stream at which
+//!   parsing of this production was started.
 //!
-//! Ein **State-Set** `Sₖ` ist die Menge aller Earley-Items, die zur
-//! Token-Position `k` aktiv sind. Die Engine konstruiert pro Token-Position
-//! ein State-Set und fuehrt darauf die drei Earley-Operationen aus
-//! (Scan, Predict, Complete) — implementiert in Task 1.4.
+//! A **state set** `Sₖ` is the set of all Earley items that are active at
+//! token position `k`. The engine constructs one state set per token position
+//! and runs the three Earley operations on it
+//! (scan, predict, complete) — implemented in Task 1.4.
 //!
-//! Siehe RFC 0001 §5.2 und Aycock/Horspool 2002 „Practical Earley Parsing".
+//! See RFC 0001 §5.2 and Aycock/Horspool 2002 "Practical Earley Parsing".
 //!
-//! Datenstrukturen sind bewusst einfach:
+//! The data structures are deliberately simple:
 //!
-//! - [`EarleyItem`] ist `Copy` + `Hash` + `Eq` — laesst sich in Sets und
-//!   Maps verwenden, ohne Clone-Overhead.
-//! - [`StateSet`] haelt Items in Einfuege-Reihenfolge (fuer deterministische
-//!   Iteration) plus ein Dedup-Set. Duplicate-Inserts sind no-ops und
-//!   werden vom Rueckgabewert `false` signalisiert.
+//! - [`EarleyItem`] is `Copy` + `Hash` + `Eq` — can be used in sets and
+//!   maps without clone overhead.
+//! - [`StateSet`] holds items in insertion order (for deterministic
+//!   iteration) plus a dedup set. Duplicate inserts are no-ops and
+//!   are signaled by the return value `false`.
 
 use std::collections::HashSet;
 
 use crate::grammar::{Grammar, GrammarLike, ProductionId, Symbol};
 
-/// Ein Earley-Item — Parser-Zustand innerhalb einer Grammar-Alternative.
+/// An Earley item — parser state within a grammar alternative.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EarleyItem {
-    /// Die Production, deren Alternative gerade gematcht wird.
+    /// The production whose alternative is currently being matched.
     pub production: ProductionId,
-    /// Index der Alternative innerhalb `Production::alternatives`.
+    /// Index of the alternative within `Production::alternatives`.
     pub alternative_index: usize,
-    /// Position des Dots — Anzahl der bereits gematchten Symbole der
-    /// Alternative.
+    /// Position of the dot — number of already matched symbols of the
+    /// alternative.
     pub dot: usize,
-    /// Token-Stream-Position, an der das Parsing dieses Items begonnen hat.
+    /// Token-stream position at which parsing of this item began.
     pub origin: usize,
 }
 
 impl EarleyItem {
-    /// Konstruiert ein frisches Item mit Dot vor dem ersten Symbol.
+    /// Constructs a fresh item with the dot before the first symbol.
     #[must_use]
     pub const fn new(production: ProductionId, alternative_index: usize, origin: usize) -> Self {
         Self {
@@ -55,8 +55,8 @@ impl EarleyItem {
         }
     }
 
-    /// Liefert ein neues Item mit Dot um eins weiter, ohne das Original zu
-    /// modifizieren (`[A → α X · β]` aus `[A → α · X β]`).
+    /// Returns a new item with the dot advanced by one, without modifying
+    /// the original (`[A → α X · β]` from `[A → α · X β]`).
     #[must_use]
     pub const fn advance(self) -> Self {
         Self {
@@ -65,11 +65,11 @@ impl EarleyItem {
         }
     }
 
-    /// Greift auf die Alternative-Symbol-Sequenz in der Grammar zu.
+    /// Accesses the alternative's symbol sequence in the grammar.
     ///
-    /// Liefert `None`, wenn `production` oder `alternative_index` nicht
-    /// existieren (deutet auf einen Grammar-Konstruktionsfehler, der vom
-    /// Validator erkannt wird, siehe `crate::grammar::validate`).
+    /// Returns `None` if `production` or `alternative_index` do not
+    /// exist (indicates a grammar construction error, detected by the
+    /// validator, see `crate::grammar::validate`).
     #[must_use]
     pub fn symbols<'g, G: GrammarLike + ?Sized>(&self, grammar: &'g G) -> Option<&'g [Symbol]> {
         grammar
@@ -79,16 +79,16 @@ impl EarleyItem {
             .map(|alt| alt.symbols)
     }
 
-    /// `true`, wenn der Dot am Ende der Alternative steht (Production ist
-    /// vollstaendig gematcht — wird von der Complete-Operation konsumiert).
+    /// `true` if the dot is at the end of the alternative (the production is
+    /// fully matched — consumed by the complete operation).
     #[must_use]
     pub fn is_complete<G: GrammarLike + ?Sized>(&self, grammar: &G) -> bool {
         self.symbols(grammar)
             .is_some_and(|syms| self.dot >= syms.len())
     }
 
-    /// Das Symbol unmittelbar nach dem Dot, oder `None` wenn das Item
-    /// komplett ist.
+    /// The symbol immediately after the dot, or `None` if the item
+    /// is complete.
     #[must_use]
     pub fn next_symbol<'g, G: GrammarLike + ?Sized>(&self, grammar: &'g G) -> Option<&'g Symbol> {
         self.symbols(grammar)?.get(self.dot)
@@ -98,12 +98,12 @@ impl EarleyItem {
 #[allow(dead_code)]
 const _GRAMMAR_TYPE: Option<Grammar> = None;
 
-/// Menge aller Earley-Items einer Token-Position.
+/// Set of all Earley items of a token position.
 ///
-/// Items werden in Einfuege-Reihenfolge iteriert (deterministisch), aber
-/// intern wird ein `HashSet` zur Duplicate-Erkennung gefuehrt. Das ist
-/// wichtig, weil die Earley-Operationen (besonders Predict und Complete)
-/// oft identische Items erzeugen.
+/// Items are iterated in insertion order (deterministic), but
+/// internally a `HashSet` is kept for duplicate detection. That is
+/// important because the Earley operations (especially predict and complete)
+/// often produce identical items.
 #[derive(Debug, Clone, Default)]
 pub struct StateSet {
     items: Vec<EarleyItem>,
@@ -111,17 +111,17 @@ pub struct StateSet {
 }
 
 impl StateSet {
-    /// Neuer leerer State-Set.
+    /// New empty state set.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Fuegt ein Item ein, sofern es nicht bereits im Set liegt.
+    /// Inserts an item, provided it is not already in the set.
     ///
-    /// Liefert `true` bei echtem Hinzufuegen, `false` wenn Duplikat.
-    /// Der Rueckgabewert steuert in der Engine den Arbeits-Queue-Fortschritt
-    /// (kein erneutes Predict/Complete fuer Duplikate).
+    /// Returns `true` on an actual add, `false` if a duplicate.
+    /// The return value drives the work-queue progress in the engine
+    /// (no repeated predict/complete for duplicates).
     pub fn push(&mut self, item: EarleyItem) -> bool {
         if self.seen.insert(item) {
             self.items.push(item);
@@ -131,31 +131,31 @@ impl StateSet {
         }
     }
 
-    /// Alle Items in Einfuege-Reihenfolge.
+    /// All items in insertion order.
     #[must_use]
     pub fn items(&self) -> &[EarleyItem] {
         &self.items
     }
 
-    /// Anzahl eindeutiger Items.
+    /// Number of unique items.
     #[must_use]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
-    /// `true`, wenn der Set keine Items enthaelt.
+    /// `true` if the set contains no items.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
-    /// Prueft, ob ein Item bereits im Set liegt.
+    /// Checks whether an item is already in the set.
     #[must_use]
     pub fn contains(&self, item: &EarleyItem) -> bool {
         self.seen.contains(item)
     }
 
-    /// Iteriert ueber Items in Einfuege-Reihenfolge.
+    /// Iterates over items in insertion order.
     pub fn iter(&self) -> impl Iterator<Item = &EarleyItem> {
         self.items.iter()
     }
@@ -167,8 +167,8 @@ mod tests {
     use crate::grammar::{
         AltRef as _AltRefUnused, Alternative, Grammar, IdlVersion, Production, SpecRef, TokenKind,
     };
-    // AltRef wird vom Grammar-Modul ueber `pub use` re-exportiert; zum
-    // Import-Warning-Silencing alias.
+    // AltRef is re-exported from the grammar module via `pub use`; aliased
+    // to silence the import warning.
     #[allow(unused_imports)]
     use _AltRefUnused as _;
 
@@ -362,8 +362,8 @@ mod tests {
 
     #[test]
     fn advanced_item_is_distinct_from_original() {
-        // Regression: advance() und original muessen eine unterschiedliche
-        // Hash-Identitaet haben, damit der State-Set beide aufnimmt.
+        // Regression: advance() and the original must have a different
+        // hash identity, so that the state set takes in both.
         let mut set = StateSet::new();
         let item = EarleyItem::new(ProductionId(0), 0, 0);
         let advanced = item.advance();

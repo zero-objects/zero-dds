@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// Native.cs — P/Invoke fuer libzerodds (zerodds.h C-FFI).
-// NativeAOT-compatible: alle DllImport mit konkretem EntryPoint, keine Reflection.
+// Native.cs — P/Invoke for libzerodds (zerodds.h C-FFI).
+// NativeAOT-compatible: all DllImport with explicit EntryPoint, no reflection.
 
 using System;
 using System.Runtime.InteropServices;

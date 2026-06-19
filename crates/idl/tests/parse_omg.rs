@@ -1,10 +1,10 @@
-//! Integration-Test: parst die `zerodds_dcps.idl`-Fixture aus dem OMG-Annex
-//! mit der vollstaendigen IDL-4.2-Grammar (T3.1-T3.10).
+//! Integration test: parses the `zerodds_dcps.idl` fixture from the OMG annex
+//! with the complete IDL-4.2 grammar (T3.1-T3.10).
 //!
-//! Dieser Test ist die T3.12-Smoke-Probe: wenn er gruen ist, traegt die
-//! Grammar repraesentative DDS-IDL-Konstrukte. Die Fixture ist eine
-//! inhaltlich aequivalente Auswahl der OMG-DDS-1.4-Annex-IDL — siehe
-//! Fixture-Header.
+//! This test is the T3.12 smoke probe: if it is green, the
+//! grammar carries representative DDS-IDL constructs. The fixture is a
+//! content-equivalent selection of the OMG-DDS-1.4 annex IDL — see the
+//! fixture header.
 
 #![allow(
     clippy::expect_used,
@@ -45,8 +45,8 @@ fn parse_fixture(name: &str, src: &str) {
 
 #[test]
 fn lexer_handles_dds_dcps_idl() {
-    // Mit T-LIM-1 (Comment-Support) sollte das Lexen jetzt voll
-    // durchlaufen — auch mit //-Kommentaren in der Fixture.
+    // With T-LIM-1 (comment support) the lexing should now run
+    // fully through — even with //-comments in the fixture.
     let tokenizer = Tokenizer::for_grammar(&IDL_42);
     let result = tokenizer.tokenize(DDS_DCPS_IDL);
     assert!(result.is_ok(), "tokenize failed: {result:?}");
@@ -59,17 +59,17 @@ fn parses_dds_dcps_idl_directly() {
 
 #[test]
 fn parses_dds_security_idl() {
-    // T4.10 — DDS-Security-Auszug (Token-Hierarchie, Property-Lists,
-    // Authentication-Interface). Validiert Annotation-Hooks (T4.4) und
-    // Struct-Inheritance (T4.7) gegen realistische Multi-Modul-IDL.
+    // T4.10 — DDS-Security excerpt (token hierarchy, property lists,
+    // authentication interface). Validates annotation hooks (T4.4) and
+    // struct inheritance (T4.7) against realistic multi-module IDL.
     parse_fixture("zerodds_security.idl", DDS_SECURITY_IDL);
 }
 
 #[test]
 fn parses_dds_xtypes_idl() {
-    // T4.10 — DDS-XTypes-Auszug (bitset/bitmask/map/extensibility-
-    // annotations, struct-Inheritance ueber CommonHeader-Pattern).
-    // Validiert Map-Productions (T4.6), Bitset/Bitmask (T4.6) und
-    // realistische Annotation-Kombinationen (T4.4).
+    // T4.10 — DDS-XTypes excerpt (bitset/bitmask/map/extensibility
+    // annotations, struct inheritance via the CommonHeader pattern).
+    // Validates map productions (T4.6), bitset/bitmask (T4.6) and
+    // realistic annotation combinations (T4.4).
     parse_fixture("dds_xtypes.idl", DDS_XTYPES_IDL);
 }

@@ -1,9 +1,9 @@
-//! Snapshot-Tests fuer den C++ Codegen-Output.
+//! Snapshot tests for the C++ codegen output.
 //!
-//! Statt brittler `assert!(contains(...))`-Patterns vergleichen wir
-//! den vollstaendigen emittierten Header gegen ein Snapshot-File.
-//! Aenderungen werden via `cargo insta review` interaktiv akzeptiert
-//! oder verworfen. Faengt unbeabsichtigte Code-Drift im Codegen.
+//! Instead of brittle `assert!(contains(...))` patterns we compare
+//! the complete emitted header against a snapshot file.
+//! Changes are accepted interactively via `cargo insta review`
+//! or rejected. Catches unintended code drift in the codegen.
 
 #![allow(
     clippy::expect_used,

@@ -1,33 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Topic-Router fuer den `zerodds-ws-bridged`-Daemon.
+//! Topic router for the `zerodds-ws-bridged` daemon.
 //!
-//! Der Router haelt:
-//! * Pro Topic eine Liste der subskribierten Connection-IDs.
-//! * Eine Sender-Map `connection_id → mpsc::Sender<RouterMsg>` damit der
-//!   DDS-Pump-Thread die richtigen Connection-Writer-Threads benachrichtigen
-//!   kann.
+//! The router holds:
+//! * A list of subscribed connection IDs per topic.
+//! * A sender map `connection_id → mpsc::Sender<RouterMsg>` so the
+//!   DDS pump thread can notify the right connection writer threads.
 //!
-//! Der Router ist `Send + Sync` und kann ueber `Arc<Mutex<...>>` von allen
-//! Worker-Threads konsumiert werden.
+//! The router is `Send + Sync` and can be consumed via `Arc<Mutex<...>>`
+//! by all worker threads.
 
 use std::collections::BTreeMap;
 use std::string::String;
 use std::sync::mpsc;
 use std::vec::Vec;
 
-/// Nachricht an einen Connection-Writer-Thread.
+/// Message to a connection writer thread.
 #[derive(Debug, Clone)]
 pub enum RouterMsg {
-    /// DDS-Sample auf einem Topic — Push als WS-Frame.
+    /// DDS sample on a topic — push as a WS frame.
     Sample {
-        /// DDS-Topic-Name.
+        /// DDS topic name.
         topic: String,
-        /// CDR-Payload (ohne Encap-Header) oder JSON-Repraesentation.
+        /// CDR payload (without the encap header) or JSON representation.
         payload: Vec<u8>,
     },
-    /// Daemon-Shutdown — Connection close mit Code 1001.
+    /// Daemon shutdown — close the connection with code 1001.
     Shutdown,
 }
 
@@ -41,18 +40,18 @@ pub struct Router {
 }
 
 impl Router {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Registriert eine neue Connection.
+    /// Registers a new connection.
     pub fn register_connection(&mut self, id: u64, sender: mpsc::Sender<RouterMsg>) {
         self.conns.insert(id, sender);
     }
 
-    /// Entfernt eine Connection (cleanup beim Disconnect).
+    /// Removes a connection (cleanup on disconnect).
     pub fn deregister_connection(&mut self, id: u64) {
         self.conns.remove(&id);
         for subs in self.subs.values_mut() {
@@ -60,7 +59,7 @@ impl Router {
         }
     }
 
-    /// Subscribiert eine Connection auf ein Topic.
+    /// Subscribes a connection to a topic.
     pub fn subscribe(&mut self, conn_id: u64, topic: String) {
         let entry = self.subs.entry(topic).or_default();
         if !entry.contains(&conn_id) {
@@ -75,9 +74,9 @@ impl Router {
         }
     }
 
-    /// Pusht ein Sample an alle Subscriber.
-    /// Connections deren channel `disconnected` ist werden automatisch
-    /// entfernt (lazy cleanup).
+    /// Pushes a sample to all subscribers.
+    /// Connections whose channel is `disconnected` are automatically
+    /// removed (lazy cleanup).
     pub fn dispatch(&mut self, topic: &str, payload: Vec<u8>) -> usize {
         let Some(subs) = self.subs.get(topic).cloned() else {
             return 0;
@@ -92,7 +91,7 @@ impl Router {
                 if sender.send(msg).is_ok() {
                     delivered += 1;
                 } else {
-                    // Receiver tot — markiere fuer cleanup.
+                    // Receiver dead — mark for cleanup.
                     self.conns.remove(&conn_id);
                 }
             }
@@ -100,14 +99,14 @@ impl Router {
         delivered
     }
 
-    /// Sendet `Shutdown` an alle Connections (graceful drain).
+    /// Sends `Shutdown` to all connections (graceful drain).
     pub fn broadcast_shutdown(&self) {
         for sender in self.conns.values() {
             let _ = sender.send(RouterMsg::Shutdown);
         }
     }
 
-    /// Anzahl aktiver Connections.
+    /// Number of active connections.
     #[must_use]
     pub fn connection_count(&self) -> usize {
         self.conns.len()

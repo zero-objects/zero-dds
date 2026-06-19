@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! PyO3-Bindings fuer die DCPS-QoS-Surface (§6.2 Vendor-Spec
+//! PyO3 bindings for the DCPS QoS surface (§6.2 vendor spec
 //! `zerodds-py-1.0`).
 //!
-//! Exponiert `DataWriterQos` und `DataReaderQos` als PyClasses mit
-//! Setter-Methoden fuer alle 22 DDS-1.4-Policies. Anwender bauen QoS-
-//! Objekte und uebergeben sie an `Publisher.create_*_writer_with_qos()`
+//! Exposes `DataWriterQos` and `DataReaderQos` as PyClasses with
+//! setter methods for all 22 DDS-1.4 policies. Users build QoS
+//! objects and pass them to `Publisher.create_*_writer_with_qos()`
 //! / `Subscriber.create_*_reader_with_qos()`.
 
 #![allow(clippy::missing_errors_doc)]
-#![allow(unsafe_code)] // PyO3-Macros expanden zu unsafe
-#![allow(unsafe_op_in_unsafe_fn)] // Rust 2024: PyO3-Macros koennen nicht wrappen
-#![allow(clippy::useless_conversion)] // PyO3-Macro-generated `.into()`-Calls
-#![allow(clippy::needless_lifetimes)] // PyO3-Signatures mit Bound<'py, T>
-#![allow(clippy::new_without_default)] // #[new]-Konstruktoren sind Python-Construktoren
+#![allow(unsafe_code)] // PyO3 macros expand to unsafe
+#![allow(unsafe_op_in_unsafe_fn)] // Rust 2024: PyO3 macros cannot wrap
+#![allow(clippy::useless_conversion)] // PyO3-macro-generated `.into()` calls
+#![allow(clippy::needless_lifetimes)] // PyO3 signatures with Bound<'py, T>
+#![allow(clippy::new_without_default)] // #[new] constructors are Python constructors
 #![allow(clippy::unwrap_used)] // PyO3 macros + Test-Helper
 #![allow(clippy::expect_used)] // PyO3 macros + Test-Helper
 
@@ -37,12 +37,12 @@ use zerodds_qos::Duration as DdsDuration;
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Konvertiert eine `f64`-Sekundenzahl in `zerodds_qos::Duration`.
+/// Converts an `f64` number of seconds into `zerodds_qos::Duration`.
 ///
-/// - `secs < 0.0`, `NaN` oder `Inf` → `Duration::INFINITE` (§9.3.2).
-/// - sonst → Millisekunden, gerundet (Duration speichert i32-Sekunden +
-///   u32-Fraction; `from_millis(i32)` ist die Standard-Konvertierung
-///   aus dem Crate).
+/// - `secs < 0.0`, `NaN` or `Inf` → `Duration::INFINITE` (§9.3.2).
+/// - otherwise → milliseconds, rounded (Duration stores i32 seconds +
+///   u32 fraction; `from_millis(i32)` is the standard conversion
+///   from the crate).
 fn duration_from_secs_or_infinite(secs: f64) -> DdsDuration {
     if !secs.is_finite() || secs < 0.0 {
         return DdsDuration::INFINITE;
@@ -132,8 +132,8 @@ fn parse_presentation_scope(s: &str) -> PyResult<PresentationAccessScope> {
 // PyDataWriterQos
 // ---------------------------------------------------------------------------
 
-/// QoS-Builder fuer einen `DataWriter`. Spec: DDS 1.4 §2.2.3 (alle 22
-/// Policies). Default-Werte folgen DDS 1.4 §2.2.3 Defaults (siehe
+/// QoS builder for a `DataWriter`. Spec: DDS 1.4 §2.2.3 (all 22
+/// policies). Default values follow the DDS 1.4 §2.2.3 defaults (see
 /// `crates/dcps/src/qos.rs::DataWriterQos::default`).
 #[pyclass(name = "DataWriterQos", module = "zerodds_py")]
 pub struct PyDataWriterQos {

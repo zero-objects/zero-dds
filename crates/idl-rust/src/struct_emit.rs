@@ -13,9 +13,9 @@ use crate::error::{Result, RustGenError};
 use crate::type_map::escape_keyword;
 use crate::type_map::rust_type_for;
 
-/// Liefert den Rust-Identifier eines Declarators als owned `String`,
-/// raw-identifier-escaped wenn noetig (Spec §6.1 + §6.2).
-fn declarator_ident(decl: &Declarator) -> String {
+/// Returns the Rust identifier of a declarator as an owned `String`,
+/// raw-identifier-escaped if needed (spec §6.1 + §6.2).
+pub(crate) fn declarator_ident(decl: &Declarator) -> String {
     let raw = match decl {
         Declarator::Simple(n) => &n.text,
         Declarator::Array(a) => &a.name.text,
@@ -23,17 +23,77 @@ fn declarator_ident(decl: &Declarator) -> String {
     escape_keyword(raw)
 }
 
-/// Emittiert eine komplette Rust-Struct-Definition + DdsType-Impl.
+/// Emits a complete Rust struct definition + DdsType impl.
 ///
-/// `module_path` ist die Liste der einschliessenden IDL-Module
-/// (raw Namen). Sie wird genutzt, um den vollqualifizierten
-/// `TYPE_NAME` `"Module::Sub::Struct"` zu emittieren.
+/// `module_path` is the list of enclosing IDL modules (raw names). It is
+/// used to emit the fully-qualified `TYPE_NAME` `"Module::Sub::Struct"`.
 pub fn emit_struct(out: &mut String, s: &StructDef, module_path: &[String]) -> Result<()> {
+    emit_struct_with_mode(out, s, module_path, false)
+}
+
+/// Like [`emit_struct`], but with a `cdr_only` switch: at `true` the
+/// `DdsType` impl (XCDR2 + `field_value`, pulls `zerodds_dcps`/`zerodds_types`/
+/// `zerodds_sql_filter`) is omitted. Only the struct decl + classic
+/// `CdrEncode`/`CdrDecode` remain — exactly what the CORBA/GIOP path needs
+/// (no DDS topic pipeline, hence no DdsType dependencies).
+pub fn emit_struct_with_mode(
+    out: &mut String,
+    s: &StructDef,
+    module_path: &[String],
+    cdr_only: bool,
+) -> Result<()> {
     let extensibility = struct_extensibility(&s.annotations);
 
     emit_struct_decl(out, s)?;
     out.push('\n');
-    emit_dds_type_impl(out, s, extensibility, module_path)?;
+    if !cdr_only {
+        emit_dds_type_impl(out, s, extensibility, module_path)?;
+    }
+    // Writer-agnostic classic CDR impls (`CdrEncode`/`CdrDecode`). The
+    // CORBA/GIOP codegen uses these with a non-`.xcdr2()` writer (classic
+    // CDR §15.3); XCDR2/DDS stays in `DdsType::encode`. Also makes
+    // nested-struct fields really resolvable via `<_ as CdrEncode>::encode`.
+    emit_cdr_encode_impl(out, s)?;
+    emit_cdr_decode_impl(out, s)?;
+    Ok(())
+}
+
+/// `impl CdrEncode for <struct>` — plain sequential field encoding via the
+/// passed `BufferWriter` (classic CDR; no XTypes DHEADER frames).
+fn emit_cdr_encode_impl(out: &mut String, s: &StructDef) -> Result<()> {
+    let name = escape_keyword(&s.name.text);
+    out.push_str(&format!("\nimpl zerodds_cdr::CdrEncode for {name} {{\n"));
+    out.push_str(
+        "    fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {\n",
+    );
+    for member in &s.members {
+        emit_member_encode_with_writer(out, member, "        ", "writer")?;
+    }
+    out.push_str("        ::core::result::Result::Ok(())\n");
+    out.push_str("    }\n}\n");
+    Ok(())
+}
+
+/// `impl CdrDecode for <struct>` — plain sequential field decoding from the
+/// passed `BufferReader` (symmetric to [`emit_cdr_encode_impl`]).
+fn emit_cdr_decode_impl(out: &mut String, s: &StructDef) -> Result<()> {
+    let name = escape_keyword(&s.name.text);
+    out.push_str(&format!("\nimpl zerodds_cdr::CdrDecode for {name} {{\n"));
+    out.push_str(
+        "    fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {\n",
+    );
+    for member in &s.members {
+        emit_member_decode_let_with_reader(out, member, "        ", "reader")?;
+    }
+    out.push_str("        ::core::result::Result::Ok(Self {\n");
+    for member in &s.members {
+        for declarator in &member.declarators {
+            let field = declarator_ident(declarator);
+            out.push_str(&format!("            {field},\n"));
+        }
+    }
+    out.push_str("        })\n");
+    out.push_str("    }\n}\n");
     Ok(())
 }
 
@@ -109,10 +169,10 @@ fn emit_dds_type_impl(
     out.push_str("impl zerodds_dcps::DdsType for ");
     out.push_str(&escape_keyword(&s.name.text));
     out.push_str(" {\n");
-    // TYPE_NAME ist der vollqualifizierte IDL-Scoped-Name
+    // TYPE_NAME is the fully qualified IDL scoped name
     // (`Module::Sub::Struct`). Spec: zerodds-xcdr2-bindings-conformance
-    // §3 / §5 + V-7 iVm. XTypes 1.3 §7.3.4.6. Strikt OMG-IDL-Format
-    // mit `::` Separator, NICHT Rust-Syntax.
+    // §3 / §5 + V-7 in conjunction with XTypes 1.3 §7.3.4.6. Strictly the
+    // OMG IDL format with a `::` separator, NOT Rust syntax.
     out.push_str("    const TYPE_NAME: &'static str = \"");
     for module in module_path {
         out.push_str(module);
@@ -140,9 +200,9 @@ fn emit_dds_type_impl(
     if crate::annotations::struct_is_nested(&s.annotations) {
         out.push_str("    const IS_NESTED: bool = true;\n");
     }
-    // F-TYPES-3: TYPE_IDENTIFIER (XTypes 1.3 §7.3.4.2) als const.
-    // Codegen-time berechneter EquivalenceHash der `CompleteStructType`,
-    // wenn alle Member-Typen leaf-resolvable sind; sonst `None`.
+    // F-TYPES-3: TYPE_IDENTIFIER (XTypes 1.3 §7.3.4.2) as a const.
+    // Codegen-time-computed EquivalenceHash of the `CompleteStructType`,
+    // if all member types are leaf-resolvable; otherwise `None`.
     let type_id_expr = crate::type_identifier::struct_type_identifier_expr(s);
     out.push_str(&format!(
         "    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = {type_id_expr};\n"
@@ -152,7 +212,7 @@ fn emit_dds_type_impl(
     // encode
     out.push_str("    fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {\n");
     out.push_str(
-        "        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);\n",
+        "        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();\n",
     );
     emit_encode_body(out, s, extensibility)?;
     out.push_str("        out.extend_from_slice(&writer.into_bytes());\n");
@@ -163,7 +223,7 @@ fn emit_dds_type_impl(
     out.push_str(
         "    fn decode(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {\n",
     );
-    out.push_str("        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);\n");
+    out.push_str("        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little).xcdr2();\n");
     emit_decode_body(out, s, extensibility)?;
     out.push_str("    }\n");
 
@@ -180,11 +240,11 @@ fn emit_dds_type_impl(
 }
 
 /// Emittiert `fn field_value(&self, path: &str) -> Option<zerodds_sql_filter::Value>`
-/// fuer SQL-Filter-Evaluation (QueryCondition / ContentFilteredTopic).
+/// for SQL-filter evaluation (QueryCondition / ContentFilteredTopic).
 ///
-/// DDS 1.4 §B.2.1: Filter-Expressions referenzieren Feld-Werte ueber
-/// dotted-paths (z.B. `"sensor.id"`). Rust-DataTypes implementieren
-/// das hier als deterministische match-arm-Tabelle.
+/// DDS 1.4 §B.2.1: filter expressions reference field values via
+/// dotted paths (e.g. `"sensor.id"`). Rust DataTypes implement this here
+/// as a deterministic match-arm table.
 fn emit_field_value(out: &mut String, s: &StructDef) -> Result<()> {
     out.push_str(
         "    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {\n",
@@ -212,10 +272,10 @@ fn emit_field_value_arm(
 ) -> Result<()> {
     use zerodds_idl::ast::types::{FloatingType, PrimitiveType};
 
-    // Array-Felder lassen sich nicht direkt auf Value mappen — Filter-
-    // Expressions referenzieren Element-Indices (`"arr[0]"`), das ist
-    // RC1-außerhalb des aktuellen Scopes. Wir emittieren nichts und der `_`-fallback
-    // greift.
+    // Array fields cannot be mapped directly to Value — filter
+    // expressions reference element indices (`"arr[0]"`), which is
+    // outside the current RC1 scope. We emit nothing and the `_`
+    // fallback kicks in.
     if matches!(declarator, Declarator::Array(_)) {
         return Ok(());
     }
@@ -262,20 +322,20 @@ fn emit_field_value_arm(
             )
         }),
         TypeSpec::Scoped(_) => {
-            // Nested struct/enum: dotted-path-Forwarding. Wir emittieren
-            // ein Pattern, das `name.<rest>` matched und an
-            // `self.<name>.field_value(rest)` weiterreicht.
+            // Nested struct/enum: dotted-path forwarding. We emit a
+            // pattern that matches `name.<rest>` and forwards to
+            // `self.<name>.field_value(rest)`.
             //
-            // Spezialfall: Enums werden via `i32::from(self.<name>)`
-            // konvertiert — das ist nicht trivial im Codegen ohne
-            // Type-Lookup. Fuer RC1 ueberlassen wir Enums dem Caller-
-            // `_`-fallback. Phase 2 erweitert das mit einem Type-Index.
+            // Special case: enums are converted via `i32::from(self.<name>)`
+            // — which is not trivial in codegen without a type lookup. For
+            // RC1 we leave enums to the caller's `_` fallback. Phase 2
+            // extends this with a type index.
             out.push_str(&format!(
                 "            p if p.starts_with(\"{name}.\") => self.{name}.field_value(&p[\"{name}.\".len()..]),\n"
             ));
             None
         }
-        // Sequence / Array / Optional: keine direkte Werte-Konversion.
+        // Sequence / array / optional: no direct value conversion.
         TypeSpec::Sequence(_) | TypeSpec::Fixed(_) | TypeSpec::Map(_) | TypeSpec::Any => None,
     };
 
@@ -285,9 +345,9 @@ fn emit_field_value_arm(
     Ok(())
 }
 
-/// Berechnet den `KEY_HOLDER_MAX_SIZE`-Wert: Summe der wire-sizes aller
-/// `@key`-Member, falls alle fixed-size sind. Bei String/Sequence/etc.
-/// wird `None` zurueckgegeben (MD5-Pfad in `compute_key_hash`).
+/// Computes the `KEY_HOLDER_MAX_SIZE` value: the sum of the wire sizes
+/// of all `@key` members, if all are fixed-size. For string/sequence/etc.
+/// `None` is returned (MD5 path in `compute_key_hash`).
 fn compute_key_holder_max_size(key_members: &[&Member]) -> Option<usize> {
     let mut total = 0usize;
     for member in key_members {
@@ -314,9 +374,9 @@ fn emit_key_holder_be(out: &mut String, key_members: &[&Member]) -> Result<()> {
     out.push_str(
         "    fn encode_key_holder_be(&self, holder: &mut zerodds_cdr::PlainCdr2BeKeyHolder) {\n",
     );
-    // Spec: XTypes 1.3 §7.6.8.3.1.b — Members in member-id-Reihenfolge
-    // sortiert. Wir nutzen die positional-IDs der Decl-Reihenfolge als
-    // Default. Bei `@id(N)` wird N stattdessen verwendet.
+    // Spec: XTypes 1.3 §7.6.8.3.1.b — members sorted in member-id order.
+    // We use the positional IDs of the decl order as the default. With
+    // `@id(N)`, N is used instead.
     let mut ordered: Vec<(u32, &Member)> = key_members
         .iter()
         .enumerate()
@@ -357,7 +417,7 @@ fn emit_key_field_write(out: &mut String, spec: &TypeSpec, value_expr: &str) -> 
                 }
                 PrimitiveType::Boolean => "write_u8",
                 PrimitiveType::Char => "write_u8",
-                PrimitiveType::WideChar => "write_u32",
+                PrimitiveType::WideChar => "write_u16",
             };
             if matches!(
                 p,
@@ -369,9 +429,9 @@ fn emit_key_field_write(out: &mut String, spec: &TypeSpec, value_expr: &str) -> 
             }
         }
         TypeSpec::String(_) => {
-            // PlainCdr2BeKeyHolder hat eine `write_string`-Methode, die
-            // den UTF-8-Bytes direkt einsetzt (Spec §7.6.8.4 — Strings
-            // tragen ihren Length-Prefix im Big-Endian).
+            // PlainCdr2BeKeyHolder has a `write_string` method that
+            // inserts the UTF-8 bytes directly (spec §7.6.8.4 — strings
+            // carry their length prefix in big-endian).
             out.push_str(&format!("        holder.write_string(&{value_expr});\n"));
         }
         TypeSpec::Sequence(_) | TypeSpec::Scoped(_) => {
@@ -461,7 +521,7 @@ fn emit_member_encode(out: &mut String, member: &Member, indent: &str) -> Result
     emit_member_encode_with_writer(out, member, indent, "&mut writer")
 }
 
-fn emit_member_encode_with_writer(
+pub(crate) fn emit_member_encode_with_writer(
     out: &mut String,
     member: &Member,
     indent: &str,
@@ -470,19 +530,20 @@ fn emit_member_encode_with_writer(
     for declarator in &member.declarators {
         let name = declarator_ident(declarator);
         out.push_str(indent);
+        emit_member_bound_checks(out, member, declarator);
         emit_field_encode(out, &member.type_spec, &format!("self.{name}"), writer_expr)?;
         out.push('\n');
     }
     Ok(())
 }
 
-/// Emittiert einen `zerodds_cdr::CdrEncode::encode`-Aufruf fuer ein Feld.
+/// Emits a `zerodds_cdr::CdrEncode::encode` call for a field.
 ///
-/// **Einheitliche Trait-API** — alle primitives + composite-types
-/// (String, Vec, [T;N], Option) haben `impl CdrEncode` in
-/// `zerodds_cdr::encode` / `zerodds_cdr::composite`. Der Codegen muss also
-/// nicht zwischen primitive method-calls und function-calls
-/// unterscheiden.
+/// **Uniform trait API** — all primitives + composite types
+/// (String, Vec, [T;N], Option) have `impl CdrEncode` in
+/// `zerodds_cdr::encode` / `zerodds_cdr::composite`. The codegen thus
+/// need not distinguish between primitive method calls and function
+/// calls.
 pub fn emit_field_encode(
     out: &mut String,
     spec: &TypeSpec,
@@ -490,12 +551,157 @@ pub fn emit_field_encode(
     writer_expr: &str,
 ) -> Result<()> {
     let _ = spec;
-    // Einheitlicher Trait-Pfad fuer primitives + composite + scoped +
-    // Fixed + Map + Any (alle haben CdrEncode-Impls).
+    // Uniform trait path for primitives + composite + scoped + Fixed +
+    // Map + Any (all have CdrEncode impls). Bound enforcement
+    // (DDS-XTypes §7.4.3) runs separately at the declarator level via
+    // `emit_member_bound_checks` — there it is known whether the field is
+    // an array (otherwise `value_expr.len()` would wrongly check the
+    // array length instead of the sequence length).
     out.push_str(&format!(
         "<_ as zerodds_cdr::CdrEncode>::encode(&{value_expr}, {writer_expr})?;"
     ));
     Ok(())
+}
+
+/// `true` if `spec` itself is a bounded sequence/string with a known
+/// (const-evaluable) bound — or recursively contains one (through
+/// sequence nesting). Structs/scoped types do NOT count: their own
+/// `CdrEncode` impl enforces their field bounds themselves once the
+/// element is encoded. Controls whether `emit_bound_checks` emits loops.
+fn bound_is_known(bound: &Option<zerodds_idl::ast::types::ConstExpr>) -> bool {
+    bound
+        .as_ref()
+        .and_then(crate::type_map::const_expr_as_usize)
+        .is_some()
+}
+
+/// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
+fn type_has_bounds(spec: &TypeSpec) -> bool {
+    match spec {
+        TypeSpec::Sequence(seq) => bound_is_known(&seq.bound) || type_has_bounds(&seq.elem),
+        // narrow `string<N>` AND wide `wstring<N>` are both enforced now.
+        TypeSpec::String(s) => bound_is_known(&s.bound),
+        TypeSpec::Map(m) => {
+            bound_is_known(&m.bound) || type_has_bounds(&m.value) || type_has_bounds(&m.key)
+        }
+        _ => false,
+    }
+}
+
+/// Emits recursive bound checks (DDS-XTypes §7.4.3) for `value_expr` of
+/// type `spec`: a bounded `sequence<T,N>` / `string<N>` / `wstring<N>` /
+/// `map<K,V,N>` longer than `N` is an ENCODE error
+/// (`EncodeError::ValueOutOfRange`) — strict vendors (OpenDDS) reject it
+/// on the wire. Descends through sequence/map nesting
+/// (`sequence<sequence<octet,4>>` checks both levels, `map<string,seq<T,4>,8>`
+/// checks the map bound + each value). `depth` makes the loop variables unique.
+///
+/// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
+fn emit_bound_checks(out: &mut String, spec: &TypeSpec, value_expr: &str, depth: usize) {
+    match spec {
+        TypeSpec::Sequence(seq) => {
+            if let Some(n) = seq
+                .bound
+                .as_ref()
+                .and_then(crate::type_map::const_expr_as_usize)
+            {
+                out.push_str(&format!(
+                    "if {value_expr}.len() > {n} {{ return Err(zerodds_cdr::EncodeError::ValueOutOfRange {{ message: \"bounded sequence length exceeds its IDL bound ({n})\" }}); }} "
+                ));
+            }
+            if type_has_bounds(&seq.elem) {
+                let item = format!("__b{depth}");
+                out.push_str(&format!("for {item} in {value_expr}.iter() {{ "));
+                emit_bound_checks(out, &seq.elem, &item, depth + 1);
+                out.push_str("} ");
+            }
+        }
+        TypeSpec::String(s) => {
+            if let Some(n) = s
+                .bound
+                .as_ref()
+                .and_then(crate::type_map::const_expr_as_usize)
+            {
+                if s.wide {
+                    // `wstring<N>`: bound is in wide characters = UTF-16 code
+                    // units (GIOP 1.2 §15.3.2.7 encodes UTF-16). `WString`
+                    // wraps a `String`; count its UTF-16 units.
+                    out.push_str(&format!(
+                        "if {value_expr}.as_str().encode_utf16().count() > {n} {{ return Err(zerodds_cdr::EncodeError::ValueOutOfRange {{ message: \"bounded wstring length exceeds its IDL bound ({n})\" }}); }} "
+                    ));
+                } else {
+                    // narrow `string<N>`: CDR encodes byte-wise (`as_bytes`),
+                    // so the bound guards the UTF-8 byte length (ASCII = chars).
+                    out.push_str(&format!(
+                        "if {value_expr}.len() > {n} {{ return Err(zerodds_cdr::EncodeError::ValueOutOfRange {{ message: \"bounded string length exceeds its IDL bound ({n})\" }}); }} "
+                    ));
+                }
+            }
+        }
+        TypeSpec::Map(m) => {
+            if let Some(n) = m
+                .bound
+                .as_ref()
+                .and_then(crate::type_map::const_expr_as_usize)
+            {
+                out.push_str(&format!(
+                    "if {value_expr}.len() > {n} {{ return Err(zerodds_cdr::EncodeError::ValueOutOfRange {{ message: \"bounded map length exceeds its IDL bound ({n})\" }}); }} "
+                ));
+            }
+            // Recurse into bounded map values + keys (`map<string<4>, seq<T,8>>`).
+            if type_has_bounds(&m.value) {
+                let item = format!("__b{depth}");
+                out.push_str(&format!("for {item} in {value_expr}.values() {{ "));
+                emit_bound_checks(out, &m.value, &item, depth + 1);
+                out.push_str("} ");
+            }
+            if type_has_bounds(&m.key) {
+                let item = format!("__k{depth}");
+                out.push_str(&format!("for {item} in {value_expr}.keys() {{ "));
+                emit_bound_checks(out, &m.key, &item, depth + 1);
+                out.push_str("} ");
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Emits bound checks for a value `base_expr` of declared type
+/// `type_spec` with `declarator`. For an array declarator
+/// (`sequence<octet,4> arr[3]`) `base_expr` is a (possibly
+/// multidimensional) array of the element type — it iterates over all
+/// array elements so the array length is not wrongly checked against the
+/// sequence bound. Shared by struct members (`base = self.{name}`) and
+/// union arms (`base = __v`).
+pub(crate) fn emit_bound_checks_decl(
+    out: &mut String,
+    type_spec: &TypeSpec,
+    declarator: &Declarator,
+    base_expr: &str,
+) {
+    if !type_has_bounds(type_spec) {
+        return;
+    }
+    match declarator {
+        Declarator::Simple(_) => emit_bound_checks(out, type_spec, base_expr, 0),
+        Declarator::Array(arr) => {
+            let mut expr = base_expr.to_string();
+            for (i, _) in arr.sizes.iter().enumerate() {
+                let item = format!("__a{i}");
+                out.push_str(&format!("for {item} in {expr}.iter() {{ "));
+                expr = item;
+            }
+            emit_bound_checks(out, type_spec, &expr, 0);
+            for _ in &arr.sizes {
+                out.push_str("} ");
+            }
+        }
+    }
+}
+
+fn emit_member_bound_checks(out: &mut String, member: &Member, declarator: &Declarator) {
+    let base = format!("self.{}", declarator_ident(declarator));
+    emit_bound_checks_decl(out, &member.type_spec, declarator, &base);
 }
 
 fn emit_mutable_member_encode(
@@ -512,6 +718,7 @@ fn emit_mutable_member_encode(
         out.push_str(&format!(
             "enc.encode_member({id}, {must_understand}, |w| {{ "
         ));
+        emit_member_bound_checks(out, member, declarator);
         emit_field_encode(out, &member.type_spec, &format!("self.{name}"), "w")?;
         out.push_str(" Ok(()) })?;\n");
     }
@@ -525,7 +732,7 @@ fn emit_decode_body(
 ) -> Result<()> {
     match extensibility {
         StructExtensibility::Final => {
-            // Decode in deklarations-Reihenfolge.
+            // Decode in declaration order.
             for member in &s.members {
                 emit_member_decode_let(out, member, "        ")?;
             }
@@ -554,12 +761,12 @@ fn emit_decode_body(
             out.push_str("        }).map_err(::core::convert::Into::into)\n");
         }
         StructExtensibility::Mutable => {
-            // XTypes 1.3 §7.4.3.4.4: mutable-decode mit beliebiger
-            // Member-Reihenfolge via read_mutable_member-Loop +
-            // member-id-match. Pro Member tracken wir ein Option<T>;
-            // unbekannte must_understand-Member-IDs fuehren zu Decode-Error.
+            // XTypes 1.3 §7.4.3.4.4: mutable decode with arbitrary
+            // member order via the read_mutable_member loop +
+            // member-id match. We track an Option<T> per member;
+            // unknown must_understand member IDs lead to a decode error.
             out.push_str("        zerodds_cdr::struct_enc::decode_appendable(&mut reader, |r| {\n");
-            // Pre-init aller Member-Slots als Option<T>::None.
+            // Pre-init all member slots as Option<T>::None.
             for (idx, member) in s.members.iter().enumerate() {
                 let id = crate::annotations::member_id(&member.annotations).unwrap_or(idx as u32);
                 let optional = crate::annotations::member_is_optional(&member.annotations);
@@ -576,13 +783,13 @@ fn emit_decode_body(
                     ));
                 }
             }
-            // Loop ueber alle Mutable-Members im Wire.
+            // Loop over all mutable members on the wire.
             out.push_str("            loop {\n");
             out.push_str(
                 "                match zerodds_cdr::struct_enc::read_mutable_member(r)? {\n",
             );
             out.push_str("                    ::core::option::Option::Some(member) => {\n");
-            out.push_str("                        let mut body_reader = zerodds_cdr::BufferReader::new(member.body, zerodds_cdr::Endianness::Little);\n");
+            out.push_str("                        let mut body_reader = zerodds_cdr::BufferReader::new(member.body, zerodds_cdr::Endianness::Little).xcdr2();\n");
             out.push_str("                        match member.member_id {\n");
             for (idx, member) in s.members.iter().enumerate() {
                 let id = crate::annotations::member_id(&member.annotations).unwrap_or(idx as u32);
@@ -616,7 +823,7 @@ fn emit_decode_body(
             out.push_str("                    ::core::option::Option::None => break,\n");
             out.push_str("                }\n");
             out.push_str("            }\n");
-            // Self-Init mit ok_or fuer Pflicht-Member, oder unwrap_or_default fuer optionals.
+            // Self-init with ok_or for mandatory members, or unwrap_or_default for optionals.
             out.push_str("            ::core::result::Result::Ok(Self {\n");
             for (idx, member) in s.members.iter().enumerate() {
                 let id = crate::annotations::member_id(&member.annotations).unwrap_or(idx as u32);
@@ -645,7 +852,7 @@ fn emit_member_decode_let(out: &mut String, member: &Member, indent: &str) -> Re
     emit_member_decode_let_with_reader(out, member, indent, "&mut reader")
 }
 
-fn emit_member_decode_let_with_reader(
+pub(crate) fn emit_member_decode_let_with_reader(
     out: &mut String,
     member: &Member,
     indent: &str,
@@ -662,12 +869,12 @@ fn emit_member_decode_let_with_reader(
     Ok(())
 }
 
-/// Emittiert einen `zerodds_cdr::CdrDecode::decode`-Aufruf, der einen
-/// Wert vom Typ `target_type` aus dem Reader liest.
+/// Emits a `zerodds_cdr::CdrDecode::decode` call that reads a value of
+/// type `target_type` from the reader.
 ///
-/// Wir nutzen die **fully-qualified Trait-Form** mit explizitem
-/// Target-Type, damit Type-Inference auch bei `let x = ...;` ohne
-/// rechte Seite klappt.
+/// We use the **fully-qualified trait form** with an explicit target
+/// type so that type inference works even with `let x = ...;` without a
+/// right-hand side.
 fn emit_field_decode_with_optional(
     out: &mut String,
     spec: &TypeSpec,

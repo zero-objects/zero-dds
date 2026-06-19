@@ -4,7 +4,7 @@
 //! `TIMESTAMP_REPLY` Submessage (id=15, Spec §8.3.5.16).
 //!
 //! Body = `transmit_timestamp + receive_timestamp + originate_timestamp`
-//! = 3 * `Time_t` = 24 Bytes.
+//! = 3 * `Time_t` = 24 bytes.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -14,25 +14,25 @@ use crate::error::XrceError;
 use crate::submessages::timestamp::{TIME_T_WIRE_SIZE, TimePoint};
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// Body-Wire-Size: 24 Bytes (3 * Time_t).
+/// Body wire size: 24 bytes (3 * Time_t).
 pub const TIMESTAMP_REPLY_BODY_SIZE: usize = 3 * TIME_T_WIRE_SIZE;
 
 /// `TIMESTAMP_REPLY_Payload`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct TimestampReplyPayload {
-    /// Sende-Zeitstempel des Antwortenden.
+    /// Transmit timestamp of the responder.
     pub transmit_timestamp: TimePoint,
-    /// Empfangs-Zeitstempel der urspruenglichen TIMESTAMP-Message.
+    /// Receive timestamp of the original TIMESTAMP message.
     pub receive_timestamp: TimePoint,
-    /// Original-Sende-Zeitstempel des Anfragenden.
+    /// Original transmit timestamp of the requester.
     pub originate_timestamp: TimePoint,
 }
 
 impl TimestampReplyPayload {
-    /// Encodiert den Body.
+    /// Encodes the body.
     ///
     /// # Errors
-    /// keine erwartet.
+    /// None expected.
     pub fn encode_body(self, e: Endianness) -> Result<Vec<u8>, XrceError> {
         let mut out = alloc::vec![0u8; TIMESTAMP_REPLY_BODY_SIZE];
         self.transmit_timestamp.encode(&mut out[0..8], e)?;
@@ -41,7 +41,7 @@ impl TimestampReplyPayload {
         Ok(out)
     }
 
-    /// Decodiert den Body.
+    /// Decodes the body.
     ///
     /// # Errors
     /// `UnexpectedEof`.
@@ -59,7 +59,7 @@ impl TimestampReplyPayload {
         })
     }
 
-    /// Verpackt in `Submessage` (LE).
+    /// Packs into a `Submessage` (LE).
     ///
     /// # Errors
     /// `PayloadTooLarge`.
@@ -68,7 +68,7 @@ impl TimestampReplyPayload {
         Submessage::new(SubmessageId::TimestampReply, FLAG_E_LITTLE_ENDIAN, body)
     }
 
-    /// Extrahiert aus `Submessage`.
+    /// Extracts from a `Submessage`.
     ///
     /// # Errors
     /// `ValueOutOfRange`, `UnexpectedEof`.

@@ -1,42 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! RCU-Cell — Copy-on-Write-Container fuer wenig-Schreib/viel-Lese-Patterns.
+//! RCU cell — copy-on-write container for low-write/high-read patterns.
 //!
-//! Foundation-Primitive fuer einen Lock-Free-Read-History-Cache.
-//! Reader greifen auf einen `Arc<T>`-Snapshot zu, der von
-//! einem kurzen Mutex-Aufruf (Microsekunden) geliefert wird; danach lebt
-//! der Snapshot referenzgezaehlt, **ohne** weiteren Lock-Touch.
+//! Foundation primitive for a lock-free read history cache.
+//! Readers access an `Arc<T>` snapshot delivered by a short mutex
+//! call (microseconds); afterwards the snapshot lives reference-counted,
+//! **without** any further lock touch.
 //!
-//! # Designziel
+//! # Design goal
 //!
-//! Klassischer RCU mit `AtomicPtr`-Pointer-Swap braucht `unsafe`
-//! (Pointer-Provenance, Memory-Ordering). Diese Implementation tradet
-//! mikroskopische Performance gegen Strikt-Safe-Code: ein `Mutex<Arc<T>>`
-//! schuetzt nur die Reference-Cell, **nicht** den Inhalt — der Inhalt
-//! wird geklont, bevor der Lock faellt.
+//! Classic RCU with an `AtomicPtr` pointer swap needs `unsafe`
+//! (pointer provenance, memory ordering). This implementation trades
+//! microscopic performance for strictly safe code: a `Mutex<Arc<T>>`
+//! guards only the reference cell, **not** the contents — the contents
+//! are cloned before the lock is released.
 //!
-//! Performance-Profil:
+//! Performance profile:
 //!
-//! * **Reader**: 1× Mutex acquire/release + 1× Arc-Clone (refcount inc).
-//!   Mehrere Reader **serialisieren** kurz auf dem Cell-Mutex — jeder
-//!   haelt ihn nur fuer einen Refcount-Inc, also Sub-Microsekunde.
-//! * **Writer**: 1× Mutex acquire + Copy-on-Write von `T` (= Allocation
-//!   einer neuen Inner-Struktur via Closure) + Arc-Replace + Mutex
+//! * **Reader**: 1× mutex acquire/release + 1× Arc clone (refcount inc).
+//!   Multiple readers **serialize** briefly on the cell mutex — each
+//!   holds it only for a refcount inc, so sub-microsecond.
+//! * **Writer**: 1× mutex acquire + copy-on-write of `T` (= allocation
+//!   of a new inner struct via closure) + Arc replace + mutex
 //!   release.
-//! * **Snapshot-Lebensdauer**: nach Reader-Read existiert die `Arc<T>`-
-//!   Snapshot unabhaengig vom Cell-Mutex. Reader und Writer interferieren
-//!   nicht mehr.
+//! * **Snapshot lifetime**: after a reader read, the `Arc<T>` snapshot
+//!   exists independently of the cell mutex. Readers and writers no
+//!   longer interfere.
 //!
-//! Fuer einen echten `AtomicPtr`-Swap (lock-frei beim Read) waere
-//! `arc-swap` als externe Crate die Standard-Wahl. Wir vermeiden das,
-//! solange std-Mittel ausreichen.
+//! For a true `AtomicPtr` swap (lock-free on read), `arc-swap` as an
+//! external crate would be the standard choice. We avoid it as long as
+//! std means suffice.
 //!
-//! # Anwendung in ZeroDDS
+//! # Usage in ZeroDDS
 //!
 //! `zerodds_rtps::history_cache::LockFreeReadHistoryCache` (D.4 Phase C-2)
-//! nutzt diese Cell als Backing-Store. Monitoring/Tick-Loops koennen
-//! dann Snapshots ziehen, ohne den Writer-Lock zu nehmen — der eigentliche
-//! Insert-Pfad bleibt synchron unter dem Per-Slot-Mutex aus D.4 Phase B.
+//! uses this cell as a backing store. Monitoring/tick loops can then
+//! pull snapshots without taking the writer lock — the actual insert
+//! path stays synchronous under the per-slot mutex from D.4 Phase B.
 
 #[cfg(feature = "alloc")]
 use alloc::sync::Arc;
@@ -44,11 +44,11 @@ use alloc::sync::Arc;
 #[cfg(feature = "std")]
 use std::sync::Mutex;
 
-/// RCU-Cell: read-only-Snapshot via Arc-Clone, write via Copy-on-Write.
+/// RCU cell: read-only snapshot via Arc clone, write via copy-on-write.
 ///
-/// Generisch ueber `T`. `T` muss `Clone` sein — der Writer-Pfad
-/// kopiert den aktuellen Stand und uebergibt eine `&T` an die Mutator-
-/// Closure, die einen neuen `T` zurueckgibt.
+/// Generic over `T`. `T` must be `Clone` — the writer path copies the
+/// current state and passes a `&T` to the mutator closure, which
+/// returns a new `T`.
 ///
 /// ```
 /// use zerodds_foundation::rcu::RcuCell;
@@ -58,7 +58,7 @@ use std::sync::Mutex;
 /// assert_eq!(*r, 0);
 /// cell.write_with(|cur| cur + 1);
 /// assert_eq!(*cell.read(), 1);
-/// // Der alte Snapshot ist unveraendert:
+/// // The old snapshot is unchanged:
 /// assert_eq!(*r, 0);
 /// ```
 #[cfg(feature = "std")]
@@ -69,7 +69,7 @@ pub struct RcuCell<T> {
 
 #[cfg(feature = "std")]
 impl<T> RcuCell<T> {
-    /// Erzeugt eine neue Cell mit Initialwert.
+    /// Creates a new cell with an initial value.
     #[must_use]
     pub fn new(value: T) -> Self {
         Self {
@@ -77,27 +77,27 @@ impl<T> RcuCell<T> {
         }
     }
 
-    /// Liefert einen Read-Snapshot. Der Mutex wird **nur** fuer den
-    /// `Arc::clone()` gehalten — danach ist der zurueckgegebene Arc
-    /// unabhaengig von der Cell.
+    /// Returns a read snapshot. The mutex is held **only** for the
+    /// `Arc::clone()` — afterwards the returned Arc is independent of
+    /// the cell.
     ///
     /// # Panics
-    /// Niemals — Mutex-Poisoning wird via `into_inner` umgangen.
+    /// Never — mutex poisoning is bypassed via `into_inner`.
     #[must_use]
     pub fn read(&self) -> Arc<T> {
         match self.inner.lock() {
             Ok(g) => Arc::clone(&g),
-            // Bei Poisoning den letzten validen Stand zurueckgeben — die
-            // Cell ist read-only erreichbar, weil Inner durch `Arc` und
-            // damit `Clone` strukturiert ist.
+            // On poisoning, return the last valid state — the cell is
+            // reachable read-only because the inner is structured via
+            // `Arc` and therefore `Clone`.
             Err(p) => Arc::clone(&p.into_inner()),
         }
     }
 
-    /// Aktualisiert den Inhalt copy-on-write. Die Closure bekommt eine
-    /// Referenz auf den aktuellen Stand und gibt den neuen Stand
-    /// zurueck. Der Writer haelt den Mutex nur fuer Closure-Lauf +
-    /// Arc-Replace.
+    /// Updates the contents copy-on-write. The closure receives a
+    /// reference to the current state and returns the new state.
+    /// The writer holds the mutex only for the closure run +
+    /// Arc replace.
     pub fn write_with(&self, f: impl FnOnce(&T) -> T)
     where
         T: Clone,
@@ -110,9 +110,9 @@ impl<T> RcuCell<T> {
         *guard = Arc::new(new);
     }
 
-    /// In-place-Mutation auf einer **lokalen Kopie** des Inhalts.
-    /// Sequenz: Snapshot ziehen, klonen, Closure ruft `&mut`-Mutator
-    /// auf der Kopie, dann Arc-Replace.
+    /// In-place mutation on a **local copy** of the contents.
+    /// Sequence: pull snapshot, clone, the closure runs a `&mut`
+    /// mutator on the copy, then Arc replace.
     pub fn modify(&self, f: impl FnOnce(&mut T))
     where
         T: Clone,
@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn concurrent_readers_writers_smoke() {
-        // 1 Writer, 4 Reader, 10ms — kein Deadlock, keine Daten-Verluste.
+        // 1 writer, 4 readers, 10ms — no deadlock, no data loss.
         use std::sync::Arc as StdArc;
         use std::thread;
         use std::time::Duration;
@@ -201,9 +201,9 @@ mod tests {
                 let mut last = 0u64;
                 while !stop.load(std::sync::atomic::Ordering::Relaxed) {
                     let v = *cell.read();
-                    // Wir koennen nur garantieren dass Werte monoton sind;
-                    // u64-wrap nach 1e10 Iterationen ist nicht in 10ms zu
-                    // sehen, also strikt monoton.
+                    // We can only guarantee that values are monotonic;
+                    // a u64 wrap after 1e10 iterations isn't seen in 10ms,
+                    // so strictly monotonic.
                     assert!(v >= last);
                     last = v;
                 }
@@ -221,21 +221,21 @@ mod tests {
 
     #[test]
     fn write_with_recovers_from_poisoned_mutex() {
-        // Wenn ein Writer mit Panic den Mutex vergiftet, soll der naechste
-        // Reader/Writer trotzdem den letzten validen Stand sehen.
+        // If a writer poisons the mutex with a panic, the next
+        // reader/writer should still see the last valid state.
         use std::sync::Arc as StdArc;
         let cell: StdArc<RcuCell<u32>> = StdArc::new(RcuCell::new(7));
         let cell_p = StdArc::clone(&cell);
-        // Panic im Writer-Pfad: closure panic'd, mutex bleibt vergiftet.
+        // Panic in the writer path: closure panicked, mutex stays poisoned.
         let _ = std::thread::spawn(move || {
             cell_p.write_with(|_| panic!("intentional"));
         })
         .join();
-        // read() darf nicht selbst panicen + liefert den letzten validen
-        // Wert (7), weil die Closure den Mutex erst NACH ihrer Ausfuehrung
-        // veroeffentlicht haette.
+        // read() must not panic itself + returns the last valid value
+        // (7), because the closure would only publish the mutex AFTER
+        // its execution.
         assert_eq!(*cell.read(), 7);
-        // write_with auf vergiftetem Mutex — recovers.
+        // write_with on a poisoned mutex — recovers.
         cell.write_with(|c| c + 1);
         assert_eq!(*cell.read(), 8);
     }

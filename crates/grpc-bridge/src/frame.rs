@@ -17,16 +17,16 @@ use core::fmt;
 /// CF = Compressed-Flag (1 byte; 0 = uncompressed, 1 = compressed).
 /// Message-Length = 4-byte big-endian unsigned integer.
 ///
-/// gRPC-Web extension: CF mit MSB=1 (`0x80`) markiert Trailers-Frame
-/// (LPM-encoded HTTP-Trailer-Section).
+/// gRPC-Web extension: CF with MSB=1 (`0x80`) marks a trailers frame
+/// (LPM-encoded HTTP trailer section).
 pub const HEADER_LEN: usize = 5;
 
-/// Codec-Fehler.
+/// Codec error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameError {
-    /// Header < 5 Bytes.
+    /// Header < 5 bytes.
     HeaderTooShort,
-    /// Message-Body reicht nicht in die verfuegbaren Bytes.
+    /// The message body does not fit into the available bytes.
     BodyTruncated,
     /// Message > u32::MAX.
     MessageTooLarge,
@@ -45,14 +45,14 @@ impl fmt::Display for FrameError {
 #[cfg(feature = "std")]
 impl std::error::Error for FrameError {}
 
-/// Encodiert einen Message-Body als Length-Prefixed-Message.
+/// Encodes a message body as a Length-Prefixed-Message.
 ///
-/// `compressed` setzt das Compressed-Flag-Byte (Spec §"Compressed-
-/// Flag"). Wenn `true`, MUST `Message-Encoding`-Header (Caller) auf
-/// einen non-identity-Encoding-Wert gesetzt sein.
+/// `compressed` sets the Compressed-Flag byte (Spec §"Compressed-
+/// Flag"). If `true`, the `Message-Encoding` header (caller) MUST be set
+/// to a non-identity encoding value.
 ///
 /// # Errors
-/// `MessageTooLarge` wenn `payload.len() > u32::MAX`.
+/// `MessageTooLarge` if `payload.len() > u32::MAX`.
 pub fn encode_message(payload: &[u8], compressed: bool) -> Result<Vec<u8>, FrameError> {
     if payload.len() > u32::MAX as usize {
         return Err(FrameError::MessageTooLarge);
@@ -65,26 +65,26 @@ pub fn encode_message(payload: &[u8], compressed: bool) -> Result<Vec<u8>, Frame
     Ok(out)
 }
 
-/// Encodiert einen gRPC-Web-Trailers-Frame (CF-MSB=1).
+/// Encodes a gRPC-Web trailers frame (CF-MSB=1).
 ///
-/// `trailers` ist die UTF-8-encoded Trailer-Section
+/// `trailers` is the UTF-8-encoded trailer section
 /// (`grpc-status: 0\r\ngrpc-message: \r\n` etc.).
 ///
 /// # Errors
-/// `MessageTooLarge` wenn `trailers.len() > u32::MAX`.
+/// `MessageTooLarge` if `trailers.len() > u32::MAX`.
 pub fn encode_web_trailers(trailers: &[u8]) -> Result<Vec<u8>, FrameError> {
     if trailers.len() > u32::MAX as usize {
         return Err(FrameError::MessageTooLarge);
     }
     let mut out = Vec::with_capacity(HEADER_LEN + trailers.len());
-    out.push(0x80); // gRPC-Web Trailer-Marker.
+    out.push(0x80); // gRPC-Web trailer marker.
     #[allow(clippy::cast_possible_truncation)]
     out.extend_from_slice(&(trailers.len() as u32).to_be_bytes());
     out.extend_from_slice(trailers);
     Ok(out)
 }
 
-/// Decodiert eine Length-Prefixed-Message. Liefert
+/// Decodes a Length-Prefixed-Message. Returns
 /// `(compressed_flag, message_bytes, consumed_bytes)`.
 ///
 /// # Errors
@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn back_to_back_messages_can_be_decoded_sequentially() {
-        // Spec: "*Length-Prefixed-Message" — Stream von Messages.
+        // Spec: "*Length-Prefixed-Message" — stream of messages.
         let m1 = encode_message(b"first", false).expect("encode");
         let m2 = encode_message(b"second", false).expect("encode");
         let mut combined = m1.clone();

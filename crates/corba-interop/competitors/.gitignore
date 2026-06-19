@@ -1,0 +1,14 @@
+# Build-Artefakte + generierter IDL-Code (reproduzierbar via build-Skript)
+echo_server
+echo_client
+*.o
+*.class
+*.ior
+# omniORB-generiert
+*/Echo.hh
+*/EchoSK.cc
+# TAO-generiert
+*/EchoC.* */EchoS.* */EchoA.*
+# JacORB-generiert (org.omg-Stubs)
+jacorb/Echo*.java
+jacorb/_EchoStub.java

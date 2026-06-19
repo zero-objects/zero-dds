@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Relationship-Resolver — DDS 1.4 §B.5.
+//! Relationship resolver — DDS 1.4 §B.5.
 //!
-//! Voll implementiert.
+//! Fully implemented.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -11,69 +11,69 @@ use alloc::vec::Vec;
 
 use crate::object_cache::ObjectId;
 
-/// Relationship-Kind. Spec §B.5.1.
+/// Relationship kind. Spec §B.5.1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RelationshipKind {
-    /// `Reference` — referentielle Bindung (Source kann frei
-    /// erstellt werden).
+    /// `Reference` — referential binding (the source can be created
+    /// freely).
     Reference,
-    /// `Composition` — kompositionelle Bindung (Lifecycle gekoppelt).
+    /// `Composition` — compositional binding (lifecycle coupled).
     Composition,
 }
 
 /// Direction. Spec §B.5.2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Direction {
-    /// `Mono` — einseitig.
+    /// `Mono` — one-directional.
     Mono,
-    /// `Bi` — beidseitig.
+    /// `Bi` — bidirectional.
     Bi,
 }
 
-/// Cascade-Mode bei Update/Delete. Spec §B.5.4.
+/// Cascade mode on update/delete. Spec §B.5.4.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CascadeMode {
-    /// `None` — keine Kaskade.
+    /// `None` — no cascade.
     None,
-    /// `Update` — Updates kaskadieren.
+    /// `Update` — updates cascade.
     Update,
-    /// `Delete` — Deletes kaskadieren.
+    /// `Delete` — deletes cascade.
     Delete,
-    /// `All` — alle Kaskaden.
+    /// `All` — all cascades.
     All,
 }
 
-/// Eine konkrete Relationship-Definition.
+/// A concrete relationship definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Relationship {
-    /// Frei waehlbarer Name (z.B. `"orders"`).
+    /// Freely chosen name (e.g. `"orders"`).
     pub name: String,
-    /// Quelle.
+    /// Source.
     pub source: ObjectId,
-    /// Ziel.
+    /// Target.
     pub target: ObjectId,
     /// Kind.
     pub kind: RelationshipKind,
     /// Direction.
     pub direction: Direction,
-    /// Cascade-Mode.
+    /// Cascade mode.
     pub cascade: CascadeMode,
 }
 
-/// Resolver — Index ueber Relationships pro Source-Object.
+/// Resolver — index over relationships per source object.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RelationshipResolver {
     by_source: BTreeMap<ObjectId, Vec<Relationship>>,
 }
 
 impl RelationshipResolver {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Fuege eine Relationship hinzu.
+    /// Add a relationship.
     pub fn add(&mut self, rel: Relationship) {
         let source = rel.source.clone();
         self.by_source.entry(source).or_default().push(rel.clone());
@@ -87,7 +87,7 @@ impl RelationshipResolver {
         }
     }
 
-    /// Liste der Relationships, die von einer Source ausgehen.
+    /// List of relationships originating from a source.
     #[must_use]
     pub fn outgoing(&self, source: &ObjectId) -> Vec<&Relationship> {
         self.by_source
@@ -95,20 +95,20 @@ impl RelationshipResolver {
             .map_or_else(Vec::new, |v| v.iter().collect())
     }
 
-    /// Anzahl gespeicherter Relationships (inkl. inverser bei `Bi`).
+    /// Number of stored relationships (including inverse ones for `Bi`).
     #[must_use]
     pub fn len(&self) -> usize {
         self.by_source.values().map(Vec::len).sum()
     }
 
-    /// `true` wenn keine Relationships.
+    /// `true` if there are no relationships.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.by_source.is_empty()
     }
 
-    /// Spec §B.5.4 — kaskadierende Targets fuer eine Source-ID, wenn
-    /// das Source-Object geloescht wird.
+    /// Spec §B.5.4 — cascading targets for a source ID when the source
+    /// object is deleted.
     #[must_use]
     pub fn cascade_targets_for_delete(&self, source: &ObjectId) -> Vec<ObjectId> {
         self.by_source.get(source).map_or_else(Vec::new, |rels| {
@@ -119,7 +119,7 @@ impl RelationshipResolver {
         })
     }
 
-    /// Spec §B.5.4 — kaskadierende Targets fuer ein Update.
+    /// Spec §B.5.4 — cascading targets for an update.
     #[must_use]
     pub fn cascade_targets_for_update(&self, source: &ObjectId) -> Vec<ObjectId> {
         self.by_source.get(source).map_or_else(Vec::new, |rels| {

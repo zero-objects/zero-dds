@@ -13,8 +13,8 @@
 //!     ...
 //! };
 //! ```
-//! Anonyme Bitfields (kein Name) erhoehen nur den Bit-Cursor.
-//! Summe der Widths > 64 → harter Fehler.
+//! Anonymous bitfields (no name) only advance the bit cursor.
+//! Sum of widths > 64 → hard error.
 //!
 //! ## Bitmask
 //!
@@ -29,9 +29,9 @@
 //! }
 //! /* analog &, ^, ~ */
 //! ```
-//! Cross-Ref: idl4-java analog mit `EnumSet<Flag>`. Der C++-Pfad
-//! nutzt `enum class : underlying_type` direkt — typsicher und
-//! ohne Wrapper.
+//! Cross-ref: idl4-java does the equivalent with `EnumSet<Flag>`. The
+//! C++ path uses `enum class : underlying_type` directly — type-safe and
+//! without a wrapper.
 
 use std::fmt::Write;
 
@@ -48,7 +48,7 @@ fn fmt_err(_e: std::fmt::Error) -> CppGenError {
     CppGenError::Internal("string formatting failed".into())
 }
 
-/// Liefert den passenden `uintN_t`-Underlying-Type fuer ein gegebenes
+/// Returns the matching `uintN_t` underlying type for a given
 /// `bit_bound` (Spec §7.14.3.3 Tab.7.12).
 fn underlying_type_for(bit_bound: u32) -> &'static str {
     match bit_bound {
@@ -59,7 +59,7 @@ fn underlying_type_for(bit_bound: u32) -> &'static str {
     }
 }
 
-/// Bitmask → `enum class : underlying` mit Bitwise-Operatoren.
+/// Bitmask → `enum class : underlying` with bitwise operators.
 pub(crate) fn emit_bitmask(
     out: &mut String,
     indent: &str,
@@ -137,8 +137,8 @@ pub(crate) fn emit_bitmask(
     Ok(())
 }
 
-/// Bitset → `struct` mit `uint64_t value` + Getter/Setter pro
-/// Bitfield (Mask + Shift inline).
+/// Bitset → `struct` with `uint64_t value` + getter/setter per
+/// bitfield (mask + shift inline).
 pub(crate) fn emit_bitset(
     out: &mut String,
     indent: &str,
@@ -147,7 +147,7 @@ pub(crate) fn emit_bitset(
 ) -> Result<(), CppGenError> {
     let name = &b.name.text;
 
-    // Width-Calculation analog Java-Path.
+    // Width calculation, mirroring the Java path.
     let mut total_width: u32 = 0;
     let mut entries: Vec<(Option<&str>, u32, u32)> = Vec::new(); // (name, width, offset)
     for f in &b.bitfields {
@@ -178,7 +178,7 @@ pub(crate) fn emit_bitset(
     writeln!(out).map_err(fmt_err)?;
     for (field_name, width, offset) in &entries {
         let Some(fname) = field_name else {
-            continue; // anonyme Padding-Bitfields nicht exposen
+            continue; // do not expose anonymous padding bitfields
         };
         let mask: u64 = if *width >= 64 {
             u64::MAX

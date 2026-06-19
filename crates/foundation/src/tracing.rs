@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Spans + Histogramme — grobgranulare Tracing-Primitive.
+//! Spans + histograms — coarse-grained tracing primitives.
 //!
-//! Liefert die in-Crate-Primitive; der `zerodds-observability-otlp`-Crate
-//! wandelt sie in OTLP-HTTP-JSON-Frames fuer Collector-Export.
+//! Provides the in-crate primitives; the `zerodds-observability-otlp`
+//! crate converts them into OTLP HTTP JSON frames for collector export.
 //!
-//! ## Design-Linie
+//! ## Design line
 //!
-//! Wie `observability::Event` sind Spans **grobgranular** — wir
-//! instrumentieren Endpoint-Lifecycle und Discovery-Phasen, **nicht**
-//! pro-Sample-Latenzen. Hot-Path-Latenzen kommen aus den Histogrammen
-//! im Aggregat (`Histogram` hier), nicht aus pro-Sample-Spans.
+//! Like `observability::Event`, spans are **coarse-grained** — we
+//! instrument endpoint lifecycle and discovery phases, **not**
+//! per-sample latencies. Hot-path latencies come from the histograms
+//! in aggregate (`Histogram` here), not from per-sample spans.
 //!
-//! ## Wire-Layer-Mapping
+//! ## Wire-layer mapping
 //!
-//! | OTel-Konzept    | Hier                          |
+//! | OTel concept    | Here                          |
 //! | --------------- | ----------------------------- |
 //! | TraceId         | [`TraceId`] (16 byte)         |
 //! | SpanId          | [`SpanId`] (8 byte)           |
@@ -22,51 +22,51 @@
 //! | SpanContext     | [`SpanContext`]               |
 //! | Histogram       | [`Histogram`]                 |
 //!
-//! Kein `tracing`-Crate-Dep — wir bleiben minimal. Adapter zu
-//! `tracing-opentelemetry` ist eine optionale Bridge im Konsumenten.
+//! No `tracing`-crate dependency — we stay minimal. An adapter to
+//! `tracing-opentelemetry` is an optional bridge in the consumer.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::observability::Attribute;
 
-/// 16-Byte W3C-Trace-ID. Niemals all-zero (Zero ist Reserved fuer
-/// "Invalid").
+/// 16-byte W3C trace ID. Never all-zero (zero is reserved for
+/// "invalid").
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TraceId(pub [u8; 16]);
 
 impl TraceId {
-    /// Zero-Sentinel, OTel-Spec: invalid.
+    /// Zero sentinel, OTel spec: invalid.
     pub const INVALID: Self = Self([0u8; 16]);
 
-    /// `true` wenn nicht all-zero.
+    /// `true` if not all-zero.
     #[must_use]
     pub fn is_valid(&self) -> bool {
         self.0.iter().any(|b| *b != 0)
     }
 
-    /// Hex-Lowercase-Repr (OTLP-Wire).
+    /// Hex lowercase repr (OTLP wire).
     #[must_use]
     pub fn to_hex(&self) -> String {
         bytes_to_hex(&self.0)
     }
 }
 
-/// 8-Byte Span-ID.
+/// 8-byte span ID.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SpanId(pub [u8; 8]);
 
 impl SpanId {
-    /// Zero-Sentinel.
+    /// Zero sentinel.
     pub const INVALID: Self = Self([0u8; 8]);
 
-    /// `true` wenn nicht all-zero.
+    /// `true` if not all-zero.
     #[must_use]
     pub fn is_valid(&self) -> bool {
         self.0.iter().any(|b| *b != 0)
     }
 
-    /// Hex-Lowercase-Repr.
+    /// Hex lowercase repr.
     #[must_use]
     pub fn to_hex(&self) -> String {
         bytes_to_hex(&self.0)
@@ -83,21 +83,21 @@ fn bytes_to_hex(b: &[u8]) -> String {
     out
 }
 
-/// Kontext der Span-Beziehung — von welcher Trace, mit welchem
-/// Parent.
+/// Context of the span relationship — from which trace, with which
+/// parent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SpanContext {
-    /// Globale Trace-Identitaet.
+    /// Global trace identity.
     pub trace_id: TraceId,
-    /// Eigene Span-ID.
+    /// Own span ID.
     pub span_id: SpanId,
-    /// Parent-Span (None = Root).
+    /// Parent span (None = root).
     pub parent_span_id: Option<SpanId>,
 }
 
 impl SpanContext {
-    /// Root-Span: erzeugt SpanContext mit zufaellig gewaehlter
-    /// `trace_id` und `span_id` (keine Parent).
+    /// Root span: creates a SpanContext with a randomly chosen
+    /// `trace_id` and `span_id` (no parent).
     #[must_use]
     pub fn new_root(trace_id: TraceId, span_id: SpanId) -> Self {
         Self {
@@ -107,7 +107,7 @@ impl SpanContext {
         }
     }
 
-    /// Child-Span unter einem existierenden Parent.
+    /// Child span under an existing parent.
     #[must_use]
     pub fn child_of(parent: &SpanContext, span_id: SpanId) -> Self {
         Self {
@@ -118,87 +118,87 @@ impl SpanContext {
     }
 }
 
-/// Ergebnis-Status eines Spans (OTel-Spec).
+/// Result status of a span (OTel spec).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpanStatus {
-    /// Default: ohne Status-Override.
+    /// Default: no status override.
     Unset,
-    /// Span hat Erfolg signalisiert.
+    /// Span signaled success.
     Ok,
-    /// Fehler — Beschreibung im Span-Description-Feld.
+    /// Error — description in the span description field.
     Error,
 }
 
-/// Span-Kind nach OTel-Spec — wir benutzen Internal/Server/Client.
+/// Span kind per OTel spec — we use Internal/Server/Client.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpanKind {
-    /// Default fuer in-process Operations.
+    /// Default for in-process operations.
     Internal,
-    /// Eingehende Operation (z.B. SEDP-Discovery-Receive).
+    /// Inbound operation (e.g. SEDP discovery receive).
     Server,
-    /// Ausgehende Operation (z.B. Pub-Write).
+    /// Outbound operation (e.g. pub write).
     Client,
 }
 
-/// Ein abgeschlossener Span.
+/// A completed span.
 ///
-/// In ZeroDDS bauen wir Spans **abgeschlossen** auf — kein
-/// scope-guard-Magic. Caller misst Start/Ende manuell, der Sink
-/// bekommt das Result.
+/// In ZeroDDS we build spans **completed** — no scope-guard magic.
+/// The caller measures start/end manually; the sink receives the
+/// result.
 #[derive(Clone, Debug)]
 pub struct Span {
-    /// Span-Kontext (Trace+Span-ID + Parent).
+    /// Span context (trace+span ID + parent).
     pub context: SpanContext,
-    /// Span-Name (z.B. `"dcps.write"`).
+    /// Span name (e.g. `"dcps.write"`).
     pub name: String,
-    /// Span-Kind.
+    /// Span kind.
     pub kind: SpanKind,
-    /// Start-Time relativ zu einem monotonen Origin (ns).
+    /// Start time relative to a monotonic origin (ns).
     pub start_unix_ns: u64,
-    /// Ende-Time relativ zum gleichen Origin.
+    /// End time relative to the same origin.
     pub end_unix_ns: u64,
     /// Status.
     pub status: SpanStatus,
-    /// Optionale Status-Beschreibung (z.B. Fehler-Message).
+    /// Optional status description (e.g. error message).
     pub status_description: Option<String>,
-    /// Attribute, beliebig viele.
+    /// Attributes, any number.
     pub attributes: Vec<Attribute>,
 }
 
 impl Span {
-    /// Span-Dauer in Nanosekunden.
+    /// Span duration in nanoseconds.
     #[must_use]
     pub fn duration_ns(&self) -> u64 {
         self.end_unix_ns.saturating_sub(self.start_unix_ns)
     }
 }
 
-/// Histogram-Primitive — exponentielle Buckets (Powers of 10) plus
-/// Sum/Count/Min/Max. Bewusst minimalistisch: kein hdrhistogram-Dep,
-/// sondern `[u64; 10]`-Buckets fuer 1ns..10s in 10x-Schritten.
+/// Histogram primitive — exponential buckets (powers of 10) plus
+/// sum/count/min/max. Deliberately minimalistic: no hdrhistogram
+/// dependency, but `[u64; 10]` buckets for 1ns..10s in 10x steps.
 ///
-/// Für volle p99/p999-Aufloesung kann der Konsument `hdrhistogram`
-/// als Sink-Sink benutzen — wir liefern hier nur das aggregat-frei
-/// summierbare Format, das OTLP `Histogram` direkt mappt.
+/// For full p99/p999 resolution the consumer can use `hdrhistogram`
+/// as a downstream sink — here we provide only the aggregate-free
+/// summable format that maps directly to OTLP `Histogram`.
 #[derive(Clone, Debug)]
 pub struct Histogram {
-    /// Logischer Name (z.B. `"dds.write.latency"`).
+    /// Logical name (e.g. `"dds.write.latency"`).
     pub name: String,
-    /// Anzahl aller Records.
+    /// Number of all records.
     pub count: u64,
-    /// Summe aller Records (in der Einheit; default: ns).
+    /// Sum of all records (in the unit; default: ns).
     pub sum_ns: u64,
-    /// Min-Wert.
+    /// Min value.
     pub min_ns: u64,
-    /// Max-Wert.
+    /// Max value.
     pub max_ns: u64,
-    /// Bucket-Counts: `buckets[i]` = wie viele Records `<= 10^i ns`.
-    /// 10 Buckets fuer 1ns (10^0) bis 10s (10^10).
+    /// Bucket counts: `buckets[i]` = how many records `<= 10^i ns`.
+    /// 10 buckets for 1ns (10^0) to 10s (10^10).
     pub buckets: [u64; 11],
 }
 
 impl Histogram {
-    /// Konstruktor mit Namen.
+    /// Constructor with name.
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
         Self {
@@ -211,7 +211,7 @@ impl Histogram {
         }
     }
 
-    /// Misst einen Wert in Nanosekunden.
+    /// Records a value in nanoseconds.
     pub fn record_ns(&mut self, ns: u64) {
         self.count = self.count.saturating_add(1);
         self.sum_ns = self.sum_ns.saturating_add(ns);
@@ -225,7 +225,7 @@ impl Histogram {
         self.buckets[idx] = self.buckets[idx].saturating_add(1);
     }
 
-    /// Mittelwert in Nanosekunden, oder 0 wenn count=0.
+    /// Mean in nanoseconds, or 0 if count=0.
     #[must_use]
     pub fn mean_ns(&self) -> u64 {
         if self.count == 0 {
@@ -235,8 +235,8 @@ impl Histogram {
         }
     }
 
-    /// Bucket-Boundaries als Array — fuer OTLP-Export.
-    /// `bounds[i]` ist der obere Cutoff von `buckets[i]` in Nanosekunden.
+    /// Bucket boundaries as an array — for OTLP export.
+    /// `bounds[i]` is the upper cutoff of `buckets[i]` in nanoseconds.
     #[must_use]
     pub fn bucket_bounds() -> [u64; 11] {
         [
@@ -254,7 +254,7 @@ impl Histogram {
         ]
     }
 
-    /// Reset auf leeren Zustand.
+    /// Reset to empty state.
     pub fn reset(&mut self) {
         self.count = 0;
         self.sum_ns = 0;
@@ -274,15 +274,15 @@ fn bucket_index(ns: u64) -> usize {
     bounds.len() - 1
 }
 
-/// Standardisierte Histogram-Namen (Spec-Plan F.3).
+/// Standardized histogram names (spec plan F.3).
 pub mod metric_name {
-    /// Pub-Write-Latenz (User → Wire).
+    /// Pub write latency (user → wire).
     pub const DDS_WRITE_LATENCY: &str = "dds.write.latency";
-    /// Sub-Read-Latenz (Wire → User).
+    /// Sub read latency (wire → user).
     pub const DDS_READ_LATENCY: &str = "dds.read.latency";
-    /// Heartbeat-Roundtrip-Time.
+    /// Heartbeat round-trip time.
     pub const DDS_HEARTBEAT_RTT: &str = "dds.heartbeat.rtt";
-    /// SPDP→SEDP→Match-Dauer.
+    /// SPDP→SEDP→match duration.
     pub const DDS_DISCOVERY_MATCH_DURATION: &str = "dds.discovery.match.duration";
 }
 

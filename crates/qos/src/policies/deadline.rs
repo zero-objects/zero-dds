@@ -10,7 +10,7 @@ use crate::duration::Duration;
 
 /// DeadlineQosPolicy.
 ///
-/// Default: `DURATION_INFINITE` (§2.2.3.7.3) — keine Deadline-Ueberwachung.
+/// Default: `DURATION_INFINITE` (§2.2.3.7.3) — no deadline monitoring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DeadlineQosPolicy {
     /// Period.

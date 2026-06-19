@@ -8,24 +8,24 @@
 //! the Keep Alive time period, it MUST close the Network Connection
 //! to the Client as if the network had failed."
 //!
-//! Wir kapseln den Keep-Alive-Timer als Wall-Clock-Tick. Caller
-//! ruft `record_packet()` bei jedem eingehenden Packet und `tick()`
-//! periodisch (z.B. einmal pro Sekunde).
+//! We encapsulate the keep-alive timer as a wall-clock tick. The caller
+//! calls `record_packet()` on every incoming packet and `tick()`
+//! periodically (e.g. once per second).
 
 use core::time::Duration;
 use std::time::Instant;
 
-/// Keep-Alive-Tracker pro Session.
+/// Keep-alive tracker per session.
 #[derive(Debug, Clone)]
 pub struct KeepAliveTracker {
-    /// Spec §3.1.2.10 — `Keep Alive`-Wert in Sekunden. `0` = disabled.
+    /// Spec §3.1.2.10 — `Keep Alive` value in seconds. `0` = disabled.
     keep_alive_secs: u16,
-    /// Letzter Zeitpunkt eines empfangenen Packets.
+    /// Last time a packet was received.
     last_packet: Instant,
 }
 
 impl KeepAliveTracker {
-    /// Konstruktor — wird beim CONNECT-Empfang aktiviert.
+    /// Constructor — activated on CONNECT receipt.
     #[must_use]
     pub fn new(keep_alive_secs: u16) -> Self {
         Self {
@@ -40,14 +40,14 @@ impl KeepAliveTracker {
         self.keep_alive_secs > 0
     }
 
-    /// Caller ruft das bei jedem eingehenden Packet (einschliesslich
+    /// The caller calls this on every incoming packet (including
     /// PINGREQ).
     pub fn record_packet(&mut self) {
         self.last_packet = Instant::now();
     }
 
-    /// Spec §3.1.2.10 — Server schliesst Connection nach 1.5 ×
-    /// Keep-Alive-Period ohne Packet.
+    /// Spec §3.1.2.10 — the server closes the connection after 1.5 ×
+    /// the keep-alive period without a packet.
     #[must_use]
     pub fn is_expired(&self) -> bool {
         if !self.is_enabled() {
@@ -57,7 +57,7 @@ impl KeepAliveTracker {
         self.last_packet.elapsed() > limit
     }
 
-    /// Verbleibende Zeit bis zum Expiry (oder `None` wenn Keep-Alive
+    /// Remaining time until expiry (or `None` if keep-alive is
     /// disabled).
     #[must_use]
     pub fn remaining(&self) -> Option<Duration> {

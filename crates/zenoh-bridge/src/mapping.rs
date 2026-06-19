@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Pure-Rust-Mapping zwischen DDS-Topic-Namen und Zenoh-Key-Expressions.
-//! Lebt ohne `zenoh`-Dep, damit das Workspace-CI ohne externe Deps
-//! gegen die Bridge-Logik testen kann.
+//! Pure-Rust mapping between DDS topic names and Zenoh key expressions.
+//! Lives without the `zenoh` dep so the workspace CI can test the
+//! bridge logic without external deps.
 
 extern crate alloc;
 use alloc::string::String;
@@ -11,17 +11,17 @@ use alloc::vec::Vec;
 
 use zerodds_qos::{DurabilityKind, ReliabilityKind};
 
-/// Zenoh-Key-Expression-Konventionen.
-#[allow(dead_code)] // nur unter feature `zenoh-runtime` als Builder-Default genutzt
+/// Zenoh key-expression conventions.
+#[allow(dead_code)] // only used under the `zenoh-runtime` feature as a builder default
 pub const DEFAULT_PREFIX: &str = "dds";
 
-/// Bildet einen DDS-Topic-Namen (mit optionalen Partition-Tags) auf eine
-/// Zenoh-Key-Expression ab. Reservierte DDS-Sonderzeichen (`*`, `?`, `[`,
-/// `]`) werden mit `_` substituiert — Zenoh-KeyExpr-Spec verbietet sie.
+/// Maps a DDS topic name (with optional partition tags) to a
+/// Zenoh key expression. Reserved DDS special characters (`*`, `?`, `[`,
+/// `]`) are substituted with `_` — the Zenoh KeyExpr spec forbids them.
 ///
-/// Layout: `<prefix>/<partition>/<topic>` (Partition leer → ohne Slot).
+/// Layout: `<prefix>/<partition>/<topic>` (empty partition → no slot).
 ///
-/// # Beispiele
+/// # Examples
 /// ```
 /// use zerodds_zenoh_bridge::key_expr_for_topic;
 /// assert_eq!(key_expr_for_topic("dds", "", "Chatter"), "dds/Chatter");
@@ -48,7 +48,7 @@ fn sanitize(s: &str) -> String {
         .collect()
 }
 
-/// Zenoh-Reliability-Aequivalent zu einer DDS-Reliability-QoS.
+/// Zenoh reliability equivalent of a DDS reliability QoS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZenohReliability {
     /// Reliable end-to-end (Zenoh: `Reliability::Reliable`).
@@ -57,23 +57,23 @@ pub enum ZenohReliability {
     BestEffort,
 }
 
-/// Zenoh-CongestionControl-Aequivalent.
+/// Zenoh CongestionControl equivalent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZenohCongestion {
-    /// Block (Spec-Aequivalent zu DDS Reliable + max_blocking_time).
+    /// Block (spec equivalent of DDS Reliable + max_blocking_time).
     Block,
-    /// Drop (Spec-Aequivalent zu DDS BestEffort + Volatile).
+    /// Drop (spec equivalent of DDS BestEffort + Volatile).
     Drop,
 }
 
-/// Mapped einen DDS-QoS-Tupel auf Zenoh-Reliability + Congestion-Control.
+/// Maps a DDS QoS tuple to Zenoh reliability + congestion control.
 ///
-/// # Ableitung
+/// # Derivation
 /// - DDS Reliable → Zenoh Reliable.
 /// - DDS BestEffort → Zenoh BestEffort.
 /// - DDS Durability=TransientLocal/Transient/Persistent → Block (Zenoh
-///   schickt nicht ohne Subscriber-Window — TransientLocal-Aequivalent
-///   ist Zenoh's `Storage`-Plugin, hier nur Block-Pressure).
+///   does not send without a subscriber window — the TransientLocal equivalent
+///   is Zenoh's `Storage` plugin, here only block pressure).
 /// - DDS Durability=Volatile → Drop.
 #[must_use]
 pub fn dds_qos_to_zenoh(
@@ -91,13 +91,13 @@ pub fn dds_qos_to_zenoh(
     (rel, cong)
 }
 
-/// Topic-Map: bidirektionale Zuordnung DDS-Topic ↔ Zenoh-KeyExpr.
+/// Topic map: bidirectional mapping DDS topic ↔ Zenoh KeyExpr.
 #[derive(Debug, Default, Clone)]
 pub struct TopicMap {
     entries: Vec<TopicMapEntry>,
 }
 
-/// Einzelner Topic-Eintrag.
+/// A single topic entry.
 #[derive(Debug, Clone)]
 pub struct TopicMapEntry {
     /// DDS-Topic-Name.
@@ -113,30 +113,30 @@ pub struct TopicMapEntry {
 }
 
 impl TopicMap {
-    /// Neue, leere Map.
+    /// New, empty map.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Fuegt einen Eintrag hinzu.
+    /// Adds an entry.
     pub fn add(&mut self, entry: TopicMapEntry) {
         self.entries.push(entry);
     }
 
-    /// Schaut einen Eintrag nach DDS-Topic-Namen nach.
+    /// Looks up an entry by DDS topic name.
     #[must_use]
     pub fn by_topic(&self, topic: &str) -> Option<&TopicMapEntry> {
         self.entries.iter().find(|e| e.topic == topic)
     }
 
-    /// Schaut einen Eintrag nach Zenoh-Key-Expression nach.
+    /// Looks up an entry by Zenoh key expression.
     #[must_use]
     pub fn by_key_expr(&self, key_expr: &str) -> Option<&TopicMapEntry> {
         self.entries.iter().find(|e| e.key_expr == key_expr)
     }
 
-    /// Liefert alle Eintraege.
+    /// Returns all entries.
     #[must_use]
     pub fn entries(&self) -> &[TopicMapEntry] {
         &self.entries
@@ -163,8 +163,8 @@ mod tests {
 
     #[test]
     fn key_expr_sanitizes_wildcards() {
-        // Zenoh erlaubt `*` als Wildcard im Subscribe-Pattern, aber
-        // als Topic-Name-Bestandteil ist es ambig — wir ersetzen mit `_`.
+        // Zenoh allows `*` as a wildcard in the subscribe pattern, but
+        // as part of a topic name it is ambiguous — we replace it with `_`.
         assert_eq!(key_expr_for_topic("dds", "", "Foo*Bar"), "dds/Foo_Bar");
         assert_eq!(key_expr_for_topic("dds", "", "Topic[1]"), "dds/Topic_1_");
     }

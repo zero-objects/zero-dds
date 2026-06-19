@@ -1,14 +1,14 @@
-//! E2E-Wire-Roundtrip-Tests fuer DDS-RPC.
+//! E2E wire-roundtrip tests for DDS-RPC.
 //!
-//! Verifiziert den vollen Request-Reply-Zyklus zwischen In-Process-
-//! Requester und -Replier durch reine Wire-Bytes (ohne RTPS/Network):
+//! Verifies the full request-reply cycle between in-process
+//! requester and replier through pure wire bytes (without RTPS/network):
 //!
-//! 1. Requester encoded RequestHeader + Payload.
-//! 2. "Wire" liefert die Bytes.
-//! 3. Replier decoded das Frame, extrahiert RequestHeader + Payload.
-//! 4. Replier baut ReplyHeader (mit related_request_id = request.SampleIdentity).
-//! 5. Replier encoded ReplyHeader + Reply-Payload.
-//! 6. Requester decoded Reply, korreliert via SampleIdentity.
+//! 1. The requester encodes RequestHeader + payload.
+//! 2. The "wire" delivers the bytes.
+//! 3. The replier decodes the frame, extracts RequestHeader + payload.
+//! 4. The replier builds ReplyHeader (with related_request_id = request.SampleIdentity).
+//! 5. The replier encodes ReplyHeader + reply payload.
+//! 6. The requester decodes the reply, correlates via SampleIdentity.
 //!
 //! Spec-Anker: DDS-RPC 1.0 §7.5 (Wire), §7.6 (Correlation).
 
@@ -32,7 +32,7 @@ use zerodds_rpc::wire_codec::{
     decode_reply_frame, decode_request_frame, encode_reply_frame, encode_request_frame,
 };
 
-/// Hilfsstruktur: Simuliert eine in-Process-Wire-Queue.
+/// Helper struct: simulates an in-process wire queue.
 #[derive(Default)]
 struct InProcWire {
     request_queue: Vec<Vec<u8>>,
@@ -66,15 +66,15 @@ impl InProcWire {
 fn single_request_reply_roundtrip() {
     let mut wire = InProcWire::default();
 
-    // Step 1: Requester baut Request mit korrelations-eindeutigem
-    // SampleIdentity (writer-GUID + sequence-number).
+    // Step 1: the requester builds a request with a correlation-unique
+    // SampleIdentity (writer GUID + sequence number).
     let req_id = SampleIdentity::new([0xAA; 16], 1);
     let req_hdr = RequestHeader::new(req_id, "Calculator::add");
     let req_payload = vec![0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00]; // a=1, b=2
     let req_frame = encode_request_frame(&req_hdr, &req_payload);
     wire.put_request(req_frame);
 
-    // Step 2-3: Replier holt das Frame, decoded.
+    // Step 2-3: the replier fetches the frame, decodes.
     let frame = wire.take_request().unwrap();
     let (decoded_hdr, decoded_payload) = decode_request_frame(&frame).unwrap();
     assert_eq!(decoded_hdr, req_hdr);
@@ -104,8 +104,8 @@ fn single_request_reply_roundtrip() {
 
 #[test]
 fn many_concurrent_request_reply_pairs() {
-    // 100 Requests mit unique SampleIdentities, dann 100 Replies in
-    // umgekehrter Reihenfolge — Korrelation muss trotzdem aufgehen.
+    // 100 requests with unique SampleIdentities, then 100 replies in
+    // reverse order — correlation must still work out.
     let mut wire = InProcWire::default();
     let mut sent_ids = Vec::new();
 
@@ -117,7 +117,7 @@ fn many_concurrent_request_reply_pairs() {
         sent_ids.push(id);
     }
 
-    // Replier verarbeitet in Reverse-Order.
+    // The replier processes in reverse order.
     let mut frames: Vec<Vec<u8>> = Vec::new();
     while let Some(frame) = wire.take_request() {
         frames.push(frame);
@@ -133,7 +133,7 @@ fn many_concurrent_request_reply_pairs() {
         wire.put_reply(encode_reply_frame(&reply_hdr, &[]));
     }
 
-    // Requester sammelt alle Replies und matcht jede gegen sent_ids.
+    // The requester collects all replies and matches each against sent_ids.
     let mut matched = 0;
     while let Some(frame) = wire.take_reply() {
         let (reply_hdr, _) = decode_reply_frame(&frame).unwrap();

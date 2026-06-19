@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CLI fuer `zerodds-mqtt-bridged`. Spec §2.
+//! CLI for `zerodds-mqtt-bridged`. Spec §2.
 
 use std::string::String;
 use std::vec::Vec;
 
-/// Geparste CLI-Args.
+/// Parsed CLI args.
 #[derive(Debug, Clone, Default)]
 pub struct CliArgs {
     /// `--config <FILE>`.
@@ -39,18 +39,18 @@ pub struct CliArgs {
     pub help: bool,
 }
 
-/// Fehler beim CLI-Parse.
+/// Error during CLI parsing.
 #[derive(Debug, Clone)]
 pub enum CliError {
-    /// Unbekannter Flag.
+    /// Unknown flag.
     UnknownFlag(String),
-    /// Flag braucht Value.
+    /// Flag needs a value.
     MissingValue(String),
-    /// Wert nicht parsbar.
+    /// Value not parsable.
     InvalidValue {
-        /// Flag-Name.
+        /// Flag name.
         flag: String,
-        /// Roher Wert.
+        /// Raw value.
         value: String,
     },
 }
@@ -67,36 +67,36 @@ impl core::fmt::Display for CliError {
 
 impl std::error::Error for CliError {}
 
-/// Help-Text.
+/// Help text.
 pub const HELP_TEXT: &str = "\
-zerodds-mqtt-bridged 1.0 — DDS↔MQTT-5-Bridge-Daemon
+zerodds-mqtt-bridged 1.0 — DDS↔MQTT-5 bridge daemon
 
 USAGE:
     zerodds-mqtt-bridged [OPTIONS]
 
 OPTIONS:
-    --config <FILE>        Path zur Config-File (YAML)
-    --broker <URL>         MQTT-Broker-URL (mqtt://, mqtts://)
-    --client-id <ID>       MQTT-Client-Id
-    --domain <ID>          DDS-Domain-ID (Default 0)
-    --username <USER>      MQTT-Username
-    --password <PASS>      MQTT-Password
-    --tls-ca <FILE>        CA-Cert — L5-stub
-    --tls-cert <FILE>      Client-Cert — L5-stub
-    --tls-key <FILE>       Client-Key — L5-stub
-    --topic <DDS:MQTT>     Topic-Override (mehrfach)
+    --config <FILE>        Path to the config file (YAML)
+    --broker <URL>         MQTT broker URL (mqtt://, mqtts://)
+    --client-id <ID>       MQTT client ID
+    --domain <ID>          DDS domain ID (default 0)
+    --username <USER>      MQTT username
+    --password <PASS>      MQTT password
+    --tls-ca <FILE>        CA cert — L5 stub
+    --tls-cert <FILE>      Client cert — L5 stub
+    --tls-key <FILE>       Client key — L5 stub
+    --topic <DDS:MQTT>     Topic override (repeatable)
     --log-level <LEVEL>    trace/debug/info/warn/error
-    --metrics <ADDR>       Prometheus-Listen — L5-stub
-    --version              Versions-Info
-    --help                 Hilfe
+    --metrics <ADDR>       Prometheus listen — L5 stub
+    --version              Version info
+    --help                 Help
 
-EXIT-CODES:
-    0   normaler Shutdown
-    1   Config-Fehler
-    2   Broker-Connect-Fehler
-    3   DDS-Discovery-Fehler
-    4   TLS-Fehler
-    5   Auth-Fehler
+EXIT CODES:
+    0   normal shutdown
+    1   config error
+    2   broker connect error
+    3   DDS discovery error
+    4   TLS error
+    5   auth error
 ";
 
 /// Versions-String.

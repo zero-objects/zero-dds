@@ -28,12 +28,22 @@ public sealed class EmptyTypeSupport : IDdsTopicType<Empty>
     public byte[] Encode(Empty sample, EndianMode endian)
     {
         var w = new Xcdr2Writer(endian);
+        EncodeInto(w, sample);
         return w.ToArray();
+    }
+
+    public void EncodeInto(Xcdr2Writer w, Empty sample)
+    {
     }
 
     public Empty Decode(ReadOnlySpan<byte> bytes)
     {
         var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
+        return DecodeFrom(r);
+    }
+
+    public Empty DecodeFrom(Xcdr2Reader r)
+    {
         return new Empty
         {
         };

@@ -1,6 +1,6 @@
-//! Integrationstest: alle 16 Submessages werden in eine Message
-//! gepackt, encodiert und decodiert. Validiert das Padding zwischen
-//! Submessages und die Outer-Header-Variante "ohne ClientKey".
+//! Integration test: all 16 submessages are packed into one message,
+//! encoded and decoded. Validates the padding between
+//! submessages and the outer header variant "without ClientKey".
 
 #![allow(
     clippy::expect_used,

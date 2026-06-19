@@ -1,7 +1,7 @@
-//! Property-Based Tests fuer CDR-Encode-Decode-Roundtrip.
+//! Property-based tests for the CDR encode-decode roundtrip.
 //!
-//! Invariante: `decode(encode(x)) == x` fuer alle Primitive-Typen,
-//! beide Endiannesses. Spec-Anker: OMG-CDR (Common Data
+//! Invariant: `decode(encode(x)) == x` for all primitive types,
+//! both endiannesses. Spec anchor: OMG-CDR (Common Data
 //! Representation), XCDR1/XCDR2.
 
 #![allow(
@@ -101,7 +101,7 @@ proptest! {
 
     #[test]
     fn roundtrip_f32_le(v in any::<u32>()) {
-        // Verwende u32-Bits, dann zu f32 — vermeidet NaN-vergleichs-Stolperfalle.
+        // Use u32 bits, then to f32 — avoids the NaN-comparison pitfall.
         let f = f32::from_bits(v);
         if f.is_nan() {
             return Ok(());

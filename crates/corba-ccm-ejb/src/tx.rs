@@ -14,8 +14,8 @@
 //!   };
 //! ```
 //!
-//! `javax.transaction.Status` (JTA 1.3 §3.5) hat die selben 10 Werte
-//! mit Integer-Codes 0-9. Wir mappen 1:1.
+//! `javax.transaction.Status` (JTA 1.3 §3.5) has the same 10 values
+//! with integer codes 0-9. We map them 1:1.
 
 use core::fmt;
 
@@ -88,7 +88,7 @@ impl fmt::Display for TxStatus {
     }
 }
 
-/// Mapping CosTransactions → JTA. Beide Enums sind 1:1.
+/// Mapping CosTransactions → JTA. Both enums are 1:1.
 #[must_use]
 pub fn jta_status_from_cos(s: TxStatus) -> JtaStatus {
     match s {
@@ -105,7 +105,7 @@ pub fn jta_status_from_cos(s: TxStatus) -> JtaStatus {
     }
 }
 
-/// Mapping JTA → CosTransactions. Beide Enums sind 1:1.
+/// Mapping JTA → CosTransactions. Both enums are 1:1.
 #[must_use]
 pub fn jta_status_to_cos(s: JtaStatus) -> TxStatus {
     match s {
@@ -122,49 +122,49 @@ pub fn jta_status_to_cos(s: JtaStatus) -> TxStatus {
     }
 }
 
-/// Bridge — verbindet eine CosTransactions::Current mit einem
-/// JTA-UserTransaction. Trait-Definition; Caller-Layer liefert die
-/// JNI-/JVM-Brücke.
+/// Bridge — connects a CosTransactions::Current with a
+/// JTA UserTransaction. Trait definition; the caller layer provides
+/// the JNI/JVM bridge.
 pub trait TxBridge {
-    /// Aktuellen Status der Bridge-Transaction.
+    /// Current status of the bridge transaction.
     fn status(&self) -> TxStatus;
 
-    /// Begin neue Transaction (CosTransactions: `Current::begin()`,
+    /// Begin a new transaction (CosTransactions: `Current::begin()`,
     /// JTA: `UserTransaction.begin()`).
     ///
     /// # Errors
-    /// Static-String wenn der Begin fehlschlaegt.
+    /// Static string if the begin fails.
     fn begin(&mut self) -> Result<(), &'static str>;
 
     /// Commit (CosTransactions: `Current::commit()`, JTA:
     /// `UserTransaction.commit()`).
     ///
     /// # Errors
-    /// Static-String bei Heuristic/Rollback.
+    /// Static string on heuristic/rollback.
     fn commit(&mut self) -> Result<(), &'static str>;
 
     /// Rollback.
     ///
     /// # Errors
-    /// Static-String wenn der Rollback fehlschlaegt.
+    /// Static string if the rollback fails.
     fn rollback(&mut self) -> Result<(), &'static str>;
 
-    /// Markiert die Transaction zur Rollback-only (CosTransactions:
+    /// Marks the transaction as rollback-only (CosTransactions:
     /// `Current::rollback_only()`, JTA: `setRollbackOnly()`).
     ///
     /// # Errors
-    /// Static-String wenn keine Transaction aktiv.
+    /// Static string if no transaction is active.
     fn set_rollback_only(&mut self) -> Result<(), &'static str>;
 }
 
-/// In-Memory-Bridge fuer Tests + Default-Verhalten.
+/// In-memory bridge for tests + default behavior.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct InMemoryTxBridge {
     state: Option<TxStatus>,
 }
 
 impl InMemoryTxBridge {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()

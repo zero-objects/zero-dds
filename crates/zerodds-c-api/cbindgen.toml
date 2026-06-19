@@ -20,6 +20,19 @@ header = """
  * on FFI boundaries. Bytes returned via zerodds_reader_take() must
  * be released with zerodds_buffer_free().
  */
+
+/*
+ * Condition handle types are OPAQUE on the C ABI (the binding holds an
+ * opaque pointer only). On the Rust side they are repr(C) so the generic
+ * condition dispatcher can read the ConditionKind discriminant at offset 0,
+ * but their fields (incl. String/Vec in QueryCondition) must NOT leak into
+ * this header - hence they are excluded from cbindgen and forward-declared
+ * here. See crates/zerodds-c-api/src/condition_ffi.rs (F-PSM-CXX-readcond-segv).
+ */
+typedef struct zerodds_ZeroDdsGuardCondition zerodds_ZeroDdsGuardCondition;
+typedef struct zerodds_ZeroDdsStatusCondition zerodds_ZeroDdsStatusCondition;
+typedef struct zerodds_ZeroDdsReadCondition zerodds_ZeroDdsReadCondition;
+typedef struct zerodds_ZeroDdsQueryCondition zerodds_ZeroDdsQueryCondition;
 """
 include_guard = "ZERODDS_H"
 autogen_warning = "/* WARNING: AUTO-GENERATED — DO NOT EDIT */"
@@ -28,7 +41,7 @@ sys_includes = ["stdint.h", "stddef.h", "stdbool.h"]
 includes = []
 documentation = true
 documentation_style = "doxy"
-# C++-Inkludierbarkeit: alle Funktionen + Typen in extern "C" wrappen.
+# C++ includability: wrap all functions + types in extern "C".
 cpp_compat = true
 
 [parse]
@@ -39,5 +52,11 @@ prefix = "zerodds_"
 item_types = ["functions", "structs", "enums", "typedefs", "opaque"]
 exclude = [
     "ConditionKind",
+    # Condition handles are opaque on the C ABI (forward-declared in the
+    # header preamble); their #[repr(C)] Rust layout must not be emitted.
+    "ZeroDdsGuardCondition",
+    "ZeroDdsStatusCondition",
+    "ZeroDdsReadCondition",
+    "ZeroDdsQueryCondition",
 ]
 

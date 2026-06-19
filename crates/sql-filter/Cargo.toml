@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "OMG DDS 1.4 §B.2.1 ContentFilteredTopic Filter-Expression Parser + Evaluator (SQL-92-Subset mit %N-Parametern, BETWEEN, LIKE)."
+description = "OMG DDS 1.4 §B.2.1 ContentFilteredTopic filter-expression parser + evaluator (SQL-92 subset with %N parameters, BETWEEN, LIKE)."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-sql-filter"
 readme = "README.md"
@@ -21,6 +21,7 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std"]
 std = ["alloc"]
 alloc = []

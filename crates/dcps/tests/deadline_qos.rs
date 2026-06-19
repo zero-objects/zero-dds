@@ -1,16 +1,16 @@
-//! Deadline QoS Tests.
+//! Deadline QoS tests.
 //!
-//! Testet Counter-Semantik fuer `OFFERED_DEADLINE_MISSED_STATUS` und
+//! Tests the counter semantics for `OFFERED_DEADLINE_MISSED_STATUS` and
 //! `REQUESTED_DEADLINE_MISSED_STATUS` (OMG DDS 1.4 §2.2.4.2.9 + .11).
 //!
-//! Der Tick-Loop im DcpsRuntime-Event-Loop checkt alle ~20 ms
-//! ob ein Writer/Reader in seinem Deadline-Fenster ein Sample gehabt hat.
-//! Wenn nicht, inkrementiert er den entsprechenden Missed-Counter.
+//! The tick loop in the DcpsRuntime event loop checks every ~20 ms
+//! whether a writer/reader has had a sample within its deadline window.
+//! If not, it increments the corresponding missed counter.
 //!
-//! **WP-3.2a (dieser Commit):** lokales Deadline-Monitoring + Counter-
-//! Public-API. **WP-3.2b (Folge-Commit):** QoS-Compat-Check zwischen
-//! Peers via SEDP (braucht Deadline-PID in Publication/Subscription-
-//! BuiltinTopicData).
+//! **WP-3.2a (this commit):** local deadline monitoring + counter
+//! public API. **WP-3.2b (follow-up commit):** QoS compatibility check
+//! between peers via SEDP (needs the deadline PID in the
+//! Publication/Subscription BuiltinTopicData).
 
 #![allow(
     clippy::expect_used,
@@ -51,8 +51,8 @@ fn fast_cfg() -> RuntimeConfig {
 
 #[test]
 fn deadline_default_is_infinite_so_counter_stays_zero() {
-    // Default-Deadline = INFINITE. Auch wenn Writer nie schreibt darf
-    // kein Missed-Counter hochgehen. Sonst waere die API-Shape kaputt.
+    // Default deadline = INFINITE. Even if the writer never writes, no
+    // missed counter may go up. Otherwise the API shape would be broken.
     let factory = DomainParticipantFactory::instance();
     let p = factory
         .create_participant_with_config(
@@ -73,7 +73,7 @@ fn deadline_default_is_infinite_so_counter_stays_zero() {
     assert_eq!(
         writer.offered_deadline_missed_count(),
         0,
-        "INFINITE-Deadline darf NIEMALS inkrementieren"
+        "INFINITE deadline must NEVER increment"
     );
 }
 
@@ -87,9 +87,9 @@ mod linux {
 
     #[test]
     fn offered_deadline_increments_when_writer_misses_period() {
-        // Writer mit Deadline=150ms, keine Writes → Counter muss
-        // innerhalb 1s mehrere Male hochgehen (jedes 150-ms-Fenster
-        // inkrementiert genau einmal).
+        // Writer with deadline=150ms, no writes → the counter must
+        // go up several times within 1s (each 150-ms window
+        // increments exactly once).
         let factory = DomainParticipantFactory::instance();
         let p = factory
             .create_participant_with_config(
@@ -113,7 +113,7 @@ mod linux {
             .create_datawriter::<ShapeType>(&topic, qos)
             .expect("writer");
 
-        // Ersten Write sofort machen, dann 1 s warten ohne weitere Writes.
+        // Do the first write immediately, then wait 1 s without further writes.
         writer
             .write(&ShapeType::new("RED", 0, 0, 30))
             .expect("write");
@@ -122,7 +122,7 @@ mod linux {
         let missed = writer.offered_deadline_missed_count();
         assert!(
             (3..=10).contains(&missed),
-            "erwartet ~6-7 Missed bei 1000ms/150ms=6.67, got {missed}"
+            "expected ~6-7 missed at 1000ms/150ms=6.67, got {missed}"
         );
     }
 
@@ -156,13 +156,13 @@ mod linux {
         let missed = reader.requested_deadline_missed_count();
         assert!(
             (3..=10).contains(&missed),
-            "erwartet ~6-7 Missed bei 1000ms/150ms, got {missed}"
+            "expected ~6-7 missed at 1000ms/150ms, got {missed}"
         );
     }
 
     #[test]
     fn writes_within_deadline_keep_counter_at_zero() {
-        // Writer mit Deadline=500ms, Writes alle 100ms → Counter bleibt 0.
+        // Writer with deadline=500ms, writes every 100ms → counter stays 0.
         let factory = DomainParticipantFactory::instance();
         let p = factory
             .create_participant_with_config(
@@ -186,7 +186,7 @@ mod linux {
             .create_datawriter::<ShapeType>(&topic, qos)
             .expect("writer");
 
-        // 10 Writes à 100 ms = 1 Sekunde, alle innerhalb Deadline.
+        // 10 writes at 100 ms = 1 second, all within the deadline.
         for i in 0..10 {
             writer
                 .write(&ShapeType::new("RED", i, i, 30))
@@ -197,7 +197,7 @@ mod linux {
         assert_eq!(
             writer.offered_deadline_missed_count(),
             0,
-            "write-Rate (100ms) < Deadline (500ms) → KEINE Misses"
+            "write rate (100ms) < deadline (500ms) → NO misses"
         );
     }
 }

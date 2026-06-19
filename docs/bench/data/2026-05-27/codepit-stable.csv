@@ -1,0 +1,6 @@
+host,ping,pong,payload,domain,n,min,p50,p90,p99,p999,max,status
+codepit,zerodds,zerodds,0,150,2000,21.861,23.986,37.02,56.377,105.81,121.059,ok
+codepit,cyclone,cyclone,0,151,2000,28.855,35.347,49.974,84.45,138.462,180.492,ok
+codepit,fastdds,fastdds,0,152,2000,36.098,46.628,67.948,93.698,190.892,425.356,ok
+codepit,rti,rti,0,153,2000,21.291,29.436,41.96,67.718,231.689,750.652,ok
+codepit,opendds,opendds,0,154,2000,193.096,338.27,518.833,782.351,1667.7,1738.66,ok

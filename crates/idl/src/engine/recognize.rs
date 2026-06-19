@@ -2,92 +2,91 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Earley-Recognition: Scan, Predict, Complete.
 //!
-//! Diese Stufe entscheidet, **ob** eine Token-Sequenz einer Grammar
-//! entspricht. Sie produziert die State-Set-Sequenz `S₀ … Sₙ`, aus der
-//! eine spaetere Forest-Construction (Task 2.4) den Concrete-Syntax-Tree
-//! ableitet. Akzeptanz entspricht: in `Sₙ` existiert ein abgeschlossenes
-//! Item, dessen Production die Start-Production der Grammar ist und
-//! dessen Origin `0` ist.
+//! This stage decides **whether** a token sequence matches a grammar.
+//! It produces the state-set sequence `S₀ … Sₙ`, from which
+//! a later forest construction (Task 2.4) derives the concrete syntax tree.
+//! Acceptance means: in `Sₙ` there exists a completed
+//! item whose production is the start production of the grammar and
+//! whose origin is `0`.
 //!
-//! Algorithmus (klassisch, Aycock/Horspool 2002):
+//! Algorithm (classic, Aycock/Horspool 2002):
 //!
 //! ```text
-//! Initialisiere S₀ mit allen Items [Start → · α, 0] fuer jede Alternative
-//! der Start-Production.
+//! Initialize S₀ with all items [Start → · α, 0] for each alternative
+//! of the start production.
 //!
-//! fuer k = 0 .. n:
-//!   wiederhole bis Sₖ fix:
-//!     fuer jedes Item it in Sₖ:
-//!       wenn it.is_complete:
-//!         COMPLETE: fuer jedes Item w in S_{it.origin} mit
+//! for k = 0 .. n:
+//!   repeat until Sₖ is fixed:
+//!     for each item it in Sₖ:
+//!       if it.is_complete:
+//!         COMPLETE: for each item w in S_{it.origin} with
 //!                   w.next_symbol == Nonterminal(it.production):
-//!           fuege w.advance() in Sₖ ein
-//!       sonst wenn it.next_symbol == Nonterminal(B):
-//!         PREDICT: fuer jede Alternative von B:
-//!           fuege [B → · γ, k] in Sₖ ein
-//!       sonst wenn it.next_symbol == Terminal(t) und tokens[k] == t:
-//!         (SCAN wird unten am Ende dieses k abgehandelt)
-//!   SCAN: fuer jedes Item it in Sₖ mit next_symbol == Terminal(t) und
-//!         tokens[k] == t: fuege it.advance() in Sₖ₊₁ ein.
+//!           insert w.advance() into Sₖ
+//!       else if it.next_symbol == Nonterminal(B):
+//!         PREDICT: for each alternative of B:
+//!           insert [B → · γ, k] into Sₖ
+//!       else if it.next_symbol == Terminal(t) and tokens[k] == t:
+//!         (SCAN is handled below at the end of this k)
+//!   SCAN: for each item it in Sₖ with next_symbol == Terminal(t) and
+//!         tokens[k] == t: insert it.advance() into Sₖ₊₁.
 //!
-//! akzeptiert wenn Sₙ ein Item enthaelt mit:
-//!   production == grammar.start, dot am Ende, origin == 0.
+//! accepted if Sₙ contains an item with:
+//!   production == grammar.start, dot at the end, origin == 0.
 //! ```
 //!
-//! Repeat- und Choice-Symbole werden vom Engine-Recognizer **nicht direkt**
-//! behandelt. Stattdessen erfolgt vor der Recognition ein Compile-Pass
-//! ([`crate::grammar::compile`]), der EBNF-Konstrukte zu rekursiven
-//! Hilfs-Productions desugart. Die [`crate::engine::Engine`]-Facade
-//! ruft diesen Pass automatisch in [`crate::engine::Engine::new`] auf.
-//! Direkt-Recognition auf einer rohen [`Grammar`] mit Repeat/Choice
-//! ignoriert die Konstrukte und kann valides Input ablehnen — daher
-//! immer ueber `Engine`/`parse` arbeiten.
+//! Repeat and choice symbols are **not handled directly** by the engine
+//! recognizer. Instead, a compile pass runs before recognition
+//! ([`crate::grammar::compile`]) that desugars EBNF constructs into recursive
+//! helper productions. The [`crate::engine::Engine`] facade
+//! calls this pass automatically in [`crate::engine::Engine::new`].
+//! Direct recognition on a raw [`Grammar`] with repeat/choice
+//! ignores the constructs and may reject valid input — therefore
+//! always work via `Engine`/`parse`.
 
 use crate::grammar::{Grammar, GrammarLike, ProductionId, Symbol, TokenKind};
 use crate::lexer::Token;
 
 use super::state::{EarleyItem, StateSet};
 
-/// Ergebnis eines Recognition-Laufs.
+/// Result of a recognition run.
 #[derive(Debug, Clone)]
 pub struct RecognitionResult {
-    /// Die State-Sets `S₀ … Sₙ`. `state_sets[0]` ist der Init-Set,
-    /// `state_sets[n]` der Final-Set nach Konsum aller Tokens.
+    /// The state sets `S₀ … Sₙ`. `state_sets[0]` is the init set,
+    /// `state_sets[n]` the final set after consuming all tokens.
     pub state_sets: Vec<StateSet>,
-    /// `true`, wenn die Grammar die Token-Sequenz akzeptiert.
+    /// `true` if the grammar accepts the token sequence.
     pub accepted: bool,
 }
 
-/// Recognizer-Frontend.
+/// Recognizer frontend.
 ///
-/// `G` ist generisch ueber [`crate::grammar::GrammarLike`], sodass der
-/// Recognizer sowohl auf rohen [`Grammar`]-Konstanten als auch auf
-/// EBNF-desugarten [`crate::grammar::compile::CompiledGrammar`]-Werten
-/// arbeitet.
+/// `G` is generic over [`crate::grammar::GrammarLike`], so that the
+/// recognizer works both on raw [`Grammar`] constants and on
+/// EBNF-desugared [`crate::grammar::compile::CompiledGrammar`] values.
 #[derive(Debug, Clone, Copy)]
 pub struct Recognizer<'g, G: GrammarLike + ?Sized = Grammar> {
     grammar: &'g G,
 }
 
 impl<'g, G: GrammarLike + ?Sized> Recognizer<'g, G> {
-    /// Konstruiert einen Recognizer fuer die gegebene Grammar.
+    /// Constructs a recognizer for the given grammar.
     #[must_use]
     pub const fn new(grammar: &'g G) -> Self {
         Self { grammar }
     }
 
-    /// Fuehrt Earley-Recognition fuer eine Token-Sequenz aus.
+    /// Runs Earley recognition for a token sequence.
     ///
-    /// Die Engine baut `tokens.len() + 1` State-Sets auf. Pro Position `k`
-    /// laeuft ein Fixpoint aus Predict + Complete; Scan vermittelt zwischen
-    /// `Sₖ` und `Sₖ₊₁`. Spans der Tokens werden hier nicht direkt konsumiert,
-    /// stehen aber den nachgelagerten Stufen (CST-Bau, AST-Bau,
-    /// Diagnostiken) zur Verfuegung.
+    /// The engine builds `tokens.len() + 1` state sets. Per position `k`
+    /// a fixpoint of predict + complete runs; scan mediates between
+    /// `Sₖ` and `Sₖ₊₁`. The tokens' spans are not consumed directly here,
+    /// but are available to the downstream stages (CST build, AST build,
+    /// diagnostics).
     #[must_use]
     pub fn recognize(&self, tokens: &[Token<'_>]) -> RecognitionResult {
         let mut state_sets: Vec<StateSet> = (0..=tokens.len()).map(|_| StateSet::new()).collect();
 
-        // Init S₀ mit allen Alternativen der Start-Production.
+        // Init S₀ with all alternatives of the start production.
         let start_id = self.grammar.start();
         if let Some(start) = self.grammar.production(start_id) {
             for (alt_idx, _) in start.alternatives.iter().enumerate() {
@@ -109,10 +108,10 @@ impl<'g, G: GrammarLike + ?Sized> Recognizer<'g, G> {
         }
     }
 
-    /// Wiederhole Predict + Complete auf Sₖ bis zum Fixpoint.
+    /// Repeat predict + complete on Sₖ until the fixpoint.
     fn close_set_inner(&self, state_sets: &mut [StateSet], k: usize) {
-        // Index-basierte Schleife, weil `state_sets[k]` waehrend der
-        // Iteration durch Predict/Complete waechst.
+        // Index-based loop, because `state_sets[k]` grows during the
+        // iteration via predict/complete.
         let mut i = 0;
         while i < state_sets[k].items().len() {
             let item = state_sets[k].items()[i];
@@ -122,13 +121,13 @@ impl<'g, G: GrammarLike + ?Sized> Recognizer<'g, G> {
                 match symbol {
                     Symbol::Nonterminal(b) => self.predict(state_sets, k, *b),
                     Symbol::Terminal(_) => {
-                        // Scan-Kandidat — behandelt am Set-Ende durch scan().
+                        // Scan candidate — handled at the set end by scan().
                     }
                     Symbol::Repeat(_, _) | Symbol::Choice(_) => {
-                        // Repeat/Choice werden via
-                        // Desugaring-Pass spaeter zu reinem CFG umgeformt.
-                        // Hier ignorieren — Recognition kann dadurch ein
-                        // valides Input ablehnen, was in Tests vermieden wird.
+                        // Repeat/choice are transformed into pure CFG later
+                        // via the desugaring pass.
+                        // Ignore here — recognition may thereby reject
+                        // valid input, which is avoided in tests.
                     }
                 }
             }
@@ -136,12 +135,12 @@ impl<'g, G: GrammarLike + ?Sized> Recognizer<'g, G> {
         }
     }
 
-    /// PREDICT: fuer ein Item `[A → α · B β, j]` in Sₖ alle Alternativen von
-    /// B als `[B → · γ, k]` in Sₖ einfuegen.
+    /// PREDICT: for an item `[A → α · B β, j]` in Sₖ, insert all alternatives of
+    /// B as `[B → · γ, k]` into Sₖ.
     fn predict(&self, state_sets: &mut [StateSet], k: usize, nonterminal: ProductionId) {
-        // coverage: justified — Dangling-Production wird vom Validator
-        // (grammar::validate::check_dangling_references) als Error gemeldet;
-        // hier nur defensiver Fallback, in gueltigen Grammars unerreichbar.
+        // coverage: justified — a dangling production is reported as an error by the validator
+        // (grammar::validate::check_dangling_references);
+        // here only a defensive fallback, unreachable in valid grammars.
         let Some(production) = self.grammar.production(nonterminal) else {
             return;
         };
@@ -151,12 +150,12 @@ impl<'g, G: GrammarLike + ?Sized> Recognizer<'g, G> {
         }
     }
 
-    /// COMPLETE: fuer ein abgeschlossenes Item `[B → γ ·, j]` in Sₖ alle
-    /// wartenden Items in Sⱼ vom Form `[A → α · B β, i]` advancen.
+    /// COMPLETE: for a completed item `[B → γ ·, j]` in Sₖ, advance all
+    /// waiting items in Sⱼ of the form `[A → α · B β, i]`.
     fn complete(&self, state_sets: &mut [StateSet], k: usize, completed: EarleyItem) {
         let origin = completed.origin;
-        // Snapshot der Items in S_origin, damit wir mut-borrow auf S_k
-        // halten koennen ohne Konflikt.
+        // Snapshot of the items in S_origin, so we can hold a mut-borrow on S_k
+        // without conflict.
         let waiting: Vec<EarleyItem> = state_sets[origin]
             .items()
             .iter()
@@ -173,11 +172,11 @@ impl<'g, G: GrammarLike + ?Sized> Recognizer<'g, G> {
         }
     }
 
-    /// SCAN: liest Token `tokens[k]` und advanced alle Sₖ-Items, die auf
-    /// dieses Terminal warten, in Sₖ₊₁.
+    /// SCAN: reads token `tokens[k]` and advances all Sₖ items waiting on
+    /// this terminal into Sₖ₊₁.
     fn scan(&self, state_sets: &mut [StateSet], k: usize, token: TokenKind) {
-        // Snapshot der zu advancenden Items; mut-borrow auf S_{k+1} kommt
-        // anschliessend.
+        // Snapshot of the items to advance; the mut-borrow on S_{k+1} comes
+        // afterwards.
         let advancing: Vec<EarleyItem> = state_sets[k]
             .items()
             .iter()
@@ -194,12 +193,12 @@ impl<'g, G: GrammarLike + ?Sized> Recognizer<'g, G> {
         }
     }
 
-    /// Akzeptanz-Check: `Sₙ` enthaelt ein abgeschlossenes Item, dessen
-    /// Production die Start-Production ist und dessen Origin `0` ist.
+    /// Acceptance check: `Sₙ` contains a completed item whose
+    /// production is the start production and whose origin is `0`.
     fn is_accepted(&self, state_sets: &[StateSet], n: usize) -> bool {
-        // coverage: justified — `recognize()` initialisiert state_sets mit
-        // Laenge tokens.len()+1 und uebergibt n=tokens.len(), Index ist also
-        // immer in-range. Defensiver Fallback fuer kuenftige API-Aenderungen.
+        // coverage: justified — `recognize()` initializes state_sets with
+        // length tokens.len()+1 and passes n=tokens.len(), so the index is
+        // always in range. Defensive fallback for future API changes.
         let Some(final_set) = state_sets.get(n) else {
             return false;
         };
@@ -221,13 +220,13 @@ mod tests {
         section: "0.0",
     };
 
-    /// Test-Helper: erzeugt einen synthetischen Token aus einem TokenKind.
-    /// Macht Recognizer-Tests unabhaengig von echtem Source-Text.
+    /// Test helper: creates a synthetic token from a TokenKind.
+    /// Makes recognizer tests independent of real source text.
     fn t(kind: TokenKind) -> Token<'static> {
         Token::synthetic(kind)
     }
 
-    /// Hilfs-Konstruktor: einzelne Production aus Index, Name, Alternative-Liste.
+    /// Helper constructor: a single production from index, name, alternative list.
     const fn prod(id: u32, name: &'static str, alts: &'static [Alternative]) -> Production {
         Production {
             id: ProductionId(id),
@@ -247,7 +246,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Test-Grammatiken (alle const, im Binary-Segment).
+    // Test grammars (all const, in the binary segment).
     // -----------------------------------------------------------------
 
     /// `A ::= "x"`
@@ -413,7 +412,7 @@ mod tests {
 
     #[test]
     fn recognize_left_recursive_grammar() {
-        // "n + n + n" — drei "n", zwei "+"
+        // "n + n + n" — three "n", two "+"
         let r = Recognizer::new(&G_LEFT_RECURSIVE);
         let tokens = [
             t(TokenKind::Keyword("n")),
@@ -457,7 +456,7 @@ mod tests {
     #[test]
     fn rejects_partial_input() {
         let r = Recognizer::new(&G_SEQUENCE);
-        // Erwartet "x" "y", input nur "x".
+        // Expects "x" "y", input only "x".
         assert!(!r.recognize(&[t(TokenKind::Keyword("x"))]).accepted);
     }
 
@@ -490,8 +489,8 @@ mod tests {
 
     #[test]
     fn predict_populates_initial_set_with_alternatives() {
-        // Bei G_ALTERNATIVES sollte S0 zwei Items enthalten —
-        // beide Alternativen der Start-Production.
+        // For G_ALTERNATIVES, S0 should contain two items —
+        // both alternatives of the start production.
         let r = Recognizer::new(&G_ALTERNATIVES);
         let result = r.recognize(&[]);
         assert_eq!(result.state_sets[0].len(), 2);
@@ -505,9 +504,9 @@ mod tests {
 
     #[test]
     fn predict_descends_into_nonterminal() {
-        // G_NESTED: A ::= B "y", B ::= "x". S0 sollte sowohl Items fuer A
-        // (alt 0, dot 0) als auch fuer B (alt 0, dot 0) enthalten,
-        // weil Predict ueber das Nonterminal B in A's RHS triggert.
+        // G_NESTED: A ::= B "y", B ::= "x". S0 should contain items for both A
+        // (alt 0, dot 0) and B (alt 0, dot 0),
+        // because predict triggers via the nonterminal B in A's RHS.
         let r = Recognizer::new(&G_NESTED);
         let result = r.recognize(&[]);
         let items = result.state_sets[0].items();
@@ -517,9 +516,8 @@ mod tests {
 
     #[test]
     fn complete_advances_parent_item() {
-        // G_NESTED nach Konsum von "x": Item [B -> "x" ., 0] in S1
-        // muss das wartende [A -> . B "y", 0] zu [A -> B . "y", 0] in S1
-        // advancen.
+        // G_NESTED after consuming "x": item [B -> "x" ., 0] in S1
+        // must advance the waiting [A -> . B "y", 0] to [A -> B . "y", 0] in S1.
         let r = Recognizer::new(&G_NESTED);
         let result = r.recognize(&[t(TokenKind::Keyword("x"))]);
         let s1 = &result.state_sets[1];
@@ -546,8 +544,8 @@ mod tests {
     #[test]
     fn repeat_and_choice_symbols_are_skipped_phase_zero() {
         // A ::= [ "x" ] | "y"   (Optional-Repeat in Alt 0, Terminal in Alt 1).
-        // Engine ignoriert Repeat/Choice — Alt 0 traegt also nicht zur
-        // Recognition bei. Eingabe "y" akzeptiert via Alt 1.
+        // The engine ignores repeat/choice — so alt 0 does not contribute to
+        // recognition. Input "y" accepted via alt 1.
         const G_REPEAT: Grammar = Grammar {
             name: "with_repeat",
             version: IdlVersion::V4_2,
@@ -566,21 +564,21 @@ mod tests {
             token_rules: &[],
         };
         let r = Recognizer::new(&G_REPEAT);
-        // Alt 1 traegt Recognition: "y" wird akzeptiert.
+        // Alt 1 carries recognition: "y" is accepted.
         assert!(r.recognize(&[t(TokenKind::Keyword("y"))]).accepted);
-        // Alt 0 wird nicht behandelt: "x" wird nicht akzeptiert (waere mit
-        // korrektem Repeat-Handling akzeptiert worden — .
+        // Alt 0 is not handled: "x" is not accepted (would have been
+        // accepted with correct repeat handling — .
         assert!(!r.recognize(&[t(TokenKind::Keyword("x"))]).accepted);
     }
 
     #[test]
     fn duplicate_predicts_do_not_explode_state_set() {
-        // Regression: bei direkter Linksrekursion produziert Predict
-        // wiederholt dasselbe Item — Dedup im StateSet muss greifen.
+        // Regression: on direct left recursion, predict repeatedly
+        // produces the same item — dedup in the StateSet must kick in.
         let r = Recognizer::new(&G_LEFT_RECURSIVE);
         let result = r.recognize(&[t(TokenKind::Keyword("n"))]);
-        // S0 sollte nur eine begrenzte Anzahl distinct items enthalten,
-        // nicht endlos durch Re-Predict explodieren.
+        // S0 should contain only a limited number of distinct items,
+        // not explode endlessly through re-predict.
         assert!(result.state_sets[0].len() < 10);
     }
 }

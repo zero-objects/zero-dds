@@ -1,4 +1,4 @@
-//! Stable-Rust Fuzz-Smoke-Tests fuer den MQTT-5.0-Wire-Decoder.
+//! Stable-Rust fuzz smoke tests for the MQTT-5.0 wire decoder.
 //!
 //! Spec: MQTT 5.0 §1.5 (data representation) + §3 (control packets).
 

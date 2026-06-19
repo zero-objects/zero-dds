@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Foreign-vendor cross-vendor durability INGEST harness type.
+// FINAL extensibility on purpose: a final type makes CycloneDDS advertise an
+// XCDR1-only writer, which is exactly the case the ZeroDDS ingest reader must
+// accept (data_representation [0, 2]). Unkeyed (no @key) → NoKey writer that
+// matches the service's `serve_typed(..., keyed=false)` reader.
+module dur {
+  struct Sample {
+    sequence<octet> data;
+  };
+};

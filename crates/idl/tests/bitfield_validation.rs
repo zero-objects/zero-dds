@@ -1,4 +1,4 @@
-//! Integration-Test: Bitfield/Bitmask-Validierung (C4.6 §1.9).
+//! Integration test: bitfield/bitmask validation (C4.6 §1.9).
 
 #![allow(
     clippy::expect_used,

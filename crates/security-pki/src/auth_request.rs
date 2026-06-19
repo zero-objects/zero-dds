@@ -3,10 +3,9 @@
 
 //! `AuthRequestMessageToken` — DDS-Security 1.2 §9.3.2.5.1.1.
 //!
-//! Pre-Handshake-Token, vom Initiator via Builtin-Topic
-//! `ParticipantStatelessMessage` an einen unbekannten Remote-
-//! Participant geschickt, um die `handshake_request_message`-Sequenz
-//! anzustossen.
+//! Pre-handshake token, sent by the initiator via the built-in topic
+//! `ParticipantStatelessMessage` to an unknown remote
+//! participant, to kick off the `handshake_request_message` sequence.
 //!
 //! ```text
 //!   class_id  = "DDS:Auth:PKI-DH:1.0+AuthReq"
@@ -14,9 +13,9 @@
 //!   binary_properties = { future_challenge = <256-bit nonce> }
 //! ```
 //!
-//! Spec §9.3.2.5.1.1: das `future_challenge` muss im nachfolgenden
-//! `HandshakeRequest`-Token als `challenge1` echoed werden, um Replay-
-//! Attacks zu verhindern.
+//! Spec §9.3.2.5.1.1: the `future_challenge` must be echoed in the subsequent
+//! `HandshakeRequest` token as `challenge1`, to prevent replay
+//! attacks.
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -24,22 +23,22 @@ use alloc::vec::Vec;
 
 use crate::identity::PkiError;
 
-/// Class-ID laut Spec §9.3.2.5.1.1.
+/// Class ID per spec §9.3.2.5.1.1.
 pub const AUTH_REQUEST_CLASS_ID: &str = "DDS:Auth:PKI-DH:1.0+AuthReq";
 
-/// Property-Key fuer den Future-Challenge-Wert.
+/// Property key for the future-challenge value.
 pub const FUTURE_CHALLENGE_KEY: &str = "future_challenge";
 
 /// `AuthRequestMessageToken`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthRequestToken {
-    /// 32-Byte (256-bit) Nonce, der im naechsten HandshakeRequest
-    /// als `challenge1` wieder auftauchen muss.
+    /// 32-byte (256-bit) nonce that must reappear in the next HandshakeRequest
+    /// as `challenge1`.
     pub future_challenge: [u8; 32],
 }
 
 impl AuthRequestToken {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(challenge: [u8; 32]) -> Self {
         Self {
@@ -47,9 +46,9 @@ impl AuthRequestToken {
         }
     }
 
-    /// Encode zu Wire-Bytes (TLV: 1-Byte-Class-ID-Length + Class-ID +
-    /// 1-Byte-Key-Length + Key + 2-Byte-BE-Value-Length + Value).
-    /// Caller-Layer mappt das in den Builtin-Topic-Wire-Format.
+    /// Encode to wire bytes (TLV: 1-byte class-ID length + class ID +
+    /// 1-byte key length + key + 2-byte BE value length + value).
+    /// The caller layer maps this into the built-in-topic wire format.
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let class_id = AUTH_REQUEST_CLASS_ID.as_bytes();
@@ -67,11 +66,11 @@ impl AuthRequestToken {
     /// Decode Wire-Bytes.
     ///
     /// # Errors
-    /// `PkiError::InvalidPem` (re-used als Generic-Decode-Error) wenn:
-    /// * Class-ID falsch
-    /// * Property-Key falsch
-    /// * Value-Length != 32
-    /// * Buffer truncated
+    /// `PkiError::InvalidPem` (re-used as a generic decode error) if:
+    /// * class ID wrong
+    /// * property key wrong
+    /// * value length != 32
+    /// * buffer truncated
     pub fn decode(bytes: &[u8]) -> Result<Self, PkiError> {
         let mut pos = 0usize;
         if bytes.len() <= pos {
@@ -131,8 +130,8 @@ impl AuthRequestToken {
     }
 }
 
-/// Helper: Property-Liste-Format fuer das DDS-Security-Plugin-API
-/// (Caller-Layer baut daraus den Builtin-Topic-Sample).
+/// Helper: property-list format for the DDS-Security plugin API
+/// (the caller layer builds the built-in-topic sample from it).
 #[must_use]
 pub fn auth_request_properties(token: &AuthRequestToken) -> Vec<(String, Vec<u8>)> {
     alloc::vec![(

@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Error-Familie fuer `zerodds-idl-python`-Codegen.
+//! Error family for the `zerodds-idl-python` codegen.
 
 use core::fmt;
 
-/// Codegen-Fehler beim Emittieren von Python-Code.
+/// Codegen error while emitting Python code.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdlPythonError {
-    /// IDL-Konstrukt ausserhalb des unterstuetzten Python-Mapping-Scopes
-    /// (z.B. Bitmask, Map, Fixed, Any, Valuetype, Interface). Phase-2-
-    /// Material.
+    /// IDL construct outside the supported Python mapping scope
+    /// (e.g. bitmask, map, fixed, any, valuetype, interface). Phase-2
+    /// material.
     Unsupported(String),
-    /// Sprach-Map-Konflikt: ein IDL-Identifier kollidiert mit einem
-    /// Python-Reserved-Word und der konfigurierte Escape-Mode wuerde
-    /// dazu fuehren, dass zwei verschiedene IDL-Namen denselben Python-
-    /// Namen ergeben.
+    /// Language-map conflict: an IDL identifier collides with a
+    /// Python reserved word and the configured escape mode would
+    /// cause two different IDL names to yield the same Python
+    /// name.
     NameConflict(String),
 }
 
@@ -30,5 +30,5 @@ impl fmt::Display for IdlPythonError {
 
 impl std::error::Error for IdlPythonError {}
 
-/// Spezialisiertes `Result` fuer Codegen-Aufrufe.
+/// Specialized `Result` for codegen calls.
 pub type Result<T> = core::result::Result<T, IdlPythonError>;

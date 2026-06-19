@@ -1,14 +1,14 @@
-// dds_xtypes.idl — repraesentative Auswahl aus OMG XTypes 1.3
+// dds_xtypes.idl — representative selection from OMG XTypes 1.3
 // (https://www.omg.org/spec/DDS-XTypes/1.3).
 //
-// Hand-kuratierte Fixture fuer Week-4-Productions:
+// Hand-curated fixture for week-4 productions:
 // - @extensibility (FINAL/APPENDABLE/MUTABLE)
 // - @key, @id, @optional, @nested
 // - bitset / bitfield / bitfield<N, dest>
 // - bitmask
-// - map<K,V> bounded und unbounded
-// - struct-Inheritance
-// - enum mit @default_literal
+// - map<K,V> bounded and unbounded
+// - struct inheritance
+// - enum with @default_literal
 // - typedef map / typedef sequence
 
 module XTypes {
@@ -109,7 +109,7 @@ module XTypes {
     };
 
     // ----------------------------------------------------------------
-    // Service Interface mit annotierten Operationen
+    // Service interface with annotated operations
     // ----------------------------------------------------------------
 
     @verbatim

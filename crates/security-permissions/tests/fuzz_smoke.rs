@@ -1,6 +1,6 @@
-//! Stable-Rust Fuzz-Smoke-Tests fuer DDS-Security Permissions/Governance-Parser.
+//! Stable-Rust fuzz smoke tests for the DDS-Security permissions/governance parser.
 //!
-//! Spec: DDS-Security 1.2 §9.4 (Access-Control, Governance + Permissions XML).
+//! Spec: DDS-Security 1.2 §9.4 (access control, governance + permissions XML).
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
@@ -77,8 +77,8 @@ fn empty_inputs_no_panic() {
 
 #[test]
 fn deeply_nested_unclosed_tags_no_panic() {
-    // Spec-relevante DoS-Resistenz: < bei 50 unclosed Tags muss
-    // entweder gracefull error oder akzeptiert werden, nicht panic.
+    // Spec-relevant DoS resistance: with 50 unclosed tags it must
+    // either error gracefully or be accepted, not panic.
     let mut s = String::new();
     for _ in 0..50 {
         s.push_str("<rule>");

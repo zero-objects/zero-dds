@@ -1,36 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Crate `zerodds-lint` — Custom-Lints und Projekt-Regeln fuer ZeroDDS.
+//! Crate `zerodds-lint` — custom lints and project rules for ZeroDDS.
 //!
-//! Safety classification: **TOOLING** (kein Runtime-Code, nicht safety-relevant).
-//! Public-Strategy: **internal-only** (🏠) — wird nicht nach crates.io gepusht.
+//! Safety classification: **TOOLING** (no runtime code, not safety-relevant).
+//! Public strategy: **internal-only** (🏠) — not pushed to crates.io.
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Tooling — laeuft via `cargo run -p zerodds-lint -- check` als CLI-Binary.
-//! Wird in CI (`.gitlab-ci.yml::zerodds-lint`) und im pre-commit-Hook
-//! (`scripts/pre-commit.sh`) ausgefuehrt; erzwingt 0 errors / 0 warnings
-//! workspace-weit als RC1-DoD-Gate.
+//! Tooling — runs via `cargo run -p zerodds-lint -- check` as a CLI binary.
+//! Runs in CI (`.gitlab-ci.yml::zerodds-lint`) and in the pre-commit hook
+//! (`scripts/pre-commit.sh`); enforces 0 errors / 0 warnings
+//! workspace-wide as the RC1-DoD gate.
 //!
-//! Implementiert die in `docs/architecture/04_safety_by_architecture.md §3.4`
-//! spezifizierten Projekt-Lints **AST-basiert auf stable Rust**, ohne
-//! Nightly-Toolchain oder dylint.
+//! Implements the project lints specified in
+//! `docs/architecture/04_safety_by_architecture.md §3.4` **AST-based on stable
+//! Rust**, without a nightly toolchain or dylint.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! Tooling-Crate — die Public-API ist primaer fuer den eingebetteten
-//! Binary `zerodds-lint`. Externe Konsumenten der Lint-Library sind moeglich
-//! (z.B. eigener Lint-Runner mit Custom-Lints), bleiben aber Phase-2.
+//! Tooling crate — the public API is primarily for the embedded
+//! `zerodds-lint` binary. External consumers of the lint library are possible
+//! (e.g. a custom lint runner with custom lints), but remain phase 2.
 //!
 //! - [`classification::SafetyClass`] / [`classification::parse_from_lib_rs`]
-//!   / [`classification::read_from_file`] — Safety-Klasse pro Crate aus
-//!   `lib.rs`-Doc-Kommentar.
-//! - [`scanner::CrateInfo`] / [`scanner::scan_workspace`] — Workspace-Walk
-//!   via `cargo_metadata`, Datei-Enumeration.
+//!   / [`classification::read_from_file`] — safety class per crate from the
+//!   `lib.rs` doc comment.
+//! - [`scanner::CrateInfo`] / [`scanner::scan_workspace`] — workspace walk
+//!   via `cargo_metadata`, file enumeration.
 //! - [`diagnostic::Diagnostic`] / [`diagnostic::Severity`] —
-//!   Diagnose-Datentyp mit Display-Impl.
+//!   diagnostic data type with a Display impl.
 //! - [`lints::FileLint`] / [`lints::CrateLint`] / [`lints::FileLintContext`]
-//!   — Trait-Familie + Default-Lints-Liste.
+//!   — trait family + default lints list.
 //! - [`runner::run`] / [`runner::RunConfig`] / [`runner::RunReport`] /
 //!   [`runner::locate_workspace_root`] — orchestriert Scanner + Lints +
 //!   Reporter.
@@ -46,7 +46,7 @@
 //! - [`lints::safety_classification_present::SafetyClassificationPresent`]
 //!   (Crate-Level)
 //!
-//! ## Aufruf
+//! ## Invocation
 //!
 //! ```text
 //! cargo run -p zerodds-lint -- check

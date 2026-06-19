@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+// Cross-ORB-Valuetype-Capture-Fixture (#1 Valuetype-Wire §15.3.4).
+// JacORB 3.9 is the reference ORB for byte-exact wire conformance.
+valuetype Point {
+  public long x;
+  public long y;
+};

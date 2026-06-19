@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Standard-Span-Namen + Attr-Keys (Spec §5).
+//! Standard span names + attr keys (spec §5).
 
-/// Span: User-Code → DataWriter::write.
+/// Span: user code → DataWriter::write.
 pub const SPAN_DDS_PUBLISH: &str = "dds.publish";
-/// Span: Sample serialisieren (CDR/PL_CDR1/PL_CDR2).
+/// Span: serialize a sample (CDR/PL_CDR1/PL_CDR2).
 pub const SPAN_DDS_SAMPLE_SERIALIZE: &str = "dds.sample.serialize";
-/// Span: Sample uebermitteln (Transport-Layer).
+/// Span: transmit a sample (transport layer).
 pub const SPAN_DDS_SAMPLE_TRANSMIT: &str = "dds.sample.transmit";
-/// Span: Sample empfangen (Reader-Side, ggf. mit follows-from).
+/// Span: sample received (reader side, possibly with follows-from).
 pub const SPAN_DDS_SAMPLE_RECEIVE: &str = "dds.sample.receive";
-/// Span: Sample deserialisieren.
+/// Span: deserialize a sample.
 pub const SPAN_DDS_SAMPLE_DESERIALIZE: &str = "dds.sample.deserialize";
-/// Span: Sample an User-Reader liefern.
+/// Span: deliver a sample to the user reader.
 pub const SPAN_DDS_SAMPLE_DELIVER: &str = "dds.sample.deliver";
-/// Span: RTPS-Reliable-NACK-Cycle.
+/// Span: RTPS reliable NACK cycle.
 pub const SPAN_DDS_RTPS_RELIABLE_NACK: &str = "dds.rtps.reliable.nack";
-/// Span: Discovery-Match-Computation.
+/// Span: discovery match computation.
 pub const SPAN_DDS_DISCOVERY_MATCH: &str = "dds.discovery.match";
-/// Span: Security-Authenticate-Handshake.
+/// Span: security authenticate handshake.
 pub const SPAN_DDS_SECURITY_AUTHENTICATE: &str = "dds.security.authenticate";
 
-/// Liste aller 9 Spec-Span-Namen.
+/// List of all 9 spec span names.
 pub const ALL: &[&str] = &[
     SPAN_DDS_PUBLISH,
     SPAN_DDS_SAMPLE_SERIALIZE,
@@ -45,7 +45,7 @@ pub mod attr {
     pub const DDS_READER_GUID: &str = "dds.reader_guid";
     /// Source-GUID (Receiver-Side).
     pub const DDS_SOURCE_GUID: &str = "dds.source_guid";
-    /// Sample-Groesse in Bytes.
+    /// Sample size in bytes.
     pub const DDS_SAMPLE_SIZE: &str = "dds.sample_size";
     /// Wire-Repraesentation (CDR / PL_CDR1 / PL_CDR2 / XCDR2).
     pub const DDS_REPRESENTATION: &str = "dds.representation";
@@ -53,7 +53,7 @@ pub mod attr {
     pub const DDS_TRANSPORT: &str = "dds.transport";
     /// Destination-Locator.
     pub const DDS_DESTINATION: &str = "dds.destination";
-    /// Anzahl Fragmente.
+    /// Number of fragments.
     pub const DDS_FRAGMENTS: &str = "dds.fragments";
     /// QoS-Reliability-Kind.
     pub const DDS_QOS_RELIABILITY: &str = "dds.qos.reliability";
@@ -67,7 +67,7 @@ pub mod attr {
     pub const DDS_IDENTITY_CA: &str = "dds.identity_ca";
     /// Auth-Result (success/failure).
     pub const DDS_RESULT: &str = "dds.result";
-    /// Anzahl Missing-Sequence-Numbers (Reliable-NACK).
+    /// Number of missing sequence numbers (reliable NACK).
     pub const DDS_MISSING_SN_COUNT: &str = "dds.missing_sn_count";
 }
 

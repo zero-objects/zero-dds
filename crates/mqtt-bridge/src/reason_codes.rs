@@ -3,8 +3,8 @@
 
 //! MQTT 5.0 Reason Codes — Spec §2.4.
 //!
-//! Reason Codes >= 0x80 sind Errors. Wir liefern eine vollstaendige
-//! Tabelle aller Codes aus Spec Table 2-2.
+//! Reason codes >= 0x80 are errors. We provide a complete
+//! table of all codes from Spec Table 2-2.
 
 use core::fmt;
 
@@ -101,7 +101,7 @@ pub enum ReasonCode {
 }
 
 impl ReasonCode {
-    /// `true` wenn Code >= 0x80 (Spec §2.4.1).
+    /// `true` if the code >= 0x80 (Spec §2.4.1).
     #[must_use]
     pub const fn is_error(self) -> bool {
         (self as u8) >= 0x80
@@ -110,7 +110,7 @@ impl ReasonCode {
     /// `u8 -> ReasonCode`.
     ///
     /// # Errors
-    /// `()` wenn Code unbekannt.
+    /// `()` if the code is unknown.
     #[allow(clippy::result_unit_err)]
     pub const fn from_u8(v: u8) -> Result<Self, ()> {
         match v {

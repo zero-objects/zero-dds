@@ -54,20 +54,28 @@ export const TagsTypeSupport: DdsTopicType<Tags> = {
     typeName: "Tags",
     isKeyed: false,
     extensibility: "final",
-    encode(s: Tags, endian: EndianMode = "le"): Uint8Array {
-        const w = new Xcdr2Writer(endian);
+    encodeInto(w: Xcdr2Writer, s: Tags): void {
+        const _seqtok = w.beginAppendable();
         w.writeUint32(s.tags.length);
         for (const _e of s.tags) {
             w.writeString(_e);
         }
+        w.endAppendable(_seqtok);
+    },
+    encode(s: Tags, endian: EndianMode = "le"): Uint8Array {
+        const w = new Xcdr2Writer(endian);
+        this.encodeInto(w, s);
         return w.toBytes();
     },
-    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): Tags {
-        const r = new Xcdr2Reader(bytes, offset, length, "le");
-        const _f_tags: Array<string> = ((): Array<string> => { const _n = r.readUint32(); const _o: Array<string> = []; for (let _i = 0; _i < _n; _i++) { _o.push(r.readString()); } return _o; })();
+    decodeFrom(r: Xcdr2Reader): Tags {
+        const _f_tags: Array<string> = ((): Array<string> => { const _t = r.beginAppendable(); const _n = r.readUint32(); const _o: Array<string> = []; for (let _i = 0; _i < _n; _i++) { _o.push(r.readString()); } r.endAppendable(_t); return _o; })();
         return {
             tags: _f_tags,
         };
+    },
+    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): Tags {
+        const r = new Xcdr2Reader(bytes, offset, length, "le");
+        return this.decodeFrom(r);
     },
     keyHash(s: Tags): Uint8Array {
         return new Uint8Array(16);

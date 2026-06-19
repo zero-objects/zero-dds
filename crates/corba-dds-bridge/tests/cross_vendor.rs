@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Cross-Vendor-Interop-Tests gegen omniORB (Spec §10 + §12.3).
+//! Cross-vendor interop tests against omniORB (Spec §10 + §12.3).
 //!
 //! Run via:
 //! ```bash

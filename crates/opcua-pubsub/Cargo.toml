@@ -1,0 +1,47 @@
+[package]
+name = "zerodds-opcua-pubsub"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "OPC-UA Pub/Sub Part 14 (UADP) native wire stack: Part-6 binary codec, NetworkMessage/DataSetMessage framing, PubSub config, discovery, SecurityGroup/SKS, transport carriers and a DDS bridge. Pure-Rust no_std + alloc."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-opcua-pubsub"
+readme = "README.md"
+keywords = ["opcua", "uadp", "pubsub", "dds", "no-std"]
+categories = ["network-programming", "encoding", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc", "zerodds-opcua-gateway/std"]
+alloc = ["zerodds-opcua-gateway/alloc"]
+# PubSub security (Part 14 §8): AES-CTR + HMAC-SHA256. no_std-capable
+# (RustCrypto), therefore activatable independently of `std`.
+security = ["dep:aes", "dep:ctr", "dep:hmac", "dep:sha2", "dep:aes-gcm"]
+# JSON message mapping (Part 14 §7.2.3) — uses serde_json, so std-only.
+json = ["std", "dep:serde_json", "dep:base64"]
+
+[dependencies]
+# Type system model (NodeId/Variant/DataValue/Guid/...) — we encode
+# exactly these types instead of maintaining a parallel model.
+zerodds-opcua-gateway = { version = "1.0.0-rc.3", path = "../opcua-gateway", default-features = false }
+
+# PubSub-Security-Krypto (Feature `security`). RustCrypto, no_std + alloc.
+aes = { version = "0.8", default-features = false, optional = true }
+ctr = { version = "0.9", default-features = false, optional = true }
+hmac = { version = "0.12", default-features = false, optional = true }
+sha2 = { version = "0.10", default-features = false, optional = true }
+aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"], optional = true }
+
+# JSON message mapping (Feature `json`, std-only).
+serde_json = { version = "1", features = ["preserve_order"], optional = true }
+base64 = { version = "0.22", default-features = false, features = ["alloc"], optional = true }

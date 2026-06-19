@@ -1,56 +1,56 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! C5.2: DDS-PSM-CXX 1.0 Header-Skeleton-Layer.
+//! C5.2: DDS-PSM-CXX 1.0 header skeleton layer.
 //!
-//! Statt eines vollen Codegens (der Rust→C++-Cross-Compile waere) liefert
-//! diese Schicht **statische Header-Templates** fuer den `dds::core::*`-
-//! Namespace, plus Codegen-Helper, die diese Templates fuer ein konkretes
-//! Topic-IDL emittieren.
+//! Instead of a full codegen (which would be a Rust→C++ cross-compile),
+//! this layer provides **static header templates** for the `dds::core::*`
+//! namespace, plus codegen helpers that emit these templates for a concrete
+//! topic IDL.
 //!
-//! Spec-Referenz: OMG DDS-PSM-CXX 1.0 (formal/22-08-04).
+//! Spec reference: OMG DDS-PSM-CXX 1.0 (formal/22-08-04).
 //!
-//! # Bestandteile
-//! - `dds::core::Reference<T>`/`dds::core::Value<T>`-Pattern (Spec §7.1.6).
-//! - Exception-Hierarchie (Spec §7.1.7).
+//! # Components
+//! - `dds::core::Reference<T>`/`dds::core::Value<T>` pattern (Spec §7.1.6).
+//! - Exception hierarchy (Spec §7.1.7).
 //! - Listener / Status / Condition / WaitSet (Spec §8.3).
-//! - Domain/Topic/Pub/Sub-Klassen (Spec §8.1).
+//! - Domain/Topic/Pub/Sub classes (Spec §8.1).
 //!
 //! # API
-//! - [`emit_psm_cxx_includes`]: erzeugt `#include`-Block fuer einen
-//!   konkreten Topic-Namen.
-//! - [`emit_reference_value_pattern`]: emittiert die Reference/Value-
-//!   Templates (`Reference<T>`, `Value<T>`).
-//! - [`emit_listener_skeleton`]: emittiert die Listener-Klassen mit den
-//!   13 Status-Callbacks aus Block F.
-//! - [`emit_exception_hierarchy`]: emittiert die DDS-Exception-Klassen.
+//! - [`emit_psm_cxx_includes`]: produces the `#include` block for a
+//!   concrete topic name.
+//! - [`emit_reference_value_pattern`]: emits the Reference/Value
+//!   templates (`Reference<T>`, `Value<T>`).
+//! - [`emit_listener_skeleton`]: emits the listener classes with the
+//!   13 status callbacks from Block F.
+//! - [`emit_exception_hierarchy`]: emits the DDS exception classes.
 //!
-//! Die Templates liegen statisch unter `templates/dds-psm-cxx/*.hpp.tmpl`
-//! und werden via `include_str!` zur Build-Zeit eingebettet.
+//! The templates live statically under `templates/dds-psm-cxx/*.hpp.tmpl`
+//! and are embedded at build time via `include_str!`.
 
 use core::fmt::Write;
 
 use crate::error::CppGenError;
 
-/// Statische Templates (eingebettet via `include_str!`).
+/// Static templates (embedded via `include_str!`).
 const TPL_CORE_HPP: &str = include_str!("../templates/dds-psm-cxx/core.hpp.tmpl");
 const TPL_REFERENCE_HPP: &str = include_str!("../templates/dds-psm-cxx/reference.hpp.tmpl");
 const TPL_EXCEPTIONS_HPP: &str = include_str!("../templates/dds-psm-cxx/exceptions.hpp.tmpl");
 const TPL_LISTENER_HPP: &str = include_str!("../templates/dds-psm-cxx/listener.hpp.tmpl");
 const TPL_CONDITION_HPP: &str = include_str!("../templates/dds-psm-cxx/condition.hpp.tmpl");
 
-/// Erzeugt den `#include`-Block fuer einen konkreten Topic.
+/// Produces the `#include` block for a concrete topic.
 ///
-/// Der Block enthaelt sowohl die `dds::core::*`-Header (Reference, Value,
-/// Status, QoS, Entity) als auch die Standard-Bibliotheks-Includes, die
-/// fuer die Topic-Bindings benoetigt werden.
+/// The block contains both the `dds::core::*` headers (Reference, Value,
+/// Status, QoS, Entity) and the standard-library includes needed for the
+/// topic bindings.
 ///
-/// # Argumente
-/// - `participant_name`: Name des DomainParticipant-Headers (ohne
-///   `.hpp`-Suffix). Wird als `#include "<name>.hpp"` emittiert.
+/// # Arguments
+/// - `participant_name`: name of the DomainParticipant header (without
+///   the `.hpp` suffix). Emitted as `#include "<name>.hpp"`.
 ///
 /// # Errors
-/// Liefert [`CppGenError::InvalidName`], wenn `participant_name` leer ist
-/// oder unsichere Zeichen (`/`, `\`, `..`) enthaelt.
+/// Returns [`CppGenError::InvalidName`] if `participant_name` is empty
+/// or contains unsafe characters (`/`, `\`, `..`).
 pub fn emit_psm_cxx_includes(participant_name: &str) -> Result<String, CppGenError> {
     if participant_name.is_empty() {
         return Err(CppGenError::InvalidName {
@@ -58,7 +58,7 @@ pub fn emit_psm_cxx_includes(participant_name: &str) -> Result<String, CppGenErr
             reason: "participant header name must not be empty".into(),
         });
     }
-    // Defensive Validierung: keine Path-Traversal-Zeichen.
+    // Defensive validation: no path-traversal characters.
     if participant_name.contains('/')
         || participant_name.contains('\\')
         || participant_name.contains("..")
@@ -86,15 +86,15 @@ pub fn emit_psm_cxx_includes(participant_name: &str) -> Result<String, CppGenErr
     Ok(out)
 }
 
-/// Emittiert das Reference/Value-Pattern aus Spec §7.1.6.
+/// Emits the Reference/Value pattern from Spec §7.1.6.
 ///
-/// `dds::core::Reference<T>` ist ein nullable Smart-Pointer-Wrapper,
-/// `dds::core::Value<T>` ist ein by-value-Wrapper. Beide werden als
-/// Template-Klassen im `dds::core`-Namespace emittiert.
+/// `dds::core::Reference<T>` is a nullable smart-pointer wrapper,
+/// `dds::core::Value<T>` is a by-value wrapper. Both are emitted as
+/// template classes in the `dds::core` namespace.
 ///
 /// # Errors
-/// Liefert [`CppGenError::Internal`], wenn das Schreiben in den
-/// `String`-Buffer scheitert.
+/// Returns [`CppGenError::Internal`] if writing into the
+/// `String` buffer fails.
 pub fn emit_reference_value_pattern(out: &mut String) -> Result<(), CppGenError> {
     out.push_str(TPL_REFERENCE_HPP);
     if !TPL_REFERENCE_HPP.ends_with('\n') {
@@ -103,10 +103,10 @@ pub fn emit_reference_value_pattern(out: &mut String) -> Result<(), CppGenError>
     Ok(())
 }
 
-/// Emittiert die DDS-Exception-Hierarchie aus Spec §7.1.7.
+/// Emits the DDS exception hierarchy from Spec §7.1.7.
 ///
 /// # Errors
-/// Liefert [`CppGenError::Internal`], wenn das Schreiben scheitert.
+/// Returns [`CppGenError::Internal`] if writing fails.
 pub fn emit_exception_hierarchy(out: &mut String) -> Result<(), CppGenError> {
     out.push_str(TPL_EXCEPTIONS_HPP);
     if !TPL_EXCEPTIONS_HPP.ends_with('\n') {
@@ -115,13 +115,13 @@ pub fn emit_exception_hierarchy(out: &mut String) -> Result<(), CppGenError> {
     Ok(())
 }
 
-/// Emittiert das Listener-Skeleton aus Spec §8.3.
+/// Emits the listener skeleton from Spec §8.3.
 ///
-/// Liefert Listener-Klassen mit allen 13 Status-Callbacks aus Block F als
-/// virtuelle Methoden mit Default-Implementation `{}`.
+/// Provides listener classes with all 13 status callbacks from Block F as
+/// virtual methods with the default implementation `{}`.
 ///
 /// # Errors
-/// Liefert [`CppGenError::Internal`], wenn das Schreiben scheitert.
+/// Returns [`CppGenError::Internal`] if writing fails.
 pub fn emit_listener_skeleton(out: &mut String) -> Result<(), CppGenError> {
     out.push_str(TPL_LISTENER_HPP);
     if !TPL_LISTENER_HPP.ends_with('\n') {
@@ -130,10 +130,10 @@ pub fn emit_listener_skeleton(out: &mut String) -> Result<(), CppGenError> {
     Ok(())
 }
 
-/// Emittiert die Condition/WaitSet-Klassen aus Spec §8.3.
+/// Emits the Condition/WaitSet classes from Spec §8.3.
 ///
 /// # Errors
-/// Liefert [`CppGenError::Internal`], wenn das Schreiben scheitert.
+/// Returns [`CppGenError::Internal`] if writing fails.
 pub fn emit_condition_skeleton(out: &mut String) -> Result<(), CppGenError> {
     out.push_str(TPL_CONDITION_HPP);
     if !TPL_CONDITION_HPP.ends_with('\n') {
@@ -142,11 +142,11 @@ pub fn emit_condition_skeleton(out: &mut String) -> Result<(), CppGenError> {
     Ok(())
 }
 
-/// Emittiert die `dds::core`-Basis-Header (Time, Duration, InstanceHandle,
+/// Emits the `dds::core` base headers (Time, Duration, InstanceHandle,
 /// Sample<T>).
 ///
 /// # Errors
-/// Liefert [`CppGenError::Internal`], wenn das Schreiben scheitert.
+/// Returns [`CppGenError::Internal`] if writing fails.
 pub fn emit_core_basics(out: &mut String) -> Result<(), CppGenError> {
     out.push_str(TPL_CORE_HPP);
     if !TPL_CORE_HPP.ends_with('\n') {
@@ -155,12 +155,12 @@ pub fn emit_core_basics(out: &mut String) -> Result<(), CppGenError> {
     Ok(())
 }
 
-/// Erzeugt einen vollstaendigen DDS-PSM-CXX-Skeleton-Header inkl. aller
-/// statischer Templates. Wird in den Fixture-Tests gegen die existierenden
-/// C5.1-a-Outputs gemerged geprueft.
+/// Produces a complete DDS-PSM-CXX skeleton header including all
+/// static templates. In the fixture tests it is checked merged against the
+/// existing C5.1-a outputs.
 ///
 /// # Errors
-/// Liefert [`CppGenError::Internal`], wenn das Schreiben scheitert.
+/// Returns [`CppGenError::Internal`] if writing fails.
 pub fn emit_full_psm_cxx_skeleton() -> Result<String, CppGenError> {
     let mut out = String::new();
     writeln!(
@@ -242,7 +242,7 @@ mod tests {
     fn listener_skeleton_has_13_callbacks() {
         let mut s = String::new();
         emit_listener_skeleton(&mut s).expect("ok");
-        // Listener-Callbacks fuer alle 13 Status-Klassen (DCPS Spec):
+        // Listener callbacks for all 13 status classes (DCPS Spec):
         let callbacks = [
             "on_inconsistent_topic",
             "on_sample_lost",
@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn full_skeleton_namespaces_are_dds_core() {
         let s = emit_full_psm_cxx_skeleton().expect("ok");
-        // Mindestens drei Erscheinungen von "namespace dds":
+        // At least three occurrences of "namespace dds":
         let count = s.matches("namespace dds").count();
         assert!(count >= 3, "expected >=3 namespace dds blocks, got {count}");
     }

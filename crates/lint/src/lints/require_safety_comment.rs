@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `dds_require_safety_comment` — jeder `unsafe`-Block, jede `unsafe fn`,
-//! jedes `unsafe impl` braucht direkt davor einen `// SAFETY:`-Kommentar
-//! mit mindestens einem nicht-leeren Satz.
+//! `dds_require_safety_comment` — every `unsafe` block, every `unsafe fn`,
+//! every `unsafe impl` needs a `// SAFETY:` comment directly above it
+//! with at least one non-empty sentence.
 //!
-//! Fuer `pub unsafe fn` wird zusaetzlich die rustdoc-Form
+//! For `pub unsafe fn` the rustdoc form
 //! `# Safety` (Rust API Guidelines C-FAILURE / Clippy
-//! `missing_safety_doc`) akzeptiert.
+//! `missing_safety_doc`) is additionally accepted.
 //!
-//! Mehrzeilige Kommentar-Bloecke werden unterstuetzt: ausgehend von
-//! der Zeile direkt ueber dem `unsafe` laeuft der Matcher rueckwaerts
-//! durch zusammenhaengende `//`-Zeilen, bis er entweder eine
-//! `// SAFETY:`-Zeile findet oder eine Nicht-Kommentar-Zeile trifft.
+//! Multi-line comment blocks are supported: starting from
+//! the line directly above the `unsafe`, the matcher runs backwards
+//! through contiguous `//` lines until it either finds a
+//! `// SAFETY:` line or hits a non-comment line.
 //!
 //! Spec: `docs/architecture/04_safety_by_architecture.md §3.4`.
 
@@ -24,7 +24,7 @@ use crate::diagnostic::Diagnostic;
 
 use super::{FileLint, FileLintContext};
 
-/// Lint-Implementierung.
+/// Lint implementation.
 pub struct RequireSafetyComment;
 
 const NAME: &str = "dds_require_safety_comment";
@@ -53,8 +53,8 @@ struct Visitor<'a> {
 }
 
 impl Visitor<'_> {
-    /// Pruefung fuer `unsafe { ... }`-Bloecke und `unsafe impl`-Items
-    /// — verlangt strikt einen `// SAFETY:`-Kommentar oberhalb.
+    /// Check for `unsafe { ... }` blocks and `unsafe impl` items
+    /// — strictly requires a `// SAFETY:` comment above.
     fn check_block_or_impl(&mut self, span: Span, what: &str) {
         let start = span.start();
         let line = start.line;
@@ -65,16 +65,16 @@ impl Visitor<'_> {
                 line,
                 col,
                 NAME,
-                format!("{what} ohne `// SAFETY:`-Kommentar in der Zeile davor"),
+                format!("{what} without a `// SAFETY:` comment on the line above"),
             ));
         }
     }
 
-    /// Pruefung fuer `unsafe fn`-Deklarationen — akzeptiert beide
-    /// Konventionen:
+    /// Check for `unsafe fn` declarations — accepts both
+    /// conventions:
     ///
-    /// 1. `// SAFETY: <text>`-Kommentar direkt davor.
-    /// 2. `# Safety` als Section in der vorausgehenden rustdoc
+    /// 1. `// SAFETY: <text>` comment directly above.
+    /// 2. `# Safety` as a section in the preceding rustdoc
     ///    (Rust API Guidelines C-FAILURE).
     fn check_unsafe_fn(&mut self, span: Span, attrs: &[Attribute]) {
         let start = span.start();
@@ -91,14 +91,14 @@ impl Visitor<'_> {
             line,
             col,
             NAME,
-            "unsafe fn ohne `// SAFETY:`-Kommentar oder rustdoc `# Safety`-Section",
+            "unsafe fn without a `// SAFETY:` comment or a rustdoc `# Safety` section",
         ));
     }
 }
 
 impl<'ast> Visit<'ast> for Visitor<'_> {
     fn visit_expr_unsafe(&mut self, node: &'ast ExprUnsafe) {
-        self.check_block_or_impl(node.unsafe_token.span(), "unsafe-Block");
+        self.check_block_or_impl(node.unsafe_token.span(), "unsafe block");
         visit::visit_expr_unsafe(self, node);
     }
 
@@ -117,10 +117,10 @@ impl<'ast> Visit<'ast> for Visitor<'_> {
     }
 }
 
-/// Walker rueckwaerts durch zusammenhaengende Kommentar-Zeilen, bis ein
-/// `// SAFETY:` mit Inhalt gefunden wird oder der Block bricht.
+/// Walks backwards through contiguous comment lines until a
+/// `// SAFETY:` with content is found or the block breaks.
 ///
-/// `line` ist 1-basiert (proc-macro2-Konvention).
+/// `line` is 1-based (proc-macro2 convention).
 fn has_safety_comment_above(lines: &[&str], line: usize) -> bool {
     if line < 2 {
         return false;
@@ -128,8 +128,8 @@ fn has_safety_comment_above(lines: &[&str], line: usize) -> bool {
     let mut idx = line.saturating_sub(2);
     loop {
         let cur = lines.get(idx).map(|s| s.trim()).unwrap_or("");
-        // Leere Zeile zwischen Kommentar und unsafe ist nicht
-        // erlaubt: bricht den Block ab.
+        // An empty line between the comment and the unsafe is not
+        // allowed: it breaks the block.
         if cur.is_empty() {
             return false;
         }
@@ -146,8 +146,8 @@ fn has_safety_comment_above(lines: &[&str], line: usize) -> bool {
     }
 }
 
-/// Prueft ob die rustdoc-Attribute eine `# Safety`-Section enthalten —
-/// die kanonische Form fuer `pub unsafe fn` (Rust API Guidelines
+/// Checks whether the rustdoc attributes contain a `# Safety` section —
+/// the canonical form for `pub unsafe fn` (Rust API Guidelines
 /// C-FAILURE / Clippy `missing_safety_doc`).
 fn has_safety_section_in_doc(attrs: &[Attribute]) -> bool {
     for a in attrs {
@@ -281,9 +281,9 @@ mod tests {
 
     #[test]
     fn unsafe_block_inside_unsafe_fn_still_needs_safety_comment() {
-        // Auch in einer unsafe fn braucht jeder bare unsafe-Block
-        // einen `// SAFETY:`-Kommentar — sonst zerfallen die
-        // Begruendungen ueber Funktionsgrenzen.
+        // Even inside an unsafe fn, every bare unsafe block needs
+        // a `// SAFETY:` comment — otherwise the justifications
+        // fall apart across function boundaries.
         let src = concat!(
             "/// # Safety\n",
             "/// caller knows.\n",

@@ -1,23 +1,23 @@
-//! TCP-Side-Channel-Server (R-026 + R-022 + R-100..R-104).
+//! TCP side-channel server (R-026 + R-022 + R-100..R-104).
 //!
-//! Phase-1-Implementation: plain TCP mit **Cert-Fingerprint-Handshake**
-//! statt vollem mTLS. Client sendet seine Cert-PEM als Handshake-Frame,
-//! Server prueft den SHA-256-Fingerprint gegen den geladenen
-//! `cert.d`-Inhalt. Frames werden als length-prefixed JSON gestreamt.
+//! Phase-1 implementation: plain TCP with a **cert-fingerprint handshake**
+//! instead of full mTLS. The client sends its cert PEM as a handshake frame,
+//! the server checks the SHA-256 fingerprint against the loaded
+//! `cert.d` content. Frames are streamed as length-prefixed JSON.
 //!
-//! Phase-2 (separater Iterations-Step): vollstaendiges mTLS via
-//! rustls — Cert-Fingerprint-Match ist Phase-1 ausreichend fuer die
-//! Defense-Air-gap-Umgebung wo der Side-Channel anyway ueber ein
-//! kuratiertes Wartungs-LAN laueft.
+//! Phase-2 (a separate iteration step): full mTLS via
+//! rustls — cert-fingerprint matching is sufficient for Phase-1 in the
+//! defense air-gap environment where the side channel runs over a
+//! curated maintenance LAN anyway.
 //!
-//! Wire-Format:
+//! Wire format:
 //!
 //! ```text
-//! [u32 BE length][JSON-Frame]
+//! [u32 BE length][JSON frame]
 //! ```
 //!
-//! Das ist menschen-lesbar genug fuer Bring-Up; Production kann auf
-//! `bincode` oder eigenes Binary-Schema upgraden.
+//! This is human-readable enough for bring-up; production can upgrade to
+//! `bincode` or its own binary schema.
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -30,29 +30,29 @@ use crate::auth::CertSet;
 use crate::frame::Frame;
 use crate::tap::TapHook;
 
-/// Konfiguration eines Servers.
+/// Configuration of a server.
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
-    /// Bind-Adresse, z.B. `127.0.0.1:9555`.
+    /// Bind address, e.g. `127.0.0.1:9555`.
     pub bind: String,
-    /// Geladener `cert.d`-Inhalt.
+    /// Loaded `cert.d` content.
     pub cert_set: CertSet,
 }
 
-/// Laufender Server. Drop stoppt ihn.
+/// Running server. Drop stops it.
 pub struct InspectServer {
-    /// Geteilter Client-Pool — jede neue Connection registriert sich.
+    /// Shared client pool — every new connection registers itself.
     clients: Arc<Mutex<Vec<TcpStream>>>,
     accept_thread: Option<JoinHandle<()>>,
     shutdown: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl InspectServer {
-    /// Startet den Server, akzeptiert Connections in einem Hintergrund-Thread.
+    /// Starts the server, accepts connections in a background thread.
     ///
     /// # Errors
     ///
-    /// Schlaegt fehl wenn die Bind-Adresse nicht offen werden kann.
+    /// Fails if the bind address cannot be opened.
     pub fn start(cfg: ServerConfig) -> std::io::Result<Self> {
         let listener = TcpListener::bind(&cfg.bind)?;
         listener.set_nonblocking(true)?;
@@ -71,11 +71,20 @@ impl InspectServer {
                     }
                     match listener.accept() {
                         Ok((stream, _peer)) => {
-                            if authenticate_client(&stream, &cert_set).is_ok() {
+                            // Accepted sockets inherit the listener's
+                            // non-blocking flag on BSD/macOS. The handshake read
+                            // (`authenticate_client` → `read_exact` with
+                            // `set_read_timeout`) needs a BLOCKING
+                            // socket, though — `set_read_timeout` only works there; on a
+                            // non-blocking socket `read_exact` immediately returns
+                            // `WouldBlock` if the client bytes have not yet
+                            // arrived → sporadically rejected clients.
+                            // So switch to blocking BEFORE authentication.
+                            if stream.set_nonblocking(false).is_ok()
+                                && authenticate_client(&stream, &cert_set).is_ok()
+                            {
                                 if let Ok(mut clients) = clients.lock() {
-                                    if stream.set_nonblocking(false).is_ok() {
-                                        clients.push(stream);
-                                    }
+                                    clients.push(stream);
                                 }
                             }
                         }
@@ -95,9 +104,8 @@ impl InspectServer {
         })
     }
 
-    /// Liefert einen `TapHook` der Frames an alle connected Clients
-    /// streamt. Der Hook kann dann via `tap::register_*_tap`
-    /// registriert werden.
+    /// Returns a `TapHook` that streams frames to all connected clients.
+    /// The hook can then be registered via `tap::register_*_tap`.
     #[must_use]
     pub fn broadcast_hook(&self) -> Box<BroadcastHook> {
         Box::new(BroadcastHook {
@@ -105,13 +113,13 @@ impl InspectServer {
         })
     }
 
-    /// Anzahl aktuell connected Clients.
+    /// Number of currently connected clients.
     #[must_use]
     pub fn client_count(&self) -> usize {
         self.clients.lock().map(|c| c.len()).unwrap_or(0)
     }
 
-    /// Stoppt den Accept-Loop.
+    /// Stops the accept loop.
     pub fn shutdown(&mut self) {
         self.shutdown
             .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -127,7 +135,7 @@ impl Drop for InspectServer {
     }
 }
 
-/// Tap-Hook der Frames als length-prefixed JSON an alle Clients schreibt.
+/// Tap hook that writes frames as length-prefixed JSON to all clients.
 pub struct BroadcastHook {
     clients: Arc<Mutex<Vec<TcpStream>>>,
 }
@@ -194,10 +202,10 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Mutex;
 
-    /// Serialisiert die TCP-Server-Tests — bei `cargo test` ohne
-    /// `--test-threads=1` koennen Race-Conditions auf
-    /// ephemeral Ports + Tap-Registry-State auftreten. Lock am
-    /// Start jedes Tests garantiert sequentielle Ausfuehrung.
+    /// Serializes the TCP server tests — under `cargo test` without
+    /// `--test-threads=1`, race conditions can occur on
+    /// ephemeral ports + tap-registry state. A lock at the
+    /// start of each test guarantees sequential execution.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn pick_unused_port() -> u16 {
@@ -243,7 +251,7 @@ mod tests {
         };
         let server = InspectServer::start(cfg).expect("start");
 
-        // Client mit falschem Cert
+        // Client with a wrong cert
         let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
         let bad = b"BAD-CERT";
         let len = (bad.len() as u32).to_be_bytes();
@@ -253,7 +261,7 @@ mod tests {
         let _ = stream.read_exact(&mut resp);
         assert!(resp.starts_with(&[0, 0, 0, 7]) || resp[..7] == *b"\x00\x00\x00\x07R");
 
-        // Server hat den Client nicht akzeptiert
+        // The server did not accept the client
         std::thread::sleep(std::time::Duration::from_millis(100));
         assert_eq!(server.client_count(), 0);
     }
@@ -269,7 +277,7 @@ mod tests {
         };
         let server = InspectServer::start(cfg).expect("start");
 
-        // Client mit korrektem Cert
+        // Client with the correct cert
         let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
         let len = (pem.len() as u32).to_be_bytes();
         stream.write_all(&len).expect("write len");
@@ -278,7 +286,7 @@ mod tests {
         stream.read_exact(&mut ok).expect("ok handshake");
         assert_eq!(&ok[..6], b"\x00\x00\x00\x02OK");
 
-        // Warte bis der Server den Client registriert hat
+        // Wait until the server has registered the client
         for _ in 0..20 {
             if server.client_count() >= 1 {
                 break;
@@ -287,7 +295,7 @@ mod tests {
         }
         assert_eq!(server.client_count(), 1);
 
-        // Sende einen Frame ueber den Hook
+        // Send a frame via the hook
         let hook = server.broadcast_hook();
         let frame = Frame::dcps("topic-1".into(), 100, 42, vec![1, 2, 3]);
         hook.on_frame(&frame);

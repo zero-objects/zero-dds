@@ -3,10 +3,12 @@
 **Quelle:** `documentation/specs/dds-ts-1.0/main.tex`
 (`zerodds/v1.0`, ZeroDDS Vendor-Spec).
 
-Folgt `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item gegen
-die TeX-Quelle. Repo-Pfade verweisen auf `crates/idl-ts/` und
-das Runtime-Package `@zerodds/types` (Source unter
-`crates/idl-ts/src/runtime/`).
+Audit Item-für-Item gegen
+die TeX-Quelle.
+
+Implementation:
+
+- `crates/idl-ts/` — TypeScript-Codegen + Descriptor-Runtime; Runtime-Package `@zerodds/types` mit Source unter `crates/idl-ts/src/runtime/`.
 
 **Crate-Mapping:**
 
@@ -739,7 +741,7 @@ per §7.3.3.
 **Spec:** Ch8 §Reflection API — exports: `registerType`,
 `lookupType`, `getKey`, `getTopic`, `withDefaults`, `boxAny`,
 `unboxAny`, `equalKey`, `isOneOf`. Plus `GuardedTypeOf`-Helper.
-Strukturelle Equivalenz für `registerType` definiert
+Strukturelle Äquivalenz für `registerType` definiert
 (deep-equal aller Felder außer `typeGuard`).
 
 **Repo:** `crates/idl-ts/src/runtime/registry.ts` (Registry +
@@ -1105,4 +1107,4 @@ spec-reserviert (kein Code-Pfad).
 Test-Lauf: `cargo test -p zerodds-idl-ts` — 149 Tests grün
 (`lib::tests::*` 134, integration `tests::*` 15).
 
-Keine offenen Punkte; siehe `dds-ts-1.0.open.md`.
+Keine offenen Punkte.

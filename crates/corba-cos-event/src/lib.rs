@@ -3,40 +3,40 @@
 
 //! Crate `zerodds-corba-cos-event`. Safety classification: **STANDARD**.
 //!
-//! OMG CosEventService 1.4 (`formal/2004-10-02`) voller Stack —
-//! pure-Rust `no_std + alloc`, `forbid(unsafe_code)`. Implementiert:
+//! OMG CosEventService 1.4 (`formal/2004-10-02`) full stack —
+//! pure Rust `no_std + alloc`, `forbid(unsafe_code)`. Implements:
 //!
-//! - **CosEventComm** (Spec §1.5): PushConsumer, PushSupplier,
-//!   PullConsumer, PullSupplier mit Disconnect-Operations.
-//! - **CosEventChannelAdmin** (Spec §1.6): EventChannel,
+//! - **CosEventComm** (spec §1.5): PushConsumer, PushSupplier,
+//!   PullConsumer, PullSupplier with disconnect operations.
+//! - **CosEventChannelAdmin** (spec §1.6): EventChannel,
 //!   ConsumerAdmin, SupplierAdmin, ProxyPushConsumer/Supplier,
 //!   ProxyPullConsumer/Supplier.
-//! - **CosTypedEventComm + CosTypedEventChannelAdmin** (Spec §2):
-//!   TypedPushConsumer/Supplier mit `get_typed_consumer/supplier`-
-//!   Operations.
-//! - **AnyEvent**: opaque Event-Container fuer den Push-Modus.
+//! - **CosTypedEventComm + CosTypedEventChannelAdmin** (spec §2):
+//!   TypedPushConsumer/Supplier with `get_typed_consumer/supplier`
+//!   operations.
+//! - **AnyEvent**: opaque event container for the push mode.
 //!
 //! Spec: OMG CosEventService 1.4 (`formal/2004-10-02`) §1.5 + §1.6 + §2.
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 8 — CORBA-Stack (Tier-A). Caller-Layer (Daemon o.ae.)
-//! konstruiert konkrete Channel-Instanzen, registriert Suppliers
-//! und Consumers, und treibt die Connect/Disconnect-Lifecycle.
+//! Layer 8 — CORBA stack (Tier-A). The caller layer (a daemon or similar)
+//! constructs concrete channel instances, registers suppliers
+//! and consumers, and drives the connect/disconnect lifecycle.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! - [`AnyEvent`] / [`Disconnected`] / [`ConnectError`] — Event-Body
-//!   und Spec-§1.5-Errors.
+//! - [`AnyEvent`] / [`Disconnected`] / [`ConnectError`] — event body
+//!   and spec §1.5 errors.
 //! - [`PushConsumer`] / [`PushSupplier`] / [`PullConsumer`] /
-//!   [`PullSupplier`] — Spec §1.5 Trait-Surfaces.
+//!   [`PullSupplier`] — spec §1.5 trait surfaces.
 //! - [`EventChannel`] / [`ConsumerAdmin`] / [`SupplierAdmin`] /
 //!   [`ProxyPushConsumer`] / [`ProxyPushSupplier`] /
 //!   [`ProxyPullConsumer`] / [`ProxyPullSupplier`] — Spec §1.6.
 //! - [`TypedEventChannel`] / [`TypedPushConsumer`] /
 //!   [`TypedPushSupplier`] — Spec §2.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust
 //! use zerodds_corba_cos_event::{AnyEvent, EventChannel};

@@ -2,10 +2,10 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Type-Resolution + Recursion-Guards (XTypes §7.3.4.5, §7.3.4.9).
 //!
-//! Cross-references zwischen TypeObjects passieren ueber `EquivalenceHash`-
-//! TypeIdentifier (EK_MINIMAL / EK_COMPLETE). Ein TypeRegistry-Map cached
-//! bekannte Objekte; Resolver-Funktionen folgen Alias-Ketten und
-//! erkennen Rekursion/Cycles/DoS-Versuche via Depth-Cap.
+//! Cross-references between TypeObjects happen via `EquivalenceHash`
+//! TypeIdentifiers (EK_MINIMAL / EK_COMPLETE). A TypeRegistry map caches
+//! known objects; resolver functions follow alias chains and
+//! detect recursion/cycles/DoS attempts via a depth cap.
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
@@ -14,43 +14,41 @@ use crate::type_identifier::{EquivalenceHash, TypeIdentifier};
 use crate::type_object::minimal::MinimalTypeObject;
 use crate::type_object::{CompleteTypeObject, TypeObject};
 
-/// Maximum-Depth fuer rekursives Aufloesen von Alias-Ketten und
-/// TypeIdentifier-Referenzen. Verhindert DoS durch boese
-/// Type-Graphen mit Zyklen.
+/// Maximum depth for recursively resolving alias chains and
+/// TypeIdentifier references. Prevents DoS via malicious
+/// type graphs with cycles.
 pub const DEFAULT_MAX_RESOLVE_DEPTH: usize = 64;
 
-/// Maximum-Knotenzahl waehrend [`collect_referenced_hashes`]. Zusaetzlich
-/// zum Depth-Cap begrenzt das auch breite/fan-out-lastige Graphen
-/// (ein Struct mit 10_000 Member-Eintraegen, die alle auf Hashes
-/// verweisen).
+/// Maximum number of nodes during [`collect_referenced_hashes`]. In addition
+/// to the depth cap this also bounds wide/fan-out-heavy graphs
+/// (a struct with 10,000 member entries that all reference hashes).
 pub const DEFAULT_MAX_RESOLVE_NODES: usize = 4_096;
 
-/// Fehler bei Type-Resolution.
+/// Error during type resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ResolveError {
-    /// Maximum-Depth ueberschritten.
+    /// Maximum depth exceeded.
     DepthExceeded {
-        /// Zulaessige Tiefe.
+        /// Allowed depth.
         limit: usize,
     },
-    /// Maximum-Knotenzahl ueberschritten.
+    /// Maximum node count exceeded.
     NodeLimitExceeded {
-        /// Zulaessige Knotenzahl.
+        /// Allowed node count.
         limit: usize,
     },
-    /// Referenzierter Type nicht in der Registry.
+    /// Referenced type not in the registry.
     Unknown {
-        /// Hash, der gesucht wurde.
+        /// Hash that was looked up.
         hash: EquivalenceHash,
     },
-    /// Zyklus ohne Fortschritt erkannt.
+    /// Cycle without progress detected.
     Cycle,
 }
 
-/// In-Memory-Registry von bekannten TypeObjects, indiziert nach
-/// `EquivalenceHash`. Wird typischerweise durch TypeLookup-Replies
-/// befuellt.
+/// In-memory registry of known TypeObjects, indexed by
+/// `EquivalenceHash`. Typically populated by TypeLookup replies.
 #[derive(Debug, Clone, Default)]
 pub struct TypeRegistry {
     minimals: BTreeMap<EquivalenceHash, MinimalTypeObject>,
@@ -64,12 +62,12 @@ impl TypeRegistry {
         Self::default()
     }
 
-    /// Fuegt ein Minimal-TypeObject ein, indiziert unter seinem Hash.
+    /// Inserts a minimal TypeObject, indexed by its hash.
     pub fn insert_minimal(&mut self, hash: EquivalenceHash, t: MinimalTypeObject) {
         self.minimals.insert(hash, t);
     }
 
-    /// Fuegt ein Complete-TypeObject ein.
+    /// Inserts a complete TypeObject.
     pub fn insert_complete(&mut self, hash: EquivalenceHash, t: CompleteTypeObject) {
         self.completes.insert(hash, t);
     }
@@ -86,37 +84,37 @@ impl TypeRegistry {
         self.completes.get(hash)
     }
 
-    /// Anzahl Eintraege.
+    /// Number of entries.
     #[must_use]
     pub fn len(&self) -> (usize, usize) {
         (self.minimals.len(), self.completes.len())
     }
 
-    /// Leer?
+    /// Empty?
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.minimals.is_empty() && self.completes.is_empty()
     }
 
-    /// Iteriert alle Minimal-Eintraege.
+    /// Iterates over all minimal entries.
     pub fn iter_minimals(
         &self,
     ) -> alloc::collections::btree_map::Iter<'_, EquivalenceHash, MinimalTypeObject> {
         self.minimals.iter()
     }
 
-    /// Iteriert alle Complete-Eintraege.
+    /// Iterates over all complete entries.
     pub fn iter_completes(
         &self,
     ) -> alloc::collections::btree_map::Iter<'_, EquivalenceHash, CompleteTypeObject> {
         self.completes.iter()
     }
 
-    /// Liefert alle direkten Dependencies eines Hashes (transitiv ueber
-    /// [`collect_referenced_hashes`]). Wenn der Type nicht in der
-    /// Registry ist, wird leer zurueckgegeben.
+    /// Returns all direct dependencies of a hash (transitively via
+    /// [`collect_referenced_hashes`]). If the type is not in the
+    /// registry, empty is returned.
     ///
-    /// Bevorzugt die Minimal-Variante, faellt zurueck auf Complete.
+    /// Prefers the Minimal variant, falls back to Complete.
     #[must_use]
     pub fn dependencies_of(&self, hash: &EquivalenceHash) -> Vec<EquivalenceHash> {
         let to = if let Some(m) = self.minimals.get(hash) {
@@ -129,9 +127,9 @@ impl TypeRegistry {
         collect_referenced_hashes(&to, DEFAULT_MAX_RESOLVE_DEPTH).unwrap_or_default()
     }
 
-    /// Sammelt **transitiv** alle abhaengigen Hashes — folgt jedem
-    /// gefundenen Hash rekursiv durch die Registry. Eingehender Hash
-    /// selbst ist NICHT enthalten. Begrenzt durch `max_nodes`.
+    /// Collects **transitively** all dependent hashes — follows each
+    /// found hash recursively through the registry. The incoming hash
+    /// itself is NOT included. Bounded by `max_nodes`.
     #[must_use]
     pub fn transitive_dependencies(
         &self,
@@ -159,13 +157,13 @@ impl TypeRegistry {
     }
 }
 
-/// Folgt Alias-Ketten: wenn `ti` auf einen Alias verweist (und der
-/// Alias in der Registry bekannt ist), resolve zum related_type.
-/// Primitive / Plain / Hash-direkt werden ohne Aenderung zurueckgegeben.
+/// Follows alias chains: if `ti` references an alias (and the
+/// alias is known in the registry), resolve to the related_type.
+/// Primitive / plain / hash-direct are returned unchanged.
 ///
 /// # Errors
-/// - `DepthExceeded` bei tieferem Alias-Nesting als `max_depth`.
-/// - `Unknown` wenn ein Hash nicht in der Registry liegt.
+/// - `DepthExceeded` on deeper alias nesting than `max_depth`.
+/// - `Unknown` if a hash is not in the registry.
 pub fn resolve_alias_chain(
     start: &TypeIdentifier,
     registry: &TypeRegistry,
@@ -177,7 +175,7 @@ pub fn resolve_alias_chain(
         let hash = match &current {
             TypeIdentifier::EquivalenceHashMinimal(h) => *h,
             TypeIdentifier::EquivalenceHashComplete(h) => *h,
-            _ => return Ok(current), // nicht hash-referenced — fertig
+            _ => return Ok(current), // not hash-referenced — done
         };
         if !visited.insert(hash) {
             return Err(ResolveError::Cycle);
@@ -186,7 +184,7 @@ pub fn resolve_alias_chain(
         let next_ti = if matches!(current, TypeIdentifier::EquivalenceHashMinimal(_)) {
             match registry.get_minimal(&hash) {
                 Some(MinimalTypeObject::Alias(a)) => a.body.common.related_type.clone(),
-                Some(_) => return Ok(current), // struct/enum/... — kein Alias
+                Some(_) => return Ok(current), // struct/enum/... — not an alias
                 None => return Err(ResolveError::Unknown { hash }),
             }
         } else {
@@ -201,15 +199,15 @@ pub fn resolve_alias_chain(
     Err(ResolveError::DepthExceeded { limit: max_depth })
 }
 
-/// Sammelt transitiv alle `EquivalenceHash`-TypeIdentifiers, die von
-/// `root` direkt oder indirekt (durch Collections, Struct-Members,
-/// Union-Cases, Alias-Targets) referenziert werden. Nuetzlich fuer
-/// TypeLookup-Dependency-Resolution (T14).
+/// Collects transitively all `EquivalenceHash` TypeIdentifiers that are
+/// referenced by `root` directly or indirectly (through collections, struct
+/// members, union cases, alias targets). Useful for
+/// TypeLookup dependency resolution (T14).
 ///
-/// Verwendet Depth-Cap gegen boese Type-Graphen.
+/// Uses a depth cap against malicious type graphs.
 ///
 /// # Errors
-/// `DepthExceeded` wenn der Type-Graph tiefer als `max_depth` ist.
+/// `DepthExceeded` if the type graph is deeper than `max_depth`.
 pub fn collect_referenced_hashes(
     root: &TypeObject,
     max_depth: usize,
@@ -269,7 +267,7 @@ fn collect_from_minimal(
             collect_from_ti(&m.key.common.type_id, max_depth, depth, out, seen)?;
             collect_from_ti(&m.element.common.type_id, max_depth, depth, out, seen)?;
         }
-        _ => {} // Enum/Bitmask/Bitset/Annotation — keine nested TIs
+        _ => {} // Enum/Bitmask/Bitset/Annotation — no nested TIs
     }
     Ok(())
 }
@@ -314,9 +312,9 @@ fn collect_from_complete(
 
 /// zerodds-lint: recursion-depth 16
 ///
-/// Walked plain-Collection-Elements rekursiv (Sequence→Map→Array-nesting).
-/// Die Tiefe ist effektiv durch `TypeIdentifier::MAX_DECODE_DEPTH` (=16)
-/// begrenzt, weil der Input aus dem Wire-Decoder stammt.
+/// Walks plain collection elements recursively (Sequence→Map→Array nesting).
+/// The depth is effectively bounded by `TypeIdentifier::MAX_DECODE_DEPTH` (=16),
+/// because the input comes from the wire decoder.
 fn collect_from_ti(
     ti: &TypeIdentifier,
     _max_depth: usize,
@@ -423,10 +421,10 @@ mod tests {
     #[test]
     fn resolve_cycle_detected() {
         let mut reg = TypeRegistry::new();
-        // Zwei Aliase, die aufeinander zeigen. Um konsistente Hashes zu
-        // bekommen muessten wir sie simultan einfuegen — wir simulieren
-        // einen Zyklus indem wir denselben Alias als related_type = sein
-        // eigener Hash eintragen.
+        // Two aliases pointing at each other. To get consistent hashes
+        // we would have to insert them simultaneously — we simulate
+        // a cycle by registering the same alias with related_type = its
+        // own hash.
         let self_hash = EquivalenceHash([0x99; 14]);
         let self_alias = MinimalTypeObject::Alias(make_alias(
             TypeIdentifier::EquivalenceHashMinimal(self_hash),
@@ -631,8 +629,8 @@ mod tests {
 
     #[test]
     fn collect_referenced_hashes_node_limit_exceeded_on_wide_struct() {
-        // Struct mit DEFAULT_MAX_RESOLVE_NODES + 1 distincten Hash-Refs
-        // triggert die NodeLimit-Bremse.
+        // A struct with DEFAULT_MAX_RESOLVE_NODES + 1 distinct hash refs
+        // triggers the node-limit brake.
         let mut builder = TypeObjectBuilder::struct_type("::Wide");
         for i in 0..(DEFAULT_MAX_RESOLVE_NODES as u32 + 1) {
             let mut h_bytes = [0u8; 14];
@@ -659,11 +657,11 @@ mod tests {
     // SCC / Mutual-Dependency (XTypes 1.3 §7.3.4.8 + §7.3.4.9)
     // ====================================================================
     //
-    // Wenn drei oder mehr Structs sich gegenseitig referenzieren, bilden
-    // sie eine starkconnected Komponente (SCC). Die TypeRegistry muss die
-    // Referenzen-Aufloesung trotz Cycle korrekt fuehren — der seen-Set-
-    // basierte Walker verhindert Endlosschleifen, und transitive_dependencies
-    // liefert deterministisch alle 3/4/N Knoten der SCC.
+    // When three or more structs reference each other, they form
+    // a strongly connected component (SCC). The TypeRegistry must
+    // perform reference resolution correctly despite the cycle — the seen-set-
+    // based walker prevents infinite loops, and transitive_dependencies
+    // deterministically returns all 3/4/N nodes of the SCC.
 
     fn struct_with_member_ref(name: &str, ref_hash: EquivalenceHash) -> MinimalTypeObject {
         MinimalTypeObject::Struct(
@@ -692,8 +690,8 @@ mod tests {
         assert!(deps.contains(&h_a));
         assert!(deps.contains(&h_b));
         assert!(deps.contains(&h_c));
-        // Keine Endlosschleife: alle 3 + a-self-ref auf bekannte Hashes
-        // → exakt 3 unique Eintraege.
+        // No infinite loop: all 3 + a-self-ref onto known hashes
+        // → exactly 3 unique entries.
         let mut sorted = deps.clone();
         sorted.sort();
         sorted.dedup();
@@ -702,7 +700,7 @@ mod tests {
 
     #[test]
     fn scc_four_element_cycle_resolves_correctly() {
-        // A -> B -> C -> D -> A (4-Knoten-Cycle)
+        // A -> B -> C -> D -> A (4-node cycle)
         let h_a = EquivalenceHash([0x1A; 14]);
         let h_b = EquivalenceHash([0x1B; 14]);
         let h_c = EquivalenceHash([0x1C; 14]);
@@ -729,13 +727,13 @@ mod tests {
         //   A -> B -> D
         //   |    |
         //   v    v
-        //   C -> A   (Diamond mit Back-Edge zu A)
+        //   C -> A   (diamond with a back-edge to A)
         let h_a = EquivalenceHash([0x2A; 14]);
         let h_b = EquivalenceHash([0x2B; 14]);
         let h_c = EquivalenceHash([0x2C; 14]);
         let h_d = EquivalenceHash([0x2D; 14]);
         let mut reg = TypeRegistry::new();
-        // A hat zwei Member: -> B und -> C
+        // A has two members: -> B and -> C
         let st_a = MinimalTypeObject::Struct(
             TypeObjectBuilder::struct_type("A")
                 .member("to_b", TypeIdentifier::EquivalenceHashMinimal(h_b), |m| m)
@@ -745,7 +743,7 @@ mod tests {
         reg.insert_minimal(h_a, st_a);
         reg.insert_minimal(h_b, struct_with_member_ref("B", h_d));
         reg.insert_minimal(h_c, struct_with_member_ref("C", h_a));
-        // D: terminal (kein Hash-Member)
+        // D: terminal (no hash member)
         let st_d = MinimalTypeObject::Struct(
             TypeObjectBuilder::struct_type("D")
                 .member("x", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
@@ -768,8 +766,8 @@ mod tests {
 
     #[test]
     fn external_forward_decl_roundtrip() {
-        // Struct A hat einen `@external A* next` (Self-Forward).
-        // Wire-Encode/Decode des TypeObjects preservieren das EXTERNAL-Flag.
+        // Struct A has an `@external A* next` (self-forward).
+        // The TypeObject's wire encode/decode preserves the EXTERNAL flag.
         use crate::type_identifier::PrimitiveKind;
         use crate::type_object::TypeObject;
         use crate::type_object::flags::StructMemberFlag;
@@ -787,7 +785,7 @@ mod tests {
                 |m| m.id(2),
             )
             .build_minimal();
-        // Hash an Wire-Form festschreiben (nur fuer den Test).
+        // Pin the hash to the wire form (only for the test).
         a.member_seq[0].common.member_flags = StructMemberFlag(StructMemberFlag::IS_EXTERNAL);
 
         let mut reg = TypeRegistry::new();
@@ -809,7 +807,7 @@ mod tests {
             panic!("expected MinimalStruct");
         }
 
-        // Forward-Resolution per Registry: dependencies_of liefert h_self.
+        // Forward resolution via the registry: dependencies_of returns h_self.
         let deps = reg.transitive_dependencies(&h_self, DEFAULT_MAX_RESOLVE_NODES);
         assert!(deps.contains(&h_self));
     }
@@ -820,7 +818,7 @@ mod tests {
         //   A -> @external B -> @external D
         //   A -> @external C -> @external D
         //
-        // Erwartet: transitive_dependencies(A) = {B, C, D}, jeweils unique.
+        // Expected: transitive_dependencies(A) = {B, C, D}, each unique.
         use crate::type_identifier::PrimitiveKind;
         use crate::type_object::flags::StructMemberFlag;
         use crate::type_object::minimal::MinimalTypeObject;
@@ -837,7 +835,7 @@ mod tests {
                 m.external().id(2)
             })
             .build_minimal();
-        // Sicherstellen, dass die EXTERNAL-Flags wirklich gesetzt sind.
+        // Ensure that the EXTERNAL flags are actually set.
         for m in &mut a.member_seq {
             m.common.member_flags = StructMemberFlag(StructMemberFlag::IS_EXTERNAL);
         }
@@ -871,20 +869,20 @@ mod tests {
         assert!(sorted.contains(&h_b));
         assert!(sorted.contains(&h_c));
         assert!(sorted.contains(&h_d));
-        // 3 unique Hashes (B, C, D); A selbst ist root.
+        // 3 unique hashes (B, C, D); A itself is the root.
         assert_eq!(sorted.len(), 3);
     }
 
     #[test]
     fn scc_self_loop_does_not_explode_node_count() {
-        // A -> A (1-Knoten-Cycle, nur self-loop).
+        // A -> A (1-node cycle, only self-loop).
         let h_a = EquivalenceHash([0x3A; 14]);
         let mut reg = TypeRegistry::new();
         reg.insert_minimal(h_a, struct_with_member_ref("A", h_a));
 
         let deps = reg.transitive_dependencies(&h_a, DEFAULT_MAX_RESOLVE_NODES);
         // dependencies_of(h_a) = [h_a], queue.pop() → seen.insert(h_a) push,
-        // dann children of h_a = [h_a] schon in seen → fertig. Genau 1 Eintrag.
+        // then children of h_a = [h_a] already in seen → done. Exactly 1 entry.
         assert_eq!(deps, alloc::vec![h_a]);
     }
 }

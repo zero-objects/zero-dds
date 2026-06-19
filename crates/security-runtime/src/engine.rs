@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Default-Implementation `GovernancePolicyEngine`.
+//! Default implementation `GovernancePolicyEngine`.
 //!
-//! Diese Impl bildet die v1.4-Semantik von [`crate::SharedSecurityGate`]
-//! auf das neue [`PolicyEngine`]-Interface ab — damit Stufe 4–6 den
-//! Gate auf `PolicyEngine`-Basis refaktorieren koennen, ohne dass
-//! bestehende Deployments ihr Wire-Verhalten aendern.
+//! This impl maps the v1.4 semantics of [`crate::SharedSecurityGate`]
+//! onto the new [`PolicyEngine`] interface — so that stages 4–6 can
+//! refactor the gate onto a `PolicyEngine` basis without
+//! existing deployments changing their wire behavior.
 //!
-//! # Semantik
+//! # Semantics
 //!
-//! Der Engine entscheidet rein aus `domain_id` + Governance-XML, ohne
-//! Peer-/Interface-Auswahl — genau wie der aktuelle Gate. Die
-//! Peer-spezifischen Entscheidungen kommen erst mit RC1
-//! (SPDP-Caps) + RC1 (`<peer_classes>`) in spezialisierte
-//! PolicyEngines hinein.
+//! The engine decides purely from `domain_id` + governance XML, without
+//! peer/interface selection — exactly like the current gate. The
+//! peer-specific decisions only arrive with RC1
+//! (SPDP caps) + RC1 (`<peer_classes>`) into specialized
+//! PolicyEngines.
 //!
-//! # Parity-Kontrakt gegenueber `SharedSecurityGate`
+//! # Parity contract against `SharedSecurityGate`
 //!
-//! Die Decision aus [`GovernancePolicyEngine::outbound_decision`]
-//! bildet `ProtectionLevel` 1:1 aus
+//! The decision from [`GovernancePolicyEngine::outbound_decision`]
+//! maps `ProtectionLevel` 1:1 from
 //! `Governance::find_domain_rule(domain_id).rtps_protection_kind` —
-//! der selbe Lookup, den der Gate in `message_protection()` macht.
-//! Der zugehoerige E2E-Test in diesem Modul prueft, dass die
-//! Decision-Matrix `{None, Sign, Encrypt, SignWO, EncryptWO}` gegen
-//! den Gate identisch ausgeht.
+//! the same lookup that the gate does in `message_protection()`.
+//! The corresponding E2E test in this module checks that the
+//! decision matrix `{None, Sign, Encrypt, SignWO, EncryptWO}` comes out
+//! identical to the gate.
 
 use zerodds_security_crypto::Suite;
 use zerodds_security_permissions::{Governance, ProtectionKind};
@@ -35,25 +35,25 @@ use crate::policy::{
     InboundCtx, NetInterface, OutboundCtx, PolicyDecision, PolicyEngine, ProtectionLevel, SuiteHint,
 };
 
-/// Governance-XML-getriebene `PolicyEngine`-Default-Implementation.
+/// Governance-XML-driven `PolicyEngine` default implementation.
 ///
-/// `Clone` ist bewusst NICHT `derive`d: die [`Governance`]-struct
-/// selber ist `Clone`, aber die Engine wird typischerweise als
-/// `Arc<dyn PolicyEngine>` in mehreren Runtime-Komponenten gehalten —
-/// dann ist ein `Arc::clone` der richtige Weg, nicht ein Deep-Copy.
+/// `Clone` is deliberately NOT `derive`d: the [`Governance`] struct
+/// itself is `Clone`, but the engine is typically held as an
+/// `Arc<dyn PolicyEngine>` in several runtime components —
+/// then an `Arc::clone` is the right way, not a deep copy.
 #[derive(Debug)]
 pub struct GovernancePolicyEngine {
     domain_id: u32,
     governance: Governance,
-    /// Default-Suite, wenn Protection = Encrypt. Fuer v1.4-Parity
-    /// ist das `Aes128Gcm` — derselbe Default wie im
+    /// Default suite when protection = Encrypt. For v1.4 parity
+    /// this is `Aes128Gcm` — the same default as in
     /// `AesGcmCryptoPlugin::new()`.
     default_suite: SuiteHint,
 }
 
 impl GovernancePolicyEngine {
-    /// Konstruktor mit explizitem Default-Suite. Fuer v1.4-Parity
-    /// passt [`Self::with_defaults`].
+    /// Constructor with an explicit default suite. For v1.4 parity
+    /// use [`Self::with_defaults`].
     #[must_use]
     pub fn new(domain_id: u32, governance: Governance, default_suite: SuiteHint) -> Self {
         Self {
@@ -63,7 +63,7 @@ impl GovernancePolicyEngine {
         }
     }
 
-    /// Konstruktor mit v1.4-Default-Suite (`AES_128_GCM`).
+    /// Constructor with the v1.4 default suite (`AES_128_GCM`).
     #[must_use]
     pub fn with_defaults(domain_id: u32, governance: Governance) -> Self {
         Self::new(
@@ -73,8 +73,8 @@ impl GovernancePolicyEngine {
         )
     }
 
-    /// Aktuelle `ProtectionKind` aus Governance fuer die Participant-
-    /// Domain — gleicher Lookup wie [`crate::SharedSecurityGate::message_protection`].
+    /// Current `ProtectionKind` from governance for the participant
+    /// domain — same lookup as [`crate::SharedSecurityGate::message_protection`].
     #[must_use]
     pub fn message_protection_kind(&self) -> ProtectionKind {
         self.governance
@@ -83,14 +83,14 @@ impl GovernancePolicyEngine {
             .unwrap_or(ProtectionKind::None)
     }
 
-    /// Konfigurierte Domain-Id.
+    /// Configured domain id.
     #[must_use]
     pub fn domain_id(&self) -> u32 {
         self.domain_id
     }
 
-    /// Gemeinsame Kern-Funktion fuer Out- und Inbound-Decisions:
-    /// das Protection-Level steht rein aus Domain-Rule fest.
+    /// Shared core function for out- and inbound decisions:
+    /// the protection level is fixed purely from the domain rule.
     fn domain_decision(&self) -> PolicyDecision {
         let kind = self.message_protection_kind();
         self.decision_for_kind(kind)
@@ -106,24 +106,24 @@ impl GovernancePolicyEngine {
         PolicyDecision::with(level, suite)
     }
 
-    /// Auflosung der Peer-Klasse fuer einen Remote-Peer + Interface
+    /// Resolution of the peer class for a remote peer + interface
     ///.
     ///
-    /// Schritte:
-    /// 1. Domain-Rule suchen (wenn keine passt → `None`).
-    /// 2. Wenn `peer_classes` leer → Legacy-Pfad → `None`.
-    /// 3. Erste matchende Peer-Klasse finden. Wenn keine matched →
-    ///    `DROP`-Entscheidung (Peer passt in keine konfigurierte
-    ///    Klasse — konservativ-sichere Haltung).
-    /// 4. Interface-Binding-Filter anwenden:
-    ///    * `peer_class_filter` leer → akzeptiert.
-    ///    * Klasse **nicht** im Filter → `DROP`.
-    /// 5. Protection-Level ermitteln:
-    ///    * Start: `peer_class.protection`.
-    ///    * Interface-`protection_override`, wenn gesetzt, hat
-    ///      Vorrang (erlaubt z.B. Loopback → NONE).
-    ///    * Interface-`protection_min` wird als Untergrenze
-    ///      angewandt (`max(level, protection_min)`).
+    /// Steps:
+    /// 1. Find the domain rule (if none matches → `None`).
+    /// 2. If `peer_classes` is empty → legacy path → `None`.
+    /// 3. Find the first matching peer class. If none matched →
+    ///    `DROP` decision (the peer fits no configured
+    ///    class — conservative-safe stance).
+    /// 4. Apply the interface-binding filter:
+    ///    * `peer_class_filter` empty → accepted.
+    ///    * class **not** in the filter → `DROP`.
+    /// 5. Determine the protection level:
+    ///    * start: `peer_class.protection`.
+    ///    * interface `protection_override`, if set, takes
+    ///      precedence (allows e.g. loopback → NONE).
+    ///    * interface `protection_min` is applied as a lower bound
+    ///      (`max(level, protection_min)`).
     fn resolve_peer_decision(
         &self,
         caps: &PeerCapabilities,
@@ -138,7 +138,7 @@ impl GovernancePolicyEngine {
             None => return Some(PolicyDecision::DROP),
         };
 
-        // Interface-Binding-Regel suchen (per Name).
+        // Find the interface-binding rule (by name).
         let iface_rule = if let Some(name) = iface_name(iface) {
             rule.interface_bindings
                 .iter()
@@ -153,15 +153,15 @@ impl GovernancePolicyEngine {
             }
         }
 
-        // Start mit Class-Protection.
+        // Start with the class protection.
         let mut kind = class.protection;
-        // Interface-Override ersetzt.
+        // Interface override replaces.
         if let Some(binding) = iface_rule {
             if let Some(over) = binding.protection_override {
                 kind = over;
             }
-            // Interface-Minimum: nach Uebersetzung in ProtectionLevel
-            // den staerkeren Wert nehmen.
+            // Interface minimum: after translation into ProtectionLevel
+            // take the stronger value.
             if let Some(min) = binding.protection_min {
                 let level_cur = ProtectionLevel::from_protection_kind(kind);
                 let level_min = ProtectionLevel::from_protection_kind(min);
@@ -172,8 +172,8 @@ impl GovernancePolicyEngine {
     }
 }
 
-/// Mappt eine `NetInterface`-Variante auf den Namen, der in
-/// `<zerodds:interface name="...">` erwartet wird.
+/// Maps a `NetInterface` variant to the name expected in
+/// `<zerodds:interface name="...">`.
 fn iface_name(iface: &NetInterface) -> Option<&str> {
     match iface {
         NetInterface::Loopback => Some("loopback"),
@@ -194,19 +194,19 @@ impl PolicyEngine for GovernancePolicyEngine {
 
     fn inbound_decision(&self, ctx: InboundCtx<'_>) -> PolicyDecision {
         let expected = self.domain_decision();
-        // Wenn Domain plaintext erwartet und ein Paket ist SRTPS-
-        // gewrappt: Stufe 5 erweitert das — v1.4-Parity ist: wir
-        // geben die Domain-Decision zurueck, der Gate unwrappt dann.
+        // If the domain expects plaintext and a packet is SRTPS-
+        // wrapped: stage 5 extends this — v1.4 parity is: we
+        // return the domain decision, the gate then unwraps.
         if matches!(expected.protection, ProtectionLevel::None) && ctx.is_sec_prefixed {
-            // Paket wird trotzdem versucht zu entschluesseln — wie im
-            // aktuellen Gate (passthrough, kein hard-drop).
+            // The packet is still attempted to be decrypted — as in the
+            // current gate (passthrough, no hard drop).
             return expected;
         }
-        // Wenn Domain Schutz erwartet und Paket nicht geschuetzt:
-        // der Gate liefert `PolicyViolation`. Engine-seitig markieren
-        // wir das als "drop=true" — Stufe 5 wertet das aus. Aktueller
-        // SharedSecurityGate hat diese Semantik bereits, wir spiegeln
-        // sie hier in der Decision wider.
+        // If the domain expects protection and the packet is not protected:
+        // the gate returns `PolicyViolation`. On the engine side we mark
+        // this as "drop=true" — stage 5 evaluates it. The current
+        // SharedSecurityGate already has these semantics, we mirror
+        // them here in the decision.
         if !matches!(expected.protection, ProtectionLevel::None) && !ctx.is_sec_prefixed {
             return PolicyDecision::DROP;
         }
@@ -214,15 +214,15 @@ impl PolicyEngine for GovernancePolicyEngine {
     }
 
     fn accept_peer(&self, _caps: &PeerCapabilities) -> bool {
-        // v1.4-Parity: der Gate filtert nicht nach Caps. Die
-        // Authentication-Plugin-Kette uebernimmt diese Rolle.
-        // Stufe 2 (SPDP-Caps) verschaerft das.
+        // v1.4 parity: the gate does not filter by caps. The
+        // authentication plugin chain takes that role.
+        // Stage 2 (SPDP caps) tightens this.
         true
     }
 }
 
 // ============================================================================
-// Tests — Parity-Matrix gegen SharedSecurityGate
+// Tests — parity matrix against SharedSecurityGate
 // ============================================================================
 
 #[cfg(test)]
@@ -296,7 +296,7 @@ mod tests {
             let decision = engine.outbound_decision(stub_out_ctx(&peer, &caps, &iface, &parts));
             assert_eq!(
                 decision.protection, expected_level,
-                "protection mismatch fuer kind={kind}"
+                "protection mismatch for kind={kind}"
             );
             assert!(!decision.drop);
         }
@@ -361,7 +361,7 @@ mod tests {
             source_caps: None,
             is_sec_prefixed: false,
         });
-        assert!(d.drop, "plaintext auf protected domain muss droppen");
+        assert!(d.drop, "plaintext on a protected domain must drop");
     }
 
     #[test]
@@ -400,9 +400,9 @@ mod tests {
 
     #[test]
     fn inbound_secure_on_plain_domain_passthrough() {
-        // v1.4-SharedSecurityGate akzeptiert SRTPS auf plain domain
-        // und unwrappt. Unsere Engine liefert die Domain-Decision
-        // zurueck (None) — dann entscheidet der Gate/Plugin.
+        // The v1.4 SharedSecurityGate accepts SRTPS on a plain domain
+        // and unwraps. Our engine returns the domain decision
+        // (None) — then the gate/plugin decides.
         let gov = parse_governance_xml(&gov_xml("NONE")).unwrap();
         let engine = GovernancePolicyEngine::with_defaults(0, gov);
         let peer: PeerKey = [1; 12];
@@ -431,7 +431,7 @@ mod tests {
 
     #[test]
     fn message_protection_kind_falls_back_to_none_when_domain_not_listed() {
-        // Governance hat nur domain_id=0, Engine fragt nach domain_id=99.
+        // Governance only has domain_id=0, the engine asks for domain_id=99.
         let gov = parse_governance_xml(&gov_xml("ENCRYPT")).unwrap();
         let engine = GovernancePolicyEngine::with_defaults(99, gov);
         assert_eq!(engine.message_protection_kind(), ProtectionKind::None);
@@ -444,7 +444,7 @@ mod tests {
         assert_eq!(engine.domain_id(), 42);
     }
 
-    // Nutzt IpRange-Import fuer Compilation-Check
+    // Uses the IpRange import for a compilation check
     #[test]
     fn interface_classification_is_independent_of_engine() {
         let _r = IpRange {
@@ -454,7 +454,7 @@ mod tests {
     }
 
     // =======================================================================
-    // RC1 Stufe 8 — Peer-Class-Integration in GovernancePolicyEngine
+    // RC1 stage 8 — peer-class integration in GovernancePolicyEngine
     // =======================================================================
 
     const HETERO_GOV_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -511,7 +511,7 @@ mod tests {
 
     #[test]
     fn hetero_dod_legacy_peer_on_eth0_gets_none() {
-        // Plan §Stufe 8 DoD-Matrix: Legacy-Peer auf eth0 → NONE.
+        // Plan §stage 8 DoD matrix: legacy peer on eth0 → NONE.
         let engine = hetero_engine();
         let peer: PeerKey = [1; 12];
         let caps = PeerCapabilities::default();
@@ -572,8 +572,8 @@ mod tests {
 
     #[test]
     fn hetero_interface_override_loopback_forces_none() {
-        // Interface-Binding loopback hat protection_override=NONE —
-        // selbst ein secure-Peer darf auf Loopback plain senden.
+        // Interface binding loopback has protection_override=NONE —
+        // even a secure peer may send plain on loopback.
         let engine = hetero_engine();
         let peer: PeerKey = [5; 12];
         let caps = PeerCapabilities {
@@ -587,32 +587,32 @@ mod tests {
         assert_eq!(
             dec.protection,
             ProtectionLevel::None,
-            "loopback-override muss Class-Encrypt ueberschreiben"
+            "loopback override must override class Encrypt"
         );
     }
 
     #[test]
     fn hetero_interface_filter_rejects_legacy_on_tun0() {
-        // tun0 hat peer_class_filter="secure,highassurance". Ein
-        // Legacy-Peer muss droppen.
+        // tun0 has peer_class_filter="secure,highassurance". A
+        // legacy peer must drop.
         let engine = hetero_engine();
         let peer: PeerKey = [6; 12];
         let caps = PeerCapabilities::default(); // legacy
         let iface = NetInterface::Named("tun0".into());
         let parts: Vec<String> = vec![];
         let dec = engine.outbound_decision(mk_out_ctx(&peer, &caps, &iface, &parts));
-        assert!(dec.drop, "Legacy-Peer darf nicht auf tun0 → drop");
+        assert!(dec.drop, "legacy peer must not be on tun0 → drop");
     }
 
     #[test]
     fn hetero_no_matching_peer_class_drops() {
-        // Ein Peer dessen Caps keine der 4 Klassen matchen → Drop
-        // (konservativ-sichere Haltung).
+        // A peer whose caps match none of the 4 classes → drop
+        // (conservative-safe stance).
         let engine = hetero_engine();
         let peer: PeerKey = [7; 12];
         let caps = PeerCapabilities {
-            // Hat Auth (also kein legacy), cert-CN matcht weder fast
-            // noch ha, Suite leer (also kein secure), kein OCSP.
+            // Has auth (so not legacy), cert CN matches neither fast
+            // nor ha, suite empty (so not secure), no OCSP.
             auth_plugin_class: Some("DDS:Auth:PKI-DH:1.2".into()),
             cert_cn: Some("unknown.zone".into()),
             supported_suites: vec![],
@@ -621,17 +621,16 @@ mod tests {
         let iface = NetInterface::Named("eth0".into());
         let parts: Vec<String> = vec![];
         let dec = engine.outbound_decision(mk_out_ctx(&peer, &caps, &iface, &parts));
-        assert!(dec.drop, "Peer in keiner Klasse → drop");
+        assert!(dec.drop, "peer in no class → drop");
     }
 
     #[test]
     fn hetero_interface_protection_min_upgrades_sign_to_encrypt() {
-        // tun0 hat protection_min=ENCRYPT — ein secure-Peer ist
-        // bereits ENCRYPT (stronger_wins ändert nichts).
-        // Wichtiger: ein fast-Peer (SIGN) wuerde auf tun0 als DROP
-        // enden, weil fast nicht im filter ist. Also testen wir mit
-        // einem secure-Peer der nur durch protection_min auf ENCRYPT
-        // bleibt.
+        // tun0 has protection_min=ENCRYPT — a secure peer is
+        // already ENCRYPT (stronger_wins changes nothing).
+        // More important: a fast peer (SIGN) would end up as DROP on
+        // tun0, because fast is not in the filter. So we test with
+        // a secure peer that stays at ENCRYPT only via protection_min.
         let engine = hetero_engine();
         let peer: PeerKey = [8; 12];
         let caps = PeerCapabilities {
@@ -647,8 +646,8 @@ mod tests {
 
     #[test]
     fn legacy_xml_without_peer_classes_falls_back_to_domain_rule() {
-        // Ein reines OMG-Governance-XML ohne peer_classes soll
-        // exakt wie v1.4 entscheiden (Domain-Rule wins).
+        // A pure OMG governance XML without peer_classes should
+        // decide exactly like v1.4 (domain rule wins).
         let engine = GovernancePolicyEngine::with_defaults(
             0,
             parse_governance_xml(&gov_xml("SIGN")).unwrap(),
@@ -665,7 +664,7 @@ mod tests {
         assert_eq!(
             dec.protection,
             ProtectionLevel::Sign,
-            "ohne peer_classes muss Domain-Rule greifen"
+            "without peer_classes the domain rule must take effect"
         );
     }
 }

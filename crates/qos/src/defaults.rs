@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Verifikation der Default-Werte gegen DDS 1.4 §2.2.3.
+//! Verification of the default values against DDS 1.4 §2.2.3.
 //!
-//! Jede Policy hat einen Spec-Default; dieser Test-Satz stellt sicher,
-//! dass unsere `Default::default()`-Impls den Spec-Defaults entsprechen.
-//! Fehlerhafte Defaults sind eine haeufige Interop-Quelle (siehe Memory:
-//! "Spec-Treue schlaegt Diff-Groesse" — Core-Changes willkommen, wenn sie
-//! das Datenmodell spec-treu machen).
+//! Each policy has a spec default; this test set ensures
+//! that our `Default::default()` impls match the spec defaults.
+//! Incorrect defaults are a common source of interop issues (see memory:
+//! "spec fidelity beats diff size" — core changes are welcome when they
+//! make the data model spec-faithful).
 //!
-//! Die Tests hier sind Reine-Verifikation und wollen keine Logik; sie
-//! dokumentieren die Spec-Paragraphen im Klartext.
+//! The tests here are pure verification and intentionally hold no logic;
+//! they document the spec paragraphs in plain text.
 
 #[cfg(test)]
 #[allow(clippy::bool_assert_comparison)]
@@ -27,7 +27,7 @@ mod tests {
         TransportPriorityQosPolicy, UserDataQosPolicy, WriterDataLifecycleQosPolicy,
     };
 
-    // §2.2.3.1-3 UserData/TopicData/GroupData: leere bytes.
+    // §2.2.3.1-3 UserData/TopicData/GroupData: empty bytes.
     #[test]
     fn user_data_default_is_empty() {
         assert!(UserDataQosPolicy::default().value.is_empty());
@@ -106,8 +106,8 @@ mod tests {
         assert!(PartitionQosPolicy::default().names.is_empty());
     }
 
-    // §2.2.3.14 Reliability: BestEffort (Reader-default). Writer setzt
-    // ::Reliable explizit.
+    // §2.2.3.14 Reliability: BestEffort (reader default). Writer sets
+    // ::Reliable explicitly.
     #[test]
     fn reliability_default_best_effort_100ms() {
         let d = ReliabilityQosPolicy::default();
@@ -153,7 +153,7 @@ mod tests {
         assert_eq!(d.max_samples_per_instance, LENGTH_UNLIMITED);
     }
 
-    // §2.2.3.20 ReaderDataLifecycle: beide INFINITE.
+    // §2.2.3.20 ReaderDataLifecycle: both INFINITE.
     #[test]
     fn reader_data_lifecycle_default_infinite() {
         let d = ReaderDataLifecycleQosPolicy::default();

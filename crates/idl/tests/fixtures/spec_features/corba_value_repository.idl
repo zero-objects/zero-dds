@@ -1,6 +1,6 @@
 // IDL 4.2 §7.4.5 Value Types Full + §7.4.6 Repository-IDs / Import.
 //
-// Synthetisch konstruierte Fixture fuer Grammar-Coverage:
+// Synthetically constructed fixture for grammar coverage:
 // - value_def + value_header + value_inheritance_spec + value_element +
 //   state_member + init_dcl + init_param_dcls/dcl + value_inheritance_name_list
 // - type_id_dcl + type_prefix_dcl + import_dcl + imported_scope

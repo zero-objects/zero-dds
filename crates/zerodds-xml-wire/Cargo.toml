@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["dds", "xml", "wire", "cdr"]
 categories = ["parsing", "network-programming"]
 authors.workspace = true
-description = "DDS-XML 1.0 Wire-PSM für ZeroDDS — XML↔CDR-Codec, XSD-Schema-Gen, Streaming-Parser."
+description = "DDS-XML 1.0 wire PSM for ZeroDDS — XML↔CDR codec, XSD schema gen, streaming parser."
 publish = true
 
 [lints]

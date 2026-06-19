@@ -3,87 +3,87 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-rt-linux/badge.svg)](https://docs.rs/zerodds-rt-linux)
 
-Linux Real-Time-Scheduling Adapter fuer den
-[ZeroDDS](https://zerodds.org)-Stack: `SCHED_FIFO`/`SCHED_RR`/
-`SCHED_DEADLINE`-Profile + CPU-Pinning. Safety classification:
-**COMFORT** — die einzige Stelle im Workspace, wo `unsafe`-Syscalls
-in den Runtime-Pfad gelangen.
+Linux real-time scheduling adapter for the
+[ZeroDDS](https://zerodds.org) stack: `SCHED_FIFO`/`SCHED_RR`/
+`SCHED_DEADLINE` profiles + CPU pinning. Safety classification:
+**COMFORT** — the only place in the workspace where `unsafe` syscalls
+reach the runtime path.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| `sched(7)` Linux-Manpage | SCHED_OTHER / SCHED_FIFO / SCHED_RR / SCHED_DEADLINE |
-| `sched_setattr(2)` | `sched_attr`-Struktur + Syscall-Number |
+| `sched(7)` Linux man page | SCHED_OTHER / SCHED_FIFO / SCHED_RR / SCHED_DEADLINE |
+| `sched_setattr(2)` | `sched_attr` struct + syscall number |
 | `sched_setaffinity(2)` | `cpu_set_t` |
 
-Keine OMG-Spec — Linux-Kernel-API.
+No OMG spec — Linux kernel API.
 
-## Was ist drin
+## What's inside
 
-- **`SchedulerProfile`** — Builder fuer `SCHED_FIFO`/`SCHED_RR`/
-  `SCHED_DEADLINE`/`SCHED_OTHER`-Profile mit Validation.
-- **`SchedulerKind`** — Enum-Diskriminanten.
-- **`apply_to_current_thread()`** — `sched_setattr` auf `tid=0`.
-- **`current_scheduler()`** — `sched_getattr` auf `tid=0`, liefert
+- **`SchedulerProfile`** — builder for `SCHED_FIFO`/`SCHED_RR`/
+  `SCHED_DEADLINE`/`SCHED_OTHER` profiles with validation.
+- **`SchedulerKind`** — enum discriminants.
+- **`apply_to_current_thread()`** — `sched_setattr` on `tid=0`.
+- **`current_scheduler()`** — `sched_getattr` on `tid=0`, returns
   `RunningSchedulerInfo`.
-- **`pin_current_thread_to_cpus(&[u32])`** — `sched_setaffinity` mit
-  CPU-Set.
+- **`pin_current_thread_to_cpus(&[u32])`** — `sched_setaffinity` with a
+  CPU set.
 
-Auf Nicht-Linux-Targets liefern alle Public-APIs
-`io::ErrorKind::Unsupported` zurueck — der Workspace baut weiter auf
-macOS und Windows.
+On non-Linux targets all public APIs return
+`io::ErrorKind::Unsupported` — the workspace still builds on
+macOS and Windows.
 
-## Schichten-Position
+## Layer position
 
-Layer 4 — Core Services. **Keine** ZeroDDS-Crate-Deps; `libc` ist die
-einzige externe Dep, target-gegated `cfg(target_os = "linux")`.
+Layer 4 — core services. **No** ZeroDDS crate deps; `libc` is the
+only external dep, target-gated `cfg(target_os = "linux")`.
 
 ## Quickstart
 
 ```rust,no_run
 use zerodds_rt_linux::{SchedulerProfile, pin_current_thread_to_cpus};
 
-// Real-Time-FIFO mit Priority 80, CPU-Pinning auf Core 2+3:
+// Real-time FIFO with priority 80, CPU pinning to cores 2+3:
 let profile = SchedulerProfile::fifo(80).expect("priority valid");
-profile.apply_to_current_thread().expect("CAP_SYS_NICE noetig");
+profile.apply_to_current_thread().expect("CAP_SYS_NICE needed");
 pin_current_thread_to_cpus(&[2, 3]).expect("affinity set");
 ```
 
-## Privilegien
+## Privileges
 
-`SCHED_FIFO`/`SCHED_RR` mit Priority > 0 + `SCHED_DEADLINE` brauchen
-`CAP_SYS_NICE` (effective). Default-User-Tests bekommen `EPERM`
-zurueck — die Test-Suite handelt das als "skipped" und behauptet
-nicht, der Pfad sei verifiziert.
+`SCHED_FIFO`/`SCHED_RR` with priority > 0 + `SCHED_DEADLINE` need
+`CAP_SYS_NICE` (effective). Default-user tests get `EPERM`
+back — the test suite treats this as "skipped" and does not
+claim the path is verified.
 
-## Threat-Model + Invarianten
+## Threat model + invariants
 
-Alle FFI-Calls in diesem Crate halten folgende Invarianten ein:
+All FFI calls in this crate hold the following invariants:
 
-1. **Kein Pointer-Outliving** — Stack-lokale Strukturen, kein Heap.
-2. **Kein FD-Leak** — keiner der genutzten Syscalls erzeugt FDs.
-3. **Kein Memory-Aliasing** — Buffer sind exklusiv waehrend des Aufrufs.
-4. **Errno-zu-Result** — `io::Error::last_os_error()` wird genau einmal vor weiteren libc-Operationen gelesen.
-5. **Keine Mut-Aliasing-Race** — alle Calls beziehen sich auf `tid = 0`
-   (calling thread), nicht auf Fremd-Threads.
+1. **No pointer outliving** — stack-local structs, no heap.
+2. **No FD leak** — none of the syscalls used create FDs.
+3. **No memory aliasing** — buffers are exclusive during the call.
+4. **Errno-to-Result** — `io::Error::last_os_error()` is read exactly once before any further libc operations.
+5. **No mut-aliasing race** — all calls refer to `tid = 0`
+   (the calling thread), not foreign threads.
 
-Jeder `unsafe { libc::... }`-Block in `syscalls.rs` traegt einen
-`// SAFETY:`-Kommentar mit Block-genauer Begruendung.
+Every `unsafe { libc::... }` block in `syscalls.rs` carries a
+`// SAFETY:` comment with a block-specific rationale.
 
-## Feature-Flags
+## Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std` | ✅ | `std::io::Error` + Stack-Strukturen. |
+| `std` | ✅ | `std::io::Error` + stack structs. |
 
-Ohne `std` baut die Crate als no-op-Stub auf Linux (alle Public-APIs
-liefern `Unsupported`).
+Without `std` the crate builds as a no-op stub on Linux (all public APIs
+return `Unsupported`).
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1`. Public-API + Errno-Mapping RC1-stabil. Linux-Kernel-API
-(`sched_setattr`/`sched_setaffinity`) ist seit Kernel 3.14 stabil.
+`1.0.0-rc.1`. Public API + errno mapping RC1-stable. The Linux kernel API
+(`sched_setattr`/`sched_setaffinity`) has been stable since kernel 3.14.
 
 ## Tests
 
@@ -91,14 +91,14 @@ liefern `Unsupported`).
 cargo test -p zerodds-rt-linux
 ```
 
-7 Tests — privilegienfreie Pfade + EPERM-Errno-Pfade + Round-Trip
-zwischen `apply` und `current_scheduler`.
+7 tests — privilege-free paths + EPERM errno paths + round-trip
+between `apply` and `current_scheduler`.
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../../LICENSE).
+Apache-2.0. See [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
-- `sched(7)`, `sched_setattr(2)`, `sched_setaffinity(2)` — Linux-Manpages.
-- `docs/architecture/04_safety_by_architecture.md` §2.3 COMFORT-Klasse.
+- `sched(7)`, `sched_setattr(2)`, `sched_setaffinity(2)` — Linux man pages.
+- `docs/architecture/04_safety_by_architecture.md` §2.3 COMFORT class.

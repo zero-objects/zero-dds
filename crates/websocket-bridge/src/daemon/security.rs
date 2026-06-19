@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! WS-Bridge §7.x Security-Wireup: TLS-Acceptor, Auth-Validation,
-//! Topic-ACL. Sitzt zwischen `accept()` und dem WS-Handshake-Pfad
+//! WS-Bridge §7.x security wireup: TLS acceptor, auth validation,
+//! topic ACL. Sits between `accept()` and the WS handshake path
 //! in [`super::server`].
 //!
-//! Spec: `zerodds-ws-bridge-1.0.md` §7. Die eigentliche Logik kommt
-//! aus [`zerodds_bridge_security`] — dieses Modul ist nur der WS-
-//! spezifische Hook (`Authorization`-Header aus dem HTTP-Upgrade-
-//! Request).
+//! Spec: `zerodds-ws-bridge-1.0.md` §7. The actual logic comes
+//! from [`zerodds_bridge_security`] — this module is only the WS-
+//! specific hook (`Authorization` header from the HTTP upgrade
+//! request).
 
 pub use zerodds_bridge_security::{
     Acl, AclEntry, AclOp, AuthError, AuthMode, AuthSubject, RotatingTlsConfig, SecurityConfig,
@@ -16,13 +16,13 @@ pub use zerodds_bridge_security::{
     extract_mtls_subject, serve_tls_handshake,
 };
 
-/// Übersetzt die Daemon-CLI/YAML-`DaemonConfig` in einen
-/// [`SecurityCtx`] + optionale [`RotatingTlsConfig`] für Hot-Reload.
+/// Translates the daemon CLI/YAML `DaemonConfig` into a
+/// [`SecurityCtx`] + optional [`RotatingTlsConfig`] for hot reload.
 ///
-/// Wird beim Daemon-Start und beim SIGHUP-Reload identisch genutzt.
+/// Used identically on daemon start and on SIGHUP reload.
 ///
 /// # Errors
-/// [`SecurityError`] bei TLS-Lade- oder Auth-Mode-Konfig-Fehler.
+/// [`SecurityError`] on a TLS-load or auth-mode config error.
 pub fn ctx_from_daemon_config(
     cfg: &super::config::DaemonConfig,
 ) -> Result<(SecurityCtx, Option<RotatingTlsConfig>), SecurityError> {
@@ -69,15 +69,15 @@ pub fn ctx_from_daemon_config(
     Ok((ctx, rotating))
 }
 
-/// WS-spezifischer Auth-Hook: extrahiert Bearer-/JWT-Token aus dem
-/// HTTP-Upgrade-Request und prüft gegen [`AuthMode`].
+/// WS-specific auth hook: extracts the bearer/JWT token from the
+/// HTTP upgrade request and checks it against [`AuthMode`].
 ///
-/// `headers` ist die rohe Header-Liste aus
+/// `headers` is the raw header list from
 /// [`crate::handshake::ClientRequest::headers`] (case-insensitive
-/// match auf `Authorization`).
+/// match on `Authorization`).
 ///
 /// # Errors
-/// [`AuthError`] bei missing/malformed/rejected.
+/// [`AuthError`] on missing/malformed/rejected.
 pub fn authenticate_ws(
     auth: &AuthMode,
     headers: &[(String, String)],
@@ -90,9 +90,9 @@ pub fn authenticate_ws(
     bs_authenticate(auth, auth_header, None, mtls_subject)
 }
 
-/// Mini-HTTP-Header-Extractor für den Raw-Handshake-Request-String.
-/// Liefert den Wert des ersten `Authorization:`-Headers (case-
-/// insensitive) ohne CRLF-Trailer.
+/// Mini HTTP header extractor for the raw handshake request string.
+/// Returns the value of the first `Authorization:` header (case-
+/// insensitive) without the CRLF trailer.
 #[must_use]
 pub fn extract_authorization_header(raw_request: &str) -> Option<String> {
     for line in raw_request.split("\r\n") {

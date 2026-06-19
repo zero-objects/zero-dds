@@ -1,6 +1,6 @@
-"""SampleStateMask-Konstanten (DDS 1.4 §2.2.2.5.1.4).
+"""SampleStateMask constants (DDS 1.4 §2.2.2.5.1.4).
 
-Verwendung mit `zerodds.ReadCondition` / `zerodds.QueryCondition`::
+Use with `zerodds.ReadCondition` / `zerodds.QueryCondition`::
 
     rc = zerodds.ReadCondition(
         zerodds.sample_state.ANY,

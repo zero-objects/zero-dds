@@ -26,4 +26,4 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-xml-wire = { version = "1.0.0-rc.1", path = "../zerodds-xml-wire" }
+zerodds-xml-wire = { version = "1.0.0-rc.3", path = "../zerodds-xml-wire" }

@@ -3,17 +3,17 @@
 //
 //! Crate `zerodds-rs`. Safety classification: **SAFE**.
 //!
-//! `zerodds-rs` — idiomatische Rust-SDK-Facade.
+//! `zerodds-rs` — idiomatic Rust SDK facade.
 //!
-//! Re-exportiert die nutzerseitig relevanten APIs aus den darunterliegenden
-//! Implementierungs-Crates (`zerodds-dcps`, `zerodds-dcps-async`,
+//! Re-exports the user-facing APIs from the underlying
+//! implementation crates (`zerodds-dcps`, `zerodds-dcps-async`,
 //! `zerodds-qos`, `zerodds-types`, `zerodds-monitor`, `zerodds-recorder`).
 //!
-//! Anwendungen sollten **diese** Crate nutzen — direkter Zugriff auf
-//! `zerodds-dcps` etc. ist erlaubt, aber an `zerodds-rs` muss sich die
-//! Public-API stabilisieren.
+//! Applications should use **this** crate — direct access to
+//! `zerodds-dcps` etc. is allowed, but the public API must stabilize
+//! against `zerodds-rs`.
 //!
-//! # Beispiel
+//! # Example
 //!
 //! ```no_run
 //! use zerodds_rs::{
@@ -28,19 +28,19 @@
 //! let writer = publisher
 //!     .create_datawriter::<RawBytes>(&topic, DataWriterQos::default())
 //!     .unwrap();
-//! let _ = writer; // offline-Mode hat kein UDP — nur API-Smoke.
+//! let _ = writer; // offline mode has no UDP — API smoke only.
 //! ```
 //!
 //! ## Re-Exports
 //!
-//! - **[`crate::dcps`]** — synchrone DCPS-Surface (`zerodds_dcps::*`).
+//! - **[`crate::dcps`]** — synchronous DCPS surface (`zerodds_dcps::*`).
 //! - **[`crate::aio`]** — async DCPS (`zerodds_dcps_async::*`).
-//! - **[`crate::qos`]** — alle 22 QoS-Policies (`zerodds_qos::*`).
-//! - **[`crate::types`]** — IDL-/XTypes-Typsystem (`zerodds_types::*`).
-//! - **[`crate::monitor`]** — Statistics + Built-in DCPS-Monitor.
-//! - **[`crate::recorder`]** — Sample-Recording + -Replay.
+//! - **[`crate::qos`]** — all 22 QoS policies (`zerodds_qos::*`).
+//! - **[`crate::types`]** — IDL/XTypes type system (`zerodds_types::*`).
+//! - **[`crate::monitor`]** — statistics + built-in DCPS monitor.
+//! - **[`crate::recorder`]** — sample recording + replay.
 //!
-//! Plus Top-Level-Convenience-Re-Exports der haeufigsten Symbole.
+//! Plus top-level convenience re-exports of the most common symbols.
 
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
@@ -54,16 +54,16 @@ pub use zerodds_dcps_async as aio;
 /// QoS-Policies (`zerodds_qos`).
 pub use zerodds_qos as qos;
 
-/// IDL-/XTypes-Typsystem (`zerodds_types`).
+/// IDL/XTypes type system (`zerodds_types`).
 pub use zerodds_types as types;
 
 /// DCPS-Monitor (`zerodds_monitor`).
 pub use zerodds_monitor as monitor;
 
-/// Sample-Recording (`zerodds_recorder`).
+/// Sample recording (`zerodds_recorder`).
 pub use zerodds_recorder as recorder;
 
-/// Foundation-Layer (Time-Service, Observability) (`zerodds_foundation`).
+/// Foundation layer (time service, observability) (`zerodds_foundation`).
 pub use zerodds_foundation as foundation;
 
 // ---- Top-Level Convenience Re-Exports -------------------------------------

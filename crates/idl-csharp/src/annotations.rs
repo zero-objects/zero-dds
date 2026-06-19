@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! IDL → C#-Attribute-Bridge (C5.3-b).
+//! IDL → C# attribute bridge (C5.3-b).
 //!
-//! Mappt typisierte `BuiltinAnnotation`s aus `zerodds_idl::semantics::annotations`
-//! auf C#-Attribute-Strings, die der Emitter in den Output schreibt.
+//! Maps typed `BuiltinAnnotation`s from `zerodds_idl::semantics::annotations`
+//! to C# attribute strings that the emitter writes into the output.
 //!
-//! Die C#-Attribute-Klassen selbst leben in der Runtime-Lib `Omg.Types`
-//! (siehe `runtime/Omg.Types.cs`). Generated Code muss `using Omg.Types;`
-//! haben, sobald irgendein Member oder Type eine Annotation traegt.
+//! The C# attribute classes themselves live in the runtime lib `Omg.Types`
+//! (see `runtime/Omg.Types.cs`). Generated code must have `using Omg.Types;`
+//! as soon as any member or type carries an annotation.
 //!
-//! ## Mapping-Tabelle
+//! ## Mapping table
 //!
-//! | IDL                           | C#-Attribute                                |
+//! | IDL                           | C# attribute                                |
 //! |-------------------------------|---------------------------------------------|
 //! | `@key`                        | `[Key]`                                     |
 //! | `@id(N)`                      | `[Id(N)]`                                   |
 //! | `@optional`                   | `[Optional]` + `T?`                         |
 //! | `@must_understand`            | `[MustUnderstand]`                          |
 //! | `@external`                   | `[External]`                                |
-//! | `@nested`                     | `[Nested]` (Type-Level)                     |
+//! | `@nested`                     | `[Nested]` (type level)                     |
 //! | `@extensibility(FINAL)`       | `[Extensibility(ExtensibilityKind.Final)]`  |
 //! | `@extensibility(APPENDABLE)`  | `[Extensibility(ExtensibilityKind.Appendable)]` |
 //! | `@extensibility(MUTABLE)`     | `[Extensibility(ExtensibilityKind.Mutable)]` |
@@ -26,36 +26,36 @@
 //! | `@appendable` (shorthand)     | `[Extensibility(ExtensibilityKind.Appendable)]` |
 //! | `@mutable` (shorthand)        | `[Extensibility(ExtensibilityKind.Mutable)]` |
 //!
-//! ## Bewusst NICHT gemappt
+//! ## Deliberately NOT mapped
 //!
-//! - `@autoid(...)`     — wird beim TypeObject-Build verbraucht, fuer C#-
-//!                        Codegen ohne sichtbaren Effekt; Phase 6+.
-//! - `@topic`           — implizit ueber `ITopicType<T>`-Marker
-//!                        (siehe `emitter::is_topic_type`).
+//! - `@autoid(...)`     — consumed during the TypeObject build, no
+//!                        visible effect for C# codegen; phase 6+.
+//! - `@topic`           — implicit via the `ITopicType<T>` marker
+//!                        (see `emitter::is_topic_type`).
 //! - `@unit`, `@hashid`,
 //!   `@range`, `@min`, `@max`, `@value`, `@position`, `@bit_bound`,
-//!   `@default`, `@default_literal`, `@verbatim` — semantische Hints
-//!   ohne Wire-Effekt im C#-Mapping; Phase 6+.
+//!   `@default`, `@default_literal`, `@verbatim` — semantic hints
+//!   without a wire effect in the C# mapping; phase 6+.
 
 use zerodds_idl::ast::Annotation;
 use zerodds_idl::semantics::annotations::{
     BuiltinAnnotation, ExtensibilityKind, lower_annotations, lower_type_annotations,
 };
 
-/// Resultat des Annotation-Bridgings: Strings, die der Emitter
-/// als Zeile vor das Member/den Type stellt.
+/// Result of the annotation bridging: strings that the emitter
+/// places as a line before the member/type.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct CsAttributes {
-    /// Eine Zeile pro C#-Attribute, ohne Trailing-Newline.
+    /// One line per C# attribute, without a trailing newline.
     pub(crate) attrs: Vec<String>,
-    /// `true` wenn mind. ein Attribut emittiert wurde — Emitter
-    /// nutzt das zum Setzen des `using Omg.Types;`-Imports.
+    /// `true` if at least one attribute was emitted — the emitter
+    /// uses this to set the `using Omg.Types;` import.
     pub(crate) needs_omg_types: bool,
-    /// `true` wenn `@optional` gesetzt ist (Emitter macht den Type
-    /// dann zusaetzlich nullable).
+    /// `true` if `@optional` is set (the emitter then additionally makes
+    /// the type nullable).
     pub(crate) optional: bool,
-    /// `true` wenn `@shared` gesetzt ist (Emitter packt Type in einen
-    /// Reference-Wrapper / `T?`-Reference).
+    /// `true` if `@shared` is set (the emitter wraps the type in a
+    /// reference wrapper / `T?` reference).
     pub(crate) shared: bool,
 }
 
@@ -66,16 +66,16 @@ impl CsAttributes {
     }
 }
 
-/// Bridge fuer Member-Level-Annotationen (`@key`, `@id`, `@optional`,
+/// Bridge for member-level annotations (`@key`, `@id`, `@optional`,
 /// `@must_understand`, `@external`).
 ///
-/// Unbekannte / nicht gemappte Annotations werden ignoriert (sie
-/// liegen ja schon im AST).
+/// Unknown / unmapped annotations are ignored (they are
+/// already in the AST anyway).
 pub(crate) fn member_attributes(anns: &[Annotation]) -> CsAttributes {
     let mut out = CsAttributes::default();
     let Ok(lowered) = lower_annotations(anns) else {
-        // Lower-Error: silent-skip — Codegen ist nicht der Ort fuer
-        // Annotation-Validation, das macht das Lowering selbst.
+        // Lower error: silent skip — codegen is not the place for
+        // annotation validation, the lowering does that itself.
         return out;
     };
     for b in &lowered.builtins {
@@ -88,26 +88,26 @@ pub(crate) fn member_attributes(anns: &[Annotation]) -> CsAttributes {
             }
             BuiltinAnnotation::Shared => {
                 // §8.1.5 idl4-cpp / dds-psm-cxx: @shared -> Pointer.
-                // C# hat kein direktes shared_ptr-Aequivalent; wir nutzen
-                // das `[Shared]`-Marker-Attribute (Annotation-Definition
-                // in Omg.Types-Runtime) und reichen den C#-Reference-
-                // Type-Charakter (Class statt Struct) durch.
+                // C# has no direct shared_ptr equivalent; we use
+                // the `[Shared]` marker attribute (annotation definition
+                // in the Omg.Types runtime) and pass through the C#
+                // reference-type character (class instead of struct).
                 out.push("[Shared]");
                 out.shared = true;
             }
             BuiltinAnnotation::MustUnderstand => out.push("[MustUnderstand]"),
             BuiltinAnnotation::External => out.push("[External]"),
-            // Member-Level: @nested ist nicht zulaessig laut Spec.
-            // Member-Level: @extensibility ist nicht zulaessig laut Spec.
-            // Andere Annotations (default/min/max/range/...) sind
-            // semantische Hints ohne C#-Attribut-Mapping in Phase 5.
+            // Member level: @nested is not allowed per spec.
+            // Member level: @extensibility is not allowed per spec.
+            // Other annotations (default/min/max/range/...) are
+            // semantic hints without a C# attribute mapping in phase 5.
             _ => {}
         }
     }
     out
 }
 
-/// Bridge fuer Type-Level-Annotationen (`@nested`, `@extensibility`,
+/// Bridge for type-level annotations (`@nested`, `@extensibility`,
 /// `@final`/`@appendable`/`@mutable`).
 pub(crate) fn type_attributes(anns: &[Annotation]) -> CsAttributes {
     let mut out = CsAttributes::default();
@@ -133,9 +133,9 @@ pub(crate) fn type_attributes(anns: &[Annotation]) -> CsAttributes {
     out
 }
 
-/// `true` wenn ein Type *nicht* `@nested` markiert ist (also Topic-faehig).
-/// Default: Top-Level-Structs sind Topic-Types, sofern nicht explizit
-/// `@nested` annotiert.
+/// `true` if a type is *not* marked `@nested` (i.e. topic-capable).
+/// Default: top-level structs are topic types unless explicitly
+/// annotated `@nested`.
 pub(crate) fn is_nested_type(anns: &[Annotation]) -> bool {
     let Ok(lowered) = lower_type_annotations(anns) else {
         return false;
@@ -305,7 +305,7 @@ mod tests {
     fn key_and_id_combine_in_order() {
         let anns = parse_first_member_anns("struct S { @key @id(7) long id; };");
         let cs = member_attributes(&anns);
-        // Reihenfolge entspricht der Source-Reihenfolge.
+        // The order matches the source order.
         assert_eq!(cs.attrs, vec!["[Key]".to_string(), "[Id(7)]".to_string()]);
     }
 }

@@ -3,35 +3,35 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-corba-cos-event/badge.svg)](https://docs.rs/zerodds-corba-cos-event)
 
-OMG CosEventService 1.4 (`formal/2004-10-02`) voller Stack —
-Push/Pull-Modell + EventChannelAdmin + TypedEvent.
+OMG CosEventService 1.4 (`formal/2004-10-02`) full stack —
+push/pull model + EventChannelAdmin + TypedEvent.
 `no_std + alloc`, `forbid(unsafe_code)`. Safety classification:
 **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
 | OMG CosEventService 1.4 (`formal/2004-10-02`) | §1.5 (CosEventComm), §1.6 (CosEventChannelAdmin), §2 (CosTypedEventComm + CosTypedEventChannelAdmin) |
 
-## Was ist drin
+## What's inside
 
-- **`AnyEvent`** — opaque Event-Body-Container.
+- **`AnyEvent`** — opaque event-body container.
 - **`PushConsumer` / `PushSupplier` / `PullConsumer` / `PullSupplier`**
-  — §1.5 Trait-Surfaces mit Disconnect-Operations.
+  — §1.5 trait surfaces with disconnect operations.
 - **`EventChannel` / `ConsumerAdmin` / `SupplierAdmin`** — §1.6
-  Channel-Admin.
+  channel admin.
 - **`ProxyPushConsumer` / `ProxyPushSupplier` / `ProxyPullConsumer` /
-  `ProxyPullSupplier`** — §1.6 Proxies.
+  `ProxyPullSupplier`** — §1.6 proxies.
 - **`TypedEventChannel` / `TypedPushConsumer` / `TypedPushSupplier`**
-  — §2 Typed-Variant.
-- **`Disconnected` / `ConnectError`** — Spec-§1.5-Errors.
+  — §2 typed variant.
+- **`Disconnected` / `ConnectError`** — spec §1.5 errors.
 
-## Schichten-Position
+## Layer position
 
-Layer 8 — CORBA-Stack (Tier-A). Caller-Layer (Daemon o.ae.)
-konstruiert konkrete Channel-Instanzen, registriert Suppliers und
-Consumers, und treibt die Connect/Disconnect-Lifecycle.
+Layer 8 — CORBA stack (tier A). The caller layer (daemon or similar)
+constructs concrete channel instances, registers suppliers and
+consumers, and drives the connect/disconnect lifecycle.
 
 ## Quickstart
 
@@ -43,19 +43,19 @@ let _consumer_admin = channel.for_consumers();
 let _supplier_admin = channel.for_suppliers();
 ```
 
-## Feature-Flags
+## Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std` | ✅ | Standard-Library. |
+| `std` | ✅ | Standard library. |
 | `alloc` | ✅ (via std) | `Vec` / `String` / `Arc`. |
 
-`no_std`-fahig: `default-features = false, features = ["alloc"]`.
+`no_std`-capable: `default-features = false, features = ["alloc"]`.
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1`. Public-API + Trait-Surfaces sind RC1-stabil; Spec-
-Aenderungen erfordern Major-Bump.
+`1.0.0-rc.1`. Public API + trait surfaces are RC1-stable; spec
+changes require a major bump.
 
 ## Tests
 
@@ -63,12 +63,12 @@ Aenderungen erfordern Major-Bump.
 cargo test -p zerodds-corba-cos-event
 ```
 
-23 Unit-Tests grün.
+23 unit tests green.
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../../LICENSE).
+Apache-2.0. See [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
-- [`docs/release/rc1-reviews/corba-cos-event.md`](../../docs/release/rc1-reviews/corba-cos-event.md) — RC1-Review.
+- [`docs/release/rc1-reviews/corba-cos-event.md`](../../docs/release/rc1-reviews/corba-cos-event.md) — RC1 review.

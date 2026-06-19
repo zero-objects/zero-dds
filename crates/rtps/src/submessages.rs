@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! RTPS-Submessages — DDSI-RTPS 2.5 §8.3.7.
+//! RTPS submessages — DDSI-RTPS 2.5 §8.3.7.
 //!
-//! Implementierte Submessages:
+//! Implemented submessages:
 //! - **DATA** (`DataSubmessage`) — §8.3.7.2.
 //! - **HEARTBEAT** (`HeartbeatSubmessage`) — §8.3.7.5.
 //! - **ACKNACK** (`AckNackSubmessage`) — §8.3.7.1.
@@ -14,16 +14,16 @@
 //! - **INFO_TS** (`InfoTimestampSubmessage`) — §8.3.7.5/§8.3.8.5.
 //! - **INFO_REPLY** (`InfoReplySubmessage`) — §8.3.7.8.
 //!
-//! ParameterList (Inline-QoS) lebt im separaten Modul
-//! [`crate::parameter_list`]; SecuredPayload-Wrapping liegt im
-//! `zerodds-security`-Crate (DDS-Security 1.2 §7.4).
+//! ParameterList (inline QoS) lives in the separate module
+//! [`crate::parameter_list`]; SecuredPayload wrapping is in the
+//! `zerodds-security` crate (DDS-Security 1.2 §7.4).
 //!
 //! # Endianness
 //!
-//! Submessage-Bodies werden in der Endianness des Submessage-Headers
-//! geschrieben (E-Flag). Die hier gegebenen `to_bytes_*`/`from_bytes_*`-
-//! Funktionen nehmen explizite Endianness als Parameter — der Caller
-//! muss sie konsistent zum Header waehlen.
+//! Submessage bodies are written in the endianness of the submessage
+//! header (E-flag). The `to_bytes_*`/`from_bytes_*` functions given here
+//! take explicit endianness as a parameter — the caller must choose it
+//! consistently with the header.
 
 extern crate alloc;
 use alloc::sync::Arc;
@@ -33,49 +33,48 @@ use crate::error::WireError;
 use crate::submessage_header::FLAG_E_LITTLE_ENDIAN;
 use crate::wire_types::{EntityId, FragmentNumber, SequenceNumber};
 
-/// Hard-Cap fuer `numBits` in `SequenceNumberSet` und
-/// `FragmentNumberSet`. DDSI-RTPS gibt kein spezifisches Limit vor,
-/// aber sowohl Cyclone DDS (`ddsi_radmin.c`) als auch Fast-DDS
-/// (`BitmapRange<..., 256>`) capen auf 256. Wir folgen — verhindert
-/// DoS via `numBits=2^32-1`-Bitmap-Alloc.
+/// Hard cap for `numBits` in `SequenceNumberSet` and
+/// `FragmentNumberSet`. DDSI-RTPS gives no specific limit, but both
+/// Cyclone DDS (`ddsi_radmin.c`) and Fast-DDS (`BitmapRange<..., 256>`)
+/// cap at 256. We follow — prevents DoS via a `numBits=2^32-1` bitmap
+/// alloc.
 pub const RTPS_BITMAP_MAX_BITS: u32 = 256;
 
 // ============================================================================
 // SequenceNumberSet (§9.4.2.6)
 // ============================================================================
 
-/// Bitset von Sequence-Numbers ab `bitmap_base`. Wird in HEARTBEAT/
-/// ACKNACK/GAP genutzt, um Mengen verlorener oder bekannter Pakete zu
-/// signalisieren.
+/// Bitset of sequence numbers from `bitmap_base`. Used in HEARTBEAT/
+/// ACKNACK/GAP to signal sets of lost or known packets.
 ///
-/// Wire-Layout (variable Laenge):
-///   bitmapBase: 8 Byte (SequenceNumber, big oder little gemaess Header)
-///   numBits:    4 Byte (u32)
-///   bitmap:     ceil(numBits/32) * 4 Byte (u32-Words)
+/// Wire layout (variable length):
+///   bitmapBase: 8 byte (SequenceNumber, big or little per header)
+///   numBits:    4 byte (u32)
+///   bitmap:     ceil(numBits/32) * 4 byte (u32 words)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SequenceNumberSet {
-    /// Erste Sequence-Number, fuer die das erste Bit zustaendig ist.
+    /// First sequence number that the first bit is responsible for.
     pub bitmap_base: SequenceNumber,
-    /// Anzahl gueltiger Bits.
+    /// Number of valid bits.
     pub num_bits: u32,
-    /// `ceil(num_bits/32)` u32-Worte.
+    /// `ceil(num_bits/32)` u32 words.
     pub bitmap: Vec<u32>,
 }
 
 impl SequenceNumberSet {
-    /// Berechnet die Wire-Size in Bytes basierend auf `num_bits`.
+    /// Computes the wire size in bytes based on `num_bits`.
     #[must_use]
     pub fn wire_size(num_bits: u32) -> usize {
         let words = (num_bits as usize).div_ceil(32);
         8 + 4 + words * 4
     }
 
-    /// Baut ein `SequenceNumberSet` aus einer sortierten Liste fehlender SNs.
+    /// Builds a `SequenceNumberSet` from a sorted list of missing SNs.
     ///
-    /// `base` ist die kleinste noch nicht acked SN (der AckNack-Base).
-    /// `missing` muss aufsteigend sortiert und alle SNs ≥ `base` sein.
-    /// Bits werden in RTPS-Konvention gesetzt: Bit 0 ist das hoechstwertige
-    /// Bit (MSB) von `bitmap[0]`.
+    /// `base` is the smallest not-yet-acked SN (the AckNack base).
+    /// `missing` must be sorted ascending and all SNs ≥ `base`. Bits are
+    /// set in RTPS convention: bit 0 is the most-significant bit (MSB) of
+    /// `bitmap[0]`.
     #[must_use]
     pub fn from_missing(base: SequenceNumber, missing: &[SequenceNumber]) -> Self {
         let Some(last) = missing.last().copied() else {
@@ -113,7 +112,7 @@ impl SequenceNumberSet {
         }
     }
 
-    /// Iteriert ueber alle SNs, deren Bit gesetzt ist.
+    /// Iterates over all SNs whose bit is set.
     pub fn iter_set(&self) -> impl Iterator<Item = SequenceNumber> + '_ {
         (0..self.num_bits).filter_map(move |i| {
             let word_idx = (i / 32) as usize;
@@ -132,7 +131,7 @@ impl SequenceNumberSet {
         Self::wire_size(self.num_bits)
     }
 
-    /// Encoded das Set in `out` mit der gegebenen Endianness.
+    /// Encodes the set into `out` with the given endianness.
     pub fn write_to(&self, out: &mut Vec<u8>, little_endian: bool) {
         if little_endian {
             out.extend_from_slice(&self.bitmap_base.to_bytes_le());
@@ -149,7 +148,7 @@ impl SequenceNumberSet {
         }
     }
 
-    /// Decoded ein Set aus `bytes` ab `offset`. Liefert (Set, neue Position).
+    /// Decodes a set from `bytes` at `offset`. Returns (set, new position).
     ///
     /// # Errors
     /// `UnexpectedEof`.
@@ -226,34 +225,34 @@ impl SequenceNumberSet {
 // FragmentNumberSet (§9.4.2.8)
 // ============================================================================
 
-/// Bitset von `FragmentNumber`-Werten ab `bitmap_base`. Analog zu
-/// [`SequenceNumberSet`], aber mit `FragmentNumber` (u32) als Base
-/// statt `SequenceNumber`.
+/// Bitset of `FragmentNumber` values from `bitmap_base`. Analogous to
+/// [`SequenceNumberSet`], but with `FragmentNumber` (u32) as the base
+/// instead of `SequenceNumber`.
 ///
-/// Wire-Layout:
-///   bitmapBase: 4 Byte (FragmentNumber, LE oder BE gemaess Header)
-///   numBits:    4 Byte (u32)
-///   bitmap:     ceil(numBits/32) * 4 Byte
+/// Wire layout:
+///   bitmapBase: 4 byte (FragmentNumber, LE or BE per header)
+///   numBits:    4 byte (u32)
+///   bitmap:     ceil(numBits/32) * 4 byte
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FragmentNumberSet {
-    /// Erstes Fragment, fuer das das erste Bit zustaendig ist.
+    /// First fragment that the first bit is responsible for.
     pub bitmap_base: FragmentNumber,
-    /// Anzahl gueltiger Bits.
+    /// Number of valid bits.
     pub num_bits: u32,
-    /// `ceil(num_bits/32)` u32-Worte.
+    /// `ceil(num_bits/32)` u32 words.
     pub bitmap: Vec<u32>,
 }
 
 impl FragmentNumberSet {
-    /// Wire-Size in Bytes.
+    /// Wire size in bytes.
     #[must_use]
     pub fn wire_size(num_bits: u32) -> usize {
         let words = (num_bits as usize).div_ceil(32);
         4 + 4 + words * 4
     }
 
-    /// Baut das Set aus einer sortierten Liste fehlender Fragmente.
-    /// `base` = kleinste noch nicht bestaetigte FragmentNumber.
+    /// Builds the set from a sorted list of missing fragments.
+    /// `base` = smallest not-yet-acknowledged FragmentNumber.
     #[must_use]
     pub fn from_missing(base: FragmentNumber, missing: &[FragmentNumber]) -> Self {
         let Some(last) = missing.last().copied() else {
@@ -270,7 +269,13 @@ impl FragmentNumberSet {
                 bitmap: Vec::new(),
             };
         }
-        let num_bits = last.0.saturating_sub(base.0).saturating_add(1);
+        // DDSI-RTPS §8.3.5.4: numBits MUST be <= 256. A gap over more
+        // than 256 fragments (large samples under packet loss) would
+        // otherwise produce a num_bits > 256, which every spec-conformant
+        // receiver discards as malformed → the NACK_FRAG is lost →
+        // fragment stall. We cover only the first 256; the rest follows
+        // in the next NACK_FRAG once bitmap_base has advanced.
+        let num_bits = last.0.saturating_sub(base.0).saturating_add(1).min(256);
         let num_words = (num_bits as usize).div_ceil(32);
         let mut bitmap = alloc::vec![0u32; num_words];
         for fnum in missing {
@@ -278,6 +283,10 @@ impl FragmentNumberSet {
                 continue;
             }
             let offset = (fnum.0 - base.0) as usize;
+            // Skip fragments beyond the 256-bit window (follow-up NACK_FRAG).
+            if offset >= num_bits as usize {
+                continue;
+            }
             let word_idx = offset / 32;
             let bit = 31 - (offset % 32);
             if word_idx < bitmap.len() {
@@ -291,7 +300,7 @@ impl FragmentNumberSet {
         }
     }
 
-    /// Iteriert ueber alle gesetzten FragmentNumbers.
+    /// Iterates over all set FragmentNumbers.
     pub fn iter_set(&self) -> impl Iterator<Item = FragmentNumber> + '_ {
         (0..self.num_bits).filter_map(move |i| {
             let word_idx = (i / 32) as usize;
@@ -310,7 +319,7 @@ impl FragmentNumberSet {
         Self::wire_size(self.num_bits)
     }
 
-    /// Encoded das Set in `out`.
+    /// Encodes the set into `out`.
     pub fn write_to(&self, out: &mut Vec<u8>, little_endian: bool) {
         if little_endian {
             out.extend_from_slice(&self.bitmap_base.to_bytes_le());
@@ -327,7 +336,7 @@ impl FragmentNumberSet {
         }
     }
 
-    /// Decoded ein Set aus `bytes` ab `offset`.
+    /// Decodes a set from `bytes` at `offset`.
     ///
     /// # Errors
     /// `UnexpectedEof`.
@@ -413,53 +422,65 @@ pub const DATA_FLAG_KEY: u8 = 0x08;
 /// DATA-Submessage Flag: N (non-standard payload).
 pub const DATA_FLAG_NON_STANDARD: u8 = 0x10;
 
-/// DATA-Submessage. Phase 0 unterstuetzt nur D-Flag (Daten), kein Q
-/// (kein Inline-QoS), kein K, kein N.
+/// DATA submessage. Phase 0 supports only the D-flag (data), no Q
+/// (no inline QoS), no K, no N.
 ///
-/// `serialized_payload` ist `Arc<[u8]>` (WP 2.0a Zero-Copy-Spike).
-/// Writer teilen sich die Payload-Allocation mit `CacheChange` und
-/// allen DATA/DATA_FRAG-Datagrammen — `clone()` auf dieser Struct ist
-/// ein reiner Refcount-Bump.
+/// `serialized_payload` is `Arc<[u8]>` (WP 2.0a zero-copy spike).
+/// Writers share the payload allocation with `CacheChange` and all
+/// DATA/DATA_FRAG datagrams — `clone()` on this struct is a pure
+/// refcount bump.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataSubmessage {
-    /// Reserved Extra-Flags (uint16, meist 0).
+    /// Reserved extra flags (uint16, mostly 0).
     pub extra_flags: u16,
-    /// Empfaenger-EntityId.
+    /// Receiver EntityId.
     pub reader_id: EntityId,
-    /// Sender-EntityId.
+    /// Sender EntityId.
     pub writer_id: EntityId,
-    /// Sequence-Number dieser DATA.
+    /// Sequence number of this DATA.
     pub writer_sn: SequenceNumber,
-    /// Inline-QoS-ParameterList (Q-Flag, §9.4.5.3.2). `None` = kein
-    /// Q-Flag, kein Inline-QoS-Block. Trager fuer PID_KEY_HASH (WP 1.B),
+    /// Inline-QoS ParameterList (Q-flag, §9.4.5.3.2). `None` = no
+    /// Q-flag, no inline-QoS block. Carrier for PID_KEY_HASH (WP 1.B),
     /// PID_STATUS_INFO, PID_COHERENT_SET etc.
     pub inline_qos: Option<crate::parameter_list::ParameterList>,
-    /// K-Flag (Spec §8.3.8.2 Tab. 8.43). `true`: `serialized_payload`
-    /// enthaelt nur die @key-Felder (key-only Sample, z.B. dispose-
-    /// Marker). Der D-Flag kann gleichzeitig false sein, wenn nur Key
-    /// gesendet wird; in dem Fall ist `serialized_payload` ein
-    /// XCDR-codierter Key-Holder.
+    /// K-flag (spec §8.3.8.2 Tab. 8.43). `true`: `serialized_payload`
+    /// contains only the @key fields (key-only sample, e.g. a dispose
+    /// marker). The D-flag can be false at the same time when only the
+    /// key is sent; in that case `serialized_payload` is an
+    /// XCDR-encoded key holder.
     pub key_flag: bool,
-    /// N-Flag (Spec §8.3.8.2 Tab. 8.43, NonStandardPayloadFlag).
-    /// `true`: `serialized_payload` ist NICHT in der durch
-    /// `representation_identifier` impliziten CDR-Variante codiert
-    /// (z.B. fuer DDS-Security-encrypted Payloads).
+    /// N-flag (spec §8.3.8.2 Tab. 8.43, NonStandardPayloadFlag).
+    /// `true`: `serialized_payload` is NOT encoded in the CDR variant
+    /// implied by `representation_identifier` (e.g. for
+    /// DDS-Security-encrypted payloads).
     pub non_standard_flag: bool,
-    /// Serialisierter Payload (XCDR2-codiert oder vendor-spezifisch).
+    /// Serialized payload (XCDR2-encoded or vendor-specific).
     pub serialized_payload: Arc<[u8]>,
 }
 
 impl DataSubmessage {
-    /// Encoded den DATA-Body (ohne Submessage-Header) in einen Vec.
-    /// Setzt automatisch das D-Flag und ggf. das Q-Flag im
-    /// `flags`-Output (rueckgegeben), damit der Caller den
-    /// Submessage-Header korrekt fuellen kann.
+    /// Encodes the DATA body (without the submessage header) into a Vec.
+    /// Automatically sets the D-flag and, if applicable, the Q-flag in
+    /// the `flags` output (returned), so the caller can fill the
+    /// submessage header correctly.
     ///
     /// Layout: extraFlags(2) + octetsToInlineQos(2) + readerId(4) +
-    /// writerId(4) + writerSN(8) + [optional InlineQoS-PL] + payload.
+    /// writerId(4) + writerSN(8) + [optional InlineQoS PL] + payload.
     #[must_use]
     pub fn write_body(&self, little_endian: bool) -> (Vec<u8>, u8) {
-        let mut out = Vec::new();
+        // Encode inline QoS once (instead of amortizing it with
+        // `out.extend_from_slice`) and thereby set the Vec capacity
+        // *exactly*. This eliminates the reallocation cascade with
+        // `extend_from_slice` — visible in the macOS recv-thread profile
+        // (`finish_grow`/`reserve` ~17% of samples before this refactor).
+        let inline_qos_buf = self
+            .inline_qos
+            .as_ref()
+            .map(|pl| pl.to_bytes(little_endian));
+        let inline_qos_len = inline_qos_buf.as_ref().map_or(0, |v| v.len());
+        // 20 = extraFlags(2)+octetsToInlineQos(2)+readerId(4)+writerId(4)
+        // +writerSN(8).
+        let mut out = Vec::with_capacity(20 + inline_qos_len + self.serialized_payload.len());
         // extraFlags (2 byte)
         let extra = if little_endian {
             self.extra_flags.to_le_bytes()
@@ -467,9 +488,9 @@ impl DataSubmessage {
             self.extra_flags.to_be_bytes()
         };
         out.extend_from_slice(&extra);
-        // octetsToInlineQos (2 byte) — Distanz vom Ende dieses Felds bis
-        // Anfang von readerId. Konstant 16 (4 readerId + 4 writerId
-        // + 8 writerSN), unabhaengig vom Q-Flag.
+        // octetsToInlineQos (2 byte) — distance from the end of this field to
+        // the start of readerId. Constant 16 (4 readerId + 4 writerId
+        // + 8 writerSN), independent of the Q flag.
         let octets_to_inline_qos: u16 = 16;
         let oti = if little_endian {
             octets_to_inline_qos.to_le_bytes()
@@ -486,9 +507,9 @@ impl DataSubmessage {
         } else {
             self.writer_sn.to_bytes_be()
         });
-        // Inline-QoS-ParameterList (Q-Flag) — wenn vorhanden.
-        if let Some(pl) = &self.inline_qos {
-            out.extend_from_slice(&pl.to_bytes(little_endian));
+        // Inline-QoS ParameterList (Q-flag) — if present.
+        if let Some(qos_bytes) = inline_qos_buf {
+            out.extend_from_slice(&qos_bytes);
         }
         // serializedPayload
         out.extend_from_slice(&self.serialized_payload);
@@ -510,22 +531,22 @@ impl DataSubmessage {
         (out, flags)
     }
 
-    /// Decoded den DATA-Body aus einem Slice. Backward-Compat-Wrapper
-    /// fuer Caller, die kein Q-Flag tragen — Inline-QoS wird ignoriert.
+    /// Decodes the DATA body from a slice. A backward-compat wrapper for
+    /// callers that carry no Q-flag — inline QoS is ignored.
     ///
     /// # Errors
-    /// `UnexpectedEof` bei zu kurzem Body.
+    /// `UnexpectedEof` on a too-short body.
     pub fn read_body(body: &[u8], little_endian: bool) -> Result<Self, WireError> {
         Self::read_body_with_flags(body, little_endian, 0)
     }
 
-    /// Decoded den DATA-Body unter Beruecksichtigung der Submessage-Flags.
-    /// Wenn `flags & DATA_FLAG_INLINE_QOS != 0` parst der Decoder die
-    /// ParameterList nach dem writerSN, vor dem Payload.
+    /// Decodes the DATA body taking the submessage flags into account.
+    /// If `flags & DATA_FLAG_INLINE_QOS != 0` the decoder parses the
+    /// ParameterList after the writerSN, before the payload.
     ///
     /// # Errors
-    /// `UnexpectedEof` bei zu kurzem Body. ParameterList-Fehler werden
-    /// als `WireError` durchgereicht.
+    /// `UnexpectedEof` on a too-short body. ParameterList errors are
+    /// passed through as `WireError`.
     pub fn read_body_with_flags(
         body: &[u8],
         little_endian: bool,
@@ -546,8 +567,8 @@ impl DataSubmessage {
             u16::from_be_bytes(ef)
         };
         pos += 2;
-        // octetsToInlineQos lesen — wir nutzen es nicht direkt (immer 16),
-        // aber wir konsumieren das Feld.
+        // Read octetsToInlineQos — we do not use it directly (always 16),
+        // but we consume the field.
         pos += 2;
         let mut rid = [0u8; 4];
         rid.copy_from_slice(&body[pos..pos + 4]);
@@ -566,16 +587,16 @@ impl DataSubmessage {
         };
         pos += 8;
 
-        // Inline-QoS — Q-Flag (DATA_FLAG_INLINE_QOS = 0x02).
+        // Inline QoS — Q-flag (DATA_FLAG_INLINE_QOS = 0x02).
         let inline_qos = if flags & DATA_FLAG_INLINE_QOS != 0 {
-            // ParameterList::from_bytes parst bis zum Sentinel und gibt
-            // den Rest des Buffers an uns zurueck via konsumierte Bytes.
-            // Da from_bytes nur die Liste liefert, muessen wir die
-            // Konsum-Laenge selbst tracken — wir berechnen sie aus dem
-            // Encode-Output der List.
+            // ParameterList::from_bytes parses up to the sentinel and
+            // returns the rest of the buffer to us via consumed bytes.
+            // Since from_bytes only returns the list, we must track the
+            // consumed length ourselves — we compute it from the list's
+            // encode output.
             let pl = crate::parameter_list::ParameterList::from_bytes(&body[pos..], little_endian)?;
-            // Re-Encode um konsumierte Byte-Laenge zu ermitteln. Das ist
-            // robust und vermeidet Drift mit dem from_bytes-Parser.
+            // Re-encode to determine the consumed byte length. This is
+            // robust and avoids drift with the from_bytes parser.
             let consumed = pl.to_bytes(little_endian).len();
             pos += consumed;
             Some(pl)
@@ -583,7 +604,7 @@ impl DataSubmessage {
             None
         };
 
-        // Rest ist serializedPayload.
+        // The rest is serializedPayload.
         let serialized_payload: Arc<[u8]> = Arc::from(&body[pos..]);
         let key_flag = (flags & DATA_FLAG_KEY) != 0;
         let non_standard_flag = (flags & DATA_FLAG_NON_STANDARD) != 0;
@@ -608,65 +629,65 @@ impl DataSubmessage {
 pub const HEARTBEAT_FLAG_FINAL: u8 = 0x02;
 /// HEARTBEAT Flag: L (Liveliness).
 pub const HEARTBEAT_FLAG_LIVELINESS: u8 = 0x04;
-/// HEARTBEAT Flag: G (GroupInfo present). Vendor-Extension fuer
-/// Group-Ordered-Access (§8.3.8.6.2). Trailer enthaelt currentGSN,
-/// firstGSN, lastGSN und einen `writerSet` (Liste der GUID-Prefixe der
-/// Gruppen-Member).
+/// HEARTBEAT flag: G (GroupInfo present). A vendor extension for
+/// group-ordered access (§8.3.8.6.2). The trailer contains currentGSN,
+/// firstGSN, lastGSN and a `writerSet` (list of the GUID prefixes of the
+/// group members).
 pub const HEARTBEAT_FLAG_GROUP_INFO: u8 = 0x08;
 
-/// Optionaler GroupInfo-Trailer einer HEARTBEAT-Submessage (§8.3.8.6.2).
+/// Optional GroupInfo trailer of a HEARTBEAT submessage (§8.3.8.6.2).
 ///
-/// Wire-Layout:
+/// Wire layout:
 /// - currentGSN: i64
 /// - firstGSN:   i64
 /// - lastGSN:    i64
-/// - writerSet:  u32-Length + length × GuidPrefix(12 byte)
+/// - writerSet:  u32 length + length × GuidPrefix(12 byte)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeartbeatGroupInfo {
-    /// Aktuelle Group-SN (hoechste vom Gruppen-Coordinator vergebene).
+    /// Current group SN (highest assigned by the group coordinator).
     pub current_gsn: SequenceNumber,
-    /// Erste relevante Group-SN (cache_min der Gruppe).
+    /// First relevant group SN (cache_min of the group).
     pub first_gsn: SequenceNumber,
-    /// Letzte verfuegbare Group-SN (= currentGSN minus pending, in der
-    /// Praxis identisch zu currentGSN bei Steady-State).
+    /// Last available group SN (= currentGSN minus pending, in practice
+    /// identical to currentGSN at steady state).
     pub last_gsn: SequenceNumber,
-    /// GuidPrefix-Set der teilnehmenden Writer dieser Gruppe.
+    /// GuidPrefix set of the participating writers of this group.
     pub writer_set: Vec<crate::wire_types::GuidPrefix>,
 }
 
-/// HEARTBEAT-Submessage.
+/// HEARTBEAT submessage.
 ///
-/// `final_flag`, `liveliness_flag` und `group_info_flag` (via `Some` von
-/// `group_info`) entsprechen den F-/L-/G-Bits im Submessage-Header
-/// (Spec §8.3.7.5.1, §8.3.8.6.2) — sie liegen **nicht** im Body, werden
-/// aber als semantischer Teil der Nachricht hier gefuehrt.
+/// `final_flag`, `liveliness_flag` and `group_info_flag` (via `Some` of
+/// `group_info`) correspond to the F-/L-/G bits in the submessage header
+/// (spec §8.3.7.5.1, §8.3.8.6.2) — they are **not** in the body, but are
+/// carried here as a semantic part of the message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeartbeatSubmessage {
-    /// Reader-EntityId (Ziel).
+    /// Reader EntityId (target).
     pub reader_id: EntityId,
-    /// Writer-EntityId (Quelle).
+    /// Writer EntityId (source).
     pub writer_id: EntityId,
-    /// Erste verfuegbare Sequence-Number im History-Cache.
+    /// First available sequence number in the history cache.
     pub first_sn: SequenceNumber,
-    /// Letzte gesendete Sequence-Number.
+    /// Last sent sequence number.
     pub last_sn: SequenceNumber,
-    /// Count_t (i32) — Heartbeat-Sequenznummer (zur ACK-Korrelation).
+    /// Count_t (i32) — heartbeat sequence number (for ACK correlation).
     pub count: i32,
-    /// F-Flag: `true` = Reader muss keine Response senden wenn vollstaendig.
+    /// F-flag: `true` = the reader need not send a response when complete.
     pub final_flag: bool,
-    /// L-Flag: Liveliness-Announce (ohne History-Semantik).
+    /// L-flag: liveliness announce (without history semantics).
     pub liveliness_flag: bool,
-    /// G-Flag (§8.3.8.6.2): optionaler GroupInfo-Trailer.
+    /// G-flag (§8.3.8.6.2): optional GroupInfo trailer.
     pub group_info: Option<HeartbeatGroupInfo>,
 }
 
 impl HeartbeatSubmessage {
-    /// Minimal-Wire-Size (Body ohne GroupInfo): 28 Bytes (4+4+8+8+4).
-    /// Flags sind im Submessage-Header.
+    /// Minimal wire size (body without GroupInfo): 28 bytes (4+4+8+8+4).
+    /// Flags are in the submessage header.
     pub const WIRE_SIZE: usize = 28;
 
-    /// Encoded den Body. Liefert (bytes, flags), wobei `flags` das
-    /// Submessage-Header-Flag-Byte inkl. E/F/L/G enthaelt.
+    /// Encodes the body. Returns (bytes, flags), where `flags` is the
+    /// submessage-header flag byte incl. E/F/L/G.
     #[must_use]
     pub fn write_body(&self, little_endian: bool) -> (Vec<u8>, u8) {
         let mut out = Vec::with_capacity(Self::WIRE_SIZE);
@@ -719,11 +740,11 @@ impl HeartbeatSubmessage {
         (out, flags)
     }
 
-    /// Decoded den Body. `final_flag`, `liveliness_flag`, `group_info_flag`
-    /// werden vom Caller aus dem Submessage-Header extrahiert.
+    /// Decodes the body. `final_flag`, `liveliness_flag`,
+    /// `group_info_flag` are extracted by the caller from the submessage header.
     ///
     /// # Errors
-    /// `UnexpectedEof`, `ValueOutOfRange` (writerSet-Laenge bizarr gross).
+    /// `UnexpectedEof`, `ValueOutOfRange` (writerSet length bizarrely large).
     pub fn read_body(
         body: &[u8],
         little_endian: bool,
@@ -807,8 +828,8 @@ impl HeartbeatSubmessage {
                 u32::from_be_bytes(len_bytes)
             } as usize;
             pos += 4;
-            // Cap: writer_set darf nicht groesser sein als der Body uebrig
-            // hat. Schutz gegen DoS via riesigem length-Feld.
+            // Cap: writer_set must not be larger than what the body has
+            // left. Protection against DoS via a huge length field.
             let remaining = body.len().saturating_sub(pos);
             if len.saturating_mul(12) > remaining {
                 return Err(WireError::ValueOutOfRange {
@@ -851,30 +872,35 @@ impl HeartbeatSubmessage {
 /// ACKNACK Flag: F (Final).
 pub const ACKNACK_FLAG_FINAL: u8 = 0x02;
 
-/// ACKNACK-Submessage.
+/// ACKNACK submessage.
 ///
-/// `final_flag` entspricht dem F-Bit im Submessage-Header (Spec
-/// §8.3.7.1.1). `final=false` verlangt vom Writer eine zeitnahe
-/// HEARTBEAT-Response.
+/// `final_flag` corresponds to the F-bit in the submessage header (spec
+/// §8.3.7.1.1). `final=false` requires a timely HEARTBEAT response from
+/// the writer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AckNackSubmessage {
-    /// Reader-EntityId (Quelle).
+    /// Reader EntityId (source).
     pub reader_id: EntityId,
-    /// Writer-EntityId (Ziel).
+    /// Writer EntityId (target).
     pub writer_id: EntityId,
-    /// Bitset der noch nicht empfangenen Sequence-Numbers.
+    /// Bitset of the not-yet-received sequence numbers.
     pub reader_sn_state: SequenceNumberSet,
-    /// Count_t (zur Korrelation mit HEARTBEAT.count).
+    /// Count_t (for correlation with HEARTBEAT.count).
     pub count: i32,
-    /// F-Flag: `false` = Writer soll zeitnah mit HEARTBEAT antworten.
+    /// F-flag: `false` = the writer should answer with a timely HEARTBEAT.
     pub final_flag: bool,
 }
 
 impl AckNackSubmessage {
-    /// Encoded den Body. Liefert (bytes, flags).
+    /// Encodes the body. Returns (bytes, flags).
     #[must_use]
     pub fn write_body(&self, little_endian: bool) -> (Vec<u8>, u8) {
-        let mut out = Vec::new();
+        // 4 readerId + 4 writerId + 12 SN base + 4*num_words bitmap +
+        // 4 count. The SN set can be variable; 12 + words*4 is the upper
+        // bound. Pre-allocating saves the realloc step on the recv-thread
+        // hot path (HEARTBEAT response).
+        let snset_words = self.reader_sn_state.bitmap.len();
+        let mut out = Vec::with_capacity(4 + 4 + 12 + snset_words * 4 + 4);
         out.extend_from_slice(&self.reader_id.to_bytes());
         out.extend_from_slice(&self.writer_id.to_bytes());
         self.reader_sn_state.write_to(&mut out, little_endian);
@@ -893,8 +919,8 @@ impl AckNackSubmessage {
         (out, flags)
     }
 
-    /// Decoded den Body. `final_flag` wird vom Caller aus dem
-    /// Submessage-Header extrahiert.
+    /// Decodes the body. `final_flag` is extracted by the caller from
+    /// the submessage header.
     ///
     /// # Errors
     /// `UnexpectedEof`.
@@ -948,53 +974,58 @@ impl AckNackSubmessage {
 // ============================================================================
 
 /// GAP Flag: G (GroupInfo present — `gapStartGSN`/`gapEndGSN` Trailer).
-/// Vendor-Extension fuer Group-Ordered-Access (§8.3.8.4.2). ZeroDDS-Encoder setzt das nicht; der Decoder akzeptiert es lesend.
+/// A vendor extension for group-ordered access (§8.3.8.4.2). The ZeroDDS encoder does not set it; the decoder accepts it on read.
 pub const GAP_FLAG_GROUP_INFO: u8 = 0x04;
 
-/// GAP Flag: K (FilteredCount present). Spec §8.3.8.4.2 fuehrt ein
-/// optionales `Count_t filteredCount`-Trailer-Feld ein, das dem Reader
-/// erlaubt, "via Content-Filter weggeworfen" von "echt removed" zu
-/// unterscheiden — Voraussetzung fuer korrekte Instance-State-Transitionen
-/// nach §8.7.4 (NOT_ALIVE_FILTERED vs. NOT_ALIVE_DISPOSED).
+/// GAP flag: K (FilteredCount present). Spec §8.3.8.4.2 introduces an
+/// optional `Count_t filteredCount` trailer field that lets the reader
+/// distinguish "discarded via content filter" from "really removed" — a
+/// prerequisite for correct instance-state transitions per §8.7.4
+/// (NOT_ALIVE_FILTERED vs. NOT_ALIVE_DISPOSED).
 pub const GAP_FLAG_FILTERED_COUNT: u8 = 0x08;
 
-/// Optionaler Trailer einer GAP-Submessage mit GroupInfo (G-Flag, §8.3.8.4.2).
+/// Optional trailer of a GAP submessage with GroupInfo (G-flag, §8.3.8.4.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GapGroupInfo {
-    /// Group-SN des ersten ueberprungenen Samples in der Gruppe.
+    /// Group SN of the first skipped sample in the group.
     pub gap_start_gsn: SequenceNumber,
-    /// Group-SN des letzten ueberprungenen Samples in der Gruppe.
+    /// Group SN of the last skipped sample in the group.
     pub gap_end_gsn: SequenceNumber,
 }
 
-/// GAP-Submessage. Signalisiert Reader, dass Writer Sequence-Numbers
-/// `[gap_start, gap_list.bitmap_base)` nie senden wird (alle vor
-/// `gap_list.bitmap_base` Lücken; die Bits in `gap_list` markieren
-/// individuelle weitere Lücken ab `bitmap_base`).
+/// GAP submessage. Signals the reader that the writer will never send
+/// sequence numbers `[gap_start, gap_list.bitmap_base)` (all before
+/// `gap_list.bitmap_base` are gaps; the bits in `gap_list` mark
+/// individual further gaps from `bitmap_base`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GapSubmessage {
-    /// Reader-EntityId (Ziel).
+    /// Reader EntityId (target).
     pub reader_id: EntityId,
-    /// Writer-EntityId (Quelle).
+    /// Writer EntityId (source).
     pub writer_id: EntityId,
-    /// Erste irreversible Lücken-SN.
+    /// First irreversible gap SN.
     pub gap_start: SequenceNumber,
-    /// Bitset der weiteren Lücken ab `gap_list.bitmap_base`.
+    /// Bitset of the further gaps from `gap_list.bitmap_base`.
     pub gap_list: SequenceNumberSet,
-    /// Optionale GroupInfo (§8.3.8.4.2). `Some` ⇒ G-Flag im Header gesetzt.
+    /// Optional GroupInfo (§8.3.8.4.2). `Some` ⇒ G flag set in the header.
     pub group_info: Option<GapGroupInfo>,
-    /// Optionaler `filteredCount`-Trailer (§8.3.8.4.2). `Some` ⇒
-    /// K-Flag im Header gesetzt. `0` ist explizit "nichts gefiltert,
-    /// alles wirklich removed"; `1+` heisst "n Samples via Content-
-    /// Filter verworfen".
+    /// Optional `filteredCount` trailer (§8.3.8.4.2). `Some` ⇒
+    /// K flag set in the header. `0` is explicitly "nothing filtered,
+    /// everything really removed"; `1+` means "n samples discarded via
+    /// content filter".
     pub filtered_count: Option<u32>,
 }
 
 impl GapSubmessage {
-    /// Encoded den Body. Liefert (bytes, flags) inkl. evtl. G-/K-Bit.
+    /// Encodes the body. Returns (bytes, flags) incl. possible G/K bit.
     #[must_use]
     pub fn write_body(&self, little_endian: bool) -> (Vec<u8>, u8) {
-        let mut out = Vec::new();
+        // 4 readerId + 4 writerId + 8 gap_start + 12 SN-Set-Base +
+        // 4*words. Optional GroupInfo (24) + filteredCount (4) on top.
+        let snset_words = self.gap_list.bitmap.len();
+        let extra =
+            self.group_info.as_ref().map_or(0, |_| 24) + self.filtered_count.map_or(0, |_| 4);
+        let mut out = Vec::with_capacity(4 + 4 + 8 + 12 + snset_words * 4 + extra);
         out.extend_from_slice(&self.reader_id.to_bytes());
         out.extend_from_slice(&self.writer_id.to_bytes());
         out.extend_from_slice(&if little_endian {
@@ -1031,8 +1062,8 @@ impl GapSubmessage {
         (out, flags)
     }
 
-    /// Decoded den Body. Flags G/K werden aus dem Submessage-Header vom
-    /// Caller uebergeben (siehe `decode_datagram`).
+    /// Decodes the body. Flags G/K are passed by the caller from the
+    /// submessage header (see `decode_datagram`).
     ///
     /// # Errors
     /// `UnexpectedEof`.
@@ -1133,59 +1164,59 @@ impl GapSubmessage {
 pub const DATA_FRAG_FLAG_INLINE_QOS: u8 = 0x02;
 /// DATA_FRAG Flag: H (hash key).
 pub const DATA_FRAG_FLAG_HASH_KEY: u8 = 0x04;
-/// DATA_FRAG Flag: K (key flag — serialized_payload ist Key statt Data).
+/// DATA_FRAG flag: K (key flag — serialized_payload is key instead of data).
 pub const DATA_FRAG_FLAG_KEY: u8 = 0x08;
 /// DATA_FRAG Flag: N (non-standard payload).
 pub const DATA_FRAG_FLAG_NON_STANDARD: u8 = 0x10;
 
-/// DATA_FRAG-Submessage. Traegt einen Ausschnitt (Fragmente) eines
-/// Samples, dessen Gesamtgroesse in `sample_size` steht.
+/// DATA_FRAG submessage. Carries a section (fragments) of a sample
+/// whose total size is in `sample_size`.
 ///
-/// Flags (Q/H/K/N) werden aus dem Submessage-Header gespiegelt. Encoder setzt diese Flags aktuell nicht; Decoder akzeptiert sie lesend.
+/// Flags (Q/H/K/N) are mirrored from the submessage header. The encoder does not currently set these flags; the decoder accepts them on read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataFragSubmessage {
-    /// octetsToInlineQos-Analog zu DATA (§8.3.7.2 spricht von extraFlags+
-    /// octetsToInlineQos; Variante traegt 0).
+    /// octetsToInlineQos analogue to DATA (§8.3.7.2 speaks of extraFlags+
+    /// octetsToInlineQos; this variant carries 0).
     pub extra_flags: u16,
-    /// Reader-EntityId (Ziel).
+    /// Reader EntityId (target).
     pub reader_id: EntityId,
-    /// Writer-EntityId (Quelle).
+    /// Writer EntityId (source).
     pub writer_id: EntityId,
-    /// Sequence-Number des Samples, dessen Fragmente dies traegt.
+    /// Sequence number of the sample whose fragments this carries.
     pub writer_sn: SequenceNumber,
-    /// Erstes Fragment in dieser Submessage (1-basiert).
+    /// First fragment in this submessage (1-based).
     pub fragment_starting_num: FragmentNumber,
-    /// Anzahl der Fragmente in dieser Submessage. Writer: immer 1.
+    /// Number of fragments in this submessage. Writer: always 1.
     pub fragments_in_submessage: u16,
-    /// Groesse eines einzelnen Fragments (das letzte darf kuerzer sein).
+    /// Size of a single fragment (the last may be shorter).
     pub fragment_size: u16,
-    /// Gesamtgroesse des Samples in Bytes.
+    /// Total size of the sample in bytes.
     pub sample_size: u32,
-    /// Fragmentierter Payload-Ausschnitt. Arc-shared:
-    /// Writer-Re-Sends bauen nur Refcount-Bumps, keine Kopie.
+    /// Fragmented payload section. Arc-shared:
+    /// writer re-sends are just refcount bumps, no copy.
     pub serialized_payload: Arc<[u8]>,
-    /// Q-Flag aus dem Submessage-Header (inline_qos present).
+    /// Q-flag from the submessage header (inline_qos present).
     pub inline_qos_flag: bool,
-    /// H-Flag aus dem Submessage-Header (hash_key).
+    /// H-flag from the submessage header (hash_key).
     pub hash_key_flag: bool,
-    /// K-Flag aus dem Submessage-Header (serialized_payload = Key).
+    /// K-flag from the submessage header (serialized_payload = key).
     pub key_flag: bool,
-    /// N-Flag aus dem Submessage-Header (non-standard payload).
+    /// N-flag from the submessage header (non-standard payload).
     pub non_standard_flag: bool,
 }
 
 impl DataFragSubmessage {
-    /// Minimal-Body-Size ohne Payload: extraFlags(2) + octetsToInlineQos(2)
+    /// Minimal body size without payload: extraFlags(2) + octetsToInlineQos(2)
     /// + readerId(4) + writerId(4) + writerSN(8) + fragmentStartingNum(4)
     /// + fragmentsInSubmessage(2) + fragmentSize(2) + sampleSize(4) = 32.
     pub const HEADER_WIRE_SIZE: usize = 32;
 
-    /// octetsToInlineQos: Offset vom Ende dieses Felds bis zum Beginn
-    /// von inlineQos bzw. serializedPayload. Variante mit
-    /// Q=false: Offset = 28 (readerId..sampleSize).
+    /// octetsToInlineQos: offset from the end of this field to the start
+    /// of inlineQos or serializedPayload. Variant with
+    /// Q=false: offset = 28 (readerId..sampleSize).
     pub const OCTETS_TO_INLINE_QOS: u16 = 28;
 
-    /// Encoded den Body. Liefert (bytes, flags).
+    /// Encodes the body. Returns (bytes, flags).
     #[must_use]
     pub fn write_body(&self, little_endian: bool) -> (Vec<u8>, u8) {
         let mut out = Vec::with_capacity(Self::HEADER_WIRE_SIZE + self.serialized_payload.len());
@@ -1237,8 +1268,8 @@ impl DataFragSubmessage {
         (out, flags)
     }
 
-    /// Decoded den Body. Flags werden aus dem Submessage-Header vom
-    /// Caller uebergeben.
+    /// Decodes the body. Flags are passed by the caller from the
+    /// submessage header.
     ///
     /// # Errors
     /// `UnexpectedEof`.
@@ -1265,14 +1296,13 @@ impl DataFragSubmessage {
             u16::from_be_bytes(ef)
         };
         pos += 2;
-        // extra_flags: siehe DATA. 2.1-Reader muessen ignorieren
-        // (Cyclone + Fast-DDS machen das), wir ebenfalls — nur lesen
-        // und weiterreichen.
-        // octetsToInlineQos (2 Byte): offset von Anfang readerId bis zum
-        // Inline-QoS bzw. (bei Q=false) bis zum serializedPayload. Spec
-        // fordert 28 = Header-Size − 2 (extra_flags) − 2 (dieses Feld).
-        // Abweichung bei Q=false fangen wir hier ab — haeufiger Interop-
-        // Bug, den wir spec-treu ablehnen.
+        // extra_flags: see DATA. 2.1 readers must ignore them
+        // (Cyclone + Fast-DDS do), we do too — only read and pass on.
+        // octetsToInlineQos (2 byte): offset from the start of readerId
+        // to the inline QoS, or (with Q=false) to the serializedPayload.
+        // The spec requires 28 = header size − 2 (extra_flags) − 2 (this
+        // field). A deviation at Q=false we catch here — a frequent
+        // interop bug that we reject spec-faithfully.
         let mut otq = [0u8; 2];
         otq.copy_from_slice(&body[pos..pos + 2]);
         let octets_to_inline_qos = if little_endian {
@@ -1334,9 +1364,9 @@ impl DataFragSubmessage {
             u32::from_be_bytes(ss)
         };
         pos += 4;
-        // Q-Flag = false, daher kein Inline-QoS-Block.
-        // Bei Q=true wuerden hier ParameterList-Bytes folgen — aktuell
-        // akzeptieren wir das nicht.
+        // Q-flag = false, so no inline-QoS block.
+        // With Q=true, ParameterList bytes would follow here — we do not
+        // currently accept that.
         if inline_qos_flag {
             return Err(WireError::UnsupportedFeature {
                 what: "DATA_FRAG with inline_qos",
@@ -1363,25 +1393,25 @@ impl DataFragSubmessage {
 
 // ============================================================================
 // InfoSource Submessage (§8.3.7.9 / §8.3.8.9.4) — submessageId 0x0c (legacy
-// table) bzw. 0x0A im 2.5-PSM. Wir folgen 2.5: id=0x0A.
+// table) or 0x0A in the 2.5 PSM. We follow 2.5: id=0x0A.
 // ============================================================================
 
-/// InfoSource-Submessage (§8.3.8.9.4). Setzt im ReceiverState
-/// `sourceProtocolVersion`, `sourceVendorId`, `sourceGuidPrefix` neu —
-/// alle nachfolgenden Submessages werden dieser Quelle zugeordnet (nicht
-/// dem Datagram-Header).
+/// InfoSource submessage (§8.3.8.9.4). Resets `sourceProtocolVersion`,
+/// `sourceVendorId`, `sourceGuidPrefix` in the ReceiverState — all
+/// subsequent submessages are attributed to this source (not the
+/// datagram header).
 ///
-/// Wire-Layout (Body, 20 byte):
-/// - unused (4 byte, in der Spec "Long unused")
+/// Wire layout (body, 20 byte):
+/// - unused (4 byte, "Long unused" in the spec)
 /// - ProtocolVersion (2 byte)
 /// - VendorId (2 byte)
 /// - GuidPrefix (12 byte)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InfoSourceSubmessage {
-    /// Reservierte 4 Byte (Spec sagt: muss vom Sender 0 sein, vom
-    /// Receiver ignoriert).
+    /// Reserved 4 byte (spec says: must be 0 from the sender, ignored by
+    /// the receiver).
     pub unused: u32,
-    /// Source-ProtocolVersion (z.B. 2.5).
+    /// Source ProtocolVersion (e.g. 2.5).
     pub protocol_version: crate::wire_types::ProtocolVersion,
     /// Source-VendorId (Hersteller-Kennung).
     pub vendor_id: crate::wire_types::VendorId,
@@ -1393,7 +1423,7 @@ impl InfoSourceSubmessage {
     /// Wire-Size: 20 Bytes (4+2+2+12).
     pub const WIRE_SIZE: usize = 20;
 
-    /// Encoded den Body. Liefert (bytes, flags) inkl. E-Bit.
+    /// Encodes the body. Returns (bytes, flags) incl. E bit.
     #[must_use]
     pub fn write_body(&self, little_endian: bool) -> (Vec<u8>, u8) {
         let mut out = Vec::with_capacity(Self::WIRE_SIZE);
@@ -1456,25 +1486,25 @@ impl InfoSourceSubmessage {
 // InfoTimestamp Submessage (§8.3.8.5 / §8.3.7.5) — submessageId 0x09
 // ============================================================================
 
-/// InfoTimestamp Flag: I (Invalidate). Wenn gesetzt: Body ist leer und
-/// `haveTimestamp` wird im ReceiverState auf `false` gesetzt.
+/// InfoTimestamp flag: I (Invalidate). When set: the body is empty and
+/// `haveTimestamp` is set to `false` in the ReceiverState.
 pub const INFO_TIMESTAMP_FLAG_INVALIDATE: u8 = 0x02;
 
-/// InfoTimestamp-Submessage (§8.3.7.5 / §8.3.8.5). Setzt im
-/// ReceiverState das `timestamp`-Feld + `haveTimestamp` Flag.
-/// Wird via `INFO_TIMESTAMP_FLAG_INVALIDATE` invertiert (I-Flag).
+/// InfoTimestamp submessage (§8.3.7.5 / §8.3.8.5). Sets the `timestamp`
+/// field + `haveTimestamp` flag in the ReceiverState.
+/// Inverted via `INFO_TIMESTAMP_FLAG_INVALIDATE` (I-flag).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct InfoTimestampSubmessage {
-    /// Timestamp (8 byte: i32 sec + u32 fraction). Wenn `invalidate=true`
-    /// ignoriert.
+    /// Timestamp (8 byte: i32 sec + u32 fraction). Ignored when
+    /// `invalidate=true`.
     pub timestamp: crate::header_extension::HeTimestamp,
-    /// `true` = I-Flag in der Submessage gesetzt → Body leer und der
-    /// Receiver setzt `haveTimestamp = false`.
+    /// `true` = the I-flag is set in the submessage → the body is empty
+    /// and the receiver sets `haveTimestamp = false`.
     pub invalidate: bool,
 }
 
 impl InfoTimestampSubmessage {
-    /// Encoded den Body. Wenn `invalidate=true`: Body leer (0 byte).
+    /// Encodes the body. If `invalidate=true`: body empty (0 byte).
     /// Sonst: 8 byte Time_t.
     #[must_use]
     pub fn write_body(&self, little_endian: bool) -> (Vec<u8>, u8) {
@@ -1502,11 +1532,11 @@ impl InfoTimestampSubmessage {
         (out, flags)
     }
 
-    /// Decoded den Body. Wenn `invalidate_flag=true`: erwartet einen
-    /// leeren Body und liefert `timestamp = default()`.
+    /// Decodes the body. When `invalidate_flag=true`: expects an empty
+    /// body and returns `timestamp = default()`.
     ///
     /// # Errors
-    /// `UnexpectedEof` wenn `invalidate_flag=false` und Body < 8 byte.
+    /// `UnexpectedEof` if `invalidate_flag=false` and the body is < 8 byte.
     pub fn read_body(
         body: &[u8],
         little_endian: bool,
@@ -1549,27 +1579,27 @@ impl InfoTimestampSubmessage {
 // InfoReply Submessage (§8.3.7.10 / §8.3.8.10.4) — submessageId 0x0F
 // ============================================================================
 
-/// InfoReply Flag: M (Multicast). Wenn gesetzt: zweite LocatorList
+/// InfoReply flag: M (multicast). If set: a second LocatorList
 /// (multicastReplyLocatorList) folgt im Body.
 pub const INFO_REPLY_FLAG_MULTICAST: u8 = 0x02;
 
-/// InfoReply-Submessage (§8.3.8.10.4). Setzt im ReceiverState
-/// `unicastReplyLocatorList` (Pflicht) und ggf.
-/// `multicastReplyLocatorList` (wenn M-Flag).
+/// InfoReply submessage (§8.3.8.10.4). Sets `unicastReplyLocatorList`
+/// (mandatory) and, if applicable, `multicastReplyLocatorList` (with the
+/// M-flag) in the ReceiverState.
 ///
-/// Wire-Layout (Body):
-/// - unicastLocatorList: u32 length + N × 24 byte Locator
-/// - (M-Flag) multicastLocatorList: u32 length + N × 24 byte Locator
+/// Wire layout (body):
+/// - unicastLocatorList: u32 length + N × 24 byte locator
+/// - (M-flag) multicastLocatorList: u32 length + N × 24 byte locator
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InfoReplySubmessage {
-    /// Unicast-Reply-Locators (mind. 1 sinnvoll, leere Liste erlaubt).
+    /// Unicast reply locators (at least 1 sensible, empty list allowed).
     pub unicast_locators: Vec<crate::wire_types::Locator>,
-    /// Multicast-Reply-Locators (`Some` ⇒ M-Flag im Header gesetzt).
+    /// Multicast reply locators (`Some` ⇒ M flag set in the header).
     pub multicast_locators: Option<Vec<crate::wire_types::Locator>>,
 }
 
 impl InfoReplySubmessage {
-    /// Encoded den Body. Liefert (bytes, flags) inkl. E- und ggf. M-Bit.
+    /// Encodes the body. Returns (bytes, flags) incl. E and possibly M bit.
     #[must_use]
     pub fn write_body(&self, little_endian: bool) -> (Vec<u8>, u8) {
         let mut out = Vec::new();
@@ -1597,14 +1627,14 @@ impl InfoReplySubmessage {
             len.to_be_bytes()
         });
         for loc in list {
-            // Locator hat ein eigenes Wire-Format (24 byte). Wir nehmen
-            // hier den LE-Pfad — Locator ist im RTPS immer LE in den
-            // ParameterList-Pfaden, fuer Submessage-Body folgen wir der
-            // Submessage-Endianness.
+            // The locator has its own wire format (24 byte). We take the
+            // LE path here — the locator is always LE in RTPS in the
+            // ParameterList paths; for the submessage body we follow the
+            // submessage endianness.
             if little_endian {
                 out.extend_from_slice(&loc.to_bytes_le());
             } else {
-                // BE-Variante: kind (4 byte BE), port (4 byte BE), addr (16 byte raw)
+                // BE variant: kind (4 byte BE), port (4 byte BE), addr (16 byte raw)
                 out.extend_from_slice(&(loc.kind.as_i32()).to_be_bytes());
                 out.extend_from_slice(&loc.port.to_be_bytes());
                 out.extend_from_slice(&loc.address);
@@ -1612,11 +1642,11 @@ impl InfoReplySubmessage {
         }
     }
 
-    /// Decoded den Body. M-Flag wird vom Caller aus dem Submessage-Header
-    /// extrahiert.
+    /// Decodes the body. The M-flag is extracted by the caller from the
+    /// submessage header.
     ///
     /// # Errors
-    /// `UnexpectedEof`, `ValueOutOfRange` (Locator-Length bizarr gross).
+    /// `UnexpectedEof`, `ValueOutOfRange` (locator length bizarrely large).
     pub fn read_body(
         body: &[u8],
         little_endian: bool,
@@ -1664,7 +1694,7 @@ impl InfoReplySubmessage {
         for _ in 0..len {
             let mut buf = [0u8; 24];
             buf.copy_from_slice(&body[*pos..*pos + 24]);
-            // BE-Decode: bauen das Locator manuell, da from_bytes_le
+            // BE decode: build the locator manually, since from_bytes_le
             // strikt LE annimmt.
             let loc = if little_endian {
                 crate::wire_types::Locator::from_bytes_le(buf)?
@@ -1695,21 +1725,21 @@ impl InfoReplySubmessage {
 // HEARTBEAT_FRAG Submessage (§8.3.7.7)
 // ============================================================================
 
-/// HEARTBEAT_FRAG-Submessage. Schickt der Writer, um den Reader zu
-/// informieren, dass Fragmente bis `last_fragment_num` fuer `writer_sn`
-/// verfuegbar sind. Writer sendet diese nicht; der Decoder wird
-/// dennoch bereitgehalten fuer Interop.
+/// HEARTBEAT_FRAG submessage. Sent by the writer to inform the reader
+/// that fragments up to `last_fragment_num` are available for
+/// `writer_sn`. The writer does not send these; the decoder is kept
+/// ready anyway for interop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HeartbeatFragSubmessage {
-    /// Reader-EntityId (Ziel).
+    /// Reader EntityId (target).
     pub reader_id: EntityId,
-    /// Writer-EntityId (Quelle).
+    /// Writer EntityId (source).
     pub writer_id: EntityId,
-    /// Zugehoeriges Sample.
+    /// Associated sample.
     pub writer_sn: SequenceNumber,
-    /// Hoechste verfuegbare FragmentNumber.
+    /// Highest available FragmentNumber.
     pub last_fragment_num: FragmentNumber,
-    /// Count_t (zur Korrelation mit NACK_FRAG).
+    /// Count_t (for correlation with NACK_FRAG).
     pub count: i32,
 }
 
@@ -1802,19 +1832,19 @@ impl HeartbeatFragSubmessage {
 // NACK_FRAG Submessage (§8.3.7.6)
 // ============================================================================
 
-/// NACK_FRAG-Submessage. Reader meldet fehlende Fragmente fuer einen
-/// bestimmten `writer_sn`. Auf der Wire keine Flags ausser E.
+/// NACK_FRAG submessage. The reader reports missing fragments for a
+/// specific `writer_sn`. No flags on the wire except E.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NackFragSubmessage {
-    /// Reader-EntityId (Quelle).
+    /// Reader EntityId (source).
     pub reader_id: EntityId,
-    /// Writer-EntityId (Ziel).
+    /// Writer EntityId (target).
     pub writer_id: EntityId,
-    /// Zugehoeriges Sample.
+    /// Associated sample.
     pub writer_sn: SequenceNumber,
-    /// Bitset fehlender Fragmente.
+    /// Bitset of missing fragments.
     pub fragment_number_state: FragmentNumberSet,
-    /// Count_t (zur Korrelation).
+    /// Count_t (for correlation).
     pub count: i32,
 }
 
@@ -1956,11 +1986,11 @@ mod tests {
 
     #[test]
     fn snset_decode_rejects_truncated_bitmap() {
-        // numBits=64 → 8 byte bitmap erwartet; nur 4 vorhanden.
+        // numBits=64 → 8 byte bitmap expected; only 4 present.
         let mut buf = Vec::new();
         buf.extend_from_slice(&SequenceNumber(0).to_bytes_le());
         buf.extend_from_slice(&64_u32.to_le_bytes());
-        buf.extend_from_slice(&[0u8; 4]); // nur 4 statt 8
+        buf.extend_from_slice(&[0u8; 4]); // only 4 instead of 8
         let res = SequenceNumberSet::read_from(&buf, 0, true);
         assert!(matches!(res, Err(WireError::UnexpectedEof { .. })));
     }
@@ -2006,7 +2036,7 @@ mod tests {
 
     #[test]
     fn data_submessage_key_flag_roundtrip() {
-        // Spec §8.3.8.2 K-Flag: serialized_payload enthaelt nur Key.
+        // Spec §8.3.8.2 K-flag: serialized_payload contains only the key.
         let d = DataSubmessage {
             extra_flags: 0,
             reader_id: reader_id(),
@@ -2048,7 +2078,7 @@ mod tests {
 
     #[test]
     fn data_submessage_all_flags_combined_roundtrip() {
-        // E + Q + D + K + N alle gesetzt — der volle 5-Flag-Roundtrip.
+        // E + Q + D + K + N all set — the full 5-flag roundtrip.
         let mut pl = crate::parameter_list::ParameterList::new();
         pl.push(crate::parameter_list::Parameter::new(0x0070, vec![1; 4]));
         let d = DataSubmessage {
@@ -2157,7 +2187,7 @@ mod tests {
         assert!(matches!(res, Err(WireError::UnexpectedEof { .. })));
     }
 
-    // ---- WP 1.E Stufe-D: HEARTBEAT GroupInfo ----
+    // ---- WP 1.E stage D: HEARTBEAT GroupInfo ----
 
     #[test]
     fn heartbeat_with_empty_group_info_roundtrip_le() {
@@ -2227,21 +2257,21 @@ mod tests {
         body.extend_from_slice(&SequenceNumber(0).to_bytes_le());
         // bizarre length
         body.extend_from_slice(&u32::MAX.to_le_bytes());
-        // kein Body fuer prefixes
+        // no body for prefixes
         let res = HeartbeatSubmessage::read_body(&body, true, false, false, true);
         assert!(matches!(res, Err(WireError::ValueOutOfRange { .. })));
     }
 
     #[test]
     fn heartbeat_decode_rejects_truncated_group_info() {
-        // Body endet vor den 3 GSN-Feldern
+        // body ends before the 3 GSN fields
         let mut body = Vec::new();
         body.extend_from_slice(&reader_id().to_bytes());
         body.extend_from_slice(&writer_id().to_bytes());
         body.extend_from_slice(&SequenceNumber(1).to_bytes_le());
         body.extend_from_slice(&SequenceNumber(1).to_bytes_le());
         body.extend_from_slice(&1i32.to_le_bytes());
-        // GroupInfo-Trailer fehlt → UnexpectedEof
+        // GroupInfo trailer missing → UnexpectedEof
         let res = HeartbeatSubmessage::read_body(&body, true, false, false, true);
         assert!(matches!(res, Err(WireError::UnexpectedEof { .. })));
     }
@@ -2316,7 +2346,7 @@ mod tests {
         assert!(matches!(res, Err(WireError::UnexpectedEof { .. })));
     }
 
-    // ---- WP 1.E Stufe-C: GAP filteredCount + GroupInfo ----
+    // ---- WP 1.E stage C: GAP filteredCount + GroupInfo ----
 
     #[test]
     fn gap_with_filtered_count_roundtrip_le() {
@@ -2388,9 +2418,9 @@ mod tests {
 
     #[test]
     fn gap_filtered_count_zero_is_distinct_from_none() {
-        // filtered_count=Some(0) heisst "K-Flag gesetzt, aber 0 gefiltert"
-        // (= alles wirklich removed). None = Trailer fehlt komplett.
-        // Beide muessen sich roundtripen lassen.
+        // filtered_count=Some(0) means "K flag set, but 0 filtered"
+        // (= everything really removed). None = trailer completely missing.
+        // Both must round-trip.
         let zero = GapSubmessage {
             reader_id: reader_id(),
             writer_id: writer_id(),
@@ -2411,7 +2441,7 @@ mod tests {
 
     #[test]
     fn gap_decode_rejects_truncated_filtered_count() {
-        // Body endet vor filtered_count → UnexpectedEof
+        // body ends before filtered_count → UnexpectedEof
         let g = GapSubmessage {
             reader_id: reader_id(),
             writer_id: writer_id(),
@@ -2425,7 +2455,7 @@ mod tests {
             filtered_count: None,
         };
         let (bytes, _) = g.write_body(true);
-        // Decoder mit filtered_count_flag=true erwartet 4 byte Trailer
+        // Decoder with filtered_count_flag=true expects a 4-byte trailer
         let res = GapSubmessage::read_body(&bytes, true, false, true);
         assert!(matches!(res, Err(WireError::UnexpectedEof { .. })));
     }
@@ -2476,6 +2506,30 @@ mod tests {
         let s = FragmentNumberSet::from_missing(FragmentNumber(5), &[]);
         assert_eq!(s.num_bits, 0);
         assert!(s.iter_set().next().is_none());
+    }
+
+    #[test]
+    fn fnset_from_missing_caps_num_bits_at_256() {
+        // Regression M-4 / DDSI-RTPS §8.3.5.4: numBits MUST be <= 256. A
+        // gap over > 256 fragments (e.g. fragment 1 AND 300 missing at
+        // ~781 fragments under packet loss) must not build the set with
+        // num_bits=300 — a spec-conformant receiver discards that as
+        // malformed → the NACK_FRAG is lost → fragments are never resent
+        // → sample stall. The set covers only the first 256; the rest
+        // follows in the next NACK_FRAG once bitmap_base has advanced.
+        let missing = [FragmentNumber(1), FragmentNumber(300)];
+        let s = FragmentNumberSet::from_missing(FragmentNumber(1), &missing);
+        assert!(
+            s.num_bits <= 256,
+            "num_bits {} > 256 (malformed)",
+            s.num_bits
+        );
+        assert_eq!(s.bitmap_base, FragmentNumber(1));
+        // Fragment 1 (within the 256 window) is set, 300 (outside) is
+        // not — it is re-requested in a follow-up NACK_FRAG.
+        let set: Vec<_> = s.iter_set().collect();
+        assert!(set.contains(&FragmentNumber(1)));
+        assert!(!set.contains(&FragmentNumber(300)));
     }
 
     #[test]
@@ -2574,7 +2628,7 @@ mod tests {
 
     #[test]
     fn data_frag_last_fragment_shorter_than_fragment_size() {
-        // sample_size=10, fragment_size=4, fragment 3 traegt nur 2 Byte
+        // sample_size=10, fragment_size=4, fragment 3 carries only 2 bytes
         let d = dataflag_frag(1, 3, 1, 4, 10, vec![0xAA, 0xBB]);
         let (bytes, _) = d.write_body(true);
         let decoded =
@@ -2592,8 +2646,8 @@ mod tests {
 
     #[test]
     fn data_frag_decode_accepts_nonzero_extra_flags_silently() {
-        // B3-Recherche: Cyclone/Fast-DDS ignorieren non-zero extra_flags.
-        // Wir auch.
+        // B3 research: Cyclone/Fast-DDS ignore non-zero extra_flags.
+        // So do we.
         let d = dataflag_frag(1, 1, 1, 4, 4, vec![1, 2, 3, 4]);
         let (mut bytes, _) = d.write_body(true);
         bytes[0..2].copy_from_slice(&0x0042u16.to_le_bytes()); // extra_flags nonzero
@@ -2604,7 +2658,7 @@ mod tests {
 
     #[test]
     fn seqnumset_rejects_num_bits_above_256() {
-        // B7: Hard-Cap gegen DoS via riesiger Bitmap.
+        // B7: hard cap against DoS via a huge bitmap.
         let mut buf = Vec::new();
         buf.extend_from_slice(&SequenceNumber(1).to_bytes_le());
         buf.extend_from_slice(&257u32.to_le_bytes()); // num_bits > 256
@@ -2627,15 +2681,15 @@ mod tests {
     fn fnset_rejects_num_bits_above_256() {
         let mut buf = Vec::new();
         buf.extend_from_slice(&FragmentNumber(1).to_bytes_le());
-        buf.extend_from_slice(&1000u32.to_le_bytes()); // num_bits weit ueber 256
+        buf.extend_from_slice(&1000u32.to_le_bytes()); // num_bits far above 256
         let res = FragmentNumberSet::read_from(&buf, 0, true);
         assert!(matches!(res, Err(WireError::ValueOutOfRange { .. })));
     }
 
     #[test]
     fn fnset_dos_giant_num_bits_rejected_before_alloc() {
-        // Pathologisch: num_bits = u32::MAX wuerde ~512 MB allokieren
-        // wenn wir nicht vorher cappen.
+        // Pathological: num_bits = u32::MAX would allocate ~512 MB if we
+        // do not cap beforehand.
         let mut buf = Vec::new();
         buf.extend_from_slice(&FragmentNumber(1).to_bytes_le());
         buf.extend_from_slice(&u32::MAX.to_le_bytes());
@@ -2645,11 +2699,11 @@ mod tests {
 
     #[test]
     fn data_frag_decode_rejects_wrong_octets_to_inline_qos_when_q_false() {
-        // Wir basteln einen DATA_FRAG-Body mit falschem
-        // octetsToInlineQos=99 und Q=false. Decoder muss das ablehnen.
+        // We craft a DATA_FRAG body with a wrong octetsToInlineQos=99 and
+        // Q=false. The decoder must reject it.
         let d = dataflag_frag(1, 1, 1, 4, 4, vec![1, 2, 3, 4]);
         let (mut bytes, _) = d.write_body(true);
-        // octetsToInlineQos sitzt in Bytes [2..4] (nach extra_flags).
+        // octetsToInlineQos sits in bytes [2..4] (after extra_flags).
         bytes[2..4].copy_from_slice(&99u16.to_le_bytes());
         let res = DataFragSubmessage::read_body(&bytes, true, false, false, false, false);
         assert!(matches!(res, Err(WireError::ValueOutOfRange { .. })));
@@ -2657,7 +2711,7 @@ mod tests {
 
     #[test]
     fn data_frag_decode_rejects_inline_qos() {
-        // Q-Flag true wird abgelehnt (Feature nicht implementiert).
+        // Q-flag true is rejected (feature not implemented).
         let d = dataflag_frag(1, 1, 1, 4, 4, vec![1, 2, 3, 4]);
         let (bytes, _) = d.write_body(true);
         let res = DataFragSubmessage::read_body(&bytes, true, true, false, false, false);
@@ -2763,7 +2817,7 @@ mod tests {
         assert!(matches!(res, Err(WireError::UnexpectedEof { .. })));
     }
 
-    // ---- WP 1.E Stufe-E: InfoSource ----
+    // ---- WP 1.E stage E: InfoSource ----
 
     fn make_info_source() -> InfoSourceSubmessage {
         InfoSourceSubmessage {
@@ -2809,7 +2863,7 @@ mod tests {
     #[test]
     fn info_source_unused_field_roundtrips() {
         // unused MUST roundtrip byte-identisch — manche Vendor-Implementations
-        // tragen dort Diagnose-Daten ein.
+        // enter diagnostic data there.
         let mut i = make_info_source();
         i.unused = 0xDEAD_BEEF;
         let (bytes, _) = i.write_body(true);
@@ -2817,7 +2871,7 @@ mod tests {
         assert_eq!(decoded.unused, 0xDEAD_BEEF);
     }
 
-    // ---- WP 1.E Stufe-F: InfoReply ----
+    // ---- WP 1.E stage F: InfoReply ----
 
     #[test]
     fn info_reply_unicast_only_roundtrip_le() {
@@ -2862,8 +2916,8 @@ mod tests {
 
     #[test]
     fn info_reply_empty_unicast_list_is_valid() {
-        // Spec erlaubt leere Liste (z.B. "vergiss alle bisherigen
-        // Reply-Locators"). Decoder muss das akzeptieren.
+        // The spec allows an empty list (e.g. "forget all previous
+        // reply locators"). The decoder must accept it.
         let i = InfoReplySubmessage {
             unicast_locators: vec![],
             multicast_locators: None,
@@ -2879,7 +2933,7 @@ mod tests {
         // length=u32::MAX → DoS-Schutz greift
         let mut body = Vec::new();
         body.extend_from_slice(&u32::MAX.to_le_bytes());
-        // kein Locator-Body
+        // no locator body
         let res = InfoReplySubmessage::read_body(&body, true, false);
         assert!(matches!(res, Err(WireError::ValueOutOfRange { .. })));
     }
@@ -2931,7 +2985,7 @@ mod tests {
         };
         let (bytes, flags) = i.write_body(true);
         assert!(flags & INFO_TIMESTAMP_FLAG_INVALIDATE != 0);
-        assert!(bytes.is_empty(), "I-Flag → leerer Body");
+        assert!(bytes.is_empty(), "I-Flag → empty body");
         let decoded = InfoTimestampSubmessage::read_body(&bytes, true, true).unwrap();
         assert!(decoded.invalidate);
     }
@@ -2944,8 +2998,8 @@ mod tests {
 
     #[test]
     fn info_timestamp_decode_with_invalidate_ignores_body() {
-        // I-Flag → Body wird ignoriert; auch wenn er voll ist, gilt
-        // invalidate=true.
+        // I-flag → the body is ignored; even when it is full,
+        // invalidate=true holds.
         let res = InfoTimestampSubmessage::read_body(&[0u8; 8], true, true).unwrap();
         assert!(res.invalidate);
         assert_eq!(

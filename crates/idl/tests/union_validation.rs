@@ -1,4 +1,4 @@
-//! Integration-Test: Union-Validierung (C4.6 §1.8).
+//! Integration test: union validation (C4.6 §1.8).
 
 #![allow(
     clippy::expect_used,

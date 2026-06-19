@@ -1,0 +1,1 @@
+interface Echo { string ping(in string msg); };

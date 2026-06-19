@@ -3,19 +3,18 @@
 
 //! Crate `zerodds-corba-codegen`. Safety classification: **STANDARD**.
 //!
-//! OMG CORBA 3.3 Annex-A.1 IDL-Mapping-Codegen-Helpers — pure-Rust
-//! `no_std + alloc`, `forbid(unsafe_code)`. Liefert Tabellen + Helper,
-//! die [`zerodds-idl-cpp`], [`zerodds-idl-csharp`] und
-//! [`zerodds-idl-java`] zur Erzeugung CORBA-Stub-/Skeleton-Codes
-//! konsumieren.
+//! OMG CORBA 3.3 Annex-A.1 IDL-mapping codegen helpers — pure Rust
+//! `no_std + alloc`, `forbid(unsafe_code)`. Provides tables + helpers
+//! that [`zerodds-idl-cpp`], [`zerodds-idl-csharp`] and
+//! [`zerodds-idl-java`] consume to generate CORBA stub/skeleton code.
 //!
 //! Spec: OMG CORBA 3.3 Part 1 Annex A (IDL-Type-Mappings) +
 //! `formal/2008-01-09` IDL-to-C++ + `formal/2008-01-04` IDL-to-Java.
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 8 — CORBA-Stack. Substrat fuer die drei OMG-PSM-Codegen-
-//! Crates ([`zerodds-idl-cpp`] / [`zerodds-idl-csharp`] /
+//! Layer 8 — CORBA stack. Substrate for the three OMG-PSM codegen
+//! crates ([`zerodds-idl-cpp`] / [`zerodds-idl-csharp`] /
 //! [`zerodds-idl-java`]).
 //!
 //! [`zerodds-idl-cpp`]: ../zerodds_idl_cpp/index.html
@@ -27,16 +26,16 @@
 //! - [`SpecialType`] / [`TargetLanguage`] / [`language_mapping`] —
 //!   13 Annex-A.1 Special-Types (Object, ValueBase, AbstractBase,
 //!   NativeRef, TypeCode, any, sequence-of-any, string, wstring,
-//!   Time, fixed, ULongLong, LongDouble) mit Sprach-Mappings fuer
+//!   Time, fixed, ULongLong, LongDouble) with language mappings for
 //!   C++ / C# / Java.
-//! - [`StubOp`] / [`render_stub_op`] — Client-Stub-Template (sendet
-//!   GIOP-Request, erwartet Reply mit ReplyStatus-Switch).
-//! - [`SkeletonOp`] / [`render_skeleton_dispatch`] — Server-Side-
-//!   Dispatch-Template (Operation-Name-Switch).
-//! - [`build_repository_id`] — Repository-ID-Builder (Spec §10.7.3.1)
-//!   fuer IDL-`module`/`interface`-Pfade.
+//! - [`StubOp`] / [`render_stub_op`] — client-stub template (sends a
+//!   GIOP request, expects a reply with a ReplyStatus switch).
+//! - [`SkeletonOp`] / [`render_skeleton_dispatch`] — server-side
+//!   dispatch template (operation-name switch).
+//! - [`build_repository_id`] — repository-ID builder (spec §10.7.3.1)
+//!   for IDL `module`/`interface` paths.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust
 //! use zerodds_corba_codegen::build_repository_id;

@@ -3,10 +3,10 @@
 
 //! `IdentityStatusToken` — DDS-Security 1.2 §9.3.2.5.1.2.
 //!
-//! Wird vom Authentication-Plugin emittiert, um den aktuellen Status
-//! einer remote Identity zu signalisieren (Cert-Revocation,
-//! Permissions-Expire). Gehoert zum Identity-Status-Topic
-//! (`ParticipantStatelessMessage`-Topic mit speziellem Class-Id).
+//! Emitted by the authentication plugin to signal the current status
+//! of a remote identity (cert revocation,
+//! permissions expiry). Belongs to the identity-status topic
+//! (`ParticipantStatelessMessage` topic with a special class ID).
 //!
 //! ```text
 //!   class_id  = "DDS:Auth:PKI-DH:1.0+IdentityStatus"
@@ -19,31 +19,31 @@ use alloc::vec::Vec;
 
 use crate::identity::PkiError;
 
-/// Class-ID laut Spec §9.3.2.5.1.2.
+/// Class ID per spec §9.3.2.5.1.2.
 pub const IDENTITY_STATUS_CLASS_ID: &str = "DDS:Auth:PKI-DH:1.0+IdentityStatus";
 
-/// Property-Keys.
+/// Property keys.
 pub const KEY_OCSP_STATUS: &str = "ocsp_status";
-/// `ocsp_response`-Property-Key.
+/// `ocsp_response` property key.
 pub const KEY_OCSP_RESPONSE: &str = "ocsp_response";
-/// `expiry_time`-Property-Key (UTC Unix-Sekunden, BE u64).
+/// `expiry_time` property key (UTC Unix seconds, BE u64).
 pub const KEY_EXPIRY_TIME: &str = "expiry_time";
 
-/// Status-Werte (RFC 6960 OCSP-Code-Mapping).
+/// Status values (RFC 6960 OCSP code mapping).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdentityStatusKind {
-    /// `good` — Cert ist aktiv und gueltig.
+    /// `good` — the cert is active and valid.
     Good,
-    /// `revoked` — Cert ist widerrufen, jeder Handshake muss
-    /// abgelehnt werden.
+    /// `revoked` — the cert is revoked, every handshake must
+    /// be rejected.
     Revoked,
-    /// `unknown` — OCSP-Responder kennt das Cert nicht; Caller
-    /// entscheidet ob er das toleriert.
+    /// `unknown` — the OCSP responder does not know the cert; the caller
+    /// decides whether to tolerate it.
     Unknown,
 }
 
 impl IdentityStatusKind {
-    /// Wire-Wert (1 Byte).
+    /// Wire value (1 byte).
     #[must_use]
     pub const fn to_u8(self) -> u8 {
         match self {
@@ -56,7 +56,7 @@ impl IdentityStatusKind {
     /// `u8 → IdentityStatusKind`.
     ///
     /// # Errors
-    /// `PkiError::InvalidPem` wenn der Code nicht 0/1/2 ist.
+    /// `PkiError::InvalidPem` if the code is not 0/1/2.
     pub fn from_u8(v: u8) -> Result<Self, PkiError> {
         match v {
             0 => Ok(Self::Good),
@@ -72,17 +72,17 @@ impl IdentityStatusKind {
 /// `IdentityStatusToken`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdentityStatusToken {
-    /// OCSP-Status der Remote-Identity.
+    /// OCSP status of the remote identity.
     pub ocsp_status: IdentityStatusKind,
-    /// Optional rohes OCSP-Response-DER (Caller kann selbst
-    /// signature-verifizieren).
+    /// Optional raw OCSP response DER (the caller can
+    /// signature-verify it itself).
     pub ocsp_response: Option<Vec<u8>>,
-    /// Cert-Expiry als UTC-Unix-Sekunden.
+    /// Cert expiry as UTC Unix seconds.
     pub expiry_time: u64,
 }
 
 impl IdentityStatusToken {
-    /// Konstruktor mit `Good`-Status und kein OCSP-Response-Body.
+    /// Constructor with `Good` status and no OCSP response body.
     #[must_use]
     pub fn good(expiry_time: u64) -> Self {
         Self {
@@ -92,7 +92,7 @@ impl IdentityStatusToken {
         }
     }
 
-    /// Konstruktor mit `Revoked`.
+    /// Constructor with `Revoked`.
     #[must_use]
     pub fn revoked(expiry_time: u64, ocsp_response: Option<Vec<u8>>) -> Self {
         Self {
@@ -132,7 +132,7 @@ impl IdentityStatusToken {
     /// Decode Wire-Bytes.
     ///
     /// # Errors
-    /// `PkiError::InvalidPem` bei Format-Problemen.
+    /// `PkiError::InvalidPem` on format problems.
     pub fn decode(bytes: &[u8]) -> Result<Self, PkiError> {
         let mut pos = 0usize;
         if bytes.len() <= pos {
@@ -193,8 +193,8 @@ impl IdentityStatusToken {
                     expiry_time = Some(u64::from_be_bytes(buf));
                 }
                 other => {
-                    // Unbekannte Properties — Spec sagt "tolerable",
-                    // wir skippen.
+                    // Unknown properties — the spec says "tolerable",
+                    // we skip them.
                     let _ = other;
                 }
             }
@@ -209,14 +209,14 @@ impl IdentityStatusToken {
         })
     }
 
-    /// `true` wenn der Status einen Handshake-Reject ausloesen muss.
+    /// `true` if the status must trigger a handshake reject.
     #[must_use]
     pub fn requires_reject(&self) -> bool {
         matches!(self.ocsp_status, IdentityStatusKind::Revoked)
     }
 }
 
-/// Helper: Property-Liste fuer Plugin-API.
+/// Helper: property list for the plugin API.
 #[must_use]
 pub fn identity_status_properties(token: &IdentityStatusToken) -> Vec<(String, Vec<u8>)> {
     let mut out = Vec::with_capacity(3);
@@ -265,7 +265,7 @@ mod tests {
             ocsp_response: None,
             expiry_time: 0,
         };
-        assert!(!unknown.requires_reject(), "Unknown ist nicht auto-reject");
+        assert!(!unknown.requires_reject(), "Unknown is not auto-reject");
     }
 
     #[test]

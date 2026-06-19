@@ -1,11 +1,11 @@
-// Cyclone DDS Vendor-Profile.
+// Cyclone DDS vendor profile.
 //
-// Cyclone nutzt:
-// - #pragma keylist <Type> <field>... (preprocessor-Ebene; siehe
-//   preprocessor::tests fuer Tests, Coverage-Report umgeht den
-//   Preprocessor und testet nur den Recognizer)
-// - OMG-Standard-Annotations (@key, @optional, @id, @nested)
-// - idlc-spezifische Hints (z.B. @nested-Variante)
+// Cyclone uses:
+// - #pragma keylist <Type> <field>... (preprocessor level; see
+//   preprocessor::tests for tests, the coverage report bypasses the
+//   preprocessor and tests only the recognizer)
+// - OMG standard annotations (@key, @optional, @id, @nested)
+// - idlc-specific hints (e.g. the @nested variant)
 
 @nested
 struct Header {

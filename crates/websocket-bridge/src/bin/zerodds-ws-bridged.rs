@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `zerodds-ws-bridged` — DDS↔WebSocket-Bridge-Daemon.
+//! `zerodds-ws-bridged` — DDS↔WebSocket bridge daemon.
 //!
 //! Spec: `docs/specs/zerodds-ws-bridge-1.0.md`.
 
@@ -24,8 +24,8 @@
     missing_docs
 )]
 
-// Daemon-Logging: eprintln ist die strukturierte JSON-Log-Senke per
-// Spec §8.1; ein full-fledged tracing-Stack haengt nicht im Workspace.
+// Daemon logging: eprintln is the structured JSON log sink per
+// Spec §8.1; a full-fledged tracing stack is not part of the workspace.
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -69,7 +69,7 @@ fn main() -> ExitCode {
 }
 
 fn run(args: CliArgs) -> Result<(), ServerError> {
-    // Config laden — File hat Vorrang, CLI-Args ueberschreiben.
+    // Load config — the file takes precedence, CLI args override.
     let mut cfg = if let Some(path) = &args.config {
         DaemonConfig::load_from_file(Path::new(path))
             .map_err(|e| ServerError::Io(format!("config: {e}")))?
@@ -81,13 +81,13 @@ fn run(args: CliArgs) -> Result<(), ServerError> {
     let handle = server::start(cfg)?;
     eprintln!("[zerodds-ws-bridged] running on {}", handle.local_addr);
 
-    // Park-Thread bis SIGINT/SIGTERM. Wir nutzen std::thread::park() —
-    // bei SIGTERM wird der Prozess vom Runtime beendet, der Drop-Handler
-    // auf `DaemonHandle` setzt das Stop-Flag.
+    // Park the thread until SIGINT/SIGTERM. We use std::thread::park() —
+    // on SIGTERM the process is terminated by the runtime, and the drop
+    // handler on `DaemonHandle` sets the stop flag.
     loop {
         std::thread::park_timeout(std::time::Duration::from_secs(60));
     }
-    // Unreachable; Drop auf `handle` macht graceful Shutdown.
+    // Unreachable; dropping `handle` performs a graceful shutdown.
     #[allow(unreachable_code)]
     {
         drop(handle);
@@ -95,10 +95,10 @@ fn run(args: CliArgs) -> Result<(), ServerError> {
     }
 }
 
-/// Wendet CLI-Overrides auf die geladene Config an. Public-in-Crate fuer Tests.
+/// Applies CLI overrides to the loaded config. Crate-public for tests.
 ///
-/// Spec §2: CLI ueberschreibt File-Werte. `--topic` ist additiv (kann mehrfach
-/// vorkommen), alle anderen Flags sind Replace-Operationen.
+/// Spec §2: the CLI overrides file values. `--topic` is additive (may occur
+/// multiple times), all other flags are replace operations.
 fn apply_cli_overrides(cfg: &mut DaemonConfig, args: CliArgs) {
     if let Some(l) = args.listen {
         cfg.listen = l;

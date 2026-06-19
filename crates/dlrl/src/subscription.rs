@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Subscription-Hierarchie — DDS 1.4 §B.3 + §B.6.
+//! Subscription hierarchy — DDS 1.4 §B.3 + §B.6.
 //!
-//! Spec §B.3: `HomeFactory` haelt `HomeListener`-Instanzen pro Topic;
-//! `ObjectListener` reagiert auf Object-Lifecycle-Events innerhalb
-//! eines Homes.
+//! Spec §B.3: `HomeFactory` holds `HomeListener` instances per topic;
+//! `ObjectListener` reacts to object lifecycle events within a home.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -14,31 +13,31 @@ use alloc::vec::Vec;
 
 use crate::object_cache::{ObjectId, ObjectRef};
 
-/// Object-Change-Kind. Spec §B.6.6.
+/// Object change kind. Spec §B.6.6.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ObjectChangeKind {
-    /// Neues Object angelegt.
+    /// New object created.
     Created,
-    /// Object modifiziert.
+    /// Object modified.
     Modified,
-    /// Object geloescht.
+    /// Object deleted.
     Deleted,
 }
 
-/// HomeListener — wird gerufen wenn ein Object in einem Home
-/// (Topic) erscheint/verschwindet. Spec §B.3.4.
+/// HomeListener — invoked when an object appears in / disappears from a
+/// home (topic). Spec §B.3.4.
 pub trait HomeListener: Send + Sync {
-    /// Object wurde im Home angelegt.
+    /// An object was created in the home.
     fn on_object_created(&mut self, obj: &ObjectRef);
-    /// Object wurde im Home modifiziert.
+    /// An object was modified in the home.
     fn on_object_modified(&mut self, obj: &ObjectRef);
-    /// Object wurde geloescht.
+    /// An object was deleted.
     fn on_object_deleted(&mut self, id: &ObjectId);
 }
 
-/// ObjectListener — pro-Object-Listener. Spec §B.6.7.
+/// ObjectListener — per-object listener. Spec §B.6.7.
 pub trait ObjectListener: Send + Sync {
-    /// Eigener Object-State hat sich geaendert.
+    /// The object's own state has changed.
     fn on_state_changed(&mut self, obj: &ObjectRef, kind: ObjectChangeKind);
 }
 
@@ -57,30 +56,30 @@ impl core::fmt::Debug for HomeFactory {
 }
 
 impl HomeFactory {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Registriert einen HomeListener fuer einen Topic.
+    /// Registers a HomeListener for a topic.
     pub fn register_home_listener(&mut self, topic: String, listener: Box<dyn HomeListener>) {
         self.homes.entry(topic).or_default().push(listener);
     }
 
-    /// Anzahl Listener fuer ein Topic.
+    /// Number of listeners for a topic.
     #[must_use]
     pub fn listener_count(&self, topic: &str) -> usize {
         self.homes.get(topic).map(Vec::len).unwrap_or(0)
     }
 
-    /// Liste aller registrierten Topics.
+    /// List of all registered topics.
     #[must_use]
     pub fn topics(&self) -> Vec<String> {
         self.homes.keys().cloned().collect()
     }
 
-    /// Fan-out eines Object-Events an alle Listener des Topics.
+    /// Fan-out of an object event to all listeners of the topic.
     pub fn fanout(&mut self, obj: &ObjectRef, kind: ObjectChangeKind) {
         if let Some(listeners) = self.homes.get_mut(&obj.id.topic) {
             for l in listeners {
@@ -94,8 +93,8 @@ impl HomeFactory {
     }
 }
 
-/// SubscriptionRegistry — kombiniert HomeFactory mit per-Object-
-/// Listenern.
+/// SubscriptionRegistry — combines HomeFactory with per-object
+/// listeners.
 #[derive(Default)]
 pub struct SubscriptionRegistry {
     home: HomeFactory,
@@ -112,23 +111,23 @@ impl core::fmt::Debug for SubscriptionRegistry {
 }
 
 impl SubscriptionRegistry {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// HomeFactory-Mut-Reference.
+    /// Mutable reference to the HomeFactory.
     pub fn home_mut(&mut self) -> &mut HomeFactory {
         &mut self.home
     }
 
-    /// Registriert einen per-Object-Listener.
+    /// Registers a per-object listener.
     pub fn register_object_listener(&mut self, id: ObjectId, listener: Box<dyn ObjectListener>) {
         self.object_listeners.entry(id).or_default().push(listener);
     }
 
-    /// Notify alle relevanten Listener (Home- + Object-Level).
+    /// Notify all relevant listeners (home and object level).
     pub fn notify(&mut self, obj: &ObjectRef, kind: ObjectChangeKind) {
         self.home.fanout(obj, kind);
         if let Some(listeners) = self.object_listeners.get_mut(&obj.id) {

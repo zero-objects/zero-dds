@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Top-Level-Server fuer `zerodds-mqtt-bridged`.
+//! Top-level server for `zerodds-mqtt-bridged`.
 //!
-//! Spec: `zerodds-mqtt-bridge-1.0.md` §9 (Lifecycle).
+//! Spec: `zerodds-mqtt-bridge-1.0.md` §9 (lifecycle).
 //!
-//! Architektur:
-//! 1. DCPS-Runtime starten.
-//! 2. Pro Topic Reader+Writer registrieren.
-//! 3. MQTT-5-Client connecten zum Broker.
-//! 4. SUBSCRIBE auf alle MQTT-Topics fuer `direction=in|bidir`.
-//! 5. Inbound-Loop-Thread: MQTT-PUBLISH → DDS-Writer.
-//! 6. Outbound-Pump-Thread: DDS-Sample → MQTT-PUBLISH.
+//! Architecture:
+//! 1. Start the DCPS runtime.
+//! 2. Register a reader+writer per topic.
+//! 3. Connect the MQTT-5 client to the broker.
+//! 4. SUBSCRIBE to all MQTT topics for `direction=in|bidir`.
+//! 5. Inbound loop thread: MQTT PUBLISH → DDS writer.
+//! 6. Outbound pump thread: DDS sample → MQTT PUBLISH.
 
 use std::collections::BTreeMap;
 use std::string::String;
@@ -42,18 +42,18 @@ use zerodds_monitor::Registry;
 #[cfg(feature = "daemon")]
 use zerodds_observability_otlp::OtlpExporter;
 
-/// Daemon-Top-Level-Fehler (mappt auf Spec §2 Exit-Codes).
+/// Daemon top-level error (maps to Spec §2 exit codes).
 #[derive(Debug)]
 pub enum ServerError {
-    /// Broker-Connect-Fehler (Exit 2).
+    /// Broker-connect error (exit 2).
     BrokerConnect(String),
-    /// DCPS-Init-Fehler (Exit 3).
+    /// DCPS init error (exit 3).
     Dds(String),
-    /// TLS-Fehler (Exit 4).
+    /// TLS error (exit 4).
     Tls(String),
-    /// Auth-Fehler (Exit 5).
+    /// Auth error (exit 5).
     Auth(String),
-    /// Generischer IO-Fehler.
+    /// Generic IO error.
     Io(String),
 }
 
@@ -80,7 +80,7 @@ pub struct DaemonHandle {
     admin_thread: Option<JoinHandle<()>>,
     #[cfg(feature = "daemon")]
     otlp_thread: Option<JoinHandle<()>>,
-    /// Bound Admin-Adresse fuer `/metrics`, `/catalog`, `/healthz`.
+    /// Bound admin address for `/metrics`, `/catalog`, `/healthz`.
     #[cfg(feature = "daemon")]
     pub admin_addr: Option<String>,
     /// SIGHUP-Reload-Flag.
@@ -89,29 +89,29 @@ pub struct DaemonHandle {
     /// Healthz-Flag.
     #[cfg(feature = "daemon")]
     pub healthy: Arc<AtomicBool>,
-    /// Standard-Metric-Set fuer Tests.
+    /// Standard metric set for tests.
     #[cfg(feature = "daemon")]
     pub metrics: Option<BridgeMetrics>,
-    /// Bridge-interner DCPS-Runtime — vom Daemon selbst verwaltet,
-    /// aber für E2E-Tests (und Telemetry-Inspektoren) ausgeleitet, damit
-    /// gegen denselben Participant publiziert werden kann ohne
-    /// Cross-Participant-Discovery.
+    /// Bridge-internal DCPS runtime — managed by the daemon itself,
+    /// but exposed for E2E tests (and telemetry inspectors) so that
+    /// one can publish against the same participant without
+    /// cross-participant discovery.
     #[cfg(feature = "daemon")]
     pub runtime: Arc<DcpsRuntime>,
-    /// Topic-Name (DDS) → registrierte Writer-EntityId. Test-Helfer für
-    /// L4-Inbound-Inspektion (welcher EID gehört welchem Topic).
+    /// Topic name (DDS) → registered writer EntityId. Test helper for
+    /// L4 inbound inspection (which EID belongs to which topic).
     #[cfg(feature = "daemon")]
     pub user_writers: BTreeMap<String, EntityId>,
-    /// Topic-Name (DDS) → registrierte Reader-EntityId. Test-Helfer für
-    /// L3-Outbound: erlaubt synthetische Sample-Injection via
-    /// `DcpsRuntime::test_inject_user_alive` ohne den Wire-Pfad zu
-    /// durchlaufen (CI-stabil ohne Multicast-Discovery).
+    /// Topic name (DDS) → registered reader EntityId. Test helper for
+    /// L3 outbound: allows synthetic sample injection via
+    /// `DcpsRuntime::test_inject_user_alive` without going through the
+    /// wire path (CI-stable without multicast discovery).
     #[cfg(feature = "daemon")]
     pub user_readers: BTreeMap<String, EntityId>,
 }
 
 impl DaemonHandle {
-    /// Setzt das Stop-Flag und joint die Worker.
+    /// Sets the stop flag and joins the workers.
     pub fn shutdown(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
         #[cfg(feature = "daemon")]
@@ -147,7 +147,7 @@ impl Drop for DaemonHandle {
     }
 }
 /// zerodds-lint: recursion-depth 64 (start bounded by AST depth)
-/// Startet den Daemon mit gegebener Config.
+/// Starts the daemon with the given config.
 ///
 /// # Errors
 /// `BrokerConnect` (Spec Exit-Code 2), `Dds` (3), `Tls` (4), `Auth` (5).
@@ -161,7 +161,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         cfg.topics.len()
     );
 
-    // 0. Metrics-Registry + Standard-Counter (§8.2 Prometheus).
+    // 0. Metrics registry + standard counters (§8.2 Prometheus).
     let registry = Arc::new(Registry::new());
     let metrics = BridgeMetrics::register(&registry);
     let healthy = Arc::new(AtomicBool::new(true));
@@ -182,7 +182,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     let (host, port, tls) = parse_broker_url(&cfg.broker_url)
         .map_err(|e| ServerError::BrokerConnect(format!("{e}")))?;
     if tls && tls_client_cfg.is_none() {
-        // mqtts:// ohne tls-Setup → strict reject (Spec §7.1).
+        // mqtts:// without tls setup → strict reject (spec §7.1).
         return Err(ServerError::Tls(
             "mqtts:// scheme requires mqtt.tls.enabled=true and ca_file (Spec §7.1)".to_string(),
         ));
@@ -215,7 +215,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         )?;
     }
 
-    // 4. MQTT-Client verbinden — mit optionalem TLS-Wrap (§7.1).
+    // 4. Connect the MQTT client — with an optional TLS wrap (§7.1).
     metrics.connections_total.inc();
     let mut client = MqttClient::connect_secure(&host, port, &cfg, tls_client_cfg.clone())
         .map_err(|e| {
@@ -224,10 +224,10 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         })?;
     metrics.connections_active.set(1);
 
-    // 5. SUBSCRIBE auf alle in/bidir-Topics — pro Topic ACL-Read-Check
-    //    gegen das Bridge-eigene Subject (Spec §7.3). Topics, fuer die
-    //    der Bridge-Subject keine Read-Permission hat, werden nicht
-    //    subscribed (kein Disclose).
+    // 5. SUBSCRIBE to all in/bidir topics — an ACL read check per topic
+    //    against the bridge's own subject (Spec §7.3). Topics for which
+    //    the bridge subject has no read permission are not
+    //    subscribed (no disclose).
     let bridge_subject = AuthSubject::new(
         cfg.auth_bearer_subject
             .as_deref()
@@ -265,10 +265,10 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
 
     let stop = Arc::new(AtomicBool::new(false));
 
-    // Wir teilen den Client ueber einen Mutex zwischen Inbound-
-    // (next_event) und Outbound-Pump (publish). Das ist sync-genug
-    // weil unsere Frames klein sind und der TCP-Stream Atomic-Writes
-    // pro frame mit `write_all` durchpusht.
+    // We share the client over a mutex between the inbound
+    // (next_event) and outbound pump (publish). That is sync enough
+    // because our frames are small and the TCP stream pushes atomic writes
+    // per frame with `write_all`.
     let client = Arc::new(Mutex::new(client));
     let runtime_arc = Arc::clone(&runtime);
 
@@ -290,8 +290,8 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
             while !stop_c.load(Ordering::SeqCst) {
                 match rx.recv_timeout(Duration::from_millis(200)) {
                     Ok(UserSample::Alive { payload, .. }) => {
-                        // Spec §7.3 — ACL-Read-Check pro Sample, das wir
-                        // an MQTT herausgeben.
+                        // Spec §7.3 — ACL read check per sample that we
+                        // hand out to MQTT.
                         if !authorize(
                             &security_pump.acl,
                             &bridge_subject_pump,
@@ -316,8 +316,8 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
                         }
                     }
                     Ok(UserSample::Lifecycle { .. }) => {
-                        // Lifecycle → koennte als zerodds_op=dispose User-Property
-                        // gesendet werden. L1-L4: kein Lifecycle-Wire.
+                        // Lifecycle → could be sent as a zerodds_op=dispose user
+                        // property. L1-L4: no lifecycle wire.
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
@@ -331,9 +331,9 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     let stop_inbound = Arc::clone(&stop);
     let client_in = Arc::clone(&client);
     let runtime_in = Arc::clone(&runtime_arc);
-    // Snapshot der Writer-Map exportieren, bevor der Inbound-Loop sie
-    // in einen Arc moved. Wird im DaemonHandle als `user_writers`
-    // ausgeleitet (E2E-Test-Helfer).
+    // Export a snapshot of the writer map before the inbound loop moves it
+    // into an Arc. Exposed in the DaemonHandle as `user_writers`
+    // (E2E test helper).
     let writers_export = writers.clone();
     let writers_arc = Arc::new(writers);
     let mqtt_to_dds_arc = Arc::new(mqtt_to_dds);
@@ -351,13 +351,13 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
                 };
                 c.next_event()
             };
-            // Mutex-Fairness: nach jedem Lock-Release einen kurzen
-            // Yield-Sleep einlegen. Inbound + Outbound-Pump teilen sich
-            // den `client_in`-Mutex; ohne Yield reißt der Inbound-Loop
-            // den Lock sofort wieder an sich (insb. auf macOS, wo der
-            // OS-Mutex unfair scheduled), und der Pump-Thread hängt
-            // dauerhaft an `client_c.lock()`. Verifiziert über den
-            // `dds_publish_pumps_to_mqtt_broker`-E2E-Test.
+            // Mutex fairness: insert a short yield-sleep after each lock
+            // release. Inbound + outbound pump share the
+            // `client_in` mutex; without the yield the inbound loop
+            // grabs the lock again immediately (especially on macOS, where the
+            // OS mutex schedules unfairly), and the pump thread hangs
+            // permanently on `client_c.lock()`. Verified via the
+            // `dds_publish_pumps_to_mqtt_broker` E2E test.
             thread::sleep(Duration::from_millis(1));
             match event {
                 Ok(Some(InboundEvent::Publish {
@@ -372,8 +372,8 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
                             Some(d) => d,
                             None => continue,
                         };
-                    // Spec §7.3 — ACL-Write-Check pro Sample, das wir
-                    // in DDS einspeisen.
+                    // Spec §7.3 — ACL write check per sample that we
+                    // feed into DDS.
                     if !authorize(
                         &security_inbound.acl,
                         &bridge_subject_inbound,
@@ -480,11 +480,11 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     })
 }
 
-/// Spec §5.1 — fall-back DDS-Topic-Name wenn ein eintreffender MQTT-
-/// Topic genau einem konfigurierten Eintrag entspricht. Wildcards
-/// werden hier nicht expandiert; nur exact-match (und alle weiteren
-/// Topics werden gedroppt — Spec konform mit "topics nicht im Config
-/// werden ignoriert").
+/// Spec §5.1 — fallback DDS topic name when an incoming MQTT
+/// topic matches exactly one configured entry. Wildcards
+/// are not expanded here; only exact match (and all other
+/// topics are dropped — spec-conformant with "topics not in the config
+/// are ignored").
 fn resolve_dds_for_mqtt(
     mqtt_topic: &str,
     direct: &BTreeMap<String, String>,
@@ -493,8 +493,8 @@ fn resolve_dds_for_mqtt(
     if let Some(d) = direct.get(mqtt_topic) {
         return Some(d.clone());
     }
-    // Optional: wildcard-Filter koennen pro Topic-Eintrag konfiguriert
-    // sein — wir checken hier auf simple suffix-`#`-Matches.
+    // Optional: wildcard filters can be configured per topic entry
+    // — we check here for simple suffix-`#` matches.
     for t in cfg_topics {
         if let Some(prefix) = t.mqtt_topic.strip_suffix("/#") {
             if mqtt_topic.starts_with(prefix) {
@@ -531,7 +531,7 @@ fn register_topic(
         _ => DurabilityKind::Volatile,
     };
     let reliable = !matches!(topic.reliability.as_str(), "best_effort");
-    // Spec §5.1: Daemon erwartet einen Eintrag der direction=`out|bidir|in`.
+    // Spec §5.1: the daemon expects an entry with direction=`out|bidir|in`.
     let want_writer = matches!(topic.direction.as_str(), "in" | "bidir");
     let want_reader = matches!(topic.direction.as_str(), "out" | "bidir");
 

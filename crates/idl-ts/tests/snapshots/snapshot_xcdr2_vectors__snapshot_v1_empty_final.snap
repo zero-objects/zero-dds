@@ -45,14 +45,20 @@ export const EmptyTypeSupport: DdsTopicType<Empty> = {
     typeName: "Empty",
     isKeyed: false,
     extensibility: "final",
+    encodeInto(w: Xcdr2Writer, s: Empty): void {
+    },
     encode(s: Empty, endian: EndianMode = "le"): Uint8Array {
         const w = new Xcdr2Writer(endian);
+        this.encodeInto(w, s);
         return w.toBytes();
+    },
+    decodeFrom(r: Xcdr2Reader): Empty {
+        return {
+        };
     },
     decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): Empty {
         const r = new Xcdr2Reader(bytes, offset, length, "le");
-        return {
-        };
+        return this.decodeFrom(r);
     },
     keyHash(s: Empty): Uint8Array {
         return new Uint8Array(16);

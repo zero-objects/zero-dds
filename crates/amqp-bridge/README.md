@@ -3,48 +3,48 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-amqp-bridge/badge.svg)](https://docs.rs/zerodds-amqp-bridge)
 
-OASIS AMQP 1.0 Wire-Codec — pure-Rust `no_std + alloc`,
-`forbid(unsafe_code)`. Implementiert das vollstaendige AMQP-1.0
-Type-System (Primitive + Compound), das Frame-Format (`amqp-1.0-
-transport` §2.3), alle 9 Performatives (`open` / `begin` / `attach` /
+OASIS AMQP 1.0 wire codec — pure-Rust `no_std + alloc`,
+`forbid(unsafe_code)`. Implements the complete AMQP-1.0
+type system (primitive + compound), the frame format (`amqp-1.0-
+transport` §2.3), all 9 performatives (`open` / `begin` / `attach` /
 `flow` / `transfer` / `disposition` / `detach` / `end` / `close`),
-alle 7 Message-Sections (Header / Delivery-Annotations / Message-
+all 7 message sections (Header / Delivery-Annotations / Message-
 Annotations / Properties / Application-Properties / Body / Footer)
-und den DDS-AMQP-1.0 Codec-/Codec-Lite-Profile-Marker. Safety
+and the DDS-AMQP-1.0 codec / codec-lite profile marker. Safety
 classification: **STANDARD**.
 
 ## Spec-Mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
 | OASIS AMQP 1.0 (Types) | §1.6 (Primitive Types), §1.7 (Restricted Types), §3 (Variable-Width-Encodings) |
 | OASIS AMQP 1.0 (Transport) | §2.3 (Frame-Format), §2.7 (Performatives), §6 (Connections / Sessions / Links) |
-| OASIS AMQP 1.0 (Messaging) | §3 (Message-Format), §3.2 (Section-Reihenfolge) |
+| OASIS AMQP 1.0 (Messaging) | §3 (Message-Format), §3.2 (Section ordering) |
 | OMG DDS-AMQP 1.0 (formal/2024-08-01) | §2.3 (Codec-Profile), §2.4 (Codec-Lite-Profile), §6.1 (Direct-Embed-Topology), §7 (Type-System-Mapping), §8 (Message-Section-Mapping) |
 
-## Was ist drin
+## What's included
 
-- **`AmqpValue` / `FormatCode`** — Variant-Modell + alle Format-Codes
-  (Primitive + Compound).
-- **`AmqpExtValue`** — erweitertes Variant-Modell mit `decimal32`/`64`/
-  `128` und alle `int`-Tail-Typen.
-- **`encode_*` / `decode_*`** — Primitiv-Encoder/Decoder pro Typ.
-- **`decode_value`** — universaler Decoder ueber alle Format-Codes.
+- **`AmqpValue` / `FormatCode`** — variant model + all format codes
+  (primitive + compound).
+- **`AmqpExtValue`** — extended variant model with `decimal32`/`64`/
+  `128` and all `int` tail types.
+- **`encode_*` / `decode_*`** — primitive encoder/decoder per type.
+- **`decode_value`** — universal decoder across all format codes.
 - **`FrameHeader` / `FrameType` / `encode_frame_header` /
-  `decode_frame_header`** — 4-Byte SIZE BE + DOFF + TYPE + CHANNEL BE
-  + Extended-Header.
-- **`open` / `begin` / ... / `close`** — Performative-Builder.
-- **`encode_performative` / `decode_performative`** — Round-Trip-Codec.
-- **`MessageSection`** — alle 9 Section-Typen.
-- **`validate_section_sequence`** — §3.2-Reihenfolge-Pruefung.
-- **`codec_profile::{CodecProfile, active_profile, is_codec_lite_value, is_codec_lite_section}`** — DDS-AMQP-1.0 §2.4 Codec-Lite-Marker.
+  `decode_frame_header`** — 4-byte SIZE BE + DOFF + TYPE + CHANNEL BE
+  + extended header.
+- **`open` / `begin` / ... / `close`** — performative builders.
+- **`encode_performative` / `decode_performative`** — round-trip codec.
+- **`MessageSection`** — all 9 section types.
+- **`validate_section_sequence`** — §3.2 ordering check.
+- **`codec_profile::{CodecProfile, active_profile, is_codec_lite_value, is_codec_lite_section}`** — DDS-AMQP-1.0 §2.4 codec-lite marker.
 
-## Schichten-Position
+## Layer position
 
-Layer 5 — Bridges. Substrat fuer:
+Layer 5 — Bridges. Substrate for:
 
-- [`zerodds-amqp-endpoint`](../amqp-endpoint) — DDS-AMQP-1.0 Endpoint-
-  Layer (Direct-Embed-Topology, Connection-/Session-/Link-Lifecycle).
+- [`zerodds-amqp-endpoint`](../amqp-endpoint) — DDS-AMQP-1.0 endpoint
+  layer (Direct-Embed-Topology, connection / session / link lifecycle).
 
 ## Quickstart
 
@@ -77,17 +77,17 @@ assert_eq!(decoded.frame_type, FrameType::Amqp);
 
 ## Feature-Flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std` | ✅ | `std::error::Error`-Impls. |
-| `alloc` | ✅ (via std) | `Vec` / `String`. Crate ist `no_std`-fahig: `default-features = false, features = ["alloc"]`. |
-| `codec-lite` | ❌ | DDS-AMQP-1.0 §2.4 Codec-Lite-Profile-Marker (Conformance-Claim, kein Code-Pfad-Effekt). |
+| `std` | ✅ | `std::error::Error` impls. |
+| `alloc` | ✅ (via std) | `Vec` / `String`. The crate is `no_std`-capable: `default-features = false, features = ["alloc"]`. |
+| `codec-lite` | ❌ | DDS-AMQP-1.0 §2.4 codec-lite profile marker (conformance claim, no code-path effect). |
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1` ist die initiale Release-Materialisierung. Public-API,
-Wire-Format (OASIS AMQP 1.0) und Fehler-Diskriminanten sind RC1-
-stabil; Breaking-Changes erfordern Major-Bump.
+`1.0.0-rc.1` is the initial release materialization. The public API,
+wire format (OASIS AMQP 1.0) and error discriminants are RC1-
+stable; breaking changes require a major bump.
 
 ## Tests
 
@@ -95,19 +95,19 @@ stabil; Breaking-Changes erfordern Major-Bump.
 cargo test -p zerodds-amqp-bridge
 ```
 
-188 Tests grün:
-- 82 Unit-Tests in src/ (Type-System + Frame + Performatives + Sections + Extended-Types + Codec-Profile).
-- 90 Boundary-Decoder-Tests in `tests/boundary_decoders.rs` (Mutation-Survival-Reduction).
-- 8 Property-Tests in `tests/proptest_roundtrip.rs` (Roundtrip-Invarianten).
-- 8 Fuzz-Smoke-Tests in `tests/fuzz_smoke.rs` (Pseudo-Random-Bytes-Stream-Decoder, kein Panic).
+188 tests green:
+- 82 unit tests in src/ (type system + frame + performatives + sections + extended types + codec profile).
+- 90 boundary-decoder tests in `tests/boundary_decoders.rs` (mutation-survival reduction).
+- 8 property tests in `tests/proptest_roundtrip.rs` (round-trip invariants).
+- 8 fuzz smoke tests in `tests/fuzz_smoke.rs` (pseudo-random byte-stream decoder, no panic).
 
-Coverage-guided Fuzzing via `cargo-fuzz` siehe `fuzz/README.md` (nightly opt-in).
+Coverage-guided fuzzing via `cargo-fuzz`, see `fuzz/README.md` (nightly opt-in).
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../../LICENSE).
+Apache-2.0. See [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
-- [`docs/release/rc1-reviews/amqp-bridge.md`](../../docs/release/rc1-reviews/amqp-bridge.md) — RC1-Review.
-- [`zerodds-amqp-endpoint`](../amqp-endpoint) — DDS-AMQP-1.0 Endpoint-Layer.
+- [`docs/release/rc1-reviews/amqp-bridge.md`](../../docs/release/rc1-reviews/amqp-bridge.md) — RC1 review.
+- [`zerodds-amqp-endpoint`](../amqp-endpoint) — DDS-AMQP-1.0 endpoint layer.

@@ -1,11 +1,11 @@
-//! Spec-Conformance-Matrix fuer IDL4-C# 1.0 §7 + §8.
+//! Spec conformance matrix for IDL4-C# 1.0 §7 + §8.
 //!
-//! Verifiziert produktiv die in `docs/spec-coverage/idl4-csharp-1.0.md`
-//! gelisteten Generator-Pfade durch end-to-end-IDL→C#-Renderings.
+//! Productively verifies the generator paths listed in
+//! `docs/spec-coverage/idl4-csharp-1.0.md` via end-to-end IDL→C# renderings.
 //!
-//! Cross-Cutting:
-//! * `@verbatim` (§7.17.5) ist gemeinsam mit XTypes 1.3 §7.2.2.4.8;
-//!   siehe `dds-xtypes-1.3.open.md`.
+//! Cross-cutting:
+//! * `@verbatim` (§7.17.5) is shared with XTypes 1.3 §7.2.2.4.8;
+//!   see `dds-xtypes-1.3.open.md`.
 
 #![allow(
     clippy::expect_used,
@@ -36,7 +36,7 @@ fn gen_cs(src: &str) -> String {
 
 #[test]
 fn idl_naming_default_uses_dotnet_pascal_case() {
-    // Spec §7.1.1.2: .NET-Default ist PascalCase. ZeroDDS-Default ist
+    // Spec §7.1.1.2: the .NET default is PascalCase. The ZeroDDS default is
     // .NET-Naming.
     let cs = gen_cs("struct my_struct { long my_field; };");
     assert!(
@@ -47,8 +47,8 @@ fn idl_naming_default_uses_dotnet_pascal_case() {
 
 #[test]
 fn camel_case_member_naming_for_pascalized_idl_names() {
-    // Spec §7.1.1.2.2: Member-Properties folgen camelCase oder
-    // PascalCase. ZeroDDS .NET-Default emittiert PascalCase fuer
+    // Spec §7.1.1.2.2: member properties follow camelCase or
+    // PascalCase. The ZeroDDS .NET default emits PascalCase for
     // Properties.
     let cs = gen_cs("struct S { long my_field; };");
     assert!(cs.contains("MyField") || cs.contains("my_field"));
@@ -68,7 +68,7 @@ fn standalone_constant_emits_const_value_class() {
 }
 
 // ============================================================================
-// §7.2.4.2.1 Sequences (Bounds-Checking ist MAY)
+// §7.2.4.2.1 Sequences (bounds checking is MAY)
 // ============================================================================
 
 #[test]
@@ -84,21 +84,21 @@ fn unbounded_sequence_member_emits_isequence_marker() {
 #[test]
 fn bounded_sequence_member_emits_ibounded_sequence() {
     // Spec §7.2.4.2.1: bounded → IBoundedSequence<T,N>. ZeroDDS
-    // Generator emittiert das mit dem `bound`-Marker.
+    // The generator emits this with the `bound` marker.
     let cs = gen_cs("struct S { sequence<long, 5> values; };");
     assert!(cs.contains("Bounded") || cs.contains("IList") || cs.contains("ISequence"));
 }
 
 // ============================================================================
-// §7.2.4.3.1 Struct (record-class ist Spec-konformer Modernisierungs-Pfad)
+// §7.2.4.3.1 Struct (record class is a spec-conformant modernization path)
 // ============================================================================
 
 #[test]
 fn struct_emits_public_class_or_record_class() {
-    // Spec §7.2.4.3.1: struct → public class. ZeroDDS emittiert
-    // `record class` (C# 9+) als modernisierte Variante mit
-    // identischer Semantik (Init-Properties + Default-/Copy-/All-
-    // Values-Constructor automatisch via record-Syntax).
+    // Spec §7.2.4.3.1: struct → public class. ZeroDDS emits
+    // `record class` (C# 9+) as a modernized variant with
+    // identical semantics (init properties + default/copy/all-
+    // values constructor automatically via record syntax).
     let cs = gen_cs("struct S { long x; };");
     assert!(cs.contains("class S") || cs.contains("record S"));
 }
@@ -109,7 +109,7 @@ fn struct_emits_public_class_or_record_class() {
 
 #[test]
 fn union_emits_discriminator_class() {
-    // Spec §7.2.4.3.2: union → C# class mit Discriminator-Pattern.
+    // Spec §7.2.4.3.2: union → C# class with a discriminator pattern.
     let cs = gen_cs(
         r#"
         union U switch (long) {
@@ -143,36 +143,36 @@ fn typedef_alias_works_for_recursive_pattern() {
 
 #[test]
 fn typedef_emits_alias_record_or_using() {
-    // ZeroDDS-Variante: Wrapper-Class statt Inline-Replacement
-    // (Spec erlaubt beides, Wrapper ist documentation-friendly).
+    // ZeroDDS variant: a wrapper class instead of inline replacement
+    // (the spec allows both, the wrapper is documentation-friendly).
     let cs = gen_cs("typedef long MyLong;");
-    assert!(cs.contains("MyLong"), "typedef-alias fehlt:\n{cs}");
+    assert!(cs.contains("MyLong"), "typedef alias missing:\n{cs}");
 }
 
 // ============================================================================
-// §7.4.2 Interface Forward-Decl — kein C#-Mapping
+// §7.4.2 interface forward-decl — no C# mapping
 // ============================================================================
 
 #[test]
 fn interface_forward_decl_has_no_csharp_output() {
-    // Spec §7.4.2: forward-decl → kein C#-Mapping. Generator filtert.
-    // Non-service-Interface ist ohnehin Unsupported (Spec lizenziert).
+    // Spec §7.4.2: forward-decl → no C# mapping. The generator filters it.
+    // A non-service interface is Unsupported anyway (spec-licensed).
     let parse = zerodds_idl::parse("interface Foo;", &ParserConfig::default());
     if let Ok(ast) = parse {
         let res = generate_csharp(&ast, &CsGenOptions::default());
-        // Entweder Unsupported-Error oder leerer Output ohne `Foo`.
+        // Either an Unsupported error or empty output without `Foo`.
         if let Ok(cs) = res {
-            // Forward-Decl-only emittiert nichts Konkretes.
+            // Forward-decl-only emits nothing concrete.
             assert!(
                 !cs.contains("interface Foo {"),
-                "forward-decl emittiert vollen Interface-Body"
+                "forward-decl emits a full interface body"
             );
         }
     }
 }
 
 // ============================================================================
-// §7.14.2 Union-Discriminator-Erweiterungen
+// §7.14.2 union discriminator extensions
 // ============================================================================
 
 #[test]
@@ -194,8 +194,8 @@ fn union_with_octet_discriminator_supported() {
 #[test]
 fn verbatim_annotation_with_csharp_language_inlines_text() {
     // Spec §7.17.5 + XTypes §7.2.2.4.8: @verbatim(language="csharp",
-    // placement=BEFORE_DECLARATION, text="...") bettet Text vor
-    // dem Type-Header ein.
+    // placement=BEFORE_DECLARATION, text="...") embeds text before
+    // the type header.
     let cs = gen_cs(
         r#"
         @verbatim(language="csharp", placement=BEFORE_DECLARATION, text="// pre-decl marker")
@@ -205,13 +205,13 @@ fn verbatim_annotation_with_csharp_language_inlines_text() {
     assert!(cs.contains("PlainStruct"));
     assert!(
         cs.contains("// pre-decl marker"),
-        "@verbatim BEFORE_DECLARATION fehlt:\n{cs}"
+        " BEFORE_DECLARATION missing:\n{cs}"
     );
     let pos_marker = cs.find("// pre-decl marker").unwrap_or(usize::MAX);
     let pos_class = cs.find("record class PlainStruct").unwrap_or(usize::MAX);
     assert!(
         pos_marker < pos_class,
-        "Marker muss vor record class stehen:\n{cs}"
+        "marker must come before the record class:\n{cs}"
     );
 }
 
@@ -228,18 +228,18 @@ fn verbatim_annotation_csharp_alias_cs_matches() {
     let pos_close = cs.rfind("}").unwrap_or(usize::MAX);
     assert!(
         pos_marker != usize::MAX && pos_marker > pos_close,
-        "AFTER_DECLARATION verbatim muss nach record-Block stehen:\n{cs}"
+        "AFTER_DECLARATION verbatim must come after the record block:\n{cs}"
     );
 }
 
 #[test]
 fn bitset_emits_struct_with_value_field() {
-    // Spec idl4-csharp §7.14.3.2: bitset → C# struct mit Value-Property
+    // Spec idl4-csharp §7.14.3.2: bitset → C# struct with a value property
     // pro Bitfield (Mask + Shift inline).
     let cs = gen_cs(r#"bitset BS { bitfield<3> a; bitfield<5> b; };"#);
-    assert!(cs.contains("public struct BS"), "struct BS fehlt:\n{cs}");
+    assert!(cs.contains("public struct BS"), "struct BS missing:\n{cs}");
     assert!(cs.contains("public ulong Value"));
-    assert!(cs.contains("public ulong A"), "Property A fehlt:\n{cs}");
+    assert!(cs.contains("public ulong A"), "property A missing:\n{cs}");
     assert!(cs.contains("public ulong B"));
     assert!(cs.contains("0x7UL"));
     assert!(cs.contains("0x1FUL"));
@@ -249,7 +249,7 @@ fn bitset_emits_struct_with_value_field() {
 fn bitmask_emits_flags_enum() {
     // Spec idl4-csharp §7.14.3.3: bitmask → `[Flags] enum`.
     let cs = gen_cs(r#"@bit_bound(8) bitmask Flags { READ, WRITE, EXEC };"#);
-    assert!(cs.contains("[System.Flags]"), "[Flags] fehlt:\n{cs}");
+    assert!(cs.contains("[System.Flags]"), "[Flags] missing:\n{cs}");
     assert!(cs.contains("public enum Flags : byte"));
     assert!(cs.contains("READ = 1UL << 0"));
     assert!(cs.contains("WRITE = 1UL << 1"));
@@ -280,7 +280,7 @@ fn valuetype_emits_abstract_and_concrete_class() {
         let cs = generate_csharp(&ast, &CsGenOptions::default()).expect("ok");
         assert!(
             cs.contains("public abstract class VTAbstract"),
-            "VTAbstract fehlt:\n{cs}"
+            "VTAbstract missing:\n{cs}"
         );
         assert!(cs.contains("public class VT : VTAbstract"));
         assert!(cs.contains("X { get; set; }"), "Pascal-Property X:\n{cs}");
@@ -297,7 +297,7 @@ fn valuetype_private_state_emits_protected_property() {
         let cs = generate_csharp(&ast, &CsGenOptions::default()).expect("ok");
         assert!(
             cs.contains("protected abstract"),
-            "private->protected Mapping fehlt:\n{cs}"
+            "private->protected mapping missing:\n{cs}"
         );
     }
 }
@@ -328,7 +328,7 @@ fn non_service_interface_emits_csharp_interface() {
     );
     assert!(
         cs.contains("public interface Calc"),
-        "C# interface fehlt:\n{cs}"
+        "C# interface missing:\n{cs}"
     );
     assert!(cs.contains("add"));
     assert!(cs.contains("Version"));
@@ -337,20 +337,20 @@ fn non_service_interface_emits_csharp_interface() {
 #[test]
 fn any_member_emits_omg_types_any() {
     let cs = gen_cs(r#"struct M { any value; };"#);
-    assert!(cs.contains("Omg.Types.Any"), "Omg.Types.Any fehlt:\n{cs}");
+    assert!(cs.contains("Omg.Types.Any"), "Omg.Types.Any missing:\n{cs}");
 }
 
 #[test]
 fn fixed_member_emits_csharp_decimal() {
     // Spec idl4-csharp §7.2.4.2.4: fixed<digits,scale> -> C# `decimal`.
     let cs = gen_cs(r#"struct M { fixed<10,2> price; };"#);
-    assert!(cs.contains("decimal"), "C# decimal-Mapping fehlt:\n{cs}");
+    assert!(cs.contains("decimal"), "C# decimal mapping missing:\n{cs}");
 }
 
 #[test]
 fn shared_member_emits_shared_marker_attribute() {
     // Spec §8.1.5 (idl4-cpp / dds-psm-cxx): @shared -> Reference-Type.
-    // C# emittiert `[Shared]`-Attribute (Omg.Types-Runtime).
+    // C# emits a `[Shared]` attribute (Omg.Types runtime).
     let cs = gen_cs(
         r#"
         struct WithShared {
@@ -358,7 +358,7 @@ fn shared_member_emits_shared_marker_attribute() {
         };
     "#,
     );
-    assert!(cs.contains("[Shared]"), "[Shared]-Attribute fehlt:\n{cs}");
+    assert!(cs.contains("[Shared]"), "[Shared] attribute missing:\n{cs}");
 }
 
 #[test]
@@ -371,7 +371,7 @@ fn verbatim_annotation_other_language_not_emitted_in_csharp() {
     );
     assert!(
         !cs.contains("// java only"),
-        "Java-verbatim darf nicht in C#-Output:\n{cs}"
+        "Java verbatim must not be in the C# output:\n{cs}"
     );
 }
 
@@ -382,7 +382,7 @@ fn verbatim_annotation_other_language_not_emitted_in_csharp() {
 #[test]
 fn csharp_mapping_options_have_sensible_defaults() {
     let opts = CsGenOptions::default();
-    // Default-Generator emittiert .NET-Naming + record-Variante.
+    // The default generator emits .NET naming + record variant.
     let cs = gen_csharp_with_opts("struct S { long x; };", &opts);
     assert!(cs.contains("S"));
 }
@@ -398,8 +398,8 @@ fn gen_csharp_with_opts(src: &str, opts: &CsGenOptions) -> String {
 
 #[test]
 fn fixed_type_emits_decimal() {
-    // fixed jetzt voll unterstuetzt — siehe
-    // `fixed_member_emits_csharp_decimal` oben.
+    // fixed is now fully supported — see
+    // `fixed_member_emits_csharp_decimal` above.
     let parse = zerodds_idl::parse("struct S { fixed<5,2> price; };", &ParserConfig::default());
     if let Ok(ast) = parse {
         let cs = generate_csharp(&ast, &CsGenOptions::default()).expect("ok");
@@ -418,11 +418,11 @@ fn any_type_emits_omg_types_any() {
 
 #[test]
 fn bitset_short_form_emits_struct() {
-    // Bitset jetzt voll abgedeckt (siehe `bitset_emits_struct_with_value_field`).
+    // Bitset is now fully covered (see `bitset_emits_struct_with_value_field`).
     let parse = zerodds_idl::parse("bitset BS { bitfield<3> a; };", &ParserConfig::default());
     if let Ok(ast) = parse {
         let res = generate_csharp(&ast, &CsGenOptions::default());
-        assert!(res.is_ok(), "bitset sollte jetzt unterstuetzt sein");
+        assert!(res.is_ok(), "bitset should now be supported");
         assert!(res.expect("ok").contains("public struct BS"));
     }
 }

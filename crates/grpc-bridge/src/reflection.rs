@@ -5,31 +5,31 @@
 //!
 //! Spec: `zerodds-grpc-bridge-1.0.md` §4.6.
 //!
-//! Implementiert ein **minimales** Reflection-Profile:
-//! * `ListServices` — liefert alle registrierten Topic-Services aus
-//!   dem [`crate::service_gen::ServiceCatalog`].
-//! * Andere Reflection-Anfragen (`FileByFilename`,
-//!   `FileContainingSymbol`, `AllExtensionNumbersOfType` …) werden mit
-//!   `error_response { error_code = NOT_FOUND }` beantwortet (Spec
-//!   §4.6 Note: `error_code = 12 (UNIMPLEMENTED)` ist auch zulaessig).
+//! Implements a **minimal** reflection profile:
+//! * `ListServices` — returns all registered topic services from the
+//!   [`crate::service_gen::ServiceCatalog`].
+//! * Other reflection requests (`FileByFilename`,
+//!   `FileContainingSymbol`, `AllExtensionNumbersOfType` …) are answered
+//!   with `error_response { error_code = NOT_FOUND }` (Spec §4.6 Note:
+//!   `error_code = 12 (UNIMPLEMENTED)` is also permitted).
 //!
-//! Wire-Format: protobuf — wir bauen die Antworten manuell aus den
-//! benötigten Feldern, ohne `prost`-Dependency. Das ist ausreichend
-//! für `grpcurl`-Compliance auf den ListServices-Pfad.
+//! Wire format: protobuf — we build the responses manually from the
+//! required fields, without a `prost` dependency. That is sufficient for
+//! `grpcurl` compliance on the ListServices path.
 
 use alloc::vec::Vec;
 
 use crate::service_gen::ServiceCatalog;
 
-/// Reflection-Service-Pfad, gleicher Wert wie in `grpcurl -plaintext localhost:N list`.
+/// Reflection service path, the same value as in `grpcurl -plaintext localhost:N list`.
 pub const REFLECTION_PATH: &str = "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo";
 
-/// Status-Code (NOT_FOUND).
+/// Status code (NOT_FOUND).
 pub const STATUS_NOT_FOUND: i32 = 5;
 
-/// Encodiert einen `ServerReflectionResponse` mit `list_services_response`.
+/// Encodes a `ServerReflectionResponse` with `list_services_response`.
 ///
-/// Vereinfachter Proto-Encode der relevanten Felder:
+/// Simplified proto-encode of the relevant fields:
 /// ```proto
 /// message ServerReflectionResponse {
 ///   string valid_host = 1;
@@ -64,7 +64,7 @@ pub fn encode_list_services(catalog: &ServiceCatalog) -> Vec<u8> {
     out
 }
 
-/// Encodiert einen `ServerReflectionResponse` mit `error_response`.
+/// Encodes a `ServerReflectionResponse` with `error_response`.
 ///
 /// ```proto
 /// message ErrorResponse {

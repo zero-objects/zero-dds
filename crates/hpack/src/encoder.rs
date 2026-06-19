@@ -3,13 +3,13 @@
 
 //! HPACK Encoder — RFC 7541 §6.
 //!
-//! Vier Header-Field-Repraesentationen:
+//! Four header-field representations:
 //!
-//! * `Indexed Header Field` (§6.1) — Bit 7 = 1.
-//! * `Literal Header Field with Incremental Indexing` (§6.2.1) — Bit
+//! * `Indexed Header Field` (§6.1) — bit 7 = 1.
+//! * `Literal Header Field with Incremental Indexing` (§6.2.1) — bits
 //!   7..6 = 01.
-//! * `Literal Header Field without Indexing` (§6.2.2) — Bit 7..4 = 0000.
-//! * `Literal Header Field never Indexed` (§6.2.3) — Bit 7..4 = 0001.
+//! * `Literal Header Field without Indexing` (§6.2.2) — bits 7..4 = 0000.
+//! * `Literal Header Field never Indexed` (§6.2.3) — bits 7..4 = 0001.
 
 use alloc::vec::Vec;
 
@@ -17,30 +17,30 @@ use crate::integer::encode_integer;
 use crate::string::encode_string;
 use crate::table::{HeaderField, Table};
 
-/// Encoder-Fehler.
+/// Encoder error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncoderError {
-    /// Reserviert fuer kuenftige Erweiterungen — aktuell unused.
+    /// Reserved for future extensions — currently unused.
     Reserved,
 }
 
-/// HPACK-Encoder mit eigener Dynamic-Table.
+/// HPACK encoder with its own dynamic table.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Encoder {
     table: Table,
-    /// Wenn `true`, werden String-Literals Huffman-komprimiert (Spec
-    /// §5.2 erlaubt beides).
+    /// When `true`, string literals are Huffman-compressed (the spec
+    /// §5.2 permits either).
     pub use_huffman: bool,
 }
 
 impl Encoder {
-    /// Konstruktor mit Default-Max-Size 4096.
+    /// Constructor with a default max size of 4096.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Konstruktor mit konfigurierter Max-Size.
+    /// Constructor with a configured max size.
     #[must_use]
     pub fn with_max_size(max: usize) -> Self {
         Self {
@@ -49,43 +49,43 @@ impl Encoder {
         }
     }
 
-    /// Reference auf die Dynamic-Table.
+    /// Reference to the dynamic table.
     #[must_use]
     pub fn table(&self) -> &Table {
         &self.table
     }
 
-    /// Mut-Reference (Caller passt Max-Size an).
+    /// Mutable reference (the caller adjusts the max size).
     pub fn table_mut(&mut self) -> &mut Table {
         &mut self.table
     }
 
-    /// Encode eine Header-Liste in einen Output-Buffer.
+    /// Encode a header list into an output buffer.
     ///
-    /// Strategie:
-    /// * Voll-Match → `Indexed Header Field` (Spec §6.1).
-    /// * Name-Only-Match → `Literal with Incremental Indexing,
+    /// Strategy:
+    /// * Full match → `Indexed Header Field` (spec §6.1).
+    /// * Name-only match → `Literal with Incremental Indexing,
     ///   indexed name`.
-    /// * Kein Match → `Literal with Incremental Indexing, new name`.
+    /// * No match → `Literal with Incremental Indexing, new name`.
     #[must_use]
     pub fn encode(&mut self, headers: &[HeaderField]) -> Vec<u8> {
         let mut out = Vec::new();
         for h in headers {
             match self.table.find(&h.name, &h.value) {
                 Some((index, true)) => {
-                    // §6.1: 1xxx_xxxx — 7-Bit-Index.
+                    // §6.1: 1xxx_xxxx — 7-bit index.
                     let buf = encode_integer(index as u64, 7, 0x80);
                     out.extend_from_slice(&buf);
                 }
                 Some((index, false)) => {
-                    // §6.2.1: 01xx_xxxx — 6-Bit-Index, dann Value-String.
+                    // §6.2.1: 01xx_xxxx — 6-bit index, then value string.
                     let buf = encode_integer(index as u64, 6, 0x40);
                     out.extend_from_slice(&buf);
                     out.extend_from_slice(&encode_string(&h.value, self.use_huffman));
                     self.table.add(h.clone());
                 }
                 None => {
-                    // §6.2.1: 0100_0000 + Name-Literal + Value-Literal.
+                    // §6.2.1: 0100_0000 + name literal + value literal.
                     out.push(0x40);
                     out.extend_from_slice(&encode_string(&h.name, self.use_huffman));
                     out.extend_from_slice(&encode_string(&h.value, self.use_huffman));

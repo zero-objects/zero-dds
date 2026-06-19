@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Message-Layer (§6.1 Send-Algorithm + §6.2 Receive-Algorithm).
+//! Message layer (§6.1 send algorithm + §6.2 receive algorithm).
 //!
-//! WebSocket-Frames sind atomar; eine logische Message kann aber in
-//! mehrere Frames mit FIN=0-Continuation fragmentiert sein. Wir
-//! kapseln die Send-Sequencing- + Receive-Reassembly-Logik hier.
+//! WebSocket frames are atomic; a logical message can, however, be
+//! fragmented into multiple frames with FIN=0 continuation. We
+//! encapsulate the send-sequencing and receive-reassembly logic here.
 
 use alloc::vec::Vec;
 
@@ -13,15 +13,15 @@ use crate::frame::{Frame, Opcode};
 use crate::utf8::{StreamingValidator, Utf8Error};
 
 // ---------------------------------------------------------------------------
-// §6.1 Sending Data — Frame-Sequencing fuer Continuations
+// §6.1 Sending Data — frame sequencing for continuations
 // ---------------------------------------------------------------------------
 
-/// Send-Errors.
+/// Send errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendError {
-    /// `max_frame_payload` ist 0 (caller-bug).
+    /// `max_frame_payload` is 0 (caller bug).
     InvalidFrameLimit,
-    /// Text-Message ist nicht valid UTF-8 (Spec §6.1).
+    /// The text message is not valid UTF-8 (Spec §6.1).
     InvalidUtf8,
 }
 
@@ -37,26 +37,26 @@ impl core::fmt::Display for SendError {
 #[cfg(feature = "std")]
 impl std::error::Error for SendError {}
 
-/// Send-Algorithm nach Spec §6.1.
+/// Send algorithm per Spec §6.1.
 ///
-/// Splittet eine logische Message in eine Frame-Sequenz:
-/// - Erstes Frame: `Text`/`Binary`-Opcode, FIN=0 falls weitere Frames
-///   folgen.
-/// - Folgende Frames: `Continuation`-Opcode, FIN=0 ausser dem letzten.
-/// - Letztes Frame: FIN=1.
+/// Splits a logical message into a frame sequence:
+/// - First frame: `Text`/`Binary` opcode, FIN=0 if further frames
+///   follow.
+/// - Following frames: `Continuation` opcode, FIN=0 except the last.
+/// - Last frame: FIN=1.
 ///
-/// Bei Text-Messages erfolgt UTF-8-Validation auf den
-/// Gesamt-Payload.
+/// For text messages, UTF-8 validation is performed over the
+/// entire payload.
 ///
-/// `max_frame_payload` = 0 wird als `InvalidFrameLimit` rejected;
-/// `usize::MAX` schaltet das Splitting effektiv aus.
+/// `max_frame_payload` = 0 is rejected as `InvalidFrameLimit`;
+/// `usize::MAX` effectively disables splitting.
 ///
-/// `mask` (4-byte) wird auf jedes Frame angewandt, falls nicht-Null
-/// (Client-Pfad). Server-Pfad uebergibt `[0;4]` als Mask oder
-/// `apply_mask=false` (durch leere Mask handled).
+/// `mask` (4-byte) is applied to each frame if non-zero
+/// (client path). The server path passes `[0;4]` as the mask or
+/// `apply_mask=false` (handled via the empty mask).
 ///
 /// # Errors
-/// Siehe [`SendError`].
+/// See [`SendError`].
 pub fn fragment_message(
     is_text: bool,
     payload: &[u8],
@@ -71,8 +71,8 @@ pub fn fragment_message(
     }
 
     if payload.is_empty() {
-        // Spec §5.6 erlaubt leere Text/Binary-Messages → ein Frame
-        // mit FIN=1, leerer Payload.
+        // Spec §5.6 allows empty text/binary messages → one frame
+        // with FIN=1, empty payload.
         return Ok(alloc::vec![Frame {
             fin: true,
             rsv1: false,
@@ -125,19 +125,19 @@ pub fn fragment_message(
 }
 
 // ---------------------------------------------------------------------------
-// §6.2 Receiving Data — Reassembly + UTF-8-Validation
+// §6.2 Receiving Data — reassembly + UTF-8 validation
 // ---------------------------------------------------------------------------
 
-/// Receive-Errors.
+/// Receive errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReceiveError {
-    /// Continuation-Frame ohne vorausgehenden Text/Binary-Frame.
+    /// Continuation frame without a preceding text/binary frame.
     UnexpectedContinuation,
-    /// Neuer Text/Binary-Frame waehrend Continuation-Sequenz.
+    /// New text/binary frame during a continuation sequence.
     InterleavedDataFrame,
-    /// UTF-8-Fehler in Text-Message.
+    /// UTF-8 error in a text message.
     InvalidUtf8(Utf8Error),
-    /// Reassembly-Buffer ueberschreitet `max_message_size`.
+    /// The reassembly buffer exceeds `max_message_size`.
     MessageTooLarge,
 }
 
@@ -155,21 +155,21 @@ impl core::fmt::Display for ReceiveError {
 #[cfg(feature = "std")]
 impl std::error::Error for ReceiveError {}
 
-/// Komplette logische Message (nach Reassembly).
+/// Complete logical message (after reassembly).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
-    /// `true` wenn `Text`-Message.
+    /// `true` if a `Text` message.
     pub is_text: bool,
-    /// Gesamtpayload (concatenated nach FIN=1).
+    /// Total payload (concatenated after FIN=1).
     pub payload: Vec<u8>,
 }
 
-/// Receive-Algorithm Reassembler.
+/// Receive-algorithm reassembler.
 pub struct Reassembler {
-    /// `Some` wenn eine Continuation-Sequenz aktiv ist.
+    /// `Some` if a continuation sequence is active.
     pending: Option<PendingMessage>,
-    /// Spec §10.1: Caller setzt diesen Wert um DoS zu vermeiden.
-    /// `usize::MAX` deaktiviert das Limit.
+    /// Spec §10.1: the caller sets this value to avoid DoS.
+    /// `usize::MAX` disables the limit.
     pub max_message_size: usize,
 }
 
@@ -195,8 +195,8 @@ impl Default for Reassembler {
 }
 
 impl Reassembler {
-    /// Konstruktor mit `usize::MAX`-Limit (kein DoS-Schutz —
-    /// Caller MUSS `max_message_size` setzen wenn extern erreichbar).
+    /// Constructor with a `usize::MAX` limit (no DoS protection —
+    /// the caller MUST set `max_message_size` if externally reachable).
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -205,7 +205,7 @@ impl Reassembler {
         }
     }
 
-    /// Konstruktor mit explizitem DoS-Cap.
+    /// Constructor with an explicit DoS cap.
     #[must_use]
     pub fn with_limit(max_message_size: usize) -> Self {
         Self {
@@ -214,16 +214,16 @@ impl Reassembler {
         }
     }
 
-    /// Spec §6.2 — verarbeite ein Frame und liefere ggf. eine
-    /// fertige Message (FIN=1 + valide UTF-8 fuer Text).
+    /// Spec §6.2 — process a frame and return a completed message if
+    /// applicable (FIN=1 + valid UTF-8 for text).
     ///
-    /// Control-Frames (Close/Ping/Pong) werden NICHT reassembled
-    /// (Spec §5.5: control frames MUST NOT be fragmented). Caller
-    /// behandelt diese separat; wir geben sie einfach als
-    /// `Ok(Some(_))` zurueck mit `is_text=false`.
+    /// Control frames (Close/Ping/Pong) are NOT reassembled
+    /// (Spec §5.5: control frames MUST NOT be fragmented). The caller
+    /// handles them separately; we simply return them as
+    /// `Ok(Some(_))` with `is_text=false`.
     ///
     /// # Errors
-    /// Siehe [`ReceiveError`].
+    /// See [`ReceiveError`].
     pub fn feed(&mut self, frame: &Frame) -> Result<Option<Message>, ReceiveError> {
         match frame.opcode {
             Opcode::Text | Opcode::Binary => {
@@ -287,20 +287,20 @@ impl Reassembler {
                     Ok(None)
                 }
             }
-            // Control-Frames: nicht fragmentierbar, direkt zurueckgeben.
+            // Control frames: not fragmentable, return directly.
             Opcode::Close | Opcode::Ping | Opcode::Pong => Ok(Some(Message {
                 is_text: false,
                 payload: frame.payload.clone(),
             })),
-            // Reserved-Opcodes (Spec §5.2): MUST result in fail of
-            // the WebSocket connection. Wir behandeln das als
-            // UnexpectedContinuation-Aequivalent.
+            // Reserved opcodes (Spec §5.2): MUST result in failing
+            // the WebSocket connection. We treat this as the
+            // UnexpectedContinuation equivalent.
             Opcode::Reserved(_) => Err(ReceiveError::UnexpectedContinuation),
         }
     }
 
-    /// `true` wenn eine Continuation-Sequenz aktiv ist (ein
-    /// noch nicht abgeschlossenes Reassembly).
+    /// `true` if a continuation sequence is active (a reassembly
+    /// that is not yet complete).
     #[must_use]
     pub fn has_pending(&self) -> bool {
         self.pending.is_some()

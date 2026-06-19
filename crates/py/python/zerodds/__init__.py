@@ -1,10 +1,10 @@
 """ZeroDDS Python API.
 
-Rust-native DDS-Implementation, exponiert ueber PyO3. API-Shape folgt
-bewusst OMG DDS 1.4 §2.2.2 — wer von cyclonedds-python oder rti-dds
-kommt, findet sich direkt zurecht.
+Rust-native DDS implementation, exposed via PyO3. The API shape
+deliberately follows OMG DDS 1.4 §2.2.2 — anyone coming from
+cyclonedds-python or rti-dds finds their way around immediately.
 
-Beispiel::
+Example::
 
     import zerodds
 
@@ -24,19 +24,19 @@ Beispiel::
     for payload in reader.take():
         print(payload)
 
-Typisierte DdsType-Bindings (`@dataclass`-Mapping via IDL-Gen)
-kommen aus `crates/idl-rust`-Codegen ueber Python-Generator.
+Typed DdsType bindings (`@dataclass` mapping via IDL gen)
+come from `crates/idl-rust` codegen via a Python generator.
 """
 
-# Reine Python-Module ohne Abhaengigkeit zum kompilierten Extension-
-# Module. Damit `zerodds.cdr` und `zerodds.idl` auch ohne
-# `maturin develop --features extension-module` nutzbar bleiben
-# (pytest in CI braucht kein Rust-Build).
+# Pure Python modules without a dependency on the compiled extension
+# module. So that `zerodds.cdr` and `zerodds.idl` remain usable even
+# without `maturin develop --features extension-module`
+# (pytest in CI needs no Rust build).
 from . import cdr, idl  # noqa: F401
 
-# Optional-Import des Rust-Extension-Moduls. Wenn nicht gebaut, setzen
-# wir alle DDS-Klassen auf `None` und der Nutzer bekommt beim Zugriff
-# einen klaren `ImportError` (nicht den kryptischen `attribute` not found).
+# Optional import of the Rust extension module. If not built, we set
+# all DDS classes to `None` and the user gets a clear `ImportError` on
+# access (not the cryptic `attribute` not found).
 try:
     from ._core import (  # noqa: F401
         __version__,
@@ -63,20 +63,20 @@ try:
     from . import sample_state, view_state, instance_state  # noqa: F401
 
     _CORE_AVAILABLE = True
-except ImportError as _core_err:  # pragma: no cover - nur in dev-ohne-maturin
+except ImportError as _core_err:  # pragma: no cover - only in dev-without-maturin
     _CORE_AVAILABLE = False
     _CORE_IMPORT_ERROR = _core_err
     __version__ = "0.0.0+nocore"
 
     def _core_not_available(*_args: object, **_kwargs: object) -> None:
         raise ImportError(
-            "zerodds._core ist nicht kompiliert. Fuehre "
-            "`maturin develop --features extension-module` im crates/py/ aus.",
+            "zerodds._core is not compiled. Run "
+            "`maturin develop --features extension-module` in crates/py/.",
         ) from _CORE_IMPORT_ERROR
 
-    # Platzhalter-Objekte, damit Tests die Klassen zumindest importieren
-    # koennen ohne ImportError; Instanziierung wirft dann den klaren
-    # Fehler.
+    # Placeholder objects so that tests can at least import the classes
+    # without ImportError; instantiation then throws the clear
+    # error.
     class _CoreStub:
         def __init_subclass__(cls, **_kw: object) -> None:
             _core_not_available()

@@ -3,44 +3,44 @@
 [![docs.rs](https://img.shields.io/docsrs/zerodds-transport-udp)](https://docs.rs/zerodds-transport-udp)
 [![crates.io](https://img.shields.io/crates/v/zerodds-transport-udp)](https://crates.io/crates/zerodds-transport-udp)
 
-UDP/IP-PSM-Implementation für ZeroDDS. Layer 2 (Wire-Implementation).
+UDP/IP PSM implementation for ZeroDDS. Layer 2 (wire implementation).
 
-`std`-only, `forbid(unsafe_code)`, Safety-Klasse **SAFE**.
+`std`-only, `forbid(unsafe_code)`, safety class **SAFE**.
 
-## Was liefert dieses Crate
+## What this crate provides
 
-- `UdpTransport` — `Transport`-Trait-Implementation über `std::net::UdpSocket`
-- `UdpTransport::bind_v4` — UDPv4 Unicast Bind
-- `UdpTransport::bind_multicast_v4` — Multicast-Group-Join mit
-  `SO_REUSEADDR`/`SO_REUSEPORT` (Discovery-Pfad SPDP/SEDP)
-- `UdpTransport::set_multicast_ttl` — Multicast-TTL für ausgehende Pakete
-- `UdpTransport::with_timeout` — konfigurierbarer Read-Timeout
-- `MAX_DATAGRAM_SIZE` — Datagramm-Cap für sichere Sends
-- `UdpTransportError` — typisierte Fehler
+- `UdpTransport` — `Transport` trait implementation over `std::net::UdpSocket`
+- `UdpTransport::bind_v4` — UDPv4 unicast bind
+- `UdpTransport::bind_multicast_v4` — multicast group join with
+  `SO_REUSEADDR`/`SO_REUSEPORT` (discovery path SPDP/SEDP)
+- `UdpTransport::set_multicast_ttl` — multicast TTL for outgoing packets
+- `UdpTransport::with_timeout` — configurable read timeout
+- `MAX_DATAGRAM_SIZE` — datagram cap for safe sends
+- `UdpTransportError` — typed errors
 
 ## Spec
 
-- **DDSI-RTPS 2.5 §9.6.1** — UDP/IP PSM Wire-Mapping
-- **DDSI-RTPS 2.5 §9.6.1.4** — Discovery-Multicast (SPDP)
+- **DDSI-RTPS 2.5 §9.6.1** — UDP/IP PSM wire mapping
+- **DDSI-RTPS 2.5 §9.6.1.4** — discovery multicast (SPDP)
 
-## Implementiert (RC1)
+## Implemented (RC1)
 
 | Feature | Status |
 |---|---|
-| UDPv4 Unicast | ✅ |
-| UDPv4 Multicast (Group-Join + TTL) | ✅ |
-| `SO_REUSEADDR` + `SO_REUSEPORT` (Coexistenz mit Cyclone) | ✅ |
-| Read-Timeout konfigurierbar | ✅ |
-| Bind-Retry-Loop (CI-EADDRINUSE-Race) | ✅ |
-| Anwendungs-Layer-Fragmentation | ✅ via `zerodds-rtps` (DATA_FRAG) |
+| UDPv4 unicast | ✅ |
+| UDPv4 multicast (group join + TTL) | ✅ |
+| `SO_REUSEADDR` + `SO_REUSEPORT` (coexistence with Cyclone) | ✅ |
+| Configurable read timeout | ✅ |
+| Bind retry loop (CI EADDRINUSE race) | ✅ |
+| Application-layer fragmentation | ✅ via `zerodds-rtps` (DATA_FRAG) |
 
-## Bewusst nicht im Crate
+## Deliberately not in the crate
 
-- **UDPv6** — Erweiterungspunkt für künftige Releases. Locator-Wire
-  unterstützt v6 bereits, Bind-API ist v4-spezifisch.
-- **Async/Non-blocking** — Sync-Architektur ist gewählter Stil; DCPS
-  nutzt eigene Tick-Scheduler.
-- **Pfad-MTU-Discovery** — Fragmentation läuft auf RTPS-Layer.
+- **UDPv6** — extension point for future releases. The locator wire
+  already supports v6, the bind API is v4-specific.
+- **Async/non-blocking** — the sync architecture is a chosen style; DCPS
+  uses its own tick scheduler.
+- **Path-MTU discovery** — fragmentation runs at the RTPS layer.
 
 ## Tests
 
@@ -48,9 +48,9 @@ UDP/IP-PSM-Implementation für ZeroDDS. Layer 2 (Wire-Implementation).
 cargo test -p zerodds-transport-udp
 ```
 
-11 Tests grün (lib + integration). Multicast-Tests skippen automatisch in
-Umgebungen ohne Multicast-Routing.
+11 tests green (lib + integration). Multicast tests skip automatically in
+environments without multicast routing.
 
-## Lizenz
+## License
 
-Apache-2.0 OR MIT — siehe Workspace-Root.
+Apache-2.0 OR MIT — see the workspace root.

@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DDS-Security 1.2 Token-Strukturen (DataHolder + Property-Records).
+//! DDS-Security 1.2 token structures (DataHolder + property records).
 //!
 //! Spec: §7.2.6 (Property_t / BinaryProperty_t), §7.2.7 (DataHolder),
-//! §7.4.1.4 (IdentityToken im SPDP-Announce).
+//! §7.4.1.4 (IdentityToken in the SPDP announce).
 //!
-//! Ein **DataHolder** ist die generische Wire-Repraesentation aller
-//! Security-Tokens (IdentityToken, PermissionsToken, IdentityStatus-
+//! A **DataHolder** is the generic wire representation of all
+//! security tokens (IdentityToken, PermissionsToken, IdentityStatus-
 //! Token, AuthRequestMessageToken, HandshakeMessageToken, CryptoToken,
-//! ParticipantCryptoToken etc.). Felder:
+//! ParticipantCryptoToken, etc.). Fields:
 //!
 //! ```text
 //! struct DataHolder_t {
@@ -21,15 +21,15 @@
 //! struct BinaryProperty_t  { string name; sequence<octet> value; };
 //! ```
 //!
-//! WICHTIG: das Wire-`Property_t` (Spec §7.2.6 Tab.5) hat **kein**
-//! `propagate`-Feld — das ist Local-Filter-State im plug-konfigurierten
+//! IMPORTANT: the wire `Property_t` (spec §7.2.6 Tab.5) has **no**
+//! `propagate` field — that is local filter state in the plug-configured
 //! `zerodds_security::PropertyList`.
 //!
-//! Encoding ist OMG-CDR (XCDR1) — der DataHolder wird als Big-/Little-
-//! Endian Stream serialisiert, je nachdem in welchem Encapsulation-
-//! Kontext er sitzt (typisch PL_CDR_LE der ParameterList, also LE).
+//! The encoding is OMG-CDR (XCDR1) — the DataHolder is serialized as a
+//! big-/little-endian stream, depending on which encapsulation
+//! context it sits in (typically PL_CDR_LE of the ParameterList, i.e. LE).
 //!
-//! # Verwendung
+//! # Usage
 //!
 //! ```
 //! use zerodds_security::token::{DataHolder, IdentityToken};
@@ -46,19 +46,19 @@ use alloc::vec::Vec;
 
 use crate::error::{SecurityError, SecurityErrorKind, SecurityResult};
 
-/// Spec §7.2.6 Tab.5 — Wire-`Property_t` (`name` + `value`, beide
-/// CDR-Strings). Im Gegensatz zu [`crate::Property`] kein `propagate`-
-/// Feld; Token-Properties werden grundsaetzlich propagiert.
+/// Spec §7.2.6 Tab.5 — wire `Property_t` (`name` + `value`, both
+/// CDR strings). Unlike [`crate::Property`], no `propagate`
+/// field; token properties are always propagated.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct WireProperty {
-    /// Property-Name (reverse-DNS, z.B. `"dds.cert.sn"`).
+    /// Property name (reverse-DNS, e.g. `"dds.cert.sn"`).
     pub name: String,
-    /// Property-Value (UTF-8).
+    /// Property value (UTF-8).
     pub value: String,
 }
 
 impl WireProperty {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -68,18 +68,18 @@ impl WireProperty {
     }
 }
 
-/// Spec §7.2.6 Tab.6 — Wire-`BinaryProperty_t` (`name` + `value` als
+/// Spec §7.2.6 Tab.6 — wire `BinaryProperty_t` (`name` + `value` as
 /// `sequence<octet>`).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BinaryProperty {
-    /// Property-Name (reverse-DNS).
+    /// Property name (reverse-DNS).
     pub name: String,
-    /// Roher Byte-Wert.
+    /// Raw byte value.
     pub value: Vec<u8>,
 }
 
 impl BinaryProperty {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(name: impl Into<String>, value: impl Into<Vec<u8>>) -> Self {
         Self {
@@ -89,21 +89,21 @@ impl BinaryProperty {
     }
 }
 
-/// Spec §7.2.7 Tab.7 — generische `DataHolder_t` Wire-Struktur. Alle
-/// Security-Tokens sind Type-Aliases von `DataHolder` mit fixem
-/// `class_id`-Wert.
+/// Spec §7.2.7 Tab.7 — generic `DataHolder_t` wire struct. All
+/// security tokens are type aliases of `DataHolder` with a fixed
+/// `class_id` value.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DataHolder {
-    /// Plugin-Class-Id, z.B. `"DDS:Auth:PKI-DH:1.2"`.
+    /// Plugin class id, e.g. `"DDS:Auth:PKI-DH:1.2"`.
     pub class_id: String,
-    /// String-Properties (Spec §7.2.6 Tab.5).
+    /// String properties (spec §7.2.6 Tab.5).
     pub properties: Vec<WireProperty>,
-    /// Binary-Properties (Spec §7.2.6 Tab.6).
+    /// Binary properties (spec §7.2.6 Tab.6).
     pub binary_properties: Vec<BinaryProperty>,
 }
 
 impl DataHolder {
-    /// Konstruktor mit nur `class_id`.
+    /// Constructor with only `class_id`.
     #[must_use]
     pub fn new(class_id: impl Into<String>) -> Self {
         Self {
@@ -113,14 +113,14 @@ impl DataHolder {
         }
     }
 
-    /// Builder: fuegt eine String-Property hinzu.
+    /// Builder: adds a string property.
     #[must_use]
     pub fn with_property(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.properties.push(WireProperty::new(name, value));
         self
     }
 
-    /// Builder: fuegt eine Binary-Property hinzu.
+    /// Builder: adds a binary property.
     #[must_use]
     pub fn with_binary_property(
         mut self,
@@ -132,10 +132,10 @@ impl DataHolder {
         self
     }
 
-    /// Mut-Variante: setzt eine String-Property mit Replace-on-Dup-
-    /// Semantik (wenn Name schon existiert, wird der alte Wert
-    /// ueberschrieben — Spec §7.2.6: pro Token darf jeder Property-
-    /// Name nur einmal vorkommen).
+    /// Mut variant: sets a string property with replace-on-dup
+    /// semantics (if the name already exists, the old value is
+    /// overwritten — spec §7.2.6: per token each property
+    /// name may appear only once).
     pub fn set_property(&mut self, name: impl Into<String>, value: impl Into<String>) {
         let n = name.into();
         if let Some(existing) = self.properties.iter_mut().find(|p| p.name == n) {
@@ -148,7 +148,7 @@ impl DataHolder {
         }
     }
 
-    /// Mut-Variante: setzt eine Binary-Property mit Replace-on-Dup.
+    /// Mut variant: sets a binary property with replace-on-dup.
     pub fn set_binary_property(&mut self, name: impl Into<String>, value: impl Into<Vec<u8>>) {
         let n = name.into();
         if let Some(existing) = self.binary_properties.iter_mut().find(|p| p.name == n) {
@@ -161,7 +161,7 @@ impl DataHolder {
         }
     }
 
-    /// Sucht eine String-Property nach Name.
+    /// Looks up a string property by name.
     #[must_use]
     pub fn property(&self, name: &str) -> Option<&str> {
         self.properties
@@ -170,7 +170,7 @@ impl DataHolder {
             .map(|p| p.value.as_str())
     }
 
-    /// Sucht eine Binary-Property nach Name.
+    /// Looks up a binary property by name.
     #[must_use]
     pub fn binary_property(&self, name: &str) -> Option<&[u8]> {
         self.binary_properties
@@ -179,9 +179,9 @@ impl DataHolder {
             .map(|p| p.value.as_slice())
     }
 
-    /// XCDR1-Little-Endian-Encoder. Liefert die Bytes ohne
-    /// Encapsulation-Header — der wird vom Caller (z.B. ParameterList-
-    /// Wert) bereitgestellt.
+    /// XCDR1 little-endian encoder. Returns the bytes without the
+    /// encapsulation header — that is supplied by the caller (e.g. the
+    /// ParameterList value).
     #[must_use]
     pub fn to_cdr_le(&self) -> Vec<u8> {
         encode(self, true)
@@ -196,39 +196,50 @@ impl DataHolder {
     /// XCDR1-Decoder, Little-Endian.
     ///
     /// # Errors
-    /// `BadArgument` wenn die Bytes nicht spec-konform sind (z.B.
-    /// vorzeitiges Ende, zu lange Length-Prefixes).
+    /// `BadArgument` if the bytes are not spec-conformant (e.g.
+    /// premature end, overly long length prefixes).
     pub fn from_cdr_le(bytes: &[u8]) -> SecurityResult<Self> {
         decode(bytes, true)
+    }
+
+    /// Like [`from_cdr_le`](Self::from_cdr_le), additionally returns the number of
+    /// bytes consumed. For inline `sequence<DataHolder>` decoding (spec
+    /// `GenericMessageData`), where multiple DataHolders lie one after another
+    /// without a length prefix.
+    ///
+    /// # Errors
+    /// `BadArgument` on non-spec-conformant bytes.
+    pub fn from_cdr_le_consumed(bytes: &[u8]) -> SecurityResult<(Self, usize)> {
+        decode_consumed(bytes, true)
     }
 
     /// XCDR1-Decoder, Big-Endian.
     ///
     /// # Errors
-    /// `BadArgument` wenn die Bytes nicht spec-konform sind.
+    /// `BadArgument` if the bytes are not spec-conformant.
     pub fn from_cdr_be(bytes: &[u8]) -> SecurityResult<Self> {
         decode(bytes, false)
     }
 }
 
 // ---------------------------------------------------------------------
-// Type-Aliases fuer die Token-Familien (Spec-Bezeichnung / class_id)
+// Type aliases for the token families (spec name / class_id)
 // ---------------------------------------------------------------------
 
-/// IdentityToken (Spec §7.4.1.4 Tab.16; PKI-DH §10.3.2 Tab.51).
-/// Wird im SPDP-Announce als `PID_IDENTITY_TOKEN` (0x1001) verschickt.
+/// IdentityToken (spec §7.4.1.4 Tab.16; PKI-DH §10.3.2 Tab.51).
+/// Sent in the SPDP announce as `PID_IDENTITY_TOKEN` (0x1001).
 pub type IdentityToken = DataHolder;
 
-/// PermissionsToken (Spec §7.4.1.5 Tab.17; PKI-Permissions §10.4.2
+/// PermissionsToken (spec §7.4.1.5 Tab.17; PKI-Permissions §10.4.2
 /// Tab.65). `PID_PERMISSIONS_TOKEN` (0x1002).
 pub type PermissionsToken = DataHolder;
 
-/// IdentityStatusToken (Spec §7.4.1.6, §10.3.2 Tab.53). `PID_IDENTITY_
-/// STATUS_TOKEN` (0x1006). Traeger fuer OCSP-Live-Status.
+/// IdentityStatusToken (spec §7.4.1.6, §10.3.2 Tab.53). `PID_IDENTITY_
+/// STATUS_TOKEN` (0x1006). Carrier for OCSP live status.
 pub type IdentityStatusToken = DataHolder;
 
-/// PermissionsCredentialToken (Spec §10.4.2 Tab.64). Wird im
-/// Stateless-Topic-Handshake transportiert, nicht im SPDP.
+/// PermissionsCredentialToken (spec §10.4.2 Tab.64). Transported in the
+/// stateless-topic handshake, not in SPDP.
 pub type PermissionsCredentialToken = DataHolder;
 
 /// AuthRequestMessageToken (Spec §10.3.2 Tab.55).
@@ -241,42 +252,42 @@ pub type HandshakeMessageToken = DataHolder;
 pub type CryptoToken = DataHolder;
 
 // ---------------------------------------------------------------------
-// Convenience-Konstruktoren fuer die typischen Token-Auspraegungen.
+// Convenience constructors for the typical token forms.
 // ---------------------------------------------------------------------
 
-/// Plugin-Class-Id-Konstanten — Spec-1.2-Versioniert (siehe C3.3).
+/// Plugin class-id constants — spec-1.2-versioned (see C3.3).
 pub mod class_id {
-    /// Builtin-PKI-Authentication (§10.3.2.1 Tab.51).
+    /// Builtin PKI authentication (§10.3.2.1 Tab.51).
     pub const AUTH_PKI_DH_V12: &str = "DDS:Auth:PKI-DH:1.2";
-    /// Builtin-Permissions Access-Control (§10.4 Tab.69).
+    /// Builtin permissions access control (§10.4 Tab.69).
     pub const ACCESS_PERMISSIONS_V12: &str = "DDS:Access:Permissions:1.2";
-    /// Builtin-AES-GCM-GMAC Crypto (§10.5 Tab.72).
+    /// Builtin AES-GCM-GMAC crypto (§10.5 Tab.72).
     pub const CRYPTO_AES_GCM_GMAC_V12: &str = "DDS:Crypto:AES-GCM-GMAC:1.2";
-    /// Permissions-Credential (§10.4.2 Tab.64).
+    /// Permissions credential (§10.4.2 Tab.64).
     pub const ACCESS_PERMISSIONS_CREDENTIAL: &str = "DDS:Access:PermissionsCredential";
 }
 
-/// Property-Namen — Spec-1.2 (Auswahl).
+/// Property names — spec 1.2 (selection).
 pub mod prop {
-    /// IdentityToken: Cert-Subject-Name-Serial. Spec §10.3.2.1 Tab.51.
+    /// IdentityToken: cert subject name serial. Spec §10.3.2.1 Tab.51.
     pub const CERT_SN: &str = "dds.cert.sn";
-    /// IdentityToken: Cert-Signature-Algorithmus.
+    /// IdentityToken: cert signature algorithm.
     pub const CERT_ALGO: &str = "dds.cert.algo";
-    /// IdentityToken: CA-Subject-Name-Serial.
+    /// IdentityToken: CA subject name serial.
     pub const CA_SN: &str = "dds.ca.sn";
-    /// IdentityToken: CA-Signature-Algorithmus.
+    /// IdentityToken: CA signature algorithm.
     pub const CA_ALGO: &str = "dds.ca.algo";
-    /// PermissionsToken: Permissions-CA-Subject-Name-Serial.
+    /// PermissionsToken: permissions-CA subject name serial.
     /// Spec §10.4.2 Tab.65.
     pub const PERM_CA_SN: &str = "dds.perm_ca.sn";
-    /// PermissionsToken: Permissions-CA-Signature-Algorithmus.
+    /// PermissionsToken: permissions-CA signature algorithm.
     pub const PERM_CA_ALGO: &str = "dds.perm_ca.algo";
 }
 
 impl IdentityToken {
-    /// Builtin-Helfer fuer den PKI-DH-IdentityToken (§10.3.2.1 Tab.51).
+    /// Builtin helper for the PKI-DH IdentityToken (§10.3.2.1 Tab.51).
     /// Properties `dds.cert.sn`, `dds.cert.algo`, `dds.ca.sn`,
-    /// `dds.ca.algo`. Keine binary_properties.
+    /// `dds.ca.algo`. No binary_properties.
     #[must_use]
     pub fn pki_dh_v12(
         cert_sn: impl Into<String>,
@@ -291,7 +302,7 @@ impl IdentityToken {
             .with_property(prop::CA_ALGO, ca_algo)
     }
 
-    /// Builtin-Helfer fuer den Permissions-Token (§10.4.2 Tab.65).
+    /// Builtin helper for the permissions token (§10.4.2 Tab.65).
     /// `class_id="DDS:Access:Permissions:1.2"`, properties
     /// `dds.perm_ca.sn` + `dds.perm_ca.algo`.
     #[must_use]
@@ -306,7 +317,7 @@ impl IdentityToken {
 // XCDR1-Codec
 // ---------------------------------------------------------------------
 //
-// Layout (LE oder BE, je nach `little_endian`):
+// Layout (LE or BE, depending on `little_endian`):
 //   string class_id              -- aligned 4
 //   sequence<Property> props     -- aligned 4
 //     uint32 count               -- 4 byte
@@ -315,12 +326,12 @@ impl IdentityToken {
 //     uint32 count
 //     N x { string name; sequence<octet> value; }  -- aligned 4 each
 //
-// CDR-String: uint32 length (incl. trailing \0) + UTF-8 bytes + \0 +
-// padding to 4 byte. Length=0 ist erlaubt (= leerer String).
+// CDR string: uint32 length (incl. trailing \0) + UTF-8 bytes + \0 +
+// padding to 4 bytes. Length=0 is allowed (= empty string).
 
-/// Maximale Zaehler/-Laengen die wir aus der Wire akzeptieren —
-/// DoS-Cap. 64 KiB pro Token, 256 Properties, 256 Binary-Properties,
-/// 8 KiB pro Property-Wert.
+/// Maximum counts/lengths we accept from the wire —
+/// DoS cap. 64 KiB per token, 256 properties, 256 binary properties,
+/// 8 KiB per property value.
 const MAX_TOKEN_BYTES: usize = 64 * 1024;
 const MAX_PROPS: u32 = 256;
 const MAX_BIN_PROPS: u32 = 256;
@@ -344,6 +355,14 @@ fn encode(d: &DataHolder, le: bool) -> Vec<u8> {
 }
 
 fn decode(bytes: &[u8], le: bool) -> SecurityResult<DataHolder> {
+    decode_consumed(bytes, le).map(|(dh, _)| dh)
+}
+
+/// Like [`decode`], additionally returns the number of bytes consumed —
+/// needed for the inline decoding of `sequence<DataHolder>` (spec
+/// `GenericMessageData`), where the DataHolders lie one after another
+/// without a length prefix and the caller must advance the cursor.
+fn decode_consumed(bytes: &[u8], le: bool) -> SecurityResult<(DataHolder, usize)> {
     if bytes.len() > MAX_TOKEN_BYTES {
         return Err(SecurityError::new(
             SecurityErrorKind::BadArgument,
@@ -378,11 +397,14 @@ fn decode(bytes: &[u8], le: bool) -> SecurityResult<DataHolder> {
         let value = cur.read_octet_seq(le)?;
         binary_properties.push(BinaryProperty { name, value });
     }
-    Ok(DataHolder {
-        class_id,
-        properties,
-        binary_properties,
-    })
+    Ok((
+        DataHolder {
+            class_id,
+            properties,
+            binary_properties,
+        },
+        cur.pos,
+    ))
 }
 
 fn align_to(out: &mut Vec<u8>, n: usize) {
@@ -470,7 +492,7 @@ impl<'a> Cursor<'a> {
         }
         let body = &self.buf[self.pos..self.pos + len as usize];
         self.pos += len as usize;
-        // Spec: trailing NUL ist Pflicht; UTF-8 muss valide sein.
+        // Spec: a trailing NUL is mandatory; UTF-8 must be valid.
         if let Some((_, rest)) = body.split_last() {
             if body.last() != Some(&0) {
                 return Err(SecurityError::new(
@@ -553,7 +575,7 @@ mod tests {
         let be = tok.to_cdr_be();
         assert_eq!(tok, DataHolder::from_cdr_le(&le).unwrap());
         assert_eq!(tok, DataHolder::from_cdr_be(&be).unwrap());
-        assert_ne!(le, be, "BE/LE Streams unterscheiden sich");
+        assert_ne!(le, be, "BE/LE streams differ");
     }
 
     #[test]

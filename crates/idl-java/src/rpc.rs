@@ -1,34 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! IDL-Service → Java-RPC-Codegen (DDS-RPC 1.0 §7.11.2 — Java-PSM).
+//! IDL service → Java RPC codegen (DDS-RPC 1.0 §7.11.2 — Java PSM).
 //!
-//! Dieser Modul ist die Bruecke zwischen dem typisierten RPC-Datenmodell
-//! aus `zerodds-rpc` (`ServiceDef`/`MethodDef`/`ParamDef`) und dem
-//! Java-Source-Codegen. Pro Service emittieren wir vier Klassen:
+//! This module is the bridge between the typed RPC data model
+//! from `zerodds-rpc` (`ServiceDef`/`MethodDef`/`ParamDef`) and the
+//! Java source codegen. Per service we emit four classes:
 //!
-//! * `<Service>.java`         — synchrones Interface mit allen Methoden
-//!                              (`throws RemoteException` + User-Exceptions).
-//! * `<Service>Async.java`    — asynchrones Interface mit
-//!                              `CompletableFuture<TOut>`-Returns
-//!                              (Spec §7.11.2.2.4 mappt `Future<T>` auf
-//!                              `java.util.concurrent.Future<T>`; wir
-//!                              nutzen `CompletableFuture` als
-//!                              vollstaendige Implementierung).
-//! * `<Service>Requester.java` — Client-Side: kapselt einen
+//! * `<Service>.java`         — synchronous interface with all methods
+//!                              (`throws RemoteException` + user exceptions).
+//! * `<Service>Async.java`    — asynchronous interface with
+//!                              `CompletableFuture<TOut>` returns
+//!                              (spec §7.11.2.2.4 maps `Future<T>` to
+//!                              `java.util.concurrent.Future<T>`; we
+//!                              use `CompletableFuture` as a
+//!                              full implementation).
+//! * `<Service>Requester.java` — client side: wraps a
 //!                              `org.zerodds.rpc.Requester<TIn,TOut>`
-//!                              und implementiert `<Service>` +
+//!                              and implements `<Service>` +
 //!                              `<Service>Async`.
-//! * `<Service>Replier.java`   — Server-Side: kapselt einen
-//!                              `org.zerodds.rpc.Replier<TIn,TOut>` und
-//!                              dispatcht eingehende Requests an einen
-//!                              `<Service>Service`-Handler.
-//! * `<Service>Service.java`   — Server-Side Handler-Interface: das
-//!                              Service-Implementor implementiert dieses
-//!                              Interface.
+//! * `<Service>Replier.java`   — server side: wraps a
+//!                              `org.zerodds.rpc.Replier<TIn,TOut>` and
+//!                              dispatches incoming requests to a
+//!                              `<Service>Service` handler.
+//! * `<Service>Service.java`   — server-side handler interface: the
+//!                              service implementor implements this
+//!                              interface.
 //!
-//! # Out-Parameter
-//! Java hat kein `out`/`inout`-Konzept. Wir mappen `out`/`inout` ueber das
-//! **Holder-Pattern** (Spec §7.11.2.3 / IDL-to-Java 1.3 §1.5):
+//! # Out parameters
+//! Java has no `out`/`inout` concept. We map `out`/`inout` via the
+//! **holder pattern** (spec §7.11.2.3 / IDL-to-Java 1.3 §1.5):
 //!
 //! ```java
 //! public final class IntHolder {
@@ -38,29 +38,38 @@
 //! }
 //! ```
 //!
-//! Holder werden **nicht** pro Service emittiert — wir referenzieren die
-//! generischen Holders aus `org.zerodds.rpc.Holder<T>` (siehe
-//! `runtime/rpc/Holder.java`). Begruendung: weniger Boilerplate als
-//! pro-Type-Holder, vollstaendig kompatibel mit dem Spec-Pattern (der
-//! Caller schreibt vor dem Aufruf in `holder.value`, der Reply-Decoder
-//! ueberschreibt nach Rueckkehr). Alternative `Object[]`-Wrapper waere
-//! type-unsafe und scheidet daher aus.
+//! Holders are **not** emitted per service — we reference the
+//! generic holders from `org.zerodds.rpc.Holder<T>` (see
+//! `runtime/rpc/Holder.java`). Rationale: less boilerplate than
+//! per-type holders, fully compatible with the spec pattern (the
+//! caller writes to `holder.value` before the call, the reply decoder
+//! overwrites it on return). The alternative `Object[]` wrapper would be
+//! type-unsafe and is therefore ruled out.
 //!
-//! # Exception-Mapping (Spec §7.11.2.1)
-//! * IDL `exception E { ... }` → wir delegieren an den existierenden
-//!   `emit_exception_file`-Pfad (`E extends RuntimeException`); der RPC-
-//!   Codegen ergaenzt nur die `throws E1, E2`-Klausel auf der Methode.
-//! * `org.zerodds.rpc.RemoteException` ist eine RuntimeException-
-//!   Subclass, die jede RPC-Methode implizit werfen darf — wir setzen
-//!   sie deshalb **nicht** explizit in den `throws`-Listen, weil
-//!   RuntimeException in Java nicht checked ist.
+//! # Exception mapping (spec §7.11.2.1)
+//! * IDL `exception E { ... }` → we delegate to the existing
+//!   `emit_exception_file` path (`E extends RuntimeException`); the RPC
+//!   codegen only adds the `throws E1, E2` clause on the method.
+//! * `org.zerodds.rpc.RemoteException` is a RuntimeException
+//!   subclass that every RPC method may throw implicitly — we therefore
+//!   do **not** place it explicitly in the `throws` lists, because
+//!   RuntimeException is not checked in Java.
 //!
-//! # Was diese Stufe NICHT macht
-//! * Keine `javac`/`mvn`-Integration — der Output ist Skeleton-Java
-//!   ohne JVM-Build-Verifikation.
-//! * Keine JNI-Anbindung — `Requester`/`Replier` halten `Object`-Felder
-//!   fuer den Native-Handle (Stub-Form).
-//! * Keine Reflection-TypeRep (Stretch in idl4-java §8).
+//! # Marshalling convention
+//! The requester/replier marshal a type-erased tuple
+//! through the runtime `Requester<Object,Object>` / `Replier<Object,Object>`:
+//! the request payload is an `Object[]` of the IN + INOUT values (declaration
+//! order); the reply payload is an `Object[] { returnValue-or-null, INOUT+OUT
+//! values… }`. The requester writes the INOUT/OUT holders back from the reply
+//! and casts the return value; the replier decodes the request tuple, builds
+//! holders, calls the handler, and packs the reply. The generated code is
+//! verified to compile against the real runtime by
+//! `tests/compile_check.rs` (real `javac`, no stubs).
+//!
+//! # What this stage does NOT do
+//! * No `mvn` packaging — callers drop the `runtime/` sources (or a jar)
+//!   alongside the generated code (see `runtime/README.md`).
+//! * No reflection TypeRep (a stretch in idl4-java §8).
 
 extern crate alloc;
 
@@ -82,13 +91,13 @@ use crate::type_map::{
 };
 
 // ---------------------------------------------------------------------------
-// Public API — siehe Crate-Doc fuer Aufruf-Schema
+// Public API — see the crate doc for the call schema
 // ---------------------------------------------------------------------------
 
-/// Emittiert das synchrone Service-Interface (`<Service>.java`).
+/// Emits the synchronous service interface (`<Service>.java`).
 ///
 /// # Errors
-/// `JavaGenError::InvalidName` bei nicht-sanitisierbarem Service-Namen.
+/// `JavaGenError::InvalidName` for a non-sanitizable service name.
 pub fn emit_service_interface(
     svc: &ServiceDef,
     pkg: &str,
@@ -112,10 +121,10 @@ pub fn emit_service_interface(
     })
 }
 
-/// Emittiert das asynchrone Service-Interface (`<Service>Async.java`).
+/// Emits the asynchronous service interface (`<Service>Async.java`).
 ///
 /// # Errors
-/// Wie [`emit_service_interface`].
+/// Like [`emit_service_interface`].
 pub fn emit_service_interface_async(
     svc: &ServiceDef,
     pkg: &str,
@@ -143,10 +152,10 @@ pub fn emit_service_interface_async(
     })
 }
 
-/// Emittiert die Client-seitige Requester-Klasse (`<Service>Requester.java`).
+/// Emits the client-side requester class (`<Service>Requester.java`).
 ///
 /// # Errors
-/// Wie [`emit_service_interface`].
+/// Like [`emit_service_interface`].
 pub fn emit_requester_class(
     svc: &ServiceDef,
     pkg: &str,
@@ -168,46 +177,27 @@ pub fn emit_requester_class(
         "public final class {class} implements {svc_class}, {svc_class}Async {{",
     )
     .map_err(fmt_err)?;
-    if cfg!(feature = "jni") {
-        // JNI-Variante: wir delegieren direkt an `RustRequesterFFI` und
-        // halten den native Handle dort.
-        writeln!(
-            body,
-            "{ind}private final org.zerodds.rpc.RustRequesterFFI requesterFfi;",
-        )
-        .map_err(fmt_err)?;
-        writeln!(body).map_err(fmt_err)?;
-        writeln!(
-            body,
-            "{ind}public {class}(org.zerodds.rpc.RustRequesterFFI requesterFfi) {{",
-        )
-        .map_err(fmt_err)?;
-        writeln!(body, "{ind}{ind}this.requesterFfi = requesterFfi;").map_err(fmt_err)?;
-        writeln!(body, "{ind}}}").map_err(fmt_err)?;
-        writeln!(body).map_err(fmt_err)?;
-    } else {
-        writeln!(
-            body,
-            "{ind}private final org.zerodds.rpc.Requester<Object, Object> requester;",
-        )
-        .map_err(fmt_err)?;
-        writeln!(body).map_err(fmt_err)?;
-        writeln!(
-            body,
-            "{ind}public {class}(org.zerodds.rpc.Requester<Object, Object> requester) {{",
-        )
-        .map_err(fmt_err)?;
-        writeln!(body, "{ind}{ind}this.requester = requester;").map_err(fmt_err)?;
-        writeln!(body, "{ind}}}").map_err(fmt_err)?;
-        writeln!(body).map_err(fmt_err)?;
-    }
+    writeln!(
+        body,
+        "{ind}private final org.zerodds.rpc.Requester<Object, Object> requester;",
+    )
+    .map_err(fmt_err)?;
+    writeln!(body).map_err(fmt_err)?;
+    writeln!(
+        body,
+        "{ind}public {class}(org.zerodds.rpc.Requester<Object, Object> requester) {{",
+    )
+    .map_err(fmt_err)?;
+    writeln!(body, "{ind}{ind}this.requester = requester;").map_err(fmt_err)?;
+    writeln!(body, "{ind}}}").map_err(fmt_err)?;
+    writeln!(body).map_err(fmt_err)?;
 
-    // Sync-Methoden: rufen die Async-Variante auf und blocken.
+    // Sync methods: call the async variant and block.
     for m in &svc.methods {
         emit_requester_sync_impl(&mut body, m, &ind)?;
     }
     writeln!(body).map_err(fmt_err)?;
-    // Async-Methoden: senden Request, geben CompletableFuture zurueck.
+    // Async methods: send the request, return a CompletableFuture.
     for m in &svc.methods {
         emit_requester_async_impl(&mut body, m, &ind)?;
     }
@@ -221,10 +211,10 @@ pub fn emit_requester_class(
     })
 }
 
-/// Emittiert die Server-seitige Replier-Klasse (`<Service>Replier.java`).
+/// Emits the server-side replier class (`<Service>Replier.java`).
 ///
 /// # Errors
-/// Wie [`emit_service_interface`].
+/// Like [`emit_service_interface`].
 pub fn emit_replier_class(
     svc: &ServiceDef,
     pkg: &str,
@@ -259,8 +249,8 @@ pub fn emit_replier_class(
     writeln!(body, "{ind}}}").map_err(fmt_err)?;
     writeln!(body).map_err(fmt_err)?;
 
-    // Dispatch-Stub: nimmt eine Request entgegen und ruft die richtige
-    // Handler-Methode anhand der Method-ID auf.
+    // Dispatch stub: takes a request and calls the right
+    // the handler method by method ID.
     writeln!(
         body,
         "{ind}/** Dispatches an incoming request by method id. */",
@@ -275,17 +265,69 @@ pub fn emit_replier_class(
     for (idx, m) in svc.methods.iter().enumerate() {
         let mname = sanitize_identifier(&m.name)?;
         let case_id = idx + 1;
-        // void-return (inkl. oneway) → kein `return` vor dem Aufruf;
-        // sonst Result als `return`-Wert weiterreichen.
-        let void_like = m.oneway
-            || (m.return_type.is_none()
-                && m.params.iter().all(|p| p.direction == ParamDirection::In));
-        let stub = if void_like {
-            format!("{ind}{ind}{ind}case {case_id}: handler.{mname}(/* args */); return null;")
+        // Decode the request tuple, call the handler, pack the reply tuple —
+        // mirroring the requester marshalling convention:
+        //   args  = Object[] of IN + INOUT values (declaration order)
+        //   reply = Object[] { returnValue-or-null, INOUT+OUT values… }
+        writeln!(body, "{ind}{ind}{ind}case {case_id}: {{").map_err(fmt_err)?;
+        writeln!(body, "{ind}{ind}{ind}{ind}Object[] __a = (Object[]) args;").map_err(fmt_err)?;
+        let mut req_idx = 0usize;
+        let mut call_args: Vec<String> = Vec::new();
+        for p in &m.params {
+            let pname = sanitize_identifier(&p.name)?;
+            let boxed = typespec_to_java_boxed(&p.type_ref)?;
+            match p.direction {
+                ParamDirection::In => {
+                    call_args.push(format!("({boxed}) __a[{req_idx}]"));
+                    req_idx += 1;
+                }
+                ParamDirection::InOut => {
+                    writeln!(
+                        body,
+                        "{ind}{ind}{ind}{ind}org.zerodds.rpc.Holder<{boxed}> {pname} = \
+                         new org.zerodds.rpc.Holder<>(({boxed}) __a[{req_idx}]);",
+                    )
+                    .map_err(fmt_err)?;
+                    call_args.push(pname);
+                    req_idx += 1;
+                }
+                ParamDirection::Out => {
+                    writeln!(
+                        body,
+                        "{ind}{ind}{ind}{ind}org.zerodds.rpc.Holder<{boxed}> {pname} = \
+                         new org.zerodds.rpc.Holder<>();",
+                    )
+                    .map_err(fmt_err)?;
+                    call_args.push(pname);
+                }
+            }
+        }
+        let call = format!("handler.{mname}({})", call_args.join(", "));
+        if m.return_type.is_some() {
+            let ret_unboxed = sync_return_type(m)?;
+            writeln!(body, "{ind}{ind}{ind}{ind}{ret_unboxed} __ret = {call};").map_err(fmt_err)?;
         } else {
-            format!("{ind}{ind}{ind}case {case_id}: return handler.{mname}(/* args */);")
-        };
-        writeln!(body, "{stub}").map_err(fmt_err)?;
+            writeln!(body, "{ind}{ind}{ind}{ind}{call};").map_err(fmt_err)?;
+        }
+        // Reply tuple: [0] = return value (or null), then inout/out values.
+        let mut reply_parts: Vec<String> = Vec::new();
+        reply_parts.push(if m.return_type.is_some() {
+            "__ret".to_string()
+        } else {
+            "null".to_string()
+        });
+        for p in &m.params {
+            if p.direction != ParamDirection::In {
+                reply_parts.push(format!("{}.value", sanitize_identifier(&p.name)?));
+            }
+        }
+        writeln!(
+            body,
+            "{ind}{ind}{ind}{ind}return new Object[] {{ {} }};",
+            reply_parts.join(", ")
+        )
+        .map_err(fmt_err)?;
+        writeln!(body, "{ind}{ind}{ind}}}").map_err(fmt_err)?;
     }
     writeln!(
         body,
@@ -306,13 +348,13 @@ pub fn emit_replier_class(
     })
 }
 
-/// Emittiert das Server-side Handler-Interface (`<Service>Service.java`).
+/// Emits the server-side handler interface (`<Service>Service.java`).
 ///
-/// Anwender implementieren dieses Interface und uebergeben ihre
-/// Implementierung dem [`emit_replier_class`]-Output.
+/// Users implement this interface and pass their
+/// implementation to the [`emit_replier_class`] output.
 ///
 /// # Errors
-/// Wie [`emit_service_interface`].
+/// Like [`emit_service_interface`].
 pub fn emit_service_handler_interface(
     svc: &ServiceDef,
     pkg: &str,
@@ -342,13 +384,13 @@ pub fn emit_service_handler_interface(
     })
 }
 
-/// Convenience-Wrapper: emittiert alle 5 Java-Files fuer ein Service.
+/// Convenience wrapper: emits all 5 Java files for one service.
 ///
-/// Reihenfolge: Interface, Async-Interface, Handler-Interface, Requester,
-/// Replier.
+/// Order: interface, async interface, handler interface, requester,
+/// replier.
 ///
 /// # Errors
-/// Wie [`emit_service_interface`].
+/// Like [`emit_service_interface`].
 pub fn emit_service_files(
     svc: &ServiceDef,
     pkg: &str,
@@ -404,7 +446,7 @@ fn emit_handler_method_signature(
     m: &MethodDef,
     ind: &str,
 ) -> Result<(), JavaGenError> {
-    // Handler-Signatur ist identisch zur sync-Signatur — der
+    // The handler signature is identical to the sync signature — the
     // Replier-Dispatch ruft sie direkt auf.
     emit_sync_method_signature(out, m, ind)
 }
@@ -426,7 +468,9 @@ fn emit_requester_sync_impl(
         writeln!(out, "{ind}}}").map_err(fmt_err)?;
         return Ok(());
     }
-    if m.return_type.is_none() && m.params.iter().all(|p| p.direction == ParamDirection::In) {
+    if m.return_type.is_none() {
+        // void return (with or without out/inout holders): block on the
+        // future but do not `return` its (Void) value.
         writeln!(
             out,
             "{ind}{ind}try {{ {async_name}({arg_list}).get(); }} catch (Exception e) {{ \
@@ -457,66 +501,57 @@ fn emit_requester_async_impl(
     writeln!(out, "{ind}@Override").map_err(fmt_err)?;
     writeln!(out, "{ind}public {ret_ty} {async_name}({params}) {{").map_err(fmt_err)?;
 
-    // JNI-Skeleton: Wenn das `jni`-Feature aktiv ist, zeigen wir
-    // direkt den Rust-FFI-Pfad. Der Marshalling-Code ist bewusst
-    // als Kommentar markiert — pro Service waere ein dedizierter
-    // XCDR2-Encoder noetig, der in einer spaeteren Codegen-Stufe
-    // emittiert wird (idl4-java §8 / zerodds-rpc §7.11).
-    if cfg!(feature = "jni") {
-        if m.oneway {
-            writeln!(
-                out,
-                "{ind}{ind}// JNI: oneway -> Requester.sendRequest blocking + ignore reply.",
-            )
-            .map_err(fmt_err)?;
-            writeln!(
-                out,
-                "{ind}{ind}requesterFfi.sendRequest(/* xcdr2_encode(args) */ new byte[0], 0L);",
-            )
-            .map_err(fmt_err)?;
-            writeln!(
-                out,
-                "{ind}{ind}return java.util.concurrent.CompletableFuture.completedFuture(null);",
-            )
-            .map_err(fmt_err)?;
-        } else {
-            writeln!(
-                out,
-                "{ind}{ind}// JNI: async-Path via RustRequesterFFI.sendRequestAsync.",
-            )
-            .map_err(fmt_err)?;
-            writeln!(
-                out,
-                "{ind}{ind}return requesterFfi.sendRequestAsync(/* xcdr2_encode(args) */ new byte[0])",
-            )
-            .map_err(fmt_err)?;
-            writeln!(
-                out,
-                "{ind}{ind}{ind}.thenApply(reply -> /* xcdr2_decode<TOut>(reply) */ null);",
-            )
-            .map_err(fmt_err)?;
-        }
-        writeln!(out, "{ind}}}").map_err(fmt_err)?;
-        return Ok(());
-    }
-
+    // Type-erased marshalling convention (matches the replier dispatch):
+    //   request payload  = Object[] of IN + INOUT values (declaration order)
+    //   reply payload    = Object[] { returnValue-or-null, INOUT+OUT values… }
+    let req_args = request_args_array(m)?;
     if m.oneway {
-        writeln!(
-            out,
-            "{ind}{ind}requester.sendOneway(new Object[] {{ /* args */ }});",
-        )
-        .map_err(fmt_err)?;
+        writeln!(out, "{ind}{ind}requester.sendOneway({req_args});").map_err(fmt_err)?;
         writeln!(
             out,
             "{ind}{ind}return java.util.concurrent.CompletableFuture.completedFuture(null);",
         )
         .map_err(fmt_err)?;
     } else {
-        writeln!(
-            out,
-            "{ind}{ind}return requester.sendRequest(new Object[] {{ /* args */ }});",
-        )
-        .map_err(fmt_err)?;
+        let has_writeback = m.params.iter().any(|p| p.direction != ParamDirection::In);
+        if m.return_type.is_none() && !has_writeback {
+            // void, no holders: complete with null once the reply arrives.
+            writeln!(
+                out,
+                "{ind}{ind}return requester.sendRequest({req_args}).thenApply(__reply -> null);",
+            )
+            .map_err(fmt_err)?;
+        } else {
+            writeln!(
+                out,
+                "{ind}{ind}return requester.sendRequest({req_args}).thenApply(__reply -> {{",
+            )
+            .map_err(fmt_err)?;
+            writeln!(out, "{ind}{ind}{ind}Object[] __out = (Object[]) __reply;",)
+                .map_err(fmt_err)?;
+            // Write back inout/out holders from reply[1..] in declaration order.
+            let mut k = 1usize;
+            for p in &m.params {
+                if p.direction == ParamDirection::In {
+                    continue;
+                }
+                let pname = sanitize_identifier(&p.name)?;
+                let boxed = typespec_to_java_boxed(&p.type_ref)?;
+                writeln!(out, "{ind}{ind}{ind}{pname}.value = ({boxed}) __out[{k}];",)
+                    .map_err(fmt_err)?;
+                k += 1;
+            }
+            match &m.return_type {
+                None => {
+                    writeln!(out, "{ind}{ind}{ind}return null;").map_err(fmt_err)?;
+                }
+                Some(ts) => {
+                    let boxed = typespec_to_java_boxed(ts)?;
+                    writeln!(out, "{ind}{ind}{ind}return ({boxed}) __out[0];").map_err(fmt_err)?;
+                }
+            }
+            writeln!(out, "{ind}{ind}}});").map_err(fmt_err)?;
+        }
     }
     writeln!(out, "{ind}}}").map_err(fmt_err)?;
     Ok(())
@@ -526,9 +561,9 @@ fn emit_requester_async_impl(
 // Type-Mapping-Helpers
 // ---------------------------------------------------------------------------
 
-/// Liefert den Java-Return-Type fuer die synchrone Methoden-Signatur.
-/// `oneway` und `void` → `void`. `out`-Parameter sind im Holder-Pattern
-/// abgebildet — sie bleiben Teil der Parameterliste.
+/// Returns the Java return type for the synchronous method signature.
+/// `oneway` and `void` → `void`. `out` parameters are mapped in the holder
+/// pattern — they remain part of the parameter list.
 fn sync_return_type(m: &MethodDef) -> Result<String, JavaGenError> {
     if m.oneway {
         return Ok("void".to_string());
@@ -539,10 +574,10 @@ fn sync_return_type(m: &MethodDef) -> Result<String, JavaGenError> {
     }
 }
 
-/// Liefert den Java-Async-Return-Type. `oneway` ergibt
-/// `CompletableFuture<Void>` (Caller darf trotzdem auf "complete"
-/// warten, auch wenn Reply ueberspringen wird), `void` → `Void`,
-/// sonst `CompletableFuture<TBoxed>`.
+/// Returns the Java async return type. `oneway` yields
+/// `CompletableFuture<Void>` (the caller may still wait on "complete"
+/// even if the reply will be skipped), `void` → `Void`,
+/// otherwise `CompletableFuture<TBoxed>`.
 fn async_return_type(m: &MethodDef) -> Result<String, JavaGenError> {
     if m.oneway {
         return Ok("java.util.concurrent.CompletableFuture<Void>".to_string());
@@ -556,7 +591,7 @@ fn async_return_type(m: &MethodDef) -> Result<String, JavaGenError> {
     }
 }
 
-/// Param-Liste fuer die sync-Variante. `out`/`inout` werden als
+/// Parameter list for the sync variant. `out`/`inout` are
 /// Holder gerendert.
 fn render_method_params(m: &MethodDef) -> Result<String, JavaGenError> {
     let mut parts: Vec<String> = Vec::new();
@@ -566,7 +601,7 @@ fn render_method_params(m: &MethodDef) -> Result<String, JavaGenError> {
     Ok(parts.join(", "))
 }
 
-/// Param-Liste fuer die async-Variante; Holder-Pattern bleibt erhalten.
+/// Parameter list for the async variant; the holder pattern is preserved.
 fn render_method_params_async(m: &MethodDef) -> Result<String, JavaGenError> {
     render_method_params(m)
 }
@@ -592,6 +627,22 @@ fn render_call_arglist(m: &MethodDef) -> Result<String, JavaGenError> {
         parts.push(sanitize_identifier(&p.name)?);
     }
     Ok(parts.join(", "))
+}
+
+/// `new Object[] { … }` request payload sent to the runtime `Requester`:
+/// IN params contribute their value, INOUT their `.value`, OUT nothing (the
+/// server allocates an empty holder). Order = declaration order.
+fn request_args_array(m: &MethodDef) -> Result<String, JavaGenError> {
+    let mut parts: Vec<String> = Vec::new();
+    for p in &m.params {
+        let pname = sanitize_identifier(&p.name)?;
+        match p.direction {
+            ParamDirection::In => parts.push(pname),
+            ParamDirection::InOut => parts.push(format!("{pname}.value")),
+            ParamDirection::Out => {}
+        }
+    }
+    Ok(format!("new Object[] {{ {} }}", parts.join(", ")))
 }
 
 // ---------------------------------------------------------------------------
@@ -656,8 +707,8 @@ fn scoped_to_java(s: &ScopedName) -> String {
         .join(".")
 }
 
-// Marker, damit der Linter die "vielleicht-spaeter"-Helpers nicht
-// als unused meldet.
+// Marker so the linter does not report the "maybe-later" helpers
+// as unused.
 #[allow(dead_code)]
 fn _unused_marker(_i: IntegerType) {
     let _ = integer_to_java;

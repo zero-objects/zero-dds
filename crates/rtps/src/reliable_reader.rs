@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Reliable RTPS-Reader (1:N Writer-Proxies) — DDSI-RTPS 2.5 §8.4.10.
+//! Reliable RTPS reader (1:N writer proxies) — DDSI-RTPS 2.5 §8.4.10.
 //!
-//! Entspricht der [`StatefulReader`]-Rolle mit 1..N matched Writers.
-//! Fragmentation (§8.4.14) ist unterstuetzt. Multi-Writer ab WP 1.4
-//! T4.5: pro Remote-Writer getrennter [`WriterProxyState`] mit eigenem
-//! `received_cache`, `delivered_up_to` und `FragmentAssembler`.
+//! Corresponds to the [`StatefulReader`] role with 1..N matched writers.
+//! Fragmentation (§8.4.14) is supported. Multi-writer since WP 1.4
+//! T4.5: a separate [`WriterProxyState`] per remote writer with its own
+//! `received_cache`, `delivered_up_to` and `FragmentAssembler`.
 //!
-//! # Warum pro-Proxy State?
+//! # Why per-proxy state?
 //!
-//! SequenceNumbers sind writer-lokal (Spec §8.3.5.4). Zwei Writer mit
-//! ueberlappenden SN-Spaces wuerden in einem globalen Cache kollidieren
-//! — daher separate Puffer pro Proxy.
+//! SequenceNumbers are writer-local (Spec §8.3.5.4). Two writers with
+//! overlapping SN spaces would collide in a global cache
+//! — hence separate buffers per proxy.
 //!
 //! # API-Form
 //!
@@ -48,44 +48,44 @@ use crate::submessages::{
     AckNackSubmessage, DataFragSubmessage, DataSubmessage, GapSubmessage, HeartbeatSubmessage,
     NackFragSubmessage, SequenceNumberSet,
 };
-use crate::wire_types::{Guid, SequenceNumber, VendorId};
+use crate::wire_types::{Guid, GuidPrefix, SequenceNumber, VendorId};
 use crate::writer_proxy::WriterProxy;
 
-/// Default-Heartbeat-Response-Delay.
+/// Default heartbeat response delay.
 ///
-/// RTPS 2.5 §8.4.15.7 erlaubt dem Reader einen konfigurierbaren Delay
-/// zwischen HEARTBEAT-Empfang und ACKNACK-Emit, um mehrere HBs zu
-/// batchen. Spec spezifiziert keinen festen Default — die zuvor
-/// verwendeten 200 ms sind ein Pre-1.0-Implementierungsdetail.
+/// RTPS 2.5 §8.4.15.7 allows the reader a configurable delay
+/// between HEARTBEAT receipt and ACKNACK emit, to
+/// batch multiple HBs. The spec specifies no fixed default — the previously
+/// used 200 ms are a pre-1.0 implementation detail.
 ///
-/// **0 ms** = synchrone ACK-Response. Cyclone DDS default ist ebenfalls
-/// 0 (`HeartbeatResponseDelay`-XML-Default). Macht ACKNACK event-driven
-/// statt deferred-batched. Kein Verlust an Korrektheit fuer reliable
-/// loopback / low-loss-Netze; bei lossy-Netzen kann der Wert via
-/// `ReliableReaderConfig::heartbeat_response_delay` hochgesetzt werden.
+/// **0 ms** = synchronous ACK response. The Cyclone DDS default is also
+/// 0 (`HeartbeatResponseDelay` XML default). Makes ACKNACK event-driven
+/// instead of deferred-batched. No loss of correctness for reliable
+/// loopback / low-loss networks; for lossy networks the value can be
+/// raised via `ReliableReaderConfig::heartbeat_response_delay`.
 ///
-/// Pre-D.5e: 200 ms — das war ein impliziter Latency-Floor von 200 ms
-/// pro Roundtrip-ACK-Cycle.
+/// Pre-D.5e: 200 ms — that was an implicit latency floor of 200 ms
+/// per roundtrip ACK cycle.
 pub const DEFAULT_HEARTBEAT_RESPONSE_DELAY: Duration = Duration::from_millis(0);
 
-/// Pro-Writer State: der Proxy + getrennter Empfangs-State.
+/// Per-writer state: the proxy + separate receive state.
 ///
-/// Jeder Remote-Writer hat seinen eigenen SN-Space (§8.3.5.4), also
-/// auch eigenen `received_cache`, `delivered_up_to` und
-/// `FragmentAssembler`. So koennen zwei Writer mit kollidierenden SN
-/// (z.B. beide starten bei 1) problemlos parallel empfangen werden.
+/// Every remote writer has its own SN space (§8.3.5.4), so also
+/// its own `received_cache`, `delivered_up_to` and
+/// `FragmentAssembler`. This way two writers with colliding SNs
+/// (e.g. both starting at 1) can be received in parallel without issue.
 #[derive(Debug, Clone)]
 pub struct WriterProxyState {
-    /// Writer-Proxy-Protokoll-State.
+    /// Writer-proxy protocol state.
     pub proxy: WriterProxy,
-    /// Empfangs-Cache fuer diesen Writer.
+    /// Receive cache for this writer.
     pub received_cache: HistoryCache,
-    /// Hoechste SN, die an die App ausgeliefert wurde.
+    /// Highest SN delivered to the app.
     pub delivered_up_to: SequenceNumber,
-    /// Fragment-Reassembly fuer diesen Writer.
+    /// Fragment reassembly for this writer.
     pub assembler: FragmentAssembler,
-    /// Zeitpunkt, seit wann ein ACKNACK/NACK_FRAG an diesen Writer
-    /// ausstehend ist. `None` = nichts ausstehend.
+    /// Time since which an ACKNACK/NACK_FRAG to this writer is
+    /// pending. `None` = nothing pending.
     pub pending_acknack_since: Option<Duration>,
 }
 
@@ -101,7 +101,7 @@ impl WriterProxyState {
     }
 }
 
-/// Ein Reliable-Reader mit 0..N Writer-Proxies.
+/// A reliable reader with 0..N writer proxies.
 #[derive(Debug, Clone)]
 pub struct ReliableReader {
     guid: Guid,
@@ -111,61 +111,61 @@ pub struct ReliableReader {
     acknack_count: i32,
     nackfrag_count: i32,
     duplicate_frag_count: u64,
-    /// Template fuer neue Proxies.
+    /// Template for new proxies.
     max_samples_per_proxy: usize,
     assembler_caps: AssemblerCaps,
-    /// Zaehler fuer Submessages, deren `writer_id` keinen Proxy hat.
+    /// Counter for submessages whose `writer_id` has no proxy.
     unknown_src_count: u64,
 }
 
-/// Konfiguration beim Anlegen.
+/// Configuration at creation.
 #[derive(Debug, Clone)]
 pub struct ReliableReaderConfig {
-    /// GUID des Reader-Endpoints.
+    /// GUID of the reader endpoint.
     pub guid: Guid,
-    /// VendorId fuer den RTPS-Header der ACKNACKs.
+    /// VendorId for the RTPS header of the ACKNACKs.
     pub vendor_id: VendorId,
-    /// Initiale Writer-Proxies. Weitere via `add_writer_proxy`.
+    /// Initial writer proxies. More via `add_writer_proxy`.
     pub writer_proxies: Vec<WriterProxy>,
-    /// Kapazitaet des Empfangs-Caches pro Proxy (nicht global).
+    /// Capacity of the receive cache per proxy (not global).
     pub max_samples_per_proxy: usize,
-    /// Heartbeat-Response-Delay (Default: 200 ms).
+    /// Heartbeat response delay (default: 200 ms).
     pub heartbeat_response_delay: Duration,
-    /// Caps fuer den Fragment-Assembler (pro Proxy).
+    /// Caps for the fragment assembler (per proxy).
     pub assembler_caps: AssemblerCaps,
 }
 
-/// Ein an die Applikation ausgelieferter Sample.
+/// A sample delivered to the application.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeliveredSample {
-    /// GUID des Writers, von dem der Sample kommt. Macht Multi-Writer-
-    /// Deduplication im Caller moeglich.
+    /// GUID of the writer the sample comes from. Makes multi-writer
+    /// deduplication possible in the caller.
     pub writer_guid: Guid,
-    /// Sequence-Number im Writer.
+    /// Sequence number in the writer.
     pub sequence_number: SequenceNumber,
-    /// Serialisierter Payload (Zero-Copy via `Arc::clone` aus dem Cache).
-    /// Nutzlast.
+    /// Serialized payload (zero-copy via `Arc::clone` from the cache).
+    /// Payload.
     pub payload: alloc::sync::Arc<[u8]>,
-    /// Spec §8.2.1.2 ChangeKind — `Alive` fuer normale Samples,
+    /// Spec §8.2.1.2 ChangeKind — `Alive` for normal samples,
     /// `NotAliveDisposed` / `NotAliveUnregistered` /
-    /// `NotAliveDisposedUnregistered` fuer Lifecycle-Marker, die der
-    /// Writer per `dispose`/`unregister_instance` versendet hat.
-    /// Spec §9.6.3.9 PID_STATUS_INFO im Inline-QoS.
+    /// `NotAliveDisposedUnregistered` for lifecycle markers that the
+    /// writer sent via `dispose`/`unregister_instance`.
+    /// Spec §9.6.3.9 PID_STATUS_INFO in the inline QoS.
     pub kind: ChangeKind,
-    /// `PID_KEY_HASH` aus dem Inline-QoS (Spec §9.6.4.8). Bei
-    /// Lifecycle-Markern ist das die Identitaet der disposed/
-    /// unregistered Instanz; bei keyed-Topic-ALIVE-Samples optional
-    /// (manche Vendors senden Inline-Hash, manche nicht). `None`
-    /// wenn der Writer keinen Hash inline mitliefert (typisch fuer
-    /// keyless Topics).
+    /// `PID_KEY_HASH` from the inline QoS (Spec §9.6.4.8). For
+    /// lifecycle markers this is the identity of the disposed/
+    /// unregistered instance; for keyed-topic ALIVE samples optional
+    /// (some vendors send an inline hash, some don't). `None`
+    /// if the writer does not supply a hash inline (typical for
+    /// keyless topics).
     pub key_hash: Option<[u8; 16]>,
 }
 
 impl ReliableReader {
-    /// Erzeugt einen frischen Reader.
+    /// Creates a fresh reader.
     ///
     /// # Panics
-    /// Wenn `cfg.assembler_caps.max_pending_sns == 0`.
+    /// If `cfg.assembler_caps.max_pending_sns == 0`.
     #[must_use]
     pub fn new(cfg: ReliableReaderConfig) -> Self {
         assert!(
@@ -198,39 +198,39 @@ impl ReliableReader {
         self.guid
     }
 
-    /// Read-only-Slice der Writer-Proxy-States.
+    /// Read-only slice of the writer-proxy states.
     #[must_use]
     pub fn writer_proxies(&self) -> &[WriterProxyState] {
         &self.writer_proxies
     }
 
-    /// Anzahl registrierter Writer-Proxies.
+    /// Number of registered writer proxies.
     #[must_use]
     pub fn writer_proxy_count(&self) -> usize {
         self.writer_proxies.len()
     }
 
-    /// Zaehler der gesendeten ACKNACKs.
+    /// Counter of sent ACKNACKs.
     #[must_use]
     pub fn acknack_count(&self) -> i32 {
         self.acknack_count
     }
 
-    /// Zaehler der gesendeten NACK_FRAGs.
+    /// Counter of sent NACK_FRAGs.
     #[must_use]
     pub fn nackfrag_count(&self) -> i32 {
         self.nackfrag_count
     }
 
-    /// Summe der aktiven (unvollstaendigen) Fragment-Buffer ueber alle
-    /// Proxies.
+    /// Sum of the active (incomplete) fragment buffers across all
+    /// proxies.
     #[must_use]
     pub fn pending_fragment_count(&self) -> usize {
         self.writer_proxies.iter().map(|s| s.assembler.len()).sum()
     }
 
-    /// Summe der verworfenen Fragmente ueber alle Proxies
-    /// (DoS-/Inkonsistenz-Diagnose).
+    /// Sum of the dropped fragments across all proxies
+    /// (DoS / inconsistency diagnosis).
     #[must_use]
     pub fn dropped_fragment_count(&self) -> u64 {
         self.writer_proxies
@@ -239,45 +239,60 @@ impl ReliableReader {
             .sum()
     }
 
-    /// Anzahl DATA_FRAGs, die fuer bereits-bekannte SNs eintrafen
-    /// (Duplicate-Fragments, Re-Sends).
+    /// Number of DATA_FRAGs that arrived for already-known SNs
+    /// (duplicate fragments, re-sends).
     #[must_use]
     pub fn duplicate_fragment_count(&self) -> u64 {
         self.duplicate_frag_count
     }
 
-    /// Anzahl Submessages, deren `writer_id` keinem registrierten
-    /// Proxy zuzuordnen war (Misrouting / Spoofing-Diagnose).
+    /// Number of submessages whose `writer_id` could not be assigned to a registered
+    /// proxy (misrouting / spoofing diagnosis).
     #[must_use]
     pub fn unknown_src_count(&self) -> u64 {
         self.unknown_src_count
     }
 
-    /// Fuegt einen Writer-Proxy hinzu. Idempotent: gleiche GUID ersetzt.
+    /// Adds a writer proxy. Idempotent: for a known GUID the
+    /// reliability state (SN bounds, received cache, delivered pointer)
+    /// is **preserved** — only the locators are refreshed.
     ///
-    /// Setzt sofort ein preemptives ACKNACK als pending, damit der Writer
-    /// beim naechsten Tick ein "Hallo, ich bin hier"-ACKNACK bekommt.
-    /// Cyclone DDS reagiert darauf mit einem HEARTBEAT und beginnt mit
-    /// DATA-Resends — ohne diesen Impuls wartet der Writer passiv.
+    /// Sets a preemptive ACKNACK as pending, so the writer gets a
+    /// "hello, I'm here" ACKNACK on the next tick. Cyclone DDS
+    /// responds with a HEARTBEAT and starts DATA resends —
+    /// without this impulse the writer waits passively.
+    ///
+    /// Important: a renewed SPDP/SEDP announce of the same writer (Cyclone
+    /// re-announces periodically) must NOT discard the reader progress.
+    /// A reset would, after an already-processed HEARTBEAT, produce an empty
+    /// ACKNACK ("nothing missing") → the reliable writer never delivers the
+    /// DATA (cross-vendor secure-SEDP deadlock).
     pub fn add_writer_proxy(&mut self, proxy: WriterProxy) {
         let guid = proxy.remote_writer_guid;
-        let mut state =
-            WriterProxyState::new(proxy, self.max_samples_per_proxy, self.assembler_caps);
-        // Duration::ZERO triggert beim naechsten tick() sofort einen
-        // ACKNACK-Emit (now - ZERO >= heartbeat_response_delay).
-        state.pending_acknack_since = Some(Duration::ZERO);
         if let Some(idx) = self
             .writer_proxies
             .iter()
             .position(|s| s.proxy.remote_writer_guid == guid)
         {
-            self.writer_proxies[idx] = state;
+            // Known: preserve the state, only refresh locators + re-arm the
+            // ACKNACK (if none is pending yet).
+            self.writer_proxies[idx]
+                .proxy
+                .refresh_locators(proxy.unicast_locators, proxy.multicast_locators);
+            self.writer_proxies[idx]
+                .pending_acknack_since
+                .get_or_insert(Duration::ZERO);
         } else {
+            let mut state =
+                WriterProxyState::new(proxy, self.max_samples_per_proxy, self.assembler_caps);
+            // Duration::ZERO triggers an ACKNACK emit immediately on the next tick()
+            // (now - ZERO >= heartbeat_response_delay).
+            state.pending_acknack_since = Some(Duration::ZERO);
             self.writer_proxies.push(state);
         }
     }
 
-    /// Entfernt einen Writer-Proxy.
+    /// Removes a writer proxy.
     pub fn remove_writer_proxy(&mut self, guid: Guid) -> Option<WriterProxy> {
         let idx = self
             .writer_proxies
@@ -286,7 +301,7 @@ impl ReliableReader {
         Some(self.writer_proxies.remove(idx).proxy)
     }
 
-    /// Nulliert alle Diagnose-Zaehler. Beruehrt keine State-Maschine.
+    /// Zeroes all diagnostic counters. Touches no state machine.
     pub fn reset_diagnostics(&mut self) {
         self.acknack_count = 0;
         self.nackfrag_count = 0;
@@ -299,15 +314,19 @@ impl ReliableReader {
 
     // ---------- Incoming Submessages ----------
 
-    /// DATA verarbeiten. Dispatch nach `writer_id` auf den passenden
-    /// Proxy. Liefert die reassemblierten Samples dieses Proxies.
+    /// Process a DATA. Dispatch by `writer_id` to the matching
+    /// proxy. Returns the reassembled samples of this proxy.
     ///
-    /// Spec §9.6.3.9 PID_STATUS_INFO: bei `key_flag=true` + Inline-QoS
-    /// mit gesetztem STATUS_INFO wird der CacheChange mit
+    /// Spec §9.6.3.9 PID_STATUS_INFO: with `key_flag=true` + inline QoS
+    /// with STATUS_INFO set, the CacheChange is marked
     /// NotAliveDisposed / NotAliveUnregistered / NotAliveDisposedUnregistered
-    /// markiert, statt Alive.
-    pub fn handle_data(&mut self, data: &DataSubmessage) -> Vec<DeliveredSample> {
-        let Some(idx) = self.proxy_index_by_writer_id(data.writer_id) else {
+    /// instead of Alive.
+    pub fn handle_data(
+        &mut self,
+        source_prefix: GuidPrefix,
+        data: &DataSubmessage,
+    ) -> Vec<DeliveredSample> {
+        let Some(idx) = self.proxy_index_by_writer(Guid::new(source_prefix, data.writer_id)) else {
             self.unknown_src_count = self.unknown_src_count.saturating_add(1);
             return Vec::new();
         };
@@ -322,9 +341,9 @@ impl ReliableReader {
             .inline_qos
             .as_ref()
             .and_then(crate::inline_qos::find_key_hash);
-        // Arc::clone statt Vec::clone auf dem Payload — der
-        // Refcount-Block wird zwischen DataSubmessage, Cache und
-        // DeliveredSample geteilt.
+        // Arc::clone instead of Vec::clone on the payload — the
+        // refcount block is shared between DataSubmessage, cache and
+        // DeliveredSample.
         let _ = state.received_cache.insert(CacheChange {
             sequence_number: sn,
             payload: alloc::sync::Arc::clone(&data.serialized_payload),
@@ -334,9 +353,9 @@ impl ReliableReader {
         Self::collect_in_order_for(state)
     }
 
-    /// Klassifiziert eine eingehende DATA als Alive vs Lifecycle-Marker.
-    /// `key_flag=true` zeigt Key-Only-Payload an; STATUS_INFO im
-    /// Inline-QoS sagt, ob disposed/unregistered/beides.
+    /// Classifies an incoming DATA as Alive vs lifecycle marker.
+    /// `key_flag=true` indicates a key-only payload; STATUS_INFO in the
+    /// inline QoS says whether disposed/unregistered/both.
     fn classify_change_kind(data: &DataSubmessage) -> ChangeKind {
         if !data.key_flag {
             return ChangeKind::Alive;
@@ -357,14 +376,15 @@ impl ReliableReader {
         }
     }
 
-    /// DATA_FRAG verarbeiten. `now` triggert NACK_FRAG-Scheduling
-    /// direkt, ohne auf HEARTBEAT zu warten.
+    /// Process a DATA_FRAG. `now` triggers NACK_FRAG scheduling
+    /// directly, without waiting for a HEARTBEAT.
     pub fn handle_data_frag(
         &mut self,
+        source_prefix: GuidPrefix,
         df: &DataFragSubmessage,
         now: Duration,
     ) -> Vec<DeliveredSample> {
-        let Some(idx) = self.proxy_index_by_writer_id(df.writer_id) else {
+        let Some(idx) = self.proxy_index_by_writer(Guid::new(source_prefix, df.writer_id)) else {
             self.unknown_src_count = self.unknown_src_count.saturating_add(1);
             return Vec::new();
         };
@@ -389,13 +409,14 @@ impl ReliableReader {
         result
     }
 
-    /// HEARTBEAT verarbeiten. Dispatch nach `writer_id`.
+    /// Process a HEARTBEAT. Dispatch by `writer_id`.
     pub fn handle_heartbeat(
         &mut self,
+        source_prefix: GuidPrefix,
         hb: &HeartbeatSubmessage,
         now: Duration,
     ) -> Vec<DeliveredSample> {
-        let Some(idx) = self.proxy_index_by_writer_id(hb.writer_id) else {
+        let Some(idx) = self.proxy_index_by_writer(Guid::new(source_prefix, hb.writer_id)) else {
             self.unknown_src_count = self.unknown_src_count.saturating_add(1);
             return Vec::new();
         };
@@ -409,17 +430,21 @@ impl ReliableReader {
         if !hb.final_flag || has_missing || has_frag_gaps {
             state.pending_acknack_since.get_or_insert(now);
         }
-        // Ein HB mit first_sn > delivered_up_to+1 bedeutet, dass Samples
-        // vor first_sn "lost" sind. `collect_in_order_for` rueckt dann
-        // `delivered_up_to` bis first_sn-1 vor und liefert Samples aus
-        // dem received_cache, die auf den Hole-Fill warteten (z.B. ein
-        // Volatile-direkt-send mit SN > delivered_up_to+1).
+        // An HB with first_sn > delivered_up_to+1 means that samples
+        // before first_sn are "lost". `collect_in_order_for` then advances
+        // `delivered_up_to` to first_sn-1 and delivers samples from
+        // the received_cache that were waiting on the hole fill (e.g. a
+        // volatile direct send with SN > delivered_up_to+1).
         Self::collect_in_order_for(state)
     }
 
-    /// GAP verarbeiten. Dispatch nach `writer_id`.
-    pub fn handle_gap(&mut self, gap: &GapSubmessage) -> Vec<DeliveredSample> {
-        let Some(idx) = self.proxy_index_by_writer_id(gap.writer_id) else {
+    /// Process a GAP. Dispatch by `writer_id`.
+    pub fn handle_gap(
+        &mut self,
+        source_prefix: GuidPrefix,
+        gap: &GapSubmessage,
+    ) -> Vec<DeliveredSample> {
+        let Some(idx) = self.proxy_index_by_writer(Guid::new(source_prefix, gap.writer_id)) else {
             self.unknown_src_count = self.unknown_src_count.saturating_add(1);
             return Vec::new();
         };
@@ -437,12 +462,12 @@ impl ReliableReader {
         Self::collect_in_order_for(state)
     }
 
-    /// Tick: liefert faellige ACKNACK/NACK_FRAG-Datagramme **ueber alle
-    /// Proxies hinweg**. Pro Proxy ein eigenes ACKNACK/NACK_FRAG, weil
-    /// SN-Spaces pro Writer sind.
+    /// Tick: returns due ACKNACK/NACK_FRAG datagrams **across all
+    /// proxies**. Per proxy its own ACKNACK/NACK_FRAG, because
+    /// SN spaces are per writer.
     ///
     /// # Errors
-    /// Wire-Encode-Fehler.
+    /// Wire encode error.
     pub fn tick(&mut self, now: Duration) -> Result<Vec<Vec<u8>>, WireError> {
         Ok(self
             .tick_outbound(now)?
@@ -451,12 +476,12 @@ impl ReliableReader {
             .collect())
     }
 
-    /// Wie [`Self::tick`], aber mit Ziel-Locators fuer jedes Datagram.
-    /// Bevorzugt fuer Transport-Integration, weil jeder AckNack an den
-    /// konkreten Writer-Proxy-Unicast-Locator gehen muss.
+    /// Like [`Self::tick`], but with target locators for each datagram.
+    /// Preferred for transport integration, because each AckNack must go to
+    /// the concrete writer-proxy unicast locator.
     ///
     /// # Errors
-    /// `WireError::ValueOutOfRange` bei ueberlangem Submessage-Body.
+    /// `WireError::ValueOutOfRange` for an overlong submessage body.
     pub fn tick_outbound(&mut self, now: Duration) -> Result<Vec<OutboundDatagram>, WireError> {
         let mut out = Vec::new();
         for idx in 0..self.writer_proxies.len() {
@@ -486,16 +511,26 @@ impl ReliableReader {
         Ok(out)
     }
 
-    // ---------- Intern ----------
+    // ---------- Internal ----------
 
-    fn proxy_index_by_writer_id(&self, writer_id: crate::wire_types::EntityId) -> Option<usize> {
+    /// Finds the writer proxy by the **full writer GUID** (source
+    /// `guid_prefix` from the RTPS header + `writerId` of the submessage).
+    /// DDSI-RTPS 2.5 §8.3.4: the effective source of a writer submessage is
+    /// `Receiver.sourceGuidPrefix` + `writerId`; the EntityId alone
+    /// does NOT uniquely identify a remote writer (multiple participants
+    /// share the same per-participant base-assigned EntityId), otherwise
+    /// DATA/HB/GAP of two writers end up in the same proxy state.
+    fn proxy_index_by_writer(&self, guid: Guid) -> Option<usize> {
         self.writer_proxies
             .iter()
-            .position(|s| s.proxy.remote_writer_guid.entity_id == writer_id)
+            .position(|s| s.proxy.remote_writer_guid == guid)
     }
 
     fn collect_in_order_for(state: &mut WriterProxyState) -> Vec<DeliveredSample> {
-        let mut out = Vec::new();
+        // Typically 1 sample per recv in steady-state, occasionally a burst.
+        // Pre-alloc with cap=2 eliminates the Vec::grow reallocs without
+        // over-allocating on the single-sample path.
+        let mut out = Vec::with_capacity(2);
         loop {
             let next = SequenceNumber(state.delivered_up_to.0 + 1);
             if let Some(change) = state.received_cache.get(next) {
@@ -511,11 +546,11 @@ impl ReliableReader {
             } else if state.proxy.is_known(next) && state.proxy.last_available_sn() >= next {
                 state.delivered_up_to = next;
             } else if next < state.proxy.first_available_sn() {
-                // Writer hat via HEARTBEAT first_sn > next angekuendigt
-                // → Samples vor first_available sind "lost" (Volatile-
-                // Skip, Historic-Eviction). Delivery-Pointer weiterruecken,
-                // damit nachfolgende SNs im received_cache endlich geliefert
-                // werden koennen. Spec §8.4.12.4.
+                // Writer announced first_sn > next via HEARTBEAT
+                // → samples before first_available are "lost" (volatile
+                // skip, historic eviction). Advance the delivery pointer
+                // so that subsequent SNs in the received_cache can finally
+                // be delivered. Spec §8.4.12.4.
                 state.delivered_up_to = next;
             } else {
                 break;
@@ -552,12 +587,12 @@ impl ReliableReader {
         let missing = state.proxy.missing_changes(256);
         let snset = SequenceNumberSet::from_missing(base, &missing);
         self.acknack_count = self.acknack_count.wrapping_add(1);
-        // final_flag=true nur, wenn wir wirklich alles bis base-1 haben
-        // und keine weitere Writer-Aktion noetig ist. Beim preemptive
-        // AckNack (base=1, leere bitmap, Proxy noch nichts gesehen)
-        // muss final=false, sonst liest der Writer es als "Reader ist
-        // up-to-date" und schickt keine durability-Resends (Cyclone DDS
-        // zeigt dann nur HEARTBEATs, keine DATA).
+        // final_flag=true only if we really have everything up to base-1
+        // and no further writer action is needed. For the preemptive
+        // AckNack (base=1, empty bitmap, proxy has seen nothing yet)
+        // final must be false, otherwise the writer reads it as "reader is
+        // up-to-date" and sends no durability resends (Cyclone DDS
+        // then shows only HEARTBEATs, no DATA).
         let final_flag = missing.is_empty() && state.proxy.last_available_sn().0 >= 1;
         let writer_guid = state.proxy.remote_writer_guid;
         let ack = AckNackSubmessage {
@@ -572,10 +607,10 @@ impl ReliableReader {
         self.wrap_to_writer(writer_guid.prefix, SubmessageId::AckNack, flags, &body)
     }
 
-    /// Packt `Header + INFO_DST(writer_prefix) + Submessage` in ein
-    /// Datagramm. INFO_DST ist zwingend: ohne ihn ist der effektive
-    /// Destination-Prefix = UNKNOWN, und Receiver (z.B. Cyclone DDS)
-    /// verwerfen die Submessage als "not a connection" (RTPS 2.5 §8.3.7.6).
+    /// Packs `Header + INFO_DST(writer_prefix) + Submessage` into a
+    /// datagram. INFO_DST is mandatory: without it the effective
+    /// destination prefix = UNKNOWN, and receivers (e.g. Cyclone DDS)
+    /// discard the submessage as "not a connection" (RTPS 2.5 §8.3.7.6).
     fn wrap_to_writer(
         &self,
         writer_prefix: crate::wire_types::GuidPrefix,
@@ -650,6 +685,16 @@ mod tests {
         SequenceNumber(n)
     }
 
+    /// source-`guid_prefix` des Default-Writer-Proxys (single_writer_guid).
+    fn p1() -> GuidPrefix {
+        single_writer_guid().prefix
+    }
+
+    /// source-`guid_prefix` des zweiten Writer-Proxys (second_writer_guid).
+    fn p2() -> GuidPrefix {
+        second_writer_guid().prefix
+    }
+
     fn data(wid: EntityId, rid: EntityId, n: i64, byte: u8) -> DataSubmessage {
         DataSubmessage {
             extra_flags: 0,
@@ -688,11 +733,44 @@ mod tests {
     }
 
     #[test]
+    fn re_adding_known_writer_preserves_reliability_state() {
+        // RTPS: a renewed SPDP/SEDP announce of the same writer must NOT
+        // discard the reader reliability state. Otherwise, after a
+        // HEARTBEAT(first=1,last=1), the reader falsely reports "nothing missing"
+        // (empty ACKNACK) and the reliable writer never delivers the DATA —
+        // exactly the cross-vendor secure-SEDP deadlock against Cyclone DDS.
+        let mut r = make_reader(10);
+        let w_eid = single_writer_guid().entity_id;
+        let r_eid = r.guid().entity_id;
+        // Writer announces seq 1 (not yet delivered).
+        r.handle_heartbeat(
+            p1(),
+            &heartbeat(w_eid, r_eid, 1, 1, 1, false),
+            Duration::ZERO,
+        );
+        assert!(first_state(&r).proxy.has_missing_changes());
+        assert_eq!(first_state(&r).proxy.last_available_sn(), sn(1));
+        // Re-discovery: the same writer proxy is added again.
+        r.add_writer_proxy(WriterProxy::new(
+            single_writer_guid(),
+            alloc::vec![Locator::udp_v4([127, 0, 0, 1], 7420)],
+            alloc::vec![],
+            true,
+        ));
+        // seq 1 must still be known as missing.
+        assert!(
+            first_state(&r).proxy.has_missing_changes(),
+            "re-add must not reset last_available/missing"
+        );
+        assert_eq!(first_state(&r).proxy.last_available_sn(), sn(1));
+    }
+
+    #[test]
     fn in_order_data_delivered_immediately() {
         let mut r = make_reader(10);
         let w_eid = single_writer_guid().entity_id;
         let r_eid = r.guid().entity_id;
-        let delivered = r.handle_data(&data(w_eid, r_eid, 1, 0xAA));
+        let delivered = r.handle_data(p1(), &data(w_eid, r_eid, 1, 0xAA));
         assert_eq!(delivered.len(), 1);
         assert_eq!(delivered[0].payload.as_ref(), &[0xAA][..]);
         assert_eq!(delivered[0].writer_guid, single_writer_guid());
@@ -704,9 +782,9 @@ mod tests {
         let mut r = make_reader(10);
         let w = single_writer_guid().entity_id;
         let rd = r.guid().entity_id;
-        assert!(r.handle_data(&data(w, rd, 2, 0x22)).is_empty());
-        assert!(r.handle_data(&data(w, rd, 3, 0x33)).is_empty());
-        let out = r.handle_data(&data(w, rd, 1, 0x11));
+        assert!(r.handle_data(p1(), &data(w, rd, 2, 0x22)).is_empty());
+        assert!(r.handle_data(p1(), &data(w, rd, 3, 0x33)).is_empty());
+        let out = r.handle_data(p1(), &data(w, rd, 1, 0x11));
         assert_eq!(
             out.iter().map(|s| s.sequence_number).collect::<Vec<_>>(),
             alloc::vec![sn(1), sn(2), sn(3)]
@@ -719,8 +797,8 @@ mod tests {
         let mut r = make_reader(10);
         let w = single_writer_guid().entity_id;
         let rd = r.guid().entity_id;
-        r.handle_data(&data(w, rd, 1, 0xAA));
-        let second = r.handle_data(&data(w, rd, 1, 0xAA));
+        r.handle_data(p1(), &data(w, rd, 1, 0xAA));
+        let second = r.handle_data(p1(), &data(w, rd, 1, 0xAA));
         assert!(second.is_empty());
     }
 
@@ -729,7 +807,7 @@ mod tests {
         let mut r = make_reader(10);
         let rd = r.guid().entity_id;
         let foreign = EntityId::user_writer_with_key([0xFF, 0xFF, 0xFF]);
-        assert!(r.handle_data(&data(foreign, rd, 1, 0xAA)).is_empty());
+        assert!(r.handle_data(p1(), &data(foreign, rd, 1, 0xAA)).is_empty());
         assert_eq!(r.unknown_src_count(), 1);
     }
 
@@ -740,7 +818,7 @@ mod tests {
         let mut r = make_reader(10);
         let w = single_writer_guid().entity_id;
         let rd = r.guid().entity_id;
-        let delivered = r.handle_data(&data(w, rd, 1, 0xAA));
+        let delivered = r.handle_data(p1(), &data(w, rd, 1, 0xAA));
         assert_eq!(delivered.len(), 1);
         assert_eq!(delivered[0].kind, ChangeKind::Alive);
     }
@@ -772,13 +850,16 @@ mod tests {
         let mut r = make_reader(10);
         let w = single_writer_guid().entity_id;
         let rd = r.guid().entity_id;
-        let delivered = r.handle_data(&lifecycle_data(
-            w,
-            rd,
-            1,
-            [0xAB; 16],
-            crate::inline_qos::status_info::DISPOSED,
-        ));
+        let delivered = r.handle_data(
+            p1(),
+            &lifecycle_data(
+                w,
+                rd,
+                1,
+                [0xAB; 16],
+                crate::inline_qos::status_info::DISPOSED,
+            ),
+        );
         assert_eq!(delivered.len(), 1);
         assert_eq!(delivered[0].kind, ChangeKind::NotAliveDisposed);
     }
@@ -788,13 +869,16 @@ mod tests {
         let mut r = make_reader(10);
         let w = single_writer_guid().entity_id;
         let rd = r.guid().entity_id;
-        let delivered = r.handle_data(&lifecycle_data(
-            w,
-            rd,
-            1,
-            [0xCD; 16],
-            crate::inline_qos::status_info::UNREGISTERED,
-        ));
+        let delivered = r.handle_data(
+            p1(),
+            &lifecycle_data(
+                w,
+                rd,
+                1,
+                [0xCD; 16],
+                crate::inline_qos::status_info::UNREGISTERED,
+            ),
+        );
         assert_eq!(delivered.len(), 1);
         assert_eq!(delivered[0].kind, ChangeKind::NotAliveUnregistered);
     }
@@ -806,21 +890,21 @@ mod tests {
         let rd = r.guid().entity_id;
         let bits =
             crate::inline_qos::status_info::DISPOSED | crate::inline_qos::status_info::UNREGISTERED;
-        let delivered = r.handle_data(&lifecycle_data(w, rd, 1, [0xEF; 16], bits));
+        let delivered = r.handle_data(p1(), &lifecycle_data(w, rd, 1, [0xEF; 16], bits));
         assert_eq!(delivered.len(), 1);
         assert_eq!(delivered[0].kind, ChangeKind::NotAliveDisposedUnregistered);
     }
 
     #[test]
     fn key_flag_without_status_info_falls_back_to_alive() {
-        // key_flag=true ohne PID_STATUS_INFO ist Spec-grenzwertig — wir
-        // fallen sicherheitshalber auf Alive zurueck statt zu raten.
+        // key_flag=true without PID_STATUS_INFO is spec-borderline — to be
+        // safe we fall back to Alive instead of guessing.
         let mut r = make_reader(10);
         let w = single_writer_guid().entity_id;
         let rd = r.guid().entity_id;
         let mut d = data(w, rd, 1, 0xAA);
         d.key_flag = true;
-        let delivered = r.handle_data(&d);
+        let delivered = r.handle_data(p1(), &d);
         assert_eq!(delivered.len(), 1);
         assert_eq!(delivered[0].kind, ChangeKind::Alive);
     }
@@ -830,7 +914,7 @@ mod tests {
         let mut r = make_reader(10);
         let w = single_writer_guid().entity_id;
         let rd = r.guid().entity_id;
-        r.handle_heartbeat(&heartbeat(w, rd, 1, 3, 1, false), Duration::ZERO);
+        r.handle_heartbeat(p1(), &heartbeat(w, rd, 1, 3, 1, false), Duration::ZERO);
         assert!(r.tick(Duration::from_millis(100)).unwrap().is_empty());
         let out = r.tick(Duration::from_millis(250)).unwrap();
         assert_eq!(out.len(), 1);
@@ -841,12 +925,12 @@ mod tests {
         let mut r = make_reader(10);
         let w = single_writer_guid().entity_id;
         let rd = r.guid().entity_id;
-        r.handle_data(&data(w, rd, 1, 0xAA));
-        r.handle_heartbeat(&heartbeat(w, rd, 1, 1, 1, true), Duration::ZERO);
+        r.handle_data(p1(), &data(w, rd, 1, 0xAA));
+        r.handle_heartbeat(p1(), &heartbeat(w, rd, 1, 1, 1, true), Duration::ZERO);
         assert!(r.tick(Duration::from_secs(10)).unwrap().is_empty());
     }
 
-    // ---------- Multi-Writer (T4.5) ----------
+    // ---------- Multi-writer (T4.5) ----------
 
     fn second_writer_guid() -> Guid {
         Guid::new(
@@ -873,16 +957,16 @@ mod tests {
 
     #[test]
     fn two_writers_with_overlapping_sn_spaces_both_delivered() {
-        // Kern-Regression: beide Writer benutzen SN 1. Ohne per-Proxy-
-        // State wuerde das zweite `handle_data` als Duplicate abgelehnt.
+        // Core regression: both writers use SN 1. Without per-proxy
+        // state the second `handle_data` would be rejected as a duplicate.
         let mut r = make_reader(10);
         add_second_writer(&mut r);
         let w1 = single_writer_guid().entity_id;
         let w2 = second_writer_guid().entity_id;
         let rd = r.guid().entity_id;
 
-        let d1 = r.handle_data(&data(w1, rd, 1, 0xAA));
-        let d2 = r.handle_data(&data(w2, rd, 1, 0xBB));
+        let d1 = r.handle_data(p1(), &data(w1, rd, 1, 0xAA));
+        let d2 = r.handle_data(p2(), &data(w2, rd, 1, 0xBB));
 
         assert_eq!(d1.len(), 1);
         assert_eq!(d1[0].payload.as_ref(), &[0xAA][..]);
@@ -892,6 +976,34 @@ mod tests {
         assert_eq!(d2[0].writer_guid, second_writer_guid());
 
         assert_eq!(r.writer_proxies()[0].delivered_up_to, sn(1));
+        assert_eq!(r.writer_proxies()[1].delivered_up_to, sn(1));
+    }
+
+    #[test]
+    fn same_entity_id_different_prefix_not_confused() {
+        // Regression H-1/H-2: two remote writers with the SAME entity_id but
+        // different guid_prefix (the normal case for fan-in — entity keys are
+        // assigned per-participant from a low base, the first user writer
+        // of each participant shares the same entity_id). A sample from writer B
+        // must NOT be attributed to writer A (first proxy).
+        let mut r = make_reader(10);
+        let eid = single_writer_guid().entity_id; // identical to proxy 0
+        let prefix_b = GuidPrefix::from_bytes([9; 12]);
+        let guid_b = Guid::new(prefix_b, eid);
+        r.add_writer_proxy(WriterProxy::new(
+            guid_b,
+            alloc::vec![Locator::udp_v4([127, 0, 0, 9], 7420)],
+            alloc::vec![],
+            true,
+        ));
+        assert_eq!(r.writer_proxy_count(), 2);
+        let rd = r.guid().entity_id;
+        // Sample from B: must be assigned to the B proxy, not A.
+        let d = r.handle_data(prefix_b, &data(eid, rd, 1, 0xBB));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].writer_guid, guid_b, "sample misattributed");
+        // The A proxy (proxy 0) must NOT have advanced.
+        assert_eq!(r.writer_proxies()[0].delivered_up_to, sn(0));
         assert_eq!(r.writer_proxies()[1].delivered_up_to, sn(1));
     }
 
@@ -913,26 +1025,28 @@ mod tests {
         let mut r = make_reader(10);
         add_second_writer(&mut r);
         let rd = r.guid().entity_id;
-        // Beide Writer schicken HB mit missing-SN
+        // Both writers send an HB with a missing SN
         r.handle_heartbeat(
+            p1(),
             &heartbeat(single_writer_guid().entity_id, rd, 1, 3, 1, false),
             Duration::ZERO,
         );
         r.handle_heartbeat(
+            p2(),
             &heartbeat(second_writer_guid().entity_id, rd, 1, 5, 1, false),
             Duration::ZERO,
         );
         let out = r.tick(Duration::from_millis(250)).unwrap();
-        // 2 ACKNACKs (pro Writer einen)
+        // 2 ACKNACKs (one per writer)
         assert_eq!(out.len(), 2);
     }
 
-    // ---------- WP 1.E Stufe-B: Pre-Emptive ACKNACK ----------
+    // ---------- WP 1.E stage B: pre-emptive ACKNACK ----------
 
-    /// §8.4.2.3.4: Beim Match eines neuen Writer-Proxies sendet der
-    /// Reader **proaktiv** einen ACKNACK mit `bitmap_base=1, num_bits=0,
-    /// final_flag=false` — das beschleunigt den ersten Datenfluss um
-    /// genau eine HB-Periode (typ. 1 s).
+    /// §8.4.2.3.4: when matching a new writer proxy the reader sends
+    /// **proactively** an ACKNACK with `bitmap_base=1, num_bits=0,
+    /// final_flag=false` — this speeds up the first data flow by
+    /// exactly one HB period (typ. 1 s).
     #[test]
     fn pre_emptive_acknack_emitted_after_add_writer_proxy() {
         let reader_guid = Guid::new(
@@ -953,8 +1067,8 @@ mod tests {
             alloc::vec![],
             true,
         ));
-        // Werte aus add_writer_proxy: pending_acknack_since=Duration::ZERO
-        // → tick(>=delay) liefert Pre-Emptive AckNack.
+        // Values from add_writer_proxy: pending_acknack_since=Duration::ZERO
+        // → tick(>=delay) yields the pre-emptive AckNack.
         let out = r.tick(Duration::from_millis(250)).unwrap();
         assert_eq!(out.len(), 1, "exactly one Pre-Emptive ACKNACK expected");
         let parsed = decode_datagram(&out[0]).unwrap();
@@ -977,8 +1091,8 @@ mod tests {
         );
     }
 
-    /// Pre-Emptive ACKNACK passiert NICHT, wenn `add_writer_proxy` nie
-    /// aufgerufen wurde (defensiver Sanity-Check fuer den Default-Reader).
+    /// Pre-emptive ACKNACK does NOT happen if `add_writer_proxy` was never
+    /// called (defensive sanity check for the default reader).
     #[test]
     fn no_pre_emptive_acknack_without_proxy() {
         let reader_guid = Guid::new(
@@ -993,19 +1107,19 @@ mod tests {
             heartbeat_response_delay: Duration::from_millis(200),
             assembler_caps: AssemblerCaps::default(),
         });
-        // Keine Proxies → kein ACKNACK
+        // No proxies → no ACKNACK
         assert!(r.tick(Duration::from_secs(10)).unwrap().is_empty());
     }
 
-    /// Initiale Proxies aus `ReliableReaderConfig.writer_proxies` bekommen
-    /// **kein** automatisches Pre-Emptive — nur via `add_writer_proxy`.
-    /// Das ist konsistent mit der DCPS-Integration: Discovery-Layer ruft
-    /// `add_writer_proxy` auf, sobald SEDP-Match steht.
+    /// Initial proxies from `ReliableReaderConfig.writer_proxies` get
+    /// **no** automatic pre-emptive — only via `add_writer_proxy`.
+    /// This is consistent with the DCPS integration: the discovery layer calls
+    /// `add_writer_proxy` as soon as the SEDP match is established.
     #[test]
     fn initial_proxy_from_config_does_not_send_pre_emptive() {
-        // make_reader() nutzt config.writer_proxies, kein add_writer_proxy
+        // make_reader() uses config.writer_proxies, not add_writer_proxy
         let mut r = make_reader(10);
-        // Vor add: auch nach langem tick kein Pre-Emptive
+        // Before add: no pre-emptive even after a long tick
         assert!(
             r.tick(Duration::from_secs(10)).unwrap().is_empty(),
             "initial proxy from config must not emit Pre-Emptive"
@@ -1014,8 +1128,8 @@ mod tests {
 
     #[test]
     fn pre_emptive_acknack_carries_info_dst() {
-        // Pre-Emptive ACKNACK MUSS in INFO_DST(writer_prefix) gewrappt
-        // sein, sonst verwerfen Cyclone/Fast-DDS die Submessage als
+        // The pre-emptive ACKNACK MUST be wrapped in INFO_DST(writer_prefix),
+        // otherwise Cyclone/Fast-DDS discard the submessage as
         // "not for me" (Spec §8.3.7.6 / §8.3.8.7).
         let reader_guid = Guid::new(
             GuidPrefix::from_bytes([2; 12]),
@@ -1038,8 +1152,8 @@ mod tests {
         let out = r.tick(Duration::from_millis(250)).unwrap();
         assert_eq!(out.len(), 1);
         let parsed = decode_datagram(&out[0]).unwrap();
-        // submessages[0] = INFO_DST (Unknown im Decoder, weil InfoDst
-        // im Decoder nicht ausgepackt wird), [1] = ACKNACK
+        // submessages[0] = INFO_DST (Unknown in the decoder, because InfoDst
+        // is not unpacked by the decoder), [1] = ACKNACK
         assert!(parsed.submessages.len() >= 2, "INFO_DST + ACKNACK");
         match &parsed.submessages[0] {
             ParsedSubmessage::Unknown { id, .. } => assert_eq!(*id, 0x0E),
@@ -1052,7 +1166,11 @@ mod tests {
         let mut r = make_reader(10);
         let rd = r.guid().entity_id;
         let foreign = EntityId::user_writer_with_key([0xFF, 0xFF, 0xFF]);
-        r.handle_heartbeat(&heartbeat(foreign, rd, 1, 3, 1, false), Duration::ZERO);
+        r.handle_heartbeat(
+            p1(),
+            &heartbeat(foreign, rd, 1, 3, 1, false),
+            Duration::ZERO,
+        );
         assert_eq!(r.unknown_src_count(), 1);
         assert!(r.tick(Duration::from_secs(1)).unwrap().is_empty());
     }

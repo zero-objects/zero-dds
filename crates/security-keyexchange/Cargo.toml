@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Ephemeral Diffie-Hellman Key-Agreement (X25519 + P-256-ECDH) fuer DDS-Security 1.1 Authentication-Handshake (Spec §8.3.2)."
+description = "Ephemeral Diffie-Hellman key agreement (X25519 + P-256 ECDH) for the DDS-Security 1.1 authentication handshake (spec §8.3.2)."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-security-keyexchange"
 readme = "README.md"
@@ -21,9 +21,10 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std"]
 std = []
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.3", path = "../security" }
 ring = { workspace = true }

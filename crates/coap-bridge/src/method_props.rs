@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Method-Properties (Idempotency / Safety) nach RFC 7252 §5.8.
+//! Method properties (idempotency / safety) per RFC 7252 §5.8.
 //!
-//! GET ist `safe + idempotent`; PUT, DELETE sind `idempotent`;
-//! POST ist `nicht safe + nicht idempotent`. Diese Properties sind
-//! relevant fuer Caching (§5.6) und Retry-Logik.
+//! GET is `safe + idempotent`; PUT, DELETE are `idempotent`;
+//! POST is `not safe + not idempotent`. These properties are
+//! relevant for caching (§5.6) and retry logic.
 
 use crate::message::CoapCode;
 
 /// Spec §5.8.1 — `is_safe(method)`.
 ///
-/// Eine Method ist "safe" wenn sie keinen Server-State aendert.
-/// Nur GET ist safe.
+/// A method is "safe" if it does not change server state.
+/// Only GET is safe.
 #[must_use]
 pub fn is_safe(method: CoapCode) -> bool {
     method == CoapCode::GET
@@ -20,9 +20,9 @@ pub fn is_safe(method: CoapCode) -> bool {
 
 /// Spec §5.8.x — `is_idempotent(method)`.
 ///
-/// Eine Method ist idempotent wenn N Aufrufe denselben Effekt
-/// haben wie 1 Aufruf. GET, PUT, DELETE sind idempotent;
-/// POST nicht.
+/// A method is idempotent if N invocations have the same effect
+/// as 1 invocation. GET, PUT, DELETE are idempotent;
+/// POST is not.
 #[must_use]
 pub fn is_idempotent(method: CoapCode) -> bool {
     method == CoapCode::GET || method == CoapCode::PUT || method == CoapCode::DELETE
@@ -30,8 +30,8 @@ pub fn is_idempotent(method: CoapCode) -> bool {
 
 /// Spec §5.8 — `is_method(code)`.
 ///
-/// Liefert `true` wenn der Code eine Request-Method ist (Class 0,
-/// Codes 1-31).
+/// Returns `true` if the code is a request method (class 0,
+/// codes 1-31).
 #[must_use]
 pub fn is_method(code: CoapCode) -> bool {
     code == CoapCode::GET

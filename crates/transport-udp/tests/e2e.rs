@@ -1,8 +1,8 @@
 //! W4 E2E-Test: write → UDP → read.
 //!
-//! Verbindet `BestEffortWriter` und `BestEffortReader` ueber zwei
-//! `UdpTransport`-Instanzen auf der Loopback-Schnittstelle und
-//! verifiziert, dass mehrere Datagrams in-order ankommen.
+//! Connects `BestEffortWriter` and `BestEffortReader` over two
+//! `UdpTransport` instances on the loopback interface and
+//! verifies that several datagrams arrive in order.
 
 #![allow(
     clippy::expect_used,
@@ -107,12 +107,12 @@ fn e2e_reader_drops_message_to_other_endpoint() {
     let datagram = writer.write(b"not for us").expect("encode");
     writer_xport.send(&dest, &datagram).expect("send");
 
-    // Unser Reader sieht das Datagram, aber filtert es weg.
+    // Our reader sees the datagram but filters it out.
     let recv = reader_xport.recv().expect("recv");
     let our_reader_obj = BestEffortReader::new(PARTICIPANT_PREFIX, our_reader);
     let samples = our_reader_obj.recv_datagram(&recv.data).expect("decode");
     assert!(
         samples.is_empty(),
-        "Datagram an other_reader darf nicht delivert werden"
+        "datagram must not be delivered to other_reader"
     );
 }

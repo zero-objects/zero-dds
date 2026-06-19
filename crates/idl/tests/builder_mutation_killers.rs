@@ -1,8 +1,8 @@
-//! Mutation-Killer für `crates/idl/src/ast/builder.rs`.
+//! Mutation killers for `crates/idl/src/ast/builder.rs`.
 //!
-//! Adressiert die 65 von cargo-mutants gefundenen ueberlebenden Mutationen,
-//! gruppiert nach Funktion. Strategie: Parsen IDL, dann pattern-matchen
-//! die resultierende Specification.
+//! Addresses the 65 surviving mutations found by cargo-mutants,
+//! grouped by function. Strategy: parse IDL, then pattern-match
+//! the resulting specification.
 
 #![allow(
     clippy::expect_used,
@@ -57,21 +57,21 @@ fn first_typedef(spec: &Specification) -> &TypedefDecl {
 // BuilderError Display (line 41)
 // =====================================================================
 
-/// BuilderError::new ist privat — Display testen wir indirekt durch
-/// einen IDL-Input der einen Builder-Error provoziert.
+/// BuilderError::new is private — we test Display indirectly through
+/// an IDL input that provokes a builder error.
 #[test]
 fn builder_error_display_via_invalid_idl() {
-    // `boolean` constants brauchen TRUE/FALSE als RHS. `42` als bool-
-    // Wert sollte einen Builder-Validation-Error werfen.
+    // `boolean` constants need TRUE/FALSE as the RHS. `42` as a bool
+    // value should throw a builder validation error.
     let res = parse("const boolean B = 42;", &ParserConfig::default());
     if let Err(e) = res {
         let s = format!("{e}");
-        // Display darf nicht leer sein und sollte eine Description enthalten.
+        // Display must not be empty and should contain a description.
         assert!(!s.is_empty(), "error display empty");
         assert!(s.len() > 5, "error display too short: {s}");
     }
-    // Falls der Validator das durchlaesst — auch ok, ist nicht das Ziel
-    // dieses Tests.
+    // If the validator lets that through — also ok, it is not the goal
+    // of this test.
 }
 
 // =====================================================================
@@ -249,8 +249,8 @@ fn const_float_literal() {
 
 #[test]
 fn const_fixed_literal() {
-    // Fixed-Pt-Literal hat `d`-Suffix; const-Decls referenzieren den
-    // typedef-Pfad: `typedef fixed<10,2> Money; const Money M = 12.34d;`.
+    // A fixed-pt literal has a `d` suffix; const decls reference the
+    // typedef path: `typedef fixed<10,2> Money; const Money M = 12.34d;`.
     let s = parse_corba("typedef fixed<10, 2> Money; const Money M = 12.34d;");
     assert_literal(&s, LiteralKind::Fixed);
 }
@@ -292,7 +292,7 @@ fn const_boolean_literal_false() {
 }
 
 // =====================================================================
-// Integer-Type-Keywords (typedef-Pfad triggert integer_from_keywords)
+// Integer type keywords (typedef path triggers integer_from_keywords)
 // =====================================================================
 
 fn assert_typedef_int(spec: &Specification, expected: IntegerType) {
@@ -627,30 +627,29 @@ fn interface_annotation_attached() {
 // 2nd-Welle: 14 weitere Mutation-Killer (Stand 2026-05-01)
 // =====================================================================
 
-/// Display::fmt von BuilderError soll Span + Message liefern.
-/// Faengt `replace fmt -> Ok(default)`.
+/// `Display::fmt` of BuilderError should return span + message.
+/// Catches `replace fmt -> Ok(default)`.
 ///
-/// Wir provozieren einen Builder-Fehler indirekt: ein Const mit Boolean-
-/// Type und Integer-Literal als RHS triggert ggf den Type-Checker. Falls
-/// der Pfad durchgeht, machen wir den Test zu einem No-Op (das ist OK,
-/// solange irgendein Test eine BuilderError-Display-Pfad ausuebt).
+/// We provoke a builder error indirectly: a const with a boolean
+/// type and an integer literal as RHS may trigger the type checker. If
+/// the path passes, we make the test a no-op (that is OK,
+/// as long as some test exercises a BuilderError display path).
 #[test]
 fn builder_error_display_format_includes_span_and_message() {
-    // Direkte Konstruktion via parse: Input das nicht ins Builder-Schema
-    // passt — leeres `module ;` wird vom Parser bereits zurueckgewiesen,
-    // landet als Parse-Fehler. Builder-Fehler sind seltener; eines der
-    // wenigen reproduzierbaren Faelle: `interface I { void op(in attribute X val); };`
-    // ist nicht parsbar (Parse-Fehler), nicht Builder.
+    // Direct construction via parse: input that does not fit the builder
+    // schema — empty `module ;` is already rejected by the parser,
+    // lands as a parse error. Builder errors are rarer; one of the
+    // few reproducible cases: `interface I { void op(in attribute X val); };`
+    // is not parsable (parse error), not a builder error.
     //
-    // Pragmatisch: jede valid-parsing-aber-builder-fehlerhafte Konstruktion
-    // ist seltener als der Test wert ist. Stattdessen testen wir, dass
-    // ein erfolgreicher Build keine BuilderError produziert UND dass der
-    // Display einer manuell-konstruierten Errors wenigstens Substrings
-    // enthaelt.
+    // Pragmatically: any valid-parsing-but-builder-faulty construction
+    // is rarer than the test is worth. Instead we test that
+    // a successful build produces no BuilderError AND that the
+    // Display of a manually-constructed error at least contains substrings.
     //
-    // BuilderError::new ist privat, aber wir koennen die Display-Logik
-    // ueber die `zerodds_idl::Error::AstBuild`-Variante testen — die nutzt den
-    // gleichen Display-Pfad indirekt.
+    // BuilderError::new is private, but we can test the display logic
+    // via the `zerodds_idl::Error::AstBuild` variant — it uses the
+    // same display path indirectly.
     use zerodds_idl::Error;
     let parse_result = parse(
         "interface I; interface I; interface I;",
@@ -659,15 +658,15 @@ fn builder_error_display_format_includes_span_and_message() {
     if let Err(Error::AstBuild(e)) = parse_result {
         let s = format!("{e}");
         assert!(
-            s.contains("AST-Builder-Fehler"),
+            s.contains("AST builder error"),
             "format must use prefix: {s}"
         );
     }
 }
 
-/// `local interface Foo;` Forward-Decl muss `kind=Local` setzen.
-/// Faengt `==` -> `!=` in build_interface_forward (line 1327): mit `!=`
-/// wird das erste Nicht-interface_kind-Kind gefunden → wrong build.
+/// `local interface Foo;` forward-decl must set `kind=Local`.
+/// Catches `==` -> `!=` in build_interface_forward (line 1327): with `!=`
+/// the first non-interface_kind child is found → wrong build.
 #[test]
 fn interface_forward_local_kind_detected() {
     let s = parse_corba("local interface Foo;");
@@ -697,20 +696,17 @@ fn interface_forward_abstract_kind_detected() {
     panic!("forward interface not found");
 }
 
-/// Scoped-Name `A::B::C` (NICHT mit fuehrendem `::`).
-/// Faengt `parts.is_empty()` -> `true` Mutation in collect_scoped_name_parts:
-/// mit always-true wuerde JEDER `::` `absolute = true` setzen, auch im
-/// Tail. Test asserts `absolute == false` fuer `A::B::C`.
+/// Scoped name `A::B::C` (NOT with a leading `::`).
+/// Catches the `parts.is_empty()` -> `true` mutation in collect_scoped_name_parts:
+/// with always-true, EVERY `::` would set `absolute = true`, even in the
+/// tail. The test asserts `absolute == false` for `A::B::C`.
 #[test]
 fn scoped_name_non_leading_absolute_false() {
     let src = "module A { module B { struct C { long x; }; }; }; typedef A::B::C Alias;";
     let s = parse_ok(src);
     let typedef = first_typedef(&s);
     if let TypeSpec::Scoped(name) = &typedef.type_spec {
-        assert!(
-            !name.absolute,
-            "A::B::C ist NICHT absolut, got absolute=true"
-        );
+        assert!(!name.absolute, "A::B::C is NOT absolute, got absolute=true");
         assert_eq!(name.parts.len(), 3);
     } else {
         panic!("expected scoped");
@@ -718,7 +714,7 @@ fn scoped_name_non_leading_absolute_false() {
 }
 
 /// Bare scoped-name `Alias` (single ident, no separator).
-/// Faengt `delete match arm Token(Ident)` in collect_scoped_name_parts.
+/// Catches `delete match arm Token(Ident)` in collect_scoped_name_parts.
 #[test]
 fn scoped_name_single_ident_collected() {
     let src = "struct S { long x; }; typedef S Alias;";
@@ -732,17 +728,17 @@ fn scoped_name_single_ident_collected() {
     }
 }
 
-/// Valuetype mit value_header + direkten ValueElements.
-/// Faengt `&&` -> `||` in build_value_def (line 2089): mit `||` wuerde
-/// der value_header selbst auch als element-Container kollektiert →
-/// Element-Anzahl waere erhoeht oder es gaebe Doppel-Elemente.
+/// Valuetype with value_header + direct ValueElements.
+/// Catches `&&` -> `||` in build_value_def (line 2089): with `||`,
+/// the value_header itself would also be collected as an element container →
+/// the element count would be inflated or there would be double elements.
 #[test]
 fn valuetype_element_count_excludes_header() {
     let src = "valuetype V { public long x; public long y; };";
     let s = parse_corba(src);
     for d in &s.definitions {
         if let Definition::ValueDef(v) = d {
-            // 2 state members exakt — header darf nicht als Element zaehlen.
+            // exactly 2 state members — the header must not count as an element.
             assert_eq!(
                 v.elements.len(),
                 2,
@@ -755,8 +751,8 @@ fn valuetype_element_count_excludes_header() {
     panic!("valuetype not found");
 }
 
-/// Init-Dcl Param-Filter — nur ID_INIT_PARAM_DCL kommt durch.
-/// Faengt `==` -> `!=` in build_init_dcl (line 2180).
+/// Init-dcl param filter — only ID_INIT_PARAM_DCL passes through.
+/// Catches `==` -> `!=` in build_init_dcl (line 2180).
 #[test]
 fn init_dcl_params_filtered_correctly() {
     let src = "valuetype V { factory init(in long a, in long b); };";
@@ -774,8 +770,8 @@ fn init_dcl_params_filtered_correctly() {
     panic!("init_dcl not found");
 }
 
-/// Init-Dcl Raises-Filter — nur ID_SCOPED_NAME kommt durch.
-/// Faengt `==` -> `!=` in build_init_dcl (line 2190).
+/// Init-dcl raises filter — only ID_SCOPED_NAME passes through.
+/// Catches `==` -> `!=` in build_init_dcl (line 2190).
 #[test]
 fn init_dcl_raises_filtered_correctly() {
     let src = "exception E1 {}; exception E2 {}; \
@@ -796,8 +792,8 @@ fn init_dcl_raises_filtered_correctly() {
     panic!("init_dcl not found");
 }
 
-/// Supports-Liste auf valuetype — Filter-`==` korrekt.
-/// Faengt `==` -> `!=` in collect_supported_interfaces (line 2339).
+/// Supports list on a valuetype — filter `==` correct.
+/// Catches `==` -> `!=` in collect_supported_interfaces (line 2339).
 #[test]
 fn valuetype_supports_count_correct() {
     let src = "interface I1 {}; interface I2 {}; \
@@ -816,8 +812,8 @@ fn valuetype_supports_count_correct() {
     panic!("valuetype with supports not found");
 }
 
-/// `@local component Foo {};` muss Annotation auf der Component setzen.
-/// Faengt `set_component_annotations -> ()` (line 2935).
+/// `@local component Foo {};` must set the annotation on the component.
+/// Catches `set_component_annotations -> ()` (line 2935).
 #[test]
 fn component_annotation_attached() {
     let src = "@nested component Foo {};";
@@ -834,8 +830,8 @@ fn component_annotation_attached() {
     panic!("component not found");
 }
 
-/// `@nested home Foo manages C {};` — Home-Annotation.
-/// Faengt `set_home_annotations -> ()` (line 2941).
+/// `@nested home Foo manages C {};` — home annotation.
+/// Catches `set_home_annotations -> ()` (line 2941).
 #[test]
 fn home_annotation_attached() {
     let src = "component C {}; @nested home Foo manages C {};";
@@ -852,8 +848,8 @@ fn home_annotation_attached() {
     panic!("home not found");
 }
 
-/// `@nested eventtype Foo {};` — Event-Annotation.
-/// Faengt `set_event_annotations -> ()` (line 2947).
+/// `@nested eventtype Foo {};` — event annotation.
+/// Catches `set_event_annotations -> ()` (line 2947).
 #[test]
 fn event_annotation_attached() {
     let src = "@nested eventtype Foo { public long x; };";
@@ -870,12 +866,12 @@ fn event_annotation_attached() {
     panic!("eventtype not found");
 }
 
-/// Modul-Nesting-Cap: depth=MAX (=256) bleibt akzeptiert, MAX+1 fail.
-/// Faengt `>` -> `==`/`>=` Boundary (line 211) und `+` -> `*` Increment
-/// (lines 239, 309) — mit `*` waere depth immer 0, Cap niemals fired.
+/// Module nesting cap: depth=MAX (=256) stays accepted, MAX+1 fails.
+/// Catches `>` -> `==`/`>=` boundary (line 211) and `+` -> `*` increment
+/// (lines 239, 309) — with `*`, depth would always be 0, the cap never fired.
 #[test]
 fn module_nesting_at_cap_accepted() {
-    // Re-Export-Pfad: builder-modul ist pub.
+    // Re-export path: the builder module is pub.
     use zerodds_idl::ast::builder::MAX_MODULE_NESTING_DEPTH;
     let depth = MAX_MODULE_NESTING_DEPTH;
     let mut src = String::new();
@@ -886,8 +882,8 @@ fn module_nesting_at_cap_accepted() {
         src.push_str("}; ");
     }
     let res = parse(&src, &ParserConfig::default());
-    // Erwartet: kein Builder-error wegen nesting; entweder ok oder anderer
-    // Fehler (Engine-recursion etc).
+    // Expected: no builder error due to nesting; either ok or another
+    // error (engine recursion etc).
     if let Err(zerodds_idl::Error::AstBuild(e)) = &res {
         assert!(
             !e.message.contains("nesting exceeds"),
@@ -898,7 +894,7 @@ fn module_nesting_at_cap_accepted() {
 
 #[test]
 fn module_nesting_over_cap_rejected() {
-    // Re-Export-Pfad: builder-modul ist pub.
+    // Re-export path: the builder module is pub.
     use zerodds_idl::ast::builder::MAX_MODULE_NESTING_DEPTH;
     let depth = MAX_MODULE_NESTING_DEPTH + 1;
     let mut src = String::new();
@@ -915,22 +911,22 @@ fn module_nesting_over_cap_rejected() {
             "depth=MAX+1 must trigger nesting cap, got: {e:?}"
         );
     } else {
-        // Akzeptiert auch andere Fehler (Stack overflow im Parser ist
-        // moeglich), aber dann ist die Mutation nicht caught.
-        // Schluss-Logik: bei Erfolg ist Mutation defintiv nicht caught,
-        // also panic.
+        // Also accepts other errors (a stack overflow in the parser is
+        // possible), but then the mutation is not caught.
+        // Final logic: on success the mutation is definitely not caught,
+        // so panic.
         assert!(res.is_err(), "depth=MAX+1 must error somehow");
     }
 }
 
 // =====================================================================
-// 3rd-Welle: präzisere Tests gegen die noch ueberlebenden Mutationen
+// 3rd wave: more precise tests against the still-surviving mutations
 // =====================================================================
 
-/// `component Foo supports I1, I2 {};` triggert collect_supported_interfaces.
-/// Faengt `==` -> `!=` Mutation in Zeile 2339 — die NICHT vom valuetype-
-/// Pfad ausgeloest wird, weil valuetype-supports durch
-/// build_value_inheritance_spec geht (separate Filter-Stelle).
+/// `component Foo supports I1, I2 {};` triggers collect_supported_interfaces.
+/// Catches the `==` -> `!=` mutation on line 2339 — which is NOT triggered by the
+/// valuetype path, because valuetype-supports goes through
+/// build_value_inheritance_spec (a separate filter site).
 #[test]
 fn component_supports_count_via_collect_supported_interfaces() {
     let src = "interface I1 {}; interface I2 {}; \
@@ -952,14 +948,14 @@ fn component_supports_count_via_collect_supported_interfaces() {
     panic!("component not found");
 }
 
-/// Template-Modul-Nesting-Cap.
-/// Faengt `>` -> `==`/`>=` (line 2726) und `+` -> `*` Increment auf Zeile 309.
+/// Template-module nesting cap.
+/// Catches `>` -> `==`/`>=` (line 2726) and `+` -> `*` increment on line 309.
 #[test]
 fn template_module_nesting_at_cap_accepted() {
     use zerodds_idl::ast::builder::MAX_MODULE_NESTING_DEPTH;
     let depth = MAX_MODULE_NESTING_DEPTH;
-    // Template-Modul-Verschachtelung: aussen ein Template-Modul, dann
-    // depth-1 reine Module darin.
+    // Template-module nesting: an outer template module, then
+    // depth-1 plain modules inside it.
     let mut src = String::from("module M0<typename T> { ");
     for i in 1..depth {
         src.push_str(&format!("module M{i} {{ "));
@@ -1002,22 +998,22 @@ fn template_module_nesting_over_cap_rejected() {
     }
 }
 
-/// Display::fmt — direkter Test ueber publike `BuilderError::span`-
-/// Konstruktion.
+/// `Display::fmt` — direct test via the public `BuilderError::span`
+/// construction.
 ///
-/// Triggern eines Builder-Fehlers: `valuetype` mit `truncatable` ohne
-/// inheritance — Builder waers Validation-Fail. Falls der Build durch
-/// dann ist nichts zu testen; sonst muss Display ein Format mit
-/// "AST-Builder-Fehler @ <span>: <message>" liefern.
+/// Triggering a builder error: `valuetype` with `truncatable` without
+/// inheritance — a builder validation fail. If the build passes
+/// then there is nothing to test; otherwise Display must return a format with
+/// "AST builder error @ <span>: <message>".
 #[test]
 fn builder_error_display_real_format() {
     use zerodds_idl::Error as IdlError;
-    // Provoziere AstBuild-Fehler: const_dcl mit unsupported const_type
-    // (falls findbar). Pragmatisch: nehmen wir `valuetype X` ohne
-    // body (viele Vendoren tolerieren das nicht; Builder pruefts).
+    // Provoke an AstBuild error: const_dcl with an unsupported const_type
+    // (if findable). Pragmatically: take `valuetype X` without a
+    // body (many vendors do not tolerate that; the builder checks it).
     let test_inputs = [
         // various inputs that may produce AstBuild errors
-        "valuetype X : truncatable {};", // truncatable ohne base
+        "valuetype X : truncatable {};", // truncatable without a base
         "interface I; interface I { void op() context (\"x\"); };",
         "module M { typedef int8 X; typedef int8 X; };", // double typedef
     ];
@@ -1025,8 +1021,8 @@ fn builder_error_display_real_format() {
         if let Err(IdlError::AstBuild(e)) = parse(src, &ParserConfig::full_4_2()) {
             let s = format!("{e}");
             assert!(
-                s.contains("AST-Builder-Fehler"),
-                "Display must include 'AST-Builder-Fehler' prefix, got: {s}"
+                s.contains("AST builder error"),
+                "Display must include 'AST builder error' prefix, got: {s}"
             );
             assert!(
                 s.contains(':'),
@@ -1035,9 +1031,70 @@ fn builder_error_display_real_format() {
             return;
         }
     }
-    // Wenn keiner der Inputs AstBuild produziert, ist der Test ein No-Op
-    // — Display-fmt wird durch andere Tests indirekt geuebt (z.B.
-    // `module_nesting_over_cap_rejected` produziert AstBuild und
-    // `format!("{e:?}")` ruft Debug, nicht Display, aber es gibt im
-    // Workspace genug Tests die Display nutzen).
+    // If none of the inputs produce AstBuild, the test is a no-op
+    // — Display::fmt is exercised indirectly by other tests (e.g.
+    // `module_nesting_over_cap_rejected` produces AstBuild and
+    // `format!("{e:?}")` calls Debug, not Display, but there are
+    // enough tests in the workspace that use Display).
+}
+
+/// Root regression: `native X;` (§7.4.1.3 Rule 61) must flow through to the AST
+/// — not just be recognized/gated. `corba_native` is
+/// active by default; historically `build_type_dcl` broke off hard here, because
+/// `TypeDecl` had no `Native` variant and not a single test
+/// checked `parse()`→AST (instead of only recognition).
+#[test]
+fn native_dcl_builds_ast_and_resolves() {
+    // The default profile suffices — corba_native is default-on.
+    let spec = parse_ok("native Cookie;");
+    assert_eq!(spec.definitions.len(), 1);
+    match &spec.definitions[0] {
+        Definition::Type(TypeDecl::Native(n)) => assert_eq!(n.name.text, "Cookie"),
+        other => panic!("expected TypeDecl::Native, got {other:?}"),
+    }
+    // Referenceable: a native type as a member type resolves as a type symbol.
+    let spec2 = parse_corba("native Handle; struct S { Handle h; };");
+    assert_eq!(spec2.definitions.len(), 2);
+}
+
+/// Root regression: `Object` as a type (§7.4.6.3 Rule 117) must flow through to the AST.
+/// Historically `build_base_type_spec` broke off here
+/// ("base_type_spec unrecognized"), although the grammar recognizes the keyword.
+/// Modeled as the scoped name `Object` (like the inheritance builder).
+#[test]
+fn object_base_type_builds_ast() {
+    for src in [
+        "typedef Object Ref;",
+        "interface S { void op(in Object o); };",
+        "interface S { attribute Object peer; };",
+        "struct S { sequence<Object> refs; };",
+    ] {
+        let spec = parse_corba(src);
+        assert!(
+            !spec.definitions.is_empty(),
+            "Object type should parse: {src}"
+        );
+    }
+}
+
+/// Root regression: the `context (...)` clause (§7.4.6.3 Rule 123/124) must flow
+/// through to the AST. Historically `build_export` broke with "export without
+/// alt", because the op_dcl is nested in the `op_with_context` branch and
+/// was not found as a direct export child.
+#[test]
+fn op_with_context_builds_ast() {
+    let spec = parse_corba(r#"interface S { void op() context ("a", "b.c"); };"#);
+    let mut found = false;
+    for def in &spec.definitions {
+        if let Definition::Interface(InterfaceDcl::Def(i)) = def {
+            for e in &i.exports {
+                if let Export::Op(op) = e {
+                    assert_eq!(op.name.text, "op");
+                    assert_eq!(op.context, vec!["a".to_string(), "b.c".to_string()]);
+                    found = true;
+                }
+            }
+        }
+    }
+    assert!(found, "op with context clause should parse as Export::Op");
 }

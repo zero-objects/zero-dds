@@ -3,57 +3,57 @@
 
 //! Block-Wise Transfer — RFC 7959.
 //!
-//! Spec §2: Block-Option (Block1 / Block2) erlaubt segmentierten
-//! Payload-Transfer. Encoding eines Block-Wertes:
+//! Spec §2: the block option (Block1 / Block2) allows segmented
+//! payload transfer. Encoding of a block value:
 //!
 //! ```text
 //!   NUM (4..20 bit) || M (1 bit) || SZX (3 bit)
 //! ```
 //!
-//! `SZX` codiert die Block-Size als `2^(SZX+4)` (16 bytes..1024 bytes).
-//! `M` = "more"-Flag.
+//! `SZX` encodes the block size as `2^(SZX+4)` (16 bytes..1024 bytes).
+//! `M` = "more" flag.
 
 use alloc::vec::Vec;
 
-/// Block-Option-Number (RFC 7959 §2.1).
+/// Block option number (RFC 7959 §2.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
 pub enum BlockOption {
-    /// `Block1` (Option-Number 27) — Transfer im Request-Body.
+    /// `Block1` (option number 27) — transfer in the request body.
     Block1 = 27,
-    /// `Block2` (Option-Number 23) — Transfer im Response-Body.
+    /// `Block2` (option number 23) — transfer in the response body.
     Block2 = 23,
 }
 
-/// Block-Wert (Spec §2.2).
+/// Block value (Spec §2.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlockValue {
-    /// Block-Number (NUM).
+    /// Block number (NUM).
     pub num: u32,
-    /// "More"-Flag.
+    /// "More" flag.
     pub more: bool,
-    /// `SZX` (0..=6, 7 reserved); Spec verbietet 7.
+    /// `SZX` (0..=6, 7 reserved); the spec forbids 7.
     pub szx: u8,
 }
 
-/// Block-Codec-Fehler.
+/// Block codec error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockError {
-    /// `SZX = 7` ist reserved.
+    /// `SZX = 7` is reserved.
     ReservedSzx,
     /// `NUM > 2^20 - 1`.
     NumTooLarge,
-    /// Encoded value uebersteigt 3 Bytes.
+    /// Encoded value exceeds 3 bytes.
     EncodingTooLong,
-    /// Decode: 0 oder mehr als 3 Bytes.
+    /// Decode: 0 or more than 3 bytes.
     BadEncodingLength,
 }
 
 impl BlockValue {
-    /// Block-Size in Bytes (Spec §2.2: 2^(SZX+4)).
+    /// Block size in bytes (Spec §2.2: 2^(SZX+4)).
     ///
     /// # Errors
-    /// `ReservedSzx` wenn `szx == 7`.
+    /// `ReservedSzx` if `szx == 7`.
     pub fn block_size(&self) -> Result<usize, BlockError> {
         if self.szx > 6 {
             return Err(BlockError::ReservedSzx);
@@ -61,7 +61,7 @@ impl BlockValue {
         Ok(1usize << (self.szx + 4))
     }
 
-    /// Encode zu 1..=3 Bytes. Spec §2.2.
+    /// Encode to 1..=3 bytes. Spec §2.2.
     ///
     /// # Errors
     /// `ReservedSzx` / `NumTooLarge`.
@@ -87,7 +87,7 @@ impl BlockValue {
         Ok(out)
     }
 
-    /// Decode von 1..=3 Bytes.
+    /// Decode from 1..=3 bytes.
     ///
     /// # Errors
     /// `BadEncodingLength` / `ReservedSzx`.
@@ -108,21 +108,21 @@ impl BlockValue {
     }
 }
 
-/// Reassembler — sammelt Block-Slices in der korrekten Reihenfolge.
+/// Reassembler — collects block slices in the correct order.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BlockReassembler {
-    /// Erwartete Block-Size (Bytes).
+    /// Expected block size (bytes).
     block_size: usize,
-    /// Akkumuliertes Payload.
+    /// Accumulated payload.
     buf: Vec<u8>,
-    /// Naechste erwartete `num`.
+    /// Next expected `num`.
     next_num: u32,
-    /// `true` wenn der letzte Block (`!more`) angekommen ist.
+    /// `true` when the last block (`!more`) has arrived.
     complete: bool,
 }
 
 impl BlockReassembler {
-    /// Konstruktor — fixiert die Block-Size beim ersten Block.
+    /// Constructor — fixes the block size at the first block.
     #[must_use]
     pub fn new(block_size: usize) -> Self {
         Self {
@@ -133,12 +133,12 @@ impl BlockReassembler {
         }
     }
 
-    /// Akzeptiere einen Block-Slice.
+    /// Accept a block slice.
     ///
     /// # Errors
-    /// Static-String wenn die Block-Sequenz inkonsistent ist (falsche
-    /// Reihenfolge, Block-Size-Wechsel mit Daten, unerwartete more-
-    /// Flag-Kombination).
+    /// Static string if the block sequence is inconsistent (wrong
+    /// order, block-size change with data, unexpected more-flag
+    /// combination).
     pub fn accept(&mut self, value: BlockValue, payload: &[u8]) -> Result<(), &'static str> {
         if self.complete {
             return Err("reassembler already complete");
@@ -148,7 +148,7 @@ impl BlockReassembler {
             return Err("block out of order");
         }
         if size != self.block_size {
-            // Spec §2.2 erlaubt SZX-Verkleinerung beim ersten Block.
+            // Spec §2.2 allows shrinking SZX at the first block.
             if self.next_num == 0 {
                 self.block_size = size;
             } else {
@@ -169,25 +169,25 @@ impl BlockReassembler {
         Ok(())
     }
 
-    /// `true` wenn alle Blocks empfangen.
+    /// `true` when all blocks have been received.
     #[must_use]
     pub fn is_complete(&self) -> bool {
         self.complete
     }
 
-    /// Entnimmt das gesammelte Payload.
+    /// Takes out the collected payload.
     #[must_use]
     pub fn into_payload(self) -> Vec<u8> {
         self.buf
     }
 
-    /// Aktuelle Length.
+    /// Current length.
     #[must_use]
     pub fn len(&self) -> usize {
         self.buf.len()
     }
 
-    /// `true` wenn keine Bytes empfangen.
+    /// `true` when no bytes have been received.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.buf.is_empty()

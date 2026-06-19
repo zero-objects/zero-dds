@@ -3,12 +3,12 @@
 
 //! GIOP Version (Spec §15.4.1).
 
-/// GIOP-Version (`octet major; octet minor`).
+/// GIOP version (`octet major; octet minor`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Version {
-    /// Major-Version (typisch `1`).
+    /// Major version (typically `1`).
     pub major: u8,
-    /// Minor-Version (`0`, `1`, `2`).
+    /// Minor version (`0`, `1`, `2`).
     pub minor: u8,
 }
 
@@ -20,50 +20,50 @@ impl Version {
     /// GIOP 1.2 — Spec §15.4.1.
     pub const V1_2: Self = Self { major: 1, minor: 2 };
 
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new(major: u8, minor: u8) -> Self {
         Self { major, minor }
     }
 
-    /// `true` wenn die Version Fragment-Messages unterstuetzt
-    /// (Spec §15.4.9: ab GIOP 1.1; in 1.1 nur Request+Reply, in 1.2
-    /// alle Messages).
+    /// `true` when the version supports fragment messages
+    /// (Spec §15.4.9: from GIOP 1.1; in 1.1 only Request+Reply, in 1.2
+    /// all messages).
     #[must_use]
     pub const fn supports_fragments(self) -> bool {
         self.is_at_least(1, 1)
     }
 
-    /// `true` wenn Fragment-Messages fuer **alle** Message-Types
-    /// erlaubt sind (Spec §15.4.9: ab GIOP 1.2).
+    /// `true` when fragment messages are allowed for **all** message
+    /// types (Spec §15.4.9: from GIOP 1.2).
     #[must_use]
     pub const fn supports_universal_fragments(self) -> bool {
         self.is_at_least(1, 2)
     }
 
-    /// `true` wenn das `flags`-Octet (statt `byte_order`) im Header
-    /// steht (Spec §15.4.1: ab GIOP 1.1).
+    /// `true` when the `flags` octet (instead of `byte_order`) is
+    /// present in the header (Spec §15.4.1: from GIOP 1.1).
     #[must_use]
     pub const fn uses_flags_octet(self) -> bool {
         self.is_at_least(1, 1)
     }
 
-    /// `true` wenn der Request/Reply-Header das GIOP-1.2-Layout
-    /// nutzt (`request_id` zuerst, `service_context` zuletzt,
-    /// `TargetAddress` statt `object_key`).
+    /// `true` when the Request/Reply header uses the GIOP 1.2 layout
+    /// (`request_id` first, `service_context` last, `TargetAddress`
+    /// instead of `object_key`).
     #[must_use]
     pub const fn uses_v1_2_request_layout(self) -> bool {
         self.is_at_least(1, 2)
     }
 
-    /// `true` wenn Bidirectional-GIOP unterstuetzt ist (Spec §15.9:
-    /// ab GIOP 1.2 mit `BiDirIIOPServiceContext`).
+    /// `true` when bidirectional GIOP is supported (Spec §15.9:
+    /// from GIOP 1.2 with `BiDirIIOPServiceContext`).
     #[must_use]
     pub const fn supports_bidirectional(self) -> bool {
         self.is_at_least(1, 2)
     }
 
-    /// const-fn-faehiger Versions-Vergleich.
+    /// const-fn-capable version comparison.
     #[must_use]
     pub const fn is_at_least(self, major: u8, minor: u8) -> bool {
         if self.major > major {

@@ -1,11 +1,11 @@
-//! Integration-Tests fuer C2.2-b: Listener-Slot + Bubble-Up.
+//! Integration tests for C2.2-b: listener slot + bubble-up.
 //!
-//! Testet das Zusammenspiel der `set_listener`/`get_listener`-API
-//! mit der `notify_data_arrived`/`poll_*_matched`-Hot-Path-
-//! Verdrahtung. Spec §2.2.4.2.3 + §2.2.2.{2,3,4,5}.x.
+//! Tests the interplay of the `set_listener`/`get_listener` API
+//! with the `notify_data_arrived`/`poll_*_matched` hot-path
+//! wiring. Spec §2.2.4.2.3 + §2.2.2.{2,3,4,5}.x.
 //!
-//! Diese Tests laufen alle **offline** (kein UDP-Bind) — der
-//! Listener-Pfad ist vom Transport entkoppelt.
+//! These tests all run **offline** (no UDP bind) — the
+//! listener path is decoupled from the transport.
 
 #![allow(
     clippy::expect_used,
@@ -40,7 +40,7 @@ use zerodds_dcps::status::{
 use zerodds_dcps::*;
 
 // ============================================================================
-// Test-Doubles — atomare Counter pro Callback.
+// Test doubles — atomic counter per callback.
 // ============================================================================
 
 #[derive(Default)]
@@ -197,7 +197,7 @@ fn mk_setup() -> (DomainParticipant, Topic<RawBytes>, Publisher, Subscriber) {
 }
 
 // ============================================================================
-// API-Form: set_listener / get_listener auf jeder Entity.
+// API form: set_listener / get_listener on every entity.
 // ============================================================================
 
 #[test]
@@ -263,7 +263,7 @@ fn datareader_set_get_listener_roundtrip() {
 }
 
 // ============================================================================
-// Hot-Path: data_available + data_on_readers durch __push_raw.
+// Hot path: data_available + data_on_readers via __push_raw.
 // ============================================================================
 
 #[test]
@@ -290,8 +290,8 @@ fn push_raw_fires_on_data_on_readers_at_subscriber() {
 
     r.__push_raw(vec![1, 2, 3]).unwrap();
     assert_eq!(sc.on_readers.load(Ordering::Relaxed), 1);
-    // data_available bubblet ebenfalls — Reader hat keinen Listener,
-    // Subscriber hat ANY-Mask, also fuert sub.on_data_available auch.
+    // data_available bubbles up too — the reader has no listener,
+    // the subscriber has the ANY mask, so sub.on_data_available fires too.
     assert_eq!(sc.avail.load(Ordering::Relaxed), 1);
 }
 
@@ -317,7 +317,7 @@ fn push_raw_with_zero_mask_at_reader_bubbles_to_subscriber() {
         .unwrap();
     let rc = Arc::new(ReaderCounters::default());
     let sc = Arc::new(SubscriberCounters::default());
-    r.set_listener(Some(rc.clone()), 0); // Mask 0 → kein Bit konsumiert.
+    r.set_listener(Some(rc.clone()), 0); // Mask 0 → no bit consumed.
     subr.set_listener(Some(sc.clone()), bits::ANY);
 
     r.__push_raw(vec![1]).unwrap();
@@ -337,7 +337,7 @@ fn push_raw_with_only_data_available_bit_does_not_call_reader_for_others() {
 
     r.__push_raw(vec![1]).unwrap();
     assert_eq!(rc.avail.load(Ordering::Relaxed), 1);
-    // Andere Bits (sub_matched) bleiben 0, weil Mask sie nicht abdeckt.
+    // Other bits (sub_matched) stay 0, because the mask doesn't cover them.
     assert_eq!(rc.sub_matched.load(Ordering::Relaxed), 0);
 }
 
@@ -347,7 +347,7 @@ fn no_listener_set_anywhere_is_safe() {
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
         .unwrap();
-    // Keine Listener auf irgendeiner Stufe — push darf nicht panicken.
+    // No listeners at any stage — push must not panic.
     r.__push_raw(vec![1]).unwrap();
 }
 
@@ -367,34 +367,34 @@ fn multi_push_increments_listener_counter() {
 }
 
 // ============================================================================
-// data_on_readers konsumiert Subscriber-Stage; data_available bubblet
-// trotzdem zur Reader-Stage (separate Bits).
+// data_on_readers consumes the subscriber stage; data_available bubbles
+// up to the reader stage anyway (separate bits).
 // ============================================================================
 
 #[test]
 fn data_available_independent_from_data_on_readers() {
-    // Reader hat NUR data_on_readers in der Mask (was unsinnig waere,
-    // weil das ein Subscriber-Status ist) — dann bubblet data_available
-    // weiter zum Subscriber.
+    // The reader has ONLY data_on_readers in its mask (which would be
+    // nonsensical, since that is a subscriber status) — then data_available
+    // bubbles up to the subscriber.
     let (_, t, _, subr) = mk_setup();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
         .unwrap();
     let rc = Arc::new(ReaderCounters::default());
     let sc = Arc::new(SubscriberCounters::default());
-    r.set_listener(Some(rc.clone()), bits::DATA_ON_READERS); // unueblich
+    r.set_listener(Some(rc.clone()), bits::DATA_ON_READERS); // unusual
     subr.set_listener(Some(sc.clone()), bits::ANY);
 
     r.__push_raw(vec![1]).unwrap();
-    // Reader hatte das DATA_AVAILABLE-Bit nicht → Subscriber empfaengt
-    // es.
+    // The reader did not have the DATA_AVAILABLE bit → the subscriber
+    // receives it.
     assert_eq!(rc.avail.load(Ordering::Relaxed), 0);
     assert_eq!(sc.avail.load(Ordering::Relaxed), 1);
 }
 
 // ============================================================================
-// Listener-Drop-Race: Listener wird waehrend des Hot-Paths
-// ueberschrieben. Wir testen, dass das atomar passiert (kein Crash).
+// Listener-drop race: the listener is overwritten during the hot path.
+// We test that this happens atomically (no crash).
 // ============================================================================
 
 #[test]
@@ -408,14 +408,14 @@ fn listener_replacement_during_dispatch_is_safe() {
     r.__push_raw(vec![1]).unwrap();
     assert_eq!(first.avail.load(Ordering::Relaxed), 1);
 
-    // Listener austauschen.
+    // Swap the listener.
     let second = Arc::new(ReaderCounters::default());
     r.set_listener(Some(second.clone()), bits::ANY);
     r.__push_raw(vec![1]).unwrap();
-    assert_eq!(first.avail.load(Ordering::Relaxed), 1); // unveraendert
+    assert_eq!(first.avail.load(Ordering::Relaxed), 1); // unchanged
     assert_eq!(second.avail.load(Ordering::Relaxed), 1);
 
-    // Listener entfernen.
+    // Remove the listener.
     r.set_listener(None, bits::NONE);
     r.__push_raw(vec![1]).unwrap();
     assert_eq!(first.avail.load(Ordering::Relaxed), 1);
@@ -423,8 +423,8 @@ fn listener_replacement_during_dispatch_is_safe() {
 }
 
 // ============================================================================
-// Bubble-Up Stop-on-Hit: wenn Reader das Bit konsumiert, bubblet es
-// nicht weiter.
+// Bubble-up stop-on-hit: if the reader consumes the bit, it does not
+// bubble up further.
 // ============================================================================
 
 #[test]
@@ -442,11 +442,11 @@ fn data_available_consumed_at_reader_does_not_bubble() {
 
     r.__push_raw(vec![1]).unwrap();
     assert_eq!(rc.avail.load(Ordering::Relaxed), 1);
-    // data_available wurde am Reader konsumiert, bubblet nicht.
+    // data_available was consumed at the reader, does not bubble up.
     assert_eq!(sc.avail.load(Ordering::Relaxed), 0);
     assert_eq!(pc.avail.load(Ordering::Relaxed), 0);
-    // ABER: data_on_readers ist subscriber-only, hat keinen Reader-
-    // Stage — wird beim Subscriber konsumiert.
+    // BUT: data_on_readers is subscriber-only, has no reader
+    // stage — it is consumed at the subscriber.
     assert_eq!(sc.on_readers.load(Ordering::Relaxed), 1);
     assert_eq!(pc.on_readers.load(Ordering::Relaxed), 0);
 }
@@ -466,7 +466,7 @@ fn topic_listener_can_be_attached_and_detached() {
 }
 
 // ============================================================================
-// Listener-Replacement bei Subscriber + Participant.
+// Listener replacement at subscriber + participant.
 // ============================================================================
 
 #[test]
@@ -505,8 +505,8 @@ fn participant_listener_replacement_works() {
 }
 
 // ============================================================================
-// Mixed: Reader + Subscriber + Participant, jeweils unterschiedliche
-// Bits, jeweils nur ein Treffer pro Event.
+// Mixed: Reader + Subscriber + Participant, each with different
+// bits, only one hit per event.
 // ============================================================================
 
 #[test]
@@ -519,8 +519,8 @@ fn three_stage_chain_each_gets_their_bit() {
     let sc = Arc::new(SubscriberCounters::default());
     let pc = Arc::new(ParticipantCounters::default());
 
-    // Reader macht NUR data_available; Subscriber NUR data_on_readers;
-    // Participant ALL.
+    // Reader does ONLY data_available; subscriber ONLY data_on_readers;
+    // participant ALL.
     r.set_listener(Some(rc.clone()), bits::DATA_AVAILABLE);
     subr.set_listener(Some(sc.clone()), bits::DATA_ON_READERS);
     p.set_listener(Some(pc.clone()), bits::ANY);
@@ -528,14 +528,14 @@ fn three_stage_chain_each_gets_their_bit() {
     r.__push_raw(vec![1]).unwrap();
     assert_eq!(rc.avail.load(Ordering::Relaxed), 1);
     assert_eq!(sc.on_readers.load(Ordering::Relaxed), 1);
-    // Beide Events wurden auf den engeren Stufen konsumiert; der
-    // Participant darf nichts gesehen haben.
+    // Both events were consumed at the narrower stages; the
+    // participant must not have seen anything.
     assert_eq!(pc.avail.load(Ordering::Relaxed), 0);
     assert_eq!(pc.on_readers.load(Ordering::Relaxed), 0);
 }
 
 // ============================================================================
-// Panic in Reader-Listener crasht den Push nicht.
+// A panic in the reader listener does not crash the push.
 // ============================================================================
 
 #[test]
@@ -551,10 +551,10 @@ fn panicking_listener_does_not_break_push() {
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
         .unwrap();
     r.set_listener(Some(Arc::new(Panicky)), bits::ANY);
-    // Wenn der Panic durchschluepft, kippt der Test.
+    // If the panic slips through, the test fails.
     r.__push_raw(vec![1, 2, 3]).unwrap();
-    // Inbox enthaelt den Sample dennoch — Push hat erfolgreich
-    // gefuellt, bevor der Listener geworfen hat.
+    // The inbox still contains the sample — push filled it
+    // successfully before the listener threw.
     let n = r.take().unwrap().len();
     assert_eq!(n, 1);
 }

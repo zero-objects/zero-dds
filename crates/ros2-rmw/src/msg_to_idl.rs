@@ -35,46 +35,46 @@
 //! | T[]         | sequence<T> |
 //! | T[N]        | T[N]        |
 //!
-//! Diese Implementation parst `.msg`-Source, erzeugt eine
-//! `MsgStruct`-AST und kann sie als IDL-Source rendern.
+//! This implementation parses `.msg` source, builds a
+//! `MsgStruct` AST and can render it as IDL source.
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// Geparstes ROS-2-Field.
+/// Parsed ROS-2 field.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MsgField {
-    /// Field-Name (snake_case).
+    /// Field name (snake_case).
     pub name: String,
-    /// ROS-Typ-Bezeichner (z.B. `string`, `int32`, `geometry_msgs/Point`).
+    /// ROS type identifier (e.g. `string`, `int32`, `geometry_msgs/Point`).
     pub ros_type: String,
-    /// Array-Spec: `None` = Skalar, `Some(None)` = unbounded sequence,
+    /// Array spec: `None` = scalar, `Some(None)` = unbounded sequence,
     /// `Some(Some(N))` = fixed-size N.
     pub array: Option<Option<usize>>,
 }
 
-/// Geparstes ROS-2-Struct (`.msg` parsed into structured form).
+/// Parsed ROS-2 struct (`.msg` parsed into structured form).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MsgStruct {
-    /// `<package>/<Type>` (z.B. `geometry_msgs/Point`).
+    /// `<package>/<Type>` (e.g. `geometry_msgs/Point`).
     pub fully_qualified: String,
-    /// Felder.
+    /// Fields.
     pub fields: Vec<MsgField>,
 }
 
-/// Parser-Fehler.
+/// Parser error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// Zeile passt nicht zu `<type>[<arr>] <name>`.
+    /// Line does not match `<type>[<arr>] <name>`.
     BadLine(String),
-    /// Array-Spec ist nicht parsbar.
+    /// Array spec is not parsable.
     BadArraySpec(String),
 }
 
-/// Parse `.msg`-Source-Code.
+/// Parse `.msg` source code.
 ///
 /// # Errors
-/// `BadLine`/`BadArraySpec` bei Syntax-Fehlern.
+/// `BadLine`/`BadArraySpec` on syntax errors.
 pub fn parse_msg(fully_qualified: &str, source: &str) -> Result<MsgStruct, ParseError> {
     let mut fields = Vec::new();
     for raw in source.lines() {
@@ -82,9 +82,9 @@ pub fn parse_msg(fully_qualified: &str, source: &str) -> Result<MsgStruct, Parse
         if line.is_empty() {
             continue;
         }
-        // Constants (starting with `<type> <name>=<value>`) sind in
-        // ROS-2 erlaubt — fuer das Mapping ignorieren wir sie. Erkennen
-        // an `=` rechts vom Name.
+        // Constants (starting with `<type> <name>=<value>`) are
+        // allowed in ROS-2 — we ignore them for the mapping. Detected
+        // by the `=` to the right of the name.
         if line.contains('=') {
             continue;
         }
@@ -152,7 +152,7 @@ pub fn ros_to_idl_type(ros: &str) -> String {
     }
 }
 
-/// Render eine `MsgStruct` als IDL-Source.
+/// Render a `MsgStruct` as IDL source.
 #[must_use]
 pub fn render_idl(s: &MsgStruct) -> String {
     let mut out = String::new();

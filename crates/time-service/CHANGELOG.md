@@ -4,7 +4,7 @@ Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionie
 
 ## [1.0.0-rc.1]
 
-Initiale Release-Materialisierung der `zerodds-time-service`-Crate.
+Initial release materialization der `zerodds-time-service`-Crate.
 
 ### Spec-Referenzen
 
@@ -19,11 +19,11 @@ Initiale Release-Materialisierung der `zerodds-time-service`-Crate.
 **TimeBase** (`time_base`-Modul):
 
 - `TimeT` (Type-Alias `u64`) — 64-bit 100ns-Tick-Counter.
-- `InaccuracyT` (Type-Alias `u64`) — 48-bit Inaccuracy-Wert.
+- `InaccuracyT` (type alias `u64`) — 48-bit inaccuracy value.
 - `TdfT` (Type-Alias `i16`) — Time-Displacement-Factor in Minuten.
-- `UtcT { time, inacclo, inacchi, tdf }` — 16-byte Wire-Struct mit `to_wire`/`from_wire` Roundtrip + `local_time`.
-- `IntervalT { lower_bound, upper_bound }` — mit `IntervalT::new` Validation.
-- `current_time() -> TimeT` — Wall-Clock (`#[cfg(feature = "std")]`); no_std-Stub liefert `0`.
+- `UtcT { time, inacclo, inacchi, tdf }` — 16-byte wire struct with `to_wire`/`from_wire` roundtrip + `local_time`.
+- `IntervalT { lower_bound, upper_bound }` — with `IntervalT::new` validation.
+- `current_time() -> TimeT` — wall clock (`#[cfg(feature = "std")]`); no_std stub returns `0`.
 - `UTC_EPOCH_TO_UNIX_TICKS`, `TICKS_PER_SECOND` — Konstanten.
 
 **UTO** (`uto`-Modul):
@@ -32,7 +32,7 @@ Initiale Release-Materialisierung der `zerodds-time-service`-Crate.
 - `Uto::new` / `Uto::from_utc` — Konstruktoren.
 - `Uto::time` / `inaccuracy` / `tdf` / `utc_time` — Getter (Spec §1.3.4.1-4).
 - `Uto::absolute_time` — Spec §1.3.4.5 (`#[cfg(feature = "std")]`).
-- `Uto::compare_time(ComparisonType, Uto) -> TimeComparison` — Spec §1.3.4.6 mit IntervalC/MidC.
+- `Uto::compare_time(ComparisonType, Uto) -> TimeComparison` — spec §1.3.4.6 with IntervalC/MidC.
 - `Uto::time_to_interval` / `interval` — Spec §1.3.4.7-8.
 - `ComparisonType::{IntervalC, MidC}`.
 - `TimeComparison::{EqualTo, LessThan, GreaterThan, Indeterminate}`.
@@ -48,23 +48,23 @@ Initiale Release-Materialisierung der `zerodds-time-service`-Crate.
 - `TimeService { default_tdf, default_inaccuracy, secure_source }`.
 - `TimeService::universal_time` / `secure_universal_time` — Spec §2.1.1-2.
 - `TimeService::new_universal_time` / `uto_from_utc` / `new_interval` — Spec §2.1.2.
-- `TimeUnavailable` — Exception-Type mit `Display` + `std::error::Error` Impl.
+- `TimeUnavailable` — exception type with `Display` + `std::error::Error` impl.
 
-### Implementierung
+### Implementation
 
 - `forbid(unsafe_code)`.
-- `#![cfg_attr(not(feature = "std"), no_std)]` mit mandatory `alloc`.
-- 35 Unit-Tests + 1 doc-test grün.
-- Konversionsfaktor `UTC_EPOCH_TO_UNIX_TICKS = 122_192_928_000_000_000` (141_427 Tage × 86_400 sec × 10_000_000 ticks).
-- 16-byte UtcT Wire-Format byte-genau gemäß Spec §1.3.2.4.
+- `#![cfg_attr(not(feature = "std"), no_std)]` with mandatory `alloc`.
+- 35 unit tests + 1 doc-test green.
+- Conversion factor `UTC_EPOCH_TO_UNIX_TICKS = 122_192_928_000_000_000` (141_427 days × 86_400 sec × 10_000_000 ticks).
+- 16-byte UtcT wire format byte-exact per spec §1.3.2.4.
 
-### Feature-Flags
+### Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std`   | ✅      | `current_time()` via `SystemTime`; std-Re-Exports |
-| `alloc` | ✅      | mandatory (Vec/wire-buffer) |
+| `std`   | ✅      | `current_time()` via `SystemTime`; std re-exports |
+| `alloc` | ✅      | mandatory (Vec/wire buffer) |
 
-### Verhältnis zu DDS-DCPS Time_t
+### Relationship to DDS-DCPS Time_t
 
-Spec-distinkt: OMG Time Service 1.1 verwendet 16-byte `UtcT` mit 1582-Epoch und 100ns-Ticks; DDS-DCPS 1.4 §2.3.3 verwendet 8-byte `Time_t` mit 1970-Unix-Epoch und 1ns-Auflösung. ZeroDDS-DDS-DCPS verbraucht `zerodds-time-service` daher nicht intern. Konsumenten sind End-User-Applikationen mit OMG-Time-Service-Konformitätsbedarf (z.B. Tutorial `dds-warehouse/02-time-sync`).
+Spec-distinct: OMG Time Service 1.1 uses a 16-byte `UtcT` with a 1582 epoch and 100ns ticks; DDS-DCPS 1.4 §2.3.3 uses an 8-byte `Time_t` with a 1970 Unix epoch and 1ns resolution. ZeroDDS-DDS-DCPS therefore does not consume `zerodds-time-service` internally. Consumers are end-user applications with an OMG Time Service conformance need (e.g. the tutorial `dds-warehouse/02-time-sync`).

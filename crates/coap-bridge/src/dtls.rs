@@ -1,67 +1,67 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CoAP DTLS Mode nach RFC 7252 §9.
+//! CoAP DTLS mode per RFC 7252 §9.
 //!
-//! Spec definiert vier Security-Modi:
-//! - **NoSec** (§9.1): keine Verschluesselung; Default-Port 5683.
-//! - **PreSharedKey** (§9.1.1): symmetrischer PSK-Pfad.
-//! - **RawPublicKey** (§9.1.2): asymmetrische Curve-Keys ohne Cert-Chain.
-//! - **Certificate** (§9.1.3): X.509-Chain-Validation.
+//! The spec defines four security modes:
+//! - **NoSec** (§9.1): no encryption; default port 5683.
+//! - **PreSharedKey** (§9.1.1): symmetric PSK path.
+//! - **RawPublicKey** (§9.1.2): asymmetric curve keys without a cert chain.
+//! - **Certificate** (§9.1.3): X.509 chain validation.
 //!
-//! Wir liefern hier den Configuration-Layer + Profile-Wahl. Die
-//! eigentliche DTLS-Record-Layer-Implementation ist Caller-seitig
-//! (z.B. via `tokio-rustls` oder eine andere DTLS-Crate); ZeroDDS
-//! stellt die Identitaets- und Schluessel-Datenstrukturen bereit
-//! (Reuse der `security-pki` + `security-crypto` Bausteine).
+//! Here we provide the configuration layer + profile selection. The
+//! actual DTLS record-layer implementation is on the caller side
+//! (e.g. via `tokio-rustls` or another DTLS crate); ZeroDDS
+//! provides the identity and key data structures
+//! (reusing the `security-pki` + `security-crypto` building blocks).
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Spec §9.1 — DTLS-Modus pro Connection.
+/// Spec §9.1 — DTLS mode per connection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DtlsMode {
-    /// `NoSec` — Klartext-CoAP auf Port 5683.
+    /// `NoSec` — plaintext CoAP on port 5683.
     NoSec,
-    /// `PreSharedKey` — PSK identitaet + key.
+    /// `PreSharedKey` — PSK identity + key.
     PreSharedKey {
-        /// Identitaet, die der Client sendet (`psk_identity_hint`).
+        /// Identity the client sends (`psk_identity_hint`).
         identity: String,
-        /// Pre-Shared Key (typischerweise 16-32 Bytes).
+        /// Pre-shared key (typically 16-32 bytes).
         key: Vec<u8>,
     },
-    /// `RawPublicKey` — Curve-Punkt ohne Cert.
+    /// `RawPublicKey` — curve point without a cert.
     RawPublicKey {
-        /// Public-Key-Bytes (z.B. ECDSA-P256 64 Bytes uncompressed).
+        /// Public-key bytes (e.g. ECDSA-P256, 64 bytes uncompressed).
         public_key: Vec<u8>,
         /// Spec §9.1.2: subject-public-key-info ASN.1-DER.
         spki_der: Vec<u8>,
     },
-    /// `Certificate` — X.509-Chain.
+    /// `Certificate` — X.509 chain.
     Certificate {
-        /// Eigene Cert-Chain (DER-encoded, leaf zuerst).
+        /// Own cert chain (DER-encoded, leaf first).
         cert_chain: Vec<Vec<u8>>,
-        /// Trust-Anchors fuer Peer-Validation (DER-encoded).
+        /// Trust anchors for peer validation (DER-encoded).
         trust_anchors: Vec<Vec<u8>>,
     },
 }
 
 impl DtlsMode {
-    /// Spec §9.1 — `true` wenn der Modus DTLS aktiviert (alles ausser
+    /// Spec §9.1 — `true` if the mode enables DTLS (everything except
     /// `NoSec`).
     #[must_use]
     pub fn is_secure(&self) -> bool {
         !matches!(self, Self::NoSec)
     }
 
-    /// Spec §6.2 / §9 — Default-Port nach Modus: 5683 (NoSec) bzw.
+    /// Spec §6.2 / §9 — default port by mode: 5683 (NoSec) or
     /// 5684 (DTLS).
     #[must_use]
     pub fn default_port(&self) -> u16 {
         if self.is_secure() { 5684 } else { 5683 }
     }
 
-    /// Modus-Name fuer Logging/Debug.
+    /// Mode name for logging/debug.
     #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
@@ -73,18 +73,18 @@ impl DtlsMode {
     }
 }
 
-/// DTLS-Configuration-Errors.
+/// DTLS configuration errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DtlsConfigError {
-    /// PSK-Key ist leer oder zu kurz (Spec verlangt ≥ 16 bytes empfohlen).
+    /// PSK key is empty or too short (spec recommends ≥ 16 bytes).
     PskTooShort,
-    /// Identity ist leer.
+    /// Identity is empty.
     EmptyIdentity,
-    /// Cert-Chain ist leer.
+    /// Cert chain is empty.
     EmptyCertChain,
-    /// Trust-Anchors-Liste ist leer (Validation moeglich).
+    /// Trust-anchor list is empty (no validation possible).
     NoTrustAnchors,
-    /// Public-Key-Format ungueltig.
+    /// Invalid public-key format.
     InvalidPublicKey,
 }
 
@@ -103,10 +103,10 @@ impl core::fmt::Display for DtlsConfigError {
 #[cfg(feature = "std")]
 impl std::error::Error for DtlsConfigError {}
 
-/// Spec §9.1 — Validiert eine DtlsMode-Konfiguration.
+/// Spec §9.1 — validates a DtlsMode configuration.
 ///
 /// # Errors
-/// Siehe [`DtlsConfigError`].
+/// See [`DtlsConfigError`].
 pub fn validate_dtls_mode(mode: &DtlsMode) -> Result<(), DtlsConfigError> {
     match mode {
         DtlsMode::NoSec => Ok(()),

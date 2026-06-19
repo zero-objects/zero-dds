@@ -3,39 +3,39 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-corba-poa/badge.svg)](https://docs.rs/zerodds-corba-poa)
 
-OMG CORBA 3.3 Part 1 §11 — Portable Object Adapter (POA). Voller
-Stack mit allen 7 Policies in allen Modi, POAManager-State-Machine,
-POA-Hierarchie, Active-Object-Map, ServantManager-Hooks und Policy-
-Compatibility-Validator. `no_std + alloc`,
+OMG CORBA 3.3 Part 1 §11 — Portable Object Adapter (POA). Full
+stack with all 7 policies in every mode, POAManager state machine,
+POA hierarchy, active object map, ServantManager hooks, and a policy
+compatibility validator. `no_std + alloc`,
 `forbid(unsafe_code)`. Safety classification: **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
 | OMG CORBA 3.3 Part 1 | §11 POA, §11.3.4 POAManager, §11.3.5 Operations |
-| OMG CORBA 3.3 Part 1 | §11.3.6 Policy-Validierung, §11.3.7 Policies |
+| OMG CORBA 3.3 Part 1 | §11.3.6 policy validation, §11.3.7 policies |
 | OMG CORBA 3.3 Part 1 | §11.3.3 Servant, §11.3.5.7-8 ServantManagers |
 
-## Was ist drin
+## What's included
 
-- **`Poa` + `PoaConfig`** — POA-Instanz mit Hierarchie-Awareness.
-- **`PoaManager`** — 4-State-Machine (Holding/Active/Discarding/Inactive).
-- **`PolicySet`** + 7 Policies (Lifespan/IdAssignment/IdUniqueness/
+- **`Poa` + `PoaConfig`** — POA instance with hierarchy awareness.
+- **`PoaManager`** — 4-state machine (Holding/Active/Discarding/Inactive).
+- **`PolicySet`** + 7 policies (Lifespan/IdAssignment/IdUniqueness/
   ImplicitActivation/ServantRetention/RequestProcessing/Thread).
-- **`Servant`-Trait** — `primary_interface` / `primary_repository_id`
-  (typisiert via `corba-ir`) / `is_a` / `is_a_typed` / `invoke`.
+- **`Servant` trait** — `primary_interface` / `primary_repository_id`
+  (typed via `corba-ir`) / `is_a` / `is_a_typed` / `invoke`.
 - **`ActiveObjectMap`**, **`ObjectId`**, **`ServantActivator`**,
   **`ServantLocator`**.
 
-## Was nicht abgedeckt ist
+## What's not covered
 
-- IIOP-Wire-Encoding der POA-Operations: gehoert in `corba-iiop` /
+- IIOP wire encoding of the POA operations: belongs in `corba-iiop` /
   `corba-giop`.
-- ORB-Singleton-Lifecycle: liegt in den hosting Anwendungen
-  (`Orb::init/shutdown` ist nicht POA-Scope).
+- ORB singleton lifecycle: lives in the hosting applications
+  (`Orb::init/shutdown` is not POA scope).
 
-## Beispiel
+## Example
 
 ```rust
 use zerodds_corba_poa::policies::PolicySet;
@@ -52,5 +52,5 @@ cargo test -p zerodds-corba-poa
 ## See also
 
 - [Architecture](../../docs/architecture/02_architecture.md)
-- [`zerodds-corba-ir`](../corba-ir/README.md) — fuer typisierte
-  RepositoryId-Validierung.
+- [`zerodds-corba-ir`](../corba-ir/README.md) — for typed
+  RepositoryId validation.

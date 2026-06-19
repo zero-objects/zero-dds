@@ -1,6 +1,6 @@
-//! Property-Tests fuer RTPS-Wire-Roundtrips.
+//! Property tests for RTPS wire roundtrips.
 //!
-//! Invariante: `read_from(write_to(x)) == x` fuer alle SequenceNumber-
+//! Invariant: `read_from(write_to(x)) == x` for all SequenceNumber
 //! Sets, FragmentNumber-Sets, beide Endiannesses.
 
 #![allow(
@@ -23,7 +23,7 @@ use zerodds_rtps::submessages::{FragmentNumberSet, SequenceNumberSet};
 use zerodds_rtps::wire_types::{FragmentNumber, SequenceNumber};
 
 fn arb_sn(base: i64) -> impl Strategy<Value = i64> {
-    // SN >= base, max 1024 ueber base (Set-Groesse begrenzt fuer Test-Speed).
+    // SN >= base, max 1024 above base (set size limited for test speed).
     (0i64..1024).prop_map(move |i| base + i)
 }
 

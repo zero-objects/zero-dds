@@ -2,7 +2,7 @@
 // Copyright 2026 ZeroDDS Contributors
 //! OwnershipStrengthQosPolicy (DDS 1.4 §2.2.3.24).
 //!
-//! Wire-Format: i32 value (4 byte). Nur relevant bei Ownership=Exclusive.
+//! Wire format: i32 value (4 bytes). Only relevant for Ownership=Exclusive.
 
 use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 

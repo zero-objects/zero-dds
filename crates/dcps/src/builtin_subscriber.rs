@@ -1,28 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Builtin-Subscriber — vorinstallierter Subscriber mit den 4
-//! Builtin-Topic-Readern (DDS 1.4 §2.2.2.2.1.7
+//! Built-in subscriber — preinstalled subscriber with the 4
+//! built-in-topic readers (DDS 1.4 §2.2.2.2.1.7
 //! `get_builtin_subscriber`).
 //!
-//! Pro `DomainParticipant` existiert genau **ein** Builtin-Subscriber.
-//! Er ist der Application-API-Sicht-Wrapper auf den
-//! Discovery-Cache der Runtime: jedes empfangene SPDP-Beacon
-//! oder SEDP-Pub/Sub-Event laesst ein Sample in den jeweiligen
-//! Builtin-Reader fallen, und User-Code kann es per
-//! `take()/read()` abholen — wie bei jedem anderen DataReader.
+//! Per `DomainParticipant` there is exactly **one** built-in
+//! subscriber. It is the application-API-view wrapper over the
+//! runtime's discovery cache: every received SPDP beacon or SEDP
+//! pub/sub event drops a sample into the respective built-in reader,
+//! and user code can pick it up via `take()/read()` — just like any
+//! other DataReader.
 //!
-//! # Spec-Pfade
+//! # Spec paths
 //!
-//! - DDS-DCPS 1.4 §2.2.5: Built-in Topics (alle 4)
+//! - DDS-DCPS 1.4 §2.2.5: Built-in Topics (all 4)
 //! - DDS-DCPS 1.4 §2.2.2.2.1.7: `get_builtin_subscriber()`
 //! - DDSI-RTPS 2.5 §8.5.4: SEDP Built-in Endpoints
 //!
-//! # Built-in-DataReader-QoS (Spec §2.2.5 Table 12)
+//! # Built-in DataReader QoS (spec §2.2.5 Table 12)
 //!
 //! Reliability=RELIABLE, Durability=TRANSIENT_LOCAL, History=KEEP_LAST(1).
-//! Wir setzen diese Defaults an `BuiltinSubscriber::new`. User koennen
-//! sie (analog Spec) **nicht** modifizieren — `lookup_datareader` ist
-//! read-only.
+//! We set these defaults in `BuiltinSubscriber::new`. Users (per spec)
+//! **cannot** modify them — `lookup_datareader` is read-only.
 
 extern crate alloc;
 use alloc::string::{String, ToString};
@@ -48,7 +47,7 @@ use crate::qos::{DataReaderQos, SubscriberQos, TopicQos};
 use crate::subscriber::{DataReader, Subscriber, SubscriberInner};
 use crate::topic::Topic;
 
-/// Spec-konforme DataReader-QoS fuer Builtin-Topics (DDS 1.4 §2.2.5
+/// Spec-conformant DataReader QoS for built-in topics (DDS 1.4 §2.2.5
 /// Table 12): RELIABLE + TRANSIENT_LOCAL + KEEP_LAST(1).
 #[must_use]
 pub fn builtin_reader_qos() -> DataReaderQos {
@@ -67,73 +66,73 @@ pub fn builtin_reader_qos() -> DataReaderQos {
     qos
 }
 
-/// Builtin-Subscriber. Haelt 4 vor-erzeugte DataReader fuer die
-/// Builtin-Topics. Die `inbox` jedes Readers ist als
-/// `Arc<Mutex<Vec<crate::runtime::UserSample>>>` herausgegeben, damit der Runtime-
-/// Discovery-Hook neue Samples ohne Lock-Cycles einspeisen kann.
+/// Built-in subscriber. Holds 4 pre-created DataReaders for the
+/// built-in topics. Each reader's `inbox` is exposed as
+/// `Arc<Mutex<Vec<crate::runtime::UserSample>>>` so that the runtime
+/// discovery hook can feed in new samples without lock cycles.
 #[derive(Debug)]
 pub struct BuiltinSubscriber {
-    /// Der "transparente" Subscriber-Handle, den `get_builtin_subscriber`
-    /// zurueckgibt — fuer API-Symmetrie zu User-Subscribers.
+    /// The "transparent" subscriber handle that `get_builtin_subscriber`
+    /// returns — for API symmetry with user subscribers.
     subscriber: Subscriber,
-    /// Reader fuer `DCPSParticipant` (entdeckte Participants).
+    /// Reader for `DCPSParticipant` (discovered participants).
     participant_reader: DataReader<ParticipantBuiltinTopicData>,
-    /// Reader fuer `DCPSTopic` (entdeckte Topics).
+    /// Reader for `DCPSTopic` (discovered topics).
     topic_reader: DataReader<TopicBuiltinTopicData>,
-    /// Reader fuer `DCPSPublication` (entdeckte Writer).
+    /// Reader for `DCPSPublication` (discovered writers).
     publication_reader: DataReader<PublicationBuiltinTopicData>,
-    /// Reader fuer `DCPSSubscription` (entdeckte Reader).
+    /// Reader for `DCPSSubscription` (discovered readers).
     subscription_reader: DataReader<SubscriptionBuiltinTopicData>,
-    /// Sink-Inboxes (gemeinsam mit den Readers oben). Werden vom
-    /// Runtime-Discovery-Hook als Push-Targets verwendet.
+    /// Sink inboxes (shared with the readers above). Used by the
+    /// runtime discovery hook as push targets.
     sinks: BuiltinSinks,
 }
 
-/// Bundle der 4 shared inboxes — wird vom `DcpsRuntime` an den
-/// SPDP/SEDP-Hot-Path weitergereicht. Cloning ist billig (Arc-Bumps).
+/// Bundle of the 4 shared inboxes — handed by `DcpsRuntime` to the
+/// SPDP/SEDP hot path. Cloning is cheap (Arc bumps).
 #[derive(Debug, Clone)]
 pub struct BuiltinSinks {
-    /// Inbox des `DCPSParticipant`-Readers.
+    /// Inbox of the `DCPSParticipant` reader.
     pub participant: Arc<Mutex<Vec<crate::runtime::UserSample>>>,
-    /// Inbox des `DCPSTopic`-Readers.
+    /// Inbox of the `DCPSTopic` reader.
     pub topic: Arc<Mutex<Vec<crate::runtime::UserSample>>>,
-    /// Inbox des `DCPSPublication`-Readers.
+    /// Inbox of the `DCPSPublication` reader.
     pub publication: Arc<Mutex<Vec<crate::runtime::UserSample>>>,
-    /// Inbox des `DCPSSubscription`-Readers.
+    /// Inbox of the `DCPSSubscription` reader.
     pub subscription: Arc<Mutex<Vec<crate::runtime::UserSample>>>,
 }
 
 impl BuiltinSinks {
-    /// Bequemer Helfer: encoded ein Builtin-Sample und schiebt es in
-    /// den passenden Reader-Inbox.
+    /// Convenience helper: encodes a built-in sample and pushes it into
+    /// the matching reader inbox.
     ///
     /// # Errors
-    /// `WireError` wenn das Encoding fehlschlaegt; `PreconditionNotMet`
-    /// wenn der Mutex vergiftet ist.
+    /// `WireError` if the encoding fails; `PreconditionNotMet` if the
+    /// mutex is poisoned.
     pub fn push_participant(&self, sample: &ParticipantBuiltinTopicData) -> Result<()> {
         push_into(&self.participant, sample)
     }
 
-    /// Push fuer `DCPSTopic`.
+    /// Push for `DCPSTopic`.
     ///
     /// # Errors
-    /// Wie [`Self::push_participant`].
+    /// As [`Self::push_participant`].
     pub fn push_topic(&self, sample: &TopicBuiltinTopicData) -> Result<()> {
         push_into(&self.topic, sample)
     }
 
-    /// Push fuer `DCPSPublication`.
+    /// Push for `DCPSPublication`.
     ///
     /// # Errors
-    /// Wie [`Self::push_participant`].
+    /// As [`Self::push_participant`].
     pub fn push_publication(&self, sample: &PublicationBuiltinTopicData) -> Result<()> {
         push_into(&self.publication, sample)
     }
 
-    /// Push fuer `DCPSSubscription`.
+    /// Push for `DCPSSubscription`.
     ///
     /// # Errors
-    /// Wie [`Self::push_participant`].
+    /// As [`Self::push_participant`].
     pub fn push_subscription(&self, sample: &SubscriptionBuiltinTopicData) -> Result<()> {
         push_into(&self.subscription, sample)
     }
@@ -150,14 +149,17 @@ fn push_into<T: DdsType>(
     let mut guard = sink.lock().map_err(|_| DdsError::PreconditionNotMet {
         reason: "builtin sink mutex poisoned",
     })?;
-    // Builtin-Samples kommen aus dem lokalen Discovery-Pfad (kein
-    // Remote-Writer); writer_guid + writer_strength sind Default-Init.
-    // Builtin-Topics nutzen Shared-Ownership, also keine Filter-
-    // Aktivierung im Reader.
+    // Built-in samples come from the local discovery path (no remote
+    // writer); writer_guid + writer_strength are default-initialized.
+    // Built-in topics use shared ownership, so no filter activation in
+    // the reader.
     guard.push(crate::runtime::UserSample::Alive {
         payload: crate::sample_bytes::SampleBytes::from_vec(buf),
         writer_guid: [0u8; 16],
         writer_strength: 0,
+        // Built-in-topic samples are encoded ZeroDDS-internally —
+        // XCDR1 baseline.
+        representation: 0,
     });
     Ok(())
 }
@@ -170,20 +172,20 @@ fn format_err(e: &crate::dds_type::EncodeError) -> String {
 }
 
 impl BuiltinSubscriber {
-    /// Konstruiert einen Builtin-Subscriber **mit** vor-erzeugten
-    /// Readern fuer alle 4 Builtin-Topics. Wird genau einmal pro
-    /// `DomainParticipant` (vom Konstruktor) gerufen.
+    /// Constructs a built-in subscriber **with** pre-created readers for
+    /// all 4 built-in topics. Called exactly once per
+    /// `DomainParticipant` (by the constructor).
     #[must_use]
     pub fn new() -> Self {
-        // Subscriber mit Default-QoS — der Subscriber selbst ist
-        // schlicht ein API-Wrapper, kein Runtime-Endpoint.
+        // Subscriber with default QoS — the subscriber itself is simply
+        // an API wrapper, not a runtime endpoint.
         let subscriber = Subscriber::new(SubscriberQos::default(), None);
         let inner = subscriber.inner.clone();
 
         let qos = builtin_reader_qos();
 
-        // 4 Inboxes anlegen (shared zwischen DataReader und Runtime-
-        // Discovery-Hook).
+        // Create 4 inboxes (shared between the DataReader and the
+        // runtime discovery hook).
         let part_inbox: Arc<Mutex<Vec<crate::runtime::UserSample>>> =
             Arc::new(Mutex::new(Vec::new()));
         let topic_inbox: Arc<Mutex<Vec<crate::runtime::UserSample>>> =
@@ -245,54 +247,54 @@ impl BuiltinSubscriber {
         }
     }
 
-    /// Underlying Subscriber-Handle (API-Spiegel zu User-Subscribers).
+    /// Underlying subscriber handle (API mirror of user subscribers).
     #[must_use]
     pub fn subscriber(&self) -> &Subscriber {
         &self.subscriber
     }
 
-    /// Sinks fuer den Runtime-Discovery-Hook. Sollte nur intern
-    /// (im DcpsRuntime) genutzt werden.
+    /// Sinks for the runtime discovery hook. Should only be used
+    /// internally (in `DcpsRuntime`).
     #[must_use]
     pub fn sinks(&self) -> BuiltinSinks {
         self.sinks.clone()
     }
 
-    /// Liefert eine Kopie des typed DataReaders fuer ein Builtin-Topic.
+    /// Returns a copy of the typed DataReader for a built-in topic.
     /// Spec: `Subscriber::lookup_datareader(topic_name)` (DDS 1.4
     /// §2.2.2.5.1.5).
     ///
-    /// **Topic-Name + Type-Parameter MUESSEN konsistent sein** (z.B.
+    /// **Topic name + type parameter MUST be consistent** (e.g.
     /// `lookup_datareader::<ParticipantBuiltinTopicData>("DCPSParticipant")`),
-    /// sonst gibt es `BadParameter`.
+    /// otherwise it returns `BadParameter`.
     ///
     /// # Errors
-    /// `BadParameter` wenn `topic_name` keinem Builtin-Topic entspricht
-    /// oder Type-Parameter und Topic-Name auseinanderlaufen.
+    /// `BadParameter` if `topic_name` matches no built-in topic, or if
+    /// the type parameter and topic name diverge.
     pub fn lookup_datareader<T: BuiltinTopic>(&self, topic_name: &str) -> Result<DataReader<T>> {
         T::lookup(self, topic_name)
     }
 
-    /// Direkter Zugriff auf den `DCPSParticipant`-Reader (Convenience-
-    /// API, vermeidet generische Lookup-Pfade fuer Builtin-Topics).
+    /// Direct access to the `DCPSParticipant` reader (convenience API,
+    /// avoids generic lookup paths for built-in topics).
     #[must_use]
     pub fn participant_reader(&self) -> DataReader<ParticipantBuiltinTopicData> {
         clone_reader(&self.participant_reader)
     }
 
-    /// Direkter Zugriff auf den `DCPSTopic`-Reader.
+    /// Direct access to the `DCPSTopic` reader.
     #[must_use]
     pub fn topic_reader(&self) -> DataReader<TopicBuiltinTopicData> {
         clone_reader(&self.topic_reader)
     }
 
-    /// Direkter Zugriff auf den `DCPSPublication`-Reader.
+    /// Direct access to the `DCPSPublication` reader.
     #[must_use]
     pub fn publication_reader(&self) -> DataReader<PublicationBuiltinTopicData> {
         clone_reader(&self.publication_reader)
     }
 
-    /// Direkter Zugriff auf den `DCPSSubscription`-Reader.
+    /// Direct access to the `DCPSSubscription` reader.
     #[must_use]
     pub fn subscription_reader(&self) -> DataReader<SubscriptionBuiltinTopicData> {
         clone_reader(&self.subscription_reader)
@@ -305,13 +307,13 @@ impl Default for BuiltinSubscriber {
     }
 }
 
-/// Marker-Trait + Lookup-Routing fuer die 4 Builtin-Topic-Typen.
+/// Marker trait + lookup routing for the 4 built-in-topic types.
 ///
-/// Damit `lookup_datareader::<T>(topic_name)` per Type-Parameter den
-/// richtigen Reader trifft. Externe Typen koennen das Trait nicht
-/// implementieren — `BuiltinTopic` ist sealed.
+/// So that `lookup_datareader::<T>(topic_name)` hits the right reader
+/// via the type parameter. External types cannot implement the trait —
+/// `BuiltinTopic` is sealed.
 pub trait BuiltinTopic: DdsType + private::Sealed + Sized {
-    /// Topic-Name aus DDS 1.4 §2.2.5.
+    /// Topic name from DDS 1.4 §2.2.5.
     const TOPIC_NAME: &'static str;
     #[doc(hidden)]
     fn lookup(sub: &BuiltinSubscriber, topic_name: &str) -> Result<DataReader<Self>>;
@@ -373,12 +375,11 @@ impl BuiltinTopic for SubscriptionBuiltinTopicData {
     }
 }
 
-/// Klont einen Reader, indem ein neuer Reader-Handle mit derselben
-/// shared inbox + identischer Topic-/QoS-Snapshot konstruiert wird.
-/// Wir koennen `DataReader<T>` nicht direkt `Clone` machen, weil die
-/// `runtime`/`rx`-Felder (mpsc + Mutex) nicht `Clone` sind. Fuer
-/// Builtin-Reader sind beide aber `None`, daher ist der Spezial-Klon
-/// hier sicher.
+/// Clones a reader by constructing a new reader handle with the same
+/// shared inbox + identical topic/QoS snapshot. We cannot make
+/// `DataReader<T>` directly `Clone`, because the `runtime`/`rx` fields
+/// (mpsc + Mutex) are not `Clone`. For built-in readers, however, both
+/// are `None`, so the special-case clone here is safe.
 fn clone_reader<T: DdsType + Send + Sync + 'static>(r: &DataReader<T>) -> DataReader<T> {
     DataReader::<T>::new_builtin(
         r.topic().clone(),
@@ -389,9 +390,8 @@ fn clone_reader<T: DdsType + Send + Sync + 'static>(r: &DataReader<T>) -> DataRe
 }
 
 fn builtin_clone_subscriber_inner<T: DdsType>(_r: &DataReader<T>) -> Arc<SubscriberInner> {
-    // Builtin-Subscriber ist statisch: wir konstruieren bei jedem
-    // Lookup einen neuen Inner — er wird ohnehin nicht zur
-    // Runtime-Routing-Lookup verwendet.
+    // The built-in subscriber is static: we construct a new inner on
+    // every lookup — it is not used for runtime routing lookup anyway.
     Arc::new(SubscriberInner {
         qos: std::sync::Mutex::new(SubscriberQos::default()),
         entity_state: crate::entity::EntityState::new(),
@@ -560,8 +560,8 @@ mod tests {
     #[test]
     fn subscriber_handle_is_accessible() {
         let bs = BuiltinSubscriber::new();
-        // Smoke: der innere Subscriber-Handle ist zugreifbar (API-
-        // Symmetrie zu User-Subscribers).
+        // Smoke: the inner subscriber handle is accessible (API
+        // symmetry with user subscribers).
         let _: &Subscriber = bs.subscriber();
     }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Custom-Metadata Encoding nach gRPC-Spec.
+//! Custom-Metadata encoding per the gRPC spec.
 //!
 //! Spec: `protocol-http2.md` + `protocol-web.md` —
 //! "Custom-Metadata is an arbitrary set of key-value pairs defined
@@ -9,85 +9,85 @@
 //! are interpreted as binary and base64-encoded values, otherwise
 //! header values are ASCII."
 //!
-//! Plus gRPC-Web-Spezifika fuer `application/grpc-web-text`:
-//! der gesamte LPM-Body wird base64-encoded.
+//! Plus the gRPC-Web specifics for `application/grpc-web-text`:
+//! the entire LPM body is base64-encoded.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Suffix fuer Binary-Headers nach gRPC-Spec.
+/// Suffix for binary headers per the gRPC spec.
 pub const BIN_SUFFIX: &str = "-bin";
 
-/// Standard Content-Type Header-Werte.
+/// Standard Content-Type header values.
 pub mod content_types {
-    /// Mandatory fuer gRPC-over-HTTP/2.
+    /// Mandatory for gRPC-over-HTTP/2.
     pub const GRPC: &str = "application/grpc";
-    /// gRPC-over-HTTP/2 mit Sub-Format.
+    /// gRPC-over-HTTP/2 with a sub-format.
     pub const GRPC_PROTO: &str = "application/grpc+proto";
-    /// gRPC-Web Binary-Format (Browser-kompatibel).
+    /// gRPC-Web binary format (browser-compatible).
     pub const GRPC_WEB: &str = "application/grpc-web";
-    /// gRPC-Web Base64-Text-Format (Browser-kompatibel ohne
-    /// HTTP-Trailers).
+    /// gRPC-Web base64 text format (browser-compatible without
+    /// HTTP trailers).
     pub const GRPC_WEB_TEXT: &str = "application/grpc-web-text";
 }
 
-/// Standard Required Request-Headers (HTTP/2-Pseudoheaders + gRPC).
+/// Standard required request headers (HTTP/2 pseudo-headers + gRPC).
 pub mod request_headers {
-    /// HTTP/2-Pseudoheader `:method` — gRPC verlangt POST.
+    /// HTTP/2 pseudo-header `:method` — gRPC requires POST.
     pub const METHOD: &str = ":method";
-    /// HTTP/2-Pseudoheader `:scheme` — http oder https.
+    /// HTTP/2 pseudo-header `:scheme` — http or https.
     pub const SCHEME: &str = ":scheme";
-    /// HTTP/2-Pseudoheader `:path` — `/<service>/<method>`.
+    /// HTTP/2 pseudo-header `:path` — `/<service>/<method>`.
     pub const PATH: &str = ":path";
-    /// HTTP/2-Pseudoheader `:authority` — Server-Hostname.
+    /// HTTP/2 pseudo-header `:authority` — server hostname.
     pub const AUTHORITY: &str = ":authority";
-    /// `te: trailers` — gRPC verlangt Trailer-Support-Signal.
+    /// `te: trailers` — gRPC requires a trailer-support signal.
     pub const TE: &str = "te";
-    /// `content-type` — siehe [`super::content_types`].
+    /// `content-type` — see [`super::content_types`].
     pub const CONTENT_TYPE: &str = "content-type";
-    /// `grpc-encoding` — Compression (e.g. "identity", "gzip").
+    /// `grpc-encoding` — compression (e.g. "identity", "gzip").
     pub const GRPC_ENCODING: &str = "grpc-encoding";
-    /// `grpc-accept-encoding` — Liste der akzeptierten Compressions.
+    /// `grpc-accept-encoding` — list of accepted compressions.
     pub const GRPC_ACCEPT_ENCODING: &str = "grpc-accept-encoding";
-    /// `user-agent` — empfohlen.
+    /// `user-agent` — recommended.
     pub const USER_AGENT: &str = "user-agent";
-    /// `grpc-timeout` — siehe `timeout` Modul.
+    /// `grpc-timeout` — see the `timeout` module.
     pub const GRPC_TIMEOUT: &str = "grpc-timeout";
-    /// `grpc-message-type` — fully-qualified-name des Request-Type.
+    /// `grpc-message-type` — fully-qualified name of the request type.
     pub const GRPC_MESSAGE_TYPE: &str = "grpc-message-type";
 }
 
-/// Standard Required Response-Headers + Trailers.
+/// Standard required response headers + trailers.
 pub mod response_headers {
-    /// HTTP/2-Pseudoheader `:status` — HTTP-Status.
+    /// HTTP/2 pseudo-header `:status` — HTTP status.
     pub const STATUS: &str = ":status";
-    /// `content-type` (siehe Request).
+    /// `content-type` (see request).
     pub const CONTENT_TYPE: &str = "content-type";
     /// `grpc-encoding`.
     pub const GRPC_ENCODING: &str = "grpc-encoding";
-    /// Trailer: `grpc-status` (numerisch, 0..=16).
+    /// Trailer: `grpc-status` (numeric, 0..=16).
     pub const GRPC_STATUS: &str = "grpc-status";
-    /// Trailer: `grpc-message` (Percent-Encoded).
+    /// Trailer: `grpc-message` (percent-encoded).
     pub const GRPC_MESSAGE: &str = "grpc-message";
 }
 
 // ---------------------------------------------------------------------------
-// -bin Header-Klassifikation
+// -bin header classification
 // ---------------------------------------------------------------------------
 
-/// `true` wenn der Header-Name den `-bin`-Suffix traegt.
+/// `true` if the header name carries the `-bin` suffix.
 #[must_use]
 pub fn is_binary_header(name: &str) -> bool {
     name.len() > BIN_SUFFIX.len() && name.ends_with(BIN_SUFFIX)
 }
 
 // ---------------------------------------------------------------------------
-// Base64 fuer Binary-Header + grpc-web-text
+// Base64 for binary headers + grpc-web-text
 // ---------------------------------------------------------------------------
 
 const B64_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-/// Encoding eines Binary-Header-Wertes nach RFC 4648 §4 (mit Padding).
+/// Encoding of a binary header value per RFC 4648 §4 (with padding).
 #[must_use]
 pub fn encode_base64(input: &[u8]) -> String {
     let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
@@ -120,11 +120,11 @@ pub fn encode_base64(input: &[u8]) -> String {
     out
 }
 
-/// Decoding eines Base64-encoded Binary-Header-Wertes.
+/// Decoding of a base64-encoded binary header value.
 ///
 /// # Errors
-/// `MetadataError::InvalidBase64` bei nicht-Base64-Zeichen oder
-/// fehlerhaftem Padding.
+/// `MetadataError::InvalidBase64` on non-base64 characters or
+/// malformed padding.
 pub fn decode_base64(input: &str) -> Result<Vec<u8>, MetadataError> {
     let bytes = input.as_bytes();
     if bytes.len() % 4 != 0 {
@@ -177,12 +177,12 @@ fn decode_b64_char(c: u8) -> Option<u8> {
 // Errors
 // ---------------------------------------------------------------------------
 
-/// Metadata-Encoding-Fehler.
+/// Metadata encoding error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MetadataError {
-    /// Base64-Eingabe ist invalid (Padding, Zeichen, Length).
+    /// Base64 input is invalid (padding, characters, length).
     InvalidBase64,
-    /// Header-Name traegt kein `-bin`-Suffix, Wert ist aber non-ASCII.
+    /// Header name carries no `-bin` suffix, but the value is non-ASCII.
     NonAsciiInTextHeader,
 }
 
@@ -202,12 +202,12 @@ impl std::error::Error for MetadataError {}
 // High-Level Helpers
 // ---------------------------------------------------------------------------
 
-/// Encodet einen Header-Wert nach dem Header-Namen:
-/// `-bin`-Suffix → base64; sonst ASCII (Plain).
+/// Encodes a header value according to the header name:
+/// `-bin` suffix → base64; otherwise ASCII (plain).
 ///
 /// # Errors
-/// `MetadataError::NonAsciiInTextHeader` wenn der Header *kein*
-/// `-bin`-Suffix hat aber `value` non-ASCII-Bytes enthaelt.
+/// `MetadataError::NonAsciiInTextHeader` if the header has *no*
+/// `-bin` suffix but `value` contains non-ASCII bytes.
 pub fn encode_header_value(name: &str, value: &[u8]) -> Result<String, MetadataError> {
     if is_binary_header(name) {
         Ok(encode_base64(value))
@@ -218,10 +218,10 @@ pub fn encode_header_value(name: &str, value: &[u8]) -> Result<String, MetadataE
     }
 }
 
-/// Decodet einen Header-Wert in raw bytes nach dem Header-Namen.
+/// Decodes a header value into raw bytes according to the header name.
 ///
 /// # Errors
-/// `MetadataError::InvalidBase64` bei base64-Fehlern.
+/// `MetadataError::InvalidBase64` on base64 errors.
 pub fn decode_header_value(name: &str, encoded: &str) -> Result<Vec<u8>, MetadataError> {
     if is_binary_header(name) {
         decode_base64(encoded)

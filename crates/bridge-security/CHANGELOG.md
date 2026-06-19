@@ -1,75 +1,74 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
-Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
-Datums-Marker pro Eintrag sind Keep-a-Changelog-Konvention; alles
-weitere git-getrackt.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+versioning follows [Semantic Versioning](https://semver.org/).
+Per-entry date markers are a Keep-a-Changelog convention; everything
+else is git-tracked.
 
 ## [1.0.0-rc.1] — 2026-05-07
 
-Initiale Release-Materialisierung.
+Initial release materialization.
 
-### Spec-Referenzen
+### Spec references
 
-- ZeroDDS Bridge-Spec 1.0 §7.1 — Transport-Layer-Security (TLS).
-- ZeroDDS Bridge-Spec 1.0 §7.2 — Auth-Modes `none|bearer|jwt|mtls|sasl`.
-- ZeroDDS Bridge-Spec 1.0 §7.3 — Topic-ACL (Read / Write pro Topic-Pattern).
+- ZeroDDS Bridge Spec 1.0 §7.1 — transport-layer security (TLS).
+- ZeroDDS Bridge Spec 1.0 §7.2 — auth modes `none|bearer|jwt|mtls|sasl`.
+- ZeroDDS Bridge Spec 1.0 §7.3 — topic ACL (read / write per topic pattern).
 
-### Public-API
+### Public API
 
-**Re-Exports aus `lib.rs`:**
+**Re-exports from `lib.rs`:**
 
-- `Acl`, `AclEntry`, `AclOp` (Modul `acl`) — Topic-ACL mit Wildcard-
-  und Group-Matching.
-- `AuthError`, `AuthMode`, `AuthSubject` (Modul `auth`) — Auth-Modes
-  und Subject-Datentyp mit Group-Memberships + Free-Form-Claims.
+- `Acl`, `AclEntry`, `AclOp` (module `acl`) — topic ACL with wildcard
+  and group matching.
+- `AuthError`, `AuthMode`, `AuthSubject` (module `auth`) — auth modes
+  and subject data type with group memberships + free-form claims.
 - `RotatingTlsConfig`, `build_client_tls_connector`, `parse_server_name`,
-  `serve_tls_handshake` (Modul `connection`) — pro-Connection-TLS-Helpers.
+  `serve_tls_handshake` (module `connection`) — per-connection TLS helpers.
 - `SecurityConfig`, `SecurityCtx`, `SecurityError`, `authenticate`,
-  `authorize`, `build_ctx`, `extract_mtls_subject` (Modul `ctx`) —
-  Aggregat-Ctx aus Auth + ACL + TLS und die Top-Level-Helpers
+  `authorize`, `build_ctx`, `extract_mtls_subject` (module `ctx`) —
+  aggregate ctx of auth + ACL + TLS, plus the top-level helpers
   `authenticate` / `authorize`.
-- `TlsConfigError`, `load_server_config` (Modul `tls`) — `rustls`-
-  ServerConfig-Builder mit PEM-Cert/Key-Loader und optionalem Client-
-  CA-Trust für mTLS.
+- `TlsConfigError`, `load_server_config` (module `tls`) — `rustls`
+  ServerConfig builder with PEM cert/key loader and optional client
+  CA trust for mTLS.
 
-### Implementierung
+### Implementation
 
-`load_server_config` parst PEM-Files mit `rustls-pemfile`, fuettert sie
-in `rustls::ServerConfig::builder()` und unterstuetzt drei Pfade: nur
-Server-Cert, Server-Cert mit Client-CA-Trust (mTLS), und das Reload-
-Pattern `RotatingTlsConfig::reload()` fuer SIGHUP-getriggerte
-Cert-Rotation ohne Connection-Drop.
+`load_server_config` parses PEM files with `rustls-pemfile`, feeds them
+into `rustls::ServerConfig::builder()` and supports three paths:
+server cert only, server cert with client CA trust (mTLS), and the
+reload pattern `RotatingTlsConfig::reload()` for SIGHUP-triggered cert
+rotation without connection drop.
 
-`AuthMode::validate` ist die Single-Entry-Stelle pro Connection: bekommt
-das Wire-spezifische Material (HTTP-Header, MQTT-Connect-Properties,
-SASL-PLAIN-Tokens, mTLS-Peer-Cert) und produziert deterministisch ein
-`AuthSubject` oder einen `AuthError`. JWT-Validation laeuft ueber `ring`
-(RS256-Signature) und vermeidet damit eine zweite Crypto-Dep neben
-rustls.
+`AuthMode::validate` is the single entry point per connection: it
+receives the wire-specific material (HTTP headers, MQTT CONNECT
+properties, SASL-PLAIN tokens, mTLS peer cert) and deterministically
+produces an `AuthSubject` or an `AuthError`. JWT validation runs through
+`ring` (RS256 signature), avoiding a second crypto dep alongside rustls.
 
-`Acl` matched in zwei Stufen: Subject-Name (Wildcard `*`) und
-Group-Membership; pro Topic kann jede Stufe Read oder Write erlauben.
+`Acl` matches in two stages: subject name (wildcard `*`) and group
+membership; per topic, each stage can grant read or write.
 
-### Architektur
+### Architecture
 
-- **Layer:** 5 (Bridges) — gemeinsamer Substrat-Layer fuer alle sechs
-  Bridge-Daemons.
-- **Dependencies (in):** `rustls 0.23` (mit `ring`-Backend, kein
+- **Layer:** 5 (Bridges) — shared substrate layer for all six bridge
+  daemons.
+- **Dependencies (in):** `rustls 0.23` (with `ring` backend, no
   `aws-lc-rs`), `rustls-pemfile`, `rustls-pki-types`, `ring`, `base64`.
-  Keine ZeroDDS-Internals.
+  No ZeroDDS internals.
 - **Dependents (out):** `zerodds-websocket-bridge`, `zerodds-mqtt-bridge`,
   `zerodds-coap-bridge`, `zerodds-amqp-endpoint`, `zerodds-grpc-bridge`,
-  `zerodds-corba-dds-bridge` — alle als optional Dep im `daemon`-Feature.
-- **Feature-Flags:**
-  | Flag | Default | Zweck |
-  |------|---------|-------|
-  | `std` | ✅ | Pflicht (rustls 0.23 braucht std). |
+  `zerodds-corba-dds-bridge` — all as optional deps in the `daemon` feature.
+- **Feature flags:**
+  | Flag | Default | Purpose |
+  |------|---------|---------|
+  | `std` | ✅ | Required (rustls 0.23 needs std). |
 
-### Stabilitaet
+### Stability
 
-- Alle `pub`-Items sind RC1-stabil; Breaking-Changes erfordern Major-Bump.
-- Neue `AuthMode`-Diskriminanten oder neue `AclOp`-Varianten sind
-  Major-additive (rustc lehnt non-exhaustive ohne `#[non_exhaustive]`
-  ab — wir behalten exhaustive Match-Syntax bei und bumpen Major bei
-  Erweiterung).
+- All `pub` items are RC1-stable; breaking changes require a major bump.
+- New `AuthMode` discriminants or new `AclOp` variants are
+  major-additive (rustc rejects non-exhaustive without
+  `#[non_exhaustive]` — we keep exhaustive match syntax and bump major on
+  extension).

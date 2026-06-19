@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["dds", "idl", "codegen", "typescript"]
 categories = ["development-tools"]
 authors.workspace = true
-description = "OMG IDL4 → TypeScript Code-Generator (Browser + Node.js Targets) für ZeroDDS."
+description = "OMG IDL4 → TypeScript code generator (browser + Node.js targets) for ZeroDDS."
 publish = true
 
 [lints]
@@ -26,7 +26,7 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.1", path = "../idl" }
+zerodds-idl = { version = "1.0.0-rc.3", path = "../idl" }
 
 [dev-dependencies]
 insta = { workspace = true }

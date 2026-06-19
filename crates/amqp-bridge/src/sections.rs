@@ -3,11 +3,11 @@
 
 //! AMQP 1.0 Message Sections — Spec `amqp-1.0-messaging` §3.
 //!
-//! Die 7 Message-Sections (Header, Delivery-Annotations, Message-
+//! The 7 message sections (Header, Delivery-Annotations, Message-
 //! Annotations, Properties, Application-Properties, Body, Footer)
-//! sind described composites mit Descriptor-Code (ulong) + Body
-//! (list oder Variant). [`validate_section_sequence`] erzwingt die
-//! AMQP-Messaging §3.2-Reihenfolge-Constraint.
+//! are described composites with a descriptor code (ulong) + body
+//! (list or variant). [`validate_section_sequence`] enforces the
+//! AMQP-Messaging §3.2 ordering constraint.
 //!
 //! Cross-Ref: DDS-AMQP-1.0 §8.2 Properties-Section-Mapping + §8.3
 //! Application-Properties-Mapping.
@@ -18,7 +18,7 @@ use crate::extended_types::AmqpExtValue;
 use crate::performatives::{decode_performative, encode_performative};
 use crate::types::TypeError;
 
-/// Spec §3.2 — Message-Section Descriptor-Codes.
+/// Spec §3.2 — message-section descriptor codes.
 pub mod descriptor {
     /// `0x70` — Header.
     pub const HEADER: u64 = 0x0000_0000_0000_0070;
@@ -136,8 +136,8 @@ impl MessageSection {
 /// (Spec §3.2 sequencing-rule).
 ///
 /// # Errors
-/// `Truncated` (re-used als generischer Sequencing-Error) wenn die
-/// Reihenfolge verletzt ist.
+/// `Truncated` (reused as a generic sequencing error) if the
+/// order is violated.
 pub fn validate_section_sequence(sections: &[MessageSection]) -> Result<(), TypeError> {
     let mut last_order = 0;
     for s in sections {

@@ -3,27 +3,27 @@
 
 //! ObjectId — Spec §11.3.4.
 //!
-//! `typedef sequence<octet> ObjectId;` — opaque Bytes, vom POA
-//! generiert (SYSTEM_ID) oder vom Caller geliefert (USER_ID).
+//! `typedef sequence<octet> ObjectId;` — opaque bytes, generated
+//! by the POA (SYSTEM_ID) or supplied by the caller (USER_ID).
 
 use alloc::vec::Vec;
 
-/// ObjectId — opaque Bytes.
+/// ObjectId — opaque bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
 pub struct ObjectId(pub Vec<u8>);
 
 impl ObjectId {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new(bytes: Vec<u8>) -> Self {
         Self(bytes)
     }
 
-    /// Konstruiert eine SYSTEM_ID aus einer monotonen u64. Das
-    /// Format ist Implementation-Defined; wir nutzen 16 Bytes
-    /// `[0xCAFE_F00D, 8 random bytes, 4 padding]`-aehnlich.
-    /// In Praxis wird die u64-Sequenz als Big-Endian eingebettet,
-    /// damit Nesting-Reihenfolge stabil ist.
+    /// Constructs a SYSTEM_ID from a monotonic u64. The
+    /// format is implementation-defined; we use something like 16
+    /// bytes `[0xCAFE_F00D, 8 random bytes, 4 padding]`.
+    /// In practice the u64 sequence is embedded big-endian
+    /// so that nesting order stays stable.
     #[must_use]
     pub fn system_id(seq: u64) -> Self {
         let mut bytes = Vec::with_capacity(8);
@@ -31,19 +31,19 @@ impl ObjectId {
         Self(bytes)
     }
 
-    /// Bytes-Slice.
+    /// Byte slice.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 
-    /// Laenge in Bytes.
+    /// Length in bytes.
     #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    /// `true` wenn leer.
+    /// `true` if empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()

@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CIF — Component Implementation Framework (Spec §8).
+//! CIF — Component Implementation Framework (spec §8).
 //!
-//! Vier Executor-Modi (Spec §8.1.4):
+//! Four executor modes (spec §8.1.4):
 //!
-//! | Mode | Verwendung | Lifecycle |
+//! | Mode | Usage | Lifecycle |
 //! |---|---|---|
 //! | Session | one-instance-per-session | session-scoped |
 //! | Service | stateless | per-request |
 //! | Process | long-running per-process | process-scoped |
 //! | Entity | persistent | persistent |
 //!
-//! Component-Executor implementiert die Component-Method-Logik;
-//! Home-Executor verwaltet Lifecycle-Calls (`ccm_activate` etc.).
+//! The component executor implements the component method logic;
+//! the home executor manages lifecycle calls (`ccm_activate` etc.).
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -21,58 +21,58 @@ use alloc::vec::Vec;
 
 use crate::context::ComponentContext;
 
-/// Allgemeines Executor-Trait (alle vier Modi).
+/// Common executor trait (all four modes).
 pub trait ComponentExecutor: Send + Sync {
-    /// `set_session_context` / `set_service_context` etc. — der
-    /// Container injiziert den Context vor dem ersten Method-Call
-    /// (Spec §8.1.5).
+    /// `set_session_context` / `set_service_context` etc. — the
+    /// container injects the context before the first method call
+    /// (spec §8.1.5).
     fn set_context(&mut self, context: Box<dyn ComponentContext>);
 
-    /// `ccm_activate` — Spec §8.1.5.4.
+    /// `ccm_activate` — spec §8.1.5.4.
     fn ccm_activate(&mut self) -> Result<(), CifError> {
         Ok(())
     }
 
-    /// `ccm_passivate` — Spec §8.1.5.5.
+    /// `ccm_passivate` — spec §8.1.5.5.
     fn ccm_passivate(&mut self) -> Result<(), CifError> {
         Ok(())
     }
 
-    /// `ccm_remove` — Spec §8.1.5.6.
+    /// `ccm_remove` — spec §8.1.5.6.
     fn ccm_remove(&mut self) -> Result<(), CifError> {
         Ok(())
     }
 }
 
-/// CIF-spezifische Fehler.
+/// CIF-specific errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CifError {
-    /// `CCMException` — generischer Fehler aus dem Executor.
+    /// `CCMException` — generic error from the executor.
     CcmException(String),
 }
 
-/// Session-Executor — Spec §8.1.4.1.
+/// Session executor — spec §8.1.4.1.
 pub trait SessionExecutor: ComponentExecutor {
-    /// Marker-Method, dass der Executor Session-Mode hat.
+    /// Marker method indicating the executor is in session mode.
     fn session_marker(&self) {}
 }
 
-/// Keyed-Executor — Spec §8.1.4.4 (Entity).
+/// Keyed executor — spec §8.1.4.4 (Entity).
 pub trait KeyedExecutor: ComponentExecutor {
-    /// Liefert den Primary-Key des Entity-Executors.
+    /// Returns the primary key of the entity executor.
     fn primary_key(&self) -> Vec<u8>;
 }
 
-/// ExecutorLocator — Spec §8.1.6.
+/// ExecutorLocator — spec §8.1.6.
 ///
-/// Vom Container aufgerufen, um pro Method-Call den passenden
-/// Executor zu bekommen. Bei Session/Process: cached; bei Service:
+/// Called by the container to obtain the appropriate executor for
+/// each method call. For Session/Process: cached; for Service:
 /// transient.
 pub trait ExecutorLocator: Send + Sync {
-    /// Vor dem Method-Call.
+    /// Before the method call.
     ///
     /// # Errors
-    /// CIF-Fehler, falls der Locator den Executor nicht liefern kann.
+    /// CIF error if the locator cannot provide the executor.
     fn obtain_executor(&self, oid: &[u8]) -> Result<Box<dyn ComponentExecutor>, CifError>;
 }
 

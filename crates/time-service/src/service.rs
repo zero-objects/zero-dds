@@ -13,8 +13,8 @@
 //! };
 //! ```
 //!
-//! Wir bilden das ohne CORBA-Interface ab — die Operations werden als
-//! Methoden auf der [`TimeService`]-Struct realisiert.
+//! We model this without a CORBA interface — the operations are realized
+//! as methods on the [`TimeService`] struct.
 
 use core::fmt;
 
@@ -37,31 +37,31 @@ impl fmt::Display for TimeUnavailable {
 #[cfg(feature = "std")]
 impl std::error::Error for TimeUnavailable {}
 
-/// `TimeService`-Object — Spec §2.1. ZeroDDS-Implementation als
-/// plain Rust-Struct (kein CORBA-Object).
+/// `TimeService` object — Spec §2.1. ZeroDDS implementation as a
+/// plain Rust struct (no CORBA object).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TimeService {
-    /// Tdf, der bei `universal_time()` in den UTOs gesetzt wird.
+    /// Tdf set in the UTOs at `universal_time()`.
     /// Default 0 (Greenwich).
     pub default_tdf: TdfT,
-    /// Inaccuracy, die bei `universal_time()` in den UTOs angegeben
-    /// wird. Default 0 (Spec erlaubt Implementations, ihre eigene
-    /// Inaccuracy zu kennen).
+    /// Inaccuracy reported in the UTOs at `universal_time()`.
+    /// Default 0 (the spec allows implementations to know their own
+    /// inaccuracy).
     pub default_inaccuracy: InaccuracyT,
-    /// Wenn `true`, dann ist die zugrundeliegende Zeitquelle als
-    /// "secure" markiert (Spec §2.1.2 + Appendix A). Sonst wirft
-    /// `secure_universal_time()` `TimeUnavailable`.
+    /// If `true`, the underlying time source is marked
+    /// "secure" (spec §2.1.2 + appendix A). Otherwise
+    /// `secure_universal_time()` throws `TimeUnavailable`.
     pub secure_source: bool,
 }
 
 impl TimeService {
-    /// Spec §2.1.1 — `universal_time()`. Liefert die aktuelle Zeit.
-    /// Raises `TimeUnavailable`, wenn die Time-Source nicht
-    /// verfuegbar ist.
+    /// Spec §2.1.1 — `universal_time()`. Returns the current time.
+    /// Raises `TimeUnavailable` if the time source is not
+    /// available.
     ///
     /// # Errors
-    /// `TimeUnavailable` wenn `current_time()` 0 zurueckliefert
-    /// (z.B. no_std ohne Real-Clock).
+    /// `TimeUnavailable` if `current_time()` returns 0
+    /// (e.g. no_std without a real clock).
     #[cfg(feature = "std")]
     pub fn universal_time(&self) -> Result<Uto, TimeUnavailable> {
         let now = current_time();
@@ -75,12 +75,12 @@ impl TimeService {
         )))
     }
 
-    /// Spec §2.1.2 — `secure_universal_time()`. Liefert Zeit nur, wenn
-    /// die Time-Source als "secure" konfiguriert ist (Spec Appendix A).
+    /// Spec §2.1.2 — `secure_universal_time()`. Returns the time only if
+    /// the time source is configured as "secure" (spec appendix A).
     ///
     /// # Errors
-    /// `TimeUnavailable` wenn `secure_source = false` oder die
-    /// Time-Source nicht verfuegbar ist.
+    /// `TimeUnavailable` if `secure_source = false` or the
+    /// time source is not available.
     #[cfg(feature = "std")]
     pub fn secure_universal_time(&self) -> Result<Uto, TimeUnavailable> {
         if !self.secure_source {
@@ -92,8 +92,8 @@ impl TimeService {
     /// Spec §2.1.2.1 — `new_universal_time(time, inaccuracy, tdf)`.
     ///
     /// # Errors
-    /// Spec sagt `CORBA::BAD_PARAM` bei out-of-range Inaccuracy. Wir
-    /// kappen statt dessen still auf 48 bit (siehe [`UtcT::new`]).
+    /// Spec says `CORBA::BAD_PARAM` on out-of-range inaccuracy. We
+    /// silently clamp to 48 bit instead (see [`UtcT::new`]).
     #[must_use]
     pub fn new_universal_time(time: TimeT, inaccuracy: InaccuracyT, tdf: TdfT) -> Uto {
         Uto::new(time, inaccuracy, tdf)
@@ -106,7 +106,7 @@ impl TimeService {
     }
 
     /// Spec §2.1.2.3 — `new_interval(lower, upper)`. Raises
-    /// `CORBA::BAD_PARAM` wenn `lower > upper`. Wir liefern `None`.
+    /// `CORBA::BAD_PARAM` if `lower > upper`. We return `None`.
     #[must_use]
     pub fn new_interval(lower: TimeT, upper: TimeT) -> Option<Tio> {
         IntervalT::new(lower, upper).map(Tio::from_interval)
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn new_interval_rejects_lower_greater_than_upper() {
-        // Spec §2.1.2.3 — BAD_PARAM bei lower > upper.
+        // Spec §2.1.2.3 — BAD_PARAM when lower > upper.
         assert!(TimeService::new_interval(200, 100).is_none());
     }
 
@@ -153,7 +153,7 @@ mod tests {
     fn universal_time_returns_recent_value() {
         let service = TimeService::default();
         let uto = service.universal_time().expect("ok");
-        // Spec §2.1.1 — Time muss > 0 sein und im plausiblen Bereich
+        // Spec §2.1.1 — time must be > 0 and in the plausible range
         // (post-2020, pre-2200).
         assert!(uto.time() > 130_000_000_000_000_000);
     }

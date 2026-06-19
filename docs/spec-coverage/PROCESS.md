@@ -18,6 +18,8 @@ Pro Spec gibt es **zwei** Dateien:
    - jedes `open`-Item mit Spec-Ref + Kurzbeschreibung + Plan-Hinweis
    - dient als Arbeits-Backlog
    - Vor jedem Audit-Lauf gelöscht und neu generiert (kein Drift)
+   - **Ausnahme:** ist nach dem Audit nichts mehr offen/partial/rejected,
+     entfällt die `.open.md` ganz — siehe „Leere `.open.md` entfernen" am Ende.
 
 ## File-Struktur
 
@@ -90,7 +92,7 @@ ohne Klasse ist nicht zulässig.
 ## Anti-Patterns (verboten)
 
 1. **Status-Drift**: Item als `done` markieren ohne Tests im Repo.
-2. **Phasen-Marker**: "Phase-2", "deferred", "out-of-scope", "spaeter"
+2. **Phasen-Marker**: "Phase-2", "deferred", "out-of-scope", "später"
    sind keine Status-Werte. Wenn unklar → `open` mit konkreter
    Beschreibung.
 3. **Sammel-Status**: "alle Rules 133-183 done" ohne Item-für-Item-
@@ -249,9 +251,26 @@ Files. Aktueller Bestand:
 - `coap-rfc-7252.md`
 - `websocket-rfc-6455.md`
 - `mqtt-5.0.md`
+- `mqtt-3.1.1.md` (MQTT 3.1.1 — version-aware Codec-Pfad neben 5.0;
+  Repo: `crates/mqtt-bridge/` `ProtocolVersion::V311`)
 - `amqp-1.0.md`
+- `amqp-0-9-1.md` (AMQP 0.9.1 — eigenständiges Protokoll: connection/
+  channel/exchange/queue/basic/confirm/tx; Repo: `crates/amqp-0-9-1/`)
 - `grpc-protocol.md`
 - `ros2-rmw.md`
+
+### OPC Foundation (OPC-UA)
+
+Quelle: die OPC-UA-Core-Parts in `docs/standards/cache/opcfoundation/`
+(per OPC-Account beschafft; aus IP-/Copyright-Gründen gitignored — nur zum
+Zitieren, nie committen). PDF-Offset Part 14 = +20.
+
+- `opcua-pubsub-1.05.md` (Part 14 — PubSub/UADP; Cross-Spec Part 6 §5 Binär-
+  Codec / Part 4 / Part 3; Repo: `crates/opcua-pubsub/`)
+- `opcua-client-server-1.05.md` (Part 4 — Services + Part 6 §7.1 UACP /
+  §6.7 OPC UA Secure Conversation; Repo: `crates/opcua-uacp/` +
+  `crates/opcua-server/`). Nicht zu verwechseln mit `dds-opcua-1.0.md`, das die
+  OMG-DDS-OPC-UA-**Gateway**-Spec abdeckt.
 
 ### ZeroDDS-Vendor-Specs
 
@@ -265,6 +284,18 @@ File-Konvention identisch zu OMG-Specs; Repo-Pfade zeigen auf
   Quelle: `documentation/specs/dds-ts-1.0/main.tex`)
 - `zerodds-py-1.0.md` (Python-Binding, Quelle:
   `docs/specs/zerodds-py-1.0.md`; Repo: `crates/py/`)
+- `zerodds-monitor-1.1.md` (Observability-Substrat, Quelle:
+  `docs/specs/zerodds-monitor-1.1.md`; Repo: `crates/monitor/` + Hook-Points in
+  `crates/{transport,rtps,discovery,dcps,security}/`; 10 done / 0 open, löst die
+  1.0-Coverage ab)
+- `zerodds-listener-callbacks-1.1.md` (C-FFI cross-language Listener-Layer,
+  Quelle: `docs/specs/zerodds-listener-callbacks-1.1.md`; Repo:
+  `crates/zerodds-c-api/` Listener-FFI + Status-/Inconsistent-Topic-Counter in
+  `crates/{dcps,discovery}/`; 26 done / 0 open / 1 n/a (informative))
+- `zerodds-observability-otlp-1.0.md` (OTLP/HTTP/JSON-Exporter, Quelle:
+  `docs/specs/zerodds-observability-otlp-1.0.md`; Repo: `crates/observability-otlp/`)
+- `zddsrec-1.0.md` (Recording-Format `.zddsrec`, Quelle:
+  `docs/specs/zddsrec-1.0.md`; Repo: `crates/recorder/`)
 
 ### Test-Inventare (kein Spec-Coverage)
 
@@ -279,3 +310,27 @@ Pro Spec gilt: zugehörige `.open.md` vor Audit löschen, kompletter
 Re-Sync gegen die Quelle (PDF oder TeX), Item-für-Item. Nach
 Re-Sync: Abschluss-Bemerkung im Hauptfile aktualisieren,
 Decision-Records in `.open.md` neu generieren.
+
+## Leere `.open.md` entfernen (kein Leer-Aggregat)
+
+Wenn nach dem vollständigen, sauberen Item-für-Item-Durchgang **kein
+einziges** Item mehr den Status `open`, `partial` oder `n/a (rejected)`
+trägt — und auch keine verkappten Aufschiebe-Marker wie „deferred",
+„later", „Phase X", „out-of-scope", „TODO" mehr im Hauptfile stehen
+(diese sind ohnehin keine zulässigen Status, siehe Anti-Patterns) —
+dann gibt es nichts zu aggregieren. In diesem Fall:
+
+1. Die `.open.md` (und ggf. `.open.en.md`) **löschen** statt ein
+   inhaltsleeres Aggregat zu pflegen.
+2. Im Hauptfile den `.open.md`-Querverweis entfernen (Intro **und**
+   Abschluss-Bemerkung) und durch „Offene Punkte: keine. Decision-
+   Records: keine." ersetzen.
+3. Gerenderte `*.open.html` mitlöschen und Coverage-HTML neu rendern,
+   damit die Sidebars die entfernte Seite nicht mehr verlinken
+   (keine toten Links).
+
+Die Aggregat-Zahl in der Abschluss-Bemerkung muss dann
+`<N> done / 0 partial / 0 open / <P> n/a (informative) / 0 n/a (rejected)`
+lauten (nur `done` und optional `n/a (informative)`). Sobald ein späterer
+Re-Audit wieder ein `open`/`partial`/`rejected`-Item findet, wird die
+`.open.md` nach dem normalen Workflow neu erzeugt.

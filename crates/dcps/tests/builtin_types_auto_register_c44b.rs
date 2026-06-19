@@ -1,15 +1,15 @@
-//! Integration-Tests fuer C4.4-b: Built-in Types Auto-Register
-//! im Participant.
+//! Integration tests for C4.4-b: built-in types auto-register
+//! in the participant.
 //!
-//! Spec: XTypes 1.3 §7.6.5 + Annex E. Vier Built-in-Types:
+//! Spec: XTypes 1.3 §7.6.5 + Annex E. Four built-in types:
 //! `DDS::String`, `DDS::KeyedString`, `DDS::Bytes`, `DDS::KeyedBytes`.
 //!
-//! Erwartetes Verhalten:
-//! - Nach `create_participant_offline()` sind alle 4 lookupbar.
-//! - Idempotent: doppeltes `register_builtin_types()` darf nicht
-//!   crashen + nicht die Anzahl verdoppeln.
-//! - `unregister_builtin_types()` entfernt sie wieder; erneutes
-//!   Register stellt sie wieder her.
+//! Expected behavior:
+//! - After `create_participant_offline()` all 4 are lookup-able.
+//! - Idempotent: calling `register_builtin_types()` twice must not
+//!   crash and must not double the count.
+//! - `unregister_builtin_types()` removes them again; registering
+//!   again restores them.
 
 #![allow(
     clippy::expect_used,
@@ -132,7 +132,7 @@ fn separate_participants_have_separate_registries() {
         .create_participant_offline(0, DomainParticipantQos::default());
     p1.unregister_builtin_types();
     assert_eq!(p1.registered_type_count(), 0);
-    // P2 unbeeinflusst.
+    // P2 unaffected.
     assert_eq!(p2.registered_type_count(), 4);
 }
 

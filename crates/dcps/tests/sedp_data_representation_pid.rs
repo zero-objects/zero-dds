@@ -1,22 +1,22 @@
-//! D.5f — SEDP-PID-DATA_REPRESENTATION-Conformance.
+//! D.5f — SEDP PID_DATA_REPRESENTATION conformance.
 //!
-//! Schuetzt gegen den D.5e-Bug "ZeroDDS announct kein
-//! PID_DATA_REPRESENTATION (PID 0x0073)" der bei Live-Interop gegen
-//! strict Vendoren (RTI Connext 7.7.0) zu silent SEDP-Match-Fail
-//! fuehrt.
+//! Guards against the D.5e bug "ZeroDDS announces no
+//! PID_DATA_REPRESENTATION (PID 0x0073)" which causes a silent SEDP
+//! match failure in live interop against strict vendors (RTI Connext
+//! 7.7.0).
 //!
-//! Spec-Quellen:
+//! Spec sources:
 //! * **DDS-XTypes 1.3 §7.6.3.1.1** — `DataRepresentationQosPolicy`
-//!   mit `value: sequence<DataRepresentationId>`. IDs:
+//!   with `value: sequence<DataRepresentationId>`. IDs:
 //!   `XCDR_DATA_REPRESENTATION = 0`, `XML = 1`, `XCDR2 = 2`.
-//! * **DDSI-RTPS 2.5** PID-Tabelle: `PID_DATA_REPRESENTATION = 0x0073`.
-//! * **DDS-XTypes 1.3 §7.6.3.1.2** — Default ohne Policy-Match ist
-//!   `[XCDR1]` (legacy). Wenn ZeroDDS XCDR2-Encap (`0x0007`) emittiert,
-//!   muss es das im SEDP auch ankuendigen.
+//! * **DDSI-RTPS 2.5** PID table: `PID_DATA_REPRESENTATION = 0x0073`.
+//! * **DDS-XTypes 1.3 §7.6.3.1.2** — the default without a policy match
+//!   is `[XCDR1]` (legacy). If ZeroDDS emits XCDR2 encapsulation
+//!   (`0x0007`), it must also announce it in SEDP.
 //!
-//! Pre-D.5f: ZeroDDS hat `data_representation: Vec::new()` und der
-//! Encoder skippt das PID. Unser Wire-Encap war XCDR2 — aber
-//! Announcement war default-XCDR1 = inkonsistent.
+//! Pre-D.5f: ZeroDDS had `data_representation: Vec::new()` and the
+//! encoder skipped the PID. Our wire encapsulation was XCDR2 — but the
+//! announcement was default XCDR1 = inconsistent.
 
 #![allow(
     clippy::expect_used,
@@ -68,16 +68,18 @@ fn make_pub_data(data_rep: Vec<i16>) -> PublicationBuiltinTopicData {
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
+        unicast_locators: Vec::new(),
+        multicast_locators: Vec::new(),
     }
 }
 
-/// Cluster-A: PID_DATA_REPRESENTATION wird emittiert wenn Liste
-/// non-empty ist.
+/// Cluster-A: PID_DATA_REPRESENTATION is emitted when the list is
+/// non-empty.
 #[test]
 fn publication_data_emits_data_representation_pid_when_set() {
     let pd = make_pub_data(vec![publication_data::data_representation::XCDR2]);
     let bytes = pd.to_pl_cdr_le().expect("encode");
-    // PID-Layout: 4 byte encap header + ParameterList. Suche nach
+    // PID layout: 4-byte encap header + ParameterList. Search for
     // 0x0073 little-endian = bytes [0x73, 0x00].
     let hex_dump: String = bytes
         .iter()
@@ -87,13 +89,13 @@ fn publication_data_emits_data_representation_pid_when_set() {
     let needle = "73 00";
     assert!(
         hex_dump.contains(needle),
-        "PID_DATA_REPRESENTATION (0x0073) NICHT in encoded SEDP-Pub gefunden!\nFull hex:\n{hex_dump}"
+        "PID_DATA_REPRESENTATION (0x0073) NOT found in encoded SEDP pub!\nFull hex:\n{hex_dump}"
     );
 }
 
-/// Cluster-A neg: leere Liste → PID wird NICHT emittiert (Pre-D.5f
-/// Verhalten, das wir genau vermeiden wollen). Nur dokumentarisch —
-/// Production-Code muss IMMER die Liste befuellen.
+/// Cluster-A neg: empty list → PID is NOT emitted (pre-D.5f behavior,
+/// which is exactly what we want to avoid). Documentary only —
+/// production code must ALWAYS populate the list.
 #[test]
 fn publication_data_skips_pid_when_empty_documentary() {
     let pd = make_pub_data(Vec::new());
@@ -105,11 +107,11 @@ fn publication_data_skips_pid_when_empty_documentary() {
         .join(" ");
     assert!(
         !hex_dump.contains("73 00"),
-        "Empty data_representation hat PID emittiert — Encoder-Bug:\n{hex_dump}"
+        "empty data_representation emitted a PID — encoder bug:\n{hex_dump}"
     );
 }
 
-/// Cluster-A roundtrip: encode → decode preserviert Liste exakt.
+/// Cluster-A roundtrip: encode → decode preserves the list exactly.
 #[test]
 fn publication_data_roundtrip_preserves_data_representation() {
     let original = vec![
@@ -125,9 +127,8 @@ fn publication_data_roundtrip_preserves_data_representation() {
     );
 }
 
-/// Cluster-B: das DCPS-Runtime `build_publication_data` setzt das Feld
-/// AUF XCDR2 (D.5f-Fix). Dieser Test wird red wenn der Fix
-/// regrediert wird.
+/// Cluster-B: the DCPS runtime `build_publication_data` sets the field
+/// TO XCDR2 (D.5f fix). This test goes red if the fix regresses.
 #[test]
 fn dcps_runtime_publication_announces_xcdr2() {
     use zerodds_dcps::{
@@ -144,22 +145,23 @@ fn dcps_runtime_publication_announces_xcdr2() {
     let _writer = publisher
         .create_datawriter::<RawBytes>(&topic, DataWriterQos::default())
         .expect("writer");
-    // Note: offline-Mode emittiert kein SEDP. Diese Assertion muss
-    // ueber den `build_publication_data`-Helper laufen wenn er
-    // public-API-zugaenglich ist; sonst ueber den Live-Mode-Test in
+    // Note: offline mode emits no SEDP. This assertion must run via the
+    // `build_publication_data` helper if it is public-API-accessible;
+    // otherwise via the live-mode test in
     // `live_data_representation_announce.rs`.
     //
-    // Hier nur Smoketest dass create_datawriter nicht panicked.
+    // Here just a smoke test that create_datawriter does not panic.
     let _ = (p, publisher);
 }
 
 // ---------------------------------------------------------------------------
-// Cluster-C: receiver-side detection — wenn announce sagt XCDR1 aber
-// wire-encap ist XCDR2 (oder umgekehrt), das ist Spec-Inkonsistenz.
-// Reader sollte sample droppen oder log Warning. (Implementation TBD)
+// Cluster-C: receiver-side detection — if the announce says XCDR1 but
+// the wire encapsulation is XCDR2 (or vice versa), that is a spec
+// inconsistency. The reader should drop the sample or log a warning.
+// (Implementation TBD)
 //
-// Vorerst nur dokumentarisch: wir testen die DATA-Submessage-Encap-
-// Erkennung auf Bytes-Level.
+// For now documentary only: we test DATA-submessage encapsulation
+// detection at the byte level.
 
 const ENCAP_PLAIN_CDR_LE: [u8; 4] = [0x00, 0x01, 0x00, 0x00]; // XCDR1
 const ENCAP_PLAIN_CDR2_LE: [u8; 4] = [0x00, 0x07, 0x00, 0x00]; // XCDR2 final
@@ -209,7 +211,7 @@ fn detect_xcdr2_from_pl_cdr2_le_encap() {
     assert_eq!(detect_data_rep(ENCAP_PL_CDR2_LE), DataRepFromEncap::Xcdr2);
 }
 
-/// Konsistenz-Check: announced [XCDR2] + received-encap=PLAIN_CDR2_LE → match.
+/// Consistency check: announced [XCDR2] + received-encap=PLAIN_CDR2_LE → match.
 #[test]
 fn announced_xcdr2_with_xcdr2_encap_is_consistent() {
     let announced = [publication_data::data_representation::XCDR2];
@@ -217,13 +219,13 @@ fn announced_xcdr2_with_xcdr2_encap_is_consistent() {
     assert_eq!(received_rep, DataRepFromEncap::Xcdr2);
     assert!(
         announced.contains(&publication_data::data_representation::XCDR2),
-        "announced XCDR2 sollte XCDR2-encap akzeptieren"
+        "announced XCDR2 should accept XCDR2 encap"
     );
 }
 
-/// Konsistenz-Check FAIL: announced [XCDR1] aber received-encap=PLAIN_CDR2_LE.
-/// Pre-D.5f-Bug: ZeroDDS announct nichts (=XCDR1 default) aber sendet
-/// XCDR2 — dieser Mismatch wird hier explizit erkannt.
+/// Consistency check FAIL: announced [XCDR1] but received-encap=PLAIN_CDR2_LE.
+/// Pre-D.5f bug: ZeroDDS announces nothing (=XCDR1 default) but sends
+/// XCDR2 — this mismatch is detected explicitly here.
 #[test]
 fn announced_default_xcdr1_with_xcdr2_encap_is_inconsistent() {
     let announced_or_default: Vec<i16> = Vec::new(); // empty = default = [XCDR1]
@@ -236,8 +238,8 @@ fn announced_default_xcdr1_with_xcdr2_encap_is_inconsistent() {
     assert_eq!(received_rep, DataRepFromEncap::Xcdr2);
     assert!(
         !effective_announced.contains(&publication_data::data_representation::XCDR2),
-        "Pre-D.5f-Konstellation: announce-default=XCDR1 + wire=XCDR2 — \
-         genau die Inkonsistenz die RTI 7.7.0 silently rejected hat."
+        "pre-D.5f constellation: announce-default=XCDR1 + wire=XCDR2 — \
+         exactly the inconsistency that RTI 7.7.0 silently rejected."
     );
 }
 
@@ -302,7 +304,7 @@ fn tolerant_no_overlap_returns_none() {
     assert_eq!(result, None, "Kein overlap = no match");
 }
 
-/// Spec-Default: leere Listen → impliziert [XCDR1].
+/// Spec default: empty lists → implies [XCDR1].
 #[test]
 fn empty_writer_list_treated_as_xcdr1() {
     let result = negotiate(&[], &[XCDR2, XCDR], DataRepMatchMode::Strict);
@@ -334,17 +336,19 @@ fn encap_for_final_xcdr1_yields_plain_cdr_le() {
     assert_eq!(encap_for_final_le(XCDR), [0x00, 0x01, 0x00, 0x00]);
 }
 
-/// DEFAULT_OFFER Sanity-Check.
+/// DEFAULT_OFFER sanity check.
 ///
-/// `[XCDR1, XCDR2]`: XCDR1 first damit Strict-Spec-Vendoren wie RTI
-/// matchen (writer.first ∈ reader.list mit reader=[XCDR1]). XCDR2
-/// second als modern fallback fuer Peers die XCDR2 koennen.
+/// `[XCDR2]` (XCDR2-only, since the XCDR2 default flip): the codegen emits
+/// real XCDR2 (body fixed XCDR2-aligned, encap 0x07/0x09/0x0b). XCDR1 must NOT
+/// be in the list — otherwise an XCDR1-only reader matches falsely in tolerant mode
+/// and reads the XCDR2 body wrong. Legacy XCDR1 explicitly via
+/// `ZERODDS_DATA_REPR_OFFER=XCDR1`.
 #[test]
-fn default_offer_is_xcdr1_first_xcdr2_second() {
+fn default_offer_is_xcdr2_only() {
     assert_eq!(
         DEFAULT_OFFER,
-        [XCDR, XCDR2],
-        "Default offer: prefer legacy XCDR1 (RTI-strict-compat), modern XCDR2 als Fallback"
+        [XCDR2],
+        "default offer: XCDR2-only (codegen emits an XCDR2 body; XCDR1 would trigger a tolerant mismatch)"
     );
 }
 
@@ -352,7 +356,7 @@ fn default_offer_is_xcdr1_first_xcdr2_second() {
 // D.5g Config-Options — RuntimeConfig override + Per-Writer/Reader override
 // ---------------------------------------------------------------------------
 
-/// `RuntimeConfig::data_representation_offer` ist konfigurierbar.
+/// `RuntimeConfig::data_representation_offer` is configurable.
 #[test]
 fn runtime_config_data_rep_offer_default_matches_default_offer() {
     use zerodds_dcps::runtime::RuntimeConfig;
@@ -364,7 +368,7 @@ fn runtime_config_data_rep_offer_default_matches_default_offer() {
     );
 }
 
-/// `RuntimeConfig::data_rep_match_mode` ist konfigurierbar; Default = Tolerant.
+/// `RuntimeConfig::data_rep_match_mode` is configurable; default = Tolerant.
 #[test]
 fn runtime_config_data_rep_match_mode_default_is_tolerant() {
     use zerodds_dcps::runtime::RuntimeConfig;
@@ -372,7 +376,7 @@ fn runtime_config_data_rep_match_mode_default_is_tolerant() {
     assert_eq!(cfg.data_rep_match_mode, DataRepMatchMode::Tolerant);
 }
 
-/// User kann eigene Offer-Liste setzen, z.B. XCDR2-only fuer modern-Deployments.
+/// The user can set a custom offer list, e.g. XCDR2-only for modern deployments.
 #[test]
 fn runtime_config_data_rep_offer_user_override_xcdr2_only() {
     use zerodds_dcps::runtime::RuntimeConfig;
@@ -383,7 +387,7 @@ fn runtime_config_data_rep_offer_user_override_xcdr2_only() {
     assert_eq!(cfg.data_representation_offer, vec![XCDR2]);
 }
 
-/// User kann Strict-Mode setzen.
+/// The user can set strict mode.
 #[test]
 fn runtime_config_data_rep_match_mode_user_strict() {
     use zerodds_dcps::runtime::RuntimeConfig;

@@ -26,7 +26,7 @@ fn run(src: &str) -> String {
 
 #[test]
 fn multi_line_define_with_backslash_continuation() {
-    // `\` direkt vor `\n` splice't die Zeile.
+    // `\` directly before `\n` splices the line.
     let src = "#define MAX 1000 + \\\n 234\nconst long L = MAX;\n";
     let out = run(src);
     // Whitespace collapses with one space because Token-Splice removed the
@@ -36,7 +36,7 @@ fn multi_line_define_with_backslash_continuation() {
 
 #[test]
 fn multi_line_with_carriage_return_newline() {
-    // CR LF + Backslash-Continuation muss auch funktionieren.
+    // CR LF + backslash continuation must work too.
     let src = "#define X 100 \\\r\n + 1\nconst long L = X;\n";
     let out = run(src);
     assert!(out.contains("100  + 1"), "got {out:?}");

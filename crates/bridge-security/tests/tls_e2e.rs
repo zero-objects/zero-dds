@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! End-to-End-TLS-Handshake-Smoke: spawnt einen Mini-Server mit
-//! `zerodds-bridge-security::load_server_config`, connected einen
-//! `rustls::ClientConnection` über Loopback und verifiziert, dass
-//! der Handshake durch den `with_single_cert`-Pfad abschließt.
+//! End-to-end TLS handshake smoke: spawns a mini server with
+//! `zerodds-bridge-security::load_server_config`, connects a
+//! `rustls::ClientConnection` over loopback, and verifies that the
+//! handshake completes through the `with_single_cert` path.
 //!
-//! Akzeptanz-Pfad fuer Bridge-Spec §7.1 TLS: spawne Daemon mit
-//! Self-Signed-Cert (rcgen), connect mit `rustls::ClientConfig`,
-//! assert TLS-Handshake OK.
+//! Acceptance path for Bridge spec §7.1 TLS: spawn a daemon with a
+//! self-signed cert (rcgen), connect with `rustls::ClientConfig`,
+//! assert TLS handshake OK.
 
 #![allow(
     clippy::expect_used,

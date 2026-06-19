@@ -1,0 +1,7 @@
+zerodds (0.0.0-1) unstable; urgency=medium
+
+  * Initial Debian source package skeleton (Phase-5 E.2).
+  * Four binary packages: zerodds-tools, libzerodds-dev, libzerodds0,
+    librmw-zerodds.
+
+ -- ZeroDDS Maintainers <maintainers@zerodds.io>  Sat, 03 May 2026 00:00:00 +0000

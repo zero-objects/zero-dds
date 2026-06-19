@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Schema-Validation — DDS-XML 1.0 §6.6.
+//! Schema validation — DDS-XML 1.0 §6.6.
 //!
-//! Spec §6.6: das XSD muss alle empfangenen Samples validieren. Wir
-//! implementieren minimal-XSD: Element-Namen + Type-Coercion auf
+//! Spec §6.6: the XSD must validate all received samples. We
+//! implement minimal XSD: element names + type coercion to
 //! `xs:long`/`xs:double`/`xs:boolean`/`xs:string`/`xs:hexBinary`.
 
 use alloc::collections::BTreeMap;
@@ -12,21 +12,21 @@ use alloc::string::{String, ToString};
 use crate::codec::{FieldKind, FieldValue};
 use crate::xsd::XsdGenerator;
 
-/// Validation-Fehler.
+/// Validation error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationError {
-    /// Required-Field fehlt im Sample.
+    /// A required field is missing from the sample.
     MissingField(String),
-    /// Field hat den falschen Type.
+    /// A field has the wrong type.
     TypeMismatch {
-        /// Field-Name.
+        /// Field name.
         field: String,
-        /// Erwarteter XSD-Type-Name.
+        /// Expected XSD type name.
         expected: String,
-        /// Tatsaechlicher FieldKind.
+        /// Actual FieldKind.
         actual: FieldKind,
     },
-    /// Sample enthaelt einen unbekannten Field-Name.
+    /// The sample contains an unknown field name.
     UnknownField(String),
 }
 
@@ -47,20 +47,20 @@ impl core::fmt::Display for ValidationError {
 #[cfg(feature = "std")]
 impl std::error::Error for ValidationError {}
 
-/// Validiert ein Sample-Map gegen ein XSD-Generator (= Schema-Builder).
+/// Validates a sample map against an XSD generator (= schema builder).
 ///
 /// # Errors
-/// Siehe [`ValidationError`].
+/// See [`ValidationError`].
 pub fn validate(
     schema: &XsdGenerator,
     sample: &BTreeMap<String, FieldValue>,
 ) -> Result<(), ValidationError> {
     let xsd = schema.render();
-    // Wir parsen die Felder aus dem XSD-Quelltext direkt; alternativ
-    // koennte XsdGenerator die Felder via Getter exponieren — hier
-    // halten wir die XSD-Quelltext-Sicht als single source.
+    // We parse the fields directly from the XSD source text; alternatively
+    // XsdGenerator could expose the fields via a getter — here
+    // we keep the XSD-source-text view as the single source.
     let fields = parse_xsd_fields(&xsd);
-    // 1) UnknownField: jedes sample-Field muss im XSD existieren.
+    // 1) UnknownField: every sample field must exist in the XSD.
     for sample_name in sample.keys() {
         if !fields.iter().any(|(n, _, _)| n == sample_name) {
             return Err(ValidationError::UnknownField(sample_name.clone()));

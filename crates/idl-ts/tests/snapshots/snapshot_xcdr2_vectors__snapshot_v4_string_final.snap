@@ -55,17 +55,23 @@ export const GreetingTypeSupport: DdsTopicType<Greeting> = {
     typeName: "Greeting",
     isKeyed: false,
     extensibility: "final",
+    encodeInto(w: Xcdr2Writer, s: Greeting): void {
+        w.writeString(s.text);
+    },
     encode(s: Greeting, endian: EndianMode = "le"): Uint8Array {
         const w = new Xcdr2Writer(endian);
-        w.writeString(s.text);
+        this.encodeInto(w, s);
         return w.toBytes();
     },
-    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): Greeting {
-        const r = new Xcdr2Reader(bytes, offset, length, "le");
+    decodeFrom(r: Xcdr2Reader): Greeting {
         const _f_text: string = r.readString();
         return {
             text: _f_text,
         };
+    },
+    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): Greeting {
+        const r = new Xcdr2Reader(bytes, offset, length, "le");
+        return this.decodeFrom(r);
     },
     keyHash(s: Greeting): Uint8Array {
         return new Uint8Array(16);

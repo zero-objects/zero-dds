@@ -1,54 +1,53 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! S/MIME-Signatur-Trait + Dev-Helper fuer Permissions/Governance-XML.
+//! S/MIME signature trait + dev helper for permissions/governance XML.
 //!
-//! Spec §9.4.1.2.1 verlangt, dass Permissions- und Governance-XML
-//! mit der **Permissions-CA** signiert sind. Das Format ist S/MIME
-//! mit PKCS#7/CMS-Envelope — typischer Gebrauch: `openssl cms -sign`.
-//! Der produktive PKCS#7/CMS-Verifier lebt in [`crate::cms`].
+//! Spec §9.4.1.2.1 requires that the permissions and governance XML be
+//! signed with the **permissions CA**. The format is S/MIME
+//! with a PKCS#7/CMS envelope — typical use: `openssl cms -sign`.
+//! The production PKCS#7/CMS verifier lives in [`crate::cms`].
 //!
-//! # Was hier definiert ist
+//! # What is defined here
 //!
-//! * Trait [`XmlSignatureVerifier`] als Abstraktion ueber den
-//!   Verify-Schritt.
-//! * [`NoOpVerifier`] — explizit dokumentierter Dev-Helper, der die
-//!   Signatur-Pruefung ueberspringt (`SignedPermissionsXml::open` mit
-//!   `NoOpVerifier` ist nur fuer Development und Tests gedacht — produktive
-//!   Anwendungen verwenden `cms::CmsVerifier`).
-//! * [`EnvelopeCheckVerifier`] — formaler Smoke-Verifier, der den
-//!   S/MIME-Envelope auf Plausibilitaet prueft, **ohne** die Signatur
-//!   wirklich zu pruefen. Auch Dev-Helper.
-//! * [`open_signed_permissions`] kapselt den "erst verifizieren, dann
-//!   parsen"-Flow.
+//! * Trait [`XmlSignatureVerifier`] as an abstraction over the
+//!   verify step.
+//! * [`NoOpVerifier`] — an explicitly documented dev helper that
+//!   skips the signature check (`SignedPermissionsXml::open` with
+//!   `NoOpVerifier` is meant only for development and tests — production
+//!   applications use `cms::CmsVerifier`).
+//! * [`EnvelopeCheckVerifier`] — a formal smoke verifier that checks the
+//!   S/MIME envelope for plausibility, **without** really checking the
+//!   signature. Also a dev helper.
+//! * [`open_signed_permissions`] encapsulates the "verify first, then
+//!   parse" flow.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::xml::{Permissions, PermissionsError, parse_permissions_xml};
 
-/// Abstraktion fuer den S/MIME-Verify-Schritt.
+/// Abstraction over the S/MIME verify step.
 pub trait XmlSignatureVerifier {
-    /// Prueft die Signatur einer Permissions- oder Governance-XML.
+    /// Checks the signature of a permissions or governance XML.
     ///
-    /// `signed_doc` ist der **rohe S/MIME-Container** (inklusive
-    /// PEM-Headers wie `-----BEGIN PKCS7-----`). Der Verifier
-    /// extrahiert den inneren XML-Content und verifiziert die
-    /// Signatur gegen die Permissions-CA.
+    /// `signed_doc` is the **raw S/MIME container** (including
+    /// PEM headers like `-----BEGIN PKCS7-----`). The verifier
+    /// extracts the inner XML content and verifies the
+    /// signature against the permissions CA.
     ///
-    /// Rueckgabe: die **verifizierten** inneren XML-Bytes fuer
-    /// nachgelagertes Parsing.
+    /// Returns: the **verified** inner XML bytes for
+    /// downstream parsing.
     ///
     /// # Errors
-    /// Implementierung-spezifisch; tendiert nach
-    /// `PermissionsError::Malformed` bei Signatur- oder
-    /// Format-Problemen.
+    /// Implementation-specific; tends toward
+    /// `PermissionsError::Malformed` on signature or
+    /// format problems.
     fn verify_and_extract(&self, signed_doc: &[u8]) -> Result<Vec<u8>, PermissionsError>;
 }
 
-/// No-op-Verifier fuer Development — akzeptiert **jedes** Input als
-/// gueltig und behandelt es als Klartext-XML. **NIE** in Produktion
-/// einsetzen.
+/// No-op verifier for development — accepts **any** input as
+/// valid and treats it as plaintext XML. **NEVER** use in production.
 pub struct NoOpVerifier;
 
 impl XmlSignatureVerifier for NoOpVerifier {
@@ -57,12 +56,12 @@ impl XmlSignatureVerifier for NoOpVerifier {
     }
 }
 
-/// Simple-Envelope-Verifier fuer Tests und Pseudo-Signatur.
+/// Simple envelope verifier for tests and a pseudo-signature.
 ///
-/// Erwartet ein Wrapper-Format `-----BEGIN SIGNED-XML-----\n<XML>\n-----END SIGNED-XML-----`
-/// und extrahiert den XML-Block. Der Signatur-Teil ist hier nur die
-/// Envelope-Praesenz (kein echter Crypto-Check) — der Zweck ist End-
-/// to-End-Tests der Verifier-Aufruf-Kette.
+/// Expects a wrapper format `-----BEGIN SIGNED-XML-----\n<XML>\n-----END SIGNED-XML-----`
+/// and extracts the XML block. The signature part here is only the
+/// envelope presence (no real crypto check) — the purpose is end-
+/// to-end tests of the verifier call chain.
 pub struct EnvelopeCheckVerifier;
 
 impl XmlSignatureVerifier for EnvelopeCheckVerifier {
@@ -70,30 +69,30 @@ impl XmlSignatureVerifier for EnvelopeCheckVerifier {
         const BEGIN: &str = "-----BEGIN SIGNED-XML-----\n";
         const END: &str = "\n-----END SIGNED-XML-----";
         let s = core::str::from_utf8(signed_doc)
-            .map_err(|_| PermissionsError::Malformed("signed-xml ist kein UTF-8".into()))?;
+            .map_err(|_| PermissionsError::Malformed("signed-xml is not UTF-8".into()))?;
         let body = s
             .strip_prefix(BEGIN)
             .and_then(|rest| rest.strip_suffix(END))
             .ok_or_else(|| {
                 PermissionsError::Malformed(String::from(
-                    "signed-xml: envelope BEGIN/END fehlt oder ist fehlerhaft",
+                    "signed-xml: envelope BEGIN/END missing or malformed",
                 ))
             })?;
         Ok(body.as_bytes().to_vec())
     }
 }
 
-/// High-Level-Wrapper: verifiziert Signatur, parst Permissions-XML.
+/// High-level wrapper: verifies the signature, parses the permissions XML.
 ///
 /// # Errors
-/// Signatur- oder XML-Parse-Fehler.
+/// Signature or XML parse error.
 pub fn open_signed_permissions<V: XmlSignatureVerifier>(
     signed_doc: &[u8],
     verifier: &V,
 ) -> Result<Permissions, PermissionsError> {
     let inner = verifier.verify_and_extract(signed_doc)?;
     let xml = core::str::from_utf8(&inner)
-        .map_err(|_| PermissionsError::Malformed("verified XML ist kein UTF-8".into()))?;
+        .map_err(|_| PermissionsError::Malformed("verified XML is not UTF-8".into()))?;
     parse_permissions_xml(xml)
 }
 

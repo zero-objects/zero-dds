@@ -3,44 +3,44 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-http2/badge.svg)](https://docs.rs/zerodds-http2)
 
-HTTP/2 (RFC 9113) Wire-Codec: 9-Byte-Frame-Header + alle 10 Frame-
-Types (`DATA` / `HEADERS` / `PRIORITY` / `RST_STREAM` / `SETTINGS` /
+HTTP/2 (RFC 9113) wire codec: 9-byte frame header + all 10 frame
+types (`DATA` / `HEADERS` / `PRIORITY` / `RST_STREAM` / `SETTINGS` /
 `PUSH_PROMISE` / `PING` / `GOAWAY` / `WINDOW_UPDATE` /
-`CONTINUATION`), Connection-Preface, SETTINGS-Codec mit Defaults,
-Stream-State-Machine (§5.1), und Connection + Stream Flow-Control
+`CONTINUATION`), connection preface, SETTINGS codec with defaults,
+stream state machine (§5.1), and connection + stream flow control
 (§5.2 + §6.9). `no_std + alloc`, `forbid(unsafe_code)`. Safety
 classification: **STANDARD**.
 
-> RFC 9113 hat RFC 7540 abgeloest und behaelt das Wire-Format mit
-> identischen §-Nummern. Diese Crate folgt dem 9113-Stand.
+> RFC 9113 superseded RFC 7540 and keeps the wire format with
+> identical §-numbers. This crate follows the 9113 revision.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| RFC 9113 (HTTP/2) | §3.4 (Connection-Preface), §4 (Frame-Layer), §5.1 (Stream-State-Machine), §5.2 (Flow-Control), §6.1-§6.10 (Frame-Types), §6.5 (SETTINGS), §6.9 (`WINDOW_UPDATE`), §7 (Error-Codes) |
+| RFC 9113 (HTTP/2) | §3.4 (connection preface), §4 (frame layer), §5.1 (stream state machine), §5.2 (flow control), §6.1-§6.10 (frame types), §6.5 (SETTINGS), §6.9 (`WINDOW_UPDATE`), §7 (error codes) |
 
-## Was ist drin
+## What's inside
 
-- **`Frame` / `FrameHeader` / `FrameType` / `Flags`** — Frame-Layer-
-  Modell (§4) inkl. Length/Type/Flags/Stream-Id-Header und
-  zero-copy-Payload-Slice.
-- **`encode_frame` / `decode_frame`** — Codec mit `max_frame_size`-
-  Bound-Check (`SETTINGS_MAX_FRAME_SIZE`-Konformitaet).
-- **`CLIENT_PREFACE` / `check_preface`** — 24-Byte-Connection-
-  Preface (§3.4).
-- **`Settings` / `Setting` / `SettingId`** — alle sechs Standard-
-  Settings (`HEADER_TABLE_SIZE`, `ENABLE_PUSH`, `MAX_CONCURRENT_STREAMS`,
+- **`Frame` / `FrameHeader` / `FrameType` / `Flags`** — frame-layer
+  model (§4) including the length/type/flags/stream-id header and a
+  zero-copy payload slice.
+- **`encode_frame` / `decode_frame`** — codec with a `max_frame_size`
+  bound check (`SETTINGS_MAX_FRAME_SIZE` conformance).
+- **`CLIENT_PREFACE` / `check_preface`** — 24-byte connection
+  preface (§3.4).
+- **`Settings` / `Setting` / `SettingId`** — all six standard
+  settings (`HEADER_TABLE_SIZE`, `ENABLE_PUSH`, `MAX_CONCURRENT_STREAMS`,
   `INITIAL_WINDOW_SIZE`, `MAX_FRAME_SIZE`, `MAX_HEADER_LIST_SIZE`).
-- **`StreamId` / `StreamState`** — Stream-State-Machine mit allen
-  §5.1-Uebergaengen.
-- **`FlowControl`** — Connection + Stream Window-Tracking,
-  Round-Trip-Window-Update-Codec, Overflow-Rejection (§5.2).
-- **`ErrorCode` / `Http2Error`** — alle Standard-Error-Codes (§7).
+- **`StreamId` / `StreamState`** — stream state machine with all
+  §5.1 transitions.
+- **`FlowControl`** — connection + stream window tracking,
+  round-trip window-update codec, overflow rejection (§5.2).
+- **`ErrorCode` / `Http2Error`** — all standard error codes (§7).
 
-## Schichten-Position
+## Layer position
 
-Layer 5 — Bridges. Substrat fuer:
+Layer 5 — Bridges. Substrate for:
 
 - [`zerodds-grpc-bridge`](../grpc-bridge) — gRPC-over-HTTP/2 + gRPC-
   Web (HEADERS/CONTINUATION via [`zerodds-hpack`](../hpack)).
@@ -70,7 +70,7 @@ assert_eq!(consumed, 17);
 assert_eq!(decoded.header.frame_type, FrameType::Ping);
 ```
 
-Connection-Preface verifizieren:
+Verify the connection preface:
 
 ```rust,no_run
 use zerodds_http2::{CLIENT_PREFACE, check_preface};
@@ -80,20 +80,20 @@ let consumed = check_preface(CLIENT_PREFACE).expect("preface");
 assert_eq!(consumed, 24);
 ```
 
-## Feature-Flags
+## Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std` | ✅ | `std::error::Error` fuer alle Fehler-Typen. |
+| `std` | ✅ | `std::error::Error` for all error types. |
 | `alloc` | ✅ (via std) | `Vec` / `String`. |
 
-`no_std`-fahig: `default-features = false, features = ["alloc"]`.
+`no_std`-capable: `default-features = false, features = ["alloc"]`.
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1` ist die initiale Release-Materialisierung. Public-API,
-Wire-Format (RFC 9113) und Fehler-Diskriminanten sind RC1-stabil;
-Breaking-Changes erfordern Major-Bump.
+`1.0.0-rc.1` is the initial release materialization. The public API,
+the wire format (RFC 9113), and error discriminants are RC1-stable;
+breaking changes require a major bump.
 
 ## Tests
 
@@ -101,16 +101,16 @@ Breaking-Changes erfordern Major-Bump.
 cargo test -p zerodds-http2
 ```
 
-45 Unit-Tests + 1 Doc-Test: Frame-Codec (9, inkl. Round-Trip + R-Bit-
-Stripping + Buffer-Bound), Flow-Control (10), Error-Codes (3),
-Connection-Preface (5), Settings (8), Stream-State-Transitions (10).
+45 unit tests + 1 doc test: frame codec (9, including round-trip + R-bit
+stripping + buffer bound), flow control (10), error codes (3),
+connection preface (5), settings (8), stream state transitions (10).
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../../LICENSE).
+Apache-2.0. See [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
-- [`docs/release/rc1-reviews/http2.md`](../../docs/release/rc1-reviews/http2.md) — RC1-Review.
-- [`zerodds-hpack`](../hpack) — RFC 7541 HEADERS-Frame-Body-Codec.
-- [`zerodds-grpc-bridge`](../grpc-bridge) — gRPC-Konsument.
+- [`docs/release/rc1-reviews/http2.md`](../../docs/release/rc1-reviews/http2.md) — RC1 review.
+- [`zerodds-hpack`](../hpack) — RFC 7541 HEADERS frame-body codec.
+- [`zerodds-grpc-bridge`](../grpc-bridge) — gRPC consumer.

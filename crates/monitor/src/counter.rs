@@ -16,7 +16,7 @@ pub struct Counter {
 }
 
 impl Counter {
-    /// Konstruktor — startet bei 0.
+    /// Constructor — starts at 0.
     #[must_use]
     pub fn new(name: &'static str, labels: Labels) -> Self {
         Self {
@@ -36,7 +36,7 @@ impl Counter {
         self.value.fetch_add(n, Ordering::Relaxed);
     }
 
-    /// Aktueller Wert.
+    /// Current value.
     #[must_use]
     pub fn get(&self) -> u64 {
         self.value.load(Ordering::Relaxed)

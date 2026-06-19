@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Service-Evolution-Compatibility-Regeln (Spec §7.7).
+//! Service-evolution compatibility rules (Spec §7.7).
 //!
-//! Pro Mapping (Basic + Enhanced) definiert die Spec, welche
-//! Service-Evolutionen (add/remove/reorder operation, change
-//! signature, etc.) backward-compatible sind. Dieses Modul kodiert
-//! diese Regeln als Const-Tabellen und liefert Helper-Funktionen,
-//! die ein Codegen-/Audit-Tool gegen evolved Service-Definitions
-//! prueft.
+//! Per mapping (basic + enhanced), the spec defines which
+//! service evolutions (add/remove/reorder operation, change
+//! signature, etc.) are backward-compatible. This module encodes
+//! these rules as const tables and provides helper functions that
+//! a codegen/audit tool checks against evolved service definitions.
 
 extern crate alloc;
 
@@ -25,7 +24,7 @@ pub enum Evolution {
     ReorderOperations,
     /// Spec §7.7.1.2.
     ReorderBaseInterfaces,
-    /// Spec §7.7.1.3 — Operation-Signatur aendert sich.
+    /// Spec §7.7.1.3 — operation signature changes.
     ChangeSignature,
     /// Spec §7.7.2.4 — Duck-Typing.
     DuckTyping,
@@ -52,19 +51,19 @@ pub enum Mapping {
 
 /// Spec §7.7: Compatibility-Tabelle pro (Mapping, Evolution).
 ///
-/// Liefert `true` wenn die Evolution unter dem gegebenen Mapping
-/// backward-compatible ist (Old-Client kann mit New-Service reden).
+/// Returns `true` if the evolution is backward-compatible under the
+/// given mapping (an old client can talk to a new service).
 #[must_use]
 pub fn is_compatible(mapping: Mapping, evolution: Evolution) -> bool {
     match (mapping, evolution) {
-        // Basic-Mapping: jede Strukturaenderung ist breaking
+        // Basic mapping: every structural change is breaking
         // (Spec §7.7.1.x).
         (Mapping::Basic, _) => false,
 
-        // Enhanced-Mapping (Spec §7.7.2.x): die meisten
-        // Strukturaenderungen sind compat-by-default.
+        // Enhanced mapping (Spec §7.7.2.x): most
+        // structural changes are compat-by-default.
         (Mapping::Enhanced, Evolution::AddOperation) => true,
-        (Mapping::Enhanced, Evolution::RemoveOperation) => true, // mit Caveat (§7.7.2.2)
+        (Mapping::Enhanced, Evolution::RemoveOperation) => true, // with a caveat (§7.7.2.2)
         (Mapping::Enhanced, Evolution::ReorderOperations) => true,
         (Mapping::Enhanced, Evolution::ReorderBaseInterfaces) => true,
         (Mapping::Enhanced, Evolution::DuckTyping) => true,
@@ -72,15 +71,15 @@ pub fn is_compatible(mapping: Mapping, evolution: Evolution) -> bool {
         (Mapping::Enhanced, Evolution::ReorderParameters) => true,
         (Mapping::Enhanced, Evolution::AddRemoveReturnType) => true,
 
-        // Aenderung des Typs (auch in Enhanced) ist breaking.
+        // A change of type (even in enhanced) is breaking.
         (Mapping::Enhanced, Evolution::ChangeSignature) => false,
         (Mapping::Enhanced, Evolution::ChangeParameterType) => false,
         (Mapping::Enhanced, Evolution::ChangeReturnType) => false,
     }
 }
 
-/// Liefert alle Evolutionen, die unter dem gegebenen Mapping
-/// **kompatibel** sind.
+/// Returns all evolutions that are **compatible** under the given
+/// mapping.
 #[must_use]
 pub fn compatible_evolutions(mapping: Mapping) -> Vec<Evolution> {
     [
@@ -106,7 +105,7 @@ pub fn compatible_evolutions(mapping: Mapping) -> Vec<Evolution> {
 mod tests {
     use super::*;
 
-    // ---- Spec §7.7.1.1-3 Basic-Mapping (alle breaking) -------------
+    // ---- Spec §7.7.1.1-3 basic mapping (all breaking) -------------
 
     #[test]
     fn basic_mapping_add_remove_operation_is_breaking() {
@@ -189,8 +188,8 @@ mod tests {
 
     #[test]
     fn enhanced_mapping_change_param_type_is_breaking() {
-        // Spec §7.7.2.5.3 — Type-Aenderungen sind auch in Enhanced
-        // breaking, weil das Wire-Format nicht kompatibel ist.
+        // Spec §7.7.2.5.3 — type changes are breaking even in enhanced,
+        // because the wire format is not compatible.
         assert!(!is_compatible(
             Mapping::Enhanced,
             Evolution::ChangeParameterType

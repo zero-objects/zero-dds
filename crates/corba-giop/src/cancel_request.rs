@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CancelRequest-Message — Spec §15.4.4.
+//! CancelRequest message — spec §15.4.4.
 //!
 //! ```text
 //! struct CancelRequestHeader {
@@ -9,35 +9,35 @@
 //! };
 //! ```
 //!
-//! Sehr kleine Message: nur die `request_id` der zu cancellenden
-//! Original-Request. Spec §15.4.4: Server MUST cease processing,
-//! darf aber bereits gesendete Reply nicht zurueckziehen.
+//! Very small message: only the `request_id` of the original request
+//! to be cancelled. Spec §15.4.4: the server MUST cease processing,
+//! but must not retract a reply that has already been sent.
 
 use zerodds_cdr::{BufferReader, BufferWriter};
 
 use crate::error::GiopResult;
 
-/// CancelRequest-Body.
+/// CancelRequest body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CancelRequest {
-    /// `request_id` der zu cancelnden Request.
+    /// `request_id` of the request to be cancelled.
     pub request_id: u32,
 }
 
 impl CancelRequest {
-    /// CDR-Encode.
+    /// CDR encode.
     ///
     /// # Errors
-    /// Buffer-Schreibfehler.
+    /// Buffer write error.
     pub fn encode(&self, w: &mut BufferWriter) -> GiopResult<()> {
         w.write_u32(self.request_id)?;
         Ok(())
     }
 
-    /// CDR-Decode.
+    /// CDR decode.
     ///
     /// # Errors
-    /// Buffer-Lesefehler.
+    /// Buffer read error.
     pub fn decode(r: &mut BufferReader<'_>) -> GiopResult<Self> {
         let request_id = r.read_u32()?;
         Ok(Self { request_id })

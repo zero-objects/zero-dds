@@ -1,5 +1,5 @@
-//! Smoke-Tests fuer die async-API. Offline-Pfad — kein UDP, nur
-//! Sync-Reuse via Newtype.
+//! Smoke tests for the async API. Offline path — no UDP, just
+//! sync reuse via a newtype.
 
 #![allow(
     clippy::expect_used,
@@ -127,9 +127,9 @@ async fn publication_matched_stream_yields_initial_count() {
         .expect("reader");
 
     let stream = reader.publication_matched_stream();
-    // Erstes poll — sollte den initialen `SubscriptionMatchedStatus`
-    // liefern (current_count=0, total_count=0), da `last_count=MAX`
-    // initialisiert ist und der Delta-Sprung detektiert wird.
+    // First poll — should return the initial `SubscriptionMatchedStatus`
+    // (current_count=0, total_count=0), since `last_count=MAX` is
+    // the initial value and the delta jump is detected.
     let mut s = std::pin::pin!(stream);
     let first = poll_fn(|cx| s.as_mut().poll_next(cx));
     let v = tokio::time::timeout(Duration::from_millis(200), first)
@@ -142,9 +142,9 @@ async fn publication_matched_stream_yields_initial_count() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn write_returns_timeout_after_max_blocking_when_queue_full() {
-    // Spec §5.1: Bei OutOfResources mit max_blocking_time = 50ms muss
-    // AsyncDataWriter::write nach ~50ms Timeout liefern (statt sync zu
-    // blockieren).
+    // Spec §5.1: On OutOfResources with max_blocking_time = 50ms,
+    // AsyncDataWriter::write must return a Timeout after ~50ms (instead
+    // of blocking synchronously).
     use zerodds_qos::Duration as QosDuration;
     use zerodds_qos::ReliabilityKind;
     use zerodds_qos::ReliabilityQosPolicy;
@@ -176,28 +176,28 @@ async fn write_returns_timeout_after_max_blocking_when_queue_full() {
         .create_datawriter::<RawBytes>(&topic, qos)
         .expect("writer");
 
-    // Ein Sample fuellt die Queue.
+    // One sample fills the queue.
     writer
         .write(&RawBytes::new(vec![1]))
         .await
         .expect("first write");
-    // Zweites Sample → OutOfResources → retry-Loop → Timeout nach ~50ms.
+    // Second sample → OutOfResources → retry loop → Timeout after ~50ms.
     let start = std::time::Instant::now();
     let res = writer.write(&RawBytes::new(vec![2])).await;
     let elapsed = start.elapsed();
     assert!(matches!(res, Err(zerodds_dcps_async::DdsError::Timeout)));
     assert!(
         elapsed >= Duration::from_millis(40),
-        "Timeout sollte ~50ms warten, war {elapsed:?}"
+        "timeout should wait ~50ms, was {elapsed:?}"
     );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn data_available_stream_signals_without_consuming() {
-    // Spec zerodds-async-1.0 §6.1: data_available_stream emittiert
-    // pro neuem Sample ein `()`-Event und konsumiert die Samples
-    // NICHT — der Caller muss `take()`/`take_stream()` separat
-    // aufrufen, um die Samples zu lesen.
+    // Spec zerodds-async-1.0 §6.1: data_available_stream emits
+    // a `()` event per new sample and does NOT consume the
+    // samples — the caller must call `take()`/`take_stream()`
+    // separately to read the samples.
     use core::future::poll_fn;
     use futures_core::Stream;
 
@@ -211,10 +211,10 @@ async fn data_available_stream_signals_without_consuming() {
         .create_datareader::<RawBytes>(&topic, DataReaderQos::default())
         .expect("reader");
 
-    // Ein Sample direkt in die Reader-Inbox pushen (offline-Pfad).
+    // Push one sample directly into the reader inbox (offline path).
     reader.as_sync().__push_raw(vec![0xAB, 0xCD]).expect("push");
 
-    // data_available_stream muss `()` liefern.
+    // data_available_stream must return `()`.
     let stream = reader.data_available_stream();
     let mut s = std::pin::pin!(stream);
     let event = poll_fn(|cx| s.as_mut().poll_next(cx));
@@ -223,12 +223,12 @@ async fn data_available_stream_signals_without_consuming() {
         .expect("timeout")
         .expect("none");
 
-    // Wichtig: das Sample ist NICHT konsumiert — `take()` liefert es.
+    // Important: the sample is NOT consumed — `take()` returns it.
     let samples = reader.take(Duration::from_millis(50)).await.expect("take");
     assert_eq!(
         samples.len(),
         1,
-        "Sample muss nach data_available noch im Reader sein"
+        "sample must still be in the reader after data_available"
     );
     assert_eq!(samples[0].data, vec![0xAB, 0xCD]);
 }

@@ -1,12 +1,12 @@
-//! Transient-Local Durability Tests.
+//! Transient-Local Durability tests.
 //!
-//! Kernsemantik (OMG DDS 1.4 §2.2.3.4):
-//! * **Volatile**: Late-joiner-Reader bekommt KEINE Samples, die vor
-//!   seinem Match geschrieben wurden.
-//! * **TransientLocal**: Late-joiner-Reader bekommt alle Samples, die
-//!   noch im Writer-History-Cache liegen (bis History-Depth).
+//! Core semantics (OMG DDS 1.4 §2.2.3.4):
+//! * **Volatile**: a late-joiner reader receives NO samples written
+//!   before its match.
+//! * **TransientLocal**: a late-joiner reader receives all samples
+//!   still in the writer history cache (up to history depth).
 //!
-//! Diese Tests laufen nur auf Linux wegen Multicast-Loopback.
+//! These tests run only on Linux because of multicast loopback.
 
 #![allow(
     clippy::expect_used,
@@ -40,10 +40,10 @@ mod linux {
 
     use super::common::unique_domain;
 
-    /// Helper: zwei Participants mit derselben isolierten Multicast-Group.
-    /// Liefert RAII-Guards die beim Test-Ende sauber via
-    /// `factory.delete_participant` aus dem Singleton entfernt werden
-    /// — sonst akkumulieren Threads/Sockets ueber Test-Grenzen.
+    /// Helper: two participants in the same isolated multicast group.
+    /// Returns RAII guards that are cleanly removed from the singleton
+    /// via `factory.delete_participant` at test end — otherwise threads
+    /// and sockets accumulate across test boundaries.
     fn two_participants(
         domain: i32,
     ) -> (
@@ -67,9 +67,9 @@ mod linux {
     #[serial_test::serial(dcps)]
     #[test]
     fn transient_local_writer_delivers_history_to_late_joiner() {
-        // Writer: TransientLocal. Schreibt 5 Samples BEVOR der Reader
-        // joined. Reader joined spaet, muss trotzdem alle 5 Samples
-        // empfangen.
+        // Writer: TransientLocal. Writes 5 samples BEFORE the reader
+        // joins. The reader joins late but must still receive all 5
+        // samples.
         let (pub_p, sub_p) = two_participants(unique_domain(8));
 
         let pub_topic = pub_p
@@ -87,14 +87,14 @@ mod linux {
             .create_datawriter::<ShapeType>(&pub_topic, writer_qos)
             .expect("writer");
 
-        // Schreibe 5 Samples bevor irgendein Reader da ist.
+        // Write 5 samples before any reader exists.
         for i in 0i32..5 {
             writer
                 .write(&ShapeType::new(format!("C{i}"), i, i * 2, 30))
                 .expect("write");
         }
 
-        // Jetzt joined der Reader — auch TransientLocal.
+        // Now the reader joins — also TransientLocal.
         let sub_topic = sub_p
             .create_topic::<ShapeType>("Square", TopicQos::default())
             .expect("sub topic");
@@ -109,7 +109,7 @@ mod linux {
             .create_datareader::<ShapeType>(&sub_topic, reader_qos)
             .expect("reader");
 
-        // Discovery + Match — 5 s Budget.
+        // Discovery + match — 5 s budget.
         writer
             .wait_for_matched_subscription(1, super::common::match_timeout())
             .expect("writer sees reader");
@@ -117,7 +117,7 @@ mod linux {
             .wait_for_matched_publication(1, super::common::match_timeout())
             .expect("reader sees writer");
 
-        // Alle 5 Samples einsammeln.
+        // Collect all 5 samples.
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let mut received = Vec::new();
         while received.len() < 5 && std::time::Instant::now() < deadline {
@@ -128,7 +128,7 @@ mod linux {
         assert_eq!(
             received.len(),
             5,
-            "TransientLocal sollte alle 5 vor-match-Samples liefern, nur {} bekommen: {received:?}",
+            "TransientLocal should deliver all 5 pre-match samples, only got {}: {received:?}",
             received.len()
         );
         for i in 0..5 {
@@ -143,19 +143,19 @@ mod linux {
     #[serial_test::serial(dcps)]
     #[test]
     fn volatile_writer_does_not_deliver_history_to_late_joiner() {
-        // Volatile-Kontrast: late-joiner sieht KEINE pre-match Samples.
+        // Volatile contrast: the late-joiner sees NO pre-match samples.
         let (pub_p, sub_p) = two_participants(unique_domain(8));
 
         let pub_topic = pub_p
             .create_topic::<ShapeType>("Square", TopicQos::default())
             .expect("pub topic");
         let publisher = pub_p.create_publisher(PublisherQos::default());
-        // Default-QoS = Volatile.
+        // Default QoS = Volatile.
         let writer = publisher
             .create_datawriter::<ShapeType>(&pub_topic, DataWriterQos::default())
             .expect("writer");
 
-        // Schreibe 5 Samples bevor Reader existiert.
+        // Write 5 samples before the reader exists.
         for i in 0i32..5 {
             writer
                 .write(&ShapeType::new(format!("OLD{i}"), i, 0, 30))
@@ -177,8 +177,8 @@ mod linux {
             .wait_for_matched_publication(1, super::common::match_timeout())
             .expect("match");
 
-        // Nach Match schreiben wir ein "NEW"-Sample. Das sollte kommen,
-        // die OLD-Samples nicht.
+        // After the match we write a "NEW" sample. That should arrive,
+        // the OLD samples should not.
         writer
             .write(&ShapeType::new("NEW", 99, 99, 30))
             .expect("write post-match");
@@ -189,28 +189,28 @@ mod linux {
         for s in &received {
             assert!(
                 !s.color.starts_with("OLD"),
-                "Volatile sollte KEINE pre-match Samples liefern, aber bekam {s:?}"
+                "Volatile should deliver NO pre-match samples, but got {s:?}"
             );
         }
         assert!(
             received.iter().any(|s| s.color == "NEW"),
-            "post-match NEW sample sollte ankommen, got {received:?}"
+            "post-match NEW sample should arrive, got {received:?}"
         );
     }
 
     #[serial_test::serial(dcps)]
     #[test]
     fn transient_local_reader_rejects_volatile_writer() {
-        // QoS-Compat: Reader fordert TransientLocal, Writer bietet nur
-        // Volatile → kein Match, wait_for_matched_publication muss
-        // Timeout werfen.
+        // QoS compat: the reader requires TransientLocal, the writer
+        // offers only Volatile → no match, wait_for_matched_publication
+        // must time out.
         let (pub_p, sub_p) = two_participants(unique_domain(8));
 
         let pub_topic = pub_p
             .create_topic::<ShapeType>("Square", TopicQos::default())
             .expect("pub topic");
         let publisher = pub_p.create_publisher(PublisherQos::default());
-        // Writer bleibt Volatile (Default).
+        // The writer stays Volatile (default).
         let _writer = publisher
             .create_datawriter::<ShapeType>(&pub_topic, DataWriterQos::default())
             .expect("writer");
@@ -229,12 +229,12 @@ mod linux {
             .create_datareader::<ShapeType>(&sub_topic, reader_qos)
             .expect("reader");
 
-        // 2 s Budget sind genug — Mismatch muss SPDP+SEDP ueberleben,
-        // aber kein Match triggern.
+        // 2 s budget is enough — the mismatch must survive SPDP+SEDP but
+        // not trigger a match.
         let result = reader.wait_for_matched_publication(1, Duration::from_secs(2));
         assert!(
             result.is_err(),
-            "Volatile-Writer sollte TransientLocal-Reader NICHT matchen, \
+            "Volatile writer should NOT match a TransientLocal reader, \
              got result={result:?}"
         );
     }

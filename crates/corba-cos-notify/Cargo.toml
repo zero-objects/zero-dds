@@ -1,0 +1,30 @@
+[package]
+name = "zerodds-corba-cos-notify"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG CosNotification 1.1 — structured event channel + ConsumerAdmin/SupplierAdmin + StructuredProxy hierarchy + filter + QoS (successor to CosEvent; no_std + alloc)."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-cos-notify"
+readme = "README.md"
+keywords = ["dds", "corba", "cos-notification", "pub-sub", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc", "zerodds-cdr/std"]
+alloc = ["zerodds-cdr/alloc"]
+
+[dependencies]
+# StructuredEvent values (Property.value / remainder_of_body) are CORBA `any`.
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr", default-features = false }

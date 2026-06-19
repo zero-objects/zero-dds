@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! IDL → Python-Codegen — Emit-Logik.
+//! IDL → Python codegen — emit logic.
 //!
-//! Erzeugt fuer eine IDL-Specification ein Python-Modul, das die
-//! `@idl_struct(typename=...)`-/`@dataclass`-Konvention der
-//! `zerodds-py`-Crate verwendet. Generierte Klassen sind direkt mit
-//! `zerodds.IdlTopic(MyClass)` nutzbar.
+//! Generates, for an IDL specification, a Python module that uses the
+//! `@idl_struct(typename=...)`/`@dataclass` convention of the
+//! `zerodds-py` crate. Generated classes are usable directly with
+//! `zerodds.IdlTopic(MyClass)`.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -20,23 +20,22 @@ use zerodds_idl::ast::types::{
 
 use crate::error::{IdlPythonError, Result};
 
-/// Codegen-Optionen fuer Python-Module.
+/// Codegen options for Python modules.
 #[derive(Debug, Clone, Default)]
 pub struct PythonGenOptions {
-    /// Optionaler Header-Kommentar, der oben in der erzeugten Datei
-    /// landet. Newlines werden als getrennte `#`-Kommentarzeilen
-    /// emittiert.
+    /// Optional header comment that lands at the top of the generated
+    /// file. Newlines are emitted as separate `#` comment lines.
     pub header_comment: Option<String>,
 }
 
-/// Codegen-Eintrittspunkt — IDL-Spec → vollstaendiger Python-Source.
+/// Codegen entry point — IDL spec → complete Python source.
 ///
 /// # Errors
 ///
-/// `IdlPythonError::Unsupported` fuer IDL-Konstrukte, die das Python-
-/// Mapping (noch) nicht unterstuetzt: `valuetype`, `interface`,
-/// `fixed`, `map`, `any`, sowie Union-Cases mit nicht-literalen
-/// Const-Expressions.
+/// `IdlPythonError::Unsupported` for IDL constructs that the Python
+/// mapping does not (yet) support: `valuetype`, `interface`,
+/// `fixed`, `map`, `any`, as well as union cases with non-literal
+/// const expressions.
 pub fn generate_python_module(spec: &Specification, opts: &PythonGenOptions) -> Result<String> {
     let mut imports = ImportSet::default();
     collect_imports(&spec.definitions, &mut imports)?;
@@ -143,9 +142,9 @@ fn collect_imports(defs: &[Definition], imports: &mut ImportSet) -> Result<()> {
                 imports.int_flag = true;
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Bitset(_))) => {
-                // Bitset: emittieren als IntN-Alias + Bit-Konstanten —
-                // braucht nur den unterliegenden Integer-Brand, kein
-                // Decorator.
+                // Bitset: emit as an IntN alias + bit constants —
+                // needs only the underlying integer brand, no
+                // decorator.
                 imports.zerodds_brands.insert("Int64");
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Def(u)))) => {
@@ -168,10 +167,10 @@ fn collect_imports(defs: &[Definition], imports: &mut ImportSet) -> Result<()> {
                 }
             }
             _ => {
-                // Forward-Decls + Const + Interface + Valuetype + RTI-
-                // Vendor-Konstrukte werden in emit_definitions als
-                // Unsupported gemeldet bzw. ignoriert. Fuer den Import-
-                // Pass koennen wir sie hier still uebergehen.
+                // Forward decls + const + interface + valuetype + RTI
+                // vendor constructs are reported as Unsupported or
+                // ignored in emit_definitions. For the import
+                // pass we can silently skip them here.
             }
         }
     }
@@ -192,8 +191,8 @@ fn collect_type_imports(ts: &TypeSpec, imports: &mut ImportSet) -> Result<()> {
             collect_type_imports(&seq.elem, imports)?;
         }
         TypeSpec::Scoped(_) => {
-            // Lokale Referenz auf einen anderen Typ im selben Modul —
-            // kein Import noetig.
+            // Local reference to another type in the same module —
+            // no import needed.
         }
         TypeSpec::Fixed(_) | TypeSpec::Map(_) | TypeSpec::Any => {
             return Err(IdlPythonError::Unsupported(format!(
@@ -210,8 +209,8 @@ fn collect_switch_type_imports(switch: &SwitchTypeSpec, imports: &mut ImportSet)
             imports.zerodds_brands.insert(brand_for_integer(*i));
         }
         SwitchTypeSpec::Boolean => {
-            // bool ist Python-builtin, kein Brand-Import noetig — der
-            // `_kind_from_annotation`-Fallback mapped es auf Bool.
+            // bool is a Python builtin, no brand import needed — the
+            // `_kind_from_annotation` fallback maps it to Bool.
         }
         SwitchTypeSpec::Octet => {
             imports.zerodds_brands.insert("Octet");
@@ -220,8 +219,8 @@ fn collect_switch_type_imports(switch: &SwitchTypeSpec, imports: &mut ImportSet)
             imports.zerodds_brands.insert("Char");
         }
         SwitchTypeSpec::Scoped(_) => {
-            // Vermutlich ein IntEnum — wird ueber den definierten Typ
-            // referenziert, kein extra Brand-Import.
+            // Probably an IntEnum — referenced via the defined type,
+            // no extra brand import.
         }
     }
 }
@@ -239,7 +238,7 @@ fn emit_definitions(out: &mut String, defs: &[Definition], scope: &mut Vec<Strin
                 emit_struct(out, s, scope)?;
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Forward(_)))) => {
-                // Forward declarations brauchen in Python keinen Code.
+                // Forward declarations need no code in Python.
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
                 emit_enum(out, e, scope)?;
@@ -254,7 +253,7 @@ fn emit_definitions(out: &mut String, defs: &[Definition], scope: &mut Vec<Strin
                 emit_union(out, u, scope)?;
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Forward(_)))) => {
-                // Forward declarations brauchen in Python keinen Code.
+                // Forward declarations need no code in Python.
             }
             Definition::Type(TypeDecl::Typedef(td)) => {
                 emit_typedef(out, td, scope)?;
@@ -296,8 +295,8 @@ fn emit_struct(out: &mut String, s: &StructDef, scope: &[String]) -> Result<()> 
     if s.members.is_empty() && s.base.is_none() {
         writeln!(out, "    pass").ok();
     } else if s.members.is_empty() {
-        // Mit Base aber ohne neue Felder: `pass` damit dataclass-Body
-        // syntaktisch gueltig ist.
+        // With a base but no new fields: `pass` so the dataclass body
+        // is syntactically valid.
         writeln!(out, "    pass").ok();
     } else {
         for m in &s.members {
@@ -376,11 +375,11 @@ fn emit_bitmask(out: &mut String, b: &BitmaskDecl, scope: &[String]) -> Result<(
 }
 
 fn emit_bitset(out: &mut String, b: &BitsetDecl, scope: &[String]) -> Result<()> {
-    // OMG bitset: ein Container-Integer mit gepackten Sub-Feldern. Wir
-    // emittieren einen Int64-Alias plus eine Helper-Klasse mit
-    // SHIFT/MASK-Konstanten pro benanntem Bitfield. Die `zerodds-py`-
-    // Runtime sieht den Alias als Int64-Brand und encodet entsprechend;
-    // der Lerner liest/schreibt Felder via Helper-Konstanten:
+    // OMG bitset: a container integer with packed sub-fields. We
+    // emit an Int64 alias plus a helper class with
+    // SHIFT/MASK constants per named bitfield. The `zerodds-py`
+    // runtime sees the alias as an Int64 brand and encodes accordingly;
+    // the application reads/writes fields via the helper constants:
     //
     //   value = SensorFlags_Bits.encode(sensor_id=42, quality=2)
     //   sensor_id = (value >> SensorFlags_Bits.SENSOR_ID_SHIFT)
@@ -429,9 +428,9 @@ fn emit_union(out: &mut String, u: &UnionDef, scope: &[String]) -> Result<()> {
     let class_name = python_class_name(&u.name, scope);
     let discriminator_repr = switch_type_python_repr(&u.switch_type);
 
-    // Cases sammeln: pro Label einen Eintrag im dict[int, tuple[str, Any]].
-    // Bei `default:`-Label sammeln wir den Fall separat fuer den
-    // `default=`-Parameter des idl_union-Constructors.
+    // Collect cases: one entry per label in dict[int, tuple[str, Any]].
+    // For a `default:` label we collect the case separately for the
+    // `default=` parameter of the idl_union constructor.
     let mut case_entries: Vec<(i64, String, String)> = Vec::new();
     let mut default_entry: Option<(String, String)> = None;
 
@@ -603,7 +602,7 @@ fn escape_python_keyword(name: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Const-Expression-Auswertung (begrenzt: nur Integer-Literale + unary +/-)
+// Const-expression evaluation (limited: integer literals + unary +/- only)
 // ---------------------------------------------------------------------------
 
 /// zerodds-lint: recursion-depth 32
@@ -628,16 +627,16 @@ fn eval_const_int(expr: &ConstExpr) -> Option<i64> {
 
 fn parse_integer_literal(raw: &str) -> Option<i64> {
     let s = raw.trim();
-    // OMG IDL erlaubt Hex (0x...), Oktal (0...) und Dezimal-Literale.
-    // Suffixes wie `L`/`u` ignorieren wir grosszuegig — der Parser
-    // hat schon validiert, dass das ein Integer-Literal ist.
+    // OMG IDL allows hex (0x...), octal (0...) and decimal literals.
+    // Suffixes like `L`/`u` we ignore generously — the parser
+    // has already validated that this is an integer literal.
     let s = s.trim_end_matches(['L', 'l', 'u', 'U']);
     if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         i64::from_str_radix(hex, 16).ok()
     } else if let Some(rest) = s.strip_prefix("-0x").or_else(|| s.strip_prefix("-0X")) {
         i64::from_str_radix(rest, 16).ok().map(|n| -n)
     } else if s.starts_with('0') && s.len() > 1 && !s.contains(|c: char| !c.is_ascii_digit()) {
-        // Oktal — gewollt strict, weil OMG IDL Octal akzeptiert.
+        // Octal — intentionally strict, because OMG IDL accepts octal.
         i64::from_str_radix(&s[1..], 8).ok()
     } else {
         s.parse::<i64>().ok()

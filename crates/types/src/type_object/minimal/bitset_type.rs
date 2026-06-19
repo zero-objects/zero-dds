@@ -19,9 +19,9 @@ pub struct CommonBitfield {
     pub position: u16,
     /// Flags.
     pub flags: BitfieldFlag,
-    /// Breite in Bits (1..64).
+    /// Width in bits (1..64).
     pub bitcount: u8,
-    /// Holding-Typ (z.B. TK_UINT32).
+    /// Holding type (e.g. TK_UINT32).
     pub holder_type: HoldingType,
 }
 

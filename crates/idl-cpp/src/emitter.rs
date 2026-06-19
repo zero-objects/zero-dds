@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! AST-Walker, der C++17-Header emittiert.
+//! AST walker that emits C++17 headers.
 //!
-//! Block-A: Header-Layout (`#pragma once`, includes, namespaces).
-//! Block-B: Primitive-Mapping (delegiert an [`crate::type_map`]).
+//! Block-A: Header layout (`#pragma once`, includes, namespaces).
+//! Block-B: Primitive mapping (delegated to [`crate::type_map`]).
 //! Block-C: struct/enum/union/typedef/sequence/array/inheritance.
 //! Block-D: Exception → `class X : public std::exception`.
-//! Block-E: Time/Duration über DDS::Time_t / DDS::Duration_t.
+//! Block-E: Time/Duration via DDS::Time_t / DDS::Duration_t.
 //!
-//! Die Emission ist single-pass: zuerst werden alle benoetigten
-//! Standard-Includes durch einen pre-walk gesammelt, dann der Body
-//! emittiert. So bleibt die Header-Praeambel deterministisch
-//! (alphabetisch sortiert).
+//! Emission is single-pass: all required standard includes are collected
+//! via a pre-walk, then the body is emitted. This keeps the header
+//! preamble deterministic (alphabetically sorted).
 
-use std::collections::BTreeSet;
+use core::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
 use zerodds_idl::ast::{
@@ -32,7 +32,7 @@ use crate::type_map::{check_identifier, is_reserved, primitive_to_cpp};
 use crate::verbatim::emit_verbatim_at;
 use crate::{CppGenOptions, TIME_DURATION_TYPES};
 
-/// Bekannte Header-Includes. Reihenfolge ist stabil-alphabetisch.
+/// Known header includes. Order is stably alphabetical.
 #[derive(Debug, Default, Clone)]
 struct Includes {
     headers: BTreeSet<&'static str>,
@@ -44,81 +44,116 @@ impl Includes {
     }
 }
 
-/// Haupt-Entry: erzeugt den vollstaendigen C++-Header.
+/// Main entry point: generates the complete C++ header.
+/// `true` if `ts` is (or, through sequence nesting, contains) a bounded
+/// collection that the encoder enforces: a bounded `sequence<T, N>` or a bounded
+/// narrow `string<N>`. Drives the conditional `<stdexcept>` include.
+///
+/// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
+fn type_has_bounded_collection(ts: &TypeSpec) -> bool {
+    match ts {
+        TypeSpec::Sequence(s) => s.bound.is_some() || type_has_bounded_collection(&s.elem),
+        // narrow `string<N>` AND wide `wstring<N>` both throw on over-bound.
+        TypeSpec::String(s) => s.bound.is_some(),
+        _ => false,
+    }
+}
+
+/// `true` if any topic struct in `spec` has a member with a bounded collection.
+fn spec_has_bounded_collection(spec: &Specification) -> bool {
+    let mut structs: Vec<(String, &StructDef)> = Vec::new();
+    collect_topic_structs(&spec.definitions, "", &mut structs);
+    structs.iter().any(|(_, s)| {
+        s.members
+            .iter()
+            .any(|m| type_has_bounded_collection(&m.type_spec))
+    })
+}
+
 pub(crate) fn emit_header(
     spec: &Specification,
     opts: &CppGenOptions,
 ) -> Result<String, CppGenError> {
-    // 1. Kollidierende Inheritance-Cycles erkennen (vor Emission).
+    // 1. Detect colliding inheritance cycles (before emission).
     detect_inheritance_cycles(spec)?;
 
-    // 2. Walk pre-pass: includes sammeln.
-    let mut includes = Includes::default();
-    includes.add("<cstdint>"); // stdint.h ist immer praesent (uint8_t etc.).
-    collect_includes(spec, &mut includes);
+    // 1b. Codegen-scoped type registry (enum/struct simple-names) so the XCDR2
+    //     member encoder can classify a `Scoped` member as an enum.
+    set_type_registry(spec);
 
-    // 3. Output-Buffer.
+    // 2. Walk pre-pass: collect includes.
+    let mut includes = Includes::default();
+    includes.add("<cstdint>"); // stdint.h is always present (uint8_t etc.).
+    collect_includes(spec, &mut includes);
+    // Bounded collections throw std::length_error on over-bound encode
+    // (DDS-XTypes §7.4.3) — pull <stdexcept> only when needed, so headers
+    // without bounded types stay byte-identical.
+    if spec_has_bounded_collection(spec) {
+        includes.add("<stdexcept>");
+    }
+
+    // 3. Output buffer.
     let mut out = String::new();
     write_header_preamble(&mut out, opts, &includes)?;
 
-    // 4. Optionale Top-Level-Namespace-Einbindung (`namespace_prefix`).
+    // 4. Optional top-level namespace wrapping (`namespace_prefix`).
     let mut ctx = EmitCtx::new(opts);
     let outer_prefix: Option<&str> = opts.namespace_prefix.as_deref().filter(|p| !p.is_empty());
     if let Some(prefix) = outer_prefix {
         ctx.open_namespace(&mut out, prefix)?;
     }
 
-    // 4b. §7.2.2.4.8 — `@verbatim(placement=BEGIN_FILE)` aus allen
-    // Top-Level-Defs. Spec sagt nichts ueber Reihenfolge bei mehreren —
-    // wir nehmen Source-Order.
+    // 4b. §7.2.2.4.8 — `@verbatim(placement=BEGIN_FILE)` from all
+    // top-level defs. The spec says nothing about ordering for multiple —
+    // we use source order.
     for d in &spec.definitions {
         if let Some(anns) = top_level_annotations(d) {
             emit_verbatim_at(&mut out, "", anns, PlacementKind::BeginFile)?;
         }
     }
 
-    // 4c. Wenn das Spec mindestens eine Top-Level- oder Modul-nested
-    //     `struct`-Definition enthaelt, emittieren wir nach den
-    //     Standard-Includes auch `dds/topic/TopicTraits.hpp` — dort lebt
-    //     `topic_type_support<T>` und ByteSeq/string-Defaults — sowie
-    //     `dds/topic/xcdr2.hpp` und `dds/topic/xcdr2_md5.hpp` fuer die
-    //     XCDR2 Wire-Encoder/MD5-Helpers, auf denen die spaeter
-    //     emittierten Spezialisierungen aufsetzen.
+    // 4c. If the spec contains at least one top-level or module-nested
+    //     `struct` definition, we also emit `dds/topic/TopicTraits.hpp`
+    //     after the standard includes — that header provides
+    //     `topic_type_support<T>` and ByteSeq/string defaults — as well as
+    //     `dds/topic/xcdr2.hpp` and `dds/topic/xcdr2_md5.hpp` for the
+    //     XCDR2 wire-encoder/MD5 helpers that the later-emitted
+    //     specializations depend on.
     let mut probe_structs: Vec<(String, &StructDef)> = Vec::new();
     collect_topic_structs(&spec.definitions, "", &mut probe_structs);
     if !probe_structs.is_empty() {
-        // <array> wird von key_hash() benoetigt, <vector>/<string> von
-        // encode/decode(). Falls die Standard-Walks die nicht schon eingezogen
-        // haben, ueber TopicTraits.hpp transitiv abgedeckt — aber wir
-        // emittieren sie hier explizit, damit der Header ohne Topic-Helpers
-        // noch syntaktisch valid bleibt.
+        // <array> is needed by key_hash(), <vector>/<string> by
+        // encode/decode(). If the standard walks have not already pulled
+        // them in, they are covered transitively via TopicTraits.hpp —
+        // but we emit them explicitly here so the header remains
+        // syntactically valid without the topic helpers.
         writeln!(&mut out, "#include \"dds/topic/TopicTraits.hpp\"").map_err(fmt_err)?;
         writeln!(&mut out, "#include \"dds/topic/xcdr2.hpp\"").map_err(fmt_err)?;
         writeln!(&mut out, "#include \"dds/topic/xcdr2_md5.hpp\"").map_err(fmt_err)?;
         writeln!(&mut out).map_err(fmt_err)?;
     }
 
-    // 5. Definitions emittieren.
+    // 5. Emit definitions.
     for d in &spec.definitions {
         emit_definition(&mut out, &mut ctx, d)?;
     }
 
-    // 5b. §7.2.2.4.8 — `@verbatim(placement=END_FILE)` aus allen
-    // Top-Level-Defs.
+    // 5b. §7.2.2.4.8 — `@verbatim(placement=END_FILE)` from all
+    // top-level defs.
     for d in &spec.definitions {
         if let Some(anns) = top_level_annotations(d) {
             emit_verbatim_at(&mut out, "", anns, PlacementKind::EndFile)?;
         }
     }
 
-    // 6. Optional: Top-Level-Namespace schliessen.
+    // 6. Optionally close the top-level namespace.
     if let Some(prefix) = outer_prefix {
         ctx.close_namespace(&mut out, prefix)?;
     }
 
-    // 7. `topic_type_support<T>`-Spezialisierungen fuer alle struct-Defs.
-    //    Lebt im `::dds::topic`-Namespace (globaler Scope), daher nach
-    //    `outer_prefix`-Close emittiert mit voll-qualifiziertem T.
+    // 7. `topic_type_support<T>` specializations for all struct defs.
+    //    Lives in the `::dds::topic` namespace (global scope), so emitted
+    //    after the `outer_prefix` close with fully-qualified T.
     if !probe_structs.is_empty() {
         emit_topic_type_support_specs(&mut out, opts, &probe_structs)?;
     }
@@ -126,8 +161,8 @@ pub(crate) fn emit_header(
     Ok(out)
 }
 
-/// Liefert die Annotation-Liste eines Top-Level-`Definition`s, falls
-/// die Variante eine traegt. Wird fuer File-Level-Verbatim genutzt.
+/// Returns the annotation list of a top-level `Definition`, if the
+/// variant carries one. Used for file-level verbatim emission.
 fn top_level_annotations(d: &Definition) -> Option<&[Annotation]> {
     match d {
         Definition::Module(m) => Some(&m.annotations),
@@ -144,7 +179,7 @@ fn top_level_annotations(d: &Definition) -> Option<&[Annotation]> {
     }
 }
 
-/// Schreibt `// Generated...`, `#pragma once` und Standard-Includes.
+/// Writes `// Generated...`, `#pragma once`, and standard includes.
 fn write_header_preamble(
     out: &mut String,
     opts: &CppGenOptions,
@@ -154,8 +189,8 @@ fn write_header_preamble(
     writeln!(out, "#pragma once").map_err(fmt_err)?;
     if let Some(guard) = opts.include_guard_prefix.as_deref() {
         if !guard.is_empty() {
-            // Optionaler Guard-Kommentar fuer Tools, die nur klassische
-            // include-Guards akzeptieren. `#pragma once` bleibt primaer.
+            // Optional guard comment for tools that only accept classical
+            // include guards. `#pragma once` remains primary.
             writeln!(out, "// guard-prefix: {guard}").map_err(fmt_err)?;
         }
     }
@@ -167,7 +202,7 @@ fn write_header_preamble(
     Ok(())
 }
 
-/// Walkt den AST und sammelt benoetigte `<...>`-Includes.
+/// Walks the AST and collects required `<...>` includes.
 fn collect_includes(spec: &Specification, inc: &mut Includes) {
     for d in &spec.definitions {
         collect_in_def(d, inc);
@@ -211,8 +246,8 @@ fn collect_in_def(d: &Definition, inc: &mut Includes) {
         | Definition::TemplateModuleInst(_)
         | Definition::Annotation(_)
         | Definition::VendorExtension(_) => {
-            // Im emit_definition als
-            // UnsupportedConstruct erkannt; hier kein Include sammeln.
+            // Recognised as UnsupportedConstruct in emit_definition;
+            // no includes to collect here.
         }
     }
 }
@@ -257,6 +292,8 @@ fn collect_in_typedecl(td: &TypeDecl, inc: &mut Includes) {
                 }
             }
         }
+        // `native X;` — opaque type, no includes.
+        TypeDecl::Native(_) => {}
     }
 }
 
@@ -270,7 +307,7 @@ fn collect_in_typespec(ts: &TypeSpec, inc: &mut Includes) {
             collect_in_typespec(&s.elem, inc);
         }
         TypeSpec::String(_) => {
-            // sowohl `string` als auch `wstring` sind in `<string>` definiert.
+            // Both `string` and `wstring` are defined in `<string>`.
             inc.add("<string>");
         }
         TypeSpec::Map(m) => {
@@ -280,8 +317,8 @@ fn collect_in_typespec(ts: &TypeSpec, inc: &mut Includes) {
         }
         TypeSpec::Fixed(_) => {
             // §7.2.4.2.4 — `fixed<digits, scale>` -> `dds::core::Fixed`.
-            // Wir emittieren eine forward-deklarierte Wrapper-Klasse
-            // (Runtime-Implementierung kommt mit `dds-core`-Crate).
+            // We emit a forward-declared wrapper class
+            // (runtime implementation comes with the `dds-core` crate).
             inc.add("<cstdint>");
         }
         TypeSpec::Any => {
@@ -291,7 +328,7 @@ fn collect_in_typespec(ts: &TypeSpec, inc: &mut Includes) {
     }
 }
 
-/// Emit-Kontext (Indentation, Output).
+/// Emit context (indentation, output).
 struct EmitCtx<'o> {
     opts: &'o CppGenOptions,
     indent_level: usize,
@@ -335,9 +372,9 @@ fn emit_definition(
         Definition::Except(e) => emit_exception(out, ctx, e),
         Definition::Interface(InterfaceDcl::Def(iface)) => {
             // Spec idl4-cpp §7.4: IDL interface -> C++ pure-virtual class.
-            // `@service`-Interfaces gehen weiter ueber den RPC-Codegen-
-            // Pfad (siehe `crate::rpc`); hier ist der Legacy-CORBA-Stub-
-            // Pfad fuer non-service Interfaces.
+            // `@service` interfaces go on via the RPC codegen path
+            // (see `crate::rpc`); here is the legacy CORBA stub path
+            // for non-service interfaces.
             emit_interface_stub(out, ctx, iface)
         }
         Definition::Interface(InterfaceDcl::Forward(f)) => {
@@ -347,9 +384,9 @@ fn emit_definition(
         }
         Definition::ValueDef(v) => emit_value_type(out, ctx, v),
         Definition::ValueBox(_) | Definition::ValueForward(_) => {
-            // ValueBox + ValueForward sind seltene CORBA-Konstrukte;
-            // Foundation laesst sie als no-op (Spec §7.6.x erlaubt
-            // forward-decl mit spaeterer Resolution).
+            // ValueBox + ValueForward are rare CORBA constructs;
+            // the foundation leaves them as a no-op (spec §7.6.x allows
+            // a forward decl with later resolution).
             Ok(())
         }
         Definition::TypeId(_)
@@ -366,9 +403,9 @@ fn emit_definition(
             context: None,
         }),
         Definition::Annotation(_) => {
-            // §7.4.15 Annotation-Defs werden nicht direkt zu C++-Code —
-            // Anwendungen werden bei den annotierten Mitgliedern via
-            // Annotation-Bridges (z.B. @key) emittiert.
+            // §7.4.15 annotation defs do not become C++ code directly —
+            // applications are emitted at the annotated members via
+            // annotation bridges (e.g. @key).
             Ok(())
         }
         Definition::VendorExtension(v) => Err(CppGenError::UnsupportedConstruct {
@@ -423,6 +460,9 @@ fn emit_type_decl(
             }
         },
         TypeDecl::Typedef(t) => emit_typedef(out, ctx, t),
+        // `native X;` — opaque, platform-specific type without a wire
+        // representation; not emitted in the DataType codegen.
+        TypeDecl::Native(_) => Ok(()),
     }
 }
 
@@ -430,11 +470,11 @@ fn emit_struct(out: &mut String, ctx: &mut EmitCtx<'_>, s: &StructDef) -> Result
     check_identifier(&s.name.text)?;
     let ind = ctx.indent();
 
-    // §7.2.2.4.8 — `@verbatim(placement=BEFORE_DECLARATION)` vor der
-    // Class-Header-Zeile.
+    // §7.2.2.4.8 — `@verbatim(placement=BEFORE_DECLARATION)` before the
+    // class header line.
     emit_verbatim_at(out, &ind, &s.annotations, PlacementKind::BeforeDeclaration)?;
 
-    // Class-Header mit optionaler Inheritance-Klausel.
+    // Class header with an optional inheritance clause.
     if let Some(base) = &s.base {
         let base_str = scoped_to_cpp(base);
         writeln!(out, "{ind}class {} : public {} {{", s.name.text, base_str).map_err(fmt_err)?;
@@ -445,16 +485,16 @@ fn emit_struct(out: &mut String, ctx: &mut EmitCtx<'_>, s: &StructDef) -> Result
 
     let inner = " ".repeat((ctx.indent_level + 1) * ctx.opts.indent_width);
 
-    // §7.2.2.4.8 — `@verbatim(placement=BEGIN_DECLARATION)` als erste
-    // Zeile innerhalb des `public:`-Blocks.
+    // §7.2.2.4.8 — `@verbatim(placement=BEGIN_DECLARATION)` as the first
+    // line inside the `public:` block.
     emit_verbatim_at(out, &inner, &s.annotations, PlacementKind::BeginDeclaration)?;
 
-    // Default-Konstruktor.
+    // Default constructor.
     writeln!(out, "{inner}{}() = default;", s.name.text).map_err(fmt_err)?;
     writeln!(out, "{inner}~{}() = default;", s.name.text).map_err(fmt_err)?;
     writeln!(out).map_err(fmt_err)?;
 
-    // Member-Felder als private Storage.
+    // Member fields as private storage.
     writeln!(out, "{ind}private:").map_err(fmt_err)?;
     for m in &s.members {
         emit_struct_member_field(out, ctx, m)?;
@@ -467,14 +507,14 @@ fn emit_struct(out: &mut String, ctx: &mut EmitCtx<'_>, s: &StructDef) -> Result
         emit_struct_member_accessors(out, ctx, m)?;
     }
 
-    // §7.2.2.4.8 — `@verbatim(placement=END_DECLARATION)` als letzte
-    // Zeile vor `};`.
+    // §7.2.2.4.8 — `@verbatim(placement=END_DECLARATION)` as the last
+    // line before `};`.
     emit_verbatim_at(out, &inner, &s.annotations, PlacementKind::EndDeclaration)?;
 
     writeln!(out, "{ind}}};").map_err(fmt_err)?;
 
     // §7.2.2.4.8 — `@verbatim(placement=AFTER_DECLARATION)` direkt
-    // hinter dem schliessenden `};`.
+    // after the closing `};`.
     emit_verbatim_at(out, &ind, &s.annotations, PlacementKind::AfterDeclaration)?;
 
     writeln!(out).map_err(fmt_err)?;
@@ -498,8 +538,8 @@ fn emit_struct_member_field(
         } else {
             ""
         };
-        // §8.1.5 `@shared` -> `std::shared_ptr<T>`. Kombination mit
-        // `@optional` ergibt `std::optional<std::shared_ptr<T>>`.
+        // §8.1.5 `@shared` -> `std::shared_ptr<T>`. Combination with
+        // `@optional` yields `std::optional<std::shared_ptr<T>>`.
         let core_ty = if shared {
             format!("std::shared_ptr<{cpp_ty}>")
         } else {
@@ -566,7 +606,7 @@ fn emit_union(out: &mut String, ctx: &mut EmitCtx<'_>, u: &UnionDef) -> Result<(
 
     let disc_ty = switch_type_to_cpp(&u.switch_type)?;
 
-    // Variant-Liste aus distinct Element-Typen aufbauen.
+    // Build the variant list from distinct element types.
     let mut variant_types: Vec<String> = Vec::new();
     for c in &u.cases {
         let cpp_ty = type_for_declarator(&c.element.type_spec, &c.element.declarator)?;
@@ -604,7 +644,7 @@ fn emit_union(out: &mut String, ctx: &mut EmitCtx<'_>, u: &UnionDef) -> Result<(
     .map_err(fmt_err)?;
     writeln!(out).map_err(fmt_err)?;
 
-    // Branch-Marker als Kommentare (Discriminator-Werte).
+    // Branch markers as comments (discriminator values).
     let mut has_default = false;
     for c in &u.cases {
         emit_union_case_comment(out, &inner, c, &mut has_default)?;
@@ -694,7 +734,7 @@ fn emit_interface_stub(
         PlacementKind::BeforeDeclaration,
     )?;
 
-    // Bases via public virtual inheritance (CORBA-Pattern fuer Diamond).
+    // Bases via public virtual inheritance (CORBA pattern for diamonds).
     if iface.bases.is_empty() {
         writeln!(out, "{ind}class {name} {{").map_err(fmt_err)?;
     } else {
@@ -740,8 +780,8 @@ fn emit_interface_op(out: &mut String, inner: &str, op: &OpDecl) -> Result<(), C
         .iter()
         .map(|p| -> Result<String, CppGenError> {
             let ty = typespec_to_cpp(&p.type_spec)?;
-            // Spec §7.4.5: in -> const T& (oder T fuer primitives),
-            // out/inout -> T&. Fuer Foundation: const T&/T& konsistent.
+            // Spec §7.4.5: in -> const T& (or T for primitives),
+            // out/inout -> T&. For the foundation: const T&/T& consistent.
             let qual = match p.attribute {
                 ParamAttribute::In => format!("const {ty}&"),
                 ParamAttribute::Out | ParamAttribute::InOut => format!("{ty}&"),
@@ -772,9 +812,9 @@ fn emit_interface_attr(
 ) -> Result<(), CppGenError> {
     check_identifier(&attr.name.text)?;
     let ty = typespec_to_cpp(&attr.type_spec)?;
-    // Getter (alle Attribute haben einen).
+    // Getter (every attribute has one).
     writeln!(out, "{inner}virtual {ty} {}() const = 0;", attr.name.text).map_err(fmt_err)?;
-    // Setter nur fuer non-readonly.
+    // Setter only for non-readonly.
     if !attr.readonly {
         writeln!(
             out,
@@ -798,9 +838,9 @@ fn emit_value_type(
 
     emit_verbatim_at(out, &ind, &v.annotations, PlacementKind::BeforeDeclaration)?;
 
-    // Spec idl4-cpp §7.6: valuetype -> C++ class mit pure-virtual
-    // public/protected accessors (state) + factory-Class.
-    // Inheritance: public virtual fuer alle bases + supports-Interfaces.
+    // Spec idl4-cpp §7.6: valuetype -> C++ class with pure-virtual
+    // public/protected accessors (state) + factory class.
+    // Inheritance: public virtual for all bases + supports interfaces.
     let mut bases: Vec<String> = Vec::new();
     if let Some(inh) = &v.inheritance {
         for b in &inh.bases {
@@ -818,7 +858,7 @@ fn emit_value_type(
     writeln!(out, "{ind}public:").map_err(fmt_err)?;
     writeln!(out, "{inner}virtual ~{name}() = default;").map_err(fmt_err)?;
 
-    // Public-State + Methoden.
+    // Public state + methods.
     let mut has_protected = false;
     for el in &v.elements {
         match el {
@@ -946,9 +986,9 @@ fn emit_const_decl(
         zerodds_idl::ast::ConstType::String { wide: true } => "std::wstring".into(),
         zerodds_idl::ast::ConstType::Scoped(s) => scoped_to_cpp(s),
         zerodds_idl::ast::ConstType::Fixed => {
-            // §7.2.4.2.4 — Fixed-Constant ohne Digits/Scale-Annotation;
-            // wir emittieren als opaker Wrapper (Caller annotiert den Typ
-            // ueber separates `typedef fixed<D,S> Name;`).
+            // §7.2.4.2.4 — fixed constant without a digits/scale annotation;
+            // we emit it as an opaque wrapper (the caller annotates the type
+            // via a separate `typedef fixed<D,S> Name;`).
             "::dds::core::Fixed<31, 0>".into()
         }
     };
@@ -994,14 +1034,14 @@ fn emit_exception(
 // TypeSpec → C++-Type-Ausdruck
 // ---------------------------------------------------------------------------
 
-/// Liefert den C++-Type-Ausdruck fuer ein Member (TypeSpec + Declarator).
-/// Array-Declaratoren werden zu `std::array<T, N>` (mehrdimensional ge-nestet).
+/// Returns the C++ type expression for a member (TypeSpec + Declarator).
+/// Array declarators become `std::array<T, N>` (multidimensionally nested).
 pub(crate) fn type_for_declarator(ts: &TypeSpec, decl: &Declarator) -> Result<String, CppGenError> {
     let base = typespec_to_cpp(ts)?;
     match decl {
         Declarator::Simple(_) => Ok(base),
         Declarator::Array(arr) => {
-            // Innen-zu-aussen wickeln: arr.sizes[0] ist die aeusserste Dimension.
+            // Wrap inside-out: arr.sizes[0] is the outermost dimension.
             // `int x[2][3]` → `std::array<std::array<int, 3>, 2>`.
             let mut out = base;
             for size in arr.sizes.iter().rev() {
@@ -1036,17 +1076,17 @@ pub(crate) fn typespec_to_cpp(ts: &TypeSpec) -> Result<String, CppGenError> {
         }
         TypeSpec::Fixed(f) => {
             // Spec idl4-cpp §7.2.4.2.4: fixed<digits, scale> ->
-            // `omg::types::fixed<D, S>` (Spec) bzw. `dds::core::Fixed<D,S>`
-            // (ZeroDDS-aequivalente Form). Digits/Scale aus AST.
+            // `omg::types::fixed<D, S>` (spec) resp. `dds::core::Fixed<D,S>`
+            // (ZeroDDS-equivalent form). Digits/scale from the AST.
             let digits = const_expr_to_u32(&f.digits).unwrap_or(0);
             let scale = const_expr_to_u32(&f.scale).unwrap_or(0);
             Ok(format!("::dds::core::Fixed<{digits}, {scale}>"))
         }
         TypeSpec::Any => {
-            // Spec idl4-cpp §7.3: `any` -> `omg::types::Any`. Wir
-            // emittieren als ZeroDDS-aequivalente `dds::core::Any`-Klasse
-            // (Reflective-Container, Runtime-Implementation in
-            // `dds-core`-Crate).
+            // Spec idl4-cpp §7.3: `any` -> `omg::types::Any`. We emit it
+            // as the ZeroDDS-equivalent `dds::core::Any` class
+            // (a reflective container, runtime implementation in the
+            // `dds-core` crate).
             Ok("::dds::core::Any".into())
         }
     }
@@ -1063,7 +1103,7 @@ pub(crate) fn switch_type_to_cpp(s: &SwitchTypeSpec) -> Result<String, CppGenErr
 }
 
 pub(crate) fn scoped_to_cpp(s: &ScopedName) -> String {
-    // Mapping fuer Time/Duration (Block E).
+    // Mapping for Time/Duration (block E).
     if s.parts.len() == 1 {
         if let Some(mapped) = TIME_DURATION_TYPES
             .iter()
@@ -1083,7 +1123,7 @@ pub(crate) fn scoped_to_cpp(s: &ScopedName) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// ConstExpr → C++-Literal-String (best-effort fuer Foundation)
+// ConstExpr → C++ literal string (best-effort for the foundation)
 // ---------------------------------------------------------------------------
 
 fn const_expr_to_u32(e: &ConstExpr) -> Option<u32> {
@@ -1171,7 +1211,7 @@ fn has_named_annotation(anns: &[Annotation], name: &str) -> bool {
     })
 }
 
-/// Sucht ein `@<name>(N)` und liefert den uint32-Wert; sonst None.
+/// Looks for a `@<name>(N)` and returns the uint32 value; otherwise None.
 fn find_uint_annotation(anns: &[Annotation], name: &str) -> Option<u32> {
     for a in anns {
         if a.name.parts.last().is_some_and(|p| p.text == name) {
@@ -1185,8 +1225,8 @@ fn find_uint_annotation(anns: &[Annotation], name: &str) -> Option<u32> {
     None
 }
 /// zerodds-lint: recursion-depth 64 (const_expr_as_u32 bounded by AST depth)
-/// Versucht, einen ConstExpr als positiven u32 zu deuten (nur Integer-Literal
-/// oder Unary-Plus auf Integer-Literal).
+/// Attempts to interpret a ConstExpr as a positive u32 (only an integer
+/// literal or unary plus on an integer literal).
 fn const_expr_as_u32(e: &ConstExpr) -> Option<u32> {
     match e {
         ConstExpr::Literal(Literal {
@@ -1203,7 +1243,7 @@ fn const_expr_as_u32(e: &ConstExpr) -> Option<u32> {
     }
 }
 
-/// Parser fuer integer-Literale (dezimal, hex `0x`, oktal `0...`).
+/// Parser for integer literals (decimal, hex `0x`, octal `0...`).
 fn parse_int_literal(raw: &str) -> Option<u64> {
     let s = raw.trim_end_matches(|c: char| matches!(c, 'l' | 'L' | 'u' | 'U'));
     if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
@@ -1215,7 +1255,7 @@ fn parse_int_literal(raw: &str) -> Option<u64> {
     }
 }
 
-/// Extensibility-Modus eines Structs aus seinen Annotations.
+/// Extensibility mode of a struct from its annotations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Extensibility {
     Final,
@@ -1240,7 +1280,7 @@ fn struct_extensibility(anns: &[Annotation]) -> Extensibility {
 // Inheritance-Cycle-Detection (reine Self/Direct-Loops im Top-Level-Scope).
 // ---------------------------------------------------------------------------
 
-/// Walkt das AST und sammelt `child → parent`-Edges (FQN-Strings).
+/// Walks the AST and collects `child → parent` edges (FQN strings).
 ///
 /// zerodds-lint: recursion-depth 64 (Parser/AST-Walk; bounded by IDL nesting)
 fn collect_inheritance_edges(
@@ -1285,13 +1325,13 @@ fn detect_inheritance_cycles(spec: &Specification) -> Result<(), CppGenError> {
     let mut parents: HashMap<String, String> = HashMap::new();
     collect_inheritance_edges(&spec.definitions, &mut parents, "");
 
-    // Cycle-Detection per visited-Set pro Knoten.
+    // Cycle detection via a visited set per node.
     for start in parents.keys() {
         let mut current = start.clone();
         let mut visited: BTreeSet<String> = BTreeSet::new();
         visited.insert(current.clone());
         while let Some(p) = parents.get(&current) {
-            // Match flexibel: voller Schluessel oder Suffix-Match.
+            // Match flexibly: full key or suffix match.
             let resolved = parents
                 .keys()
                 .find(|k| *k == p || k.ends_with(&format!("::{p}")))
@@ -1326,19 +1366,19 @@ fn short_name(s: &str) -> String {
 // topic_type_support<T> — DDS-PSM-Cxx Topic-Trait-Spezialisierung
 // ---------------------------------------------------------------------------
 //
-// Sammelt alle Top-Level- und Modul-nested-Structs und emittiert pro Struct
-// eine `dds::topic::topic_type_support<FQN>`-Spezialisierung mit type_name(),
-// encode(), encode_be(), decode(), key_hash(), is_keyed() und extensibility().
+// Collects all top-level and module-nested structs and emits per struct
+// a `dds::topic::topic_type_support<FQN>` specialization with type_name(),
+// encode(), encode_be(), decode(), key_hash(), is_keyed() and extensibility().
 //
-// Wire-Format ist voll-XCDR2 (XTypes 1.3 §7.4):
-//   * Plain-CDR2 LE mit Alignment relativ zum Encapsulation-Start.
-//   * `@final`           -> kein DHEADER.
-//   * `@appendable`(def) -> DHEADER (4 Byte body-size) prefixed.
-//   * `@mutable`         -> DHEADER + EMHEADER pro Member (PL_CDR2).
-//   * `@key`             -> Member geht in Key-Hash (MD5 ueber BE-Plain-CDR2).
+// The wire format is full XCDR2 (XTypes 1.3 §7.4):
+//   * Plain-CDR2 LE with alignment relative to the encapsulation start.
+//   * `@final`           -> no DHEADER.
+//   * `@appendable`(def) -> DHEADER (4 byte body-size) prefixed.
+//   * `@mutable`         -> DHEADER + EMHEADER per member (PL_CDR2).
+//   * `@key`             -> member goes into the key hash (MD5 over BE-Plain-CDR2).
 //   * `@id(N)`           -> EMHEADER member-id.
-//   * `@optional`        -> EMHEADER skip falls absent (Mutable);
-//                            1-Byte Present-Flag fuer Final/Appendable.
+//   * `@optional`        -> EMHEADER skip if absent (mutable);
+//                            1-byte present-flag for final/appendable.
 //   * `@must_understand` -> EMHEADER MU-Flag.
 //
 // Konformanz: docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md (V-1..V-12).
@@ -1406,24 +1446,153 @@ fn emit_topic_type_support_specs(
     Ok(())
 }
 
-/// Liefert true falls die Member-Annotations encode-fest sind (Codegen
-/// kann Wire-Bytes erzeugen). False bei `@shared` (Heap-Indirection,
-/// noch nicht unterstuetzt). `@optional` ist erlaubt.
+/// Returns true if the member annotations are encode-safe (the codegen
+/// can produce wire bytes). False for `@shared` (heap indirection, not
+/// yet supported). `@optional` is allowed.
 fn member_codegen_supported(m: &Member) -> bool {
     !has_shared_annotation(&m.annotations)
 }
 
-/// Liefert true wenn ein Type-Spec vom XCDR2-Codegen verstanden wird.
+/// Returns true if a type spec is understood by the XCDR2 codegen.
+///
+/// zerodds-lint: recursion-depth 64 (type-spec walk; bounded by IDL nesting)
 fn typespec_supported(ts: &TypeSpec) -> bool {
     match ts {
         TypeSpec::Primitive(_) => true,
-        TypeSpec::String(s) => !s.wide,
+        // narrow `string` AND wide `wstring` (conformance §9.1, UTF-16 wire).
+        TypeSpec::String(_) => true,
+        // Sequence elements: primitives, narrow + wide string, enum (-> int32),
+        // nested struct of ANY extensibility (@final → recursed inline;
+        // @appendable/@mutable → 4-aligned splice per element, see emit loops),
+        // nested sequence (recursed, own inner DHEADER) and map (recursed, own
+        // DHEADER) are all wired.
         TypeSpec::Sequence(seq) => match &*seq.elem {
             TypeSpec::Primitive(_) => true,
-            TypeSpec::String(s) => !s.wide,
+            TypeSpec::String(_) => true,
+            TypeSpec::Scoped(s) => scoped_is_enum(s) || scoped_struct(s).is_some(),
+            TypeSpec::Sequence(_) => typespec_supported(&seq.elem),
+            TypeSpec::Map(m) => typespec_supported(&m.key) && typespec_supported(&m.value),
             _ => false,
         },
+        // A `Scoped` member resolving to an enum (→ int32) or to a directly-
+        // encodable struct of ANY extensibility (@final → recursed inline;
+        // @appendable/@mutable → spliced, see `scoped_struct`) is supported.
+        // The Sequence-element arm above mirrors this (each non-final element is
+        // 4-aligned + spliced/sub-decoded per its own DHEADER).
+        TypeSpec::Scoped(s) => scoped_is_enum(s) || scoped_struct(s).is_some(),
+        // map<K,V>: supported iff both key and value are themselves supported
+        // (encode/decode recurse through emit_value_write/read per entry).
+        TypeSpec::Map(m) => typespec_supported(&m.key) && typespec_supported(&m.value),
         _ => false,
+    }
+}
+
+// Codegen-scoped type registry (thread-local = correct under concurrent header
+// generation; rebuilt per `emit_header`). Holds the SIMPLE names of all enums
+// and all structs, so a `Scoped` member can be classified as an enum WITHOUT a
+// full name resolver: a name is treated as an enum only if it is a known enum
+// simple-name AND NOT a known struct simple-name — never mis-classifying a
+// struct (which would emit a broken int32 cast). Ambiguous/relative names fall
+// back to "skip", i.e. no regression.
+thread_local! {
+    static ENUM_NAMES: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+    static STRUCT_NAMES: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+    static STRUCT_DEFS: RefCell<BTreeMap<String, StructDef>> = const { RefCell::new(BTreeMap::new()) };
+    // Monotonic counter for unique nested-struct decode temp-var names
+    // (`__ns<N>`), so nested-nested decodes do not shadow each other.
+    static NEST_CTR: core::cell::Cell<u32> = const { core::cell::Cell::new(0) };
+}
+
+fn next_nest_id() -> u32 {
+    NEST_CTR.with(|c| {
+        let v = c.get();
+        c.set(v.wrapping_add(1));
+        v
+    })
+}
+
+fn set_type_registry(spec: &Specification) {
+    let mut enums = BTreeSet::new();
+    let mut structs = BTreeSet::new();
+    let mut defs = BTreeMap::new();
+    collect_type_names(&spec.definitions, &mut enums, &mut structs, &mut defs);
+    ENUM_NAMES.with(|r| *r.borrow_mut() = enums);
+    STRUCT_NAMES.with(|r| *r.borrow_mut() = structs);
+    STRUCT_DEFS.with(|r| *r.borrow_mut() = defs);
+}
+
+/// zerodds-lint: recursion-depth 64 (module/type tree; bounded by IDL nesting)
+fn collect_type_names(
+    defs: &[Definition],
+    enums: &mut BTreeSet<String>,
+    structs: &mut BTreeSet<String>,
+    struct_defs: &mut BTreeMap<String, StructDef>,
+) {
+    for d in defs {
+        match d {
+            Definition::Module(m) => {
+                collect_type_names(&m.definitions, enums, structs, struct_defs)
+            }
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
+                enums.insert(e.name.text.clone());
+            }
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
+                structs.insert(s.name.text.clone());
+                struct_defs.insert(s.name.text.clone(), s.clone());
+            }
+            _ => {}
+        }
+    }
+}
+
+/// `true` if `s` (a member's scoped type name) unambiguously names an enum.
+fn scoped_is_enum(s: &ScopedName) -> bool {
+    let Some(last) = s.parts.last().map(|p| p.text.clone()) else {
+        return false;
+    };
+    let is_enum = ENUM_NAMES.with(|r| r.borrow().contains(&last));
+    let is_struct = STRUCT_NAMES.with(|r| r.borrow().contains(&last));
+    is_enum && !is_struct
+}
+
+/// If `s` resolves to a `@final` struct whose members are ALL directly encodable
+/// (single Simple declarator + a type the XCDR2 member encoder handles), returns
+/// the [`StructDef`] so the encoder can recurse into it inline (Plain-CDR2: no
+/// DHEADER for `@final`, Spec §7.4.3.4.1). Appendable/mutable nested structs +
+/// arrays/sub-structs inside the nested struct fall back to "not supported"
+/// (whole member skipped — never a partial encode).
+fn scoped_final_struct(s: &ScopedName) -> Option<StructDef> {
+    match scoped_struct(s) {
+        Some((def, Extensibility::Final)) => Some(def),
+        _ => None,
+    }
+}
+
+/// Like [`scoped_final_struct`] but for **any** extensibility: returns the
+/// [`StructDef`] + its [`Extensibility`] when `s` resolves to a struct whose
+/// members are all directly encodable. The member encoder picks the wire form
+/// per extensibility — `@final` recurses inline (no DHEADER, alignment relative
+/// to the outer origin), while `@appendable`/`@mutable` are **spliced** from the
+/// nested type's own `topic_type_support<...>::encode`/`decode`. The latter is
+/// byte-correct because the nested struct's own DHEADER (Plain-CDR2 for
+/// appendable, the mutable scope for mutable) forces 4-alignment, and under
+/// XCDR2 (`max_align == 4`) a 4-aligned splice point preserves every member's
+/// relative alignment (Spec §7.4.3.4.2).
+///
+/// zerodds-lint: recursion-depth 64 (via typespec_supported; bounded by IDL nesting)
+fn scoped_struct(s: &ScopedName) -> Option<(StructDef, Extensibility)> {
+    let last = s.parts.last()?.text.clone();
+    let def = STRUCT_DEFS.with(|r| r.borrow().get(&last).cloned())?;
+    let ext = struct_extensibility(&def.annotations);
+    let all_encodable = def.members.iter().all(|m| {
+        m.declarators.len() == 1
+            && matches!(m.declarators.first(), Some(Declarator::Simple(_)))
+            && typespec_supported(&m.type_spec)
+    });
+    if all_encodable {
+        Some((def, ext))
+    } else {
+        None
     }
 }
 
@@ -1485,17 +1654,50 @@ fn emit_encode_fn(
     ext: Extensibility,
     be: bool,
 ) -> Result<(), CppGenError> {
-    let fn_name = if be { "encode_be" } else { "encode" };
-    writeln!(
-        out,
-        "    static std::vector<uint8_t> {fn_name}(const {cpp_fqn}& __v) {{"
-    )
-    .map_err(fmt_err)?;
-    writeln!(out, "        std::vector<uint8_t> __out;").map_err(fmt_err)?;
-    writeln!(out, "        (void)__v;").map_err(fmt_err)?;
-
     // Suffix for write helpers: write_le or write_be, write_string or write_string_be.
     let endian_suffix = if be { "be" } else { "le" };
+
+    if be {
+        writeln!(
+            out,
+            "    static std::vector<uint8_t> encode_be(const {cpp_fqn}& __v) {{"
+        )
+        .map_err(fmt_err)?;
+    } else {
+        // XCDR2 default delegator + version-aware encode. XCDR2 caps
+        // 8-byte primitive alignment to 4 (XTypes 1.3 §7.4.3.4.2)
+        // — symmetric to `decode(.., XcdrVersion)`. XCDR2 is the
+        // ZeroDDS system default (= dcps DEFAULT_OFFER [XCDR2], encap
+        // 0x07/0x09/0x0b); for legacy XCDR1 call
+        // `encode(__v, XcdrVersion::Xcdr1)` explicitly.
+        writeln!(
+            out,
+            "    static std::vector<uint8_t> encode(const {cpp_fqn}& __v) {{"
+        )
+        .map_err(fmt_err)?;
+        writeln!(
+            out,
+            "        return encode(__v, ::dds::topic::xcdr2::XcdrVersion::Xcdr2);"
+        )
+        .map_err(fmt_err)?;
+        writeln!(out, "    }}").map_err(fmt_err)?;
+        writeln!(
+            out,
+            "    static std::vector<uint8_t> encode(const {cpp_fqn}& __v, \
+             ::dds::topic::xcdr2::XcdrVersion __repr) {{"
+        )
+        .map_err(fmt_err)?;
+    }
+    writeln!(out, "        std::vector<uint8_t> __out;").map_err(fmt_err)?;
+    writeln!(out, "        (void)__v;").map_err(fmt_err)?;
+    if !be {
+        writeln!(
+            out,
+            "        const size_t __max_align = ::dds::topic::xcdr2::xcdr_max_align(__repr);"
+        )
+        .map_err(fmt_err)?;
+        writeln!(out, "        (void)__max_align;").map_err(fmt_err)?;
+    }
 
     match ext {
         Extensibility::Final => {
@@ -1560,7 +1762,7 @@ fn emit_plain_member_encode(
             let name = &decl.name().text;
             writeln!(
                 out,
-                "        // xcdr2: @shared member '{name}' nicht unterstuetzt (skip)"
+                "        // xcdr2: @shared member '{name}' not supported (skip)"
             )
             .map_err(fmt_err)?;
         }
@@ -1569,24 +1771,89 @@ fn emit_plain_member_encode(
     let is_optional = has_optional_annotation(&m.annotations);
     for decl in &m.declarators {
         let name = &decl.name().text;
-        if !matches!(decl, Declarator::Simple(_)) {
-            writeln!(
-                out,
-                "        // xcdr2: array member '{name}' nicht unterstuetzt (skip)"
-            )
-            .map_err(fmt_err)?;
+        // 1-D fixed array of a leaf type (primitive / string / wstring): XCDR2
+        // encodes N contiguous elements, no length prefix. Multi-dim arrays and
+        // arrays of struct/sequence remain a follow-up (need the type registry /
+        // recursion — see idl-cpp-xcdr2-encoder-gaps.md).
+        if let Declarator::Array(arr) = decl {
+            let prim = matches!(m.type_spec, TypeSpec::Primitive(_));
+            let leaf_1d = arr.sizes.len() == 1
+                && matches!(m.type_spec, TypeSpec::Primitive(_) | TypeSpec::String(_));
+            if leaf_1d {
+                writeln!(out, "        for (const auto& __ae : __v.{name}()) {{")
+                    .map_err(fmt_err)?;
+                emit_value_write(out, &m.type_spec, "__ae", endian, origin, "        ")?;
+                writeln!(out, "        }}").map_err(fmt_err)?;
+            } else if prim && arr.sizes.len() >= 2 {
+                // Multi-dim array of a primitive (XTypes §7.4.3): row-major, fixed
+                // size, NO DHEADER (primitive elements). The C++ type is a nested
+                // std::array, so N nested range-for loops reach the innermost cell.
+                let n = arr.sizes.len();
+                let mut acc = format!("__v.{name}()");
+                let mut ind = String::from("        ");
+                for d in 0..n {
+                    let lv = format!("__a{d}");
+                    writeln!(out, "{ind}for (const auto& {lv} : {acc}) {{").map_err(fmt_err)?;
+                    acc = lv;
+                    ind.push_str("    ");
+                }
+                emit_value_write(out, &m.type_spec, &acc, endian, origin, &ind)?;
+                for _ in 0..n {
+                    ind.truncate(ind.len() - 4);
+                    writeln!(out, "{ind}}}").map_err(fmt_err)?;
+                }
+            } else if matches!(&m.type_spec, TypeSpec::Scoped(s) if scoped_is_enum(s) || scoped_final_struct(s).is_some())
+                || (matches!(m.type_spec, TypeSpec::String(_)) && arr.sizes.len() >= 2)
+            {
+                // Array of NON-primitive elements (enum / @final struct, any dims;
+                // string only for >=2 dims — 1-D string keeps the legacy no-DHEADER
+                // leaf path above): one DHEADER (XTypes §7.4.3.5) wrapping N
+                // elements inline, row-major, NO count. N nested range-for loops.
+                let n = arr.sizes.len();
+                writeln!(out, "        {{").map_err(fmt_err)?;
+                writeln!(
+                    out,
+                    "        const auto __arr_dh = ::dds::topic::xcdr2::dheader_begin(__out);"
+                )
+                .map_err(fmt_err)?;
+                let mut acc = format!("__v.{name}()");
+                let mut ind = String::from("        ");
+                for d in 0..n {
+                    let lv = format!("__a{d}");
+                    writeln!(out, "{ind}for (const auto& {lv} : {acc}) {{").map_err(fmt_err)?;
+                    acc = lv;
+                    ind.push_str("    ");
+                }
+                emit_value_write(out, &m.type_spec, &acc, endian, origin, &ind)?;
+                for _ in 0..n {
+                    ind.truncate(ind.len() - 4);
+                    writeln!(out, "{ind}}}").map_err(fmt_err)?;
+                }
+                writeln!(
+                    out,
+                    "        ::dds::topic::xcdr2::dheader_end(__out, __arr_dh);"
+                )
+                .map_err(fmt_err)?;
+                writeln!(out, "        }}").map_err(fmt_err)?;
+            } else {
+                writeln!(
+                    out,
+                    "        // xcdr2: array member '{name}' (multi-dim string-1D-only / unsupported elem) not supported (skip)"
+                )
+                .map_err(fmt_err)?;
+            }
             continue;
         }
         if !typespec_supported(&m.type_spec) {
             writeln!(
                 out,
-                "        // xcdr2: member '{name}' nicht unterstuetzt (nested/enum/wstring/map/fixed; skip)"
+                "        // xcdr2: member '{name}' not supported (nested/enum/map/fixed; skip)"
             )
             .map_err(fmt_err)?;
             continue;
         }
         if is_optional {
-            // Final/Appendable: 1-Byte present-flag, dann Wert wenn vorhanden.
+            // Final/appendable: 1-byte present-flag, then the value if present.
             writeln!(out, "        if (__v.{name}().has_value()) {{").map_err(fmt_err)?;
             writeln!(out, "            __out.push_back(uint8_t{{1}});").map_err(fmt_err)?;
             emit_value_write(
@@ -1615,6 +1882,8 @@ fn emit_plain_member_encode(
 }
 
 /// Emit a single value write at `access` using LE or BE convention.
+///
+/// zerodds-lint: recursion-depth 64 (nested type emit; bounded by IDL nesting)
 fn emit_value_write(
     out: &mut String,
     ts: &TypeSpec,
@@ -1638,13 +1907,32 @@ fn emit_value_write(
         }
         TypeSpec::Primitive(p) => {
             let cpp_ty = primitive_to_cpp(*p);
-            writeln!(
-                out,
-                "{pre}::dds::topic::xcdr2::write_{endian}_origin<{cpp_ty}>(__out, {origin}, {access});"
-            )
-            .map_err(fmt_err)?;
+            if endian == "be" {
+                writeln!(
+                    out,
+                    "{pre}::dds::topic::xcdr2::write_be_origin<{cpp_ty}>(__out, {origin}, {access});"
+                )
+                .map_err(fmt_err)?;
+            } else {
+                // LE: representation-aware (XCDR2 deckelt 8-Byte-Align auf 4).
+                writeln!(
+                    out,
+                    "{pre}::dds::topic::xcdr2::write_le_origin<{cpp_ty}>(__out, {origin}, {access}, __max_align);"
+                )
+                .map_err(fmt_err)?;
+            }
         }
         TypeSpec::String(s) if !s.wide => {
+            // Bounded narrow `string<N>` (DDS-XTypes §7.4.3): byte-length check
+            // (std::string::size = bytes = CDR wire length).
+            if let Some(b) = &s.bound {
+                let bv = const_expr_to_cpp(b);
+                writeln!(
+                    out,
+                    "{pre}if ({access}.size() > {bv}) throw std::length_error(\"bounded string length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
             if endian == "be" {
                 writeln!(
                     out,
@@ -1654,19 +1942,82 @@ fn emit_value_write(
             } else {
                 writeln!(
                     out,
-                    "{pre}::dds::topic::xcdr2::write_string_origin(__out, {origin}, {access});"
+                    "{pre}::dds::topic::xcdr2::write_string_origin(__out, {origin}, {access}, __max_align);"
+                )
+                .map_err(fmt_err)?;
+            }
+        }
+        TypeSpec::String(s) if s.wide => {
+            // Bounded `wstring<N>` (DDS-XTypes §7.4.3): bound is in wide chars
+            // (std::wstring::size). Wire = UTF-16 (conformance §9.1).
+            if let Some(b) = &s.bound {
+                let bv = const_expr_to_cpp(b);
+                writeln!(
+                    out,
+                    "{pre}if ({access}.size() > {bv}) throw std::length_error(\"bounded wstring length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
+            if endian == "be" {
+                writeln!(
+                    out,
+                    "{pre}::dds::topic::xcdr2::write_wstring_be(__out, {access});"
+                )
+                .map_err(fmt_err)?;
+            } else {
+                writeln!(
+                    out,
+                    "{pre}::dds::topic::xcdr2::write_wstring_origin(__out, {origin}, {access}, __max_align);"
                 )
                 .map_err(fmt_err)?;
             }
         }
         TypeSpec::Sequence(seq) => {
+            // Bounded `sequence<T, N>` (DDS-XTypes §7.4.3): over-bound = encode
+            // error. The encode returns a vector (no Result channel), so this
+            // throws — strict vendors (OpenDDS) reject on the wire likewise.
+            if let Some(b) = &seq.bound {
+                let bv = const_expr_to_cpp(b);
+                writeln!(
+                    out,
+                    "{pre}if ({access}.size() > {bv}) throw std::length_error(\"bounded sequence length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
+            if matches!(&*seq.elem, TypeSpec::Primitive(PrimitiveType::Octet)) {
+                // sequence<octet>: u32 length + raw byte block, no per-byte loop.
+                if endian == "be" {
+                    writeln!(out, "{pre}::dds::topic::xcdr2::write_be<uint32_t>(__out, static_cast<uint32_t>({access}.size()));").map_err(fmt_err)?;
+                } else {
+                    writeln!(out, "{pre}::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, {origin}, static_cast<uint32_t>({access}.size()), __max_align);").map_err(fmt_err)?;
+                }
+                writeln!(
+                    out,
+                    "{pre}__out.insert(__out.end(), {access}.begin(), {access}.end());"
+                )
+                .map_err(fmt_err)?;
+                return Ok(());
+            }
+            // XCDR2 §7.4.3.5: sequences with NON-primitive elements
+            // (string, struct, …) get a DHEADER (uint32 = byte length of
+            // [count + elements]) prepended; primitives do not.
+            // Cyclone-DDS-verified (V-5 without, V-6 with).
+            let seq_non_primitive = !matches!(&*seq.elem, TypeSpec::Primitive(_));
+            if seq_non_primitive {
+                writeln!(out, "{pre}{{").map_err(fmt_err)?;
+                writeln!(
+                    out,
+                    "{pre}const auto __seq_dh = ::dds::topic::xcdr2::dheader_begin(__out);"
+                )
+                .map_err(fmt_err)?;
+            }
             let count_call = if endian == "be" {
                 format!(
                     "{pre}::dds::topic::xcdr2::write_be<uint32_t>(__out, static_cast<uint32_t>({access}.size()));"
                 )
             } else {
                 format!(
-                    "{pre}::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, {origin}, static_cast<uint32_t>({access}.size()));"
+                    "{pre}::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, {origin}, static_cast<uint32_t>({access}.size()), __max_align);"
                 )
             };
             writeln!(out, "{count_call}").map_err(fmt_err)?;
@@ -1698,7 +2049,7 @@ fn emit_value_write(
                     } else {
                         writeln!(
                             out,
-                            "{elem_indent}::dds::topic::xcdr2::write_le_origin<{cpp_ty}>(__out, {origin}, __e);"
+                            "{elem_indent}::dds::topic::xcdr2::write_le_origin<{cpp_ty}>(__out, {origin}, __e, __max_align);"
                         )
                         .map_err(fmt_err)?;
                     }
@@ -1713,24 +2064,158 @@ fn emit_value_write(
                     } else {
                         writeln!(
                             out,
-                            "{elem_indent}::dds::topic::xcdr2::write_string_origin(__out, {origin}, __e);"
+                            "{elem_indent}::dds::topic::xcdr2::write_string_origin(__out, {origin}, __e, __max_align);"
                         )
                         .map_err(fmt_err)?;
                     }
                 }
+                // wide string (wstring): recurse for the BOM/octet-length wire form.
+                TypeSpec::String(_) => {
+                    emit_value_write(out, &seq.elem, "__e", endian, origin, &elem_indent)?;
+                }
+                // enum (-> int32) and nested struct of ANY extensibility: recurse
+                // through emit_value_write, identical to member-level encoding —
+                // @final inlines (no DHEADER), @appendable/@mutable pad-to-4 +
+                // splice the element's own [DHEADER+body] (XTypes §7.4.3.5).
+                TypeSpec::Scoped(sc) if scoped_is_enum(sc) || scoped_struct(sc).is_some() => {
+                    emit_value_write(out, &seq.elem, "__e", endian, origin, &elem_indent)?;
+                }
+                // nested sequence (sequence<sequence<...>>): recurse — the inner
+                // sequence emits its own DHEADER (XTypes §7.4.3.5).
+                TypeSpec::Sequence(_) => {
+                    emit_value_write(out, &seq.elem, "__e", endian, origin, &elem_indent)?;
+                }
+                // map element (sequence<map<K,V>>): recurse — the map emits its
+                // own DHEADER.
+                TypeSpec::Map(_) => {
+                    emit_value_write(out, &seq.elem, "__e", endian, origin, &elem_indent)?;
+                }
                 _ => {
                     writeln!(
                         out,
-                        "{elem_indent}// xcdr2: nested/wstring sequence-element nicht unterstuetzt"
+                        "{elem_indent}// xcdr2: nested sequence-element not supported"
                     )
                     .map_err(fmt_err)?;
                 }
             }
             writeln!(out, "{pre}}}").map_err(fmt_err)?;
+            if seq_non_primitive {
+                writeln!(
+                    out,
+                    "{pre}::dds::topic::xcdr2::dheader_end(__out, __seq_dh);"
+                )
+                .map_err(fmt_err)?;
+                writeln!(out, "{pre}}}").map_err(fmt_err)?;
+            }
+        }
+        // map<K,V> member (XTypes §7.4.4.6): a non-primitive collection -> DHEADER
+        // (uint32 byte-len of [count + entries]); uint32 count; then each entry as
+        // key.encode + value.encode in key-sorted order. std::map iterates in
+        // ascending key order, matching the Rust BTreeMap reference encoder
+        // (crates/cdr/src/composite.rs §7.4.4.6) byte-for-byte.
+        TypeSpec::Map(m) => {
+            if let Some(b) = &m.bound {
+                let bv = const_expr_to_cpp(b);
+                writeln!(
+                    out,
+                    "{pre}if ({access}.size() > {bv}) throw std::length_error(\"bounded map length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
+            writeln!(out, "{pre}{{").map_err(fmt_err)?;
+            writeln!(
+                out,
+                "{pre}const auto __map_dh = ::dds::topic::xcdr2::dheader_begin(__out);"
+            )
+            .map_err(fmt_err)?;
+            if endian == "be" {
+                writeln!(out, "{pre}::dds::topic::xcdr2::write_be<uint32_t>(__out, static_cast<uint32_t>({access}.size()));").map_err(fmt_err)?;
+            } else {
+                writeln!(out, "{pre}::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, {origin}, static_cast<uint32_t>({access}.size()), __max_align);").map_err(fmt_err)?;
+            }
+            writeln!(out, "{pre}for (const auto& __kv : {access}) {{").map_err(fmt_err)?;
+            let kv_indent = format!("{pre}    ");
+            emit_value_write(out, &m.key, "__kv.first", endian, origin, &kv_indent)?;
+            emit_value_write(out, &m.value, "__kv.second", endian, origin, &kv_indent)?;
+            writeln!(out, "{pre}}}").map_err(fmt_err)?;
+            writeln!(
+                out,
+                "{pre}::dds::topic::xcdr2::dheader_end(__out, __map_dh);"
+            )
+            .map_err(fmt_err)?;
+            writeln!(out, "{pre}}}").map_err(fmt_err)?;
+        }
+        // enum member: encode as its int32 underlying type (Spec §7.4.1.4.2).
+        TypeSpec::Scoped(s) if scoped_is_enum(s) => {
+            if endian == "be" {
+                writeln!(
+                    out,
+                    "{pre}::dds::topic::xcdr2::write_be<int32_t>(__out, static_cast<int32_t>({access}));"
+                )
+                .map_err(fmt_err)?;
+            } else {
+                writeln!(
+                    out,
+                    "{pre}::dds::topic::xcdr2::write_le_origin<int32_t>(__out, {origin}, static_cast<int32_t>({access}), __max_align);"
+                )
+                .map_err(fmt_err)?;
+            }
+        }
+        // nested struct member. @final: recurse, encoding each sub-member inline
+        // (Plain-CDR2, no DHEADER, Spec §7.4.3.4.1). @appendable/@mutable: splice
+        // the nested type's own encoding — its DHEADER forces 4-alignment, so a
+        // 4-aligned splice point is byte-identical to standalone under XCDR2.
+        TypeSpec::Scoped(sc) if scoped_struct(sc).is_some() => {
+            let Some((def, ext)) = scoped_struct(sc) else {
+                return Ok(());
+            };
+            match ext {
+                Extensibility::Final => {
+                    for sm in &def.members {
+                        let sm_name = &sm.declarators[0].name().text;
+                        emit_value_write(
+                            out,
+                            &sm.type_spec,
+                            &format!("{access}.{sm_name}()"),
+                            endian,
+                            origin,
+                            &pre,
+                        )?;
+                    }
+                }
+                Extensibility::Appendable | Extensibility::Mutable => {
+                    let cpp = scoped_to_cpp(sc);
+                    let id = next_nest_id();
+                    writeln!(out, "{pre}{{").map_err(fmt_err)?;
+                    writeln!(
+                        out,
+                        "{pre}    ::dds::topic::xcdr2::pad_to_from_origin(__out, {origin}, 4);"
+                    )
+                    .map_err(fmt_err)?;
+                    if endian == "be" {
+                        writeln!(
+                            out,
+                            "{pre}    auto __nsb{id} = ::dds::topic::topic_type_support<{cpp}>::encode_be({access});"
+                        )
+                        .map_err(fmt_err)?;
+                    } else {
+                        writeln!(
+                            out,
+                            "{pre}    auto __nsb{id} = ::dds::topic::topic_type_support<{cpp}>::encode({access}, __repr);"
+                        )
+                        .map_err(fmt_err)?;
+                    }
+                    writeln!(
+                        out,
+                        "{pre}    __out.insert(__out.end(), __nsb{id}.begin(), __nsb{id}.end());"
+                    )
+                    .map_err(fmt_err)?;
+                    writeln!(out, "{pre}}}").map_err(fmt_err)?;
+                }
+            }
         }
         _ => {
-            writeln!(out, "{pre}// xcdr2: member type nicht unterstuetzt (skip)")
-                .map_err(fmt_err)?;
+            writeln!(out, "{pre}// xcdr2: member type not supported (skip)").map_err(fmt_err)?;
         }
     }
     Ok(())
@@ -1747,7 +2232,7 @@ fn emit_mutable_member_encode(
             let name = &decl.name().text;
             writeln!(
                 out,
-                "        // xcdr2: @shared member '{name}' nicht unterstuetzt (skip)"
+                "        // xcdr2: @shared member '{name}' not supported (skip)"
             )
             .map_err(fmt_err)?;
         }
@@ -1763,7 +2248,7 @@ fn emit_mutable_member_encode(
         if !matches!(decl, Declarator::Simple(_)) {
             writeln!(
                 out,
-                "        // xcdr2: array member '{name}' nicht unterstuetzt (skip)"
+                "        // xcdr2: array member '{name}' not supported (skip)"
             )
             .map_err(fmt_err)?;
             continue;
@@ -1771,7 +2256,7 @@ fn emit_mutable_member_encode(
         if !typespec_supported(&m.type_spec) {
             writeln!(
                 out,
-                "        // xcdr2: member '{name}' nicht unterstuetzt (skip)"
+                "        // xcdr2: member '{name}' not supported (skip)"
             )
             .map_err(fmt_err)?;
             continue;
@@ -1885,6 +2370,15 @@ fn emit_mutable_value_emit(
             }
         }
         TypeSpec::String(s) if !s.wide => {
+            // Bounded narrow `string<N>` (DDS-XTypes §7.4.3): byte-length check.
+            if let Some(b) = &s.bound {
+                let bv = const_expr_to_cpp(b);
+                writeln!(
+                    out,
+                    "{indent}if ({access}.size() > {bv}) throw std::length_error(\"bounded string length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
             // EMHEADER LC=3 with NEXTINT, then string body inline.
             writeln!(
                 out,
@@ -1909,7 +2403,7 @@ fn emit_mutable_value_emit(
             } else {
                 writeln!(
                     out,
-                    "{indent}      ::dds::topic::xcdr2::write_string_origin(__out, __body_origin, {access});"
+                    "{indent}      ::dds::topic::xcdr2::write_string_origin(__out, __body_origin, {access}, __max_align);"
                 )
                 .map_err(fmt_err)?;
             }
@@ -1920,7 +2414,17 @@ fn emit_mutable_value_emit(
             )
             .map_err(fmt_err)?;
         }
-        TypeSpec::Sequence(seq) => {
+        TypeSpec::String(s) if s.wide => {
+            // Bounded `wstring<N>` (DDS-XTypes §7.4.3): wide-char-length check.
+            if let Some(b) = &s.bound {
+                let bv = const_expr_to_cpp(b);
+                writeln!(
+                    out,
+                    "{indent}if ({access}.size() > {bv}) throw std::length_error(\"bounded wstring length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
+            // EMHEADER LC=3 with NEXTINT, then wstring body inline (UTF-16).
             writeln!(
                 out,
                 "{indent}{{ const auto __sub = ::dds::topic::xcdr2::emheader_nextint_begin(__out, __origin, {id_expr}, {mu_lit});"
@@ -1934,64 +2438,300 @@ fn emit_mutable_value_emit(
             if endian == "be" {
                 writeln!(
                     out,
+                    "{indent}      ::dds::topic::xcdr2::write_wstring_be(__out, {access});"
+                )
+                .map_err(fmt_err)?;
+            } else {
+                writeln!(
+                    out,
+                    "{indent}      ::dds::topic::xcdr2::write_wstring_origin(__out, __body_origin, {access}, __max_align);"
+                )
+                .map_err(fmt_err)?;
+            }
+            writeln!(out, "{indent}    }}").map_err(fmt_err)?;
+            writeln!(
+                out,
+                "{indent}    ::dds::topic::xcdr2::emheader_nextint_end(__out, __sub); }}"
+            )
+            .map_err(fmt_err)?;
+        }
+        TypeSpec::Sequence(seq) => {
+            // Bounded `sequence<T, N>` (DDS-XTypes §7.4.3): over-bound = throw.
+            if let Some(b) = &seq.bound {
+                let bv = const_expr_to_cpp(b);
+                writeln!(
+                    out,
+                    "{indent}if ({access}.size() > {bv}) throw std::length_error(\"bounded sequence length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
+            writeln!(
+                out,
+                "{indent}{{ const auto __sub = ::dds::topic::xcdr2::emheader_nextint_begin(__out, __origin, {id_expr}, {mu_lit});"
+            )
+            .map_err(fmt_err)?;
+            writeln!(
+                out,
+                "{indent}    {{ const auto __body_origin = __sub.body_start; (void)__body_origin;"
+            )
+            .map_err(fmt_err)?;
+            // XTypes §7.4.3.5: a non-primitive-element sequence carries its OWN
+            // DHEADER even inside a mutable EMHEADER NEXTINT frame (the Rust
+            // reference encoder writes EMHEADER+NEXTINT+DHEADER+count+elements;
+            // Cyclone-interop-verified). Primitive-element sequences carry none.
+            let seq_inner_dh = !matches!(&*seq.elem, TypeSpec::Primitive(_));
+            if seq_inner_dh {
+                writeln!(
+                    out,
+                    "{indent}      const auto __seq_dh = ::dds::topic::xcdr2::dheader_begin(__out);"
+                )
+                .map_err(fmt_err)?;
+            }
+            if endian == "be" {
+                writeln!(
+                    out,
                     "{indent}      ::dds::topic::xcdr2::write_be<uint32_t>(__out, static_cast<uint32_t>({access}.size()));"
                 )
                 .map_err(fmt_err)?;
             } else {
                 writeln!(
                     out,
-                    "{indent}      ::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, __body_origin, static_cast<uint32_t>({access}.size()));"
+                    "{indent}      ::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, __body_origin, static_cast<uint32_t>({access}.size()), __max_align);"
                 )
                 .map_err(fmt_err)?;
             }
-            writeln!(out, "{indent}      for (const auto& __e : {access}) {{").map_err(fmt_err)?;
-            match &*seq.elem {
-                TypeSpec::Primitive(PrimitiveType::Boolean) => {
-                    writeln!(
-                        out,
-                        "{indent}        ::dds::topic::xcdr2::write_bool(__out, __e);"
-                    )
+            if matches!(&*seq.elem, TypeSpec::Primitive(PrimitiveType::Octet)) {
+                // sequence<octet>: raw byte block instead of a per-byte loop.
+                writeln!(
+                    out,
+                    "{indent}      __out.insert(__out.end(), {access}.begin(), {access}.end());"
+                )
+                .map_err(fmt_err)?;
+            } else {
+                writeln!(out, "{indent}      for (const auto& __e : {access}) {{")
                     .map_err(fmt_err)?;
-                }
-                TypeSpec::Primitive(PrimitiveType::Octet) => {
-                    writeln!(
-                        out,
-                        "{indent}        ::dds::topic::xcdr2::write_u8(__out, __e);"
-                    )
-                    .map_err(fmt_err)?;
-                }
-                TypeSpec::Primitive(p) => {
-                    let cpp_ty = primitive_to_cpp(*p);
-                    if endian == "be" {
+                match &*seq.elem {
+                    TypeSpec::Primitive(PrimitiveType::Boolean) => {
                         writeln!(
+                            out,
+                            "{indent}        ::dds::topic::xcdr2::write_bool(__out, __e);"
+                        )
+                        .map_err(fmt_err)?;
+                    }
+                    TypeSpec::Primitive(PrimitiveType::Octet) => {
+                        writeln!(
+                            out,
+                            "{indent}        ::dds::topic::xcdr2::write_u8(__out, __e);"
+                        )
+                        .map_err(fmt_err)?;
+                    }
+                    TypeSpec::Primitive(p) => {
+                        let cpp_ty = primitive_to_cpp(*p);
+                        if endian == "be" {
+                            writeln!(
                             out,
                             "{indent}        ::dds::topic::xcdr2::write_be<{cpp_ty}>(__out, __e);"
                         )
                         .map_err(fmt_err)?;
-                    } else {
-                        writeln!(out, "{indent}        ::dds::topic::xcdr2::write_le_origin<{cpp_ty}>(__out, __body_origin, __e);").map_err(fmt_err)?;
+                        } else {
+                            writeln!(out, "{indent}        ::dds::topic::xcdr2::write_le_origin<{cpp_ty}>(__out, __body_origin, __e, __max_align);").map_err(fmt_err)?;
+                        }
+                    }
+                    TypeSpec::String(s) if !s.wide => {
+                        if endian == "be" {
+                            writeln!(
+                                out,
+                                "{indent}        ::dds::topic::xcdr2::write_string_be(__out, __e);"
+                            )
+                            .map_err(fmt_err)?;
+                        } else {
+                            writeln!(out, "{indent}        ::dds::topic::xcdr2::write_string_origin(__out, __body_origin, __e, __max_align);").map_err(fmt_err)?;
+                        }
+                    }
+                    // wstring / enum / nested struct (any extensibility) elements:
+                    // recurse with the EMHEADER body-origin (identical to the
+                    // plain-path arms; non-final elements pad-to-4 + splice).
+                    TypeSpec::String(_) => {
+                        emit_value_write(
+                            out,
+                            &seq.elem,
+                            "__e",
+                            endian,
+                            "__body_origin",
+                            &format!("{indent}        "),
+                        )?;
+                    }
+                    TypeSpec::Scoped(sc) if scoped_is_enum(sc) || scoped_struct(sc).is_some() => {
+                        emit_value_write(
+                            out,
+                            &seq.elem,
+                            "__e",
+                            endian,
+                            "__body_origin",
+                            &format!("{indent}        "),
+                        )?;
+                    }
+                    // nested sequence / map element (each emits its own DHEADER).
+                    TypeSpec::Sequence(_) | TypeSpec::Map(_) => {
+                        emit_value_write(
+                            out,
+                            &seq.elem,
+                            "__e",
+                            endian,
+                            "__body_origin",
+                            &format!("{indent}        "),
+                        )?;
+                    }
+                    _ => {
+                        writeln!(
+                            out,
+                            "{indent}        // xcdr2: nested seq-elem not supported"
+                        )
+                        .map_err(fmt_err)?;
                     }
                 }
-                TypeSpec::String(s) if !s.wide => {
+                writeln!(out, "{indent}      }}").map_err(fmt_err)?;
+            }
+            if seq_inner_dh {
+                writeln!(
+                    out,
+                    "{indent}      ::dds::topic::xcdr2::dheader_end(__out, __seq_dh);"
+                )
+                .map_err(fmt_err)?;
+            }
+            writeln!(out, "{indent}    }}").map_err(fmt_err)?;
+            writeln!(
+                out,
+                "{indent}    ::dds::topic::xcdr2::emheader_nextint_end(__out, __sub); }}"
+            )
+            .map_err(fmt_err)?;
+        }
+        // enum member: 4-byte int32 -> compact LC=2 EMHEADER (no NEXTINT).
+        TypeSpec::Scoped(s) if scoped_is_enum(s) => {
+            writeln!(
+                out,
+                "{indent}::dds::topic::xcdr2::emheader_4<int32_t>(__out, __origin, {id_expr}, {mu_lit}, static_cast<int32_t>({access}));"
+            )
+            .map_err(fmt_err)?;
+        }
+        // nested struct member as a @mutable member: LC=4 NEXTINT frame. @final:
+        // wrap the inline (no inner DHEADER) body. @appendable/@mutable: splice
+        // the nested type's own encoding (it carries its own inner DHEADER) into
+        // the NEXTINT body — byte-identical to the Rust reference (a non-final
+        // nested struct contributes its DHEADER inside the member frame).
+        TypeSpec::Scoped(sc) if scoped_struct(sc).is_some() => {
+            let Some((def, ext)) = scoped_struct(sc) else {
+                return Ok(());
+            };
+            writeln!(
+                out,
+                "{indent}{{ const auto __sub = ::dds::topic::xcdr2::emheader_nextint_begin(__out, __origin, {id_expr}, {mu_lit});"
+            )
+            .map_err(fmt_err)?;
+            match ext {
+                Extensibility::Final => {
+                    writeln!(
+                        out,
+                        "{indent}    {{ const auto __body_origin = __sub.body_start; (void)__body_origin;"
+                    )
+                    .map_err(fmt_err)?;
+                    for sm in &def.members {
+                        let sm_name = &sm.declarators[0].name().text;
+                        emit_value_write(
+                            out,
+                            &sm.type_spec,
+                            &format!("{access}.{sm_name}()"),
+                            endian,
+                            "__body_origin",
+                            &format!("{indent}      "),
+                        )?;
+                    }
+                    writeln!(out, "{indent}    }}").map_err(fmt_err)?;
+                }
+                Extensibility::Appendable | Extensibility::Mutable => {
+                    let cpp = scoped_to_cpp(sc);
+                    let id = next_nest_id();
+                    writeln!(
+                        out,
+                        "{indent}    {{ ::dds::topic::xcdr2::pad_to_from_origin(__out, __sub.body_start, 4);"
+                    )
+                    .map_err(fmt_err)?;
                     if endian == "be" {
                         writeln!(
                             out,
-                            "{indent}        ::dds::topic::xcdr2::write_string_be(__out, __e);"
+                            "{indent}      auto __nsb{id} = ::dds::topic::topic_type_support<{cpp}>::encode_be({access});"
                         )
                         .map_err(fmt_err)?;
                     } else {
-                        writeln!(out, "{indent}        ::dds::topic::xcdr2::write_string_origin(__out, __body_origin, __e);").map_err(fmt_err)?;
+                        writeln!(
+                            out,
+                            "{indent}      auto __nsb{id} = ::dds::topic::topic_type_support<{cpp}>::encode({access}, __repr);"
+                        )
+                        .map_err(fmt_err)?;
                     }
-                }
-                _ => {
                     writeln!(
                         out,
-                        "{indent}        // xcdr2: nested seq-elem nicht unterstuetzt"
+                        "{indent}      __out.insert(__out.end(), __nsb{id}.begin(), __nsb{id}.end()); }}"
                     )
                     .map_err(fmt_err)?;
                 }
             }
+            writeln!(
+                out,
+                "{indent}    ::dds::topic::xcdr2::emheader_nextint_end(__out, __sub); }}"
+            )
+            .map_err(fmt_err)?;
+        }
+        // map<K,V> member: LC=4 NEXTINT frame wrapping [DHEADER + count +
+        // interleaved entries]. A map is always a non-primitive collection, so —
+        // like the mutable Sequence arm and the Rust reference encoder — it
+        // carries its own inner DHEADER inside the NEXTINT frame (Finding 6,
+        // resolved against the Rust/Cyclone wire).
+        TypeSpec::Map(m) => {
+            writeln!(
+                out,
+                "{indent}{{ const auto __sub = ::dds::topic::xcdr2::emheader_nextint_begin(__out, __origin, {id_expr}, {mu_lit});"
+            )
+            .map_err(fmt_err)?;
+            writeln!(
+                out,
+                "{indent}    {{ const auto __body_origin = __sub.body_start; (void)__body_origin;"
+            )
+            .map_err(fmt_err)?;
+            writeln!(
+                out,
+                "{indent}      const auto __map_dh = ::dds::topic::xcdr2::dheader_begin(__out);"
+            )
+            .map_err(fmt_err)?;
+            if endian == "be" {
+                writeln!(out, "{indent}      ::dds::topic::xcdr2::write_be<uint32_t>(__out, static_cast<uint32_t>({access}.size()));").map_err(fmt_err)?;
+            } else {
+                writeln!(out, "{indent}      ::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, __body_origin, static_cast<uint32_t>({access}.size()), __max_align);").map_err(fmt_err)?;
+            }
+            writeln!(out, "{indent}      for (const auto& __kv : {access}) {{").map_err(fmt_err)?;
+            let kv_indent = format!("{indent}        ");
+            emit_value_write(
+                out,
+                &m.key,
+                "__kv.first",
+                endian,
+                "__body_origin",
+                &kv_indent,
+            )?;
+            emit_value_write(
+                out,
+                &m.value,
+                "__kv.second",
+                endian,
+                "__body_origin",
+                &kv_indent,
+            )?;
             writeln!(out, "{indent}      }}").map_err(fmt_err)?;
+            writeln!(
+                out,
+                "{indent}      ::dds::topic::xcdr2::dheader_end(__out, __map_dh);"
+            )
+            .map_err(fmt_err)?;
             writeln!(out, "{indent}    }}").map_err(fmt_err)?;
             writeln!(
                 out,
@@ -2000,7 +2740,7 @@ fn emit_mutable_value_emit(
             .map_err(fmt_err)?;
         }
         _ => {
-            writeln!(out, "{indent}// xcdr2: nicht unterstuetzter member-type").map_err(fmt_err)?;
+            writeln!(out, "{indent}// xcdr2: unsupported member type").map_err(fmt_err)?;
         }
     }
     Ok(())
@@ -2040,12 +2780,24 @@ fn emit_decode_fn(
 ) -> Result<(), CppGenError> {
     writeln!(
         out,
-        "    static {cpp_fqn} decode(const uint8_t* __buf, size_t __len) {{"
+        "    static {cpp_fqn} decode(const uint8_t* __buf, size_t __len, \
+         ::dds::topic::xcdr2::XcdrVersion __repr) {{"
     )
     .map_err(fmt_err)?;
     writeln!(out, "        size_t __pos = 0;").map_err(fmt_err)?;
     writeln!(out, "        {cpp_fqn} __v;").map_err(fmt_err)?;
-    writeln!(out, "        (void)__buf; (void)__len; (void)__pos;").map_err(fmt_err)?;
+    // The XCDR version controls alignment: XCDR2 caps 8-byte primitives
+    // to 4-byte boundaries (XTypes 1.3 §7.4.3.4.2), XCDR1 does not.
+    writeln!(
+        out,
+        "        const size_t __max_align = ::dds::topic::xcdr2::xcdr_max_align(__repr);"
+    )
+    .map_err(fmt_err)?;
+    writeln!(
+        out,
+        "        (void)__buf; (void)__len; (void)__pos; (void)__max_align;"
+    )
+    .map_err(fmt_err)?;
 
     match ext {
         Extensibility::Final => {
@@ -2091,11 +2843,29 @@ fn emit_decode_fn(
             writeln!(out, "                default: {{").map_err(fmt_err)?;
             writeln!(
                 out,
-                "                    // unbekannter Member: NEXTINT-Skip falls LC>=3 ohne primitive-mapping."
+                "                    // Unknown member: per-LC skip per XTypes 1.3"
             )
             .map_err(fmt_err)?;
-            writeln!(out, "                    if (__h.lc == 0) {{ ++__pos; }}")
-                .map_err(fmt_err)?;
+            writeln!(
+                out,
+                "                    // §7.4.3.4.2 (LengthCode::body_len). LC0..3 are"
+            )
+            .map_err(fmt_err)?;
+            writeln!(
+                out,
+                "                    // fixed 1/2/4/8-byte bodies WITHOUT NEXTINT; LC4/5 NEXTINT="
+            )
+            .map_err(fmt_err)?;
+            writeln!(
+                out,
+                "                    // byte length; LC6/7 NEXTINT=element count (4 + 4n / 4 + 8n)."
+            )
+            .map_err(fmt_err)?;
+            writeln!(
+                out,
+                "                    if (__h.lc == 0) {{ __pos += 1; }}"
+            )
+            .map_err(fmt_err)?;
             writeln!(
                 out,
                 "                    else if (__h.lc == 1) {{ __pos += 2; }}"
@@ -2108,7 +2878,22 @@ fn emit_decode_fn(
             .map_err(fmt_err)?;
             writeln!(
                 out,
-                "                    else {{ auto __n = ::dds::topic::xcdr2::emheader_nextint_read(__buf, __pos, __len); __pos += __n; }}"
+                "                    else if (__h.lc == 3) {{ __pos += 8; }}"
+            )
+            .map_err(fmt_err)?;
+            writeln!(
+                out,
+                "                    else if (__h.lc == 4 || __h.lc == 5) {{ auto __n = ::dds::topic::xcdr2::emheader_nextint_read(__buf, __pos, __len); __pos += __n; }}"
+            )
+            .map_err(fmt_err)?;
+            writeln!(
+                out,
+                "                    else if (__h.lc == 6) {{ auto __c = ::dds::topic::xcdr2::emheader_nextint_read(__buf, __pos, __len); __pos += 4 + 4 * static_cast<size_t>(__c); }}"
+            )
+            .map_err(fmt_err)?;
+            writeln!(
+                out,
+                "                    else {{ auto __c = ::dds::topic::xcdr2::emheader_nextint_read(__buf, __pos, __len); __pos += 4 + 8 * static_cast<size_t>(__c); }}"
             )
             .map_err(fmt_err)?;
             writeln!(out, "                    break;").map_err(fmt_err)?;
@@ -2130,7 +2915,7 @@ fn emit_plain_member_decode(out: &mut String, m: &Member, origin: &str) -> Resul
             let name = &decl.name().text;
             writeln!(
                 out,
-                "        // xcdr2: @shared member '{name}' nicht unterstuetzt (skip)"
+                "        // xcdr2: @shared member '{name}' not supported (skip)"
             )
             .map_err(fmt_err)?;
         }
@@ -2139,18 +2924,103 @@ fn emit_plain_member_decode(out: &mut String, m: &Member, origin: &str) -> Resul
     let is_optional = has_optional_annotation(&m.annotations);
     for decl in &m.declarators {
         let name = &decl.name().text;
-        if !matches!(decl, Declarator::Simple(_)) {
-            writeln!(
-                out,
-                "        // xcdr2: array member '{name}' nicht unterstuetzt (skip)"
-            )
-            .map_err(fmt_err)?;
+        // 1-D fixed array of a leaf type — read N elements in place (symmetric to
+        // the plain-encode array path). Multi-dim / array-of-struct: follow-up.
+        if let Declarator::Array(arr) = decl {
+            let prim = matches!(m.type_spec, TypeSpec::Primitive(_));
+            let leaf_1d = arr.sizes.len() == 1
+                && matches!(m.type_spec, TypeSpec::Primitive(_) | TypeSpec::String(_));
+            let prim_read_expr = || -> String {
+                match &m.type_spec {
+                    TypeSpec::Primitive(PrimitiveType::Boolean) => {
+                        "::dds::topic::xcdr2::read_bool(__buf, __pos, __len)".to_string()
+                    }
+                    TypeSpec::Primitive(PrimitiveType::Octet) => {
+                        "::dds::topic::xcdr2::read_u8(__buf, __pos, __len)".to_string()
+                    }
+                    TypeSpec::Primitive(p) => format!(
+                        "::dds::topic::xcdr2::read_le_origin<{}>(__buf, __pos, __len, {origin}, __max_align)",
+                        primitive_to_cpp(*p)
+                    ),
+                    TypeSpec::String(s) if s.wide => format!(
+                        "::dds::topic::xcdr2::read_wstring_origin(__buf, __pos, __len, {origin}, __max_align)"
+                    ),
+                    _ => format!(
+                        "::dds::topic::xcdr2::read_string_origin(__buf, __pos, __len, {origin}, __max_align)"
+                    ),
+                }
+            };
+            if leaf_1d {
+                let read_expr = prim_read_expr();
+                writeln!(out, "        {{").map_err(fmt_err)?;
+                writeln!(out, "            auto __arr = __v.{name}();").map_err(fmt_err)?;
+                writeln!(
+                    out,
+                    "            for (auto& __ae : __arr) {{ __ae = {read_expr}; }}"
+                )
+                .map_err(fmt_err)?;
+                writeln!(out, "            __v.{name}(__arr);").map_err(fmt_err)?;
+                writeln!(out, "        }}").map_err(fmt_err)?;
+            } else if prim && arr.sizes.len() >= 2 {
+                // Multi-dim primitive array: read row-major into the nested
+                // std::array via N nested loops (symmetric to the encode).
+                let read_expr = prim_read_expr();
+                let n = arr.sizes.len();
+                writeln!(out, "        {{").map_err(fmt_err)?;
+                writeln!(out, "            auto __arr = __v.{name}();").map_err(fmt_err)?;
+                let mut acc = String::from("__arr");
+                let mut ind = String::from("            ");
+                for d in 0..n {
+                    let lv = format!("__a{d}");
+                    writeln!(out, "{ind}for (auto& {lv} : {acc}) {{").map_err(fmt_err)?;
+                    acc = lv;
+                    ind.push_str("    ");
+                }
+                writeln!(out, "{ind}{acc} = {read_expr};").map_err(fmt_err)?;
+                for _ in 0..n {
+                    ind.truncate(ind.len() - 4);
+                    writeln!(out, "{ind}}}").map_err(fmt_err)?;
+                }
+                writeln!(out, "            __v.{name}(__arr);").map_err(fmt_err)?;
+                writeln!(out, "        }}").map_err(fmt_err)?;
+            } else if matches!(&m.type_spec, TypeSpec::Scoped(s) if scoped_is_enum(s) || scoped_final_struct(s).is_some())
+                || (matches!(m.type_spec, TypeSpec::String(_)) && arr.sizes.len() >= 2)
+            {
+                // Array of non-primitive elements (any dims; string only >=2-D):
+                // skip the DHEADER, read N elements in place via N nested loops
+                // (symmetric to the encode; fixed size, no count).
+                let n = arr.sizes.len();
+                writeln!(out, "        {{").map_err(fmt_err)?;
+                writeln!(out, "        const auto __arr_dh = ::dds::topic::xcdr2::dheader_read(__buf, __pos, __len); (void)__arr_dh;").map_err(fmt_err)?;
+                writeln!(out, "        auto __arr = __v.{name}();").map_err(fmt_err)?;
+                let mut acc = String::from("__arr");
+                let mut ind = String::from("        ");
+                for d in 0..n {
+                    let lv = format!("__a{d}");
+                    writeln!(out, "{ind}for (auto& {lv} : {acc}) {{").map_err(fmt_err)?;
+                    acc = lv;
+                    ind.push_str("    ");
+                }
+                emit_value_read(out, &m.type_spec, &format!("{acc} ="), origin, &ind, false)?;
+                for _ in 0..n {
+                    ind.truncate(ind.len() - 4);
+                    writeln!(out, "{ind}}}").map_err(fmt_err)?;
+                }
+                writeln!(out, "        __v.{name}(__arr);").map_err(fmt_err)?;
+                writeln!(out, "        }}").map_err(fmt_err)?;
+            } else {
+                writeln!(
+                    out,
+                    "        // xcdr2: array member '{name}' (1-D string only / unsupported elem) not supported (skip)"
+                )
+                .map_err(fmt_err)?;
+            }
             continue;
         }
         if !typespec_supported(&m.type_spec) {
             writeln!(
                 out,
-                "        // xcdr2: member '{name}' nicht unterstuetzt (skip)"
+                "        // xcdr2: member '{name}' not supported (skip)"
             )
             .map_err(fmt_err)?;
             continue;
@@ -2189,6 +3059,7 @@ fn emit_plain_member_decode(out: &mut String, m: &Member, origin: &str) -> Resul
     Ok(())
 }
 
+/// zerodds-lint: recursion-depth 64 (nested type emit; bounded by IDL nesting)
 fn emit_value_read(
     out: &mut String,
     ts: &TypeSpec,
@@ -2224,33 +3095,73 @@ fn emit_value_read(
             let cpp_ty = primitive_to_cpp(*p);
             writeln!(
                 out,
-                "{indent}{setter}(::dds::topic::xcdr2::read_le_origin<{cpp_ty}>(__buf, __pos, __len, {origin}));"
+                "{indent}{setter}(::dds::topic::xcdr2::read_le_origin<{cpp_ty}>(__buf, __pos, __len, {origin}, __max_align));"
             )
             .map_err(fmt_err)?;
         }
         TypeSpec::String(s) if !s.wide => {
             writeln!(
                 out,
-                "{indent}{setter}(::dds::topic::xcdr2::read_string_origin(__buf, __pos, __len, {origin}));"
+                "{indent}{setter}(::dds::topic::xcdr2::read_string_origin(__buf, __pos, __len, {origin}, __max_align));"
+            )
+            .map_err(fmt_err)?;
+        }
+        TypeSpec::String(s) if s.wide => {
+            writeln!(
+                out,
+                "{indent}{setter}(::dds::topic::xcdr2::read_wstring_origin(__buf, __pos, __len, {origin}, __max_align));"
             )
             .map_err(fmt_err)?;
         }
         TypeSpec::Sequence(seq) => {
+            if matches!(&*seq.elem, TypeSpec::Primitive(PrimitiveType::Octet)) {
+                // sequence<octet>: raw byte block directly from the buffer.
+                writeln!(out, "{indent}{{").map_err(fmt_err)?;
+                writeln!(out, "{indent}    auto __cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, {origin}, __max_align);").map_err(fmt_err)?;
+                writeln!(
+                    out,
+                    "{indent}    ::dds::topic::xcdr2::check_avail(__pos, __cnt, __len);"
+                )
+                .map_err(fmt_err)?;
+                writeln!(
+                    out,
+                    "{indent}    std::vector<uint8_t> __seq(__buf + __pos, __buf + __pos + __cnt);"
+                )
+                .map_err(fmt_err)?;
+                writeln!(out, "{indent}    __pos += __cnt;").map_err(fmt_err)?;
+                writeln!(out, "{indent}    {setter}(std::move(__seq));").map_err(fmt_err)?;
+                writeln!(out, "{indent}}}").map_err(fmt_err)?;
+                return Ok(());
+            }
             let elem_cpp_ty: String = match &*seq.elem {
                 TypeSpec::Primitive(PrimitiveType::Boolean) => "bool".to_string(),
                 TypeSpec::Primitive(p) => primitive_to_cpp(*p).to_string(),
                 TypeSpec::String(s) if !s.wide => "std::string".to_string(),
+                // wide string element -> std::wstring (narrow caught above).
+                TypeSpec::String(_) => "std::wstring".to_string(),
+                // enum (-> underlying int32, but the vector holds the enum) and
+                // nested struct elements (any extensibility) use their C++ type.
+                TypeSpec::Scoped(s) if scoped_is_enum(s) => scoped_to_cpp(s),
+                TypeSpec::Scoped(s) if scoped_struct(s).is_some() => scoped_to_cpp(s),
+                // nested sequence element -> std::vector<inner>.
+                TypeSpec::Sequence(_) => typespec_to_cpp(&seq.elem)?,
+                // map element -> std::map<K,V>.
+                TypeSpec::Map(_) => typespec_to_cpp(&seq.elem)?,
                 _ => {
                     writeln!(
                         out,
-                        "{indent}// xcdr2: nested seq-elem nicht unterstuetzt (skip)"
+                        "{indent}// xcdr2: nested seq-elem not supported (skip)"
                     )
                     .map_err(fmt_err)?;
                     return Ok(());
                 }
             };
             writeln!(out, "{indent}{{").map_err(fmt_err)?;
-            writeln!(out, "{indent}    auto __cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, {origin});").map_err(fmt_err)?;
+            // XCDR2 §7.4.3.5: for non-primitive elements skip the DHEADER.
+            if !matches!(&*seq.elem, TypeSpec::Primitive(_)) {
+                writeln!(out, "{indent}    const auto __seq_dh = ::dds::topic::xcdr2::dheader_read(__buf, __pos, __len); (void)__seq_dh;").map_err(fmt_err)?;
+            }
+            writeln!(out, "{indent}    auto __cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, {origin}, __max_align);").map_err(fmt_err)?;
             writeln!(out, "{indent}    std::vector<{elem_cpp_ty}> __seq;").map_err(fmt_err)?;
             writeln!(out, "{indent}    __seq.reserve(__cnt);").map_err(fmt_err)?;
             writeln!(
@@ -2267,15 +3178,176 @@ fn emit_value_read(
                 }
                 TypeSpec::Primitive(p) => {
                     let cpp_ty = primitive_to_cpp(*p);
-                    writeln!(out, "{indent}        __seq.push_back(::dds::topic::xcdr2::read_le_origin<{cpp_ty}>(__buf, __pos, __len, {origin}));").map_err(fmt_err)?;
+                    writeln!(out, "{indent}        __seq.push_back(::dds::topic::xcdr2::read_le_origin<{cpp_ty}>(__buf, __pos, __len, {origin}, __max_align));").map_err(fmt_err)?;
                 }
                 TypeSpec::String(s) if !s.wide => {
-                    writeln!(out, "{indent}        __seq.push_back(::dds::topic::xcdr2::read_string_origin(__buf, __pos, __len, {origin}));").map_err(fmt_err)?;
+                    writeln!(out, "{indent}        __seq.push_back(::dds::topic::xcdr2::read_string_origin(__buf, __pos, __len, {origin}, __max_align));").map_err(fmt_err)?;
+                }
+                // wide string element.
+                TypeSpec::String(_) => {
+                    writeln!(out, "{indent}        __seq.push_back(::dds::topic::xcdr2::read_wstring_origin(__buf, __pos, __len, {origin}, __max_align));").map_err(fmt_err)?;
+                }
+                // enum element: read int32, cast back to the enum type.
+                TypeSpec::Scoped(s) if scoped_is_enum(s) => {
+                    let cpp_ty = scoped_to_cpp(s);
+                    writeln!(out, "{indent}        __seq.push_back(static_cast<{cpp_ty}>(::dds::topic::xcdr2::read_le_origin<int32_t>(__buf, __pos, __len, {origin}, __max_align)));").map_err(fmt_err)?;
+                }
+                // nested @final struct element: read each sub-member into a fresh
+                // temp, push the whole object (symmetric to the inline encode).
+                TypeSpec::Scoped(sc) if scoped_final_struct(sc).is_some() => {
+                    if let Some(def) = scoped_final_struct(sc) {
+                        let cpp_ty = scoped_to_cpp(sc);
+                        let var = format!("__se{}", next_nest_id());
+                        let binner = format!("{indent}        ");
+                        writeln!(out, "{binner}{cpp_ty} {var}{{}};").map_err(fmt_err)?;
+                        for sm in &def.members {
+                            let sm_name = &sm.declarators[0].name().text;
+                            emit_value_read(
+                                out,
+                                &sm.type_spec,
+                                &format!("{var}.{sm_name}"),
+                                origin,
+                                &binner,
+                                false,
+                            )?;
+                        }
+                        writeln!(out, "{binner}__seq.push_back({var});").map_err(fmt_err)?;
+                    }
+                }
+                // nested @appendable/@mutable struct element: 4-align, read the
+                // element's own DHEADER, sub-decode the [DHEADER+body] slice via
+                // the nested type's `decode`, advance the cursor past it, push it.
+                TypeSpec::Scoped(sc) if scoped_struct(sc).is_some() => {
+                    let cpp_ty = scoped_to_cpp(sc);
+                    let id = next_nest_id();
+                    let var = format!("__se{id}");
+                    let binner = format!("{indent}        ");
+                    writeln!(
+                        out,
+                        "{binner}::dds::topic::xcdr2::skip_pad_from_origin(__pos, {origin}, 4);"
+                    )
+                    .map_err(fmt_err)?;
+                    writeln!(out, "{binner}const size_t __nss{id} = __pos;").map_err(fmt_err)?;
+                    writeln!(out, "{binner}size_t __npk{id} = __pos;").map_err(fmt_err)?;
+                    writeln!(out, "{binner}const uint32_t __nl{id} = ::dds::topic::xcdr2::dheader_read(__buf, __npk{id}, __len);").map_err(fmt_err)?;
+                    writeln!(out, "{binner}{cpp_ty} {var} = ::dds::topic::topic_type_support<{cpp_ty}>::decode(__buf + __nss{id}, 4u + __nl{id}, __repr);").map_err(fmt_err)?;
+                    writeln!(out, "{binner}__pos = __nss{id} + 4u + __nl{id};").map_err(fmt_err)?;
+                    writeln!(out, "{binner}__seq.push_back(std::move({var}));").map_err(fmt_err)?;
+                }
+                // nested sequence element: read the inner sequence into a temp
+                // via the assignment-setter form, then push it.
+                TypeSpec::Sequence(_) => {
+                    let inner_ty = typespec_to_cpp(&seq.elem)?;
+                    let var = format!("__se{}", next_nest_id());
+                    let binner = format!("{indent}        ");
+                    writeln!(out, "{binner}{inner_ty} {var}{{}};").map_err(fmt_err)?;
+                    emit_value_read(out, &seq.elem, &format!("{var} ="), origin, &binner, false)?;
+                    writeln!(out, "{binner}__seq.push_back(std::move({var}));").map_err(fmt_err)?;
+                }
+                // map element: read the inner map into a temp, then push it.
+                TypeSpec::Map(_) => {
+                    let inner_ty = typespec_to_cpp(&seq.elem)?;
+                    let var = format!("__se{}", next_nest_id());
+                    let binner = format!("{indent}        ");
+                    writeln!(out, "{binner}{inner_ty} {var}{{}};").map_err(fmt_err)?;
+                    emit_value_read(out, &seq.elem, &format!("{var} ="), origin, &binner, false)?;
+                    writeln!(out, "{binner}__seq.push_back(std::move({var}));").map_err(fmt_err)?;
                 }
                 _ => {}
             }
             writeln!(out, "{indent}    }}").map_err(fmt_err)?;
             writeln!(out, "{indent}    {setter}(std::move(__seq));").map_err(fmt_err)?;
+            writeln!(out, "{indent}}}").map_err(fmt_err)?;
+        }
+        // map<K,V> member: read DHEADER, count, then count interleaved key/value
+        // pairs (symmetric to the encode); insert into a std::map. Key/value are
+        // read into fresh temps via the assignment-setter form `__k =(...)`
+        // (emit_value_read always ends in `{setter}(final)`, so `__k =` yields a
+        // plain assignment that works for primitive/string/enum/struct values).
+        TypeSpec::Map(m) => {
+            let k_ty = typespec_to_cpp(&m.key)?;
+            let v_ty = typespec_to_cpp(&m.value)?;
+            let id = next_nest_id();
+            let mapv = format!("__map{id}");
+            let kv = format!("__mk{id}");
+            let vv = format!("__mv{id}");
+            let inner = format!("{indent}    ");
+            let li = format!("{inner}    ");
+            writeln!(out, "{indent}{{").map_err(fmt_err)?;
+            writeln!(out, "{inner}const auto __map_dh = ::dds::topic::xcdr2::dheader_read(__buf, __pos, __len); (void)__map_dh;").map_err(fmt_err)?;
+            writeln!(out, "{inner}auto __mcnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, {origin}, __max_align);").map_err(fmt_err)?;
+            writeln!(out, "{inner}std::map<{k_ty}, {v_ty}> {mapv};").map_err(fmt_err)?;
+            writeln!(out, "{inner}for (uint32_t __i = 0; __i < __mcnt; ++__i) {{")
+                .map_err(fmt_err)?;
+            writeln!(out, "{li}{k_ty} {kv}{{}};").map_err(fmt_err)?;
+            writeln!(out, "{li}{v_ty} {vv}{{}};").map_err(fmt_err)?;
+            emit_value_read(out, &m.key, &format!("{kv} ="), origin, &li, false)?;
+            emit_value_read(out, &m.value, &format!("{vv} ="), origin, &li, false)?;
+            writeln!(out, "{li}{mapv}.emplace(std::move({kv}), std::move({vv}));")
+                .map_err(fmt_err)?;
+            writeln!(out, "{inner}}}").map_err(fmt_err)?;
+            writeln!(out, "{inner}{setter}(std::move({mapv}));").map_err(fmt_err)?;
+            writeln!(out, "{indent}}}").map_err(fmt_err)?;
+        }
+        // enum member: read its int32 underlying value, cast back to the enum.
+        TypeSpec::Scoped(s) if scoped_is_enum(s) => {
+            let cpp_ty = scoped_to_cpp(s);
+            writeln!(
+                out,
+                "{indent}{setter}(static_cast<{cpp_ty}>(::dds::topic::xcdr2::read_le_origin<int32_t>(__buf, __pos, __len, {origin}, __max_align)));"
+            )
+            .map_err(fmt_err)?;
+        }
+        // nested struct member. @final: read each sub-member into a fresh temp
+        // (symmetric to the inline encode). @appendable/@mutable: read the
+        // nested DHEADER length, then sub-decode the [DHEADER+body] slice via the
+        // nested type's own `decode` and advance the cursor past it.
+        TypeSpec::Scoped(sc) if scoped_struct(sc).is_some() => {
+            let Some((def, ext)) = scoped_struct(sc) else {
+                return Ok(());
+            };
+            let cpp_ty = scoped_to_cpp(sc);
+            let id = next_nest_id();
+            let var = format!("__ns{id}");
+            let inner = format!("{indent}    ");
+            writeln!(out, "{indent}{{").map_err(fmt_err)?;
+            writeln!(out, "{inner}{cpp_ty} {var}{{}};").map_err(fmt_err)?;
+            match ext {
+                Extensibility::Final => {
+                    for sm in &def.members {
+                        let sm_name = &sm.declarators[0].name().text;
+                        emit_value_read(
+                            out,
+                            &sm.type_spec,
+                            &format!("{var}.{sm_name}"),
+                            origin,
+                            &inner,
+                            false,
+                        )?;
+                    }
+                }
+                Extensibility::Appendable | Extensibility::Mutable => {
+                    writeln!(
+                        out,
+                        "{inner}::dds::topic::xcdr2::skip_pad_from_origin(__pos, {origin}, 4);"
+                    )
+                    .map_err(fmt_err)?;
+                    writeln!(out, "{inner}const size_t __nss{id} = __pos;").map_err(fmt_err)?;
+                    writeln!(out, "{inner}size_t __npk{id} = __pos;").map_err(fmt_err)?;
+                    writeln!(
+                        out,
+                        "{inner}const uint32_t __nl{id} = ::dds::topic::xcdr2::dheader_read(__buf, __npk{id}, __len);"
+                    )
+                    .map_err(fmt_err)?;
+                    writeln!(
+                        out,
+                        "{inner}{var} = ::dds::topic::topic_type_support<{cpp_ty}>::decode(__buf + __nss{id}, 4u + __nl{id}, __repr);"
+                    )
+                    .map_err(fmt_err)?;
+                    writeln!(out, "{inner}__pos = __nss{id} + 4u + __nl{id};").map_err(fmt_err)?;
+                }
+            }
+            writeln!(out, "{inner}{setter}({var});").map_err(fmt_err)?;
             writeln!(out, "{indent}}}").map_err(fmt_err)?;
         }
         _ => {}
@@ -2332,46 +3404,248 @@ fn emit_mutable_member_decode_case(out: &mut String, m: &Member) -> Result<(), C
                 writeln!(out, "                    (void)__n;").map_err(fmt_err)?;
                 writeln!(out, "                    auto __body_origin = __pos;")
                     .map_err(fmt_err)?;
-                writeln!(out, "                    __v.{name}(::dds::topic::xcdr2::read_string_origin(__buf, __pos, __len, __body_origin));").map_err(fmt_err)?;
+                writeln!(out, "                    __v.{name}(::dds::topic::xcdr2::read_string_origin(__buf, __pos, __len, __body_origin, __max_align));").map_err(fmt_err)?;
             }
-            TypeSpec::Sequence(seq) => {
-                let elem_cpp_ty: String = match &*seq.elem {
-                    TypeSpec::Primitive(PrimitiveType::Boolean) => "bool".to_string(),
-                    TypeSpec::Primitive(p) => primitive_to_cpp(*p).to_string(),
-                    TypeSpec::String(s) if !s.wide => "std::string".to_string(),
-                    _ => "uint8_t".to_string(),
-                };
+            TypeSpec::String(s) if s.wide => {
                 writeln!(out, "                    auto __n = ::dds::topic::xcdr2::emheader_nextint_read(__buf, __pos, __len);").map_err(fmt_err)?;
                 writeln!(out, "                    (void)__n;").map_err(fmt_err)?;
                 writeln!(out, "                    auto __body_origin = __pos;")
                     .map_err(fmt_err)?;
-                writeln!(out, "                    auto __cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, __body_origin);").map_err(fmt_err)?;
-                writeln!(out, "                    std::vector<{elem_cpp_ty}> __seq;")
+                writeln!(out, "                    __v.{name}(::dds::topic::xcdr2::read_wstring_origin(__buf, __pos, __len, __body_origin, __max_align));").map_err(fmt_err)?;
+            }
+            TypeSpec::Sequence(seq) => {
+                writeln!(out, "                    auto __n = ::dds::topic::xcdr2::emheader_nextint_read(__buf, __pos, __len);").map_err(fmt_err)?;
+                writeln!(out, "                    (void)__n;").map_err(fmt_err)?;
+                writeln!(out, "                    auto __body_origin = __pos;")
                     .map_err(fmt_err)?;
-                writeln!(out, "                    __seq.reserve(__cnt);").map_err(fmt_err)?;
+                // Non-primitive-element sequence carries an inner DHEADER inside
+                // the NEXTINT frame (symmetric to the encode; Finding 6).
+                if !matches!(&*seq.elem, TypeSpec::Primitive(_)) {
+                    writeln!(out, "                    {{ const auto __seq_dh = ::dds::topic::xcdr2::dheader_read(__buf, __pos, __len); (void)__seq_dh; }}").map_err(fmt_err)?;
+                }
+                writeln!(out, "                    auto __cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, __body_origin, __max_align);").map_err(fmt_err)?;
+                if matches!(&*seq.elem, TypeSpec::Primitive(PrimitiveType::Octet)) {
+                    // sequence<octet>: raw byte block directly from the buffer.
+                    writeln!(
+                        out,
+                        "                    ::dds::topic::xcdr2::check_avail(__pos, __cnt, __len);"
+                    )
+                    .map_err(fmt_err)?;
+                    writeln!(out, "                    std::vector<uint8_t> __seq(__buf + __pos, __buf + __pos + __cnt);").map_err(fmt_err)?;
+                    writeln!(out, "                    __pos += __cnt;").map_err(fmt_err)?;
+                    writeln!(out, "                    __v.{name}(std::move(__seq));")
+                        .map_err(fmt_err)?;
+                } else {
+                    let elem_cpp_ty: String = match &*seq.elem {
+                        TypeSpec::Primitive(PrimitiveType::Boolean) => "bool".to_string(),
+                        TypeSpec::Primitive(p) => primitive_to_cpp(*p).to_string(),
+                        TypeSpec::String(s) if !s.wide => "std::string".to_string(),
+                        TypeSpec::String(_) => "std::wstring".to_string(),
+                        TypeSpec::Scoped(s) if scoped_is_enum(s) => scoped_to_cpp(s),
+                        TypeSpec::Scoped(s) if scoped_struct(s).is_some() => scoped_to_cpp(s),
+                        TypeSpec::Sequence(_) | TypeSpec::Map(_) => typespec_to_cpp(&seq.elem)?,
+                        _ => "uint8_t".to_string(),
+                    };
+                    writeln!(out, "                    std::vector<{elem_cpp_ty}> __seq;")
+                        .map_err(fmt_err)?;
+                    writeln!(out, "                    __seq.reserve(__cnt);").map_err(fmt_err)?;
+                    writeln!(
+                        out,
+                        "                    for (uint32_t __i = 0; __i < __cnt; ++__i) {{"
+                    )
+                    .map_err(fmt_err)?;
+                    match &*seq.elem {
+                        TypeSpec::Primitive(PrimitiveType::Boolean) => {
+                            writeln!(out, "                        __seq.push_back(::dds::topic::xcdr2::read_bool(__buf, __pos, __len));").map_err(fmt_err)?;
+                        }
+                        TypeSpec::Primitive(p) => {
+                            let cpp_ty = primitive_to_cpp(*p);
+                            writeln!(out, "                        __seq.push_back(::dds::topic::xcdr2::read_le_origin<{cpp_ty}>(__buf, __pos, __len, __body_origin, __max_align));").map_err(fmt_err)?;
+                        }
+                        TypeSpec::String(s) if !s.wide => {
+                            writeln!(out, "                        __seq.push_back(::dds::topic::xcdr2::read_string_origin(__buf, __pos, __len, __body_origin, __max_align));").map_err(fmt_err)?;
+                        }
+                        TypeSpec::String(_) => {
+                            writeln!(out, "                        __seq.push_back(::dds::topic::xcdr2::read_wstring_origin(__buf, __pos, __len, __body_origin, __max_align));").map_err(fmt_err)?;
+                        }
+                        TypeSpec::Scoped(s) if scoped_is_enum(s) => {
+                            let cpp_ty = scoped_to_cpp(s);
+                            writeln!(out, "                        __seq.push_back(static_cast<{cpp_ty}>(::dds::topic::xcdr2::read_le_origin<int32_t>(__buf, __pos, __len, __body_origin, __max_align)));").map_err(fmt_err)?;
+                        }
+                        TypeSpec::Scoped(sc) if scoped_final_struct(sc).is_some() => {
+                            if let Some(def) = scoped_final_struct(sc) {
+                                let cpp_ty = scoped_to_cpp(sc);
+                                let var = format!("__se{}", next_nest_id());
+                                writeln!(out, "                        {cpp_ty} {var}{{}};")
+                                    .map_err(fmt_err)?;
+                                for sm in &def.members {
+                                    let sm_name = &sm.declarators[0].name().text;
+                                    emit_value_read(
+                                        out,
+                                        &sm.type_spec,
+                                        &format!("{var}.{sm_name}"),
+                                        "__body_origin",
+                                        "                        ",
+                                        false,
+                                    )?;
+                                }
+                                writeln!(out, "                        __seq.push_back({var});")
+                                    .map_err(fmt_err)?;
+                            }
+                        }
+                        // nested @appendable/@mutable struct element: 4-align,
+                        // read the element DHEADER, sub-decode the [DHEADER+body]
+                        // slice via the nested type's `decode`, advance, push.
+                        TypeSpec::Scoped(sc) if scoped_struct(sc).is_some() => {
+                            let cpp_ty = scoped_to_cpp(sc);
+                            let id = next_nest_id();
+                            let var = format!("__se{id}");
+                            writeln!(out, "                        ::dds::topic::xcdr2::skip_pad_from_origin(__pos, __body_origin, 4);").map_err(fmt_err)?;
+                            writeln!(
+                                out,
+                                "                        const size_t __nss{id} = __pos;"
+                            )
+                            .map_err(fmt_err)?;
+                            writeln!(out, "                        size_t __npk{id} = __pos;")
+                                .map_err(fmt_err)?;
+                            writeln!(out, "                        const uint32_t __nl{id} = ::dds::topic::xcdr2::dheader_read(__buf, __npk{id}, __len);").map_err(fmt_err)?;
+                            writeln!(out, "                        {cpp_ty} {var} = ::dds::topic::topic_type_support<{cpp_ty}>::decode(__buf + __nss{id}, 4u + __nl{id}, __repr);").map_err(fmt_err)?;
+                            writeln!(
+                                out,
+                                "                        __pos = __nss{id} + 4u + __nl{id};"
+                            )
+                            .map_err(fmt_err)?;
+                            writeln!(
+                                out,
+                                "                        __seq.push_back(std::move({var}));"
+                            )
+                            .map_err(fmt_err)?;
+                        }
+                        // nested sequence / map element: read into a temp, push.
+                        TypeSpec::Sequence(_) | TypeSpec::Map(_) => {
+                            let inner_ty = typespec_to_cpp(&seq.elem)?;
+                            let var = format!("__se{}", next_nest_id());
+                            writeln!(out, "                        {inner_ty} {var}{{}};")
+                                .map_err(fmt_err)?;
+                            emit_value_read(
+                                out,
+                                &seq.elem,
+                                &format!("{var} ="),
+                                "__body_origin",
+                                "                        ",
+                                false,
+                            )?;
+                            writeln!(
+                                out,
+                                "                        __seq.push_back(std::move({var}));"
+                            )
+                            .map_err(fmt_err)?;
+                        }
+                        _ => {}
+                    }
+                    writeln!(out, "                    }}").map_err(fmt_err)?;
+                    writeln!(out, "                    __v.{name}(std::move(__seq));")
+                        .map_err(fmt_err)?;
+                }
+            }
+            // enum member: 4-byte int32 read directly (encoded via compact LC=2).
+            TypeSpec::Scoped(s) if scoped_is_enum(s) => {
+                let cpp_ty = scoped_to_cpp(s);
+                writeln!(out, "                    __v.{name}(static_cast<{cpp_ty}>(::dds::topic::xcdr2::read_le_raw<int32_t>(__buf, __pos, __len)));").map_err(fmt_err)?;
+            }
+            // nested struct member: skip NEXTINT to the EMHEADER body-origin.
+            // @final: read inline members. @appendable/@mutable: sub-decode the
+            // nested type from its own DHEADER inside the body.
+            TypeSpec::Scoped(sc) if scoped_struct(sc).is_some() => {
+                if let Some((def, ext)) = scoped_struct(sc) {
+                    let cpp_ty = scoped_to_cpp(sc);
+                    let id = next_nest_id();
+                    let var = format!("__ns{id}");
+                    writeln!(out, "                    auto __n = ::dds::topic::xcdr2::emheader_nextint_read(__buf, __pos, __len); (void)__n;").map_err(fmt_err)?;
+                    writeln!(
+                        out,
+                        "                    auto __body_origin = __pos; (void)__body_origin;"
+                    )
+                    .map_err(fmt_err)?;
+                    writeln!(out, "                    {cpp_ty} {var}{{}};").map_err(fmt_err)?;
+                    match ext {
+                        Extensibility::Final => {
+                            for sm in &def.members {
+                                let sm_name = &sm.declarators[0].name().text;
+                                emit_value_read(
+                                    out,
+                                    &sm.type_spec,
+                                    &format!("{var}.{sm_name}"),
+                                    "__body_origin",
+                                    "                    ",
+                                    false,
+                                )?;
+                            }
+                        }
+                        Extensibility::Appendable | Extensibility::Mutable => {
+                            writeln!(out, "                    const size_t __nss{id} = __pos;")
+                                .map_err(fmt_err)?;
+                            writeln!(out, "                    size_t __npk{id} = __pos;")
+                                .map_err(fmt_err)?;
+                            writeln!(out, "                    const uint32_t __nl{id} = ::dds::topic::xcdr2::dheader_read(__buf, __npk{id}, __len);").map_err(fmt_err)?;
+                            writeln!(out, "                    {var} = ::dds::topic::topic_type_support<{cpp_ty}>::decode(__buf + __nss{id}, 4u + __nl{id}, __repr);").map_err(fmt_err)?;
+                            writeln!(
+                                out,
+                                "                    __pos = __nss{id} + 4u + __nl{id};"
+                            )
+                            .map_err(fmt_err)?;
+                        }
+                    }
+                    writeln!(out, "                    __v.{name}({var});").map_err(fmt_err)?;
+                }
+            }
+            // map<K,V> member: skip NEXTINT, read count + interleaved entries
+            // relative to the body-origin (symmetric to the mutable encode).
+            TypeSpec::Map(m) => {
+                let k_ty = typespec_to_cpp(&m.key)?;
+                let v_ty = typespec_to_cpp(&m.value)?;
+                let id = next_nest_id();
+                let mapv = format!("__map{id}");
+                let kv = format!("__mk{id}");
+                let vv = format!("__mv{id}");
+                writeln!(out, "                    auto __mn = ::dds::topic::xcdr2::emheader_nextint_read(__buf, __pos, __len); (void)__mn;").map_err(fmt_err)?;
+                writeln!(out, "                    auto __body_origin = __pos;")
+                    .map_err(fmt_err)?;
+                // map is non-primitive -> inner DHEADER inside the NEXTINT frame.
+                writeln!(out, "                    {{ const auto __map_dh = ::dds::topic::xcdr2::dheader_read(__buf, __pos, __len); (void)__map_dh; }}").map_err(fmt_err)?;
+                writeln!(out, "                    auto __mcnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, __body_origin, __max_align);").map_err(fmt_err)?;
+                writeln!(out, "                    std::map<{k_ty}, {v_ty}> {mapv};")
+                    .map_err(fmt_err)?;
                 writeln!(
                     out,
-                    "                    for (uint32_t __i = 0; __i < __cnt; ++__i) {{"
+                    "                    for (uint32_t __i = 0; __i < __mcnt; ++__i) {{"
                 )
                 .map_err(fmt_err)?;
-                match &*seq.elem {
-                    TypeSpec::Primitive(PrimitiveType::Boolean) => {
-                        writeln!(out, "                        __seq.push_back(::dds::topic::xcdr2::read_bool(__buf, __pos, __len));").map_err(fmt_err)?;
-                    }
-                    TypeSpec::Primitive(PrimitiveType::Octet) => {
-                        writeln!(out, "                        __seq.push_back(::dds::topic::xcdr2::read_u8(__buf, __pos, __len));").map_err(fmt_err)?;
-                    }
-                    TypeSpec::Primitive(p) => {
-                        let cpp_ty = primitive_to_cpp(*p);
-                        writeln!(out, "                        __seq.push_back(::dds::topic::xcdr2::read_le_origin<{cpp_ty}>(__buf, __pos, __len, __body_origin));").map_err(fmt_err)?;
-                    }
-                    TypeSpec::String(s) if !s.wide => {
-                        writeln!(out, "                        __seq.push_back(::dds::topic::xcdr2::read_string_origin(__buf, __pos, __len, __body_origin));").map_err(fmt_err)?;
-                    }
-                    _ => {}
-                }
+                writeln!(out, "                        {k_ty} {kv}{{}};").map_err(fmt_err)?;
+                writeln!(out, "                        {v_ty} {vv}{{}};").map_err(fmt_err)?;
+                emit_value_read(
+                    out,
+                    &m.key,
+                    &format!("{kv} ="),
+                    "__body_origin",
+                    "                        ",
+                    false,
+                )?;
+                emit_value_read(
+                    out,
+                    &m.value,
+                    &format!("{vv} ="),
+                    "__body_origin",
+                    "                        ",
+                    false,
+                )?;
+                writeln!(
+                    out,
+                    "                        {mapv}.emplace(std::move({kv}), std::move({vv}));"
+                )
+                .map_err(fmt_err)?;
                 writeln!(out, "                    }}").map_err(fmt_err)?;
-                writeln!(out, "                    __v.{name}(std::move(__seq));")
+                writeln!(out, "                    __v.{name}(std::move({mapv}));")
                     .map_err(fmt_err)?;
             }
             _ => {}
@@ -2412,7 +3686,7 @@ fn emit_key_hash_fn(
         }
         emit_plain_member_encode(out, m, "be", "__origin")?;
     }
-    // XTypes 1.3 §7.6.8.4: Holder ≤ 16 octets -> zero-pad; sonst MD5.
+    // XTypes 1.3 §7.6.8.4: holder ≤ 16 octets -> zero-pad; otherwise MD5.
     writeln!(out, "        std::array<uint8_t, 16> __h{{}};").map_err(fmt_err)?;
     writeln!(out, "        if (__out.size() <= 16) {{").map_err(fmt_err)?;
     writeln!(
@@ -2437,6 +3711,6 @@ fn fmt_err(_: core::fmt::Error) -> CppGenError {
 
 #[allow(dead_code)]
 fn _ensure_used() {
-    // is_reserved wird von check_identifier genutzt — Compiler-Hint.
+    // is_reserved is used by check_identifier — a compiler hint.
     let _ = is_reserved("int");
 }

@@ -4,7 +4,7 @@
 //! SOAP 1.2 Envelope — W3C SOAP 1.2 Part 1 §5.
 //!
 //! `<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">`
-//! mit `<soap:Header>?` und `<soap:Body>`.
+//! with `<soap:Header>?` and `<soap:Body>`.
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -19,22 +19,22 @@ pub const SOAP_12_NS: &str = "http://www.w3.org/2003/05/soap-envelope";
 /// SOAP-Envelope (Header + Body).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Envelope {
-    /// Optional Header-Inhalt als Raw-XML.
+    /// Optional header content as raw XML.
     pub header_xml: Option<String>,
-    /// Body-Inhalt als Raw-XML (z.B. ein Operation-Request-Element).
+    /// Body content as raw XML (e.g. an Operation-Request element).
     pub body_xml: String,
 }
 
-/// Envelope-Fehler.
+/// Envelope error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvelopeError {
-    /// XML-Parse-Fehler.
+    /// XML parse error.
     Parse(ParseError),
-    /// XML-Emit-Fehler.
+    /// XML emit error.
     Emit(EmitError),
-    /// Kein `<soap:Envelope>`-Root.
+    /// No `<soap:Envelope>` root.
     NoEnvelope,
-    /// Kein `<soap:Body>` im Envelope.
+    /// No `<soap:Body>` in the envelope.
     NoBody,
 }
 
@@ -63,10 +63,10 @@ impl From<EmitError> for EnvelopeError {
     }
 }
 
-/// Baut einen SOAP-1.2 Envelope-String. Spec §5.1.
+/// Builds a SOAP-1.2 envelope string. Spec §5.1.
 ///
 /// # Errors
-/// `Emit` wenn der Body- oder Header-Tag-Name ungueltig ist.
+/// `Emit` if the body or header tag name is invalid.
 pub fn build_envelope(env: &Envelope) -> Result<String, EnvelopeError> {
     let mut e = XmlEmitter::new();
     e.declaration();
@@ -95,7 +95,7 @@ pub fn build_envelope(env: &Envelope) -> Result<String, EnvelopeError> {
     Ok(out)
 }
 
-/// Parst einen SOAP-1.2 Envelope-String zurueck zu [`Envelope`].
+/// Parses a SOAP-1.2 envelope string back to [`Envelope`].
 ///
 /// # Errors
 /// `NoEnvelope` / `NoBody` / `Parse`.

@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! AST-Walker, der Java-17-Source-Files emittiert.
+//! AST walker that emits Java 17 source files.
 //!
-//! Block-A: Header-Layout (`package`, `import`, Class-Modifiers).
-//! Block-B: Primitive-Mapping (delegiert an [`crate::type_map`]).
-//! Block-C: struct/enum/union/typedef/sequence/array/inheritance.
-//! Block-D: Exception → `class X extends RuntimeException`.
+//! Block A: header layout (`package`, `import`, class modifiers).
+//! Block B: primitive mapping (delegates to [`crate::type_map`]).
+//! Block C: struct/enum/union/typedef/sequence/array/inheritance.
+//! Block D: exception → `class X extends RuntimeException`.
 //!
-//! Java erfordert eine `.java`-Datei pro top-level public class. Der
-//! Emitter sammelt waehrend des AST-Walks pro Top-Level-Type genau eine
-//! [`JavaFile`]-Struktur.
+//! Java requires one `.java` file per top-level public class. The
+//! emitter collects exactly one [`JavaFile`] structure per top-level
+//! type during the AST walk.
 
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Write;
-// zerodds-lint: BTreeSet wird im Emitter fuer ImportSet + Cycle-Detection verwendet.
+// zerodds-lint: BTreeSet is used in the emitter for ImportSet + cycle detection.
 
 use zerodds_idl::ast::{
     Annotation, AnnotationParams, CaseLabel, ConstExpr, ConstrTypeDecl, Declarator, Definition,
@@ -37,19 +37,19 @@ use crate::type_map::{
 };
 use crate::verbatim::emit_verbatim_at;
 
-/// Eine einzelne generierte Java-Source-Datei.
+/// A single generated Java source file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JavaFile {
-    /// Java-Package-Pfad mit Punkt-Trennern (z.B. `org.example.types`).
+    /// Java package path with dot separators (e.g. `org.example.types`).
     pub package_path: String,
-    /// Class-Name = Datei-Name ohne `.java`-Suffix.
+    /// Class name = file name without the `.java` suffix.
     pub class_name: String,
-    /// Vollstaendige Source-Datei (inkl. `package`, Imports, Class-Body).
+    /// Complete source file (including `package`, imports, class body).
     pub source: String,
 }
 
 impl JavaFile {
-    /// Liefert den relativen Pfad fuer die Datei (z.B. `org/example/Foo.java`).
+    /// Returns the relative path for the file (e.g. `org/example/Foo.java`).
     #[must_use]
     pub fn relative_path(&self) -> String {
         let dir = self.package_path.replace('.', "/");
@@ -61,7 +61,7 @@ impl JavaFile {
     }
 }
 
-/// Haupt-Entry: walkt das IDL-AST und emittiert eine Liste von Java-Files.
+/// Main entry: walks the IDL AST and emits a list of Java files.
 pub(crate) fn emit_files(
     spec: &Specification,
     opts: &JavaGenOptions,
@@ -79,14 +79,14 @@ pub(crate) fn emit_files(
     Ok(files)
 }
 
-/// Emitter-Kontext, der waehrend des AST-Walks read-only gehalten wird.
-/// Hier landet der Multi-Inheritance-Index plus Spaeter weitere globale
-/// Lookup-Tables (z.B. type-name → topic-eligibility).
+/// Emitter context held read-only during the AST walk.
+/// Contains the multi-inheritance index plus any future global
+/// lookup tables (e.g. type-name → topic-eligibility).
 #[derive(Debug, Default)]
 pub(crate) struct EmitCtx {
-    /// Mapping `struct-Name → direkter Basis-Name` (kurzform, ohne
-    /// Modul-Prefix). Wir benutzen den letzten `.`-getrennten Token
-    /// (siehe [`scoped_to_short`]).
+    /// Mapping `struct name → direct base name` (short form, without
+    /// module prefix). We use the last `.`-separated token
+    /// (see [`scoped_to_short`]).
     pub parent_of: std::collections::HashMap<String, String>,
 }
 
@@ -138,7 +138,7 @@ fn walk_definitions(
                 files.extend(value_files);
             }
             Definition::ValueBox(_) | Definition::ValueForward(_) => {
-                // ValueBox + ValueForward sind Foundation-no-op.
+                // ValueBox + ValueForward are no-ops in the foundation.
             }
             Definition::TypeId(_)
             | Definition::TypePrefix(_)
@@ -156,9 +156,9 @@ fn walk_definitions(
                 });
             }
             Definition::Annotation(_) => {
-                // §7.4.15: User-Defined Annotation-Defs werden bei
-                // Anwendung in den annotierten Mitgliedern emittiert,
-                // nicht als eigenes Top-Level-Java-Konstrukt.
+                // §7.4.15: user-defined annotation defs are emitted at
+                // the point of application on annotated members,
+                // not as a standalone top-level Java construct.
             }
             Definition::VendorExtension(v) => {
                 return Err(JavaGenError::UnsupportedConstruct {
@@ -182,19 +182,18 @@ fn emit_type_decl_top(
         TypeDecl::Constr(c) => match c {
             ConstrTypeDecl::Struct(StructDcl::Def(s)) => {
                 files.push(emit_struct_file(s, pkg, opts, ctx)?);
-                // Multi-Inheritance-Pattern: emittiere fuer jeden
-                // Struct, der selbst Basis eines anderen Struct ist,
-                // ein Companion-Interface — so kann ein Sub-Sub-Class
-                // den jeweils transitiven Vorfahren via `implements
-                // <Anc>Interface` einbinden.
+                // Multi-inheritance pattern: emit a companion interface
+                // for every struct that is itself a base of another
+                // struct — so a sub-sub-class can include the respective
+                // transitive ancestor via `implements <Anc>Interface`.
                 if ctx.parent_of.values().any(|p| p == &s.name.text) {
                     files.push(emit_struct_companion_interface(s, pkg, opts)?);
                 }
                 Ok(())
             }
             ConstrTypeDecl::Struct(StructDcl::Forward(_)) => {
-                // Forward-Decls in Java implizit (Class wird ohnehin
-                // separat erzeugt) — kein File noetig.
+                // Forward decls are implicit in Java (the class is
+                // produced separately anyway) — no file needed.
                 Ok(())
             }
             ConstrTypeDecl::Union(UnionDcl::Def(u)) => {
@@ -219,11 +218,14 @@ fn emit_type_decl_top(
             files.extend(emit_typedef_files(t, pkg, opts)?);
             Ok(())
         }
+        // `native X;` — opaque, platform-specific type without an XCDR2
+        // wire representation; not emitted in the DataType codegen.
+        TypeDecl::Native(_) => Ok(()),
     }
 }
 
 // ---------------------------------------------------------------------------
-// Per-Type-Emitter (jeweils 1 JavaFile)
+// Per-type emitter (one JavaFile each)
 // ---------------------------------------------------------------------------
 
 fn emit_struct_file(
@@ -243,8 +245,8 @@ fn emit_struct_file(
 
     let mut body = String::new();
 
-    // §7.2.2.4.8 — `@verbatim(placement=BEGIN_FILE)` direkt am Anfang
-    // des body (sitzt nach package + imports im Compilation-Unit-Wrap).
+    // §7.2.2.4.8 — `@verbatim(placement=BEGIN_FILE)` right at the start
+    // of the body (sits after package + imports in the compilation-unit wrap).
     emit_verbatim_at(&mut body, "", &s.annotations, PlacementKind::BeginFile)?;
 
     // §7.2.2.4.8 — `@verbatim(placement=BEFORE_DECLARATION)`.
@@ -267,28 +269,27 @@ fn emit_struct_file(
         String::new()
     };
 
-    // Multi-Inheritance-Pattern: alle transitiven Vorfahren *jenseits*
-    // der direkten Basis werden als `implements <X>Interface` gefuehrt.
-    // Bei einer einfachen Hierarchie (Single-Base ohne Grandparent)
-    // bleibt diese Liste leer.
+    // Multi-inheritance pattern: all transitive ancestors *beyond* the
+    // direct base are carried as `implements <X>Interface`. For a simple
+    // hierarchy (single base without a grandparent) this list stays empty.
     let mut implements: Vec<String> = transitive_ancestors_beyond_base(&s.name.text, ctx)
         .into_iter()
         .map(|anc| format!("{anc}Interface"))
         .collect();
 
-    // TopicType-Marker: jede top-level-Struct ohne `@nested`-Marker
-    // **und ohne Basis** implementiert `org.omg.dds.topic.TopicType<Self>`.
+    // TopicType marker: every top-level struct without a `@nested`
+    // marker **and without a base** implements `org.omg.dds.topic.TopicType<Self>`.
     //
-    // Sub-Strukturen (`struct Child : Base`) erben den Marker vom
-    // Parent ueber die regulaere `extends`-Kette — Java verbietet die
-    // erneute Implementierung mit eigenem Generic-Param (`TopicType<Child>`
-    // vs. `TopicType<Base>`). Das ist spec-konform: in DDS-Java-PSM ist
-    // `TopicType<T>` ein Marker-Interface, dessen Generic-Param nur am
-    // Wurzel-Type der Vererbungs-Kette steht. Ein Sub-struct ist gemaess
-    // Inheritance-Regel weiterhin `instanceof TopicType<Base>` und damit
-    // als Topic-Type registrierbar.
+    // Sub-structs (`struct Child : Base`) inherit the marker from the
+    // parent via the regular `extends` chain — Java forbids
+    // re-implementing it with its own generic param (`TopicType<Child>`
+    // vs. `TopicType<Base>`). This is spec-conformant: in the DDS Java PSM,
+    // `TopicType<T>` is a marker interface whose generic param sits only
+    // at the root type of the inheritance chain. By the inheritance rule a
+    // sub-struct is still `instanceof TopicType<Base>` and thus
+    // registerable as a topic type.
     //
-    // Findings-Anker: TS-3-Finding 4 (`docs/test-harness/plan.md`).
+    // Findings anchor: TS-3 finding 4 (`docs/test-harness/plan.md`).
     let lowered_type = lower_or_empty(&s.annotations);
     if !has_nested(&lowered_type) && s.base.is_none() {
         implements.push(format!("org.omg.dds.topic.TopicType<{class}>"));
@@ -301,8 +302,8 @@ fn emit_struct_file(
 
     writeln!(body, "public class {class}{extends}{implements_clause} {{").map_err(fmt_err)?;
 
-    // §7.2.2.4.8 — `@verbatim(placement=BEGIN_DECLARATION)` als erste
-    // Zeile innerhalb des Class-Bodys.
+    // §7.2.2.4.8 — `@verbatim(placement=BEGIN_DECLARATION)` as the first
+    // line inside the class body.
     emit_verbatim_at(
         &mut body,
         &ind,
@@ -316,7 +317,7 @@ fn emit_struct_file(
     }
     writeln!(body).map_err(fmt_err)?;
 
-    // Default-Konstruktor.
+    // Default constructor.
     writeln!(body, "{ind}public {class}() {{}}").map_err(fmt_err)?;
     writeln!(body).map_err(fmt_err)?;
 
@@ -325,8 +326,8 @@ fn emit_struct_file(
         emit_member_accessors(&mut body, m, &ind)?;
     }
 
-    // §7.2.2.4.8 — `@verbatim(placement=END_DECLARATION)` als letzte
-    // Zeile vor dem schliessenden `}`.
+    // §7.2.2.4.8 — `@verbatim(placement=END_DECLARATION)` as the last
+    // line before the closing `}`.
     emit_verbatim_at(
         &mut body,
         &ind,
@@ -385,7 +386,7 @@ fn emit_enum_file(e: &EnumDef, pkg: &str, opts: &JavaGenOptions) -> Result<JavaF
         let name = sanitize_identifier(&en.name.text)?;
         let sep = if idx + 1 == count { ';' } else { ',' };
         // Explicit `@value(N)` overrides the auto-assigned ordinal.
-        // Spec idl4-java-1.0 §7.2 — Custom-Werte statt Auto-Ordinals.
+        // Spec idl4-java-1.0 §7.2 — custom values instead of auto ordinals.
         let value_lit = match enum_value_override(&en.annotations) {
             Some(raw) => match raw.parse::<i64>() {
                 Ok(n) => {
@@ -429,10 +430,10 @@ fn emit_enum_file(e: &EnumDef, pkg: &str, opts: &JavaGenOptions) -> Result<JavaF
     })
 }
 
-/// Union → ein sealed interface + ein Java-File pro Case-Record.
-/// Wir geben *einen* File mit sealed interface + nested case-records
-/// zurueck (Java erlaubt nested permits in einem File). Dadurch bleibt
-/// die Datei-Anzahl deterministisch.
+/// Union → one sealed interface + one Java file per case record.
+/// We return *one* file with the sealed interface + nested case records
+/// (Java allows nested permits in one file). This keeps the file count
+/// deterministic.
 fn emit_union_files(
     u: &UnionDef,
     pkg: &str,
@@ -444,25 +445,25 @@ fn emit_union_files(
 
     let _disc_ty = switch_type_to_java(&u.switch_type)?;
 
-    // Permit-Liste der Case-Records (per Member-Name eindeutig).
+    // Permit list of the case records (unique per member name).
     let mut permits: Vec<String> = Vec::new();
     let mut case_records: Vec<(String, String, String)> = Vec::new(); // (record-name, field-ty, field-name)
     for c in &u.cases {
         let cpp_ty = type_for_declarator(&c.element.type_spec, &c.element.declarator)?;
         let field_name = sanitize_identifier(&c.element.declarator.name().text)?;
-        // Record-Name: CapitalCase aus Field-Name.
+        // Record name: CapitalCase from the field name.
         let record_name = capitalize(&field_name);
         if !permits.iter().any(|p| p == &record_name) {
             permits.push(record_name.clone());
             case_records.push((record_name, cpp_ty, field_name));
         }
     }
-    // Java verlangt fuer nested-records innerhalb des sealed
-    // interface qualifizierte Namen in der `permits`-Klausel —
-    // `permits A, B, C` schlaegt mit `cannot find symbol` fehl,
-    // `permits Foo.A, Foo.B, Foo.C` ist die korrekte Form.
+    // Java requires qualified names in the `permits` clause for nested
+    // records inside the sealed interface — `permits A, B, C` fails with
+    // `cannot find symbol`; `permits Foo.A, Foo.B, Foo.C` is the correct
+    // form.
     //
-    // Findings-Anker: TS-3-Finding 5 (`docs/test-harness/plan.md`).
+    // Findings anchor: TS-3 finding 5 (`docs/test-harness/plan.md`).
     let permits_clause = if permits.is_empty() {
         String::new()
     } else {
@@ -478,16 +479,27 @@ fn emit_union_files(
         &u.annotations,
         PlacementKind::BeforeDeclaration,
     )?;
-    writeln!(body, "public sealed interface {class}{permits_clause} {{").map_err(fmt_err)?;
+    if opts.java8_compat {
+        // Java-8 compat: `abstract class` instead of `sealed interface`
+        // (Java 17), without `permits`. Pseudo-sealing via a private
+        // constructor — only the nested `static final` subclasses can extend.
+        writeln!(body, "public abstract class {class} {{").map_err(fmt_err)?;
+    } else {
+        writeln!(body, "public sealed interface {class}{permits_clause} {{").map_err(fmt_err)?;
+    }
     emit_verbatim_at(
         &mut body,
         &ind,
         &u.annotations,
         PlacementKind::BeginDeclaration,
     )?;
+    if opts.java8_compat {
+        writeln!(body, "{ind}private {class}() {{}}").map_err(fmt_err)?;
+        writeln!(body).map_err(fmt_err)?;
+    }
 
-    // Default-Marker fuer den default-Branch (Kommentar; Branch-Labels
-    // werden als Kommentar emittiert, nicht als Java-Konstrukt).
+    // Default marker for the default branch (a comment; branch labels
+    // are emitted as a comment, not as a Java construct).
     let mut has_default = false;
     for c in &u.cases {
         for label in &c.labels {
@@ -518,13 +530,35 @@ fn emit_union_files(
     }
     writeln!(body).map_err(fmt_err)?;
 
-    // Nested case-records.
+    // Nested case-Typen.
     for (record_name, field_ty, field_name) in &case_records {
-        writeln!(
-            body,
-            "{ind}record {record_name}({field_ty} {field_name}) implements {class} {{}}",
-        )
-        .map_err(fmt_err)?;
+        if opts.java8_compat {
+            // Java-8 equivalent of a case record: a `static final` subclass
+            // with a final field + constructor + same-named accessor.
+            writeln!(
+                body,
+                "{ind}public static final class {record_name} extends {class} {{",
+            )
+            .map_err(fmt_err)?;
+            writeln!(body, "{ind}{ind}private final {field_ty} {field_name};").map_err(fmt_err)?;
+            writeln!(
+                body,
+                "{ind}{ind}public {record_name}({field_ty} {field_name}) {{ this.{field_name} = {field_name}; }}",
+            )
+            .map_err(fmt_err)?;
+            writeln!(
+                body,
+                "{ind}{ind}public {field_ty} {field_name}() {{ return {field_name}; }}",
+            )
+            .map_err(fmt_err)?;
+            writeln!(body, "{ind}}}").map_err(fmt_err)?;
+        } else {
+            writeln!(
+                body,
+                "{ind}record {record_name}({field_ty} {field_name}) implements {class} {{}}",
+            )
+            .map_err(fmt_err)?;
+        }
     }
     emit_verbatim_at(
         &mut body,
@@ -554,8 +588,8 @@ fn emit_typedef_files(
     pkg: &str,
     _opts: &JavaGenOptions,
 ) -> Result<Vec<JavaFile>, JavaGenError> {
-    // Java hat keine `using`/`typedef` — wir emittieren eine Wrapper-
-    // Klasse pro Alias (1 Wrapper-Field, named `value`).
+    // Java has no `using`/`typedef` — we emit a wrapper class per alias
+    // (1 wrapper field, named `value`).
     let mut out = Vec::new();
     for decl in &t.declarators {
         let alias = sanitize_identifier(&decl.name().text)?;
@@ -634,7 +668,7 @@ fn emit_const_holder(
     pkg: &str,
     _opts: &JavaGenOptions,
 ) -> Result<JavaFile, JavaGenError> {
-    // IDL-`const` → public static final field in einer Holder-Class
+    // IDL `const` → public static final field in a holder class
     // namens `<NAME>Constant`.
     let name = sanitize_identifier(&c.name.text)?;
     let class = format!("{name}Constant");
@@ -671,7 +705,7 @@ fn emit_member_field(out: &mut String, m: &Member, ind: &str) -> Result<(), Java
         for ann in &ann_lines {
             writeln!(out, "{ind}{ann}").map_err(fmt_err)?;
         }
-        // Doc-Comment fuer unsigned-Workaround.
+        // Doc comment for the unsigned workaround.
         if let TypeSpec::Primitive(zerodds_idl::ast::PrimitiveType::Integer(i)) = &m.type_spec {
             if is_unsigned(*i) {
                 writeln!(
@@ -734,7 +768,7 @@ fn boxed_for_optional(ts: &TypeSpec) -> String {
 // TypeSpec / Declarator
 // ---------------------------------------------------------------------------
 
-/// Liefert den Java-Type-Ausdruck fuer Member (TypeSpec + Declarator).
+/// Returns the Java type expression for a member (TypeSpec + Declarator).
 pub(crate) fn type_for_declarator(
     ts: &TypeSpec,
     decl: &Declarator,
@@ -785,16 +819,16 @@ pub(crate) fn typespec_to_java(ts: &TypeSpec) -> Result<String, JavaGenError> {
         TypeSpec::Fixed(_) => {
             // Spec idl4-java §7.2.4.2.4: fixed<digits,scale> ->
             // `java.math.BigDecimal` (Range-Check via
-            // `java.lang.ArithmeticException` zur Laufzeit, Scale via
-            // `setScale(scale)` im Codegen-Output).
+            // `java.lang.ArithmeticException` at runtime, scale via
+            // `setScale(scale)` in the codegen output).
             Ok("java.math.BigDecimal".into())
         }
         TypeSpec::Any => {
-            // Spec idl4-java §7.3: any -> `org.omg.type.Any`. ZeroDDS-
-            // Mapping-Wahl: `java.lang.Object` (Reflection-basiert,
-            // Spec sagt explizit "implementation is middleware
-            // specific"). org.omg.type.Any-Wrapper-Variante moeglich,
-            // aber Object reicht fuer Java-Type-Repr-§8 Pfad.
+            // Spec idl4-java §7.3: any -> `org.omg.type.Any`. ZeroDDS
+            // mapping choice: `java.lang.Object` (reflection-based, the
+            // spec explicitly says "implementation is middleware
+            // specific"). An org.omg.type.Any wrapper variant is
+            // possible, but Object is enough for the Java-Type-Repr §8 path.
             Ok("Object".into())
         }
     }
@@ -846,12 +880,12 @@ impl ImportSet {
     }
 }
 
-/// Hook fuer C5.4-b: hier kann die Import-Sammlung pro Member
-/// erweitert werden. C5.4-a nutzt durchgaengig FQN, daher No-op.
+/// Hook for C5.4-b: the per-member import collection can be extended
+/// here. C5.4-a uses FQN throughout, hence a no-op.
 #[allow(clippy::needless_pass_by_ref_mut)]
 fn collect_member_imports(_m: &Member, _inc: &mut ImportSet) {
-    // FQN-Strategie: java.util.List/Optional/Map werden inline als
-    // `java.util.<X>` referenziert, daher keine Import-Eintraege noetig.
+    // FQN strategy: java.util.List/Optional/Map are referenced inline as
+    // `java.util.<X>`, so no import entries are needed.
 }
 
 // ---------------------------------------------------------------------------
@@ -865,10 +899,9 @@ pub(crate) fn wrap_compilation_unit(pkg: &str, _imports: &ImportSet, body: &str)
         let _ = writeln!(out, "package {pkg};");
         let _ = writeln!(out);
     }
-    // Imports werden derzeit per FQN ersetzt — keine import-Statements
-    // erforderlich. Das haelt den Diff stabil und vermeidet Konflikte
-    // bei Type-Namen wie `List`/`Map`, falls die IDL einen Type so
-    // benannt hat.
+    // Imports are currently replaced by FQN — no import statements
+    // required. This keeps the diff stable and avoids conflicts with
+    // type names like `List`/`Map` if the IDL named a type that way.
     out.push_str(body);
     out
 }
@@ -1039,9 +1072,9 @@ pub(crate) fn fmt_err(_: core::fmt::Error) -> JavaGenError {
     JavaGenError::Internal("string formatting failed".into())
 }
 
-/// Wrap-Helper fuer Bitset/Bitmask: wickelt Header + Body in eine
-/// Compilation-Unit. Identisch zu [`wrap_compilation_unit`] nur ohne
-/// Import-Argument.
+/// Wrap helper for bitset/bitmask: wraps header + body into a
+/// compilation unit. Identical to [`wrap_compilation_unit`] but without
+/// the import argument.
 pub(crate) fn wrap_compilation_unit_default(pkg: &str, body: &str) -> String {
     wrap_compilation_unit(pkg, &ImportSet::default(), body)
 }
@@ -1050,16 +1083,16 @@ pub(crate) fn wrap_compilation_unit_default(pkg: &str, body: &str) -> String {
 // Multi-Inheritance — Interface-Pattern (C5.4-b §3)
 // ---------------------------------------------------------------------------
 
-/// Sammelt fuer jede Struct-Definition den (kurzen) Namen ihres
-/// direkten Vorgaengers. IDL4-`struct`-Inheritance ist single — der
-/// Codegen erzeugt aus der transitiven Kette die `extends + implements
-/// XInterface, YInterface`-Form.
+/// Collects for each struct definition the (short) name of its direct
+/// predecessor. IDL4 `struct` inheritance is single — the codegen
+/// produces the `extends + implements XInterface, YInterface` form from
+/// the transitive chain.
 fn collect_base_chain_index(spec: &Specification) -> std::collections::HashMap<String, String> {
     let mut out: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     /// zerodds-lint: recursion-depth 32
     ///
-    /// Modul-Hierarchie in IDL-Files: typische Tiefe 2-4
-    /// (`org::omg::dds::core`), 32 deckt Edge-Cases.
+    /// Module hierarchy in IDL files: typical depth 2-4
+    /// (`org::omg::dds::core`), 32 covers edge cases.
     fn visit(defs: &[Definition], out: &mut std::collections::HashMap<String, String>) {
         for d in defs {
             match d {
@@ -1077,8 +1110,8 @@ fn collect_base_chain_index(spec: &Specification) -> std::collections::HashMap<S
     out
 }
 
-/// Liefert die transitiven Vorfahren-Namen *jenseits* der direkten
-/// Basis (alle Grandparents). Bei `A : B`, `B : C`, `C : D` liefert
+/// Returns the transitive ancestor names *beyond* the direct base
+/// (all grandparents). For `A : B`, `B : C`, `C : D`,
 /// `transitive_ancestors_beyond_base("A", ctx) → ["C", "D"]`.
 fn transitive_ancestors_beyond_base(name: &str, ctx: &EmitCtx) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -1103,11 +1136,11 @@ fn scoped_to_short(s: &ScopedName) -> String {
     s.parts.last().map(|p| p.text.clone()).unwrap_or_default()
 }
 
-/// Emittiert ein Companion-Interface `<Name>Interface.java` mit
-/// Default-Methoden, die das Bean-Pattern-Read-Only-Abbild der
-/// Members spiegeln. Dadurch koennen Sub-Sub-Klassen den Vorfahren
-/// ueber `implements <Name>Interface` einbinden, ohne dass die
-/// JVM-Class-File-Constraints (single `extends`) verletzt werden.
+/// Emits a companion interface `<Name>Interface.java` with default
+/// methods that mirror the bean-pattern read-only view of the members.
+/// This lets sub-sub-classes include the ancestor via
+/// `implements <Name>Interface` without violating the JVM class-file
+/// constraints (single `extends`).
 fn emit_struct_companion_interface(
     s: &StructDef,
     pkg: &str,
@@ -1124,13 +1157,12 @@ fn emit_struct_companion_interface(
     )
     .map_err(fmt_err)?;
     writeln!(body, "public interface {interface_name} {{").map_err(fmt_err)?;
-    // Default-Methoden — wir geben die Getter-Signaturen mit
-    // `default`-Implementierung wieder, die per cast auf die
-    // konkrete Class delegiert. Da wir die Klasse zur Compile-Zeit
-    // kennen (jede `implements`-Stelle ist eine Subklasse von
-    // `class`), erzeugen wir hier nur abstrakte Methoden — die
-    // konkrete Class liefert die Implementierung als ueblicher
-    // Bean-Getter.
+    // Default methods — we render the getter signatures with a
+    // `default` implementation that delegates to the concrete class via
+    // a cast. Since we know the class at compile time (every `implements`
+    // site is a subclass of `class`), we produce only abstract methods
+    // here — the concrete class provides the implementation as a usual
+    // bean getter.
     for m in &s.members {
         let opt = has_optional_annotation(&m.annotations);
         for decl in &m.declarators {
@@ -1154,9 +1186,9 @@ fn emit_struct_companion_interface(
     })
 }
 
-// Marker, damit unused-imports keine Warnings produziert (z.B.
-// `IntegerType`/`integer_to_java_boxed`, falls Detail-Use spaeter
-// wegfaellt).
+// Marker so unused imports produce no warnings (e.g.
+// `IntegerType`/`integer_to_java_boxed`, in case the detailed use is
+// removed later).
 #[allow(dead_code)]
 fn _unused_marker(_i: IntegerType) {
     let _ = integer_to_java_boxed;
@@ -1167,10 +1199,10 @@ fn _unused_marker(_i: IntegerType) {
 // RPC-Service-Bridge (DDS-RPC §7.11.2)
 // ---------------------------------------------------------------------------
 
-/// Spec idl4-java §7.6: valuetype -> 2 Java-Klassen
+/// Spec idl4-java §7.6: valuetype -> 2 Java classes
 /// (`<Name>Abstract` abstract + `<Name>` non-abstract).
-/// public state -> public abstract Bean-Accessoren; private state ->
-/// protected abstract Accessoren; factory -> void-Method.
+/// public state -> public abstract bean accessors; private state ->
+/// protected abstract accessors; factory -> void method.
 fn emit_value_type_files(
     v: &zerodds_idl::ast::ValueDef,
     pkg: &str,
@@ -1187,7 +1219,7 @@ fn emit_value_type_files(
     let mut body = String::new();
     let extends = match &v.inheritance {
         Some(inh) if !inh.bases.is_empty() => {
-            // Java erlaubt nur eine super-Class — wir nehmen die erste base.
+            // Java allows only one superclass — we take the first base.
             let base = scoped_to_java(&inh.bases[0]);
             format!(" extends {base}Abstract")
         }
@@ -1275,9 +1307,9 @@ fn emit_value_type_files(
         source: abstract_source,
     };
 
-    // Concrete subclass-Skelett.
+    // Concrete subclass skeleton.
     let concrete_body = format!(
-        "public class {class} extends {abstract_name} {{\n{ind}// User-Implementation hier\n}}\n"
+        "public class {class} extends {abstract_name} {{\n{ind}// User implementation here\n}}\n"
     );
     let concrete_source = wrap_compilation_unit(pkg, &imports, &concrete_body);
     let concrete_file = JavaFile {
@@ -1289,8 +1321,8 @@ fn emit_value_type_files(
     Ok(vec![abstract_file, concrete_file])
 }
 
-/// Spec idl4-java §7.4: IDL interface -> Java public interface mit
-/// Method pro Operation (raises -> throws), Property pro Attribute.
+/// Spec idl4-java §7.4: IDL interface -> Java public interface with a
+/// method per operation (raises -> throws), a property per attribute.
 fn emit_non_service_interface_file(
     iface: &InterfaceDef,
     pkg: &str,
@@ -1350,7 +1382,7 @@ fn emit_non_service_interface_file(
                 }
             }
             _ => {
-                // Embedded type/const/exception: aktuell nicht implementiert.
+                // Embedded type/const/exception: not currently implemented.
             }
         }
     }
@@ -1364,8 +1396,8 @@ fn emit_non_service_interface_file(
     })
 }
 
-/// `true` wenn die Interface-Annotations `@service` enthalten — dann
-/// behandeln wir das Interface als RPC-Service und delegieren an
+/// `true` if the interface annotations contain `@service` — then we
+/// treat the interface as an RPC service and delegate to
 /// [`crate::rpc`].
 fn is_service_interface(iface: &InterfaceDef) -> bool {
     iface
@@ -1374,9 +1406,9 @@ fn is_service_interface(iface: &InterfaceDef) -> bool {
         .any(|a| a.name.parts.last().is_some_and(|p| p.text == "service"))
 }
 
-/// Emittiert die fuenf RPC-Files fuer ein `@service`-Interface plus die
-/// `exception`-Files, die in den `raises`-Klauseln referenziert werden
-/// (lokal im Interface-Body deklariert).
+/// Emits the five RPC files for a `@service` interface plus the
+/// `exception` files referenced in the `raises` clauses (declared
+/// locally in the interface body).
 fn emit_service_interface_files(
     iface: &InterfaceDef,
     pkg: &str,
@@ -1387,8 +1419,8 @@ fn emit_service_interface_files(
     use zerodds_rpc::annotations::lower_rpc_annotations;
     use zerodds_rpc::service_mapping::lower_service;
 
-    // Inner exceptions — emit als RuntimeException-Subclasses, ueber
-    // den existierenden Exception-Pfad.
+    // Inner exceptions — emit as RuntimeException subclasses, via the
+    // existing exception path.
     for export in &iface.exports {
         if let Export::Except(e) = export {
             files.push(emit_exception_file(e, pkg, opts)?);
@@ -1399,7 +1431,7 @@ fn emit_service_interface_files(
     let lowered = lower_rpc_annotations(&iface.annotations);
     let svc = lower_service(iface, &lowered).map_err(|e| JavaGenError::Internal(e.to_string()))?;
 
-    // Emit die fuenf Java-Files.
+    // Emit the five Java files.
     let svc_files = crate::rpc::emit_service_files(&svc, pkg, opts)?;
     files.extend(svc_files);
 

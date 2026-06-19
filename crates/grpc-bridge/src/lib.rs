@@ -3,48 +3,48 @@
 
 //! Crate `zerodds-grpc-bridge`. Safety classification: **STANDARD**.
 //!
-//! gRPC-over-HTTP/2 + gRPC-Web Wire-Codec — pure-Rust `no_std +
-//! alloc`, `forbid(unsafe_code)`. Implementiert die gRPC-spezifischen
-//! Wire-Elemente die ueber dem HTTP/2-Stack sitzen: Length-Prefixed-
-//! Message (LPM), Path-Parsing, Timeout-Header, Status-Codes,
-//! Custom-Metadata-Encoding (inkl. `-bin`-Suffix-Konvention),
-//! gRPC-Web-Trailer-Frames und ein gRPC-Server-Skeleton fuer
-//! Caller-konfigurierte HTTP/2-Listener.
+//! gRPC-over-HTTP/2 + gRPC-Web wire codec — pure-Rust `no_std +
+//! alloc`, `forbid(unsafe_code)`. Implements the gRPC-specific
+//! wire elements that sit above the HTTP/2 stack: length-prefixed
+//! message (LPM), path parsing, timeout header, status codes,
+//! custom-metadata encoding (incl. the `-bin` suffix convention),
+//! gRPC-Web trailer frames and a gRPC server skeleton for
+//! caller-configured HTTP/2 listeners.
 //!
-//! Spec: gRPC HTTP/2 Protocol (Length-Prefixed Message + Path +
-//! Timeout + Status + Custom-Metadata) + gRPC-Web Specification
-//! (Trailer-Frame + Content-Types).
+//! Spec: gRPC HTTP/2 Protocol (length-prefixed message + path +
+//! timeout + status + custom metadata) + gRPC-Web Specification
+//! (trailer frame + content types).
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 5 — Bridges. Sitzt auf [`zerodds-http2`](../zerodds_http2/index.html)
-//! (RFC 9113 Framing + Stream-State + Flow-Control) und
-//! [`zerodds-hpack`](../zerodds_hpack/index.html) (RFC 7541 Header-
-//! Compression). HTTP/2-Connection-Lifecycle und HEADERS/CONTINUATION-
-//! Encoding kommen aus diesen Substrat-Crates; gRPC-Bridge konzentriert
-//! sich auf das gRPC-Application-Layer-Wire-Format.
+//! Layer 5 — bridges. Sits on [`zerodds-http2`](../zerodds_http2/index.html)
+//! (RFC 9113 framing + stream state + flow control) and
+//! [`zerodds-hpack`](../zerodds_hpack/index.html) (RFC 7541 header
+//! compression). The HTTP/2 connection lifecycle and HEADERS/CONTINUATION
+//! encoding come from these substrate crates; gRPC-bridge concentrates
+//! on the gRPC application-layer wire format.
 //!
 //! ## Public API (Stand 1.0.0-rc.1)
 //!
 //! - [`encode_message`] / [`decode_message`] / [`FrameError`] — gRPC
 //!   Length-Prefixed-Message (LPM): Compressed-Flag (1 byte) +
 //!   Message-Length (4-byte BE) + Message-Bytes.
-//! - [`parse_path`] / [`PathError`] — `/<service>/<method>` aus HTTP
+//! - [`parse_path`] / [`PathError`] — `/<service>/<method>` from the HTTP
 //!   `:path`.
 //! - [`encode_timeout`] / [`decode_timeout`] / [`TimeoutUnit`] /
 //!   [`TimeoutError`] — `grpc-timeout` Header value + unit
 //!   (H/M/S/m/u/n).
-//! - [`Status`] — alle 17 gRPC Status-Codes (0..=16).
+//! - [`Status`] — all 17 gRPC status codes (0..=16).
 //! - [`encode_header_value`] / [`decode_header_value`] /
 //!   [`encode_base64`] / [`decode_base64`] / [`is_binary_header`] /
 //!   [`BIN_SUFFIX`] / [`MetadataError`] — Custom-Metadata-Encoding
 //!   (`-bin`-Suffix → Base64).
 //! - [`request_headers`] / [`response_headers`] / [`content_types`]
-//!   — Standard-Header-Sets fuer Request/Response/gRPC-Web/JSON.
-//! - [`GrpcServer`] / [`GrpcRequest`] / [`GrpcResponse`] — gRPC-
-//!   Server-Skeleton fuer Caller-konfigurierte HTTP/2-Listener.
+//!   — standard header sets for request/response/gRPC-Web/JSON.
+//! - [`GrpcServer`] / [`GrpcRequest`] / [`GrpcResponse`] — gRPC
+//!   server skeleton for caller-configured HTTP/2 listeners.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust
 //! use zerodds_grpc_bridge::{decode_message, encode_message};

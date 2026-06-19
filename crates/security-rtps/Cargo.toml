@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Secure-Submessage-Wrapper (SEC_PREFIX/SEC_BODY/SEC_POSTFIX) + RTPS-Header-AAD-Codec (SRTPS_PREFIX/SRTPS_POSTFIX) fuer DDS-Security 1.1 §7.3.6 + §9.5."
+description = "Secure submessage wrapper (SEC_PREFIX/SEC_BODY/SEC_POSTFIX) + RTPS header AAD codec (SRTPS_PREFIX/SRTPS_POSTFIX) for DDS-Security 1.1 §7.3.6 + §9.5."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-security-rtps"
 readme = "README.md"
@@ -21,11 +21,12 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std"]
 std = []
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.3", path = "../security" }
 
 [dev-dependencies]
 zerodds-security-crypto = { path = "../security-crypto" }

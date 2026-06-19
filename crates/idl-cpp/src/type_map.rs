@@ -2,8 +2,8 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Mapping IDL-Primitive → C++-Type-Strings.
 //!
-//! Folgt OMG IDL4-CPP-Mapping §7.4 Tabelle 7.5 und Tabelle 7.6 (formal/2018-07-01).
-//! Nur die Foundation-Subset (Block B): primitive Skalare, Strings, sowie die
+//! Follows the OMG IDL4-CPP mapping §7.4 Table 7.5 and Table 7.6 (formal/2018-07-01).
+//! Only the foundation subset (Block B): primitive scalars, strings, as well as the
 //! Foundation-Container [`std::vector`], [`std::array`], [`std::variant`],
 //! [`std::optional`].
 
@@ -11,12 +11,12 @@ use zerodds_idl::ast::{FloatingType, IntegerType, PrimitiveType};
 
 use crate::error::CppGenError;
 
-/// Reservierte C++17-Schluesselwoerter, die als Identifier verboten sind.
+/// Reserved C++17 keywords that are forbidden as identifiers.
 ///
-/// Quelle: ISO/IEC 14882:2017 §5.11 (Tabelle 5). Die Liste ist intentional
-/// nicht vollstaendig — sie deckt die haeufigen Kollisionen ab, die ein
-/// IDL-Mapping treffen kann (Token-Class fuer Type-Specifier und
-/// Storage-Klassen). Erweiterbar in C5.1-b.
+/// Source: ISO/IEC 14882:2017 §5.11 (table 5). The list is intentionally
+/// not complete — it covers the frequent collisions an IDL mapping can
+/// hit (the token class for type specifiers and storage classes).
+/// Extensible in C5.1-b.
 pub(crate) const CPP_RESERVED: &[&str] = &[
     "alignas",
     "alignof",
@@ -104,17 +104,17 @@ pub(crate) const CPP_RESERVED: &[&str] = &[
     "xor_eq",
 ];
 
-/// Prueft, ob ein Identifier ein C++-Keyword ist.
+/// Checks whether an identifier is a C++ keyword.
 #[must_use]
 pub fn is_reserved(name: &str) -> bool {
     CPP_RESERVED.contains(&name)
 }
 
-/// Pruefen + Fehler-Konversion: liefert Err, wenn `name` reserviert ist.
+/// Check + error conversion: returns Err if `name` is reserved.
 ///
 /// # Errors
-/// Gibt [`CppGenError::InvalidName`] zurueck, wenn `name` ein
-/// reserviertes C++-Keyword ist.
+/// Returns [`CppGenError::InvalidName`] if `name` is a reserved C++
+/// keyword.
 pub fn check_identifier(name: &str) -> Result<(), CppGenError> {
     if is_reserved(name) {
         return Err(CppGenError::InvalidName {
@@ -125,9 +125,9 @@ pub fn check_identifier(name: &str) -> Result<(), CppGenError> {
     Ok(())
 }
 
-/// Mappt eine [`PrimitiveType`] auf den C++-Typ-Ausdruck (als `&'static str`).
+/// Maps a [`PrimitiveType`] to the C++ type expression (as `&'static str`).
 ///
-/// Spec-Referenz: §7.4 Tabelle 7.5.
+/// Spec reference: §7.4 table 7.5.
 #[must_use]
 pub fn primitive_to_cpp(p: PrimitiveType) -> &'static str {
     match p {
@@ -140,7 +140,7 @@ pub fn primitive_to_cpp(p: PrimitiveType) -> &'static str {
     }
 }
 
-/// Mapping fuer Integer-Subtypen.
+/// Mapping for integer subtypes.
 #[must_use]
 pub fn integer_to_cpp(i: IntegerType) -> &'static str {
     match i {
@@ -155,8 +155,8 @@ pub fn integer_to_cpp(i: IntegerType) -> &'static str {
     }
 }
 
-/// Mapping fuer Floating-Subtypen. `long double` wird als
-/// [`CppGenError::UnsupportedConstruct`] gemeldet (Block-E-außerhalb des aktuellen Scopes).
+/// Mapping for floating subtypes. `long double` is reported as
+/// [`CppGenError::UnsupportedConstruct`] (block E — outside the current scope).
 #[must_use]
 pub fn floating_to_cpp(f: FloatingType) -> &'static str {
     match f {

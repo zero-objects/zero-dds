@@ -5,7 +5,7 @@
 //!
 //! Modul: `OMG::DDSOPCUA::OPCUA2DDS::METHOD`. Interface: `Method`.
 //!
-//! Methode: `call`.
+//! Method: `call`.
 
 use alloc::vec::Vec;
 
@@ -18,9 +18,9 @@ use super::{DiagnosticInfo, IDL_MODULE_METHOD, ParamDir, ServiceMethod, ServiceP
 /// Spec Tab 8.7 — `CallMethodRequest` (`@nested`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CallMethodRequest {
-    /// `NodeId object_id` — Object, an dem die Methode haengt.
+    /// `NodeId object_id` — the object the method is attached to.
     pub object_id: NodeId,
-    /// `NodeId method_id` — Methode auf dem Object.
+    /// `NodeId method_id` — method on the object.
     pub method_id: NodeId,
     /// `sequence<BaseDataType> input_arguments` (= Variant-Sequenz).
     pub input_arguments: Vec<Variant>,
@@ -39,11 +39,11 @@ pub struct CallMethodResult {
     pub output_arguments: Vec<Variant>,
 }
 
-/// Methoden-Namen-Konstanten (Spec §8.3.5.2 IDL).
+/// Method-name constants (Spec §8.3.5.2 IDL).
 pub struct MethodServiceMethods;
 
 impl MethodServiceMethods {
-    /// Methode `call`.
+    /// Method `call`.
     pub const CALL: &'static str = "call";
 }
 
@@ -76,7 +76,7 @@ const METHODS: &[ServiceMethod] = &[ServiceMethod {
     params: CALL_PARAMS,
 }];
 
-/// Method-Service-Set-Beschreibung (Spec §8.3.5.2).
+/// Method service set description (Spec §8.3.5.2).
 pub const SERVICE_SET: ServiceSet = ServiceSet {
     module_path: IDL_MODULE_METHOD,
     interface_name: "Method",

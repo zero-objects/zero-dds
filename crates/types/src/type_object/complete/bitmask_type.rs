@@ -16,9 +16,9 @@ use crate::type_object::minimal::CommonBitflag;
 /// CompleteBitflag = common + CompleteMemberDetail.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompleteBitflag {
-    /// Position + Flags.
+    /// Position + flags.
     pub common: CommonBitflag,
-    /// Name + Annotationen.
+    /// Name + annotations.
     pub detail: CompleteMemberDetail,
 }
 
@@ -27,7 +27,7 @@ pub struct CompleteBitflag {
 pub struct CompleteBitmaskType {
     /// Flags.
     pub bitmask_flags: BitmaskTypeFlag,
-    /// Bit-Breite.
+    /// Bit width.
     pub bit_bound: u16,
     /// Header-Detail.
     pub detail: CompleteTypeDetail,

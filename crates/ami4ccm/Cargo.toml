@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "OMG AMI4CCM 1.1 (formal/2015-08-03) — Async-Method-Invocation fuer CCM: Implied-IDL-Transformation (§7.3 + §7.5), ReplyHandler/ExceptionHolder-Modell (§7.4), Pragma-Parsing (§7.7). no_std + alloc."
+description = "OMG AMI4CCM 1.1 (formal/2015-08-03) — asynchronous method invocation for CCM: implied-IDL transformation (§7.3 + §7.5), ReplyHandler/ExceptionHolder model (§7.4), pragma parsing (§7.7). no_std + alloc."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-ami4ccm"
 readme = "README.md"
@@ -26,4 +26,4 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.1", path = "../idl" }
+zerodds-idl = { version = "1.0.0-rc.3", path = "../idl" }

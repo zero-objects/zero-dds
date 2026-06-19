@@ -1,29 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! 4b.5 (Spec `docs/specs/zerodds-zero-copy-1.0.md` §6 Welle 3
-//! Sub-Sprints): UDS-Datagram-basierter alternativer Same-Host-Pfad.
+//! 4b.5 (Spec `docs/specs/zerodds-zero-copy-1.0.md` §6 Wave 3
+//! sub-sprints): UDS-datagram-based alternative same-host path.
 //!
-//! Aktiv nur mit Feature `same-host-uds` (mutually exclusive zu
-//! `same-host-shm` — bei beiden aktiv gewinnt SHM-Pfad, siehe
-//! `runtime.rs`-Hook-Cascade).
+//! Active only with the `same-host-uds` feature (mutually exclusive with
+//! `same-host-shm` — if both are active the SHM path wins, see the
+//! hook cascade in `runtime.rs`).
 //!
 //! # Trade-off vs SHM
 //!
-//! UDS-Datagram ist KEIN echtes Zero-Copy — der Kernel kopiert die
-//! Bytes von Sender-User-Space ueber Socket-Buffer in den Receiver-
-//! User-Space. Aber:
-//! - eliminiert IP-Stack-Overhead (kein UDP-Header, kein routing)
-//! - funktioniert in Sandboxed-Containern ohne `/dev/shm`
-//! - 1:N-fähig (mehrere Writer pro Reader-Endpoint, ohne extra
-//!   Segment-Allokation)
+//! UDS datagram is NOT true zero-copy — the kernel copies the bytes from
+//! the sender's user space through the socket buffer into the receiver's
+//! user space. But:
+//! - eliminates IP-stack overhead (no UDP header, no routing)
+//! - works in sandboxed containers without `/dev/shm`
+//! - 1:N capable (multiple writers per reader endpoint, without extra
+//!   segment allocation)
 //!
-//! # Pfad-Convention
+//! # Path convention
 //!
-//! UDS-Sockets liegen unter `${TMPDIR}/zerodds-uds/${host_hex}/`.
-//! Der lokale Endpoint-Id ist die ersten 16 Bytes der Reader-GUID
-//! (Owner-Seite) bzw. Writer-GUID (Consumer-Seite); ein UDS-`bind`
-//! erstellt den Socket-Pfad und ein `sendto` adressiert ihn direkt
-//! (1:N-Modell).
+//! UDS sockets live under `${TMPDIR}/zerodds-uds/${host_hex}/`. The
+//! local endpoint id is the first 16 bytes of the reader GUID (owner
+//! side) or writer GUID (consumer side); a UDS `bind` creates the socket
+//! path and a `sendto` addresses it directly (1:N model).
 
 #![cfg(feature = "same-host-uds")]
 
@@ -37,10 +36,10 @@ use zerodds_transport_uds::{UdsConfig, UdsTransport};
 
 use crate::same_host::Role;
 
-/// Default-Datagram-Limit fuer den UDS-Same-Host-Pfad.
+/// Default datagram limit for the UDS same-host path.
 pub const DEFAULT_MAX_DATAGRAM: usize = 64 * 1024;
 
-/// Berechnet den `UdsConfig` fuer Same-Host-Paare.
+/// Computes the `UdsConfig` for same-host pairs.
 #[must_use]
 pub fn uds_config_for_pair(local_prefix: GuidPrefix) -> UdsConfig {
     let host_id = local_prefix.host_id();
@@ -54,10 +53,10 @@ pub fn uds_config_for_pair(local_prefix: GuidPrefix) -> UdsConfig {
     }
 }
 
-/// Owner-Side: bindet einen UdsTransport am Reader-GUID-Pfad.
+/// Owner side: binds a UdsTransport at the reader-GUID path.
 ///
-/// Im UDS-Modell ist der Reader der Owner (er bindet den
-/// well-known Pfad), Writer adressieren ihn via `sendto`.
+/// In the UDS model the reader is the owner (it binds the well-known
+/// path); writers address it via `sendto`.
 pub fn open_owner_segment(
     local_prefix: GuidPrefix,
     _writer_guid: Guid,
@@ -74,8 +73,8 @@ pub fn open_owner_segment(
     }
 }
 
-/// Consumer-Side: bindet einen separaten UdsTransport am Writer-
-/// GUID-Pfad und adressiert spaeter den Reader via `send_to`.
+/// Consumer side: binds a separate UdsTransport at the writer-GUID path
+/// and later addresses the reader via `send_to`.
 pub fn open_consumer_segment(
     local_prefix: GuidPrefix,
     writer_guid: Guid,
@@ -92,7 +91,7 @@ pub fn open_consumer_segment(
     }
 }
 
-/// Helper: Rolle des lokalen Endpunkts (identisch zu
+/// Helper: role of the local endpoint (identical to
 /// `same_host_shm::local_role_for_pair`).
 #[must_use]
 pub fn local_role_for_pair(local_prefix: GuidPrefix, writer: Guid, reader: Guid) -> Option<Role> {

@@ -1,35 +1,36 @@
 //! C5.5 — Live-Interop: ZeroDDS-Publisher → FastDDS-Subscriber.
 //!
-//! **Opt-in only** — `#[ignore]` markiert. Aufruf:
+//! **Opt-in only** — `#[ignore]` marked. Invocation:
 //!
 //! ```bash
 //! cargo test -p zerodds-dcps --features live-interop \
 //!     --test fastdds_live_sub -- --ignored --nocapture
 //! ```
 //!
-//! # Spec-Bezug
+//! # Spec reference
 //!
-//! - DDSI-RTPS 2.5 §8.3 — DATA-Submessage outbound
-//! - XCDR2-Encoding (`@key string color; int32 x,y,shapesize;`)
-//! - PID_TYPE_NAME / PID_TOPIC_NAME — FastDDS muss unsere SEDP-
-//!   Publication als matchend zum lokalen Reader erkennen.
+//! - DDSI-RTPS 2.5 §8.3 — DATA submessage outbound
+//! - XCDR2 encoding (`@key string color; int32 x,y,shapesize;`)
+//! - PID_TYPE_NAME / PID_TOPIC_NAME — FastDDS must recognize our SEDP
+//!   publication as matching the local reader.
 //!
-//! # Test-Ablauf
+//! # Test flow
 //!
-//! 1. ZeroDDS-Participant + DataWriter<ShapeType> auf Topic `Square`.
-//! 2. Writer schickt periodisch Samples ueber 10 s.
-//! 3. `fastdds shape subscriber --topic Square ...` auf llvm via SSH.
-//! 4. Subscriber-Log auf llvm wird remote gegrep't auf `Sample
-//!    received`-Substring (FastDDS-Standard-Log-Format).
-//! 5. Erfolg = mind. 1 "Sample received"-Line im Log.
+//! 1. ZeroDDS participant + DataWriter<ShapeType> on topic `Square`.
+//! 2. The writer sends samples periodically over 10 s.
+//! 3. `fastdds shape subscriber --topic Square ...` on the Linux bench
+//!    host via SSH.
+//! 4. The subscriber log on the Linux bench host is grepped remotely for
+//!    the `Sample received` substring (FastDDS standard log format).
+//! 5. Success = at least 1 "Sample received" line in the log.
 //!
-//! # Bekannte Edge-Cases
+//! # Known edge cases
 //!
-//! - FastDDS-`shape` matched nur `ShapeType` als IDL-Typ; unser
-//!   `ShapeType` muss exakt diesen Type-Name fuehren (ist es —
-//!   `interop.rs` setzt das hart).
-//! - `fastdds shape subscriber` printet auf stdout, daher pipen wir
-//!   auf eine Logdatei und tail-en.
+//! - FastDDS's `shape` matches only `ShapeType` as the IDL type; our
+//!   `ShapeType` must carry exactly that type name (it does —
+//!   `interop.rs` sets it hard).
+//! - `fastdds shape subscriber` prints to stdout, so we pipe to a log
+//!   file and tail it.
 
 #![allow(
     clippy::expect_used,
@@ -90,9 +91,9 @@ mod tests {
         }
     }
 
-    /// Pruefen ob das FastDDS-Sub-Log auf llvm einen Sample-Empfang
-    /// dokumentiert. `fastdds shape subscriber` schreibt eine Zeile
-    /// pro empfangenem Sample.
+    /// Check whether the FastDDS subscriber log on the Linux bench host
+    /// records a sample receipt. `fastdds shape subscriber` writes one
+    /// line per received sample.
     fn fastdds_log_has_sample(topic: &str) -> bool {
         let path = format!("/tmp/fastdds_sub_{topic}.log");
         let cmd = format!("grep -c 'received' {path} 2>/dev/null || echo 0");
@@ -137,12 +138,12 @@ mod tests {
             .create_datawriter::<ShapeType>(&topic_handle, wr_qos)
             .expect("create writer");
 
-        // FastDDS-Subscriber auf llvm starten (vor dem ersten Write,
-        // damit Discovery + ggf. TransientLocal-Resend funktionieren).
+        // Start the FastDDS subscriber on the Linux bench host (before the
+        // first write, so discovery + any TransientLocal resend work).
         let _fast = start_fastdds_sub(topic, FASTDDS_DOMAIN as u32, &fast_qos)
             .expect("start fastdds shape subscriber");
 
-        // Discovery 3 s, dann periodisch schreiben.
+        // Discovery 3 s, then write periodically.
         std::thread::sleep(Duration::from_secs(3));
         for i in 0..40 {
             let s = ShapeType::new("RED", 50 + i % 100, 60 + i % 100, 30);
@@ -150,12 +151,12 @@ mod tests {
             std::thread::sleep(Duration::from_millis(200));
         }
 
-        // FastDDS-Subscriber bekommt etwas Zeit, das Log zu flushen.
+        // Give the FastDDS subscriber some time to flush the log.
         std::thread::sleep(Duration::from_secs(2));
 
         assert!(
             fastdds_log_has_sample(topic),
-            "fastdds shape subscriber log on llvm shows no samples for topic={topic}"
+            "fastdds shape subscriber log on the Linux bench host shows no samples for topic={topic}"
         );
         eprintln!("ZeroDDS→FastDDS sub-test {topic} OK");
     }
@@ -217,5 +218,5 @@ mod tests {
 #[test]
 #[ignore = "live FastDDS interop runs on Linux only"]
 fn fastdds_sub_macos_stub() {
-    eprintln!("FastDDS-Live-Tests laufen nur auf Linux.");
+    eprintln!("FastDDS live tests run on Linux only.");
 }

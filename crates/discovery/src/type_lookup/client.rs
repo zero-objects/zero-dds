@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! TypeLookup-Service Client-Side (XTypes 1.3 §7.6.3.3.4).
+//! TypeLookup service client side (XTypes 1.3 §7.6.3.3.4).
 //!
-//! Sendet `getTypes` / `getTypeDependencies`-Requests und matched
-//! eingehende Replies via `RequestId` (Sample-Identity §7.6.3.3.5).
+//! Sends `getTypes` / `getTypeDependencies` requests and matches
+//! incoming replies via `RequestId` (sample identity §7.6.3.3.5).
 //!
 //! Lifecycle:
-//! 1. [`TypeLookupClient::request_types`] erzeugt eine eindeutige
-//!    [`RequestId`] und merkt sich den Callback.
-//! 2. Die Anwendung serialisiert den Request ueber [`request_payload`]
-//!    und sendet ihn ueber den Reliable-Writer.
-//! 3. Bei eingehender Reply ruft sie [`TypeLookupClient::handle_reply`]
-//!    mit der korrelierten RequestId — der Callback feuert dann
-//!    automatisch.
+//! 1. [`TypeLookupClient::request_types`] generates a unique
+//!    [`RequestId`] and remembers the callback.
+//! 2. The application serializes the request via [`request_payload`]
+//!    and sends it over the reliable writer.
+//! 3. On an incoming reply it calls [`TypeLookupClient::handle_reply`]
+//!    with the correlated RequestId — the callback then fires
+//!    automatically.
 //!
-//! Pending-Requests-Cap: [`TypeLookupClient::DEFAULT_MAX_PENDING`] = 256
-//! laufende Requests pro Client. Aelteste werden bei Ueberschreitung
-//! verworfen (FIFO-Eviction). Schuetzt vor unbeantworteten Requests die
-//! sich akkumulieren.
+//! Pending-requests cap: [`TypeLookupClient::DEFAULT_MAX_PENDING`] = 256
+//! in-flight requests per client. The oldest are dropped on overflow
+//! (FIFO eviction). Protects against unanswered requests that
+//! accumulate.
 //!
-//! zerodds-lint: allow no_dyn_in_safe — `Box<dyn FnMut>` ist die Standard-
-//! Callback-Signatur fuer Application-Code, der heterogen typisierte
-//! Closures registrieren will. Konkrete Generics waeren hier
-//! API-feindlich (jeder Pending-Eintrag muesste denselben Closure-Typ
-//! haben).
+//! zerodds-lint: allow no_dyn_in_safe — `Box<dyn FnMut>` is the standard
+//! callback signature for application code that wants to register
+//! heterogeneously typed closures. Concrete generics would be
+//! API-hostile here (every pending entry would have to have the same
+//! closure type).
 
 use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, VecDeque};
@@ -36,11 +36,11 @@ use zerodds_types::type_lookup::{
 };
 use zerodds_types::{EquivalenceHash, TypeIdentifier};
 
-/// Eindeutige Request-Identifier (Sub-Set der Sample-Identity).
+/// Unique request identifier (subset of the sample identity).
 ///
 /// Spec §7.6.3.3.5: `SampleIdentity = { writer_guid, sequence_number }`.
-/// Hier verkuerzen wir auf den Sequence-Anteil — der `writer_guid` ist
-/// implizit durch den Client gegeben.
+/// Here we shorten it to the sequence part — the `writer_guid` is
+/// implicit through the client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RequestId(pub u64);
 
@@ -52,20 +52,20 @@ impl RequestId {
     }
 }
 
-/// Was ein Reply ist — typunterschieden, weil `getTypes` und
-/// `getTypeDependencies` separate Reply-Typen haben.
+/// What a reply is — type-distinguished, because `getTypes` and
+/// `getTypeDependencies` have separate reply types.
 #[derive(Debug, Clone)]
 pub enum TypeLookupReply {
-    /// Antwort auf `getTypes`.
+    /// Response to `getTypes`.
     Types(GetTypesReply),
-    /// Antwort auf `getTypeDependencies`.
+    /// Response to `getTypeDependencies`.
     Dependencies(GetTypeDependenciesReply),
 }
 
-/// Callback-Signatur fuer Replies.
+/// Callback signature for replies.
 pub type ClientCallback = Box<dyn FnMut(TypeLookupReply) + Send>;
 
-/// Pending-Request-Eintrag.
+/// Pending-request entry.
 struct Pending {
     callback: ClientCallback,
 }
@@ -76,31 +76,31 @@ impl core::fmt::Debug for Pending {
     }
 }
 
-/// Client-Side TypeLookup-Service (Requester).
+/// Client-side TypeLookup service (requester).
 ///
-/// Stateless beyond pending-callbacks — die eigentliche Wire-Korrelation
-/// (writer_guid + sequence_number) wird vom Caller via [`RequestId`]
-/// gemanagt.
+/// Stateless beyond pending callbacks — the actual wire correlation
+/// (writer_guid + sequence_number) is managed by the caller via
+/// [`RequestId`].
 #[derive(Debug)]
 pub struct TypeLookupClient {
     pending: BTreeMap<RequestId, Pending>,
-    /// FIFO-Reihenfolge fuer Eviction-Tracking.
+    /// FIFO order for eviction tracking.
     pending_order: VecDeque<RequestId>,
     next_seq: u64,
     max_pending: usize,
 }
 
 impl TypeLookupClient {
-    /// Standard-Cap fuer offene Requests.
+    /// Default cap for open requests.
     pub const DEFAULT_MAX_PENDING: usize = 256;
 
-    /// Konstruiert einen Client mit Standard-Cap.
+    /// Constructs a client with the default cap.
     #[must_use]
     pub fn new() -> Self {
         Self::with_capacity(Self::DEFAULT_MAX_PENDING)
     }
 
-    /// Konstruiert einen Client mit konfigurierbarem Cap.
+    /// Constructs a client with a configurable cap.
     #[must_use]
     pub fn with_capacity(max_pending: usize) -> Self {
         Self {
@@ -111,15 +111,15 @@ impl TypeLookupClient {
         }
     }
 
-    /// Anzahl aktuell offener Requests.
+    /// Number of currently open requests.
     #[must_use]
     pub fn pending_count(&self) -> usize {
         self.pending.len()
     }
 
-    /// Registriert einen `getTypes`-Request mit Callback und liefert
-    /// die zugewiesene [`RequestId`] zurueck. Der Caller serialisiert
-    /// die Request-Bytes selbst (siehe [`request_types_payload`]).
+    /// Registers a `getTypes` request with a callback and returns
+    /// the assigned [`RequestId`]. The caller serializes
+    /// the request bytes itself (see [`request_types_payload`]).
     pub fn request_types(
         &mut self,
         _ids: Vec<TypeIdentifier>,
@@ -128,7 +128,7 @@ impl TypeLookupClient {
         self.alloc_pending(callback)
     }
 
-    /// Registriert einen `getTypeDependencies`-Request mit Callback.
+    /// Registers a `getTypeDependencies` request with a callback.
     pub fn request_type_dependencies(
         &mut self,
         _ids: Vec<TypeIdentifier>,
@@ -142,7 +142,7 @@ impl TypeLookupClient {
         let id = RequestId(self.next_seq);
         self.next_seq = self.next_seq.saturating_add(1);
 
-        // Eviction: FIFO-Drop wenn ueber Cap.
+        // Eviction: FIFO drop when over cap.
         while self.pending.len() >= self.max_pending {
             if let Some(old) = self.pending_order.pop_front() {
                 self.pending.remove(&old);
@@ -156,17 +156,17 @@ impl TypeLookupClient {
         id
     }
 
-    /// Verarbeitet ein Reply fuer eine gegebene [`RequestId`].
-    /// Unbekannte IDs werden ignoriert (kein Panic, kein Error). Das
-    /// schuetzt vor verzoegerten Replies oder Replies fuer evictete
-    /// Pending-Eintraege.
+    /// Processes a reply for a given [`RequestId`].
+    /// Unknown IDs are ignored (no panic, no error). This
+    /// protects against delayed replies or replies for evicted
+    /// pending entries.
     ///
-    /// Liefert `true` zurueck wenn der Callback ausgefuehrt wurde.
+    /// Returns `true` if the callback was executed.
     pub fn handle_reply(&mut self, request_id: RequestId, reply: TypeLookupReply) -> bool {
         let Some(mut entry) = self.pending.remove(&request_id) else {
             return false;
         };
-        // entry.order entry entfernen (linear scan ist ok, max 256).
+        // Remove the pending_order entry (linear scan is fine, max 256).
         if let Some(pos) = self.pending_order.iter().position(|x| *x == request_id) {
             self.pending_order.remove(pos);
         }
@@ -174,7 +174,7 @@ impl TypeLookupClient {
         true
     }
 
-    /// Verwirft alle Pending-Eintraege (z.B. bei Participant-Shutdown).
+    /// Drops all pending entries (e.g. on participant shutdown).
     pub fn clear(&mut self) {
         self.pending.clear();
         self.pending_order.clear();
@@ -187,10 +187,10 @@ impl Default for TypeLookupClient {
     }
 }
 
-/// Serialisiert einen `getTypes`-Request fuer den Wire-Transport.
+/// Serializes a `getTypes` request for the wire transport.
 ///
 /// # Errors
-/// `EncodeError` bei Buffer-Overflow.
+/// `EncodeError` on buffer overflow.
 pub fn request_types_payload(ids: &[TypeIdentifier]) -> Result<Vec<u8>, EncodeError> {
     let req = GetTypesRequest {
         type_ids: ids.to_vec(),
@@ -200,10 +200,10 @@ pub fn request_types_payload(ids: &[TypeIdentifier]) -> Result<Vec<u8>, EncodeEr
     Ok(w.into_bytes())
 }
 
-/// Serialisiert einen `getTypeDependencies`-Request.
+/// Serializes a `getTypeDependencies` request.
 ///
 /// # Errors
-/// `EncodeError` bei Buffer-Overflow.
+/// `EncodeError` on buffer overflow.
 pub fn request_dependencies_payload(
     ids: &[TypeIdentifier],
     continuation_point: ContinuationPoint,
@@ -217,7 +217,7 @@ pub fn request_dependencies_payload(
     Ok(w.into_bytes())
 }
 
-/// Convenience: Build die TypeIdentifiers aus einem Set von Hashes.
+/// Convenience: builds the TypeIdentifiers from a set of hashes.
 #[must_use]
 pub fn hashes_to_minimal_ids(hashes: &[EquivalenceHash]) -> Vec<TypeIdentifier> {
     hashes
@@ -341,9 +341,9 @@ mod tests {
         assert!(matches!(ids[0], TypeIdentifier::EquivalenceHashMinimal(_)));
     }
 
-    // Lokaler Smoke-Test fuer non-Send-Callback ist nicht moeglich
-    // (ClientCallback ist `Send`). RefCell-Test stellt sicher dass
-    // wir interior-mutability im Callback lokal benutzen koennen.
+    // A local smoke test for a non-Send callback is not possible
+    // (ClientCallback is `Send`). The RefCell test ensures that
+    // we can use interior mutability locally in the callback.
     #[test]
     fn callback_can_mutate_via_arc_mutex() {
         let _: RefCell<i32> = RefCell::new(0); // smoke

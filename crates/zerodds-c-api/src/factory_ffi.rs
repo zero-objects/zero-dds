@@ -16,18 +16,18 @@ use crate::qos_ffi::{
     ZeroDdsDomainParticipantFactoryQos, ZeroDdsDomainParticipantQos, dp_qos_from_c, dpf_qos_from_c,
 };
 
-/// Get-Singleton: liefert den globalen Factory-Pointer. Niemals NULL.
-/// Caller darf den Pointer **nicht** freigeben.
+/// Get singleton: returns the global factory pointer. Never NULL.
+/// The caller must **not** free the pointer.
 #[unsafe(no_mangle)]
 pub extern "C" fn zerodds_dpf_get_instance() -> *const ZeroDdsDomainParticipantFactory {
     ZeroDdsDomainParticipantFactory::instance() as *const _
 }
 
-/// Erzeugt einen neuen DomainParticipant.
+/// Creates a new DomainParticipant.
 ///
 /// # Safety
-/// `f` muss aus `zerodds_dpf_get_instance` stammen oder NULL sein.
-/// `qos` darf NULL sein (default).
+/// `f` must come from `zerodds_dpf_get_instance` or be NULL.
+/// `qos` may be NULL (default).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dpf_create_participant(
     f: *const ZeroDdsDomainParticipantFactory,
@@ -37,8 +37,8 @@ pub unsafe extern "C" fn zerodds_dpf_create_participant(
     if f.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: see fn # Safety doc — f NULL-checked above; stammt aus get_instance
-    // (statische Lifetime); qos NULL-tolerant.
+    // SAFETY: see fn # Safety doc — f NULL-checked above; comes from get_instance
+    // (static lifetime); qos NULL-tolerant.
     unsafe {
         let factory = &*f;
         let qos: DomainParticipantQos = if qos.is_null() {
@@ -76,12 +76,12 @@ pub unsafe extern "C" fn zerodds_dpf_create_participant(
     }
 }
 
-/// Loescht einen DomainParticipant.
+/// Deletes a DomainParticipant.
 ///
 /// # Safety
-/// `f` und `p` muessen valide Handles sein. `p` darf nicht zum
-/// Zeitpunkt des Aufrufs noch enthaltene Entities (Topics, Publisher,
-/// Subscriber) haben — Caller muss `delete_contained_entities` rufen.
+/// `f` and `p` must be valid handles. `p` must not have any
+/// contained entities (topics, publishers, subscribers) at the time
+/// of the call — the caller must call `delete_contained_entities`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dpf_delete_participant(
     f: *const ZeroDdsDomainParticipantFactory,
@@ -90,8 +90,8 @@ pub unsafe extern "C" fn zerodds_dpf_delete_participant(
     if f.is_null() || p.is_null() {
         return crate::ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: see fn # Safety doc — f+p NULL-checked above; p aus
-    // dpf_create_participant (Box::into_raw); contained-entities-Check vor drop.
+    // SAFETY: see fn # Safety doc — f+p NULL-checked above; p from
+    // dpf_create_participant (Box::into_raw); contained-entities check before drop.
     unsafe {
         let factory = &*f;
         let pp = &*p;
@@ -113,11 +113,11 @@ pub unsafe extern "C" fn zerodds_dpf_delete_participant(
     crate::ZeroDdsStatus::Ok as c_int
 }
 
-/// Findet einen aktiven Participant zu der gegebenen Domain-ID. Liefert
-/// NULL wenn keiner existiert.
+/// Finds an active participant for the given domain ID. Returns
+/// NULL if none exists.
 ///
 /// # Safety
-/// `f` muss valide sein.
+/// `f` must be valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dpf_lookup_participant(
     f: *const ZeroDdsDomainParticipantFactory,
@@ -126,8 +126,8 @@ pub unsafe extern "C" fn zerodds_dpf_lookup_participant(
     if f.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: see fn # Safety doc — f NULL-checked above; participants-Liste haelt
-    // nur valide Box-Pointer aus create_participant.
+    // SAFETY: see fn # Safety doc — f NULL-checked above; the participants list holds
+    // only valid box pointers from create_participant.
     unsafe {
         let factory = &*f;
         if let Ok(list) = factory.participants.lock() {
@@ -144,16 +144,16 @@ pub unsafe extern "C" fn zerodds_dpf_lookup_participant(
     ptr::null_mut()
 }
 
-/// Get-Default-Participant-QoS via Pass-Through-Pointer auf einen
-/// `Arc<...>`-internen Snapshot. Caller darf den Pointer nur lesen,
-/// nicht freigeben (statische Lifetime der Singleton-Factory).
+/// Get default participant QoS via a pass-through pointer to an
+/// `Arc<...>`-internal snapshot. The caller may only read the pointer,
+/// not free it (static lifetime of the singleton factory).
 ///
-/// In dieser RC1-Surface-Form wird die Default-QoS als opaker
-/// `Arc<DomainParticipantQos>` geliefert — die volle Field-getter/setter
-/// kommt mit den `qos.rs`-Strukturen in Folge-Pass.
+/// In this RC1 surface form the default QoS is returned as an opaque
+/// `Arc<DomainParticipantQos>` — the full field getter/setter
+/// comes with the `qos.rs` structs in a follow-up pass.
 ///
 /// # Safety
-/// `f` valide.
+/// `f` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dpf_set_default_participant_qos(
     f: *const ZeroDdsDomainParticipantFactory,
@@ -177,12 +177,12 @@ pub unsafe extern "C" fn zerodds_dpf_set_default_participant_qos(
     crate::ZeroDdsStatus::Ok as c_int
 }
 
-/// Gibt eine Kopie der aktuellen Default-Participant-QoS in `out` zurueck.
-/// Solange die `zerodds_DomainParticipantQos`-Struktur nicht in der
-/// `qos.rs`-Schicht definiert ist, ist `out` ein opaker `void*`.
+/// Returns a copy of the current default participant QoS in `out`.
+/// As long as the `zerodds_DomainParticipantQos` struct is not defined in the
+/// `qos.rs` layer, `out` is an opaque `void*`.
 ///
 /// # Safety
-/// `f` valide; `out` darf NULL sein (no-op).
+/// `f` valid; `out` may be NULL (no-op).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dpf_get_default_participant_qos(
     f: *const ZeroDdsDomainParticipantFactory,
@@ -203,10 +203,10 @@ pub unsafe extern "C" fn zerodds_dpf_get_default_participant_qos(
     }
 }
 
-/// Factory-eigene QoS setzen (Spec §2.2.2.2.2.6).
+/// Sets the factory's own QoS (Spec §2.2.2.2.2.6).
 ///
 /// # Safety
-/// `f` valide; `qos` darf NULL sein (Reset).
+/// `f` valid; `qos` may be NULL (reset).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dpf_set_qos(
     f: *const ZeroDdsDomainParticipantFactory,
@@ -230,10 +230,10 @@ pub unsafe extern "C" fn zerodds_dpf_set_qos(
     crate::ZeroDdsStatus::Ok as c_int
 }
 
-/// Factory-eigene QoS lesen.
+/// Reads the factory's own QoS.
 ///
 /// # Safety
-/// `f`, `out` valide.
+/// `f`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dpf_get_qos(
     f: *const ZeroDdsDomainParticipantFactory,
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn create_and_delete_participant_clean_lifecycle() {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: f aus dpf_get_instance (statisch).
+        // SAFETY: f from dpf_get_instance (static).
         unsafe {
             let p = zerodds_dpf_create_participant(f, 0, ptr::null());
             assert!(!p.is_null(), "participant must be created");
@@ -281,7 +281,7 @@ mod tests {
     #[test]
     fn delete_with_null_handles_returns_bad_handle() {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: f statisch; NULL ist explizit erlaubt im delete_participant Vertrag.
+        // SAFETY: f static; NULL is explicitly allowed in the delete_participant contract.
         unsafe {
             let rc = zerodds_dpf_delete_participant(f, ptr::null_mut());
             assert_eq!(rc, crate::ZeroDdsStatus::BadHandle as c_int);
@@ -293,7 +293,7 @@ mod tests {
     #[test]
     fn lookup_unknown_domain_returns_null() {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: f statisch.
+        // SAFETY: f static.
         let p = unsafe { zerodds_dpf_lookup_participant(f, 99_999) };
         assert!(p.is_null());
     }

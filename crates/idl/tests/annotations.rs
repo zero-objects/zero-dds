@@ -1,7 +1,7 @@
-//! Integration-Test: Annotation-Parsing + AST-Speicherung (C4.6 §1.7).
+//! Integration test: annotation parsing + AST storage (C4.6 §1.7).
 //!
-//! Apply-Logik (XTypes) bleibt ausserhalb (siehe C4.3); hier nur
-//! "wird der Annotation-AST-Knoten korrekt erfasst".
+//! The apply logic (XTypes) stays outside (see C4.3); here only
+//! "is the annotation AST node captured correctly".
 
 #![allow(
     clippy::expect_used,
@@ -55,6 +55,29 @@ fn id_with_int_param_lowers() {
     let anns = first_member_annotations("struct S { @id(42) long x; };");
     let lowered = lower_annotations(&anns).expect("lower");
     assert_eq!(lowered.explicit_id(), Some(42));
+}
+
+#[test]
+fn keyword_named_annotation_parses() {
+    // GitHub #6: an annotation whose name is a reserved keyword must parse,
+    // not be rejected as UnexpectedToken. The practically relevant one is the
+    // XTypes builtin `@default` (name = the `default` keyword), carried by
+    // DDS/ROS2 topic IDL.
+    let with_param = first_member_annotations("struct S { @default(0) long x; };");
+    assert_eq!(with_param.len(), 1);
+    assert_eq!(with_param[0].name.parts.last().unwrap().text, "default");
+
+    let bare = first_member_annotations("struct S { @default long x; };");
+    assert_eq!(bare[0].name.parts.last().unwrap().text, "default");
+
+    // a keyword-named annotation that is not a builtin still parses (like any
+    // unknown annotation `@whatever`).
+    let oneway = first_member_annotations("struct S { @oneway long x; };");
+    assert_eq!(oneway[0].name.parts.last().unwrap().text, "oneway");
+
+    // the ordinary-identifier path is unchanged.
+    let id = first_member_annotations("struct S { @id(0) long x; };");
+    assert_eq!(id[0].name.parts.last().unwrap().text, "id");
 }
 
 #[test]
@@ -171,7 +194,7 @@ fn must_understand_member_annotation_lowers() {
 
 #[test]
 fn default_literal_annotation_on_enumerator_lowers() {
-    // `@default_literal` ist die OMG-Form fuer Enum-Default-Werte.
+    // `@default_literal` is the OMG form for enum default values.
     let src = "enum E { @default_literal A, B };";
     let ast = parse(src, &ParserConfig::default()).expect("parse");
     for d in &ast.definitions {
@@ -205,7 +228,7 @@ fn multiple_annotations_combine_on_member() {
 
 #[test]
 fn verbatim_marker_on_struct_parses() {
-    // Phase-1: `@verbatim` ohne Multi-Param-Argumente.
+    // Phase 1: `@verbatim` without multi-param arguments.
     let src = "@verbatim struct S { long x; };";
     let ast = parse(src, &ParserConfig::default()).expect("parse");
     assert_eq!(ast.definitions.len(), 1);

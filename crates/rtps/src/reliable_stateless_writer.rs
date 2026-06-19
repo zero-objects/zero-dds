@@ -3,32 +3,31 @@
 //! `ReliableStatelessWriter` — DDSI-RTPS 2.5 §8.4.8.2 (Reliable
 //! StatelessWriter, T1-T12).
 //!
-//! Im Gegensatz zum StatefulWriter (`reliable_writer.rs`) traegt der
-//! StatelessWriter **keinen Per-Reader-Proxy-State**. Stattdessen
-//! existiert genau eine Liste von Reply-Locators (typisch Multicast)
-//! und ein einziger gemeinsamer Acked-State, der die
-//! `lowest_unacked_sn` aus dem Pool aller eingehenden ACKNACKs
-//! ableitet.
+//! In contrast to the StatefulWriter (`reliable_writer.rs`), the
+//! StatelessWriter carries **no per-reader proxy state**. Instead
+//! there is exactly one list of reply locators (typically multicast)
+//! and a single shared acked state, which derives the
+//! `lowest_unacked_sn` from the pool of all incoming ACKNACKs.
 //!
-//! Real-world Use-Cases sind selten — die DDSI-RTPS-Spec listet
-//! Reliable-Stateless als optional, und Cyclone DDS / FastDDS
-//! verwenden nur den Stateful-Pfad. ZeroDDS implementiert den
-//! Stateless-Reliable-Pfad fuer Spec-Vollstaendigkeit (K3b-D).
+//! Real-world use cases are rare — the DDSI-RTPS spec lists
+//! reliable-stateless as optional, and Cyclone DDS / FastDDS
+//! use only the stateful path. ZeroDDS implements the
+//! stateless-reliable path for spec completeness (K3b-D).
 //!
 //! # T1-T12 Transitions (Spec Tab. 8.46)
 //!
-//! Die Spec definiert eine 12-Zustands-Transition-Matrix. Wir mappen
-//! sie auf folgende API-Methoden:
+//! The spec defines a 12-state transition matrix. We map
+//! it to the following API methods:
 //!
 //! | T  | Trigger                            | API                         |
 //! |----|------------------------------------|-----------------------------|
 //! | T1 | new_change(kind, payload)          | [`Self::new_change`]        |
 //! | T2 | RESPONSIVE-Tick → DATA an alle     | [`Self::tick`] → DATA-Burst |
 //! | T3 | RESPONSIVE-Tick → HEARTBEAT        | [`Self::tick`] → HB         |
-//! | T4 | ACKNACK empfangen (FinalFlag=0)    | [`Self::handle_acknack`]    |
-//! | T5 | ACKNACK FinalFlag=1 (kein NACK)    | [`Self::handle_acknack`]    |
+//! | T4 | ACKNACK received (FinalFlag=0)    | [`Self::handle_acknack`]    |
+//! | T5 | ACKNACK FinalFlag=1 (no NACK)       | [`Self::handle_acknack`]    |
 //! | T6 | requested-Retransmit               | [`Self::tick`] (NACK-Drain) |
-//! | T7 | unsent_changes leer + ACKED-bound  | [`Self::is_acked_to`]       |
+//! | T7 | unsent_changes empty + ACKED-bound  | [`Self::is_acked_to`]       |
 //! | T8 | sample purge (Cache-LowWater)      | [`Self::purge_acked`]       |
 //! | T9 | new_change-Boundary (KeepLast)     | [`HistoryCache::insert`]    |
 //! | T10| Lease-Timeout / shutdown           | [`Self::shutdown`]          |
@@ -49,46 +48,46 @@ use crate::wire_types::{EntityId, Guid, GuidPrefix, Locator, SequenceNumber, Ven
 
 /// `ReliableStatelessWriter` — Spec §8.4.8.2.
 pub struct ReliableStatelessWriter {
-    /// Eigene GUID (Prefix + EntityId).
+    /// Own GUID (prefix + EntityId).
     guid: Guid,
-    /// VendorId (RTPS-Header).
+    /// VendorId (RTPS header).
     vendor_id: VendorId,
-    /// HistoryCache (KeepAll oder KeepLast — Spec laesst beides zu).
+    /// HistoryCache (KeepAll or KeepLast — the spec allows both).
     cache: HistoryCache,
-    /// Naechste Sequence-Number (writer-vergeben, monoton).
+    /// Next sequence number (writer-assigned, monotonic).
     next_sn: i64,
-    /// Reply-Locator-Liste (typisch Multicast).
+    /// Reply locator list (typically multicast).
     locators: Vec<Locator>,
-    /// Heartbeat-Counter (Spec §8.3.8.6 — wraps u32).
+    /// Heartbeat counter (Spec §8.3.8.6 — wraps u32).
     heartbeat_count: u32,
-    /// Pendings ACKNACK-Requested (gemeinsamer Pool aller Readers).
+    /// Pending ACKNACK-requested SNs (shared pool of all readers).
     requested: BTreeSet<SequenceNumber>,
-    /// Niedrigste un-Acked SN (`min(base)` aller je gesehenen ACKNACKs).
-    /// `0` bedeutet: noch keine ACKNACK gesehen — keine Annahmen.
+    /// Lowest un-acked SN (`min(base)` of all ACKNACKs ever seen).
+    /// `0` means: no ACKNACK seen yet — no assumptions.
     lowest_unacked: i64,
-    /// Heartbeat-Periode (Tick-getrieben).
+    /// Heartbeat period (tick-driven).
     heartbeat_period: Duration,
-    /// Letzter Heartbeat-Tick.
+    /// Last heartbeat tick.
     last_heartbeat: Duration,
-    /// Maximale Pakete-pro-Tick (DoS-Cap fuer Retransmits).
+    /// Maximum packets per tick (DoS cap for retransmits).
     max_per_tick: usize,
 }
 
-/// Statistik-Snapshot (T12).
+/// Statistics snapshot (T12).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ReliableStatelessStats {
-    /// Anzahl Cache-Eintraege.
+    /// Number of cache entries.
     pub cached_changes: usize,
-    /// Anzahl pendender Retransmits (`requested.len()`).
+    /// Number of pending retransmits (`requested.len()`).
     pub pending_retransmits: usize,
-    /// Aktueller `lowest_unacked` (0 = noch unbekannt).
+    /// Current `lowest_unacked` (0 = still unknown).
     pub lowest_unacked: i64,
-    /// Heartbeat-Counter (modulo-u32).
+    /// Heartbeat counter (modulo u32).
     pub heartbeat_count: u32,
 }
 
 impl ReliableStatelessWriter {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(
         prefix: GuidPrefix,
@@ -113,27 +112,27 @@ impl ReliableStatelessWriter {
         }
     }
 
-    /// Eigene GUID.
+    /// Own GUID.
     #[must_use]
     pub fn guid(&self) -> Guid {
         self.guid
     }
 
-    /// Setzt eine neue Locator-Liste (T11).
+    /// Sets a new locator list (T11).
     pub fn set_locators(&mut self, locators: Vec<Locator>) {
         self.locators = locators;
     }
 
-    /// Setzt das DoS-Cap fuer Retransmits-pro-Tick.
+    /// Sets the DoS cap for retransmits per tick.
     pub fn set_max_per_tick(&mut self, n: usize) {
         self.max_per_tick = n;
     }
 
-    /// T1 — `new_change`: legt einen Sample im Cache an. Liefert die
-    /// vergebene Sequence-Number.
+    /// T1 — `new_change`: stores a sample in the cache. Returns the
+    /// assigned sequence number.
     ///
     /// # Errors
-    /// `ValueOutOfRange` bei SN-Overflow oder Cache-Capacity-Limit.
+    /// `ValueOutOfRange` on SN overflow or cache capacity limit.
     pub fn new_change(
         &mut self,
         kind: ChangeKind,
@@ -149,8 +148,8 @@ impl ReliableStatelessWriter {
         let change = match kind {
             ChangeKind::Alive => CacheChange::alive(sn, payload),
             other => {
-                // Dispose/Unregister + Filtered nutzen denselben
-                // Konstruktor; Kind wird im Cache mit-bewahrt.
+                // Dispose/Unregister + Filtered use the same
+                // constructor; the kind is preserved in the cache.
                 let mut c = CacheChange::alive(sn, payload);
                 c.kind = other;
                 c
@@ -164,14 +163,14 @@ impl ReliableStatelessWriter {
         Ok(sn)
     }
 
-    /// T4/T5 — verarbeitet eine eingehende ACKNACK. Aktualisiert
-    /// `lowest_unacked` (max der jemals gesehenen `base` — once-acked-
-    /// always-acked) und nimmt `requested`-SNs in den Retransmit-Pool.
+    /// T4/T5 — processes an incoming ACKNACK. Updates
+    /// `lowest_unacked` (max of all `base` ever seen — once-acked-
+    /// always-acked) and takes `requested` SNs into the retransmit pool.
     pub fn handle_acknack(&mut self, ack: &AckNackSubmessage) {
         let base = ack.reader_sn_state.bitmap_base.0;
         if base > self.lowest_unacked {
             self.lowest_unacked = base;
-            // Acked-SNs aus dem Retransmit-Pool entfernen (alles < base).
+            // Remove acked SNs from the retransmit pool (everything < base).
             self.requested.retain(|sn| sn.0 >= base);
         }
         for sn in ack.reader_sn_state.iter_set() {
@@ -179,15 +178,15 @@ impl ReliableStatelessWriter {
         }
     }
 
-    /// T7 — `is_acked_to(sn)`: alle SNs bis einschliesslich `sn` sind
-    /// von mindestens einem Reader bestaetigt.
+    /// T7 — `is_acked_to(sn)`: all SNs up to and including `sn` are
+    /// acknowledged by at least one reader.
     #[must_use]
     pub fn is_acked_to(&self, sn: SequenceNumber) -> bool {
         sn.0 < self.lowest_unacked
     }
 
-    /// T8 — purgt alle Cache-Eintraege, die `lowest_unacked - 1` oder
-    /// kleiner sind. Liefert die Anzahl entfernter Samples.
+    /// T8 — purges all cache entries that are `lowest_unacked - 1` or
+    /// smaller. Returns the number of removed samples.
     pub fn purge_acked(&mut self) -> usize {
         if self.lowest_unacked <= 1 {
             return 0;
@@ -196,14 +195,14 @@ impl ReliableStatelessWriter {
         self.cache.remove_up_to(cutoff)
     }
 
-    /// T2/T3/T6 — Tick. Liefert eine Liste von Datagrams, die der
-    /// Caller via UDP an alle `locators` senden soll. Reihenfolge:
-    /// 1. Pending-Retransmits (max `max_per_tick`).
-    /// 2. Wenn `now >= last_heartbeat + heartbeat_period` UND Cache
-    ///    nicht leer: ein HEARTBEAT.
+    /// T2/T3/T6 — tick. Returns a list of datagrams the
+    /// caller should send via UDP to all `locators`. Order:
+    /// 1. Pending retransmits (max `max_per_tick`).
+    /// 2. If `now >= last_heartbeat + heartbeat_period` AND the cache is
+    ///    not empty: one HEARTBEAT.
     ///
     /// # Errors
-    /// Wire-Encode-Fehler bei DATA/HEARTBEAT-Encoding.
+    /// Wire encode error on DATA/HEARTBEAT encoding.
     pub fn tick(&mut self, now: Duration) -> Result<Vec<OutboundDatagram>, WireError> {
         use alloc::rc::Rc;
         let mut out = Vec::new();
@@ -222,7 +221,7 @@ impl ReliableStatelessWriter {
             if let Some(change) = self.cache.get(*sn) {
                 let data = DataSubmessage {
                     extra_flags: 0,
-                    reader_id: EntityId::UNKNOWN, // Stateless: an alle Reader.
+                    reader_id: EntityId::UNKNOWN, // Stateless: to all readers.
                     writer_id: self.guid.entity_id,
                     writer_sn: *sn,
                     inline_qos: None,
@@ -243,7 +242,7 @@ impl ReliableStatelessWriter {
             }
         }
 
-        // 2. Heartbeat-Tick.
+        // 2. Heartbeat tick.
         if now >= self.last_heartbeat + self.heartbeat_period && !self.cache.is_empty() {
             self.last_heartbeat = now;
             self.heartbeat_count = self.heartbeat_count.wrapping_add(1);
@@ -283,7 +282,7 @@ impl ReliableStatelessWriter {
         Ok(out)
     }
 
-    /// T10 — Shutdown: leert den Cache + Retransmit-Pool.
+    /// T10 — shutdown: clears the cache + retransmit pool.
     pub fn shutdown(&mut self) {
         if let Some(max) = self.cache.max_sn() {
             let _ = self.cache.remove_up_to(max);
@@ -291,7 +290,7 @@ impl ReliableStatelessWriter {
         self.requested.clear();
     }
 
-    /// T12 — Diagnose-Snapshot.
+    /// T12 — diagnosis snapshot.
     #[must_use]
     pub fn stats(&self) -> ReliableStatelessStats {
         ReliableStatelessStats {
@@ -365,7 +364,7 @@ mod tests {
             count: 2,
             final_flag: true,
         };
-        // Niedriger ACKNACK darf nicht regredieren.
+        // A lower ACKNACK must not regress.
         w.handle_acknack(&ack_low);
         assert_eq!(w.stats().lowest_unacked, 10);
     }
@@ -462,7 +461,7 @@ mod tests {
         };
         w.handle_acknack(&ack);
         let datagrams = w.tick(Duration::from_millis(0)).unwrap();
-        // 2 Retransmits — kein HB (Tick=0).
+        // 2 retransmits — no HB (tick=0).
         assert_eq!(datagrams.len(), 2);
         assert_eq!(w.stats().pending_retransmits, 0);
     }
@@ -512,7 +511,7 @@ mod tests {
         let mut w = make_writer();
         w.set_locators(alloc::vec![Locator::udp_v4([1, 1, 1, 1], 100)]);
         w.set_locators(alloc::vec![Locator::udp_v4([2, 2, 2, 2], 200)]);
-        // Roundtrip: nur 1 Locator, der zweite.
+        // Roundtrip: only 1 locator, the second.
         let _ = w.new_change(ChangeKind::Alive, alloc::vec![1]).unwrap();
         let datagrams = w.tick(Duration::from_millis(150)).unwrap();
         assert!(!datagrams.is_empty());
@@ -521,15 +520,15 @@ mod tests {
 
     #[test]
     fn heartbeat_count_wraps_at_u32_max_t3_modular() {
-        // Spec §8.4.15.7: count modulo u32. Set heartbeat_count nahe
-        // u32::MAX und verifiziere wrap.
+        // Spec §8.4.15.7: count modulo u32. Set heartbeat_count near
+        // u32::MAX and verify the wrap.
         let mut w = make_writer();
         w.heartbeat_count = u32::MAX - 1;
         let _ = w.new_change(ChangeKind::Alive, alloc::vec![1]).unwrap();
         w.set_locators(alloc::vec![Locator::udp_v4([1, 2, 3, 4], 7400)]);
         let _ = w.tick(Duration::from_millis(150)).unwrap();
         assert_eq!(w.stats().heartbeat_count, u32::MAX);
-        // Reset last_heartbeat damit der naechste Tick wieder feuert.
+        // Reset last_heartbeat so the next tick fires again.
         w.last_heartbeat = Duration::ZERO;
         let _ = w.tick(Duration::from_millis(150)).unwrap();
         // Wrap-around: u32::MAX + 1 → 0.

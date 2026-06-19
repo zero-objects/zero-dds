@@ -3,9 +3,9 @@
 
 //! POA Policies — Spec §11.3.6 Table 11-2.
 //!
-//! Sieben Policies, jede mit ihren Modi:
+//! Seven policies, each with its modes:
 //!
-//! | Policy | Default | Werte |
+//! | Policy | Default | Values |
 //! |---|---|---|
 //! | Lifespan | TRANSIENT | TRANSIENT / PERSISTENT |
 //! | IdAssignment | SYSTEM_ID | USER_ID / SYSTEM_ID |
@@ -15,19 +15,19 @@
 //! | RequestProcessing | USE_ACTIVE_OBJECT_MAP_ONLY | USE_ACTIVE_OBJECT_MAP_ONLY / USE_DEFAULT_SERVANT / USE_SERVANT_MANAGER |
 //! | Thread | ORB_CTRL_MODEL | ORB_CTRL / SINGLE_THREAD / MAIN_THREAD |
 //!
-//! Spec §11.3.6.6 normativ: bestimmte Kombinationen sind ungueltig
-//! und werden vom POA mit `InvalidPolicy` zurueckgewiesen.
+//! Spec §11.3.6.6 normative: certain combinations are invalid
+//! and are rejected by the POA with `InvalidPolicy`.
 
 use crate::error::{PoaError, PoaResult};
 
 /// Spec §11.3.6.1 — Lifespan-Policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LifespanPolicy {
-    /// `TRANSIENT` — Object-References sind nur innerhalb des
-    /// erstellenden Server-Prozesses gueltig (Default).
+    /// `TRANSIENT` — object references are valid only within the
+    /// creating server process (default).
     Transient,
-    /// `PERSISTENT` — Object-References ueberleben den erstellenden
-    /// Prozess und koennen nach Restart wieder bedient werden.
+    /// `PERSISTENT` — object references outlive the creating
+    /// process and can be served again after a restart.
     Persistent,
 }
 
@@ -40,9 +40,9 @@ impl Default for LifespanPolicy {
 /// Spec §11.3.6.2 — Id-Assignment-Policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IdAssignmentPolicy {
-    /// `SYSTEM_ID` — POA generiert die Object-IDs (Default).
+    /// `SYSTEM_ID` — the POA generates the object IDs (default).
     System,
-    /// `USER_ID` — Caller liefert die Object-IDs explizit
+    /// `USER_ID` — the caller supplies the object IDs explicitly
     /// (`activate_object_with_id`).
     User,
 }
@@ -56,11 +56,11 @@ impl Default for IdAssignmentPolicy {
 /// Spec §11.3.6.3 — Id-Uniqueness-Policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IdUniquenessPolicy {
-    /// `UNIQUE_ID` — ein Servant darf hoechstens eine Object-ID
-    /// haben (Default).
+    /// `UNIQUE_ID` — a servant may have at most one object ID
+    /// (default).
     Unique,
-    /// `MULTIPLE_ID` — ein Servant kann unter mehreren Object-IDs
-    /// aktiv sein.
+    /// `MULTIPLE_ID` — a servant can be active under multiple
+    /// object IDs.
     Multiple,
 }
 
@@ -75,8 +75,8 @@ impl Default for IdUniquenessPolicy {
 pub enum ImplicitActivationPolicy {
     /// `NO_IMPLICIT_ACTIVATION` (Default).
     NoImplicit,
-    /// `IMPLICIT_ACTIVATION` — `_this()`-Aufrufe aktivieren den
-    /// Servant automatisch.
+    /// `IMPLICIT_ACTIVATION` — `_this()` calls activate the
+    /// servant automatically.
     Implicit,
 }
 
@@ -89,10 +89,10 @@ impl Default for ImplicitActivationPolicy {
 /// Spec §11.3.6.5 — Servant-Retention-Policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ServantRetentionPolicy {
-    /// `RETAIN` — POA fuehrt eine Active-Object-Map (Default).
+    /// `RETAIN` — the POA maintains an Active Object Map (default).
     Retain,
-    /// `NON_RETAIN` — keine AOM; jeder Request geht an den
-    /// Default-Servant oder ServantManager.
+    /// `NON_RETAIN` — no AOM; every request goes to the
+    /// default servant or ServantManager.
     NonRetain,
 }
 
@@ -105,13 +105,13 @@ impl Default for ServantRetentionPolicy {
 /// Spec §11.3.6.6 — Request-Processing-Policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RequestProcessingPolicy {
-    /// `USE_ACTIVE_OBJECT_MAP_ONLY` — nur AOM (Default).
+    /// `USE_ACTIVE_OBJECT_MAP_ONLY` — AOM only (default).
     UseActiveObjectMapOnly,
-    /// `USE_DEFAULT_SERVANT` — bei Miss faellt auf Default-Servant
-    /// zurueck. Verlangt MULTIPLE_ID.
+    /// `USE_DEFAULT_SERVANT` — on a miss, falls back to the default
+    /// servant. Requires MULTIPLE_ID.
     UseDefaultServant,
-    /// `USE_SERVANT_MANAGER` — bei Miss wird ServantActivator/
-    /// Locator aufgerufen.
+    /// `USE_SERVANT_MANAGER` — on a miss, the ServantActivator/
+    /// Locator is invoked.
     UseServantManager,
 }
 
@@ -124,12 +124,12 @@ impl Default for RequestProcessingPolicy {
 /// Spec §11.3.6.7 — Thread-Policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ThreadPolicy {
-    /// `ORB_CTRL_MODEL` — ORB waehlt das Threading (Default).
+    /// `ORB_CTRL_MODEL` — the ORB chooses the threading (default).
     OrbCtrl,
-    /// `SINGLE_THREAD_MODEL` — alle Requests an diesen POA werden
-    /// sequentiell auf einem Thread serialisiert.
+    /// `SINGLE_THREAD_MODEL` — all requests to this POA are
+    /// serialized sequentially onto a single thread.
     SingleThread,
-    /// `MAIN_THREAD_MODEL` — Requests laufen im ORB-Main-Thread.
+    /// `MAIN_THREAD_MODEL` — requests run on the ORB main thread.
     MainThread,
 }
 
@@ -139,7 +139,7 @@ impl Default for ThreadPolicy {
     }
 }
 
-/// Vollstaendiges Policy-Set fuer einen POA.
+/// Complete policy set for a POA.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PolicySet {
     /// Lifespan.
@@ -159,13 +159,13 @@ pub struct PolicySet {
 }
 
 impl PolicySet {
-    /// Validiert die Policy-Kombination per Spec §11.3.6.6.
+    /// Validates the policy combination per Spec §11.3.6.6.
     ///
     /// # Errors
-    /// `InvalidPolicy` mit Diagnose-String, wenn eine inkompatible
-    /// Kombination gewaehlt wurde.
+    /// `InvalidPolicy` with a diagnostic string when an incompatible
+    /// combination was chosen.
     pub fn validate(&self) -> PoaResult<()> {
-        // Spec §11.3.6.6: USE_DEFAULT_SERVANT verlangt MULTIPLE_ID.
+        // Spec §11.3.6.6: USE_DEFAULT_SERVANT requires MULTIPLE_ID.
         if self.request_processing == RequestProcessingPolicy::UseDefaultServant
             && self.id_uniqueness != IdUniquenessPolicy::Multiple
         {
@@ -173,9 +173,9 @@ impl PolicySet {
                 "USE_DEFAULT_SERVANT requires MULTIPLE_ID".into(),
             ));
         }
-        // Spec §11.3.6.6: NON_RETAIN verlangt USE_DEFAULT_SERVANT
-        // oder USE_SERVANT_MANAGER (USE_ACTIVE_OBJECT_MAP_ONLY ist
-        // ohne AOM unsinnig).
+        // Spec §11.3.6.6: NON_RETAIN requires USE_DEFAULT_SERVANT
+        // or USE_SERVANT_MANAGER (USE_ACTIVE_OBJECT_MAP_ONLY makes
+        // no sense without an AOM).
         if self.servant_retention == ServantRetentionPolicy::NonRetain
             && self.request_processing == RequestProcessingPolicy::UseActiveObjectMapOnly
         {
@@ -183,7 +183,7 @@ impl PolicySet {
                 "NON_RETAIN requires USE_DEFAULT_SERVANT or USE_SERVANT_MANAGER".into(),
             ));
         }
-        // Spec §11.3.6.4: IMPLICIT_ACTIVATION verlangt SYSTEM_ID + RETAIN.
+        // Spec §11.3.6.4: IMPLICIT_ACTIVATION requires SYSTEM_ID + RETAIN.
         if self.implicit_activation == ImplicitActivationPolicy::Implicit {
             if self.id_assignment != IdAssignmentPolicy::System {
                 return Err(PoaError::InvalidPolicy(

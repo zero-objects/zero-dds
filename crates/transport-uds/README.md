@@ -3,46 +3,46 @@
 [![docs.rs](https://img.shields.io/docsrs/zerodds-transport-uds)](https://docs.rs/zerodds-transport-uds)
 [![crates.io](https://img.shields.io/crates/v/zerodds-transport-uds)](https://crates.io/crates/zerodds-transport-uds)
 
-ZeroDDS-UDS-Transport: Container-IPC via Unix Domain Sockets.
-Layer 2 (Wire-Implementation).
+ZeroDDS UDS transport: container IPC via Unix domain sockets.
+Layer 2 (wire implementation).
 
-`std`-only, Safety-Klasse **STANDARD** (Unsafe-Island im
-`abstract_dgram`-Modul für libc-FFI; Default-DGRAM-Modul ist safe-only).
+`std`-only, safety class **STANDARD** (unsafe island in the
+`abstract_dgram` module for libc FFI; the default DGRAM module is safe-only).
 
-## Spec-Status
+## Spec status
 
-OMG normiert keinen UDS-Transport für DDS. Cyclone DDS und FastDDS
-haben keinen offiziellen UDS-Transport (nutzen iceoryx/SHM für
-Container-IPC). ZeroDDS definiert seine eigene Variante explizit als
-**ZeroDDS-UDS-Transport 1.0**, dokumentiert in
+OMG does not standardize a UDS transport for DDS. Cyclone DDS and FastDDS
+have no official UDS transport (they use iceoryx/SHM for container IPC).
+ZeroDDS defines its own variant explicitly as
+**ZeroDDS UDS Transport 1.0**, documented in
 [`docs/spec-coverage/zerodds-uds-transport-1.0.md`](../../docs/spec-coverage/zerodds-uds-transport-1.0.md).
 
-DDSI-RTPS-Konformität: Locator-Kind ist DDSI-RTPS 2.5 §9.4-vendor-
-reservierter Wert `0x81000001` (in `crates/rtps/src/wire_types.rs`).
+DDSI-RTPS conformance: the locator kind is the DDSI-RTPS 2.5 §9.4 vendor-
+reserved value `0x81000001` (in `crates/rtps/src/wire_types.rs`).
 
-## Was liefert dieses Crate
+## What this crate provides
 
-- `UdsTransport` — `Transport`-Trait-Impl via Filesystem-UDS
-- `UdsConfig` — Konfiguration (base_dir, max_datagram, recv_timeout)
-- `socket_path` — Path-Resolution-Helper
-- `abstract_dgram::AbstractDgramSocket` — Linux Abstract-Namespace-Variante
+- `UdsTransport` — `Transport` trait impl via filesystem UDS
+- `UdsConfig` — configuration (base_dir, max_datagram, recv_timeout)
+- `socket_path` — path-resolution helper
+- `abstract_dgram::AbstractDgramSocket` — Linux abstract-namespace variant
 
-## Use Case
+## Use case
 
-Container-IPC, wenn:
-- Multicast geblockt (Cluster-Network-Policy)
-- POSIX-SHM cross-Container unpraktisch (UID-Mapping, `/dev/shm`-Sichtbarkeit, SELinux)
+Container IPC when:
+- Multicast is blocked (cluster network policy)
+- POSIX SHM is impractical cross-container (UID mapping, `/dev/shm` visibility, SELinux)
 
-Docker/Kubernetes-Pattern: gemountetes Volume `/tmp/zerodds/uds` zwischen
-Containern.
+Docker/Kubernetes pattern: a mounted volume `/tmp/zerodds/uds` shared between
+containers.
 
-## Plattform-Support
+## Platform support
 
-| Plattform | Status |
+| Platform | Status |
 |---|---|
-| Linux | ✅ primary (Filesystem + Abstract Namespace) |
-| macOS | ✅ supported (Filesystem only, kein Abstract Namespace) |
-| Windows | ❌ nicht supported (Unix-spezifisch) |
+| Linux | ✅ primary (filesystem + abstract namespace) |
+| macOS | ✅ supported (filesystem only, no abstract namespace) |
+| Windows | ❌ not supported (Unix-specific) |
 
 ## Tests
 
@@ -50,8 +50,8 @@ Containern.
 cargo test -p zerodds-transport-uds
 ```
 
-17 Tests grün (16 lib + 1 cross-process integration).
+17 tests green (16 lib + 1 cross-process integration).
 
-## Lizenz
+## License
 
-Apache-2.0 OR MIT — siehe Workspace-Root.
+Apache-2.0 OR MIT — see the workspace root.

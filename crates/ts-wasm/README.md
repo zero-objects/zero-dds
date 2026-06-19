@@ -1,49 +1,49 @@
-# zerodds-ts-wasm — ZeroDDS WASM-Bindings
+# zerodds-ts-wasm — ZeroDDS WASM bindings
 
-WASM-Bindings ueber `zerodds-cdr` (XCDR1/XCDR2-Codec) nach JS/TS via
-`wasm-bindgen`, fuer Browser- und Node-WASM-Umgebungen.
+WASM bindings over `zerodds-cdr` (XCDR1/XCDR2 codec) to JS/TS via
+`wasm-bindgen`, for browser and Node WASM environments.
 
 ## Scope
 
-**In-Scope:**
-- `CdrEncoder` — schreibt Primitives, Strings, Bytes
-- `CdrDecoder` — liest Primitives, Strings
-- LE/BE-Endianness ueber 0/1-Konstanten
-- Alignment fuer XCDR1-konforme Padding
-- KeyHash-Berechnung (XTypes 1.3 §7.6.8)
-- DDS-TS 1.0 Vendor-Spec-konformer TS-PSM (siehe
+**In scope:**
+- `CdrEncoder` — writes primitives, strings, bytes
+- `CdrDecoder` — reads primitives, strings
+- LE/BE endianness via 0/1 constants
+- alignment for XCDR1-conform padding
+- KeyHash computation (XTypes 1.3 §7.6.8)
+- DDS-TS 1.0 vendor-spec-conform TS PSM (see
   `documentation/specs/dds-ts-1.0/`)
 
-**Out-of-Scope:**
-- Live-DDS-Pub-Sub im Browser ueber UDP/Multicast — WASM kann das
-  nicht. Stattdessen: WebSocket-Bridge (`crates/websocket-bridge/`)
-  als Server-Side-Gateway, plus dieser Codec auf Browser-Seite zur
-  CDR-Encode/Decode. Architektur-Skizze in
+**Out of scope:**
+- Live DDS pub/sub in the browser over UDP/multicast — WASM cannot do
+  that. Instead: the WebSocket bridge (`crates/websocket-bridge/`)
+  as a server-side gateway, plus this codec on the browser side for
+  CDR encode/decode. Architecture sketch in
   [Documentation Trail Station 05 → typescript-wasm](../../documentation/05-integration/typescript-wasm.md).
-- RTPS-Wire-Decode im Browser — theoretisch moeglich, aber ohne
-  UDP-Pfad selten sinnvoll.
+- RTPS wire decode in the browser — theoretically possible, but without
+  a UDP path rarely useful.
 
 ## Build
 
 ```bash
 cd crates/ts-wasm
-# Node-Target (fuer Tests + Server-Side):
+# Node target (for tests + server-side):
 wasm-pack build --release --target nodejs --out-dir pkg-node
-# Web-Target (fuer Browser via ES-Modules):
+# Web target (for the browser via ES modules):
 wasm-pack build --release --target web --out-dir pkg-web
 ```
 
-## Smoke-Test
+## Smoke test
 
 ```bash
 node --test crates/ts-wasm/test/smoke.test.mjs
 ```
 
-Verifiziert Encode/Decode-Roundtrip in LE/BE, Bytes-Blob, Version.
+Verifies the encode/decode roundtrip in LE/BE, bytes blob, version.
 
-## Use-Case-Beispiele
+## Use-case examples
 
-### CDR-Validation im Browser-Frontend
+### CDR validation in the browser frontend
 
 ```ts
 import init, { CdrEncoder } from "@zerodds/ts-wasm";
@@ -52,16 +52,16 @@ const enc = new CdrEncoder(0); // little-endian
 enc.writeU32(temperature);
 enc.writeString(sensorId);
 const cdr = enc.finish();
-ws.send(cdr); // an WebSocket-Gateway
+ws.send(cdr); // to the WebSocket gateway
 ```
 
-### Schema-konformer Type-Check ohne Server-Roundtrip
+### Schema-conform type check without a server roundtrip
 
-Form-Eingaben gegen IDL-Typ validieren bevor sie ueber's Netz gehen:
-Encoder erzwingt Range-Checks (z.B. write_u8 lehnt 256 ab),
-Alignment-Bugs werden lokal sichtbar.
+Validate form inputs against the IDL type before they go over the wire:
+the encoder enforces range checks (e.g. write_u8 rejects 256),
+alignment bugs become visible locally.
 
-## Bundle-Groesse
+## Bundle size
 
-- Node-Build (`pkg-node/`): WASM ~ 45 kB optimized via `wasm-opt -Oz`
-- Web-Build (`pkg-web/`): identisches WASM, nur anderer JS-Glue.
+- Node build (`pkg-node/`): WASM ~ 45 kB optimized via `wasm-opt -Oz`
+- Web build (`pkg-web/`): identical WASM, only different JS glue.

@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! [`Replier`] — Server-Seite eines DDS-RPC-Service (Spec §7.10).
+//! [`Replier`] — server side of a DDS-RPC service (Spec §7.10).
 //!
-//! Threading-Modell: spiegelt [`crate::requester::Requester`]. `tick()`
-//! liest pending Requests, ruft den User-Handler synchron, schreibt das
-//! Reply mit `related_request_id` zurueck. Caller orchestriert den Tick
-//! selbst — kein eigener Thread.
+//! Threading model: mirrors [`crate::requester::Requester`]. `tick()`
+//! reads pending requests, calls the user handler synchronously, writes the
+//! reply with `related_request_id` back. The caller orchestrates the tick
+//! itself — no dedicated thread.
 //!
-//! Spec-Referenz: §7.10 (Replier-Behaviour). `related_request_id`
-//! wandert in dieser Foundation-Stufe ueber den Wire-Frame im
-//! [`ReplyHeader`]; die parallele Inline-QoS-Variante mit
-//! `PID_RELATED_SAMPLE_IDENTITY` (Spec §7.8.2) ist C6.1.D-Scope.
+//! Spec reference: §7.10 (replier behaviour). `related_request_id`
+//! travels over the wire frame in the [`ReplyHeader`] at this foundation
+//! stage; the parallel inline-QoS variant with
+//! `PID_RELATED_SAMPLE_IDENTITY` (Spec §7.8.2) is C6.1.D scope.
 
 extern crate alloc;
 
@@ -37,19 +37,19 @@ use crate::wire_codec::{decode_request_frame, encode_reply_frame};
 // ReplierHandler
 // ---------------------------------------------------------------------
 
-/// User-Hook, der einen einzelnen Request bearbeitet.
+/// User hook that handles a single request.
 ///
-/// Sync-only — die Foundation-Stufe ruft den Handler direkt im
-/// `tick()`-Pfad auf. Async-Variante ist C6.1.D.
+/// Sync-only — the foundation stage calls the handler directly in the
+/// `tick()` path. The async variant is C6.1.D.
 pub trait ReplierHandler<TIn, TOut>: Send + Sync {
-    /// Bearbeitet einen Request. `Ok(reply)` ⇒ erfolgreiches Reply mit
-    /// `RemoteExceptionCode::Ok`. `Err(code)` ⇒ Reply mit dem
-    /// gegebenen Exception-Code und leerer Payload.
+    /// Handles a request. `Ok(reply)` ⇒ successful reply with
+    /// `RemoteExceptionCode::Ok`. `Err(code)` ⇒ reply with the
+    /// given exception code and an empty payload.
     fn handle(&self, request: TIn) -> Result<TOut, RemoteExceptionCode>;
 }
 
-/// Convenience-Adapter, der eine `Fn(TIn) -> Result<TOut, RemoteExceptionCode>`-
-/// Closure als [`ReplierHandler`] verfuegbar macht.
+/// Convenience adapter that makes an `Fn(TIn) -> Result<TOut, RemoteExceptionCode>`
+/// closure available as a [`ReplierHandler`].
 pub struct FnHandler<F, TIn, TOut>
 where
     F: Fn(TIn) -> Result<TOut, RemoteExceptionCode> + Send + Sync,
@@ -62,7 +62,7 @@ impl<F, TIn, TOut> FnHandler<F, TIn, TOut>
 where
     F: Fn(TIn) -> Result<TOut, RemoteExceptionCode> + Send + Sync,
 {
-    /// Wrappt eine Closure.
+    /// Wraps a closure.
     pub fn new(f: F) -> Self {
         Self {
             f,
@@ -84,7 +84,7 @@ where
 // Replier
 // ---------------------------------------------------------------------
 
-/// Server-Seite eines DDS-RPC-Service.
+/// Server side of a DDS-RPC service.
 pub struct Replier<TIn: DdsType, TOut: DdsType> {
     service_name: String,
     instance_name: String,
@@ -107,10 +107,10 @@ impl<TIn: DdsType, TOut: DdsType> core::fmt::Debug for Replier<TIn, TOut> {
 }
 
 impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Replier<TIn, TOut> {
-    /// Legt einen neuen Replier gegen `service_name` an.
+    /// Creates a new replier against `service_name`.
     ///
     /// # Errors
-    /// Siehe [`crate::requester::Requester::new`].
+    /// See [`crate::requester::Requester::new`].
     pub fn new(
         participant: &DomainParticipant,
         service_name: &str,
@@ -120,10 +120,10 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Replier<TIn,
         Self::with_instance(participant, service_name, "", qos, handler)
     }
 
-    /// Wie [`Self::new`], mit explizitem Instance-Namen.
+    /// Like [`Self::new`], with an explicit instance name.
     ///
     /// # Errors
-    /// Siehe [`crate::requester::Requester::with_instance`].
+    /// See [`crate::requester::Requester::with_instance`].
     pub fn with_instance(
         participant: &DomainParticipant,
         service_name: &str,
@@ -177,21 +177,21 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Replier<TIn,
         &self.instance_name
     }
 
-    /// Anzahl bisher erfolgreich verarbeiteter Requests.
+    /// Number of requests successfully processed so far.
     #[must_use]
     pub fn handled_count(&self) -> u64 {
         self.handled_count
             .load(std::sync::atomic::Ordering::Acquire)
     }
 
-    /// Anzahl Requests, die der Handler mit `Err(_)` quittiert hat.
+    /// Number of requests the handler acknowledged with `Err(_)`.
     #[must_use]
     pub fn error_count(&self) -> u64 {
         self.error_count.load(std::sync::atomic::Ordering::Acquire)
     }
 
-    /// Liest pending Requests, ruft den Handler, schreibt Reply zurueck.
-    /// Liefert die Anzahl der in diesem Tick verarbeiteten Requests.
+    /// Reads pending requests, calls the handler, writes the reply back.
+    /// Returns the number of requests processed in this tick.
     pub fn tick(&self) -> usize {
         let samples = match self.request_reader.take() {
             Ok(s) => s,
@@ -204,10 +204,10 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Replier<TIn,
                 Ok(t) => t,
                 Err(_) => continue,
             };
-            // Optional: Instance-Name-Filter — wenn unser Replier ein
-            // konkretes Instance-Name beansprucht, ignorieren wir
-            // Requests, die fuer einen anderen Instance-Namen gemeint
-            // sind (Spec §7.6.2 — Instance-Routing).
+            // Optional: instance-name filter — if our replier claims a
+            // concrete instance name, we ignore
+            // requests meant for a different instance name
+            // (Spec §7.6.2 — instance routing).
             if !self.instance_name.is_empty()
                 && !header.instance_name.is_empty()
                 && header.instance_name != self.instance_name
@@ -233,9 +233,9 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Replier<TIn,
                     let header = ReplyHeader::new(request_id, RemoteExceptionCode::Ok);
                     let frame = encode_reply_frame(&header, &user_buf);
                     if self.reply_writer.write(&RawBytes::new(frame)).is_err() {
-                        // Reply konnte nicht gesendet werden — Counters
-                        // bleiben konsistent: handler war ok, aber Reply
-                        // verloren. Wir zaehlen das nicht als Error.
+                        // The reply could not be sent — counters
+                        // stay consistent: the handler was ok, but the reply
+                        // was lost. We do not count that as an error.
                         continue;
                     }
                     self.handled_count
@@ -262,14 +262,14 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Replier<TIn,
         let _ = self.reply_writer.write(&RawBytes::new(frame));
     }
 
-    /// Test-Helper: Drainiert die offline-gequeueten Reply-Frames.
+    /// Test helper: drains the offline-queued reply frames.
     #[doc(hidden)]
     #[must_use]
     pub fn __drain_reply_writer(&self) -> Vec<Vec<u8>> {
         self.reply_writer.__drain_pending()
     }
 
-    /// Test-Helper: pusht einen Request-Frame direkt in die Reader-Inbox.
+    /// Test helper: pushes a request frame directly into the reader inbox.
     #[doc(hidden)]
     pub fn __push_request_raw(&self, bytes: Vec<u8>) -> RpcResult<()> {
         self.request_reader
@@ -405,7 +405,7 @@ mod tests {
             Replier::<RawBytes, RawBytes>::with_instance(&p, "Calc", "calc-A", &q, echo_handler())
                 .unwrap();
         let id = SampleIdentity::new([3u8; 16], 1);
-        // Header instance_name="calc-B" — wir sind calc-A → ignorieren.
+        // Header instance_name="calc-B" — we are calc-A → ignore.
         let frame = encode_request_frame(&RequestHeader::new(id, "calc-B"), &[1]);
         r.__push_request_raw(frame).unwrap();
         assert_eq!(r.tick(), 0);

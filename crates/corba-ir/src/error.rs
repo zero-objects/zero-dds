@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! IR-Fehler.
+//! IR errors.
 
 use alloc::string::String;
 
-/// Result-Alias.
+/// Result alias.
 pub type IrResult<T> = Result<T, IrError>;
 
-/// IR-Fehler.
+/// IR error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IrError {
-    /// `RepositoryId` ist nicht im Format `IDL:<scoped>:<version>`.
+    /// `RepositoryId` is not in the format `IDL:<scoped>:<version>`.
     InvalidRepositoryId(String),
-    /// `RepositoryId` schon vergeben.
+    /// `RepositoryId` already taken.
     DuplicateRepositoryId(String),
-    /// Lookup-Name nicht im Repository.
+    /// Lookup name not in the repository.
     LookupFailed(String),
-    /// `TypeCode` ist von Wire-Daten korrupt.
+    /// `TypeCode` is corrupt from wire data.
     InvalidTypeCode(String),
 }

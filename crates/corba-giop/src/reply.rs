@@ -37,39 +37,39 @@ use crate::error::{GiopError, GiopResult};
 use crate::service_context::ServiceContextList;
 use crate::version::Version;
 
-/// Reply-Status — alle 6 Spec-Werte (Spec §15.4.3.1 + §15.4.3.2).
+/// Reply status — all 6 spec values (Spec §15.4.3.1 + §15.4.3.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
 pub enum ReplyStatusType {
     /// `NO_EXCEPTION` — Operation success.
     NoException = 0,
-    /// `USER_EXCEPTION` — IDL-deklarierte User-Exception.
+    /// `USER_EXCEPTION` — IDL-declared user exception.
     UserException = 1,
-    /// `SYSTEM_EXCEPTION` — System-Level-Fault.
+    /// `SYSTEM_EXCEPTION` — system-level fault.
     SystemException = 2,
-    /// `LOCATION_FORWARD` — Server bittet Client, an einen anderen
-    /// Endpoint zu gehen (transient).
+    /// `LOCATION_FORWARD` — the server asks the client to go to a
+    /// different endpoint (transient).
     LocationForward = 3,
-    /// `LOCATION_FORWARD_PERM` — wie oben, aber persistent (GIOP 1.2+).
+    /// `LOCATION_FORWARD_PERM` — as above, but persistent (GIOP 1.2+).
     LocationForwardPerm = 4,
-    /// `NEEDS_ADDRESSING_MODE` — Server moechte einen anderen
-    /// `TargetAddress`-Discriminator (GIOP 1.2+).
+    /// `NEEDS_ADDRESSING_MODE` — the server wants a different
+    /// `TargetAddress` discriminator (GIOP 1.2+).
     NeedsAddressingMode = 5,
 }
 
 impl ReplyStatusType {
-    /// Diskriminanten-Wert.
+    /// Discriminant value.
     #[must_use]
     pub const fn as_u32(self) -> u32 {
         self as u32
     }
 
-    /// Parsing aus `unsigned long`.
+    /// Parse from `unsigned long`.
     ///
     /// # Errors
-    /// `UnknownReplyStatus` ausserhalb 0..=5; `Malformed` wenn der
-    /// Wert nicht zur GIOP-Version passt (LOCATION_FORWARD_PERM /
-    /// NEEDS_ADDRESSING_MODE in 1.0/1.1 nicht erlaubt).
+    /// `UnknownReplyStatus` outside 0..=5; `Malformed` when the
+    /// value does not match the GIOP version (LOCATION_FORWARD_PERM /
+    /// NEEDS_ADDRESSING_MODE not allowed in 1.0/1.1).
     pub fn from_u32(value: u32, version: Version) -> GiopResult<Self> {
         match value {
             0 => Ok(Self::NoException),
@@ -93,12 +93,12 @@ impl ReplyStatusType {
 pub struct Reply {
     /// `request_id`.
     pub request_id: u32,
-    /// Reply-Status-Discriminator.
+    /// Reply-status discriminator.
     pub reply_status: ReplyStatusType,
     /// `service_context_list`.
     pub service_context: ServiceContextList,
-    /// Body-Bytes (CDR-encoded `out`/`return`/`Exception`-Inhalt).
-    /// In GIOP 1.2 8-Byte-aligned ab Header-Start.
+    /// Body bytes (CDR-encoded `out`/`return`/exception content).
+    /// In GIOP 1.2, 8-byte aligned from the header start.
     pub body: Vec<u8>,
 }
 
@@ -106,9 +106,9 @@ impl Reply {
     /// CDR-Encode.
     ///
     /// # Errors
-    /// Buffer-Schreibfehler.
+    /// Buffer write error.
     pub fn encode(&self, version: Version, w: &mut BufferWriter) -> GiopResult<()> {
-        // Status-Validierung gegen Version.
+        // Validate status against version.
         match self.reply_status {
             ReplyStatusType::LocationForwardPerm | ReplyStatusType::NeedsAddressingMode
                 if !version.uses_v1_2_request_layout() =>
@@ -137,7 +137,7 @@ impl Reply {
     /// CDR-Decode.
     ///
     /// # Errors
-    /// Buffer-Lesefehler oder unbekannter Status.
+    /// Buffer read error or unknown status.
     pub fn decode(version: Version, r: &mut BufferReader<'_>) -> GiopResult<Self> {
         if version.uses_v1_2_request_layout() {
             let request_id = r.read_u32()?;

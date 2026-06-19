@@ -1,22 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Config-File-Parser fuer `zerodds-ws-bridged`.
+//! Config file parser for `zerodds-ws-bridged`.
 //!
 //! Spec: `zerodds-ws-bridge-1.0.md` §3.
 //!
-//! YAML-Subset (kein externer Parser im Workspace):
+//! YAML subset (no external parser in the workspace):
 //!
-//! * Top-Level Mapping (Schluessel-Wert).
-//! * Verschachtelte Mappings via Indent (2 Spaces).
-//! * Sequenzen via `- ` Prefix mit Indent.
-//! * Skalare: Strings (mit/ohne Quotes), Integer, Bool (`true`/`false`).
-//! * `#` Kommentare bis EOL.
-//! * `${VAR}` und `${VAR:-default}` ENV-Substitution vor dem Parse.
+//! * Top-level mapping (key-value).
+//! * Nested mappings via indent (2 spaces).
+//! * Sequences via `- ` prefix with indent.
+//! * Scalars: strings (with/without quotes), integers, bool (`true`/`false`).
+//! * `#` comments up to EOL.
+//! * `${VAR}` and `${VAR:-default}` env substitution before the parse.
 //!
-//! Bewusst kein generischer YAML-Parser — der Spec-Subset ist
-//! explizit; alles ausserhalb wird mit `ConfigError::Syntax` lehnt
-//! abgelehnt.
+//! Deliberately not a generic YAML parser — the spec subset is
+//! explicit; anything outside it is rejected with `ConfigError::Syntax`.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -25,52 +24,52 @@ use std::path::Path;
 use std::string::{String, ToString};
 use std::vec::Vec;
 
-/// Geparste Daemon-Config.
+/// Parsed daemon config.
 #[derive(Debug, Clone, Default)]
 pub struct DaemonConfig {
-    /// `listen: <addr>` — Bind-Address.
+    /// `listen: <addr>` — bind address.
     pub listen: String,
-    /// `domain: <id>` — DDS-Domain-ID.
+    /// `domain: <id>` — DDS domain id.
     pub domain: i32,
     /// `log_level: <level>`.
     pub log_level: String,
-    /// `topics:` Liste.
+    /// `topics:` list.
     pub topics: Vec<TopicConfig>,
-    /// `tls.enabled` — wenn true, müssen `tls_cert_file`+`tls_key_file`
-    /// gesetzt sein. Spec §7.1.
+    /// `tls.enabled` — if true, `tls_cert_file`+`tls_key_file` must
+    /// be set. Spec §7.1.
     pub tls_enabled: bool,
-    /// `tls.cert_file` — PEM-Cert-Pfad.
+    /// `tls.cert_file` — PEM cert path.
     pub tls_cert_file: String,
-    /// `tls.key_file` — PEM-Key-Pfad.
+    /// `tls.key_file` — PEM key path.
     pub tls_key_file: String,
-    /// `tls.client_ca_file` — PEM-CA-Bundle für mTLS Client-Auth.
+    /// `tls.client_ca_file` — PEM CA bundle for mTLS client auth.
     pub tls_client_ca_file: String,
     /// `auth.mode` — `none|bearer|jwt|mtls|sasl`. Spec §7.2.
     pub auth_mode: String,
-    /// `auth.bearer_token` — Single-Token-Form (Map mit einem Eintrag).
+    /// `auth.bearer_token` — single-token form (map with one entry).
     pub auth_bearer_token: Option<String>,
-    /// `auth.bearer_token_subject` — wer hinter dem Bearer steckt.
+    /// `auth.bearer_token_subject` — who is behind the bearer.
     pub auth_bearer_subject: Option<String>,
-    /// Topic-ACL: `topic → ("read,write" CSV von Subjects)`. Spec §7.3.
+    /// Topic ACL: `topic → ("read,write" CSV of subjects)`. Spec §7.3.
     pub topic_acl: std::collections::HashMap<String, (Vec<String>, Vec<String>)>,
-    /// `metrics.enabled` — schaltet den Prometheus-Endpoint (§8.2).
+    /// `metrics.enabled` — toggles the Prometheus endpoint (§8.2).
     pub metrics_enabled: bool,
-    /// Bind-Address fuer Admin-Endpoint (`/metrics`, `/catalog`,
-    /// `/healthz`). Wenn leer aber `metrics_enabled=true`: default
-    /// `127.0.0.1:9090`. Per CLI/`metrics.address` ueberschreibbar.
+    /// Bind address for the admin endpoint (`/metrics`, `/catalog`,
+    /// `/healthz`). If empty but `metrics_enabled=true`: default
+    /// `127.0.0.1:9090`. Overridable via CLI/`metrics.address`.
     pub metrics_addr: String,
 }
 
-/// Single Topic-Map-Entry.
+/// Single topic map entry.
 #[derive(Debug, Clone, Default)]
 pub struct TopicConfig {
-    /// `name:` — DDS-Topic-Name.
+    /// `name:` — DDS topic name.
     pub name: String,
-    /// `type:` — DDS-Type-Name.
+    /// `type:` — DDS type name.
     pub type_name: String,
     /// `direction:` — `in|out|bidir`.
     pub direction: String,
-    /// `ws_path:` — Override-URL-Pfad.
+    /// `ws_path:` — override URL path.
     pub ws_path: String,
     /// `qos.reliability:`.
     pub reliability: String,
@@ -80,20 +79,20 @@ pub struct TopicConfig {
     pub history_depth: i32,
 }
 
-/// Config-Fehler.
+/// Config error.
 #[derive(Debug, Clone)]
 pub enum ConfigError {
-    /// File-IO-Fehler.
+    /// File I/O error.
     Io(String),
-    /// YAML-Syntax-Fehler.
+    /// YAML syntax error.
     Syntax(String),
-    /// Pflicht-Feld fehlt.
+    /// A required field is missing.
     MissingField(String),
-    /// Wert-Typ unpassend.
+    /// Value type mismatch.
     BadValue {
-        /// Feldname.
+        /// Field name.
         field: String,
-        /// Roher Wert.
+        /// Raw value.
         value: String,
     },
 }
@@ -114,7 +113,7 @@ impl core::fmt::Display for ConfigError {
 impl std::error::Error for ConfigError {}
 
 impl DaemonConfig {
-    /// Default-Config (wenn weder File noch CLI-Override gesetzt sind).
+    /// Default config (when neither a file nor a CLI override is set).
     #[must_use]
     pub fn default_for_dev() -> Self {
         Self {
@@ -135,20 +134,20 @@ impl DaemonConfig {
         }
     }
 
-    /// Laedt + parst eine Config aus File.
+    /// Loads + parses a config from a file.
     ///
     /// # Errors
-    /// `Io` bei Read-Fehler, `Syntax`/`MissingField`/`BadValue` bei
-    /// fehlerhaftem YAML.
+    /// `Io` on a read error, `Syntax`/`MissingField`/`BadValue` on
+    /// malformed YAML.
     pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
         let raw = fs::read_to_string(path).map_err(|e| ConfigError::Io(e.to_string()))?;
         Self::load_from_str(&raw)
     }
 
-    /// Parst Config aus YAML-String. Public fuer Tests.
+    /// Parses a config from a YAML string. Public for tests.
     ///
     /// # Errors
-    /// Siehe [`ConfigError`].
+    /// See [`ConfigError`].
     pub fn load_from_str(raw: &str) -> Result<Self, ConfigError> {
         let expanded = expand_env_vars(raw);
         let nodes = parse_yaml_subset(&expanded)?;
@@ -279,11 +278,11 @@ impl DaemonConfig {
                     }
                 }
                 _ => {
-                    // Unbekannte top-level-keys werden NICHT als Fehler behandelt
-                    // (Forward-Compatibility), aber via stderr-WARN sichtbar gemacht,
-                    // damit Tippfehler oder Doku-Drift (z.B. veraltete `participant:` /
-                    // `websocket:` / `routes:` / `observability:` Sektionen) nicht
-                    // unbemerkt zu Default-Werten fuehren.
+                    // Unknown top-level keys are NOT treated as an error
+                    // (forward compatibility), but made visible via a stderr WARN,
+                    // so that typos or doc drift (e.g. outdated `participant:` /
+                    // `websocket:` / `routes:` / `observability:` sections) do not
+                    // silently lead to default values.
                     eprintln!(
                         "[zerodds-ws-bridged config] WARN: unknown top-level key {:?} ignored \
                          (typo or schema drift? expected one of: listen, domain, log_level, \
@@ -297,7 +296,7 @@ impl DaemonConfig {
     }
 }
 
-/// Slug-Algorithmus per Spec §5.1: `Chat::Message` → `/topics/chat/message`.
+/// Slug algorithm per Spec §5.1: `Chat::Message` → `/topics/chat/message`.
 #[must_use]
 pub fn default_ws_path(topic: &str) -> String {
     let mut buf = String::from("/topics/");
@@ -325,7 +324,7 @@ fn parse_bool(s: &str) -> bool {
     matches!(s.trim().to_ascii_lowercase().as_str(), "true" | "yes" | "1")
 }
 
-/// `${VAR}` und `${VAR:-default}` Substitution.
+/// `${VAR}` and `${VAR:-default}` substitution.
 #[must_use]
 pub fn expand_env_vars(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
@@ -352,7 +351,7 @@ pub fn expand_env_vars(input: &str) -> String {
     out
 }
 
-/// YAML-Subset-AST.
+/// YAML subset AST.
 #[derive(Debug, Clone)]
 enum YamlNode {
     Scalar(String),
@@ -369,12 +368,12 @@ impl YamlNode {
     }
 }
 
-/// Mini-YAML-Parser. Verarbeitet nur das Spec-Subset.
+/// Mini YAML parser. Processes only the spec subset.
 fn parse_yaml_subset(raw: &str) -> Result<BTreeMap<String, YamlNode>, ConfigError> {
-    // Tokenize: pro Zeile `(indent, content)`.
+    // Tokenize: `(indent, content)` per line.
     let mut lines: Vec<(usize, String)> = Vec::new();
     for line in raw.split('\n') {
-        // Strip `#`-Kommentare (ausserhalb von Quotes).
+        // Strip `#` comments (outside of quotes).
         let stripped = strip_comment(line);
         if stripped.trim().is_empty() {
             continue;
@@ -449,11 +448,11 @@ fn parse_block_map(
             map.insert(key, YamlNode::Scalar(unquote(&value)));
             i += 1;
         } else {
-            // Block-Child auf next-deeper Indent.
+            // Block child at the next-deeper indent.
             i += 1;
-            // Naechste nicht-leere Line bestimmt das Format.
+            // The next non-empty line determines the format.
             if i >= lines.len() || lines[i].0 <= indent {
-                // leere Body — als leerer Scalar.
+                // Empty body — as an empty scalar.
                 map.insert(key, YamlNode::Scalar(String::new()));
                 continue;
             }
@@ -491,7 +490,7 @@ fn parse_block_seq(
         if !content.starts_with('-') {
             break;
         }
-        // `- key: value`-Form vs `-` block child auf naechster Zeile
+        // `- key: value` form vs `-` block child on the next line
         let after_dash = if content == "-" {
             String::new()
         } else if content.starts_with("- ") {
@@ -500,7 +499,7 @@ fn parse_block_seq(
             return Err(ConfigError::Syntax("malformed seq item".to_string()));
         };
         if after_dash.is_empty() {
-            // Item-Body auf naechster Zeile.
+            // Item body on the next line.
             i += 1;
             if i >= lines.len() || lines[i].0 <= indent {
                 seq.push(YamlNode::Scalar(String::new()));
@@ -513,11 +512,11 @@ fn parse_block_seq(
         } else if let Some((k, v)) = after_dash.split_once(':') {
             let k = k.trim().to_string();
             let v = v.trim();
-            // Sammle: erster Eintrag inline + Folge-Lines mit `child_indent =
-            // indent + 2` als Map-Members.
+            // Collect: first entry inline + following lines with `child_indent =
+            // indent + 2` as map members.
             let mut sub = BTreeMap::new();
             if v.is_empty() {
-                // Block-Child fuer ersten Key auf naechster Zeile.
+                // Block child for the first key on the next line.
                 i += 1;
                 if i >= lines.len() {
                     sub.insert(k, YamlNode::Scalar(String::new()));
@@ -540,8 +539,8 @@ fn parse_block_seq(
                 sub.insert(k, YamlNode::Scalar(unquote(v)));
                 i += 1;
             }
-            // Sammle weitere Mitglieder dieses Map-Items: indent muss
-            // > seq-indent sein, exakt = indent + 2.
+            // Collect further members of this map item: indent must be
+            // > the seq indent, exactly = indent + 2.
             let item_member_indent = indent + 2;
             while i < lines.len() {
                 let (li, lc) = &lines[i];
@@ -586,7 +585,7 @@ fn parse_block_seq(
             }
             seq.push(YamlNode::Map(sub));
         } else {
-            // Inline-Scalar.
+            // Inline scalar.
             seq.push(YamlNode::Scalar(unquote(&after_dash)));
             i += 1;
         }
@@ -624,13 +623,13 @@ mod tests {
 
     #[test]
     fn unknown_top_level_keys_do_not_fail_parse() {
-        // Forward-Compatibility: unbekannte Top-Level-Keys (Tippfehler,
-        // veraltete Schema-Drift wie `participant:` / `websocket:` / `routes:`
-        // / `observability:` aus der alten yaml-example) duerfen den Parse
-        // NICHT als ConfigError abbrechen — sie werden via stderr-WARN
-        // sichtbar gemacht und der Daemon bootet mit Defaults fuer die
-        // fehlenden bekannten Keys. Geaenderte Semantik (z.B. zukuenftig
-        // strikt ablehnen) bricht diesen Test absichtlich.
+        // Forward compatibility: unknown top-level keys (typos,
+        // outdated schema drift like `participant:` / `websocket:` / `routes:`
+        // / `observability:` from the old yaml example) must NOT abort the
+        // parse as a ConfigError — they are made visible via a stderr WARN
+        // and the daemon boots with defaults for the missing known keys.
+        // Changed semantics (e.g. strict rejection in the future)
+        // deliberately break this test.
         let yaml = "\
 participant:
   domain_id: 7
@@ -640,9 +639,9 @@ typo_listen: \"1.2.3.4:9999\"
 listen: \"0.0.0.0:1234\"
 ";
         let cfg = DaemonConfig::load_from_str(yaml).expect("must not error on unknown keys");
-        // Der bekannte Key wirkt, alles unter unknown wird ignoriert.
+        // The known key takes effect, everything under unknown is ignored.
         assert_eq!(cfg.listen, "0.0.0.0:1234");
-        assert_eq!(cfg.domain, 0); // participant.domain_id wurde NICHT gemapped
+        assert_eq!(cfg.domain, 0); // participant.domain_id was NOT mapped
     }
 
     #[test]
@@ -652,8 +651,8 @@ listen: \"0.0.0.0:1234\"
 
     #[test]
     fn env_substitution_with_default() {
-        // Test mit einem garantiert nicht gesetzten Var-Namen
-        // (UUID-Style, damit wir nicht auf process-state vertrauen).
+        // Test with a guaranteed-unset variable name
+        // (UUID-style, so we do not rely on process state).
         let s = expand_env_vars("token: ${ZERODDS_PROBABLY_UNSET_VAR_e2afb0b9_test:-fallback}");
         assert!(s.contains("fallback"), "got: {s}");
     }

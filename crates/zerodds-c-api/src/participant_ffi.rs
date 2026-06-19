@@ -3,11 +3,11 @@
 
 //! DomainParticipant C-FFI (Spec §2.2.2.2.1 + DDS-PSM-Cxx §7.5.2).
 //!
-//! Implementiert die C-Surface der DomainParticipant-Operationen aus
-//! `docs/specs/zerodds-c-api-1.0.md` §2.2. QoS-Pointer akzeptieren in
-//! der RC1-Surface NULL (Default) oder werden in `qos.rs` definitiv
-//! mit `#[repr(C)]`-Layouts hinterlegt — die Funktionssignaturen hier
-//! ankern bereits den finalen ABI-Vertrag.
+//! Implements the C surface of the DomainParticipant operations from
+//! `docs/specs/zerodds-c-api-1.0.md` §2.2. QoS pointers in
+//! the RC1 surface accept NULL (default) or are backed definitively in `qos.rs`
+//! with `#[repr(C)]` layouts — the function signatures here
+//! already anchor the final ABI contract.
 
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
@@ -26,22 +26,22 @@ use crate::entities::{
     ZeroDdsTopic,
 };
 use crate::qos_ffi::{
-    ZeroDdsPublisherQos, ZeroDdsSubscriberQos, ZeroDdsTopicQos, pub_qos_from_c, sub_qos_from_c,
-    topic_qos_from_c,
+    ZeroDdsPublisherQos, ZeroDdsSubscriberQos, ZeroDdsTime, ZeroDdsTopicQos, pub_qos_from_c,
+    sub_qos_from_c, topic_qos_from_c,
 };
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Sicheres Cast `*const c_char` → `&str`. Liefert `Err` bei NULL oder
-/// wenn nicht UTF-8.
+/// Safe cast `*const c_char` → `&str`. Returns `Err` on NULL or
+/// if not UTF-8.
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
 unsafe fn cstr_to_str<'a>(p: *const c_char) -> Result<&'a str, ()> {
     if p.is_null() {
         return Err(());
     }
-    // SAFETY: NULL-Check oben + Caller-Kontrakt fuer C-string termination.
+    // SAFETY: NULL check above + caller contract for C-string termination.
     let cs = unsafe { CStr::from_ptr(p) };
     cs.to_str().map_err(|_| ())
 }
@@ -50,12 +50,12 @@ unsafe fn cstr_to_str<'a>(p: *const c_char) -> Result<&'a str, ()> {
 // Topic
 // ---------------------------------------------------------------------------
 
-/// Erzeugt ein Topic. Liefert NULL bei NULL-Argumenten oder Topic-Name-
-/// Konflikt mit anderem Type.
+/// Creates a topic. Returns NULL on NULL arguments or a topic-name
+/// conflict with another type.
 ///
 /// # Safety
-/// `p`, `name`, `type_name` muessen valide sein. `qos` darf NULL sein
-/// (Default aus `default_topic_qos`).
+/// `p`, `name`, `type_name` must be valid. `qos` may be NULL
+/// (default from `default_topic_qos`).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_create_topic(
     p: *mut ZeroDdsDomainParticipant,
@@ -67,7 +67,7 @@ pub unsafe extern "C" fn zerodds_dp_create_topic(
         return ptr::null_mut();
     }
     // SAFETY: see fn # Safety doc — p NULL-checked above; name/type_name/qos
-    // per Caller-Pledge; topics-Liste haelt nur Pointer aus Box::into_raw.
+    // per caller pledge; the topics list holds only pointers from Box::into_raw.
     unsafe {
         let pp = &*p;
         let name_s = match cstr_to_str(name) {
@@ -79,7 +79,7 @@ pub unsafe extern "C" fn zerodds_dp_create_topic(
             _ => return ptr::null_mut(),
         };
 
-        // QoS-Pfad: Caller-supplied wenn non-NULL, sonst Participant-Default.
+        // QoS path: caller-supplied if non-NULL, otherwise the participant default.
         let qos: TopicQos = if qos.is_null() {
             pp.default_topic_qos
                 .lock()
@@ -89,7 +89,7 @@ pub unsafe extern "C" fn zerodds_dp_create_topic(
             topic_qos_from_c(qos)
         };
 
-        // Konflikt-Check: existiert ein Topic gleichen Namens mit anderem Type?
+        // Conflict check: does a topic of the same name with a different type exist?
         if let Ok(list) = pp.topics.lock() {
             for &existing in list.iter() {
                 if existing.is_null() {
@@ -116,10 +116,10 @@ pub unsafe extern "C" fn zerodds_dp_create_topic(
     }
 }
 
-/// Loescht ein Topic.
+/// Deletes a topic.
 ///
 /// # Safety
-/// `p` und `t` muessen valide Handles sein und zueinander gehoeren.
+/// `p` and `t` must be valid handles and belong together.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_delete_topic(
     p: *mut ZeroDdsDomainParticipant,
@@ -128,7 +128,7 @@ pub unsafe extern "C" fn zerodds_dp_delete_topic(
     if p.is_null() || t.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: see fn # Safety doc — p+t NULL-checked above; t aus create_topic Box::into_raw.
+    // SAFETY: see fn # Safety doc — p+t NULL-checked above; t from create_topic Box::into_raw.
     unsafe {
         let pp = &*p;
         if (*t).participant != p {
@@ -146,10 +146,10 @@ pub unsafe extern "C" fn zerodds_dp_delete_topic(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Findet ein bereits angelegtes Topic via Name. Liefert NULL wenn keins.
+/// Finds an already-created topic by name. Returns NULL if none.
 ///
 /// # Safety
-/// `p`, `name` valide.
+/// `p`, `name` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_find_topic(
     p: *mut ZeroDdsDomainParticipant,
@@ -158,8 +158,8 @@ pub unsafe extern "C" fn zerodds_dp_find_topic(
     if p.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: see fn # Safety doc — p NULL-checked above; name per Caller-Pledge;
-    // topics-Liste haelt nur valide Box-Pointer.
+    // SAFETY: see fn # Safety doc — p NULL-checked above; name per caller pledge;
+    // the topics list holds only valid box pointers.
     unsafe {
         let pp = &*p;
         let name_s = match cstr_to_str(name) {
@@ -184,10 +184,10 @@ pub unsafe extern "C" fn zerodds_dp_find_topic(
 // Publisher
 // ---------------------------------------------------------------------------
 
-/// Erzeugt einen Publisher.
+/// Creates a publisher.
 ///
 /// # Safety
-/// `p` valide; `qos` darf NULL sein.
+/// `p` valid; `qos` may be NULL.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_create_publisher(
     p: *mut ZeroDdsDomainParticipant,
@@ -222,10 +222,10 @@ pub unsafe extern "C" fn zerodds_dp_create_publisher(
     }
 }
 
-/// Loescht einen Publisher.
+/// Deletes a publisher.
 ///
 /// # Safety
-/// Beide Handles valide; Publisher darf keine DataWriter mehr enthalten.
+/// Both handles valid; the publisher must contain no more DataWriters.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_delete_publisher(
     p: *mut ZeroDdsDomainParticipant,
@@ -234,7 +234,7 @@ pub unsafe extern "C" fn zerodds_dp_delete_publisher(
     if p.is_null() || pubh.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: see fn # Safety doc — p+pubh NULL-checked above; pubh aus create_publisher.
+    // SAFETY: see fn # Safety doc — p+pubh NULL-checked above; pubh from create_publisher.
     unsafe {
         let pp = &*p;
         let pb = &*pubh;
@@ -265,10 +265,10 @@ pub unsafe extern "C" fn zerodds_dp_delete_publisher(
 // Subscriber
 // ---------------------------------------------------------------------------
 
-/// Erzeugt einen Subscriber.
+/// Creates a subscriber.
 ///
 /// # Safety
-/// `p` valide; `qos` darf NULL sein.
+/// `p` valid; `qos` may be NULL.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_create_subscriber(
     p: *mut ZeroDdsDomainParticipant,
@@ -302,10 +302,10 @@ pub unsafe extern "C" fn zerodds_dp_create_subscriber(
     }
 }
 
-/// Loescht einen Subscriber.
+/// Deletes a subscriber.
 ///
 /// # Safety
-/// Beide Handles valide; Subscriber darf keine DataReader mehr halten.
+/// Both handles valid; the subscriber must hold no more DataReaders.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_delete_subscriber(
     p: *mut ZeroDdsDomainParticipant,
@@ -314,7 +314,7 @@ pub unsafe extern "C" fn zerodds_dp_delete_subscriber(
     if p.is_null() || sub.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: see fn # Safety doc — p+sub NULL-checked above; sub aus create_subscriber.
+    // SAFETY: see fn # Safety doc — p+sub NULL-checked above; sub from create_subscriber.
     unsafe {
         let pp = &*p;
         let sb = &*sub;
@@ -345,10 +345,10 @@ pub unsafe extern "C" fn zerodds_dp_delete_subscriber(
 // ContentFilteredTopic
 // ---------------------------------------------------------------------------
 
-/// Erzeugt ein ContentFilteredTopic.
+/// Creates a ContentFilteredTopic.
 ///
 /// # Safety
-/// `p`, `name`, `related`, `filter_expression` valide.
+/// `p`, `name`, `related`, `filter_expression` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_create_contentfilteredtopic(
     p: *mut ZeroDdsDomainParticipant,
@@ -362,7 +362,7 @@ pub unsafe extern "C" fn zerodds_dp_create_contentfilteredtopic(
         return ptr::null_mut();
     }
     // SAFETY: see fn # Safety doc — p+related NULL-checked above; name/filter/parameters
-    // per Caller-Pledge; parameters[0..param_count] muss valide sein wenn parameters != NULL.
+    // per caller pledge; parameters[0..param_count] must be valid if parameters != NULL.
     unsafe {
         let name_s = match cstr_to_str(name) {
             Ok(s) if !s.is_empty() => s.to_string(),
@@ -393,10 +393,10 @@ pub unsafe extern "C" fn zerodds_dp_create_contentfilteredtopic(
     }
 }
 
-/// Loescht ein ContentFilteredTopic.
+/// Deletes a ContentFilteredTopic.
 ///
 /// # Safety
-/// Beide Handles valide.
+/// Both handles valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_delete_contentfilteredtopic(
     p: *mut ZeroDdsDomainParticipant,
@@ -405,7 +405,7 @@ pub unsafe extern "C" fn zerodds_dp_delete_contentfilteredtopic(
     if p.is_null() || cft.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: see fn # Safety doc — p+cft NULL-checked above; cft aus create_contentfilteredtopic.
+    // SAFETY: see fn # Safety doc — p+cft NULL-checked above; cft from create_contentfilteredtopic.
     unsafe {
         if (*cft).participant != p {
             return ZeroDdsStatus::PreconditionNotMet as c_int;
@@ -422,7 +422,7 @@ pub unsafe extern "C" fn zerodds_dp_delete_contentfilteredtopic(
 /// Ignore Participant by InstanceHandle.
 ///
 /// # Safety
-/// `p` valide.
+/// `p` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_ignore_participant(
     p: *mut ZeroDdsDomainParticipant,
@@ -443,7 +443,7 @@ pub unsafe extern "C" fn zerodds_dp_ignore_participant(
 /// Ignore Topic by InstanceHandle.
 ///
 /// # Safety
-/// `p` valide.
+/// `p` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_ignore_topic(
     p: *mut ZeroDdsDomainParticipant,
@@ -464,7 +464,7 @@ pub unsafe extern "C" fn zerodds_dp_ignore_topic(
 /// Ignore Publication by InstanceHandle.
 ///
 /// # Safety
-/// `p` valide.
+/// `p` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_ignore_publication(
     p: *mut ZeroDdsDomainParticipant,
@@ -485,7 +485,7 @@ pub unsafe extern "C" fn zerodds_dp_ignore_publication(
 /// Ignore Subscription by InstanceHandle.
 ///
 /// # Safety
-/// `p` valide.
+/// `p` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_ignore_subscription(
     p: *mut ZeroDdsDomainParticipant,
@@ -510,10 +510,10 @@ pub unsafe extern "C" fn zerodds_dp_ignore_subscription(
 // Misc
 // ---------------------------------------------------------------------------
 
-/// Domain-ID des Participant.
+/// Domain ID of the participant.
 ///
 /// # Safety
-/// `p` valide.
+/// `p` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_get_domain_id(p: *mut ZeroDdsDomainParticipant) -> u32 {
     if p.is_null() {
@@ -523,11 +523,11 @@ pub unsafe extern "C" fn zerodds_dp_get_domain_id(p: *mut ZeroDdsDomainParticipa
     unsafe { (*p).domain_id }
 }
 
-/// Liveliness fuer alle vom Participant gehaltenen MANUAL_BY_PARTICIPANT-
-/// Writers asserten.
+/// Asserts liveliness for all MANUAL_BY_PARTICIPANT writers held by the
+/// participant.
 ///
 /// # Safety
-/// `p` valide.
+/// `p` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_assert_liveliness(p: *mut ZeroDdsDomainParticipant) -> c_int {
     if p.is_null() {
@@ -540,11 +540,35 @@ pub unsafe extern "C" fn zerodds_dp_assert_liveliness(p: *mut ZeroDdsDomainParti
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Loescht alle vom Participant gehaltenen Topics, Publisher, Subscriber
-/// rekursiv (Spec §2.2.2.2.1.10).
+/// Writes the participant's current wall-clock time into `*out`
+/// (Spec §2.2.2.1.1.21 `get_current_time`).
 ///
 /// # Safety
-/// `p` valide.
+/// `p` and `out` valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_dp_get_current_time(
+    p: *mut ZeroDdsDomainParticipant,
+    out: *mut ZeroDdsTime,
+) -> c_int {
+    if p.is_null() || out.is_null() {
+        return ZeroDdsStatus::BadHandle as c_int;
+    }
+    let now = zerodds_dcps::get_current_time();
+    // SAFETY: out NULL-checked above.
+    unsafe {
+        *out = ZeroDdsTime {
+            sec: now.sec,
+            nanosec: now.nanosec,
+        };
+    }
+    ZeroDdsStatus::Ok as c_int
+}
+
+/// Deletes all topics, publishers, subscribers held by the participant
+/// recursively (Spec §2.2.2.2.1.10).
+///
+/// # Safety
+/// `p` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_delete_contained_entities(
     p: *mut ZeroDdsDomainParticipant,
@@ -552,12 +576,12 @@ pub unsafe extern "C" fn zerodds_dp_delete_contained_entities(
     if p.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: see fn # Safety doc — p NULL-checked above; alle Listen halten nur
-    // Pointer aus Box::into_raw der entsprechenden create_*-fns.
+    // SAFETY: see fn # Safety doc — p NULL-checked above; all lists hold only
+    // pointers from Box::into_raw of the respective create_* fns.
     unsafe {
         let pp = &*p;
 
-        // Reihenfolge: erst Pub/Sub (incl. ihre DW/DR), dann Topics.
+        // Order: first Pub/Sub (incl. their DW/DR), then topics.
         let pubs: Vec<*mut ZeroDdsPublisher> = pp
             .publishers
             .lock()
@@ -567,9 +591,9 @@ pub unsafe extern "C" fn zerodds_dp_delete_contained_entities(
             if pub_ptr.is_null() {
                 continue;
             }
-            // delete_contained_entities auf Publisher: hier inline
-            // (Publisher-FFI implementiert das in publisher_ffi.rs, aber
-            // wir ziehen lokal ab).
+            // delete_contained_entities on the publisher: inline here
+            // (the publisher FFI implements this in publisher_ffi.rs, but
+            // we tear down locally).
             let pb = &*pub_ptr;
             if let Ok(mut dws) = pb.datawriters.lock() {
                 for dw in dws.drain(..) {
@@ -615,11 +639,11 @@ pub unsafe extern "C" fn zerodds_dp_delete_contained_entities(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Prueft ob ein InstanceHandle zu einer Entity in diesem Participant
-/// gehoert (Spec §2.2.2.2.1.11).
+/// Checks whether an InstanceHandle belongs to an entity in this participant
+/// (Spec §2.2.2.2.1.11).
 ///
 /// # Safety
-/// `p` valide.
+/// `p` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_contains_entity(
     p: *mut ZeroDdsDomainParticipant,
@@ -638,11 +662,11 @@ pub unsafe extern "C" fn zerodds_dp_contains_entity(
 // Discovery-Listing
 // ---------------------------------------------------------------------------
 
-/// Liefert die InstanceHandles aller entdeckten Remote-Participants.
-/// `out_handles[0..*out_count]` werden geschrieben, max `cap`.
+/// Returns the InstanceHandles of all discovered remote participants.
+/// `out_handles[0..*out_count]` are written, max `cap`.
 ///
 /// # Safety
-/// `p`, `out_handles`, `out_count` valide; `out_handles[0..cap]` writeable.
+/// `p`, `out_handles`, `out_count` valid; `out_handles[0..cap]` writeable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_get_discovered_participants(
     p: *mut ZeroDdsDomainParticipant,
@@ -654,7 +678,7 @@ pub unsafe extern "C" fn zerodds_dp_get_discovered_participants(
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — p+out_handles+out_count NULL-checked above;
-    // out_handles muss cap-Slots haben (Caller-Pledge).
+    // out_handles must have cap slots (caller pledge).
     unsafe {
         let pp = &*p;
         let handles = pp.dp.get_discovered_participants();
@@ -678,13 +702,13 @@ mod tests {
 
     fn mk_participant(domain: u32) -> *mut ZeroDdsDomainParticipant {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: f aus dpf_get_instance, statisch valide.
+        // SAFETY: f from dpf_get_instance, statically valid.
         unsafe { zerodds_dpf_create_participant(f, domain, ptr::null()) }
     }
 
     fn drop_participant(p: *mut ZeroDdsDomainParticipant) {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: p aus mk_participant; f statisch.
+        // SAFETY: p from mk_participant; f static.
         unsafe {
             zerodds_dp_delete_contained_entities(p);
             zerodds_dpf_delete_participant(f, p);
@@ -697,7 +721,7 @@ mod tests {
         assert!(!p.is_null());
         let n = c"MyTopic";
         let tn = c"MyType";
-        // SAFETY: p aus mk; n+tn statisch.
+        // SAFETY: p from mk; n+tn static.
         unsafe {
             let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
             assert!(!t.is_null());
@@ -715,7 +739,7 @@ mod tests {
         let n = c"X";
         let t1 = c"TypeA";
         let t2 = c"TypeB";
-        // SAFETY: p aus mk; n+t1+t2 statisch.
+        // SAFETY: p from mk; n+t1+t2 static.
         unsafe {
             let a = zerodds_dp_create_topic(p, n.as_ptr(), t1.as_ptr(), ptr::null());
             assert!(!a.is_null());
@@ -728,7 +752,7 @@ mod tests {
     #[test]
     fn create_delete_publisher_clean() {
         let p = mk_participant(13);
-        // SAFETY: p aus mk.
+        // SAFETY: p from mk.
         unsafe {
             let pubh = zerodds_dp_create_publisher(p, ptr::null());
             assert!(!pubh.is_null());
@@ -741,7 +765,7 @@ mod tests {
     #[test]
     fn create_delete_subscriber_clean() {
         let p = mk_participant(14);
-        // SAFETY: p aus mk.
+        // SAFETY: p from mk.
         unsafe {
             let sub = zerodds_dp_create_subscriber(p, ptr::null());
             assert!(!sub.is_null());
@@ -757,14 +781,14 @@ mod tests {
         let n = c"T";
         let tn = c"TT";
         let f = zerodds_dpf_get_instance();
-        // SAFETY: p aus mk; n+tn statisch; f statisch.
+        // SAFETY: p from mk; n+tn static; f static.
         unsafe {
             let _t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
             let _pubh = zerodds_dp_create_publisher(p, ptr::null());
             let _sub = zerodds_dp_create_subscriber(p, ptr::null());
             let rc = zerodds_dp_delete_contained_entities(p);
             assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
-            // Nun darf delete_participant gehen.
+            // Now delete_participant may proceed.
             let rc2 = zerodds_dpf_delete_participant(f, p);
             assert_eq!(rc2, ZeroDdsStatus::Ok as c_int);
         }
@@ -773,8 +797,25 @@ mod tests {
     #[test]
     fn domain_id_roundtrip() {
         let p = mk_participant(99);
-        // SAFETY: p aus mk.
+        // SAFETY: p from mk.
         assert_eq!(unsafe { zerodds_dp_get_domain_id(p) }, 99);
+        drop_participant(p);
+    }
+
+    #[test]
+    fn get_current_time_returns_nonzero() {
+        let p = mk_participant(98);
+        let mut t = ZeroDdsTime { sec: 0, nanosec: 0 };
+        // SAFETY: p from mk; t is a live stack slot.
+        let rc = unsafe { zerodds_dp_get_current_time(p, &mut t) };
+        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        assert!(t.sec > 0, "wall-clock seconds should be positive");
+        assert!(t.nanosec < 1_000_000_000, "nanosec in range");
+        // NULL out → BadHandle.
+        assert_eq!(
+            unsafe { zerodds_dp_get_current_time(p, ptr::null_mut()) },
+            ZeroDdsStatus::BadHandle as c_int
+        );
         drop_participant(p);
     }
 
@@ -787,7 +828,7 @@ mod tests {
         let expr = c"x > %0";
         let p1 = c"42";
         let params: [*const c_char; 1] = [p1.as_ptr()];
-        // SAFETY: p aus mk; alle CStr+param-arr statisch/stack-lokal.
+        // SAFETY: p from mk; all CStr+param array static/stack-local.
         unsafe {
             let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
             assert!(!t.is_null());
@@ -810,7 +851,7 @@ mod tests {
     #[test]
     fn ignore_participant_returns_status() {
         let p = mk_participant(17);
-        // SAFETY: p aus mk.
+        // SAFETY: p from mk.
         let rc = unsafe { zerodds_dp_ignore_participant(p, 12345) };
         // Valid handle path: rt may return Error if handle unknown — both Ok.
         assert!(rc == ZeroDdsStatus::Ok as c_int || rc == ZeroDdsStatus::Error as c_int);

@@ -264,19 +264,16 @@ impl<T: FlatStruct> Drop for FlatSampleRef<'_, T> {
 - **0 Heap-Allokation pro write** (Slot-Reuse).
 - **Same-Host-Pub-Latenz < UDP-Pub-Latenz / 5**.
 
-## §12 Roadmap
+## §12 Lieferumfang
 
-| Sprint | Inhalt |
-|--------|--------|
-| **F1** | FlatStruct-Trait + derive-Macro |
-| **F2** | PosixShmTransport-Slot-API (reserve_slot / commit_slot / release_slot) |
-| **F3** | DataWriter::write_flat + loan_slot/FlatSlot |
-| **F4** | DataReader::read_flat + FlatSampleRef + Drop-Hook |
-| **F5** | PID_SHM_LOCATOR encode/decode + SEDP-Push |
-| **F6** | Same-Host-Match-Logik (hostname+uid) |
-| **F7** | Wire-Pfad-Split: Same-Host SHM vs Cross-Host UDP parallel |
-| **F8** | Test-Suite: Unit + Integration + Cyclone-Compat |
-| **F9** | Latenz-Bench (criterion) |
-| **F10** | Doku + Examples |
+- FlatStruct-Trait + derive-Macro
+- PosixShmTransport-Slot-API (reserve_slot / commit_slot / release_slot)
+- DataWriter::write_flat + loan_slot/FlatSlot
+- DataReader::read_flat + FlatSampleRef
+- PID_SHM_LOCATOR encode/decode + SEDP-Push
+- Same-Host-Match-Logik (hostname+uid)
+- Same-Host-SHM- vs. Cross-Host-UDP-Wire-Pfad
+- Test-Suite (Unit + Integration + Cyclone-Compat) + Latenz-Bench + Doku
 
-Aufwand: ~3-5 PT.
+Der aktuelle Implementierungs-Stand pro Punkt steht im Coverage-Audit
+`docs/spec-coverage/zerodds-flatdata-1.0.md`.

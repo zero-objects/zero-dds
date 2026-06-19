@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Daemon-facing Convenience: `SecurityConfig` (CLI/YAML-Surface) →
-//! [`SecurityCtx`] (resolved). Wird von allen sechs Bridge-Daemons
-//! identisch verwendet — der Unterschied ist nur der Connection-Pfad,
-//! in den der Ctx gehängt wird.
+//! Daemon-facing convenience: `SecurityConfig` (CLI/YAML surface) →
+//! [`SecurityCtx`] (resolved). Used identically by all six bridge
+//! daemons — the only difference is the connection path into which the
+//! ctx is hooked.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -14,14 +14,14 @@ use crate::acl::{Acl, AclEntry, AclOp};
 use crate::auth::{AuthError, AuthInput, AuthMode, AuthSubject};
 use crate::tls::{TlsConfigError, load_server_config, load_server_config_with_client_auth};
 
-/// Aufgelöste Security-Config — Output dieser Schicht.
+/// Resolved security config — the output of this layer.
 #[derive(Clone)]
 pub struct SecurityCtx {
-    /// `Some(...)` ⇒ TLS aktiv; rustls-ServerConfig (mit oder ohne mTLS).
+    /// `Some(...)` ⇒ TLS active; rustls ServerConfig (with or without mTLS).
     pub tls: Option<Arc<rustls::ServerConfig>>,
-    /// Auth-Mode (none/bearer/jwt/mtls/sasl).
+    /// Auth mode (none/bearer/jwt/mtls/sasl).
     pub auth: Arc<AuthMode>,
-    /// Topic-ACL.
+    /// Topic ACL.
     pub acl: Arc<Acl>,
 }
 
@@ -34,39 +34,39 @@ impl core::fmt::Debug for SecurityCtx {
     }
 }
 
-/// Roh-Config aus YAML/CLI.
+/// Raw config from YAML/CLI.
 #[derive(Debug, Clone, Default)]
 pub struct SecurityConfig {
-    /// PEM-Cert-Pfad (`--tls-cert`).
+    /// PEM cert path (`--tls-cert`).
     pub tls_cert: Option<PathBuf>,
-    /// PEM-Key-Pfad (`--tls-key`).
+    /// PEM key path (`--tls-key`).
     pub tls_key: Option<PathBuf>,
-    /// PEM-CA-Bundle für mTLS Client-Cert-Validation (`--client-ca`).
+    /// PEM CA bundle for mTLS client cert validation (`--client-ca`).
     pub client_ca: Option<PathBuf>,
-    /// Auth-Mode-String (`none|bearer|jwt|mtls|sasl`).
+    /// Auth mode string (`none|bearer|jwt|mtls|sasl`).
     pub auth_mode: String,
-    /// Bearer-Tokens als Map `token → subject-name`.
+    /// Bearer tokens as a map `token → subject name`.
     pub bearer_tokens: HashMap<String, String>,
-    /// JWT-RSA-Public-Key (PKCS#1-DER).
+    /// JWT RSA public key (PKCS#1 DER).
     pub jwt_pubkey_der: Option<Vec<u8>>,
-    /// JWT erwarteter `iss`-Claim.
+    /// JWT expected `iss` claim.
     pub jwt_expected_iss: Option<String>,
-    /// SASL-PLAIN: `user → password`-Map (für AMQP/MQTT).
+    /// SASL-PLAIN: `user → password` map (for AMQP/MQTT).
     pub sasl_users: HashMap<String, String>,
-    /// ACL pro Topic-Name.
+    /// ACL per topic name.
     pub topic_acl: HashMap<String, AclEntry>,
-    /// ACL Default-Entry für unbekannte Topics. `None` = deny-by-default.
+    /// ACL default entry for unknown topics. `None` = deny-by-default.
     pub topic_acl_default: Option<AclEntry>,
 }
 
-/// Setup-Fehler.
+/// Setup error.
 #[derive(Debug)]
 pub enum SecurityError {
-    /// Cert-/Key-Loader meldet Fehler.
+    /// Cert/key loader reports an error.
     Tls(TlsConfigError),
-    /// Auth-Mode-String unbekannt.
+    /// Auth mode string unknown.
     UnknownAuthMode(String),
-    /// Auth-Mode benötigt Input der fehlt.
+    /// Auth mode requires input that is missing.
     MissingAuthInput(&'static str),
 }
 
@@ -88,11 +88,11 @@ impl From<TlsConfigError> for SecurityError {
     }
 }
 
-/// Baut [`SecurityCtx`] aus [`SecurityConfig`]. Wird beim Daemon-Start
-/// und beim SIGHUP-Reload aufgerufen.
+/// Builds [`SecurityCtx`] from [`SecurityConfig`]. Called at daemon
+/// start and on SIGHUP reload.
 ///
 /// # Errors
-/// [`SecurityError`] bei TLS-Config-Fehler oder unbekanntem Auth-Mode.
+/// [`SecurityError`] on TLS config error or unknown auth mode.
 pub fn build_ctx(cfg: &SecurityConfig) -> Result<SecurityCtx, SecurityError> {
     let tls = match (&cfg.tls_cert, &cfg.tls_key) {
         (Some(c), Some(k)) => match &cfg.client_ca {
@@ -161,14 +161,13 @@ pub fn build_ctx(cfg: &SecurityConfig) -> Result<SecurityCtx, SecurityError> {
     })
 }
 
-/// Authentication-Wrapper. Pro Daemon werden die jeweils relevanten
-/// Inputs gefüllt:
+/// Authentication wrapper. Each daemon fills the inputs relevant to it:
 /// * HTTP/WS/gRPC: `authorization_header`
-/// * mTLS (alle TCP-Bridges): `mtls_subject` aus `rustls::ServerConnection::peer_certificates()` extrahiert
-/// * MQTT/AMQP-SASL-PLAIN: `sasl_plain_blob`
+/// * mTLS (all TCP bridges): `mtls_subject` extracted from `rustls::ServerConnection::peer_certificates()`
+/// * MQTT/AMQP SASL-PLAIN: `sasl_plain_blob`
 ///
 /// # Errors
-/// [`AuthError`] bei jeder Form von Reject/Missing/Malformed.
+/// [`AuthError`] on any form of reject/missing/malformed.
 pub fn authenticate(
     auth: &AuthMode,
     authorization_header: Option<&str>,
@@ -183,25 +182,24 @@ pub fn authenticate(
     auth.validate(&input)
 }
 
-/// Convenience: Topic-ACL-Check.
+/// Convenience: topic ACL check.
 #[must_use]
 pub fn authorize(acl: &Acl, subject: &AuthSubject, op: AclOp, topic: &str) -> bool {
     acl.check(subject, op, topic)
 }
 
-/// Extrahiert ein `AuthSubject` aus einem `rustls::ServerConnection`
-/// peer-cert (für `AuthMode::Mtls`). Liefert `None` wenn kein Cert
-/// präsentiert wurde.
+/// Extracts an `AuthSubject` from a `rustls::ServerConnection` peer cert
+/// (for `AuthMode::Mtls`). Returns `None` if no cert was presented.
 ///
-/// Subject-Name = X.509-Subject-DN als String (DER-Bytes hex-encoded
-/// als Fallback, falls X.500 nicht parst).
+/// Subject name = X.509 subject DN as a string (DER bytes hex-encoded
+/// as a fallback if X.500 does not parse).
 #[must_use]
 pub fn extract_mtls_subject(conn: &rustls::ServerConnection) -> Option<AuthSubject> {
     let certs = conn.peer_certificates()?;
     let leaf = certs.first()?;
-    // Wir nehmen den Cert-DER-SHA256-Fingerprint als stable Identity.
-    // Spec §7.2: mTLS-Subject = SubjectDN ODER hash. Wir wählen hash für
-    // Determinismus ohne X.500-DN-Parser-Dep.
+    // We use the cert DER SHA256 fingerprint as a stable identity.
+    // Spec §7.2: mTLS subject = SubjectDN OR hash. We choose hash for
+    // determinism without an X.500 DN parser dep.
     let hash = sha256_hex(leaf.as_ref());
     Some(AuthSubject::new(format!("mtls:{hash}")))
 }

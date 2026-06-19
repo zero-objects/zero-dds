@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Gateway-Bridge-Helper.
+//! Gateway-bridge helper.
 //!
-//! Architektur-Referenz: `docs/architecture/09_delegation.md` §3 (Use-
-//! Cases) + §5.3 (Bridge-Sub-Gateway-Chaining).
+//! Architecture reference: `docs/architecture/09_delegation.md` §3 (use
+//! cases) + §5.3 (bridge sub-gateway chaining).
 //!
-//! Ein [`GatewayBridge`] sitzt typischerweise auf einer Wanne- oder
-//! Turm-Recheneinheit, die fuer mehrere Edge-Peers (Sensoren, ECUs)
-//! ohne eigenes Cert verantwortlich ist. Der Bridge:
+//! A [`GatewayBridge`] typically sits on a hull or
+//! turret compute unit responsible for several edge peers (sensors, ECUs)
+//! without their own cert. The bridge:
 //!
-//! 1. **Stellt** Delegation-Links pro Edge-Peer aus, signiert mit dem
-//!    eigenen Gateway-Schluessel.
-//! 2. **Verwaltet** die aktiven Delegations in einer `BTreeMap`
+//! 1. **Issues** delegation links per edge peer, signed with its
+//!    own gateway key.
+//! 2. **Manages** the active delegations in a `BTreeMap`
 //!    (`edge_guid → DelegationLink`).
-//! 3. **Reicht** auf Anfrage die volle [`DelegationChain`] an den
-//!    Discovery-Layer (SPDP-Property), wahlweise als 1-Hop oder
-//!    n-Hop wenn der Bridge selbst Delegatee einer hoeheren Ebene ist
-//!    (Doppelstern Wanne+Turm).
-//! 4. **Widerruft** Delegations explizit (Revocation-Liste, die im
-//!    naechsten SPDP-Beacon mitgeschickt wird).
+//! 3. **Provides** on request the full [`DelegationChain`] to the
+//!    discovery layer (SPDP property), optionally as 1-hop or
+//!    n-hop when the bridge is itself the delegatee of a higher level
+//!    (double-star hull+turret).
+//! 4. **Revokes** delegations explicitly (revocation list, sent along in the
+//!    next SPDP beacon).
 //!
-//! Der Bridge **fuehrt keinen Forwarding-Pfad selbst** — er ist der
-//! Policy-/Datenmodell-Helper, das eigentliche Re-Sealing und
-//! Forwarding der RTPS-Frames passiert in der DCPS-Runtime (Plan
-//! §Stufe j-g, kommt spaeter).
+//! The bridge **does not run a forwarding path itself** — it is the
+//! policy/data-model helper; the actual re-sealing and
+//! forwarding of the RTPS frames happens in the DCPS runtime (plan
+//! §stage j-g, comes later).
 
 extern crate alloc;
 
@@ -35,35 +35,35 @@ use alloc::vec::Vec;
 use zerodds_security_permissions::EdgeIdentityConfig;
 use zerodds_security_pki::{DelegationChain, DelegationError, DelegationLink, SignatureAlgorithm};
 
-/// Konfiguration eines Gateway-Bridges.
+/// Configuration of a gateway bridge.
 ///
-/// `gateway_guid` ist der 16-byte Subject-GUID, den die ausgestellten
-/// Delegations als `delegator_guid` tragen.
-/// `signing_key` ist das PKCS#8-DER-formatierte Privatkey-Material zum
-/// Signieren neuer Links — der Bridge haelt das im RAM, lade-Mechanismus
-/// liegt beim Caller (Filesystem, Secret-Manager, HSM).
-/// `algorithm` muss zum Trust-Anchor des Profile passen, gegen das die
-/// Chain spaeter validiert wird.
+/// `gateway_guid` is the 16-byte subject GUID that the issued
+/// delegations carry as their `delegator_guid`.
+/// `signing_key` is the PKCS#8-DER-formatted private key material for
+/// signing new links — the bridge holds it in RAM, the loading mechanism
+/// is up to the caller (filesystem, secret manager, HSM).
+/// `algorithm` must match the trust anchor of the profile against which the
+/// chain is later validated.
 #[derive(Debug, Clone)]
 pub struct GatewayBridgeConfig {
-    /// 16-byte Gateway-Participant-GUID.
+    /// 16-byte gateway participant GUID.
     pub gateway_guid: [u8; 16],
-    /// PKCS#8-DER-formatierter Privatkey.
+    /// PKCS#8-DER-formatted private key.
     pub signing_key: Vec<u8>,
-    /// Signatur-Algorithmus.
+    /// Signature algorithm.
     pub algorithm: SignatureAlgorithm,
 }
 
-/// Fehler aus Gateway-Bridge-Operationen.
+/// Error from gateway-bridge operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum GatewayBridgeError {
-    /// Edge ist nicht registriert.
+    /// The edge is not registered.
     UnknownEdge {
-        /// 16-byte Edge-GUID.
+        /// 16-byte edge GUID.
         edge_guid: [u8; 16],
     },
-    /// Sign-Operation fehlgeschlagen (delegiert aus PKI-Crate).
+    /// The sign operation failed (delegated from the PKI crate).
     DelegationFailed(DelegationError),
 }
 
@@ -87,39 +87,38 @@ impl From<DelegationError> for GatewayBridgeError {
     }
 }
 
-/// Result-Alias.
+/// Result alias.
 pub type GatewayBridgeResult<T> = Result<T, GatewayBridgeError>;
 
-/// Gateway-Bridge-Helper.
+/// Gateway-bridge helper.
 ///
 /// Lifecycle:
-/// 1. [`GatewayBridge::new`] mit `GatewayBridgeConfig`.
-/// 2. Optional [`GatewayBridge::with_upstream`] um den eigenen Bridge
-///    in eine bestehende Chain (z.B. von Wanne-GW zum eigenen Turm-GW)
-///    einzuhaengen.
-/// 3. Pro Edge: [`GatewayBridge::delegate_for`] um eine neue Delegation
-///    auszustellen.
-/// 4. [`GatewayBridge::chain_for`] reicht die Chain als Output fuer
-///    SPDP/SEDP-Properties.
-/// 5. [`GatewayBridge::revoke_delegation`] entfernt einen Edge.
+/// 1. [`GatewayBridge::new`] with `GatewayBridgeConfig`.
+/// 2. Optional [`GatewayBridge::with_upstream`] to hook the own bridge
+///    into an existing chain (e.g. from the hull GW to the own turret GW).
+/// 3. Per edge: [`GatewayBridge::delegate_for`] to issue a new
+///    delegation.
+/// 4. [`GatewayBridge::chain_for`] provides the chain as output for
+///    SPDP/SEDP properties.
+/// 5. [`GatewayBridge::revoke_delegation`] removes an edge.
 #[derive(Debug, Clone)]
 pub struct GatewayBridge {
     config: GatewayBridgeConfig,
-    /// Optional: Chain, die diesen Gateway als Delegatee einer hoeheren
-    /// Ebene legitimiert. Wird in [`Self::chain_for`] dem ausgestellten
-    /// Edge-Link voraus-geschoben.
+    /// Optional: chain that legitimizes this gateway as the delegatee of a
+    /// higher level. In [`Self::chain_for`] it is prepended to the issued
+    /// edge link.
     upstream: Option<DelegationChain>,
-    /// Aktive Edge-Delegations (`edge_guid → Link`).
+    /// Active edge delegations (`edge_guid → Link`).
     active: BTreeMap<[u8; 16], DelegationLink>,
-    /// Revocation-Liste: Edge-GUIDs, deren Delegation in der naechsten
-    /// SPDP-Welle als revoked annonciert werden soll. Caller leert
-    /// die Liste nach erfolgreichem Announce via
+    /// Revocation list: edge GUIDs whose delegation should be announced as
+    /// revoked in the next SPDP wave. The caller clears
+    /// the list after a successful announce via
     /// [`Self::take_revocations`].
     revocations: Vec<[u8; 16]>,
 }
 
 impl GatewayBridge {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(config: GatewayBridgeConfig) -> Self {
         Self {
@@ -130,34 +129,34 @@ impl GatewayBridge {
         }
     }
 
-    /// Setzt eine Upstream-Chain. Diese wird in [`Self::chain_for`]
-    /// vor den Edge-Link gehaengt — Sub-Gateway-Chaining fuer
-    /// Doppelstern (Turm-GW unter Wanne-GW).
+    /// Sets an upstream chain. In [`Self::chain_for`] it is
+    /// prepended to the edge link — sub-gateway chaining for
+    /// a double-star (turret GW under hull GW).
     ///
-    /// Validation der Upstream-Chain ist NICHT Teil des Bridge —
-    /// Caller muss vorher selbst `validate_chain` aufrufen, um
-    /// Mismatch-Profile-Fehlern vorzubeugen.
+    /// Validation of the upstream chain is NOT part of the bridge —
+    /// the caller must call `validate_chain` itself beforehand, to
+    /// prevent mismatch-profile errors.
     pub fn with_upstream(&mut self, upstream_chain: DelegationChain) {
         self.upstream = Some(upstream_chain);
     }
 
-    /// 16-byte Gateway-GUID (Read-only).
+    /// 16-byte gateway GUID (read-only).
     #[must_use]
     pub fn gateway_guid(&self) -> [u8; 16] {
         self.config.gateway_guid
     }
 
-    /// Stellt eine neue Delegation fuer einen Edge-Peer aus. Wenn der
-    /// Edge bereits delegiert war, wird der alte Link ueberschrieben
-    /// (typisch bei Ephemeral-Edge-Rotation, Plan §Stufe j-f).
+    /// Issues a new delegation for an edge peer. If the
+    /// edge was already delegated, the old link is overwritten
+    /// (typical with ephemeral-edge rotation, plan §stage j-f).
     ///
-    /// `not_before` und `not_after` sind absolute Unix-Sekunden;
-    /// `topic_patterns`/`partition_patterns` sind die Glob-Whitelist,
-    /// die der Edge im engsten Scope haben darf.
+    /// `not_before` and `not_after` are absolute Unix seconds;
+    /// `topic_patterns`/`partition_patterns` are the glob whitelist
+    /// that the edge may have in the narrowest scope.
     ///
     /// # Errors
-    /// [`GatewayBridgeError::DelegationFailed`] wenn der PKI-Sign-
-    /// Schritt fehlschlaegt (Cap-Verletzung, Key-Parse-Fehler).
+    /// [`GatewayBridgeError::DelegationFailed`] if the PKI sign
+    /// step fails (cap violation, key parse error).
     pub fn delegate_for(
         &mut self,
         edge_guid: [u8; 16],
@@ -177,23 +176,23 @@ impl GatewayBridge {
         )?;
         link.sign(&self.config.signing_key)?;
         self.active.insert(edge_guid, link);
-        // Edge wieder aktiv → ggf. aus Revocations entfernen, falls
-        // Re-Issue (z.B. nach Renewal).
+        // Edge active again → remove from revocations if needed, in case of
+        // a re-issue (e.g. after renewal).
         self.revocations.retain(|g| g != &edge_guid);
-        // Lookup nach erfolgreichem insert kann nicht fehlschlagen,
-        // aber clippy::expect_used verbietet expect — wir liefern
-        // unwrap_or via einen frischen Lookup.
+        // The lookup after a successful insert cannot fail,
+        // but clippy::expect_used forbids expect — we provide
+        // unwrap_or via a fresh lookup.
         self.active
             .get(&edge_guid)
             .ok_or(GatewayBridgeError::UnknownEdge { edge_guid })
     }
 
-    /// Widerruft die aktive Delegation fuer einen Edge. Der Edge wird
-    /// in die Revocation-Liste aufgenommen und kann ueber
-    /// [`Self::take_revocations`] dem Discovery-Layer mitgeteilt werden.
+    /// Revokes the active delegation for an edge. The edge is
+    /// added to the revocation list and can be communicated to the
+    /// discovery layer via [`Self::take_revocations`].
     ///
     /// # Errors
-    /// [`GatewayBridgeError::UnknownEdge`] wenn der Edge nicht aktiv ist.
+    /// [`GatewayBridgeError::UnknownEdge`] if the edge is not active.
     pub fn revoke_delegation(&mut self, edge_guid: [u8; 16]) -> GatewayBridgeResult<()> {
         if self.active.remove(&edge_guid).is_some() {
             if !self.revocations.contains(&edge_guid) {
@@ -205,14 +204,14 @@ impl GatewayBridge {
         }
     }
 
-    /// Liefert die ausgehende Chain fuer einen Edge.
+    /// Returns the outgoing chain for an edge.
     ///
-    /// 1-Hop-Bridge (kein Upstream): Chain = `[Edge-Link]`,
+    /// 1-hop bridge (no upstream): chain = `[edge link]`,
     ///   `origin_guid = gateway_guid`.
-    /// n-Hop-Bridge (mit Upstream): Chain = `upstream.links ++
-    ///   [Edge-Link]`, `origin_guid = upstream.origin_guid`.
+    /// n-hop bridge (with upstream): chain = `upstream.links ++
+    ///   [edge link]`, `origin_guid = upstream.origin_guid`.
     ///
-    /// Returns `None` wenn der Edge nicht aktiv ist.
+    /// Returns `None` if the edge is not active.
     #[must_use]
     pub fn chain_for(&self, edge_guid: &[u8; 16]) -> Option<DelegationChain> {
         let edge_link = self.active.get(edge_guid)?.clone();
@@ -226,58 +225,58 @@ impl GatewayBridge {
         }
     }
 
-    /// Anzahl aktiver Edge-Delegations.
+    /// Number of active edge delegations.
     #[must_use]
     pub fn active_count(&self) -> usize {
         self.active.len()
     }
 
-    /// True wenn ein Edge aktiv delegiert ist.
+    /// True if an edge is actively delegated.
     #[must_use]
     pub fn has_edge(&self, edge_guid: &[u8; 16]) -> bool {
         self.active.contains_key(edge_guid)
     }
 
-    /// Iteriert ueber alle aktiven Edge-Delegations.
+    /// Iterates over all active edge delegations.
     pub fn iter_active(&self) -> impl Iterator<Item = (&[u8; 16], &DelegationLink)> {
         self.active.iter()
     }
 
-    /// Liest und leert die Revocation-Liste (Discovery-Layer ruft das
-    /// pro SPDP-Beacon-Tick auf).
+    /// Reads and clears the revocation list (the discovery layer calls this
+    /// per SPDP beacon tick).
     pub fn take_revocations(&mut self) -> Vec<[u8; 16]> {
         core::mem::take(&mut self.revocations)
     }
 
-    /// Lese-Zugriff auf den Upstream-Chain (nuetzlich fuer Logging /
-    /// Metrics).
+    /// Read access to the upstream chain (useful for logging /
+    /// metrics).
     #[must_use]
     pub fn upstream(&self) -> Option<&DelegationChain> {
         self.upstream.as_ref()
     }
 
-    /// Rotiert Ephemeral-Edge-Identities deren Lifetime abgelaufen ist.
+    /// Rotates ephemeral edge identities whose lifetime has expired.
     ///
-    /// Workflow pro Ephemeral-Edge:
-    /// 1. Wenn Edge nicht aktiv → ueberspringen (init kommt via
-    ///    `delegate_for` durch den Caller).
-    /// 2. Wenn `now < link.not_after - lifetime/N` (N=Renewal-Window)
-    ///    → noch zu frisch, ueberspringen.
-    /// 3. Sonst: neue GuidPrefix ziehen (`prefix_generator(name)`),
-    ///    alten Edge revoken, neuen `delegate_for` mit `now`-basierten
-    ///    Zeitfenster ausstellen.
+    /// Workflow per ephemeral edge:
+    /// 1. If the edge is not active → skip (init comes via
+    ///    `delegate_for` by the caller).
+    /// 2. If `now < link.not_after - lifetime/N` (N=renewal window)
+    ///    → still too fresh, skip.
+    /// 3. Otherwise: pull a new GuidPrefix (`prefix_generator(name)`),
+    ///    revoke the old edge, issue a new `delegate_for` with a `now`-based
+    ///    time window.
     ///
-    /// `prefix_generator` ist ein Pluggable-Hook (z.B. ChaCha20-RNG
-    /// oder system-RNG); der Bridge ist deterministic-testbar weil
-    /// die Zufalls-Quelle vom Caller kommt.
+    /// `prefix_generator` is a pluggable hook (e.g. a ChaCha20 RNG
+    /// or a system RNG); the bridge is deterministically testable because
+    /// the randomness source comes from the caller.
     ///
-    /// Returns Liste der rotierten Edge-Namen.
+    /// Returns the list of rotated edge names.
     ///
     /// # Errors
-    /// Propagiert [`GatewayBridgeError::DelegationFailed`] wenn ein
-    /// neu-Sign fehlschlaegt — bricht aber NICHT die Loop-Schleife ab,
-    /// fehlerhafte Edges werden im `Err`-Tail-Vec gesammelt und der
-    /// Aufrufer kann entscheiden.
+    /// Propagates [`GatewayBridgeError::DelegationFailed`] if a
+    /// re-sign fails — but does NOT abort the loop;
+    /// faulty edges are collected in the `Err` tail vec and the
+    /// caller can decide.
     pub fn rotate_ephemerals<F>(
         &mut self,
         identities: &[EdgeIdentityConfig],
@@ -292,21 +291,21 @@ impl GatewayBridge {
         let mut rotated = Vec::new();
         let mut failed = Vec::new();
         for cfg in identities.iter().filter(|c| c.is_ephemeral()) {
-            // Edge-GUID = 12-byte Prefix + 4-byte EntityId 0x00.0x00.0x01.0xC1 (DDS-konv).
-            // Wir nehmen hier nur den Prefix als Identifier-Schluessel —
-            // GuidPrefix selbst entscheidet die Edge-Identity.
+            // Edge GUID = 12-byte prefix + 4-byte EntityId 0x00.0x00.0x01.0xC1 (DDS conv).
+            // Here we take only the prefix as the identifier key —
+            // the GuidPrefix itself decides the edge identity.
             let new_prefix = prefix_generator(&cfg.name);
-            // Reconstruct full 16-byte edge guid (Prefix+EntityId der
-            // Default-Participant-EntityId).
+            // Reconstruct full 16-byte edge guid (prefix + EntityId of the
+            // default participant EntityId).
             let mut edge_guid = [0u8; 16];
             edge_guid[..12].copy_from_slice(&new_prefix);
             edge_guid[12..].copy_from_slice(&[0x00, 0x00, 0x01, 0xC1]);
 
-            // Alle vorhandenen Edges mit gleichem Namen aufgreifen
-            // (matching ist hier prefix-basiert; in voller Impl haetten
-            // wir eine name-keyed Map). Da wir den name nicht im
-            // active-Map haben, gehen wir hier einfach raw vor:
-            // delegate_for ueberschreibt bei Konflikt.
+            // Pick up all existing edges with the same name
+            // (matching here is prefix-based; in a full impl we would
+            // have a name-keyed map). Since we don't have the name in the
+            // active map, we proceed raw here:
+            // delegate_for overwrites on conflict.
             let lifetime = i64::from(cfg.effective_lifetime());
             let new_not_after = now.saturating_add(lifetime);
             match self.delegate_for(
@@ -415,7 +414,7 @@ mod tests {
         assert!(!bridge.has_edge(&edge));
         let revocations = bridge.take_revocations();
         assert_eq!(revocations, alloc::vec![edge]);
-        // Liste ist nach take leer.
+        // The list is empty after take.
         assert!(bridge.take_revocations().is_empty());
     }
 
@@ -436,7 +435,7 @@ mod tests {
             .delegate_for(edge, alloc::vec![], alloc::vec![], 0, 9_000)
             .expect("delegate");
         bridge.revoke_delegation(edge).expect("revoke");
-        // Re-Delegate (z.B. nach Cert-Renewal) muss Revocation entfernen.
+        // Re-delegate (e.g. after a cert renewal) must remove the revocation.
         bridge
             .delegate_for(edge, alloc::vec![], alloc::vec![], 100, 10_000)
             .expect("redelegate");
@@ -446,13 +445,13 @@ mod tests {
 
     #[test]
     fn sub_gateway_chaining_two_hops() {
-        // Wanne-GW (gw1) delegates an Turm-GW (gw2). Turm-GW bridges
-        // edge `turm-imu`. Resulting chain has 2 links und origin = gw1.
+        // Hull GW (gw1) delegates to turret GW (gw2). The turret GW bridges
+        // edge `turm-imu`. The resulting chain has 2 links and origin = gw1.
         let gw1 = [0x11; 16];
         let gw2 = [0x22; 16];
         let edge = [0x33; 16];
 
-        // gw1 erzeugt einen Upstream-Link gw1 -> gw2.
+        // gw1 creates an upstream link gw1 -> gw2.
         let (sk1, _pk1) = ecdsa_p256_keypair();
         let mut upstream_link = DelegationLink::new(
             gw1,
@@ -468,7 +467,7 @@ mod tests {
         let upstream_chain =
             DelegationChain::new(gw1, alloc::vec![upstream_link]).expect("upstream chain");
 
-        // Turm-Bridge.
+        // Turret bridge.
         let (mut turm_bridge, _pk2) = make_bridge(gw2);
         turm_bridge.with_upstream(upstream_chain);
 
@@ -485,7 +484,7 @@ mod tests {
         assert_eq!(chain.depth(), 2);
         assert_eq!(chain.origin_guid, gw1);
         assert_eq!(chain.edge_guid(), Some(edge));
-        // Letzter Link ist gw2 -> edge.
+        // The last link is gw2 -> edge.
         assert_eq!(chain.links.last().unwrap().delegator_guid, gw2);
         assert_eq!(chain.links.last().unwrap().delegatee_guid, edge);
     }
@@ -535,17 +534,17 @@ mod tests {
             DelegationProfile, TrustAnchor, TrustPolicy, validate_chain,
         };
 
-        // Setup: gw1 (Wanne), gw2 (Turm), edge.
+        // Setup: gw1 (hull), gw2 (turret), edge.
         let gw1 = [0x11; 16];
         let gw2 = [0x22; 16];
         let edge = [0x33; 16];
 
-        // Wanne-GW Schluessel-Pair.
+        // Hull-GW key pair.
         let (sk1, pk1) = ecdsa_p256_keypair();
-        // Turm-GW Schluessel-Pair (anderes Pair!).
+        // Turret-GW key pair (different pair!).
         let (sk2, pk2) = ecdsa_p256_keypair();
 
-        // Wanne erzeugt Upstream-Link gw1 -> gw2 (signiert mit sk1).
+        // The hull creates the upstream link gw1 -> gw2 (signed with sk1).
         let mut upstream_link = DelegationLink::new(
             gw1,
             gw2,
@@ -559,7 +558,7 @@ mod tests {
         upstream_link.sign(&sk1).unwrap();
         let upstream = DelegationChain::new(gw1, alloc::vec![upstream_link]).unwrap();
 
-        // Turm-Bridge (signiert mit sk2).
+        // Turret bridge (signed with sk2).
         let cfg = GatewayBridgeConfig {
             gateway_guid: gw2,
             signing_key: sk2,
@@ -579,7 +578,7 @@ mod tests {
 
         let chain = turm_bridge.chain_for(&edge).expect("chain");
 
-        // Profile mit Trust-Anchor = gw1 (pk1).
+        // Profile with trust anchor = gw1 (pk1).
         let mut algos = BTreeSet::new();
         algos.insert(SignatureAlgorithm::EcdsaP256.wire_id());
         let profile = DelegationProfile {
@@ -595,7 +594,7 @@ mod tests {
             require_ocsp: false,
         };
 
-        // Resolver liefert pk2 fuer gw2.
+        // The resolver returns pk2 for gw2.
         let resolver = move |g: &[u8; 16]| -> Option<(Vec<u8>, SignatureAlgorithm)> {
             if g == &gw2 {
                 Some((pk2.clone(), SignatureAlgorithm::EcdsaP256))
@@ -607,7 +606,7 @@ mod tests {
         let validated = validate_chain(&chain, &profile, 5_000, resolver).expect("validate");
         assert_eq!(validated.chain_depth, 2);
         assert_eq!(validated.edge_guid, edge);
-        // Scope-Intersection: "*" und "sensor/imu" → "sensor/imu".
+        // Scope intersection: "*" and "sensor/imu" → "sensor/imu".
         assert!(
             validated
                 .effective_topic_patterns
@@ -651,8 +650,8 @@ mod tests {
         );
         assert_eq!(rotated, alloc::vec!["ephemeral-edge".to_string()]);
         assert!(failed.is_empty());
-        // Static-Edge wurde NICHT delegiert (Caller managed Static
-        // selbst).
+        // The static edge was NOT delegated (the caller manages static
+        // itself).
         assert_eq!(bridge.active_count(), 1);
     }
 
@@ -683,7 +682,7 @@ mod tests {
         assert_eq!(rotated.len(), 1);
         assert!(captured_name.load(core::sync::atomic::Ordering::SeqCst));
 
-        // Edge ist mit dem generierten Prefix aktiv.
+        // The edge is active with the generated prefix.
         let mut expected_guid = [0u8; 16];
         expected_guid[..12].copy_from_slice(&[0xDE; 12]);
         expected_guid[12..].copy_from_slice(&[0x00, 0x00, 0x01, 0xC1]);
@@ -725,15 +724,15 @@ mod tests {
             lifetime_seconds: Some(60),
         }];
 
-        // Erste Rotation mit Prefix [0x11; 12].
+        // First rotation with prefix [0x11; 12].
         let (_, _) =
             bridge.rotate_ephemerals(&identities, 1_000, alloc::vec![], alloc::vec![], |_| {
                 [0x11; 12]
             });
-        // Zweite Rotation mit Prefix [0x22; 12] — alter Edge bleibt
-        // im active map (delegate_for ueberschreibt nur exact gleiche
-        // GUID). Beide sind aktiv. In Production wuerde der
-        // Discovery-Layer den alten via take_revocations evicten.
+        // Second rotation with prefix [0x22; 12] — the old edge stays
+        // in the active map (delegate_for only overwrites the exact same
+        // GUID). Both are active. In production the
+        // discovery layer would evict the old one via take_revocations.
         let (_, _) =
             bridge.rotate_ephemerals(&identities, 2_000, alloc::vec![], alloc::vec![], |_| {
                 [0x22; 12]

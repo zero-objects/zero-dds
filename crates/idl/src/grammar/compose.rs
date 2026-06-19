@@ -1,35 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Base+Delta-Komposition zu einer [`CompiledGrammar`] (T6.4).
+//! Base+delta composition into a [`CompiledGrammar`] (T6.4).
 //!
 //! Pipeline:
 //!
-//! 1. Base-Grammar → [`compile`](super::compile::compile) (EBNF-Desugar)
-//! 2. Fuer jeden Delta:
-//!    - `additional_productions` an die Productions-Liste anhaengen
-//!      (mit re-vergebenen IDs ab `current_count`)
-//!    - `alternative_extensions` auf die Ziel-Productions anwenden
-//!      (zusaetzliche Alternativen anhaengen)
-//! 3. Kein erneuter Desugar-Pass — Deltas sollen pre-desugart sein
-//!    (sie geben EBNF-frei vor;
-//!    spaeter koennte ein Delta-Compile-Pass folgen).
+//! 1. Base grammar → [`compile`](super::compile::compile) (EBNF desugar)
+//! 2. For each delta:
+//!    - append `additional_productions` to the productions list
+//!      (with IDs reassigned from `current_count`)
+//!    - apply `alternative_extensions` to the target productions
+//!      (append additional alternatives)
+//! 3. No second desugar pass — deltas should be pre-desugared
+//!    (they are specified EBNF-free;
+//!    a delta compile pass could follow later).
 //!
 //! # Memory
 //!
-//! Wie [`compile`](super::compile::compile) nutzt diese Funktion
-//! [`Box::leak`] fuer dynamische Production-Allokationen — siehe
-//! Compile-Modul-Doc fuer Begruendung.
+//! Like [`compile`](super::compile::compile), this function uses
+//! [`Box::leak`] for dynamic production allocations — see the
+//! compile module doc for the rationale.
 
 use super::compile::{CompiledGrammar, compile};
 use super::deltas::GrammarDelta;
 use super::{Alternative, Grammar, Production, ProductionId};
 
-/// Komponiert eine Base-Grammar mit beliebig vielen Deltas.
+/// Composes a base grammar with any number of deltas.
 ///
-/// Reihenfolge ist signifikant: spaetere Deltas koennen Productions
-/// erweitern, die ein vorheriger Delta hinzugefuegt hat. Konflikte
-/// (z.B. zwei Deltas, die dieselbe Alternative auf eine Production
-/// anhaengen) entstehen nicht — Alternativen sind kommutativ-additiv.
+/// Order is significant: later deltas can extend productions
+/// that an earlier delta added. Conflicts
+/// (e.g. two deltas appending the same alternative to a production)
+/// do not arise — alternatives are commutative-additive.
 #[must_use]
 pub fn compose(base: &Grammar, deltas: &[&GrammarDelta]) -> CompiledGrammar {
     let mut compiled = compile(base);
@@ -163,12 +163,12 @@ mod tests {
             .iter()
             .find(|p| p.name == "root")
             .expect("root");
-        // Erste Alternative ist die Base-`a`.
+        // First alternative is the base `a`.
         match root.alternatives[0].symbols {
             [Symbol::Terminal(TokenKind::Keyword("a"))] => {}
             other => panic!("expected base 'a' alternative first, got {other:?}"),
         }
-        // Zweite ist die Delta-`b`.
+        // Second is the delta `b`.
         match root.alternatives[1].symbols {
             [Symbol::Terminal(TokenKind::Keyword("b"))] => {}
             other => panic!("expected delta 'b' alternative second, got {other:?}"),
@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn compose_multiple_deltas_apply_in_sequence() {
-        // Zwei Deltas: erste fuegt Alternative "b" hinzu, zweite "d".
+        // Two deltas: the first adds alternative "b", the second "d".
         static EXTRA_2: &[Alternative] = &[alt_with(&[Symbol::Terminal(TokenKind::Keyword("d"))])];
         static EXT_2: &[AlternativeExtension] = &[AlternativeExtension {
             target: ProductionId(0),
@@ -205,10 +205,10 @@ mod tests {
 
     #[test]
     fn compose_extension_with_unknown_target_is_silently_skipped() {
-        // Vendor-Delta mit Tippfehler in target — sollte nicht crashen.
+        // Vendor delta with a typo in target — should not crash.
         static EXTRA: &[Alternative] = &[alt_with(&[Symbol::Terminal(TokenKind::Keyword("x"))])];
         static EXT: &[AlternativeExtension] = &[AlternativeExtension {
-            target: ProductionId(9999), // existiert nicht
+            target: ProductionId(9999), // does not exist
             extra_alternatives: EXTRA,
         }];
         static BAD_DELTA: GrammarDelta = GrammarDelta {

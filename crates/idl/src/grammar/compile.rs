@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Grammar-Compile-Pass: desugart `Symbol::Repeat` und `Symbol::Choice`
-//! zu rekursiven Hilfs-Productions.
+//! Grammar compile pass: desugars `Symbol::Repeat` and `Symbol::Choice`
+//! into recursive helper productions.
 //!
-//! Die Earley-Engine arbeitet nur auf reinen kontextfreien Grammatiken
-//! (Terminal + Nonterminal). EBNF-Konstrukte wie `<X>+`, `<X>*`,
-//! `[<X>]` und Inline-`(<A> | <B>)` werden hier in Hilfs-Productions
-//! umgeformt:
+//! The Earley engine works only on pure context-free grammars
+//! (terminal + nonterminal). EBNF constructs like `<X>+`, `<X>*`,
+//! `[<X>]` and inline `(<A> | <B>)` are transformed here into helper
+//! productions:
 //!
 //! - `Symbol::Repeat(OneOrMore, inner)` →
 //!   `_rep_N ::= inner | _rep_N inner`
@@ -17,63 +17,63 @@
 //! - `Symbol::Choice(branches)` →
 //!   `_chc_N ::= branch_0 | branch_1 | ...`
 //!
-//! Das Ergebnis [`CompiledGrammar`] besteht aus den Original-Productions
-//! plus den synthetisierten. Die ID-Reihenfolge ist `[original, ...,
-//! synthesized, ...]`. Original-Productions behalten ihre IDs, synthesized
-//! Productions bekommen neue IDs ab `original.len()`.
+//! The result [`CompiledGrammar`] consists of the original productions
+//! plus the synthesized ones. The ID order is `[original, ...,
+//! synthesized, ...]`. Original productions keep their IDs, synthesized
+//! productions get new IDs from `original.len()`.
 //!
-//! ## Implementierungs-Detail: `Box::leak`
+//! ## Implementation detail: `Box::leak`
 //!
-//! `Production` und `Alternative` haben `&'static [Symbol]`-Slices. Fuer
-//! synthesized Productions reichen diese in dynamisch allokierte Vecs. Wir
-//! nutzen [`Box::leak`], um sie zu `&'static`-Slices zu machen. Das
-//! bedeutet einen kleinen, einmaligen Memory-Leak pro
-//! [`compile`]-Aufruf — bei realistischen IDL-Grammars im niedrigen
-//! kB-Bereich. Fuer ein CLI-Tool oder Build-Pipeline-Step ist das
-//! akzeptabel; in Library-Settings sollte `compile()` einmalig pro
-//! Programm-Lebensdauer aufgerufen werden.
+//! `Production` and `Alternative` have `&'static [Symbol]` slices. For
+//! synthesized productions these reach into dynamically allocated Vecs. We
+//! use [`Box::leak`] to turn them into `&'static` slices. That
+//! means a small, one-time memory leak per
+//! [`compile`] call — in the low kB range for realistic IDL grammars.
+//! For a CLI tool or build-pipeline step that is
+//! acceptable; in library settings `compile()` should be called once per
+//! program lifetime.
 
 use super::{
     AltRef as _AltRef, Alternative, Grammar, IdlVersion, Production, ProductionId, RepeatKind,
     SpecRef, Symbol, TokenKind, TokenRule,
 };
 
-/// Compiliert eine [`Grammar`] zu einer EBNF-freien Form.
+/// Compiles a [`Grammar`] into an EBNF-free form.
 ///
-/// Wenn die Grammar keine `Symbol::Repeat`/`Symbol::Choice`-Symbole
-/// enthaelt, ist das Ergebnis strukturell identisch zur Input-Grammar
-/// (nur in einer owned [`CompiledGrammar`]-Form).
+/// If the grammar contains no `Symbol::Repeat`/`Symbol::Choice` symbols,
+/// the result is structurally identical to the input grammar
+/// (only in an owned [`CompiledGrammar`] form).
 #[must_use]
 pub fn compile(grammar: &Grammar) -> CompiledGrammar {
     CompileState::new(grammar).compile()
 }
 
-/// EBNF-freie Form einer [`Grammar`]. Wird von [`compile`] erzeugt; die
-/// Engine arbeitet primaer auf dieser Form.
+/// EBNF-free form of a [`Grammar`]. Produced by [`compile`]; the
+/// engine works primarily on this form.
 #[derive(Debug, Clone)]
 pub struct CompiledGrammar {
-    /// Menschenlesbarer Name (uebernommen aus der Quelle).
+    /// Human-readable name (taken from the source).
     pub name: &'static str,
-    /// IDL-Version (uebernommen).
+    /// IDL version (taken over).
     pub version: IdlVersion,
-    /// Productions in der Reihenfolge `[original_0, ..., original_n,
-    /// synthesized_0, ..., synthesized_m]`. Original behalten ihre IDs.
+    /// Productions in the order `[original_0, ..., original_n,
+    /// synthesized_0, ..., synthesized_m]`. Originals keep their IDs.
     pub productions: Vec<Production>,
-    /// Start-Production (uebernommen).
+    /// Start production (taken over).
     pub start: ProductionId,
-    /// Token-Regeln (uebernommen).
+    /// Token rules (taken over).
     pub token_rules: &'static [TokenRule],
 }
 
 impl CompiledGrammar {
-    /// Lookup einer Production anhand ihrer ID.
+    /// Lookup of a production by its ID.
     ///
-    /// Versucht erst den schnellen positional-Lookup (gilt fuer
-    /// kompilierte Base-Grammars, deren Productions in ID-Reihenfolge
-    /// liegen). Fallback: lineare Suche, falls die positional-Annahme
-    /// nicht haelt — das ist nach Delta-Komposition (T6.5) der Fall,
-    /// weil Vendor-Productions mit hohen IDs (>= 1000) ab ihrem
-    /// Anhaenge-Index liegen.
+    /// First tries the fast positional lookup (holds for
+    /// compiled base grammars whose productions lie in ID order).
+    /// Fallback: linear search if the positional assumption
+    /// does not hold — that is the case after delta composition (T6.5),
+    /// because vendor productions with high IDs (>= 1000) lie from their
+    /// append index.
     #[must_use]
     pub fn production(&self, id: ProductionId) -> Option<&Production> {
         if let Some(p) = self.productions.get(id.0 as usize) {
@@ -84,19 +84,19 @@ impl CompiledGrammar {
         self.productions.iter().find(|p| p.id == id)
     }
 
-    /// Start-Production-Lookup.
+    /// Start production lookup.
     #[must_use]
     pub fn start_production(&self) -> Option<&Production> {
         self.production(self.start)
     }
 
-    /// Anzahl Productions (original + synthesized).
+    /// Number of productions (original + synthesized).
     #[must_use]
     pub fn production_count(&self) -> usize {
         self.productions.len()
     }
 
-    /// Iteriert ueber alle Productions.
+    /// Iterates over all productions.
     pub fn productions_iter(&self) -> impl Iterator<Item = &Production> {
         self.productions.iter()
     }
@@ -115,7 +115,7 @@ impl super::GrammarLike for CompiledGrammar {
 }
 
 // ---------------------------------------------------------------------------
-// Compile-Implementierung
+// Compile implementation
 // ---------------------------------------------------------------------------
 
 struct CompileState<'g> {
@@ -134,7 +134,7 @@ impl<'g> CompileState<'g> {
     }
 
     fn compile(mut self) -> CompiledGrammar {
-        // Zuerst alle Original-Productions mit transformierten Symbolen.
+        // First all original productions with transformed symbols.
         let mut transformed: Vec<Production> = Vec::with_capacity(self.base.productions.len());
         for prod in self.base.productions {
             let new_alts: Vec<Alternative> = prod
@@ -155,8 +155,8 @@ impl<'g> CompileState<'g> {
             });
         }
 
-        // Original kommen zuerst, dann synthesized (ueber `productions` waehrend
-        // transform_symbols befuellt).
+        // Originals come first, then synthesized (filled via `productions` during
+        // transform_symbols).
         let mut all = transformed;
         all.append(&mut self.productions);
 
@@ -297,7 +297,7 @@ fn leak_name(name: String) -> &'static str {
     Box::leak(name.into_boxed_str())
 }
 
-// `AltRef` re-export-stub (parallel zum Pattern in idl42.rs).
+// `AltRef` re-export stub (parallel to the pattern in idl42.rs).
 #[allow(dead_code)]
 const _ALT_REF_TYPE: Option<_AltRef> = None;
 
@@ -365,14 +365,14 @@ mod tests {
         }];
         let compiled = compile(&dummy_grammar(PRODS));
         assert_eq!(compiled.production_count(), 2);
-        // Original wurde transformiert: erstes Symbol jetzt Nonterminal(1).
+        // The original was transformed: the first symbol is now Nonterminal(1).
         let a = compiled.production(ProductionId(0)).expect("a");
         assert_eq!(a.alternatives[0].symbols.len(), 1);
         assert_eq!(
             a.alternatives[0].symbols[0],
             Symbol::Nonterminal(ProductionId(1))
         );
-        // Synth-Production hat 2 Alternativen (single + cons).
+        // The synth production has 2 alternatives (single + cons).
         let rep = compiled.production(ProductionId(1)).expect("rep");
         assert_eq!(rep.alternatives.len(), 2);
         assert_eq!(rep.name, "_rep_1");
@@ -400,7 +400,7 @@ mod tests {
         let compiled = compile(&dummy_grammar(PRODS));
         let rep = compiled.production(ProductionId(1)).expect("rep");
         assert_eq!(rep.alternatives.len(), 2);
-        // Erste Alt ist empty (epsilon).
+        // The first alt is empty (epsilon).
         assert_eq!(rep.alternatives[0].symbols, &[] as &[Symbol]);
         assert_eq!(rep.alternatives[0].name, Some("empty"));
     }
@@ -458,7 +458,7 @@ mod tests {
 
     #[test]
     fn engine_recognizes_grammar_with_one_or_more_repeat() {
-        // A ::= "x"+    nimmt ein oder mehr "x".
+        // A ::= "x"+    takes one or more "x".
         use crate::engine::Engine;
         use crate::lexer::Token;
         const PRODS: &[Production] = &[Production {
@@ -489,14 +489,14 @@ mod tests {
         let five = [Token::synthetic(TokenKind::Keyword("x")); 5];
         assert!(engine.recognize(&five).is_ok());
 
-        // 0 x → reject (OneOrMore braucht mindestens eins)
+        // 0 x → reject (OneOrMore needs at least one)
         let zero: [Token<'static>; 0] = [];
         assert!(engine.recognize(&zero).is_err());
     }
 
     #[test]
     fn engine_recognizes_grammar_with_zero_or_more_repeat() {
-        // A ::= "x"*    nimmt null oder mehr "x".
+        // A ::= "x"*    takes zero or more "x".
         use crate::engine::Engine;
         use crate::lexer::Token;
         const PRODS: &[Production] = &[Production {
@@ -519,7 +519,7 @@ mod tests {
         let g = dummy_grammar(PRODS);
         let engine = Engine::new(&g);
 
-        // 0 x → ok (Empty erlaubt)
+        // 0 x → ok (empty allowed)
         let zero: [Token<'static>; 0] = [];
         assert!(engine.recognize(&zero).is_ok());
 
@@ -530,7 +530,7 @@ mod tests {
 
     #[test]
     fn engine_recognizes_grammar_with_optional_repeat() {
-        // A ::= ["x"] "y"   optional x, dann y.
+        // A ::= ["x"] "y"   optional x, then y.
         use crate::engine::Engine;
         use crate::lexer::Token;
         const PRODS: &[Production] = &[Production {

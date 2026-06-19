@@ -1,8 +1,8 @@
-//! Integrationtests fuer den Builtin-Topic-Reader (DDS 1.4
+//! Integration tests for the builtin topic reader (DDS 1.4
 //! §2.2.5, §2.2.2.2.1.7 `get_builtin_subscriber`).
 //!
-//! Diese Tests bauen ausschliesslich auf den nach aussen exportierten
-//! DCPS-Typen auf — `BuiltinSubscriber`, `DcpsParticipantBuiltinTopicData`,
+//! These tests build exclusively on the externally exported
+//! DCPS types — `BuiltinSubscriber`, `DcpsParticipantBuiltinTopicData`,
 //! `DcpsTopicBuiltinTopicData`, `DcpsPublicationBuiltinTopicData`,
 //! `DcpsSubscriptionBuiltinTopicData`.
 
@@ -33,7 +33,7 @@ fn get_builtin_subscriber_returns_subscriber() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(31, DomainParticipantQos::default());
     let bs = p.get_builtin_subscriber();
-    // Identitaet: zweimaliger get liefert dieselbe Instanz.
+    // Identity: getting twice returns the same instance.
     let bs2 = p.get_builtin_subscriber();
     assert!(std::sync::Arc::ptr_eq(&bs, &bs2));
 }
@@ -82,7 +82,7 @@ fn lookup_with_wrong_type_for_topic_returns_bad_parameter() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(34, DomainParticipantQos::default());
     let bs = p.get_builtin_subscriber();
-    // Type passt nicht zum Topic-Namen.
+    // Type does not match the topic name.
     let err = bs
         .lookup_datareader::<DcpsParticipantBuiltinTopicData>("DCPSPublication")
         .unwrap_err();
@@ -114,14 +114,14 @@ fn offline_builtin_readers_start_empty() {
 
 #[cfg(target_os = "linux")]
 mod linux_e2e {
-    //! Linux-only: SPDP-Beacon zwischen zwei Live-Participants ueber
-    //! Multicast erzeugt automatisch ein `DCPSParticipant`-Sample, ein
-    //! Pub/Sub erzeugt entsprechende `DCPSPublication`- /
-    //! `DCPSSubscription`- + `DCPSTopic`-Samples.
+    //! Linux-only: an SPDP beacon between two live participants over
+    //! multicast automatically produces a `DCPSParticipant` sample, and
+    //! a pub/sub produces the corresponding `DCPSPublication` /
+    //! `DCPSSubscription` + `DCPSTopic` samples.
     //!
-    //! Auf macOS ist Multicast-Loopback in der CI/Dev-Umgebung
-    //! schwach; die Spec-konformen Pfade sind dort durch die Unit-
-    //! Tests + Direct-Sink-Push abgedeckt.
+    //! On macOS, multicast loopback in the CI/dev environment is
+    //! weak; the spec-conformant paths are covered there by the unit
+    //! tests + direct-sink push.
     use super::*;
     use std::time::{Duration, Instant};
     use zerodds_dcps::{
@@ -154,17 +154,17 @@ mod linux_e2e {
             .lookup_datareader::<DcpsParticipantBuiltinTopicData>(TOPIC_NAME_DCPS_PARTICIPANT)
             .unwrap();
 
-        // Warte bis A B's Beacon verarbeitet hat.
+        // Wait until A has processed B's beacon.
         let ok = wait_until(Duration::from_secs(8), || !r.read().unwrap().is_empty());
         if !ok {
-            // CI ohne Multicast → Test-Skip.
-            eprintln!("Skip: kein SPDP-Multicast erreichbar in dieser Umgebung");
+            // CI without multicast → skip the test.
+            eprintln!("Skip: no SPDP multicast reachable in this environment");
             return;
         }
         let samples = r.take().unwrap();
         assert!(
             !samples.is_empty(),
-            "DCPSParticipant-Reader muss Sample liefern"
+            "DCPSParticipant reader must return a sample"
         );
     }
 
@@ -178,7 +178,7 @@ mod linux_e2e {
             .create_participant(102, DomainParticipantQos::default())
             .expect("participant B");
 
-        // B legt einen Writer an (→ SEDP-Pub-Announce an A).
+        // B creates a writer (→ SEDP pub-announce to A).
         let topic_b = p_b
             .create_topic::<RawBytes>("BltinTopic", TopicQos::default())
             .unwrap();
@@ -187,7 +187,7 @@ mod linux_e2e {
             .create_datawriter::<RawBytes>(&topic_b, DataWriterQos::default())
             .unwrap();
 
-        // A legt einen Reader an (→ SEDP-Sub-Announce an B).
+        // A creates a reader (→ SEDP sub-announce to B).
         let topic_a = p_a
             .create_topic::<RawBytes>("BltinTopic", TopicQos::default())
             .unwrap();
@@ -214,11 +214,11 @@ mod linux_e2e {
         });
 
         if !ok_pub && !ok_sub {
-            eprintln!("Skip: kein SPDP/SEDP-Multicast erreichbar");
+            eprintln!("Skip: no SPDP/SEDP multicast reachable");
             return;
         }
-        // Wenn die Discovery durch ist, muessen Topic-Reader auch
-        // synthetisierte DCPSTopic-Samples haben.
+        // Once discovery has completed, topic readers must also
+        // have synthesized DCPSTopic samples.
         if ok_pub {
             let samples = pub_reader.take().unwrap();
             assert!(!samples.is_empty());

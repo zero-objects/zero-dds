@@ -1,31 +1,31 @@
-//! C5.5 — Cyclone-Lueckenfueller: ManualByParticipant-WLP-Pulse.
+//! C5.5 — Cyclone gap-filler: ManualByParticipant WLP pulse.
 //!
-//! `cyclone_live_wlp.rs` deckt nur AUTOMATIC-WLP-Heartbeats.
-//! Dieser Test verifiziert, dass ein expliziter
-//! `assert_participant()`-Pulse (siehe DDS 1.4 §2.2.3.11
-//! ManualByParticipant) byte-genau auf den Wire geht und einen
-//! Cyclone-Reader als alive markieren wuerde.
+//! `cyclone_live_wlp.rs` only covers AUTOMATIC WLP heartbeats.
+//! This test verifies that an explicit
+//! `assert_participant()` pulse (see DDS 1.4 §2.2.3.11
+//! ManualByParticipant) goes onto the wire byte-exactly and would
+//! mark a Cyclone reader as alive.
 //!
-//! **Opt-in only** — `#[ignore]`. Aufruf:
+//! **Opt-in only** — `#[ignore]`. Invocation:
 //!
 //! ```bash
 //! cargo test -p zerodds-dcps --features live-interop \
 //!     --test cyclone_live_wlp_manual -- --ignored --nocapture
 //! ```
 //!
-//! # Spec-Bezug
+//! # Spec reference
 //!
-//! - DDSI-RTPS 2.5 §8.7.2.2.3 — ParticipantMessageData Wire-Format
+//! - DDSI-RTPS 2.5 §8.7.2.2.3 — ParticipantMessageData wire format
 //! - DDS 1.4 §2.2.3.11 — LIVELINESS.kind ManualByParticipant
 //!
-//! # Test-Ablauf
+//! # Test flow
 //!
-//! 1. ZeroDDS-Runtime auf Domain 42, WLP-Period auf 60s gesetzt
-//!    (langer AUTOMATIC-Default), damit nur unsere expliziten
-//!    `assert_participant()`-Pulses Pakete erzeugen.
-//! 2. ddsperf-Sub auf llvm — empfaengt unsere Pulses.
-//! 3. Wir rufen 3x `assert_participant()` mit 1s Abstand und checken
-//!    via tick(), dass jeder Aufruf ein WLP-Datagram emittiert.
+//! 1. ZeroDDS runtime on domain 42, WLP period set to 60s
+//!    (long AUTOMATIC default) so that only our explicit
+//!    `assert_participant()` pulses produce packets.
+//! 2. ddsperf sub on the Linux bench host — receives our pulses.
+//! 3. We call `assert_participant()` 3 times with a 1s gap and check
+//!    via tick() that each call emits a WLP datagram.
 
 #![allow(
     clippy::expect_used,
@@ -51,20 +51,20 @@ use zerodds_rtps::wire_types::{GuidPrefix, VendorId};
 #[test]
 #[ignore = "live cyclone interop — opt-in via --ignored + --features live-interop"]
 fn cyclone_live_wlp_manual_by_participant_pulse() {
-    // Wir testen die WLP-Endpoint-API direkt — kein voller Runtime-
-    // Spawn noetig, da der Pulse-Output deterministisch und
-    // unabhaengig vom AUTOMATIC-Tick ist.
+    // We test the WLP endpoint API directly — no full runtime
+    // spawn needed, since the pulse output is deterministic and
+    // independent of the AUTOMATIC tick.
     let mut wlp = WlpEndpoint::new(
         GuidPrefix::from_bytes([0xBB; 12]),
         VendorId::ZERODDS,
-        Duration::from_secs(60), // AUTOMATIC quasi aus
+        Duration::from_secs(60), // AUTOMATIC effectively off
     );
 
-    // 3 Manual-Pulses mit Pause dazwischen.
+    // 3 manual pulses with a pause in between.
     let mut emitted = 0usize;
     for _ in 0..3 {
         wlp.assert_participant();
-        // tick() liefert den manuellen Pulse als Datagram.
+        // tick() returns the manual pulse as a datagram.
         if let Ok(Some(_dg)) = wlp.tick(Duration::from_millis(0)) {
             emitted += 1;
         }
@@ -81,9 +81,9 @@ fn cyclone_live_wlp_manual_by_participant_pulse() {
 #[test]
 #[ignore = "live cyclone interop — opt-in via --ignored + --features live-interop"]
 fn cyclone_live_wlp_manual_by_topic_token() {
-    // ManualByTopic uebermittelt zusaetzlich ein Topic-Token im
-    // ParticipantMessageData (Vendor-Kind 0x02). Wir verifizieren
-    // dass das Token byte-genau auf den Wire kommt.
+    // ManualByTopic additionally conveys a topic token in the
+    // ParticipantMessageData (vendor kind 0x02). We verify
+    // that the token reaches the wire byte-exactly.
     let mut wlp = WlpEndpoint::new(
         GuidPrefix::from_bytes([0xCD; 12]),
         VendorId::ZERODDS,
@@ -95,7 +95,7 @@ fn cyclone_live_wlp_manual_by_topic_token() {
         .tick(Duration::from_millis(0))
         .expect("tick ok")
         .expect("expected datagram");
-    // Token kommt im Inline-Payload — wir suchen den Substring.
+    // The token arrives in the inline payload — we search for the substring.
     let needle = &token[..];
     let found = dg.windows(needle.len()).any(|w| w == needle);
     assert!(found, "topic token not present in WLP datagram: {dg:?}");

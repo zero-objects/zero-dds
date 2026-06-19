@@ -1,8 +1,8 @@
-//! Integrationtests ueber die DCPS-Public-API.
+//! Integration tests over the DCPS public API.
 //!
-//! Diese Tests nutzen **ausschliesslich** die nach aussen exportierten
-//! DCPS-Typen. Kein Zugriff auf `runtime::*` (ausser RuntimeConfig
-//! fuer Timing-Tuning), kein `__push_raw`.
+//! These tests use **only** the externally exported DCPS types. No access
+//! to `runtime::*` (except RuntimeConfig for timing tuning), no
+//! `__push_raw`.
 
 #![allow(
     clippy::expect_used,
@@ -64,9 +64,9 @@ mod common;
 
 #[cfg(target_os = "linux")]
 mod linux_e2e {
-    //! Linux-only: echter SPDP-Multicast-E2E ueber die Public-API, jetzt
-    //! mit `wait_for_matched_*` als Synchronisationspunkt. Damit entfaellt
-    //! der bisherige "blind poll + hope"-Ansatz und der Test wird stabil.
+    //! Linux-only: real SPDP-multicast E2E over the public API, now with
+    //! `wait_for_matched_*` as the synchronization point. This removes the
+    //! previous "blind poll + hope" approach and makes the test stable.
 
     use std::time::Duration;
 
@@ -80,7 +80,7 @@ mod linux_e2e {
 
     #[test]
     fn two_participants_exchange_samples_via_public_api() {
-        // Eigene Domain (20) + tight SPDP-Period (100 ms).
+        // Dedicated domain (20) + tight SPDP period (100 ms).
         let cfg = RuntimeConfig {
             tick_period: Duration::from_millis(20),
             spdp_period: Duration::from_millis(100),
@@ -113,7 +113,7 @@ mod linux_e2e {
             .create_datareader::<RawBytes>(&sub_topic, DataReaderQos::default())
             .expect("reader");
 
-        // Discovery-Sync ueber die Public-API. 5 s Budget deckt CI-Jitter.
+        // Discovery sync over the public API. A 5 s budget covers CI jitter.
         writer
             .wait_for_matched_subscription(1, super::common::match_timeout())
             .expect("writer sees subscriber");
@@ -125,7 +125,7 @@ mod linux_e2e {
             .write(&RawBytes::new(vec![0xDE, 0xAD, 0xBE, 0xEF]))
             .expect("write");
 
-        // wait_for_data statt busy-poll.
+        // wait_for_data instead of busy-poll.
         reader
             .wait_for_data(Duration::from_secs(3))
             .expect("sample arrives");
@@ -133,8 +133,8 @@ mod linux_e2e {
         assert_eq!(samples.len(), 1);
         assert_eq!(samples[0].data, vec![0xDE, 0xAD, 0xBE, 0xEF]);
 
-        // wait_for_acknowledgments: Reader hat bis hier via AckNack
-        // alles bestaetigt — sollte praktisch instant zurueckkommen.
+        // wait_for_acknowledgments: by now the reader has acknowledged
+        // everything via AckNack — should return practically instantly.
         writer
             .wait_for_acknowledgments(Duration::from_secs(3))
             .expect("writer acks complete");

@@ -7,9 +7,9 @@ pub const TPID_8021Q: u16 = 0x8100;
 /// Spec — IEEE 802.1ad (QinQ) TPID = `0x88a8`.
 pub const TPID_8021AD: u16 = 0x88A8;
 
-/// Spec §7.2.3 Tab 7.21 — IEEE 802.1Q VLAN Tag (4 Bytes Wire-Form).
+/// Spec §7.2.3 Tab 7.21 — IEEE 802.1Q VLAN tag (4-byte wire form).
 ///
-/// Wire-Layout:
+/// Wire layout:
 /// ```text
 ///   0                   1                   2                   3
 ///   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -17,7 +17,7 @@ pub const TPID_8021AD: u16 = 0x88A8;
 ///  |              TPID             | PCP |D|         VID           |
 ///  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 /// ```
-/// * TPID — `0x8100` (802.1Q) oder `0x88a8` (802.1ad / QinQ).
+/// * TPID — `0x8100` (802.1Q) or `0x88a8` (802.1ad / QinQ).
 /// * PCP (Priority Code Point) — 3 Bits (0..=7).
 /// * DEI (Drop Eligible Indicator) — 1 Bit.
 /// * VID (VLAN Identifier) — 12 Bits (1..=4094 valid; 0 + 4095
@@ -35,11 +35,11 @@ pub struct Ieee802VlanTag {
 }
 
 impl Ieee802VlanTag {
-    /// Konstruktor mit Validation.
+    /// Constructor with validation.
     ///
     /// # Errors
-    /// `Err(VlanError::PcpOutOfRange)` wenn `pcp > 7`.
-    /// `Err(VlanError::VidOutOfRange)` wenn `vid > 4095`.
+    /// `Err(VlanError::PcpOutOfRange)` if `pcp > 7`.
+    /// `Err(VlanError::VidOutOfRange)` if `vid > 4095`.
     pub fn new(tpid: u16, pcp: u8, dei: bool, vid: u16) -> Result<Self, VlanError> {
         if pcp > 7 {
             return Err(VlanError::PcpOutOfRange(pcp));
@@ -55,7 +55,7 @@ impl Ieee802VlanTag {
         })
     }
 
-    /// Encodet zu 4-Byte-Wire-Form (BE).
+    /// Encodes to 4-byte wire form (BE).
     #[must_use]
     pub fn to_wire(self) -> [u8; 4] {
         let mut out = [0u8; 4];
@@ -68,10 +68,10 @@ impl Ieee802VlanTag {
         out
     }
 
-    /// Decodet aus 4-Byte-Wire-Form.
+    /// Decodes from 4-byte wire form.
     ///
     /// # Errors
-    /// `Truncated` wenn `bytes.len() < 4`.
+    /// `Truncated` if `bytes.len() < 4`.
     pub fn from_wire(bytes: &[u8]) -> Result<Self, VlanError> {
         if bytes.len() < 4 {
             return Err(VlanError::Truncated);
@@ -90,21 +90,21 @@ impl Ieee802VlanTag {
         })
     }
 
-    /// Spec — VID 0 oder 4095 sind reserviert.
+    /// Spec — VID 0 or 4095 are reserved.
     #[must_use]
     pub const fn is_reserved_vid(self) -> bool {
         self.vid == 0 || self.vid == 4095
     }
 }
 
-/// VLAN-Validation-Fehler.
+/// VLAN validation error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VlanError {
-    /// PCP > 7 (3-bit-Limit).
+    /// PCP > 7 (3-bit limit).
     PcpOutOfRange(u8),
-    /// VID > 4095 (12-bit-Limit).
+    /// VID > 4095 (12-bit limit).
     VidOutOfRange(u16),
-    /// Wire-Bytes kuerzer als 4.
+    /// Wire bytes shorter than 4.
     Truncated,
 }
 

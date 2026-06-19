@@ -2,12 +2,17 @@
 
 ZeroDDS-vendor-spezifischer Unix-Domain-Socket-Transport für
 Container-IPC. **Nicht OMG-normativ** — Cyclone DDS und FastDDS haben
-keinen offiziellen UDS-Transport.
+keinen offiziellen UDS-Transport. Implementiert in:
+
+- `crates/transport-uds/` — Path-Resolution + SOCK_DGRAM-Format + Abstract-Namespace + Cleanup (`lib.rs`, `abstract_dgram.rs`)
+
+Der vendor-reservierte Locator-Kind-Wert (§9.4) ist eine Konstante in
+`crates/rtps/src/wire_types.rs`.
 
 | Spec-Family | Status |
 |---|---|
 | **OMG-normativ** | DDSI-RTPS 2.5 §9.4 LocatorKind (vendor-reserviert) — Locator-Wert in `crates/rtps/src/wire_types.rs` |
-| **ZeroDDS-eigene Spec** | Path-Resolution + SOCK_DGRAM-Format + Abstract-Namespace — diese Datei |
+| **ZeroDDS-eigene Spec** | Path-Resolution + SOCK_DGRAM-Format + Abstract-Namespace — [`zerodds-uds-transport-1.0.md`](https://github.com/zero-objects/zero-dds/blob/main/docs/spec-coverage/zerodds-uds-transport-1.0.md) |
 
 ## §1 Scope und Spec-Status
 

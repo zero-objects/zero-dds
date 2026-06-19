@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Topic-Name-Matching mit Wildcards — Spec-konform zu OMG POSIX-Glob.
+//! Topic-name matching with wildcards — spec-conform to OMG POSIX glob.
 //!
-//! Unterstuetzte Wildcards:
-//! * `*` — null oder mehr beliebige Zeichen.
-//! * `?` — genau ein Zeichen.
+//! Supported wildcards:
+//! * `*` — zero or more arbitrary characters.
+//! * `?` — exactly one character.
 //!
-//! Zweck: ein `<topic>*</topic>` im Permissions-XML matcht alle
-//! Topics; `<topic>sensor_*</topic>` matcht `sensor_temp`, `sensor_pressure`.
+//! Purpose: a `<topic>*</topic>` in the permissions XML matches all
+//! topics; `<topic>sensor_*</topic>` matches `sensor_temp`, `sensor_pressure`.
 
-/// Glob-Match. Rein iterativ/DP, kein Regex-Engine-Overhead.
+/// Glob match. Purely iterative/DP, no regex-engine overhead.
 #[must_use]
 pub fn topic_match(pattern: &str, name: &str) -> bool {
     let p: alloc::vec::Vec<char> = pattern.chars().collect();
     let n: alloc::vec::Vec<char> = name.chars().collect();
     let (m, k) = (n.len(), p.len());
-    // dp[i][j] = name[..i] matcht pattern[..j].
+    // dp[i][j] = name[..i] matches pattern[..j].
     let mut dp = alloc::vec![alloc::vec![false; k + 1]; m + 1];
     dp[0][0] = true;
     for j in 1..=k {

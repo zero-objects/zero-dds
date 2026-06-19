@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! OMG Time Service 1.1 PSM-Typen — Spec §2.2-§2.4.
+//! OMG Time Service 1.1 PSM types — Spec §2.2-§2.4.
 //!
-//! Spec-konforme IDL-PSM-Typen + Operations als Wrapper um den
-//! Plattform-`TimerEventService` aus `timer.rs`. Macht den
-//! ZeroDDS-CCM-Timer-Stack 1:1 spec-konform aufrufbar.
+//! Spec-compliant IDL-PSM types + operations as a wrapper around the
+//! platform `TimerEventService` from `timer.rs`. Makes the
+//! ZeroDDS CCM timer stack callable in a 1:1 spec-compliant manner.
 //!
-//! Cross-Ref Spec-Coverage `omg-time-1.1.md` §2.2.x / §2.3.x / §2.4.x.
+//! Cross-ref spec coverage `omg-time-1.1.md` §2.2.x / §2.3.x / §2.4.x.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -17,12 +17,12 @@ use std::sync::Arc;
 use crate::timer::{TimerCallback, TimerEventService, TimerHandle, TimerKind};
 
 // ---------------------------------------------------------------------------
-// §2.2.4 Exceptions — Spec-konform
+// §2.2.4 Exceptions — spec-compliant
 // ---------------------------------------------------------------------------
 
-/// Spec §2.2.4 — `TimerEventService`-Exception-Hierarchie.
+/// Spec §2.2.4 — `TimerEventService` exception hierarchy.
 ///
-/// Aequivalent zu den IDL-Exceptions:
+/// Equivalent to the IDL exceptions:
 ///
 /// ```text
 /// exception TimeUnavailable {};
@@ -34,13 +34,12 @@ use crate::timer::{TimerCallback, TimerEventService, TimerHandle, TimerKind};
 pub enum TimerError {
     /// Spec §2.2.4 `TimeUnavailable`.
     TimeUnavailable,
-    /// Spec §2.2.4 `TimerExpired` — Operation auf bereits gefeuertem
-    /// One-Shot-Timer.
+    /// Spec §2.2.4 `TimerExpired` — operation on an already-fired
+    /// one-shot timer.
     TimerExpired,
-    /// Spec §2.2.4 `InvalidTime` — Sec/NSec ausserhalb erlaubter Range.
+    /// Spec §2.2.4 `InvalidTime` — sec/nsec outside the allowed range.
     InvalidTime,
-    /// Spec §2.2.4 `InvalidEvent` — Event-Daten konnten nicht geparst
-    /// werden.
+    /// Spec §2.2.4 `InvalidEvent` — event data could not be parsed.
     InvalidEvent,
 }
 
@@ -59,22 +58,22 @@ impl core::fmt::Display for TimerError {
 impl std::error::Error for TimerError {}
 
 // ---------------------------------------------------------------------------
-// §2.2.3.1 Enum TimeType — Spec-konform
+// §2.2.3.1 Enum TimeType — spec-compliant
 // ---------------------------------------------------------------------------
 
 /// Spec §2.2.3.1 — Enum `TimeType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimeType {
-    /// Absolute Time (Wall-Clock).
+    /// Absolute time (wall clock).
     TtAbsolute,
-    /// Relative Time (von "now" gerechnet).
+    /// Relative time (measured from "now").
     TtRelative,
-    /// Periodic (Periode + Phase).
+    /// Periodic (period + phase).
     TtPeriodic,
 }
 
 impl TimeType {
-    /// Mapping zu `TimerKind` aus dem Plattform-Modul.
+    /// Mapping to `TimerKind` from the platform module.
     #[must_use]
     pub fn to_timer_kind(self) -> TimerKind {
         match self {
@@ -88,25 +87,25 @@ impl TimeType {
 // §2.2.3 Data Types CosTimerEvent
 // ---------------------------------------------------------------------------
 
-/// Spec §2.2.3 — `EventStatus`-Enum.
+/// Spec §2.2.3 — `EventStatus` enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventStatus {
-    /// Timer ist registriert, noch nicht gefeuert.
+    /// Timer is registered, not yet fired.
     EsTimeSet,
-    /// Timer ist gefeuert (One-Shot final).
+    /// Timer has fired (one-shot final).
     EsTimerFired,
-    /// Timer wurde explizit gecancelt.
+    /// Timer was explicitly cancelled.
     EsTimerCancelled,
 }
 
-/// Spec §2.2.3 — `TimerEventT`. Trägt Event-Time + Event-Daten.
+/// Spec §2.2.3 — `TimerEventT`. Carries event time + event data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimerEventT {
-    /// UTC-Zeit als Nanosekunden seit Unix-Epoch (UTO-Aequivalent).
+    /// UTC time as nanoseconds since the Unix epoch (UTO equivalent).
     pub utc: u64,
-    /// Event-Type-Identifier (analog `Components::EventBase`-Repository-ID).
+    /// Event type identifier (analogous to the `Components::EventBase` repository ID).
     pub event_type_id: String,
-    /// Optional: opaque Event-Daten (CDR-encoded).
+    /// Optional: opaque event data (CDR-encoded).
     pub event_data: Vec<u8>,
 }
 
@@ -115,8 +114,8 @@ pub struct TimerEventT {
 // ---------------------------------------------------------------------------
 
 /// Spec §2.4.3 — `event_time(in TimerEventT) -> UTO`.
-/// Liefert die `utc`-Komponente des `TimerEventT` als UTO-Aequivalent
-/// (Nanosekunden seit Unix-Epoch).
+/// Returns the `utc` component of the `TimerEventT` as a UTO equivalent
+/// (nanoseconds since the Unix epoch).
 #[must_use]
 pub fn event_time(ev: &TimerEventT) -> u64 {
     ev.utc
@@ -126,10 +125,10 @@ pub fn event_time(ev: &TimerEventT) -> u64 {
 // §2.3.1 TimerEventHandler
 // ---------------------------------------------------------------------------
 
-/// Spec §2.3 — `TimerEventHandler`-Wrapper.
+/// Spec §2.3 — `TimerEventHandler` wrapper.
 ///
-/// Trägt das `status`-Attribut spec-konform mit. Wird vom
-/// [`TimerEventServiceFacade::register`]-Aufruf erzeugt.
+/// Carries the `status` attribute in a spec-compliant way. Created by
+/// the [`TimerEventServiceFacade::register`] call.
 pub struct TimerEventHandler {
     handle: TimerHandle,
     status: std::sync::Mutex<EventStatus>,
@@ -138,7 +137,7 @@ pub struct TimerEventHandler {
 }
 
 impl TimerEventHandler {
-    /// Konstruktor.
+    /// Constructor.
     fn new(handle: TimerHandle, time_type: TimeType) -> Self {
         Self {
             handle,
@@ -148,7 +147,7 @@ impl TimerEventHandler {
         }
     }
 
-    /// Spec §2.3.1 — `status` Attribute (Read-Only).
+    /// Spec §2.3.1 — `status` attribute (read-only).
     #[must_use]
     pub fn status(&self) -> EventStatus {
         self.status
@@ -163,12 +162,12 @@ impl TimerEventHandler {
         self.time_type
     }
 
-    /// Spec §2.3.1 — `set_timer(time_type, time)` — re-arms timer.
-    /// Liefert `Ok(())` oder `TimerExpired` wenn Timer schon
-    /// gefeuert ist.
+    /// Spec §2.3.1 — `set_timer(time_type, time)` — re-arms the timer.
+    /// Returns `Ok(())`, or `TimerExpired` if the timer has already
+    /// fired.
     ///
     /// # Errors
-    /// `TimerError::TimerExpired` wenn der Timer schon gefeuert hat.
+    /// `TimerError::TimerExpired` if the timer has already fired.
     pub fn set_timer(&self, _time_type: TimeType, _time: Duration) -> Result<(), TimerError> {
         if self.status() == EventStatus::EsTimerFired {
             return Err(TimerError::TimerExpired);
@@ -176,11 +175,11 @@ impl TimerEventHandler {
         Ok(())
     }
 
-    /// Spec §2.3.1 — `set_data(in any data)`. Wir nehmen CDR-Bytes
-    /// statt `any` (kein dynamisches Type-System ohne ORB).
+    /// Spec §2.3.1 — `set_data(in any data)`. We take CDR bytes
+    /// instead of `any` (no dynamic type system without an ORB).
     ///
     /// # Errors
-    /// `TimerError::InvalidEvent` wenn `data` leer ist.
+    /// `TimerError::InvalidEvent` if `data` is empty.
     pub fn set_data(&self, data: Vec<u8>) -> Result<(), TimerError> {
         if data.is_empty() {
             return Err(TimerError::InvalidEvent);
@@ -193,20 +192,20 @@ impl TimerEventHandler {
         }
     }
 
-    /// Lieferung des `TimerHandle` fuer Cancel-Operationen.
+    /// Returns the `TimerHandle` for cancel operations.
     #[must_use]
     pub fn handle(&self) -> TimerHandle {
         self.handle
     }
 
-    /// Markiert den Handler als "fired" (intern; vom Worker-Thread).
+    /// Marks the handler as "fired" (internal; called by the worker thread).
     pub(crate) fn mark_fired(&self) {
         if let Ok(mut g) = self.status.lock() {
             *g = EventStatus::EsTimerFired;
         }
     }
 
-    /// Markiert den Handler als "cancelled" (intern).
+    /// Marks the handler as "cancelled" (internal).
     pub(crate) fn mark_cancelled(&self) {
         if let Ok(mut g) = self.status.lock() {
             *g = EventStatus::EsTimerCancelled;
@@ -215,21 +214,20 @@ impl TimerEventHandler {
 }
 
 // ---------------------------------------------------------------------------
-// §2.4.1 Operation register — Spec-konformer Adapter
+// §2.4.1 Operation register — spec-compliant adapter
 // ---------------------------------------------------------------------------
 
-/// Push-Consumer-Adapter (Spec §2.2.2 Usage — Push-Event-Channel).
+/// Push-consumer adapter (Spec §2.2.2 Usage — push event channel).
 ///
-/// Wraps einen `cos-event`-Push-Consumer-Trait so, dass der
-/// `TimerEventService` ihn als `TimerCallback` aufrufen kann.
+/// Wraps a `cos-event` push-consumer trait so that the
+/// `TimerEventService` can invoke it as a `TimerCallback`.
 pub trait PushConsumerLike: Send + Sync {
-    /// Wird vom Worker-Thread bei Timer-Feuerung aufgerufen.
+    /// Invoked by the worker thread when the timer fires.
     fn push(&self, event: &TimerEventT);
 }
 
-/// Adapter-Wrapper, der `PushConsumerLike` an
-/// [`crate::timer::TimerCallback`] anbindet und das `EventStatus`
-/// pflegt.
+/// Adapter wrapper that connects `PushConsumerLike` to
+/// [`crate::timer::TimerCallback`] and maintains the `EventStatus`.
 struct PushAdapter {
     consumer: Arc<dyn PushConsumerLike>,
     handler: Arc<TimerEventHandler>,
@@ -252,14 +250,14 @@ impl TimerCallback for PushAdapter {
     }
 }
 
-/// Spec-konforme Facade ueber `TimerEventService` mit Push-Adapter
-/// und `TimerEventHandler`-Lifecycle.
+/// Spec-compliant facade over `TimerEventService` with a push adapter
+/// and `TimerEventHandler` lifecycle.
 pub struct TimerEventServiceFacade {
     inner: Arc<TimerEventService>,
 }
 
 impl TimerEventServiceFacade {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(inner: Arc<TimerEventService>) -> Self {
         Self { inner }
@@ -267,13 +265,13 @@ impl TimerEventServiceFacade {
 
     /// Spec §2.4.1 — `register(consumer, data) -> TimerEventHandler`.
     ///
-    /// Erzeugt einen Handler, der bei Feuerung den `consumer.push`
-    /// aufruft. `time_type` + `time` muessen ueber den
-    /// zurueckgelieferten Handler via `set_timer` gesetzt werden.
+    /// Creates a handler that calls `consumer.push` when it fires.
+    /// `time_type` + `time` must be set via `set_timer` on the
+    /// returned handler.
     ///
     /// # Errors
-    /// `TimerError::TimeUnavailable` falls der Service-Lock nicht
-    /// erworben werden kann.
+    /// `TimerError::TimeUnavailable` if the service lock cannot be
+    /// acquired.
     pub fn register(
         &self,
         consumer: Arc<dyn PushConsumerLike>,
@@ -281,7 +279,7 @@ impl TimerEventServiceFacade {
         delay: Duration,
         event_type_id: String,
     ) -> Result<Arc<TimerEventHandler>, TimerError> {
-        // Placeholder-Handle bis create_*-Aufruf stattfindet.
+        // Placeholder handle until the create_* call takes place.
         let placeholder = TimerHandle(0);
         let handler = Arc::new(TimerEventHandler::new(placeholder, time_type));
 
@@ -298,12 +296,12 @@ impl TimerEventServiceFacade {
             }
         };
 
-        // Update Handler mit echtem Handle (Re-Konstruktion).
+        // Update handler with the real handle (reconstruction).
         let final_handler = Arc::new(TimerEventHandler::new(real_handle, time_type));
         Ok(final_handler)
     }
 
-    /// Cancel.
+    /// Cancels the timer.
     pub fn cancel(&self, handler: &TimerEventHandler) -> bool {
         let cancelled = self.inner.cancel(handler.handle);
         if cancelled {

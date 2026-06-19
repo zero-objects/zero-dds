@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Cross-Vendor-Interop-Tests gegen Cyclone-DDS via ROS-2.
+//! Cross-vendor interop tests against Cyclone DDS via ROS 2.
 //!
 //! Spec: `zerodds-ros2-bridge-1.0.md` §10 + §12.3.
 //!
-//! Diese Tests verifizieren das ROS-2-DDS-Mapping (Topic-Mangling +
-//! Service-Pattern + Action-Pattern) durch Vergleich mit den
-//! Cyclone-DDS-Wire-Konventionen, wie sie `rmw_cyclonedds_cpp` nutzt.
+//! These tests verify the ROS-2 DDS mapping (topic mangling +
+//! service pattern + action pattern) by comparison against the
+//! Cyclone-DDS wire conventions as used by `rmw_cyclonedds_cpp`.
 //!
-//! Da kein lokaler ROS-2-Workspace vorausgesetzt ist, sind die Live-
-//! Tests `#[ignore]`-markiert. Die Pure-Rust-Tests laufen immer und
-//! verifizieren die Wire-Konvention.
+//! Since no local ROS-2 workspace is assumed, the live
+//! tests are marked `#[ignore]`. The pure-Rust tests always run and
+//! verify the wire convention.
 
 #![cfg(feature = "cross-vendor-tests")]
 #![allow(
@@ -39,7 +39,7 @@ fn ros2_available() -> bool {
 fn topic_mangling_matches_rmw_dds_common_convention() {
     use zerodds_ros2_rmw::topic_mangling::{RosKind, mangle_topic_name};
     // `rmw_dds_common::topic_endpoint_info::mangle_topic_name`
-    // verwendet exakt diese Praefixe — kompatibel mit Cyclone+Fast-DDS.
+    // uses exactly these prefixes — compatible with Cyclone+Fast-DDS.
     assert_eq!(
         mangle_topic_name("/chatter", RosKind::Topic).unwrap(),
         "rt/chatter"
@@ -49,7 +49,7 @@ fn topic_mangling_matches_rmw_dds_common_convention() {
 #[test]
 fn service_topic_pair_matches_cyclone_format() {
     use zerodds_ros2_rmw::service::ServiceTopics;
-    // Cyclone-DDS-Konvention: rq/<base>Request, rr/<base>Reply.
+    // Cyclone DDS convention: rq/<base>Request, rr/<base>Reply.
     let s = ServiceTopics::from_service("/add_two_ints");
     assert_eq!(s.request, "rq/add_two_intsRequest");
     assert_eq!(s.reply, "rr/add_two_intsReply");

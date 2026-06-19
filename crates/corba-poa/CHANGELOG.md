@@ -1,23 +1,23 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-corba-poa`-Crate.
+Initial release materialization of the `zerodds-corba-poa` crate.
 
-### Spec-Referenzen
+### Spec references
 
 - **OMG CORBA 3.3 Part 1**: §11 (Portable Object Adapter), §11.3.5
-  (POA-Operations), §11.3.6 (Policy-Validierung), §11.3.7 (Policies),
-  §11.3.3 (Servant), §11.3.5.7-8 (ServantActivator/ServantLocator).
+  (POA operations), §11.3.6 (policy validation), §11.3.7 (policies),
+  §11.3.3 (servant), §11.3.5.7-8 (ServantActivator/ServantLocator).
 
-### Public-API
+### Public API
 
 **`Poa` + `PoaConfig`** (Spec §11.3.5.6 `create_POA`).
 **`PoaManager` + `PoaManagerState`** (Spec §11.3.4 — Holding/Active/
-Discarding/Inactive State-Machine).
-**`PolicySet` + 7 Policies** (Spec §11.3.7):
+Discarding/Inactive state machine).
+**`PolicySet` + 7 policies** (Spec §11.3.7):
 - `LifespanPolicy::{Transient, Persistent}`
 - `IdAssignmentPolicy::{System, User}`
 - `IdUniquenessPolicy::{Unique, Multiple}`
@@ -26,9 +26,9 @@ Discarding/Inactive State-Machine).
 - `RequestProcessingPolicy::{UseActiveObjectMap, UseDefaultServant, UseServantManager}`
 - `ThreadPolicy::{OrbControl, SingleThread, MainThread}`
 
-**`Servant`-Trait** (Spec §11.3.3 / §11.3.5.20):
+**`Servant` trait** (Spec §11.3.3 / §11.3.5.20):
 - `primary_interface() -> String`
-- `primary_repository_id() -> IrResult<RepositoryId>` (typisiert via `corba-ir`).
+- `primary_repository_id() -> IrResult<RepositoryId>` (typed via `corba-ir`).
 - `all_interfaces() -> Vec<String>`
 - `is_a(&str) -> bool` / `is_a_typed(&RepositoryId) -> bool`
 - `invoke(operation, body) -> Vec<u8>`
@@ -36,35 +36,35 @@ Discarding/Inactive State-Machine).
 **`ActiveObjectMap` + `ServantId`** (Spec §11.3.5).
 **`ObjectId`** (Spec §11.2.1).
 **`ServantActivator` + `ServantLocator` + `ServantLocatorCookie`**
-(Spec §11.3.5.7-8 — ServantManager-Hooks; Default-Impls liefern
-`Default::default()` zwecks `noop`-Sentinel).
-**`PoaError` / `PoaResult`** mit voller Spec-Exception-Surface.
+(Spec §11.3.5.7-8 — ServantManager hooks; default impls return
+`Default::default()` as a `noop` sentinel).
+**`PoaError` / `PoaResult`** with the full spec exception surface.
 
-### Implementierung
+### Implementation
 
-`#![cfg_attr(not(feature = "std"), no_std)]` mit `extern crate alloc`;
+`#![cfg_attr(not(feature = "std"), no_std)]` with `extern crate alloc`;
 `#![forbid(unsafe_code)]`.
 
-`PolicySet::validate` setzt die in Spec §11.3.6 definierten
-Inkompatibilitaeten durch (z.B. `IMPLICIT_ACTIVATION` verlangt
+`PolicySet::validate` enforces the incompatibilities defined in
+Spec §11.3.6 (e.g. `IMPLICIT_ACTIVATION` requires
 `SYSTEM_ID + RETAIN`).
 
-`Servant::primary_repository_id` bindet typisiert auf
-`zerodds-corba-ir::RepositoryId` (Spec §10.7.3.1) — Roundtrip-
-Garantie zwischen String- und Strukturform.
+`Servant::primary_repository_id` binds in a typed manner to
+`zerodds-corba-ir::RepositoryId` (Spec §10.7.3.1) — roundtrip
+guarantee between the string and struct forms.
 
-### Architektur
+### Architecture
 
-- **Layer:** 8 (CORBA-Stack, Tier-A).
-- **Dependencies (in):** `zerodds-corba-ir` (RepositoryId fuer typisierte
-  Servant-Validierung).
+- **Layer:** 8 (CORBA stack, Tier-A).
+- **Dependencies (in):** `zerodds-corba-ir` (RepositoryId for typed
+  servant validation).
 - **Dependents (out):** `zerodds-corba-iiop`, `zerodds-corba-dds-bridge`
-  (POA fuer Servant-Dispatch).
-- **Feature-Flags:** `std` (default), `alloc` (via std).
+  (POA for servant dispatch).
+- **Feature flags:** `std` (default), `alloc` (via std).
 
-### Stabilitaet
+### Stability
 
-- Public-API: RC1-stabil.
-- Trait-Default-Methoden auf `ServantActivator`/`ServantLocator` sind
-  noop-Sentinels — Implementer ueberschreiben fuer eigene Policies.
-- Spec §11.3.7 Policy-Konstanten sind durch OMG fixiert.
+- Public API: RC1-stable.
+- Trait default methods on `ServantActivator`/`ServantLocator` are
+  noop sentinels — implementers override them for their own policies.
+- Spec §11.3.7 policy constants are fixed by OMG.

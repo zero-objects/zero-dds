@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Permissions-XML-Parser (OMG DDS-Security 1.1 §9.4.1.3).
+//! Permissions XML parser (OMG DDS-Security 1.1 §9.4.1.3).
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// Parse-Fehler.
+/// Parse error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PermissionsError {
-    /// XML-Parsing gescheitert.
+    /// XML parsing failed.
     InvalidXml(String),
-    /// Struktur-Fehler (fehlendes Pflicht-Element).
+    /// Structural error (missing mandatory element).
     Malformed(String),
 }
 
@@ -27,18 +27,18 @@ impl core::fmt::Display for PermissionsError {
 #[cfg(feature = "std")]
 impl std::error::Error for PermissionsError {}
 
-/// Validity-Periode: `not_before <= now < not_after`. Werte sind
-/// ISO-8601-Strings aus dem XML; der Parser konvertiert sie zu
-/// Unix-Epoch-Seconds (u64). Spec §9.4.1.3.2.2.
+/// Validity period: `not_before <= now < not_after`. Values are
+/// ISO-8601 strings from the XML; the parser converts them to
+/// Unix epoch seconds (u64). Spec §9.4.1.3.2.2.
 ///
-/// future-major: Enforcement erfolgt zur Access-Check-Zeit via
-/// [`Grant::is_valid_at`]. Das Plugin selbst pruefen `now` gegen jeden
-/// `check_create_*`-Call — Uhren-Drift-Toleranz liegt im Caller.
+/// future-major: enforcement happens at access-check time via
+/// [`Grant::is_valid_at`]. The plugin itself checks `now` against every
+/// `check_create_*` call — clock-drift tolerance is up to the caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Validity {
-    /// Inklusive Unter-Grenze (Unix-Epoch-Seconds). `0` = keine.
+    /// Inclusive lower bound (Unix epoch seconds). `0` = none.
     pub not_before: u64,
-    /// Exklusive Ober-Grenze (Unix-Epoch-Seconds). `u64::MAX` = keine.
+    /// Exclusive upper bound (Unix epoch seconds). `u64::MAX` = none.
     pub not_after: u64,
 }
 
@@ -49,7 +49,7 @@ impl Default for Validity {
 }
 
 impl Validity {
-    /// Unbeschraenkte Validity — immer gueltig.
+    /// Unrestricted validity — always valid.
     #[must_use]
     pub const fn unrestricted() -> Self {
         Self {
@@ -58,70 +58,70 @@ impl Validity {
         }
     }
 
-    /// `true` wenn `not_before <= now < not_after`.
+    /// `true` if `not_before <= now < not_after`.
     #[must_use]
     pub const fn contains(&self, now: u64) -> bool {
         now >= self.not_before && now < self.not_after
     }
 }
 
-/// Ein Grant-Eintrag: pro Subject welche Topics erlaubt sind.
+/// A grant entry: which topics are allowed per subject.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Grant {
-    /// Subject-Name aus dem Zertifikat (z.B. `"CN=alice"`).
+    /// Subject name from the certificate (e.g. `"CN=alice"`).
     pub subject_name: String,
-    /// Topic-Patterns (Glob), die der Subject publizieren darf.
+    /// Topic patterns (glob) the subject may publish.
     pub allow_publish_topics: Vec<String>,
-    /// Topic-Patterns, die der Subject subscriben darf.
+    /// Topic patterns the subject may subscribe to.
     pub allow_subscribe_topics: Vec<String>,
-    /// Topic-Patterns, die explizit verboten sind (`<deny_rule>`,
-    /// Spec §10.4.1.3 Tab.51). Hat Vorrang vor allow_*.
+    /// Topic patterns explicitly forbidden (`<deny_rule>`,
+    /// spec §10.4.1.3 Tab.51). Takes precedence over allow_*.
     pub deny_publish_topics: Vec<String>,
-    /// Topic-Patterns, die explizit zur Subscribe verboten sind.
+    /// Topic patterns explicitly forbidden for subscribe.
     pub deny_subscribe_topics: Vec<String>,
-    /// Domain-Range — Spec §10.4.1.3 `<domains>`. Leere Liste =
-    /// alle Domains erlaubt.
+    /// Domain range — spec §10.4.1.3 `<domains>`. Empty list =
+    /// all domains allowed.
     pub domains: Vec<DomainRange>,
-    /// Partition-Patterns (`<partitions><partition>P</partition>
+    /// Partition patterns (`<partitions><partition>P</partition>
     /// </partitions>`).
     pub partitions: Vec<String>,
-    /// Data-Tags (`<data_tags><tag><name>X</name><value>Y</value>
+    /// Data tags (`<data_tags><tag><name>X</name><value>Y</value>
     /// </tag></data_tags>`). Spec §10.4.1.3 Tab.51 + DataTagging.
     pub data_tags: Vec<DataTag>,
-    /// `true` = default-Deny (alles nicht-allow-gelistete wird
-    /// verweigert). `false` = default-Allow (Allow-Liste ist eine
-    /// Exception-Liste auf DENY-Basis — selten genutzt).
+    /// `true` = default-deny (everything not allow-listed is
+    /// denied). `false` = default-allow (the allow list is an
+    /// exception list on a DENY basis — rarely used).
     pub default_deny: bool,
-    /// Validity-Periode (Spec §9.4.1.3.2.2). Default `unrestricted`.
+    /// Validity period (spec §9.4.1.3.2.2). Default `unrestricted`.
     pub validity: Validity,
 }
 
-/// Domain-Id-Range nach Spec §10.4.1.3 `<domains>`-Element.
+/// Domain-id range per spec §10.4.1.3 `<domains>` element.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DomainRange {
-    /// Untere Domain-Id (inklusiv).
+    /// Lower domain id (inclusive).
     pub min: u32,
-    /// Obere Domain-Id (inklusiv).
+    /// Upper domain id (inclusive).
     pub max: u32,
 }
 
 impl DomainRange {
-    /// Konstruktor fuer Single-Id-Range.
+    /// Constructor for a single-id range.
     #[must_use]
     pub const fn single(id: u32) -> Self {
         Self { min: id, max: id }
     }
 
-    /// `true` wenn `id` im Range liegt.
+    /// `true` if `id` is in the range.
     #[must_use]
     pub const fn contains(&self, id: u32) -> bool {
         id >= self.min && id <= self.max
     }
 }
 
-/// Data-Tag (Spec §10.4.1.3 + DataTagging-QoS). Pro Subject
-/// auflistbare (name, value)-Tupel, die in `DataTags` der QoS-
-/// Policy gespiegelt werden.
+/// Data tag (spec §10.4.1.3 + DataTagging QoS). (name, value) tuples
+/// listable per subject that are mirrored into the `DataTags` of the QoS
+/// policy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataTag {
     /// Tag-Name.
@@ -131,16 +131,16 @@ pub struct DataTag {
 }
 
 impl Grant {
-    /// `true` wenn der Grant zum Zeitpunkt `now` (Unix-Seconds) aktiv
-    /// ist. Caller liefert `now` — typisch aus
-    /// `SystemTime::now()`-Wrapper.
+    /// `true` if the grant is active at time `now` (Unix seconds).
+    /// The caller provides `now` — typically from a
+    /// `SystemTime::now()` wrapper.
     #[must_use]
     pub const fn is_valid_at(&self, now: u64) -> bool {
         self.validity.contains(now)
     }
 
-    /// Spec §10.4.1.3: Publish-Zugriff erlaubt? Reihenfolge:
-    /// deny_rule (Vorrang) → allow_rule → default.
+    /// Spec §10.4.1.3: is publish access allowed? Order:
+    /// deny_rule (precedence) → allow_rule → default.
     #[must_use]
     pub fn is_publish_allowed(&self, topic: &str) -> bool {
         if self
@@ -160,7 +160,7 @@ impl Grant {
         !self.default_deny
     }
 
-    /// Subscribe-Zugriff erlaubt? Selbe Reihenfolge wie publish.
+    /// Is subscribe access allowed? Same order as publish.
     #[must_use]
     pub fn is_subscribe_allowed(&self, topic: &str) -> bool {
         if self
@@ -180,8 +180,8 @@ impl Grant {
         !self.default_deny
     }
 
-    /// Spec §10.4.1.3 `<domains>`: ist die Domain-Id im erlaubten
-    /// Range? Leere Domain-Liste = alle Domains erlaubt.
+    /// Spec §10.4.1.3 `<domains>`: is the domain id in the allowed
+    /// range? Empty domain list = all domains allowed.
     #[must_use]
     pub fn matches_domain(&self, domain_id: u32) -> bool {
         if self.domains.is_empty() {
@@ -191,15 +191,15 @@ impl Grant {
     }
 }
 
-/// Vollstaendige Permissions-Datei.
+/// Complete permissions file.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Permissions {
-    /// Alle Grants. Reihenfolge ist relevant (erster Match gewinnt).
+    /// All grants. Order matters (first match wins).
     pub grants: Vec<Grant>,
 }
 
 impl Permissions {
-    /// Findet den Grant fuer ein Subject. Falls kein Grant matcht,
+    /// Finds the grant for a subject. If no grant matches,
     /// `None`.
     #[must_use]
     pub fn find_grant(&self, subject_name: &str) -> Option<&Grant> {
@@ -207,32 +207,32 @@ impl Permissions {
     }
 }
 
-/// Parsed ein Permissions-XML-Dokument.
+/// Parses a permissions XML document.
 ///
-/// Akzeptiert das vereinfachte Schema aus Spec §9.4.1.3; ignoriert
-/// `<validity>` und `<default>` auf Root-Grant-Level (Default wird
-/// aus `<default>DENY</default>` / `ALLOW` abgeleitet — unbekannter
-/// Text → Default-DENY).
+/// Accepts the simplified schema from spec §9.4.1.3; ignores
+/// `<validity>` and `<default>` at the root-grant level (the default is
+/// derived from `<default>DENY</default>` / `ALLOW` — unknown
+/// text → default-DENY).
 ///
 /// # Errors
-/// Siehe [`PermissionsError`].
+/// See [`PermissionsError`].
 pub fn parse_permissions_xml(xml: &str) -> Result<Permissions, PermissionsError> {
     let doc =
         roxmltree::Document::parse(xml).map_err(|e| PermissionsError::InvalidXml(e.to_string()))?;
     let root = doc.root_element();
 
-    // Root ist typisch `<dds>` oder direkt `<permissions>`. Wir
-    // suchen rekursiv nach `<grant>`-Knoten — tolerant gegen die
-    // drei bekannten Hierarchie-Varianten (Cyclone / Fast-DDS /
+    // The root is typically `<dds>` or directly `<permissions>`. We
+    // search recursively for `<grant>` nodes — tolerant of the
+    // three known hierarchy variants (Cyclone / FastDDS /
     // Connext).
     let mut grants = Vec::new();
     walk_grants(root, &mut grants)?;
     Ok(Permissions { grants })
 }
 
-/// zerodds-lint: recursion-depth = xml-tree-depth (≤ 16 in Praxis;
-/// `roxmltree` schuetzt vor >1000-stufiger Rekursion im Parser
-/// selbst, wir delegieren implizit darauf).
+/// zerodds-lint: recursion-depth = xml-tree-depth (≤ 16 in practice;
+/// `roxmltree` protects against >1000-level recursion in the parser
+/// itself, we delegate implicitly to that).
 fn walk_grants(
     node: roxmltree::Node<'_, '_>,
     out: &mut Vec<Grant>,
@@ -248,15 +248,15 @@ fn walk_grants(
 }
 
 fn parse_grant(grant: roxmltree::Node<'_, '_>) -> Result<Grant, PermissionsError> {
-    // Subject-Name: Kind-Element `<subject_name>` oder Attribut `name`
-    // (je nach Vendor).
+    // Subject name: child element `<subject_name>` or attribute `name`
+    // (depending on the vendor).
     let subject_name = grant
         .children()
         .find(|c| c.has_tag_name("subject_name"))
         .and_then(|c| c.text().map(str::trim).map(str::to_owned))
         .or_else(|| grant.attribute("name").map(str::to_owned))
         .ok_or_else(|| {
-            PermissionsError::Malformed("<grant> ohne <subject_name> oder name=".into())
+            PermissionsError::Malformed("<grant> without <subject_name> or name=".into())
         })?;
 
     let mut allow_publish_topics = Vec::new();
@@ -280,7 +280,7 @@ fn parse_grant(grant: roxmltree::Node<'_, '_>) -> Result<Grant, PermissionsError
             }
         }
     }
-    // Spec §10.4.1.3 Tab.51 — `<deny_rule>` hat Vorrang vor allow_rule.
+    // Spec §10.4.1.3 Tab.51 — `<deny_rule>` takes precedence over allow_rule.
     for rule in grant.children().filter(|c| c.has_tag_name("deny_rule")) {
         for op in rule.children().filter(roxmltree::Node::is_element) {
             match op.tag_name().name() {
@@ -290,13 +290,13 @@ fn parse_grant(grant: roxmltree::Node<'_, '_>) -> Result<Grant, PermissionsError
             }
         }
     }
-    // Domains-Range auf Grant-Level.
+    // Domain range at grant level.
     let domains = parse_domains(grant);
-    // Data-Tags.
+    // Data tags.
     let data_tags = parse_data_tags(grant);
 
-    // Default-Behandlung: `<default>DENY</default>` ist Spec-konform
-    // (alles nicht-Allow-gelistete wird verweigert).
+    // Default handling: `<default>DENY</default>` is spec-conformant
+    // (everything not allow-listed is denied).
     let default_deny = grant
         .children()
         .find(|c| c.has_tag_name("default"))
@@ -305,12 +305,12 @@ fn parse_grant(grant: roxmltree::Node<'_, '_>) -> Result<Grant, PermissionsError
             let t = t.trim().to_uppercase();
             t == "DENY" || t == "DISALLOW"
         })
-        // Wenn kein `<default>` angegeben, nehmen wir wie Fast-DDS
-        // DENY als sicheren Default.
+        // If no `<default>` is given, like FastDDS we take
+        // DENY as the safe default.
         .unwrap_or(true);
 
-    // Validity-Periode (Spec §9.4.1.3.2.2). Fehlende Children → 0 /
-    // u64::MAX (unbegrenzt).
+    // Validity period (spec §9.4.1.3.2.2). Missing children → 0 /
+    // u64::MAX (unbounded).
     let validity = parse_validity(grant);
 
     Ok(Grant {
@@ -328,10 +328,28 @@ fn parse_grant(grant: roxmltree::Node<'_, '_>) -> Result<Grant, PermissionsError
 }
 
 fn parse_domains(grant: roxmltree::Node<'_, '_>) -> Vec<DomainRange> {
-    let Some(dnode) = grant.children().find(|c| c.has_tag_name("domains")) else {
-        return Vec::new();
-    };
+    // Spec §9.4.1.3 / DDS-Security XSD: `<domains>` lives under each
+    // `<allow_rule>`; some simplified permissions files put it directly under
+    // `<grant>`. Collect from BOTH so the grant's domain scope is honoured
+    // either way. (Previously this only read a grant-direct `<domains>`, so the
+    // spec/SROS2/cross-vendor-bench layout `<grant><allow_rule><domains>` was
+    // silently dropped → every grant matched ALL domains, defeating
+    // `<domains>`-based access control.)
     let mut out = Vec::new();
+    let direct = grant.children().filter(|c| c.has_tag_name("domains"));
+    let in_allow = grant
+        .children()
+        .filter(|c| c.has_tag_name("allow_rule"))
+        .flat_map(|r| r.children().filter(|c| c.has_tag_name("domains")));
+    for dnode in direct.chain(in_allow) {
+        parse_domain_ranges(dnode, &mut out);
+    }
+    out
+}
+
+/// Parses the `<id>` / `<id_range>` children of a single `<domains>` node into
+/// `out`.
+fn parse_domain_ranges(dnode: roxmltree::Node<'_, '_>, out: &mut Vec<DomainRange>) {
     for child in dnode.children().filter(roxmltree::Node::is_element) {
         match child.tag_name().name() {
             // Single-Id: `<id>5</id>`.
@@ -359,7 +377,6 @@ fn parse_domains(grant: roxmltree::Node<'_, '_>) -> Vec<DomainRange> {
             _ => {}
         }
     }
-    out
 }
 
 fn parse_data_tags(grant: roxmltree::Node<'_, '_>) -> Vec<DataTag> {
@@ -422,18 +439,18 @@ fn parse_validity(grant: roxmltree::Node<'_, '_>) -> Validity {
     }
 }
 
-/// Minimaler ISO-8601-Parser fuer den gaengigsten Spec-Fall:
-/// `YYYY-MM-DDTHH:MM:SS` mit optionalem `Z` / `+00:00`-Suffix. Gibt
-/// Unix-Epoch-Seconds zurueck.
+/// Minimal ISO-8601 parser for the most common spec case:
+/// `YYYY-MM-DDTHH:MM:SS` with an optional `Z` / `+00:00` suffix. Returns
+/// Unix epoch seconds.
 ///
-/// WICHTIG: Dieser Parser implementiert keine kompletten Timezone-
-/// Offsets — alles ausser `Z` oder fehlend wird als UTC interpretiert.
-/// Fuer vollstaendige ISO-8601 kommt in future-major+ ein `time`-Crate-
-/// Adapter (aktuell MSRV-geblockt).
+/// IMPORTANT: This parser does not implement full timezone
+/// offsets — everything except `Z` or absent is interpreted as UTC.
+/// For full ISO-8601 a `time`-crate adapter comes in future-major+
+/// (currently MSRV-blocked).
 fn parse_iso_seconds(s: &str) -> Option<u64> {
     let s = s.trim();
     // Format: YYYY-MM-DDTHH:MM:SS(Z|+HH:MM|-HH:MM|)
-    // Laenge mind. 19 (ohne Timezone).
+    // Length at least 19 (without a timezone).
     if s.len() < 19 {
         return None;
     }
@@ -460,8 +477,8 @@ fn parse_iso_seconds(s: &str) -> Option<u64> {
         return None;
     }
 
-    // Days from 1970-01-01 (Howard-Hinnant civil_from_days-Algorithmus,
-    // ohne externe Deps).
+    // Days from 1970-01-01 (Howard Hinnant civil_from_days algorithm,
+    // without external deps).
     let y = year - i32::from(month <= 2);
     let era = if y >= 0 { y } else { y - 399 } / 400;
     let yoe = (y - era * 400) as u32; // [0, 399]
@@ -480,8 +497,8 @@ fn parse_iso_seconds(s: &str) -> Option<u64> {
 }
 
 fn collect_topics(op: roxmltree::Node<'_, '_>, out: &mut Vec<String>) {
-    // Akzeptiere sowohl <topics><topic>X</topic></topics> als auch
-    // direkt <topic>X</topic> unter <publish>/<subscribe>.
+    // Accept both <topics><topic>X</topic></topics> and
+    // directly <topic>X</topic> under <publish>/<subscribe>.
     for topic in op.descendants().filter(|c| c.has_tag_name("topic")) {
         if let Some(txt) = topic.text() {
             out.push(txt.trim().to_string());
@@ -573,7 +590,7 @@ mod tests {
     fn missing_validity_defaults_to_unrestricted() {
         let p = parse_permissions_xml(SAMPLE).unwrap();
         assert_eq!(p.grants[0].validity, Validity::unrestricted());
-        // Immer gueltig — auch bei now=0 und u64::MAX.
+        // Always valid — even at now=0 and u64::MAX.
         assert!(p.grants[0].is_valid_at(0));
         assert!(p.grants[0].is_valid_at(u64::MAX - 1));
     }
@@ -617,11 +634,11 @@ mod tests {
         let g = &p.grants[0];
         let not_before = parse_iso_seconds("2026-01-01T00:00:00Z").unwrap();
         let not_after = parse_iso_seconds("2027-01-01T00:00:00Z").unwrap();
-        assert!(!g.is_valid_at(not_before - 1), "gerade vor not_before");
-        assert!(g.is_valid_at(not_before), "genau not_before (inklusiv)");
+        assert!(!g.is_valid_at(not_before - 1), "just before not_before");
+        assert!(g.is_valid_at(not_before), "exactly not_before (inclusive)");
         assert!(g.is_valid_at(not_before + 3600), "mitten drin");
-        assert!(!g.is_valid_at(not_after), "genau not_after (exklusiv)");
-        assert!(!g.is_valid_at(u64::MAX / 2), "weit nach not_after");
+        assert!(!g.is_valid_at(not_after), "exactly not_after (exclusive)");
+        assert!(!g.is_valid_at(u64::MAX / 2), "well after not_after");
     }
 
     #[test]

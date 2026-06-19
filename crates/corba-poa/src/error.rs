@@ -1,43 +1,43 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! POA-Fehler — Spec §11.3.7.
+//! POA errors — Spec §11.3.7.
 
 use alloc::string::String;
 
-/// Result-Alias.
+/// Result alias.
 pub type PoaResult<T> = Result<T, PoaError>;
 
-/// POA-Fehler. Spec §11.3.7 listet die normativen Exceptions; wir
-/// modellieren sie als Rust-Enum.
+/// POA error. Spec §11.3.7 lists the normative exceptions; we
+/// model them as a Rust enum.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PoaError {
-    /// `AdapterAlreadyExists` — POA mit dem Namen existiert schon.
+    /// `AdapterAlreadyExists` — a POA with that name already exists.
     AdapterAlreadyExists(String),
-    /// `AdapterNonExistent` — `find_POA` mit `activate_it=false`
-    /// und der POA existiert nicht.
+    /// `AdapterNonExistent` — `find_POA` with `activate_it=false`
+    /// and the POA does not exist.
     AdapterNonExistent(String),
-    /// `AdapterInactive` — POAManager ist im INACTIVE-State.
+    /// `AdapterInactive` — POAManager is in the INACTIVE state.
     AdapterInactive,
-    /// `InvalidPolicy` — inkompatible Policy-Kombination.
+    /// `InvalidPolicy` — incompatible policy combination.
     InvalidPolicy(String),
-    /// `WrongPolicy` — Operation passt nicht zu den aktuellen Policies
-    /// (z.B. `activate_object` mit USER_ID).
+    /// `WrongPolicy` — operation does not match the current policies
+    /// (e.g. `activate_object` with USER_ID).
     WrongPolicy(String),
-    /// `ObjectNotActive` — kein Mapping in der AOM.
+    /// `ObjectNotActive` — no mapping in the AOM.
     ObjectNotActive,
-    /// `ObjectAlreadyActive` — Object-Id ist schon in der AOM.
+    /// `ObjectAlreadyActive` — the ObjectId is already in the AOM.
     ObjectAlreadyActive,
-    /// `ServantAlreadyActive` — Servant ist mit anderer Object-Id
-    /// schon in der AOM (UNIQUE_ID-Verletzung).
+    /// `ServantAlreadyActive` — the servant is already in the AOM
+    /// under a different ObjectId (UNIQUE_ID violation).
     ServantAlreadyActive,
-    /// `ServantNotActive` — `servant_to_id` ohne aktive Mapping.
+    /// `ServantNotActive` — `servant_to_id` without an active mapping.
     ServantNotActive,
-    /// `BadInvocationOrder` — z.B. POAManager-Operation in
-    /// inkonsistentem State.
+    /// `BadInvocationOrder` — e.g. a POAManager operation in an
+    /// inconsistent state.
     BadInvocationOrder(String),
-    /// `NoServant` — Default-Servant nicht gesetzt.
+    /// `NoServant` — default servant not set.
     NoServant,
-    /// `OBJ_ADAPTER` System-Exception (transport-/adapter-Level).
+    /// `OBJ_ADAPTER` system exception (transport/adapter level).
     ObjAdapter(String),
 }

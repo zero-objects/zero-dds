@@ -1,41 +1,41 @@
-//! WP 1.C — Cyclone-Interop-Negativtest fuer HeaderExtension mit
-//! unbekanntem Must-Understand-PID.
+//! WP 1.C — Cyclone interop negative test for a HeaderExtension with
+//! an unknown must-understand PID.
 //!
-//! **Opt-in only** — `#[ignore]` markiert. Aufruf:
+//! **Opt-in only** — marked `#[ignore]`. Invocation:
 //!
 //! ```bash
 //! cargo test -p zerodds-rtps --test cyclone_he_must_understand -- --ignored --nocapture
 //! ```
 //!
-//! # Spec-Hintergrund
+//! # Spec background
 //!
-//! DDSI-RTPS 2.5 §9.4.2.11.2: Wenn eine ParameterList in einer
-//! HeaderExtension einen PID enthaelt, dessen `must_understand`-Bit
-//! (0x4000) gesetzt ist, und der Receiver diesen PID nicht kennt,
-//! MUSS er die ganze RTPS-Message verwerfen.
+//! DDSI-RTPS 2.5 §9.4.2.11.2: if a ParameterList in a
+//! HeaderExtension contains a PID whose `must_understand` bit
+//! (0x4000) is set, and the receiver does not know this PID,
+//! it MUST discard the whole RTPS message.
 //!
-//! # Test-Ablauf (ungesehene Cyclone-Maschine)
+//! # Test flow (unseen Cyclone machine)
 //!
-//! 1. Lokal: Wir erzeugen eine RTPS-Message bestehend aus
+//! 1. Local: we produce an RTPS message consisting of
 //!    - RtpsHeader (ZeroDDS VendorId)
-//!    - HeaderExtension mit ParameterList, die einen `must_understand`-
-//!      PID enthaelt, den Cyclone nicht kennt (z.B. PID 0xC042 — vendor-
+//!    - a HeaderExtension with a ParameterList containing a `must_understand`
+//!      PID that Cyclone does not know (e.g. PID 0xC042 — vendor-
 //!      specific + must-understand).
-//!    - Anschliessend ein DATA-Submessage mit einer regulaeren
-//!      DCPSParticipant-Payload (SPDP-Builtin-Topic).
+//!    - followed by a DATA submessage with a regular
+//!      DCPSParticipant payload (SPDP builtin topic).
 //!
-//! 2. Diese Message via UDP-Multicast an Cyclone schicken.
+//! 2. Send this message via UDP multicast to Cyclone.
 //!
-//! 3. Erwartung: Cyclone discovered diesen Participant **nicht**
-//!    (Whole-Message-Reject).
+//! 3. Expectation: Cyclone does **not** discover this participant
+//!    (whole-message reject).
 //!
-//! 4. Vergleichs-Run: gleiche Message ohne den must-understand-PID →
-//!    Cyclone discovered korrekt.
+//! 4. Comparison run: same message without the must-understand PID →
+//!    Cyclone discovers correctly.
 //!
-//! Ohne Cyclone-Live-Setup verifiziert dieser Test nur, dass unser
-//! Encoder die richtige Wire-Form produziert, dass unser Decoder selbst
-//! ebenfalls rejecten wuerde, und dass der Hex-Dump dem entspricht,
-//! was wir zur Debugging-Verifikation gegen Cyclone brauchen.
+//! Without a Cyclone live setup this test only verifies that our
+//! encoder produces the correct wire form, that our decoder would itself
+//! also reject, and that the hex dump matches
+//! what we need for debugging verification against Cyclone.
 
 #![allow(
     clippy::expect_used,
@@ -57,13 +57,13 @@ use zerodds_rtps::header_extension::{HE_FLAG_E, HeaderExtension};
 use zerodds_rtps::parameter_list::{MUST_UNDERSTAND_BIT, Parameter, ParameterList};
 use zerodds_rtps::wire_types::{GuidPrefix, VendorId};
 
-/// Baut die fragliche RTPS-Message mit HE.P + must-understand-PID.
+/// Builds the RTPS message in question with HE.P + must-understand PID.
 fn build_he_with_unknown_must_understand_pid() -> Vec<u8> {
     let header = RtpsHeader::new(VendorId::ZERODDS, GuidPrefix::from_bytes([0x42; 12]));
     let mut pl = ParameterList::new();
-    // Vendor-PID 0x0042 mit Must-Understand-Bit + Vendor-Bit:
+    // Vendor PID 0x0042 with must-understand bit + vendor bit:
     // 0x4042 (must-understand) | 0x8000 (vendor) = 0xC042. Cyclone
-    // kennt 0x0042 nicht und MUSS deshalb die ganze Message verwerfen.
+    // does not know 0x0042 and therefore MUST discard the whole message.
     pl.push(Parameter::new(MUST_UNDERSTAND_BIT | 0x8042, vec![0; 4]));
     let he = HeaderExtension {
         little_endian: true,
@@ -80,27 +80,30 @@ fn build_he_with_unknown_must_understand_pid() -> Vec<u8> {
 #[test]
 fn local_encoder_produces_must_understand_bit() {
     let bytes = build_he_with_unknown_must_understand_pid();
-    // Sanity: HE-Submessage-ID 0x80 ist nach dem 20-Byte-RTPS-Header.
+    // Sanity: HE submessage ID 0x80 is after the 20-byte RTPS header.
     assert_eq!(bytes[20], 0x80);
-    // P-Flag (Bit 7) im Flag-Byte gesetzt.
+    // P flag (bit 7) set in the flag byte.
     assert_eq!(bytes[21] & 0x80, 0x80);
-    // E-Flag (Bit 0) im Flag-Byte gesetzt.
+    // E flag (bit 0) set in the flag byte.
     assert_eq!(bytes[21] & HE_FLAG_E, HE_FLAG_E);
 }
 
 #[test]
 fn parameter_with_must_understand_helper_sets_bit() {
-    // Spec §9.4.2.11.2: Sender setzt Must-Understand-Bit (`0x4000`)
-    // pro PID, dessen Verstaendnis auf Receiver-Seite Pflicht ist.
+    // Spec §9.4.2.11.2: sender sets the must-understand bit (`0x4000`)
+    // per PID whose understanding is mandatory on the receiver side.
     use zerodds_rtps::parameter_list::{MUST_UNDERSTAND_BIT, Parameter};
     let p = Parameter::new(0x0042, vec![0u8; 4]).with_must_understand();
-    assert!(p.has_must_understand(), "Bit-Setter muss MU-Flag setzen");
+    assert!(
+        p.has_must_understand(),
+        "the bit setter must set the MU flag"
+    );
     assert_eq!(
         p.id & MUST_UNDERSTAND_BIT,
         MUST_UNDERSTAND_BIT,
-        "Wire-Wert traegt MU-Bit"
+        "wire value carries the MU bit"
     );
-    assert_eq!(p.id & 0x3FFF, 0x0042, "Original-PID bleibt erhalten");
+    assert_eq!(p.id & 0x3FFF, 0x0042, "original PID is preserved");
 }
 
 #[test]
@@ -109,34 +112,31 @@ fn local_decoder_rejects_via_validate_must_understand() {
     use zerodds_rtps::datagram::decode_datagram;
 
     let bytes = build_he_with_unknown_must_understand_pid();
-    let parsed = decode_datagram(&bytes).expect("HE-Decode darf erfolgen");
+    let parsed = decode_datagram(&bytes).expect("HE decode may succeed");
     let he = match &parsed.submessages[0] {
         ParsedSubmessage::HeaderExtension(he) => he,
         other => panic!("expected HE, got {other:?}"),
     };
-    let pl = he.parameters.as_ref().expect("PL muss vorhanden sein");
+    let pl = he.parameters.as_ref().expect("PL must be present");
     // Receiver kennt nur PID 0x0015 — der Must-Understand-PID 0x0042
-    // ist unbekannt → Reject.
+    // is unknown → reject.
     let res = pl.validate_must_understand(|pid| pid == 0x0015);
-    assert!(
-        res.is_err(),
-        "Whole-message-reject erforderlich (§9.4.2.11.2)"
-    );
+    assert!(res.is_err(), "whole-message reject required (§9.4.2.11.2)");
 }
 
 #[test]
 #[ignore = "needs live Cyclone DDS instance + multicast network setup"]
 fn cyclone_live_rejects_he_with_unknown_must_understand_pid() {
-    // Live-Test gegen Cyclone DDS:
-    // 1. Build the RTPS-Datagram mit HE.P + must-understand vendor PID.
-    // 2. Sende via UDP an die Multicast-Adresse SPDP (239.255.0.1:7400 +
-    //    Port-Berechnung fuer Domain).
-    // 3. Erwartung: Cyclone verwirft die Message, der Participant taucht
-    //    NICHT in `ddsperf -D <DOMAIN>` Discovery auf.
+    // Live test against Cyclone DDS:
+    // 1. Build the RTPS datagram with HE.P + must-understand vendor PID.
+    // 2. Send via UDP to the SPDP multicast address (239.255.0.1:7400 +
+    //    port computation for the domain).
+    // 3. Expectation: Cyclone discards the message, the participant does
+    //    NOT appear in `ddsperf -D <DOMAIN>` discovery.
     //
-    // Implementierung benoetigt das gleiche Multicast-Setup wie
-    // `crates/discovery/tests/cyclone_live_sedp.rs`. Solange das Lab-
-    // Setup nicht in der CI verfuegbar ist, bleibt dieser Test
+    // The implementation needs the same multicast setup as
+    // `crates/discovery/tests/cyclone_live_sedp.rs`. As long as the lab
+    // setup is not available in CI, this test stays
     // `#[ignore]`.
     let _ = build_he_with_unknown_must_understand_pid();
 }

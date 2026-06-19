@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Wire-Codec fuer Request- und Reply-Samples (Foundation C6.1.C).
+//! Wire codec for request and reply samples (foundation C6.1.C).
 //!
-//! In dieser Stufe transportieren Requester/Replier ihre Samples ueber
-//! generische `RawBytes`-Topics — der DDS-RPC-Wire-Frame ist daher
-//! anwendungsseitig sichtbar:
+//! At this stage requester/replier transport their samples over
+//! generic `RawBytes` topics — the DDS-RPC wire frame is therefore
+//! visible on the application side:
 //!
 //! ```text
 //! REQUEST-Frame:
@@ -14,9 +14,9 @@
 //!   ReplyHeader (XCDR2-LE)    ||  user-payload-bytes
 //! ```
 //!
-//! Decoder muessen das Header-Format beidseitig kennen, weil DCPS-DataReader
-//! den Sample-Buffer als ein einziges `Vec<u8>` ausliefert. Der Wire-Frame
-//! ist mit den XCDR2-Encodings aus [`crate::common_types`] kompatibel.
+//! Decoders must know the header format on both sides, because the DCPS
+//! DataReader delivers the sample buffer as a single `Vec<u8>`. The wire frame
+//! is compatible with the XCDR2 encodings from [`crate::common_types`].
 
 extern crate alloc;
 
@@ -25,11 +25,11 @@ use alloc::vec::Vec;
 use crate::common_types::{ReplyHeader, RequestHeader};
 use crate::error::{RpcError, RpcResult};
 
-/// Encoded ein Request-Frame: `RequestHeader` (XCDR2-LE) gefolgt von den
-/// XCDR2-encodeden User-Payload-Bytes.
+/// Encodes a request frame: `RequestHeader` (XCDR2-LE) followed by the
+/// XCDR2-encoded user payload bytes.
 ///
-/// `user_payload` ist die Ausgabe von `T::encode` und wird **byte-identisch**
-/// hinter den Header geschrieben — kein zusaetzliches Padding.
+/// `user_payload` is the output of `T::encode` and is written **byte-identically**
+/// after the header — no additional padding.
 #[must_use]
 pub fn encode_request_frame(header: &RequestHeader, user_payload: &[u8]) -> Vec<u8> {
     let mut out = header.to_cdr_le();
@@ -37,11 +37,11 @@ pub fn encode_request_frame(header: &RequestHeader, user_payload: &[u8]) -> Vec<
     out
 }
 
-/// Splittet ein Request-Frame in `(RequestHeader, &user-payload)`.
+/// Splits a request frame into `(RequestHeader, &user-payload)`.
 ///
 /// # Errors
-/// `RpcError::Codec` wenn der Header nicht parsen will oder die Payload
-/// truncated ist.
+/// `RpcError::Codec` if the header does not parse or the payload
+/// is truncated.
 pub fn decode_request_frame(bytes: &[u8]) -> RpcResult<(RequestHeader, &[u8])> {
     let header = RequestHeader::from_cdr_le(bytes)?;
     let consumed = encoded_request_header_len(&header);
@@ -51,7 +51,7 @@ pub fn decode_request_frame(bytes: &[u8]) -> RpcResult<(RequestHeader, &[u8])> {
     Ok((header, &bytes[consumed..]))
 }
 
-/// Encoded ein Reply-Frame.
+/// Encodes a reply frame.
 #[must_use]
 pub fn encode_reply_frame(header: &ReplyHeader, user_payload: &[u8]) -> Vec<u8> {
     let mut out = header.to_cdr_le();
@@ -59,11 +59,11 @@ pub fn encode_reply_frame(header: &ReplyHeader, user_payload: &[u8]) -> Vec<u8> 
     out
 }
 
-/// Splittet ein Reply-Frame in `(ReplyHeader, &user-payload)`.
+/// Splits a reply frame into `(ReplyHeader, &user-payload)`.
 ///
 /// # Errors
-/// `RpcError::Codec` wenn der Header nicht parsen will oder die Payload
-/// truncated ist.
+/// `RpcError::Codec` if the header does not parse or the payload
+/// is truncated.
 pub fn decode_reply_frame(bytes: &[u8]) -> RpcResult<(ReplyHeader, &[u8])> {
     let header = ReplyHeader::from_cdr_le(bytes)?;
     let consumed = encoded_reply_header_len();
@@ -74,8 +74,8 @@ pub fn decode_reply_frame(bytes: &[u8]) -> RpcResult<(ReplyHeader, &[u8])> {
 }
 
 fn encoded_request_header_len(header: &RequestHeader) -> usize {
-    // Wir kalkulieren die Laenge per Re-Encode — billig (24-30 byte typisch),
-    // robust gegen Padding-Aenderungen im Encoder.
+    // We compute the length via re-encode — cheap (24-30 bytes typical),
+    // robust against padding changes in the encoder.
     header.to_cdr_le().len()
 }
 

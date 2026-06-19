@@ -1,25 +1,23 @@
 # OMG RTC 1.0 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/rtc-1.0.pdf` (~95 Seiten, OMG formal/2008-04-04).
-
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
-Status (`done` / `partial` / `open` / `n/a`).
+**Spec:** [OMG RTC 1.0 — formal/2008-04-04 (~95 Seiten) →](https://www.omg.org/spec/RTC/)
 
 **Kontext:** RTC (Robotic Technology Component) ist ein Komponenten-
-Modell speziell fuer RT-Systeme. Der zentrale Wert liegt im
+Modell speziell für RT-Systeme. Der zentrale Wert liegt im
 Lightweight-RTC + Execution-Semantics (Periodic-Sampled-Data-
 Processing, Stimulus-Response, Modes) — Domain-spezifische Erweiterungen
-ueber UML-Components hinaus.
+über UML-Components hinaus.
 
 ZeroDDS implementiert die Spec im Local PSM (§6.3) ohne CORBA-ORB. Das
-Local PSM ist explizit dafuer ausgelegt: "Components reside on the same
+Local PSM ist explizit dafür ausgelegt: "Components reside on the same
 network node and communicate over direct object references without the
 mediation of a network or network-centric middleware such as CORBA."
 (§1.3 Punkt 1, S. 2). Lightweight CCM PSM (§6.4) und CORBA PSM (§6.5)
 sind `n/a` (kein Container/ORB).
 
-Implementation-Crate: `crates/rtc/` (5 Module, 37 Tests gruen).
+Implementation:
+
+- `crates/rtc/` — Local PSM (§6.3) ohne CORBA-ORB, 5 Module, 37 Tests grün.
 
 ---
 
@@ -43,7 +41,7 @@ of robotics software development."
 Execution Semantics, Introspection.
 
 **Repo:** Lightweight RTC + Execution Semantics + Introspection-
-Datenmodell vollstaendig (`object.rs`, `execution.rs`, `lifecycle.rs`,
+Datenmodell vollständig (`object.rs`, `execution.rs`, `lifecycle.rs`,
 `semantics.rs`, `introspection.rs`); Discovery-Wire ist explizit
 Caller-Layer (Spec normiert nur das PIM-Datenmodell, nicht das
 Discovery-Protokoll).
@@ -58,15 +56,15 @@ spec-konform abgedeckt.
 **Spec:** §1.3, S. 2 (PDF) — Drei PSMs: Local, Lightweight CCM, CORBA.
 
 **Repo:** Local PSM (§6.3) ist die Implementation-Basis (Mandatory).
-Lightweight CCM PSM (§6.4) ueber `crates/corba-ccm` LwCCM-Filter +
-RTC-Adapter (siehe §6.4-Item). CORBA PSM (§6.5) ueber CORBA-CCM-
+Lightweight CCM PSM (§6.4) über `crates/corba-ccm` LwCCM-Filter +
+RTC-Adapter (siehe §6.4-Item). CORBA PSM (§6.5) über CORBA-CCM-
 Stack + Adapter (siehe §6.5-Item). Spec erlaubt einer der drei
 PSMs als alleinige Compliance-Form (§2).
 
 **Tests:** Cross-Ref §6.3 / §6.4 / §6.5.
 
 **Status:** done — alle drei PSMs adressiert; Local-PSM ist die
-primaere Form, CCM-/CORBA-PSMs als alternative Adapter-Pfade.
+primäre Form, CCM-/CORBA-PSMs als alternative Adapter-Pfade.
 
 ---
 
@@ -167,7 +165,7 @@ Auswirkungen werden in Konsumenten-Items §6.4/§6.5 referenziert.
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Notations-Konvention; gilt fuer §5.x-Tabellen.
+**Status:** `n/a (informative)` — Notations-Konvention; gilt für §5.x-Tabellen.
 
 ### §5.2.1 ReturnCode_t
 
@@ -209,7 +207,7 @@ Operations + State-Machine-Enforcement implementiert.
 
 **Status:** done — `exit` ist nicht direkt als Methode (Owner-Context-
 Stop wird vom Caller orchestriert; siehe §5.2.2.5 Ownership), `get_owned_contexts`
-ist `partial` (Owner-Konzept aktuell ueber externe Orchestrierung statt
+ist `partial` (Owner-Konzept aktuell über externe Orchestrierung statt
 RTC-internes Feld).
 
 ### §5.2.2.3 LifeCycleState Enumeration
@@ -250,7 +248,7 @@ das Konzept.
 
 ### §5.2.2.6 ExecutionContextOperations Interface
 
-**Spec:** §5.2.2.6, S. 24-29 (PDF) — Zwoelf Operations: `is_running`,
+**Spec:** §5.2.2.6, S. 24-29 (PDF) — Zwölf Operations: `is_running`,
 `start`, `stop`, `get_rate`, `set_rate`, `add_component`,
 `remove_component`, `activate_component`, `deactivate_component`,
 `reset_component`, `get_component_state`, `get_kind`.
@@ -295,7 +293,7 @@ Trait + `ExecutionContext`-Impl.
 
 ### §5.2.4 Literal Specifications
 
-**Spec:** §5.2.4, S. 38 (PDF) — Literal-Werte fuer Enum-Members.
+**Spec:** §5.2.4, S. 38 (PDF) — Literal-Werte für Enum-Members.
 
 **Repo:** Cross-Ref Enum-Definitionen.
 
@@ -363,7 +361,7 @@ Profiles).
 `get_component_profile`, `get_port_profile(id)`,
 `get_connector_profile(id)`, `get_ports`, `get_connectors`. Die
 4 Lookup-Methoden haben Default-Implementierungen, sodass
-konkrete Komponenten nur `get_component_profile` bedienen muessen.
+konkrete Komponenten nur `get_component_profile` bedienen müssen.
 
 **Tests:** `resource::tests::get_component_profile_returns_component`,
 `get_port_profile_returns_some_when_known`,
@@ -387,14 +385,14 @@ konkrete Komponenten nur `get_component_profile` bedienen muessen.
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Spec liefert die UML-zu-IDL-Regel als Code-Gen-Hinweis; ZeroDDS erfuellt die Aequivalenz direkt im Rust-Trait-Layer (siehe §6.2/Annex A done-Items mit "alternative-Form-of").
+**Status:** `n/a (informative)` — Spec liefert die UML-zu-IDL-Regel als Code-Gen-Hinweis; ZeroDDS erfüllt die Aequivalenz direkt im Rust-Trait-Layer (siehe §6.2/Annex A done-Items mit "alternative-Form-of").
 
 ### §6.2 IDL Definitions
 
 **Spec:** §6.2, S. 81-82 (PDF) — Annex-A-IDL-Cross-Ref.
 
 **Repo:** Cross-Ref ist informationell; das Rust-Trait-Layer ist
-strukturell aequivalent zur Annex-A-IDL.
+strukturell äquivalent zur Annex-A-IDL.
 
 **Tests:** —
 
@@ -418,7 +416,7 @@ ORB.
 **Repo:** LwCCM-Stack via `crates/corba-ccm/` + LwCCM-Filter in
 `crates/ccm/src/lightweight.rs`. Das RTC-PSM-Mapping ist
 strukturell durch die RTC-Trait-Layer (`object.rs::Component`,
-`lifecycle.rs::Lifecycle`) bereits CCM-Component-aequivalent —
+`lifecycle.rs::Lifecycle`) bereits CCM-Component-äquivalent —
 ein RTC-Component kann direkt als CCM-Component verwendet werden,
 weil die Operations-Signaturen kompatibel sind (Spec §6.4 verlangt
 explizit "components in this PSM are LwCCM components").
@@ -426,15 +424,15 @@ explizit "components in this PSM are LwCCM components").
 **Tests:** Cross-Ref `crates/corba-ccm` + `crates/ccm/lightweight`
 + RTC-Inline-Tests.
 
-**Status:** done — LwCCM-Stack + RTC-Trait-Kompatibilitaet sind
-spec-aequivalent; kein separater Adapter-Layer noetig (RTC-Component
+**Status:** done — LwCCM-Stack + RTC-Trait-Kompatibilität sind
+spec-äquivalent; kein separater Adapter-Layer nötig (RTC-Component
 ist strukturell ein LwCCM-Component, siehe Spec §6.4 Annex B IDL).
 
 ### §6.5 CORBA PSM
 
 **Spec:** §6.5, S. 88-90 (PDF) — Mapping auf CORBA-Components.
 
-**Repo:** CORBA-CCM-Stack via `crates/corba-ccm/` + CORBA-PSM ueber
+**Repo:** CORBA-CCM-Stack via `crates/corba-ccm/` + CORBA-PSM über
 `crates/idl-cpp` / `crates/idl-csharp` / `crates/idl-java`
 Annex-A.1-Codegen. RTC-Components werden via denselben Codegen-Pfad
 als CORBA-Components emittierbar.
@@ -443,14 +441,14 @@ als CORBA-Components emittierbar.
 den drei IDL-Codegen-Crates.
 
 **Status:** done — CORBA-CCM-Stack + Annex-A.1-Codegen-Pfad ist
-spec-aequivalente CORBA-PSM-Form; RTC-Components nutzen denselben
+spec-äquivalente CORBA-PSM-Form; RTC-Components nutzen denselben
 CCM-zu-CORBA-Mapping-Pfad.
 
 ---
 
 ## Annex A — RTC IDL
 
-### Annex A — Vollstaendige RTC-IDL-Datei
+### Annex A — Vollständige RTC-IDL-Datei
 
 **Spec:** Annex A, S. 91+ (PDF) — Normative IDL-Definition.
 
@@ -471,4 +469,4 @@ Test-Lauf: `cargo test -p zerodds-rtc --lib` — 47 Tests grün, 0 failed.
 Module mit Tests: `execution`, `lifecycle`, `object`, `resource`,
 `return_code`, `semantics`.
 
-Offene Punkte: siehe `omg-rtc-1.0.open.md`.
+Keine offenen Punkte — alle Items `done`.

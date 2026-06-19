@@ -3,12 +3,12 @@
 
 //! DDS-Security 1.2 §7.5.5 — `ParticipantGenericMessage` (C3.4).
 //!
-//! Wire-Datentyp fuer die zwei Builtin-Topics aus §7.5.3 + §7.5.4:
+//! Wire data type for the two builtin topics from §7.5.3 + §7.5.4:
 //!
-//! | Topic                                   | Reliability | Endpoints (Bits, §7.4.7.1)            | Inhalt                                      |
+//! | Topic                                   | Reliability | Endpoints (bits, §7.4.7.1)            | Content                                     |
 //! |----------------------------------------|-------------|----------------------------------------|---------------------------------------------|
 //! | `DCPSParticipantStatelessMessage`      | BestEffort  | 22/23 (`STATELESS_*_{WRITER,READER}`)  | HandshakeRequest/Reply/FinalMessageToken    |
-//! | `DCPSParticipantVolatileMessageSecure` | Reliable    | 24/25 (`VOLATILE_*_{WRITER,READER}`)   | CryptoToken-Exchange-Nachrichten            |
+//! | `DCPSParticipantVolatileMessageSecure` | Reliable    | 24/25 (`VOLATILE_*_{WRITER,READER}`)   | CryptoToken exchange messages               |
 //!
 //! Spec §7.5.5 Tab.10:
 //!
@@ -28,12 +28,12 @@
 //! };
 //! ```
 //!
-//! Encoding ist XCDR1 (PL_CDR_LE) — die ParticipantGenericMessage
-//! wird als `serialized_payload` einer DATA-Submessage transportiert.
+//! The encoding is XCDR1 (PL_CDR_LE) — the ParticipantGenericMessage
+//! is transported as the `serialized_payload` of a DATA submessage.
 //!
 //! `message_class_id`-Konstanten (Spec §7.5.5):
 //!
-//! | class_id                                  | Bedeutung                                       |
+//! | class_id                                  | Meaning                                         |
 //! |-------------------------------------------|-------------------------------------------------|
 //! | `"dds.sec.auth_request"`                  | Initiator → Replier: HandshakeRequestMessage    |
 //! | `"dds.sec.auth"`                          | Replier → Initiator: HandshakeReplyMessage      |
@@ -50,42 +50,42 @@ use alloc::vec::Vec;
 use crate::error::{SecurityError, SecurityErrorKind, SecurityResult};
 use crate::token::DataHolder;
 
-/// Topic-Name fuer den Stateless-Auth-Handshake (Spec §7.5.3).
+/// Topic name for the stateless auth handshake (spec §7.5.3).
 pub const TOPIC_STATELESS_MESSAGE: &str = "DCPSParticipantStatelessMessage";
 
-/// Topic-Name fuer Crypto-Token-Exchange (Spec §7.5.4).
+/// Topic name for the crypto-token exchange (spec §7.5.4).
 pub const TOPIC_VOLATILE_MESSAGE_SECURE: &str = "DCPSParticipantVolatileMessageSecure";
 
-/// Type-Name beider Topics (Spec §7.5.3 + §7.5.4): identisch.
+/// Type name of both topics (spec §7.5.3 + §7.5.4): identical.
 pub const TYPE_NAME_GENERIC_MESSAGE: &str = "ParticipantGenericMessage";
 
-/// `message_class_id`-Konstanten (Spec §7.5.5).
+/// `message_class_id` constants (spec §7.5.5).
 pub mod class_id {
-    /// `HandshakeRequestMessage` (Initiator → Replier).
+    /// `HandshakeRequestMessage` (initiator → replier).
     pub const AUTH_REQUEST: &str = "dds.sec.auth_request";
-    /// `HandshakeReplyMessage` (Replier → Initiator) **und**
-    /// `HandshakeFinalMessage` (Initiator → Replier mit
+    /// `HandshakeReplyMessage` (replier → initiator) **and**
+    /// `HandshakeFinalMessage` (initiator → replier with
     /// `related_message_identity != NIL`).
     pub const AUTH: &str = "dds.sec.auth";
-    /// Crypto-Token-Exchange auf Participant-Ebene.
+    /// Crypto-token exchange at the participant level.
     pub const PARTICIPANT_CRYPTO_TOKENS: &str = "dds.sec.participant_crypto_tokens";
-    /// Crypto-Token-Exchange fuer einen DataWriter-Slot.
+    /// Crypto-token exchange for a DataWriter slot.
     pub const DATAWRITER_CRYPTO_TOKENS: &str = "dds.sec.datawriter_crypto_tokens";
-    /// Crypto-Token-Exchange fuer einen DataReader-Slot.
+    /// Crypto-token exchange for a DataReader slot.
     pub const DATAREADER_CRYPTO_TOKENS: &str = "dds.sec.datareader_crypto_tokens";
 }
 
-/// `MessageIdentity` (Spec §7.5.5 Tab.10).
+/// `MessageIdentity` (spec §7.5.5 Tab.10).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MessageIdentity {
-    /// 16-byte GUID des Senders.
+    /// 16-byte GUID of the sender.
     pub source_guid: [u8; 16],
-    /// 8-byte Sequence-Number (i64). 0 = NIL/unset.
+    /// 8-byte sequence number (i64). 0 = NIL/unset.
     pub sequence_number: i64,
 }
 
 impl MessageIdentity {
-    /// True wenn beide Felder Default-Werte haben (NIL-Indicator).
+    /// True if both fields have default values (NIL indicator).
     #[must_use]
     pub fn is_nil(&self) -> bool {
         self.source_guid == [0; 16] && self.sequence_number == 0
@@ -95,38 +95,38 @@ impl MessageIdentity {
 /// `ParticipantGenericMessage` (Spec §7.5.5 Tab.10).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ParticipantGenericMessage {
-    /// Eindeutige Sender-Identitaet pro Message.
+    /// Unique sender identity per message.
     pub message_identity: MessageIdentity,
-    /// `MessageIdentity` der Vorgaenger-Message — bei Replies + Finals
-    /// gesetzt, bei initialen Requests NIL (alle Bytes 0).
+    /// `MessageIdentity` of the predecessor message — set for replies + finals,
+    /// NIL (all bytes 0) for initial requests.
     pub related_message_identity: MessageIdentity,
-    /// Destination-Participant-GUID (16 byte). 0 = broadcast an alle
-    /// matched Receiver.
+    /// Destination participant GUID (16 bytes). 0 = broadcast to all
+    /// matched receivers.
     pub destination_participant_key: [u8; 16],
-    /// Destination-Endpoint-GUID (oder 0 fuer Participant-Wide).
+    /// Destination endpoint GUID (or 0 for participant-wide).
     pub destination_endpoint_key: [u8; 16],
     /// Source-Endpoint-GUID.
     pub source_endpoint_key: [u8; 16],
-    /// `message_class_id`-String (siehe [`class_id`]).
+    /// `message_class_id` string (see [`class_id`]).
     pub message_class_id: String,
-    /// Sequenz von `DataHolder` — typischerweise EINER (z.B. ein
-    /// HandshakeMessageToken oder ein CryptoToken-Bundle).
+    /// Sequence of `DataHolder` — typically ONE (e.g. a
+    /// HandshakeMessageToken or a CryptoToken bundle).
     pub message_data: Vec<DataHolder>,
 }
 
-/// Maximaler Wire-Body eines `ParticipantGenericMessage` (DoS-Cap).
+/// Maximum wire body of a `ParticipantGenericMessage` (DoS cap).
 const MAX_GENERIC_MESSAGE_BYTES: usize = 256 * 1024;
 
-/// Maximale `message_data`-Sequenz-Laenge (DoS-Cap).
+/// Maximum `message_data` sequence length (DoS cap).
 const MAX_MESSAGE_DATA_LEN: u32 = 64;
 
-/// Maximale `message_class_id`-Laenge (Spec: string<256>).
+/// Maximum `message_class_id` length (spec: string<256>).
 const MAX_CLASS_ID_LEN: u32 = 256;
 
 impl ParticipantGenericMessage {
-    /// Encode → XCDR1-LE Bytes (ohne PL_CDR-Encapsulation-Header — den
-    /// fuegt der Wire-Layer separat an, weil ParticipantGenericMessage
-    /// kein PL_CDR (ParameterList), sondern strukturiertes CDR ist).
+    /// Encode → XCDR1-LE bytes (without the PL_CDR encapsulation header — the
+    /// wire layer appends that separately, because ParticipantGenericMessage
+    /// is not PL_CDR (ParameterList) but structured CDR).
     #[must_use]
     pub fn to_cdr_le(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(128);
@@ -138,18 +138,22 @@ impl ParticipantGenericMessage {
         encode_string(&mut out, &self.message_class_id, true);
         encode_u32(&mut out, self.message_data.len() as u32, true);
         for dh in &self.message_data {
-            // DataHolder embedded → CDR-Bytes des DataHolders selbst,
-            // length-prefixed damit der Decoder die Begrenzungen kennt.
-            let dh_bytes = dh.to_cdr_le();
-            encode_octet_seq(&mut out, &dh_bytes, true);
+            // Spec `sequence<DataHolder>` (GenericMessageData): each
+            // DataHolder INLINE as a CDR struct (4-aligned), NOT
+            // length-prefixed. Cross-vendor critical: cyclone/FastDDS
+            // deserialize sequence<DataHolder> inline — an
+            // octet-seq length prefix would be misinterpreted as the
+            // class_id string length ("deserialization failed").
+            align(&mut out, 4);
+            out.extend_from_slice(&dh.to_cdr_le());
         }
         out
     }
 
-    /// Decode aus XCDR1-LE Bytes.
+    /// Decode from XCDR1-LE bytes.
     ///
     /// # Errors
-    /// `BadArgument` bei Truncation, ueberschrittenen DoS-Caps oder
+    /// `BadArgument` on truncation, exceeded DoS caps, or
     /// non-UTF-8 in `message_class_id`.
     pub fn from_cdr_le(bytes: &[u8]) -> SecurityResult<Self> {
         if bytes.len() > MAX_GENERIC_MESSAGE_BYTES {
@@ -180,8 +184,11 @@ impl ParticipantGenericMessage {
         }
         let mut message_data = Vec::with_capacity(count as usize);
         for _ in 0..count {
-            let dh_bytes = decode_octet_seq(&mut cur)?;
-            let dh = DataHolder::from_cdr_le(&dh_bytes)?;
+            // Inline DataHolder (4-aligned), the length is determined by the
+            // decoder itself — no length prefix (see to_cdr_le).
+            cur.align(4)?;
+            let (dh, consumed) = DataHolder::from_cdr_le_consumed(&cur.buf[cur.pos..])?;
+            cur.advance(consumed)?;
             message_data.push(dh);
         }
         Ok(Self {
@@ -231,11 +238,6 @@ fn encode_string(buf: &mut Vec<u8>, s: &str, le: bool) {
     encode_u32(buf, len, le);
     buf.extend_from_slice(bytes);
     buf.push(0);
-}
-
-fn encode_octet_seq(buf: &mut Vec<u8>, v: &[u8], le: bool) {
-    encode_u32(buf, v.len() as u32, le);
-    buf.extend_from_slice(v);
 }
 
 fn encode_message_identity(buf: &mut Vec<u8>, mi: &MessageIdentity, le: bool) {
@@ -347,17 +349,6 @@ fn decode_string(cur: &mut Cursor<'_>) -> SecurityResult<String> {
     Ok(s.to_string())
 }
 
-fn decode_octet_seq(cur: &mut Cursor<'_>) -> SecurityResult<Vec<u8>> {
-    let len = cur.read_u32()? as usize;
-    if len > MAX_GENERIC_MESSAGE_BYTES {
-        return Err(SecurityError::new(
-            SecurityErrorKind::BadArgument,
-            "generic_message: octet_seq > cap",
-        ));
-    }
-    Ok(cur.read_slice(len)?.to_vec())
-}
-
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
@@ -387,6 +378,40 @@ mod tests {
     }
 
     #[test]
+    fn message_data_dataholder_is_inline_not_length_prefixed() {
+        // Spec `sequence<DataHolder>`: cyclone/FastDDS serialize the
+        // DataHolders INLINE (no octet-seq length prefix). Earlier ZeroDDS
+        // wrapped each DataHolder in a length-prefixed sequence<octet> —
+        // cyclone read the prefix as the class_id string length → "deserialization
+        // failed". Here: the (single) DataHolder must stand as a contiguous
+        // inline block at the end, and the 4 bytes before it are the
+        // sequence COUNT (=1), NOT its length.
+        let msg = sample_msg();
+        let bytes = msg.to_cdr_le();
+        let dh_inline = msg.message_data[0].to_cdr_le();
+        assert!(
+            bytes.ends_with(&dh_inline),
+            "the DataHolder must stand INLINE at the end"
+        );
+        let pos = bytes.len() - dh_inline.len();
+        let prefix = u32::from_le_bytes([
+            bytes[pos - 4],
+            bytes[pos - 3],
+            bytes[pos - 2],
+            bytes[pos - 1],
+        ]);
+        assert_eq!(
+            prefix, 1,
+            "before the DataHolder stands the sequence count (=1)"
+        );
+        assert_ne!(
+            prefix as usize,
+            dh_inline.len(),
+            "NO octet-seq length prefix before the DataHolder"
+        );
+    }
+
+    #[test]
     fn nil_message_identity() {
         let mi = MessageIdentity::default();
         assert!(mi.is_nil());
@@ -399,8 +424,8 @@ mod tests {
 
     #[test]
     fn class_id_constants_match_spec() {
-        // Spec §7.5.5 — diese Strings duerfen NIE driftet sein, sonst
-        // matched Cyclone/FastDDS unsere Auth-Messages nicht.
+        // Spec §7.5.5 — these strings must NEVER have drifted, otherwise
+        // Cyclone/FastDDS won't match our auth messages.
         assert_eq!(class_id::AUTH_REQUEST, "dds.sec.auth_request");
         assert_eq!(class_id::AUTH, "dds.sec.auth");
         assert_eq!(
@@ -441,7 +466,7 @@ mod tests {
 
     #[test]
     fn handshake_request_token_in_message_data() {
-        // Realistisches Scenario: Initiator schickt seinen
+        // Realistic scenario: the initiator sends its
         // HandshakeRequestMessageToken via DCPSParticipantStateless.
         let token = DataHolder::new("DDS:Auth:PKI-DH:1.2+AuthReq")
             .with_property("c.dsign_algo", "ECDSA-SHA256")
@@ -473,9 +498,8 @@ mod tests {
 
     #[test]
     fn related_message_identity_links_reply_to_request() {
-        // Replier setzt related_message_identity = sender_identity des
-        // Requests, damit Initiator die Reply seinem Request zuordnen
-        // kann.
+        // The replier sets related_message_identity = the sender_identity of the
+        // request, so the initiator can map the reply to its request.
         let request_id = MessageIdentity {
             source_guid: [0xAA; 16],
             sequence_number: 1,
@@ -506,7 +530,7 @@ mod tests {
 
     #[test]
     fn invalid_class_id_utf8_rejected() {
-        // Encode mit forged non-UTF-8-class-id-Bytes.
+        // Encode with forged non-UTF-8 class-id bytes.
         let mut buf = Vec::new();
         // message_identity (24 byte: 16 + i64 padded)
         buf.extend_from_slice(&[0u8; 16]);
@@ -516,7 +540,7 @@ mod tests {
         buf.extend_from_slice(&0i64.to_le_bytes());
         // 3x GUID
         buf.extend_from_slice(&[0u8; 48]);
-        // class_id-len = 5, dann 4 byte invalid utf-8 + NUL
+        // class_id len = 5, then 4 bytes invalid utf-8 + NUL
         buf.extend_from_slice(&5u32.to_le_bytes());
         buf.extend_from_slice(&[0xFF, 0xFE, 0xFD, 0xFC, 0x00]);
         // align + message_data count = 0
@@ -540,7 +564,7 @@ mod tests {
         buf.extend_from_slice(&[0u8; 24]); // mi
         buf.extend_from_slice(&[0u8; 24]); // related
         buf.extend_from_slice(&[0u8; 48]); // 3 GUIDs
-        // class_id-len = 1 + NUL
+        // class_id len = 1 + NUL
         buf.extend_from_slice(&1u32.to_le_bytes());
         buf.push(0);
         align(&mut buf, 4);

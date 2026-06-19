@@ -25,10 +25,10 @@ use crate::qos_ffi::{ZeroDdsDataReaderQos, dr_qos_from_c};
 // Subscriber
 // ---------------------------------------------------------------------------
 
-/// Liefert den Owning-Participant.
+/// Returns the owning participant.
 ///
 /// # Safety
-/// `sub` valide.
+/// `sub` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_get_participant(
     sub: *mut ZeroDdsSubscriber,
@@ -40,11 +40,11 @@ pub unsafe extern "C" fn zerodds_sub_get_participant(
     unsafe { (*sub).participant }
 }
 
-/// `begin_access` (Spec §2.2.2.5.1.13). RC1: No-op-Marker fuer
-/// Coherent-Sets — die echten Set-Boundaries liegen am Reader-Wire-Pfad.
+/// `begin_access` (Spec §2.2.2.5.1.13). RC1: no-op marker for
+/// coherent sets — the real set boundaries are on the reader wire path.
 ///
 /// # Safety
-/// `sub` valide.
+/// `sub` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_begin_access(sub: *mut ZeroDdsSubscriber) -> c_int {
     if sub.is_null() {
@@ -56,7 +56,7 @@ pub unsafe extern "C" fn zerodds_sub_begin_access(sub: *mut ZeroDdsSubscriber) -
 /// `end_access`.
 ///
 /// # Safety
-/// `sub` valide.
+/// `sub` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_end_access(sub: *mut ZeroDdsSubscriber) -> c_int {
     if sub.is_null() {
@@ -65,10 +65,10 @@ pub unsafe extern "C" fn zerodds_sub_end_access(sub: *mut ZeroDdsSubscriber) -> 
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Liefert die Liste aktiver DataReader.
+/// Returns the list of active DataReaders.
 ///
 /// # Safety
-/// `sub`, `out`, `out_count` valide.
+/// `sub`, `out`, `out_count` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_get_datareaders(
     sub: *mut ZeroDdsSubscriber,
@@ -80,7 +80,7 @@ pub unsafe extern "C" fn zerodds_sub_get_datareaders(
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — sub+out+out_count NULL-checked above; out[0..cap]
-    // muss writeable sein (Caller-Pledge).
+    // must be writeable (caller pledge).
     unsafe {
         let sb = &*sub;
         let drs = sb.datareaders.lock().map(|g| g.clone()).unwrap_or_default();
@@ -92,11 +92,11 @@ pub unsafe extern "C" fn zerodds_sub_get_datareaders(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// `notify_datareaders` (Spec §2.2.2.5.1.16). RC1: No-op — Listener-Bubble-Up
-/// laeuft per-Reader, der Subscriber-Aggregator wird in WP "Listeners-FFI" wired.
+/// `notify_datareaders` (Spec §2.2.2.5.1.16). RC1: no-op — the listener bubble-up
+/// runs per-reader, the subscriber aggregator is wired in the WP "Listeners-FFI".
 ///
 /// # Safety
-/// `sub` valide.
+/// `sub` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_notify_datareaders(sub: *mut ZeroDdsSubscriber) -> c_int {
     if sub.is_null() {
@@ -105,10 +105,10 @@ pub unsafe extern "C" fn zerodds_sub_notify_datareaders(sub: *mut ZeroDdsSubscri
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Erzeugt einen DataReader.
+/// Creates a DataReader.
 ///
 /// # Safety
-/// `sub`, `topic` valide; `qos` darf NULL sein.
+/// `sub`, `topic` valid; `qos` may be NULL.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_create_datareader(
     sub: *mut ZeroDdsSubscriber,
@@ -119,7 +119,7 @@ pub unsafe extern "C" fn zerodds_sub_create_datareader(
         return ptr::null_mut();
     }
     // SAFETY: see fn # Safety doc — sub+topic NULL-checked above; participant
-    // aus dp_create_subscriber; qos NULL-tolerant.
+    // from dp_create_subscriber; qos NULL-tolerant.
     unsafe {
         let sb = &*sub;
         let tt = &*topic;
@@ -180,12 +180,12 @@ pub unsafe extern "C" fn zerodds_sub_create_datareader(
     }
 }
 
-/// Erzeugt einen DataReader auf einem ContentFilteredTopic.
-/// Bei jedem `take`/`read` wird die Filter-Expression evaluiert
+/// Creates a DataReader on a ContentFilteredTopic.
+/// On every `take`/`read` the filter expression is evaluated
 /// (Spec §2.2.2.3.3 + §2.2.2.5.2.5).
 ///
 /// # Safety
-/// `sub`, `cft` valide; `qos` darf NULL sein.
+/// `sub`, `cft` valid; `qos` may be NULL.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_create_datareader_with_cft(
     sub: *mut ZeroDdsSubscriber,
@@ -195,9 +195,9 @@ pub unsafe extern "C" fn zerodds_sub_create_datareader_with_cft(
     if sub.is_null() || cft.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: see fn # Safety doc — sub+cft NULL-checked above; cft aus
-    // create_contentfilteredtopic; delegation an zerodds_sub_create_datareader;
-    // dr ist frische Box::into_raw die wir wieder einsammeln um cft_filter zu setzen.
+    // SAFETY: see fn # Safety doc — sub+cft NULL-checked above; cft from
+    // create_contentfilteredtopic; delegation to zerodds_sub_create_datareader;
+    // dr is a fresh Box::into_raw that we collect again to set cft_filter.
     unsafe {
         let cft_ref = &*cft;
         let related_topic = cft_ref.related_topic;
@@ -228,10 +228,10 @@ pub unsafe extern "C" fn zerodds_sub_create_datareader_with_cft(
     }
 }
 
-/// Loescht einen DataReader.
+/// Deletes a DataReader.
 ///
 /// # Safety
-/// `sub`, `dr` valide und zugehoerig.
+/// `sub`, `dr` valid and belonging together.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_delete_datareader(
     sub: *mut ZeroDdsSubscriber,
@@ -240,7 +240,7 @@ pub unsafe extern "C" fn zerodds_sub_delete_datareader(
     if sub.is_null() || dr.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: see fn # Safety doc — sub+dr NULL-checked above; dr aus sub_create_datareader.
+    // SAFETY: see fn # Safety doc — sub+dr NULL-checked above; dr from sub_create_datareader.
     unsafe {
         if (*dr).subscriber != sub {
             return ZeroDdsStatus::PreconditionNotMet as c_int;
@@ -253,15 +253,21 @@ pub unsafe extern "C" fn zerodds_sub_delete_datareader(
                 return ZeroDdsStatus::BadHandle as c_int;
             }
         }
+        // Drop any zero-copy SHM map state keyed by this reader's (runtime, eid).
+        #[cfg(feature = "flatdata-loan")]
+        {
+            let drr = &*dr;
+            crate::shm_loan_ffi::forget_reader(&drr.rt, drr.eid);
+        }
         let _ = Box::from_raw(dr);
     }
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Lookup-DataReader by Topic-Name.
+/// Look up a DataReader by topic name.
 ///
 /// # Safety
-/// `sub`, `topic_name` valide.
+/// `sub`, `topic_name` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_lookup_datareader(
     sub: *mut ZeroDdsSubscriber,
@@ -271,7 +277,7 @@ pub unsafe extern "C" fn zerodds_sub_lookup_datareader(
         return ptr::null_mut();
     }
     // SAFETY: see fn # Safety doc — sub+topic_name NULL-checked above; datareaders
-    // und ihre topic-Pointer aus sub_create_datareader (Box::into_raw).
+    // and their topic pointers from sub_create_datareader (Box::into_raw).
     unsafe {
         let cs = std::ffi::CStr::from_ptr(topic_name);
         let name = match cs.to_str() {
@@ -294,10 +300,10 @@ pub unsafe extern "C" fn zerodds_sub_lookup_datareader(
     ptr::null_mut()
 }
 
-/// Loescht alle vom Subscriber gehaltenen DataReader.
+/// Deletes all DataReaders held by the subscriber.
 ///
 /// # Safety
-/// `sub` valide.
+/// `sub` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_delete_contained_entities(
     sub: *mut ZeroDdsSubscriber,
@@ -305,7 +311,7 @@ pub unsafe extern "C" fn zerodds_sub_delete_contained_entities(
     if sub.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: see fn # Safety doc — sub NULL-checked above; datareaders aus
+    // SAFETY: see fn # Safety doc — sub NULL-checked above; datareaders from
     // sub_create_datareader (Box::into_raw).
     unsafe {
         let drs: Vec<*mut ZeroDdsDataReader> = (*sub)
@@ -326,10 +332,10 @@ pub unsafe extern "C" fn zerodds_sub_delete_contained_entities(
 // DataReader: read / take + Sample-API
 // ---------------------------------------------------------------------------
 
-/// Liefert das TopicDescription-Handle (im RC1: Topic-Pointer).
+/// Returns the TopicDescription handle (in RC1: the topic pointer).
 ///
 /// # Safety
-/// `dr` valide.
+/// `dr` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_get_topicdescription(
     dr: *mut ZeroDdsDataReader,
@@ -341,10 +347,10 @@ pub unsafe extern "C" fn zerodds_dr_get_topicdescription(
     unsafe { (*dr).topic }
 }
 
-/// Liefert den Subscriber.
+/// Returns the subscriber.
 ///
 /// # Safety
-/// `dr` valide.
+/// `dr` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_get_subscriber(
     dr: *mut ZeroDdsDataReader,
@@ -360,11 +366,11 @@ pub unsafe extern "C" fn zerodds_dr_get_subscriber(
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ZeroDdsSampleInfo {
-    /// Sample-State Bit (1=READ, 2=NOT_READ).
+    /// Sample-state bit (1=READ, 2=NOT_READ).
     pub sample_state: u32,
-    /// View-State (1=NEW, 2=NOT_NEW).
+    /// View state (1=NEW, 2=NOT_NEW).
     pub view_state: u32,
-    /// Instance-State (1=ALIVE, 2=NOT_ALIVE_DISPOSED, 4=NOT_ALIVE_NO_WRITERS).
+    /// Instance state (1=ALIVE, 2=NOT_ALIVE_DISPOSED, 4=NOT_ALIVE_NO_WRITERS).
     pub instance_state: u32,
     /// disposed_generation_count.
     pub disposed_generation_count: i32,
@@ -380,31 +386,31 @@ pub struct ZeroDdsSampleInfo {
     pub source_timestamp_sec: i32,
     /// source_timestamp nanoseconds.
     pub source_timestamp_nanosec: u32,
-    /// Instance-Handle.
+    /// Instance handle.
     pub instance_handle: u64,
-    /// Publication-Handle (Writer-GUID-Hash).
+    /// Publication handle (writer-GUID hash).
     pub publication_handle: u64,
-    /// `true` wenn payload tatsaechlich Daten hat (vs. Lifecycle-Marker).
+    /// `true` if the payload actually has data (vs. a lifecycle marker).
     pub valid_data: bool,
 }
 
-/// Sample-Array (Spec §5 Mini-Spec).
+/// Sample array (Spec §5 mini-spec).
 #[repr(C)]
 pub struct ZeroDdsSampleArray {
-    /// Array von Payload-Pointern.
+    /// Array of payload pointers.
     pub buffers: *mut *mut u8,
-    /// Array von Payload-Laengen.
+    /// Array of payload lengths.
     pub lengths: *mut usize,
-    /// Array von SampleInfos.
+    /// Array of SampleInfos.
     pub infos: *mut ZeroDdsSampleInfo,
-    /// Anzahl Samples.
+    /// Number of samples.
     pub count: usize,
-    /// Internes Loan-Token (Pointer auf `Vec<UserSample>` Box). Wird
-    /// von `return_loan` freigegeben.
+    /// Internal loan token (pointer to a `Vec<UserSample>` box). Freed
+    /// by `return_loan`.
     pub loan_token: *mut core::ffi::c_void,
 }
 
-/// Internes Loan-Memory: Held bis `return_loan` aufruft.
+/// Internal loan memory: held until `return_loan` is called.
 struct LoanMemory {
     payloads: Vec<Vec<u8>>,
     buffers: Vec<*mut u8>,
@@ -483,9 +489,9 @@ impl LoanMemory {
             }
         }
 
-        // Buffers + Lengths separate Vecs damit ihre Pointer stabil sind
-        // (Vec<Vec<u8>>::as_mut_ptr() der inneren Vecs sind stabil
-        // solange die outer Vec nicht re-allokiert).
+        // Buffers + lengths in separate Vecs so that their pointers are stable
+        // (Vec<Vec<u8>>::as_mut_ptr() of the inner Vecs is stable
+        // as long as the outer Vec does not re-allocate).
         let mut buffers: Vec<*mut u8> = Vec::with_capacity(payloads.len());
         let mut lengths: Vec<usize> = Vec::with_capacity(payloads.len());
         for v in payloads.iter_mut() {
@@ -510,12 +516,12 @@ fn u64_from_guid(g: [u8; 16]) -> u64 {
     h
 }
 
-/// Take: konsumiert Samples aus Cache + Channel (Spec §2.2.2.5.3).
-/// Geht durch read_cache (Sample-State READ + NOT_READ) und Channel
-/// (Sample-State NOT_READ), entfernt alle gelieferten Samples.
+/// Take: consumes samples from the cache + channel (Spec §2.2.2.5.3).
+/// Goes through read_cache (sample-state READ + NOT_READ) and the channel
+/// (sample-state NOT_READ), removes all delivered samples.
 ///
 /// # Safety
-/// `dr`, `out` valide.
+/// `dr`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_take(
     dr: *mut ZeroDdsDataReader,
@@ -535,17 +541,17 @@ pub unsafe extern "C" fn zerodds_dr_take(
     };
 
     let mut collected: Vec<(UserSample, crate::entities::ReadSampleState)> = Vec::new();
-    // SAFETY: see fn # Safety doc — dr+out NULL-checked above; cache+rx leben fuer
-    // den Reader; out-Felder werden in einem Block beschrieben.
+    // SAFETY: see fn # Safety doc — dr+out NULL-checked above; cache+rx live for
+    // the reader; the out fields are written in one block.
     let empty_out = unsafe {
         let drr = &*dr;
-        // 1) Read-Cache leeren (Samples die `read()` schon gesehen hat).
+        // 1) Empty the read cache (samples that `read()` has already seen).
         if let Ok(mut cache) = drr.read_cache.lock() {
             while collected.len() < limit && !cache.is_empty() {
                 collected.push(cache.remove(0));
             }
         }
-        // 2) Frische Samples aus dem Channel.
+        // 2) Fresh samples from the channel.
         if let Ok(rx) = drr.rx.lock() {
             while collected.len() < limit {
                 match rx.try_recv() {
@@ -554,7 +560,7 @@ pub unsafe extern "C" fn zerodds_dr_take(
                 }
             }
         }
-        // 3) ContentFilteredTopic-Filter (Spec §2.2.2.3.3).
+        // 3) ContentFilteredTopic filter (Spec §2.2.2.3.3).
         if let Some(filter) = &drr.cft_filter {
             collected.retain(|(s, _)| match s {
                 UserSample::Alive { payload, .. } => filter.evaluate(payload),
@@ -578,12 +584,12 @@ pub unsafe extern "C" fn zerodds_dr_take(
     finalize_loan(out, collected)
 }
 
-/// Read: non-destructive Variante von Take (Spec §2.2.2.5.3).
-/// Liefert Samples aus Cache + Channel, aber ALLE bleiben anschliessend
-/// im Read-Cache mit Sample-State = READ.
+/// Read: non-destructive variant of take (Spec §2.2.2.5.3).
+/// Returns samples from the cache + channel, but ALL of them remain afterwards
+/// in the read cache with sample-state = READ.
 ///
 /// # Safety
-/// `dr`, `out` valide.
+/// `dr`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_read(
     dr: *mut ZeroDdsDataReader,
@@ -605,7 +611,7 @@ pub unsafe extern "C" fn zerodds_dr_read(
     // SAFETY: see fn # Safety doc — dr+out NULL-checked above.
     let (collected, empty_out) = unsafe {
         let drr = &*dr;
-        // Pull frische Samples vom Channel in den Cache (mit NOT_READ-Marker).
+        // Pull fresh samples from the channel into the cache (with the NOT_READ marker).
         if let (Ok(rx), Ok(mut cache)) = (drr.rx.lock(), drr.read_cache.lock()) {
             while let Ok(s) = rx.try_recv() {
                 let pass = if let Some(filter) = &drr.cft_filter {
@@ -621,7 +627,7 @@ pub unsafe extern "C" fn zerodds_dr_read(
                 }
             }
         }
-        // Lese die ersten `limit` aus dem Cache (clone), markiere als READ.
+        // Read the first `limit` from the cache (clone), mark as READ.
         let collected: Vec<(UserSample, crate::entities::ReadSampleState)> =
             if let Ok(mut cache) = drr.read_cache.lock() {
                 let n = cache.len().min(limit);
@@ -663,8 +669,8 @@ fn finalize_loan(
     let infos_ptr = loan.infos.as_mut_ptr();
     let count = loan.payloads.len();
     let token = Box::into_raw(loan) as *mut core::ffi::c_void;
-    // SAFETY: out wurde von dr_take/dr_read NULL-gecheckt vor dem Aufruf; Caller-Pledge
-    // garantiert valide ZeroDdsSampleArray-Struct.
+    // SAFETY: out was NULL-checked by dr_take/dr_read before the call; the caller pledge
+    // guarantees a valid ZeroDdsSampleArray struct.
     unsafe {
         (*out).buffers = buffers_ptr;
         (*out).lengths = lengths_ptr;
@@ -678,7 +684,7 @@ fn finalize_loan(
 /// Take next single sample.
 ///
 /// # Safety
-/// `dr`, `out_buf`, `out_len`, `out_info` valide.
+/// `dr`, `out_buf`, `out_len`, `out_info` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_take_next_sample(
     dr: *mut ZeroDdsDataReader,
@@ -704,22 +710,22 @@ pub unsafe extern "C" fn zerodds_dr_take_next_sample(
         *out_len = loan.lengths[0];
         *out_info = loan.infos[0];
     }
-    // Single-sample take: Loan haengt am out_buf. Caller muss
-    // `take`-Loan-Pfad benutzen wenn er Memory zurueckgeben will —
-    // hier transferieren wir Ownership an Caller via Box::into_raw +
-    // memory-leak-Pfad: dokumentiert in der Mini-Spec, Caller MUSS
-    // `zerodds_dr_return_loan` mit einer SampleArray { loan_token: <token> }
-    // rufen. Wir ankern den Token in einer thread-local Variable —
-    // oder besser: wir geben ihn ueber out_info nicht zurueck. Diese
-    // RC1-Variante ist deshalb leak-tolerant: Loan wird drop-bare.
+    // Single-sample take: the loan hangs off out_buf. The caller must
+    // use the `take` loan path if it wants to return memory —
+    // here we transfer ownership to the caller via Box::into_raw +
+    // a memory-leak path: documented in the mini-spec, the caller MUST
+    // call `zerodds_dr_return_loan` with a SampleArray { loan_token: <token> }.
+    // We anchor the token in a thread-local variable —
+    // or better: we do not return it via out_info. This
+    // RC1 variant is therefore leak-tolerant: the loan becomes droppable.
     let _ = Box::into_raw(loan);
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Read next single sample. Identisch zu take_next_sample im RC1.
+/// Read next single sample. Identical to take_next_sample in RC1.
 ///
 /// # Safety
-/// Wie `take_next_sample`.
+/// Like `take_next_sample`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_read_next_sample(
     dr: *mut ZeroDdsDataReader,
@@ -731,18 +737,18 @@ pub unsafe extern "C" fn zerodds_dr_read_next_sample(
     unsafe { zerodds_dr_take_next_sample(dr, out_buf, out_len, out_info) }
 }
 
-/// Filtert eine `SampleArray` in-place auf einen einzelnen
-/// `instance_handle`. Samples die nicht passen werden aus den
-/// Arrays entfernt; `count` wird angepasst.
+/// Filters a `SampleArray` in place to a single
+/// `instance_handle`. Samples that do not match are removed from the
+/// arrays; `count` is adjusted.
 ///
 /// # Safety
-/// `arr` valide; `arr.buffers/lengths/infos[0..count]` lesbar.
+/// `arr` valid; `arr.buffers/lengths/infos[0..count]` lesbar.
 pub fn sample_array_filter_instance(arr: *mut ZeroDdsSampleArray, handle: u64) -> c_int {
     if arr.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: arr NULL-checked above; arr stammt aus dr_take/dr_read; alle Sub-Pointer
-    // (buffers/lengths/infos) wurden von finalize_loan beschrieben und sind 0..count valide.
+    // SAFETY: arr NULL-checked above; arr comes from dr_take/dr_read; all sub-pointers
+    // (buffers/lengths/infos) were written by finalize_loan and are valid 0..count.
     unsafe {
         let count = (*arr).count;
         if count == 0 {
@@ -771,13 +777,13 @@ pub fn sample_array_filter_instance(arr: *mut ZeroDdsSampleArray, handle: u64) -
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Filtert auf "naechste" Instance > prev_handle. Liefert nur
-/// Samples deren instance_handle > prev_handle UND minimal ist.
+/// Filters to the "next" instance > prev_handle. Returns only
+/// samples whose instance_handle is > prev_handle AND minimal.
 pub fn sample_array_filter_next_instance(arr: *mut ZeroDdsSampleArray, prev_handle: u64) -> c_int {
     if arr.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: arr aus dr_take/dr_read; infos 0..count valide.
+    // SAFETY: arr from dr_take/dr_read; infos valid 0..count.
     let next_handle = unsafe {
         let count = (*arr).count;
         if count == 0 {
@@ -806,8 +812,8 @@ pub fn sample_array_filter_next_instance(arr: *mut ZeroDdsSampleArray, prev_hand
     }
 }
 
-/// Filtert auf sample_state/view_state/instance_state-Bitmask.
-/// Mask=0 bedeutet "alle erlaubt".
+/// Filters to a sample_state/view_state/instance_state bitmask.
+/// Mask=0 means "all allowed".
 pub fn sample_array_filter_states(
     arr: *mut ZeroDdsSampleArray,
     sample_states: u32,
@@ -817,7 +823,7 @@ pub fn sample_array_filter_states(
     if arr.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: arr aus dr_take/dr_read; alle Sub-Pointer 0..count valide.
+    // SAFETY: arr from dr_take/dr_read; all sub-pointers valid 0..count.
     unsafe {
         let count = (*arr).count;
         if count == 0 {
@@ -849,11 +855,11 @@ pub fn sample_array_filter_states(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Gibt geliehene Sample-Buffer zurueck.
+/// Returns loaned sample buffers.
 ///
 /// # Safety
-/// `arr` muss aus einem vorherigen `zerodds_dr_take`/`read` stammen,
-/// `loan_token` muss noch gueltig sein.
+/// `arr` must come from a previous `zerodds_dr_take`/`read`,
+/// `loan_token` must still be valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_return_loan(
     _dr: *mut ZeroDdsDataReader,
@@ -862,7 +868,7 @@ pub unsafe extern "C" fn zerodds_dr_return_loan(
     if arr.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — arr NULL-checked above; loan_token aus
+    // SAFETY: see fn # Safety doc — arr NULL-checked above; loan_token from
     // LoanMemory::new Box::into_raw in dr_take/read.
     unsafe {
         let token = (*arr).loan_token;
@@ -878,10 +884,10 @@ pub unsafe extern "C" fn zerodds_dr_return_loan(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Wartet bis `min` matched Publications oder Timeout.
+/// Waits until `min` matched publications or a timeout.
 ///
 /// # Safety
-/// `dr` valide.
+/// `dr` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_wait_for_matched(
     dr: *mut ZeroDdsDataReader,
@@ -994,7 +1000,7 @@ pub struct ZeroDdsSampleRejectedStatus {
 /// `LIVELINESS_CHANGED_STATUS`.
 ///
 /// # Safety
-/// `dr` und `out` valide.
+/// `dr` and `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_get_liveliness_changed_status(
     dr: *mut ZeroDdsDataReader,
@@ -1022,7 +1028,7 @@ pub unsafe extern "C" fn zerodds_dr_get_liveliness_changed_status(
 /// `SUBSCRIPTION_MATCHED_STATUS`.
 ///
 /// # Safety
-/// `dr` und `out` valide.
+/// `dr` and `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_get_subscription_matched_status(
     dr: *mut ZeroDdsDataReader,
@@ -1049,7 +1055,7 @@ pub unsafe extern "C" fn zerodds_dr_get_subscription_matched_status(
 /// `REQUESTED_DEADLINE_MISSED_STATUS`.
 ///
 /// # Safety
-/// `dr` und `out` valide.
+/// `dr` and `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_get_requested_deadline_missed_status(
     dr: *mut ZeroDdsDataReader,
@@ -1074,7 +1080,7 @@ pub unsafe extern "C" fn zerodds_dr_get_requested_deadline_missed_status(
 /// `REQUESTED_INCOMPATIBLE_QOS_STATUS`.
 ///
 /// # Safety
-/// `dr` und `out` valide.
+/// `dr` and `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_get_requested_incompatible_qos_status(
     dr: *mut ZeroDdsDataReader,
@@ -1099,7 +1105,7 @@ pub unsafe extern "C" fn zerodds_dr_get_requested_incompatible_qos_status(
 /// `SAMPLE_LOST_STATUS`.
 ///
 /// # Safety
-/// `dr` und `out` valide.
+/// `dr` and `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_get_sample_lost_status(
     dr: *mut ZeroDdsDataReader,
@@ -1123,7 +1129,7 @@ pub unsafe extern "C" fn zerodds_dr_get_sample_lost_status(
 /// `SAMPLE_REJECTED_STATUS`.
 ///
 /// # Safety
-/// `dr` und `out` valide.
+/// `dr` and `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_get_sample_rejected_status(
     dr: *mut ZeroDdsDataReader,
@@ -1178,7 +1184,7 @@ mod tests {
         let f = zerodds_dpf_get_instance();
         let n = c"SubT";
         let tn = c"SubTy";
-        // SAFETY: f aus dpf_get_instance, n+tn statisch valide.
+        // SAFETY: f from dpf_get_instance, n+tn statically valid.
         unsafe {
             let p = zerodds_dpf_create_participant(f, domain, ptr::null());
             let sub = zerodds_dp_create_subscriber(p, ptr::null());
@@ -1188,7 +1194,7 @@ mod tests {
     }
     fn cleanup(p: *mut ZeroDdsDomainParticipant) {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: p aus mk; f statisch.
+        // SAFETY: p from mk; f static.
         unsafe {
             zerodds_dp_delete_contained_entities(p);
             zerodds_dpf_delete_participant(f, p);
@@ -1198,7 +1204,7 @@ mod tests {
     #[test]
     fn create_delete_datareader() {
         let (p, sub, t) = mk(51);
-        // SAFETY: sub+t aus mk, valide bis cleanup.
+        // SAFETY: sub+t from mk, valid until cleanup.
         unsafe {
             let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
             assert!(!dr.is_null());
@@ -1212,7 +1218,7 @@ mod tests {
     fn lookup_datareader_finds_existing() {
         let (p, sub, t) = mk(52);
         let n = c"SubT";
-        // SAFETY: sub+t aus mk; n statisch.
+        // SAFETY: sub+t from mk; n static.
         unsafe {
             let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
             let f = zerodds_sub_lookup_datareader(sub, n.as_ptr());
@@ -1231,7 +1237,7 @@ mod tests {
             count: 0,
             loan_token: ptr::null_mut(),
         };
-        // SAFETY: sub+t aus mk; arr lebt fuer den Test.
+        // SAFETY: sub+t from mk; arr lives for the test.
         unsafe {
             let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
             let rc = zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0);
@@ -1251,7 +1257,7 @@ mod tests {
             count: 7,
             loan_token: ptr::null_mut(),
         };
-        // SAFETY: sub+t aus mk; arr lebt fuer den Test.
+        // SAFETY: sub+t from mk; arr lives for the test.
         unsafe {
             let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
             let rc = zerodds_dr_return_loan(dr, &mut arr);
@@ -1270,7 +1276,7 @@ mod tests {
         let mut d = ZeroDdsRequestedIncompatibleQosStatus::default();
         let mut e = ZeroDdsSampleLostStatus::default();
         let mut g = ZeroDdsSampleRejectedStatus::default();
-        // SAFETY: sub+t aus mk; status-Slots auf Stack.
+        // SAFETY: sub+t from mk; status slots on the stack.
         unsafe {
             let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
             let ok = ZeroDdsStatus::Ok as c_int;
@@ -1305,9 +1311,9 @@ mod tests {
             count: 0,
             loan_token: ptr::null_mut(),
         };
-        // SAFETY: p+sub+t aus mk; cft_name+expr statisch; arr lebt fuer den Test.
-        // CFT mit "name = 'foo'" — fuer untyped Bytes-Topic liefert EmptyRow None;
-        // CftFilter::evaluate gibt unwrap_or(true) zurueck (pass-through).
+        // SAFETY: p+sub+t from mk; cft_name+expr static; arr lives for the test.
+        // CFT with "name = 'foo'" — for an untyped bytes topic EmptyRow returns None;
+        // CftFilter::evaluate returns unwrap_or(true) (pass-through).
         unsafe {
             let cft = zerodds_dp_create_contentfilteredtopic(
                 p,
@@ -1333,7 +1339,7 @@ mod tests {
         let (p, sub, t) = mk(59);
         let cft_name = c"BadCFT";
         let bad_expr = c"$$invalid syntax";
-        // SAFETY: p+sub+t aus mk; cft_name+bad_expr statisch.
+        // SAFETY: p+sub+t from mk; cft_name+bad_expr static.
         unsafe {
             let cft = zerodds_dp_create_contentfilteredtopic(
                 p,
@@ -1362,7 +1368,7 @@ mod tests {
             count: 0,
             loan_token: ptr::null_mut(),
         };
-        // SAFETY: sub+t aus mk; arr lebt fuer den Test.
+        // SAFETY: sub+t from mk; arr lives for the test.
         unsafe {
             let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
             let rc = zerodds_dr_read(dr, &mut arr, 10, 0, 0, 0);
@@ -1374,7 +1380,7 @@ mod tests {
     #[test]
     fn dr_get_topicdescription_subscriber_roundtrip() {
         let (p, sub, t) = mk(56);
-        // SAFETY: sub+t aus mk.
+        // SAFETY: sub+t from mk.
         unsafe {
             let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
             assert_eq!(zerodds_dr_get_topicdescription(dr), t);

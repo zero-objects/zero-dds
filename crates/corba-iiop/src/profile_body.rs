@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! IIOP ProfileBody — Spec §15.7.2 (alle 4 Versionen 1.0/1.1/1.2/1.3).
+//! IIOP ProfileBody — Spec §15.7.2 (all 4 versions 1.0/1.1/1.2/1.3).
 //!
 //! ```text
 //! struct Version {
@@ -25,27 +25,27 @@
 //! };
 //! ```
 //!
-//! `TaggedComponent` ist ein einfacher `(tag, encapsulation_octets)`-
-//! Container; der Inhalt ist abhaengig vom Tag (Spec §13.6.6).
-//! Wir halten den Inhalt opaque — `crates/corba-ior/` decodiert die
-//! Standard-32 Tags.
+//! `TaggedComponent` is a simple `(tag, encapsulation_octets)`
+//! container; its content depends on the tag (Spec §13.6.6).
+//! We keep the content opaque — `crates/corba-ior/` decodes the
+//! standard 32 tags.
 //!
-//! Die ProfileBody wird in einem `IOR.profiles[i].profile_data`-
-//! `sequence<octet>` als CDR-Encapsulation gespeichert (Spec §13.6.3
-//! Tab 13-3): erst ein `octet` mit Endianness, dann der Body in
-//! dieser Endianness.
+//! The ProfileBody is stored inside an `IOR.profiles[i].profile_data`
+//! `sequence<octet>` as a CDR encapsulation (Spec §13.6.3
+//! Tab 13-3): first an `octet` with the endianness, then the body in
+//! that endianness.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
 
-/// IIOP-Version (`major.minor`).
+/// IIOP version (`major.minor`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct IiopVersion {
-    /// Major-Version.
+    /// Major version.
     pub major: u8,
-    /// Minor-Version.
+    /// Minor version.
     pub minor: u8,
 }
 
@@ -59,14 +59,14 @@ impl IiopVersion {
     /// IIOP 1.3.
     pub const V1_3: Self = Self { major: 1, minor: 3 };
 
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new(major: u8, minor: u8) -> Self {
         Self { major, minor }
     }
 
-    /// `true` wenn die Version `components`-Sequenz im Body hat
-    /// (Spec §15.7.2: ab IIOP 1.1).
+    /// `true` if the version has a `components` sequence in the body
+    /// (Spec §15.7.2: from IIOP 1.1 onward).
     #[must_use]
     pub const fn has_components(self) -> bool {
         if self.major > 1 {
@@ -77,38 +77,38 @@ impl IiopVersion {
     }
 }
 
-/// Tagged-Component — Spec §13.6.6.
+/// Tagged component — Spec §13.6.6.
 ///
-/// `tag` ist ein `unsigned long` (z.B. `TAG_ORB_TYPE = 0`,
+/// `tag` is an `unsigned long` (e.g. `TAG_ORB_TYPE = 0`,
 /// `TAG_CODE_SETS = 1`, `TAG_POLICIES = 2`, …).
-/// `component_data` ist ein CDR-encapsulated Octet-Stream.
+/// `component_data` is a CDR-encapsulated octet stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaggedComponent {
-    /// Tag-ID.
+    /// Tag ID.
     pub tag: u32,
-    /// Encapsulation-Bytes (Length+Data oder Endianness+Body).
+    /// Encapsulation bytes (length+data or endianness+body).
     pub component_data: Vec<u8>,
 }
 
 /// IIOP ProfileBody.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IiopProfileBody {
-    /// IIOP-Version.
+    /// IIOP version.
     pub iiop_version: IiopVersion,
-    /// Host-Name oder IP-Adresse als String (Spec §15.7.2:
+    /// Host name or IP address as a string (Spec §15.7.2:
     /// "string identifying the host").
     pub host: String,
-    /// TCP-Port.
+    /// TCP port.
     pub port: u16,
-    /// Object-Key (POA-encoded).
+    /// Object key (POA-encoded).
     pub object_key: Vec<u8>,
-    /// `components` — leer in IIOP 1.0; ab 1.1 enthaelt es alle
-    /// optionalen TaggedComponents.
+    /// `components` — empty in IIOP 1.0; from 1.1 onward it holds all
+    /// optional TaggedComponents.
     pub components: Vec<TaggedComponent>,
 }
 
 impl IiopProfileBody {
-    /// Konstruktor mit minimalem Pflicht-Feld-Set.
+    /// Constructor with the minimal set of required fields.
     #[must_use]
     pub fn new(version: IiopVersion, host: String, port: u16, object_key: Vec<u8>) -> Self {
         Self {
@@ -120,11 +120,11 @@ impl IiopProfileBody {
         }
     }
 
-    /// CDR-Encode den ProfileBody (ohne Encapsulation-Wrapper —
-    /// Caller wraps in `crates/corba-ior/` bei Bedarf).
+    /// CDR-encodes the ProfileBody (without the encapsulation wrapper —
+    /// the caller wraps it in `crates/corba-ior/` when needed).
     ///
     /// # Errors
-    /// Buffer-Schreibfehler oder Length-Overflow.
+    /// Buffer write error or length overflow.
     pub fn encode(&self, w: &mut BufferWriter) -> Result<(), CdrError> {
         w.write_u8(self.iiop_version.major)?;
         w.write_u8(self.iiop_version.minor)?;
@@ -134,7 +134,7 @@ impl IiopProfileBody {
         let n = u32::try_from(self.object_key.len()).map_err(|_| CdrError::Overflow)?;
         w.write_u32(n)?;
         w.write_bytes(&self.object_key)?;
-        // components (ab IIOP 1.1).
+        // components (from IIOP 1.1 onward).
         if self.iiop_version.has_components() {
             let cn = u32::try_from(self.components.len()).map_err(|_| CdrError::Overflow)?;
             w.write_u32(cn)?;
@@ -148,10 +148,10 @@ impl IiopProfileBody {
         Ok(())
     }
 
-    /// CDR-Decode.
+    /// CDR-decodes.
     ///
     /// # Errors
-    /// Buffer-Lesefehler.
+    /// Buffer read error.
     pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, CdrError> {
         let major = r.read_u8()?;
         let minor = r.read_u8()?;
@@ -185,30 +185,30 @@ impl IiopProfileBody {
         })
     }
 
-    /// Encodiert den ProfileBody als CDR-Encapsulation (Spec §15.3.3):
-    /// `octet endianness + body in dieser Endianness`. Das ist die
-    /// Form, in der der ProfileBody in `IOR.profiles[i].profile_data`
-    /// gespeichert wird.
+    /// Encodes the ProfileBody as a CDR encapsulation (Spec §15.3.3):
+    /// `octet endianness + body in that endianness`. This is the
+    /// form in which the ProfileBody is stored in
+    /// `IOR.profiles[i].profile_data`.
     ///
     /// # Errors
-    /// Buffer-Schreibfehler.
+    /// Buffer write error.
     pub fn encode_encapsulation(&self, endianness: Endianness) -> Result<Vec<u8>, CdrError> {
         let mut out = Vec::with_capacity(64);
-        // Endianness-Byte (Bit 0 = 0 BE / 1 LE).
+        // Endianness byte (bit 0 = 0 BE / 1 LE).
         out.push(match endianness {
             Endianness::Big => 0,
             Endianness::Little => 1,
         });
-        let mut w = BufferWriter::new(endianness);
+        let mut w = BufferWriter::new(endianness).with_align_origin(1);
         self.encode(&mut w)?;
         out.extend_from_slice(w.as_bytes());
         Ok(out)
     }
 
-    /// Decodiert eine CDR-Encapsulation (siehe `encode_encapsulation`).
+    /// Decodes a CDR encapsulation (see `encode_encapsulation`).
     ///
     /// # Errors
-    /// Buffer-Lesefehler oder Endianness-Byte ungueltig.
+    /// Buffer read error or invalid endianness byte.
     pub fn decode_encapsulation(bytes: &[u8]) -> Result<Self, CdrError> {
         if bytes.is_empty() {
             return Err(CdrError::Truncated);
@@ -218,24 +218,29 @@ impl IiopProfileBody {
             1 => Endianness::Little,
             _ => return Err(CdrError::InvalidEndianness),
         };
-        let mut r = BufferReader::new(&bytes[1..], endianness);
+        // `align_origin = 1`: the endianness octet (index 0) is part of the
+        // alignment origin of the encapsulation (CORBA §15.3.3) — the body at
+        // index 1 aligns relative to the start of the encapsulation, not
+        // relative to the start of the body. Without this offset the first
+        // 4-byte field (host string length) is misaligned by 1 byte → interop break.
+        let mut r = BufferReader::new(&bytes[1..], endianness).with_align_origin(1);
         Self::decode(&mut r)
     }
 }
 
-/// Lokaler CDR-Fehlertyp (kapselt die `zerodds-cdr`-Errors zusaetzlich um
-/// Length-Overflow + Truncation-Faelle).
+/// Local CDR error type (wraps the `zerodds-cdr` errors and additionally
+/// covers length-overflow + truncation cases).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CdrError {
-    /// `zerodds-cdr`-Encode-Fehler.
+    /// `zerodds-cdr` encode error.
     Encode(zerodds_cdr::EncodeError),
-    /// `zerodds-cdr`-Decode-Fehler.
+    /// `zerodds-cdr` decode error.
     Decode(zerodds_cdr::DecodeError),
-    /// Sequenz-Laenge ueberschreitet `u32::MAX`.
+    /// Sequence length exceeds `u32::MAX`.
     Overflow,
-    /// Truncated-Encapsulation (zu wenige Bytes).
+    /// Truncated encapsulation (too few bytes).
     Truncated,
-    /// Endianness-Octet ist weder 0 noch 1.
+    /// Endianness octet is neither 0 nor 1.
     InvalidEndianness,
 }
 
@@ -264,7 +269,7 @@ mod tests {
 
     #[test]
     fn components_only_from_iiop_1_1() {
-        // Spec §15.7.2: components-Sequenz erst ab IIOP 1.1.
+        // Spec §15.7.2: components sequence only from IIOP 1.1 onward.
         assert!(!IiopVersion::V1_0.has_components());
         assert!(IiopVersion::V1_1.has_components());
         assert!(IiopVersion::V1_2.has_components());
@@ -305,7 +310,7 @@ mod tests {
         let bytes = p.encode_encapsulation(Endianness::Big).unwrap();
         let decoded = IiopProfileBody::decode_encapsulation(&bytes).unwrap();
         assert_eq!(decoded, p);
-        // Encapsulation startet mit Endianness-Byte 0 (BE).
+        // Encapsulation starts with endianness byte 0 (BE).
         assert_eq!(bytes[0], 0);
     }
 
@@ -329,10 +334,10 @@ mod tests {
 
     #[test]
     fn v1_0_does_not_emit_components_field() {
-        // Spec §15.7.2: IIOP 1.0 hat keine components-Sequenz im Wire.
-        // Ein voller Round-Trip muss auch ohne components funktionieren.
+        // Spec §15.7.2: IIOP 1.0 has no components sequence on the wire.
+        // A full round-trip must work without components too.
         let mut p = sample_v1_0();
-        // components werden bei Encode/Decode in 1.0 ignoriert.
+        // components are ignored on encode/decode in 1.0.
         p.components = alloc::vec![TaggedComponent {
             tag: 99,
             component_data: alloc::vec![1, 2],

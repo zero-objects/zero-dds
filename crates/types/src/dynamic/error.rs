@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Fehlertypen fuer DynamicType / DynamicData (Spec §7.5.6 ReturnCode).
+//! Error types for DynamicType / DynamicData (Spec §7.5.6 ReturnCode).
 
 use alloc::string::String;
 use core::fmt;
 
-/// Spec-genannter Return-Code (§7.5.6.4) — nicht alle Codes sind in
-/// Phase 4 belegt; die wichtigsten sechs sind hier abgebildet.
+/// Spec-named return code (§7.5.6.4) — not all codes are populated in
+/// phase 4; the most important six are mapped here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DynamicError {
-    /// `BadParameter` — illegales Argument (Type-Mismatch, falsche ID).
+    /// `BadParameter` — illegal argument (type mismatch, wrong ID).
     BadParameter(String),
-    /// `PreconditionNotMet` — Operation aktuell nicht erlaubt.
+    /// `PreconditionNotMet` — operation currently not allowed.
     PreconditionNotMet(String),
-    /// `IllegalOperation` — auf diesen Kind nicht definiert.
+    /// `IllegalOperation` — not defined on this kind.
     IllegalOperation(String),
-    /// `Unsupported` — Spec-Konstrukt noch nicht implementiert.
+    /// `Unsupported` — spec construct not yet implemented.
     Unsupported(String),
-    /// Type/Member-Inkonsistenz (gefunden via `is_consistent`).
+    /// Type/member inconsistency (found via `is_consistent`).
     Inconsistent(String),
-    /// Builder-Konflikt: dup name/id, fehlende Required-Felder etc.
+    /// Builder conflict: dup name/id, missing required fields etc.
     BuilderConflict(String),
     /// Loan-Lifecycle-Verletzung.
     LoanError(String),

@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `CdrEncode` / `CdrDecode` Traits + Primitive-Implementierungen
+//! `CdrEncode` / `CdrDecode` traits + primitive implementations
 //! (W1.3).
 //!
-//! Trait-basiert statt freier Funktionen, damit Composite-Typen in W2/W3
-//! ihre Children einheitlich rekursiv-encodieren koennen ohne grosse
-//! Type-Switches.
+//! Trait-based instead of free functions, so that composite types in
+//! W2/W3 can recursively encode their children uniformly without large
+//! type switches.
 //!
-//! # Alignment-Konvention
+//! # Alignment convention
 //!
 //! - `u8`/`i8`/`bool`: 1
 //! - `u16`/`i16`: 2
 //! - `u32`/`i32`/`f32`/`char`: 4
 //! - `u64`/`i64`/`f64`: 8
 //!
-//! Char wird als XCDR2-`wchar32` (4 Byte) kodiert (OMG-XTypes §7.4.7);
-//! das deckt voll Unicode ab. Die XCDR1-`char`-Variante (1 Byte ASCII)
-//! lebt im separaten `xcdr1`-Modul (siehe Crate-Header).
+//! Char is encoded as XCDR2 `wchar32` (4 bytes) (OMG XTypes §7.4.7);
+//! that covers full Unicode. The XCDR1 `char` variant (1 byte ASCII)
+//! lives in the separate `xcdr1` module (see the crate header).
 
 use crate::buffer::BufferReader;
 use crate::error::DecodeError;
@@ -30,25 +30,39 @@ use crate::error::EncodeError;
 // Traits
 // ============================================================================
 
-/// Wert kann in einen [`BufferWriter`] enkodiert werden.
+/// Value can be encoded into a [`BufferWriter`].
 #[cfg(feature = "alloc")]
 pub trait CdrEncode {
-    /// Schreibt diesen Wert in den Writer (alignment-bewusst).
+    /// XCDR2 primitive classification (OMG XTypes 1.3 §7.4.3.5): `true`
+    /// only for primitives (bool, octet, int8/16/32/64, uint8/16/32/64,
+    /// float, double, char/wchar). `false` for aggregate/variable
+    /// types (string, struct, union, enum, sequence, array, map).
+    /// Controls DHEADER prepending for `sequence<T>`/`T[N]`:
+    /// collections with NON-primitive elements need a DHEADER (uint32 =
+    /// byte length of the following content) under XCDR2.
+    const IS_PRIMITIVE: bool = false;
+
+    /// Writes this value into the writer (alignment-aware).
     ///
     /// # Errors
     /// [`EncodeError`].
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError>;
 }
 
-/// Stub-Trait fuer no-alloc Builds: nicht nutzbar, da [`BufferWriter`]
-/// nur mit `alloc`-Feature existiert. Wird mit Slice-basiertem Writer
-/// in Phase 1 nachgereicht.
+/// Stub trait for no-alloc builds: unusable, since [`BufferWriter`]
+/// only exists with the `alloc` feature. Will be provided with a
+/// slice-based writer in Phase 1.
 #[cfg(not(feature = "alloc"))]
 pub trait CdrEncode {}
 
-/// Wert kann aus einem [`BufferReader`] dekodiert werden.
+/// Value can be decoded from a [`BufferReader`].
 pub trait CdrDecode: Sized {
-    /// Liest diesen Wert aus dem Reader (alignment-bewusst).
+    /// XCDR2 primitive classification, symmetric to
+    /// [`CdrEncode::IS_PRIMITIVE`]. Controls DHEADER reading when
+    /// decoding `sequence<T>`/`T[N]` with non-primitive `T`.
+    const IS_PRIMITIVE: bool = false;
+
+    /// Reads this value from the reader (alignment-aware).
     ///
     /// # Errors
     /// [`DecodeError`].
@@ -61,12 +75,14 @@ pub trait CdrDecode: Sized {
 
 #[cfg(feature = "alloc")]
 impl CdrEncode for u8 {
+    const IS_PRIMITIVE: bool = true;
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
         writer.write_u8(*self)
     }
 }
 
 impl CdrDecode for u8 {
+    const IS_PRIMITIVE: bool = true;
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         reader.read_u8()
     }
@@ -74,12 +90,14 @@ impl CdrDecode for u8 {
 
 #[cfg(feature = "alloc")]
 impl CdrEncode for i8 {
+    const IS_PRIMITIVE: bool = true;
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
         writer.write_u8(*self as u8)
     }
 }
 
 impl CdrDecode for i8 {
+    const IS_PRIMITIVE: bool = true;
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         Ok(reader.read_u8()? as i8)
     }
@@ -87,12 +105,14 @@ impl CdrDecode for i8 {
 
 #[cfg(feature = "alloc")]
 impl CdrEncode for u16 {
+    const IS_PRIMITIVE: bool = true;
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
         writer.write_u16(*self)
     }
 }
 
 impl CdrDecode for u16 {
+    const IS_PRIMITIVE: bool = true;
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         reader.read_u16()
     }
@@ -100,12 +120,14 @@ impl CdrDecode for u16 {
 
 #[cfg(feature = "alloc")]
 impl CdrEncode for i16 {
+    const IS_PRIMITIVE: bool = true;
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
         writer.write_u16(*self as u16)
     }
 }
 
 impl CdrDecode for i16 {
+    const IS_PRIMITIVE: bool = true;
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         Ok(reader.read_u16()? as i16)
     }
@@ -113,12 +135,14 @@ impl CdrDecode for i16 {
 
 #[cfg(feature = "alloc")]
 impl CdrEncode for u32 {
+    const IS_PRIMITIVE: bool = true;
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
         writer.write_u32(*self)
     }
 }
 
 impl CdrDecode for u32 {
+    const IS_PRIMITIVE: bool = true;
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         reader.read_u32()
     }
@@ -126,12 +150,14 @@ impl CdrDecode for u32 {
 
 #[cfg(feature = "alloc")]
 impl CdrEncode for i32 {
+    const IS_PRIMITIVE: bool = true;
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
         writer.write_u32(*self as u32)
     }
 }
 
 impl CdrDecode for i32 {
+    const IS_PRIMITIVE: bool = true;
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         Ok(reader.read_u32()? as i32)
     }
@@ -139,12 +165,14 @@ impl CdrDecode for i32 {
 
 #[cfg(feature = "alloc")]
 impl CdrEncode for u64 {
+    const IS_PRIMITIVE: bool = true;
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
         writer.write_u64(*self)
     }
 }
 
 impl CdrDecode for u64 {
+    const IS_PRIMITIVE: bool = true;
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         reader.read_u64()
     }
@@ -152,12 +180,14 @@ impl CdrDecode for u64 {
 
 #[cfg(feature = "alloc")]
 impl CdrEncode for i64 {
+    const IS_PRIMITIVE: bool = true;
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
         writer.write_u64(*self as u64)
     }
 }
 
 impl CdrDecode for i64 {
+    const IS_PRIMITIVE: bool = true;
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         Ok(reader.read_u64()? as i64)
     }
@@ -165,12 +195,14 @@ impl CdrDecode for i64 {
 
 #[cfg(feature = "alloc")]
 impl CdrEncode for f32 {
+    const IS_PRIMITIVE: bool = true;
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
         writer.write_u32(self.to_bits())
     }
 }
 
 impl CdrDecode for f32 {
+    const IS_PRIMITIVE: bool = true;
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         Ok(Self::from_bits(reader.read_u32()?))
     }
@@ -178,12 +210,14 @@ impl CdrDecode for f32 {
 
 #[cfg(feature = "alloc")]
 impl CdrEncode for f64 {
+    const IS_PRIMITIVE: bool = true;
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
         writer.write_u64(self.to_bits())
     }
 }
 
 impl CdrDecode for f64 {
+    const IS_PRIMITIVE: bool = true;
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         Ok(Self::from_bits(reader.read_u64()?))
     }
@@ -191,12 +225,14 @@ impl CdrDecode for f64 {
 
 #[cfg(feature = "alloc")]
 impl CdrEncode for bool {
+    const IS_PRIMITIVE: bool = true;
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
         writer.write_u8(u8::from(*self))
     }
 }
 
 impl CdrDecode for bool {
+    const IS_PRIMITIVE: bool = true;
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let offset = reader.position();
         let byte = reader.read_u8()?;
@@ -213,13 +249,15 @@ impl CdrDecode for bool {
 
 #[cfg(feature = "alloc")]
 impl CdrEncode for char {
+    const IS_PRIMITIVE: bool = true;
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
-        // XCDR2 wchar32 (UTF-32 Codepoint).
+        // XCDR2 wchar32 (UTF-32 codepoint).
         writer.write_u32(*self as u32)
     }
 }
 
 impl CdrDecode for char {
+    const IS_PRIMITIVE: bool = true;
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let offset = reader.position();
         let value = reader.read_u32()?;
@@ -335,7 +373,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn f32_roundtrip_special() {
-        // NaN ist nicht selbst-equal — nutze to_bits-Vergleich.
+        // NaN is not self-equal — use a to_bits comparison.
         let mut w = BufferWriter::new(Endianness::Little);
         f32::NAN.encode(&mut w).unwrap();
         let bytes = w.into_bytes();
@@ -379,13 +417,13 @@ mod tests {
         roundtrip_alloc('A');
         roundtrip_alloc('z');
         roundtrip_alloc('0');
-        roundtrip_alloc('🦀'); // Unicode-Code-Point ueber BMP
+        roundtrip_alloc('🦀'); // Unicode code point above the BMP
         roundtrip_alloc('ä');
     }
 
     #[test]
     fn char_decode_rejects_surrogate() {
-        // 0xD800 ist Surrogate-Pair-Marker, kein gueltiger Codepoint.
+        // 0xD800 is a surrogate-pair marker, not a valid codepoint.
         let bytes = [0x00, 0xD8, 0x00, 0x00];
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let res = char::decode(&mut r);
@@ -398,7 +436,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn primitives_align_correctly_when_mixed() {
-        // u8 + u16 + u32 + u64 → erwartet 16 Byte (1 + 1pad + 2 + 4 + 8)
+        // u8 + u16 + u32 + u64 -> expected 16 bytes (1 + 1pad + 2 + 4 + 8)
         let mut w = BufferWriter::new(Endianness::Little);
         1u8.encode(&mut w).unwrap();
         2u16.encode(&mut w).unwrap();

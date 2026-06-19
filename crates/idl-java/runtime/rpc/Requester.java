@@ -1,9 +1,9 @@
 // DDS-RPC 1.0 §7.11.2 / §7.9 — generic Requester interface.
 //
 // Skeleton-only: declares the API surface used by generated
-// `<Service>Requester.java` classes. A native binding (JNI / pure-Java
-// transport) is expected to provide an implementation; this crate only
-// publishes the contract.
+// `<Service>Requester.java` classes. A pure-Java transport binding is
+// expected to provide an implementation; this crate only publishes the
+// contract.
 package org.zerodds.rpc;
 
 import java.util.concurrent.CompletableFuture;

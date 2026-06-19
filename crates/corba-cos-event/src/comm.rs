@@ -1,84 +1,84 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CosEventComm — Spec §1.5.
+//! CosEventComm — spec §1.5.
 //!
-//! Vier Trait-Definitions fuer das Push/Pull-Modell:
+//! Four trait definitions for the push/pull model:
 //!
 //! | Mode | Initiator | Trait | Counterpart |
 //! |---|---|---|---|
 //! | Push | Supplier | PushConsumer | PushSupplier |
 //! | Pull | Consumer | PullSupplier | PullConsumer |
 //!
-//! Im Push-Modell pusht der Supplier Events; im Pull-Modell zieht
-//! der Consumer Events. Beide Endpunkte koennen disconnected werden.
+//! In the push model the supplier pushes events; in the pull model
+//! the consumer pulls events. Both endpoints can be disconnected.
 
 use alloc::vec::Vec;
 
-/// Opaque-Event-Container — Spec §1.4: `any` als CDR-Encapsulation.
+/// Opaque event container — spec §1.4: `any` as a CDR encapsulation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnyEvent {
-    /// Repository-ID des Event-Types (oder leer fuer "any").
+    /// Repository ID of the event type (or empty for "any").
     pub type_id: alloc::string::String,
-    /// CDR-Encapsulation des Event-Body.
+    /// CDR encapsulation of the event body.
     pub data: Vec<u8>,
 }
 
 impl AnyEvent {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(type_id: alloc::string::String, data: Vec<u8>) -> Self {
         Self { type_id, data }
     }
 }
 
-/// `Disconnected` — Spec §1.5.1 normativ: wenn ein Push-/Pull-Endpoint
-/// disconnected ist, werfen alle Operations `Disconnected`.
+/// `Disconnected` — spec §1.5.1 normative: when a push/pull endpoint
+/// is disconnected, all operations throw `Disconnected`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Disconnected;
 
-/// `ConnectError` (Spec §1.6 normativ "AlreadyConnected" + "TypeError").
+/// `ConnectError` (spec §1.6 normative "AlreadyConnected" + "TypeError").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectError {
-    /// Endpoint ist bereits verbunden (Spec §1.6.1.1).
+    /// Endpoint is already connected (spec §1.6.1.1).
     AlreadyConnected,
-    /// Type-Mismatch zwischen Consumer und Supplier (Spec §1.6.1.2).
+    /// Type mismatch between consumer and supplier (spec §1.6.1.2).
     TypeError,
 }
 
-/// PushConsumer — Spec §1.5.1.
+/// PushConsumer — spec §1.5.1.
 pub trait PushConsumer: Send + Sync {
-    /// `push(any)` — Supplier sendet ein Event.
+    /// `push(any)` — the supplier sends an event.
     ///
     /// # Errors
-    /// `Disconnected` wenn der Consumer bereits disconnected ist.
+    /// `Disconnected` if the consumer is already disconnected.
     fn push(&self, event: AnyEvent) -> Result<(), Disconnected>;
 
-    /// `disconnect_push_consumer` — irreversibler Endzustand.
+    /// `disconnect_push_consumer` — irreversible terminal state.
     fn disconnect_push_consumer(&self);
 }
 
-/// PushSupplier — Spec §1.5.2.
+/// PushSupplier — spec §1.5.2.
 pub trait PushSupplier: Send + Sync {
-    /// `disconnect_push_supplier` — Spec §1.5.2.
+    /// `disconnect_push_supplier` — spec §1.5.2.
     fn disconnect_push_supplier(&self);
 }
 
-/// PullConsumer — Spec §1.5.3.
+/// PullConsumer — spec §1.5.3.
 pub trait PullConsumer: Send + Sync {
-    /// `disconnect_pull_consumer` — Spec §1.5.3.
+    /// `disconnect_pull_consumer` — spec §1.5.3.
     fn disconnect_pull_consumer(&self);
 }
 
-/// PullSupplier — Spec §1.5.4.
+/// PullSupplier — spec §1.5.4.
 pub trait PullSupplier: Send + Sync {
-    /// `pull` — blockierend, liefert das naechste Event.
+    /// `pull` — blocking, returns the next event.
     ///
     /// # Errors
-    /// `Disconnected` nach Disconnect.
+    /// `Disconnected` after disconnect.
     fn pull(&self) -> Result<AnyEvent, Disconnected>;
 
-    /// `try_pull` — non-blocking. Liefert `(event, has_event)`.
+    /// `try_pull` — non-blocking. Returns `(event, has_event)`.
     ///
     /// # Errors
     /// `Disconnected`.

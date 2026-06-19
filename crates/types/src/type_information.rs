@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! TypeInformation (XTypes 1.3 §7.6.3.2.2) — Wrapper fuer die
-//! Discovery von strongly-hashed TypeObjects inkl. transitiver
-//! Abhaengigkeiten.
+//! TypeInformation (XTypes 1.3 §7.6.3.2.2) — wrapper for the
+//! discovery of strongly-hashed TypeObjects incl. transitive
+//! dependencies.
 //!
 //! Wire-Format:
 //!
@@ -24,12 +24,12 @@
 //! };
 //! ```
 //!
-//! Das wird als Payload des `PID_TYPE_INFORMATION` (0x0075) in SEDP
-//! Publikations-/Subscriptions-Announcements uebertragen (T8).
+//! This is transmitted as the payload of `PID_TYPE_INFORMATION` (0x0075) in SEDP
+//! publication/subscription announcements (T8).
 //!
-//! Die Dependencies beschreiben transitiv benoetigte TypeObjects, die
-//! der Empfaenger ueber den TypeLookup-Service (T11..T15) nachladen
-//! kann, sofern ihm nur der TypeIdentifier bekannt ist.
+//! The dependencies describe transitively needed TypeObjects, which
+//! the receiver can fetch via the TypeLookup service (T11..T15),
+//! as long as it only knows the TypeIdentifier.
 
 use alloc::vec::Vec;
 
@@ -41,15 +41,15 @@ use crate::type_identifier::TypeIdentifier;
 use crate::type_object::common::{decode_seq, encode_seq};
 use crate::type_object::{CompleteTypeObject, MinimalTypeObject};
 
-/// TypeIdentifier + Groesse des serialisierten TypeObjects (§7.6.3.2.2).
+/// TypeIdentifier + size of the serialized TypeObject (§7.6.3.2.2).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeIdentifierWithSize {
-    /// Typ-Referenz (direkt oder strongly-hashed).
+    /// Type reference (direct or strongly-hashed).
     pub type_id: TypeIdentifier,
-    /// Groesse des serialisierten TypeObjects in Bytes.
+    /// Size of the serialized TypeObject in bytes.
     ///
-    /// Null, wenn `type_id` ein direkt-identifiziertes Primitive ist
-    /// (kein TypeObject braucht zu existieren) oder Groesse unbekannt.
+    /// Zero if `type_id` is a directly-identified primitive
+    /// (no TypeObject needs to exist) or the size is unknown.
     pub typeobject_serialized_size: u32,
 }
 
@@ -80,20 +80,20 @@ impl TypeIdentifierWithSize {
 /// TypeIdentifier + Abhaengigkeiten (§7.6.3.2.2).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeIdentifierWithDependencies {
-    /// Haupt-Typ.
+    /// Main type.
     pub typeid_with_size: TypeIdentifierWithSize,
-    /// Anzahl transitiver Dependencies (kann `-1` sein = "unknown").
+    /// Number of transitive dependencies (can be `-1` = "unknown").
     ///
-    /// Wenn `dependent_typeids.len() == dependent_typeid_count`, ist
-    /// die Liste vollstaendig. Bei `-1` kann der Empfaenger via
-    /// TypeLookup `getTypeDependencies` nachladen.
+    /// When `dependent_typeids.len() == dependent_typeid_count`, the
+    /// list is complete. With `-1` the receiver can fetch more via
+    /// TypeLookup `getTypeDependencies`.
     pub dependent_typeid_count: i32,
-    /// Transitive Dependencies (nur die, die der Sender kennt).
+    /// Transitive dependencies (only those the sender knows).
     pub dependent_typeids: Vec<TypeIdentifierWithSize>,
 }
 
 impl TypeIdentifierWithDependencies {
-    /// Kurz-Konstruktor fuer Typen ohne bekannte Dependencies.
+    /// Short constructor for types without known dependencies.
     #[must_use]
     pub fn without_dependencies(typeid_with_size: TypeIdentifierWithSize) -> Self {
         Self {
@@ -116,7 +116,7 @@ impl TypeIdentifierWithDependencies {
     /// Decode.
     ///
     /// # Errors
-    /// Buffer-Underflow / Unknown-Kind-Fehler aus [`TypeIdentifier`].
+    /// Buffer underflow / unknown-kind error from [`TypeIdentifier`].
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
         let typeid_with_size = TypeIdentifierWithSize::decode_from(r)?;
         let dependent_typeid_count = r.read_u32()? as i32;
@@ -141,34 +141,34 @@ impl TypeIdentifierWithDependencies {
     }
 }
 
-/// TypeInformation (§7.6.3.2.2) — tupelt `minimal` und `complete`
-/// TypeIdentifier-Referenzen. Wird als Payload von `PID_TYPE_INFORMATION`
-/// (0x0075) in SEDP-Announcements uebertragen.
+/// TypeInformation (§7.6.3.2.2) — tuples `minimal` and `complete`
+/// TypeIdentifier references. Transmitted as the payload of `PID_TYPE_INFORMATION`
+/// (0x0075) in SEDP announcements.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeInformation {
-    /// Minimal-TypeIdentifier mit Dependencies.
+    /// Minimal TypeIdentifier with dependencies.
     pub minimal: TypeIdentifierWithDependencies,
-    /// Complete-TypeIdentifier mit Dependencies.
+    /// Complete TypeIdentifier with dependencies.
     pub complete: TypeIdentifierWithDependencies,
 }
 
 impl TypeInformation {
-    /// Baut TypeInformation aus einem Minimal/Complete-Paar, ohne
-    /// transitive Dependencies. Nuetzlich wenn der Typ self-contained
-    /// ist (alle Member sind Primitives / plain Collections).
+    /// Builds TypeInformation from a minimal/complete pair, without
+    /// transitive dependencies. Useful when the type is self-contained
+    /// (all members are primitives / plain collections).
     ///
     /// # Errors
-    /// `EncodeError` beim Serialisieren fuer Size/Hash.
+    /// `EncodeError` when serializing for size/hash.
     pub fn from_minimal_and_complete(
         minimal: &MinimalTypeObject,
         complete: &CompleteTypeObject,
     ) -> Result<Self, EncodeError> {
         let min_hash = compute_minimal_hash(minimal)?;
         let com_hash = compute_complete_hash(complete)?;
-        // Groesse = Bytes des wrapped TypeObjects (inkl. EquivalenceKind).
-        // Bei >4GB (extrem unrealistisch) echten Fehler liefern statt
-        // stummer Truncation — sonst bricht die Hash-Validation beim Peer
-        // mit kryptischer Fehlermeldung.
+        // Size = bytes of the wrapped TypeObject (incl. EquivalenceKind).
+        // At >4GB (extremely unrealistic) return a real error instead of
+        // silent truncation — otherwise hash validation at the peer breaks
+        // with a cryptic error message.
         let min_size = u32::try_from(
             crate::type_object::TypeObject::Minimal(minimal.clone())
                 .to_bytes_le()?
@@ -199,7 +199,7 @@ impl TypeInformation {
         })
     }
 
-    /// Fuegt eine transitive Dependency zu beiden Seiten hinzu.
+    /// Adds a transitive dependency to both sides.
     pub fn add_dependency(
         &mut self,
         minimal_dep: TypeIdentifierWithSize,
@@ -213,8 +213,8 @@ impl TypeInformation {
             self.complete.dependent_typeids.len().min(i32::MAX as usize) as i32;
     }
 
-    /// Encode als XCDR-CDR-Bytes (ohne Encapsulation-Header — der wird
-    /// vom PID-Layer geliefert).
+    /// Encode as XCDR-CDR bytes (without the encapsulation header — that is
+    /// provided by the PID layer).
     ///
     /// # Errors
     /// Buffer-Overflow.
@@ -243,7 +243,7 @@ impl TypeInformation {
         Ok(w.into_bytes())
     }
 
-    /// Convenience: aus LE-Bytes.
+    /// Convenience: from LE bytes.
     ///
     /// # Errors
     /// Decode / Unknown-TypeKind.
@@ -343,7 +343,7 @@ mod tests {
         assert_eq!(ti.complete.dependent_typeid_count, 1);
         assert_eq!(ti.complete.dependent_typeids[0], dep_com);
 
-        // Roundtrip auch mit Dependencies
+        // Roundtrip with dependencies too
         let bytes = ti.to_bytes_le().unwrap();
         assert_eq!(TypeInformation::from_bytes_le(&bytes).unwrap(), ti);
     }

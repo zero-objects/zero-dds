@@ -5,7 +5,7 @@ Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [1.0.0-rc.1] — 2026-05-07
 
-Initiale Release-Materialisierung des Crates **`zerodds-ros2-rmw`** als Layer-7-Profile.
+Initial release materialization of the **`zerodds-ros2-rmw`** crate as a Layer-7 profile.
 
 ### Spec-Referenzen
 Siehe `README.md` + `docs/spec-coverage/<spec>.md`.
@@ -13,22 +13,22 @@ Siehe `README.md` + `docs/spec-coverage/<spec>.md`.
 ### Public-API
 Siehe `README.md` + `src/lib.rs` Doc-Comments.
 
-### Implementierung
+### Implementation
 ROS 2 RMW middleware-interface mapping (REP-2003/2004 + topic-name-mangling) for ZeroDDS bridge
 
 ### Architektur
 - Layer: 7 (Profiles)
 
 ### Stabilitaet
-Alle `pub`-Items sind RC1-stabil; Breaking-Changes erfordern Major-Bump.
+All `pub` items are RC1-stable; breaking changes require a major bump.
 
 ### Added — Service / Action / Cross-Vendor
 
-- Service-Layer (`service.rs`): REP-2008 Request-Reply ueber
+- Service layer (`service.rs`): REP-2008 request-reply over
   `zerodds-rpc` Topic-Naming.
 - Action-Layer (`action.rs`): REP-2009 Goal/Feedback/Result-Pattern.
-- IDL-Bridge (`msg_to_idl.rs`): ROS-2 `.msg`/`.srv`-Subset →
-  IDL-AST-Mapping fuer Type-Hash (REP-2007).
-- JSON-Log-Sink (`json_log.rs`) fuer strukturierte rmw-Diagnose.
-- Cross-Vendor-Interop-Modul (`cross_vendor.rs`) fuer
-  rclcpp/rclpy-Kompatibilitaet.
+- IDL bridge (`msg_to_idl.rs`): ROS-2 `.msg`/`.srv` subset →
+  IDL AST mapping for type hash (REP-2007).
+- JSON log sink (`json_log.rs`) for structured rmw diagnostics.
+- Cross-vendor interop module (`cross_vendor.rs`) for
+  rclcpp/rclpy compatibility.

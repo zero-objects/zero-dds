@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CPU-Affinity-API. Plattform-Routing nach `target_os`.
+//! CPU affinity API. Platform routing by `target_os`.
 //!
-//! Auf Linux delegiert dieses Modul an die internen `syscalls::pin_to_cpus`
-//! / `syscalls::get_cpus`. Auf anderen Targets gibt jede
-//! Funktion `Unsupported` zurueck.
+//! On Linux this module delegates to the internal `syscalls::pin_to_cpus`
+//! / `syscalls::get_cpus`. On other targets every
+//! function returns `Unsupported`.
 
 use std::io;
 
-/// Pinnt den **aufrufenden Thread** auf die angegebenen CPU-Indizes.
+/// Pins the **calling thread** to the given CPU indices.
 ///
-/// Reihenfolge im Slice ist irrelevant — der Kernel verwendet eine
-/// Bit-Mask. Doppelte Indizes werden silently dedupliziert.
+/// The order in the slice is irrelevant — the kernel uses a
+/// bit-mask. Duplicate indices are deduplicated silently.
 ///
 /// # Errors
-/// * `InvalidInput` wenn `cpus.is_empty()` oder ein Index `>=
-///   CPU_SETSIZE` ist (Linux: 1024).
-/// * Kernel-Errno aus `sched_setaffinity(2)` — typisch `EINVAL`,
-///   wenn keine der CPUs online ist.
-/// * `Unsupported` auf Nicht-Linux-Targets.
+/// * `InvalidInput` if `cpus.is_empty()` or an index is `>=
+///   CPU_SETSIZE` (Linux: 1024).
+/// * Kernel errno from `sched_setaffinity(2)` — typically `EINVAL`
+///   if none of the CPUs is online.
+/// * `Unsupported` on non-Linux targets.
 ///
-/// # Beispiel
+/// # Example
 /// ```no_run
 /// use zerodds_rt_linux::pin_current_thread_to_cpus;
 /// pin_current_thread_to_cpus(&[2, 3]).unwrap();
@@ -41,11 +41,11 @@ pub fn pin_current_thread_to_cpus(cpus: &[usize]) -> io::Result<()> {
     }
 }
 
-/// Liefert die CPUs, auf denen der aufrufende Thread laufen darf.
+/// Returns the CPUs on which the calling thread is allowed to run.
 ///
 /// # Errors
-/// Kernel-Errno aus `sched_getaffinity(2)`.
-/// `Unsupported` auf Nicht-Linux-Targets.
+/// Kernel errno from `sched_getaffinity(2)`.
+/// `Unsupported` on non-Linux targets.
 pub fn current_thread_cpus() -> io::Result<std::vec::Vec<usize>> {
     #[cfg(target_os = "linux")]
     {

@@ -1,42 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! ZeroDDS-TCP-Transport-Handshake.
+//! ZeroDDS TCP transport handshake.
 //!
-//! # Spec-Status
+//! # Spec status
 //!
-//! **Es gibt keinen normativen OMG-Spec für einen TCP-PSM-Handshake.**
-//! DDSI-RTPS 2.5 §9.4 normiert nur den Locator-Kind (`TCPv4`=4,
-//! `TCPv6`=8) und §9.5 das Wire-Bytes-Mapping (RTPS-Header +
-//! Submessages, identisch zum UDP-PSM). Vendor-spezifisch sind:
-//! Cyclone's `ddsi_tcp` (kein Handshake, raw RTPS-Frames mit Length-
-//! Prefix), FastDDS-TCPv4-Transport (eigene BindConnection-Submessages
-//! 0x71/0x72), RTI-DDS-TCP (TLS-orientiert).
+//! **There is no normative OMG spec for a TCP-PSM handshake.**
+//! DDSI-RTPS 2.5 §9.4 standardizes only the locator kind (`TCPv4`=4,
+//! `TCPv6`=8) and §9.5 the wire-bytes mapping (RTPS header +
+//! submessages, identical to the UDP PSM). Vendor-specific are:
+//! Cyclone's `ddsi_tcp` (no handshake, raw RTPS frames with a length
+//! prefix), the FastDDS TCPv4 transport (its own BindConnection
+//! submessages 0x71/0x72), RTI DDS TCP (TLS-oriented).
 //!
-//! Dieser Handshake ist Teil der **ZeroDDS-TCP-Transport-1.0**-Spec
-//! (`docs/spec-coverage/zerodds-tcp-transport-1.0.md`) und ist
-//! ZeroDDS-vendor-spezifisch.
+//! This handshake is part of the **ZeroDDS TCP Transport 1.0** spec
+//! (`docs/spec-coverage/zerodds-tcp-transport-1.0.md`) and is
+//! ZeroDDS-vendor-specific.
 //!
 //! # Scope
 //!
-//! Beim Verbindungsaufbau tauschen Client und Server **vor** jedem
-//! RTPS-Frame einen festen 16-Byte `BindConnection`-Request +
-//! -Response aus. Der Handshake:
+//! On connection setup, client and server exchange a fixed 16-byte
+//! `BindConnection` request + response **before** any RTPS frame. The
+//! handshake:
 //!
-//! 1. Verifiziert, dass der Peer ueberhaupt ein ZeroDDS-TCP-Transport
-//!    ist und kein HTTP/TLS/Nonsense — Magic-Prefix klappert sofort.
-//! 2. Alignt Protocol-Version, Vendor-Id, und einen
-//!    Logical-Port-Claim.
-//! 3. Erlaubt dem Server, die Verbindung mit einem Reason-Code
-//!    abzulehnen (Version-mismatch, Port-Konflikt, Resource-Limit).
+//! 1. Verifies that the peer is actually a ZeroDDS TCP transport and
+//!    not HTTP/TLS/nonsense — the magic prefix rattles immediately.
+//! 2. Aligns protocol version, vendor id, and a logical-port claim.
+//! 3. Lets the server reject the connection with a reason code
+//!    (version mismatch, port conflict, resource limit).
 //!
-//! # Cross-Vendor-Interop
+//! # Cross-vendor interop
 //!
-//! Cross-Vendor-TCP-Interop (FastDDS, RTI) erfordert vendor-spezifische
-//! Compatibility-Modes. Cyclone-`ddsi_tcp`-Compat ist bereits über den
-//! "raw RTPS-Frames"-Pfad abgedeckt (Handshake skippbar via
-//! `TcpTransport::without_handshake`). FastDDS-/RTI-Compat sind
-//! optionale Feature-Flags-Erweiterungspunkte; siehe
-//! `zerodds-tcp-transport-1.0.md §6` für Wire-Format-Details.
+//! Cross-vendor TCP interop (FastDDS, RTI) requires vendor-specific
+//! compatibility modes. Cyclone `ddsi_tcp` compat is already covered via
+//! the "raw RTPS frames" path (the handshake is skippable via
+//! `TcpTransport::without_handshake`). FastDDS/RTI compat are optional
+//! feature-flag extension points; see
+//! `zerodds-tcp-transport-1.0.md §6` for wire-format details.
 //!
 //! # Wire-Layout
 //!
@@ -64,88 +63,88 @@
 //!   +---------+---------+---------+---------+
 //!   |               flags (u32)             |   reserved, = 0
 //!   +---------+---------+---------+---------+
-//!   |            reason_code (u32)          |   0 bei Ok, sonst nach RejectReason
+//!   |            reason_code (u32)          |   0 on Ok, otherwise per RejectReason
 //!   +---------+---------+---------+---------+
 //! ```
 //!
-//! Status im 4. Magic-Byte:
+//! Status in the 4th magic byte:
 //! - `b'+'` (0x2B) = Accept
 //! - `b'-'` (0x2D) = Reject
 //!
-//! # Fehlerpfade
+//! # Error paths
 //!
-//! - Falscher Magic-Prefix → `HandshakeError::BadMagic`. Sender ist
-//!   kein ZeroDDS-TCP — Connection dropen.
-//! - Version-Mismatch → Server antwortet mit Reject/`VersionMismatch`.
-//! - Reject aus irgend einem Grund → Client dropt die Connection und
-//!   signalisiert dem Pool einen `backoff`, damit kein tight-loop.
+//! - Wrong magic prefix → `HandshakeError::BadMagic`. The sender is
+//!   not ZeroDDS TCP — drop the connection.
+//! - Version mismatch → the server answers with Reject/`VersionMismatch`.
+//! - Reject for any reason → the client drops the connection and
+//!   signals the pool a `backoff`, so no tight loop.
 
 use std::io::{Read, Write};
 
-/// Handshake-Magic `ZDDS`.
+/// Handshake magic `ZDDS`.
 pub const HANDSHAKE_MAGIC_REQUEST: [u8; 4] = *b"ZDDS";
-/// Handshake-Response-Magic-Prefix `ZDA` + Accept-Byte.
+/// Handshake response magic prefix `ZDA` + accept byte.
 pub const HANDSHAKE_MAGIC_ACCEPT: [u8; 4] = *b"ZDA+";
-/// Handshake-Response-Magic-Prefix `ZDA` + Reject-Byte.
+/// Handshake response magic prefix `ZDA` + reject byte.
 pub const HANDSHAKE_MAGIC_REJECT: [u8; 4] = *b"ZDA-";
 
-/// Protocol-Version-Major, die dieser Transport fuehrt.
+/// Protocol major version that this transport carries.
 pub const TCP_PSM_VERSION_MAJOR: u8 = 1;
-/// Protocol-Version-Minor.
+/// Protocol minor version.
 pub const TCP_PSM_VERSION_MINOR: u8 = 0;
 
-/// Maximaler Diff zwischen Peer- und lokaler Version, den wir noch
-/// akzeptieren. `(0,0)` = exakte Matches only.
+/// Maximum diff between the peer and local version we still accept.
+/// `(0,0)` = exact matches only.
 pub const ACCEPTED_VERSION_DIFF: (u8, u8) = (0, 0);
 
-/// Fixed wire size beider Handshake-Frames.
+/// Fixed wire size of both handshake frames.
 pub const HANDSHAKE_WIRE_SIZE: usize = 16;
 
-/// ZeroDDS-Vendor-Id (matches `zerodds_rtps::wire_types::VendorId::ZERODDS`
-/// [0x01, 0x0F]). Hardcodiert, damit diese Crate nicht auf zerodds-rtps
-/// verweisen muss nur fuer die Konstante.
+/// ZeroDDS vendor id (matches `zerodds_rtps::wire_types::VendorId::ZERODDS`
+/// [0x01, 0x0F]). Hardcoded so this crate need not reference zerodds-rtps
+/// just for the constant.
 pub const VENDOR_ID_ZERODDS: [u8; 2] = [0x01, 0x0F];
 
-/// Bind-Connection-Request (§5.2.1.3, hier Fixed-Layout).
+/// Bind-connection request (§5.2.1.3, fixed layout here).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BindConnectionRequest {
-    /// Protocol-Major-Version des Senders.
+    /// Protocol major version of the sender.
     pub version_major: u8,
-    /// Protocol-Minor-Version.
+    /// Protocol minor version.
     pub version_minor: u8,
-    /// Vendor-Id des Senders.
+    /// Vendor id of the sender.
     pub vendor_id: [u8; 2],
-    /// Reserved, muss 0 sein.
+    /// Reserved, must be 0.
     pub flags: u32,
-    /// DDS-Endpoint-Logical-Port, den dieser Sender auf dieser
-    /// Connection befragen will. 0 = "keine Angabe, nutze default".
+    /// DDS endpoint logical port this sender wants to query on this
+    /// connection. 0 = "unspecified, use default".
     pub logical_port: u32,
 }
 
-/// Bind-Connection-Response Status.
+/// Bind-connection response status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ResponseStatus {
-    /// Handshake akzeptiert.
+    /// Handshake accepted.
     Accept,
-    /// Handshake abgelehnt — `reason_code` traegt Begruendung.
+    /// Handshake rejected — `reason_code` carries the rationale.
     Reject(RejectReason),
 }
 
-/// Reject-Reasons. Numerische Werte sind stable wire-Codes.
+/// Reject reasons. Numeric values are stable wire codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 #[non_exhaustive]
 pub enum RejectReason {
-    /// Unbekannt / ueberreservierter Code.
+    /// Unknown / over-reserved code.
     Unknown = 0,
-    /// Peer-Version zu neu/alt.
+    /// Peer version too new/old.
     VersionMismatch = 1,
-    /// Server hat Resource-Limit erreicht (MAX_PEERS).
+    /// Server reached its resource limit (MAX_PEERS).
     ResourceLimit = 2,
-    /// Logical-Port-Konflikt (Port bereits gebunden).
+    /// Logical-port conflict (port already bound).
     LogicalPortConflict = 3,
-    /// Vendor-ID nicht akzeptiert (Policy).
+    /// Vendor id not accepted (policy).
     VendorNotAccepted = 4,
 }
 
@@ -176,43 +175,43 @@ impl RejectReason {
 pub struct BindConnectionResponse {
     /// Accept/Reject.
     pub status: ResponseStatus,
-    /// Version des Servers (Peer echoed bei Accept; bei Reject
-    /// informativ, damit Client die Version kennt).
+    /// Version of the server (the peer echoes it on Accept; on Reject
+    /// informative, so the client knows the version).
     pub version_major: u8,
-    /// Minor-Version.
+    /// Minor version.
     pub version_minor: u8,
-    /// Vendor-Id des Servers.
+    /// Vendor id of the server.
     pub vendor_id: [u8; 2],
-    /// Reserved, muss 0 sein.
+    /// Reserved, must be 0.
     pub flags: u32,
 }
 
-/// Fehler waehrend des Handshakes.
+/// Error during the handshake.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum HandshakeError {
-    /// I/O-Fehler beim Schreiben/Lesen.
+    /// I/O error on write/read.
     Io(std::io::Error),
-    /// Peer sendete einen Frame ohne das erwartete Magic-Prefix.
+    /// Peer sent a frame without the expected magic prefix.
     BadMagic {
-        /// Tatsaechlich erhaltenes 4-Byte-Prefix (fuer Diagnostik).
+        /// The 4-byte prefix actually received (for diagnostics).
         got: [u8; 4],
     },
-    /// Peer-Version ausserhalb des akzeptierten Fensters.
+    /// Peer version outside the accepted window.
     VersionMismatch {
-        /// Peer-Version (major, minor).
+        /// Peer version (major, minor).
         peer: (u8, u8),
-        /// Unsere Version.
+        /// Our version.
         local: (u8, u8),
     },
-    /// Server sagte Reject.
+    /// Server said Reject.
     Rejected {
-        /// Grund.
+        /// Reason.
         reason: RejectReason,
     },
-    /// Response-Magic weder Accept noch Reject.
+    /// Response magic neither Accept nor Reject.
     BadResponse {
-        /// 4-Byte-Prefix.
+        /// 4-byte prefix.
         got: [u8; 4],
     },
 }
@@ -322,8 +321,8 @@ fn decode_response(
 // High-level roles
 // ---------------------------------------------------------------------
 
-/// Client-Side des Handshakes. Sendet Request, liest Response,
-/// liefert die akzeptierte Server-Identitaet oder einen Error.
+/// Client side of the handshake. Sends the request, reads the
+/// response, returns the accepted server identity or an error.
 ///
 /// # Errors
 /// [`HandshakeError`].
@@ -351,13 +350,13 @@ pub fn client_handshake<S: Read + Write>(
     }
 }
 
-/// Server-Side des Handshakes. Liest Request, prueft Version, sendet
-/// Accept- oder Reject-Response. Bei Reject wird trotzdem Ok(...)
-/// zurueckgegeben, damit der Caller entscheiden kann, ob er die
-/// Verbindung droppet; der Server sollte in der Regel droppen.
+/// Server side of the handshake. Reads the request, checks the
+/// version, sends an Accept or Reject response. On Reject, Ok(...) is
+/// still returned so the caller can decide whether to drop the
+/// connection; the server should normally drop.
 ///
 /// # Errors
-/// I/O-Fehler, Protokoll-Fehler beim Request.
+/// I/O error, protocol error on the request.
 pub fn server_handshake<S: Read + Write>(
     stream: &mut S,
 ) -> Result<(BindConnectionRequest, BindConnectionResponse), HandshakeError> {
@@ -479,7 +478,7 @@ mod tests {
         assert_eq!(RejectReason::from_code(9999), RejectReason::Unknown);
     }
 
-    // ---- client_handshake-Rejection-Pfade ----
+    // ---- client_handshake rejection paths ----
 
     /// Paired-stream helper: emits a fixed server response and lets
     /// the client read it back while we capture what the client sent.
@@ -592,7 +591,7 @@ mod tests {
 
     #[test]
     fn client_handshake_errors_on_bad_response_magic() {
-        // Server antwortet mit zufaelligen bytes (HTTP-Probe, TLS-Probe).
+        // Server answers with random bytes (HTTP probe, TLS probe).
         let mut bad = [0u8; HANDSHAKE_WIRE_SIZE];
         bad[..4].copy_from_slice(b"HTTP");
         let (res, _) = run_client_against_server_bytes(bad);

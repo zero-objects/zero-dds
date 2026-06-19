@@ -1,101 +1,101 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CIDL-Datenmodell — Spec §7.
+//! CIDL data model — spec §7.
 //!
-//! CIDL (Component Implementation Definition Language) erweitert
-//! IDL um:
+//! CIDL (Component Implementation Definition Language) extends
+//! IDL with:
 //!
-//! * `composition` — koppelt einen Home-Executor an einen
-//!   Storage-Type.
-//! * `home executor <Name> <Home> { ... }` — Implementer-Skeleton
-//!   fuer das Home.
-//! * `storagetype` / `storagehome` — persistente State-Mapping
-//!   (Spec §7.4 + Persistent State Service §10).
+//! * `composition` — couples a home executor to a
+//!   storage type.
+//! * `home executor <Name> <Home> { ... }` — implementer skeleton
+//!   for the home.
+//! * `storagetype` / `storagehome` — persistent state mapping
+//!   (spec §7.4 + Persistent State Service §10).
 //!
-//! Wir liefern das Datenmodell; CIDL-Parser ist Caller-Layer (kann
-//! auf `crates/idl/`-Parser-Erweiterung aufbauen).
+//! We provide the data model; the CIDL parser is the caller layer
+//! (can build on the `crates/idl/` parser extension).
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Storage-Type-Definition — Spec §7.4.1.
+/// Storage type definition — spec §7.4.1.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StorageType {
     /// Name.
     pub name: String,
-    /// Repository-ID.
+    /// Repository ID.
     pub repository_id: String,
-    /// Optional: Single-Inheritance auf einen Base-StorageType.
+    /// Optional: single inheritance from a base storage type.
     pub base: Option<String>,
-    /// Storage-State-Member als (name, idl-type) Liste.
+    /// Storage state members as a (name, idl-type) list.
     pub state_members: Vec<(String, String)>,
 }
 
-/// Storage-Home — Spec §7.4.2.
+/// Storage home — spec §7.4.2.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StorageHome {
     /// Name.
     pub name: String,
-    /// Repository-ID.
+    /// Repository ID.
     pub repository_id: String,
-    /// Storage-Type, der verwaltet wird.
+    /// The storage type that is managed.
     pub managed_storage_type: String,
-    /// Optional: PrimaryKey-Type-ID.
+    /// Optional: primary key type ID.
     pub primary_key: Option<String>,
 }
 
-/// Home-Executor — Spec §7.5.
+/// Home executor — spec §7.5.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct HomeExecutor {
-    /// Executor-Name.
+    /// Executor name.
     pub name: String,
-    /// Implementiertes Home-Repository-ID.
+    /// Implemented home repository ID.
     pub home_id: String,
-    /// Component-Executor-Reference (durch composition gebunden).
+    /// Component executor reference (bound via composition).
     pub component_executor: Option<String>,
 }
 
-/// Composition — Spec §7.3.
+/// Composition — spec §7.3.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Composition {
-    /// Composition-Name.
+    /// Composition name.
     pub name: String,
     /// Category — `session` / `entity` / `service` / `process`
-    /// (Spec §7.3.1).
+    /// (spec §7.3.1).
     pub category: CompositionCategory,
-    /// Home-Executor-Name.
+    /// Home executor name.
     pub home_executor: String,
-    /// Storage-Home-Name (optional, nur bei `entity`-Category).
+    /// Storage home name (optional, only for the `entity` category).
     pub home_storage: Option<String>,
 }
 
-/// Composition-Category — Spec §7.3.1.
+/// Composition category — spec §7.3.1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum CompositionCategory {
-    /// `session` — non-persistent (Default).
+    /// `session` — non-persistent (default).
     #[default]
     Session,
     /// `service` — stateless service.
     Service,
     /// `process` — long-running process.
     Process,
-    /// `entity` — persistent entity (verlangt Storage-Home).
+    /// `entity` — persistent entity (requires a storage home).
     Entity,
 }
 
 impl Composition {
-    /// Spec §7.3.1: `entity`-Compositions verlangen ein
-    /// Storage-Home, andere nicht.
+    /// Spec §7.3.1: `entity` compositions require a
+    /// storage home, others do not.
     #[must_use]
     pub fn requires_storage_home(&self) -> bool {
         matches!(self.category, CompositionCategory::Entity)
     }
 
-    /// Spec-Validierung: bei `entity` muss `home_storage` gesetzt sein.
+    /// Spec validation: for `entity`, `home_storage` must be set.
     ///
     /// # Errors
-    /// Static-String wenn die Composition inkonsistent ist.
+    /// Static string if the composition is inconsistent.
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.requires_storage_home() && self.home_storage.is_none() {
             return Err("entity composition requires home_storage");

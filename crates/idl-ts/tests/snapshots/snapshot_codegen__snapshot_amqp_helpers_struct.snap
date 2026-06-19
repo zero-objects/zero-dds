@@ -65,16 +65,18 @@ export const SensorTypeSupport: DdsTopicType<Sensor> = {
     typeName: "Sensor",
     isKeyed: false,
     extensibility: "appendable",
-    encode(s: Sensor, endian: EndianMode = "le"): Uint8Array {
-        const w = new Xcdr2Writer(endian);
+    encodeInto(w: Xcdr2Writer, s: Sensor): void {
         const _tok = w.beginAppendable();
         w.writeInt32(s.id);
         w.writeFloat64(s.temp);
         w.endAppendable(_tok);
+    },
+    encode(s: Sensor, endian: EndianMode = "le"): Uint8Array {
+        const w = new Xcdr2Writer(endian);
+        this.encodeInto(w, s);
         return w.toBytes();
     },
-    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): Sensor {
-        const r = new Xcdr2Reader(bytes, offset, length, "le");
+    decodeFrom(r: Xcdr2Reader): Sensor {
         const _tok = r.beginAppendable();
         const _f_id: number = r.readInt32();
         const _f_temp: number = r.readFloat64();
@@ -83,6 +85,10 @@ export const SensorTypeSupport: DdsTopicType<Sensor> = {
             id: _f_id,
             temp: _f_temp,
         };
+    },
+    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): Sensor {
+        const r = new Xcdr2Reader(bytes, offset, length, "le");
+        return this.decodeFrom(r);
     },
     keyHash(s: Sensor): Uint8Array {
         return new Uint8Array(16);

@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! GIOP Flags-Octet — Spec §15.4.1.
+//! GIOP flags octet — spec §15.4.1.
 //!
-//! GIOP 1.0 nutzt das 7. Header-Byte als reines `byte_order`-Octet
-//! (0=BE, 1=LE). Ab GIOP 1.1 ist es ein Bitfield:
+//! GIOP 1.0 uses the 7th header byte as a pure `byte_order` octet
+//! (0=BE, 1=LE). As of GIOP 1.1 it is a bitfield:
 //!
 //! * Bit 0 — `byte_order` (0=BE, 1=LE).
-//! * Bit 1 — `fragment_bit` (1 = mehr Fragments folgen).
-//! * Bits 2..7 — reserviert (Spec §15.4.1: "set to 0").
+//! * Bit 1 — `fragment_bit` (1 = more fragments follow).
+//! * Bits 2..7 — reserved (spec §15.4.1: "set to 0").
 
 use zerodds_cdr::Endianness;
 
-/// GIOP-Flags-Octet (Spec §15.4.1 ab GIOP 1.1; in GIOP 1.0 nur
-/// `byte_order_bit` benutzt).
+/// GIOP flags octet (spec §15.4.1 as of GIOP 1.1; in GIOP 1.0 only
+/// `byte_order_bit` is used).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Flags(pub u8);
 
 impl Flags {
     /// Bit 0 — `byte_order` (1 = Little-Endian).
     pub const BYTE_ORDER_BIT: u8 = 0b0000_0001;
-    /// Bit 1 — `fragment_bit` (1 = mehr Fragments folgen).
+    /// Bit 1 — `fragment_bit` (1 = more fragments follow).
     pub const FRAGMENT_BIT: u8 = 0b0000_0010;
 
-    /// Konstruiert Flags aus einer [`Endianness`].
+    /// Constructs flags from an [`Endianness`].
     #[must_use]
     pub const fn from_endianness(e: Endianness) -> Self {
         match e {
@@ -32,7 +32,7 @@ impl Flags {
         }
     }
 
-    /// Liefert die [`Endianness`] aus dem Bit-0.
+    /// Returns the [`Endianness`] from bit 0.
     #[must_use]
     pub const fn endianness(self) -> Endianness {
         if self.0 & Self::BYTE_ORDER_BIT != 0 {
@@ -42,13 +42,13 @@ impl Flags {
         }
     }
 
-    /// `true` wenn das Fragment-Bit gesetzt ist.
+    /// `true` if the fragment bit is set.
     #[must_use]
     pub const fn has_more_fragments(self) -> bool {
         self.0 & Self::FRAGMENT_BIT != 0
     }
 
-    /// Setzt das Fragment-Bit.
+    /// Sets the fragment bit.
     #[must_use]
     pub const fn with_fragment(mut self, more: bool) -> Self {
         if more {

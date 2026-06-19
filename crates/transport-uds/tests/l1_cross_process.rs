@@ -1,12 +1,12 @@
-//! L1 Isolation-Test: Separate OS-Prozesse tauschen UDS-Datagramme aus.
+//! L1 isolation test: separate OS processes exchange UDS datagrams.
 //!
-//! Dieser Test spawnt sich selbst als Child-Prozess mit einer
-//! Umgebungsvariable, die den Child in den Sender-Pfad steuert.
-//! Der Parent bindet einen Receiver und wartet auf das Datagram.
+//! This test spawns itself as a child process with an
+//! environment variable that steers the child into the sender path.
+//! The parent binds a receiver and waits for the datagram.
 //!
-//! Der Test bestaetigt, dass der UDS-Transport nicht nur same-process
-//! funktioniert, sondern tatsaechlich Prozess-Grenzen ueberschreitet —
-//! L1 aus der Isolation-Matrix.
+//! The test confirms that the UDS transport works not only same-process
+//! but actually crosses process boundaries —
+//! L1 from the isolation matrix.
 
 #![allow(
     clippy::expect_used,

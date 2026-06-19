@@ -1,13 +1,13 @@
 //! C5.5 — QoS-Compatibility-Matrix vs. FastDDS.
 //!
-//! **Opt-in only** — `#[ignore]` markiert. Aufruf:
+//! **Opt-in only** — marked `#[ignore]`. Invocation:
 //!
 //! ```bash
 //! cargo test -p zerodds-dcps --features live-interop \
 //!     --test fastdds_qos_matrix -- --ignored --nocapture
 //! ```
 //!
-//! # Spec-Bezug
+//! # Spec reference
 //!
 //! - DDS 1.4 §2.2.3 — RxO-QoS-Matching (Reliability/Durability)
 //! - DDSI-RTPS 2.5 §8.4.2.2 — Reliable HEARTBEAT/ACKNACK Wire
@@ -22,9 +22,9 @@
 //! | Reliable      | Volatile        | `qos_matrix_reliable_volatile`         |
 //! | Reliable      | TransientLocal  | `qos_matrix_reliable_transient_local`  |
 //!
-//! Jeder Test schickt 100 Samples FastDDS-Pub → ZeroDDS-Sub und
-//! erwartet >= 50 davon empfangen (BestEffort darf droppen, Reliable
-//! sollte alle bekommen).
+//! Each test sends 100 samples FastDDS pub → ZeroDDS sub and
+//! expects >= 50 of them received (BestEffort may drop, Reliable
+//! should receive all).
 
 #![allow(
     clippy::expect_used,
@@ -191,5 +191,5 @@ mod tests {
 #[test]
 #[ignore = "live FastDDS interop runs on Linux only"]
 fn fastdds_qos_matrix_macos_stub() {
-    eprintln!("FastDDS-QoS-Matrix-Tests laufen nur auf Linux.");
+    eprintln!("FastDDS QoS matrix tests run on Linux only.");
 }

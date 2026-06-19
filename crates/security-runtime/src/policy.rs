@@ -1,30 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Heterogeneous-Security — `PolicyEngine`-Trait und Datentypen
+//! Heterogeneous security — `PolicyEngine` trait and data types
 //!.
 //!
-//! Diese Schicht ist die Abstraktion ueber dem Governance-XML-Stack.
-//! Der v1.4-Stand ([`crate::SharedSecurityGate`]) entscheidet **ein**
-//! Protection-Level pro Participant. System-of-Systems-Deployments
-//! (Vehicle, Tactical, Edge) brauchen feinere Koernung auf der Tripel-
-//! Achse `(peer, topic, interface)`.
+//! This layer is the abstraction over the governance-XML stack.
+//! The v1.4 state ([`crate::SharedSecurityGate`]) decides **one**
+//! protection level per participant. System-of-systems deployments
+//! (vehicle, tactical, edge) need finer granularity on the triple
+//! axis `(peer, topic, interface)`.
 //!
-//! [`PolicyEngine`] kapselt diese Entscheidung:
-//! * [`PolicyEngine::outbound_decision`] wird pro matched Reader
-//!   aufgerufen, bevor ein Wire-Paket geschrieben wird.
-//! * [`PolicyEngine::inbound_decision`] wird pro eingehendem Datagramm
-//!   aufgerufen.
-//! * [`PolicyEngine::accept_peer`] ist der Admission-Check waehrend
-//!   SEDP-Matching.
+//! [`PolicyEngine`] encapsulates this decision:
+//! * [`PolicyEngine::outbound_decision`] is called per matched reader
+//!   before a wire packet is written.
+//! * [`PolicyEngine::inbound_decision`] is called per incoming datagram.
+//! * [`PolicyEngine::accept_peer`] is the admission check during
+//!   SEDP matching.
 //!
-//! Die Default-Implementation ([`crate::GovernancePolicyEngine`], in
-//! Stufe 1c) bildet die aktuelle `SharedSecurityGate`-Semantik 1:1 nach.
-//! Nutzer koennen eigene `PolicyEngine`-Impls einstecken, z.B. um
-//! Entscheidungen aus einem externen Policy-Server oder einer Vehicle-
-//! Network-Certification-Datenbank zu beziehen.
+//! The default implementation ([`crate::GovernancePolicyEngine`], in
+//! stage 1c) mirrors the current `SharedSecurityGate` semantics 1:1.
+//! Users can plug in their own `PolicyEngine` impls, e.g. to derive
+//! decisions from an external policy server or a vehicle-network
+//! certification database.
 //!
-//! Siehe `docs/architecture/08_heterogeneous_security.md` §3.1.
+//! See `docs/architecture/08_heterogeneous_security.md` §3.1.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -38,36 +37,36 @@ use crate::caps::PeerCapabilities;
 use crate::shared::PeerKey;
 
 // ============================================================================
-// Grundtypen
+// Base types
 // ============================================================================
 
-/// Abstraktes Schutz-Level fuer die Policy-Ebene.
+/// Abstract protection level for the policy layer.
 ///
-/// Im Gegensatz zu [`ProtectionKind`] (XML-Parser-Typ, 5 Varianten
-/// inkl. Origin-Authentication) traegt `ProtectionLevel` nur die 3
-/// Grund-Klassen. Policy-Entscheidungen vergleichen/ordnen diese
-/// Stufen — die Origin-Auth-Verfeinerung folgt aus
-/// [`PolicyDecision::suite`] (Receiver-Specific-MACs, RC1).
+/// Unlike [`ProtectionKind`] (XML parser type, 5 variants
+/// incl. origin authentication), `ProtectionLevel` carries only the 3
+/// base classes. Policy decisions compare/order these
+/// levels — the origin-auth refinement follows from
+/// [`PolicyDecision::suite`] (receiver-specific MACs, RC1).
 ///
-/// Die Reihenfolge `None < Sign < Encrypt` ist fuer das "staerkster
-/// Wert gewinnt"-Matching in Stufe 3 (SEDP-Endpoint-Caps) relevant
-/// — `Ord`/`PartialOrd` sind entsprechend definiert.
+/// The order `None < Sign < Encrypt` is relevant for the "strongest
+/// value wins" matching in stage 3 (SEDP endpoint caps)
+/// — `Ord`/`PartialOrd` are defined accordingly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum ProtectionLevel {
-    /// Kein Schutz — plaintext-RTPS auf dem Wire.
+    /// No protection — plaintext RTPS on the wire.
     #[default]
     None,
-    /// Integrity-Schutz (HMAC/AEAD-Tag), Payload bleibt lesbar.
+    /// Integrity protection (HMAC/AEAD tag), payload stays readable.
     Sign,
-    /// Integrity + Confidentiality (AEAD-Ciphertext).
+    /// Integrity + confidentiality (AEAD ciphertext).
     Encrypt,
 }
 
 impl ProtectionLevel {
-    /// Mapping aus Governance-XML-[`ProtectionKind`]. Origin-Auth-
-    /// Varianten kollabieren auf ihre Grund-Klasse; die Origin-Auth-
-    /// Eigenschaft wird per [`PolicyDecision::suite`] +
-    /// Receiver-Specific-MAC-Encoding transportiert.
+    /// Mapping from the governance-XML [`ProtectionKind`]. Origin-auth
+    /// variants collapse to their base class; the origin-auth
+    /// property is transported via [`PolicyDecision::suite`] +
+    /// receiver-specific MAC encoding.
     #[must_use]
     pub fn from_protection_kind(kind: ProtectionKind) -> Self {
         match kind {
@@ -79,7 +78,7 @@ impl ProtectionLevel {
         }
     }
 
-    /// Rueck-Mapping auf [`ProtectionKind`] ohne Origin-Auth-Verfeinerung.
+    /// Reverse mapping to [`ProtectionKind`] without origin-auth refinement.
     #[must_use]
     pub fn to_protection_kind(self) -> ProtectionKind {
         match self {
@@ -89,34 +88,34 @@ impl ProtectionLevel {
         }
     }
 
-    /// Wahl des staerkeren von zwei Leveln (z.B. Writer-
-    /// vs. Reader-Offer).
+    /// Picks the stronger of two levels (e.g. writer
+    /// vs. reader offer).
     #[must_use]
     pub fn stronger(self, other: Self) -> Self {
         if self >= other { self } else { other }
     }
 }
 
-/// Crypto-Suite-Hinweis fuer die Policy-Entscheidung.
+/// Crypto-suite hint for the policy decision.
 ///
-/// `SuiteHint` ist ein **Wunsch** der Policy-Engine — das Crypto-
-/// Plugin kann ihn ignorieren, wenn es den Algorithmus nicht
-/// unterstuetzt. Das konkrete [`Suite`]-Enum (`security-crypto`)
-/// ist der Plugin-interne Typ; diese Indirektion erlaubt zukuenftige
-/// Suiten (ChaCha20-Poly1305, AES-CCM) ohne Breaking Change am
-/// Policy-API.
+/// `SuiteHint` is a **wish** of the policy engine — the crypto
+/// plugin may ignore it if it does not support the
+/// algorithm. The concrete [`Suite`] enum (`security-crypto`)
+/// is the plugin-internal type; this indirection allows future
+/// suites (ChaCha20-Poly1305, AES-CCM) without a breaking change to the
+/// policy API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SuiteHint {
-    /// AES-128-GCM — Default-Suite v1.4.
+    /// AES-128-GCM — default suite v1.4.
     Aes128Gcm,
-    /// AES-256-GCM — fuer Langzeit-Vertraulichkeit / Compliance.
+    /// AES-256-GCM — for long-term confidentiality / compliance.
     Aes256Gcm,
-    /// HMAC-SHA256 Auth-only (keine Confidentiality, SIGN-Level).
+    /// HMAC-SHA256 auth-only (no confidentiality, SIGN level).
     HmacSha256,
 }
 
 impl SuiteHint {
-    /// Mapping auf das Plugin-interne [`Suite`].
+    /// Mapping to the plugin-internal [`Suite`].
     #[must_use]
     pub fn to_suite(self) -> Suite {
         match self {
@@ -126,18 +125,21 @@ impl SuiteHint {
         }
     }
 
-    /// Rueck-Mapping aus [`Suite`].
+    /// Reverse mapping from [`Suite`].
     #[must_use]
     pub fn from_suite(suite: Suite) -> Self {
         match suite {
             Suite::Aes128Gcm => Self::Aes128Gcm,
             Suite::Aes256Gcm => Self::Aes256Gcm,
-            Suite::HmacSha256 => Self::HmacSha256,
+            // AES-256-GMAC is auth-only (SIGN) — for the capability advertisement
+            // map it to the SIGN hint; the real key suite is set directly via
+            // set_local_protection_suites, not via this hint.
+            Suite::HmacSha256 | Suite::Aes256Gmac => Self::HmacSha256,
         }
     }
 
-    /// Liefert das natuerliche Protection-Level dieser Suite:
-    /// AEAD-Suiten → `Encrypt`, HMAC → `Sign`.
+    /// Returns the natural protection level of this suite:
+    /// AEAD suites → `Encrypt`, HMAC → `Sign`.
     #[must_use]
     pub fn protection_level(self) -> ProtectionLevel {
         match self {
@@ -151,23 +153,23 @@ impl SuiteHint {
 // NetInterface
 // ============================================================================
 
-/// CIDR-artige IPv4/IPv6-Range, inklusiv interpretiert.
+/// CIDR-like IPv4/IPv6 range, interpreted inclusively.
 ///
-/// Minimaler Selbstbau (kein `ipnet`-Dep, um den Safety-Footprint
-/// klein zu halten). Praefix-Laenge in Host-Bits: IPv4 bis 32, IPv6
-/// bis 128. Parsing (z.B. aus `"10.0.0.0/24"`) kommt in RC1
-/// (Governance-XML); hier genuegt die struct-Form.
+/// A minimal self-build (no `ipnet` dep, to keep the safety footprint
+/// small). Prefix length in host bits: IPv4 up to 32, IPv6
+/// up to 128. Parsing (e.g. from `"10.0.0.0/24"`) arrives in RC1
+/// (governance XML); here the struct form suffices.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IpRange {
-    /// Basis-Adresse der Range (Host-Bits werden ignoriert).
+    /// Base address of the range (host bits are ignored).
     pub base: IpAddr,
-    /// Praefix-Laenge in Bits. Muss `<= 32` fuer v4, `<= 128` fuer v6.
+    /// Prefix length in bits. Must be `<= 32` for v4, `<= 128` for v6.
     pub prefix_len: u8,
 }
 
 impl IpRange {
-    /// Prueft, ob `addr` in der Range liegt. Gemischte Familien
-    /// (v4 in v6-Range) sind **kein** Match.
+    /// Checks whether `addr` lies in the range. Mixed families
+    /// (v4 in a v6 range) are **not** a match.
     #[must_use]
     pub fn contains(&self, addr: &IpAddr) -> bool {
         match (self.base, addr) {
@@ -202,56 +204,55 @@ impl IpRange {
     }
 }
 
-/// Klassifikation eines Netz-Interfaces fuer die Policy-Entscheidung.
+/// Classification of a network interface for the policy decision.
 ///
-/// Die Engine kann darauf basierend unterschiedlich entscheiden:
-/// * `Loopback` + `LocalHost` → oft `ProtectionLevel::None` (Bytes
-///   verlassen den Host nicht).
-/// * `LocalSubnet` → Management-Netze mit `Sign` statt `Encrypt`.
-/// * `Wan` → restriktivste Policy.
-/// * `Named` → benutzer-konfigurierte Klassifikation (z.B. `tun0`
-///   als VPN-geschuetzt, `can0-gw` als Vehicle-Bus-Gateway).
+/// The engine can decide differently based on it:
+/// * `Loopback` + `LocalHost` → often `ProtectionLevel::None` (bytes
+///   do not leave the host).
+/// * `LocalSubnet` → management networks with `Sign` instead of `Encrypt`.
+/// * `Wan` → the most restrictive policy.
+/// * `Named` → user-configured classification (e.g. `tun0`
+///   as VPN-protected, `can0-gw` as a vehicle-bus gateway).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum NetInterface {
-    /// 127.0.0.0/8 oder `::1`.
+    /// 127.0.0.0/8 or `::1`.
     Loopback,
-    /// Host-lokaler Transport ausserhalb von Loopback (Shared-Memory,
-    /// Unix-Domain-Socket) — Bytes verlassen den Host-Kernel nicht.
+    /// Host-local transport outside loopback (shared memory,
+    /// Unix domain socket) — bytes do not leave the host kernel.
     LocalHost,
-    /// Adresse in einer konfigurierten privaten Range (z.B.
+    /// Address in a configured private range (e.g.
     /// `10.0.0.0/24`, `192.168.0.0/16`).
     LocalSubnet(IpRange),
-    /// Alles andere — oeffentliche IP, unbekanntes Interface.
+    /// Everything else — public IP, unknown interface.
     Wan,
-    /// Benutzer-konfigurierte Interface-Klasse per Name.
+    /// User-configured interface class by name.
     Named(String),
 }
 
-/// Laufzeit-Konfiguration des Interface-Classifiers.
+/// Runtime configuration of the interface classifier.
 ///
-/// Wird vom Nutzer beim Participant-Start gebaut und an den
-/// [`PolicyEngine`] uebergeben. Leere Konfiguration → jede nicht-
-/// Loopback-Adresse landet in [`NetInterface::Wan`].
+/// Built by the user at participant start and passed to the
+/// [`PolicyEngine`]. Empty configuration → every non-
+/// loopback address lands in [`NetInterface::Wan`].
 ///
-/// Die `named`-Liste erlaubt Muster wie "alle Adressen im Tun0-Subnet
-/// sollen `NetInterface::Named("vpn".into())` werden". Die Liste
-/// wird in Reihenfolge abgearbeitet — erstes Match gewinnt.
+/// The `named` list allows patterns like "all addresses in the tun0 subnet
+/// should become `NetInterface::Named("vpn".into())`". The list
+/// is processed in order — first match wins.
 #[derive(Debug, Clone, Default)]
 pub struct InterfaceConfig {
-    /// Private Subnetze, die als [`NetInterface::LocalSubnet`]
-    /// klassifiziert werden.
+    /// Private subnets classified as [`NetInterface::LocalSubnet`].
     pub local_subnets: Vec<IpRange>,
-    /// Named-Interface-Zuordnungen: `(range, name)` — erstes Match
-    /// liefert [`NetInterface::Named`].
+    /// Named-interface mappings: `(range, name)` — first match
+    /// yields [`NetInterface::Named`].
     pub named: Vec<(IpRange, String)>,
 }
 
-/// Klassifiziert eine IP-Adresse in die `NetInterface`-Taxonomie.
+/// Classifies an IP address into the `NetInterface` taxonomy.
 ///
-/// Reihenfolge:
+/// Order:
 /// 1. Loopback (127/8, `::1`).
-/// 2. Named-Matches aus `config.named` (erstes Match gewinnt).
-/// 3. Local-Subnet-Matches aus `config.local_subnets`.
+/// 2. Named matches from `config.named` (first match wins).
+/// 3. Local-subnet matches from `config.local_subnets`.
 /// 4. Fallback `Wan`.
 #[must_use]
 pub fn classify_interface(addr: &IpAddr, config: &InterfaceConfig) -> NetInterface {
@@ -272,40 +273,40 @@ pub fn classify_interface(addr: &IpAddr, config: &InterfaceConfig) -> NetInterfa
 }
 
 // ============================================================================
-// Policy-Decision
+// Policy decision
 // ============================================================================
 
-/// Entscheidung der [`PolicyEngine`] fuer ein konkretes
-/// Paket/Peer/Interface-Tripel.
+/// Decision of the [`PolicyEngine`] for a concrete
+/// packet/peer/interface triple.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PolicyDecision {
-    /// Verlangtes Schutz-Level.
+    /// Required protection level.
     pub protection: ProtectionLevel,
-    /// Gewuenschte Crypto-Suite. `None` bei `ProtectionLevel::None`
-    /// oder wenn die Engine dem Plugin die Wahl ueberlaesst.
+    /// Desired crypto suite. `None` for `ProtectionLevel::None`
+    /// or when the engine leaves the choice to the plugin.
     pub suite: Option<SuiteHint>,
-    /// Harter Drop — Paket wird nicht zugestellt, Peer nicht
-    /// akzeptiert. Falls `true` sind `protection`/`suite` irrelevant.
+    /// Hard drop — the packet is not delivered, the peer not
+    /// accepted. If `true`, `protection`/`suite` are irrelevant.
     pub drop: bool,
 }
 
 impl PolicyDecision {
-    /// Kurzform: "plaintext akzeptiert/erwartet".
+    /// Shorthand: "plaintext accepted/expected".
     pub const PLAIN: Self = Self {
         protection: ProtectionLevel::None,
         suite: None,
         drop: false,
     };
 
-    /// Kurzform: "hart droppen".
+    /// Shorthand: "hard drop".
     pub const DROP: Self = Self {
         protection: ProtectionLevel::None,
         suite: None,
         drop: true,
     };
 
-    /// Baut eine Decision aus Protection + Suite. Bei
-    /// `ProtectionLevel::None` wird `suite` auf `None` gezwungen.
+    /// Builds a decision from protection + suite. For
+    /// `ProtectionLevel::None`, `suite` is forced to `None`.
     #[must_use]
     pub fn with(protection: ProtectionLevel, suite: Option<SuiteHint>) -> Self {
         let suite = if matches!(protection, ProtectionLevel::None) {
@@ -322,41 +323,41 @@ impl PolicyDecision {
 }
 
 // ============================================================================
-// Context-Objects
+// Context objects
 // ============================================================================
 
-/// Outbound-Entscheidungs-Context: ein Writer schickt an einen Peer.
+/// Outbound decision context: a writer sends to a peer.
 #[derive(Debug)]
 pub struct OutboundCtx<'a> {
-    /// Domain, in der der Writer lebt.
+    /// Domain the writer lives in.
     pub domain_id: u32,
-    /// Topic-Name (fuer Governance-`topic_rule`-Matching).
+    /// Topic name (for governance `topic_rule` matching).
     pub topic: &'a str,
-    /// Partition-Namen (fuer Permissions-Check).
+    /// Partition names (for the permissions check).
     pub partition: &'a [String],
-    /// Klasse des Interfaces, auf dem das Paket rausgeht.
+    /// Class of the interface the packet goes out on.
     pub interface: &'a NetInterface,
-    /// GuidPrefix des Remote-Peers.
+    /// GuidPrefix of the remote peer.
     pub remote_peer: &'a PeerKey,
-    /// Capability-Snapshot des Remote-Peers (aus SPDP/SEDP).
+    /// Capability snapshot of the remote peer (from SPDP/SEDP).
     pub remote_caps: &'a PeerCapabilities,
 }
 
-/// Inbound-Entscheidungs-Context: ein Datagramm ist reingekommen.
+/// Inbound decision context: a datagram has come in.
 #[derive(Debug)]
 pub struct InboundCtx<'a> {
-    /// Domain, in der der Empfaenger lebt.
+    /// Domain the receiver lives in.
     pub domain_id: u32,
-    /// GuidPrefix des Senders (aus RTPS-Header Bytes 8..20).
+    /// GuidPrefix of the sender (from RTPS header bytes 8..20).
     pub source_peer: &'a PeerKey,
-    /// Klasse des Empfangs-Interfaces.
+    /// Class of the receive interface.
     pub source_iface: &'a NetInterface,
-    /// Capability-Snapshot des Senders. `None` wenn der Peer noch nie
-    /// ein SPDP-Announce geschickt hat (Legacy-Vendor oder
-    /// Pre-Discovery).
+    /// Capability snapshot of the sender. `None` if the peer has never
+    /// sent an SPDP announce (legacy vendor or
+    /// pre-discovery).
     pub source_caps: Option<&'a PeerCapabilities>,
-    /// `true` wenn das Paket mit `SRTPS_PREFIX` beginnt (also laut
-    /// Wire-Format schon geschuetzt ist).
+    /// `true` if the packet begins with `SRTPS_PREFIX` (i.e. according to the
+    /// wire format it is already protected).
     pub is_sec_prefixed: bool,
 }
 
@@ -364,36 +365,35 @@ pub struct InboundCtx<'a> {
 // Trait
 // ============================================================================
 
-/// Policy-Engine: entscheidet fuer ein konkretes `(peer, topic,
-/// interface)`-Tripel das Schutz-Level.
+/// Policy engine: decides the protection level for a concrete `(peer, topic,
+/// interface)` triple.
 ///
-/// # Safety-Klassifikation
+/// # Safety classification
 ///
-/// Trait ist `Send + Sync`, damit er via `Arc<dyn PolicyEngine>` in
-/// Multi-Thread-Runtime genutzt werden kann. Das triggert
-/// `zerodds-lint: allow no_dyn_in_safe` (dokumentiert in
+/// The trait is `Send + Sync` so it can be used via `Arc<dyn PolicyEngine>` in
+/// a multi-thread runtime. This triggers
+/// `zerodds-lint: allow no_dyn_in_safe` (documented in
 /// `08_heterogeneous_security.md` §7).
 ///
-/// # Default-Contract
+/// # Default contract
 ///
-/// * Implementationen muessen **deterministisch** sein: gleiche
-///   Context-Inputs → gleiche Decision. Kein Zufall, keine
-///   Zeit-abhaengigen Branches (sonst sind Replay-Angriffe moeglich).
-/// * `accept_peer` darf `false` zurueckgeben, wenn der Peer nicht
-///   die Minimal-Anforderungen (z.B. fehlendes `auth_plugin_class`
-///   bei Domain mit `allow_unauthenticated_participants=false`)
-///   erfuellt.
-/// * `outbound_decision`/`inbound_decision` duerfen **nicht**
-///   blockieren — sie laufen im Hot-Path.
+/// * Implementations must be **deterministic**: same
+///   context inputs → same decision. No randomness, no
+///   time-dependent branches (otherwise replay attacks are possible).
+/// * `accept_peer` may return `false` if the peer does not
+///   meet the minimal requirements (e.g. a missing `auth_plugin_class`
+///   for a domain with `allow_unauthenticated_participants=false`).
+/// * `outbound_decision`/`inbound_decision` must **not**
+///   block — they run in the hot path.
 pub trait PolicyEngine: Send + Sync {
-    /// Outbound-Pfad: welches Schutz-Level soll das Wire-Paket haben?
+    /// Outbound path: which protection level should the wire packet have?
     fn outbound_decision(&self, ctx: OutboundCtx<'_>) -> PolicyDecision;
 
-    /// Inbound-Pfad: Paket akzeptieren / droppen / entschluesseln?
+    /// Inbound path: accept / drop / decrypt the packet?
     fn inbound_decision(&self, ctx: InboundCtx<'_>) -> PolicyDecision;
 
-    /// SEDP-Admission: ist dieser Peer (laut Capabilities)
-    /// grundsaetzlich akzeptabel fuer einen Match?
+    /// SEDP admission: is this peer (according to its capabilities)
+    /// fundamentally acceptable for a match?
     fn accept_peer(&self, caps: &PeerCapabilities) -> bool;
 }
 

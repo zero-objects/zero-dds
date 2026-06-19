@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! [`Requester`] — Client-Seite eines DDS-RPC-Service (Spec §7.9).
+//! [`Requester`] — client side of a DDS-RPC service (Spec §7.9).
 //!
-//! Threading-Modell der Foundation-Stufe (C6.1.C):
+//! Threading model of the foundation stage (C6.1.C):
 //!
-//! * **Synchrones API**, kein async-Runtime-Zwang. `send_request_blocking`
-//!   ruft intern [`Requester::tick`] in einem Polling-Loop bis Reply oder
-//!   Timeout. Caller mit eigenem Event-Loop koennen `send_request_async`
-//!   nutzen, das nur den Request schickt und einen `mpsc::Receiver`
-//!   zurueckliefert; sie sind dann selbst dafuer zustaendig, regelmaessig
-//!   `tick()` zu rufen.
-//! * Korrelation: jeder Request bekommt eine eindeutige
-//!   [`SampleIdentity`], die im [`RequestHeader`] auf die Wire geht. Der
-//!   Replier setzt sie in `ReplyHeader::related_request_id`. `tick`
-//!   liest neue Replies, sucht den passenden `mpsc::Sender` und routet die
-//!   Antwort.
+//! * **Synchronous API**, no async-runtime requirement. `send_request_blocking`
+//!   internally calls [`Requester::tick`] in a polling loop until reply or
+//!   timeout. Callers with their own event loop can use `send_request_async`,
+//!   which only sends the request and returns an `mpsc::Receiver`;
+//!   they are then responsible themselves for regularly
+//!   calling `tick()`.
+//! * Correlation: each request gets a unique
+//!   [`SampleIdentity`] that goes onto the wire in the [`RequestHeader`]. The
+//!   replier sets it in `ReplyHeader::related_request_id`. `tick`
+//!   reads new replies, finds the matching `mpsc::Sender` and routes the
+//!   response.
 //!
-//! Wire-Frame: siehe [`crate::wire_codec`].
+//! Wire frame: see [`crate::wire_codec`].
 //!
-//! Spec-Korrelation: Die Spec verlangt zusaetzlich, dass der Reply-DATA
-//! im Inline-QoS-Block den `PID_RELATED_SAMPLE_IDENTITY` traegt
-//! ([`zerodds_rtps::inline_qos`]). Dieser Pfad wird in C6.1.D
-//! aktiviert, wenn DCPS-DataWriter eine Inline-QoS-API exponiert. Bis
-//! dahin reicht der Header-im-Payload-Pfad fuer Foundation-Tests.
+//! Spec correlation: the spec additionally requires that the reply DATA
+//! carries `PID_RELATED_SAMPLE_IDENTITY` in the inline-QoS block
+//! ([`zerodds_rtps::inline_qos`]). This path is activated in C6.1.D
+//! when the DCPS DataWriter exposes an inline-QoS API. Until
+//! then, the header-in-payload path suffices for foundation tests.
 
 extern crate alloc;
 
@@ -48,19 +48,19 @@ use crate::topic_naming::ServiceTopicNames;
 use crate::wire_codec::{decode_reply_frame, encode_request_frame};
 
 // ---------------------------------------------------------------------
-// Service-Instance-Registry — verhindert Duplikate auf einem Participant
+// Service instance registry — prevents duplicates on one participant
 // ---------------------------------------------------------------------
 
-/// Rolle eines Endpoints in der Instance-Registry — Requester und Replier
-/// fuer dasselbe `(service, instance)` koexistieren auf einem Participant
-/// (Spec §7.6.2). Doppelt belegt ist nur dieselbe Rolle.
+/// Role of an endpoint in the instance registry — requester and replier
+/// for the same `(service, instance)` coexist on one participant
+/// (Spec §7.6.2). Only the same role is doubly occupied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum InstanceRole {
     Requester,
     Replier,
 }
 
-/// Schluessel: `(participant_pointer, role, service_name, instance_name)`.
+/// Key: `(participant_pointer, role, service_name, instance_name)`.
 type InstanceKey = (usize, InstanceRole, String, String);
 
 fn instance_registry() -> &'static Mutex<std::collections::HashSet<InstanceKey>> {
@@ -70,8 +70,8 @@ fn instance_registry() -> &'static Mutex<std::collections::HashSet<InstanceKey>>
 }
 
 fn participant_addr(p: &DomainParticipant) -> usize {
-    // Adresse des `DomainParticipant`-Wrappers reicht als Process-lokales
-    // Token. `Arc`-Inhalt bleibt waehrend der Lebenszeit stabil.
+    // The address of the `DomainParticipant` wrapper suffices as a process-local
+    // token. The `Arc` content stays stable over its lifetime.
     core::ptr::from_ref(p) as usize
 }
 
@@ -82,8 +82,8 @@ pub(crate) fn try_claim_instance(
     instance_name: &str,
 ) -> RpcResult<InstanceClaim> {
     if instance_name.is_empty() {
-        // Anonyme Endpoints erlauben Mehrfach-Registrierung — Spec §7.6.2
-        // unterscheidet Default-Instance nicht vom Single-Endpoint.
+        // Anonymous endpoints allow multiple registration — Spec §7.6.2
+        // does not distinguish the default instance from a single endpoint.
         return Ok(InstanceClaim::anonymous());
     }
     let key: InstanceKey = (
@@ -101,9 +101,9 @@ pub(crate) fn try_claim_instance(
     Ok(InstanceClaim::owned(key))
 }
 
-/// RAII-Slot, der einen `(participant, service, instance)`-Eintrag bei
-/// Drop wieder freigibt. So bleibt die Registry sauber, wenn ein
-/// Requester/Replier gedropt wird.
+/// RAII slot that releases a `(participant, service, instance)` entry on
+/// drop. This keeps the registry clean when a
+/// requester/replier is dropped.
 #[derive(Debug)]
 pub(crate) struct InstanceClaim {
     key: Option<InstanceKey>,
@@ -132,32 +132,32 @@ impl Drop for InstanceClaim {
 // Requester
 // ---------------------------------------------------------------------
 
-/// Reply-Payload an den wartenden Caller. `Ok(bytes)` ⇒
-/// `RemoteExceptionCode::Ok` mit user-payload-bytes; `Err(code)` ⇒
-/// Server-Side-Exception ohne Payload.
+/// Reply payload to the waiting caller. `Ok(bytes)` ⇒
+/// `RemoteExceptionCode::Ok` with user payload bytes; `Err(code)` ⇒
+/// server-side exception without payload.
 pub type ReplyOutcome = Result<Vec<u8>, RemoteExceptionCode>;
 
-/// Pending-Slot pro outstanding Request.
+/// Pending slot per outstanding request.
 struct PendingSlot {
     sender: mpsc::Sender<ReplyOutcome>,
 }
 
-/// Client-Seite eines DDS-RPC-Service.
+/// Client side of a DDS-RPC service.
 ///
-/// `TIn` ist der **User-Request-Payload-Typ** (z.B. `Calculator_AddRequest`),
-/// `TOut` der **User-Reply-Payload-Typ**. Beide muessen `DdsType`
-/// implementieren — encodet/decodet wird ueber [`DdsType::encode`] und
+/// `TIn` is the **user request payload type** (e.g. `Calculator_AddRequest`),
+/// `TOut` the **user reply payload type**. Both must implement `DdsType`
+/// — encoding/decoding goes through [`DdsType::encode`] and
 /// [`DdsType::decode`].
 pub struct Requester<TIn: DdsType, TOut: DdsType> {
     service_name: String,
     instance_name: String,
     request_writer: DataWriter<RawBytes>,
     reply_reader: DataReader<RawBytes>,
-    /// 16-byte Writer-GUID, der jeden Request markiert. Der Wert wird
-    /// vom DataWriter-Layer aus dem DCPS-Runtime injiziert (RTPS-GUID
-    /// des Request-Writers); `Requester::new` synthesisiert nur einen
-    /// Initial-Wert fuer Tests, der vor dem ersten Send durch
-    /// `set_writer_guid` ersetzt wird.
+    /// 16-byte writer GUID that marks every request. The value is
+    /// injected by the DataWriter layer from the DCPS runtime (RTPS GUID
+    /// of the request writer); `Requester::new` only synthesizes an
+    /// initial value for tests, which is replaced before the first send by
+    /// `set_writer_guid`.
     writer_guid: [u8; 16],
     next_seq: Mutex<u64>,
     pending: Arc<Mutex<HashMap<SampleIdentity, PendingSlot>>>,
@@ -176,19 +176,19 @@ impl<TIn: DdsType, TOut: DdsType> core::fmt::Debug for Requester<TIn, TOut> {
 }
 
 impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Requester<TIn, TOut> {
-    /// Legt einen neuen Requester gegen `service_name` an.
+    /// Creates a new requester against `service_name`.
     ///
-    /// Erzeugt zwei Topics — `<service>_Request` (Writer) und
-    /// `<service>_Reply` (Reader) — und einen `Publisher`/`Subscriber`-
-    /// Paerchen. `instance_name=""` heisst "Default-Instance, kein
+    /// Produces two topics — `<service>_Request` (writer) and
+    /// `<service>_Reply` (reader) — and a `Publisher`/`Subscriber`
+    /// pair. `instance_name=""` means "default instance, no
     /// `PID_SERVICE_INSTANCE_NAME`".
     ///
     /// # Errors
-    /// * `RpcError::InvalidServiceName` falls der Name leer/illegal ist.
-    /// * `RpcError::Dcps` bei Topic/Writer/Reader-Anlegen-Fehlern.
-    /// * `RpcError::DuplicateInstanceName` falls auf demselben
-    ///   Participant bereits ein Requester/Replier mit gleichem
-    ///   `(service, instance)`-Paar laeuft.
+    /// * `RpcError::InvalidServiceName` if the name is empty/illegal.
+    /// * `RpcError::Dcps` on topic/writer/reader creation errors.
+    /// * `RpcError::DuplicateInstanceName` if a requester/replier with
+    ///   the same `(service, instance)` pair already runs on the same
+    ///   participant.
     pub fn new(
         participant: &DomainParticipant,
         service_name: &str,
@@ -197,11 +197,11 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Requester<TI
         Self::with_instance(participant, service_name, "", qos)
     }
 
-    /// Wie [`Self::new`], aber mit explizitem `service_instance_name`
+    /// Like [`Self::new`], but with an explicit `service_instance_name`
     /// (Spec §7.8.2 PID 0x0080).
     ///
     /// # Errors
-    /// Siehe [`Self::new`].
+    /// See [`Self::new`].
     pub fn with_instance(
         participant: &DomainParticipant,
         service_name: &str,
@@ -245,37 +245,37 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Requester<TI
         })
     }
 
-    /// Service-Name, gegen den dieser Requester arbeitet.
+    /// Service name this requester works against.
     #[must_use]
     pub fn service_name(&self) -> &str {
         &self.service_name
     }
 
-    /// Service-Instance-Name (`""` falls Default-Instance).
+    /// Service instance name (`""` if default instance).
     #[must_use]
     pub fn instance_name(&self) -> &str {
         &self.instance_name
     }
 
-    /// Anzahl outstanding Requests.
+    /// Number of outstanding requests.
     #[must_use]
     pub fn pending_count(&self) -> usize {
         self.pending.lock().map(|m| m.len()).unwrap_or(0)
     }
 
-    /// Aktuelle Default-Timeout-Konfiguration.
+    /// Current default-timeout configuration.
     #[must_use]
     pub fn default_timeout(&self) -> Duration {
         self.qos.request_timeout
     }
 
-    /// Schickt einen Request **ohne auf Reply zu warten**. Liefert
-    /// einen `mpsc::Receiver`, ueber den der Caller spaeter mit
-    /// [`mpsc::Receiver::recv`] (oder selbst-getriebener
-    /// `tick()`-Schleife) den Reply abholt.
+    /// Sends a request **without waiting for a reply**. Returns
+    /// an `mpsc::Receiver` through which the caller later picks up the
+    /// reply with [`mpsc::Receiver::recv`] (or a self-driven
+    /// `tick()` loop).
     ///
     /// # Errors
-    /// `RpcError::Dcps` bei Encoder- oder Writer-Fehlern.
+    /// `RpcError::Dcps` on encoder or writer errors.
     pub fn send_request_async(
         &self,
         payload: &TIn,
@@ -288,9 +288,9 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Requester<TI
             .map_err(|e| RpcError::Dcps(alloc::format!("encode TIn: {e}")))?;
         let frame = encode_request_frame(&header, &user_buf);
         let (tx, rx) = mpsc::channel();
-        // Erst registrieren, dann senden — vermeidet Race, wenn der
-        // Replier extrem schnell antwortet und unser tick vor dem
-        // pending-Insert dran kaeme.
+        // Register first, then send — avoids a race if the
+        // replier answers extremely fast and our tick would run before the
+        // pending insert.
         {
             let mut pend = self
                 .pending
@@ -299,7 +299,7 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Requester<TI
             pend.insert(id, PendingSlot { sender: tx });
         }
         if let Err(e) = self.request_writer.write(&RawBytes::new(frame)) {
-            // Slot wieder freigeben.
+            // Release the slot again.
             if let Ok(mut pend) = self.pending.lock() {
                 pend.remove(&id);
             }
@@ -308,11 +308,11 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Requester<TI
         Ok((id, rx))
     }
 
-    /// Sendet einen Oneway-Request — kein Reply erwartet, kein
-    /// `pending`-Slot.
+    /// Sends a oneway request — no reply expected, no
+    /// `pending` slot.
     ///
     /// # Errors
-    /// `RpcError::Dcps` bei Encoder- oder Writer-Fehlern.
+    /// `RpcError::Dcps` on encoder or writer errors.
     pub fn send_oneway(&self, payload: &TIn) -> RpcResult<SampleIdentity> {
         let id = self.next_request_id()?;
         let header = RequestHeader::new(id, self.instance_name.clone());
@@ -327,16 +327,16 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Requester<TI
         Ok(id)
     }
 
-    /// Sendet einen Request und blockiert bis Reply oder Timeout.
+    /// Sends a request and blocks until reply or timeout.
     ///
-    /// `timeout=None` nutzt [`RpcQos::request_timeout`]; explizit ueber
-    /// `Some(...)` ueberschreiben.
+    /// `timeout=None` uses [`RpcQos::request_timeout`]; override explicitly
+    /// via `Some(...)`.
     ///
     /// # Errors
-    /// * `RpcError::Timeout` wenn waehrend `timeout` kein Reply ankam.
-    /// * `RpcError::RemoteException(code)` falls Server-Side eine
-    ///   `RemoteExceptionCode != Ok` zurueckgemeldet hat.
-    /// * `RpcError::Dcps` bei Encode/Decode/Writer-Fehlern.
+    /// * `RpcError::Timeout` if no reply arrived during `timeout`.
+    /// * `RpcError::RemoteException(code)` if the server side reported a
+    ///   `RemoteExceptionCode != Ok`.
+    /// * `RpcError::Dcps` on encode/decode/writer errors.
     pub fn send_request_blocking(
         &self,
         payload: &TIn,
@@ -347,7 +347,7 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Requester<TI
         let deadline = std::time::Instant::now() + timeout;
         let poll = Duration::from_millis(2);
         loop {
-            // 1. Vor dem Receive-Versuch einmal Replies einsammeln.
+            // 1. Collect replies once before the receive attempt.
             self.tick();
             match rx.try_recv() {
                 Ok(Ok(bytes)) => {
@@ -368,9 +368,9 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Requester<TI
         }
     }
 
-    /// Liest neue Replies aus dem Reader, korreliert via
-    /// `related_request_id`, und feuert die zugeordneten
-    /// `mpsc::Sender`. Idempotent (kein Reply ⇒ no-op).
+    /// Reads new replies from the reader, correlates via
+    /// `related_request_id`, and fires the associated
+    /// `mpsc::Sender`. Idempotent (no reply ⇒ no-op).
     pub fn tick(&self) {
         let samples = match self.reply_reader.take() {
             Ok(s) => s,
@@ -390,8 +390,8 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Requester<TI
                 Err(_) => continue, // Malformed reply ⇒ silent drop.
             };
             let Some(slot) = pend.remove(&header.related_request_id) else {
-                // Reply, dem keine offene Request entspricht — z.B. duplicate
-                // delivery, late-after-timeout. Verwerfen.
+                // A reply with no matching open request — e.g. duplicate
+                // delivery, late-after-timeout. Discard.
                 continue;
             };
             let payload_owned = payload.to_vec();
@@ -400,7 +400,7 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Requester<TI
             } else {
                 Err(header.remote_ex)
             };
-            // `send` failt nur, wenn Receiver gedropt wurde — egal.
+            // `send` only fails if the receiver was dropped — irrelevant.
             let _ = slot.sender.send(result);
         }
     }
@@ -417,17 +417,17 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Requester<TI
         Ok(SampleIdentity::new(self.writer_guid, sn))
     }
 
-    /// Test-Helper: Drainiert die offline-gequeueten Request-Bytes des
-    /// Writers — ermoeglicht es, die Bytes manuell in einen Replier-
-    /// Reader zu pumpen (bypass der DCPS-Live-Runtime).
+    /// Test helper: drains the offline-queued request bytes of the
+    /// writer — lets you manually pump the bytes into a replier
+    /// reader (bypassing the DCPS live runtime).
     #[doc(hidden)]
     #[must_use]
     pub fn __drain_request_writer(&self) -> Vec<Vec<u8>> {
         self.request_writer.__drain_pending()
     }
 
-    /// Test-Helper: pusht einen Reply-Frame direkt in die Reader-Inbox.
-    /// Nur fuer Offline-Tests gedacht.
+    /// Test helper: pushes a reply frame directly into the reader inbox.
+    /// Intended only for offline tests.
     #[doc(hidden)]
     pub fn __push_reply_raw(&self, bytes: Vec<u8>) -> RpcResult<()> {
         self.reply_reader
@@ -435,8 +435,8 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Requester<TI
             .map_err(|e| RpcError::Dcps(alloc::format!("push raw: {e:?}")))
     }
 
-    /// Test-Helper: liefert eine `Clone` der Writer-GUID. Nicht stabil,
-    /// nur fuer Test-Inspektion.
+    /// Test helper: returns a `Clone` of the writer GUID. Not stable,
+    /// only for test inspection.
     #[doc(hidden)]
     #[must_use]
     pub fn __writer_guid(&self) -> [u8; 16] {
@@ -445,21 +445,21 @@ impl<TIn: DdsType + Send + 'static, TOut: DdsType + Send + 'static> Requester<TI
 }
 
 // ---------------------------------------------------------------------
-// Helper: synthetischer Writer-GUID
+// Helper: synthetic writer GUID
 // ---------------------------------------------------------------------
 
 fn synthesize_writer_guid() -> [u8; 16] {
     use std::sync::atomic::{AtomicU64, Ordering};
-    // Pro Requester ein eigener counter-Suffix; 8 byte Process-Salt
-    // + 8 byte Counter. Ueber Process-Boundaries ist das nicht
-    // global-unique, aber fuer Foundation-Korrelations-Tests (sowie
-    // fuer mehrere Requester pro Process) ausreichend.
+    // A dedicated counter suffix per requester; 8 bytes process salt
+    // + 8 bytes counter. Across process boundaries this is not
+    // globally unique, but for foundation correlation tests (as well as
+    // for multiple requesters per process) it suffices.
     static SALT: std::sync::OnceLock<[u8; 8]> = std::sync::OnceLock::new();
     static CTR: AtomicU64 = AtomicU64::new(1);
     let salt = *SALT.get_or_init(|| {
-        // Ohne externe rng-Crate: System-Zeit + Process-ID + Stack-Probe-
-        // Address ueber-XOR. Nicht crypto-strong, aber fuer eine
-        // Process-lokale Disambiguierung von Requestern reicht es.
+        // Without an external rng crate: system time + process id + stack-probe
+        // address XOR'd together. Not crypto-strong, but for a
+        // process-local disambiguation of requesters it suffices.
         let probe: alloc::boxed::Box<u8> = alloc::boxed::Box::new(0u8);
         let addr = (&*probe as *const u8) as u64;
         drop(probe);
@@ -496,8 +496,8 @@ mod tests {
         let a = synthesize_writer_guid();
         let b = synthesize_writer_guid();
         assert_ne!(a, b);
-        // Salt-Bytes (erste 8) sind fuer beide gleich, Counter-Bytes
-        // unterscheiden sich.
+        // The salt bytes (first 8) are the same for both, the counter bytes
+        // differ.
         assert_eq!(&a[..8], &b[..8]);
         assert_ne!(&a[8..], &b[8..]);
     }
@@ -596,7 +596,7 @@ mod tests {
             let _r1 =
                 Requester::<RawBytes, RawBytes>::with_instance(&p, "Calc", "calc-X", &q).unwrap();
         }
-        // Nach dem Drop muss der Slot wieder frei sein.
+        // After the drop the slot must be free again.
         let _r2 = Requester::<RawBytes, RawBytes>::with_instance(&p, "Calc", "calc-X", &q).unwrap();
     }
 
@@ -616,7 +616,7 @@ mod tests {
         let (id, rx) = r
             .send_request_async(&RawBytes::new(alloc::vec![1]))
             .unwrap();
-        // Manuell einen passenden Reply-Frame in den Reader pushen.
+        // Manually push a matching reply frame into the reader.
         let reply_header = ReplyHeader::new(id, RemoteExceptionCode::Ok);
         let frame = crate::wire_codec::encode_reply_frame(&reply_header, &[7u8, 8, 9]);
         r.__push_reply_raw(frame).unwrap();
@@ -639,7 +639,7 @@ mod tests {
         );
         r.__push_reply_raw(frame).unwrap();
         r.tick();
-        // Kein Pending-Slot, daher kein Effekt.
+        // No pending slot, hence no effect.
         assert_eq!(r.pending_count(), 0);
     }
 
@@ -667,7 +667,7 @@ mod tests {
         let (_id, _rx) = r.send_request_async(&RawBytes::new(alloc::vec![])).unwrap();
         r.__push_reply_raw(alloc::vec![0u8; 4]).unwrap(); // Truncated header.
         r.tick();
-        // Pending bleibt unveraendert — malformed reply wird verworfen.
+        // Pending stays unchanged — a malformed reply is discarded.
         assert_eq!(r.pending_count(), 1);
     }
 

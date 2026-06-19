@@ -6,7 +6,7 @@
 use alloc::string::String;
 
 /// Spec §7.3.1.1 — Authenticated SessionToken (returned by Root::
-/// `create_application` als `authenticatedSessionRepresentation`).
+/// `create_application` as `authenticatedSessionRepresentation`).
 ///
 /// Spec sagt: "The purpose of the SessionId type is to remember an
 /// authenticated client across subsequent invocations of operations on
@@ -15,19 +15,19 @@ use alloc::string::String;
 pub struct SessionId(pub String);
 
 impl SessionId {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(token: impl Into<String>) -> Self {
         Self(token.into())
     }
 
-    /// Liefert den Token-String.
+    /// Returns the token string.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    /// `true` wenn der Token nicht leer ist.
+    /// `true` if the token is not empty.
     #[must_use]
     pub fn is_valid(&self) -> bool {
         !self.0.is_empty()

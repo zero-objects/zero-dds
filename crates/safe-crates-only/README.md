@@ -1,0 +1,36 @@
+# `safe-crates-only`
+
+Meta-crate aggregating the ZeroDDS Safe-Subset (SAFE-classified, no_std) for the safe-profile build + lint gate. Not published.
+
+Part of [**ZeroDDS**](../../README.md). Safety classification: **SAFE**.
+
+## Status
+
+This README is auto-generated from `Cargo.toml` metadata. For
+hand-written documentation see the rustdoc on the crate's public
+items, or the relevant station in the
+[Documentation Trail](../../documentation/README.md).
+
+## Usage
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+safe-crates-only = { path = "../path/to/safe-crates-only" }
+# or, when published:
+# safe-crates-only = "0.x"
+```
+
+## Tests
+
+```bash
+cargo test -p safe-crates-only
+```
+
+## See also
+
+* [`docs/architecture/02_architecture.md`](../../docs/architecture/02_architecture.md) —
+  layered crate architecture.
+* [`documentation/02-architecture/components.md`](../../documentation/02-architecture/components.md) —
+  per-crate map (English).

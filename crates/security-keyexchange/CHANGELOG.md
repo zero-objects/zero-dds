@@ -1,40 +1,40 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-security-keyexchange`-Crate.
+Initial release materialization of the `zerodds-security-keyexchange` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **OMG DDS-Security 1.1** §8.3.2 (Authentication-Handshake) + §8.3.2.11 (Key-Establishment).
+- **OMG DDS-Security 1.1** §8.3.2 (authentication handshake) + §8.3.2.11 (key establishment).
 
-### Public-API
+### Public API
 
 - `KeyExchange::{new, with_suite, public_key, derive_shared_secret}`.
 - `Suite::{X25519, P256Ecdh}`.
 
-### Implementierung
+### Implementation
 
-`KeyExchange::new` erzeugt ein ephemerales Schluesselpaar via `ring::agreement::EphemeralPrivateKey` (X25519 oder P-256-ECDH). `derive_shared_secret(&remote_pub)` ruft `ring::agreement::agree_ephemeral` und expandiert das Ergebnis via HKDF-SHA256 auf 32 byte. Beide Seiten der DH-Operation berechnen denselben SharedSecret deterministisch.
+`KeyExchange::new` generates an ephemeral key pair via `ring::agreement::EphemeralPrivateKey` (X25519 or P-256 ECDH). `derive_shared_secret(&remote_pub)` calls `ring::agreement::agree_ephemeral` and expands the result via HKDF-SHA256 to 32 bytes. Both sides of the DH operation compute the same SharedSecret deterministically.
 
-### Architektur
+### Architecture
 
 - **Layer:** 4 (Core Services).
-- **Dependencies (in):** `zerodds-security` (Plugin-Trait + Errors), `ring` (Crypto-Primitives).
-- **Dependents (out):** `zerodds-security-pki` (Handshake-State-Machine).
-- **Feature-Flags:** `std` (default).
+- **Dependencies (in):** `zerodds-security` (plugin trait + errors), `ring` (crypto primitives).
+- **Dependents (out):** `zerodds-security-pki` (handshake state machine).
+- **Feature flags:** `std` (default).
 
-### Stabilitaet
+### Stability
 
-Public-API + Wire-Format (Public-Key-Encoding) RC1-stabil.
+Public API + wire format (public-key encoding) RC1-stable.
 
 ### Removed (RsaKeyWrap)
 
-Pre-Cleanup gab es ein `rsa_wrap`-Modul mit `RsaKeyWrap`-Struct. Die `wrap_secret`-Implementation war explizit ein Platzhalter ("ring 0.17 exponiert keine RSA-Encrypt-API; aktuell liefert die Funktion die Eingabe mit einer 16-byte zufaelligen Mask davor, damit Integrationstests den Call-Pfad validieren koennen"). Das war Phantom-API ohne Spec-Compliance — gedropt fuer RC1, weil:
-1. 0 externe Production-Refs (nur eigene Tests).
-2. X25519 + P-256-ECDH decken alle modernen Vendoren ab.
-3. RSA-OAEP-Key-Transport (Spec §8.3.2.11) ist eine optionale Alternative.
+Before cleanup there was an `rsa_wrap` module with an `RsaKeyWrap` struct. The `wrap_secret` implementation was explicitly a placeholder ("ring 0.17 exposes no RSA encrypt API; currently the function returns the input with a 16-byte random mask prepended, so integration tests can validate the call path"). That was a phantom API without spec compliance — dropped for RC1, because:
+1. 0 external production refs (only own tests).
+2. X25519 + P-256 ECDH cover all modern vendors.
+3. RSA-OAEP key transport (spec §8.3.2.11) is an optional alternative.
 
-Falls ein konkreter Legacy-Use-Case auftaucht, wird der Pfad ueber die `rsa`-Crate als Major-2.0-additive-Erweiterung wieder eingefuehrt.
+If a concrete legacy use case appears, the path via the `rsa` crate is reintroduced as a major-2.0 additive extension.

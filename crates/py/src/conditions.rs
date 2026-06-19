@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! PyO3-Bindings fuer ReadCondition + QueryCondition (§6.6 Vendor-Spec
+//! PyO3 bindings for ReadCondition + QueryCondition (§6.6 vendor spec
 //! `zerodds-py-1.0`).
 //!
-//! `GuardCondition` und `WaitSet` leben bereits in `ffi.rs`. Hier kommen
-//! die zwei reader-state-getriebenen Conditions hinzu, plus die
-//! SampleState/ViewState/InstanceState-Bitmask-Konstanten.
+//! `GuardCondition` and `WaitSet` already live in `ffi.rs`. Here the
+//! two reader-state-driven conditions are added, plus the
+//! SampleState/ViewState/InstanceState bitmask constants.
 
 #![allow(clippy::missing_errors_doc)]
 #![allow(unsafe_code)]
@@ -27,10 +27,10 @@ use zerodds_dcps::condition::{Condition, QueryCondition, ReadCondition};
 // PyReadCondition
 // ---------------------------------------------------------------------------
 
-/// `ReadCondition` (Spec §2.2.2.5.8). Triggert wenn der Reader-State
-/// die uebergebenen Bitmasks erfuellt. Die Standard-Closure-Logik
-/// triggert sobald irgendeines der drei Masken im "ANY"-Set steht —
-/// fuer den Python-Use-Case ist das die nuetzlichste Default-Semantik.
+/// `ReadCondition` (Spec §2.2.2.5.8). Triggers when the reader state
+/// satisfies the given bitmasks. The default closure logic
+/// triggers as soon as any of the three masks is in the "ANY" set —
+/// for the Python use case this is the most useful default semantics.
 #[pyclass(name = "ReadCondition", module = "zerodds_py")]
 pub struct PyReadCondition {
     pub inner: Arc<ReadCondition>,
@@ -38,15 +38,15 @@ pub struct PyReadCondition {
 
 #[pymethods]
 impl PyReadCondition {
-    /// Konstruiert eine ReadCondition mit Sample-/View-/Instance-State-
-    /// Masken (DDS 1.4 §2.2.2.5.8). Use-Convenience: alle drei
-    /// Argumente sind u32-Bitmasks.
+    /// Constructs a ReadCondition with sample/view/instance-state
+    /// masks (DDS 1.4 §2.2.2.5.8). Usage convenience: all three
+    /// arguments are u32 bitmasks.
     ///
-    /// `state_check_mode` waehlt die Trigger-Closure:
-    /// * `"any"` — triggert, wenn der Reader-Status irgendeine
-    ///   passende Sample/View/Instance-Kombination hat (Default).
-    /// * `"never"` — triggert nie (fuer Test/Demo).
-    /// * `"always"` — triggert immer.
+    /// `state_check_mode` selects the trigger closure:
+    /// * `"any"` — triggers when the reader status has any
+    ///   matching sample/view/instance combination (default).
+    /// * `"never"` — never triggers (for test/demo).
+    /// * `"always"` — always triggers.
     #[new]
     #[pyo3(signature = (sample_state_mask, view_state_mask, instance_state_mask, state_check_mode="any"))]
     fn new(
@@ -96,9 +96,9 @@ impl PyReadCondition {
 // PyQueryCondition
 // ---------------------------------------------------------------------------
 
-/// `QueryCondition` (Spec §2.2.2.5.9). ReadCondition + SQL-Filter-
-/// Ausdruck. Der Filter wird beim Konstruieren validiert; eine
-/// ungueltige Expression liefert `RuntimeError`.
+/// `QueryCondition` (Spec §2.2.2.5.9). ReadCondition + SQL filter
+/// expression. The filter is validated on construction; an
+/// invalid expression returns `RuntimeError`.
 #[pyclass(name = "QueryCondition", module = "zerodds_py")]
 pub struct PyQueryCondition {
     pub inner: Arc<QueryCondition>,

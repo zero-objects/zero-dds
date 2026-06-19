@@ -3,8 +3,8 @@
 
 //! REP-2009 RMW-QoS-Mapping — `rmw_qos_profile_t` (C struct) → DDS-QoS.
 //!
-//! Spec REP-2009 §3 + `rmw/qos_profiles.h` (rmw 4.x). Pro QoS-Dimension
-//! ein C-Enum, das wir auf das DDS-Pendant mappen.
+//! Spec REP-2009 §3 + `rmw/qos_profiles.h` (rmw 4.x). One C enum per
+//! QoS dimension, which we map to the DDS counterpart.
 
 use crate::qos_profiles::{Durability, History, QosProfile, Reliability};
 
@@ -34,7 +34,7 @@ pub enum RmwReliability {
     BestEffort = 2,
     /// `UNKNOWN`.
     Unknown = 3,
-    /// `BEST_AVAILABLE` — Best-Available aus REP-2009 §3.2.
+    /// `BEST_AVAILABLE` — best-available from REP-2009 §3.2.
     BestAvailable = 4,
 }
 
@@ -54,25 +54,25 @@ pub enum RmwDurability {
     BestAvailable = 4,
 }
 
-/// `rmw_qos_profile_t` — REP-2009 §3 (C-Layout-konform).
+/// `rmw_qos_profile_t` — REP-2009 §3 (C-layout-conformant).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 pub struct RmwQosProfile {
-    /// History-Policy.
+    /// History policy.
     pub history: RmwHistory,
-    /// History-Depth (nur relevant bei `KeepLast`).
+    /// History depth (only relevant for `KeepLast`).
     pub depth: usize,
-    /// Reliability-Policy.
+    /// Reliability policy.
     pub reliability: RmwReliability,
-    /// Durability-Policy.
+    /// Durability policy.
     pub durability: RmwDurability,
-    /// `avoid_ros_namespace_conventions` — wenn `true`, wird der
-    /// `rt/`-Prefix im Topic-Mangling weggelassen (Spec REP-2009 §3.7).
+    /// `avoid_ros_namespace_conventions` — if `true`, the
+    /// `rt/` prefix is omitted in topic mangling (Spec REP-2009 §3.7).
     pub avoid_ros_namespace_conventions: bool,
 }
 
 impl RmwQosProfile {
-    /// Default-Profile aus REP-2009 §4 (`rmw_qos_profile_default`):
+    /// Default profile from REP-2009 §4 (`rmw_qos_profile_default`):
     /// `KEEP_LAST(10) + RELIABLE + VOLATILE`.
     #[must_use]
     pub const fn default_profile() -> Self {
@@ -127,23 +127,31 @@ impl RmwQosProfile {
 
 /// Mapping `RmwQosProfile` → DDS-QoS (`crate::qos_profiles::QosProfile`).
 ///
-/// `SystemDefault` und `Unknown` werden zu DDS-Defaults aufgeloest.
-/// Spec REP-2009 §3.7: `BestAvailable` ist Match-Time-Resolution; auf
-/// Sender-Seite mappen wir konservativ zum strikteren DDS-Profile.
+/// `SystemDefault` and `Unknown` are **passed through as sentinels** — the
+/// resolution ("use the DDS default" or "unspecified") happens only at
+/// DDS-entity creation, where each field's DDS default is known (a
+/// `SystemDefault` field is simply not set there). Spec REP-2009 §3.7:
+/// `BestAvailable` is match-time resolution; on the sender side we map to
+/// `BestEffort`/`Volatile`.
 #[must_use]
 pub fn rmw_to_dds(profile: &RmwQosProfile) -> QosProfile {
     let history = match profile.history {
+        RmwHistory::SystemDefault => History::SystemDefault,
+        RmwHistory::KeepLast => History::KeepLast(profile.depth as u32),
         RmwHistory::KeepAll => History::KeepAll,
-        _ => History::KeepLast(profile.depth as u32),
+        RmwHistory::Unknown => History::Unknown,
     };
     let reliability = match profile.reliability {
-        RmwReliability::BestEffort => Reliability::BestEffort,
-        RmwReliability::BestAvailable => Reliability::BestEffort,
-        _ => Reliability::Reliable,
+        RmwReliability::SystemDefault => Reliability::SystemDefault,
+        RmwReliability::Reliable => Reliability::Reliable,
+        RmwReliability::BestEffort | RmwReliability::BestAvailable => Reliability::BestEffort,
+        RmwReliability::Unknown => Reliability::Unknown,
     };
     let durability = match profile.durability {
+        RmwDurability::SystemDefault => Durability::SystemDefault,
         RmwDurability::TransientLocal => Durability::TransientLocal,
-        _ => Durability::Volatile,
+        RmwDurability::Volatile | RmwDurability::BestAvailable => Durability::Volatile,
+        RmwDurability::Unknown => Durability::Unknown,
     };
     QosProfile {
         history,
@@ -154,21 +162,27 @@ pub fn rmw_to_dds(profile: &RmwQosProfile) -> QosProfile {
     }
 }
 
-/// Reverse-Mapping DDS → RMW. Praktisch fuer ROS-2-Reflection-APIs
-/// (z.B. `rmw_get_endpoint_info`-Calls).
+/// Reverse mapping DDS → RMW. Handy for ROS-2 reflection APIs
+/// (e.g. `rmw_get_endpoint_info` calls).
 #[must_use]
 pub fn dds_to_rmw(profile: &QosProfile) -> RmwQosProfile {
     let (history, depth) = match profile.history {
+        History::SystemDefault => (RmwHistory::SystemDefault, 0),
         History::KeepAll => (RmwHistory::KeepAll, 0),
         History::KeepLast(d) => (RmwHistory::KeepLast, d as usize),
+        History::Unknown => (RmwHistory::Unknown, 0),
     };
     let reliability = match profile.reliability {
+        Reliability::SystemDefault => RmwReliability::SystemDefault,
         Reliability::Reliable => RmwReliability::Reliable,
         Reliability::BestEffort => RmwReliability::BestEffort,
+        Reliability::Unknown => RmwReliability::Unknown,
     };
     let durability = match profile.durability {
+        Durability::SystemDefault => RmwDurability::SystemDefault,
         Durability::TransientLocal => RmwDurability::TransientLocal,
         Durability::Volatile => RmwDurability::Volatile,
+        Durability::Unknown => RmwDurability::Unknown,
     };
     RmwQosProfile {
         history,
@@ -245,7 +259,10 @@ mod tests {
     }
 
     #[test]
-    fn rmw_system_default_maps_to_dds_reliable() {
+    fn rmw_system_default_passes_through_as_sentinel() {
+        // Spec-faithful: SYSTEM_DEFAULT is NOT resolved hard to Reliable/Volatile
+        // but passed through as a sentinel (resolution only at
+        // DDS-entity creation).
         let rmw = RmwQosProfile {
             history: RmwHistory::SystemDefault,
             depth: 0,
@@ -254,8 +271,27 @@ mod tests {
             avoid_ros_namespace_conventions: false,
         };
         let dds = rmw_to_dds(&rmw);
-        assert_eq!(dds.reliability, Reliability::Reliable);
-        assert_eq!(dds.durability, Durability::Volatile);
+        assert_eq!(dds.reliability, Reliability::SystemDefault);
+        assert_eq!(dds.durability, Durability::SystemDefault);
+        assert_eq!(dds.history, History::SystemDefault);
+        // Round-trip preserves the sentinel.
+        let back = dds_to_rmw(&dds);
+        assert_eq!(back.reliability, RmwReliability::SystemDefault);
+        assert_eq!(back.durability, RmwDurability::SystemDefault);
+        assert_eq!(back.history, RmwHistory::SystemDefault);
+    }
+
+    #[test]
+    fn rmw_unknown_passes_through_as_sentinel() {
+        let rmw = RmwQosProfile {
+            history: RmwHistory::Unknown,
+            depth: 0,
+            reliability: RmwReliability::Unknown,
+            durability: RmwDurability::Unknown,
+            avoid_ros_namespace_conventions: false,
+        };
+        let dds = rmw_to_dds(&rmw);
+        assert!(crate::qos_profiles::profiles::is_unknown(&dds));
     }
 
     #[test]

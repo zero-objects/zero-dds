@@ -3,12 +3,12 @@
 
 //! ServantManager — Spec §11.3.5.10/11.3.5.11.
 //!
-//! Zwei Modi:
-//! * `ServantActivator` (RETAIN-POAs): Servant wird beim ersten
-//!   Request fuer eine Object-Id aktiviert und in der AOM gespeichert,
-//!   bis explizit deactiviert.
-//! * `ServantLocator` (NON_RETAIN-POAs): Pre-Invoke-Hook liefert den
-//!   Servant pro Request, Post-Invoke-Hook gibt ihn frei.
+//! Two modes:
+//! * `ServantActivator` (RETAIN POAs): the servant is activated on the
+//!   first request for an object id and stored in the AOM,
+//!   until explicitly deactivated.
+//! * `ServantLocator` (NON_RETAIN POAs): a pre-invoke hook supplies the
+//!   servant per request, a post-invoke hook releases it.
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
@@ -18,7 +18,7 @@ use crate::error::PoaResult;
 use crate::object_id::ObjectId;
 use crate::servant::Servant;
 
-/// Generische ServantManager-Reference fuer einen POA.
+/// Generic ServantManager reference for a POA.
 #[derive(Clone)]
 pub enum ServantManager {
     /// `ServantActivator` (RETAIN).
@@ -38,32 +38,31 @@ impl core::fmt::Debug for ServantManager {
 
 /// `ServantActivator` — Spec §11.3.5.10.
 pub trait ServantActivator: Send + Sync {
-    /// `incarnate` — wird vom POA aufgerufen, wenn die Object-Id
-    /// nicht in der AOM ist. Liefert den zu aktivierenden Servant.
+    /// `incarnate` — called by the POA when the object id is
+    /// not in the AOM. Returns the servant to activate.
     ///
     /// # Errors
-    /// `NoServant` oder Caller-spezifische Exception (`ForwardRequest`-
-    /// equivalent in unserer Repraesentation).
+    /// `NoServant` or a caller-specific exception (`ForwardRequest`
+    /// equivalent in our representation).
     fn incarnate(&self, oid: &ObjectId, adapter_name: &str) -> PoaResult<Box<dyn Servant>>;
 
-    /// `etherealize` — wird vom POA aufgerufen, wenn der Servant
-    /// deactiviert wird. Caller raeumt eventuelle Servant-Ressourcen
-    /// auf.
+    /// `etherealize` — called by the POA when the servant is
+    /// deactivated. The caller cleans up any servant resources.
     fn etherealize(&self, oid: &ObjectId, adapter_name: &str, _servant: &dyn Servant) {
         let _ = (oid, adapter_name);
     }
 }
 
-/// Cookie — opaque Caller-Daten, die zwischen `preinvoke` und
-/// `postinvoke` propagiert werden (Spec §11.3.5.11).
+/// Cookie — opaque caller data propagated between `preinvoke` and
+/// `postinvoke` (Spec §11.3.5.11).
 pub type ServantLocatorCookie = Vec<u8>;
 
 /// `ServantLocator` — Spec §11.3.5.11.
 pub trait ServantLocator: Send + Sync {
-    /// `preinvoke` — liefert den Servant + Cookie fuer einen Request.
+    /// `preinvoke` — returns the servant + cookie for a request.
     ///
     /// # Errors
-    /// Caller-spezifisch.
+    /// Caller-specific.
     fn preinvoke(
         &self,
         oid: &ObjectId,
@@ -71,8 +70,8 @@ pub trait ServantLocator: Send + Sync {
         operation: &str,
     ) -> PoaResult<(Box<dyn Servant>, ServantLocatorCookie)>;
 
-    /// `postinvoke` — wird nach Request-Dispatch aufgerufen, gibt
-    /// den Servant frei.
+    /// `postinvoke` — called after request dispatch, releases
+    /// the servant.
     fn postinvoke(
         &self,
         oid: &ObjectId,

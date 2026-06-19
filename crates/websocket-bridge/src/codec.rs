@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! WebSocket Wire-Codec — RFC 6455 §5.2 + §5.3.
+//! WebSocket wire codec — RFC 6455 §5.2 + §5.3.
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -9,23 +9,23 @@ use core::fmt;
 use crate::frame::{Frame, Opcode};
 use crate::masking::apply_mask;
 
-/// Codec-Fehler.
+/// Codec error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CodecError {
-    /// Header zu kurz.
+    /// Header too short.
     HeaderTooShort,
-    /// Spec §5.2 — payload length 126 mit Wert <= 125 oder 127 mit
-    /// Wert <= 65535. "minimal number of bytes MUST be used".
+    /// Spec §5.2 — payload length 126 with value <= 125 or 127 with
+    /// value <= 65535. "minimal number of bytes MUST be used".
     NonMinimalLength,
-    /// Spec §5.2 — payload length 127 mit gesetztem MSB.
+    /// Spec §5.2 — payload length 127 with the MSB set.
     PayloadLengthMsbSet,
-    /// Frame-Body reicht nicht in die verfuegbaren Bytes.
+    /// The frame body does not fit into the available bytes.
     PayloadTruncated,
-    /// Masking-Key reicht nicht in die verfuegbaren Bytes.
+    /// The masking key does not fit into the available bytes.
     MaskingKeyTruncated,
-    /// Spec §5.5 — Control Frame mit payload > 125 Bytes ist illegal.
+    /// Spec §5.5 — a control frame with payload > 125 bytes is illegal.
     ControlFrameTooLong,
-    /// Spec §5.5 — Control Frame muss FIN=1 (kein Fragmentieren).
+    /// Spec §5.5 — a control frame must have FIN=1 (no fragmentation).
     FragmentedControlFrame,
 }
 
@@ -46,15 +46,15 @@ impl fmt::Display for CodecError {
 #[cfg(feature = "std")]
 impl std::error::Error for CodecError {}
 
-/// Encodiert einen [`Frame`] zum WebSocket-Wire-Byte-Slice.
+/// Encodes a [`Frame`] into the WebSocket wire byte slice.
 ///
-/// Wenn `frame.masking_key` gesetzt ist, wird das Payload waehrend
-/// des Encode XOR-maskiert (Spec §5.3).
+/// If `frame.masking_key` is set, the payload is XOR-masked during
+/// encoding (Spec §5.3).
 ///
 /// # Errors
-/// * [`CodecError::ControlFrameTooLong`] wenn Control-Frame mit
-///   Payload > 125 Bytes (Spec §5.5).
-/// * [`CodecError::FragmentedControlFrame`] wenn Control-Frame mit
+/// * [`CodecError::ControlFrameTooLong`] if a control frame has a
+///   payload > 125 bytes (Spec §5.5).
+/// * [`CodecError::FragmentedControlFrame`] if a control frame has
 ///   FIN=0 (Spec §5.5).
 pub fn encode(frame: &Frame) -> Result<Vec<u8>, CodecError> {
     if frame.opcode.is_control() {
@@ -83,7 +83,7 @@ pub fn encode(frame: &Frame) -> Result<Vec<u8>, CodecError> {
     }
     out.push(byte0);
 
-    // Byte 1: MASK | Payload-Length (7 bits).
+    // Byte 1: MASK | payload length (7 bits).
     let payload_len = frame.payload.len();
     let masked = frame.masking_key.is_some();
     let (len7, ext_len) = encode_payload_length(payload_len);
@@ -91,10 +91,10 @@ pub fn encode(frame: &Frame) -> Result<Vec<u8>, CodecError> {
     out.push(byte1);
     out.extend_from_slice(&ext_len);
 
-    // Masking-Key (4 bytes wenn MASK=1).
+    // Masking key (4 bytes if MASK=1).
     if let Some(key) = frame.masking_key {
         out.extend_from_slice(&key);
-        // Payload-Daten XOR-maskiert ausgeben.
+        // Emit the payload data XOR-masked.
         let mut masked_payload = frame.payload.clone();
         apply_mask(&mut masked_payload, key);
         out.extend_from_slice(&masked_payload);
@@ -105,8 +105,8 @@ pub fn encode(frame: &Frame) -> Result<Vec<u8>, CodecError> {
     Ok(out)
 }
 
-/// Spec §5.2 — Payload-Length-Encoding mit "minimal number of bytes".
-/// Liefert `(7-bit-Wert, Extended-Bytes)`.
+/// Spec §5.2 — payload length encoding with "minimal number of bytes".
+/// Returns `(7-bit value, extended bytes)`.
 fn encode_payload_length(len: usize) -> (u8, Vec<u8>) {
     if len <= 125 {
         #[allow(clippy::cast_possible_truncation)]
@@ -121,14 +121,14 @@ fn encode_payload_length(len: usize) -> (u8, Vec<u8>) {
     }
 }
 
-/// Decodiert einen [`Frame`] aus dem WebSocket-Wire-Byte-Slice.
-/// Wenn das MASK-Bit gesetzt ist, wird das Payload waehrend des Decode
-/// automatisch demaskiert.
+/// Decodes a [`Frame`] from the WebSocket wire byte slice.
+/// If the MASK bit is set, the payload is automatically unmasked
+/// during decoding.
 ///
-/// Liefert `(frame, consumed_bytes)`.
+/// Returns `(frame, consumed_bytes)`.
 ///
 /// # Errors
-/// Siehe [`CodecError`].
+/// See [`CodecError`].
 pub fn decode(bytes: &[u8]) -> Result<(Frame, usize), CodecError> {
     if bytes.len() < 2 {
         return Err(CodecError::HeaderTooShort);
@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn large_payload_uses_extended_64_bit_length() {
-        // Spec §5.2 — len > 65535 ⇒ marker 127 + 8 byte BE mit MSB=0.
+        // Spec §5.2 — len > 65535 ⇒ marker 127 + 8 byte BE with MSB=0.
         let payload = alloc::vec![0xBB; 70_000];
         let f = Frame::binary(payload.clone());
         let bytes = encode(&f).expect("encode");
@@ -284,7 +284,7 @@ mod tests {
         // decode.
         let f = Frame::text("masked!").with_mask([0x12, 0x34, 0x56, 0x78]);
         let bytes = encode(&f).expect("encode");
-        // Wire-Bytes ungleich Plaintext.
+        // Wire bytes differ from plaintext.
         assert_ne!(&bytes[6..], b"masked!");
         let (parsed, _) = decode(&bytes).expect("decode");
         assert_eq!(parsed.payload, b"masked!");
@@ -327,7 +327,7 @@ mod tests {
 
     #[test]
     fn extended_16_bit_length_truncated_fails() {
-        // Marker 126 ohne 2 Length-Bytes.
+        // Marker 126 without the 2 length bytes.
         assert_eq!(decode(&[0x81, 0x7E]), Err(CodecError::HeaderTooShort));
     }
 
@@ -341,14 +341,14 @@ mod tests {
     #[test]
     fn non_minimal_16_bit_length_rejected() {
         // Spec §5.2 — "minimal number of bytes MUST be used".
-        // Marker 126 mit Wert 100 ist non-minimal.
+        // Marker 126 with value 100 is non-minimal.
         let bytes = [0x82u8, 0x7E, 0, 100, 0xAA, 0xBB];
         assert_eq!(decode(&bytes), Err(CodecError::NonMinimalLength));
     }
 
     #[test]
     fn non_minimal_64_bit_length_rejected() {
-        // Marker 127 mit Wert 65000 ist non-minimal (waere 16-bit).
+        // Marker 127 with value 65000 is non-minimal (would be 16-bit).
         let mut bytes = alloc::vec![0x82u8, 0x7F];
         bytes.extend_from_slice(&65000u64.to_be_bytes());
         assert_eq!(decode(&bytes), Err(CodecError::NonMinimalLength));
@@ -371,23 +371,22 @@ mod tests {
 
     #[test]
     fn masked_frame_without_key_bytes_decode_fails() {
-        // MASK=1 aber nur 2 Header-Bytes vorhanden.
+        // MASK=1 but only 2 header bytes present.
         let bytes = [0x81u8, 0x80];
         assert_eq!(decode(&bytes), Err(CodecError::MaskingKeyTruncated));
     }
 
     #[test]
     fn payload_truncation_decode_fails() {
-        // FIN+Text+len=10, aber nur 2 Payload-Bytes.
+        // FIN+Text+len=10, but only 2 payload bytes.
         let bytes = [0x81u8, 0x0A, 0xAA, 0xBB];
         assert_eq!(decode(&bytes), Err(CodecError::PayloadTruncated));
     }
 
     #[test]
     fn rsv_bits_propagate_to_decoded_frame() {
-        // Spec §5.2 — RSV1-3 sind kein Codec-Validation-Topic
-        // (Extension-Negotiation), aber muessen 1:1 durchgereicht
-        // werden.
+        // Spec §5.2 — RSV1-3 are not a codec validation topic
+        // (extension negotiation), but must be passed through 1:1.
         let mut f = Frame::binary(alloc::vec![1]);
         f.rsv1 = true;
         f.rsv3 = true;
@@ -400,8 +399,8 @@ mod tests {
 
     #[test]
     fn fin_zero_text_frame_round_trip() {
-        // Spec §5.4 — Fragmentierung: FIN=0 + Text-Opcode → Caller
-        // sendet Continuation-Frames mit FIN=1 fuer letzten.
+        // Spec §5.4 — fragmentation: FIN=0 + text opcode → the caller
+        // sends continuation frames with FIN=1 for the last one.
         let mut f = Frame::text("part-1");
         f.fin = false;
         let bytes = encode(&f).expect("encode");

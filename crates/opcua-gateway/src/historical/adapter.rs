@@ -3,75 +3,75 @@
 
 //! Historical-Sample-Adapter — Spec §9.3.4.4 + §8.3.4.2 history_read.
 //!
-//! Liefert die Schnittstelle, mit der der OPC-UA-Server-Stack im
-//! Gateway den `HistoryRead`-Request auf die DataReader-Sample-
-//! Historie umleitet. Der Caller (Daemon-Crate) implementiert
-//! [`HistoricalSampleAdapter`] gegen den konkreten History-Cache;
-//! dieses Modul liefert ein **InMemory-Default-Backend**, das
-//! ausreichend ist fuer Test + kleine Einsaetze.
+//! Provides the interface with which the OPC-UA server stack in the
+//! gateway redirects the `HistoryRead` request onto the DataReader sample
+//! history. The caller (daemon crate) implements
+//! [`HistoricalSampleAdapter`] against the concrete history cache;
+//! this module provides an **in-memory default backend** that
+//! is sufficient for tests + small deployments.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use crate::data_value::DataValue;
 
-/// Ein historisches Sample mit Zeitstempel + Wert.
+/// A historical sample with a timestamp + value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HistoricalSample {
-    /// `SourceTimestamp` als Windows-FILETIME-Ticks (i64).
+    /// `SourceTimestamp` as Windows FILETIME ticks (i64).
     pub source_timestamp: i64,
     /// `DataValue` (incl. Variant + StatusCode) — Spec Tab 8.6
-    /// HistoryReadResult.history_data hat sequence<DataValue>.
+    /// HistoryReadResult.history_data has sequence<DataValue>.
     pub value: DataValue,
 }
 
-/// Read-History-Query-Parameter — entspricht der Subset von
-/// `ReadRawModifiedDetails` + `ReadAtTimeDetails`, die das Gateway
-/// aus dem OPC-UA-Request extrahiert.
+/// Read-history query parameters — corresponds to the subset of
+/// `ReadRawModifiedDetails` + `ReadAtTimeDetails` that the gateway
+/// extracts from the OPC-UA request.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReadHistoryQuery {
     /// `READ_RAW_MODIFIED_HISTORY_READ_DETAILS_KIND` (§8.3.4.1
-    /// `ReadRawModifiedDetails`): Time-Range-Read (raw == false ist
-    /// der einzig sinnvolle Modus fuer DDS — modified wird nicht
-    /// unterstuetzt, weil DDS keine modified-Versionen liefert).
+    /// `ReadRawModifiedDetails`): time-range read (raw == false is
+    /// the only sensible mode for DDS — modified is not
+    /// supported, because DDS provides no modified versions).
     Raw {
-        /// Range-Start in i64-Ticks.
+        /// Range start in i64 ticks.
         start_time: i64,
-        /// Range-Ende.
+        /// Range end.
         end_time: i64,
-        /// Maximalzahl Werte (0 = unlimited).
+        /// Maximum number of values (0 = unlimited).
         num_values_per_node: u32,
-        /// `return_bounds` — wenn true werden grenz-naehe Bounds-Samples
-        /// mitgeliefert (Spec OPCUA-11 §6.4.3).
+        /// `return_bounds` — if true, boundary-near bounds samples
+        /// are included (Spec OPCUA-11 §6.4.3).
         return_bounds: bool,
     },
     /// `READ_AT_TIME_HISTORY_READ_DETAILS_KIND` (§8.3.4.1
-    /// `ReadAtTimeDetails`): Read-At-Time (multi-time-point).
+    /// `ReadAtTimeDetails`): read-at-time (multi-time-point).
     AtTime {
-        /// Liste angeforderter Zeitpunkte.
+        /// List of requested points in time.
         req_times: Vec<i64>,
-        /// `use_simple_bounds` — Interpolation/Bounds-Verhalten.
+        /// `use_simple_bounds` — interpolation/bounds behavior.
         use_simple_bounds: bool,
     },
 }
 
-/// Read-History-Result.
+/// Read-history result.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReadHistoryResult {
-    /// Gefundene Samples in zeitlicher Reihenfolge (aufsteigend).
+    /// Found samples in temporal order (ascending).
     pub samples: Vec<HistoricalSample>,
-    /// Hat das Backend mehr Samples als zurueckgegeben (Pagination
-    /// noetig)? Spec §8.3.4.1: liefert dann ContinuationPoint.
+    /// Does the backend have more samples than returned (pagination
+    /// needed)? Spec §8.3.4.1: then returns a ContinuationPoint.
     pub more_available: bool,
 }
 
-/// Adapter-Contract — Caller implementiert das gegen den Reader-
-/// History-Cache aus `crates/dcps/`.
+/// Adapter contract — the caller implements this against the reader
+/// history cache from `crates/dcps/`.
 pub trait HistoricalSampleAdapter {
-    /// Fuehrt eine HistoryRead-Query aus.
+    /// Executes a HistoryRead query.
     ///
     /// # Errors
-    /// Trait-Implementer waehlen den konkreten Error-Type.
+    /// Trait implementers choose the concrete error type.
     fn read_history(
         &self,
         instance_handle: &str,
@@ -79,37 +79,37 @@ pub trait HistoricalSampleAdapter {
     ) -> Result<ReadHistoryResult, HistoryReadError>;
 }
 
-/// Fehler im History-Read-Pfad.
+/// Error in the history-read path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HistoryReadError {
-    /// `instance_handle` ist keinem registrierten Sample-Stream
-    /// zugeordnet.
+    /// `instance_handle` is not associated with any registered sample
+    /// stream.
     UnknownInstance,
-    /// Zeit-Range ist ungueltig (`start > end` oder leere AtTime-Liste).
+    /// The time range is invalid (`start > end` or an empty AtTime list).
     InvalidTimeRange,
 }
 
 // -------------------------------------------------------------------
-// In-Memory-Default-Implementation.
+// In-memory default implementation.
 // -------------------------------------------------------------------
 
-/// Einfacher In-Memory-History-Cache. Pro `instance_handle` wird ein
-/// `BTreeMap<i64, HistoricalSample>` (sortiert nach SourceTimestamp)
-/// gehalten. Fuer Test + kleine Deployments ausreichend; Production-
-/// Caller koennen einen Persistent-Backend implementieren.
+/// Simple in-memory history cache. A
+/// `BTreeMap<i64, HistoricalSample>` (sorted by SourceTimestamp) is held
+/// per `instance_handle`. Sufficient for tests + small deployments;
+/// production callers can implement a persistent backend.
 #[derive(Debug, Default)]
 pub struct InMemoryHistoryCache {
     streams: BTreeMap<alloc::string::String, BTreeMap<i64, HistoricalSample>>,
 }
 
 impl InMemoryHistoryCache {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Fuegt ein Sample zum Stream `instance_handle` hinzu.
+    /// Adds a sample to the stream `instance_handle`.
     pub fn push(&mut self, instance_handle: alloc::string::String, sample: HistoricalSample) {
         self.streams
             .entry(instance_handle)
@@ -117,7 +117,7 @@ impl InMemoryHistoryCache {
             .insert(sample.source_timestamp, sample);
     }
 
-    /// Anzahl Samples pro Instance — fuer Tests.
+    /// Number of samples per instance — for tests.
     #[must_use]
     pub fn len(&self, instance_handle: &str) -> usize {
         self.streams.get(instance_handle).map_or(0, BTreeMap::len)
@@ -172,9 +172,9 @@ impl HistoricalSampleAdapter for InMemoryHistoryCache {
                 }
                 let mut samples = Vec::with_capacity(req_times.len());
                 for t in req_times {
-                    // Spec OPCUA-11 §6.4.5: bei AtTime ohne exakten
-                    // Match wird interpoliert oder Bound zurueckgegeben.
-                    // Wir liefern den nearest-prior-Sample (simple-bounds).
+                    // Spec OPCUA-11 §6.4.5: on AtTime without an exact
+                    // match, it is interpolated or a bound is returned.
+                    // We return the nearest-prior sample (simple bounds).
                     if let Some((_, s)) = stream.range(..=*t).next_back() {
                         samples.push(s.clone());
                     }

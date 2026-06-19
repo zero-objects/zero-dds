@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! IDL `fixed<P, S>` Decimal-Type (XCDR2 §7.4.4.5).
+//! IDL `fixed<P, S>` decimal type (XCDR2 §7.4.4.5).
 //!
-//! Wire-Format: Packed Binary-Coded-Decimal (BCD).
-//! - Digit-Count = P, Scale = S (Anzahl Stellen nach Komma).
-//! - Bytes = `(P + 1) / 2 + 1`. Letztes Halb-Byte ist Sign-Nibble:
-//!   `0xC` = positiv, `0xD` = negativ.
-//! - Digits werden in Big-Endian-Reihenfolge, je 2 pro Byte gepackt.
+//! Wire format: packed binary-coded decimal (BCD).
+//! - Digit count = P, scale = S (number of digits after the decimal point).
+//! - Bytes = `(P + 1) / 2 + 1`. The last half-byte is the sign nibble:
+//!   `0xC` = positive, `0xD` = negative.
+//! - Digits are packed in big-endian order, 2 per byte.
 
 #![allow(clippy::manual_div_ceil, clippy::while_let_on_iterator)]
 
@@ -18,18 +18,18 @@ use crate::buffer::{BufferReader, BufferWriter};
 use crate::encode::{CdrDecode, CdrEncode};
 use crate::error::{DecodeError, EncodeError};
 
-/// IDL-`fixed<P, S>`-Decimal mit `P` Gesamt-Stellen und `S` Stellen
-/// nach dem Komma.
+/// IDL `fixed<P, S>` decimal with `P` total digits and `S` digits
+/// after the decimal point.
 ///
-/// Storage als Packed-BCD-Bytes (XCDR2 §7.4.4.5). Pure-Rust ohne
-/// externe Crate-Dep. Bewusste Architektur-Wahl: dieser Type bietet
-/// **Roundtrip + String-Konversion**, keine Decimal-Arithmetik
-/// (Add/Mul). End-User die Decimal-Arithmetik brauchen, kombinieren
-/// das mit `rust_decimal` o.ae. via `From`-Impl.
+/// Stored as packed BCD bytes (XCDR2 §7.4.4.5). Pure Rust with no
+/// external crate dependency. Deliberate architectural choice: this
+/// type offers **roundtrip + string conversion**, no decimal
+/// arithmetic (add/mul). End users who need decimal arithmetic combine
+/// it with `rust_decimal` or similar via a `From` impl.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fixed<const P: u32, const S: u32> {
-    /// Packed-BCD-Storage. Laenge `(P + 1) / 2 + 1` Byte (letztes
-    /// Nibble = Sign).
+    /// Packed-BCD storage. Length `(P + 1) / 2 + 1` bytes (last
+    /// nibble = sign).
     digits: Vec<u8>,
 }
 
@@ -37,7 +37,7 @@ impl<const P: u32, const S: u32> Default for Fixed<P, S> {
     fn default() -> Self {
         let n = ((P + 1) / 2 + 1) as usize;
         let mut digits = alloc::vec![0u8; n];
-        // Sign-Nibble auf positiv (0xC) setzen.
+        // Set the sign nibble to positive (0xC).
         let last = digits.len() - 1;
         digits[last] = 0x0C;
         Self { digits }
@@ -45,10 +45,10 @@ impl<const P: u32, const S: u32> Default for Fixed<P, S> {
 }
 
 impl<const P: u32, const S: u32> Fixed<P, S> {
-    /// Konstruiert eine `Fixed<P, S>` aus einer Roh-BCD-Bytes-Sequenz.
+    /// Constructs a `Fixed<P, S>` from a raw BCD byte sequence.
     ///
     /// # Errors
-    /// `Invalid` wenn die Bytes-Laenge nicht `(P + 1) / 2 + 1` ist.
+    /// `Invalid` if the byte length is not `(P + 1) / 2 + 1`.
     pub fn from_bcd_bytes(bytes: Vec<u8>) -> Result<Self, DecodeError> {
         let expected = ((P + 1) / 2 + 1) as usize;
         if bytes.len() != expected {
@@ -61,16 +61,16 @@ impl<const P: u32, const S: u32> Fixed<P, S> {
         Ok(Self { digits: bytes })
     }
 
-    /// Roh-BCD-Bytes.
+    /// Raw BCD bytes.
     #[must_use]
     pub fn as_bcd_bytes(&self) -> &[u8] {
         &self.digits
     }
 
-    /// Erzeugt aus String (z.B. `"123.45"` oder `"-1.5"`).
+    /// Creates from a string (e.g. `"123.45"` or `"-1.5"`).
     ///
     /// # Errors
-    /// `Invalid` bei nicht-numerischen Eingaben oder Overflow gegen P/S.
+    /// `Invalid` for non-numeric input or overflow against P/S.
     pub fn from_str_repr(s: &str) -> Result<Self, DecodeError> {
         let (sign, rest) = if let Some(stripped) = s.strip_prefix('-') {
             (false, stripped)
@@ -80,11 +80,11 @@ impl<const P: u32, const S: u32> Fixed<P, S> {
             (true, s)
         };
         let (int_part, frac_part) = rest.split_once('.').unwrap_or((rest, ""));
-        // Trimme zu P/S-Layout.
+        // Trim to the P/S layout.
         let total_p = P as usize;
         let total_s = S as usize;
         let mut digits_buf = String::with_capacity(total_p);
-        // Pad int_part links wenn zu kurz.
+        // Pad int_part on the left if too short.
         let int_needed = total_p - total_s;
         if int_part.len() > int_needed {
             return Err(DecodeError::InvalidString {
@@ -96,7 +96,7 @@ impl<const P: u32, const S: u32> Fixed<P, S> {
             digits_buf.push('0');
         }
         digits_buf.push_str(int_part);
-        // Pad frac_part rechts wenn zu kurz, trim wenn zu lang.
+        // Pad frac_part on the right if too short, trim if too long.
         if frac_part.len() > total_s {
             return Err(DecodeError::InvalidString {
                 offset: 0,
@@ -132,7 +132,7 @@ impl<const P: u32, const S: u32> Fixed<P, S> {
             packed.push(current);
         }
         packed.reverse();
-        // Sicherstellen dass Laenge stimmt
+        // Ensure the length is correct
         let expected = ((P + 1) / 2 + 1) as usize;
         while packed.len() < expected {
             packed.insert(0, 0);
@@ -140,7 +140,7 @@ impl<const P: u32, const S: u32> Fixed<P, S> {
         Ok(Self { digits: packed })
     }
 
-    /// Decimal-String-Repraesentation (z.B. `"123.45"`).
+    /// Decimal string representation (e.g. `"123.45"`).
     #[must_use]
     pub fn to_string_repr(&self) -> String {
         let mut digits_chars: Vec<char> = Vec::new();
@@ -156,11 +156,11 @@ impl<const P: u32, const S: u32> Fixed<P, S> {
                 digits_chars.push(char::from_digit(u32::from(low), 10).unwrap_or('?'));
             }
         }
-        // Trim leading zeros (mind. eine Ziffer behalten)
+        // Trim leading zeros (keep at least one digit)
         while digits_chars.len() > (S as usize + 1) && digits_chars[0] == '0' {
             digits_chars.remove(0);
         }
-        // Komma einfuegen falls S > 0
+        // Insert the decimal point if S > 0
         let mut out = String::new();
         if sign == '-' {
             out.push('-');
@@ -184,8 +184,8 @@ impl<const P: u32, const S: u32> Fixed<P, S> {
 
 impl<const P: u32, const S: u32> CdrEncode for Fixed<P, S> {
     fn encode(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        // XCDR2 §7.4.4.5: BCD-Bytes raw, kein length-prefix (weil Bytes-
-        // Anzahl statisch via P bekannt ist).
+        // XCDR2 §7.4.4.5: raw BCD bytes, no length prefix (since the byte
+        // count is statically known via P).
         w.write_bytes(&self.digits)
     }
 }

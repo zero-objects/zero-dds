@@ -7,48 +7,48 @@
 //!
 //! Spec: OMG DDS 1.4 §2.2 (Data-Centric Publish-Subscribe Module) +
 //! DDSI-RTPS 2.5 §8.5 (Discovery + WLP) + XTypes 1.3 §7.6.3
-//! (TypeLookup-Service Wiring).
+//! (TypeLookup service wiring).
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 4 — Core Services. Bauend auf Layer 1
+//! Layer 4 — Core Services. Built on Layer 1
 //! (foundation/cdr/qos/types/time-service), Layer 2
 //! (rtps/discovery/transport-*), Layer 3 (idl/idl-rust/xml).
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! - [`DomainParticipantFactory`] — Singleton-Factory;
-//!   `create_participant` spawnt eine Live-Runtime mit
-//!   UDP/SPDP/SEDP/WLP, `create_participant_offline` baut einen
-//!   in-process-Skeleton ohne Netzwerk fuer Unit-Tests.
-//! - [`DomainParticipant`] — Top-Level-Entity; erzeugt
-//!   Publishers/Subscribers/Topics, fuehrt Built-in-Type-Registry,
-//!   exponiert TypeLookup-Hooks und Ignore-Filter.
-//! - [`Publisher`] / [`DataWriter`] — typed `Writer<T>` mit `DdsType`-
-//!   Bound; integriert RTPS-ReliableWriter (Live) bzw. In-Memory-Queue
-//!   (Offline) plus Durability-Backend (DDS 1.4 §2.2.3.5).
-//! - [`Subscriber`] / [`DataReader`] — typed `Reader<T>` mit
-//!   `take`/`read`/Conditions, Sample-Cache und InstanceState-Tracker
+//! - [`DomainParticipantFactory`] — singleton factory;
+//!   `create_participant` spawns a live runtime with UDP/SPDP/SEDP/WLP,
+//!   `create_participant_offline` builds an in-process skeleton without
+//!   networking for unit tests.
+//! - [`DomainParticipant`] — top-level entity; creates
+//!   publishers/subscribers/topics, maintains the built-in type
+//!   registry, exposes TypeLookup hooks and ignore filters.
+//! - [`Publisher`] / [`DataWriter`] — typed `Writer<T>` with a `DdsType`
+//!   bound; integrates the RTPS ReliableWriter (live) or an in-memory
+//!   queue (offline) plus the durability backend (DDS 1.4 §2.2.3.5).
+//! - [`Subscriber`] / [`DataReader`] — typed `Reader<T>` with
+//!   `take`/`read`/conditions, sample cache and InstanceState tracker
 //!   (DDS 1.4 §2.2.2.5).
-//! - [`Topic`] / [`ContentFilteredTopic`] / [`MultiTopic`] — Topic-
-//!   Hierarchie inkl. SQL-Filter (DDS 1.4 §2.2.2.3).
-//! - Builtin-Topics: [`BuiltinSubscriber`] +
+//! - [`Topic`] / [`ContentFilteredTopic`] / [`MultiTopic`] — the topic
+//!   hierarchy incl. SQL filters (DDS 1.4 §2.2.2.3).
+//! - Builtin topics: [`BuiltinSubscriber`] +
 //!   [`DcpsParticipantBuiltinTopicData`] /
 //!   [`DcpsPublicationBuiltinTopicData`] /
 //!   [`DcpsSubscriptionBuiltinTopicData`] /
 //!   [`DcpsTopicBuiltinTopicData`] (DDS 1.4 §2.2.5).
 //! - Conditions/WaitSet: [`Condition`] / [`ReadCondition`] /
 //!   [`QueryCondition`] / [`GuardCondition`] / [`WaitSet`].
-//! - QoS-Familien: [`DomainParticipantQos`], [`PublisherQos`],
+//! - QoS families: [`DomainParticipantQos`], [`PublisherQos`],
 //!   [`SubscriberQos`], [`TopicQos`], [`DataWriterQos`],
 //!   [`DataReaderQos`].
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```
 //! use zerodds_dcps::*;
 //! let factory = DomainParticipantFactory::instance();
-//! // Offline-Mode fuer Doctest (kein UDP-Multicast noetig).
+//! // Offline mode for the doctest (no UDP multicast needed).
 //! let participant = factory.create_participant_offline(0, DomainParticipantQos::default());
 //! let topic = participant
 //!     .create_topic::<RawBytes>("Chatter", TopicQos::default())
@@ -78,9 +78,12 @@ pub mod durability_service;
 pub mod entity;
 pub mod error;
 pub mod factory;
-/// ADR-0005: opt-in Flatdata-Integration.
+/// ADR-0005: opt-in flatdata integration.
 #[cfg(all(feature = "std", feature = "flatdata-integration"))]
 pub mod flatdata_integration;
+/// In-process discovery fastpath (same-process, same-domain).
+#[cfg(feature = "std")]
+mod inproc;
 pub mod instance_handle;
 #[cfg(feature = "std")]
 pub mod instance_tracker;
@@ -98,19 +101,29 @@ pub mod qos;
 #[cfg(feature = "std")]
 pub mod runtime;
 pub mod same_host;
-/// Welle 4b.3: feature-gated Bruecke zwischen `same_host`-Tracker und
-/// `zerodds-transport-shm::PosixShmTransport`. Nur kompiliert wenn
-/// `same-host-shm`-Feature aktiv ist.
+/// Wave 4b.3: feature-gated bridge between the `same_host` tracker and
+/// `zerodds-transport-shm::PosixShmTransport`. Only compiled when the
+/// `same-host-shm` feature is active.
 #[cfg(all(feature = "std", feature = "same-host-shm"))]
 pub mod same_host_shm;
-/// 4b.5: alternativer UDS-Datagram-Backend fuer Same-Host-Paths.
-/// Kein echtes Zero-Copy aber container-freundlich. Nur kompiliert
-/// wenn `same-host-uds`-Feature aktiv ist.
+/// 4b.5: alternative UDS datagram backend for same-host paths. Not true
+/// zero-copy but container-friendly. Only compiled when the
+/// `same-host-uds` feature is active.
 #[cfg(all(feature = "std", feature = "same-host-uds"))]
 pub mod same_host_uds;
 pub mod sample;
 pub mod sample_bytes;
 pub mod sample_info;
+/// D.5e Phase 3 — deadline-heap scheduler (event-driven replacement for the
+/// fixed-period tick poll). Std-only (mpsc channel + Instant park).
+#[cfg(feature = "std")]
+pub mod scheduler;
+/// Multi-peer SHM adapter for `user_unicast` transport selection. Wraps
+/// multiple `PosixShmTransport` pairs behind the transport trait.
+/// Feature-gated via `same-host-shm` because zerodds-transport-shm is
+/// optional.
+#[cfg(all(feature = "std", feature = "same-host-shm"))]
+pub mod shm_user;
 pub mod status;
 pub mod subscriber;
 pub mod time;
@@ -118,7 +131,7 @@ pub mod topic;
 #[cfg(feature = "std")]
 pub mod wlp;
 
-// Flat-Re-Exports fuer die typische Import-Zeile.
+// Flat re-exports for the typical import line.
 pub use builtin_subscriber::{BuiltinSinks, BuiltinSubscriber, BuiltinTopic, builtin_reader_qos};
 pub use builtin_topics::{
     ParticipantBuiltinTopicData as DcpsParticipantBuiltinTopicData,
@@ -167,10 +180,10 @@ mod tests {
 
     #[test]
     fn end_to_end_in_process_loopback() {
-        // Loopback smoke: Factory → Offline-Participant → Topic → Writer/Reader.
-        // Schleifen wir einen Sample per __push_raw von DataWriter
-        // in den DataReader. Live-Transport wird in den Runtime-Tests
-        // in crates/dcps/src/runtime.rs abgedeckt.
+        // Loopback smoke: Factory → offline participant → Topic → Writer/Reader.
+        // We loop a sample via __push_raw from the DataWriter into the
+        // DataReader. Live transport is covered in the runtime tests in
+        // crates/dcps/src/runtime.rs.
         let factory = DomainParticipantFactory::instance();
         let p = factory.create_participant_offline(0, DomainParticipantQos::default());
         let topic = p
@@ -189,8 +202,8 @@ mod tests {
 
         w.write(&RawBytes::new(vec![1, 2, 3])).unwrap();
         w.write(&RawBytes::new(vec![4, 5])).unwrap();
-        // Manuell queue drainen und in den Reader pushen, simuliert
-        // den Live-Transport-Pfad.
+        // Manually drain the queue and push into the reader, simulating
+        // the live transport path.
         for bytes in w.__drain_pending() {
             r.__push_raw(bytes).unwrap();
         }

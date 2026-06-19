@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Gemeinsame Wire-Helper fuer Policy-Encoder/Decoder.
+//! Shared wire helpers for policy encoders/decoders.
 
 use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 
-/// Schreibt 1 bool + 3 byte padding (4-byte aligned).
+/// Writes 1 bool + 3 byte padding (4-byte aligned).
 ///
 /// # Errors
 /// Buffer-Overflow.
@@ -15,7 +15,7 @@ pub(crate) fn write_bool_padded(w: &mut BufferWriter, v: bool) -> Result<(), Enc
     w.write_u8(0)
 }
 
-/// Liest 1 bool + 3 byte padding.
+/// Reads 1 bool + 3 byte padding.
 ///
 /// # Errors
 /// Buffer-Underflow.
@@ -33,7 +33,7 @@ mod tests {
     use super::*;
     use zerodds_cdr::Endianness;
 
-    /// Roundtrip fuer `true`: muss als `0x01 0x00 0x00 0x00` rauskommen
+    /// Roundtrip for `true`: must come out as `0x01 0x00 0x00 0x00`
     /// (DDSI-RTPS §9.6.3.2 Table 9.13 — 4-byte aligned bool).
     #[test]
     fn bool_padded_roundtrip_true() {
@@ -46,7 +46,7 @@ mod tests {
         assert!(read_bool_padded(&mut r).unwrap());
     }
 
-    /// Roundtrip fuer `false`: 4 Null-Bytes.
+    /// Roundtrip for `false`: 4 null bytes.
     #[test]
     fn bool_padded_roundtrip_false() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -58,8 +58,8 @@ mod tests {
         assert!(!read_bool_padded(&mut r).unwrap());
     }
 
-    /// Jedes Nicht-Null-Byte → `true` (Spec erlaubt nur 0/1, aber Decoder
-    /// normalisiert defensiv).
+    /// Every non-zero byte → `true` (the spec allows only 0/1, but the decoder
+    /// normalizes defensively).
     #[test]
     fn read_bool_padded_nonzero_is_true() {
         let bytes = [0x42u8, 0x00, 0x00, 0x00];
@@ -67,7 +67,7 @@ mod tests {
         assert!(read_bool_padded(&mut r).unwrap());
     }
 
-    /// Buffer-Underflow im Wert-Byte → `DecodeError`.
+    /// Buffer underflow in the value byte → `DecodeError`.
     #[test]
     fn read_bool_padded_short_buffer_value_errors() {
         let bytes: [u8; 0] = [];
@@ -76,7 +76,7 @@ mod tests {
     }
 
     /// Buffer-Underflow im Padding (nur 1 byte da) → `DecodeError`.
-    /// Deckt die drei read_u8()?-Padding-Aufrufe einzeln ab.
+    /// Covers the three read_u8()? padding calls individually.
     #[test]
     fn read_bool_padded_short_buffer_padding_errors() {
         for len in 1usize..=3 {

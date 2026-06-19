@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Cross-Cutting Daemon-Runtime: §8.2 Prometheus-Metrics, §8.3 OTLP-Spans,
-//! §9.2 Graceful Shutdown, §5.2 Catalog-/Healthz-Endpoint, §6 QoS-Mapping.
+//! Cross-cutting daemon runtime: §8.2 Prometheus metrics, §8.3 OTLP spans,
+//! §9.2 graceful shutdown, §5.2 catalog/healthz endpoint, §6 QoS mapping.
 //!
-//! Wiederverwendbar fuer den `zerodds-ws-bridged`-Daemon — die Logik ist
-//! library-side gehalten, damit Tests den `BridgeMetrics`-Set ohne
-//! Subprocess-Boot durchspielen koennen.
+//! Reusable for the `zerodds-ws-bridged` daemon — the logic is kept
+//! library-side so that tests can exercise the `BridgeMetrics` set without
+//! a subprocess boot.
 
 #![allow(clippy::print_stderr)]
 
@@ -21,47 +21,47 @@ use zerodds_observability_otlp::{OtlpConfig, OtlpExporter};
 
 use super::config::{DaemonConfig, TopicConfig};
 
-/// Service-Name fuer OTel-Resource und Catalog.
+/// Service name for the OTel resource and catalog.
 pub const SERVICE_NAME: &str = "zerodds-ws-bridged";
 
-/// Versions-String — Cargo-Crate-Version (Single-Source).
+/// Version string — Cargo crate version (single source).
 pub const SERVICE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // ============================================================================
-// A2 — Prometheus-Metrics-Set (§8.2).
+// A2 — Prometheus metrics set (§8.2).
 // ============================================================================
 
-/// Standard-Metric-Set fuer alle Bridges.
+/// Standard metric set for all bridges.
 ///
-/// Die Metric-Namen folgen dem Bridge-Spec-Schema
-/// `zerodds_<bridge>_<thing>_total`. Counter sind monotonically-increasing,
-/// Gauges sind reset-bar.
+/// The metric names follow the bridge spec schema
+/// `zerodds_<bridge>_<thing>_total`. Counters are monotonically increasing,
+/// gauges are resettable.
 #[derive(Clone)]
 pub struct BridgeMetrics {
-    /// Anzahl eingehender WS-Frames (Text+Binary).
+    /// Number of incoming WS frames (text+binary).
     pub frames_in_total: Arc<Counter>,
-    /// Anzahl ausgehender WS-Frames.
+    /// Number of outgoing WS frames.
     pub frames_out_total: Arc<Counter>,
-    /// Bytes in (Frame-Payload).
+    /// Bytes in (frame payload).
     pub bytes_in_total: Arc<Counter>,
     /// Bytes out.
     pub bytes_out_total: Arc<Counter>,
-    /// Aktuell offene Connections.
+    /// Currently open connections.
     pub connections_active: Arc<Gauge>,
-    /// Lifetime-Connections-akzeptiert.
+    /// Lifetime connections accepted.
     pub connections_total: Arc<Counter>,
-    /// DDS-Samples published into runtime.
+    /// DDS samples published into runtime.
     pub dds_samples_in_total: Arc<Counter>,
-    /// DDS-Samples received from runtime.
+    /// DDS samples received from runtime.
     pub dds_samples_out_total: Arc<Counter>,
-    /// Wire-Errors (decode/encode/socket).
+    /// Wire errors (decode/encode/socket).
     pub errors_total: Arc<Counter>,
 }
 
 impl BridgeMetrics {
-    /// Registriert das Standard-Metric-Set in der gegebenen Registry.
-    /// Idempotent — mehrfacher Aufruf liefert dieselben Counter-/Gauge-
-    /// Instanzen zurueck.
+    /// Registers the standard metric set in the given registry.
+    /// Idempotent — repeated calls return the same counter/gauge
+    /// instances.
     pub fn register(registry: &Registry) -> Self {
         registry.set_help(
             "zerodds_ws_frames_in_total",
@@ -108,29 +108,28 @@ impl BridgeMetrics {
 }
 
 // ============================================================================
-// A1 — Graceful-Shutdown (§9.2).
+// A1 — graceful shutdown (§9.2).
 // ============================================================================
 
-/// Lifecycle-Signale, die der Daemon empfangen kann.
+/// Lifecycle signals the daemon can receive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LifecycleSignal {
-    /// SIGTERM/SIGINT — beginne mit Shutdown.
+    /// SIGTERM/SIGINT — begin shutdown.
     Shutdown,
-    /// SIGHUP — Config-Reload (TLS-Cert + ACL hot-reload).
+    /// SIGHUP — config reload (TLS cert + ACL hot-reload).
     Reload,
 }
 
-/// Installiert einen Signal-Watcher der `SIGTERM`/`SIGINT`/`SIGHUP`
-/// abfaengt und das `shutdown_flag` setzt bzw. den `reload_flag`-
-/// Hook anstoesst.
+/// Installs a signal watcher that catches `SIGTERM`/`SIGINT`/`SIGHUP`
+/// and sets the `shutdown_flag` or triggers the `reload_flag`
+/// hook respectively.
 ///
-/// Der Worker laeuft in einem dedizierten Thread und beendet sich
-/// sobald das `shutdown_flag` gesetzt ist (Self-Notification durch
-/// SIGTERM-Path).
+/// The worker runs in a dedicated thread and exits as soon as the
+/// `shutdown_flag` is set (self-notification via the SIGTERM path).
 ///
-/// Die Funktion gibt einen Join-Handle zurueck; im Daemon-`Drop`-Pfad
-/// soll dieser nicht aktiv gejoint werden — der Worker-Thread ist
-/// detached gegen das Process-Lifecycle.
+/// The function returns a join handle; in the daemon `Drop` path it
+/// should not be actively joined — the worker thread is detached
+/// against the process lifecycle.
 #[cfg(unix)]
 pub fn install_signal_watcher(
     shutdown_flag: Arc<AtomicBool>,
@@ -160,22 +159,22 @@ pub fn install_signal_watcher(
 }
 
 // ============================================================================
-// A5 — Catalog/Healthz-Endpoint (§5.2).
+// A5 — catalog/healthz endpoint (§5.2).
 // ============================================================================
 
-/// Catalog-Snapshot fuer `/catalog`-Endpoint.
+/// Catalog snapshot for the `/catalog` endpoint.
 #[derive(Clone)]
 pub struct CatalogSnapshot {
-    /// Service-Name.
+    /// Service name.
     pub service: String,
     /// Version.
     pub version: String,
-    /// Bridge-Topics (DDS-Name + Direction + WS-Pfad + QoS).
+    /// Bridge topics (DDS name + direction + WS path + QoS).
     pub topics: Vec<TopicConfig>,
 }
 
 impl CatalogSnapshot {
-    /// Aus Daemon-Config bauen.
+    /// Build from the daemon config.
     #[must_use]
     pub fn from_config(cfg: &DaemonConfig) -> Self {
         Self {
@@ -185,7 +184,7 @@ impl CatalogSnapshot {
         }
     }
 
-    /// Render als JSON (Spec §5.2).
+    /// Render as JSON (Spec §5.2).
     #[must_use]
     pub fn render_json(&self) -> String {
         let mut out = String::with_capacity(256 + self.topics.len() * 128);
@@ -236,10 +235,10 @@ fn push_json_str(out: &mut String, s: &str) {
     }
 }
 
-/// Mini-HTTP-Worker der `/catalog`, `/healthz` und `/metrics` bedient.
+/// Mini HTTP worker serving `/catalog`, `/healthz` and `/metrics`.
 ///
-/// Returns `JoinHandle` + bound `SocketAddr`. Beim Drop des stop-flags
-/// laeuft die accept-Loop noch eine Iteration durch (dank Self-Connect).
+/// Returns `JoinHandle` + bound `SocketAddr`. When the stop flag is set,
+/// the accept loop runs one more iteration (thanks to self-connect).
 pub fn serve_admin_endpoints(
     addr: SocketAddr,
     catalog: Arc<CatalogSnapshot>,
@@ -292,7 +291,7 @@ fn admin_handle(
     let req = String::from_utf8_lossy(&buf[..n]);
     let first_line = req.lines().next().unwrap_or("");
 
-    // Path extrahieren.
+    // Extract the path.
     let path = first_line
         .split_whitespace()
         .nth(1)
@@ -341,9 +340,9 @@ fn admin_handle(
 // A3 — OTLP-Span-Exporter (§8.3).
 // ============================================================================
 
-/// Parst `OTEL_EXPORTER_OTLP_ENDPOINT`-aehnlichen String in eine
-/// `OtlpConfig`. Akzeptiert `http://host:port`, `host:port`, oder
-/// nur `host` (default Port 4318).
+/// Parses an `OTEL_EXPORTER_OTLP_ENDPOINT`-like string into an
+/// `OtlpConfig`. Accepts `http://host:port`, `host:port`, or
+/// just `host` (default port 4318).
 #[must_use]
 pub fn otlp_config_from_endpoint(service_name: &str, raw: &str) -> OtlpConfig {
     let trimmed = raw
@@ -364,15 +363,15 @@ pub fn otlp_config_from_endpoint(service_name: &str, raw: &str) -> OtlpConfig {
     }
 }
 
-/// Holt `OTEL_EXPORTER_OTLP_ENDPOINT` aus der Umgebung und parst
-/// `host:port`. Liefert `None` wenn die ENV nicht gesetzt ist.
+/// Fetches `OTEL_EXPORTER_OTLP_ENDPOINT` from the environment and parses
+/// `host:port`. Returns `None` if the env var is not set.
 #[must_use]
 pub fn otlp_config_from_env(service_name: &str) -> Option<OtlpConfig> {
     let raw = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok()?;
     Some(otlp_config_from_endpoint(service_name, &raw))
 }
 
-/// Spawn-t einen periodischen `OtlpExporter::flush()`-Thread.
+/// Spawns a periodic `OtlpExporter::flush()` thread.
 pub fn spawn_otlp_flush_loop(
     exporter: Arc<OtlpExporter>,
     stop: Arc<AtomicBool>,
@@ -386,8 +385,8 @@ pub fn spawn_otlp_flush_loop(
                 if stop.load(Ordering::SeqCst) {
                     break;
                 }
-                // Fehler werden geschluckt — der Collector kann offline
-                // sein; das ist fuer den Daemon-Pfad nicht fatal.
+                // Errors are swallowed — the collector may be offline;
+                // that is not fatal for the daemon path.
                 let _ = exporter.flush();
             }
             // Final flush.
@@ -566,7 +565,7 @@ pub fn install_signal_watcher(
     _shutdown_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     _reload_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> std::io::Result<std::thread::JoinHandle<()>> {
-    // Windows: signal_hook::iterator nur POSIX. Spawn dummy thread,
-    // shutdown laeuft ueber die normalen socket-close-Pfade.
+    // Windows: signal_hook::iterator is POSIX-only. Spawn a dummy thread,
+    // shutdown runs via the normal socket-close paths.
     Ok(std::thread::spawn(|| {}))
 }

@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Spec-Constraint-Validatoren fuer K1-Followup (§7.4.5-§7.4.12).
+//! Spec-constraint validators for K1 follow-up (§7.4.5-§7.4.12).
 //!
-//! Implementiert die 19 spezifischen Constraint-Validatoren aus dem
-//! S-Res-AST-Builder-Validator-Followup-Tracker
-//! (`docs/spec-coverage/idl-4.2.md`). Jeder Validator entspricht
-//! genau einer normativen Spec-Section und liefert konkrete
-//! [`SpecValidationError`]-Varianten.
+//! Implements the 19 specific constraint validators from the
+//! S-Res-AST-builder-validator follow-up tracker
+//! (`docs/spec-coverage/idl-4.2.md`). Each validator corresponds to
+//! exactly one normative spec section and returns concrete
+//! [`SpecValidationError`] variants.
 //!
-//! Aufruf-Modell: `validate_all` laeuft als Post-Resolver-Pass — der
-//! Resolver baut das Symbol-Tree, dieses Modul nutzt es fuer
-//! Symbol-Kind-Lookups (z.B. ValueBox-inner-no-Value).
+//! Call model: `validate_all` runs as a post-resolver pass — the
+//! resolver builds the symbol tree, this module uses it for
+//! symbol-kind lookups (e.g. ValueBox-inner-no-Value).
 
 use crate::ast::{
     ComponentDcl, ComponentExport, Definition, EventDcl, HomeDcl, ImportedScope, InterfaceDcl,
@@ -20,199 +20,198 @@ use crate::errors::Span;
 use crate::semantics::resolver::{Resolver, SymbolKind};
 use std::collections::{BTreeMap, HashSet};
 
-/// Aggregat-Fehler-Typ aller K1-Followup-Validatoren.
+/// Aggregate error type of all K1 follow-up validators.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpecValidationError {
     // -------- Cluster A: ValueDef --------
-    /// §7.4.5.4.1.2 — concrete Value erbt von max. 1 concrete Base.
+    /// §7.4.5.4.1.2 — a concrete value inherits from at most 1 concrete base.
     ValueMultipleConcreteBases {
-        /// Name des fehlerhaft erbenden ValueType.
+        /// Name of the erroneously inheriting ValueType.
         name: String,
-        /// Anzahl tatsaechlicher concrete Bases.
+        /// Number of actual concrete bases.
         count: usize,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.7.4.2.1 — abstract valuetype darf weder state_member noch
-    /// init enthalten.
+    /// §7.4.7.4.2.1 — an abstract valuetype must contain neither a state_member
+    /// nor an init.
     AbstractValueWithStateOrInit {
-        /// Name des abstract ValueType.
+        /// Name of the abstract ValueType.
         name: String,
-        /// Konkrete Verletzung (`"state_member"` oder `"init"`).
+        /// Concrete violation (`"state_member"` or `"init"`).
         violation: &'static str,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.7.4.3 Tab. 7-19 — Inheritance-Compat-Matrix verletzt.
+    /// §7.4.7.4.3 Tab. 7-19 — inheritance-compatibility matrix violated.
     ValueInheritanceMatrixViolation {
         /// Sub-ValueType.
         sub: String,
         /// Base-ValueType.
         base: String,
-        /// Beschreibung der Verletzung.
+        /// Description of the violation.
         reason: &'static str,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.7.4.4 — `custom valuetype` muss mind. 1 state_member haben.
+    /// §7.4.7.4.4 — a `custom valuetype` must have at least 1 state_member.
     CustomValueNotStateful {
-        /// Name des custom ValueType.
+        /// Name of the custom ValueType.
         name: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.7.4.5 — `custom`-Values duerfen nicht `truncatable` erben;
-    /// ValueBox-Decls duerfen nicht in Inheritance auftreten.
+    /// §7.4.7.4.5 — `custom` values must not inherit `truncatable`;
+    /// ValueBox decls must not appear in inheritance.
     TruncatableMisuse {
-        /// Name des fehlerhaft markierten ValueType.
+        /// Name of the erroneously marked ValueType.
         name: String,
-        /// Beschreibung der Verletzung.
+        /// Description of the violation.
         reason: &'static str,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
 
     // -------- Cluster B: Value-Box + Interface --------
-    /// §7.4.7.4.1 — `value_box`-inner darf nicht selbst ValueType sein.
+    /// §7.4.7.4.1 — the `value_box` inner must not itself be a ValueType.
     ValueBoxInnerIsValue {
-        /// Name des fehlerhaften ValueBox.
+        /// Name of the faulty ValueBox.
         name: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.7.4.2.2 — `abstract interface` darf nur von `abstract`-
-    /// Interfaces erben.
+    /// §7.4.7.4.2.2 — an `abstract interface` may only inherit from `abstract`
+    /// interfaces.
     AbstractInterfaceFromConcrete {
-        /// Name des abstract Interfaces.
+        /// Name of the abstract interface.
         name: String,
-        /// Name der konkreten Base.
+        /// Name of the concrete base.
         base: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.6.4.3 — `local`-Interface-Type darf nur als Param/Return
-    /// von Local-/Value-Type-Operationen auftreten. Vereinfachte
-    /// Variante: `local` darf nicht von non-local Interfaces erben.
+    /// §7.4.6.4.3 — a `local` interface type may only appear as a param/return
+    /// of local/value-type operations. Simplified
+    /// variant: `local` must not inherit from non-local interfaces.
     LocalInterfaceInheritsNonLocal {
-        /// Local-Interface-Name.
+        /// Local interface name.
         name: String,
-        /// Non-local Base-Name.
+        /// Non-local base name.
         base: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
 
     // -------- Cluster C: CORBA-Top-Level --------
     /// §7.4.6.4.1.1 — `typeid`: at-most-one pro Construct.
     TypeIdDuplicated {
-        /// Voller Name des Targets.
+        /// Full name of the target.
         target: String,
-        /// Quellort der zweiten typeid-Decl.
+        /// Source location of the second typeid decl.
         span: Span,
     },
-    /// §7.4.6.4.1.2 — Typeprefix-String muss gueltiges Format haben:
-    /// kein trailing `/`, keine fuehrenden Punkte/Underscores in
-    /// Segmenten, slash-getrennte Segmente non-leer.
+    /// §7.4.6.4.1.2 — the typeprefix string must have a valid format:
+    /// no trailing `/`, no leading dots/underscores in
+    /// segments, slash-separated segments non-empty.
     TypePrefixInvalidFormat {
-        /// Roher Prefix-String.
+        /// Raw prefix string.
         prefix: String,
-        /// Konkrete Format-Verletzung.
+        /// Concrete format violation.
         reason: &'static str,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.6.4.1.3 — Repository-ID-Konflikt zwischen `#pragma prefix`
-    /// und `typeprefix`-Deklaration fuer denselben Scope.
+    /// §7.4.6.4.1.3 — repository-ID conflict between `#pragma prefix`
+    /// and a `typeprefix` declaration for the same scope.
     RepositoryIdConflict {
-        /// Voller Name des Konflikt-Scopes.
+        /// Full name of the conflicting scope.
         target: String,
-        /// Quellort des Konflikts.
+        /// Source location of the conflict.
         span: Span,
     },
-    /// §7.4.6.4.1.4 — `import` referenziert unbekanntes Symbol oder
-    /// re-deklariert einen importierten Namen.
+    /// §7.4.6.4.1.4 — `import` references an unknown symbol or
+    /// re-declares an imported name.
     ImportSemanticViolation {
-        /// Beschreibung des verletzten Effekts.
+        /// Description of the violated effect.
         violation: &'static str,
-        /// Importierter Name.
+        /// Imported name.
         target: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.6.4.7 — `CORBA::`-Praefix ist reserved; nur in `orb.idl`
-    /// (bundled Resource) erlaubt.
+    /// §7.4.6.4.7 — the `CORBA::` prefix is reserved; only allowed in `orb.idl`
+    /// (bundled resource).
     CorbaPrefixReserved {
-        /// Voller verbotener Name.
+        /// Full forbidden name.
         name: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
 
     // -------- Cluster D: Components/Events/Home/Porttype/Template --------
-    /// §7.4.8.4.2.1 — `provides`-type_spec muss ein non-Component
-    /// Interface (oder `Object`) sein.
+    /// §7.4.8.4.2.1 — the `provides` type_spec must be a non-component
+    /// interface (or `Object`).
     ProvidesNotInterface {
-        /// Component-Name.
+        /// Component name.
         component: String,
-        /// Provides-Slot-Name.
+        /// Provides-slot name.
         port: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.8.4.3 — Component-Forward muss vor Verwendung definiert
-    /// werden; hier eingegrenzt auf Inherit-from-Forward-Detection.
+    /// §7.4.8.4.3 — a component forward must be defined before use;
+    /// here narrowed to inherit-from-forward detection.
     ComponentForwardInherit {
-        /// Component-Name.
+        /// Component name.
         component: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.10.4.1.1.2 — `abstract eventtype` darf weder state noch
-    /// init enthalten.
+    /// §7.4.10.4.1.1.2 — an `abstract eventtype` must contain neither state nor
+    /// init.
     AbstractEventWithStateOrInit {
-        /// Name des abstract Eventtype.
+        /// Name of the abstract eventtype.
         name: String,
-        /// Konkrete Verletzung.
+        /// Concrete violation.
         violation: &'static str,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.10.4.2.2 — `primarykey`-Type muss von
-    /// `Components::PrimaryKeyBase` erben.
+    /// §7.4.10.4.2.2 — a `primarykey` type must inherit from
+    /// `Components::PrimaryKeyBase`.
     PrimaryKeyNotPrimaryKeyBase {
-        /// Home-Name.
+        /// Home name.
         home: String,
-        /// PrimaryKey-Type-Name.
+        /// PrimaryKey type name.
         key_type: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.11.4.1.1 — Porttype darf keinen zyklischen Embedding-Pfad
-    /// haben.
+    /// §7.4.11.4.1.1 — a porttype must not have a cyclic embedding path.
     PorttypeCycle {
-        /// Name des Porttype, ueber dem der Zyklus startet.
+        /// Name of the porttype at which the cycle starts.
         name: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.12.4.1 — Template-Module darf weder ein anderes
-    /// Template-Module embedden noch Module-Reopen.
+    /// §7.4.12.4.1 — a template module may neither embed another
+    /// template module nor reopen a module.
     TemplateModuleEmbedReopen {
-        /// Name des outer Template-Module.
+        /// Name of the outer template module.
         name: String,
-        /// Beschreibung des verletzten Effekts.
+        /// Description of the violated effect.
         violation: &'static str,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.3.4.2 — Exception-Identifier darf nur in `raises`-
-    /// Expressions auftreten, nicht als Member-Type.
+    /// §7.4.3.4.2 — an exception identifier may only appear in `raises`
+    /// expressions, not as a member type.
     ExceptionUsedAsMemberType {
-        /// Exception-Name.
+        /// Exception name.
         exception: String,
-        /// Struct/Union-Kontext.
+        /// Struct/union context.
         context: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
 }
@@ -316,7 +315,7 @@ impl core::fmt::Display for SpecValidationError {
 impl std::error::Error for SpecValidationError {}
 
 impl SpecValidationError {
-    /// Quellort des Fehlers.
+    /// Source location of the error.
     #[must_use]
     pub fn span(&self) -> Span {
         match self {
@@ -344,18 +343,18 @@ impl SpecValidationError {
     }
 }
 
-/// Aggregat: alle 19 K1-Followup-Validatoren auf `spec` ausfuehren —
-/// ohne `#pragma prefix`-Side-Channel. Aufrufer ohne Preprocessor-
-/// Output rufen diese Variant auf.
+/// Aggregate: run all 19 K1 follow-up validators on `spec` —
+/// without the `#pragma prefix` side channel. Callers without preprocessor
+/// output call this variant.
 #[must_use]
 pub fn validate_all(spec: &Specification, resolver: &Resolver) -> Vec<SpecValidationError> {
     validate_all_with_pragmas(spec, resolver, &[])
 }
 
-/// Aggregat-Variant mit `#pragma prefix`-Side-Channel: ermoeglicht
-/// §7.4.6.4.1.3 Repository-ID-Konflikt-Detection zwischen Pragma- und
-/// Typeprefix-Decls. Erwartet eine Liste von Tuples
-/// `(prefix_string, pragma_line)` aus dem Preprocessor-Output.
+/// Aggregate variant with the `#pragma prefix` side channel: enables
+/// §7.4.6.4.1.3 repository-ID conflict detection between pragma and
+/// typeprefix decls. Expects a list of tuples
+/// `(prefix_string, pragma_line)` from the preprocessor output.
 #[must_use]
 pub fn validate_all_with_pragmas(
     spec: &Specification,
@@ -375,31 +374,30 @@ pub fn validate_all_with_pragmas(
 }
 
 // ============================================================================
-// Spec-Summary: Index aller Definitionen mit Kind/Kategorie
+// Spec summary: index of all definitions with kind/category
 // ============================================================================
 
-/// Zusammenfassung der gesamten Specification — pro fully-qualified-Name
-/// einmal die wichtigsten Kategorien (ValueKind, Local-Flag, Component-vs-
-/// Interface). Wird einmalig aufgebaut und von allen Validatoren genutzt.
+/// Summary of the entire specification — for each fully-qualified name
+/// the most important categories once (ValueKind, local flag, component-vs-
+/// interface). Built once and used by all validators.
 #[derive(Debug, Default)]
 struct SpecSummary {
-    /// Pfad → ValueDef-Kind (Concrete/Abstract/Custom).
+    /// Path → ValueDef kind (Concrete/Abstract/Custom).
     value_kinds: BTreeMap<String, ValueKind>,
-    /// Pfad → ist Value-Box?
+    /// Path → is it a value box?
     value_boxes: HashSet<String>,
-    /// Pfad → ist Component (Def oder Forward)?
+    /// Path → is it a component (def or forward)?
     components: HashSet<String>,
-    /// Pfad → Interface-Kind: (abstract, local).
+    /// Path → interface kind: (abstract, local).
     interfaces: BTreeMap<String, (bool, bool)>,
-    /// Pfad → Truncatable-Marker auf der Inheritance-Spec.
+    /// Path → truncatable marker on the inheritance spec.
     value_truncatables: HashSet<String>,
-    /// Porttype-Name (Last-Segment) → (outgoing Edges als
-    /// Last-Segment-Targets, Span). Wird vom
-    /// `validate_porttype_graph`-Pass fuer Multi-Hop-Cycle-Detection
-    /// verwendet.
+    /// Porttype name (last segment) → (outgoing edges as
+    /// last-segment targets, span). Used by the
+    /// `validate_porttype_graph` pass for multi-hop cycle detection.
     porttype_edges: BTreeMap<String, (Vec<String>, Span)>,
-    /// Last-Segment-Namen aller deklarierten Exceptions. Wird vom
-    /// `validate_exception_only_in_raises`-Pass verwendet.
+    /// Last-segment names of all declared exceptions. Used by the
+    /// `validate_exception_only_in_raises` pass.
     exceptions: HashSet<String>,
 }
 
@@ -446,8 +444,8 @@ fn collect_summary(defs: &[Definition], path: &[&str], out: &mut SpecSummary) {
                             matches!(def.kind, crate::ast::InterfaceKind::Local),
                         ),
                     );
-                    // §7.4.4 Rule 97: Exceptions koennen auch innerhalb
-                    // von Interface-Bodies deklariert werden.
+                    // §7.4.4 Rule 97: exceptions can also be declared
+                    // inside interface bodies.
                     for ex in &def.exports {
                         if let crate::ast::Export::Except(e) = ex {
                             out.exceptions.insert(e.name.text.clone());
@@ -505,7 +503,7 @@ fn full_path(path: &[&str], name: &str) -> String {
 }
 
 // ============================================================================
-// Walk-Loop: alle Top-Level-Defs durchgehen + Cluster-Validatoren
+// Walk loop: go through all top-level defs + cluster validators
 // ============================================================================
 
 /// zerodds-lint: recursion-depth 64 (AST-Walk; bounded by IDL nesting)
@@ -566,8 +564,8 @@ fn walk_definitions_inner(
             }
             Definition::Home(HomeDcl::Forward(_, _)) => {}
             Definition::Porttype(_) => {
-                // Porttype-Cycle-Detection laeuft global in
-                // validate_porttype_graph (DFS auf dem Gesamt-Graph aus
+                // Porttype cycle detection runs globally in
+                // validate_porttype_graph (DFS on the overall graph from
                 // SpecSummary.porttype_edges).
             }
             _ => {}
@@ -601,7 +599,7 @@ fn validate_value_def(v: &ValueDef, summary: &SpecSummary, errs: &mut Vec<SpecVa
         }
     }
 
-    // §7.4.7.4.2.1 — Abstract: kein state_member, kein init.
+    // §7.4.7.4.2.1 — abstract: no state_member, no init.
     if v.kind == ValueKind::Abstract {
         for el in &v.elements {
             match el {
@@ -624,7 +622,7 @@ fn validate_value_def(v: &ValueDef, summary: &SpecSummary, errs: &mut Vec<SpecVa
         }
     }
 
-    // §7.4.7.4.4 — `custom` muss mind. ein state_member haben.
+    // §7.4.7.4.4 — `custom` must have at least one state_member.
     if v.kind == ValueKind::Custom {
         let has_state = v
             .elements
@@ -638,8 +636,8 @@ fn validate_value_def(v: &ValueDef, summary: &SpecSummary, errs: &mut Vec<SpecVa
         }
     }
 
-    // §7.4.7.4.5 — Truncatable nicht fuer custom; ValueBox darf nicht
-    // in Inheritance auftreten.
+    // §7.4.7.4.5 — truncatable not for custom; ValueBox must not
+    // appear in inheritance.
     if truncatable && v.kind == ValueKind::Custom {
         errs.push(SpecValidationError::TruncatableMisuse {
             name: v.name.text.clone(),
@@ -658,12 +656,12 @@ fn validate_value_def(v: &ValueDef, summary: &SpecSummary, errs: &mut Vec<SpecVa
         }
     }
 
-    // §7.4.7.4.3 — Inheritance-Compat-Matrix (Tab. 7-19, 5x5).
-    // Subset: concrete kann nur von concrete erben; abstract nur von
-    // abstract; custom nur von custom oder concrete (Spec-Regel: custom
-    // erbt von beliebigen non-custom Values, Spec §7.4.7.4.4 erlaubt
-    // dies). Boxed-Values koennen nicht in Hierarchie auftreten (oben
-    // bereits geprueft). Truncatable + abstract = Verstoss.
+    // §7.4.7.4.3 — inheritance-compatibility matrix (Tab. 7-19, 5x5).
+    // Subset: concrete can only inherit from concrete; abstract only from
+    // abstract; custom only from custom or concrete (spec rule: custom
+    // inherits from arbitrary non-custom values, spec §7.4.7.4.4 allows
+    // this). Boxed values cannot appear in a hierarchy (already
+    // checked above). Truncatable + abstract = violation.
     if truncatable && v.kind == ValueKind::Abstract {
         errs.push(SpecValidationError::ValueInheritanceMatrixViolation {
             sub: v.name.text.clone(),
@@ -727,7 +725,7 @@ fn validate_value_box(
     use crate::ast::TypeSpec;
     if let TypeSpec::Scoped(sn) = type_spec {
         let key = scoped_name_to_key(sn);
-        // Lokales Lookup im Summary; falls fehlt, Resolver befragen.
+        // Local lookup in the summary; if missing, query the resolver.
         let is_value = summary.value_kinds.contains_key(&key)
             || summary.value_boxes.contains(&key)
             || resolver_kind(resolver, sn.parts.last().map_or("", |p| p.text.as_str()))
@@ -745,8 +743,8 @@ fn resolver_kind(resolver: &Resolver, name: &str) -> Option<SymbolKind> {
     resolver.root.lookup(name).map(|s| s.kind.clone())
 }
 
-/// Path-Lookup im Resolver-Scope-Tree: walke entlang der Path-Segmente
-/// und liefere das Ziel-Symbol, falls jedes Segment auflösbar ist.
+/// Path lookup in the resolver scope tree: walk along the path segments
+/// and return the target symbol if every segment is resolvable.
 fn resolve_path_in_root<'a>(
     root: &'a crate::semantics::resolver::Scope,
     parts: &[crate::ast::Identifier],
@@ -761,7 +759,7 @@ fn resolve_path_in_root<'a>(
         if i + 1 == parts.len() {
             return scope.symbols.get(&key);
         }
-        // Mid-Path: muss ein Module sein → in children absteigen.
+        // Mid-path: must be a module → descend into children.
         match scope.children.get(&key) {
             Some(child) => scope = child,
             None => return None,
@@ -776,7 +774,7 @@ fn validate_interface_def(
     resolver: &Resolver,
     errs: &mut Vec<SpecValidationError>,
 ) {
-    // §7.4.7.4.2.2 — abstract interface erbt nur von abstract.
+    // §7.4.7.4.2.2 — an abstract interface inherits only from abstract.
     if matches!(def.kind, crate::ast::InterfaceKind::Abstract) {
         for b in &def.bases {
             let key = scoped_name_to_key(b);
@@ -785,10 +783,10 @@ fn validate_interface_def(
                 .get(&key)
                 .map(|(a, _)| *a)
                 .unwrap_or_else(|| {
-                    // Fallback: Resolver-Kind. Wir koennen nicht
-                    // unterscheiden ob Forward/Def abstract war ohne
-                    // den Original-Kind — also pessimistisch nur Error
-                    // wenn Resolver weiss dass es non-abstract ist.
+                    // Fallback: resolver kind. We cannot
+                    // distinguish whether forward/def was abstract without
+                    // the original kind — so pessimistically only error
+                    // if the resolver knows it is non-abstract.
                     resolver_kind(resolver, b.parts.last().map_or("", |p| p.text.as_str()))
                         .is_some_and(|k| matches!(k, SymbolKind::InterfaceDef))
                 });
@@ -801,7 +799,7 @@ fn validate_interface_def(
             }
         }
     }
-    // §7.4.6.4.3 — local-Interface darf nicht von non-local erben.
+    // §7.4.6.4.3 — a local interface must not inherit from non-local.
     if matches!(def.kind, crate::ast::InterfaceKind::Local) {
         for b in &def.bases {
             let key = scoped_name_to_key(b);
@@ -862,8 +860,8 @@ fn collect_typeids(
 }
 
 fn validate_type_prefix(prefix: &str, span: Span, errs: &mut Vec<SpecValidationError>) {
-    // §7.4.6.4.1.2 — slash-Separation, kein trailing slash, keine
-    // Segmente die mit `_`/`.`/`-` beginnen, Segmente non-empty.
+    // §7.4.6.4.1.2 — slash separation, no trailing slash, no
+    // segments beginning with `_`/`.`/`-`, segments non-empty.
     let mk = |reason: &'static str| SpecValidationError::TypePrefixInvalidFormat {
         prefix: prefix.to_string(),
         reason,
@@ -883,7 +881,7 @@ fn validate_type_prefix(prefix: &str, span: Span, errs: &mut Vec<SpecValidationE
             return;
         }
         let Some(first) = seg.chars().next() else {
-            // Leeres Segment ist oben bereits abgefangen — defensive guard.
+            // An empty segment is already caught above — defensive guard.
             errs.push(mk("empty segment between '/' separators"));
             return;
         };
@@ -895,7 +893,7 @@ fn validate_type_prefix(prefix: &str, span: Span, errs: &mut Vec<SpecValidationE
 }
 
 fn validate_corba_prefix_in_target(target: &ScopedName, errs: &mut Vec<SpecValidationError>) {
-    // §7.4.6.4.7 — `CORBA::`-Praefix ist reserved.
+    // §7.4.6.4.7 — the `CORBA::` prefix is reserved.
     if let Some(first) = target.parts.first() {
         if first.text == "CORBA" {
             errs.push(SpecValidationError::CorbaPrefixReserved {
@@ -911,44 +909,44 @@ fn validate_import(
     resolver: &Resolver,
     errs: &mut Vec<SpecValidationError>,
 ) {
-    // §7.4.6.4.1.4 — 9 Effekte aus Spec S. 61:
+    // §7.4.6.4.1.4 — 9 effects from spec p. 61:
     //
-    //   1. Visibility: imported name-scope sichtbar im importing-spec —
-    //      hier durchgesetzt durch unresolved-Diagnose.
-    //   2. Same Namespace: imported scopes leben im selben Namespace
-    //      wie subsequent Decls — Resolver-Default; nicht extra
-    //      validiert (sonst false-positive bei Reopen).
-    //   3. Module-Reopen: importierte Modules duerfen reopened werden —
-    //      explizit erlaubt; kein Error.
-    //   4. Inner-no-Implicit: import von A::B::C importiert nicht
-    //      implizit A oder B — Behavior-Test (siehe Test-Suite).
-    //   5. Enclosing exposed-not-imported: Path-Komponenten vor dem
-    //      letzten Segment sind exposed, aber NICHT importiert; sie
-    //      duerfen nicht redefined/reopened werden — durchgesetzt
-    //      durch validate_import_exposed_redefines (globaler Pass).
-    //   6. Recursive: import importiert nested scopes — Behavior-Test.
-    //   7. Importable Constructs: Targets muessen Module/Interface/
-    //      Value-Type/Event-Type sein — durchgesetzt unten via
-    //      Symbol-Kind-Check.
-    //   8. Redundant: redundante imports werden ignoriert —
-    //      Behavior-Test, kein Error.
-    //   9. Generation neutral: Standard definiert keine Stub-Form —
-    //      nicht prueffaehig.
+    //   1. Visibility: imported name scope visible in the importing spec —
+    //      enforced here via the unresolved diagnostic.
+    //   2. Same Namespace: imported scopes live in the same namespace
+    //      as subsequent decls — resolver default; not extra
+    //      validated (otherwise a false positive on reopen).
+    //   3. Module reopen: imported modules may be reopened —
+    //      explicitly allowed; no error.
+    //   4. Inner-no-implicit: import of A::B::C does not implicitly
+    //      import A or B — behavior test (see test suite).
+    //   5. Enclosing exposed-not-imported: path components before the
+    //      last segment are exposed, but NOT imported; they
+    //      must not be redefined/reopened — enforced
+    //      by validate_import_exposed_redefines (global pass).
+    //   6. Recursive: import imports nested scopes — behavior test.
+    //   7. Importable constructs: targets must be module/interface/
+    //      value-type/event-type — enforced below via a
+    //      symbol-kind check.
+    //   8. Redundant: redundant imports are ignored —
+    //      behavior test, no error.
+    //   9. Generation neutral: the standard defines no stub form —
+    //      not checkable.
     if let ImportedScope::Scoped(sn) = &im.imported {
         validate_corba_prefix_in_target(sn, errs);
         if sn.parts.is_empty() {
             return;
         }
-        // Effekt 1: Visibility — Target muss resolvable sein.
-        // Vereinfacht: bei Multi-Path-Imports (`A::B::C`) muss das
-        // erste Segment ein bekanntes Module sein. Beim einfachen
-        // 1-Segment-Import muss das Symbol direkt im Root liegen.
+        // Effect 1: Visibility — the target must be resolvable.
+        // Simplified: for multi-path imports (`A::B::C`) the
+        // first segment must be a known module. For a simple
+        // 1-segment import the symbol must lie directly in the root.
         let first = sn.parts[0].text.as_str();
         let target_sym = if sn.parts.len() == 1 {
             resolver.root.lookup(first)
         } else {
-            // Path-Lookup: erstes Segment im Root finden, dann
-            // verschachteln.
+            // Path lookup: find the first segment in the root, then
+            // nest.
             resolve_path_in_root(&resolver.root, &sn.parts)
         };
         let Some(sym) = target_sym else {
@@ -959,9 +957,9 @@ fn validate_import(
             });
             return;
         };
-        // Effekt 7: Target muss Module / Interface / Value-Type /
-        // Event-Type sein. Andere Symbol-Kinds (Struct/Const/Enum/...)
-        // sind keine importable Name-Scopes.
+        // Effect 7: the target must be module / interface / value-type /
+        // event-type. Other symbol kinds (struct/const/enum/...)
+        // are not importable name scopes.
         let is_importable = matches!(
             sym.kind,
             SymbolKind::Module
@@ -980,17 +978,17 @@ fn validate_import(
     }
 }
 
-/// §7.4.6.4.1.3 — Repository-ID-Konflikt zwischen `#pragma prefix` und
-/// `typeprefix`-Decl im selben Spec.
+/// §7.4.6.4.1.3 — repository-ID conflict between `#pragma prefix` and a
+/// `typeprefix` decl in the same spec.
 ///
 /// Spec-Regel: "Both mechanisms must return the same repository id for
 /// the same IDL element otherwise an error should be raised."
 ///
-/// Pragmatische Approximation: wenn ueberhaupt ein `#pragma prefix`
-/// im Spec aktiv war UND eine `typeprefix`-Decl mit anderem Wert
-/// auftaucht, melden wir den Konflikt. Echte per-element-Korrelation
-/// (welche Pragma-Region welchen typeprefix beeinflusst) wuerde
-/// Source-Range-Overlap-Tracking erfordern; das ist eine künftige Verfeinerung.
+/// Pragmatic approximation: if any `#pragma prefix` was active at all
+/// in the spec AND a `typeprefix` decl with a different value
+/// appears, we report the conflict. True per-element correlation
+/// (which pragma region affects which typeprefix) would require
+/// source-range overlap tracking; that is a future refinement.
 fn validate_pragma_prefix_conflict(
     spec: &Specification,
     pragma_prefixes: &[(String, usize)],
@@ -1003,15 +1001,15 @@ fn validate_pragma_prefix_conflict(
     collect_typeprefix_conflicts(&spec.definitions, &pragma_values, errs);
 }
 
-/// §7.4.6.4.1.2 + §7.4.6.4.1.3 — Detektiert mehrfache `typeprefix`-
-/// Decls auf demselben Target mit unterschiedlichen Werten. IDL ist
-/// case-insensitive (§7.2.3), daher wird das Target case-insensitiv
-/// gruppiert.
+/// §7.4.6.4.1.2 + §7.4.6.4.1.3 — detects multiple `typeprefix`
+/// decls on the same target with different values. IDL is
+/// case-insensitive (§7.2.3), so the target is grouped
+/// case-insensitively.
 fn validate_typeprefix_internal_conflicts(
     spec: &Specification,
     errs: &mut Vec<SpecValidationError>,
 ) {
-    // target_lower (path-joined) → erster prefix-Wert + canonical target.
+    // target_lower (path-joined) → first prefix value + canonical target.
     let mut seen: BTreeMap<String, (String, String, Span)> = BTreeMap::new();
     collect_typeprefixes(&spec.definitions, &[], &mut seen, errs);
 }
@@ -1036,7 +1034,7 @@ fn collect_typeprefixes(
                 collect_typeprefixes(&t.definitions, &np, seen, errs);
             }
             Definition::TypePrefix(tp) => {
-                // Case-insensitive Schluessel: enclosing-path + target.
+                // Case-insensitive key: enclosing path + target.
                 let target_canonical = scoped_name_to_key(&tp.target);
                 let key_lower: String = if path.is_empty() {
                     target_canonical.to_ascii_lowercase()
@@ -1090,15 +1088,15 @@ fn collect_typeprefix_conflicts(
     }
 }
 
-/// §7.4.6.4.1.4 Effekt 5 — globaler Pass: sammelt alle exposed-but-not-
-/// imported Path-Komponenten aus den Top-Level-Imports und meldet
-/// Module/Interface-Defs, die *nach* dem fruehesten Import einen
-/// solchen Namen redefine/reopen.
+/// §7.4.6.4.1.4 effect 5 — global pass: collects all exposed-but-not-
+/// imported path components from the top-level imports and reports
+/// module/interface defs that redefine/reopen such a name
+/// *after* the earliest import.
 fn validate_import_exposed_redefines(spec: &Specification, errs: &mut Vec<SpecValidationError>) {
-    // 1) Sammle aus allen Top-Level-Imports:
-    //    - imported_targets: Last-Segments aus `import A::B::C` → `C`
-    //    - exposed_only: enclosing-Segments → `A`, `B`
-    //    - earliest_import_offset: span.start des ersten Imports
+    // 1) Collect from all top-level imports:
+    //    - imported_targets: last segments from `import A::B::C` → `C`
+    //    - exposed_only: enclosing segments → `A`, `B`
+    //    - earliest_import_offset: span.start of the first import
     let mut imported_targets: HashSet<String> = HashSet::new();
     let mut exposed_only: HashSet<String> = HashSet::new();
     let mut earliest: Option<u32> = None;
@@ -1108,8 +1106,8 @@ fn validate_import_exposed_redefines(spec: &Specification, errs: &mut Vec<SpecVa
         &mut exposed_only,
         &mut earliest,
     );
-    // Imported-Set hat Vorrang: ein Name, der explizit importiert ist,
-    // ist NICHT "exposed-only" (Reopen erlaubt, Effekt 3).
+    // The imported set takes precedence: a name that is explicitly imported
+    // is NOT "exposed-only" (reopen allowed, effect 3).
     let exposed_only: HashSet<&String> = exposed_only
         .iter()
         .filter(|n| !imported_targets.contains(*n))
@@ -1120,13 +1118,13 @@ fn validate_import_exposed_redefines(spec: &Specification, errs: &mut Vec<SpecVa
     if exposed_only.is_empty() {
         return;
     }
-    // 2) Walk Top-Level-Defs und melde Redefine/Reopen von exposed-only,
-    //    aber nur fuer Defs *nach* dem ersten Import (subsequent
-    //    declarations gemaess Spec).
+    // 2) Walk top-level defs and report redefine/reopen of exposed-only,
+    //    but only for defs *after* the first import (subsequent
+    //    declarations per spec).
     walk_for_exposed_redefines(&spec.definitions, &exposed_only, earliest_offset, errs);
 }
 
-/// zerodds-lint: recursion-depth 64 (AST-Walk; bounded by IDL nesting)
+/// zerodds-lint: recursion-depth 64 (AST walk; bounded by IDL nesting)
 fn collect_import_paths(
     defs: &[Definition],
     imported: &mut HashSet<String>,
@@ -1210,8 +1208,7 @@ fn validate_component(
     resolver: &Resolver,
     errs: &mut Vec<SpecValidationError>,
 ) {
-    // §7.4.8.4.2.1 — provides muss non-Component-Interface (oder Object)
-    // referenzieren.
+    // §7.4.8.4.2.1 — provides must reference a non-component interface (or Object).
     for ex in &comp.body {
         if let ComponentExport::Provides {
             type_spec,
@@ -1220,7 +1217,7 @@ fn validate_component(
         } = ex
         {
             let key = scoped_name_to_key(type_spec);
-            // Object-Praefix erlaubt.
+            // Object prefix allowed.
             if type_spec.parts.len() == 1 && type_spec.parts[0].text == "Object" {
                 continue;
             }
@@ -1232,7 +1229,7 @@ fn validate_component(
                 });
                 continue;
             }
-            // Resolver-Kind muss Interface oder ValueType sein.
+            // The resolver kind must be an interface or ValueType.
             let kind = resolver_kind(
                 resolver,
                 type_spec.parts.last().map_or("", |p| p.text.as_str()),
@@ -1240,10 +1237,10 @@ fn validate_component(
             match kind {
                 Some(SymbolKind::InterfaceDef | SymbolKind::InterfaceForward) => {}
                 Some(SymbolKind::ValueType) | None => {
-                    // Unbekannte Targets lassen wir durch — den Resolver-
-                    // unresolved-Pfad pickt das im Resolver-Pass auf.
+                    // Unknown targets we let through — the resolver
+                    // unresolved path picks that up in the resolver pass.
                     if kind.is_none() && !summary.interfaces.contains_key(&key) {
-                        // Schweigen: Resolver meldet unresolved separat.
+                        // Silence: the resolver reports unresolved separately.
                     }
                 }
                 _ => {
@@ -1256,9 +1253,9 @@ fn validate_component(
             }
         }
     }
-    // §7.4.8.4.3 — Component-Forward-Inherit: Wenn `base` auf nur einen
-    // Forward-Eintrag zeigt (Resolver kennt nur Forward, nicht Def), ist
-    // das ein Verstoss.
+    // §7.4.8.4.3 — component-forward-inherit: if `base` points to only a
+    // forward entry (the resolver knows only the forward, not the def), that
+    // is a violation.
     if let Some(base) = &comp.base {
         let last = base.parts.last().map_or("", |p| p.text.as_str());
         if let Some(SymbolKind::InterfaceForward) = resolver_kind(resolver, last) {
@@ -1271,7 +1268,7 @@ fn validate_component(
 }
 
 fn validate_event(ev: &crate::ast::EventDef, errs: &mut Vec<SpecValidationError>) {
-    // §7.4.10.4.1.1.2 — abstract eventtype darf weder state noch init.
+    // §7.4.10.4.1.1.2 — an abstract eventtype must have neither state nor init.
     if ev.kind == ValueKind::Abstract {
         for el in &ev.elements {
             match el {
@@ -1300,17 +1297,17 @@ fn validate_home(
     resolver: &Resolver,
     errs: &mut Vec<SpecValidationError>,
 ) {
-    // §7.4.10.4.2.2 — primarykey muss von Components::PrimaryKeyBase erben.
+    // §7.4.10.4.2.2 — primarykey must inherit from Components::PrimaryKeyBase.
     if let Some(pk) = &h.primary_key {
         let last = pk.parts.last().map_or("", |p| p.text.as_str());
         let kind = resolver_kind(resolver, last);
-        // Akzeptierte Patterns:
-        // 1) `Components::PrimaryKeyBase` direkt referenziert (canonical).
-        // 2) Im Resolver bekannt als ValueType + Inheritance auf
-        //    `Components::PrimaryKeyBase` (Validator hat aber keinen Walk
-        //    in dieser Phase — wir akzeptieren bekannte ValueTypes als
-        //    "potentially derived" und melden nur den klaren Fall:
-        //    primary_key zeigt auf Non-Value-Symbol.
+        // Accepted patterns:
+        // 1) `Components::PrimaryKeyBase` referenced directly (canonical).
+        // 2) Known in the resolver as a ValueType + inheritance from
+        //    `Components::PrimaryKeyBase` (but the validator has no walk
+        //    in this phase — we accept known ValueTypes as
+        //    "potentially derived" and report only the clear case:
+        //    primary_key points to a non-value symbol.
         let is_pk_base = pk.parts.len() == 2
             && pk.parts[0].text == "Components"
             && pk.parts[1].text == "PrimaryKeyBase";
@@ -1319,10 +1316,10 @@ fn validate_home(
         }
         match kind {
             Some(SymbolKind::ValueType | SymbolKind::ValueForward) => {
-                // Nicht-direkte Referenz auf PrimaryKeyBase — strenge
-                // Pruefung benoetigt Inheritance-Walk. Wir koennen das
-                // hier nicht abschliessend pruefen ohne den
-                // Inheritance-Graph; deshalb tolerant: kein Error.
+                // Indirect reference to PrimaryKeyBase — a strict
+                // check needs an inheritance walk. We cannot
+                // check this conclusively here without the
+                // inheritance graph; therefore tolerant: no error.
             }
             Some(_) => {
                 errs.push(SpecValidationError::PrimaryKeyNotPrimaryKeyBase {
@@ -1332,22 +1329,22 @@ fn validate_home(
                 });
             }
             None => {
-                // Unresolved — Resolver meldet das separat.
+                // Unresolved — the resolver reports that separately.
             }
         }
     }
 }
 
-/// §7.4.11.4.1.1 — Porttype-Cycle-Detection (Multi-Hop).
+/// §7.4.11.4.1.1 — porttype cycle detection (multi-hop).
 ///
-/// Globaler DFS-Pass auf dem Porttype-Graph: jeder Porttype ist Knoten,
-/// Edges sind Provides/Uses/Port-Targets, deren Last-Segment ein
-/// bekannter Porttype-Name ist. Cycle-Detection via Three-Color-DFS
-/// (white/gray/black) — gray-Knoten waehrend Traversal markiert
-/// Back-Edge → Cycle.
+/// Global DFS pass on the porttype graph: each porttype is a node,
+/// edges are provides/uses/port targets whose last segment is a
+/// known porttype name. Cycle detection via three-color DFS
+/// (white/gray/black) — gray nodes during traversal mark a
+/// back-edge → cycle.
 fn validate_porttype_graph(summary: &SpecSummary, errs: &mut Vec<SpecValidationError>) {
     use std::collections::HashMap;
-    // Color: 0 = white (ungesehen), 1 = gray (auf Stack), 2 = black (fertig).
+    // Color: 0 = white (unseen), 1 = gray (on stack), 2 = black (done).
     let mut color: HashMap<&str, u8> = summary
         .porttype_edges
         .keys()
@@ -1381,8 +1378,8 @@ fn dfs_porttype<'a>(
     stack.push(node);
     if let Some((edges, _span)) = summary.porttype_edges.get(node) {
         for target in edges {
-            // Nur Edges zu bekannten Porttypes verfolgen — ein Edge zu
-            // einem Interface ist kein Porttype-Cycle-Beitrag.
+            // Only follow edges to known porttypes — an edge to
+            // an interface is not a porttype-cycle contribution.
             let Some(target_key) = summary
                 .porttype_edges
                 .keys()
@@ -1394,8 +1391,8 @@ fn dfs_porttype<'a>(
             match color.get(target_key).copied().unwrap_or(0) {
                 0 => dfs_porttype(target_key, summary, color, stack, reported, errs),
                 1 => {
-                    // Back-Edge: Cycle entdeckt. Pro Zyklus genau einen
-                    // Error melden (am ersten Knoten des Cycles im Stack).
+                    // Back-edge: cycle detected. Report exactly one
+                    // error per cycle (at the first node of the cycle in the stack).
                     if let Some(idx) = stack.iter().position(|n| *n == target_key) {
                         let cycle_root = stack[idx];
                         if reported.insert(cycle_root.to_string()) {
@@ -1418,10 +1415,10 @@ fn dfs_porttype<'a>(
     color.insert(node, 2);
 }
 
-/// §7.4.3.4.2 — Exception-Identifier darf nur in `raises`-Expressions
-/// auftreten, nicht als Member-Type von Struct/Union/Exception. Walke
-/// alle Struct/Union/Exception-Defs und pruefe pro Member, ob der
-/// TypeSpec auf eine bekannte Exception zeigt.
+/// §7.4.3.4.2 — an exception identifier may only appear in `raises` expressions,
+/// not as a member type of struct/union/exception. Walks
+/// all struct/union/exception defs and checks per member whether the
+/// TypeSpec points to a known exception.
 fn validate_exception_only_in_raises(
     spec: &Specification,
     summary: &SpecSummary,
@@ -1491,8 +1488,8 @@ fn validate_template_module(
     t: &crate::ast::TemplateModuleDcl,
     errs: &mut Vec<SpecValidationError>,
 ) {
-    // §7.4.12.4.1 — kein Template-Module darf in einem anderen
-    // Template-Module embeded werden, und kein Reopen.
+    // §7.4.12.4.1 — no template module may be embedded in another
+    // template module, and no reopen.
     let mut seen_modules: HashSet<String> = HashSet::new();
     for d in &t.definitions {
         match d {
@@ -1536,10 +1533,10 @@ mod tests {
         validate_pipeline(src, "test.idl")
     }
 
-    /// Voll-Pipeline durch Preprocessor, Lexer, Recognizer, Builder,
-    /// Resolver und `validate_all_with_pragmas`. Aktiviert die
-    /// `§7.4.6.4.1.3`-Repository-ID-Konflikt-Detection ueber den
-    /// Pragma-prefix-Side-Channel des Preprocessors.
+    /// Full pipeline through preprocessor, lexer, recognizer, builder,
+    /// resolver and `validate_all_with_pragmas`. Activates the
+    /// `§7.4.6.4.1.3` repository-ID conflict detection via the
+    /// pragma-prefix side channel of the preprocessor.
     fn validate_pipeline(src: &str, file_name: &str) -> Vec<SpecValidationError> {
         use crate::preprocessor::{MemoryResolver, Preprocessor};
         let resolver_files = MemoryResolver::default();
@@ -1650,9 +1647,9 @@ mod tests {
 
     #[test]
     fn rejects_truncatable_on_custom_value() {
-        // Custom kann syntaktisch in IDL nicht 'truncatable' tragen
-        // (Recognizer erlaubt es nicht im custom-header) — wir testen
-        // den Validator-Code-Path ueber abstract+truncatable.
+        // Custom cannot syntactically carry 'truncatable' in IDL
+        // (the recognizer does not allow it in the custom header) — we test
+        // the validator code path via abstract+truncatable.
         assert_error_matches(
             "abstract valuetype A {}; abstract valuetype B : truncatable A {};",
             |e| matches!(e, SpecValidationError::ValueInheritanceMatrixViolation { reason, .. } if reason.contains("truncatable")),
@@ -1768,19 +1765,19 @@ mod tests {
 
     #[test]
     fn accepts_import_of_module() {
-        // §7.4.6.4.1.4 Effekt 7: Module ist importable.
+        // §7.4.6.4.1.4 effect 7: a module is importable.
         assert_no_errors("module Foo {}; import Foo;", "import-module-ok");
     }
 
     #[test]
     fn accepts_import_of_interface() {
-        // §7.4.6.4.1.4 Effekt 7: Interface ist importable.
+        // §7.4.6.4.1.4 effect 7: an interface is importable.
         assert_no_errors("interface Foo {}; import Foo;", "import-interface-ok");
     }
 
     #[test]
     fn rejects_import_of_struct() {
-        // §7.4.6.4.1.4 Effekt 7: Struct ist KEIN importable name scope.
+        // §7.4.6.4.1.4 effect 7: a struct is NOT an importable name scope.
         assert_error_matches(
             "struct Foo { long x; }; import Foo;",
             |e| matches!(e, SpecValidationError::ImportSemanticViolation { violation, .. } if violation.contains("name scope")),
@@ -1790,7 +1787,7 @@ mod tests {
 
     #[test]
     fn rejects_import_of_const() {
-        // §7.4.6.4.1.4 Effekt 7: Const ist kein importable scope.
+        // §7.4.6.4.1.4 effect 7: a const is not an importable scope.
         assert_error_matches(
             "const long X = 1; import X;",
             |e| matches!(e, SpecValidationError::ImportSemanticViolation { violation, .. } if violation.contains("name scope")),
@@ -1800,8 +1797,8 @@ mod tests {
 
     #[test]
     fn rejects_module_redef_of_exposed_outer_scope() {
-        // §7.4.6.4.1.4 Effekt 5: `import A::B` exposes A, but does not
-        // import it. Subsequent `module A {}` darf A nicht reopen.
+        // §7.4.6.4.1.4 effect 5: `import A::B` exposes A, but does not
+        // import it. A subsequent `module A {}` must not reopen A.
         assert_error_matches(
             "module A { module B {}; }; import A::B; module A { struct S { long x; }; };",
             |e| {
@@ -1814,8 +1811,8 @@ mod tests {
 
     #[test]
     fn accepts_module_reopen_when_imported_directly() {
-        // §7.4.6.4.1.4 Effekt 3: `import A` macht A direkt importiert
-        // → Module-Reopen ist erlaubt.
+        // §7.4.6.4.1.4 effect 3: `import A` makes A directly imported
+        // → module reopen is allowed.
         assert_no_errors(
             "module A {}; import A; module A { struct S { long x; }; };",
             "imported-module-reopen-ok",
@@ -1825,7 +1822,7 @@ mod tests {
     #[test]
     fn rejects_pragma_prefix_vs_typeprefix_conflict() {
         // §7.4.6.4.1.3 — pragma prefix "company.com" + typeprefix M
-        // "other.com" → Repository-ID-Konflikt.
+        // "other.com" → repository-ID conflict.
         assert_error_matches(
             "#pragma prefix \"company.com\"\nmodule M {};\ntypeprefix M \"other.com\";",
             |e| matches!(e, SpecValidationError::RepositoryIdConflict { target, .. } if target == "M"),
@@ -1835,7 +1832,7 @@ mod tests {
 
     #[test]
     fn accepts_pragma_prefix_matching_typeprefix() {
-        // Wenn Pragma- und Typeprefix denselben Wert liefern, kein Konflikt.
+        // If pragma and typeprefix return the same value, no conflict.
         assert_no_errors(
             "#pragma prefix \"company.com\"\nmodule M {};\ntypeprefix M \"company.com\";",
             "pragma-typeprefix-equal",
@@ -1844,7 +1841,7 @@ mod tests {
 
     #[test]
     fn accepts_pragma_prefix_alone_without_typeprefix() {
-        // Nur pragma prefix, keine typeprefix-Decl → kein Konflikt.
+        // Only pragma prefix, no typeprefix decl → no conflict.
         assert_no_errors(
             "#pragma prefix \"company.com\"\nmodule M {};",
             "pragma-only",
@@ -1853,10 +1850,10 @@ mod tests {
 
     #[test]
     fn rejects_conflicting_typeprefixes_on_same_target() {
-        // Lücke 3 (User-Audit): Zwei typeprefix-Deklarationen auf
-        // demselben Target mit unterschiedlichen Werten — AST-interner
-        // Konflikt ohne Pragma. Spec §7.4.6.4.1.2 + §7.4.6.4.1.3:
-        // Repository-ID muss konsistent sein.
+        // Gap 3 (user audit): two typeprefix declarations on
+        // the same target with different values — AST-internal
+        // conflict without a pragma. Spec §7.4.6.4.1.2 + §7.4.6.4.1.3:
+        // repository ID must be consistent.
         assert_error_matches(
             "module M {};\ntypeprefix M \"company.com\";\ntypeprefix M \"other.com\";",
             |e| matches!(e, SpecValidationError::RepositoryIdConflict { target, .. } if target == "M"),
@@ -1866,9 +1863,9 @@ mod tests {
 
     #[test]
     fn validates_case_insensitivity_for_pragmas_vs_typeprefixes() {
-        // Lücke 1 (User-Audit): IDL ist case-insensitive (§7.2.3).
-        // Pragma auf "M", typeprefix auf "m" — selbes Modul; Konflikt
-        // muss erkannt werden trotz unterschiedlicher Schreibweise.
+        // Gap 1 (user audit): IDL is case-insensitive (§7.2.3).
+        // Pragma on "M", typeprefix on "m" — same module; the conflict
+        // must be detected despite the different spelling.
         assert_error_matches(
             "#pragma prefix \"company.com\"\nmodule M {};\ntypeprefix m \"other.com\";",
             |e| matches!(e, SpecValidationError::RepositoryIdConflict { .. }),
@@ -1878,7 +1875,7 @@ mod tests {
 
     #[test]
     fn rejects_exception_used_as_struct_member() {
-        // §7.4.3.4.2 — Exception darf nicht als Member-Type auftreten.
+        // §7.4.3.4.2 — an exception must not appear as a member type.
         assert_error_matches(
             "exception E { long y; }; struct S { E e; };",
             |e| matches!(e, SpecValidationError::ExceptionUsedAsMemberType { exception, .. } if exception == "E"),
@@ -1898,7 +1895,7 @@ mod tests {
 
     #[test]
     fn accepts_exception_in_raises_only() {
-        // Exception nur in raises-Expression — OK.
+        // Exception only in a raises expression — OK.
         assert_no_errors(
             "exception E {}; \
              interface I { void op() raises (E); };",
@@ -1908,8 +1905,8 @@ mod tests {
 
     #[test]
     fn accepts_template_module_import() {
-        // Lücke 2 (User-Audit): Template-Module ist ein valider
-        // Name-Scope und darf importiert werden (§7.4.6.4.1.4 Effekt 7).
+        // Gap 2 (user audit): a template module is a valid
+        // name scope and may be imported (§7.4.6.4.1.4 effect 7).
         assert_no_errors(
             "module MyTemplate<typename T> { typedef T A; };\nimport MyTemplate;",
             "template-module-import",
@@ -1918,8 +1915,8 @@ mod tests {
 
     #[test]
     fn accepts_typeprefix_alone_without_pragma_prefix() {
-        // Nur typeprefix, keine #pragma prefix → kein Konflikt-Pass-
-        // Trigger.
+        // Only typeprefix, no #pragma prefix → no conflict-pass
+        // trigger.
         assert_no_errors(
             "module M {};\ntypeprefix M \"company.com\";",
             "typeprefix-only",
@@ -1928,8 +1925,8 @@ mod tests {
 
     #[test]
     fn redundant_imports_are_silent() {
-        // §7.4.6.4.1.4 Effekt 8: redundante Imports werden ignoriert.
-        // `import A::B` + `import A::B` (oder Subset) → kein Error.
+        // §7.4.6.4.1.4 effect 8: redundant imports are ignored.
+        // `import A::B` + `import A::B` (or subset) → no error.
         assert_no_errors(
             "module A { module B {}; }; import A::B; import A::B;",
             "redundant-imports-silent",
@@ -1979,7 +1976,7 @@ mod tests {
 
     #[test]
     fn primary_key_must_inherit_primary_key_base_or_be_value() {
-        // Direkter Components::PrimaryKeyBase-Pfad: akzeptiert.
+        // Direct Components::PrimaryKeyBase path: accepted.
         assert_no_errors(
             "component C {}; home H manages C primarykey Components::PrimaryKeyBase {};",
             "primarykey=PKBase",
@@ -1997,7 +1994,7 @@ mod tests {
 
     #[test]
     fn rejects_component_inherit_from_forward_only() {
-        // Forward-Decl ohne Vollform; Inherit von Forward ist §7.4.8.4.3-Verstoss.
+        // Forward-decl without full form; inheriting from a forward is a §7.4.8.4.3 violation.
         assert_error_matches(
             "component Fwd; component Sub : Fwd {};",
             |e| matches!(e, SpecValidationError::ComponentForwardInherit { component, .. } if component == "Sub"),
@@ -2057,7 +2054,7 @@ mod tests {
 
     #[test]
     fn accepts_porttype_acyclic_chain() {
-        // A → B → C (terminal), kein Cycle
+        // A → B → C (terminal), no cycle
         assert_no_errors(
             "interface I {}; \
              porttype A { uses B b; provides I ia; }; \
@@ -2069,7 +2066,7 @@ mod tests {
 
     #[test]
     fn porttype_cycle_reports_one_error_per_cycle() {
-        // Diamond mit Zyklus: A → B → A + A → C; nur ein PorttypeCycle-Error.
+        // Diamond with cycle: A → B → A + A → C; only one PorttypeCycle error.
         let errs = validate_src(
             "interface I {}; \
              porttype A { uses B b; uses C c; provides I ia; }; \

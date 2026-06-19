@@ -26,7 +26,7 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-# Read-only XML parser fuer §10 Configuration-Schema-Loader.
-# Gleiche Dep wie crates/xml + crates/security-permissions — kein
+# Read-only XML parser for the §10 configuration schema loader.
+# Same dep as crates/xml + crates/security-permissions — no
 # zweites XML-Backend im Workspace.
 roxmltree = { workspace = true }

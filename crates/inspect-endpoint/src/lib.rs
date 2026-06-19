@@ -1,33 +1,33 @@
 //! ZeroDDS Inspect-Endpoint.
 //!
 //! Crate `zerodds-inspect-endpoint`. Safety classification: **STANDARD**.
-//! Debug-Tool-Crate, voll `#[cfg(feature = "inspect")]`-gated und
-//! `#![forbid(unsafe_code)]`. Im Release-Build (Feature aus) faellt
-//! der gesamte Tap-Mechanismus weg (R-099, C-021).
+//! Debug-tool crate, fully `#[cfg(feature = "inspect")]`-gated and
+//! `#![forbid(unsafe_code)]`. In the release build (feature off) the
+//! entire tap mechanism is dropped (R-099, C-021).
 //!
-//! Hidden God-Mode-Debug-Pfad (PDE-Spec R-097, C-020) fuer den
-//! externen Reality Inspector (zerodds-pde). Wenn das Cargo-Feature
-//! `inspect` **aus** ist, exportiert dieses Crate **keine** Funktionen
-//! die in den DDS-Hot-Path eingreifen — der gesamte Tap-Mechanismus
-//! ist `#[cfg(feature = "inspect")]`-gated und faellt im Release-Build
-//! weg (R-099, C-021).
+//! A hidden god-mode debug path (PDE spec R-097, C-020) for the
+//! external Reality Inspector (zerodds-pde). When the Cargo feature
+//! `inspect` is **off**, this crate exports **no** functions
+//! that touch the DDS hot path — the entire tap mechanism
+//! is `#[cfg(feature = "inspect")]`-gated and is dropped in the release build
+//! (R-099, C-021).
 //!
-//! ## Architektur
+//! ## Architecture
 //!
-//! - [`tap`] — Trait + Registry fuer Tap-Hooks an DCPS/RTPS/Transport.
-//! - [`frame`] — Wire-Frame fuer den Side-Channel.
-//! - [`auth`] — `cert.d`-Loader fuer X.509-PEM-Certs (R-100..R-104).
+//! - [`tap`] — trait + registry for tap hooks on DCPS/RTPS/transport.
+//! - [`frame`] — wire frame for the side channel.
+//! - [`auth`] — `cert.d` loader for X.509 PEM certs (R-100..R-104).
 //!
-//! ## Sicherheits-Invarianten
+//! ## Security invariants
 //!
-//! - **Ghost-Inject** (R-110): Inject-Funktionen sind separate API-
-//!   Pfade, sie publishen direkt in den DDS-Production-Datenpfad,
-//!   **ohne** durch die Tap-Hooks zu laufen. Dadurch sehen
-//!   Production-Taps den Inject NICHT — alte DDS-Stacks ohne Security
-//!   wuerden sonst chicken-out.
-//! - **Idle-Branch-Elision**: Tap-Hook-Aufrufe in dcps/rtps/transport
-//!   sind hinter `#[cfg(feature = "inspect")]` versteckt. Ohne
-//!   Feature kein Branch im Hot-Path.
+//! - **Ghost inject** (R-110): inject functions are separate API
+//!   paths; they publish directly into the DDS production data path,
+//!   **without** going through the tap hooks. As a result
+//!   production taps do NOT see the inject — old DDS stacks without security
+//!   would otherwise chicken out.
+//! - **Idle-branch elision**: tap-hook calls in dcps/rtps/transport
+//!   are hidden behind `#[cfg(feature = "inspect")]`. Without the
+//!   feature there is no branch in the hot path.
 
 #![cfg_attr(not(feature = "inspect"), allow(dead_code))]
 #![forbid(unsafe_code)]

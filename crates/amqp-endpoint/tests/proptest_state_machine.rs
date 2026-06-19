@@ -1,15 +1,15 @@
-//! Property-Tests fuer AMQP Connection-State-Machine.
+//! Property tests for the AMQP connection state machine.
 //!
-//! Spec OASIS amqp-1.0-transport §2.4 — semantische Invarianten:
-//! 1. **End ist absorbing:** Wenn der State `End` erreicht ist, MUSS
-//!    jeder weitere Frame ein `End` zurueckliefern oder mit einer
-//!    Fehler-Transition verworfen werden.
-//! 2. **Determinismus:** `advance_connection(s, f)` ist eine reine
-//!    Funktion — gleicher Input liefert gleichen Output.
-//! 3. **State-Walk-Sequence-Invariante:** zufaellige Sequenz von
-//!    Frames laesst die State-Machine entweder erfolgreich
-//!    durchlaufen ODER mit `IllegalStateTransition` ablehnen — nie
-//!    panic, nie undefiniertes Verhalten.
+//! Spec OASIS amqp-1.0-transport §2.4 — semantic invariants:
+//! 1. **End is absorbing:** once the state reaches `End`, every
+//!    further frame MUST return an `End` or be rejected with an
+//!    error transition.
+//! 2. **Determinism:** `advance_connection(s, f)` is a pure
+//!    function — the same input yields the same output.
+//! 3. **State-walk sequence invariant:** a random sequence of
+//!    frames either lets the state machine run through
+//!    successfully OR is rejected with `IllegalStateTransition` —
+//!    never a panic, never undefined behavior.
 
 #![allow(
     clippy::expect_used,
@@ -62,7 +62,7 @@ fn arb_frame() -> impl Strategy<Value = InboundFrameKind> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(512))]
 
-    /// Determinismus: gleicher Input liefert gleichen Output.
+    /// Determinism: the same input yields the same output.
     #[test]
     fn advance_is_deterministic(state in arb_state(), frame in arb_frame()) {
         let r1 = advance_connection(state, frame);
@@ -70,9 +70,9 @@ proptest! {
         prop_assert_eq!(r1, r2);
     }
 
-    /// Aus jedem State + Frame muss `advance_connection` entweder
-    /// ein Ok liefern oder ein IllegalStateTransition — niemals
-    /// panic, niemals andere Error-Varianten.
+    /// From every state + frame, `advance_connection` must return
+    /// either an Ok or an IllegalStateTransition — never a
+    /// panic, never other error variants.
     #[test]
     fn advance_returns_ok_or_illegal_transition(
         state in arb_state(),
@@ -86,10 +86,10 @@ proptest! {
         }
     }
 
-    /// State-Walk Robustness: zufaellige Frame-Sequenz von 0..50
-    /// Frames bringt die State-Machine nicht in einen panischen
-    /// Zustand. Jeder Schritt liefert entweder Ok(s) oder Err(...).
-    /// Nach Err bricht der Walk ab.
+    /// State-walk robustness: a random frame sequence of 0..50
+    /// frames does not put the state machine into a panicking
+    /// state. Each step returns either Ok(s) or Err(...).
+    /// After Err the walk aborts.
     #[test]
     fn random_frame_sequence_terminates_cleanly(
         frames in prop::collection::vec(arb_frame(), 0..50),
@@ -101,14 +101,14 @@ proptest! {
                 Err(_) => break,
             }
         }
-        // State erreicht — kein panic, kein unexpected.
+        // State reached — no panic, nothing unexpected.
         let _ = state;
     }
 
-    /// End-Absorbing-Invariant: die Spec laesst End als Terminal-
-    /// State; nach Close-Receive geht es zu CloseRcvd→End. Aus End
-    /// gibt es keinen valid forward-path; jeder weitere Frame MUSS
-    /// IllegalStateTransition liefern.
+    /// End-absorbing invariant: the spec leaves End as the terminal
+    /// state; after a Close receive it goes to CloseRcvd→End. From End
+    /// there is no valid forward path; every further frame MUST
+    /// return IllegalStateTransition.
     #[test]
     fn end_state_rejects_all_frames(frame in arb_frame()) {
         let result = advance_connection(ConnectionState::End, frame);
@@ -140,7 +140,7 @@ fn happy_path_close_walk() {
     let s = ConnectionState::Opened;
     let s = advance_connection(s, InboundFrameKind::Close).unwrap();
     assert_eq!(s, ConnectionState::CloseRcvd);
-    // Aus CloseRcvd geht jeder Frame zu End (cleanup-phase).
+    // From CloseRcvd every frame goes to End (cleanup phase).
     let s = advance_connection(s, InboundFrameKind::End).unwrap();
     assert_eq!(s, ConnectionState::End);
 }

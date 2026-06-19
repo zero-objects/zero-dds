@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! AST-Datentypen für Content-Filter-Expressions.
+//! AST data types for content-filter expressions.
 
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Ein evaluierbarer skalarer Wert. OMG erlaubt mehr Typen (char, etc.)
-/// — wir mappen hier bewusst eng auf die häufigsten Fälle.
+/// An evaluable scalar value. OMG allows more types (char, etc.) — we
+/// deliberately map narrowly to the most common cases here.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
-    /// String-Literal oder String-Feld.
+    /// String literal or string field.
     String(String),
-    /// Signed 64-bit Integer (mappt Rust `i8..i64` + `u8..u32`).
+    /// Signed 64-bit integer (maps Rust `i8..i64` + `u8..u32`).
     Int(i64),
-    /// Doppelte Genauigkeit (für `f32` + `f64`-Felder).
+    /// Double precision (for `f32` + `f64` fields).
     Float(f64),
     /// Boolean.
     Bool(bool),
 }
 
-/// Vergleichs-Operatoren.
+/// Comparison operators.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CmpOp {
     /// `=`
@@ -36,20 +36,20 @@ pub enum CmpOp {
     Gt,
     /// `>=`
     Ge,
-    /// `LIKE` — Wildcard-Vergleich (nur für Strings).
+    /// `LIKE` — wildcard comparison (only for strings).
     Like,
 }
 
-/// Ein Filter-Ausdruck. Rekursiver Baum, erzeugt vom [`crate::parse`].
+/// A filter expression. A recursive tree, produced by [`crate::parse`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    /// Kombinierter `AND`-Ausdruck.
+    /// Combined `AND` expression.
     And(Box<Expr>, Box<Expr>),
     /// Kombinierter `OR`-Ausdruck.
     Or(Box<Expr>, Box<Expr>),
     /// `NOT`-Negation.
     Not(Box<Expr>),
-    /// Vergleich zwischen zwei Operanden.
+    /// Comparison between two operands.
     Cmp {
         /// Linker Operand.
         lhs: Operand,
@@ -58,34 +58,34 @@ pub enum Expr {
         /// Rechter Operand.
         rhs: Operand,
     },
-    /// `field BETWEEN low AND high` (Spec §B.2.1 BetweenPredicate).
-    /// Equivalent zu `field >= low AND field <= high`. `negated = true`
-    /// fuer `NOT BETWEEN`.
+    /// `field BETWEEN low AND high` (spec §B.2.1 BetweenPredicate).
+    /// Equivalent to `field >= low AND field <= high`. `negated = true`
+    /// for `NOT BETWEEN`.
     Between {
-        /// Feld-Operand (links vom BETWEEN).
+        /// Field operand (left of BETWEEN).
         field: Operand,
-        /// Untere Grenze (inklusive).
+        /// Lower bound (inclusive).
         low: Operand,
-        /// Obere Grenze (inklusive).
+        /// Upper bound (inclusive).
         high: Operand,
         /// `NOT BETWEEN`?
         negated: bool,
     },
 }
 
-/// Ein Vergleichs-Operand: Literal, Feld-Referenz oder Parameter.
+/// A comparison operand: literal, field reference or parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Operand {
-    /// Konstantes Literal.
+    /// Constant literal.
     Literal(Value),
-    /// Feldzugriff, ggf. dotted (`a.b.c`).
+    /// Field access, possibly dotted (`a.b.c`).
     Field(String),
-    /// Positional Parameter `%N`.
+    /// Positional parameter `%N`.
     Param(u32),
 }
 
 impl Expr {
-    /// Rekursive Sub-Ausdruck-Anzahl (nützlich für Tests / Metriken).
+    /// Recursive sub-expression count (useful for tests / metrics).
     #[must_use]
     pub fn node_count(&self) -> usize {
         match self {
@@ -96,11 +96,11 @@ impl Expr {
         }
     }
 
-    /// Sammelt alle Parameter-Indices, die in der Expression vorkommen.
+    /// Collects all parameter indices that occur in the expression.
     #[must_use]
     pub fn collect_param_indices(&self) -> Vec<u32> {
-        /// zerodds-lint: recursion-depth = parse-tree-depth (≤ 64 durch
-        /// Parser-Input-Caps; keine unbounded Rekursion moeglich).
+        /// zerodds-lint: recursion-depth = parse-tree-depth (≤ 64 via
+        /// parser input caps; no unbounded recursion possible).
         fn walk(e: &Expr, out: &mut Vec<u32>) {
             match e {
                 Expr::And(a, b) | Expr::Or(a, b) => {

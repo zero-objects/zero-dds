@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Service-IDL → typisiertes Service-Datenmodell — Spec §7.4.
+//! Service IDL → typed service data model — Spec §7.4.
 //!
-//! Die DDS-RPC-Spec mappt eine IDL-Service-Definition
+//! The DDS-RPC spec maps an IDL service definition
 //!
 //! ```text
 //! @service interface Calculator {
@@ -12,25 +12,25 @@
 //! };
 //! ```
 //!
-//! auf zwei Wire-Strukturen pro Methode:
+//! onto two wire structures per method:
 //!
-//! * `<Service>_<Method>_In`  — Request-Payload (alle `in`/`inout`).
-//! * `<Service>_<Method>_Out` — Reply-Payload (Return + `out`/`inout`).
+//! * `<Service>_<Method>_In`  — request payload (all `in`/`inout`).
+//! * `<Service>_<Method>_Out` — reply payload (return + `out`/`inout`).
 //!
-//! Diese Foundation-Stufe (C6.1.A) stellt nur das **Datenmodell** dar
-//! ([`ServiceDef`], [`MethodDef`], [`ParamDef`]). Die eigentliche
-//! Codegen-Stufe (C6.1.B) konsumiert das Modell und emittiert IDL-
-//! Strukturen + Rust-Bindings.
+//! This foundation stage (C6.1.A) represents only the **data model**
+//! ([`ServiceDef`], [`MethodDef`], [`ParamDef`]). The actual
+//! codegen stage (C6.1.B) consumes the model and emits IDL
+//! structures + Rust bindings.
 //!
-//! Das Modell wird per [`lower_service`] aus einem `zerodds_idl::ast::
-//! InterfaceDef` plus den bereits typisierten RPC-Annotations
-//! ([`crate::annotations::LoweredRpc`]) konstruiert. Validierung in
-//! dieser Stufe:
+//! The model is constructed via [`lower_service`] from a `zerodds_idl::ast::
+//! InterfaceDef` plus the already-typed RPC annotations
+//! ([`crate::annotations::LoweredRpc`]). Validation at
+//! this stage:
 //!
-//! * Service-Name ist nicht-leer + alphanumerisch + `_`.
-//! * Methoden-Namen sind eindeutig.
-//! * Parameter-Namen pro Methode sind eindeutig.
-//! * `oneway`-Methoden haben `void`-Return und keine `out`/`inout`-Params.
+//! * The service name is non-empty + alphanumeric + `_`.
+//! * Method names are unique.
+//! * Parameter names per method are unique.
+//! * `oneway` methods have a `void` return and no `out`/`inout` params.
 
 extern crate alloc;
 
@@ -43,7 +43,7 @@ use crate::annotations::{LoweredRpc, lower_rpc_annotations};
 use crate::error::{RpcError, RpcResult};
 use crate::topic_naming::{ServiceTopicNames, validate_service_name};
 
-/// Direction-Attribut eines RPC-Parameters.
+/// Direction attribute of an RPC parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParamDirection {
     /// `in` — Request-only.
@@ -65,22 +65,22 @@ impl From<ParamAttribute> for ParamDirection {
 }
 
 impl ParamDirection {
-    /// `true` wenn Parameter im Request-Topic landet (`in` oder `inout`).
+    /// `true` if the parameter lands in the request topic (`in` or `inout`).
     #[must_use]
     pub const fn is_in(self) -> bool {
         matches!(self, Self::In | Self::InOut)
     }
 
-    /// `true` wenn Parameter im Reply-Topic landet (`out` oder `inout`).
+    /// `true` if the parameter lands in the reply topic (`out` or `inout`).
     #[must_use]
     pub const fn is_out(self) -> bool {
         matches!(self, Self::Out | Self::InOut)
     }
 }
 
-/// Type-Referenz im Service-Modell. In Foundation-Stufe ist das nur ein
-/// Re-Use des AST-`TypeSpec` — Phase C6.1.B kann hier ein resolviertes
-/// Type-Objekt einsetzen.
+/// Type reference in the service model. At the foundation stage this is only a
+/// re-use of the AST `TypeSpec` — phase C6.1.B can insert a resolved
+/// type object here.
 pub type TypeRef = TypeSpec;
 
 /// Ein RPC-Parameter.
@@ -94,65 +94,65 @@ pub struct ParamDef {
     pub type_ref: TypeRef,
 }
 
-/// Eine RPC-Methode.
+/// An RPC method.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MethodDef {
-    /// Methoden-Name.
+    /// Method name.
     pub name: String,
-    /// Parameter in Deklarations-Reihenfolge.
+    /// Parameters in declaration order.
     pub params: Vec<ParamDef>,
-    /// Return-Type. `None` bei `void`.
+    /// Return type. `None` for `void`.
     pub return_type: Option<TypeRef>,
-    /// `true` wenn `oneway` (kein Reply, nur `in`-Params, void-Return).
+    /// `true` if `oneway` (no reply, only `in` params, void return).
     pub oneway: bool,
 }
 
 impl MethodDef {
-    /// Alle `in`/`inout`-Parameter (Request-Felder).
+    /// All `in`/`inout` parameters (request fields).
     pub fn in_params(&self) -> impl Iterator<Item = &ParamDef> {
         self.params.iter().filter(|p| p.direction.is_in())
     }
 
-    /// Alle `out`/`inout`-Parameter (Reply-Felder).
+    /// All `out`/`inout` parameters (reply fields).
     pub fn out_params(&self) -> impl Iterator<Item = &ParamDef> {
         self.params.iter().filter(|p| p.direction.is_out())
     }
 }
 
-/// Eine RPC-Service-Definition.
+/// An RPC service definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServiceDef {
-    /// Effektiver Service-Name (`@service(name="...")` oder Interface-Name).
+    /// Effective service name (`@service(name="...")` or interface name).
     pub name: String,
-    /// Methoden.
+    /// Methods.
     pub methods: Vec<MethodDef>,
 }
 
 impl ServiceDef {
-    /// Liefert die zugehoerigen Topic-Namen (`<svc>_Request` / `<svc>_Reply`).
+    /// Returns the associated topic names (`<svc>_Request` / `<svc>_Reply`).
     ///
     /// # Errors
-    /// Sollte nicht passieren — `lower_service` validiert den Namen
-    /// bereits. Defensiv trotzdem propagiert.
+    /// Should not happen — `lower_service` already validates the name.
+    /// Propagated defensively nonetheless.
     pub fn topic_names(&self) -> RpcResult<ServiceTopicNames> {
         ServiceTopicNames::new(&self.name)
     }
 }
 
-/// Lowert eine IDL-Service-Definition in das typisierte Service-Modell.
+/// Lowers an IDL service definition into the typed service model.
 ///
-/// Erwartet, dass die Annotations des Interface bereits per
-/// [`lower_rpc_annotations`] vorgelowert wurden. Wenn `@service` nicht
-/// gesetzt ist, wird der Interface-Name als Service-Name benutzt.
+/// Expects that the interface's annotations have already been
+/// pre-lowered via [`lower_rpc_annotations`]. If `@service` is not
+/// set, the interface name is used as the service name.
 ///
 /// # Errors
-/// * `RpcError::InvalidServiceName` bei leerem oder ungueltigem Namen.
-/// * `RpcError::InvalidMethodName` bei leerem Methoden-Namen.
-/// * `RpcError::OnewayWithReturn` / `OnewayWithOutParam` bei
+/// * `RpcError::InvalidServiceName` for an empty or invalid name.
+/// * `RpcError::InvalidMethodName` for an empty method name.
+/// * `RpcError::OnewayWithReturn` / `OnewayWithOutParam` on
 ///   inkonsistenten oneway-Deklarationen.
-/// * `RpcError::DuplicateMethod` / `DuplicateParam` bei Namens-Kollisionen.
+/// * `RpcError::DuplicateMethod` / `DuplicateParam` on name collisions.
 pub fn lower_service(iface: &InterfaceDef, lowered: &LoweredRpc) -> RpcResult<ServiceDef> {
-    // Service-Name aus @service(name="...") oder Interface-Name.
+    // Service name from @service(name="...") or the interface name.
     let svc_name = lowered
         .service_name()
         .map(ToString::to_string)
@@ -164,9 +164,9 @@ pub fn lower_service(iface: &InterfaceDef, lowered: &LoweredRpc) -> RpcResult<Se
         if let Export::Op(op) = export {
             methods.push(lower_method(op)?);
         }
-        // Andere Exports (Attr/Type/Const/Except) sind in C6.1.A explizit
-        // out-of-scope — exceptions werden in C6.1.B als RemoteException-
-        // Carrier modelliert.
+        // Other exports (Attr/Type/Const/Except) are explicitly
+        // out-of-scope in C6.1.A — exceptions are modeled in C6.1.B as
+        // RemoteException carriers.
     }
 
     // Duplicate-Method-Check.
@@ -190,9 +190,9 @@ fn lower_method(op: &OpDecl) -> RpcResult<MethodDef> {
         return Err(RpcError::InvalidMethodName(name));
     }
 
-    // Annotation-Lowering der Methoden-Annotations: `@oneway` als
-    // Annotation-Form muss aequivalent zum AST-`oneway`-Keyword
-    // behandelt werden.
+    // Annotation lowering of the method annotations: `@oneway` in
+    // annotation form must be treated equivalently to the AST `oneway`
+    // keyword.
     let method_anns = lower_rpc_annotations(&op.annotations);
     let oneway = op.oneway || method_anns.has_oneway();
 
@@ -204,8 +204,8 @@ fn lower_method(op: &OpDecl) -> RpcResult<MethodDef> {
 
     let mut params = Vec::with_capacity(op.params.len());
     for p in &op.params {
-        // Param-Annotation `@in/@out/@inout` ueberschreibt das native
-        // ParamAttribute, falls explizit gesetzt.
+        // Param annotation `@in/@out/@inout` overrides the native
+        // ParamAttribute, if explicitly set.
         let p_anns = lower_rpc_annotations(&p.annotations);
         let direction = override_direction(p.attribute, &p_anns);
 
@@ -299,6 +299,7 @@ mod tests {
             return_type: ret,
             params,
             raises: Vec::new(),
+            context: Vec::new(),
             annotations: anns,
             span: sp(),
         }
@@ -431,7 +432,7 @@ mod tests {
 
     #[test]
     fn oneway_via_annotation_recognized() {
-        // Native oneway=false, aber @oneway-Annotation gesetzt.
+        // Native oneway=false, but @oneway annotation set.
         let m = op("ping", false, None, Vec::new(), vec![ann_simple("oneway")]);
         let i = iface("Svc", vec![Export::Op(m)], Vec::new());
         let lowered = lower_rpc_annotations(&i.annotations);
@@ -486,7 +487,7 @@ mod tests {
 
     #[test]
     fn service_name_from_annotation_overrides_iface_name() {
-        // @service(name="OuterName") gewinnt ueber den Interface-Namen.
+        // @service(name="OuterName") wins over the interface name.
         let i = iface(
             "InternalIface",
             Vec::new(),
@@ -549,7 +550,7 @@ mod tests {
 
     #[test]
     fn param_annotation_in_overrides_native_attr() {
-        // ParamAttribute::Out, aber @in-Annotation -> @in gewinnt.
+        // ParamAttribute::Out, but @in annotation -> @in wins.
         let mut p = param("v", ParamAttribute::Out, long_t());
         p.annotations.push(ann_simple("in"));
         let m = op("foo", false, None, vec![p], Vec::new());
@@ -561,8 +562,8 @@ mod tests {
 
     #[test]
     fn non_op_exports_are_ignored() {
-        // Const-Exports sollen das Service-Modell nicht stoeren — sie
-        // werden in C6.1.A explizit nicht abgebildet.
+        // Const exports should not disturb the service model — they
+        // are explicitly not represented in C6.1.A.
         let const_decl = zerodds_idl::ast::ConstDecl {
             name: ident("MAX"),
             type_: zerodds_idl::ast::ConstType::Integer(IntegerType::Long),

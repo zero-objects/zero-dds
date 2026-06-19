@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Smoke-Test fuer `#[derive(DdsType)]`.
+//! Smoke test for `#[derive(DdsType)]`.
 //!
-//! Verifiziert dass eine Plain-`struct` mit `#[derive(DdsType)]` einen
-//! validen `impl DdsType` bekommt der byte-genau encoded/decodet —
-//! dasselbe Wire-Format wie idl-rust-Codegen liefert.
+//! Verifies that a plain `struct` with `#[derive(DdsType)]` gets a
+//! valid `impl DdsType` that encodes/decodes byte-exact — the same
+//! wire format that the idl-rust codegen produces.
 
 #![allow(
     clippy::expect_used,

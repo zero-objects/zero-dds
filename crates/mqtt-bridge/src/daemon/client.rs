@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! MQTT-5-Client gegen externen Broker. Spec §4.1-§4.3.
+//! MQTT-5 client against an external broker. Spec §4.1-§4.3.
 //!
-//! Synchrone Implementation auf `std::net::TcpStream`. Sendet
-//! CONNECT, wartet auf CONNACK; danach im Loop SUBSCRIBE +
-//! PUBLISH-In/Out.
+//! Synchronous implementation on `std::net::TcpStream`. Sends
+//! CONNECT, waits for CONNACK; then SUBSCRIBE +
+//! PUBLISH in/out in a loop.
 //!
-//! Nicht alle MQTT-5-Properties werden bedient — der Daemon braucht
-//! nur die Spec §4-Pflicht-Surface. Reconnect-Backoff ist als
-//! Hook angelegt, in dieser Daemon-Variante aber nicht aktiv (das
-//! Top-Level-Server-Loop kann den Client erneut starten).
+//! Not all MQTT-5 properties are served — the daemon needs
+//! only the Spec §4 mandatory surface. Reconnect backoff is laid out
+//! as a hook but is not active in this daemon variant (the
+//! top-level server loop can restart the client).
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -32,14 +32,14 @@ use super::config::DaemonConfig;
 #[cfg(feature = "daemon")]
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 
-/// Fehler beim Client-Lifecycle.
+/// Error during the client lifecycle.
 #[derive(Debug)]
 pub enum ClientError {
-    /// TCP-/IO-Error.
+    /// TCP/IO error.
     Io(String),
-    /// Wire-Codec-Error.
+    /// Wire-codec error.
     Codec(String),
-    /// Broker antwortete mit CONNACK-Reason >= 0x80.
+    /// Broker answered with a CONNACK reason >= 0x80.
     ConnAck {
         /// Spec §3.2.2.2 reason-code.
         reason: u8,
@@ -58,30 +58,30 @@ impl core::fmt::Display for ClientError {
 
 impl std::error::Error for ClientError {}
 
-/// Inbound-Event vom Broker — der Caller behandelt PUBLISH-Frames
-/// als DDS-Writes.
+/// Inbound event from the broker — the caller handles PUBLISH frames
+/// as DDS writes.
 #[derive(Debug, Clone)]
 pub enum InboundEvent {
-    /// PUBLISH von einem anderen MQTT-Client.
+    /// PUBLISH from another MQTT client.
     Publish {
-        /// MQTT-Topic.
+        /// MQTT topic.
         topic: String,
         /// Payload.
         payload: Vec<u8>,
-        /// QoS-Level.
+        /// QoS level.
         qos: u8,
     },
-    /// Verbindung verloren.
+    /// Connection lost.
     Disconnected(String),
 }
 
-/// Connection-Stream-Variant fuer die MQTT-Client-Schicht. Plain-TCP
-/// vs. TLS-wrapped (Spec §7.1 — `mqtts://`-Pfad).
+/// Connection-stream variant for the MQTT client layer. Plain TCP
+/// vs. TLS-wrapped (Spec §7.1 — `mqtts://` path).
 #[cfg(feature = "daemon")]
 pub(crate) enum MqttStream {
-    /// Plain TCP — `tls_enabled=false` oder `mqtt://`.
+    /// Plain TCP — `tls_enabled=false` or `mqtt://`.
     Plain(TcpStream),
-    /// Client-Side TLS-Stream mit owned Connection + Socket.
+    /// Client-side TLS stream with an owned connection + socket.
     Tls(Box<StreamOwned<ClientConnection, TcpStream>>),
 }
 
@@ -137,25 +137,25 @@ impl Write for MqttStream {
     }
 }
 
-/// MQTT-5-Client. Verwaltet einen TCP- oder TLS-wrapped Stream + Wire-Loop.
+/// MQTT-5 client. Manages a TCP or TLS-wrapped stream + wire loop.
 pub struct MqttClient {
     #[cfg(feature = "daemon")]
     stream: MqttStream,
     #[cfg(not(feature = "daemon"))]
     stream: TcpStream,
-    /// Naechster zu vergebender Packet-Identifier.
+    /// Next packet identifier to allocate.
     next_packet_id: u16,
 }
 
 impl MqttClient {
-    /// Verbindet zum Broker, sendet CONNECT, blockt auf CONNACK.
-    /// Wenn `tls_client_cfg = Some(...)` wird der TCP-Stream nach
-    /// dem connect mit rustls gewrappt (Spec §7.1).
+    /// Connects to the broker, sends CONNECT, blocks on CONNACK.
+    /// If `tls_client_cfg = Some(...)` the TCP stream is wrapped with
+    /// rustls after the connect (Spec §7.1).
     ///
     /// # Errors
-    /// `Io` bei TCP-/Read-/Write-Fehler. `ConnAck` wenn der Broker
-    /// die Connection mit reason >= 0x80 ablehnt. `Codec` bei
-    /// Frame-Decode-Fehler.
+    /// `Io` on TCP/read/write error. `ConnAck` if the broker
+    /// rejects the connection with reason >= 0x80. `Codec` on
+    /// a frame-decode error.
     #[cfg(feature = "daemon")]
     pub fn connect_secure(
         host: &str,
@@ -236,14 +236,14 @@ impl MqttClient {
     }
 
     fn send_connect(&mut self, cfg: &DaemonConfig) -> Result<(), ClientError> {
-        // Spec §7.2 — Out-Bound-Credentials werden nach `auth.mode`
-        // berechnet (bearer/sasl/sasl_plain/none); legacy `username`/
-        // `password` bleibt als Fallback.
+        // Spec §7.2 — outbound credentials are computed by `auth.mode`
+        // (bearer/sasl/sasl_plain/none); legacy `username`/
+        // `password` remains as a fallback.
         #[cfg(feature = "daemon")]
         let (user, pass) = {
             let (u, p) = super::security::outbound_credentials(cfg);
-            // Falls auth.mode=none aber legacy `username`/`password`
-            // gesetzt ist: nimm legacy.
+            // If auth.mode=none but legacy `username`/`password`
+            // is set: use legacy.
             let u = u.or_else(|| cfg.username.clone());
             let p = p.or_else(|| cfg.password.as_ref().map(|s| s.as_bytes().to_vec()));
             (u, p)
@@ -305,8 +305,8 @@ impl MqttClient {
         Ok(())
     }
 
-    /// SUBSCRIBE auf alle uebergebenen Topic-Filter mit dem
-    /// gewuenschten QoS.
+    /// SUBSCRIBE to all the given topic filters with the
+    /// desired QoS.
     ///
     /// # Errors
     /// IO/Codec.
@@ -365,12 +365,12 @@ impl MqttClient {
         Ok(())
     }
 
-    /// Blocking-Read fuer einen Inbound-Event. Returned `None` bei
-    /// Read-Timeout (Caller kann polling-Loop bauen + Stop-Flag
-    /// pruefen).
+    /// Blocking read for an inbound event. Returns `None` on a
+    /// read timeout (the caller can build a polling loop + check a stop
+    /// flag).
     ///
     /// # Errors
-    /// IO/Codec — fuer EOF/closed-Stream returnen wir
+    /// IO/Codec — for EOF/closed stream we return
     /// `Disconnected`.
     pub fn next_event(&mut self) -> Result<Option<InboundEvent>, ClientError> {
         let (header, body) = match self.read_packet_nonblocking() {
@@ -409,7 +409,7 @@ impl MqttClient {
             | ControlPacketType::PubRel
             | ControlPacketType::PubComp
             | ControlPacketType::PingResp => {
-                // Acks ignorieren — fuer L1-Pflichten reicht das.
+                // Ignore acks — that's enough for the L1 obligations.
                 Ok(None)
             }
             ControlPacketType::Disconnect => Ok(Some(InboundEvent::Disconnected(
@@ -419,7 +419,7 @@ impl MqttClient {
         }
     }
 
-    /// Sendet DISCONNECT mit Reason 0x00 und schliesst den Stream.
+    /// Sends DISCONNECT with reason 0x00 and closes the stream.
     pub fn graceful_disconnect(mut self) {
         let body = DisconnectBody {
             reason_code: 0,
@@ -450,12 +450,12 @@ impl MqttClient {
     }
 
     fn read_packet(&mut self) -> Result<(FixedHeader, Vec<u8>), ClientError> {
-        // Blocking — Read-Timeout vom set_read_timeout greift.
+        // Blocking — the read timeout from set_read_timeout applies.
         self.read_packet_inner()
     }
 
     fn read_packet_nonblocking(&mut self) -> Result<(FixedHeader, Vec<u8>), ClientError> {
-        // Mit set_read_timeout liefert Read::read einen Err(WouldBlock|TimedOut).
+        // With set_read_timeout, Read::read returns an Err(WouldBlock|TimedOut).
         self.read_packet_inner()
     }
 
@@ -523,17 +523,17 @@ fn wrap_packet(
     Ok(out)
 }
 
-/// Backoff-Konfiguration fuer Reconnect-Versuche.
+/// Backoff configuration for reconnect attempts.
 /// Spec `zerodds-mqtt-bridge-1.0` §9.3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BackoffConfig {
-    /// Initialer Backoff (z.B. 100 ms).
+    /// Initial backoff (e.g. 100 ms).
     pub initial_ms: u64,
-    /// Max. Backoff (z.B. 30 s).
+    /// Max. backoff (e.g. 30 s).
     pub max_ms: u64,
-    /// Multiplikator pro Fehlversuch (z.B. 2).
+    /// Multiplier per failed attempt (e.g. 2).
     pub multiplier: u64,
-    /// Max. Versuche (`u32::MAX` = unendlich).
+    /// Max. attempts (`u32::MAX` = infinite).
     pub max_attempts: u32,
 }
 
@@ -549,8 +549,8 @@ impl Default for BackoffConfig {
 }
 
 impl BackoffConfig {
-    /// Berechne den Delay fuer Versuch `attempt` (0-basiert).
-    /// Cap bei `max_ms`.
+    /// Computes the delay for attempt `attempt` (0-based).
+    /// Capped at `max_ms`.
     #[must_use]
     pub fn delay_for(&self, attempt: u32) -> Duration {
         let mut d = self.initial_ms;
@@ -565,11 +565,11 @@ impl BackoffConfig {
     }
 }
 
-/// Verbindet zum Broker mit Exponential-Backoff.
+/// Connects to the broker with exponential backoff.
 /// Spec `zerodds-mqtt-bridge-1.0` §9.3.
 ///
 /// # Errors
-/// Letzter `ClientError` wenn `max_attempts` erschoepft sind.
+/// The last `ClientError` if `max_attempts` is exhausted.
 pub fn connect_with_backoff(
     host: &str,
     port: u16,
@@ -594,11 +594,11 @@ pub fn connect_with_backoff(
     Err(last_err)
 }
 
-/// Verbindet zum Broker mit Backoff + optionalem TLS-Wrap (Spec §7.1).
+/// Connects to the broker with backoff + an optional TLS wrap (Spec §7.1).
 /// Spec `zerodds-mqtt-bridge-1.0` §9.3 + §7.1.
 ///
 /// # Errors
-/// Letzter `ClientError` wenn `max_attempts` erschoepft sind.
+/// The last `ClientError` if `max_attempts` is exhausted.
 #[cfg(feature = "daemon")]
 pub fn connect_secure_with_backoff(
     host: &str,
@@ -625,9 +625,9 @@ pub fn connect_secure_with_backoff(
     Err(last_err)
 }
 
-/// Aux: Run-Loop fuer den Client-Thread, der Inbound-Events
-/// abholt. Beendet sich wenn `stop` gesetzt wird oder der Stream
-/// disconnected.
+/// Aux: run loop for the client thread that fetches inbound
+/// events. Terminates when `stop` is set or the stream
+/// disconnects.
 pub fn run_inbound_loop<F>(mut client: MqttClient, stop: Arc<AtomicBool>, mut on_event: F)
 where
     F: FnMut(InboundEvent),
@@ -656,7 +656,7 @@ mod tests {
 
     #[test]
     fn backoff_config_default_increments_exponentially() {
-        // Spec §9.3: initial=100ms, mult=2 -> Folge 100, 200, 400, 800, ...
+        // Spec §9.3: initial=100ms, mult=2 -> sequence 100, 200, 400, 800, ...
         let b = BackoffConfig::default();
         assert_eq!(b.delay_for(0), Duration::from_millis(100));
         assert_eq!(b.delay_for(1), Duration::from_millis(200));
@@ -704,9 +704,8 @@ mod tests {
         assert_eq!(f[0] & 0x0F, 0b0010);
     }
 
-    // Hinweis: PID-Wrap-Logik ist pure-fn auf `MqttClient::next_pid`,
-    // wir koennen sie ohne TcpStream nicht direkt testen ohne den
-    // Constructor zu refactoren. Der Wrap-Pfad ist via E2E-Test
-    // (broker akzeptiert mehrere SUBSCRIBE/PUBLISH ohne Crash)
-    // indirekt abgedeckt.
+    // Note: the PID-wrap logic is a pure fn on `MqttClient::next_pid`,
+    // we cannot test it directly without a TcpStream without refactoring
+    // the constructor. The wrap path is covered indirectly via the E2E test
+    // (the broker accepts multiple SUBSCRIBE/PUBLISH without a crash).
 }

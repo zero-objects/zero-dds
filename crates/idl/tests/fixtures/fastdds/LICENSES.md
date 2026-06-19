@@ -1,11 +1,11 @@
-# Fast-DDS-Fixture-Lizenzen
+# Fast-DDS fixture licenses
 
-Die IDL-Files in diesem Verzeichnis sind **nicht** aus dem eProsima
-Fast-DDS Repo kopiert. Sie sind handgepflegte Repraesentanten typischer
-Fast-DDS-IDL-Konstrukte (OMG-Standard-IDL-4.2 + Standard-Annotations
-@final/@mutable/@key/@id/@optional) fuer Grammar-Coverage-Tests.
+The IDL files in this directory are **not** copied from the eProsima
+Fast-DDS repo. They are hand-maintained representatives of typical
+Fast-DDS IDL constructs (OMG standard IDL 4.2 + standard annotations
+@final/@mutable/@key/@id/@optional) for grammar-coverage tests.
 
-Fast-DDS nutzt ueberwiegend Standard-IDL — diese Fixtures parsen mit
-der Base-Grammar (`IDL_42`) ohne Delta.
+Fast-DDS mostly uses standard IDL — these fixtures parse with
+the base grammar (`IDL_42`) without a delta.
 
-Lizenz: dieselbe Lizenz wie das umgebende `zerodds-idl`-Crate.
+License: the same license as the surrounding `zerodds-idl` crate.

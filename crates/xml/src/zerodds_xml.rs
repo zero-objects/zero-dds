@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Top-Level Building-Block-Loader fuer DDS-XML 1.0.
+//! Top-level building-block loader for DDS-XML 1.0.
 //!
-//! Aggregiert die vier Library-Typen (QoS, Domain, Domain-Participant,
-//! Application) aus einem einzelnen `<dds>`-Root-Element zu einem
-//! [`DdsXml`]-Snapshot. Bietet Cross-Library-Resolve-Helper, die einen
-//! Participant inkl. seiner Inheritance-Kette und der referenzierten
-//! Domain-/Topic-/QoS-Items aufloesen.
+//! Aggregates the four library types (QoS, Domain, Domain-Participant,
+//! Application) from a single `<dds>` root element into a
+//! [`DdsXml`] snapshot. Provides cross-library resolve helpers that
+//! resolve a participant incl. its inheritance chain and the referenced
+//! domain/topic/QoS items.
 //!
-//! Spec-Quellen: OMG DDS-XML 1.0 §7.3.2 - §7.3.6 zusammen.
+//! Spec sources: OMG DDS-XML 1.0 §7.3.2 - §7.3.6 together.
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -30,142 +30,142 @@ use crate::resolver::parse_library_ref;
 use crate::xtypes_def::{TypeDef, TypeLibrary};
 use crate::xtypes_parser::parse_types_element;
 
-/// Aggregierter Top-Level-Snapshot eines `<dds>`-Dokuments.
+/// Aggregated top-level snapshot of a `<dds>` document.
 ///
-/// Alle vier Library-Typen aus DDS-XML 1.0 §7.3.2-7.3.6 sind hier in
-/// ihrer geparsten Form versammelt. Cross-Library-Verweise werden
-/// **lazily** beim Aufruf der `resolve_*`-Methoden aufgeloest — der
-/// Konstruktor macht nur Wohlgeformtheits- und Schema-Pruefung.
+/// All four library types from DDS-XML 1.0 §7.3.2-7.3.6 are gathered here
+/// in their parsed form. Cross-library references are resolved
+/// **lazily** when the `resolve_*` methods are called — the
+/// constructor only performs well-formedness and schema checks.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DdsXml {
-    /// Alle `<qos_library>`-Eintraege.
+    /// All `<qos_library>` entries.
     pub qos_libraries: Vec<QosLibrary>,
-    /// Alle `<domain_library>`-Eintraege.
+    /// All `<domain_library>` entries.
     pub domain_libraries: Vec<DomainLibrary>,
-    /// Alle `<domain_participant_library>`-Eintraege.
+    /// All `<domain_participant_library>` entries.
     pub participant_libraries: Vec<DomainParticipantLibrary>,
-    /// Alle `<application_library>`-Eintraege.
+    /// All `<application_library>` entries.
     pub application_libraries: Vec<ApplicationLibrary>,
-    /// Alle `<types>`-Top-Level-Bloecke (Spec §7.3.3).
+    /// All `<types>` top-level blocks (Spec §7.3.3).
     pub type_libraries: Vec<TypeLibrary>,
 }
 
-/// Aufgeloester Snapshot eines Domain-Participants nach Anwendung von:
-/// 1. Multi-Level `base_name`-Inheritance (Participant-Kette).
-/// 2. Domain-Lookup ueber `domain_ref`.
-/// 3. Topic-Lookup ueber `topic_ref` der Children-Writer/Reader.
-/// 4. Optional: QoS-Profile-Materialisierung wenn `qos_profile_ref`
-///    gesetzt war oder Inline-QoS via Inheritance gemergt wurde.
+/// Resolved snapshot of a domain participant after applying:
+/// 1. Multi-level `base_name` inheritance (participant chain).
+/// 2. Domain lookup via `domain_ref`.
+/// 3. Topic lookup via `topic_ref` of the children writers/readers.
+/// 4. Optional: QoS profile materialization when `qos_profile_ref`
+///    was set or inline QoS was merged via inheritance.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResolvedParticipant {
-    /// Voller Lookup-Pfad (`library::name`).
+    /// Full lookup path (`library::name`).
     pub lookup_path: String,
-    /// Effektiver Name.
+    /// Effective name.
     pub name: String,
-    /// Aufgeloeste numerische Domain-ID.
+    /// Resolved numeric domain ID.
     pub domain_id: u32,
-    /// Voller Domain-Snapshot inkl. Topics + Type-Registrierungen.
+    /// Full domain snapshot incl. topics + type registrations.
     pub domain: DomainEntry,
-    /// Inheritance-Kette der Participant-Definition (base-first).
+    /// Inheritance chain of the participant definition (base-first).
     pub inheritance_chain: Vec<String>,
-    /// Effektives Participant-QoS nach Merge der Kette.
+    /// Effective participant QoS after merging the chain.
     pub qos: Option<EntityQos>,
-    /// Aufgeloeste Topic-Verweise.
+    /// Resolved topic references.
     pub topics: Vec<ResolvedTopic>,
-    /// Aufgeloeste Publishers.
+    /// Resolved publishers.
     pub publishers: Vec<ResolvedPublisher>,
-    /// Aufgeloeste Subscribers.
+    /// Resolved subscribers.
     pub subscribers: Vec<ResolvedSubscriber>,
 }
 
-/// Aufgeloester Topic-Snapshot.
+/// Resolved topic snapshot.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResolvedTopic {
-    /// Topic-Name.
+    /// Topic name.
     pub name: String,
-    /// Type-Name (aus `register_type_ref` der Domain).
+    /// Type name (from the domain's `register_type_ref`).
     pub type_name: String,
-    /// Effektives Topic-QoS (Inline aus Topic, oder via `qos_profile_ref`,
-    /// oder `None` wenn nichts gesetzt).
+    /// Effective topic QoS (inline from the topic, or via `qos_profile_ref`,
+    /// or `None` if nothing is set).
     pub qos: Option<EntityQos>,
-    /// Topic-Filter-Glob.
+    /// Topic filter glob.
     pub topic_filter: Option<String>,
 }
 
-/// Aufgeloester Publisher-Snapshot.
+/// Resolved publisher snapshot.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResolvedPublisher {
-    /// Publisher-Name.
+    /// Publisher name.
     pub name: String,
-    /// Effektives Publisher-QoS (oder vom Participant geerbt).
+    /// Effective publisher QoS (or inherited from the participant).
     pub qos: Option<EntityQos>,
-    /// Aufgeloeste DataWriter.
+    /// Resolved DataWriters.
     pub data_writers: Vec<ResolvedDataWriter>,
 }
 
-/// Aufgeloester Subscriber-Snapshot.
+/// Resolved subscriber snapshot.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResolvedSubscriber {
-    /// Subscriber-Name.
+    /// Subscriber name.
     pub name: String,
-    /// Effektives Subscriber-QoS (oder vom Participant geerbt).
+    /// Effective subscriber QoS (or inherited from the participant).
     pub qos: Option<EntityQos>,
-    /// Aufgeloeste DataReader.
+    /// Resolved DataReaders.
     pub data_readers: Vec<ResolvedDataReader>,
 }
 
-/// Aufgeloester DataWriter-Snapshot.
+/// Resolved DataWriter snapshot.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResolvedDataWriter {
-    /// Writer-Name.
+    /// Writer name.
     pub name: String,
-    /// Aufgeloeste Topic-Referenz.
+    /// Resolved topic reference.
     pub topic: ResolvedTopic,
-    /// Effektives Writer-QoS (Inline ueber Inheritance, oder Publisher-QoS,
-    /// oder via `qos_profile_ref`).
+    /// Effective writer QoS (inline via inheritance, or publisher QoS,
+    /// or via `qos_profile_ref`).
     pub qos: Option<EntityQos>,
 }
 
-/// Aufgeloester DataReader-Snapshot.
+/// Resolved DataReader snapshot.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResolvedDataReader {
-    /// Reader-Name.
+    /// Reader name.
     pub name: String,
-    /// Aufgeloeste Topic-Referenz.
+    /// Resolved topic reference.
     pub topic: ResolvedTopic,
-    /// Effektives Reader-QoS.
+    /// Effective reader QoS.
     pub qos: Option<EntityQos>,
 }
 
-/// Adapter-Trait fuer das Anbinden eines aufgeloesten Participants an ein
-/// echtes DCPS-`DomainParticipantFactory`. Dieses Crate implementiert
-/// **bewusst nur das Trait-Skelett** — eine konkrete Wire-Up-Implementation
-/// lebt in einem separaten Crate (z.B. `zerodds-dcps-xml-bridge`), um die
-/// Schicht-Disziplin (`zerodds-xml` haengt **nicht** von `zerodds-dcps` ab) zu
-/// wahren.
+/// Adapter trait for binding a resolved participant to a
+/// real DCPS `DomainParticipantFactory`. This crate
+/// **deliberately implements only the trait skeleton** — a concrete wire-up
+/// implementation lives in a separate crate (e.g. `zerodds-dcps-xml-bridge`),
+/// to preserve the layer discipline (`zerodds-xml` does **not** depend on
+/// `zerodds-dcps`).
 ///
-/// Spec-Bezug: DDS-XML 1.0 §7.3.5 (Domain Participant Library) liefert
-/// die Konfiguration; die Anbindung an die DDS 1.4 §2.2.2 DCPS-Factory
-/// ist Aufgabe des hoeher liegenden Adapters.
+/// Spec reference: DDS-XML 1.0 §7.3.5 (Domain Participant Library) provides
+/// the configuration; binding to the DDS 1.4 §2.2.2 DCPS factory
+/// is the task of the higher-level adapter.
 pub trait ParticipantFactoryAdapter {
-    /// Wende einen aufgeloesten Participant-Snapshot auf einen DCPS-
-    /// Factory an. Ein Adapter MUSS:
-    /// 1. Das `DomainParticipant`-Objekt mit `domain_id` erzeugen,
-    /// 2. Topics und ihre Type-Registrierungen anlegen,
-    /// 3. Publishers/Subscribers mit den effektiven QoS instanziieren,
-    /// 4. DataWriters/DataReaders an die Topics binden.
+    /// Apply a resolved participant snapshot to a DCPS
+    /// factory. An adapter MUST:
+    /// 1. Create the `DomainParticipant` object with `domain_id`,
+    /// 2. Create the topics and their type registrations,
+    /// 3. Instantiate publishers/subscribers with the effective QoS,
+    /// 4. Bind DataWriters/DataReaders to the topics.
     ///
     /// # Errors
     /// Implementation-defined.
     fn apply(&self, participant: &ResolvedParticipant) -> Result<(), XmlError>;
 }
 
-/// Convenience-Funktion: leitet einen aufgeloesten Participant an einen
-/// Adapter durch. Die Implementation ist Trivial-Forwarding und existiert
-/// nur, damit die Top-Level-API ergonomisch ist.
+/// Convenience function: forwards a resolved participant to an
+/// adapter. The implementation is trivial forwarding and exists
+/// only to make the top-level API ergonomic.
 ///
 /// # Errors
-/// Wie [`ParticipantFactoryAdapter::apply`].
+/// As [`ParticipantFactoryAdapter::apply`].
 pub fn apply_to_factory(
     participant: &ResolvedParticipant,
     factory: &dyn ParticipantFactoryAdapter,
@@ -173,16 +173,16 @@ pub fn apply_to_factory(
     factory.apply(participant)
 }
 
-/// Parsed ein vollstaendiges `<dds>`-Dokument und liefert den aggregierten
-/// Building-Block-Snapshot.
+/// Parses a complete `<dds>` document and returns the aggregated
+/// building-block snapshot.
 ///
-/// Akzeptiert Dokumente, die *jede beliebige Untermenge* der vier Library-
-/// Typen enthalten — auch ein leeres `<dds/>` ist ein valides Dokument.
+/// Accepts documents that contain *any arbitrary subset* of the four library
+/// types — even an empty `<dds/>` is a valid document.
 ///
 /// # Errors
-/// * [`XmlError::InvalidXml`] — keine `<dds>`-Wurzel oder XML nicht
-///   wohlgeformt.
-/// * Weitere Fehler aus den Per-Library-Decoder-Pfaden.
+/// * [`XmlError::InvalidXml`] — no `<dds>` root or XML not
+///   well-formed.
+/// * Further errors from the per-library decoder paths.
 pub fn parse_dds_xml(xml: &str) -> Result<DdsXml, XmlError> {
     let doc = parse_xml_tree(xml)?;
     if doc.root.name != "dds" {
@@ -214,11 +214,11 @@ pub fn parse_dds_xml(xml: &str) -> Result<DdsXml, XmlError> {
 }
 
 impl DdsXml {
-    /// Lookup eines Participants ueber `library::participant`-Pfad.
+    /// Looks up a participant via the `library::participant` path.
     ///
     /// # Errors
-    /// [`XmlError::UnresolvedReference`] wenn Library oder Participant
-    /// fehlt.
+    /// [`XmlError::UnresolvedReference`] if the library or participant
+    /// is missing.
     pub fn find_participant(&self, path: &str) -> Result<&DomainParticipantEntry, XmlError> {
         let r = parse_library_ref(path)?;
         if !r.is_qualified() {
@@ -237,10 +237,10 @@ impl DdsXml {
             .ok_or_else(|| XmlError::UnresolvedReference(format!("participant `{path}`")))
     }
 
-    /// Lookup einer Domain ueber `library::name`.
+    /// Looks up a domain via `library::name`.
     ///
     /// # Errors
-    /// [`XmlError::UnresolvedReference`] wenn Library oder Domain fehlt.
+    /// [`XmlError::UnresolvedReference`] if the library or domain is missing.
     pub fn find_domain(&self, path: &str) -> Result<&DomainEntry, XmlError> {
         let r = parse_library_ref(path)?;
         if !r.is_qualified() {
@@ -259,13 +259,13 @@ impl DdsXml {
             .ok_or_else(|| XmlError::UnresolvedReference(format!("domain `{path}`")))
     }
 
-    /// Loest einen Participant inklusive seiner Inheritance-Kette,
-    /// referenzierter Domain, Topics und QoS-Profile auf.
+    /// Resolves a participant including its inheritance chain,
+    /// referenced domain, topics and QoS profiles.
     ///
     /// # Errors
-    /// * [`XmlError::UnresolvedReference`] — Verweis nicht auffindbar.
-    /// * [`XmlError::CircularInheritance`] — `base_name`-Zyklus.
-    /// * [`XmlError::LimitExceeded`] — Inheritance-Tiefe > 32.
+    /// * [`XmlError::UnresolvedReference`] — reference not found.
+    /// * [`XmlError::CircularInheritance`] — `base_name` cycle.
+    /// * [`XmlError::LimitExceeded`] — inheritance depth > 32.
     pub fn resolve_participant(&self, path: &str) -> Result<ResolvedParticipant, XmlError> {
         let r = parse_library_ref(path)?;
         if !r.is_qualified() {
@@ -275,7 +275,7 @@ impl DdsXml {
         }
         let canonical = format!("{}::{}", r.library, r.name);
 
-        // Inheritance-Kette aufloesen.
+        // Resolve the inheritance chain.
         let chain = resolve_chain(&canonical, |key| {
             let kr = parse_library_ref(key)?;
             let lib = self
@@ -297,7 +297,7 @@ impl DdsXml {
             }))
         })?;
 
-        // Felder durch Merge der Kette aufloesen (base-first).
+        // Resolve fields by merging the chain (base-first).
         let mut domain_ref: Option<String> = None;
         let mut qos: Option<EntityQos> = None;
         let mut publishers: Vec<PublisherEntry> = Vec::new();
@@ -329,12 +329,12 @@ impl DdsXml {
         })?;
         let domain = self.find_domain(&dref)?.clone();
 
-        // Topics: nur die explizit referenzierten (per `<topic ref="…"/>`)
-        // werden in den ResolvedParticipant uebernommen. Wenn keine
-        // `topics_ref` vorhanden sind, werden ALLE Topics der Domain
-        // als implizit verfuegbar betrachtet (Spec §7.3.5.4.2 erlaubt
-        // beide Lesarten — Annex C zeigt explizite Selektion; Cyclone
-        // und FastDDS treten implizit alle Topics zur Verfuegung).
+        // Topics: only the explicitly referenced ones (via `<topic ref="…"/>`)
+        // are taken into the ResolvedParticipant. If no
+        // `topics_ref` are present, ALL topics of the domain are
+        // considered implicitly available (Spec §7.3.5.4.2 allows
+        // both readings — Annex C shows explicit selection; Cyclone
+        // and FastDDS make all topics implicitly available).
         let topics: Vec<ResolvedTopic> = if topics_ref.is_empty() {
             domain
                 .topics
@@ -389,7 +389,7 @@ impl DdsXml {
         topic: &TopicEntry,
         domain: &DomainEntry,
     ) -> Result<ResolvedTopic, XmlError> {
-        // type-name ueber register_type_ref aufloesen.
+        // resolve the type name via register_type_ref.
         let rt = domain
             .register_type(&topic.register_type_ref)
             .ok_or_else(|| {
@@ -398,7 +398,7 @@ impl DdsXml {
                     topic.register_type_ref
                 ))
             })?;
-        // QoS: Inline gewinnt; sonst qos_profile_ref aufloesen.
+        // QoS: inline wins; otherwise resolve qos_profile_ref.
         let qos: Option<EntityQos> = if let Some(q) = &topic.topic_qos {
             Some(q.clone())
         } else if let Some(profile_ref) = &topic.qos_profile_ref {
@@ -500,11 +500,11 @@ impl DdsXml {
         })
     }
 
-    /// Loest einen Type-Namen (`Module::Sub::Type` oder bare `Type`) ueber
-    /// alle [`Self::type_libraries`] auf.
+    /// Resolves a type name (`Module::Sub::Type` or bare `Type`) over
+    /// all [`Self::type_libraries`].
     ///
-    /// Bei mehreren passenden Eintraegen wird der erste in
-    /// Dokument-Reihenfolge geliefert.
+    /// On multiple matching entries, the first in
+    /// document order is returned.
     #[must_use]
     pub fn resolve_type(&self, name: &str) -> Option<&TypeDef> {
         let parts: Vec<&str> = name.split("::").collect();
@@ -516,11 +516,11 @@ impl DdsXml {
         None
     }
 
-    /// Loest eine Application auf zu einer Liste von ResolvedParticipants
-    /// (1+ Eintraege pro `<application>`).
+    /// Resolves an application into a list of ResolvedParticipants
+    /// (1+ entries per `<application>`).
     ///
     /// # Errors
-    /// Wie [`Self::resolve_participant`].
+    /// As [`Self::resolve_participant`].
     pub fn resolve_application(&self, path: &str) -> Result<Vec<ResolvedParticipant>, XmlError> {
         let r = parse_library_ref(path)?;
         if !r.is_qualified() {
@@ -565,9 +565,9 @@ where
     }
 }
 
-/// zerodds-lint: recursion-depth = anzahl `::`-Segmente im Lookup-Pfad +
-/// Modul-Schachtelungstiefe (durch `MAX_TOTAL_ELEMENTS`-DoS-Cap der
-/// XML-Foundation effektiv beschraenkt; realistisch ≤ 16).
+/// zerodds-lint: recursion-depth = number of `::` segments in the lookup path +
+/// module nesting depth (effectively bounded by the `MAX_TOTAL_ELEMENTS` DoS cap
+/// of the XML foundation; realistically ≤ 16).
 fn walk_types<'a>(types: &'a [TypeDef], parts: &[&str]) -> Option<&'a TypeDef> {
     if parts.is_empty() {
         return None;

@@ -31,11 +31,12 @@ Pure-Python-Module
 PyO3-Extension-Module ``zerodds._core``
 ---------------------------------------
 
-Die 13 DCPS-PyClasses werden bei Doc-Build per ``autodoc_mock_imports``
-gemockt (das Extension-Module ``zerodds._core`` ist bei Sphinx-Doc-Build
-nicht zwingend kompiliert). Vollstaendige Methoden-Signaturen entstehen
-beim Doc-Build, wenn ``maturin develop --features extension-module``
-vorab gelaufen ist; dann wird ``autodoc_mock_imports`` ueberschrieben.
+The 13 DCPS PyClasses are mocked during the doc build via
+``autodoc_mock_imports`` (the extension module ``zerodds._core`` is not
+necessarily compiled during the Sphinx doc build). Full method
+signatures are produced during the doc build when
+``maturin develop --features extension-module`` has been run
+beforehand; then ``autodoc_mock_imports`` is overridden.
 
 ``DomainParticipantFactory``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -83,7 +84,7 @@ vorab gelaufen ist; dann wird ``autodoc_mock_imports`` ueberschrieben.
    :undoc-members:
 
 ``ShapeTopic`` / ``ShapeWriter`` / ``ShapeReader`` / ``Shape``
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. autoclass:: zerodds.ShapeTopic
    :members:

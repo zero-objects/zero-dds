@@ -1,0 +1,13 @@
+host,transport,ping,pong,payload,domain,n,min,p50,p90,p99,p999,max,status
+codepit,UDPv4,cyclone,cyclone,0,101,50,34.175,35.557,40.486,44.855,44.855,59.272,ok
+codepit,UDPv4,fastdds,fastdds,0,102,50,52.6,57.83,88.508,99.418,99.418,100.05,ok
+codepit,UDPv4,rti,rti,0,103,50,36.008,48.793,67.969,74.792,74.792,134.434,ok
+codepit,UDPv4,opendds,opendds,0,104,50,442.368,684.175,997.92,1132.38,1132.38,1212.77,ok
+codepit,UDPv6,cyclone,cyclone,0,105,50,34.957,36.439,41.538,70.293,70.293,87.386,ok
+codepit,UDPv6,fastdds,fastdds,0,106,50,33.293,44.404,72.256,115.118,115.118,132.962,ok
+codepit,UDPv6,rti,rti,0,107,0,,,,,,,timeout(rc=0)
+codepit,UDPv6,opendds,opendds,0,108,50,102.464,242.029,250.193,266.184,266.184,280.451,ok
+codepit,SHM,cyclone,cyclone,0,109,0,,,,,,,timeout(rc=134)
+codepit,SHM,fastdds,fastdds,0,110,50,26.36,27.192,31.55,39.144,39.144,48.863,ok
+codepit,SHM,rti,rti,0,111,50,33.082,36.419,65.284,79.701,79.701,129.285,ok
+codepit,SHM,opendds,opendds,0,112,50,121.229,126.72,187.235,238.352,238.352,750.421,ok

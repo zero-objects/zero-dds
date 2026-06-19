@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CosTypedEventComm + CosTypedEventChannelAdmin — Spec §2.
+//! CosTypedEventComm + CosTypedEventChannelAdmin — spec §2.
 //!
-//! Im typed-Modus haben Events einen festen IDL-Interface-Type und
-//! der Channel ruft die Operations direkt am Consumer auf (statt
-//! `push(any)`). Die `get_typed_consumer`/`get_typed_supplier`-
-//! Operations geben Object-References vom IDL-Interface-Type zurueck.
+//! In typed mode events have a fixed IDL interface type and the
+//! channel calls the operations directly on the consumer (instead of
+//! `push(any)`). The `get_typed_consumer`/`get_typed_supplier`
+//! operations return object references of the IDL interface type.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -16,18 +16,18 @@ use std::sync::Mutex;
 
 use crate::comm::Disconnected;
 
-/// Typed-Operation-Argument-Form.
+/// Typed operation argument form.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypedInvocation {
-    /// Operation-Name (Wire-Form).
+    /// Operation name (wire form).
     pub operation: String,
-    /// CDR-encoded Argumente.
+    /// CDR-encoded arguments.
     pub args: Vec<u8>,
 }
 
-/// TypedPushConsumer-Trait — Spec §2.4.
+/// TypedPushConsumer trait — spec §2.4.
 pub trait TypedPushConsumer: Send + Sync {
-    /// Generischer Dispatch fuer einen Operation-Aufruf.
+    /// Generic dispatch for an operation call.
     ///
     /// # Errors
     /// `Disconnected`.
@@ -37,27 +37,27 @@ pub trait TypedPushConsumer: Send + Sync {
     fn disconnect(&self);
 }
 
-/// TypedPushSupplier-Trait — Spec §2.5.
+/// TypedPushSupplier trait — spec §2.5.
 pub trait TypedPushSupplier: Send + Sync {
     /// `disconnect_push_supplier`.
     fn disconnect(&self);
 }
 
-/// TypedPullSupplier-Trait — Spec §2.5.2.
+/// TypedPullSupplier trait — spec §2.5.2.
 ///
-/// Im Pull-Modus zieht der Consumer aktiv Operations vom Supplier;
-/// `try_pull` liefert sofort (oder leeres Result), `pull` blockiert
-/// bis ein Event ankommt.
+/// In pull mode the consumer actively pulls operations from the
+/// supplier; `try_pull` returns immediately (or an empty result),
+/// `pull` blocks until an event arrives.
 pub trait TypedPullSupplier: Send + Sync {
-    /// `pull` — blockiert bis Event vorliegt; liefert dann die
-    /// CDR-encoded Operation-Args.
+    /// `pull` — blocks until an event is available; then returns the
+    /// CDR-encoded operation args.
     ///
     /// # Errors
     /// `Disconnected`.
     fn pull(&self) -> Result<TypedInvocation, Disconnected>;
 
-    /// `try_pull` — non-blocking. `Ok(Some(_))` wenn Event vorlag,
-    /// `Ok(None)` bei leerer Queue.
+    /// `try_pull` — non-blocking. `Ok(Some(_))` if an event was
+    /// available, `Ok(None)` for an empty queue.
     ///
     /// # Errors
     /// `Disconnected`.
@@ -71,10 +71,10 @@ pub trait TypedPullSupplier: Send + Sync {
 // §2.7.2-§2.7.5 Typed Admin + Proxy Interfaces
 // ---------------------------------------------------------------------------
 
-/// Spec §2.7.2 — TypedConsumerAdmin Interface.
+/// Spec §2.7.2 — TypedConsumerAdmin interface.
 ///
-/// Der TypedConsumerAdmin verwaltet die Subscriptions der
-/// Push-Consumers fuer einen typed-EventChannel.
+/// The TypedConsumerAdmin manages the subscriptions of the
+/// push consumers for a typed EventChannel.
 #[derive(Default)]
 pub struct TypedConsumerAdmin {
     consumers: Mutex<BTreeMap<String, Vec<Arc<dyn TypedPushConsumer>>>>,
@@ -87,22 +87,22 @@ impl core::fmt::Debug for TypedConsumerAdmin {
 }
 
 impl TypedConsumerAdmin {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Spec §2.7.4 — `obtain_typed_pull_supplier(repo_id)`.
-    /// Wir liefern hier den Sub-Slot fuer Pull-Suppliers (Caller
-    /// implementiert `TypedPullSupplier`-Trait).
+    /// Here we provide the sub-slot for pull suppliers (the caller
+    /// implements the `TypedPullSupplier` trait).
     pub fn register_consumer(&self, repo_id: &str, c: Arc<dyn TypedPushConsumer>) {
         if let Ok(mut g) = self.consumers.lock() {
             g.entry(repo_id.to_string()).or_default().push(c);
         }
     }
 
-    /// Anzahl registrierter Consumers fuer einen Type.
+    /// Number of registered consumers for a type.
     pub fn consumer_count(&self, repo_id: &str) -> usize {
         self.consumers
             .lock()
@@ -111,7 +111,7 @@ impl TypedConsumerAdmin {
     }
 }
 
-/// Spec §2.7.3 — TypedSupplierAdmin Interface.
+/// Spec §2.7.3 — TypedSupplierAdmin interface.
 #[derive(Default)]
 pub struct TypedSupplierAdmin {
     pull_suppliers: Mutex<BTreeMap<String, Vec<Arc<dyn TypedPullSupplier>>>>,
@@ -124,21 +124,21 @@ impl core::fmt::Debug for TypedSupplierAdmin {
 }
 
 impl TypedSupplierAdmin {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Spec §2.7.5 — `obtain_typed_pull_supplier(repo_id)`-Slot.
+    /// Spec §2.7.5 — `obtain_typed_pull_supplier(repo_id)` slot.
     pub fn register_pull_supplier(&self, repo_id: &str, s: Arc<dyn TypedPullSupplier>) {
         if let Ok(mut g) = self.pull_suppliers.lock() {
             g.entry(repo_id.to_string()).or_default().push(s);
         }
     }
 
-    /// Spec §2.7.5 — `try_pull` ueber alle registrierten Suppliers.
-    /// Liefert das erste verfuegbare Event (oder `None`).
+    /// Spec §2.7.5 — `try_pull` across all registered suppliers.
+    /// Returns the first available event (or `None`).
     pub fn try_pull(&self, repo_id: &str) -> Option<TypedInvocation> {
         let suppliers = match self.pull_suppliers.lock() {
             Ok(g) => g.get(repo_id).cloned().unwrap_or_default(),
@@ -152,7 +152,7 @@ impl TypedSupplierAdmin {
         None
     }
 
-    /// Anzahl registrierter Pull-Suppliers fuer einen Type.
+    /// Number of registered pull suppliers for a type.
     pub fn supplier_count(&self, repo_id: &str) -> usize {
         self.pull_suppliers
             .lock()
@@ -161,14 +161,14 @@ impl TypedSupplierAdmin {
     }
 }
 
-/// TypedEventChannel — Spec §2.6 / §2.7.1.
+/// TypedEventChannel — spec §2.6 / §2.7.1.
 pub struct TypedEventChannel {
-    /// Map von Repository-ID auf registrierte Consumers.
+    /// Map from repository ID to registered consumers.
     consumers: Mutex<BTreeMap<String, Vec<Arc<dyn TypedPushConsumer>>>>,
-    /// Spec §2.7.1 — Admin-Splits.
+    /// Spec §2.7.1 — admin splits.
     consumer_admin: Arc<TypedConsumerAdmin>,
     supplier_admin: Arc<TypedSupplierAdmin>,
-    /// Spec §2.7.1 — `destroy`-Marker.
+    /// Spec §2.7.1 — `destroy` marker.
     destroyed: std::sync::atomic::AtomicBool,
 }
 
@@ -185,7 +185,7 @@ impl core::fmt::Debug for TypedEventChannel {
 }
 
 impl TypedEventChannel {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -196,15 +196,15 @@ impl TypedEventChannel {
         }
     }
 
-    /// Registriert einen Consumer unter einem `Repository-ID`-Type.
+    /// Registers a consumer under a `Repository-ID` type.
     pub fn register_consumer(&self, repo_id: &str, c: Arc<dyn TypedPushConsumer>) {
         if let Ok(mut g) = self.consumers.lock() {
             g.entry(repo_id.to_string()).or_default().push(c);
         }
     }
 
-    /// Versendet eine Operation an alle Consumers eines Types.
-    /// Liefert die Anzahl der erreichten Consumers.
+    /// Dispatches an operation to all consumers of a type.
+    /// Returns the number of consumers reached.
     pub fn dispatch(&self, repo_id: &str, op: &TypedInvocation) -> usize {
         if self.destroyed.load(std::sync::atomic::Ordering::Acquire) {
             return 0;
@@ -222,7 +222,7 @@ impl TypedEventChannel {
         count
     }
 
-    /// Anzahl registrierter Consumers fuer einen Type.
+    /// Number of registered consumers for a type.
     pub fn consumer_count(&self, repo_id: &str) -> usize {
         self.consumers
             .lock()
@@ -242,14 +242,14 @@ impl TypedEventChannel {
         Arc::clone(&self.supplier_admin)
     }
 
-    /// Spec §2.7.1 — `destroy()`. Setzt die Channel in einen
-    /// "destroyed"-Zustand; weitere `dispatch`-Aufrufe sind no-ops.
+    /// Spec §2.7.1 — `destroy()`. Puts the channel into a
+    /// "destroyed" state; further `dispatch` calls are no-ops.
     pub fn destroy(&self) {
         self.destroyed
             .store(true, std::sync::atomic::Ordering::Release);
     }
 
-    /// `true` wenn `destroy()` aufgerufen wurde.
+    /// `true` if `destroy()` has been called.
     #[must_use]
     pub fn is_destroyed(&self) -> bool {
         self.destroyed.load(std::sync::atomic::Ordering::Acquire)
@@ -260,24 +260,23 @@ impl TypedEventChannel {
 // §3.1.2-§3.1.3 Lightweight Profile (CosLightweightEventComm + Channel)
 // ---------------------------------------------------------------------------
 
-/// Spec §3.1.2 — `CosLightweightEventComm` Profile (subset von
+/// Spec §3.1.2 — `CosLightweightEventComm` profile (subset of
 /// §2.1).
 ///
-/// Wir betrachten das Lightweight-Profile als denselben Push-Pfad
-/// wie [`TypedPushConsumer`], aber mit reduzierten Operations
-/// (kein `disconnect`-Lifecycle in der Mini-Variante; Channel-
-/// destroy reicht). Der Profile-Marker macht das auf Code-Niveau
-/// sichtbar.
+/// We treat the lightweight profile as the same push path as
+/// [`TypedPushConsumer`], but with reduced operations (no `disconnect`
+/// lifecycle in the mini variant; channel destroy is enough). The
+/// profile marker makes this visible at the code level.
 pub mod lightweight {
-    /// Spec §3.1.2 — Marker-Konstante.
+    /// Spec §3.1.2 — marker constant.
     pub const PROFILE_NAME: &str = "CosLightweightEventComm";
 
     /// Spec §3.1.3 — `CosLightweightEventChannel`.
     pub const CHANNEL_PROFILE_NAME: &str = "CosLightweightEventChannel";
 
-    /// `true` wenn der Caller den Lightweight-Profile-Modus aktiv
-    /// signalisieren will (vereinfachte Subscription-Pfade ohne
-    /// expliziten `disconnect` per Channel-Lifecycle).
+    /// `true` if the caller wants to actively signal lightweight
+    /// profile mode (simplified subscription paths without an
+    /// explicit `disconnect` via the channel lifecycle).
     #[must_use]
     pub fn is_lightweight(profile_name: &str) -> bool {
         profile_name == PROFILE_NAME || profile_name == CHANNEL_PROFILE_NAME
@@ -402,7 +401,7 @@ mod tests {
             if !self.connected.load(Ordering::Acquire) {
                 return Err(Disconnected);
             }
-            // Block-frei wir simulieren mit busy-wait-frei via try_pull
+            // Non-blocking: we simulate without busy-wait via try_pull
             self.try_pull()?.ok_or(Disconnected)
         }
         fn try_pull(&self) -> Result<Option<TypedInvocation>, Disconnected> {

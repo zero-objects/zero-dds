@@ -1,11 +1,11 @@
-//! §8.2 ABI-Compat-Snapshot-Test.
+//! §8.2 ABI compat snapshot test.
 //!
-//! Vergleicht den aktuellen Symbol-Surface von `include/zerodds.h` gegen
-//! `tests/abi.snapshot.json`. Schlägt fehl, sobald eine Funktion entfernt
-//! oder umbenannt wurde — additive Änderungen sind erlaubt (Minor-Bump-
-//! Semantik per `zerodds-c-api-1.0` §7).
+//! Compares the current symbol surface of `include/zerodds.h` against
+//! `tests/abi.snapshot.json`. Fails as soon as a function is removed
+//! or renamed — additive changes are allowed (minor-bump
+//! semantics per `zerodds-c-api-1.0` §7).
 //!
-//! Snapshot wird durch Setzen von `ZERODDS_ABI_REGENERATE=1` neu geschrieben.
+//! The snapshot is rewritten by setting `ZERODDS_ABI_REGENERATE=1`.
 
 #![allow(
     clippy::expect_used,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! PropertyList Wire-Format fuer `PID_PROPERTY_LIST` (0x0059).
+//! PropertyList wire format for `PID_PROPERTY_LIST` (0x0059).
 //!
 //! Spec OMG DDS-Security 1.1 §7.2.1 + DDSI-RTPS 2.5 §9.6.4:
 //! ```text
@@ -15,20 +15,20 @@
 //! ```text
 //!   u32  n_props
 //!   [ Property ] * n_props
-//!   u32  n_binary         // immer 0 fuer unsere Zwecke
+//!   u32  n_binary         // always 0 for our purposes
 //!
 //! Property:
 //!   align 4
-//!   u32  name_len         // inkl. null-terminator
+//!   u32  name_len         // incl. null terminator
 //!   u8   name[name_len]
 //!   align 4
 //!   u32  value_len
 //!   u8   value[value_len]
 //! ```
 //!
-//! Dieses Modul ist **Wire-only** — es kennt keine Security-Semantik
-//! (propagate-Flag, Plugin-Klassen, etc.). Die Policy-Schicht
-//! ([`zerodds-security-runtime`]) baut auf diesem Wire-Typ auf.
+//! This module is **wire-only** — it knows no security semantics
+//! (propagate flag, plugin classes, etc.). The policy layer
+//! ([`zerodds-security-runtime`]) builds on this wire type.
 
 extern crate alloc;
 use alloc::string::{String, ToString};
@@ -36,28 +36,28 @@ use alloc::vec::Vec;
 
 use crate::error::WireError;
 
-/// DoS-Cap fuer die Anzahl Properties in einer PropertyList (amplifiziert
-/// sonst via SPDP-Broadcast). 1024 passt fuer jede realistische
-/// Security-Plugin-Konfiguration.
+/// DoS cap for the number of properties in a PropertyList (otherwise
+/// amplified via SPDP broadcast). 1024 fits any realistic
+/// security-plugin configuration.
 pub const MAX_PROPERTIES: usize = 1_024;
 
-/// DoS-Cap fuer die Laenge von name+value in Bytes (verhindert einen
-/// Peer, der eine einzelne 4-GiB-Property schickt).
+/// DoS cap for the length of name+value in bytes (prevents a
+/// peer from sending a single 4-GiB property).
 pub const MAX_PROPERTY_STRING_LEN: usize = 64 * 1024;
 
-/// Ein einzelner Property-Eintrag auf dem Wire. Beide Felder sind
-/// UTF-8-Strings ohne inneren Null-Byte (Spec-Constraint des
-/// CDR-String-Typs).
+/// A single property entry on the wire. Both fields are
+/// UTF-8 strings without an inner null byte (spec constraint of the
+/// CDR string type).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct WireProperty {
-    /// Name (reverse-DNS Convention, z.B. `dds.sec.auth.plugin_class`).
+    /// Name (reverse-DNS convention, e.g. `dds.sec.auth.plugin_class`).
     pub name: String,
-    /// Wert (opaker UTF-8-String).
+    /// Value (opaque UTF-8 string).
     pub value: String,
 }
 
 impl WireProperty {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -67,49 +67,49 @@ impl WireProperty {
     }
 }
 
-/// PropertyList-Snapshot fuer die Wire-Ebene. Die Reihenfolge wird
-/// beim Encode/Decode beibehalten — Caller, die Duplikat-Namen
-/// vermeiden wollen, muessen das selbst durchsetzen.
+/// PropertyList snapshot for the wire level. The order is
+/// preserved on encode/decode — callers that want to avoid duplicate
+/// names must enforce that themselves.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WirePropertyList {
-    /// Liste der Properties in wire-Reihenfolge.
+    /// List of properties in wire order.
     pub entries: Vec<WireProperty>,
 }
 
 impl WirePropertyList {
-    /// Leere Liste.
+    /// Empty list.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Liefert `true` wenn kein Property vorhanden.
+    /// Returns `true` if no property is present.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
-    /// Anzahl Properties.
+    /// Number of properties.
     #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
-    /// Fuegt ein Property an. Ueberschreibt **nicht** bei Dublette —
-    /// Wire-Semantik: letzter Eintrag gewinnt beim Lookup.
+    /// Appends a property. Does **not** overwrite on duplicate —
+    /// wire semantics: the last entry wins on lookup.
     pub fn push(&mut self, prop: WireProperty) {
         self.entries.push(prop);
     }
 
-    /// Builder-Variante fuer [`Self::push`].
+    /// Builder variant for [`Self::push`].
     #[must_use]
     pub fn with(mut self, prop: WireProperty) -> Self {
         self.push(prop);
         self
     }
 
-    /// Liefert den Wert zum letzten Eintrag mit diesem Namen (Spec-
-    /// Semantik: "last value wins").
+    /// Returns the value of the last entry with this name (spec
+    /// semantics: "last value wins").
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&str> {
         self.entries
@@ -119,15 +119,15 @@ impl WirePropertyList {
             .map(|p| p.value.as_str())
     }
 
-    /// Encode zur Byte-Sequenz, die direkt als Value eines
-    /// `PID_PROPERTY_LIST`-Parameters genutzt wird. `BinaryPropertySeq`
-    /// wird immer als `count=0` angehaengt.
+    /// Encodes to the byte sequence used directly as the value of a
+    /// `PID_PROPERTY_LIST` parameter. `BinaryPropertySeq`
+    /// is always appended as `count=0`.
     ///
     /// # Errors
-    /// * `ValueOutOfRange` wenn die Anzahl Properties
-    ///   [`MAX_PROPERTIES`] ueberschreitet.
-    /// * `ValueOutOfRange` wenn name/value ueber
-    ///   [`MAX_PROPERTY_STRING_LEN`] liegen.
+    /// * `ValueOutOfRange` if the number of properties
+    ///   exceeds [`MAX_PROPERTIES`].
+    /// * `ValueOutOfRange` if name/value exceed
+    ///   [`MAX_PROPERTY_STRING_LEN`].
     pub fn encode(&self, little_endian: bool) -> Result<Vec<u8>, WireError> {
         if self.entries.len() > MAX_PROPERTIES {
             return Err(WireError::ValueOutOfRange {
@@ -147,17 +147,17 @@ impl WirePropertyList {
             write_cdr_string(&mut out, &p.value, little_endian)?;
             align4(&mut out);
         }
-        // BinaryPropertySeq: count = 0, keine Eintraege.
+        // BinaryPropertySeq: count = 0, no entries.
         write_u32(&mut out, 0, little_endian);
         Ok(out)
     }
 
-    /// Decode aus dem Value-Byte-Slice eines `PID_PROPERTY_LIST`-
-    /// Parameters.
+    /// Decodes from the value byte slice of a `PID_PROPERTY_LIST`
+    /// parameter.
     ///
     /// # Errors
-    /// * `UnexpectedEof` bei truncated Eingabe.
-    /// * `ValueOutOfRange` bei verletzten DoS-Caps.
+    /// * `UnexpectedEof` on truncated input.
+    /// * `ValueOutOfRange` on violated DoS caps.
     pub fn decode(bytes: &[u8], little_endian: bool) -> Result<Self, WireError> {
         let mut pos = 0usize;
         let n_props = read_u32(bytes, &mut pos, little_endian)? as usize;
@@ -174,9 +174,9 @@ impl WirePropertyList {
             align4_read(&mut pos);
             entries.push(WireProperty { name, value });
         }
-        // BinaryPropertySeq lesen und verwerfen (wir persistieren die
-        // binary-Eintraege derzeit nicht — kein Security-Use-Case in
-        // Stufe 2).
+        // Read and discard the BinaryPropertySeq (we currently do not
+        // persist the binary entries — no security use case in
+        // stage 2).
         let n_binary = read_u32(bytes, &mut pos, little_endian)? as usize;
         if n_binary > MAX_PROPERTIES {
             return Err(WireError::ValueOutOfRange {
@@ -286,7 +286,7 @@ fn read_cdr_string(bytes: &[u8], pos: &mut usize, le: bool) -> Result<String, Wi
             offset: *pos,
         });
     }
-    // Null-terminator gehoert in die Laenge — ihn abschneiden.
+    // The null terminator belongs to the length — strip it.
     let text_bytes = &bytes[*pos..*pos + len - 1];
     if bytes[*pos + len - 1] != 0 {
         return Err(WireError::ValueOutOfRange {
@@ -402,7 +402,7 @@ mod tests {
 
     #[test]
     fn decode_rejects_count_above_cap() {
-        // n_props = u32::MAX — sollte vor der Allozierung abgelehnt werden.
+        // n_props = u32::MAX — should be rejected before allocation.
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&u32::MAX.to_le_bytes());
         let err = WirePropertyList::decode(&bytes, true).unwrap_err();
@@ -415,23 +415,23 @@ mod tests {
         bytes.extend_from_slice(&1u32.to_le_bytes()); // n_props = 1
         bytes.extend_from_slice(&3u32.to_le_bytes()); // name_len = 3
         bytes.extend_from_slice(b"ab\0\0"); // name + pad
-        bytes.extend_from_slice(&10u32.to_le_bytes()); // value_len = 10, aber keine bytes mehr
+        bytes.extend_from_slice(&10u32.to_le_bytes()); // value_len = 10, but no bytes left
         let err = WirePropertyList::decode(&bytes, true).unwrap_err();
         assert!(matches!(err, WireError::UnexpectedEof { .. }));
     }
 
     #[test]
     fn decode_accepts_nonzero_binary_sequence() {
-        // Wir persistieren binary nicht, muessen sie aber konsumieren.
+        // We do not persist binary, but must consume it.
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&0u32.to_le_bytes()); // n_props = 0
         bytes.extend_from_slice(&1u32.to_le_bytes()); // n_binary = 1
-        bytes.extend_from_slice(&4u32.to_le_bytes()); // binary name_len = 4 ("ab"+null gepadded)
+        bytes.extend_from_slice(&4u32.to_le_bytes()); // binary name_len = 4 ("ab"+null padded)
         bytes.extend_from_slice(b"bin\0"); // name "bin" + null
         bytes.extend_from_slice(&3u32.to_le_bytes()); // value_len = 3
         bytes.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0x00]); // bytes + pad
         let decoded = WirePropertyList::decode(&bytes, true).unwrap();
-        assert!(decoded.is_empty(), "binary seq wird still konsumiert");
+        assert!(decoded.is_empty(), "binary seq is silently consumed");
     }
 
     #[test]
@@ -457,13 +457,13 @@ mod tests {
 
     #[test]
     fn decode_rejects_missing_null_terminator() {
-        // name_len sagt 4, aber letzes byte ist kein null
+        // name_len says 4, but the last byte is not null
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&1u32.to_le_bytes()); // n_props = 1
         bytes.extend_from_slice(&4u32.to_le_bytes()); // name_len = 4
-        bytes.extend_from_slice(b"abcd"); // kein null am Ende
+        bytes.extend_from_slice(b"abcd"); // no null at the end
         bytes.extend_from_slice(&2u32.to_le_bytes()); // value_len = 2
-        bytes.extend_from_slice(b"v\0\0\0"); // wuerde kompletten sein
+        bytes.extend_from_slice(b"v\0\0\0"); // would be complete
         bytes.extend_from_slice(&0u32.to_le_bytes()); // n_binary = 0
         let err = WirePropertyList::decode(&bytes, true).unwrap_err();
         assert!(matches!(err, WireError::ValueOutOfRange { .. }));
@@ -516,7 +516,7 @@ mod tests {
         bytes.extend_from_slice(&4u32.to_le_bytes()); // binary name_len = 4
         bytes.extend_from_slice(b"bin\0"); // name + null
         bytes.extend_from_slice(&(MAX_PROPERTY_STRING_LEN as u32 + 1).to_le_bytes());
-        // Keine echten Value-Bytes, aber wir erwarten Cap-Check vor EOF
+        // No real value bytes, but we expect the cap check before EOF
         let err = WirePropertyList::decode(&bytes, true).unwrap_err();
         assert!(matches!(err, WireError::ValueOutOfRange { .. }));
     }
@@ -529,7 +529,7 @@ mod tests {
         bytes.extend_from_slice(&4u32.to_le_bytes()); // binary name_len = 4
         bytes.extend_from_slice(b"bin\0");
         bytes.extend_from_slice(&8u32.to_le_bytes()); // value_len = 8
-        bytes.extend_from_slice(&[0xAA, 0xBB]); // nur 2 byte da
+        bytes.extend_from_slice(&[0xAA, 0xBB]); // only 2 bytes present
         let err = WirePropertyList::decode(&bytes, true).unwrap_err();
         assert!(matches!(err, WireError::UnexpectedEof { .. }));
     }

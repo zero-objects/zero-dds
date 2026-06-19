@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! End-to-End-Test fuer Spec §2.2.3.5 DurabilityService Wire-Replay.
+//! End-to-end test for Spec §2.2.3.5 DurabilityService wire replay.
 //!
-//! Szenario: Writer mit Durability=Transient publisht Samples, bevor
-//! ein Reader matched. Der Late-Joiner muss alle Samples via SEDP-Match-
-//! getriggertem Backend-Replay sehen. Dies verifiziert den Wire-Pfad
-//! aus `DcpsRuntime::wire_writer_to_remote_reader` — Backend-Samples
-//! werden beim ersten Match in den HistoryCache injiziert und ueber
-//! den existierenden Reliable-Reader-Pfad ausgeliefert.
+//! Scenario: a writer with Durability=Transient publishes samples before
+//! a reader matches. The late-joiner must see all samples via SEDP-match-
+//! triggered backend replay. This verifies the wire path in
+//! `DcpsRuntime::wire_writer_to_remote_reader` — backend samples are
+//! injected into the HistoryCache on the first match and delivered over
+//! the existing reliable-reader path.
 //!
-//! Linux-only: macOS-Loopback-Multicast ist fuer DDS-Discovery
-//! unzuverlaessig (siehe `fastdds_qos_matrix.rs` mit gleichem Guard).
+//! Linux-only: macOS loopback multicast is unreliable for DDS discovery
+//! (see `fastdds_qos_matrix.rs` with the same guard).
 
 #![cfg(target_os = "linux")]
 #![allow(
@@ -79,10 +79,10 @@ fn reliable_transient_writer() -> DataWriterQos {
         durability: DurabilityQosPolicy {
             kind: DurabilityKind::Transient,
         },
-        // No-Key-Topic: alle Samples haben gleichen instance_key. Damit
-        // Backend + Writer-Cache + Reader die volle Sample-History sehen,
-        // brauchen wir KeepAll-History + DurabilityServiceQos mit
-        // hinreichender history_depth.
+        // No-key topic: all samples share the same instance_key. For the
+        // backend + writer cache + reader to see the full sample history,
+        // we need KeepAll history + DurabilityServiceQos with a
+        // sufficient history_depth.
         history: HistoryQosPolicy {
             kind: HistoryKind::KeepAll,
             depth: 1,
@@ -121,11 +121,11 @@ fn fast_runtime_cfg() -> RuntimeConfig {
     }
 }
 
-/// Late-Joiner-Reader bekommt Backend-Replay beim ersten Match.
+/// Late-joiner reader gets a backend replay on the first match.
 ///
-/// Setup: Writer mit `Transient`-Durability publisht 3 Samples vor dem
-/// Reader-Start. Reader matched anschliessend; muss alle 3 Samples
-/// sehen (ueber Backend-Replay-Pfad in `wire_writer_to_remote_reader`).
+/// Setup: a writer with `Transient` durability publishes 3 samples before
+/// the reader starts. The reader then matches and must see all 3 samples
+/// (via the backend-replay path in `wire_writer_to_remote_reader`).
 #[test]
 fn transient_late_joiner_receives_backend_replay() {
     let factory = DomainParticipantFactory::instance();
@@ -143,18 +143,18 @@ fn transient_late_joiner_receives_backend_replay() {
         .create_datawriter::<Beep>(&topic_p, reliable_transient_writer())
         .expect("writer");
 
-    // Backend muss da sein.
+    // Backend must exist.
     assert!(
         writer.durability_backend().is_some(),
-        "Transient-Writer muss DurabilityService-Backend haben"
+        "transient writer must have a DurabilityService backend"
     );
 
-    // 3 Samples publishen, *bevor* der Reader existiert.
+    // Publish 3 samples *before* the reader exists.
     for n in 1u32..=3 {
         writer.write(&Beep { n }).expect("write");
     }
 
-    // 200 ms Verzoegerung — Writer-Discovery propagiert.
+    // 200 ms delay — writer discovery propagates.
     std::thread::sleep(Duration::from_millis(200));
 
     // Subscriber-Participant (Late-Joiner)
@@ -169,12 +169,12 @@ fn transient_late_joiner_receives_backend_replay() {
         .create_datareader::<Beep>(&topic_s, reliable_transient_reader())
         .expect("reader");
 
-    // Match + Backend-Replay einlaufen lassen.
+    // Let the match + backend replay settle in.
     reader
         .wait_for_matched_publication(1, common::match_timeout())
         .expect("reader match");
 
-    // Bis zu 3 Sekunden auf die replayed Samples warten.
+    // Wait up to 3 seconds for the replayed samples.
     let deadline = std::time::Instant::now() + Duration::from_secs(3);
     let mut collected: Vec<u32> = Vec::new();
     while std::time::Instant::now() < deadline && collected.len() < 3 {
@@ -190,7 +190,7 @@ fn transient_late_joiner_receives_backend_replay() {
     assert_eq!(
         collected,
         vec![1, 2, 3],
-        "Late-Joiner muss alle 3 Backend-Samples sehen (via Wire-Replay)"
+        "late-joiner must see all 3 backend samples (via wire replay)"
     );
 }
 
@@ -233,17 +233,17 @@ fn reliable_persistent_reader() -> DataReaderQos {
     }
 }
 
-/// Persistent-Backend (On-Disk) Late-Joiner-Replay.
+/// Persistent backend (on-disk) late-joiner replay.
 ///
-/// Setup: Writer mit `Persistent`-Durability publisht 3 Samples vor dem
-/// Reader-Start. Backend ist `OnDiskDurabilityBackend` (auto-build mit
-/// `ZERODDS_DURABILITY_DIR` Env-Override). Reader matched anschliessend
-/// und muss alle 3 Samples via Wire-Replay sehen.
+/// Setup: a writer with `Persistent` durability publishes 3 samples before
+/// the reader starts. The backend is `OnDiskDurabilityBackend` (auto-built
+/// with the `ZERODDS_DURABILITY_DIR` env override). The reader then matches
+/// and must see all 3 samples via wire replay.
 ///
-/// Eigener Topic-Name verhindert Cross-Test-Kontamination im Backend.
+/// A dedicated topic name prevents cross-test contamination in the backend.
 #[test]
 fn persistent_late_joiner_receives_backend_replay() {
-    // Unique tmpdir pro Run, damit Backend nicht alte Samples re-played.
+    // Unique tmpdir per run so the backend does not replay old samples.
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -253,9 +253,9 @@ fn persistent_late_joiner_receives_backend_replay() {
         std::process::id(),
         nanos
     ));
-    // SAFETY: Env-Var-Set ist Test-only, kein Cross-Thread-Race da
-    // Cargo Tests pro Crate per default mit -j1 in CI laufen — und
-    // wir nutzen einen unique Pfad pro Run.
+    // SAFETY: setting the env-var is test-only, with no cross-thread race
+    // since cargo tests run per crate with -j1 in CI by default — and we
+    // use a unique path per run.
     // SAFETY: This is the only test-thread touching this env-var (Linux-only test,
     // tests in this file run serially per default).
     unsafe {
@@ -278,7 +278,7 @@ fn persistent_late_joiner_receives_backend_replay() {
 
     assert!(
         writer.durability_backend().is_some(),
-        "Persistent-Writer muss DurabilityService-Backend (On-Disk) haben"
+        "persistent writer must have a DurabilityService backend (on-disk)"
     );
 
     for n in 1u32..=3 {
@@ -320,6 +320,6 @@ fn persistent_late_joiner_receives_backend_replay() {
     assert_eq!(
         collected,
         vec![1, 2, 3],
-        "Persistent-Late-Joiner muss alle 3 Backend-Samples sehen (via On-Disk-Wire-Replay)"
+        "persistent late-joiner must see all 3 backend samples (via on-disk wire replay)"
     );
 }

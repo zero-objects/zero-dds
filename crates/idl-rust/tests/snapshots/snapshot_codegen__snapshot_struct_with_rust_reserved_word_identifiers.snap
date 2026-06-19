@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
-assertion_line: 252
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -25,7 +24,7 @@ impl zerodds_dcps::DdsType for r#match {
     const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x57, 0x84, 0x4d, 0x86, 0xea, 0x14, 0x3a, 0xc1, 0x0a, 0xae, 0xdf, 0x0c, 0x12, 0xa5]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
-        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
         <_ as zerodds_cdr::CdrEncode>::encode(&self.r#type, &mut writer)?;
         <_ as zerodds_cdr::CdrEncode>::encode(&self.r#mod, &mut writer)?;
         <_ as zerodds_cdr::CdrEncode>::encode(&self.r#fn, &mut writer)?;
@@ -34,7 +33,7 @@ impl zerodds_dcps::DdsType for r#match {
     }
 
     fn decode(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
-        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little).xcdr2();
         let r#type = <i32 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         let r#mod = <i32 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         let r#fn = <i32 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
@@ -52,5 +51,27 @@ impl zerodds_dcps::DdsType for r#match {
             "r#fn" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.r#fn as i64)),
             _ => ::core::option::Option::None,
         }
+    }
+}
+
+impl zerodds_cdr::CdrEncode for r#match {
+    fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.r#type, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.r#mod, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.r#fn, writer)?;
+        ::core::result::Result::Ok(())
+    }
+}
+
+impl zerodds_cdr::CdrDecode for r#match {
+    fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
+        let r#type = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let r#mod = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let r#fn = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        ::core::result::Result::Ok(Self {
+            r#type,
+            r#mod,
+            r#fn,
+        })
     }
 }

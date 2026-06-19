@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "UDP/IP-PSM für ZeroDDS — DDSI-RTPS 2.5 §9.6.1: UDPv4 Unicast + Multicast (Discovery), SO_REUSE, Multicast-TTL."
+description = "UDP/IP PSM for ZeroDDS — DDSI-RTPS 2.5 §9.6.1: UDPv4 unicast + multicast (discovery), SO_REUSE, multicast TTL."
 repository = "https://github.com/zero-objects/zero-dds"
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-transport-udp"
@@ -21,30 +21,34 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std"]
 std = ["alloc"]
 alloc = []
-# PDE Reality Inspector Hook-Up — Tap-Dispatch im UDP-Send-Pfad.
+# PDE Reality Inspector hook-up — tap dispatch in the UDP send path.
 # Default OFF (R-034).
 inspect = ["dep:zerodds-inspect-endpoint", "zerodds-inspect-endpoint/inspect"]
-# Opt-2 (Spec `zerodds-zero-copy-1.0` §9): Linux-`recvmmsg`-Batch-Recv.
-# Reduziert Per-Datagram-Syscall-Overhead um Faktor 8-10x. Default an
-# auf Linux (siehe target-dependent dep unten); aufruf via
-# `UdpTransport::recv_batch(&mut Vec<ReceivedDatagram>, max)`. Wenn
-# Feature deaktiviert ist, faellt die Methode auf eine Schleife
-# einzelner `recv()`-Calls zurueck.
-recvmmsg-batch = ["dep:libc"]
+# Opt-2 (spec `zerodds-zero-copy-1.0` §9): Linux `recvmmsg` batch recv.
+# Reduces per-datagram syscall overhead by a factor of 8-10x. Default on
+# on Linux (see the target-dependent dep below); call via
+# `UdpTransport::recv_batch(&mut Vec<ReceivedDatagram>, max)`. When the
+# feature is disabled, the method falls back to a loop of individual
+# `recv()` calls.
+recvmmsg-batch = []
 
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps" }
-zerodds-transport = { version = "1.0.0-rc.1", path = "../transport" }
-zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", default-features = false, features = ["std"] }
+zerodds-rtps = { version = "1.0.0-rc.3", path = "../rtps" }
+zerodds-transport = { version = "1.0.0-rc.3", path = "../transport" }
+zerodds-monitor = { version = "1.0.0-rc.3", path = "../monitor", default-features = false, features = ["std"] }
 socket2 = { workspace = true }
-# Linux-only: libc::recvmmsg + struct mmsghdr fuer Batch-Recv.
-# Opt-2 / Feature `recvmmsg-batch`.
-libc = { workspace = true, optional = true }
-# Inspect-Endpoint Tap-Hooks (PDE Reality Inspector). Optional.
-zerodds-inspect-endpoint = { version = "1.0.0-rc.1", path = "../inspect-endpoint", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+# libc for setsockopt(SO_DONTROUTE) configuration (a Cyclone DDS
+# parallel, loopback-routing skip) and the Linux recvmmsg batch under
+# feature `recvmmsg-batch`. Default-active on Unix (Linux, macOS, BSD).
+libc = { workspace = true }
+# Inspect-endpoint tap hooks (PDE Reality Inspector). Optional.
+zerodds-inspect-endpoint = { version = "1.0.0-rc.3", path = "../inspect-endpoint", optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

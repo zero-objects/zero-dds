@@ -6,11 +6,13 @@
 Folgt dem Format aus `docs/spec-coverage/PROCESS.md`.
 
 **Kontext:** gRPC ist die Cloud-RPC-Spec von Google. ZeroDDS
-implementiert die gRPC-Wire-Elemente in `crates/grpc-bridge/`,
-plus eigene no_std-tauglich-HTTP/2-Implementation in
-`crates/http2/` (RFC 7540) und HPACK-Header-Compression in
-`crates/hpack/` (RFC 7541). Compression-Codecs (gzip/deflate) sind
-Caller-Layer.
+implementiert den gRPC-Stack verteilt über:
+
+- `crates/grpc-bridge/` — gRPC-Wire-Elemente (LPM, Path, Status, Timeout)
+- `crates/http2/` — eigene no_std-taugliche HTTP/2-Implementation (RFC 7540)
+- `crates/hpack/` — HPACK-Header-Compression (RFC 7541)
+
+Compression-Codecs (gzip/deflate) sind Caller-Layer.
 
 Crate-Mapping:
 
@@ -85,7 +87,7 @@ relative-paths, missing-method, empty-segments, method-mit-slash.
 TimeoutValue MUST be at most 8 digits, Unit ∈ {H,M,S,m,u,n}.
 
 **Repo:** `crates/grpc-bridge/src/timeout.rs::{TimeoutUnit,
-encode_timeout, decode_timeout}` mit Reject von ueber-8-Digit, non-
+encode_timeout, decode_timeout}` mit Reject von über-8-Digit, non-
 digit, unbekannter-Unit, leerem Header.
 
 **Tests:** `timeout::tests::*` (10 Tests inkl. Round-Trip aller
@@ -236,5 +238,3 @@ Test-Lauf:
 * `cargo test -p zerodds-hpack` — 49 lib-Tests grün (RFC 7541 HPACK).
 * `cargo test -p zerodds-http2` — 45 lib-Tests grün (RFC 7540 Frames +
   Stream-State + Settings).
-
-Offene Punkte: siehe `grpc-protocol.open.md`.

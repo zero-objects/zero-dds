@@ -24,7 +24,7 @@ path = "src/lib.rs"
 default = ["std", "daemon"]
 std = ["alloc"]
 alloc = []
-# `daemon` aktiviert das `zerodds-coap-bridged` Binary + DDS-Pump.
+# `daemon` enables the `zerodds-coap-bridged` binary + DDS pump.
 daemon = [
     "std",
     "dep:zerodds-dcps",
@@ -36,25 +36,46 @@ daemon = [
     "dep:zerodds-observability-otlp",
     "dep:signal-hook",
 ]
-# Cross-Vendor-Interop-Tests gegen libcoap (Spec §10 + §12.3); benoetigt `coap-client`-Binary.
+# OSCORE (RFC 8613) object security — HKDF-SHA-256 key derivation + COSE.
+# no_std + alloc; pulls only RustCrypto hmac/sha2 (AEAD layer adds `ccm`).
+oscore = ["alloc", "dep:hmac", "dep:sha2", "dep:ccm", "dep:aes"]
+# DTLS 1.2 (RFC 6347) for coaps:// (RFC 7252 §9). Opt-in, **EXPERIMENTAL**:
+# webrtc-dtls is a pure-Rust DTLS 1.2 stack (crates.io, MIT/Apache, ~3.9M
+# downloads, used in webrtc-rs). Async (tokio). NOT in `default` — the
+# published no_std codec core is untouched. See ADR 0011 + the DTLS dossier.
+dtls = ["std", "dep:webrtc-dtls", "dep:webrtc-util", "dep:tokio"]
+# Cross-vendor interop tests against libcoap (Spec §10 + §12.3); requires the `coap-client` binary.
 cross-vendor-tests = ["daemon"]
 
 [dependencies]
-zerodds-dcps = { version = "1.0.0-rc.1", path = "../dcps", optional = true, default-features = false, features = ["std"] }
-zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps", optional = true, default-features = false, features = ["std"] }
-zerodds-qos = { version = "1.0.0-rc.1", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
-zerodds-types = { version = "1.0.0-rc.1", path = "../types", optional = true, default-features = false, features = ["alloc"] }
-# Bridge-Security-Substrat (Bridge-Spec §7.2 Auth / §7.3 Topic-ACL).
-# Hinweis: §7.1 TLS für CoAP = DTLS (Datagram-TLS). rustls 0.23 hat
-# keinen DTLS-Server-Mode; eine pure-Rust DTLS-Lib (z.B. webrtc-dtls)
-# ist im Workspace nicht freigegeben. Der CoAP-Daemon wired daher
-# Auth + ACL voll und meldet beim Setzen von --tls-cert/--tls-key
-# einen klaren "DTLS-Wireup ueber separates ADR"-Hinweis (Spec §7.1).
-zerodds-bridge-security = { version = "1.0.0-rc.1", path = "../bridge-security", optional = true }
-# Cross-Cutting Daemon-Observability: §8.2 Prometheus + §8.3 OTLP + §9.2 Graceful Shutdown.
-zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
-zerodds-observability-otlp = { version = "1.0.0-rc.1", path = "../observability-otlp", optional = true }
+zerodds-dcps = { version = "1.0.0-rc.3", path = "../dcps", optional = true, default-features = false, features = ["std"] }
+zerodds-rtps = { version = "1.0.0-rc.3", path = "../rtps", optional = true, default-features = false, features = ["std"] }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+zerodds-types = { version = "1.0.0-rc.3", path = "../types", optional = true, default-features = false, features = ["alloc"] }
+# Bridge-security substrate (Bridge-Spec §7.2 Auth / §7.3 Topic-ACL).
+# §7.1 DTLS for coaps:// is now available behind the opt-in `dtls`
+# feature (webrtc-dtls, DTLS 1.2) — see `dtls.rs` + ADR 0011.
+zerodds-bridge-security = { version = "1.0.0-rc.3", path = "../bridge-security", optional = true }
+# Cross-cutting daemon observability: §8.2 Prometheus + §8.3 OTLP + §9.2 Graceful Shutdown.
+zerodds-monitor = { version = "1.0.0-rc.3", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "1.0.0-rc.3", path = "../observability-otlp", optional = true }
 signal-hook = { workspace = true, optional = true }
+# OSCORE (RFC 8613) crypto — HKDF-SHA-256 via HMAC. no_std + alloc.
+hmac = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+ccm = { workspace = true, optional = true }
+aes = { workspace = true, optional = true }
+# DTLS 1.2 (feature `dtls`) — pure-Rust DTLS over UDP for coaps://.
+# Async; the transport runs on a tokio runtime supplied by the caller.
+webrtc-dtls = { version = "0.12", optional = true }
+# Must match webrtc-dtls 0.12's `^0.11` requirement so the `Conn`/`Listener`
+# traits are the same type instance (no semver-split duplicate).
+webrtc-util = { version = "0.11", optional = true, default-features = false, features = ["conn"] }
+tokio = { version = "1", optional = true, default-features = false, features = ["net", "rt", "io-util", "time", "sync"] }
+
+[dev-dependencies]
+# Async test harness for the `dtls` e2e (#[tokio::test]).
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "io-util"] }
 
 [[bin]]
 name = "zerodds-coap-bridged"

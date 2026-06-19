@@ -1,29 +1,29 @@
 # zerodds-bridge-security
 
-> Gemeinsamer Security-Layer für ZeroDDS Bridge-Daemons (ws / mqtt / coap / amqp / grpc / corba):
-> §7.1 TLS (rustls), §7.2 Auth-Modes, §7.3 Topic-ACL.
+> Shared security layer for ZeroDDS bridge daemons (ws / mqtt / coap / amqp / grpc / corba):
+> §7.1 TLS (rustls), §7.2 auth modes, §7.3 topic ACL.
 
 [![Crates.io](https://img.shields.io/crates/v/zerodds-bridge-security.svg)](https://crates.io/crates/zerodds-bridge-security)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-ZeroDDS-Komponente: Layer 5 (Bridges). Bündelt drei wiederverwendbare
-Bausteine, die jede Bridge-Daemon einbinden kann, ohne ihre eigene
-Crypto-/Auth-Logik schreiben zu müssen.
+ZeroDDS component: Layer 5 (Bridges). Bundles three reusable building
+blocks that any bridge daemon can plug in without having to write its
+own crypto/auth logic.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec-Dokument | Abschnitt |
-| ------------- | --------- |
-| ZeroDDS Bridge-Spec 1.0 | §7.1 TLS |
-| ZeroDDS Bridge-Spec 1.0 | §7.2 Auth-Modes |
-| ZeroDDS Bridge-Spec 1.0 | §7.3 Topic-ACL |
+| Spec document | Section |
+| ------------- | ------- |
+| ZeroDDS Bridge Spec 1.0 | §7.1 TLS |
+| ZeroDDS Bridge Spec 1.0 | §7.2 auth modes |
+| ZeroDDS Bridge Spec 1.0 | §7.3 topic ACL |
 
-## Safety-Klassifikation
+## Safety classification
 
-**STANDARD** — sicherheitsrelevant, aber nicht safety-zertifiziert.
-`#![forbid(unsafe_code)]` ist gesetzt.
+**STANDARD** — security-relevant, but not safety-certified.
+`#![forbid(unsafe_code)]` is set.
 
-## Verwendung
+## Usage
 
 ```rust,no_run
 use zerodds_bridge_security::{Acl, AclOp, AuthSubject};
@@ -33,37 +33,37 @@ let acl = Acl::allow_all();
 let _allowed = acl.check(&subj, AclOp::Write, "/topics/trade");
 ```
 
-## Bausteine
+## Building blocks
 
-* [`tls`] — `rustls 0.23` ServerConfig-Builder mit PEM-Cert/Key-Loader,
-  optionalem Client-CA-Trust für mTLS, plus `RotatingTlsConfig` für
-  SIGHUP-Hot-Reload.
-* [`auth`] — Auth-Modes `none|bearer|jwt|mtls|sasl` plus
-  [`AuthSubject`]-Typ mit Group-Memberships und Free-Form-Claims.
-* [`acl`] — Topic-ACL mit Wildcard- und Group-Match (Read / Write).
-* [`connection`] — pro-Connection-Helper: TLS-Handshake-Server-Side,
-  rustls-`ClientConnector`-Builder, RotatingTlsConfig.
-* [`ctx`] — `SecurityCtx` als Aggregat (Auth + ACL + TLS), plus
+* [`tls`] — `rustls 0.23` ServerConfig builder with PEM cert/key loader,
+  optional client CA trust for mTLS, plus `RotatingTlsConfig` for
+  SIGHUP hot reload.
+* [`auth`] — auth modes `none|bearer|jwt|mtls|sasl` plus
+  [`AuthSubject`] type with group memberships and free-form claims.
+* [`acl`] — topic ACL with wildcard and group matching (read / write).
+* [`connection`] — per-connection helpers: server-side TLS handshake,
+  rustls `ClientConnector` builder, RotatingTlsConfig.
+* [`ctx`] — `SecurityCtx` as an aggregate (auth + ACL + TLS), plus
   `authenticate` / `authorize` / `extract_mtls_subject`.
 
 ## Features
 
-* `default = ["std"]` — Standard-Library + Heap-Allocator.
-* `std` — Pflicht (rustls 0.23 braucht std).
+* `default = ["std"]` — standard library + heap allocator.
+* `std` — required (rustls 0.23 needs std).
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1` — Public-API ist RC1-stabil. Breaking-Changes erfordern
-einen Major-Bump. Neue Auth-Modes oder ACL-Operationen sind additive
-Diskriminanten und damit Major-additive.
+`1.0.0-rc.1` — the public API is RC1-stable. Breaking changes require a
+major bump. New auth modes or ACL operations are additive discriminants
+and thus major-additive.
 
-## Build & Test
+## Build & test
 
 ```bash
 cargo build -p zerodds-bridge-security
 cargo test -p zerodds-bridge-security
 ```
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../LICENSE).
+Apache-2.0. See [LICENSE](../LICENSE).

@@ -1,107 +1,107 @@
-# ZeroDDS — Architektur-Überblick
+# ZeroDDS — architecture overview
 
-> **Status:** Draft v0.2 · **Zielgruppe:** Engineering, Leadership, Stakeholder
-> **Nächste Review:** nach Phase-0-Kickoff
+> **Status:** Draft v0.2 · **Audience:** Engineering, Leadership, Stakeholders
+> **Next review:** after the Phase-0 kickoff
 
 ## 1 Mission
 
-**ZeroDDS** ist eine vollständige, souveräne DDS-Implementierung (OMG Data Distribution Service) in Rust mit Bindings für C, C++, C#, Java, Python und Rust. Der Name reflektiert das architektonische Kernversprechen:
+**ZeroDDS** is a complete, sovereign DDS implementation (OMG Data Distribution Service) in Rust with bindings for C, C++, C#, Java, Python and Rust. The name reflects the architectural core promise:
 
-- **Zero external dependencies** im Safe-Core (nur `core` + `alloc` + kuratierte no_std-Crates)
-- **Zero panic** in allen Nicht-Comfort-Crates (Clippy-durchgesetzt)
-- **Zero unsafe** wo strukturell möglich, jeder Ausnahme-Block mit SAFETY-Kommentar
-- **Zero copy** im Shared-Memory-Transport-Pfad
-- **Zero vendor lock-in** durch strikt offene Standards und Apache-2.0-Lizenz
+- **Zero external dependencies** in the safe core (only `core` + `alloc` + curated no_std crates)
+- **Zero panic** in all non-comfort crates (clippy-enforced)
+- **Zero unsafe** where structurally possible, every exception block with a SAFETY comment
+- **Zero copy** in the shared-memory transport path
+- **Zero vendor lock-in** through strictly open standards and the Apache-2.0 license
 
-Ziel ist eine Alternative zu bestehenden kommerziellen und Open-Source-DDS-Anbietern, die die für unsere Anwendungsfälle kritischen Lücken schließt: Souveränität der Lieferkette, Safety-Qualifizierbarkeit, moderne Observability und tiefe Embedded-Integration.
+The goal is an alternative to existing commercial and open-source DDS providers that closes the gaps critical for our use cases: supply-chain sovereignty, safety qualifiability, modern observability and deep embedded integration.
 
-## 1.1 Ausführungsmodell: Bootstrap vor Expansion
+## 1.1 Execution model: bootstrap before expansion
 
-ZeroDDS wird als internes Core-Projekt entwickelt. Wir sind unser erster Kunde — der Stack wird gegen eine konkrete interne Anwendung (verteiltes Sensor- und Entscheidungs-System auf Jetson-Thor-Plattform) validiert. Externe Positionierung, OMG-Mitgliedschaft, Patent-Clearance, Safety-Zertifizierung und Community-Aufbau folgen erst, wenn ein stabiles Basis-System existiert, das in internen Benchmarks gegen eProsima Fast DDS und Eclipse Cyclone DDS bestehen kann.
+ZeroDDS is developed as an internal core project. We are our own first customer — the stack is validated against a concrete internal application (a distributed sensor and decision system on the Jetson Thor platform). External positioning, OMG membership, patent clearance, safety certification and community building only follow once a stable baseline system exists that can hold its own in internal benchmarks against eProsima Fast DDS and Eclipse Cyclone DDS.
 
-Die Begründung ist nüchtern: externe Partnerschaften, Audit-Budgets und Certifications lassen sich erst mobilisieren, wenn der interne Proof existiert. Umgekehrt wäre es ineffizient.
+The rationale is sober: external partnerships, audit budgets and certifications can only be mobilized once the internal proof exists. The other way around would be inefficient.
 
-## 2 Strategische Begründung
+## 2 Strategic rationale
 
-Die aktuelle DDS-Landschaft zwingt zu unakzeptablen Kompromissen:
+The current DDS landscape forces unacceptable trade-offs:
 
-| Pain-Punkt | Heutige Realität | Unsere Antwort |
+| Pain point | Today's reality | Our answer |
 |---|---|---|
-| **Transatlantische Abhängigkeit** | RTI (US, ITAR/EAR-exponiert), OpenDDS (US) dominieren Safety-Segment | EU-basierte Entwicklung, souveräne Lieferkette, keine Export-Kontroll-Risiken |
-| **Safety-Pfad** | Nur RTI Connext Cert und eProsima Safe DDS bieten Cert-Evidence; beide teuer oder jung | Safety-by-Architecture ab Tag 1, Ferrocene-basierter Cert-Pfad zu ISO 26262 ASIL D und DO-178C |
-| **Security** | DDS-Security 1.1/1.2 meist implementiert, aber keine Post-Quantum-Crypto, keine EU-Crypto-Suiten | Plugin-basierte Crypto, austauschbare Suites, Post-Quantum-ready |
-| **Performance-Tooling** | Bestenfalls proprietäre Admin-Tools, kaum OpenTelemetry-Integration | Native OTel-Instrumentierung, W3C Trace Context, deterministisches Replay |
-| **Embedded/MCU** | Fragmentiert: eProsima Micro XRCE-DDS für micro-ROS, RTI Micro separat | Einheitliche Codebasis, XRCE-Client für Cortex-M mit PlatformIO-Integration |
-| **Lizenz-Exposure** | Kommerzielle Vendoren mit pro-Unit-Lizenz, proprietäre Source-Basis | Offene Lizenz-Option, Single-Vendor-Lock-In vermeidbar |
+| **Transatlantic dependency** | RTI (US, ITAR/EAR-exposed), OpenDDS (US) dominate the safety segment | EU-based development, sovereign supply chain, no export-control risks |
+| **Safety path** | Only RTI Connext Cert and eProsima Safe DDS offer cert evidence; both expensive or young | Safety-by-architecture from day 1, Ferrocene-based cert path to ISO 26262 ASIL D and DO-178C |
+| **Security** | DDS-Security 1.1/1.2 mostly implemented, but no post-quantum crypto, no EU crypto suites | Plugin-based crypto, swappable suites, post-quantum-ready |
+| **Performance tooling** | At best proprietary admin tools, hardly any OpenTelemetry integration | Native OTel instrumentation, W3C Trace Context, deterministic replay |
+| **Embedded/MCU** | Fragmented: eProsima Micro XRCE-DDS for micro-ROS, RTI Micro separate | Unified codebase, XRCE client for Cortex-M with PlatformIO integration |
+| **License exposure** | Commercial vendors with per-unit licensing, proprietary source base | Open license option, single-vendor lock-in avoidable |
 
-## 3 Kern-Eigenschaften der Ziel-Architektur
+## 3 Core properties of the target architecture
 
-- **Spec-Konformität:** Vollständige OMG DDS Spec-Family (DCPS 1.4, RTPS 2.5, XTypes 1.3, Security 1.2, RPC 1.0, XML 1.0, XRCE 1.0) plus IDL4 mit Mappings nach C, C++, C#, Java, Python, Rust.
-- **Vier Deployment-Profile** aus einer Codebasis: Full (Desktop/Server), Standard (Embedded Linux/RTOS), Safe (zertifizierbar), Micro (Cortex-M via XRCE).
-- **Sechs Sprach-Bindings:** C, C++, C#, Java, Python, Rust — alle mit IDL4-Mapping.
-- **Plattform-Coverage:** Linux x86_64/ARM64, Windows, macOS, QNX Neutrino, VxWorks, INTEGRITY, PikeOS, Deos, Zephyr, FreeRTOS, ESP-IDF, STM32Cube, bare-metal Cortex-M.
-- **Safety-ready:** Safe-Subset-Crates sind no_std, no-panic, no-dynamic-alloc, Ferrocene-only. Audit-Pfad zu ISO 26262 ASIL D, DO-178C DAL B+, IEC 61508 SIL 3+ vorgesehen.
-- **Observability-first:** OpenTelemetry-Instrumentierung durchgehend, Prometheus-Metriken, deterministisches Wire-Recording mit Replay, Tauri-basiertes Live-Dashboard.
-- **PlatformIO-nativ:** Embedded-Distribution als PlatformIO-Library mit vorgefertigten Targets für die gängigen Framework-Stacks.
+- **Spec conformance:** complete OMG DDS spec family (DCPS 1.4, RTPS 2.5, XTypes 1.3, Security 1.2, RPC 1.0, XML 1.0, XRCE 1.0) plus IDL4 with mappings to C, C++, C#, Java, Python, Rust.
+- **Four deployment profiles** from one codebase: Full (desktop/server), Standard (embedded Linux/RTOS), Safe (certifiable), Micro (Cortex-M via XRCE).
+- **Six language bindings:** C, C++, C#, Java, Python, Rust — all with IDL4 mapping.
+- **Platform coverage:** Linux x86_64/ARM64, Windows, macOS, QNX Neutrino, VxWorks, INTEGRITY, PikeOS, Deos, Zephyr, FreeRTOS, ESP-IDF, STM32Cube, bare-metal Cortex-M.
+- **Safety-ready:** safe-subset crates are no_std, no-panic, no-dynamic-alloc, Ferrocene-only. Audit path to ISO 26262 ASIL D, DO-178C DAL B+, IEC 61508 SIL 3+ planned.
+- **Observability-first:** OpenTelemetry instrumentation throughout, Prometheus metrics, deterministic wire recording with replay, Tauri-based live dashboard.
+- **PlatformIO-native:** embedded distribution as a PlatformIO library with prebuilt targets for the common framework stacks.
 
-## 4 Erfolgskriterien
+## 4 Success criteria
 
-Erfolg wird in zwei Stufen gemessen, entsprechend der Bootstrap-vor-Expansion-Strategie.
+Success is measured in two stages, corresponding to the bootstrap-before-expansion strategy.
 
-### 4.1 Bootstrap-Proof-Kriterien (intern)
+### 4.1 Bootstrap-proof criteria (internal)
 
-Der Stack gilt als intern-proven, wenn folgende Kriterien erfüllt sind:
+The stack is considered internally proven when the following criteria are met:
 
-1. RTPS-Reliable-Protokoll implementiert und in Interop-Tests mit Cyclone DDS und Fast DDS erfolgreich validiert.
-2. DCPS 1.4 Minimum Profile plus Ownership und Content-Subscription Profile funktional.
-3. DDS-Security 1.2 mit der Standard-Builtin-Plugin-Suite (AES-GCM, RSA/ECDSA) lauffähig und Interop-validiert.
-4. C- und C++-Bindings funktional, IDL4-Mapping für diese beiden Sprachen komplett.
-5. Kern-Anwendung (interner Use-Case) läuft produktiv auf ZeroDDS, löst klassischen Pub-Sub-Anforderungen der Anwendung.
-6. Latency und Throughput auf Referenz-Hardware (ARM Jetson-Klasse und x86_64-Server) innerhalb von ±30% der eProsima-Fast-DDS-Werte auf demselben Test-Setup.
+1. RTPS reliable protocol implemented and successfully validated in interop tests with Cyclone DDS and Fast DDS.
+2. DCPS 1.4 Minimum Profile plus Ownership and Content Subscription Profile functional.
+3. DDS-Security 1.2 with the standard builtin plugin suite (AES-GCM, RSA/ECDSA) running and interop-validated.
+4. C and C++ bindings functional, IDL4 mapping for those two languages complete.
+5. Core application (internal use case) runs in production on ZeroDDS, solving the application's classic pub-sub requirements.
+6. Latency and throughput on reference hardware (ARM Jetson class and x86_64 server) within ±30% of the eProsima Fast DDS values on the same test setup.
 
-### 4.2 Expansion-Kriterien (extern, wenn Mittel verfügbar)
+### 4.2 Expansion criteria (external, when funds are available)
 
-Nach bestätigtem internen Proof:
+After confirmed internal proof:
 
-1. Interop-Zertifizierung am OMG Plug-Fest mit mindestens RTI Connext, Cyclone DDS, Fast DDS.
-2. Vollständige sechs Sprach-Bindings funktional, alle IDL4-Mappings validiert.
-3. XRCE-Client auf mindestens drei Embedded-Plattformen lauffähig.
-4. Observability-Stack komplett: OpenTelemetry-Emission, Prometheus-Exporter, Wire-Recorder, Tauri-Dashboard.
-5. Safety-Audit-Readiness für den Safe-Subset durch externen Auditor bestätigt.
-6. Latency und Durchsatz innerhalb von ±20% der Spitzenwerte etablierter Vendoren.
+1. Interop certification at the OMG Plug-Fest with at least RTI Connext, Cyclone DDS, Fast DDS.
+2. All six language bindings functional, all IDL4 mappings validated.
+3. XRCE client running on at least three embedded platforms.
+4. Observability stack complete: OpenTelemetry emission, Prometheus exporter, wire recorder, Tauri dashboard.
+5. Safety audit readiness for the safe subset confirmed by an external auditor.
+6. Latency and throughput within ±20% of the peak values of established vendors.
 
-## 5 Explizite Non-Goals
+## 5 Explicit non-goals
 
-Bewusste Einschränkungen, die wir aus Scope halten, um Fokus zu wahren:
+Deliberate restrictions we keep out of scope to maintain focus:
 
-- **DLRL (Data Local Reconstruction Layer):** Der OMG-Spec-Teil ist weitgehend verwaist, keine relevanten Deployments. Wir implementieren ihn nicht.
-- **CORBA-Interop:** Historisches Erbe. Keine Kunden-Nachfrage in unserem Zielsegment.
-- **Proprietäre Wire-Erweiterungen:** Wir bleiben strikt bei RTPS-Standard, keine Vendor-spezifischen Erweiterungen wie RTI-FlatData oder OpenSplice-DDSI2E.
-- **Legacy-Sprach-Bindings:** Ada, Fortran, JavaScript, Go stehen nicht im initialen Scope.
-- **Kommerzielles SaaS-Management-Plane:** Cloud-gehostete Admin-Tools sind kein Ziel. Observability ist on-premises oder via Customer-Cloud.
+- **DLRL (Data Local Reconstruction Layer):** the OMG spec part is largely orphaned, no relevant deployments. We do not implement it.
+- **CORBA interop:** historical legacy. No customer demand in our target segment.
+- **Proprietary wire extensions:** we stay strictly with the RTPS standard, no vendor-specific extensions like RTI FlatData or OpenSplice DDSI2E.
+- **Legacy language bindings:** Ada, Fortran, JavaScript, Go are not in the initial scope.
+- **Commercial SaaS management plane:** cloud-hosted admin tools are not a goal. Observability is on-premises or via customer cloud.
 
-## 6 Projektstruktur auf einen Blick
+## 6 Project structure at a glance
 
-- **Kern-Team (Bootstrap-Phase):** 2–4 Senior-Engineers im internen Core-Team. Kein External-Hiring-Ramp bis interner Proof erreicht ist.
-- **Claude-Teams-Augmentation:** durchgehend, realistisch 4–8× Acceleration je nach Arbeitsbereich. Bei kleinem Kern-Team ist Claude-Teams der primäre Force-Multiplier.
-- **Externe Partnerschaften:** verschoben auf Post-Proof-Phase. Ferrous Systems, OMG-Mitgliedschaft, Patent-Anwalts-Engagement und Community-Aufbau werden aktiviert, wenn das Basis-System internally-proven ist und externe Mittel zur Verfügung stehen.
-- **Governance:** internes Core-Projekt der Sponsor-Firma. Kein Foundation-Modell, kein externes Governance-Framework. Apache-2.0-Lizenz gewählt, um spätere Optionalität zu wahren (Donation an eine Foundation bleibt möglich, erfordert aber keine Planung jetzt).
-- **Lizenz:** Apache 2.0 (entschieden).
-- **Zeit-Horizont:** Bootstrap-Phase 10–14 Monate bis MVP mit interner Anwendung; danach iterative Weiter-Entwicklung je nach Ressourcen-Verfügbarkeit.
+- **Core team (bootstrap phase):** 2–4 senior engineers in the internal core team. No external hiring ramp until the internal proof is reached.
+- **Claude-Teams augmentation:** throughout, realistically 4–8× acceleration depending on the work area. With a small core team, Claude Teams is the primary force multiplier.
+- **External partnerships:** deferred to the post-proof phase. Ferrous Systems, OMG membership, patent-attorney engagement and community building are activated once the baseline system is internally proven and external funds are available.
+- **Governance:** internal core project of the sponsoring company. No foundation model, no external governance framework. Apache-2.0 license chosen to preserve later optionality (donation to a foundation remains possible but requires no planning now).
+- **License:** Apache 2.0 (decided).
+- **Time horizon:** bootstrap phase 10–14 months to MVP with the internal application; afterwards iterative further development depending on resource availability.
 
-## 7 Dokumentations-Suite
+## 7 Documentation suite
 
-Die folgenden Dokumente bilden zusammen das architektonische Fundament:
+The following documents together form the architectural foundation:
 
-| # | Dokument | Zweck |
+| # | Document | Purpose |
 |---|---|---|
-| 00 | `00_overview.md` | Dieses Dokument — strategische Mission |
-| 01 | `01_scope_and_specs.md` | OMG-Spec-Coverage und Conformance-Ziele |
-| 02 | `02_architecture.md` | System-Architektur und Crate-Workspace |
-| 03 | `03_profiles_and_platforms.md` | Vier Profile, Plattform-Matrix, Binding-Matrix |
-| 04 | `04_safety_by_architecture.md` | Safe-Subset-Vertrag und CI-Durchsetzung |
-| 05 | `05_observability_and_tooling.md` | Live-Insights, Recording, Replay, UI |
-| 06 | `06_roadmap.md` | Phasen-Plan, Meilensteine, Ressourcen |
-| 07 | `07_risks_and_strategy.md` | Patent, IP, Community, Wettbewerbs-Antwort |
+| 00 | `00_overview.md` | This document — strategic mission |
+| 01 | `01_scope_and_specs.md` | OMG spec coverage and conformance goals |
+| 02 | `02_architecture.md` | System architecture and crate workspace |
+| 03 | `03_profiles_and_platforms.md` | Four profiles, platform matrix, binding matrix |
+| 04 | `04_safety_by_architecture.md` | Safe-subset contract and CI enforcement |
+| 05 | `05_observability_and_tooling.md` | Live insights, recording, replay, UI |
+| 06 | `06_roadmap.md` | Phase plan, milestones, resources |
+| 07 | `07_risks_and_strategy.md` | Patent, IP, community, competitive response |
 
-Jedes dieser Dokumente ist eigenständig lesbar und kann parallel von verschiedenen Stakeholder-Gruppen genutzt werden. Bei Änderungen ist Cross-Reference-Konsistenz zu wahren — Claude-Teams-unterstützbares Pattern.
+Each of these documents is independently readable and can be used in parallel by different stakeholder groups. On changes, cross-reference consistency is to be maintained — a Claude-Teams-supportable pattern.

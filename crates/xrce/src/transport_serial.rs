@@ -3,10 +3,10 @@
 
 //! XRCE Serial-Transport-Framer (Spec Annex C, RFC 1662 PPP/HDLC-Framing).
 //!
-//! Annex C definiert ein PPP/HDLC-aehnliches Framing, das Frame-Boundaries
-//! ueber Begin/End-Flags + Byte-Stuffing markiert und CRC-16 zur
-//! Fehler-Erkennung anhaengt. Das ist notwendig, weil Serial-Transports
-//! (RS-232, SPI, I2C) keine inhaerenten Frame-Boundaries haben.
+//! Annex C defines a PPP/HDLC-like framing that marks frame boundaries
+//! via begin/end flags + byte stuffing and appends a CRC-16 for
+//! error detection. This is necessary because serial transports
+//! (RS-232, SPI, I2C) have no inherent frame boundaries.
 //!
 //! ## Frame-Layout
 //!
@@ -16,24 +16,24 @@
 //!
 //! ## Byte-Stuffing
 //!
-//! - `0x7E` (Begin/End-Flag) im Payload → `0x7D 0x5E`
-//! - `0x7D` (Escape-Flag) im Payload → `0x7D 0x5D`
-//! - Generisch: `b ∈ {0x7D, 0x7E}` → `0x7D, b XOR 0x20`
+//! - `0x7E` (begin/end flag) in the payload → `0x7D 0x5E`
+//! - `0x7D` (escape flag) in the payload → `0x7D 0x5D`
+//! - Generic: `b ∈ {0x7D, 0x7E}` → `0x7D, b XOR 0x20`
 //!
 //! ## CRC
 //!
 //! 16-Bit CRC-CCITT-FALSE: Init=`0xFFFF`, Polynom=`0x1021`,
 //! RefIn=false, RefOut=false, XorOut=`0x0000`.
 //!
-//! Begruendung: Spec §C.1.1.6 verlangt RFC 1662 CRC-16, Polynom
-//! `x^16+x^12+x^5+1` (= `0x1021`). RFC 1662 spezifiziert technisch
-//! init=`0xFFFF` mit reflektiertem Input/Output (X.25/FCS-16). Wir
-//! waehlen die unrefkletierte CCITT-FALSE-Variante, weil diese (a)
-//! der Mehrheit der Embedded-CRC-Implementierungen entspricht (XMODEM,
-//! ITU-T V.41) und (b) die `0x1021`-Polynom-Wahl deckungsgleich ist.
-//! Anhaengung als Big-Endian (most-significant Byte first) vor dem
-//! End-Flag, weil das die DDS-XCDR-Konvention im RTPS-Stack ist und
-//! vom XRCE-Spec-Text nicht explizit reflektiert verlangt wird.
+//! Rationale: Spec §C.1.1.6 requires RFC 1662 CRC-16, polynomial
+//! `x^16+x^12+x^5+1` (= `0x1021`). RFC 1662 technically specifies
+//! init=`0xFFFF` with reflected input/output (X.25/FCS-16). We
+//! choose the unreflected CCITT-FALSE variant, because it (a)
+//! matches the majority of embedded CRC implementations (XMODEM,
+//! ITU-T V.41) and (b) is congruent with the `0x1021` polynomial choice.
+//! Appended as big-endian (most-significant byte first) before the
+//! end flag, because that is the DDS-XCDR convention in the RTPS stack and
+//! the XRCE spec text does not explicitly require it reflected.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -42,49 +42,49 @@ use crate::error::XrceError;
 use crate::submessages::{DOSC_MAX_PAYLOAD_SIZE, Message};
 use crate::transport_udp::MAX_DATAGRAM_SIZE;
 
-/// Frame-Boundary-Flag.
+/// Frame boundary flag.
 pub const FLAG_BYTE: u8 = 0x7E;
-/// Escape-Byte.
+/// Escape byte.
 pub const ESCAPE_BYTE: u8 = 0x7D;
-/// XOR-Maskierung fuer gestuffte Bytes.
+/// XOR mask for stuffed bytes.
 pub const STUFF_XOR: u8 = 0x20;
 
-/// Fehler beim Serial-Framing.
+/// Error during serial framing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SerialError {
-    /// Frame ist kuerzer als das CRC-Feld (mind. 2 Byte) — keine
-    /// vollstaendige Nutzlast moeglich.
+    /// Frame is shorter than the CRC field (at least 2 bytes) — no
+    /// complete payload possible.
     FrameTooShort {
-        /// Tatsaechliche destuffte Frame-Laenge in Bytes.
+        /// Actual destuffed frame length in bytes.
         actual: usize,
     },
-    /// Berechneter CRC stimmt nicht mit dem im Frame uebermittelten ueberein.
+    /// The computed CRC does not match the one transmitted in the frame.
     CrcMismatch {
-        /// Erwarteter (errechneter) CRC.
+        /// Expected (computed) CRC.
         expected: u16,
-        /// Tatsaechlicher (uebermittelter) CRC.
+        /// Actual (transmitted) CRC.
         actual: u16,
     },
-    /// Escape-Sequenz endet mitten im Frame ohne folgendes Byte.
+    /// Escape sequence ends mid-frame with no following byte.
     DanglingEscape,
-    /// Escape-Sequenz wurde zwar mit einem Byte gefolgt, aber das Byte
-    /// passt nicht zur Stuffing-Convention (`b XOR 0x20` muss `0x7D` oder
-    /// `0x7E` ergeben).
+    /// Escape sequence was followed by a byte, but the byte
+    /// does not fit the stuffing convention (`b XOR 0x20` must yield `0x7D`
+    /// or `0x7E`).
     InvalidEscape {
-        /// Das Byte hinter `0x7D`.
+        /// The byte after `0x7D`.
         byte: u8,
     },
-    /// Frame ueberschreitet den DoS-Cap.
+    /// Frame exceeds the DoS cap.
     FrameTooLong {
         /// Cap.
         limit: usize,
-        /// Tatsaechliche Laenge.
+        /// Actual length.
         actual: usize,
     },
-    /// Wrappt einen `XrceError` aus `Message::decode`.
+    /// Wraps an `XrceError` from `Message::decode`.
     Decode(XrceError),
-    /// Wrappt einen `XrceError` aus `Message::encode`.
+    /// Wraps an `XrceError` from `Message::encode`.
     Encode(XrceError),
 }
 
@@ -127,7 +127,7 @@ pub fn crc16_ccitt_false(data: &[u8]) -> u16 {
     crc
 }
 
-/// Encodiert genau ein HDLC-Frame um `payload`.
+/// Encodes exactly one HDLC frame around `payload`.
 ///
 /// Layout: `7E [stuffed payload + crc16 BE] 7E`.
 #[must_use]
@@ -142,11 +142,11 @@ pub fn encode_payload(payload: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Encodiert eine vollstaendige `Message` als HDLC-Frame.
+/// Encodes a complete `Message` as an HDLC frame.
 ///
 /// # Errors
-/// `Encode`, wenn `Message::encode` fehlschlaegt; `FrameTooLong`, wenn das
-/// kodierte Message > `MAX_DATAGRAM_SIZE` ist.
+/// `Encode` if `Message::encode` fails; `FrameTooLong` if the
+/// encoded message is > `MAX_DATAGRAM_SIZE`.
 pub fn encode_message(msg: &Message) -> Result<Vec<u8>, SerialError> {
     let payload = msg.encode().map_err(SerialError::Encode)?;
     if payload.len() > MAX_DATAGRAM_SIZE {
@@ -169,8 +169,8 @@ fn stuff_into(out: &mut Vec<u8>, data: &[u8]) {
     }
 }
 
-/// Destufft `input` (ohne Begin/End-Flags). Liefert die rohe Nutzlast
-/// inkl. CRC-Feld.
+/// Destuffs `input` (without begin/end flags). Returns the raw payload
+/// incl. the CRC field.
 fn destuff(input: &[u8]) -> Result<Vec<u8>, SerialError> {
     let mut out = Vec::with_capacity(input.len());
     let mut i = 0;
@@ -194,13 +194,13 @@ fn destuff(input: &[u8]) -> Result<Vec<u8>, SerialError> {
     Ok(out)
 }
 
-/// Decodiert genau ein Frame, das in `bytes` zwischen Begin- und End-Flag
-/// liegt. `bytes` muss exakt die Frame-Inneren-Bytes (zwischen den Flags)
-/// enthalten — ohne die Flags selbst.
+/// Decodes exactly one frame that lies in `bytes` between the begin and
+/// end flag. `bytes` must contain exactly the frame-inner bytes (between
+/// the flags) — without the flags themselves.
 ///
 /// # Errors
-/// - `FrameTooShort` (< 2 Byte CRC).
-/// - `DanglingEscape`/`InvalidEscape` aus `destuff`.
+/// - `FrameTooShort` (< 2 byte CRC).
+/// - `DanglingEscape`/`InvalidEscape` from `destuff`.
 /// - `CrcMismatch`.
 pub fn decode_frame_inner(bytes: &[u8]) -> Result<Vec<u8>, SerialError> {
     let raw = destuff(bytes)?;
@@ -220,24 +220,24 @@ pub fn decode_frame_inner(bytes: &[u8]) -> Result<Vec<u8>, SerialError> {
     Ok(payload.to_vec())
 }
 
-/// Decodiert den ersten kompletten Frame in `input` (mit Begin/End-Flags).
-/// Liefert `(message, rest)` — `rest` zeigt auf die Bytes nach dem
-/// End-Flag.
+/// Decodes the first complete frame in `input` (with begin/end flags).
+/// Returns `(message, rest)` — `rest` points to the bytes after the
+/// end flag.
 ///
 /// # Errors
-/// - `FrameTooShort`, wenn kein vollstaendiges Frame da ist.
-/// - Frame-Decode-Fehler (CRC, Escape, etc.).
-/// - `Decode`, wenn die Payload kein gueltiges XRCE-Message ist.
+/// - `FrameTooShort` if no complete frame is present.
+/// - Frame decode error (CRC, escape, etc.).
+/// - `Decode` if the payload is not a valid XRCE message.
 pub fn decode_frame(input: &[u8]) -> Result<(Message, &[u8]), SerialError> {
-    // Suche Begin-Flag.
+    // Search for the begin flag.
     let begin = input
         .iter()
         .position(|&b| b == FLAG_BYTE)
         .ok_or(SerialError::FrameTooShort { actual: 0 })?;
     let after_begin = &input[begin + 1..];
-    // Suche End-Flag (das naechste 0x7E NICHT direkt nach Begin — es kann
-    // aber sein, dass der Sender mehrere 0x7E hintereinander schreibt
-    // und dann eine Adjazenz auftritt; wir skippen Leer-Frames).
+    // Search for the end flag (the next 0x7E NOT directly after begin — but
+    // it may be that the sender writes several 0x7E in a row
+    // and then an adjacency occurs; we skip empty frames).
     let mut search_start = 0;
     while search_start < after_begin.len() && after_begin[search_start] == FLAG_BYTE {
         search_start += 1;
@@ -256,43 +256,43 @@ pub fn decode_frame(input: &[u8]) -> Result<(Message, &[u8]), SerialError> {
     Ok((msg, rest))
 }
 
-/// Streaming-Decoder: nimmt einen kontinuierlichen Byte-Stream und
-/// extrahiert komplett-empfangene Frames.
+/// Streaming decoder: takes a continuous byte stream and
+/// extracts completely received frames.
 ///
-/// Anti-Bombing: Pro `push_bytes`-Aufruf werden hoechstens
-/// `DOSC_MAX_PAYLOAD_SIZE * 2` Bytes intern gepuffert (Worst-Case durch
-/// Stuffing). Ueberlauf → das interne Buffer wird in einen Resync-Modus
-/// versetzt, der bis zum naechsten `0x7E` ueberspringt.
+/// Anti-bombing: per `push_bytes` call at most
+/// `DOSC_MAX_PAYLOAD_SIZE * 2` bytes are buffered internally (worst case due
+/// to stuffing). Overflow → the internal buffer is put into a resync mode
+/// that skips up to the next `0x7E`.
 #[derive(Debug, Default)]
 pub struct SerialFramer {
-    /// Aktuell zwischengepufferte Bytes.
+    /// Currently buffered bytes.
     buf: Vec<u8>,
-    /// `true`, wenn wir gerade in einem Frame sind (zwischen Begin und End).
+    /// `true` when we are currently inside a frame (between begin and end).
     in_frame: bool,
-    /// `true`, wenn wir nach einem Overflow alle Bytes bis zum naechsten
-    /// `0x7E` ignorieren.
+    /// `true` when, after an overflow, we skip all bytes up to the next
+    /// `0x7E`.
     resync: bool,
 }
 
 impl SerialFramer {
-    /// Frischer Framer.
+    /// Fresh framer.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Anti-Bombing-Cap: maximaler interner Buffer bevor Resync.
+    /// Anti-bombing cap: maximum internal buffer before resync.
     const BUF_CAP: usize = DOSC_MAX_PAYLOAD_SIZE * 2;
 
-    /// Reset auf den Initialzustand.
+    /// Reset to the initial state.
     pub fn reset(&mut self) {
         self.buf.clear();
         self.in_frame = false;
         self.resync = false;
     }
 
-    /// Konsumiert einen Byte-Chunk und gibt alle in dem Chunk komplett
-    /// gewordenen Frames zurueck. Frame-Errors werden ebenfalls gemeldet.
+    /// Consumes a byte chunk and returns all frames that became complete
+    /// within the chunk. Frame errors are reported as well.
     pub fn push_bytes(&mut self, data: &[u8]) -> Vec<Result<Message, SerialError>> {
         let mut out = Vec::new();
         for &b in data {
@@ -306,7 +306,7 @@ impl SerialFramer {
             }
             if b == FLAG_BYTE {
                 if self.in_frame && !self.buf.is_empty() {
-                    // End-Flag: Frame komplett.
+                    // End flag: frame complete.
                     let inner = core::mem::take(&mut self.buf);
                     match decode_frame_inner(&inner) {
                         Ok(payload) => match Message::decode(&payload) {
@@ -315,12 +315,12 @@ impl SerialFramer {
                         },
                         Err(e) => out.push(Err(e)),
                     }
-                    // Naechster Frame koennte direkt anfangen (wenn der
-                    // Sender den End-Flag gleichzeitig als Begin-Flag des
-                    // naechsten Frames nutzt — RFC 1662 erlaubt das).
+                    // The next frame could start immediately (if the
+                    // sender uses the end flag simultaneously as the begin
+                    // flag of the next frame — RFC 1662 allows that).
                     self.in_frame = true;
                 } else {
-                    // Begin-Flag (oder leeres Frame zwischen zwei 7E).
+                    // Begin flag (or empty frame between two 7E).
                     self.in_frame = true;
                     self.buf.clear();
                 }
@@ -335,7 +335,7 @@ impl SerialFramer {
                     self.in_frame = false;
                     self.resync = true;
                 }
-            } // sonst: Bytes ausserhalb von Frames werden ignoriert.
+            } // otherwise: bytes outside of frames are ignored.
         }
         out
     }
@@ -388,7 +388,7 @@ mod tests {
     fn encode_payload_stuffs_flag_byte_in_payload() {
         let frame = encode_payload(&[0x7E]);
         // 7E [7D 5E (stuffed body)] [7D (escape) ?? (low byte of CRC)]
-        // … wir pruefen nur, dass der gestuffte Body 7D 5E enthaelt.
+        // … we only check that the stuffed body contains 7D 5E.
         let body = &frame[1..frame.len() - 1];
         assert!(body.starts_with(&[ESCAPE_BYTE, FLAG_BYTE ^ STUFF_XOR]));
     }
@@ -458,7 +458,7 @@ mod tests {
     fn decode_rejects_crc_mismatch() {
         let payload = alloc::vec![1, 2, 3, 4];
         let mut frame = encode_payload(&payload);
-        // Letztes Byte vor End-Flag flippen.
+        // Flip the last byte before the end flag.
         let len = frame.len();
         frame[len - 2] ^= 0xFF;
         let inner = &frame[1..frame.len() - 1];
@@ -475,7 +475,7 @@ mod tests {
 
     #[test]
     fn decode_rejects_invalid_escape() {
-        // 0x7D 0xFF — 0xFF XOR 0x20 = 0xDF, weder 0x7D noch 0x7E.
+        // 0x7D 0xFF — 0xFF XOR 0x20 = 0xDF, neither 0x7D nor 0x7E.
         let bad = alloc::vec![ESCAPE_BYTE, 0xFF, 0x00, 0x00];
         let res = decode_frame_inner(&bad);
         assert!(matches!(
@@ -508,7 +508,7 @@ mod tests {
 
     #[test]
     fn full_message_encode_decode_write_data_with_special_bytes() {
-        // Konstruiere absichtlich Payload, das viele 0x7E/0x7D enthaelt.
+        // Deliberately construct a payload that contains many 0x7E/0x7D.
         let msg = message_with(
             WriteDataPayload {
                 representation: alloc::vec![0x7E, 0x7D, 0x00, 0x7E, 0x7D, 0xFF, 0x7E],
@@ -704,7 +704,7 @@ mod tests {
     fn streaming_framer_emits_crc_error_for_corrupted_frame() {
         let msg = message_with(ResetPayload.into_submessage().unwrap());
         let mut frame = encode_message(&msg).unwrap();
-        // Letztes Byte vor End-Flag flippen.
+        // Flip the last byte before the end flag.
         let len = frame.len();
         frame[len - 2] ^= 0xFF;
         let mut framer = SerialFramer::new();
@@ -746,7 +746,7 @@ mod tests {
         // Halben Frame einspeisen.
         let _ = framer.push_bytes(&frame[..frame.len() / 2]);
         framer.reset();
-        // Jetzt vollen Frame einspeisen.
+        // Now feed in the full frame.
         let out = framer.push_bytes(&frame);
         assert_eq!(out.len(), 1);
         assert_eq!(*out[0].as_ref().unwrap(), msg);

@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DDS-Bridge-Trait-Surface.
+//! DDS bridge trait surface.
 //!
 //! Spec dds-amqp-1.0:
-//! * §7.7.2 Inbound Operation Signals — `dds:operation`-Werte
-//!   (`write/register/unregister/dispose`) auf
-//!   DataWriter-Method-Calls dispatchen.
-//! * §7.7.3 Disposition Mapping — AMQP-Disposition auf
-//!   DDS-Sample-State-Update.
-//! * §11.3 Instance-Lifecycle Failures — Fehler beim Lifecycle-
-//!   Handling sind spec-konform auf AMQP-Errors abzubilden.
+//! * §7.7.2 Inbound Operation Signals — dispatch `dds:operation`
+//!   values (`write/register/unregister/dispose`) onto
+//!   DataWriter method calls.
+//! * §7.7.3 Disposition Mapping — AMQP disposition onto a
+//!   DDS sample-state update.
+//! * §11.3 Instance-Lifecycle Failures — errors during lifecycle
+//!   handling must be mapped to AMQP errors per spec.
 //!
-//! Das Endpoint-Crate selbst bringt keine DDS-DataWriter/Reader-
-//! Implementierung mit (das ist die DCPS-Crate). Wir definieren
-//! Trait-Surface, gegen die der Daemon (oder ein Test-Mock) bindet
-//! — analog zu [`crate::security::AccessControlPlugin`].
+//! The endpoint crate itself ships no DDS DataWriter/Reader
+//! implementation (that is the DCPS crate). We define the
+//! trait surface that the daemon (or a test mock) binds against
+//! — analogous to [`crate::security::AccessControlPlugin`].
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -24,43 +24,43 @@ use crate::errors::{AmqpError, instance_unknown, register_missing_key, unknown_d
 use crate::properties::DdsOperation;
 
 // ============================================================
-// §7.7.2 — Inbound Operation Dispatcher
+// §7.7.2 — inbound operation dispatcher
 // ============================================================
 
-/// Eingabe fuer einen Inbound-Operation-Dispatch-Call.
+/// Input for an inbound operation dispatch call.
 #[derive(Debug, Clone)]
 pub struct InboundOperation {
-    /// `dds:operation` aus den Application-Properties.
+    /// `dds:operation` from the application properties.
     pub operation: DdsOperation,
-    /// Topic-Name, gegen den dispatched wird.
+    /// Topic name to dispatch against.
     pub topic: String,
-    /// `dds:instance-handle` (16 Byte) — identifiziert die Instanz.
-    /// Bei `register` aus dem Body abgeleitet, bei
-    /// `unregister`/`dispose` aus dieser Property.
+    /// `dds:instance-handle` (16 byte) — identifies the instance.
+    /// For `register` derived from the body, for
+    /// `unregister`/`dispose` from this property.
     pub instance_handle: Option<[u8; 16]>,
-    /// Sample-Body-Bytes (XCDR2 / JSON / native).
+    /// Sample body bytes (XCDR2 / JSON / native).
     pub body: Vec<u8>,
 }
 
-/// Spec §11.3 — Resultat einer Lifecycle-Dispatch-Operation.
+/// Spec §11.3 — result of a lifecycle dispatch operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DispatchOutcome {
-    /// Operation wurde erfolgreich an DDS-DataWriter gemeldet.
+    /// Operation was successfully reported to the DDS DataWriter.
     Accepted,
-    /// `unregister` / `dispose` auf unbekannter Instanz —
+    /// `unregister` / `dispose` on an unknown instance —
     /// `amqp:precondition-failed`.
     UnknownInstance,
-    /// `register` ohne Key-Felder im Body —
+    /// `register` without key fields in the body —
     /// `amqp:decode-error`.
     RegisterMissingKey,
-    /// Unbekannter operation-Wert (Spec §11.2 →
+    /// Unknown operation value (spec §11.2 →
     /// `amqp:not-implemented`).
     UnknownOperation(String),
 }
 
 impl DispatchOutcome {
-    /// Spec §11.2 + §11.3 — Outcome auf `AmqpError` abbilden.
-    /// Liefert `None` wenn Outcome `Accepted` ist.
+    /// Spec §11.2 + §11.3 — map the outcome to an `AmqpError`.
+    /// Returns `None` when the outcome is `Accepted`.
     #[must_use]
     pub fn to_amqp_error(&self, key_hex: &str) -> Option<AmqpError> {
         match self {
@@ -72,23 +72,23 @@ impl DispatchOutcome {
     }
 }
 
-/// Spec §7.7.2 — DDS-Bridge-Adapter, der einen Inbound-Operation
-/// auf einen DDS-DataWriter-Method-Call dispatcht.
+/// Spec §7.7.2 — DDS bridge adapter that dispatches an inbound
+/// operation onto a DDS DataWriter method call.
 ///
-/// Implementer:
-/// * Daemon-Variante mit echter DCPS-Bruecke.
-/// * Test-Mock fuer Conformance-Tests.
+/// Implementers:
+/// * Daemon variant with a real DCPS bridge.
+/// * Test mock for conformance tests.
 pub trait DdsOperationDispatcher {
-    /// Dispatch der eingelesenen Operation.
+    /// Dispatch the parsed operation.
     ///
     /// # Errors / Outcome
-    /// Liefert `DispatchOutcome::Accepted` bei Erfolg, sonst
-    /// einen Spec-konformen Fehler-Outcome.
+    /// Returns `DispatchOutcome::Accepted` on success, otherwise
+    /// a spec-conformant error outcome.
     fn dispatch(&self, op: &InboundOperation) -> DispatchOutcome;
 }
 
-/// No-op-Dispatcher, der alle Operationen akzeptiert.
-/// Test-Default; **nicht** fuer Produktion.
+/// No-op dispatcher that accepts all operations.
+/// Test default; **not** for production.
 #[derive(Debug, Default)]
 pub struct AcceptAllDispatcher;
 
@@ -98,21 +98,21 @@ impl DdsOperationDispatcher for AcceptAllDispatcher {
     }
 }
 
-/// Dispatcher, der eine Liste registrierter Instance-Handles
-/// pflegt und Spec-§11.3-Fehler emittiert.
+/// Dispatcher that maintains a list of registered instance handles
+/// and emits §11.3 spec errors.
 #[derive(Debug, Default)]
 pub struct InstanceTrackingDispatcher {
     known: alloc::collections::BTreeSet<[u8; 16]>,
 }
 
 impl InstanceTrackingDispatcher {
-    /// Frischer Tracker.
+    /// Fresh tracker.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Anzahl bekannter Instanzen (test-helper).
+    /// Number of known instances (test helper).
     #[must_use]
     pub fn known_count(&self) -> usize {
         self.known.len()
@@ -123,15 +123,15 @@ impl DdsOperationDispatcher for InstanceTrackingDispatcher {
     fn dispatch(&self, op: &InboundOperation) -> DispatchOutcome {
         match op.operation {
             DdsOperation::Register => {
-                // Spec §11.3 — register OHNE Key-Felder im Body
-                // ist Decode-Error.
+                // Spec §11.3 — register WITHOUT key fields in the
+                // body is a decode error.
                 if op.body.is_empty() {
                     return DispatchOutcome::RegisterMissingKey;
                 }
                 DispatchOutcome::Accepted
             }
             DdsOperation::Unregister | DdsOperation::Dispose => {
-                // Spec §11.3 — unbekannte Instanz → precondition-
+                // Spec §11.3 — unknown instance → precondition-
                 // failed.
                 if let Some(h) = op.instance_handle {
                     if !self.known.contains(&h) {
@@ -146,22 +146,22 @@ impl DdsOperationDispatcher for InstanceTrackingDispatcher {
 }
 
 impl InstanceTrackingDispatcher {
-    /// Test-helper: registriere eine Instanz.
+    /// Test helper: register an instance.
     pub fn register_instance(&mut self, handle: [u8; 16]) {
         self.known.insert(handle);
     }
 }
 
 // ============================================================
-// §7.7.3 — Disposition Mapping
+// §7.7.3 — disposition mapping
 // ============================================================
 
-/// Spec §3.4 + §7.7.3 — AMQP-Disposition-State.
+/// Spec §3.4 + §7.7.3 — AMQP disposition state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispositionState {
     /// Spec §3.4.2 — `accepted`.
     Accepted,
-    /// Spec §3.4.3 — `rejected` (mit Error-Condition).
+    /// Spec §3.4.3 — `rejected` (with an error condition).
     Rejected,
     /// Spec §3.4.4 — `released`.
     Released,
@@ -169,31 +169,31 @@ pub enum DispositionState {
     Modified,
 }
 
-/// Spec §7.7.3 — DDS-Side-Sample-State-Update aus AMQP-
-/// Disposition-Result.
+/// Spec §7.7.3 — DDS-side sample-state update from an AMQP
+/// disposition result.
 ///
-/// Wire-up-Pfad: [`crate::link::LinkSession::settle_with_mapper`] ruft
-/// dieses Trait beim Empfangen eines AMQP-Disposition-Frames mit dem
-/// dekodierten Sample-Handle und [`DispositionState`] auf.
+/// Wireup path: [`crate::link::LinkSession::settle_with_mapper`] calls
+/// this trait when receiving an AMQP disposition frame with the
+/// decoded sample handle and [`DispositionState`].
 ///
-/// Caller-Implementer (typisch eine DCPS-Bruecke):
-/// * `accepted` → `acknowledged()` auf den DDS-DataWriter.
+/// Caller implementers (typically a DCPS bridge):
+/// * `accepted` → `acknowledged()` on the DDS DataWriter.
 /// * `rejected` / `released` → `unacknowledged()`.
-/// * `modified` → typisch wie `rejected` behandeln.
+/// * `modified` → typically handled like `rejected`.
 ///
-/// Fuer AMQP-only-Workflows ohne DDS-Bridge:
-/// [`NoopDispositionMapper`] verwenden ODER
-/// [`crate::link::LinkSession::settle`] (counter-only) aufrufen.
+/// For AMQP-only workflows without a DDS bridge:
+/// use [`NoopDispositionMapper`] OR call
+/// [`crate::link::LinkSession::settle`] (counter-only).
 pub trait DispositionMapper {
-    /// Wendet ein Disposition auf den DDS-side DataWriter an.
+    /// Applies a disposition to the DDS-side DataWriter.
     fn apply(&self, sample_handle: [u8; 16], state: DispositionState);
 }
 
-/// Null-Object-Default fuer AMQP-only-Workflows ohne DDS-Side-Sample-
-/// State-Update.
+/// Null-object default for AMQP-only workflows without a DDS-side
+/// sample-state update.
 ///
-/// Caller mit DDS-Bridge implementieren `DispositionMapper` selbst
-/// und uebergeben es an
+/// Callers with a DDS bridge implement `DispositionMapper` themselves
+/// and pass it to
 /// [`crate::link::LinkSession::settle_with_mapper`].
 #[derive(Debug, Default)]
 pub struct NoopDispositionMapper;
@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn dispatch_outcome_to_amqp_error_maps_correctly() {
-        // Accepted → kein Error.
+        // Accepted → no error.
         assert!(DispatchOutcome::Accepted.to_amqp_error("k").is_none());
         // UnknownInstance → precondition-failed.
         let e = DispatchOutcome::UnknownInstance
@@ -297,7 +297,7 @@ mod tests {
     #[test]
     fn noop_disposition_mapper_does_nothing() {
         let m = NoopDispositionMapper;
-        // Test ist Pflicht-Smoke: Trait-Aufruf darf nicht panicken.
+        // Mandatory smoke test: the trait call must not panic.
         m.apply([0u8; 16], DispositionState::Accepted);
         m.apply([0u8; 16], DispositionState::Rejected);
         m.apply([0u8; 16], DispositionState::Released);

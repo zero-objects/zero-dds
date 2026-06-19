@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// E2E-Tests fuer `zerodds-corba-bridged`. Wir spawnen den Daemon,
-// senden eine GIOP-Request, und verifizieren dass eine GIOP-Reply
-// mit `NoException` zurueckkommt.
+// E2E tests for `zerodds-corba-bridged`. We spawn the daemon, send a
+// GIOP request, and verify that a GIOP reply with `NoException` comes
+// back.
 //
 // Spec: `docs/specs/zerodds-corba-bridge-1.0.md` §12.2.
 
@@ -49,18 +49,18 @@ impl Drop for DaemonGuard {
     }
 }
 
-/// SIGTERM-graceful Termination + 3-s-Wait, sonst SIGKILL-Fallback.
-/// Ein hartes `child.kill()` (SIGKILL) lässt unter `cargo llvm-cov`
-/// die LLVM-Coverage-`__llvm_profile_write_file`-Atexit-Handler nicht
-/// laufen → korrupte `.profraw`-Header → `llvm-profdata merge` failt
-/// die ganze Pipeline.
+/// Graceful SIGTERM termination + 3 s wait, otherwise SIGKILL
+/// fallback. A hard `child.kill()` (SIGKILL) prevents the LLVM
+/// coverage `__llvm_profile_write_file` atexit handlers from running
+/// under `cargo llvm-cov` → corrupt `.profraw` headers → `llvm-profdata
+/// merge` fails the entire pipeline.
 fn terminate_child_gracefully(child: &mut Child) {
     #[cfg(unix)]
     {
         let pid = child.id() as i32;
-        // SAFETY: `child.id()` ist valid solange wir nicht schon
-        // gewaitet haben; Drop ist exklusiv. `libc::kill` mit SIGTERM
-        // ist immer call-safe.
+        // SAFETY: `child.id()` is valid as long as we have not already
+        // waited; Drop is exclusive. `libc::kill` with SIGTERM is
+        // always call-safe.
         unsafe {
             libc::kill(pid, libc::SIGTERM);
         }

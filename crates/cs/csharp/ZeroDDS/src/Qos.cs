@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// Qos.cs — Public C# Pendants der OMG DDS 1.4 §2.2.3 QoS-Policies
-// und der 6 QoS-Sets (Spec §2.2.2.x.y get_qos/set_qos).
+// Qos.cs — public C# counterparts of the OMG DDS 1.4 §2.2.3 QoS policies
+// and the 6 QoS sets (Spec §2.2.2.x.y get_qos/set_qos).
 //
-// API-Style: idiomatisches C# mit Record-Structs fuer Value-Type-
-// Policies und Klassen fuer QoS-Sets (mutable, builder-friendly).
+// API style: idiomatic C# with record structs for value-type
+// policies and classes for QoS sets (mutable, builder-friendly).
 
 using System;
 using System.Collections.Generic;

@@ -3,26 +3,26 @@
 
 //! `TransportLocator`-Wire-Encoding (Spec §7.7.4).
 //!
-//! Eine `TransportLocator`-Variante kennzeichnet eine erreichbare
-//! Transport-Adresse, ueber die ein Agent (oder Client) erreichbar ist.
-//! Die Spec definiert drei Groessen-Klassen:
+//! A `TransportLocator` variant identifies a reachable
+//! transport address through which an agent (or client) can be reached.
+//! The spec defines three size classes:
 //!
 //! ```text
 //!   +----+ ----+
-//!   |fmt |     |   fmt = 0x00 → Small  (4 Adress + 2 Port = 6 Byte)
-//!   +----+     |         0x01 → Medium (4 Adress + 4 Port = 8 Byte)
-//!   |  payload |         0x02 → Large  (16 Adress + 4 Port = 20 Byte)
+//!   |fmt |     |   fmt = 0x00 → Small  (4 address + 2 port = 6 bytes)
+//!   +----+     |         0x01 → Medium (4 address + 4 port = 8 bytes)
+//!   |  payload |         0x02 → Large  (16 address + 4 port = 20 bytes)
 //!   ~          ~         0x03 → String (UTF-8)
 //!   +----------+
 //! ```
 //!
-//! `Small` ist gedacht fuer "klassisches IPv4+UDP-Port". `Medium`
-//! erlaubt einen 32-Bit-Port-Identifier (z.B. fuer L4-Multipath-IDs).
-//! `Large` ist IPv6+Port oder beliebiger 16-Byte-Adressraum (z.B. UUID).
+//! `Small` is intended for "classic IPv4+UDP port". `Medium`
+//! allows a 32-bit port identifier (e.g. for L4 multipath IDs).
+//! `Large` is IPv6+port or any 16-byte address space (e.g. UUID).
 //!
-//! Diese Datei kapselt nur das Wire-Format (Endianness folgt dem Aufrufer
-//! analog zu anderen XCDR2-Strukturen). Auflosung von String-Locators auf
-//! tatsaechliche `SocketAddr` ist Aufgabe des Transport-Layers.
+//! This file encapsulates only the wire format (endianness follows the caller,
+//! analogous to other XCDR2 structures). Resolving string locators to an
+//! actual `SocketAddr` is the task of the transport layer.
 
 extern crate alloc;
 use alloc::string::String;
@@ -39,86 +39,86 @@ pub mod fmt_disc {
     pub const MEDIUM: u8 = 0x01;
     /// `ADDRESS_FORMAT_LARGE`.
     pub const LARGE: u8 = 0x02;
-    /// `ADDRESS_FORMAT_STRING` (z.B. `"udpv4://192.168.0.5:7400"`).
+    /// `ADDRESS_FORMAT_STRING` (e.g. `"udpv4://192.168.0.5:7400"`).
     pub const STRING: u8 = 0x03;
-    /// TCP-Locator (C6.2.D, Spec §11.3.1) — IPv4 + 2-Byte Port.
+    /// TCP locator (C6.2.D, Spec §11.3.1) — IPv4 + 2-byte port.
     pub const TCP: u8 = 0x04;
-    /// Serial-Locator (C6.2.D, Spec Annex C) — Device-String + Baud-Rate.
+    /// Serial locator (C6.2.D, Spec Annex C) — device string + baud rate.
     pub const SERIAL: u8 = 0x05;
 }
 
-/// `ADDRESS_FORMAT_SMALL` (UDPv4 4-Byte Adresse + 2-Byte Port).
+/// `ADDRESS_FORMAT_SMALL` (UDPv4 4-byte address + 2-byte port).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct TransportLocatorSmall {
-    /// 4 Adress-Bytes (z.B. IPv4).
+    /// 4 address bytes (e.g. IPv4).
     pub address: [u8; 4],
-    /// 2 Port-Bytes (Big-Endian, wie im Netzwerk-Standard).
+    /// 2 port bytes (big-endian, as in the network standard).
     pub port: [u8; 2],
 }
 
-/// `ADDRESS_FORMAT_MEDIUM` (4-Byte Adresse + 4-Byte Port-Identifier).
+/// `ADDRESS_FORMAT_MEDIUM` (4-byte address + 4-byte port identifier).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct TransportLocatorMedium {
-    /// 4 Adress-Bytes.
+    /// 4 address bytes.
     pub address: [u8; 4],
-    /// 4 Port-Bytes (BE).
+    /// 4 port bytes (BE).
     pub port: [u8; 4],
 }
 
-/// `ADDRESS_FORMAT_LARGE` (16-Byte Adresse + 4-Byte Port).
+/// `ADDRESS_FORMAT_LARGE` (16-byte address + 4-byte port).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct TransportLocatorLarge {
-    /// 16 Adress-Bytes (IPv6 oder UUID).
+    /// 16 address bytes (IPv6 or UUID).
     pub address: [u8; 16],
-    /// 4 Port-Bytes (BE).
+    /// 4 port bytes (BE).
     pub port: [u8; 4],
 }
 
-/// Cap fuer String-Locator (vermeidet OOM bei boeswilligem Length-Header).
+/// Cap for string locators (avoids OOM on a malicious length header).
 pub const TRANSPORT_LOCATOR_STRING_MAX: usize = 256;
 
-/// Cap fuer Serial-Device-Strings (z.B. `"/dev/ttyUSB0"`).
+/// Cap for serial device strings (e.g. `"/dev/ttyUSB0"`).
 pub const TRANSPORT_LOCATOR_SERIAL_DEVICE_MAX: usize = 64;
 
-/// TCP-Locator (Spec §11.3.1) — analog UDPv4-Medium aber als eigene
-/// Variante markiert, damit Sender/Empfaenger den passenden Transport-
-/// Stack waehlen koennen.
+/// TCP locator (Spec §11.3.1) — analogous to UDPv4 Medium but marked as
+/// its own variant, so that sender/receiver can choose the matching
+/// transport stack.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct TransportLocatorTcp {
-    /// 4 Adress-Bytes (IPv4).
+    /// 4 address bytes (IPv4).
     pub address: [u8; 4],
-    /// 2 Port-Bytes (Big-Endian).
+    /// 2 port bytes (big-endian).
     pub port: [u8; 2],
 }
 
-/// Serial-Locator (Spec Annex C) — Device-String + Baud-Rate.
+/// Serial locator (Spec Annex C) — device string + baud rate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransportLocatorSerial {
-    /// Device-Pfad (z.B. `"/dev/ttyUSB0"` oder `"COM3"`).
+    /// Device path (e.g. `"/dev/ttyUSB0"` or `"COM3"`).
     pub device: String,
-    /// Baud-Rate (z.B. 115200).
+    /// Baud rate (e.g. 115200).
     pub baud_rate: u32,
 }
 
-/// `TransportLocator`-Variante.
+/// `TransportLocator` variant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransportLocator {
-    /// 4-Byte Adresse + 2-Byte Port.
+    /// 4-byte address + 2-byte port.
     Small(TransportLocatorSmall),
-    /// 4-Byte Adresse + 4-Byte Port.
+    /// 4-byte address + 4-byte port.
     Medium(TransportLocatorMedium),
-    /// 16-Byte Adresse + 4-Byte Port.
+    /// 16-byte address + 4-byte port.
     Large(TransportLocatorLarge),
-    /// String-Form (UTF-8).
+    /// String form (UTF-8).
     String(String),
-    /// TCP-Locator (C6.2.D).
+    /// TCP locator (C6.2.D).
     Tcp(TransportLocatorTcp),
-    /// Serial-Locator (C6.2.D).
+    /// Serial locator (C6.2.D).
     Serial(TransportLocatorSerial),
 }
 
 impl TransportLocator {
-    /// Discriminator-Byte.
+    /// Discriminator byte.
     #[must_use]
     pub fn discriminator(&self) -> u8 {
         match self {
@@ -131,12 +131,12 @@ impl TransportLocator {
         }
     }
 
-    /// Encodiert. `e` regelt nur die `u32`-Length-Felder (String und
-    /// Medium/Large-Port-Lange-Werte folgen `e`).
+    /// Encodes. `e` only governs the `u32` length fields (string and
+    /// Medium/Large port-length values follow `e`).
     ///
     /// # Errors
-    /// `PayloadTooLarge`, wenn ein String laenger als
-    /// `TRANSPORT_LOCATOR_STRING_MAX` ist.
+    /// `PayloadTooLarge` if a string is longer than
+    /// `TRANSPORT_LOCATOR_STRING_MAX`.
     pub fn encode(&self, e: Endianness) -> Result<Vec<u8>, XrceError> {
         let mut out = Vec::new();
         out.push(self.discriminator());
@@ -198,7 +198,7 @@ impl TransportLocator {
         Ok(out)
     }
 
-    /// Decodiert. Liefert `(locator, bytes_consumed)`.
+    /// Decodes. Returns `(locator, bytes_consumed)`.
     ///
     /// # Errors
     /// `UnexpectedEof`, `ValueOutOfRange`, `PayloadTooLarge`.

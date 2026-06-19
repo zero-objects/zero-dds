@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! IDL 4.2 Grammar — `IDL_42`-Konstante und alle Productions.
+//! IDL 4.2 grammar — the `IDL_42` constant and all productions.
 //!
-//! Die Grammar wird ueber die Tasks T3.1–T3.10 inkrementell aufgebaut.
-//! Jede Section spiegelt die jeweilige Spec-Section in OMG IDL 4.2:
+//! The grammar is built incrementally over the tasks T3.1–T3.10.
+//! Each section mirrors the respective spec section in OMG IDL 4.2:
 //!
 //! - **§7.2** Lexical Conventions (T3.1)
 //! - **§7.4.1.1–3** `<specification>`, `<definition>`, `<module>` (T3.2)
@@ -16,30 +16,30 @@
 //! - **§7.4.1.4.4.6** `<typedef_decl>`, `<type_declarator>` (T3.9)
 //! - **§7.4.1.4.4.7** `<except_decl>` (T3.10)
 //!
-//! ## Designentscheidung: manuelles Repeat/Choice-Desugaring
+//! ## Design decision: manual repeat/choice desugaring
 //!
-//! Die Earley-Engine in Phase 0 behandelt `Symbol::Repeat` und
-//! `Symbol::Choice` nicht direkt. Wiederholungen in der IDL-BNF werden
-//! daher als rekursive Productions geschrieben — z.B.
+//! The Earley engine in phase 0 does not handle `Symbol::Repeat` and
+//! `Symbol::Choice` directly. Repetitions in the IDL BNF are
+//! therefore written as recursive productions — e.g.
 //!
 //! ```text
 //! <member_list> ::= <member>
 //!                | <member_list> <member>
 //! ```
 //!
-//! statt der EBNF-Form `<member>+`. Das ist mehr Schreibarbeit, haelt
-//! aber die Engine sauber. Engine-Erweiterung um Repeat/Choice ist als
-//! spaetere Optimierung vorgesehen.
+//! instead of the EBNF form `<member>+`. That is more writing, but keeps
+//! the engine clean. Extending the engine with repeat/choice is planned
+//! as a later optimization.
 //!
-//! ## Production-IDs
+//! ## Production IDs
 //!
-//! IDs sind als `pub const` aufgefuehrt — stabil ueber alle
-//! `IDL_42`-Aenderungen, damit externe Werkzeuge (`tools/idlc`,
-//! `tools/traceability`) auf sie verweisen koennen. Die `IDL_42.productions`-
-//! Reihenfolge entspricht den IDs.
+//! IDs are listed as `pub const` — stable across all
+//! `IDL_42` changes, so that external tools (`tools/idlc`,
+//! `tools/traceability`) can refer to them. The `IDL_42.productions`
+//! order corresponds to the IDs.
 
-// Production-Konstanten und ihre IDs sind durch Section-Kommentare
-// gruppiert dokumentiert; einzelne Doc-Comments waeren redundant.
+// Production constants and their IDs are documented grouped by section
+// comments; individual doc-comments would be redundant.
 #![allow(missing_docs)]
 
 use super::{
@@ -48,7 +48,7 @@ use super::{
 };
 
 // ============================================================================
-// Spec-Anker
+// Spec anchors
 // ============================================================================
 
 const fn spec(section: &'static str) -> SpecRef {
@@ -75,12 +75,12 @@ const fn named_alt(name: &'static str, symbols: &'static [Symbol]) -> Alternativ
 }
 
 // ============================================================================
-// Production-ID-Konstanten
+// Production-ID constants
 // ============================================================================
-// Nach Section gruppiert. Reihenfolge stabil — niemals umnummerieren ohne
-// Code-Generator-Update.
+// Grouped by section. Order stable — never renumber without
+// a code-generator update.
 
-// §7.2 Lexical Conventions (T3.1) — Wrapper-Productions ueber TokenKind.
+// §7.2 Lexical Conventions (T3.1) — wrapper productions over TokenKind.
 pub const ID_IDENTIFIER: ProductionId = ProductionId(0);
 pub const ID_INTEGER_LITERAL: ProductionId = ProductionId(1);
 pub const ID_FLOATING_PT_LITERAL: ProductionId = ProductionId(2);
@@ -149,6 +149,7 @@ pub const ID_ANNOTATION_APPL: ProductionId = ProductionId(96);
 pub const ID_ANNOTATION_APPL_PARAMS: ProductionId = ProductionId(97);
 pub const ID_ANNOTATION_APPL_PARAM_LIST: ProductionId = ProductionId(98);
 pub const ID_ANNOTATION_APPL_PARAM: ProductionId = ProductionId(99);
+pub const ID_ANNOTATION_APPL_NAME: ProductionId = ProductionId(185);
 
 // §7.4.3.1 Rules 90-97 — multi-name attr + raises (R-blocker RPC).
 pub const ID_READONLY_ATTR_SPEC: ProductionId = ProductionId(108);
@@ -262,7 +263,7 @@ pub const ID_CASE_LABELS: ProductionId = ProductionId(71);
 pub const ID_CASE_LABEL: ProductionId = ProductionId(72);
 pub const ID_ELEMENT_SPEC: ProductionId = ProductionId(73);
 
-// const_expr Operator-Stack (T-LIM-3). Praezedenz von oben nach unten:
+// const_expr operator stack (T-LIM-3). Precedence from top to bottom:
 // or → xor → and → shift → add → mult → unary → primary.
 pub const ID_OR_EXPR: ProductionId = ProductionId(57);
 pub const ID_XOR_EXPR: ProductionId = ProductionId(58);
@@ -301,7 +302,7 @@ pub const ID_WIDE_STRING_TYPE: ProductionId = ProductionId(30);
 pub const ID_FIXED_PT_TYPE: ProductionId = ProductionId(31);
 pub const ID_POSITIVE_INT_CONST: ProductionId = ProductionId(32);
 
-// Primitive Types (T3.4) — Forward-Declared, Productions folgen unten.
+// Primitive Types (T3.4) — forward-declared, productions follow below.
 pub const ID_BASE_TYPE_SPEC: ProductionId = ProductionId(18);
 pub const ID_INTEGER_TYPE: ProductionId = ProductionId(19);
 pub const ID_SIGNED_INT: ProductionId = ProductionId(20);
@@ -315,10 +316,10 @@ pub const ID_OCTET_TYPE: ProductionId = ProductionId(26);
 // ============================================================================
 // §7.2 Lexical Conventions (T3.1)
 // ============================================================================
-// Trivialer 1:1-Wrapper pro Lexical-Token-Klasse. Diese Productions
-// erlauben es, in syntaktischen Productions per Nonterminal-Referenz auf
-// Lexical-Tokens zu verweisen — z.B. `<member> ::= <type_spec> <identifier>`
-// statt `<member> ::= <type_spec> Ident-Terminal`.
+// Trivial 1:1 wrapper per lexical token class. These productions
+// allow referring to lexical tokens via a nonterminal reference in
+// syntactic productions — e.g. `<member> ::= <type_spec> <identifier>`
+// instead of `<member> ::= <type_spec> Ident-Terminal`.
 
 pub const PROD_IDENTIFIER: Production = Production {
     id: ID_IDENTIFIER,
@@ -398,9 +399,9 @@ pub const PROD_BOOLEAN_LITERAL: Production = Production {
 // ============================================================================
 // §7.4.1.1–3 Specification, Definition, Module (T3.2)
 // ============================================================================
-// BNF aus IDL 4.2 §7.4.1.1:
+// BNF from IDL 4.2 §7.4.1.1:
 //   <specification> ::= <definition> +
-// Desugared zu rekursiver Liste:
+// Desugared to a recursive list:
 //   <specification>     ::= <definition_list>
 //   <definition_list>   ::= <definition>
 //                        | <definition_list> <definition>
@@ -413,10 +414,10 @@ pub const PROD_SPECIFICATION: Production = Production {
     ast_hint: None,
 };
 
-// Spec-Abweichung: leere Definition-Liste wird erlaubt (`module M {}`).
-// IDL 4.2 §7.4.1.3 fordert strikt `<definition>+`, aber praktisch alle
-// DDS-Vendoren akzeptieren leere Module — Migration aus Bestands-IDL
-// wuerde sonst scheitern. Dokumentiert per Note.
+// Spec deviation: an empty definition list is allowed (`module M {}`).
+// IDL 4.2 §7.4.1.3 strictly requires `<definition>+`, but practically all
+// DDS vendors accept empty modules — migration from existing IDL
+// would otherwise fail. Documented via a note.
 pub const PROD_DEFINITION_LIST: Production = Production {
     id: ID_DEFINITION_LIST,
     name: "definition_list",
@@ -425,7 +426,7 @@ pub const PROD_DEFINITION_LIST: Production = Production {
         Alternative {
             name: Some("empty"),
             symbols: &[],
-            note: Some("Spec fordert <definition>+, hier zugelassen fuer Vendor-Kompatibilitaet."),
+            note: Some("Spec requires <definition>+, allowed here for vendor compatibility."),
         },
         named_alt("single", &[Symbol::Nonterminal(ID_DEFINITION)]),
         named_alt(
@@ -439,14 +440,14 @@ pub const PROD_DEFINITION_LIST: Production = Production {
     ast_hint: None,
 };
 
-// BNF aus IDL 4.2 §7.4.1.2:
+// BNF from IDL 4.2 §7.4.1.2:
 //   <definition> ::= <module_dcl> ";"
 //                  | <const_dcl> ";"
 //                  | <type_dcl> ";"
 //                  | <except_dcl> ";"
 //                  | ...
-// T3.2 hatte nur <module_dcl>; T3.3 ergaenzt <type_dcl>, weitere
-// Definitionen folgen in T3.7-T3.10.
+// T3.2 had only <module_dcl>; T3.3 adds <type_dcl>, further
+// definitions follow in T3.7-T3.10.
 pub const PROD_DEFINITION: Production = Production {
     id: ID_DEFINITION,
     name: "definition",
@@ -600,8 +601,8 @@ pub const PROD_DEFINITION: Production = Production {
             ],
         ),
         // §7.4.15 Rule 218 — User-Defined Annotation Declarations.
-        // Hinweis: KEIN annotation_appl_seq-Prefix; Annotation-Defs
-        // selbst koennen nicht annotiert werden (Spec-konform).
+        // Note: NO annotation_appl_seq prefix; annotation defs
+        // themselves cannot be annotated (spec-compliant).
         named_alt(
             "annotation_dcl",
             &[
@@ -613,7 +614,7 @@ pub const PROD_DEFINITION: Production = Production {
     ast_hint: None,
 };
 
-// BNF aus IDL 4.2 §7.4.1.3:
+// BNF from IDL 4.2 §7.4.1.3:
 //   <module_dcl> ::= "module" <identifier> "{" <definition_list> "}"
 pub const PROD_MODULE_DCL: Production = Production {
     id: ID_MODULE_DCL,
@@ -632,9 +633,9 @@ pub const PROD_MODULE_DCL: Production = Production {
 // ============================================================================
 // §7.4.1.4 Type Declarations / Type-Specs (T3.3)
 // ============================================================================
-// BNF aus IDL 4.2 §7.4.1.4:
+// BNF from IDL 4.2 §7.4.1.4:
 //   <type_dcl> ::= <constr_type_dcl> | <native_dcl> | <typedef_dcl>
-// T3.3 macht <type_dcl> zu einem Forward-Hub; konkrete Alternativen
+// T3.3 makes <type_dcl> a forward hub; concrete alternatives
 // BNF §7.4.1.4:
 //   <type_dcl> ::= <constr_type_dcl> | <native_dcl> | <typedef_dcl>
 pub const PROD_TYPE_DCL: Production = Production {
@@ -651,9 +652,9 @@ pub const PROD_TYPE_DCL: Production = Production {
 
 // §7.4.1.3 Rule 61: <native_dcl> ::= "native" <simple_declarator>
 //
-// Spec-Hinweis: native deklariert einen plattform-spezifischen Type
-// ohne IDL-Definition. CORBA-Konstrukt; in DDS selten genutzt, aber
-// fuer Repository-/Migration-Use-Cases relevant.
+// Spec note: native declares a platform-specific type
+// without an IDL definition. A CORBA construct; rarely used in DDS, but
+// relevant for repository/migration use cases.
 pub const PROD_NATIVE_DCL: Production = Production {
     id: ID_NATIVE_DCL,
     name: "native_dcl",
@@ -774,12 +775,12 @@ pub const PROD_BASE_TYPE_SPEC: Production = Production {
         named_alt("wide_char", &[Symbol::Nonterminal(ID_WIDE_CHAR_TYPE)]),
         named_alt("boolean", &[Symbol::Nonterminal(ID_BOOLEAN_TYPE)]),
         named_alt("octet", &[Symbol::Nonterminal(ID_OCTET_TYPE)]),
-        // CORBA Any (T4.6) — wird in DDS-IDL selten genutzt, aber von
-        // CORBA-Migrationen erwartet.
+        // CORBA Any (T4.6) — rarely used in DDS IDL, but expected by
+        // CORBA migrations.
         named_alt("any", &[Symbol::Nonterminal(ID_ANY_TYPE)]),
         // Spec §7.4.6.3 Rule (117): <base_type_spec> ::+ <object_type>.
-        // Inline `Object`-Keyword statt separater Production —
-        // semantisch identisch zur `<object_type>`-Rule (118).
+        // Inline `Object` keyword instead of a separate production —
+        // semantically identical to the `<object_type>` rule (118).
         named_alt("object", &[Symbol::Terminal(TokenKind::Keyword("Object"))]),
         // Spec §7.4.7.3 Rule (131): <base_type_spec> ::+ <value_base_type>.
         named_alt("value_base", &[Symbol::Nonterminal(ID_VALUE_BASE_TYPE)]),
@@ -1033,11 +1034,11 @@ pub const PROD_FIXED_PT_TYPE: Production = Production {
     ast_hint: None,
 };
 
-// BNF §7.4.1.4.4.5 (Vorgriff aus T3.8):
+// BNF §7.4.1.4.4.5 (preview from T3.8):
 //   <positive_int_const> ::= <integer_literal>
-// Die echte Definition <const_expr> kommt in T3.8 mit Konstanten-
-// Ausdruecken (Arithmetik, Scoped-Names). Vorerst nur Integer-Literal —
-// reicht fuer alle bounded sequences/strings.
+// The real definition <const_expr> comes in T3.8 with constant
+// expressions (arithmetic, scoped names). For now only integer literal —
+// sufficient for all bounded sequences/strings.
 pub const PROD_POSITIVE_INT_CONST: Production = Production {
     id: ID_POSITIVE_INT_CONST,
     name: "positive_int_const",
@@ -1086,9 +1087,9 @@ pub const PROD_STRUCT_DEF: Production = Production {
     name: "struct_def",
     spec_ref: spec("7.4.1.4.4.2"),
     alternatives: &[
-        // Inheritance-Variante zuerst — Extended Data Types BB (§7.4.13)
-        // erweitert struct um ":" <scoped_name>. Praktisch verwendet von
-        // RTI/OpenSplice fuer DDS-XTypes-Vererbung.
+        // Inheritance variant first — the Extended Data Types BB (§7.4.13)
+        // extends struct with ":" <scoped_name>. Used in practice by
+        // RTI/OpenSplice for DDS-XTypes inheritance.
         named_alt(
             "with_base",
             &[
@@ -1129,8 +1130,8 @@ pub const PROD_STRUCT_FORWARD_DCL: Production = Production {
 // BNF §7.4.1.4.4.2:
 //   <member_list> ::= <member> +
 //   <member>      ::= <type_spec> <declarators> ";"
-// Pragmatik: leere member_list zugelassen (analog definition_list,
-// fuer Vendor-Kompatibilitaet "struct Empty {};").
+// Pragmatic: empty member_list allowed (analogous to definition_list,
+// for vendor compatibility "struct Empty {};").
 pub const PROD_MEMBER_LIST: Production = Production {
     id: ID_MEMBER_LIST,
     name: "member_list",
@@ -1139,7 +1140,7 @@ pub const PROD_MEMBER_LIST: Production = Production {
         Alternative {
             name: Some("empty"),
             symbols: &[],
-            note: Some("Spec fordert <member>+, hier zugelassen fuer Vendor-Kompatibilitaet."),
+            note: Some("Spec requires <member>+, allowed here for vendor compatibility."),
         },
         named_alt("single", &[Symbol::Nonterminal(ID_MEMBER)]),
         named_alt(
@@ -1171,7 +1172,7 @@ pub const PROD_MEMBER: Production = Production {
 //                  | <declarators> "," <declarator>
 //   <declarator>  ::= <simple_declarator> | <complex_declarator>
 //   <simple_declarator> ::= <identifier>
-// <complex_declarator> (Arrays) folgt in T3.9 mit Typedef.
+// <complex_declarator> (arrays) follows in T3.9 with typedef.
 pub const PROD_DECLARATORS: Production = Production {
     id: ID_DECLARATORS,
     name: "declarators",
@@ -1195,9 +1196,9 @@ pub const PROD_DECLARATOR: Production = Production {
     name: "declarator",
     spec_ref: spec("7.4.1.4.4.3"),
     alternatives: &[
-        // complex_declarator zuerst — Earley-Disambiguation greift bei
-        // ident gefolgt von "[". OMG-Spec erlaubt array_declarator als
-        // complex_declarator auch im struct-member-Kontext.
+        // complex_declarator first — Earley disambiguation kicks in on
+        // an ident followed by "[". The OMG spec allows array_declarator as
+        // a complex_declarator also in the struct-member context.
         named_alt("complex", &[Symbol::Nonterminal(ID_ARRAY_DECLARATOR)]),
         named_alt("simple", &[Symbol::Nonterminal(ID_SIMPLE_DECLARATOR)]),
     ],
@@ -1222,7 +1223,7 @@ pub const PROD_SIMPLE_DECLARATOR: Production = Production {
 //   <union_forward_dcl> ::= "union" <identifier>
 //   <switch_type_spec> ::= <integer_type> | <char_type> | <wide_char_type>
 //                       | <boolean_type> | <enum_dcl> | <scoped_name>
-//   <switch_body> ::= <case>+   (manuell desugart als rekursive Liste)
+//   <switch_body> ::= <case>+   (manually desugared as a recursive list)
 //   <case>        ::= <case_labels> <element_spec> ";"
 //   <case_labels> ::= <case_label>
 //                  | <case_labels> <case_label>
@@ -1280,8 +1281,8 @@ pub const PROD_SWITCH_TYPE_SPEC: Production = Production {
         named_alt("boolean", &[Symbol::Nonterminal(ID_BOOLEAN_TYPE)]),
         named_alt("scoped", &[Symbol::Nonterminal(ID_SCOPED_NAME)]),
         // Spec §7.4.13.3 Rule (196): <switch_type_spec> ::+
-        // <wide_char_type> | <octet_type>. wide_char ist oben schon
-        // dabei; octet wird hier ergänzt.
+        // <wide_char_type> | <octet_type>. wide_char is already included
+        // above; octet is added here.
         named_alt("octet", &[Symbol::Nonterminal(ID_OCTET_TYPE)]),
     ],
     ast_hint: None,
@@ -1317,9 +1318,9 @@ pub const PROD_CASE: Production = Production {
     ast_hint: None,
 };
 
-// element_spec mit Annotation-Prefix (T4.4): erlaubt sowohl
-// `case 1: @optional long val;` (Annotation auf Element) als auch
-// `@optional case 1: long val;` (Annotation auf Case).
+// element_spec with annotation prefix (T4.4): allows both
+// `case 1: @optional long val;` (annotation on element) and
+// `@optional case 1: long val;` (annotation on case).
 
 pub const PROD_CASE_LABELS: Production = Production {
     id: ID_CASE_LABELS,
@@ -1382,8 +1383,8 @@ pub const PROD_ELEMENT_SPEC: Production = Production {
 //   <enumerator_list> ::= <enumerator>
 //                      | <enumerator_list> "," <enumerator>
 //   <enumerator> ::= <identifier>
-// Enum erfordert mindestens 1 enumerator (keine Vendor-Pragmatik fuer
-// leere Enums — die wuerden semantisch keinen Wert haben).
+// Enum requires at least 1 enumerator (no vendor pragmatism for
+// empty enums — they would have no semantic value).
 
 pub const PROD_ENUM_DCL: Production = Production {
     id: ID_ENUM_DCL,
@@ -1439,9 +1440,9 @@ pub const PROD_ENUMERATOR: Production = Production {
 //                  | <wide_string_type> | <scoped_name>
 //   <const_expr> ::= <or_expr> | ...
 //
-// T3.8 vereinfacht <const_expr> zu Literal-only (analog T3.5
-// positive_int_const). Volle Arithmetik (or/xor/and/shift/add/mul/unary)
-// läuft im AST-Builder.
+// T3.8 simplifies <const_expr> to literal-only (analogous to T3.5
+// positive_int_const). Full arithmetic (or/xor/and/shift/add/mul/unary)
+// runs in the AST builder.
 
 pub const PROD_CONST_DCL: Production = Production {
     id: ID_CONST_DCL,
@@ -1472,7 +1473,7 @@ pub const PROD_CONST_TYPE: Production = Production {
         named_alt("wide_string", &[Symbol::Nonterminal(ID_WIDE_STRING_TYPE)]),
         named_alt("scoped", &[Symbol::Nonterminal(ID_SCOPED_NAME)]),
         // Spec §7.4.1.4.3 Rule (43): <fixed_pt_const_type> ::= "fixed".
-        // Inline-Keyword genuegt — Production hat keinen weiteren Inhalt.
+        // Inline keyword suffices — the production has no further content.
         named_alt(
             "fixed_pt_const",
             &[Symbol::Terminal(TokenKind::Keyword("fixed"))],
@@ -1481,8 +1482,8 @@ pub const PROD_CONST_TYPE: Production = Production {
     ast_hint: None,
 };
 
-// const_expr ist der Top-Level-Wrapper; die echte Operator-Hierarchie
-// folgt in T-LIM-3 (or → xor → and → shift → add → mult → unary → primary).
+// const_expr is the top-level wrapper; the real operator hierarchy
+// follows in T-LIM-3 (or → xor → and → shift → add → mult → unary → primary).
 pub const PROD_CONST_EXPR: Production = Production {
     id: ID_CONST_EXPR,
     name: "const_expr",
@@ -1519,9 +1520,9 @@ pub const PROD_LITERAL: Production = Production {
 };
 
 // ============================================================================
-// §7.4.1.4.4.5 const_expr Operator-Stack (T-LIM-3)
+// §7.4.1.4.4.5 const_expr operator stack (T-LIM-3)
 // ============================================================================
-// BNF aus IDL 4.2 §7.4.1.4.4.5 (verkuerzt, klassische Praezedenz):
+// BNF from IDL 4.2 §7.4.1.4.4.5 (shortened, classic precedence):
 //   <or_expr>     ::= <xor_expr>   | <or_expr> "|" <xor_expr>
 //   <xor_expr>    ::= <and_expr>   | <xor_expr> "^" <and_expr>
 //   <and_expr>    ::= <shift_expr> | <and_expr> "&" <shift_expr>
@@ -1536,7 +1537,7 @@ pub const PROD_LITERAL: Production = Production {
 //                  | "~" <primary_expr> | <primary_expr>
 //   <primary_expr> ::= <scoped_name> | <literal>
 //                   | "(" <const_expr> ")"
-// Alle linksrekursiv, Engine handelt das via Earley.
+// All left-recursive, the engine handles that via Earley.
 
 pub const PROD_OR_EXPR: Production = Production {
     id: ID_OR_EXPR,
@@ -1592,11 +1593,11 @@ pub const PROD_AND_EXPR: Production = Production {
     ast_hint: None,
 };
 
-// HINWEIS: `>>` wird im Lexer NICHT als Multi-Char-Punct gefuehrt — es
-// kollidiert mit nested template-Closures wie `sequence<sequence<long>>`.
-// Stattdessen besteht der Right-Shift hier aus zwei einzelnen `>`-Tokens
-// (klassischer C++-Workaround vor C++11). Der Lexer-Tokenizer wird deshalb
-// kein `>>`-Token erzeugen, weil keine Production diese Punct-Regel nutzt.
+// NOTE: `>>` is NOT carried as a multi-char punct in the lexer — it
+// collides with nested template closures like `sequence<sequence<long>>`.
+// Instead the right shift here consists of two individual `>` tokens
+// (classic pre-C++11 C++ workaround). The lexer-tokenizer will therefore
+// not produce a `>>` token, because no production uses this punct rule.
 pub const PROD_SHIFT_EXPR: Production = Production {
     id: ID_SHIFT_EXPR,
     name: "shift_expr",
@@ -1782,7 +1783,7 @@ pub const PROD_TYPE_DECLARATOR: Production = Production {
         ),
         // Spec §7.4.1.3 Rule (64): <type_declarator> ::= { <simple_type_spec>
         // | <template_type_spec> | <constr_type_dcl> } <any_declarators>.
-        // Beispiel: typedef struct { long x; } S;
+        // Example: typedef struct { long x; } S;
         named_alt(
             "constr",
             &[
@@ -1868,7 +1869,7 @@ pub const PROD_FIXED_ARRAY_SIZE: Production = Production {
 // ============================================================================
 // BNF §7.4.1.4.4.7:
 //   <except_dcl> ::= "exception" <identifier> "{" <member_list> "}"
-// Identische Struktur wie struct_def, aber mit "exception"-Keyword.
+// Identical structure to struct_def, but with the "exception" keyword.
 
 pub const PROD_EXCEPT_DCL: Production = Production {
     id: ID_EXCEPT_DCL,
@@ -2144,7 +2145,7 @@ pub const PROD_EXPORT: Production = Production {
                 Symbol::Terminal(TokenKind::Punct(";")),
             ],
         ),
-        // Rule (123): <op_with_context> als Export-Variante.
+        // Rule (123): <op_with_context> as an export variant.
         named_alt(
             "op_with_context",
             &[
@@ -2329,7 +2330,7 @@ pub const PROD_SCOPED_NAME_LIST: Production = Production {
 // Rule 96: <set_excep_expr> ::= "setraises" <exception_list>
 // Rule 97: <exception_list> ::= "(" <scoped_name> { "," <scoped_name> }* ")"
 //
-// Anmerkung: <simple_declarator> ist hier `identifier` (Rule 41 in §7.4.1).
+// Note: <simple_declarator> here is `identifier` (Rule 41 in §7.4.1).
 
 pub const PROD_ATTR_DCL: Production = Production {
     id: ID_ATTR_DCL,
@@ -2493,8 +2494,8 @@ pub const PROD_EXCEPTION_LIST: Production = Production {
 //                                   [ "default" <const_expr> ] ";"
 // Rules 222/223: reserved (n/a).
 //
-// Hinweis: `annotation` wird Keyword (Tab 7-14 reserved); der Lexer leitet
-// das automatisch aus der Production ab.
+// Note: `annotation` becomes a keyword (Tab 7-14 reserved); the lexer derives
+// that automatically from the production.
 
 pub const PROD_ANNOTATION_DCL: Production = Production {
     id: ID_ANNOTATION_DCL,
@@ -2537,7 +2538,7 @@ pub const PROD_ANNOTATION_BODY_MEMBER: Production = Production {
     name: "annotation_body_member",
     spec_ref: spec("7.4.15"),
     alternatives: &[
-        // <annotation_member> endet selbst mit ";" (Rule 221).
+        // <annotation_member> ends with ";" itself (Rule 221).
         named_alt("member", &[Symbol::Nonterminal(ID_ANNOTATION_MEMBER)]),
         named_alt(
             "enum",
@@ -2594,10 +2595,10 @@ pub const PROD_ANNOTATION_MEMBER: Production = Production {
 // ============================================================================
 // §7.4.3 Valuetype (T-LIM-5, minimal)
 // ============================================================================
-// Vollstaendige <value_dcl>-Spec ist umfangreich (custom, abstract,
-// truncatable, init, factory). Spike-Scope: nur <value_box_dcl> und
-// <value_forward_dcl>, weil das das ist, was DDS-IDLs in der Praxis
-// nutzen.
+// The full <value_dcl> spec is extensive (custom, abstract,
+// truncatable, init, factory). Spike scope: only <value_box_dcl> and
+// <value_forward_dcl>, because that is what DDS IDLs use in
+// practice.
 //   <value_box_dcl>     ::= "valuetype" <identifier> <type_spec>
 //   <value_forward_dcl> ::= "valuetype" <identifier>
 
@@ -2668,7 +2669,7 @@ pub const PROD_VALUE_HEADER: Production = Production {
     name: "value_header",
     spec_ref: spec("7.4.5"),
     alternatives: &[
-        // Alt 0: `custom valuetype` (Rule 102, custom-Variante)
+        // Alt 0: `custom valuetype` (Rule 102, custom variant)
         named_alt(
             "custom",
             &[
@@ -3687,10 +3688,10 @@ pub const PROD_TEMPLATE_MODULE_DCL: Production = Production {
         Symbol::Nonterminal(ID_FORMAL_PARAMETERS),
         Symbol::Terminal(TokenKind::Punct(">")),
         Symbol::Terminal(TokenKind::Punct("{")),
-        // Spec §7.4.12 Rule 184 verlangt `<tpl_definition>+` im Body —
-        // Rule 188 erweitert <definition> um <template_module_ref> ";"
-        // (alias-Hook). ZeroOrMore ist Vendor-kompatible Lockerung
-        // analog PROD_DEFINITION_LIST.
+        // Spec §7.4.12 Rule 184 requires `<tpl_definition>+` in the body —
+        // Rule 188 extends <definition> with <template_module_ref> ";"
+        // (alias hook). ZeroOrMore is a vendor-compatible relaxation
+        // analogous to PROD_DEFINITION_LIST.
         Symbol::Repeat(
             RepeatKind::ZeroOrMore,
             &[Symbol::Nonterminal(ID_TPL_DEFINITION)],
@@ -3933,7 +3934,7 @@ pub const PROD_VALUE_BASE_TYPE: Production = Production {
 // ============================================================================
 // §7.4.13 Extended Data Types BB — Map / Bitset / Bitmask / Any (T4.6)
 // ============================================================================
-// BNF aus IDL 4.2 §7.4.13:
+// BNF from IDL 4.2 §7.4.13:
 //   <map_type>    ::= "map" "<" <type_spec> "," <type_spec>
 //                       "," <positive_int_const> ">"
 //                  | "map" "<" <type_spec> "," <type_spec> ">"
@@ -4046,7 +4047,7 @@ pub const PROD_BITFIELD: Production = Production {
                 Symbol::Terminal(TokenKind::Punct(";")),
             ],
         ),
-        // Anonymous bitfield (Padding) — nur Spec, keinen Identifier.
+        // Anonymous bitfield (padding) — spec only, no identifier.
         named_alt(
             "anonymous",
             &[
@@ -4065,9 +4066,9 @@ pub const PROD_BITFIELD_SPEC: Production = Production {
     spec_ref: spec("7.4.13"),
     alternatives: &[
         // destination_type per Spec: boolean | integer_type | octet_type.
-        // base_type_spec deckt alle drei (plus weitere primitives) ab —
-        // das ist permissiv aber praktisch, da AST-Builder sowieso
-        // semantisch validiert.
+        // base_type_spec covers all three (plus further primitives) —
+        // that is permissive but practical, since the AST builder
+        // validates semantically anyway.
         named_alt(
             "with_dest",
             &[
@@ -4111,7 +4112,7 @@ pub const PROD_BIT_VALUE_LIST: Production = Production {
     name: "bit_value_list",
     spec_ref: spec("7.4.13"),
     alternatives: &[
-        // bit_value entspricht annotated identifier (analog enumerator).
+        // bit_value corresponds to an annotated identifier (analogous to enumerator).
         named_alt(
             "single",
             &[
@@ -4143,7 +4144,7 @@ pub const PROD_ANY_TYPE: Production = Production {
 // ============================================================================
 // §8.3 Annotations (T4.4)
 // ============================================================================
-// BNF aus IDL 4.2 §8.3:
+// BNF from IDL 4.2 §8.3:
 //   <annotation_appl>        ::= "@" <scoped_name>
 //                                [ "(" <annotation_appl_params> ")" ]
 //   <annotation_appl_params> ::= <const_expr>
@@ -4157,22 +4158,22 @@ pub const PROD_ANY_TYPE: Production = Production {
 // @bit_bound, @external, @nested, @verbatim, @service, @oneway, @ami,
 // @topic, @hashid, @ignore_literal_names, @try_construct.
 //
-// Wichtig: NICHT als Keywords registriert. Annotation-Namen sind
-// <scoped_name> nach "@" — ein normaler Identifier-Pfad. Das erlaubt es,
-// auch Vendor-spezifische Annotations (z.B. @rti::optional) zu parsen,
-// ohne Grammar-Aenderung. Die semantische Behandlung der Standard-Namen
-// passiert spaeter im AST-Builder.
+// Important: NOT registered as keywords. Annotation names are a
+// <scoped_name> after "@" — a normal identifier path. This allows
+// parsing vendor-specific annotations (e.g. @rti::optional) too,
+// without a grammar change. The semantic handling of the standard names
+// happens later in the AST builder.
 //
-// Hook-Punkte (annotation_appl_seq als Prefix): <definition>, <member>,
+// Hook points (annotation_appl_seq as prefix): <definition>, <member>,
 // <case>, <enumerator>, <op_dcl>, <attr_dcl>, <param_dcl>, <export>.
 //
-// `<annotation_appl_params>`: vereinfachte Disambiguation. Spec erlaubt
-// "single const_expr" oder "named param list". Ein einzelner const_expr
-// mit nur einem Identifier waere mehrdeutig (Identifier = sowohl
-// scoped_name als auch named-param-LHS). Wir handhaben das so:
-// - Wenn das Token nach "(" ein Ident ist gefolgt von "=", dann
-//   named-param-list. Earley-Engine resolved das automatisch ueber die
-//   Alternativen.
+// `<annotation_appl_params>`: simplified disambiguation. The spec allows
+// "single const_expr" or "named param list". A single const_expr
+// with only one identifier would be ambiguous (identifier = both
+// scoped_name and named-param LHS). We handle it as follows:
+// - If the token after "(" is an ident followed by "=", then it is a
+//   named-param-list. The Earley engine resolves that automatically via the
+//   alternatives.
 
 pub const PROD_ANNOTATION_APPL_SEQ: Production = Production {
     id: ID_ANNOTATION_APPL_SEQ,
@@ -4204,7 +4205,7 @@ pub const PROD_ANNOTATION_APPL: Production = Production {
             "with_params",
             &[
                 Symbol::Terminal(TokenKind::Punct("@")),
-                Symbol::Nonterminal(ID_SCOPED_NAME),
+                Symbol::Nonterminal(ID_ANNOTATION_APPL_NAME),
                 Symbol::Terminal(TokenKind::Punct("(")),
                 Symbol::Nonterminal(ID_ANNOTATION_APPL_PARAMS),
                 Symbol::Terminal(TokenKind::Punct(")")),
@@ -4214,17 +4215,42 @@ pub const PROD_ANNOTATION_APPL: Production = Production {
             "no_params",
             &[
                 Symbol::Terminal(TokenKind::Punct("@")),
-                Symbol::Nonterminal(ID_SCOPED_NAME),
+                Symbol::Nonterminal(ID_ANNOTATION_APPL_NAME),
             ],
         ),
         named_alt(
             "empty_params",
             &[
                 Symbol::Terminal(TokenKind::Punct("@")),
-                Symbol::Nonterminal(ID_SCOPED_NAME),
+                Symbol::Nonterminal(ID_ANNOTATION_APPL_NAME),
                 Symbol::Terminal(TokenKind::Punct("(")),
                 Symbol::Terminal(TokenKind::Punct(")")),
             ],
+        ),
+    ],
+    ast_hint: None,
+};
+
+// The annotation name after `@` is normally a `<scoped_name>`
+// (identifier). Some built-in annotations, however, carry a name that
+// is a reserved keyword — OMG IDL 4.2 / XTypes 1.3 define
+// `@default` (name = the `default` keyword). A conformant parser must accept the keyword
+// in the name position; after `@`, a keyword is unambiguously an
+// annotation name (no ambiguity). `@annotation` (declaration) remains
+// deliberately excluded, that is its own production.
+pub const PROD_ANNOTATION_APPL_NAME: Production = Production {
+    id: ID_ANNOTATION_APPL_NAME,
+    name: "annotation_appl_name",
+    spec_ref: spec("8.3"),
+    alternatives: &[
+        named_alt("scoped", &[Symbol::Nonterminal(ID_SCOPED_NAME)]),
+        named_alt(
+            "kw_default",
+            &[Symbol::Terminal(TokenKind::Keyword("default"))],
+        ),
+        named_alt(
+            "kw_oneway",
+            &[Symbol::Terminal(TokenKind::Keyword("oneway"))],
         ),
     ],
     ast_hint: None,
@@ -4235,8 +4261,8 @@ pub const PROD_ANNOTATION_APPL_PARAMS: Production = Production {
     name: "annotation_appl_params",
     spec_ref: spec("8.3"),
     alternatives: &[
-        // Named-param-list zuerst — Earley waehlt korrekte Alternative
-        // ueber Lookahead auf das "=" nach dem Identifier.
+        // Named-param-list first — Earley picks the correct alternative
+        // via lookahead on the "=" after the identifier.
         named_alt(
             "named",
             &[Symbol::Nonterminal(ID_ANNOTATION_APPL_PARAM_LIST)],
@@ -4279,13 +4305,13 @@ pub const PROD_ANNOTATION_APPL_PARAM: Production = Production {
 // ============================================================================
 // IDL_42 Grammar
 // ============================================================================
-// Die `productions`-Liste muss in derselben Reihenfolge wie die
-// ID_*-Konstanten stehen, damit `Grammar::production(id)` ein O(1)-
-// Slice-Index-Lookup ist.
+// The `productions` list must be in the same order as the
+// ID_* constants, so that `Grammar::production(id)` is an O(1)
+// slice-index lookup.
 //
-// Start-Production ist `<specification>` (T3.2). Bis dahin ist die
-// Grammar als Stub mit ID_IDENTIFIER als Start markiert — funktional
-// nicht akzeptierend fuer komplette IDL-Files, aber lexikal korrekt.
+// The start production is `<specification>` (T3.2). Until then the
+// grammar is marked as a stub with ID_IDENTIFIER as start — functionally
+// not accepting for complete IDL files, but lexically correct.
 
 pub const IDL_42: Grammar = Grammar {
     name: "OMG IDL 4.2",
@@ -4358,7 +4384,7 @@ pub const IDL_42: Grammar = Grammar {
         PROD_FIXED_ARRAY_SIZE,
         // §7.4.1.4.4.7 Except Decl (T3.10)
         PROD_EXCEPT_DCL,
-        // §7.4.1.4.4.5 const_expr Operator-Stack (T-LIM-3)
+        // §7.4.1.4.4.5 const_expr operator stack (T-LIM-3)
         PROD_OR_EXPR,
         PROD_XOR_EXPR,
         PROD_AND_EXPR,
@@ -4487,6 +4513,7 @@ pub const IDL_42: Grammar = Grammar {
         // §8.3 Annotations (T4.4)
         PROD_ANNOTATION_APPL_SEQ,
         PROD_ANNOTATION_APPL,
+        PROD_ANNOTATION_APPL_NAME,
         PROD_ANNOTATION_APPL_PARAMS,
         PROD_ANNOTATION_APPL_PARAM_LIST,
         PROD_ANNOTATION_APPL_PARAM,
@@ -4504,7 +4531,7 @@ pub const IDL_42: Grammar = Grammar {
     token_rules: &[],
 };
 
-// `AltRef` ist re-exportiert, damit Test-Module nicht zwei super-Pfade brauchen.
+// `AltRef` is re-exported so that test modules don't need two super paths.
 #[allow(dead_code)]
 const _ALT_REF_TYPE: Option<AltRef> = None;
 
@@ -4518,8 +4545,8 @@ mod tests {
     #[test]
     fn idl42_grammar_validates_at_lexical_layer() {
         let report = validate(&IDL_42);
-        // Erlaubt sind Warnungen (z.B. UnusedProduction, weil Lexical-
-        // Productions noch keine Verbraucher haben). Keine Errors.
+        // Warnings are allowed (e.g. UnusedProduction, because lexical
+        // productions have no consumers yet). No errors.
         assert!(
             !report.has_errors(),
             "Errors: {:?}",
@@ -4529,10 +4556,10 @@ mod tests {
 
     #[test]
     fn idl42_full_grammar_validation_sweep() {
-        // T4.9 — explizites Audit: keine InvalidStart/Dangling-Errors,
-        // Warnings aufgelistet als Audit-Trail (Left-Recursion erwartet
-        // bei Operator-Stack/List-Productions; UnusedProduction bei
-        // Lexical-Stubs).
+        // T4.9 — explicit audit: no InvalidStart/Dangling errors,
+        // warnings listed as an audit trail (left recursion expected
+        // for operator-stack/list productions; UnusedProduction for
+        // lexical stubs).
         use crate::grammar::validate::ValidationIssue;
         let report = validate(&IDL_42);
         assert!(
@@ -4540,7 +4567,7 @@ mod tests {
             "Errors: {:?}",
             report.errors().collect::<Vec<_>>()
         );
-        // Audit: kategorisiere Warnings.
+        // Audit: categorize warnings.
         let mut left_rec = 0;
         let mut unused = 0;
         let mut first_first = 0;
@@ -4553,21 +4580,21 @@ mod tests {
                 _ => other += 1,
             }
         }
-        // FirstFirstConflicts sind in EBNF-roher Form normal
-        // (annotation_appl_seq vor mehreren Alternativen). Sie sind
-        // keine Korrektheits-Probleme — der Earley-Parser handhabt
-        // alle Konflikte korrekt; FF-Warnings markieren nur potenzielle
-        // Slow-Path-Stellen fuer LL/LALR-Backends.
-        // Erwartete Baseline (Audit-Trail): 22 LeftRecursion (Operator-
-        // Stack + *_list-Productions), <= 6 UnusedProduction (
-        // Audit-Stubs aus Tab. 7-6: alias/context/ValueBase, deren
-        // Composer-Hooks erst in Phase 5 des Action-Plans aktiviert
-        // werden), ~90 FirstFirstConflict (annotation_appl_seq-Hooks).
+        // FirstFirstConflicts are normal in raw EBNF form
+        // (annotation_appl_seq before multiple alternatives). They are
+        // not correctness problems — the Earley parser handles
+        // all conflicts correctly; FF warnings only mark potential
+        // slow-path spots for LL/LALR backends.
+        // Expected baseline (audit trail): 22 LeftRecursion (operator
+        // stack + *_list productions), <= 6 UnusedProduction (
+        // audit stubs from Tab. 7-6: alias/context/ValueBase, whose
+        // composer hooks are only activated in phase 5 of the action plan),
+        // ~90 FirstFirstConflict (annotation_appl_seq hooks).
         assert_eq!(other, 0, "unexpected warning kinds detected");
         assert!(
             unused <= 6,
-            "unused productions: {unused} (max 6 für \
-             Tab.7-6-Keyword-Stubs: template_module_ref, \
+            "unused productions: {unused} (max 6 for \
+             Tab.7-6 keyword stubs: template_module_ref, \
              formal_parameter_names, op_with_context, context_expr, \
              context_string_list, value_base_type)"
         );
@@ -4591,20 +4618,22 @@ mod tests {
         // + 36 §7.4.9 (components/homes/eventtypes/ports/connectors) = 171
         // + 7 §7.4.12 (template_module_dcl/_inst, formal/actual_parameters) = 178.
         // + 2 §7.4.12 Rules (193)/(194) (template_module_ref +
-        //   formal_parameter_names) = 180 (Audit nachgezogen,
-        //   damit `alias`-Keyword aus Tab. 7-6 vom Lexer erkannt wird).
+        //   formal_parameter_names) = 180 (audit caught up,
+        //   so the `alias` keyword from Tab. 7-6 is recognized by the lexer).
         // + 3 §7.4.6 Rules (123)/(124) (op_with_context, context_expr,
-        //   context_string_list) = 183 (`context`-Keyword).
+        //   context_string_list) = 183 (the `context` keyword).
         // + 1 §7.4.7 Rule (132) (value_base_type) = 184 (
-        // `ValueBase`-Keyword).
+        // the `ValueBase` keyword).
         // + 1 §7.4.12 Rule (188) (tpl_definition) = 185 (
-        // alias-Ref-Hook in template_module_dcl-Body).
-        assert_eq!(IDL_42.production_count(), 185);
+        // alias-ref hook in the template_module_dcl body).
+        // + 1 §8.3 (annotation_appl_name) = 186 (keyword-name builtins like
+        // `@default` are accepted in the name position; GitHub #6).
+        assert_eq!(IDL_42.production_count(), 186);
     }
 
     #[test]
     fn production_ids_are_stable() {
-        // Regression: Konsumenten verlassen sich auf ID-Konstanten.
+        // Regression: consumers rely on the ID constants.
         assert_eq!(
             IDL_42.production(ID_IDENTIFIER).map(|p| p.name),
             Some("identifier")
@@ -4706,8 +4735,8 @@ mod tests {
 
     #[test]
     fn parses_typedef_with_primitive_types() {
-        // Stub-typedef ohne abschliessenden Identifier-Suffix (Arrays etc.
-        // kommen mit T3.9). T3.3-Stub: typedef <type> <ident>
+        // Stub typedef without a trailing identifier suffix (arrays etc.
+        // come with T3.9). T3.3 stub: typedef <type> <ident>
         for src in [
             "typedef short A;",
             "typedef long B;",
@@ -4730,7 +4759,7 @@ mod tests {
 
     #[test]
     fn parses_typedef_with_scoped_name() {
-        // typedef Foo Alias; und typedef ::Foo::Bar Alias2;
+        // typedef Foo Alias; and typedef ::Foo::Bar Alias2;
         assert!(try_parse("typedef Foo Alias;").is_ok());
         assert!(try_parse("typedef ::Foo::Bar Alias2;").is_ok());
         assert!(try_parse("typedef Outer::Inner::Type X;").is_ok());
@@ -4786,7 +4815,7 @@ mod tests {
 
     #[test]
     fn rejects_string_with_invalid_bound() {
-        // String braucht positive int, nicht string-literal.
+        // A string needs a positive int, not a string literal.
         assert!(try_parse(r#"typedef string<"big"> Bad;"#).is_err());
     }
 
@@ -4818,7 +4847,7 @@ mod tests {
 
     #[test]
     fn parses_struct_with_multiple_declarators_in_one_member() {
-        // long x, y, z; ist eine member-Definition mit 3 declarators.
+        // long x, y, z; is one member definition with 3 declarators.
         assert!(try_parse("struct Vec { long x, y, z; };").is_ok());
     }
 
@@ -4871,7 +4900,7 @@ mod tests {
 
     #[test]
     fn rejects_enum_without_enumerator() {
-        // Enum braucht mindestens 1 enumerator.
+        // An enum needs at least 1 enumerator.
         assert!(try_parse("enum Empty {};").is_err());
     }
 
@@ -5018,7 +5047,7 @@ mod tests {
     fn parses_const_with_parens_and_precedence() {
         // (1 + 2) * 3
         assert!(try_parse("const long N = (1 + 2) * 3;").is_ok());
-        // 1 + 2 * 3 (Praezedenz: * vor +)
+        // 1 + 2 * 3 (precedence: * before +)
         assert!(try_parse("const long N = 1 + 2 * 3;").is_ok());
     }
 
@@ -5287,8 +5316,8 @@ mod tests {
     #[test]
     fn rejects_attr_setraises_before_getraises() {
         // Spec: attr_raises_expr ::= get_excep_expr [set_excep_expr] | set_excep_expr
-        // also: setraises allein ok, getraises allein ok, beide nur in Reihenfolge get→set.
-        // setraises FOLGEND get ist erlaubt; das Gegenteil (set vor get) NICHT.
+        // so: setraises alone ok, getraises alone ok, both only in the order get→set.
+        // setraises FOLLOWING get is allowed; the opposite (set before get) is NOT.
         let src = r"
             interface I {
                 exception E1 {};
@@ -5313,7 +5342,7 @@ mod tests {
 
     // -----------------------------------------------------------------
     // §7.4.4 Rule 97 — Interfaces-Full Embedded Decls
-    // (R-blocker fuer DDS-RPC: Inner-Types in Service-Interfaces)
+    // (R-blocker for DDS-RPC: inner types in service interfaces)
     // -----------------------------------------------------------------
 
     #[test]
@@ -5365,7 +5394,7 @@ mod tests {
 
     #[test]
     fn parses_full_interface_all_export_kinds() {
-        // §7.4.4 Rule 97: interface body kann op/attr/type/const/except.
+        // §7.4.4 Rule 97: an interface body can have op/attr/type/const/except.
         let src = r"
             interface Full {
                 exception Bad {};
@@ -5382,8 +5411,8 @@ mod tests {
 
     #[test]
     fn parses_interface_with_inner_type_used_in_op() {
-        // Realistisches DDS-RPC-Pattern: Inner-Type wird Return-Type der Op.
-        // (`port` ist seit B5 Keyword fuer ccm-port-Decl — Field heisst port_num.)
+        // Realistic DDS-RPC pattern: the inner type becomes the return type of the op.
+        // (`port` has been a keyword since B5 for ccm-port-decl — the field is called port_num.)
         let src = r"
             interface Locator {
                 struct Endpoint {
@@ -5526,9 +5555,9 @@ mod tests {
 
     #[test]
     fn parses_annotation_on_enumerator() {
-        // OMG-Standard ist `@default_literal` (nicht `@default`, weil
-        // `default` ein Union-Keyword ist und damit Lexer-Konflikt
-        // erzeugt — mit Annotations vermischt waere das mehrdeutig).
+        // The OMG standard is `@default_literal` (not `@default`, because
+        // `default` is a union keyword and therefore creates a lexer
+        // conflict — mixed with annotations that would be ambiguous).
         let src = r"
             enum Color {
                 RED,
@@ -5561,8 +5590,8 @@ mod tests {
 
     #[test]
     fn parses_annotation_on_interface_op() {
-        // `oneway` als Annotation kollidiert mit Op-Keyword. Stattdessen
-        // realistisches Beispiel mit `@ami` (asynchronous method
+        // `oneway` as an annotation collides with the op keyword. Instead a
+        // realistic example with `@ami` (asynchronous method
         // invocation, OMG CORBA AMI).
         let src = r"
             interface Service {
@@ -5574,7 +5603,7 @@ mod tests {
 
     #[test]
     fn parses_annotation_with_scoped_name() {
-        // Vendor-specific: @rti::optional — Annotation-Name ist scoped_name.
+        // Vendor-specific: @rti::optional — the annotation name is a scoped_name.
         assert!(try_parse("@rti::optional struct Foo { long x; };").is_ok());
     }
 
@@ -5600,7 +5629,7 @@ mod tests {
 
     #[test]
     fn parses_complex_annotated_struct() {
-        // Realistisches DDS-Topic-Beispiel.
+        // Realistic DDS-topic example.
         let src = r#"
             @topic
             @appendable
@@ -5621,7 +5650,7 @@ mod tests {
 
     // -----------------------------------------------------------------
     // §7.4.15 Rules 218-223 — User-Defined @annotation Declarations
-    // (R-correctness fuer XTypes-konforme IDLs mit Custom-Annotations)
+    // (R-correctness for XTypes-conformant IDLs with custom annotations)
     // -----------------------------------------------------------------
 
     #[test]
@@ -5669,7 +5698,7 @@ mod tests {
 
     #[test]
     fn parses_user_annotation_then_application() {
-        // Custom-Annotation definieren, dann anwenden.
+        // Define a custom annotation, then apply it.
         let src = r"
             @annotation MyKey {};
             @MyKey struct Topic { long id; };
@@ -5688,7 +5717,7 @@ mod tests {
 
     #[test]
     fn parses_escape_identifier_module_as_typename() {
-        // _module ist Identifier (Keyword `module` waere ohne _ illegal).
+        // _module is an identifier (the keyword `module` would be illegal without _).
         assert!(try_parse("typedef long _module;").is_ok());
     }
 
@@ -5700,7 +5729,7 @@ mod tests {
 
     #[test]
     fn parses_escape_identifier_with_non_keyword_prefix() {
-        // _Foo: Underscore + Non-Keyword bleibt valid Identifier.
+        // _Foo: underscore + non-keyword stays a valid identifier.
         assert!(try_parse("struct _Foo { long y; };").is_ok());
     }
 
@@ -5732,7 +5761,7 @@ mod tests {
 
     // -----------------------------------------------------------------
     // §7.4.5 Rules 100-109 — Value Types Full
-    // (Recognizer akzeptiert immer; Feature-Gate enforct in `parse()`)
+    // (the recognizer always accepts; the feature gate is enforced in `parse()`)
     // -----------------------------------------------------------------
 
     #[test]
@@ -5928,7 +5957,7 @@ mod tests {
 
     #[test]
     fn parses_template_module_typename_with_const_param() {
-        // Multi-Parameter mit `const`-Form (Rule 187 alt-10).
+        // Multi-parameter with the `const` form (Rule 187 alt-10).
         let src = r"
             module Buffer<typename T, const long Capacity> {
                 typedef T Element;
@@ -6007,7 +6036,7 @@ mod tests {
 
     #[test]
     fn parses_annotated_struct_with_inheritance() {
-        // Realistisches DDS-XTypes-Beispiel.
+        // Realistic DDS-XTypes example.
         let src = r"
             @appendable
             struct ExtendedSensor : SensorReading {
@@ -6043,9 +6072,9 @@ mod tests {
 
     #[test]
     fn parses_nested_map_without_workaround() {
-        // §7.4.14.4 Note — `>>` ohne WS muss in nested templates gehen.
-        // Spec-Check 2.0 Iter 6: Tokenizer split `>>` in zwei `>` weil
-        // `>>` nicht in der Punct-Liste der Grammar ist.
+        // §7.4.14.4 Note — `>>` without WS must work in nested templates.
+        // Spec-Check 2.0 iter 6: the tokenizer splits `>>` into two `>` because
+        // `>>` is not in the punct list of the grammar.
         let src = "typedef map<string, map<long, double>> Nested;";
         assert!(try_parse(src).is_ok(), "{src}");
     }
@@ -6058,7 +6087,7 @@ mod tests {
 
     #[test]
     fn parses_triple_nested_template_without_workaround() {
-        // map<K1, map<K2, sequence<long>>> — drei `>` am Stueck.
+        // map<K1, map<K2, sequence<long>>> — three `>` in a row.
         let src = "typedef map<string, map<long, sequence<double>>> Cube;";
         assert!(try_parse(src).is_ok(), "{src}");
     }
@@ -6163,14 +6192,14 @@ mod tests {
 
     // -----------------------------------------------------------------
     // T4.5 — Extended Data Types BB Coverage-Smoke
-    // §7.4.13 ist hauptsaechlich durch T4.4 (Annotations), T4.6 (Map/
-    // Bitset/Bitmask) und T4.7 (Struct-Inheritance) abgedeckt. Diese
-    // Tests sichern Coverage-Restpunkte.
+    // §7.4.13 is mainly covered by T4.4 (annotations), T4.6 (map/
+    // bitset/bitmask) and T4.7 (struct inheritance). These
+    // tests secure the remaining coverage points.
     // -----------------------------------------------------------------
 
     #[test]
     fn parses_anonymous_sequence_as_struct_member() {
-        // Anonymous bounded sequence direkt als type_spec eines Members.
+        // Anonymous bounded sequence directly as the type_spec of a member.
         let src = r"
             struct Buffer {
                 sequence<long, 100> samples;
@@ -6202,8 +6231,8 @@ mod tests {
 
     #[test]
     fn parses_dds_xtypes_combined() {
-        // Realistisches DDS-XTypes-Pattern: extensibility + key + nested
-        // struct + map + bitmask in einer Datei.
+        // Realistic DDS-XTypes pattern: extensibility + key + nested
+        // struct + map + bitmask in one file.
         let src = r#"
             @bit_bound(8) bitmask Permission { READ, WRITE };
 
@@ -6223,14 +6252,14 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Recognizer-Tests für alle Productions, die in
-    // Phase 1 als Stubs vorgezogen wurden (alias/context/ValueBase),
-    // plus Spec-Lücken-Tests fuer §7.4.1.3, §7.4.6.3, §7.4.7.3, §7.4.8.3,
+    // Recognizer tests for all productions that were pulled forward as
+    // stubs in phase 1 (alias/context/ValueBase),
+    // plus spec-gap tests for §7.4.1.3, §7.4.6.3, §7.4.7.3, §7.4.8.3,
     // §7.4.9.3, §7.4.10.3, §7.4.11.3, §7.4.12.3, §7.4.13.3, §7.4.14.3,
     // §7.4.15.3.
     // -----------------------------------------------------------------
 
-    // Phase 3.1 — §7.4.1.3 Rule (6) Const-Type-Varianten
+    // Phase 3.1 — §7.4.1.3 Rule (6) const-type variants
 
     #[test]
     fn parses_octet_const() {
@@ -6300,14 +6329,14 @@ mod tests {
         assert!(try_parse("typedef long double LD;").is_ok());
     }
 
-    // Phase 3.6 — §7.4.1.3 Rule (38) wstring als Template
+    // Phase 3.6 — §7.4.1.3 Rule (38) wstring as a template
 
     #[test]
     fn parses_wide_string_typedef() {
         assert!(try_parse("typedef wstring<10> WS;").is_ok());
     }
 
-    // Phase 3.7 — §7.4.1.3 Rule (51) Scoped-Name als Switch-Type
+    // Phase 3.7 — §7.4.1.3 Rule (51) scoped name as switch type
 
     #[test]
     fn parses_union_with_scoped_name_discriminator() {
@@ -6328,18 +6357,18 @@ mod tests {
         // Spec §7.4.1.3 Rule 64: <type_declarator> ::= { <simple_type_spec>
         // | <template_type_spec> | <constr_type_dcl> } <any_declarators>.
         // constr_type_dcl = struct_dcl | union_dcl | enum_dcl; struct_dcl
-        // verlangt Bezeichner (Foo) — anonymous struct ist nicht
-        // spec-konform.
+        // requires an identifier (Foo) — an anonymous struct is not
+        // spec-compliant.
         let src = "typedef struct Foo { long x; } Alias;";
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r64: typedef-mit-inline-struct nicht akzeptiert: {r:?}"
+            "Detected gap r64: typedef-with-inline-struct not accepted: {r:?}"
         );
     }
 
-    // Phase 3.9 — §7.4.6.3 Rule (112) typeid/typeprefix/import als
-    // Export im Interface
+    // Phase 3.9 — §7.4.6.3 Rule (112) typeid/typeprefix/import as
+    // an export in the interface
 
     #[test]
     fn parses_typeid_inside_interface() {
@@ -6351,7 +6380,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r112: typeid-als-export nicht akzeptiert: {r:?}"
+            "Detected gap r112: typeid-as-export not accepted: {r:?}"
         );
     }
 
@@ -6366,11 +6395,11 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r112: typeprefix-im-module nicht akzeptiert: {r:?}"
+            "Detected gap r112: typeprefix-in-module not accepted: {r:?}"
         );
     }
 
-    // Phase 3.10 — §7.4.6.3 Rule (117) Object-als-Type
+    // Phase 3.10 — §7.4.6.3 Rule (117) Object-as-type
 
     #[test]
     fn parses_typedef_object_type() {
@@ -6378,7 +6407,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r117: Object-als-base_type_spec nicht akzeptiert: {r:?}"
+            "Detected gap r117: Object-as-base_type_spec not accepted: {r:?}"
         );
     }
 
@@ -6394,7 +6423,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r127: abstract valuetype nicht akzeptiert: {r:?}"
+            "Detected gap r127: abstract valuetype not accepted: {r:?}"
         );
     }
 
@@ -6432,7 +6461,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r154: component-supports nicht akzeptiert: {r:?}"
+            "Detected gap r154: component-supports not accepted: {r:?}"
         );
     }
 
@@ -6448,7 +6477,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r157: provides-Object nicht akzeptiert: {r:?}"
+            "Detected gap r157: provides-Object not accepted: {r:?}"
         );
     }
 
@@ -6465,7 +6494,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r158: uses-multiple nicht akzeptiert: {r:?}"
+            "Detected gap r158: uses-multiple not accepted: {r:?}"
         );
     }
 
@@ -6482,7 +6511,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r162: home-supports+primarykey nicht akzeptiert: {r:?}"
+            "Detected gap r162: home-supports+primarykey not accepted: {r:?}"
         );
     }
 
@@ -6497,7 +6526,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r167: eventtype forward nicht akzeptiert: {r:?}"
+            "Detected gap r167: eventtype forward not accepted: {r:?}"
         );
     }
 
@@ -6515,7 +6544,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r173: porttype forward nicht akzeptiert: {r:?}"
+            "Detected gap r173: porttype forward not accepted: {r:?}"
         );
     }
 
@@ -6533,10 +6562,7 @@ mod tests {
             };
         "#;
         let r = try_parse(src);
-        assert!(
-            r.is_ok(),
-            "Erkannte Lücke r178: port-dcl nicht akzeptiert: {r:?}"
-        );
+        assert!(r.is_ok(), "Detected gap r178: port-dcl not accepted: {r:?}");
     }
 
     #[test]
@@ -6553,7 +6579,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r178: mirrorport-dcl nicht akzeptiert: {r:?}"
+            "Detected gap r178: mirrorport-dcl not accepted: {r:?}"
         );
     }
 
@@ -6573,7 +6599,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r182: connector-inheritance nicht akzeptiert: {r:?}"
+            "Detected gap r182: connector-inheritance not accepted: {r:?}"
         );
     }
 
@@ -6585,7 +6611,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r188: interface-formal-param: {r:?}"
+            "Detected gap r188: interface-formal-param: {r:?}"
         );
     }
 
@@ -6595,7 +6621,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r188: valuetype-formal-param: {r:?}"
+            "Detected gap r188: valuetype-formal-param: {r:?}"
         );
     }
 
@@ -6605,7 +6631,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r188: eventtype-formal-param: {r:?}"
+            "Detected gap r188: eventtype-formal-param: {r:?}"
         );
     }
 
@@ -6613,7 +6639,7 @@ mod tests {
     fn parses_template_module_with_union_param() {
         let src = "module M<union T> { typedef T A; };";
         let r = try_parse(src);
-        assert!(r.is_ok(), "Erkannte Lücke r188: union-formal-param: {r:?}");
+        assert!(r.is_ok(), "Detected gap r188: union-formal-param: {r:?}");
     }
 
     #[test]
@@ -6622,7 +6648,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r188: exception-formal-param: {r:?}"
+            "Detected gap r188: exception-formal-param: {r:?}"
         );
     }
 
@@ -6630,17 +6656,14 @@ mod tests {
     fn parses_template_module_with_enum_param() {
         let src = "module M<enum T> { typedef T A; };";
         let r = try_parse(src);
-        assert!(r.is_ok(), "Erkannte Lücke r188: enum-formal-param: {r:?}");
+        assert!(r.is_ok(), "Detected gap r188: enum-formal-param: {r:?}");
     }
 
     #[test]
     fn parses_template_module_with_sequence_param() {
         let src = "module M<sequence T> { typedef T A; };";
         let r = try_parse(src);
-        assert!(
-            r.is_ok(),
-            "Erkannte Lücke r188: sequence-formal-param: {r:?}"
-        );
+        assert!(r.is_ok(), "Detected gap r188: sequence-formal-param: {r:?}");
     }
 
     // Phase 3.23 — §7.4.12.3 Rule (190) Template-Module-Inst
@@ -6654,7 +6677,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r190: template_module_inst nicht akzeptiert: {r:?}"
+            "Detected gap r190: template_module_inst not accepted: {r:?}"
         );
     }
 
@@ -6662,10 +6685,10 @@ mod tests {
 
     #[test]
     fn parses_template_module_with_alias_ref() {
-        // Spec §7.4.12 Rule 187: <formal_parameter_type> akzeptiert nur
+        // Spec §7.4.12 Rule 187: <formal_parameter_type> accepts only
         // typename/interface/valuetype/eventtype/struct/union/exception/
-        // enum/sequence/const <const_type> — `long` allein ist NICHT
-        // erlaubt (muss "const long" sein).
+        // enum/sequence/const <const_type> — `long` alone is NOT
+        // allowed (must be "const long").
         // Rule 193: <template_module_ref> ::= "alias" <scoped_name>
         // "<" <formal_parameter_names> ">" <identifier>.
         let src = r#"
@@ -6679,7 +6702,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r193: alias-ref nicht akzeptiert (Composer-Hook fehlt): {r:?}"
+            "Detected gap r193: alias-ref not accepted (Composer hook missing): {r:?}"
         );
     }
 
@@ -6698,12 +6721,12 @@ mod tests {
     fn parses_empty_struct_with_void_body() {
         // Spec §7.4.13.3 (195): "struct" <identifier> "{" "}".
         let src = "struct Empty {};";
-        // Wird via OneOrMore-Constraint potentiell rejected; mit
-        // Extended-Data-Types-Composer-Erweiterung erlaubt.
+        // Potentially rejected via the OneOrMore constraint; allowed with
+        // the Extended-Data-Types composer extension.
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r195: empty-struct nicht akzeptiert: {r:?}"
+            "Detected gap r195: empty-struct not accepted: {r:?}"
         );
     }
 
@@ -6720,7 +6743,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r196: wchar-discriminator nicht akzeptiert: {r:?}"
+            "Detected gap r196: wchar-discriminator not accepted: {r:?}"
         );
     }
 
@@ -6735,7 +6758,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r196: octet-discriminator nicht akzeptiert: {r:?}"
+            "Detected gap r196: octet-discriminator not accepted: {r:?}"
         );
     }
 
@@ -6749,7 +6772,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r217: anonymous-array-in-struct nicht akzeptiert: {r:?}"
+            "Detected gap r217: anonymous-array-in-struct not accepted: {r:?}"
         );
     }
 
@@ -6765,7 +6788,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke r218: custom-annotation-decl nicht akzeptiert: {r:?}"
+            "Detected gap r218: custom-annotation-decl not accepted: {r:?}"
         );
     }
 
@@ -6782,7 +6805,7 @@ mod tests {
         let r = try_parse(src);
         assert!(
             r.is_ok(),
-            "Erkannte Lücke 7.4.3.4.3.3.2: native-attr nicht akzeptiert: {r:?}"
+            "Detected gap 7.4.3.4.3.3.2: native-attr not accepted: {r:?}"
         );
     }
 
@@ -6790,16 +6813,16 @@ mod tests {
     #[test]
     fn parses_object_as_base_type_spec() {
         // Spec §7.4.6.3 (117): `<base_type_spec> ::+ <object_type>`
-        // Object ist ein gueltiger base_type_spec im CORBA-Profil.
+        // Object is a valid base_type_spec in the CORBA profile.
         let src = "typedef Object MyObj;";
         assert!(try_parse(src).is_ok(), "{src}");
     }
 
-    // Phase 5 — §7.4.7.3 Rule (131) ValueBase als base_type_spec
+    // Phase 5 — §7.4.7.3 Rule (131) ValueBase as base_type_spec
     #[test]
     fn parses_value_base_as_base_type_spec() {
         // Spec §7.4.7.3 (131): `<base_type_spec> ::+ <value_base_type>`
-        // ValueBase ist ein gueltiger base_type_spec im CORBA-Profil.
+        // ValueBase is a valid base_type_spec in the CORBA profile.
         let src = "typedef ValueBase MyVal;";
         assert!(try_parse(src).is_ok(), "{src}");
     }

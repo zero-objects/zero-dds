@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Source-Map: mappt expandierte Output-Positionen auf
-//! `(Datei, Original-Offset)` (T6.3).
+//! Source map: maps expanded output positions to
+//! `(file, original offset)` (T6.3).
 //!
-//! Nach Preprocessor-Lauf zeigt der Lexer auf Bytes des `expanded`-
-//! Strings. Diagnostiken muessen aber auf die Original-Quelldatei
-//! zeigen (eine Zeile aus `inc.idl` ist im expanded-Output an einer
-//! voellig anderen Position).
+//! After a preprocessor run, the lexer points at bytes of the `expanded`
+//! string. Diagnostics, however, must point at the original source file
+//! (a line from `inc.idl` is at a completely different position in the
+//! expanded output).
 //!
-//! [`SourceMap`] sammelt Segmente: jedes Segment ist ein Output-
-//! Bereich `[output_start, output_start + length)`, der aus einer
-//! Datei `file_id` ab `original_offset` stammt. `lookup(output_pos)`
-//! findet das passende Segment und rechnet die ursprungsgetreue
-//! Position aus.
+//! [`SourceMap`] collects segments: each segment is an output
+//! range `[output_start, output_start + length)` that stems from a
+//! file `file_id` starting at `original_offset`. `lookup(output_pos)`
+//! finds the matching segment and computes the faithful original
+//! position.
 
-/// Stable Identifier fuer eine Datei (lokal innerhalb einer
+/// Stable identifier for a file (local within a
 /// SourceMap).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FileId(pub u32);
 
-/// Originale Quell-Position nach Lookup.
+/// Original source position after lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SourceLocation {
     pub file_id: FileId,
@@ -42,13 +42,13 @@ struct Segment {
 }
 
 impl SourceMap {
-    /// Konstruiert eine leere SourceMap.
+    /// Constructs an empty SourceMap.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Registriert eine Datei und liefert ihre stabile [`FileId`].
+    /// Registers a file and returns its stable [`FileId`].
     pub fn add_file(&mut self, name: &str) -> FileId {
         if let Some(idx) = self.files.iter().position(|f| f == name) {
             return FileId(idx as u32);
@@ -58,9 +58,9 @@ impl SourceMap {
         id
     }
 
-    /// Schreibt ein Segment ein. `output_start` und `length` beziehen
-    /// sich auf den expanded-String; `original_offset` zeigt auf die
-    /// erste Byte-Position in der `file_id`-Source.
+    /// Records a segment. `output_start` and `length` refer to the
+    /// expanded string; `original_offset` points to the
+    /// first byte position in the `file_id` source.
     pub fn record_segment(
         &mut self,
         output_start: usize,
@@ -79,10 +79,10 @@ impl SourceMap {
         });
     }
 
-    /// Loest eine expanded-Position auf die Original-(Datei,Offset).
-    /// Liefert `None`, wenn die Position nicht in einem registrierten
-    /// Segment liegt (z.B. zwischen zwei Segmenten oder hinter dem
-    /// letzten).
+    /// Resolves an expanded position to the original (file, offset).
+    /// Returns `None` if the position does not lie in a registered
+    /// segment (e.g. between two segments or past the
+    /// last one).
     #[must_use]
     pub fn lookup(&self, output_pos: usize) -> Option<SourceLocation> {
         for s in &self.segments {
@@ -97,19 +97,19 @@ impl SourceMap {
         None
     }
 
-    /// Datei-Name fuer eine [`FileId`].
+    /// File name for a [`FileId`].
     #[must_use]
     pub fn file_name(&self, id: FileId) -> Option<&str> {
         self.files.get(id.0 as usize).map(String::as_str)
     }
 
-    /// Anzahl registrierter Segmente.
+    /// Number of registered segments.
     #[must_use]
     pub fn segment_count(&self) -> usize {
         self.segments.len()
     }
 
-    /// Anzahl registrierter Dateien.
+    /// Number of registered files.
     #[must_use]
     pub fn file_count(&self) -> usize {
         self.files.len()

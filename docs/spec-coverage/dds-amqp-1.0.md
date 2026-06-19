@@ -4,10 +4,10 @@
 `spec-dds-amqp-v1.0.0-beta1`, PDF
 `documentation/specs/releases/v1.0-beta1/dds-amqp-1.0-beta1.pdf`).
 
-Repo-Implementation in `crates/amqp-bridge/` (Codec-Profile) und
-`crates/amqp-endpoint/` (Endpoint-/Bridge-Profile-Operations-
-Schichten). Audit folgt
-`docs/spec-coverage/PROCESS.md`.
+**Kontext:** Die Repo-Implementation ist über zwei Crates verteilt:
+
+- `crates/amqp-bridge/` — Codec-Profile
+- `crates/amqp-endpoint/` — Endpoint-/Bridge-Profile-Operations-Schichten
 
 ---
 
@@ -22,7 +22,7 @@ specified in §sec:pim-type-mapping."
 `crates/amqp-bridge/src/extended_types.rs::AmqpExtValue`.
 
 **Tests:** `crates/amqp-bridge/src/types.rs::tests` (15 Tests,
-Roundtrips fuer alle Primitive),
+Roundtrips für alle Primitive),
 `crates/amqp-bridge/src/extended_types.rs::tests` (16 Tests).
 
 **Status:** done
@@ -283,7 +283,7 @@ liest `sasl-outcome` (code 0 = ok).
 over an unencrypted transport."
 
 **Repo:** `sasl::SaslState::select_outbound(offered, tls_active)`
-filtert PLAIN aus der Auswahl-Praezedenz wenn `tls_active=false`.
+filtert PLAIN aus der Auswahl-Präzedenz wenn `tls_active=false`.
 
 **Tests:** `sasl::tests::select_outbound_skips_plain_without_tls`,
 `select_outbound_no_acceptable_mechanism`.
@@ -297,7 +297,7 @@ filtert PLAIN aus der Auswahl-Praezedenz wenn `tls_active=false`.
 conflated with the bridge's DDS-Security IdentityToken."
 
 **Repo:** `security::DualIdentity` mit `for_broker()` /
-`for_dds()` Getter. Plugin-Calls referenzieren ausschliesslich
+`for_dds()` Getter. Plugin-Calls referenzieren ausschließlich
 `for_dds()`.
 
 **Tests:** `security::tests::dual_identity_keeps_broker_and_dds_separate`,
@@ -311,7 +311,7 @@ conflated with the bridge's DDS-Security IdentityToken."
 after connection loss as specified in §reconnect."
 
 **Repo:** `client::ReconnectConfig` (initial 1s, mult 2, cap 60s
-gemaess Spec) + `connect_with_reconnect` mit kooperativem
+gemäß Spec) + `connect_with_reconnect` mit kooperativem
 shutdown-Atomic. `next_backoff_ms(attempt)` cap-correct.
 
 **Tests:** `client::tests::backoff_starts_at_initial`,
@@ -370,7 +370,7 @@ ohne Connection-Lifecycle.
 **Repo:** `crates/amqp-bridge/` voll: `types.rs`, `extended_types.rs`,
 `frame.rs`, `performatives.rs`, `sections.rs`.
 
-**Tests:** `cargo test -p zerodds-amqp-bridge --lib`: 70 Tests gruen.
+**Tests:** `cargo test -p zerodds-amqp-bridge --lib`: 70 Tests grün.
 
 **Status:** done
 
@@ -382,7 +382,7 @@ ohne Connection-Lifecycle.
 **Repo:** `crates/amqp-bridge/src/codec_profile.rs` mit
 `CodecProfile::{Full, Lite}`, `active_profile()` (steuert
 durch Cargo-Feature `codec-lite`), `is_codec_lite_value()` und
-`is_codec_lite_section()` — Conformance-Marker fuer Code, der
+`is_codec_lite_section()` — Conformance-Marker für Code, der
 nur das Lite-Subset benutzt. `cargo test -p zerodds-amqp-bridge
 --features codec-lite` aktiviert den Marker.
 
@@ -399,10 +399,10 @@ nur das Lite-Subset benutzt. `cargo test -p zerodds-amqp-bridge
 
 **Spec:** §2.5.1, S. 11 — Endpoint/Bridge implizieren Codec.
 
-**Repo:** Cargo-Dependency: beide Crates haengen von
+**Repo:** Cargo-Dependency: beide Crates hängen von
 `amqp-bridge` ab; jede Endpoint-Operation nutzt den Codec.
 
-**Status:** done — strukturell durch Crate-Abhaengigkeit
+**Status:** done — strukturell durch Crate-Abhängigkeit
 erzwungen.
 
 ### §2.5.2 Hybrid Profile Combination
@@ -426,7 +426,7 @@ AMQP-§1.6-Primitive (boolean, int8/16/32/64, uint8/16/32/64,
 float, double, char, wchar, string, wstring, octet).
 
 **Repo:** `crates/amqp-bridge/src/types.rs` (15 Encoder/Decoder)
-+ `extended_types.rs::AmqpExtValue` (16 weitere fuer Compound +
++ `extended_types.rs::AmqpExtValue` (16 weitere für Compound +
 described).
 
 **Tests:** `types.rs::tests`, `extended_types.rs::tests`.
@@ -439,7 +439,7 @@ described).
 `double` (8 Byte) verengt.
 
 **Repo:** `codegen_helpers::narrow_long_double_to_double(f64)`
-ist die Audit-Anker-Stelle fuer §7.1.2; Rust hat keinen
+ist die Audit-Anker-Stelle für §7.1.2; Rust hat keinen
 binary128-Typ, der Codegen liefert bereits f64.
 
 **Tests:** `codegen_helpers::tests::long_double_narrowing_is_identity_on_f64`.
@@ -459,11 +459,11 @@ ausnahmslos `to_be_bytes()`/lesen `from_be_bytes()`.
 ### §7.1.4.1 IDL `char` (8-bit) → AMQP `char` (32-bit)
 
 **Spec:** §7.1.4.1, S. 21 — IDL-`char` ist auf UTF-8-ASCII-
-Subset beschraenkt; Source-Bytes > 0x7F → `decode-error`.
+Subset beschränkt; Source-Bytes > 0x7F → `decode-error`.
 
 **Repo:** `extended_types.rs::encode_char` (4-Byte BE) +
 `codegen_helpers::validate_char_ascii(byte) -> Result<u8, u8>`
-fuer Codegen-Pre-Encode-Check. Codegen-Templates rufen
+für Codegen-Pre-Encode-Check. Codegen-Templates rufen
 `validate_char_ascii` und propagieren `Err` als
 `amqp:decode-error`.
 
@@ -512,11 +512,11 @@ Property `dds:nsec` aus `SampleHeader.source_nsec_remainder`).
 ### §7.1.6.1 Identifier Types
 
 **Spec:** §7.1.6.1, S. 26 — 16-Byte-Identifier ohne RFC-4122-
-Konformitaet werden als `binary` (0xA0/0xB0) codiert, nicht als
+Konformität werden als `binary` (0xA0/0xB0) codiert, nicht als
 `uuid` (0x98).
 
 **Repo:** `codegen_helpers::is_rfc4122_uuid(&[u8;16]) -> bool`
-prueft Variant+Version per RFC-4122; `encode_16byte_identifier`
+prüft Variant+Version per RFC-4122; `encode_16byte_identifier`
 routet automatisch auf `Uuid` oder `Binary`.
 
 **Tests:** `codegen_helpers::tests::rfc4122_v4_uuid_recognised`,
@@ -586,10 +586,10 @@ Form als AMQP `symbol` (sym8/sym32) `dds:type:<hex>`.
 
 **Spec:** §7.2.1.3, S. 31 — bei `descriptor_form = DESC_TRUNCATED`
 muss Sender Application-Property `dds:type-id` (volle 14-Byte-
-Hex) setzen; Empfaenger SHALL inspect; bei Mismatch
+Hex) setzen; Empfänger SHALL inspect; bei Mismatch
 `amqp:decode-error`.
 
-**Repo:** Sender-Side: `produce_application_properties`. Empfaenger-
+**Repo:** Sender-Side: `produce_application_properties`. Empfänger-
 Side: `properties::inspect_dds_type_id(props, expected_hex)`
 liefert `TypeIdCheck::{Match, Absent, Mismatch}`. Caller (Daemon)
 mappt Mismatch auf `amqp:decode-error`.
@@ -657,7 +657,7 @@ Wildcard-Matching.
 
 **Spec:** §7.4.2, S. 40 — DDS `DURABILITY` (VOLATILE/TRANSIENT/
 PERSISTENT) ↔ AMQP `terminus.durable`-Tabelle. `unsettled-state`
-verlangt Broker-Funktionalitaet → SHALL `amqp:not-implemented`.
+verlangt Broker-Funktionalität → SHALL `amqp:not-implemented`.
 
 **Repo:** `link.rs::TerminusDurability` (None/Configuration/
 UnsettledState) + `check_attach_durability` liefert
@@ -674,9 +674,9 @@ UnsettledState) + `check_attach_durability` liefert
 von AMQP-Settlement; AMQP-Layer leitet Samples weiter wie DDS sie
 emittiert.
 
-**Repo:** kein expliziter HISTORY-Mapper noetig.
+**Repo:** kein expliziter HISTORY-Mapper nötig.
 
-**Status:** done — strukturell durch Decoupling erfuellt.
+**Status:** done — strukturell durch Decoupling erfüllt.
 
 ### §7.4.4 DEADLINE
 
@@ -685,10 +685,10 @@ signalisiert missed-deadline-Events.
 
 **Repo:** Catalog-Channel via `bridge::produce_catalog_transfers`
 + `management::CatalogProducer`. Audit-Channel (`AuditProducer`)
-fuer Deadline-Events; ein konkreter `DcpsDdsHost`-Implementer
+für Deadline-Events; ein konkreter `DcpsDdsHost`-Implementer
 verbindet `DataReader::on_requested_deadline_missed` mit
 `AuditProducer::push(AuditEvent::Unauthorized {...})` oder
-einem ergaenzten `DeadlineMissed`-Event-Typ.
+einem ergänzten `DeadlineMissed`-Event-Typ.
 
 **Tests:** `management::tests::audit_producer_*`,
 `bridge::tests::produce_catalog_transfers_*`.
@@ -729,7 +729,7 @@ wenn `SampleHeader.lifespan_remaining_ms = Some(_)`.
 
 **Repo:** `routing.rs::parse_domain_url` akzeptiert mehrfach
 wiederholte `?partition=`-Params; `AddressResolution.partitions`
-ist `Vec<String>`; percent-decoding (RFC 3986) fuer reservierte
+ist `Vec<String>`; percent-decoding (RFC 3986) für reservierte
 Zeichen in Partition-Werten.
 
 **Tests:** `routing::tests::domain_url_with_multi_partition_parses`,
@@ -755,7 +755,7 @@ reserviert.
 **Repo:** `management::CatalogProducer` mit `add`/`remove`/
 `snapshot`-API, `CatalogEntry` (address, dds, type-name, type-id,
 direction, partitions). `topics.exposed`-Counter wird automatisch
-gefuehrt. `classify_address("$catalog")` liefert
+geführt. `classify_address("$catalog")` liefert
 `AddressKind::Catalog`.
 
 **Tests:** `management::tests::catalog_*` (5 Tests),
@@ -783,7 +783,7 @@ liefert `AmqpError` mit `condition = NotFound`,
 ### §7.6 Key and Instance Mapping (group-id SHA-256)
 
 **Spec:** §7.6.1, S. 50 — `group-id` = lowercase Hex SHA-256
-ueber XCDR2-KeyHash-Encapsulation; opak fuer Subscriber.
+über XCDR2-KeyHash-Encapsulation; opak für Subscriber.
 
 **Repo:** `crates/amqp-endpoint/src/keyhash.rs::group_id` mit
 SHA-256 + 64-char-Hex-Lowercase. `properties::produce_properties`
@@ -840,8 +840,8 @@ auf DataWriter-Method-Calls (`register_instance`,
 **Repo:** `dds_bridge::DdsOperationDispatcher`-Trait mit
 `AcceptAllDispatcher` (Test-Default) und
 `InstanceTrackingDispatcher` (mit Spec-§11.3-Konformer
-Lifecycle-Pruefung). Daemon bindet seine echte DCPS-
-DataWriter-Bruecke an den Trait; das Endpoint-Crate liefert
+Lifecycle-Prüfung). Daemon bindet seine echte DCPS-
+DataWriter-Brücke an den Trait; das Endpoint-Crate liefert
 das Plugin-Surface.
 
 **Tests:** `dds_bridge::tests::accept_all_returns_accepted_for_every_operation`,
@@ -857,7 +857,7 @@ das Plugin-Surface.
 **Spec:** §7.7.3, S. 54 — AMQP-`disposition` ↔ DDS-Sample-State.
 
 **Repo:** `link::LinkSession::apply_disposition` (Settlement-
-Tracking) + `dds_bridge::DispositionMapper`-Trait fuer
+Tracking) + `dds_bridge::DispositionMapper`-Trait für
 DDS-API-Wiring (Caller-Layer Plugin). `NoopDispositionMapper`
 als Test-Default.
 
@@ -885,7 +885,7 @@ property_form.
 ### §7.9.1 Catalog Address ($catalog)
 
 **Spec:** §7.9.1, S. 57 — Receiver-Link auf `$catalog` liefert
-Topic-Mapping-Eintraege; Eintrag-Felder enumeriert.
+Topic-Mapping-Einträge; Eintrag-Felder enumeriert.
 
 **Repo:** `management::CatalogProducer::snapshot` produziert
 pro Eintrag eine `AmqpExtValue::Map` mit
@@ -926,7 +926,7 @@ liefert pro Mandatory-Metric eine `AmqpExtValue::Map` mit
 
 **Repo:** `metrics::MANDATORY_METRIC_NAMES` (alle 14 Konstanten),
 `MetricsHub::on_*`-Counter-API, `unit_of(name)` liefert
-korrekte Unit-Strings gemaess Spec-Tabelle.
+korrekte Unit-Strings gemäß Spec-Tabelle.
 
 **Tests:** `metrics::tests::mandatory_metric_count_is_14`,
 `fresh_hub_all_zero` (verifiziert Coverage aller 14 Namen).
@@ -1088,7 +1088,7 @@ Konstanten; `produce_application_properties` baut die
 
 **Tests:** `properties::tests::application_properties_*` (6
 Tests inkl. multi-partition list, single-partition string,
-register-Operation, type-id-Praesenz).
+register-Operation, type-id-Präsenz).
 
 **Status:** done
 
@@ -1098,7 +1098,7 @@ register-Operation, type-id-Praesenz).
 
 ### §9.1 IDL-defined Mapping Schema (Annex A)
 
-**Spec:** §9.1, S. 79 — Konfiguration ueber IDL-Schema:
+**Spec:** §9.1, S. 79 — Konfiguration über IDL-Schema:
 `TopicMapping`, `AmqpEndpointConfig`, `AmqpBridgeConfig`,
 `TlsConfig`, `SaslConfig`, `ResourceLimits`,
 `DynamicTopicConfig`. SemVer-Felder.
@@ -1116,7 +1116,7 @@ defaults, AMQP-wire-aliases).
 
 **Status:** done — handgepflegte Mirror-Struktur. IDL-Codegen-
 Pipeline bleibt als Folge-Aufgabe (idl-rust-Generator), aber
-das Datenmodell ist spec-konform und in der Crate verfuegbar.
+das Datenmodell ist spec-konform und in der Crate verfügbar.
 
 ### §9.2 XML Configuration
 
@@ -1127,7 +1127,7 @@ Eingabe; XSD-Snippet referenziert.
 `parse_config(xml)` → `DdsAmqpConfig`-Resultat
 (roxmltree-basiert; std-only Feature). Akzeptiert das
 `<dds-amqp>`-Root-Element mit Namespace
-`http://www.zerodds.org/dds-amqp/v1.0`. Parser fuer endpoint,
+`http://www.zerodds.org/dds-amqp/v1.0`. Parser für endpoint,
 bridge, tls, sasl, topics, dynamic, limits.
 
 **Tests:** `config_xml::tests` (11 Tests inkl.
@@ -1155,7 +1155,7 @@ Cert-Validation; AMQP-Negotiation nach TLS-Handshake.
 `build_server_config` mit optionalem mTLS-Client-Cert-Verifier
 (`require_client_cert = true`), `build_client_config` mit Trust-
 Anchors + optionalem Client-Auth-Cert. `accept_server` /
-`connect_client` fuehren echten TLS-Handshake (rustls 0.23,
+`connect_client` führen echten TLS-Handshake (rustls 0.23,
 TLS 1.2 + 1.3, ring-Crypto-Provider). `StreamOwned`-Resultat
 ist `Read+Write` und wird direkt an `handle_connection`
 gereicht.
@@ -1214,7 +1214,7 @@ in `client::do_outbound_sasl` mit
 
 ### §10.3 Cross-Reference to DDS-Security — Outbound Signing
 
-**Spec:** §10.3.1, S. 88 — DDS-Security-Plugins koennen aktiv
+**Spec:** §10.3.1, S. 88 — DDS-Security-Plugins können aktiv
 sein; Outbound-Signing ist DDS-side.
 
 **Status:** done — strukturell (DDS-Security-Plugins parallel
@@ -1245,7 +1245,7 @@ Tokens (PLAIN/ANONYMOUS/EXTERNAL/SCRAM).
 
 **Spec:** §10.3.3, S. 90 — IdentityToken an
 DDS-Security AccessControl-Plugin
-`check_create_datawriter`/`check_create_datareader` uebergeben;
+`check_create_datawriter`/`check_create_datareader` übergeben;
 NOT_ALLOWED → AMQP `amqp:unauthorized-access` Link-Error.
 
 **Repo:** `security::AccessControlPlugin`-Trait mit
@@ -1261,12 +1261,12 @@ liefert das `amqp:unauthorized-access`-Mapping.
 ### §10.3.4 Determinism Across Vendors
 
 **Spec:** §10.3.4, S. 91 — IdentityToken-Konstruktion
-deterministisch ueber Implementations.
+deterministisch über Implementations.
 
 **Repo:** `build_identity_token` ist pure Funktion ohne
 Random/State; gleiche `SaslSubject` → gleicher
 `IdentityToken`. `LinkGovernance::evaluate` cached pro Op und
-liefert deterministisch dieselbe Decision fuer gleiche Eingabe.
+liefert deterministisch dieselbe Decision für gleiche Eingabe.
 
 **Tests:** `security::tests::link_governance_caches_decision`
 (verifiziert Cache-Hit bei wiederholtem Op-Call).
@@ -1276,7 +1276,7 @@ liefert deterministisch dieselbe Decision fuer gleiche Eingabe.
 ### §10.3.5 No-Bypass Guarantee
 
 **Spec:** §10.3.5, S. 92 — DDS-Sample, das AccessControl ablehnt,
-darf nicht ueber AMQP austreten; AccessControl-Resultat ist
+darf nicht über AMQP austreten; AccessControl-Resultat ist
 Pre-Condition jedes Transfer.
 
 **Repo:** `handler::check_access(cfg, addr, op)` im Daemon-Loop
@@ -1318,7 +1318,7 @@ teilen keine Identity automatisch.
 
 ### §10.6 Bridge-Profile Dual Identity
 
-**Spec:** §10.6, S. 98 — Bridge fuehrt zwei getrennte Identitaeten:
+**Spec:** §10.6, S. 98 — Bridge führt zwei getrennte Identitäten:
 Broker-side SASL-Credential, DDS-side IdentityToken; nicht
 miteinander verschmelzen.
 
@@ -1339,8 +1339,8 @@ sind erlaubt.
 
 **Repo:** `security::LinkGovernance::new(identity, address, rule)`
 + `evaluate(plugin, op)` mit Per-Op-Cache. Mixed-Sensitivity ist
-strukturell unterstuetzt: jede `LinkGovernance`-Instanz haelt
-eigene Identitaet/Rule, mehrere Instanzen pro Connection sind
+strukturell unterstützt: jede `LinkGovernance`-Instanz hält
+eigene Identität/Rule, mehrere Instanzen pro Connection sind
 erlaubt.
 
 **Tests:** `security::tests::link_governance_caches_decision`.
@@ -1351,12 +1351,12 @@ erlaubt.
 
 **Spec:** §10.8, S. 102 — Endpoint: failed-Connection-unsettled
 released; Bridge: Reconnect mit exp. Backoff (init 1s, mult 2,
-cap 60s); KEEP_LAST-Eviction zaehlt
+cap 60s); KEEP_LAST-Eviction zählt
 `transfers.dropped.reconnect-overflow`.
 
 **Repo:** `client::ReconnectConfig` + `connect_with_reconnect`
-mit Default-Pacing (1s init, 2x mult, 60s cap) gemaess Spec.
-`MetricsHub::on_reconnect_overflow` fuer KEEP_LAST-Eviction-
+mit Default-Pacing (1s init, 2x mult, 60s cap) gemäß Spec.
+`MetricsHub::on_reconnect_overflow` für KEEP_LAST-Eviction-
 Counter.
 
 **Tests:** siehe §2.2 Cl. 7.
@@ -1432,7 +1432,7 @@ das Verhalten um.
 
 **Repo:** `errors::ErrorDescription::render` liefert exakt das
 Format `<§-Ref>: <Text>`. Alle `errors::*`-Helper konstruieren
-Spec-konforme Descriptions mit `§-Ref`-Praefix.
+Spec-konforme Descriptions mit `§-Ref`-Präfix.
 
 **Tests:** `errors::tests::description_renders_spec_section_then_text`,
 `description_display_matches_render`.
@@ -1445,7 +1445,7 @@ Spec-konforme Descriptions mit `§-Ref`-Praefix.
 
 ### Annex A IDL Module `zerodds::amqp`
 
-**Spec:** Annex A, S. 113 — vollstaendiger IDL-Code: enums
+**Spec:** Annex A, S. 113 — vollständiger IDL-Code: enums
 `BodyEncodingMode`, `TimeMapping`, `DescriptorForm`,
 `SaslMechanism`, `LinkDirection`; structs `TopicMapping`,
 `TlsConfig`, `SaslConfig`, `ResourceLimits`,
@@ -1482,7 +1482,7 @@ Cloud-Subscriber via Broker, Multi-Vendor-Federation.
 **Spec:** Annex C §C.1.1, S. 124 — AMQP-1.0-Client connectet via
 TLS, authentifiziert mit PLAIN, etabliert Session.
 
-**Repo:** Integration-Test `c1_1_connection_open.rs` faehrt
+**Repo:** Integration-Test `c1_1_connection_open.rs` fährt
 echten Open-Roundtrip gegen lokal-laufenden Daemon mit
 `tls_active = true`. TLS-Termination selbst ist §10.1
 Folge-Welle.
@@ -1512,7 +1512,7 @@ mit echter TCP-Verbindung gegen lokal-laufenden Daemon.
 ### Annex C C.1.3 Sender-Link Producer-to-DDS
 
 **Spec:** Annex C §C.1.3, S. 125 — Sender-Link auf Topic-Address;
-Transfer wird in DDS publiziert; DDS-Subscriber empfaengt.
+Transfer wird in DDS publiziert; DDS-Subscriber empfängt.
 
 **Repo:** `bridge::dispatch_attach` resolved Address gegen
 `DdsHost`; `bridge::dispatch_transfer(host, topic_id, body, metrics)`
@@ -1545,7 +1545,7 @@ RELIABILITY=RELIABLE; AMQP-Settlement-Roundtrip.
 **Repo:** `link.rs::LinkSession::deliver`/`settle` Pending-
 Tracking. Integration-Test
 `c1_5_settlement_reliable.rs` verifiziert: pending wird
-erhoeht bis Disposition empfangen wird, Credit-Erschoepfung
+erhöht bis Disposition empfangen wird, Credit-Erschöpfung
 liefert NoCredit-Error.
 
 **Tests:** `c1_5_reliable_unsettled_increments_pending_until_disposition`,
@@ -1592,7 +1592,7 @@ und liefert `AttachOutcome::AttachedCatalog`;
 `bridge::produce_catalog_transfers(host)` liefert pro
 registriertem Topic-Mapping eine AMQP-Map als Sample-Body;
 `encode_catalog_sample` wickelt es in described-composite
-fuer Wire-Transport.
+für Wire-Transport.
 
 **Tests:** `bridge::tests::produce_catalog_transfers_returns_one_per_topic`,
 `encode_catalog_sample_produces_described_composite`,
@@ -1608,7 +1608,7 @@ Connection-Close mit Idle-Timeout-Error.
 **Repo:** `ResourceLimits::idle_timeout_ms` +
 `TcpStream::set_read_timeout` im Daemon. Integration-Test
 `c1_9_idle_timeout.rs` verifiziert echten Read-Timeout-
-Disconnect (Server schliesst idle-Klient).
+Disconnect (Server schließt idle-Klient).
 
 **Tests:** `c1_9_server_disconnects_idle_client_after_short_read_timeout`,
 `c1_9_idle_timeout_is_configurable`.
@@ -1625,7 +1625,7 @@ thread-per-connection. Integration-Test
 `c1_10_concurrent_connections.rs` startet 8 parallele
 Klient-Threads, verifiziert dass alle 8 erfolgreich
 authentifiziert + connectet sind und `connections.total`-
-Counter im Server alle zaehlt.
+Counter im Server alle zählt.
 
 **Tests:** `c1_10_server_accepts_multiple_concurrent_connections`.
 
@@ -1650,7 +1650,7 @@ plus Bridge-Dispatch in
 ### Annex C C.1.12 JSON Encoding
 
 **Spec:** Annex C §C.1.12, S. 127 — Sample mit MODE_JSON ist
-gueltiges RFC-8259-JSON.
+gültiges RFC-8259-JSON.
 
 **Repo:** `mapping.rs::encode_dds_to_amqp_body(.., Json)`
 (Hex-Fallback); per-Type JSON-Wrapper aus
@@ -1678,7 +1678,7 @@ now_ms)` produziert pro Mandatory-Metric eine
 `AmqpExtValue::Map`. Integration-Test
 `c1_13_metrics_link.rs` verifiziert dass alle 14 Metrics
 emittiert werden, dass jedes Sample `{name, value, unit,
-timestamp}` enthaelt und dass Counter-Werte sich in den
+timestamp}` enthält und dass Counter-Werte sich in den
 Samples widerspiegeln.
 
 **Tests:** `c1_13_metrics_snapshot_emits_one_sample_per_mandatory_metric`,
@@ -1732,7 +1732,7 @@ Multi-Hop-Stamp inkrementiert sauber, sauberes Sample passiert.
 Upstream-Broker.
 
 **Repo:** `client::connect_outbound` + Integration-Test
-`client::tests::outbound_connect_to_local_server` faehrt
+`client::tests::outbound_connect_to_local_server` fährt
 echten TCP-Connect + AMQP-Open-Roundtrip gegen lokalen
 Server-Daemon. C.2.4 (Reconnect) baut darauf auf.
 
@@ -1744,10 +1744,10 @@ Server-Daemon. C.2.4 (Reconnect) baut darauf auf.
 ### Annex C C.2.2 Sender-Link Bridge-to-Broker
 
 **Spec:** Annex C §C.2.2, S. 130 — Bridge attached Sender-Link
-fuer outbound Topic-Mapping.
+für outbound Topic-Mapping.
 
 **Repo:** Bridge-DDS-Side-Subscribe (`subscribe_outbound`) +
-AMQP-Outbound-Producer-Pfad. Test-Roundtrip ueber zwei
+AMQP-Outbound-Producer-Pfad. Test-Roundtrip über zwei
 `InMemoryDdsHost`-Instanzen, die den Broker-Hop simulieren.
 
 **Tests:** `c2_2_bridge_outbound_publish_flows_to_dds`.
@@ -1769,10 +1769,10 @@ mit eingehendem Broker-Sample → DDS-DataWriter publishtet.
 
 **Spec:** Annex C §C.2.4, S. 131 — Connection-Loss → Reconnect
 innerhalb konfiguriertem Backoff-Cap (default 60s); HISTORY-
-Eviction zaehlt.
+Eviction zählt.
 
 **Repo:** `client::connect_with_reconnect` mit
-`ReconnectConfig` (Default 1s init, 2x mult, 60s cap gemaess
+`ReconnectConfig` (Default 1s init, 2x mult, 60s cap gemäß
 Spec §10.8). Integration-Test `c2_4_reconnect_on_loss.rs`.
 
 **Tests:** `c2_4_reconnect_loop_pacing_follows_spec_defaults`,
@@ -1799,12 +1799,12 @@ Sample-Handle). DataWriter-Acknowledgment ist Caller-Layer
 
 ### Annex C C.2.6 Dual-Identity Separation
 
-**Spec:** Annex C §C.2.6, S. 131 — Bridge praesentiert
+**Spec:** Annex C §C.2.6, S. 131 — Bridge präsentiert
 DDS-Side-Identity (`CN=Bridge-1`) statt Broker-Side-Credential
 (`Alice`) zu DDS-Security-AccessControl.
 
 **Repo:** `security::DualIdentity` mit `for_broker()`/`for_dds()`
-Getter; AccessControl-Plugin verwendet ausschliesslich
+Getter; AccessControl-Plugin verwendet ausschließlich
 `for_dds()`. Lib-Tests in `security::tests` decken den
 Spec-§C.2.6-Pfad direkt ab.
 
@@ -1815,7 +1815,7 @@ Spec-§C.2.6-Pfad direkt ab.
 
 ### Annex C C.2.7 Loop-Prevention (Bridge)
 
-**Spec:** Annex C §C.2.7, S. 132 — analog C.1.15 fuer Bridge-
+**Spec:** Annex C §C.2.7, S. 132 — analog C.1.15 für Bridge-
 Profile (Outbound + Inbound).
 
 **Repo:** `coexistence`-Layer ist Profile-agnostisch; Bridge-
@@ -1839,7 +1839,7 @@ $catalog/$metrics/$audit; Upstream-Broker-Side governed by broker.
 `AddressKind::{Catalog, Metrics, Audit}` und liefert die
 entsprechenden `AttachOutcome`-Varianten; `produce_catalog_transfers`
 liefert Catalog-Stream aus dem `DdsHost`. Upstream-Broker-Side
-managementgehoert zum Broker (RabbitMQ-HTTP-API, etc.); kein
+managementgehört zum Broker (RabbitMQ-HTTP-API, etc.); kein
 Bridge-Code.
 
 **Tests:** `c1_8_catalog_receiver_gets_one_sample_per_topic`,
@@ -1851,13 +1851,13 @@ Bridge-Code.
 ### Annex C C.3 Codec-Profile Tests
 
 **Spec:** Annex C §C.3, S. 134 — In-Process-Type-System-
-Roundtrips fuer alle Primitives, Composites, Sections.
+Roundtrips für alle Primitives, Composites, Sections.
 
 **Repo:** `crates/amqp-bridge/src/types.rs::tests`,
 `extended_types.rs::tests`, `frame.rs::tests`,
 `performatives.rs::tests`, `sections.rs::tests`.
 
-**Tests:** `cargo test -p zerodds-amqp-bridge --lib`: 70 Tests gruen.
+**Tests:** `cargo test -p zerodds-amqp-bridge --lib`: 70 Tests grün.
 
 **Status:** done
 
@@ -1866,7 +1866,7 @@ Roundtrips fuer alle Primitives, Composites, Sections.
 **Spec:** Annex C §C.4, S. 135 — strikte Untermenge von C.3.
 
 **Repo:** `cargo test -p zerodds-amqp-bridge --features codec-lite`
-laeuft das volle Codec-Test-Set + die 5 zusaetzlichen
+läuft das volle Codec-Test-Set + die 5 zusätzlichen
 `codec_profile`-Tests, die das Lite-Subset markieren. Conformance-
 Marker `active_profile()` liefert `CodecProfile::Lite` unter dem
 Feature.
@@ -1880,7 +1880,7 @@ unter `--features codec-lite`).
 ### Annex C C.5 Test Harness
 
 **Spec:** Annex C §C.5, S. 136 — vendor-neutrales Wording;
-Implementer SHOULD veroeffentlicht harness-source.
+Implementer SHOULD veröffentlicht harness-source.
 
 **Status:** done — strukturell (Harness-Wahl ist
 implementation-defined).
@@ -1899,7 +1899,7 @@ RPC-operation→`dds:rpc-operation`.
 
 **Repo:** `rpc_correlation::ReplyProperties::from_amqp` liest
 `correlation-id` (Str/Symbol/Uuid/Binary) und normalisiert auf
-String-Lookup-Key. `OutstandingCalls::issue` traegt
+String-Lookup-Key. `OutstandingCalls::issue` trägt
 `request_id` (= `message-id`) ein.
 
 **Tests:** `rpc_correlation::tests::from_amqp_handles_str_symbol_uuid_binary`.
@@ -1923,7 +1923,7 @@ nur wenn `rpc_aware = true` aktiviert wird.
 
 **Spec:** Annex D §D.3, S. 139 — kein wire-level RPC-Bridge,
 nur Property-Mapping; volles RPC-over-AMQP ist
-spaetere Spec.
+spätere Spec.
 
 **Status:** done — Spec-Inhalts-Klassifikation.
 
@@ -1931,7 +1931,7 @@ spaetere Spec.
 
 **Spec:** Annex D §D.4, S. 140 — Reply-Acceptance:
 correlation-id PFLICHT, Match auf outstanding RPC-Call
-PFLICHT, Body-Decode mode-abhaengig (PASSTHROUGH/JSON/
+PFLICHT, Body-Decode mode-abhängig (PASSTHROUGH/JSON/
 AMQP_NATIVE). Failure-Dispositions Tabelle. Per-Call-Timeout
 `rpc_timeout_ms` (default 30000) → RETCODE_TIMEOUT. Non-
 Blocking-Guarantee. Bounded outstanding-calls table mit
@@ -1979,5 +1979,3 @@ Test-Lauf:
 
 Cross-Crate Test-Volumen: 313 + Lang-Codegen-AMQP-Sub-Tests gegen
 die DDS-AMQP-1.0-Spec.
-
-Open- + Decision-Record-Eintraege siehe `dds-amqp-1.0.open.md`.

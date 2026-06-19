@@ -1,13 +1,13 @@
-// dds_dcps.idl — repraesentative IDL-Auswahl basierend auf
+// dds_dcps.idl — representative IDL selection based on
 // OMG DDS 1.4 §B (DCPS PSM IDL).
 //
-// Diese Datei ist KEINE 1:1-Kopie der OMG-Spec-IDL — die Spec liegt
-// unter Copyright und wird per `docs/standards/cache/omg/dds-dcps-1.4.pdf`
-// referenziert. Hier eine **inhaltlich aequivalente Auswahl** der
-// wichtigsten Built-in-Topic-Types und QoS-Strukturen, die fuer T3.12
-// als Parser-Smoke-Test dient.
+// This file is NOT a 1:1 copy of the OMG spec IDL — the spec is
+// under copyright and is referenced via `docs/standards/cache/omg/dds-dcps-1.4.pdf`.
+// Here is a **content-equivalent selection** of the
+// most important built-in topic types and QoS structures, serving as a
+// parser smoke test for T3.12.
 //
-// Alle Konstrukte hier sind in der T3.1-T3.10 Grammar abdeckbar.
+// All constructs here are coverable by the T3.1-T3.10 grammar.
 
 module DDS {
 
@@ -37,7 +37,7 @@ module DDS {
         unsigned long nanosec;
     };
 
-    // ----- QoS Policies (Auswahl) ----------------------------------
+    // ----- QoS policies (selection) --------------------------------
 
     enum DurabilityKind {
         VOLATILE_DURABILITY_QOS,

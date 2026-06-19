@@ -71,8 +71,7 @@ export const MTypeSupport: DdsTopicType<M> = {
     typeName: "M",
     isKeyed: false,
     extensibility: "mutable",
-    encode(s: M, endian: EndianMode = "le"): Uint8Array {
-        const w = new Xcdr2Writer(endian);
+    encodeInto(w: Xcdr2Writer, s: M): void {
         const _tok = w.beginMutable();
         w.writeEmHeader(1, 2, false);
         w.writeInt32(s.a);
@@ -83,10 +82,13 @@ export const MTypeSupport: DdsTopicType<M> = {
             w.patchUint32(_bodyStart - 4, w.pos - _bodyStart);
         }
         w.endMutable(_tok);
+    },
+    encode(s: M, endian: EndianMode = "le"): Uint8Array {
+        const w = new Xcdr2Writer(endian);
+        this.encodeInto(w, s);
         return w.toBytes();
     },
-    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): M {
-        const r = new Xcdr2Reader(bytes, offset, length, "le");
+    decodeFrom(r: Xcdr2Reader): M {
         let _f_a: number | undefined = 0;
         let _f_b: string | undefined = "";
         const _tok = r.beginMutable();
@@ -117,6 +119,10 @@ export const MTypeSupport: DdsTopicType<M> = {
             a: _f_a as number,
             b: _f_b as string,
         };
+    },
+    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): M {
+        const r = new Xcdr2Reader(bytes, offset, length, "le");
+        return this.decodeFrom(r);
     },
     keyHash(s: M): Uint8Array {
         return new Uint8Array(16);

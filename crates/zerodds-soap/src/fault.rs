@@ -3,7 +3,7 @@
 
 //! SOAP-Fault — W3C SOAP 1.2 Part 1 §5.4.
 //!
-//! Spec §5.4: SOAP-Fault hat fuenf Standard-Codes:
+//! Spec §5.4: a SOAP fault has five standard codes:
 //! `VersionMismatch`, `MustUnderstand`, `DataEncodingUnknown`,
 //! `Sender` (Client-Side-Error), `Receiver` (Server-Side-Error).
 
@@ -28,7 +28,7 @@ pub enum FaultCode {
 }
 
 impl FaultCode {
-    /// Spec-Name als XML-QName (`env:<Code>`).
+    /// Spec name as an XML QName (`env:<Code>`).
     #[must_use]
     pub fn qname(self) -> &'static str {
         match self {
@@ -46,16 +46,16 @@ impl FaultCode {
 pub struct Fault {
     /// Fault-Code.
     pub code: FaultCode,
-    /// Reason — kurze human-readable Beschreibung.
+    /// Reason — short human-readable description.
     pub reason: String,
     /// Optional Detail-XML (Subcode-/App-spezifisch).
     pub detail: Option<String>,
-    /// Optional `xml:lang` fuer den Reason-Text (default `en`).
+    /// Optional `xml:lang` for the reason text (default `en`).
     pub lang: String,
 }
 
 impl Fault {
-    /// Konstruktor mit Default-Lang `en`.
+    /// Constructor with default lang `en`.
     #[must_use]
     pub fn new(code: FaultCode, reason: &str) -> Self {
         Self {
@@ -66,7 +66,7 @@ impl Fault {
         }
     }
 
-    /// Render zu XML — wird typisch in `Envelope.body_xml` verbaut.
+    /// Render to XML — typically embedded in `Envelope.body_xml`.
     /// Spec §5.4 Skeleton.
     #[must_use]
     pub fn to_xml(&self) -> String {

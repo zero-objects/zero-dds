@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// dds.ts — DDS-PSM-Cxx 1.0 konforme TS-Surface ueber koffi.
+// dds.ts — DDS-PSM-Cxx 1.0 conform TS surface over koffi.
 
 import * as N from "./native.js";
 import { ZeroDdsError } from "./index.js";
 
-/// Topic-Traits Interface — Sample-Type-Codierung.
+/// Topic-traits interface — sample-type coding.
 export interface TopicTraits<T> {
   readonly typeName: string;
   encode(value: T): Uint8Array;
   decode(bytes: Uint8Array): T;
 }
 
-/// Default-Traits fuer raw bytes.
+/// Default traits for raw bytes.
 export const ByteSeqTraits: TopicTraits<Uint8Array> = {
   typeName: "DDS::Bytes",
   encode: (v) => v,
   decode: (b) => b,
 };
 
-/// Default-Traits fuer UTF-8 strings.
+/// Default traits for UTF-8 strings.
 export const StringTraits: TopicTraits<string> = {
   typeName: "DDS::String",
   encode: (v) => new TextEncoder().encode(v),

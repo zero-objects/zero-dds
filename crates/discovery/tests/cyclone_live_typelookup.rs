@@ -1,15 +1,16 @@
-//! WP 1.5 T15 — Live-Interop-Skelett fuer TypeLookup gegen Cyclone DDS.
+//! WP 1.5 T15 — live-interop skeleton for TypeLookup against Cyclone DDS.
 //!
-//! **Opt-in only** — `#[ignore]`. Verifiziert dass unser TypeLookupStack
-//! Requests serialisiert, die Cyclone byte-technisch akzeptieren wuerde.
-//! Voller Live-RPC-Roundtrip (Request via Reliable-Writer → Reply via
-//! Reliable-Reader) ist noch nicht verdrahtet — der Stack ist Transport-
-//! agnostisch, die TypeLookup-Endpoints muessten analog SEDP (WP 1.4 T4)
-//! als weitere Reliable-Writer/Reader-Paare registriert werden.
+//! **Opt-in only** — `#[ignore]`. Verifies that our TypeLookupStack
+//! serializes requests that Cyclone would accept byte-wise. The full
+//! live RPC round trip (request via reliable writer → reply via
+//! reliable reader) is not yet wired up — the stack is transport-
+//! agnostic, and the TypeLookup endpoints would need to be registered
+//! as additional reliable writer/reader pairs, analogous to SEDP
+//! (WP 1.4 T4).
 //!
-//! Phase-1-Scope: Request-Payload byte-genau gemaess XTypes §7.6.3.3,
-//! Sample-Identity-Tracking deterministisch, Responder-Logik aus
-//! Registry. Full-Wire-Flow: WP 1.6+ oder WP 2.
+//! Phase 1 scope: request payload byte-exact per XTypes §7.6.3.3,
+//! deterministic sample-identity tracking, responder logic from the
+//! registry. Full wire flow: WP 1.6+ or WP 2.
 
 #![allow(
     clippy::expect_used,
@@ -34,7 +35,7 @@ use zerodds_types::{EquivalenceHash, MinimalTypeObject, PrimitiveKind, TypeIdent
 #[test]
 #[ignore = "placeholder — full Cyclone-RPC-roundtrip requires TypeLookup reliable endpoints wired into transport (WP 1.6+)"]
 fn cyclone_typelookup_live_roundtrip_placeholder() {
-    // Setup: Requester + Responder mit identischer Registry.
+    // Setup: requester + responder with identical registry.
     let mut responder = TypeLookupStack::new(GuidPrefix::from_bytes([0xAA; 12]));
     let m = MinimalTypeObject::Struct(
         TypeObjectBuilder::struct_type("::X")
@@ -48,7 +49,7 @@ fn cyclone_typelookup_live_roundtrip_placeholder() {
     let (req_bytes, _seq) = requester.make_get_types_request(&[hash], true).unwrap();
     eprintln!("request serialized: {} bytes", req_bytes.len());
 
-    // Simulated transport: Responder-build → Requester-parse.
+    // Simulated transport: responder build → requester parse.
     let reply_bytes = responder.build_get_types_reply(&[hash], true).unwrap();
     eprintln!("reply serialized: {} bytes", reply_bytes.len());
     let n = requester.handle_get_types_reply(&reply_bytes).unwrap();
@@ -56,20 +57,21 @@ fn cyclone_typelookup_live_roundtrip_placeholder() {
     assert!(requester.registry.get_minimal(&hash).is_some());
 
     // TODO WP 1.6: request_bytes → ReliableWriter(TL_REQ_WRITER) → UDP
-    // TODO WP 1.6: Cyclone-TL-Responder antwortet via TL_REPLY_WRITER
-    // TODO WP 1.6: reply_bytes an handle_get_types_reply()
+    // TODO WP 1.6: Cyclone TL responder replies via TL_REPLY_WRITER
+    // TODO WP 1.6: reply_bytes to handle_get_types_reply()
 }
 
 #[test]
 fn get_types_request_is_cdr_wire_compatible() {
-    // Sanity: serialisierter Request beginnt mit u32-Laenge und enthaelt
-    // dann die TypeIdentifier. Cyclone akzeptiert diese als CDR-sequence.
+    // Sanity: the serialized request begins with a u32 length and then
+    // contains the TypeIdentifiers. Cyclone accepts these as a CDR
+    // sequence.
     let mut stack = TypeLookupStack::new(GuidPrefix::from_bytes([1; 12]));
     let hashes = [EquivalenceHash([0xA1; 14]), EquivalenceHash([0xB2; 14])];
     let (bytes, _) = stack.make_get_types_request(&hashes, true).unwrap();
-    // Ersten 4 Bytes = u32 count = 2 (LE)
+    // First 4 bytes = u32 count = 2 (LE)
     assert_eq!(&bytes[..4], &[0x02, 0x00, 0x00, 0x00]);
-    // Danach 2 * (1 disc + 14 hash) = 30 bytes TypeIdentifier.
+    // Then 2 * (1 disc + 14 hash) = 30 bytes of TypeIdentifier.
     assert_eq!(bytes.len(), 4 + 2 * 15);
     assert_eq!(bytes[4], 0xF1); // EK_MINIMAL
 }

@@ -3,8 +3,8 @@
 
 //! `STATUS_AGENT` Submessage (id=4, Spec §8.3.5.5).
 //!
-//! Direction: Agent → Client. Antwort auf `CREATE_CLIENT`. Payload =
-//! `STATUS_AGENT_Payload { AGENT_Representation }` mit
+//! Direction: Agent → Client. Reply to `CREATE_CLIENT`. Payload =
+//! `STATUS_AGENT_Payload { AGENT_Representation }` with
 //! `xrce_cookie = 'X','R','C','E'`.
 
 extern crate alloc;
@@ -13,7 +13,7 @@ use alloc::vec::Vec;
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// Opaker Body fuer `STATUS_AGENT`.
+/// Opaque body for `STATUS_AGENT`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StatusAgentPayload {
     /// XCDR2 `AGENT_Representation`.
@@ -21,7 +21,7 @@ pub struct StatusAgentPayload {
 }
 
 impl StatusAgentPayload {
-    /// Verpackt in `Submessage`.
+    /// Packs into a `Submessage`.
     ///
     /// # Errors
     /// `PayloadTooLarge`.
@@ -33,7 +33,7 @@ impl StatusAgentPayload {
         )
     }
 
-    /// Extrahiert aus `Submessage`.
+    /// Extracts from a `Submessage`.
     ///
     /// # Errors
     /// `ValueOutOfRange`.

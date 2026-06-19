@@ -1,9 +1,9 @@
-//! T7.3 — Vendor-Fixture-Tests fuer Cyclone DDS und Fast-DDS.
+//! T7.3 — vendor fixture tests for Cyclone DDS and Fast-DDS.
 //!
-//! Beide Vendors nutzen ueberwiegend Standard-OMG-IDL-4.2 ohne
-//! Vendor-spezifische Grammar-Erweiterungen. Diese Tests verifizieren,
-//! dass die Base-Grammar `IDL_42` repraesentative Files dieser Vendors
-//! akzeptiert.
+//! Both vendors mostly use standard OMG-IDL-4.2 without
+//! vendor-specific grammar extensions. These tests verify
+//! that the base grammar `IDL_42` accepts representative files of these
+//! vendors.
 
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 

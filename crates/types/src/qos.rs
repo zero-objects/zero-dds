@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! XTypes-bezogene QoS-Policies (T17, T18).
+//! XTypes-related QoS policies (T17, T18).
 //!
-//! - [`TypeConsistencyEnforcement`] (§7.6.3.7) — Strictness-Level fuer
-//!   Assignability-Checks.
-//! - [`DataRepresentation`] (§7.6.3.2.1) — XCDR1/XCDR2-Negotiation.
+//! - [`TypeConsistencyEnforcement`] (§7.6.3.7) — strictness level for
+//!   assignability checks.
+//! - [`DataRepresentation`] (§7.6.3.2.1) — XCDR1/XCDR2 negotiation.
 
 use alloc::vec::Vec;
 
-/// Kind der TypeConsistencyEnforcement (§7.6.3.7).
+/// Kind of the TypeConsistencyEnforcement (§7.6.3.7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeConsistencyKind {
-    /// Kein Type-Check beim Matching.
+    /// No type check on matching.
     DisallowTypeCoercion,
-    /// Type-Coercion (int16→int32 etc.) erlaubt.
+    /// Type coercion (int16→int32 etc.) allowed.
     AllowTypeCoercion,
-    /// Volle Type-Validation + Force alle Checks.
+    /// Full type validation + force all checks.
     ForceTypeValidation,
 }
 
 impl TypeConsistencyKind {
-    /// Wire-Encoded als u32 (§7.6.3.7).
+    /// Wire-encoded as u32 (§7.6.3.7).
     #[must_use]
     pub const fn to_u32(self) -> u32 {
         match self {
@@ -46,11 +46,11 @@ impl TypeConsistencyKind {
 pub struct TypeConsistencyEnforcement {
     /// Kind.
     pub kind: TypeConsistencyKind,
-    /// IgnoreSequenceBounds — erlaubt unterschiedliche Bound-Werte.
+    /// IgnoreSequenceBounds — allows different bound values.
     pub ignore_sequence_bounds: bool,
     /// IgnoreStringBounds.
     pub ignore_string_bounds: bool,
-    /// IgnoreMemberNames (Match per @id, nicht per Name).
+    /// IgnoreMemberNames (match per @id, not per name).
     pub ignore_member_names: bool,
     /// PreventTypeWidening (Narrowing-Ergebnisse blocken).
     pub prevent_type_widening: bool,
@@ -61,7 +61,7 @@ pub struct TypeConsistencyEnforcement {
 impl Default for TypeConsistencyEnforcement {
     fn default() -> Self {
         Self {
-            // Default laut Spec: AllowTypeCoercion (§7.6.3.7.1).
+            // Default per spec: AllowTypeCoercion (§7.6.3.7.1).
             kind: TypeConsistencyKind::AllowTypeCoercion,
             ignore_sequence_bounds: true,
             ignore_string_bounds: true,
@@ -73,7 +73,7 @@ impl Default for TypeConsistencyEnforcement {
 }
 
 impl TypeConsistencyEnforcement {
-    /// Encode laut XTypes §7.6.3.7.3:
+    /// Encode per XTypes §7.6.3.7.3:
     ///
     /// ```text
     /// struct TypeConsistencyEnforcementQosPolicy {
@@ -86,8 +86,8 @@ impl TypeConsistencyEnforcement {
     /// };
     /// ```
     ///
-    /// Wire-Groesse = 4 + 5 = 9 byte, mit 3 byte Tail-Padding auf 12
-    /// byte Alignment (PID-Value ist 4-byte-aligned).
+    /// Wire size = 4 + 5 = 9 bytes, with 3 bytes of tail padding to 12-byte
+    /// alignment (the PID value is 4-byte-aligned).
     #[must_use]
     pub fn to_bytes_le(self) -> Vec<u8> {
         let mut out = Vec::with_capacity(12);
@@ -98,20 +98,20 @@ impl TypeConsistencyEnforcement {
         out.push(u8::from(self.prevent_type_widening));
         out.push(u8::from(self.force_type_validation));
         while out.len() % 4 != 0 {
-            out.push(0); // Padding auf 4-byte-Boundary.
+            out.push(0); // padding to the 4-byte boundary.
         }
         out
     }
 
-    /// Decode. Kuerzere Inputs nehmen Default fuer fehlende Flags
-    /// (forward-compat: aeltere Peers senden evtl. nur kind + 3
-    /// booleans, analog zu Cyclone DDS ≤ 0.10).
+    /// Decode. Shorter inputs use the default for missing flags
+    /// (forward-compat: older peers may send only kind + 3
+    /// booleans, analogous to Cyclone DDS ≤ 0.10).
     #[must_use]
     pub fn from_bytes_le(bytes: &[u8]) -> Self {
         if bytes.len() < 4 {
             return Self::default();
         }
-        // Infallible: len >= 4 oben geprueft.
+        // Infallible: len >= 4 checked above.
         let mut k = [0u8; 4];
         k.copy_from_slice(&bytes[..4]);
         let kind = TypeConsistencyKind::from_u32(u32::from_le_bytes(k));
@@ -139,7 +139,7 @@ pub enum DataRepresentationId {
 }
 
 impl DataRepresentationId {
-    /// Versuch einen i16 zu einer bekannten Representation zu mappen.
+    /// Tries to map an i16 to a known representation.
     #[must_use]
     pub const fn from_i16(v: i16) -> Option<Self> {
         match v {
@@ -151,18 +151,18 @@ impl DataRepresentationId {
     }
 }
 
-/// Ergebnis einer Data-Representation-Negotiation.
+/// Result of a data representation negotiation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepresentationNegotiation {
-    /// Gemeinsamer Wert gefunden.
+    /// Common value found.
     Accepted(DataRepresentationId),
-    /// Keine Ueberschneidung.
+    /// No overlap.
     NoOverlap,
 }
 
-/// Wie DCPS §2.2.3 beschreibt: Writer offeriert Representations, Reader
-/// akzeptiert eine Liste. Match = erste Writer-Choice, die in Reader-
-/// Liste vorhanden ist.
+/// As DCPS §2.2.3 describes: the writer offers representations, the reader
+/// accepts a list. Match = the first writer choice present in the reader
+/// list.
 #[must_use]
 pub fn negotiate_representation(
     writer_offered: &[i16],
@@ -178,16 +178,16 @@ pub fn negotiate_representation(
     RepresentationNegotiation::NoOverlap
 }
 
-/// Wire-Constraint-Matrix (§7.6.3.1 Tab.59): pro DataRepresentation und
-/// Extensibility-Kategorie definiert die Spec, ob das Pairing zulaessig
-/// ist. XCDR1 stuetzt FINAL und MUTABLE (mit PL_CDR1); XCDR2 stuetzt
-/// FINAL, APPENDABLE und MUTABLE.
+/// Wire constraint matrix (§7.6.3.1 Tab.59): for each DataRepresentation and
+/// extensibility category, the spec defines whether the pairing is allowed.
+/// XCDR1 supports FINAL and MUTABLE (with PL_CDR1); XCDR2 supports
+/// FINAL, APPENDABLE and MUTABLE.
 ///
-/// Liefert `Ok(())` wenn die Kombination in der Spec-Matrix steht;
-/// sonst `Err` mit deutscher Beschreibung.
+/// Returns `Ok(())` if the combination is in the spec matrix;
+/// otherwise `Err` with a description.
 ///
 /// # Errors
-/// `&'static str` mit der Verletzung.
+/// `&'static str` with the violation.
 pub fn check_data_repr_extensibility(
     repr: DataRepresentationId,
     ext: ExtensibilityForRepr,
@@ -195,22 +195,22 @@ pub fn check_data_repr_extensibility(
     use DataRepresentationId::*;
     use ExtensibilityForRepr::*;
     match (repr, ext) {
-        // XCDR1 erlaubt FINAL + MUTABLE (via PL_CDR1) — APPENDABLE-NICHT
-        // direkt definiert (Spec faellt auf FINAL-Behandlung zurueck;
-        // Validator hier sieht das als Verletzung).
+        // XCDR1 allows FINAL + MUTABLE (via PL_CDR1) — APPENDABLE is NOT
+        // directly defined (the spec falls back to FINAL handling;
+        // the validator here treats it as a violation).
         (Xcdr1, Final) | (Xcdr1, Mutable) => Ok(()),
         (Xcdr1, Appendable) => Err(
-            "Tab.59 §7.6.3.1: XCDR1 unterstuetzt APPENDABLE nicht direkt — Encoder muss FINAL waehlen",
+            "Tab.59 §7.6.3.1: XCDR1 does not support APPENDABLE directly — the encoder must choose FINAL",
         ),
-        // XCDR2 unterstuetzt alle drei Kategorien (FINAL, APPENDABLE, MUTABLE).
+        // XCDR2 supports all three categories (FINAL, APPENDABLE, MUTABLE).
         (Xcdr2, _) => Ok(()),
-        // XML hat eigene Repraesentation, keine direkte Extensibility-
-        // Constraint im selben Sinn.
+        // XML has its own representation, no direct extensibility
+        // constraint in the same sense.
         (Xml, _) => Ok(()),
     }
 }
 
-/// Extensibility-Kategorie fuer die DataRepresentation-Constraint-Matrix.
+/// Extensibility category for the DataRepresentation constraint matrix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExtensibilityForRepr {
     /// `@final`.
@@ -313,7 +313,7 @@ mod tests {
         ] {
             assert!(
                 check_data_repr_extensibility(DataRepresentationId::Xcdr2, ext).is_ok(),
-                "XCDR2 + {ext:?} muss zulaessig sein"
+                "XCDR2 + {ext:?} must be allowed"
             );
         }
     }

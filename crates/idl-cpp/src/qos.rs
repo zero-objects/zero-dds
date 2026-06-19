@@ -1,49 +1,49 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Block-G: QoS-Policy + Type-Traits (Spec idl4-cpp-1.0 §7.5).
+//! Block-G: QoS policy + type traits (Spec idl4-cpp-1.0 §7.5).
 //!
-//! Emittiert die 22 OMG-DDS-1.4-QoS-Policies als C++17-Strukturen in den
-//! Namespace `dds::core::policy`. Jede Policy bekommt:
-//! - Default-Konstruktor + Special-Members,
-//! - Reference-Pattern Getter (mutable + const),
-//! - Setter-Paar (`const T&` + `T&&` Move-Setter),
-//! - Equality-Operator `==`/`!=` (sauberer Vergleich, falls relevant).
+//! Emits the 22 OMG-DDS-1.4 QoS policies as C++17 structs in the
+//! `dds::core::policy` namespace. Each policy gets:
+//! - default constructor + special members,
+//! - reference-pattern getters (mutable + const),
+//! - a setter pair (`const T&` + `T&&` move setter),
+//! - equality operators `==`/`!=` (clean comparison where relevant).
 //!
-//! Spec-Tabelle: DDS 1.4 §2.2.3 (Tabelle 2.6/2.7) plus DDS-XTypes §7.6.4
-//! fuer DataRepresentation/TypeConsistencyEnforcement.
+//! Spec table: DDS 1.4 §2.2.3 (Table 2.6/2.7) plus DDS-XTypes §7.6.4
+//! for DataRepresentation/TypeConsistencyEnforcement.
 //!
-//! Zusaetzlich werden die Type-Traits aus idl4-cpp §7.1.4 Tab.7.1
-//! (`value_type<T>`, `in_type<T>`, `out_type<T>`, `inout_type<T>`) als
-//! Templates im Namespace `dds::core` emittiert.
+//! Additionally, the type traits from idl4-cpp §7.1.4 Tab.7.1
+//! (`value_type<T>`, `in_type<T>`, `out_type<T>`, `inout_type<T>`) are
+//! emitted as templates in the `dds::core` namespace.
 
 use core::fmt::Write;
 
 use crate::error::CppGenError;
 
-/// Beschreibung eines QoS-Policy-Felds.
+/// Description of a QoS policy field.
 #[derive(Debug, Clone, Copy)]
 struct QosField {
-    /// Feld-Name (snake_case).
+    /// Field name (snake_case).
     name: &'static str,
-    /// C++-Typ-Ausdruck.
+    /// C++ type expression.
     cpp_ty: &'static str,
-    /// Default-Wert (C++-Initialisierungsausdruck).
+    /// Default value (C++ initialization expression).
     default_init: &'static str,
 }
 
-/// Beschreibung einer QoS-Policy-Klasse.
+/// Description of a QoS policy class.
 #[derive(Debug, Clone, Copy)]
 struct QosSpec {
-    /// Klassen-Name (PascalCase).
+    /// Class name (PascalCase).
     name: &'static str,
-    /// Felder der Policy.
+    /// Fields of the policy.
     fields: &'static [QosField],
-    /// Spec-Referenz (DDS 1.4 §2.2.3 + Tabellen-Zeile).
+    /// Spec reference (DDS 1.4 §2.2.3 + table row).
     spec_ref: &'static str,
 }
 
-/// 22 QoS-Policies aus OMG DDS 1.4. Reihenfolge folgt Tabelle 2.6 +
-/// Erweiterungen aus DDS-Security 1.1 / DDS-XTypes 1.3.
+/// 22 QoS policies from OMG DDS 1.4. The order follows Table 2.6 +
+/// extensions from DDS-Security 1.1 / DDS-XTypes 1.3.
 #[allow(clippy::too_many_lines)]
 const POLICIES: &[QosSpec] = &[
     QosSpec {
@@ -325,11 +325,11 @@ const POLICIES: &[QosSpec] = &[
     },
 ];
 
-/// Schreibt den vollstaendigen QoS-Header.
+/// Writes the complete QoS header.
 ///
 /// # Errors
-/// Liefert [`CppGenError::Internal`], wenn das Schreiben in den
-/// `String`-Buffer scheitert.
+/// Returns [`CppGenError::Internal`] if writing to the
+/// `String` buffer fails.
 pub fn emit_qos_header(out: &mut String) -> Result<(), CppGenError> {
     writeln!(out, "// Block-G: DDS-QoS-Policies (Spec dds-1.4 §2.2.3).").map_err(fmt_err)?;
     writeln!(
@@ -339,11 +339,11 @@ pub fn emit_qos_header(out: &mut String) -> Result<(), CppGenError> {
     .map_err(fmt_err)?;
     writeln!(out).map_err(fmt_err)?;
 
-    // Kind-Enums (Forward-Decl reicht — volle Definitionen liegen in der
-    // PSM-CXX-Runtime).
+    // Kind enums (a forward decl suffices — full definitions live in the
+    // PSM-CXX runtime).
     writeln!(
         out,
-        "// Forward-Declarations der Kind-Enums (siehe DDS 1.4 §2.2.3)."
+        "// Forward declarations of the kind enums (see DDS 1.4 §2.2.3)."
     )
     .map_err(fmt_err)?;
     for kind in [
@@ -372,7 +372,7 @@ pub fn emit_qos_header(out: &mut String) -> Result<(), CppGenError> {
     Ok(())
 }
 
-/// Liefert die Liste aller emittierten Policy-Klassen-Namen.
+/// Returns the list of all emitted policy class names.
 #[must_use]
 pub fn policy_class_names() -> Vec<&'static str> {
     POLICIES.iter().map(|p| p.name).collect()
@@ -427,7 +427,7 @@ fn emit_policy_class(out: &mut String, p: &QosSpec) -> Result<(), CppGenError> {
 
     if !p.fields.is_empty() {
         writeln!(out).map_err(fmt_err)?;
-        // Equality-Operator: vergleicht alle Felder.
+        // Equality operator: compares all fields.
         write!(
             out,
             "    bool operator==(const {}& rhs) const {{ return ",
@@ -469,7 +469,7 @@ fn emit_policy_class(out: &mut String, p: &QosSpec) -> Result<(), CppGenError> {
     Ok(())
 }
 
-/// Emittiert die Type-Traits aus idl4-cpp §7.1.4 Tab.7.1.
+/// Emits the type traits from idl4-cpp §7.1.4 Tab.7.1.
 ///
 /// - `value_type<T>`: by-value Typ.
 /// - `in_type<T>`: const-ref-Argument-Typ.

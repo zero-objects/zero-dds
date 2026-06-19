@@ -4,9 +4,9 @@
 //! `CREATE` Submessage (id=1, Spec §8.3.5.2).
 //!
 //! Direction: Client → Agent. Payload = `CREATE_Payload` (extends
-//! `BaseObjectRequest`, enthaelt `ObjectVariant`).
+//! `BaseObjectRequest`, contains `ObjectVariant`).
 //!
-//! Flags-Bits ueber dem E-Flag:
+//! Flag bits above the E-flag:
 //! - Bit 1 = REUSE
 //! - Bit 2 = REPLACE
 
@@ -16,24 +16,24 @@ use alloc::vec::Vec;
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// CREATE-Flag: Reuse vorhandenes Object (CreationMode.reuse).
+/// CREATE flag: reuse an existing object (CreationMode.reuse).
 pub const CREATE_FLAG_REUSE: u8 = 0x02;
-/// CREATE-Flag: Replace vorhandenes Object (CreationMode.replace).
+/// CREATE flag: replace an existing object (CreationMode.replace).
 pub const CREATE_FLAG_REPLACE: u8 = 0x04;
 
-/// Opaker Body fuer `CREATE`.
+/// Opaque body for `CREATE`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CreatePayload {
-    /// XCDR2-Body (`BaseObjectRequest` + `ObjectVariant`).
+    /// XCDR2 body (`BaseObjectRequest` + `ObjectVariant`).
     pub representation: Vec<u8>,
-    /// `reuse`-Flag (Bit 1 im Submessage-Header-Flag-Byte).
+    /// `reuse` flag (bit 1 in the submessage header flag byte).
     pub reuse: bool,
-    /// `replace`-Flag (Bit 2 im Submessage-Header-Flag-Byte).
+    /// `replace` flag (bit 2 in the submessage header flag byte).
     pub replace: bool,
 }
 
 impl CreatePayload {
-    /// Berechnet das Flag-Byte inkl. E-Flag (LE).
+    /// Computes the flag byte incl. the E-flag (LE).
     #[must_use]
     pub fn flags(&self) -> u8 {
         let mut f = FLAG_E_LITTLE_ENDIAN;
@@ -46,7 +46,7 @@ impl CreatePayload {
         f
     }
 
-    /// Verpackt in `Submessage`.
+    /// Packs into a `Submessage`.
     ///
     /// # Errors
     /// `PayloadTooLarge`.
@@ -55,10 +55,10 @@ impl CreatePayload {
         Submessage::new(SubmessageId::Create, flags, self.representation)
     }
 
-    /// Extrahiert aus `Submessage`.
+    /// Extracts from a `Submessage`.
     ///
     /// # Errors
-    /// `ValueOutOfRange`, wenn ID nicht `Create`.
+    /// `ValueOutOfRange` if the ID is not `Create`.
     pub fn try_from_submessage(sm: &Submessage) -> Result<Self, XrceError> {
         if sm.header.submessage_id != SubmessageId::Create {
             return Err(XrceError::ValueOutOfRange {

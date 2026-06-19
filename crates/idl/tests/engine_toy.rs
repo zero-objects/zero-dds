@@ -1,11 +1,11 @@
-//! End-to-End-Integration-Tests fuer die Earley-Engine gegen die Toy-Grammar
+//! End-to-end integration tests for the Earley engine against the toy grammar
 //! (`E ::= E "+" T | T;  T ::= T "*" F | F;  F ::= "n" | "(" E ")"`).
 //!
-//! Validiert die volle Pipeline (Grammar-Datenmodell, Validator, Recognizer,
-//! Engine-Facade) ueber `zerodds_idl::engine::parse` als Public-API.
-//! Wenn diese Tests gruen sind, ist Wochen-1-Milestone M1 erreicht:
-//! „Engine recognized Toy-Grammar" (siehe
-//! `.planning/wp-0.3-idl-parser/PLAN.md` Wochen-Tabelle).
+//! Validates the full pipeline (grammar data model, validator, recognizer,
+//! engine facade) via `zerodds_idl::engine::parse` as the public API.
+//! If these tests are green, week-1 milestone M1 is reached:
+//! "engine recognizes the toy grammar" (see
+//! `.planning/wp-0.3-idl-parser/PLAN.md` week table).
 
 use zerodds_idl::engine::{EngineError, parse};
 use zerodds_idl::grammar::{TokenKind, toy::TOY};
@@ -40,7 +40,7 @@ fn accepts_multiplication() {
 
 #[test]
 fn accepts_mixed_precedence() {
-    // n + n * n  — Praezedenz durch Grammar (T bindet enger)
+    // n + n * n  — precedence via the grammar (T binds tighter)
     assert!(parse(&TOY, &[N, PLUS, N, TIMES, N]).is_ok());
 }
 
@@ -58,7 +58,7 @@ fn accepts_left_associative_multiplication() {
 
 #[test]
 fn accepts_parenthesized_subexpression() {
-    // ( n + n ) * n  — Klammern uebersteuern Praezedenz
+    // ( n + n ) * n  — parentheses override precedence
     assert!(parse(&TOY, &[LPAREN, N, PLUS, N, RPAREN, TIMES, N]).is_ok());
 }
 
@@ -100,7 +100,7 @@ fn rejects_lone_operator() {
 
 #[test]
 fn rejects_two_numbers_without_operator() {
-    // n n  — kein Operator
+    // n n  — no operator
     let result = parse(&TOY, &[N, N]);
     assert!(matches!(result, Err(EngineError::NotAccepted { .. })));
 }
@@ -141,7 +141,7 @@ fn rejects_empty_parens() {
 }
 
 // ---------------------------------------------------------------------------
-// State-Set-Invariante: n+1 Sets fuer n Tokens
+// State-set invariant: n+1 sets for n tokens
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -155,12 +155,12 @@ fn state_set_count_matches_token_count_plus_one() {
 }
 
 // ---------------------------------------------------------------------------
-// NotAccepted traegt last_consumed
+// NotAccepted carries last_consumed
 // ---------------------------------------------------------------------------
 
 #[test]
 fn not_accepted_reports_last_consumed_count() {
-    let tokens = [N, PLUS]; // unvollstaendig
+    let tokens = [N, PLUS]; // incomplete
     let err = parse(&TOY, &tokens);
     assert!(matches!(
         err,

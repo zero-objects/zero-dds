@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Codegen-Helpers fuer per-Language-PSM-Templates.
+//! Codegen helpers for per-language PSM templates.
 //!
-//! Zentrale Stelle, an der Spec-Regeln fuer den Codegen erzwungen
-//! werden — die idl-cpp/idl-java/idl-ts/idl-csharp-Templates
-//! emittieren Calls hierhin, statt die Regeln einzeln zu
-//! implementieren. Damit ist die Spec-Conformance an einer Stelle
-//! testbar, nicht ueber 4 Codegen-Backends verstreut.
+//! Central place where spec rules for the codegen are enforced — the
+//! idl-cpp/idl-java/idl-ts/idl-csharp templates emit calls here
+//! instead of implementing the rules individually. This makes spec
+//! conformance testable in one place rather than scattered across
+//! 4 codegen backends.
 //!
-//! Spec-Quellen:
-//! * §7.1.2 — long double (16 Byte) → AMQP double (8 Byte) Narrowing.
-//! * §7.1.4.1 — IDL char ASCII-Subset Validierung.
-//! * §7.1.6.1 — 16-Byte-Identifier ohne RFC-4122-Konformitaet:
-//!   `binary` (0xA0/0xB0), nicht `uuid` (0x98).
-//! * §7.2.1.1/.2 — Composite-Descriptor: TRUNCATED→ulong(8B),
+//! Spec sources:
+//! * §7.1.2 — long double (16 byte) → AMQP double (8 byte) narrowing.
+//! * §7.1.4.1 — IDL char ASCII-subset validation.
+//! * §7.1.6.1 — 16-byte identifier without RFC-4122 conformance:
+//!   `binary` (0xA0/0xB0), not `uuid` (0x98).
+//! * §7.2.1.1/.2 — composite descriptor: TRUNCATED→ulong(8B),
 //!   FULL→symbol(`dds:type:<hex>`).
-//! * §7.2.3 — Union als AMQP-list mit {discriminator, value}.
+//! * §7.2.3 — union as AMQP list with {discriminator, value}.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -26,51 +26,51 @@ use zerodds_amqp_bridge::extended_types::AmqpExtValue;
 use crate::annex_a::DescriptorForm;
 
 // ============================================================
-// §7.1.2 — long double Narrowing
+// §7.1.2 — long double narrowing
 // ============================================================
 
-/// Spec §7.1.2 — IDL `long double` (16 Byte IEEE 754-2008
-/// binary128) wird auf AMQP `double` (8 Byte binary64) verengt.
+/// Spec §7.1.2 — IDL `long double` (16 byte IEEE 754-2008
+/// binary128) is narrowed to AMQP `double` (8 byte binary64).
 ///
-/// Rust hat keinen nativen binary128-Typ; Codegen-Templates
-/// liefern daher schon einen `f64` und dieses Funktion
-/// dokumentiert die Narrowing-Stelle. Bei Werten ausserhalb des
-/// binary64-Bereichs liefern wir Inf — Spec laesst die exakte
-/// Behandlung dem Implementer.
+/// Rust has no native binary128 type; codegen templates therefore
+/// already supply an `f64`, and this function documents the
+/// narrowing point. For values outside the binary64 range we
+/// return Inf — the spec leaves the exact handling to the
+/// implementer.
 #[must_use]
 pub fn narrow_long_double_to_double(value_binary128_as_f64: f64) -> f64 {
-    // Identitaet auf f64 (Rust hat keinen binary128). Die Stelle
-    // existiert als Audit-Anker fuer §7.1.2.
+    // Identity on f64 (Rust has no binary128). This point exists
+    // as an audit anchor for §7.1.2.
     value_binary128_as_f64
 }
 
 // ============================================================
-// §7.1.4.1 — char ASCII-Subset
+// §7.1.4.1 — char ASCII subset
 // ============================================================
 
-/// Spec §7.1.4.1 — IDL `char` ist auf UTF-8-ASCII beschraenkt.
+/// Spec §7.1.4.1 — IDL `char` is restricted to UTF-8 ASCII.
 /// Codepoints > 0x7F → `decode-error`.
 ///
 /// # Errors
-/// `Err(byte)` fuer Bytes > 0x7F; Codegen-Caller emittiert daraufhin
+/// `Err(byte)` for bytes > 0x7F; the codegen caller then emits
 /// `amqp:decode-error`.
 pub fn validate_char_ascii(byte: u8) -> Result<u8, u8> {
     if byte <= 0x7F { Ok(byte) } else { Err(byte) }
 }
 
 // ============================================================
-// §7.1.6.1 — Identifier-Type-Routing
+// §7.1.6.1 — identifier type routing
 // ============================================================
 
-/// Spec §7.1.6.1 — 16-Byte-Identifier-Form-Wahl.
+/// Spec §7.1.6.1 — 16-byte identifier form choice.
 ///
-/// `is_rfc4122_uuid`: hat das 16-Byte-Pattern eine valide
-/// RFC-4122-Version+Variant-Codierung?
+/// `is_rfc4122_uuid`: does the 16-byte pattern have a valid
+/// RFC-4122 version+variant encoding?
 ///
 /// * `true` → AMQP `uuid` (0x98).
 /// * `false` → AMQP `binary` (0xA0/0xB0). Spec: "InstanceHandle_t,
-///   GUID_t, X-Types TypeIdentifier sind in der Regel keine
-///   RFC-4122-UUIDs und MUESSEN als binary codiert werden."
+///   GUID_t, X-Types TypeIdentifier are generally not
+///   RFC-4122 UUIDs and MUST be encoded as binary."
 #[must_use]
 pub fn encode_16byte_identifier(bytes: [u8; 16], is_rfc4122_uuid: bool) -> AmqpExtValue {
     if is_rfc4122_uuid {
@@ -80,36 +80,36 @@ pub fn encode_16byte_identifier(bytes: [u8; 16], is_rfc4122_uuid: bool) -> AmqpE
     }
 }
 
-/// Spec §7.1.6.1 — RFC-4122-Konformitaet pruefen.
+/// Spec §7.1.6.1 — check RFC-4122 conformance.
 ///
-/// Pruefung: Variant-Bits 8-9 von Byte 8 = `10` (RFC-4122-Variant)
-/// und Version-Nibble in Byte 6 high-nibble in {1..=5}. Streng
-/// genommen ist die Spec hier konservativ — andere UUID-Varianten
-/// (Microsoft-GUID, RFC-9562 Versions 6-8) werden hier nicht als
-/// RFC-4122 anerkannt und gehen den binary-Pfad.
+/// Check: variant bits 8-9 of byte 8 = `10` (RFC-4122 variant)
+/// and version nibble in byte 6 high nibble in {1..=5}. Strictly
+/// speaking the spec is conservative here — other UUID variants
+/// (Microsoft GUID, RFC-9562 versions 6-8) are not recognized as
+/// RFC-4122 and take the binary path.
 #[must_use]
 pub fn is_rfc4122_uuid(bytes: &[u8; 16]) -> bool {
-    // Variant-Check: byte[8] high-bits = 0b10xxxxxx.
+    // Variant check: byte[8] high bits = 0b10xxxxxx.
     let variant_ok = (bytes[8] & 0xC0) == 0x80;
-    // Version-Check: byte[6] high-nibble in 1..=5.
+    // Version check: byte[6] high nibble in 1..=5.
     let version = (bytes[6] >> 4) & 0x0F;
     let version_ok = (1..=5).contains(&version);
     variant_ok && version_ok
 }
 
 // ============================================================
-// §7.2.1 — Composite-Descriptor
+// §7.2.1 — composite descriptor
 // ============================================================
 
-/// Spec §7.2.1.1 — TRUNCATED-Descriptor: erste 8 Octets der
-/// equivalence-hash als big-endian unsigned 64-bit-Integer fuer
+/// Spec §7.2.1.1 — TRUNCATED descriptor: first 8 octets of the
+/// equivalence hash as a big-endian unsigned 64-bit integer for
 /// AMQP `ulong` (0x80).
 ///
-/// Eingabe ist die XTypes-equivalence-hash (mind. 8 Byte; typisch
-/// 14B); zusaetzliche Bytes werden ignoriert.
+/// Input is the XTypes equivalence hash (at least 8 bytes; typically
+/// 14B); additional bytes are ignored.
 ///
 /// # Errors
-/// `Err` wenn `hash_bytes.len() < 8`.
+/// `Err` when `hash_bytes.len() < 8`.
 pub fn compute_truncated_descriptor(hash_bytes: &[u8]) -> Result<u64, &'static str> {
     if hash_bytes.len() < 8 {
         return Err("hash_bytes shorter than 8 octets");
@@ -119,8 +119,8 @@ pub fn compute_truncated_descriptor(hash_bytes: &[u8]) -> Result<u64, &'static s
     Ok(u64::from_be_bytes(buf))
 }
 
-/// Spec §7.2.1.2 — FULL-Descriptor: `dds:type:<hex>` symbol-string
-/// aus der vollen 14-Byte-TypeIdentifier-Form.
+/// Spec §7.2.1.2 — FULL descriptor: `dds:type:<hex>` symbol string
+/// from the full 14-byte TypeIdentifier form.
 #[must_use]
 pub fn make_full_descriptor_symbol(type_identifier_bytes: &[u8]) -> String {
     let mut s = String::with_capacity(9 + type_identifier_bytes.len() * 2);
@@ -131,19 +131,18 @@ pub fn make_full_descriptor_symbol(type_identifier_bytes: &[u8]) -> String {
     s
 }
 
-/// Spec §7.2.1 — High-Level Descriptor-Routing per `descriptor_form`.
+/// Spec §7.2.1 — high-level descriptor routing by `descriptor_form`.
 ///
-/// Liefert das Tupel `(numeric, symbolic)`:
-/// * Bei `DESC_TRUNCATED` ist `numeric = Some(8B BE ulong)`,
+/// Returns the tuple `(numeric, symbolic)`:
+/// * For `DESC_TRUNCATED`, `numeric = Some(8B BE ulong)`,
 ///   `symbolic = None`.
-/// * Bei `DESC_FULL` ist `numeric = None`,
+/// * For `DESC_FULL`, `numeric = None`,
 ///   `symbolic = Some("dds:type:<hex>")`.
 ///
-/// Codegen-Caller benutzt das, das zu seinem Spec-§7.2.1-Pfad
-/// gehoert.
+/// The codegen caller uses whichever one matches its §7.2.1 path.
 ///
 /// # Errors
-/// `Err` wenn TRUNCATED und `hash_bytes.len() < 8`.
+/// `Err` when TRUNCATED and `hash_bytes.len() < 8`.
 pub fn route_descriptor(
     form: DescriptorForm,
     hash_bytes: &[u8],
@@ -161,9 +160,9 @@ pub fn route_descriptor(
 // §7.2.3 — Union
 // ============================================================
 
-/// Spec §7.2.3 — DDS-IDL `union` ↔ AMQP `list` mit
-/// `[discriminator, active-branch-value]`. Bei leerem aktivem
-/// Branch (Spec laesst das offen) wird `value` ausgelassen.
+/// Spec §7.2.3 — DDS-IDL `union` ↔ AMQP `list` with
+/// `[discriminator, active-branch-value]`. For an empty active
+/// branch (the spec leaves this open) `value` is omitted.
 #[must_use]
 pub fn make_union_body(
     discriminator: AmqpExtValue,
@@ -181,11 +180,11 @@ pub fn make_union_body(
 // §7.1.7 — Empty Sequence/Array (list0 helper)
 // ============================================================
 
-/// Spec §7.1.7 — leere Sequenz/Array als `list0` (0x45).
+/// Spec §7.1.7 — empty sequence/array as `list0` (0x45).
 ///
-/// Codegen-Helper: liefert `AmqpExtValue::List(Vec::new())`, das
-/// vom Wire-Encoder im `amqp-bridge` als `list0` codiert wird (vgl.
-/// `extended_types::AmqpExtValue::encode` mit `LIST0`-Code).
+/// Codegen helper: returns `AmqpExtValue::List(Vec::new())`, which
+/// the wire encoder in `amqp-bridge` encodes as `list0` (cf.
+/// `extended_types::AmqpExtValue::encode` with the `LIST0` code).
 #[must_use]
 pub fn empty_sequence() -> AmqpExtValue {
     AmqpExtValue::List(Vec::new())
@@ -216,7 +215,7 @@ mod tests {
 
     #[test]
     fn rfc4122_v4_uuid_recognised() {
-        // Standard v4-UUID: byte[6] = 0x40..=0x4F, byte[8] = 0x80..=0xBF.
+        // Standard v4 UUID: byte[6] = 0x40..=0x4F, byte[8] = 0x80..=0xBF.
         let bytes = [
             0xAA, 0xBB, 0xCC, 0xDD, 0x11, 0x22, 0x4A, 0xBC, 0x82, 0x34, 0x56, 0x78, 0x9A, 0xBC,
             0xDE, 0xF0,
@@ -226,8 +225,8 @@ mod tests {
 
     #[test]
     fn arbitrary_16_bytes_not_recognised_as_uuid() {
-        // InstanceHandle / GUID / TypeIdentifier: zufaellige Bytes,
-        // typisch keine valide UUID-Version.
+        // InstanceHandle / GUID / TypeIdentifier: random bytes,
+        // typically not a valid UUID version.
         let bytes = [0x00; 16];
         assert!(!is_rfc4122_uuid(&bytes));
     }
@@ -253,7 +252,7 @@ mod tests {
 
     #[test]
     fn truncated_descriptor_first_8_bytes_be() {
-        // 14-Byte-Hash; die ersten 8 Bytes als BE-u64.
+        // 14-byte hash; the first 8 bytes as BE u64.
         let hash = [
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
         ];

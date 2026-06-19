@@ -1,47 +1,47 @@
-//! zerodds-async-1.0 §8 — E2E gegen Cyclone-Live.
+//! zerodds-async-1.0 §8 — E2E against live Cyclone.
 //!
-//! **Opt-in only** — `#[ignore]` markiert. Aufruf:
+//! **Opt-in only** — marked `#[ignore]`. Invocation:
 //!
 //! ```bash
 //! cargo test -p zerodds-dcps-async --test cyclone_live_async_e2e -- --ignored --nocapture
 //! ```
 //!
-//! # Voraussetzungen
+//! # Prerequisites
 //!
-//! - `LLVM_HOST_AVAILABLE=1` env oder `sshpass` lokal installiert
-//! - SSH-Zugriff `llvm@llvm` mit Passwort `llvm` (Lab-Setup; siehe
-//!   Memory `reference_bench_hosts`)
-//! - Cyclone DDS auf `llvm` mit `ddsperf` Binary
-//! - `/tmp/cyc.xml` auf `llvm` pinnt Cyclone auf `enp6s18`
-//! - PVE-Multicast-Querier-Setup (siehe Memory
+//! - `LLVM_HOST_AVAILABLE=1` env or `sshpass` installed locally
+//! - SSH access `llvm@llvm` with password `llvm` (lab setup; see
+//!   memory `reference_bench_hosts`)
+//! - Cyclone DDS on the Linux bench host with the `ddsperf` binary
+//! - `/tmp/cyc.xml` on the Linux bench host pins Cyclone to `enp6s18`
+//! - PVE multicast querier setup (see memory
 //!   `reference_pve_multicast_setup`)
 //!
-//! # Test-Ablauf
+//! # Test flow
 //!
-//! 1. Lokal: AsyncDomainParticipant + AsyncDataReader auf einem
-//!    eindeutigen Test-Topic (Cyclone `ddsperf`-Topic-Namen sind
-//!    fixed; wir testen das Negativ-Szenario "kein Sample bei
-//!    falschem Topic" als Smoke fuer den Async-Discovery-Pfad).
-//! 2. Remote: ddsperf-Pub auf demselben Domain.
-//! 3. Polling via `take().await(timeout)` — mindestens ein Tick muss
-//!    durch den async-Pfad laufen, ohne zu panicen.
-//! 4. Teardown: SSH-pkill auf `ddsperf`.
+//! 1. Local: AsyncDomainParticipant + AsyncDataReader on a
+//!    unique test topic (Cyclone `ddsperf` topic names are
+//!    fixed; we test the negative scenario "no sample on the
+//!    wrong topic" as a smoke test for the async discovery path).
+//! 2. Remote: ddsperf pub on the same domain.
+//! 3. Polling via `take().await(timeout)` — at least one tick must
+//!    run through the async path without panicking.
+//! 4. Teardown: SSH pkill of `ddsperf`.
 //!
-//! # Warum "#[ignore]"?
+//! # Why "#[ignore]"?
 //!
-//! - Cyclone-Binary nicht im CI
-//! - SSH-Zugang + Passwort pflegeintensiv
-//! - Netzwerk-Abhaengigkeit (LAN-Setup)
+//! - Cyclone binary not in CI
+//! - SSH access + password are maintenance-heavy
+//! - network dependency (LAN setup)
 //!
-//! Der deterministische Pfad ist in `smoke.rs::writer_write_async_offline`
-//! ohne `#[ignore]` und deckt die nicht-Cyclone-spezifische API ab.
+//! The deterministic path is in `smoke.rs::writer_write_async_offline`
+//! without `#[ignore]` and covers the non-Cyclone-specific API.
 //!
-//! # Latency-Vergleich Sync vs Async (Spec §8)
+//! # Latency comparison sync vs async (Spec §8)
 //!
-//! Der Bench-Pfad in `benches/write_async_vs_sync.rs` (Spec §9.1)
-//! liefert die quantitative Antwort. Dieser Live-Test prueft nur,
-//! dass der async-Stack gegen einen echten Vendor-Stack
-//! discovery-faehig ist.
+//! The bench path in `benches/write_async_vs_sync.rs` (Spec §9.1)
+//! provides the quantitative answer. This live test only checks
+//! that the async stack is discovery-capable against a real vendor
+//! stack.
 
 #![allow(
     clippy::expect_used,
@@ -69,7 +69,7 @@ const SSH_PASS: &str = "llvm";
 const SSH_HOST: &str = "llvm";
 const CYCLONE_DOMAIN: u32 = 42;
 
-/// Pruefung ob Live-Host erreichbar ist; sonst skip ohne Fehler.
+/// Checks whether the live host is reachable; otherwise skip without error.
 fn live_host_available() -> bool {
     if std::env::var("LLVM_HOST_AVAILABLE").is_ok() {
         return true;
@@ -129,7 +129,7 @@ async fn async_reader_does_not_panic_against_live_cyclone_pub() {
         return;
     }
 
-    // Lokal: AsyncDomainParticipant auf demselben Domain wie ddsperf.
+    // Local: AsyncDomainParticipant on the same domain as ddsperf.
     let f = AsyncDomainParticipantFactory::instance();
     let p = f
         .create_participant(CYCLONE_DOMAIN as i32)
@@ -142,20 +142,20 @@ async fn async_reader_does_not_panic_against_live_cyclone_pub() {
         .create_datareader::<RawBytes>(&topic, DataReaderQos::default())
         .expect("reader");
 
-    // Remote: ddsperf-Pub starten (10 s laufend).
+    // Remote: start ddsperf pub (running for 10 s).
     let _cyclone = DdsperfPub::start(CYCLONE_DOMAIN, 10).expect("start ddsperf");
 
-    // Async-take-Loop: mindestens ein take()-Tick muss ohne Panic durch.
-    // Wir asserten *nicht*, dass Samples ankommen (Topic-Mismatch ist
-    // wahrscheinlich, ddsperf publiziert auf "PingTopic"); wir asserten
-    // nur, dass der async-Pfad robust gegen einen echten Vendor-Stack
-    // ist (kein Panic, kein Hang, kein OutOfResources).
+    // Async take loop: at least one take() tick must pass without a panic.
+    // We do *not* assert that samples arrive (a topic mismatch is
+    // likely, ddsperf publishes on "PingTopic"); we only assert
+    // that the async path is robust against a real vendor stack
+    // (no panic, no hang, no OutOfResources).
     let start = std::time::Instant::now();
     let mut ticks = 0usize;
     while start.elapsed() < Duration::from_secs(8) {
         let res = reader.take(Duration::from_millis(500)).await;
-        // Egal ob Ok([]) oder Ok([..]) — der Pfad muss runlaufen.
-        // Err nur akzeptiert wenn Timeout (deadline expired).
+        // Whether Ok([]) or Ok([..]) — the path must run through.
+        // Err is only accepted when it is a Timeout (deadline expired).
         match res {
             Ok(_) | Err(zerodds_dcps_async::DdsError::Timeout) => ticks += 1,
             Err(e) => panic!("unexpected error from async take: {e:?}"),

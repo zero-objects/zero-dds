@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "DLRL Code-Gen-Helpers: emittiert Home/Object-Boilerplate fuer cpp/csharp/java/ts"
+description = "DLRL code-gen helpers: emits home/object boilerplate for cpp/csharp/java/ts"
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-dlrl-codegen"
 readme = "README.md"
@@ -26,4 +26,4 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-dlrl = { version = "1.0.0-rc.1", path = "../dlrl" }
+zerodds-dlrl = { version = "1.0.0-rc.3", path = "../dlrl" }

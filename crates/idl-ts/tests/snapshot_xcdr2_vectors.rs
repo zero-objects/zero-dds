@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-//! Snapshot-Tests fuer XCDR2 wire-vector IDL-Files (V-1..V-12).
+//! Snapshot tests for XCDR2 wire-vector IDL files (V-1..V-12).
 //!
-//! Wir vergleichen den `idl-ts`-Output gegen abgespeicherte Snapshots,
-//! damit Aenderungen an der Codegen-Form auffallen. Spec:
+//! We compare the `idl-ts` output against stored snapshots
+//! so that changes to the codegen form stand out. Spec:
 //! `zerodds-xcdr2-bindings-conformance-1.0` §6 + `zerodds-xcdr2-ts-1.0`.
 
 #![allow(

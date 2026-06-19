@@ -1,4 +1,4 @@
-//! Stable-Rust Fuzz-Smoke-Tests fuer den AMQP-Endpoint-Decoder.
+//! Stable-Rust fuzz smoke tests for the AMQP endpoint decoder.
 //!
 //! Pseudo-random Inputs in `parse_amqp_body`, XML-Config-Parser
 //! (`parse_config`, `parse_governance`). Spec: DDS-AMQP 1.0 §8 + §9.

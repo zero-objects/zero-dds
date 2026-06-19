@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Cross-Vendor-Interop-Tests gegen RabbitMQ.
+//! Cross-vendor interop tests against RabbitMQ.
 //!
 //! Spec: `zerodds-amqp-bridge-daemon-1.0.md` §10 + §12.3.
 //!
-//! Verifiziert AMQP-1.0-Wire-Compliance gegen einen RabbitMQ-Broker
-//! mit aktiviertem amqp-1-0-Plugin (Docker-Image: `rabbitmq:3-management`
-//! mit `rabbitmq_amqp1_0` Plugin enabled).
+//! Verifies AMQP 1.0 wire compliance against a RabbitMQ broker
+//! with the amqp-1-0 plugin enabled (Docker image: `rabbitmq:3-management`
+//! with the `rabbitmq_amqp1_0` plugin enabled).
 //!
-//! Tests sind `#[ignore]`-markiert. Run via:
+//! Tests are marked `#[ignore]`. Run via:
 //! ```bash
 //! cargo test -p zerodds-amqp-endpoint --features cross-vendor-tests \
 //!     --test cross_vendor -- --ignored

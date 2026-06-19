@@ -5,10 +5,10 @@
 
 use alloc::string::String;
 
-/// Spec §8.3.1 — URI-Prefix `/dds/rest1`.
+/// Spec §8.3.1 — URI prefix `/dds/rest1`.
 pub const REST_PREFIX: &str = "/dds/rest1";
 
-/// HTTP-Method (Spec §8.3.2 erlaubt POST/PUT/GET/DELETE + HEAD wie GET).
+/// HTTP method (Spec §8.3.2 allows POST/PUT/GET/DELETE + HEAD like GET).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RestMethod {
     /// `POST` — create operations.
@@ -23,7 +23,7 @@ pub enum RestMethod {
     Head,
 }
 
-/// Spec §8.3.3 Tab 5 — alle WebDDS-Operations als parametrisierte
+/// Spec §8.3.3 Tab 5 — all WebDDS operations as parameterized
 /// Routen.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RestRoute {
@@ -187,22 +187,22 @@ pub enum RestRoute {
         data_reader: String,
     },
 
-    /// Beliebige andere URI, die zu keinem Spec-Pattern matched.
+    /// Any other URI that matches no spec pattern.
     Unknown {
-        /// Original-Pfad ohne Prefix.
+        /// Original path without the prefix.
         path: String,
     },
 }
 
-/// Parst Method + URI in eine [`RestRoute`].
+/// Parses method + URI into a [`RestRoute`].
 ///
-/// Erwartet die URI **ohne** Query-String. Caller muss URLs
-/// vorher percent-decoded haben (Spec §8.3.2 verlangt
-/// percent-encoding fuer non-ASCII).
+/// Expects the URI **without** the query string. The caller must have
+/// percent-decoded URLs beforehand (Spec §8.3.2 requires
+/// percent-encoding for non-ASCII).
 ///
 /// # Errors
-/// Liefert `Err(RouteError::MissingPrefix)` wenn URI nicht mit
-/// `/dds/rest1` beginnt.
+/// Returns `Err(RouteError::MissingPrefix)` if the URI does not start
+/// with `/dds/rest1`.
 pub fn parse_route(method: RestMethod, uri: &str) -> Result<RestRoute, RouteError> {
     let path = uri
         .strip_prefix(REST_PREFIX)
@@ -362,10 +362,10 @@ pub fn parse_route(method: RestMethod, uri: &str) -> Result<RestRoute, RouteErro
     })
 }
 
-/// Routing-Fehler.
+/// Routing error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RouteError {
-    /// URI hat nicht den Prefix `/dds/rest1`.
+    /// The URI does not have the prefix `/dds/rest1`.
     MissingPrefix,
 }
 
@@ -546,7 +546,7 @@ mod tests {
         ] {
             let uri = alloc::format!("/dds/rest1/applications/app/domain_participants/p/{segment}");
             let r = parse_route(RestMethod::Post, &uri).expect("ok");
-            // Sanity-Check: keine Unknown-Variante.
+            // Sanity check: no Unknown variant.
             assert!(
                 !matches!(r, RestRoute::Unknown { .. }),
                 "{expected_variant_test} -> got {r:?}"
@@ -565,7 +565,7 @@ mod tests {
 
     #[test]
     fn types_routes_match_root_pattern() {
-        // Spec §8.3.3 — /types ohne <appname>-Prefix.
+        // Spec §8.3.3 — /types without <appname> prefix.
         let create = parse_route(RestMethod::Post, "/dds/rest1/types").expect("ok");
         assert_eq!(create, RestRoute::CreateType);
         let delete = parse_route(RestMethod::Delete, "/dds/rest1/types/MyType").expect("ok");

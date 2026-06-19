@@ -2,15 +2,15 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
-TypeScript-Bindings für ZeroDDS in Node.js via `koffi`-FFI gegen
-`libzerodds.dylib` / `.so` / `.dll` (aus `crates/zerodds-c-api`).
+TypeScript bindings for ZeroDDS in Node.js via `koffi` FFI against
+`libzerodds.dylib` / `.so` / `.dll` (from `crates/zerodds-c-api`).
 
 ## Spec
 
-- OMG DDS 1.4 (formal/2015-04-10) §2.2.2 — DCPS-API
-- OMG DDS-PSM-Cxx 1.0 (formal/2013-11-01) §7.5 — adaptiert auf
-  TypeScript-Idiome
-- ZeroDDS Vendor-Spec `zerodds-c-api-1.0` als FFI-Foundation
+- OMG DDS 1.4 (formal/2015-04-10) §2.2.2 — DCPS API
+- OMG DDS-PSM-Cxx 1.0 (formal/2013-11-01) §7.5 — adapted to
+  TypeScript idioms
+- ZeroDDS vendor spec `zerodds-c-api-1.0` as the FFI foundation
 
 ## Layer
 
@@ -44,10 +44,10 @@ dp.destroy();
 ## Build
 
 ```bash
-# Erst libzerodds bauen
+# First build libzerodds
 cargo build --release -p zerodds-c-api
 
-# Dann TS-Module
+# Then the TS module
 cd crates/ts-node
 npm install
 npm run build
@@ -56,19 +56,19 @@ npm test
 
 ## API
 
-- **`DomainParticipantFactory`** — Singleton, erzeugt Participants
+- **`DomainParticipantFactory`** — singleton, creates participants
 - **`DomainParticipant`** — Domain-Lifecycle, RAII
 - **`Topic<T>`** — Topic + Type-Traits
 - **`Publisher`** / **`DataWriter<T>`** — Pub-Side
 - **`Subscriber`** / **`DataReader<T>`** — Sub-Side
 - **`GuardCondition`** / **`WaitSet`** — Conditions
-- **Legacy:** `Runtime` / `Writer` / `Reader` (typgelöschter Pfad)
+- **Legacy:** `Runtime` / `Writer` / `Reader` (type-erased path)
 
-## Stabilitaet
+## Stability
 
-Pre-1.0 — API kann sich aendern. RC1-konformer Spec-API ist
-`DomainParticipantFactory`-basierte Surface; Legacy `Runtime`-API
-bleibt fuer Apex.AI-/ROS-2-RMW-Use-Cases stabil.
+Pre-1.0 — the API may change. The RC1-conform spec API is the
+`DomainParticipantFactory`-based surface; the legacy `Runtime` API
+stays stable for Apex.AI / ROS-2 RMW use cases.
 
 ## Links
 

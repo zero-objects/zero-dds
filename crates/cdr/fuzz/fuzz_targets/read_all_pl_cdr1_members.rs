@@ -1,5 +1,5 @@
 #![no_main]
-//! Fuzz-Target: `read_all_pl_cdr1_members` — Listen-Walk bis Sentinel.
+//! Fuzz target: `read_all_pl_cdr1_members` — list walk until sentinel.
 
 use zerodds_cdr::Endianness;
 use zerodds_cdr::buffer::BufferReader;

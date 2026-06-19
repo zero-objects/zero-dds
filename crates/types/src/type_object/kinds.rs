@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! TypeObject-Diskriminator-Konstanten (XTypes 1.3 §7.3.4.1 / §7.3.4.4).
+//! TypeObject discriminator constants (XTypes 1.3 §7.3.4.1 / §7.3.4.4).
 //!
-//! Diese Konstanten diskriminieren die `MinimalTypeObject`- und
-//! `CompleteTypeObject`-Union. Sie unterscheiden sich von den
-//! TypeIdentifier-Konstanten fuer composite Types (TypeObject hat
-//! eigene Kind-Codes fuer STRUCTURE, UNION, etc., ab 0x50).
+//! These constants discriminate the `MinimalTypeObject` and
+//! `CompleteTypeObject` union. They differ from the
+//! TypeIdentifier constants for composite types (TypeObject has
+//! its own kind codes for STRUCTURE, UNION, etc., from 0x50).
 
 /// `alias<T>`.
 pub const TK_ALIAS: u8 = 0x30;

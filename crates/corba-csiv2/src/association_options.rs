@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! AssociationOptions — Spec §24.2.4 (Spec-Tabelle 24-1).
+//! AssociationOptions — Spec §24.2.4 (spec Table 24-1).
 //!
-//! Bitmask, die in `target_supports` und `target_requires` gesetzt
-//! wird (`unsigned short`).
+//! Bitmask that is set in `target_supports` and `target_requires`
+//! (`unsigned short`).
 
-/// Spec §24.2.4 — AssociationOptions-Bitmask.
+/// Spec §24.2.4 — AssociationOptions bitmask.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct AssociationOptions(pub u16);
 
@@ -36,19 +36,19 @@ impl AssociationOptions {
     /// `DelegationByClient = 2048`.
     pub const DELEGATION_BY_CLIENT: u16 = 2048;
 
-    /// Konstruktor aus Bits.
+    /// Constructor from bits.
     #[must_use]
     pub const fn from_bits(b: u16) -> Self {
         Self(b)
     }
 
-    /// `true` wenn Flag gesetzt.
+    /// `true` if the flag is set.
     #[must_use]
     pub const fn has(&self, flag: u16) -> bool {
         (self.0 & flag) != 0
     }
 
-    /// Setzt ein Flag.
+    /// Sets a flag.
     #[must_use]
     pub const fn with(mut self, flag: u16) -> Self {
         self.0 |= flag;

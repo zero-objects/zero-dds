@@ -2,19 +2,19 @@
  * zerodds_xcdr2.h — C-FFI XCDR2-TypeSupport (Vendor-Spec
  *                   `zerodds-xcdr2-c-1.0`).
  *
- * Hand-maintained C99 header (NICHT cbindgen-generiert). Wird von
- * Codegen-Output-Headern (idl-cpp c_mode) ueber `#include` gezogen.
+ * Hand-maintained C99 header (NOT cbindgen-generated). Pulled in by
+ * codegen output headers (idl-cpp c_mode) via `#include`.
  *
- * Definiert:
- *   - `zerodds_typesupport_t` Function-Table-Struct.
- *   - FFI-Function-Prototypen (`zerodds_topic_create_typed`,
+ * Defines:
+ *   - the `zerodds_typesupport_t` function-table struct.
+ *   - FFI function prototypes (`zerodds_topic_create_typed`,
  *     `zerodds_writer_write_typed`, `zerodds_reader_take_typed`,
  *     `zerodds_xcdr2_encode/decode`).
- *   - Inline-Helper fuer Codegen-Encoder/Decoder (write_iN/uN/fN,
+ *   - inline helpers for codegen encoders/decoders (write_iN/uN/fN,
  *     write_string, read_iN/uN/fN, read_string, grow, put_u32_at,
  *     compute_key_hash).
  *
- * Memory-Ownership: siehe Vendor-Spec §6.
+ * Memory ownership: see vendor spec §6.
  *
  * SPDX-License-Identifier: Apache-2.0
  * Copyright 2026 ZeroDDS Contributors
@@ -62,8 +62,8 @@ typedef struct zerodds_typesupport_s {
 } zerodds_typesupport_t;
 
 /* ========================================================================
- * Vendor-Spec §3 — FFI-Funktionen (Pointer-Forward, weil cbindgen die
- * Strings nicht emittiert).
+ * Vendor spec §3 — FFI functions (pointer forward, because cbindgen does
+ * not emit the strings).
  * ====================================================================== */
 
 struct zerodds_ZeroDdsRuntime;
@@ -99,15 +99,15 @@ int zerodds_xcdr2_decode(const zerodds_typesupport_t* ts,
                          void* out_sample);
 
 /* ========================================================================
- * Inline-Helper fuer Codegen-Encoder/Decoder.
+ * Inline helpers for codegen encoders/decoders.
  *
- * Konventionen:
- *   - Buffer ist `(uint8_t** buf, size_t* len, size_t* cap)`-Triple,
- *     dynamisch wachsend via `realloc`.
- *   - Returns 0 = OK, !=0 = OOM oder Fehler.
- *   - Bytes werden in **Little-Endian** geschrieben (XCDR2 LE default).
- *   - Alignment: `pad_to(align)` springt auf `align`-Byte-Grenze
- *     relativ zum Buffer-Start (XTypes §7.4.1.5).
+ * Conventions:
+ *   - The buffer is a `(uint8_t** buf, size_t* len, size_t* cap)` triple,
+ *     growing dynamically via `realloc`.
+ *   - Returns 0 = OK, !=0 = OOM or error.
+ *   - Bytes are written in **little-endian** (XCDR2 LE default).
+ *   - Alignment: `pad_to(align)` jumps to an `align`-byte boundary
+ *     relative to the buffer start (XTypes §7.4.1.5).
  * ====================================================================== */
 
 static inline int zerodds_xcdr2_c_grow(uint8_t** buf, size_t* cap, size_t need) {
@@ -311,8 +311,8 @@ static inline int zerodds_xcdr2_c_read_string(const uint8_t* buf, size_t len, si
 /* ========================================================================
  * Key-Hash-Helpers.
  *
- * `kh_write_*` schreiben **Big-Endian** (PlainCdr2BeKeyHolder, XTypes
- * §7.6.8.3). `compute_key_hash` zero-padded oder MD5'd auf 16 Byte.
+ * `kh_write_*` write **big-endian** (PlainCdr2BeKeyHolder, XTypes
+ * §7.6.8.3). `compute_key_hash` zero-pads or MD5s to 16 bytes.
  * ====================================================================== */
 
 static inline int zerodds_xcdr2_c_kh_pad(uint8_t** buf, size_t* len, size_t* cap, size_t align) {
@@ -395,11 +395,11 @@ static inline int zerodds_xcdr2_c_kh_write_string(uint8_t** buf, size_t* len, si
     return 0;
 }
 
-/* MD5 (RFC 1321) — kompakte freie Implementation, wird nur fuer
- * Key-Hash-Fallback genutzt (XTypes §7.6.8 Step 5.2).
+/* MD5 (RFC 1321) — compact free implementation, used only for the
+ * key-hash fallback (XTypes §7.6.8 step 5.2).
  *
- * Konstanten + Algorithmus aus dem RFC; keine externe Lib um die
- * C99-FFI ohne weitere Build-Abhaengigkeiten kompilierbar zu halten.
+ * Constants + algorithm from the RFC; no external lib, to keep the
+ * C99 FFI compilable without further build dependencies.
  */
 static inline uint32_t zerodds_md5_lr(uint32_t x, uint32_t n) { return (x << n) | (x >> (32 - n)); }
 
@@ -473,7 +473,7 @@ static inline void zerodds_xcdr2_c_compute_key_hash(const uint8_t* kh_buf, size_
         if (n > 0) memcpy(out_hash, kh_buf, n);
         return;
     }
-    /* Default-Pfad fuer rc1: < 16 byte → zero-pad, sonst MD5. */
+    /* Default path for rc1: < 16 byte → zero-pad, otherwise MD5. */
     if (kh_len <= 16) {
         memset(out_hash, 0, 16);
         if (kh_len > 0) memcpy(out_hash, kh_buf, kh_len);

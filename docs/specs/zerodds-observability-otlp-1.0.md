@@ -4,7 +4,7 @@ ZeroDDS Vendor-Spec. In `crates/observability-otlp` (`zerodds-observability-otlp
 
 ## Motivation
 
-[`zerodds-monitor`](./zerodds-monitor-1.0.md) liefert die Registry +
+[`zerodds-monitor`](./zerodds-monitor-1.1.md) liefert die Registry +
 Prometheus-Text-Exposition. Fuer Konsumenten, die OpenTelemetry-Stack
 (Tempo / Jaeger / DataDog / Honeycomb) statt Prometheus nutzen, ist
 ein OTLP-Exporter notwendig.
@@ -35,7 +35,7 @@ Protobuf, weil:
   Context-Propagation als generic API).
 - gRPC-Encoding (OTLP/gRPC) — bewusst weggelassen, weil das eine
   Protobuf-Codegen-Pipeline noetig macht. Add-on `zerodds-observability-otlp-grpc`
-  ist post-RC1 moeglich, aber nicht in diesem Spec-Scope.
+  ist künftig moeglich, aber nicht in diesem Spec-Scope.
 - Direkte Integration mit dem `Sink`-Trait — der Caller fuettert
   `OtlpExporter::add_span/add_histogram/add_event` aus eigenen Loops.
 
@@ -151,12 +151,12 @@ exporter.flush()?;
 
 Der Caller kann periodisch via `Registry::snapshot()` alle Counter/
 Gauge/Histogram exportieren. Der OTLP-Exporter akzeptiert
-`Histogram`-Instanzen direkt (Counter/Gauge werden im aktuellen RC1
+`Histogram`-Instanzen direkt (Counter/Gauge werden aktuell
 nicht ueber OTLP exportiert — sie laufen nur ueber Prometheus).
 
 > **Designentscheidung:** Counter/Gauge sind Prometheus-native und
 > werden vom OTel-Collector ohnehin ueber das `prometheus`-Receiver-Modul
-> ingestiert. OTLP-Metric-Doppel-Export ist im RC1-Scope nicht
+> ingestiert. OTLP-Metric-Doppel-Export ist im aktuellen Scope nicht
 > sinnvoll — Konsumenten konfigurieren entweder Prometheus-Scrape oder
 > OTLP-Push, nicht beides.
 
@@ -171,7 +171,7 @@ nicht ueber OTLP exportiert — sie laufen nur ueber Prometheus).
 ## §7 Stabilitaet
 
 - Public-API (`OtlpConfig`, `OtlpExporter`, `ExportError`, `add_*`,
-  `flush`): RC1-stabil.
+  `flush`): stabil.
 - Wire-Format: an OTel-Spec v1.4 angelehnt; JSON-Schema-Aenderung
   durch upstream-OTel-Spec ist Major-Bump.
 

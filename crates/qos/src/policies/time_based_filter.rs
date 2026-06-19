@@ -3,7 +3,7 @@
 //! TimeBasedFilterQosPolicy (DDS 1.4 §2.2.3.12).
 //!
 //! Wire-Format: Duration (8 byte).
-//! Default: `ZERO`. Reader-only (Writer kennt den Filter nicht).
+//! Default: `ZERO`. Reader-only (the writer does not know the filter).
 
 use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 
@@ -12,7 +12,7 @@ use crate::duration::Duration;
 /// TimeBasedFilterQosPolicy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TimeBasedFilterQosPolicy {
-    /// Minimum-Separation zwischen empfangenen Samples derselben Instance.
+    /// Minimum separation between received samples of the same instance.
     pub minimum_separation: Duration,
 }
 

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Mini-HTTP-Server fuer den Prometheus-`/metrics`-Endpunkt (Spec §6.3).
+//! Mini HTTP server for the Prometheus `/metrics` endpoint (spec §6.3).
 //!
-//! Pure-Rust ohne hyper-Dep. Reicht fuer Prometheus-Scrape-Endpoints
-//! und lokale Tools.
+//! Pure Rust without a hyper dep. Sufficient for Prometheus scrape endpoints
+//! and local tools.
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener};
@@ -14,10 +14,10 @@ use std::time::Duration;
 
 use crate::Registry;
 
-/// Server-Fehler.
+/// Server error.
 #[derive(Debug)]
 pub enum ServeError {
-    /// Bind/Accept/IO-Fehler.
+    /// Bind/accept/IO error.
     Io(std::io::Error),
 }
 
@@ -37,14 +37,14 @@ impl From<std::io::Error> for ServeError {
     }
 }
 
-/// Startet einen blocking-Mini-HTTP-Server, der `/metrics` auf
-/// `addr` exponiert. Liefert ein `JoinHandle` — Abbruch via Drop des
-/// `TcpListener` indem der Server-Thread ein neues `accept()` macht
-/// und der Listener-Drop ihn aufweckt.
+/// Starts a blocking mini HTTP server that exposes `/metrics` on
+/// `addr`. Returns a `JoinHandle` — shutdown via dropping the
+/// `TcpListener` by having the server thread make a new `accept()`
+/// and the listener drop wake it up.
 ///
-/// Fuer produktive Workloads sollte ein vorgeschalteter Reverse-Proxy
-/// (Nginx, Envoy) das Rate-Limiting und TLS uebernehmen — dieser
-/// Server ist absichtlich minimalistisch.
+/// For production workloads an upstream reverse proxy
+/// (Nginx, Envoy) should handle rate limiting and TLS — this
+/// server is intentionally minimal.
 pub fn serve_prometheus(
     addr: SocketAddr,
     registry: Arc<Registry>,

@@ -1,41 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Builtin Pre-Shared-Key Authentication-Plugin (Spec §10.7).
+//! Built-in pre-shared-key authentication plugin (spec §10.7).
 //!
 //! zerodds-lint: allow no_dyn_in_safe
-//! (`SharedSecretProvider` ist Plugin-SPI; `&dyn`-Test-Bridge demonstriert
-//! Substitution-Pfad zum Crypto-Plugin.)
+//! (`SharedSecretProvider` is a plugin SPI; the `&dyn` test bridge demonstrates
+//! the substitution path to the crypto plugin.)
 //!
-//! Spec-Class-Id `"DDS:Auth:PSK:1.2"`. Alternative zum X.509-PKI-Pfad
-//! aus `crate::plugin` — die Identitaet wird ueber einen pre-shared
-//! symmetrischen Schluessel (typisch 256 bit) statt ueber einen
-//! Cert-Chain etabliert. Anwendungsfall: Embedded-Systeme ohne X.509-
-//! Toolchain (Industrial / Defense / Mesh-Networks).
+//! Spec class ID `"DDS:Auth:PSK:1.2"`. Alternative to the X.509 PKI path
+//! from `crate::plugin` — the identity is established via a pre-shared
+//! symmetric key (typically 256 bits) instead of via a
+//! cert chain. Use case: embedded systems without an X.509
+//! toolchain (industrial / defense / mesh networks).
 //!
-//! # Wire-Layout (Spec §10.7.2)
+//! # Wire layout (spec §10.7.2)
 //!
-//! Drei Tokens, alle als `DataHolder` auf der Wire:
+//! Three tokens, all as `DataHolder` on the wire:
 //!
-//! | Token  | class_id                       | Properties / Binary-Properties |
+//! | Token  | class_id                       | properties / binary properties |
 //! |--------|--------------------------------|--------------------------------|
 //! | Req    | `DDS:Auth:PSK:1.2+AuthReq`     | `psk.id`, `challenge1`, `c.kagree_algo="PSK"` |
 //! | Reply  | `DDS:Auth:PSK:1.2+AuthReply`   | `psk.id`, `challenge1`, `challenge2`, `hmac` |
 //! | Final  | `DDS:Auth:PSK:1.2+AuthFinal`   | `challenge1`, `challenge2`, `hmac` |
 //!
-//! Der HMAC ist `HMAC-SHA256(pre_shared_key, length_prefixed(psk.id ||
-//! challenge1 || challenge2))`. Der `SharedSecret`-Output ist 32 byte
+//! The HMAC is `HMAC-SHA256(pre_shared_key, length_prefixed(psk.id ||
+//! challenge1 || challenge2))`. The `SharedSecret` output is 32 bytes
 //! HKDF-SHA256(pre_shared_key, salt=challenge1||challenge2,
 //! info="DDS-Security-1.2-PSK").
 //!
-//! # Spec-Items, die hier nicht abgedeckt sind
+//! # Spec items not covered here
 //!
-//! * Token-spezifische `properties` aus Spec §10.7 Tab.61 — die Spec
-//!   listet ein paar optionale Properties (z.B. `c.id` als Identitaet,
-//!   wir bilden das auf `psk.id` ab). Wir verfolgen den Cyclone-DDS-
-//!   Konventions-Pfad statt der Spec-Letterung.
-//! * Cross-Vendor Live-Interop ist ungetestet — die Cyclone-PSK-Suite
-//!   ist nicht offen verfuegbar.
+//! * Token-specific `properties` from spec §10.7 Tab.61 — the spec
+//!   lists a few optional properties (e.g. `c.id` as identity,
+//!   we map that to `psk.id`). We follow the Cyclone-DDS
+//!   convention path instead of the spec's lettering.
+//! * Cross-vendor live interop is untested — the Cyclone PSK suite
+//!   is not openly available.
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::{String, ToString};
@@ -53,9 +53,9 @@ use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};
 use zerodds_security::properties::PropertyList;
 use zerodds_security::token::DataHolder;
 
-/// Spec-konforme Class-Id-Strings (§10.7).
+/// Spec-conformant class-ID strings (§10.7).
 pub mod class_id {
-    /// Plugin-Class-Id der PSK-Authentication.
+    /// Plugin class ID of the PSK authentication.
     pub const PSK: &str = "DDS:Auth:PSK:1.2";
     /// `HandshakeRequestMessageToken` PSK.
     pub const REQUEST: &str = "DDS:Auth:PSK:1.2+AuthReq";
@@ -65,51 +65,51 @@ pub mod class_id {
     pub const FINAL: &str = "DDS:Auth:PSK:1.2+AuthFinal";
 }
 
-/// Property-Keys im Handshake-Token (Spec §10.7.2).
+/// Property keys in the handshake token (spec §10.7.2).
 pub mod prop {
-    /// PSK-Identitaet (UTF-8-String).
+    /// PSK identity (UTF-8 string).
     pub const PSK_ID: &str = "psk.id";
-    /// Initiator-Challenge (32 byte binary).
+    /// Initiator challenge (32 bytes binary).
     pub const CHALLENGE1: &str = "challenge1";
-    /// Replier-Challenge (32 byte binary).
+    /// Replier challenge (32 bytes binary).
     pub const CHALLENGE2: &str = "challenge2";
-    /// HMAC-SHA256-Tag (32 byte binary).
+    /// HMAC-SHA256 tag (32 bytes binary).
     pub const HMAC: &str = "hmac";
-    /// Key-Agreement-Algorithmus (immer `"PSK"` fuer dieses Plugin).
+    /// Key agreement algorithm (always `"PSK"` for this plugin).
     pub const KAGREE_ALGO: &str = "c.kagree_algo";
 }
 
-/// PropertyList-Key fuer den lokalen PSK-Identifier.
+/// PropertyList key for the local PSK identifier.
 pub const PROP_PSK_ID: &str = "dds.psk.identity_id";
-/// PropertyList-Key fuer den lokalen PSK-Material (hex-encoded).
+/// PropertyList key for the local PSK material (hex-encoded).
 pub const PROP_PSK_KEY_HEX: &str = "dds.psk.pre_shared_key_hex";
 
-/// Replay-Cache pro lokaler Identity (DoS-Cap analog zu PKI).
+/// Replay cache per local identity (DoS cap analogous to PKI).
 const REPLAY_CACHE_CAP: usize = 1024;
 
-/// HKDF-Info-String fuer SharedSecret-Derivation. Spec-Domain-
-/// Separator (§10.7.3).
+/// HKDF info string for SharedSecret derivation. Spec domain
+/// separator (§10.7.3).
 pub const HKDF_INFO_SHARED_SECRET: &[u8] = b"DDS-Security-1.2-PSK";
 
-/// Builtin PSK-Authentication-Plugin (Spec §10.7).
+/// Built-in PSK authentication plugin (spec §10.7).
 pub struct PskAuthenticationPlugin {
     next_handle: AtomicU64,
-    /// Konfigurierte PSKs: Identity-String → Pre-Shared-Key-Bytes.
+    /// Configured PSKs: identity string → pre-shared-key bytes.
     psks: BTreeMap<String, Vec<u8>>,
-    /// Lokal-validierte Identitaeten: Handle → Identity-String.
+    /// Locally validated identities: handle → identity string.
     identities: BTreeMap<IdentityHandle, String>,
-    /// Initiator-State zwischen Request und Reply.
+    /// Initiator state between request and reply.
     pending_initiator: BTreeMap<HandshakeHandle, InitiatorState>,
-    /// Replier-State zwischen Reply und Final.
+    /// Replier state between reply and final.
     pending_replier: BTreeMap<HandshakeHandle, ReplierState>,
-    /// Abgeschlossene Handshakes → SharedSecret-Handle.
+    /// Completed handshakes → SharedSecret handle.
     handshake_to_secret: BTreeMap<HandshakeHandle, SharedSecretHandle>,
-    /// Materialisierte SharedSecrets (32 byte HKDF-Output).
+    /// Materialized SharedSecrets (32 bytes HKDF output).
     secrets: BTreeMap<SharedSecretHandle, Vec<u8>>,
-    /// Replay-Cache: pro lokaler Identity die bereits gesehenen
-    /// `challenge1`-Werte (Replier-Sicht).
+    /// Replay cache: per local identity the already-seen
+    /// `challenge1` values (replier view).
     replay_cache: BTreeMap<IdentityHandle, BTreeSet<[u8; 32]>>,
-    /// FIFO-Order der replay-cache Entries fuer Cap-Eviction.
+    /// FIFO order of the replay-cache entries for cap eviction.
     replay_order: BTreeMap<IdentityHandle, Vec<[u8; 32]>>,
 }
 
@@ -134,7 +134,7 @@ impl Default for PskAuthenticationPlugin {
 }
 
 impl PskAuthenticationPlugin {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -154,32 +154,32 @@ impl PskAuthenticationPlugin {
         self.next_handle.fetch_add(1, Ordering::Relaxed) + 1
     }
 
-    /// Registriert einen Pre-Shared-Key fuer eine Identity. Replace-
-    /// Semantik: zweite Registrierung mit gleicher ID ueberschreibt.
+    /// Registers a pre-shared key for an identity. Replace
+    /// semantics: a second registration with the same ID overwrites.
     ///
     /// # Errors
-    /// `BadArgument` wenn `id` leer oder `key` leer ist.
+    /// `BadArgument` if `id` is empty or `key` is empty.
     pub fn register_psk(&mut self, id: String, key: Vec<u8>) -> SecurityResult<()> {
         if id.is_empty() {
             return Err(SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "psk: identity-id leer",
+                "psk: identity-id empty",
             ));
         }
         if key.is_empty() {
             return Err(SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "psk: pre-shared-key leer",
+                "psk: pre-shared-key empty",
             ));
         }
         self.psks.insert(id, key);
         Ok(())
     }
 
-    /// Validiert eine lokale PSK-Identity und liefert einen Handle.
+    /// Validates a local PSK identity and returns a handle.
     ///
     /// # Errors
-    /// `BadArgument` wenn `identity_id` nicht registriert ist.
+    /// `BadArgument` if `identity_id` is not registered.
     pub fn validate_local_psk_identity(
         &mut self,
         identity_id: &str,
@@ -187,7 +187,7 @@ impl PskAuthenticationPlugin {
         if !self.psks.contains_key(identity_id) {
             return Err(SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                alloc::format!("psk: unbekannte identity-id '{identity_id}'"),
+                alloc::format!("psk: unknown identity-id '{identity_id}'"),
             ));
         }
         let handle = IdentityHandle(self.next_id());
@@ -195,13 +195,13 @@ impl PskAuthenticationPlugin {
         Ok(handle)
     }
 
-    /// Validiert eine Remote-PSK-Identity (aus dem propagierten
-    /// IdentityToken). Pruefung: die behauptete `psk.id` muss in
-    /// unserer lokalen PSK-Map vorhanden sein.
+    /// Validates a remote PSK identity (from the propagated
+    /// IdentityToken). Check: the claimed `psk.id` must be present in
+    /// our local PSK map.
     ///
     /// # Errors
-    /// `BadArgument` wenn der Token-Format-Fehler hat oder die
-    /// `psk.id` nicht in der lokalen Map ist.
+    /// `BadArgument` if the token has a format error or the
+    /// `psk.id` is not in the local map.
     pub fn validate_remote_psk_identity(
         &mut self,
         remote_token: &[u8],
@@ -211,7 +211,7 @@ impl PskAuthenticationPlugin {
             return Err(SecurityError::new(
                 SecurityErrorKind::AuthenticationFailed,
                 alloc::format!(
-                    "psk: remote-IdentityToken hat falsche class_id '{}'",
+                    "psk: remote IdentityToken has wrong class_id '{}'",
                     dh.class_id
                 ),
             ));
@@ -219,13 +219,13 @@ impl PskAuthenticationPlugin {
         let id = dh.property(PROP_PSK_ID).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::AuthenticationFailed,
-                "psk: IdentityToken ohne psk.id",
+                "psk: IdentityToken without psk.id",
             )
         })?;
         if !self.psks.contains_key(id) {
             return Err(SecurityError::new(
                 SecurityErrorKind::AuthenticationFailed,
-                alloc::format!("psk: remote psk.id '{id}' nicht im lokalen Trust-Store"),
+                alloc::format!("psk: remote psk.id '{id}' not in the local trust store"),
             ));
         }
         let handle = IdentityHandle(self.next_id());
@@ -233,20 +233,20 @@ impl PskAuthenticationPlugin {
         Ok(handle)
     }
 
-    /// Erzeugt das Wire-IdentityToken (`DDS:Auth:PSK:1.2`) fuer eine
-    /// lokale Identity.
+    /// Creates the wire IdentityToken (`DDS:Auth:PSK:1.2`) for a
+    /// local identity.
     ///
     /// # Errors
-    /// `BadArgument` wenn der Handle unbekannt ist.
+    /// `BadArgument` if the handle is unknown.
     pub fn build_identity_token(&self, local: IdentityHandle) -> SecurityResult<Vec<u8>> {
         let id = self.identities.get(&local).ok_or_else(|| {
-            SecurityError::new(SecurityErrorKind::BadArgument, "psk: unbekannter Handle")
+            SecurityError::new(SecurityErrorKind::BadArgument, "psk: unknown handle")
         })?;
         let dh = DataHolder::new(class_id::PSK).with_property(PROP_PSK_ID, id.clone());
         Ok(dh.to_cdr_le())
     }
 
-    /// Liefert das rohe SharedSecret (32 byte) — primaer fuer Tests.
+    /// Returns the raw SharedSecret (32 bytes) — primarily for tests.
     #[must_use]
     pub fn secret_bytes(&self, handle: SharedSecretHandle) -> Option<&[u8]> {
         self.secrets.get(&handle).map(Vec::as_slice)
@@ -280,7 +280,7 @@ impl PskAuthenticationPlugin {
         self.psks.get(id).map(Vec::as_slice).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::AuthenticationFailed,
-                alloc::format!("psk: unbekannte identity-id '{id}'"),
+                alloc::format!("psk: unknown identity-id '{id}'"),
             )
         })
     }
@@ -292,7 +292,7 @@ impl SharedSecretProvider for PskAuthenticationPlugin {
     }
 }
 
-/// Zufaellige 32-byte Challenge.
+/// Random 32-byte challenge.
 fn random_challenge() -> SecurityResult<[u8; 32]> {
     let rng = SystemRandom::new();
     let mut buf = [0u8; 32];
@@ -305,8 +305,8 @@ fn random_challenge() -> SecurityResult<[u8; 32]> {
     Ok(buf)
 }
 
-/// HMAC-Input nach Spec §10.7.2. Length-prefixed Concatenation
-/// (`u32-LE len || bytes`) verhindert Cross-Field-Tampering.
+/// HMAC input per spec §10.7.2. Length-prefixed concatenation
+/// (`u32-LE len || bytes`) prevents cross-field tampering.
 fn hmac_input(psk_id: &str, ch1: &[u8; 32], ch2: &[u8; 32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(4 + psk_id.len() + 4 + 32 + 4 + 32);
     out.extend_from_slice(&(psk_id.len() as u32).to_le_bytes());
@@ -343,7 +343,7 @@ fn hmac_verify(
 }
 
 /// Spec §10.7.3 — SharedSecret = HKDF-SHA256(psk, salt=ch1||ch2,
-/// info="DDS-Security-1.2-PSK"). Output: 32 byte.
+/// info="DDS-Security-1.2-PSK"). Output: 32 bytes.
 pub fn derive_psk_shared_secret(
     psk: &[u8],
     ch1: &[u8; 32],
@@ -392,15 +392,23 @@ impl AuthenticationPlugin for PskAuthenticationPlugin {
         let id = props.get(PROP_PSK_ID).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::InvalidConfiguration,
-                "psk: fehlt dds.psk.identity_id",
+                "psk: missing dds.psk.identity_id",
             )
         })?;
-        // Optional: PSK-Material direkt aus Properties laden (hex).
+        // Optional: load PSK material directly from properties (hex).
         if let Some(hex) = props.get(PROP_PSK_KEY_HEX) {
             let bytes = hex_decode(hex)?;
             self.register_psk(id.to_string(), bytes)?;
         }
         self.validate_local_psk_identity(id)
+    }
+
+    /// Returns the `IdentityToken` announced in the SPDP beacon (PID_IDENTITY_TOKEN).
+    /// Without this trait impl the default `Ok(Vec::new())` would remain → no token on the
+    /// beacon → the peer never starts `begin_handshake_with` (no-op on token=None)
+    /// → the PSK handshake never happens live. Delegates to `build_identity_token`.
+    fn get_identity_token(&self, local: IdentityHandle) -> SecurityResult<Vec<u8>> {
+        self.build_identity_token(local)
     }
 
     fn validate_remote_identity(
@@ -423,7 +431,7 @@ impl AuthenticationPlugin for PskAuthenticationPlugin {
             .ok_or_else(|| {
                 SecurityError::new(
                     SecurityErrorKind::BadArgument,
-                    "psk: unbekannter Initiator-IdentityHandle",
+                    "psk: unknown initiator IdentityHandle",
                 )
             })?
             .clone();
@@ -474,10 +482,10 @@ impl AuthenticationPlugin for PskAuthenticationPlugin {
             .to_string();
         let challenge1 = read_32(&dh, prop::CHALLENGE1)?;
 
-        // Replay-Detection (Replier-Seite).
+        // Replay detection (replier side).
         self.record_challenge(replier, challenge1)?;
 
-        // PSK-Lookup gegen lokalen Trust-Store.
+        // PSK lookup against the local trust store.
         let psk = self.lookup_psk(&psk_id)?.to_vec();
 
         let challenge2 = random_challenge()?;
@@ -521,7 +529,7 @@ impl AuthenticationPlugin for PskAuthenticationPlugin {
         }
         Err(SecurityError::new(
             SecurityErrorKind::BadArgument,
-            "psk: unbekannter HandshakeHandle",
+            "psk: unknown HandshakeHandle",
         ))
     }
 
@@ -532,7 +540,7 @@ impl AuthenticationPlugin for PskAuthenticationPlugin {
             .ok_or_else(|| {
                 SecurityError::new(
                     SecurityErrorKind::BadArgument,
-                    "psk: handshake-handle unbekannt oder noch nicht completed",
+                    "psk: handshake handle unknown or not yet completed",
                 )
             })
     }
@@ -591,7 +599,7 @@ impl PskAuthenticationPlugin {
         let psk = self.lookup_psk(&st.psk_id)?.to_vec();
         hmac_verify(&psk, &st.psk_id, &ch1, &ch2, hmac)?;
 
-        // Eigenes HMAC fuer Final-Token.
+        // Own HMAC for the final token.
         let final_hmac = hmac_sign(&psk, &st.psk_id, &ch1, &ch2);
         let secret = derive_psk_shared_secret(&psk, &ch1, &ch2)?;
         let secret_handle = self.store_secret(secret.to_vec());
@@ -658,10 +666,10 @@ fn hex_decode(s: &str) -> SecurityResult<Vec<u8>> {
     for chunk in bytes.chunks(2) {
         let hi = hex_nibble(chunk[0])?;
         let lo = hex_nibble(chunk[1])?;
-        // Arithmetic form statt `(hi << 4) | lo`: bei nibble-Werten
-        // (0..=15) ueberlappen die Bits nicht, also identisch.
-        // mutation-detection-freundlich: `*` und `+` sind nicht
-        // aequivalent zueinander.
+        // Arithmetic form instead of `(hi << 4) | lo`: for nibble values
+        // (0..=15) the bits do not overlap, so it is identical.
+        // mutation-detection-friendly: `*` and `+` are not
+        // equivalent to each other.
         out.push(hi * 16 + lo);
     }
     Ok(out)
@@ -788,10 +796,7 @@ mod tests {
         let a_bytes = alice.secret_bytes(alice_secret).unwrap();
         let b_bytes = bob.secret_bytes(bob_secret).unwrap();
         assert_eq!(a_bytes.len(), 32);
-        assert_eq!(
-            a_bytes, b_bytes,
-            "alice + bob muessen gleiches secret haben"
-        );
+        assert_eq!(a_bytes, b_bytes, "alice + bob must have the same secret");
     }
 
     #[test]
@@ -836,7 +841,7 @@ mod tests {
         alice
             .register_psk("k".into(), alloc::vec![0xAAu8; 32])
             .unwrap();
-        // Bob hat anderen Key fuer dieselbe ID.
+        // Bob has a different key for the same ID.
         bob.register_psk("k".into(), alloc::vec![0xBBu8; 32])
             .unwrap();
         let alice_h = alice.validate_local_psk_identity("k").unwrap();
@@ -862,7 +867,7 @@ mod tests {
         bob.register_psk("known".into(), alloc::vec![0x11; 32])
             .unwrap();
         let bob_h = bob.validate_local_psk_identity("known").unwrap();
-        // Alice schickt request mit "unknown" id (handgebaut).
+        // Alice sends a request with an "unknown" id (hand-built).
         let req = DataHolder::new(class_id::REQUEST)
             .with_property(prop::PSK_ID, "unknown")
             .with_property(prop::KAGREE_ALGO, "PSK")
@@ -921,8 +926,8 @@ mod tests {
 
     #[test]
     fn cross_plugin_psk_vs_pki_mismatch_class_id() {
-        // Token von PSK-Plugin → von PKI-IdentityToken-Decoder als
-        // unterschiedlich klassifiziert (verschiedene class_ids).
+        // Token from the PSK plugin → classified as different by the
+        // PKI IdentityToken decoder (different class_ids).
         let mut psk = PskAuthenticationPlugin::new();
         psk.register_psk("k".into(), alloc::vec![0xAA; 32]).unwrap();
         let h = psk.validate_local_psk_identity("k").unwrap();
@@ -972,14 +977,14 @@ mod tests {
 
     #[test]
     fn hkdf_test_vector_rfc5869_ish_is_deterministic() {
-        // Cross-Validation: gleicher PSK + gleiche Challenges → bit-identisches Secret.
+        // Cross-validation: same PSK + same challenges → bit-identical secret.
         let psk = alloc::vec![0x0bu8; 22];
         let ch1 = [0x01u8; 32];
         let ch2 = [0x02u8; 32];
         let s1 = derive_psk_shared_secret(&psk, &ch1, &ch2).unwrap();
         let s2 = derive_psk_shared_secret(&psk, &ch1, &ch2).unwrap();
         assert_eq!(s1, s2);
-        // Andere Challenges → anderer Secret.
+        // Different challenges → different secret.
         let s3 = derive_psk_shared_secret(&psk, &ch2, &ch1).unwrap();
         assert_ne!(s1, s3);
     }
@@ -1000,8 +1005,8 @@ mod tests {
 
     #[test]
     fn final_token_validates_initiator_hmac_on_replier() {
-        // Wenn der Initiator-HMAC im Final-Token kaputt ist, schlaegt
-        // process_final_on_replier mit AuthenticationFailed fehl.
+        // If the initiator HMAC in the final token is broken,
+        // process_final_on_replier fails with AuthenticationFailed.
         let (mut alice, mut bob, alice_h, bob_h) = alice_bob_with_shared_psk();
         let (alice_hs, req_out) = alice.begin_handshake_request(alice_h, bob_h).unwrap();
         let req = match req_out {
@@ -1087,11 +1092,11 @@ mod tests {
     }
 
     // -------------------------------------------------------------
-    // Mutation-Killer (2026-05-01)
+    // Mutation killers (2026-05-01)
     // -------------------------------------------------------------
 
-    /// Replay-cache CAP-Boundary (analog plugin.rs).
-    /// Faengt `>` -> `==`/`>=` auf record_challenge eviction.
+    /// Replay-cache CAP boundary (analogous to plugin.rs).
+    /// Catches `>` -> `==`/`>=` on record_challenge eviction.
     #[test]
     fn psk_replay_cache_holds_exactly_cap() {
         let (mut alice, _, alice_h, _) = alice_bob_with_shared_psk();
@@ -1124,8 +1129,8 @@ mod tests {
             .expect("oldest should be evicted");
     }
 
-    /// hmac_input liefert eine spezifische length-prefixed Konkatenation.
-    /// Faengt Mutationen `vec![]`/`vec![0]`/`vec![1]`.
+    /// hmac_input returns a specific length-prefixed concatenation.
+    /// Catches mutations `vec![]`/`vec![0]`/`vec![1]`.
     #[test]
     fn hmac_input_length_prefixed_concatenation() {
         let psk_id = "abc";
@@ -1135,26 +1140,26 @@ mod tests {
         // Layout: u32-LE psk_id_len + psk_id + u32-LE 32 + ch1 + u32-LE 32 + ch2
         // = 4 + 3 + 4 + 32 + 4 + 32 = 79
         assert_eq!(out.len(), 4 + 3 + 4 + 32 + 4 + 32);
-        // Erste 4 bytes: 3 als u32-LE
+        // First 4 bytes: 3 as u32-LE
         assert_eq!(&out[0..4], &3u32.to_le_bytes());
         // psk_id ascii
         assert_eq!(&out[4..7], b"abc");
-        // ch1-len-prefix
+        // ch1 len prefix
         assert_eq!(&out[7..11], &32u32.to_le_bytes());
         // ch1 bytes
         assert_eq!(&out[11..43], &ch1[..]);
-        // ch2-len-prefix
+        // ch2 len prefix
         assert_eq!(&out[43..47], &32u32.to_le_bytes());
         // ch2 bytes
         assert_eq!(&out[47..79], &ch2[..]);
 
-        // Verschiedene Inputs => verschiedene Outputs
+        // Different inputs => different outputs
         let out_b = hmac_input("xyz", &ch1, &ch2);
         assert_ne!(out, out_b);
     }
 
-    /// hex_nibble: a..f, A..F, 0..9 alle drei Branches abdecken.
-    /// Faengt `delete arm` und `+ -> -` Mutationen.
+    /// hex_nibble: cover all three branches a..f, A..F, 0..9.
+    /// Catches `delete arm` and `+ -> -` mutations.
     #[test]
     fn hex_nibble_all_three_ranges() {
         for (c, expected) in [
@@ -1175,11 +1180,11 @@ mod tests {
         assert!(hex_nibble(b'@').is_err());
     }
 
-    /// hex_decode mit konkretem Wert — faengt `*` -> `+` und arithm.
-    /// Mutationen auf der nibble-Akkumulation.
+    /// hex_decode with concrete value — catches `*` -> `+` and arith.
+    /// mutations on the nibble accumulation.
     #[test]
     fn hex_decode_specific_byte_values() {
-        // "ab" = 0xAB; mit `*` mutated waere result 10+11=21 != 171.
+        // "ab" = 0xAB; with `*` mutated the result would be 10+11=21 != 171.
         assert_eq!(hex_decode("ab").unwrap(), vec![0xAB]);
         // "F0" = 0xF0; mutated: 15+0=15 vs 15*16=240.
         assert_eq!(hex_decode("F0").unwrap(), vec![0xF0]);
@@ -1190,8 +1195,8 @@ mod tests {
         );
     }
 
-    /// Final-Token Tampering: einzelnes Field-Mismatch muss rejecten.
-    /// Faengt `||` -> `&&` (Zeile 624).
+    /// Final-token tampering: a single field mismatch must reject.
+    /// Catches `||` -> `&&` (line 624).
     fn run_psk_final_tampered<M>(mutate: M)
     where
         M: FnOnce(&mut DataHolder),
@@ -1236,14 +1241,13 @@ mod tests {
         });
     }
 
-    /// Faengt `||` -> `&&` (Zeile 624) in process_final_on_replier
-    /// Echo-Check: ch1 != local UND ch2 == local muss rejecten.
+    /// Catches `||` -> `&&` (line 624) in process_final_on_replier
+    /// echo check: ch1 != local AND ch2 == local must reject.
     ///
-    /// Naive Tamper-Tests catchen das nicht, weil hmac-Verify den
-    /// Mismatch ALSO catcht. Hier wird die HMAC ueber die getamperten
-    /// Werte neu berechnet, sodass die Mutation an `&&` zur Replier-
-    /// Akzeptanz fuehrt waehrend die Original `||` zur Echo-Reject
-    /// fuehrt.
+    /// Naive tamper tests do not catch this, because the HMAC verify ALSO
+    /// catches the mismatch. Here the HMAC is recomputed over the tampered
+    /// values, so that the mutation to `&&` leads to replier
+    /// acceptance while the original `||` leads to an echo reject.
     #[test]
     fn psk_final_only_ch1_tamper_with_recomputed_hmac_rejected() {
         let psk_bytes = alloc::vec![0xA5u8; 32];
@@ -1266,7 +1270,7 @@ mod tests {
             _ => panic!(),
         };
 
-        // Tamper challenge1 + recompute HMAC ueber die getamperten Werte.
+        // Tamper challenge1 + recompute HMAC over the tampered values.
         let mut h = DataHolder::from_cdr_le(&final_tok).unwrap();
         let mut new_ch1 = h.binary_property("challenge1").unwrap().to_vec();
         new_ch1[0] ^= 0x01;
@@ -1282,9 +1286,9 @@ mod tests {
         h.set_binary_property("hmac", new_hmac.to_vec());
         let tampered = h.to_cdr_le();
 
-        // Original (`||`): Echo-Mismatch von ch1 => AuthFailed.
-        // Mutation (`&&`): ch1 mismatched aber ch2 ok => Echo-Check
-        // passt durch, hmac-Verify passt (neu berechnet) => Success.
+        // Original (`||`): echo mismatch of ch1 => AuthFailed.
+        // Mutation (`&&`): ch1 mismatched but ch2 ok => the echo check
+        // passes, the HMAC verify passes (recomputed) => success.
         let err = bob.process_handshake(bob_hs, &tampered).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::AuthenticationFailed);
     }

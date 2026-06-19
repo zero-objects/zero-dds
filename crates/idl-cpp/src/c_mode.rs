@@ -1,35 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! IDL → C99 Codegen-Mode (Vendor-Spec `zerodds-xcdr2-c-1.0`).
+//! IDL → C99 codegen mode (vendor spec `zerodds-xcdr2-c-1.0`).
 //!
-//! Diese Module emittiert pro IDL-Specification:
-//! - C99 `typedef struct`-Definitionen pro `struct` (mit Module-prefix
-//!   im Type-Namen, weil C99 keine Namespaces hat).
-//! - Statische `zerodds_typesupport_t`-Tabellen mit XCDR2-Encoder/
-//!   Decoder/KeyHash/Free-Funktionspointern.
-//! - Inline-Body-Implementationen der Encoder/Decoder, die das
-//!   XCDR2-Wire-Format (XTypes 1.3 §7.4) byte-genau erzeugen.
+//! For each IDL specification, this module emits:
+//! - C99 `typedef struct` definitions per `struct` (with a module prefix
+//!   in the type name, because C99 has no namespaces).
+//! - Static `zerodds_typesupport_t` tables with XCDR2 encoder/
+//!   decoder/key-hash/free function pointers.
+//! - Inline body implementations of the encoders/decoders that produce
+//!   the XCDR2 wire format (XTypes 1.3 §7.4) byte-exactly.
 //!
 //! ## Scope (rc1)
 //!
-//! Unterstuetzt:
-//! - Strukturen mit `@final`/`@appendable`/`@mutable`-Extensibility.
-//! - Primitive-Typen (boolean, octet, short/long/long long + unsigned,
+//! Supported:
+//! - Structs with `@final`/`@appendable`/`@mutable` extensibility.
+//! - Primitive types (boolean, octet, short/long/long long + unsigned,
 //!   float, double).
 //! - `string` (unbounded).
-//! - `sequence<T>` (unbounded; nested sequences zulaessig).
-//! - Geschachtelte Module → Type-Name-Praefix mit `::` (Cross-Lang-
-//!   Konvention) und Identifier-Praefix mit `_` (C99-konform).
-//! - `@key`-Members → Key-Hash-Routine ueber `PlainCdr2BeKeyHolder`.
-//! - `@id(N)` fuer @mutable.
+//! - `sequence<T>` (unbounded; nested sequences allowed).
+//! - Nested modules → type-name prefix with `::` (cross-language
+//!   convention) and identifier prefix with `_` (C99-conformant).
+//! - `@key` members → key-hash routine via `PlainCdr2BeKeyHolder`.
+//! - `@id(N)` for @mutable.
 //!
-//! Ausserhalb (Errors auf der Codegen-Ebene):
-//! - Unions, Enums, Bitsets/Bitmasks, Typedefs, Arrays, Maps.
+//! Out of scope (errors at the codegen level):
+//! - Unions, enums, bitsets/bitmasks, typedefs, arrays, maps.
 //! - `wstring`, `fixed`, `any`.
 //! - `@optional`/`@external`/`@bit_bound`.
 //!
-//! ## Aufruf
+//! ## Invocation
 //!
 //! ```rust
 //! use zerodds_idl::config::ParserConfig;
@@ -60,20 +60,20 @@ fn unsupported(kind: &'static str) -> CppGenError {
     }
 }
 
-/// Codegen-Optionen (parallel zu `CppGenOptions`).
+/// Codegen options (parallel to `CppGenOptions`).
 #[derive(Debug, Clone, Default)]
 pub struct CGenOptions {
-    /// Optionaler Include-Guard-Name (Default: `ZERODDS_GENERATED_H`).
+    /// Optional include-guard name (default: `ZERODDS_GENERATED_H`).
     pub include_guard: Option<String>,
-    /// Optionaler Datei-Header-Kommentar.
+    /// Optional file-header comment.
     pub file_header: Option<String>,
 }
 
-/// Erzeugt einen vollstaendigen C99-Header aus einer IDL-Specification.
+/// Produces a complete C99 header from an IDL specification.
 ///
 /// # Errors
-/// - [`CppGenError::UnsupportedConstruct`]: out-of-scope IDL-Konstrukte
-///   (Unions, Enums, Bitsets, Typedefs, Arrays, Maps, wstring, fixed,
+/// - [`CppGenError::UnsupportedConstruct`]: out-of-scope IDL constructs
+///   (unions, enums, bitsets, typedefs, arrays, maps, wstring, fixed,
 ///   any).
 pub fn generate_c_header(ast: &Specification, opts: &CGenOptions) -> Result<String, CppGenError> {
     let mut ctx = Ctx::new(opts);
@@ -160,13 +160,13 @@ impl<'a> Ctx<'a> {
                 Definition::Type(_) => {
                     return Err(unsupported("non-struct type"));
                 }
-                // Konstanten/Annotationen passieren auf Top-Level vor.
+                // Constants/annotations occur at top level.
                 Definition::Const(_)
                 | Definition::Annotation(_)
                 | Definition::TypeId(_)
                 | Definition::TypePrefix(_)
                 | Definition::Import(_) => {
-                    // Ignorieren — kein C-Output noetig.
+                    // Ignore — no C output needed.
                 }
                 _ => {
                     return Err(unsupported("non-struct definition"));
@@ -197,7 +197,7 @@ impl<'a> Ctx<'a> {
             }
         }
         if def.members.is_empty() {
-            // C99 verbietet leere Structs; Dummy-Padding-Member.
+            // C99 forbids empty structs; dummy padding member.
             let _ = writeln!(self.out, "    uint8_t _zerodds_empty;");
         }
         let _ = writeln!(self.out, "}} {c_name}_t;");
@@ -275,19 +275,16 @@ impl<'a> Ctx<'a> {
             "    const {c_name}_t* s = (const {c_name}_t*)sample;"
         );
         let _ = writeln!(self.out, "    (void)s;");
-        // Rest mode: 2-pass — erst Size berechnen, dann schreiben.
-        // Einfachheits-Approach: wir schreiben in einen internen
-        // dynamischen Buffer und kopieren am Ende raus.
-        let _ = writeln!(
-            self.out,
-            "    /* Two-pass: Buffer wachsen lassen, dann kopieren. */"
-        );
+        // Rest mode: 2-pass — first compute the size, then write.
+        // Simplicity approach: we write into an internal
+        // dynamic buffer and copy out at the end.
+        let _ = writeln!(self.out, "    /* Two-pass: grow the buffer, then copy. */");
         let _ = writeln!(self.out, "    uint8_t* w_buf = NULL;");
         let _ = writeln!(self.out, "    size_t w_len = 0;");
         let _ = writeln!(self.out, "    size_t w_cap = 0;");
-        // Defensive Caller-Pruefung: BadParameter wenn out_buf=NULL bei
-        // out_cap>0. Sorgt zusaetzlich dafuer dass die fail-Label-
-        // Reachability auch fuer leere Structs gegeben ist (V-1).
+        // Defensive caller check: BadParameter if out_buf=NULL when
+        // out_cap>0. Also ensures that the fail-label
+        // reachability is given even for empty structs (V-1).
         let _ = writeln!(
             self.out,
             "    if (out_buf == NULL && out_cap > 0) goto fail;"
@@ -335,7 +332,7 @@ impl<'a> Ctx<'a> {
                 );
             }
         }
-        // Output kopieren.
+        // Copy the output.
         let _ = writeln!(self.out, "    if (out_len) *out_len = w_len;");
         let _ = writeln!(
             self.out,
@@ -420,6 +417,21 @@ impl<'a> Ctx<'a> {
 
     fn emit_sequence_write(&mut self, var: &str, elem: &TypeSpec) -> Result<(), CppGenError> {
         // Sequence-Repraesentation in C: `struct { uint32_t len; T* elems; }`.
+        // XCDR2 §7.4.3.5: non-primitive elements (string, …) get
+        // a DHEADER (uint32 = byte length of [count + elements])
+        // prepended; primitives do not. Cyclone-DDS-verified.
+        let non_primitive = !matches!(elem, TypeSpec::Primitive(_));
+        // Block-scopes the DHEADER locals (multiple sequences per struct).
+        let _ = writeln!(self.out, "    {{");
+        if non_primitive {
+            let _ = writeln!(
+                self.out,
+                "    if (zerodds_xcdr2_c_grow(&w_buf, &w_cap, w_len + 4) != 0) goto fail;"
+            );
+            let _ = writeln!(self.out, "    size_t seq_dheader_pos = w_len;");
+            let _ = writeln!(self.out, "    w_len += 4;");
+            let _ = writeln!(self.out, "    size_t seq_body_start = w_len;");
+        }
         let _ = writeln!(
             self.out,
             "    if (zerodds_xcdr2_c_write_u32(&w_buf, &w_len, &w_cap, ({var}).len) != 0) goto fail;"
@@ -446,6 +458,17 @@ impl<'a> Ctx<'a> {
             }
         }
         let _ = writeln!(self.out, "    }}");
+        if non_primitive {
+            let _ = writeln!(
+                self.out,
+                "    uint32_t seq_dheader_len = (uint32_t)(w_len - seq_body_start);"
+            );
+            let _ = writeln!(
+                self.out,
+                "    zerodds_xcdr2_c_put_u32_at(w_buf, seq_dheader_pos, seq_dheader_len);"
+            );
+        }
+        let _ = writeln!(self.out, "    }}");
         Ok(())
     }
 
@@ -455,12 +478,12 @@ impl<'a> Ctx<'a> {
                 .ok_or_else(|| unsupported("@mutable member without @id(N)"))?;
             for decl in &member.declarators {
                 let f = &decl.name().text;
-                // Member-Body in temp buffer encoden, dann EMHEADER + body.
+                // Encode the member body into a temp buffer, then EMHEADER + body.
                 let _ = writeln!(self.out, "    {{");
                 let _ = writeln!(self.out, "        uint8_t* m_buf = NULL;");
                 let _ = writeln!(self.out, "        size_t m_len = 0;");
                 let _ = writeln!(self.out, "        size_t m_cap = 0;");
-                // Member-Body: temp swap der Buffer-Variablen.
+                // Member body: temp swap of the buffer variables.
                 self.emit_member_write_to_named_buffer(
                     &format!("s->{f}"),
                     &member.type_spec,
@@ -503,9 +526,9 @@ impl<'a> Ctx<'a> {
         len: &str,
         cap: &str,
     ) -> Result<(), CppGenError> {
-        // Wir nutzen lokale "Aliases" via Macro-aehnlichem inline-Write.
-        // Damit das einfach bleibt, generieren wir ein in-line Mini-Encoder
-        // pro Type-Spec, der direkt auf m_buf/m_len/m_cap arbeitet.
+        // We use local "aliases" via macro-like inline write.
+        // To keep this simple, we generate an inline mini-encoder
+        // per type spec that operates directly on m_buf/m_len/m_cap.
         match type_spec {
             TypeSpec::Primitive(p) => {
                 let helper = primitive_helper(*p)?;
@@ -535,8 +558,8 @@ impl<'a> Ctx<'a> {
         def: &StructDef,
         ext: Extensibility,
     ) -> Result<(), CppGenError> {
-        // Decoder ist symmetrisch zum Encoder; baut den Rust-Stack-style
-        // BufferReader ueber Helper-Inline-Funktionen aus `zerodds_xcdr2.h`.
+        // The decoder is symmetric to the encoder; builds the Rust-stack-style
+        // BufferReader via helper inline functions from `zerodds_xcdr2.h`.
         let _ = writeln!(
             self.out,
             "static int {c_name}_decode(const uint8_t* buf, size_t len, void* out_sample) {{"
@@ -638,6 +661,16 @@ impl<'a> Ctx<'a> {
 
     fn emit_sequence_read(&mut self, var: &str, elem: &TypeSpec) -> Result<(), CppGenError> {
         let _ = writeln!(self.out, "    {{");
+        // XCDR2 §7.4.3.5: for non-primitive elements, write the DHEADER
+        // (uint32 before [count + elements]) skipped over.
+        if !matches!(elem, TypeSpec::Primitive(_)) {
+            let _ = writeln!(self.out, "        uint32_t seq_dheader = 0;");
+            let _ = writeln!(
+                self.out,
+                "        if (zerodds_xcdr2_c_read_u32(buf, len, &pos, &seq_dheader) != 0) return -7;"
+            );
+            let _ = writeln!(self.out, "        (void)seq_dheader;");
+        }
         let _ = writeln!(self.out, "        uint32_t seq_len = 0;");
         let _ = writeln!(
             self.out,
@@ -744,8 +777,8 @@ impl<'a> Ctx<'a> {
     }
 
     fn emit_key_hash_body(&mut self, c_name: &str, def: &StructDef) {
-        // Spec §7.6.8: sammelt @key-Members in PlainCdr2BeKeyHolder, dann
-        // entweder zero-pad oder MD5. Wir nutzen die XCDR2-C-Helper.
+        // Spec §7.6.8: collects  members in PlainCdr2BeKeyHolder, then
+        // either zero-pad or MD5. We use the XCDR2 C helpers.
         let _ = writeln!(
             self.out,
             "static int {c_name}_key_hash(const void* sample, uint8_t out_hash[16]) {{"

@@ -15,9 +15,9 @@ use crate::return_code::ReturnCode;
 /// "An ExecutionContext allows the business logic of an RTC to be
 /// decoupled from the thread of control in which it is executed."
 ///
-/// Diese Trait definiert die externe Sicht; konkrete Realisationen
-/// erben davon. Der Body der Trait ist die `ExecutionContextOperations`-
-/// Iface aus Spec §5.2.2.6.
+/// This trait defines the external view; concrete realizations
+/// inherit from it. The body of the trait is the `ExecutionContextOperations`
+/// interface from spec §5.2.2.6.
 pub trait ExecutionContextOperations {
     /// Spec §5.2.2.6.1 — `is_running`.
     fn is_running(&self) -> bool;
@@ -30,13 +30,13 @@ pub trait ExecutionContextOperations {
     /// Spec §5.2.2.6.5 — `set_rate(rate)`.
     ///
     /// # Errors
-    /// `BAD_PARAMETER` wenn `rate <= 0.0` oder `NaN`.
+    /// `BAD_PARAMETER` if `rate <= 0.0` or `NaN`.
     fn set_rate(&mut self, rate: f64) -> ReturnCode;
     /// Spec §5.2.2.6.6 — `add_component`.
     ///
     /// # Errors
-    /// Liefert `ReturnCode::Err` wenn das RTC nicht alive ist oder
-    /// schon im Context registriert.
+    /// Returns `ReturnCode::Err` if the RTC is not alive or
+    /// is already registered in the context.
     fn add_component(
         &mut self,
         component: &mut LightweightRtObject,
@@ -76,13 +76,13 @@ pub trait ExecutionContextOperations {
 }
 
 /// Konkrete `ExecutionContext`-Implementation — Spec §5.2.2.5
-/// (Local-PSM-Variante).
+/// (local-PSM variant).
 ///
-/// Verwaltet:
+/// Manages:
 /// * Running/Stopped-State (Spec Fig 5.7).
 /// * Tick-Rate (Hz, Spec §5.2.2.6.4-§5.2.2.6.5).
-/// * Liste der teilnehmenden RTCs (durch Handle gekennzeichnet —
-///   die RTCs selbst werden vom Caller gehalten).
+/// * List of participating RTCs (identified by handle —
+///   the RTCs themselves are held by the caller).
 /// * `ExecutionKind` (Spec §5.2.2.7).
 pub struct ExecutionContext {
     running: bool,
@@ -92,8 +92,8 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
-    /// Konstruiert ein neues, gestopptes `ExecutionContext` mit dem
-    /// gegebenen `ExecutionKind` und Default-Rate 1.0 Hz.
+    /// Constructs a new, stopped `ExecutionContext` with the
+    /// given `ExecutionKind` and a default rate of 1.0 Hz.
     #[must_use]
     pub const fn new(kind: ExecutionKind) -> Self {
         Self {
@@ -104,10 +104,10 @@ impl ExecutionContext {
         }
     }
 
-    /// Konstruiert mit expliziter Rate.
+    /// Constructs with an explicit rate.
     ///
     /// # Errors
-    /// `Err(BAD_PARAMETER)` wenn `rate <= 0.0` oder `NaN`.
+    /// `Err(BAD_PARAMETER)` if `rate <= 0.0` or `NaN`.
     pub fn with_rate(kind: ExecutionKind, rate_hz: f64) -> Result<Self, ReturnCode> {
         if !rate_hz.is_finite() || rate_hz <= 0.0 {
             return Err(ReturnCode::BadParameter);
@@ -139,8 +139,8 @@ impl ExecutionContextOperations for ExecutionContext {
 
     fn start(&mut self) -> ReturnCode {
         if self.running {
-            // Spec §5.2.2.6.2 — already running ist nicht expliziter
-            // Fehler, aber wir liefern `Ok` (idempotent).
+            // Spec §5.2.2.6.2 — already running is not an explicit
+            // error, but we return `Ok` (idempotent).
             return ReturnCode::Ok;
         }
         self.running = true;
@@ -229,8 +229,8 @@ impl ExecutionContextOperations for ExecutionContext {
         component: &LightweightRtObject,
         handle: ExecutionContextHandle,
     ) -> LifeCycleState {
-        // Spec §5.2.2.6.11 — wenn Handle unbekannt, semantisch
-        // unklar; wir liefern Created als Default.
+        // Spec §5.2.2.6.11 — if the handle is unknown, semantically
+        // unclear; we return Created as the default.
         component
             .get_context_state(handle)
             .unwrap_or(LifeCycleState::Created)
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn activate_with_unknown_handle_yields_bad_parameter() {
-        // Spec §5.2.2.6.8 — Handle muss zu diesem Context gehoeren.
+        // Spec §5.2.2.6.8 — the handle must belong to this context.
         let mut ec = ExecutionContext::new(ExecutionKind::Periodic);
         let mut r = rtc();
         r.initialize();

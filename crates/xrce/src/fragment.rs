@@ -3,26 +3,26 @@
 
 //! XRCE FRAGMENT-Reassembler (Spec §8.4.13).
 //!
-//! Spec §8.3.5.14 erlaubt FRAGMENT-Submessages nur in reliable Streams.
-//! Jedes Fragment traegt einen Body-Slice der zerlegten Original-
-//! Submessage und ein `LAST`-Flag (siehe `crate::submessages::fragment`).
+//! Spec §8.3.5.14 allows FRAGMENT submessages only in reliable streams.
+//! Each fragment carries a body slice of the split original
+//! submessage and a `LAST` flag (see `crate::submessages::fragment`).
 //!
-//! Der Reassembler ist tick-frei: Fragmente werden via `add_fragment`
-//! eingespielt; sobald `LAST` empfangen ist und alle Bytes-Bereiche luecken-
-//! frei sind, wird `Some(Vec<u8>)` zurueckgeliefert. Bis dahin behaelt der
-//! Reassembler eine einzige Pre-Allokation pro `(stream, base_seq)`.
+//! The reassembler is tick-free: fragments are fed in via `add_fragment`;
+//! as soon as `LAST` is received and all byte ranges are gap-free,
+//! `Some(Vec<u8>)` is returned. Until then the
+//! reassembler keeps a single pre-allocation per `(stream, base_seq)`.
 //!
-//! ## DoS-Caps
-//! - `MAX_FRAGMENTS_PER_STREAM = 256`: maximale Anzahl Fragmente pro
-//!   in-flight Reassembly. 256 deckt 256·1500 ≈ 384 KiB ab — mehr als
-//!   genug fuer den realistischen Use-Case.
-//! - `MAX_TOTAL_PAYLOAD = 1 MiB`: harter Cap fuer den reassemblierten
-//!   Payload. Wird auch zum Pre-Allocation-Limit genutzt (kein
-//!   "behauptete 4 GiB" → OOM).
-//! - `MAX_PENDING_STREAMS = 32`: gleichzeitig zulaessig laufende
-//!   Reassemblies. Schuetzt vor "1000 Streams a 1 Fragment".
-//! - GC: jedes Fragment hat einen `arrival`-Tick; alte Reassemblies
-//!   werden via `gc(now)` nach `gc_ttl` verworfen.
+//! ## DoS caps
+//! - `MAX_FRAGMENTS_PER_STREAM = 256`: maximum number of fragments per
+//!   in-flight reassembly. 256 covers 256·1500 ≈ 384 KiB — more than
+//!   enough for the realistic use case.
+//! - `MAX_TOTAL_PAYLOAD = 1 MiB`: hard cap for the reassembled
+//!   payload. Also used as the pre-allocation limit (no
+//!   "claimed 4 GiB" → OOM).
+//! - `MAX_PENDING_STREAMS = 32`: simultaneously allowed running
+//!   reassemblies. Protects against "1000 streams of 1 fragment".
+//! - GC: each fragment has an `arrival` tick; old reassemblies
+//!   are discarded via `gc(now)` after `gc_ttl`.
 
 extern crate alloc;
 use alloc::collections::BTreeMap;
@@ -31,34 +31,34 @@ use core::time::Duration;
 
 use crate::error::XrceError;
 
-/// DoS-Cap: maximale Fragmente pro in-flight Reassembly.
+/// DoS cap: maximum fragments per in-flight reassembly.
 pub const MAX_FRAGMENTS_PER_STREAM: usize = 256;
-/// DoS-Cap: maximale Gesamtgroesse einer reassemblierten Submessage.
+/// DoS cap: maximum total size of a reassembled submessage.
 pub const MAX_TOTAL_PAYLOAD: usize = 1 << 20; // 1 MiB
-/// DoS-Cap: maximale Anzahl gleichzeitig laufender Reassemblies.
+/// DoS cap: maximum number of simultaneously running reassemblies.
 pub const MAX_PENDING_STREAMS: usize = 32;
-/// Default-TTL fuer abgelaufene Reassemblies (10 s).
+/// Default TTL for expired reassemblies (10 s).
 pub const DEFAULT_GC_TTL: Duration = Duration::from_secs(10);
 
-/// Schluessel einer in-flight Reassembly: `(stream_id, base_seqnr)`.
+/// Key of an in-flight reassembly: `(stream_id, base_seqnr)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AssemblerKey {
-    /// Reliable Stream-Id.
+    /// Reliable stream id.
     pub stream_id: u8,
-    /// Base-Sequence-Number der ersten Fragment-Submessage.
+    /// Base sequence number of the first fragment submessage.
     pub base_seq: u16,
 }
 
 #[derive(Debug, Clone)]
 struct PendingAssembly {
-    /// Geordnete Map `offset → bytes`. Sobald `last_offset_end`
-    /// gesetzt und alle Slots zusammenhaengend sind, ist die
-    /// Reassembly fertig.
+    /// Ordered map `offset → bytes`. As soon as `last_offset_end`
+    /// is set and all slots are contiguous, the
+    /// reassembly is done.
     fragments: BTreeMap<u32, Vec<u8>>,
-    /// Wenn `LAST` empfangen ist, das End-Offset (offset + len) des
-    /// letzten Fragments. Markiert die Gesamtlaenge.
+    /// When `LAST` is received, the end offset (offset + len) of the
+    /// last fragment. Marks the total length.
     final_size: Option<u32>,
-    /// Tick des letzten Inputs — fuer GC.
+    /// Tick of the last input — for GC.
     last_arrival: Duration,
 }
 
@@ -79,7 +79,7 @@ impl PendingAssembly {
         self.fragments.values().map(Vec::len).sum()
     }
 
-    /// Ist die Reassembly luecken-frei und hat das letzte Fragment?
+    /// Is the reassembly gap-free and does it have the last fragment?
     fn is_complete(&self) -> bool {
         let Some(target) = self.final_size else {
             return false;
@@ -103,7 +103,7 @@ impl PendingAssembly {
     }
 }
 
-/// FRAGMENT-Reassembler ueber alle reliable Streams.
+/// FRAGMENT reassembler over all reliable streams.
 #[derive(Debug, Clone, Default)]
 pub struct FragmentAssembler {
     pending: BTreeMap<AssemblerKey, PendingAssembly>,
@@ -112,7 +112,7 @@ pub struct FragmentAssembler {
 }
 
 impl FragmentAssembler {
-    /// Konstruktor mit Default-TTL.
+    /// Constructor with the default TTL.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -122,7 +122,7 @@ impl FragmentAssembler {
         }
     }
 
-    /// Mit explizit gesetzter GC-TTL.
+    /// With explicitly set GC TTL.
     #[must_use]
     pub fn with_gc_ttl(ttl: Duration) -> Self {
         Self {
@@ -132,29 +132,29 @@ impl FragmentAssembler {
         }
     }
 
-    /// Anzahl gleichzeitig laufender Reassemblies.
+    /// Number of concurrently running reassemblies.
     #[must_use]
     pub fn pending_count(&self) -> usize {
         self.pending.len()
     }
 
-    /// Anzahl insgesamt verworfener Fragmente (DoS-Diagnose).
+    /// Number of fragments discarded in total (DoS diagnostics).
     #[must_use]
     pub fn drop_count(&self) -> u64 {
         self.drop_count
     }
 
-    /// Spielt ein Fragment ein. `offset` ist der Byte-Offset des
-    /// Fragments innerhalb der zerlegten Original-Submessage.
-    /// Liefert `Some(payload)`, wenn die Reassembly mit diesem Aufruf
-    /// vollstaendig wird; `None` sonst.
+    /// Feeds in a fragment. `offset` is the byte offset of the
+    /// fragment within the split original submessage.
+    /// Returns `Some(payload)` when the reassembly becomes complete with
+    /// this call; `None` otherwise.
     ///
     /// # Errors
-    /// - `PayloadTooLarge`, wenn die Reassembly `MAX_TOTAL_PAYLOAD`
-    ///   ueberschreiten wuerde.
-    /// - `ValueOutOfRange`, wenn ein Cap erreicht ist
-    ///   (`MAX_FRAGMENTS_PER_STREAM`, `MAX_PENDING_STREAMS`) oder ein
-    ///   Fragment-Overlap entsteht.
+    /// - `PayloadTooLarge` if the reassembly would exceed
+    ///   `MAX_TOTAL_PAYLOAD`.
+    /// - `ValueOutOfRange` if a cap is reached
+    ///   (`MAX_FRAGMENTS_PER_STREAM`, `MAX_PENDING_STREAMS`) or a
+    ///   fragment overlap occurs.
     pub fn add_fragment(
         &mut self,
         key: AssemblerKey,
@@ -176,7 +176,7 @@ impl FragmentAssembler {
             });
         }
 
-        // Neuen Pending-Bucket anlegen ggf. mit Stream-Cap-Check.
+        // Create a new pending bucket, possibly with a stream cap check.
         let entry = match self.pending.get_mut(&key) {
             Some(e) => e,
             None => {
@@ -200,14 +200,14 @@ impl FragmentAssembler {
             });
         }
 
-        // Ueberlapp-Check (kein gleicher offset, kein Overlap).
+        // Overlap check (no equal offset, no overlap).
         if entry.fragments.contains_key(&offset) {
             // duplicates dropped
             self.drop_count = self.drop_count.saturating_add(1);
             return Ok(None);
         }
-        // Pruefen ob `[offset, new_end)` mit existierenden Ranges
-        // ueberlappt: hole groessten key <= offset und kleinsten key > offset.
+        // Check whether `[offset, new_end)` overlaps with existing ranges:
+        // get the largest key <= offset and the smallest key > offset.
         let prev = entry.fragments.range(..=offset).next_back();
         if let Some((&po, pb)) = prev {
             let pe = po + pb.len() as u32;
@@ -228,7 +228,7 @@ impl FragmentAssembler {
             }
         }
 
-        // Total-Cap nach Insert?
+        // Total cap after insert?
         if entry.current_total() + bytes.len() > MAX_TOTAL_PAYLOAD {
             self.drop_count = self.drop_count.saturating_add(1);
             return Err(XrceError::PayloadTooLarge {
@@ -251,8 +251,8 @@ impl FragmentAssembler {
         Ok(None)
     }
 
-    /// GC: verwirft alle Reassemblies, deren letztes Fragment laenger als
-    /// `gc_ttl` her ist. Liefert die Anzahl verworfener Buckets.
+    /// GC: discards all reassemblies whose last fragment is older than
+    /// `gc_ttl`. Returns the number of discarded buckets.
     pub fn gc(&mut self, now: Duration) -> usize {
         let cutoff = now.saturating_sub(self.gc_ttl);
         let to_drop: Vec<AssemblerKey> = self
@@ -269,7 +269,7 @@ impl FragmentAssembler {
         n
     }
 
-    /// Setzt alle Pending-Buckets zurueck (z.B. bei `RESET`).
+    /// Resets all pending buckets (e.g. on `RESET`).
     pub fn reset(&mut self) {
         let n = self.pending.len() as u64;
         self.pending.clear();
@@ -403,10 +403,10 @@ mod tests {
         a.add_fragment(k(), 0, false, vec![1, 2], Duration::ZERO)
             .unwrap();
         assert_eq!(a.pending_count(), 1);
-        // 4s spaeter → noch nicht abgelaufen
+        // 4s later → not yet expired
         assert_eq!(a.gc(Duration::from_secs(4)), 0);
         assert_eq!(a.pending_count(), 1);
-        // 11s spaeter → abgelaufen
+        // 11s later → expired
         assert_eq!(a.gc(Duration::from_secs(11)), 1);
         assert_eq!(a.pending_count(), 0);
     }

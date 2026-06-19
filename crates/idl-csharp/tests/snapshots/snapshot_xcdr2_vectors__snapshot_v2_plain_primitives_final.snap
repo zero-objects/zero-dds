@@ -30,14 +30,24 @@ public sealed class PointTypeSupport : IDdsTopicType<Point>
     public byte[] Encode(Point sample, EndianMode endian)
     {
         var w = new Xcdr2Writer(endian);
+        EncodeInto(w, sample);
+        return w.ToArray();
+    }
+
+    public void EncodeInto(Xcdr2Writer w, Point sample)
+    {
         w.WriteInt32(sample.X);
         w.WriteInt32(sample.Y);
-        return w.ToArray();
     }
 
     public Point Decode(ReadOnlySpan<byte> bytes)
     {
         var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
+        return DecodeFrom(r);
+    }
+
+    public Point DecodeFrom(Xcdr2Reader r)
+    {
         int __m0 = default;
         __m0 = r.ReadInt32();
         int __m1 = default;

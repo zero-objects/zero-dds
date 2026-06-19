@@ -1,48 +1,47 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `Sample<T>` — Daten + [`SampleInfo`] zusammen.
+//! `Sample<T>` — data + [`SampleInfo`] together.
 //!
-//! Spec-Referenz: OMG DDS-DCPS 1.4 §2.2.2.5.3 `read`/`take`. Die Spec
-//! arbeitet mit zwei parallelen Sequenzen `data_values` und
-//! `sample_infos`; in unserer Rust-API buendeln wir sie zu einem
-//! `Sample<T> { data, info }`.
+//! Spec reference: OMG DDS-DCPS 1.4 §2.2.2.5.3 `read`/`take`. The spec
+//! works with two parallel sequences `data_values` and `sample_infos`;
+//! in our Rust API we bundle them into a single `Sample<T> { data, info }`.
 //!
 //! ## valid_data
 //!
-//! Wenn `info.valid_data == false`, traegt das Sample reine
-//! Lifecycle-Information (Dispose-/Unregister-Marker). `data` enthaelt
-//! in diesem Fall einen Default-konstruierten `T` mit nur den Key-
-//! Feldern befuellt (Spec §2.2.2.5.1.13).
+//! When `info.valid_data == false`, the sample carries pure lifecycle
+//! information (dispose/unregister marker). In that case `data` holds a
+//! default-constructed `T` with only the key fields filled in
+//! (spec §2.2.2.5.1.13).
 
 extern crate alloc;
 
 use crate::sample_info::SampleInfo;
 
-/// Einzelner Sample-Datensatz aus `read`/`take`.
+/// A single sample record from `read`/`take`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sample<T> {
-    /// Application-Daten. Bei `info.valid_data == false` ist nur der
-    /// Key-Anteil bedeutungsvoll.
+    /// Application data. When `info.valid_data == false`, only the key
+    /// portion is meaningful.
     pub data: T,
-    /// Metadaten (Spec §2.2.2.5.1).
+    /// Metadata (spec §2.2.2.5.1).
     pub info: SampleInfo,
 }
 
 impl<T> Sample<T> {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(data: T, info: SampleInfo) -> Self {
         Self { data, info }
     }
 
-    /// `true` wenn das Sample Nutzdaten enthaelt (nicht nur einen
-    /// Lifecycle-Marker).
+    /// `true` if the sample carries payload (not just a lifecycle
+    /// marker).
     #[must_use]
     pub fn is_valid(&self) -> bool {
         self.info.valid_data
     }
 
-    /// Komfort-Akzessor: Lifecycle-Sicht ohne Daten.
+    /// Convenience accessor: lifecycle view without data.
     #[must_use]
     pub fn info(&self) -> &SampleInfo {
         &self.info

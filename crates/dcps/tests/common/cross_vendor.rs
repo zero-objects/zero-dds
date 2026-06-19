@@ -1,63 +1,63 @@
-//! Cross-Vendor-Live-Interop-Helfer fuer C5.5.
+//! Cross-vendor live-interop helpers for C5.5.
 //!
-//! Stellt Subprocess-Spawner fuer FastDDS- und Cyclone-Tools bereit,
-//! die ueber `ssh llvm@llvm` auf dem Lab-Host ausgefuehrt werden. Die
-//! Strukturen halten den lokalen Child-Handle plus eine Drop-Impl,
-//! die das Remote-Process via `pkill` killt — sonst bleiben
-//! `fastdds shape` / `ddsperf`-Prozesse auf der VM stehen.
+//! Provides subprocess spawners for FastDDS and Cyclone tools that are
+//! executed over `ssh llvm@llvm` on the lab host. The structs hold the
+//! local child handle plus a `Drop` impl that kills the remote process
+//! via `pkill` — otherwise `fastdds shape` / `ddsperf` processes would
+//! linger on the VM.
 //!
-//! # Typ-Strategie
+//! # Type strategy
 //!
-//! `RemoteSubprocess` ist ein generischer Wrapper: das `pkill_pattern`
-//! identifiziert das Remote-Programm, der lokale `Child` haelt die
-//! SSH-Session. Ohne SSH-Schluessel wird via `sshpass` mit Lab-Passwort
-//! gepiped — fuer ein Lab-Setup akzeptabel, in Produktion durch
-//! Schluessel-Auth zu ersetzen.
+//! `RemoteSubprocess` is a generic wrapper: the `pkill_pattern`
+//! identifies the remote program, the local `Child` holds the
+//! SSH session. Without an SSH key, the lab password is piped in via
+//! `sshpass` — acceptable for a lab setup, to be replaced by
+//! key-based auth in production.
 //!
-//! # `#[ignore]`-Strategie
+//! # `#[ignore]` strategy
 //!
-//! Alle Live-Tests sind per `#[ignore]` markiert. Lokal:
+//! All live tests are marked with `#[ignore]`. Locally:
 //!
 //! ```bash
 //! cargo test -p zerodds-discovery --features live-interop \
 //!     --test fastdds_live_pub -- --ignored --nocapture
 //! ```
 //!
-//! Wer das Lab nicht erreicht, lese `live_host_available()` — sobald
-//! die Env-Var `LLVM_HOST_AVAILABLE=1` nicht gesetzt ist UND `sshpass`
-//! oder die Host-Verbindung fehlt, ueberspringen die Helfer mit klarer
-//! Fehler-Message.
+//! If you cannot reach the lab, read `live_host_available()` — as soon
+//! as the env var `LLVM_HOST_AVAILABLE=1` is not set AND `sshpass`
+//! or the host connection is missing, the helpers skip with a clear
+//! error message.
 
 #![allow(dead_code, clippy::expect_used, clippy::print_stderr)]
 
 use core::time::Duration;
 use std::process::{Child, Command, Stdio};
 
-/// SSH-User fuer Lab-Host (siehe Memory `reference_bench_hosts`).
+/// SSH user for the lab host (see memory `reference_bench_hosts`).
 pub const SSH_USER: &str = "llvm";
-/// SSH-Passwort fuer Lab-Host. Lab-only — Produktion braucht Key-Auth.
+/// SSH password for the lab host. Lab-only — production needs key auth.
 pub const SSH_PASS: &str = "llvm";
-/// SSH-Hostname; wird via `~/.ssh/config` aufgeloest.
+/// SSH hostname; resolved via `~/.ssh/config`.
 pub const SSH_HOST: &str = "llvm";
-/// Default-Timeout fuer Live-Subprocess-Bring-up.
+/// Default timeout for live-subprocess bring-up.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Reliability-Variante fuer FastDDS-Tools. `fastdds shape` akzeptiert
-/// genau diese zwei Varianten (s. `fastdds shape --help`).
+/// Reliability variant for FastDDS tools. `fastdds shape` accepts
+/// exactly these two variants (see `fastdds shape --help`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FastReliability {
     BestEffort,
     Reliable,
 }
 
-/// Durability-Variante fuer FastDDS-Tools.
+/// Durability variant for FastDDS tools.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FastDurability {
     Volatile,
     TransientLocal,
 }
 
-/// Komplettes QoS-Set fuer FastDDS-Tools.
+/// Complete QoS set for FastDDS tools.
 #[derive(Debug, Clone, Copy)]
 pub struct FastQos {
     pub reliability: FastReliability,
@@ -65,13 +65,13 @@ pub struct FastQos {
 }
 
 impl FastQos {
-    /// Standard fuer `fastdds shape`-Default-Profile.
+    /// Default for the `fastdds shape` default profile.
     pub const DEFAULT: Self = Self {
         reliability: FastReliability::Reliable,
         durability: FastDurability::Volatile,
     };
 
-    /// Mappt auf CLI-Flags fuer `fastdds shape`. `-r reliable|besteffort`,
+    /// Maps to CLI flags for `fastdds shape`. `-r reliable|besteffort`,
     /// `-d volatile|transient_local`.
     pub fn cli_flags(&self) -> [&'static str; 4] {
         let r = match self.reliability {
@@ -86,14 +86,14 @@ impl FastQos {
     }
 }
 
-/// Pruefung ob Live-Host erreichbar ist. Tests ohne Lab koennen so
-/// frueh skip-en, bevor SSH-Timeouts den Test ausbluten lassen.
+/// Checks whether the live host is reachable. Tests without a lab can
+/// skip early, before SSH timeouts drain the test.
 pub fn live_host_available() -> bool {
     if std::env::var("LLVM_HOST_AVAILABLE").is_ok() {
         return true;
     }
-    // Fallback: `sshpass` lokal vorhanden? Ohne `sshpass` wuerden alle
-    // Subprocess-Spawns sofort scheitern.
+    // Fallback: is `sshpass` available locally? Without `sshpass`, all
+    // subprocess spawns would fail immediately.
     Command::new("sshpass")
         .arg("-V")
         .stdout(Stdio::null())
@@ -103,8 +103,8 @@ pub fn live_host_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Generischer SSH-Subprocess-Wrapper. `pkill_pattern` ist das
-/// `pkill -f`-Argument, mit dem `Drop` den Remote-Prozess killt.
+/// Generic SSH subprocess wrapper. `pkill_pattern` is the
+/// `pkill -f` argument with which `Drop` kills the remote process.
 pub struct RemoteSubprocess {
     child: Child,
     pkill_pattern: String,
@@ -112,9 +112,9 @@ pub struct RemoteSubprocess {
 }
 
 impl RemoteSubprocess {
-    /// Spawnt `cmd` ueber `sshpass+ssh` auf `llvm`. `pkill_pattern`
-    /// matcht den Remote-Prozess (regex-frei, wird mit `pkill -f`
-    /// als Substring genutzt).
+    /// Spawns `cmd` over `sshpass+ssh` on `llvm`. `pkill_pattern`
+    /// matches the remote process (regex-free, used as a substring
+    /// with `pkill -f`).
     pub fn spawn(label: &str, cmd: &str, pkill_pattern: &str) -> std::io::Result<Self> {
         let child = Command::new("sshpass")
             .arg("-p")
@@ -136,7 +136,7 @@ impl RemoteSubprocess {
         })
     }
 
-    /// Synonym damit der Aufrufer-Code lesbarer wird.
+    /// Synonym to make the caller code more readable.
     pub fn label(&self) -> &str {
         &self.label
     }
@@ -144,7 +144,7 @@ impl RemoteSubprocess {
 
 impl Drop for RemoteSubprocess {
     fn drop(&mut self) {
-        // Best-effort: Remote-Prozess killen, dann lokales SSH-Child.
+        // Best-effort: kill the remote process, then the local SSH child.
         let cmd = format!("pkill -f '{}' || true", self.pkill_pattern);
         let _ = Command::new("sshpass")
             .arg("-p")
@@ -162,12 +162,12 @@ impl Drop for RemoteSubprocess {
     }
 }
 
-/// Startet `fastdds shape publisher` auf llvm.
+/// Starts `fastdds shape publisher` on the Linux bench host.
 ///
-/// Wir setzen `--domain` explizit; Topic ist eine der drei
-/// Shape-Topics (`Square`, `Triangle`, `Circle`) per FastDDS-Konvention.
-/// Color `RED` als Default, weil das fuer das Default-Profile von
-/// `fastdds shape` der erste verfuegbare ist.
+/// We set `--domain` explicitly; the topic is one of the three
+/// shape topics (`Square`, `Triangle`, `Circle`) per FastDDS convention.
+/// Color `RED` as the default, because that is the first available one
+/// for the `fastdds shape` default profile.
 pub fn start_fastdds_pub(
     topic: &str,
     domain: u32,
@@ -186,7 +186,7 @@ pub fn start_fastdds_pub(
     )
 }
 
-/// Startet `fastdds shape subscriber` auf llvm.
+/// Starts `fastdds shape subscriber` on the Linux bench host.
 pub fn start_fastdds_sub(
     topic: &str,
     domain: u32,
@@ -205,10 +205,10 @@ pub fn start_fastdds_sub(
     )
 }
 
-/// Startet `fastdds discovery` Server-Modus. Discovery-Server-Spec liegt
-/// in FastDDS' Server-Client-Discovery-Protokoll (siehe FastDDS 2.9
-/// User-Manual §16). Wir setzen GUID-Prefix auf `44.53.00.5f.45.50...`
-/// (das von eProsima als Reference dokumentierte Default-Prefix).
+/// Starts `fastdds discovery` in server mode. The discovery-server spec
+/// lives in FastDDS' server-client discovery protocol (see FastDDS 2.9
+/// user manual §16). We set the GUID prefix to `44.53.00.5f.45.50...`
+/// (the default prefix documented by eProsima as a reference).
 pub fn start_fastdds_discovery_server(domain: u32, port: u16) -> std::io::Result<RemoteSubprocess> {
     let cmd = format!(
         "timeout 60 fastdds discovery -i 0 -d {domain} -p {port} \
@@ -221,10 +221,10 @@ pub fn start_fastdds_discovery_server(domain: u32, port: u16) -> std::io::Result
     )
 }
 
-/// Cyclone-Pub via `ddsperf` — wird fuer Lueckenfueller-Tests
-/// (cyclone_typelookup_sub_side) gebraucht. `-D` ist Duration in
-/// Sekunden, `-i` ist Domain-ID (siehe Memory
-/// `reference_ddsperf_flags` — Achtung Flag-Falle).
+/// Cyclone pub via `ddsperf` — needed for gap-filler tests
+/// (cyclone_typelookup_sub_side). `-D` is the duration in
+/// seconds, `-i` is the domain ID (see memory
+/// `reference_ddsperf_flags` — beware the flag trap).
 pub fn start_cyclone_ddsperf_pub(
     domain: u32,
     duration_secs: u32,
@@ -243,7 +243,7 @@ pub fn start_cyclone_ddsperf_pub(
     )
 }
 
-/// Cyclone-Sub via `ddsperf`.
+/// Cyclone sub via `ddsperf`.
 pub fn start_cyclone_ddsperf_sub(
     domain: u32,
     duration_secs: u32,
@@ -262,10 +262,9 @@ pub fn start_cyclone_ddsperf_sub(
     )
 }
 
-/// Detect lokale LAN-IP — auf macOS via `ipconfig`, auf Linux via
-/// `hostname -I`. Wird fuer SPDP-Beacons gebraucht (Cyclone/FastDDS
-/// schicken Unicast-Antworten an den im Beacon angekuendigten
-/// Locator).
+/// Detects the local LAN IP — on macOS via `ipconfig`, on Linux via
+/// `hostname -I`. Needed for SPDP beacons (Cyclone/FastDDS
+/// send unicast replies to the locator announced in the beacon).
 pub fn detect_local_interface() -> Option<std::net::Ipv4Addr> {
     if cfg!(target_os = "macos") {
         if let Ok(out) = Command::new("ipconfig").args(["getifaddr", "en0"]).output() {

@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Runtime-agnostic async wrappers around the ZeroDDS DCPS sync API (zerodds-async-1.0 spec): write/take Futures, SampleStream, DataAvailableStream, PublicationMatchedStream — kein Thread-Block, native Reader-Slot-Waker."
+description = "Runtime-agnostic async wrappers around the ZeroDDS DCPS sync API (zerodds-async-1.0 spec): write/take Futures, SampleStream, DataAvailableStream, PublicationMatchedStream — no thread block, native Reader-Slot waker."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-dcps-async"
 readme = "README.md"
@@ -20,12 +20,12 @@ workspace = true
 [features]
 default = ["std"]
 std = []
-# Optional Tokio-Convenience: spawn_in_tokio + tokio::sync::Notify.
+# Optional Tokio convenience: spawn_in_tokio + tokio::sync::Notify.
 tokio-glue = ["dep:tokio"]
 
 [dependencies]
-zerodds-dcps = { version = "1.0.0-rc.1", path = "../dcps" }
-zerodds-qos = { version = "1.0.0-rc.1", path = "../qos" }
+zerodds-dcps = { version = "1.0.0-rc.3", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos" }
 futures-core = "0.3"
 tokio = { version = "1", optional = true, features = ["rt", "sync", "time"] }
 

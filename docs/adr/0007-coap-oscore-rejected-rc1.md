@@ -1,6 +1,6 @@
 # 0007 — CoAP-OSCORE (RFC 8613) — RC1 als rejected, n/a
 
-- **Status:** rejected
+- **Status:** superseded by [0010](0010-coap-oscore-accepted-spec-completeness.md) (war: rejected)
 - **Datum:** 2026-05-06
 - **Autoren:** RC1-Closeout-Cluster-C
 - **Kontext:** `crates/coap-bridge`, Spec `zerodds-coap-bridge-1.0` §7.2, RC1-Edge-Case-Audit

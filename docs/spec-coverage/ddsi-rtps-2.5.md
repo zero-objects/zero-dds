@@ -1,21 +1,18 @@
 # DDSI-RTPS 2.5 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/ddsi-rtps-2.5.pdf` (206 Seiten, OMG formal/2022-04-01)
+**Spec:** [OMG DDSI-RTPS 2.5](https://www.omg.org/spec/DDSI-RTPS/2.5/PDF) (206 Seiten, OMG formal/2022-04-01)
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
+Audit Item-für-Item
+gegen die Spec; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
 Status (`done` / `partial` / `open` / `n/a`).
 
-**Kontext:** `crates/rtps/` ist live mit ~30 Files + 458 Tests
-(datagram/header/header_extension/fragment_assembler/inline_qos/
-message_builder/parameter_list/participant_data/publication_data/
-subscription_data/qos_bridge/reader/reader_proxy/receiver_state/
-reliable_reader/reliable_writer/submessage_header/submessages/
-wire_types/writer/writer_proxy + endpoint_security_info/
-property_list/security_algo_info). `crates/discovery/` ergaenzt
-(spdp.rs + sedp/* + type_lookup/* + endpoint_match.rs +
-capabilities.rs) mit 111 Tests. SPDP+SEDP+TypeLookup live + alle 16
-Submessages + HeaderExtension + Reliable-Stack + Fragmentation.
+**Kontext:** Der DDSI-RTPS-2.5-Stack ist verteilt über:
+
+- `crates/rtps/` — RTPS-Wire-Stack: ~30 Files + 458 Tests (datagram/header/header_extension/fragment_assembler/inline_qos/message_builder/parameter_list/participant_data/publication_data/subscription_data/qos_bridge/reader/reader_proxy/receiver_state/reliable_reader/reliable_writer/submessage_header/submessages/wire_types/writer/writer_proxy + endpoint_security_info/property_list/security_algo_info)
+- `crates/discovery/` — SPDP/SEDP/TypeLookup: spdp.rs + sedp/* + type_lookup/* + endpoint_match.rs + capabilities.rs, 111 Tests
+
+SPDP+SEDP+TypeLookup live + alle 16 Submessages + HeaderExtension +
+Reliable-Stack + Fragmentation.
 
 ---
 
@@ -35,11 +32,11 @@ Submessages + HeaderExtension + Reliable-Stack + Fragmentation.
 
 ## §2 Conformance
 
-### 2.1 Conformance gemaess §8.4.2 (Behavior Module)
+### 2.1 Conformance gemäß §8.4.2 (Behavior Module)
 
 **Spec:** §2.
 
-**Repo:** Vollstaendige Behavior-Modul-Abdeckung:
+**Repo:** Vollständige Behavior-Modul-Abdeckung:
 - Stateless Best-Effort: `crates/discovery/src/spdp.rs::SpdpBeacon`
   + `crates/discovery/src/security/stateless.rs::StatelessMessageWriter`.
 - Stateless Reliable: `crates/rtps/src/reliable_stateless_writer.rs::
@@ -151,7 +148,7 @@ Lese-Hinweise, Acknowledgments, Maturity-Statement).
 
 **Spec:** §7.2, S. 7-8.
 
-**Repo:** n/a — Anforderungen erfuellt durch Crate-Architektur.
+**Repo:** n/a — Anforderungen erfüllt durch Crate-Architektur.
 
 **Tests:** Crate-weit.
 
@@ -314,8 +311,8 @@ ADDRESS_INVALID + Konstruktoren udp_v4/udp_v6/tcp_v4/uds/shm.
 
 **Repo:** `crates/rtps/src/history_cache.rs::ChangeKind` mit allen
 4 Spec-Varianten + `NotAliveDisposedUnregistered` (kombinierter Marker)
-+ `is_relevant()` (false fuer AliveFiltered) + `is_alive_kind()`
-(true fuer Alive + AliveFiltered).
++ `is_relevant()` (false für AliveFiltered) + `is_alive_kind()`
+(true für Alive + AliveFiltered).
 
 **Tests:** `history_cache::tests::change_kind_alive_is_relevant_and_alive`,
 `change_kind_alive_filtered_is_alive_but_not_relevant`,
@@ -506,7 +503,7 @@ GAP/INFO_REPLY_IP4/SEC_*
 ### 8.3.2 GroupDigest_t
 
 **Spec:** §8.3.2 / §8.3.5.10 — 16-byte CDR-encoded 128-bit-Digest
-fuer Group-Membership.
+für Group-Membership.
 
 **Repo:** `crates/rtps/src/group_digest.rs::GroupDigest` mit
 `UNKNOWN`-Sentinel (16 Null-Bytes), `from_prefixes(prefixes)` (sortiert
@@ -534,8 +531,8 @@ Encoding.
 
 **Repo:** `crates/rtps/src/wire_types.rs::UExtension4` (4-byte vendor-
 opaque) + `WExtension8` (8-byte vendor-opaque) mit u32/u64-BE
-Konvertern + roundtrip-Identitaet. HE-Submessage nutzt UExtension4
-ueber `header_extension.rs::HeaderExtension.uextension4`.
+Konvertern + roundtrip-Identität. HE-Submessage nutzt UExtension4
+über `header_extension.rs::HeaderExtension.uextension4`.
 
 **Tests:** `wire_types::tests::uextension4_roundtrip`,
 `uextension4_u32_be_roundtrip`,
@@ -581,8 +578,8 @@ ueber `header_extension.rs::HeaderExtension.uextension4`.
 **Spec:** §8.3.3.1.2.
 
 **Repo:** `crates/rtps/src/wire_types.rs::ProtocolVersion::V2_5` +
-`Default::default()` liefert V2_5; `CURRENT` Alias fuer den
-aktuellsten unterstuetzten Spec-Stand.
+`Default::default()` liefert V2_5; `CURRENT` Alias für den
+aktuellsten unterstützten Spec-Stand.
 
 **Tests:** `wire_types::tests::protocol_version_default_is_2_5`,
 `protocol_version_aliases_match_spec`,
@@ -596,7 +593,7 @@ aktuellsten unterstuetzten Spec-Stand.
 
 **Repo:** `crates/rtps/src/header_extension.rs::HeaderExtension` mit
 allen Feldern (messageLength/timestamp/uextension4/extension16/
-checksum/parameters) + allen 7 Flags (E/L/W/U/V/C/P; C=2-bit fuer
+checksum/parameters) + allen 7 Flags (E/L/W/U/V/C/P; C=2-bit für
 None/CRC32C/CRC64/MD5). `flag_byte` baut Flag-Byte aus gesetzten
 Optional-Feldern.
 
@@ -737,7 +734,7 @@ Length-Mismatch + truncated-Body durch `decode_body` /
 
 **Status:** done
 
-### 8.3.7.4 HeaderExtension-Updates fuer Receiver (messageLength/timestamps/clockSkew/extensions/checksum/parameters)
+### 8.3.7.4 HeaderExtension-Updates für Receiver (messageLength/timestamps/clockSkew/extensions/checksum/parameters)
 
 **Spec:** §8.3.7.4.
 
@@ -897,7 +894,7 @@ in den Reply-Pfad.
 **Repo:** `crates/rtps/src/submessages.rs::InfoSourceSubmessage` mit
 allen 4 Wire-Feldern (unused / protocolVersion / vendorId /
 guidPrefix). `crates/rtps/src/receiver_state.rs::ReceiverState::
-apply_info_source` ueberschreibt source_version + source_vendor_id
+apply_info_source` überschreibt source_version + source_vendor_id
 + source_guid_prefix UND **resetted** Reply-Locator-Listen + setzt
 `have_timestamp = false` (Spec §8.3.8.9.4 Schritt 4).
 
@@ -920,7 +917,7 @@ apply_info_source` ueberschreibt source_version + source_vendor_id
 `SubmessageId::InfoTs`. `crates/rtps/src/receiver_state.rs::
 ReceiverState::apply_info_timestamp` setzt `timestamp` +
 `have_timestamp = true`; bei `invalidate=true` wird
-`have_timestamp = false`. Skew-Korrektur ueber
+`have_timestamp = false`. Skew-Korrektur über
 `note_clock_skew(now_seconds, threshold)` setzt
 `clock_skew_detected`-Flag (Spec §8.3.4.1 Receiver-Rule 4).
 
@@ -978,11 +975,11 @@ ReceiverState::apply_info_timestamp` setzt `timestamp` +
 
 **Repo:** `crates/rtps/src/writer.rs` (Best-Effort) +
 `reliable_writer.rs` (Reliable StatefulWriter mit handle_acknack +
-periodischem Heartbeat-Tick + Inline-QoS-Pfad ueber
+periodischem Heartbeat-Tick + Inline-QoS-Pfad über
 `DataSubmessage.inline_qos`). Writer sendet streng monoton steigende
-SequenceNumbers (No-Out-of-Order); HEARTBEAT enthaelt firstSN/lastSN/
+SequenceNumbers (No-Out-of-Order); HEARTBEAT enthält firstSN/lastSN/
 count + Final/Liveliness/GroupInfo-Flags (Spec §8.3.8.6).
-Group-Info-Sektion mit writerSet + secureWriterSet ueber
+Group-Info-Sektion mit writerSet + secureWriterSet über
 `HeartbeatSubmessage.group_info`-Felder.
 
 **Tests:** `reliable_writer::tests` (39 Tests inkl. handle_acknack-
@@ -1006,7 +1003,7 @@ u32), `highest_received_sn`-Once-Acked-Buchhaltung im
 **Tests:** `reliable_reader::tests::pre_emptive_acknack_emitted_after_add_writer_proxy`,
 `no_pre_emptive_acknack_without_proxy` (Negativ),
 `initial_proxy_from_config_does_not_send_pre_emptive` (Negativ),
-`pre_emptive_acknack_carries_info_dst`. Plus 30+ weitere Tests fuer
+`pre_emptive_acknack_carries_info_dst`. Plus 30+ weitere Tests für
 ACKNACK-Generation, Heartbeat-Reaction, Once-Acked-Persistenz.
 
 **Status:** done
@@ -1020,7 +1017,7 @@ ACKNACK-Generation, Heartbeat-Reaction, Once-Acked-Persistenz.
 - Stateless Best-Effort: `crates/discovery/src/spdp.rs::SpdpBeacon`
   (Multicast-Beacon, kein Reader-Proxy-State) +
   `crates/discovery/src/security/stateless.rs::StatelessMessageWriter`
-  (Multi-Reader-Fan-out fuer
+  (Multi-Reader-Fan-out für
   `BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER`, kein Cache, kein
   Resend, kein HEARTBEAT).
 - Stateless Reliable: `crates/rtps/src/reliable_stateless_writer.rs::
@@ -1115,14 +1112,14 @@ SpdpBeacon` (SPDP-Multicast) +
 
 **Repo:** `crates/rtps/src/reader_proxy.rs::ReaderProxy` (Stateful) +
 `crates/discovery/src/security/stateless.rs::StatelessMessageWriter::
-reader_proxies` (Stateless-Vector). ReaderLocator-aequivalente Felder
+reader_proxies` (Stateless-Vector). ReaderLocator-äquivalente Felder
 in ReaderProxy: `remote_reader_guid`, `unicast_locators`,
 `multicast_locators`, `expects_inline_qos`, `highest_sent_change_sn`,
 `requested_changes`, `acked_changes`. Ops: `add_proxy`/`remove_proxy`/
-`update_locators`. Stateless-ReaderLocator-Pool ueber
+`update_locators`. Stateless-ReaderLocator-Pool über
 `ReliableStatelessWriter::set_locators`.
 
-**Tests:** `reader_proxy::tests::*` (12 Tests fuer alle Ops),
+**Tests:** `reader_proxy::tests::*` (12 Tests für alle Ops),
 `reliable_stateless_writer::tests::set_locators_t11_replaces_list`,
 `security::stateless::tests::add_remove_reader_proxy_idempotent`.
 
@@ -1168,7 +1165,7 @@ ReliableStatelessWriter` mit allen 12 Transitions:
 - T1 `new_change(kind, payload)` → SequenceNumber.
 - T2/T3 `tick(now)` → DATA-Burst + periodischer HEARTBEAT.
 - T4/T5 `handle_acknack(ack)` → `lowest_unacked` advance, requested-
-  Pool fuellen.
+  Pool füllen.
 - T6 `tick` (NACK-Drain) → Retransmits aus dem Pool senden.
 - T7 `is_acked_to(sn)` → once-acked-always-acked Predicate.
 - T8 `purge_acked()` → Cache-LowWater-Cleanup.
@@ -1177,7 +1174,7 @@ ReliableStatelessWriter` mit allen 12 Transitions:
 - T11 `set_locators(locators)` → Reply-Locator-List Update.
 - T12 `stats()` → Diagnose-Snapshot.
 
-`max_per_tick`-Cap (default 16) als DoS-Schutz gegen ueberbordende
+`max_per_tick`-Cap (default 16) als DoS-Schutz gegen überbordende
 ACKNACK-Anfragen. `heartbeat_count` wraps u32 (siehe §8.4.15.7).
 
 **Tests:** `reliable_stateless_writer::tests`:
@@ -1225,7 +1222,7 @@ mit GAP-Handling, retransmit-Pfad, AckedByAll-Aussage,
 filteredCount-Tracking via `AliveFiltered`-ChangeKind in
 ReaderProxy.
 
-**Tests:** `reliable_writer::tests` (40+ Tests fuer alle 16
+**Tests:** `reliable_writer::tests` (40+ Tests für alle 16
 Transitions inkl. handle_acknack-Variantenpfade, heartbeat-tick,
 retransmits, AckedByAll). Plus `tests/reliable_e2e.rs` E2E-Pfad
 mit 0%/10%/30% Packet-Loss.
@@ -1293,10 +1290,10 @@ heartbeatSuppressionDuration=0.
 
 **Repo:** `crates/rtps/src/writer_proxy.rs::WriterProxy::
 mark_not_available` mit allen 3 Reasons. `filteredCount` wird via
-`ChangeKind::AliveFiltered` gefuehrt:
+`ChangeKind::AliveFiltered` geführt:
 `crates/rtps/src/history_cache.rs::ChangeKind::is_relevant` liefert
-`false` fuer AliveFiltered, sodass diese SNs als "not_available" mit
-Reason `NA_FILTERED` zaehlen ohne erneute NACKs auszuloesen.
+`false` für AliveFiltered, sodass diese SNs als "not_available" mit
+Reason `NA_FILTERED` zählen ohne erneute NACKs auszulösen.
 GAP-Submessages mit `filtered_count` (K-Flag) tragen den Counter
 zwischen Writer und Reader.
 
@@ -1327,7 +1324,7 @@ zwischen Writer und Reader.
 (TIME_BASED_FILTER, ContentFilteredTopic, oder
 ChangeKind::AliveFiltered). `crates/rtps/src/history_cache.rs::
 ChangeKind::is_relevant` ist die kanonische Quelle der
-Truth (false nur fuer AliveFiltered).
+Truth (false nur für AliveFiltered).
 
 **Tests:** `writer_proxy::tests` (12+ Tests inkl.
 `gap_marks_irrelevant`, `received_change_set` etc.),
@@ -1415,7 +1412,7 @@ Per-Peer-Tracking + Lease-Expiry via `lost_peers(now, lease)`.
 ### 8.4.15.6 Inactive-Reader-Reclaim (Strict-Reliability-Aussetzer)
 
 **Spec:** §8.4.15.6 — Writer DARF einen Reader-Proxy reclaimen, wenn
-dieser laenger als `inactive_threshold` keine ACKNACK / NACK_FRAG
+dieser länger als `inactive_threshold` keine ACKNACK / NACK_FRAG
 geliefert hat (Strict-Reliability-Aussetzer als DoS-Schutz gegen
 stalled Reader).
 
@@ -1481,10 +1478,12 @@ Erreichen des Maximums wird auf MIN/0 gewrapped.
 **Spec:** §8.5.3.
 
 **Repo:** Alle 4 Builtin-Topic-Data-Strukturen voll spec-konform:
+
 - `crates/rtps/src/participant_data.rs::ParticipantBuiltinTopicData`
 - `crates/rtps/src/publication_data.rs::PublicationBuiltinTopicData`
 - `crates/rtps/src/subscription_data.rs::SubscriptionBuiltinTopicData`
   (inkl. `content_filter: Option<ContentFilterProperty>`)
+
 - `crates/dcps/src/builtin_topics.rs::TopicBuiltinTopicData`
   (DCPS-Sicht; SEDP-Topic-Endpoint wird als optionaler Endpoint
   in §8.5.4 announced).
@@ -1543,11 +1542,11 @@ ohne Must-Understand-Bit ignoriert werden; mit Must-Understand-Bit
 darf der Receiver die Message verwerfen.
 
 **Repo:** `crates/rtps/src/submessage_header.rs::SubmessageId`-Enum
-mit Standard-Range + Pass-through fuer Vendor-Range via
+mit Standard-Range + Pass-through für Vendor-Range via
 `SUBMESSAGE_ID_HEADER_EXTENSION` (0x80) und Unknown-Variante.
 Vendor-spezifischer PID-Pfad in
 `crates/rtps/src/parameter_list.rs::VENDOR_SPECIFIC_BIT` (0x8000) +
-`validate_must_understand_in_data_pipeline` (silent-skip fuer
+`validate_must_understand_in_data_pipeline` (silent-skip für
 vendor-spezifische MU-PIDs, Spec §9.6.2).
 
 **Tests:** `datagram::tests::decode_marks_unknown_submessage_id_without_failing`,
@@ -1572,7 +1571,7 @@ PIDs inkl. neu in K3b-F: `TYPE_MAX_SIZE_SERIALIZED` (0x0060),
 `ORIGINAL_WRITER_INFO` (0x0061), `WRITER_GROUP_INFO` (0x0062). Plus
 `COHERENT_SET` / `GROUP_COHERENT_SET` / `GROUP_SEQ_NUM` /
 `DIRECTED_WRITE` / `KEY_HASH` / `STATUS_INFO` etc. (50+ PIDs total).
-`is_standard_pid(pid)` als Klassifikator fuer Must-Understand-Reject.
+`is_standard_pid(pid)` als Klassifikator für Must-Understand-Reject.
 
 **Tests:** `parameter_list::tests::is_standard_pid_recognises_dds_security_pids`,
 `is_standard_pid_unknown_pid_returns_false` (Negativ),
@@ -1590,7 +1589,7 @@ plus alle ParameterList-Roundtrip-Tests pro PID-Familie.
 (`crates/rtps/src/participant_message_data.rs::ParticipantMessageData`).
 MANUAL_BY_TOPIC via Heartbeat-LivelinessFlag (L-Bit, Spec §8.3.8.6) +
 ZeroDDS-Vendor-Kind (`PARTICIPANT_MESSAGE_DATA_KIND_ZERODDS_MANUAL_BY_TOPIC`)
-mit Topic-Token. Reliable-Writer setzt L-Flag auf Heartbeats fuer
+mit Topic-Token. Reliable-Writer setzt L-Flag auf Heartbeats für
 MANUAL_BY_TOPIC-konfigurierte Writers.
 
 **Tests:** `participant_message_data::tests::*`,
@@ -1609,7 +1608,7 @@ MANUAL_BY_TOPIC-konfigurierte Writers.
 `decode_content_filter_property`). PID `CONTENT_FILTER_PROPERTY`
 (0x0035) in SubscriptionBuiltinTopicData. Reader-side Filter via
 `crates/dcps/src/topic.rs::ContentFilteredTopic` mit SQL-Filter
-ueber `zerodds-sql-filter`-Crate (siehe DCPS K3a §2.2.2.5.4 +
+über `zerodds-sql-filter`-Crate (siehe DCPS K3a §2.2.2.5.4 +
 ContentFilteredTopic-Tests).
 
 **Tests:** `crates/rtps/src/subscription_data.rs::tests::*`
@@ -1624,10 +1623,10 @@ ContentFilteredTopic-Tests).
 
 **Repo:** `crates/dcps/src/instance_tracker.rs::InstanceTracker` +
 `InstanceState`. Spec-Transitions ALIVE → NOT_ALIVE_DISPOSED /
-NOT_ALIVE_NO_WRITERS / ALIVE_FILTERED ueber `dispose()`,
+NOT_ALIVE_NO_WRITERS / ALIVE_FILTERED über `dispose()`,
 `unregister()`, `should_deliver_under_time_based_filter`. Tracking
-ueber `disposed_at`, `no_writers_at`, `current_owner` mit
-generation-Counters. `ChangeKind::AliveFiltered` zaehlt im
+über `disposed_at`, `no_writers_at`, `current_owner` mit
+generation-Counters. `ChangeKind::AliveFiltered` zählt im
 filteredCount aber bleibt instance-aktiv.
 
 **Tests:** `instance_tracker::tests::dispose_transitions_to_disposed`,
@@ -1701,7 +1700,7 @@ verwerfen.
 
 **Spec:** §8.7.8.
 
-**Repo:** `crates/rtps/src/inline_qos.rs` mit Helper-Funktionen fuer
+**Repo:** `crates/rtps/src/inline_qos.rs` mit Helper-Funktionen für
 alle Standard-Inline-QoS-PIDs:
 `reply_inline_qos` (PID_RELATED_SAMPLE_IDENTITY) + `find_*` Decoder,
 `directed_write_param` (PID_DIRECTED_WRITE) +
@@ -1717,7 +1716,7 @@ OriginalWriterInfo, RelatedSampleIdentity Roundtrip).
 
 **Status:** done
 
-### 8.7.9 OriginalWriterInfo (fuer Persistence-Service-Forwarding)
+### 8.7.9 OriginalWriterInfo (für Persistence-Service-Forwarding)
 
 **Spec:** §8.7.9 — Inline-QoS `PID_ORIGINAL_WRITER_INFO` (24 byte:
 GUID + i64 SequenceNumber). Persistence-Service setzt das auf
@@ -1780,7 +1779,7 @@ Wire-Roundtrip pro Bit).
 **Spec:** §9.4 — Wire-Layout pro Submessage.
 
 **Repo:** `crates/rtps/src/submessages.rs` + `header_extension.rs` +
-`datagram.rs` mit kompletten Encode/Decode-Pfaden fuer alle
+`datagram.rs` mit kompletten Encode/Decode-Pfaden für alle
 Submessage-Klassen (DATA, DATA_FRAG, HEARTBEAT, HEARTBEAT_FRAG,
 ACKNACK, NACK_FRAG, GAP, INFO_TS, INFO_SRC, INFO_DST, INFO_REPLY,
 PAD, HEADER_EXTENSION). InfoReplyIp4 wird als generisches
@@ -1825,7 +1824,7 @@ Must-Understand-Bit ignoriert (Spec §9.6.2).
 ### 9.4.2.15 Checksum-Pfad (CRC-32C / CRC-64-XZ / MD5-128)
 
 **Spec:** §9.4.2.15 — alle 3 Checksum-Algorithmen via
-HeaderExtension.C-Flag-Paerchen (C0+C1).
+HeaderExtension.C-Flag-Pärchen (C0+C1).
 
 **Repo:** `crates/rtps/src/header_extension.rs::ChecksumKind` mit allen
 4 Werten (None/Crc32c/Crc64/Md5) + `ChecksumValue` Enum-Variants
@@ -1833,11 +1832,11 @@ mit dem Hash-Wert (4/8/16 byte). Wire-Encode/Decode in `decode_body`
 + `flag_byte`.
 
 **Compute/Verify:** `ChecksumValue::compute(kind, payload)` und
-`ChecksumValue::verify(payload)` berechnen die Checksum bzw. pruefen
+`ChecksumValue::verify(payload)` berechnen die Checksum bzw. prüfen
 einen empfangenen Wert gegen einen Payload-Slice. Die drei Algorithmen
 sind durchgehend pure-Rust no_std implementiert via
 `zerodds_foundation::{crc32c, crc64_xz, md5}` — keine externe Crypto-Crate-
-Abhaengigkeit (Pillar 9 Zero-Dependency).
+Abhängigkeit (Pillar 9 Zero-Dependency).
 
 **Tests:** `header_extension::tests::roundtrip_with_crc32c_le`,
 `roundtrip_with_crc64_be`,
@@ -1880,7 +1879,7 @@ Abhaengigkeit (Pillar 9 Zero-Dependency).
 ### 9.6.3 Optimization-Omit (MUSS-omit redundante Felder bei SPDP/SEDP)
 
 **Spec:** §9.6.3 — Felder die beim Default-Wert nicht in PL-CDR
-serialisiert werden duerfen (Bandbreiten-Optimierung).
+serialisiert werden dürfen (Bandbreiten-Optimierung).
 
 **Repo:** `crates/rtps/src/participant_data.rs::ParticipantBuiltinTopicData::
 to_pl_cdr_le` + `crates/rtps/src/publication_data.rs` /
@@ -1904,7 +1903,7 @@ Pfaden (zero-pad + MD5). XCDR2-BE-Serialization mit Member-Reorder
 durch `dds_type::DdsType::encode_key_holder_be` (proc-macro generiert
 sortierte Reihenfolge in K2 XTypes-Voll-Stack).
 
-**Tests:** `cdr::key_hash::tests::*` (16+ Tests fuer beide Pfade,
+**Tests:** `cdr::key_hash::tests::*` (16+ Tests für beide Pfade,
 zero-pad + MD5),
 `dds_type::tests::small_keyed_produces_zero_padded_keyhash`,
 `large_keyed_produces_md5_hashed_keyhash`,
@@ -1925,7 +1924,7 @@ mit allen Spec-Werten (CDR_BE/LE, PL_CDR_BE/LE, CDR2_BE/LE,
 PL_CDR2_BE/LE, D_CDR_BE/LE, XML, RTPS_HE 0xC0xx). 4-byte
 Encapsulation-Header (RID + Options) als Prefix jeder
 SerializedPayload. D-CDR (Delimited) als Length-Prefix-Wrapper
-ueber XCDR2 (XTypes 1.3 §7.4.3.5.4) im DCPS-CDR-Layer
+über XCDR2 (XTypes 1.3 §7.4.3.5.4) im DCPS-CDR-Layer
 implementiert.
 
 **Tests:** `cdr::representation::tests::*` (Wire-Roundtrip aller

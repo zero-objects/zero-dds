@@ -1,12 +1,12 @@
-//! Roundtrip-Test (T5.6 + T6.0): parse → AST → print → parse → AST-Aequivalenz.
+//! Roundtrip test (T5.6 + T6.0): parse → AST → print → parse → AST equivalence.
 //!
-//! Pipeline-Smoke-Test fuer den Top-Level-Parser. Vergleicht AST-Strukturen
-//! ohne Span-Information (Spans verschieben sich beim Re-Print, weil das
-//! Format kanonisch ist und nicht den Original-Whitespace bewahrt).
+//! Pipeline smoke test for the top-level parser. Compares AST structures
+//! without span information (spans shift on re-print, because the
+//! format is canonical and does not preserve the original whitespace).
 //!
-//! T6.0 (CST-Memoization) hat das Phase-0-Limit beseitigt: alle drei
-//! OMG-Fixtures (zerodds_dcps/security/xtypes) sind jetzt im Roundtrip
-//! mit drin und laufen unter 200 ms.
+//! T6.0 (CST memoization) removed the phase-0 limit: all three
+//! OMG fixtures (zerodds_dcps/security/xtypes) are now included in the roundtrip
+//! and run under 200 ms.
 
 #![allow(
     clippy::expect_used,
@@ -28,9 +28,9 @@ use zerodds_idl::config::ParserConfig;
 use zerodds_idl::errors::Span;
 use zerodds_idl::parse;
 
-// Mit T6.0 (CST-Memoization) sind volle Fixture-Roundtrips wieder
-// moeglich. Vorher exponentielles Backtracking durch nullable
-// `<annotation_appl_seq>`-Hooks; jetzt polynomial via Memo.
+// With T6.0 (CST memoization) full fixture roundtrips are possible
+// again. Previously exponential backtracking through nullable
+// `<annotation_appl_seq>` hooks; now polynomial via memo.
 const DDS_DCPS_IDL: &str = include_str!("fixtures/omg/zerodds_dcps.idl");
 const DDS_SECURITY_IDL: &str = include_str!("fixtures/omg/zerodds_security.idl");
 const DDS_XTYPES_IDL: &str = include_str!("fixtures/omg/dds_xtypes.idl");
@@ -93,7 +93,7 @@ fn roundtrip_annotated_topic() {
 
 #[test]
 fn roundtrip_interface_with_ops() {
-    // `oneway`-Op ist CORBA-Konstrukt, gated via corba_oneway_op.
+    // The `oneway` op is a CORBA construct, gated via corba_oneway_op.
     roundtrip_with(
         "interface",
         r#"
@@ -152,11 +152,11 @@ fn roundtrip_dds_xtypes_fixture() {
 }
 
 // ============================================================================
-// Span-Normalisierung
+// Span normalization
 // ============================================================================
-// Spans aendern sich zwischen Original-Source und Re-Print. Vergleich muss
-// also Span-frei sein. Wir setzen alle Spans auf SYNTHETIC und vergleichen
-// dann mit derived `PartialEq`.
+// Spans change between the original source and the re-print. The comparison
+// must therefore be span-free. We set all spans to SYNTHETIC and then compare
+// with derived `PartialEq`.
 
 fn normalize_spec(spec: &Specification) -> Specification {
     Specification {
@@ -208,11 +208,11 @@ fn normalize_def(def: &Definition) -> Definition {
             raw: v.raw.clone(),
             span: Span::SYNTHETIC,
         }),
-        // Neue AST-Variants (CORBA-Top-Level, Components, Templates):
-        // Roundtrip-Normalisierung folgt mit dem Builder-Refactor pro
-        // Variant. Bis dahin: Identitaet (Klone behalten Inhalt; Spans
-        // bleiben in der Roundtrip-Diagnostik nicht-normalisiert, was
-        // bei reinem Recognizer-Roundtrip-Vergleich akzeptabel ist).
+        // New AST variants (CORBA top-level, components, templates):
+        // roundtrip normalization follows with the per-variant builder
+        // refactor. Until then: identity (clones keep their content; spans
+        // remain non-normalized in the roundtrip diagnostics, which
+        // is acceptable for a pure recognizer-roundtrip comparison).
         Definition::ValueDef(_)
         | Definition::TypeId(_)
         | Definition::TypePrefix(_)
@@ -246,6 +246,10 @@ fn normalize_type_decl(t: &TypeDecl) -> TypeDecl {
             type_spec: normalize_type_spec(&t.type_spec),
             declarators: t.declarators.iter().map(normalize_declarator).collect(),
             annotations: t.annotations.iter().map(normalize_annotation).collect(),
+            span: Span::SYNTHETIC,
+        }),
+        TypeDecl::Native(n) => TypeDecl::Native(NativeDecl {
+            name: normalize_id(&n.name),
             span: Span::SYNTHETIC,
         }),
     }
@@ -475,6 +479,7 @@ fn normalize_export(e: &Export) -> Export {
                 })
                 .collect(),
             raises: o.raises.iter().map(normalize_scoped).collect(),
+            context: o.context.clone(),
             annotations: o.annotations.iter().map(normalize_annotation).collect(),
             span: Span::SYNTHETIC,
         }),

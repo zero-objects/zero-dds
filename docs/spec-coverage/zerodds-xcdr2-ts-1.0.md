@@ -2,11 +2,15 @@
 
 **Quelle:** `docs/specs/zerodds-xcdr2-ts-1.0.md` (185 Zeilen) -- ZeroDDS TypeScript TypeSupport-Codegen-Spec.
 
+Implementation:
+
+- `crates/ts-node/` — TypeScript XCDR2-TypeSupport-Codegen.
+
 ## §1 Motivation
 
 ### §1 OMG-DDS-TS-1.0 ohne Wire-Encoding
 
-**Spec:** §1 -- "OMG DDS-TS 1.0 spezifiziert TypeScript-Mapping fuer IDL-Datentypen, sagt aber nichts ueber Wire-Encoding. Heute liefert `crates/idl-ts` nur Type-Definitions; `encode/decode` fehlen komplett."
+**Spec:** §1 -- "OMG DDS-TS 1.0 spezifiziert TypeScript-Mapping für IDL-Datentypen, sagt aber nichts über Wire-Encoding. Heute liefert `crates/idl-ts` nur Type-Definitions; `encode/decode` fehlen komplett."
 
 **Repo:** Motivations-Text der Vendor-Spec.
 
@@ -18,9 +22,9 @@
 
 ### §2 `DdsTopicType<T>`-Interface mit Module-Level-Const
 
-**Spec:** §2 -- TypeScript-Interface `DdsTopicType<T>` mit `typeName`, `isKeyed`, `extensibility`, `encode(sample, endian?)`, `decode(bytes, offset?, length?)`, `keyHash(sample)`. Plus types `ExtensibilityKind`, `EndianMode`.
+**Spec:** §2 -- TypeScript-Interface `DdsTopicType<T>` mit `typeName`, `isKeyed`, `extensibility`, `encode(sample, endian?)`, `decode(bytes, offset?, length?)`, `keyHash(sample)`, sowie den Stream-Helfern `encodeInto(w, sample)` / `decodeFrom(r)` für nested Aggregate (siehe §4). Plus types `ExtensibilityKind`, `EndianMode`.
 
-**Repo:** `crates/ts-node/src/cdr/types.ts` haelt Interface + types.
+**Repo:** `crates/ts-node/src/cdr/types.ts` hält Interface + types.
 
 **Tests:** `crates/ts-node/test/xcdr2-wire-vectors.test.ts` (15 Tests inkl. V-Reihe + md5).
 
@@ -34,7 +38,7 @@
 
 **Repo:** `crates/idl-ts/src/lib.rs::emit_struct_typesupport` (Zeile 1612ff) emittiert exakt diese Form.
 
-**Tests:** `crates/ts-node/test/xcdr2-wire-vectors.test.ts`; Codegen-Snapshot-Pfad ueber idl-ts lib unit tests.
+**Tests:** `crates/ts-node/test/xcdr2-wire-vectors.test.ts`; Codegen-Snapshot-Pfad über idl-ts lib unit tests.
 
 **Status:** done
 
@@ -60,11 +64,31 @@
 
 **Status:** done
 
+### §4 Nested-Aggregate-Codec: `encodeInto` / `decodeFrom`
+
+**Spec:** §4 -- `DdsTopicType<T>` (`crates/ts-node/src/cdr/types.ts`) trägt neben `encode`/`decode` die Stream-Helfer `encodeInto(w: Xcdr2Writer, sample: T)` / `decodeFrom(r: Xcdr2Reader): T`, sodass ein struct-wertiges Member eines äußeren Typs in denselben CDR-Stream delegiert (XCDR2-Alignment relativ zum äußeren Stream bleibt erhalten).
+
+**Repo:** `crates/idl-ts/src/lib.rs` — ein Typ-Resolver (`build_type_registry`/`TYPE_REG`, keyed by simple name) klassifiziert scoped Member-Refs als Struct/Union/IntLike/Typedef; der Encode-Pfad ruft für ein Struct-Member `{dotted}TypeSupport.encodeInto(w, …)` (Typedef → rekursiv, Enum/IntLike → int32), der Decode-Pfad `{dotted}TypeSupport.decodeFrom(r)`. Davor wurde jedes scoped Member als `int32` codiert (stille Korruption).
+
+**Tests:** `crates/idl-ts/tests/nested_codec.rs` (5 Tests inkl. nested-struct-Roundtrip-Form); `crates/idl-ts/tests/compile_check.rs::compiles_struct_with_union_member_gated` (tsc).
+
+**Status:** done
+
+### §4 Gating nicht-codierbarer Member (fixed/any/union)
+
+**Spec:** §4 -- für Konstrukte ohne XCDR2-Wire-Codec (`fixed`, `any` sowie eine `union`-Referenz — Unions haben in TS keinen eigenen Codec) wird das **interface** emittiert, aber **kein** `*TypeSupport` — analog zu idl-csharp/idl-java. Es entsteht kein generierter Codec, der zur Laufzeit wirft oder Daten korrumpiert; die Codegen-Arme für `fixed`/`any` liefern zudem ein `Err(IdlTsError::Unsupported)` statt eines Platzhalters.
+
+**Repo:** `crates/idl-ts/src/lib.rs::struct_xcdr2_codecable` / `typespec_xcdr2_codecable`; `emit_struct` gatet einen nicht-codierbaren Struct.
+
+**Tests:** `crates/idl-ts/tests/nested_codec.rs::struct_with_union_member_is_gated_not_broken`; `compile_check.rs::compiles_struct_with_{union,fixed,any}_member_gated`.
+
+**Status:** done
+
 ## §5 Wire-Type-Mapping
 
 ### §5 IDL-zu-TypeScript-Typen + Wire-Layout
 
-**Spec:** §5, Tabelle 18 IDL-Typen → TS → XCDR2 LE. "bigint fuer 64-Bit-Integer ist Pflicht."
+**Spec:** §5, Tabelle 18 IDL-Typen → TS → XCDR2 LE. "bigint für 64-Bit-Integer ist Pflicht."
 
 **Repo:** `crates/idl-ts/src/lib.rs::ts_type_for` mapt IDL-Primitive auf TypeScript-Typen inkl. `bigint`. `crates/ts-node/src/cdr/writer.ts` + `reader.ts` mit `writeInt64`/`writeUint64` als bigint-Pfad.
 
@@ -78,7 +102,7 @@
 
 **Spec:** §6 -- "`Xcdr2Writer.beginAppendable()` / `beginMutable()` / `writeEmHeader(id, lc)` sind Helper-Methoden."
 
-**Repo:** `crates/ts-node/src/cdr/writer.ts` haelt `beginAppendable`, `beginMutable`, `writeEmHeader`.
+**Repo:** `crates/ts-node/src/cdr/writer.ts` hält `beginAppendable`, `beginMutable`, `writeEmHeader`.
 
 **Tests:** V-9, V-10, V-11 in `xcdr2-wire-vectors.test.ts`.
 
@@ -104,23 +128,23 @@
 
 **Repo:** `crates/ts-node/src/cdr/`: `index.ts`, `types.ts`, `writer.ts`, `reader.ts`, `md5.ts`, `errors.ts` -- alle 6 vorhanden.
 
-**Tests:** `npm run test:wire` -- 15 Tests gruen.
+**Tests:** `npm run test:wire` -- 15 Tests grün.
 
 **Status:** done
 
 ### §8 Pure TypeScript >=5.0 Browser+Node
 
-**Spec:** §8 -- "Pure TypeScript >= 5.0. Browser- und Node-Target gleichermassen (`Uint8Array` + `DataView` sind universal). Keine `Buffer`-Dependency."
+**Spec:** §8 -- "Pure TypeScript >= 5.0. Browser- und Node-Target gleichermaßen (`Uint8Array` + `DataView` sind universal). Keine `Buffer`-Dependency."
 
-**Repo:** `package.json` TypeScript >= 5; Helper nutzen ausschliesslich Uint8Array + DataView.
+**Repo:** `package.json` TypeScript >= 5; Helper nutzen ausschließlich Uint8Array + DataView.
 
-**Tests:** `npm run test:wire` lauffaehig auf Node, browser-CSP-kompatibel.
+**Tests:** `npm run test:wire` lauffähig auf Node, browser-CSP-kompatibel.
 
 **Status:** done
 
 ### §8 ts-wasm Re-Export
 
-**Spec:** §8 -- "ts-wasm-Variante (`crates/ts-wasm/src/cdr/`) ist binary-identisch ueber re-export."
+**Spec:** §8 -- "ts-wasm-Variante (`crates/ts-wasm/src/cdr/`) ist binary-identisch über re-export."
 
 **Repo:** ts-wasm-Pfad re-exportiert dieselben Module aus ts-node.
 
@@ -132,11 +156,11 @@
 
 ### §9 L1 Wire (V-1..V-12)
 
-**Spec:** §9 -- "L1 (Wire): `crates/ts-node/test/xcdr2-wire-vectors.test.ts` prueft V-1..V-12."
+**Spec:** §9 -- "L1 (Wire): `crates/ts-node/test/xcdr2-wire-vectors.test.ts` prüft V-1..V-12."
 
 **Repo:** `crates/ts-node/test/xcdr2-wire-vectors.test.ts` mit V-1..V-12 (13 V-tests + 2 md5).
 
-**Tests:** `npm run test:wire` -- 15 Tests gruen.
+**Tests:** `npm run test:wire` -- 15 Tests grün.
 
 **Status:** done
 
@@ -144,7 +168,7 @@
 
 **Spec:** §9 -- "L2 (Codegen): `crates/idl-ts/tests/snapshots/` mit generierten *.ts-Files."
 
-**Repo:** `crates/idl-ts/tests/snapshot_xcdr2_vectors.rs` haelt 11 V-i-Snapshots als eigenstaendigen Test-Tree.
+**Repo:** `crates/idl-ts/tests/snapshot_xcdr2_vectors.rs` hält 11 V-i-Snapshots als eigenständigen Test-Tree.
 
 **Tests:** `crates/idl-ts/tests/snapshot_xcdr2_vectors.rs` (11 Tests: snapshot_v1_empty_final, snapshot_v2_plain_primitives_final, snapshot_v3_mixed_primitives_final, snapshot_v4_string_final, snapshot_v5_seq_int32_final, snapshot_v6_seq_string_final, snapshot_v7_nested_modules_final, snapshot_v8_keyed_final, snapshot_v9_appendable, snapshot_v10_mutable, snapshot_v11_optional_member_mutable).
 
@@ -162,13 +186,13 @@
 
 ### §9 L4 Cross-Vendor (FFI)
 
-**Spec:** §9 -- "L4 (Cross-Vendor): TS Encoder ueber FFI in zerodds-c-api → Cyclone."
+**Spec:** §9 -- "L4 (Cross-Vendor): TS Encoder über FFI in zerodds-c-api → Cyclone."
 
-**Repo:** `tests/interop/xcdr2_cross_vendor.sh` orchestriert Cross-Vendor-Setup; Fixture-Tree `crates/discovery/tests/fixtures/cyclone-xcdr2/` haelt V-2 als recorded Cyclone-Capture (`v2_cyclone_recorded.bin`). TS-Encoder produziert byte-identische V-Bytes (verifiziert in xcdr2-wire-vectors.test.ts); Cyclone-Equivalenz fuer V-2 mit abgedeckt. V-3..V-12 spec-derived.
+**Repo:** Alle 12 Vektoren wurden live gegen Cyclone DDS 0.11 (erzwungenes XCDR2) auf dem Linux-Bench-Host aufgenommen und byte-genau verglichen; zwei Gaps gefixt (64-Bit-Alignment §7.4.1.1.1, Sequence-DHEADER §7.4.3.5 für nicht-primitive Elemente). Der TS-Encoder ist byte-verifiziert: `crates/ts-node/test/xcdr2-wire-vectors.test.ts` (`node --test`, 19/19) prüft V-1..V-12 byte-genau inkl. V-6 `sequence<string>`-DHEADER (`beginAppendable`/`endAppendable`). V-10/V-11a konforme LC-Divergenz.
 
-**Tests:** `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests) + `crates/ts-node/test/xcdr2-wire-vectors.test.ts` (15 Tests).
+**Tests:** `crates/ts-node/test/xcdr2-wire-vectors.test.ts` (node, 19/19) + `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests).
 
-**Status:** partial -- V-2 Cyclone-recorded; V-3..V-12 spec-derived ohne Cyclone-Live-Capture.
+**Status:** done -- TS-Encoder byte-genau gegen Cyclone DDS 0.11 (V-1..V-9/V-11b, node-ausgeführt), mutable V-10/V-11a konforme LC-Divergenz.
 
 ## §10 Examples
 
@@ -176,19 +200,19 @@
 
 **Spec:** §10 -- "`crates/ts-node/examples/topic-typed-smoke.ts` ist Referenz-Smoke."
 
-**Repo:** `crates/ts-node/examples/topic-typed-smoke.ts` (eigenstaendiger Examples-Tree). Lauf via `npx tsx examples/topic-typed-smoke.ts` -> Encode/Decode-Roundtrip OK.
+**Repo:** `crates/ts-node/examples/topic-typed-smoke.ts` (eigenständiger Examples-Tree). Lauf via `npx tsx examples/topic-typed-smoke.ts` -> Encode/Decode-Roundtrip OK.
 
-**Tests:** Manueller Run wie oben dokumentiert; zusaetzlich smoke.test.ts.
+**Tests:** Manueller Run wie oben dokumentiert; zusätzlich smoke.test.ts.
 
 **Status:** done
 
 ## §11 Errata + Open-Questions
 
-### §11.1 Number Praezision
+### §11.1 Number Präzision
 
 **Spec:** §11.1 -- "int32/uint32 passen in 53-bit Mantisse. int64/uint64 brauchen `bigint`. Codegen emittiert striktes Type."
 
-**Repo:** `idl-ts` ts_type_for emit `bigint` fuer 64-Bit.
+**Repo:** `idl-ts` ts_type_for emit `bigint` für 64-Bit.
 
 **Tests:** V-3 Mixed Primitives Test (long long, ull) verwendet bigint.
 
@@ -238,8 +262,6 @@
 
 ## Audit-Status
 
-19 done / 1 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+22 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-idl-ts` -- 11 snapshot_xcdr2_vectors Tests gruen; `npm run test:wire` -- 15 Tests gruen; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_6_typescript_binding` -- 1 Test gruen; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 Tests gruen; `npx tsx crates/ts-node/examples/topic-typed-smoke.ts` -- OK.
-
-Offene Items: `zerodds-xcdr2-ts-1.0.open.md`.
+Test-Lauf: `cargo test -p zerodds-idl-ts` -- 168 Tests grün (134 lib + nested_codec 5 + snapshot_xcdr2_vectors 11 + compile_check/edge integration); `npm run test:wire` -- 15 Tests grün; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_6_typescript_binding` -- 1 Test grün; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 Tests grün; `npx tsx crates/ts-node/examples/topic-typed-smoke.ts` -- OK.

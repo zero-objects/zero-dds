@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["dds", "idl", "codegen", "java", "java-psm"]
 categories = ["development-tools"]
 authors.workspace = true
-description = "OMG IDL4 → Java 17 Code-Generator (idl4-java-1.0 + DDS-Java-PSM) für ZeroDDS."
+description = "OMG IDL4 → Java 17 code generator (idl4-java-1.0 + DDS Java PSM) for ZeroDDS."
 publish = true
 
 [lints]
@@ -21,17 +21,13 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std"]
 std = []
-# Wenn aktiv, emittiert der RPC-Codegen Requester-Methoden mit
-# RustRequesterFFI-Aufrufen (statt der abstrakten `requester.sendRequest(...)`-
-# Variante). Bedeutet: `<Service>Requester.java` zeigt direkt, wie der
-# Java-Code an den Rust-Core spricht. Skeleton-Tiefe (C6.1.D-stretch).
-jni = []
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.1", path = "../idl" }
-zerodds-rpc = { version = "1.0.0-rc.1", path = "../rpc" }
+zerodds-idl = { version = "1.0.0-rc.3", path = "../idl" }
+zerodds-rpc = { version = "1.0.0-rc.3", path = "../rpc" }
 
 [dev-dependencies]
 insta = { workspace = true }

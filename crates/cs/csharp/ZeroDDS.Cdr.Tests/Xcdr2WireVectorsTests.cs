@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// Wire-Vector-Tests gegen `zerodds-xcdr2-bindings-conformance-1.0` §6 V-1..V-12.
-// Diese Klassen sind hand-geschriebene Aequivalente dessen, was
-// `idl-csharp` als `*TypeSupport` emittiert; sie verifizieren die
-// `ZeroDDS.Cdr`-Helper-Library byte-genau.
+// Wire-vector tests against `zerodds-xcdr2-bindings-conformance-1.0` §6 V-1..V-12.
+// These classes are hand-written equivalents of what
+// `idl-csharp` emits as `*TypeSupport`; they verify the
+// `ZeroDDS.Cdr` helper library byte for byte.
 
 using System;
 using System.Collections.Generic;
@@ -15,7 +15,7 @@ using ZeroDDS.Cdr;
 namespace ZeroDDS.Cdr.Tests;
 
 // ============================================================================
-// Sample-Klassen (V-1..V-12)
+// Sample classes (V-1..V-12)
 // ============================================================================
 
 public sealed record class Empty;
@@ -84,7 +84,7 @@ public sealed record class O11
 }
 
 // ============================================================================
-// TypeSupport-Klassen (hand-geschrieben, codegen-aequivalent)
+// TypeSupport classes (hand-written, codegen-equivalent)
 // ============================================================================
 
 public sealed class EmptyTypeSupport : IDdsTopicType<Empty>
@@ -218,17 +218,24 @@ public sealed class TagsTypeSupport : IDdsTopicType<Tags>
     public byte[] Encode(Tags sample) => Encode(sample, EndianMode.LittleEndian);
     public byte[] Encode(Tags sample, EndianMode endian)
     {
+        // XCDR2 §7.4.3.5: seq<string> has non-primitive elements -> prepend a DHEADER
+        // (uint32 = byte length of [count + elements]). Verified against CycloneDDS.
         var w = new Xcdr2Writer(endian);
-        w.WriteSequenceLength(sample.TagList.Count);
-        foreach (var s in sample.TagList) w.WriteString(s);
+        using (var dh = w.BeginAppendable())
+        {
+            w.WriteSequenceLength(sample.TagList.Count);
+            foreach (var s in sample.TagList) w.WriteString(s);
+        }
         return w.ToArray();
     }
     public Tags Decode(ReadOnlySpan<byte> bytes)
     {
         var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
+        var dh = r.BeginDHeader();
         int n = r.ReadSequenceLength();
         var list = new List<string>(n);
         for (int i = 0; i < n; i++) list.Add(r.ReadString());
+        r.EndDHeader(dh);
         return new Tags { TagList = list };
     }
     public byte[] KeyHash(Tags sample) => new byte[16];
@@ -331,11 +338,13 @@ public sealed class M10TypeSupport : IDdsTopicType<M10>
             // @id(1) long a -> LC=2 (4-byte fix)
             w.WriteEmHeader(1u, 2, false);
             w.WriteInt32(sample.A);
-            // @id(2) string b -> LC=3 (NEXTINT-prefixed)
+            // @id(2) string b -> LC=4 (variable, NEXTINT = body byte length).
+            // LC=3 would mean a fixed 8-byte body with no NEXTINT and desyncs
+            // any spec-compliant (Rust/Cyclone/FastDDS) reader.
             var sub = new Xcdr2Writer(endian);
             sub.WriteString(sample.B);
             var subBytes = sub.ToArray();
-            w.WriteEmHeader(2u, 3, false);
+            w.WriteEmHeader(2u, 4, false);
             w.WriteUInt32((uint)subBytes.Length);
             w.WriteBytes(subBytes);
         }
@@ -350,7 +359,7 @@ public sealed class M10TypeSupport : IDdsTopicType<M10>
         while (!r.DHeaderDone(s))
         {
             var (id, lc, _) = r.ReadEmHeader();
-            if (lc >= 3) { _ = r.ReadUInt32(); }
+            if (lc >= 4) { _ = r.ReadUInt32(); }
             if (id == 1u) a = r.ReadInt32();
             else if (id == 2u) b = r.ReadString();
             else throw new XcdrException($"unknown id {id}");
@@ -389,7 +398,7 @@ public sealed class O11TypeSupport : IDdsTopicType<O11>
         while (!r.DHeaderDone(s))
         {
             var (id, lc, _) = r.ReadEmHeader();
-            if (lc >= 3) { _ = r.ReadUInt32(); }
+            if (lc >= 4) { _ = r.ReadUInt32(); }
             if (id == 1u) maybe = r.ReadInt32();
             else throw new XcdrException($"unknown id {id}");
         }
@@ -454,13 +463,13 @@ public class Xcdr2WireVectorsTests
     [Fact]
     public void V3_MixedPrimitivesFinal_MatchesWire()
     {
-        // Hinweis zur Spec-Diskrepanz: §6 V-3 listet einen zusaetzlichen
-        // 1-Byte-Pad an Offset 2 sowie eine Gesamt-Laenge von 40 Bytes.
-        // Per OMG XTypes 1.3 §7.4.1.5 sind diese Werte nicht erreichbar
-        // (b+o sind bei Offset 0..1, danach folgt short bei Offset 2,
-        // bereits 2-aligned). Wir verifizieren stattdessen die korrekte
-        // XTypes-1.3-Form via Roundtrip + Spot-Checks an den gut-
-        // definierten Stellen (long/long long/double).
+        // Note on a spec discrepancy: §6 V-3 lists an extra
+        // 1-byte pad at offset 2 plus a total length of 40 bytes.
+        // Per OMG XTypes 1.3 §7.4.1.5 those values are not reachable
+        // (b+o are at offsets 0..1, then short follows at offset 2,
+        // already 2-aligned). Instead we verify the correct
+        // XTypes 1.3 form via roundtrip + spot checks at the well-
+        // defined positions (long/long long/double).
         var sample = new All
         {
             B = true,
@@ -476,8 +485,8 @@ public class Xcdr2WireVectorsTests
         };
         var bytes = AllTypeSupport.Instance.Encode(sample);
 
-        // Spot-Checks: jedes primitive-Field muss genau dort liegen, wo
-        // XTypes 1.3 §7.4.1.5 es vorschreibt (Origin = 0).
+        // Spot checks: every primitive field must sit exactly where
+        // XTypes 1.3 §7.4.1.5 prescribes (origin = 0).
         // Layout: b(0) o(1) s(2..3) us(4..5) l(8..11) ul(12..15)
         //         ll(16..23) ull(24..31) f(32..35) d(40..47).
         Assert.Equal((byte)1, bytes[0]);
@@ -522,7 +531,9 @@ public class Xcdr2WireVectorsTests
     public void V6_SeqStringFinal_MatchesWire()
     {
         var sample = new Tags { TagList = new List<string> { "a", "bc" } };
+        // XCDR2 §7.4.3.5: DHEADER (= 19) before seq<string>.
         var expected = Hex(
+            "13 00 00 00 " +
             "02 00 00 00 " +
             "02 00 00 00 61 00 " +
             "00 00 " +
@@ -554,8 +565,8 @@ public class Xcdr2WireVectorsTests
         Assert.Equal(ToHex(expected), ToHex(bytes));
         Assert.Equal(sample, SensorTypeSupport.Instance.Decode(bytes));
         Assert.True(SensorTypeSupport.Instance.IsKeyed);
-        // Key-Hash: PlainCdr2BeKeyHolder ist 4 Byte (`00 00 00 2A`) -> da
-        // <= 16 Bytes, wird laut XTypes 1.3 §7.6.8 zero-padded statt MD5.
+        // Key hash: PlainCdr2BeKeyHolder is 4 bytes (`00 00 00 2A`) -> since
+        // <= 16 bytes, it is zero-padded per XTypes 1.3 §7.6.8 instead of MD5.
         var keyHash = SensorTypeSupport.Instance.KeyHash(sample);
         Assert.Equal(16, keyHash.Length);
         var expectedHash = Hex("00 00 00 2A 00 00 00 00 00 00 00 00 00 00 00 00");
@@ -576,17 +587,17 @@ public class Xcdr2WireVectorsTests
     [Fact]
     public void V10_Mutable_MatchesWire()
     {
-        // Hinweis zur Spec-Diskrepanz: §6 V-10 listet DHEADER=20, aber der
-        // Body ist tatsaechlich 23 Bytes (4 EMHEADER + 4 value + 4 EMHEADER
-        // + 4 NEXTINT + 7 string). XTypes 1.3 §7.4.4.4 definiert DHEADER als
-        // Body-Laenge ohne den 4-Byte-Header selbst -> wir setzen DHEADER=23.
+        // Note on a spec discrepancy: §6 V-10 lists DHEADER=20, but the
+        // body is actually 23 bytes (4 EMHEADER + 4 value + 4 EMHEADER
+        // + 4 NEXTINT + 7 string). XTypes 1.3 §7.4.4.4 defines DHEADER as
+        // the body length excluding the 4-byte header itself -> we set DHEADER=23.
         var sample = new M10 { A = 42, B = "hi" };
         var bytes = M10TypeSupport.Instance.Encode(sample);
 
         // [0..4]   = DHEADER  (LE uint32 = body-len = 23)
         // [4..8]   = EMHEADER id=1 LC=2 (ambient-LE uint32 per XTypes §7.4.3.4.5)
         // [8..12]  = a-value LE
-        // [12..16] = EMHEADER id=2 LC=3 (ambient-LE)
+        // [12..16] = EMHEADER id=2 LC=4 (ambient-LE; variable member + NEXTINT)
         // [16..20] = NEXTINT (LE uint32 = string-byte-len)
         // [20..27] = string-prefix(4) + "hi\0"(3) = 7 bytes
         Assert.Equal((uint)23, BitConverter.ToUInt32(bytes, 0));
@@ -596,7 +607,7 @@ public class Xcdr2WireVectorsTests
         Assert.Equal(42, BitConverter.ToInt32(bytes, 8));
         var em2 = BitConverter.ToUInt32(bytes, 12);
         Assert.Equal((uint)2, em2 & 0x0FFFFFFFu);
-        Assert.Equal(3, (int)((em2 >> 28) & 0x7));
+        Assert.Equal(4, (int)((em2 >> 28) & 0x7));
         Assert.Equal((uint)7, BitConverter.ToUInt32(bytes, 16));
         Assert.Equal((uint)3, BitConverter.ToUInt32(bytes, 20)); // string length-incl-NUL
         Assert.Equal((byte)'h', bytes[24]);
@@ -610,9 +621,9 @@ public class Xcdr2WireVectorsTests
     [Fact]
     public void V11_OptionalSome_MatchesWire()
     {
-        // Hinweis zur Spec-Diskrepanz: §6 V-11 listet DHEADER=12, aber der
-        // Body ist tatsaechlich 8 Bytes (EMHEADER 4 + value 4). XTypes 1.3
-        // §7.4.4.4 definiert DHEADER als Body-Laenge -> 8.
+        // Note on a spec discrepancy: §6 V-11 lists DHEADER=12, but the
+        // body is actually 8 bytes (EMHEADER 4 + value 4). XTypes 1.3
+        // §7.4.4.4 defines DHEADER as the body length -> 8.
         var sample = new O11 { Maybe = 7 };
         // EMHEADER ambient-LE per XTypes §7.4.3.4.5: u32=0x20000001 -> bytes 01 00 00 20.
         var expected = Hex("08 00 00 00 01 00 00 20 07 00 00 00");
@@ -634,11 +645,11 @@ public class Xcdr2WireVectorsTests
     [Fact]
     public void V12_MutableSentinel_NoExplicitSentinelEmitted()
     {
-        // §6 V-12: XCDR2 emittiert KEINEN expliziten PID_LIST_END-Sentinel.
-        // Stattdessen begrenzt die DHEADER-Groesse das Lesen.
+        // §6 V-12: XCDR2 emits NO explicit PID_LIST_END sentinel.
+        // Instead the DHEADER size bounds the read.
         var bytes = M10TypeSupport.Instance.Encode(new M10 { A = 1, B = "x" });
-        // Ueberpruefe: das Tail enthaelt keinen PID_LIST_END (0x3F02) am Ende.
-        // Last bytes sind die Bytes des strings "x\0", nicht ein 4-Byte-Sentinel.
+        // Check: the tail contains no PID_LIST_END (0x3F02) at the end.
+        // The last bytes are the bytes of the string "x\0", not a 4-byte sentinel.
         Assert.False(bytes.Length >= 4 &&
                      bytes[^4] == 0x3F &&
                      bytes[^3] == 0x02 &&

@@ -1,4 +1,4 @@
-// Fixture: enum mit drei Werten → Java enum mit explicit values.
+// Fixture: enum with three values → Java enum with explicit values.
 enum Color {
     RED,
     GREEN,

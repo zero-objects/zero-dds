@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CLI fuer `zerodds-coap-bridged`. Spec §2.
+//! CLI for `zerodds-coap-bridged`. Spec §2.
 
 use std::string::String;
 use std::vec::Vec;
 
-/// Geparste CLI-Args.
+/// Parsed CLI args.
 #[derive(Debug, Clone, Default)]
 pub struct CliArgs {
     /// `--config <FILE>`.
@@ -15,13 +15,13 @@ pub struct CliArgs {
     pub bind: Option<String>,
     /// `--domain <ID>`.
     pub domain: Option<i32>,
-    /// `--dtls-psk-id <ID>` — L5-Stub.
+    /// `--dtls-psk-id <ID>` — L5 stub.
     pub dtls_psk_id: Option<String>,
-    /// `--dtls-psk <SECRET>` — L5-Stub.
+    /// `--dtls-psk <SECRET>` — L5 stub.
     pub dtls_psk: Option<String>,
-    /// `--dtls-cert <FILE>` — L5-Stub.
+    /// `--dtls-cert <FILE>` — L5 stub.
     pub dtls_cert: Option<String>,
-    /// `--dtls-key <FILE>` — L5-Stub.
+    /// `--dtls-key <FILE>` — L5 stub.
     pub dtls_key: Option<String>,
     /// `--topic` (multi).
     pub topics: Vec<String>,
@@ -35,18 +35,18 @@ pub struct CliArgs {
     pub help: bool,
 }
 
-/// CLI-Fehler.
+/// CLI error.
 #[derive(Debug, Clone)]
 pub enum CliError {
-    /// Unbekannter Flag.
+    /// Unknown flag.
     UnknownFlag(String),
-    /// Fehlender Value.
+    /// Missing value.
     MissingValue(String),
-    /// Wert nicht parsbar.
+    /// Value not parseable.
     InvalidValue {
         /// Flag.
         flag: String,
-        /// Wert.
+        /// Value.
         value: String,
     },
 }
@@ -63,39 +63,39 @@ impl core::fmt::Display for CliError {
 
 impl std::error::Error for CliError {}
 
-/// Help-Text.
+/// Help text.
 pub const HELP_TEXT: &str = "\
-zerodds-coap-bridged 1.0 — DDS↔CoAP-Bridge-Daemon
+zerodds-coap-bridged 1.0 — DDS↔CoAP bridge daemon
 
 USAGE:
     zerodds-coap-bridged [OPTIONS]
 
 OPTIONS:
-    --config <FILE>        Path zur Config-File (YAML)
-    --bind <ADDR>          UDP-Bind-Address (Default 0.0.0.0:5683)
-    --domain <ID>          DDS-Domain-ID (Default 0)
-    --dtls-psk-id <ID>     DTLS-PSK-Identity — L5-stub
-    --dtls-psk <SECRET>    DTLS-PSK-Secret — L5-stub
-    --dtls-cert <FILE>     DTLS-Server-Cert — L5-stub
-    --dtls-key <FILE>      DTLS-Server-Key — L5-stub
-    --topic <DDS:URI>      Topic-Override (mehrfach)
+    --config <FILE>        Path to the config file (YAML)
+    --bind <ADDR>          UDP bind address (default 0.0.0.0:5683)
+    --domain <ID>          DDS domain ID (default 0)
+    --dtls-psk-id <ID>     DTLS PSK identity — L5 stub
+    --dtls-psk <SECRET>    DTLS PSK secret — L5 stub
+    --dtls-cert <FILE>     DTLS server cert — L5 stub
+    --dtls-key <FILE>      DTLS server key — L5 stub
+    --topic <DDS:URI>      Topic override (repeatable)
     --log-level <LEVEL>    trace/debug/info/warn/error
-    --metrics <ADDR>       Prometheus-Listen — L5-stub
-    --version              Versions-Info
-    --help                 Hilfe
+    --metrics <ADDR>       Prometheus listener — L5 stub
+    --version              Version info
+    --help                 Help
 
-EXIT-CODES:
-    0   normaler Shutdown
-    1   Config-Fehler
-    2   Bind-Fehler (Port belegt)
-    3   DDS-Discovery-Fehler
-    4   DTLS-Setup-Fehler
+EXIT CODES:
+    0   normal shutdown
+    1   config error
+    2   bind error (port in use)
+    3   DDS discovery error
+    4   DTLS setup error
 ";
 
-/// Versions-String.
+/// Version string.
 pub const VERSION_TEXT: &str = "zerodds-coap-bridged 1.0";
 
-/// Parst Args.
+/// Parses args.
 ///
 /// # Errors
 /// [`CliError`].

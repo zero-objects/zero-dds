@@ -34,7 +34,7 @@ pub enum NodeIdentifier {
 }
 
 impl NodeIdentifier {
-    /// Liefert die Kind-Diskriminator.
+    /// Returns the kind discriminator.
     #[must_use]
     pub const fn kind(&self) -> NodeIdentifierKind {
         match self {
@@ -46,18 +46,18 @@ impl NodeIdentifier {
     }
 }
 
-/// Spec §8.2.2 Tab 8.2 — `NodeId` Struct mit namespace_index +
+/// Spec §8.2.2 Tab 8.2 — `NodeId` struct with namespace_index +
 /// identifier_type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeId {
-    /// Namespace-Index (Spec: uint16).
+    /// Namespace index (Spec: uint16).
     pub namespace_index: u16,
-    /// Identifier-Variante.
+    /// Identifier variant.
     pub identifier_type: NodeIdentifier,
 }
 
 impl NodeId {
-    /// Konstruktor fuer numerischen NodeId (haeufigster Fall).
+    /// Constructor for a numeric NodeId (most common case).
     #[must_use]
     pub const fn numeric(namespace: u16, id: u32) -> Self {
         Self {
@@ -66,10 +66,10 @@ impl NodeId {
         }
     }
 
-    /// Konstruktor fuer String-NodeId.
+    /// Constructor for a string NodeId.
     ///
     /// # Errors
-    /// `Err(NodeIdError::StringTooLong)` wenn `id.len() > 4096`.
+    /// `Err(NodeIdError::StringTooLong)` if `id.len() > 4096`.
     pub fn string(namespace: u16, id: impl Into<String>) -> Result<Self, NodeIdError> {
         let s = id.into();
         if s.len() > 4096 {
@@ -81,10 +81,10 @@ impl NodeId {
         })
     }
 
-    /// Konstruktor fuer Opaque-NodeId.
+    /// Constructor for an opaque NodeId.
     ///
     /// # Errors
-    /// `Err(NodeIdError::OpaqueTooLong)` wenn `bytes.len() > 4096`.
+    /// `Err(NodeIdError::OpaqueTooLong)` if `bytes.len() > 4096`.
     pub fn opaque(namespace: u16, bytes: ByteString) -> Result<Self, NodeIdError> {
         if bytes.len() > 4096 {
             return Err(NodeIdError::OpaqueTooLong(bytes.len()));
@@ -95,7 +95,7 @@ impl NodeId {
         })
     }
 
-    /// Konstruktor fuer Guid-NodeId.
+    /// Constructor for a guid NodeId.
     #[must_use]
     pub const fn guid(namespace: u16, g: Guid) -> Self {
         Self {
@@ -104,7 +104,7 @@ impl NodeId {
         }
     }
 
-    /// Spec — formatiertes Display nach OPC-UA-Convention `ns=N;<kind>=<id>`.
+    /// Spec — formatted display per OPC-UA convention `ns=N;<kind>=<id>`.
     #[must_use]
     pub fn to_canonical_string(&self) -> String {
         let body = match &self.identifier_type {
@@ -131,12 +131,12 @@ impl NodeId {
     }
 }
 
-/// `NodeId`-Fehler.
+/// `NodeId` error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeIdError {
-    /// String-Identifier laenger als 4096 Bytes (Spec-Limit).
+    /// String identifier longer than 4096 bytes (spec limit).
     StringTooLong(usize),
-    /// Opaque-Identifier laenger als 4096 Bytes (Spec-Limit).
+    /// Opaque identifier longer than 4096 bytes (spec limit).
     OpaqueTooLong(usize),
 }
 
@@ -152,7 +152,7 @@ impl core::fmt::Display for NodeIdError {
 #[cfg(feature = "std")]
 impl std::error::Error for NodeIdError {}
 
-/// Spec §8.2.2 Tab 8.2 — `ExpandedNodeId` extends NodeId mit
+/// Spec §8.2.2 Tab 8.2 — `ExpandedNodeId` extends NodeId with
 /// namespace_uri + server_index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExpandedNodeId {

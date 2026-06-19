@@ -18,14 +18,14 @@ use crate::type_object::minimal::CommonDiscriminatorMember;
 /// CompleteUnionHeader = detail.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompleteUnionHeader {
-    /// Typ-Detail.
+    /// Type detail.
     pub detail: CompleteTypeDetail,
 }
 
-/// CompleteDiscriminator — common + ann_builtin + ann_custom (kein Name).
+/// CompleteDiscriminator — common + ann_builtin + ann_custom (no name).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompleteDiscriminatorMember {
-    /// Discriminator-Typ/Flags.
+    /// Discriminator type/flags.
     pub common: CommonDiscriminatorMember,
     /// `@verbatim` etc.
     pub ann_builtin: AppliedBuiltinTypeAnnotations,
@@ -38,7 +38,7 @@ pub struct CompleteDiscriminatorMember {
 pub struct CompleteUnionMember {
     /// Common.
     pub common: CommonUnionMember,
-    /// Name + Annotationen.
+    /// Name + annotations.
     pub detail: CompleteMemberDetail,
 }
 

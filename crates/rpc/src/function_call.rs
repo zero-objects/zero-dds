@@ -1,33 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Function-Call-Style Service-API (Spec §7.2.2.1, §7.9.2.1, §7.10.1).
+//! Function-call-style service API (Spec §7.2.2.1, §7.9.2.1, §7.10.1).
 //!
-//! Das DDS-RPC-Spec definiert zwei Language-Binding-Styles:
-//! 1. **Request/Reply-Style** (low-level) — `crates/rpc/src/{requester,
+//! The DDS-RPC spec defines two language-binding styles:
+//! 1. **Request/reply style** (low-level) — `crates/rpc/src/{requester,
 //!    replier}.rs`.
-//! 2. **Function-Call-Style** (high-level) — *dieses Modul*.
+//! 2. **Function-call style** (high-level) — *this module*.
 //!
-//! Function-Call-Style verwendet Stubs (Client-Side-Proxy) und
-//! Skeletons (Service-Side-Dispatch), die zur Codegen-Zeit aus einer
-//! Service-Definition (IDL `interface Foo { void op(); }`) generiert
-//! werden. Die Stubs sehen wie native Function-Calls aus, kapseln
-//! aber intern den Request/Reply-Pfad.
+//! Function-call style uses stubs (client-side proxy) and
+//! skeletons (service-side dispatch), generated at codegen time from a
+//! service definition (IDL `interface Foo { void op(); }`).
+//! The stubs look like native function calls, but internally
+//! encapsulate the request/reply path.
 //!
-//! # Architektur
+//! # Architecture
 //!
-//! Wir liefern hier die **Runtime-Foundation** fuer generierte Stubs
-//! und Skeletons:
+//! Here we provide the **runtime foundation** for generated stubs
+//! and skeletons:
 //!
-//! * [`FunctionStub`]-Trait fuer Client-Side-Proxies (jede generierte
-//!   Stub-Klasse implementiert es).
-//! * [`FunctionSkeleton`]-Trait fuer Service-Side-Dispatch — ruft die
-//!   richtige Operation aus dem `request_data`-Union-Discriminator
-//!   und liefert die Reply.
-//! * [`dispatch_request`]-Helper fuer Skeleton-Implementations.
+//! * The [`FunctionStub`] trait for client-side proxies (each generated
+//!   stub class implements it).
+//! * The [`FunctionSkeleton`] trait for service-side dispatch — calls the
+//!   right operation from the `request_data` union discriminator
+//!   and returns the reply.
+//! * The [`dispatch_request`] helper for skeleton implementations.
 //!
-//! Codegen-Templates leben in `crates/idl-cpp/src/rpc_template.rs`
-//! (C++) und `crates/idl-java/src/rpc_template.rs` (Java).
+//! Codegen templates live in `crates/idl-cpp/src/rpc_template.rs`
+//! (C++) and `crates/idl-java/src/rpc_template.rs` (Java).
 
 extern crate alloc;
 
@@ -36,59 +36,59 @@ use alloc::vec::Vec;
 
 use crate::error::{RpcError, RpcResult};
 
-/// Stub-Trait: jeder generierte Client-Side-Proxy implementiert das.
+/// Stub trait: every generated client-side proxy implements it.
 ///
-/// Der Stub kapselt den Request/Reply-Mechanismus hinter einer
-/// type-safe Method-Signatur (z.B. `fn add(a: i32, b: i32) -> i32`).
+/// The stub encapsulates the request/reply mechanism behind a
+/// type-safe method signature (e.g. `fn add(a: i32, b: i32) -> i32`).
 pub trait FunctionStub {
-    /// Service-Name aus IDL-`interface`-Namen.
+    /// Service name from the IDL `interface` name.
     fn service_name(&self) -> &str;
 }
 
-/// Skeleton-Trait: jeder generierte Service-Side-Dispatch implementiert
-/// das. Der Skeleton entpackt den Request-Discriminator, ruft die
-/// passende Operation in der User-Implementation und packt die Reply
-/// als Union zurueck.
+/// Skeleton trait: every generated service-side dispatch implements
+/// it. The skeleton unpacks the request discriminator, calls the
+/// matching operation in the user implementation and packs the reply
+/// back as a union.
 pub trait FunctionSkeleton {
-    /// Service-Name.
+    /// Service name.
     fn service_name(&self) -> &str;
 
-    /// Liste aller Operations, die dieser Skeleton entgegen nimmt.
-    /// Jeder Eintrag ist `(operation_name, opcode)`. Opcodes werden
-    /// bei der Codegen automatisch monoton vergeben (Spec §7.2.2.1).
+    /// List of all operations this skeleton accepts.
+    /// Each entry is `(operation_name, opcode)`. Opcodes are
+    /// assigned monotonically and automatically at codegen time (Spec §7.2.2.1).
     fn operations(&self) -> &[(&'static str, u32)];
 }
 
-/// Operation-Descriptor fuer Codegen.
+/// Operation descriptor for codegen.
 ///
-/// Pro IDL-Operation `void op(in t1 x, out t2 y) raises (E)` erzeugt
-/// der Codegen einen [`OperationDescriptor`].
+/// For each IDL operation `void op(in t1 x, out t2 y) raises (E)` the
+/// codegen produces an [`OperationDescriptor`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationDescriptor {
-    /// Method-Name aus IDL.
+    /// Method name from IDL.
     pub name: String,
-    /// Monoton vergebener Opcode.
+    /// Monotonically assigned opcode.
     pub opcode: u32,
-    /// `true` wenn `oneway`-Spec — kein Reply erwartet.
+    /// `true` for a `oneway` spec — no reply expected.
     pub one_way: bool,
-    /// Liste der `in`/`inout`-Parameter (Reihenfolge wie in IDL).
+    /// List of `in`/`inout` parameters (order as in IDL).
     pub in_params: Vec<String>,
-    /// Liste der `out`/`inout`-Parameter + Return-Type (Spec
-    /// §7.2.4.2 mappt Return zur ersten Member-Position).
+    /// List of `out`/`inout` parameters + return type (Spec
+    /// §7.2.4.2 maps the return to the first member position).
     pub out_params: Vec<String>,
 }
 
-/// Service-Descriptor fuer Codegen — Sammlung von [`OperationDescriptor`]s.
+/// Service descriptor for codegen — collection of [`OperationDescriptor`]s.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ServiceDescriptor {
     /// IDL-Interface-Name.
     pub name: String,
-    /// Operations in IDL-Reihenfolge.
+    /// Operations in IDL order.
     pub operations: Vec<OperationDescriptor>,
 }
 
 impl ServiceDescriptor {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
         Self {
@@ -97,11 +97,10 @@ impl ServiceDescriptor {
         }
     }
 
-    /// Registriert eine Operation. Opcode wird automatisch vergeben.
+    /// Registers an operation. The opcode is assigned automatically.
     ///
     /// # Errors
-    /// `RpcError::Codec` wenn die Operations-Anzahl `u32::MAX`
-    /// ueberschreitet.
+    /// `RpcError::Codec` if the operation count exceeds `u32::MAX`.
     pub fn add_operation(
         &mut self,
         name: impl Into<String>,
@@ -124,26 +123,26 @@ impl ServiceDescriptor {
             .ok_or_else(|| RpcError::Codec("ServiceDescriptor: push failed".into()))
     }
 
-    /// Lookup nach Name.
+    /// Lookup by name.
     #[must_use]
     pub fn operation(&self, name: &str) -> Option<&OperationDescriptor> {
         self.operations.iter().find(|o| o.name == name)
     }
 
-    /// Lookup nach Opcode.
+    /// Lookup by opcode.
     #[must_use]
     pub fn operation_by_opcode(&self, opcode: u32) -> Option<&OperationDescriptor> {
         self.operations.iter().find(|o| o.opcode == opcode)
     }
 }
 
-/// Dispatcher-Helper fuer Skeleton-Implementations.
+/// Dispatcher helper for skeleton implementations.
 ///
-/// Liest den Opcode aus dem Request-Discriminator, ruft den
-/// passenden Handler-Closure und liefert die kodierte Reply zurueck.
+/// Reads the opcode from the request discriminator, calls the
+/// matching handler closure and returns the encoded reply.
 ///
 /// # Errors
-/// `OperationNotFound` wenn der Opcode nicht im Service vorhanden ist.
+/// `OperationNotFound` if the opcode is not present in the service.
 pub fn dispatch_request<F, T>(service: &ServiceDescriptor, opcode: u32, handler: F) -> RpcResult<T>
 where
     F: FnOnce(&OperationDescriptor) -> RpcResult<T>,
@@ -232,14 +231,14 @@ mod tests {
 
     #[test]
     fn out_params_first_member_is_return_value() {
-        // Spec §7.2.4.2: Return-Type mapped auf ersten Member von
+        // Spec §7.2.4.2: the return type is mapped to the first member of
         // `out_params`.
         let s = calculator_service();
         let add = s.operation("add").expect("add");
         assert_eq!(add.out_params.first().map(String::as_str), Some("result"));
     }
 
-    /// Test-Stub als Beispiel-Codegen-Output.
+    /// Test stub as an example codegen output.
     struct CalculatorStub {
         service_name: String,
     }
@@ -249,7 +248,7 @@ mod tests {
         }
     }
 
-    /// Test-Skeleton als Beispiel-Codegen-Output.
+    /// Test skeleton as an example codegen output.
     struct CalculatorSkeleton;
     impl FunctionSkeleton for CalculatorSkeleton {
         fn service_name(&self) -> &str {

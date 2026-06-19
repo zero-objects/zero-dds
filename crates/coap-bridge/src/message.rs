@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CoAP-Message Modell — RFC 7252 §3 + §12.1.
+//! CoAP message model — RFC 7252 §3 + §12.1.
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -24,10 +24,10 @@ pub enum MessageType {
 }
 
 impl MessageType {
-    /// Konvertiert vom 2-Bit-Wire-Wert.
+    /// Converts from the 2-bit wire value.
     ///
     /// # Errors
-    /// Liefert `None` wenn `v > 3`.
+    /// Returns `None` if `v > 3`.
     #[must_use]
     pub const fn from_bits(v: u8) -> Option<Self> {
         match v {
@@ -39,7 +39,7 @@ impl MessageType {
         }
     }
 
-    /// Wire-Wert (2 Bit).
+    /// Wire value (2 bits).
     #[must_use]
     pub const fn to_bits(self) -> u8 {
         match self {
@@ -53,7 +53,7 @@ impl MessageType {
 
 /// CoAP-Code (RFC 7252 §3 + §12.1) — 8-bit, 3-bit class + 5-bit detail.
 ///
-/// Format `c.dd` mit `c` ∈ 0..=7 und `dd` ∈ 0..=31.
+/// Format `c.dd` with `c` ∈ 0..=7 and `dd` ∈ 0..=31.
 ///
 /// Code-Class:
 /// * 0 — Request (0.00 = empty, 0.01-0.04 = method codes).
@@ -69,8 +69,8 @@ pub struct CoapCode {
 }
 
 impl CoapCode {
-    /// Konstruktor; class+detail werden auf gueltige Bit-Bereiche
-    /// (3-bit, 5-bit) gemaskt.
+    /// Constructor; class+detail are masked to valid bit ranges
+    /// (3-bit, 5-bit).
     #[must_use]
     pub const fn new(class: u8, detail: u8) -> Self {
         Self {
@@ -79,7 +79,7 @@ impl CoapCode {
         }
     }
 
-    /// Decodiert vom Wire-Byte (RFC 7252 §3 Code-Field).
+    /// Decodes from the wire byte (RFC 7252 §3 Code field).
     #[must_use]
     pub const fn from_byte(b: u8) -> Self {
         Self {
@@ -88,13 +88,13 @@ impl CoapCode {
         }
     }
 
-    /// Encodiert ins Wire-Byte.
+    /// Encodes into the wire byte.
     #[must_use]
     pub const fn to_byte(self) -> u8 {
         (self.class << 5) | (self.detail & 0b1_1111)
     }
 
-    /// `EMPTY` (0.00, RFC 7252 §3) — Spec-Sonderfall fuer Reset/ACK.
+    /// `EMPTY` (0.00, RFC 7252 §3) — spec special case for Reset/ACK.
     pub const EMPTY: Self = Self::new(0, 0);
     /// `GET` (0.01).
     pub const GET: Self = Self::new(0, 1);
@@ -121,32 +121,32 @@ impl CoapCode {
     /// `5.00 Internal Server Error`.
     pub const INTERNAL_SERVER_ERROR: Self = Self::new(5, 0);
 
-    /// `true` wenn class == 0 und detail > 0 — Request-Method (Spec
+    /// `true` if class == 0 and detail > 0 — request method (spec
     /// §3 + §12.1.1).
     #[must_use]
     pub const fn is_request(self) -> bool {
         self.class == 0 && self.detail > 0
     }
 
-    /// `true` wenn class == 2 — Success-Response (Spec §12.1.2).
+    /// `true` if class == 2 — success response (spec §12.1.2).
     #[must_use]
     pub const fn is_success(self) -> bool {
         self.class == 2
     }
 
-    /// `true` wenn class == 4 — Client-Error (Spec §12.1.2).
+    /// `true` if class == 4 — client error (spec §12.1.2).
     #[must_use]
     pub const fn is_client_error(self) -> bool {
         self.class == 4
     }
 
-    /// `true` wenn class == 5 — Server-Error (Spec §12.1.2).
+    /// `true` if class == 5 — server error (spec §12.1.2).
     #[must_use]
     pub const fn is_server_error(self) -> bool {
         self.class == 5
     }
 
-    /// `true` wenn Empty-Code (0.00).
+    /// `true` if empty code (0.00).
     #[must_use]
     pub const fn is_empty(self) -> bool {
         self.class == 0 && self.detail == 0
@@ -162,7 +162,7 @@ impl fmt::Display for CoapCode {
 /// CoAP-Message — RFC 7252 §3.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoapMessage {
-    /// Spec §3 — `Ver`. Wir setzen immer 1 beim Encode.
+    /// Spec §3 — `Ver`. We always set 1 on encode.
     pub version: u8,
     /// Spec §3 — `Type`.
     pub message_type: MessageType,
@@ -172,16 +172,16 @@ pub struct CoapMessage {
     pub message_id: u16,
     /// Spec §3 — `Token`. Length 0..=8 (TKL field).
     pub token: Vec<u8>,
-    /// Spec §3.1 — Optionen, sortiert nach Number (Spec verlangt
-    /// Delta-Encoding-Reihenfolge).
+    /// Spec §3.1 — options, sorted by number (spec requires
+    /// delta-encoding order).
     pub options: Vec<CoapOption>,
-    /// Spec §3 — Payload (nach 0xFF-Marker).
+    /// Spec §3 — payload (after the 0xFF marker).
     pub payload: Vec<u8>,
 }
 
 impl CoapMessage {
-    /// Konstruiert eine neue Message mit Default `version=1` und
-    /// leeren Options/Payload.
+    /// Constructs a new message with default `version=1` and
+    /// empty options/payload.
     #[must_use]
     pub const fn new(message_type: MessageType, code: CoapCode, message_id: u16) -> Self {
         Self {

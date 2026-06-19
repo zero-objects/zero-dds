@@ -23,3 +23,35 @@ impl Default for Event {
         Self::Counter (<i32>::default())
     }
 }
+
+
+impl zerodds_cdr::CdrEncode for Event {
+    fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+        match self {
+            Event::Counter(__v) => {
+                <i32 as zerodds_cdr::CdrEncode>::encode(&((1) as i32), writer)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(__v, writer)?;
+            }
+            Event::Value(__v) => {
+                <i32 as zerodds_cdr::CdrEncode>::encode(&((2) as i32), writer)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(__v, writer)?;
+            }
+            Event::Message(__v) => {
+                <i32 as zerodds_cdr::CdrEncode>::encode(&((0) as i32), writer)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(__v, writer)?;
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+
+impl zerodds_cdr::CdrDecode for Event {
+    fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
+        let __disc = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        match __disc as i128 {
+            1 => ::core::result::Result::Ok(Event::Counter(<i32 as zerodds_cdr::CdrDecode>::decode(reader)?)),
+            2 => ::core::result::Result::Ok(Event::Value(<f64 as zerodds_cdr::CdrDecode>::decode(reader)?)),
+            _ => ::core::result::Result::Ok(Event::Message(<String as zerodds_cdr::CdrDecode>::decode(reader)?)),
+        }
+    }
+}

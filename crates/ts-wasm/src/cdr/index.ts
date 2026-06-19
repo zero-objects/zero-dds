@@ -2,9 +2,9 @@
 // Copyright 2026 ZeroDDS Contributors
 //
 // index.ts — ts-wasm @zerodds/cdr re-export.
-// Konformanz: zerodds-xcdr2-ts-1.0 §8 — binary-identisch zu
-// crates/ts-node/src/cdr/. WASM-Layer braucht den Codec NICHT
-// selbst; TS-Layer serialisiert ausserhalb des wasm-Bindings.
+// Conformance: zerodds-xcdr2-ts-1.0 §8 — binary-identical to
+// crates/ts-node/src/cdr/. The WASM layer does NOT need the codec
+// itself; the TS layer serializes outside the wasm bindings.
 
 export { Xcdr2Writer } from './writer.js';
 export { Xcdr2Reader } from './reader.js';

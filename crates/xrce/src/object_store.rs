@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `ObjectStore` — pro-Client Object-Lifecycle (Spec §7.5).
+//! `ObjectStore` — per-client object lifecycle (Spec §7.5).
 //!
-//! Pro `ProxyClient` haelt der Agent eine `BTreeMap<ObjectId, ObjectInstance>`,
-//! die alle aktuell im Client erzeugten Objekte (Participant, Topic,
-//! Publisher, Subscriber, DataWriter, DataReader, ...) enthaelt.
+//! Per `ProxyClient` the agent keeps a `BTreeMap<ObjectId, ObjectInstance>`
+//! that contains all objects currently created in the client (participant,
+//! topic, publisher, subscriber, DataWriter, DataReader, ...).
 //!
-//! ## CREATE-Semantik (Spec §7.5.1)
+//! ## CREATE semantics (Spec §7.5.1)
 //!
-//! Beim Empfang einer `CREATE`-Submessage entscheidet die Kombination
-//! der `creation_mode`-Flags `reuse` und `replace` ueber das Verhalten
-//! bei einer bereits existierenden ID:
+//! On receiving a `CREATE` submessage, the combination of the
+//! `creation_mode` flags `reuse` and `replace` decides the behavior
+//! for an already existing ID:
 //!
-//! | reuse | replace | bei existierendem Objekt          |
+//! | reuse | replace | for an existing object            |
 //! |-------|---------|-----------------------------------|
-//! | false | false   | Fehler (`STATUS_ERR_ALREADY_EXISTS`)|
-//! | true  | false   | Wiederverwenden (`STATUS_OK_MATCHED`)|
-//! | false | true    | Loeschen+Neu (`STATUS_OK`)         |
-//! | true  | true    | Wiederverwenden (Variante 2 dominiert)|
+//! | false | false   | error (`STATUS_ERR_ALREADY_EXISTS`) |
+//! | true  | false   | reuse (`STATUS_OK_MATCHED`)        |
+//! | false | true    | delete+new (`STATUS_OK`)           |
+//! | true  | true    | reuse (variant 2 dominates)        |
 //!
-//! `STATUS_*` werden von der Agent-Aufrufseite zurueckgemeldet — das
-//! Store liefert eine `CreateOutcome`, aus der der Caller den Status
-//! ableiten kann.
+//! `STATUS_*` are reported back by the agent caller side — the
+//! store returns a `CreateOutcome` from which the caller can derive
+//! the status.
 
 extern crate alloc;
 use alloc::collections::BTreeMap;
@@ -32,46 +32,46 @@ use crate::object_id::ObjectId;
 use crate::object_kind::ObjectKind;
 use crate::object_repr::ObjectVariant;
 
-/// Creation-Mode-Flags (Spec §7.5.1, codiert als Submessage-Flags Bits 1+2).
+/// Creation mode flags (Spec §7.5.1, encoded as submessage flags bits 1+2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct CreationMode {
-    /// Existierendes Objekt wiederverwenden.
+    /// Reuse an existing object.
     pub reuse: bool,
-    /// Existierendes Objekt loeschen und neu anlegen.
+    /// Delete an existing object and create it anew.
     pub replace: bool,
 }
 
 impl CreationMode {
-    /// Strict: weder reuse noch replace.
+    /// Strict: neither reuse nor replace.
     pub const STRICT: Self = Self {
         reuse: false,
         replace: false,
     };
-    /// Reuse: bei Existenz wiederverwenden, sonst neu.
+    /// Reuse: reuse if it exists, otherwise create anew.
     pub const REUSE: Self = Self {
         reuse: true,
         replace: false,
     };
-    /// Replace: bei Existenz loeschen+neu.
+    /// Replace: delete+new if it exists.
     pub const REPLACE: Self = Self {
         reuse: false,
         replace: true,
     };
 }
 
-/// Eine im Store registrierte Object-Instance.
+/// An object instance registered in the store.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectInstance {
-    /// Object-Kind (4-bit, gespiegelt aus der ObjectId).
+    /// Object kind (4-bit, mirrored from the ObjectId).
     pub kind: ObjectKind,
-    /// Aktuelle Wire-Repraesentation der Object-Daten.
+    /// Current wire representation of the object data.
     pub variant: ObjectVariant,
-    /// Versionszaehler — wird bei Replace inkrementiert.
+    /// Version counter — incremented on replace.
     pub version: u32,
 }
 
 impl ObjectInstance {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(kind: ObjectKind, variant: ObjectVariant) -> Self {
         Self {
@@ -82,21 +82,21 @@ impl ObjectInstance {
     }
 }
 
-/// Resultat einer `create`-Operation.
+/// Result of a `create` operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CreateOutcome {
-    /// Object wurde frisch angelegt.
+    /// Object was freshly created.
     Created,
-    /// Objekt existierte bereits, mit `reuse=true` wiederverwendet
-    /// (Inhalt ist gleich → `STATUS_OK_MATCHED`, oder Inhalt unterscheidet
-    /// sich → `STATUS_ERR_MISMATCH` — die Unterscheidung uebernimmt der Caller).
+    /// Object already existed, reused with `reuse=true`
+    /// (content is equal → `STATUS_OK_MATCHED`, or content differs
+    /// → `STATUS_ERR_MISMATCH` — the caller handles the distinction).
     Reused {
-        /// `true`, falls der Inhalt mit dem bestehenden uebereinstimmt.
+        /// `true` if the content matches the existing one.
         equal: bool,
     },
-    /// Objekt existierte bereits, mit `replace=true` ersetzt.
+    /// Object already existed, replaced with `replace=true`.
     Replaced,
-    /// Objekt existierte bereits, kein reuse/replace → Konflikt.
+    /// Object already existed, no reuse/replace → conflict.
     Conflict,
 }
 
@@ -113,7 +113,7 @@ impl ObjectStore {
         Self::default()
     }
 
-    /// Anzahl gehaltener Objekte.
+    /// Number of held objects.
     #[must_use]
     pub fn len(&self) -> usize {
         self.objects.len()
@@ -137,19 +137,18 @@ impl ObjectStore {
         self.objects.get(&id)
     }
 
-    /// Iteriert alle Objekte sortiert nach `ObjectId`.
+    /// Iterates all objects sorted by `ObjectId`.
     pub fn iter(&self) -> impl Iterator<Item = (ObjectId, &ObjectInstance)> {
         self.objects.iter().map(|(&id, inst)| (id, inst))
     }
 
-    /// CREATE-Operation.
+    /// CREATE operation.
     ///
-    /// Validiert dass der `kind` der `ObjectId` mit dem Argument
-    /// uebereinstimmt (Spec §7.2.1: Lower-4-Bits-Kind muss zur Variante
-    /// passen).
+    /// Validates that the `kind` of the `ObjectId` matches the argument
+    /// (Spec §7.2.1: the lower-4-bits kind must match the variant).
     ///
     /// # Errors
-    /// - `ValueOutOfRange`, wenn `id.kind() != kind` oder `id` invalid ist.
+    /// - `ValueOutOfRange` if `id.kind() != kind` or `id` is invalid.
     pub fn create(
         &mut self,
         id: ObjectId,
@@ -195,17 +194,17 @@ impl ObjectStore {
         }
     }
 
-    /// DELETE-Operation. Liefert `true`, wenn die ID existiert hat.
+    /// DELETE operation. Returns `true` if the ID existed.
     pub fn delete(&mut self, id: ObjectId) -> bool {
         self.objects.remove(&id).is_some()
     }
 
-    /// Loescht alle Objekte (z.B. wenn der ProxyClient terminated).
+    /// Deletes all objects (e.g. when the ProxyClient terminates).
     pub fn clear(&mut self) {
         self.objects.clear();
     }
 
-    /// Filtert nach Kind.
+    /// Filters by kind.
     pub fn iter_by_kind(
         &self,
         kind: ObjectKind,
@@ -274,12 +273,12 @@ mod tests {
         store
             .create(id, ObjectKind::Topic, first.clone(), CreationMode::STRICT)
             .unwrap();
-        // 1) Reuse mit gleichem Inhalt → equal=true
+        // 1) Reuse with the same content → equal=true
         let r1 = store
             .create(id, ObjectKind::Topic, first.clone(), CreationMode::REUSE)
             .unwrap();
         assert_eq!(r1, CreateOutcome::Reused { equal: true });
-        // 2) Reuse mit anderem Inhalt → equal=false
+        // 2) Reuse with different content → equal=false
         let r2 = store
             .create(
                 id,
@@ -289,7 +288,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(r2, CreateOutcome::Reused { equal: false });
-        // Inhalt wurde NICHT ersetzt
+        // Content was NOT replaced
         assert_eq!(store.get(id).unwrap().variant, first);
         assert_eq!(store.get(id).unwrap().version, 0);
     }
@@ -340,7 +339,7 @@ mod tests {
     #[test]
     fn create_kind_mismatch_with_id_rejected() {
         let mut store = ObjectStore::new();
-        // ObjectId mit Kind=Topic, aber wir geben DataWriter
+        // ObjectId with kind=Topic, but we pass DataWriter
         let id = ObjectId::new(0x030, ObjectKind::Topic).unwrap();
         let r = store.create(
             id,
@@ -451,7 +450,7 @@ mod tests {
                 .unwrap();
         }
         let ids: alloc::vec::Vec<ObjectId> = store.iter().map(|(id, _)| id).collect();
-        // BTreeMap sortiert nach ObjectId-raw
+        // BTreeMap sorted by ObjectId raw
         assert!(ids.windows(2).all(|w| w[0] <= w[1]));
     }
 }

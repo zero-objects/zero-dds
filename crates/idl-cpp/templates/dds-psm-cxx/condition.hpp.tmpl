@@ -51,7 +51,7 @@ public:
 
     void attach_condition(const std::shared_ptr<Condition>& c) { conditions_.push_back(c); }
     void detach_condition(const std::shared_ptr<Condition>& c) {
-        // Linear-Scan; akzeptabel fuer kleine WaitSets.
+        // Linear scan; acceptable for small WaitSets.
         for (auto it = conditions_.begin(); it != conditions_.end(); ++it) {
             if (it->lock() == c) { conditions_.erase(it); return; }
         }

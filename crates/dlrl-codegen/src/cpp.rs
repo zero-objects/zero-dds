@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! C++-Codegen — DDS 1.4 §B.4 Annex C++ PSM.
+//! C++ codegen — DDS 1.4 §B.4 Annex C++ PSM.
 
 use alloc::format;
 use alloc::string::String;
 
 use crate::DlrlTypeInfo;
 
-/// Erzeugt einen C++ ObjectRoot-abgeleiteten Class-Header
+/// Generates a C++ class header derived from ObjectRoot
 /// (`class T : public DLRL::ObjectRoot`). Spec §B.6.
 #[allow(clippy::format_collect)]
 #[must_use]
@@ -35,7 +35,7 @@ class {cls} : public DLRL::ObjectRoot {{\npublic:\n"
     out
 }
 
-/// Erzeugt eine C++-Home-Class fuer einen DLRL-Type. Spec §B.3.
+/// Generates a C++ Home class for a DLRL type. Spec §B.3.
 #[must_use]
 pub fn generate_cpp_home(info: &DlrlTypeInfo) -> String {
     let cls = simple_name(&info.name);

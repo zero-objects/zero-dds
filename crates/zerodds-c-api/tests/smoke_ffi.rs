@@ -1,9 +1,9 @@
-//! Smoke-Test: erzeuge Runtime + Writer + Reader, schreibe ein Sample,
-//! lies es zurück. Ruft die `extern "C"`-Funktionen wie ein C-Caller auf.
+//! Smoke test: create runtime + writer + reader, write a sample,
+//! read it back. Calls the `extern "C"` functions like a C caller.
 //!
-//! Kein echter C-Build hier — der C-Build ist in `examples/c_smoke.c`
-//! als ergänzender Test. Dieser Rust-Test verifiziert, dass die FFI-
-//! Schnittstelle in sich konsistent ist.
+//! No real C build here — the C build is in `examples/c_smoke.c`
+//! as a complementary test. This Rust test verifies that the FFI
+//! interface is internally consistent.
 
 #![allow(
     clippy::expect_used,
@@ -34,12 +34,12 @@ use zerodds::{
     zerodds_writer_destroy, zerodds_writer_wait_for_matched, zerodds_writer_write,
 };
 
-/// Pub-Sub-Roundtrip ueber das FFI mit ZWEI Participants (Pub + Sub).
-/// Single-Runtime-Pub+Sub geht NICHT, weil `wire_writer_to_remote_reader`
-/// SPDP-discovered Locators braucht — die existieren erst wenn ein
-/// SEPARATER Participant via SPDP angekommen ist.
+/// Pub-sub roundtrip over the FFI with TWO participants (pub + sub).
+/// Single-runtime pub+sub does NOT work, because `wire_writer_to_remote_reader`
+/// needs SPDP-discovered locators — those exist only once a
+/// SEPARATE participant has arrived via SPDP.
 ///
-/// Auf macOS: ignored (Multicast-Loopback unzuverlaessig).
+/// On macOS: ignored (multicast loopback unreliable).
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
 fn ffi_pub_sub_roundtrip() {
@@ -47,8 +47,8 @@ fn ffi_pub_sub_roundtrip() {
     let topic = CString::new("CFfiSmoke").unwrap();
     let typ = CString::new("RawBytes").unwrap();
 
-    // SAFETY: Test-FFI-Aufrufe mit valid C-Strings + NULL-checks gemaess
-    // jeder pub unsafe fn # Safety. CStrings leben bis Block-Ende.
+    // SAFETY: test FFI calls with valid C strings + NULL checks per
+    // each pub unsafe fn # Safety. The CStrings live until the end of the block.
     unsafe {
         let rt_pub = zerodds_runtime_create(domain);
         let rt_sub = zerodds_runtime_create(domain);
@@ -57,8 +57,8 @@ fn ffi_pub_sub_roundtrip() {
             "runtime_create failed"
         );
 
-        // Vor Endpoint-Erstellung: SPDP-Discovery abwarten. Sonst
-        // wired wire_*_to_remote_* mit leerer Locator-Liste.
+        // Before creating endpoints: wait for SPDP discovery. Otherwise
+        // wire_*_to_remote_* wires up with an empty locator list.
         assert_eq!(
             zerodds_runtime_wait_for_peers(rt_pub, 1, 5_000),
             0,
@@ -87,7 +87,7 @@ fn ffi_pub_sub_roundtrip() {
         while received < 5 && std::time::Instant::now() < deadline {
             let mut buf: *mut u8 = ptr::null_mut();
             let mut len: usize = 0;
-            let rc = zerodds_reader_take(reader, &mut buf, &mut len);
+            let rc = zerodds_reader_take(reader, &mut buf, &mut len, ptr::null_mut());
             assert_eq!(rc, 0);
             if !buf.is_null() && len > 0 {
                 zerodds_buffer_free(buf, len);
@@ -108,26 +108,26 @@ fn ffi_pub_sub_roundtrip() {
 
 #[test]
 fn ffi_handles_null_safely() {
-    // SAFETY: alle destroy-Funktionen sind explizit NULL-tolerant
-    // dokumentiert; NULL-Pointer als Argument ist by-design erlaubt.
+    // SAFETY: all destroy functions are explicitly documented as
+    // NULL-tolerant; a NULL pointer as an argument is allowed by design.
     unsafe {
-        // alle destroy-Funktionen müssen NULL-tolerant sein
+        // all destroy functions must be NULL-tolerant
         zerodds_runtime_destroy(ptr::null_mut());
         zerodds_writer_destroy(ptr::null_mut());
         zerodds_reader_destroy(ptr::null_mut());
         zerodds_buffer_free(ptr::null_mut(), 0);
-        // Opt-1 R6: Loan-API ist auch NULL-tolerant.
+        // Opt-1 R6: the loan API is also NULL-tolerant.
         zerodds_reader_return_loan(ptr::null_mut());
     }
 }
 
-/// Opt-1 R6 — Read-Loan-API Roundtrip ohne to_vec().
+/// Opt-1 R6 — read-loan API roundtrip without to_vec().
 ///
-/// Vergleich zu `ffi_pub_sub_roundtrip`: statt
-/// `zerodds_reader_take` (mit interner `to_vec().into_boxed_slice()`)
-/// verwendet der Subscriber `zerodds_reader_loan` + `_return_loan`.
-/// Bei loan ist `*out_buf` ein direkter Pointer in das interne
-/// `Arc<[u8]>` — Zero-Copy auf dem C-FFI-Boundary.
+/// Compared to `ffi_pub_sub_roundtrip`: instead of
+/// `zerodds_reader_take` (with its internal `to_vec().into_boxed_slice()`)
+/// the subscriber uses `zerodds_reader_loan` + `_return_loan`.
+/// With loan `*out_buf` is a direct pointer into the internal
+/// `Arc<[u8]>` — zero-copy at the C-FFI boundary.
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
 fn ffi_pub_sub_roundtrip_via_loan() {
@@ -135,9 +135,9 @@ fn ffi_pub_sub_roundtrip_via_loan() {
     let topic = CString::new("CFfiSmokeLoan").unwrap();
     let typ = CString::new("RawBytes").unwrap();
 
-    // SAFETY: gleiches Schema wie ffi_pub_sub_roundtrip — valid C-Strings,
-    // NULL-checks gemaess jeder pub unsafe fn # Safety, CStrings leben
-    // bis Block-Ende.
+    // SAFETY: same scheme as ffi_pub_sub_roundtrip — valid C strings,
+    // NULL checks per each pub unsafe fn # Safety, the CStrings live
+    // until the end of the block.
     unsafe {
         let rt_pub = zerodds_runtime_create(domain);
         let rt_sub = zerodds_runtime_create(domain);
@@ -168,11 +168,11 @@ fn ffi_pub_sub_roundtrip_via_loan() {
             let rc = zerodds_reader_loan(reader, &mut buf, &mut len, &mut loan);
             assert_eq!(rc, 0);
             if !buf.is_null() && len > 0 && !loan.is_null() {
-                // Lesen waehrend loan lebt — Bytes muessen die
-                // erwarteten Werte tragen.
+                // Read while the loan lives — the bytes must carry the
+                // expected values.
                 let bytes = std::slice::from_raw_parts(buf, len);
                 assert!(bytes.len() >= 4);
-                assert_eq!(bytes[3], 0xAB, "Marker-Byte aus dem Payload");
+                assert_eq!(bytes[3], 0xAB, "marker byte from the payload");
                 zerodds_reader_return_loan(loan);
                 received += 1;
             } else {
@@ -187,4 +187,64 @@ fn ffi_pub_sub_roundtrip_via_loan() {
 
         assert!(received >= 1, "expected ≥1 sample, got {received}");
     }
+}
+
+/// Regression: A2 bench bug 2026-05-19. RTPS spec §9.6.1.4.1 says
+/// `spdp_port = 7400 + 250 * domain`. For domain ≥ 233 the
+/// port exceeds u16::MAX. `DcpsRuntime::start` returns Err. The FFI must
+/// NOT silently swallow that into a NULL without diagnosis — the A2 bench
+/// did exactly that and then only died at wait_for_peers with a
+/// cryptic BadHandle (-2).
+///
+/// This test ensures that:
+/// * `runtime_create(250)` returns NULL (no UB, no crash)
+/// * follow-up calls with the NULL handle return BadHandle (-2),
+///   not segfault
+#[test]
+fn ffi_runtime_create_domain_too_large_returns_null() {
+    // Domain 250 → spdp_port = 7400 + 250*250 = 69900 > u16::MAX
+    // SAFETY: zerodds_runtime_create takes only a domain integer,
+    // no pointers — no precondition risk.
+    let rt = unsafe { zerodds_runtime_create(250) };
+    assert!(
+        rt.is_null(),
+        "runtime_create(250) must return NULL (port overflow)"
+    );
+    // A NULL handle in a follow-up API must return BadHandle (-2), not crash
+    // SAFETY: `rt` is NULL here (create returned NULL) — the NULL-handle path
+    // is an explicit contract (returns BadHandle).
+    let rc = unsafe { zerodds_runtime_wait_for_peers(rt, 1, 100) };
+    assert_eq!(rc, -2, "wait_for_peers(NULL) must return BadHandle (-2)");
+    // destroy(NULL) must be a no-op
+    // SAFETY: `rt` comes from zerodds_runtime_create or is NULL —
+    // destroy accepts both.
+    unsafe { zerodds_runtime_destroy(rt) };
+}
+
+/// Domain 232 is the highest safe value (spdp_port = 65400 < u16::MAX).
+#[test]
+fn ffi_runtime_create_domain_232_succeeds() {
+    // SAFETY: only a domain integer, no pointer precondition.
+    let rt = unsafe { zerodds_runtime_create(232) };
+    assert!(
+        !rt.is_null(),
+        "runtime_create(232) must be OK (port = 65400, max u16-safe)"
+    );
+    // SAFETY: `rt` comes from zerodds_runtime_create or is NULL —
+    // destroy accepts both.
+    unsafe { zerodds_runtime_destroy(rt) };
+}
+
+/// Domain 233 is the first overflow (spdp_port = 65650 > u16::MAX).
+#[test]
+fn ffi_runtime_create_domain_233_returns_null() {
+    // SAFETY: only a domain integer, no pointer precondition.
+    let rt = unsafe { zerodds_runtime_create(233) };
+    assert!(
+        rt.is_null(),
+        "runtime_create(233) must return NULL (port = 65650 > u16::MAX)"
+    );
+    // SAFETY: `rt` comes from zerodds_runtime_create or is NULL —
+    // destroy accepts both.
+    unsafe { zerodds_runtime_destroy(rt) };
 }

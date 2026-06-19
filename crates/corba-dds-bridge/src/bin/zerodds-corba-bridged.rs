@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// `zerodds-corba-bridged` — DDS↔CORBA-Bridge-Daemon (IIOP-Server).
+// `zerodds-corba-bridged` — DDS↔CORBA bridge daemon (IIOP server).
 //
-// Spec: `docs/specs/zerodds-corba-bridge-1.0.md`. Implementiert die
-// L1-L4-Pflichtschicht: IIOP-Server (Listen 6833), GIOP-Decode +
-// Reply-Pump, Object-Key-Generation per SHA-256 (§4.5), IOR-Generation
-// (§4.1), YAML-Config-File, CLI-Surface §2.
+// Spec: `docs/specs/zerodds-corba-bridge-1.0.md`. Implements the
+// mandatory L1-L4 layer: IIOP server (listen 6833), GIOP decode +
+// reply pump, object-key generation via SHA-256 (§4.5), IOR generation
+// (§4.1), YAML config file, CLI surface §2.
 //
-// L5 (SSLIOP+CSIv2) und L6 (Multi-Tenant) sind FUTURE-Hooks.
+// L5 (SSLIOP+CSIv2) and L6 (multi-tenant) are FUTURE hooks.
 
 #![allow(
     clippy::expect_used,
@@ -242,16 +242,16 @@ fn run() -> Result<(), DaemonError> {
     let shutdown = Arc::new(AtomicBool::new(false));
     let reload = Arc::new(AtomicBool::new(false));
 
-    // Metrics-Registry + Standard-Counter (§8.2 Prometheus).
+    // Metrics registry + standard counters (§8.2 Prometheus).
     let registry = Arc::new(Registry::new());
     let bridge_metrics = BridgeMetrics::register(&registry);
 
-    // Signal-Watcher (§9.2 Graceful Shutdown).
+    // Signal watcher (§9.2 graceful shutdown).
     if let Err(e) = install_signal_watcher(Arc::clone(&shutdown), Arc::clone(&reload)) {
         eprintln!("{{\"event\":\"signal_watcher_init_failed\",\"err\":\"{e}\"}}");
     }
 
-    // Admin-Endpoint (§5.2 Catalog/Healthz + §8.2 Metrics).
+    // Admin endpoint (§5.2 catalog/healthz + §8.2 metrics).
     let healthy = Arc::new(AtomicBool::new(true));
     let _admin_h = if let Some(addr_s) = metrics.as_deref().filter(|s| !s.is_empty()) {
         match addr_s.parse::<std::net::SocketAddr>() {
@@ -289,7 +289,7 @@ fn run() -> Result<(), DaemonError> {
         None
     };
 
-    // OTLP-Exporter (§8.3).
+    // OTLP exporter (§8.3).
     let _otlp_h = if let Some(otlp_cfg) = otlp_config_from_env(SERVICE_NAME) {
         let exp = Arc::new(OtlpExporter::new(otlp_cfg));
         spawn_otlp_flush_loop(exp, Arc::clone(&shutdown), Duration::from_secs(5)).ok()
@@ -297,7 +297,7 @@ fn run() -> Result<(), DaemonError> {
         None
     };
 
-    // FUTURE (L2): DcpsRuntime::start(cfg.domain, …) — DDS-Side.
+    // FUTURE (L2): DcpsRuntime::start(cfg.domain, …) — DDS side.
 
     let res = serve_iiop(&cfg, shutdown, idle_timeout_ms, &bridge_metrics);
     healthy.store(false, Ordering::SeqCst);
@@ -342,7 +342,7 @@ pub(crate) fn compute_object_key(repo_id: &str, request_topic: &str, reply_topic
     digest[..16].to_vec()
 }
 
-/// Spec §4.1 — IOR mit IIOP-Profile.
+/// Spec §4.1 — IOR with an IIOP profile.
 pub(crate) fn build_ior(repo_id: &str, host: &str, port: u16, object_key: Vec<u8>) -> Ior {
     let body = IiopProfileBody::new(IiopVersion::new(1, 2), host.into(), port, object_key);
     let profile =

@@ -9,9 +9,9 @@
 //! Navigation, Type-specific Generic Operations, Segmentation,
 //! Transactions, Security, Configurators, Proxy Homes, Home Finders."
 //!
-//! Wir implementieren das als Filter-Funktion auf dem `ComponentEquivalent`
-//! / `HomeEquivalent` aus [`crate::transform`] — alle Operationen, die
-//! in §13.2-§13.10 explizit ausgeschlossen sind, werden entfernt.
+//! We implement this as a filter function over the `ComponentEquivalent`
+//! / `HomeEquivalent` from [`crate::transform`] — all operations that
+//! are explicitly excluded in §13.2-§13.10 are removed.
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -20,13 +20,12 @@ use zerodds_idl::ast::{Export, InterfaceDef, ScopedName};
 
 use crate::transform::ComponentEquivalent;
 
-/// Filter-Fehler.
+/// Filter error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LightweightFilterError {
-    /// Ein verlangter LwCCM-konformer Component wuerde nach Filter
-    /// keine Operations mehr haben — typischer Fall: der Component
-    /// hatte ausschliesslich Persistence-/Configurator-/Proxy-Home-
-    /// Features.
+    /// A requested LwCCM-conformant component would have no operations
+    /// left after filtering — typical case: the component had only
+    /// persistence / configurator / proxy-home features.
     EmptyAfterFilter,
 }
 
@@ -43,29 +42,29 @@ impl fmt::Display for LightweightFilterError {
 #[cfg(feature = "std")]
 impl std::error::Error for LightweightFilterError {}
 
-/// Wendet das Lightweight-CCM-Profile §13 auf ein
-/// [`ComponentEquivalent`] an. Spec-Sections, die gefiltert werden:
+/// Applies the Lightweight CCM Profile §13 to a
+/// [`ComponentEquivalent`]. Spec sections that are filtered:
 ///
-/// * §13.3 (S. 276) — keine `provide_facet`/`get_all_facets`/
-///   `get_named_facets` (Navigation generic ops).
-/// * §13.3 (S. 276) — keine `connect`/`disconnect`/`get_connection(s)`
-///   GENERIC ops auf `Receptacles`-Iface (type-specific bleiben).
-/// * §13.3 (S. 276) — keine `subscribe`/`unsubscribe`/
+/// * §13.3 (p. 276) — no `provide_facet`/`get_all_facets`/
+///   `get_named_facets` (generic navigation ops).
+/// * §13.3 (p. 276) — no `connect`/`disconnect`/`get_connection(s)`
+///   GENERIC ops on the `Receptacles` iface (type-specific ones remain).
+/// * §13.3 (p. 276) — no `subscribe`/`unsubscribe`/
 ///   `connect_consumer`/`disconnect_consumer`/`get_consumer`/
-///   `get_all_consumers`/`get_named_consumers` GENERIC ops auf `Events`
-///   Interface (type-specific bleiben).
-/// * §13.7 (S. 279) — keine Configurator-Methoden (`configure`,
+///   `get_all_consumers`/`get_named_consumers` GENERIC ops on the
+///   `Events` interface (type-specific ones remain).
+/// * §13.7 (p. 279) — no configurator methods (`configure`,
 ///   `set_configuration`, `configuration_complete`).
 ///
-/// Diese Filter wirken auf der `Components::*`-API-Ebene, nicht auf den
-/// Component-Body. Da unser `ComponentEquivalent` bereits die
-/// type-spezifischen Ops (`provide_<n>`, `connect_<n>`, etc.) enthaelt,
-/// gibt es typisch nichts zu filtern. Die Filter-Funktion entfernt
-/// dennoch Konfigurator-Operationen, falls vorhanden, und Generic-
-/// Navigation-Ops, falls der Caller sie eingebunden hat.
+/// These filters act at the `Components::*` API level, not on the
+/// component body. Since our `ComponentEquivalent` already contains the
+/// type-specific ops (`provide_<n>`, `connect_<n>`, etc.), there is
+/// typically nothing to filter. The filter function nonetheless removes
+/// configurator operations, if present, and generic navigation ops, if
+/// the caller has included them.
 ///
 /// # Errors
-/// Siehe [`LightweightFilterError`].
+/// See [`LightweightFilterError`].
 pub fn filter_to_lightweight(
     eq: ComponentEquivalent,
 ) -> Result<ComponentEquivalent, LightweightFilterError> {
@@ -76,9 +75,9 @@ pub fn filter_to_lightweight(
         .filter(|e| !is_filtered_export(e))
         .collect();
     if kept_exports.is_empty() && !eq.event_consumer_interfaces.is_empty() {
-        // Wenn einzige Ports Configurator-Ops waren und sonst nichts,
-        // wird das nach Filter leer — das ist Spec-konform leer
-        // moeglich, aber ein Hinweis fuer den Caller.
+        // If the only ports were configurator ops and nothing else, the
+        // result becomes empty after filtering — spec allows an empty
+        // result, but it's a hint for the caller.
         return Err(LightweightFilterError::EmptyAfterFilter);
     }
     let filtered_iface = InterfaceDef {
@@ -100,7 +99,7 @@ pub fn filter_to_lightweight(
 fn is_filtered_export(e: &Export) -> bool {
     if let Export::Op(o) = e {
         let n = &o.name.text;
-        // Spec §13.7 (S. 279) — Configurator.
+        // Spec §13.7 (p. 279) — configurator.
         matches!(
             n.as_str(),
             "configure" | "set_configuration" | "configuration_complete"
@@ -111,8 +110,8 @@ fn is_filtered_export(e: &Export) -> bool {
 }
 
 fn is_filtered_base(b: &ScopedName) -> bool {
-    // Wir filtern keine Inheritance — Spec §13 entfernt Member-Ops, nicht
-    // die Inheritance-Beziehung selbst. Stub fuer Erweiterbarkeit.
+    // We don't filter inheritance — Spec §13 removes member ops, not the
+    // inheritance relationship itself. Stub for extensibility.
     let _ = b;
     false
 }
@@ -146,8 +145,8 @@ mod tests {
 
     #[test]
     fn lightweight_filter_drops_configurator_operations() {
-        // Synthese: bauen Equivalent + injizieren `configure`-Op, dann
-        // filtern.
+        // Synthesis: build the equivalent + inject a `configure` op, then
+        // filter.
         let c = ComponentDef {
             name: ident("C"),
             base: None,
@@ -161,10 +160,11 @@ mod tests {
             span: span(),
         };
         let mut eq = transform_component(&c);
-        // Inject Configurator-Op (Spec §6.10.1.1 S. 45).
+        // Inject configurator op (Spec §6.10.1.1 p. 45).
         eq.equivalent_interface.exports.push(Export::Op(OpDecl {
             name: ident("configure"),
             oneway: false,
+            context: Vec::new(),
             return_type: None,
             params: alloc::vec![ParamDecl {
                 attribute: ParamAttribute::In,
@@ -193,8 +193,8 @@ mod tests {
 
     #[test]
     fn lightweight_filter_keeps_typespecific_ops() {
-        // Spec §13.3 entfernt nur GENERIC navigation; type-specific
-        // (provide_<n>) bleibt.
+        // Spec §13.3 removes only GENERIC navigation; type-specific
+        // (provide_<n>) remains.
         let c = ComponentDef {
             name: ident("C"),
             base: None,

@@ -3,30 +3,30 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-flatdata/badge.svg)](https://docs.rs/zerodds-flatdata)
 
-Zero-Copy Same-Host-Pub/Sub fuer den [ZeroDDS](https://zerodds.org)-Stack: `FlatStruct`-Trait, Slot-Layout per Spec, drei produktive `SlotBackend`-Implementationen (in-memory + POSIX shm/mmap + Iceoryx2-Bridge). Safety classification: **STANDARD** (mit per-Block-`SAFETY`-Kommentaren um die `unsafe trait FlatStruct`-Garantien herum lokalisiert).
+Zero-copy same-host pub/sub for the [ZeroDDS](https://zerodds.org) stack: `FlatStruct` trait, slot layout per spec, three production `SlotBackend` implementations (in-memory + POSIX shm/mmap + Iceoryx2 bridge). Safety classification: **STANDARD** (localized with per-block `SAFETY` comments around the `unsafe trait FlatStruct` guarantees).
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| ZeroDDS-flatdata 1.0 | §1 (FlatStruct + derive), §2 (Slot-Layout), §4 (Wire-Pfad), §5 (Lifetime + Refcount), §6 (Schema-Versioning), §7 (Sicherheit), §8/§9 (Writer-/Reader-API) |
-| ADR-0003 | Drei-Backend-Architektur (in-memory / POSIX shm / Iceoryx2) |
+| ZeroDDS-flatdata 1.0 | §1 (FlatStruct + derive), §2 (slot layout), §4 (wire path), §5 (lifetime + refcount), §6 (schema versioning), §7 (security), §8/§9 (writer/reader API) |
+| ADR-0003 | Three-backend architecture (in-memory / POSIX shm / Iceoryx2) |
 
-## Was ist drin
+## What's inside
 
-- **`FlatStruct`-Trait** — `unsafe trait` mit `Copy + 'static + Send + Sync` und `TYPE_HASH`-Konstante. Garantiert Layout-Stabilitaet, sodass `as_bytes()` und `from_bytes_unchecked()` per Layout safe sind.
-- **`SlotHeader` + Slot-Layout** — 16-Byte-Header (`sequence_number`, `sample_size`, `reader_mask`, reserved) + Payload (Spec §2).
-- **`SlotBackend`-Trait** — abstrahiert das Backend; Reader/Writer sind generisch.
-- **`InMemorySlotAllocator`** — Default-Backend fuer Tests + Single-Process-Pub/Sub.
-- **`PosixSlotAllocator`** (Feature `posix-mmap`, default an) — `shm_open`+`mmap`, Cross-Process Same-Host. Owner/Consumer-Modell mit flink-Datei.
-- **`Iceoryx2Publisher<T>` / `Iceoryx2Subscriber<T>`** (Feature `iceoryx2-bridge`) — separate Pub/Sub-API gegen [Eclipse iceoryx2 v0.8](https://github.com/eclipse-iceoryx/iceoryx2). Mappt auf `loan_slice_uninit` + `send` / `receive`. Type-Hash-Cross-Validation per Service-Name-Komposition.
-- **`FlatWriter<T>`** + **`FlatSlot<T>`** — Spec §8.1/§8.2: `write` + `loan_slot` + `commit`/Drop-discard.
-- **`FlatReader<T>`** + **`FlatSampleRef<T>`** — Spec §9.1: `read` mit Type-Hash-Cross-Validation (Spec §6.1) + `last_sn`-Re-Read-Suppression.
-- **`ShmLocator`** + `is_same_host` + FNV-1a-Helper — Discovery-Vendor-PID-Hilfen.
+- **`FlatStruct` trait** — `unsafe trait` with `Copy + 'static + Send + Sync` and a `TYPE_HASH` constant. Guarantees layout stability so that `as_bytes()` and `from_bytes_unchecked()` are safe by layout.
+- **`SlotHeader` + slot layout** — 16-byte header (`sequence_number`, `sample_size`, `reader_mask`, reserved) + payload (spec §2).
+- **`SlotBackend` trait** — abstracts the backend; readers/writers are generic.
+- **`InMemorySlotAllocator`** — default backend for tests + single-process pub/sub.
+- **`PosixSlotAllocator`** (feature `posix-mmap`, on by default) — `shm_open` + `mmap`, cross-process same-host. Owner/consumer model with a flink file.
+- **`Iceoryx2Publisher<T>` / `Iceoryx2Subscriber<T>`** (feature `iceoryx2-bridge`) — separate pub/sub API against [Eclipse iceoryx2 v0.8](https://github.com/eclipse-iceoryx/iceoryx2). Maps to `loan_slice_uninit` + `send` / `receive`. Type-hash cross-validation via service-name composition.
+- **`FlatWriter<T>`** + **`FlatSlot<T>`** — spec §8.1/§8.2: `write` + `loan_slot` + `commit` / Drop-discard.
+- **`FlatReader<T>`** + **`FlatSampleRef<T>`** — spec §9.1: `read` with type-hash cross-validation (spec §6.1) + `last_sn` re-read suppression.
+- **`ShmLocator`** + `is_same_host` + FNV-1a helper — discovery vendor-PID helpers.
 
-## Schichten-Position
+## Layer position
 
-Layer 4 — Core Services. Keine ZeroDDS-Crate-Deps; einzige externe Dep ist `shared_memory` (optional, hinter `posix-mmap`-Feature).
+Layer 4 — Core Services. No ZeroDDS crate deps; the only external dep is `shared_memory` (optional, behind the `posix-mmap` feature).
 
 ## Quickstart
 
@@ -51,18 +51,18 @@ let got = reader.read().unwrap().unwrap();
 assert_eq!(got, Pose { x: 1.0, y: 2.0, z: 3.0 });
 ```
 
-## Feature-Flags
+## Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std` | ✅ | Standard-Library + Mutex + Threads. |
+| `std` | ✅ | Standard library + Mutex + threads. |
 | `alloc` | ✅ (via std) | `Vec`/`Arc`. |
-| `posix-mmap` | ✅ | `PosixSlotAllocator` (POSIX `shm_open` + `mmap`). Hangt an `shared_memory`. |
-| `iceoryx2-bridge` | ❌ | Iceoryx2-Adapter-Skelett (Bridge zu iceoryx2-Service). |
+| `posix-mmap` | ✅ | `PosixSlotAllocator` (POSIX `shm_open` + `mmap`). Depends on `shared_memory`. |
+| `iceoryx2-bridge` | ❌ | Iceoryx2 adapter skeleton (bridge to iceoryx2 service). |
 
-## Stabilitaet
+## Stability
 
-Alle `pub`-Items sind ab `1.0.0` stabil. Die `unsafe trait FlatStruct` ist API-stabil; Implementer müssen die Layout-Garantien per `unsafe impl` zusichern.
+All `pub` items are stable as of `1.0.0`. The `unsafe trait FlatStruct` is API-stable; implementers must guarantee the layout properties via `unsafe impl`.
 
 ## Tests
 
@@ -70,12 +70,12 @@ Alle `pub`-Items sind ab `1.0.0` stabil. Die `unsafe trait FlatStruct` ist API-s
 cargo test -p zerodds-flatdata
 ```
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../../LICENSE).
+Apache-2.0. See [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
 - [`docs/specs/zerodds-flatdata-1.0.md`](../../docs/specs/zerodds-flatdata-1.0.md)
-- [`zerodds-dcps`](../dcps) — DCPS-Integration (Feature `flatdata-integration`)
-- [`zerodds-flatdata-derive`](../flatdata-derive) — `#[derive(FlatStruct)]` Proc-Macro
+- [`zerodds-dcps`](../dcps) — DCPS integration (feature `flatdata-integration`)
+- [`zerodds-flatdata-derive`](../flatdata-derive) — `#[derive(FlatStruct)]` proc-macro

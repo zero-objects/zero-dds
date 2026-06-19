@@ -1,8 +1,8 @@
-"""Tests fuer §2.5 — DataReader/Writer Status-Getter.
+"""Tests for §2.5 — DataReader/Writer status getters.
 
-Verifiziert die Tupel-Shape der Status-Getter gegen die Spec
-(DDS 1.4 §2.2.4). Auf einem offline-Participant sind die Counter
-alle 0, der last-handle 0; die Shape muss trotzdem stimmen.
+Verifies the tuple shape of the status getters against the spec
+(DDS 1.4 §2.2.4). On an offline participant the counters are
+all 0 and the last handle 0; the shape must be correct nonetheless.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import zerodds
 
 pytestmark = pytest.mark.skipif(
     not getattr(zerodds, "_CORE_AVAILABLE", False),
-    reason="zerodds._core nicht kompiliert — maturin develop noetig",
+    reason="zerodds._core not compiled — maturin develop needed",
 )
 
 
@@ -26,9 +26,9 @@ def _make_writer_reader(domain: int):
 
 
 def test_publication_matched_status_shape():
-    """§2.5 — publication_matched_status liefert
+    """§2.5 — publication_matched_status returns
     `(total_count, total_count_change, current_count, current_count_change, last_subscription_handle)`
-    nach DDS 1.4 §2.2.4.6 PublicationMatchedStatus."""
+    per DDS 1.4 §2.2.4.6 PublicationMatchedStatus."""
     writer, _r = _make_writer_reader(140)
     status = writer.publication_matched_status()
     assert len(status) == 5

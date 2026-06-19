@@ -1,23 +1,23 @@
-//! Build-Script fuer zerodds-py. Setzt die PyO3-Linker-Flags fuer
-//! `--features extension-module` auch beim direkten cargo-Build
-//! (ohne maturin-Wrapper).
+//! Build script for zerodds-py. Sets the PyO3 linker flags for
+//! `--features extension-module` even on a direct cargo build
+//! (without the maturin wrapper).
 //!
-//! Spec-Basis: <https://pyo3.rs/v0.22/building_and_distribution#the-extension-module-feature>
-//! — wenn ein Python-Extension-Module direkt mit cargo gebaut wird,
-//! muss der Linker wissen dass die `Py*`-Symbole erst zur Python-
-//! Laufzeit aufgeloest werden.
+//! Spec basis: <https://pyo3.rs/v0.22/building_and_distribution#the-extension-module-feature>
+//! — when a Python extension module is built directly with cargo,
+//! the linker must know that the `Py*` symbols are resolved only at
+//! Python runtime.
 
 fn main() {
-    // Nur aktiv wenn das Feature gesetzt ist. Sonst no-op.
+    // Only active when the feature is set. Otherwise a no-op.
     if std::env::var("CARGO_FEATURE_EXTENSION_MODULE").is_ok() {
         let target = std::env::var("TARGET").unwrap_or_default();
         if target.contains("apple-darwin") || target.contains("apple-ios") {
-            // macOS: Symbole spaet aufloesen (Python liefert sie beim
-            // Import).
+            // macOS: resolve symbols late (Python provides them on
+            // import).
             println!("cargo:rustc-link-arg=-undefined");
             println!("cargo:rustc-link-arg=dynamic_lookup");
         }
-        // Linux/Windows: PyO3's extension-module Feature erzeugt
-        // ohnehin die richtigen Flags.
+        // Linux/Windows: PyO3's extension-module feature produces
+        // the right flags anyway.
     }
 }

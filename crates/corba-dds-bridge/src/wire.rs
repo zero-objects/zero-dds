@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Wire-Helpers — bringen die Bridge an konkrete CORBA-Wire-Crates
-//! (`zerodds-corba-giop` + `zerodds-corba-ior`) heran.
+//! Wire helpers — connect the bridge to the concrete CORBA wire crates
+//! (`zerodds-corba-giop` + `zerodds-corba-ior`).
 //!
-//! Die Bridge selbst lebt logisch oberhalb der Wire-Crates und mappt
-//! Operation-Bytes auf DDS-Topics, aber Hosting braucht die Helpers
-//! um:
+//! The bridge itself lives logically above the wire crates and maps
+//! operation bytes onto DDS topics, but hosting needs the helpers to:
 //!
-//! 1. **GIOP-Requests zu inspizieren** (Operation-Name + Body
-//!    extrahieren ohne den ganzen Servant-Loop), und
-//! 2. **`object_key` aus einer IOR zu ziehen** — fuer den Lookup,
-//!    welche `BridgeRoute` einen eingehenden Request bedient.
+//! 1. **inspect GIOP requests** (extract the operation name + body
+//!    without the full servant loop), and
+//! 2. **pull the `object_key` out of an IOR** — for the lookup of
+//!    which `BridgeRoute` serves an incoming request.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -19,22 +18,22 @@ use alloc::vec::Vec;
 use zerodds_corba_giop::{Message, decode_message};
 use zerodds_corba_ior::{Ior, ProfileId};
 
-/// Zusammenfassung einer GIOP-Request, wie sie der Bridge-Servant
-/// fuer das DDS-Mapping benoetigt.
+/// Summary of a GIOP request, as the bridge servant needs it for the
+/// DDS mapping.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestSummary {
-    /// `request_id` aus dem GIOP-Header (bzw. der `RequestHeader`).
+    /// `request_id` from the GIOP header (i.e. the `RequestHeader`).
     pub request_id: u32,
-    /// Operation-Name (vollqualifiziert).
+    /// Operation name (fully qualified).
     pub operation: String,
-    /// Body-Bytes (das, was die Bridge auf das Topic publiziert).
+    /// Body bytes (what the bridge publishes to the topic).
     pub body: Vec<u8>,
 }
 
-/// Decodiert ein GIOP-Frame (Header + Body) und extrahiert
-/// `request_id`/`operation`/`body` falls die Message ein
-/// `Request`-Type ist. Andere Message-Types werden nicht in eine
-/// `RequestSummary` gekapselt.
+/// Decodes a GIOP frame (header + body) and extracts
+/// `request_id`/`operation`/`body` if the message is a `Request`
+/// type. Other message types are not wrapped into a
+/// `RequestSummary`.
 #[must_use]
 pub fn decode_giop_request_bytes(frame: &[u8]) -> Option<RequestSummary> {
     let (msg, body) = decode_message(frame).ok()?;
@@ -48,10 +47,10 @@ pub fn decode_giop_request_bytes(frame: &[u8]) -> Option<RequestSummary> {
     }
 }
 
-/// Extrahiert das `object_key` aus dem ersten `TAG_INTERNET_IOP`-
-/// Profile einer IOR. Rueckgabe ist die fuer Bridge-Routes-Match
-/// benoetigte `Vec<u8>`-Form. Liefert `None` falls die IOR kein
-/// IIOP-Profile enthaelt oder die Decapsulation fehlschlaegt.
+/// Extracts the `object_key` from the first `TAG_INTERNET_IOP`
+/// profile of an IOR. The return value is the `Vec<u8>` form needed
+/// for bridge-route matching. Returns `None` if the IOR contains no
+/// IIOP profile or the decapsulation fails.
 #[must_use]
 pub fn object_key_from_ior(ior: &Ior) -> Option<Vec<u8>> {
     for prof in &ior.profiles {
@@ -70,7 +69,7 @@ mod tests {
 
     #[test]
     fn decode_giop_request_bytes_rejects_non_request_frame() {
-        // 12-Byte-Header eines bekannt-ungueltigen Frames.
+        // 12-byte header of a known-invalid frame.
         let bogus = [0u8; 12];
         assert!(decode_giop_request_bytes(&bogus).is_none());
     }

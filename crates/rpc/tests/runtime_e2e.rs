@@ -1,11 +1,11 @@
-//! E2E-Integrationstests fuer C6.1.C — Requester + Replier ueber DCPS-
-//! Offline-Loop.
+//! E2E integration tests for C6.1.C — requester + replier over a DCPS
+//! offline loop.
 //!
-//! Strategie: Beide Endpoints laufen auf demselben `DomainParticipant`
-//! im Offline-Mode. Wir pumpen Bytes manuell zwischen Writer-Queue und
-//! Reader-Inbox — das simuliert den Phase-B-Transport-Pfad und ist
-//! ausreichend fuer Foundation-Tests, die die Korrelations- und
-//! Handler-Logik validieren (nicht den UDP-Transport).
+//! Strategy: both endpoints run on the same `DomainParticipant`
+//! in offline mode. We pump bytes manually between the writer queue and
+//! the reader inbox — this simulates the phase-B transport path and is
+//! sufficient for foundation tests that validate the correlation and
+//! handler logic (not the UDP transport).
 
 #![allow(
     clippy::expect_used,
@@ -41,10 +41,10 @@ fn participant(domain: i32) -> DomainParticipant {
         .create_participant_offline(domain, DomainParticipantQos::default())
 }
 
-/// Pumpt alle gequeueten Frames vom Requester→Replier (Request-Topic) und
-/// vom Replier→Requester (Reply-Topic). Eine "Tick" ist ein Bidirectional-
-/// Roundtrip: erst Requests durchschieben, Replier verarbeiten, dann
-/// Replies durchschieben, Requester `tick`.
+/// Pumps all queued frames from requester→replier (request topic) and
+/// from replier→requester (reply topic). One "tick" is a bidirectional
+/// roundtrip: first push the requests through, process the replier, then
+/// push the replies through, requester `tick`.
 fn pump<
     TIn: zerodds_dcps::dds_type::DdsType + Send + 'static,
     TOut: zerodds_dcps::dds_type::DdsType + Send + 'static,
@@ -90,10 +90,10 @@ fn e2e_single_request_response_roundtrip() {
 
 #[test]
 fn e2e_three_methods_distinct_payload_directions() {
-    // Simuliert drei Methoden auf demselben Service mit unterschiedlichen
-    // Param-Direction-Mustern, indem wir den Payload als
-    // (method_tag, payload_bytes) interpretieren. Im echten Codegen
-    // produziert C6.1.B genau so eine Discriminator-Union.
+    // Simulates three methods on the same service with different
+    // param-direction patterns, by interpreting the payload as
+    // (method_tag, payload_bytes). In real codegen
+    // C6.1.B produces exactly such a discriminator union.
     let p = participant(1002);
     let q = RpcQos::default_basic();
     let handler = Arc::new(FnHandler::new(|req: RawBytes| {
@@ -130,11 +130,11 @@ fn e2e_three_methods_distinct_payload_directions() {
 
 #[test]
 fn e2e_multi_pending_requests_all_get_their_reply() {
-    // 5 Requests parallel — jeder soll seinen eigenen Reply zurueckbekommen.
+    // 5 requests in parallel — each should get its own reply back.
     let p = participant(1003);
     let q = RpcQos::default_basic();
     let handler = Arc::new(FnHandler::new(|req: RawBytes| {
-        // Reply payload echoed mit inkrement
+        // Reply payload echoed with increment
         let mut out = req.data.clone();
         if let Some(b) = out.first_mut() {
             *b = b.wrapping_add(100);
@@ -184,7 +184,7 @@ fn e2e_handler_error_surfaces_as_remote_exception_at_caller() {
 
 #[test]
 fn e2e_send_request_blocking_succeeds_with_pumping_thread() {
-    // Blocking-Variante mit einem Background-Thread, der das Pumpen macht.
+    // Blocking variant with a background thread that does the pumping.
     let p = participant(1005);
     let q = RpcQos::default_basic();
     let handler = Arc::new(FnHandler::new(|req: RawBytes| {
@@ -238,12 +238,12 @@ fn e2e_reply_after_timeout_is_dropped() {
         .send_request_blocking(&RawBytes::new(vec![1]), None)
         .unwrap_err();
     assert!(matches!(err, RpcError::Timeout));
-    // Erst jetzt pumpen — der Reply trifft "zu spaet" ein und wird vom
-    // Requester verworfen, kein Crash.
+    // Only pump now — the reply arrives "too late" and is discarded by the
+    // requester, no crash.
     pump(&requester, &replier);
-    // Pending wurde nach Timeout in send_request_blocking nicht entfernt
-    // (Foundation-Limitation: Drop-on-Timeout ist C6.1.D-Scope). Der Slot
-    // wird im pump dann konsumiert und drop'ed.
+    // Pending was not removed after the timeout in send_request_blocking
+    // (foundation limitation: drop-on-timeout is C6.1.D scope). The slot
+    // is then consumed in pump and dropped.
     assert!(requester.pending_count() <= 1);
 }
 
@@ -259,8 +259,8 @@ fn e2e_oneway_does_not_produce_reply_traffic() {
     let id = requester.send_oneway(&RawBytes::new(vec![1, 2])).unwrap();
     assert!(id.sequence_number > 0);
     assert_eq!(requester.pending_count(), 0);
-    // Reply wird trotzdem produziert (Replier weiss nicht, dass es oneway war),
-    // aber Requester hat keinen Pending-Slot dafuer und verwirft ihn.
+    // The reply is produced anyway (the replier does not know it was oneway),
+    // but the requester has no pending slot for it and discards it.
     pump(&requester, &replier);
     assert_eq!(replier.handled_count(), 1);
     assert_eq!(requester.pending_count(), 0);
@@ -268,8 +268,8 @@ fn e2e_oneway_does_not_produce_reply_traffic() {
 
 #[test]
 fn e2e_instance_routing_filters_per_replier() {
-    // Zwei Replier auf derselben Service unterschieden durch
-    // service_instance_name. Requester-A spricht nur mit Replier-A.
+    // Two repliers on the same service distinguished by
+    // service_instance_name. Requester A talks only to replier A.
     let p = participant(1008);
     let q = RpcQos::default_basic();
     let handler_a = Arc::new(FnHandler::new(|_: RawBytes| {
@@ -285,7 +285,7 @@ fn e2e_instance_routing_filters_per_replier() {
     let req_a = Requester::<RawBytes, RawBytes>::with_instance(&p, "Inst", "calc-A", &q).unwrap();
 
     let (_id, _rx) = req_a.send_request_async(&RawBytes::new(vec![1])).unwrap();
-    // Pumpe Request manuell zu beiden Repliern — nur calc-A darf antworten.
+    // Pump the request manually to both repliers — only calc-A may answer.
     let frames = req_a.__drain_request_writer();
     for f in frames.iter() {
         rep_a.__push_request_raw(f.clone()).unwrap();
@@ -323,7 +323,7 @@ fn e2e_qos_profile_from_xml_drives_history_depth() {
 
     let p = participant(1009);
     let r = Requester::<RawBytes, RawBytes>::new(&p, "FromXml", &q).unwrap();
-    // QoS wurde auf den Writer durchgereicht — DataWriter::qos() gibt eine
-    // Kopie mit depth=17 zurueck.
+    // The QoS was passed through to the writer — DataWriter::qos() returns a
+    // copy with depth=17.
     drop(r);
 }

@@ -1,11 +1,11 @@
-//! Optionaler Roundtrip-Test: IDL → C++-Header → `clang -fsyntax-only`.
+//! Optional roundtrip test: IDL → C++ header → `clang -fsyntax-only`.
 //!
-//! Default ignored, weil clang nicht in jeder CI/Dev-Umgebung verfuegbar
-//! ist. Run via `cargo test -p zerodds-idl-cpp -- --ignored`.
+//! Ignored by default, because clang is not available in every CI/dev
+//! environment. Run via `cargo test -p zerodds-idl-cpp -- --ignored`.
 //!
-//! Wenn clang im PATH ist und der Test grun ist, beweist das die
-//! Syntax-Korrektheit (nicht Semantik-Korrektheit) des generierten
-//! C++17-Headers.
+//! If clang is on the PATH and the test is green, this proves the
+//! syntactic correctness (not semantic correctness) of the generated
+//! C++17 header.
 
 #![allow(
     clippy::expect_used,

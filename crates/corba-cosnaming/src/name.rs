@@ -17,14 +17,14 @@ use alloc::vec::Vec;
 /// Name-Component — `id` + `kind`-Tupel.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
 pub struct NameComponent {
-    /// Identifier-Teil.
+    /// Identifier part.
     pub id: String,
-    /// Kind/Type-Tag (oft leer).
+    /// Kind/type tag (often empty).
     pub kind: String,
 }
 
 impl NameComponent {
-    /// Konstruktor mit nur `id` (kind = leer).
+    /// Constructor with only `id` (kind = empty).
     #[must_use]
     pub fn new(id: impl Into<String>) -> Self {
         Self {
@@ -33,7 +33,7 @@ impl NameComponent {
         }
     }
 
-    /// Konstruktor mit `id` + `kind`.
+    /// Constructor with `id` + `kind`.
     #[must_use]
     pub fn with_kind(id: impl Into<String>, kind: impl Into<String>) -> Self {
         Self {

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Wire-Codec fuer `ParticipantGenericMessage` (Spec §7.5.5).
+//! Wire codec for `ParticipantGenericMessage` (Spec §7.5.5).
 //!
-//! Identische Semantik wie `zerodds_security_runtime::builtin_topics`: 4-Byte
-//! CDR-LE-Encapsulation-Header gefolgt vom XCDR1-Body. Wir reimplementieren
-//! es hier inline, damit `zerodds-discovery` nicht von `zerodds-security-runtime`
-//! abhaengt (Cargo-Zyklus mit den Dev-Dep-Tests in security-runtime).
+//! Identical semantics to `zerodds_security_runtime::builtin_topics`: a 4-byte
+//! CDR-LE encapsulation header followed by the XCDR1 body. We reimplement it
+//! here inline so that `zerodds-discovery` does not depend on
+//! `zerodds-security-runtime` (Cargo cycle with the dev-dep tests in
+//! security-runtime).
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -13,14 +14,14 @@ use alloc::vec::Vec;
 use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};
 use zerodds_security::generic_message::ParticipantGenericMessage;
 
-/// CDR-LE-Encapsulation-Kind (Spec RTPS 2.5 §10.2).
+/// CDR-LE encapsulation kind (Spec RTPS 2.5 §10.2).
 pub const ENCAPSULATION_CDR_LE: [u8; 2] = [0x00, 0x01];
 
-/// Encapsulation-Header-Laenge (Spec §10.1: 2 byte kind + 2 byte options).
+/// Encapsulation header length (Spec §10.1: 2 byte kind + 2 byte options).
 pub const ENCAPSULATION_HEADER_LEN: usize = 4;
 
-/// Encoded eine `ParticipantGenericMessage` als `serialized_payload`-
-/// Bytes fuer eine DATA-Submessage.
+/// Encodes a `ParticipantGenericMessage` as `serialized_payload`
+/// bytes for a DATA submessage.
 #[must_use]
 pub fn encode_generic_message(msg: &ParticipantGenericMessage) -> Vec<u8> {
     let body = msg.to_cdr_le();
@@ -31,13 +32,12 @@ pub fn encode_generic_message(msg: &ParticipantGenericMessage) -> Vec<u8> {
     out
 }
 
-/// Decoded eine `ParticipantGenericMessage` aus `serialized_payload`-
-/// Bytes (mit 4-byte Encapsulation-Header).
+/// Decodes a `ParticipantGenericMessage` from `serialized_payload`
+/// bytes (with a 4-byte encapsulation header).
 ///
 /// # Errors
-/// `BadArgument` wenn der Encapsulation-Header fehlt oder ein anderes
-/// Kind als CDR_LE / CDR_BE traegt; CDR-Decode-Fehler werden
-/// durchgereicht.
+/// `BadArgument` if the encapsulation header is missing or carries a kind
+/// other than CDR_LE / CDR_BE; CDR decode errors are propagated.
 pub fn decode_generic_message(bytes: &[u8]) -> SecurityResult<ParticipantGenericMessage> {
     if bytes.len() < ENCAPSULATION_HEADER_LEN {
         return Err(SecurityError::new(

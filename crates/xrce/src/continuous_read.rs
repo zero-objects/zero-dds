@@ -3,16 +3,16 @@
 
 //! Continuous-Read-Mode (Spec §8.4.14).
 //!
-//! `READ_DATA`-Submessages koennen einen `DataDeliveryControl` tragen, der
-//! aus dem Single-Shot-Read einen kontinuierlichen Stream macht: der Agent
-//! liefert solange `DATA`-Submessages, bis eines der Limits erreicht ist:
+//! `READ_DATA` submessages can carry a `DataDeliveryControl` that
+//! turns the single-shot read into a continuous stream: the agent
+//! delivers `DATA` submessages until one of the limits is reached:
 //!
-//! - `max_samples`: maximale Anzahl Samples insgesamt.
-//! - `max_elapsed_time`: harte Zeit-Obergrenze.
-//! - `max_bytes_per_second`: Rate-Limit (Token-Bucket-aehnlich).
+//! - `max_samples`: maximum total number of samples.
+//! - `max_elapsed_time`: hard time upper bound.
+//! - `max_bytes_per_second`: rate limit (token-bucket-like).
 //!
-//! Diese Datei modelliert den Reader-Mode-State, der von einem
-//! Agent-Prozess (out-of-scope hier) konsumiert wird.
+//! This file models the reader-mode state, which is consumed by an
+//! agent process (out of scope here).
 
 extern crate alloc;
 use alloc::collections::VecDeque;
@@ -21,19 +21,19 @@ use core::time::Duration;
 
 use crate::object_id::ObjectId;
 
-/// Delivery-Control (Spec §7.7.13).
+/// Delivery control (Spec §7.7.13).
 ///
-/// `0` als Wert bedeutet "no limit" (Spec); wir mappen das auf `u16::MAX`
-/// fuer max_samples / `Duration::MAX` fuer max_elapsed_time.
+/// A value of `0` means "no limit" (spec); we map that to `u16::MAX`
+/// for max_samples / `Duration::MAX` for max_elapsed_time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DeliveryControl {
-    /// Maximale Anzahl Samples (`0` = unlimited).
+    /// Maximum number of samples (`0` = unlimited).
     pub max_samples: u16,
-    /// Harte Zeit-Obergrenze.
+    /// Hard time upper bound.
     pub max_elapsed_time: Duration,
-    /// Rate-Cap in Bytes/s (`0` = unlimited).
+    /// Rate cap in bytes/s (`0` = unlimited).
     pub max_bytes_per_second: u32,
-    /// Mindest-Pause zwischen Samples (ms). `0` = kein Pacing.
+    /// Minimum pause between samples (ms). `0` = no pacing.
     pub min_pace_period: Duration,
 }
 
@@ -49,7 +49,7 @@ impl Default for DeliveryControl {
 }
 
 impl DeliveryControl {
-    /// Single-Shot Read: ein Sample, sofort.
+    /// Single-shot read: one sample, immediately.
     #[must_use]
     pub fn single_shot() -> Self {
         Self {
@@ -61,40 +61,40 @@ impl DeliveryControl {
     }
 }
 
-/// Ein vom ReadStream produziertes Sample (entspricht spaeter dem
-/// XCDR2-Body einer DATA-Submessage).
+/// A sample produced by the ReadStream (corresponds later to the
+/// XCDR2 body of a DATA submessage).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingSample {
-    /// Application-Payload (XCDR2-encoded).
+    /// Application payload (XCDR2-encoded).
     pub bytes: Vec<u8>,
 }
 
-/// Pro-`READ_DATA`-Request gehaltener Stream-State.
+/// Stream state held per `READ_DATA` request.
 #[derive(Debug, Clone)]
 pub struct ReadStream {
-    /// Subscriber-Object, dem der ReadStream zugeordnet ist.
+    /// Subscriber object the ReadStream is associated with.
     pub subscriber_handle: ObjectId,
-    /// Topic-Object, das gelesen wird.
+    /// Topic object being read.
     pub topic_handle: ObjectId,
-    /// Delivery-Control mit allen Limits.
+    /// Delivery control with all limits.
     pub delivery_control: DeliveryControl,
 
-    /// Start-Zeitpunkt (uptime-relativ).
+    /// Start time (uptime-relative).
     started_at: Duration,
-    /// Letzter Tick.
+    /// Last tick.
     last_tick: Duration,
-    /// Bisher gelieferte Samples.
+    /// Samples delivered so far.
     samples_delivered: u32,
-    /// Token-Bucket: zum Tick verfuegbare Bytes.
+    /// Token bucket: bytes available at the tick.
     bytes_credit: u64,
-    /// Wartende Samples, von der App-Schicht eingespielt.
+    /// Waiting samples, fed in by the app layer.
     queue: VecDeque<PendingSample>,
-    /// `true`, wenn der Stream finalized ist und nichts mehr liefert.
+    /// `true` when the stream is finalized and delivers nothing more.
     finalized: bool,
 }
 
 impl ReadStream {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(
         subscriber_handle: ObjectId,
@@ -115,38 +115,38 @@ impl ReadStream {
         }
     }
 
-    /// `true`, wenn der Stream abgeschlossen ist.
+    /// `true` when the stream is finished.
     #[must_use]
     pub fn is_finalized(&self) -> bool {
         self.finalized
     }
 
-    /// Anzahl bereits gelieferter Samples.
+    /// Number of samples already delivered.
     #[must_use]
     pub fn samples_delivered(&self) -> u32 {
         self.samples_delivered
     }
 
-    /// App-Schicht reicht ein neues Sample ein.
+    /// The app layer submits a new sample.
     pub fn push_sample(&mut self, sample: PendingSample) {
         if !self.finalized {
             self.queue.push_back(sample);
         }
     }
 
-    /// Anzahl wartender Samples (noch nicht ausgeliefert).
+    /// Number of waiting samples (not yet delivered).
     #[must_use]
     pub fn queued_count(&self) -> usize {
         self.queue.len()
     }
 
-    /// Pull-Tick: liefert die Samples, die jetzt rate-konform ausgegeben
-    /// werden duerfen. `now` ist uptime-relativ.
+    /// Pull tick: returns the samples that may now be emitted in a
+    /// rate-conformant way. `now` is uptime-relative.
     pub fn pull_pending_samples(&mut self, now: Duration) -> Vec<PendingSample> {
         if self.finalized {
             return Vec::new();
         }
-        // Time-Cap: max_elapsed_time ueberschritten?
+        // Time cap: max_elapsed_time exceeded?
         let elapsed = now.saturating_sub(self.started_at);
         if elapsed >= self.delivery_control.max_elapsed_time
             && self.delivery_control.max_elapsed_time > Duration::ZERO
@@ -155,21 +155,21 @@ impl ReadStream {
             return Vec::new();
         }
 
-        // Token-Bucket nachfuellen.
+        // Refill the token bucket.
         let dt = now.saturating_sub(self.last_tick);
         if self.delivery_control.max_bytes_per_second > 0 {
             let added = (u128::from(self.delivery_control.max_bytes_per_second)
                 * u128::from(dt.as_millis() as u64)
                 / 1000) as u64;
             self.bytes_credit = self.bytes_credit.saturating_add(added);
-            // Cap auf 1s-Burst
+            // Cap to a 1s burst
             let burst_cap = u64::from(self.delivery_control.max_bytes_per_second);
             if self.bytes_credit > burst_cap {
                 self.bytes_credit = burst_cap;
             }
         }
 
-        // Pacing-Pause: noch nicht abgelaufen?
+        // Pacing pause: not yet elapsed?
         if self.delivery_control.min_pace_period > Duration::ZERO
             && dt < self.delivery_control.min_pace_period
             && self.samples_delivered > 0
@@ -180,14 +180,14 @@ impl ReadStream {
 
         let mut out = Vec::new();
         while let Some(front) = self.queue.front() {
-            // max_samples-Cap?
+            // max_samples cap?
             if self.delivery_control.max_samples > 0
                 && self.samples_delivered >= u32::from(self.delivery_control.max_samples)
             {
                 self.finalized = true;
                 break;
             }
-            // Rate-Cap: passt das naechste Sample?
+            // Rate cap: does the next sample fit?
             if self.delivery_control.max_bytes_per_second > 0 {
                 let need = front.bytes.len() as u64;
                 if self.bytes_credit < need {
@@ -201,17 +201,17 @@ impl ReadStream {
             out.push(sample);
             self.samples_delivered = self.samples_delivered.saturating_add(1);
 
-            // Single-Shot ist nach 1 Sample fertig.
+            // Single-shot is done after 1 sample.
             if self.delivery_control.max_samples == 1 {
                 self.finalized = true;
                 break;
             }
-            // Pacing nach jedem Sample, falls aktiv.
+            // Pacing after each sample, if active.
             if self.delivery_control.min_pace_period > Duration::ZERO {
                 break;
             }
         }
-        // max_samples erreicht?
+        // max_samples reached?
         if self.delivery_control.max_samples > 0
             && self.samples_delivered >= u32::from(self.delivery_control.max_samples)
         {
@@ -220,7 +220,7 @@ impl ReadStream {
         out
     }
 
-    /// Stoppt den Stream sofort (z.B. bei DELETE des Subscribers).
+    /// Stops the stream immediately (e.g. on DELETE of the subscriber).
     pub fn stop(&mut self) {
         self.finalized = true;
     }
@@ -256,7 +256,7 @@ mod tests {
         let out = rs.pull_pending_samples(Duration::from_millis(1));
         assert_eq!(out.len(), 1);
         assert!(rs.is_finalized());
-        // Nach finalize liefert nichts mehr
+        // After finalize, nothing more is delivered
         let out = rs.pull_pending_samples(Duration::from_millis(2));
         assert!(out.is_empty());
     }
@@ -292,10 +292,10 @@ mod tests {
                 bytes: alloc::vec![0u8; 50],
             });
         }
-        // Bei 1s vergangen: 100 B Budget, 50 B Samples → 2 Samples
+        // At 1s elapsed: 100 B budget, 50 B samples → 2 samples
         let out = rs.pull_pending_samples(Duration::from_secs(1));
         assert_eq!(out.len(), 2);
-        // Bei 2s: weitere 100 B → 2 mehr (insgesamt 4)
+        // At 2s: another 100 B → 2 more (4 in total)
         let out = rs.pull_pending_samples(Duration::from_secs(2));
         assert_eq!(out.len(), 2);
     }
@@ -312,11 +312,11 @@ mod tests {
         rs.push_sample(PendingSample {
             bytes: alloc::vec![1],
         });
-        // 0.5s spaeter → noch ok
+        // 0.5s later → still ok
         let out = rs.pull_pending_samples(Duration::from_millis(500));
         assert_eq!(out.len(), 1);
         assert!(!rs.is_finalized());
-        // 2s spaeter → finalized, kein Sample mehr
+        // 2s later → finalized, no sample anymore
         rs.push_sample(PendingSample {
             bytes: alloc::vec![2],
         });
@@ -351,13 +351,13 @@ mod tests {
                 bytes: alloc::vec![1],
             });
         }
-        // Erster Tick: liefert 1 Sample
+        // First tick: delivers 1 sample
         let out = rs.pull_pending_samples(Duration::from_millis(1));
         assert_eq!(out.len(), 1);
-        // 50ms spaeter → noch keine 100ms vergangen → kein Sample
+        // 50ms later → no 100ms elapsed yet → no sample
         let out = rs.pull_pending_samples(Duration::from_millis(50));
         assert!(out.is_empty());
-        // 200ms spaeter → naechstes Sample
+        // 200ms later → next sample
         let out = rs.pull_pending_samples(Duration::from_millis(200));
         assert_eq!(out.len(), 1);
     }

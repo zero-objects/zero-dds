@@ -11,27 +11,27 @@ use std::sync::Mutex;
 
 use zerodds_security::logging::{LogLevel, LoggingPlugin};
 
-/// Schreibt Security-Events als JSON-Lines in eine Datei.
+/// Writes security events as JSON lines to a file.
 ///
-/// Jede Zeile ist ein eigenstaendiges JSON-Objekt:
+/// Each line is a standalone JSON object:
 /// ```json
 /// {"ts":"2026-04-24T11:22:33Z","level":"CRITICAL","participant":"aabbcc...","category":"auth.handshake.failed","message":"bad cert"}
 /// ```
 ///
-/// Typische Nutzung: `auditd`/`filebeat`/`promtail` kollektiert das
-/// File. Dieses Plugin selbst fuehrt **keine** Log-Rotation durch —
-/// das ist Aufgabe von `logrotate(8)` oder systemd-journald.
+/// Typical use: `auditd`/`filebeat`/`promtail` collects the
+/// file. This plugin itself performs **no** log rotation —
+/// that is the job of `logrotate(8)` or systemd-journald.
 pub struct JsonLinesLoggingPlugin {
     min_level: LogLevel,
     writer: Mutex<BufWriter<File>>,
 }
 
 impl JsonLinesLoggingPlugin {
-    /// Oeffnet / legt die Datei an und wrap in BufWriter.
+    /// Opens / creates the file and wraps it in a BufWriter.
     ///
     /// # Errors
-    /// `io::Error` wenn die Datei nicht geoeffnet werden kann
-    /// (Permissions, Parent-Dir fehlt).
+    /// `io::Error` if the file cannot be opened
+    /// (permissions, parent dir missing).
     pub fn open<P: AsRef<Path>>(path: P, min_level: LogLevel) -> std::io::Result<Self> {
         let file = OpenOptions::new().create(true).append(true).open(path)?;
         Ok(Self {
@@ -54,9 +54,9 @@ fn level_name(l: LogLevel) -> &'static str {
     }
 }
 
-/// Simple JSON-Escaping: nur die Control-Chars + `"` + `\`.
-/// Ausreichend fuer Log-Messages; wir brauchen kein serde fuer
-/// einen 5-Feld-Emit.
+/// Simple JSON escaping: only the control chars + `"` + `\`.
+/// Enough for log messages; we don't need serde for
+/// a 5-field emit.
 fn escape_json(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     for c in s.chars() {
@@ -96,8 +96,8 @@ impl LoggingPlugin for JsonLinesLoggingPlugin {
             msg = escape_json(message),
         );
         if let Ok(mut w) = self.writer.lock() {
-            // `writeln!` + `flush` — BufWriter wuerde sonst bei
-            // Crashes die letzten Events verlieren.
+            // `writeln!` + `flush` — otherwise a BufWriter would lose
+            // the last events on a crash.
             let _ = writeln!(w, "{line}");
             let _ = w.flush();
         }
@@ -131,7 +131,7 @@ mod tests {
         let plugin = JsonLinesLoggingPlugin::open(&path, LogLevel::Warning).expect("open");
         plugin.log(LogLevel::Critical, [0xAA; 16], "auth.fail", "bad cert");
         plugin.log(LogLevel::Informational, [0xBB; 16], "debug", "ignored");
-        // flush durch Drop.
+        // flush via Drop.
         drop(plugin);
 
         let mut content = String::new();
@@ -140,7 +140,7 @@ mod tests {
             .read_to_string(&mut content)
             .unwrap();
         let lines: Vec<&str> = content.lines().collect();
-        assert_eq!(lines.len(), 1, "nur Critical sollte durchkommen");
+        assert_eq!(lines.len(), 1, "only Critical should get through");
         assert!(lines[0].contains("\"level\":\"CRITICAL\""));
         assert!(lines[0].contains("\"category\":\"auth.fail\""));
         assert!(lines[0].contains("\"message\":\"bad cert\""));
@@ -170,7 +170,7 @@ mod tests {
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains(r"multi\nline"));
         assert!(content.contains(r#""message":"a\nb""#));
-        // Genau EINE Zeile — kein echter LF im Output.
+        // Exactly ONE line — no real LF in the output.
         assert_eq!(content.lines().count(), 1);
         let _ = std::fs::remove_file(&path);
     }

@@ -1,18 +1,17 @@
-//! Profile-Conformance-Matrix fuer DDS-XRCE 1.0 §1 + §2 + §7.
+//! Profile conformance matrix for DDS-XRCE 1.0 §1 + §2 + §7.
 //!
-//! Verifiziert produktiv, dass:
+//! Verifies productively that:
 //!
-//! 1. **§1.1 + §1.2** Wire-Codec deckt Client/Agent-Protokoll
-//!    interoperabel ab — `SubmessageId::from_u8` round-trippt alle
-//!    16 Spec-Werte.
-//! 2. **§2.1-§2.10** pro Profile (Read/Write/Configure/Configure-QoS/
-//!    Configure-Types/Discovery/File-Config/UDP/TCP/Complete) sind
-//!    alle erforderlichen `SubmessageId`-Werte als Wire-Pfad
-//!    exponiert.
-//! 3. **§7.1, §7.4, §7.5** Object-Model: 5 Top-Level-Klassen +
-//!    Proxy-Object-Kind-Konstanten + ObjectId-Reserved-Werte.
-//! 4. **§7.8.2 + §7.8.3** Root + ProxyClient Operations sind als
-//!    Submessages exponiert.
+//! 1. **§1.1 + §1.2** the wire codec covers the client/agent protocol
+//!    interoperably — `SubmessageId::from_u8` round-trips all
+//!    16 spec values.
+//! 2. **§2.1-§2.10** per profile (Read/Write/Configure/Configure-QoS/
+//!    Configure-Types/Discovery/File-Config/UDP/TCP/Complete), all
+//!    required `SubmessageId` values are exposed as a wire path.
+//! 3. **§7.1, §7.4, §7.5** object model: 5 top-level classes +
+//!    proxy object kind constants + ObjectId reserved values.
+//! 4. **§7.8.2 + §7.8.3** Root + ProxyClient operations are exposed as
+//!    submessages.
 
 #![allow(
     clippy::expect_used,
@@ -40,7 +39,7 @@ use zerodds_xrce::submessages::SubmessageId;
 // §2.1-§2.10 Profile-Conformance-Matrix
 // ============================================================================
 
-/// Spec §2.1 Read Access Profile: alle Submessages **ausser**
+/// Spec §2.1 Read Access Profile: all submessages **except**
 /// CREATE/INFO/WRITE_DATA/DELETE.
 const READ_ACCESS_PROFILE: &[SubmessageId] = &[
     SubmessageId::CreateClient,
@@ -57,7 +56,7 @@ const READ_ACCESS_PROFILE: &[SubmessageId] = &[
     SubmessageId::TimestampReply,
 ];
 
-/// Spec §2.2 Write Access Profile: alle Submessages **ausser**
+/// Spec §2.2 Write Access Profile: all submessages **except**
 /// CREATE/INFO/READ_DATA/DATA/DELETE.
 const WRITE_ACCESS_PROFILE: &[SubmessageId] = &[
     SubmessageId::CreateClient,
@@ -74,7 +73,7 @@ const WRITE_ACCESS_PROFILE: &[SubmessageId] = &[
 ];
 
 /// Spec §2.3 Configure Entities Profile: CREATE_CLIENT + CREATE +
-/// DELETE + STATUS-Pfad.
+/// DELETE + STATUS path.
 const CONFIGURE_ENTITIES_PROFILE: &[SubmessageId] = &[
     SubmessageId::CreateClient,
     SubmessageId::Create,
@@ -83,7 +82,7 @@ const CONFIGURE_ENTITIES_PROFILE: &[SubmessageId] = &[
     SubmessageId::Status,
 ];
 
-/// Spec §2.10 Complete Profile: alle 16 Submessages.
+/// Spec §2.10 Complete Profile: all 16 submessages.
 const COMPLETE_PROFILE: &[SubmessageId] = &[
     SubmessageId::CreateClient,
     SubmessageId::Create,
@@ -131,8 +130,8 @@ fn profile_2_3_configure_entities_submessages_all_roundtrip() {
 
 #[test]
 fn profile_2_10_complete_covers_all_16_submessages() {
-    // Spec §2.10: Complete Profile verlangt alle Submessage-Typen.
-    // Spec §8.3.5: 16 Werte (0..15).
+    // Spec §2.10: the Complete profile requires all submessage types.
+    // Spec §8.3.5: 16 values (0..15).
     assert_eq!(COMPLETE_PROFILE.len(), 16);
     let mut seen = std::collections::BTreeSet::new();
     for sid in COMPLETE_PROFILE {
@@ -141,21 +140,21 @@ fn profile_2_10_complete_covers_all_16_submessages() {
     for byte in 0u8..=15u8 {
         assert!(
             seen.contains(&byte),
-            "Complete-Profile fehlt SubmessageId {byte}"
+            "Complete profile is missing SubmessageId {byte}"
         );
-        // Plus: jeder Wire-Wert ist via from_u8 dekodierbar.
+        // Plus: every wire value is decodable via from_u8.
         assert!(
             SubmessageId::from_u8(byte).is_ok(),
-            "SubmessageId({byte}) nicht dekodierbar"
+            "SubmessageId({byte}) not decodable"
         );
     }
 }
 
 #[test]
 fn read_and_write_profiles_disjoint_in_data_submessages() {
-    // Spec-Logik: §2.1 hat ReadData/Data, §2.2 hat WriteData. Diese
-    // sind die exklusiv-unterscheidenden Submessages. Wir vergleichen
-    // ueber u8-Werte (SubmessageId implementiert nicht Ord).
+    // Spec logic: §2.1 has ReadData/Data, §2.2 has WriteData. These
+    // are the exclusively distinguishing submessages. We compare
+    // over u8 values (SubmessageId does not implement Ord).
     let r: std::collections::BTreeSet<u8> = READ_ACCESS_PROFILE.iter().map(|s| s.as_u8()).collect();
     let w: std::collections::BTreeSet<u8> =
         WRITE_ACCESS_PROFILE.iter().map(|s| s.as_u8()).collect();
@@ -169,32 +168,32 @@ fn read_and_write_profiles_disjoint_in_data_submessages() {
 
 #[test]
 fn invalid_submessage_id_rejected() {
-    // Spec §8.3.5: Werte > 15 sind nicht definiert.
+    // Spec §8.3.5: values > 15 are not defined.
     for byte in 16u8..=255u8 {
         assert!(
             SubmessageId::from_u8(byte).is_err(),
-            "SubmessageId({byte}) sollte abgelehnt werden"
+            "SubmessageId({byte}) should be rejected"
         );
     }
 }
 
 // ============================================================================
-// §1.1 + §1.2 Wire-Compatibility (Client/Agent-Protokoll)
+// §1.1 + §1.2 wire compatibility (client/agent protocol)
 // ============================================================================
 
 #[test]
 fn spec_1_1_wire_codec_supports_all_submessages() {
-    // §1.1: Client-Agent-Protokoll. Wire-Codec exponiert alle
-    // Spec-Submessages.
+    // §1.1: client-agent protocol. The wire codec exposes all
+    // spec submessages.
     for byte in 0u8..=15u8 {
-        let _ = SubmessageId::from_u8(byte).expect("alle 16 IDs muessen dekodieren");
+        let _ = SubmessageId::from_u8(byte).expect("all 16 IDs must decode");
     }
 }
 
 #[test]
 fn spec_1_2_submessage_ids_match_spec_assignment() {
-    // §1.2 Vendor-Interoperability: jede SubmessageId hat ihren
-    // exakten Spec-Wert.
+    // §1.2 vendor interoperability: every SubmessageId has its
+    // exact spec value.
     assert_eq!(SubmessageId::CreateClient.as_u8(), 0);
     assert_eq!(SubmessageId::Create.as_u8(), 1);
     assert_eq!(SubmessageId::GetInfo.as_u8(), 2);
@@ -219,8 +218,8 @@ fn spec_1_2_submessage_ids_match_spec_assignment() {
 
 #[test]
 fn spec_7_1_object_model_kinds_complete() {
-    // §7.1: DDS-XRCE Object-Model definiert ObjectKind-Werte. Die
-    // 12 produktiven OBJK_*-Werte sind alle als pub const exponiert.
+    // §7.1: the DDS-XRCE object model defines ObjectKind values. The
+    // 12 productive OBJK_* values are all exposed as pub const.
     let kinds: &[(u8, &str)] = &[
         (OBJK_INVALID, "INVALID"),
         (OBJK_PARTICIPANT, "PARTICIPANT"),
@@ -239,31 +238,31 @@ fn spec_7_1_object_model_kinds_complete() {
     for (val, name) in kinds {
         assert!(
             seen.insert(*val),
-            "OBJK_-Wert 0x{val:02X} doppelt fuer {name}"
+            "OBJK_ value 0x{val:02X} duplicated for {name}"
         );
     }
-    assert_eq!(seen.len(), 12, "Object-Model muss 12 Kind-Werte exponieren");
+    assert_eq!(seen.len(), 12, "object model must expose 12 kind values");
 }
 
 #[test]
 fn spec_7_4_top_level_classes_have_kind_constants() {
-    // §7.4: 5 Top-Level-Klassen — Root (ueber object_store::ObjectStore
-    // realisiert; kein eigener OBJK), ProxyClient (OBJK_CLIENT),
-    // Application (OBJK_APPLICATION), AccessController (n/a — keine
-    // separate XRCE-Wire-Repr; Spec §7.4 sagt: "AccessController
+    // §7.4: 5 top-level classes — Root (realized via object_store::ObjectStore;
+    // no own OBJK), ProxyClient (OBJK_CLIENT),
+    // Application (OBJK_APPLICATION), AccessController (n/a — no
+    // separate XRCE wire repr; Spec §7.4 says: "AccessController
     // exists in the model but is not exposed as a CRUD-able object"),
     // DomainParticipant (OBJK_PARTICIPANT).
     assert_ne!(OBJK_PARTICIPANT, OBJK_INVALID);
     assert_ne!(OBJK_APPLICATION, OBJK_INVALID);
     assert_ne!(OBJK_CLIENT, OBJK_INVALID);
-    // Root ist Singleton — repraesentiert durch object_store::ObjectStore.
+    // Root is a singleton — represented by object_store::ObjectStore.
     let _ = zerodds_xrce::object_store::ObjectStore::default();
 }
 
 #[test]
 fn spec_7_5_proxy_objects_have_kind_constants() {
-    // §7.5: Proxy-Objekte sind DomainParticipant/Publisher/Subscriber/
-    // DataWriter/DataReader/Topic; QosProfile/Type sind Value-Objekte.
+    // §7.5: proxy objects are DomainParticipant/Publisher/Subscriber/
+    // DataWriter/DataReader/Topic; QosProfile/Type are value objects.
     let proxy_kinds: &[u8] = &[
         OBJK_PARTICIPANT,
         OBJK_PUBLISHER,
@@ -273,9 +272,9 @@ fn spec_7_5_proxy_objects_have_kind_constants() {
         OBJK_TOPIC,
     ];
     for k in proxy_kinds {
-        assert!(*k != OBJK_INVALID, "Proxy-Kind ist INVALID: 0x{k:02X}");
+        assert!(*k != OBJK_INVALID, "proxy kind is INVALID: 0x{k:02X}");
     }
-    // Value-Objekte:
+    // Value objects:
     assert_ne!(OBJK_QOSPROFILE, OBJK_INVALID);
     assert_ne!(OBJK_TYPE, OBJK_INVALID);
 }
@@ -286,37 +285,37 @@ fn spec_7_5_proxy_objects_have_kind_constants() {
 
 #[test]
 fn spec_7_8_2_root_operations_have_submessage_ids() {
-    // §7.8.2: Root-Operations (CREATE_CLIENT, DELETE_CLIENT). Wire-
-    // Pfad via SubmessageId::CreateClient. DELETE_CLIENT ist
-    // Spec §7.8.2 — wird als CREATE_CLIENT mit DELETE-Flag oder als
-    // separater Pfad ueber Delete-Submessage realisiert.
+    // §7.8.2: Root operations (CREATE_CLIENT, DELETE_CLIENT). Wire
+    // path via SubmessageId::CreateClient. DELETE_CLIENT is
+    // Spec §7.8.2 — realized as CREATE_CLIENT with a DELETE flag or as
+    // a separate path via the Delete submessage.
     assert_eq!(SubmessageId::CreateClient.as_u8(), 0);
-    // Delete-Submessage ist primary fuer ProxyClient-Operations
-    // (siehe §7.8.3) — kann auch fuer DELETE_CLIENT genutzt werden.
+    // The Delete submessage is primary for ProxyClient operations
+    // (see §7.8.3) — can also be used for DELETE_CLIENT.
     assert_eq!(SubmessageId::Delete.as_u8(), 3);
-    // Status reply path — Root operations liefern StatusAgent zurueck.
+    // Status reply path — Root operations return StatusAgent.
     assert_eq!(SubmessageId::StatusAgent.as_u8(), 4);
 }
 
 #[test]
 fn spec_7_8_3_proxy_client_operations_have_submessage_ids() {
-    // §7.8.3: ProxyClient-Operations (CREATE/DELETE/GET_INFO/UPDATE).
-    // UPDATE wird via CREATE mit REPLACE-Flag realisiert (siehe
-    // CreationMode-Konstanten).
+    // §7.8.3: ProxyClient operations (CREATE/DELETE/GET_INFO/UPDATE).
+    // UPDATE is realized via CREATE with a REPLACE flag (see
+    // the CreationMode constants).
     assert_eq!(SubmessageId::Create.as_u8(), 1);
     assert_eq!(SubmessageId::Delete.as_u8(), 3);
     assert_eq!(SubmessageId::GetInfo.as_u8(), 2);
-    // UPDATE = CREATE + REPLACE-Flag (Spec §7.7.11 CreationMode).
+    // UPDATE = CREATE + REPLACE flag (Spec §7.7.11 CreationMode).
     use zerodds_xrce::submessages::create::CREATE_FLAG_REPLACE;
     assert_eq!(CREATE_FLAG_REPLACE, 0x04);
-    // Reply-Pfad: Status fuer alle 4 Operations.
+    // Reply path: Status for all 4 operations.
     assert_eq!(SubmessageId::Status.as_u8(), 5);
-    // GET_INFO-Reply: separate Info-Submessage.
+    // GET_INFO reply: separate Info submessage.
     assert_eq!(SubmessageId::Info.as_u8(), 6);
 }
 
 // ============================================================================
-// §7.6 ObjectId Reserved-Werte (Sanity)
+// §7.6 ObjectId reserved values (sanity)
 // ============================================================================
 
 #[test]

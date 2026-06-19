@@ -1,69 +1,69 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-monitor`-Crate.
+Initial release materialization of the `zerodds-monitor` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **`docs/specs/zerodds-monitor-1.0.md`** §1 (Datenmodell), §2 (Standard-Naming, 31 Metriken), §3 (Prometheus-Text-Format), §4 (PID 0x0D00 W3C-Trace-Context), §5 (Span-Schema, 9 Span-Typen), §6 (Lifecycle), §7 (Hook-Tabelle), §8 (Stabilitaet), §9 (Sicherheit), §10 (Test-Pflicht).
-- **Industrie-Standards:** Prometheus-Text-Format v0.0.4, OpenMetrics, W3C-Trace-Context 1.0, OpenTelemetry-Semantic-Conventions.
+- **`docs/specs/zerodds-monitor-1.0.md`** §1 (data model), §2 (standard naming, 31 metrics), §3 (Prometheus text format), §4 (PID 0x0D00 W3C trace context), §5 (span schema, 9 span types), §6 (lifecycle), §7 (hook table), §8 (stability), §9 (security), §10 (test requirement).
+- **Industry standards:** Prometheus text format v0.0.4, OpenMetrics, W3C-Trace-Context 1.0, OpenTelemetry semantic conventions.
 
-### Public-API
+### Public API
 
-**Metric-Typen:**
+**Metric types:**
 - `Counter` (AtomicU64), `Gauge` (AtomicI64), `LabeledHistogram` (Mutex<foundation::Histogram>).
-- `Labels` (sortiert, dedupend), `MetricKey`.
+- `Labels` (sorted, deduplicating), `MetricKey`.
 
 **Registry:**
 - `Registry::{new, counter, gauge, histogram, set_help, snapshot, render_prometheus}`.
 - `default_registry()` — globaler `OnceLock<Arc<Registry>>`.
 - `RegistrySnapshot`.
 
-**Prometheus-Text:**
-- `render_prometheus(&snapshot) -> String` — OpenMetrics v0.0.4-Exposition.
-- `serve_prometheus(addr, registry)` (Feature `prometheus-server`) — Mini-HTTP-`/metrics`-Endpoint.
+**Prometheus text:**
+- `render_prometheus(&snapshot) -> String` — OpenMetrics v0.0.4 exposition.
+- `serve_prometheus(addr, registry)` (feature `prometheus-server`) — mini-HTTP `/metrics` endpoint.
 
-**Trace-Context:**
+**Trace context:**
 - `PID_VENDOR_TRACE_CONTEXT = 0x0D00`.
 - `TraceContextPid::{encode_inline_qos, decode_inline_qos, from_span_context, to_span_context}`.
 - `TraceParent`, `TraceState`, `TraceContextError`.
 
-**Konstanten:**
-- `metric_names::*` — 31 Standard-Metric-Namen (Transport / RTPS / DCPS / Discovery / Security).
-- `span_names::*` — 9 Standard-Span-Namen.
-- `span_names::attr::*` — 16 DDS-Attribut-Keys.
+**Constants:**
+- `metric_names::*` — 31 standard metric names (transport / RTPS / DCPS / discovery / security).
+- `span_names::*` — 9 standard span names.
+- `span_names::attr::*` — 16 DDS attribute keys.
 
-**Konfiguration:**
+**Configuration:**
 - `MonitorConfig`, `TraceContextEmission::{Always, Sampled, Never}`.
 
-**Re-Exports:**
-- `zerodds_foundation::tracing::Histogram` als `Histogram`.
+**Re-exports:**
+- `zerodds_foundation::tracing::Histogram` as `Histogram`.
 
-### Implementierung
+### Implementation
 
-`Counter` und `Gauge` sind `AtomicU64`/`AtomicI64` mit `Ordering::Relaxed` (keine Cross-Thread-Causality fuer Counter). `LabeledHistogram` ist `Mutex<Histogram>` weil `Histogram` Mutate-Methoden hat. `Registry` haelt `Mutex<HashMap<MetricKey, Arc<...>>>` fuer Counter/Gauge/Histogram getrennt. Idempotente Lookup: zweiter `counter("x", labels)` liefert dieselbe Instance.
+`Counter` and `Gauge` are `AtomicU64`/`AtomicI64` with `Ordering::Relaxed` (no cross-thread causality for counters). `LabeledHistogram` is a `Mutex<Histogram>` because `Histogram` has mutating methods. `Registry` holds a separate `Mutex<HashMap<MetricKey, Arc<...>>>` for counters/gauges/histograms. Idempotent lookup: a second `counter("x", labels)` returns the same instance.
 
-Prometheus-Render macht eine deterministische Sortierung: nach Metric-Name (BTreeMap), pro Metric nach Labels (cmp). Histogramme werden in Sekunden konvertiert (foundation zaehlt in ns), Bucket-Bounds sind log10 von `1e-09` bis `10` Sekunden, plus `+Inf`. Label-Escape per Prometheus-Spec (`\`, `"`, `\n`).
+The Prometheus render does a deterministic sort: by metric name (BTreeMap), per metric by labels (cmp). Histograms are converted to seconds (foundation counts in ns), bucket bounds are log10 from `1e-09` to `10` seconds, plus `+Inf`. Label escaping per the Prometheus spec (`\`, `"`, `\n`).
 
-PID 0x0D00 Wire-Format: zwei CDR-Strings (length+bytes+NUL+padding-zu-4-byte). `traceparent` parst W3C-Format `00-{32hex}-{16hex}-{2hex}` und lehnt all-zero Trace-/Span-IDs ab (W3C-Spec).
+PID 0x0D00 wire format: two CDR strings (length+bytes+NUL+padding-to-4-byte). `traceparent` parses the W3C format `00-{32hex}-{16hex}-{2hex}` and rejects all-zero trace/span IDs (W3C spec).
 
-`serve_prometheus` ist ein Mini-HTTP-Server auf `TcpListener`-Basis ohne `hyper`-Dep — reicht fuer Prometheus-Scrape. Pre-RC1 lieferte das ein Stub `// TODO: Implementierung folgt` (12 LOC) — die volle RC1-Materialisierung ist mit dieser Version eingefuehrt.
+`serve_prometheus` is a mini-HTTP server based on `TcpListener` without a `hyper` dep — sufficient for a Prometheus scrape. Pre-RC1 this was a stub `// TODO: implementation to follow` (12 LOC) — the full RC1 materialization is introduced with this version.
 
-`forbid(unsafe_code)` ist gesetzt (per Workspace-Lints).
+`forbid(unsafe_code)` is set (via workspace lints).
 
-### Architektur
+### Architecture
 
-- **Layer:** 4 (Core Services).
-- **Dependencies (in):** `zerodds-foundation` (Span/Histogram/TraceId/SpanId/Event-Datenmodell). Keine weiteren ZeroDDS-Crate-Deps.
-- **Dependents (out):** `zerodds-rtps` (Feature `metrics`), `zerodds-discovery` (Feature `metrics`), `zerodds-dcps` (Feature `metrics`), `zerodds-transport-udp`, `zerodds-security-crypto` (Feature `metrics`), `tools/dashboard`, `tools/perf`.
-- **Feature-Flags:** `std` (default), `alloc` (via std), `prometheus-server` (default an).
+- **Layer:** 4 (core services).
+- **Dependencies (in):** `zerodds-foundation` (Span/Histogram/TraceId/SpanId/Event data model). No further ZeroDDS crate deps.
+- **Dependents (out):** `zerodds-rtps` (feature `metrics`), `zerodds-discovery` (feature `metrics`), `zerodds-dcps` (feature `metrics`), `zerodds-transport-udp`, `zerodds-security-crypto` (feature `metrics`), `tools/dashboard`, `tools/perf`.
+- **Feature flags:** `std` (default), `alloc` (via std), `prometheus-server` (default on).
 
-### Stabilitaet
+### Stability
 
-- Public-API: RC1-stabil.
-- Metric-Namen + Label-Keys: stabil; Label-Keys-Erweiterung ist Major-additive (Prometheus-Selectors brechen nicht).
-- PID 0x0D00 Wire-Format: stabil ab RC1; Aenderung waere RTPS-Wire-Breaking.
-- Span-Namen: folgen OTel-Semantic-Conventions; Releases verfolgen die Semconv-Versionen.
+- Public API: RC1-stable.
+- Metric names + label keys: stable; label-key extension is major-additive (Prometheus selectors do not break).
+- PID 0x0D00 wire format: stable from RC1; a change would be RTPS-wire-breaking.
+- Span names: follow OTel semantic conventions; releases track the semconv versions.

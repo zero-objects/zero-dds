@@ -6,18 +6,18 @@
 //! Crate `zerodds-corba-ccm-lib`. Safety classification: **STANDARD**.
 //! Spec: OMG CCM 4.0 (`formal/2006-04-01`) §6 + §10 (Persistent State).
 //!
-//! Enthaelt drei produktionsreife CCM-Components, die als Schablone
-//! oder direkt in Plans verwendet werden koennen:
+//! Contains three production-ready CCM components that can be used as a
+//! template or directly in plans:
 //!
-//! * [`dds_bridge`] — `DdsBridgeComponent`: bidirektionale CCM↔DDS-
-//!   Bruecke, mappt CCM-EventSinks auf DDS-Topics und DDS-Reader auf
-//!   CCM-EventSources.
+//! * [`dds_bridge`] — `DdsBridgeComponent`: bidirectional CCM↔DDS
+//!   bridge, maps CCM EventSinks onto DDS topics and DDS readers onto
+//!   CCM EventSources.
 //! * [`persistence`] — `PersistenceStorageComponent`: Persistent
 //!   State Service §10 (`/storage`).
-//! * [`telemetry`] — `TelemetryComponent`: emittiert Component-
-//!   Lifecycle-Metriken via DCPS-Topic `__ZeroDDS_CcmTelemetry`.
+//! * [`telemetry`] — `TelemetryComponent`: emits component
+//!   lifecycle metrics via the DCPS topic `__ZeroDDS_CcmTelemetry`.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```
 //! use zerodds_corba_ccm_lib::{MappingDirection, TopicMapping};

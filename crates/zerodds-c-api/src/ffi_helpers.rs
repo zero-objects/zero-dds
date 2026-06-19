@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Safe-Boundary fuer die FFI-Schicht.
+//! Safe boundary for the FFI layer.
 //!
-//! Jeder Newtype kapselt eine Rohzeiger-Operation, die heute inline
-//! in den `pub unsafe extern "C" fn` Bodies stand. Die `from_raw`
-//! Konstruktoren bleiben `unsafe fn`, weil der Lifetime-Pledge des
-//! C-Callers nicht statisch beweisbar ist — die einzige unsafe-Stelle
-//! pro extern fn ist genau dort, alles dahinter ist safe Rust.
+//! Each newtype encapsulates a raw-pointer operation that today stood inline
+//! in the `pub unsafe extern "C" fn` bodies. The `from_raw`
+//! constructors stay `unsafe fn`, because the lifetime pledge of the
+//! C caller is not statically provable — the only unsafe site
+//! per extern fn is exactly there, everything behind it is safe Rust.
 //!
-//! ## Klassen
+//! ## Classes
 //!
-//! | Newtype         | Klasse                  | Caller-Pledge |
+//! | Newtype         | Class                   | Caller pledge |
 //! |-----------------|-------------------------|---------------|
-//! | `Borrowed<T>`   | Read-Borrow             | `*const T` valide oder NULL, lebt fuer fn-Dauer, nicht aliased mutiert |
-//! | `OutPtr<T>`     | Write-Only Out-Pointer  | `*mut T` valide + aligned + beschreibbar, exklusiv |
-//! | `Owned<T>`      | Lifecycle-Owned Box     | `from_raw_drop`: Pointer stammt aus `into_raw` derselben Instanz |
-//! | `BytesIn`       | Byte-Buffer-Eingang     | `ptr..ptr+len` valides initialisiertes Memory; NULL OK falls len==0 |
-//! | `BytesOut`      | Byte-Buffer-Ausgang     | `ptr..ptr+len` beschreibbar, aligned, exklusiv |
-//! | `CStrIn`        | C-String-Eingang        | NUL-terminierter, valide UTF-8 String |
+//! | `Borrowed<T>`   | Read borrow             | `*const T` valid or NULL, lives for the fn duration, not aliased-mutated |
+//! | `OutPtr<T>`     | Write-only out-pointer  | `*mut T` valid + aligned + writeable, exclusive |
+//! | `Owned<T>`      | Lifecycle-owned box     | `from_raw_drop`: pointer comes from `into_raw` of the same instance |
+//! | `BytesIn`       | Byte-buffer input       | `ptr..ptr+len` valid initialized memory; NULL OK if len==0 |
+//! | `BytesOut`      | Byte-buffer output      | `ptr..ptr+len` writeable, aligned, exclusive |
+//! | `CStrIn`        | C-string input          | NUL-terminated, valid UTF-8 string |
 //!
-//! Hinweis: in Phase 1 ist noch keine Call-Site migriert; die Newtypes
-//! sind temporaer als `dead_code` markiert. Phase 2+ entfernt das Allow.
+//! Note: in phase 1 no call site is migrated yet; the newtypes
+//! are temporarily marked `dead_code`. Phase 2+ removes the allow.
 //!
-//! ## Pattern in Call-Sites
+//! ## Pattern in call sites
 //!
 //! ```ignore
 //! #[unsafe(no_mangle)]
@@ -40,7 +40,7 @@
 //! }
 //! ```
 
-// Phase-1-Scaffolding: Newtypes existieren, sind aber bis Phase 2 ungenutzt.
+// Phase-1 scaffolding: the newtypes exist but are unused until phase 2.
 #![allow(dead_code)]
 
 use core::ffi::c_int;
@@ -50,23 +50,23 @@ use core::ptr::NonNull;
 use crate::ZeroDdsStatus;
 
 // ============================================================================
-// Klasse A — Borrowed<T>: read-only Borrow eines C-Rohzeigers
+// Class A — Borrowed<T>: read-only borrow of a C raw pointer
 // ============================================================================
 
-/// Read-Borrow eines C-Rohzeigers.
+/// Read borrow of a C raw pointer.
 ///
-/// Wraps `&T` mit FFI-Pointer-Herkunft. NULL-tolerant: gibt
-/// `Err(BadHandle)` bei NULL-Pointern.
+/// Wraps `&T` with FFI-pointer provenance. NULL-tolerant: returns
+/// `Err(BadHandle)` for NULL pointers.
 pub(crate) struct Borrowed<'a, T: 'a>(&'a T);
 
 impl<'a, T> Borrowed<'a, T> {
     /// # Safety
-    /// Caller garantiert: `ptr` ist NULL oder zeigt auf eine valide
-    /// `T`-Instanz, die fuer mindestens `'a` lebt und in dem Zeitraum
-    /// nicht aliased mutiert wird.
+    /// The caller guarantees: `ptr` is NULL or points to a valid
+    /// `T` instance that lives for at least `'a` and is not aliased-mutated
+    /// during that time.
     #[inline]
     pub unsafe fn from_raw(ptr: *const T) -> Result<Self, ZeroDdsStatus> {
-        // SAFETY: NULL-Check via `as_ref`; ansonsten Caller-Pledge.
+        // SAFETY: NULL check via `as_ref`; otherwise caller pledge.
         match unsafe { ptr.as_ref() } {
             Some(r) => Ok(Borrowed(r)),
             None => Err(ZeroDdsStatus::BadHandle),
@@ -83,18 +83,18 @@ impl<T> Deref for Borrowed<'_, T> {
 }
 
 // ============================================================================
-// Klasse B — OutPtr<T>: konsumierender Write-Only Out-Pointer
+// Class B — OutPtr<T>: consuming write-only out-pointer
 // ============================================================================
 
-/// Write-Only Out-Pointer fuer extern fn-Resultate.
+/// Write-only out-pointer for extern fn results.
 ///
-/// Konsumierend → garantiert genau einen Write am Typsystem.
+/// Consuming → guarantees exactly one write at the type-system level.
 pub(crate) struct OutPtr<T>(NonNull<T>);
 
 impl<T> OutPtr<T> {
     /// # Safety
-    /// Caller garantiert: `ptr` ist NULL oder zeigt auf einen
-    /// beschreibbaren, korrekt aligned `T`-Slot.
+    /// The caller guarantees: `ptr` is NULL or points to a
+    /// writeable, correctly aligned `T` slot.
     #[inline]
     pub unsafe fn from_raw(ptr: *mut T) -> Result<Self, ZeroDdsStatus> {
         NonNull::new(ptr)
@@ -102,61 +102,61 @@ impl<T> OutPtr<T> {
             .ok_or(ZeroDdsStatus::BadParameter)
     }
 
-    /// Schreibt `value` in den Out-Slot. Konsumiert `self`.
+    /// Writes `value` into the out slot. Consumes `self`.
     #[inline]
     pub fn write(self, value: T) {
-        // SAFETY: NonNull garantiert non-NULL; Caller-Pledge aus from_raw
-        // garantiert valider beschreibbarer aligned Slot.
+        // SAFETY: NonNull guarantees non-NULL; the caller pledge from from_raw
+        // guarantees a valid writeable aligned slot.
         unsafe { self.0.as_ptr().write(value) }
     }
 }
 
 // ============================================================================
-// Klasse C — Owned<T>: Lifecycle-Owned Box-Wrapper
+// Class C — Owned<T>: lifecycle-owned box wrapper
 // ============================================================================
 
-/// Owned Box-Wrapper fuer FFI-Lifecycle-Pairs.
+/// Owned box wrapper for FFI lifecycle pairs.
 ///
-/// `into_raw` und `from_raw_drop` sind das spec-geschützte Paar
-/// — wer `into_raw` ruft, muss spaeter `from_raw_drop` rufen.
+/// `into_raw` and `from_raw_drop` are the spec-protected pair
+/// — whoever calls `into_raw` must later call `from_raw_drop`.
 pub(crate) struct Owned<T>(Box<T>);
 
 impl<T> Owned<T> {
-    /// Allokiert auf Heap und gibt einen Box-Wrapper zurueck.
+    /// Allocates on the heap and returns a box wrapper.
     #[inline]
     pub fn new(value: T) -> Self {
         Owned(Box::new(value))
     }
 
-    /// Konvertiert in Raw-Pointer fuer FFI-Rueckgabe. Caller besitzt.
+    /// Converts into a raw pointer for the FFI return. The caller owns it.
     #[inline]
     pub fn into_raw(self) -> *mut T {
         Box::into_raw(self.0)
     }
 
     /// # Safety
-    /// `ptr` stammt aus `Owned::into_raw` derselben `T`-Instanz und
-    /// wurde noch nicht ge-drop'pt. NULL ist erlaubt (no-op).
+    /// `ptr` comes from `Owned::into_raw` of the same `T` instance and
+    /// has not yet been dropped. NULL is allowed (no-op).
     #[inline]
     pub unsafe fn from_raw_drop(ptr: *mut T) {
         if !ptr.is_null() {
-            // SAFETY: Caller-Pledge: stammt aus into_raw, nicht doppelt-droppen.
+            // SAFETY: caller pledge: comes from into_raw, do not double-drop.
             let _ = unsafe { Box::from_raw(ptr) };
         }
     }
 }
 
 // ============================================================================
-// Klasse D — BytesIn / BytesOut: Byte-Buffer
+// Class D — BytesIn / BytesOut: byte buffer
 // ============================================================================
 
-/// Read-Borrow eines `(*const u8, usize)` Byte-Buffers.
+/// Read borrow of a `(*const u8, usize)` byte buffer.
 pub(crate) struct BytesIn<'a>(&'a [u8]);
 
 impl<'a> BytesIn<'a> {
     /// # Safety
-    /// `ptr..ptr+len` ist valides initialisiertes Memory fuer `'a`,
-    /// nicht aliased mutiert. NULL ist erlaubt nur falls `len == 0`.
+    /// `ptr..ptr+len` is valid initialized memory for `'a`,
+    /// not aliased-mutated. NULL is allowed only if `len == 0`.
     #[inline]
     pub unsafe fn from_raw(ptr: *const u8, len: usize) -> Result<Self, ZeroDdsStatus> {
         if ptr.is_null() {
@@ -165,7 +165,7 @@ impl<'a> BytesIn<'a> {
             }
             return Err(ZeroDdsStatus::BadParameter);
         }
-        // SAFETY: NULL-Check + len-Pledge.
+        // SAFETY: NULL check + len pledge.
         Ok(BytesIn(unsafe { core::slice::from_raw_parts(ptr, len) }))
     }
 }
@@ -178,13 +178,13 @@ impl Deref for BytesIn<'_> {
     }
 }
 
-/// Write-Borrow eines `(*mut u8, usize)` Byte-Buffers.
+/// Write borrow of a `(*mut u8, usize)` byte buffer.
 pub(crate) struct BytesOut<'a>(&'a mut [u8]);
 
 impl<'a> BytesOut<'a> {
     /// # Safety
-    /// `ptr..ptr+len` ist beschreibbar, korrekt aligned, exklusiv
-    /// fuer `'a`. NULL ist erlaubt nur falls `len == 0`.
+    /// `ptr..ptr+len` is writeable, correctly aligned, exclusive
+    /// for `'a`. NULL is allowed only if `len == 0`.
     #[inline]
     pub unsafe fn from_raw(ptr: *mut u8, len: usize) -> Result<Self, ZeroDdsStatus> {
         if ptr.is_null() {
@@ -193,7 +193,7 @@ impl<'a> BytesOut<'a> {
             }
             return Err(ZeroDdsStatus::BadParameter);
         }
-        // SAFETY: NULL-Check + len-Pledge.
+        // SAFETY: NULL check + len pledge.
         Ok(BytesOut(unsafe {
             core::slice::from_raw_parts_mut(ptr, len)
         }))
@@ -216,23 +216,23 @@ impl DerefMut for BytesOut<'_> {
 }
 
 // ============================================================================
-// Klasse E — CStrIn: NUL-terminierter UTF-8 Eingang
+// Class E — CStrIn: NUL-terminated UTF-8 input
 // ============================================================================
 
-/// Read-Borrow eines NUL-terminierten `*const c_char` als UTF-8 `&str`.
+/// Read borrow of a NUL-terminated `*const c_char` as a UTF-8 `&str`.
 pub(crate) struct CStrIn<'a>(&'a str);
 
 impl<'a> CStrIn<'a> {
     /// # Safety
-    /// `ptr` ist NULL oder zeigt auf eine NUL-terminierte Byte-Sequenz
-    /// die fuer `'a` lebt. Inhalt muss valide UTF-8 sein, sonst
+    /// `ptr` is NULL or points to a NUL-terminated byte sequence
+    /// that lives for `'a`. The content must be valid UTF-8, otherwise
     /// `Err(InvalidUtf8)`.
     #[inline]
     pub unsafe fn from_raw(ptr: *const core::ffi::c_char) -> Result<Self, ZeroDdsStatus> {
         if ptr.is_null() {
             return Err(ZeroDdsStatus::BadParameter);
         }
-        // SAFETY: NULL-Check + Caller-Pledge fuer NUL-Terminierung.
+        // SAFETY: NULL check + caller pledge for NUL termination.
         let cs = unsafe { core::ffi::CStr::from_ptr(ptr) };
         cs.to_str()
             .map(CStrIn)
@@ -249,10 +249,10 @@ impl Deref for CStrIn<'_> {
 }
 
 // ============================================================================
-// Status-Adapter
+// Status adapter
 // ============================================================================
 
-/// Konvertiert `Result<T, ZeroDdsStatus>` zu `c_int` fuer extern fn return.
+/// Converts `Result<T, ZeroDdsStatus>` to `c_int` for the extern fn return.
 #[inline]
 pub(crate) fn status<T>(r: Result<T, ZeroDdsStatus>) -> c_int {
     match r {
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn borrowed_null_returns_bad_handle() {
-        // SAFETY: NULL-Pointer ist erlaubter Input fuer from_raw.
+        // SAFETY: a NULL pointer is allowed input for from_raw.
         let r: Result<Borrowed<'_, u32>, _> = unsafe { Borrowed::from_raw(ptr::null()) };
         assert!(matches!(r, Err(ZeroDdsStatus::BadHandle)));
     }
@@ -276,14 +276,14 @@ mod tests {
     #[test]
     fn borrowed_valid_derefs() {
         let x: u32 = 42;
-        // SAFETY: x lebt fuer den Test, &x ist valider Pointer.
+        // SAFETY: x lives for the test, &x is a valid pointer.
         let b = unsafe { Borrowed::from_raw(&x as *const u32) }.unwrap();
         assert_eq!(*b, 42);
     }
 
     #[test]
     fn outptr_null_returns_bad_parameter() {
-        // SAFETY: NULL ist erlaubter Input fuer from_raw.
+        // SAFETY: NULL is allowed input for from_raw.
         let r: Result<OutPtr<u32>, _> = unsafe { OutPtr::from_raw(ptr::null_mut()) };
         assert!(matches!(r, Err(ZeroDdsStatus::BadParameter)));
     }
@@ -291,7 +291,7 @@ mod tests {
     #[test]
     fn outptr_writes_exactly_once() {
         let mut x: u32 = 0;
-        // SAFETY: x lebt fuer den Test als beschreibbarer Slot.
+        // SAFETY: x lives for the test as a writeable slot.
         let out = unsafe { OutPtr::from_raw(&mut x as *mut u32) }.unwrap();
         out.write(99);
         assert_eq!(x, 99);
@@ -301,26 +301,26 @@ mod tests {
     fn owned_roundtrip_drops_on_from_raw() {
         let o = Owned::new(String::from("alive"));
         let raw = o.into_raw();
-        // SAFETY: raw stammt aus into_raw, wird nicht doppelt gedroppt.
+        // SAFETY: raw comes from into_raw, is not double-dropped.
         unsafe { Owned::from_raw_drop(raw) };
     }
 
     #[test]
     fn owned_from_raw_drop_null_is_noop() {
-        // SAFETY: NULL ist explizit erlaubt (no-op).
+        // SAFETY: NULL is explicitly allowed (no-op).
         unsafe { Owned::<u32>::from_raw_drop(ptr::null_mut()) };
     }
 
     #[test]
     fn bytesin_null_with_len_zero_ok() {
-        // SAFETY: NULL+len=0 ist explizit erlaubter Input.
+        // SAFETY: NULL+len=0 is explicitly allowed input.
         let b = unsafe { BytesIn::from_raw(ptr::null(), 0) }.unwrap();
         assert!(b.is_empty());
     }
 
     #[test]
     fn bytesin_null_with_len_nonzero_errors() {
-        // SAFETY: NULL+len>0 muss BadParameter zurueckliefern (Test).
+        // SAFETY: NULL+len>0 must return BadParameter (test).
         let r = unsafe { BytesIn::from_raw(ptr::null(), 4) };
         assert!(matches!(r, Err(ZeroDdsStatus::BadParameter)));
     }
@@ -328,14 +328,14 @@ mod tests {
     #[test]
     fn bytesin_valid_derefs() {
         let data = [1u8, 2, 3, 4];
-        // SAFETY: data lebt fuer den Test als valides 4-Byte-Buffer.
+        // SAFETY: data lives for the test as a valid 4-byte buffer.
         let b = unsafe { BytesIn::from_raw(data.as_ptr(), data.len()) }.unwrap();
         assert_eq!(&*b, &data[..]);
     }
 
     #[test]
     fn bytesout_null_with_len_zero_ok() {
-        // SAFETY: NULL+len=0 ist explizit erlaubter Input.
+        // SAFETY: NULL+len=0 is explicitly allowed input.
         let b = unsafe { BytesOut::from_raw(ptr::null_mut(), 0) }.unwrap();
         assert!(b.is_empty());
     }
@@ -344,7 +344,7 @@ mod tests {
     fn bytesout_valid_writes() {
         let mut buf = [0u8; 4];
         {
-            // SAFETY: buf lebt fuer den Block als beschreibbarer 4-Byte-Slot.
+            // SAFETY: buf lives for the block as a writeable 4-byte slot.
             let mut b = unsafe { BytesOut::from_raw(buf.as_mut_ptr(), buf.len()) }.unwrap();
             b[0] = 0xAA;
             b[3] = 0xBB;
@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn cstrin_null_errors() {
-        // SAFETY: NULL ist explizit verbotener Input — muss BadParameter sein.
+        // SAFETY: NULL is explicitly forbidden input — must be BadParameter.
         let r = unsafe { CStrIn::from_raw(ptr::null()) };
         assert!(matches!(r, Err(ZeroDdsStatus::BadParameter)));
     }
@@ -362,7 +362,7 @@ mod tests {
     #[test]
     fn cstrin_valid_utf8_derefs() {
         let s = c"hello";
-        // SAFETY: c"hello" ist NUL-terminierter UTF-8.
+        // SAFETY: c"hello" is NUL-terminated UTF-8.
         let c = unsafe { CStrIn::from_raw(s.as_ptr()) }.unwrap();
         assert_eq!(&*c, "hello");
     }
@@ -371,7 +371,7 @@ mod tests {
     fn cstrin_invalid_utf8_errors() {
         // Bytes 0xFF, 0x00 — invalid UTF-8 + NUL.
         let bad: [core::ffi::c_char; 2] = [-1, 0];
-        // SAFETY: bad ist NUL-terminiert, aber invalid UTF-8 — Test der Validierung.
+        // SAFETY: bad is NUL-terminated, but invalid UTF-8 — tests the validation.
         let r = unsafe { CStrIn::from_raw(bad.as_ptr()) };
         assert!(matches!(r, Err(ZeroDdsStatus::InvalidUtf8)));
     }

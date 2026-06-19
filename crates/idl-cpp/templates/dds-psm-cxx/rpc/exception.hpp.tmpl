@@ -1,12 +1,12 @@
 // dds-rpc-1.0 — exception.hpp
-// RemoteException-Hierarchie. Spec §10.6 (Exception-Mapping).
+// RemoteException hierarchy. Spec §10.6 (exception mapping).
 //
-// `RemoteException` ist die Basisklasse fuer alle aus einem IDL `raises`-
-// Clause abgeleiteten Server-Exceptions. Sie erweitert die DDS-Core-
-// Exception-Hierarchie aus `dds::core` (siehe exceptions.hpp.tmpl).
+// `RemoteException` is the base class for all server exceptions derived
+// from an IDL `raises` clause. It extends the DDS core
+// exception hierarchy from `dds::core` (see exceptions.hpp.tmpl).
 namespace dds { namespace rpc {
 
-/// Basisklasse aller Remote-Exceptions (Spec §10.6).
+/// Base class of all remote exceptions (Spec §10.6).
 class RemoteException : public ::dds::core::Exception {
 public:
     RemoteException() = default;
@@ -14,32 +14,32 @@ public:
         : ::dds::core::Exception(std::move(msg)) {}
 };
 
-/// Fehler, wenn der Service eine angeforderte Operation nicht kennt.
+/// Error when the service does not know a requested operation.
 class UnknownOperationError : public RemoteException {
 public:
     using RemoteException::RemoteException;
 };
 
-/// Fehler, wenn der Service eine Exception meldet, die der Client nicht
-/// kennt.
+/// Error when the service reports an exception the client does not
+/// know.
 class UnknownExceptionError : public RemoteException {
 public:
     using RemoteException::RemoteException;
 };
 
-/// Fehler, wenn die Argumente nicht valide sind.
+/// Error when the arguments are not valid.
 class InvalidArgumentRemoteError : public RemoteException {
 public:
     using RemoteException::RemoteException;
 };
 
-/// Fehler, wenn der Service Ressourcenmangel meldet.
+/// Error when the service reports resource exhaustion.
 class OutOfResourcesRemoteError : public RemoteException {
 public:
     using RemoteException::RemoteException;
 };
 
-/// Fehler, wenn der Service die Operation nicht unterstuetzt.
+/// Error when the service does not support the operation.
 class UnsupportedRemoteError : public RemoteException {
 public:
     using RemoteException::RemoteException;

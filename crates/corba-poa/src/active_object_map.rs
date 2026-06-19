@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Active-Object-Map (AOM) — Spec §11.3.5.
+//! Active object map (AOM) — Spec §11.3.5.
 //!
-//! Bei RETAIN-POAs haelt der POA eine bidirektionale Map zwischen
-//! ObjectId und Servant. UNIQUE_ID erlaubt nur 1:1-Mappings;
-//! MULTIPLE_ID erlaubt einem Servant mehrere ObjectIds.
+//! For RETAIN POAs the POA keeps a bidirectional map between
+//! ObjectId and servant. UNIQUE_ID allows only 1:1 mappings;
+//! MULTIPLE_ID lets a single servant have multiple ObjectIds.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -16,12 +16,12 @@ use crate::object_id::ObjectId;
 use crate::policies::IdUniquenessPolicy;
 use crate::servant::Servant;
 
-/// Eindeutige interne ID pro registriertem Servant — wir brauchen
-/// das, weil `Box<dyn Servant>` keine eindeutige Identitaet hat
-/// (zwei Boxes auf dasselbe Type sind verschieden).
+/// Unique internal ID per registered servant — we need this
+/// because `Box<dyn Servant>` has no unique identity
+/// (two boxes of the same type are distinct).
 pub type ServantId = u64;
 
-/// Active-Object-Map.
+/// Active object map.
 #[derive(Default)]
 pub struct ActiveObjectMap {
     next_servant_id: ServantId,
@@ -42,7 +42,7 @@ impl core::fmt::Debug for ActiveObjectMap {
 }
 
 impl ActiveObjectMap {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new(uniqueness: IdUniquenessPolicy) -> Self {
         Self {
@@ -54,12 +54,12 @@ impl ActiveObjectMap {
         }
     }
 
-    /// Registriert ein neues Servant unter der gegebenen ObjectId.
+    /// Registers a new servant under the given ObjectId.
     ///
     /// # Errors
-    /// * `ObjectAlreadyActive` wenn `oid` schon mappt.
-    /// * `ServantAlreadyActive` (UNIQUE_ID) wenn der Servant schon
-    ///   eine andere ObjectId hat.
+    /// * `ObjectAlreadyActive` if `oid` already maps.
+    /// * `ServantAlreadyActive` (UNIQUE_ID) if the servant already
+    ///   has a different ObjectId.
     pub fn activate(&mut self, oid: ObjectId, servant: Box<dyn Servant>) -> PoaResult<ServantId> {
         if self.by_oid.contains_key(&oid) {
             return Err(PoaError::ObjectAlreadyActive);
@@ -72,13 +72,13 @@ impl ActiveObjectMap {
         Ok(sid)
     }
 
-    /// Registriert ein bestehendes Servant unter einer zusaetzlichen
-    /// ObjectId (nur unter MULTIPLE_ID erlaubt).
+    /// Registers an existing servant under an additional
+    /// ObjectId (only allowed under MULTIPLE_ID).
     ///
     /// # Errors
-    /// * `ServantNotActive` wenn `sid` unbekannt.
-    /// * `ObjectAlreadyActive` wenn `oid` schon mappt.
-    /// * `ServantAlreadyActive` wenn UNIQUE_ID.
+    /// * `ServantNotActive` if `sid` is unknown.
+    /// * `ObjectAlreadyActive` if `oid` already maps.
+    /// * `ServantAlreadyActive` under UNIQUE_ID.
     pub fn add_alias(&mut self, sid: ServantId, oid: ObjectId) -> PoaResult<()> {
         if !self.servants.contains_key(&sid) {
             return Err(PoaError::ServantNotActive);
@@ -94,30 +94,30 @@ impl ActiveObjectMap {
         Ok(())
     }
 
-    /// Liefert den Servant fuer eine ObjectId.
+    /// Returns the servant for an ObjectId.
     #[must_use]
     pub fn get(&self, oid: &ObjectId) -> Option<&dyn Servant> {
         let sid = *self.by_oid.get(oid)?;
         self.servants.get(&sid).map(|s| s.as_ref())
     }
 
-    /// Liefert die `ServantId` fuer eine ObjectId.
+    /// Returns the `ServantId` for an ObjectId.
     #[must_use]
     pub fn servant_id(&self, oid: &ObjectId) -> Option<ServantId> {
         self.by_oid.get(oid).copied()
     }
 
-    /// Liefert die Object-Ids unter denen ein Servant registriert ist.
+    /// Returns the ObjectIds under which a servant is registered.
     #[must_use]
     pub fn ids_for_servant(&self, sid: ServantId) -> &[ObjectId] {
         self.by_servant.get(&sid).map(Vec::as_slice).unwrap_or(&[])
     }
 
-    /// Deaktiviert eine ObjectId. Wenn der Servant keine weiteren
-    /// Aliasses hat, wird er auch entfernt.
+    /// Deactivates an ObjectId. If the servant has no further
+    /// aliases, it is removed as well.
     ///
     /// # Errors
-    /// `ObjectNotActive` wenn `oid` nicht mappt.
+    /// `ObjectNotActive` if `oid` does not map.
     pub fn deactivate(&mut self, oid: &ObjectId) -> PoaResult<Box<dyn Servant>> {
         let sid = self.by_oid.remove(oid).ok_or(PoaError::ObjectNotActive)?;
         if let Some(list) = self.by_servant.get_mut(&sid) {
@@ -128,26 +128,26 @@ impl ActiveObjectMap {
                 return s.ok_or(PoaError::ServantNotActive);
             }
         }
-        // Servant haengt noch unter anderen IDs — kein Servant
-        // zurueckgeben (Box noch in Map).
+        // Servant is still attached under other IDs — return no
+        // servant (box still in the map).
         Err(PoaError::BadInvocationOrder(
             "servant still has other aliases".into(),
         ))
     }
 
-    /// Anzahl Eintraege.
+    /// Number of entries.
     #[must_use]
     pub fn len(&self) -> usize {
         self.by_oid.len()
     }
 
-    /// `true` wenn leer.
+    /// `true` if empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.by_oid.is_empty()
     }
 
-    /// Setzt die Uniqueness-Policy (intern, fuer POA-Konstruktion).
+    /// Sets the uniqueness policy (internal, for POA construction).
     pub(crate) fn set_uniqueness(&mut self, u: IdUniquenessPolicy) {
         self.uniqueness = u;
     }
@@ -208,12 +208,12 @@ mod tests {
         let sid = m.activate(ObjectId::system_id(1), echo()).unwrap();
         m.add_alias(sid, ObjectId::system_id(2)).unwrap();
 
-        // Erste Deaktivierung — Servant haengt noch unter ID 2.
+        // First deactivation — servant is still attached under ID 2.
         let err = m.deactivate(&ObjectId::system_id(1)).unwrap_err();
         assert!(matches!(err, PoaError::BadInvocationOrder(_)));
         assert_eq!(m.len(), 1);
 
-        // Zweite Deaktivierung entfernt den Servant.
+        // Second deactivation removes the servant.
         let _s = m.deactivate(&ObjectId::system_id(2)).unwrap();
         assert_eq!(m.len(), 0);
     }

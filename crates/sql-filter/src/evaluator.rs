@@ -1,35 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Expression-Evaluator.
+//! Expression evaluator.
 //!
-//! Die Evaluation ist strikt — Type-Mismatch (z.B. String < Int)
-//! liefert `EvalError::TypeMismatch`. Der Caller entscheidet, ob er
-//! das als `filter denies` oder als `filter error` behandelt.
+//! Evaluation is strict — a type mismatch (e.g. String < Int) returns
+//! `EvalError::TypeMismatch`. The caller decides whether to treat that
+//! as `filter denies` or as `filter error`.
 
 use alloc::string::String;
 
 use crate::ast::{CmpOp, Expr, Operand, Value};
 
-/// Row-Abstraktion: ein Zugriff auf die Felder einer Stichprobe.
+/// Row abstraction: access to the fields of a sample.
 ///
-/// Implementierer mappen dotted-Pfade (`a.b.c`) auf die passenden
-/// Werte. Für einfache flache Structs reicht ein `HashMap<String,
-/// Value>`-Lookup.
+/// Implementers map dotted paths (`a.b.c`) to the matching values. For
+/// simple flat structs a `HashMap<String, Value>` lookup is enough.
 pub trait RowAccess {
-    /// Liefert den Wert des Feldpfads, wenn vorhanden. `None` = kein
-    /// Feld mit dem Namen.
+    /// Returns the value of the field path if present. `None` = no field
+    /// with that name.
     fn get(&self, path: &str) -> Option<Value>;
 }
 
-/// Fehler bei der Evaluation.
+/// Error during evaluation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EvalError {
-    /// Feld nicht gefunden.
+    /// Field not found.
     UnknownField(String),
-    /// Parameter-Index ausserhalb des uebergebenen Slice.
+    /// Parameter index outside the passed slice.
     MissingParam(u32),
-    /// Operator nicht kompatibel mit den Operand-Typen.
+    /// Operator not compatible with the operand types.
     TypeMismatch(String),
 }
 
@@ -47,7 +46,7 @@ impl core::fmt::Display for EvalError {
 impl std::error::Error for EvalError {}
 
 impl Expr {
-    /// Werte die Expression gegen einen Row + Parameter-Slice aus.
+    /// Evaluates the expression against a row + parameter slice.
     ///
     /// # Errors
     /// Siehe [`EvalError`].
@@ -95,7 +94,7 @@ fn resolve_operand<R: RowAccess>(
 }
 
 fn cmp(lhs: &Value, op: CmpOp, rhs: &Value) -> Result<bool, EvalError> {
-    // Numerische Promotion fuer Int/Float-Vergleiche.
+    // Numeric promotion for int/float comparisons.
     if let (Some(l), Some(r)) = (as_f64(lhs), as_f64(rhs)) {
         return Ok(match op {
             CmpOp::Eq => (l - r).abs() < f64::EPSILON,
@@ -105,7 +104,7 @@ fn cmp(lhs: &Value, op: CmpOp, rhs: &Value) -> Result<bool, EvalError> {
             CmpOp::Gt => l > r,
             CmpOp::Ge => l >= r,
             CmpOp::Like => {
-                return Err(EvalError::TypeMismatch("LIKE nur für String".into()));
+                return Err(EvalError::TypeMismatch("LIKE only for String".into()));
             }
         });
     }
@@ -135,9 +134,9 @@ fn as_f64(v: &Value) -> Option<f64> {
     }
 }
 
-/// SQL-92 LIKE-Match mit `%` (null-oder-mehr) und `_` (genau ein Zeichen).
-/// Backslash-Escape ist nicht implementiert — Spec §B.2.1 verlangt es
-/// nicht; %/_ in Daten muss der Caller per Doppel-Encoding einbringen.
+/// SQL-92 LIKE match with `%` (zero-or-more) and `_` (exactly one character).
+/// Backslash escape is not implemented — spec §B.2.1 does not require it;
+/// %/_ in data must be introduced by the caller via double-encoding.
 fn like_match(s: &str, pat: &str) -> bool {
     // Klassisches DP: m[i][j] = s[..i] matcht pat[..j]
     let s_chars: alloc::vec::Vec<char> = s.chars().collect();
@@ -203,7 +202,7 @@ mod tests {
 
     #[test]
     fn evaluates_float_int_cross() {
-        // Int auf einer Seite, Float auf der anderen — promotet zu f64.
+        // Int on one side, float on the other — promoted to f64.
         let e = parse("x < 3.5").unwrap();
         let r = row(&[("x", Value::Int(3))]);
         assert_eq!(e.evaluate(&r, &[]), Ok(true));

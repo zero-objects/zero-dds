@@ -1,11 +1,10 @@
-//! Spec-Conformance-Matrix fuer DDS C++ PSM 1.0.
+//! Spec conformance matrix for DDS C++ PSM 1.0.
 //!
-//! Verifiziert die in `docs/spec-coverage/dds-psm-cxx-1.0.md`
-//! gelisteten Header-Templates + Emitter-Funktionen. ZeroDDS' DDS-
-//! C++-PSM ist als Header-by-Codegen-Pfad realisiert (Spec §1.1
-//! erlaubt das: "the PSM API is defined by means of a set of C++
-//! header files" — diese Header werden bei uns aus IDL generiert
-//! statt hand-gepflegt).
+//! Verifies the header templates + emitter functions listed in
+//! `docs/spec-coverage/dds-psm-cxx-1.0.md`. ZeroDDS' DDS C++ PSM is
+//! realized as a header-by-codegen path (spec §1.1 permits this: "the
+//! PSM API is defined by means of a set of C++ header files" — in our
+//! case these headers are generated from IDL rather than hand-maintained).
 
 #![allow(
     clippy::expect_used,
@@ -34,8 +33,8 @@ use zerodds_idl_cpp::{
 
 #[test]
 fn psm_cxx_includes_emit_per_participant_name() {
-    // Spec §1.1: PSM ist als Header-Set definiert. Der Includes-
-    // Emitter generiert pro Participant einen Header-Block.
+    // Spec §1.1: the PSM is defined as a header set. The includes
+    // emitter generates one header block per participant.
     let inc = emit_psm_cxx_includes("Calculator").expect("emit");
     assert!(inc.contains("Calculator"));
     assert!(inc.contains("dds"));
@@ -43,25 +42,25 @@ fn psm_cxx_includes_emit_per_participant_name() {
 
 #[test]
 fn psm_cxx_full_skeleton_renders() {
-    // Spec §2.0: PDF + Header-Files sind beide normativ. Der full-
-    // skeleton-Emitter rendert das volle Header-Skelett.
+    // Spec §2.0: the PDF + header files are both normative. The full-
+    // skeleton emitter renders the complete header skeleton.
     let s = emit_full_psm_cxx_skeleton().expect("skeleton");
     assert!(s.contains("dds::core") || s.contains("dds::sub") || s.len() > 100);
 }
 
 // ============================================================================
-// §6.1 Reference / Value-Pattern (zentraler Modellbaustein)
+// §6.1 Reference / Value pattern (central model building block)
 // ============================================================================
 
 #[test]
 fn reference_value_pattern_emits_template() {
-    // Spec §6.1: dds::core::Reference / dds::core::Value Templates
-    // sind die Basis fuer alle PSM-Klassen.
+    // Spec §6.1: the dds::core::Reference / dds::core::Value templates
+    // are the basis for all PSM classes.
     let mut out = String::new();
     emit_reference_value_pattern(&mut out).expect("emit");
     assert!(
         out.contains("Reference") || out.contains("Value") || !out.is_empty(),
-        "reference/value pattern fehlt:\n{out}"
+        "reference/value pattern missing:\n{out}"
     );
 }
 
@@ -111,6 +110,6 @@ fn core_basics_emits_time_duration_instance_handle() {
             || out.contains("Duration")
             || out.contains("Handle")
             || !out.is_empty(),
-        "core basics fehlen:\n{out}"
+        "core basics missing:\n{out}"
     );
 }

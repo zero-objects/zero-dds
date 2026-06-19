@@ -3,35 +3,35 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-flatdata-derive/badge.svg)](https://docs.rs/zerodds-flatdata-derive)
 
-Proc-Macro `#[derive(FlatStruct)]` fuer den
-[`zerodds-flatdata`](https://docs.rs/zerodds-flatdata)-Trait. Generiert
-`unsafe impl FlatStruct for T` mit einem deterministischen
-SHA-256-basierten `TYPE_HASH` aus Type-Name und Field-Layout. Safety
+Proc-macro `#[derive(FlatStruct)]` for the
+[`zerodds-flatdata`](https://docs.rs/zerodds-flatdata) trait. Generates
+`unsafe impl FlatStruct for T` with a deterministic
+SHA-256-based `TYPE_HASH` derived from the type name and field layout. Safety
 classification: **STANDARD** (proc-macro).
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| ZeroDDS-flatdata 1.0 | §1.2 (Derive-Macro) |
+| ZeroDDS-flatdata 1.0 | §1.2 (derive macro) |
 
-## Was ist drin
+## What's inside
 
-- **`#[derive(FlatStruct)]`** — generiert `unsafe impl ::zerodds_flatdata::FlatStruct`
-  mit `TYPE_HASH = sha256(layout_signature(T))[..16]`.
-- **Compile-Time-Checks**:
-  - `enum`/`union` werden mit `compile_error!` abgelehnt (kein
-    stabiles Layout).
-  - Fehlendes `#[repr(C)]` / `#[repr(transparent)]` wird mit
-    `compile_error!` abgelehnt (Default-Repr ist nicht garantiert
-    layout-stabil).
-- **Layout-Signatur** `<TypeName>{<field-name>:<field-ty>,...}` erkennt
-  Type-Rename, Field-add/remove, Field-reorder, Field-Type-Change.
+- **`#[derive(FlatStruct)]`** — generates `unsafe impl ::zerodds_flatdata::FlatStruct`
+  with `TYPE_HASH = sha256(layout_signature(T))[..16]`.
+- **Compile-time checks**:
+  - `enum`/`union` are rejected with `compile_error!` (no stable
+    layout).
+  - A missing `#[repr(C)]` / `#[repr(transparent)]` is rejected with
+    `compile_error!` (the default repr is not guaranteed to be
+    layout-stable).
+- **Layout signature** `<TypeName>{<field-name>:<field-ty>,...}` detects
+  type rename, field add/remove, field reorder, field type change.
 
-## Schichten-Position
+## Layer position
 
-Layer 4 — Core Services. Build-Time-Companion zu `zerodds-flatdata`,
-keine Runtime-Code-Surface. Keine ZeroDDS-Crate-Deps.
+Layer 4 — Core Services. Build-time companion to `zerodds-flatdata`,
+no runtime code surface. No ZeroDDS crate deps.
 
 ## Quickstart
 
@@ -49,34 +49,34 @@ struct Pose { x: f64, y: f64, z: f64 }
 //   }
 ```
 
-`WIRE_SIZE` und die `as_bytes`/`from_bytes_unchecked`-Methoden kommen
-als Default aus dem Trait und brauchen keinen Macro-Override.
+`WIRE_SIZE` and the `as_bytes`/`from_bytes_unchecked` methods come as a
+default from the trait and need no macro override.
 
-## Feature-Flags
+## Feature flags
 
-Keine. Die Crate ist eine reine `proc-macro`-Lib.
+None. The crate is a pure `proc-macro` lib.
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1` ist die initiale Release-Materialisierung. Alle
-oeffentlichen Macro-Pfade sind RC1-stabil; Layout-Signatur-Format gilt
-als Wire-Stabil — eine Aenderung wuerde alle generierten `TYPE_HASH`-
-Werte invalidieren und ist daher Major-Breaking.
+`1.0.0-rc.1` is the initial release materialization. All public macro
+paths are RC1-stable; the layout signature format is considered
+wire-stable — a change would invalidate all generated `TYPE_HASH`
+values and is therefore major-breaking.
 
 ## Build & Test
 
 ```bash
 cargo build -p zerodds-flatdata-derive
-# Tests stehen in zerodds-flatdata, weil proc-macro-Crates ihre eigenen
-# Output nicht testen koennen:
+# Tests live in zerodds-flatdata because proc-macro crates cannot test
+# their own output:
 cargo test -p zerodds-flatdata --test derive
 ```
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../../LICENSE).
+Apache-2.0. See [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
-- [`zerodds-flatdata`](../flatdata) — der `FlatStruct`-Trait selbst.
+- [`zerodds-flatdata`](../flatdata) — the `FlatStruct` trait itself.
 - [`docs/specs/zerodds-flatdata-1.0.md`](../../docs/specs/zerodds-flatdata-1.0.md) §1.2.

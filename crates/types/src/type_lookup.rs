@@ -2,14 +2,14 @@
 // Copyright 2026 ZeroDDS Contributors
 //! TypeLookup Service IDL (XTypes 1.3 §7.6.3.3).
 //!
-//! Das ist ein DDS-RPC-Service mit zwei Operationen:
+//! This is a DDS-RPC service with two operations:
 //! - `getTypes(TypeIdentifier[])` → `TypeObject[]` (Minimal/Complete)
 //! - `getTypeDependencies(TypeIdentifier[], continuation_point)`
 //!   → `TypeIdentifierWithSize[] + continuation_point`
 //!
-//! Wir definieren die IDL-Strukturen manuell. Ein kuenftiger
-//! `zerodds-idlc`-Codegen wird diese aus dem OMG-IDL-Schnipsel direkt
-//! generieren.
+//! We define the IDL structures manually. A future
+//! `zerodds-idlc` codegen will generate these directly from the OMG-IDL
+//! snippet.
 
 use alloc::vec::Vec;
 
@@ -25,10 +25,10 @@ use crate::type_object::{CompleteTypeObject, MinimalTypeObject};
 // getTypes
 // ============================================================================
 
-/// Request fuer `TypeLookup::getTypes`.
+/// Request for `TypeLookup::getTypes`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GetTypesRequest {
-    /// Angefragte TypeIdentifiers (typischerweise EK_MINIMAL/EK_COMPLETE).
+    /// Requested TypeIdentifiers (typically EK_MINIMAL/EK_COMPLETE).
     pub type_ids: Vec<TypeIdentifier>,
 }
 
@@ -36,7 +36,7 @@ impl GetTypesRequest {
     /// Encode.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         encode_seq(w, &self.type_ids, |w, t| t.encode_into(w))
     }
@@ -44,7 +44,7 @@ impl GetTypesRequest {
     /// Decode.
     ///
     /// # Errors
-    /// Buffer-Underflow.
+    /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
         let type_ids = decode_seq(r, |rr| {
             TypeIdentifier::decode_from(rr).map_err(|e| zerodds_cdr::DecodeError::InvalidString {
@@ -59,37 +59,37 @@ impl GetTypesRequest {
     }
 }
 
-/// Ein getTypes-Reply-Item: ein TypeObject (Minimal oder Complete).
-/// Der Kind wird im ersten Byte der serialisierten Form diskriminiert
-/// (siehe [`crate::type_object::TypeObject`]).
+/// A getTypes reply item: a TypeObject (Minimal or Complete).
+/// The kind is discriminated in the first byte of the serialized form
+/// (see [`crate::type_object::TypeObject`]).
 ///
-/// Variant-Size wie [`crate::type_object::TypeObject`] — Boxing der
-/// `Complete`-Variante waere Mikro-Optimierung mit Refactor-Pflicht
-/// auf vielen Callsites; ReplyTypeObject lebt im TypeLookup-Reply-
-/// Pfad, nicht auf dem Sample-Hot-Path.
+/// Variant size as [`crate::type_object::TypeObject`] — boxing the
+/// `Complete` variant would be a micro-optimization requiring a refactor
+/// at many call sites; ReplyTypeObject lives on the TypeLookup reply
+/// path, not on the sample hot path.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReplyTypeObject {
-    /// Minimal-Variante.
+    /// Minimal variant.
     Minimal(MinimalTypeObject),
-    /// Complete-Variante.
+    /// Complete variant.
     Complete(CompleteTypeObject),
 }
 
-/// Antwort fuer `TypeLookup::getTypes`.
+/// Reply for `TypeLookup::getTypes`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GetTypesReply {
-    /// Liste der zurueckgelieferten TypeObjects. Nicht-gefundene werden
-    /// typischerweise ausgelassen; der Caller muss nach TypeIdentifier
-    /// matchen (ueber den Hash).
+    /// List of the returned TypeObjects. Not-found ones are
+    /// typically omitted; the caller must match by TypeIdentifier
+    /// (via the hash).
     pub types: Vec<ReplyTypeObject>,
 }
 
 impl GetTypesReply {
-    /// Encode als sequence<TypeObject>.
+    /// Encode as sequence<TypeObject>.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         encode_seq(w, &self.types, |w, t| match t {
             ReplyTypeObject::Minimal(m) => {
@@ -104,14 +104,14 @@ impl GetTypesReply {
     /// Decode.
     ///
     /// # Errors
-    /// Buffer-Underflow / Unknown-TypeKind.
+    /// Buffer underflow / unknown TypeKind.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
         let n = r.read_u32()? as usize;
-        // DoS-Cap: ein boeser Peer darf uns nicht mit `u32::MAX`-
-        // Type-Objects GB an RAM allozieren. `safe_capacity` kappt
-        // auf noch lesbare Bytes / min-elem-size (1 byte pro TypeObject
-        // als konservative Untergrenze — ein echter TypeObject ist
-        // mind. ~20 byte).
+        // DoS cap: a malicious peer must not make us allocate GB of RAM
+        // with `u32::MAX` type objects. `safe_capacity` caps
+        // to still-readable bytes / min-elem-size (1 byte per TypeObject
+        // as a conservative lower bound — a real TypeObject is
+        // at least ~20 bytes).
         let cap = crate::type_object::common::safe_capacity(n, 1, r.remaining());
         let mut types = Vec::with_capacity(cap);
         for _ in 0..n {
@@ -129,21 +129,21 @@ impl GetTypesReply {
 // getTypeDependencies
 // ============================================================================
 
-/// Opaque-Continuation-Point fuer paginierte Dependency-Listen.
-/// XTypes spec §7.6.3.3.3 erlaubt bis zu 32 bytes.
+/// Opaque continuation point for paginated dependency lists.
+/// XTypes spec §7.6.3.3.3 allows up to 32 bytes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ContinuationPoint(pub Vec<u8>);
 
 impl ContinuationPoint {
-    /// Maximum-Laenge (§7.6.3.3.3).
+    /// Maximum length (§7.6.3.3.3).
     pub const MAX_LEN: usize = 32;
 
-    /// Encode als fixed-length octet[32] — wir kodieren es als
-    /// sequence<octet> aus Vereinfachung (spec erlaubt beides via
-    /// @bound; die meisten Implementierungen nutzen sequence).
+    /// Encode as a fixed-length octet[32] — we encode it as a
+    /// sequence<octet> for simplicity (the spec allows both via
+    /// @bound; most implementations use sequence).
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         let len = u32::try_from(self.0.len().min(Self::MAX_LEN)).unwrap_or(Self::MAX_LEN as u32);
         w.write_u32(len)?;
@@ -153,7 +153,7 @@ impl ContinuationPoint {
     /// Decode.
     ///
     /// # Errors
-    /// Buffer-Underflow / Laenge > MAX_LEN.
+    /// Buffer underflow / length > MAX_LEN.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
         let len = r.read_u32()? as usize;
         if len > Self::MAX_LEN {
@@ -163,12 +163,12 @@ impl ContinuationPoint {
     }
 }
 
-/// Request fuer `TypeLookup::getTypeDependencies`.
+/// Request for `TypeLookup::getTypeDependencies`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GetTypeDependenciesRequest {
-    /// TypeIds, deren Dependencies wir brauchen.
+    /// TypeIds whose dependencies we need.
     pub type_ids: Vec<TypeIdentifier>,
-    /// Continuation-Point aus vorigem Reply (leer bei erstem Request).
+    /// Continuation point from the previous reply (empty on the first request).
     pub continuation_point: ContinuationPoint,
 }
 
@@ -176,7 +176,7 @@ impl GetTypeDependenciesRequest {
     /// Encode.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         encode_seq(w, &self.type_ids, |w, t| t.encode_into(w))?;
         self.continuation_point.encode_into(w)
@@ -185,7 +185,7 @@ impl GetTypeDependenciesRequest {
     /// Decode.
     ///
     /// # Errors
-    /// Buffer-Underflow.
+    /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
         let type_ids = decode_seq(r, |rr| {
             TypeIdentifier::decode_from(rr).map_err(|_| zerodds_cdr::DecodeError::InvalidString {
@@ -201,12 +201,12 @@ impl GetTypeDependenciesRequest {
     }
 }
 
-/// Antwort fuer `TypeLookup::getTypeDependencies`.
+/// Reply for `TypeLookup::getTypeDependencies`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GetTypeDependenciesReply {
     /// Dependencies.
     pub dependent_typeids: Vec<TypeIdentifierWithSize>,
-    /// Continuation-Point (leer = Ende).
+    /// Continuation point (empty = end).
     pub continuation_point: ContinuationPoint,
 }
 
@@ -214,7 +214,7 @@ impl GetTypeDependenciesReply {
     /// Encode.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         encode_seq(w, &self.dependent_typeids, |w, t| t.encode_into(w))?;
         self.continuation_point.encode_into(w)
@@ -223,7 +223,7 @@ impl GetTypeDependenciesReply {
     /// Decode.
     ///
     /// # Errors
-    /// Buffer-Underflow.
+    /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
         let dependent_typeids = decode_seq(r, |rr| {
             TypeIdentifierWithSize::decode_from(rr).map_err(|_| {
@@ -319,8 +319,8 @@ mod tests {
 
     #[test]
     fn continuation_point_too_large_on_decode_rejected() {
-        // u32-length > MAX_LEN → UnknownTypeKind (Platzhalter fuer
-        // "length out of range"; passende ErrorVariante folgt.)
+        // u32 length > MAX_LEN → UnknownTypeKind (placeholder for
+        // "length out of range"; a matching error variant follows.)
         let mut w = BufferWriter::new(Endianness::Little);
         w.write_u32(100).unwrap(); // > MAX_LEN=32
         w.write_bytes(&[0u8; 100]).unwrap();

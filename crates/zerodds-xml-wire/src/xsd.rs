@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! XSD-Schema-Generation aus DDS-Topic-Type-Definitions.
+//! XSD schema generation from DDS topic type definitions.
 //!
-//! Spec DDS-XML 1.0 §6.5: aus einem IDL-Type wird ein XSD-Schema
-//! generiert, das alle Caller validieren koennen.
+//! Spec DDS-XML 1.0 §6.5: from an IDL type an XSD schema is
+//! generated that all callers can validate against.
 
 use alloc::format;
 use alloc::string::String;
@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 
 use crate::codec::FieldKind;
 
-/// XSD-Type-Reference.
+/// XSD type reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XsdType {
     /// `xs:long`.
@@ -27,7 +27,7 @@ pub enum XsdType {
 }
 
 impl XsdType {
-    /// Liefert den Spec-konformen XSD-Namen.
+    /// Returns the spec-conformant XSD name.
     #[must_use]
     pub fn xsd_name(self) -> &'static str {
         match self {
@@ -52,7 +52,7 @@ impl XsdType {
     }
 }
 
-/// XSD-Generator-Builder. Spec §6.5.
+/// XSD generator builder. Spec §6.5.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct XsdGenerator {
     type_name: String,
@@ -60,7 +60,7 @@ pub struct XsdGenerator {
 }
 
 impl XsdGenerator {
-    /// Konstruktor mit Type-Name (wird Root-Element-Name).
+    /// Constructor with a type name (becomes the root element name).
     #[must_use]
     pub fn new(type_name: &str) -> Self {
         Self {
@@ -69,7 +69,7 @@ impl XsdGenerator {
         }
     }
 
-    /// Fuegt ein Feld hinzu. `optional=true` mappt zu
+    /// Adds a field. `optional=true` maps to
     /// `minOccurs="0"`.
     #[must_use]
     pub fn field(mut self, name: &str, kind: XsdType, optional: bool) -> Self {
@@ -77,7 +77,7 @@ impl XsdGenerator {
         self
     }
 
-    /// Render zu XSD-XML-String. Spec §6.5 Appendix A.
+    /// Render to an XSD XML string. Spec §6.5 Appendix A.
     #[must_use]
     pub fn render(&self) -> String {
         let mut out = String::new();
@@ -104,7 +104,7 @@ impl XsdGenerator {
         out
     }
 
-    /// Anzahl Felder.
+    /// Number of fields.
     #[must_use]
     pub fn field_count(&self) -> usize {
         self.fields.len()

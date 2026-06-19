@@ -3,8 +3,8 @@
 
 //! `ACKNACK` Submessage (id=10, Spec §8.3.5.11).
 //!
-//! Direction: bidirektional. Header.streamId = `STREAMID_NONE`; das
-//! eigentliche Stream-Tag ist im Body.
+//! Direction: bidirectional. Header.streamId = `STREAMID_NONE`; the
+//! actual stream tag is in the body.
 //!
 //! Body-Layout:
 //! ```text
@@ -16,7 +16,7 @@
 //!  |   stream_id   |
 //!  +-+-+-+-+-+-+-+-+
 //! ```
-//! Endianness der `i16`-Felder folgt dem E-Flag.
+//! The endianness of the `i16` fields follows the E-flag.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -25,25 +25,25 @@ use crate::encoding::{Endianness, read_i16, write_i16};
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// Body-Wire-Size: 5 Bytes.
+/// Body wire size: 5 bytes.
 pub const ACKNACK_BODY_SIZE: usize = 5;
 
-/// `ACKNACK_Payload` strukturiert.
+/// `ACKNACK_Payload`, structured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct AckNackPayload {
-    /// Erste Sequenznummer, die noch nicht acked ist.
+    /// First sequence number that is not yet acked.
     pub first_unacked_seq_num: i16,
-    /// Bitmap der Lock-Outs (2 Bytes = 16 Bit Fenster).
+    /// Bitmap of the lock-outs (2 bytes = 16-bit window).
     pub nack_bitmap: [u8; 2],
-    /// Stream, fuer den das ACKNACK gilt.
+    /// Stream the ACKNACK applies to.
     pub stream_id: u8,
 }
 
 impl AckNackPayload {
-    /// Encodiert den Body in einen `Vec<u8>` mit gegebener Endianness.
+    /// Encodes the body into a `Vec<u8>` with the given endianness.
     ///
     /// # Errors
-    /// keine erwartet (Buffer wird selbst alloziert).
+    /// None expected (the buffer is allocated internally).
     pub fn encode_body(self, e: Endianness) -> Result<Vec<u8>, XrceError> {
         let mut out = alloc::vec![0u8; ACKNACK_BODY_SIZE];
         write_i16(&mut out[0..2], self.first_unacked_seq_num, e)?;
@@ -53,10 +53,10 @@ impl AckNackPayload {
         Ok(out)
     }
 
-    /// Decodiert aus Body-Bytes.
+    /// Decodes from body bytes.
     ///
     /// # Errors
-    /// `UnexpectedEof`, wenn weniger als 5 Bytes.
+    /// `UnexpectedEof` if fewer than 5 bytes.
     pub fn decode_body(bytes: &[u8], e: Endianness) -> Result<Self, XrceError> {
         if bytes.len() < ACKNACK_BODY_SIZE {
             return Err(XrceError::UnexpectedEof {
@@ -72,7 +72,7 @@ impl AckNackPayload {
         })
     }
 
-    /// Verpackt in `Submessage` mit LE-Body.
+    /// Packs into a `Submessage` with an LE body.
     ///
     /// # Errors
     /// `PayloadTooLarge`.
@@ -81,7 +81,7 @@ impl AckNackPayload {
         Submessage::new(SubmessageId::AckNack, FLAG_E_LITTLE_ENDIAN, body)
     }
 
-    /// Extrahiert aus `Submessage`.
+    /// Extracts from a `Submessage`.
     ///
     /// # Errors
     /// `ValueOutOfRange`, `UnexpectedEof`.

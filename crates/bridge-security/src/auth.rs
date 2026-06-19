@@ -1,33 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! §7.2 Auth-Modes — `none|bearer|jwt|mtls|sasl`.
+//! §7.2 auth modes — `none|bearer|jwt|mtls|sasl`.
 //!
-//! Eingangspunkt: [`AuthMode::validate`] → [`AuthSubject`] oder
-//! [`AuthError`]. Pro Bridge wird der Aufruf an die jeweilige
-//! Connection-Phase gehängt:
+//! Entry point: [`AuthMode::validate`] → [`AuthSubject`] or
+//! [`AuthError`]. In each bridge, the call is hooked into the relevant
+//! connection phase:
 //!
-//! * HTTP-basiert (ws/grpc): nach dem Request-Header-Lesen.
-//! * MQTT: in der CONNECT-Packet-Auswertung.
-//! * AMQP: nach SASL-PLAIN-Negotiation.
-//! * CORBA: aus dem CSIv2-Token-Parsing oder dem TLS-Layer (mtls).
+//! * HTTP-based (ws/grpc): after reading the request headers.
+//! * MQTT: during CONNECT packet evaluation.
+//! * AMQP: after SASL-PLAIN negotiation.
+//! * CORBA: from CSIv2 token parsing or the TLS layer (mtls).
 
 use std::collections::HashMap;
 
-/// Auth-Subject — wird nach erfolgreichem [`AuthMode::validate`] an
-/// nachfolgende ACL-Prüfungen (`§7.3`) gereicht.
+/// Auth subject — passed to subsequent ACL checks (`§7.3`) after a
+/// successful [`AuthMode::validate`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuthSubject {
     /// Stable Identity (e.g. JWT `sub`, Bearer-Mapping, mTLS-CN, SASL-User).
     pub name: String,
-    /// Group-Memberships (z.B. JWT `groups`-Claim).
+    /// Group memberships (e.g. JWT `groups` claim).
     pub groups: Vec<String>,
-    /// Free-form Claims (jeder String-Wert).
+    /// Free-form claims (any string value).
     pub claims: HashMap<String, String>,
 }
 
 impl AuthSubject {
-    /// Anonymous-Subject für `AuthMode::None`.
+    /// Anonymous subject for `AuthMode::None`.
     #[must_use]
     pub fn anonymous() -> Self {
         Self {
@@ -37,7 +37,7 @@ impl AuthSubject {
         }
     }
 
-    /// Plain-Constructor.
+    /// Plain constructor.
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
         Self {
@@ -47,14 +47,14 @@ impl AuthSubject {
         }
     }
 
-    /// Fluent-Add Group.
+    /// Fluent add group.
     #[must_use]
     pub fn with_group(mut self, g: impl Into<String>) -> Self {
         self.groups.push(g.into());
         self
     }
 
-    /// Fluent-Add Claim.
+    /// Fluent add claim.
     #[must_use]
     pub fn with_claim(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
         self.claims.insert(k.into(), v.into());
@@ -62,16 +62,16 @@ impl AuthSubject {
     }
 }
 
-/// Fehler bei der Auth-Validation.
+/// Error during auth validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthError {
-    /// Header / Frame fehlt komplett (z.B. kein `Authorization`).
+    /// Header / frame is entirely missing (e.g. no `Authorization`).
     MissingCredentials,
-    /// Header-Format invalid (z.B. `Authorization` ohne `Bearer `).
+    /// Header format invalid (e.g. `Authorization` without `Bearer `).
     MalformedCredentials(String),
-    /// Token nicht akzeptiert (Bearer mismatch / JWT-Signature fail / ...).
+    /// Token not accepted (bearer mismatch / JWT signature fail / ...).
     Rejected(String),
-    /// Konfiguration broken (z.B. JWT-Public-Key kann nicht geladen werden).
+    /// Configuration broken (e.g. JWT public key cannot be loaded).
     Misconfigured(String),
 }
 
@@ -88,30 +88,30 @@ impl core::fmt::Display for AuthError {
 
 impl std::error::Error for AuthError {}
 
-/// Auth-Mode pro Daemon (CLI `--auth-mode <MODE>`).
+/// Auth mode per daemon (CLI `--auth-mode <MODE>`).
 #[derive(Debug, Clone)]
 pub enum AuthMode {
-    /// Keine Auth. Subject = "anonymous".
+    /// No auth. Subject = "anonymous".
     None,
-    /// Bearer-Token-Vergleich (HTTP-Header `Authorization: Bearer …`).
-    /// Multi-Token via Map `token → subject`.
+    /// Bearer token comparison (HTTP header `Authorization: Bearer …`).
+    /// Multi-token via map `token → subject`.
     Bearer {
-        /// Mapping vom Token-String auf das resultierende Subject.
+        /// Mapping from the token string to the resulting subject.
         tokens: HashMap<String, AuthSubject>,
     },
-    /// JWT — RS256-Signature-Validation gegen RSA-Public-Key (DER-Bytes
-    /// wie aus `RsaPublicKey::to_pkcs1_der`).
+    /// JWT — RS256 signature validation against an RSA public key (DER
+    /// bytes as from `RsaPublicKey::to_pkcs1_der`).
     Jwt {
-        /// PKCS#1-DER des RSA-Public-Keys.
+        /// PKCS#1 DER of the RSA public key.
         pkcs1_pubkey_der: Vec<u8>,
-        /// Optional Issuer-Match (`iss`-Claim).
+        /// Optional issuer match (`iss` claim).
         expected_issuer: Option<String>,
     },
-    /// mTLS — Identity wird vom TLS-Layer (Client-Cert) geliefert,
-    /// nicht von dieser Funktion. [`AuthMode::validate`] mit `Mtls`
-    /// erwartet `presented_subject = Some(...)`.
+    /// mTLS — identity is supplied by the TLS layer (client cert), not
+    /// by this function. [`AuthMode::validate`] with `Mtls` expects
+    /// `presented_subject = Some(...)`.
     Mtls,
-    /// SASL-PLAIN — `username\0username\0password`-Frame, mit Map
+    /// SASL-PLAIN — `username\0username\0password` frame, with map
     /// `username → password`.
     SaslPlain {
         /// Mapping `user → password`.
@@ -119,23 +119,23 @@ pub enum AuthMode {
     },
 }
 
-/// Was der Caller (Daemon) für `validate` mitbringt.
+/// What the caller (daemon) supplies for `validate`.
 #[derive(Debug, Clone, Default)]
 pub struct AuthInput<'a> {
-    /// Bearer/JWT: Inhalt des `Authorization`-Headers (komplett).
+    /// Bearer/JWT: content of the `Authorization` header (complete).
     pub authorization_header: Option<&'a str>,
-    /// SASL-PLAIN: Raw-Frame-Bytes (`user\0user\0pass`).
+    /// SASL-PLAIN: raw frame bytes (`user\0user\0pass`).
     pub sasl_plain_blob: Option<&'a [u8]>,
-    /// mTLS: vom rustls-Connection bereits validiertes Subject (z.B.
-    /// Cert-CN). Wenn mTLS aber kein Cert präsentiert wurde: `None`.
+    /// mTLS: subject already validated by the rustls connection (e.g.
+    /// cert CN). If mTLS but no cert was presented: `None`.
     pub mtls_subject: Option<AuthSubject>,
 }
 
 impl AuthMode {
-    /// Validate. Liefert das Subject oder einen [`AuthError`].
+    /// Validate. Returns the subject or an [`AuthError`].
     ///
     /// # Errors
-    /// [`AuthError`] mit Sub-Variante.
+    /// [`AuthError`] with sub-variant.
     pub fn validate(&self, input: &AuthInput<'_>) -> Result<AuthSubject, AuthError> {
         match self {
             Self::None => Ok(AuthSubject::anonymous()),
@@ -254,14 +254,14 @@ fn validate_jwt_rs256(
         .decode(s_b64)
         .map_err(|e| AuthError::MalformedCredentials(format!("jwt sig b64: {e}")))?;
 
-    // Header muss alg=RS256 sagen.
+    // Header must say alg=RS256.
     let header_str = core::str::from_utf8(&header_bytes)
         .map_err(|_| AuthError::MalformedCredentials("jwt header utf8".into()))?;
     if !json_field_eq(header_str, "alg", "RS256") {
         return Err(AuthError::Rejected("jwt: alg must be RS256".into()));
     }
 
-    // Signature über `<h_b64>.<p_b64>` mit RSA-PKCS#1-v1.5-SHA256 prüfen.
+    // Verify the signature over `<h_b64>.<p_b64>` with RSA-PKCS#1-v1.5-SHA256.
     let signed = {
         let mut v = Vec::with_capacity(h_b64.len() + 1 + p_b64.len());
         v.extend_from_slice(h_b64.as_bytes());
@@ -277,7 +277,7 @@ fn validate_jwt_rs256(
         .verify(&signed, &sig_bytes)
         .map_err(|_| AuthError::Rejected("jwt: signature invalid".into()))?;
 
-    // Payload-Claims extrahieren.
+    // Extract payload claims.
     let payload_str = core::str::from_utf8(&payload_bytes)
         .map_err(|_| AuthError::MalformedCredentials("jwt payload utf8".into()))?;
     let sub = json_field(payload_str, "sub")
@@ -300,10 +300,10 @@ fn validate_jwt_rs256(
     Ok(subj)
 }
 
-/// Mini-JSON-Field-Extractor für die JWT-Header- und Payload-Maps.
-/// Akzeptiert flach-strukturiertes JSON wie es JWT-Libraries emittieren.
-/// Keine vollständige JSON-Parser-Implementation — Spec §7.2 sagt
-/// JWT-Lib darf kompakter Subset sein.
+/// Mini JSON field extractor for the JWT header and payload maps.
+/// Accepts flat-structured JSON as JWT libraries emit it. Not a full
+/// JSON parser implementation — Spec §7.2 says a JWT lib may use a
+/// compact subset.
 fn json_field(src: &str, key: &str) -> Option<String> {
     let pat = format!("\"{key}\"");
     let pos = src.find(&pat)?;
@@ -314,7 +314,7 @@ fn json_field(src: &str, key: &str) -> Option<String> {
         let end = stripped.find('"')?;
         Some(stripped[..end].to_string())
     } else {
-        // Numeric / bool — wir nehmen bis zum nächsten , oder }.
+        // Numeric / bool — take up to the next , or }.
         let end = rest
             .find(|c: char| c == ',' || c == '}' || c.is_whitespace())
             .unwrap_or(rest.len());
@@ -472,10 +472,10 @@ mod tests {
 
     #[test]
     fn jwt_invalid_signature_rejected() {
-        // Bogus pubkey + bogus token. Wir testen nur den Reject-Pfad —
-        // ein voll-signierter Round-Trip-Test braucht eine RSA-Key-Gen
-        // Lib (rcgen kann das nicht für JWT). Der Code-Pfad selbst ist
-        // gegen `ring::signature::UnparsedPublicKey::verify` gefahren.
+        // Bogus pubkey + bogus token. We only test the reject path — a
+        // fully-signed round-trip test would need an RSA key-gen lib
+        // (rcgen can't do that for JWT). The code path itself is driven
+        // against `ring::signature::UnparsedPublicKey::verify`.
         let m = AuthMode::Jwt {
             pkcs1_pubkey_der: vec![0u8; 32],
             expected_issuer: None,

@@ -1,26 +1,26 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-rpc`-Crate.
+Initial release materialization of the `zerodds-rpc` crate.
 
-### Spec-Referenzen
+### Spec references
 
 - **OMG DDS-RPC 1.0** (`formal/16-12-04`):
-  - §7.3 IDL-Annotations (`@service`, `@oneway`, `@in`, `@out`, `@inout`).
-  - §7.4 Service-Mapping (IDL → ServiceDef/MethodDef/ParamDef).
-  - §7.5 Common-Types (RequestHeader, ReplyHeader, SampleIdentity, RemoteExceptionCode_t) + Member-Hash (§7.5.4).
-  - §7.6 Evolution-Rules + Compatibility-Mappings.
+  - §7.3 IDL annotations (`@service`, `@oneway`, `@in`, `@out`, `@inout`).
+  - §7.4 service mapping (IDL → ServiceDef/MethodDef/ParamDef).
+  - §7.5 common types (RequestHeader, ReplyHeader, SampleIdentity, RemoteExceptionCode_t) + member hash (§7.5.4).
+  - §7.6 evolution rules + compatibility mappings.
   - §7.7 function_call / dispatch_request.
-  - §7.8 Topic-Naming, Request-Identity, Discovery-Extensions.
-  - §7.9 Requester-API.
-  - §7.10 Replier-API.
-  - §7.11 QoS-Profile (Foundation + Enhanced).
-- Coverage-Status: `docs/spec-coverage/dds-rpc-1.0.md` — 94 done / 0 partial / 0 open / 10 n/a.
+  - §7.8 topic naming, request identity, discovery extensions.
+  - §7.9 requester API.
+  - §7.10 replier API.
+  - §7.11 QoS profile (foundation + enhanced).
+- Coverage status: `docs/spec-coverage/dds-rpc-1.0.md` — 94 done / 0 partial / 0 open / 10 n/a.
 
-### Public-API
+### Public API
 
 **Foundation:**
 - `RequestHeader`, `ReplyHeader`, `SampleIdentity`, `RemoteExceptionCode`, `MAX_HEADER_BYTES`, `MAX_STRING_LEN`.
@@ -32,10 +32,10 @@ Initiale Release-Materialisierung der `zerodds-rpc`-Crate.
 
 **Runtime:**
 - `Requester<TIn, TOut>::{new, with_instance, send_request_blocking, send_request_async, tick}`.
-- `Replier<TIn, TOut>::{new, with_instance, tick}` + `ReplierHandler`-Trait + `FnHandler`-Adapter.
+- `Replier<TIn, TOut>::{new, with_instance, tick}` + `ReplierHandler` trait + `FnHandler` adapter.
 - `RpcEndpointBuilder`, `RequesterEndpoint`, `ReplierEndpoint`.
 - `RpcQos::{default_basic, default_enhanced, from_xml_profile, request_writer_qos, request_reader_qos, reply_writer_qos, reply_reader_qos}`.
-- Konstanten: `DEFAULT_BASIC_HISTORY_DEPTH = 10`, `DEFAULT_ENHANCED_HISTORY_DEPTH = 64`, `DEFAULT_RESOURCE_LIMITS`.
+- Constants: `DEFAULT_BASIC_HISTORY_DEPTH = 10`, `DEFAULT_ENHANCED_HISTORY_DEPTH = 64`, `DEFAULT_RESOURCE_LIMITS`.
 - `wire_codec::{encode_request_frame, decode_request_frame, encode_reply_frame, decode_reply_frame}`.
 
 **Cross-Cutting:**
@@ -46,29 +46,29 @@ Initiale Release-Materialisierung der `zerodds-rpc`-Crate.
 
 **Errors:** `RpcError`, `RpcResult`.
 
-### Implementierung
+### Implementation
 
-Common-Types werden via XCDR2-Final encoded (Spec §7.5.1.1) und matched byte-genau mit RTI/Cyclone-DDS-Reply-Wire. `SampleIdentity` (16-byte writer-GUID + 8-byte sequence-number) ist das Korrelations-Token zwischen Request und Reply — der Replier setzt es in `ReplyHeader::related_request_id` und der Requester routet die Antwort ueber einen `mpsc::Sender`-pending-Slot.
+Common types are encoded via XCDR2-Final (Spec §7.5.1.1) and match byte-exactly with the RTI/Cyclone-DDS reply wire. `SampleIdentity` (16-byte writer GUID + 8-byte sequence number) is the correlation token between request and reply — the replier sets it in `ReplyHeader::related_request_id` and the requester routes the response via an `mpsc::Sender` pending slot.
 
-`Requester` ist synchron + tick-driven: `send_request_blocking` ruft `tick` in einem Polling-Loop bis Reply oder Timeout. Caller mit eigenem Event-Loop koennen `send_request_async` nutzen, der nur den Request schickt und einen `mpsc::Receiver` zurueckliefert.
+`Requester` is synchronous + tick-driven: `send_request_blocking` calls `tick` in a polling loop until reply or timeout. Callers with their own event loop can use `send_request_async`, which only sends the request and returns an `mpsc::Receiver`.
 
-`Replier` traegt einen `ReplierHandler`-Trait — Apps liefern eine Closure (`FnHandler::new(|req| reply)`) oder eine eigene Trait-Impl. `dispatch_request` (Spec §7.7) macht den function-call-Pfad vom IDL-Typ zur Handler-Methode.
+`Replier` carries a `ReplierHandler` trait — apps provide a closure (`FnHandler::new(|req| reply)`) or their own trait impl. `dispatch_request` (Spec §7.7) makes the function-call path from the IDL type to the handler method.
 
-`RpcQos` bringt zwei Foundation-Defaults (`default_basic` mit KeepLast(10), `default_enhanced` mit KeepLast(64)) und einen XML-Profile-Resolver — Profile unter `library::profile` werden mergt mit den Defaults, sodass nicht im XML angegebene Policies auf Spec-Default fallen.
+`RpcQos` brings two foundation defaults (`default_basic` with KeepLast(10), `default_enhanced` with KeepLast(64)) and an XML profile resolver — profiles under `library::profile` are merged with the defaults, so that policies not specified in the XML fall back to the spec default.
 
-Eine Process-globale Instance-Registry verhindert Duplikate `(participant, role, service, instance)` (Spec §7.6.2). Anonyme Instanzen (`instance_name = ""`) erlauben Mehrfach-Registrierung als Default-Instance.
+A process-global instance registry prevents duplicates of `(participant, role, service, instance)` (Spec §7.6.2). Anonymous instances (`instance_name = ""`) allow multiple registration as the default instance.
 
-`Codegen` produziert Basic + Enhanced Request/Reply-Struct-Pairs samt `CallUnion`-Diskrim-Type fuer den Server-Side-Match (Spec §7.5.1.3).
+`Codegen` produces basic + enhanced request/reply struct pairs along with the `CallUnion` discriminator type for the server-side match (Spec §7.5.1.3).
 
-`forbid(unsafe_code)` ist gesetzt.
+`forbid(unsafe_code)` is set.
 
-### Architektur
+### Architecture
 
-- **Layer:** 4 (Core Services).
+- **Layer:** 4 (core services).
 - **Dependencies (in):** `zerodds-dcps`, `zerodds-idl`, `zerodds-qos`, `zerodds-rtps`, `zerodds-types`, `zerodds-xml`.
-- **Dependents (out):** End-User-RPC-Apps, `crates/rmw-zerodds-shim` (ROS-2-Service-Pfad), Bridges (`grpc-bridge` macht eigene Wire-Pfade).
-- **Feature-Flags:** `std` (default), `alloc` (via std), `safety` (Reserve-Hook).
+- **Dependents (out):** end-user RPC apps, `crates/rmw-zerodds-shim` (ROS-2 service path), bridges (`grpc-bridge` does its own wire paths).
+- **Feature flags:** `std` (default), `alloc` (via std), `safety` (reserve hook).
 
-### Stabilitaet
+### Stability
 
-Public-API + Wire-Format RC1-stabil. Major-Bumps bei Breaking-Changes der Spec-Wire-Form.
+Public API + wire format RC1-stable. Major bumps for breaking changes of the spec wire form.

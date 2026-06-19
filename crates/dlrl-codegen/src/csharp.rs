@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! C#-Codegen — DDS 1.4 §B.4 (analog C++ PSM, dotnet-Form).
+//! C# codegen — DDS 1.4 §B.4 (analogous to the C++ PSM, dotnet form).
 
 use alloc::format;
 use alloc::string::String;
 
 use crate::DlrlTypeInfo;
 
-/// Erzeugt eine `partial class` mit `[DlrlObject]`-Attribut.
+/// Generates a `partial class` with a `[DlrlObject]` attribute.
 #[allow(clippy::format_collect)]
 #[must_use]
 pub fn generate_csharp_partial(info: &DlrlTypeInfo) -> String {
@@ -39,8 +39,8 @@ pub fn generate_csharp_partial(info: &DlrlTypeInfo) -> String {
     }
 }
 
-/// Erzeugt zusaetzlich eine separate Object-Class (komplett, nicht
-/// `partial`) — fuer Caller, die das Type nicht user-anchor brauchen.
+/// Additionally generates a separate object class (complete, not
+/// `partial`) — for callers that do not need the type as a user anchor.
 #[allow(clippy::format_collect)]
 #[must_use]
 pub fn generate_csharp_object(info: &DlrlTypeInfo) -> String {

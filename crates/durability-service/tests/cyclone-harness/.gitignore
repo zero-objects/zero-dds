@@ -1,0 +1,9 @@
+# idlc + compiler output (regenerate via README)
+dur.c
+dur.h
+pub
+al.c
+al.h
+align_pub
+align_sub
+*.o

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! XRCE-XML-File-Configuration (Spec §7.7.3 + §9.3).
+//! XRCE XML file configuration (Spec §7.7.3 + §9.3).
 //!
-//! Ein XRCE-Client/Agent kann seine ganze Object-Hierarchie aus einem
-//! XML-File laden. Das File-Format folgt der DDS-XRCE-Spec §9.3 Tab.15
+//! An XRCE client/agent can load its whole object hierarchy from an
+//! XML file. The file format follows the DDS-XRCE spec §9.3 Tab.15
 //! ("File-based Configuration"):
 //!
 //! ```xml
@@ -26,21 +26,21 @@
 //! </dds>
 //! ```
 //!
-//! ## Bridge zu DDS-XML-Loader
+//! ## Bridge to the DDS-XML loader
 //!
-//! * `<type><module>…</module></type>` wird ueber
-//!   [`zerodds_xml::parse_xml_tree`] eingelesen und kann an
-//!   [`zerodds_xml::xtypes_parser::parse_types_element`] weitergeleitet werden
-//!   (XML→TypeObject-Bridge ueber `zerodds_xml::typeobject_bridge`).
-//! * `qos_profile`-Attribute referenzieren Profile aus einer separat
-//!   geladenen `<qos_library>` (DDS-XML-Modul in `zerodds-xml`). Resolution
-//!   erfolgt via [`XrceConfig::resolve_qos_profile`] mit injiziertem
-//!   QoS-Loader.
+//! * `<type><module>…</module></type>` is read via
+//!   [`zerodds_xml::parse_xml_tree`] and can be forwarded to
+//!   [`zerodds_xml::xtypes_parser::parse_types_element`]
+//!   (XML→TypeObject bridge via `zerodds_xml::typeobject_bridge`).
+//! * `qos_profile` attributes reference profiles from a separately
+//!   loaded `<qos_library>` (DDS-XML module in `zerodds-xml`). Resolution
+//!   happens via [`XrceConfig::resolve_qos_profile`] with an injected
+//!   QoS loader.
 //!
-//! ## Mapping zu CREATE-Submessages (Spec §8.4.6)
+//! ## Mapping to CREATE submessages (Spec §8.4.6)
 //!
-//! [`XrceConfig::to_create_messages`] generiert die CREATE-Submessage-
-//! Sequence in topologisch korrekter Reihenfolge:
+//! [`XrceConfig::to_create_messages`] generates the CREATE submessage
+//! sequence in topologically correct order:
 //!
 //! ```text
 //!   1. Type           (OBJK_TYPE,         REPRESENTATION_AS_XML_STRING)
@@ -52,11 +52,11 @@
 //!   7. DataReader     (OBJK_DATAREADER,   REPRESENTATION_AS_XML_STRING)
 //! ```
 //!
-//! Out-of-scope :
-//! * `<application>`-Container, `<domain>`-Library — DDS-XML-Side.
-//! * Live-Reload / Hot-Swap — Stretch.
-//! * DTD-/XSD-Validation der Schema selbst — `xrce-config.xsd` ist
-//!   Doku-Skizze, nicht Validator-Input.
+//! Out of scope:
+//! * `<application>` containers, `<domain>` libraries — DDS-XML side.
+//! * Live reload / hot swap — stretch.
+//! * DTD/XSD validation of the schema itself — `xrce-config.xsd` is a
+//!   documentation sketch, not validator input.
 
 extern crate alloc;
 use alloc::format;
@@ -73,81 +73,81 @@ use crate::object_kind::ObjectKind;
 use crate::object_repr::ObjectVariant;
 use crate::submessages::create::CreatePayload;
 
-/// Maximale Schachtelungs-Tiefe der XRCE-Object-Hierarchie. Spec §9.3
-/// erlaubt formal `<dds>/<participant>/<publisher>/<data_writer>` —
-/// Tiefe 4. Wir setzen ein DoS-Cap von 8 fuer Robustheit.
+/// Maximum nesting depth of the XRCE object hierarchy. Spec §9.3
+/// formally allows `<dds>/<participant>/<publisher>/<data_writer>` —
+/// depth 4. We set a DoS cap of 8 for robustness.
 pub const MAX_HIERARCHY_DEPTH: usize = 8;
 
-/// Maximale Anzahl Type-Definitionen pro File (DoS-Cap).
+/// Maximum number of type definitions per file (DoS cap).
 pub const MAX_TYPES_PER_FILE: usize = 256;
 
-/// Fehler beim Laden eines XRCE-XML-Configuration-Files.
+/// Error when loading an XRCE XML configuration file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum XrceXmlError {
-    /// Underlying DDS-XML-Loader-Fehler (Wohlgeformtheit, DoS-Cap).
+    /// Underlying DDS-XML loader error (well-formedness, DoS cap).
     InvalidXml(String),
-    /// Wurzel-Element ist nicht `<dds>` (Spec §9.3).
+    /// The root element is not `<dds>` (Spec §9.3).
     UnexpectedRoot(String),
-    /// Pflicht-Attribut fehlt (z.B. `object_id`, `domain_id`, `name`).
+    /// A mandatory attribute is missing (e.g. `object_id`, `domain_id`, `name`).
     MissingAttribute {
-        /// Element-Name.
+        /// Element name.
         element: String,
-        /// Attribut-Name.
+        /// Attribute name.
         attribute: String,
     },
-    /// Attribut-Wert ist nicht parsebar (z.B. `object_id="0xZZZZ"`).
+    /// An attribute value is not parseable (e.g. `object_id="0xZZZZ"`).
     InvalidAttribute {
-        /// Element-Name.
+        /// Element name.
         element: String,
-        /// Attribut-Name.
+        /// Attribute name.
         attribute: String,
-        /// Beobachteter Wert.
+        /// Observed value.
         value: String,
     },
-    /// Doppelte ObjectId im Scope eines Participants (Spec §7.2.1
-    /// fordert Eindeutigkeit pro Client/Agent-Object-Store).
+    /// Duplicate ObjectId in the scope of a participant (Spec §7.2.1
+    /// requires uniqueness per client/agent object store).
     DuplicateObjectId(ObjectId),
-    /// `topic_ref` zeigt auf eine ObjectId, die nicht im selben
-    /// Participant deklariert ist.
+    /// `topic_ref` points to an ObjectId that is not declared in the same
+    /// participant.
     UnresolvedTopicRef {
-        /// DataWriter-/DataReader-ObjectId.
+        /// DataWriter/DataReader ObjectId.
         endpoint: ObjectId,
-        /// Topic-ObjectId, auf die verwiesen wurde.
+        /// The referenced topic ObjectId.
         topic: ObjectId,
     },
-    /// `type_name` referenziert einen Type, der nicht in der globalen
-    /// `<type>`-Section deklariert ist.
+    /// `type_name` references a type that is not declared in the global
+    /// `<type>` section.
     UnresolvedTypeName {
-        /// Topic-ObjectId, an der der Type-Name haengt.
+        /// Topic ObjectId the type name hangs off.
         topic: ObjectId,
-        /// Type-Name (z.B. `ShapeType` oder `Module::ShapeType`).
+        /// Type name (e.g. `ShapeType` or `Module::ShapeType`).
         type_name: String,
     },
-    /// `qos_profile`-String konnte nicht aufgeloest werden (kein
-    /// QoS-Loader injiziert oder Profile fehlt).
+    /// The `qos_profile` string could not be resolved (no
+    /// QoS loader injected or the profile is missing).
     UnresolvedQosProfile(String),
-    /// Schachtelungs-Tiefe ueberschreitet [`MAX_HIERARCHY_DEPTH`].
+    /// The nesting depth exceeds [`MAX_HIERARCHY_DEPTH`].
     HierarchyTooDeep(usize),
-    /// Anzahl Types ueberschreitet [`MAX_TYPES_PER_FILE`].
+    /// The number of types exceeds [`MAX_TYPES_PER_FILE`].
     TooManyTypes(usize),
-    /// Innerhalb der Type-Definition referenziert sich ein Type selbst
-    /// (struct A enthaelt struct A) — direkt oder transitiv.
+    /// Within the type definition a type references itself
+    /// (struct A contains struct A) — directly or transitively.
     CircularType(String),
-    /// Domain-Id ist out-of-range (DDS-XRCE 1.0 §7.7.3.6: `long`, also
+    /// The domain ID is out of range (DDS-XRCE 1.0 §7.7.3.6: `long`, i.e.
     /// 0..=`i32::MAX`).
     DomainIdOutOfRange(u64),
-    /// Eine ObjectId-/ObjectKind-Kombination passt nicht (z.B. eine
-    /// als `<topic>` deklarierte ObjectId hat im unteren Nibble nicht
-    /// `OBJK_TOPIC = 0x02`). Spec §7.2.1 verlangt diese Konsistenz.
+    /// An ObjectId/ObjectKind combination does not match (e.g. an ObjectId
+    /// declared as `<topic>` does not have `OBJK_TOPIC = 0x02` in the lower
+    /// nibble). Spec §7.2.1 requires this consistency.
     ObjectKindMismatch {
         /// ObjectId.
         id: ObjectId,
-        /// Erwarteter Kind.
+        /// Expected kind.
         expected: u8,
-        /// Beobachteter Kind im unteren Nibble.
+        /// Observed kind in the lower nibble.
         actual: u8,
     },
-    /// XRCE-Wire-Encode-Fehler (Payload-Cap, etc.).
+    /// XRCE wire encode error (payload cap, etc.).
     Wire(XrceError),
 }
 
@@ -227,148 +227,148 @@ impl From<XrceError> for XrceXmlError {
     }
 }
 
-/// Top-Level XRCE-File-Configuration (Spec §9.3 Tab.15).
+/// Top-level XRCE file configuration (Spec §9.3 Tab.15).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct XrceConfig {
-    /// Type-Definitionen (`<type><module>…</module></type>`). Speicher
-    /// ist der Original-XML-Substring pro Type — der DDS-XRCE-Wire-Pfad
-    /// uebergibt das ungeparste XML als `RepresentationByXmlString`.
+    /// Type definitions (`<type><module>…</module></type>`). The storage
+    /// is the original XML substring per type — the DDS-XRCE wire path
+    /// passes the unparsed XML as `RepresentationByXmlString`.
     pub types: Vec<TypeConfig>,
-    /// Participants. Pro Participant eigener ObjectStore-Scope.
+    /// Participants. Each participant has its own object-store scope.
     pub participants: Vec<ParticipantConfig>,
 }
 
-/// Eine `<type>`-Section (Spec §7.7.3.3).
+/// A `<type>` section (Spec §7.7.3.3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeConfig {
-    /// ObjectId fuer den OBJK_TYPE-Wrapper. Wird beim Aufrufer
-    /// deklariert oder mit `ObjectId::new(raw, ObjectKind::Type)`
-    /// generiert. Optional, weil §9.3 ObjectId-Ableitung via
-    /// MD5-Hash erlaubt — siehe `derive_object_id`.
+    /// ObjectId for the OBJK_TYPE wrapper. Declared by the caller
+    /// or generated with `ObjectId::new(raw, ObjectKind::Type)`.
+    /// Optional, because §9.3 allows ObjectId derivation via
+    /// MD5 hash — see `derive_object_id`.
     pub object_id: ObjectId,
-    /// Type-Name (top-level struct/enum/union oder Module).
+    /// Type name (top-level struct/enum/union or module).
     pub name: String,
-    /// Alle in dieser Section deklarierten Type-Namen (rekursiv ueber
+    /// All type names declared in this section (recursively over
     /// `<module>`/`<struct>`/`<enum>`/`<union>`/`<typedef>`/
-    /// `<bitmask>`/`<bitset>`). Topics duerfen Namen aus dieser Liste
-    /// referenzieren — entspricht der DDS-XML 1.0 §7.3.3-Sicht.
+    /// `<bitmask>`/`<bitset>`). Topics may reference names from this list
+    /// — matches the DDS-XML 1.0 §7.3.3 view.
     pub declared_names: Vec<String>,
-    /// Original-XML der Type-Section (Substring zwischen
-    /// `<type>` und `</type>`). Wird im CREATE als
-    /// `RepresentationByXmlString` weitergegeben.
+    /// The original XML of the type section (substring between
+    /// `<type>` and `</type>`). Passed on in the CREATE as
+    /// `RepresentationByXmlString`.
     pub xml: String,
 }
 
-/// Ein `<participant>` (Spec §7.7.3.6).
+/// A `<participant>` (Spec §7.7.3.6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParticipantConfig {
     /// ObjectId, kind=OBJK_PARTICIPANT.
     pub object_id: ObjectId,
-    /// `domain_id`-Attribut.
+    /// `domain_id` attribute.
     pub domain_id: u32,
-    /// Topic-Definitionen.
+    /// Topic definitions.
     pub topics: Vec<TopicConfig>,
-    /// Publisher-Definitionen.
+    /// Publisher definitions.
     pub publishers: Vec<PublisherConfig>,
-    /// Subscriber-Definitionen.
+    /// Subscriber definitions.
     pub subscribers: Vec<SubscriberConfig>,
 }
 
-/// Ein `<topic>` (Spec §7.7.3.7).
+/// A `<topic>` (Spec §7.7.3.7).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopicConfig {
     /// ObjectId, kind=OBJK_TOPIC.
     pub object_id: ObjectId,
-    /// `name`-Attribut.
+    /// `name` attribute.
     pub name: String,
-    /// `type_name`-Attribut. Muss in der globalen `<type>`-Section
-    /// deklariert sein.
+    /// `type_name` attribute. Must be declared in the global `<type>`
+    /// section.
     pub type_name: String,
     /// Optional `qos_profile="Lib::Profile"`.
     pub qos_profile: Option<String>,
 }
 
-/// Ein `<publisher>` (Spec §7.7.3.8).
+/// A `<publisher>` (Spec §7.7.3.8).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublisherConfig {
     /// ObjectId, kind=OBJK_PUBLISHER.
     pub object_id: ObjectId,
-    /// DataWriter-Endpoints.
+    /// DataWriter endpoints.
     pub data_writers: Vec<DataWriterConfig>,
 }
 
-/// Ein `<subscriber>` (Spec §7.7.3.9).
+/// A `<subscriber>` (Spec §7.7.3.9).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubscriberConfig {
     /// ObjectId, kind=OBJK_SUBSCRIBER.
     pub object_id: ObjectId,
-    /// DataReader-Endpoints.
+    /// DataReader endpoints.
     pub data_readers: Vec<DataReaderConfig>,
 }
 
-/// Ein `<data_writer>` (Spec §7.7.3.10).
+/// A `<data_writer>` (Spec §7.7.3.10).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataWriterConfig {
     /// ObjectId, kind=OBJK_DATAWRITER.
     pub object_id: ObjectId,
-    /// Referenz auf ein Topic im selben Participant.
+    /// Reference to a topic in the same participant.
     pub topic_ref: ObjectId,
-    /// Optional QoS-Profile.
+    /// Optional QoS profile.
     pub qos_profile: Option<String>,
 }
 
-/// Ein `<data_reader>` (Spec §7.7.3.11).
+/// A `<data_reader>` (Spec §7.7.3.11).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataReaderConfig {
     /// ObjectId, kind=OBJK_DATAREADER.
     pub object_id: ObjectId,
-    /// Referenz auf ein Topic im selben Participant.
+    /// Reference to a topic in the same participant.
     pub topic_ref: ObjectId,
-    /// Optional QoS-Profile.
+    /// Optional QoS profile.
     pub qos_profile: Option<String>,
 }
 
-/// Eine generierte CREATE-Submessage zusammen mit ihrer ObjectId und
-/// ObjectKind, damit der Caller sie an die richtige Stelle in der
-/// Submessage-Pipeline einfuegen kann.
+/// A generated CREATE submessage together with its ObjectId and
+/// ObjectKind, so that the caller can insert it at the right place in the
+/// submessage pipeline.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateMessage {
-    /// ObjectId, fuer die das CREATE gilt.
+    /// ObjectId the CREATE applies to.
     pub object_id: ObjectId,
-    /// Kind (Topic/Publisher/…) zur Sortier-Validation.
+    /// Kind (topic/publisher/…) for ordering validation.
     pub kind: ObjectKind,
-    /// Fertig konstruiertes [`CreatePayload`] mit
-    /// `RepresentationByXmlString`-Body. Der Aufrufer wandelt es ueber
-    /// [`CreatePayload::into_submessage`] in eine [`crate::Submessage`].
+    /// Fully constructed [`CreatePayload`] with a
+    /// `RepresentationByXmlString` body. The caller converts it via
+    /// [`CreatePayload::into_submessage`] into a [`crate::Submessage`].
     pub payload: CreatePayload,
 }
 
-/// Trait zum Auflosen von `qos_profile="Lib::Profile"`-Referenzen aus
-/// einer separat geladenen DDS-XML-`<qos_library>` (DDS-XML-Modul in
-/// `zerodds-xml`). Optional injiziert; wenn `None`, werden Referenzen
-/// strukturell mitgefuehrt aber nicht resolved.
+/// Trait for resolving `qos_profile="Lib::Profile"` references from a
+/// separately loaded DDS-XML `<qos_library>` (DDS-XML module in
+/// `zerodds-xml`). Optionally injected; if `None`, references are
+/// carried structurally but not resolved.
 pub trait QosProfileResolver {
-    /// Liefert den `<qos_profile>…</qos_profile>`-XML-Substring fuer
-    /// einen Pfad `Library::Profile`. `None` bei nicht-existentem
-    /// Profile (Caller dann [`XrceXmlError::UnresolvedQosProfile`]).
+    /// Returns the `<qos_profile>…</qos_profile>` XML substring for
+    /// a path `Library::Profile`. `None` for a non-existent
+    /// profile (the caller then returns [`XrceXmlError::UnresolvedQosProfile`]).
     fn resolve(&self, path: &str) -> Option<String>;
 }
 
-/// Convenience-Resolver, der direkt eine Map `Lib::Profile -> XML`
-/// haelt. Pure-Logik, kein DDS-XML-Layer noetig.
+/// Convenience resolver that holds a `Lib::Profile -> XML` map
+/// directly. Pure logic, no DDS-XML layer needed.
 #[derive(Debug, Default, Clone)]
 pub struct InMemoryQosResolver {
-    /// Lookup-Map.
+    /// Lookup map.
     pub profiles: alloc::collections::BTreeMap<String, String>,
 }
 
 impl InMemoryQosResolver {
-    /// Konstruiert einen leeren Resolver.
+    /// Constructs an empty resolver.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
-    /// Fuegt ein Profile hinzu.
+    /// Adds a profile.
     pub fn add<P: Into<String>, X: Into<String>>(&mut self, path: P, xml: X) {
         self.profiles.insert(path.into(), xml.into());
     }
@@ -380,18 +380,18 @@ impl QosProfileResolver for InMemoryQosResolver {
     }
 }
 
-/// Parst einen XML-String in eine [`XrceConfig`].
+/// Parses an XML string into an [`XrceConfig`].
 ///
 /// Validation:
-/// * Wurzel muss `<dds>` sein.
-/// * Jede ObjectId ist eindeutig (ueber alle Sections + Participants).
-/// * Jede ObjectId hat im unteren Nibble den passenden ObjectKind.
-/// * `topic_ref` zeigt auf ein Topic im selben Participant.
-/// * `type_name` ist in der `<type>`-Section deklariert.
-/// * Type-Definitionen sind zyklus-frei.
+/// * The root must be `<dds>`.
+/// * Each ObjectId is unique (across all sections + participants).
+/// * Each ObjectId has the matching ObjectKind in the lower nibble.
+/// * `topic_ref` points to a topic in the same participant.
+/// * `type_name` is declared in the `<type>` section.
+/// * Type definitions are cycle-free.
 ///
 /// # Errors
-/// [`XrceXmlError`] siehe einzelne Varianten.
+/// [`XrceXmlError`] — see the individual variants.
 pub fn load_xrce_config(xml: &str) -> Result<XrceConfig, XrceXmlError> {
     let doc: DdsXmlDocument = parse_xml_tree(xml)?;
     if doc.root.name != "dds" {
@@ -400,11 +400,11 @@ pub fn load_xrce_config(xml: &str) -> Result<XrceConfig, XrceXmlError> {
     XrceConfig::from_root(&doc.root)
 }
 
-/// Liest und parst eine Datei (nur mit `feature = "std"`).
+/// Reads and parses a file (only with `feature = "std"`).
 ///
 /// # Errors
-/// IO-Fehler werden als [`XrceXmlError::InvalidXml`] re-emittiert,
-/// XML-Fehler ueber [`load_xrce_config`].
+/// IO errors are re-emitted as [`XrceXmlError::InvalidXml`],
+/// XML errors via [`load_xrce_config`].
 #[cfg(feature = "std")]
 pub fn load_xrce_config_from_file(path: &std::path::Path) -> Result<XrceConfig, XrceXmlError> {
     let xml = std::fs::read_to_string(path).map_err(|e| {
@@ -414,7 +414,7 @@ pub fn load_xrce_config_from_file(path: &std::path::Path) -> Result<XrceConfig, 
 }
 
 impl XrceConfig {
-    /// Baut die Config aus dem `<dds>`-Wurzel-Element auf.
+    /// Builds the config from the `<dds>` root element.
     fn from_root(root: &XmlElement) -> Result<Self, XrceXmlError> {
         let mut cfg = Self::default();
         let mut seen_type_names: alloc::collections::BTreeSet<String> =
@@ -426,7 +426,7 @@ impl XrceConfig {
             let tc = TypeConfig::from_element(type_el, &mut seen_type_names)?;
             cfg.types.push(tc);
         }
-        // Cycle-Check ueber alle Type-Definitionen.
+        // Cycle check over all type definitions.
         check_type_cycles(&cfg.types)?;
 
         let mut global_ids: alloc::collections::BTreeSet<ObjectId> =
@@ -444,15 +444,15 @@ impl XrceConfig {
         Ok(cfg)
     }
 
-    /// Generiert die CREATE-Submessage-Sequence. Reihenfolge:
-    /// Type → Participant → Topic → Publisher → Subscriber →
+    /// Generates the CREATE submessage sequence. Order:
+    /// type → participant → topic → publisher → subscriber →
     /// DataWriter → DataReader.
     ///
-    /// `RepresentationByXmlString`-Body ist pro Object eine kompakte
-    /// XML-Snippet (kein voller File-Inhalt).
+    /// The `RepresentationByXmlString` body is a compact XML snippet per
+    /// object (not the full file content).
     ///
     /// # Errors
-    /// [`XrceXmlError::Wire`] bei Encode-Fehlern (Payload-Cap).
+    /// [`XrceXmlError::Wire`] on encode errors (payload cap).
     pub fn to_create_messages(&self) -> Result<Vec<CreateMessage>, XrceXmlError> {
         let mut out = Vec::new();
         // 1. Types
@@ -467,7 +467,7 @@ impl XrceConfig {
             );
             out.push(create_message(p.object_id, ObjectKind::Participant, &xml)?);
         }
-        // 3. Topics (pro Participant in Reihenfolge)
+        // 3. Topics (per participant in order)
         for p in &self.participants {
             for t in &p.topics {
                 let qos = t
@@ -543,14 +543,14 @@ impl XrceConfig {
         Ok(out)
     }
 
-    /// Versucht alle `qos_profile`-Referenzen via Resolver aufzuloesen.
-    /// Liefert die Liste der gefundenen `(path, xml)`-Paare; fehlende
-    /// Profile werden als [`XrceXmlError::UnresolvedQosProfile`]
-    /// gesammelt (erstes Encounter).
+    /// Tries to resolve all `qos_profile` references via the resolver.
+    /// Returns the list of the found `(path, xml)` pairs; missing
+    /// profiles are collected as [`XrceXmlError::UnresolvedQosProfile`]
+    /// (first encounter).
     ///
     /// # Errors
-    /// [`XrceXmlError::UnresolvedQosProfile`] beim ersten fehlenden
-    /// Profile.
+    /// [`XrceXmlError::UnresolvedQosProfile`] on the first missing
+    /// profile.
     pub fn resolve_qos_profile<R: QosProfileResolver>(
         &self,
         path: &str,
@@ -561,7 +561,7 @@ impl XrceConfig {
             .ok_or_else(|| XrceXmlError::UnresolvedQosProfile(path.to_string()))
     }
 
-    /// Sammelt alle in der Hierarchie referenzierten QoS-Profile-Pfade.
+    /// Collects all QoS profile paths referenced in the hierarchy.
     #[must_use]
     pub fn qos_profile_refs(&self) -> Vec<String> {
         let mut out: alloc::collections::BTreeSet<String> = alloc::collections::BTreeSet::new();
@@ -596,8 +596,8 @@ impl TypeConfig {
         seen: &mut alloc::collections::BTreeSet<String>,
     ) -> Result<Self, XrceXmlError> {
         let object_id = parse_object_id_attr(el, "object_id", ObjectKind::Type)?;
-        // Top-Level-Name: aus `name`-Attribut auf `<type>` selbst, oder
-        // vom ersten Type-tragenden Kind-Element (Modul/Struct/...).
+        // Top-level name: from the `name` attribute on `<type>` itself, or
+        // from the first type-bearing child element (module/struct/...).
         let name = if let Some(n) = el.attribute("name") {
             n.to_string()
         } else if let Some(child) = el.children.first() {
@@ -614,7 +614,7 @@ impl TypeConfig {
                 attribute: "name".to_string(),
             });
         };
-        // Alle deklarierten Type-Namen (rekursiv durch <module>).
+        // All declared type names (recursively through <module>).
         let mut declared = Vec::new();
         collect_declared_types(el, &mut declared);
         if declared.is_empty() {
@@ -634,8 +634,8 @@ impl TypeConfig {
         })
     }
 
-    /// Sammelt alle Type-Namen, die diese Definition referenziert
-    /// (fuer Cycle-Detection auf der Type-Ebene).
+    /// Collects all type names that this definition references
+    /// (for cycle detection at the type level).
     fn referenced_types(&self) -> Vec<String> {
         let Ok(doc) = parse_xml_tree(&self.xml) else {
             return Vec::new();
@@ -644,13 +644,13 @@ impl TypeConfig {
     }
 }
 
-/// Sammelt rekursiv alle Type-Namen unter einem Element (struct/enum/
-/// union/typedef/bitmask/bitset, in `<module>`-Wraps geschachtelt).
+/// Recursively collects all type names under an element (struct/enum/
+/// union/typedef/bitmask/bitset, nested inside `<module>` wraps).
 ///
 /// zerodds-lint: recursion-depth 32
 ///
-/// XML-Module-Hierarchie ist mit `MAX_HIERARCHY_DEPTH=32` durch den
-/// Loader-Top-Level vorab gecappt; dieser Walk geht nicht tiefer.
+/// The XML module hierarchy is pre-capped at `MAX_HIERARCHY_DEPTH=32` by
+/// the loader top level; this walk does not go deeper.
 fn collect_declared_types(el: &XmlElement, out: &mut Vec<String>) {
     for child in &el.children {
         match child.name.as_str() {
@@ -673,8 +673,8 @@ fn collect_declared_types(el: &XmlElement, out: &mut Vec<String>) {
 
 /// zerodds-lint: recursion-depth 32
 ///
-/// Member-/Case-Walks innerhalb eines Type-Elements; tiefe Verschachtelung
-/// ist durch `MAX_HIERARCHY_DEPTH` im Loader bereits gecappt.
+/// Member/case walks within a type element; deep nesting
+/// is already capped by `MAX_HIERARCHY_DEPTH` in the loader.
 fn collect_member_types(el: &XmlElement) -> Vec<String> {
     let mut out = Vec::new();
     for child in &el.children {
@@ -695,7 +695,7 @@ fn check_type_cycles(types: &[TypeConfig]) -> Result<(), XrceXmlError> {
     for t in types {
         graph.insert(t.name.as_str(), t.referenced_types());
     }
-    // DFS pro Knoten.
+    // DFS per node.
     for start in types.iter().map(|t| t.name.as_str()) {
         let mut stack: Vec<&str> = vec![start];
         let mut on_path: BTreeSet<&str> = BTreeSet::new();
@@ -782,9 +782,9 @@ impl TopicConfig {
         let object_id = parse_object_id_attr(el, "object_id", ObjectKind::Topic)?;
         let name = required_attr(el, "name")?;
         let type_name = required_attr(el, "type_name")?;
-        // type_name darf entweder gegen den Top-Level-Namen einer
-        // <type>-Section matchen oder gegen einen darunter geschachtelten
-        // Type (z.B. "ShapeType" innerhalb von <module>).
+        // type_name may match either the top-level name of a
+        // <type> section or a type nested below it
+        // (e.g. "ShapeType" within <module>).
         let known = types
             .iter()
             .any(|t| t.name == type_name || t.declared_names.iter().any(|d| d == &type_name));
@@ -993,11 +993,11 @@ fn escape_xml_attr(s: &str) -> String {
     out
 }
 
-/// Serialisiert ein [`XmlElement`] in eine kompakte XML-String-Form.
+/// Serializes an [`XmlElement`] into a compact XML string form.
 ///
-/// Diese Reserialisierung ist nicht byte-identisch mit dem Eingabe-XML
-/// (Whitespace, Attribut-Reihenfolge), aber strukturell aequivalent —
-/// genau das, was [`ObjectVariant::ByXmlString`] braucht.
+/// This reserialization is not byte-identical with the input XML
+/// (whitespace, attribute order), but structurally equivalent —
+/// exactly what [`ObjectVariant::ByXmlString`] needs.
 fn serialize_element(el: &XmlElement) -> String {
     let mut out = String::new();
     write_element(&mut out, el);
@@ -1006,8 +1006,8 @@ fn serialize_element(el: &XmlElement) -> String {
 
 /// zerodds-lint: recursion-depth 32
 ///
-/// XML-Reserialisierung-Walk; Tiefe ist durch `MAX_HIERARCHY_DEPTH` beim
-/// Loader bereits beschraenkt.
+/// XML reserialization walk; depth is already bounded by
+/// `MAX_HIERARCHY_DEPTH` at the loader.
 fn write_element(out: &mut String, el: &XmlElement) {
     out.push('<');
     out.push_str(&el.name);
@@ -1149,8 +1149,8 @@ mod tests {
 
     #[test]
     fn err_duplicate_object_id_two_topics() {
-        // Beide Topics teilen ObjectId 0x0102 — Duplikat innerhalb des
-        // Topic-Scopes des Participants.
+        // Both topics share ObjectId 0x0102 — duplicate within the
+        // participant's topic scope.
         let xml = r#"<dds>
               <type object_id="0x000A" name="T1"/>
               <participant object_id="0xCAF1" domain_id="0">
@@ -1191,8 +1191,8 @@ mod tests {
 
     #[test]
     fn err_object_kind_mismatch() {
-        // ObjectId 0x0103 endet auf 3 = OBJK_PUBLISHER, wird aber als
-        // Topic deklariert (erwartet ObjectKind::Topic = 0x02).
+        // ObjectId 0x0103 ends in 3 = OBJK_PUBLISHER, but is declared as
+        // a topic (expects ObjectKind::Topic = 0x02).
         let xml = r#"<dds>
               <type object_id="0x000A" name="T1"/>
               <participant object_id="0xCAF1" domain_id="0">
@@ -1205,7 +1205,7 @@ mod tests {
 
     #[test]
     fn err_circular_type_self_reference() {
-        // struct A enthaelt member type=A → Cycle
+        // struct A contains member type=A → cycle
         let xml = r#"<dds>
               <type object_id="0x000A" name="A">
                 <struct name="A">
@@ -1257,7 +1257,7 @@ mod tests {
             .find(|m| m.kind == ObjectKind::Topic)
             .expect("topic");
         let body = &topic_msg.payload.representation;
-        // Discriminator-Byte muss BY_XML_STRING = 0x02 sein.
+        // The discriminator byte must be BY_XML_STRING = 0x02.
         assert_eq!(body[0], crate::object_repr::repr_disc::AS_XML_STRING);
     }
 
@@ -1328,10 +1328,10 @@ mod tests {
 
     #[test]
     fn qos_resolver_via_phase7_dds_xml_loader_shape() {
-        // Bridge-Test: DDS-XML-Loader liefert ein parseable
-        // <qos_library>-XML; daraus extrahieren wir den Profile-XML-Block
-        // und stecken ihn in unseren Resolver. Hier simulieren wir das
-        // mit `zerodds_xml::parse_xml_tree`.
+        // Bridge test: the DDS-XML loader yields a parseable
+        // <qos_library> XML; from it we extract the profile XML block
+        // and put it into our resolver. Here we simulate that
+        // with `zerodds_xml::parse_xml_tree`.
         let lib_xml = r#"<dds><qos_library name="Lib"><qos_profile name="ShapeProfile"><datawriter_qos><reliability><kind>RELIABLE_RELIABILITY_QOS</kind></reliability></datawriter_qos></qos_profile></qos_library></dds>"#;
         let doc = parse_xml_tree(lib_xml).unwrap();
         let lib = doc.root.child("qos_library").unwrap();
@@ -1349,8 +1349,8 @@ mod tests {
     #[test]
     fn type_reuse_xml_substring_parseable() {
         let cfg = load_xrce_config(cfg_basic()).unwrap();
-        // Der gespeicherte XML-Substring muss vom zerodds-xml-Loader wieder
-        // parseable sein (Bridge zur Type-Library).
+        // The stored XML substring must be parseable again by the
+        // zerodds-xml loader (bridge to the type library).
         let doc = parse_xml_tree(&cfg.types[0].xml).unwrap();
         assert_eq!(doc.root.name, "type");
     }

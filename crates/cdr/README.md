@@ -1,7 +1,7 @@
 # `zerodds-cdr`
 
-XCDR1/XCDR2 Encoder/Decoder, Endianness, Alignment.
-Teil von [**ZeroDDS**](../../README.md). Safety-Klasse **SAFE** —
+XCDR1/XCDR2 encoder/decoder, endianness, alignment.
+Part of [**ZeroDDS**](../../README.md). Safety class **SAFE** —
 `forbid(unsafe_code)`, no_std + alloc.
 
 ---
@@ -25,7 +25,7 @@ assert_eq!((n, &*s), (42, "hello"));
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-## Strukturen mit Extensibility
+## Structs with Extensibility
 
 ```rust
 use zerodds_cdr::struct_enc::{encode_appendable, decode_appendable, encode_mutable_member,
@@ -34,13 +34,13 @@ use zerodds_cdr::{BufferWriter, BufferReader, Endianness, CdrEncode, CdrDecode};
 
 let mut w = BufferWriter::new(Endianness::Little);
 
-// @final: tight-packed, kein Header
+// @final: tight-packed, no header
 encode_final(&mut w, |w| { 1u32.encode(w)?; 2u8.encode(w) })?;
 
-// @appendable: 4-byte DHEADER, forward-kompatibel
+// @appendable: 4-byte DHEADER, forward-compatible
 encode_appendable(&mut w, |w| { 100u32.encode(w)?; 200u8.encode(w) })?;
 
-// @mutable: pro Member ein EMHEADER mit Member-ID
+// @mutable: one EMHEADER with member ID per member
 encode_mutable_member(&mut w, /*member_id=*/ 1, /*must_understand=*/ false,
     |w| 999u32.encode(w))?;
 # Ok::<(), zerodds_cdr::EncodeError>(())
@@ -48,7 +48,7 @@ encode_mutable_member(&mut w, /*member_id=*/ 1, /*must_understand=*/ false,
 
 ---
 
-## Architektur
+## Architecture
 
 ```text
 ┌────────────┐  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐
@@ -64,46 +64,45 @@ encode_mutable_member(&mut w, /*member_id=*/ 1, /*must_understand=*/ false,
 └────────────┘  └─────────────┘  └──────────────┘  └───────────────┘
 ```
 
-### Module
+### Modules
 
-| Modul | Zweck | Status |
+| Module | Purpose | Status |
 |---|---|---|
-| `error` | `EncodeError`, `DecodeError` | stabil |
-| `endianness` | `Endianness::{Big, Little}` + Konvertierungs-Helpers | stabil |
-| `buffer` | `BufferWriter` (alloc) + `BufferReader` mit Alignment-Tracking | stabil |
-| `encode` | `CdrEncode`/`CdrDecode` Traits + Primitive-Impls | stabil |
-| `composite` (alloc) | `String`/`Vec<T>`/`[T;N]`/`Option<T>` | stabil |
-| `struct_enc` (alloc) | `@final`/`@appendable`/`@mutable` Helpers | stabil |
+| `error` | `EncodeError`, `DecodeError` | stable |
+| `endianness` | `Endianness::{Big, Little}` + conversion helpers | stable |
+| `buffer` | `BufferWriter` (alloc) + `BufferReader` with alignment tracking | stable |
+| `encode` | `CdrEncode`/`CdrDecode` traits + primitive impls | stable |
+| `composite` (alloc) | `String`/`Vec<T>`/`[T;N]`/`Option<T>` | stable |
+| `struct_enc` (alloc) | `@final`/`@appendable`/`@mutable` helpers | stable |
 
 ---
 
-## Wire-Format-Konformitaet
+## Wire-Format Conformance
 
 OMG XTypes 1.3 §7.4 (CDR Encoding Rules):
 
-- **Primitives** (§7.4.1): alignment relativ zu Stream-Anfang, BE/LE pro
-  Stream-Encapsulation
-- **String** (§7.4.4): `uint32`-Laenge inkl. Null-Terminator + UTF-8 + `\0`
-- **Sequence** (§7.4.4.2): `uint32`-Element-Anzahl + Elemente
-- **Array** (§7.4.4.3): N Elemente ohne Length-Prefix
-- **Optional** (§7.4.5.1.4): `uint8`-Present-Flag + Wert
-- **`@final`-Struct** (§7.4.5.1.1): tight-packed
-- **`@appendable`-Struct** (§7.4.3.4.5): DHEADER (uint32 = body length)
-- **`@mutable`-Struct` (§7.4.3.4.2): EMHEADER (m-bit + LC + 28-bit ID)
+- **Primitives** (§7.4.1): alignment relative to stream start, BE/LE per
+  stream encapsulation
+- **String** (§7.4.4): `uint32` length incl. null terminator + UTF-8 + `\0`
+- **Sequence** (§7.4.4.2): `uint32` element count + elements
+- **Array** (§7.4.4.3): N elements without length prefix
+- **Optional** (§7.4.5.1.4): `uint8` present flag + value
+- **`@final` struct** (§7.4.5.1.1): tight-packed
+- **`@appendable` struct** (§7.4.3.4.5): DHEADER (uint32 = body length)
+- **`@mutable` struct** (§7.4.3.4.2): EMHEADER (m-bit + LC + 28-bit ID)
   + NEXTINT
 
 ## Coverage
 
-- **XCDR1 (CDR_BE / CDR_LE)** und **XCDR2** — beide
-  Encapsulation-Schemes vollstaendig. XCDR1 fuer Legacy-Vendor-Compat
-  (RTI Connext, Cyclone DDS Default fuer kleine Typen).
-- **EMHEADER-Length-Codes**: LC0..3 + LC4 + LC5..7 — alle 8 Codes
-  produzieren bytetidentisch zur OMG XTypes 1.3-Spec.
-- **Type-Object-Encoding** (XTypes §7.3) — eigenes Crate
+- **XCDR1 (CDR_BE / CDR_LE)** and **XCDR2** — both
+  encapsulation schemes complete. XCDR1 for legacy vendor compat
+  (RTI Connext, Cyclone DDS default for small types).
+- **EMHEADER length codes**: LC0..3 + LC4 + LC5..7 — all 8 codes
+  produce byte-identical output to the OMG XTypes 1.3 spec.
+- **Type-Object encoding** (XTypes §7.3) — separate crate
   `zerodds-types` (TypeIdentifier, TypeObject, TypeMap, KeyHash).
-- **Code-Gen**: `zerodds-idlc` emittiert pro IDL-Type CDR-Encoder +
-  Decoder; manuelle Aufrufe der Helper-Funktionen sind weiter
-  moeglich.
+- **Code-gen**: `zerodds-idlc` emits a CDR encoder + decoder per IDL
+  type; manual calls to the helper functions remain possible.
 
 ## Tests
 
@@ -114,6 +113,6 @@ cargo test -p zerodds-cdr --no-default-features --features alloc  # no_std + all
 
 ---
 
-## Lizenz
+## License
 
-Siehe Workspace-`Cargo.toml`.
+See the workspace `Cargo.toml`.

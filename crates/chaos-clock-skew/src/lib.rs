@@ -1,18 +1,18 @@
-//! LD_PRELOAD-Shim fuer Clock-Skew-Chaos (WP 5.F.2 Phase-B).
+//! LD_PRELOAD shim for clock-skew chaos (WP 5.F.2 Phase-B).
 //!
 //! Crate `chaos-clock-skew`. Safety classification: **STANDARD**
-//! (FFI-Boundary, dlsym-basiert).
+//! (FFI boundary, dlsym-based).
 //!
-//! Setzt `clock_gettime()` und `gettimeofday()` so um, dass eine
-//! konfigurierbare Drift addiert wird. Die Drift kommt aus Env-
-//! Variablen die der Test-Harness setzt:
+//! Overrides `clock_gettime()` and `gettimeofday()` so that a
+//! configurable drift is added. The drift comes from env variables
+//! set by the test harness:
 //!
-//! * `CHAOS_CLOCK_SKEW_NS` — fixe Offset in Nanosekunden (signed,
-//!   negative Werte = Clock laeuft hinten).
-//! * `CHAOS_CLOCK_DRIFT_PPM` — kontinuierliche Drift in
-//!   parts-per-million (z.B. `100` = 100 µs/s langsamer).
+//! * `CHAOS_CLOCK_SKEW_NS` — fixed offset in nanoseconds (signed,
+//!   negative values = clock runs behind).
+//! * `CHAOS_CLOCK_DRIFT_PPM` — continuous drift in
+//!   parts-per-million (e.g. `100` = 100 µs/s slower).
 //!
-//! Aktivierung:
+//! Activation:
 //!
 //! ```bash
 //! cargo build -p chaos-clock-skew --release
@@ -21,24 +21,24 @@
 //!   ./my-process
 //! ```
 //!
-//! Auf macOS/Windows kompiliert die Crate nicht (kein dlsym-Pendant
-//! fuer system clock). Fuer den CI laeuft sie nur auf Linux.
+//! The crate does not compile on macOS/Windows (no dlsym equivalent
+//! for the system clock). In CI it runs only on Linux.
 //!
-//! # Was wird NICHT abgefangen?
+//! # What is NOT intercepted?
 //!
-//! * `CLOCK_MONOTONIC_RAW` — bleibt unveraendert (nur fuer Bench-Tools
-//!   wichtig).
-//! * `CLOCK_BOOTTIME` — bleibt unveraendert.
-//! * Direct-syscall `clock_gettime` ueber `vDSO`-Bypass —
-//!   `LD_PRELOAD` greift bei vDSO-Calls nur wenn das Programm explizit
-//!   ueber libc callt; das ist bei stdlib-Code der Fall.
+//! * `CLOCK_MONOTONIC_RAW` — left unchanged (only relevant for bench
+//!   tools).
+//! * `CLOCK_BOOTTIME` — left unchanged.
+//! * Direct-syscall `clock_gettime` via `vDSO` bypass —
+//!   `LD_PRELOAD` only takes effect on vDSO calls when the program
+//!   explicitly calls through libc; that is the case for stdlib code.
 
 #![warn(missing_docs)]
 #![allow(clippy::missing_safety_doc)]
-// Init-time panics akzeptieren: ohne dlsym(RTLD_NEXT) ist die
-// LD_PRELOAD-Lib funktional tot, also ist Process-Termination das
-// einzig sinnvolle Fail-Mode. Das ist Comfort-Tool-Code, kein
-// Runtime-Pfad.
+// Accept init-time panics: without dlsym(RTLD_NEXT) the LD_PRELOAD
+// lib is functionally dead, so process termination is the only
+// sensible failure mode. This is convenience-tool code, not a
+// runtime path.
 #![allow(clippy::panic)]
 
 #[cfg(target_os = "linux")]
@@ -47,25 +47,25 @@ mod linux {
     use core::ptr;
     use std::sync::OnceLock;
 
-    /// Linux-`timespec`. Layout glibc-kompatibel.
+    /// Linux `timespec`. glibc-compatible layout.
     #[repr(C)]
     pub struct Timespec {
-        /// Sekunden seit Epoch.
+        /// Seconds since epoch.
         pub tv_sec: i64,
-        /// Nanosekunden, 0..1_000_000_000.
+        /// Nanoseconds, 0..1_000_000_000.
         pub tv_nsec: i64,
     }
 
-    /// Linux-`timeval`. Layout glibc-kompatibel.
+    /// Linux `timeval`. glibc-compatible layout.
     #[repr(C)]
     pub struct Timeval {
-        /// Sekunden.
+        /// Seconds.
         pub tv_sec: i64,
-        /// Microsekunden.
+        /// Microseconds.
         pub tv_usec: i64,
     }
 
-    /// `clockid_t`-Enum, glibc-kompatibel.
+    /// `clockid_t` enum, glibc-compatible.
     pub type ClockId = c_int;
     /// `CLOCK_REALTIME`.
     pub const CLOCK_REALTIME: ClockId = 0;
@@ -80,14 +80,14 @@ mod linux {
 
     fn real_clock_gettime() -> ClockGettimeFn {
         *REAL_CLOCK_GETTIME.get_or_init(|| {
-            // SAFETY: dlsym mit RTLD_NEXT liefert die echte glibc-
-            // Implementation. Pointer-Cast auf Funktionstyp gleicher
-            // Signatur ist kontraktgemaess.
+            // SAFETY: dlsym with RTLD_NEXT returns the real glibc
+            // implementation. Casting the pointer to a function type
+            // with the same signature is contractually correct.
             unsafe {
                 let p = libc_stub::dlsym(libc_stub::RTLD_NEXT, c"clock_gettime".as_ptr());
                 if p.is_null() {
-                    // Fallback: gar nichts auflösen, Crashes lassen
-                    // wir kontrolliert bei Aufruf.
+                    // Fallback: resolve nothing, let crashes happen
+                    // in a controlled way at call time.
                     panic!("dlsym(clock_gettime) failed");
                 }
                 core::mem::transmute::<*mut c_void, ClockGettimeFn>(p)
@@ -97,7 +97,7 @@ mod linux {
 
     fn real_gettimeofday() -> GetTimeOfDayFn {
         *REAL_GETTIMEOFDAY.get_or_init(|| {
-            // SAFETY: gleiche Begruendung wie real_clock_gettime.
+            // SAFETY: same reasoning as real_clock_gettime.
             unsafe {
                 let p = libc_stub::dlsym(libc_stub::RTLD_NEXT, c"gettimeofday".as_ptr());
                 if p.is_null() {
@@ -108,8 +108,8 @@ mod linux {
         })
     }
 
-    /// Gibt den fixen Skew-Offset (ns) zurueck. Wird bei jedem Call
-    /// gelesen, damit Tests den Wert zur Laufzeit aendern koennen.
+    /// Returns the fixed skew offset (ns). Read on every call so that
+    /// tests can change the value at runtime.
     fn skew_ns() -> i64 {
         std::env::var("CHAOS_CLOCK_SKEW_NS")
             .ok()
@@ -124,7 +124,7 @@ mod linux {
             .unwrap_or(0)
     }
 
-    /// Wendet Skew + Drift auf einen Timespec an.
+    /// Applies skew + drift to a Timespec.
     fn apply_skew(ts: &mut Timespec, monotonic_ns: i64) {
         let skew = skew_ns();
         let drift = drift_ppm();
@@ -150,49 +150,50 @@ mod linux {
         ts.tv_nsec = new_nsec;
     }
 
-    /// `clock_gettime`-Replacement.
+    /// `clock_gettime` replacement.
     ///
     /// # Safety
-    /// `tp` muss valid sein.
+    /// `tp` must be valid.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn clock_gettime(clk_id: ClockId, tp: *mut Timespec) -> c_int {
-        // SAFETY: real_clock_gettime() liefert die echte glibc-
-        // Implementation; die Aufruf-Semantik ist signaturgleich.
+        // SAFETY: real_clock_gettime() returns the real glibc
+        // implementation; the call semantics match the signature.
         let r = unsafe { real_clock_gettime()(clk_id, tp) };
         if r != 0 || tp.is_null() {
             return r;
         }
-        // Skew nur fuer CLOCK_REALTIME — MONOTONIC bleibt unveraendert.
+        // Skew only for CLOCK_REALTIME — MONOTONIC stays unchanged.
         if clk_id == CLOCK_REALTIME {
-            // SAFETY: r==0, tp wurde von der echten Funktion befuellt.
+            // SAFETY: r==0, tp was filled by the real function.
             let ts = unsafe { &mut *tp };
-            // Drift: monotonic_ns ist die Wallclock seit Boot.
-            // Naeherung: ts.tv_sec * 1e9 + tv_nsec (ist seit-Epoch
-            // statt seit-Boot, aber die PPM-Drift ist gleichmaessig).
+            // Drift: monotonic_ns is the wallclock since boot.
+            // Approximation: ts.tv_sec * 1e9 + tv_nsec (this is
+            // since-epoch rather than since-boot, but the PPM drift
+            // is uniform).
             let monotonic_ns = ts.tv_sec.saturating_mul(1_000_000_000) + ts.tv_nsec;
             apply_skew(ts, monotonic_ns);
         }
         r
     }
 
-    /// `gettimeofday`-Replacement.
+    /// `gettimeofday` replacement.
     ///
     /// # Safety
-    /// `tv` muss valid sein.
+    /// `tv` must be valid.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn gettimeofday(tv: *mut Timeval, tz: *mut c_void) -> c_int {
-        // SAFETY: real_gettimeofday() liefert die echte glibc-
-        // Implementation; signaturkompatibler Pass-Through.
+        // SAFETY: real_gettimeofday() returns the real glibc
+        // implementation; signature-compatible pass-through.
         let r = unsafe { real_gettimeofday()(tv, tz) };
         if r != 0 || tv.is_null() {
             return r;
         }
-        // Skew anwenden.
+        // Apply skew.
         let skew = skew_ns();
         if skew == 0 {
             return r;
         }
-        // SAFETY: r==0 → tv wurde befuellt.
+        // SAFETY: r==0 → tv was filled.
         let v = unsafe { &mut *tv };
         let total_us = skew / 1_000;
         let total_sec = total_us / 1_000_000;
@@ -208,7 +209,7 @@ mod linux {
             new_us += 1_000_000;
         }
         v.tv_usec = new_us;
-        // Schlucke unused tz.
+        // Swallow unused tz.
         let _ = tz;
         let _ = ptr::eq::<()>(ptr::null(), ptr::null());
         r
@@ -219,7 +220,7 @@ mod linux {
         unsafe extern "C" {
             pub fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
         }
-        // RTLD_NEXT auf Linux glibc = -1 als void*.
+        // RTLD_NEXT on Linux glibc = -1 as void*.
         pub const RTLD_NEXT: *mut c_void = -1isize as *mut c_void;
     }
 
@@ -228,16 +229,16 @@ mod linux {
         use super::*;
         use std::sync::Mutex;
 
-        /// cargo test laeuft multi-threaded by default; CHAOS_CLOCK_SKEW_NS
-        /// und CHAOS_CLOCK_DRIFT_PPM sind process-global env-vars, daher
-        /// muessen alle Tests die diese setzen den selben Mutex halten.
-        /// Pattern: `let _g = ENV_LOCK.lock()...` am Anfang jedes Tests.
+        /// cargo test runs multi-threaded by default; CHAOS_CLOCK_SKEW_NS
+        /// and CHAOS_CLOCK_DRIFT_PPM are process-global env vars, so all
+        /// tests that set them must hold the same mutex.
+        /// Pattern: `let _g = ENV_LOCK.lock()...` at the start of each test.
         static ENV_LOCK: Mutex<()> = Mutex::new(());
 
         #[test]
         fn apply_skew_zero_is_noop() {
             let _g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-            // SAFETY: env-mutation unter ENV_LOCK serialisiert.
+            // SAFETY: env mutation serialized under ENV_LOCK.
             unsafe {
                 std::env::remove_var("CHAOS_CLOCK_SKEW_NS");
                 std::env::remove_var("CHAOS_CLOCK_DRIFT_PPM");
@@ -254,7 +255,7 @@ mod linux {
         #[test]
         fn apply_skew_positive_offset_adds_seconds() {
             let _g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-            // SAFETY: env-mutation unter ENV_LOCK serialisiert.
+            // SAFETY: env mutation serialized under ENV_LOCK.
             unsafe {
                 std::env::set_var("CHAOS_CLOCK_SKEW_NS", "5000000000"); // +5s
                 std::env::remove_var("CHAOS_CLOCK_DRIFT_PPM");
@@ -265,14 +266,14 @@ mod linux {
             };
             apply_skew(&mut ts, 0);
             assert_eq!(ts.tv_sec, 105);
-            // SAFETY: env-cleanup im single-threaded scope.
+            // SAFETY: env cleanup in single-threaded scope.
             unsafe { std::env::remove_var("CHAOS_CLOCK_SKEW_NS") };
         }
 
         #[test]
         fn apply_skew_negative_offset_subtracts() {
             let _g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-            // SAFETY: env-mutation unter ENV_LOCK serialisiert.
+            // SAFETY: env mutation serialized under ENV_LOCK.
             unsafe {
                 std::env::set_var("CHAOS_CLOCK_SKEW_NS", "-2000000000"); // -2s
                 std::env::remove_var("CHAOS_CLOCK_DRIFT_PPM");
@@ -283,14 +284,14 @@ mod linux {
             };
             apply_skew(&mut ts, 0);
             assert_eq!(ts.tv_sec, 98);
-            // SAFETY: env-cleanup im single-threaded scope.
+            // SAFETY: env cleanup in single-threaded scope.
             unsafe { std::env::remove_var("CHAOS_CLOCK_SKEW_NS") };
         }
 
         #[test]
         fn apply_skew_handles_nsec_carry() {
             let _g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-            // SAFETY: env-mutation unter ENV_LOCK serialisiert.
+            // SAFETY: env mutation serialized under ENV_LOCK.
             unsafe {
                 std::env::set_var("CHAOS_CLOCK_SKEW_NS", "1500000000"); // +1.5s
                 std::env::remove_var("CHAOS_CLOCK_DRIFT_PPM");
@@ -303,7 +304,7 @@ mod linux {
             // 100s + 0.6s + 1.5s = 102s + 0.1s
             assert_eq!(ts.tv_sec, 102);
             assert_eq!(ts.tv_nsec, 100_000_000);
-            // SAFETY: env-cleanup im single-threaded scope.
+            // SAFETY: env cleanup in single-threaded scope.
             unsafe { std::env::remove_var("CHAOS_CLOCK_SKEW_NS") };
         }
     }
@@ -312,11 +313,11 @@ mod linux {
 #[cfg(target_os = "linux")]
 pub use linux::*;
 
-// Stub fuer Nicht-Linux: lib kompiliert, hat aber keine no_mangle-
-// Symbole.
+// Stub for non-Linux: the lib compiles but has no no_mangle
+// symbols.
 #[cfg(not(target_os = "linux"))]
 mod stub {
-    /// Auf Nicht-Linux ist die Crate ein No-Op-Stub.
+    /// On non-Linux the crate is a no-op stub.
     pub fn unsupported() -> &'static str {
         "chaos-clock-skew is Linux-only"
     }

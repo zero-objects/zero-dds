@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-//! Cargo-getriggerter C++-Smoke-Test: kompiliert
-//! `crates/cpp/tests/smoke_dds_psm.cpp` gegen die libzerodds.dylib und
-//! prueft dass das DDS-PSM-Cxx-1.0-Header-Interface E2E funktioniert.
+//! Cargo-triggered C++ smoke test: compiles
+//! `crates/cpp/tests/smoke_dds_psm.cpp` against libzerodds.dylib and
+//! checks that the DDS-PSM-Cxx 1.0 header interface works end-to-end.
 //!
-//! Erfordert `clang++` (oder `c++`) im PATH.
+//! Requires `clang++` (or `c++`) in PATH.
 
 #![allow(
     clippy::expect_used,
@@ -34,9 +34,6 @@ fn workspace_root() -> PathBuf {
 }
 
 #[test]
-#[ignore = "Layer-3 PSM-Cxx ReadCondition::trigger_value SIGSEGV auf Linux \
-            (siehe docs/OPEN-ITEMS.md F-PSM-CXX-readcond-segv); \
-            lokal macOS gruen; Owner: Layer-3 PSM-Cxx-Agent."]
 fn dds_psm_cxx_smoke() {
     let root = workspace_root();
     let cpp_inc = root.join("crates/cpp/include");
@@ -52,9 +49,9 @@ fn dds_psm_cxx_smoke() {
     assert!(status.success(), "cargo build zerodds-c-api failed");
 
     // Locate libzerodds.dylib (macOS) / libzerodds.so (Linux).
-    // CI setzt --target=<triple>, sodass die Output-Lib unter
-    // target/<triple>/release/ liegt; lokal ohne Target unter
-    // target/release/. Suche beide Varianten + fallback auf deps/.
+    // CI sets --target=<triple>, so the output lib is under
+    // target/<triple>/release/; locally without a target under
+    // target/release/. Search both variants + fall back to deps/.
     let lib_names = ["libzerodds.dylib", "libzerodds.so"];
     let candidate_dirs = {
         let mut v: Vec<PathBuf> = Vec::new();

@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DDS-Security-Bridge fuer den AMQP-Endpoint.
+//! DDS-Security bridge for the AMQP endpoint.
 //!
-//! Spec-Quellen:
-//! * dds-amqp-1.0 §10.3.2 — IdentityToken-class_id-Tabelle pro
-//!   SASL-Mechanismus (`zerodds:Auth:SASL-Username:1.0`,
+//! Spec sources:
+//! * dds-amqp-1.0 §10.3.2 — IdentityToken class_id table per
+//!   SASL mechanism (`zerodds:Auth:SASL-Username:1.0`,
 //!   `zerodds:Auth:Anonymous:1.0`,
 //!   `zerodds:Auth:SASL-SCRAM-SHA256:1.0`,
-//!   `DDS:Auth:PKI-DH:1.0` nur fuer EXTERNAL+X.509).
-//! * §10.3.3 — Permission Evaluation an AccessControl-Plugin.
-//! * §10.3.5 — No-Bypass-Guarantee.
-//! * §10.4 — Governance-Document-Mapping.
-//! * §10.6 — Bridge-Profile Dual Identity.
-//! * §10.7 — Per-Link Governance Resolution.
+//!   `DDS:Auth:PKI-DH:1.0` only for EXTERNAL+X.509).
+//! * §10.3.3 — permission evaluation against the AccessControl plugin.
+//! * §10.3.5 — no-bypass guarantee.
+//! * §10.4 — governance document mapping.
+//! * §10.6 — Bridge Profile dual identity.
+//! * §10.7 — per-link governance resolution.
 //!
-//! Diese Schicht kennt das DDS-Security-Plugin nicht direkt;
-//! sie liefert Trait-basierte Adapter, gegen die der Endpoint-
-//! Daemon (oder ein Test-Mock) bindet.
+//! This layer does not know the DDS-Security plugin directly;
+//! it provides trait-based adapters that the endpoint
+//! daemon (or a test mock) binds against.
 
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
@@ -29,43 +29,43 @@ use crate::sasl::SaslMechanism;
 // IdentityToken (§10.3.2)
 // ============================================================
 
-/// Spec §10.3.2 — class_id-Konstanten pro SASL-Mechanismus.
+/// Spec §10.3.2 — class_id constants per SASL mechanism.
 pub mod class_ids {
-    /// PLAIN → vendor-prefixed Username-Token.
+    /// PLAIN → vendor-prefixed username token.
     pub const SASL_USERNAME: &str = "zerodds:Auth:SASL-Username:1.0";
-    /// ANONYMOUS → vendor-prefixed Anonymous-Token.
+    /// ANONYMOUS → vendor-prefixed anonymous token.
     pub const ANONYMOUS: &str = "zerodds:Auth:Anonymous:1.0";
-    /// SCRAM-SHA-256 → vendor-prefixed SCRAM-Token.
+    /// SCRAM-SHA-256 → vendor-prefixed SCRAM token.
     pub const SCRAM_SHA256: &str = "zerodds:Auth:SASL-SCRAM-SHA256:1.0";
-    /// EXTERNAL (mTLS-X.509) → OMG-PKI-DH:1.0 (nur diese Form ist
-    /// PKI-DH-konform: enthaelt `certificate`).
+    /// EXTERNAL (mTLS X.509) → OMG-PKI-DH:1.0 (only this form is
+    /// PKI-DH-compliant: it contains `certificate`).
     pub const PKI_DH: &str = "DDS:Auth:PKI-DH:1.0";
 }
 
 /// Spec §10.3.2 — IdentityToken (subset). DDS-Security 1.2 §8.4.1
-/// spezifiziert weitere Felder (binary properties, etc.); fuer das
-/// AMQP-Mapping reichen subject_name, certificate, class_id.
+/// specifies further fields (binary properties, etc.); for the
+/// AMQP mapping, subject_name, certificate, and class_id suffice.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdentityToken {
-    /// Spec §10.3.2 — `class_id` aus [`class_ids`].
+    /// Spec §10.3.2 — `class_id` from [`class_ids`].
     pub class_id: String,
-    /// Spec §10.3.2 — `subject_name`, RFC-4514-DN-Form
+    /// Spec §10.3.2 — `subject_name`, RFC 4514 DN form
     /// (`CN=alice` etc.).
     pub subject_name: String,
-    /// Spec §10.3.2 — X.509-Cert (DER-bytes), nur bei EXTERNAL/PKI-DH
-    /// gesetzt.
+    /// Spec §10.3.2 — X.509 cert (DER bytes), set only for
+    /// EXTERNAL/PKI-DH.
     pub certificate: Option<Vec<u8>>,
 }
 
-/// Spec §10.3.2 — IdentityToken aus SASL-Outcome bauen.
+/// Spec §10.3.2 — build the IdentityToken from the SASL outcome.
 ///
-/// Die Tabelle bildet:
+/// The table maps:
 /// * `Plain(authcid)` → `SASL-Username:1.0`, `subject_name = "CN=" + authcid`,
 ///   `certificate = None`.
 /// * `Anonymous` → `Anonymous:1.0`, `subject_name = "CN=ANONYMOUS"`,
 ///   `certificate = None`.
 /// * `External(cert_der, dn)` → `PKI-DH:1.0`, `subject_name = dn`
-///   (wie vom Transport gemeldet), `certificate = Some(cert_der)`.
+///   (as reported by the transport), `certificate = Some(cert_der)`.
 /// * `ScramSha256(authcid)` → `SASL-SCRAM-SHA256:1.0`,
 ///   `subject_name = "CN=" + authcid`.
 #[must_use]
@@ -97,33 +97,33 @@ pub fn build_identity_token(input: &SaslSubject) -> IdentityToken {
     }
 }
 
-/// Erweiterter SASL-Outcome mit den Daten, die fuer
-/// IdentityToken-Konstruktion gebraucht werden.
+/// Extended SASL outcome carrying the data needed for
+/// IdentityToken construction.
 #[derive(Debug, Clone)]
 pub enum SaslSubject {
-    /// SASL-PLAIN authentifiziert.
+    /// SASL-PLAIN authenticated.
     Plain {
-        /// Authenticated Username.
+        /// Authenticated username.
         authcid: String,
     },
     /// SASL-ANONYMOUS.
     Anonymous,
-    /// SASL-EXTERNAL mit X.509-Cert vom Transport.
+    /// SASL-EXTERNAL with an X.509 cert from the transport.
     External {
-        /// X.509-DER-Cert-Bytes.
+        /// X.509 DER cert bytes.
         certificate: Vec<u8>,
-        /// Subject-DN aus dem Cert (RFC-4514).
+        /// Subject DN from the cert (RFC 4514).
         subject_dn: String,
     },
     /// SASL-SCRAM-SHA-256.
     ScramSha256 {
-        /// Authenticated Username.
+        /// Authenticated username.
         authcid: String,
     },
 }
 
 impl SaslSubject {
-    /// Welcher SASL-Mechanismus liegt vor?
+    /// Which SASL mechanism is present?
     #[must_use]
     pub const fn mechanism(&self) -> SaslMechanism {
         match self {
@@ -139,43 +139,43 @@ impl SaslSubject {
 // AccessControl-Plugin-Trait (§10.3.3 + §10.3.5)
 // ============================================================
 
-/// Spec §10.3.3 — AccessControl-Plugin-Operation, die der
-/// Endpoint vor jedem Link-Attach + jedem Pre-Transfer aufruft.
+/// Spec §10.3.3 — AccessControl plugin operation that the
+/// endpoint invokes before every link attach + every pre-transfer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AccessOp {
-    /// Sender-Link attachen (entspricht
+    /// Attach a sender link (corresponds to
     /// `check_create_datawriter`).
     AttachSender,
-    /// Receiver-Link attachen (entspricht
+    /// Attach a receiver link (corresponds to
     /// `check_create_datareader`).
     AttachReceiver,
-    /// Sample senden (Pre-Transfer-Hook fuer No-Bypass §10.3.5).
+    /// Send a sample (pre-transfer hook for no-bypass §10.3.5).
     SendSample,
-    /// Sample empfangen (Receiver-Side Pre-Decode-Hook).
+    /// Receive a sample (receiver-side pre-decode hook).
     ReceiveSample,
 }
 
-/// Spec §10.3.3 — Plugin-Resultat.
+/// Spec §10.3.3 — plugin result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccessDecision {
-    /// Operation darf ausgefuehrt werden.
+    /// Operation may be performed.
     Allow,
     /// Operation rejected → AMQP `amqp:unauthorized-access`.
     Deny,
 }
 
-/// Spec §10.3.3 — AccessControl-Plugin-Trait.
+/// Spec §10.3.3 — AccessControl plugin trait.
 ///
-/// `check` wird mit der bereits validierten `IdentityToken`,
-/// dem Address-Topic und der Operation aufgerufen. Plugin
-/// entscheidet `Allow`/`Deny`. Plugin SHALL deterministisch sein
-/// (Spec §10.3.4) — bei gleicher Eingabe gleiche Antwort.
+/// `check` is invoked with the already-validated `IdentityToken`,
+/// the address topic, and the operation. The plugin
+/// decides `Allow`/`Deny`. The plugin SHALL be deterministic
+/// (Spec §10.3.4) — same input, same answer.
 pub trait AccessControlPlugin {
-    /// Permission-Check.
+    /// Permission check.
     fn check(&self, identity: &IdentityToken, address: &str, op: AccessOp) -> AccessDecision;
 }
 
-/// Allow-All-Plugin (Test-Default; **nicht** fuer Produktion).
+/// Allow-all plugin (test default; **not** for production).
 #[derive(Debug, Default)]
 pub struct AllowAll;
 
@@ -185,25 +185,24 @@ impl AccessControlPlugin for AllowAll {
     }
 }
 
-/// Static-Allow-List-Plugin (per `subject_name`-Match).
+/// Static allow-list plugin (by `subject_name` match).
 ///
-/// Plugin denied alles, was nicht in `allow` aufgelistet ist.
-/// Pattern-Match ist exakt; Wildcards waeren ein Plugin-eigenes
-/// Feature.
+/// The plugin denies everything not listed in `allow`.
+/// Pattern matching is exact; wildcards would be a plugin-specific
+/// feature.
 #[derive(Debug, Default)]
 pub struct StaticAllowList {
     allow: BTreeMap<String, Vec<(String, AccessOp)>>,
 }
 
 impl StaticAllowList {
-    /// Frische Liste.
+    /// Fresh list.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Eintrag hinzufuegen: `subject_name` darf `op` auf `address`
-    /// ausfuehren.
+    /// Add an entry: `subject_name` may perform `op` on `address`.
     pub fn allow(&mut self, subject_name: &str, address: &str, op: AccessOp) {
         self.allow
             .entry(subject_name.to_string())
@@ -230,54 +229,54 @@ impl AccessControlPlugin for StaticAllowList {
 // Governance Document Mapping (§10.4)
 // ============================================================
 
-/// Spec §10.4 — Domain-Governance-Rule (subset).
-/// Eine echte DDS-Security-Implementierung liest dies aus dem
-/// XML-Governance-Document; wir liefern hier die Datenstruktur,
-/// die der XML-Loader (separater Crate) befuellt.
+/// Spec §10.4 — domain governance rule (subset).
+/// A real DDS-Security implementation reads this from the
+/// XML governance document; here we provide the data structure
+/// that the XML loader (a separate crate) populates.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GovernanceRule {
-    /// DDS-Topic-Name oder Glob-Pattern (`Sensor*`).
+    /// DDS topic name or glob pattern (`Sensor*`).
     pub topic_pattern: String,
-    /// SHALL Topic ueberhaupt entdeckbar sein? (`enable_discovery`).
+    /// SHALL the topic be discoverable at all? (`enable_discovery`).
     pub enable_discovery: bool,
-    /// SHALL Liveliness signalisiert werden? (`enable_liveliness`).
+    /// SHALL liveliness be signaled? (`enable_liveliness`).
     pub enable_liveliness: bool,
-    /// Encryption-Modus.
+    /// Encryption mode.
     pub data_protection_kind: DataProtectionKind,
 }
 
-/// Spec §10.4 — `data_protection_kind`-Werte.
+/// Spec §10.4 — `data_protection_kind` values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataProtectionKind {
-    /// Keine Sample-Encryption (Wire-clear-Body).
+    /// No sample encryption (wire-clear body).
     None,
-    /// Sign aber nicht encrypt.
+    /// Sign but do not encrypt.
     SignOnly,
-    /// Sign + Encrypt.
+    /// Sign + encrypt.
     SignAndEncrypt,
 }
 
-/// Spec §10.4 — Governance-Document.
+/// Spec §10.4 — governance document.
 #[derive(Debug, Default)]
 pub struct GovernanceDocument {
     rules: Vec<GovernanceRule>,
 }
 
 impl GovernanceDocument {
-    /// Frisches leeres Document.
+    /// Fresh empty document.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Regel hinzufuegen (typisch aus XML-Loader).
+    /// Add a rule (typically from the XML loader).
     pub fn add_rule(&mut self, rule: GovernanceRule) {
         self.rules.push(rule);
     }
 
-    /// Erste Regel liefern, deren `topic_pattern` matched.
-    /// Pattern `*` matched alles, `prefix*` Praefix-Match,
-    /// `*suffix` Suffix-Match, alles andere exakter Match.
+    /// Return the first rule whose `topic_pattern` matches.
+    /// Pattern `*` matches everything, `prefix*` is a prefix match,
+    /// `*suffix` is a suffix match, everything else is an exact match.
     #[must_use]
     pub fn resolve(&self, topic: &str) -> Option<&GovernanceRule> {
         self.rules
@@ -303,22 +302,22 @@ fn match_pattern(pattern: &str, topic: &str) -> bool {
 // Per-Link Governance Cache (§10.7)
 // ============================================================
 
-/// Spec §10.7 — pro Link aufgeloeste Governance + Permission.
+/// Spec §10.7 — per-link resolved governance + permission.
 #[derive(Debug, Clone)]
 pub struct LinkGovernance {
-    /// Identitaet, gegen die per-Link autorisiert wurde.
+    /// Identity against which per-link authorization was performed.
     pub identity: IdentityToken,
-    /// Address (Topic) des Link-Terminus.
+    /// Address (topic) of the link terminus.
     pub address: String,
-    /// Resolved governance rule (`None` wenn `default-rule`).
+    /// Resolved governance rule (`None` if `default-rule`).
     pub rule: Option<GovernanceRule>,
-    /// Permission-Cache: pro Operation `Allow`/`Deny`.
+    /// Permission cache: per operation `Allow`/`Deny`.
     pub cached_decisions: BTreeMap<AccessOp, AccessDecision>,
 }
 
 impl LinkGovernance {
-    /// Frischer Eintrag; Cache ist leer und wird per
-    /// `evaluate(plugin, op)` gefuellt.
+    /// Fresh entry; the cache is empty and gets filled via
+    /// `evaluate(plugin, op)`.
     #[must_use]
     pub fn new(identity: IdentityToken, address: String, rule: Option<GovernanceRule>) -> Self {
         Self {
@@ -329,11 +328,11 @@ impl LinkGovernance {
         }
     }
 
-    /// Per-Op-Permission auswerten + cachen.
+    /// Evaluate + cache the per-op permission.
     ///
-    /// Spec §10.7 — pro Link wird Permission neu evaluiert; einmal
-    /// gecacht aendert sich das Resultat fuer dieselbe Op nicht
-    /// (Determinism §10.3.4).
+    /// Spec §10.7 — permission is re-evaluated per link; once
+    /// cached, the result for the same op does not change
+    /// (determinism §10.3.4).
     pub fn evaluate<P: AccessControlPlugin>(&mut self, plugin: &P, op: AccessOp) -> AccessDecision {
         if let Some(d) = self.cached_decisions.get(&op) {
             return d.clone();
@@ -348,23 +347,23 @@ impl LinkGovernance {
 // Bridge-Profile Dual Identity (§10.6)
 // ============================================================
 
-/// Spec §10.6 — Dual-Identity-Konfiguration der Bridge.
+/// Spec §10.6 — dual-identity configuration of the bridge.
 ///
-/// Broker-Side SASL-Credential und DDS-Side IdentityToken
-/// werden strikt getrennt. AccessControl-Plugin SHALL nur den
-/// `dds_identity` benutzen.
+/// The broker-side SASL credential and the DDS-side IdentityToken
+/// are kept strictly separate. The AccessControl plugin SHALL use
+/// only the `dds_identity`.
 #[derive(Debug, Clone)]
 pub struct DualIdentity {
-    /// Spec §10.6 — Identity zur Broker-Authentifizierung
-    /// (z.B. `Alice` als SASL-Username).
+    /// Spec §10.6 — identity for broker authentication
+    /// (e.g. `Alice` as the SASL username).
     pub broker_identity: IdentityToken,
-    /// Spec §10.6 — Identity, die in der DDS-Domain praesentiert
-    /// wird (z.B. `CN=Bridge-1`).
+    /// Spec §10.6 — identity presented in the DDS domain
+    /// (e.g. `CN=Bridge-1`).
     pub dds_identity: IdentityToken,
 }
 
 impl DualIdentity {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(broker_identity: IdentityToken, dds_identity: IdentityToken) -> Self {
         Self {
@@ -373,14 +372,14 @@ impl DualIdentity {
         }
     }
 
-    /// Spec §10.6 — die fuer DDS-Security-Calls relevante Identity.
-    /// Plugin-Calls SHALL ausschliesslich diese liefern.
+    /// Spec §10.6 — the identity relevant for DDS-Security calls.
+    /// Plugin calls SHALL be given exclusively this one.
     #[must_use]
     pub fn for_dds(&self) -> &IdentityToken {
         &self.dds_identity
     }
 
-    /// Identity fuer Broker-SASL-Negotiation.
+    /// Identity for broker SASL negotiation.
     #[must_use]
     pub fn for_broker(&self) -> &IdentityToken {
         &self.broker_identity
@@ -392,7 +391,7 @@ impl DualIdentity {
 mod tests {
     use super::*;
 
-    // --- IdentityToken-Builder ---
+    // --- IdentityToken builder ---
 
     #[test]
     fn plain_yields_sasl_username_class_id() {
@@ -433,7 +432,7 @@ mod tests {
 
     #[test]
     fn class_id_strings_match_spec_table() {
-        // Spec §10.3.2-Tabelle: konkrete strings.
+        // Spec §10.3.2 table: concrete strings.
         assert_eq!(class_ids::SASL_USERNAME, "zerodds:Auth:SASL-Username:1.0");
         assert_eq!(class_ids::ANONYMOUS, "zerodds:Auth:Anonymous:1.0");
         assert_eq!(
@@ -443,7 +442,7 @@ mod tests {
         assert_eq!(class_ids::PKI_DH, "DDS:Auth:PKI-DH:1.0");
     }
 
-    // --- AccessControl-Plugin ---
+    // --- AccessControl plugin ---
 
     #[test]
     fn allow_all_returns_allow() {
@@ -551,7 +550,7 @@ mod tests {
             authcid: "alice".into(),
         });
         let mut lg = LinkGovernance::new(id, "Sensor".to_string(), None);
-        // Test-Plugin, das Calls zaehlt.
+        // Test plugin that counts calls.
         struct Counting<'a> {
             count: &'a core::cell::Cell<u32>,
         }
@@ -563,13 +562,13 @@ mod tests {
         }
         let count = core::cell::Cell::new(0);
         let p = Counting { count: &count };
-        // Erste Auswertung → Plugin-Call.
+        // First evaluation → plugin call.
         assert_eq!(lg.evaluate(&p, AccessOp::SendSample), AccessDecision::Allow);
         assert_eq!(count.get(), 1);
-        // Zweite Auswertung derselben Op → Cache-Hit, kein Plugin-Call.
+        // Second evaluation of the same op → cache hit, no plugin call.
         assert_eq!(lg.evaluate(&p, AccessOp::SendSample), AccessDecision::Allow);
         assert_eq!(count.get(), 1);
-        // Andere Op → neuer Plugin-Call.
+        // Different op → new plugin call.
         assert_eq!(
             lg.evaluate(&p, AccessOp::ReceiveSample),
             AccessDecision::Allow
@@ -592,14 +591,14 @@ mod tests {
         assert_eq!(dual.for_dds().subject_name, "CN=Bridge-1");
         assert_eq!(dual.for_broker().subject_name, "CN=Alice");
         // Spec §10.6: broker-side SHALL NOT conflate; for_dds()
-        // gibt nicht broker_identity zurueck.
+        // does not return broker_identity.
         assert_ne!(dual.for_dds().subject_name, dual.for_broker().subject_name);
     }
 
     #[test]
     fn dual_identity_for_dds_does_not_carry_broker_credential() {
-        // Annex C C.2.6 — Bridge praesentiert CN=Bridge-1
-        // (nicht Alice) zu DDS-AccessControl.
+        // Annex C C.2.6 — the bridge presents CN=Bridge-1
+        // (not Alice) to DDS AccessControl.
         let broker = build_identity_token(&SaslSubject::Plain {
             authcid: "Alice".into(),
         });
@@ -609,7 +608,7 @@ mod tests {
         });
         let dual = DualIdentity::new(broker, dds);
         let ac = AllowAll;
-        // Plugin-Call mit dual.for_dds() — der subject_name ist
+        // Plugin call with dual.for_dds() — the subject_name is
         // CN=Bridge-1.
         assert_eq!(
             ac.check(dual.for_dds(), "X", AccessOp::AttachSender),

@@ -5,18 +5,18 @@
 //!
 //! Spec: `zerodds-ros2-bridge-1.0.md` §8.1 (= rcutils logging API).
 //!
-//! Eine minimale JSON-Log-Layer fuer Bridge-Daemon-Diagnostics. Format:
+//! A minimal JSON log layer for bridge-daemon diagnostics. Format:
 //!
 //! ```json
 //! {"ts":"2026-05-06T12:34:56.789Z","level":"INFO","logger":"ros2-bridge","msg":"…"}
 //! ```
 //!
-//! Wir formattieren ohne `serde_json` (no_std-friendly) und escapen
-//! die nötigen JSON-Zeichen `"`, `\`, control-chars.
+//! We format without `serde_json` (no_std-friendly) and escape
+//! the necessary JSON characters `"`, `\`, control chars.
 
 use alloc::string::String;
 
-/// rcutils-kompatible Severity-Level.
+/// rcutils-compatible severity levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogLevel {
     /// `RCUTILS_LOG_SEVERITY_DEBUG`.
@@ -32,7 +32,7 @@ pub enum LogLevel {
 }
 
 impl LogLevel {
-    /// String wie in `RCUTILS_CONSOLE_OUTPUT_FORMAT` ueblich.
+    /// String as usual in `RCUTILS_CONSOLE_OUTPUT_FORMAT`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -45,7 +45,7 @@ impl LogLevel {
     }
 }
 
-/// Render eine Log-Zeile als 1-line-JSON.
+/// Render a log line as 1-line JSON.
 #[must_use]
 pub fn render_json(ts_iso: &str, level: LogLevel, logger: &str, msg: &str) -> String {
     let mut out = String::with_capacity(64 + msg.len());

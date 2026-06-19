@@ -1,32 +1,32 @@
 ZeroDDS Python Binding
 ======================
 
-``zerodds`` ist das Python-Binding für den Rust-nativen DDS-Stack
-ZeroDDS. API-Shape folgt bewusst OMG DDS 1.4 §2.2.2, damit Nutzer von
-``cyclonedds-python`` oder ``rti.connextdds`` sich ohne Einarbeitung
-zurechtfinden.
+``zerodds`` is the Python binding for the Rust-native DDS stack
+ZeroDDS. The API shape deliberately follows OMG DDS 1.4 §2.2.2, so users
+of ``cyclonedds-python`` or ``rti.connextdds`` find their way around
+without ramp-up.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Inhalt:
+   :caption: Contents:
 
    quickstart
    examples
    api
 
-Feature-Stand v1.3
-------------------
+Feature status v1.3
+-------------------
 
 * ``DomainParticipantFactory`` / ``DomainParticipant``
-* ``BytesTopic`` + ``BytesWriter`` / ``BytesReader`` (opaker Payload)
+* ``BytesTopic`` + ``BytesWriter`` / ``BytesReader`` (opaque payload)
 * ``ShapeTopic`` + ``ShapeWriter`` / ``ShapeReader`` + ``Shape``
-  (Cross-Vendor-Interop gegen Cyclone/Fast-DDS ShapesDemo)
-* ``@idl_struct``-Decorator (XCDR2-LE byte-genau kompatibel mit Rust)
-* Sync-Primitives: ``wait_for_matched_*``, ``wait_for_data``
-* GIL-Release während blockierender DDS-Calls
+  (cross-vendor interop against Cyclone/Fast-DDS ShapesDemo)
+* ``@idl_struct`` decorator (XCDR2-LE byte-exact compatible with Rust)
+* Sync primitives: ``wait_for_matched_*``, ``wait_for_data``
+* GIL release during blocking DDS calls
 
-Was kommt als nächstes
-----------------------
+What's next
+-----------
 
 * **v1.4** — nested Structs, ``sequence<T>``, Arrays, Unions,
   Optional; QoS-Profile aus XML/YAML.

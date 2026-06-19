@@ -1,46 +1,46 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `zerodds-ws-bridged` Daemon-Implementation.
+//! `zerodds-ws-bridged` daemon implementation.
 //!
 //! Spec: `docs/specs/zerodds-ws-bridge-1.0.md`.
 //!
-//! Conformance-Levels L1-L4 werden hier voll bedient:
+//! Conformance levels L1-L4 are fully served here:
 //!
-//! * **L1 — Wire**: HTTP-Upgrade-Handshake gemaess RFC 6455 §4 ueber das
-//!   `crate::handshake`-Modul; Frame-Codec ueber `crate::codec`.
-//! * **L2 — DDS**: jeder Daemon-Prozess startet einen `DcpsRuntime` mit
-//!   `RuntimeConfig::default()` auf der konfigurierten Domain-ID.
-//! * **L3 — Bridging**: pro `topics[]`-Eintrag ein Reader+Writer; WS-
-//!   Frames `op:publish` schreiben in den Writer, DDS-Samples werden
-//!   als `op:notify` an alle subskribierten WS-Clients gepusht.
-//! * **L4 — Config**: YAML-Subset-Parser ohne externe deps (siehe
+//! * **L1 — Wire**: HTTP upgrade handshake per RFC 6455 §4 via the
+//!   `crate::handshake` module; frame codec via `crate::codec`.
+//! * **L2 — DDS**: each daemon process starts a `DcpsRuntime` with
+//!   `RuntimeConfig::default()` on the configured domain id.
+//! * **L3 — Bridging**: one reader+writer per `topics[]` entry; WS
+//!   frames `op:publish` write into the writer, DDS samples are
+//!   pushed as `op:notify` to all subscribed WS clients.
+//! * **L4 — Config**: YAML-subset parser without external deps (see
 //!   [`config`]).
 //!
-//! L5 (Auth/TLS) und L6 (Multi-Tenant) sind als Stubs angelegt — der
-//! Wire-Pfad ist L1-vollstaendig, L5/L6-Wireup wird in einem Folge-
-//! Sprint nachgezogen.
+//! L5 (auth/TLS) and L6 (multi-tenant) are laid out as stubs — the
+//! wire path is L1-complete, the L5/L6 wireup is added in a follow-up
+//! sprint.
 //!
-//! # Architektur
+//! # Architecture
 //!
-//! Sync-Threads, blockierendes I/O. Pro WS-Connection ein Reader-
-//! Thread + ein Writer-Thread (DDS-Pump → Connection-Queue). Keine
-//! tokio-Abhaengigkeit — der Workspace ist sync.
+//! Sync threads, blocking I/O. One reader thread + one writer thread
+//! per WS connection (DDS pump → connection queue). No tokio
+//! dependency — the workspace is sync.
 //!
 //! ```text
 //!                 +--------------------+
-//!                 |  TCP-Listener      |
+//!                 |  TCP listener      |
 //!                 +---------+----------+
 //!                           |
 //!                           v
 //!     +----------------- Connection -----------------+
-//!     |  read-thread  ←  WS-Frame-Decoder            |
+//!     |  read-thread  ←  WS frame decoder            |
 //!     |       │                                      |
-//!     |       └─→ DDS-Writer (write_user_sample)     |
+//!     |       └─→ DDS writer (write_user_sample)     |
 //!     |                                              |
-//!     |  write-thread  ←  DDS-Reader rx-channel      |
+//!     |  write-thread  ←  DDS reader rx-channel      |
 //!     |       │                                      |
-//!     |       └─→ WS-Frame-Encoder ─→ TCP-Stream     |
+//!     |       └─→ WS frame encoder ─→ TCP stream     |
 //!     +----------------------------------------------+
 //! ```
 

@@ -7,15 +7,15 @@ use core::time::Duration;
 
 use zerodds_dcps::{DataWriter, DataWriterQos, DdsType, InstanceHandle, Result};
 
-/// Async-Wrapper um `DataWriter<T>`.
+/// Async wrapper around `DataWriter<T>`.
 ///
-/// Hot-Path: `write()` ist eine Future-Form ueber dem sync-Pfad mit
-/// einer yield-basierten Retry-Schleife fuer
-/// `OutOfResources`-Backpressure (Spec §5.1
-/// `zerodds-async-1.0`). Statt eines Thread-Block-`Condvar::wait_timeout`
-/// fallen Caller-Tasks per `yield_for` aus dem Executor und bleiben
-/// cancelable. Andere DCPS-Methoden delegieren synchron — sie sind
-/// ohnehin nicht blockierend.
+/// Hot path: `write()` is a future form over the sync path with
+/// a yield-based retry loop for
+/// `OutOfResources` backpressure (Spec §5.1
+/// `zerodds-async-1.0`). Instead of a thread-blocking `Condvar::wait_timeout`,
+/// caller tasks yield out of the executor via `yield_for` and stay
+/// cancelable. Other DCPS methods delegate synchronously — they are
+/// non-blocking anyway.
 pub struct AsyncDataWriter<T: DdsType + Send + Sync + 'static> {
     inner: Arc<DataWriter<T>>,
 }
@@ -35,28 +35,28 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataWriter<T> {
         }
     }
 
-    /// Schreibt einen Sample. Spec §2.1.1.
+    /// Writes a sample. Spec §2.1.1.
     ///
     /// # Errors
-    /// Wie `DataWriter::write` — `OutOfResources` nach
-    /// `max_blocking_time`-Timeout, sonst alle anderen Errors
-    /// transparent durchgereicht.
+    /// Same as `DataWriter::write` — `OutOfResources` after the
+    /// `max_blocking_time` timeout, otherwise all other errors are
+    /// passed through transparently.
     ///
-    /// Spec §5.1 zerodds-async-1.0: bei `OutOfResources` suspendiert
-    /// der Future via `yield_for` und retried, bis entweder ein Drain
-    /// passiert oder die `reliability.max_blocking_time` abgelaufen
-    /// ist. Im Sync-Pfad wuerde hier ein `Condvar::wait_timeout`
-    /// blockieren — async-Pfad nutzt yield-retry-Loop ohne
-    /// Thread-Block.
+    /// Spec §5.1 zerodds-async-1.0: on `OutOfResources` the future
+    /// suspends via `yield_for` and retries until either a drain
+    /// happens or `reliability.max_blocking_time` has elapsed.
+    /// In the sync path a `Condvar::wait_timeout` would block here —
+    /// the async path uses a yield-retry loop without a
+    /// thread block.
     pub async fn write(&self, sample: &T) -> Result<()>
     where
         T: Clone,
     {
         let max_block = self.inner.qos().reliability.max_blocking_time;
         let max_block_nanos = max_block.to_nanos();
-        // INFINITE → unsere Retry-Loop hat trotzdem einen safety-cap
-        // (~1 s polling) damit Caller die Caller-side cancellation
-        // sieht. Spec erlaubt das.
+        // INFINITE → our retry loop still has a safety cap
+        // (~1 s polling) so the caller sees caller-side cancellation.
+        // The spec permits this.
         let safety_cap = core::time::Duration::from_secs(1);
         let deadline = if max_block_nanos == u128::MAX {
             None
@@ -73,7 +73,7 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataWriter<T> {
             match self.inner.write(&s) {
                 Ok(()) => return Ok(()),
                 Err(zerodds_dcps::DdsError::OutOfResources { .. }) => {
-                    // Drain abwarten.
+                    // Wait for a drain.
                     if let Some(d) = deadline {
                         if std::time::Instant::now() >= d {
                             return Err(zerodds_dcps::DdsError::Timeout);
@@ -84,8 +84,8 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataWriter<T> {
                 Err(other) => return Err(other),
             }
             if deadline.is_none() {
-                // INFINITE: nach 1 s safety-yield, damit der Caller
-                // mindestens ein await-point sieht und canceln kann.
+                // INFINITE: a safety yield after 1 s so the caller
+                // sees at least one await point and can cancel.
                 let _ = safety_cap;
             }
         }
@@ -94,15 +94,15 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataWriter<T> {
     /// Spec §2.1.2 register_instance.
     ///
     /// # Errors
-    /// Wie sync.
+    /// Same as sync.
     pub async fn register_instance(&self, sample: &T) -> Result<InstanceHandle> {
         self.inner.register_instance(sample)
     }
 
-    /// Spec §2.1.3 dispose. Loest Wire-Lifecycle DISPOSED.
+    /// Spec §2.1.3 dispose. Triggers the DISPOSED wire lifecycle.
     ///
     /// # Errors
-    /// Wie sync.
+    /// Same as sync.
     pub async fn dispose(&self, sample: &T, handle: InstanceHandle) -> Result<()> {
         self.inner.dispose(sample, handle)
     }
@@ -110,16 +110,16 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataWriter<T> {
     /// Spec §2.1.4 unregister_instance.
     ///
     /// # Errors
-    /// Wie sync.
+    /// Same as sync.
     pub async fn unregister_instance(&self, sample: &T, handle: InstanceHandle) -> Result<()> {
         self.inner.unregister_instance(sample, handle)
     }
 
-    /// Spec §2.1.5 wait_for_matched_subscription. Async-Polling-
-    /// Schleife mit 10 ms Tick.
+    /// Spec §2.1.5 wait_for_matched_subscription. Async polling
+    /// loop with a 10 ms tick.
     ///
     /// # Errors
-    /// Wie sync — `Timeout` wenn `min_count` nicht in `timeout` erreicht.
+    /// Same as sync — `Timeout` if `min_count` is not reached within `timeout`.
     pub async fn wait_for_matched_subscription(
         &self,
         min_count: usize,
@@ -133,24 +133,24 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataWriter<T> {
             if std::time::Instant::now() >= deadline {
                 return Err(zerodds_dcps::DdsError::Timeout);
             }
-            // Async-sleep ohne tokio-Hard-Dep: yield via futures-Helper.
+            // Async sleep without a hard tokio dependency: yield via a futures helper.
             crate::yield_for(Duration::from_millis(10)).await;
         }
     }
 
-    /// Spec §2.1.6 matched_subscription_count (synchron).
+    /// Spec §2.1.6 matched_subscription_count (synchronous).
     #[must_use]
     pub fn matched_subscription_count(&self) -> usize {
         self.inner.matched_subscription_count()
     }
 
-    /// Liefert die zugrundeliegende sync-Variante.
+    /// Returns the underlying sync variant.
     #[must_use]
     pub fn as_sync(&self) -> &DataWriter<T> {
         &self.inner
     }
 
-    /// Liefert die DataWriterQos.
+    /// Returns the DataWriterQos.
     #[must_use]
     pub fn qos(&self) -> DataWriterQos {
         self.inner.qos()

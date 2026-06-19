@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Query-Engine — DDS 1.4 §B.7.
+//! Query engine — DDS 1.4 §B.7.
 //!
-//! Spec §B.7: DLRL bietet objektzentrische Queries mit Filter,
-//! Order und Limit ueber den Object-Cache.
+//! Spec §B.7: DLRL offers object-centric queries with filter, order,
+//! and limit over the object cache.
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -12,21 +12,21 @@ use alloc::vec::Vec;
 
 use crate::object_cache::{ObjectCache, ObjectRef};
 
-/// Sortierreihenfolge.
+/// Sort order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortOrder {
-    /// Aufsteigend.
+    /// Ascending.
     Ascending,
-    /// Absteigend.
+    /// Descending.
     Descending,
 }
 
-/// Query-Fehler.
+/// Query error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QueryError {
-    /// Limit ueberschreitet u32::MAX.
+    /// Limit exceeds u32::MAX.
     LimitTooLarge,
-    /// Topic-Filter ist leer-string (Spec verbietet das).
+    /// Topic filter is an empty string (the spec forbids that).
     EmptyTopic,
 }
 
@@ -42,16 +42,16 @@ impl core::fmt::Display for QueryError {
 #[cfg(feature = "std")]
 impl std::error::Error for QueryError {}
 
-/// Query-Result — Slice-aehnliche Liste von ObjectRefs.
+/// Query result — slice-like list of ObjectRefs.
 pub type QueryResult = Vec<ObjectRef>;
 
-/// Custom-Filter-Function.
+/// Custom filter function.
 pub type FilterFn = Box<dyn Fn(&ObjectRef) -> bool + Send + Sync>;
 
-/// Sort-Key-Extraction-Function.
+/// Sort-key extraction function.
 pub type SortKeyFn = Box<dyn Fn(&ObjectRef) -> Vec<u8> + Send + Sync>;
 
-/// Query-Builder. Spec §B.7.
+/// Query builder. Spec §B.7.
 pub struct Query {
     topic_filter: Option<String>,
     state_filter: Option<crate::object_cache::ObjectState>,
@@ -79,7 +79,7 @@ impl Default for Query {
 }
 
 impl Query {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -91,10 +91,10 @@ impl Query {
         }
     }
 
-    /// Topic-Filter — nur Objekte dieses Topics.
+    /// Topic filter — only objects of this topic.
     ///
     /// # Errors
-    /// `EmptyTopic` wenn der Filter ein Leerstring ist.
+    /// `EmptyTopic` if the filter is an empty string.
     pub fn topic(mut self, topic: &str) -> Result<Self, QueryError> {
         if topic.is_empty() {
             return Err(QueryError::EmptyTopic);
@@ -103,14 +103,14 @@ impl Query {
         Ok(self)
     }
 
-    /// State-Filter.
+    /// State filter.
     #[must_use]
     pub fn state(mut self, state: crate::object_cache::ObjectState) -> Self {
         self.state_filter = Some(state);
         self
     }
 
-    /// Custom-Filter.
+    /// Custom filter.
     #[must_use]
     pub fn filter<F>(mut self, f: F) -> Self
     where
@@ -120,7 +120,7 @@ impl Query {
         self
     }
 
-    /// Sortierung — Caller liefert eine Key-Extraction-Funktion.
+    /// Sorting — the caller supplies a key-extraction function.
     #[must_use]
     pub fn order_by<F>(mut self, order: SortOrder, key_fn: F) -> Self
     where
@@ -133,7 +133,7 @@ impl Query {
     /// Limit.
     ///
     /// # Errors
-    /// `LimitTooLarge` wenn `limit > u32::MAX`.
+    /// `LimitTooLarge` if `limit > u32::MAX`.
     pub fn limit(mut self, limit: usize) -> Result<Self, QueryError> {
         if limit > u32::MAX as usize {
             return Err(QueryError::LimitTooLarge);
@@ -142,7 +142,7 @@ impl Query {
         Ok(self)
     }
 
-    /// Spec §B.7.1 — Execute Query gegen einen ObjectCache.
+    /// Spec §B.7.1 — execute the query against an ObjectCache.
     pub fn execute(&self, cache: &ObjectCache) -> QueryResult {
         let mut out: Vec<ObjectRef> = cache
             .iter()

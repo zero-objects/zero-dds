@@ -3,8 +3,8 @@
 //! Emittiert IDL `enum` → Rust `enum`.
 //!
 //! XTypes 1.3 §7.4.5.1 Enum-Wire-Format: 32-bit signed integer (`i32`)
-//! mit dem Wert des Enumerators. Default-Mapping: 0..N-1 in
-//! deklarations-Reihenfolge.
+//! with the value of the enumerator. Default mapping: 0..N-1 in
+//! declaration order.
 
 use zerodds_idl::ast::types::EnumDef;
 
@@ -43,7 +43,7 @@ pub fn emit_enum(out: &mut String, e: &EnumDef) -> Result<()> {
     out.push_str("impl ");
     out.push_str(&escape_keyword(&e.name.text));
     out.push_str(" {\n");
-    out.push_str("    /// Versucht einen `i32`-Wire-Wert auf einen Enumerator zu mappen.\n");
+    out.push_str("    /// Tries to map an `i32` wire value to an enumerator.\n");
     out.push_str("    #[must_use]\n");
     out.push_str("    pub fn from_wire(value: i32) -> Option<Self> {\n");
     out.push_str("        match value {\n");
@@ -58,9 +58,9 @@ pub fn emit_enum(out: &mut String, e: &EnumDef) -> Result<()> {
     out.push_str("    }\n");
     out.push_str("}\n\n");
 
-    // CdrEncode/CdrDecode-Impls — wir delegieren an i32 (Wire-Format
-    // §7.4.5.1) und nutzen die existing `impl CdrEncode for i32` aus
-    // zerodds_cdr::encode (das macht intern den u32-cast + write_u32).
+    // CdrEncode/CdrDecode impls — we delegate to i32 (wire format
+    // §7.4.5.1) and use the existing `impl CdrEncode for i32` from
+    // zerodds_cdr::encode (which internally does the u32 cast + write_u32).
     out.push_str("impl zerodds_cdr::CdrEncode for ");
     out.push_str(&escape_keyword(&e.name.text));
     out.push_str(" {\n");

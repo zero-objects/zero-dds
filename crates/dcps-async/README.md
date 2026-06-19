@@ -3,28 +3,28 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-dcps-async/badge.svg)](https://docs.rs/zerodds-dcps-async)
 
-Runtime-agnostische async-Wrappers um die [`zerodds-dcps`](../dcps) Sync-API. Newtypes teilen den internen `Arc<...>` mit den Sync-Pendants — kein State-Duplikat, kein Performance-Overhead. Safety classification: **STANDARD**.
+Runtime-agnostic async wrappers around the [`zerodds-dcps`](../dcps) sync API. Newtypes share the internal `Arc<...>` with the sync counterparts — no state duplicate, no performance overhead. Safety classification: **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| ZeroDDS-async 1.0 | §1–§9 (komplett) |
-| OMG DDS 1.4 | §2.2.2.4–5 (DataWriter/DataReader-API) |
+| ZeroDDS-async 1.0 | §1–§9 (complete) |
+| OMG DDS 1.4 | §2.2.2.4–5 (DataWriter/DataReader API) |
 
-## Was ist drin
+## What's inside
 
-- **Async-Newtypes** — `AsyncDomainParticipantFactory`, `AsyncDomainParticipant`, `AsyncPublisher`, `AsyncDataWriter<T>`, `AsyncSubscriber`, `AsyncDataReader<T>`. Jeder Newtype haelt einen `Arc<...>` auf das Sync-Pendant.
-- **`write().await`** — yield-basierte Retry-Schleife auf `OutOfResources`-Backpressure (Spec §5.1). `Condvar::wait_timeout`-Sync-Block durch `yield_for`-Future ersetzt; Caller-Tasks bleiben cancelable.
-- **`take(timeout).await`** — Polling-Future mit Deadline; leerer `Vec<T>` bei Timeout (analog Sync-Semantik).
-- **`SampleStream`** (Spec §2.2.1) — `Stream<Item = T>`. Live-Mode nutzt `register_user_reader_waker` an der Runtime; Wake erfolgt beim `sample_tx.send` (kein Polling). Offline-Mode: detached-Thread-Sleep als Polling-Fallback (Spec §3.3).
-- **`DataAvailableStream`** (Spec §6.1) — `Stream<Item = ()>`. Signalisiert "neue Daten verfuegbar" pro Sample-Zufluss; konsumiert keine Samples (Caller ruft `take()` separat).
-- **`PublicationMatchedStream`** (Spec §6.2) — `Stream<Item = SubscriptionMatchedStatus>`. Emittiert den vollen Reader-side Match-Status (DDS 1.4 §2.2.4.1 SUBSCRIPTION_MATCHED) bei jeder Aenderung.
-- **`wait_for_matched_*`-Futures** — Async-Polling-Schleifen mit Deadline.
+- **Async newtypes** — `AsyncDomainParticipantFactory`, `AsyncDomainParticipant`, `AsyncPublisher`, `AsyncDataWriter<T>`, `AsyncSubscriber`, `AsyncDataReader<T>`. Each newtype holds an `Arc<...>` to the sync counterpart.
+- **`write().await`** — yield-based retry loop on `OutOfResources` backpressure (spec §5.1). The `Condvar::wait_timeout` sync block is replaced by a `yield_for` Future; caller tasks stay cancelable.
+- **`take(timeout).await`** — polling Future with deadline; empty `Vec<T>` on timeout (analogous to sync semantics).
+- **`SampleStream`** (spec §2.2.1) — `Stream<Item = T>`. Live mode uses `register_user_reader_waker` on the runtime; wake happens on `sample_tx.send` (no polling). Offline mode: detached-thread sleep as polling fallback (spec §3.3).
+- **`DataAvailableStream`** (spec §6.1) — `Stream<Item = ()>`. Signals "new data available" per sample inflow; consumes no samples (the caller calls `take()` separately).
+- **`PublicationMatchedStream`** (spec §6.2) — `Stream<Item = SubscriptionMatchedStatus>`. Emits the full reader-side match status (DDS 1.4 §2.2.4.1 SUBSCRIPTION_MATCHED) on every change.
+- **`wait_for_matched_*` Futures** — async polling loops with deadline.
 
-## Schichten-Position
+## Layer position
 
-Layer 4 — Core Services. Aufgesetzt auf `zerodds-dcps` (Layer 4) und `zerodds-qos` (Layer 1). Runtime-agnostisch — nutzt `futures-core::Stream`, optional `tokio::time::sleep` mit Feature `tokio-glue`. Default-Pfad ist Detached-Thread-Sleep.
+Layer 4 — Core Services. Built on `zerodds-dcps` (layer 4) and `zerodds-qos` (layer 1). Runtime-agnostic — uses `futures-core::Stream`, optionally `tokio::time::sleep` with feature `tokio-glue`. The default path is detached-thread sleep.
 
 ## Quickstart
 
@@ -51,16 +51,16 @@ async fn main() {
 }
 ```
 
-## Feature-Flags
+## Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std` | ✅ | Standard-Library + Threads + Detached-Thread-Sleep. |
-| `tokio-glue` | ❌ | `tokio::time::sleep` als Backend fuer `yield_for` (statt detached-Thread). Reduziert Spawn-Overhead bei tokio-basiertem Caller. |
+| `std` | ✅ | Standard library + threads + detached-thread sleep. |
+| `tokio-glue` | ❌ | `tokio::time::sleep` as backend for `yield_for` (instead of detached thread). Reduces spawn overhead with a tokio-based caller. |
 
-## Stabilitaet
+## Stability
 
-Alle `pub`-Items sind ab `1.0.0` stabil; Breaking-Changes erfordern Major-Bump.
+All `pub` items are stable from `1.0.0`; breaking changes require a major bump.
 
 ## Tests
 
@@ -68,11 +68,11 @@ Alle `pub`-Items sind ab `1.0.0` stabil; Breaking-Changes erfordern Major-Bump.
 cargo test -p zerodds-dcps-async
 ```
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../../LICENSE).
+Apache-2.0. See [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
-- [`zerodds-dcps`](../dcps) — die zugrundeliegende Sync-API
-- [`docs/specs/zerodds-async-1.0.md`](../../docs/specs/zerodds-async-1.0.md) — async-API-Spec
+- [`zerodds-dcps`](../dcps) — the underlying sync API
+- [`docs/specs/zerodds-async-1.0.md`](../../docs/specs/zerodds-async-1.0.md) — async API spec

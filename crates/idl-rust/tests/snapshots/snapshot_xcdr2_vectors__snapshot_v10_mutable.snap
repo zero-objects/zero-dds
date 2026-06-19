@@ -23,7 +23,7 @@ impl zerodds_dcps::DdsType for M {
     const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xd8, 0x63, 0xdf, 0xe7, 0xf7, 0x52, 0xe3, 0xfe, 0x68, 0x06, 0x04, 0xcb, 0xeb, 0x73]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
-        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
         zerodds_cdr::struct_enc::encode_appendable(&mut writer, |w| {
             let mut enc = zerodds_cdr::struct_enc::MutableStructEncoder::new(w, ::std::vec![1, 2]);
             enc.encode_member(1, false, |w| { <_ as zerodds_cdr::CdrEncode>::encode(&self.a, w)?; Ok(()) })?;
@@ -36,7 +36,7 @@ impl zerodds_dcps::DdsType for M {
     }
 
     fn decode(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
-        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little).xcdr2();
         zerodds_cdr::struct_enc::decode_appendable(&mut reader, |r| {
             // member-id 1
             let mut a: ::core::option::Option<i32> = ::core::option::Option::None;
@@ -45,7 +45,7 @@ impl zerodds_dcps::DdsType for M {
             loop {
                 match zerodds_cdr::struct_enc::read_mutable_member(r)? {
                     ::core::option::Option::Some(member) => {
-                        let mut body_reader = zerodds_cdr::BufferReader::new(member.body, zerodds_cdr::Endianness::Little);
+                        let mut body_reader = zerodds_cdr::BufferReader::new(member.body, zerodds_cdr::Endianness::Little).xcdr2();
                         match member.member_id {
                             1 => {
                                 a = ::core::option::Option::Some(<i32 as zerodds_cdr::CdrDecode>::decode(&mut body_reader)?);
@@ -79,5 +79,24 @@ impl zerodds_dcps::DdsType for M {
             "b" => ::core::option::Option::Some(zerodds_sql_filter::Value::String(self.b.clone())),
             _ => ::core::option::Option::None,
         }
+    }
+}
+
+impl zerodds_cdr::CdrEncode for M {
+    fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.a, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.b, writer)?;
+        ::core::result::Result::Ok(())
+    }
+}
+
+impl zerodds_cdr::CdrDecode for M {
+    fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
+        let a = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let b = <String as zerodds_cdr::CdrDecode>::decode(reader)?;
+        ::core::result::Result::Ok(Self {
+            a,
+            b,
+        })
     }
 }

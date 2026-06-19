@@ -2,15 +2,15 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Map-Key-Validation (XTypes 1.3 §7.2.2.4.6.6 + §7.2.4.4.8).
 //!
-//! Spec-Constraint: Der Key-Typ einer `map<K, V, N>` MUSS einer der
-//! folgenden sein:
+//! Spec constraint: the key type of a `map<K, V, N>` MUST be one of
+//! the following:
 //!   - Integer (int8/16/32/64, uint8/16/32/64)
 //!   - char, wchar, octet, boolean
-//!   - Enumerated (per ScopedName-Resolution)
+//!   - Enumerated (via ScopedName resolution)
 //!   - String / WString
 //!
-//! Verboten: Struct, Union, Sequence, Array, Map, Fixed, Float-/Double-,
-//! ValueType, Interface, Object/Any.
+//! Forbidden: struct, union, sequence, array, map, fixed, float/double,
+//! valuetype, interface, Object/Any.
 
 use crate::ast::{
     ConstrTypeDecl, Definition, Member, PrimitiveType, ScopedName, Specification, StructDef,
@@ -18,20 +18,20 @@ use crate::ast::{
 };
 use crate::errors::Span;
 
-/// Validierungs-Fehler einer `map<K, V, N>`.
+/// Validation error of a `map<K, V, N>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MapValidationError {
-    /// §7.2.2.4.6.6 / §7.2.4.4.8 — Map-Key-Typ ist nicht in der erlaubten
-    /// Whitelist (primitive int/char/bool/string/enum).
+    /// §7.2.2.4.6.6 / §7.2.4.4.8 — the map-key type is not in the allowed
+    /// whitelist (primitive int/char/bool/string/enum).
     InvalidMapKeyType {
-        /// Beschreibung des verwendeten Key-Typs.
+        /// Description of the used key type.
         kind: String,
-        /// Quellort der Map-Deklaration.
+        /// Source location of the map declaration.
         span: Span,
     },
 }
 
-/// Walks alle Maps in der Specification und liefert Verletzungen.
+/// Walks all maps in the specification and returns violations.
 #[must_use]
 pub fn validate_maps(spec: &Specification) -> Vec<MapValidationError> {
     let mut errs = Vec::new();
@@ -108,11 +108,11 @@ fn is_valid_map_key(ts: &TypeSpec) -> bool {
                 | PrimitiveType::Octet
         ),
         TypeSpec::String(_) => true,
-        // Scoped name kann ein Enum oder ein typedef-Alias sein. Ohne
-        // Resolver kann der Validator das nicht abschliessend ueberpruefen
-        // — wir akzeptieren scoped-name-Keys hier optimistisch und
-        // verlassen uns auf den Resolver-Pass, der dann nicht-Enum
-        // scoped-names mit eigener Diagnose meldet.
+        // A scoped name can be an enum or a typedef alias. Without the
+        // resolver the validator cannot check this conclusively
+        // — we accept scoped-name keys optimistically here and
+        // rely on the resolver pass, which then reports non-enum
+        // scoped names with its own diagnostic.
         TypeSpec::Scoped(_) => true,
         _ => false,
     }
@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn map_key_element_type_must_be_primitive() {
-        // sequence<long> als Key-Typ — nicht erlaubt.
+        // sequence<long> as key type — not allowed.
         let ast = parse_to_ast("struct S { map<sequence<long>, long, 10> m; };");
         let errs = validate_maps(&ast);
         assert!(
@@ -196,8 +196,8 @@ mod tests {
 
     #[test]
     fn map_value_type_can_be_anything() {
-        // Value-Typ ist NICHT eingeschraenkt — sequence<long> als Value
-        // ist OK.
+        // The value type is NOT restricted — sequence<long> as a value
+        // is OK.
         let ast = parse_to_ast("struct S { map<long, sequence<long>, 10> m; };");
         let errs = validate_maps(&ast);
         assert!(errs.is_empty(), "got {errs:?}");

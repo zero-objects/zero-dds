@@ -3,38 +3,38 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-corba-giop/badge.svg)](https://docs.rs/zerodds-corba-giop)
 
-OMG CORBA 3.3 Part 2 §15 — General Inter-ORB Protocol (GIOP) Wire-
-Codec. Voller Stack mit allen 8 Message-Types fuer GIOP 1.0, 1.1
-und 1.2 (inkl. Bidirectional-GIOP). `no_std + alloc`,
+OMG CORBA 3.3 Part 2 §15 — General Inter-ORB Protocol (GIOP) wire
+codec. Full stack with all 8 message types for GIOP 1.0, 1.1
+and 1.2 (including bidirectional GIOP). `no_std + alloc`,
 `forbid(unsafe_code)`. Safety classification: **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
 | OMG CORBA 3.3 Part 2 | §15 General Inter-ORB Protocol |
-| OMG CORBA 3.3 Part 2 | §15.4.1-§15.4.9 (alle 8 Message-Types) |
-| OMG CORBA 3.3 Part 2 | §15.5 Service-Context-Tags |
+| OMG CORBA 3.3 Part 2 | §15.4.1-§15.4.9 (all 8 message types) |
+| OMG CORBA 3.3 Part 2 | §15.5 service context tags |
 
-## Was ist drin
+## What's included
 
-- **Header + Codec** (`encode_message` / `decode_message`,
+- **Header + codec** (`encode_message` / `decode_message`,
   `MessageHeader`, `Version`, `Flags`, `MessageType`, `MAGIC`).
-- **Alle 8 Message-Types** — Request/Reply/CancelRequest/
+- **All 8 message types** — Request/Reply/CancelRequest/
   LocateRequest/LocateReply/CloseConnection/MessageError/Fragment.
-- **Reply-Statuses** (alle 6 — NO_EXCEPTION/USER_EXCEPTION/
+- **Reply statuses** (all 6 — NO_EXCEPTION/USER_EXCEPTION/
   SYSTEM_EXCEPTION/LOCATION_FORWARD/LOCATION_FORWARD_PERM/
   NEEDS_ADDRESSING_MODE).
-- **GIOP 1.2 TargetAddress-Union** + ObjectKey.
-- **ServiceContext + List + Tags**.
+- **GIOP 1.2 TargetAddress union** + ObjectKey.
+- **ServiceContext + list + tags**.
 
-## Was nicht abgedeckt ist
+## What's not covered
 
-- Transport (TCP/UDS-Lieferung): liegt in `corba-iiop`.
-- IOR-Format: liegt in `corba-ior`.
-- POA Servant-Dispatch: liegt in `corba-poa`.
+- Transport (TCP/UDS delivery): lives in `corba-iiop`.
+- IOR format: lives in `corba-ior`.
+- POA servant dispatch: lives in `corba-poa`.
 
-## Beispiel
+## Example
 
 ```rust
 use zerodds_corba_giop::{MAGIC_BYTES, Version};

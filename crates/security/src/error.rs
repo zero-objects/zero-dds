@@ -1,57 +1,57 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Security-Error-Typen. OMG DDS-Security 1.1 §8.1.2 `SecurityException`.
+//! Security error types. OMG DDS-Security 1.1 §8.1.2 `SecurityException`.
 //!
-//! Ein gemeinsamer Error-Typ ueber alle Plugins — damit Call-Sites nicht
-//! fuenf verschiedene Result-Variants handhaben muessen. Die `Kind`-
-//! Varianten matchen die Spec-Fehlercodes.
+//! A common error type across all plugins — so that call sites do not
+//! have to handle five different result variants. The `Kind`
+//! variants match the spec error codes.
 
 extern crate alloc;
 
 use alloc::borrow::Cow;
 use core::fmt;
 
-/// Security-Operation-Fehler.
+/// Security operation error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct SecurityError {
-    /// Fehler-Kategorie.
+    /// Error category.
     pub kind: SecurityErrorKind,
-    /// Menschenlesbarer Hinweis (nicht fuer Endnutzer — intern).
+    /// Human-readable hint (not for end users — internal).
     pub detail: Cow<'static, str>,
 }
 
-/// Kategorie des Security-Fehlers.
+/// Category of the security error.
 ///
-/// Spec-Bezug OMG DDS-Security 1.1 §8.1.2. Die Codes sind offen
-/// gehalten (`#[non_exhaustive]`), damit v1.4 zusaetzliche Varianten
-/// ohne Breaking-Change einfuegen kann.
+/// Spec reference OMG DDS-Security 1.1 §8.1.2. The codes are kept
+/// open (`#[non_exhaustive]`) so that v1.4 can add additional variants
+/// without a breaking change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SecurityErrorKind {
-    /// Identity-Handshake fehlgeschlagen (Zertifikat ungueltig,
-    /// Signatur falsch, Peer nicht im Trust-Store).
+    /// Identity handshake failed (certificate invalid,
+    /// signature wrong, peer not in the trust store).
     AuthenticationFailed,
-    /// Peer hat keine Permission fuer diese Operation.
+    /// The peer has no permission for this operation.
     AccessDenied,
-    /// Cryptographic-Operation fehlgeschlagen (AES-GCM-Tag-Verify,
-    /// HMAC-Mismatch, Key-unbekannt).
+    /// Cryptographic operation failed (AES-GCM tag verify,
+    /// HMAC mismatch, key unknown).
     CryptoFailed,
-    /// Fehlende oder unplausible Konfiguration (z.B. Cert fehlt,
-    /// Permissions-XML parst nicht).
+    /// Missing or implausible configuration (e.g. cert missing,
+    /// permissions XML does not parse).
     InvalidConfiguration,
-    /// Ungueltiges Argument (None wo Some erwartet, leerer Key usw.).
+    /// Invalid argument (None where Some expected, empty key, etc.).
     BadArgument,
-    /// Feature nicht implementiert. v1.3-Plugin-SPI signalisiert so,
-    /// wenn eine Methode in v1.4 vorgesehen ist.
+    /// Feature not implemented. The v1.3 plugin SPI signals this way
+    /// when a method is planned for v1.4.
     NotImplemented,
-    /// Interne unerwartete Error — Plugin-Bug.
+    /// Internal unexpected error — plugin bug.
     Internal,
 }
 
 impl SecurityError {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(kind: SecurityErrorKind, detail: impl Into<Cow<'static, str>>) -> Self {
         Self {
@@ -60,13 +60,13 @@ impl SecurityError {
         }
     }
 
-    /// Shortcut fuer `NotImplemented`.
+    /// Shortcut for `NotImplemented`.
     #[must_use]
     pub fn not_implemented(detail: impl Into<Cow<'static, str>>) -> Self {
         Self::new(SecurityErrorKind::NotImplemented, detail)
     }
 
-    /// Shortcut fuer `BadArgument`.
+    /// Shortcut for `BadArgument`.
     #[must_use]
     pub fn bad_argument(detail: impl Into<Cow<'static, str>>) -> Self {
         Self::new(SecurityErrorKind::BadArgument, detail)
@@ -82,5 +82,5 @@ impl fmt::Display for SecurityError {
 #[cfg(feature = "std")]
 impl std::error::Error for SecurityError {}
 
-/// Plugin-Operation-Result.
+/// Plugin operation result.
 pub type SecurityResult<T> = core::result::Result<T, SecurityError>;

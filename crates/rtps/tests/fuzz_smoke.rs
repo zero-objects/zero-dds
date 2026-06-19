@@ -1,9 +1,9 @@
-//! Stable-Rust Fuzz-Smoke-Tests: pseudo-random Byte-Streams in alle
-//! Wire-Decoder + den FragmentAssembler. **Kein echtes coverage-guided
-//! Fuzzing**, aber ein Panic-Smoke: der Decoder darf auf *keinen* Input
-//! panic/abort — nur `Ok(..)` oder `Err(WireError::..)` sind erlaubt.
+//! Stable-Rust fuzz smoke tests: pseudo-random byte streams into all
+//! wire decoders + the FragmentAssembler. **Not real coverage-guided
+//! fuzzing**, but a panic smoke: the decoder must not panic/abort on *any*
+//! input — only `Ok(..)` or `Err(WireError::..)` are allowed.
 //!
-//! Fuer echtes cargo-fuzz-Targets siehe `crates/rtps/fuzz/` (benoetigt
+//! For real cargo-fuzz targets see `crates/rtps/fuzz/` (requires
 //! nightly + `cargo install cargo-fuzz`).
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
@@ -18,7 +18,7 @@ use zerodds_rtps::submessages::{
 mod common;
 use common::XorShift32;
 
-/// Generiert einen pseudo-random Byte-Buffer aus dem Seed.
+/// Generates a pseudo-random byte buffer from the seed.
 fn random_bytes(rng: &mut XorShift32, len: usize) -> Vec<u8> {
     let mut out = Vec::with_capacity(len);
     while out.len() < len {
@@ -29,9 +29,9 @@ fn random_bytes(rng: &mut XorShift32, len: usize) -> Vec<u8> {
     out
 }
 
-/// Wrapper: nimmt Closure, die auf zufaelligem Input operieren soll,
-/// und treibt sie mit N Iterationen in variablen Groessen. Erlaubt
-/// beliebige Ergebnisse — der Test schlaegt **nur** bei Panic fehl.
+/// Wrapper: takes a closure that should operate on random input,
+/// and drives it with N iterations in variable sizes. Allows
+/// arbitrary results — the test fails **only** on panic.
 fn fuzz<F: FnMut(&[u8])>(seed: u32, iterations: usize, mut f: F) {
     let mut rng = XorShift32::new(seed);
     for i in 0..iterations {
@@ -55,7 +55,7 @@ fn fuzz<F: FnMut(&[u8])>(seed: u32, iterations: usize, mut f: F) {
 #[test]
 fn fuzz_decode_datagram_does_not_panic() {
     fuzz(0x1234_5678, 2000, |buf| {
-        // Darf nur Ok(_) oder Err(WireError::_) zurueckgeben — kein Panic.
+        // May only return Ok(_) or Err(WireError::_) — no panic.
         let _ = decode_datagram(buf);
     });
 }
@@ -86,8 +86,8 @@ fn fuzz_data_read_body_does_not_panic() {
 #[test]
 fn fuzz_data_frag_read_body_does_not_panic() {
     fuzz(0x1337_F00D, 1000, |buf| {
-        // Alle Flag-Kombinationen — Fuzzer soll keine triggert nur
-        // eine bestimmte Branch.
+        // All flag combinations — the fuzzer should not trigger only
+        // one specific branch.
         for flags in 0..16_u8 {
             let q = flags & 1 != 0;
             let h = flags & 2 != 0;
@@ -121,7 +121,7 @@ fn fuzz_acknack_read_body_does_not_panic() {
 fn fuzz_gap_read_body_does_not_panic() {
     fuzz(0xABCD_EF01, 1000, |buf| {
         let _ = GapSubmessage::read_body(buf, true, false, false);
-        // Auch mit gesetzten Flags fuzzen, um den Trailer-Pfad zu treffen.
+        // Also fuzz with flags set, to hit the trailer path.
         let _ = GapSubmessage::read_body(buf, true, true, true);
     });
 }
@@ -140,7 +140,7 @@ fn fuzz_nack_frag_read_body_does_not_panic() {
     });
 }
 
-/// DataFrag-Fixture-Helfer fuer Fuzz-Tests.
+/// DataFrag fixture helper for fuzz tests.
 fn df_arbitrary(
     sn: i64,
     starting: u32,
@@ -189,9 +189,9 @@ fn fuzz_assembler_insert_random_does_not_panic() {
 
 #[test]
 fn fuzz_assembler_edge_values_do_not_panic() {
-    // Gezielte Edge-Werte, die ein Pure-Random-Fuzzer selten trifft.
-    // Jeder Case muss via DoS-Caps oder Validierung abgefangen werden —
-    // nie Panic, nie OOM-Allocation.
+    // Targeted edge values that a pure-random fuzzer rarely hits.
+    // Each case must be caught via DoS caps or validation —
+    // never panic, never OOM allocation.
     let mut a = FragmentAssembler::default();
 
     // sample_size = u32::MAX → SampleTooLarge (no alloc)
@@ -200,7 +200,7 @@ fn fuzz_assembler_edge_values_do_not_panic() {
     let _ = a.insert(&df_arbitrary(2, 1, 1, 100, 0, vec![]));
     // fragment_size = 0 → FragmentSizeInvalid
     let _ = a.insert(&df_arbitrary(3, 1, 1, 0, 100, vec![]));
-    // fragment_size = u16::MAX, sample_size = u16::MAX-1 → genau 1 Fragment
+    // fragment_size = u16::MAX, sample_size = u16::MAX-1 → exactly 1 fragment
     let _ = a.insert(&df_arbitrary(
         4,
         1,
@@ -217,30 +217,30 @@ fn fuzz_assembler_edge_values_do_not_panic() {
     let _ = a.insert(&df_arbitrary(7, 1, 0, 4, 4, vec![1, 2, 3, 4]));
     // fragments_in_submessage = u16::MAX → starting + count Overflow
     let _ = a.insert(&df_arbitrary(8, 1, u16::MAX, 4, 100, vec![]));
-    // Payload leer, aber erwartet voll → PayloadSizeMismatch
+    // Payload empty, but expected full → PayloadSizeMismatch
     let _ = a.insert(&df_arbitrary(9, 1, 1, 4, 4, vec![]));
     // Payload zu lang → PayloadSizeMismatch
     let _ = a.insert(&df_arbitrary(10, 1, 1, 4, 4, vec![0; 100]));
-    // writer_sn = 0 (SN-Space beginnt spec-maessig bei 1, aber wir
-    // pruefen nur ≤ delivered_up_to — Assembler sieht writer_sn nie direkt)
+    // writer_sn = 0 (the SN space starts at 1 per spec, but we
+    // only check ≤ delivered_up_to — the assembler never sees writer_sn directly)
     let _ = a.insert(&df_arbitrary(0, 1, 1, 4, 4, vec![1, 2, 3, 4]));
-    // writer_sn negativ (illegal per Spec, aber i64-Wire-Feld erlaubt's)
+    // writer_sn negative (illegal per spec, but the i64 wire field allows it)
     let _ = a.insert(&df_arbitrary(-1, 1, 1, 4, 4, vec![1, 2, 3, 4]));
-    // Inkonsistente Folge-Fragmente (schon-vorhandene-sn + anderer
+    // Inconsistent follow-up fragments (already-present sn + different
     // sample_size) → InconsistentWithBuffered
     let _ = a.insert(&df_arbitrary(20, 1, 1, 4, 8, vec![1, 2, 3, 4]));
     let _ = a.insert(&df_arbitrary(20, 2, 1, 4, 99, vec![5, 6, 7, 8]));
 
-    // Nach all dem darf der Assembler weiter sinnvoll arbeiten
+    // After all that the assembler must keep working sensibly
     let res = a.insert(&df_arbitrary(100, 1, 1, 4, 4, vec![1, 2, 3, 4]));
     assert!(res.is_some(), "assembler still works after edge inputs");
 }
 
 #[test]
 fn fuzz_assembler_slow_drip_attack_evicts_oldest() {
-    // Slow-drip: Angreifer schickt je 1 Fragment fuer viele SNs.
-    // max_pending_sns=64 → ab 65. SN muss evicten, und zwar **LRU:
-    // die kleinste/aelteste SN**, nicht die neueste.
+    // Slow-drip: an attacker sends 1 fragment each for many SNs.
+    // max_pending_sns=64 → from 65. SN must evict, namely **LRU:
+    // the smallest/oldest SN**, not the newest.
     use zerodds_rtps::wire_types::{FragmentNumber, SequenceNumber};
     let mut a = FragmentAssembler::default();
     for sn in 1..=200i64 {
@@ -252,13 +252,13 @@ fn fuzz_assembler_slow_drip_attack_evicts_oldest() {
         "dropped >= 136 buffers via LRU eviction"
     );
 
-    // D4-Schaerfung: pruefen, dass die **letzten 64 SNs** drin sind
-    // (137..=200), und alle davor rausgeworfen wurden. Wenn die LRU-
-    // Richtung umgedreht wuerde (neueste statt aelteste evicten),
-    // wuerde dieser Test fehlschlagen.
+    // D4 sharpening: check that the **last 64 SNs** are in
+    // (137..=200), and all before were thrown out. If the LRU
+    // direction were reversed (evicting newest instead of oldest),
+    // this test would fail.
     let active: Vec<_> = a.incomplete_sns().collect();
     assert_eq!(active.len(), 64);
-    // Sortiert nach SN (BTreeMap-Iteration) → ordinal exakt 137..=200.
+    // Sorted by SN (BTreeMap iteration) → ordinal exactly 137..=200.
     for (i, sn) in active.iter().enumerate() {
         assert_eq!(
             *sn,
@@ -269,16 +269,16 @@ fn fuzz_assembler_slow_drip_attack_evicts_oldest() {
             i
         );
     }
-    // Zusaetzliche Absicherung: eine alte SN (sn=10) ist weg →
-    // missing_fragments liefert leeres Set, nicht etwa die vorherigen
+    // Additional safeguard: an old SN (sn=10) is gone →
+    // missing_fragments returns an empty set, not the previous ones
     // Luecken.
     let missing_of_old = a.missing_fragments(SequenceNumber(10));
     assert_eq!(
         missing_of_old.num_bits, 0,
         "evicted SN 10 must have empty missing-set (it's gone, not just unfinished)"
     );
-    // Eine aktuelle SN hat eine Luecke (wir haben nur Fragment 1 von 3
-    // geschickt, also fehlen 2 und 3).
+    // A current SN has a gap (we sent only fragment 1 of 3,
+    // so 2 and 3 are missing).
     let missing_of_new = a.missing_fragments(SequenceNumber(200));
     let missing_vec: Vec<_> = missing_of_new.iter_set().collect();
     assert_eq!(

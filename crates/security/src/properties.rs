@@ -1,35 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Property-Liste — Name/Value-Paare für Plugin-Konfiguration.
+//! Property list — name/value pairs for plugin configuration.
 //!
 //! Spec OMG DDS-Security 1.1 §8.2.1 `Property_t` + `PropertyQosPolicy`.
-//! Properties werden beim Participant erzeugt und an die Plugins
-//! durchgereicht (z.B. Zertifikats-Pfade, HSM-URIs, Cipher-Suites).
+//! Properties are created on the participant and passed through to the
+//! plugins (e.g. certificate paths, HSM URIs, cipher suites).
 
 extern crate alloc;
 
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
-/// Ein einzelnes Property: Name + Value.
+/// A single property: name + value.
 ///
-/// `propagate=true` wird an Remote-Participants via SEDP gesendet (z.B.
-/// `dds.sec.permissions_hash`); `false` bleibt lokal (z.B.
-/// `dds.sec.auth.private_key_path` — nie ueber die Wire!).
+/// `propagate=true` is sent to remote participants via SEDP (e.g.
+/// `dds.sec.permissions_hash`); `false` stays local (e.g.
+/// `dds.sec.auth.private_key_path` — never over the wire!).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Property {
-    /// Key (reverse-DNS Convention, `dds.sec.xyz`).
+    /// Key (reverse-DNS convention, `dds.sec.xyz`).
     pub name: Cow<'static, str>,
-    /// Wert (opaker UTF-8-String; Plugin interpretiert).
+    /// Value (opaque UTF-8 string; interpreted by the plugin).
     pub value: Cow<'static, str>,
-    /// `true` → via SEDP propagiert. Default `false` — niemals
-    /// geheimnisvolle Strings an Remote leaken.
+    /// `true` → propagated via SEDP. Default `false` — never
+    /// leak secret strings to remote.
     pub propagate: bool,
 }
 
 impl Property {
-    /// Konstruktor: lokal, nicht propagiert (Default).
+    /// Constructor: local, not propagated (default).
     #[must_use]
     pub fn local(name: impl Into<Cow<'static, str>>, value: impl Into<Cow<'static, str>>) -> Self {
         Self {
@@ -39,7 +39,7 @@ impl Property {
         }
     }
 
-    /// Konstruktor: wird via SEDP propagiert.
+    /// Constructor: propagated via SEDP.
     #[must_use]
     pub fn propagated(
         name: impl Into<Cow<'static, str>>,
@@ -53,21 +53,21 @@ impl Property {
     }
 }
 
-/// Liste von Properties. Reihenfolge egal, Namen muessen eindeutig sein
-/// — bei Duplikat gewinnt letzter Eintrag (wie OMG-Spec).
+/// List of properties. Order does not matter, names must be unique
+/// — on a duplicate the last entry wins (as per OMG spec).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PropertyList {
     entries: Vec<Property>,
 }
 
 impl PropertyList {
-    /// Leere Liste.
+    /// Empty list.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Fuegt ein Property hinzu (oder ersetzt, falls Name schon da).
+    /// Adds a property (or replaces it, if the name already exists).
     pub fn set(&mut self, p: Property) {
         if let Some(existing) = self.entries.iter_mut().find(|e| e.name == p.name) {
             *existing = p;
@@ -76,14 +76,14 @@ impl PropertyList {
         }
     }
 
-    /// Builder-Variante fuer `set`.
+    /// Builder variant of `set`.
     #[must_use]
     pub fn with(mut self, p: Property) -> Self {
         self.set(p);
         self
     }
 
-    /// Liefert den Wert zu einem Namen.
+    /// Returns the value for a name.
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&str> {
         self.entries
@@ -92,13 +92,13 @@ impl PropertyList {
             .map(|p| p.value.as_ref())
     }
 
-    /// Alle Properties (read-only).
+    /// All properties (read-only).
     #[must_use]
     pub fn entries(&self) -> &[Property] {
         &self.entries
     }
 
-    /// Nur propagierbare Properties (fuer SEDP-Wire).
+    /// Only propagatable properties (for the SEDP wire).
     pub fn propagatable(&self) -> impl Iterator<Item = &Property> {
         self.entries.iter().filter(|p| p.propagate)
     }

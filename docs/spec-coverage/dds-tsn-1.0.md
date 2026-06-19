@@ -1,18 +1,28 @@
 # DDS Extensions for Time Sensitive Networking 1.0 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/dds-tsn-1.0-beta2.pdf` (OMG ptc/2024-05-16).
+**Quelle:** `docs/standards/cache/omg/dds-tsn-1.0-beta2.pdf` (OMG DDS-TSN 1.0,
+ptc/2024-05-16; aus IP-/Copyright-Gründen nicht im Repo getrackt). Öffentliche
+Spec-Seite: <https://www.omg.org/spec/DDS-TSN/>.
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`.
+**Repo:** `crates/transport-tsn/` — PIM-Configuration-Modell (§7.2) + XML/JSON/YANG-PSM (§7.3) + DDSI-RTPS-Ethernet-PSM (Annex A), pure-Rust no_std+alloc. Live-AF_PACKET-Transport unter Feature `live`. 93 lib-Tests grün (Default), 105 mit `--features live` (+12 plattformneutrale `live_frame`-Tests) + veth-Roundtrip-Integrationstest (CI, root).
 
 **Kontext:** DDS-TSN bringt DDS auf IEEE-802.1-Time-Sensitive-
 Networking. ZeroDDS implementiert das **PIM-Configuration-Modell**
-(§7.2 wire-relevante Tables) und das **DDSI-RTPS-Ethernet-PSM**
-(Annex A) als pure-Rust no_std+alloc Library in
-`crates/transport-tsn/`. TSN-UNI-Wire-Protocol + 802.1AS-PTP-Daemon +
-Hardware-Acceleration (TX-Timestamping per `SO_TIMESTAMPING`/PHC) sind
-Caller-Layer.
+(§7.2 wire-relevante Tables), alle drei **Configuration-PSM** (§7.3:
+XML, JSON und die normative **YANG-Group-Transformation** §7.3.3) und
+das **DDSI-RTPS-Ethernet-PSM** (Annex A) als pure-Rust no_std+alloc
+Library — inkl. optionalem Live-AF_PACKET-Transport (Feature `live`,
+Linux). TSN-UNI-Wire-Protocol (Transport der YANG-Groups über das
+konkrete UNI-Protokoll) + 802.1AS-PTP-Daemon + Hardware-Acceleration
+(TX-Timestamping per `SO_TIMESTAMPING`/PHC) sind Caller-Layer.
 
-Implementation: `crates/transport-tsn/` (8 Module, 38 Tests gruen).
+**§3 normative Referenzen (IEEE 802.1Qbu Frame-Preemption / 802.1CB
+FRER):** Die Spec listet diese in §3 als externe IEEE-Referenzen; §2
+deklariert explizit *keine* eigenen Conformance-Points dafür. Sie sind
+also keine eigenständigen DDS-TSN-Mappings — 802.1CB taucht als
+`num_seamless_trees` (NetworkRequirements, Tab 7.18/7.25) und in den
+YANG-`interface-capabilities` (`cb-*-list`) auf, 802.1Qbv als
+`TimeAware` (Tab 7.17). Kein offenes Loch.
 
 ---
 
@@ -34,7 +44,7 @@ Implementation: `crates/transport-tsn/` (8 Module, 38 Tests gruen).
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Spec deklariert explizit keine eigenen Conformance-Points; Konformitaet wird ueber DDS-Konsumenten-Specs gemessen.
+**Status:** `n/a (informative)` — Spec deklariert explizit keine eigenen Conformance-Points; Konformität wird über DDS-Konsumenten-Specs gemessen.
 
 ---
 
@@ -46,7 +56,7 @@ Implementation: `crates/transport-tsn/` (8 Module, 38 Tests gruen).
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Externe normative Referenzen (IEEE-802.1-Familie + RFCs); werden in den jeweiligen Konsumenten-Items §7.2.3/§8.3/Annex A operativ erfuellt.
+**Status:** `n/a (informative)` — Externe normative Referenzen (IEEE-802.1-Familie + RFCs); werden in den jeweiligen Konsumenten-Items §7.2.3/§8.3/Annex A operativ erfüllt.
 
 ---
 
@@ -62,14 +72,37 @@ Implementation: `crates/transport-tsn/` (8 Module, 38 Tests gruen).
 
 ## §7.2.3 TSN Configuration
 
-### Tab 7.15 TsnTalker + Tab 7.24 TsnListener
+### Tab 7.15 TsnTalker + Tab 7.24 TsnListener + Figure 7.3 TsnConfiguration
 
 **Repo:** `crates/transport-tsn/src/stream.rs::{TsnTalker, TsnListener,
-StreamIdentifier}`.
+StreamIdentifier, TsnConfiguration}`.
+
+`TsnTalker` deckt alle Tab-7.15-Felder ab: `name`, `stream_name`,
+`traffic_specification`, `network_requirements` (0..1),
+`data_frame_specification` (0..1, `Option`), `datawriter_ref`,
+`time_aware` (0..1). `TsnListener` (Tab 7.24): `name`, `stream_name`,
+`network_requirements` (0..1), `datareader_ref`. `TsnConfiguration`
+(Figure 7.3) aggregiert `tsn_talker`/`tsn_listener` (je 0..*).
 
 **Tests:** `stream::tests::matching_stream_ids_match`,
 `different_vlan_streams_do_not_match`,
-`time_aware_talker_can_be_time_critical`.
+`time_aware_talker_can_be_time_critical`,
+`talker_carries_optional_network_requirements_per_tab_7_15`,
+`listener_carries_optional_network_requirements_per_tab_7_24`,
+`tsn_configuration_aggregates_talkers_and_listeners`.
+
+**Status:** done
+
+### Tab 7.18/7.25 NetworkRequirements
+
+**Spec:** §7.2.3.1.2 Tab 7.18 (Talker) + §7.2.3.2.1 Tab 7.25 (Listener)
+— `num_seamless_trees` (UInt8, IEEE 802.1CB FRER-Redundanz) +
+`max_latency` (Talker `UInt32`, Listener `String8`; beide Nanosekunden,
+vereinheitlicht auf `u32`).
+
+**Repo:** `crates/transport-tsn/src/network_requirements.rs::NetworkRequirements`.
+
+**Tests:** `network_requirements::tests::*` (4).
 
 **Status:** done
 
@@ -86,7 +119,7 @@ ETS/ATS) + bytes_per_second-Berechnung.
 ### Tab 7.17 TimeAware
 
 **Repo:** `crates/transport-tsn/src/time_aware.rs::TimeAware` mit
-Window-Length-Berechnung + is_valid-Praedikat.
+Window-Length-Berechnung + is_valid-Prädikat.
 
 **Tests:** `time_aware::tests::*` (4).
 
@@ -126,10 +159,12 @@ to_wire/from_wire Round-Trip + Bit-Layout-Validation.
 
 ### Tab 7.22 IPv4Tuple
 
-**Spec:** §7.2.3 Tab 7.22 — 5-Tuple-Struktur (src-IP, dst-IP, src-Port,
-dst-Port, Protocol) für IPv4.
+**Spec:** §7.2.3 Tab 7.22 — `source_ip`, `destination_ip`, `dscp`
+(RFC 2474, 64=ignore), `protocol`, `source_port`, `destination_port`
+für IPv4.
 
-**Repo:** `crates/transport-tsn/src/data_frame.rs::IPv4Tuple`.
+**Repo:** `crates/transport-tsn/src/data_frame.rs::IPv4Tuple` (inkl.
+`dscp`-Feld).
 
 **Tests:** `data_frame::tests::ipv4_tuple_carries_5_tuple_fields`.
 
@@ -137,10 +172,11 @@ dst-Port, Protocol) für IPv4.
 
 ### Tab 7.23 IPv6Tuple
 
-**Spec:** §7.2.3 Tab 7.23 — 5-Tuple-Struktur für IPv6 (16-byte
-Adressen).
+**Spec:** §7.2.3 Tab 7.23 — wie Tab 7.22 für IPv6 (16-byte Adressen),
+inkl. `dscp`.
 
-**Repo:** `crates/transport-tsn/src/data_frame.rs::IPv6Tuple`.
+**Repo:** `crates/transport-tsn/src/data_frame.rs::IPv6Tuple` (inkl.
+`dscp`-Feld).
 
 **Tests:** `data_frame::tests::ipv6_tuple_uses_16_byte_addresses`.
 
@@ -177,25 +213,61 @@ DeploymentTalker, DeploymentListener, BridgeNode, etc.
 
 ## §7.3 Configuration Representation (PSM)
 
-**Spec:** §7.3, S. 22-28 — XML/JSON/YANG-PSM.
+Alle drei normativen PSM sind abgedeckt.
 
-**Repo:** `crates/transport-tsn/src/pim/{xml,json}.rs` (XML- und
-JSON-Codec). Der JSON-PSM-Output ist gleichzeitig die **YANG-JSON-
-Form nach RFC 7951** ("JSON Encoding of Data Modeled with YANG"),
-solange die Schema-Strukturen YANG-konform sind (container/leaf/
-list/choice/case-Aequivalente). Unsere TSN-Application/Deployment-
-Library-Schemas (`pim::application`, `pim::deployment`) folgen dem
-YANG-Tree-Pattern (named container mit typisierten leaves), womit
-die JSON-Serialisierung automatisch eine valide YANG-Instance ist.
-RFC 7950 YANG-Source-Parsing (textuelle .yang-Files) ist Caller-
-Layer und nicht Teil dieses Crates — die Spec verlangt nur eine der
-drei Repraesentationen, nicht alle drei.
+### §7.3.1 XML PSM
 
-**Tests:** Cross-Ref `pim::json::tests::*` +
-`pim::xml::tests::*`.
+**Repo:** `crates/transport-tsn/src/pim/xml.rs::parse_dds_tsn_xml` —
+Loader für `<dds_tsn>` nach Spec-XSD (Tab 7.1-7.14).
 
-**Status:** done — XML + JSON-PSM (auch RFC-7951 YANG-JSON-Form)
-abgedeckt; YANG-Source-Files sind Caller-Layer.
+**Tests:** `pim::xml::tests::*` (11).
+
+**Status:** done
+
+### §7.3.2 JSON PSM
+
+**Repo:** `crates/transport-tsn/src/pim/json.rs::render_dds_tsn_json` —
+Renderer im Spec-JSON-Schema.
+
+**Tests:** `pim::json::tests::*` (4).
+
+**Status:** done
+
+### §7.3.3 YANG PSM
+
+**Spec:** §7.3.3, S. 23-27 — Transformation des Konfigurationsmodells in
+die YANG-Datenmodul-Definitionen aus IEEE 802.1Q §46.3
+(Talker-/Listener-Groups für den UNI-Austausch CUC↔CNC). Normativ und
+NICHT durch das JSON-PSM abgedeckt — es ist ein eigenes Mapping
+(stream-id-type, group-talker/group-listener mit den 802.1Q/802.1CB-
+`interface-capabilities`).
+
+**Repo:** `crates/transport-tsn/src/pim/yang.rs` — die §7.3.3-
+Transformregeln 1:1:
+
+- `StreamId` (`stream-id-type`): 6-Oktett-Node-MAC + 16-bit-DataWriter-
+  ID, YANG-String `AA-BB-CC-DD-EE-FF-NN-NN` (IEEE 802.1Qcc).
+- `GroupTalker::from_talker`: `stream-rank`=1, `end-station-interfaces`,
+  optionale `data-frame-specification` (Ethernet-MAC+VLAN / IPv4 / IPv6
+  inkl. `dscp`), `traffic-specification` (Intervall als
+  numerator/denominator, `max-frames-per-interval`, `max-frame-size`,
+  `transmission-selection`, `time-aware` mit Null bei unspezifiziert),
+  optionale `user-to-network-requirements`, `interface-capabilities`.
+- `GroupListener::from_listener`: `end-station-interfaces`,
+  `user-to-network-requirements`, `interface-capabilities`.
+- `talker_listener_groups`: ganze `TsnConfiguration` → Groups, mit
+  sequentiellen DataWriter-IDs (§7.3.3.1).
+- RFC-7951-YANG-JSON-Renderer (`to_yang_json`).
+
+RFC 7950 YANG-Source-Parsing (textuelle `.yang`-Module einlesen) ist
+Caller-Layer; die Spec verlangt die Erzeugung der YANG-Group-
+Repräsentation, nicht das Parsen fremder `.yang`-Dateien.
+
+**Tests:** `pim::yang::tests::*` (17, inkl. stream-id-Bildung,
+data-frame-Branches, interval-Bruch, time-aware-Null-Regel,
+UNR present/absent, YANG-JSON-Wohlgeformtheit).
+
+**Status:** done
 
 ---
 
@@ -254,7 +326,16 @@ EthernetFrameHeader, ETHERTYPE_RTPS}`. Header mit/ohne VLAN-Tag
 (14 vs 18 bytes), Round-Trip, Truncation-Detection,
 IPv4-EtherType-Non-VLAN-Branch.
 
-**Tests:** `ethernet_psm::tests::*` (7 Tests).
+**Live-Transport (Feature `live`, Linux):**
+`crates/transport-tsn/src/socket.rs::TsnTransport` sendet/empfängt RTPS
+direkt im Ethernet-Frame über einen `AF_PACKET`/`SOCK_RAW`-Socket; die
+plattformneutrale Frame-Logik (VLAN-Wahl, Frame-Bau + Min-Frame-Padding,
+sysfs-MAC-Parsing) liegt in `live_frame.rs`.
+
+**Tests:** `ethernet_psm::tests::*` (7); `live_frame::tests::*` (12,
+plattformneutral); `tests/veth_loopback.rs` — echter RTPS-Roundtrip
+über ein veth-Paar (root, CI-`tsn-live`-Job, siehe
+`docs/ci/tsn-live.md`).
 
 **Status:** done
 
@@ -268,19 +349,21 @@ IPv4-EtherType-Non-VLAN-Branch.
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Annex B explizit "informational" markiert; Beispiele fuer Integrations-Topologien.
+**Status:** `n/a (informative)` — Annex B explizit "informational" markiert; Beispiele für Integrations-Topologien.
 
 ---
 
 ## Audit-Status
 
-17 done / 0 partial / 0 open / 4 n/a (informative) / 0 n/a (rejected).
+20 done / 0 partial / 0 open / 4 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-transport-tsn` — 69 lib-Tests grün,
-0 failed. Module mit Tests: `config`, `data_frame`, `dscp`,
-`ethernet_psm`, `mac`, `pim::application`, `pim::deployment`,
-`pim::json`, `pim::xml`, `stream`, `time_aware`, `traffic`,
-`vlan_tag`.
+Test-Lauf: `cargo test -p zerodds-transport-tsn` — 93 lib-Tests grün,
+0 failed; mit `--features live` 105 (+12 `live_frame`). Module mit
+Tests: `config`, `data_frame`, `dscp`, `ethernet_psm`, `live_frame`
+(live), `mac`, `network_requirements`, `pim::application`,
+`pim::deployment`, `pim::json`, `pim::xml`, `pim::yang`, `stream`,
+`time_aware`, `traffic`, `vlan_tag`. Plus `tests/veth_loopback.rs`
+(live, root, CI).
 
-Offene Punkte: siehe `dds-tsn-1.0.open.md`. §7.2 PIM voll, §7.3
-XML/JSON-PSM done; YANG-PSM offen (~0.5-1 PW).
+Keine offenen Punkte: §7.2 PIM voll, §7.3 alle drei PSM (XML/JSON/YANG)
+done, Annex A inkl. Live-Transport.

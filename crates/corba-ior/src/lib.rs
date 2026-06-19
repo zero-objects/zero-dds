@@ -8,22 +8,22 @@
 //!
 //! # Scope
 //!
-//! Voller IOR-Stack:
+//! Full IOR stack:
 //!
-//! * **IOR-Struct** (Spec §13.6.2): `string type_id` +
+//! * **IOR struct** (spec §13.6.2): `string type_id` +
 //!   `sequence<TaggedProfile> profiles`.
-//! * **TaggedProfile** mit allen Standard-Profile-Tags (Spec §13.6.7.1)
-//!   plus IIOP-Profile-Body via `crates/corba-iiop/`.
-//! * **TaggedComponent** mit ueber 30 Standard-Component-Tags (Spec
-//!   §13.6.7.3) und strukturierten Decodern fuer die wichtigsten:
+//! * **TaggedProfile** with all standard profile tags (spec §13.6.7.1)
+//!   plus IIOP profile body via `crates/corba-iiop/`.
+//! * **TaggedComponent** with over 30 standard component tags (spec
+//!   §13.6.7.3) and structured decoders for the most important ones:
 //!   ORB_TYPE / CODE_SETS / ALTERNATE_IIOP_ADDRESS / SSL_SEC_TRANS /
 //!   TLS_SEC_TRANS / RMI_CUSTOM_MAX_STREAM_FORMAT / JAVA_CODEBASE.
-//! * **stringified-IOR** (Spec §13.6.10): `IOR:`-Prefix + Hex-
-//!   Encoding einer CDR-Encapsulation. Bidirektional encode/decode.
-//! * **corbaloc:** und **corbaname:** URL-Parser (Spec §13.6.10
-//!   ueber das Naming-Service-Submapping).
+//! * **stringified IOR** (spec §13.6.10): `IOR:` prefix + hex
+//!   encoding of a CDR encapsulation. Bidirectional encode/decode.
+//! * **corbaloc:** and **corbaname:** URL parser (spec §13.6.10
+//!   over the naming-service submapping).
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```
 //! use zerodds_corba_ior::{Ior, ProfileId};

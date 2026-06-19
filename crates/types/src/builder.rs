@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Programmatischer Builder fuer TypeObjects.
+//! Programmatic builder for TypeObjects.
 //!
-//! Ermoeglicht lesbaren Code wie:
+//! Enables readable code like:
 //!
 //! ```no_run
 //! use zerodds_types::builder::{Extensibility, TypeObjectBuilder};
@@ -23,9 +23,9 @@
 //!     .build_complete();
 //! ```
 //!
-//! Scope in T5: StructBuilder, EnumBuilder, AliasBuilder — die drei
-//! am haeufigsten gebrauchten Top-Level-Typen. Union, Collections,
-//! Bitmask, Bitset, Annotation folgen on-demand.
+//! Scope in T5: StructBuilder, EnumBuilder, AliasBuilder — the three
+//! most frequently used top-level types. Union, collections,
+//! bitmask, bitset, annotation follow on demand.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -50,15 +50,15 @@ use crate::type_object::minimal::{
     MinimalStructMember, MinimalStructType,
 };
 
-/// Extensibility-Kind (§7.2.2.4). Einfachere Darstellung als die
-/// Flag-Bits: genau einer von drei Werten.
+/// Extensibility kind (§7.2.2.4). Simpler representation than the
+/// flag bits: exactly one of three values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Extensibility {
-    /// `@final` — Typ kann nicht erweitert werden.
+    /// `@final` — the type cannot be extended.
     Final,
-    /// `@appendable` — Neue Felder am Ende (default).
+    /// `@appendable` — new fields at the end (default).
     Appendable,
-    /// `@mutable` — Jedes Feld mit expliziter @id; beliebige Evolution.
+    /// `@mutable` — each field with an explicit @id; arbitrary evolution.
     Mutable,
 }
 
@@ -82,8 +82,8 @@ impl Extensibility {
 pub struct TypeObjectBuilder;
 
 impl TypeObjectBuilder {
-    /// Startet einen Struct-Builder mit dem angegebenen qualifizierten
-    /// Namen (z.B. "::sensors::Chatter").
+    /// Starts a struct builder with the given qualified
+    /// name (e.g. "::sensors::Chatter").
     #[must_use]
     pub fn struct_type(name: impl Into<String>) -> StructBuilder {
         StructBuilder {
@@ -96,7 +96,7 @@ impl TypeObjectBuilder {
         }
     }
 
-    /// Startet einen Enum-Builder.
+    /// Starts an enum builder.
     #[must_use]
     pub fn enum_type(name: impl Into<String>) -> EnumBuilder {
         EnumBuilder {
@@ -106,7 +106,7 @@ impl TypeObjectBuilder {
         }
     }
 
-    /// Startet einen Alias-Builder.
+    /// Starts an alias builder.
     #[must_use]
     pub fn alias(name: impl Into<String>, target: TypeIdentifier) -> AliasBuilder {
         AliasBuilder {
@@ -120,7 +120,7 @@ impl TypeObjectBuilder {
 // Struct
 // ============================================================================
 
-/// Builder fuer Struct-Typen.
+/// Builder for struct types.
 pub struct StructBuilder {
     name: String,
     extensibility: Extensibility,
@@ -130,8 +130,7 @@ pub struct StructBuilder {
     members: Vec<StructMemberSpec>,
 }
 
-/// Innerer State eines Struct-Members — via [`StructMemberBuilder`]
-/// gesetzt.
+/// Inner state of a struct member — set via [`StructMemberBuilder`].
 pub struct StructMemberSpec {
     name: String,
     type_id: TypeIdentifier,
@@ -144,13 +143,13 @@ pub struct StructMemberSpec {
     default_value: Option<String>,
 }
 
-/// Fluent-Builder fuer Member-Attribute.
+/// Fluent builder for member attributes.
 pub struct StructMemberBuilder<'a> {
     spec: &'a mut StructMemberSpec,
 }
 
 impl StructMemberBuilder<'_> {
-    /// Markiert Member als `@key`.
+    /// Marks a member as `@key`.
     #[must_use]
     pub fn key(self) -> Self {
         self.spec.flags |= StructMemberFlag::IS_KEY;
@@ -213,10 +212,9 @@ impl StructMemberBuilder<'_> {
         self
     }
 
-    /// `@default(val)` — XTypes 1.3 §7.2.4.4.4.4.9. Wert als String
-    /// (Encoder-konvertiert beim Wire-Encode). Wird im Complete-
-    /// TypeObject ueber `AppliedBuiltinMemberAnnotations.default_value`
-    /// transportiert.
+    /// `@default(val)` — XTypes 1.3 §7.2.4.4.4.4.9. The value as a string
+    /// (encoder-converted on wire encode). Carried in the complete
+    /// TypeObject via `AppliedBuiltinMemberAnnotations.default_value`.
     #[must_use]
     pub fn set_member_default(self, value: impl Into<String>) -> Self {
         self.spec.default_value = Some(value.into());
@@ -225,14 +223,14 @@ impl StructMemberBuilder<'_> {
 }
 
 impl StructBuilder {
-    /// Setzt die Extensibility (default: Appendable).
+    /// Sets the extensibility (default: Appendable).
     #[must_use]
     pub fn extensibility(mut self, ext: Extensibility) -> Self {
         self.extensibility = ext;
         self
     }
 
-    /// Markiert als `@nested`.
+    /// Marks as `@nested`.
     #[must_use]
     pub fn nested(mut self) -> Self {
         self.nested = true;
@@ -246,17 +244,17 @@ impl StructBuilder {
         self
     }
 
-    /// Setzt einen Base-Type fuer Inheritance.
+    /// Sets a base type for inheritance.
     #[must_use]
     pub fn base(mut self, base: TypeIdentifier) -> Self {
         self.base_type = base;
         self
     }
 
-    /// Fuegt einen Member hinzu.
+    /// Adds a member.
     ///
-    /// Der Callback erhaelt einen `StructMemberBuilder` um Flags
-    /// und Annotationen zu setzen.
+    /// The callback receives a `StructMemberBuilder` to set flags
+    /// and annotations.
     #[must_use]
     pub fn member<F>(mut self, name: impl Into<String>, ty: TypeIdentifier, f: F) -> Self
     where
@@ -289,10 +287,10 @@ impl StructBuilder {
         StructTypeFlag(bits)
     }
 
-    /// Member-ID-Vergabe:
-    /// - explicit_id, wenn gesetzt
-    /// - sonst autoid-hash (erste 4 bytes SHA-256 ueber Name — vereinfacht)
-    /// - sonst sequentiell ab 1
+    /// Member-ID assignment:
+    /// - explicit_id, if set
+    /// - otherwise autoid-hash (first 4 bytes SHA-256 over the name — simplified)
+    /// - otherwise sequential from 1
     fn resolve_member_ids(&self) -> Vec<u32> {
         let mut ids = Vec::with_capacity(self.members.len());
         let mut next_seq: u32 = 1;
@@ -300,10 +298,10 @@ impl StructBuilder {
             let id = if let Some(explicit) = spec.explicit_id {
                 explicit
             } else if self.autoid_hash {
-                // XTypes §7.2.2.4.9 + §7.3.1.2.1.1: fuer `@autoid(HASH)`
-                // wird die Member-ID aus Bits [4..28) (=24 Bits) der ersten
-                // 4 MD5-Bytes des Member-Namens abgeleitet. Bits [0..4)
-                // sind reserviert (E-Flag etc.), werden nicht benutzt.
+                // XTypes §7.2.2.4.9 + §7.3.1.2.1.1: for `@autoid(HASH)`
+                // the member ID is derived from bits [4..28) (=24 bits) of the
+                // first 4 MD5 bytes of the member name. Bits [0..4)
+                // are reserved (E-flag etc.) and not used.
                 let nh = NameHash::from_name(&spec.name);
                 (u32::from_le_bytes(nh.0) >> 4) & 0x00FF_FFFF
             } else {
@@ -338,7 +336,7 @@ impl StructBuilder {
         }
     }
 
-    /// Baut einen `MinimalStructType`.
+    /// Builds a `MinimalStructType`.
     #[must_use]
     pub fn build_minimal(&self) -> MinimalStructType {
         let ids = self.resolve_member_ids();
@@ -360,7 +358,7 @@ impl StructBuilder {
         }
     }
 
-    /// Baut einen `CompleteStructType`.
+    /// Builds a `CompleteStructType`.
     #[must_use]
     pub fn build_complete(&self) -> CompleteStructType {
         let ids = self.resolve_member_ids();
@@ -392,7 +390,7 @@ impl StructBuilder {
 // Enum
 // ============================================================================
 
-/// Builder fuer Enumerated-Typen.
+/// Builder for enumerated types.
 pub struct EnumBuilder {
     name: String,
     bit_bound: u16,
@@ -406,14 +404,14 @@ struct EnumLiteralSpec {
 }
 
 impl EnumBuilder {
-    /// Setzt die bit-Breite (8/16/32, default 32).
+    /// Sets the bit width (8/16/32, default 32).
     #[must_use]
     pub fn bit_bound(mut self, bits: u16) -> Self {
         self.bit_bound = bits;
         self
     }
 
-    /// Fuegt ein Literal hinzu.
+    /// Adds a literal.
     #[must_use]
     pub fn literal(mut self, name: impl Into<String>, value: i32) -> Self {
         self.literals.push(EnumLiteralSpec {
@@ -424,7 +422,7 @@ impl EnumBuilder {
         self
     }
 
-    /// Fuegt das Default-Literal hinzu (`@default_literal`).
+    /// Adds the default literal (`@default_literal`).
     #[must_use]
     pub fn default_literal(mut self, name: impl Into<String>, value: i32) -> Self {
         self.literals.push(EnumLiteralSpec {
@@ -435,7 +433,7 @@ impl EnumBuilder {
         self
     }
 
-    /// Baut ein `MinimalEnumeratedType`.
+    /// Builds a `MinimalEnumeratedType`.
     #[must_use]
     pub fn build_minimal(&self) -> MinimalEnumeratedType {
         MinimalEnumeratedType {
@@ -463,7 +461,7 @@ impl EnumBuilder {
         }
     }
 
-    /// Baut ein `CompleteEnumeratedType`.
+    /// Builds a `CompleteEnumeratedType`.
     #[must_use]
     pub fn build_complete(&self) -> CompleteEnumeratedType {
         CompleteEnumeratedType {
@@ -505,7 +503,7 @@ impl EnumBuilder {
 // Alias
 // ============================================================================
 
-/// Builder fuer Alias/Typedef.
+/// Builder for alias/typedef.
 pub struct AliasBuilder {
     name: String,
     related_type: TypeIdentifier,
@@ -552,7 +550,7 @@ impl AliasBuilder {
 // Union
 // ============================================================================
 
-/// Builder fuer Union-Typen.
+/// Builder for union types.
 pub struct UnionBuilder {
     name: String,
     extensibility: Extensibility,
@@ -569,14 +567,14 @@ struct UnionCaseSpec {
 }
 
 impl UnionBuilder {
-    /// Setzt die Extensibility (default Appendable).
+    /// Sets the extensibility (default Appendable).
     #[must_use]
     pub fn extensibility(mut self, ext: Extensibility) -> Self {
         self.extensibility = ext;
         self
     }
 
-    /// Fuegt einen Case-Member hinzu.
+    /// Adds a case member.
     #[must_use]
     pub fn case(mut self, name: impl Into<String>, ty: TypeIdentifier, labels: Vec<i32>) -> Self {
         self.cases.push(UnionCaseSpec {
@@ -589,7 +587,7 @@ impl UnionBuilder {
         self
     }
 
-    /// Fuegt den Default-Case hinzu.
+    /// Adds the default case.
     #[must_use]
     pub fn default_case(mut self, name: impl Into<String>, ty: TypeIdentifier) -> Self {
         self.cases.push(UnionCaseSpec {
@@ -604,8 +602,8 @@ impl UnionBuilder {
 
     fn union_flags(&self) -> crate::type_object::flags::UnionTypeFlag {
         use crate::type_object::flags::UnionTypeFlag;
-        // UnionTypeFlag verwendet analog die Struct-Bits fuer
-        // Extensibility (§7.3.4.5) — reuse die Bit-Positionen.
+        // UnionTypeFlag analogously uses the struct bits for
+        // extensibility (§7.3.4.5) — reuse the bit positions.
         UnionTypeFlag(match self.extensibility {
             Extensibility::Final => StructTypeFlag::IS_FINAL,
             Extensibility::Appendable => StructTypeFlag::IS_APPENDABLE,
@@ -626,7 +624,7 @@ impl UnionBuilder {
         ids
     }
 
-    /// Baut `MinimalUnionType`.
+    /// Builds a `MinimalUnionType`.
     #[must_use]
     pub fn build_minimal(&self) -> crate::type_object::minimal::MinimalUnionType {
         use crate::type_object::common::CommonUnionMember;
@@ -666,7 +664,7 @@ impl UnionBuilder {
         }
     }
 
-    /// Baut `CompleteUnionType`.
+    /// Builds a `CompleteUnionType`.
     #[must_use]
     pub fn build_complete(&self) -> crate::type_object::complete::CompleteUnionType {
         use crate::type_object::common::CommonUnionMember;
@@ -725,14 +723,14 @@ impl UnionBuilder {
 // Sequence / Array / Map
 // ============================================================================
 
-/// Builder fuer `sequence<T, N>`.
+/// Builder for `sequence<T, N>`.
 pub struct SequenceBuilder {
     element: TypeIdentifier,
     bound: u32,
 }
 
 impl SequenceBuilder {
-    /// Baut MinimalSequenceType.
+    /// Builds a MinimalSequenceType.
     #[must_use]
     pub fn build_minimal(&self) -> crate::type_object::minimal::MinimalSequenceType {
         use crate::type_object::flags::{CollectionElementFlag, CollectionTypeFlag};
@@ -752,14 +750,14 @@ impl SequenceBuilder {
     }
 }
 
-/// Builder fuer `T[D1, D2, ...]`.
+/// Builder for `T[D1, D2, ...]`.
 pub struct ArrayBuilder {
     element: TypeIdentifier,
     dimensions: Vec<u32>,
 }
 
 impl ArrayBuilder {
-    /// Baut MinimalArrayType.
+    /// Builds a MinimalArrayType.
     #[must_use]
     pub fn build_minimal(&self) -> crate::type_object::minimal::MinimalArrayType {
         use crate::type_object::flags::{CollectionElementFlag, CollectionTypeFlag};
@@ -779,17 +777,17 @@ impl ArrayBuilder {
     }
 }
 
-/// Validierungs-Fehler beim Bauen von Collection-Typen.
+/// Validation error when building collection types.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuilderError {
-    /// MUTABLE-Extensibility ist auf Maps nicht erlaubt
-    /// (XTypes 1.3 §7.4.3.5.3 Rules 11-16). Spec erlaubt nur FINAL/
-    /// APPENDABLE; MUTABLE wird historisch silent als APPENDABLE
-    /// behandelt. Dieser Fehler verhindert die silent demotion.
+    /// MUTABLE extensibility is not allowed on maps
+    /// (XTypes 1.3 §7.4.3.5.3 Rules 11-16). The spec allows only FINAL/
+    /// APPENDABLE; MUTABLE has historically been silently treated as
+    /// APPENDABLE. This error prevents the silent demotion.
     MutableMapExtensibilityNotAllowed,
 }
 
-/// Builder fuer `map<K, V, N>`.
+/// Builder for `map<K, V, N>`.
 pub struct MapBuilder {
     key: TypeIdentifier,
     value: TypeIdentifier,
@@ -797,12 +795,12 @@ pub struct MapBuilder {
 }
 
 impl MapBuilder {
-    /// Validierender Builder: erlaubt nur FINAL/APPENDABLE-Extensibility.
+    /// Validating builder: allows only FINAL/APPENDABLE extensibility.
     /// MUTABLE wirft `BuilderError::MutableMapExtensibilityNotAllowed`
     /// (XTypes 1.3 §7.4.3.5.3 Rules 11-16).
     ///
     /// # Errors
-    /// `MutableMapExtensibilityNotAllowed` wenn `ext == Mutable`.
+    /// `MutableMapExtensibilityNotAllowed` if `ext == Mutable`.
     pub fn add_map_member(
         self,
         ext: Extensibility,
@@ -813,7 +811,7 @@ impl MapBuilder {
         Ok(self.build_minimal())
     }
 
-    /// Baut MinimalMapType.
+    /// Builds a MinimalMapType.
     #[must_use]
     pub fn build_minimal(&self) -> crate::type_object::minimal::MinimalMapType {
         use crate::type_object::flags::{CollectionElementFlag, CollectionTypeFlag};
@@ -845,7 +843,7 @@ impl MapBuilder {
 // Bitmask / Bitset
 // ============================================================================
 
-/// Builder fuer `bitmask`-Typen.
+/// Builder for `bitmask` types.
 pub struct BitmaskBuilder {
     name: String,
     bit_bound: u16,
@@ -853,21 +851,21 @@ pub struct BitmaskBuilder {
 }
 
 impl BitmaskBuilder {
-    /// Bit-Breite (default 32).
+    /// Bit width (default 32).
     #[must_use]
     pub fn bit_bound(mut self, bits: u16) -> Self {
         self.bit_bound = bits;
         self
     }
 
-    /// Fuegt ein Bit-Flag hinzu.
+    /// Adds a bit flag.
     #[must_use]
     pub fn flag(mut self, name: impl Into<String>, position: u16) -> Self {
         self.flags.push((name.into(), position));
         self
     }
 
-    /// Baut MinimalBitmaskType.
+    /// Builds a MinimalBitmaskType.
     #[must_use]
     pub fn build_minimal(&self) -> crate::type_object::minimal::MinimalBitmaskType {
         use crate::type_object::flags::{BitflagFlag, BitmaskTypeFlag};
@@ -889,7 +887,7 @@ impl BitmaskBuilder {
         }
     }
 
-    /// Baut `CompleteBitmaskType` (mit Namen + Annotations-Placeholder).
+    /// Builds a `CompleteBitmaskType` (with names + annotation placeholders).
     #[must_use]
     pub fn build_complete(&self) -> crate::type_object::complete::CompleteBitmaskType {
         use crate::type_object::common::{
@@ -924,14 +922,14 @@ impl BitmaskBuilder {
         }
     }
 
-    /// Getter — meist ueber [`build_complete`] genutzt.
+    /// Getter — mostly used via [`build_complete`].
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 }
 
-/// Builder fuer `bitset`-Typen.
+/// Builder for `bitset` types.
 pub struct BitsetBuilder {
     name: String,
     fields: Vec<BitfieldSpec>,
@@ -945,7 +943,7 @@ struct BitfieldSpec {
 }
 
 impl BitsetBuilder {
-    /// Fuegt ein Bitfield hinzu.
+    /// Adds a bitfield.
     #[must_use]
     pub fn field(
         mut self,
@@ -963,7 +961,7 @@ impl BitsetBuilder {
         self
     }
 
-    /// Baut MinimalBitsetType.
+    /// Builds a MinimalBitsetType.
     #[must_use]
     pub fn build_minimal(&self) -> crate::type_object::minimal::MinimalBitsetType {
         use crate::type_object::flags::{BitfieldFlag, BitsetTypeFlag};
@@ -986,7 +984,7 @@ impl BitsetBuilder {
         }
     }
 
-    /// Baut `CompleteBitsetType` (mit Namen + Annotations-Placeholder).
+    /// Builds a `CompleteBitsetType` (with names + annotation placeholders).
     #[must_use]
     pub fn build_complete(&self) -> crate::type_object::complete::CompleteBitsetType {
         use crate::type_object::common::{
@@ -1022,7 +1020,7 @@ impl BitsetBuilder {
         }
     }
 
-    /// Getter — meist ueber [`build_complete`] genutzt.
+    /// Getter — mostly used via [`build_complete`].
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
@@ -1030,12 +1028,12 @@ impl BitsetBuilder {
 }
 
 // ============================================================================
-// Einstiegspunkte fuer die neuen Builder
+// Entry points for the new builders
 // ============================================================================
 
 impl TypeObjectBuilder {
-    /// Startet einen Union-Builder. `discriminator_type` ist typisch
-    /// ein Enum oder Integer-Primitiv.
+    /// Starts a union builder. `discriminator_type` is typically
+    /// an enum or an integer primitive.
     #[must_use]
     pub fn union_type(name: impl Into<String>, discriminator_type: TypeIdentifier) -> UnionBuilder {
         UnionBuilder {
@@ -1046,13 +1044,13 @@ impl TypeObjectBuilder {
         }
     }
 
-    /// Startet einen Sequence-Builder. `bound=0` = unbounded.
+    /// Starts a sequence builder. `bound=0` = unbounded.
     #[must_use]
     pub fn sequence(element: TypeIdentifier, bound: u32) -> SequenceBuilder {
         SequenceBuilder { element, bound }
     }
 
-    /// Startet einen Array-Builder mit der angegebenen Dimensions-Liste.
+    /// Starts an array builder with the given list of dimensions.
     #[must_use]
     pub fn array(element: TypeIdentifier, dimensions: Vec<u32>) -> ArrayBuilder {
         ArrayBuilder {
@@ -1061,13 +1059,13 @@ impl TypeObjectBuilder {
         }
     }
 
-    /// Startet einen Map-Builder.
+    /// Starts a map builder.
     #[must_use]
     pub fn map(key: TypeIdentifier, value: TypeIdentifier, bound: u32) -> MapBuilder {
         MapBuilder { key, value, bound }
     }
 
-    /// Startet einen Bitmask-Builder.
+    /// Starts a bitmask builder.
     #[must_use]
     pub fn bitmask(name: impl Into<String>) -> BitmaskBuilder {
         BitmaskBuilder {
@@ -1077,7 +1075,7 @@ impl TypeObjectBuilder {
         }
     }
 
-    /// Startet einen Bitset-Builder.
+    /// Starts a bitset builder.
     #[must_use]
     pub fn bitset(name: impl Into<String>) -> BitsetBuilder {
         BitsetBuilder {
@@ -1139,7 +1137,7 @@ mod tests {
 
     #[test]
     fn mutable_map_extensibility_is_error() {
-        // §7.4.3.5.3 Rules 11-16 — MUTABLE-Map ist verboten (silent demotion).
+        // §7.4.3.5.3 Rules 11-16 — a MUTABLE map is forbidden (silent demotion).
         let res = TypeObjectBuilder::map(
             TypeIdentifier::Primitive(PrimitiveKind::Int32),
             TypeIdentifier::Primitive(PrimitiveKind::Int32),
@@ -1176,9 +1174,9 @@ mod tests {
 
     #[test]
     fn member_with_explicit_default_used_when_field_missing() {
-        // §7.2.4.4.4.4.9 — `set_member_default` setzt
-        // `AppliedBuiltinMemberAnnotations.default_value`. Test stellt
-        // sicher, dass der Wert ueber die Complete-Pipeline durchreicht.
+        // §7.2.4.4.4.4.9 — `set_member_default` sets
+        // `AppliedBuiltinMemberAnnotations.default_value`. The test ensures
+        // that the value passes through the complete pipeline.
         let st = TypeObjectBuilder::struct_type("::S")
             .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
                 m.set_member_default("42")
@@ -1192,10 +1190,10 @@ mod tests {
 
     #[test]
     fn default_overrides_implicit_zero() {
-        // Encoder-Side Hint: ein expliziter `@default("99")` muss im
-        // Complete-TypeObject erscheinen — der Decoder verwendet ihn,
-        // wenn das Feld bei Optional-Mutable-Members fehlt, statt der
-        // typ-impliziten Null.
+        // Encoder-side hint: an explicit `@default("99")` must appear in the
+        // complete TypeObject — the decoder uses it
+        // when the field is missing for optional-mutable members, instead of the
+        // type-implicit zero.
         let st = TypeObjectBuilder::struct_type("::S")
             .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
                 m.set_member_default("99")

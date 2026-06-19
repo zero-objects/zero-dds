@@ -1,15 +1,15 @@
-//! WP 1.5 T19 — Full-Live-Interop-Skelett gegen Cyclone DDS.
+//! WP 1.5 T19 — full live-interop skeleton against Cyclone DDS.
 //!
-//! **Opt-in only** — `#[ignore]`. Ziel: ein User-Data-Sample zwischen
-//! ZeroDDS und Cyclone fliesst mit XCDR2-Encoding. Das braucht:
+//! **Opt-in only** — `#[ignore]`. Goal: a user-data sample flows
+//! between ZeroDDS and Cyclone with XCDR2 encoding. This needs:
 //!
-//! 1. DCPS-artige API (DataWriter/DataReader) — Phase 2 (WP 2.*)
-//! 2. Representation-Negotiation aus T18 — OK, da
-//! 3. Assignability-Check aus T16 — OK
-//! 4. TypeLookup-Endpoints am Transport — WP 1.6+
+//! 1. DCPS-style API (DataWriter/DataReader) — phase 2 (WP 2.*)
+//! 2. Representation negotiation from T18 — OK, present
+//! 3. Assignability check from T16 — OK
+//! 4. TypeLookup endpoints at the transport — WP 1.6+
 //!
-//! Dieser Test dokumentiert die Test-Architektur; die eigentliche
-//! Implementierung kommt mit Phase 2.
+//! This test documents the test architecture; the actual
+//! implementation comes with phase 2.
 
 #![allow(
     clippy::expect_used,
@@ -43,15 +43,15 @@ fn cyclone_full_interop_chatter_struct_placeholder() {
     let minimal = MinimalTypeObject::Struct(b.build_minimal());
     let complete = zerodds_types::type_object::CompleteTypeObject::Struct(b.build_complete());
 
-    // 2. TypeInformation bauen
+    // 2. Build TypeInformation
     let ti = TypeInformation::from_minimal_and_complete(&minimal, &complete).unwrap();
     eprintln!(
         "type_information: minimal_hash={:?}",
         ti.minimal.typeid_with_size.type_id
     );
 
-    // 3. Representation-Negotiation (Mac offeriert [XCDR2, XCDR1],
-    //    Cyclone akzeptiert [XCDR2, XCDR1] — Match: XCDR2).
+    // 3. Representation negotiation (the macOS host offers [XCDR2, XCDR1],
+    //    Cyclone accepts [XCDR2, XCDR1] — match: XCDR2).
     let neg = negotiate_representation(&[2, 0], &[2, 0]);
     assert_eq!(
         neg,
@@ -60,14 +60,14 @@ fn cyclone_full_interop_chatter_struct_placeholder() {
 
     // 4. TODO WP 2.*: Create DataWriter<Chatter>, publish Sample.
     // 5. TODO WP 2.*: Cyclone-Subscriber-Subprocess connects + receives.
-    // 6. TODO WP 2.*: Assert: sample.id + sample.text round-trippen
-    //    byte-genau zwischen ZeroDDS-Writer und Cyclone-Reader.
+    // 6. TODO WP 2.*: Assert: sample.id + sample.text round-trip
+    //    byte-exact between the ZeroDDS writer and the Cyclone reader.
 }
 
 #[test]
 fn negotiation_matches_xcdr2_when_both_support() {
-    // Happy path — Voraussetzung fuer Full-Interop ist dass beide
-    // Seiten XCDR2 offerieren. Test ohne Cyclone moeglich.
+    // Happy path — a precondition for full interop is that both sides
+    // offer XCDR2. This test works without Cyclone.
     let neg = negotiate_representation(&[2], &[2]);
     assert_eq!(
         neg,
@@ -77,7 +77,7 @@ fn negotiation_matches_xcdr2_when_both_support() {
 
 #[test]
 fn typeinfo_for_cyclone_chatter_has_nonzero_sizes() {
-    // Sanity: TI enthaelt tatsaechliche Groessen.
+    // Sanity: TI contains actual sizes.
     let b = TypeObjectBuilder::struct_type("::chat::Chatter").member(
         "id",
         TypeIdentifier::Primitive(PrimitiveKind::Int64),
@@ -88,7 +88,7 @@ fn typeinfo_for_cyclone_chatter_has_nonzero_sizes() {
     let ti = TypeInformation::from_minimal_and_complete(&minimal, &complete).unwrap();
     assert!(ti.minimal.typeid_with_size.typeobject_serialized_size > 0);
     assert!(ti.complete.typeid_with_size.typeobject_serialized_size > 0);
-    // Complete ist typischerweise groesser (enthaelt Namen).
+    // Complete is typically larger (contains names).
     assert!(
         ti.complete.typeid_with_size.typeobject_serialized_size
             > ti.minimal.typeid_with_size.typeobject_serialized_size

@@ -1,35 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! AST-Typen fuer OMG IDL 4.2.
+//! AST types for OMG IDL 4.2.
 //!
-//! Alle Typen sind owned (`String`, `Vec`, `Box`) — kein Source-Borrowing.
-//! Damit kann der AST den Source-String ueberleben und z.B. in Build-
-//! Pipelines weitergereicht werden, in denen die Quelldatei bereits
-//! geschlossen ist.
+//! All types are owned (`String`, `Vec`, `Box`) — no source borrowing.
+//! This lets the AST outlive the source string and be passed on, e.g. in build
+//! pipelines, where the source file is already
+//! closed.
 //!
-//! # Span-Konvention
-//! Jeder Node, der Diagnostik-relevant ist, traegt ein `span: Span` —
-//! Byte-Offset im Source-Text. Hilfs-Strukturen ohne unabhaengige
-//! Diagnostik (z.B. [`PrimitiveType`]) sind ohne Span.
+//! # Span convention
+//! Every node that is diagnostics-relevant carries a `span: Span` —
+//! byte offset in the source text. Helper structures without independent
+//! diagnostics (e.g. [`PrimitiveType`]) have no span.
 
-#![allow(missing_docs)] // Doc-Kommentare folgen mit T5.7
+#![allow(missing_docs)] // doc-comments follow with T5.7
 
 use crate::errors::Span;
 
 // ============================================================================
-// Spezifikation / Definition
+// Specification / definition
 // ============================================================================
 
-/// Wurzelknoten — entspricht `<specification>` (§7.4.1.1).
+/// Root node — corresponds to `<specification>` (§7.4.1.1).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Specification {
     pub definitions: Vec<Definition>,
     pub span: Span,
 }
 
-/// Top-Level-Definition. Entspricht `<definition>` (§7.4.1.2) plus
-/// optionalem `VendorExtension`-Catch-All fuer Delta-eingefuegte
-/// Konstrukte (T6.5).
+/// Top-level definition. Corresponds to `<definition>` (§7.4.1.2) plus an
+/// optional `VendorExtension` catch-all for delta-inserted
+/// constructs (T6.5).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Definition {
     Module(ModuleDef),
@@ -68,10 +68,10 @@ pub enum Definition {
     TemplateModuleInst(TemplateModuleInst),
     /// User-Defined `@annotation Foo { ... };` (§7.4.15 Rules 218-221).
     Annotation(AnnotationDcl),
-    /// Top-Level-Konstrukt aus einer Vendor-Delta-Erweiterung
-    /// (z.B. `keylist Type (fields);` aus dem RTI-Delta). Span deckt
-    /// das gesamte Konstrukt ab; `production_name` ist der Production-
-    /// Name aus der Delta-Definition.
+    /// Top-level construct from a vendor delta extension
+    /// (e.g. `keylist Type (fields);` from the RTI delta). The span covers
+    /// the entire construct; `production_name` is the production
+    /// name from the delta definition.
     VendorExtension(VendorExtension),
 }
 
@@ -106,9 +106,9 @@ impl Definition {
 
 /// User-Defined Annotation Declaration (§7.4.15).
 ///
-/// `@annotation <name> { <member>* };` mit Members gem Rule 220:
+/// `@annotation <name> { <member>* };` with members per Rule 220:
 /// `annotation_member` (CONST_TYPE simple_declarator [default expr])
-/// oder embedded `enum_dcl`/`const_dcl`/`typedef_dcl`.
+/// or embedded `enum_dcl`/`const_dcl`/`typedef_dcl`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnnotationDcl {
     pub name: Identifier,
@@ -128,7 +128,7 @@ pub struct AnnotationMember {
 }
 
 // ============================================================================
-// CORBA-Specific Top-Level-Decls (§7.4.6.3)
+// CORBA-specific top-level decls (§7.4.6.3)
 // ============================================================================
 
 /// `typeid <scoped_name> "<repo-id>";` (§7.4.6.3 Rule 113).
@@ -154,7 +154,7 @@ pub struct ImportDcl {
     pub span: Span,
 }
 
-/// `<imported_scope>` — Scoped-Name oder String-Repository-ID.
+/// `<imported_scope>` — scoped name or string repository ID.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ImportedScope {
     Scoped(ScopedName),
@@ -199,9 +199,9 @@ pub struct ValueInheritanceSpec {
 /// `<value_element>` (§7.4.5.4.1.3 Rule 105).
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueElement {
-    /// `<export>` — Op/Attr/Type/Const/Except (analog Interface-Body).
+    /// `<export>` — Op/Attr/Type/Const/Except (analogous to interface body).
     Export(Export),
-    /// `<state_member>` mit Visibility (Rule 106).
+    /// `<state_member>` with visibility (Rule 106).
     State(StateMember),
     /// `<init_dcl>` — `factory <name>(<params>) [<raises>];` (Rule 107).
     Init(InitDcl),
@@ -301,8 +301,8 @@ pub enum ComponentExport {
     },
 }
 
-/// Attribut-Decl-Stub fuer Components/Homes/Values (vereinfachte Form;
-/// volle Attr-Decl ist in der Interface-Pipeline).
+/// Attribute-decl stub for components/homes/values (simplified form;
+/// the full attr-decl is in the interface pipeline).
 #[derive(Debug, Clone, PartialEq)]
 pub struct AttrDcl {
     pub readonly: bool,
@@ -441,15 +441,14 @@ pub struct TemplateModuleInst {
     pub span: Span,
 }
 
-/// Catch-All fuer Vendor-Delta-eingefuegte Top-Level-Konstrukte.
-/// AST-Builder lässt die innere Struktur unausgewertet — der
-/// AST-Builder pro Vendor-Delta soll das in einer spaeteren Phase
-/// reichern.
+/// Catch-all for top-level constructs inserted by a vendor delta.
+/// The AST builder leaves the inner structure unevaluated — the
+/// per-vendor-delta AST builder should enrich it in a later phase.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VendorExtension {
-    /// Production-Name aus der Delta-Definition (z.B. `"rti_keylist"`).
+    /// Production name from the delta definition (e.g. `"rti_keylist"`).
     pub production_name: String,
-    /// Roher Source-Slice der Konstruktion fuer Diagnostik.
+    /// Raw source slice of the construct for diagnostics.
     pub raw: String,
     pub span: Span,
 }
@@ -471,6 +470,10 @@ pub struct ModuleDef {
 pub enum TypeDecl {
     Constr(ConstrTypeDecl),
     Typedef(TypedefDecl),
+    /// `native <simple_declarator>;` (§7.4.1.3 Rule 61). Declares a
+    /// platform-/language-specific opaque type without IDL structure — a CORBA
+    /// construct (e.g. `native Cookie;`), active by default in the parser.
+    Native(NativeDecl),
 }
 
 impl TypeDecl {
@@ -479,8 +482,16 @@ impl TypeDecl {
         match self {
             Self::Constr(d) => d.span(),
             Self::Typedef(d) => d.span,
+            Self::Native(d) => d.span,
         }
     }
+}
+
+/// `native <name>;` — opaque type without an IDL definition (§7.4.1.3).
+#[derive(Debug, Clone, PartialEq)]
+pub struct NativeDecl {
+    pub name: Identifier,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -652,7 +663,7 @@ pub struct BitsetDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bitfield {
     pub spec: BitfieldSpec,
-    /// `None` bei anonymen Padding-Bitfields.
+    /// `None` for anonymous padding bitfields.
     pub name: Option<Identifier>,
     pub annotations: Vec<Annotation>,
     pub span: Span,
@@ -736,7 +747,7 @@ pub struct ConstDecl {
     pub span: Span,
 }
 
-/// Eingeschraenkter Type-Spec fuer `const`-Decls (§7.4.1.4.4.5).
+/// Restricted type-spec for `const` decls (§7.4.1.4.4.5).
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConstType {
     Integer(IntegerType),
@@ -750,7 +761,7 @@ pub enum ConstType {
     Scoped(ScopedName),
 }
 
-/// Ausdruck — entspricht `<const_expr>` und Sub-Productions.
+/// Expression — corresponds to `<const_expr>` and sub-productions.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConstExpr {
     Literal(Literal),
@@ -800,12 +811,12 @@ pub enum BinaryOp {
     Mod,
 }
 
-/// Literal-Wert — Inhalt aus dem Source-Text uebernommen.
+/// Literal value — content taken from the source text.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Literal {
     pub kind: LiteralKind,
-    /// Roh-Text aus dem Source (inkl. Quotes/Suffix). Semantische
-    /// Konvertierung passiert erst im AST-Builder/Validator.
+    /// Raw text from the source (incl. quotes/suffix). Semantic
+    /// conversion happens only in the AST builder/validator.
     pub raw: String,
     pub span: Span,
 }
@@ -904,10 +915,14 @@ impl Export {
 pub struct OpDecl {
     pub name: Identifier,
     pub oneway: bool,
-    /// `None` bei `void`, `Some` sonst.
+    /// `None` for `void`, `Some` otherwise.
     pub return_type: Option<TypeSpec>,
     pub params: Vec<ParamDecl>,
     pub raises: Vec<ScopedName>,
+    /// `context (...)` clause (§7.4.6.3 Rule 123/124): the property names that
+    /// the operation implicitly carries over from the client context. Empty if no
+    /// context clause is present. CORBA-specific, rarely used.
+    pub context: Vec<String>,
     pub annotations: Vec<Annotation>,
     pub span: Span,
 }
@@ -933,19 +948,19 @@ pub struct AttrDecl {
     pub name: Identifier,
     pub type_spec: TypeSpec,
     pub readonly: bool,
-    /// `getraises` / readonly `raises` Liste (§7.4.3.1 Rules 91/95).
-    /// Bei readonly-Attribute ist das die `raises_expr`-Liste; bei
-    /// writable-Attribute die `getraises`-Liste.
+    /// `getraises` / readonly `raises` list (§7.4.3.1 Rules 91/95).
+    /// For a readonly attribute this is the `raises_expr` list; for a
+    /// writable attribute the `getraises` list.
     pub get_raises: Vec<ScopedName>,
-    /// `setraises` Liste (§7.4.3.1 Rule 96). Nur bei writable-Attribute
-    /// nicht-leer.
+    /// `setraises` list (§7.4.3.1 Rule 96). Non-empty only for a writable
+    /// attribute.
     pub set_raises: Vec<ScopedName>,
     pub annotations: Vec<Annotation>,
     pub span: Span,
 }
 
 // ============================================================================
-// Valuetype (minimal — siehe T-LIM-5)
+// Valuetype (minimal — see T-LIM-5)
 // ============================================================================
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1055,13 +1070,13 @@ pub struct Annotation {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AnnotationParams {
-    /// `@key` — kein Klammerpaar.
+    /// `@key` — no parentheses.
     None,
-    /// `@id()` — leeres Klammerpaar.
+    /// `@id()` — empty parentheses.
     Empty,
-    /// `@id(7)` — einzelner positionaler Ausdruck.
+    /// `@id(7)` — single positional expression.
     Single(ConstExpr),
-    /// `@range(min=0, max=10)` — Liste benannter Parameter.
+    /// `@range(min=0, max=10)` — list of named parameters.
     Named(Vec<NamedParam>),
 }
 
@@ -1076,7 +1091,7 @@ pub struct NamedParam {
 // Identifier / ScopedName
 // ============================================================================
 
-/// Einfacher Identifier mit Span.
+/// Simple identifier with span.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Identifier {
     pub text: String,
@@ -1096,7 +1111,7 @@ impl Identifier {
 /// Scoped-Name `[::] <ident> ( :: <ident> )*` (§7.4.1.4.2).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ScopedName {
-    /// `true`, wenn der Name mit `::` beginnt (absolute Pfad).
+    /// `true` if the name begins with `::` (absolute path).
     pub absolute: bool,
     pub parts: Vec<Identifier>,
     pub span: Span,
@@ -1190,6 +1205,7 @@ mod tests {
             return_type: None,
             params: vec![],
             raises: vec![],
+            context: vec![],
             annotations: vec![],
             span: s(0, 10),
         });

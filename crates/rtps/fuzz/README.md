@@ -1,6 +1,6 @@
-# `zerodds-rtps` Fuzz-Targets
+# `zerodds-rtps` fuzz targets
 
-Coverage-guided Fuzzing via `cargo-fuzz` (libFuzzer).
+Coverage-guided fuzzing via `cargo-fuzz` (libFuzzer).
 
 ## Requirements
 
@@ -12,37 +12,37 @@ cargo install cargo-fuzz
 ## Running
 
 ```bash
-# 1) Corpus seeden (einmalig, aus tests/fixtures/cyclone)
+# 1) Seed the corpus (one-time, from tests/fixtures/cyclone)
 bash crates/rtps/fuzz/scripts/seed-corpus.sh
 
-# 2) Fuzzer starten
+# 2) Start the fuzzer
 cd crates/rtps
 cargo +nightly fuzz run decode_datagram
 cargo +nightly fuzz run fragment_assembler
 cargo +nightly fuzz run submessage_decoders
 ```
 
-Jedes Target läuft endlos (`Ctrl-C` zum Stoppen). Crash-Inputs landen in
-`fuzz/artifacts/<target>/`. Das Seed-Corpus in `fuzz/corpus/` ist
-gitignored — beim ersten Checkout via `seed-corpus.sh` neu erzeugen.
+Each target runs endlessly (`Ctrl-C` to stop). Crash inputs land in
+`fuzz/artifacts/<target>/`. The seed corpus in `fuzz/corpus/` is
+gitignored — regenerate it on first checkout via `seed-corpus.sh`.
 
-## Quick-Fuzz-Alternative (stable)
+## Quick-fuzz alternative (stable)
 
-Für Continuous-Integration ohne nightly siehe
-`crates/rtps/tests/fuzz_smoke.rs` — pseudorandom Byte-Streams auf allen
-Wire-Decodern. Erwischt triviale Panics, aber keine Coverage-Guidance.
+For continuous integration without nightly see
+`crates/rtps/tests/fuzz_smoke.rs` — pseudorandom byte streams on all
+wire decoders. Catches trivial panics, but no coverage guidance.
 
 ## Targets
 
-| Target | Input | Schützt vor |
+| Target | Input | Protects against |
 |---|---|---|
-| `decode_datagram` | Random Bytes | Panics im Top-Level-Decoder |
-| `fragment_assembler` | Random DATA_FRAG | Panics bei pathologischen Fragments, DoS-Cap-Bypass |
-| `submessage_decoders` | Random Bytes je Submessage-Typ | Per-Submessage-Parser-Robustheit |
+| `decode_datagram` | Random bytes | Panics in the top-level decoder |
+| `fragment_assembler` | Random DATA_FRAG | Panics on pathological fragments, DoS-cap bypass |
+| `submessage_decoders` | Random bytes per submessage type | Per-submessage parser robustness |
 
-## Phase-2-Follow-up
+## Phase-2 follow-up
 
-- AFL.rs als zweites Fuzzing-Tool (coverage-Algorithmen ergänzen sich)
-- Bessere Corpus-Seeds sobald Cyclone-DATA_FRAG-Captures verfügbar sind
-  (aktuell: nur DATA + HEARTBEAT im Cyclone-Corpus, kein DATA_FRAG)
-- CI-Integration: nightly-Job mit 10-Minuten-Budget pro Target.
+- AFL.rs as a second fuzzing tool (coverage algorithms complement each other)
+- Better corpus seeds once Cyclone DATA_FRAG captures are available
+  (currently: only DATA + HEARTBEAT in the Cyclone corpus, no DATA_FRAG)
+- CI integration: nightly job with a 10-minute budget per target.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// C# Smoke-Test fuer ZeroDDS DDS-PSM-Cxx-1.0-API.
+// C# smoke test for the ZeroDDS DDS-PSM-Cxx-1.0 API.
 //
 // Build + Run:
 //   cargo build --release -p zerodds-c-api

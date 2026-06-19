@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Snapshot-Tests fuer den CORBA-Rust-Codegen.
+//! Snapshot tests for the CORBA Rust codegen.
 
 #![allow(
     clippy::expect_used,
@@ -22,14 +22,118 @@ use zerodds_idl::config::ParserConfig;
 use zerodds_idl::features::IdlFeatures;
 
 fn run(idl: &str) -> String {
-    // CORBA-Full-Profil — aktiviert oneway-Ops, valuetypes,
-    // private state-members.
+    // CORBA full profile — enables oneway ops, valuetypes,
+    // private state members.
     let cfg = ParserConfig {
         features: IdlFeatures::corba_full(),
         ..ParserConfig::default()
     };
     let ast = zerodds_idl::parse(idl, &cfg).expect("parse");
     generate_corba_rust_module(&ast, &CorbaRustGenOptions::default()).expect("gen")
+}
+
+#[test]
+fn scope_aware_exception_repo_id_with_typeprefix() {
+    // #4(3): Exception RepositoryId uses the definition scope (module) + typeprefix.
+    let idl = r#"
+        typeprefix CosNaming "omg.org";
+        module CosNaming {
+            exception NotFound { long why; };
+            interface NamingContext {
+                long resolve(in long n) raises(NotFound);
+            };
+        };
+    "#;
+    let code = run(idl);
+    // Skeleton/stub must carry the fully qualified RepoId with the omg.org prefix.
+    assert!(
+        code.contains("IDL:omg.org/CosNaming/NotFound:1.0"),
+        "scope+typeprefix RepoId missing; gen:\n{code}"
+    );
+    assert!(
+        !code.contains("\"IDL:NotFound:1.0\""),
+        "flat RepoId must no longer appear"
+    );
+}
+
+#[test]
+fn ami_codegen_emits_handler_sendc_sendp_poller() {
+    // CORBA Messaging §22: `@ami` → ReplyHandler-Trait + sendc_/sendp_ + Poller.
+    let idl = r#"
+        interface Bank {
+            @ami long deposit(in long amount);
+            @ami long transfer(in long amount, out long balance);
+        };
+    "#;
+    let code = run(idl);
+    // Callback model: handler trait + success/fault methods.
+    assert!(
+        code.contains("pub trait BankAmiHandler"),
+        "handler trait missing:\n{code}"
+    );
+    assert!(
+        code.contains("fn deposit(&self, __return: i32)"),
+        "deposit reply missing"
+    );
+    assert!(
+        code.contains("fn deposit_excep(&self, __excep: zerodds_corba_rust::CorbaException)"),
+        "deposit_excep missing"
+    );
+    assert!(
+        code.contains("fn transfer(&self, __return: i32, balance: i32)"),
+        "transfer reply (ret + out) missing"
+    );
+    // sendc_ (callback) + sendp_ (polling) on the stub.
+    assert!(
+        code.contains("pub fn sendc_deposit"),
+        "sendc_deposit missing"
+    );
+    assert!(
+        code.contains("pub fn sendp_deposit"),
+        "sendp_deposit missing"
+    );
+    // Typed poller: return-only → i32, return+out → tuple.
+    assert!(
+        code.contains("pub struct BankDepositPoller"),
+        "poller struct missing"
+    );
+    assert!(
+        code.contains(
+            "pub fn get_reply(&self, __channel: &mut dyn zerodds_corba_rust::AsyncCorbaChannel) -> ::core::result::Result<i32"
+        ),
+        "Deposit poller get_reply -> i32 missing"
+    );
+    assert!(
+        code.contains("-> ::core::result::Result<(i32, i32)"),
+        "Transfer poller get_reply -> (ret, out) tuple missing"
+    );
+}
+
+#[test]
+fn truncatable_valuetype_emits_base_ids() {
+    // `valuetype Derived : truncatable Base` → chunked/truncatable base-id list.
+    let idl = r#"
+        valuetype Base { public long id; };
+        valuetype Derived : truncatable Base { public string extra; };
+    "#;
+    let code = run(idl);
+    assert!(
+        code.contains("pub const DERIVED_BASE_IDS: &[&str] = &[\"IDL:Base:1.0\"];"),
+        "truncatable base-id list missing:\n{code}"
+    );
+    // Non-truncatable Base gets no list.
+    assert!(!code.contains("BASE_BASE_IDS"), "Base is not truncatable");
+}
+
+#[test]
+fn no_ami_codegen_without_annotation() {
+    // Without `@ami`, NO AMI code may be produced (gate correct).
+    let code = run("interface Plain { long add(in long a); };");
+    assert!(
+        !code.contains("AmiHandler"),
+        "AMI code emitted without @ami"
+    );
+    assert!(!code.contains("sendc_"), "sendc_ emitted without @ami");
 }
 
 #[test]

@@ -7,42 +7,42 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-### RC1-Audit
+### RC1 audit
 
-**Breaking** (interne Aufräumung; öffentliche Production-API
-unverändert):
+**Breaking** (internal cleanup; the public production API is
+unchanged):
 
-- Intra-Process-Stub (`ShmTransport`, `registry`, `ring_buffer` Module)
-  entfernt — war Phase-1-Artefakt ohne externen Konsumenten. Production
-  nutzt ausschließlich `PosixShmTransport`.
+- Intra-process stub (`ShmTransport`, `registry`, `ring_buffer`
+  modules) removed — was a phase-1 artifact with no external consumer.
+  Production uses `PosixShmTransport` exclusively.
 
-**Sonstige Änderungen**:
+**Other changes**:
 
-- License-Header (SPDX-Apache-2.0) auf alle src-Files.
-- Cargo.toml RC1-Metadaten (homepage, documentation, keywords, categories).
+- License header (SPDX-Apache-2.0) on all src files.
+- Cargo.toml RC1 metadata (homepage, documentation, keywords, categories).
 - `publish = false` → `publish = true`.
-- Crate-Header rewrite: ehrliche Spec-Story (DDSI-RTPS §9.4 LocatorKind
-  OMG-normativ; Segment-Layout + SpSc + Cleanup ZeroDDS-eigen).
-- Internal-only Review-Cycle-Marker (`phase2-0-*`) aus posix.rs entfernt.
-- ZeroDDS-SHM-Transport-1.0-Spec materialisiert in
-  `docs/spec-coverage/zerodds-shm-transport-1.0.md` (§1-§8 mit
-  Segment-Layout, Frame-Format, Sync-Modell, Cleanup-Semantik,
-  Plattform-Support, Test-Mapping).
+- Crate header rewrite: honest spec story (DDSI-RTPS §9.4 LocatorKind
+  OMG-normative; segment layout + SpSc + cleanup ZeroDDS-own).
+- Internal-only review-cycle markers (`phase2-0-*`) removed from posix.rs.
+- ZeroDDS SHM Transport 1.0 spec materialized in
+  `docs/spec-coverage/zerodds-shm-transport-1.0.md` (§1-§8 with
+  segment layout, frame format, sync model, cleanup semantics,
+  platform support, test mapping).
 - README + CHANGELOG.
 
-### Eigenschaften
+### Features
 
-- `std`-only, Safety-Klasse **STANDARD**.
-- 18 Tests grün (17 lib + 1 cross-process integration); clippy clean.
-- Cross-Process SHM via POSIX `shm_open` + `mmap`.
-- Lock-free SpSc-Ringbuffer mit `AcqRel`-Atomics.
-- Crash-Recovery via predictable `os_id` + `shm_unlink`.
-- Advisory `flock`-Race-Protection beim Owner-Create.
-- Shutdown-Flag für Owner→Consumer-Termination-Signaling.
+- `std`-only, safety class **STANDARD**.
+- 18 tests green (17 lib + 1 cross-process integration); clippy clean.
+- Cross-process SHM via POSIX `shm_open` + `mmap`.
+- Lock-free SpSc ring buffer with `AcqRel` atomics.
+- Crash recovery via a predictable `os_id` + `shm_unlink`.
+- Advisory `flock` race protection on owner-create.
+- Shutdown flag for owner→consumer termination signaling.
 
-### Plattform-Support
+### Platform support
 
-- Linux primary, macOS supported, Windows best-effort, no_std nicht
+- Linux primary, macOS supported, Windows best-effort, no_std not
   supported.
 
 [Unreleased]: https://github.com/zero-objects/zero-dds/compare/v1.0.0-rc.1...HEAD

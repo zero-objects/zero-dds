@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! E2E-Test fuer `zerodds-corba-bridged` §7 Security-Wireup.
+//! E2E test for `zerodds-corba-bridged` §7 security wireup.
 //!
-//! Deckt:
-//! * §7.1 TLS — `build_corba_tls_config` (SSLIOP — kein ALPN-Token).
-//! * §7.2 Auth — Bearer-Token via GIOP-Service-Context (`context_id=256`).
-//! * §7.2 Reject — malformed Service-Context.
-//! * §7.2 mTLS — Subject-Pass-Through via TLS-Layer.
-//! * §7.3 Topic-ACL — DDS-Topic-Bridge-Mapping.
+//! Covers:
+//! * §7.1 TLS — `build_corba_tls_config` (SSLIOP — no ALPN token).
+//! * §7.2 Auth — bearer token via GIOP service context (`context_id=256`).
+//! * §7.2 Reject — malformed service context.
+//! * §7.2 mTLS — subject pass-through via the TLS layer.
+//! * §7.3 Topic ACL — DDS topic bridge mapping.
 
 #![cfg(feature = "std")]
 #![allow(
@@ -62,7 +62,7 @@ fn build_corba_tls_config_loads_self_signed() {
     let c = write_temp("corba_cert.pem", cert.as_bytes());
     let k = write_temp("corba_key.pem", key.as_bytes());
     let cfg: Arc<rustls::ServerConfig> = build_corba_tls_config(c, k, None).expect("build cfg");
-    // SSLIOP: kein ALPN-Token vorgesehen.
+    // SSLIOP: no ALPN token expected.
     assert!(cfg.alpn_protocols.is_empty());
 }
 
@@ -91,7 +91,7 @@ fn auth_bearer_via_service_context_accepts_known_token() {
     sec.auth_mode = "bearer".into();
     sec.bearer_tokens.insert("tk-corba".into(), "alice".into());
     let ctx = build_ctx(&sec).unwrap();
-    // Vendor-Schema: `\0bearer\0<token>`.
+    // Vendor schema: `\0bearer\0<token>`.
     let blob = b"\0bearer\0tk-corba";
     let s = authenticate_corba(&ctx.auth, Some(blob), None).unwrap();
     assert_eq!(s.name, "alice");

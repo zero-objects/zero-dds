@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Builtin Pre-Shared-Key Cryptographic-Plugin (Spec §10.9).
+//! Built-in pre-shared-key cryptographic plugin (spec §10.9).
 //!
-//! Spec-Class-Id `"DDS:Crypto:PSK:AES-GCM-GMAC:1.2"`. Wire-Layout
-//! ist **identisch** zum X.509-Pfad ([`AesGcmCryptoPlugin`]) — Spec
-//! §10.9 garantiert das ausdruecklich. Unterschied: die Master-Keys
-//! werden via HKDF-SHA256 direkt aus dem Pre-Shared-Key abgeleitet
-//! statt aus einem DH-Shared-Secret.
+//! Spec class ID `"DDS:Crypto:PSK:AES-GCM-GMAC:1.2"`. The wire layout
+//! is **identical** to the X.509 path ([`AesGcmCryptoPlugin`]) — spec
+//! §10.9 guarantees that explicitly. Difference: the master keys
+//! are derived directly from the pre-shared key via HKDF-SHA256
+//! instead of from a DH shared secret.
 //!
-//! Im SRTPS_PREFIX-Submessage-Header setzt der PSK-Pfad den
-//! `PreSharedKeyFlag` (Spec §10.9.1) — siehe
+//! In the SRTPS_PREFIX submessage header the PSK path sets the
+//! `PreSharedKeyFlag` (spec §10.9.1) — see
 //! `zerodds_security_rtps::PRE_SHARED_KEY_FLAG`.
 //!
-//! # Architektur
+//! # Architecture
 //!
-//! Composition statt Inheritance: `PskCryptoPlugin` haelt einen
-//! [`AesGcmCryptoPlugin`] und delegiert AEAD-Hot-Path-Calls (encrypt,
-//! decrypt, multi-MAC, …) 1:1 an ihn. Die einzige Erweiterung ist die
-//! `register_psk_local`/`register_psk_remote`-Konfigurations-API: ein Pre-Shared-Key wird
-//! pro `(local, remote)`-Paar via HKDF expandiert, und der Plugin
-//! schreibt das daraus entstehende KeyMaterial direkt in den
-//! AesGcm-Slot — ohne RNG-Random-Phase.
+//! Composition instead of inheritance: `PskCryptoPlugin` holds an
+//! [`AesGcmCryptoPlugin`] and delegates AEAD hot-path calls (encrypt,
+//! decrypt, multi-MAC, …) 1:1 to it. The only extension is the
+//! `register_psk_local`/`register_psk_remote` configuration API: a pre-shared key is
+//! expanded per `(local, remote)` pair via HKDF, and the plugin
+//! writes the resulting KeyMaterial directly into the
+//! AesGcm slot — without an RNG random phase.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -37,30 +37,30 @@ use crate::suite::Suite;
 /// Plugin-Class-Id (Spec §10.9).
 pub const CLASS_ID_PSK_CRYPTO: &str = "DDS:Crypto:PSK:AES-GCM-GMAC:1.2";
 
-/// HKDF-Info-String fuer Master-Key-Derivation aus dem Pre-Shared-
-/// Key. Spec-konformer Domain-Separator (§10.9.2).
+/// HKDF info string for the master-key derivation from the pre-shared
+/// key. Spec-conformant domain separator (§10.9.2).
 pub const HKDF_INFO_PSK_MASTER_KEY: &[u8] = b"DDS-Security-1.2-PSK-MasterKey";
 
-/// PSK-Crypto-Plugin. Class-Id `"DDS:Crypto:PSK:AES-GCM-GMAC:1.2"`,
-/// Wire-Layout = AES-GCM-Plugin.
+/// PSK crypto plugin. Class ID `"DDS:Crypto:PSK:AES-GCM-GMAC:1.2"`,
+/// wire layout = AES-GCM plugin.
 pub struct PskCryptoPlugin {
     inner: AesGcmCryptoPlugin,
     suite: Suite,
-    /// Pre-Shared-Keys pro Identity-Handle-Pair (lokale Konfiguration).
-    /// Im PSK-Modus wird der Master-Key deterministisch aus
-    /// (PSK || session_salt) abgeleitet — beide Seiten landen ohne
-    /// Token-Exchange beim gleichen Material.
+    /// Pre-shared keys per identity-handle pair (local configuration).
+    /// In PSK mode the master key is derived deterministically from
+    /// (PSK || session_salt) — both sides land on the same material
+    /// without a token exchange.
     psks: BTreeMap<u64, Vec<u8>>,
 }
 
 impl PskCryptoPlugin {
-    /// Konstruktor mit Default-Suite `AES-GCM-128`.
+    /// Constructor with the default suite `AES-GCM-128`.
     #[must_use]
     pub fn new() -> Self {
         Self::with_suite(Suite::Aes128Gcm)
     }
 
-    /// Konstruktor mit expliziter Suite.
+    /// Constructor with an explicit suite.
     #[must_use]
     pub fn with_suite(suite: Suite) -> Self {
         Self {
@@ -70,39 +70,39 @@ impl PskCryptoPlugin {
         }
     }
 
-    /// Aktive Suite (fuer Tests / Metrics).
+    /// Active suite (for tests / metrics).
     #[must_use]
     pub fn suite(&self) -> Suite {
         self.suite
     }
 
-    /// Registriert einen Pre-Shared-Key. Der Caller adressiert ihn
-    /// spaeter via `register_psk_remote` ueber den gleichen
-    /// `psk_id`-Namespace. Im PSK-Pfad gibt es keinen Random-Phase,
-    /// d.h. Encrypt-Tokens werden via `register_psk_remote` direkt
-    /// ohne RNG generiert.
+    /// Registers a pre-shared key. The caller addresses it
+    /// later via `register_psk_remote` over the same
+    /// `psk_id` namespace. In the PSK path there is no random phase,
+    /// i.e. encrypt tokens are generated via `register_psk_remote` directly
+    /// without an RNG.
     ///
     /// # Errors
-    /// `BadArgument` wenn der Key leer ist.
+    /// `BadArgument` if the key is empty.
     pub fn register_psk(&mut self, psk_id: u64, key: Vec<u8>) -> SecurityResult<()> {
         if key.is_empty() {
             return Err(SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "psk-crypto: pre-shared-key leer",
+                "psk-crypto: pre-shared-key empty",
             ));
         }
         self.psks.insert(psk_id, key);
         Ok(())
     }
 
-    /// Registriert einen Remote-Slot fuer einen bekannten PSK. Der
-    /// Plugin leitet via HKDF einen Per-Peer-Master-Key ab und
-    /// schreibt ihn als Wire-Token in den AES-GCM-Slot. Beide Seiten
-    /// muessen denselben PSK + dieselbe `session_id` verwenden, damit
-    /// die Decrypt-Seite passt.
+    /// Registers a remote slot for a known PSK. The
+    /// plugin derives a per-peer master key via HKDF and
+    /// writes it as a wire token into the AES-GCM slot. Both sides
+    /// must use the same PSK + the same `session_id`, so that
+    /// the decrypt side matches.
     ///
     /// # Errors
-    /// `BadArgument` wenn `psk_id` unbekannt; sonstige Crypto-Fehler.
+    /// `BadArgument` if `psk_id` is unknown; other crypto errors.
     pub fn register_psk_remote(
         &mut self,
         local: CryptoHandle,
@@ -116,7 +116,7 @@ impl PskCryptoPlugin {
             .ok_or_else(|| {
                 SecurityError::new(
                     SecurityErrorKind::BadArgument,
-                    "psk-crypto: psk_id nicht registriert",
+                    "psk-crypto: psk_id not registered",
                 )
             })?
             .clone();
@@ -127,16 +127,25 @@ impl PskCryptoPlugin {
         // Build serialized token (Spec §10.5.2 Tab.73, C3.7-b):
         // [kind_id(1) | session_id(4) | sender_key_id(4) |
         //  master_salt(32) | master_key(N)]
-        let mut token = Vec::with_capacity(1 + 4 + 4 + 32 + master_key.len());
-        token.push(self.suite.transform_kind_id());
-        token.extend_from_slice(&session_id);
-        token.extend_from_slice(&key_id);
+        // CryptoToken keymat in cyclone/spec CDR-BE format (§9.5.2.1.1):
+        // transform_kind[4] || master_salt seq || sender_key_id[4] ||
+        // master_sender_key seq || receiver_specific_key_id[4] || rcv seq(0).
+        // (session_id does not travel in the keymat — the decode path reads it from the
+        // wire nonce; master_key/salt already depend on session_id.)
+        let mut token =
+            Vec::with_capacity(4 + 4 + master_salt.len() + 4 + 4 + master_key.len() + 8);
+        token.extend_from_slice(&self.suite.transform_kind());
+        token.extend_from_slice(&(master_salt.len() as u32).to_be_bytes());
         token.extend_from_slice(&master_salt);
+        token.extend_from_slice(&key_id);
+        token.extend_from_slice(&(master_key.len() as u32).to_be_bytes());
         token.extend_from_slice(&master_key);
+        token.extend_from_slice(&[0u8; 4]);
+        token.extend_from_slice(&0u32.to_be_bytes());
 
-        // Erst einen Slot via inner-Plugin allocieren — der Random-
-        // Inhalt wird gleich danach durch unseren PSK-abgeleiteten
-        // Token ueberschrieben.
+        // First allocate a slot via the inner plugin — the random
+        // content is overwritten right after by our PSK-derived
+        // token.
         let slot = self.inner.register_matched_remote_participant(
             local,
             remote_identity,
@@ -147,13 +156,13 @@ impl PskCryptoPlugin {
         Ok(slot)
     }
 
-    /// Registriert auch den **lokalen** Slot deterministisch aus
-    /// PSK + session_id — ueblicherweise aufgerufen statt
-    /// `register_local_participant` wenn man pure-PSK-Sym-Keys haben
-    /// will (beide Seiten rechnen den Key offline aus).
+    /// Registers the **local** slot too, deterministically from
+    /// PSK + session_id — usually called instead of
+    /// `register_local_participant` when you want pure PSK symmetric keys
+    /// (both sides compute the key offline).
     ///
     /// # Errors
-    /// Wie [`Self::register_psk_remote`].
+    /// Like [`Self::register_psk_remote`].
     pub fn register_psk_local(
         &mut self,
         psk_id: u64,
@@ -165,19 +174,28 @@ impl PskCryptoPlugin {
             .ok_or_else(|| {
                 SecurityError::new(
                     SecurityErrorKind::BadArgument,
-                    "psk-crypto: psk_id nicht registriert",
+                    "psk-crypto: psk_id not registered",
                 )
             })?
             .clone();
         let master_key = derive_psk_master_key(self.suite, &psk, &session_id)?;
         let master_salt = derive_psk_master_salt(&psk, &session_id)?;
         let key_id = derive_psk_key_id(&psk, &session_id)?;
-        let mut token = Vec::with_capacity(1 + 4 + 4 + 32 + master_key.len());
-        token.push(self.suite.transform_kind_id());
-        token.extend_from_slice(&session_id);
-        token.extend_from_slice(&key_id);
+        // CryptoToken keymat in cyclone/spec CDR-BE format (§9.5.2.1.1):
+        // transform_kind[4] || master_salt seq || sender_key_id[4] ||
+        // master_sender_key seq || receiver_specific_key_id[4] || rcv seq(0).
+        // (session_id does not travel in the keymat — the decode path reads it from the
+        // wire nonce; master_key/salt already depend on session_id.)
+        let mut token =
+            Vec::with_capacity(4 + 4 + master_salt.len() + 4 + 4 + master_key.len() + 8);
+        token.extend_from_slice(&self.suite.transform_kind());
+        token.extend_from_slice(&(master_salt.len() as u32).to_be_bytes());
         token.extend_from_slice(&master_salt);
+        token.extend_from_slice(&key_id);
+        token.extend_from_slice(&(master_key.len() as u32).to_be_bytes());
         token.extend_from_slice(&master_key);
+        token.extend_from_slice(&[0u8; 4]);
+        token.extend_from_slice(&0u32.to_be_bytes());
 
         let slot = self
             .inner
@@ -194,7 +212,7 @@ impl Default for PskCryptoPlugin {
     }
 }
 
-/// Spec §10.9.2 — Master-Key-Ableitung aus PSK + Session-Salt.
+/// Spec §10.9.2 — master-key derivation from PSK + session salt.
 /// `master_sender_key = HKDF-SHA256(psk, salt=session_id, info=
 /// "DDS-Security-1.2-PSK-MasterKey")`.
 fn derive_psk_master_key(
@@ -205,9 +223,9 @@ fn derive_psk_master_key(
     derive_psk_field(psk, session_id, HKDF_INFO_PSK_MASTER_KEY, suite.key_len())
 }
 
-/// Spec §10.9.2: master_salt + sender_key_id deterministisch aus
-/// (PSK, session_id) — beide Seiten rechnen offline. Verwendet eigene
-/// HKDF-Info-Strings, damit keine Kollision mit master_key.
+/// Spec §10.9.2: master_salt + sender_key_id deterministically from
+/// (PSK, session_id) — both sides compute offline. Uses its own
+/// HKDF info strings so there is no collision with master_key.
 const HKDF_INFO_PSK_MASTER_SALT: &[u8] = b"DDS-Security-1.2-PSK-MasterSalt";
 const HKDF_INFO_PSK_KEY_ID: &[u8] = b"DDS-Security-1.2-PSK-SenderKeyId";
 
@@ -460,7 +478,7 @@ mod tests {
         let session = [0u8, 0, 0, 42];
         let alice_local = alice.register_psk_local(7, session).unwrap();
         let bob_local = bob.register_psk_local(7, session).unwrap();
-        // remote-slots = die gleichen Keys (PSK ist symmetrisch).
+        // remote slots = the same keys (PSK is symmetric).
         let alice_to_bob = alice
             .register_psk_remote(alice_local, IdentityHandle(2), 7, session)
             .unwrap();

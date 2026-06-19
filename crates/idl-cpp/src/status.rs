@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Block-F: DDS-Status-Mapping (Spec idl4-cpp-1.0 §7.4 + dds-1.4 §2.2.4.1).
+//! Block-F: DDS status mapping (spec idl4-cpp-1.0 §7.4 + dds-1.4 §2.2.4.1).
 //!
-//! Emittiert die 13 OMG-DCPS-Status-Strukturen als C++17-Header in den
-//! Namespace `dds::core::status`. Die Klassen folgen dem Reference-Pattern
-//! aus C5.1-a (private Storage `field_`, mutable + const Getter, Setter).
+//! Emits the 13 OMG DCPS status structures as a C++17 header in the
+//! `dds::core::status` namespace. The classes follow the reference pattern
+//! from C5.1-a (private storage `field_`, mutable + const getter, setter).
 //!
-//! Spec-Quellen:
+//! Spec sources:
 //! - DDS-PSM-CXX 1.0 §7.5.5 (Listener / Status / Condition).
-//! - DDS 1.4 §2.2.4.1 (Communication-Status).
+//! - DDS 1.4 §2.2.4.1 (communication status).
 //!
-//! # Liste der 13 Status-Klassen
+//! # List of the 13 status classes
 //!
-//! | Status                          | Counter-Felder                                       |
+//! | Status                          | Counter fields                                       |
 //! |---------------------------------|------------------------------------------------------|
 //! | InconsistentTopicStatus         | total_count, total_count_change                      |
 //! | SampleLostStatus                | total_count, total_count_change                      |
@@ -28,35 +28,35 @@
 //! | DataAvailableStatus             | (marker only)                                        |
 //! | DataOnReadersStatus             | (marker only)                                        |
 //!
-//! Die Statusse mit `(marker only)` sind reine Notification-Marker ohne
-//! Counter (Spec DDS 1.4 §2.2.4.1.1.1). Sie werden trotzdem als leere
-//! Klassen emittiert, damit Listener-Signaturen einheitlich sind.
+//! The statuses marked `(marker only)` are pure notification markers without
+//! counter (spec DDS 1.4 §2.2.4.1.1.1). They are emitted as empty
+//! classes anyway so that listener signatures are uniform.
 
 use core::fmt::Write;
 
 use crate::error::CppGenError;
 
-/// Beschreibung eines DDS-Status-Felds.
+/// Description of a DDS status field.
 #[derive(Debug, Clone, Copy)]
 struct StatusField {
-    /// Feld-Name (snake_case wie in Spec).
+    /// Field name (snake_case as in the spec).
     name: &'static str,
-    /// C++-Typ-Ausdruck.
+    /// C++ type expression.
     cpp_ty: &'static str,
 }
 
-/// Beschreibung einer DDS-Status-Klasse.
+/// Description of a DDS status class.
 #[derive(Debug, Clone, Copy)]
 struct StatusSpec {
-    /// Klassen-Name (PascalCase wie in Spec).
+    /// Class name (PascalCase as in the spec).
     name: &'static str,
-    /// Felder der Status-Klasse.
+    /// Fields of the status class.
     fields: &'static [StatusField],
-    /// Doc-Kommentar mit Spec-Referenz.
+    /// Doc comment with a spec reference.
     spec_ref: &'static str,
 }
 
-/// Vollstaendige Liste der 13 DCPS-Status-Strukturen.
+/// Full list of the 13 DCPS status structures.
 const STATUSES: &[StatusSpec] = &[
     StatusSpec {
         name: "InconsistentTopicStatus",
@@ -292,15 +292,15 @@ const STATUSES: &[StatusSpec] = &[
     },
 ];
 
-/// Schreibt den vollstaendigen Status-Header in `out`.
+/// Writes the complete status header into `out`.
 ///
-/// Der Header enthaelt einen Block-Kommentar mit Spec-Referenz, oeffnet den
-/// Namespace `dds::core::status`, emittiert die 13 Status-Klassen und
-/// schliesst die Namespaces wieder.
+/// The header contains a block comment with a spec reference, opens the
+/// `dds::core::status` namespace, emits the 13 status classes and
+/// closes the namespaces again.
 ///
 /// # Errors
-/// Liefert [`CppGenError::Internal`], wenn das Schreiben in den
-/// `String`-Buffer scheitert (sollte praktisch nie auftreten).
+/// Returns [`CppGenError::Internal`] if writing to the
+/// `String` buffer fails (should practically never happen).
 pub fn emit_status_header(out: &mut String) -> Result<(), CppGenError> {
     writeln!(
         out,
@@ -314,9 +314,9 @@ pub fn emit_status_header(out: &mut String) -> Result<(), CppGenError> {
     .map_err(fmt_err)?;
     writeln!(out).map_err(fmt_err)?;
 
-    // Forward-decls fuer Hilfstypen; volle Definitionen liegen ausserhalb
-    // dieses Codegens (in der DDS-PSM-CXX-Runtime).
-    writeln!(out, "// Forward-Declarations fuer Hilfstypen.").map_err(fmt_err)?;
+    // Forward decls for helper types; full definitions live outside
+    // this codegen (in the DDS-PSM-CXX runtime).
+    writeln!(out, "// Forward declarations for helper types.").map_err(fmt_err)?;
     writeln!(out, "enum class SampleRejectedState : int32_t;").map_err(fmt_err)?;
     writeln!(out, "class QosPolicyCount;").map_err(fmt_err)?;
     writeln!(out).map_err(fmt_err)?;
@@ -330,7 +330,7 @@ pub fn emit_status_header(out: &mut String) -> Result<(), CppGenError> {
     Ok(())
 }
 
-/// Liefert die Liste aller emittierten Status-Klassen-Namen.
+/// Returns the list of all emitted status class names.
 #[must_use]
 pub fn status_class_names() -> Vec<&'static str> {
     STATUSES.iter().map(|s| s.name).collect()
@@ -349,13 +349,9 @@ fn emit_status_class(out: &mut String, s: &StatusSpec) -> Result<(), CppGenError
 
     if !s.fields.is_empty() {
         writeln!(out).map_err(fmt_err)?;
-        // Reset-Helper: setzt alle *_change-Felder auf 0 (Spec DDS 1.4
-        // §2.2.4.1.1: Reset on read).
-        writeln!(
-            out,
-            "    /// Reset-on-read: setzt alle *_change-Felder auf 0."
-        )
-        .map_err(fmt_err)?;
+        // Reset helper: sets all *_change fields to 0 (spec DDS 1.4
+        // §2.2.4.1.1: reset on read).
+        writeln!(out, "    /// Reset-on-read: sets all *_change fields to 0.").map_err(fmt_err)?;
         writeln!(out, "    void reset_changes() {{").map_err(fmt_err)?;
         for f in s.fields {
             if f.name.ends_with("_change") {
@@ -485,8 +481,8 @@ mod tests {
         let s = render();
         assert!(s.contains("class DataAvailableStatus {"));
         assert!(s.contains("class DataOnReadersStatus {"));
-        // Marker-Statusse haben keine Felder, daher kein `int32_t total_count_`.
-        // Aber sie emittieren Default-Konstruktor:
+        // Marker statuses have no fields, hence no `int32_t total_count_`.
+        // But they emit a default constructor:
         assert!(s.contains("DataAvailableStatus() = default;"));
         assert!(s.contains("DataOnReadersStatus() = default;"));
     }
@@ -521,7 +517,7 @@ mod tests {
     #[test]
     fn move_setter_variant_present() {
         let s = render();
-        // Move-Setter mit && + std::move:
+        // Move setter with && + std::move:
         assert!(s.contains("void total_count(int32_t&& value)"));
         assert!(s.contains("std::move(value);"));
     }

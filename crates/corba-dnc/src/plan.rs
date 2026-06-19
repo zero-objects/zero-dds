@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Plan-Datenmodell — OMG D&C 4.0 §6 + §7.
+//! Plan data model — OMG D&C 4.0 §6 + §7.
 //!
-//! Wir modellieren die zentralen Plan-Strukturen ohne den vollen
-//! UML-Stack: nur das, was fuer eine deploybare CCM-Application
-//! relevant ist.
+//! We model the core plan structures without the full UML stack: only
+//! what is relevant for a deployable CCM application.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -13,145 +12,145 @@ use alloc::vec::Vec;
 
 /// `ImplementationDescription` (IDD) — D&C §6.4.
 ///
-/// Beschreibt eine konkrete Component-Implementation: welches
-/// Artifact, welche Component-Repository-ID realisiert sie, und
-/// welche Konfigurations-Properties hat sie.
+/// Describes a concrete component implementation: which artifact,
+/// which component repository ID it realizes, and which configuration
+/// properties it has.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ImplementationDescription {
-    /// Eindeutiger Label (Spec D&C §6.4 `label`).
+    /// Unique label (spec D&C §6.4 `label`).
     pub label: String,
-    /// UUID (Spec D&C §6.4 `UUID`).
+    /// UUID (spec D&C §6.4 `UUID`).
     pub uuid: String,
-    /// Liste von Artifact-Pfaden (`.so`/`.dll`/`.jar`).
+    /// List of artifact paths (`.so`/`.dll`/`.jar`).
     pub artifacts: Vec<String>,
-    /// Repository-ID des Components, das diese Implementation
-    /// realisiert.
+    /// Repository ID of the component that this implementation
+    /// realizes.
     pub realizes: String,
-    /// Property-Map (D&C §6.4 `execParameter`).
+    /// Property map (D&C §6.4 `execParameter`).
     pub exec_params: BTreeMap<String, String>,
-    /// Implementation-Dependencies (D&C §6.4 `dependsOn`).
+    /// Implementation dependencies (D&C §6.4 `dependsOn`).
     pub depends_on: Vec<ImplementationDependency>,
 }
 
-/// Implementation-Dependency — D&C §6.5.
+/// Implementation dependency — D&C §6.5.
 ///
-/// Spec §6.5: `name` + `version` + Required-Capabilities.
+/// Spec §6.5: `name` + `version` + required capabilities.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ImplementationDependency {
-    /// Required-Capability-Name (z.B. `Java_Runtime`).
+    /// Required capability name (e.g. `Java_Runtime`).
     pub name: String,
-    /// Mindestversion.
+    /// Minimum version.
     pub min_version: String,
 }
 
 /// `PackagedComponentImplementation` — D&C §6.6.
 ///
-/// Verknuepft eine Component-Repository-ID mit den verfuegbaren
-/// Implementations.
+/// Links a component repository ID with the available
+/// implementations.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PackagedComponentImplementation {
-    /// Component-Repository-ID.
+    /// Component repository ID.
     pub component_id: String,
-    /// Liste der Implementations (z.B. eine fuer Linux, eine fuer
+    /// List of implementations (e.g. one for Linux, one for
     /// Windows).
     pub implementations: Vec<ImplementationDescription>,
 }
 
 /// `ComponentPackageDescription` (CPD) — D&C §6.6.
 ///
-/// Bundle-Beschreibung fuer eine Component plus alle ihre
-/// Implementations.
+/// Bundle description for a component plus all of its
+/// implementations.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ComponentPackageDescription {
-    /// Eindeutiger Label.
+    /// Unique label.
     pub label: String,
     /// UUID.
     pub uuid: String,
-    /// Repository-ID des Components.
+    /// Repository ID of the component.
     pub component_id: String,
-    /// Implementations (mit Selection-Requirements).
+    /// Implementations (with selection requirements).
     pub implementations: Vec<ImplementationDescription>,
 }
 
 /// `PackageConfiguration` (PSD) — D&C §6.7.
 ///
-/// Ein bereits selektiertes Package (Implementation-Selection
-/// abgeschlossen).
+/// A package that has already been selected (implementation selection
+/// complete).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PackageConfiguration {
-    /// Eindeutiger Label.
+    /// Unique label.
     pub label: String,
     /// UUID.
     pub uuid: String,
-    /// Selected Component-Package.
+    /// Selected component package.
     pub package: ComponentPackageDescription,
-    /// Selected Implementation (Index in package.implementations).
+    /// Selected implementation (index into package.implementations).
     pub selected_implementation: usize,
 }
 
-/// `InstanceDeploymentDescription` (IDD-Instance) — D&C §7.5.
+/// `InstanceDeploymentDescription` (IDD instance) — D&C §7.5.
 ///
-/// Eine konkrete Instance einer Component, mit Node-Assignment.
+/// A concrete instance of a component, with node assignment.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct InstanceDeploymentDescription {
-    /// Instance-Name.
+    /// Instance name.
     pub name: String,
-    /// Reference auf eine ImplementationDescription (label).
+    /// Reference to an ImplementationDescription (label).
     pub implementation: String,
-    /// Target-Node-Name.
+    /// Target node name.
     pub node: String,
-    /// Configured-Properties (D&C §7.5 `configProperty`).
+    /// Configured properties (D&C §7.5 `configProperty`).
     pub config_props: BTreeMap<String, String>,
-    /// Co-Location-Constraint (Spec D&C §7.7) — Liste anderer
-    /// Instance-Names, mit denen diese Instance im selben Process
-    /// laufen muss.
+    /// Co-location constraint (spec D&C §7.7) — list of other
+    /// instance names that this instance must run in the same process
+    /// as.
     pub co_locate_with: Vec<String>,
 }
 
 /// `DeploymentPlan` (DPD) — D&C §7.4.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DeploymentPlan {
-    /// Eindeutiger Label.
+    /// Unique label.
     pub label: String,
     /// UUID.
     pub uuid: String,
-    /// Ressourcen-Requirements (z.B. min RAM).
+    /// Resource requirements (e.g. minimum RAM).
     pub realizes: String,
     /// Implementations (D&C §7.4 `implementation`).
     pub implementations: Vec<ImplementationDescription>,
     /// Instances (D&C §7.4 `instance`).
     pub instances: Vec<InstanceDeploymentDescription>,
-    /// Connection-Definitions (D&C §7.6 `connection`).
+    /// Connection definitions (D&C §7.6 `connection`).
     pub connections: Vec<PlanConnection>,
 }
 
-/// Plan-Connection — verbindet Receptacle einer Instance an Facet
-/// einer anderen.
+/// Plan connection — connects the receptacle of one instance to the
+/// facet of another.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PlanConnection {
-    /// Connection-Name.
+    /// Connection name.
     pub name: String,
-    /// Source-Instance.
+    /// Source instance.
     pub source_instance: String,
-    /// Source-Port (Receptacle-Name).
+    /// Source port (receptacle name).
     pub source_port: String,
-    /// Target-Instance.
+    /// Target instance.
     pub target_instance: String,
-    /// Target-Port (Facet-Name).
+    /// Target port (facet name).
     pub target_port: String,
 }
 
-/// Plan-Validation-Fehler.
+/// Plan validation error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlanError {
-    /// Instance referenziert eine Implementation, die nicht im Plan
-    /// existiert.
+    /// An instance references an implementation that does not exist in
+    /// the plan.
     UnknownImplementation(String),
-    /// Connection referenziert eine Instance, die nicht im Plan
-    /// existiert.
+    /// A connection references an instance that does not exist in the
+    /// plan.
     UnknownInstance(String),
-    /// Co-Location-Liste verweist auf eine Instance, die nicht im
-    /// Plan existiert.
+    /// A co-location list refers to an instance that does not exist in
+    /// the plan.
     UnknownCoLocation(String),
 }
 
@@ -169,9 +168,8 @@ impl core::fmt::Display for PlanError {
 impl std::error::Error for PlanError {}
 
 impl DeploymentPlan {
-    /// Spec D&C §7.4 — Validation: alle Instance-Implementations,
-    /// Connection-Endpoints und Co-Locations muessen im Plan
-    /// existieren.
+    /// Spec D&C §7.4 — validation: all instance implementations,
+    /// connection endpoints, and co-locations must exist in the plan.
     ///
     /// # Errors
     /// Siehe [`PlanError`].

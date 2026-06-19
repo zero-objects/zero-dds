@@ -1,36 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Crate `zerodds-security-runtime`. Safety classification: **SAFE** (reiner Adapter ohne eigene Crypto-Primitiven — delegiert an `security-crypto` + `security-rtps`).
+//! Crate `zerodds-security-runtime`. Safety classification: **SAFE** (pure adapter without its own crypto primitives — delegates to `security-crypto` + `security-rtps`).
 //!
-//! Security-Runtime: Governance-driven Plugin-Lifecycle, Peer-Capabilities-Cache,
-//! Outbound-/Inbound-Verdict-Engine, Built-in DataTagging, Anti-Squatter,
-//! Heterogeneous-Mesh-Gateway-Bridge. Adapter-Schicht zwischen Governance-XML-Policy
-//! und dem Secure-Submessage-Wrapper.
+//! Security runtime: governance-driven plugin lifecycle, peer-capabilities cache,
+//! outbound/inbound verdict engine, built-in data tagging, anti-squatter,
+//! heterogeneous-mesh gateway bridge. Adapter layer between the governance-XML policy
+//! and the secure-submessage wrapper.
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 4 — Core Services. Konsumiert `zerodds-security` (SPI) +
+//! Layer 4 — core services. Consumes `zerodds-security` (SPI) +
 //! `zerodds-security-crypto` + `-permissions` + `-pki` + `-rtps` +
-//! `zerodds-rtps` + `zerodds-qos`. Wird vom DCPS-Runtime via
-//! `Box<dyn ...>`-Plugins gefuettert (Feature `security`).
+//! `zerodds-rtps` + `zerodds-qos`. Fed by the DCPS runtime via
+//! `Box<dyn ...>` plugins (feature `security`).
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! - [`SecurityGate`] — High-Level-Adapter zwischen Governance + Crypto + RTPS-Wrap.
-//! - `engine::*` — `GovernancePolicyEngine`-Default-Impl + `PolicyEngine`-Trait.
-//! - `policy::*` — `PolicyDecision` mit Suite, Receiver-MACs, Topic-Class.
+//! - [`SecurityGate`] — high-level adapter between governance + crypto + RTPS wrap.
+//! - `engine::*` — `GovernancePolicyEngine` default impl + `PolicyEngine` trait.
+//! - `policy::*` — `PolicyDecision` with suite, receiver MACs, topic class.
 //! - `caps::*` — `PeerCapabilities` + `PeerCapabilitiesCache`.
-//! - `caps_wire::*` — SPDP-Mapping fuer Peer-Capabilities (Wire-Codec).
-//! - `peer_class::*` — `<peer_class>`-Match (CIDR, Subject-Patterns).
-//! - `endpoint::*` — Endpoint-Slot-Lookup.
-//! - `data_tagging::*` — Built-in DataTaggingPlugin (Spec §8.7).
+//! - `caps_wire::*` — SPDP mapping for peer capabilities (wire codec).
+//! - `peer_class::*` — `<peer_class>` match (CIDR, subject patterns).
+//! - `endpoint::*` — endpoint slot lookup.
+//! - `data_tagging::*` — built-in DataTaggingPlugin (spec §8.7).
 //! - `builtin_topics::*` — DCPSParticipantStatelessMessage + DCPSParticipantVolatileMessageSecure.
-//! - `anti_squatter::*` — Spec §8.5.3 Anti-Squatter-Logik.
-//! - `gateway_bridge::*` — Heterogeneous-Mesh-Gateway-Bridge (Edge ↔ Backend).
-//! - `shared::*` — Shared-Inbound/Outbound-Verdict-Types.
+//! - `anti_squatter::*` — spec §8.5.3 anti-squatter logic.
+//! - `gateway_bridge::*` — heterogeneous-mesh gateway bridge (edge ↔ backend).
+//! - `shared::*` — shared inbound/outbound verdict types.
 //!
-//! # Beispiel
+//! # Example
 //!
 //! ```no_run
 //! use zerodds_security_crypto::AesGcmCryptoPlugin;
@@ -44,7 +44,7 @@
 //! // Outbound:
 //! let wire = gate.encode_outbound("Chatter", b"hello").unwrap();
 //!
-//! // Inbound (am Peer):
+//! // Inbound (at the peer):
 //! let plain = gate.decode_inbound("Chatter", &wire).unwrap();
 //! # const GOVERNANCE_XML: &str = "";
 //! ```
@@ -66,6 +66,8 @@ mod gate;
 pub mod gateway_bridge;
 pub mod peer_class;
 pub mod policy;
+#[cfg(feature = "std")]
+pub mod profile;
 mod shared;
 
 pub use anti_squatter::{BindingDecision, GuidPrefixBytes, IdentityBindingCache};
@@ -85,9 +87,11 @@ pub use policy::{
     InboundCtx, InterfaceConfig, IpRange, NetInterface, OutboundCtx, PolicyDecision, PolicyEngine,
     ProtectionLevel, SuiteHint, classify_interface,
 };
+#[cfg(feature = "std")]
+pub use profile::{SecurityProfile, SecurityProfileConfig, SecurityProfileError, strip_file_url};
 pub use shared::{InboundVerdict, PeerKey, SharedSecurityGate};
 
-// Re-exports aus zerodds-security fuer Downstream-Crates, die nur
-// `zerodds-security-runtime` depen (vor allem `dcps` fuer die Security-
-// Logger-Integration).
+// Re-exports from zerodds-security for downstream crates that only
+// depend on `zerodds-security-runtime` (above all `dcps` for the security
+// logger integration).
 pub use zerodds_security::logging::{LogLevel, LoggingPlugin};

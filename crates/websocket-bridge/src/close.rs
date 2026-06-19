@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Close-Frame Status-Codes — RFC 6455 §7.4.
+//! Close-frame status codes — RFC 6455 §7.4.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -18,9 +18,9 @@ pub enum CloseCode {
     ProtocolError = 1002,
     /// `1003` Unsupported Data.
     UnsupportedData = 1003,
-    /// `1005` No Status Received (reserved, NICHT auf Wire).
+    /// `1005` No Status Received (reserved, NOT on the wire).
     NoStatusReceived = 1005,
-    /// `1006` Abnormal Closure (reserved, NICHT auf Wire).
+    /// `1006` Abnormal Closure (reserved, NOT on the wire).
     AbnormalClosure = 1006,
     /// `1007` Invalid Frame Payload Data (UTF-8).
     InvalidPayloadData = 1007,
@@ -38,12 +38,12 @@ pub enum CloseCode {
     TryAgainLater = 1013,
     /// `1014` Bad Gateway.
     BadGateway = 1014,
-    /// `1015` TLS Handshake Failure (reserved, NICHT auf Wire).
+    /// `1015` TLS Handshake Failure (reserved, NOT on the wire).
     TlsHandshakeFailure = 1015,
 }
 
 impl CloseCode {
-    /// Wire-Wert.
+    /// Wire value.
     #[must_use]
     pub const fn to_u16(self) -> u16 {
         self as u16
@@ -52,7 +52,7 @@ impl CloseCode {
     /// `u16 -> CloseCode`.
     ///
     /// # Errors
-    /// `()` wenn Code unbekannt oder reserved-aber-nicht-handled.
+    /// `()` if the code is unknown or reserved-but-not-handled.
     #[allow(clippy::result_unit_err)]
     pub const fn from_u16(v: u16) -> Result<Self, ()> {
         match v {
@@ -75,8 +75,8 @@ impl CloseCode {
         }
     }
 
-    /// Spec §7.4.2: Codes 1004, 1005, 1006, 1015 sind reserved und
-    /// duerfen NICHT auf der Wire erscheinen.
+    /// Spec §7.4.2: codes 1004, 1005, 1006, 1015 are reserved and
+    /// must NOT appear on the wire.
     #[must_use]
     pub const fn is_reserved(self) -> bool {
         matches!(
@@ -87,26 +87,26 @@ impl CloseCode {
 }
 
 // ---------------------------------------------------------------------------
-// §7.4 Status Code Range-Validation
+// §7.4 status code range validation
 // ---------------------------------------------------------------------------
 
-/// Spec §7.4 Status-Code-Range-Klassifikation.
+/// Spec §7.4 status code range classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusCodeRange {
-    /// 0..=999 — verboten (nicht assigned).
+    /// 0..=999 — forbidden (not assigned).
     Invalid,
-    /// 1000..=2999 — Protocol-reserved (`is_protocol_assigned`-Subset).
-    /// Nicht-assigned-Werte in diesem Range sind invalid.
+    /// 1000..=2999 — protocol-reserved (`is_protocol_assigned` subset).
+    /// Non-assigned values in this range are invalid.
     ProtocolReserved,
-    /// 3000..=3999 — Library/Framework-defined.
+    /// 3000..=3999 — library/framework-defined.
     LibraryDefined,
-    /// 4000..=4999 — Application-defined.
+    /// 4000..=4999 — application-defined.
     ApplicationDefined,
-    /// 5000+ — verboten.
+    /// 5000+ — forbidden.
     OutOfRange,
 }
 
-/// Spec §7.4 — Klassifiziert einen Wire-Status-Code.
+/// Spec §7.4 — classifies a wire status code.
 #[must_use]
 pub const fn classify_status_code(code: u16) -> StatusCodeRange {
     match code {
@@ -118,19 +118,19 @@ pub const fn classify_status_code(code: u16) -> StatusCodeRange {
     }
 }
 
-/// Spec §7.4.2 — Code 1004 ist reserved-aber-nicht-on-wire (mit
-/// 1005, 1006, 1015). Liefert `true` wenn der Wire-Code in dieser
-/// Forbidden-Set ist.
+/// Spec §7.4.2 — code 1004 is reserved-but-not-on-wire (along with
+/// 1005, 1006, 1015). Returns `true` if the wire code is in this
+/// forbidden set.
 #[must_use]
 pub const fn is_forbidden_on_wire(code: u16) -> bool {
     matches!(code, 1004 | 1005 | 1006 | 1015)
 }
 
-/// Spec §7.4.2 — Validiert einen Wire-Status-Code als legal.
+/// Spec §7.4.2 — validates a wire status code as legal.
 ///
 /// # Errors
-/// `()` wenn der Code outside any allowed range ist oder eine der
-/// reserved-but-not-on-wire-Restrictions verletzt.
+/// `()` if the code is outside any allowed range or violates one of
+/// the reserved-but-not-on-wire restrictions.
 #[allow(clippy::result_unit_err)]
 pub const fn validate_wire_status_code(code: u16) -> Result<(), ()> {
     if is_forbidden_on_wire(code) {
@@ -144,16 +144,16 @@ pub const fn validate_wire_status_code(code: u16) -> Result<(), ()> {
     }
 }
 
-/// Close-Frame Payload (Code + optional Reason).
+/// Close-frame payload (code + optional reason).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClosePayload {
-    /// Status-Code.
+    /// Status code.
     pub code: CloseCode,
-    /// UTF-8-Reason (max 123 Bytes — Spec §5.5.1).
+    /// UTF-8 reason (max 123 bytes — Spec §5.5.1).
     pub reason: String,
 }
 
-/// Encode zu Close-Frame-Payload-Bytes (2-Byte BE Code + UTF-8 Reason).
+/// Encode to close-frame payload bytes (2-byte BE code + UTF-8 reason).
 #[must_use]
 pub fn encode_close_payload(payload: &ClosePayload) -> Vec<u8> {
     let mut out = Vec::with_capacity(2 + payload.reason.len());
@@ -162,14 +162,14 @@ pub fn encode_close_payload(payload: &ClosePayload) -> Vec<u8> {
     out
 }
 
-/// Decode von Close-Frame-Payload-Bytes.
+/// Decode from close-frame payload bytes.
 ///
 /// # Errors
-/// `()` wenn Payload < 2 Bytes oder UTF-8-invalid oder Reserved-Code.
+/// `()` if the payload < 2 bytes or UTF-8-invalid or a reserved code.
 #[allow(clippy::result_unit_err)]
 pub fn decode_close_payload(bytes: &[u8]) -> Result<ClosePayload, ()> {
     if bytes.is_empty() {
-        // Spec §5.5.1: leeres Close-Payload ist erlaubt → kein Status.
+        // Spec §5.5.1: an empty close payload is allowed → no status.
         return Err(());
     }
     if bytes.len() < 2 {
@@ -415,24 +415,24 @@ mod tests {
 // §7.1 / §7.2 / §7.3 Close-Handshake State-Machine
 // ---------------------------------------------------------------------------
 
-/// Spec §7.1 / §7.2 / §7.3 — Close-Handshake-State.
+/// Spec §7.1 / §7.2 / §7.3 — close-handshake state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CloseState {
-    /// Connect ist offen, Frames werden frei ausgetauscht.
+    /// The connection is open, frames are exchanged freely.
     Open,
-    /// Wir haben Close gesendet, warten auf Antwort. (Spec §7.1.2)
+    /// We have sent Close and are waiting for the response. (Spec §7.1.2)
     ClosingInitiator,
-    /// Peer hat Close gesendet, wir muessen mit Close antworten.
+    /// The peer has sent Close, we must respond with Close.
     /// (Spec §7.1.4)
     ClosingResponder,
-    /// Close-Handshake abgeschlossen — TCP-Close kann folgen.
+    /// Close handshake completed — a TCP close may follow.
     /// (Spec §7.1.1 Normal Closure)
     Closed,
-    /// Connect wurde abnormal beendet. (Spec §7.1.7)
+    /// The connection was terminated abnormally. (Spec §7.1.7)
     Failed,
 }
 
-/// Close-Handshake State-Machine.
+/// Close-handshake state machine.
 #[derive(Debug, Clone)]
 pub struct CloseHandshake {
     state: CloseState,
@@ -448,7 +448,7 @@ impl Default for CloseHandshake {
 }
 
 impl CloseHandshake {
-    /// Konstruktor — startet im Open-State.
+    /// Constructor — starts in the open state.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -459,29 +459,29 @@ impl CloseHandshake {
         }
     }
 
-    /// Aktueller State.
+    /// Current state.
     #[must_use]
     pub fn state(&self) -> CloseState {
         self.state
     }
 
-    /// `true` wenn der Connect zu (Closed oder Failed) ist.
+    /// `true` if the connection is (closed or failed).
     #[must_use]
     pub fn is_closed(&self) -> bool {
         matches!(self.state, CloseState::Closed | CloseState::Failed)
     }
 
-    /// Fehler-Grund bei abnormaler Closure (§7.1.7).
+    /// Failure reason on abnormal closure (§7.1.7).
     #[must_use]
     pub fn failure_reason(&self) -> Option<&str> {
         self.failure_reason.as_deref()
     }
 
-    /// Spec §7.1.2 — Initiator sendet Close-Frame mit Status-Code.
-    /// Transitioniert von `Open` → `ClosingInitiator`.
+    /// Spec §7.1.2 — the initiator sends a close frame with a status code.
+    /// Transitions from `Open` → `ClosingInitiator`.
     ///
     /// # Errors
-    /// `()` wenn nicht im `Open`-State.
+    /// `()` if not in the `Open` state.
     #[allow(clippy::result_unit_err)]
     pub fn initiator_send_close(&mut self, code: CloseCode) -> Result<(), ()> {
         if self.state != CloseState::Open {
@@ -492,11 +492,11 @@ impl CloseHandshake {
         Ok(())
     }
 
-    /// Spec §7.1.3 — Initiator empfaengt Close-Antwort.
-    /// Transitioniert von `ClosingInitiator` → `Closed`.
+    /// Spec §7.1.3 — the initiator receives the close response.
+    /// Transitions from `ClosingInitiator` → `Closed`.
     ///
     /// # Errors
-    /// `()` wenn nicht im `ClosingInitiator`-State.
+    /// `()` if not in the `ClosingInitiator` state.
     #[allow(clippy::result_unit_err)]
     pub fn recv_close_response(&mut self, code: CloseCode) -> Result<(), ()> {
         if self.state != CloseState::ClosingInitiator {
@@ -507,11 +507,11 @@ impl CloseHandshake {
         Ok(())
     }
 
-    /// Spec §7.1.4 — Responder empfaengt Close-Frame vom Peer.
-    /// Transitioniert von `Open` → `ClosingResponder`.
+    /// Spec §7.1.4 — the responder receives a close frame from the peer.
+    /// Transitions from `Open` → `ClosingResponder`.
     ///
     /// # Errors
-    /// `()` wenn nicht im `Open`-State.
+    /// `()` if not in the `Open` state.
     #[allow(clippy::result_unit_err)]
     pub fn responder_recv_close(&mut self, code: CloseCode) -> Result<(), ()> {
         if self.state != CloseState::Open {
@@ -522,11 +522,11 @@ impl CloseHandshake {
         Ok(())
     }
 
-    /// Spec §7.1.4 — Responder antwortet mit Close-Frame.
-    /// Transitioniert von `ClosingResponder` → `Closed`.
+    /// Spec §7.1.4 — the responder replies with a close frame.
+    /// Transitions from `ClosingResponder` → `Closed`.
     ///
     /// # Errors
-    /// `()` wenn nicht im `ClosingResponder`-State.
+    /// `()` if not in the `ClosingResponder` state.
     #[allow(clippy::result_unit_err)]
     pub fn responder_send_close_response(&mut self) -> Result<(), ()> {
         if self.state != CloseState::ClosingResponder {
@@ -538,8 +538,8 @@ impl CloseHandshake {
         Ok(())
     }
 
-    /// Spec §7.1.7 — Abnormal Closure (TCP reset, Crash, etc.).
-    /// Transitioniert in `Failed` mit Begruendung.
+    /// Spec §7.1.7 — abnormal closure (TCP reset, crash, etc.).
+    /// Transitions to `Failed` with a reason.
     pub fn fail(&mut self, reason: impl Into<String>) {
         self.state = CloseState::Failed;
         self.failure_reason = Some(reason.into());

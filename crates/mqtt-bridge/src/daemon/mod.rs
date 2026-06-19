@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `zerodds-mqtt-bridged` Daemon-Implementation.
+//! `zerodds-mqtt-bridged` daemon implementation.
 //!
 //! Spec: `docs/specs/zerodds-mqtt-bridge-1.0.md`.
 //!
 //! Conformance L1-L4:
 //!
-//! * **L1 — Wire**: MQTT-5 (OASIS 2019) ueber bestehende Codec-Module
+//! * **L1 — wire**: MQTT-5 (OASIS 2019) over the existing codec modules
 //!   (`crate::control_packets`, `crate::codec`, `crate::vbi`).
-//! * **L2 — DDS**: `DcpsRuntime` auf Domain-ID aus Config.
-//! * **L3 — Bridging**: pro Topic-Eintrag DDS-Reader (out-Direction)
-//!   plus DDS-Writer (in-Direction); MQTT-PUBLISH ↔ DDS-Sample.
-//! * **L4 — Config**: YAML-Subset wie WS-Daemon (eigener Mini-Parser).
+//! * **L2 — DDS**: `DcpsRuntime` on the domain ID from the config.
+//! * **L3 — bridging**: per topic entry a DDS reader (out direction)
+//!   plus a DDS writer (in direction); MQTT PUBLISH ↔ DDS sample.
+//! * **L4 — config**: YAML subset like the WS daemon (own mini parser).
 //!
-//! L5/L6 sind Stubs.
+//! L5/L6 are stubs.
 
 pub mod cli;
 pub mod client;

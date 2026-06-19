@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0 OR Unlicense
 // Copyright 2026 ZeroDDS Contributors
 //
-// dds/topic/xcdr2_md5.hpp -- RFC 1321 MD5 fuer Key-Hash.
+// dds/topic/xcdr2_md5.hpp -- RFC 1321 MD5 for key hashing.
 //
-// Public-domain Implementation. Header-only, kein external Dep.
-// Wird ausschliesslich fuer XTypes 1.3 §7.6.8 PlainCdr2BeKeyHolder
-// verwendet. Nicht fuer kryptographische Zwecke.
+// Public-domain implementation. Header-only, no external dependency.
+// Used exclusively for XTypes 1.3 §7.6.8 PlainCdr2BeKeyHolder.
+// Not for cryptographic purposes.
 
 #ifndef ZERODDS_DDS_TOPIC_XCDR2_MD5_HPP
 #define ZERODDS_DDS_TOPIC_XCDR2_MD5_HPP
@@ -119,7 +119,7 @@ inline void process_block(uint32_t state[4], const uint8_t block[64]) {
 
 } // namespace detail
 
-/// MD5 ueber `data` (RFC 1321). 16-Byte-Digest, in Reading-Order.
+/// MD5 over `data` (RFC 1321). 16-byte digest, in reading order.
 inline std::array<uint8_t, 16> md5(const uint8_t* data, size_t len) {
     uint32_t state[4] = {
         0x67452301u, 0xefcdab89u, 0x98badcfeu, 0x10325476u,

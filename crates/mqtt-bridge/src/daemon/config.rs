@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Config fuer `zerodds-mqtt-bridged`. Spec §3.
+//! Config for `zerodds-mqtt-bridged`. Spec §3.
 //!
-//! YAML-Subset gleiches Format wie websocket-bridge::daemon::config —
-//! eigenstaendig dupliziert, weil die Daemons keinen geteilten
-//! Hilfs-Crate teilen sollen (vendor-spec Independence).
+//! YAML subset, same format as websocket-bridge::daemon::config —
+//! duplicated standalone, because the daemons should not share a
+//! common helper crate (vendor-spec independence).
 
 use std::fs;
 use std::path::Path;
@@ -33,38 +33,38 @@ pub struct DaemonConfig {
     pub clean_start: bool,
     /// `topics:`.
     pub topics: Vec<TopicConfig>,
-    /// TLS aktiv (L5-Stub — Legacy-Flag, ueberlebt fuer Backward-Compat).
+    /// TLS active (L5 stub — legacy flag, kept for backward compat).
     pub tls_enabled: bool,
-    /// Spec §7.1 — TLS aktiv im Out-Bound zum Broker (`mqtts://`).
+    /// Spec §7.1 — TLS active outbound to the broker (`mqtts://`).
     pub broker_tls_enabled: bool,
-    /// `mqtt.tls.ca_file:` — PEM-CA fuer Broker-Cert-Validation.
+    /// `mqtt.tls.ca_file:` — PEM CA for broker-cert validation.
     pub broker_tls_ca_file: String,
-    /// `mqtt.tls.client_cert_file:` — Client-Cert (mTLS).
+    /// `mqtt.tls.client_cert_file:` — client cert (mTLS).
     pub broker_tls_client_cert_file: String,
-    /// `mqtt.tls.client_key_file:` — Client-Key (mTLS).
+    /// `mqtt.tls.client_key_file:` — client key (mTLS).
     pub broker_tls_client_key_file: String,
-    /// `mqtt.tls.server_name:` — Hostname-Override fuer SNI/Validation.
+    /// `mqtt.tls.server_name:` — hostname override for SNI/validation.
     pub broker_tls_server_name: String,
-    /// Spec §7.2 — Auth-Mode der Bridge gegenueber dem Broker:
+    /// Spec §7.2 — auth mode of the bridge towards the broker:
     /// `none|bearer|sasl|sasl_plain|mtls`.
     pub auth_mode: String,
-    /// `auth.bearer_token:` — Token, das als CONNECT-Password rausgeht.
+    /// `auth.bearer_token:` — token sent out as the CONNECT password.
     pub auth_bearer_token: Option<String>,
-    /// `auth.bearer_subject:` — Lokaler Subject-Name fuer ACL-Auth.
+    /// `auth.bearer_subject:` — local subject name for ACL auth.
     pub auth_bearer_subject: Option<String>,
-    /// `auth.username:` — Out-Bound CONNECT-Username (SASL-PLAIN).
+    /// `auth.username:` — outbound CONNECT username (SASL-PLAIN).
     pub outbound_username: Option<String>,
-    /// `auth.password:` — Out-Bound CONNECT-Password (SASL-PLAIN).
+    /// `auth.password:` — outbound CONNECT password (SASL-PLAIN).
     pub outbound_password: Option<String>,
-    /// `auth.sasl_users:` — User/Pass-Map (CSV `u:p,u2:p2` im YAML).
-    /// Wird im Daemon-internen ACL-Pfad zur Validierung benutzt.
+    /// `auth.sasl_users:` — user/pass map (CSV `u:p,u2:p2` in the YAML).
+    /// Used in the daemon-internal ACL path for validation.
     pub sasl_users: std::collections::HashMap<String, String>,
-    /// Spec §7.3 — Topic-ACL `topic → (read-Subjects, write-Subjects)`.
+    /// Spec §7.3 — topic ACL `topic → (read subjects, write subjects)`.
     pub topic_acl: std::collections::HashMap<String, (Vec<String>, Vec<String>)>,
-    /// `metrics.enabled` — schaltet den Prometheus-Endpoint (§8.2).
+    /// `metrics.enabled` — toggles the Prometheus endpoint (§8.2).
     pub metrics_enabled: bool,
     /// `metrics.address`. Default `127.0.0.1:9090`
-    /// wenn `metrics_enabled=true` und die Adresse leer ist.
+    /// if `metrics_enabled=true` and the address is empty.
     pub metrics_addr: String,
 }
 
@@ -74,7 +74,7 @@ impl Default for DaemonConfig {
     }
 }
 
-/// Pro-Topic-Eintrag.
+/// Per-topic entry.
 #[derive(Debug, Clone, Default)]
 pub struct TopicConfig {
     /// `dds_name:`.
@@ -97,20 +97,20 @@ pub struct TopicConfig {
     pub history_depth: i32,
 }
 
-/// Config-Fehler.
+/// Config error.
 #[derive(Debug, Clone)]
 pub enum ConfigError {
     /// IO.
     Io(String),
     /// Syntax.
     Syntax(String),
-    /// Pflicht-Feld fehlt.
+    /// Required field missing.
     MissingField(String),
-    /// Wert-Typ.
+    /// Value type.
     BadValue {
-        /// Feldname.
+        /// Field name.
         field: String,
-        /// Wert.
+        /// Value.
         value: String,
     },
 }
@@ -129,7 +129,7 @@ impl core::fmt::Display for ConfigError {
 impl std::error::Error for ConfigError {}
 
 impl DaemonConfig {
-    /// Default fuer dev-mode.
+    /// Default for dev mode.
     #[must_use]
     pub fn default_for_dev() -> Self {
         Self {
@@ -160,7 +160,7 @@ impl DaemonConfig {
         }
     }
 
-    /// Laedt aus File.
+    /// Loads from a file.
     ///
     /// # Errors
     /// [`ConfigError`].
@@ -169,7 +169,7 @@ impl DaemonConfig {
         Self::load_from_str(&raw)
     }
 
-    /// Parst aus String.
+    /// Parses from a string.
     ///
     /// # Errors
     /// [`ConfigError`].
@@ -395,10 +395,10 @@ fn parse_bool(s: &str) -> bool {
     matches!(s.trim().to_ascii_lowercase().as_str(), "true" | "yes" | "1")
 }
 
-/// Parst `mqtt://host:port` oder `mqtts://host:port`.
+/// Parses `mqtt://host:port` or `mqtts://host:port`.
 ///
 /// # Errors
-/// `ConfigError::BadValue` wenn keine valide URL.
+/// `ConfigError::BadValue` if not a valid URL.
 pub fn parse_broker_url(url: &str) -> Result<(String, u16, bool), ConfigError> {
     let (scheme, rest) = url.split_once("://").ok_or(ConfigError::BadValue {
         field: "broker_url".to_string(),

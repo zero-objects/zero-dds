@@ -7,60 +7,60 @@ SemVer.
 
 ### Added
 
-- **`xcdr2`-Modul** — implementiert die `zerodds-xcdr2-c-1.0`
-  Vendor-Spec.
-  - `ZeroDdsTypeSupport` (`zerodds_typesupport_t` C-side) als
-    function-table-basiertes TypeSupport-Struct.
-  - FFI-Funktionen `zerodds_topic_create_typed`,
+- **`xcdr2` module** — implements the `zerodds-xcdr2-c-1.0`
+  vendor spec.
+  - `ZeroDdsTypeSupport` (`zerodds_typesupport_t` C-side) as a
+    function-table-based TypeSupport struct.
+  - FFI functions `zerodds_topic_create_typed`,
     `zerodds_topic_destroy_typed`, `zerodds_writer_write_typed`,
     `zerodds_reader_take_typed`, `zerodds_xcdr2_encode`,
     `zerodds_xcdr2_decode`.
-  - `ZeroDdsTopic` opaque-Handle fuer typisierte Topics.
-  - Helper-Funktionen `copy_to_out_buf`, `input_slice`, `write_out_len`
-    fuer Codegen-Encoder/-Decoder.
-- **`include/zerodds_xcdr2.h`** — hand-maintained C99-Header mit
-  TypeSupport-Struct + FFI-Forward-Declarations + inline-Helpers fuer
-  Codegen-Output (`zerodds_xcdr2_c_write_uN/iN/fN/string`,
+  - `ZeroDdsTopic` opaque handle for typed topics.
+  - Helper functions `copy_to_out_buf`, `input_slice`, `write_out_len`
+    for codegen encoders/decoders.
+- **`include/zerodds_xcdr2.h`** — hand-maintained C99 header with the
+  TypeSupport struct + FFI forward declarations + inline helpers for the
+  codegen output (`zerodds_xcdr2_c_write_uN/iN/fN/string`,
   `zerodds_xcdr2_c_read_*`, `zerodds_xcdr2_c_kh_write_*`,
-  `zerodds_xcdr2_c_compute_key_hash`, eingebauter MD5).
-- **L1 Wire-Conformance-Tests** in `tests/xcdr2_wire_vectors.rs` —
-  pruefen V-1..V-12 byte-genau ueber das FFI-Pattern.
-- **L2 Codegen-Conformance-Tests** in `tests/xcdr2_c_codegen.rs` —
-  verifizieren `idl-cpp::generate_c_header`-Output fuer jeden
-  V-1..V-12 IDL-Snippet.
-- **L2 C-Compile-Tests** in `tests/xcdr2_c_compile.rs` — kompilieren
-  jeden generierten Header mit `cc -std=c99 -Wall -Werror`, um C99-
-  Validitaet zu garantieren (skipt wenn kein C-Compiler im PATH).
+  `zerodds_xcdr2_c_compute_key_hash`, built-in MD5).
+- **L1 wire-conformance tests** in `tests/xcdr2_wire_vectors.rs` —
+  check V-1..V-12 byte-exactly over the FFI pattern.
+- **L2 codegen-conformance tests** in `tests/xcdr2_c_codegen.rs` —
+  verify the `idl-cpp::generate_c_header` output for each
+  V-1..V-12 IDL snippet.
+- **L2 C-compile tests** in `tests/xcdr2_c_compile.rs` — compile
+  each generated header with `cc -std=c99 -Wall -Werror`, to guarantee C99
+  validity (skipped if no C compiler is in PATH).
 
 ### Changed
 
-- `Cargo.toml`: add `zerodds-cdr` als runtime-Abhaengigkeit (mit
-  `alloc` + `std`-Features), `zerodds-idl` + `zerodds-idl-cpp` als
-  dev-dependencies fuer Codegen-/Wire-Tests.
-- `src/lib.rs`: registriert `pub mod xcdr2`.
+- `Cargo.toml`: add `zerodds-cdr` as a runtime dependency (with
+  `alloc` + `std` features), `zerodds-idl` + `zerodds-idl-cpp` as
+  dev-dependencies for codegen/wire tests.
+- `src/lib.rs`: registers `pub mod xcdr2`.
 
 ### Notes
 
-- **Codegen-Pfad-Wahl** (Vendor-Spec §4): **Option A** umgesetzt — neues
-  Modul `crates/idl-cpp/src/c_mode.rs` mit `generate_c_header` /
-  `CGenOptions`, integriert in die existierende `zerodds-idl-cpp`-
-  Crate. Begrenzt auf den V-1..V-12-Korpus + extensible Form (final/
-  appendable/mutable Strukturen, primitive Typen, `string`, `sequence<T>`,
-  geschachtelte Module, `@key`, `@id`).
-- **Wire-Vector-Errata** vs. `zerodds-xcdr2-bindings-conformance-1.0`
+- **Codegen path choice** (vendor spec §4): **Option A** implemented — a new
+  module `crates/idl-cpp/src/c_mode.rs` with `generate_c_header` /
+  `CGenOptions`, integrated into the existing `zerodds-idl-cpp`
+  crate. Limited to the V-1..V-12 corpus + extensible form (final/
+  appendable/mutable structs, primitive types, `string`, `sequence<T>`,
+  nested modules, `@key`, `@id`).
+- **Wire-vector errata** vs. `zerodds-xcdr2-bindings-conformance-1.0`
   §6:
-  - **V-3** Spec-Doku zeigt 40-Byte-Wire mit drei numerischen Fehlern
+  - **V-3** the spec doc shows a 40-byte wire with three numeric errors
     (`l = -1234567`, `ul = 2345678`, `ll = -987654321`); XCDR2-spec-
-    konforme LE-Bytes ergeben 48 Byte. Tests pruefen die korrigierte
-    Form, die mit `zerodds-cdr` und Cyclone DDS interoperiert.
-  - **V-10**/V-11/V-12 EMHEADER ist Spec-Doku visuell BE-gruppiert
-    dargestellt; Wire-Bytes sind LE-serialisiert (XCDR2 stream-
-    endianness gilt fuer alle Felder, inkl. EMHEADER). Tests assertieren
-    die LE-Form, konsistent mit `zerodds-cdr::struct_enc` und Cyclone DDS.
+    conformant LE bytes yield 48 bytes. Tests check the corrected
+    form, which interoperates with `zerodds-cdr` and Cyclone DDS.
+  - **V-10**/V-11/V-12 EMHEADER is shown visually BE-grouped in the spec doc;
+    the wire bytes are LE-serialized (XCDR2 stream
+    endianness applies to all fields, incl. EMHEADER). Tests assert
+    the LE form, consistent with `zerodds-cdr::struct_enc` and Cyclone DDS.
 
-### Added — ABI-Compat-Test
+### Added — ABI compat test
 
-- `tests/abi_compat.rs` + `abi.snapshot.json` als 185-Symbol-Baseline
-  fuer Drift-Detection: jeder neue oder umbenannte FFI-Symbol-Eintrag
-  laesst den Test fail'en, bis `abi.snapshot.json` mit Begruendung
-  aktualisiert wurde. `serde` + `serde_json` als dev-deps.
+- `tests/abi_compat.rs` + `abi.snapshot.json` as a 185-symbol baseline
+  for drift detection: every new or renamed FFI symbol entry
+  makes the test fail, until `abi.snapshot.json` is updated with a
+  justification. `serde` + `serde_json` as dev-deps.

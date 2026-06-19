@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Builtin-Endpoint `DCPSParticipantStatelessMessage` — DDS-Security 1.2
+//! Builtin endpoint `DCPSParticipantStatelessMessage` — DDS-Security 1.2
 //! §7.4.4 + §10.3.4.
 //!
-//! Wire-Profil:
+//! Wire profile:
 //! - Reliability: BestEffort (Spec §7.5.3 — "stateless").
 //! - Durability:  Volatile.
-//! - Topic-Type:  `ParticipantGenericMessage` (Spec §7.5.5), encoded mit
-//!   4-Byte CDR-LE-Encapsulation-Header + XCDR1-Body via
+//! - Topic type:  `ParticipantGenericMessage` (Spec §7.5.5), encoded with
+//!   a 4-byte CDR-LE encapsulation header + XCDR1 body via
 //!   [`security_runtime::builtin_topics::encode_generic_message`].
 //! - EntityIds:   `BUILTIN_PARTICIPANT_STATELESS_MESSAGE_{WRITER,READER}`.
 //!
-//! Wir nutzen **kein** [`zerodds_rtps::ReliableWriter`], weil Stateless
-//! laut Spec keinen Empfangs-Status, keine HEARTBEATs und keine
-//! AckNack-Loop hat. Stattdessen: simple Multi-Reader-Fan-out-Liste; pro
-//! `write()` wird ein DATA-Datagramm pro [`ReaderProxy`] erzeugt.
+//! We do **not** use [`zerodds_rtps::ReliableWriter`], because stateless
+//! has no receive status, no HEARTBEATs and no AckNack loop per spec.
+//! Instead: a simple multi-reader fan-out list; each `write()` produces
+//! one DATA datagram per [`ReaderProxy`].
 //!
-//! C3.4-c-Scope: keine Plugin-Pipeline-Logik im Reader. Der Reader
-//! dekodiert die `ParticipantGenericMessage` und reicht sie an den
-//! Caller — der Auth-Plugin-Hook (Spec §10.3.4.1) wird vom DCPS-Layer
-//! oben drauf gesetzt.
+//! C3.4-c scope: no plugin pipeline logic in the reader. The reader
+//! decodes the `ParticipantGenericMessage` and passes it to the caller —
+//! the auth plugin hook (Spec §10.3.4.1) is installed on top by the DCPS
+//! layer.
 
 extern crate alloc;
 
@@ -28,10 +28,11 @@ use alloc::vec::Vec;
 
 use zerodds_rtps::datagram::{ParsedSubmessage, decode_datagram, encode_data_datagram};
 use zerodds_rtps::error::WireError;
+use zerodds_rtps::fragment_assembler::{AssemblerCaps, FragmentAssembler};
 use zerodds_rtps::header::RtpsHeader;
 use zerodds_rtps::message_builder::OutboundDatagram;
 use zerodds_rtps::reader_proxy::ReaderProxy;
-use zerodds_rtps::submessages::DataSubmessage;
+use zerodds_rtps::submessages::{DataFragSubmessage, DataSubmessage};
 use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix, SequenceNumber, VendorId};
 use zerodds_rtps::writer_proxy::WriterProxy;
 
@@ -40,13 +41,13 @@ use zerodds_security::generic_message::ParticipantGenericMessage;
 
 use crate::security::codec::{decode_generic_message, encode_generic_message};
 
-/// Stateless-Message-Writer (Spec §7.4.4 + §10.3.4).
+/// Stateless message writer (Spec §7.4.4 + §10.3.4).
 ///
-/// Pflegt Multi-Reader-Fan-out fuer den
-/// `BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER`-Endpoint. Jedes
-/// `write()` erzeugt pro registriertem [`ReaderProxy`] ein
-/// [`OutboundDatagram`] — kein Cache, kein Resend, kein HEARTBEAT
-/// (Stateless = kein Empfangs-Status).
+/// Maintains multi-reader fan-out for the
+/// `BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER` endpoint. Each
+/// `write()` produces one [`OutboundDatagram`] per registered
+/// [`ReaderProxy`] — no cache, no resend, no HEARTBEAT
+/// (stateless = no receive status).
 #[derive(Debug)]
 pub struct StatelessMessageWriter {
     guid: Guid,
@@ -56,7 +57,7 @@ pub struct StatelessMessageWriter {
 }
 
 impl StatelessMessageWriter {
-    /// Erzeugt einen Writer fuer den lokalen Participant.
+    /// Creates a writer for the local participant.
     #[must_use]
     pub fn new(participant_prefix: GuidPrefix, vendor_id: VendorId) -> Self {
         Self {
@@ -70,26 +71,25 @@ impl StatelessMessageWriter {
         }
     }
 
-    /// GUID des Writers.
+    /// GUID of the writer.
     #[must_use]
     pub fn guid(&self) -> Guid {
         self.guid
     }
 
-    /// Read-only-Slice der registrierten Reader-Proxies.
+    /// Read-only slice of the registered reader proxies.
     #[must_use]
     pub fn reader_proxies(&self) -> &[ReaderProxy] {
         &self.reader_proxies
     }
 
-    /// Anzahl registrierter Reader-Proxies.
+    /// Number of registered reader proxies.
     #[must_use]
     pub fn reader_proxy_count(&self) -> usize {
         self.reader_proxies.len()
     }
 
-    /// Fuegt einen Reader-Proxy hinzu (idempotent: gleiche GUID
-    /// ueberschreibt).
+    /// Adds a reader proxy (idempotent: same GUID overwrites).
     pub fn add_reader_proxy(&mut self, proxy: ReaderProxy) {
         let guid = proxy.remote_reader_guid;
         if let Some(idx) = self
@@ -103,8 +103,7 @@ impl StatelessMessageWriter {
         }
     }
 
-    /// Entfernt einen Reader-Proxy. Liefert ihn zurueck, falls
-    /// vorhanden.
+    /// Removes a reader proxy. Returns it if present.
     pub fn remove_reader_proxy(&mut self, guid: Guid) -> Option<ReaderProxy> {
         let idx = self
             .reader_proxies
@@ -113,14 +112,13 @@ impl StatelessMessageWriter {
         Some(self.reader_proxies.remove(idx))
     }
 
-    /// Sendet eine `ParticipantGenericMessage` an alle Reader-Proxies.
+    /// Sends a `ParticipantGenericMessage` to all reader proxies.
     ///
-    /// Liefert ein Datagram pro Proxy (oder leer, wenn keine
-    /// registriert sind).
+    /// Returns one datagram per proxy (or empty if none are registered).
     ///
     /// # Errors
-    /// `WireError::ValueOutOfRange` bei Sequence-Number-Overflow oder
-    /// `WireError::*` aus der DATA-Encoding-Pipeline.
+    /// `WireError::ValueOutOfRange` on sequence-number overflow or
+    /// `WireError::*` from the DATA encoding pipeline.
     pub fn write(
         &mut self,
         msg: &ParticipantGenericMessage,
@@ -151,8 +149,8 @@ impl StatelessMessageWriter {
             };
             let header = RtpsHeader::new(self.vendor_id, self.guid.prefix);
             let bytes = encode_data_datagram(header, &[data])?;
-            // Ziel = Unicast-Locators des Proxies (Multicast ignorieren
-            // wir bei Stateless: Auth-Handshake ist immer Punkt-zu-Punkt).
+            // Target = unicast locators of the proxy (we ignore multicast
+            // for stateless: the auth handshake is always point-to-point).
             let targets = Rc::new(proxy.unicast_locators.clone());
             out.push(OutboundDatagram { bytes, targets });
         }
@@ -160,27 +158,31 @@ impl StatelessMessageWriter {
     }
 }
 
-/// Stateless-Message-Reader (Spec §7.4.4 + §10.3.4).
+/// Stateless message reader (Spec §7.4.4 + §10.3.4).
 ///
-/// Decoded eingehende DATA-Submessages, die an den
-/// `BUILTIN_PARTICIPANT_STATELESS_MESSAGE_READER` adressiert sind.
-/// Stateless: kein History-Cache, kein ACKNACK, kein Heartbeat-State.
-/// Ein bekannter Writer-Proxy ist fuer Source-Authenticity-Checks
-/// optional — der Reader liefert die Message immer, der Auth-Plugin-
-/// Hook entscheidet nach dem `source_guid`-Feld.
+/// Decodes incoming DATA submessages addressed to the
+/// `BUILTIN_PARTICIPANT_STATELESS_MESSAGE_READER`.
+/// Stateless: no history cache, no ACKNACK, no heartbeat state.
+/// A known writer proxy is optional for source-authenticity checks —
+/// the reader always delivers the message, the auth plugin hook decides
+/// based on the `source_guid` field.
 #[derive(Debug)]
 pub struct StatelessMessageReader {
     guid: Guid,
     #[allow(dead_code)]
     vendor_id: VendorId,
-    /// Bekannte Writer-Proxies. Der Reader nutzt sie nicht fuers
-    /// Filtering (Stateless akzeptiert von jedem Writer), sondern fuer
-    /// Caller-Diagnose (`writer_proxy_count`).
+    /// Known writer proxies. The reader does not use them for filtering
+    /// (stateless accepts from any writer), but for caller diagnostics
+    /// (`writer_proxy_count`).
     writer_proxies: Vec<WriterProxy>,
+    /// Fragment reassembly for LARGE stateless messages: cyclone/FastDDS
+    /// RTPS-fragment the HandshakeReply/Final (DATA_FRAG), because with
+    /// c.id-PEM + c.perm-p7s + c.pdata it easily exceeds the MTU.
+    frag: FragmentAssembler,
 }
 
 impl StatelessMessageReader {
-    /// Erzeugt einen Reader fuer den lokalen Participant.
+    /// Creates a reader for the local participant.
     #[must_use]
     pub fn new(participant_prefix: GuidPrefix, vendor_id: VendorId) -> Self {
         Self {
@@ -190,28 +192,29 @@ impl StatelessMessageReader {
             ),
             vendor_id,
             writer_proxies: Vec::new(),
+            frag: FragmentAssembler::new(AssemblerCaps::default()),
         }
     }
 
-    /// GUID des Readers.
+    /// GUID of the reader.
     #[must_use]
     pub fn guid(&self) -> Guid {
         self.guid
     }
 
-    /// Anzahl registrierter Writer-Proxies.
+    /// Number of registered writer proxies.
     #[must_use]
     pub fn writer_proxy_count(&self) -> usize {
         self.writer_proxies.len()
     }
 
-    /// Read-only-Slice der registrierten Writer-Proxies.
+    /// Read-only slice of the registered writer proxies.
     #[must_use]
     pub fn writer_proxies(&self) -> &[WriterProxy] {
         &self.writer_proxies
     }
 
-    /// Fuegt einen Writer-Proxy hinzu (idempotent).
+    /// Adds a writer proxy (idempotent).
     pub fn add_writer_proxy(&mut self, proxy: WriterProxy) {
         let guid = proxy.remote_writer_guid;
         if let Some(idx) = self
@@ -225,7 +228,7 @@ impl StatelessMessageReader {
         }
     }
 
-    /// Entfernt einen Writer-Proxy.
+    /// Removes a writer proxy.
     pub fn remove_writer_proxy(&mut self, guid: Guid) -> Option<WriterProxy> {
         let idx = self
             .writer_proxies
@@ -234,11 +237,11 @@ impl StatelessMessageReader {
         Some(self.writer_proxies.remove(idx))
     }
 
-    /// Verarbeitet eine eingehende DATA-Submessage und decoded sie zu
-    /// einer `ParticipantGenericMessage`.
+    /// Processes an incoming DATA submessage and decodes it into a
+    /// `ParticipantGenericMessage`.
     ///
     /// # Errors
-    /// `BadArgument` wenn die Encapsulation/CDR-Decode scheitert.
+    /// `BadArgument` if the encapsulation/CDR decode fails.
     pub fn handle_data(
         &mut self,
         data: &DataSubmessage,
@@ -246,13 +249,31 @@ impl StatelessMessageReader {
         decode_generic_message(&data.serialized_payload)
     }
 
-    /// Verarbeitet ein vollstaendiges RTPS-Datagram. Liefert alle
-    /// dekodierten Stateless-Messages aus diesem Datagramm.
+    /// Processes an incoming DATA_FRAG submessage. Large stateless
+    /// messages (HandshakeReply/Final with cert/permissions) are
+    /// RTPS-fragmented cross-vendor. Returns the decoded
+    /// `ParticipantGenericMessage` once all fragments are present
+    /// (otherwise empty — best-effort, no NACK).
     ///
     /// # Errors
-    /// - `BadArgument` wenn das Datagram nicht parst (Wire-Decoder-
-    ///   Fehler) oder eine relevante DATA-Submessage einen kaputten
-    ///   Generic-Message-Body hat.
+    /// `BadArgument` if the reassembled generic-message body does not parse.
+    pub fn handle_data_frag(
+        &mut self,
+        df: &DataFragSubmessage,
+    ) -> SecurityResult<Vec<ParticipantGenericMessage>> {
+        match self.frag.insert(df) {
+            Some(completed) => Ok(alloc::vec![decode_generic_message(&completed.payload)?]),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Processes a complete RTPS datagram. Returns all decoded stateless
+    /// messages from this datagram.
+    ///
+    /// # Errors
+    /// - `BadArgument` if the datagram does not parse (wire decoder
+    ///   error) or a relevant DATA submessage has a corrupt
+    ///   generic-message body.
     pub fn handle_datagram(
         &mut self,
         datagram: &[u8],
@@ -441,7 +462,7 @@ mod tests {
         ));
         let dg1 = w.write(&sample_msg(1)).unwrap()[0].clone();
         let dg2 = w.write(&sample_msg(2)).unwrap()[0].clone();
-        // Decoded SN aus den Wire-Bytes
+        // Decode the SN from the wire bytes
         let p1 = decode_datagram(&dg1.bytes).unwrap();
         let p2 = decode_datagram(&dg2.bytes).unwrap();
         let sn1 = match &p1.submessages[0] {
@@ -535,7 +556,7 @@ mod tests {
             alloc::vec![],
             false,
         ));
-        // Idempotenz
+        // Idempotency
         r.add_writer_proxy(WriterProxy::new(
             remote,
             alloc::vec![],
@@ -549,7 +570,7 @@ mod tests {
 
     #[test]
     fn end_to_end_writer_to_reader_loopback() {
-        // Writer baut Datagram, Reader dekodiert es zurueck.
+        // Writer builds the datagram, reader decodes it back.
         let mut w = StatelessMessageWriter::new(local_prefix(), VendorId::ZERODDS);
         let mut r = StatelessMessageReader::new(remote_prefix(), VendorId::ZERODDS);
         let remote_reader_guid = Guid::new(

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Toy-Grammar arithmetischer Ausdruecke.
+//! Toy grammar of arithmetic expressions.
 //!
-//! Klassischer Operator-Praezedenz-Aufbau:
+//! Classic operator-precedence structure:
 //!
 //! ```text
 //! E ::= E "+" T | T
@@ -10,17 +10,17 @@
 //! F ::= "n" | "(" E ")"
 //! ```
 //!
-//! Diese Grammar ist linksrekursiv (E und T) — Earley handelt das korrekt,
-//! der Validator meldet erwartete `LeftRecursion`-Warnungen ohne Errors.
-//! Sie ist die Test-Grammar fuer M1: zeigt, dass die volle T1.1–T1.5-
-//! Pipeline (Datenmodell, Validation, Recognition, Facade) gegen einen
-//! real-aussehenden Use-Case traegt.
+//! This grammar is left-recursive (E and T) — Earley handles that correctly,
+//! the validator reports the expected `LeftRecursion` warnings without errors.
+//! It is the test grammar for M1: shows that the full T1.1–T1.5
+//! pipeline (data model, validation, recognition, facade) holds up against a
+//! realistic-looking use case.
 //!
-//! `n` steht stellvertretend fuer „number"; in einer realen Grammar waere
-//! das ein `TokenKind::IntegerLiteral`. Wir verwenden `Keyword("n")`, um
-//! lexer-unabhaengig zu bleiben (Lexer kommt in Woche 2).
+//! `n` stands in for "number"; in a real grammar this would be
+//! a `TokenKind::IntegerLiteral`. We use `Keyword("n")` to
+//! stay lexer-independent (the lexer comes in week 2).
 //!
-//! Verwendung:
+//! Usage:
 //!
 //! ```rust,ignore
 //! use zerodds_idl::engine::parse;
@@ -39,8 +39,8 @@ use super::{
     Alternative, Grammar, IdlVersion, Production, ProductionId, SpecRef, Symbol, TokenKind,
 };
 
-/// Spec-Anker fuer die Toy-Grammar — verweist auf dieses Modul, nicht auf
-/// eine externe Spezifikation.
+/// Spec anchor for the toy grammar — refers to this module, not to
+/// an external specification.
 const SR: SpecRef = SpecRef {
     doc: "ZeroDDS Toy Arith Grammar",
     section: "0.0",
@@ -118,7 +118,7 @@ const PROD_F: Production = Production {
     ast_hint: None,
 };
 
-/// Die fertig zusammengesetzte Toy-Grammar mit Start = E.
+/// The fully assembled toy grammar with start = E.
 pub const TOY: Grammar = Grammar {
     name: "toy_arith",
     version: IdlVersion::V4_2,
@@ -153,15 +153,15 @@ mod tests {
             .count();
         assert!(
             lr_count >= 1,
-            "Toy-Grammar ist linksrekursiv (E und T) — mindestens eine LR-Warnung erwartet. Report: {:?}",
+            "The toy grammar is left-recursive (E and T) — at least one LR warning expected. Report: {:?}",
             report.issues()
         );
     }
 
     #[test]
     fn toy_grammar_validator_reports_first_first_conflicts() {
-        // E ::= E "+" T | T und T ::= T "*" F | F: beide Alts haben
-        // FIRST = {n, (}. Validator soll das melden.
+        // E ::= E "+" T | T and T ::= T "*" F | F: both alts have
+        // FIRST = {n, (}. The validator should report that.
         let report = validate(&TOY);
         let ffc_count = report
             .issues()
@@ -170,7 +170,7 @@ mod tests {
             .count();
         assert!(
             ffc_count >= 2,
-            "Erwartet ≥2 FirstFirstConflicts (E und T). Report: {:?}",
+            "expected ≥2 FirstFirstConflicts (E and T). Report: {:?}",
             report.issues()
         );
     }
@@ -192,7 +192,7 @@ mod tests {
         assert_eq!(
             production.map(|p| p.alternatives.len()),
             Some(2),
-            "E muss 2 Alternativen haben"
+            "E must have 2 alternatives"
         );
         assert_eq!(
             production.map(|p| p.alternatives[0].name),

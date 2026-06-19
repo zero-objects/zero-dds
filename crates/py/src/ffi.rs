@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! PyO3-FFI-Modul. Nur mit `--features extension-module` aktiv.
+//! PyO3 FFI module. Only active with `--features extension-module`.
 //!
-//! Aktueller Scope: Raw-Bytes-Topic. Dies ist absichtlich ein dünnes
-//! Wrapper-Layer — die schwere Arbeit (QoS, Discovery, Wire) lebt in
-//! `zerodds-dcps`. Keine Python-spezifische Logik hier ausser Konversion
-//! Rust↔Python.
+//! Current scope: raw-bytes topic. This is deliberately a thin
+//! wrapper layer — the heavy lifting (QoS, discovery, wire) lives in
+//! `zerodds-dcps`. No Python-specific logic here apart from
+//! Rust↔Python conversion.
 //!
 //! # SAFETY
 //!
-//! Die `unsafe`-Expansions von `#[pymodule]` / `#[pyclass]` sind
-//! PyO3-Makro-internal; wir schreiben kein explizites `unsafe` hier.
-//! Thread-Safety: DataReader/Writer halten intern `Arc` und `Mutex`,
-//! damit der GIL-Release waehrend `write`/`take` sicher ist.
+//! The `unsafe` expansions of `#[pymodule]` / `#[pyclass]` are
+//! PyO3-macro-internal; we write no explicit `unsafe` here.
+//! Thread safety: DataReader/Writer hold `Arc` and `Mutex` internally,
+//! so that the GIL release during `write`/`take` is safe.
 
 #![allow(clippy::missing_errors_doc)]
-#![allow(unsafe_code)] // PyO3-Macros expanden zu unsafe
-#![allow(unsafe_op_in_unsafe_fn)] // Rust 2024: PyO3-Macros koennen nicht wrappen
-#![allow(clippy::useless_conversion)] // PyO3-Macro-generated `.into()`-Calls
-#![allow(clippy::needless_lifetimes)] // PyO3-Signatures mit Bound<'py, T>
-#![allow(clippy::new_without_default)] // #[new]-Konstruktoren sind Python-Construktoren, nicht Rust-Default
+#![allow(unsafe_code)] // PyO3 macros expand to unsafe
+#![allow(unsafe_op_in_unsafe_fn)] // Rust 2024: PyO3 macros cannot wrap
+#![allow(clippy::useless_conversion)] // PyO3-macro-generated `.into()` calls
+#![allow(clippy::needless_lifetimes)] // PyO3 signatures with Bound<'py, T>
+#![allow(clippy::new_without_default)] // #[new] constructors are Python constructors, not Rust Default
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -49,7 +49,7 @@ fn dds_err_to_py(e: DdsError) -> PyErr {
 // Factory
 // =============================================================================
 
-/// Python-Wrapper um `DomainParticipantFactory`.
+/// Python wrapper around `DomainParticipantFactory`.
 #[pyclass(name = "DomainParticipantFactory", module = "zerodds_py")]
 struct PyFactory;
 
@@ -61,14 +61,14 @@ impl PyFactory {
         Self
     }
 
-    /// Offline-Participant (kein UDP-Bind) — ideal fuer Unit-Tests.
+    /// Offline participant (no UDP bind) — ideal for unit tests.
     fn create_participant_offline(&self, domain_id: i32) -> PyParticipant {
         let p = DomainParticipantFactory::instance()
             .create_participant_offline(domain_id, DomainParticipantQos::default());
         PyParticipant { inner: p }
     }
 
-    /// Live-Participant mit UDP + SPDP/SEDP.
+    /// Live participant with UDP + SPDP/SEDP.
     fn create_participant(&self, domain_id: i32) -> PyResult<PyParticipant> {
         let p = DomainParticipantFactory::instance()
             .create_participant(domain_id, DomainParticipantQos::default())
@@ -76,7 +76,7 @@ impl PyFactory {
         Ok(PyParticipant { inner: p })
     }
 
-    /// Live-Participant mit getunten Timings (schnelles Discovery).
+    /// Live participant with tuned timings (fast discovery).
     fn create_participant_fast(&self, domain_id: i32) -> PyResult<PyParticipant> {
         let cfg = RuntimeConfig {
             tick_period: Duration::from_millis(20),
@@ -106,18 +106,18 @@ impl PyParticipant {
         self.inner.domain_id()
     }
 
-    /// Topic-Registry-Groesse.
+    /// Topic registry size.
     fn topics_len(&self) -> usize {
         self.inner.topics_len()
     }
 
-    /// Anzahl ueber SPDP entdeckter Remote-Participants.
+    /// Number of remote participants discovered via SPDP.
     fn discovered_participants_count(&self) -> usize {
         self.inner.discovered_participants_count()
     }
 
-    /// Bytes-Topic (Type-Name `zerodds::RawBytes`). Fuer ungetypten
-    /// Payload-Transfer.
+    /// Bytes topic (type name `zerodds::RawBytes`). For untyped
+    /// payload transfer.
     fn create_bytes_topic(&self, name: &str) -> PyResult<PyBytesTopic> {
         let topic = self
             .inner
@@ -126,8 +126,8 @@ impl PyParticipant {
         Ok(PyBytesTopic { inner: topic })
     }
 
-    /// ShapesDemo-Topic (Type-Name `ShapeType`). Fuer Interop-Tests
-    /// gegen Cyclone/Fast-DDS ShapesDemo.
+    /// ShapesDemo topic (type name `ShapeType`). For interop tests
+    /// against Cyclone/Fast-DDS ShapesDemo.
     fn create_shape_topic(&self, name: &str) -> PyResult<PyShapeTopic> {
         let topic = self
             .inner
@@ -194,7 +194,7 @@ impl PyParticipant {
                 handle,
             ))
     }
-    /// Liefert die InstanceHandles aller entdeckten Topics.
+    /// Returns the InstanceHandles of all discovered topics.
     fn get_discovered_topics(&self) -> Vec<u64> {
         self.inner
             .get_discovered_topics()
@@ -202,7 +202,7 @@ impl PyParticipant {
             .map(|h| h.as_raw())
             .collect()
     }
-    /// Liefert die InstanceHandles aller entdeckten Participants.
+    /// Returns the InstanceHandles of all discovered participants.
     fn get_discovered_participants(&self) -> Vec<u64> {
         self.inner
             .get_discovered_participants()
@@ -277,7 +277,7 @@ impl PyPublisher {
         Ok(PyShapeWriter { inner: Arc::new(w) })
     }
 
-    /// §6.2 — explizite QoS-Auswahl. Spec: DDS 1.4 §2.2.2.4.1.5.
+    /// §6.2 — explicit QoS selection. Spec: DDS 1.4 §2.2.2.4.1.5.
     fn create_bytes_writer_with_qos(
         &self,
         topic: &PyBytesTopic,
@@ -290,7 +290,7 @@ impl PyPublisher {
         Ok(PyBytesWriter { inner: Arc::new(w) })
     }
 
-    /// §6.2 — explizite QoS-Auswahl fuer ShapeType-Topics.
+    /// §6.2 — explicit QoS selection for ShapeType topics.
     fn create_shape_writer_with_qos(
         &self,
         topic: &PyShapeTopic,
@@ -327,7 +327,7 @@ impl PySubscriber {
         Ok(PyShapeReader { inner: Arc::new(r) })
     }
 
-    /// §6.2 — explizite QoS-Auswahl. Spec: DDS 1.4 §2.2.2.5.1.5.
+    /// §6.2 — explicit QoS selection. Spec: DDS 1.4 §2.2.2.5.1.5.
     fn create_bytes_reader_with_qos(
         &self,
         topic: &PyBytesTopic,
@@ -340,7 +340,7 @@ impl PySubscriber {
         Ok(PyBytesReader { inner: Arc::new(r) })
     }
 
-    /// §6.2 — explizite QoS-Auswahl fuer ShapeType-Topics.
+    /// §6.2 — explicit QoS selection for ShapeType topics.
     fn create_shape_reader_with_qos(
         &self,
         topic: &PyShapeTopic,
@@ -365,7 +365,7 @@ struct PyBytesWriter {
 
 #[pymethods]
 impl PyBytesWriter {
-    /// Schreibt bytes als Sample. GIL wird waehrend des Sends freigegeben.
+    /// Writes bytes as a sample. The GIL is released during the send.
     fn write(&self, py: Python<'_>, data: &[u8]) -> PyResult<()> {
         let sample = RawBytes::new(data.to_vec());
         let writer = Arc::clone(&self.inner);
@@ -391,7 +391,7 @@ impl PyBytesWriter {
     }
 
     /// `get_publication_matched_status` — (current_count, current_count, last_handle=0).
-    /// RC1: ZeroDDS-DCPS expose nur `matched_subscription_count`; total/change-Pflege folgt.
+    /// RC1: ZeroDDS-DCPS exposes only `matched_subscription_count`; total/change maintenance follows.
     fn publication_matched_status(&self) -> (i32, i32, i32, i32, u64) {
         let n = self.inner.matched_subscription_count() as i32;
         (n, 0, n, 0, 0)
@@ -405,14 +405,14 @@ impl PyBytesWriter {
         (self.inner.offered_deadline_missed_count() as i32, 0)
     }
 
-    /// §6.5 — Listener mit allen Status-Kinds anhaengen.
-    /// `mask` = StatusMask (u32, DDS 1.4 §2.2.4.1). 0 = alle Bits aktiv.
+    /// §6.5 — attach a listener with all status kinds.
+    /// `mask` = StatusMask (u32, DDS 1.4 §2.2.4.1). 0 = all bits active.
     fn set_listener(&self, listener: &crate::listener::PyDataWriterListener, mask: u32) {
         let bridge = crate::listener::PyDataWriterListenerBridge::from_pyclass(listener);
         self.inner.set_listener(Some(bridge), mask);
     }
 
-    /// §6.5 — Listener-Slot loeschen (Spec §2.2.2.4.2.x).
+    /// §6.5 — clear the listener slot (Spec §2.2.2.4.2.x).
     fn clear_listener(&self) {
         self.inner.set_listener(None, 0);
     }
@@ -425,7 +425,7 @@ struct PyBytesReader {
 
 #[pymethods]
 impl PyBytesReader {
-    /// Nimmt alle verfuegbaren Samples als `list[bytes]`.
+    /// Takes all available samples as `list[bytes]`.
     fn take<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         let reader = Arc::clone(&self.inner);
         let samples = py.allow_threads(|| reader.take()).map_err(dds_err_to_py)?;
@@ -473,38 +473,38 @@ impl PyBytesReader {
         (self.inner.requested_deadline_missed_count() as i32, 0)
     }
 
-    /// §6.5 — Listener mit allen Status-Kinds anhaengen.
+    /// §6.5 — attach a listener with all status kinds.
     fn set_listener(&self, listener: &crate::listener::PyDataReaderListener, mask: u32) {
         let bridge = crate::listener::PyDataReaderListenerBridge::from_pyclass(listener);
         self.inner.set_listener(Some(bridge), mask);
     }
 
-    /// §6.5 — Listener-Slot loeschen.
+    /// §6.5 — clear the listener slot.
     fn clear_listener(&self) {
         self.inner.set_listener(None, 0);
     }
 }
 
 // =============================================================================
-// Shape-Writer / -Reader (fuer ShapesDemo-Interop)
+// Shape writer / reader (for ShapesDemo interop)
 // =============================================================================
 
-/// Python-Repr einer ShapeType-Instanz. Ein plain dict wäre auch
-/// möglich, aber eine eigene Klasse macht `isinstance`-Checks und
-/// getter/setter sauberer.
+/// Python repr of a ShapeType instance. A plain dict would also be
+/// possible, but a dedicated class makes `isinstance` checks and
+/// getter/setter cleaner.
 #[pyclass(name = "Shape", module = "zerodds_py")]
 #[derive(Clone)]
 struct PyShape {
-    /// Farbe / Instance-Key.
+    /// Color / instance key.
     #[pyo3(get, set)]
     color: String,
-    /// X-Koordinate.
+    /// X coordinate.
     #[pyo3(get, set)]
     x: i32,
-    /// Y-Koordinate.
+    /// Y coordinate.
     #[pyo3(get, set)]
     y: i32,
-    /// Groesse in Pixeln.
+    /// Size in pixels.
     #[pyo3(get, set)]
     shapesize: i32,
 }
@@ -561,9 +561,8 @@ impl PyShapeWriter {
             .map_err(dds_err_to_py)
     }
 
-    /// Spec §2.2.2.4.2.5 `register_instance`. Liefert einen
-    /// Instance-Handle, der spaeter zum dispose/unregister benutzt
-    /// werden kann.
+    /// Spec §2.2.2.4.2.5 `register_instance`. Returns an
+    /// instance handle that can later be used for dispose/unregister.
     fn register_instance(&self, py: Python<'_>, shape: &PyShape) -> PyResult<u64> {
         let sample: ShapeType = shape.into();
         let writer = Arc::clone(&self.inner);
@@ -572,8 +571,8 @@ impl PyShapeWriter {
             .map_err(dds_err_to_py)
     }
 
-    /// Spec §2.2.2.4.2.10 `dispose`. Schickt einen Wire-Lifecycle-
-    /// Marker — Reader sehen die Instanz als `NotAliveDisposed`.
+    /// Spec §2.2.2.4.2.10 `dispose`. Sends a wire-lifecycle
+    /// marker — readers see the instance as `NotAliveDisposed`.
     fn dispose(&self, py: Python<'_>, shape: &PyShape) -> PyResult<()> {
         let sample: ShapeType = shape.into();
         let writer = Arc::clone(&self.inner);
@@ -584,9 +583,9 @@ impl PyShapeWriter {
         .map_err(dds_err_to_py)
     }
 
-    /// Spec §2.2.2.4.2.7 `unregister_instance`. Bei
-    /// WriterDataLifecycle.autodispose=true (Default) implizit auch
-    /// dispose.
+    /// Spec §2.2.2.4.2.7 `unregister_instance`. With
+    /// WriterDataLifecycle.autodispose=true (default), implicitly also
+    /// disposes.
     fn unregister_instance(&self, py: Python<'_>, shape: &PyShape) -> PyResult<()> {
         let sample: ShapeType = shape.into();
         let writer = Arc::clone(&self.inner);
@@ -610,7 +609,7 @@ impl PyShapeWriter {
         .map_err(dds_err_to_py)
     }
 
-    /// §6.5 — Listener mit allen Status-Kinds anhaengen.
+    /// §6.5 — attach a listener with all status kinds.
     fn set_listener(&self, listener: &crate::listener::PyDataWriterListener, mask: u32) {
         let bridge = crate::listener::PyDataWriterListenerBridge::from_pyclass(listener);
         self.inner.set_listener(Some(bridge), mask);
@@ -657,7 +656,7 @@ impl PyShapeReader {
         .map_err(dds_err_to_py)
     }
 
-    /// §6.5 — Listener mit allen Status-Kinds anhaengen.
+    /// §6.5 — attach a listener with all status kinds.
     fn set_listener(&self, listener: &crate::listener::PyDataReaderListener, mask: u32) {
         let bridge = crate::listener::PyDataReaderListenerBridge::from_pyclass(listener);
         self.inner.set_listener(Some(bridge), mask);
@@ -676,7 +675,7 @@ impl PyShapeReader {
 // Conditions + WaitSet (Spec §2.2.2.1.7)
 // =============================================================================
 
-/// Python-Wrapper um `GuardCondition`.
+/// Python wrapper around `GuardCondition`.
 #[pyclass(name = "GuardCondition", module = "zerodds_py")]
 struct PyGuardCondition {
     inner: Arc<GuardCondition>,
@@ -684,25 +683,25 @@ struct PyGuardCondition {
 
 #[pymethods]
 impl PyGuardCondition {
-    /// Erzeugt eine GuardCondition mit initialem trigger=false.
+    /// Creates a GuardCondition with an initial trigger=false.
     #[new]
     fn new() -> Self {
         Self {
             inner: GuardCondition::new(),
         }
     }
-    /// Setzt den Trigger-Wert.
+    /// Sets the trigger value.
     fn set_trigger_value(&self, value: bool) {
         self.inner.set_trigger_value(value);
     }
-    /// Liest den aktuellen Trigger-Wert.
+    /// Reads the current trigger value.
     fn get_trigger_value(&self) -> bool {
         use zerodds_dcps::condition::Condition;
         self.inner.get_trigger_value()
     }
 }
 
-/// Python-Wrapper um `WaitSet`.
+/// Python wrapper around `WaitSet`.
 #[pyclass(name = "WaitSet", module = "zerodds_py")]
 struct PyWaitSet {
     inner: WaitSet,
@@ -729,31 +728,31 @@ impl PyWaitSet {
         Ok(())
     }
 
-    /// §6.6 — attach eine ReadCondition.
+    /// §6.6 — attach a ReadCondition.
     fn attach_read_condition(&self, rc: &crate::conditions::PyReadCondition) -> PyResult<()> {
         let cond: Arc<dyn zerodds_dcps::condition::Condition> =
             Arc::clone(&rc.inner) as Arc<dyn zerodds_dcps::condition::Condition>;
         self.inner.attach_condition(cond).map_err(dds_err_to_py)
     }
 
-    /// §6.6 — attach eine QueryCondition.
+    /// §6.6 — attach a QueryCondition.
     fn attach_query_condition(&self, qc: &crate::conditions::PyQueryCondition) -> PyResult<()> {
         let cond: Arc<dyn zerodds_dcps::condition::Condition> =
             Arc::clone(&qc.inner) as Arc<dyn zerodds_dcps::condition::Condition>;
         self.inner.attach_condition(cond).map_err(dds_err_to_py)
     }
 
-    /// Wait — liefert die Anzahl getriggerter Conditions.
+    /// Wait — returns the number of triggered conditions.
     fn wait(&self, py: Python<'_>, timeout_secs: f64) -> PyResult<usize> {
-        // WaitSet ist nicht Clone — nutze inner direkt.
+        // WaitSet is not Clone — use inner directly.
         py.allow_threads(|| self.inner.wait(Duration::from_secs_f64(timeout_secs)))
             .map_err(dds_err_to_py)
             .map(|v| v.len())
     }
 }
 
-/// PyO3-Modul `zerodds._core`. Das aeussere Python-Package `zerodds`
-/// re-exportiert daraus (siehe `python/zerodds/__init__.py`).
+/// PyO3 module `zerodds._core`. The outer Python package `zerodds`
+/// re-exports from it (see `python/zerodds/__init__.py`).
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFactory>()?;
@@ -775,9 +774,9 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::listener::PyDataReaderListener>()?;
     m.add_class::<crate::conditions::PyReadCondition>()?;
     m.add_class::<crate::conditions::PyQueryCondition>()?;
-    // §6.6 — SampleState/ViewState/InstanceState-Bitmask-Konstanten
-    // (DDS 1.4 §2.2.2.5.1.4). Exponiert als Modul-Attribute, damit
-    // Anwender `zerodds._core.SAMPLE_STATE_ANY` etc. nutzen koennen.
+    // §6.6 — SampleState/ViewState/InstanceState bitmask constants
+    // (DDS 1.4 §2.2.2.5.1.4). Exposed as module attributes so that
+    // users can use `zerodds._core.SAMPLE_STATE_ANY` etc.
     m.add(
         "SAMPLE_STATE_NOT_READ",
         zerodds_dcps::sample_info::sample_state_mask::NOT_READ,

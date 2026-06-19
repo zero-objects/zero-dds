@@ -12,3 +12,7 @@ tools/dashboard-tauri/dist/
 **/*.pyc
 .pytest_cache/
 .DS_Store
+
+# C# build artifacts (stale rc.2 leftovers, never ship)
+crates/cs/csharp/**/bin/
+crates/cs/csharp/**/obj/

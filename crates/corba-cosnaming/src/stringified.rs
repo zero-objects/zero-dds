@@ -10,12 +10,12 @@
 //! Escaping: `\` escapes `/`, `.`, `\` self.
 //! ```
 //!
-//! Spec normativ:
-//! * `/` separator zwischen NameComponents.
-//! * `.` separator zwischen `id` und `kind`. Wenn `kind` leer, kein `.`
-//!   im Output.
-//! * Bei leerem `id` und non-leerem `kind`: `.kind`.
-//! * Backslash-Escape fuer Sonderzeichen (`/`, `.`, `\`).
+//! Spec normative:
+//! * `/` separator between NameComponents.
+//! * `.` separator between `id` and `kind`. If `kind` is empty, no `.`
+//!   in the output.
+//! * For an empty `id` and a non-empty `kind`: `.kind`.
+//! * Backslash escape for special characters (`/`, `.`, `\`).
 
 use alloc::string::String;
 
@@ -25,7 +25,7 @@ use crate::name::{Name, NameComponent};
 /// Spec §2.5.4.20 `to_string`.
 ///
 /// # Errors
-/// `InvalidName` wenn `name` leer ist.
+/// `InvalidName` when `name` is empty.
 pub fn name_to_string(name: &Name) -> Result<String, NamingError> {
     if name.is_empty() {
         return Err(NamingError::InvalidName);
@@ -49,15 +49,15 @@ pub fn name_to_string(name: &Name) -> Result<String, NamingError> {
 /// Spec §2.5.4.20 `to_name`.
 ///
 /// # Errors
-/// `InvalidName` wenn `s` leer oder Component leer.
+/// `InvalidName` when `s` is empty or a component is empty.
 pub fn string_to_name(s: &str) -> Result<Name, NamingError> {
     if s.is_empty() {
         return Err(NamingError::InvalidName);
     }
-    // Outer-Schleife splittet an unescaped '/'. Escape-Sequenzen
-    // werden als zwei Chars (`\X`) zur Inner-Component (`parse_component`)
-    // durchgereicht — sie hat die Hoheit ueber `.`-Splitting und
-    // Escape-Decoding.
+    // The outer loop splits at unescaped '/'. Escape sequences are
+    // passed through as two chars (`\X`) to the inner component
+    // (`parse_component`) — it owns `.` splitting and escape
+    // decoding.
     let mut out = Name::new();
     let mut current = String::new();
     let mut chars = s.chars().peekable();
@@ -92,7 +92,7 @@ pub fn string_to_name(s: &str) -> Result<Name, NamingError> {
 }
 
 fn parse_component(s: &str) -> Result<NameComponent, NamingError> {
-    // `.`-Split (escaped via backslash). Wir traversieren manuell.
+    // `.` split (escaped via backslash). We traverse manually.
     let mut id = String::new();
     let mut kind = String::new();
     let mut in_kind = false;

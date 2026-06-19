@@ -217,8 +217,8 @@ verifizieren.
 <tr class="section"><td colspan="8">Durability QoS</td></tr>
 <tr><td>Volatile</td>                <td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td></tr>
 <tr><td>Transient-Local</td>         <td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td><td class="partial">◐</td></tr>
-<tr><td>Transient (Service)</td>     <td class="miss">✗</td><td class="miss">✗</td><td class="miss">✗</td><td class="partial">◐</td><td class="ok">✓</td><td class="ok">✓<span class="footnote-ref">¹</span></td><td class="miss">✗</td></tr>
-<tr><td>Persistent (Service)</td>    <td class="miss">✗</td><td class="miss">✗</td><td class="miss">✗</td><td class="partial">◐</td><td class="ok">✓</td><td class="ok">✓<span class="footnote-ref">¹</span></td><td class="miss">✗</td></tr>
+<tr><td>Transient (Service)</td>     <td class="ok">✓<span class="footnote-ref">¹⁰</span></td><td class="miss">✗</td><td class="miss">✗</td><td class="partial">◐</td><td class="ok">✓</td><td class="ok">✓<span class="footnote-ref">¹</span></td><td class="miss">✗</td></tr>
+<tr><td>Persistent (Service)</td>    <td class="ok">✓<span class="footnote-ref">¹⁰</span></td><td class="miss">✗</td><td class="miss">✗</td><td class="partial">◐</td><td class="ok">✓</td><td class="ok">✓<span class="footnote-ref">¹</span></td><td class="miss">✗</td></tr>
 
 <tr class="section"><td colspan="8">Kern-QoS (22 Standard-Policies)</td></tr>
 <tr><td>History (KeepLast / All)</td> <td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td></tr>
@@ -288,6 +288,7 @@ verifizieren.
 <p><sup class="footnote-ref">⁷</sup> <strong>RTI Connext Micro</strong> ist ein separates Produkt für Embedded / sicherheitskritische Anwendungen, nicht identisch mit Connext Pro.</p>
 <p><sup class="footnote-ref">⁸</sup> <strong>ZeroDDS</strong>-C++-Binding via <code>crates/idl-cpp/</code> (DDS-PSM-CXX-Header-Codegen + Annex-A.1-CORBA-Trait-Templates); voller C++-Runtime-Wrapper auf DCPS-Public-API ist Caller-Layer.</p>
 <p><sup class="footnote-ref">⁹</sup> <strong>ZeroDDS</strong>-Java-Binding via <code>crates/idl-java/</code> (IDL→Java-Codegen + IDL4-Java Annex-A.1) und <code>crates/java-omgdds/java/</code> (Pure-Java DDS-Java-PSM Maven-Projekt mit <code>InProcessBus</code> + <code>Xcdr2Codec</code>; CoreTypesTest + Xcdr2CodecTest + PubSubLoopbackTest, 18 grün). Eine frühere JNI-Bridge (<code>crates/zerodds-java-jni/</code>) wurde am 2026-05-07 entfernt — kein Native-Lib auf der Java-Seite mehr.</p>
+<p><sup class="footnote-ref">¹⁰</sup> <strong>ZeroDDS</strong> Transient/Persistent via standalone Durability-Service-Daemon <code>zerodds-durability-svc</code> (ADR 0009), ein Prozess pro Domain, pluggable Cold-Store (sqlite/file/lakehouse). Überlebt Writer-Prozess-Tod (TRANSIENT) und vollen Service-/System-Neustart (PERSISTENT, per <code>kill -9</code>+Restart-Test belegt). Aus RTPS-Sicht ein <code>TRANSIENT_LOCAL(KEEP_ALL)</code>-Writer, daher cross-vendor replay-bar (im Gegensatz zu OpenDDS <sup class="footnote-ref">¹</sup>, das diese Stufen nur über den proprietären Transport kann). Setup: <code>docs/deployment/durability-service.md</code>.</p>
 </div>
 
 <h2>Regional / Defense-Vendors</h2>
@@ -494,8 +495,11 @@ Telco-Bestand.</li>
 
 <h3>Verbleibende Defizite</h3>
 <ul>
-<li>Transient + Persistent Service — nur RTI / Fast-DDS-Pro / OpenDDS;
-Backend ist im DataWriter angeschlossen, Cross-Vendor-Wire-Replay-Pfad fehlt noch.</li>
+<li><del>Transient + Persistent Service</del> — <strong>erledigt</strong>: standalone
+<code>zerodds-durability-svc</code>-Daemon (ADR 0009), sqlite/file/lakehouse-Adapter,
+Writer-Tod- + Restart-überlebend (<code>kill -9</code>-Test). Aus RTPS-Sicht ein
+<code>TRANSIENT_LOCAL(KEEP_ALL)</code>-Writer → cross-vendor replay-bar. Offen bleibt nur
+die Gegenrichtung (Fremd-Vendor-Writer → ZeroDDS-Service als eigene Validierungs-Achse).</li>
 <li>Python-Binding — Riesen-Reichweite-Hebel (ros2-python).</li>
 <li>Voller C-Binding (FFI-Wrapper auf DCPS-Public-API).</li>
 <li>Voller C++/Java-Runtime-Wrapper auf DCPS-Public-API (heute nur

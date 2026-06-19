@@ -1,302 +1,302 @@
-# Risiken und strategische Überlegungen
+# Risks and strategic considerations
 
 > **Status:** Draft v0.2
-> **Abhängigkeiten:** Alle vorangegangenen Dokumente
+> **Dependencies:** all preceding documents
 
-Dieses Dokument identifiziert strategische und technische Risiken des Projekts und dokumentiert Mitigation-Strategien. Es wird periodisch reviewt, insbesondere an Phasen-Übergängen.
+This document identifies strategic and technical risks of the project and documents mitigation strategies. It is reviewed periodically, especially at phase transitions.
 
-## 1 Technische Risiken
+## 1 Technical risks
 
-### 1.1 RTPS-Reliable-Protokoll-Bugs
+### 1.1 RTPS reliable-protocol bugs
 
-**Risiko:** Das RTPS-Reliable-Protokoll ist eines der subtilsten Stücke im DDS-Stack. Fast DDS und Cyclone DDS haben über Jahre Bugs in diesem Bereich gefunden. Fehler zeigen sich oft erst unter Netzwerk-Stress, bei hoher Fragmentierungs-Dichte, oder in spezifischen Race-Conditions zwischen Heartbeats, Acknacks und Datenflüssen.
+**Risk:** The RTPS reliable protocol is one of the subtlest pieces in the DDS stack. Fast DDS and Cyclone DDS have found bugs in this area over years. Errors often only show up under network stress, at high fragmentation density, or in specific race conditions between heartbeats, acknacks and data flows.
 
-**Impact:** Produktions-Bugs in Reliable-Zustellung führen zu Daten-Verlust, Daten-Duplikation oder Deadlocks. Das ist in Mission-Critical-Kontexten inakzeptabel.
-
-**Mitigation:**
-- Property-Based-Testing und Model-Checking (Kani) ab Tag 1 für State Machines
-- Fuzz-Testing der Wire-Parser (mindestens Nightly, 1h pro Run)
-- Umfassende Interop-Tests gegen mindestens drei unabhängige Peer-Implementierungen
-- Chaos-Engineering mit Netzwerk-Störung (Packet-Loss, Reorder, Delay, Partition)
-- Code-Review-Pflicht durch mindestens zwei Senior-Engineers für alle Reliable-Protokoll-Änderungen
-- Reference-Implementierung: Cyclone DDS als informelle Orientierung, mit dokumentierten Abweichungen
-
-### 1.2 XTypes-Interoperabilität
-
-**Risiko:** XTypes-Implementierungen variieren historisch zwischen Vendoren. Interop-Probleme, besonders bei komplexeren Type-Mutationen (appendable, mutable), sind verbreitet.
-
-**Impact:** Enden-Nodes können sich nicht finden, obwohl Types "eigentlich" kompatibel sind. Das ist ein häufiger Support-Fall bei allen DDS-Vendoren.
+**Impact:** Production bugs in reliable delivery lead to data loss, data duplication or deadlocks. That is unacceptable in mission-critical contexts.
 
 **Mitigation:**
-- Strikte Einhaltung der XTypes 1.3-Spec
-- Interop-Tests pro Type-Mutation-Pattern (alle @final/@appendable/@mutable-Kombinationen)
-- Dokumentierte Abweichungen von anderen Vendoren (wenn wir spec-konform sind, sie nicht)
-- Type-Lookup-Service als Fallback bei unbekannten Typen
+- Property-based testing and model checking (Kani) from day 1 for state machines
+- Fuzz testing of the wire parser (at least nightly, 1h per run)
+- Comprehensive interop tests against at least three independent peer implementations
+- Chaos engineering with network disturbance (packet loss, reorder, delay, partition)
+- Mandatory code review by at least two senior engineers for all reliable-protocol changes
+- Reference implementation: Cyclone DDS as informal orientation, with documented deviations
 
-### 1.3 Performance-Parität
+### 1.2 XTypes interoperability
 
-**Risiko:** Etablierte Vendoren haben 10–20 Jahre Performance-Tuning hinter sich. Eine neue Implementierung könnte in Benchmarks unterliegen, was Verkaufs-Argumente und Kunden-Akzeptanz beeinträchtigt.
+**Risk:** XTypes implementations have historically varied between vendors. Interop problems, especially with more complex type mutations (appendable, mutable), are common.
 
-**Impact:** Kunden wählen etablierten Vendor trotz Souveränitäts-Argumenten, wenn Performance-Gap zu groß ist.
-
-**Mitigation:**
-- Frühe Benchmark-Baseline (ab Phase 1) gegen Cyclone DDS und Fast DDS
-- Performance-Regression-Tests in CI mit 5%-Schwelle
-- Zero-Copy-SHM als Priorität in Phase 4
-- Profile-guided Optimization (PGO) für Release-Builds
-- Flamegraph-basierte Hot-Path-Analyse kontinuierlich
-- Rust gibt uns strukturelle Vorteile (zero-cost abstractions, keine GC-Pauses); das sollte mindestens zu Parität führen
-
-### 1.4 Ferrocene-Target-Lücke (verschoben auf Expansion-Era)
-
-**Risiko:** Ferrocene ist aktuell für eine begrenzte Target-Menge qualifiziert. Wenn Kunden exotische Targets brauchen, könnte der Qualifications-Scope von Ferrocene nicht ausreichen.
-
-**Impact:** Safe-Profile funktioniert auf Kunden-Hardware nicht oder nur unter Zusatzaufwand.
-
-**Aktueller Status:** In Bootstrap- und Proof-Era verwenden wir stable Rust. Safe-Subset-Crates werden safety-ready geschrieben (siehe `04_safety_by_architecture.md`), aber ohne Ferrocene-Qualifikation gebaut. Ferrocene-Integration ist ein Track-B-Thema (siehe `06_roadmap.md` §8.1).
-
-**Mitigation für später:**
-- Early-Alignment mit Ferrous Systems über Ziel-Targets beim Start von Track B
-- Contract-Engineering für Target-Ports (Ferrous bietet das als Service)
-- Dual-Path-Strategie: Safe-Profile primär auf Mainstream-Targets (Linux x86_64/ARM64, QNX Neutrino), exotische Targets nur auf Kunden-Nachfrage
-
-### 1.5 Claude-Teams-Produktivitäts-Enttäuschung
-
-**Risiko:** Der geplante Multiplikator von 4–8× wird nicht erreicht, weil bestimmte Aufgaben (RTPS-Debugging, Interop-Issues, Performance-Tuning) nicht durch LLM-Augmentation beschleunigt werden.
-
-**Impact:** Roadmap rutscht, Kosten steigen.
+**Impact:** End nodes cannot find each other, even though types are "actually" compatible. That is a frequent support case across all DDS vendors.
 
 **Mitigation:**
-- Klare Buckets pro Aufgabentyp mit realistischen Multiplikator-Erwartungen (siehe `06_roadmap.md`)
-- Kontinuierliche Metrik: Welche Tasks liefen wie schnell mit vs. ohne AI-Augmentation?
-- Kein Vertrauen auf 100×-Multiplikator; Plan konservativ kalkuliert
-- Fallback-Puffer in Phase 4 und 5 eingeplant
+- Strict adherence to the XTypes 1.3 spec
+- Interop tests per type-mutation pattern (all @final/@appendable/@mutable combinations)
+- Documented deviations from other vendors (when we are spec-conformant and they are not)
+- Type-lookup service as a fallback for unknown types
 
-## 2 Lizenzrechtliche und Patent-Risiken
+### 1.3 Performance parity
 
-### 2.1 RTI-Patent-Exposure
+**Risk:** Established vendors have 10–20 years of performance tuning behind them. A new implementation could lose in benchmarks, which impairs sales arguments and customer acceptance.
 
-**Risiko:** RTI hält diverse Patente um DDS-Performance-Techniken (insbesondere Shared-Memory, FlatData, spezifische Discovery-Optimierungen). Eine eigene Implementierung kann versehentlich Patente berühren.
-
-**Impact:** Patent-Klage, Lizenz-Zwang, oder Feature-Rücknahme. Sogar die bloße Drohung kann Investoren und Kunden abschrecken.
+**Impact:** Customers choose an established vendor despite sovereignty arguments, when the performance gap is too large.
 
 **Mitigation:**
-- **Phase-0-Patent-Clearance** durch spezialisierten Anwalt mit IP-Erfahrung
-- RTI-Patent-Portfolio systematisch kartieren
-- Design-Around bei identifizierten Patenten
-- Freedom-to-Operate-Gutachten vor Public-Release
-- OMG-Spec-Features sind Royalty-Free (OMG Essential Claims) — darauf stützen, wo möglich
-- Partnership-Option: Prior-Art-Defense-Fonds (Open Invention Network-Äquivalent in EU)
+- Early benchmark baseline (from Phase 1) against Cyclone DDS and Fast DDS
+- Performance-regression tests in CI with a 5% threshold
+- Zero-copy SHM as a priority in Phase 4
+- Profile-guided optimization (PGO) for release builds
+- Flamegraph-based hot-path analysis continuously
+- Rust gives us structural advantages (zero-cost abstractions, no GC pauses); that should lead to at least parity
 
-### 2.2 Export-Kontrolle
+### 1.4 Ferrocene target gap (deferred to the expansion era)
 
-**Risiko:** Unser DDS wird Defense-Kunden bedienen. EU Dual-Use Regulation (EU 2021/821) kann Export-Lizenzen für bestimmte Kombinationen aus Crypto + Destination-Country erfordern.
+**Risk:** Ferrocene is currently qualified for a limited set of targets. When customers need exotic targets, Ferrocene's qualification scope might not suffice.
 
-**Impact:** Blocked exports, verzögerte Deals, Compliance-Overhead.
+**Impact:** The safe profile does not work on customer hardware or only with additional effort.
 
-**Mitigation:**
-- Phase-0-Legal-Beratung zu EU-Dual-Use-Klassifikation
-- Separates Crypto-Plugin-Modell: Core-Distribution ohne Strong-Crypto, Crypto separat lizenzierbar je nach Destination
-- Prüfen: BAFA-Klassifizierung in Deutschland, analog in anderen EU-Staaten
-- Open-Source-Release-Strategie mit Blick auf US-EAR-ähnliche EU-Regelungen abstimmen
+**Current status:** In the bootstrap and proof eras we use stable Rust. Safe-subset crates are written safety-ready (see `04_safety_by_architecture.md`), but built without Ferrocene qualification. Ferrocene integration is a Track-B topic (see `06_roadmap.md` §8.1).
 
-### 2.3 Open-Source-Lizenz-Wahl
+**Mitigation for later:**
+- Early alignment with Ferrous Systems on target platforms at the start of Track B
+- Contract engineering for target ports (Ferrous offers this as a service)
+- Dual-path strategy: safe profile primarily on mainstream targets (Linux x86_64/ARM64, QNX Neutrino), exotic targets only on customer demand
 
-**Risiko:** Falsche Lizenz-Wahl schließt entweder kommerzielle Kunden aus (z.B. GPL) oder gibt Konkurrenten Gratis-Code ohne Reziprozität.
+### 1.5 Claude-Teams productivity disappointment
 
-**Impact:** Geschäftsmodell-Erosion oder Community-Adoption-Lücke.
+**Risk:** The planned multiplier of 4–8× is not reached, because certain tasks (RTPS debugging, interop issues, performance tuning) are not accelerated by LLM augmentation.
 
-**Empfehlung:**
-- **Dual-Lizenz Apache 2.0 + MIT**: maximale Adoption, EU-freundlich, kommerziell friktionsfrei
-- **Alternative: EPL 2.0**: wenn wir zu Eclipse Foundation gehen, was dort übliche Lizenz ist
-- **Gegen GPL**: schließt embedded Vendor-Integration aus
-- **Gegen AGPL**: schließt Cloud-SaaS-Deployments aus
-- Commercial-Support + Services als primäres Business-Modell, nicht Lizenz-Verkauf
-
-### 2.4 Trademark und Naming
-
-**Risiko:** DDS-Markt hat bereits RTI Connext, eProsima Fast DDS, Cyclone DDS — einen neuen Namen zu finden, der unique ist und nicht mit existierenden Marken kollidiert, erfordert Recherche.
+**Impact:** Roadmap slips, costs rise.
 
 **Mitigation:**
-- Phase-0-Trademark-Recherche (EUIPO, USPTO-Screening)
-- Domain-Verfügbarkeit prüfen (`.eu`, `.org`, `.io`)
-- GitHub-Organisation-Namen reservieren
-- Keine DDS-Namen mit "Euro-" oder "Sovereign-" Präfix wählen (politisiert, schränkt Use-Cases ein)
+- Clear buckets per task type with realistic multiplier expectations (see `06_roadmap.md`)
+- Continuous metric: which tasks ran how fast with vs. without AI augmentation?
+- No reliance on a 100× multiplier; the plan is calculated conservatively
+- Fallback buffer planned in Phases 4 and 5
 
-## 3 Strategische und Wettbewerbs-Risiken
+## 2 License and patent risks
 
-### 3.1 RTI-Reaktion
+### 2.1 RTI patent exposure
 
-**Risiko:** RTI wird auf einen EU-Souveränitäts-Konkurrenten reagieren. Mögliche Reaktionen reichen von Akquisitions-Angeboten über aggressive Preis-Unterbietung bis zu rechtlichen Schritten.
+**Risk:** RTI holds various patents around DDS performance techniques (especially shared memory, FlatData, specific discovery optimizations). An own implementation can inadvertently touch patents.
 
-**Impact:** Marktzugang erschwert, Investoren nervös, Team-Abwerbungen.
-
-**Mitigation:**
-- **Financial Runway:** mindestens 18 Monate Cash-Runway unabhängig von frühen Umsätzen
-- **IP-Protection:** eigene Patent-Anmeldungen für Innovationen (Observability-Features, XRCE-Erweiterungen)
-- **Community-Moat:** starke Open-Source-Community als Verteidigungslinie gegen Proprietärisierung
-- **Sovereign-Kunden-Anchor:** frühzeitige Commitments von EU-Defense- oder Aerospace-Kunden als strategische Rückendeckung
-- **Team-Retention:** Vesting-Strukturen, langfristige Anreize; Schlüssel-Engineers nicht ersetzbar
-
-### 3.2 eProsima-Positionierung
-
-**Risiko:** eProsima ist EU-basiert (Madrid), hat Safe DDS mit ASIL D, und bedient viele unserer Ziel-Kunden bereits. Sie sind der natürlichste Konkurrent in unserem Segment.
-
-**Impact:** Kunden, die bereits eProsima nutzen, haben hohe Wechsel-Kosten.
+**Impact:** Patent suit, license mandate, or feature withdrawal. Even the mere threat can deter investors and customers.
 
 **Mitigation:**
-- Klare Differenzierung: wir bieten **umfassenderes Tooling, Rust-basierte Safety, PlatformIO-Integration** — Dinge, die eProsima nicht hat
-- Migration-Tools und Co-Existence-Modus (unser Stack und eProsima im selben Netzwerk)
-- Nicht auf "eProsima ersetzen" positionieren, sondern "nächste Generation von DDS" — weniger konfrontativ
-- Evtl. Kooperations-Gespräche mit eProsima (gemeinsame Interop-Test-Bed, OMG-Plug-Fest-Koordination)
+- **Phase-0 patent clearance** by a specialized attorney with IP experience
+- Systematically map RTI's patent portfolio
+- Design-around for identified patents
+- Freedom-to-operate opinion before a public release
+- OMG spec features are royalty-free (OMG Essential Claims) — rely on those where possible
+- Partnership option: prior-art defense fund (an Open Invention Network equivalent in the EU)
 
-### 3.3 Markt-Timing
+### 2.2 Export control
 
-**Risiko:** In 22–27 Monaten kann der Markt sich verschoben haben. Software-Defined-Vehicle-Trend, Post-Quantum-Crypto-Pflicht, neue Standards — Timing-Risk ist real.
+**Risk:** Our DDS will serve defense customers. The EU Dual-Use Regulation (EU 2021/821) can require export licenses for certain combinations of crypto + destination country.
 
-**Mitigation:**
-- Phased Release (Beta ab Monat 14, v1.0 ab Monat 22, Cert ab Monat 27) mit Markt-Feedback-Integration
-- Flexibles Feature-Scope: kritisch vs. nice-to-have identifizieren, bei Bedarf verschieben
-- Kontinuierliche Market-Intelligence (Customer-Interviews, Conference-Attendance, Competitor-Watch)
-
-### 3.4 Community-Aufbau
-
-**Risiko:** Open-Source-Projekt ohne Community ist nur Code. Ohne externe Contributors, User-Feedback und externe Reviews wird das Projekt isoliert bleiben.
+**Impact:** Blocked exports, delayed deals, compliance overhead.
 
 **Mitigation:**
-- Public GitHub ab Phase 1 (auch wenn noch nicht produktionsreif)
-- Transparente Roadmap und Design-Dokumente (dieser Satz)
-- Conference-Präsenz: ROSCon, Embedded World, Eclipse Conference, OMG Meetings
-- Governance-Modell das externe Contributors willkommen heißt (SIG-Struktur wie Kubernetes)
-- Ernannter Community-Manager ab Phase 3
-- Partnerschaften mit Universitäten (Forschungsprojekte, studentische Contributions)
+- Phase-0 legal advice on EU dual-use classification
+- Separate crypto-plugin model: core distribution without strong crypto, crypto separately licensable depending on destination
+- Check: BAFA classification in Germany, analogous in other EU states
+- Align the open-source release strategy with a view to US-EAR-like EU regulations
 
-### 3.5 Governance (entschieden)
+### 2.3 Open-source license choice
 
-**Entscheidung:** ZeroDDS ist ein internes Core-Projekt der Sponsor-Firma. Kein externes Governance-Framework, keine Foundation-Donation geplant. Lizenz ist **Apache 2.0**. Diese Wahl bewahrt Optionalität — ein späterer Wechsel zu einem offeneren Governance-Modell bleibt ohne Re-Licensing-Friktion möglich, falls strategische Gründe dafür entstehen. Umgekehrt wird keine Planung, Personalaufwand oder Aufmerksamkeit jetzt investiert.
+**Risk:** A wrong license choice either excludes commercial customers (e.g. GPL) or gives competitors free code without reciprocity.
 
-Community-bezogene Fragen (Open-Source-Release, Contributor-License-Agreement, Donation-Ziel) sind Expansion-Era-Themen und werden in `06_roadmap.md` §8.1 Track E behandelt, falls sie relevant werden.
+**Impact:** Business-model erosion or a community-adoption gap.
 
-## 4 Team- und Organisations-Risiken
+**Recommendation:**
+- **Dual license Apache 2.0 + MIT**: maximum adoption, EU-friendly, commercially frictionless
+- **Alternative: EPL 2.0**: if we go to the Eclipse Foundation, which is the usual license there
+- **Against GPL**: excludes embedded vendor integration
+- **Against AGPL**: excludes cloud SaaS deployments
+- Commercial support + services as the primary business model, not license sales
 
-### 4.1 Senior-Talent-Akquisition
+### 2.4 Trademark and naming
 
-**Risiko:** DDS-Experten sind rar. RTPS-Expertise noch rarer. In einem kompetitiven Markt (insbesondere in Deutschland) ist die Rekrutierung herausfordernd.
-
-**Mitigation:**
-- Competitive Compensation inklusive Equity-Beteiligung
-- Remote-First-Option in EU-Zeitzone, nicht auf Standort-Cluster beschränkt
-- Conference-Präsenz und technische Publikationen zum Aufbau von Employer-Brand
-- University-Partnerships für Junior-Talent-Pipeline
-- Kein Requirement für Ex-DDS-Vendor-Erfahrung; Rust+Distributed-Systems-Experten können DDS lernen
-
-### 4.2 Bus-Factor
-
-**Risiko:** Wenige Personen mit tiefem Protocol-Verständnis. Ausfall einzelner Schlüssel-Engineers verursacht Projekt-Risiko.
+**Risk:** The DDS market already has RTI Connext, eProsima Fast DDS, Cyclone DDS — finding a new name that is unique and does not collide with existing trademarks requires research.
 
 **Mitigation:**
-- Mindestens zwei Senior-Engineers pro Kern-Subsystem (Protocol, Platform, Quality)
-- Dokumentations-Pflicht: Jede nicht-triviale Entscheidung im Code als ADR (Architecture Decision Record)
-- Code-Review-Kultur: Jeder Senior reviewt regelmäßig Code von allen anderen, vermeidet Silos
+- Phase-0 trademark research (EUIPO, USPTO screening)
+- Check domain availability (`.eu`, `.org`, `.io`)
+- Reserve the GitHub organization name
+- Do not choose DDS names with a "Euro-" or "Sovereign-" prefix (politicized, restricts use cases)
 
-### 4.3 Claude-Teams-Abhängigkeit
+## 3 Strategic and competitive risks
 
-**Risiko:** Wenn das gesamte Entwicklungsmodell auf Claude-Augmentation basiert und Claude-Availability/Pricing/Capabilities sich ändern, entsteht Plattform-Lock-In.
+### 3.1 RTI reaction
 
-**Mitigation:**
-- Prompts und Workflows in Git versioniert, reproduzierbar
-- Artefakte (generierter Code) sind portabel zu anderen LLM-Providern
-- Kein Vendor-Lock-In auf Anthropic-spezifische Features jenseits von Standard-LLM-Capabilities
-- Kontinuitäts-Plan: was wenn Claude morgen weg ist? Team muss ohne weiter arbeiten können, langsamer aber funktional.
+**Risk:** RTI will react to an EU sovereignty competitor. Possible reactions range from acquisition offers through aggressive price undercutting to legal steps.
 
-## 5 Compliance- und Regulierungs-Risiken
-
-### 5.1 Safety-Audit-Durchfall (Expansion-Era, Track C)
-
-**Risiko:** Falls Track C aktiviert wird, könnte der formelle Audit Mängel finden, die größere Refactorings erfordern.
-
-**Impact:** Zertifizierung verspätet sich, Produkt nicht für Safety-Segment nutzbar.
+**Impact:** Market access made harder, investors nervous, team poaching.
 
 **Mitigation:**
-- Safety-by-Architecture-Disziplin ab Tag 1 in Bootstrap-Era (siehe `04_safety_by_architecture.md`) reduziert Retrofit-Risiko erheblich
-- Audit-Artefakte werden kontinuierlich aufgebaut, nicht erst bei Track-C-Aktivierung
-- Safety-Engineer wird mit Track-C-Start Teil des Teams; interne Audit-Simulation vor externem Audit
-- Puffer im Track-C-Zeitplan eingeplant (6–10 Monate Kalenderzeit inkl. Remediation)
+- **Financial runway:** at least 18 months cash runway independent of early revenue
+- **IP protection:** own patent applications for innovations (observability features, XRCE extensions)
+- **Community moat:** a strong open-source community as a defensive line against proprietarization
+- **Sovereign-customer anchor:** early commitments from EU defense or aerospace customers as strategic backing
+- **Team retention:** vesting structures, long-term incentives; key engineers not replaceable
 
-### 5.2 Post-Quantum-Crypto-Pflicht
+### 3.2 eProsima positioning
 
-**Risiko:** EU regulatorische Vorgaben oder Kunden-Anforderungen könnten PQC-Support vor Phase-3-Release erzwingen.
+**Risk:** eProsima is EU-based (Madrid), has Safe DDS with ASIL D, and already serves many of our target customers. They are the most natural competitor in our segment.
+
+**Impact:** Customers who already use eProsima have high switching costs.
 
 **Mitigation:**
-- Plugin-Architektur des `zerodds-security`-Crates ist PQC-ready
-- Monitoring der NIST-PQC-Standardisierung und EU-Regulation
-- Early-Implementation-Option: Kyber/Dilithium-Prototyp in Phase 2/3 als Feature-Preview
-- Hybride Crypto-Suites (Classical + PQC) als Default bei Release
+- Clear differentiation: we offer **more comprehensive tooling, Rust-based safety, PlatformIO integration** — things eProsima does not have
+- Migration tools and a co-existence mode (our stack and eProsima in the same network)
+- Position not as "replace eProsima" but as the "next generation of DDS" — less confrontational
+- Possibly cooperation talks with eProsima (shared interop test bed, OMG Plug-Fest coordination)
+
+### 3.3 Market timing
+
+**Risk:** In 22–27 months the market may have shifted. Software-defined-vehicle trend, post-quantum-crypto mandate, new standards — timing risk is real.
+
+**Mitigation:**
+- Phased release (beta from month 14, v1.0 from month 22, cert from month 27) with market-feedback integration
+- Flexible feature scope: identify critical vs. nice-to-have, defer if needed
+- Continuous market intelligence (customer interviews, conference attendance, competitor watch)
+
+### 3.4 Community building
+
+**Risk:** An open-source project without a community is just code. Without external contributors, user feedback and external reviews the project will stay isolated.
+
+**Mitigation:**
+- Public GitHub from Phase 1 (even if not yet production-ready)
+- Transparent roadmap and design documents (this set)
+- Conference presence: ROSCon, Embedded World, Eclipse Conference, OMG meetings
+- A governance model that welcomes external contributors (SIG structure like Kubernetes)
+- An appointed community manager from Phase 3
+- Partnerships with universities (research projects, student contributions)
+
+### 3.5 Governance (decided)
+
+**Decision:** ZeroDDS is an internal core project of the sponsoring company. No external governance framework, no foundation donation planned. License is **Apache 2.0**. This choice preserves optionality — a later switch to a more open governance model remains possible without re-licensing friction, if strategic reasons arise. Conversely, no planning, staffing or attention is invested now.
+
+Community-related questions (open-source release, contributor license agreement, donation target) are expansion-era topics and are handled in `06_roadmap.md` §8.1 Track E, if they become relevant.
+
+## 4 Team and organization risks
+
+### 4.1 Senior-talent acquisition
+
+**Risk:** DDS experts are rare. RTPS expertise rarer still. In a competitive market (especially in Germany), recruiting is challenging.
+
+**Mitigation:**
+- Competitive compensation including equity participation
+- Remote-first option in the EU time zone, not restricted to a location cluster
+- Conference presence and technical publications to build the employer brand
+- University partnerships for a junior-talent pipeline
+- No requirement for ex-DDS-vendor experience; Rust + distributed-systems experts can learn DDS
+
+### 4.2 Bus factor
+
+**Risk:** Few people with deep protocol understanding. The loss of individual key engineers causes project risk.
+
+**Mitigation:**
+- At least two senior engineers per core subsystem (Protocol, Platform, Quality)
+- Documentation obligation: every non-trivial decision in the code as an ADR (Architecture Decision Record)
+- Code-review culture: every senior reviews code from all others regularly, avoids silos
+
+### 4.3 Claude-Teams dependency
+
+**Risk:** When the entire development model is based on Claude augmentation and Claude availability/pricing/capabilities change, platform lock-in arises.
+
+**Mitigation:**
+- Prompts and workflows versioned in git, reproducible
+- Artifacts (generated code) are portable to other LLM providers
+- No vendor lock-in on Anthropic-specific features beyond standard LLM capabilities
+- Continuity plan: what if Claude is gone tomorrow? The team must be able to continue without it, slower but functional.
+
+## 5 Compliance and regulation risks
+
+### 5.1 Safety-audit failure (expansion era, Track C)
+
+**Risk:** If Track C is activated, the formal audit could find deficiencies that require larger refactorings.
+
+**Impact:** Certification is delayed, the product is not usable for the safety segment.
+
+**Mitigation:**
+- Safety-by-architecture discipline from day 1 in the bootstrap era (see `04_safety_by_architecture.md`) reduces retrofit risk considerably
+- Audit artifacts are built up continuously, not only at Track-C activation
+- A safety engineer becomes part of the team with the Track-C start; internal audit simulation before the external audit
+- Buffer planned in the Track-C schedule (6–10 months calendar time incl. remediation)
+
+### 5.2 Post-quantum-crypto mandate
+
+**Risk:** EU regulatory requirements or customer requirements could force PQC support before the Phase-3 release.
+
+**Mitigation:**
+- The plugin architecture of the `zerodds-security` crate is PQC-ready
+- Monitoring of NIST PQC standardization and EU regulation
+- Early-implementation option: Kyber/Dilithium prototype in Phase 2/3 as a feature preview
+- Hybrid crypto suites (classical + PQC) as default at release
 
 ### 5.3 CRA (Cyber Resilience Act)
 
-**Risiko:** EU Cyber Resilience Act (2024) stellt Anforderungen an Hersteller von Software mit digitalen Elementen, einschließlich Sicherheits-Updates und Vulnerability-Disclosure.
+**Risk:** The EU Cyber Resilience Act (2024) imposes requirements on manufacturers of software with digital elements, including security updates and vulnerability disclosure.
 
 **Mitigation:**
-- SBOM-Produktion per Release (CycloneDX)
-- Vulnerability-Disclosure-Policy dokumentiert und implementiert (security.md, GPG-Schlüssel)
-- CVE-Prozess: PSIRT-ähnliche Funktion im Team
-- Kontinuierliches `cargo audit` in CI, Auto-Patch für kritische CVEs
+- SBOM production per release (CycloneDX)
+- Vulnerability-disclosure policy documented and implemented (security.md, GPG key)
+- CVE process: a PSIRT-like function in the team
+- Continuous `cargo audit` in CI, auto-patch for critical CVEs
 
-## 6 Risiko-Register (zusammenfassend)
+## 6 Risk register (summary)
 
-| ID | Risiko | Wahrscheinlichkeit | Impact | Era | Trend |
+| ID | Risk | Likelihood | Impact | Era | Trend |
 |---|---|---|---|---|---|
-| T-01 | RTPS-Reliable-Bug | Hoch | Hoch | Bootstrap | stabil |
-| T-02 | XTypes-Interop-Issues | Mittel | Mittel | Bootstrap | stabil |
-| T-03 | Performance-Gap | Mittel | Mittel | Proof | sinkend mit Rust-Reife |
-| T-04 | Ferrocene-Target-Lücke | Niedrig | Mittel | Expansion | sinkend |
-| T-05 | Claude-Multiplikator-Enttäuschung | Mittel | Mittel | Bootstrap | sinkend mit Erfahrung |
-| L-01 | RTI-Patent-Exposure | Mittel | Hoch | Expansion | stabil |
-| L-02 | Export-Kontrolle | Niedrig | Mittel | Expansion | steigend mit Geopolitik |
-| L-03 | Lizenz-Fehlwahl | — | — | entschieden | Apache 2.0 gewählt |
-| S-01 | RTI-Reaktion | Niedrig → Hoch | Mittel | je nach Sichtbarkeit | steigend mit Traction |
-| S-02 | eProsima-Wettbewerb | Hoch | Mittel | alle | stabil |
-| S-03 | Markt-Timing | Mittel | Mittel | alle | stabil |
-| S-04 | Community-Aufbau | — | Niedrig | Expansion Track E | konditional |
-| S-05 | Governance-Home-Entscheidung | — | — | entschieden | interner Core gewählt |
-| O-01 | Senior-Talent-Akquisition | Mittel | Hoch | alle | stabil |
-| O-02 | Bus-Factor (bei 2–4 FTE erhöht) | Hoch | Hoch | Bootstrap | sinkend in Proof-Era |
-| O-03 | Claude-Abhängigkeit | Mittel | Mittel | Bootstrap | stabil |
-| O-04 | Scope-Creep durch kleines Team | Hoch | Hoch | Bootstrap | steuerbar mit Disziplin |
-| O-05 | Interner Use-Case verschiebt sich | Mittel | Hoch | Bootstrap | projekt-spezifisch |
-| C-01 | Safety-Audit-Durchfall | Niedrig | Hoch | Expansion Track C | sinkend mit Architektur-Disziplin |
-| C-02 | PQC-Pflicht | Niedrig | Mittel | alle | steigend |
-| C-03 | CRA-Compliance | Mittel | Mittel | Proof → Expansion | steigend |
+| T-01 | RTPS reliable bug | High | High | Bootstrap | stable |
+| T-02 | XTypes interop issues | Medium | Medium | Bootstrap | stable |
+| T-03 | Performance gap | Medium | Medium | Proof | falling with Rust maturity |
+| T-04 | Ferrocene target gap | Low | Medium | Expansion | falling |
+| T-05 | Claude multiplier disappointment | Medium | Medium | Bootstrap | falling with experience |
+| L-01 | RTI patent exposure | Medium | High | Expansion | stable |
+| L-02 | Export control | Low | Medium | Expansion | rising with geopolitics |
+| L-03 | Wrong license choice | — | — | decided | Apache 2.0 chosen |
+| S-01 | RTI reaction | Low → High | Medium | depends on visibility | rising with traction |
+| S-02 | eProsima competition | High | Medium | all | stable |
+| S-03 | Market timing | Medium | Medium | all | stable |
+| S-04 | Community building | — | Low | Expansion Track E | conditional |
+| S-05 | Governance-home decision | — | — | decided | internal core chosen |
+| O-01 | Senior-talent acquisition | Medium | High | all | stable |
+| O-02 | Bus factor (elevated at 2–4 FTE) | High | High | Bootstrap | falling in the proof era |
+| O-03 | Claude dependency | Medium | Medium | Bootstrap | stable |
+| O-04 | Scope creep from a small team | High | High | Bootstrap | controllable with discipline |
+| O-05 | The internal use case shifts | Medium | High | Bootstrap | project-specific |
+| C-01 | Safety-audit failure | Low | High | Expansion Track C | falling with architecture discipline |
+| C-02 | PQC mandate | Low | Medium | all | rising |
+| C-03 | CRA compliance | Medium | Medium | Proof → Expansion | rising |
 
-Das Register wird monatlich in der Lead-Runde reviewt und aktualisiert.
+The register is reviewed and updated monthly in the lead round.
 
-**Neu in dieser Version:**
-- O-04 (Scope-Creep): bei kleinem Team kritisch, Phase-Gate-Disziplin essenziell
-- O-05 (Use-Case-Shift): wir sind unser erster Kunde, wenn der interne Use-Case sich ändert, verschiebt sich das Validierungs-Ziel
+**New in this version:**
+- O-04 (scope creep): critical with a small team, phase-gate discipline essential
+- O-05 (use-case shift): we are our own first customer; if the internal use case changes, the validation target shifts
 
-## 7 Strategische Entscheidungen: Status
+## 7 Strategic decisions: status
 
-### 7.1 Für Bootstrap-Era (entschieden)
+### 7.1 For the bootstrap era (decided)
 
-- **Projekt-Name:** ZeroDDS (Trademark-Clearance in Expansion-Era, siehe §2.4)
-- **Lizenz:** Apache 2.0
-- **Governance:** internes Core-Projekt, keine Foundation
-- **Team-Modell:** 2–4 interne Engineers + Claude-Teams-Augmentation
-- **Ersten Kunde:** wir selbst (interne Zielanwendung als Validierungs-Anker)
-- **Crypto-Default:** Standard-Suite aus DDS-Security 1.2 (AES-GCM, RSA/ECDSA) für Interop-Tag-Eins
-- **Safety-Pfad:** Safety-by-Architecture ab Tag 1, aber Ferrocene-Integration und formaler Audit verschoben in Expansion-Era
+- **Project name:** ZeroDDS (trademark clearance in the expansion era, see §2.4)
+- **License:** Apache 2.0
+- **Governance:** internal core project, no foundation
+- **Team model:** 2–4 internal engineers + Claude-Teams augmentation
+- **First customer:** ourselves (the internal target application as a validation anchor)
+- **Crypto default:** standard suite from DDS-Security 1.2 (AES-GCM, RSA/ECDSA) for interop day one
+- **Safety path:** safety-by-architecture from day 1, but Ferrocene integration and the formal audit deferred to the expansion era
 
-### 7.2 Für Expansion-Era (aufgeschoben)
+### 7.2 For the expansion era (deferred)
 
-Die folgenden Entscheidungen werden erst getroffen, wenn Bootstrap-Proof erreicht ist und externe Mittel mobilisiert werden:
+The following decisions are made only once the bootstrap proof is reached and external funds are mobilized:
 
-1. **Ferrous-Systems-Partnerschafts-Vertrag** — Scope und Konditionen (Track B)
-2. **OMG-Membership-Tier** (Track A)
-3. **Patent-Anwalt-Engagement** für Freedom-to-Operate und Trademark (Track D)
-4. **EU-Crypto-Plugin-Strategie** — welche Suites als zweite Wahl nach der Standard-Suite
-5. **Open-Source-Release-Strategie** (Track E) — falls Community-Build gewünscht
-6. **HSM-Integration via PKCS#11** — als kommerzielles Feature oder Default?
-7. **Governance-Evolution** — bleibt internes Core-Projekt oder Donation an Foundation?
+1. **Ferrous-Systems partnership contract** — scope and conditions (Track B)
+2. **OMG membership tier** (Track A)
+3. **Patent-attorney engagement** for freedom-to-operate and trademark (Track D)
+4. **EU crypto-plugin strategy** — which suites as a second choice after the standard suite
+5. **Open-source release strategy** (Track E) — if a community build is desired
+6. **HSM integration via PKCS#11** — as a commercial feature or default?
+7. **Governance evolution** — stay an internal core project or donate to a foundation?
 
-Diese Aufschiebung ist bewusst. Mittel für externe Engagements werden rationaler allokiert, wenn ein funktionierender Stack als Verhandlungs-Basis existiert.
+This deferral is deliberate. Funds for external engagements are allocated more rationally when a working stack exists as a negotiation basis.

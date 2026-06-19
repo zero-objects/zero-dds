@@ -1,64 +1,64 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Typisiertes Annotation-Model (XTypes-relevante Builtin-Annotations).
+//! Typed annotation model (XTypes-relevant builtin annotations).
 //!
-//! Wandelt generische `Annotation { name, params }` aus dem AST in ein
-//! typisiertes `BuiltinAnnotation`-Enum um. Unbekannte / vendor-
-//! spezifische Annotations bleiben als unerkannt im `custom`-Vec.
+//! Converts generic `Annotation { name, params }` from the AST into a
+//! typed `BuiltinAnnotation` enum. Unknown / vendor-
+//! specific annotations stay as unrecognized in the `custom` vec.
 //!
-//! Quelle der Wahrheit: XTypes §7.3.1.2 (Standard-Annotationen) +
+//! Source of truth: XTypes §7.3.1.2 (standard annotations) +
 //! IDL 4.2 §8.3.
 
 use crate::ast::{Annotation, AnnotationParams, ConstExpr, LiteralKind};
 
-/// Extensibility-Kind aus `@extensibility(FINAL|APPENDABLE|MUTABLE)`
-/// oder den Aliases `@final`, `@appendable`, `@mutable`.
+/// Extensibility kind from `@extensibility(FINAL|APPENDABLE|MUTABLE)`
+/// or the aliases `@final`, `@appendable`, `@mutable`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExtensibilityKind {
-    /// `FINAL` — strikte Gleichheit.
+    /// `FINAL` — strict equality.
     Final,
-    /// `APPENDABLE` — Prefix-Match.
+    /// `APPENDABLE` — prefix match.
     Appendable,
-    /// `MUTABLE` — ID-basiertes Match.
+    /// `MUTABLE` — ID-based match.
     Mutable,
 }
 
-/// Kind aus `@autoid(SEQUENTIAL|HASH)`.
+/// Kind from `@autoid(SEQUENTIAL|HASH)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AutoidKind {
-    /// Sequentielle IDs ab 0.
+    /// Sequential IDs starting at 0.
     Sequential,
-    /// MD5-basierter Hash des Member-Namens.
+    /// MD5-based hash of the member name.
     Hash,
 }
 
-/// Typisierte Repraesentation der Standard-Builtin-Annotations.
+/// Typed representation of the standard builtin annotations.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BuiltinAnnotation {
-    /// `@key` (gueltig auf Member).
+    /// `@key` (valid on a member).
     Key,
-    /// `@id(n)` (gueltig auf Member).
+    /// `@id(n)` (valid on a member).
     Id(u32),
     /// `@optional`.
     Optional,
     /// `@shared` (Plain-Language-Binding §8.1.5; XTypes 1.3 §7.2.5.x).
-    /// Markiert einen Member, der als Pointer/shared-Reference statt
-    /// embedded-by-value abgebildet wird. Im PSM C++ -> `std::shared_ptr<T>`,
-    /// in C# -> Wrapper-Class, in Java -> Reference-Type (default-Pointer).
+    /// Marks a member mapped as a pointer/shared reference instead of
+    /// embedded-by-value. In the C++ PSM -> `std::shared_ptr<T>`,
+    /// in C# -> a wrapper class, in Java -> a reference type (default pointer).
     Shared,
     /// `@must_understand`.
     MustUnderstand,
     /// `@external`.
     External,
-    /// `@non_serialized` (XTypes 1.3 §7.2.4.4.2). Member ist Programm-
-    /// internes Storage und MUSS aus jeder Wire-Form ausgelassen werden;
-    /// Assignability-Vergleiche MUESSEN den Member ueberspringen.
+    /// `@non_serialized` (XTypes 1.3 §7.2.4.4.2). The member is program-
+    /// internal storage and MUST be omitted from every wire form;
+    /// assignability comparisons MUST skip the member.
     NonSerialized,
-    /// `@ignore_literal_names` (XTypes 1.3 §7.2.4.4.7). Auf einem Enum-
-    /// Typ: bei Compat-Vergleichen Literal-Namen ignorieren, nur Ordinal-
-    /// Werte vergleichen.
+    /// `@ignore_literal_names` (XTypes 1.3 §7.2.4.4.7). On an enum
+    /// type: in compat comparisons ignore literal names, compare only
+    /// ordinal values.
     IgnoreLiteralNames,
-    /// `@default(value)` — Wert als String (Caller konvertiert nach Typ).
+    /// `@default(value)` — value as a string (the caller converts to the type).
     Default(String),
     /// `@extensibility(FINAL|APPENDABLE|MUTABLE)`.
     Extensibility(ExtensibilityKind),
@@ -78,18 +78,18 @@ pub enum BuiltinAnnotation {
     Unit(String),
     /// `@hashid("hint")`.
     HashId(Option<String>),
-    /// `@range(min, max)` — Strings fuer einfache Serialisierung.
+    /// `@range(min, max)` — strings for simple serialization.
     Range {
-        /// Min-Literal.
+        /// Min literal.
         min: Option<String>,
-        /// Max-Literal.
+        /// Max literal.
         max: Option<String>,
     },
     /// `@min(value)`.
     Min(String),
     /// `@max(value)`.
     Max(String),
-    /// `@value(v)` — Enum-Literal-Wert.
+    /// `@value(v)` — enum literal value.
     Value(String),
     /// `@position(n)` — Bitmask/Bitfield.
     Position(u32),
@@ -98,56 +98,56 @@ pub enum BuiltinAnnotation {
     /// `@default_literal`.
     DefaultLiteral,
     /// `@verbatim(language, placement, text)` (§8.3.5.1).
-    /// Spec-konformes Lowering mit getrennten Feldern und
-    /// `PlacementKind`-Enum statt String-Platzhalter.
+    /// Spec-compliant lowering with separate fields and a
+    /// `PlacementKind` enum instead of a string placeholder.
     Verbatim(VerbatimSpec),
-    /// `@ami(boolean default TRUE)` (§8.3.6.3) — Asynchronous-Method-
-    /// Invocation-Marker. Der bool-Wert (default `true`) signalisiert
-    /// ob die annotierte Op AMI-faehig ist.
+    /// `@ami(boolean default TRUE)` (§8.3.6.3) — asynchronous-method-
+    /// invocation marker. The bool value (default `true`) signals
+    /// whether the annotated op is AMI-capable.
     Ami(bool),
     /// `@service(string platform default "*")` (§8.3.6.1).
-    /// Marker fuer Interface, das als Service zu behandeln ist.
-    /// Platform-Werte: `"CORBA"`, `"DDS"`, `"*"` (default).
+    /// Marker for an interface to be treated as a service.
+    /// Platform values: `"CORBA"`, `"DDS"`, `"*"` (default).
     Service(String),
-    /// `@oneway(boolean value default TRUE)` (§8.3.6.2). Markiert eine
-    /// Operation als one-way (kein Return-Value, keine out/inout-
-    /// Params). Disambiguiert vom recognizer-side `oneway`-Keyword
+    /// `@oneway(boolean value default TRUE)` (§8.3.6.2). Marks an
+    /// operation as one-way (no return value, no out/inout
+    /// params). Disambiguated from the recognizer-side `oneway` keyword
     /// (Rule 120).
     OnewayAnno(bool),
 }
 
-/// `@verbatim` Lowering-Struktur (§8.3.5.1).
+/// `@verbatim` lowering struct (§8.3.5.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerbatimSpec {
-    /// Codegen-Sprache, default `"*"` (alle Sprachen).
+    /// Codegen language, default `"*"` (all languages).
     pub language: String,
-    /// Wo im generierten Output der Text platziert werden soll.
+    /// Where in the generated output the text should be placed.
     pub placement: PlacementKind,
-    /// Roher Verbatim-Text.
+    /// Raw verbatim text.
     pub text: String,
 }
 
-/// Wo im generierten Output `@verbatim`-Text platziert werden soll
-/// (§8.3.5.1 — `PlacementKind` Enum).
+/// Where `@verbatim` text should be placed in the generated output
+/// (§8.3.5.1 — `PlacementKind` enum).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlacementKind {
-    /// Vor jedem anderen Output im File.
+    /// Before any other output in the file.
     BeginFile,
-    /// Direkt vor der annotierten Deklaration.
+    /// Directly before the annotated declaration.
     BeforeDeclaration,
-    /// Erstes Element innerhalb der annotierten Deklaration.
+    /// First element inside the annotated declaration.
     BeginDeclaration,
-    /// Letztes Element innerhalb der annotierten Deklaration.
+    /// Last element inside the annotated declaration.
     EndDeclaration,
-    /// Direkt nach der annotierten Deklaration (Spec-Default).
+    /// Directly after the annotated declaration (spec default).
     AfterDeclaration,
-    /// Letztes Element im File.
+    /// Last element in the file.
     EndFile,
 }
 
 impl PlacementKind {
-    /// Mappt einen Spec-Identifier (`BEGIN_FILE`, `AFTER_DECLARATION`, ...)
-    /// auf den entsprechenden Enum-Wert.
+    /// Maps a spec identifier (`BEGIN_FILE`, `AFTER_DECLARATION`, ...)
+    /// to the corresponding enum value.
     #[must_use]
     pub fn from_ident(s: &str) -> Option<Self> {
         Some(match s {
@@ -162,44 +162,44 @@ impl PlacementKind {
     }
 }
 
-/// Fehler beim Lowering.
+/// Error during lowering.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LowerError {
-    /// `@id(x)` mit non-integer argument.
+    /// `@id(x)` with a non-integer argument.
     InvalidIdArgument,
     /// `@extensibility(UNKNOWN)`.
     UnknownExtensibilityKind(String),
     /// `@autoid(UNKNOWN)`.
     UnknownAutoidKind(String),
-    /// Argumentanzahl falsch.
+    /// Wrong argument count.
     WrongArgumentCount {
-        /// Annotation-Name.
+        /// Annotation name.
         annotation: String,
-        /// Erwartete Arg-Count.
+        /// Expected arg count.
         expected: usize,
-        /// Tatsaechlich.
+        /// Actual.
         got: usize,
     },
-    /// `@position(n)` mit Wert > 65535 (Spec §8.3.1.4: `unsigned short
-    /// value` impliziert Range 0..=65535).
+    /// `@position(n)` with value > 65535 (spec §8.3.1.4: `unsigned short
+    /// value` implies the range 0..=65535).
     PositionOutOfShortRange {
-        /// Tatsaechlicher Wert.
+        /// Actual value.
         value: u32,
     },
 }
 
-/// Ergebnis eines Lowerings — getrennte Listen fuer erkannte Builtins
-/// und unbekannte (durchgereichte) Annotations.
+/// Result of a lowering — separate lists for recognized builtins
+/// and unknown (passed-through) annotations.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Lowered {
-    /// Typisierte Standard-Annotations.
+    /// Typed standard annotations.
     pub builtins: Vec<BuiltinAnnotation>,
-    /// Unbekannte / vendor-spezifische — durchgereicht für Vendor-Layer.
+    /// Unknown / vendor-specific — passed through for the vendor layer.
     pub custom: Vec<Annotation>,
 }
 
 impl Lowered {
-    /// `true` wenn `@key` gesetzt.
+    /// `true` if `@key` is set.
     #[must_use]
     pub fn has_key(&self) -> bool {
         self.builtins
@@ -207,7 +207,7 @@ impl Lowered {
             .any(|a| matches!(a, BuiltinAnnotation::Key))
     }
 
-    /// Expliziter `@id(n)`-Wert, falls vorhanden.
+    /// Explicit `@id(n)` value, if present.
     #[must_use]
     pub fn explicit_id(&self) -> Option<u32> {
         self.builtins.iter().find_map(|a| match a {
@@ -216,7 +216,7 @@ impl Lowered {
         })
     }
 
-    /// Erster Extensibility-Kind aus `@extensibility(...)`, `@final`,
+    /// First extensibility kind from `@extensibility(...)`, `@final`,
     /// `@appendable`, `@mutable` (first match wins).
     #[must_use]
     pub fn extensibility(&self) -> Option<ExtensibilityKind> {
@@ -229,17 +229,17 @@ impl Lowered {
         })
     }
 
-    /// Liefert alle `@verbatim`-Specs, deren `language`-Feld auf den
-    /// gewuenschten Codegen passt (XTypes 1.3 §7.2.2.4.8 +
+    /// Returns all `@verbatim` specs whose `language` field matches the
+    /// desired codegen (XTypes 1.3 §7.2.2.4.8 +
     /// IDL 4.2 §8.3.5.1).
     ///
-    /// Match-Regel:
-    /// 1. Spec-Wildcard `"*"` matched immer.
-    /// 2. Sprach-Tag wird case-insensitive verglichen.
-    /// 3. `lang_aliases` matched zusaetzliche akzeptierte Tags
-    ///    (z.B. `&["c++", "cpp", "cxx"]` fuer den C++-Codegen).
+    /// Match rule:
+    /// 1. The spec wildcard `"*"` always matches.
+    /// 2. The language tag is compared case-insensitively.
+    /// 3. `lang_aliases` matches additional accepted tags
+    ///    (e.g. `&["c++", "cpp", "cxx"]` for the C++ codegen).
     ///
-    /// Reihenfolge: Stable nach Erscheinung im Source.
+    /// Order: stable by appearance in the source.
     #[must_use]
     pub fn verbatims_for_language<'a>(&'a self, lang_aliases: &[&str]) -> Vec<&'a VerbatimSpec> {
         self.builtins
@@ -279,9 +279,9 @@ fn const_to_string(expr: &ConstExpr) -> Option<String> {
     if let ConstExpr::Literal(l) = expr {
         let s = l.raw.as_str();
         if matches!(l.kind, LiteralKind::String) {
-            // Nur EIN Quote-Paar am Rand entfernen. `trim_matches` wuerde
-            // bei `"""x"""` alle Quotes schlucken — wir wollen aber nur
-            // den aeusseren Paar-Delimiter.
+            // Remove only ONE quote pair at the edge. `trim_matches` would
+            // swallow all quotes for `"""x"""` — but we only want the
+            // outer pair delimiter.
             return Some(
                 s.strip_prefix('"')
                     .and_then(|s| s.strip_suffix('"'))
@@ -294,11 +294,11 @@ fn const_to_string(expr: &ConstExpr) -> Option<String> {
     None
 }
 
-/// Lower eine generic Annotation auf ihre typisierte Form.
-/// Liefert `None` wenn sie nicht als Builtin erkannt wird.
+/// Lower a generic annotation to its typed form.
+/// Returns `None` if it is not recognized as a builtin.
 ///
 /// # Errors
-/// `LowerError` bei invaliden Arguments (z.B. `@id("abc")`).
+/// `LowerError` on invalid arguments (e.g. `@id("abc")`).
 pub fn lower_single(ann: &Annotation) -> Result<Option<BuiltinAnnotation>, LowerError> {
     let name = name_tail(ann);
     let params = &ann.params;
@@ -390,8 +390,8 @@ pub fn lower_single(ann: &Annotation) -> Result<Option<BuiltinAnnotation>, Lower
             AnnotationParams::Single(e) => {
                 let value = const_to_u32(e).unwrap_or(0);
                 // §8.3.1.4: `@annotation position { unsigned short value; }`
-                // — Range 0..=65535 (u16). Werte darueber sind Spec-
-                // Verletzung.
+                // — range 0..=65535 (u16). Values above that are a spec
+                // violation.
                 if value > u32::from(u16::MAX) {
                     return Err(LowerError::PositionOutOfShortRange { value });
                 }
@@ -401,8 +401,8 @@ pub fn lower_single(ann: &Annotation) -> Result<Option<BuiltinAnnotation>, Lower
         },
         "bit_bound" => match params {
             AnnotationParams::Single(e) => {
-                // Bugfix (#30): Invalides Argument (z.B. @bit_bound("x"))
-                // ist ein harter Fehler, kein silent-default.
+                // Bugfix (#30): an invalid argument (e.g. @bit_bound("x"))
+                // is a hard error, not a silent default.
                 let n = const_to_u32(e).ok_or(LowerError::InvalidIdArgument)?;
                 BuiltinAnnotation::BitBound(n as u16)
             }
@@ -469,9 +469,9 @@ pub fn lower_single(ann: &Annotation) -> Result<Option<BuiltinAnnotation>, Lower
     }))
 }
 
-/// §8.3.6.3 — `@ami(boolean default TRUE)`. Compact-Form `@ami` ohne
-/// Parens nimmt den Default `true`. Single-Form mit Bool-Literal/Scoped
-/// `TRUE`/`FALSE` setzt den Wert.
+/// §8.3.6.3 — `@ami(boolean default TRUE)`. The compact form `@ami` without
+/// parens takes the default `true`. The single form with a bool-literal/scoped
+/// `TRUE`/`FALSE` sets the value.
 fn lower_ami(params: &AnnotationParams) -> bool {
     match params {
         AnnotationParams::None | AnnotationParams::Empty => true,
@@ -484,13 +484,13 @@ fn lower_ami(params: &AnnotationParams) -> bool {
             let ident = s.parts.last().map(|p| p.text.as_str()).unwrap_or("");
             matches!(ident, "TRUE" | "true")
         }
-        _ => true, // Default fallback bei nicht-trivialen Args.
+        _ => true, // Default fallback for non-trivial args.
     }
 }
 
 fn lower_verbatim(params: &AnnotationParams) -> Result<VerbatimSpec, LowerError> {
-    // Spec §8.3.5.1: alle drei Member haben Defaults bzw. werden via
-    // Single-form als `text` interpretiert (compact-form `@verbatim("...")`).
+    // Spec §8.3.5.1: all three members have defaults, or are interpreted via
+    // the single form as `text` (compact form `@verbatim("...")`).
     match params {
         AnnotationParams::None | AnnotationParams::Empty => Ok(VerbatimSpec {
             language: "*".to_string(),
@@ -528,7 +528,7 @@ fn lower_verbatim(params: &AnnotationParams) -> Result<VerbatimSpec, LowerError>
                             spec.text = s;
                         }
                     }
-                    _ => {} // unbekannte Param-Namen ignorieren (Spec lax).
+                    _ => {} // ignore unknown param names (spec lax).
                 }
             }
             Ok(spec)
@@ -536,10 +536,10 @@ fn lower_verbatim(params: &AnnotationParams) -> Result<VerbatimSpec, LowerError>
     }
 }
 
-/// Lower eine Annotation-Liste.
+/// Lower an annotation list.
 ///
 /// # Errors
-/// `LowerError` bei semantisch invaliden Annotations (z.B. `@id("abc")`).
+/// `LowerError` on semantically invalid annotations (e.g. `@id("abc")`).
 pub fn lower_annotations(anns: &[Annotation]) -> Result<Lowered, LowerError> {
     let mut out = Lowered::default();
     for a in anns {
@@ -551,14 +551,14 @@ pub fn lower_annotations(anns: &[Annotation]) -> Result<Lowered, LowerError> {
     Ok(out)
 }
 
-/// §8.3.3 — Annotations auf einem Typedef werden auf jede Verwendung
-/// (z. B. einen Member, dessen `type_spec` auf das Typedef-Symbol zeigt)
-/// vererbt. Diese Funktion sammelt die effektiven Annotations eines
-/// Members: Member-Annotations + ggf. Typedef-Annotations (transitiv,
-/// falls ein Typedef wieder auf ein Typedef zeigt).
+/// §8.3.3 — annotations on a typedef are inherited by every use
+/// (e.g. a member whose `type_spec` points to the typedef symbol).
+/// This function collects the effective annotations of a
+/// member: member annotations + possibly typedef annotations (transitively,
+/// if a typedef again points to a typedef).
 ///
-/// Bei Member-Annotation und Typedef-Annotation mit gleichem Namen
-/// gewinnt die Member-Annotation (lokale Spec-Aussage hat Vorrang).
+/// On a member annotation and typedef annotation with the same name
+/// the member annotation wins (the local spec statement takes precedence).
 #[must_use]
 pub fn effective_member_annotations(
     member: &crate::ast::Member,
@@ -575,7 +575,7 @@ pub fn effective_member_annotations(
         };
         let Some(name) = name else { break };
         if seen.iter().any(|n| n == name) {
-            break; // Cycle-Stop (defensiv).
+            break; // cycle stop (defensive).
         }
         seen.push(name.to_string());
         let Some((td_anns, next_spec)) = lookup_typedef(spec, name) else {
@@ -592,10 +592,10 @@ pub fn effective_member_annotations(
     out
 }
 
-/// Liefert `(annotations, target_type_spec)` eines Top-Level-Typedefs
-/// mit dem gegebenen Namen. Nur einfache (`Simple`) Declarators werden
-/// betrachtet; Array-Declarators sind eigene neue Typen und vererben
-/// keine Annotations.
+/// Returns `(annotations, target_type_spec)` of a top-level typedef
+/// with the given name. Only simple (`Simple`) declarators are
+/// considered; array declarators are their own new types and inherit
+/// no annotations.
 fn lookup_typedef<'a>(
     spec: &'a crate::ast::Specification,
     name: &str,
@@ -615,12 +615,12 @@ fn lookup_typedef<'a>(
     None
 }
 
-/// Convenience: lower Type-level Annotations. Aktuell identisch zu
-/// [`lower_annotations`]; Platzhalter fuer scope-spezifische
-/// Validierung (z.B. `@key` nur auf Member, nicht auf Type).
+/// Convenience: lower type-level annotations. Currently identical to
+/// [`lower_annotations`]; a placeholder for scope-specific
+/// validation (e.g. `@key` only on members, not on types).
 ///
 /// # Errors
-/// Wie [`lower_annotations`].
+/// Like [`lower_annotations`].
 pub fn lower_type_annotations(anns: &[Annotation]) -> Result<Lowered, LowerError> {
     lower_annotations(anns)
 }
@@ -1049,8 +1049,8 @@ mod tests {
 
     #[test]
     fn bit_bound_non_integer_rejects_with_error() {
-        // Bugfix #30: @bit_bound("oops") ist ein LowerError, kein silent
-        // Default auf 32.
+        // Bugfix #30: @bit_bound("oops") is a LowerError, not a silent
+        // default to 32.
         let err = lower_single(&ann(
             "bit_bound",
             AnnotationParams::Single(lit(LiteralKind::String, "\"oops\"")),
@@ -1136,7 +1136,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // §8.3.5.1 — @verbatim PlacementKind voll modelliert (§8.2 Open-List)
+    // §8.3.5.1 — @verbatim PlacementKind fully modeled (§8.2 open list)
     // -----------------------------------------------------------------
 
     #[test]
@@ -1154,7 +1154,7 @@ mod tests {
 
     #[test]
     fn verbatim_compact_form_takes_text() {
-        // @verbatim("// comment") — Single-Form interpretiert als text.
+        // @verbatim("// comment") — single form interpreted as text.
         let v = lower_one(
             "verbatim",
             AnnotationParams::Single(lit(LiteralKind::String, "\"// hello\"")),
@@ -1268,7 +1268,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Phase 4 — neue Annotations §8.3.3.2/§8.3.6.1/§8.3.6.2
+    // Phase 4 — new annotations §8.3.3.2/§8.3.6.1/§8.3.6.2
     // -----------------------------------------------------------------
 
     fn int_lit(raw: &str) -> ConstExpr {
@@ -1342,7 +1342,7 @@ mod tests {
         assert_eq!(v, Some(BuiltinAnnotation::Service("DDS".into())));
     }
 
-    // Phase 4.3 — @oneway (Annotation, nicht Keyword)
+    // Phase 4.3 — @oneway (annotation, not keyword)
 
     #[test]
     fn lowers_oneway_annotation_with_default_true() {
@@ -1363,7 +1363,7 @@ mod tests {
 
     #[test]
     fn position_at_short_max_is_ok() {
-        // 65535 ist der hoechste gueltige Wert fuer `unsigned short`.
+        // 65535 is the highest valid value for `unsigned short`.
         let v = lower_single(&ann(
             "position",
             AnnotationParams::Single(lit(LiteralKind::Integer, "65535")),
@@ -1373,7 +1373,7 @@ mod tests {
 
     #[test]
     fn position_over_short_max_is_error() {
-        // §8.3.1.4: position > 65535 verletzt unsigned-short-Range.
+        // §8.3.1.4: position > 65535 violates the unsigned-short range.
         let v = lower_single(&ann(
             "position",
             AnnotationParams::Single(lit(LiteralKind::Integer, "65536")),
@@ -1385,8 +1385,8 @@ mod tests {
 
     #[test]
     fn range_annotation_on_typedef_inherited_by_member() {
-        // §8.3.3: Annotations auf einem Typedef werden auf Member, die
-        // diesen Typedef referenzieren, vererbt.
+        // §8.3.3: annotations on a typedef are inherited by members that
+        // reference this typedef.
         let ast = parse_to_ast(
             "@range(min=0, max=100)\n\
              typedef long MyInt;\n\
@@ -1408,8 +1408,8 @@ mod tests {
 
     #[test]
     fn member_annotation_overrides_inherited_typedef_annotation() {
-        // Bei Namens-Konflikt zwischen Member- und Typedef-Annotation
-        // gewinnt die lokale Member-Aussage (Spec-Praezedenz).
+        // On a name conflict between a member and typedef annotation
+        // the local member statement wins (spec precedence).
         let ast = parse_to_ast(
             "@range(min=0, max=100)\n\
              typedef long MyInt;\n\

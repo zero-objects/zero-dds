@@ -1,33 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `RpcQos` — QoS-Profile-Resolution fuer DDS-RPC (Spec §7.11).
+//! `RpcQos` — QoS profile resolution for DDS-RPC (Spec §7.11).
 //!
-//! Das DDS-RPC-Profile (OMG `formal/16-12-04` §7.11) verlangt fuer die
-//! Default-Foundation-Konfiguration eines Requesters bzw. Repliers:
+//! The DDS-RPC profile (OMG `formal/16-12-04` §7.11) requires for the
+//! default foundation configuration of a requester or replier:
 //!
-//! * **Reliability=Reliable** (Spec §7.11 Tab.7.61) — sowohl Writer als
-//!   auch Reader. Begruendung: ein verlorenes Reply ist semantisch
-//!   nicht von einem nie ausgefuehrten Request unterscheidbar.
-//! * **History=KeepLast(N)** mit Spec-Default `N=10` fuer Reply-Reader,
-//!   `N=10` fuer Request-Writer. User koennen den Wert per Profile
-//!   ueberschreiben.
+//! * **Reliability=Reliable** (Spec §7.11 Tab.7.61) — both writer and
+//!   reader. Rationale: a lost reply is semantically
+//!   indistinguishable from a never-executed request.
+//! * **History=KeepLast(N)** with spec default `N=10` for the reply reader,
+//!   `N=10` for the request writer. Users can override the value via a
+//!   profile.
 //! * **ResourceLimits**: `max_samples=512`, `max_instances=1`,
-//!   `max_samples_per_instance=512` — entspricht den Empfehlungen aus
-//!   Spec §7.11.2 fuer Single-Instance-Endpoints.
-//! * **Lifespan/Deadline/Latency-Budget**: Spec laesst sie als
-//!   `INFINITE`/`UNSET` — User-overridable.
+//!   `max_samples_per_instance=512` — matches the recommendations from
+//!   Spec §7.11.2 for single-instance endpoints.
+//! * **Lifespan/Deadline/Latency-Budget**: the spec leaves them as
+//!   `INFINITE`/`UNSET` — user-overridable.
 //!
-//! Das Modul liefert zwei Builder-Defaults:
+//! The module provides two builder defaults:
 //!
-//! * [`RpcQos::default_basic`] — Foundation-Standard.
-//! * [`RpcQos::default_enhanced`] — wie Basic, aber Reliable mit groesserem
-//!   History-Buffer (`N=64`) fuer Multi-Pending-Requests.
+//! * [`RpcQos::default_basic`] — foundation standard.
+//! * [`RpcQos::default_enhanced`] — like basic, but reliable with a larger
+//!   history buffer (`N=64`) for multi-pending requests.
 //!
-//! Plus eine [`RpcQos::from_xml_profile`]-Methode, die ueber den
-//! XML-Loader (`zerodds-xml::DdsXml`) ein Profile unter `library::profile`
-//! aufloest und auf `RpcQos` materialisiert. Nicht im XML angegebene
-//! Policies bleiben auf den Spec-Default des passenden Foundation-Modus.
+//! Plus a [`RpcQos::from_xml_profile`] method that resolves a profile under
+//! `library::profile` via the XML loader (`zerodds-xml::DdsXml`)
+//! and materializes it onto `RpcQos`. Policies not specified in the XML
+//! stay at the spec default of the matching foundation mode.
 
 extern crate alloc;
 
@@ -43,13 +43,13 @@ use zerodds_xml::{DdsXml, EntityQos, QosLibrary, QosProfile};
 
 use crate::error::{RpcError, RpcResult};
 
-/// Spec-Default-History-Depth fuer den Foundation-Modus (§7.11.2).
+/// Spec-default history depth for the foundation mode (§7.11.2).
 pub const DEFAULT_BASIC_HISTORY_DEPTH: i32 = 10;
 
-/// Spec-Default-History-Depth fuer den Enhanced-Modus.
+/// Spec-default history depth for the enhanced mode.
 pub const DEFAULT_ENHANCED_HISTORY_DEPTH: i32 = 64;
 
-/// Spec-Default-Resource-Limits fuer Single-Instance-RPC-Endpoints.
+/// Spec-default resource limits for single-instance RPC endpoints.
 pub const DEFAULT_RESOURCE_LIMITS: ResourceLimitsQosPolicy = ResourceLimitsQosPolicy {
     max_samples: 512,
     max_instances: 1,
@@ -60,36 +60,36 @@ pub const DEFAULT_RESOURCE_LIMITS: ResourceLimitsQosPolicy = ResourceLimitsQosPo
 // RpcQos
 // ---------------------------------------------------------------------
 
-/// Effektive QoS-Konfiguration eines Requesters/Repliers (Spec §7.11).
+/// Effective QoS configuration of a requester/replier (Spec §7.11).
 ///
-/// Felder sind public — User koennen sie nach dem Builder direkt
-/// patchen. Validation findet beim Materialisieren in
-/// [`Self::request_writer_qos`] etc. statt.
+/// Fields are public — users can patch them directly after the builder.
+/// Validation happens when materializing in
+/// [`Self::request_writer_qos`] etc.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RpcQos {
-    /// Reliability fuer beide Endpoints. Spec §7.11: Reliable.
+    /// Reliability for both endpoints. Spec §7.11: Reliable.
     pub reliability: ReliabilityQosPolicy,
-    /// Durability fuer beide Endpoints. Spec §7.11: Volatile (kein
-    /// History-Replay an spaet-joinende Peers).
+    /// Durability for both endpoints. Spec §7.11: Volatile (no
+    /// history replay to late-joining peers).
     pub durability: DurabilityQosPolicy,
-    /// History fuer Request-Writer / Request-Reader.
+    /// History for the request writer / request reader.
     pub request_history: HistoryQosPolicy,
-    /// History fuer Reply-Writer / Reply-Reader.
+    /// History for the reply writer / reply reader.
     pub reply_history: HistoryQosPolicy,
-    /// Resource-Limits — fuer Writer und Reader gleich.
+    /// Resource limits — the same for writer and reader.
     pub resource_limits: ResourceLimitsQosPolicy,
-    /// Lifespan-Policy. Default INFINITE.
+    /// Lifespan policy. Default INFINITE.
     pub lifespan: LifespanQosPolicy,
-    /// Deadline-Policy. Default INFINITE.
+    /// Deadline policy. Default INFINITE.
     pub deadline: DeadlineQosPolicy,
-    /// Default-Timeout fuer `Requester::send_request_blocking`. Default
-    /// 5 Sekunden.
+    /// Default timeout for `Requester::send_request_blocking`. Default
+    /// 5 seconds.
     pub request_timeout: core::time::Duration,
 }
 
 impl RpcQos {
-    /// Spec-Foundation-Default (Spec §7.11). Reliable + KeepLast(10) +
-    /// Volatile + 5-s-Timeout.
+    /// Spec foundation default (Spec §7.11). Reliable + KeepLast(10) +
+    /// Volatile + 5 s timeout.
     #[must_use]
     pub fn default_basic() -> Self {
         Self {
@@ -115,8 +115,8 @@ impl RpcQos {
         }
     }
 
-    /// Enhanced-Modus (Spec §7.11.3). Wie Basic, aber tiefere History
-    /// (`KeepLast(64)`) fuer Multi-Pending-Requests.
+    /// Enhanced mode (Spec §7.11.3). Like basic, but deeper history
+    /// (`KeepLast(64)`) for multi-pending requests.
     #[must_use]
     pub fn default_enhanced() -> Self {
         let mut q = Self::default_basic();
@@ -125,8 +125,8 @@ impl RpcQos {
         q
     }
 
-    /// Materialisiert die Writer-QoS fuer den **Request-Topic** (Sender:
-    /// Requester, Empfaenger: Replier).
+    /// Materializes the writer QoS for the **request topic** (sender:
+    /// requester, receiver: replier).
     #[must_use]
     pub fn request_writer_qos(&self) -> DataWriterQos {
         DataWriterQos {
@@ -140,8 +140,8 @@ impl RpcQos {
         }
     }
 
-    /// Materialisiert die Reader-QoS fuer den **Request-Topic** (Empfaenger:
-    /// Replier).
+    /// Materializes the reader QoS for the **request topic** (receiver:
+    /// replier).
     #[must_use]
     pub fn request_reader_qos(&self) -> DataReaderQos {
         DataReaderQos {
@@ -154,8 +154,8 @@ impl RpcQos {
         }
     }
 
-    /// Materialisiert die Writer-QoS fuer den **Reply-Topic** (Sender:
-    /// Replier).
+    /// Materializes the writer QoS for the **reply topic** (sender:
+    /// replier).
     #[must_use]
     pub fn reply_writer_qos(&self) -> DataWriterQos {
         DataWriterQos {
@@ -169,8 +169,8 @@ impl RpcQos {
         }
     }
 
-    /// Materialisiert die Reader-QoS fuer den **Reply-Topic** (Empfaenger:
-    /// Requester).
+    /// Materializes the reader QoS for the **reply topic** (receiver:
+    /// requester).
     #[must_use]
     pub fn reply_reader_qos(&self) -> DataReaderQos {
         DataReaderQos {
@@ -183,22 +183,22 @@ impl RpcQos {
         }
     }
 
-    /// Loest ein QoS-Profile aus einem [`DdsXml`] auf und merged
-    /// dessen Policies ueber [`Self::default_basic`].
+    /// Resolves a QoS profile from a [`DdsXml`] and merges
+    /// its policies over [`Self::default_basic`].
     ///
-    /// `path` Format: `library::profile` — z.B. `"RpcLib::Calculator"`.
-    /// Profile koennen entweder ueber `<datawriter_qos>` /
-    /// `<datareader_qos>`-Container Policies setzen — beide werden
-    /// gemergt (Reader-Container ueberschreibt Writer in Policies, die
-    /// nicht reine Writer-only-Policies sind).
+    /// `path` format: `library::profile` — e.g. `"RpcLib::Calculator"`.
+    /// Profiles can set policies via either the `<datawriter_qos>` /
+    /// `<datareader_qos>` containers — both are
+    /// merged (the reader container overrides the writer for policies that
+    /// are not pure writer-only policies).
     ///
-    /// Nicht-im-Profile-gesetzte Policies bleiben auf
+    /// Policies not set in the profile stay at
     /// [`Self::default_basic`].
     ///
     /// # Errors
-    /// * `RpcError::QosProfileNotFound` wenn `library` oder `profile`
-    ///   nicht aufgeloest werden kann oder `path` nicht das
-    ///   `library::profile`-Format hat.
+    /// * `RpcError::QosProfileNotFound` if `library` or `profile`
+    ///   cannot be resolved or `path` does not have the
+    ///   `library::profile` format.
     pub fn from_xml_profile(loader: &DdsXml, path: &str) -> RpcResult<Self> {
         let (lib_name, prof_name) = split_qos_path(path)?;
         let lib = loader
@@ -212,8 +212,8 @@ impl RpcQos {
         Ok(Self::from_profile_default(Self::default_basic(), prof))
     }
 
-    /// Wie [`Self::from_xml_profile`], aber mit explizitem Default
-    /// (z.B. `default_enhanced`).
+    /// Like [`Self::from_xml_profile`], but with an explicit default
+    /// (e.g. `default_enhanced`).
     #[must_use]
     pub fn from_profile_default(mut base: Self, prof: &QosProfile) -> Self {
         if let Some(eq) = prof.datawriter_qos.as_ref() {
@@ -233,7 +233,7 @@ impl Default for RpcQos {
 }
 
 // ---------------------------------------------------------------------
-// Profile-Lowering
+// Profile lowering
 // ---------------------------------------------------------------------
 
 fn apply_entity_qos_to_writer_side(q: &mut RpcQos, eq: &EntityQos) {
@@ -244,7 +244,7 @@ fn apply_entity_qos_to_writer_side(q: &mut RpcQos, eq: &EntityQos) {
         q.durability = p;
     }
     if let Some(p) = eq.history {
-        // Schreibt sich auf Request-Writer und Reply-Writer.
+        // Writes onto the request writer and reply writer.
         q.request_history = p;
         q.reply_history = p;
     }
@@ -260,7 +260,7 @@ fn apply_entity_qos_to_writer_side(q: &mut RpcQos, eq: &EntityQos) {
 }
 
 fn apply_entity_qos_to_reader_side(q: &mut RpcQos, eq: &EntityQos) {
-    // Reader-Container ueberschreibt nur Reader-relevante Policies.
+    // The reader container overrides only reader-relevant policies.
     if let Some(p) = eq.reliability {
         q.reliability = p;
     }
@@ -277,7 +277,7 @@ fn apply_entity_qos_to_reader_side(q: &mut RpcQos, eq: &EntityQos) {
     if let Some(p) = eq.deadline {
         q.deadline = p;
     }
-    // `lifespan` ist Writer-only (Spec §2.2.3.16) → ignorieren.
+    // `lifespan` is writer-only (Spec §2.2.3.16) → ignore.
 }
 
 fn split_qos_path(path: &str) -> RpcResult<(&str, &str)> {
@@ -315,7 +315,7 @@ mod tests {
         let q = RpcQos::default_enhanced();
         assert_eq!(q.request_history.depth, DEFAULT_ENHANCED_HISTORY_DEPTH);
         assert_eq!(q.reply_history.depth, DEFAULT_ENHANCED_HISTORY_DEPTH);
-        // Restliche Policies wie Basic.
+        // Remaining policies as in basic.
         assert_eq!(q.reliability.kind, ReliabilityKind::Reliable);
     }
 

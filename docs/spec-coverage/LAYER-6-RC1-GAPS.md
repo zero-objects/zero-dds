@@ -12,7 +12,7 @@ und der RC1-Code-Realität** und verweist pro Lücke auf die jeweilige
 Vendor-Spec, die das Verhalten normativ definiert. Damit ist die
 ZeroDDS-Decision-Position pro Item dokumentiert.
 
-PROCESS.md verlangt nach grossen Code-Wellen ein Item-für-Item
+PROCESS.md verlangt nach großen Code-Wellen ein Item-für-Item
 Re-Sync der betroffenen Audit-Files. Diese Datei ist der
 Übergangs-Marker bis das Re-Sync durchgeführt ist.
 
@@ -24,7 +24,7 @@ Re-Sync der betroffenen Audit-Files. Diese Datei ist der
 | **Listener-Callbacks** | `docs/specs/zerodds-listener-callbacks-1.0.md` | Live Phase-1 | C-FFI-Listener-Pattern (vtable+user_data), kein OMG-C-Standard |
 | **Async-API** | `docs/specs/zerodds-async-1.0.md` | Live | Async-DDS-API für Rust, kein OMG-Pendant |
 | **IDL-Rust** | `docs/specs/zerodds-idl-rust-1.0.md` | Live | IDL→Rust-Codegen, ergänzt OMG-Lücke (kein OMG-IDL-Rust-PSM) |
-| **CORBA-Rust** | `docs/specs/zerodds-corba-rust-1.0.md` | Live | CORBA-Mappings für Rust, kein OMG-CORBA-Rust-PSM |
+| **CORBA-Rust** | `docs/specs/zerodds-corba-rust-1.1.md` | Live | CORBA-Mappings für Rust, kein OMG-CORBA-Rust-PSM |
 | **Flatdata** | `docs/specs/zerodds-flatdata-1.0.md` | Live | Zero-Copy-Daten-Layout, kein OMG-Pendant |
 | **Monitor** | `docs/specs/zerodds-monitor-1.0.md` | Live | Built-in DCPS-Monitor, ergänzt §2.2.5 |
 | **Recorder** | `docs/specs/zddsrec-1.0.md` | Live | Sample-Recording, kein OMG-Pendant |

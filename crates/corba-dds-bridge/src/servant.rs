@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Bridge-Servant — verarbeitet GIOP-Requests und konvertiert sie
-//! in DDS-Sample-Publish-Operationen.
+//! Bridge servant — processes GIOP requests and converts them into
+//! DDS sample publish operations.
 //!
-//! Der `BridgeServant` ist `Servant`-kompatibel (`crates/corba-poa/`)
-//! und kann in einem POA als Default-Servant oder per
-//! `activate_object_with_id` registriert werden.
+//! The `BridgeServant` is `Servant`-compatible (`crates/corba-poa/`)
+//! and can be registered in a POA as a default servant or via
+//! `activate_object_with_id`.
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -19,27 +19,27 @@ use zerodds_corba_poa::Servant;
 
 use crate::mapping::{BridgeMapping, BridgeRoute, OperationMapping};
 
-/// Aufruf-Trait, den der Bridge-Servant fuer die DDS-Seite einbindet.
-/// Caller implementiert das gegen `crates/dcps/`.
+/// Invocation trait that the bridge servant uses for the DDS side.
+/// The caller implements it against `crates/dcps/`.
 pub trait DdsPublishSink: Send + Sync {
-    /// Publiziert ein Sample auf einem Topic.
+    /// Publishes a sample on a topic.
     fn publish(&self, topic: &str, sample_bytes: &[u8]);
-    /// Wartet auf den naechsten Reply-Sample auf dem Reply-Topic.
-    /// Liefert `None` bei Timeout.
+    /// Waits for the next reply sample on the reply topic.
+    /// Returns `None` on timeout.
     fn await_reply(&self, topic: &str, request_id: u64) -> Option<Vec<u8>>;
 }
 
-/// Bridge-Servant.
+/// Bridge servant.
 pub struct BridgeServant {
-    /// Repository-ID des bedienten Object-Types.
+    /// Repository ID of the served object type.
     repository_id: String,
-    /// Object-Key des bedienten Servants.
+    /// Object key of the served servant.
     object_key: Vec<u8>,
-    /// Bridge-Mapping (geshared).
+    /// Bridge mapping (shared).
     mapping: alloc::sync::Arc<Mutex<BridgeMapping>>,
-    /// DDS-Sink fuer Publish + Reply-Wait.
+    /// DDS sink for publish + reply wait.
     sink: alloc::sync::Arc<dyn DdsPublishSink>,
-    /// Monoton wachsender Request-ID-Counter.
+    /// Monotonically increasing request-ID counter.
     next_request_id: AtomicU64,
 }
 
@@ -53,7 +53,7 @@ impl core::fmt::Debug for BridgeServant {
 }
 
 impl BridgeServant {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(
         repository_id: String,
@@ -70,8 +70,8 @@ impl BridgeServant {
         }
     }
 
-    /// Liefert die Operation-Mapping-Tabelle aus dem geshared
-    /// Mapping (Helper fuer Tests + Diagnose).
+    /// Returns the operation mapping from the shared mapping
+    /// (helper for tests + diagnostics).
     fn lookup_operation_mapping(&self, operation: &str) -> Option<OperationMapping> {
         let m = self.mapping.lock().ok()?;
         let route: &BridgeRoute = m.lookup(&self.repository_id, &self.object_key)?;
@@ -86,18 +86,18 @@ impl Servant for BridgeServant {
 
     fn invoke(&self, operation: &str, request_body: &[u8]) -> Vec<u8> {
         let Some(mapping) = self.lookup_operation_mapping(operation) else {
-            // Spec §11.3: BAD_OPERATION wird vom Caller-POA als Reply
-            // mit SystemException kodiert. Hier nur leere Reply.
+            // Spec §11.3: BAD_OPERATION is encoded by the caller POA as a
+            // reply with a SystemException. Here, just an empty reply.
             return Vec::new();
         };
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-        // Sample-Bytes = request_id (8 Bytes BE) + body. Caller-Layer
-        // dekodiert das Topic-Type-Schema.
+        // Sample bytes = request_id (8 bytes BE) + body. The caller layer
+        // decodes the topic type schema.
         let mut sample = Vec::with_capacity(8 + request_body.len());
         sample.extend_from_slice(&request_id.to_be_bytes());
         sample.extend_from_slice(request_body);
         self.sink.publish(&mapping.request_topic, &sample);
-        // Wenn Reply-Topic leer, keine Reply (fire-and-forget).
+        // If the reply topic is empty, no reply (fire-and-forget).
         if mapping.reply_topic.is_empty() {
             return Vec::new();
         }
@@ -107,7 +107,7 @@ impl Servant for BridgeServant {
     }
 }
 
-/// Hilfs-Konstruktor: registriert eine `BridgeServant`-Box.
+/// Helper constructor: registers a `BridgeServant` box.
 #[must_use]
 pub fn boxed(servant: BridgeServant) -> Box<dyn Servant> {
     Box::new(servant)
@@ -180,9 +180,9 @@ mod tests {
         assert_eq!(topic, "Echo/ping/Req");
         let bytes = sink.published_bytes.lock().unwrap().clone();
         assert_eq!(bytes.len(), 8 + 2);
-        // Request-ID = 1 (start), BE.
+        // Request ID = 1 (start), BE.
         assert_eq!(&bytes[0..8], &1u64.to_be_bytes());
-        // Body danach.
+        // Body afterwards.
         assert_eq!(&bytes[8..], &[0xff, 0xee]);
     }
 

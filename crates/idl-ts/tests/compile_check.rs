@@ -1,10 +1,10 @@
-//! TS-3 — Codegen-Compile-Tests fuer TypeScript.
+//! TS-3 — codegen compile tests for TypeScript.
 //!
-//! Generiert TypeScript-Source aus IDL und ruft `tsc --noEmit` mit
-//! Stub-Runtime fuer `@zerodds/types` und `@zerodds/amqp/codec`.
+//! Generates TypeScript source from IDL and calls `tsc --noEmit` with a
+//! stub runtime for `@zerodds/types` and `@zerodds/amqp/codec`.
 //!
-//! **Voraussetzung:** `tsc` im PATH (z.B. via `npm install -g typescript`).
-//! Tests werden geskippt wenn nicht verfuegbar.
+//! **Prerequisite:** `tsc` on the PATH (e.g. via `npm install -g typescript`).
+//! Tests are skipped if it is not available.
 
 #![allow(
     clippy::expect_used,
@@ -36,8 +36,8 @@ fn tsc_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Stub-Runtime fuer `@zerodds/types` und `@zerodds/amqp/codec`,
-/// damit der emittierte TS-Code `import`-resolved werden kann.
+/// Stub runtime for `@zerodds/types` and `@zerodds/amqp/codec`,
+/// so the emitted TS code can have its `import`s resolved.
 fn write_runtime_stubs(root: &std::path::Path) -> Result<(), String> {
     use std::io::Write;
     let pkg_types = root.join("node_modules/@zerodds/types");
@@ -47,7 +47,7 @@ fn write_runtime_stubs(root: &std::path::Path) -> Result<(), String> {
     std::fs::create_dir_all(&pkg_amqp).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&pkg_cdr).map_err(|e| e.to_string())?;
 
-    // @zerodds/cdr — stub fuer XCDR2 TypeSupport.
+    // @zerodds/cdr — stub for XCDR2 TypeSupport.
     let cdr_d_ts = "
 export type ExtensibilityKind = 'final' | 'appendable' | 'mutable';
 export type EndianMode = 'le' | 'be';
@@ -57,6 +57,8 @@ export interface DdsTopicType<T> {
     readonly extensibility: ExtensibilityKind;
     encode(sample: T, endian?: EndianMode): Uint8Array;
     decode(bytes: Uint8Array, offset?: number, length?: number): T;
+    encodeInto(w: Xcdr2Writer, sample: T): void;
+    decodeFrom(r: Xcdr2Reader): T;
     keyHash(sample: T): Uint8Array;
 }
 export class XcdrError extends Error {}
@@ -343,4 +345,29 @@ fn compiles_amqp_helpers_union() {
         true,
     )
     .expect("AMQP-union must compile");
+}
+
+#[test]
+fn compiles_struct_with_union_member_gated() {
+    // A struct with a union member is gated (no TypeSupport) — must still emit
+    // a compiling data type, not a reference to a non-existent union codec.
+    check_compiles(
+        "union Choice switch (long) { case 1: long a; case 2: double b; }; \
+         struct Holder { Choice c; long n; };",
+    )
+    .expect("struct with union member must compile (gated)");
+}
+
+#[test]
+fn compiles_struct_with_fixed_member_gated() {
+    // `fixed` has no XCDR2 codec; the struct is gated — data type only, no
+    // runtime-throwing codec.
+    check_compiles("struct Money { fixed<10,2> amount; long n; };")
+        .expect("struct with fixed member must compile (gated)");
+}
+
+#[test]
+fn compiles_struct_with_any_member_gated() {
+    check_compiles("struct Bag { any value; long n; };")
+        .expect("struct with any member must compile (gated)");
 }

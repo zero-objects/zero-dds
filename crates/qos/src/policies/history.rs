@@ -28,7 +28,7 @@ impl HistoryKind {
         }
     }
 
-    /// Forward-kompatibler Mapper (unbekannt → KeepLast).
+    /// Forward-compatible mapper (unknown → KeepLast).
     #[must_use]
     pub const fn from_u32(v: u32) -> Self {
         match v {
@@ -43,7 +43,7 @@ impl HistoryKind {
 pub struct HistoryQosPolicy {
     /// Kind.
     pub kind: HistoryKind,
-    /// Depth (nur fuer `KeepLast`). Default 1 (§2.2.3.17.3).
+    /// Depth (only for `KeepLast`). Default 1 (§2.2.3.17.3).
     pub depth: i32,
 }
 
@@ -69,7 +69,7 @@ impl HistoryQosPolicy {
     /// Wire-Decoding (strict).
     ///
     /// # Errors
-    /// Buffer-Underflow oder unbekannter Kind-Wert.
+    /// Buffer underflow or unknown kind value.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let v = r.read_u32()?;
         let kind = HistoryKind::try_from_u32(v).ok_or(DecodeError::InvalidEnum {
@@ -125,8 +125,8 @@ mod tests {
         });
     }
 
-    /// Spec §9.6.3.2: `from_u32` ist forward-kompatibel — unbekannte
-    /// Werte mappen auf Default-Variante `KeepLast` statt zu erroren.
+    /// Spec §9.6.3.2: `from_u32` is forward-compatible — unknown
+    /// values map to the default variant `KeepLast` instead of erroring.
     #[test]
     fn from_u32_forward_compatible() {
         assert_eq!(HistoryKind::from_u32(0), HistoryKind::KeepLast);
@@ -136,9 +136,9 @@ mod tests {
         assert_eq!(HistoryKind::from_u32(0xDEAD_BEEF), HistoryKind::KeepLast);
     }
 
-    /// Decode mit unbekanntem `kind`-Discriminator → `InvalidEnum`-Fehler.
-    /// Verhindert Regressions gegen "forward-compat decoder" (würde hier
-    /// absichtlich `try_from_u32` verwenden, strikt).
+    /// Decode with an unknown `kind` discriminator → `InvalidEnum` error.
+    /// Prevents regressions against a "forward-compat decoder" (which
+    /// would deliberately use `try_from_u32` here, strict).
     #[test]
     fn decode_unknown_kind_errors() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -159,8 +159,8 @@ mod tests {
         );
     }
 
-    /// Decode mit kurzem Buffer (nur kind, kein depth) → short-read error
-    /// fuer den `read_u32` am depth-Offset.
+    /// Decode with a short buffer (only kind, no depth) → short-read error
+    /// for the `read_u32` at the depth offset.
     #[test]
     fn decode_short_buffer_errors() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -170,7 +170,7 @@ mod tests {
         assert!(HistoryQosPolicy::decode_from(&mut r).is_err());
     }
 
-    /// Default ist `KeepLast/1`; Debug-Format enthaelt die Variante.
+    /// Default is `KeepLast/1`; the Debug format contains the variant.
     #[test]
     fn debug_format_contains_kind() {
         let d = HistoryQosPolicy::default();
@@ -178,7 +178,7 @@ mod tests {
         assert!(dbg.contains("KeepLast"), "debug: {dbg}");
     }
 
-    /// Copy-Semantik (`HistoryKind` ist `Copy`) und PartialEq/Clone-Pfade.
+    /// Copy semantics (`HistoryKind` is `Copy`) and PartialEq/Clone paths.
     #[test]
     fn kind_copy_clone_eq() {
         let k = HistoryKind::KeepAll;

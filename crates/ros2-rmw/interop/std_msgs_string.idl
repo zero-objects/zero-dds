@@ -1,0 +1,12 @@
+// ROS 2 std_msgs/msg/String — wire type as produced by rosidl_typesupport.
+// DDS-Typname auf dem Wire: std_msgs::msg::dds_::String_
+// (rmw_cyclonedds uses exactly this module nesting).
+module std_msgs {
+  module msg {
+    module dds_ {
+      struct String_ {
+        string data;
+      };
+    };
+  };
+};

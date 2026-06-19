@@ -3,32 +3,32 @@
 
 //! XRCE UDP-Transport-Mapping (Spec §11.2).
 //!
-//! Default-Port-Schema (Task-Spezifikation C6.2.A):
+//! Default port scheme (task specification C6.2.A):
 //! - Agent: `7400 + 4 * domain_id + 0`
 //! - Client: `7400 + 4 * domain_id + 1`
-//! - Multicast: keiner per Default (XRCE ist Unicast zwischen Client+Agent;
-//!   Multicast-Discovery bei `239.255.0.2:7400` gemaess §11.2.4 ist
-//!   out-of-scope fuer C6.2.A).
+//! - Multicast: none by default (XRCE is unicast between client+agent;
+//!   multicast discovery at `239.255.0.2:7400` per §11.2.4 is
+//!   out of scope for C6.2.A).
 //!
-//! UDP/IP-Payload = exakt eine XRCE-Message (Spec §11.2.3, keine
-//! Envelopes).
+//! UDP/IP payload = exactly one XRCE message (Spec §11.2.3, no
+//! envelopes).
 
 use std::net::{SocketAddr, UdpSocket};
 
 use crate::error::XrceError;
 use crate::submessages::{DOSC_MAX_PAYLOAD_SIZE, Message};
 
-/// Maximales UDP-Datagram. Groesser als `DOSC_MAX_PAYLOAD_SIZE` waere
-/// per UDP nicht moeglich, weil das Wire-Limit 65 507 Byte ist.
+/// Maximum UDP datagram. Larger than `DOSC_MAX_PAYLOAD_SIZE` would
+/// not be possible over UDP, because the wire limit is 65,507 bytes.
 pub const MAX_DATAGRAM_SIZE: usize = 65_507;
 
-/// Default-Agent-Port `7400 + 4*domain_id`.
+/// Default agent port `7400 + 4*domain_id`.
 #[must_use]
 pub fn agent_default_port(domain_id: u16) -> u16 {
     7400u16.saturating_add(domain_id.saturating_mul(4))
 }
 
-/// Default-Client-Port `7400 + 4*domain_id + 1`.
+/// Default client port `7400 + 4*domain_id + 1`.
 #[must_use]
 pub fn client_default_port(domain_id: u16) -> u16 {
     7400u16
@@ -36,34 +36,34 @@ pub fn client_default_port(domain_id: u16) -> u16 {
         .saturating_add(1)
 }
 
-/// XRCE-UDP-Sender, gebunden an einen lokalen Socket mit fix gesetzter
-/// Agent-Adresse als Default-Ziel.
+/// XRCE UDP sender, bound to a local socket with a fixed
+/// agent address as the default target.
 #[derive(Debug)]
 pub struct XrceUdpSender {
-    /// Lokaler Socket.
+    /// Local socket.
     pub socket: UdpSocket,
-    /// Default-Ziel (Agent-Adresse).
+    /// Default target (agent address).
     pub agent_addr: SocketAddr,
 }
 
 impl XrceUdpSender {
-    /// Konstruiert mit explizitem lokalen Bind und Agent-Ziel.
+    /// Constructs with an explicit local bind and agent target.
     ///
     /// # Errors
-    /// `std::io::Error`, wenn Bind fehlschlaegt.
+    /// `std::io::Error` if the bind fails.
     pub fn bind(local: SocketAddr, agent_addr: SocketAddr) -> std::io::Result<Self> {
         let socket = UdpSocket::bind(local)?;
         Ok(Self { socket, agent_addr })
     }
 }
 
-/// Sendet die Message an `sender.agent_addr`.
+/// Sends the message to `sender.agent_addr`.
 ///
 /// # Errors
-/// `XrceError::PayloadTooLarge`, wenn das Datagram > `MAX_DATAGRAM_SIZE`
-/// ist; ansonsten `XrceError` aus dem Encoder oder `std::io::Error`
-/// (gewrappt in `XrceError::ValueOutOfRange`, weil das Crate keinen
-/// IO-Variant hat — Caller bekommt nur strukturierte Fehler).
+/// `XrceError::PayloadTooLarge` if the datagram is > `MAX_DATAGRAM_SIZE`;
+/// otherwise `XrceError` from the encoder or `std::io::Error`
+/// (wrapped in `XrceError::ValueOutOfRange`, because the crate has no
+/// IO variant — the caller receives only structured errors).
 pub fn send_message(sender: &XrceUdpSender, msg: &Message) -> Result<(), XrceError> {
     let bytes = msg.encode()?;
     if bytes.len() > MAX_DATAGRAM_SIZE {
@@ -81,11 +81,11 @@ pub fn send_message(sender: &XrceUdpSender, msg: &Message) -> Result<(), XrceErr
     Ok(())
 }
 
-/// Empfaengt eine Message vom Socket. Liefert `(peer, msg)`.
+/// Receives a message from the socket. Returns `(peer, msg)`.
 ///
 /// # Errors
-/// `XrceError`, wenn die Message-Decode fehlschlaegt; `ValueOutOfRange`
-/// fuer IO-Fehler.
+/// `XrceError` if the message decode fails; `ValueOutOfRange`
+/// for IO errors.
 pub fn recv_message(sock: &UdpSocket) -> Result<(SocketAddr, Message), XrceError> {
     let mut buf = [0u8; MAX_DATAGRAM_SIZE];
     let (n, peer) = sock
@@ -215,8 +215,8 @@ mod tests {
 
     #[test]
     fn loopback_roundtrip_reset_fragment_timestamp_chain() {
-        // Bauen wir eine Message mit drei Submessages zusammen, um auch
-        // Padding ueber UDP zu validieren.
+        // Assemble a message with three submessages to also
+        // validate padding over UDP.
         let header = MessageHeader::without_client_key(
             SessionId(0xFF),
             StreamId::NONE,

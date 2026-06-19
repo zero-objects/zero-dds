@@ -1,11 +1,11 @@
-"""IDL-Topic-Pfad (§6.1 Vendor-Spec).
+"""IDL topic path (§6.1 vendor spec).
 
-Pure-Python-Wrapper, die ``BytesTopic`` / ``BytesWriter`` /
-``BytesReader`` mit dem ``@idl_struct``-Encoder/Decoder kombinieren,
-sodass Anwender direkt typisierte Dataclasses publishen/subscriben
-koennen — ohne sich mit Byte-Encoding zu beschaeftigen.
+Pure-Python wrappers that combine ``BytesTopic`` / ``BytesWriter`` /
+``BytesReader`` with the ``@idl_struct`` encoder/decoder,
+so that users can publish/subscribe typed dataclasses directly —
+without dealing with byte encoding.
 
-Beispiel::
+Example::
 
     from dataclasses import dataclass
     import zerodds
@@ -43,17 +43,17 @@ T = TypeVar("T")
 def _ensure_idl_struct(cls: Type[T]) -> None:
     if not is_idl_struct(cls):
         raise TypeError(
-            f"IdlTopic verlangt eine mit @idl_struct dekorierte @dataclass; "
-            f"{cls.__name__} ist keine.",
+            f"IdlTopic requires an @idl_struct-decorated @dataclass; "
+            f"{cls.__name__} is not one.",
         )
 
 
 class IdlTopic(Generic[T]):
-    """Topic-Handle, der einen ``@idl_struct``-Dataclass-Type kapselt.
+    """Topic handle that encapsulates an ``@idl_struct`` dataclass type.
 
-    Intern haelt der Topic einen ``BytesTopic``-Wert. Der Type-Name auf
-    dem Wire kommt aus ``cls.TYPE_NAME``, das vom ``@idl_struct``-
-    Decorator gesetzt wird (§3.2 Vendor-Spec).
+    Internally the topic holds a ``BytesTopic`` value. The type name on
+    the wire comes from ``cls.TYPE_NAME``, which is set by the
+    ``@idl_struct`` decorator (§3.2 vendor spec).
     """
 
     def __init__(self, participant: Any, name: str, cls: Type[T]) -> None:
@@ -83,7 +83,7 @@ class IdlTopic(Generic[T]):
 
 
 class IdlWriter(Generic[T]):
-    """Writer, der `cls.encode(self)` vor jedem ``write`` aufruft."""
+    """Writer that calls `cls.encode(self)` before each ``write``."""
 
     def __init__(self, inner: Any, cls: Type[T]) -> None:
         self._inner = inner
@@ -92,8 +92,8 @@ class IdlWriter(Generic[T]):
     def write(self, value: T) -> None:
         if not isinstance(value, self._cls):
             raise TypeError(
-                f"IdlWriter[{self._cls.__name__}].write erwartet {self._cls.__name__}, "
-                f"bekommen {type(value).__name__}",
+                f"IdlWriter[{self._cls.__name__}].write expects {self._cls.__name__}, "
+                f"got {type(value).__name__}",
             )
         encoded = value.encode()  # type: ignore[attr-defined]
         self._inner.write(encoded)
@@ -115,7 +115,7 @@ class IdlWriter(Generic[T]):
 
 
 class IdlReader(Generic[T]):
-    """Reader, der jedes ``take``-Sample via ``cls.decode(bytes)`` deserialisiert."""
+    """Reader that deserializes each ``take`` sample via ``cls.decode(bytes)``."""
 
     def __init__(self, inner: Any, cls: Type[T]) -> None:
         self._inner = inner

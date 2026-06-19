@@ -2,69 +2,69 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Crate `zerodds-foundation`. Safety classification: **SAFE**.
 //!
-//! Foundation-Layer-Primitives fuer den ZeroDDS-Stack: Hot-Path-
-//! Buffer-Pools, Wire-Integritaets-Hashes (CRC-32C / CRC-64-XZ / MD5),
-//! Observability-Event-Sprache + Sinks, Tracing-Spans + Histogramme,
-//! und ein Lock-Free-Read RCU-Cell-Container.
+//! Foundation-layer primitives for the ZeroDDS stack: hot-path
+//! buffer pools, wire-integrity hashes (CRC-32C / CRC-64-XZ / MD5),
+//! observability event language + sinks, tracing spans + histograms,
+//! and a lock-free-read RCU cell container.
 //!
-//! `no_std`-tauglich, `forbid(unsafe_code)`. Pure-Rust ohne externe
-//! Crates — die Foundation-Pillar-Idee „Frame bleibt nicht hohl".
+//! `no_std`-capable, `forbid(unsafe_code)`. Pure Rust without external
+//! crates — the foundation-pillar idea "the frame does not stay hollow".
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 0 (Foundation). Hat **keine** Dependencies auf andere
-//! ZeroDDS-Crates. Wird von Layer 1 (Primitives: cdr, qos, types)
-//! und allen hoeheren Schichten verwendet.
+//! Layer 0 (Foundation). Has **no** dependencies on other
+//! ZeroDDS crates. Used by layer 1 (primitives: cdr, qos, types)
+//! and all higher layers.
 //!
-//! Architektur-Referenz: `docs/architecture/02_architecture.md §3`
-//! und `docs/architecture/04_safety_by_architecture.md §2`.
+//! Architecture reference: `docs/architecture/02_architecture.md §3`
+//! and `docs/architecture/04_safety_by_architecture.md §2`.
 //!
 //! ## Public API
 //!
-//! - **Stack-Buffer** ([`PoolBuffer`], [`PoolBufferError`]): fixed-capacity
-//!   Buffer fuer Hot-Path-Allokationen, on-stack mit `CAP`-Generic.
-//!   Append-Operationen sind O(1) ohne Heap-Touch; Overflow wird als
-//!   Result signalisiert statt zu panicen.
-//! - **CRC + MD5** ([`crc32c`], [`crc64_xz`], [`md5`]): Wire-Integritaets-
-//!   Hashes; pure-Rust mit Standard-Lookup-Tables.
+//! - **Stack buffer** ([`PoolBuffer`], [`PoolBufferError`]): fixed-capacity
+//!   buffer for hot-path allocations, on-stack with a `CAP` generic.
+//!   Append operations are O(1) without touching the heap; overflow is
+//!   signalled as a Result instead of panicking.
+//! - **CRC + MD5** ([`crc32c`], [`crc64_xz`], [`md5`]): wire-integrity
+//!   hashes; pure Rust with standard lookup tables.
 //! - **Observability** ([`Event`], [`Sink`], [`Level`], [`Component`],
-//!   [`NullSink`], [`StderrJsonSink`], [`VecSink`]): strukturierte
-//!   DDS-Events; Sink-Trait fuer beliebige Konsumenten.
+//!   [`NullSink`], [`StderrJsonSink`], [`VecSink`]): structured
+//!   DDS events; a Sink trait for arbitrary consumers.
 //! - **Tracing** ([`Span`], [`SpanContext`], [`TraceId`], [`SpanId`],
-//!   [`SpanKind`], [`SpanStatus`], [`Histogram`]): Spans + Histogramme
-//!   fuer grobgranulares Tracing; OTLP-Export im
-//!   `zerodds-observability-otlp`-Crate.
-//! - **RCU** ([`RcuCell`]): Copy-on-Write-Container fuer wenig-Schreib/
-//!   viel-Lese-Patterns ohne `unsafe`.
+//!   [`SpanKind`], [`SpanStatus`], [`Histogram`]): spans + histograms
+//!   for coarse-grained tracing; OTLP export in the
+//!   `zerodds-observability-otlp` crate.
+//! - **RCU** ([`RcuCell`]): copy-on-write container for low-write/
+//!   high-read patterns without `unsafe`.
 //!
-//! ## Feature-Flags
+//! ## Feature flags
 //!
-//! | Feature | Default | Zweck |
+//! | Feature | Default | Purpose |
 //! |---------|---------|-------|
-//! | `std` | ✅ | Aktiviert `BufferPool`, `RcuCell`, `StderrJsonSink`, `VecSink`. Implies `alloc`. |
-//! | `alloc` | ✅ (via `std`) | Aktiviert `observability` + `tracing` + MD5 mit Vec-Padding. |
-//! | `safety` | ❌ | Reserviert fuer zukuenftige Safety-Build-Constraints. |
+//! | `std` | ✅ | Enables `BufferPool`, `RcuCell`, `StderrJsonSink`, `VecSink`. Implies `alloc`. |
+//! | `alloc` | ✅ (via `std`) | Enables `observability` + `tracing` + MD5 with Vec padding. |
+//! | `safety` | ❌ | Reserved for future safety build constraints. |
 //!
-//! Ohne Features (`default-features = false`): nur `PoolBuffer`,
-//! `crc32c`, `crc64_xz`, `md5` (no_std-MD5-Pfad ist auf 56 Byte
-//! Eingabe limitiert).
+//! Without features (`default-features = false`): only `PoolBuffer`,
+//! `crc32c`, `crc64_xz`, `md5` (the no_std MD5 path is limited to 56
+//! bytes of input).
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust
 //! use zerodds_foundation::{crc32c, PoolBuffer, PoolBufferError};
 //!
-//! // CRC-32C ueber ein RTPS-Datagramm.
+//! // CRC-32C over an RTPS datagram.
 //! let payload = b"\x52\x54\x50\x53\x02\x05\x01\x0F";
 //! let checksum = crc32c(payload);
 //! assert_eq!(checksum & 0xFFFF_FFFF, checksum);
 //!
-//! // Hot-Path-Buffer mit fester Kapazitaet.
+//! // Hot-path buffer with fixed capacity.
 //! let mut buf: PoolBuffer<256> = PoolBuffer::new();
 //! buf.extend_from_slice(payload).unwrap();
 //! assert_eq!(buf.as_slice(), payload);
 //!
-//! // Overflow ist explizit, kein Panic.
+//! // Overflow is explicit, no panic.
 //! let mut tiny: PoolBuffer<4> = PoolBuffer::new();
 //! assert_eq!(
 //!     tiny.extend_from_slice(payload),
@@ -106,6 +106,6 @@ pub use tracing::{Histogram, Span, SpanContext, SpanId, SpanKind, SpanStatus, Tr
 mod tests {
     #[test]
     fn crate_compiles() {
-        // Smoke-Test: Crate kompiliert und Testharness laeuft.
+        // Smoke test: the crate compiles and the test harness runs.
     }
 }

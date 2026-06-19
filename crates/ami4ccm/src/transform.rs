@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Implied-IDL-Transformation — Spec §7.3 + §7.5.
+//! Implied-IDL transformation — Spec §7.3 + §7.5.
 //!
-//! Eingabe: [`InterfaceDef`] eines normalen IDL-Interfaces.
-//! Ausgabe: zwei `InterfaceKind::Local` Interfaces (Spec §7.3 + §7.5):
+//! Input: [`InterfaceDef`] of a normal IDL interface.
+//! Output: two `InterfaceKind::Local` interfaces (Spec §7.3 + §7.5):
 //!
-//! 1. `AMI4CCM_<Iface>ReplyHandler` (Spec §7.5) — Type-spezifische
-//!    Reply-Handler mit normal-reply + `_excep`-Operations.
-//! 2. `AMI4CCM_<Iface>` (Spec §7.3) — Async-Operations mit
-//!    `sendc_`-Praefix.
+//! 1. `AMI4CCM_<Iface>ReplyHandler` (Spec §7.5) — type-specific reply
+//!    handler with normal-reply + `_excep` operations.
+//! 2. `AMI4CCM_<Iface>` (Spec §7.3) — async operations with the
+//!    `sendc_` prefix.
 //!
-//! Spec §7.3.1 (S. 7) — Naming-Conflict-Aufloesung: wenn der generierte
-//! `sendc_<op>`-Name bereits im Interface existiert, werden `ami_`-
-//! Praefixe zwischen `sendc_` und `<op>` eingefuegt, bis der Name
-//! eindeutig ist. Dieselbe Regel gilt fuer `<op>_excep` im
-//! ReplyHandler (Spec §7.5.2, S. 10).
+//! Spec §7.3.1 (p. 7) — naming-conflict resolution: if the generated
+//! `sendc_<op>` name already exists in the interface, `ami_` prefixes
+//! are inserted between `sendc_` and `<op>` until the name is unique.
+//! The same rule applies to `<op>_excep` in the ReplyHandler (Spec
+//! §7.5.2, p. 10).
 
 use alloc::collections::BTreeSet;
 use alloc::format;
@@ -28,7 +28,7 @@ use zerodds_idl::ast::{
 };
 use zerodds_idl::errors::Span;
 
-/// Ergebnis der Transformation: zwei zusaetzliche Local-Interfaces.
+/// Result of the transformation: two additional local interfaces.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ami4CcmInterfaces {
     /// `AMI4CCM_<Iface>ReplyHandler` (Spec §7.5).
@@ -37,40 +37,41 @@ pub struct Ami4CcmInterfaces {
     pub ami_interface: InterfaceDef,
 }
 
-/// Compilation-Kontext fuer den AMI4CCM-Transform.
+/// Compilation context for the AMI4CCM transform.
 ///
-/// Spec-Referenzen:
-/// * §7.5 — abgeleitete Interfaces erben ihren ReplyHandler vom
-///   ReplyHandler des Base-Interfaces (`AMI4CCM_<Base>ReplyHandler`).
-///   Dazu braucht der Transformer eine Map der bereits transformierten
-///   Bases (`known_bases`).
-/// * §7.5 / §7.3.1 — wenn der naive `AMI4CCM_<Iface>`-/-`ReplyHandler`-
-///   Name mit einem bestehenden Identifier im Compilation-Unit
-///   kollidiert, muessen `AMI_`-Prefixe ergaenzt werden, bis der Name
-///   eindeutig ist (`known_symbols`).
+/// Spec references:
+/// * §7.5 — derived interfaces inherit their ReplyHandler from the
+///   ReplyHandler of the base interface (`AMI4CCM_<Base>ReplyHandler`).
+///   For this, the transformer needs a map of the already-transformed
+///   bases (`known_bases`).
+/// * §7.5 / §7.3.1 — if the naive `AMI4CCM_<Iface>`/`ReplyHandler` name
+///   collides with an existing identifier in the compilation unit,
+///   `AMI_` prefixes must be added until the name is unique
+///   (`known_symbols`).
 #[derive(Debug, Clone, Default)]
 pub struct TransformContext {
-    /// Set von Original-Interface-Namen, deren ReplyHandler bereits
-    /// generiert wurde. Wird bei `transform_interface` einer Iface mit
-    /// `iface.bases = [Base]` konsultiert: ist `Base.text` enthalten,
-    /// erbt der neue ReplyHandler von `AMI4CCM_<Base>ReplyHandler`
-    /// statt vom generischen `CCM_AMI::ReplyHandler`.
+    /// Set of original interface names whose ReplyHandler has already
+    /// been generated. Consulted in `transform_interface` for an
+    /// interface with `iface.bases = [Base]`: if `Base.text` is
+    /// present, the new ReplyHandler inherits from
+    /// `AMI4CCM_<Base>ReplyHandler` instead of the generic
+    /// `CCM_AMI::ReplyHandler`.
     pub known_bases: BTreeSet<String>,
-    /// Set aller Identifier im aktuellen Compilation-Scope. Wird vor
-    /// dem Emittieren der AMI4CCM-Interface-Namen gegen den
-    /// Konflikt-Resolver gepruescht (`AMI_AMI4CCM_<Iface>` etc.).
+    /// Set of all identifiers in the current compilation scope. Checked
+    /// against the conflict resolver before emitting the AMI4CCM
+    /// interface names (`AMI_AMI4CCM_<Iface>` etc.).
     pub known_symbols: BTreeSet<String>,
 }
 
 impl TransformContext {
-    /// Neuer leerer Kontext (gleichbedeutend mit `default()`).
+    /// New empty context (equivalent to `default()`).
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Markiert einen Iface-Namen als bereits-transformiert, sodass
-    /// abgeleitete Interfaces ihren ReplyHandler korrekt erben.
+    /// Marks an interface name as already-transformed, so that derived
+    /// interfaces inherit their ReplyHandler correctly.
     pub fn mark_transformed(&mut self, iface_name: &str) {
         self.known_bases.insert(iface_name.to_string());
         self.known_symbols.insert(format!("AMI4CCM_{iface_name}"));
@@ -78,39 +79,39 @@ impl TransformContext {
             .insert(format!("AMI4CCM_{iface_name}ReplyHandler"));
     }
 
-    /// Registriert einen bereits-existierenden Identifier, gegen den
-    /// der AMI4CCM-Naming-Resolver pruefen muss.
+    /// Registers an already-existing identifier that the AMI4CCM naming
+    /// resolver must check against.
     pub fn add_known_symbol(&mut self, name: &str) {
         self.known_symbols.insert(name.to_string());
     }
 }
 
-/// Transformiert ein normales [`InterfaceDef`] in das implied AMI4CCM-
-/// Paar. Spec §7.3 + §7.5.
+/// Transforms a normal [`InterfaceDef`] into the implied AMI4CCM pair.
+/// Spec §7.3 + §7.5.
 ///
-/// Convenience-Wrapper ohne Kontext (kein Inheritance-Lookup, keine
-/// Symbol-Tabelle). Fuer voll spec-konforme Transformation aufrufen
-/// von `transform_interface_in_context`.
+/// Convenience wrapper without a context (no inheritance lookup, no
+/// symbol table). For a fully spec-compliant transformation, call
+/// `transform_interface_in_context`.
 #[must_use]
 pub fn transform_interface(iface: &InterfaceDef) -> Ami4CcmInterfaces {
     transform_interface_in_context(iface, &TransformContext::default())
 }
 
-/// Spec-konforme Variante mit Compilation-Kontext.
+/// Spec-compliant variant with a compilation context.
 ///
 /// **Naming Convention (Spec §7.3.1 + §7.5):**
-/// * Reply-Handler-Name: `AMI4CCM_<original-iface-name>ReplyHandler`,
-///   bei Konflikt mit `ctx.known_symbols`: `AMI_AMI4CCM_<...>` etc.
-/// * Async-Interface-Name: `AMI4CCM_<original-iface-name>`.
+/// * Reply-handler name: `AMI4CCM_<original-iface-name>ReplyHandler`,
+///   on conflict with `ctx.known_symbols`: `AMI_AMI4CCM_<...>` etc.
+/// * Async-interface name: `AMI4CCM_<original-iface-name>`.
 ///
-/// **Reply-Handler-Inheritance (Spec §7.5):**
-/// Wenn `iface.bases` einen Eintrag hat, dessen `last`-Identifier in
-/// `ctx.known_bases` enthalten ist, erbt der ReplyHandler von
-/// `AMI4CCM_<Base>ReplyHandler`. Andernfalls von
-/// `CCM_AMI::ReplyHandler` (Default).
+/// **Reply-Handler Inheritance (Spec §7.5):**
+/// If `iface.bases` has an entry whose `last` identifier is contained
+/// in `ctx.known_bases`, the ReplyHandler inherits from
+/// `AMI4CCM_<Base>ReplyHandler`. Otherwise from
+/// `CCM_AMI::ReplyHandler` (default).
 ///
-/// **`InterfaceKind::Local`** (Spec §7.3 + Annex A): beide generierten
-/// Interfaces sind `local interface` (nicht remotable).
+/// **`InterfaceKind::Local`** (Spec §7.3 + Annex A): both generated
+/// interfaces are `local interface` (not remotable).
 #[must_use]
 pub fn transform_interface_in_context(
     iface: &InterfaceDef,
@@ -119,8 +120,8 @@ pub fn transform_interface_in_context(
     let span = Span::SYNTHETIC;
     let original_name = iface.name.text.clone();
 
-    // Sammle alle Original-Operation-Namen + Attribute-Setter/Getter-
-    // Namen, um Naming-Conflicts (Spec §7.3.1) aufzuloesen.
+    // Collect all original operation names + attribute setter/getter
+    // names to resolve naming conflicts (Spec §7.3.1).
     let mut original_op_names: Vec<String> = Vec::new();
     for export in &iface.exports {
         match export {
@@ -135,10 +136,10 @@ pub fn transform_interface_in_context(
         }
     }
 
-    // Spec §7.5 — Reply-Handler-Inheritance fuer abgeleitete Interfaces.
-    // Wir konsultieren ctx.known_bases: der erste base in iface.bases,
-    // dessen letzter Identifier-Part in ctx.known_bases enthalten ist,
-    // bestimmt den Parent-ReplyHandler.
+    // Spec §7.5 — Reply-handler inheritance for derived interfaces.
+    // We consult ctx.known_bases: the first base in iface.bases whose
+    // last identifier part is contained in ctx.known_bases determines
+    // the parent ReplyHandler.
     let reply_handler_base = iface
         .bases
         .iter()
@@ -154,9 +155,9 @@ pub fn transform_interface_in_context(
             |base| ScopedName::single(Identifier::new(format!("AMI4CCM_{base}ReplyHandler"), span)),
         );
 
-    // Spec §7.3.1 / §7.5 — Naming-Conflict mit dem Compilation-Scope:
-    // wenn AMI4CCM_<Iface>[ReplyHandler] bereits in ctx.known_symbols
-    // ist, prefix mit AMI_ (rekursiv).
+    // Spec §7.3.1 / §7.5 — naming conflict with the compilation scope:
+    // if AMI4CCM_<Iface>[ReplyHandler] is already in ctx.known_symbols,
+    // prefix with AMI_ (recursively).
     let ami_iface_name =
         resolve_unique_iface_name(&format!("AMI4CCM_{original_name}"), &ctx.known_symbols);
     let reply_handler_name = resolve_unique_iface_name(
@@ -186,12 +187,12 @@ pub fn transform_interface_in_context(
     }
 }
 
-/// Resolver fuer den Naming-Konflikt aus Spec §7.3.1 / §7.5.
+/// Resolver for the naming conflict from Spec §7.3.1 / §7.5.
 ///
-/// Wenn `name` in `known` enthalten ist, schiebt einen `AMI_`-Prefix
-/// vor und versucht erneut. Im pathologischen Fall (alle Varianten
-/// belegt) liefert die Funktion den letzten kandidaten zurueck — der
-/// Caller faellt dann auf die unvermeidbare Doublette zurueck.
+/// If `name` is contained in `known`, prepends an `AMI_` prefix and
+/// tries again. In the pathological case (all variants taken) the
+/// function returns the last candidate — the caller then falls back to
+/// the unavoidable duplicate.
 fn resolve_unique_iface_name(base: &str, known: &BTreeSet<String>) -> String {
     let mut candidate = base.to_string();
     for _ in 0..16 {
@@ -203,8 +204,8 @@ fn resolve_unique_iface_name(base: &str, known: &BTreeSet<String>) -> String {
     candidate
 }
 
-/// Spec §7.3 (S. 6-7) — `AMI4CCM_<Iface>` Async-Interface mit
-/// `sendc_<op>` Operations.
+/// Spec §7.3 (p. 6-7) — `AMI4CCM_<Iface>` async interface with
+/// `sendc_<op>` operations.
 fn build_ami_interface(
     original_name: &str,
     iface_name: &str,
@@ -213,8 +214,8 @@ fn build_ami_interface(
     span: Span,
 ) -> InterfaceDef {
     let handler_type = handler_type_spec(original_name);
-    // Verfolge bereits ausgegebene Namen, um interne Kollisionen
-    // (z.B. zwei "ami_..."-Aufstockungen) zu vermeiden.
+    // Track already-emitted names to avoid internal collisions
+    // (e.g. two "ami_..." escalations).
     let mut emitted: Vec<String> = Vec::new();
     let mut new_exports: Vec<Export> = Vec::new();
 
@@ -226,7 +227,7 @@ fn build_ami_interface(
                 new_exports.push(Export::Op(build_sendc_op(&name, &handler_type, op, span)));
             }
             Export::Attr(attr) => {
-                // Getter — Spec §7.3.1.2 (S. 7).
+                // Getter — Spec §7.3.1.2 (p. 7).
                 let getter_name = resolve_sendc_name(
                     &format!("get_{}", attr.name.text),
                     original_op_names,
@@ -253,9 +254,9 @@ fn build_ami_interface(
                     )));
                 }
             }
-            // Spec §7.3 — types/consts/exceptions sind im Async-
-            // Interface nicht relevant; sie bleiben im Original-Iface
-            // sichtbar.
+            // Spec §7.3 — types/consts/exceptions are not relevant in
+            // the async interface; they remain visible in the original
+            // interface.
             _ => {}
         }
     }
@@ -270,8 +271,8 @@ fn build_ami_interface(
     }
 }
 
-/// Spec §7.5 (S. 9-10) — `AMI4CCM_<Iface>ReplyHandler` mit normal-
-/// Reply + `_excep`-Operations.
+/// Spec §7.5 (p. 9-10) — `AMI4CCM_<Iface>ReplyHandler` with normal
+/// reply + `_excep` operations.
 fn build_reply_handler(
     original_name: &str,
     handler_name: &str,
@@ -288,11 +289,11 @@ fn build_reply_handler(
     for export in exports {
         match export {
             Export::Op(op) => {
-                // Normal-Reply (Spec §7.5.1).
+                // Normal reply (Spec §7.5.1).
                 let normal_name = op.name.text.clone();
                 emitted.push(normal_name.clone());
                 new_exports.push(Export::Op(build_handler_normal_op(&normal_name, op, span)));
-                // Exception-Reply (Spec §7.5.2).
+                // Exception reply (Spec §7.5.2).
                 let excep_name = resolve_excep_name(&op.name.text, original_op_names, &emitted);
                 emitted.push(excep_name.clone());
                 new_exports.push(Export::Op(build_handler_excep_op(
@@ -340,9 +341,9 @@ fn build_reply_handler(
     InterfaceDef {
         kind: InterfaceKind::Local,
         name: Identifier::new(handler_name, span),
-        // Spec §7.5 (S. 9): "is derived from the generic CCM_AMI::ReplyHandler"
-        // — bei abgeleiteten Interfaces mit bekannter Base wird der Parent-
-        // Handler des Base-Interfaces eingesetzt (siehe TransformContext).
+        // Spec §7.5 (p. 9): "is derived from the generic CCM_AMI::ReplyHandler"
+        // — for derived interfaces with a known base, the parent handler
+        // of the base interface is used (see TransformContext).
         bases: alloc::vec![handler_base],
         exports: new_exports,
         annotations: Vec::new(),
@@ -350,7 +351,7 @@ fn build_reply_handler(
     }
 }
 
-/// Spec §7.3.1.1 (S. 7) — `void sendc_<op>(in handler, in/inout-args)`.
+/// Spec §7.3.1.1 (p. 7) — `void sendc_<op>(in handler, in/inout-args)`.
 fn build_sendc_op(name: &str, handler_type: &TypeSpec, op: &OpDecl, span: Span) -> OpDecl {
     let mut params = Vec::new();
     params.push(handler_param(handler_type, span));
@@ -371,22 +372,24 @@ fn build_sendc_op(name: &str, handler_type: &TypeSpec, op: &OpDecl, span: Span) 
     OpDecl {
         name: Identifier::new(name, span),
         oneway: false,
+        context: Vec::new(),
         return_type: None,
         params,
-        // Spec §7.3 (S. 5/6) — async-Operations werfen keine User-
-        // Exceptions; nur `INV_OBJREF` System-Exception, die nicht in
-        // `raises()` kommt.
+        // Spec §7.3 (p. 5/6) — async operations raise no user
+        // exceptions; only the `INV_OBJREF` system exception, which does
+        // not appear in `raises()`.
         raises: Vec::new(),
         annotations: Vec::new(),
         span,
     }
 }
 
-/// Spec §7.3.1.2 (S. 7) — `void sendc_get_<attr>(in handler);`.
+/// Spec §7.3.1.2 (p. 7) — `void sendc_get_<attr>(in handler);`.
 fn build_sendc_attr_get(name: &str, handler_type: &TypeSpec, span: Span) -> OpDecl {
     OpDecl {
         name: Identifier::new(name, span),
         oneway: false,
+        context: Vec::new(),
         return_type: None,
         params: alloc::vec![handler_param(handler_type, span)],
         raises: Vec::new(),
@@ -395,7 +398,7 @@ fn build_sendc_attr_get(name: &str, handler_type: &TypeSpec, span: Span) -> OpDe
     }
 }
 
-/// Spec §7.3.1.2 (S. 7) — `void sendc_set_<attr>(in handler, in
+/// Spec §7.3.1.2 (p. 7) — `void sendc_set_<attr>(in handler, in
 /// <attrType> attr_<attrName>);`.
 fn build_sendc_attr_set(
     name: &str,
@@ -407,6 +410,7 @@ fn build_sendc_attr_set(
     OpDecl {
         name: Identifier::new(name, span),
         oneway: false,
+        context: Vec::new(),
         return_type: None,
         params: alloc::vec![
             handler_param(handler_type, span),
@@ -424,7 +428,7 @@ fn build_sendc_attr_set(
     }
 }
 
-/// Spec §7.5.1 (S. 9-10) — `void <op>(in <ret> ami_return_val,
+/// Spec §7.5.1 (p. 9-10) — `void <op>(in <ret> ami_return_val,
 /// in/inout-args)`.
 fn build_handler_normal_op(name: &str, op: &OpDecl, span: Span) -> OpDecl {
     let mut params = Vec::new();
@@ -439,7 +443,7 @@ fn build_handler_normal_op(name: &str, op: &OpDecl, span: Span) -> OpDecl {
     }
     for p in &op.params {
         // Spec §7.5.1: "Each inout/out type name and argument name as
-        // they were declared in IDL." — alle als `in`.
+        // they were declared in IDL." — all as `in`.
         if matches!(p.attribute, ParamAttribute::InOut | ParamAttribute::Out) {
             params.push(ParamDecl {
                 attribute: ParamAttribute::In,
@@ -453,9 +457,10 @@ fn build_handler_normal_op(name: &str, op: &OpDecl, span: Span) -> OpDecl {
     OpDecl {
         name: Identifier::new(name, span),
         oneway: false,
+        context: Vec::new(),
         return_type: None,
         params,
-        // Spec §7.5.1 (S. 10): "These operations do not raise any
+        // Spec §7.5.1 (p. 10): "These operations do not raise any
         // exceptions because they are never invoked by a client and
         // have no client to respond to such an exception."
         raises: Vec::new(),
@@ -464,11 +469,12 @@ fn build_handler_normal_op(name: &str, op: &OpDecl, span: Span) -> OpDecl {
     }
 }
 
-/// Spec §7.5.1 (S. 10) — `void get_<attr>(in <attrType> ami_return_val);`.
+/// Spec §7.5.1 (p. 10) — `void get_<attr>(in <attrType> ami_return_val);`.
 fn build_handler_attr_get(name: &str, attr_type: &TypeSpec, span: Span) -> OpDecl {
     OpDecl {
         name: Identifier::new(name, span),
         oneway: false,
+        context: Vec::new(),
         return_type: None,
         params: alloc::vec![ParamDecl {
             attribute: ParamAttribute::In,
@@ -483,12 +489,13 @@ fn build_handler_attr_get(name: &str, attr_type: &TypeSpec, span: Span) -> OpDec
     }
 }
 
-/// Spec §7.5.1 (S. 10) — `void set_<attr>();` (Setter-Acknowledgement,
-/// keine Argumente).
+/// Spec §7.5.1 (p. 10) — `void set_<attr>();` (setter acknowledgement,
+/// no arguments).
 fn build_handler_attr_set_ack(name: &str, span: Span) -> OpDecl {
     OpDecl {
         name: Identifier::new(name, span),
         oneway: false,
+        context: Vec::new(),
         return_type: None,
         params: Vec::new(),
         raises: Vec::new(),
@@ -497,12 +504,13 @@ fn build_handler_attr_set_ack(name: &str, span: Span) -> OpDecl {
     }
 }
 
-/// Spec §7.5.2 (S. 10) — `void <op>_excep(in CCM_AMI::ExceptionHolder
+/// Spec §7.5.2 (p. 10) — `void <op>_excep(in CCM_AMI::ExceptionHolder
 /// excep_holder);`.
 fn build_handler_excep_op(name: &str, exc_holder_type: &TypeSpec, span: Span) -> OpDecl {
     OpDecl {
         name: Identifier::new(name, span),
         oneway: false,
+        context: Vec::new(),
         return_type: None,
         params: alloc::vec![ParamDecl {
             attribute: ParamAttribute::In,
@@ -517,7 +525,7 @@ fn build_handler_excep_op(name: &str, exc_holder_type: &TypeSpec, span: Span) ->
     }
 }
 
-/// Spec §7.3.1 (S. 7) — Naming-Conflict-Aufloesung fuer `sendc_<op>`:
+/// Spec §7.3.1 (p. 7) — naming-conflict resolution for `sendc_<op>`:
 /// "If this implied-IDL operation name conflicts with existing
 /// operations on the interface or any of the interface's base
 /// interfaces, `ami_` strings are inserted between `sendc_` and the
@@ -540,7 +548,7 @@ fn resolve_sendc_name(
     }
 }
 
-/// Spec §7.5.2 (S. 10) — Analog fuer `<op>_excep` im ReplyHandler:
+/// Spec §7.5.2 (p. 10) — analogous for `<op>_excep` in the ReplyHandler:
 /// "If the name generated by the method described above clashes with
 /// a name that already exists in the interface, `_ami` strings are
 /// inserted immediately preceding the `_excep` repeatedly, until
@@ -558,8 +566,8 @@ fn resolve_excep_name(
         {
             return candidate;
         }
-        // Spec sagt "_ami" (kein "ami_" wie bei sendc) — hier
-        // Spec-getreu beibehalten.
+        // Spec says "_ami" (not "ami_" as for sendc) — kept faithful to
+        // the spec here.
         suffix = format!("_ami{suffix}");
     }
 }
@@ -599,7 +607,7 @@ fn scoped_name(parts: &[&str], span: Span) -> ScopedName {
     }
 }
 
-/// Helper fuer `void`-Type Pruefung in Tests.
+/// Helper for `void`-type checks in tests.
 #[cfg(test)]
 fn assert_void_return(op: &OpDecl) {
     assert!(
@@ -628,6 +636,7 @@ mod tests {
         Export::Op(OpDecl {
             name: Identifier::new(name, span),
             oneway: false,
+            context: Vec::new(),
             return_type,
             params: params
                 .into_iter()
@@ -707,7 +716,7 @@ mod tests {
 
     #[test]
     fn reply_handler_inherits_from_ccm_ami_replyhandler() {
-        // Spec §7.5 (S. 9): "is derived from the generic CCM_AMI::
+        // Spec §7.5 (p. 9): "is derived from the generic CCM_AMI::
         // ReplyHandler".
         let i = iface("Foo", alloc::vec![]);
         let out = transform_interface(&i);
@@ -724,7 +733,7 @@ mod tests {
 
     #[test]
     fn sendc_op_has_handler_first_then_in_inout_only() {
-        // Spec §7.3.1.1 — out-Args werden ignoriert; inout wird zu in.
+        // Spec §7.3.1.1 — out args are ignored; inout becomes in.
         let i = iface(
             "I",
             alloc::vec![op(
@@ -742,7 +751,7 @@ mod tests {
         };
         assert_eq!(o.name.text, "sendc_remove_stock");
         assert_void_return(o);
-        // Erwartet: ami_handler + symbol; out-arg "quote" ist gedroppt.
+        // Expected: ami_handler + symbol; out arg "quote" is dropped.
         assert_eq!(o.params.len(), 2);
         assert_eq!(o.params[0].name.text, "ami_handler");
         assert_eq!(o.params[0].attribute, ParamAttribute::In);
@@ -773,7 +782,7 @@ mod tests {
 
     #[test]
     fn handler_op_has_return_value_then_inout_out() {
-        // Spec §7.5.1 (S. 9-10): ami_return_val first, dann inout/out.
+        // Spec §7.5.1 (p. 9-10): ami_return_val first, then inout/out.
         let i = iface(
             "I",
             alloc::vec![op(
@@ -786,13 +795,13 @@ mod tests {
             )],
         );
         let out = transform_interface(&i);
-        // Erstes Reply-Handler-Op = "remove_stock" (normal), zweites =
+        // First reply-handler op = "remove_stock" (normal), second =
         // "remove_stock_excep".
         let Export::Op(o) = &out.reply_handler.exports[0] else {
             panic!()
         };
         assert_eq!(o.name.text, "remove_stock");
-        // ami_return_val + quote (out wird zu in im Handler).
+        // ami_return_val + quote (out becomes in in the handler).
         assert_eq!(o.params.len(), 2);
         assert_eq!(o.params[0].name.text, "ami_return_val");
         assert_eq!(o.params[0].attribute, ParamAttribute::In);
@@ -802,7 +811,7 @@ mod tests {
 
     #[test]
     fn handler_excep_op_takes_exception_holder() {
-        // Spec §7.5.2 (S. 10): `void <op>_excep(in CCM_AMI::
+        // Spec §7.5.2 (p. 10): `void <op>_excep(in CCM_AMI::
         // ExceptionHolder excep_holder);`.
         let i = iface(
             "I",
@@ -827,8 +836,8 @@ mod tests {
 
     #[test]
     fn attribute_get_set_generated_in_both_interfaces() {
-        // Spec §7.3.1.2 (S. 7) + §7.5.1 (S. 10) — getter+setter Pfad
-        // fuer writable Attribute.
+        // Spec §7.3.1.2 (p. 7) + §7.5.1 (p. 10) — getter+setter path
+        // for writable attributes.
         let i = iface(
             "I",
             alloc::vec![attr("stock_exchange_name", string_ty(), false)],
@@ -866,7 +875,7 @@ mod tests {
 
     #[test]
     fn readonly_attribute_only_generates_getter() {
-        // Spec §7.3.1.2 (S. 7): "Setter operations are only generated
+        // Spec §7.3.1.2 (p. 7): "Setter operations are only generated
         // for attributes that are not defined readonly".
         let i = iface("I", alloc::vec![attr("price", double_ty(), true)]);
         let out = transform_interface(&i);
@@ -891,7 +900,7 @@ mod tests {
             alloc::vec![attr("stock_exchange_name", string_ty(), false)],
         );
         let out = transform_interface(&i);
-        // Index 1 = sendc_set_stock_exchange_name (Index 0 = getter).
+        // Index 1 = sendc_set_stock_exchange_name (index 0 = getter).
         let Export::Op(o) = &out.ami_interface.exports[1] else {
             panic!()
         };
@@ -902,13 +911,13 @@ mod tests {
 
     #[test]
     fn handler_attr_setter_ack_has_no_args() {
-        // Spec §7.5.1 (Beispiel S. 10): "void set_stock_exchange_name();".
+        // Spec §7.5.1 (example p. 10): "void set_stock_exchange_name();".
         let i = iface(
             "I",
             alloc::vec![attr("stock_exchange_name", string_ty(), false)],
         );
         let out = transform_interface(&i);
-        // Reihenfolge: get_x, get_x_excep, set_x, set_x_excep.
+        // Order: get_x, get_x_excep, set_x, set_x_excep.
         let Export::Op(o) = &out.reply_handler.exports[2] else {
             panic!()
         };
@@ -918,8 +927,8 @@ mod tests {
 
     #[test]
     fn naming_conflict_resolved_with_ami_prefix() {
-        // Spec §7.3.1 (S. 7) — wenn `sendc_<op>` schon im Iface
-        // existiert, "ami_" einfuegen bis eindeutig.
+        // Spec §7.3.1 (p. 7) — if `sendc_<op>` already exists in the
+        // interface, insert "ami_" until unique.
         let i = iface(
             "I",
             alloc::vec![
@@ -937,14 +946,14 @@ mod tests {
                 _ => String::new(),
             })
             .collect();
-        // "sendc_foo" existiert -> "sendc_ami_foo" wird benutzt.
+        // "sendc_foo" exists -> "sendc_ami_foo" is used.
         assert!(names.contains(&String::from("sendc_ami_foo")));
         assert!(names.contains(&String::from("sendc_sendc_foo")));
     }
 
     #[test]
     fn excep_naming_conflict_resolved_with_ami_suffix() {
-        // Spec §7.5.2 (S. 10) — `_ami_excep` etc.
+        // Spec §7.5.2 (p. 10) — `_ami_excep` etc.
         let i = iface(
             "I",
             alloc::vec![
@@ -962,17 +971,17 @@ mod tests {
                 _ => String::new(),
             })
             .collect();
-        // "foo_excep" existiert -> "foo_ami_excep" wird verwendet.
+        // "foo_excep" exists -> "foo_ami_excep" is used.
         assert!(h_names.contains(&String::from("foo_ami_excep")));
-        // foo_excep_excep wird NICHT (das waere ein Original-_excep
-        // ohne Konflikt fuer das Original-foo_excep).
+        // foo_excep_excep is NOT (that would be an original _excep
+        // without conflict for the original foo_excep).
         assert!(h_names.contains(&String::from("foo_excep_excep")));
     }
 
     #[test]
     fn full_stockmanager_running_example_yields_spec_signatures() {
-        // Spec §7.2 (S. 5-6) Running Example -> §7.3.1.3 (S. 8) +
-        // §7.5.3 (S. 11) erwartete Signaturen.
+        // Spec §7.2 (p. 5-6) running example -> §7.3.1.3 (p. 8) +
+        // §7.5.3 (p. 11) expected signatures.
         let i = iface(
             "StockManager",
             alloc::vec![
@@ -1007,7 +1016,7 @@ mod tests {
         );
         let out = transform_interface(&i);
 
-        // §7.3.1.3 (S. 8) — AMI-Interface enthaelt diese sendc_-Ops.
+        // §7.3.1.3 (p. 8) — the AMI interface contains these sendc_ ops.
         let ami_names: Vec<String> = out
             .ami_interface
             .exports
@@ -1031,7 +1040,7 @@ mod tests {
             );
         }
 
-        // §7.5.3 (S. 11) — ReplyHandler-Signaturen.
+        // §7.5.3 (p. 11) — ReplyHandler signatures.
         let h_names: Vec<String> = out
             .reply_handler
             .exports
@@ -1064,7 +1073,7 @@ mod tests {
 
     #[test]
     fn operation_with_no_return_no_args_yields_handler_op_with_no_params() {
-        // Spec §7.5.1 (S. 10) "first case" — void return + no params.
+        // Spec §7.5.1 (p. 10) "first case" — void return + no params.
         let i = iface("I", alloc::vec![op("acknowledge", None, alloc::vec![])]);
         let out = transform_interface(&i);
         let Export::Op(o) = &out.reply_handler.exports[0] else {
@@ -1100,8 +1109,8 @@ mod tests {
 
     #[test]
     fn derived_iface_handler_inherits_from_base_handler_when_known() {
-        // Spec §7.5: ReplyHandler eines abgeleiteten Interfaces erbt
-        // von AMI4CCM_<Base>ReplyHandler statt von CCM_AMI::ReplyHandler.
+        // Spec §7.5: the ReplyHandler of a derived interface inherits
+        // from AMI4CCM_<Base>ReplyHandler instead of CCM_AMI::ReplyHandler.
         let mut ctx = TransformContext::new();
         ctx.mark_transformed("Base");
         let derived = iface_with_base(
@@ -1129,8 +1138,8 @@ mod tests {
 
     #[test]
     fn derived_iface_falls_back_to_ccm_ami_when_base_unknown() {
-        // Wenn die Base nicht in known_bases vermerkt ist, behaelt
-        // die Default-Inheritance-Regel.
+        // If the base is not recorded in known_bases, the default
+        // inheritance rule applies.
         let ctx = TransformContext::new();
         let derived = iface_with_base("Derived", "UnknownBase", alloc::vec![]);
         let out = transform_interface_in_context(&derived, &ctx);
@@ -1146,9 +1155,9 @@ mod tests {
 
     #[test]
     fn ami4ccm_prefix_collision_inserts_ami_prefix() {
-        // Spec §7.5 / §7.3.1: wenn AMI4CCM_<Iface> oder AMI4CCM_<Iface>
-        // ReplyHandler bereits als Identifier im Compilation-Scope
-        // existiert, prefix mit AMI_ rekursiv.
+        // Spec §7.5 / §7.3.1: if AMI4CCM_<Iface> or AMI4CCM_<Iface>
+        // ReplyHandler already exists as an identifier in the
+        // compilation scope, prefix with AMI_ recursively.
         let mut ctx = TransformContext::new();
         ctx.add_known_symbol("AMI4CCM_Order");
         ctx.add_known_symbol("AMI4CCM_OrderReplyHandler");
@@ -1160,8 +1169,8 @@ mod tests {
 
     #[test]
     fn ami4ccm_prefix_collision_recurses_until_unique() {
-        // Wenn auch die ersten Prefix-Stufen belegt sind, immer weiter
-        // rekursiv prefixen.
+        // If even the first prefix levels are taken, keep prefixing
+        // recursively.
         let mut ctx = TransformContext::new();
         for layer in [
             "AMI4CCM_Order",

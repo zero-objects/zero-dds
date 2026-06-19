@@ -2,9 +2,9 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Workspace-Scanner.
 //!
-//! Enumeriert alle Member-Crates des Workspaces via `cargo_metadata`,
-//! liest pro Crate die Safety-Klassifikation und sammelt die zu pruefenden
-//! `.rs`-Dateien.
+//! Enumerates all member crates of the workspace via `cargo_metadata`,
+//! reads the safety classification per crate and collects the source
+//! `.rs` files.
 
 use std::path::{Path, PathBuf};
 
@@ -14,25 +14,25 @@ use walkdir::WalkDir;
 
 use crate::classification::{self, SafetyClass};
 
-/// Eine Crate, wie sie der Scanner sieht.
+/// A crate as the scanner sees it.
 #[derive(Debug, Clone)]
 pub struct CrateInfo {
-    /// Name aus `Cargo.toml`.
+    /// Name from `Cargo.toml`.
     pub name: String,
-    /// Crate-Wurzelverzeichnis (enthaelt `Cargo.toml`).
+    /// Crate root directory (contains `Cargo.toml`).
     pub root: PathBuf,
-    /// `src/lib.rs` falls vorhanden — Quelle der Klassifikation.
+    /// `src/lib.rs` if present — source of the classification.
     pub lib_rs: Option<PathBuf>,
-    /// Klassifikation, falls in `lib.rs` annotiert.
+    /// Classification, if annotated in `lib.rs`.
     pub classification: Option<SafetyClass>,
-    /// Alle `.rs`-Dateien unter `src/`, `examples/` und `tests/`.
+    /// All `.rs` files under `src/`, `examples/` and `tests/`.
     pub source_files: Vec<PathBuf>,
 }
 
-/// Scannt einen Workspace ab `root` (Pfad zur Workspace-`Cargo.toml`).
+/// Scans a workspace from `root` (path to the workspace `Cargo.toml`).
 ///
 /// # Errors
-/// Wenn `cargo metadata` fehlschlaegt oder I/O-Fehler beim Lesen von
+/// If `cargo metadata` fails or an I/O error occurs reading
 /// Quelldateien auftreten.
 pub fn scan_workspace(root: &Path) -> Result<Vec<CrateInfo>> {
     let metadata = MetadataCommand::new()
@@ -70,7 +70,7 @@ pub fn scan_workspace(root: &Path) -> Result<Vec<CrateInfo>> {
     Ok(crates)
 }
 
-/// Sammelt alle `.rs`-Dateien unter `src/`, `examples/` und `tests/` einer Crate.
+/// Collects all `.rs` files under `src/`, `examples/` and `tests/` of a crate.
 fn collect_rust_files(crate_root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for sub in ["src", "examples", "tests"] {

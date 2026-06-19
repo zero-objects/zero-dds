@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Bubble-Up-Dispatcher fuer DCPS-Listener (Spec §2.2.4.2.3).
+//! Bubble-up dispatcher for DCPS listeners (Spec §2.2.4.2.3).
 //!
-//! Spec-Kern: Wenn auf der "kleinsten" Entity (Reader/Writer/Topic)
-//! kein Listener gesetzt ist — oder dessen [`StatusMask`] das Bit
-//! des aktuellen Status nicht enthaelt — bubblet das Event eine
-//! Stufe weiter:
+//! Spec core: when no listener is set on the "smallest" entity
+//! (Reader/Writer/Topic) — or its [`StatusMask`] does not contain the
+//! bit of the current status — the event bubbles up one level:
 //!
 //! ```text
 //! DataReader  → Subscriber → DomainParticipant
@@ -13,23 +12,22 @@
 //! Topic       →             → DomainParticipant
 //! ```
 //!
-//! Die Dispatcher-Funktionen in diesem Modul kapseln die Resolution
-//! pro Status-Kind. Die wichtigsten Eigenschaften:
+//! The dispatcher functions in this module encapsulate the resolution
+//! per status kind. The most important properties:
 //!
-//! 1. **Lock-Discipline**: Wir clonen den Listener-Arc unter dem
-//!    Mutex, geben ihn frei und rufen den Callback aussen — sonst
-//!    Deadlock-Risiko, wenn der Callback selbst auf andere Entities
-//!    zugreift.
-//! 2. **Panic-Safety**: Jeder Callback laeuft in
-//!    [`std::panic::catch_unwind`]; ein panickender Listener kippt
-//!    nicht den Reader-Tick um. Der Panic wird verschluckt — die
-//!    Spec ist agnostisch zur Frage, was bei Listener-Panic passiert,
-//!    aber Cyclone/Fast-DDS verhalten sich identisch.
-//! 3. **Status-Bits**: Wir nutzen die Konstanten in
-//!    [`crate::psm_constants::status`] zur Mask-Pruefung.
+//! 1. **Lock discipline**: we clone the listener Arc under the mutex,
+//!    release it, and call the callback outside — otherwise there is a
+//!    deadlock risk if the callback itself accesses other entities.
+//! 2. **Panic safety**: every callback runs inside
+//!    [`std::panic::catch_unwind`]; a panicking listener does not bring
+//!    down the reader tick. The panic is swallowed — the spec is
+//!    agnostic about what happens on a listener panic, but
+//!    Cyclone/Fast-DDS behave identically.
+//! 3. **Status bits**: we use the constants in
+//!    [`crate::psm_constants::status`] for the mask check.
 //!
-//! Pro Status-Kind gibt es eine `dispatch_<event>`-Funktion, die der
-//! Hot-Path-Code (Discovery-Match, Reader-Cache-Insert, ...) aufruft.
+//! Per status kind there is a `dispatch_<event>` function that the hot
+//! path code (discovery match, reader cache insert, ...) calls.
 
 #![allow(clippy::module_name_repetitions)]
 
@@ -52,39 +50,38 @@ use crate::status::{
 };
 
 // ============================================================================
-// Listener-Bundles — pro Hot-Path-Eintrag duplizieren wir die Listener-
-// Klone hier, statt einzelne Referenzen herumzureichen. Damit haben
-// die Dispatch-Funktionen einen klaren, kleinen Footprint.
+// Listener bundles — per hot-path entry we duplicate the listener clones
+// here, instead of passing individual references around. This gives the
+// dispatch functions a clear, small footprint.
 // ============================================================================
 
-/// Listener-Klone fuer einen DataWriter inkl. Bubble-Up-Targets.
-/// Jedes Feld ist die Tupel `(Listener, Mask)`. Wenn ein Eintrag
-/// `None` ist, gibt es auf der Stufe keinen Listener und das Event
-/// bubblet weiter.
+/// Listener clones for a DataWriter incl. bubble-up targets. Each field
+/// is the tuple `(Listener, Mask)`. If an entry is `None`, there is no
+/// listener at that level and the event bubbles up.
 pub struct WriterListenerChain {
-    /// DataWriter-Stufe.
+    /// DataWriter level.
     pub writer: Option<(Arc<dyn DataWriterListener>, StatusMask)>,
-    /// Publisher-Stufe.
+    /// Publisher level.
     pub publisher: Option<(Arc<dyn PublisherListener>, StatusMask)>,
-    /// DomainParticipant-Stufe.
+    /// DomainParticipant level.
     pub participant: Option<(Arc<dyn DomainParticipantListener>, StatusMask)>,
 }
 
-/// Wie [`WriterListenerChain`], nur fuer Reader-Seite.
+/// Like [`WriterListenerChain`], but for the reader side.
 pub struct ReaderListenerChain {
-    /// DataReader-Stufe.
+    /// DataReader level.
     pub reader: Option<(Arc<dyn DataReaderListener>, StatusMask)>,
-    /// Subscriber-Stufe.
+    /// Subscriber level.
     pub subscriber: Option<(Arc<dyn SubscriberListener>, StatusMask)>,
-    /// DomainParticipant-Stufe.
+    /// DomainParticipant level.
     pub participant: Option<(Arc<dyn DomainParticipantListener>, StatusMask)>,
 }
 
-/// Bubble-Up-Kette eines Topics (Topic → Participant).
+/// Bubble-up chain of a topic (Topic → Participant).
 pub struct TopicListenerChain {
-    /// Topic-Stufe.
+    /// Topic level.
     pub topic: Option<(Arc<dyn TopicListener>, StatusMask)>,
-    /// DomainParticipant-Stufe.
+    /// DomainParticipant level.
     pub participant: Option<(Arc<dyn DomainParticipantListener>, StatusMask)>,
 }
 
@@ -92,24 +89,24 @@ pub struct TopicListenerChain {
 // Panic-Wrapper
 // ============================================================================
 
-/// Ruft den Closure-Body und verschluckt einen ggf. auftretenden
-/// Panic. So crasht ein fehlerhafter Listener nicht den Reader-Tick.
+/// Calls the closure body and swallows any panic that may occur. That
+/// way a faulty listener does not crash the reader tick.
 ///
-/// Wir wrappen mit [`std::panic::AssertUnwindSafe`], weil `dyn`-
-/// Listener-Traits keine [`std::panic::UnwindSafe`]-Bound haben —
-/// der Listener-Body uebernimmt die Verantwortung fuer eigenen State,
-/// und wir wollen Process-Safety, nicht Listener-internal-Safety.
+/// We wrap with [`std::panic::AssertUnwindSafe`] because `dyn` listener
+/// traits have no [`std::panic::UnwindSafe`] bound — the listener body
+/// takes responsibility for its own state, and we want process safety,
+/// not listener-internal safety.
 #[inline]
 fn safe_call<F: FnOnce()>(f: F) {
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
 }
 
 // ============================================================================
-// Reader-Pfad — Reader → Subscriber → Participant
+// Reader path — Reader → Subscriber → Participant
 // ============================================================================
 
-/// Pruefe-und-rufe-Helper fuer den Reader-Pfad. Liefert `true`, wenn
-/// das Event auf einer Stufe konsumiert wurde.
+/// Check-and-call helper for the reader path. Returns `true` if the
+/// event was consumed at a level.
 #[inline]
 fn try_call_reader_stage<F>(
     listener: &Option<(Arc<dyn DataReaderListener>, StatusMask)>,
@@ -225,10 +222,10 @@ where
 }
 
 // ============================================================================
-// Reader-Pfad-Dispatcher
+// Reader-path dispatchers
 // ============================================================================
 
-/// Bubble-Up fuer `on_data_available` (Reader → Subscriber → Participant).
+/// Bubble-up for `on_data_available` (Reader → Subscriber → Participant).
 /// Spec §2.2.4.2.6.1 + §2.2.4.2.3.
 pub fn dispatch_data_available(chain: &ReaderListenerChain, reader: InstanceHandle) {
     if try_call_reader_stage(&chain.reader, bits::DATA_AVAILABLE, move |l| {
@@ -246,9 +243,9 @@ pub fn dispatch_data_available(chain: &ReaderListenerChain, reader: InstanceHand
     });
 }
 
-/// Bubble-Up fuer `on_data_on_readers` (Subscriber → Participant).
-/// Spec §2.2.4.2.7.1 — kein Reader-Stage, weil das Event Subscriber-
-/// scoped ist.
+/// Bubble-up for `on_data_on_readers` (Subscriber → Participant).
+/// Spec §2.2.4.2.7.1 — no reader stage, because the event is
+/// subscriber-scoped.
 pub fn dispatch_data_on_readers(chain: &ReaderListenerChain, subscriber: InstanceHandle) {
     if try_call_subscriber_stage(&chain.subscriber, bits::DATA_ON_READERS, move |l| {
         l.on_data_on_readers(subscriber);
@@ -260,7 +257,7 @@ pub fn dispatch_data_on_readers(chain: &ReaderListenerChain, subscriber: Instanc
     });
 }
 
-/// Bubble-Up fuer `on_subscription_matched`.
+/// Bubble-up for `on_subscription_matched`.
 /// Spec §2.2.4.2.6.7.
 pub fn dispatch_subscription_matched(
     chain: &ReaderListenerChain,
@@ -282,7 +279,7 @@ pub fn dispatch_subscription_matched(
     });
 }
 
-/// Bubble-Up fuer `on_sample_lost`. Spec §2.2.4.2.6.2.
+/// Bubble-up for `on_sample_lost`. Spec §2.2.4.2.6.2.
 pub fn dispatch_sample_lost(
     chain: &ReaderListenerChain,
     reader: InstanceHandle,
@@ -303,7 +300,7 @@ pub fn dispatch_sample_lost(
     });
 }
 
-/// Bubble-Up fuer `on_sample_rejected`. Spec §2.2.4.2.6.3.
+/// Bubble-up for `on_sample_rejected`. Spec §2.2.4.2.6.3.
 pub fn dispatch_sample_rejected(
     chain: &ReaderListenerChain,
     reader: InstanceHandle,
@@ -324,7 +321,7 @@ pub fn dispatch_sample_rejected(
     });
 }
 
-/// Bubble-Up fuer `on_requested_deadline_missed`. Spec §2.2.4.2.6.4.
+/// Bubble-up for `on_requested_deadline_missed`. Spec §2.2.4.2.6.4.
 pub fn dispatch_requested_deadline_missed(
     chain: &ReaderListenerChain,
     reader: InstanceHandle,
@@ -353,7 +350,7 @@ pub fn dispatch_requested_deadline_missed(
     );
 }
 
-/// Bubble-Up fuer `on_requested_incompatible_qos`. Spec §2.2.4.2.6.5.
+/// Bubble-up for `on_requested_incompatible_qos`. Spec §2.2.4.2.6.5.
 pub fn dispatch_requested_incompatible_qos(
     chain: &ReaderListenerChain,
     reader: InstanceHandle,
@@ -385,7 +382,7 @@ pub fn dispatch_requested_incompatible_qos(
     );
 }
 
-/// Bubble-Up fuer `on_liveliness_changed`. Spec §2.2.4.2.6.6.
+/// Bubble-up for `on_liveliness_changed`. Spec §2.2.4.2.6.6.
 pub fn dispatch_liveliness_changed(
     chain: &ReaderListenerChain,
     reader: InstanceHandle,
@@ -407,10 +404,10 @@ pub fn dispatch_liveliness_changed(
 }
 
 // ============================================================================
-// Writer-Pfad-Dispatcher
+// Writer-path dispatchers
 // ============================================================================
 
-/// Bubble-Up fuer `on_publication_matched`. Spec §2.2.4.2.4.4.
+/// Bubble-up for `on_publication_matched`. Spec §2.2.4.2.4.4.
 pub fn dispatch_publication_matched(
     chain: &WriterListenerChain,
     writer: InstanceHandle,
@@ -431,7 +428,7 @@ pub fn dispatch_publication_matched(
     });
 }
 
-/// Bubble-Up fuer `on_offered_deadline_missed`. Spec §2.2.4.2.4.1.
+/// Bubble-up for `on_offered_deadline_missed`. Spec §2.2.4.2.4.1.
 pub fn dispatch_offered_deadline_missed(
     chain: &WriterListenerChain,
     writer: InstanceHandle,
@@ -456,7 +453,7 @@ pub fn dispatch_offered_deadline_missed(
     );
 }
 
-/// Bubble-Up fuer `on_offered_incompatible_qos`. Spec §2.2.4.2.4.2.
+/// Bubble-up for `on_offered_incompatible_qos`. Spec §2.2.4.2.4.2.
 pub fn dispatch_offered_incompatible_qos(
     chain: &WriterListenerChain,
     writer: InstanceHandle,
@@ -484,7 +481,7 @@ pub fn dispatch_offered_incompatible_qos(
     );
 }
 
-/// Bubble-Up fuer `on_liveliness_lost`. Spec §2.2.4.2.4.3.
+/// Bubble-up for `on_liveliness_lost`. Spec §2.2.4.2.4.3.
 pub fn dispatch_liveliness_lost(
     chain: &WriterListenerChain,
     writer: InstanceHandle,
@@ -506,10 +503,10 @@ pub fn dispatch_liveliness_lost(
 }
 
 // ============================================================================
-// Topic-Pfad-Dispatcher
+// Topic-path dispatchers
 // ============================================================================
 
-/// Bubble-Up fuer `on_inconsistent_topic`. Spec §2.2.4.2.5.
+/// Bubble-up for `on_inconsistent_topic`. Spec §2.2.4.2.5.
 pub fn dispatch_inconsistent_topic(
     chain: &TopicListenerChain,
     topic: InstanceHandle,
@@ -531,7 +528,7 @@ mod tests {
     use super::*;
     use core::sync::atomic::{AtomicU32, Ordering};
 
-    // ---------- Test-Doubles ----------
+    // ---------- Test doubles ----------
 
     struct CountingReader {
         avail: AtomicU32,
@@ -688,7 +685,7 @@ mod tests {
         InstanceHandle::from_raw(7)
     }
 
-    // ---------- Reader-Pfad ----------
+    // ---------- Reader path ----------
 
     #[test]
     fn data_available_reader_consumes_when_mask_set() {
@@ -741,7 +738,7 @@ mod tests {
             subscriber: None,
             participant: None,
         };
-        // No-Op: darf nicht panicken.
+        // No-op: must not panic.
         dispatch_data_available(&chain, h());
     }
 
@@ -889,7 +886,7 @@ mod tests {
         dispatch_liveliness_changed(&chain, h(), LivelinessChangedStatus::default());
     }
 
-    // ---------- Writer-Pfad ----------
+    // ---------- Writer path ----------
 
     #[test]
     fn publication_matched_consumed_at_writer() {
@@ -961,7 +958,7 @@ mod tests {
         dispatch_offered_incompatible_qos(&chain, h(), OfferedIncompatibleQosStatus::default());
     }
 
-    // ---------- Topic-Pfad ----------
+    // ---------- Topic path ----------
 
     #[test]
     fn inconsistent_topic_consumed_at_topic() {
@@ -985,7 +982,7 @@ mod tests {
         assert_eq!(p.inconsistent.load(Ordering::Relaxed), 1);
     }
 
-    // ---------- Panic-Safety ----------
+    // ---------- Panic safety ----------
 
     #[test]
     fn panic_in_listener_does_not_propagate() {
@@ -1000,7 +997,7 @@ mod tests {
             subscriber: None,
             participant: None,
         };
-        // Wenn das nicht swallowed wuerde, panickt der ganze Test.
+        // If this were not swallowed, the whole test would panic.
         dispatch_data_available(&chain, h());
     }
 
@@ -1020,7 +1017,7 @@ mod tests {
         dispatch_publication_matched(&chain, h(), PublicationMatchedStatus::default());
     }
 
-    // ---------- Bit-spezifisches Mask-Verhalten ----------
+    // ---------- Bit-specific mask behavior ----------
 
     #[test]
     fn reader_with_only_data_available_bit_passes_other_events_up() {
@@ -1035,7 +1032,7 @@ mod tests {
         assert_eq!(r.avail.load(Ordering::Relaxed), 1);
 
         dispatch_sample_lost(&chain, h(), SampleLostStatus::default());
-        // Reader-Listener hat das Bit NICHT — bubblet zum Subscriber.
+        // The reader listener does NOT have the bit — bubbles to the subscriber.
         assert_eq!(r.lost.load(Ordering::Relaxed), 0);
         assert_eq!(s.lost.load(Ordering::Relaxed), 1);
     }
@@ -1052,7 +1049,7 @@ mod tests {
         // PUBLICATION_MATCHED → Writer.
         dispatch_publication_matched(&chain, h(), PublicationMatchedStatus::default());
         assert_eq!(w.matched.load(Ordering::Relaxed), 1);
-        // LIVELINESS_LOST → Bubble durch (nirgendwo gesetzt).
+        // LIVELINESS_LOST → bubbles through (set nowhere).
         dispatch_liveliness_lost(&chain, h(), LivelinessLostStatus::default());
         assert_eq!(w.liveliness_lost.load(Ordering::Relaxed), 0);
     }

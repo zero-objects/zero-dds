@@ -7,46 +7,46 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-### RC1-Audit
+### RC1 audit
 
-- License-Header (SPDX-Apache-2.0) auf alle 18 src-Files (root + sedp/
+- License header (SPDX-Apache-2.0) on all 18 src files (root + sedp/
   + security/ + type_lookup/).
-- Cargo.toml RC1-Metadaten (homepage, documentation, keywords, categories).
+- Cargo.toml RC1 metadata (homepage, documentation, keywords, categories).
 - `publish = false` → `publish = true`.
-- Crate-Header rewrite mit vollständiger Spec-Verankerung
+- Crate-header rewrite with full spec anchoring
   (DDSI-RTPS §8.5.3+§8.5.4, XTypes 1.3 §7.6.3.3.4, DDS-Security 1.2
   §7.4.4+§7.4.5).
-- Phase-X-Marker bereinigt:
-  - `lib.rs`: "Phase-0-Scope (WP 0.7-A)" → vollständige Public-API-
-    Beschreibung mit Layer-Boundary-Statement an DCPS.
-  - `spdp.rs`: "Phase-0-Scope" entfernt; Lease-Tracking als Caller-
-    Layer-Responsibility dokumentiert.
-  - `sedp/mod.rs`: "Phase-1-Scope (WP 1.4)" → Modul-Inhalt-Liste.
-  - `sedp/stack.rs`: "Phase-2-Kosmetik" → bewusste Architektur-
-    Entscheidung erklärt; `silence unused in Phase 1` → kommentiert
-    als "derzeit nicht ausgewertet".
-  - `endpoint_match.rs`: "Phase-1-Fallback" → "Fallback".
-  - `security/mod.rs`: "Out-of-scope (C3.4-c)" → Layer-Boundary-
-    Statement mit Spec-Sektion.
-  - `type_lookup/mod.rs` + `endpoints.rs`: "TODO: wire" + "Phase-4-
-    Followup" → Layer-Boundary-Statement an DCPS-Builtin-Endpoint-
-    Spawn-Pfad.
-  - `capabilities.rs`: Test "phase0_peer_only" → "legacy_peer_only".
+- Phase-X markers cleaned up:
+  - `lib.rs`: "Phase-0 scope (WP 0.7-A)" → full public-API
+    description with a layer-boundary statement toward DCPS.
+  - `spdp.rs`: "Phase-0 scope" removed; lease tracking documented as a
+    caller-layer responsibility.
+  - `sedp/mod.rs`: "Phase-1 scope (WP 1.4)" → module-contents list.
+  - `sedp/stack.rs`: "Phase-2 cosmetics" → deliberate architecture
+    decision explained; `silence unused in Phase 1` → commented
+    as "currently not evaluated".
+  - `endpoint_match.rs`: "Phase-1 fallback" → "fallback".
+  - `security/mod.rs`: "Out-of-scope (C3.4-c)" → layer-boundary
+    statement with spec section.
+  - `type_lookup/mod.rs` + `endpoints.rs`: "TODO: wire" + "Phase-4
+    followup" → layer-boundary statement toward the DCPS builtin-endpoint
+    spawn path.
+  - `capabilities.rs`: test "phase0_peer_only" → "legacy_peer_only".
 - README + CHANGELOG.
 
-### Eigenschaften
+### Properties
 
 - Pure-Rust `no_std + alloc`, `forbid(unsafe_code)`.
-- Safety-Klasse **SAFE**.
-- 144+ Tests grün; clippy/doc clean.
+- Safety class **SAFE**.
+- 144+ tests green; clippy/doc clean.
 
-### Bekannte Cross-Layer-Findings
+### Known cross-layer findings
 
-- **F-DISC-1 / F-DCPS-typelookup-wiring** (RC2-Target): TypeLookup-
-  Service-Endpoints sind in `discovery` voll implementiert, aber nicht
-  in `dcps::runtime` als Reliable-Writer/Reader-Pairs gespawnt. Wird
-  während des DCPS-Layer-3-Review behoben (XTypes 1.3 §7.6.3.3.4
-  Spec-Compliance).
+- **F-DISC-1 / F-DCPS-typelookup-wiring** (RC2 target): TypeLookup
+  service endpoints are fully implemented in `discovery`, but not
+  spawned as reliable writer/reader pairs in `dcps::runtime`. To be
+  fixed during the DCPS layer-3 review (XTypes 1.3 §7.6.3.3.4
+  spec compliance).
 
 [Unreleased]: https://github.com/zero-objects/zero-dds/compare/v1.0.0-rc.1...HEAD
 [1.0.0-rc.1]: https://github.com/zero-objects/zero-dds/releases/tag/v1.0.0-rc.1

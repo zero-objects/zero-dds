@@ -26,7 +26,7 @@ impl Default for Color {
 }
 
 impl Color {
-    /// Versucht einen `i32`-Wire-Wert auf einen Enumerator zu mappen.
+    /// Tries to map an `i32` wire value to an enumerator.
     #[must_use]
     pub fn from_wire(value: i32) -> Option<Self> {
         match value {

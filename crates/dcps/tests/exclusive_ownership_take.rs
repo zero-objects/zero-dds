@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! E2E-Test fuer den Exclusive-Ownership-Filter im DataReader.take()-Pfad
-//! (DDS 1.4 §2.2.3.23 / §2.2.2.5.5).
+//! E2E test for the exclusive-ownership filter in the DataReader.take()
+//! path (DDS 1.4 §2.2.3.23 / §2.2.2.5.5).
 //!
-//! Verifiziert, dass:
-//! - Bei `OwnershipKind::Shared` keine Filterung stattfindet (alle Samples
-//!   passieren take()).
-//! - Bei `OwnershipKind::Exclusive` der erste Sample-Empfang den Writer
-//!   als Owner setzt; Samples schwaecherer Writer werden gedropt; Samples
-//!   staerkerer Writer uebernehmen die Ownership; Tie-Break ueber GUID.
+//! Verifies that:
+//! - With `OwnershipKind::Shared` no filtering happens (all samples pass
+//!   take()).
+//! - With `OwnershipKind::Exclusive` the first received sample sets the
+//!   writer as owner; samples from weaker writers are dropped; samples
+//!   from stronger writers take over ownership; tie-break via GUID.
 
 #![allow(
     clippy::expect_used,
@@ -57,7 +57,7 @@ fn shared_ownership_passes_all_samples() {
         .__push_raw_with_writer(b"weak".to_vec(), weak, 1)
         .unwrap();
     let out = reader.take().unwrap();
-    assert_eq!(out.len(), 2, "Shared-Ownership darf nicht filtern");
+    assert_eq!(out.len(), 2, "shared ownership must not filter");
 }
 
 #[test]
@@ -65,16 +65,16 @@ fn exclusive_ownership_filters_weaker_writer() {
     let reader = mk_reader(311, OwnershipKind::Exclusive);
     let strong = [9u8; 16];
     let weak = [1u8; 16];
-    // Strong writer kommt zuerst und wird Owner.
+    // Strong writer arrives first and becomes owner.
     reader
         .__push_raw_with_writer(b"strong".to_vec(), strong, 100)
         .unwrap();
-    // Weak writer wird verworfen.
+    // Weak writer is rejected.
     reader
         .__push_raw_with_writer(b"weak".to_vec(), weak, 1)
         .unwrap();
     let out = reader.take().unwrap();
-    assert_eq!(out.len(), 1, "Schwacher Writer muss gedropt werden");
+    assert_eq!(out.len(), 1, "weaker writer must be dropped");
     assert_eq!(out[0].data.as_slice(), b"strong");
 }
 
@@ -83,18 +83,18 @@ fn exclusive_ownership_stronger_writer_takes_over() {
     let reader = mk_reader(312, OwnershipKind::Exclusive);
     let weak = [1u8; 16];
     let strong = [9u8; 16];
-    // Weak writer kommt zuerst, wird Owner.
+    // Weak writer arrives first, becomes owner.
     reader
         .__push_raw_with_writer(b"weak".to_vec(), weak, 10)
         .unwrap();
-    // Strong writer kommt spaeter und uebernimmt.
+    // Strong writer arrives later and takes over.
     reader
         .__push_raw_with_writer(b"strong".to_vec(), strong, 100)
         .unwrap();
     let out = reader.take().unwrap();
     assert_eq!(out.len(), 2);
-    // Beide Samples kommen durch — weak war der Owner zum Empfangs-
-    // zeitpunkt, strong nimmt dann ueber.
+    // Both samples pass through — weak was the owner at receive time,
+    // strong then takes over.
     assert_eq!(out[0].data.as_slice(), b"weak");
     assert_eq!(out[1].data.as_slice(), b"strong");
 }
@@ -104,11 +104,11 @@ fn exclusive_ownership_tie_break_by_higher_guid() {
     let reader = mk_reader(313, OwnershipKind::Exclusive);
     let lower = [1u8; 16];
     let higher = [9u8; 16];
-    // Lower-GUID writer kommt zuerst.
+    // Lower-GUID writer arrives first.
     reader
         .__push_raw_with_writer(b"lower".to_vec(), lower, 50)
         .unwrap();
-    // Higher-GUID-Writer mit gleicher Strength gewinnt (Tie-Break).
+    // Higher-GUID writer with equal strength wins (tie-break).
     reader
         .__push_raw_with_writer(b"higher".to_vec(), higher, 50)
         .unwrap();
@@ -123,16 +123,16 @@ fn exclusive_ownership_lower_guid_at_tie_rejected() {
     let reader = mk_reader(314, OwnershipKind::Exclusive);
     let higher = [9u8; 16];
     let lower = [1u8; 16];
-    // Higher kommt zuerst, wird Owner.
+    // Higher arrives first, becomes owner.
     reader
         .__push_raw_with_writer(b"higher".to_vec(), higher, 50)
         .unwrap();
-    // Lower-GUID mit gleicher Strength → reject.
+    // Lower GUID with equal strength → reject.
     reader
         .__push_raw_with_writer(b"lower".to_vec(), lower, 50)
         .unwrap();
     let out = reader.take().unwrap();
-    assert_eq!(out.len(), 1, "Lower-GUID-Tie muss verworfen werden");
+    assert_eq!(out.len(), 1, "lower-GUID tie must be rejected");
     assert_eq!(out[0].data.as_slice(), b"higher");
 }
 
@@ -145,17 +145,17 @@ fn exclusive_ownership_after_owner_lost_weaker_wins() {
         .__push_raw_with_writer(b"strong".to_vec(), strong, 100)
         .unwrap();
     let _ = reader.take().unwrap();
-    // Liveliness-Loss → Owner-Clear.
+    // Liveliness loss → owner clear.
     let cleared = reader.notify_writer_liveliness_lost(strong);
     assert!(
         cleared >= 1,
-        "Mindestens eine Instance haette geclearetzt sein muessen"
+        "at least one instance should have been cleared"
     );
-    // Jetzt darf Weak gewinnen.
+    // Now weak is allowed to win.
     reader
         .__push_raw_with_writer(b"weak".to_vec(), weak, 10)
         .unwrap();
     let out = reader.take().unwrap();
-    assert_eq!(out.len(), 1, "Weak nach Owner-Clear muss durchkommen");
+    assert_eq!(out.len(), 1, "weak after owner clear must pass through");
     assert_eq!(out[0].data.as_slice(), b"weak");
 }

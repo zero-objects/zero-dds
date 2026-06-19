@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `RecordReader` — parsed `.zddsrec`-Streams in einen `Header` plus
-//! eine Sequenz von [`crate::format::Frame`].
+//! `RecordReader` — parses `.zddsrec` streams into a `Header` plus
+//! a sequence of [`crate::format::Frame`].
 //!
-//! Liest aus einem `&[u8]`-Buffer (alles im Speicher). Streaming
-//! `std::io::Read` ist als additive Major-2.0-Erweiterung vorgesehen.
+//! Reads from a `&[u8]` buffer (all in memory). Streaming
+//! `std::io::Read` is envisaged as an additive major-2.0 extension.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -16,30 +16,30 @@ use crate::format::{
     ZDDSREC_VERSION,
 };
 
-/// Fehler beim Lesen.
+/// Error while reading.
 #[derive(Debug)]
 pub enum ReadError {
-    /// File-Magic stimmt nicht — kein `.zddsrec`.
+    /// File magic does not match — not a `.zddsrec`.
     BadMagic,
-    /// Format-Version ueber dem unterstuetzten Bereich.
+    /// Format version above the supported range.
     UnsupportedVersion(u32),
-    /// Stream zu kurz fuer das erwartete Feld.
+    /// Stream too short for the expected field.
     Truncated {
-        /// Welches Feld.
+        /// Which field.
         what: &'static str,
-        /// Wie viele Bytes erwartet.
+        /// How many bytes are expected.
         need: usize,
-        /// Wie viele uebrig.
+        /// How many are left.
         have: usize,
     },
-    /// String enthaelt kein gueltiges UTF-8.
+    /// String contains no valid UTF-8.
     InvalidUtf8 {
-        /// Welches Feld.
+        /// Which field.
         what: &'static str,
     },
-    /// Sample-Kind-Byte ist ausserhalb {0,1,2}.
+    /// Sample-kind byte is outside {0,1,2}.
     BadSampleKind(u8),
-    /// Frame-Magic stimmt nicht.
+    /// Frame magic does not match.
     BadFrameMagic(u8),
 }
 
@@ -60,15 +60,15 @@ impl fmt::Display for ReadError {
 
 impl std::error::Error for ReadError {}
 
-/// Reader fuer `.zddsrec`-Buffer.
+/// Reader for `.zddsrec` buffers.
 pub struct RecordReader<'a> {
     bytes: &'a [u8],
     cursor: usize,
 }
 
 impl<'a> RecordReader<'a> {
-    /// Erzeugt einen Reader. `parse_header` muss zuerst aufgerufen
-    /// werden, danach `next_frame` bis None.
+    /// Creates a reader. `parse_header` must be called first,
+    /// then `next_frame` until None.
     pub fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, cursor: 0 }
     }
@@ -86,9 +86,9 @@ impl<'a> RecordReader<'a> {
 
     fn read_u32(&mut self, what: &'static str) -> Result<u32, ReadError> {
         let s = self.need(what, 4)?;
-        // `need(.., 4)` garantiert 4 Bytes; try_into ist deshalb
-        // unfehlbar — wir mappen den theoretischen Err-Pfad trotzdem
-        // explizit, statt expect/panic im Runtime-Pfad.
+        // `need(.., 4)` guarantees 4 bytes; try_into is therefore
+        // infallible — we still map the theoretical Err path
+        // explicitly instead of expect/panic in the runtime path.
         let arr: [u8; 4] = s.try_into().map_err(|_| ReadError::Truncated {
             what,
             need: 4,
@@ -138,7 +138,7 @@ impl<'a> RecordReader<'a> {
         Ok(s)
     }
 
-    /// Parsed den Header. Cursor steht danach am ersten Frame.
+    /// Parses the header. The cursor then sits at the first frame.
     ///
     /// # Errors
     /// [`ReadError::BadMagic`], `UnsupportedVersion`, `Truncated`.
@@ -175,7 +175,7 @@ impl<'a> RecordReader<'a> {
         })
     }
 
-    /// Liest den naechsten Frame. Returnt `Ok(None)` wenn EOF erreicht.
+    /// Reads the next frame. Returns `Ok(None)` when EOF is reached.
     ///
     /// # Errors
     /// `BadFrameMagic`, `Truncated`, `BadSampleKind`.
@@ -204,17 +204,17 @@ impl<'a> RecordReader<'a> {
         }))
     }
 
-    /// Bequem: gibt einen owned [`Frame`] zurueck.
+    /// Convenience: returns an owned [`Frame`].
     ///
     /// # Errors
-    /// Wie [`RecordReader::next_frame_view`].
+    /// As [`RecordReader::next_frame_view`].
     pub fn next_frame(&mut self) -> Result<Option<Frame>, ReadError> {
         Ok(self.next_frame_view()?.map(|v| v.to_owned()))
     }
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
     use crate::writer::{header_with, write_all};

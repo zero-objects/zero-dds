@@ -1,4 +1,4 @@
-//! Smoke-Tests fuer #[derive(FlatStruct)].
+//! Smoke tests for #[derive(FlatStruct)].
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -28,14 +28,14 @@ fn derive_generates_wire_size() {
 
 #[test]
 fn derive_generates_type_hash_nonzero() {
-    // Trivial-Sicherheit: Hash ist nicht alle 0x00 (das wuerde
-    // bedeuten Caller-Hash + derive-Hash kollidieren).
+    // Trivial sanity check: the hash is not all 0x00 (which would
+    // mean the caller hash and the derive hash collide).
     assert_ne!(PoseDerived::TYPE_HASH, [0u8; 16]);
 }
 
 #[test]
 fn derive_generates_distinct_hash_per_layout() {
-    // Verschiedene Structs → verschiedene Hashes.
+    // Different structs → different hashes.
     assert_ne!(PoseDerived::TYPE_HASH, PoseDifferent::TYPE_HASH);
 }
 
@@ -44,12 +44,12 @@ fn derive_as_bytes_roundtrip() {
     let p = PoseDerived { x: 1, y: 2, z: 3 };
     let bytes = p.as_bytes();
     assert_eq!(bytes.len(), 24);
-    // SAFETY: bytes stammt aus genau dieser Pose-Instanz.
+    // SAFETY: bytes comes from exactly this Pose instance.
     let p2: PoseDerived = unsafe { PoseDerived::from_bytes_unchecked(bytes) };
     assert_eq!(p, p2);
 }
 
-// Tuple-Struct-Variante.
+// Tuple-struct variant.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, DeriveFlatStruct)]
 #[repr(C)]
 struct Tuple(u64, u64);
@@ -61,8 +61,8 @@ fn derive_works_for_tuple_struct() {
     assert_eq!(t.as_bytes().len(), 16);
 }
 
-// repr(transparent) — wrapper um einen einzigen repr(C)-Type. Spec
-// §1.1 erlaubt das explizit.
+// repr(transparent) — wrapper around a single repr(C) type. Spec
+// §1.1 explicitly allows this.
 #[derive(Copy, Clone, DeriveFlatStruct)]
 #[repr(transparent)]
 struct WrappedPose(PoseDerived);
@@ -70,12 +70,12 @@ struct WrappedPose(PoseDerived);
 #[test]
 fn derive_accepts_repr_transparent() {
     assert_eq!(WrappedPose::WIRE_SIZE, PoseDerived::WIRE_SIZE);
-    // Hash ist distinct gegen den inneren Type, weil der Layout-String
-    // den Outer-Type-Namen einbezieht.
+    // The hash is distinct from the inner type because the layout string
+    // includes the outer type name.
     assert_ne!(WrappedPose::TYPE_HASH, PoseDerived::TYPE_HASH);
 }
 
-// Field-Reorder erzeugt einen anderen Hash.
+// Reordering fields produces a different hash.
 #[derive(Copy, Clone, DeriveFlatStruct)]
 #[repr(C)]
 struct PoseReordered {
@@ -89,8 +89,8 @@ fn derive_detects_field_reorder() {
     assert_ne!(PoseDerived::TYPE_HASH, PoseReordered::TYPE_HASH);
 }
 
-// Field-Type-Change (i64 → u64) erzeugt einen anderen Hash trotz
-// gleicher Wire-Size.
+// Changing a field type (i64 → u64) produces a different hash despite
+// the same wire size.
 #[derive(Copy, Clone, DeriveFlatStruct)]
 #[repr(C)]
 struct PoseUnsigned {
@@ -105,7 +105,7 @@ fn derive_detects_field_type_change() {
     assert_ne!(PoseDerived::TYPE_HASH, PoseUnsigned::TYPE_HASH);
 }
 
-// Type-Rename erzeugt einen anderen Hash auch bei identischen Feldern.
+// Renaming a type produces a different hash even with identical fields.
 #[derive(Copy, Clone, DeriveFlatStruct)]
 #[repr(C)]
 struct PoseRenamed {
@@ -119,7 +119,7 @@ fn derive_detects_type_rename() {
     assert_ne!(PoseDerived::TYPE_HASH, PoseRenamed::TYPE_HASH);
 }
 
-// Hash ist deterministisch — gleiche Definition → gleicher Hash.
+// The hash is deterministic — same definition → same hash.
 #[derive(Copy, Clone, DeriveFlatStruct)]
 #[repr(C)]
 struct PoseDerived2 {
@@ -130,14 +130,14 @@ struct PoseDerived2 {
 
 #[test]
 fn derive_hash_is_deterministic_for_identical_layout() {
-    // PoseDerived und PoseDerived2 sind strukturell identisch im
-    // Layout-String, ABER der Type-Name ist Teil der Signatur — daher
-    // unterschiedliche Hashes (das ist das gewuenschte Verhalten:
-    // Hash ist eine Type-Identitaet, nicht nur Layout-Identitaet).
+    // PoseDerived and PoseDerived2 are structurally identical in the
+    // layout string, BUT the type name is part of the signature — hence
+    // different hashes (this is the intended behavior:
+    // the hash is a type identity, not just a layout identity).
     assert_ne!(PoseDerived::TYPE_HASH, PoseDerived2::TYPE_HASH);
 }
 
-// Unit-Struct (Wire-Size = 0).
+// Unit struct (wire size = 0).
 #[derive(Copy, Clone, DeriveFlatStruct)]
 #[repr(C)]
 struct Marker;

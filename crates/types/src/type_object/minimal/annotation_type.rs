@@ -11,20 +11,20 @@ use crate::type_identifier::TypeIdentifier;
 use crate::type_object::common::{MemberId, decode_seq, encode_seq};
 use crate::type_object::flags::{AnnotationParameterFlag, AnnotationTypeFlag};
 
-/// AnnotationParameter-Default-Value. Im Minimal wird der Default als
-/// CDR-serialisierter Blob mit fuehrendem Type-Discriminator abgelegt
-/// (§7.3.4.5 AnnotationParameterValue). Fuer Phase 1 speichern wir ihn
-/// als opaque bytes — Validator/Consumer muss den Discriminator-Byte
-/// lesen und daraufhin den Wert interpretieren.
+/// AnnotationParameter default value. In Minimal the default is stored as a
+/// CDR-serialized blob with a leading type discriminator
+/// (§7.3.4.5 AnnotationParameterValue). For phase 1 we store it
+/// as opaque bytes — the validator/consumer must read the discriminator byte
+/// and interpret the value accordingly.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnnotationParameterValue {
-    /// Raw-Bytes (inkl. Discriminator).
+    /// Raw bytes (incl. discriminator).
     pub raw: Vec<u8>,
 }
 
 impl AnnotationParameterValue {
     fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        // Als sequence<octet>: u32 Laenge + bytes.
+        // As sequence<octet>: u32 length + bytes.
         let len = u32::try_from(self.raw.len()).map_err(|_| EncodeError::ValueOutOfRange {
             message: "annotation parameter value exceeds u32::MAX bytes",
         })?;
@@ -46,7 +46,7 @@ pub struct CommonAnnotationParameter {
     pub member_id: MemberId,
     /// Flags.
     pub member_flags: AnnotationParameterFlag,
-    /// Parameter-Typ.
+    /// Parameter type.
     pub member_type_id: TypeIdentifier,
 }
 
@@ -55,10 +55,10 @@ pub struct CommonAnnotationParameter {
 pub struct MinimalAnnotationParameter {
     /// Common.
     pub common: CommonAnnotationParameter,
-    /// Parameter-Name (im Minimal als volle String, nicht Hash — weil
-    /// Annotation-Parameter oft by-name angesprochen werden).
+    /// Parameter name (in Minimal as a full string, not a hash — because
+    /// annotation parameters are often addressed by name).
     pub name: String,
-    /// Default-Wert.
+    /// Default value.
     pub default_value: AnnotationParameterValue,
 }
 
@@ -94,7 +94,7 @@ impl MinimalAnnotationParameter {
 pub struct MinimalAnnotationType {
     /// Flags.
     pub annotation_flag: AnnotationTypeFlag,
-    /// Parameter-Liste.
+    /// Parameter list.
     pub member_seq: Vec<MinimalAnnotationParameter>,
 }
 

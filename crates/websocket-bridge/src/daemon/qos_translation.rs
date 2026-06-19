@@ -1,64 +1,64 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! §6 — DDS-QoS → WebSocket-Behavior-Translation.
+//! §6 — DDS QoS → WebSocket behavior translation.
 //!
 //! Mapping per Spec `zerodds-ws-bridge-1.0.md` §6:
 //!
-//! * `Reliability::Reliable`   → backpressure-Mode (write-block bei
-//!   voller Send-Queue) + per-conn-credit; `BestEffort` → drop-on-full.
-//! * `Durability::TransientLocal/Transient/Persistent` → replay-cache:
-//!   neu-verbindende Subscriber bekommen die letzten N Samples (gemaess
-//!   `history_depth`) wiederholt.
-//! * `Deadline` → emit `op:deadline-missed` wenn ein Sample nicht
-//!   innerhalb des Deadline-Budgets ausgeliefert wurde.
+//! * `Reliability::Reliable`   → backpressure mode (write-block on a
+//!   full send queue) + per-conn credit; `BestEffort` → drop-on-full.
+//! * `Durability::TransientLocal/Transient/Persistent` → replay cache:
+//!   newly connecting subscribers receive the last N samples (per
+//!   `history_depth`) replayed.
+//! * `Deadline` → emit `op:deadline-missed` if a sample was not
+//!   delivered within the deadline budget.
 
 use zerodds_qos::{
     DurabilityKind, HistoryKind, HistoryQosPolicy, ReaderQos, ReliabilityKind, WriterQos,
 };
 
-/// Backpressure-Verhalten bei voller Send-Queue.
+/// Backpressure behavior on a full send queue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackpressureMode {
-    /// Reliable — block bis Queue Slot frei wird (Spec §6.1).
+    /// Reliable — block until a queue slot becomes free (Spec §6.1).
     Block,
     /// BestEffort — drop oldest, non-blocking.
     DropOldest,
 }
 
-/// Replay-Cache-Strategie fuer neu verbindende Subscriber.
+/// Replay-cache strategy for newly connecting subscribers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplayMode {
-    /// Volatile — keine Wiederholung.
+    /// Volatile — no replay.
     None,
-    /// TransientLocal — letzte N Samples wiederholen.
+    /// TransientLocal — replay the last N samples.
     LastN(u32),
-    /// Transient/Persistent — alles aus dem Topic-Cache.
+    /// Transient/Persistent — everything from the topic cache.
     All,
 }
 
-/// Deadline-Watcher-Verhalten.
+/// Deadline-watcher behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeadlineMode {
-    /// Kein Deadline-Tracking.
+    /// No deadline tracking.
     None,
-    /// Emit `op:deadline-missed` wenn ueberschritten.
+    /// Emit `op:deadline-missed` when exceeded.
     Emit {
-        /// Deadline-Periode in Millisekunden.
+        /// Deadline period in milliseconds.
         period_ms: u64,
     },
 }
 
-/// Vollstaendiges Behavior das aus einem QoS-Set abgeleitet wird.
+/// Complete behavior derived from a QoS set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WsBehavior {
-    /// Backpressure auf der Connection-Send-Queue.
+    /// Backpressure on the connection send queue.
     pub backpressure: BackpressureMode,
-    /// Replay fuer neu verbindende Subscriber.
+    /// Replay for newly connecting subscribers.
     pub replay: ReplayMode,
-    /// Deadline-Tracking + Notification.
+    /// Deadline tracking + notification.
     pub deadline: DeadlineMode,
-    /// Per-Connection-Send-Queue-Bound (Anzahl Frames).
+    /// Per-connection send-queue bound (number of frames).
     pub send_queue_capacity: usize,
 }
 
@@ -74,8 +74,8 @@ impl Default for WsBehavior {
 }
 
 impl WsBehavior {
-    /// Spec-konformes Default-Behavior fuer Topic ohne ueberlagerndes
-    /// QoS — basiert auf `WriterQos::default()` (Reliable, Volatile,
+    /// Spec-conformant default behavior for a topic without overriding
+    /// QoS — based on `WriterQos::default()` (Reliable, Volatile,
     /// Deadline=infinite).
     #[must_use]
     pub fn default_for_topic() -> Self {
@@ -85,7 +85,7 @@ impl WsBehavior {
     }
 }
 
-/// Hauptfunktion: leite ein WS-Behavior aus dem `(Writer,Reader)`-QoS ab.
+/// Main function: derive a WS behavior from the `(Writer,Reader)` QoS.
 #[must_use]
 pub fn dds_qos_to_ws_behavior(writer: &WriterQos, reader: &ReaderQos) -> WsBehavior {
     let backpressure = match (writer.reliability.kind, reader.reliability.kind) {
@@ -223,9 +223,9 @@ mod tests {
     #[test]
     fn default_for_topic_uses_writer_defaults() {
         let b = WsBehavior::default_for_topic();
-        // Writer-Default ist Reliable.
+        // The writer default is Reliable.
         assert_eq!(b.backpressure, BackpressureMode::Block);
-        // Default-Durability ist Volatile.
+        // The default durability is Volatile.
         assert_eq!(b.replay, ReplayMode::None);
     }
 }

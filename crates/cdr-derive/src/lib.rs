@@ -3,16 +3,16 @@
 
 //! Crate `zerodds-cdr-derive`. Safety classification: **STANDARD**.
 //!
-//! `#[derive(DdsType)]` Proc-Macro — implementiert
+//! `#[derive(DdsType)]` proc-macro — implements
 //! `zerodds-xcdr2-rust-1.0` §11.1.
 //!
-//! Leitet aus einem Plain-`struct` einen `impl DdsType` ab, der ueber
-//! die `zerodds_cdr::CdrEncode`/`CdrDecode`-Traits seriealisiert.
-//! Unterstuetzt heute Final-Extensibility (kein DHEADER) — Appendable
-//! und Mutable bleiben dem `idl-rust`-Codegen vorbehalten weil deren
-//! Logik nicht trivial pro Field rein-derive-fie ist.
+//! Derives an `impl DdsType` from a plain `struct` that serializes via
+//! the `zerodds_cdr::CdrEncode`/`CdrDecode` traits. Currently supports
+//! final extensibility (no DHEADER) — appendable and mutable are
+//! reserved for the `idl-rust` codegen because their per-field logic is
+//! not trivially derive-only.
 //!
-//! Beispiel:
+//! Example:
 //!
 //! ```ignore
 //! use zerodds_cdr_derive::DdsType;
@@ -87,9 +87,9 @@ fn expand(ast: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             #ident: ::zerodds_cdr::CdrDecode::decode(&mut reader)?,
         }
     });
-    // PlainCdr2BeKeyHolder hat write_u8/u16/u32/u64/i8/.../bytes Methoden.
-    // Wir delegieren via CdrEncode auf einen tempBufferWriter und kopieren
-    // die Bytes ins holder buffer ueber `holder.write_bytes`.
+    // PlainCdr2BeKeyHolder has write_u8/u16/u32/u64/i8/.../bytes methods.
+    // We delegate via CdrEncode to a temp BufferWriter and copy the bytes
+    // into the holder buffer via `holder.write_bytes`.
     let key_field_lines = keyed_fields.iter().map(|ident| {
         quote! {
             {

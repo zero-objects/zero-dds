@@ -1,28 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Top-Level-Emitter: AST → Rust-String.
+//! Top-level emitter: AST → Rust string.
 
 use zerodds_idl::ast::types::{
-    ConstrTypeDecl, Declarator, Definition, ExceptDecl, ModuleDef, Specification, TypeDecl,
+    ConstrTypeDecl, Declarator, Definition, ExceptDecl, Export, InterfaceDcl, ModuleDef,
+    Specification, TypeDecl,
 };
 
 use crate::error::Result;
-use crate::struct_emit::emit_struct;
 use crate::type_map::{escape_keyword, rust_type_for};
 
-/// Optionen fuer den Codegen.
+/// Options for the code generator.
 #[derive(Debug, Clone, Default)]
 pub struct RustGenOptions {
-    /// Header-Kommentar oben in der erzeugten Datei. Wird verbatim
-    /// uebernommen.
+    /// Header comment placed at the top of the generated file. Included verbatim.
     pub header_comment: Option<String>,
+    /// CDR-only mode for the CORBA/GIOP path: omits the `DdsType` impl
+    /// (XCDR2 + `field_value`) that pulls in `zerodds_dcps`/`zerodds_types`/
+    /// `zerodds_sql_filter`. Only type declarations and classic
+    /// `CdrEncode`/`CdrDecode` remain — the sole wire representation
+    /// for CORBA requests/replies (CDR §15.3).
+    pub cdr_only: bool,
 }
 
-/// Erzeugt aus einer geparsten IDL-Spec ein einzelnes Rust-Modul-File.
+/// Generates a single Rust module file from a parsed IDL spec.
 ///
 /// # Errors
-/// `Unsupported` fuer IDL-Konstrukte ausserhalb des DDS-DataType-Scopes.
+/// `Unsupported` for IDL constructs outside the DDS DataType scope.
 pub fn generate_rust_module(spec: &Specification, opts: &RustGenOptions) -> Result<String> {
+    // `any` target: cdr_only (CORBA path) → CorbaAny, otherwise DDS → DdsAny.
+    crate::type_map::set_any_target_corba(opts.cdr_only);
+    // This pass emits only data types, no interface references — clear the
+    // interface-ref set (no stale state from a previous corba-rust run in
+    // the same process, e.g. a two-pass build.rs).
+    crate::type_map::set_interface_refs(core::iter::empty());
     let mut out = String::new();
     out.push_str("// SPDX-License-Identifier: Apache-2.0\n");
     if let Some(c) = &opts.header_comment {
@@ -42,36 +53,74 @@ pub fn generate_rust_module(spec: &Specification, opts: &RustGenOptions) -> Resu
 
     let mut path: Vec<String> = Vec::new();
     for def in &spec.definitions {
-        emit_definition(&mut out, def, &mut path)?;
+        emit_definition(&mut out, def, &mut path, opts.cdr_only)?;
     }
 
     Ok(out)
 }
 
+/// Appends only the data-type definitions (struct/enum/union/exception/typedef/
+/// bitset) from a spec to `out` — without a file header, `use` line, or
+/// module wrapper. Used by the CORBA code generator (`zerodds-corba-rust`),
+/// which emits types and interfaces into a shared module.
+///
+/// # Errors
+/// `Unsupported` for IDL constructs outside the DataType scope.
+pub fn append_data_types(out: &mut String, spec: &Specification, cdr_only: bool) -> Result<()> {
+    let mut path: Vec<String> = Vec::new();
+    for def in &spec.definitions {
+        emit_definition(out, def, &mut path, cdr_only)?;
+    }
+    Ok(())
+}
+
 /// zerodds-lint: recursion-depth 16
-/// IDL-Modul-Schachtelung — 16 Ebenen reichen fuer alle bekannten OMG-
-/// Spec-IDL-Files.
-fn emit_definition(out: &mut String, def: &Definition, path: &mut Vec<String>) -> Result<()> {
+/// IDL module nesting — 16 levels are sufficient for all known OMG spec IDL files.
+fn emit_definition(
+    out: &mut String,
+    def: &Definition,
+    path: &mut Vec<String>,
+    cdr_only: bool,
+) -> Result<()> {
     match def {
-        Definition::Module(m) => emit_module(out, m, path),
-        Definition::Type(t) => emit_type_decl(out, t, path),
+        Definition::Module(m) => emit_module(out, m, path, cdr_only),
+        Definition::Type(t) => emit_type_decl(out, t, path, cdr_only),
         Definition::Except(e) => {
             emit_exception(out, e)?;
             out.push('\n');
             Ok(())
         }
-        // Const wird im idl-rust-Pfad nicht emittiert (Compile-Time-
-        // Konstanten sind code-sprachenspezifisch; CORBA-IDL-Const wird
-        // im Code-Sprach-PSM behandelt).
+        // Const is not emitted in the idl-rust path (compile-time
+        // constants are language-specific; CORBA IDL Const is handled
+        // in the language PSM).
         Definition::Const(_) => Ok(()),
-        // CORBA-/Component-Decls + alles andere wird im Rust-Codegen
-        // nicht behandelt (ZeroDDS Rust-API ist DDS-zentriert).
+        // Emit interface-nested exceptions as struct types — the CORBA
+        // code generator (corba-rust) references them in the `{Iface}Error`
+        // enum, and their RepositoryId carries the interface scope (e.g.
+        // IDL:omg.org/CosNaming/NamingContext/NotFound:1.0). DDS IDL has no
+        // interfaces, so this is a no-op in the DDS path.
+        Definition::Interface(InterfaceDcl::Def(i)) => {
+            for ex in &i.exports {
+                if let Export::Except(e) = ex {
+                    emit_exception(out, e)?;
+                    out.push('\n');
+                }
+            }
+            Ok(())
+        }
+        // Remaining CORBA/component declarations are not handled in the
+        // Rust code generator (ZeroDDS Rust API is DDS-centric).
         _ => Ok(()),
     }
 }
 
 /// zerodds-lint: recursion-depth 16
-fn emit_module(out: &mut String, m: &ModuleDef, path: &mut Vec<String>) -> Result<()> {
+fn emit_module(
+    out: &mut String,
+    m: &ModuleDef,
+    path: &mut Vec<String>,
+    cdr_only: bool,
+) -> Result<()> {
     out.push_str("pub mod ");
     out.push_str(&escape_keyword(&m.name.text));
     out.push_str(" {\n");
@@ -81,7 +130,7 @@ fn emit_module(out: &mut String, m: &ModuleDef, path: &mut Vec<String>) -> Resul
     path.push(m.name.text.clone());
     for inner in &m.definitions {
         let mut inner_out = String::new();
-        emit_definition(&mut inner_out, inner, path)?;
+        emit_definition(&mut inner_out, inner, path, cdr_only)?;
         // Indent
         for line in inner_out.lines() {
             if line.is_empty() {
@@ -98,19 +147,19 @@ fn emit_module(out: &mut String, m: &ModuleDef, path: &mut Vec<String>) -> Resul
     Ok(())
 }
 
-fn emit_type_decl(out: &mut String, td: &TypeDecl, path: &[String]) -> Result<()> {
+fn emit_type_decl(out: &mut String, td: &TypeDecl, path: &[String], cdr_only: bool) -> Result<()> {
     match td {
         TypeDecl::Constr(ConstrTypeDecl::Struct(struct_dcl)) => {
-            // StructDcl ist ein Wrapper um Def/Forward.
+            // StructDcl is a wrapper around Def/Forward.
             use zerodds_idl::ast::types::StructDcl;
             match struct_dcl {
                 StructDcl::Def(s) => {
-                    emit_struct(out, s, path)?;
+                    crate::struct_emit::emit_struct_with_mode(out, s, path, cdr_only)?;
                     out.push('\n');
                 }
                 StructDcl::Forward(_) => {
-                    // Forward-Declarations werden in Rust nicht benoetigt
-                    // (Order ist via Visibility/Module geregelt).
+                    // Forward declarations are not needed in Rust
+                    // (order is handled via visibility/module).
                 }
             }
         }
@@ -139,18 +188,26 @@ fn emit_type_decl(out: &mut String, td: &TypeDecl, path: &[String]) -> Result<()
             crate::bitset_emit::emit_bitmask(out, m)?;
             out.push('\n');
         }
+        // `native X;` is an opaque, platform-specific type without a
+        // DDS wire representation — not emitted in the DataType codegen
+        // (analogous to `const`).
+        TypeDecl::Native(_) => {}
     }
     Ok(())
 }
 
-/// Emittiert eine IDL-`exception`-Definition als Rust-Struct.
-/// CORBA-Exceptions sind struct-aehnliche Daten-Container, die als
-/// Error-Variant im CORBA-Interface-Error-Enum referenziert werden
-/// (`zerodds-corba-rust` emittiert das Enum). Hier wird nur der Struct-
-/// Body generiert; volle CDR-Marshalling-Impl ist in Phase 2
-/// (DDS-Topic-Pipeline ist nicht betroffen, da Exceptions nicht als
-/// DDS-Sample uebertragen werden).
+/// Emits an IDL `exception` definition as a Rust struct + classic
+/// `CdrEncode`/`CdrDecode` impls. CORBA exceptions are struct-like data
+/// containers; on the wire they are marshalled like a struct
+/// (CDR §15.3 — members in declaration order), embedded in the
+/// `UserException` reply body (§15.4.2, behind the repository ID). The
+/// generated interface code (`zerodds-corba-rust`) references them as an
+/// error variant; the marshalling uses these impls.
 fn emit_exception(out: &mut String, e: &ExceptDecl) -> Result<()> {
+    use crate::struct_emit::{
+        declarator_ident, emit_member_decode_let_with_reader, emit_member_encode_with_writer,
+    };
+
     out.push_str("/// Generated by `zerodds-idl-rust` from IDL exception (CORBA 3.3 §7.4.10).\n");
     out.push_str("#[derive(Debug, Clone, PartialEq, Default)]\n");
     out.push_str("pub struct ");
@@ -168,5 +225,35 @@ fn emit_exception(out: &mut String, e: &ExceptDecl) -> Result<()> {
         }
     }
     out.push_str("}\n");
+
+    // CdrEncode — members sequential (classic CDR, no DHEADER).
+    let name = escape_keyword(&e.name.text);
+    out.push_str(&format!("\nimpl zerodds_cdr::CdrEncode for {name} {{\n"));
+    out.push_str(
+        "    fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {\n",
+    );
+    for member in &e.members {
+        emit_member_encode_with_writer(out, member, "        ", "writer")?;
+    }
+    out.push_str("        ::core::result::Result::Ok(())\n");
+    out.push_str("    }\n}\n");
+
+    // CdrDecode — symmetric.
+    out.push_str(&format!("\nimpl zerodds_cdr::CdrDecode for {name} {{\n"));
+    out.push_str(
+        "    fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {\n",
+    );
+    for member in &e.members {
+        emit_member_decode_let_with_reader(out, member, "        ", "reader")?;
+    }
+    out.push_str("        ::core::result::Result::Ok(Self {\n");
+    for member in &e.members {
+        for declarator in &member.declarators {
+            let field = declarator_ident(declarator);
+            out.push_str(&format!("            {field},\n"));
+        }
+    }
+    out.push_str("        })\n");
+    out.push_str("    }\n}\n");
     Ok(())
 }

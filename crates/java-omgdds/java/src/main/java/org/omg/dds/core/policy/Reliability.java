@@ -38,7 +38,8 @@ public final class Reliability {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof Reliability other)) return false;
+        if (!(o instanceof Reliability)) return false;
+        Reliability other = (Reliability) o;
         return kind == other.kind && maxBlockingTime.equals(other.maxBlockingTime);
     }
 

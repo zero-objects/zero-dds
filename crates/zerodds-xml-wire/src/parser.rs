@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Streaming-XML-Parser — DDS-XML 1.0 §6.2.
+//! Streaming XML parser — DDS-XML 1.0 §6.2.
 //!
-//! Spec §6.2: XML-Wire muss XML 1.0 + Namespaces 1.0 honor. Wir
-//! liefern einen Streaming-Parser ohne DOM-Buffering, der Events
-//! emittiert (StartElement/EndElement/Text/Cdata).
+//! Spec §6.2: the XML wire must honor XML 1.0 + Namespaces 1.0. We
+//! provide a streaming parser without DOM buffering that emits
+//! events (StartElement/EndElement/Text/Cdata).
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -16,12 +16,12 @@ pub enum Event {
     StartElement {
         /// Tag-Name.
         name: String,
-        /// Attribut-Liste (name, value).
+        /// Attribute list (name, value).
         attrs: Vec<(String, String)>,
     },
     /// `</elem>`.
     EndElement(String),
-    /// Text-Inhalt zwischen Tags.
+    /// Text content between tags.
     Text(String),
     /// `<![CDATA[...]]>` (XML 1.0 §2.7).
     CData(String),
@@ -29,22 +29,22 @@ pub enum Event {
     Declaration(String),
 }
 
-/// Parser-Fehler.
+/// Parser error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
     /// Unerwartetes EOF.
     UnexpectedEof,
-    /// Tag-Mismatch (Closing-Tag passt nicht zum Opening).
+    /// Tag mismatch (closing tag does not match the opening).
     TagMismatch {
-        /// Erwarteter (Opening-Stack-Top) Tag.
+        /// Expected (opening-stack-top) tag.
         expected: String,
         /// Erhaltener Closing-Tag.
         got: String,
     },
-    /// Malformed Tag (z.B. `<tag attr=value>` ohne Quotes).
+    /// Malformed tag (e.g. `<tag attr=value>` without quotes).
     MalformedTag(String),
-    /// Unbekannte Entity-Reference (nur `&amp;`/`&lt;`/`&gt;`/`&quot;`/
-    /// `&apos;` werden erkannt).
+    /// Unknown entity reference (only `&amp;`/`&lt;`/`&gt;`/`&quot;`/
+    /// `&apos;` are recognized).
     UnknownEntity(String),
 }
 
@@ -64,7 +64,7 @@ impl core::fmt::Display for ParseError {
 #[cfg(feature = "std")]
 impl std::error::Error for ParseError {}
 
-/// Streaming-XML-Parser — input ist `&str`, output ist Iterator von
+/// Streaming XML parser — input is `&str`, output is an iterator of
 /// `Result<Event, ParseError>`.
 #[derive(Debug)]
 pub struct XmlParser<'a> {
@@ -76,7 +76,7 @@ pub struct XmlParser<'a> {
 }
 
 impl<'a> XmlParser<'a> {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(input: &'a str) -> Self {
         Self {

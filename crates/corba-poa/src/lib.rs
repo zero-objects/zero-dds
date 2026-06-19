@@ -6,25 +6,25 @@
 //! Crate `zerodds-corba-poa`. Safety classification: **STANDARD**.
 //! `no_std + alloc`, `forbid(unsafe_code)`.
 //!
-//! Voller POA-Stack mit allen 7 Policies in allen Modi, POAManager-
-//! State-Machine, POA-Hierarchie, Active-Object-Map, ServantManager-
-//! Hooks und Policy-Compatibility-Validator.
+//! Full POA stack with all 7 policies in all modes, the POAManager
+//! state machine, POA hierarchy, active-object map, ServantManager
+//! hooks and a policy-compatibility validator.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! - [`Poa`] / [`PoaConfig`] — POA-Instanz mit Hierarchie.
-//! - [`PoaManager`] / [`PoaManagerState`] — State-Machine
+//! - [`Poa`] / [`PoaConfig`] — POA instance with a hierarchy.
+//! - [`PoaManager`] / [`PoaManagerState`] — state machine
 //!   (`Holding` / `Active` / `Discarding` / `Inactive`).
-//! - [`PolicySet`] + die 7 `*Policy`-Enums (Spec §11.3.7).
-//! - [`Servant`] — Servant-Trait mit `primary_interface` /
-//!   `primary_repository_id` (typisiert via `corba-ir`) /
+//! - [`PolicySet`] + the 7 `*Policy` enums (spec §11.3.7).
+//! - [`Servant`] — servant trait with `primary_interface` /
+//!   `primary_repository_id` (typed via `corba-ir`) /
 //!   `all_interfaces` / `is_a` / `invoke`.
 //! - [`ActiveObjectMap`] / [`ServantId`].
 //! - [`ServantActivator`] / [`ServantLocator`] (Spec §11.3.5.7-§11.3.5.8).
 //! - [`ObjectId`] (Spec §11.2.1).
 //! - [`PoaError`] / [`PoaResult`].
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```
 //! use zerodds_corba_poa::policies::PolicySet;

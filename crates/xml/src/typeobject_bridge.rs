@@ -2,38 +2,38 @@
 // Copyright 2026 ZeroDDS Contributors
 //! XML → TypeObject Bridge (Cluster C4.5-b).
 //!
-//! Konvertiert das interne XML-Datenmodell aus [`xtypes_def`] in das
-//! XTypes-1.3-TypeObject-Format aus `zerodds-types`. Wire-/Hash-Kompatibel
-//! mit dem IDL-Lowering aus `zerodds-idl::semantics::to_typeobject`.
+//! Converts the internal XML data model from [`xtypes_def`] into the
+//! XTypes-1.3 TypeObject format from `zerodds-types`. Wire-/hash-compatible
+//! with the IDL lowering from `zerodds-idl::semantics::to_typeobject`.
 //!
-//! # Spec-Quellen
+//! # Spec sources
 //!
-//! - OMG XTypes 1.3 §7.3.4.x — TypeObject + Minimal/Complete-Variants.
+//! - OMG XTypes 1.3 §7.3.4.x — TypeObject + Minimal/Complete variants.
 //! - OMG XTypes 1.3 §7.3.4.5 — MinimalStructType / EnumType / UnionType.
-//! - OMG XTypes 1.3 Annex A — XML-Mapping.
+//! - OMG XTypes 1.3 Annex A — XML mapping.
 //!
-//! # Scope C4.5-b (diese Stufe)
+//! # Scope C4.5-b (this stage)
 //!
-//! - Nur `MinimalTypeObject`. `CompleteTypeObject` nicht implementiert.
-//! - Top-Level-Mapping (struct, enum, union, typedef, bitmask, bitset).
-//! - Member-Typen via [`TypeRef::Primitive`] (direkt) oder
-//!   [`TypeRef::Named`] (Lookup in [`TypeLibrary`] mit Hash-Vorberechnung).
-//! - Modifier `arrayDimensions`/`sequenceMaxLength`/`stringMaxLength`
-//!   wickeln den Member-TypeIdentifier in PlainArray-/PlainSequence-/
-//!   String-Bound-Variants.
-//! - Member-IDs: `@id` aus XSD wenn gesetzt, sonst sequentiell ab 1
+//! - `MinimalTypeObject` only. `CompleteTypeObject` not implemented.
+//! - Top-level mapping (struct, enum, union, typedef, bitmask, bitset).
+//! - Member types via [`TypeRef::Primitive`] (direct) or
+//!   [`TypeRef::Named`] (lookup in [`TypeLibrary`] with hash precomputation).
+//! - The modifiers `arrayDimensions`/`sequenceMaxLength`/`stringMaxLength`
+//!   wrap the member TypeIdentifier in PlainArray-/PlainSequence-/
+//!   string-bound variants.
+//! - Member IDs: `@id` from XSD if set, otherwise sequential from 1
 //!   (AUTOID_SEQUENTIAL, Spec §7.3.1.2.1.1).
-//! - Extensibility: `final`/`appendable`/`mutable` aus
-//!   [`Extensibility`] auf `StructTypeFlag`/`UnionTypeFlag` mappen.
+//! - Extensibility: map `final`/`appendable`/`mutable` from
+//!   [`Extensibility`] onto `StructTypeFlag`/`UnionTypeFlag`.
 //!
-//! # Bewusst nicht im Crate
+//! # Deliberately not in the crate
 //!
-//! - `CompleteTypeObject` (kommt in Phase 6).
-//! - Forward-Declarations / Cross-Library-Refs.
-//! - Inheritance via `baseType` — der Bridge setzt zwar `base_type` als
-//!   `EquivalenceHashMinimal`, aber Cycle-Detection bleibt Aufgabe des
-//!   bestehenden [`crate::inheritance`]-Moduls.
-//! - `@autoid(HASH)` — XML-Schema kennt keine entsprechende Annotation.
+//! - `CompleteTypeObject` (comes in phase 6).
+//! - Forward declarations / cross-library refs.
+//! - Inheritance via `baseType` — the bridge does set `base_type` as
+//!   `EquivalenceHashMinimal`, but cycle detection remains the task of the
+//!   existing [`crate::inheritance`] module.
+//! - `@autoid(HASH)` — XML schema has no corresponding annotation.
 
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
@@ -60,24 +60,24 @@ use crate::xtypes_def::{
     TypedefType, UnionDiscriminator, UnionType,
 };
 
-/// Fehler beim XML→TypeObject-Mapping.
+/// Error during the XML→TypeObject mapping.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BridgeError {
-    /// Ein XSD-Konstrukt ist (in C4.5-b) noch nicht abbildbar — etwa
-    /// inline-Maps oder Self-Recursion.
+    /// An XSD construct is (in C4.5-b) not yet mappable — e.g.
+    /// inline maps or self-recursion.
     UnsupportedXsdConstruct(String),
-    /// Eine `TypeRef::Named`-Referenz konnte nicht aufgeloest werden,
-    /// weil sie nicht in der mitgelieferten [`TypeLibrary`] (oder via
-    /// `bridge_with_resolver`) auftaucht.
+    /// A `TypeRef::Named` reference could not be resolved,
+    /// because it does not appear in the supplied [`TypeLibrary`] (or via
+    /// `bridge_with_resolver`).
     UnresolvedReference(String),
-    /// Ein numerischer Wert (z.B. ein Union-Discriminator-Label) ist
-    /// nicht parsebar.
+    /// A numeric value (e.g. a union discriminator label) is
+    /// not parseable.
     InvalidLiteral(String),
-    /// Die EquivalenceHash-Berechnung ist fehlgeschlagen (Buffer-Overflow
-    /// im internen Encoder).
+    /// The EquivalenceHash computation failed (buffer overflow
+    /// in the internal encoder).
     HashFailed(String),
-    /// Modul-Eintraege sind kein Top-Level-Type — das XML hat ein
-    /// `<module>` an einer Stelle, an der nur ein Type stehen darf.
+    /// Module entries are not a top-level type — the XML has a
+    /// `<module>` at a position where only a type may appear.
     ModuleAtTopLevel(String),
 }
 
@@ -104,53 +104,53 @@ impl std::error::Error for BridgeError {}
 // Public API
 // ============================================================================
 
-/// Konvertiert ein einzelnes XmlType-[`TypeDef`] in einen [`TypeObject`]
-/// (Minimal-Variant).
+/// Converts a single XmlType-[`TypeDef`] into a [`TypeObject`]
+/// (minimal variant).
 ///
-/// Named-Member-Refs werden als Null-Hash-Placeholder
-/// (`TypeIdentifier::EquivalenceHashMinimal([0; 14])`) abgelegt — der
-/// Caller, der eine ganze Library auf einmal aufloesen will, sollte
-/// stattdessen [`bridge_library`] benutzen.
+/// Named member refs are stored as a null-hash placeholder
+/// (`TypeIdentifier::EquivalenceHashMinimal([0; 14])`) — a
+/// caller wanting to resolve a whole library at once should
+/// use [`bridge_library`] instead.
 ///
 /// # Errors
-/// `BridgeError::UnsupportedXsdConstruct` fuer Konstrukte, die in dieser
-/// Stufe nicht abgebildet werden; `BridgeError::ModuleAtTopLevel` wenn
-/// ein `<module>` direkt uebergeben wurde (Module sind keine Types).
+/// `BridgeError::UnsupportedXsdConstruct` for constructs not mapped in this
+/// stage; `BridgeError::ModuleAtTopLevel` if
+/// a `<module>` was passed directly (modules are not types).
 pub fn xml_type_to_typeobject(xml: &TypeDef) -> Result<TypeObject, BridgeError> {
     let mto = xml_type_to_minimal_typeobject(xml)?;
     Ok(TypeObject::Minimal(mto))
 }
 
-/// Wie [`xml_type_to_typeobject`], aber direkt als
-/// [`MinimalTypeObject`] (ohne Discriminator-Wrapper).
+/// Like [`xml_type_to_typeobject`], but directly as a
+/// [`MinimalTypeObject`] (without the discriminator wrapper).
 ///
 /// # Errors
-/// Siehe [`xml_type_to_typeobject`].
+/// See [`xml_type_to_typeobject`].
 pub fn xml_type_to_minimal_typeobject(xml: &TypeDef) -> Result<MinimalTypeObject, BridgeError> {
     let resolver = NullResolver;
     bridge_typedef(xml, &resolver)
 }
 
-/// Konvertiert eine ganze [`TypeLibrary`] in eine Map
-/// `Name → MinimalTypeObject`. Named-Refs zwischen Types innerhalb der
-/// Library werden in einem zweistufigen Pass aufgeloest:
+/// Converts a whole [`TypeLibrary`] into a map
+/// `Name → MinimalTypeObject`. Named refs between types within the
+/// library are resolved in a two-stage pass:
 ///
-/// 1. Pre-Pass: jeder Top-Level-Type wird mit Null-Hash-Placeholdern
-///    abgebildet, dann sein EquivalenceHashMinimal berechnet.
-/// 2. Final-Pass: alle TypeIdentifier-Refs auf Named-Types werden mit
-///    den Pre-Pass-Hashes ersetzt.
+/// 1. Pre-pass: each top-level type is mapped with null-hash placeholders,
+///    then its EquivalenceHashMinimal is computed.
+/// 2. Final pass: all TypeIdentifier refs to named types are replaced with
+///    the pre-pass hashes.
 ///
-/// `<module>`-Eintraege werden rekursiv abgeflacht. Der Map-Key fuer
-/// nested types ist der scoped Name (`Module::Inner`).
+/// `<module>` entries are flattened recursively. The map key for
+/// nested types is the scoped name (`Module::Inner`).
 ///
 /// # Errors
-/// `BridgeError` fuer alle Fehler aus den einzelnen Type-Mappings.
+/// `BridgeError` for all errors from the individual type mappings.
 pub fn bridge_library(
     lib: &TypeLibrary,
 ) -> Result<BTreeMap<String, MinimalTypeObject>, BridgeError> {
     let flat = flatten(&lib.types, "");
 
-    // Pre-Pass: alle Types mit Null-Hash bauen, dann EquivalenceHashMinimal.
+    // Pre-pass: build all types with a null hash, then EquivalenceHashMinimal.
     let pre_resolver = NullResolver;
     let mut pre: BTreeMap<String, MinimalTypeObject> = BTreeMap::new();
     let mut pre_hashes: BTreeMap<String, TypeIdentifier> = BTreeMap::new();
@@ -162,7 +162,7 @@ pub fn bridge_library(
         pre.insert(scoped.clone(), mto);
     }
 
-    // Final-Pass: alle Named-Refs ueber pre_hashes ersetzen.
+    // Final pass: replace all named refs via pre_hashes.
     let resolver = MapResolver { named: &pre_hashes };
     let mut out: BTreeMap<String, MinimalTypeObject> = BTreeMap::new();
     for (scoped, td) in &flat {
@@ -173,18 +173,18 @@ pub fn bridge_library(
 }
 
 // ============================================================================
-// Resolver — Strategie fuer Named-References
+// Resolver — strategy for named references
 // ============================================================================
 
-/// Strategie um `TypeRef::Named(...)` auf einen [`TypeIdentifier`]
-/// abzubilden. Implementierungen bestimmen, wie unaufloesbare Refs
-/// behandelt werden (Null-Hash vs. Fehler).
+/// Strategy for mapping `TypeRef::Named(...)` onto a [`TypeIdentifier`].
+/// Implementations decide how unresolvable refs
+/// are handled (null hash vs. error).
 trait NameResolver {
     fn resolve(&self, name: &str) -> TypeIdentifier;
 }
 
-/// Liefert immer `EquivalenceHashMinimal([0; 14])`. Wird im Pre-Pass
-/// und bei Single-Type-Bridge benutzt, wenn keine Library bekannt ist.
+/// Always returns `EquivalenceHashMinimal([0; 14])`. Used in the pre-pass
+/// and for the single-type bridge when no library is known.
 struct NullResolver;
 
 impl NameResolver for NullResolver {
@@ -193,7 +193,7 @@ impl NameResolver for NullResolver {
     }
 }
 
-/// Liefert die in `named` registrierten Hashes; Fallback Null-Hash.
+/// Returns the hashes registered in `named`; falls back to a null hash.
 struct MapResolver<'a> {
     named: &'a BTreeMap<String, TypeIdentifier>,
 }
@@ -215,9 +215,9 @@ impl NameResolver for MapResolver<'_> {
 
 /// zerodds-lint: recursion-depth 32
 ///
-/// XML-Module-Hierarchien sind selten tiefer als ~8 Ebenen
-/// (`org::omg::dds::core::policy`-Stil). Cap auf 32 deckt auch
-/// pathologisch verschachtelte Test-Fixtures.
+/// XML module hierarchies are rarely deeper than ~8 levels
+/// (`org::omg::dds::core::policy` style). A cap of 32 also covers
+/// pathologically nested test fixtures.
 fn flatten<'a>(types: &'a [TypeDef], prefix: &str) -> Vec<(String, &'a TypeDef)> {
     let mut out: Vec<(String, &TypeDef)> = Vec::new();
     for t in types {
@@ -323,8 +323,8 @@ fn map_extensibility(e: Extensibility) -> TypeExt {
 
 fn bridge_enum(e: &EnumType) -> MinimalEnumeratedType {
     let bit_bound: u16 = e.bit_bound.unwrap_or(32).min(64) as u16;
-    // Auto-Numbering: Spec §7.3.1.2.4.1 — wenn `value` fehlt, wird
-    // `prev + 1` verwendet, beginnend bei 0.
+    // Auto-numbering: Spec §7.3.1.2.4.1 — if `value` is missing,
+    // uses `prev + 1`, starting at 0.
     let mut prev: i32 = -1;
     let literal_seq: Vec<MinimalEnumeratedLiteral> = e
         .enumerators
@@ -393,9 +393,9 @@ fn bridge_union<R: NameResolver>(u: &UnionType, res: &R) -> Result<MinimalTypeOb
             detail: zerodds_types::type_object::common::NameHash::from_name(&m.name),
         });
     }
-    // XML-Union hat aktuell keinen Extensibility-Marker — Default
-    // Appendable (Spec §7.2.2.4) → IS_APPENDABLE. Reuse die Struct-
-    // Flag-Bitpositionen, die der Builder fuer Union-Flags spiegelt.
+    // The XML union currently has no extensibility marker — default
+    // appendable (Spec §7.2.2.4) → IS_APPENDABLE. Reuse the struct
+    // flag bit positions that the builder mirrors for union flags.
     let _ = &u.name;
     let union_flags_bits = StructTypeFlag::IS_APPENDABLE;
     Ok(MinimalTypeObject::Union(MinimalUnionType {
@@ -434,9 +434,9 @@ fn bridge_typedef_alias<R: NameResolver>(
     t: &TypedefType,
     res: &R,
 ) -> Result<MinimalTypeObject, BridgeError> {
-    // Wenn arrayDimensions gesetzt ist, ist das Typedef ein
-    // MinimalArrayType. Wenn sequenceMaxLength gesetzt ist, ist es ein
-    // MinimalSequenceType. Sonst ein MinimalAliasType.
+    // If arrayDimensions is set, the typedef is a
+    // MinimalArrayType. If sequenceMaxLength is set, it is a
+    // MinimalSequenceType. Otherwise a MinimalAliasType.
     if !t.array_dimensions.is_empty() {
         let element =
             type_ref_to_identifier_with_string_bound(&t.type_ref, t.string_max_length, res);
@@ -505,7 +505,7 @@ fn bridge_bitset(b: &BitsetType) -> Result<MinimalTypeObject, BridgeError> {
     use zerodds_types::type_identifier::kinds::{
         TK_INT8, TK_INT16, TK_INT32, TK_INT64, TK_UINT8, TK_UINT16, TK_UINT32, TK_UINT64,
     };
-    // Bit-Position laeuft kumulativ: jedes Feld setzt prev + bitcount.
+    // Bit position runs cumulatively: each field sets prev + bitcount.
     let mut next_pos: u16 = 0;
     let mut builder = TypeObjectBuilder::bitset(b.name.clone());
     for f in &b.bit_fields {
@@ -523,7 +523,7 @@ fn bridge_bitset(b: &BitsetType) -> Result<MinimalTypeObject, BridgeError> {
                 ));
             }
         };
-        // Defensive: dass die TK_-Konstanten existieren.
+        // Defensive: that the TK_ constants exist.
         debug_assert!(matches!(
             holder,
             TK_INT8 | TK_INT16 | TK_INT32 | TK_INT64 | TK_UINT8 | TK_UINT16 | TK_UINT32 | TK_UINT64
@@ -553,7 +553,7 @@ fn holder_kind_byte(p: XmlPrimitive) -> Option<u8> {
     })
 }
 
-/// Parst eine Bitmask wie `0x0F` zu der Anzahl gesetzter Bits.
+/// Parses a bitmask such as `0x0F` into the number of set bits.
 fn parse_bitset_mask_bits(mask: &str) -> Result<u8, BridgeError> {
     let trimmed = mask.trim();
     let (rest, radix) = if let Some(r) = trimmed
@@ -585,15 +585,15 @@ fn parse_bitset_mask_bits(mask: &str) -> Result<u8, BridgeError> {
 // TypeRef → TypeIdentifier
 // ============================================================================
 
-/// Wickelt einen Struct-Member in seinen finalen TypeIdentifier — inkl.
-/// `arrayDimensions`, `sequenceMaxLength` und `stringMaxLength`.
+/// Wraps a struct member into its final TypeIdentifier — incl.
+/// `arrayDimensions`, `sequenceMaxLength` and `stringMaxLength`.
 fn wrap_member_type<R: NameResolver>(
     m: &StructMember,
     res: &R,
 ) -> Result<TypeIdentifier, BridgeError> {
     let inner = type_ref_to_identifier_with_string_bound(&m.type_ref, m.string_max_length, res);
 
-    // arrayDimensions hat Vorrang vor sequenceMaxLength.
+    // arrayDimensions takes precedence over sequenceMaxLength.
     if !m.array_dimensions.is_empty() {
         return Ok(wrap_array(inner, &m.array_dimensions));
     }
@@ -1319,7 +1319,7 @@ mod tests {
         let map = bridge_library(&lib).unwrap();
         let line = map.get("Line").expect("Line registered");
         if let MinimalTypeObject::Struct(st) = line {
-            // Beide Member sollten auf denselben Hash zeigen.
+            // Both members should point to the same hash.
             assert_eq!(
                 st.member_seq[0].common.member_type_id,
                 st.member_seq[1].common.member_type_id
@@ -1331,7 +1331,7 @@ mod tests {
         } else {
             panic!("Line not a struct");
         }
-        // Beide Types in der Map.
+        // Both types in the map.
         assert!(map.contains_key("Point"));
     }
 
@@ -1371,7 +1371,7 @@ mod tests {
         let map = bridge_library(&lib).unwrap();
         let s = map.get("S").unwrap();
         if let MinimalTypeObject::Struct(st) = s {
-            // Null-Hash als Fallback.
+            // Null hash as fallback.
             assert_eq!(
                 st.member_seq[0].common.member_type_id,
                 TypeIdentifier::EquivalenceHashMinimal(zerodds_types::EquivalenceHash([0; 14]))
@@ -1388,16 +1388,16 @@ mod tests {
         let s = make_struct();
         let to = xml_type_to_typeobject(&TypeDef::Struct(s)).unwrap();
         let h = zerodds_types::compute_hash(&to).expect("hash");
-        // Deterministisch: zweimal dasselbe Ergebnis.
+        // Deterministic: the same result twice.
         let h2 = zerodds_types::compute_hash(&to).unwrap();
         assert_eq!(h, h2);
     }
 
     #[test]
     fn xml_struct_matches_idl_struct_hash() {
-        // Cross-Check: ein XML-Struct und eine direkt im Builder
-        // formulierte aequivalente Definition sollten denselben Hash
-        // haben (sofern Member-IDs/Flags/Types identisch sind).
+        // Cross-check: an XML struct and an equivalent definition built
+        // directly in the builder should have the same hash
+        // (provided member IDs/flags/types are identical).
         let xml_struct = StructType {
             name: "Sensor".into(),
             extensibility: Some(Extensibility::Appendable),
@@ -1435,11 +1435,11 @@ mod tests {
         let builder_hash = compute_minimal_hash(&builder_mto).unwrap();
         assert_eq!(
             xml_hash, builder_hash,
-            "XML-bridge und Builder muessen byte-identische TypeObjects produzieren"
+            "the XML bridge and builder must produce byte-identical TypeObjects"
         );
     }
 
-    // ---- Display-Impl der BridgeError ------------------------------------
+    // ---- Display impl of BridgeError -------------------------------------
 
     #[test]
     fn bridge_error_display() {

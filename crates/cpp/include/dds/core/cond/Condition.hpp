@@ -34,7 +34,7 @@ public:
         return *this;
     }
     virtual ~Condition() = default;
-    /// Trigger-Wert (Spec §7.5.10.1.1).
+    /// Trigger value (Spec §7.5.10.1.1).
     bool trigger_value() const {
         return handle_ != nullptr && zerodds_condition_get_trigger_value(handle_);
     }

@@ -1,9 +1,9 @@
 #![no_main]
-//! Fuzz-Target: AMQP-Frame-Header-Dekoder.
+//! Fuzz target: AMQP frame-header decoder.
 //!
-//! Spec OASIS amqp-1.0-transport §2.3 — 8-Byte-Header + variable
-//! Extended-Header. Coverage-guided Panic-/UB-Jagd auf alle
-//! Length-/Offset-Validierungs-Pfade.
+//! Spec OASIS amqp-1.0-transport §2.3 — 8-byte header + variable
+//! extended header. Coverage-guided panic/UB hunt over all
+//! length/offset validation paths.
 
 use libfuzzer_sys::fuzz_target;
 

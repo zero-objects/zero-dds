@@ -1,53 +1,51 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Same-Host-Tracker fuer Welle 4 der Zero-Copy-Roadmap
-//! (Spec `docs/specs/zerodds-zero-copy-1.0.md` §6 Welle 3).
+//! Same-host tracker for Wave 4 of the zero-copy roadmap
+//! (Spec `docs/specs/zerodds-zero-copy-1.0.md` §6 Wave 3).
 //!
-//! # Zweck
+//! # Purpose
 //!
-//! Discovery erkennt via [`GuidPrefix::is_same_host`] (Welle 4a),
-//! ob ein Peer auf der gleichen Maschine laeuft. Bei Match
-//! registriert das DCPS-Runtime ein `(WriterGuid, ReaderGuid)`-Paar
-//! in diesem Tracker. Der Tracker fuehrt eine deterministische
-//! SHM-Segment-Identifikation, damit beide Seiten denselben
-//! Transport-Pfad ohne extra Discovery-Roundtrip ableiten koennen.
+//! Discovery detects via [`GuidPrefix::is_same_host`] (Wave 4a) whether
+//! a peer runs on the same machine. On a match, the DCPS runtime
+//! registers a `(WriterGuid, ReaderGuid)` pair in this tracker. The
+//! tracker keeps a deterministic SHM-segment identification so that both
+//! sides can derive the same transport path without an extra discovery
+//! round-trip.
 //!
-//! # Pfad-Convention
+//! # Path convention
 //!
-//! Ein SHM-Segment fuer ein Writer-Reader-Paar wird identifiziert
-//! ueber einen deterministischen 16-Byte-Hash der beiden GUIDs
-//! (siehe [`shm_segment_id_for_pair`]). Beide Seiten kommen auf
-//! dieselbe ID, weil der Hash symmetrisch bzw. ordered ist.
+//! An SHM segment for a writer-reader pair is identified by a
+//! deterministic 16-byte hash of the two GUIDs (see
+//! [`shm_segment_id_for_pair`]). Both sides arrive at the same id because
+//! the hash is symmetric / ordered.
 //!
-//! Das `base_dir`-Default ist `${TMPDIR}/zerodds-shm` (Linux) bzw.
-//! `${TEMP}\zerodds-shm` (Windows). Der `host_id_hex`-Sub-Ordner
-//! verhindert Cross-Host-Kollisionen bei NFS-Mounts; sollte
-//! `gethostname` fehlschlagen (Fallback in
-//! `participant::host_id_bytes`), bleibt der Pfad pro Prozess
-//! eindeutig.
+//! The `base_dir` default is `${TMPDIR}/zerodds-shm` (Linux) or
+//! `${TEMP}\zerodds-shm` (Windows). The `host_id_hex` sub-folder prevents
+//! cross-host collisions on NFS mounts; should `gethostname` fail
+//! (fallback in `participant::host_id_bytes`), the path remains unique
+//! per process.
 //!
-//! # Tracker-State
+//! # Tracker state
 //!
-//! Pro Paar gibt es einen [`SameHostState`]:
+//! Each pair has a [`SameHostState`]:
 //!
-//! - `Pending` — Match erkannt, SHM-Setup noch nicht erfolgt
-//!   (z.B. weil die Welle-4b.2-Hook erst beim ersten Send das
-//!   Segment auf-mappt).
-//! - `Bound { transport, role }` — SHM-Transport ist initialisiert,
-//!   `role` sagt welche Seite Owner (Writer-Producer) oder Consumer
-//!   (Reader-Receiver) ist (siehe [`Role`]).
-//! - `Failed { reason }` — Setup ist fehlgeschlagen, der Sender soll
-//!   auf den klassischen UDP-Pfad zurueckfallen.
+//! - `Pending` — match detected, SHM setup not yet performed (e.g.
+//!   because the Wave-4b.2 hook only maps the segment on the first send).
+//! - `Bound { transport, role }` — SHM transport is initialized; `role`
+//!   says which side is Owner (writer producer) or Consumer (reader
+//!   receiver) (see [`Role`]).
+//! - `Failed { reason }` — setup failed; the sender should fall back to
+//!   the classic UDP path.
 //!
-//! Die konkrete Transport-Instanziierung lebt **nicht** hier (das ist
-//! Sache der Welle 4b.2-Hook im `runtime`-Modul), damit dieses Modul
-//! `no_std + alloc`-portierbar bleibt und nicht direkt von
-//! `transport-shm` abhaengt.
+//! The concrete transport instantiation does **not** live here (that is
+//! the job of the Wave-4b.2 hook in the `runtime` module), so this module
+//! stays `no_std + alloc` portable and does not depend directly on
+//! `transport-shm`.
 //!
-//! # Spec-Anker
+//! # Spec anchors
 //!
-//! - `docs/specs/zerodds-zero-copy-1.0.md` §6 Welle 3 (Iceoryx-Backend-
-//!   Hot-Path-Wiring; ZeroDDS reuses fuer SHM-Bytes-Pfad).
+//! - `docs/specs/zerodds-zero-copy-1.0.md` §6 Wave 3 (Iceoryx backend
+//!   hot-path wiring; ZeroDDS reuses it for the SHM-bytes path).
 //! - RTPS 2.5 §9.4 — `LOCATOR_KIND_SHM`.
 
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -60,46 +58,45 @@ use core::fmt;
 
 use zerodds_rtps::wire_types::Guid;
 
-/// Default-Basis-Verzeichnis fuer SHM-Segmente. Wird nur in `std`-
-/// Builds genutzt; im `no_std`-Profil ist der Tracker State-Only und
-/// kein Pfad-Lookup noetig.
+/// Default base directory for SHM segments. Used only in `std` builds;
+/// in the `no_std` profile the tracker is state-only and no path lookup
+/// is needed.
 #[cfg(feature = "std")]
 pub const DEFAULT_BASE_DIR_NAME: &str = "zerodds-shm";
 
-/// Rolle des lokalen Endpunkts im SHM-Paar.
+/// Role of the local endpoint in the SHM pair.
 ///
-/// Konvention folgt `zerodds-transport-shm` (Owner = Producer):
-/// im DCPS-Modell schreibt der **Writer** Samples in den
-/// Ringbuffer → Writer ist der `Owner`. Der **Reader** liest sie
-/// raus → Reader ist der `Consumer`.
+/// The convention follows `zerodds-transport-shm` (Owner = producer):
+/// in the DCPS model the **writer** writes samples into the ring buffer
+/// → the writer is the `Owner`. The **reader** reads them out → the
+/// reader is the `Consumer`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
-    /// Writer-Seite — erzeugt das SHM-Segment via `open_owner`
-    /// und schreibt Sample-Datagrams hinein.
+    /// Writer side — creates the SHM segment via `open_owner` and writes
+    /// sample datagrams into it.
     Owner,
-    /// Reader-Seite — attached via `open_consumer` und liest
-    /// Sample-Datagrams aus dem Segment.
+    /// Reader side — attaches via `open_consumer` and reads sample
+    /// datagrams out of the segment.
     Consumer,
 }
 
-/// Zustand eines Same-Host-Paares im Tracker.
+/// State of a same-host pair in the tracker.
 #[derive(Clone)]
 pub enum SameHostState {
-    /// Match erkannt, SHM-Transport noch nicht aufgesetzt.
+    /// Match detected, SHM transport not yet set up.
     Pending,
-    /// SHM-Transport aktiv. `transport` ist ein opaker `Arc<dyn Any>`,
-    /// damit dieses Modul kein direkter `transport-shm`-Abhaengiger
-    /// ist. Der `runtime`-Hook downcastet zur konkreten Transport-
-    /// Instanz.
+    /// SHM transport active. `transport` is an opaque `Arc<dyn Any>` so
+    /// that this module does not depend directly on `transport-shm`. The
+    /// `runtime` hook downcasts to the concrete transport instance.
     Bound {
-        /// Opaker Transport-Pointer; `Arc<dyn core::any::Any + Send + Sync>`.
+        /// Opaque transport pointer; `Arc<dyn core::any::Any + Send + Sync>`.
         transport: Arc<dyn core::any::Any + Send + Sync>,
-        /// Rolle dieses Endpunkts.
+        /// Role of this endpoint.
         role: Role,
     },
-    /// SHM-Setup ist fehlgeschlagen; UDP-Fallback aktiv.
+    /// SHM setup failed; UDP fallback active.
     Failed {
-        /// Diagnose-Text fuer Logs.
+        /// Diagnostic text for logs.
         reason: &'static str,
     },
 }
@@ -114,15 +111,15 @@ impl fmt::Debug for SameHostState {
     }
 }
 
-/// Deterministische 16-Byte-Segment-Identifikation fuer ein
-/// Writer-Reader-Paar.
+/// Deterministic 16-byte segment identification for a writer-reader
+/// pair.
 ///
-/// Beide Seiten errechnen denselben Wert: der Hash mischt die
-/// vollstaendigen Guids in fester Reihenfolge (Writer zuerst, dann
-/// Reader). FNV1a-128 ist deterministisch und ohne externe Deps.
+/// Both sides compute the same value: the hash mixes the complete GUIDs
+/// in a fixed order (writer first, then reader). FNV1a-128 is
+/// deterministic and has no external deps.
 ///
-/// Der Wert wird typischerweise in einen Hex-String fuer den
-/// Dateinamen ueberfuehrt (siehe [`shm_segment_filename`]).
+/// The value is typically converted into a hex string for the file name
+/// (see [`shm_segment_filename`]).
 #[must_use]
 pub fn shm_segment_id_for_pair(writer: Guid, reader: Guid) -> [u8; 16] {
     let mut buf = [0u8; 32];
@@ -131,13 +128,13 @@ pub fn shm_segment_id_for_pair(writer: Guid, reader: Guid) -> [u8; 16] {
     fnv1a_128(&buf)
 }
 
-/// Hex-Repraesentation eines [`shm_segment_id_for_pair`]-Ergebnisses.
-/// Liefert 32 Lowercase-Hex-Zeichen.
+/// Hex representation of a [`shm_segment_id_for_pair`] result. Returns
+/// 32 lowercase hex characters.
 #[must_use]
 pub fn shm_segment_filename(id: [u8; 16]) -> alloc::string::String {
     let mut s = alloc::string::String::with_capacity(32);
     for b in id {
-        // SAFETY: kein unsafe; format!-Vermeidung haelt no_std-kompatibel.
+        // SAFETY: no unsafe; avoiding format! keeps this no_std compatible.
         const HEX: &[u8; 16] = b"0123456789abcdef";
         s.push(HEX[(b >> 4) as usize] as char);
         s.push(HEX[(b & 0x0F) as usize] as char);
@@ -145,7 +142,7 @@ pub fn shm_segment_filename(id: [u8; 16]) -> alloc::string::String {
     s
 }
 
-/// FNV1a-128 ueber `data` (deterministisch, kein externer Dep).
+/// FNV1a-128 over `data` (deterministic, no external dep).
 fn fnv1a_128(data: &[u8]) -> [u8; 16] {
     let prime: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013B;
     let offset: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d;
@@ -161,12 +158,12 @@ fn fnv1a_128(data: &[u8]) -> [u8; 16] {
 // Tracker
 // ============================================================================
 
-/// Tracker fuer alle `(WriterGuid, ReaderGuid)`-Same-Host-Paare des
-/// lokalen Participants. Threadsafe via Inner-Mutex.
+/// Tracker for all `(WriterGuid, ReaderGuid)` same-host pairs of the
+/// local participant. Thread-safe via an inner mutex.
 ///
-/// API ist bewusst minimal: `register_pending`, `mark_bound`,
-/// `mark_failed`, `lookup`. Komplexere Operationen (Iteration,
-/// Cleanup-on-Drop) liegen beim Caller.
+/// The API is deliberately minimal: `register_pending`, `mark_bound`,
+/// `mark_failed`, `lookup`. More complex operations (iteration,
+/// cleanup-on-drop) are left to the caller.
 #[cfg(feature = "std")]
 pub struct SameHostTracker {
     pairs: std::sync::RwLock<alloc::collections::BTreeMap<(Guid, Guid), SameHostState>>,
@@ -174,7 +171,7 @@ pub struct SameHostTracker {
 
 #[cfg(feature = "std")]
 impl SameHostTracker {
-    /// Neuer leerer Tracker.
+    /// New empty tracker.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -182,17 +179,17 @@ impl SameHostTracker {
         }
     }
 
-    /// Registriert ein Paar im `Pending`-State. Idempotent — ein
-    /// existierender Eintrag wird **nicht** ueberschrieben (damit
-    /// `Bound`-State nicht versehentlich zurueckgesetzt wird).
+    /// Registers a pair in the `Pending` state. Idempotent — an existing
+    /// entry is **not** overwritten (so that a `Bound` state is not
+    /// accidentally reset).
     pub fn register_pending(&self, writer: Guid, reader: Guid) {
         if let Ok(mut g) = self.pairs.write() {
             g.entry((writer, reader)).or_insert(SameHostState::Pending);
         }
     }
 
-    /// Markiert ein Paar als `Bound` mit Transport-Handle und Rolle.
-    /// Ueberschreibt jeden vorherigen State.
+    /// Marks a pair as `Bound` with a transport handle and role.
+    /// Overwrites any previous state.
     pub fn mark_bound(
         &self,
         writer: Guid,
@@ -205,40 +202,40 @@ impl SameHostTracker {
         }
     }
 
-    /// Markiert ein Paar als `Failed`. Caller (Hot-Path) soll
-    /// dann UDP-Fallback waehlen.
+    /// Marks a pair as `Failed`. The caller (hot path) should then choose
+    /// the UDP fallback.
     pub fn mark_failed(&self, writer: Guid, reader: Guid, reason: &'static str) {
         if let Ok(mut g) = self.pairs.write() {
             g.insert((writer, reader), SameHostState::Failed { reason });
         }
     }
 
-    /// Liefert eine Kopie des State fuer ein Paar.
+    /// Returns a copy of the state for a pair.
     #[must_use]
     pub fn lookup(&self, writer: Guid, reader: Guid) -> Option<SameHostState> {
         self.pairs.read().ok()?.get(&(writer, reader)).cloned()
     }
 
-    /// Entfernt einen Eintrag (z.B. wenn der Match aufgeloest wird).
+    /// Removes an entry (e.g. when the match is dissolved).
     pub fn remove(&self, writer: Guid, reader: Guid) {
         if let Ok(mut g) = self.pairs.write() {
             g.remove(&(writer, reader));
         }
     }
 
-    /// Anzahl der aktuell registrierten Paare.
+    /// Number of currently registered pairs.
     #[must_use]
     pub fn len(&self) -> usize {
         self.pairs.read().map(|g| g.len()).unwrap_or(0)
     }
 
-    /// `true` wenn der Tracker leer ist.
+    /// `true` if the tracker is empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Snapshot aller Paare. Hauptsaechlich fuer Debug/Diagnose.
+    /// Snapshot of all pairs. Mainly for debug/diagnostics.
     #[must_use]
     pub fn snapshot(&self) -> Vec<(Guid, Guid, SameHostState)> {
         self.pairs
@@ -303,8 +300,8 @@ mod tests {
 
     #[test]
     fn segment_id_differs_for_swapped_pair() {
-        // (writer, reader) muss sich von (reader, writer) unterscheiden;
-        // sonst Owner/Consumer-Rollen unklar.
+        // (writer, reader) must differ from (reader, writer); otherwise
+        // the Owner/Consumer roles are ambiguous.
         let w = writer_guid(0xAA);
         let r = reader_guid(0xBB);
         let a = shm_segment_id_for_pair(w, r);
@@ -362,7 +359,7 @@ mod tests {
         let r = reader_guid(2);
         let dummy: Arc<dyn core::any::Any + Send + Sync> = Arc::new(42u32);
         t.mark_bound(w, r, dummy, Role::Consumer);
-        // Re-register sollte den Bound-State NICHT auf Pending zuruecksetzen.
+        // Re-register must NOT reset the Bound state back to Pending.
         t.register_pending(w, r);
         assert!(matches!(t.lookup(w, r), Some(SameHostState::Bound { .. })));
     }

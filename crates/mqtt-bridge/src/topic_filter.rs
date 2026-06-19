@@ -3,21 +3,21 @@
 
 //! MQTT Topic Filter Matching — Spec §4.7.
 //!
-//! Spec §4.7.1: Topics werden durch `/`-getrennte Levels strukturiert.
+//! Spec §4.7.1: topics are structured by `/`-separated levels.
 //! Wildcards:
-//! * `+` — ein Level (single-level wildcard).
-//! * `#` — Multi-Level (nur am Ende erlaubt).
-//! * `$`-Praefix — System-Topics, durch `#`/`+` an Wildcard-Position
-//!   nicht matchbar (Spec §4.7.2).
+//! * `+` — one level (single-level wildcard).
+//! * `#` — multi-level (only allowed at the end).
+//! * `$` prefix — system topics, not matchable by `#`/`+` at the
+//!   wildcard position (Spec §4.7.2).
 
-/// Validation-Fehler fuer Topic-Filter.
+/// Validation error for topic filters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TopicFilterError {
-    /// `#` ist nicht am Ende.
+    /// `#` is not at the end.
     HashNotAtEnd,
-    /// `+`/`#` ist nicht alleine in seinem Level.
+    /// `+`/`#` is not alone in its level.
     WildcardMixedWithChars,
-    /// Filter ist leer.
+    /// Filter is empty.
     Empty,
 }
 
@@ -36,10 +36,10 @@ impl core::fmt::Display for TopicFilterError {
 #[cfg(feature = "std")]
 impl std::error::Error for TopicFilterError {}
 
-/// Validiert einen Topic-Filter laut Spec §4.7.1.
+/// Validates a topic filter per Spec §4.7.1.
 ///
 /// # Errors
-/// Siehe [`TopicFilterError`].
+/// See [`TopicFilterError`].
 pub fn validate_filter(filter: &str) -> Result<(), TopicFilterError> {
     if filter.is_empty() {
         return Err(TopicFilterError::Empty);
@@ -60,12 +60,12 @@ pub fn validate_filter(filter: &str) -> Result<(), TopicFilterError> {
     Ok(())
 }
 
-/// Validiert einen Topic-Namen (Publish-Side, Spec §4.7.1.2).
-/// Topic-Names haben KEINE Wildcards.
+/// Validates a topic name (publish side, Spec §4.7.1.2).
+/// Topic names have NO wildcards.
 ///
 /// # Errors
-/// `WildcardMixedWithChars` wenn `+` oder `#` enthalten ist;
-/// `Empty` wenn leer.
+/// `WildcardMixedWithChars` if `+` or `#` is contained;
+/// `Empty` if empty.
 pub fn validate_topic_name(topic: &str) -> Result<(), TopicFilterError> {
     if topic.is_empty() {
         return Err(TopicFilterError::Empty);
@@ -76,11 +76,11 @@ pub fn validate_topic_name(topic: &str) -> Result<(), TopicFilterError> {
     Ok(())
 }
 
-/// Spec §4.7 — prueft ob `topic` (Topic-Name ohne Wildcards) gegen
-/// `filter` matcht.
+/// Spec §4.7 — checks whether `topic` (a topic name without wildcards)
+/// matches `filter`.
 ///
-/// `$`-Praefix bei `topic`: Wildcards `+`/`#` matchen nicht den
-/// ersten Level, wenn dieser `$`-Praefix hat (Spec §4.7.2).
+/// `$` prefix on `topic`: wildcards `+`/`#` do not match the
+/// first level if it has a `$` prefix (Spec §4.7.2).
 #[must_use]
 pub fn matches(filter: &str, topic: &str) -> bool {
     let f_levels: alloc::vec::Vec<&str> = filter.split('/').collect();
@@ -93,8 +93,8 @@ pub fn matches(filter: &str, topic: &str) -> bool {
         let fl = f_levels[fi];
         if fl == "#" {
             // Multi-level — matches everything from here on.
-            // Spec §4.7.2: `$`-Topics matchen nicht ueber Wildcard,
-            // wenn das Wildcard den `$`-Level greift.
+            // Spec §4.7.2: `$` topics do not match across a wildcard
+            // when the wildcard reaches the `$` level.
             if dollar_topic && fi == 0 {
                 return false;
             }

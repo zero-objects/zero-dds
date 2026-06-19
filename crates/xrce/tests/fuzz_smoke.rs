@@ -1,10 +1,10 @@
-//! Stable-Rust Fuzz-Smoke-Tests fuer DDS-XRCE-Wire-Decoder.
+//! Stable-Rust fuzz smoke tests for the DDS-XRCE wire decoder.
 //!
-//! Pseudo-random Byte-Streams in `Message::decode` (Top-Level
-//! XRCE-Frame) plus `SubmessageHeader::from_bytes` und SLIP-Frame-
-//! Decoder. Kein Decoder darf panicen.
+//! Pseudo-random byte streams into `Message::decode` (top-level
+//! XRCE frame) plus `SubmessageHeader::from_bytes` and the SLIP frame
+//! decoder. No decoder may panic.
 //!
-//! Spec: DDS-XRCE 1.0 §7 (Wire-Protocol).
+//! Spec: DDS-XRCE 1.0 §7 (wire protocol).
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 

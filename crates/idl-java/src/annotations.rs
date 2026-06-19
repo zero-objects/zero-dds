@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Annotation-Bridge: IDL-Builtins → Java-Source-Annotations (C5.4-b).
+//! Annotation bridge: IDL builtins → Java source annotations (C5.4-b).
 //!
-//! Wandelt das `Lowered`-Datenmodell aus
-//! [`zerodds_idl::semantics::annotations`] in Java-Annotation-Quelltext
-//! um. Das ist die einzige Stelle, an der die FQN der Runtime-
-//! Annotations (`org.zerodds.types.*`) gebunden ist; aendert sich der
-//! Runtime-Pfad, wird hier eine Konstante geaendert und alle
-//! Generierungs-Stellen profitieren davon.
+//! Converts the `Lowered` data model from
+//! [`zerodds_idl::semantics::annotations`] into Java annotation source text.
+//! This is the single place where the FQN of the runtime
+//! annotations (`org.zerodds.types.*`) is bound; if the runtime path
+//! changes, one constant is updated here and all generation sites benefit.
 //!
-//! ## Mapping (vgl. `runtime/README.md`)
+//! ## Mapping (see `runtime/README.md`)
 //!
 //! | IDL                              | Java                                              | Target |
 //! |----------------------------------|---------------------------------------------------|--------|
@@ -22,37 +21,37 @@
 //! | `@extensibility(FINAL|APPENDABLE|MUTABLE)` | `@org.zerodds.types.Extensibility(Kind.FINAL)` | TYPE   |
 //! | `@final`/`@appendable`/`@mutable` | shorthand → `@Extensibility(Kind.X)`            | TYPE   |
 //!
-//! Andere Builtins (`@autoid`, `@unit`, `@hashid`, `@min`/`@max`,
+//! Other builtins (`@autoid`, `@unit`, `@hashid`, `@min`/`@max`,
 //! `@range`, `@default`, `@topic`, `@verbatim`, `@bit_bound`,
-//! `@position`, `@value`, `@default_literal`) werden in dieser
-//! Foundation **nicht** auf Java-Annotations gespiegelt — entweder
-//! weil sie semantisch im Code-Layout aufgehen (z.B. `@value` auf
-//! Enum-Members), weil es bislang keinen Java-Konsumenten gibt
-//! (`@unit`, `@range`), oder weil sie als Konstrukt-Marker im IDL
-//! bleiben (`@bit_bound`, `@position`).
+//! `@position`, `@value`, `@default_literal`) are **not** mirrored as
+//! Java annotations in this foundation — either because they are absorbed
+//! into the code layout semantically (e.g. `@value` on enum members),
+//! because there is currently no Java consumer (`@unit`, `@range`),
+//! or because they remain as construct markers in IDL
+//! (`@bit_bound`, `@position`).
 
 use zerodds_idl::ast::Annotation;
 use zerodds_idl::semantics::annotations::{
     BuiltinAnnotation, ExtensibilityKind, Lowered, lower_annotations,
 };
 
-/// Java-FQN-Praefix der Runtime-Annotations.
+/// Java FQN prefix for the runtime annotations.
 pub(crate) const RUNTIME_PREFIX: &str = "org.zerodds.types";
 
-/// Lowered-View ueber eine Annotation-Liste; bei Lower-Fehlern fallen
-/// wir defensiv auf `Lowered::default()` zurueck und reichen die rohen
-/// Annotations als `custom` durch — der Codegen soll *robust* gegen
-/// fehlerhafte IDL-Annotations sein, der Parser hat sie zuvor schon
-/// strukturell akzeptiert.
+/// Lowered view over an annotation list; on lowering errors we fall back
+/// defensively to `Lowered::default()` and pass through the raw
+/// annotations as `custom` — the code generator should be *robust* against
+/// malformed IDL annotations; the parser has already accepted them
+/// structurally.
 pub(crate) fn lower_or_empty(anns: &[Annotation]) -> Lowered {
     lower_annotations(anns).unwrap_or_default()
 }
 
-/// Wandelt eine Member-Annotation-Liste in eine Liste von
-/// Java-Annotation-Zeilen um (jede Zeile inkl. fuehrender `@`).
+/// Converts a member annotation list into a list of Java annotation
+/// lines (each line including the leading `@`).
 ///
-/// Reihenfolge ist deterministisch: `@Key` → `@Id` → `@Optional` →
-/// `@MustUnderstand` → `@External` (alphabetisch nach Java-Token).
+/// Order is deterministic: `@Key` → `@Id` → `@Optional` →
+/// `@MustUnderstand` → `@External` (alphabetical by Java token).
 pub(crate) fn member_annotation_lines(anns: &[Annotation]) -> Vec<String> {
     let lowered = lower_or_empty(anns);
     let mut out: Vec<String> = Vec::new();
@@ -89,17 +88,17 @@ pub(crate) fn member_annotation_lines(anns: &[Annotation]) -> Vec<String> {
         out.push(format!("@{RUNTIME_PREFIX}.External"));
     }
     if has_shared {
-        // §8.1.5 (idl4-cpp / dds-psm-cxx): @shared -> Pointer-Semantik.
-        // In Java sind alle Class-Felder ohnehin Reference-Types; wir
-        // emittieren das `@Shared`-Marker-Annotation analog @External
-        // (Sharing-Hint fuer Codegen-Konsumenten).
+        // §8.1.5 (idl4-cpp / dds-psm-cxx): @shared -> pointer semantics.
+        // In Java all class fields are reference types anyway; we emit
+        // the `@Shared` marker annotation analogous to @External
+        // (sharing hint for code-gen consumers).
         out.push(format!("@{RUNTIME_PREFIX}.Shared"));
     }
     out
 }
 
-/// Wandelt eine Type-Annotation-Liste in eine Liste von Annotationen
-/// am Class/Enum-Header (TYPE-Target).
+/// Converts a type annotation list into a list of annotations
+/// on the class/enum header (TYPE target).
 pub(crate) fn type_annotation_lines(anns: &[Annotation]) -> Vec<String> {
     let lowered = lower_or_empty(anns);
     let mut out: Vec<String> = Vec::new();
@@ -119,7 +118,7 @@ pub(crate) fn type_annotation_lines(anns: &[Annotation]) -> Vec<String> {
     out
 }
 
-/// `true` wenn `@nested` (ohne Argument oder mit `TRUE`) vorliegt.
+/// `true` if `@nested` (without argument or with `TRUE`) is present.
 pub(crate) fn has_nested(lowered: &Lowered) -> bool {
     lowered
         .builtins
@@ -127,8 +126,8 @@ pub(crate) fn has_nested(lowered: &Lowered) -> bool {
         .any(|b| matches!(b, BuiltinAnnotation::Nested))
 }
 
-/// Liefert den expliziten `@value`-Ausdruck eines Enumerators als
-/// String, falls vorhanden. Erwartet eine Integer-Literal-Form.
+/// Returns the explicit `@value` expression of an enumerator as a
+/// string, if present. Expects an integer literal form.
 pub(crate) fn enum_value_override(anns: &[Annotation]) -> Option<String> {
     let lowered = lower_or_empty(anns);
     lowered.builtins.iter().find_map(|b| match b {

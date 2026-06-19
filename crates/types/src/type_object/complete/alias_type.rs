@@ -14,7 +14,7 @@ use crate::type_object::flags::{AliasMemberFlag, AliasTypeFlag};
 /// CompleteAliasHeader = detail.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompleteAliasHeader {
-    /// Name + Annotationen.
+    /// Name + annotations.
     pub detail: CompleteTypeDetail,
 }
 
@@ -25,7 +25,7 @@ pub struct CompleteAliasBody {
     pub related_flags: AliasMemberFlag,
     /// Zieltyp.
     pub related_type: TypeIdentifier,
-    /// Builtin-Annotations auf dem Alias-Body (selten).
+    /// Builtin annotations on the alias body (rare).
     pub ann_builtin: AppliedBuiltinMemberAnnotations,
     /// Custom.
     pub ann_custom: OptionalAppliedAnnotationSeq,

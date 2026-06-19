@@ -5,11 +5,11 @@
 
 use alloc::vec::Vec;
 
-/// Property-Identifier (Spec §2.2.2.2 Table 2-4) — Subset der wichtigsten
-/// MQTT-5.0-Properties.
+/// Property identifier (Spec §2.2.2.2 Table 2-4) — subset of the most
+/// important MQTT 5.0 properties.
 ///
-/// Die vollstaendige Tabelle hat ~30 IDs; wir geben benannte Konstanten
-/// fuer die haeufigsten und exposen den `u32`-Wert fuer den Rest.
+/// The complete table has ~30 IDs; we provide named constants
+/// for the most common ones and expose the `u32` value for the rest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PropertyId {
     /// `1` Payload Format Indicator (PUBLISH).
@@ -42,13 +42,13 @@ pub enum PropertyId {
     TopicAlias,
     /// `38` User Property (any packet).
     UserProperty,
-    /// Andere Property-IDs (Spec §2.2.2.2 Table 2-4 enthaelt weitere).
+    /// Other property IDs (Spec §2.2.2.2 Table 2-4 contains more).
     Other(u32),
 }
 
 impl PropertyId {
-    /// Wire-Identifier (VBI-encoded; hier liefern wir den u32-Wert
-    /// VOR der VBI-Encoding).
+    /// Wire identifier (VBI-encoded; here we return the u32 value
+    /// BEFORE the VBI encoding).
     #[must_use]
     pub const fn to_value(self) -> u32 {
         match self {
@@ -71,7 +71,7 @@ impl PropertyId {
         }
     }
 
-    /// Konvertiert vom u32-Wert.
+    /// Converts from the u32 value.
     #[must_use]
     pub const fn from_value(v: u32) -> Self {
         match v {
@@ -94,9 +94,9 @@ impl PropertyId {
         }
     }
 
-    /// Spec §2.2.2.2 Table 2-4 — Wert-Type pro Property-Id.
-    /// Caller decodiert den `Property::value`-Slice gemaess dieser
-    /// Klassifikation.
+    /// Spec §2.2.2.2 Table 2-4 — value type per property ID.
+    /// The caller decodes the `Property::value` slice according to this
+    /// classification.
     #[must_use]
     pub const fn value_kind(self) -> PropertyValueKind {
         match self {
@@ -120,7 +120,7 @@ impl PropertyId {
     }
 }
 
-/// Spec §2.1.3 / §2.2.2.2 — Property-Wert-Type-Klassifikation.
+/// Spec §2.1.3 / §2.2.2.2 — property value-type classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PropertyValueKind {
     /// 1 Byte (`uint8`).
@@ -143,7 +143,7 @@ impl PropertyValueKind {
     /// Spec §1.5.4 — `uint16` decode (BE).
     ///
     /// # Errors
-    /// `()` wenn weniger als 2 Bytes.
+    /// `()` if fewer than 2 bytes.
     #[allow(clippy::result_unit_err)]
     pub fn decode_two_byte_int(bytes: &[u8]) -> Result<u16, ()> {
         if bytes.len() < 2 {
@@ -155,7 +155,7 @@ impl PropertyValueKind {
     /// Spec §1.5.5 — `uint32` decode (BE).
     ///
     /// # Errors
-    /// `()` wenn weniger als 4 Bytes.
+    /// `()` if fewer than 4 bytes.
     #[allow(clippy::result_unit_err)]
     pub fn decode_four_byte_int(bytes: &[u8]) -> Result<u32, ()> {
         if bytes.len() < 4 {
@@ -164,10 +164,10 @@ impl PropertyValueKind {
         Ok(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
 
-    /// Spec §1.5.6 — UTF-8-String decode (2-Byte-Length-Prefix).
+    /// Spec §1.5.6 — UTF-8 string decode (2-byte length prefix).
     ///
     /// # Errors
-    /// `()` wenn Truncation oder UTF-8-invalid.
+    /// `()` on truncation or invalid UTF-8.
     #[allow(clippy::result_unit_err)]
     pub fn decode_utf8_string(bytes: &[u8]) -> Result<&str, ()> {
         if bytes.len() < 2 {
@@ -180,10 +180,10 @@ impl PropertyValueKind {
         core::str::from_utf8(&bytes[2..2 + len]).map_err(|_| ())
     }
 
-    /// Spec §1.5.7 — Binary-Data decode (2-Byte-Length-Prefix).
+    /// Spec §1.5.7 — binary-data decode (2-byte length prefix).
     ///
     /// # Errors
-    /// `()` wenn Truncation.
+    /// `()` on truncation.
     #[allow(clippy::result_unit_err)]
     pub fn decode_binary_data(bytes: &[u8]) -> Result<&[u8], ()> {
         if bytes.len() < 2 {
@@ -197,22 +197,22 @@ impl PropertyValueKind {
     }
 }
 
-/// `Property` — Identifier + Wert. Die Wert-Form haengt vom
-/// Identifier ab (Spec §2.2.2.2 Table 2-4); wir modellieren als
-/// opaque `Vec<u8>` (rohe Wire-Bytes) fuer codec-Generizitaet. Caller
-/// interpretiert den Wert-Inhalt.
+/// `Property` — identifier + value. The value form depends on the
+/// identifier (Spec §2.2.2.2 Table 2-4); we model it as an
+/// opaque `Vec<u8>` (raw wire bytes) for codec genericity. The caller
+/// interprets the value content.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Property {
     /// Identifier.
     pub id: PropertyId,
-    /// Raw-Wire-Bytes des Wert-Felds (Format ist Identifier-spezifisch:
+    /// Raw wire bytes of the value field (the format is identifier-specific:
     /// uint8/uint16/uint32/VBI/UTF-8 String/Binary Data/UTF-8 String
     /// Pair).
     pub value: Vec<u8>,
 }
 
 impl Property {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new(id: PropertyId, value: Vec<u8>) -> Self {
         Self { id, value }
@@ -249,7 +249,7 @@ mod tests {
 
     #[test]
     fn property_id_unknown_yields_other_variant() {
-        // Spec §2.2.2.2 — Future-IDs werden als Other gehalten.
+        // Spec §2.2.2.2 — future IDs are kept as Other.
         assert_eq!(PropertyId::from_value(99), PropertyId::Other(99));
     }
 

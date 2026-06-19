@@ -2,33 +2,33 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DurabilityQosPolicy (DDS 1.4 §2.2.3.4).
 //!
-//! Wire-Format (DDSI-RTPS §9.6.3.2): u32 kind (4 byte).
+//! Wire format (DDSI-RTPS §9.6.3.2): u32 kind (4 bytes).
 
 use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 
-/// Durability-Kind (DDS 1.4 §2.2.3.4).
+/// Durability kind (DDS 1.4 §2.2.3.4).
 ///
-/// Reihenfolge entspricht der Ordering-Relation der Compatibility-Regel:
+/// The order matches the ordering relation of the compatibility rule:
 /// `VOLATILE < TRANSIENT_LOCAL < TRANSIENT < PERSISTENT`. Spec §2.2.3
-/// Table "QoS compatibility" verlangt `offered.kind >= requested.kind`.
+/// Table "QoS compatibility" requires `offered.kind >= requested.kind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[repr(u32)]
 pub enum DurabilityKind {
-    /// Samples sind fluechtig; Late-Joiners sehen nichts.
+    /// Samples are volatile; late joiners see nothing.
     #[default]
     Volatile = 0,
-    /// Writer-Prozess haelt Samples fuer Late-Joiners.
+    /// The writer process holds samples for late joiners.
     TransientLocal = 1,
-    /// Durability-Service haelt Samples ueber Writer-Lifetime.
+    /// A durability service holds samples beyond the writer's lifetime.
     Transient = 2,
-    /// Persistent Storage.
+    /// Persistent storage.
     Persistent = 3,
 }
 
 impl DurabilityKind {
-    /// Forward-kompatibler Mapper: unbekannte Werte werden auf `Volatile`
-    /// abgebildet (default). Der stricte Mapper [`Self::try_from_u32`] gibt
-    /// bei unbekannten Werten `None` zurueck.
+    /// Forward-compatible mapper: unknown values are mapped to `Volatile`
+    /// (default). The strict mapper [`Self::try_from_u32`] returns
+    /// `None` for unknown values.
     #[must_use]
     pub const fn from_u32(v: u32) -> Self {
         match v {
@@ -39,7 +39,7 @@ impl DurabilityKind {
         }
     }
 
-    /// Strikter Mapper (return None bei unbekanntem Wert).
+    /// Strict mapper (returns None for an unknown value).
     #[must_use]
     pub const fn try_from_u32(v: u32) -> Option<Self> {
         match v {
@@ -60,20 +60,20 @@ pub struct DurabilityQosPolicy {
 }
 
 impl DurabilityQosPolicy {
-    /// Wire-Encoding: u32 kind.
+    /// Wire encoding: u32 kind.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u32(self.kind as u32)
     }
 
-    /// Wire-Decoding (strict). Unbekannter Discriminator liefert
-    /// `DecodeError::InvalidEnum` — QoS-Matching darf nicht auf still
-    /// gedowngradeten Werten basieren.
+    /// Wire decoding (strict). An unknown discriminator returns
+    /// `DecodeError::InvalidEnum` — QoS matching must not be based on
+    /// silently downgraded values.
     ///
     /// # Errors
-    /// Buffer-Underflow oder unbekannter Kind-Wert.
+    /// Buffer underflow or unknown kind value.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let v = r.read_u32()?;
         let kind = DurabilityKind::try_from_u32(v).ok_or(DecodeError::InvalidEnum {
@@ -145,9 +145,9 @@ mod tests {
 
     #[test]
     fn unknown_kind_decode_rejected() {
-        // Strict decode: u32=99 ist Spec-Verletzung → InvalidEnum.
-        // Wichtig: QoS-Matching darf nicht auf default-gedowngradeten
-        // Werten basieren.
+        // Strict decode: u32=99 is a spec violation → InvalidEnum.
+        // Important: QoS matching must not be based on default-downgraded
+        // values.
         let bytes = [99u8, 0, 0, 0];
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let res = DurabilityQosPolicy::decode_from(&mut r);
@@ -163,15 +163,15 @@ mod tests {
     #[test]
     fn compatibility_offered_ge_requested() {
         // Spec §2.2.3 Tab. "QoS compatibility" — offered.kind >=
-        // requested.kind. Pruefen via PartialOrd auf den Enum-Werten.
+        // requested.kind. Check via PartialOrd on the enum values.
         use DurabilityKind::*;
-        // Voller Match: gleiche Kind → kompatibel.
+        // Full match: same kind → compatible.
         assert!(Volatile >= Volatile);
-        // Offered TransientLocal kompatibel mit requested Volatile.
+        // Offered TransientLocal compatible with requested Volatile.
         assert!(TransientLocal >= Volatile);
-        // Offered Persistent kompatibel mit requested TransientLocal.
+        // Offered Persistent compatible with requested TransientLocal.
         assert!(Persistent >= TransientLocal);
-        // Negativ: offered Volatile NICHT kompatibel mit
+        // Negative: offered Volatile NOT compatible with
         // requested TransientLocal.
         assert!(Volatile < TransientLocal);
     }

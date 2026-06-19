@@ -2,18 +2,18 @@
 // Copyright 2026 ZeroDDS Contributors
 //! PublicationBuiltinTopicData (DDSI-RTPS 2.5 §8.5.4.2, §9.6.2.2.3).
 //!
-//! Inhalt der SEDP-Publications-DATA-Submessage, die ein Participant
-//! sendet, um einen lokalen DataWriter bei Remote-Participants bekannt
-//! zu machen. Serialisiert als PL_CDR_LE-encoded ParameterList in der
-//! `serialized_payload` einer DATA-Submessage.
+//! Content of the SEDP publications DATA submessage that a participant
+//! sends to make a local DataWriter known to remote participants.
+//! Serialized as a PL_CDR_LE-encoded ParameterList in the
+//! `serialized_payload` of a DATA submessage.
 //!
 //! topic_name + type_name + GUIDs +
-//! minimale QoS-Felder (durability, reliability). Keine Deadline,
-//! Liveliness, Lifespan, Ownership, Partition etc. — die werden
-//! gelesen und in `extra`-Vec gespeichert, aber nicht typisiert.
+//! minimal QoS fields (durability, reliability). No deadline,
+//! liveliness, lifespan, ownership, partition etc. — those are read and
+//! stored in the `extra` vec, but not typed.
 //!
-//! **QoS-Enums hier lokal** — sobald WP 1.5 volles QoS-Matching
-//! bringt, wandern DurabilityKind/ReliabilityKind nach `zerodds-qos`.
+//! **QoS enums local here** — once WP 1.5 brings full QoS matching,
+//! DurabilityKind/ReliabilityKind move to `zerodds-qos`.
 
 extern crate alloc;
 use alloc::string::String;
@@ -23,12 +23,12 @@ use crate::endpoint_security_info::EndpointSecurityInfo;
 use crate::error::WireError;
 use crate::parameter_list::{Parameter, ParameterList, pid};
 use crate::participant_data::{Duration, ENCAPSULATION_PL_CDR_LE};
-use crate::wire_types::Guid;
+use crate::wire_types::{Guid, Locator};
 
 /// Durability-QoS Kind.
 ///
-/// Canonical in [`zerodds_qos::DurabilityKind`]; RTPS re-exportiert für
-/// Abwärtskompatibilität.
+/// Canonical in [`zerodds_qos::DurabilityKind`]; RTPS re-exports for
+/// backward compatibility.
 pub use zerodds_qos::DurabilityKind;
 
 /// Reliability-QoS Kind.
@@ -36,84 +36,84 @@ pub use zerodds_qos::DurabilityKind;
 /// Canonical in [`zerodds_qos::ReliabilityKind`]; RTPS re-exportiert.
 pub use zerodds_qos::ReliabilityKind;
 
-/// Reliability-QoS Wert: Kind + max_blocking_time.
+/// Reliability QoS value: kind + max_blocking_time.
 ///
 /// Canonical in [`zerodds_qos::ReliabilityQosPolicy`]; RTPS re-exportiert
-/// unter dem historischen Alias `ReliabilityQos`.
+/// under the historical alias `ReliabilityQos`.
 pub use zerodds_qos::ReliabilityQosPolicy as ReliabilityQos;
 
 /// `DataRepresentationId` — XTypes 1.3 §7.6.3.1.1 + RTPS 2.5 PID 0x0073.
 ///
-/// Pro Spec: 16-bit signed integer; Werte 0..2 sind normativ definiert.
-/// Pro RTI/Cyclone/FastDDS Convention werden weitere Werte als
-/// vendor-specific reserviert.
+/// Per spec: 16-bit signed integer; values 0..2 are normatively
+/// defined. Per RTI/Cyclone/FastDDS convention, further values are
+/// reserved as vendor-specific.
 pub mod data_representation {
-    /// XCDR1 (legacy CDR Plain-CDR + PL_CDR mutable). Default wenn das
-    /// PID nicht present ist (Spec §7.6.3.1.2).
+    /// XCDR1 (legacy CDR Plain-CDR + PL_CDR mutable). Default when the
+    /// PID is not present (spec §7.6.3.1.2).
     pub const XCDR: i16 = 0;
-    /// XML (rare, für CFP-Profile). Nicht in unserer Default-Liste.
+    /// XML (rare, for CFP profiles). Not in our default list.
     pub const XML: i16 = 1;
     /// XCDR2 (PLAIN_CDR2 + DELIMITED_CDR2 + PL_CDR2 mutable).
-    /// ZeroDDS' nativer Encap (`0x0007`/`0x0009`/`0x000B`).
+    /// ZeroDDS' native encap (`0x0007`/`0x0009`/`0x000B`).
     pub const XCDR2: i16 = 2;
 
-    /// ZeroDDS-Default-Announce-Liste fuer Writer und Reader.
+    /// ZeroDDS default announce list for writers and readers.
     ///
-    /// **XCDR1 first** = legacy preferred (matched von strict-Spec-
-    /// Vendoren wie RTI Connext + RTI Shapes Demo deren Reader nur
-    /// `[XCDR1]` akzeptieren). **XCDR2 second** als modern-Fallback
-    /// fuer Peers die XCDR1 nicht koennen.
+    /// **XCDR2-only.** The codegen (`idl-rust`/`idl-cpp`) emits **real
+    /// XCDR2** since the version-aware alignment cap (XTypes 1.3
+    /// §7.4.1.1.1, 64-bit to 4) — the encap (`user_payload_encap`)
+    /// derives from `offer_first`. Since the body is fixed XCDR2-aligned,
+    /// `offer_first` MUST be XCDR2; XCDR1 must NOT be in the list,
+    /// otherwise an XCDR1-only reader matches wrongly (tolerant mode) and
+    /// reads the XCDR2 body with the wrong alignment.
     ///
-    /// Per Spec strict (XTypes 1.3 §7.6.3.1.2): Writer-Match besteht
-    /// wenn Writer's first-Element in Reader's accepted-list ist.
-    /// `[XCDR1, XCDR2]` matched also:
-    /// - Reader [XCDR1] (legacy/RTI strict): writer.first=XCDR1 ∈ {XCDR1} ✓
-    /// - Reader [XCDR1, XCDR2] (ZeroDDS/Cyclone/FastDDS): ✓
-    /// - Reader [XCDR2] (modern only): writer.first=XCDR1 ∉ {XCDR2} ✗
-    ///   → fuer XCDR2-only-Peers muss der User die Liste umstellen.
+    /// Match behavior:
+    /// - Reader [XCDR2] / [XCDR1, XCDR2] (Cyclone/FastDDS/modern RTI): ✓
+    /// - Reader [XCDR1] (legacy-strict, e.g. old RTI shapes): ✗ — such
+    ///   peers need an XCDR1 codegen (separate feature), not just an
+    ///   offer change.
     ///
-    /// User-Override: pro Writer/Reader via QoS, oder global durch
-    /// `RuntimeConfig::data_representation_offer` (TBD).
-    pub const DEFAULT_OFFER: [i16; 2] = [XCDR, XCDR2];
+    /// User override: globally via `RuntimeConfig::data_representation_offer`
+    /// or env `ZERODDS_DATA_REPR_OFFER`.
+    pub const DEFAULT_OFFER: [i16; 1] = [XCDR2];
 
-    /// `DataRepMatchMode` — bestimmt, wie Writer und Reader DataRep-
-    /// Listen vergleichen.
+    /// `DataRepMatchMode` — determines how writer and reader compare
+    /// DataRep lists.
     ///
-    /// * **Strict** (XTypes 1.3 §7.6.3.1.2 normativ): Writer's FIRST
-    ///   Element muss in Reader's List sein. Genau wie RTI Connext.
-    /// * **Tolerant** (Industry-Norm, Cyclone + FastDDS): Match wenn
-    ///   die Listen ueberlappen (any-overlap), Wire-Format = first-overlap.
+    /// * **Strict** (XTypes 1.3 §7.6.3.1.2 normative): the writer's FIRST
+    ///   element must be in the reader's list. Exactly like RTI Connext.
+    /// * **Tolerant** (industry norm, Cyclone + FastDDS): match when the
+    ///   lists overlap (any-overlap), wire format = first-overlap.
     ///
-    /// Default in ZeroDDS: `Tolerant` — maximiert Interop, weil unsere
-    /// eigenen Reader auch dann RTI-Writer matchen, wenn das first-Element
-    /// nicht 100% deckungsgleich ist.
+    /// Default in ZeroDDS: `Tolerant` — maximizes interop, because our
+    /// own readers also match RTI writers even when the first element is
+    /// not 100% identical.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     pub enum DataRepMatchMode {
-        /// Strict-Spec Match: Writer.first ∈ Reader.list.
+        /// Strict-spec match: Writer.first ∈ Reader.list.
         Strict,
-        /// Tolerant Match: any element in Writer.list ∈ Reader.list.
-        /// Industry-Default.
+        /// Tolerant match: any element in Writer.list ∈ Reader.list.
+        /// Industry default.
         #[default]
         Tolerant,
     }
 
-    /// Bestimmt das ausgehandelte Wire-Format zwischen Writer und Reader.
+    /// Determines the negotiated wire format between writer and reader.
     ///
-    /// Liefert `Some(id)` mit der DataRepresentationId die im Wire
-    /// emittiert werden soll. `None` heisst: keine Ueberlappung —
-    /// kein Match.
+    /// Returns `Some(id)` with the DataRepresentationId to emit on the
+    /// wire. `None` means: no overlap — no match.
     ///
-    /// `writer_offered` kann mehrere Werte enthalten (z.B.
-    /// `[XCDR2, XCDR1]`); `reader_accepted` ebenfalls.
-    /// Beide Listen koennen leer sein — Spec-Default ist `[XCDR1]`
-    /// in dem Fall (Spec §7.6.3.1.2).
+    /// `writer_offered` can contain multiple values (e.g.
+    /// `[XCDR2, XCDR1]`); `reader_accepted` likewise.
+    /// Both lists can be empty — the spec default is `[XCDR1]` in that
+    /// case (spec §7.6.3.1.2).
     #[must_use]
     pub fn negotiate(
         writer_offered: &[i16],
         reader_accepted: &[i16],
         mode: DataRepMatchMode,
     ) -> Option<i16> {
-        // Spec-Defaults bei leeren Listen.
+        // Spec defaults for empty lists.
         let w_default = [XCDR];
         let r_default = [XCDR];
         let w: &[i16] = if writer_offered.is_empty() {
@@ -129,7 +129,7 @@ pub mod data_representation {
 
         match mode {
             DataRepMatchMode::Strict => {
-                // §7.6.3.1.2: Writer's first element muss in Reader's list sein.
+                // §7.6.3.1.2: the writer's first element must be in the reader's list.
                 let first = w.first().copied()?;
                 if r.contains(&first) {
                     Some(first)
@@ -138,21 +138,20 @@ pub mod data_representation {
                 }
             }
             DataRepMatchMode::Tolerant => {
-                // Industry: any overlap. Wir bevorzugen Writer's
-                // Praeferenz-Reihenfolge (first-match wins), aber
-                // sehen die VOLLE writer-Liste, nicht nur first.
+                // Industry: any overlap. We prefer the writer's
+                // preference order (first-match wins), but see the FULL
+                // writer list, not just first.
                 w.iter().copied().find(|id| r.contains(id))
             }
         }
     }
 
-    /// Encap-Header (4 byte) fuer @final-Structs unter der gegebenen
-    /// DataRep. Fuer @appendable/@mutable wird ein anderer
-    /// Encap-Code benoetigt — siehe `encap_for_extensibility`.
+    /// Encap header (4 byte) for @final structs under the given
+    /// DataRep. For @appendable/@mutable a different encap code is
+    /// needed — see `encap_for_extensibility`.
     ///
-    /// Zurueckgabe-Format: `[byte0, byte1, byte2, byte3]` wobei
-    /// byte0 immer `0x00` und byte1 die Repr-ID nach RTPS 2.5
-    /// §10.5.
+    /// Return format: `[byte0, byte1, byte2, byte3]` where byte0 is
+    /// always `0x00` and byte1 the repr id per RTPS 2.5 §10.5.
     #[must_use]
     pub fn encap_for_final_le(id: i16) -> [u8; 4] {
         match id {
@@ -167,7 +166,7 @@ pub mod data_representation {
 pub struct PublicationBuiltinTopicData {
     /// Endpoint-GUID (= Writer-GUID).
     pub key: Guid,
-    /// GUID des Participants, dem der Writer gehoert.
+    /// GUID of the participant the writer belongs to.
     pub participant_key: Guid,
     /// Topic-Name (DDS-Topic, z.B. "ChatterTopic").
     pub topic_name: String,
@@ -179,68 +178,108 @@ pub struct PublicationBuiltinTopicData {
     pub reliability: ReliabilityQos,
     /// Ownership-QoS (Spec §2.2.3.23). Default Shared.
     pub ownership: zerodds_qos::OwnershipKind,
-    /// Ownership-Strength (Spec §2.2.3.24). Nur relevant wenn
-    /// `ownership == Exclusive`; Default 0.
+    /// Ownership strength (spec §2.2.3.24). Only relevant when
+    /// `ownership == Exclusive`; default 0.
     pub ownership_strength: i32,
-    /// Liveliness-QoS (Spec §2.2.3.11).
+    /// Liveliness QoS (spec §2.2.3.11).
     pub liveliness: zerodds_qos::LivelinessQosPolicy,
-    /// Deadline-QoS (Spec §2.2.3.7).
+    /// Deadline QoS (spec §2.2.3.7).
     pub deadline: zerodds_qos::DeadlineQosPolicy,
-    /// Lifespan-QoS (Spec §2.2.3.16) — writer-only.
+    /// Lifespan QoS (spec §2.2.3.16) — writer-only.
     pub lifespan: zerodds_qos::LifespanQosPolicy,
-    /// Partition-QoS (Spec §2.2.3.13). Leere Liste = "default partition" ("").
+    /// Partition QoS (spec §2.2.3.13). Empty list = "default partition" ("").
     pub partition: Vec<String>,
-    /// UserData-QoS (Spec §2.2.3.1) — opaque sequence<octet>, Discovery-
-    /// propagiert. Leerer Vec = nicht gesetzt.
+    /// UserData QoS (spec §2.2.3.1) — opaque sequence<octet>,
+    /// discovery-propagated. Empty vec = not set.
     pub user_data: Vec<u8>,
-    /// TopicData-QoS (Spec §2.2.3.3) — opaque sequence<octet>, vom
-    /// Topic via Pub-Discovery propagiert.
+    /// TopicData QoS (spec §2.2.3.3) — opaque sequence<octet>,
+    /// propagated from the topic via pub discovery.
     pub topic_data: Vec<u8>,
-    /// GroupData-QoS (Spec §2.2.3.2) — opaque sequence<octet>, vom
-    /// Publisher via Pub-Discovery propagiert.
+    /// GroupData QoS (spec §2.2.3.2) — opaque sequence<octet>,
+    /// propagated from the publisher via pub discovery.
     pub group_data: Vec<u8>,
-    /// Type-Information (TypeIdentifier-Hashes + Dependencies, XTypes
-    /// §7.6.3.2.2). Opaque bytes: die Struktur lebt in `zerodds-types`,
-    /// aber wir transportieren den serialisierten Blob, um zirkulaere
-    /// Crate-Abhaengigkeiten zu vermeiden.
+    /// Type information (TypeIdentifier hashes + dependencies, XTypes
+    /// §7.6.3.2.2). Opaque bytes: the structure lives in `zerodds-types`,
+    /// but we transport the serialized blob to avoid circular crate
+    /// dependencies.
     pub type_information: Option<Vec<u8>>,
-    /// Akzeptierte Data-Representations (0=XCDR1, 1=XML, 2=XCDR2, ...).
+    /// Accepted data representations (0=XCDR1, 1=XML, 2=XCDR2, ...).
     /// Spec: XTypes 1.3 §7.6.3.1.1 / RTPS 2.5 PID 0x0073.
-    /// Default-Liste bei leer ist `[XCDR1]` per XTypes §7.6.3.1.2 — wir
-    /// emittieren das PID immer explicit, damit Strict-Vendoren wie
-    /// RTI 7.7.0 SEDP-matchen koennen.
+    /// The default list when empty is `[XCDR1]` per XTypes §7.6.3.1.2 —
+    /// we always emit the PID explicitly so strict vendors like
+    /// RTI 7.7.0 can SEDP-match.
     pub data_representation: Vec<i16>,
-    /// Endpoint-Security-Info (PID 0x1004, DDS-Security 1.1 §7.4.1.5).
-    /// `None` bei Legacy-Peers ohne Security-PID. WP 4H-c matched
-    /// darauf: Writer/Reader-Paare mit inkompatiblen Protection-Leveln
-    /// werden abgelehnt.
+    /// Endpoint security info (PID 0x1004, DDS-Security 1.1 §7.4.1.5).
+    /// `None` for legacy peers without a security PID. WP 4H-c matches on
+    /// it: writer/reader pairs with incompatible protection levels are
+    /// rejected.
     pub security_info: Option<EndpointSecurityInfo>,
-    /// PID_SERVICE_INSTANCE_NAME (DDS-RPC 1.0 §7.8.2) — logischer
-    /// Service-Instance-Name eines RPC-Endpoints. `None` fuer
-    /// gewoehnliche Pub/Sub-Topics.
+    /// PID_SERVICE_INSTANCE_NAME (DDS-RPC 1.0 §7.8.2) — logical
+    /// service-instance name of an RPC endpoint. `None` for ordinary
+    /// pub/sub topics.
     pub service_instance_name: Option<String>,
-    /// PID_RELATED_ENTITY_GUID (DDS-RPC 1.0 §7.8.2) — GUID des
-    /// Pendant-Endpoints in einem RPC-Endpoint-Pair. Bei einem
-    /// Request-Writer zeigt das auf den Reply-Reader desselben
-    /// Requesters; bei einem Reply-Writer auf den Request-Reader
-    /// desselben Repliers.
+    /// PID_RELATED_ENTITY_GUID (DDS-RPC 1.0 §7.8.2) — GUID of the
+    /// counterpart endpoint in an RPC endpoint pair. For a request
+    /// writer it points to the reply reader of the same requester; for a
+    /// reply writer to the request reader of the same replier.
     pub related_entity_guid: Option<Guid>,
-    /// PID_TOPIC_ALIASES (DDS-RPC 1.0 §7.8.2) — alternative Topic-
-    /// Namen fuer Routing-/Compat-Layer. Reihenfolge ist signifikant.
+    /// PID_TOPIC_ALIASES (DDS-RPC 1.0 §7.8.2) — alternative topic names
+    /// for routing/compat layers. Order is significant.
     pub topic_aliases: Option<Vec<String>>,
-    /// PID_ZERODDS_TYPE_ID (Vendor-PID 0x8002) — XTypes-1.3 §7.3.4.2
-    /// TypeIdentifier des Writer-Type für XTypes-aware Reader-Match
+    /// PID_ZERODDS_TYPE_ID (vendor PID 0x8002) — XTypes 1.3 §7.3.4.2
+    /// TypeIdentifier of the writer type for XTypes-aware reader matching
     /// (XTypes §7.6.3.7 + DDS 1.4 §2.2.3 TypeConsistencyEnforcement).
     pub type_identifier: zerodds_types::TypeIdentifier,
+    /// Endpoint unicast locators (DDSI-RTPS 2.5 §8.5.3.3:
+    /// `DiscoveredWriterData.writerProxy.unicastLocatorList`). Where
+    /// peers send user data to *this* writer endpoint. Empty = the peer
+    /// falls back to the participant `DEFAULT_UNICAST_LOCATOR` from
+    /// SPDP (§8.5.5). OpenDDS stores the real user locator exclusively
+    /// here and sends only the placeholder 127.0.0.1:12345 as the SPDP
+    /// default.
+    pub unicast_locators: Vec<Locator>,
+    /// Endpoint multicast locators (DDSI-RTPS 2.5 §8.5.3.3).
+    pub multicast_locators: Vec<Locator>,
+}
+
+/// Emits a separate parameter per locator — an RTPS locator list is the
+/// repeated PID (spec §8.3.5.2 ParameterList).
+pub fn encode_locator_params(params: &mut ParameterList, pid_id: u16, locators: &[Locator]) {
+    for loc in locators {
+        params.push(Parameter::new(pid_id, loc.to_bytes_le().to_vec()));
+    }
+}
+
+/// Collects all locators announced under `pid_id` (a repeated PID =
+/// list). BE locators are skipped — consistent with
+/// `participant_data::decode_locator` (BE locator not implemented).
+#[must_use]
+pub fn collect_locator_params(
+    pl: &ParameterList,
+    pid_id: u16,
+    little_endian: bool,
+) -> Vec<Locator> {
+    if !little_endian {
+        return Vec::new();
+    }
+    pl.parameters
+        .iter()
+        .filter(|p| p.id == pid_id && p.value.len() == Locator::WIRE_SIZE)
+        .filter_map(|p| {
+            let mut b = [0u8; 24];
+            b.copy_from_slice(&p.value);
+            Locator::from_bytes_le(b).ok()
+        })
+        .collect()
 }
 
 impl PublicationBuiltinTopicData {
-    /// Encoded zu PL_CDR_LE-Bytes (mit 4-byte Encapsulation-Header).
-    /// Output ist direkt als `serialized_payload` einer DATA-
-    /// Submessage verwendbar.
+    /// Encodes to PL_CDR_LE bytes (with a 4-byte encapsulation header).
+    /// The output is directly usable as the `serialized_payload` of a DATA
+    /// submessage.
     ///
     /// # Errors
-    /// `ValueOutOfRange` wenn ein String laenger als u32::MAX ist.
+    /// `ValueOutOfRange` if a string is longer than u32::MAX.
     pub fn to_pl_cdr_le(&self) -> Result<Vec<u8>, WireError> {
         let mut params = ParameterList::new();
 
@@ -286,8 +325,8 @@ impl PublicationBuiltinTopicData {
             encode_u32_le(self.ownership as u32).to_vec(),
         ));
 
-        // OWNERSHIP_STRENGTH: 4 Byte int32 (nur sinnvoll bei Exclusive,
-        // aber wir schicken's immer — Reader ignoriert bei Shared).
+        // OWNERSHIP_STRENGTH: 4 byte int32 (only meaningful for
+        // Exclusive, but we always send it — the reader ignores it for Shared).
         params.push(Parameter::new(
             pid::OWNERSHIP_STRENGTH,
             encode_u32_le(self.ownership_strength as u32).to_vec(),
@@ -311,7 +350,7 @@ impl PublicationBuiltinTopicData {
             encode_duration_le(self.lifespan.duration).to_vec(),
         ));
 
-        // PARTITION: nur wenn non-empty — leere Liste = Default (= "").
+        // PARTITION: only if non-empty — an empty list = default (= "").
         if !self.partition.is_empty() {
             params.push(Parameter::new(
                 pid::PARTITION,
@@ -320,8 +359,8 @@ impl PublicationBuiltinTopicData {
         }
 
         // USER_DATA / TOPIC_DATA / GROUP_DATA: opaque sequence<octet>.
-        // Wire = 4 byte u32 length + N byte data. Nur wenn gesetzt
-        // (leerer Vec = Default, lassen wir aus dem ParameterList).
+        // Wire = 4 byte u32 length + N byte data. Only if set
+        // (an empty vec = default, we leave it out of the ParameterList).
         if !self.user_data.is_empty() {
             params.push(Parameter::new(
                 pid::USER_DATA,
@@ -341,15 +380,15 @@ impl PublicationBuiltinTopicData {
             ));
         }
 
-        // TYPE_INFORMATION: serialisierter TypeInformation-Blob
+        // TYPE_INFORMATION: serialized TypeInformation blob
         // (optional, XTypes §7.6.3.2.2).
         if let Some(ti) = &self.type_information {
             params.push(Parameter::new(pid::TYPE_INFORMATION, ti.clone()));
         }
 
-        // ENDPOINT_SECURITY_INFO: 2x u32 masks (§7.4.1.5). Nur wenn gesetzt,
-        // sonst Legacy-Verhalten (Cyclone/Fast-DDS ohne Security lassen
-        // die PID weg).
+        // ENDPOINT_SECURITY_INFO: 2x u32 masks (§7.4.1.5). Only if set,
+        // otherwise legacy behavior (Cyclone/Fast-DDS without security
+        // leave the PID out).
         if let Some(info) = self.security_info {
             params.push(Parameter::new(
                 pid::ENDPOINT_SECURITY_INFO,
@@ -358,7 +397,7 @@ impl PublicationBuiltinTopicData {
         }
 
         // ----------------------------------------------------------------
-        // DDS-RPC 1.0 Discovery-PIDs (§7.8.2) — nur wenn gesetzt.
+        // DDS-RPC 1.0 discovery PIDs (§7.8.2) — only if set.
         // ----------------------------------------------------------------
         if let Some(name) = &self.service_instance_name {
             params.push(Parameter::new(
@@ -390,7 +429,7 @@ impl PublicationBuiltinTopicData {
             params.push(Parameter::new(pid::ZERODDS_TYPE_ID, w.into_bytes()));
         }
 
-        // DATA_REPRESENTATION: sequence<int16> — u32 Laenge + 2*N bytes.
+        // DATA_REPRESENTATION: sequence<int16> — u32 length + 2*N bytes.
         if !self.data_representation.is_empty() {
             let mut dr = Vec::with_capacity(4 + 2 * self.data_representation.len());
             let len = u32::try_from(self.data_representation.len()).map_err(|_| {
@@ -405,6 +444,14 @@ impl PublicationBuiltinTopicData {
             params.push(Parameter::new(pid::DATA_REPRESENTATION, dr));
         }
 
+        // Endpoint locators (§8.5.3.3) — one parameter per locator.
+        encode_locator_params(&mut params, pid::UNICAST_LOCATOR, &self.unicast_locators);
+        encode_locator_params(
+            &mut params,
+            pid::MULTICAST_LOCATOR,
+            &self.multicast_locators,
+        );
+
         let mut out = Vec::with_capacity(params.parameters.len() * 24 + 16);
         out.extend_from_slice(&ENCAPSULATION_PL_CDR_LE);
         out.extend_from_slice(&[0, 0]); // options
@@ -412,13 +459,13 @@ impl PublicationBuiltinTopicData {
         Ok(out)
     }
 
-    /// Decoded aus PL_CDR_LE-Bytes (mit Encapsulation-Header).
+    /// Decodes from PL_CDR_LE bytes (with an encapsulation header).
     ///
     /// # Errors
-    /// `UnexpectedEof` bei zu kurzen Bytes,
-    /// `UnsupportedEncapsulation` bei unbekanntem Encoding,
-    /// `ValueOutOfRange` wenn Pflicht-PIDs fehlen oder Werte
-    /// falsche Laenge haben.
+    /// `UnexpectedEof` on too-short bytes,
+    /// `UnsupportedEncapsulation` on unknown encoding,
+    /// `ValueOutOfRange` if mandatory PIDs are missing or values have the
+    /// wrong length.
     pub fn from_pl_cdr_le(bytes: &[u8]) -> Result<Self, WireError> {
         if bytes.len() < 4 {
             return Err(WireError::UnexpectedEof {
@@ -444,13 +491,13 @@ impl PublicationBuiltinTopicData {
                 message: "ENDPOINT_GUID missing or wrong length",
             })?;
 
-        // PARTICIPANT_GUID ist technisch optional (kann aus ENDPOINT_GUID-
-        // Prefix abgeleitet werden), aber wir verlangen es, wenn es da ist.
+        // PARTICIPANT_GUID is technically optional (can be derived from
+        // the ENDPOINT_GUID prefix), but we require it when present.
         let participant_key = pl
             .find(pid::PARTICIPANT_GUID)
             .and_then(guid_from_param)
             .unwrap_or_else(|| {
-                // Fallback: Participant = ENDPOINT_GUID.prefix + PARTICIPANT-EntityId
+                // Fallback: participant = ENDPOINT_GUID.prefix + PARTICIPANT EntityId
                 Guid::new(key.prefix, crate::wire_types::EntityId::PARTICIPANT)
             });
 
@@ -503,7 +550,7 @@ impl PublicationBuiltinTopicData {
                     let max_blocking_time = if little_endian {
                         Duration::from_bytes_le(d)
                     } else {
-                        // BE-Decoding: seconds+fraction als BE interpretieren
+                        // BE decoding: interpret seconds+fraction as BE
                         let mut s = [0u8; 4];
                         s.copy_from_slice(&d[..4]);
                         let mut f = [0u8; 4];
@@ -609,9 +656,9 @@ impl PublicationBuiltinTopicData {
                 } else {
                     u32::from_be_bytes(n_bytes)
                 } as usize;
-                // DoS-Cap: Vec::with_capacity(n) koennte bei n=u32::MAX/2
-                // ca. 4 GB reservieren. Kappen auf tatsaechlich lesbare
-                // Elemente: (v.len()-4)/2 i16-Elemente.
+                // DoS cap: Vec::with_capacity(n) could reserve ~4 GB at
+                // n=u32::MAX/2. Cap to actually readable elements:
+                // (v.len()-4)/2 i16 elements.
                 let cap = n.min(v.len().saturating_sub(4) / 2);
                 let mut reps = Vec::with_capacity(cap);
                 for i in 0..n {
@@ -654,6 +701,8 @@ impl PublicationBuiltinTopicData {
             related_entity_guid,
             topic_aliases,
             type_identifier,
+            unicast_locators: collect_locator_params(&pl, pid::UNICAST_LOCATOR, little_endian),
+            multicast_locators: collect_locator_params(&pl, pid::MULTICAST_LOCATOR, little_endian),
         })
     }
 }
@@ -662,26 +711,26 @@ impl PublicationBuiltinTopicData {
 // Helpers
 // ============================================================================
 
-/// ADR-0006 / zerodds-flatdata-1.0 §3.1: injiziert PID_SHM_LOCATOR
-/// (Vendor-PID 0x8001) in eine bereits PL-CDR-LE-encodierte
-/// `PublicationBuiltinTopicData` Bytes-Sequenz. Das Vendor-PID
-/// traegt KEIN MUST_UNDERSTAND-Bit — fremde Vendoren ignorieren
-/// es safe, ZeroDDS-Reader auf demselben Host attachen an SHM.
+/// ADR-0006 / zerodds-flatdata-1.0 §3.1: injects PID_SHM_LOCATOR
+/// (vendor PID 0x8001) into an already PL-CDR-LE-encoded
+/// `PublicationBuiltinTopicData` byte sequence. The vendor PID carries
+/// NO MUST_UNDERSTAND bit — foreign vendors ignore it safely, ZeroDDS
+/// readers on the same host attach to SHM.
 ///
-/// Side-Map-Pattern: das Feld wandert nicht in den Wire-Struct
-/// (sonst 21+ Construction-Sites cross-workspace), sondern liegt
-/// als `BTreeMap<EntityId, Vec<u8>>` in `DcpsRuntime` und wird
-/// via diese Helper am Wire-Encode-Ende eingebracht.
+/// Side-map pattern: the field does not move into the wire struct
+/// (otherwise 21+ construction sites cross-workspace), but lives as a
+/// `BTreeMap<EntityId, Vec<u8>>` in `DcpsRuntime` and is injected via
+/// this helper at the wire-encode end.
 ///
-/// Der Inhalt von `locator_bytes` ist die bereits gepackte
-/// SHM-Locator-Struktur (siehe zerodds-flatdata-1.0 §3.1.2:
+/// The content of `locator_bytes` is the already-packed SHM locator
+/// structure (see zerodds-flatdata-1.0 §3.1.2:
 /// `u32 hostname_hash` plus `u32 uid` plus `u32 slot_count` plus
-/// `u32 slot_size` plus CDR-String `segment_path`). Der Caller
-/// serialisiert das vor dem Aufruf.
+/// `u32 slot_size` plus CDR-string `segment_path`). The caller
+/// serializes that before the call.
 ///
 /// # Errors
-/// `ValueOutOfRange` wenn `bytes` keinen Sentinel-Trailer
-/// (`0x01 0x00 0x00 0x00`) am Ende hat oder zu kurz ist.
+/// `ValueOutOfRange` if `bytes` has no sentinel trailer
+/// (`0x01 0x00 0x00 0x00`) at the end or is too short.
 pub fn inject_pid_shm_locator(bytes: &mut Vec<u8>, locator_bytes: &[u8]) -> Result<(), WireError> {
     use crate::parameter_list::pid;
     if bytes.len() < 4 {
@@ -690,13 +739,13 @@ pub fn inject_pid_shm_locator(bytes: &mut Vec<u8>, locator_bytes: &[u8]) -> Resu
         });
     }
     let sentinel_pos = bytes.len() - 4;
-    // Sentinel-Tag = 0x01 0x00 (PID_SENTINEL) + 0x00 0x00 (length).
+    // Sentinel tag = 0x01 0x00 (PID_SENTINEL) + 0x00 0x00 (length).
     if bytes[sentinel_pos..] != [0x01, 0x00, 0x00, 0x00] {
         return Err(WireError::ValueOutOfRange {
             message: "inject_pid_shm_locator: missing PID_SENTINEL trailer",
         });
     }
-    // Padded auf 4-Byte-Boundary fuer ParameterList-Konformitaet.
+    // Padded to a 4-byte boundary for ParameterList conformance.
     let padded_len = (locator_bytes.len() + 3) & !3;
     if padded_len > u16::MAX as usize {
         return Err(WireError::ValueOutOfRange {
@@ -707,9 +756,9 @@ pub fn inject_pid_shm_locator(bytes: &mut Vec<u8>, locator_bytes: &[u8]) -> Resu
     inject.extend_from_slice(&pid::SHM_LOCATOR.to_le_bytes());
     inject.extend_from_slice(&(padded_len as u16).to_le_bytes());
     inject.extend_from_slice(locator_bytes);
-    // Zero-Pad auf 4-Byte-Boundary.
+    // Zero-pad to a 4-byte boundary.
     inject.resize(inject.len() + (padded_len - locator_bytes.len()), 0);
-    // Append den (entfernten) Sentinel-Trailer.
+    // Append the (removed) sentinel trailer.
     inject.extend_from_slice(&bytes[sentinel_pos..]);
     bytes.truncate(sentinel_pos);
     bytes.extend_from_slice(&inject);
@@ -726,11 +775,11 @@ pub(crate) fn guid_from_param(p: &Parameter) -> Option<Guid> {
     }
 }
 
-/// CDR-String als Value-Bytes (inkl. 4-Byte-Length-Prefix + Null-
-/// Terminator, plus evtl. Padding auf 4-Byte-Boundary). LE only —
-/// ParameterList-Values werden in der Endianness der Submessage
-/// geschrieben, die wir auf LE festgelegt haben.
-/// Encoded 8 Byte LE Duration_t. Kein trailing padding (aus-aligned).
+/// CDR string as value bytes (incl. a 4-byte length prefix + null
+/// terminator, plus possible padding to a 4-byte boundary). LE only —
+/// ParameterList values are written in the endianness of the
+/// submessage, which we have fixed to LE.
+/// Encodes an 8-byte LE Duration_t. No trailing padding (out-aligned).
 pub(crate) fn encode_duration_le(d: Duration) -> [u8; 8] {
     let mut out = [0u8; 8];
     out[..4].copy_from_slice(&d.seconds.to_le_bytes());
@@ -781,7 +830,7 @@ pub(crate) fn decode_i32(value: &[u8], little_endian: bool) -> Option<i32> {
     decode_u32(value, little_endian).map(|u| u as i32)
 }
 
-/// LivelinessQos encoden: 4 Byte kind + 8 Byte lease_duration = 12 Byte.
+/// Encode LivelinessQos: 4 byte kind + 8 byte lease_duration = 12 byte.
 pub(crate) fn encode_liveliness_le(l: zerodds_qos::LivelinessQosPolicy) -> Vec<u8> {
     let mut out = Vec::with_capacity(12);
     out.extend_from_slice(&(l.kind as u32).to_le_bytes());
@@ -804,10 +853,10 @@ pub(crate) fn decode_liveliness(
     })
 }
 
-/// Partition = sequence<string>. CDR-Layout: u32 count + N × CDR-String
-/// (jeder CDR-String mit eigenem Alignment-Padding).
-/// Encoded eine opaque `sequence<octet>` als `u32 length + N byte data`,
-/// gepaddet auf 4-Byte-Boundary. DDS QoS UserData/TopicData/GroupData.
+/// Partition = sequence<string>. CDR layout: u32 count + N × CDR string
+/// (each CDR string with its own alignment padding).
+/// Encodes an opaque `sequence<octet>` as `u32 length + N byte data`,
+/// padded to a 4-byte boundary. DDS QoS UserData/TopicData/GroupData.
 pub fn encode_octet_seq_le(data: &[u8]) -> Result<Vec<u8>, WireError> {
     let len = u32::try_from(data.len()).map_err(|_| WireError::ValueOutOfRange {
         message: "octet sequence length exceeds u32::MAX",
@@ -821,7 +870,7 @@ pub fn encode_octet_seq_le(data: &[u8]) -> Result<Vec<u8>, WireError> {
     Ok(out)
 }
 
-/// Decoded eine opaque `sequence<octet>` aus dem PID-Value.
+/// Decodes an opaque `sequence<octet>` from the PID value.
 pub fn decode_octet_seq(value: &[u8], little_endian: bool) -> Option<Vec<u8>> {
     let n = decode_u32(value, little_endian)? as usize;
     if 4 + n > value.len() {
@@ -837,10 +886,10 @@ pub(crate) fn encode_partition_le(partitions: &[String]) -> Result<Vec<u8>, Wire
     })?;
     out.extend_from_slice(&len.to_le_bytes());
     for p in partitions {
-        // Jeder nested String beginnt auf 4-Byte-Grenze relativ zum
-        // Start der PARTITION-Value. Outer-count ist genau 4 Byte, also
-        // ist der erste String schon aligned. Nach jedem String padden
-        // wir erneut auf 4.
+        // Each nested string starts on a 4-byte boundary relative to the
+        // start of the PARTITION value. The outer count is exactly 4
+        // bytes, so the first string is already aligned. After each
+        // string we pad to 4 again.
         out.extend_from_slice(&encode_cdr_string_le(p)?);
     }
     Ok(out)
@@ -848,9 +897,9 @@ pub(crate) fn encode_partition_le(partitions: &[String]) -> Result<Vec<u8>, Wire
 
 pub(crate) fn decode_partition(value: &[u8], little_endian: bool) -> Option<Vec<String>> {
     let n = decode_u32(value, little_endian)? as usize;
-    // DoS-Cap: maximal so viele Strings wie bei minimalem 1-Byte-String
-    // + 4-byte-length + 4-byte-pad = 12 bytes pro Eintrag im Puffer
-    // Platz haetten. Bei n=u32::MAX sonst 4 GB reservation.
+    // DoS cap: at most as many strings as would fit in the buffer with
+    // a minimal 1-byte string + 4-byte length + 4-byte pad = 12 bytes
+    // per entry. Otherwise a 4 GB reservation at n=u32::MAX.
     let cap = n.min(value.len().saturating_sub(4) / 5);
     let mut out = Vec::with_capacity(cap);
     let mut pos = 4;
@@ -872,7 +921,7 @@ pub(crate) fn decode_partition(value: &[u8], little_endian: bool) -> Option<Vec<
         let s =
             decode_cdr_string(&value[pos..next_raw_end.min(value.len())], little_endian).ok()?;
         out.push(s);
-        // Pad auf 4-Byte-Boundary.
+        // Pad to a 4-byte boundary.
         let padded_end = (next_raw_end + 3) & !3;
         pos = padded_end;
     }
@@ -889,14 +938,14 @@ pub(crate) fn encode_cdr_string_le(s: &str) -> Result<Vec<u8>, WireError> {
     out.extend_from_slice(&len.to_le_bytes());
     out.extend_from_slice(bytes);
     out.push(0); // null-terminator
-    // Padding auf 4-Byte-Boundary (pro ParameterList-Wert gefordert)
+    // Padding to a 4-byte boundary (required per ParameterList value)
     while out.len() % 4 != 0 {
         out.push(0);
     }
     Ok(out)
 }
 
-/// CDR-String aus Value-Bytes dekodieren. Ignoriert Trailing-Padding.
+/// Decode a CDR string from value bytes. Ignores trailing padding.
 pub(crate) fn decode_cdr_string(value: &[u8], little_endian: bool) -> Result<String, WireError> {
     if value.len() < 4 {
         return Err(WireError::UnexpectedEof {
@@ -965,14 +1014,14 @@ mod tests {
             ReliabilityKind::try_from_u32(2),
             Some(ReliabilityKind::Reliable)
         );
-        // 0 ist kein gueltiger Reliability-Wire-Wert.
+        // 0 is not a valid reliability wire value.
         assert_eq!(ReliabilityKind::try_from_u32(0), None);
         assert_eq!(ReliabilityKind::try_from_u32(42), None);
     }
 
     #[test]
     fn legacy_from_u32_still_defaults_for_sedp_forward_compat() {
-        // forward-compat Path: unbekannt → Default (SEDP-Parser nutzt das).
+        // forward-compat path: unknown → default (the SEDP parser uses this).
         assert_eq!(DurabilityKind::from_u32(99), DurabilityKind::Volatile);
         assert_eq!(ReliabilityKind::from_u32(99), ReliabilityKind::BestEffort);
     }
@@ -1009,7 +1058,23 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         }
+    }
+
+    #[test]
+    fn endpoint_locators_roundtrip_le() {
+        let mut d = sample_data();
+        d.unicast_locators = alloc::vec![
+            Locator::udp_v4([192, 168, 1, 5], 7411),
+            Locator::udp_v4([10, 0, 0, 9], 7411),
+        ];
+        d.multicast_locators = alloc::vec![Locator::udp_v4([239, 255, 0, 2], 7401)];
+        let bytes = d.to_pl_cdr_le().unwrap();
+        let decoded = PublicationBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
+        assert_eq!(decoded.unicast_locators, d.unicast_locators);
+        assert_eq!(decoded.multicast_locators, d.multicast_locators);
     }
 
     #[test]
@@ -1124,8 +1189,8 @@ mod tests {
     #[test]
     fn unknown_pids_are_skipped() {
         let mut bytes = sample_data().to_pl_cdr_le().unwrap();
-        // Neuen unbekannten PID (0x7FFF, 4 byte) vor Sentinel einfuegen.
-        // Der Sentinel-Parameter ist die letzten 4 Bytes.
+        // Insert a new unknown PID (0x7FFF, 4 byte) before the sentinel.
+        // The sentinel parameter is the last 4 bytes.
         let sentinel_pos = bytes.len() - 4;
         let mut inject = vec![0xFFu8, 0x7F, 4, 0, 0xDE, 0xAD, 0xBE, 0xEF];
         inject.extend_from_slice(&bytes[sentinel_pos..]);
@@ -1137,33 +1202,32 @@ mod tests {
 
     #[test]
     fn inject_pid_shm_locator_appends_before_sentinel() {
-        // Locator-Body: 16 byte (vier u32) + 8 byte CDR-String "x"
+        // Locator body: 16 byte (four u32) + 8 byte CDR string "x"
         // (4 byte len = 2, 1 byte 'x', 1 byte null, 2 byte pad).
         let mut locator = Vec::new();
         locator.extend_from_slice(&0xDEAD_BEEFu32.to_le_bytes()); // hostname_hash
         locator.extend_from_slice(&1000u32.to_le_bytes()); // uid
         locator.extend_from_slice(&64u32.to_le_bytes()); // slot_count
         locator.extend_from_slice(&4096u32.to_le_bytes()); // slot_size
-        // CDR-String "/dev/shm/zd-1\0":
+        // CDR string "/dev/shm/zd-1\0":
         let path = "/dev/shm/zd-1";
         locator.extend_from_slice(&((path.len() as u32) + 1).to_le_bytes());
         locator.extend_from_slice(path.as_bytes());
         locator.push(0);
-        // Pad auf 4-Byte-Boundary.
+        // Pad to a 4-byte boundary.
         let pad = (4 - locator.len() % 4) % 4;
         locator.resize(locator.len() + pad, 0);
 
         let mut bytes = sample_data().to_pl_cdr_le().unwrap();
         let len_before = bytes.len();
         super::inject_pid_shm_locator(&mut bytes, &locator).unwrap();
-        // Bytes sind gewachsen (PID-Header 4 + locator).
+        // The bytes have grown (PID header 4 + locator).
         assert!(bytes.len() > len_before);
-        // Und decodieren immer noch — Vendor-PID wird als unbekannt
-        // ignoriert (kein MUST_UNDERSTAND-Bit), der Rest bleibt
-        // identisch.
+        // And still decode — the vendor PID is ignored as unknown (no
+        // MUST_UNDERSTAND bit), the rest stays identical.
         let decoded = PublicationBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
         assert_eq!(decoded, sample_data());
-        // Sanity: PID 0x8001 ist tatsaechlich enthalten.
+        // Sanity: PID 0x8001 is actually present.
         let pid_found = bytes.windows(2).any(|w| w == 0x8001u16.to_le_bytes());
         assert!(pid_found, "PID_SHM_LOCATOR should appear in bytes");
     }
@@ -1184,8 +1248,8 @@ mod tests {
 
     #[test]
     fn participant_key_fallback_when_pid_missing() {
-        // Bauen wir ein PL ohne PARTICIPANT_GUID: der Decoder soll
-        // participant_key aus ENDPOINT_GUID.prefix + PARTICIPANT ableiten.
+        // Build a PL without PARTICIPANT_GUID: the decoder should derive
+        // participant_key from ENDPOINT_GUID.prefix + PARTICIPANT.
         let d = sample_data();
         let mut pl = ParameterList::new();
         pl.push(Parameter::new(
@@ -1248,9 +1312,9 @@ mod tests {
 
     #[test]
     fn rpc_pid_constants_in_emitted_bytes() {
-        // Cyclone-Compat-Snapshot: PID 0x0080..0x0083 muessen byte-genau
-        // im Stream auftauchen, sonst kann ein Cyclone-Reader sie nicht
-        // dispatchen.
+        // Cyclone-compat snapshot: PID 0x0080..0x0083 must appear
+        // byte-exact in the stream, otherwise a Cyclone reader cannot
+        // dispatch them.
         let mut d = sample_data();
         d.service_instance_name = Some("X".into());
         d.related_entity_guid = Some(Guid::new(
@@ -1259,7 +1323,7 @@ mod tests {
         ));
         d.topic_aliases = Some(alloc::vec!["A".into()]);
         let bytes = d.to_pl_cdr_le().unwrap();
-        // PIDs sind 2-byte little-endian.
+        // PIDs are 2-byte little-endian.
         let mut found_080 = false;
         let mut found_081 = false;
         let mut found_082 = false;

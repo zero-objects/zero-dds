@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Cross-Cutting Daemon-Runtime fuer den CORBA-Daemon.
+//! Cross-cutting daemon runtime for the CORBA daemon.
 //!
-//! Bietet Standard-Counter (§8.2 Prometheus), `/catalog`-/`/healthz`-
-//! /`/metrics`-Endpoint (§5.2), Signal-Watcher (§9.2), OTLP-Exporter
-//! (§8.3) — alle als generische, im Binary-Mainloop wired-up
-//! Komponenten.
+//! Provides standard counters (§8.2 Prometheus), the `/catalog`/`/healthz`/
+//! `/metrics` endpoint (§5.2), a signal watcher (§9.2), and the OTLP exporter
+//! (§8.3) — all as generic components wired up in the binary main loop.
 
 #![allow(clippy::print_stderr)]
 
@@ -19,36 +18,36 @@ use std::time::Duration;
 use zerodds_monitor::{Counter, Gauge, Labels, Registry};
 use zerodds_observability_otlp::{OtlpConfig, OtlpExporter};
 
-/// Service-Name (verwendet im Catalog + OTel-Resource).
+/// Service name (used in the catalog and the OTel resource).
 pub const SERVICE_NAME: &str = "zerodds-corba-bridged";
-/// Crate-Version.
+/// Crate version.
 pub const SERVICE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Standard-Metric-Set fuer den CORBA-Daemon.
+/// Standard metric set for the CORBA daemon.
 #[derive(Clone)]
 pub struct BridgeMetrics {
-    /// Eingehende CORBA-Frames.
+    /// Inbound CORBA frames.
     pub frames_in_total: Arc<Counter>,
-    /// Ausgehende CORBA-Frames.
+    /// Outbound CORBA frames.
     pub frames_out_total: Arc<Counter>,
     /// Bytes in.
     pub bytes_in_total: Arc<Counter>,
     /// Bytes out.
     pub bytes_out_total: Arc<Counter>,
-    /// Aktive Broker-Connections.
+    /// Active broker connections.
     pub connections_active: Arc<Gauge>,
-    /// Lifetime Broker-Connect-Versuche.
+    /// Lifetime broker connect attempts.
     pub connections_total: Arc<Counter>,
-    /// CORBA → DDS Samples.
+    /// CORBA → DDS samples.
     pub dds_samples_in_total: Arc<Counter>,
-    /// DDS → CORBA Samples.
+    /// DDS → CORBA samples.
     pub dds_samples_out_total: Arc<Counter>,
-    /// Wire-Errors.
+    /// Wire errors.
     pub errors_total: Arc<Counter>,
 }
 
 impl BridgeMetrics {
-    /// Registriert das Standard-Set.
+    /// Registers the standard set.
     pub fn register(registry: &Registry) -> Self {
         registry.set_help("zerodds_corba_frames_in_total", "IIOP frames received");
         registry.set_help("zerodds_corba_frames_out_total", "IIOP frames sent");
@@ -84,21 +83,21 @@ impl BridgeMetrics {
     }
 }
 
-/// Catalog-Topic-Eintrag — Daemon-typ-unabhaengig.
+/// Catalog topic entry — independent of the daemon type.
 #[derive(Clone, Debug)]
 pub struct CatalogTopic {
-    /// DDS-Topic-Name.
+    /// DDS topic name.
     pub dds_name: String,
-    /// CORBA-Address (queue:// / topic://).
+    /// CORBA address (queue:// / topic://).
     pub amqp_address: String,
     /// in/out/bidir.
     pub direction: String,
 }
 
-/// Catalog-Snapshot.
+/// Catalog snapshot.
 #[derive(Clone, Debug)]
 pub struct CatalogSnapshot {
-    /// Service-Name.
+    /// Service name.
     pub service: String,
     /// Version.
     pub version: String,
@@ -107,7 +106,7 @@ pub struct CatalogSnapshot {
 }
 
 impl CatalogSnapshot {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(topics: Vec<CatalogTopic>) -> Self {
         Self {
@@ -117,7 +116,7 @@ impl CatalogSnapshot {
         }
     }
 
-    /// JSON-Render fuer `/catalog`.
+    /// JSON rendering for `/catalog`.
     #[must_use]
     pub fn render_json(&self) -> String {
         let mut out = String::with_capacity(256 + self.topics.len() * 96);
@@ -160,7 +159,7 @@ fn push_json_str(out: &mut String, s: &str) {
     }
 }
 
-/// SIGTERM/SIGINT/SIGHUP-Watcher.
+/// SIGTERM/SIGINT/SIGHUP watcher.
 #[cfg(unix)]
 pub fn install_signal_watcher(
     shutdown_flag: Arc<AtomicBool>,
@@ -185,7 +184,7 @@ pub fn install_signal_watcher(
         })
 }
 
-/// Admin-HTTP-Server `/catalog`/`/healthz`/`/metrics`.
+/// Admin HTTP server `/catalog`/`/healthz`/`/metrics`.
 pub fn serve_admin_endpoints(
     addr: SocketAddr,
     catalog: Arc<CatalogSnapshot>,
@@ -276,7 +275,7 @@ fn admin_handle(
     let _ = stream.write_all(resp.as_bytes());
 }
 
-/// Endpoint-String parsen.
+/// Parse an endpoint string.
 #[must_use]
 pub fn otlp_config_from_endpoint(service_name: &str, raw: &str) -> OtlpConfig {
     let trimmed = raw
@@ -297,14 +296,14 @@ pub fn otlp_config_from_endpoint(service_name: &str, raw: &str) -> OtlpConfig {
     }
 }
 
-/// Aus ENV.
+/// From the environment.
 #[must_use]
 pub fn otlp_config_from_env(service_name: &str) -> Option<OtlpConfig> {
     let raw = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok()?;
     Some(otlp_config_from_endpoint(service_name, &raw))
 }
 
-/// Periodischer flush.
+/// Periodic flush.
 pub fn spawn_otlp_flush_loop(
     exporter: Arc<OtlpExporter>,
     stop: Arc<AtomicBool>,
@@ -324,23 +323,24 @@ pub fn spawn_otlp_flush_loop(
         })
 }
 
-/// Spec §7.1 — CORBA-Bridge SSLIOP TLS-Server-Konfiguration.
+/// Spec §7.1 — CORBA bridge SSLIOP TLS server configuration.
 ///
-/// Baut eine `rustls::ServerConfig` ohne ALPN (CORBA-IIOP nutzt
-/// keinen ALPN-Token; SSLIOP markiert sich rein via `TAG_SSL_SEC_TRANS`
-/// (Component-ID 20) im IOR). Caller wraps damit den GIOP-TcpStream.
+/// Builds a `rustls::ServerConfig` without ALPN (CORBA IIOP uses no
+/// ALPN token; SSLIOP advertises itself solely via `TAG_SSL_SEC_TRANS`
+/// (component ID 20) in the IOR). The caller uses it to wrap the GIOP
+/// TcpStream.
 ///
 /// # Errors
-/// String-Diagnostic bei IO/PEM/rustls-Fehlern.
+/// A string diagnostic on IO/PEM/rustls errors.
 #[cfg(feature = "std")]
 pub fn build_corba_tls_config(
     cert_path: std::path::PathBuf,
     key_path: std::path::PathBuf,
     client_ca_path: Option<std::path::PathBuf>,
 ) -> Result<Arc<rustls::ServerConfig>, String> {
-    // Wir koennen nicht den foundation-Loader nutzen, weil ALPN nicht
-    // gesetzt werden muss; die Standard-Funktion liefert bereits eine
-    // ALPN-leere Config — wir reichen den foundation-Pfad direkt durch.
+    // We cannot use the foundation loader because ALPN must not be set;
+    // the standard function already returns an ALPN-empty config — we
+    // pass the foundation path straight through.
     match &client_ca_path {
         Some(ca) => zerodds_bridge_security::tls::load_server_config_with_client_auth(
             &cert_path, &key_path, ca,
@@ -419,7 +419,7 @@ pub fn install_signal_watcher(
     _shutdown_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     _reload_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> std::io::Result<std::thread::JoinHandle<()>> {
-    // Windows: signal_hook::iterator nur POSIX. Spawn dummy thread,
-    // shutdown laeuft ueber die normalen socket-close-Pfade.
+    // Windows: signal_hook::iterator is POSIX-only. Spawn a dummy
+    // thread; shutdown runs through the normal socket-close paths.
     Ok(std::thread::spawn(|| {}))
 }

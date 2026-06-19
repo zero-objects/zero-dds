@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! DDS-XML 1.0 Wire-PSM (`formal/2019-09-01` §6) — XML als
-//! Wire-Format fuer DDS-Topic-Daten.
+//! DDS-XML 1.0 wire PSM (`formal/2019-09-01` §6) — XML as the
+//! wire format for DDS topic data.
 //!
 //! Crate `zerodds-xml-wire`. Safety classification: **STANDARD**.
 //!
-//! Spec §6 spezifiziert XML als alternative Wire-Repraesentation fuer
-//! Topic-Samples (parallel zu CDR). Wir liefern:
+//! Spec §6 specifies XML as an alternative wire representation for
+//! topic samples (parallel to CDR). We provide:
 //!
-//! * [`codec`] — Bidirektionaler XML↔CDR-Codec auf Type-Token-Ebene.
-//! * [`xsd`] — XSD-Schema-Generation aus IDL-Type-Definitionen.
-//! * [`parser`] — Streaming-XML-Parser (kein DOM-Buffering).
-//! * [`emitter`] — Streaming-XML-Emitter mit XML 1.0 Conformance.
-//! * [`validator`] — Schema-Validation gegen XSD.
+//! * [`codec`] — bidirectional XML↔CDR codec at the type-token level.
+//! * [`xsd`] — XSD schema generation from IDL type definitions.
+//! * [`parser`] — streaming XML parser (no DOM buffering).
+//! * [`emitter`] — streaming XML emitter with XML 1.0 conformance.
+//! * [`validator`] — schema validation against XSD.
 
 #![no_std]
 #![forbid(unsafe_code)]

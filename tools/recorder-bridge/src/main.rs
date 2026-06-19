@@ -241,7 +241,9 @@ fn main() -> ExitCode {
             let mut buf: *mut u8 = std::ptr::null_mut();
             let mut len: usize = 0;
             // SAFETY: reader aus create.
-            let rc = unsafe { zerodds::zerodds_reader_take(*reader, &mut buf, &mut len) };
+            let rc = unsafe {
+                zerodds::zerodds_reader_take(*reader, &mut buf, &mut len, std::ptr::null_mut())
+            };
             if rc != 0 {
                 continue;
             }

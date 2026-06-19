@@ -1,33 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Delegation-Chain-Validation fuer Permissions-Sub-CAs.
+//! Delegation chain validation for permissions sub-CAs.
 //!
-//! Implementiert die 7-Punkte-Validation aus
+//! Implements the 7-point validation from
 //! `docs/architecture/09_delegation.md` §6:
 //!
-//! 1. **Chain-Kontinuitaet** — `links[i].delegatee_guid` muss
-//!    `links[i+1].delegator_guid` entsprechen.
-//! 2. **Origin-Match** — `chain.origin_guid` muss `links[0].delegator_guid`
-//!    entsprechen.
-//! 3. **Trust-Anchor-Match** — abhaengig vom [`TrustPolicy`]-Mode wird
-//!    der Origin-Delegator gegen einen oder mehrere Trust-Anchors
-//!    geprueft.
-//! 4. **Signatur-Kette** — jeder Link wird gegen den **vorigen
-//!    Delegatee-PubKey** verifiziert (Initial-Link gegen
-//!    Trust-Anchor-PubKey). Damit kann ein kompromittierter
-//!    Zwischen-Gateway nicht beliebig nach oben skalieren.
-//! 5. **Zeitfenster** — `link.not_before <= now <= link.not_after`
-//!    fuer **jeden** Link.
-//! 6. **Max-Chain-Depth** — `chain.depth() <= profile.max_chain_depth`.
-//! 7. **Scope-Intersection** — die effektive Topic-/Partition-Pattern-
-//!    Liste ist der Schnitt aller Pattern-Listen entlang der Kette.
-//!    Dadurch kann ein zwischengeschalteter Gateway den Scope nur
-//!    **enger** ziehen, nie weiter.
+//! 1. **Chain continuity** — `links[i].delegatee_guid` must
+//!    equal `links[i+1].delegator_guid`.
+//! 2. **Origin match** — `chain.origin_guid` must equal
+//!    `links[0].delegator_guid`.
+//! 3. **Trust anchor match** — depending on the [`TrustPolicy`] mode,
+//!    the origin delegator is checked against one or more trust anchors.
+//! 4. **Signature chain** — each link is verified against the **previous
+//!    delegatee pubkey** (the initial link against the
+//!    trust-anchor pubkey). This prevents a compromised
+//!    intermediate gateway from escalating arbitrarily upward.
+//! 5. **Time window** — `link.not_before <= now <= link.not_after`
+//!    for **every** link.
+//! 6. **Max chain depth** — `chain.depth() <= profile.max_chain_depth`.
+//! 7. **Scope intersection** — the effective topic/partition pattern
+//!    list is the intersection of all pattern lists along the chain.
+//!    This way an interposed gateway can only narrow the scope,
+//!    never widen it.
 //!
-//! Output ist [`ValidatedChain`] — wird vom Caller (j-d
-//! `peer_matches_class`) als Berechtigung-Pass an den Permissions-Plugin
-//! weitergegeben.
+//! Output is [`ValidatedChain`] — passed by the caller (j-d
+//! `peer_matches_class`) as an authorization pass to the permissions plugin.
 
 extern crate alloc;
 
@@ -39,76 +37,76 @@ use zerodds_security_pki::{DelegationChain, SignatureAlgorithm};
 
 use crate::topic_match::topic_match;
 
-/// Trust-Policy-Mode (Architektur §4).
+/// Trust policy mode (architecture §4).
 ///
-/// Bestimmt, wie [`validate_chain`] den Origin-Delegator gegen
-/// Trust-Anchors prueft.
+/// Determines how [`validate_chain`] checks the origin delegator against
+/// trust anchors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum TrustPolicy {
-    /// Gateway-Only: Origin-Cert MUSS exakt mit dem konfigurierten
-    /// Gateway-Cert uebereinstimmen. Kein Multi-Hop ueber andere
-    /// Gateways. (Default fuer Vehicle-intern.)
+    /// Gateway-only: the origin cert MUST match the configured
+    /// gateway cert exactly. No multi-hop via other
+    /// gateways. (Default for vehicle-internal.)
     GatewayOnly,
-    /// Direct-Or-Delegated: Peer wird **entweder** direkt akzeptiert
-    /// (regulaere PKI-Auth, ohne Chain) **oder** ueber Delegation.
-    /// Hop-Anzahl darf bis `profile.max_chain_depth`. (Default fuer
-    /// Vehicle-↔C4I.)
+    /// Direct-or-delegated: the peer is accepted **either** directly
+    /// (regular PKI auth, no chain) **or** via delegation.
+    /// The hop count may go up to `profile.max_chain_depth`. (Default for
+    /// vehicle ↔ C4I.)
     DirectOrDelegated,
-    /// Federation: mehrere Trust-Anchors (alle Gateways untereinander
-    /// peer-ed). Origin-Delegator MUSS in der Trust-Anchor-Liste sein.
+    /// Federation: multiple trust anchors (all gateways peered with each
+    /// other). The origin delegator MUST be in the trust-anchor list.
     Federation,
-    /// Strict-Delegated: ausschliesslich Delegation zugelassen — kein
-    /// direkter Auth-Pfad. Sinnvoll fuer C4I-Backends, die keine
-    /// Vehicle-Edges direkt zulassen wollen.
+    /// Strict-delegated: only delegation allowed — no
+    /// direct auth path. Useful for C4I backends that do not want to
+    /// admit vehicle edges directly.
     StrictDelegated,
 }
 
-/// Trust-Anchor — Public-Key-DER + Algorithmus + Subject-GUID.
+/// Trust anchor — public key DER + algorithm + subject GUID.
 ///
-/// Die `subject_guid` ist die GUID des Trust-Anchors (typisch das
-/// Wanne-Gateway oder C4I-Root). `verify_public_key` ist der DER-Bytes-
-/// Format-PubKey, mit dem [`DelegationLink::verify`] aufgerufen wird.
+/// The `subject_guid` is the GUID of the trust anchor (typically the
+/// hull gateway or C4I root). `verify_public_key` is the DER-bytes
+/// format pubkey with which [`DelegationLink::verify`] is called.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrustAnchor {
-    /// 16-byte GUID des Trust-Anchors.
+    /// 16-byte GUID of the trust anchor.
     pub subject_guid: [u8; 16],
-    /// PubKey-DER-Bytes (algorithm-spezifisches Format, siehe
+    /// Pubkey DER bytes (algorithm-specific format, see
     /// [`DelegationLink::verify`]).
     pub verify_public_key: Vec<u8>,
-    /// Erwarteter Signatur-Algorithmus dieses Anchors.
+    /// Expected signature algorithm of this anchor.
     pub algorithm: SignatureAlgorithm,
 }
 
-/// Delegation-Profile (minimal — Voll-Definition kommt in j-h aus
-/// Governance-XML).
+/// Delegation profile (minimal — the full definition comes in j-h from
+/// the governance XML).
 ///
-/// Profile = Konfigurations-Bundle, das Trust-Policy + erlaubte
-/// Algorithmen + max-Chain-Depth definiert. Wird per Name in
-/// `PeerClassMatch::delegation_profile` referenziert (j-d).
+/// Profile = configuration bundle that defines the trust policy + allowed
+/// algorithms + max chain depth. Referenced by name in
+/// `PeerClassMatch::delegation_profile` (j-d).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DelegationProfile {
-    /// Name des Profiles (Governance-XML-Referenz).
+    /// Name of the profile (governance-XML reference).
     pub name: String,
-    /// Trust-Policy-Modus.
+    /// Trust policy mode.
     pub trust_policy: TrustPolicy,
-    /// Erlaubte Trust-Anchors. Bei `GatewayOnly` muss exakt 1 Eintrag
-    /// drin sein; bei `Federation` >=1.
+    /// Allowed trust anchors. For `GatewayOnly` there must be exactly 1
+    /// entry; for `Federation` >=1.
     pub trust_anchors: Vec<TrustAnchor>,
-    /// Maximale Chain-Tiefe (zusaetzlich zum hard-cap aus PKI-Crate).
+    /// Maximum chain depth (additional to the hard cap from the PKI crate).
     /// Default 3.
     pub max_chain_depth: usize,
-    /// Erlaubte Signatur-Algorithmen. Andere → Reject.
+    /// Allowed signature algorithms. Others → reject.
     pub allowed_algorithms: BTreeSet<u8>, // SignatureAlgorithm::wire_id
-    /// Wenn true: Profil verlangt OCSP-Liveness-Check fuer
-    /// Trust-Anchor-Cert. Wird in j-h gegen das Governance-XML
-    /// gehaengt; in j-b ist das Feld nur ein Marker.
+    /// If true: the profile requires an OCSP liveness check for the
+    /// trust-anchor cert. Wired in j-h against the governance XML;
+    /// in j-b the field is only a marker.
     pub require_ocsp: bool,
 }
 
 impl DelegationProfile {
-    /// Convenience-Konstruktor mit `max_chain_depth=3`,
-    /// `trust_policy=DirectOrDelegated`, alle 4 Algorithmen erlaubt.
+    /// Convenience constructor with `max_chain_depth=3`,
+    /// `trust_policy=DirectOrDelegated`, all 4 algorithms allowed.
     #[must_use]
     pub fn default_with_anchor(name: String, anchor: TrustAnchor) -> Self {
         let mut algos = BTreeSet::new();
@@ -131,58 +129,58 @@ impl DelegationProfile {
     }
 }
 
-/// Errors aus der Chain-Validation.
+/// Errors from the chain validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DelegationCheckError {
-    /// Chain ist leer.
+    /// Chain is empty.
     EmptyChain,
     /// `links[i].delegatee_guid != links[i+1].delegator_guid`.
     ChainBroken {
-        /// Index des fehlerhaften Links (i).
+        /// Index of the faulty link (i).
         index: usize,
     },
     /// `chain.origin_guid != links[0].delegator_guid`.
     OriginMismatch,
-    /// Origin-Delegator entspricht keinem Trust-Anchor.
+    /// The origin delegator matches no trust anchor.
     UntrustedDelegator,
-    /// Link-Signatur ist ungueltig.
+    /// The link signature is invalid.
     SignatureInvalid {
-        /// Index des Links.
+        /// Index of the link.
         index: usize,
-        /// Diagnose-String aus dem PKI-Crate.
+        /// Diagnostic string from the PKI crate.
         reason: String,
     },
-    /// Link ausserhalb seines Zeitfensters.
+    /// Link outside its time window.
     LinkExpired {
-        /// Index des Links.
+        /// Index of the link.
         index: usize,
-        /// Aktueller Zeit-Tick.
+        /// Current time tick.
         now: i64,
         /// `link.not_before`.
         not_before: i64,
         /// `link.not_after`.
         not_after: i64,
     },
-    /// Chain ist tiefer als `profile.max_chain_depth`.
+    /// Chain is deeper than `profile.max_chain_depth`.
     ChainTooDeep {
-        /// Tatsaechliche Tiefe.
+        /// Actual depth.
         depth: usize,
-        /// Profil-Limit.
+        /// Profile limit.
         max: usize,
     },
-    /// Verwendeter Signatur-Algorithmus ist nicht in
+    /// The signature algorithm used is not in
     /// `profile.allowed_algorithms`.
     AlgorithmRejected {
-        /// Index des Links.
+        /// Index of the link.
         index: usize,
-        /// Algorithm-Wire-Id.
+        /// Algorithm wire id.
         algorithm: u8,
     },
-    /// Profil verlangt mindestens einen Trust-Anchor, hat aber keinen.
+    /// The profile requires at least one trust anchor but has none.
     NoTrustAnchor,
-    /// Trust-Anchor-Liste hat einen Eintrag mit Algorithm-Mismatch zum
-    /// Initial-Link (Defensive-Check).
+    /// The trust-anchor list has an entry with an algorithm mismatch to the
+    /// initial link (defensive check).
     AnchorAlgorithmMismatch,
 }
 
@@ -220,31 +218,31 @@ impl core::fmt::Display for DelegationCheckError {
 #[cfg(feature = "std")]
 impl std::error::Error for DelegationCheckError {}
 
-/// Result-Alias.
+/// Result alias.
 pub type DelegationCheckResult<T> = Result<T, DelegationCheckError>;
 
-/// Validierte Chain — Output von [`validate_chain`].
+/// Validated chain — output of [`validate_chain`].
 ///
-/// Effektive Pattern-Listen sind das Ergebnis der Scope-Intersection
-/// aller Links: `effective = intersect(links[0].patterns, ..., links[N-1].patterns)`.
+/// The effective pattern lists are the result of the scope intersection
+/// of all links: `effective = intersect(links[0].patterns, ..., links[N-1].patterns)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidatedChain {
-    /// 16-byte GUID des Origin-Participants.
+    /// 16-byte GUID of the origin participant.
     pub origin_guid: [u8; 16],
-    /// 16-byte GUID des Edge-Peers (= letzter Delegatee).
+    /// 16-byte GUID of the edge peer (= last delegatee).
     pub edge_guid: [u8; 16],
-    /// Tatsaechliche Chain-Tiefe.
+    /// Actual chain depth.
     pub chain_depth: usize,
-    /// Effektive Topic-Patterns (Intersection ueber alle Links).
+    /// Effective topic patterns (intersection over all links).
     pub effective_topic_patterns: Vec<String>,
-    /// Effektive Partition-Patterns (Intersection ueber alle Links).
+    /// Effective partition patterns (intersection over all links).
     pub effective_partition_patterns: Vec<String>,
 }
 
 impl ValidatedChain {
-    /// True wenn `topic_name` von der effektiven Pattern-Liste
-    /// abgedeckt wird. Empty-List = keine Topic-Whitelist (Match
-    /// false — explizit, sicherer Default).
+    /// True if `topic_name` is covered by the effective pattern list.
+    /// Empty list = no topic whitelist (match
+    /// false — explicit, safe default).
     #[must_use]
     pub fn allows_topic(&self, topic_name: &str) -> bool {
         if self.effective_topic_patterns.is_empty() {
@@ -255,8 +253,8 @@ impl ValidatedChain {
             .any(|p| topic_match(p, topic_name))
     }
 
-    /// True wenn `partition_name` von der effektiven Partition-Pattern-
-    /// Liste abgedeckt wird. Empty-List = nur Default-Partition `""`.
+    /// True if `partition_name` is covered by the effective partition
+    /// pattern list. Empty list = only the default partition `""`.
     #[must_use]
     pub fn allows_partition(&self, partition_name: &str) -> bool {
         if self.effective_partition_patterns.is_empty() {
@@ -268,32 +266,32 @@ impl ValidatedChain {
     }
 }
 
-/// 7-Punkte-Chain-Validation.
+/// 7-point chain validation.
 ///
-/// Reihenfolge der Checks (early-return):
+/// Order of the checks (early return):
 /// 1. Chain non-empty
-/// 2. Profile hat Trust-Anchors (sofern nicht TrustPolicy::DirectOrDelegated mit Empty-Chain)
-/// 3. Origin-Match
-/// 4. Chain-Kontinuitaet
-/// 5. Pro Link: Algorithm-Filter
-/// 6. Pro Link: Zeitfenster
-/// 7. Pro Link: Signatur (Trust-Anchor-PubKey fuer initial, vorigen Delegatee fuer Folgelinks)
-/// 8. Trust-Anchor-Match
-/// 9. Chain-Depth gegen Profile
-/// 10. Scope-Intersection
+/// 2. Profile has trust anchors (unless TrustPolicy::DirectOrDelegated with an empty chain)
+/// 3. Origin match
+/// 4. Chain continuity
+/// 5. Per link: algorithm filter
+/// 6. Per link: time window
+/// 7. Per link: signature (trust-anchor pubkey for the initial, previous delegatee for follow-up links)
+/// 8. Trust-anchor match
+/// 9. Chain depth against the profile
+/// 10. Scope intersection
 ///
-/// **Anmerkung zu Punkt 7 (Signatur-Kette):** Folgelinks koennen wir
-/// nicht ohne Zugriff auf den **delegator-Cert** des Zwischen-Hops
-/// verifizieren — denn aus der GUID allein laesst sich kein PubKey
-/// ableiten. j-b loest das so: der vorige `link.delegatee_guid` ist
-/// gleichzeitig der naechste `link.delegator_guid`. Wir vertrauen
-/// der **Sub-Gateway-Bridge** (j-e), den passenden PubKey via SPDP
-/// mitzuliefern. In j-b expandieren wir `pubkey_resolver: impl Fn(&[u8;16])
-/// -> Option<(Vec<u8>, SignatureAlgorithm)>` als Closure-Hook — der
-/// Default-Resolver matched nur den Trust-Anchor + den Initial-Link.
+/// **Note on point 7 (signature chain):** follow-up links cannot be
+/// verified without access to the **delegator cert** of the intermediate
+/// hop — because no pubkey can be derived from the GUID alone. j-b
+/// solves this as follows: the previous `link.delegatee_guid` is at the
+/// same time the next `link.delegator_guid`. We trust the
+/// **sub-gateway bridge** (j-e) to supply the matching pubkey via SPDP.
+/// In j-b we expand `pubkey_resolver: impl Fn(&[u8;16])
+/// -> Option<(Vec<u8>, SignatureAlgorithm)>` as a closure hook — the
+/// default resolver matches only the trust anchor + the initial link.
 ///
 /// # Errors
-/// Siehe [`DelegationCheckError`].
+/// See [`DelegationCheckError`].
 pub fn validate_chain<F>(
     chain: &DelegationChain,
     profile: &DelegationProfile,
@@ -310,7 +308,7 @@ where
         return Err(DelegationCheckError::NoTrustAnchor);
     }
 
-    // Punkt 6: Chain-Depth.
+    // Point 6: chain depth.
     if chain.depth() > profile.max_chain_depth {
         return Err(DelegationCheckError::ChainTooDeep {
             depth: chain.depth(),
@@ -318,23 +316,23 @@ where
         });
     }
 
-    // Punkt 2: Origin-Match.
+    // Point 2: origin match.
     if chain.origin_guid != chain.links[0].delegator_guid {
         return Err(DelegationCheckError::OriginMismatch);
     }
 
-    // Punkt 1: Chain-Kontinuitaet.
+    // Point 1: chain continuity.
     for i in 0..chain.links.len() - 1 {
         if chain.links[i].delegatee_guid != chain.links[i + 1].delegator_guid {
             return Err(DelegationCheckError::ChainBroken { index: i });
         }
     }
 
-    // Punkt 3: Trust-Anchor-Match (Origin gegen Anchors-Liste).
+    // Point 3: trust-anchor match (origin against the anchors list).
     let initial = &chain.links[0];
     let anchor = match profile.trust_policy {
         TrustPolicy::GatewayOnly => {
-            // Exakt 1 Anchor erlaubt.
+            // Exactly 1 anchor allowed.
             if profile.trust_anchors.len() != 1 {
                 return Err(DelegationCheckError::AnchorAlgorithmMismatch);
             }
@@ -353,9 +351,9 @@ where
         }
     };
 
-    // Loop ueber alle Links: Algorithm + Time + Signatur.
+    // Loop over all links: algorithm + time + signature.
     for (idx, link) in chain.links.iter().enumerate() {
-        // Punkt 5a: Algorithm-Filter.
+        // Point 5a: algorithm filter.
         if !profile
             .allowed_algorithms
             .contains(&link.algorithm.wire_id())
@@ -365,7 +363,7 @@ where
                 algorithm: link.algorithm.wire_id(),
             });
         }
-        // Punkt 5b: Zeitfenster.
+        // Point 5b: time window.
         if now < link.not_before || now > link.not_after {
             return Err(DelegationCheckError::LinkExpired {
                 index: idx,
@@ -374,13 +372,13 @@ where
                 not_after: link.not_after,
             });
         }
-        // Punkt 4: Signatur. Initial-Link gegen Trust-Anchor, sonst
-        // gegen pubkey_resolver(delegator_guid) — der Caller stellt das
-        // ueber den letzten Link's delegatee bereit.
+        // Point 4: signature. Initial link against the trust anchor, else
+        // against pubkey_resolver(delegator_guid) — the caller provides it
+        // via the last link's delegatee.
         let (verify_pk, expected_algo) = if idx == 0 {
             (anchor.verify_public_key.clone(), anchor.algorithm)
         } else {
-            // Vorheriger delegatee == aktueller delegator.
+            // Previous delegatee == current delegator.
             pubkey_resolver(&link.delegator_guid).ok_or_else(|| {
                 DelegationCheckError::SignatureInvalid {
                     index: idx,
@@ -388,7 +386,7 @@ where
                 }
             })?
         };
-        // Defensive: Anchor-Algo soll zum Initial-Link passen.
+        // Defensive: the anchor algo should match the initial link.
         if idx == 0 && expected_algo != link.algorithm {
             return Err(DelegationCheckError::AnchorAlgorithmMismatch);
         }
@@ -399,7 +397,7 @@ where
             })?;
     }
 
-    // Punkt 7: Scope-Intersection.
+    // Point 7: scope intersection.
     let mut effective_topics = chain.links[0].allowed_topic_patterns.clone();
     let mut effective_parts = chain.links[0].allowed_partition_patterns.clone();
     for link in chain.links.iter().skip(1) {
@@ -420,25 +418,25 @@ where
     })
 }
 
-/// Scope-Intersection ueber Wildcard-Pattern-Listen.
+/// Scope intersection over wildcard pattern lists.
 ///
-/// Ein Pattern aus `a` bleibt im Schnitt, wenn es **mindestens einem
-/// Pattern in `b` Subset ist** (im Sinne des Wildcard-Match: jedes
-/// `topic_match(b_pat, a_pat)` ist genau die Subset-Relation zwischen
-/// Pattern-Sprachen, weil `a_pat` als Topic-Name von `b_pat` gematched
-/// werden muesste — wir approximieren das durch:
+/// A pattern from `a` stays in the intersection if it is **a subset of at
+/// least one pattern in `b`** (in the sense of the wildcard match: every
+/// `topic_match(b_pat, a_pat)` is exactly the subset relation between
+/// pattern languages, because `a_pat` would have to be matched as a topic
+/// name by `b_pat` — we approximate this by:
 ///
-/// * `a_pat` bleibt drin, wenn `b` ein Pattern enthaelt, das `a_pat`
-///   matched (z.B. `b="*"` matched alles).
-/// * Andersrum dazu: konkrete `b_pat`-Strings die kein Wildcard sind
-///   bleiben drin, wenn `a` ein Pattern enthaelt das `b_pat` matched.
+/// * `a_pat` stays in if `b` contains a pattern that matches `a_pat`
+///   (e.g. `b="*"` matches everything).
+/// * Conversely: concrete `b_pat` strings that are not a wildcard
+///   stay in if `a` contains a pattern that matches `b_pat`.
 ///
-/// Das ist bewusst konservativ — bei Unsicherheit lieber das engere
-/// Set behalten. Special-Case: Wenn `b` `"*"` enthaelt, ist alles aus
-/// `a` erlaubt (b ist "alles"). Wenn `a` `"*"` enthaelt, alles aus `b`.
+/// This is intentionally conservative — when in doubt, keep the narrower
+/// set. Special case: if `b` contains `"*"`, everything from
+/// `a` is allowed (b is "everything"). If `a` contains `"*"`, everything from `b`.
 #[must_use]
 pub fn scope_intersect(a: &[String], b: &[String]) -> Vec<String> {
-    // Special-Cases fuer Empty oder Allow-All.
+    // Special cases for empty or allow-all.
     if a.is_empty() {
         return b.to_vec();
     }
@@ -572,7 +570,7 @@ mod tests {
         let mid = [0xCC; 16];
         let edge = [0xBB; 16];
         let l1 = make_link(gw, mid, &["sensor/*"], &sk);
-        let l2 = make_link(mid, edge, &["sensor/lidar"], &sk); // sig wird im check fehlschlagen, vorher schon depth-fail
+        let l2 = make_link(mid, edge, &["sensor/lidar"], &sk); // sig will fail in the check, but depth-fail happens first
         let chain = DelegationChain::new(gw, alloc::vec![l1, l2]).expect("chain");
         let anchor = TrustAnchor {
             subject_guid: gw,
@@ -612,13 +610,13 @@ mod tests {
     #[test]
     fn untrusted_delegator_rejects() {
         let (sk, _pk_sk) = ecdsa_keys();
-        let (_sk2, pk_anchor) = ecdsa_keys(); // anchor ist anderer Key
+        let (_sk2, pk_anchor) = ecdsa_keys(); // anchor is a different key
         let gw = [0xAA; 16];
         let edge = [0xBB; 16];
         let link = make_link(gw, edge, &["sensor/*"], &sk);
         let chain = DelegationChain::new(gw, alloc::vec![link]).expect("chain");
         let anchor = TrustAnchor {
-            subject_guid: [0x99; 16], // nicht gw
+            subject_guid: [0x99; 16], // not gw
             verify_public_key: pk_anchor,
             algorithm: SignatureAlgorithm::EcdsaP256,
         };
@@ -640,7 +638,7 @@ mod tests {
             algorithm: SignatureAlgorithm::EcdsaP256,
         };
         let profile = profile_with(anchor, TrustPolicy::GatewayOnly, 3);
-        // now nach not_after=2_000
+        // now after not_after=2_000
         let err = validate_chain(&chain, &profile, 5_000, |_| None).expect_err("must fail");
         assert!(matches!(err, DelegationCheckError::LinkExpired { .. }));
     }
@@ -658,7 +656,7 @@ mod tests {
             algorithm: SignatureAlgorithm::EcdsaP256,
         };
         let mut profile = profile_with(anchor, TrustPolicy::GatewayOnly, 3);
-        // ECDSA-P256 nicht in Whitelist:
+        // ECDSA-P256 not in whitelist:
         profile.allowed_algorithms.clear();
         profile
             .allowed_algorithms
@@ -678,7 +676,7 @@ mod tests {
         let edge = [0xBB; 16];
         let link = make_link(gw, edge, &["sensor/*"], &sk);
         let chain = DelegationChain::new(gw, alloc::vec![link]).expect("chain");
-        // Trust-Anchor zeigt auf gw, hat aber falschen PubKey.
+        // Trust anchor points to gw but has the wrong pubkey.
         let anchor = TrustAnchor {
             subject_guid: gw,
             verify_public_key: pk_anchor_other,
@@ -694,9 +692,9 @@ mod tests {
 
     #[test]
     fn two_hop_chain_via_resolver() {
-        // gw -> mid -> edge. Initial-Link ist gw->mid (signiert mit sk_gw).
-        // Folge-Link mid->edge (signiert mit sk_mid). Resolver liefert
-        // pk_mid wenn nach mid gefragt.
+        // gw -> mid -> edge. The initial link is gw->mid (signed with sk_gw).
+        // The follow-up link mid->edge (signed with sk_mid). The resolver
+        // returns pk_mid when asked for mid.
         let rng = SystemRandom::new();
         let pkcs8_gw =
             EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &rng).expect("gw");
@@ -729,8 +727,8 @@ mod tests {
         };
         let profile = profile_with(anchor, TrustPolicy::DirectOrDelegated, 3);
 
-        // Resolver liefert pk_mid fuer mid (== aktueller delegator des
-        // 2. Links).
+        // The resolver returns pk_mid for mid (== current delegator of the
+        // 2nd link).
         let resolver = |g: &[u8; 16]| -> Option<(Vec<u8>, SignatureAlgorithm)> {
             if g == &mid {
                 Some((pk_mid.clone(), SignatureAlgorithm::EcdsaP256))
@@ -741,7 +739,7 @@ mod tests {
         let validated = validate_chain(&chain, &profile, 1_500, resolver).expect("validate");
         assert_eq!(validated.chain_depth, 2);
         assert_eq!(validated.edge_guid, edge);
-        // Scope-Intersection: enger von "sensor/*" und "sensor/lidar" ist "sensor/lidar"
+        // Scope intersection: the narrower of "sensor/*" and "sensor/lidar" is "sensor/lidar"
         assert!(
             validated
                 .effective_topic_patterns
@@ -756,7 +754,7 @@ mod tests {
         let mid = [0xCC; 16];
         let edge = [0xBB; 16];
         let l1 = make_link(gw, mid, &["sensor/*"], &sk);
-        // l2 hat falschen delegator (nicht mid):
+        // l2 has the wrong delegator (not mid):
         let l2 = make_link([0xDD; 16], edge, &["sensor/lidar"], &sk);
         let chain = DelegationChain::new(gw, alloc::vec![l1, l2]).expect("chain");
         let anchor = TrustAnchor {
@@ -779,7 +777,7 @@ mod tests {
         let gw1 = [0x11; 16];
         let gw2 = [0x22; 16];
         let edge = [0xBB; 16];
-        let link = make_link(gw2, edge, &["sensor/*"], &sk1); // signed mit sk1
+        let link = make_link(gw2, edge, &["sensor/*"], &sk1); // signed with sk1
         let chain = DelegationChain::new(gw2, alloc::vec![link]).expect("chain");
 
         let mut profile = profile_with(
@@ -796,13 +794,13 @@ mod tests {
             verify_public_key: pk2,
             algorithm: SignatureAlgorithm::EcdsaP256,
         });
-        // Link wurde mit sk1 signiert, anchor fuer gw2 hat aber pk2 →
-        // SignatureInvalid (aber UntrustedDelegator wird vorher
-        // behoben weil gw2 in der Liste ist).
+        // The link was signed with sk1, but the anchor for gw2 has pk2 →
+        // SignatureInvalid (but UntrustedDelegator is resolved earlier
+        // because gw2 is in the list).
         let err = validate_chain(&chain, &profile, 1_500, |_| None).expect_err("must fail");
         assert!(matches!(err, DelegationCheckError::SignatureInvalid { .. }));
 
-        // Korrekt-Fix: anchor fuer gw2 mit pk1 (matches signing key).
+        // Correct fix: anchor for gw2 with pk1 (matches signing key).
         profile.trust_anchors[1].verify_public_key = pk1;
         let validated = validate_chain(&chain, &profile, 1_500, |_| None).expect("validate");
         assert_eq!(validated.origin_guid, gw2);
@@ -840,7 +838,7 @@ mod tests {
         };
         assert!(v.allows_topic("sensor/lidar"));
         assert!(!v.allows_topic("actuator/x"));
-        // Empty partition list = nur default partition
+        // Empty partition list = only the default partition
         assert!(v.allows_partition(""));
         assert!(!v.allows_partition("public"));
     }

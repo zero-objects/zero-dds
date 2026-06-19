@@ -1,35 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! SASL-Frame-Layer fuer den AMQP-Endpoint.
+//! SASL frame layer for the AMQP endpoint.
 //!
-//! Spec-Quelle: dds-amqp-1.0-beta1.pdf §10.2 SASL Mechanisms.
+//! Spec source: dds-amqp-1.0-beta1.pdf §10.2 SASL Mechanisms.
 //! Mandatory: PLAIN (RFC 4616), ANONYMOUS (RFC 4505),
 //! EXTERNAL (RFC 4422 §7).
 
 use alloc::string::{String, ToString};
 
-/// Spec §10.2 — SASL-Mechanism-Identifier.
+/// Spec §10.2 — SASL mechanism identifier.
 ///
-/// Mandatory-Set: PLAIN, ANONYMOUS, EXTERNAL.
-/// Optional-Set: SCRAM-SHA-256 (Spec: "implementations MAY
+/// Mandatory set: PLAIN, ANONYMOUS, EXTERNAL.
+/// Optional set: SCRAM-SHA-256 (Spec: "implementations MAY
 /// additionally support SCRAM-SHA-256"; RFC 7677).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaslMechanism {
     /// PLAIN — Username + Password (REQUIRES TLS).
     Plain,
-    /// ANONYMOUS — kein Authentifizierungs-Token.
+    /// ANONYMOUS — no authentication token.
     Anonymous,
-    /// EXTERNAL — Authentifizierung delegiert an Transport-Layer
-    /// (typisch mTLS).
+    /// EXTERNAL — authentication delegated to the transport layer
+    /// (typically mTLS).
     External,
     /// SCRAM-SHA-256 — Salted Challenge Response Authentication
-    /// Mechanism (RFC 7677). Optional gemaess Spec §10.2.
+    /// Mechanism (RFC 7677). Optional per Spec §10.2.
     ScramSha256,
 }
 
 impl SaslMechanism {
-    /// Spec §10.2 — Mechanismus-Name als ASCII-Symbol auf der Wire.
+    /// Spec §10.2 — mechanism name as an ASCII symbol on the wire.
     #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
@@ -40,7 +40,7 @@ impl SaslMechanism {
         }
     }
 
-    /// Mechanismus aus dem Wire-Symbol parsen.
+    /// Parse the mechanism from the wire symbol.
     #[must_use]
     pub fn from_name(s: &str) -> Option<Self> {
         match s {
@@ -52,18 +52,18 @@ impl SaslMechanism {
         }
     }
 
-    /// `true` wenn der Mechanismus zum Mandatory-Set gehoert
-    /// (Spec §10.2 listet PLAIN/ANONYMOUS/EXTERNAL als mandatory).
+    /// `true` if the mechanism belongs to the mandatory set
+    /// (Spec §10.2 lists PLAIN/ANONYMOUS/EXTERNAL as mandatory).
     #[must_use]
     pub const fn is_mandatory(self) -> bool {
         matches!(self, Self::Plain | Self::Anonymous | Self::External)
     }
 }
 
-/// SASL-Outcome-Code nach OASIS AMQP 1.0 §5.3.3.6 (Wire-Protocol).
+/// SASL outcome code per OASIS AMQP 1.0 §5.3.3.6 (wire protocol).
 ///
-/// Die Codes sind Spec-normiert; sie werden direkt als 1-Byte-Wert
-/// auf den Wire geschrieben.
+/// The codes are spec-normative; they are written directly as a
+/// 1-byte value onto the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SaslCode {
@@ -81,7 +81,7 @@ pub enum SaslCode {
 }
 
 impl SaslCode {
-    /// Wire-Wert.
+    /// Wire value.
     #[must_use]
     pub const fn to_u8(self) -> u8 {
         self as u8
@@ -90,7 +90,7 @@ impl SaslCode {
     /// `u8 -> SaslCode`.
     ///
     /// # Errors
-    /// `()` wenn der Wert kein registrierter Spec-Code ist.
+    /// `()` if the value is not a registered spec code.
     #[allow(clippy::result_unit_err)]
     pub const fn from_u8(v: u8) -> Result<Self, ()> {
         match v {
@@ -107,23 +107,23 @@ impl SaslCode {
 /// SASL-State-Machine-Outcome.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SaslOutcome {
-    /// Authentifizierung erfolgreich (Wire-Code `ok` = 0).
+    /// Authentication succeeded (wire code `ok` = 0).
     Authenticated {
-        /// Authenticated subject identifier (z.B. user-name).
+        /// Authenticated subject identifier (e.g. user name).
         subject: String,
     },
-    /// Authentifizierung fehlgeschlagen — traegt den Spec-Wire-Code
-    /// nach §5.3.3.6 (typischerweise `auth` = 1).
+    /// Authentication failed — carries the spec wire code
+    /// per §5.3.3.6 (typically `auth` = 1).
     Failed {
-        /// Wire-Code nach OASIS AMQP 1.0 §5.3.3.6.
+        /// Wire code per OASIS AMQP 1.0 §5.3.3.6.
         code: SaslCode,
-        /// Begruendung (interner Diagnostic-String, nicht Wire).
+        /// Reason (internal diagnostic string, not wire).
         reason: String,
     },
 }
 
 impl SaslOutcome {
-    /// Konstruktor fuer den haeufigen Fall `Failed{code:Auth, reason}`.
+    /// Constructor for the common case `Failed{code:Auth, reason}`.
     #[must_use]
     pub fn auth_failed(reason: impl Into<String>) -> Self {
         Self::Failed {
@@ -132,13 +132,13 @@ impl SaslOutcome {
         }
     }
 
-    /// `true` wenn der Outcome Authentifizierung erfolgreich war.
+    /// `true` if the outcome was a successful authentication.
     #[must_use]
     pub fn is_ok(&self) -> bool {
         matches!(self, Self::Authenticated { .. })
     }
 
-    /// Wire-Code nach §5.3.3.6.
+    /// Wire code per §5.3.3.6.
     #[must_use]
     pub fn wire_code(&self) -> SaslCode {
         match self {
@@ -148,21 +148,24 @@ impl SaslOutcome {
     }
 }
 
-/// SASL-Connection-State (vereinfachter Layer).
+/// SASL connection state (simplified layer).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaslState {
-    /// Vom Server angebotene Mechanismen.
+    /// Mechanisms offered by the server.
     pub offered: alloc::vec::Vec<SaslMechanism>,
-    /// Aktueller Outcome (None = Handshake noch nicht abgeschlossen).
+    /// Current outcome (None = handshake not yet complete).
     pub outcome: Option<SaslOutcome>,
 }
 
 impl SaslState {
-    /// Konstruktor mit Default-Mechanismen-Set (PLAIN+EXTERNAL+
-    /// ANONYMOUS, wenn TLS aktiv; sonst nur ANONYMOUS+EXTERNAL).
+    /// Constructor with the default mechanism set. SCRAM-SHA-256 + ANONYMOUS +
+    /// EXTERNAL are always offered; PLAIN only with TLS (it puts the password on
+    /// the wire). SCRAM is offered regardless of TLS — its challenge/response
+    /// never transmits the password, so it is the strong choice on plaintext too.
     #[must_use]
     pub fn new(tls_active: bool) -> Self {
         let mut offered = alloc::vec::Vec::new();
+        offered.push(SaslMechanism::ScramSha256);
         if tls_active {
             offered.push(SaslMechanism::Plain);
         }
@@ -174,8 +177,25 @@ impl SaslState {
         }
     }
 
-    /// Verifiziert PLAIN-Credentials gegen einen Caller-supplied
-    /// Verifier.
+    /// Map the result of a [`crate::scram::ScramServerExchange`] onto the SASL
+    /// outcome. The two-round SCRAM message flow is driven by the SASL frame
+    /// handler (server-first challenge then client-final); this records the
+    /// terminal step. SCRAM never requires TLS to be offered.
+    pub fn finish_scram(&mut self, step: crate::scram::ScramStep) {
+        if !self.offered.contains(&SaslMechanism::ScramSha256) {
+            self.outcome = Some(SaslOutcome::auth_failed("mechanism not offered"));
+            return;
+        }
+        self.outcome = Some(match step {
+            crate::scram::ScramStep::Success { username, .. } => {
+                SaslOutcome::Authenticated { subject: username }
+            }
+            crate::scram::ScramStep::Failure(reason) => SaslOutcome::auth_failed(reason),
+        });
+    }
+
+    /// Verifies PLAIN credentials against a caller-supplied
+    /// verifier.
     pub fn authenticate_plain<F>(&mut self, username: &str, password: &str, verifier: F)
     where
         F: Fn(&str, &str) -> bool,
@@ -193,7 +213,7 @@ impl SaslState {
         }
     }
 
-    /// ANONYMOUS-Outcome — immer authenticated mit leerem Subject.
+    /// ANONYMOUS outcome — always authenticated with an empty subject.
     pub fn authenticate_anonymous(&mut self) {
         if !self.offered.contains(&SaslMechanism::Anonymous) {
             self.outcome = Some(SaslOutcome::auth_failed("mechanism not offered"));
@@ -204,7 +224,7 @@ impl SaslState {
         });
     }
 
-    /// EXTERNAL-Outcome — Subject vom Transport-Layer (z.B. mTLS-CN).
+    /// EXTERNAL outcome — subject from the transport layer (e.g. mTLS CN).
     pub fn authenticate_external(&mut self, transport_subject: &str) {
         if !self.offered.contains(&SaslMechanism::External) {
             self.outcome = Some(SaslOutcome::auth_failed("mechanism not offered"));
@@ -215,18 +235,22 @@ impl SaslState {
         });
     }
 
-    /// Spec §2.2 Bridge-Profile Cl. 5 + §10.2.1 — Outbound-Initiator
-    /// waehlt aus den vom Broker angebotenen Mechanismen.
-    /// `tls_active = false` schliesst PLAIN aus.
+    /// Spec §2.2 Bridge Profile Cl. 5 + §10.2.1 — the outbound initiator
+    /// selects from the mechanisms offered by the broker.
+    /// `tls_active = false` excludes PLAIN.
     ///
-    /// Returns den gewaehlten Mechanismus oder `None` wenn keiner
-    /// der angebotenen Mechanismen unter den TLS-Constraints
-    /// akzeptabel ist.
+    /// Returns the selected mechanism, or `None` if none of the
+    /// offered mechanisms is acceptable under the TLS constraints.
     #[must_use]
     pub fn select_outbound(offered: &[SaslMechanism], tls_active: bool) -> Option<SaslMechanism> {
-        // Spec-Praezedenz: EXTERNAL (mTLS) > PLAIN (mit TLS) > ANONYMOUS.
+        // Spec precedence: EXTERNAL (mTLS) > SCRAM-SHA-256 > PLAIN (with TLS) >
+        // ANONYMOUS. SCRAM ranks above PLAIN because it never exposes the
+        // password and needs no TLS; PLAIN is the cleartext fallback.
         if offered.contains(&SaslMechanism::External) {
             return Some(SaslMechanism::External);
+        }
+        if offered.contains(&SaslMechanism::ScramSha256) {
+            return Some(SaslMechanism::ScramSha256);
         }
         if tls_active && offered.contains(&SaslMechanism::Plain) {
             return Some(SaslMechanism::Plain);
@@ -301,8 +325,8 @@ mod tests {
 
     #[test]
     fn select_outbound_no_acceptable_mechanism() {
-        // Broker bietet nur PLAIN, kein TLS aktiv → kein
-        // akzeptabler Mechanismus.
+        // Broker offers only PLAIN, no TLS active → no
+        // acceptable mechanism.
         let offered = [SaslMechanism::Plain];
         assert_eq!(SaslState::select_outbound(&offered, false), None);
     }
@@ -336,8 +360,8 @@ mod tests {
     fn plain_without_tls_yields_auth_failed() {
         let mut s = SaslState::new(false);
         s.authenticate_plain("a", "b", |_, _| true);
-        // Spec OASIS AMQP 1.0 §5.3.3.6 — Code `auth` (1) fuer
-        // Mechanism-not-offered (kein eigener `unsupported`-Code).
+        // Spec OASIS AMQP 1.0 §5.3.3.6 — code `auth` (1) for
+        // mechanism-not-offered (no dedicated `unsupported` code).
         assert!(matches!(
             s.outcome,
             Some(SaslOutcome::Failed {

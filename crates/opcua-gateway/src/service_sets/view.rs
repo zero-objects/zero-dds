@@ -5,7 +5,7 @@
 //!
 //! Modul: `OMG::DDSOPCUA::OPCUA2DDS::VIEW`. Interface: `View`.
 //!
-//! Methoden: `browse`, `browse_next`, `translate_browse_paths_to_node_ids`,
+//! Methods: `browse`, `browse_next`, `translate_browse_paths_to_node_ids`,
 //! `register_nodes`, `unregister_nodes`.
 
 use alloc::vec::Vec;
@@ -49,8 +49,8 @@ pub enum BrowseDirection {
     Forward = 0,
     /// `@value(1) REVERSE_BROWSE_DIRECTION`.
     Reverse = 1,
-    /// `@value(3) BOTH_BROWSE_DIRECTION`. Wert `3` aus Spec (kein
-    /// `@value(2)` — Spec laesst die Luecke explizit).
+    /// `@value(3) BOTH_BROWSE_DIRECTION`. Value `3` from the spec (no
+    /// `@value(2)` — the spec leaves the gap explicitly).
     Both = 3,
 }
 
@@ -71,20 +71,20 @@ pub struct BrowseDescription {
     pub result_mask: u32,
 }
 
-/// Methoden-Namen-Konstanten (Spec §8.3.2.2 IDL).
+/// Method-name constants (Spec §8.3.2.2 IDL).
 pub struct ViewServiceMethods;
 
 impl ViewServiceMethods {
-    /// Methode `browse`.
+    /// Method `browse`.
     pub const BROWSE: &'static str = "browse";
-    /// Methode `browse_next`.
+    /// Method `browse_next`.
     pub const BROWSE_NEXT: &'static str = "browse_next";
-    /// Methode `translate_browse_paths_to_node_ids`.
+    /// Method `translate_browse_paths_to_node_ids`.
     pub const TRANSLATE_BROWSE_PATHS_TO_NODE_IDS: &'static str =
         "translate_browse_paths_to_node_ids";
-    /// Methode `register_nodes`.
+    /// Method `register_nodes`.
     pub const REGISTER_NODES: &'static str = "register_nodes";
-    /// Methode `unregister_nodes`.
+    /// Method `unregister_nodes`.
     pub const UNREGISTER_NODES: &'static str = "unregister_nodes";
 }
 
@@ -232,7 +232,7 @@ const METHODS: &[ServiceMethod] = &[
     },
 ];
 
-/// View-Service-Set-Beschreibung (Spec §8.3.2.2).
+/// View service set description (Spec §8.3.2.2).
 pub const SERVICE_SET: ServiceSet = ServiceSet {
     module_path: IDL_MODULE_VIEW,
     interface_name: "View",
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn view_set_has_five_methods_per_spec() {
-        // Spec §8.3.2.2 listet exakt 5 Methoden.
+        // Spec §8.3.2.2 lists exactly 5 methods.
         assert_eq!(SERVICE_SET.methods.len(), 5);
         let names: alloc::vec::Vec<&str> = SERVICE_SET.methods.iter().map(|m| m.name).collect();
         assert_eq!(
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn browse_direction_uses_spec_values_with_gap() {
-        // Spec laesst den Wert 2 explizit aus.
+        // Spec explicitly omits the value 2.
         assert_eq!(BrowseDirection::Forward as u8, 0);
         assert_eq!(BrowseDirection::Reverse as u8, 1);
         assert_eq!(BrowseDirection::Both as u8, 3);

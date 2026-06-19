@@ -1,5 +1,5 @@
-//! Stable-Rust Fuzz-Smoke-Tests fuer DDS-RPC-Wire-Decoder.
-//! Spec: DDS-RPC 1.0 §7.5 (Wire Mapping).
+//! Stable-Rust fuzz smoke tests for the DDS-RPC wire decoder.
+//! Spec: DDS-RPC 1.0 §7.5 (wire mapping).
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 

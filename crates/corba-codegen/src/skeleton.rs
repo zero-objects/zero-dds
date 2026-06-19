@@ -1,31 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Skeleton-Code-Generation-Helper — Server-Side-Dispatch.
+//! Skeleton code-generation helper — server-side dispatch.
 //!
-//! Ein **Skeleton** dispatched einen GIOP-Request anhand des
-//! Operation-Names auf die konkrete Servant-Methode und marshallt
-//! die Reply.
+//! A **skeleton** dispatches a GIOP request to the concrete servant
+//! method based on the operation name and marshals the reply.
 
 use alloc::string::String;
 
 use crate::special_types::TargetLanguage;
 
-/// Eine Operation, die das Skeleton dispatchen muss.
+/// An operation that the skeleton must dispatch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkeletonOp {
-    /// Operation-Name (Wire-Form).
+    /// Operation name (wire form).
     pub name: String,
-    /// Servant-Method-Name (Sprach-Form, z.B. `getStock` in Java).
+    /// Servant method name (language form, e.g. `getStock` in Java).
     pub method_name: String,
 }
 
-/// Rendert einen Operation-Name-Switch fuer das Server-Skeleton.
+/// Renders an operation-name switch for the server skeleton.
 ///
-/// Das ist ein einfaches `switch operation_name`-Konstrukt, das
-/// das Codegen in C++ / C# / Java emittiert. Der echte Method-Body
-/// (Marshalling) ist Sprach-spezifisch und liegt in den
-/// `crates/idl-*`-Crates; hier ist der Switch-Body als Helper.
+/// This is a simple `switch operation_name` construct that the codegen
+/// emits in C++ / C# / Java. The actual method body (marshalling) is
+/// language-specific and lives in the `crates/idl-*` crates; here we
+/// only provide the switch body as a helper.
 #[must_use]
 pub fn render_skeleton_dispatch(
     class_name: &str,

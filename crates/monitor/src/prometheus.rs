@@ -13,7 +13,7 @@ const PROM_BUCKET_BOUNDS_SECONDS: &[f64] = &[
     1e-09, 1e-08, 1e-07, 1e-06, 1e-05, 1e-04, 1e-03, 1e-02, 1e-01, 1.0, 10.0,
 ];
 
-/// Rendert einen Snapshot in Prometheus-Exposition-Format v0.0.4.
+/// Renders a snapshot in Prometheus exposition format v0.0.4.
 #[must_use]
 pub fn render_prometheus(snap: &RegistrySnapshot) -> String {
     let helps: BTreeMap<&'static str, &'static str> = snap.helps.iter().copied().collect();
@@ -136,8 +136,8 @@ fn render_histogram_lines(
             let lbl = render_labels_with_extra(labels, "le", &format_seconds(*bound));
             let _ = writeln!(out, "{name}_bucket{lbl} {cumulative}");
         }
-        // letzter +Inf-Bucket reflektiert die Gesamtzahl der Records
-        // (faengt Overflow ueber 10s).
+        // the last +Inf bucket reflects the total number of records
+        // (catches overflow above 10s).
         let lbl_inf = render_labels_with_extra(labels, "le", "+Inf");
         let _ = writeln!(out, "{name}_bucket{lbl_inf} {}", hist.count);
 
@@ -200,8 +200,8 @@ fn format_seconds(s: f64) -> String {
     if s == 0.0 {
         "0".to_string()
     } else {
-        // Prometheus akzeptiert sowohl `1e-09` als auch `0.000000001`;
-        // wir nutzen die kompakte Exponential-Form.
+        // Prometheus accepts both `1e-09` and `0.000000001`;
+        // we use the compact exponential form.
         let exp = s.log10().round() as i32;
         let test = 10f64.powi(exp);
         if (test - s).abs() < s * 1e-6 {

@@ -8,41 +8,41 @@
 //!
 //! # Scope
 //!
-//! Implementiert sind: Lightweight RTC, Execution Semantics
-//! (Periodic / Stimulus Response / Modes), Local PSM
-//! (§5.2 + §5.3 + §6.3) als Rust-Library. Das Local PSM ist explizit
+//! Implemented are: lightweight RTC, execution semantics
+//! (periodic / stimulus response / modes), local PSM
+//! (§5.2 + §5.3 + §6.3) as a Rust library. The local PSM is explicitly
 //! "Components on same network node, direct object refs without
-//! CORBA-mediated middleware" (Spec §1.3 Punkt 1, S. 2) und damit
-//! ZeroDDS-konform.
+//! CORBA-mediated middleware" (spec §1.3 point 1, p. 2) and thus
+//! ZeroDDS-conformant.
 //!
-//! # Was nicht abgedeckt ist
+//! # What is not covered
 //!
-//! * **CORBA PSM** (§6.5) — verlangt CORBA-ORB; ZeroDDS hat keinen.
-//! * **Lightweight CCM PSM** (§6.4) — verlangt LwCCM-Container; siehe
-//!   `crates/ccm/` welche die IDL-Equivalent-Transformation liefert,
-//!   aber keinen Container bereitstellt.
-//! * **Introspection §5.4 Resource Data Model** — partial: das
-//!   Datenmodell ist im Crate, der Discovery-/Wire-Aspekt nicht.
+//! * **CORBA PSM** (§6.5) — requires a CORBA ORB; ZeroDDS has none.
+//! * **Lightweight CCM PSM** (§6.4) — requires an LwCCM container; see
+//!   `crates/ccm/` which provides the IDL-equivalent transformation
+//!   but no container.
+//! * **Introspection §5.4 Resource Data Model** — partial: the
+//!   data model is in the crate, the discovery/wire aspect is not.
 //!
-//! # Module
+//! # Modules
 //!
-//! * [`return_code`] — `ReturnCode_t` (Spec §5.2.1).
+//! * [`return_code`] — `ReturnCode_t` (spec §5.2.1).
 //! * [`lifecycle`] — `LifeCycleState`, `ExecutionKind`, `ComponentAction`
-//!   Trait + State-Machine-Enforcement (Spec §5.2.2.3 / §5.2.2.7 /
+//!   trait + state-machine enforcement (spec §5.2.2.3 / §5.2.2.7 /
 //!   §5.2.2.4).
-//! * [`object`] — `LightweightRTObject`-Modell (Spec §5.2.2.2) +
-//!   `ExecutionContextHandle_t` (Spec §5.2.2.8).
+//! * [`object`] — `LightweightRTObject` model (spec §5.2.2.2) +
+//!   `ExecutionContextHandle_t` (spec §5.2.2.8).
 //! * [`execution`] — `ExecutionContext` + `ExecutionContextOperations`
-//!   (Spec §5.2.2.5 / §5.2.2.6).
-//! * [`semantics`] — Execution-Kind-Profile (Periodic/Stimulus/Modes,
-//!   Spec §5.3).
+//!   (spec §5.2.2.5 / §5.2.2.6).
+//! * [`semantics`] — execution-kind profiles (periodic/stimulus/modes,
+//!   spec §5.3).
 //!
-//! # Beispiel
+//! # Example
 //!
 //! ```
 //! use zerodds_rtc::ReturnCode;
 //!
-//! // Spec §5.2.1.1: ReturnCode::Ok ist der einzige OK-Code.
+//! // Spec §5.2.1.1: ReturnCode::Ok is the only OK code.
 //! assert!(ReturnCode::Ok.is_ok());
 //! assert!(!ReturnCode::PreconditionNotMet.is_ok());
 //! assert_eq!(ReturnCode::Ok.into_result(), Ok(()));

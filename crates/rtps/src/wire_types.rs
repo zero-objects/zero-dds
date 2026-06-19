@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! RTPS-Wire-Basistypen (DDSI-RTPS 2.5 §8.3.5, §8.3.5.1).
+//! RTPS wire base types (DDSI-RTPS 2.5 §8.3.5, §8.3.5.1).
 //!
-//! Diese Typen sind die Atome des RTPS-Wire-Formats: GUID-Komponenten,
-//! Sequence-Numbers, Locators. Sie sind alle reine Byte-Strukturen mit
-//! festem Layout (kein XCDR-Alignment, kein Endianness-Tagging am Typ —
-//! die Endianness eines Submessage-Stream-Slices kommt aus dem
-//! Submessage-Header E-Flag).
+//! These types are the atoms of the RTPS wire format: GUID components,
+//! sequence numbers, locators. They are all pure byte structures with
+//! a fixed layout (no XCDR alignment, no endianness tagging on the type —
+//! the endianness of a submessage stream slice comes from the
+//! submessage-header E flag).
 //!
-//! # Konvention
+//! # Convention
 //!
-//! - `read_from_le` / `read_from_be`: Decoder mit expliziter Endianness.
-//! - `write_to_le` / `write_to_be`: Encoder symmetrisch.
-//! - `WIRE_SIZE`: Konstante mit der festen Bytezahl auf der Wire.
+//! - `read_from_le` / `read_from_be`: decoder with explicit endianness.
+//! - `write_to_le` / `write_to_be`: encoder, symmetric.
+//! - `WIRE_SIZE`: constant with the fixed byte count on the wire.
 
 use crate::error::WireError;
 
@@ -20,10 +20,10 @@ use crate::error::WireError;
 // ProtocolVersion (§8.3.5.5)
 // ============================================================================
 
-/// `ProtocolVersion`: Major + Minor des RTPS-Protokolls. Aktuell 2.5.
+/// `ProtocolVersion`: major + minor of the RTPS protocol. Currently 2.5.
 ///
-/// `PartialOrd`/`Ord` vergleichen lexikographisch — `(major, minor)`-
-/// Tupel-Reihenfolge — was der Spec-Versions-Ordnung entspricht
+/// `PartialOrd`/`Ord` compare lexicographically — `(major, minor)`
+/// tuple order — which matches the spec version ordering
 /// (2.4 < 2.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ProtocolVersion {
@@ -34,28 +34,28 @@ pub struct ProtocolVersion {
 }
 
 impl ProtocolVersion {
-    /// Wire-Size: 2 Bytes.
+    /// Wire size: 2 bytes.
     pub const WIRE_SIZE: usize = 2;
 
-    /// RTPS 1.0 — historisch (Spec §8.3.5.5).
+    /// RTPS 1.0 — historical (Spec §8.3.5.5).
     pub const V1_0: Self = Self { major: 1, minor: 0 };
-    /// RTPS 1.1 — historisch.
+    /// RTPS 1.1 — historical.
     pub const V1_1: Self = Self { major: 1, minor: 1 };
-    /// RTPS 2.0 — historisch.
+    /// RTPS 2.0 — historical.
     pub const V2_0: Self = Self { major: 2, minor: 0 };
-    /// RTPS 2.1 — historisch.
+    /// RTPS 2.1 — historical.
     pub const V2_1: Self = Self { major: 2, minor: 1 };
-    /// RTPS 2.2 — historisch.
+    /// RTPS 2.2 — historical.
     pub const V2_2: Self = Self { major: 2, minor: 2 };
-    /// RTPS 2.3 — historisch.
+    /// RTPS 2.3 — historical.
     pub const V2_3: Self = Self { major: 2, minor: 3 };
-    /// RTPS 2.4 — Cyclone DDS Default vor Update auf 2.5.
+    /// RTPS 2.4 — Cyclone DDS default before the update to 2.5.
     pub const V2_4: Self = Self { major: 2, minor: 4 };
-    /// RTPS 2.5 (Default fuer ZeroDDS).
+    /// RTPS 2.5 (default for ZeroDDS).
     pub const V2_5: Self = Self { major: 2, minor: 5 };
 
-    /// `PROTOCOLVERSION` — Spec-Alias fuer den aktuellsten unterstuetzten
-    /// Wert (RTPS 2.5).
+    /// `PROTOCOLVERSION` — spec alias for the most recent supported
+    /// value (RTPS 2.5).
     pub const CURRENT: Self = Self::V2_5;
 
     /// Bytes [major, minor].
@@ -64,7 +64,7 @@ impl ProtocolVersion {
         [self.major, self.minor]
     }
 
-    /// Liest 2 Bytes.
+    /// Reads 2 bytes.
     #[must_use]
     pub fn from_bytes(bytes: [u8; 2]) -> Self {
         Self {
@@ -84,29 +84,38 @@ impl Default for ProtocolVersion {
 // VendorId (§8.3.5.6)
 // ============================================================================
 
-/// `VendorId`: 2-byte Vendor-Identifier. ZeroDDS nutzt `0x01F0` als
-/// Interim-Wert aus dem OMG-Entwickler-Range, bis ein offizieller
-/// VendorId beantragt wird.
+/// `VendorId`: 2-byte vendor identifier. ZeroDDS uses `0x01F0` as an
+/// interim value from the OMG developer range, until an official
+/// VendorId is requested.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VendorId(pub [u8; 2]);
 
 impl VendorId {
-    /// Wire-Size: 2 Bytes.
+    /// Wire size: 2 bytes.
     pub const WIRE_SIZE: usize = 2;
 
-    /// Sentinel "unknown" (0x00, 0x00) — nur fuer Tests/Stub.
+    /// Sentinel "unknown" (0x00, 0x00) — only for tests/stub.
     pub const UNKNOWN: Self = Self([0, 0]);
 
-    /// ZeroDDS Interim-VendorId aus OMG-Entwickler-Range.
+    /// ZeroDDS interim VendorId from the OMG developer range.
     pub const ZERODDS: Self = Self([0x01, 0xF0]);
 
-    /// Bytes ungeaendert.
+    /// OCI OpenDDS (OMG-assigned VendorId).
+    pub const OPENDDS: Self = Self([0x01, 0x03]);
+
+    /// eProsima Fast DDS (OMG-assigned VendorId).
+    pub const FASTDDS: Self = Self([0x01, 0x0F]);
+
+    /// Eclipse Cyclone DDS (OMG-assigned VendorId).
+    pub const CYCLONE: Self = Self([0x01, 0x10]);
+
+    /// Bytes unchanged.
     #[must_use]
     pub fn to_bytes(self) -> [u8; 2] {
         self.0
     }
 
-    /// Bytes ungeaendert.
+    /// Bytes unchanged.
     #[must_use]
     pub fn from_bytes(bytes: [u8; 2]) -> Self {
         Self(bytes)
@@ -117,47 +126,46 @@ impl VendorId {
 // GuidPrefix (§8.3.5.1)
 // ============================================================================
 
-/// `GuidPrefix`: 12-byte-Prefix einer GUID. Identifiziert einen
-/// Participant; bleibt fuer alle Endpoints des Participants gleich.
+/// `GuidPrefix`: 12-byte prefix of a GUID. Identifies a
+/// participant; stays the same for all endpoints of the participant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GuidPrefix(pub [u8; 12]);
 
 impl GuidPrefix {
-    /// Wire-Size: 12 Bytes.
+    /// Wire size: 12 bytes.
     pub const WIRE_SIZE: usize = 12;
 
     /// Sentinel "unknown".
     pub const UNKNOWN: Self = Self([0; 12]);
 
-    /// Bytes ungeaendert.
+    /// Bytes unchanged.
     #[must_use]
     pub fn to_bytes(self) -> [u8; 12] {
         self.0
     }
 
-    /// Bytes ungeaendert.
+    /// Bytes unchanged.
     #[must_use]
     pub fn from_bytes(bytes: [u8; 12]) -> Self {
         Self(bytes)
     }
 
-    /// ZeroDDS-Konvention (Spec `zerodds-zero-copy-1.0` §6 Welle 4):
-    /// die ersten 4 Bytes des GuidPrefix tragen einen deterministischen
-    /// Host-Identifier (Hash der `gethostname`-Ausgabe). Zwei
-    /// Participants mit identischem Host-Id-Prefix laufen auf der
-    /// gleichen Maschine und koennen einen Same-Host-Zero-Copy-Pfad
-    /// aufbauen.
+    /// ZeroDDS convention (Spec `zerodds-zero-copy-1.0` §6 wave 4):
+    /// the first 4 bytes of the GuidPrefix carry a deterministic
+    /// host identifier (hash of the `gethostname` output). Two
+    /// participants with an identical host-id prefix run on the
+    /// same machine and can set up a same-host zero-copy path.
     ///
-    /// Die RTPS-2.5-Spec §9.3.1.5 erlaubt vendor-spezifische
-    /// Strukturierung der ersten 8 Bytes (Vendor-Vendor-Spezifisch);
-    /// nur die Vergleichs-Semantik der gesamten 12 Bytes ist normativ.
+    /// The RTPS 2.5 spec §9.3.1.5 allows vendor-specific
+    /// structuring of the first 8 bytes (vendor-specific);
+    /// only the comparison semantics of the full 12 bytes is normative.
     #[must_use]
     pub fn host_id(self) -> [u8; 4] {
         [self.0[0], self.0[1], self.0[2], self.0[3]]
     }
 
-    /// Liefert `true`, wenn beide Participants denselben Host-Id-Prefix
-    /// tragen. Siehe [`Self::host_id`].
+    /// Returns `true` if both participants carry the same host-id
+    /// prefix. See [`Self::host_id`].
     #[must_use]
     pub fn is_same_host(self, other: Self) -> bool {
         self.host_id() == other.host_id()
@@ -165,10 +173,10 @@ impl GuidPrefix {
 }
 
 // ============================================================================
-// EntityId (§8.3.5.2 + Tabelle 9.1)
+// EntityId (§8.3.5.2 + Table 9.1)
 // ============================================================================
 
-/// `EntityKind`: Klassifikation eines Endpunkts. Spec-Tabelle 9.1.
+/// `EntityKind`: classification of an endpoint. Spec Table 9.1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
 #[allow(missing_docs)]
@@ -186,8 +194,8 @@ pub enum EntityKind {
 }
 
 impl EntityKind {
-    /// Konvertiert ein Byte in einen `EntityKind`. Unbekannte Bytes
-    /// werden zu `Unknown` gemappt — das spiegelt Spec-Toleranz-Verhalten.
+    /// Converts a byte into an `EntityKind`. Unknown bytes
+    /// are mapped to `Unknown` — this mirrors spec tolerance behaviour.
     #[must_use]
     pub fn from_byte(b: u8) -> Self {
         match b {
@@ -205,18 +213,18 @@ impl EntityKind {
     }
 }
 
-/// `EntityId`: 4-byte Endpoint-Identifier innerhalb eines Participants.
-/// Layout: 3 Byte `entity_key` + 1 Byte `entity_kind`.
+/// `EntityId`: 4-byte endpoint identifier within a participant.
+/// Layout: 3 bytes `entity_key` + 1 byte `entity_kind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct EntityId {
-    /// Erste 3 Bytes (key).
+    /// First 3 bytes (key).
     pub entity_key: [u8; 3],
-    /// Letztes Byte (kind).
+    /// Last byte (kind).
     pub entity_kind: EntityKind,
 }
 
 impl EntityId {
-    /// Wire-Size: 4 Bytes.
+    /// Wire size: 4 bytes.
     pub const WIRE_SIZE: usize = 4;
 
     /// Sentinel.
@@ -225,13 +233,13 @@ impl EntityId {
         entity_kind: EntityKind::Unknown,
     };
 
-    /// Reservierter Participant-EntityId (Spec §9.3.1.2).
+    /// Reserved participant EntityId (Spec §9.3.1.2).
     pub const PARTICIPANT: Self = Self {
         entity_key: [0, 0, 1],
         entity_kind: EntityKind::Participant,
     };
 
-    /// Konstruiert einen User-Writer-Endpoint mit Key.
+    /// Constructs a user-writer endpoint with key.
     #[must_use]
     pub const fn user_writer_with_key(key: [u8; 3]) -> Self {
         Self {
@@ -240,7 +248,7 @@ impl EntityId {
         }
     }
 
-    /// Konstruiert einen User-Reader-Endpoint mit Key.
+    /// Constructs a user-reader endpoint with key.
     #[must_use]
     pub const fn user_reader_with_key(key: [u8; 3]) -> Self {
         Self {
@@ -249,8 +257,31 @@ impl EntityId {
         }
     }
 
-    /// SPDP Builtin Participant Writer (Spec §9.3.1.5 Tabelle 9.4).
-    /// Multicast-Beacon-Sender im Discovery-Pfad.
+    /// Constructs a user-writer endpoint without key (NoKey).
+    /// Spec §9.3.1.2 Table 9.1: entity_kind=0x03 for NoKey writers.
+    /// Important for cross-vendor interop: if the IDL type has no @key,
+    /// the writer must be published as NoKey, otherwise a
+    /// remote reader rejects the DATA submessage (writer/reader kind mismatch).
+    #[must_use]
+    pub const fn user_writer_no_key(key: [u8; 3]) -> Self {
+        Self {
+            entity_key: key,
+            entity_kind: EntityKind::UserWriterNoKey,
+        }
+    }
+
+    /// Constructs a user-reader endpoint without key (NoKey).
+    /// Spec §9.3.1.2 Table 9.1: entity_kind=0x04 for NoKey readers.
+    #[must_use]
+    pub const fn user_reader_no_key(key: [u8; 3]) -> Self {
+        Self {
+            entity_key: key,
+            entity_kind: EntityKind::UserReaderNoKey,
+        }
+    }
+
+    /// SPDP Builtin Participant Writer (Spec §9.3.1.5 Table 9.4).
+    /// Multicast beacon sender in the discovery path.
     pub const SPDP_BUILTIN_PARTICIPANT_WRITER: Self = Self {
         entity_key: [0, 0x01, 0x00],
         entity_kind: EntityKind::BuiltinWriterWithKey,
@@ -286,9 +317,9 @@ impl EntityId {
         entity_kind: EntityKind::BuiltinReaderWithKey,
     };
 
-    /// `BUILTIN_PARTICIPANT_MESSAGE_WRITER` — Writer-Liveliness-
-    /// Protocol (WLP). Sendet `ParticipantMessageData` ueber das
-    /// Topic `DCPSParticipantMessage` (DDSI-RTPS 2.5 §8.4.13,
+    /// `BUILTIN_PARTICIPANT_MESSAGE_WRITER` — Writer Liveliness
+    /// Protocol (WLP). Sends `ParticipantMessageData` over the
+    /// topic `DCPSParticipantMessage` (DDSI-RTPS 2.5 §8.4.13,
     /// §9.3.1.5 Tab. 9.4 — EntityKey `[00, 02, 00]`,
     /// EntityKind `BuiltinWriterWithKey = 0xC2`).
     pub const BUILTIN_PARTICIPANT_MESSAGE_WRITER: Self = Self {
@@ -296,14 +327,14 @@ impl EntityId {
         entity_kind: EntityKind::BuiltinWriterWithKey,
     };
 
-    /// `BUILTIN_PARTICIPANT_MESSAGE_READER` — Counterpart zum
-    /// WLP-Writer (DDSI-RTPS 2.5 §8.4.13, §9.3.1.5 Tab. 9.4).
+    /// `BUILTIN_PARTICIPANT_MESSAGE_READER` — counterpart to the
+    /// WLP writer (DDSI-RTPS 2.5 §8.4.13, §9.3.1.5 Tab. 9.4).
     pub const BUILTIN_PARTICIPANT_MESSAGE_READER: Self = Self {
         entity_key: [0, 0x02, 0x00],
         entity_kind: EntityKind::BuiltinReaderWithKey,
     };
 
-    // TypeLookup Service (XTypes §7.6.3.3.4): RPC, kein Key.
+    // TypeLookup Service (XTypes §7.6.3.3.4): RPC, no key.
     // ENTITYKIND_BUILTIN_WRITER_NO_KEY = 0xC3, _READER_NO_KEY = 0xC4.
     /// TypeLookup Service Request Writer.
     pub const TL_SVC_REQ_WRITER: Self = Self {
@@ -327,13 +358,13 @@ impl EntityId {
     };
 
     // ----------------------------------------------------------------
-    // DDS-Security 1.2 §7.4.7.1 Tab.7 — 12 Secure-Builtin-EntityIds
-    // (C3.8). EntityKey-Layout per Spec; Kind = WithKey ausser bei den
-    // Stateless-Topics (NoKey, da diese Topics keyless sind).
+    // DDS-Security 1.2 §7.4.7.1 Tab.7 — 12 secure builtin EntityIds
+    // (C3.8). EntityKey layout per spec; kind = WithKey except for the
+    // stateless topics (NoKey, since those topics are keyless).
     // ----------------------------------------------------------------
 
-    /// `SEDP_BUILTIN_PUBLICATIONS_SECURE_WRITER` — Secure-SEDP
-    /// Publications-Writer (Bit 16, §9.3.1.6 Tab.13).
+    /// `SEDP_BUILTIN_PUBLICATIONS_SECURE_WRITER` — secure SEDP
+    /// publications writer (bit 16, §9.3.1.6 Tab.13).
     pub const SEDP_BUILTIN_PUBLICATIONS_SECURE_WRITER: Self = Self {
         entity_key: [0xff, 0x00, 0x03],
         entity_kind: EntityKind::BuiltinWriterWithKey,
@@ -353,8 +384,8 @@ impl EntityId {
         entity_key: [0xff, 0x00, 0x04],
         entity_kind: EntityKind::BuiltinReaderWithKey,
     };
-    /// `BUILTIN_PARTICIPANT_MESSAGE_SECURE_WRITER` — Secure WLP-Writer
-    /// (Bit 20, §7.4.7.1).
+    /// `BUILTIN_PARTICIPANT_MESSAGE_SECURE_WRITER` — secure WLP writer
+    /// (bit 20, §7.4.7.1).
     pub const BUILTIN_PARTICIPANT_MESSAGE_SECURE_WRITER: Self = Self {
         entity_key: [0xff, 0x02, 0x00],
         entity_kind: EntityKind::BuiltinWriterWithKey,
@@ -364,9 +395,9 @@ impl EntityId {
         entity_key: [0xff, 0x02, 0x00],
         entity_kind: EntityKind::BuiltinReaderWithKey,
     };
-    /// `BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER` — Auth-Handshake-
-    /// Topic-Writer (Bit 22, §7.4.7.1, §10.3.4 Auth-Stateless-Wire).
-    /// NoKey, da Stateless-Topic keyless ist.
+    /// `BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER` — auth-handshake
+    /// topic writer (bit 22, §7.4.7.1, §10.3.4 auth stateless wire).
+    /// NoKey, since the stateless topic is keyless.
     pub const BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER: Self = Self {
         entity_key: [0x00, 0x02, 0x01],
         entity_kind: EntityKind::BuiltinWriterNoKey,
@@ -376,20 +407,24 @@ impl EntityId {
         entity_key: [0x00, 0x02, 0x01],
         entity_kind: EntityKind::BuiltinReaderNoKey,
     };
-    /// `BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_WRITER` — Crypto-
-    /// KeyExchange-Topic-Writer (Bit 24, §7.4.7.1, §10.5.4
-    /// VolatileMessageSecure-Wire).
+    /// `BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_WRITER` — crypto
+    /// key-exchange topic writer (bit 24, §7.4.7.1, §10.5.4
+    /// VolatileMessageSecure wire).
     pub const BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_WRITER: Self = Self {
         entity_key: [0xff, 0x02, 0x02],
-        entity_kind: EntityKind::BuiltinWriterWithKey,
+        // Kind byte 0xc3 (NoKey value) — Spec §7.4.7.1 Tab.7 + cyclone wire
+        // (ff0202c3); NOT WithKey/0xc2, otherwise the crypto channel does
+        // not match cross-vendor.
+        entity_kind: EntityKind::BuiltinWriterNoKey,
     };
     /// `BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER` — Bit 25.
     pub const BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER: Self = Self {
         entity_key: [0xff, 0x02, 0x02],
-        entity_kind: EntityKind::BuiltinReaderWithKey,
+        // Kind byte 0xc4 (NoKey value) — cyclone wire (ff0202c4).
+        entity_kind: EntityKind::BuiltinReaderNoKey,
     };
-    /// `SPDP_RELIABLE_BUILTIN_PARTICIPANTS_SECURE_WRITER` — Secure-
-    /// SPDP-Writer fuer DCPSParticipantsSecure-Topic (Bit 26).
+    /// `SPDP_RELIABLE_BUILTIN_PARTICIPANTS_SECURE_WRITER` — secure
+    /// SPDP writer for the DCPSParticipantsSecure topic (bit 26).
     pub const SPDP_RELIABLE_BUILTIN_PARTICIPANTS_SECURE_WRITER: Self = Self {
         entity_key: [0xff, 0x01, 0x01],
         entity_kind: EntityKind::BuiltinWriterWithKey,
@@ -400,8 +435,8 @@ impl EntityId {
         entity_kind: EntityKind::BuiltinReaderWithKey,
     };
 
-    /// True wenn dies einer der 12 Secure-Builtin-EntityIds aus
-    /// DDS-Security 1.2 §7.4.7.1 Tab.7 ist.
+    /// True if this is one of the 12 secure builtin EntityIds from
+    /// DDS-Security 1.2 §7.4.7.1 Tab.7.
     #[must_use]
     pub const fn is_secure_builtin(self) -> bool {
         matches!(
@@ -432,7 +467,7 @@ impl EntityId {
         ]
     }
 
-    /// Liest 4 Bytes.
+    /// Reads 4 bytes.
     #[must_use]
     pub fn from_bytes(bytes: [u8; 4]) -> Self {
         Self {
@@ -446,18 +481,18 @@ impl EntityId {
 // Guid (§8.3.5.3)
 // ============================================================================
 
-/// `Guid`: GuidPrefix + EntityId = 16 Bytes. Eindeutiger Identifier
-/// eines Endpunkts global.
+/// `Guid`: GuidPrefix + EntityId = 16 bytes. Globally unique identifier
+/// of an endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Guid {
-    /// Participant-Prefix.
+    /// Participant prefix.
     pub prefix: GuidPrefix,
-    /// Endpoint-Identifier innerhalb des Participants.
+    /// Endpoint identifier within the participant.
     pub entity_id: EntityId,
 }
 
 impl Guid {
-    /// Wire-Size: 16 Bytes.
+    /// Wire size: 16 bytes.
     pub const WIRE_SIZE: usize = 16;
 
     /// Sentinel.
@@ -466,13 +501,13 @@ impl Guid {
         entity_id: EntityId::UNKNOWN,
     };
 
-    /// Konstruiert eine Guid aus Prefix + EntityId.
+    /// Constructs a Guid from prefix + EntityId.
     #[must_use]
     pub const fn new(prefix: GuidPrefix, entity_id: EntityId) -> Self {
         Self { prefix, entity_id }
     }
 
-    /// Bytes (Prefix + EntityId).
+    /// Bytes (prefix + EntityId).
     #[must_use]
     pub fn to_bytes(self) -> [u8; 16] {
         let mut out = [0u8; 16];
@@ -481,7 +516,7 @@ impl Guid {
         out
     }
 
-    /// Liest 16 Bytes.
+    /// Reads 16 bytes.
     #[must_use]
     pub fn from_bytes(bytes: [u8; 16]) -> Self {
         let mut prefix_bytes = [0u8; 12];
@@ -499,19 +534,19 @@ impl Guid {
 // SequenceNumber (§8.3.5.4)
 // ============================================================================
 
-/// `SequenceNumber`: 64-bit signed, encoded als (high: i32, low: u32).
-/// Beide Felder werden mit der aktiven Submessage-Endianness geschrieben.
+/// `SequenceNumber`: 64-bit signed, encoded as (high: i32, low: u32).
+/// Both fields are written with the active submessage endianness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SequenceNumber(pub i64);
 
 impl SequenceNumber {
-    /// Wire-Size: 8 Bytes.
+    /// Wire size: 8 bytes.
     pub const WIRE_SIZE: usize = 8;
 
     /// Sentinel "unknown" (high=-1, low=0) → -2^32.
     pub const UNKNOWN: Self = Self(-(1_i64 << 32));
 
-    /// Splittet den i64 in (high, low) gemaess Spec.
+    /// Splits the i64 into (high, low) per spec.
     #[must_use]
     pub fn split(self) -> (i32, u32) {
         let value = self.0;
@@ -520,14 +555,14 @@ impl SequenceNumber {
         (high, low)
     }
 
-    /// Setzt aus (high, low) zusammen.
+    /// Assembles from (high, low).
     #[must_use]
     pub fn from_high_low(high: i32, low: u32) -> Self {
         let value = (i64::from(high) << 32) | i64::from(low);
         Self(value)
     }
 
-    /// Schreibt in 8 Bytes mit gegebener Endianness (LE oder BE).
+    /// Writes into 8 bytes with the given endianness (LE or BE).
     #[must_use]
     pub fn to_bytes_le(self) -> [u8; 8] {
         let (high, low) = self.split();
@@ -537,7 +572,7 @@ impl SequenceNumber {
         out
     }
 
-    /// BE-Variante.
+    /// BE variant.
     #[must_use]
     pub fn to_bytes_be(self) -> [u8; 8] {
         let (high, low) = self.split();
@@ -547,7 +582,7 @@ impl SequenceNumber {
         out
     }
 
-    /// LE-Decoder.
+    /// LE decoder.
     #[must_use]
     pub fn from_bytes_le(bytes: [u8; 8]) -> Self {
         let mut hi = [0u8; 4];
@@ -557,7 +592,7 @@ impl SequenceNumber {
         Self::from_high_low(i32::from_le_bytes(hi), u32::from_le_bytes(lo))
     }
 
-    /// BE-Decoder.
+    /// BE decoder.
     #[must_use]
     pub fn from_bytes_be(bytes: [u8; 8]) -> Self {
         let mut hi = [0u8; 4];
@@ -569,74 +604,74 @@ impl SequenceNumber {
 }
 
 // ============================================================================
-// Vendor-Extension-Slots (§8.3.2 UExtension4_t / WExtension8_t)
+// Vendor extension slots (§8.3.2 UExtension4_t / WExtension8_t)
 // ============================================================================
 
-/// `UExtension4_t` — 4-byte vendor-spezifischer Extension-Slot.
-/// Spec §8.3.2: opaker 32-bit-Wert, Vendor entscheidet ueber Bedeutung;
-/// Receiver propagiert den Wert per `extensions`-Feld in den
-/// Receiver-State.
+/// `UExtension4_t` — 4-byte vendor-specific extension slot.
+/// Spec §8.3.2: opaque 32-bit value, the vendor decides its meaning;
+/// the receiver propagates the value via the `extensions` field into the
+/// receiver state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct UExtension4(pub [u8; 4]);
 
 impl UExtension4 {
-    /// Wire-Size: 4 Bytes.
+    /// Wire size: 4 bytes.
     pub const WIRE_SIZE: usize = 4;
 
-    /// Konstruktor aus u32 (Big-Endian).
+    /// Constructor from u32 (big-endian).
     #[must_use]
     pub fn from_u32_be(v: u32) -> Self {
         Self(v.to_be_bytes())
     }
 
-    /// Liefert den Wert als u32 (Big-Endian-Interpretation).
+    /// Returns the value as u32 (big-endian interpretation).
     #[must_use]
     pub fn to_u32_be(self) -> u32 {
         u32::from_be_bytes(self.0)
     }
 
-    /// Roundtrip-Identitaet.
+    /// Roundtrip identity.
     #[must_use]
     pub fn to_bytes(self) -> [u8; 4] {
         self.0
     }
 
-    /// Roundtrip-Identitaet.
+    /// Roundtrip identity.
     #[must_use]
     pub fn from_bytes(bytes: [u8; 4]) -> Self {
         Self(bytes)
     }
 }
 
-/// `WExtension8_t` — 8-byte vendor-spezifischer Extension-Slot.
-/// Spec §8.3.2: opaker 64-bit-Wert (analog UExtension4_t fuer
-/// Felder die 8 Byte brauchen, z.B. fuer 64-bit-Counter).
+/// `WExtension8_t` — 8-byte vendor-specific extension slot.
+/// Spec §8.3.2: opaque 64-bit value (analogous to UExtension4_t for
+/// fields that need 8 bytes, e.g. for 64-bit counters).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct WExtension8(pub [u8; 8]);
 
 impl WExtension8 {
-    /// Wire-Size: 8 Bytes.
+    /// Wire size: 8 bytes.
     pub const WIRE_SIZE: usize = 8;
 
-    /// Konstruktor aus u64 (Big-Endian).
+    /// Constructor from u64 (big-endian).
     #[must_use]
     pub fn from_u64_be(v: u64) -> Self {
         Self(v.to_be_bytes())
     }
 
-    /// Liefert den Wert als u64 (Big-Endian-Interpretation).
+    /// Returns the value as u64 (big-endian interpretation).
     #[must_use]
     pub fn to_u64_be(self) -> u64 {
         u64::from_be_bytes(self.0)
     }
 
-    /// Roundtrip-Identitaet.
+    /// Roundtrip identity.
     #[must_use]
     pub fn to_bytes(self) -> [u8; 8] {
         self.0
     }
 
-    /// Roundtrip-Identitaet.
+    /// Roundtrip identity.
     #[must_use]
     pub fn from_bytes(bytes: [u8; 8]) -> Self {
         Self(bytes)
@@ -647,38 +682,38 @@ impl WExtension8 {
 // FragmentNumber (§8.3.5.7)
 // ============================================================================
 
-/// `FragmentNumber`: 32-bit unsigned, 1-basiert (Fragment #1 ist das
-/// erste Fragment eines Samples). `UNKNOWN` = 0 wird als Sentinel
-/// verwendet, ist aber kein gueltiges Fragment.
+/// `FragmentNumber`: 32-bit unsigned, 1-based (fragment #1 is the
+/// first fragment of a sample). `UNKNOWN` = 0 is used as a sentinel,
+/// but is not a valid fragment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FragmentNumber(pub u32);
 
 impl FragmentNumber {
-    /// Wire-Size: 4 Bytes.
+    /// Wire size: 4 bytes.
     pub const WIRE_SIZE: usize = 4;
 
-    /// Sentinel "unknown" (= 0). Nie ein gueltiges Fragment.
+    /// Sentinel "unknown" (= 0). Never a valid fragment.
     pub const UNKNOWN: Self = Self(0);
 
-    /// LE-Bytes.
+    /// LE bytes.
     #[must_use]
     pub fn to_bytes_le(self) -> [u8; 4] {
         self.0.to_le_bytes()
     }
 
-    /// BE-Bytes.
+    /// BE bytes.
     #[must_use]
     pub fn to_bytes_be(self) -> [u8; 4] {
         self.0.to_be_bytes()
     }
 
-    /// LE-Decoder.
+    /// LE decoder.
     #[must_use]
     pub fn from_bytes_le(bytes: [u8; 4]) -> Self {
         Self(u32::from_le_bytes(bytes))
     }
 
-    /// BE-Decoder.
+    /// BE decoder.
     #[must_use]
     pub fn from_bytes_be(bytes: [u8; 4]) -> Self {
         Self(u32::from_be_bytes(bytes))
@@ -689,7 +724,7 @@ impl FragmentNumber {
 // Locator (§8.3.5.7)
 // ============================================================================
 
-/// `LocatorKind`: Adress-Familie eines Locators.
+/// `LocatorKind`: address family of a locator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(i32)]
 #[allow(missing_docs)]
@@ -702,31 +737,37 @@ pub enum LocatorKind {
     Tcpv4 = 4,
     /// TCPv6 (DDS-TCP-PSM §4 `LOCATOR_KIND_TCPV6`).
     Tcpv6 = 8,
-    /// Shared-Memory (Vendor-Range, MSB=1 laut DDSI-RTPS §9.3.1.2 —
-    /// negative `i32`-Werte sind vendor-spezifisch). `0x8100_0000` als
-    /// ZeroDDS-Vendor-Token; Cyclone + Fast-DDS ignorieren unbekannte
-    /// Kinds.
-    Shm = -2_130_706_432, // 0x8100_0000 als i32
-    /// Unix-Domain-Socket (Vendor-Range, ZeroDDS-Extension fuer
-    /// Containerized-IPC wenn Multicast gesperrt oder POSIX-SHM
-    /// cross-container nicht funktioniert). `0x8100_0001`. 16-byte
-    /// Address-Feld traegt einen Identifier, der in einen Socket-Pfad
-    /// unter einem konfigurierbaren Base-Directory aufgeloest wird
+    /// Shared memory (vendor range, MSB=1 per DDSI-RTPS §9.3.1.2 —
+    /// negative `i32` values are vendor-specific). `0x8100_0000` as the
+    /// ZeroDDS vendor token; Cyclone + Fast-DDS ignore unknown
+    /// kinds.
+    Shm = -2_130_706_432, // 0x8100_0000 as i32
+    /// Unix domain socket (vendor range, ZeroDDS extension for
+    /// containerized IPC when multicast is blocked or POSIX SHM
+    /// does not work cross-container). `0x8100_0001`. The 16-byte
+    /// address field carries an identifier that is resolved into a socket path
+    /// under a configurable base directory
     /// (`/tmp/zerodds/uds/<hex>.sock`).
-    Uds = -2_130_706_431, // 0x8100_0001 als i32
+    Uds = -2_130_706_431, // 0x8100_0001 as i32
+    /// Time-Sensitive-Networking L2 endpoint (vendor range, ZeroDDS
+    /// extension for DDS-TSN 1.0 Annex A — RTPS-over-Ethernet with
+    /// EtherType 0x88B5). `0x8100_0002`. The 16-byte address field
+    /// carries the destination MAC (bytes 0..6) + optional VLAN VID
+    /// (bytes 6..8, big-endian).
+    Tsn = -2_130_706_430, // 0x8100_0002 as i32
 }
 
 impl LocatorKind {
-    /// Liefert den i32-Wire-Wert.
+    /// Returns the i32 wire value.
     #[must_use]
     pub fn as_i32(self) -> i32 {
         self as i32
     }
 
-    /// Konvertiert i32 in LocatorKind.
+    /// Converts i32 into a LocatorKind.
     ///
     /// # Errors
-    /// `WireError::InvalidLocatorKind` bei unbekanntem Wert.
+    /// `WireError::InvalidLocatorKind` for an unknown value.
     pub fn from_i32(v: i32) -> Result<Self, WireError> {
         match v {
             -1 => Ok(Self::Invalid),
@@ -737,25 +778,26 @@ impl LocatorKind {
             8 => Ok(Self::Tcpv6),
             -2_130_706_432 => Ok(Self::Shm),
             -2_130_706_431 => Ok(Self::Uds),
+            -2_130_706_430 => Ok(Self::Tsn),
             other => Err(WireError::InvalidLocatorKind { kind: other }),
         }
     }
 }
 
-/// SPDP-Default-Multicast-Adresse (Spec §9.6.1.4.1): `239.255.0.1`.
+/// SPDP default multicast address (Spec §9.6.1.4.1): `239.255.0.1`.
 pub const SPDP_DEFAULT_MULTICAST_ADDRESS: [u8; 4] = [239, 255, 0, 1];
 
-/// SPDP-Discovery-Port-Base (Spec §9.6.1.4.1, PB).
+/// SPDP discovery port base (Spec §9.6.1.4.1, PB).
 pub const SPDP_PORT_BASE: u32 = 7400;
 
-/// Domain-spezifischer Port-Offset (Spec §9.6.1.4.1, DG).
+/// Domain-specific port offset (Spec §9.6.1.4.1, DG).
 pub const SPDP_DOMAIN_GAIN: u32 = 250;
 
-/// Multicast-Discovery-Port-Offset (Spec §9.6.1.4.1, d0).
+/// Multicast discovery port offset (Spec §9.6.1.4.1, d0).
 pub const SPDP_DISCOVERY_MULTICAST_OFFSET: u32 = 0;
 
-/// Berechnet den SPDP-Multicast-Discovery-Port fuer eine Domain.
-/// Formel (Spec §9.6.1.4.1):
+/// Computes the SPDP multicast discovery port for a domain.
+/// Formula (Spec §9.6.1.4.1):
 ///   port = PB + DG * domain_id + d0
 ///        = 7400 + 250 * domain + 0
 #[must_use]
@@ -763,19 +805,19 @@ pub fn spdp_multicast_port(domain_id: u32) -> u32 {
     SPDP_PORT_BASE + SPDP_DOMAIN_GAIN * domain_id + SPDP_DISCOVERY_MULTICAST_OFFSET
 }
 
-/// `Locator`: 24-byte Adresse (kind + port + 16-byte address).
+/// `Locator`: 24-byte address (kind + port + 16-byte address).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Locator {
-    /// Adress-Familie.
+    /// Address family.
     pub kind: LocatorKind,
-    /// UDP-Port.
+    /// UDP port.
     pub port: u32,
-    /// 16-byte address. UDPv4 nutzt die letzten 4 Byte, davor 0.
+    /// 16-byte address. UDPv4 uses the last 4 bytes, 0 before that.
     pub address: [u8; 16],
 }
 
 impl Locator {
-    /// Wire-Size: 24 Bytes.
+    /// Wire size: 24 bytes.
     pub const WIRE_SIZE: usize = 24;
 
     /// Spec §8.3.5.7 `LOCATOR_INVALID`.
@@ -785,7 +827,7 @@ impl Locator {
         address: [0; 16],
     };
 
-    /// Spec §8.3.5.7 `LOCATOR_KIND_RESERVED` Template (kind=0,
+    /// Spec §8.3.5.7 `LOCATOR_KIND_RESERVED` template (kind=0,
     /// port=0, address=0).
     pub const RESERVED: Self = Self {
         kind: LocatorKind::Reserved,
@@ -793,34 +835,34 @@ impl Locator {
         address: [0; 16],
     };
 
-    /// Spec §8.3.5.7 — Default-UDPv4-Locator (kind=1, port=0, addr=0).
+    /// Spec §8.3.5.7 — default UDPv4 locator (kind=1, port=0, addr=0).
     pub const UDP_V4_ANY: Self = Self {
         kind: LocatorKind::UdpV4,
         port: 0,
         address: [0; 16],
     };
 
-    /// Spec §8.3.5.7 — Default-UDPv6-Locator (kind=2, port=0, addr=0).
+    /// Spec §8.3.5.7 — default UDPv6 locator (kind=2, port=0, addr=0).
     pub const UDP_V6_ANY: Self = Self {
         kind: LocatorKind::UdpV6,
         port: 0,
         address: [0; 16],
     };
 
-    /// ZeroDDS-Vendor-Extension SHM-Locator-Template.
+    /// ZeroDDS vendor-extension SHM locator template.
     pub const SHM_ANY: Self = Self {
         kind: LocatorKind::Shm,
         port: 0,
         address: [0; 16],
     };
 
-    /// Spec §8.3.5.7 — `LOCATOR_PORT_INVALID` Sentinel.
+    /// Spec §8.3.5.7 — `LOCATOR_PORT_INVALID` sentinel.
     pub const PORT_INVALID: u32 = 0;
 
-    /// Spec §8.3.5.7 — `LOCATOR_ADDRESS_INVALID` Sentinel.
+    /// Spec §8.3.5.7 — `LOCATOR_ADDRESS_INVALID` sentinel.
     pub const ADDRESS_INVALID: [u8; 16] = [0; 16];
 
-    /// Konstruktor fuer UDPv6 (16-byte address + port).
+    /// Constructor for UDPv6 (16-byte address + port).
     #[must_use]
     pub fn udp_v6(addr: [u8; 16], port: u32) -> Self {
         Self {
@@ -830,29 +872,40 @@ impl Locator {
         }
     }
 
-    /// Konstruktor fuer UDPv4 (a.b.c.d:port).
+    /// Constructor for UDPv4 (a.b.c.d:port).
     #[must_use]
     pub fn udp_v4(addr: [u8; 4], port: u32) -> Self {
         Self::with_address(LocatorKind::UdpV4, addr, port)
     }
 
-    /// Konstruktor fuer TCPv4 (DDS-TCP-PSM §4).
+    /// Constructor for TCPv4 (DDS-TCP-PSM §4).
     #[must_use]
     pub fn tcp_v4(addr: [u8; 4], port: u32) -> Self {
         Self::with_address(LocatorKind::Tcpv4, addr, port)
     }
 
-    /// Legacy-Alias fuer [`Self::tcp_v4`]. **Deprecated**: Benenne
-    /// Callsites auf `tcp_v4` um (konsistent mit `udp_v4`).
+    /// Constructor for TCPv6 (DDSI-RTPS 2.5 §9.4, LocatorKind=8).
+    /// 16-byte network-byte-order address.
+    #[must_use]
+    pub fn tcp_v6(addr: [u8; 16], port: u32) -> Self {
+        Self {
+            kind: LocatorKind::Tcpv6,
+            port,
+            address: addr,
+        }
+    }
+
+    /// Legacy alias for [`Self::tcp_v4`]. **Deprecated**: rename
+    /// call sites to `tcp_v4` (consistent with `udp_v4`).
     #[must_use]
     #[deprecated(note = "use Locator::tcp_v4 instead (naming consistency)")]
     pub fn new_tcp_v4(addr: [u8; 4], port: u32) -> Self {
         Self::tcp_v4(addr, port)
     }
 
-    /// Konstruktor fuer Unix-Domain-Socket-Endpoint mit einer 16-byte-
-    /// ID. Port bleibt 0 (nicht sinnvoll fuer UDS). Der Transport
-    /// resolved die ID zu `/<base_dir>/<hex>.sock`.
+    /// Constructor for a Unix domain socket endpoint with a 16-byte
+    /// ID. The port stays 0 (not meaningful for UDS). The transport
+    /// resolves the ID to `/<base_dir>/<hex>.sock`.
     #[must_use]
     pub fn uds(id: [u8; 16]) -> Self {
         Self {
@@ -862,8 +915,8 @@ impl Locator {
         }
     }
 
-    /// Konstruktor fuer Shared-Memory-Segment mit einer ID (16-byte
-    /// Token). Port-Feld bleibt 0 (nicht sinnvoll fuer SHM).
+    /// Constructor for a shared-memory segment with an ID (16-byte
+    /// token). The port field stays 0 (not meaningful for SHM).
     #[must_use]
     pub fn shm(id: [u8; 16]) -> Self {
         Self {
@@ -873,8 +926,24 @@ impl Locator {
         }
     }
 
-    /// Gemeinsamer IPv4-Konstruktor. Legt die IPv4-Bytes in die letzten
-    /// 4 Byte des 16-byte-`address`-Felds (mapped IPv4-in-IPv6-Layout).
+    /// Constructor for a TSN L2 endpoint (DDS-TSN 1.0 Annex A).
+    /// `mac` is the 6-byte destination MAC, `vlan_vid` the IEEE 802.1Q VID
+    /// (0 = untagged). Layout in the 16-byte address field: bytes 0..6 MAC,
+    /// bytes 6..8 VID (big-endian), rest 0. The port stays 0.
+    #[must_use]
+    pub fn tsn(mac: [u8; 6], vlan_vid: u16) -> Self {
+        let mut address = [0u8; 16];
+        address[..6].copy_from_slice(&mac);
+        address[6..8].copy_from_slice(&vlan_vid.to_be_bytes());
+        Self {
+            kind: LocatorKind::Tsn,
+            port: 0,
+            address,
+        }
+    }
+
+    /// Shared IPv4 constructor. Places the IPv4 bytes in the last
+    /// 4 bytes of the 16-byte `address` field (mapped IPv4-in-IPv6 layout).
     #[must_use]
     fn with_address(kind: LocatorKind, addr: [u8; 4], port: u32) -> Self {
         let mut address = [0u8; 16];
@@ -886,7 +955,7 @@ impl Locator {
         }
     }
 
-    /// IPv4-Adresse extrahieren (nur fuer Kind == UdpV4 sinnvoll).
+    /// Extracts the IPv4 address (only meaningful for kind == UdpV4).
     #[must_use]
     pub fn ipv4(self) -> [u8; 4] {
         let mut out = [0u8; 4];
@@ -894,7 +963,7 @@ impl Locator {
         out
     }
 
-    /// LE-Encoder.
+    /// LE encoder.
     #[must_use]
     pub fn to_bytes_le(self) -> [u8; 24] {
         let mut out = [0u8; 24];
@@ -904,10 +973,20 @@ impl Locator {
         out
     }
 
-    /// LE-Decoder.
+    /// BE encoder (for PL_CDR_BE, e.g. handshake `c.pdata`).
+    #[must_use]
+    pub fn to_bytes_be(self) -> [u8; 24] {
+        let mut out = [0u8; 24];
+        out[..4].copy_from_slice(&self.kind.as_i32().to_be_bytes());
+        out[4..8].copy_from_slice(&self.port.to_be_bytes());
+        out[8..].copy_from_slice(&self.address);
+        out
+    }
+
+    /// LE decoder.
     ///
     /// # Errors
-    /// `WireError::InvalidLocatorKind` bei unbekanntem Kind.
+    /// `WireError::InvalidLocatorKind` on an unknown kind.
     pub fn from_bytes_le(bytes: [u8; 24]) -> Result<Self, WireError> {
         let mut kind_bytes = [0u8; 4];
         kind_bytes.copy_from_slice(&bytes[..4]);
@@ -1012,7 +1091,7 @@ mod tests {
         assert_eq!(EntityId::from_bytes(id.to_bytes()), id);
     }
 
-    // ---- Secure-Builtin-EntityIds (DDS-Security 1.2 §7.4.7.1, C3.8) ----
+    // ---- Secure builtin EntityIds (DDS-Security 1.2 §7.4.7.1, C3.8) ----
 
     #[test]
     fn secure_publications_writer_layout() {
@@ -1023,7 +1102,7 @@ mod tests {
 
     #[test]
     fn stateless_writer_is_no_key_kind() {
-        // Stateless-Topic ist keyless → BuiltinWriterNoKey=0xC3.
+        // Stateless topic is keyless → BuiltinWriterNoKey=0xC3.
         let id = EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER;
         assert_eq!(id.entity_kind, EntityKind::BuiltinWriterNoKey);
         assert_eq!(id.to_bytes(), [0x00, 0x02, 0x01, 0xC3]);
@@ -1031,8 +1110,10 @@ mod tests {
 
     #[test]
     fn volatile_secure_writer_layout() {
+        // Spec §7.4.7.1 Tab.7 + cyclone wire: 0xff0202c3 (NoKey kind byte),
+        // NOT 0xc2 — otherwise the crypto-token channel does not match cross-vendor.
         let id = EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_WRITER;
-        assert_eq!(id.to_bytes(), [0xff, 0x02, 0x02, 0xC2]);
+        assert_eq!(id.to_bytes(), [0xff, 0x02, 0x02, 0xC3]);
     }
 
     #[test]
@@ -1223,7 +1304,7 @@ mod tests {
         ));
     }
 
-    // ---- §8.3.5.7 Locator-Constants ----
+    // ---- §8.3.5.7 Locator constants ----
 
     #[test]
     fn locator_invalid_constant_matches_spec() {
@@ -1250,7 +1331,22 @@ mod tests {
 
     #[test]
     fn locator_shm_any_uses_vendor_kind() {
-        assert!(Locator::SHM_ANY.kind.as_i32() < 0); // vendor-Range
+        assert!(Locator::SHM_ANY.kind.as_i32() < 0); // vendor range
+    }
+
+    #[test]
+    fn locator_tsn_carries_mac_and_vlan() {
+        let mac = [0x02, 0x00, 0x00, 0x11, 0x22, 0x33];
+        let loc = Locator::tsn(mac, 42);
+        assert_eq!(loc.kind, LocatorKind::Tsn);
+        assert_eq!(&loc.address[..6], &mac);
+        assert_eq!(u16::from_be_bytes([loc.address[6], loc.address[7]]), 42);
+        // Vendor range + i32 roundtrip.
+        assert!(loc.kind.as_i32() < 0);
+        assert_eq!(
+            LocatorKind::from_i32(loc.kind.as_i32()).unwrap(),
+            LocatorKind::Tsn
+        );
     }
 
     #[test]
@@ -1270,7 +1366,7 @@ mod tests {
         assert_eq!(Locator::from_bytes_le(l.to_bytes_le()).unwrap(), l);
     }
 
-    // ---- §8.3.5.5 ProtocolVersion-Aliases ----
+    // ---- §8.3.5.5 ProtocolVersion aliases ----
 
     #[test]
     fn protocol_version_aliases_match_spec() {
@@ -1367,7 +1463,7 @@ mod tests {
         assert_eq!(WExtension8::WIRE_SIZE, 8);
     }
 
-    // ---- SPDP Builtin EntityIds (Spec §9.3.1.5 Tabelle 9.4) ----
+    // ---- SPDP builtin EntityIds (Spec §9.3.1.5 Table 9.4) ----
 
     #[test]
     fn spdp_builtin_participant_writer_layout() {
@@ -1397,7 +1493,7 @@ mod tests {
         assert_eq!(bytes, [0x00, 0x00, 0x04, 0xC7]);
     }
 
-    // ---- SPDP-Multicast-Adresse + Port-Berechnung ----
+    // ---- SPDP multicast address + port computation ----
 
     #[test]
     fn spdp_default_multicast_is_239_255_0_1() {
@@ -1417,5 +1513,24 @@ mod tests {
     #[test]
     fn spdp_multicast_port_domain_5_is_8650() {
         assert_eq!(spdp_multicast_port(5), 8650);
+    }
+
+    #[test]
+    fn volatile_message_secure_entity_ids_match_spec_and_cyclone() {
+        // DDS-Security §7.4.7.1 Tab.7 + cyclone-wire-verified
+        // (trace: new_writer ...:ff0202c3 / new_reader ...:ff0202c4 for
+        // DCPSParticipantVolatileMessageSecure). The kind bytes are c3/c4
+        // (NoKey bytes), NOT c2/c7 — otherwise the crypto-token channel does
+        // not match cross-vendor.
+        assert_eq!(
+            EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_WRITER.to_bytes(),
+            [0xff, 0x02, 0x02, 0xc3],
+            "VolatileMessageSecure writer must be 0xff0202c3"
+        );
+        assert_eq!(
+            EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER.to_bytes(),
+            [0xff, 0x02, 0x02, 0xc4],
+            "VolatileMessageSecure reader must be 0xff0202c4"
+        );
     }
 }

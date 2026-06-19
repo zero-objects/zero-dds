@@ -26,8 +26,8 @@
 //!     ...
 //! }
 //! ```
-//! `[Flags]` aktiviert C#-Bitwise-Operatoren-Defaults; Pascal-Case-
-//! Konvention gilt analog zu Struct-Properties.
+//! `[Flags]` enables C# bitwise-operator defaults; Pascal-case
+//! convention applies analogously to struct properties.
 
 use std::fmt::Write;
 
@@ -91,7 +91,7 @@ pub(crate) fn emit_bitmask(
     for v in &b.values {
         let pos = extract_int_annotation(&v.annotations, "position").unwrap_or(next_pos);
         next_pos = pos.saturating_add(1);
-        // Enum-Literale behalten ihre IDL-Schreibung (Spec idl4-csharp
+        // Enum literals keep their IDL spelling (Spec idl4-csharp
         // §7.2.4.4.4: "names of the IDL enumeration constants").
         let lit_name = escape_identifier(&v.name.text)?;
         writeln!(out, "{inner}{lit_name} = 1UL << {pos},").map_err(fmt_err)?;

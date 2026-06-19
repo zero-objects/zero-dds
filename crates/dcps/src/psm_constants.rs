@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! IDL-PSM-Konstanten aus DDS-DCPS 1.4 §2.3.3 (Spec).
+//! IDL-PSM constants from DDS-DCPS 1.4 §2.3.3 (Spec).
 //!
-//! Diese Konstanten sind Pflicht-Bestandteil des IDL-PSM und werden von
-//! Anwendungen + Sprach-Bindings konsumiert. Wir spiegeln sie hier
-//! 1:1 als Rust-Konstanten, damit Bindings (C/C++/Java/Python) sie
-//! ohne Magic-Number-Drift uebernehmen koennen.
+//! These constants are a mandatory part of the IDL-PSM and are consumed
+//! by applications and language bindings. We mirror them here 1:1 as
+//! Rust constants so that bindings (C/C++/Java/Python) can adopt them
+//! without magic-number drift.
 
 #![allow(missing_docs)]
 
 extern crate alloc;
 
-/// Status-Kind-Bitmask-Werte (Spec §2.2.4.1 Tab. 2.10 + IDL-PSM
+/// Status-kind bitmask values (Spec §2.2.4.1 Tab. 2.10 + IDL-PSM
 /// `STATUS_MASK_*`).
 pub mod status {
     /// `INCONSISTENT_TOPIC_STATUS`
@@ -40,9 +40,9 @@ pub mod status {
     pub const PUBLICATION_MATCHED: u32 = 1 << 13;
     /// `SUBSCRIPTION_MATCHED_STATUS`
     pub const SUBSCRIPTION_MATCHED: u32 = 1 << 14;
-    /// `STATUS_MASK_NONE` — kein Status aktiv.
+    /// `STATUS_MASK_NONE` — no status active.
     pub const NONE: u32 = 0;
-    /// `STATUS_MASK_ANY` — alle 13 Standard-Statuses.
+    /// `STATUS_MASK_ANY` — all 13 standard statuses.
     pub const ANY: u32 = INCONSISTENT_TOPIC
         | OFFERED_DEADLINE_MISSED
         | REQUESTED_DEADLINE_MISSED
@@ -58,8 +58,8 @@ pub mod status {
         | SUBSCRIPTION_MATCHED;
 }
 
-/// QoS-Policy-Ids (Spec §2.2.3 Tab. 2.13). 32-bit u32-Werte; wenig
-/// Cross-Vendor-Konsens — wir folgen der OMG-Spec-Numerierung.
+/// QoS policy ids (Spec §2.2.3 Tab. 2.13). 32-bit u32 values; little
+/// cross-vendor consensus — we follow the OMG spec numbering.
 pub mod qos_policy_id {
     pub const INVALID: u32 = 0;
     pub const USER_DATA: u32 = 1;
@@ -84,15 +84,15 @@ pub mod qos_policy_id {
     pub const TRANSPORT_PRIORITY: u32 = 20;
     pub const LIFESPAN: u32 = 21;
     pub const DURABILITY_SERVICE: u32 = 22;
-    /// XTypes 1.3 §7.6.2 — TypeConsistencyEnforcement-QoS-Policy-Id.
-    /// Wird von F-TYPES-3 Reader-Match-Pfad als Reject-Reason gesetzt
-    /// wenn Reader und Writer inkompatible TypeIdentifier haben.
+    /// XTypes 1.3 §7.6.2 — TypeConsistencyEnforcement QoS policy id.
+    /// Set as the reject reason by the F-TYPES-3 reader-match path
+    /// when reader and writer have incompatible TypeIdentifiers.
     pub const TYPE_CONSISTENCY_ENFORCEMENT: u32 = 23;
-    /// XTypes 1.3 §7.6.3 — DataRepresentation-QoS-Policy-Id.
+    /// XTypes 1.3 §7.6.3 — DataRepresentation QoS policy id.
     pub const DATA_REPRESENTATION: u32 = 24;
 }
 
-/// `Sample/View/InstanceState`-Bitmask-Konstanten (Spec §2.2.2.5.1
+/// `Sample/View/InstanceState` bitmask constants (Spec §2.2.2.5.1
 /// Tab. 2.6/2.7/2.8 + IDL-PSM).
 pub mod state {
     // SampleStateKind
@@ -114,10 +114,10 @@ pub mod state {
     pub const ANY_INSTANCE_STATE: u32 = ALIVE_INSTANCE_STATE | NOT_ALIVE_INSTANCE_STATE;
 }
 
-/// Resource-Limit-Sentinels (Spec §2.2.2.5.3).
+/// Resource-limit sentinels (Spec §2.2.2.5.3).
 ///
-/// `LENGTH_UNLIMITED = -1` ist die Konvention fuer "keine Begrenzung"
-/// in `max_samples`, `max_instances`, `max_samples_per_instance`.
+/// `LENGTH_UNLIMITED = -1` is the convention for "no limit" in
+/// `max_samples`, `max_instances`, `max_samples_per_instance`.
 pub const LENGTH_UNLIMITED: i32 = -1;
 
 #[cfg(test)]
@@ -186,6 +186,6 @@ mod tests {
         for id in ids {
             assert!(seen.insert(id));
         }
-        assert_eq!(seen.len(), 22); // 22 Standard-Policies
+        assert_eq!(seen.len(), 22); // 22 standard policies
     }
 }

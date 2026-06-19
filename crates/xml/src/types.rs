@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! IDL-PSM-Datentyp-Mapping nach DDS-XML 1.0 §7.2.
+//! IDL-PSM data type mapping per DDS-XML 1.0 §7.2.
 //!
-//! Element-Werte-Parser fuer Boolean, Hex-/Dezimal-Long, Duration_t,
-//! sowie die Symbol-Konstanten `LENGTH_UNLIMITED`, `DURATION_INFINITE_SEC`
-//! und `DURATION_INFINITE_NSEC` aus §7.2.2.
+//! Element value parsers for boolean, hex/decimal long, Duration_t,
+//! and the symbol constants `LENGTH_UNLIMITED`, `DURATION_INFINITE_SEC`
+//! and `DURATION_INFINITE_NSEC` from §7.2.2.
 //!
-//! Alle Helper sind reine String -> typed-Value-Konvertierungen ohne
-//! Allokation, soweit moeglich.
+//! All helpers are pure string -> typed-value conversions without
+//! allocation, where possible.
 
 use crate::errors::XmlError;
 use alloc::format;
 use alloc::string::ToString;
 
-/// Spec §7.2.2: `LENGTH_UNLIMITED` als signed long, Wert `-1`.
+/// Spec §7.2.2: `LENGTH_UNLIMITED` as a signed long, value `-1`.
 ///
-/// Wird in QoS-Policies (z.B. `<resource_limits><max_samples>`) als
-/// "no limit"-Sentinel benutzt.
+/// Used in QoS policies (e.g. `<resource_limits><max_samples>`) as a
+/// "no limit" sentinel.
 pub const LENGTH_UNLIMITED: i32 = -1;
 
 /// Spec §7.2.2: `DURATION_INFINITE_SEC` = `0x7FFFFFFF` (max signed long).
@@ -33,14 +33,14 @@ pub const DURATION_ZERO_NSEC: u32 = 0;
 
 /// Spec §7.2.2.6: `TIME_INVALID_SEC = -1`.
 ///
-/// Sentinel-Wert fuer ein "ungueltiges" `Time_t.sec`. Wird nur fuer
-/// XML-Sample-Encoding genutzt (DDS Time-Stamps in XML-Form).
+/// Sentinel value for an "invalid" `Time_t.sec`. Used only for
+/// XML sample encoding (DDS timestamps in XML form).
 pub const TIME_INVALID_SEC: i32 = -1;
 
 /// Spec §7.2.2.7: `TIME_INVALID_NSEC = 0xFFFFFFFF`.
 pub const TIME_INVALID_NSEC: u32 = 0xFFFF_FFFF;
 
-/// `Duration_t` gemaess DDS 1.4 §2.2.1.2 + DDS-XML 1.0 §7.2.6.
+/// `Duration_t` per DDS 1.4 §2.2.1.2 + DDS-XML 1.0 §7.2.6.
 ///
 /// XML-Mapping:
 ///
@@ -51,51 +51,51 @@ pub const TIME_INVALID_NSEC: u32 = 0xFFFF_FFFF;
 /// </duration>
 /// ```
 ///
-/// Sentinel-Werte: `<sec>DURATION_INFINITE_SEC</sec>` und
-/// `<nanosec>DURATION_INFINITE_NSEC</nanosec>` werden via
-/// [`Self::INFINITE`]/[`Self::ZERO`] mit den Spec-Konstanten gemappt.
+/// Sentinel values: `<sec>DURATION_INFINITE_SEC</sec>` and
+/// `<nanosec>DURATION_INFINITE_NSEC</nanosec>` are mapped via
+/// [`Self::INFINITE`]/[`Self::ZERO`] to the spec constants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Duration {
-    /// Sekunden-Anteil (signed, da Spec `nonNegativeInteger_Duration_SEC`
-    /// das Symbol `DURATION_INFINITE_SEC` zulaesst, das auf einen
-    /// signed-long-Sentinel mappt).
+    /// Seconds part (signed, since the spec `nonNegativeInteger_Duration_SEC`
+    /// allows the symbol `DURATION_INFINITE_SEC`, which maps to a
+    /// signed-long sentinel).
     pub sec: i32,
-    /// Nanosekunden-Anteil (`0..=999_999_999`, oder Sentinel
+    /// Nanoseconds part (`0..=999_999_999`, or the sentinel
     /// [`DURATION_INFINITE_NSEC`]).
     pub nanosec: u32,
 }
 
 impl Duration {
-    /// Sentinel "infinity" — beide Felder auf den Spec-Sentinel.
+    /// Sentinel "infinity" — both fields set to the spec sentinel.
     pub const INFINITE: Self = Self {
         sec: DURATION_INFINITE_SEC,
         nanosec: DURATION_INFINITE_NSEC,
     };
 
-    /// Null-Duration (Spec-Default fuer viele QoS-Policies).
+    /// Zero duration (spec default for many QoS policies).
     pub const ZERO: Self = Self {
         sec: DURATION_ZERO_SEC,
         nanosec: DURATION_ZERO_NSEC,
     };
 
-    /// `true` wenn beide Felder den Infinite-Sentinel tragen.
+    /// `true` if both fields carry the infinite sentinel.
     #[must_use]
     pub fn is_infinite(&self) -> bool {
         self.sec == DURATION_INFINITE_SEC && self.nanosec == DURATION_INFINITE_NSEC
     }
 }
 
-/// Boolean-Parser gemaess Spec §7.1.4 Tab.7.1.
+/// Boolean parser per Spec §7.1.4 Tab.7.1.
 ///
-/// Akzeptierte Werte (alle case-sensitive in der Spec, wir akzeptieren
-/// zusaetzlich die haeufige Schreibweise mit Grossbuchstaben — Cyclone
-/// und FastDDS sind hier ebenfalls tolerant):
+/// Accepted values (all case-sensitive in the spec, we additionally
+/// accept the common uppercase spelling — Cyclone
+/// and FastDDS are tolerant here too):
 ///
 /// * `true`, `TRUE`, `1` -> `true`
 /// * `false`, `FALSE`, `0` -> `false`
 ///
 /// # Errors
-/// [`XmlError::ValueOutOfRange`] bei jedem anderen String.
+/// [`XmlError::ValueOutOfRange`] for any other string.
 pub fn parse_bool(s: &str) -> Result<bool, XmlError> {
     let t = s.trim();
     match t {
@@ -107,17 +107,17 @@ pub fn parse_bool(s: &str) -> Result<bool, XmlError> {
     }
 }
 
-/// Long-Parser (signed 32-bit) gemaess Spec §7.1.4 Tab.7.1.
+/// Long parser (signed 32-bit) per Spec §7.1.4 Tab.7.1.
 ///
-/// Akzeptiert:
-/// * Dezimal: `-2147483648..=2147483647`
-/// * Hex (Prefix `0x` / `0X`): `0..=0xFFFFFFFF` (Bit-Pattern, wird in
-///   `i32` reinterpretiert).
+/// Accepts:
+/// * Decimal: `-2147483648..=2147483647`
+/// * Hex (prefix `0x` / `0X`): `0..=0xFFFFFFFF` (bit pattern,
+///   reinterpreted as `i32`).
 /// * Symbol `LENGTH_UNLIMITED` -> `-1`.
 ///
 /// # Errors
-/// [`XmlError::ValueOutOfRange`] bei Wertbereich-Verletzung oder
-/// Parser-Fehler.
+/// [`XmlError::ValueOutOfRange`] on a value range violation or a
+/// parser error.
 pub fn parse_long(s: &str) -> Result<i32, XmlError> {
     let t = s.trim();
     if t == "LENGTH_UNLIMITED" {
@@ -126,20 +126,20 @@ pub fn parse_long(s: &str) -> Result<i32, XmlError> {
     if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
         let v = u32::from_str_radix(hex, 16)
             .map_err(|e| XmlError::ValueOutOfRange(format!("hex long `{t}`: {e}")))?;
-        // Bit-Pattern-Reinterpret: §7.1.4 Tab.7.1 erlaubt
-        // 0x80000000..0xFFFFFFFF als negative i32 (signed).
+        // Bit-pattern reinterpret: §7.1.4 Tab.7.1 allows
+        // 0x80000000..0xFFFFFFFF as a negative i32 (signed).
         return Ok(i32::from_ne_bytes(v.to_ne_bytes()));
     }
     t.parse::<i32>()
         .map_err(|e| XmlError::ValueOutOfRange(format!("long `{t}`: {e}")))
 }
 
-/// Unsigned-Long-Parser (32-bit) gemaess Spec §7.1.4 Tab.7.1.
+/// Unsigned long parser (32-bit) per Spec §7.1.4 Tab.7.1.
 ///
-/// Akzeptiert Dezimal `0..=4294967295` und Hex `0x0..=0xFFFFFFFF`.
+/// Accepts decimal `0..=4294967295` and hex `0x0..=0xFFFFFFFF`.
 ///
 /// # Errors
-/// [`XmlError::ValueOutOfRange`] bei Wertbereich-Verletzung.
+/// [`XmlError::ValueOutOfRange`] on a value range violation.
 pub fn parse_ulong(s: &str) -> Result<u32, XmlError> {
     let t = s.trim();
     if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
@@ -150,16 +150,16 @@ pub fn parse_ulong(s: &str) -> Result<u32, XmlError> {
         .map_err(|e| XmlError::ValueOutOfRange(format!("ulong `{t}`: {e}")))
 }
 
-/// Sekunden-Wert fuer `Duration_t.sec` gemaess Spec §7.2.2 +
-/// `nonNegativeInteger_Duration_SEC` Pattern.
+/// Seconds value for `Duration_t.sec` per Spec §7.2.2 +
+/// the `nonNegativeInteger_Duration_SEC` pattern.
 ///
-/// Akzeptiert:
-/// * Dezimal `0..=0x7FFFFFFF`.
-/// * Symbol `DURATION_INFINITY` und `DURATION_INFINITE_SEC` -> Sentinel
+/// Accepts:
+/// * Decimal `0..=0x7FFFFFFF`.
+/// * Symbols `DURATION_INFINITY` and `DURATION_INFINITE_SEC` -> sentinel
 ///   [`DURATION_INFINITE_SEC`].
 ///
 /// # Errors
-/// [`XmlError::ValueOutOfRange`] bei negativen Werten oder Overflow.
+/// [`XmlError::ValueOutOfRange`] on negative values or overflow.
 pub fn parse_duration_sec(s: &str) -> Result<i32, XmlError> {
     let t = s.trim();
     if t == "DURATION_INFINITY" || t == "DURATION_INFINITE_SEC" {
@@ -173,21 +173,21 @@ pub fn parse_duration_sec(s: &str) -> Result<i32, XmlError> {
             "duration_sec `{t}` outside 0..=0x7FFFFFFF"
         )));
     }
-    // Safe: durch Range-Check oben.
+    // Safe: due to the range check above.
     Ok(i32::try_from(v).unwrap_or(0))
 }
 
-/// Nanosekunden-Wert fuer `Duration_t.nanosec` gemaess Spec §7.2.2 +
-/// `nonNegativeInteger_Duration_NSEC` Pattern.
+/// Nanoseconds value for `Duration_t.nanosec` per Spec §7.2.2 +
+/// the `nonNegativeInteger_Duration_NSEC` pattern.
 ///
-/// Akzeptiert:
-/// * Dezimal `0..=999_999_999` (regulaerer Sub-Sekunden-Bereich).
-/// * Symbol `DURATION_INFINITY` und `DURATION_INFINITE_NSEC` -> Sentinel
+/// Accepts:
+/// * Decimal `0..=999_999_999` (regular sub-second range).
+/// * Symbols `DURATION_INFINITY` and `DURATION_INFINITE_NSEC` -> sentinel
 ///   [`DURATION_INFINITE_NSEC`].
 ///
 /// # Errors
-/// [`XmlError::ValueOutOfRange`] bei Wert > 999_999_999 (sofern kein
-/// Sentinel).
+/// [`XmlError::ValueOutOfRange`] on a value > 999_999_999 (unless it is a
+/// sentinel).
 pub fn parse_duration_nsec(s: &str) -> Result<u32, XmlError> {
     let t = s.trim();
     if t == "DURATION_INFINITY" || t == "DURATION_INFINITE_NSEC" {
@@ -196,8 +196,8 @@ pub fn parse_duration_nsec(s: &str) -> Result<u32, XmlError> {
     let v = t
         .parse::<u32>()
         .map_err(|e| XmlError::ValueOutOfRange(format!("duration_nsec `{t}`: {e}")))?;
-    // Spec-Range fuer regulaere Werte: 0..=999_999_999.
-    // Werte daueber sind nur via Sentinel zulaessig.
+    // Spec range for regular values: 0..=999_999_999.
+    // Values above that are only allowed via the sentinel.
     if v > 999_999_999 {
         return Err(XmlError::ValueOutOfRange(format!(
             "duration_nsec `{t}` exceeds 999_999_999"
@@ -206,78 +206,78 @@ pub fn parse_duration_nsec(s: &str) -> Result<u32, XmlError> {
     Ok(v)
 }
 
-/// `positiveInteger_UNLIMITED`-Parser gemaess Spec §7.2.2.9.
+/// `positiveInteger_UNLIMITED` parser per Spec §7.2.2.9.
 ///
-/// Pattern aus der OMG-Spec: `(LENGTH_UNLIMITED|[1-9]([0-9])*)?`.
-/// Im Unterschied zu [`parse_long`] / [`parse_ulong`] ist `0`
-/// **kein** zulaessiger Wert — die Spec verlangt `[1-9]` als ersten
-/// Ziffer-Char.
+/// Pattern from the OMG spec: `(LENGTH_UNLIMITED|[1-9]([0-9])*)?`.
+/// Unlike [`parse_long`] / [`parse_ulong`], `0` is
+/// **not** an allowed value — the spec requires `[1-9]` as the first
+/// digit char.
 ///
-/// Akzeptiert:
-/// * `LENGTH_UNLIMITED` -> `-1` (Sentinel; spec-konform "unlimited").
-/// * Dezimal `1..=2147483647` (positive i32-Werte ohne fuehrende `0`).
+/// Accepts:
+/// * `LENGTH_UNLIMITED` -> `-1` (sentinel; spec-conformant "unlimited").
+/// * Decimal `1..=2147483647` (positive i32 values without a leading `0`).
 ///
 /// Rejected:
-/// * `0` (Spec verbietet via `[1-9]`-Praefix).
-/// * Negative Werte (ausser dem Sentinel).
-/// * Hex-Werte (Spec-Pattern erlaubt nur Dezimal).
-/// * Fuehrende Nullen (z.B. `01`, `001`).
+/// * `0` (the spec forbids it via the `[1-9]` prefix).
+/// * Negative values (except the sentinel).
+/// * Hex values (the spec pattern allows only decimal).
+/// * Leading zeros (e.g. `01`, `001`).
 ///
 /// # Errors
-/// [`XmlError::ValueOutOfRange`] bei Verletzung der oben genannten
-/// Constraints.
+/// [`XmlError::ValueOutOfRange`] on a violation of the constraints
+/// named above.
 pub fn parse_positive_long_unlimited(s: &str) -> Result<i32, XmlError> {
     let t = s.trim();
     if t == "LENGTH_UNLIMITED" {
         return Ok(LENGTH_UNLIMITED);
     }
-    // Spec-Pattern `[1-9]([0-9])*` — erste Ziffer 1..=9, keine Hex,
-    // keine fuehrenden Nullen.
+    // Spec pattern `[1-9]([0-9])*` — first digit 1..=9, no hex,
+    // no leading zeros.
     let mut chars = t.chars();
     let first = chars.next().ok_or_else(|| {
         XmlError::ValueOutOfRange("positiveInteger_UNLIMITED: empty input".to_string())
     })?;
     if !('1'..='9').contains(&first) {
         return Err(XmlError::ValueOutOfRange(format!(
-            "positiveInteger_UNLIMITED `{t}`: erste Ziffer muss 1..9 sein (Spec-Pattern)"
+            "positiveInteger_UNLIMITED `{t}`: first digit must be 1..9 (spec pattern)"
         )));
     }
     if !chars.all(|c| c.is_ascii_digit()) {
         return Err(XmlError::ValueOutOfRange(format!(
-            "positiveInteger_UNLIMITED `{t}`: nur ASCII-Dezimalziffern erlaubt"
+            "positiveInteger_UNLIMITED `{t}`: only ASCII decimal digits allowed"
         )));
     }
     t.parse::<i32>()
         .map_err(|e| XmlError::ValueOutOfRange(format!("positiveInteger_UNLIMITED `{t}`: {e}")))
 }
 
-/// Octet-Sequenz-Parser gemaess Spec §7.2.4.2 (Comma-separated
-/// decimal/hex). Jedes Element ist ein Octet (`u8`).
+/// Octet sequence parser per Spec §7.2.4.2 (comma-separated
+/// decimal/hex). Each element is an octet (`u8`).
 ///
-/// Akzeptiert:
-/// * Comma-separated Dezimal: `0,1,2,255`.
-/// * Comma-separated Hex (Prefix `0x` / `0X`): `0x00,0xFF`.
-/// * Gemischt erlaubt: `1,0x02,3` (jedes Element wird einzeln geparst).
-/// * Whitespace um Kommas wird getrimmt.
-/// * Leerer String -> leere Sequenz.
+/// Accepts:
+/// * Comma-separated decimal: `0,1,2,255`.
+/// * Comma-separated hex (prefix `0x` / `0X`): `0x00,0xFF`.
+/// * Mixed allowed: `1,0x02,3` (each element is parsed individually).
+/// * Whitespace around commas is trimmed.
+/// * Empty string -> empty sequence.
 ///
 /// Rejected:
-/// * Werte ausserhalb `0..=255`.
-/// * Trailing-Komma (z.B. `1,2,`).
-/// * Nicht-numerische Tokens.
+/// * Values outside `0..=255`.
+/// * Trailing comma (e.g. `1,2,`).
+/// * Non-numeric tokens.
 ///
-/// Fuer Base64-encoded Octet-Sequenzen siehe `qos_parser::base64_decode`
-/// — die Spec erlaubt **entweder** Comma-Liste **oder** Base64,
-/// unterschieden durch Element-Namen (`<value>` vs. `<valueB64>`).
+/// For Base64-encoded octet sequences see `qos_parser::base64_decode`
+/// — the spec allows **either** a comma list **or** Base64,
+/// distinguished by the element name (`<value>` vs. `<valueB64>`).
 ///
 /// # Errors
-/// [`XmlError::ValueOutOfRange`] bei Range-/Format-Fehlern.
+/// [`XmlError::ValueOutOfRange`] on range/format errors.
 pub fn parse_octet_sequence(s: &str) -> Result<alloc::vec::Vec<u8>, XmlError> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return Ok(alloc::vec::Vec::new());
     }
-    // DoS-Cap: 1 MiB roh ≈ 256k Werte.
+    // DoS cap: 1 MiB raw ≈ 256k values.
     if trimmed.len() > MAX_STRING_BYTES * 16 {
         return Err(XmlError::LimitExceeded(format!(
             "octet sequence ({} bytes) exceeds cap",
@@ -289,7 +289,7 @@ pub fn parse_octet_sequence(s: &str) -> Result<alloc::vec::Vec<u8>, XmlError> {
         let tok = token.trim();
         if tok.is_empty() {
             return Err(XmlError::ValueOutOfRange(
-                "octet sequence: leeres Element (z.B. `1,,2` oder trailing comma)".to_string(),
+                "octet sequence: empty element (e.g. `1,,2` or trailing comma)".to_string(),
             ));
         }
         let v = if let Some(hex) = tok.strip_prefix("0x").or_else(|| tok.strip_prefix("0X")) {
@@ -306,12 +306,11 @@ pub fn parse_octet_sequence(s: &str) -> Result<alloc::vec::Vec<u8>, XmlError> {
     Ok(out)
 }
 
-/// Enum-Whitelist-Pruefung gemaess Spec §7.1.4 Tab.7.1 (enum-Werte sind
-/// String-Literale aus DCPS-IDL, *nicht* numerisch).
+/// Enum whitelist check per Spec §7.1.4 Tab.7.1 (enum values are
+/// string literals from DCPS-IDL, *not* numeric).
 ///
 /// # Errors
-/// [`XmlError::BadEnum`] wenn der Wert nicht in der Whitelist enthalten
-/// ist.
+/// [`XmlError::BadEnum`] if the value is not contained in the whitelist.
 pub fn parse_enum<'a>(s: &str, whitelist: &[&'a str]) -> Result<&'a str, XmlError> {
     let t = s.trim();
     whitelist
@@ -324,13 +323,12 @@ pub fn parse_enum<'a>(s: &str, whitelist: &[&'a str]) -> Result<&'a str, XmlErro
 /// String-DoS-Cap: 64 KiB.
 pub const MAX_STRING_BYTES: usize = 64 * 1024;
 
-/// String-Parser mit DoS-Cap gemaess ZeroDDS-Security-Posture.
+/// String parser with a DoS cap per the ZeroDDS security posture.
 ///
-/// XML-Escaping (`&lt;`, `&amp;` etc.) ist bereits durch roxmltree
-/// dekodiert.
+/// XML escaping (`&lt;`, `&amp;` etc.) is already decoded by roxmltree.
 ///
 /// # Errors
-/// [`XmlError::LimitExceeded`] bei Strings ueber [`MAX_STRING_BYTES`].
+/// [`XmlError::LimitExceeded`] on strings over [`MAX_STRING_BYTES`].
 pub fn parse_string(s: &str) -> Result<&str, XmlError> {
     if s.len() > MAX_STRING_BYTES {
         return Err(XmlError::LimitExceeded(format!(
@@ -522,8 +520,8 @@ mod tests {
         // Spec §7.2.2.6 + §7.2.2.7.
         assert_eq!(TIME_INVALID_SEC, -1);
         assert_eq!(TIME_INVALID_NSEC, 0xFFFF_FFFF);
-        // TIME_INVALID muss von DURATION_INFINITE und DURATION_ZERO
-        // unterscheidbar sein (verschiedene Sentinel-Werte).
+        // TIME_INVALID must be distinguishable from DURATION_INFINITE and
+        // DURATION_ZERO (different sentinel values).
         assert_ne!(TIME_INVALID_SEC, DURATION_INFINITE_SEC);
         assert_ne!(TIME_INVALID_NSEC, DURATION_INFINITE_NSEC);
         assert_ne!(TIME_INVALID_SEC, DURATION_ZERO_SEC);
@@ -551,7 +549,7 @@ mod tests {
 
     #[test]
     fn positive_unlimited_zero_rejected() {
-        // Spec-Pattern `[1-9]([0-9])*` verbietet 0 explizit.
+        // Spec pattern `[1-9]([0-9])*` forbids 0 explicitly.
         let err = parse_positive_long_unlimited("0").expect_err("zero");
         assert!(matches!(err, XmlError::ValueOutOfRange(_)));
     }
@@ -564,14 +562,14 @@ mod tests {
 
     #[test]
     fn positive_unlimited_leading_zero_rejected() {
-        // `01` matcht nicht das Spec-Pattern.
+        // `01` does not match the spec pattern.
         let err = parse_positive_long_unlimited("01").expect_err("leading-zero");
         assert!(matches!(err, XmlError::ValueOutOfRange(_)));
     }
 
     #[test]
     fn positive_unlimited_hex_rejected() {
-        // Pattern erlaubt nur Dezimal.
+        // Pattern allows only decimal.
         let err = parse_positive_long_unlimited("0x10").expect_err("hex");
         assert!(matches!(err, XmlError::ValueOutOfRange(_)));
     }
@@ -588,7 +586,7 @@ mod tests {
         assert!(matches!(err, XmlError::ValueOutOfRange(_)));
     }
 
-    // ---- §7.2.4.2 Octet-Sequenzen ------------------------------------
+    // ---- §7.2.4.2 octet sequences ------------------------------------
 
     #[test]
     fn octet_sequence_decimal_basic() {

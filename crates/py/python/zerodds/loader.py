@@ -1,21 +1,21 @@
-"""ZeroDDS pure-ctypes Loader gemaess `zerodds-ffi-loader-1.0` §3.1.
+"""ZeroDDS pure-ctypes loader per `zerodds-ffi-loader-1.0` §3.1.
 
-Diese Datei ist die kanonische Loader-Template fuer Python und bindet
-direkt gegen `libzerodds.{so,dylib,dll}` aus `crates/zerodds-c-api`.
+This file is the canonical loader template for Python and binds
+directly against `libzerodds.{so,dylib,dll}` from `crates/zerodds-c-api`.
 
-Im Gegensatz zur PyO3-basierten `zerodds`-API ist dieser Loader
-zero-build-dep: er braucht **nur** die fertige dynamische Library und
-Python's stdlib `ctypes`. Damit bedient er den 'Distro-Package'-Pfad
-(System-libzerodds installiert) sowie das CI-Pattern `cargo build -p
+Unlike the PyO3-based `zerodds` API, this loader is
+zero-build-dep: it needs **only** the finished dynamic library and
+Python's stdlib `ctypes`. This serves the 'distro package' path
+(system libzerodds installed) as well as the CI pattern `cargo build -p
 zerodds-c-api && python -c "from zerodds.loader import Runtime"`.
 
-Die ABI-Signaturen folgen dem konkreten Header
-`crates/zerodds-c-api/include/zerodds.h`. Die Spec-Excerpts in §2.3
-zeigen eine vereinfachte Idealform mit `out`-Pointer; der reale
-Header verwendet *return-pointer + NULL on error* fuer create-
-Funktionen — wir binden gegen das was im Header steht.
+The ABI signatures follow the concrete header
+`crates/zerodds-c-api/include/zerodds.h`. The spec excerpts in §2.3
+show a simplified ideal form with an `out` pointer; the real
+header uses *return-pointer + NULL on error* for create
+functions — we bind against what is in the header.
 
-Benutzung::
+Usage::
 
     from zerodds.loader import Runtime, Writer, Reader
 
@@ -101,7 +101,7 @@ def load_library() -> ctypes.CDLL:
 
 
 # ---------------------------------------------------------------------------
-# ABI-Signatures (subset gemaess crates/zerodds-c-api/include/zerodds.h)
+# ABI signatures (subset per crates/zerodds-c-api/include/zerodds.h)
 # ---------------------------------------------------------------------------
 
 
@@ -164,6 +164,7 @@ def _bind(lib: ctypes.CDLL) -> ctypes.CDLL:
         p_r,
         ctypes.POINTER(ctypes.POINTER(ctypes.c_uint8)),
         ctypes.POINTER(ctypes.c_size_t),
+        ctypes.POINTER(ctypes.c_uint8),  # out_repr (nullable): XCDR-Version
     ]
     lib.zerodds_reader_take.restype = ctypes.c_int
 
@@ -351,8 +352,12 @@ class Reader:
         """Take a single sample. Returns bytes or None if no sample ready."""
         out_buf = ctypes.POINTER(ctypes.c_uint8)()
         out_len = ctypes.c_size_t(0)
+        # out_repr = None (NULL): the XCDR version is not needed here.
+        # The fourth argument MUST be passed — otherwise
+        # the C function reads it from an uninitialized register
+        # and writes `repr` to a garbage address (SIGSEGV).
         rc = self._lib.zerodds_reader_take(
-            self._ptr, ctypes.byref(out_buf), ctypes.byref(out_len)
+            self._ptr, ctypes.byref(out_buf), ctypes.byref(out_len), None
         )
         if rc != 0:
             raise ZeroDdsError(f"zerodds_reader_take rc={rc}")

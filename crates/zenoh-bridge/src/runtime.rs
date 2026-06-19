@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Live-Runtime — nur mit Feature `zenoh-runtime` aktiv. Dies ist die
-//! eigentliche Bridge: spawnt async-Tasks, die DDS-DataReader und
-//! Zenoh-Subscriber zusammenkoppeln.
+//! Live runtime — only active with the `zenoh-runtime` feature. This is the
+//! actual bridge: it spawns async tasks that couple DDS DataReaders and
+//! Zenoh subscribers together.
 //!
-//! # Lebenszyklus
+//! # Lifecycle
 //!
-//! 1. `ZenohBridgeBuilder` sammelt Topic-Map-Eintraege + Zenoh-Config.
-//! 2. `build()` -> `ZenohBridge`. Allociert tokio-Runtime,
-//!    initiiert Zenoh-Session.
-//! 3. `start()` spawnt pro Topic einen Forward-Task (DDS->Zenoh) und
-//!    einen Reverse-Task (Zenoh->DDS).
-//! 4. `stop()` joint alle Tasks und schliesst Zenoh-Session.
+//! 1. `ZenohBridgeBuilder` collects topic-map entries + Zenoh config.
+//! 2. `build()` -> `ZenohBridge`. Allocates the tokio runtime,
+//!    initiates the Zenoh session.
+//! 3. `start()` spawns per topic a forward task (DDS->Zenoh) and
+//!    a reverse task (Zenoh->DDS).
+//! 4. `stop()` joins all tasks and closes the Zenoh session.
 
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -22,14 +22,14 @@ use zerodds_dcps::DomainParticipant;
 
 use crate::mapping::TopicMap;
 
-/// Bridge-Fehler.
+/// Bridge error.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum BridgeError {
-    /// Zenoh-Session konnte nicht aufgebaut werden.
+    /// The Zenoh session could not be established.
     #[error("zenoh session failed: {0}")]
     ZenohSession(String),
-    /// DDS-Topic ist nicht im Participant registriert.
+    /// The DDS topic is not registered in the participant.
     #[error("dds topic missing: {0}")]
     DdsTopicMissing(String),
     /// Tokio-Runtime-Initialisierung schlug fehl.
@@ -37,9 +37,9 @@ pub enum BridgeError {
     Tokio(String),
 }
 
-/// Builder fuer eine `ZenohBridge`. Sammelt Topic-Map + Zenoh-Config +
-/// optional einen `DomainParticipant` fuer den DDS-Side-Forward/Reverse-
-/// Pfad.
+/// Builder for a `ZenohBridge`. Collects the topic map + Zenoh config +
+/// optionally a `DomainParticipant` for the DDS-side forward/reverse
+/// path.
 pub struct ZenohBridgeBuilder {
     map: TopicMap,
     zenoh_endpoints: Vec<String>,
@@ -48,10 +48,10 @@ pub struct ZenohBridgeBuilder {
 }
 
 impl ZenohBridgeBuilder {
-    /// Neuer Builder mit Default-Prefix `dds` und ohne Participant.
-    /// Der Participant wird via [`Self::with_dcps_participant`] gesetzt
-    /// — ohne ihn betreibt die Bridge nur den Zenoh-Side-Pfad
-    /// (Caller fuettert DDS-Samples manuell ueber die Live-API).
+    /// New builder with the default prefix `dds` and no participant.
+    /// The participant is set via [`Self::with_dcps_participant`]
+    /// — without it the bridge only runs the Zenoh-side path
+    /// (the caller feeds DDS samples manually via the live API).
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -62,33 +62,33 @@ impl ZenohBridgeBuilder {
         }
     }
 
-    /// Verbindet die Bridge mit einem aktiven `DomainParticipant`. Der
-    /// DDS-Side-Forward/Reverse-Pfad nutzt diesen Participant fuer
-    /// `DataReader::take` (forward) und `DataWriter::write` (reverse).
+    /// Connects the bridge with an active `DomainParticipant`. The
+    /// DDS-side forward/reverse path uses this participant for
+    /// `DataReader::take` (forward) and `DataWriter::write` (reverse).
     #[must_use]
     pub fn with_dcps_participant(mut self, participant: Arc<DomainParticipant>) -> Self {
         self.participant = Some(participant);
         self
     }
 
-    /// Setzt den Zenoh-Key-Praefix (Default `dds`).
+    /// Sets the Zenoh key prefix (default `dds`).
     #[must_use]
     pub fn prefix(mut self, prefix: impl Into<String>) -> Self {
         self.prefix = prefix.into();
         self
     }
 
-    /// Fuegt einen Zenoh-Connect-Endpoint hinzu (z.B. `tcp/127.0.0.1:7447`).
-    /// Ohne Endpoints laeuft die Session im Peer-Mode mit Multicast-
-    /// Discovery (Zenoh-Default).
+    /// Adds a Zenoh connect endpoint (e.g. `tcp/127.0.0.1:7447`).
+    /// Without endpoints the session runs in peer mode with multicast
+    /// discovery (Zenoh default).
     #[must_use]
     pub fn endpoint(mut self, ep: impl Into<String>) -> Self {
         self.zenoh_endpoints.push(ep.into());
         self
     }
 
-    /// Registriert ein DDS-Topic. Die Zenoh-KeyExpr wird automatisch
-    /// gemappt (siehe `key_expr_for_topic`).
+    /// Registers a DDS topic. The Zenoh KeyExpr is mapped
+    /// automatically (see `key_expr_for_topic`).
     pub fn add_topic(
         &mut self,
         topic: impl Into<String>,
@@ -111,13 +111,13 @@ impl ZenohBridgeBuilder {
     /// Baut die Bridge. Initiiert Tokio-Runtime + Zenoh-Session.
     ///
     /// # Errors
-    /// `BridgeError::Tokio` bei Runtime-Fehler; `BridgeError::ZenohSession`
-    /// wenn Zenoh-Connect/Open scheitert.
+    /// `BridgeError::Tokio` on a runtime error; `BridgeError::ZenohSession`
+    /// if the Zenoh connect/open fails.
     pub async fn build(self) -> Result<ZenohBridge, BridgeError> {
-        // Zenoh-Session aufbauen. Endpoints werden in der Config injected.
+        // Build the Zenoh session. Endpoints are injected into the config.
         let mut config = zenoh::Config::default();
         for ep in &self.zenoh_endpoints {
-            // Spec: zenoh::config::ConnectConfig akzeptiert "endpoint/...".
+            // Spec: zenoh::config::ConnectConfig accepts "endpoint/...".
             // 1.x-Form: config.connect.endpoints.push.
             let _ = config.insert_json5("connect/endpoints", &alloc::format!("[\"{ep}\"]"));
         }
@@ -140,8 +140,8 @@ impl Default for ZenohBridgeBuilder {
     }
 }
 
-/// Live-Bridge. Pro Topic ein Forward-Task (DDS->Zenoh) und ein
-/// Reverse-Task (Zenoh->DDS).
+/// Live bridge. Per topic, one forward task (DDS->Zenoh) and one
+/// reverse task (Zenoh->DDS).
 pub struct ZenohBridge {
     map: Arc<TopicMap>,
     session: Arc<zenoh::Session>,
@@ -150,26 +150,26 @@ pub struct ZenohBridge {
 }
 
 impl ZenohBridge {
-    /// Liefert die Topic-Map.
+    /// Returns the topic map.
     #[must_use]
     pub fn map(&self) -> &TopicMap {
         &self.map
     }
 
-    /// Liefert den verbundenen DDS-Participant (falls einer via
-    /// [`ZenohBridgeBuilder::with_dcps_participant`] gesetzt wurde).
+    /// Returns the connected DDS participant (if one was set via
+    /// [`ZenohBridgeBuilder::with_dcps_participant`]).
     #[must_use]
     pub fn dcps_participant(&self) -> Option<&Arc<DomainParticipant>> {
         self.participant.as_ref()
     }
 
-    /// Anzahl aktiver Tasks (Forward + Reverse pro Topic).
+    /// Number of active tasks (forward + reverse per topic).
     #[must_use]
     pub fn task_count(&self) -> usize {
         self.tasks.len()
     }
 
-    /// Stoppt alle Tasks und schliesst die Zenoh-Session.
+    /// Stops all tasks and closes the Zenoh session.
     pub async fn stop(mut self) {
         for handle in self.tasks.drain(..) {
             handle.abort();
@@ -203,8 +203,8 @@ mod tests {
             ReliabilityKind::BestEffort,
             DurabilityKind::TransientLocal,
         );
-        // Internal map check via builder lassen wir aus (private state),
-        // aber wir koennen die Mapping-Funktion direkt testen.
+        // We skip the internal map check via the builder (private state),
+        // but we can test the mapping function directly.
         assert_eq!(
             crate::mapping::key_expr_for_topic("dds", "", "Chatter"),
             "dds/Chatter"

@@ -1,7 +1,7 @@
 #![no_main]
-//! Fuzz-Target: FragmentAssembler::insert. Input-Bytes werden in
-//! arbitrary DataFragSubmessage-Werte gemapped; der Assembler muss
-//! DoS-Caps durchsetzen und darf nie panicen.
+//! Fuzz target: FragmentAssembler::insert. Input bytes are mapped into
+//! arbitrary DataFragSubmessage values; the assembler must
+//! enforce DoS caps and must never panic.
 
 use libfuzzer_sys::fuzz_target;
 

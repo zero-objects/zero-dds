@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Connection-Wireup-Helpers für die sechs Bridge-Daemons.
+//! Connection wire-up helpers for the six bridge daemons.
 //!
-//! Diese Schicht sitzt zwischen `TcpStream::accept()` und dem
-//! Protokoll-Handshake (HTTP-Upgrade / MQTT-CONNECT / GIOP-Locate /
-//! HTTP/2-Preface / AMQP-Open / CoAP-Datagram) und liefert:
+//! This layer sits between `TcpStream::accept()` and the protocol
+//! handshake (HTTP upgrade / MQTT CONNECT / GIOP Locate / HTTP/2 preface
+//! / AMQP Open / CoAP datagram) and provides:
 //!
-//! * [`serve_tls_handshake`] — wraps eine `TcpStream` mit
-//!   `rustls::ServerConnection` und blockt bis der TLS-Handshake
-//!   abgeschlossen ist. Liefert ein TLS-`Stream`-Objekt + extracted
-//!   `AuthSubject` (für mTLS).
-//! * [`RotatingTlsConfig`] — `Arc<RwLock<Arc<ServerConfig>>>`-Wrapper
-//!   für SIGHUP-Cert-Hot-Reload. Bestandene Connections behalten ihre
-//!   Session, neue Connections sehen den neuen Cert.
-//! * [`build_client_tls_connector`] — Pendant für MQTT/AMQP-Client-
-//!   Daemons die zu einem Broker connecten und TLS auf der Out-Bound-
-//!   Seite brauchen.
+//! * [`serve_tls_handshake`] — wraps a `TcpStream` with
+//!   `rustls::ServerConnection` and blocks until the TLS handshake is
+//!   complete. Returns a TLS `Stream` object + extracted `AuthSubject`
+//!   (for mTLS).
+//! * [`RotatingTlsConfig`] — `Arc<RwLock<Arc<ServerConfig>>>` wrapper
+//!   for SIGHUP cert hot reload. Established connections keep their
+//!   session, new connections see the new cert.
+//! * [`build_client_tls_connector`] — counterpart for MQTT/AMQP client
+//!   daemons that connect to a broker and need TLS on the outbound
+//!   side.
 //!
 //! Spec: zerodds-{ws,mqtt,coap,amqp,grpc,corba}-bridge-1.0.md §7.1.
 
@@ -33,14 +33,14 @@ use crate::auth::AuthSubject;
 use crate::ctx::extract_mtls_subject;
 use crate::tls::{TlsConfigError, load_server_config, load_server_config_with_client_auth};
 
-/// Hot-Reload-fähiger Wrapper um `Arc<ServerConfig>`. Zwischen Reads
-/// (neue Connections lesen frisch) und Writes (SIGHUP-Reload tauscht
-/// das Inner-Arc aus) ist ein `RwLock` die natürliche Form.
+/// Hot-reload-capable wrapper around `Arc<ServerConfig>`. Between reads
+/// (new connections read fresh) and writes (SIGHUP reload swaps the
+/// inner Arc), a `RwLock` is the natural form.
 ///
-/// Connections, die zum Reload-Zeitpunkt schon einen `Arc<ServerConfig>`
-/// halten, behalten ihren Cert für die Session. Neue Connections nach
-/// dem Reload sehen den neuen Cert — das ist die Spec-konforme Semantik
-/// (SIGHUP rotiert nur zukünftige Sessions, kein Forced-Renegotiation).
+/// Connections that already hold an `Arc<ServerConfig>` at reload time
+/// keep their cert for the session. New connections after the reload
+/// see the new cert — this is the spec-conformant semantics (SIGHUP
+/// only rotates future sessions, no forced renegotiation).
 #[derive(Debug, Clone)]
 pub struct RotatingTlsConfig {
     inner: Arc<RwLock<Arc<ServerConfig>>>,
@@ -50,11 +50,11 @@ pub struct RotatingTlsConfig {
 }
 
 impl RotatingTlsConfig {
-    /// Lädt initial Cert+Key (optional Client-CA für mTLS) und gibt
-    /// einen rotierbaren Wrapper zurück.
+    /// Initially loads cert+key (optional client CA for mTLS) and
+    /// returns a rotatable wrapper.
     ///
     /// # Errors
-    /// [`TlsConfigError`] bei Lade-/Build-Fehler.
+    /// [`TlsConfigError`] on load/build error.
     pub fn load(
         cert_path: PathBuf,
         key_path: PathBuf,
@@ -72,9 +72,9 @@ impl RotatingTlsConfig {
         })
     }
 
-    /// Holt den aktuellen `Arc<ServerConfig>` für eine neue Connection.
-    /// Block-frei beim Read-Lock-Fast-Path; bei Reload-Konflikt
-    /// blockiert `read()` kurz auf den `RwLock`.
+    /// Gets the current `Arc<ServerConfig>` for a new connection.
+    /// Block-free on the read-lock fast path; on a reload conflict
+    /// `read()` blocks briefly on the `RwLock`.
     #[must_use]
     pub fn current(&self) -> Arc<ServerConfig> {
         match self.inner.read() {
@@ -83,12 +83,12 @@ impl RotatingTlsConfig {
         }
     }
 
-    /// SIGHUP-Hook: Lädt Cert+Key neu von Disk und tauscht den
-    /// gespeicherten `Arc` atomisch aus.
+    /// SIGHUP hook: reloads cert+key from disk and atomically swaps the
+    /// stored `Arc`.
     ///
     /// # Errors
-    /// [`TlsConfigError`] bei Lade-/Build-Fehler. Beim Fehler bleibt
-    /// der bestehende Cert aktiv (no-op).
+    /// [`TlsConfigError`] on load/build error. On error the existing
+    /// cert stays active (no-op).
     pub fn reload(&self) -> Result<(), TlsConfigError> {
         let new_cfg = match &self.client_ca_path {
             Some(ca) => load_server_config_with_client_auth(&self.cert_path, &self.key_path, ca)?,
@@ -103,17 +103,16 @@ impl RotatingTlsConfig {
     }
 }
 
-/// Treibt einen TLS-Handshake auf einer bereits-akzeptierten
-/// `TcpStream` und liefert die `ServerConnection` + extracted
-/// mTLS-Subject (oder `None`).
+/// Drives a TLS handshake on an already-accepted `TcpStream` and
+/// returns the `ServerConnection` + extracted mTLS subject (or `None`).
 ///
-/// Der Caller wraps anschließend `(stream, conn)` in ein
-/// `rustls::Stream` für seinen Protokoll-Pfad. Der Read-Timeout
-/// limitiert wie lange auf einen Handshake gewartet wird (Spec §7.1
-/// macht keine Vorgabe — wir nehmen 5 s als sane default).
+/// The caller then wraps `(stream, conn)` in a `rustls::Stream` for its
+/// protocol path. The read timeout limits how long a handshake is
+/// waited for (Spec §7.1 makes no requirement — we use 5 s as a sane
+/// default).
 ///
 /// # Errors
-/// `std::io::Error` bei Socket- oder Handshake-Fehler.
+/// `std::io::Error` on socket or handshake error.
 pub fn serve_tls_handshake(
     cfg: Arc<ServerConfig>,
     mut stream: TcpStream,
@@ -125,7 +124,7 @@ pub fn serve_tls_handshake(
         std::io::Error::new(std::io::ErrorKind::InvalidData, format!("rustls: {e}"))
     })?;
 
-    // Treibt den Handshake bis zum Ende (oder Fehler).
+    // Drive the handshake to completion (or error).
     while conn.is_handshaking() {
         if conn.wants_write() {
             let mut sink = TcpWriter(&mut stream);
@@ -155,7 +154,7 @@ pub fn serve_tls_handshake(
     Ok((stream, conn, mtls_subject))
 }
 
-/// Adapter: `&mut TcpStream` → `Read`-Sink für rustls.
+/// Adapter: `&mut TcpStream` → `Read` sink for rustls.
 struct TcpReader<'a>(&'a mut TcpStream);
 impl Read for TcpReader<'_> {
     fn read(&mut self, b: &mut [u8]) -> std::io::Result<usize> {
@@ -163,7 +162,7 @@ impl Read for TcpReader<'_> {
     }
 }
 
-/// Adapter: `&mut TcpStream` → `Write`-Sink für rustls.
+/// Adapter: `&mut TcpStream` → `Write` sink for rustls.
 struct TcpWriter<'a>(&'a mut TcpStream);
 impl Write for TcpWriter<'_> {
     fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
@@ -174,19 +173,19 @@ impl Write for TcpWriter<'_> {
     }
 }
 
-/// Baut eine rustls-`ClientConfig` für Bridge-Clients (mqtt-bridge,
-/// amqp-endpoint), die Out-Bound zu einem Broker connecten. Der
-/// Aufrufer übergibt den optionalen Client-Cert (mTLS) und einen
-/// CA-Bundle für Server-Cert-Validation.
+/// Builds a rustls `ClientConfig` for bridge clients (mqtt-bridge,
+/// amqp-endpoint) that connect outbound to a broker. The caller passes
+/// the optional client cert (mTLS) and a CA bundle for server cert
+/// validation.
 ///
-/// `ca_pem_path = None` ⇒ benutzt OS-Native-Roots (über `webpki-roots`
-/// fallback ist hier nicht aktiviert; im Workspace gibt es kein
-/// `rustls-native-certs` als Dep). Wenn `None` und der Server-Cert
-/// nicht gegen einen mitgegebenen CA validiert werden kann, scheitert
-/// der Handshake — das ist der secure-by-default-Pfad.
+/// `ca_pem_path = None` ⇒ uses OS-native roots (the `webpki-roots`
+/// fallback is not enabled here; the workspace has no
+/// `rustls-native-certs` as a dep). When `None` and the server cert
+/// cannot be validated against a supplied CA, the handshake fails —
+/// this is the secure-by-default path.
 ///
 /// # Errors
-/// [`TlsConfigError`] bei Lade-/Build-Fehler.
+/// [`TlsConfigError`] on load/build error.
 pub fn build_client_tls_connector(
     ca_pem_path: Option<&std::path::Path>,
     client_cert_pem_path: Option<&std::path::Path>,
@@ -226,11 +225,11 @@ pub fn build_client_tls_connector(
     Ok(Arc::new(cfg))
 }
 
-/// Validiert einen Hostname als rustls-`ServerName` (für die
-/// Client-Connector-Seite).
+/// Validates a hostname as a rustls `ServerName` (for the
+/// client-connector side).
 ///
 /// # Errors
-/// [`TlsConfigError`] wenn der Name kein gültiges DNS-Format hat.
+/// [`TlsConfigError`] if the name is not a valid DNS format.
 pub fn parse_server_name(host: &str) -> Result<ServerName<'static>, TlsConfigError> {
     ServerName::try_from(host.to_string())
         .map_err(|e| TlsConfigError::Rustls(format!("invalid server name '{host}': {e}")))
@@ -266,7 +265,7 @@ mod tests {
         let r = RotatingTlsConfig::load(c, k, None).expect("load");
         let cur1 = r.current();
         let cur2 = r.current();
-        // Beide Reads liefern dieselbe Arc-Identität bis Reload.
+        // Both reads return the same Arc identity until reload.
         assert!(Arc::ptr_eq(&cur1, &cur2));
     }
 
@@ -277,13 +276,13 @@ mod tests {
         let k = write_temp("rkey2.pem", key1.as_bytes());
         let r = RotatingTlsConfig::load(c.clone(), k.clone(), None).expect("load");
         let before = r.current();
-        // Schreib einen neuen Cert in dieselbe Datei.
+        // Write a new cert into the same file.
         let (cert2, key2) = gen_self_signed();
         std::fs::write(&c, cert2.as_bytes()).unwrap();
         std::fs::write(&k, key2.as_bytes()).unwrap();
         r.reload().expect("reload");
         let after = r.current();
-        // Reload muss einen neuen Arc liefern (Cert-Daten haben sich geändert).
+        // Reload must return a new Arc (cert data has changed).
         assert!(!Arc::ptr_eq(&before, &after));
     }
 
@@ -294,11 +293,11 @@ mod tests {
         let k = write_temp("rkey3.pem", key.as_bytes());
         let r = RotatingTlsConfig::load(c.clone(), k.clone(), None).expect("load");
         let before = r.current();
-        // Korrumpiere die Cert-Datei.
+        // Corrupt the cert file.
         std::fs::write(&c, b"-----BEGIN GARBAGE-----\n-----END GARBAGE-----\n").unwrap();
         let err = r.reload().unwrap_err();
         assert!(matches!(err, TlsConfigError::NoCertificateInPem));
-        // Alter Cert ist immer noch aktiv.
+        // The old cert is still active.
         let after = r.current();
         assert!(Arc::ptr_eq(&before, &after));
     }

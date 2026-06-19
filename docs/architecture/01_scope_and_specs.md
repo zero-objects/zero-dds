@@ -1,67 +1,67 @@
-# Scope und Spezifikations-Coverage
+# Scope and specification coverage
 
 > **Status:** Draft v0.2
-> **Abhängigkeiten:** `00_overview.md`
+> **Dependencies:** `00_overview.md`
 
-## 1 OMG-Spec-Family im Scope
+## 1 OMG spec family in scope
 
-Die folgenden OMG-Spezifikationen werden vollständig implementiert. Versionen spiegeln den Stand der jeweils aktuellen formalen Spec wider; neuere Revisionen werden nach Release geprüft und ggf. adoptiert.
+The following OMG specifications are implemented completely. Versions reflect the state of the respective current formal spec; newer revisions are reviewed after release and adopted if applicable.
 
-### 1.1 Kern-Specs (Pflicht)
+### 1.1 Core specs (mandatory)
 
-| Spec | Version | Scope | Implementierung |
+| Spec | Version | Scope | Implementation |
 |---|---|---|---|
-| **DDS DCPS** | 1.4 (formal/2015-04-10) | Data-Centric Publish-Subscribe API, Entity-Modell, QoS-System | `zerodds-dcps`, `zerodds-qos` |
-| **DDSI-RTPS** | 2.5 | Wire-Protokoll, Reader/Writer/Heartbeat-Semantik, Fragmentation | `zerodds-rtps` |
-| **DDS-XTypes** | 1.3 (formal/2020-02-04) | Type System, TypeObject, XCDR1/XCDR2, @appendable/@mutable | `zerodds-types`, `zerodds-cdr` |
+| **DDS DCPS** | 1.4 (formal/2015-04-10) | Data-Centric Publish-Subscribe API, entity model, QoS system | `zerodds-dcps`, `zerodds-qos` |
+| **DDSI-RTPS** | 2.5 | Wire protocol, reader/writer/heartbeat semantics, fragmentation | `zerodds-rtps` |
+| **DDS-XTypes** | 1.3 (formal/2020-02-04) | Type system, TypeObject, XCDR1/XCDR2, @appendable/@mutable | `zerodds-types`, `zerodds-cdr` |
 | **DDS-Security** | 1.2 | Authentication, Access Control, Cryptographic SPI | `zerodds-security` |
-| **IDL4** | 4.2 (ISO/IEC 19516:2020) | Interface Definition Language, Building Blocks | `zerodds-idl`, `zerodds-idlc` |
+| **IDL4** | 4.2 (ISO/IEC 19516:2020) | Interface Definition Language, building blocks | `zerodds-idl`, `zerodds-idlc` |
 
-### 1.2 Erweiterte Specs (Pflicht für Gesamt-Scope)
+### 1.2 Extended specs (mandatory for full scope)
 
-| Spec | Version | Scope | Implementierung |
+| Spec | Version | Scope | Implementation |
 |---|---|---|---|
-| **DDS-RPC** | 1.0 | Request/Reply über DDS, Service-Definition | `zerodds-rpc` |
-| **DDS-XML** | 1.0 | XML-Syntax für DDS-Resourcen, QoS-Profiles, Deployment | `zerodds-xml` |
-| **DDSI-RTPS TCP/IP PSM** | (mit RTPS 2.5) | TCP-Mapping für NAT/Firewall-Szenarien | `zerodds-transport-tcp` |
-| **DDS-XRCE** | 1.0 | Extremely Resource-Constrained Environments: Client-Agent-Protokoll | `zerodds-xrce-client`, `zerodds-xrce-agent` |
+| **DDS-RPC** | 1.0 | Request/reply over DDS, service definition | `zerodds-rpc` |
+| **DDS-XML** | 1.0 | XML syntax for DDS resources, QoS profiles, deployment | `zerodds-xml` |
+| **DDSI-RTPS TCP/IP PSM** | (with RTPS 2.5) | TCP mapping for NAT/firewall scenarios | `zerodds-transport-tcp` |
+| **DDS-XRCE** | 1.0 | Extremely Resource-Constrained Environments: client-agent protocol | `zerodds-xrce-client`, `zerodds-xrce-agent` |
 
-### 1.3 Language Mappings
+### 1.3 Language mappings
 
-| Spec | Target | Implementierung |
+| Spec | Target | Implementation |
 |---|---|---|
-| **IDL4-C++** | C++17+ Mapping | Backend in `zerodds-idlc`, Runtime in `zerodds-cpp` |
-| **IDL4-Java** | Java 11+ Mapping | Backend in `zerodds-idlc`, Runtime in `zerodds-java` |
-| **IDL4-C#** | .NET 8+ Mapping | Backend in `zerodds-idlc`, Runtime in `zerodds-cs` |
-| DDS C++ API PSM (ISO/IEC C++) | C++-API für DCPS | `zerodds-cpp` |
-| DDS Java API PSM | Java-API für DCPS | `zerodds-java` |
-| **DDS C#-API (ZeroDDS-eigener Anteil, nicht OMG-normiert)** | C#-API für DCPS | `zerodds-cs` |
+| **IDL4-C++** | C++17+ mapping | Backend in `zerodds-idlc`, runtime in `zerodds-cpp` |
+| **IDL4-Java** | Java 11+ mapping | Backend in `zerodds-idlc`, runtime in `zerodds-java` |
+| **IDL4-C#** | .NET 8+ mapping | Backend in `zerodds-idlc`, runtime in `zerodds-cs` |
+| DDS C++ API PSM (ISO/IEC C++) | C++ API for DCPS | `zerodds-cpp` |
+| DDS Java API PSM | Java API for DCPS | `zerodds-java` |
+| **DDS C# API (ZeroDDS-own part, not OMG-standardized)** | C# API for DCPS | `zerodds-cs` |
 
-**Hinweis zu DDS C#:** Die OMG hat kein formales C#-PSM fuer DCPS standardisiert.
-Lediglich das IDL4-to-C#-Mapping (OMG `IDL4-CSHARP`) ist OMG-normiert und bildet
-die Basis fuer Datentyp-Codegenerierung. Die Laufzeit-API `zerodds-cs` ist ein
-**ZeroDDS-eigener, nicht OMG-normierter Anteil**. Sie folgt idiomatischen
-.NET-Konventionen und orientiert sich an den Strukturen des C++-PSM (DDS-PSM-Cxx)
-und der Rust-API (`zerodds-rs`), um Konsistenz ueber Bindings hinweg zu wahren.
-Die API ist unter **Tier 1 Stabilitaet** gefuehrt (siehe `02_architecture.md §7`),
-obwohl sie keine OMG-Spec-Pflicht hat — Stabilitaet gilt gegenueber unseren
-Nutzern, nicht gegenueber der OMG-Community.
+**Note on DDS C#:** The OMG has not standardized a formal C# PSM for DCPS.
+Only the IDL4-to-C# mapping (OMG `IDL4-CSHARP`) is OMG-standardized and forms
+the basis for data-type code generation. The runtime API `zerodds-cs` is a
+**ZeroDDS-own part, not OMG-standardized**. It follows idiomatic
+.NET conventions and orients itself on the structures of the C++ PSM (DDS-PSM-Cxx)
+and the Rust API (`zerodds-rs`), to maintain consistency across bindings.
+The API is tracked at **Tier 1 stability** (see `02_architecture.md §7`),
+even though it has no OMG spec obligation — stability holds toward our
+users, not toward the OMG community.
 
-## 2 Non-OMG-Standards und externe Integration
+## 2 Non-OMG standards and external integration
 
-| Standard | Zweck | Integration |
+| Standard | Purpose | Integration |
 |---|---|---|
-| **W3C Trace Context** | Distributed-Tracing-Header-Propagation | Als RTPS-Parameter-List-Element in jedem Sample (optional) |
-| **OpenTelemetry** | Metrics, Traces, Logs Emission | Native Instrumentation in `zerodds-monitor`, OTLP-Export |
-| **Prometheus Text-Format** | Metrics-Scraping | Exporter in `zerodds-monitor` |
-| **OpenSSL / BoringSSL / Rust Crypto** | Kryptographische Primitive für DDS-Security | Plugin-basiert, swapbar für EU-Crypto-Suites |
-| **PKCS#11** | HSM-Integration für Authentication | Optional-Feature in `zerodds-security` |
-| **PlatformIO Library Registry** | Embedded-Distribution | Build-Pipeline in CI, `library.json` pro Release |
-| **CycloneDX SBOM** | Software Bill of Materials | Pro-Release-Artefakt, CI-generiert |
+| **W3C Trace Context** | Distributed-tracing header propagation | As an RTPS ParameterList element in each sample (optional) |
+| **OpenTelemetry** | Metrics, traces, logs emission | Native instrumentation in `zerodds-monitor`, OTLP export |
+| **Prometheus text format** | Metrics scraping | Exporter in `zerodds-monitor` |
+| **OpenSSL / BoringSSL / Rust Crypto** | Cryptographic primitives for DDS-Security | Plugin-based, swappable for EU crypto suites |
+| **PKCS#11** | HSM integration for authentication | Optional feature in `zerodds-security` |
+| **PlatformIO Library Registry** | Embedded distribution | Build pipeline in CI, `library.json` per release |
+| **CycloneDX SBOM** | Software Bill of Materials | Per-release artifact, CI-generated |
 
-## 3 Conformance-Profile-Ziele
+## 3 Conformance profile goals
 
-DDS DCPS 1.4 definiert fünf Conformance-Profile. Unsere Ziele nach Phase:
+DDS DCPS 1.4 defines five conformance profiles. Our goals by phase:
 
 | Profile | Phase 1 | Phase 2 | Phase 3 | Phase 4 |
 |---|---|---|---|---|
@@ -69,50 +69,50 @@ DDS DCPS 1.4 definiert fünf Conformance-Profile. Unsere Ziele nach Phase:
 | **Ownership Profile** | — | ✓ | ✓ | ✓ |
 | **Content-Subscription Profile** | — | ✓ | ✓ | ✓ |
 | **Persistence Profile** | — | — | ✓ | ✓ |
-| **Object Model Profile** | — | — | — | (evaluieren; geringe Marktrelevanz) |
+| **Object Model Profile** | — | — | — | (evaluate; low market relevance) |
 
-XTypes-Conformance: wir zielen auf **Complete** (Basic + Dynamic) bis Ende Phase 2.
+XTypes conformance: we aim for **Complete** (Basic + Dynamic) by the end of Phase 2.
 
-RTPS-Interoperability: **Basic Profile** ab Ende Phase 1, **Minimal Profile** im Discovery-Bereich ab Ende Phase 1.
+RTPS interoperability: **Basic Profile** from the end of Phase 1, **Minimal Profile** in the discovery area from the end of Phase 1.
 
-## 4 Interoperability-Ziele
+## 4 Interoperability goals
 
-Wire-Interop wird gegen die folgenden Peers kontinuierlich in CI und regelmäßig am OMG Plug-Fest validiert:
+Wire interop is validated continuously in CI and regularly at the OMG Plug-Fest against the following peers:
 
-| Peer | Ziel-Version | Priorität |
+| Peer | Target version | Priority |
 |---|---|---|
-| Eclipse Cyclone DDS | aktuell + LTS | Hoch — Default-ROS-2-RMW |
-| eProsima Fast DDS | aktuell + LTS | Hoch — Default-ROS-2-RMW ab Humble |
-| RTI Connext | 7.x LTS | Hoch — Marktführer, Defense-Relevanz |
-| OCI OpenDDS | aktuell | Mittel |
-| TwinOaks CoreDX | aktuell | Niedrig — kleinere Nutzerbasis |
+| Eclipse Cyclone DDS | current + LTS | High — default ROS 2 RMW |
+| eProsima Fast DDS | current + LTS | High — default ROS 2 RMW from Humble |
+| RTI Connext | 7.x LTS | High — market leader, defense relevance |
+| OCI OpenDDS | current | Medium |
+| TwinOaks CoreDX | current | Low — smaller user base |
 
-Unsere OMG-Vendor-ID wird in Phase 0 beantragt. Vor Erhalt verwenden wir temporär die Vendor-ID-Range für Tests (zweistellige Entwickler-IDs).
+Our OMG vendor ID is applied for in Phase 0. Before receiving it, we temporarily use the vendor-ID range for tests (two-digit developer IDs).
 
-## 5 Explizit außerhalb des Scopes
+## 5 Explicitly out of scope
 
-Folgende OMG-Specs und artverwandte Standards werden bewusst **nicht** implementiert:
+The following OMG specs and related standards are deliberately **not** implemented:
 
-| Excluded | Begründung |
+| Excluded | Rationale |
 |---|---|
-| DDS DLRL (Data Local Reconstruction Layer) | Weitgehend verwaister Spec-Teil, keine relevanten Deployments |
-| CORBA / GIOP Interop | Historisches Erbe, keine Kunden-Nachfrage |
-| RTI FlatData, OpenSplice DDSI2E, Vendor-spezifische Extensions | Souveränitäts-Prinzip: wir bleiben bei Standard-Wire |
-| JMS-Bridge | Kein strategisches Ziel |
-| Web Integration (DDS-WebSocket, WebDDS-Prototypes) | Niedrige Priorität, evaluieren in späterer Phase |
+| DDS DLRL (Data Local Reconstruction Layer) | Largely orphaned spec part, no relevant deployments |
+| CORBA / GIOP interop | Historical legacy, no customer demand |
+| RTI FlatData, OpenSplice DDSI2E, vendor-specific extensions | Sovereignty principle: we stay with standard wire |
+| JMS bridge | Not a strategic goal |
+| Web integration (DDS-WebSocket, WebDDS prototypes) | Low priority, evaluate in a later phase |
 
-## 6 Versionierungs-Politik
+## 6 Versioning policy
 
-- Unser Produkt folgt **SemVer** auf allen Public-API-Surfaces.
-- OMG-Spec-Versions-Pinning pro Release-Notes dokumentiert.
-- Wire-Kompatibilität: **RTPS 2.5** ist Minimum. Downgrade auf 2.3/2.4 wird über Discovery-Negotiation unterstützt wo möglich.
-- **Safe-Profile-API-Stabilität:** Ab Version 1.0 werden API-Änderungen in Safe-Subset-Crates durch formelles Change-Request-Verfahren behandelt, um Re-Zertifizierungs-Kosten zu minimieren.
+- Our product follows **SemVer** on all public API surfaces.
+- OMG spec version pinning documented per release notes.
+- Wire compatibility: **RTPS 2.5** is the minimum. Downgrade to 2.3/2.4 is supported via discovery negotiation where possible.
+- **Safe-profile API stability:** From version 1.0, API changes in safe-subset crates are handled through a formal change-request procedure to minimize re-certification cost.
 
-## 7 Spec-to-Code-Traceability
+## 7 Spec-to-code traceability
 
-Jede OMG-Spec-Section wird auf konkrete Code-Module abgebildet. Die Traceability-Matrix wird kontinuierlich gepflegt (Claude-Teams-unterstützt aus Git-History und Code-Annotationen).
+Every OMG spec section is mapped to concrete code modules. The traceability matrix is maintained continuously (Claude-Teams-supported from git history and code annotations).
 
-Format der Annotation im Code:
+Format of the annotation in code:
 
 ```rust
 /// Implements DDS-RTPS 2.5 §8.3.7.3 Heartbeat Submessage
@@ -120,4 +120,4 @@ Format der Annotation im Code:
 pub struct Heartbeat { ... }
 ```
 
-Diese Annotationen werden vom Tool `zerodds-traceability` aggregiert in eine Coverage-Matrix, die sowohl für interne Reviews als auch für Safety-Audits als Grundlage dient.
+These annotations are aggregated by the `zerodds-traceability` tool into a coverage matrix that serves as a basis both for internal reviews and for safety audits.

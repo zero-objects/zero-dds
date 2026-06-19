@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 
 use crate::Labels;
 
-/// Bidirektional veraenderbarer i64-Wert.
+/// Bidirectionally mutable i64 value.
 #[derive(Debug)]
 pub struct Gauge {
     name: &'static str,
@@ -16,7 +16,7 @@ pub struct Gauge {
 }
 
 impl Gauge {
-    /// Konstruktor — startet bei 0.
+    /// Constructor — starts at 0.
     #[must_use]
     pub fn new(name: &'static str, labels: Labels) -> Self {
         Self {
@@ -26,7 +26,7 @@ impl Gauge {
         }
     }
 
-    /// Wert setzen.
+    /// Set the value.
     pub fn set(&self, v: i64) {
         self.value.store(v, Ordering::Relaxed);
     }
@@ -41,12 +41,12 @@ impl Gauge {
         self.value.fetch_sub(1, Ordering::Relaxed);
     }
 
-    /// Add (kann negativ sein).
+    /// Add (can be negative).
     pub fn add(&self, n: i64) {
         self.value.fetch_add(n, Ordering::Relaxed);
     }
 
-    /// Aktueller Wert.
+    /// Current value.
     #[must_use]
     pub fn get(&self) -> i64 {
         self.value.load(Ordering::Relaxed)

@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Wire-Vector-Conformance Tests fuer `zerodds-xcdr2-c-1.0`.
+//! Wire-vector conformance tests for `zerodds-xcdr2-c-1.0`.
 //
-// Geprueft werden V-1..V-12 aus
-// `docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md` §6.
+// V-1..V-12 from
+// `docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md` §6 are checked.
 //
 // Strategy:
 //
-// Die FFI-Encoder/Decoder werden ueber das `zerodds_typesupport_t`-
-// Function-Table-Pattern gefahren. Die Encoder-Bodies sind hier
-// Rust-Implementationen, die **byte-genau das gleiche XCDR2-LE-Layout
-// erzeugen wie der C-Codegen-Output** (idl-cpp `c_mode`-Modul). Der
-// Cross-Check des C-Codegens passiert in `xcdr2_c_codegen.rs` —
-// dieses File konzentriert sich auf das **L1 Wire-Conformance**-Level.
+// The FFI encoders/decoders are driven via the `zerodds_typesupport_t`
+// function-table pattern. The encoder bodies here are
+// Rust implementations that **produce byte-exactly the same XCDR2-LE layout
+// as the C codegen output** (idl-cpp `c_mode` module). The
+// cross-check of the C codegen happens in `xcdr2_c_codegen.rs` —
+// this file focuses on the **L1 wire-conformance** level.
 //
-// EMHEADER-Konvention: spec-text zeigt EMHEADER-Bytes als big-endian
-// gruppiert ("20 00 00 01" fuer LC=2, id=1). XCDR2-LE serialisiert
-// den u32-Wert aber in Little-Endian. Wir testen LE-serialisierte
-// Bytes (entspricht Cyclone DDS und der existierenden zerodds-cdr-
-// `encode_mutable_member`-Implementation).
+// EMHEADER convention: the spec text shows EMHEADER bytes grouped
+// big-endian ("20 00 00 01" for LC=2, id=1). XCDR2-LE serializes
+// the u32 value in little-endian though. We test LE-serialized
+// bytes (matches Cyclone DDS and the existing zerodds-cdr
+// `encode_mutable_member` implementation).
 
 #![allow(
     clippy::expect_used,
@@ -279,16 +279,16 @@ unsafe extern "C" fn v3_encode(
 
 #[test]
 fn v3_mixed_primitives_final() {
-    // Anmerkung zur Spec-Doku-Diskrepanz:
+    // Note on the spec-doc discrepancy:
     //
-    // `zerodds-xcdr2-bindings-conformance-1.0.md` §6 V-3 zeigt eine
-    // 40-Byte-Wire-Sequence. Bei XCDR2-konformer Alignment-Berechnung
-    // (XTypes 1.3 §7.4.1.5: buffer-relative natural alignment fuer
-    // i64/u64 = 8) ergeben sich aber 48 Bytes. Die Spec-Doku-V-3
-    // Sequence ist intern inkonsistent (40-Byte-Aussage vs. 47 dargestellte
-    // Bytes). Wir testen gegen die XCDR2-spec-konforme 48-Byte-Form, die
-    // mit `zerodds-cdr` und Cyclone DDS interoperiert. Die V-3-Doku-Zeile
-    // ist als Errata zu erfassen (siehe CHANGELOG).
+    // `zerodds-xcdr2-bindings-conformance-1.0.md` §6 V-3 shows a
+    // 40-byte wire sequence. With XCDR2-conformant alignment computation
+    // (XTypes 1.3 §7.4.1.5: buffer-relative natural alignment for
+    // i64/u64 = 8) you get 48 bytes though. The spec-doc V-3
+    // sequence is internally inconsistent (40-byte statement vs. 47 shown
+    // bytes). We test against the XCDR2-spec-conformant 48-byte form, which
+    // interoperates with `zerodds-cdr` and Cyclone DDS. The V-3 doc line
+    // is to be recorded as errata (see CHANGELOG).
     let mut ts = ts_template(b"All\0", 0);
     ts.encode = Some(v3_encode);
     let s = All {
@@ -304,10 +304,10 @@ fn v3_mixed_primitives_final() {
         d: 3.14159,
     };
     let bytes = encode(&ts, &s as *const _ as *const c_void);
-    // Errata vs. Spec-Doku V-3:
-    //  * `l = -1234567` LE = 79 29 ED FF (Spec-Doku-Wert ist falsch).
-    //  * `ul = 2345678`  LE = CE CA 23 00 (Spec-Doku-Wert ist falsch).
-    //  * `ll = -987654321` LE = 4F 97 21 C5 FF FF FF FF (Spec-Doku-Wert ist falsch).
+    // Errata vs. spec-doc V-3:
+    //  * `l = -1234567` LE = 79 29 ED FF (the spec-doc value is wrong).
+    //  * `ul = 2345678`  LE = CE CA 23 00 (the spec-doc value is wrong).
+    //  * `ll = -987654321` LE = 4F 97 21 C5 FF FF FF FF (the spec-doc value is wrong).
     let expected: Vec<u8> = vec![
         0x01, 0xAB, // b, o
         0xC7, 0xCF, // s = -12345 (offset 2, align(2))
@@ -422,11 +422,16 @@ unsafe extern "C" fn v6_encode(
 ) -> c_int {
     // SAFETY: tests pass valid Tags pointer.
     let s = unsafe { &*(sample as *const Tags) };
-    let mut w = W::new();
-    w.u32(s.tags.len() as u32);
+    // XCDR2 §7.4.3.5: sequence<string> has non-primitive elements →
+    // DHEADER (uint32 = byte length of [count + elements]) in front.
+    let mut body = W::new();
+    body.u32(s.tags.len() as u32);
     for t in s.tags {
-        w.string(t);
+        body.string(t);
     }
+    let mut w = W::new();
+    w.u32(body.buf.len() as u32);
+    w.buf.extend_from_slice(&body.buf);
     // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
     unsafe { copy_to_out_buf(&w.buf, out_buf, out_cap, out_len) }
 }
@@ -439,6 +444,7 @@ fn v6_sequence_string_final() {
     let s = Tags { tags: &strs };
     let bytes = encode(&ts, &s as *const _ as *const c_void);
     let expected = vec![
+        0x13, 0x00, 0x00, 0x00, // DHEADER = 19 (XCDR2 §7.4.3.5 non-primitive elems)
         0x02, 0x00, 0x00, 0x00, // 2 strings
         0x02, 0x00, 0x00, 0x00, 0x61, 0x00, // "a\0"
         0x00, 0x00, // pad
@@ -478,7 +484,7 @@ fn v7_nested_modules_final() {
     let s = OuterInnerS { x: 1234 };
     let bytes = encode(&ts, &s as *const _ as *const c_void);
     assert_eq!(bytes, vec![0xD2, 0x04, 0x00, 0x00]);
-    // Type-Name-Konvention §5.
+    // Type-name convention §5.
     // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
     let name = unsafe { core::ffi::CStr::from_ptr(ts.type_name) }
         .to_str()
@@ -514,10 +520,10 @@ unsafe extern "C" fn v8_encode(
 
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
 unsafe extern "C" fn v8_key_hash(sample: *const c_void, out: *mut u8) -> c_int {
-    // PlainCdr2BeKeyHolder fuer @key int32 id.
+    // PlainCdr2BeKeyHolder for the @key int32 id.
     // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
     let s = unsafe { &*(sample as *const Sensor) };
-    // BE-Encoding der id; Stream ist 4 byte → key_holder_max_size = 4 ≤ 16
+    // BE encoding of the id; the stream is 4 byte → key_holder_max_size = 4 ≤ 16
     // → zero-pad.
     let be = s.id.to_be_bytes();
     // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
@@ -549,7 +555,7 @@ fn v8_keyed_struct_final() {
     ];
     assert_eq!(bytes, expected);
 
-    // Key-Hash: PlainCdr2BeKeyHolder mit nur `id` (4 byte → zero-pad).
+    // Key hash: PlainCdr2BeKeyHolder with only `id` (4 byte → zero-pad).
     let mut hash = [0u8; 16];
     // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
     let rc = unsafe { (ts.key_hash.unwrap())(&s as *const _ as *const c_void, hash.as_mut_ptr()) };
@@ -606,12 +612,12 @@ fn v9_appendable_struct() {
 // ============================================================================
 // V-10 Mutable Struct (DHEADER + EMHEADER per member)
 //
-// Spec wire-vector zeigt EMHEADER als BE-Bytes "20 00 00 01"; die
-// LE-Serialisierung des Werts 0x20000001 ist `01 00 00 20`. Wir testen
-// die korrekte LE-Form, weil:
-// - XCDR2 stream-endianness gilt fuer alle Felder inkl. EMHEADER.
-// - `zerodds-cdr::struct_enc::encode_mutable_member` schreibt LE.
-// - Cyclone DDS interop verwendet LE.
+// The spec wire vector shows EMHEADER as BE bytes "20 00 00 01"; the
+// LE serialization of the value 0x20000001 is `01 00 00 20`. We test
+// the correct LE form, because:
+// - XCDR2 stream endianness applies to all fields incl. EMHEADER.
+// - `zerodds-cdr::struct_enc::encode_mutable_member` writes LE.
+// - Cyclone DDS interop uses LE.
 // ============================================================================
 
 #[repr(C)]
@@ -746,14 +752,14 @@ fn v11_optional_member_none() {
 }
 
 // ============================================================================
-// V-12 Mutable Sentinel End-Marker (XCDR2: implicit, kein Sentinel)
+// V-12 mutable sentinel end-marker (XCDR2: implicit, no sentinel)
 // ============================================================================
 
 #[test]
 fn v12_mutable_no_explicit_sentinel() {
-    // Re-use V-10: nach dem letzten EMHEADER+NEXTINT+body soll KEIN
-    // PID_LIST_END Sentinel emittiert werden. Wire-Bytes-Laenge muss
-    // exakt 4 + body_len sein, ohne 4-byte-Trailer.
+    // Re-use V-10: after the last EMHEADER+NEXTINT+body NO
+    // PID_LIST_END sentinel should be emitted. The wire byte length must
+    // be exactly 4 + body_len, without a 4-byte trailer.
     let mut ts = ts_template(b"M\0", 2);
     ts.encode = Some(v10_encode);
     let s = Mab { a: 42, b: "hi" };
@@ -761,7 +767,7 @@ fn v12_mutable_no_explicit_sentinel() {
     let dheader = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
     let body_len = bytes.len() as u32 - 4;
     assert_eq!(dheader, body_len, "no implicit/explicit sentinel allowed");
-    // Trailer-Check: kein Sentinel-Pattern (`3F 02 00 00`) am Ende.
+    // Trailer check: no sentinel pattern (`3F 02 00 00`) at the end.
     let last = &bytes[bytes.len() - 4..];
     assert_ne!(
         last,

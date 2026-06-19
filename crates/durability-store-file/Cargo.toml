@@ -1,0 +1,28 @@
+[package]
+name = "zerodds-durability-store-file"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "File-per-sample cold adapter for the ZeroDDS Durability-Service: PERSISTENT storage on a directory hierarchy, dependency-free. Implements zerodds-durability-store::DurabilityStore."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-durability-store-file"
+readme = "README.md"
+keywords = ["dds", "durability", "persistence", "storage"]
+categories = ["network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-durability-store = { version = "1.0.0-rc.3", path = "../durability-store" }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos" }
+
+[dev-dependencies]
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos" }

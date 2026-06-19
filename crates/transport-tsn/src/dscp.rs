@@ -2,9 +2,9 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Differentiated Services Code Point — RFC 2474.
 //!
-//! Spec §3 (Normative References) — RFC 2474 + RFC 3290 + RFC 8939
-//! (DetNet) referenziert. DSCP wird im IPv4-ToS-Octet bzw. IPv6-
-//! Traffic-Class-Octet als 6-bit-Wert kodiert.
+//! Spec §3 (Normative References) — references RFC 2474 + RFC 3290 +
+//! RFC 8939 (DetNet). DSCP is encoded as a 6-bit value in the IPv4 ToS
+//! octet or the IPv6 traffic-class octet.
 
 /// Differentiated Services Code Point (6 Bits).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -13,8 +13,8 @@ pub struct Dscp(u8);
 impl Dscp {
     /// `0` Default-Forwarding (RFC 2474 §4.1).
     pub const DEFAULT: Self = Self(0);
-    /// `46` Expedited-Forwarding (RFC 3246) — typisch fuer
-    /// Real-Time-Streams.
+    /// `46` Expedited Forwarding (RFC 3246) — typical for
+    /// real-time streams.
     pub const EXPEDITED_FORWARDING: Self = Self(46);
     /// `10` Assured-Forwarding 11 (low-drop, AF1x family).
     pub const AF11: Self = Self(10);
@@ -25,10 +25,10 @@ impl Dscp {
     /// `34` Assured-Forwarding 41.
     pub const AF41: Self = Self(34);
 
-    /// Konstruktor mit Validation.
+    /// Constructor with validation.
     ///
     /// # Errors
-    /// `Err(())` wenn `value > 63` (DSCP ist 6-bit).
+    /// `Err(())` if `value > 63` (DSCP is 6-bit).
     pub const fn new(value: u8) -> Result<Self, DscpError> {
         if value > 63 {
             return Err(DscpError::OutOfRange(value));
@@ -36,31 +36,31 @@ impl Dscp {
         Ok(Self(value))
     }
 
-    /// Spec — DSCP-Wert (0..=63).
+    /// Spec — DSCP value (0..=63).
     #[must_use]
     pub const fn value(self) -> u8 {
         self.0
     }
 
-    /// Wandelt zu IPv4-ToS-Octet (DSCP in den oberen 6 Bits, ECN in
-    /// den unteren 2 Bits = 0).
+    /// Converts to an IPv4 ToS octet (DSCP in the upper 6 bits, ECN in
+    /// the lower 2 bits = 0).
     #[must_use]
     pub const fn to_tos_octet(self) -> u8 {
         self.0 << 2
     }
 
-    /// Decodet vom IPv4-ToS-Octet (obere 6 Bits = DSCP, untere 2 Bits
-    /// ECN ignoriert).
+    /// Decodes from the IPv4 ToS octet (upper 6 bits = DSCP, lower 2 bits
+    /// ECN ignored).
     #[must_use]
     pub const fn from_tos_octet(tos: u8) -> Self {
         Self((tos >> 2) & 0x3F)
     }
 }
 
-/// DSCP-Validation-Fehler.
+/// DSCP validation error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DscpError {
-    /// Wert > 63.
+    /// Value > 63.
     OutOfRange(u8),
 }
 

@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `ReaderProxy` — Writer-seitiger Zustand ueber **einen** Remote-Reader.
+//! `ReaderProxy` — writer-side state over **one** remote reader.
 //!
-//! DDSI-RTPS 2.5 §8.4.4.11 (Stateful Writer behavior). Der Writer fuehrt
-//! pro matched Reader einen `ReaderProxy`, in dem er mitverfolgt, welche
-//! Sequence-Numbers der Reader bereits acked hat und welche er explizit
-//! re-requested hat.
+//! DDSI-RTPS 2.5 §8.4.4.11 (stateful writer behavior). The writer keeps
+//! a `ReaderProxy` per matched reader, in which it tracks which
+//! sequence numbers the reader has already acked and which it has
+//! explicitly re-requested.
 //!
-//! ein Writer hat aktuell nur einen Reader (Single-Reader-
-//! Annahme). Trotzdem ist die Datenstruktur so geschnitten, dass spaeter
-//! `Vec<ReaderProxy>` moeglich ist.
+//! A writer currently has only one reader (single-reader
+//! assumption). Still, the data structure is cut so that `Vec<ReaderProxy>`
+//! is possible later.
 
 extern crate alloc;
 use alloc::collections::{BTreeMap, BTreeSet};
@@ -17,44 +17,44 @@ use alloc::vec::Vec;
 
 use crate::wire_types::{FragmentNumber, Guid, Locator, SequenceNumber};
 
-/// Writer-seitiger State fuer einen Remote-Reader.
+/// Writer-side state for one remote reader.
 #[derive(Debug, Clone)]
 pub struct ReaderProxy {
-    /// GUID des Remote-Reader-Endpoints.
+    /// GUID of the remote reader endpoint.
     pub remote_reader_guid: Guid,
-    /// Unicast-Empfangs-Locator(s) des Readers.
+    /// Unicast receive locator(s) of the reader.
     pub unicast_locators: Vec<Locator>,
-    /// Multicast-Empfangs-Locator(s).
+    /// Multicast receive locator(s).
     pub multicast_locators: Vec<Locator>,
-    /// Reliable-Kind (immer true in WP 1.1).
+    /// Reliable kind (always true in WP 1.1).
     pub is_reliable: bool,
-    /// Hoechste SN, die der Reader **bereits acked** hat
-    /// (aus AckNack.reader_sn_state.bitmap_base - 1).
+    /// Highest SN the reader has **already acked**
+    /// (from AckNack.reader_sn_state.bitmap_base - 1).
     highest_acked_sn: SequenceNumber,
-    /// Hoechste SN, die der Writer an diesen Reader **bereits gesendet** hat.
+    /// Highest SN the writer has **already sent** to this reader.
     highest_sent_sn: SequenceNumber,
-    /// Set von Requested SNs aus AckNack.bitmap, fuer Re-Send vorgemerkt.
+    /// Set of requested SNs from AckNack.bitmap, queued for re-send.
     requested_changes: BTreeSet<SequenceNumber>,
-    /// Pro Sample-SN: Set fehlender FragmentNumbers, die der Reader via
-    /// NACK_FRAG angefragt hat. Fuer Fragment-granulare Re-Sends.
+    /// Per sample SN: set of missing FragmentNumbers the reader requested via
+    /// NACK_FRAG. For fragment-granular re-sends.
     requested_fragments: BTreeMap<SequenceNumber, BTreeSet<FragmentNumber>>,
-    /// Spec §8.4.15.6 Inactive-Reader-Reclaim: letzte beobachtete
-    /// Reader-Aktivitaet (eingehender ACKNACK / NACK_FRAG). Der Writer
-    /// ruft `note_activity(now)` aus dem ACKNACK-Pfad. Wenn
-    /// `now - last_activity > inactive_threshold`, kann der Writer den
-    /// Proxy via `is_inactive` als reclaim-Kandidat erkennen, um
-    /// Strict-Reliability nicht den Cache OOM laufen zu lassen.
+    /// Spec §8.4.15.6 inactive-reader reclaim: last observed
+    /// reader activity (incoming ACKNACK / NACK_FRAG). The writer
+    /// calls `note_activity(now)` from the ACKNACK path. If
+    /// `now - last_activity > inactive_threshold`, the writer can recognize the
+    /// proxy as a reclaim candidate via `is_inactive`, so that
+    /// strict reliability does not run the cache OOM.
     last_activity: core::time::Duration,
-    /// XTypes 1.3 §7.6.3.1 — pro-Reader ausgehandeltes Wire-Format.
-    /// Default `XCDR2` (=2). Bei Match wird das Field via
-    /// `data_representation::negotiate(writer_offered, reader_accepted, mode)`
-    /// gesetzt, sonst bleibt es Default. Encap-Header bei sample-write
-    /// nutzt `data_representation::encap_for_final_le(this)`.
+    /// XTypes 1.3 §7.6.3.1 — per-reader negotiated wire format.
+    /// Default `XCDR2` (=2). On match the field is set via
+    /// `data_representation::negotiate(writer_offered, reader_accepted, mode)`,
+    /// otherwise it stays default. The encap header on sample-write
+    /// uses `data_representation::encap_for_final_le(this)`.
     negotiated_data_representation: i16,
 }
 
 impl ReaderProxy {
-    /// Erzeugt einen frischen Proxy.
+    /// Creates a fresh proxy.
     #[must_use]
     pub fn new(
         remote_reader_guid: Guid,
@@ -67,62 +67,61 @@ impl ReaderProxy {
             unicast_locators,
             multicast_locators,
             is_reliable,
-            // Pre-existing state: nichts acked, nichts gesendet. SN beginnt
-            // bei 1; "0 acked" heisst "nichts acked" (§8.7.4).
+            // Pre-existing state: nothing acked, nothing sent. SN starts
+            // at 1; "0 acked" means "nothing acked" (§8.7.4).
             highest_acked_sn: SequenceNumber(0),
             highest_sent_sn: SequenceNumber(0),
             requested_changes: BTreeSet::new(),
             requested_fragments: BTreeMap::new(),
             last_activity: core::time::Duration::ZERO,
-            // Default: XCDR2 (modern). SEDP-Match-Pfad ueberschreibt
-            // mit dem ausgehandelten Wert.
+            // Default: XCDR2 (modern). The SEDP match path overwrites
+            // with the negotiated value.
             negotiated_data_representation: crate::publication_data::data_representation::XCDR2,
         }
     }
 
-    /// Setzt das ausgehandelte Wire-Format fuer diesen Reader.
-    /// Wird vom DCPS-SEDP-Match-Pfad nach `negotiate(...)` aufgerufen.
+    /// Sets the negotiated wire format for this reader.
+    /// Called by the DCPS-SEDP match path after `negotiate(...)`.
     pub fn set_negotiated_data_representation(&mut self, id: i16) {
         self.negotiated_data_representation = id;
     }
 
-    /// Liefert das ausgehandelte Wire-Format.
+    /// Returns the negotiated wire format.
     #[must_use]
     pub fn negotiated_data_representation(&self) -> i16 {
         self.negotiated_data_representation
     }
 
-    /// Spec §8.4.15.6 — markiert eingehende Reader-Aktivitaet (jeder
-    /// ACKNACK / NACK_FRAG ruft das aus dem Receiver-Pfad).
+    /// Spec §8.4.15.6 — marks incoming reader activity (every
+    /// ACKNACK / NACK_FRAG calls this from the receiver path).
     pub fn note_activity(&mut self, now: core::time::Duration) {
         self.last_activity = now;
     }
 
-    /// Spec §8.4.15.6 — `true` wenn der Reader laenger als `threshold`
-    /// keine Aktivitaet gezeigt hat. Caller (z.B. ReliableWriter)
-    /// nutzt das, um den Proxy aus der `matched_readers`-Liste zu
-    /// reclaimen, sodass Strict-Reliability nicht den Cache OOM
-    /// laufen laesst.
+    /// Spec §8.4.15.6 — `true` if the reader has shown no activity for
+    /// longer than `threshold`. The caller (e.g. ReliableWriter)
+    /// uses this to reclaim the proxy from the `matched_readers` list,
+    /// so that strict reliability does not run the cache OOM.
     #[must_use]
     pub fn is_inactive(&self, now: core::time::Duration, threshold: core::time::Duration) -> bool {
         now.checked_sub(self.last_activity)
             .is_some_and(|elapsed| elapsed > threshold)
     }
 
-    /// Liefert den Last-Activity-Zeitpunkt (Diagnose).
+    /// Returns the last-activity timestamp (diagnosis).
     #[must_use]
     pub fn last_activity(&self) -> core::time::Duration {
         self.last_activity
     }
 
-    /// Markiert Samples bis zu und einschliesslich `sn` als "nicht
-    /// mehr relevant" fuer diesen Proxy — sowohl gesendet als auch
-    /// acked. Wird z.B. bei Volatile-Durability aufgerufen, wenn ein
-    /// neuer Reader-Proxy hinzukommt: der soll keine Historic-Samples
-    /// bekommen, also springen wir direkt auf den aktuellen Cache-
-    /// Stand.
+    /// Marks samples up to and including `sn` as "no longer
+    /// relevant" for this proxy — both sent and
+    /// acked. Called e.g. for volatile durability when a
+    /// new reader proxy is added: it should not get historic samples,
+    /// so we jump directly to the current cache
+    /// state.
     ///
-    /// Spec-Bezug: OMG DDS 1.4 §2.2.3.4 DurabilityQosPolicy Volatile:
+    /// Spec reference: OMG DDS 1.4 §2.2.3.4 DurabilityQosPolicy Volatile:
     /// "The Service will not attempt to retain old data beyond what is
     /// currently held by the DataWriter for live Readers".
     pub fn skip_samples_up_to(&mut self, sn: SequenceNumber) {
@@ -134,22 +133,22 @@ impl ReaderProxy {
         }
     }
 
-    /// Aktualisiert auf ACKNACK-Base — Reader hat alle SNs < `base` acked.
-    /// `base` entspricht `reader_sn_state.bitmap_base`.
+    /// Updates to the ACKNACK base — the reader has acked all SNs < `base`.
+    /// `base` corresponds to `reader_sn_state.bitmap_base`.
     pub fn acked_changes_set(&mut self, base: SequenceNumber) {
         let new_acked = SequenceNumber(base.0 - 1);
         if new_acked > self.highest_acked_sn {
             self.highest_acked_sn = new_acked;
         }
-        // Bereits acked SNs aus requested entfernen.
+        // Remove already-acked SNs from requested.
         self.requested_changes
             .retain(|sn| *sn > self.highest_acked_sn);
-        // Analog fuer fragment-granulare Requests.
+        // Analogously for fragment-granular requests.
         self.requested_fragments
             .retain(|sn, _| *sn > self.highest_acked_sn);
     }
 
-    /// Merkt sich die im ACKNACK-Bitmap angefragten SNs fuer Re-Send.
+    /// Remembers the SNs requested in the ACKNACK bitmap for re-send.
     pub fn requested_changes_set(&mut self, sns: impl IntoIterator<Item = SequenceNumber>) {
         for sn in sns {
             if sn > self.highest_acked_sn {
@@ -158,16 +157,16 @@ impl ReaderProxy {
         }
     }
 
-    /// Zieht die kleinste offene Requested-SN und entfernt sie.
+    /// Pulls the smallest open requested SN and removes it.
     pub fn next_requested_change(&mut self) -> Option<SequenceNumber> {
         let sn = *self.requested_changes.iter().next()?;
         self.requested_changes.remove(&sn);
         Some(sn)
     }
 
-    /// Liefert die naechste noch nicht gesendete SN, falls im Cache vorhanden.
+    /// Returns the next not-yet-sent SN, if present in the cache.
     ///
-    /// `cache_max` ist die groesste SN, die aktuell im Writer-Cache liegt.
+    /// `cache_max` is the largest SN currently in the writer cache.
     pub fn next_unsent_change(&mut self, cache_max: SequenceNumber) -> Option<SequenceNumber> {
         if self.highest_sent_sn < cache_max {
             let next = SequenceNumber(self.highest_sent_sn.0 + 1);
@@ -178,33 +177,33 @@ impl ReaderProxy {
         }
     }
 
-    /// True wenn zwischen `highest_acked` und `cache_max` noch unbestaetigte
-    /// Samples liegen.
+    /// True if there are still unacknowledged samples between `highest_acked`
+    /// and `cache_max`.
     #[must_use]
     pub fn unacked_changes(&self, cache_max: SequenceNumber) -> bool {
         cache_max > self.highest_acked_sn
     }
 
-    /// Getter fuer `highest_acked_sn`.
+    /// Getter for `highest_acked_sn`.
     #[must_use]
     pub fn highest_acked_sn(&self) -> SequenceNumber {
         self.highest_acked_sn
     }
 
-    /// Getter fuer `highest_sent_sn`.
+    /// Getter for `highest_sent_sn`.
     #[must_use]
     pub fn highest_sent_sn(&self) -> SequenceNumber {
         self.highest_sent_sn
     }
 
-    /// Anzahl vorgemerkter Resend-Requests.
+    /// Number of queued resend requests.
     #[must_use]
     pub fn pending_requested_count(&self) -> usize {
         self.requested_changes.len()
     }
 
-    /// Merkt sich Fragment-granulare Resend-Requests aus einem NACK_FRAG.
-    /// SN-Werte ≤ `highest_acked_sn` werden ignoriert.
+    /// Remembers fragment-granular resend requests from a NACK_FRAG.
+    /// SN values ≤ `highest_acked_sn` are ignored.
     pub fn requested_fragments_set(
         &mut self,
         sn: SequenceNumber,
@@ -224,7 +223,7 @@ impl ReaderProxy {
         }
     }
 
-    /// Zieht das kleinste offene (SN, FragmentNumber)-Paar und entfernt es.
+    /// Pulls the smallest open (SN, FragmentNumber) pair and removes it.
     pub fn next_requested_fragment(&mut self) -> Option<(SequenceNumber, FragmentNumber)> {
         let sn = *self.requested_fragments.keys().next()?;
         let frag = {
@@ -243,7 +242,7 @@ impl ReaderProxy {
         Some((sn, frag))
     }
 
-    /// Anzahl vorgemerkter Fragment-Resends (Summe ueber alle SNs).
+    /// Number of queued fragment resends (sum over all SNs).
     #[must_use]
     pub fn pending_requested_fragment_count(&self) -> usize {
         self.requested_fragments.values().map(BTreeSet::len).sum()
@@ -281,7 +280,7 @@ mod tests {
         let mut p = proxy();
         p.acked_changes_set(sn(5));
         assert_eq!(p.highest_acked_sn(), sn(4));
-        // Rueckwaerts-Acks werden ignoriert
+        // Backwards acks are ignored
         p.acked_changes_set(sn(3));
         assert_eq!(p.highest_acked_sn(), sn(4));
         p.acked_changes_set(sn(10));
@@ -293,7 +292,7 @@ mod tests {
         let mut p = proxy();
         p.acked_changes_set(sn(5)); // → highest_acked = 4
         p.requested_changes_set([sn(2), sn(4), sn(6), sn(8)]);
-        // Nur SN > 4 ueberleben
+        // Only SN > 4 survive
         assert_eq!(p.pending_requested_count(), 2);
     }
 
@@ -342,7 +341,7 @@ mod tests {
         p.requested_changes_set([sn(3), sn(5), sn(7)]);
         assert_eq!(p.pending_requested_count(), 3);
         p.acked_changes_set(sn(6)); // → highest_acked = 5
-        // sn(3) und sn(5) sind jetzt obsolet
+        // sn(3) and sn(5) are now obsolete
         assert_eq!(p.pending_requested_count(), 1);
         assert_eq!(p.next_requested_change(), Some(sn(7)));
     }
@@ -378,7 +377,7 @@ mod tests {
         p.requested_fragments_set(sn(7), [frag(2)]);
         assert_eq!(p.pending_requested_fragment_count(), 2);
         p.acked_changes_set(sn(5)); // → highest_acked = 4
-        // sn(3) ist obsolet
+        // sn(3) is obsolete
         assert_eq!(p.pending_requested_fragment_count(), 1);
         assert_eq!(p.next_requested_fragment(), Some((sn(7), frag(2))));
     }
@@ -390,12 +389,12 @@ mod tests {
         assert_eq!(p.pending_requested_fragment_count(), 1);
     }
 
-    // ---- Spec §8.4.15.6 Inactive-Reader-Reclaim ----
+    // ---- Spec §8.4.15.6 inactive-reader reclaim ----
 
     #[test]
     fn proxy_is_inactive_initially_when_threshold_is_short() {
-        // Initial last_activity = ZERO. Wenn der Writer mit
-        // now=10s + threshold=1s prueft, ist der Proxy inactive.
+        // Initial last_activity = ZERO. If the writer checks with
+        // now=10s + threshold=1s, the proxy is inactive.
         let p = proxy();
         assert!(p.is_inactive(
             core::time::Duration::from_secs(10),
@@ -408,7 +407,7 @@ mod tests {
         let mut p = proxy();
         p.note_activity(core::time::Duration::from_secs(5));
         assert_eq!(p.last_activity(), core::time::Duration::from_secs(5));
-        // Innerhalb des Schwellwerts ist der Proxy aktiv.
+        // Within the threshold the proxy is active.
         assert!(!p.is_inactive(
             core::time::Duration::from_secs(6),
             core::time::Duration::from_secs(2)
@@ -419,7 +418,7 @@ mod tests {
     fn proxy_becomes_inactive_after_threshold_elapses() {
         let mut p = proxy();
         p.note_activity(core::time::Duration::from_secs(5));
-        // 10 Sekunden spaeter, threshold 2s → inaktiv.
+        // 10 seconds later, threshold 2s → inactive.
         assert!(p.is_inactive(
             core::time::Duration::from_secs(15),
             core::time::Duration::from_secs(2)
@@ -428,8 +427,8 @@ mod tests {
 
     #[test]
     fn proxy_inactivity_not_reported_when_now_before_last_activity() {
-        // Edge case: now < last_activity (Clock-Skew o.ae.) → kein
-        // Inactive-Report.
+        // Edge case: now < last_activity (clock skew or similar) → no
+        // inactive report.
         let mut p = proxy();
         p.note_activity(core::time::Duration::from_secs(100));
         assert!(!p.is_inactive(

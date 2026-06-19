@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Concrete-Syntax-Tree-Knoten — untyped Baum-Struktur.
+//! Concrete-syntax-tree nodes — untyped tree structure.
 //!
-//! Der CST ist die unmittelbare Baum-Repraesentation eines Parse-Ergebnisses.
-//! Er folgt 1:1 der Grammar-Production-Struktur: jeder Internal-Node
-//! traegt eine [`ProductionId`] und einen Alternative-Index, jeder
-//! Token-Leaf einen [`TokenKind`]. Span-Information wird durchgereicht
-//! aus dem Lexer-Output.
+//! The CST is the immediate tree representation of a parse result.
+//! It follows the grammar-production structure 1:1: each internal node
+//! carries a [`ProductionId`] and an alternative index, each
+//! token leaf a [`TokenKind`]. Span information is passed through
+//! from the lexer output.
 //!
-//! Im Gegensatz zum typisierten AST (Woche 5, Task 5.1+) verliert der CST
-//! keine Information aus dem Source — auch Whitespace/Kommentare koennten
-//! kuenftig als Trivia-Children erfasst werden, falls Source-Preserving-
-//! Rewrites gebraucht werden (Phase 1+).
+//! In contrast to the typed AST (week 5, Task 5.1+), the CST loses
+//! no information from the source — whitespace/comments could
+//! also be captured as trivia children in the future, if source-preserving
+//! rewrites are needed (phase 1+).
 //!
-//! Modell-Inspiration: rust-analyzer / rowan (vereinfachte Variante:
-//! `Vec<CstNode>` statt Arena-Index, kein Green-Tree-Sharing — Phase 0
-//! priorisiert Klarheit ueber Performance).
+//! Model inspiration: rust-analyzer / rowan (simplified variant:
+//! `Vec<CstNode>` instead of arena index, no green-tree sharing — phase 0
+//! prioritizes clarity over performance).
 //!
-//! Siehe RFC 0001 §4.1 und §5.4 (CST vs. typed AST).
+//! See RFC 0001 §4.1 and §5.4 (CST vs. typed AST).
 
 use core::fmt;
 
@@ -25,50 +25,50 @@ use crate::errors::Span;
 use crate::grammar::{ProductionId, TokenKind};
 use crate::lexer::Token;
 
-/// Klassifikation eines [`CstNode`].
+/// Classification of a [`CstNode`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CstKind {
-    /// Internal Node — gehoert zu einer Grammar-Production und enthaelt
-    /// Children entsprechend der gewaehlten Alternative.
+    /// Internal node — belongs to a grammar production and contains
+    /// children according to the chosen alternative.
     Internal {
-        /// Welche Production diesen Node erzeugt hat.
+        /// Which production created this node.
         production: ProductionId,
-        /// Index der Alternative innerhalb der Production. Zusammen mit
-        /// `production` eindeutig — Builder braucht beides fuer Dispatch
-        /// auf den richtigen AST-Builder (Woche 5).
+        /// Index of the alternative within the production. Together with
+        /// `production` unique — the builder needs both for dispatch
+        /// to the correct AST builder (week 5).
         alternative_index: usize,
     },
-    /// Token-Leaf — gescannt vom Lexer.
+    /// Token leaf — scanned by the lexer.
     Token(TokenKind),
-    /// Error-Node — Platzhalter fuer Recovery (Phase 1+; in Phase 0 nicht
-    /// vom Builder erzeugt, aber als Datentyp vorgesehen).
+    /// Error node — placeholder for recovery (phase 1+; in phase 0 not
+    /// produced by the builder, but provided as a data type).
     Error,
 }
 
-/// Ein Knoten im Concrete Syntax Tree.
+/// A node in the concrete syntax tree.
 ///
-/// `'src` ist die Lifetime des urspruenglichen Source-Texts; `text` zeigt
-/// bei Token-Leaves auf den jeweiligen Source-Slice. Internal-Nodes
-/// koennen ein `text`-Slice tragen, das die volle Spanne ueberdeckt
-/// (vom ersten bis zum letzten Token-Children-Span), oder `""` wenn das
-/// nicht relevant ist.
+/// `'src` is the lifetime of the original source text; `text` points
+/// at the respective source slice for token leaves. Internal nodes
+/// can carry a `text` slice that covers the full span
+/// (from the first to the last token-children span), or `""` if that
+/// is not relevant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CstNode<'src> {
-    /// Klassifikation.
+    /// Classification.
     pub kind: CstKind,
-    /// Span im Source-Text, ueberdeckt alle Children.
+    /// Span in the source text, covers all children.
     pub span: Span,
-    /// Source-Slice. Bei Token-Leaves: der gescannte Token-Text. Bei
-    /// Internal-Nodes optional der ueberdeckte Source-Bereich. Bei
-    /// `Error` und synthetischen Nodes oft leer.
+    /// Source slice. For token leaves: the scanned token text. For
+    /// internal nodes optionally the covered source range. For
+    /// `Error` and synthetic nodes often empty.
     pub text: &'src str,
-    /// Kinder-Knoten in Reihenfolge des Parse-Pfads.
+    /// Child nodes in order of the parse path.
     pub children: Vec<CstNode<'src>>,
 }
 
 impl<'src> CstNode<'src> {
-    /// Konstruiert einen Internal-Node ohne Children. Span und Text werden
-    /// vom Builder aus den finalen Children abgeleitet.
+    /// Constructs an internal node without children. Span and text are
+    /// derived by the builder from the final children.
     #[must_use]
     pub fn internal(production: ProductionId, alternative_index: usize, span: Span) -> Self {
         Self {
@@ -82,7 +82,7 @@ impl<'src> CstNode<'src> {
         }
     }
 
-    /// Konstruiert einen Token-Leaf direkt aus einem Lexer-[`Token`].
+    /// Constructs a token leaf directly from a lexer [`Token`].
     #[must_use]
     pub fn token(token: Token<'src>) -> Self {
         Self {
@@ -93,8 +93,8 @@ impl<'src> CstNode<'src> {
         }
     }
 
-    /// Konstruiert einen Error-Node — Platzhalter fuer Recovery in
-    /// spaeteren Phasen.
+    /// Constructs an error node — placeholder for recovery in
+    /// later phases.
     #[must_use]
     pub fn error(span: Span) -> Self {
         Self {
@@ -105,25 +105,25 @@ impl<'src> CstNode<'src> {
         }
     }
 
-    /// `true`, wenn der Node ein Token-Leaf ist.
+    /// `true` if the node is a token leaf.
     #[must_use]
     pub fn is_token(&self) -> bool {
         matches!(self.kind, CstKind::Token(_))
     }
 
-    /// `true`, wenn der Node ein Internal-Node ist.
+    /// `true` if the node is an internal node.
     #[must_use]
     pub fn is_internal(&self) -> bool {
         matches!(self.kind, CstKind::Internal { .. })
     }
 
-    /// `true`, wenn der Node ein Error-Knoten ist.
+    /// `true` if the node is an error node.
     #[must_use]
     pub fn is_error(&self) -> bool {
         matches!(self.kind, CstKind::Error)
     }
 
-    /// [`ProductionId`] eines Internal-Nodes; sonst `None`.
+    /// [`ProductionId`] of an internal node; otherwise `None`.
     #[must_use]
     pub fn production(&self) -> Option<ProductionId> {
         match self.kind {
@@ -132,7 +132,7 @@ impl<'src> CstNode<'src> {
         }
     }
 
-    /// Index der gewaehlten Alternative; sonst `None`.
+    /// Index of the chosen alternative; otherwise `None`.
     #[must_use]
     pub fn alternative_index(&self) -> Option<usize> {
         match self.kind {
@@ -143,7 +143,7 @@ impl<'src> CstNode<'src> {
         }
     }
 
-    /// Token-Klassifikation eines Token-Leafs; sonst `None`.
+    /// Token classification of a token leaf; otherwise `None`.
     #[must_use]
     pub fn token_kind(&self) -> Option<TokenKind> {
         match self.kind {
@@ -152,15 +152,15 @@ impl<'src> CstNode<'src> {
         }
     }
 
-    /// Haengt einen Child-Node an. Span des Parents wird **nicht** automatisch
-    /// erweitert — Builder muss Span explizit setzen, wenn vollstaendig.
+    /// Appends a child node. The parent's span is **not** automatically
+    /// extended — the builder must set the span explicitly when complete.
     pub fn push_child(&mut self, child: CstNode<'src>) {
         self.children.push(child);
     }
 
-    /// Aktualisiert den Span auf die Vereinigung aller Children-Spans.
-    /// Nuetzlich nachdem alle Children eingefuegt wurden, falls der Builder
-    /// die Position-Info nicht im Voraus hatte.
+    /// Updates the span to the union of all children spans.
+    /// Useful after all children have been inserted, if the builder
+    /// did not have the position info in advance.
     pub fn recompute_span_from_children(&mut self) {
         if self.children.is_empty() {
             return;
@@ -172,8 +172,8 @@ impl<'src> CstNode<'src> {
         self.span = span;
     }
 
-    /// Pre-order-Traversal: ruft `visitor` fuer self und dann rekursiv fuer
-    /// jeden Child.
+    /// Pre-order traversal: calls `visitor` for self and then recursively for
+    /// each child.
     pub fn walk_preorder<F: FnMut(&CstNode<'src>)>(&self, visitor: &mut F) {
         visitor(self);
         for child in &self.children {
@@ -181,7 +181,7 @@ impl<'src> CstNode<'src> {
         }
     }
 
-    /// Anzahl Knoten im Teilbaum (inkl. self).
+    /// Number of nodes in the subtree (incl. self).
     #[must_use]
     pub fn count_nodes(&self) -> usize {
         1 + self.children.iter().map(Self::count_nodes).sum::<usize>()

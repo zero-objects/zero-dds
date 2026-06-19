@@ -1,11 +1,10 @@
-//! WP 1.1 T4 — E2E-Integration ReliableWriter ↔ ReliableReader mit
-//! simuliertem Packet-Loss.
+//! WP 1.1 T4 — E2E integration ReliableWriter ↔ ReliableReader with
+//! simulated packet loss.
 //!
-//! Der Test laesst beide Endpunkte durch einen in-process LossyChannel
-//! miteinander reden. Datagrams werden mit konfigurierbarer Drop-Rate
-//! verworfen. Trotz Loss muessen **alle** Samples in-order beim Reader
-//! ankommen — die Reliable-State-Maschine sorgt via ACKNACK-Round-Trips
-//! fuer Re-Sends.
+//! The test lets both endpoints talk to each other through an in-process
+//! LossyChannel. Datagrams are discarded with a configurable drop rate.
+//! Despite loss, **all** samples must arrive in-order at the reader
+//! — the reliable state machine handles re-sends via ACKNACK round-trips.
 
 #![allow(
     clippy::expect_used,
@@ -36,7 +35,7 @@ use zerodds_rtps::writer_proxy::WriterProxy;
 mod common;
 use common::{XorShift32, pattern_for, test_reader_guid, test_writer_guid};
 
-/// In-process-Kanal mit konfigurierbarer Drop-Rate in Prozent (0–100).
+/// In-process channel with a configurable drop rate in percent (0–100).
 #[derive(Debug)]
 struct LossyChannel {
     drop_percent: u32,
@@ -115,16 +114,17 @@ fn make_reader() -> ReliableReader {
 fn dispatch_w2r(datagram: &[u8], r: &mut ReliableReader, now: Duration) -> Vec<DeliveredSample> {
     let mut delivered = Vec::new();
     let parsed = decode_datagram(datagram).expect("decode w->r datagram");
+    let src = parsed.header.guid_prefix;
     for sub in parsed.submessages {
         match sub {
-            ParsedSubmessage::Data(d) => delivered.extend(r.handle_data(&d)),
+            ParsedSubmessage::Data(d) => delivered.extend(r.handle_data(src, &d)),
             ParsedSubmessage::Heartbeat(h) => {
-                // Flags (F/L) werden aus dem Submessage-Header via
-                // decode_datagram mitgefuehrt — kein Hardcoden mehr.
-                r.handle_heartbeat(&h, now);
+                // Flags (F/L) are taken from the submessage header via
+                // carried along with decode_datagram — no more hardcoding.
+                r.handle_heartbeat(src, &h, now);
             }
-            ParsedSubmessage::Gap(g) => delivered.extend(r.handle_gap(&g)),
-            ParsedSubmessage::DataFrag(df) => delivered.extend(r.handle_data_frag(&df, now)),
+            ParsedSubmessage::Gap(g) => delivered.extend(r.handle_gap(src, &g)),
+            ParsedSubmessage::DataFrag(df) => delivered.extend(r.handle_data_frag(src, &df, now)),
             ParsedSubmessage::AckNack(_)
             | ParsedSubmessage::HeartbeatFrag(_)
             | ParsedSubmessage::NackFrag(_)
@@ -162,9 +162,9 @@ fn run_e2e(total_samples: usize, drop_percent: u32, seed: u32) -> Vec<DeliveredS
     let mut ch_r2w = LossyChannel::new(drop_percent, seed.wrapping_add(1));
     let mut delivered = Vec::new();
 
-    // Phase 1: Alle Samples schreiben. Jeder write gibt eine Liste
-    // von Datagrammen zurueck (DATA oder mehrere DATA_FRAG), die wir
-    // in Reihenfolge in den Kanal kippen.
+    // Phase 1: write all samples. Each write returns a list
+    // of datagrams (DATA or multiple DATA_FRAG), which we
+    // dump into the channel in order.
     for i in 1..=total_samples {
         let dgs = w.write(&[i as u8]).expect("write");
         for dg in dgs {
@@ -172,9 +172,9 @@ fn run_e2e(total_samples: usize, drop_percent: u32, seed: u32) -> Vec<DeliveredS
         }
     }
 
-    // Phase 2: Schritt-Simulation bis alle Samples angekommen oder
-    // Deadlock. 50ms-Schritte, max 2000 Schritte = 100 simulierte
-    // Sekunden — bei 10% Loss und 50 Samples reicht das lockerleicht.
+    // Phase 2: step simulation until all samples have arrived or
+    // Deadlock. 50ms steps, max 2000 steps = 100 simulated
+    // seconds — for 10% loss and 50 samples that is easily enough.
     let max_steps = 2000;
     for step in 0..max_steps {
         let now = Duration::from_millis((step as u64) * 50);
@@ -192,7 +192,7 @@ fn run_e2e(total_samples: usize, drop_percent: u32, seed: u32) -> Vec<DeliveredS
         for dg in w.tick(now).expect("writer tick") {
             ch_w2r.send(dg.bytes);
         }
-        // Reader-Tick (ACKNACK/NACK_FRAG wenn faellig)
+        // Reader tick (ACKNACK/NACK_FRAG when due)
         for dg in r.tick(now).expect("reader tick") {
             ch_r2w.send(dg);
         }
@@ -240,11 +240,11 @@ fn e2e_30_percent_loss_delivers_all_in_order() {
 }
 
 // ============================================================================
-// WP 1.2 T4 — Fragmentation-E2E mit Packet-Loss
+// WP 1.2 T4 — fragmentation E2E with packet loss
 // ============================================================================
 
-/// Fuehrt E2E mit konfigurierbarer Payload-Groesse, fragment_size und
-/// Drop-Rate aus. Prueft, dass alle N Samples byte-identisch beim Reader
+/// Runs E2E with configurable payload size, fragment_size and
+/// drop rate. Checks that all N samples arrive byte-identical at the reader
 /// ankommen.
 fn run_frag_e2e(
     total_samples: usize,
@@ -268,9 +268,9 @@ fn run_frag_e2e(
         }
     }
 
-    // Phase 2: Schritt-Simulation — bei vielen Fragmenten und hohem
-    // Loss sind mehr Runden noetig. 50ms-Schritte, max 5000 Schritte
-    // = 250 simulierte Sekunden.
+    // Phase 2: step simulation — with many fragments and high
+    // loss more rounds are needed. 50ms steps, max 5000 steps
+    // = 250 simulated seconds.
     let max_steps = 5000;
     for step in 0..max_steps {
         let now = Duration::from_millis((step as u64) * 50);
@@ -332,7 +332,7 @@ fn e2e_frag_large_sample_30_percent_loss() {
 
 #[test]
 fn e2e_frag_many_samples_3_fragments_each_10_percent_loss() {
-    // 20 Samples, jedes mit 3 Fragmenten (payload 10, frag_size 4)
+    // 20 samples, each with 3 fragments (payload 10, frag_size 4)
     let delivered = run_frag_e2e(20, 10, 4, 10, 123);
     assert_eq!(delivered.len(), 20);
     for (i, s) in delivered.iter().enumerate() {
@@ -348,10 +348,10 @@ fn e2e_frag_many_samples_3_fragments_each_10_percent_loss() {
 
 #[test]
 fn e2e_frag_mixed_data_and_data_frag() {
-    // Mix: payload_size=3 < fragment_size=4 → nimmt DATA-Pfad.
-    // Wir testen implizit: Writer kann in ein-und-derselben Session
-    // beides emittieren. Hier nur DATA-Pfad abgedeckt; die
-    // DATA_FRAG-Pfade sind in den anderen Tests.
+    // Mix: payload_size=3 < fragment_size=4 → takes the DATA path.
+    // We implicitly test: the writer can emit both in one and the
+    // same session. Only the DATA path is covered here; the
+    // DATA_FRAG paths are in the other tests.
     let delivered = run_frag_e2e(5, 3, 4, 0, 1);
     assert_eq!(delivered.len(), 5);
     for (i, s) in delivered.iter().enumerate() {

@@ -1,10 +1,10 @@
-//! Wire-Compliance-Tests fuer `ShapeType` gegen XCDR2-LE-Spec.
+//! Wire-compliance tests for `ShapeType` against the XCDR2-LE spec.
 //!
-//! Diese Tests pruefen, dass unser Encoder byte-genau die Layouts
-//! produziert, die auch Cyclone-, Fast-DDS- und RTI-ShapesDemo-Clients
-//! auf die Wire legen. Die erwarteten Byte-Sequenzen sind von Hand
-//! aus OMG XCDR2 §7.4 hergeleitet und entsprechen den Werten, die
-//! pcap-Captures aus ShapesDemo-Traffic zeigen.
+//! These tests verify that our encoder produces, byte-for-byte, the
+//! layouts that CycloneDDS, Fast-DDS, and RTI ShapesDemo clients also
+//! put on the wire. The expected byte sequences are derived by hand
+//! from OMG XCDR2 §7.4 and match the values seen in pcap captures of
+//! ShapesDemo traffic.
 
 #![allow(
     clippy::expect_used,
@@ -24,10 +24,10 @@
 use zerodds_dcps::DdsType;
 use zerodds_dcps::interop::ShapeType;
 
-/// Referenz-Sample fuer "RED"-ShapeType. Von Hand kalkuliert:
+/// Reference sample for the "RED" ShapeType. Calculated by hand:
 ///
 /// ```text
-/// offset  0..3   : color.length = 4 (inkl. null-terminator)  -> 04 00 00 00
+/// offset  0..3   : color.length = 4 (incl. null-terminator)  -> 04 00 00 00
 /// offset  4..7   : "RED\0"                                    -> 52 45 44 00
 /// offset  8..11  : x = 42                                     -> 2a 00 00 00
 /// offset 12..15  : y = 77                                     -> 4d 00 00 00
@@ -49,7 +49,7 @@ fn shape_type_encode_red_matches_xcdr2_le_reference() {
     assert_eq!(
         buf.as_slice(),
         EXPECTED_RED_42_77_30,
-        "Encoder-Output weicht von XCDR2-LE Referenz ab. Hex-Diff:\n  got: {}\n  exp: {}",
+        "encoder output deviates from the XCDR2-LE reference. Hex diff:\n  got: {}\n  exp: {}",
         hex(&buf),
         hex(EXPECTED_RED_42_77_30)
     );
@@ -88,8 +88,8 @@ fn shape_type_roundtrip_preserves_all_fields() {
 
 #[test]
 fn shape_type_padding_after_short_color_aligns_x_to_4_bytes() {
-    // "AB\0" ist 3 Bytes lang, Gesamt nach length+bytes+null ist 4+3 = 7 Bytes.
-    // Das naechste Feld (x: int32) braucht 4-Byte-Alignment → 1 Byte Padding.
+    // "AB\0" is 3 bytes long; total after length+bytes+null is 4+3 = 7 bytes.
+    // The next field (x: int32) needs 4-byte alignment → 1 byte padding.
     let sample = ShapeType::new("AB", 1, 2, 3);
     let mut buf = Vec::new();
     sample.encode(&mut buf).expect("encode");
@@ -104,7 +104,7 @@ fn shape_type_padding_after_short_color_aligns_x_to_4_bytes() {
     assert_eq!(
         buf.as_slice(),
         expected,
-        "Padding nach 2-Byte-String falsch. got: {} exp: {}",
+        "padding after a 2-byte string wrong. got: {} exp: {}",
         hex(&buf),
         hex(expected)
     );
@@ -112,15 +112,15 @@ fn shape_type_padding_after_short_color_aligns_x_to_4_bytes() {
 
 #[test]
 fn shape_type_type_name_matches_interop_convention() {
-    // Jede andere Schreibweise (zerodds::ShapeType, dds::ShapeType, ...)
-    // wuerde SEDP-Topic-Type-Matching mit Cyclone/Fast-DDS brechen.
+    // Any other spelling (zerodds::ShapeType, dds::ShapeType, ...) would
+    // break SEDP topic-type matching with CycloneDDS/Fast-DDS.
     assert_eq!(ShapeType::TYPE_NAME, "ShapeType");
 }
 
 #[test]
 fn shape_type_decode_truncated_fails_cleanly() {
-    // 10 Byte ist zu wenig fuer einen vollstaendigen ShapeType — Decoder
-    // muss Error liefern, nicht panic.
+    // 10 bytes is too few for a complete ShapeType — the decoder must
+    // return an error, not panic.
     let result = ShapeType::decode(&[0x04, 0x00, 0x00, 0x00, 0x52, 0x45, 0x44, 0x00, 0x00, 0x00]);
     assert!(result.is_err(), "Truncated decode must fail");
 }

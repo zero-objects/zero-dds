@@ -3,24 +3,24 @@
 
 //! Crate `zerodds-py`. Safety classification: **STANDARD** (Binding-FFI).
 //!
-//! PyO3-Bindings fuer ZeroDDS DCPS-API. Liefert ein importierbares
-//! Python-Modul `zerodds_py` ueber `maturin build` oder direkt via
+//! PyO3 bindings for the ZeroDDS DCPS API. Provides an importable
+//! Python module `zerodds_py` via `maturin build` or directly via
 //! `cargo build --features extension-module`.
 //!
-//! Spec: OMG DDS 1.4 (formal/2015-04-10) §2.2.2 mit Python-Idiomen.
+//! Spec: OMG DDS 1.4 (formal/2015-04-10) §2.2.2 with Python idioms.
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 6 — PSMs / Bindings.
+//! Layer 6 — PSMs / bindings.
 //!
 //! ## Build
 //!
-//! - **Default-Cargo-Build** (ohne Python-Headers): pyo3 ist optional,
-//!   das Crate compilet als lib-Platzhalter. Keine Python-API
-//!   verfuegbar — so laeuft der Workspace-CI ohne Python-Dependency.
-//! - **Mit `--features extension-module`** (oder via `maturin build`):
-//!   wird als `cdylib` kompiliert und erzeugt ein importierbares
-//!   Python-Modul `zerodds_py`.
+//! - **Default cargo build** (without Python headers): pyo3 is optional,
+//!   the crate compiles as a lib placeholder. No Python API
+//!   available — this is how the workspace CI runs without a Python dependency.
+//! - **With `--features extension-module`** (or via `maturin build`):
+//!   compiled as a `cdylib` and produces an importable
+//!   Python module `zerodds_py`.
 //!
 //! ## API
 //!
@@ -41,8 +41,8 @@
 //! samples = reader.take()  # List[bytes]
 //! ```
 //!
-//! Typisierte `DdsType`-Bindings (Dataclass-Mapping via IDL-Generator)
-//! folgen aus `crates/idl-rust` ueber Python-Bindings-Generator.
+//! Typed `DdsType` bindings (dataclass mapping via the IDL generator)
+//! follow from `crates/idl-rust` through the Python bindings generator.
 
 #![warn(unsafe_code)]
 #![warn(missing_docs)]
@@ -61,7 +61,7 @@ mod qos;
 mod tests {
     #[test]
     fn dcps_re_export_compiles() {
-        // Minimaler Smoketest: zerodds-dcps ist als Dependency greifbar.
+        // Minimal smoke test: zerodds-dcps is reachable as a dependency.
         // Die echten PyO3-Tests laufen aus Python heraus (pytest).
         use zerodds_dcps::DomainParticipantFactory;
         let _f: &DomainParticipantFactory = DomainParticipantFactory::instance();

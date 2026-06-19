@@ -1,83 +1,83 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Standard-Metric-Namen (Spec §2). 31 Konstanten — die volle
-//! ZeroDDS-Telemetry-Domain.
+//! Standard metric names (spec §2). 31 constants — the full
+//! ZeroDDS telemetry domain.
 
 // Transport (§2.1)
-/// Transport-Domain — RTPS-Pakete gesendet.
+/// Transport domain — RTPS packets sent.
 pub const DDS_TRANSPORT_PACKETS_SENT_TOTAL: &str = "dds_transport_packets_sent_total";
-/// Transport-Domain — RTPS-Pakete empfangen.
+/// Transport domain — RTPS packets received.
 pub const DDS_TRANSPORT_PACKETS_RECEIVED_TOTAL: &str = "dds_transport_packets_received_total";
-/// Transport-Domain — Bytes gesendet.
+/// Transport domain — bytes sent.
 pub const DDS_TRANSPORT_BYTES_SENT_TOTAL: &str = "dds_transport_bytes_sent_total";
-/// Transport-Domain — Bytes empfangen.
+/// Transport domain — bytes received.
 pub const DDS_TRANSPORT_BYTES_RECEIVED_TOTAL: &str = "dds_transport_bytes_received_total";
-/// Transport-Domain — Send-Fehler.
+/// Transport domain — send error.
 pub const DDS_TRANSPORT_SEND_ERRORS_TOTAL: &str = "dds_transport_send_errors_total";
-/// Transport-Domain — Socket-Buffer-Auslastung (Gauge).
+/// Transport domain — socket buffer utilization (gauge).
 pub const DDS_TRANSPORT_SOCKET_BUFFER_BYTES: &str = "dds_transport_socket_buffer_bytes";
 
 // RTPS (§2.2)
-/// RTPS-Domain — Heartbeats gesendet.
+/// RTPS domain — heartbeats sent.
 pub const DDS_RTPS_HEARTBEATS_SENT_TOTAL: &str = "dds_rtps_heartbeats_sent_total";
-/// RTPS-Domain — Acknacks empfangen.
+/// RTPS domain — acknacks received.
 pub const DDS_RTPS_ACKNACKS_RECEIVED_TOTAL: &str = "dds_rtps_acknacks_received_total";
-/// RTPS-Domain — Retransmissions.
+/// RTPS domain — retransmissions.
 pub const DDS_RTPS_RETRANSMITS_TOTAL: &str = "dds_rtps_retransmits_total";
-/// RTPS-Domain — Samples gedropped (History-Limit, etc.).
+/// RTPS domain — samples dropped (history limit, etc.).
 pub const DDS_RTPS_SAMPLES_DROPPED_TOTAL: &str = "dds_rtps_samples_dropped_total";
-/// RTPS-Domain — Fragmentierte Samples.
+/// RTPS domain — fragmented samples.
 pub const DDS_RTPS_FRAGMENTED_SAMPLES_TOTAL: &str = "dds_rtps_fragmented_samples_total";
-/// RTPS-Domain — Unbekannte Submessage-Kinds (Interop-Indikator).
+/// RTPS domain — unknown submessage kinds (interop indicator).
 pub const DDS_RTPS_UNKNOWN_SUBMESSAGES_TOTAL: &str = "dds_rtps_unknown_submessages_total";
 
 // DCPS (§2.3)
-/// DCPS-Domain — Geschriebene Samples.
+/// DCPS domain — samples written.
 pub const DDS_DCPS_SAMPLES_WRITTEN_TOTAL: &str = "dds_dcps_samples_written_total";
-/// DCPS-Domain — Gelesene Samples.
+/// DCPS domain — samples read.
 pub const DDS_DCPS_SAMPLES_READ_TOTAL: &str = "dds_dcps_samples_read_total";
-/// DCPS-Domain — SAMPLE_LOST-Status.
+/// DCPS domain — SAMPLE_LOST status.
 pub const DDS_DCPS_SAMPLES_LOST_TOTAL: &str = "dds_dcps_samples_lost_total";
-/// DCPS-Domain — Deadline-Misses.
+/// DCPS domain — deadline misses.
 pub const DDS_DCPS_DEADLINE_MISSED_TOTAL: &str = "dds_dcps_deadline_missed_total";
-/// DCPS-Domain — Liveliness-Lost-Events.
+/// DCPS domain — liveliness-lost events.
 pub const DDS_DCPS_LIVELINESS_LOST_TOTAL: &str = "dds_dcps_liveliness_lost_total";
-/// DCPS-Domain — Neue Subscriber-Matches.
+/// DCPS domain — new subscriber matches.
 pub const DDS_DCPS_SUBSCRIPTION_MATCHED_TOTAL: &str = "dds_dcps_subscription_matched_total";
-/// DCPS-Domain — Verlorene Subscriber-Matches.
+/// DCPS domain — lost subscriber matches.
 pub const DDS_DCPS_SUBSCRIPTION_UNMATCHED_TOTAL: &str = "dds_dcps_subscription_unmatched_total";
-/// DCPS-Domain — QoS-Inkompatibilitaeten.
+/// DCPS domain — QoS incompatibilities.
 pub const DDS_DCPS_INCOMPATIBLE_QOS_TOTAL: &str = "dds_dcps_incompatible_qos_total";
-/// DCPS-Domain — Sample-Latency (Histogram, Sekunden).
+/// DCPS domain — sample latency (histogram, seconds).
 pub const DDS_DCPS_SAMPLE_LATENCY_SECONDS: &str = "dds_dcps_sample_latency_seconds";
-/// DCPS-Domain — Sample-Groessen (Histogram, Bytes).
+/// DCPS domain — sample sizes (histogram, bytes).
 pub const DDS_DCPS_SAMPLE_SIZE_BYTES: &str = "dds_dcps_sample_size_bytes";
 
 // Discovery (§2.4)
-/// Discovery-Domain — Bekannte Participants (Gauge).
+/// Discovery domain — known participants (gauge).
 pub const DDS_DISCOVERY_PARTICIPANTS_KNOWN: &str = "dds_discovery_participants_known";
-/// Discovery-Domain — Bekannte Endpoints (Gauge).
+/// Discovery domain — known endpoints (gauge).
 pub const DDS_DISCOVERY_ENDPOINTS_KNOWN: &str = "dds_discovery_endpoints_known";
-/// Discovery-Domain — SPDP-Announcements gesendet.
+/// Discovery domain — SPDP announcements sent.
 pub const DDS_DISCOVERY_SPDP_ANNOUNCEMENTS_SENT_TOTAL: &str =
     "dds_discovery_spdp_announcements_sent_total";
-/// Discovery-Domain — SEDP-Updates.
+/// Discovery domain — SEDP updates.
 pub const DDS_DISCOVERY_SEDP_UPDATES_TOTAL: &str = "dds_discovery_sedp_updates_total";
-/// Discovery-Domain — TypeLookup-Requests.
+/// Discovery domain — TypeLookup requests.
 pub const DDS_DISCOVERY_TYPE_LOOKUPS_TOTAL: &str = "dds_discovery_type_lookups_total";
 
 // Security (§2.5)
-/// Security-Domain — Authentication-Versuche.
+/// Security domain — authentication attempts.
 pub const DDS_SECURITY_AUTH_ATTEMPTS_TOTAL: &str = "dds_security_auth_attempts_total";
-/// Security-Domain — Access-Control-Denials.
+/// Security domain — access-control denials.
 pub const DDS_SECURITY_ACCESS_DENIED_TOTAL: &str = "dds_security_access_denied_total";
-/// Security-Domain — Crypto-Operationen.
+/// Security domain — crypto operations.
 pub const DDS_SECURITY_CRYPTO_OPERATIONS_TOTAL: &str = "dds_security_crypto_operations_total";
-/// Security-Domain — Crypto-Latency (Histogram, Sekunden).
+/// Security domain — crypto latency (histogram, seconds).
 pub const DDS_SECURITY_CRYPTO_LATENCY_SECONDS: &str = "dds_security_crypto_latency_seconds";
 
-/// Liste aller 31 Spec-Metric-Namen — fuer Coverage-Tests.
+/// List of all 31 spec metric names — for coverage tests.
 pub const ALL: &[&str] = &[
     DDS_TRANSPORT_PACKETS_SENT_TOTAL,
     DDS_TRANSPORT_PACKETS_RECEIVED_TOTAL,

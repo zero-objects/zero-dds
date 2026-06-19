@@ -3,12 +3,11 @@
 
 //! MessageError-Message — Spec §15.4.8.
 //!
-//! Body-frei. Wird gesendet, wenn eine Message mit unbekanntem
-//! Magic / Version / Type empfangen wurde, oder wenn der Header
-//! malformed ist. Caller schliesst danach die Connection (Spec
-//! §15.4.8 normativ).
+//! Body-free. Sent when a message with an unknown magic / version /
+//! type is received, or when the header is malformed. The caller then
+//! closes the connection (Spec §15.4.8, normative).
 
-/// MessageError-Body — leer per Spec §15.4.8.
+/// MessageError body — empty per Spec §15.4.8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct MessageError;
 

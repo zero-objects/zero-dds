@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! PID-Constants fuer QoS-Policies (DDSI-RTPS §9.6.3.2).
+//! PID constants for QoS policies (DDSI-RTPS §9.6.3.2).
 //!
-//! Jeder QoS-Wert wird in einer SEDP-ParameterList als ein
-//! `{ pid, length, value }`-Tripel gekapselt. Die PIDs sind in
-//! DDSI-RTPS 2.5 Table 9.9 "Data representations for built-in endpoints"
-//! festgelegt. Wir duplizieren sie hier (statt zerodds-rtps zu importieren),
-//! um `zerodds-qos` unabhaengig von `zerodds-rtps` zu halten.
+//! Each QoS value is encapsulated in a SEDP ParameterList as a
+//! `{ pid, length, value }` triple. The PIDs are fixed in
+//! DDSI-RTPS 2.5 Table 9.9 "Data representations for built-in endpoints".
+//! We duplicate them here (instead of importing zerodds-rtps),
+//! to keep `zerodds-qos` independent of `zerodds-rtps`.
 
-/// DDSI-RTPS Table 9.9. 16-bit Parameter-IDs.
+/// DDSI-RTPS Table 9.9. 16-bit parameter IDs.
 ///
-/// Die Werte sind OMG-publik und stabil ueber alle Vendors.
+/// The values are OMG-public and stable across all vendors.
 #[non_exhaustive]
 pub struct Pid;
 
@@ -56,18 +56,18 @@ impl Pid {
     pub const TIME_BASED_FILTER: u16 = 0x0004;
     /// `PID_TRANSPORT_PRIORITY`.
     pub const TRANSPORT_PRIORITY: u16 = 0x0049;
-    /// `PID_READER_DATA_LIFECYCLE` — OMG hat fuer DataLifecycle-Policies
-    /// keine festen PIDs standardisiert; wir kennzeichnen die Werte mit
-    /// dem Vendor-Flag (`0x8000`), damit fremde Stacks (Cyclone, Fast-DDS)
-    /// unbekannte PIDs gem. RTPS §9.6.3.2.1 ignorieren koennen, statt
-    /// auf einen standardisierten Wert zu schliessen.
+    /// `PID_READER_DATA_LIFECYCLE` — OMG has not standardized fixed PIDs
+    /// for DataLifecycle policies; we mark the values with
+    /// the vendor flag (`0x8000`), so that foreign stacks (Cyclone, Fast-DDS)
+    /// can ignore unknown PIDs per RTPS §9.6.3.2.1, instead of
+    /// inferring a standardized value.
     pub const READER_DATA_LIFECYCLE: u16 = 0x8046;
-    /// `PID_WRITER_DATA_LIFECYCLE` — analog Vendor-Flag.
+    /// `PID_WRITER_DATA_LIFECYCLE` — likewise with the vendor flag.
     pub const WRITER_DATA_LIFECYCLE: u16 = 0x8045;
 
     // ---------------------------------------------------------------------
     // Sentinel.
     // ---------------------------------------------------------------------
-    /// `PID_SENTINEL` — markiert Ende einer ParameterList.
+    /// `PID_SENTINEL` — marks the end of a ParameterList.
     pub const SENTINEL: u16 = 0x0001;
 }

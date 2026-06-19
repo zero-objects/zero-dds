@@ -4,8 +4,8 @@
 //! `GET_INFO` Submessage (id=2, Spec §8.3.5.3).
 //!
 //! Direction: Client → Agent. Payload = `GET_INFO_Payload`
-//! (`BaseObjectRequest` + `InfoMask`). ObjectKind in Lower-4-Bits der
-//! `object_id` routet zu `Root::get_info` (OBJK_AGENT) bzw.
+//! (`BaseObjectRequest` + `InfoMask`). The ObjectKind in the lower 4 bits of
+//! the `object_id` routes to `Root::get_info` (OBJK_AGENT) or
 //! `ProxyClient::get_info`.
 
 extern crate alloc;
@@ -14,15 +14,15 @@ use alloc::vec::Vec;
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// Opaker Body fuer `GET_INFO`.
+/// Opaque body for `GET_INFO`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GetInfoPayload {
-    /// XCDR2-Body.
+    /// XCDR2 body.
     pub representation: Vec<u8>,
 }
 
 impl GetInfoPayload {
-    /// Verpackt in `Submessage`.
+    /// Packs into a `Submessage`.
     ///
     /// # Errors
     /// `PayloadTooLarge`.
@@ -34,7 +34,7 @@ impl GetInfoPayload {
         )
     }
 
-    /// Extrahiert aus `Submessage`.
+    /// Extracts from a `Submessage`.
     ///
     /// # Errors
     /// `ValueOutOfRange`.

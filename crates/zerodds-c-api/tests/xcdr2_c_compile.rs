@@ -3,14 +3,14 @@
 
 //! L2-Codegen-Compile-Sanity-Test.
 //!
-//! Generiert pro V-1..V-12 ein C99-Header via `idl-cpp::generate_c_header`,
-//! schreibt ihn in eine tmp-Datei, kompiliert eine kleine C-Stub-Datei
-//! die den Header inkludiert und nutzt — und verifiziert dass der
-//! C-Compiler ohne Fehler durchlaeuft. Das stellt sicher dass der
-//! emittierte Code byte-genau valider C99 ist.
+//! Generates per V-1..V-12 a C99 header via `idl-cpp::generate_c_header`,
+//! writes it to a tmp file, compiles a small C stub file
+//! that includes and uses the header — and verifies that the
+//! C compiler runs without errors. This ensures that the
+//! emitted code is byte-exactly valid C99.
 //!
-//! Wenn kein C-Compiler verfuegbar ist (`cc`/`gcc`/`clang` nicht im
-//! PATH), wird der Test geskipped (Ignored).
+//! If no C compiler is available (`cc`/`gcc`/`clang` not in
+//! PATH), the test is skipped (ignored).
 
 #![allow(
     clippy::expect_used,
@@ -68,13 +68,13 @@ fn try_compile(name: &str, idl: &str) -> bool {
     fs::create_dir_all(&tmp).unwrap();
     fs::write(tmp.join("generated.h"), header).unwrap();
 
-    // Stub `zerodds.h` (Topic-FFI ist Pointer-forward; Stub reicht).
+    // Stub `zerodds.h` (the topic FFI is pointer-forward; a stub suffices).
     fs::write(
         tmp.join("zerodds.h"),
         b"/* test stub */\n#ifndef ZERODDS_H\n#define ZERODDS_H\n#endif\n",
     )
     .unwrap();
-    // Echter zerodds_xcdr2.h aus dem Crate-Repo.
+    // The real zerodds_xcdr2.h from the crate repo.
     let xcdr2_h = include_str!("../include/zerodds_xcdr2.h");
     fs::write(tmp.join("zerodds_xcdr2.h"), xcdr2_h).unwrap();
 

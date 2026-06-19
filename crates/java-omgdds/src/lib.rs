@@ -3,49 +3,49 @@
 
 //! Crate `zerodds-java-omgdds`. Safety classification: **STANDARD**.
 //!
-//! Native Java-DDS-PSM (`org.omg.dds.*`) Pure-Java-Implementation ohne
-//! JNI-Dependency. Der eigentliche Java-Source-Tree lebt unter
+//! Native Java DDS PSM (`org.omg.dds.*`) pure-Java implementation without
+//! a JNI dependency. The actual Java source tree lives under
 //! `crates/java-omgdds/java/src/main/java/org/omg/dds/*` (normative
-//! OMG-API) und `org/zerodds/internal/*` (Implementation-Detail).
+//! OMG API) and `org/zerodds/internal/*` (implementation detail).
 //!
-//! Spec: OMG DDS-Java-PSM 1.0 (formal/2017-04-01).
-//! Vendor-Spec: `docs/specs/zerodds-java-omgdds-1.0.md`.
+//! Spec: OMG DDS Java PSM 1.0 (formal/2017-04-01).
+//! Vendor spec: `docs/specs/zerodds-java-omgdds-1.0.md`.
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 6 — PSMs / Bindings (Pure-Java-Pfad ohne JNI; Codegen via
+//! Layer 6 — PSMs / bindings (pure-Java path without JNI; codegen via
 //! `zerodds-idl-java`).
 //!
-//! ## Architektur
+//! ## Architecture
 //!
 //! ```text
 //! +------------------------------------------------------+
-//! |  Java-User-Code                                      |
+//! |  Java user code                                     |
 //! |  import org.omg.dds.domain.DomainParticipantFactory; |
 //! +------------------------------------------------------+
 //!                  |
 //!                  v
 //! +------------------------------------------------------+
-//! |  org.omg.dds.*  (23 Java-Files, 18 mvn-Tests gruen)  |
+//! |  org.omg.dds.*  (23 Java files, 18 mvn tests green) |
 //! |  - DomainParticipant, Topic<T>, Pub/Sub, DW/DR       |
-//! |  - InProcessBus (Single-JVM Pub-Sub)                 |
-//! |  - Xcdr2Codec (XTypes 1.3 §7.4 Wire-Form)            |
+//! |  - InProcessBus (single-JVM pub/sub)                |
+//! |  - Xcdr2Codec (XTypes 1.3 §7.4 wire form)           |
 //! +------------------------------------------------------+
 //! ```
 //!
-//! Multi-JVM via gRPC-Bridge ist v1.1-Stretch (siehe Vendor-Spec §5).
+//! Multi-JVM via a gRPC bridge is a v1.1 stretch (see vendor spec §5).
 //!
 //! ## Test
 //!
-//! - `mvn test` in `crates/java-omgdds/java/`: 18 Tests grün
-//! - `cargo test -p zerodds-java-omgdds`: 1 Smoke-Test
+//! - `mvn test` in `crates/java-omgdds/java/`: 18 tests green
+//! - `cargo test -p zerodds-java-omgdds`: 1 smoke test
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 extern crate alloc;
 
-/// Versions-Marker fuer die Pure-Java-Implementation.
+/// Version marker for the pure-Java implementation.
 pub const SCAFFOLD_VERSION: &str = "1.0.0-rc.1";
 
 #[cfg(test)]

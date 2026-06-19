@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "OTLP/HTTP/JSON-Exporter fuer ZeroDDS-Telemetrie (zerodds-observability-otlp-1.0): /v1/traces + /v1/metrics + /v1/logs ohne prost/tonic/hyper."
+description = "OTLP/HTTP/JSON exporter for ZeroDDS telemetry (zerodds-observability-otlp-1.0): /v1/traces + /v1/metrics + /v1/logs without prost/tonic/hyper."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-observability-otlp"
 readme = "README.md"
@@ -21,6 +21,6 @@ workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-foundation = { version = "1.0.0-rc.1", path = "../foundation", default-features = false, features = ["std"] }
+zerodds-foundation = { version = "1.0.0-rc.3", path = "../foundation", default-features = false, features = ["std"] }
 
 [dev-dependencies]

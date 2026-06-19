@@ -1,65 +1,65 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `Time_t` und `Duration_t` (DDS-DCPS 1.4 §2.3.3 IDL-PSM).
+//! `Time_t` and `Duration_t` (DDS-DCPS 1.4 §2.3.3 IDL PSM).
 //!
-//! Spec definiert:
+//! The spec defines:
 //! * `struct Time_t { long sec; unsigned long nanosec; }`
 //! * `struct Duration_t { long sec; unsigned long nanosec; }`
-//! * Reservierte Sentinels: `TIME_INVALID`, `TIME_INFINITE`,
+//! * Reserved sentinels: `TIME_INVALID`, `TIME_INFINITE`,
 //!   `DURATION_ZERO`, `DURATION_INFINITE`.
 //!
-//! Wire-Form ist 8 Byte (4 sec + 4 nanosec). Wir kapseln das hier mit
-//! einer Rust-API, die mit `core::time::Duration` und `std::time::SystemTime`
-//! koexistiert. Der RTPS-Wire-Layer hat eigenes `Duration` in
-//! `zerodds_rtps::participant_data::Duration` — wir konvertieren bei Bedarf.
+//! The wire form is 8 bytes (4 sec + 4 nanosec). We wrap it here with a
+//! Rust API that coexists with `core::time::Duration` and
+//! `std::time::SystemTime`. The RTPS wire layer has its own `Duration` in
+//! `zerodds_rtps::participant_data::Duration` — we convert as needed.
 
 extern crate alloc;
 
-/// `Time_t` — Wall-Clock-Timestamp seit Unix-Epoch.
+/// `Time_t` — wall-clock timestamp since the Unix epoch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct Time {
-    /// Seconds seit 1970-01-01 UTC.
+    /// Seconds since 1970-01-01 UTC.
     pub sec: i32,
-    /// Nanoseconds-Anteil [0, 999_999_999].
+    /// Nanoseconds component [0, 999_999_999].
     pub nanosec: u32,
 }
 
 impl Time {
-    /// `TIME_ZERO` — Spec-Konstante (DDSI-RTPS §8.3.2 + DCPS §2.3.3).
+    /// `TIME_ZERO` — spec constant (DDSI-RTPS §8.3.2 + DCPS §2.3.3).
     pub const ZERO: Self = Self { sec: 0, nanosec: 0 };
 
-    /// Reserviertes Sentinel "ungueltige Zeit" (Spec-Konvention:
+    /// Reserved sentinel "invalid time" (spec convention:
     /// sec=-1, nanosec=0xFFFF_FFFF).
     pub const INVALID: Self = Self {
         sec: -1,
         nanosec: 0xFFFF_FFFF,
     };
 
-    /// Reserviertes Sentinel "unendlich in der Zukunft".
+    /// Reserved sentinel "infinitely far in the future".
     pub const INFINITE: Self = Self {
         sec: 0x7FFF_FFFF,
         nanosec: 0xFFFF_FFFE,
     };
 
-    /// `true` wenn der Wert dem [`Self::ZERO`]-Sentinel entspricht.
+    /// `true` if the value equals the [`Self::ZERO`] sentinel.
     #[must_use]
     pub const fn is_zero(&self) -> bool {
         self.sec == 0 && self.nanosec == 0
     }
 
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new(sec: i32, nanosec: u32) -> Self {
         Self { sec, nanosec }
     }
 
-    /// `true` wenn der Wert dem [`Self::INVALID`]-Sentinel entspricht.
+    /// `true` if the value equals the [`Self::INVALID`] sentinel.
     #[must_use]
     pub const fn is_invalid(&self) -> bool {
         self.sec == -1 && self.nanosec == 0xFFFF_FFFF
     }
 
-    /// `true` wenn der Wert dem [`Self::INFINITE`]-Sentinel entspricht.
+    /// `true` if the value equals the [`Self::INFINITE`] sentinel.
     #[must_use]
     pub const fn is_infinite(&self) -> bool {
         self.sec == 0x7FFF_FFFF && self.nanosec == 0xFFFF_FFFE
@@ -77,7 +77,7 @@ impl Time {
         self.nanosec
     }
 
-    /// Spec §7.5.6.2 — Time + Duration (Sekunden-Increment).
+    /// Spec §7.5.6.2 — Time + Duration (second increment).
     #[must_use]
     pub fn add_duration(self, d: Duration) -> Self {
         let total_ns = u64::from(self.nanosec) + u64::from(d.nanosec);
@@ -89,7 +89,7 @@ impl Time {
         }
     }
 
-    /// Spec §7.5.6.3 — Time aus Millisekunden-Integer.
+    /// Spec §7.5.6.3 — Time from a millisecond integer.
     #[must_use]
     pub const fn from_millis(ms: i64) -> Self {
         let sec = (ms / 1000) as i32;
@@ -97,14 +97,14 @@ impl Time {
         Self { sec, nanosec }
     }
 
-    /// Spec §7.5.6.3 — Time als Millisekunden-Integer.
+    /// Spec §7.5.6.3 — Time as a millisecond integer.
     #[must_use]
     pub const fn as_millis(&self) -> i64 {
         (self.sec as i64) * 1000 + (self.nanosec as i64) / 1_000_000
     }
 }
 
-/// `Duration_t` — relativer Zeitraum (kann negativ sein bei
+/// `Duration_t` — a relative time span (can be negative when
 /// `sec < 0`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct Duration {
@@ -115,36 +115,36 @@ pub struct Duration {
 }
 
 impl Duration {
-    /// `DURATION_ZERO` (Spec): 0 Sekunden.
+    /// `DURATION_ZERO` (spec): 0 seconds.
     pub const ZERO: Self = Self { sec: 0, nanosec: 0 };
 
-    /// `DURATION_INFINITE` (Spec): symbolisches Maximum.
+    /// `DURATION_INFINITE` (spec): symbolic maximum.
     pub const INFINITE: Self = Self {
         sec: 0x7FFF_FFFF,
         nanosec: 0xFFFF_FFFF,
     };
 
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new(sec: i32, nanosec: u32) -> Self {
         Self { sec, nanosec }
     }
 
-    /// `true` wenn der Wert [`Self::INFINITE`] ist.
+    /// `true` if the value is [`Self::INFINITE`].
     #[must_use]
     pub const fn is_infinite(&self) -> bool {
         self.sec == 0x7FFF_FFFF && self.nanosec == 0xFFFF_FFFF
     }
 
-    /// `true` wenn der Wert [`Self::ZERO`] ist.
+    /// `true` if the value is [`Self::ZERO`].
     #[must_use]
     pub const fn is_zero(&self) -> bool {
         self.sec == 0 && self.nanosec == 0
     }
 
-    /// Konvertierung in [`core::time::Duration`]. `INFINITE` wird auf
-    /// `Duration::MAX` gemapped; negative Sekunden auf `ZERO`
-    /// (core::time::Duration ist unsigned).
+    /// Conversion into [`core::time::Duration`]. `INFINITE` maps to
+    /// `Duration::MAX`; negative seconds map to `ZERO`
+    /// (core::time::Duration is unsigned).
     #[must_use]
     pub fn to_core(self) -> core::time::Duration {
         if self.is_infinite() {
@@ -156,8 +156,8 @@ impl Duration {
         }
     }
 
-    /// Konvertierung von [`core::time::Duration`] (lossy, kappt
-    /// Sekunden auf `i32::MAX`).
+    /// Conversion from [`core::time::Duration`] (lossy, clamps seconds
+    /// to `i32::MAX`).
     #[must_use]
     pub fn from_core(d: core::time::Duration) -> Self {
         let sec = i32::try_from(d.as_secs()).unwrap_or(i32::MAX);
@@ -179,7 +179,7 @@ impl Duration {
         self.nanosec
     }
 
-    /// Spec §7.5.6.4 — Duration + Duration (Increment).
+    /// Spec §7.5.6.4 — Duration + Duration (increment).
     #[must_use]
     pub fn add_duration(self, d: Duration) -> Self {
         let total_ns = u64::from(self.nanosec) + u64::from(d.nanosec);
@@ -191,7 +191,7 @@ impl Duration {
         }
     }
 
-    /// Spec §7.5.6.5 — Duration aus Millisekunden-Integer.
+    /// Spec §7.5.6.5 — Duration from a millisecond integer.
     #[must_use]
     pub const fn from_millis(ms: i64) -> Self {
         let sec = (ms / 1000) as i32;
@@ -199,19 +199,19 @@ impl Duration {
         Self { sec, nanosec }
     }
 
-    /// Spec §7.5.6.5 — Duration als Millisekunden-Integer.
+    /// Spec §7.5.6.5 — Duration as a millisecond integer.
     #[must_use]
     pub const fn as_millis(&self) -> i64 {
         (self.sec as i64) * 1000 + (self.nanosec as i64) / 1_000_000
     }
 }
 
-/// Aktuelle Wall-Clock-Zeit als [`Time`]. Auf `std`-Plattformen via
-/// `std::time::SystemTime`. Auf `no_std` (kein std-Feature) liefert
-/// die Funktion `Time::INVALID` — Caller muss sich um die Quelle
-/// selbst kuemmern (z.B. monotonic Hardware-Clock).
+/// Current wall-clock time as a [`Time`]. On `std` platforms via
+/// `std::time::SystemTime`. On `no_std` (no std feature) the function
+/// returns `Time::INVALID` — the caller must provide the source itself
+/// (e.g. a monotonic hardware clock).
 ///
-/// Spec-Referenz: DDS-DCPS 1.4 §2.2.2.2.1.32 `get_current_time`.
+/// Spec reference: DDS-DCPS 1.4 §2.2.2.2.1.32 `get_current_time`.
 #[must_use]
 #[cfg(feature = "std")]
 pub fn get_current_time() -> Time {
@@ -225,7 +225,7 @@ pub fn get_current_time() -> Time {
         .unwrap_or(Time::INVALID)
 }
 
-/// `no_std`-Stub fuer [`get_current_time`].
+/// `no_std` stub for [`get_current_time`].
 #[must_use]
 #[cfg(not(feature = "std"))]
 pub fn get_current_time() -> Time {
@@ -299,7 +299,7 @@ mod tests {
     fn get_current_time_is_recent() {
         let t = get_current_time();
         assert!(!t.is_invalid());
-        // sec sollte > 1_700_000_000 sein (Nov 2023+).
+        // sec should be > 1_700_000_000 (Nov 2023+).
         assert!(t.sec > 1_700_000_000);
     }
 
@@ -325,8 +325,8 @@ mod tests {
 
     #[test]
     fn time_add_duration_carries_seconds() {
-        // Spec §7.5.6.2: Time-Increment ueber Duration mit
-        // Nanosekunden-Carry.
+        // Spec §7.5.6.2: Time increment via Duration with
+        // nanosecond carry.
         let t = Time::new(10, 800_000_000);
         let inc = t.add_duration(Duration::new(2, 500_000_000));
         assert_eq!(inc.seconds(), 13);
@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     fn time_from_and_as_millis_roundtrip() {
-        // Spec §7.5.6.3: Conversion zu/von Millisekunden.
+        // Spec §7.5.6.3: conversion to/from milliseconds.
         let t = Time::from_millis(12_345);
         assert_eq!(t.seconds(), 12);
         assert_eq!(t.nanoseconds(), 345_000_000);
@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn duration_add_duration_carries_seconds() {
-        // Spec §7.5.6.4: Duration + Duration mit Nanosekunden-Carry.
+        // Spec §7.5.6.4: Duration + Duration with nanosecond carry.
         let d = Duration::new(5, 700_000_000);
         let inc = d.add_duration(Duration::new(1, 600_000_000));
         assert_eq!(inc.seconds(), 7);
@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn duration_from_and_as_millis_roundtrip() {
-        // Spec §7.5.6.5: Conversion zu/von Millisekunden.
+        // Spec §7.5.6.5: conversion to/from milliseconds.
         let d = Duration::from_millis(2_500);
         assert_eq!(d.seconds(), 2);
         assert_eq!(d.nanoseconds(), 500_000_000);

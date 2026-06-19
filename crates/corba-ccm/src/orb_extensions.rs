@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CORBA 3.3 ORB-Extensions — Stub-Layer fuer:
+//! CORBA 3.3 ORB extensions — stub layer for:
 //! - §16 Portable Interceptors (Part 1)
 //! - §17 CORBA Messaging (Part 1)
 //! - §18 Compression (Part 1) + Part 2 §12 ZIOP
@@ -9,8 +9,8 @@
 //! - Part 2 §8 Inter-ORB Bridges
 //! - Part 2 §9.8/§9.9 BiDirectional GIOP
 //!
-//! ZeroDDS hat keinen vollen ORB; diese Module liefern Configuration-
-//! + Datenmodell-Layer als Stub fuer Migrations-Tooling.
+//! ZeroDDS has no full ORB; these modules provide a configuration
+//! + data-model layer as a stub for migration tooling.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -21,7 +21,7 @@ use alloc::vec::Vec;
 // §16 Portable Interceptors
 // ===========================================================================
 
-/// Spec §16 — Interceptor-Point fuer Client-Side.
+/// Spec §16 — interception point for the client side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientInterceptionPoint {
     /// `send_request` (Spec §16.4.2).
@@ -36,7 +36,7 @@ pub enum ClientInterceptionPoint {
     ReceiveOther,
 }
 
-/// Spec §16 — Interceptor-Point fuer Server-Side.
+/// Spec §16 — interception point for the server side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerInterceptionPoint {
     /// `receive_request_service_contexts` (Spec §16.4.3).
@@ -51,32 +51,125 @@ pub enum ServerInterceptionPoint {
     SendOther,
 }
 
-/// Spec §16.4.2 — `ClientRequestInterceptor`-Trait.
+/// Spec §16.4.1 — `RequestInfo`: the invocation context that interceptors read
+/// and mutate at the points. In particular it carries the **service-context lists**
+/// (request + reply), over which frameworks such as OTS (`TransactionService` id 0)
+/// and CSIv2 (`SecurityAttributeService` id 15) propagate their context — cleanly per
+/// spec instead of hard-wired into the transport.
+#[derive(Debug, Clone, Default)]
+pub struct RequestInfo {
+    /// GIOP `request_id`.
+    pub request_id: u32,
+    /// Operation name.
+    pub operation: String,
+    /// Whether a reply is expected (non-oneway).
+    pub response_expected: bool,
+    request_sc: BTreeMap<u32, Vec<u8>>,
+    reply_sc: BTreeMap<u32, Vec<u8>>,
+    forward: Option<Vec<u8>>,
+}
+
+impl RequestInfo {
+    /// New `RequestInfo` for `request_id` + `operation`.
+    #[must_use]
+    pub fn new(request_id: u32, operation: impl Into<alloc::string::String>) -> Self {
+        Self {
+            request_id,
+            operation: operation.into(),
+            response_expected: true,
+            request_sc: BTreeMap::new(),
+            reply_sc: BTreeMap::new(),
+            forward: None,
+        }
+    }
+
+    /// Spec §16.4.1 — `add_request_service_context`.
+    pub fn add_request_service_context(&mut self, id: u32, data: Vec<u8>) {
+        self.request_sc.insert(id, data);
+    }
+    /// Spec §16.4.1 — `get_request_service_context`.
+    #[must_use]
+    pub fn get_request_service_context(&self, id: u32) -> Option<&[u8]> {
+        self.request_sc.get(&id).map(Vec::as_slice)
+    }
+    /// All request service contexts (id → encapsulated data).
+    #[must_use]
+    pub fn request_service_contexts(&self) -> &BTreeMap<u32, Vec<u8>> {
+        &self.request_sc
+    }
+    /// Spec §16.4.1 — `add_reply_service_context`.
+    pub fn add_reply_service_context(&mut self, id: u32, data: Vec<u8>) {
+        self.reply_sc.insert(id, data);
+    }
+    /// Spec §16.4.1 — `get_reply_service_context`.
+    #[must_use]
+    pub fn get_reply_service_context(&self, id: u32) -> Option<&[u8]> {
+        self.reply_sc.get(&id).map(Vec::as_slice)
+    }
+    /// All reply service contexts.
+    #[must_use]
+    pub fn reply_service_contexts(&self) -> &BTreeMap<u32, Vec<u8>> {
+        &self.reply_sc
+    }
+    /// Spec §16.4.5 — set `forward_reference` (LOCATION_FORWARD): the IOR bytes
+    /// the interceptor redirects the call to.
+    pub fn set_forward_reference(&mut self, ior: Vec<u8>) {
+        self.forward = Some(ior);
+    }
+    /// The forward reference that was set (if any).
+    #[must_use]
+    pub fn forward_reference(&self) -> Option<&[u8]> {
+        self.forward.as_deref()
+    }
+}
+
+/// Spec §16.4.2 — `ClientRequestInterceptor` trait. The named points take
+/// a [`RequestInfo`] (full spec); `intercept` remains a lightweight
+/// tracing hook for the connection path (default no-op).
 pub trait ClientRequestInterceptor: Send + Sync {
-    /// Spec-konformer Interceptor-Name.
+    /// Spec-compliant interceptor name.
     fn name(&self) -> &str;
-    /// Wird an einem `point` aufgerufen.
-    fn intercept(&self, point: ClientInterceptionPoint, op: &str);
+    /// Lightweight point hook (connection path, default no-op).
+    fn intercept(&self, _point: ClientInterceptionPoint, _op: &str) {}
+    /// Spec §16.4.2 `send_request` — before sending; add service contexts here.
+    fn send_request(&self, _info: &mut RequestInfo) {}
+    /// Spec §16.4.2 `receive_reply` — after a successful reply.
+    fn receive_reply(&self, _info: &mut RequestInfo) {}
+    /// Spec §16.4.2 `receive_exception` — on an exception reply.
+    fn receive_exception(&self, _info: &mut RequestInfo) {}
+    /// Spec §16.4.2 `receive_other` — on LOCATION_FORWARD etc.
+    fn receive_other(&self, _info: &mut RequestInfo) {}
 }
 
-/// Spec §16.4.3 — `ServerRequestInterceptor`-Trait.
+/// Spec §16.4.3 — `ServerRequestInterceptor` trait.
 pub trait ServerRequestInterceptor: Send + Sync {
-    /// Spec-konformer Interceptor-Name.
+    /// Spec-compliant interceptor name.
     fn name(&self) -> &str;
-    /// Wird an einem `point` aufgerufen.
-    fn intercept(&self, point: ServerInterceptionPoint, op: &str);
+    /// Lightweight point hook (default no-op).
+    fn intercept(&self, _point: ServerInterceptionPoint, _op: &str) {}
+    /// Spec §16.4.3 `receive_request_service_contexts` — evaluate request SCs
+    /// (e.g. verify CSIv2 credentials, join an OTS transaction).
+    fn receive_request_service_contexts(&self, _info: &mut RequestInfo) {}
+    /// Spec §16.4.3 `receive_request` — after argument demarshalling.
+    fn receive_request(&self, _info: &mut RequestInfo) {}
+    /// Spec §16.4.3 `send_reply` — before sending the reply; add reply SCs.
+    fn send_reply(&self, _info: &mut RequestInfo) {}
+    /// Spec §16.4.3 `send_exception`.
+    fn send_exception(&self, _info: &mut RequestInfo) {}
+    /// Spec §16.4.3 `send_other`.
+    fn send_other(&self, _info: &mut RequestInfo) {}
 }
 
-/// Spec §16.4.4 — `IORInterceptor`-Trait fuer ObjectReference-Erstellung.
+/// Spec §16.4.4 — `IORInterceptor` trait for object-reference creation.
 pub trait IorInterceptor: Send + Sync {
-    /// Interceptor-Name.
+    /// Interceptor name.
     fn name(&self) -> &str;
-    /// Wird beim `establish_components`-Call aufgerufen.
-    /// Returns optional Tagged-Components (siehe `corba-ior::tags`).
+    /// Invoked on the `establish_components` call.
+    /// Returns optional tagged components (see `corba-ior::tags`).
     fn establish_components(&self) -> Vec<u32>;
 }
 
-/// Spec §16.4.x — Interceptor-Registry pro ORB.
+/// Spec §16.4.x — interceptor registry per ORB.
 #[derive(Default)]
 pub struct InterceptorRegistry {
     client: Vec<Arc<dyn ClientRequestInterceptor>>,
@@ -95,7 +188,7 @@ impl core::fmt::Debug for InterceptorRegistry {
 }
 
 impl InterceptorRegistry {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -116,64 +209,64 @@ impl InterceptorRegistry {
         self.ior.push(i);
     }
 
-    /// Anzahl Client-Interceptors.
+    /// Number of client interceptors.
     #[must_use]
     pub fn client_count(&self) -> usize {
         self.client.len()
     }
 
-    /// Anzahl Server-Interceptors.
+    /// Number of server interceptors.
     #[must_use]
     pub fn server_count(&self) -> usize {
         self.server.len()
     }
 
-    /// Anzahl IOR-Interceptors.
+    /// Number of IOR interceptors.
     #[must_use]
     pub fn ior_count(&self) -> usize {
         self.ior.len()
     }
 
-    /// Spec §16.4.2 — Accessor fuer Pipeline-Walks im
-    /// Connection-Send/Receive-Pfad.
+    /// Spec §16.4.2 — accessor for pipeline walks in the
+    /// connection send/receive path.
     #[must_use]
     pub fn client_interceptors(&self) -> &[Arc<dyn ClientRequestInterceptor>] {
         &self.client
     }
 
-    /// Spec §16.4.3 — Accessor fuer Pipeline-Walks im
-    /// Acceptor-/POA-Dispatch.
+    /// Spec §16.4.3 — accessor for pipeline walks in the
+    /// acceptor/POA dispatch.
     #[must_use]
     pub fn server_interceptors(&self) -> &[Arc<dyn ServerRequestInterceptor>] {
         &self.server
     }
 
-    /// Spec §16.4.4 — Accessor fuer IOR-Build-Pfad.
+    /// Spec §16.4.4 — accessor for the IOR build path.
     #[must_use]
     pub fn ior_interceptors(&self) -> &[Arc<dyn IorInterceptor>] {
         &self.ior
     }
 
-    /// Spec §16.4.2 — Walk durch alle Client-Interceptors am Point
-    /// `point` mit dem Operation-Namen `op`. Wird im
-    /// `corba-iiop::Connection::run_client_pipeline` aufgerufen.
+    /// Spec §16.4.2 — walk through all client interceptors at point
+    /// `point` with the operation name `op`. Invoked from
+    /// `corba-iiop::Connection::run_client_pipeline`.
     pub fn walk_client(&self, point: ClientInterceptionPoint, op: &str) {
         for ic in &self.client {
             ic.intercept(point, op);
         }
     }
 
-    /// Spec §16.4.3 — Walk durch alle Server-Interceptors am Point
-    /// `point` mit dem Operation-Namen `op`.
+    /// Spec §16.4.3 — walk through all server interceptors at point
+    /// `point` with the operation name `op`.
     pub fn walk_server(&self, point: ServerInterceptionPoint, op: &str) {
         for ic in &self.server {
             ic.intercept(point, op);
         }
     }
 
-    /// Spec §16.4.4 — Walk durch alle IOR-Interceptors. Liefert
-    /// die akkumulierten TaggedComponent-Tags, die in den IOR-Build
-    /// einfliessen.
+    /// Spec §16.4.4 — walk through all IOR interceptors. Returns
+    /// the accumulated TaggedComponent tags that feed into the
+    /// IOR build.
     #[must_use]
     pub fn walk_ior(&self) -> Vec<u32> {
         let mut tags = Vec::new();
@@ -182,28 +275,90 @@ impl InterceptorRegistry {
         }
         tags
     }
+
+    /// Spec §16.4.2 — full-spec walk through all client interceptors at `point`
+    /// with a [`RequestInfo`] (service-context manipulation, forward_reference).
+    pub fn run_client(&self, point: ClientInterceptionPoint, info: &mut RequestInfo) {
+        for ic in &self.client {
+            match point {
+                ClientInterceptionPoint::SendRequest => ic.send_request(info),
+                ClientInterceptionPoint::ReceiveReply => ic.receive_reply(info),
+                ClientInterceptionPoint::ReceiveException => ic.receive_exception(info),
+                ClientInterceptionPoint::ReceiveOther => ic.receive_other(info),
+                ClientInterceptionPoint::SendPoll => {}
+            }
+            ic.intercept(point, &info.operation);
+        }
+    }
+
+    /// Spec §16.4.3 — full-spec walk through all server interceptors at `point`.
+    pub fn run_server(&self, point: ServerInterceptionPoint, info: &mut RequestInfo) {
+        for ic in &self.server {
+            match point {
+                ServerInterceptionPoint::ReceiveRequestServiceContexts => {
+                    ic.receive_request_service_contexts(info);
+                }
+                ServerInterceptionPoint::ReceiveRequest => ic.receive_request(info),
+                ServerInterceptionPoint::SendReply => ic.send_reply(info),
+                ServerInterceptionPoint::SendException => ic.send_exception(info),
+                ServerInterceptionPoint::SendOther => ic.send_other(info),
+            }
+            ic.intercept(point, &info.operation);
+        }
+    }
 }
 
-/// Spec §16.5 — `PolicyFactory`-Trait fuer Policy-Erzeugung.
+/// Generic client interceptor that injects a fixed
+/// `ServiceContext` `(id, data)` into the request at `send_request`. This is the
+/// spec-clean way to attach OTS (`TransactionService` id 0), CSIv2 (id 15) or
+/// codeset contexts — as a registrable interceptor instead of hardcoded in the
+/// transport code.
+pub struct ServiceContextInjector {
+    name: alloc::string::String,
+    context_id: u32,
+    data: Vec<u8>,
+}
+
+impl ServiceContextInjector {
+    /// New injector: attaches `(context_id, data)` to every request.
+    pub fn new(name: impl Into<alloc::string::String>, context_id: u32, data: Vec<u8>) -> Self {
+        Self {
+            name: name.into(),
+            context_id,
+            data,
+        }
+    }
+}
+
+impl ClientRequestInterceptor for ServiceContextInjector {
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn send_request(&self, info: &mut RequestInfo) {
+        info.add_request_service_context(self.context_id, self.data.clone());
+    }
+}
+
+/// Spec §16.5 — `PolicyFactory` trait for policy creation.
 pub trait PolicyFactory: Send + Sync {
-    /// Policy-Type (Spec verwendet `PolicyType` als u32).
+    /// Policy type (the spec uses `PolicyType` as a u32).
     fn policy_type(&self) -> u32;
-    /// Erzeugt eine Policy aus einem Any-Wert (CDR-encoded).
+    /// Creates a policy from an Any value (CDR-encoded).
     ///
     /// # Errors
-    /// `()` bei invalid encoding.
+    /// `()` on invalid encoding.
     #[allow(clippy::result_unit_err)]
     fn create_policy(&self, value: &[u8]) -> Result<Vec<u8>, ()>;
 }
 
-/// Spec §16.6 — `PICurrent` (Per-Invocation-Slot-Storage).
+/// Spec §16.6 — `PICurrent` (per-invocation slot storage).
 #[derive(Debug, Clone, Default)]
 pub struct PiCurrent {
     slots: BTreeMap<u32, Vec<u8>>,
 }
 
 impl PiCurrent {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -225,18 +380,18 @@ impl PiCurrent {
 // §17 CORBA Messaging (Part 1)
 // ===========================================================================
 
-/// Spec §17 — Messaging-Policy-Type.
+/// Spec §17 — messaging policy type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessagingPolicy {
-    /// `RebindPolicy` — Rebinding-Verhalten (Spec §17.3).
+    /// `RebindPolicy` — rebinding behavior (spec §17.3).
     Rebind,
-    /// `SyncScopePolicy` — Synchronization-Scope (Spec §17.4).
+    /// `SyncScopePolicy` — synchronization scope (spec §17.4).
     SyncScope,
-    /// `RequestPriorityPolicy` — Request-Priority (Spec §17.5).
+    /// `RequestPriorityPolicy` — request priority (spec §17.5).
     RequestPriority,
     /// `ReplyPriorityPolicy`.
     ReplyPriority,
-    /// `RoutingPolicy` — TII (Time-Independent-Invocation) (Spec §17.7).
+    /// `RoutingPolicy` — TII (time-independent invocation) (spec §17.7).
     Routing,
     /// `MaxHopsPolicy`.
     MaxHops,
@@ -251,9 +406,9 @@ pub enum MessagingPolicy {
 }
 
 impl MessagingPolicy {
-    /// Spec §17 — Wire-Wert (`PolicyType` ist u32, vendor-defined).
-    /// Folgt der Reihenfolge im OMG `Messaging.idl` (formal/2011-11-02
-    /// §B.5.1, Policy-Types 23..32).
+    /// Spec §17 — wire value (`PolicyType` is u32, vendor-defined).
+    /// Follows the order in the OMG `Messaging.idl` (formal/2011-11-02
+    /// §B.5.1, policy types 23..32).
     #[must_use]
     pub const fn policy_type(self) -> u32 {
         match self {
@@ -271,35 +426,35 @@ impl MessagingPolicy {
     }
 }
 
-/// Spec §17.1 — AMI (Asynchronous Method Invocation) Reply-Handler-Style.
-/// `ReplyHandlerStyle` markiert den Code-Generator-Pfad fuer den
-/// Stub-Code (Callback vs. Polling).
+/// Spec §17.1 — AMI (Asynchronous Method Invocation) reply-handler style.
+/// `ReplyHandlerStyle` marks the code-generator path for the
+/// stub code (callback vs. polling).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AmiReplyHandler {
-    /// Callback-Style — Reply-Handler-Object.
+    /// Callback style — reply-handler object.
     Callback,
-    /// Polling-Style — Poller-Object.
+    /// Polling style — poller object.
     Polling,
 }
 
-/// Spec §17.5 — `AmiReplySink`-Trait fuer asynchrone Reply-Verarbeitung.
+/// Spec §17.5 — `AmiReplySink` trait for asynchronous reply processing.
 ///
-/// Adapter-Trait, der die drei AMI-Callback-Methoden aus dem Spec-IDL
-/// (`handle_reply` / `handle_excep` / `handle_other`) konkret macht.
-/// Die `dispatch_async_reply`-Funktion mappt einen GIOP-Reply
-/// auf die passende Callback-Methode.
+/// Adapter trait that makes the three AMI callback methods from the spec IDL
+/// (`handle_reply` / `handle_excep` / `handle_other`) concrete.
+/// The `dispatch_async_reply` function maps a GIOP reply
+/// onto the matching callback method.
 pub trait AmiReplySink: Send + Sync {
-    /// Spec §17.5.1 — `handle_reply(...)` fuer `NoException`.
+    /// Spec §17.5.1 — `handle_reply(...)` for `NoException`.
     fn handle_reply(&self, request_id: u32, body: &[u8]);
-    /// Spec §17.5.1 — `handle_excep(...)` fuer User-/System-Exception.
+    /// Spec §17.5.1 — `handle_excep(...)` for user/system exception.
     fn handle_excep(&self, request_id: u32, body: &[u8]);
-    /// Spec §17.5.1 — `handle_other(...)` fuer LocationForward etc.
+    /// Spec §17.5.1 — `handle_other(...)` for LocationForward etc.
     fn handle_other(&self, request_id: u32, body: &[u8]);
 }
 
-/// Spec §17.5 — Mappt einen `corba_giop::Reply` auf die passende
-/// AMI-Callback-Methode. Das ist die Bridge zwischen GIOP-Wire und
-/// der `AmiReplySink`-Surface.
+/// Spec §17.5 — maps a `corba_giop::Reply` onto the matching
+/// AMI callback method. This is the bridge between the GIOP wire and
+/// the `AmiReplySink` surface.
 pub fn dispatch_async_reply<S: AmiReplySink + ?Sized>(sink: &S, reply: &zerodds_corba_giop::Reply) {
     use zerodds_corba_giop::ReplyStatusType;
     match reply.reply_status {
@@ -315,34 +470,34 @@ pub fn dispatch_async_reply<S: AmiReplySink + ?Sized>(sink: &S, reply: &zerodds_
     }
 }
 
-/// Spec §17.7 — Persistent Request Store fuer Time-Independent
-/// Invocations (TII). In-Memory; Backing-Layer kann auf-Platte sein.
+/// Spec §17.7 — persistent request store for time-independent
+/// invocations (TII). In-memory; the backing layer may be on disk.
 #[cfg(feature = "std")]
 #[derive(Debug, Default)]
 pub struct PersistentRequestStore {
     inner: std::sync::Mutex<BTreeMap<u32, PersistentRequestEntry>>,
 }
 
-/// Eintrag im Persistent-Request-Store.
+/// Entry in the persistent request store.
 #[cfg(feature = "std")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistentRequestEntry {
-    /// Body des urspruenglichen Requests (CDR-encoded).
+    /// Body of the original request (CDR-encoded).
     pub body: Vec<u8>,
-    /// Spec §17.7 — Deadline fuer den Request (Epoch-Sekunden).
+    /// Spec §17.7 — deadline for the request (epoch seconds).
     pub deadline_secs: u64,
 }
 
 #[cfg(feature = "std")]
 impl PersistentRequestStore {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Spec §17.7 — speichert einen Request fuer asynchrone
-    /// Verarbeitung.
+    /// Spec §17.7 — stores a request for asynchronous
+    /// processing.
     pub fn add(&self, request_id: u32, body: Vec<u8>, deadline_secs: u64) {
         if let Ok(mut g) = self.inner.lock() {
             g.insert(
@@ -355,7 +510,7 @@ impl PersistentRequestStore {
         }
     }
 
-    /// Spec §17.7 — holt einen Request raus (entfernt aus dem Store).
+    /// Spec §17.7 — retrieves a request (removes it from the store).
     #[must_use]
     pub fn poll(&self, request_id: u32) -> Option<PersistentRequestEntry> {
         self.inner
@@ -364,8 +519,8 @@ impl PersistentRequestStore {
             .and_then(|mut g| g.remove(&request_id))
     }
 
-    /// Spec §17.7 — entfernt alle Eintraege mit `deadline_secs < now`.
-    /// Liefert die request_ids der abgelaufenen Eintraege.
+    /// Spec §17.7 — removes all entries with `deadline_secs < now`.
+    /// Returns the request_ids of the expired entries.
     pub fn timeout_expired(&self, now_secs: u64) -> Vec<u32> {
         let Ok(mut g) = self.inner.lock() else {
             return Vec::new();
@@ -381,12 +536,12 @@ impl PersistentRequestStore {
         expired
     }
 
-    /// Anzahl Eintraege.
+    /// Number of entries.
     pub fn len(&self) -> usize {
         self.inner.lock().map_or(0, |g| g.len())
     }
 
-    /// `true` wenn keine Eintraege.
+    /// `true` if there are no entries.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -396,11 +551,11 @@ impl PersistentRequestStore {
 // §18 Compression (Part 1) + Part 2 §12 ZIOP
 // ===========================================================================
 
-/// Spec §18 / Part 2 §12 — Compression-Algorithm-Identifier
-/// (CORBA 3.3 ZIOP-Spec normiert "vendor-defined" Algorithmen).
+/// Spec §18 / Part 2 §12 — compression-algorithm identifier
+/// (the CORBA 3.3 ZIOP spec standardizes "vendor-defined" algorithms).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompressionAlgorithm {
-    /// `None` — keine Kompression.
+    /// `None` — no compression.
     None,
     /// `Zlib` (RFC 1950).
     Zlib,
@@ -413,7 +568,7 @@ pub enum CompressionAlgorithm {
 }
 
 impl CompressionAlgorithm {
-    /// Spec-Wire-Wert (vendor-defined; wir nehmen 0=None, 1=Zlib, ...).
+    /// Spec wire value (vendor-defined; we use 0=None, 1=Zlib, ...).
     #[must_use]
     pub const fn to_u8(self) -> u8 {
         match self {
@@ -425,10 +580,10 @@ impl CompressionAlgorithm {
         }
     }
 
-    /// Konvertierung vom Wire-Wert.
+    /// Conversion from the wire value.
     ///
     /// # Errors
-    /// `()` wenn Wert unbekannt.
+    /// `()` if the value is unknown.
     #[allow(clippy::result_unit_err)]
     pub const fn from_u8(v: u8) -> Result<Self, ()> {
         match v {
@@ -441,19 +596,19 @@ impl CompressionAlgorithm {
         }
     }
 
-    /// Spec §18 — Komprimiert `input` mit dem gewaehlten Algorithmus.
+    /// Spec §18 — compresses `input` with the chosen algorithm.
     ///
-    /// Backend-Mapping:
-    /// * [`Self::None`] — passthrough (Bytes werden geclont).
+    /// Backend mapping:
+    /// * [`Self::None`] — passthrough (bytes are cloned).
     /// * [`Self::Zlib`] — RFC 1950 (zlib-wrapped deflate) via `flate2`.
     /// * [`Self::Gzip`] — RFC 1952 via `flate2`.
     /// * [`Self::Deflate`] — RFC 1951 (raw deflate) via `flate2`.
-    /// * [`Self::Lzma`] — XZ; nicht abgedeckt (extra `xz2`/`liblzma`-
-    ///   Build-Risiko unverhaeltnismaessig). Liefert
+    /// * [`Self::Lzma`] — XZ; not covered (the extra `xz2`/`liblzma`
+    ///   build risk is disproportionate). Returns
     ///   [`CompressionError::Unsupported`].
     ///
     /// # Errors
-    /// I/O-Fehler des Compression-Backends bzw. [`CompressionError::Unsupported`].
+    /// I/O error of the compression backend, or [`CompressionError::Unsupported`].
     #[cfg(feature = "std")]
     pub fn compress(self, input: &[u8]) -> Result<Vec<u8>, CompressionError> {
         use std::io::Write;
@@ -481,10 +636,10 @@ impl CompressionAlgorithm {
         }
     }
 
-    /// Spec §18 — Dekomprimiert `input` analog zu [`Self::compress`].
+    /// Spec §18 — decompresses `input` analogously to [`Self::compress`].
     ///
     /// # Errors
-    /// I/O-Fehler bzw. [`CompressionError::Unsupported`] fuer LZMA.
+    /// I/O error, or [`CompressionError::Unsupported`] for LZMA.
     #[cfg(feature = "std")]
     pub fn decompress(self, input: &[u8]) -> Result<Vec<u8>, CompressionError> {
         use std::io::Read;
@@ -513,14 +668,14 @@ impl CompressionAlgorithm {
     }
 }
 
-/// Fehler im Compression-Codec.
+/// Error in the compression codec.
 #[cfg(feature = "std")]
 #[derive(Debug)]
 pub enum CompressionError {
-    /// Backend-I/O-Fehler.
+    /// Backend I/O error.
     Io(std::io::Error),
-    /// Algorithmus ist im aktuellen Build nicht abgedeckt
-    /// (Decision-Record: LZMA verlangt extra `xz2`/`liblzma`-Build).
+    /// The algorithm is not covered in the current build
+    /// (decision record: LZMA requires an extra `xz2`/`liblzma` build).
     Unsupported(CompressionAlgorithm),
 }
 
@@ -544,14 +699,14 @@ impl From<std::io::Error> for CompressionError {
     }
 }
 
-/// Spec Part 2 §12 — ZIOP (Compressed-IIOP) Configuration.
+/// Spec Part 2 §12 — ZIOP (compressed IIOP) configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZiopConfig {
     /// Algorithm.
     pub algorithm: CompressionAlgorithm,
-    /// Threshold (Bytes) — kein Compress unter diesem Wert.
+    /// Threshold (bytes) — no compression below this value.
     pub min_size_threshold: u32,
-    /// Compression-Level (0-9 fuer Zlib/Deflate; 0 = kein, 9 = max).
+    /// Compression level (0-9 for Zlib/Deflate; 0 = none, 9 = max).
     pub level: u8,
 }
 
@@ -569,23 +724,23 @@ impl Default for ZiopConfig {
 // Part 2 §11 MIOP (Multicast Inter-ORB Protocol)
 // ===========================================================================
 
-/// Spec Part 2 §11 — MIOP-Configuration.
+/// Spec Part 2 §11 — MIOP configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MiopConfig {
-    /// IPv4-Multicast-Group-Adresse.
+    /// IPv4 multicast group address.
     pub group_addr_v4: [u8; 4],
     /// Port.
     pub port: u16,
-    /// TTL (Hop-Count).
+    /// TTL (hop count).
     pub ttl: u8,
-    /// Loopback (lokale Replikation einschalten).
+    /// Loopback (enable local replication).
     pub loopback: bool,
 }
 
 impl Default for MiopConfig {
     fn default() -> Self {
         Self {
-            // Spec MIOP — Default-Group im 239.x-Range.
+            // Spec MIOP — default group in the 239.x range.
             group_addr_v4: [239, 255, 0, 1],
             port: 5683,
             ttl: 1,
@@ -594,44 +749,44 @@ impl Default for MiopConfig {
     }
 }
 
-/// Spec Part 2 §11 — MIOP Magic-Bytes (`MIOP` ASCII).
+/// Spec Part 2 §11 — MIOP magic bytes (`MIOP` ASCII).
 pub const MIOP_MAGIC: [u8; 4] = *b"MIOP";
 
-/// Spec Part 2 §11.4 — MIOP Packet-Version (`0x10` = MIOP/1.0).
+/// Spec Part 2 §11.4 — MIOP packet version (`0x10` = MIOP/1.0).
 pub const MIOP_VERSION_1_0: u8 = 0x10;
 
-/// Spec Part 2 §11.4 — MIOP-Packet-Header (10 Bytes ohne Magic, plus
-/// 4-Byte-Magic = 16 Bytes Header total). Kapselt einen GIOP-Frame
-/// in einem UDP-Multicast-Datagram.
+/// Spec Part 2 §11.4 — MIOP packet header (10 bytes without magic, plus
+/// 4-byte magic = 16 bytes header total). Encapsulates a GIOP frame
+/// in a UDP multicast datagram.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MiopFrameHeader {
-    /// Spec — Packet-Version. Default `MIOP_VERSION_1_0`.
+    /// Spec — packet version. Default `MIOP_VERSION_1_0`.
     pub version: u8,
-    /// Spec — Flags-Byte. Bit 0 = Endian (0=BE,1=LE), Bit 1 = Last-Frag.
+    /// Spec — flags byte. Bit 0 = endian (0=BE,1=LE), bit 1 = last-frag.
     pub flags: u8,
-    /// Spec — Packet-Length (Anzahl Body-Bytes nach diesem Header).
+    /// Spec — packet length (number of body bytes after this header).
     pub packet_length: u16,
-    /// Spec — Eindeutiger Identifier fuer dieses Multi-Packet-Set.
+    /// Spec — unique identifier for this multi-packet set.
     pub unique_id: u32,
-    /// Spec — Index dieses Packets innerhalb des Sets (0-basiert).
+    /// Spec — index of this packet within the set (0-based).
     pub packet_number: u8,
-    /// Spec — Anzahl Pakete im Set (>= 1).
+    /// Spec — number of packets in the set (>= 1).
     pub number_of_packets: u8,
 }
 
 impl MiopFrameHeader {
-    /// Bytes-Length des Headers (Magic + 10-Byte-Body).
+    /// Byte length of the header (magic + 10-byte body).
     pub const ENCODED_LEN: usize = 14;
 
-    /// Konstruktor fuer Single-Packet-MIOP-Frame (typischer Fall:
-    /// GIOP-Message passt in ein UDP-Datagram).
+    /// Constructor for a single-packet MIOP frame (typical case:
+    /// the GIOP message fits in one UDP datagram).
     #[must_use]
     pub const fn single_packet(unique_id: u32, packet_length: u16, little_endian: bool) -> Self {
         let mut flags: u8 = 0;
         if little_endian {
             flags |= 0x01;
         }
-        // Last-Frag-Bit gesetzt (Bit 1).
+        // Last-frag bit set (bit 1).
         flags |= 0x02;
         Self {
             version: MIOP_VERSION_1_0,
@@ -643,8 +798,8 @@ impl MiopFrameHeader {
         }
     }
 
-    /// Spec Part 2 §11.4 — Header-Encode (16 Bytes, Big-Endian-
-    /// Wire-Order fuer u16/u32-Felder).
+    /// Spec Part 2 §11.4 — header encode (16 bytes, big-endian
+    /// wire order for the u16/u32 fields).
     pub fn encode(&self, out: &mut Vec<u8>) {
         out.extend_from_slice(&MIOP_MAGIC);
         out.push(self.version);
@@ -655,7 +810,7 @@ impl MiopFrameHeader {
         out.push(self.number_of_packets);
     }
 
-    /// Spec Part 2 §11.4 — Header-Decode aus den ersten 16 Bytes.
+    /// Spec Part 2 §11.4 — header decode from the first 16 bytes.
     ///
     /// # Errors
     /// `MiopError::TooShort`/`InvalidMagic`/`UnsupportedVersion`.
@@ -688,50 +843,50 @@ impl MiopFrameHeader {
         ))
     }
 
-    /// Spec — `true` wenn das Last-Fragment-Bit gesetzt ist.
+    /// Spec — `true` if the last-fragment bit is set.
     #[must_use]
     pub const fn is_last_fragment(&self) -> bool {
         (self.flags & 0x02) != 0
     }
 
-    /// Spec — `true` wenn Endian-Bit auf little-endian zeigt.
+    /// Spec — `true` if the endian bit indicates little-endian.
     #[must_use]
     pub const fn is_little_endian(&self) -> bool {
         (self.flags & 0x01) != 0
     }
 }
 
-/// MIOP-Codec-Errors.
+/// MIOP codec errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MiopError {
-    /// Buffer zu klein fuer Header.
+    /// Buffer too small for the header.
     TooShort,
-    /// Magic-Bytes != "MIOP".
+    /// Magic bytes != "MIOP".
     InvalidMagic,
-    /// Unsupported MIOP-Version.
+    /// Unsupported MIOP version.
     UnsupportedVersion(u8),
 }
 
-/// Spec Part 2 §11 — MIOP-Sender. Adapter-Trait fuer den Multicast-
-/// Sink. Konkrete Implementations leben in `transport-udp`.
+/// Spec Part 2 §11 — MIOP sender. Adapter trait for the multicast
+/// sink. Concrete implementations live in `transport-udp`.
 pub trait MulticastSink: Send + Sync {
-    /// Sendet ein UDP-Datagram an die Multicast-Group.
+    /// Sends a UDP datagram to the multicast group.
     ///
     /// # Errors
-    /// Implementation-spezifisch (z.B. Socket-IO).
+    /// Implementation-specific (e.g. socket IO).
     fn send_datagram(&self, data: &[u8]) -> Result<(), MulticastSinkError>;
 }
 
-/// Multicast-Sink-Error (opaque).
+/// Multicast sink error (opaque).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MulticastSinkError(pub String);
 
-/// Spec Part 2 §11 — MIOP-Sender, der einen GIOP-Message-Body in
-/// MIOP-Frames verpackt und ueber einen `MulticastSink` versendet.
+/// Spec Part 2 §11 — MIOP sender that packs a GIOP message body into
+/// MIOP frames and sends them over a `MulticastSink`.
 ///
-/// `mtu` ist die UDP-Datagram-Groesse (typisch 1472 bei 1500-MTU
-/// minus 28-Byte-IP/UDP-Header). Wenn die GIOP-Bytes nicht in einen
-/// einzelnen MIOP-Frame passen, wird fragmentiert.
+/// `mtu` is the UDP datagram size (typically 1472 at a 1500 MTU
+/// minus the 28-byte IP/UDP header). If the GIOP bytes do not fit in a
+/// single MIOP frame, they are fragmented.
 pub struct MiopSender<S: MulticastSink> {
     sink: S,
     mtu: usize,
@@ -739,7 +894,7 @@ pub struct MiopSender<S: MulticastSink> {
 }
 
 impl<S: MulticastSink> MiopSender<S> {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(sink: S, mtu: usize) -> Self {
         Self {
@@ -749,17 +904,17 @@ impl<S: MulticastSink> MiopSender<S> {
         }
     }
 
-    /// Maximale Body-Groesse pro MIOP-Frame.
+    /// Maximum body size per MIOP frame.
     #[must_use]
     pub const fn max_body_per_frame(&self) -> usize {
         self.mtu.saturating_sub(MiopFrameHeader::ENCODED_LEN)
     }
 
-    /// Spec Part 2 §11.4 — sendet ein GIOP-Message-Body als ein- oder
-    /// mehrteiliges MIOP-Set.
+    /// Spec Part 2 §11.4 — sends a GIOP message body as a single- or
+    /// multi-part MIOP set.
     ///
     /// # Errors
-    /// `MulticastSinkError` bei IO-Failure des Sinks.
+    /// `MulticastSinkError` on an IO failure of the sink.
     pub fn send_giop(
         &self,
         giop_bytes: &[u8],
@@ -770,7 +925,7 @@ impl<S: MulticastSink> MiopSender<S> {
             .next_unique_id
             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         if max == 0 || giop_bytes.len() <= max {
-            // Single-Packet-Pfad.
+            // Single-packet path.
             let header = MiopFrameHeader::single_packet(
                 unique_id,
                 u16::try_from(giop_bytes.len()).unwrap_or(u16::MAX),
@@ -781,7 +936,7 @@ impl<S: MulticastSink> MiopSender<S> {
             datagram.extend_from_slice(giop_bytes);
             return self.sink.send_datagram(&datagram);
         }
-        // Multi-Packet-Pfad.
+        // Multi-packet path.
         let total_len = giop_bytes.len();
         let total_packets = total_len.div_ceil(max);
         let total_packets_u8 = u8::try_from(total_packets).unwrap_or(u8::MAX);
@@ -815,23 +970,23 @@ impl<S: MulticastSink> MiopSender<S> {
 // Part 2 §8 Inter-ORB Bridges
 // ===========================================================================
 
-/// Spec Part 2 §8 — Bridge-Mode.
+/// Spec Part 2 §8 — bridge mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BridgeMode {
-    /// `Inline-Bridge` — embedded in einem ORB-Process.
+    /// `Inline-Bridge` — embedded in an ORB process.
     Inline,
-    /// `Request-Level-Bridge` — separater Bridge-Process via DSI/DII.
+    /// `Request-Level-Bridge` — a separate bridge process via DSI/DII.
     RequestLevel,
 }
 
-/// Spec Part 2 §8 — Bridge-Configuration.
+/// Spec Part 2 §8 — bridge configuration.
 #[derive(Debug, Clone)]
 pub struct BridgeConfig {
-    /// Bridge-Mode.
+    /// Bridge mode.
     pub mode: BridgeMode,
-    /// Source-ORB-Identifier (z.B. `"corba"`).
+    /// Source ORB identifier (e.g. `"corba"`).
     pub source_orb: String,
-    /// Target-ORB-Identifier (z.B. `"dds"`).
+    /// Target ORB identifier (e.g. `"dds"`).
     pub target_orb: String,
 }
 
@@ -839,20 +994,20 @@ pub struct BridgeConfig {
 // Part 2 §9.8/§9.9 Bi-Directional GIOP
 // ===========================================================================
 
-/// Spec Part 2 §9.8 — BiDir-Policy.
+/// Spec Part 2 §9.8 — BiDir policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BiDirPolicy {
-    /// `NORMAL` — Standard-IIOP, kein BiDir.
+    /// `NORMAL` — standard IIOP, no BiDir.
     Normal,
-    /// `BOTH` — Server kann auch outgoing requests ueber dieselbe
-    /// Connection senden (Callback-Style).
+    /// `BOTH` — the server can also send outgoing requests over the same
+    /// connection (callback style).
     Both,
 }
 
-/// Spec Part 2 §9.9 — BiDirectional Service-Context.
+/// Spec Part 2 §9.9 — bidirectional service context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BiDirServiceContext {
-    /// Spec §9.9.1 — listen-points (host:port-Paare des Clients).
+    /// Spec §9.9.1 — listen points (the client's host:port pairs).
     pub listen_points: Vec<(String, u16)>,
 }
 
@@ -983,7 +1138,7 @@ mod tests {
         let compressed = CompressionAlgorithm::Zlib
             .compress(&input)
             .expect("compress ok");
-        // Zlib-Output muss kuerzer sein als das wiederholte Input.
+        // The Zlib output must be shorter than the repeated input.
         assert!(compressed.len() < input.len());
         let back = CompressionAlgorithm::Zlib
             .decompress(&compressed)
@@ -1032,8 +1187,8 @@ mod tests {
     #[cfg(feature = "std")]
     #[test]
     fn compression_zlib_handles_large_block() {
-        // 10 kB pseudo-random-Block: byte-pattern aus deterministischer
-        // Index-Funktion damit der Test nicht von rand-deps abhaengt.
+        // 10 kB pseudo-random block: byte pattern from a deterministic
+        // index function so the test does not depend on rand deps.
         let input: Vec<u8> = (0..10_000_u32)
             .map(|i| (i.wrapping_mul(2654435761) >> 24) as u8)
             .collect();
@@ -1196,7 +1351,7 @@ mod tests {
         assert_eq!(*g, alloc::vec![(7_u32, "excep")]);
     }
 
-    // §17.7 Persistent-Request-Store fuer TII
+    // §17.7 persistent request store for TII
     #[cfg(feature = "std")]
     #[test]
     fn persistent_request_store_add_poll_timeout() {
@@ -1206,19 +1361,19 @@ mod tests {
         s.add(3, alloc::vec![0xCC], 200);
         assert_eq!(s.len(), 3);
 
-        // Poll holt einen Eintrag heraus (entfernt aus Store).
+        // Poll retrieves an entry (removes it from the store).
         let e1 = s.poll(1).expect("present");
         assert_eq!(e1.body, alloc::vec![0xAA]);
         assert_eq!(e1.deadline_secs, 100);
         assert!(s.poll(1).is_none());
         assert_eq!(s.len(), 2);
 
-        // Timeout @ now=120 → request 2 (deadline=50) ist expired.
+        // Timeout @ now=120 → request 2 (deadline=50) is expired.
         let expired = s.timeout_expired(120);
         assert_eq!(expired, alloc::vec![2]);
         assert_eq!(s.len(), 1);
 
-        // Request 3 (deadline=200) bleibt drin.
+        // Request 3 (deadline=200) stays in.
         assert!(s.poll(3).is_some());
     }
 
@@ -1284,7 +1439,7 @@ mod tests {
         let g = sent.lock().unwrap();
         assert_eq!(g.len(), 1, "single-packet path produces 1 datagram");
         assert!(g[0].starts_with(&MIOP_MAGIC));
-        // Datagram = Header (14) + Payload (100).
+        // Datagram = header (14) + payload (100).
         assert_eq!(g[0].len(), MiopFrameHeader::ENCODED_LEN + 100);
     }
 
@@ -1292,20 +1447,20 @@ mod tests {
     fn miop_sender_fragments_multi_packet_over_small_mtu() {
         let sent = alloc::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = MockSink { sent: sent.clone() };
-        // MTU = 14 (Header) + 30 (Body) = 44.
+        // MTU = 14 (header) + 30 (body) = 44.
         let sender = MiopSender::new(sink, 44);
         let payload = alloc::vec![0xCD; 100];
         sender.send_giop(&payload, true).expect("send");
 
         let g = sent.lock().unwrap();
-        // 100 / 30 -> 4 Pakete (30+30+30+10).
+        // 100 / 30 -> 4 packets (30+30+30+10).
         assert_eq!(g.len(), 4);
-        // Letzter Frame muss Last-Fragment-Bit gesetzt haben.
+        // The last frame must have the last-fragment bit set.
         let (last_header, _) = MiopFrameHeader::decode(&g[3]).expect("decode");
         assert!(last_header.is_last_fragment());
         assert_eq!(last_header.packet_number, 3);
         assert_eq!(last_header.number_of_packets, 4);
-        // Erster Frame: Last-Fragment NICHT gesetzt.
+        // First frame: last-fragment NOT set.
         let (first_header, _) = MiopFrameHeader::decode(&g[0]).expect("decode");
         assert!(!first_header.is_last_fragment());
         assert_eq!(first_header.packet_number, 0);

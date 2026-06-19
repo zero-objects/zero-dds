@@ -1,22 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Topic — der typed rendezvous-point zwischen DataWriter und DataReader.
+//! Topic — the typed rendezvous point between DataWriter and DataReader.
 //!
-//! Spec-Referenz:
-//! - OMG DDS 1.4 §2.2.2.3.1 `TopicDescription` (Base-Klasse fuer
+//! Spec reference:
+//! - OMG DDS 1.4 §2.2.2.3.1 `TopicDescription` (base class for
 //!   `Topic`, `ContentFilteredTopic`, `MultiTopic`),
-//! - §2.2.2.3.2 `Topic` (concrete TopicDescription mit Type +
-//!   Topic-QoS),
-//! - §2.2.2.2.1.12 `lookup_topicdescription` (untypisiertes Lookup),
+//! - §2.2.2.3.2 `Topic` (concrete TopicDescription with type +
+//!   Topic QoS),
+//! - §2.2.2.2.1.12 `lookup_topicdescription` (untyped lookup),
 //! - §2.2.2.2.1.13 `create_contentfilteredtopic`.
 //!
-//! In v1.2 sind wir schlicht: der `Topic<T>` ist ein Handle, das
-//! name + type_name traegt und einen generischen `PhantomData<T>`
-//! fuer statische Typ-Sicherheit. Der Topic referenziert seinen
-//! `DomainParticipant`, damit `TopicDescription::get_participant`
-//! Spec-treu funktioniert. Der Cycle-Bruch sitzt in der
-//! Topic-Registry: die haelt nur `Arc<TopicInner>`, **nicht** den
-//! geklonten `DomainParticipant`-Handle.
+//! In v1.2 we stay simple: the `Topic<T>` is a handle that carries
+//! name + type_name and a generic `PhantomData<T>` for static type
+//! safety. The topic references its `DomainParticipant` so that
+//! `TopicDescription::get_participant` works faithfully to spec. The
+//! cycle is broken in the topic registry: it holds only
+//! `Arc<TopicInner>`, **not** the cloned `DomainParticipant` handle.
 
 extern crate alloc;
 use alloc::string::{String, ToString};
@@ -36,66 +35,66 @@ use crate::listener::ArcTopicListener;
 use crate::participant::DomainParticipant;
 use crate::qos::TopicQos;
 
-/// `TopicDescription`-Trait — Base-Interface fuer alles, woraus
-/// ein `DataReader` (typed via `T`) Samples beziehen kann.
+/// `TopicDescription` trait — base interface for anything a
+/// `DataReader` (typed via `T`) can obtain samples from.
 ///
-/// Spec-Referenz: OMG DDS 1.4 §2.2.2.3.1 "TopicDescription is the
+/// Spec reference: OMG DDS 1.4 §2.2.2.3.1 "TopicDescription is the
 /// most abstract description of a topic. It encapsulates the
 /// information that is common to all the kinds of topic that can be
 /// used: `Topic`, `ContentFilteredTopic`, `MultiTopic`."
 ///
-/// Der Trait ist **object-safe** — wir wollen ihn als
-/// `&dyn TopicDescription` aus `lookup_topicdescription` und
-/// `find_topic` zurueckgeben koennen.
+/// The trait is **object-safe** — we want to be able to return it as
+/// `&dyn TopicDescription` from `lookup_topicdescription` and
+/// `find_topic`.
 pub trait TopicDescription {
-    /// Type-Name (z.B. `"std_msgs::msg::String"`).
+    /// Type name (e.g. `"std_msgs::msg::String"`).
     /// Spec §2.2.2.3.1 `get_type_name`.
     fn get_type_name(&self) -> &str;
-    /// Topic-Name (z.B. `"ChatterTopic"`).
+    /// Topic name (e.g. `"ChatterTopic"`).
     /// Spec §2.2.2.3.1 `get_name`.
     fn get_name(&self) -> &str;
-    /// Owning Participant.
+    /// Owning participant.
     /// Spec §2.2.2.3.1 `get_participant`.
     fn get_participant(&self) -> &DomainParticipant;
 }
 
-/// Typed Topic-Handle.
+/// Typed topic handle.
 #[derive(Debug)]
 pub struct Topic<T: DdsType> {
     inner: Arc<TopicInner>,
-    /// Owning Participant (kein Cycle: der Participant haelt im
-    /// Topic-Registry nur den Inner, nicht den Handle). `None` bei
-    /// Builtin-Topics, die ohne Participant konstruiert werden
-    /// (siehe [`Self::new_orphan`]).
+    /// Owning participant (no cycle: in the topic registry the
+    /// participant holds only the inner, not the handle). `None` for
+    /// builtin topics constructed without a participant (see
+    /// [`Self::new_orphan`]).
     participant: Option<DomainParticipant>,
     _t: PhantomData<T>,
 }
 
-/// Inner-State eines Topics (shared via Arc, weil Handles geklont werden).
+/// Inner state of a topic (shared via Arc, since handles are cloned).
 pub(crate) struct TopicInner {
-    /// Topic-Name (z.B. "ChatterTopic").
+    /// Topic name (e.g. "ChatterTopic").
     pub name: String,
-    /// Type-Name aus `T::TYPE_NAME` (eager copied, damit der Inner
-    /// kein Generic-Typ hat — das vereinfacht die Participant-
-    /// Registry-Datenstruktur in .2a).
+    /// Type name from `T::TYPE_NAME` (eager-copied so the inner has no
+    /// generic type — this simplifies the participant registry data
+    /// structure in .2a).
     pub type_name: &'static str,
-    /// Topic-QoS — mutable via `Entity::set_qos`.
+    /// Topic QoS — mutable via `Entity::set_qos`.
     #[cfg(feature = "std")]
     pub qos: std::sync::Mutex<TopicQos>,
     #[cfg(not(feature = "std"))]
     pub qos: TopicQos,
-    /// Entity-Lifecycle (DCPS §2.2.2.1).
+    /// Entity lifecycle (DCPS §2.2.2.1).
     pub entity_state: Arc<crate::entity::EntityState>,
-    /// optionaler `TopicListener` + StatusMask. Spec
-    /// §2.2.2.3.2.x set_listener / Bubble-Up §2.2.4.2.3.
+    /// Optional `TopicListener` + StatusMask. Spec §2.2.2.3.2.x
+    /// set_listener / bubble-up §2.2.4.2.3.
     #[cfg(feature = "std")]
     pub listener: std::sync::Mutex<Option<(ArcTopicListener, StatusMask)>>,
-    /// Counter fuer InconsistentTopic-Detections (Spec §2.2.4.2.5).
-    /// Inkrementiert in `record_inconsistent_topic`, ausgelesen in
-    /// `inconsistent_topic_status` mit Delta-Detection.
+    /// Counter for InconsistentTopic detections (spec §2.2.4.2.5).
+    /// Incremented in `record_inconsistent_topic`, read out in
+    /// `inconsistent_topic_status` with delta detection.
     #[cfg(feature = "std")]
     pub inconsistent_topic_count: std::sync::atomic::AtomicI64,
-    /// zuletzt gesehener Wert fuer Delta-Trigger.
+    /// Last seen value for the delta trigger.
     #[cfg(feature = "std")]
     pub last_inconsistent_topic: std::sync::atomic::AtomicI64,
 }
@@ -115,8 +114,8 @@ impl core::fmt::Debug for TopicInner {
 }
 
 impl<T: DdsType> Topic<T> {
-    /// Erzeugt einen neuen Topic-Handle. Wird normalerweise vom
-    /// `DomainParticipant::create_topic<T>(name, qos)` aufgerufen.
+    /// Creates a new topic handle. Normally called by
+    /// `DomainParticipant::create_topic<T>(name, qos)`.
     #[must_use]
     pub fn new(name: String, qos: TopicQos, participant: DomainParticipant) -> Self {
         Self {
@@ -140,11 +139,12 @@ impl<T: DdsType> Topic<T> {
         }
     }
 
-    /// Erzeugt einen Topic-Handle **ohne** Participant — fuer Builtin-
-    /// Topics (DCPSParticipant/Topic/Publication/Subscription), die im
-    /// BuiltinSubscriber-Konstruktor entstehen, bevor der DomainParticipant
-    /// fertig ist (Henne-Ei-Problem). `get_participant()` panickt
-    /// auf einem orphan-Topic — Builtin-Reader umgehen das.
+    /// Creates a topic handle **without** a participant — for builtin
+    /// topics (DCPSParticipant/Topic/Publication/Subscription) that are
+    /// created in the BuiltinSubscriber constructor before the
+    /// DomainParticipant is ready (chicken-and-egg problem).
+    /// `get_participant()` panics on an orphan topic — builtin readers
+    /// avoid it.
     #[must_use]
     pub fn new_orphan(name: String, qos: TopicQos) -> Self {
         Self {
@@ -168,20 +168,20 @@ impl<T: DdsType> Topic<T> {
         }
     }
 
-    /// Topic-Name.
+    /// Topic name.
     #[must_use]
     pub fn name(&self) -> &str {
         &self.inner.name
     }
 
-    /// Type-Name (aus `T::TYPE_NAME`).
+    /// Type name (from `T::TYPE_NAME`).
     #[must_use]
     pub fn type_name(&self) -> &'static str {
         self.inner.type_name
     }
 
-    /// setzt den `TopicListener` + StatusMask. `None` loescht
-    /// den Slot. Spec §2.2.2.3.2.x set_listener.
+    /// Sets the `TopicListener` + StatusMask. `None` clears the slot.
+    /// Spec §2.2.2.3.2.x set_listener.
     #[cfg(feature = "std")]
     pub fn set_listener(&self, listener: Option<ArcTopicListener>, mask: StatusMask) {
         if let Ok(mut slot) = self.inner.listener.lock() {
@@ -190,7 +190,7 @@ impl<T: DdsType> Topic<T> {
         self.inner.entity_state.set_listener_mask(mask);
     }
 
-    /// aktueller Listener-Klon, sofern vorhanden.
+    /// Current listener clone, if any.
     #[cfg(feature = "std")]
     #[must_use]
     pub fn get_listener(&self) -> Option<ArcTopicListener> {
@@ -201,13 +201,13 @@ impl<T: DdsType> Topic<T> {
             .and_then(|s| s.as_ref().map(|(l, _)| Arc::clone(l)))
     }
 
-    /// Snapshot der Bubble-Up-Kette (Topic → Participant) — fuer
-    /// Hot-Path-Listener-Dispatch (z.B. on_inconsistent_topic).
+    /// Snapshot of the bubble-up chain (Topic → Participant) — for
+    /// hot-path listener dispatch (e.g. on_inconsistent_topic).
     ///
-    /// Aktuell hat der Hot-Path keinen Inconsistent-Topic-Trigger
-    /// (dazu braucht es Cross-Vendor Type-Mismatch-Detection in WP
-    /// 2.x); die Snapshot-API existiert bereits, damit sie spaeter
-    /// ohne API-Change verdrahtet werden kann.
+    /// The hot path currently has no inconsistent-topic trigger (that
+    /// requires cross-vendor type-mismatch detection in WP 2.x); the
+    /// snapshot API already exists so it can be wired in later without an
+    /// API change.
     #[cfg(feature = "std")]
     #[must_use]
     pub(crate) fn listener_chain(&self) -> crate::listener_dispatch::TopicListenerChain {
@@ -224,10 +224,10 @@ impl<T: DdsType> Topic<T> {
         crate::listener_dispatch::TopicListenerChain { topic, participant }
     }
 
-    /// Recordet eine InconsistentTopic-Detection (z.B. wenn
-    /// ein remote Topic mit demselben Namen, aber anderem Type-Name
-    /// entdeckt wurde, oder wenn `create_topic` mit gleichem Namen aber
-    /// unterschiedlichem Type aufgerufen wird). Spec §2.2.4.2.5.
+    /// Records an InconsistentTopic detection (e.g. when a remote topic
+    /// with the same name but a different type name is discovered, or
+    /// when `create_topic` is called with the same name but a different
+    /// type). Spec §2.2.4.2.5.
     #[cfg(feature = "std")]
     pub fn record_inconsistent_topic(&self) {
         self.inner
@@ -235,8 +235,8 @@ impl<T: DdsType> Topic<T> {
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     }
 
-    /// aktueller `InconsistentTopicStatus` + Trigger via
-    /// Bubble-Up bei Delta gegenueber dem letzten Aufruf.
+    /// Current `InconsistentTopicStatus` + trigger via bubble-up on a
+    /// delta versus the last call.
     #[cfg(feature = "std")]
     #[must_use]
     pub fn inconsistent_topic_status(&self) -> crate::status::InconsistentTopicStatus {
@@ -253,8 +253,8 @@ impl<T: DdsType> Topic<T> {
             total_count: curr as i32,
             total_count_change: delta as i32,
         };
-        // Trigger Listener nur bei tatsaechlichem Delta — sonst wird der
-        // Listener bei jedem Status-Read mehrfach gefeuert (idempotent).
+        // Trigger the listener only on an actual delta — otherwise the
+        // listener would fire on every status read (idempotent).
         let actually_changed = if prev < 0 { curr != 0 } else { prev != curr };
         if actually_changed {
             let chain = self.listener_chain();
@@ -267,7 +267,7 @@ impl<T: DdsType> Topic<T> {
         status
     }
 
-    /// Topic-QoS (cloned).  Inner-Mutex erlaubt set_qos.
+    /// Topic QoS (cloned). The inner mutex allows set_qos.
     #[must_use]
     pub fn qos(&self) -> TopicQos {
         #[cfg(feature = "std")]
@@ -280,15 +280,15 @@ impl<T: DdsType> Topic<T> {
         }
     }
 
-    /// Interner Zugriff auf den shared state (fuer Publisher/Subscriber).
+    /// Internal access to the shared state (for Publisher/Subscriber).
     #[allow(dead_code)]
     pub(crate) fn inner(&self) -> Arc<TopicInner> {
         Arc::clone(&self.inner)
     }
 
-    /// Interner Konstruktor fuer shared-handle-Rehydrierung in der
-    /// Participant-Topic-Registry (`create_topic` zweite Runde
-    /// mit gleichem Namen + Typ).
+    /// Internal constructor for shared-handle rehydration in the
+    /// participant topic registry (`create_topic` second round with the
+    /// same name + type).
     pub(crate) fn _from_inner_impl(inner: Arc<TopicInner>, participant: DomainParticipant) -> Self {
         Self {
             inner,
@@ -315,9 +315,9 @@ impl<T: DdsType> TopicDescription for Topic<T> {
     fn get_name(&self) -> &str {
         &self.inner.name
     }
-    /// Liefert den Owning-Participant. Panickt bei Builtin-Topics
-    /// (orphan), die ueber [`Topic::new_orphan`] konstruiert wurden —
-    /// Builtin-Reader rufen `get_participant()` nicht.
+    /// Returns the owning participant. Panics on builtin (orphan) topics
+    /// constructed via [`Topic::new_orphan`] — builtin readers do not
+    /// call `get_participant()`.
     #[allow(clippy::expect_used, clippy::panic)]
     fn get_participant(&self) -> &DomainParticipant {
         match &self.participant {
@@ -341,14 +341,14 @@ impl<T: DdsType> crate::entity::Entity for Topic<T> {
         self.inner.qos.lock().map(|q| q.clone()).unwrap_or_default()
     }
 
-    /// TopicQos. Spec §2.2.3: alle Topic-Policies (TOPIC_DATA, DURABILITY,
-    /// RELIABILITY, HISTORY, RESOURCE_LIMITS, ...) sind nach `enable()`
-    /// **immutable** — nur TOPIC_DATA ist Changeable=YES.
+    /// TopicQos. Spec §2.2.3: all topic policies (TOPIC_DATA, DURABILITY,
+    /// RELIABILITY, HISTORY, RESOURCE_LIMITS, ...) are **immutable**
+    /// after `enable()` — only TOPIC_DATA is Changeable=YES.
     fn set_qos(&self, qos: Self::Qos) -> Result<()> {
         let enabled = self.inner.entity_state.is_enabled();
         if let Ok(mut current) = self.inner.qos.lock() {
             if enabled {
-                // Spec §2.2.3: DURABILITY und RELIABILITY sind
+                // Spec §2.2.3: DURABILITY and RELIABILITY are
                 // Changeable=NO post-enable.
                 if current.durability != qos.durability {
                     return Err(crate::entity::immutable_if_enabled("DURABILITY"));
@@ -372,15 +372,15 @@ impl<T: DdsType> crate::entity::Entity for Topic<T> {
     }
 }
 
-/// Untypisiertes `TopicDescription`-Handle, das aus
+/// Untyped `TopicDescription` handle returned from
 /// `DomainParticipant::lookup_topicdescription` /
-/// `DomainParticipant::find_topic` zurueckgegeben wird.
+/// `DomainParticipant::find_topic`.
 ///
-/// Die Spec-API liefert die abstrakte Base-Klasse, weil der Caller
-/// im Generalfall den Typ noch nicht kennt (z.B. nach Discovery).
-/// Wir packen Name + Type-Name + Participant in ein clone-bares
-/// Handle; der Caller kann `get_type_name()` lesen und sich dann
-/// per `create_topic::<T>` einen typed Handle holen.
+/// The spec API returns the abstract base class because the caller
+/// generally does not yet know the type (e.g. after discovery). We pack
+/// name + type name + participant into a cloneable handle; the caller
+/// can read `get_type_name()` and then obtain a typed handle via
+/// `create_topic::<T>`.
 #[derive(Debug, Clone)]
 pub struct TopicDescriptionHandle {
     name: String,
@@ -389,7 +389,7 @@ pub struct TopicDescriptionHandle {
 }
 
 impl TopicDescriptionHandle {
-    /// Konstruiere ein Handle (intern; v.a. fuer Tests + Lookup-API).
+    /// Constructs a handle (internal; mainly for tests + the lookup API).
     pub(crate) fn new(name: String, type_name: String, participant: DomainParticipant) -> Self {
         Self {
             name,
@@ -411,37 +411,37 @@ impl TopicDescription for TopicDescriptionHandle {
     }
 }
 
-/// `ContentFilteredTopic<T>` — Sub-Topic eines `Topic<T>` mit
-/// Filter-Expression. Spec-Referenz: OMG DDS 1.4 §2.2.2.3.3.
+/// `ContentFilteredTopic<T>` — a sub-topic of a `Topic<T>` with a filter
+/// expression. Spec reference: OMG DDS 1.4 §2.2.2.3.3.
 ///
 /// "ContentFilteredTopic is a specialization of TopicDescription that
 /// allows for content-based subscriptions. The selection of the
 /// content is done using a filter_expression with parameters
 /// (filter_parameters)."
 ///
-/// Die Filter-Expression ist ein SQL-Subset (DDS-DCPS Annex B, BNF):
-/// `field op literal-or-param`, `AND`/`OR`/`NOT`-Komposition, parens,
-/// `LIKE`. Der konkrete Parser sitzt in `zerodds-sql-filter`.
+/// The filter expression is a SQL subset (DDS-DCPS Annex B, BNF):
+/// `field op literal-or-param`, `AND`/`OR`/`NOT` composition, parens,
+/// `LIKE`. The concrete parser lives in `zerodds-sql-filter`.
 ///
-/// **Lifecycle:** das CFT haelt einen Klon des Related-Topics (shared
-/// `Arc<TopicInner>`) und ist clone-bar selbst. Filter-Parameter sind
-/// veraenderbar zur Laufzeit (Spec §2.2.2.3.3.7).
+/// **Lifecycle:** the CFT holds a clone of the related topic (shared
+/// `Arc<TopicInner>`) and is itself cloneable. Filter parameters are
+/// mutable at runtime (spec §2.2.2.3.3.7).
 #[derive(Debug)]
 pub struct ContentFilteredTopic<T: DdsType> {
     name: String,
     related_topic: Topic<T>,
-    /// Roh-Form der Expression (read-only — Spec ist explizit, dass
-    /// nur die `filter_parameters` veraenderbar sind, nicht die
-    /// Expression selbst).
+    /// Raw form of the expression (read-only — the spec is explicit that
+    /// only the `filter_parameters` are mutable, not the expression
+    /// itself).
     filter_expression: String,
-    /// Vorab-geparste AST. Wir parsen einmal beim Konstruktor, damit
-    /// `evaluate` heiss-pfad ist.
+    /// Pre-parsed AST. We parse once in the constructor so that
+    /// `evaluate` is on the hot path.
     parsed: Arc<Expr>,
-    /// Filter-Parameter (`%0`, `%1`, ...). Werden als Strings
-    /// uebergeben (Spec §2.2.2.3.3 — die Parameter sind Strings, die
-    /// in die Expression substituiert werden). Wir tragen sie als
-    /// Strings + parsed `Value` parallel, damit `set_filter_parameters`
-    /// nur einmal die String→Value-Konversion macht.
+    /// Filter parameters (`%0`, `%1`, ...). Passed as strings (spec
+    /// §2.2.2.3.3 — the parameters are strings substituted into the
+    /// expression). We keep them as strings + parsed `Value` in parallel
+    /// so `set_filter_parameters` does the String→Value conversion only
+    /// once.
     #[cfg(feature = "std")]
     params: Arc<RwLock<FilterParams>>,
     #[cfg(not(feature = "std"))]
@@ -457,13 +457,12 @@ struct FilterParams {
 }
 
 impl<T: DdsType> ContentFilteredTopic<T> {
-    /// Konstruktor (intern aufgerufen von
+    /// Constructor (called internally by
     /// `DomainParticipant::create_contentfilteredtopic`).
     ///
     /// # Errors
-    /// `BadParameter` wenn die Expression nicht parst oder ein
-    /// referenzierter `%N`-Index nicht im `filter_parameters`-Vec
-    /// existiert.
+    /// `BadParameter` if the expression does not parse or a referenced
+    /// `%N` index does not exist in the `filter_parameters` vec.
     pub(crate) fn new(
         name: String,
         related_topic: Topic<T>,
@@ -475,7 +474,7 @@ impl<T: DdsType> ContentFilteredTopic<T> {
             zerodds_sql_filter::parse(&filter_expression).map_err(|_| DdsError::BadParameter {
                 what: "filter expression syntax",
             })?;
-        // Pruefe Parameter-Indices.
+        // Check parameter indices.
         let used = parsed.collect_param_indices();
         if let Some(max) = used.iter().max() {
             if (*max as usize) >= filter_parameters.len() {
@@ -528,14 +527,13 @@ impl<T: DdsType> ContentFilteredTopic<T> {
         }
     }
 
-    /// Spec §2.2.2.3.3.6 `set_filter_parameters`. Tauscht die
-    /// Parameter (gleiche Anzahl bleibt nicht erzwungen — die Spec
-    /// sagt "should match the number of `%n` tokens" als Empfehlung,
-    /// wir verifizieren das hart).
+    /// Spec §2.2.2.3.3.6 `set_filter_parameters`. Swaps the parameters
+    /// (equal count is not enforced — the spec says "should match the
+    /// number of `%n` tokens" as a recommendation; we verify it
+    /// strictly).
     ///
     /// # Errors
-    /// `BadParameter` wenn ein `%N`-Index ausserhalb des neuen Vecs
-    /// liegt.
+    /// `BadParameter` if a `%N` index is outside the new vec.
     pub fn set_filter_parameters(&self, params: Vec<String>) -> Result<()> {
         let used = self.parsed.collect_param_indices();
         if let Some(max) = used.iter().max() {
@@ -562,9 +560,9 @@ impl<T: DdsType> ContentFilteredTopic<T> {
         }
         #[cfg(not(feature = "std"))]
         {
-            // im no_std-Pfad nicht mutable gehalten — Parameter werden
-            // beim Konstruktor gesetzt; dieser Pfad ist im v1.2-MVP
-            // ohnehin nicht aktiv (dcps verlangt std).
+            // Not kept mutable in the no_std path — parameters are set in
+            // the constructor; this path is not active in the v1.2 MVP
+            // anyway (dcps requires std).
             let _ = fp;
             return Err(DdsError::PreconditionNotMet {
                 reason: "set_filter_parameters needs std feature",
@@ -579,15 +577,15 @@ impl<T: DdsType> ContentFilteredTopic<T> {
         &self.related_topic
     }
 
-    /// Wertet den Filter gegen ein decodiertes Sample aus. Liefert
-    /// `Ok(true)` wenn das Sample passieren soll, `Ok(false)` wenn es
-    /// gefiltert wird, `Err` wenn die Expression auf das Row-Schema
-    /// nicht passt (Caller-Entscheidung: filter denies oder error).
+    /// Evaluates the filter against a decoded sample. Returns
+    /// `Ok(true)` if the sample should pass, `Ok(false)` if it is
+    /// filtered out, `Err` if the expression does not fit the row schema
+    /// (caller's decision: filter denies or error).
     ///
     /// # Errors
-    /// - `PreconditionNotMet` wenn die Filter-Parameter-Lock vergiftet ist.
-    /// - `BadParameter` wenn ein Feld in der Expression im Row nicht
-    ///   existiert oder ein Type-Mismatch auftritt.
+    /// - `PreconditionNotMet` if the filter-parameter lock is poisoned.
+    /// - `BadParameter` if a field in the expression does not exist in
+    ///   the row or a type mismatch occurs.
     pub fn evaluate<R: RowAccess>(&self, row: &R) -> Result<bool> {
         #[cfg(feature = "std")]
         let params = {
@@ -631,8 +629,8 @@ impl<T: DdsType> Clone for ContentFilteredTopic<T> {
 }
 
 impl<T: DdsType> TopicDescription for ContentFilteredTopic<T> {
-    /// Type-Name kommt vom Related-Topic — ein CFT teilt sich das
-    /// Schema mit dem unterliegenden Topic.
+    /// The type name comes from the related topic — a CFT shares the
+    /// schema with the underlying topic.
     fn get_type_name(&self) -> &str {
         self.related_topic.type_name()
     }
@@ -644,27 +642,27 @@ impl<T: DdsType> TopicDescription for ContentFilteredTopic<T> {
     }
 }
 
-/// `MultiTopic<T>` — Spec §2.2.2.3.4 (DDS 1.4 optionales Feature).
+/// `MultiTopic<T>` — spec §2.2.2.3.4 (DDS 1.4 optional feature).
 ///
-/// Eine MultiTopic kombiniert mehrere Underlying-Topics in einer
-/// einzigen TopicDescription via `subscription_expression` (SQL-
-/// Subset). Der Resulting-Type `T` ist User-definiert; die
-/// Underlying-Topics koennen unterschiedliche Types haben.
+/// A MultiTopic combines several underlying topics into a single
+/// TopicDescription via a `subscription_expression` (SQL subset). The
+/// resulting type `T` is user-defined; the underlying topics may have
+/// different types.
 ///
-/// **Cross-Topic-Sample-Routing:** Der Join-Operator ist ueber
-/// [`hash_join_two`] und [`Self::evaluate_joined`] live. Die
-/// `subscription_expression` referenziert Felder als
-/// `<topic_name>.<field_path>` (dotted), und [`JoinedRow`]
-/// dispatched die Lookups an die matchenden Topic-Quellen.
+/// **Cross-topic sample routing:** the join operator is live via
+/// [`hash_join_two`] and [`Self::evaluate_joined`]. The
+/// `subscription_expression` references fields as
+/// `<topic_name>.<field_path>` (dotted), and [`JoinedRow`] dispatches
+/// the lookups to the matching topic sources.
 pub struct MultiTopic<T: DdsType> {
     name: String,
     type_name: String,
-    /// Liste der Related-Topics als untypisierte Handles.
+    /// List of related topics as untyped handles.
     related_topic_names: Vec<String>,
     subscription_expression: String,
-    /// Vorab-geparste AST der Subscription-Expression.
+    /// Pre-parsed AST of the subscription expression.
     parsed: Arc<Expr>,
-    /// Mutable Filter-Parameter (Spec §2.2.2.3.4.7
+    /// Mutable filter parameters (spec §2.2.2.3.4.7
     /// `set_expression_parameters`).
     #[cfg(feature = "std")]
     params: Arc<RwLock<FilterParams>>,
@@ -686,14 +684,14 @@ impl<T: DdsType> core::fmt::Debug for MultiTopic<T> {
 }
 
 impl<T: DdsType> MultiTopic<T> {
-    /// Konstruktor (intern aufgerufen von
+    /// Constructor (called internally by
     /// `DomainParticipant::create_multitopic`).
     ///
     /// # Errors
-    /// `BadParameter` bei leerem Namen oder leerer Expression, oder
-    /// wenn die Expression nicht parst, oder wenn ein referenzierter
-    /// `%N`-Parameter ausserhalb des `expression_parameters`-Vec liegt,
-    /// oder wenn `related_topic_names` leer ist.
+    /// `BadParameter` on an empty name or empty expression, or if the
+    /// expression does not parse, or if a referenced `%N` parameter is
+    /// outside the `expression_parameters` vec, or if
+    /// `related_topic_names` is empty.
     pub(crate) fn new(
         name: String,
         type_name: String,
@@ -768,9 +766,8 @@ impl<T: DdsType> MultiTopic<T> {
     /// Spec §2.2.2.3.4.6 `set_expression_parameters`.
     ///
     /// # Errors
-    /// `BadParameter` wenn ein referenzierter `%N`-Parameter
-    /// ausserhalb des neuen Vec liegt; `PreconditionNotMet` bei
-    /// Lock-Poisoning.
+    /// `BadParameter` if a referenced `%N` parameter is outside the new
+    /// vec; `PreconditionNotMet` on lock poisoning.
     pub fn set_expression_parameters(&self, params: Vec<String>) -> Result<()> {
         let used = self.parsed.collect_param_indices();
         if let Some(max) = used.iter().max() {
@@ -805,18 +802,18 @@ impl<T: DdsType> MultiTopic<T> {
         Ok(())
     }
 
-    /// Spec §2.2.2.3.4.3 `get_related_topic` (PSM gibt eine Sequence
-    /// zurueck — wir liefern die Namen).
+    /// Spec §2.2.2.3.4.3 `get_related_topic` (the PSM returns a sequence
+    /// — we return the names).
     #[must_use]
     pub fn get_related_topic_names(&self) -> &[String] {
         &self.related_topic_names
     }
 
-    /// Wertet die `subscription_expression` gegen ein [`JoinedRow`]
-    /// aus (Cross-Topic-Predicate). Spec §2.2.2.3.4.
+    /// Evaluates the `subscription_expression` against a [`JoinedRow`]
+    /// (cross-topic predicate). Spec §2.2.2.3.4.
     ///
     /// # Errors
-    /// `PreconditionNotMet` bei Lock-Poisoning oder SQL-Eval-Fehler.
+    /// `PreconditionNotMet` on lock poisoning or SQL eval error.
     pub fn evaluate_joined(&self, row: &JoinedRow<'_>) -> Result<bool> {
         #[cfg(feature = "std")]
         let values = {
@@ -838,20 +835,19 @@ impl<T: DdsType> MultiTopic<T> {
     }
 }
 
-/// `JoinedRow` — `RowAccess`-Adapter ueber mehrere benannte
-/// Topic-Quellen. Dotted-Pfade `topic.field.sub` werden am ersten
-/// `.` geteilt: der Praefix matcht den Topic-Namen, der Rest wird
-/// an dessen [`RowAccess::get`] weitergereicht.
+/// `JoinedRow` — a `RowAccess` adapter over several named topic
+/// sources. Dotted paths `topic.field.sub` are split at the first `.`:
+/// the prefix matches the topic name, the rest is forwarded to its
+/// [`RowAccess::get`].
 ///
-/// Wenn keine Topic-Quelle den Praefix kennt, wird der gesamte Pfad
-/// pauschal an alle Quellen weitergereicht (Fallback fuer
-/// undotted-Feld-Referenzen).
+/// If no topic source knows the prefix, the whole path is forwarded to
+/// all sources (fallback for undotted field references).
 pub struct JoinedRow<'a> {
     sources: Vec<(String, &'a dyn RowAccess)>,
 }
 
 impl<'a> JoinedRow<'a> {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(sources: Vec<(String, &'a dyn RowAccess)>) -> Self {
         Self { sources }
@@ -867,8 +863,7 @@ impl RowAccess for JoinedRow<'_> {
                 }
             }
         }
-        // Kein Praefix-Match -> alle Quellen abfragen, erste Antwort
-        // gewinnt.
+        // No prefix match -> query all sources, first answer wins.
         for (_, src) in &self.sources {
             if let Some(v) = src.get(path) {
                 return Some(v);
@@ -878,15 +873,15 @@ impl RowAccess for JoinedRow<'_> {
     }
 }
 
-/// Hash-Join-Helper fuer zwei typed Streams. Iteriert die linke
-/// Liste, baut eine HashMap `key -> [&L]` (Build-Phase), iteriert
-/// dann die rechte Liste (Probe-Phase) und erzeugt fuer jedes
-/// matchende `(L, R)`-Paar via `combine` ein Resultat. Optional
-/// wird ein zusaetzliches Predicate via `predicate` (z.B.
-/// `MultiTopic::evaluate_joined`) auf jedem Paar geprueft.
+/// Hash-join helper for two typed streams. Iterates the left list,
+/// builds a HashMap `key -> [&L]` (build phase), then iterates the right
+/// list (probe phase) and produces a result via `combine` for each
+/// matching `(L, R)` pair. Optionally, an additional predicate via
+/// `predicate` (e.g. `MultiTopic::evaluate_joined`) is checked on each
+/// pair.
 ///
-/// Spec: §2.2.2.3.4 (MultiTopic) — der Hash-Join ist die idiomatische
-/// O(n+m)-Implementation der `subscription_expression`.
+/// Spec: §2.2.2.3.4 (MultiTopic) — the hash join is the idiomatic
+/// O(n+m) implementation of the `subscription_expression`.
 #[cfg(feature = "std")]
 #[allow(clippy::too_many_arguments)]
 pub fn hash_join_two<L, R, T, KL, KR, C, P>(
@@ -959,10 +954,10 @@ impl<T: DdsType> TopicDescription for MultiTopic<T> {
     }
 }
 
-/// Heuristik-Konversion eines `filter_parameter`-Strings in einen
-/// `Value`: erst Bool, dann Int, dann Float, sonst String. Wir
-/// strippen flankierende `'...'`-Anfuehrungszeichen, weil die Spec-
-/// Beispiele die Strings oft so liefern.
+/// Heuristic conversion of a `filter_parameter` string into a `Value`:
+/// first Bool, then Int, then Float, otherwise String. We strip flanking
+/// `'...'` quotes because the spec examples often provide the strings
+/// that way.
 fn param_string_to_value(s: &str) -> Value {
     let trimmed = s.trim();
     // Bool.
@@ -980,7 +975,7 @@ fn param_string_to_value(s: &str) -> Value {
     if let Ok(f) = trimmed.parse::<f64>() {
         return Value::Float(f);
     }
-    // String (mit optionalem ''-strip).
+    // String (with optional ''-strip).
     if trimmed.len() >= 2 && trimmed.starts_with('\'') && trimmed.ends_with('\'') {
         return Value::String(trimmed[1..trimmed.len() - 1].to_string());
     }
@@ -1002,7 +997,7 @@ mod tests {
         let t = p
             .create_topic::<RawBytes>("Chatter", TopicQos::default())
             .unwrap();
-        // Trait-Methoden funktionieren.
+        // Trait methods work.
         let td: &dyn TopicDescription = &t;
         assert_eq!(td.get_name(), "Chatter");
         assert_eq!(td.get_type_name(), RawBytes::TYPE_NAME);
@@ -1022,9 +1017,9 @@ mod tests {
 
     #[test]
     fn topic_description_trait_is_object_safe() {
-        // Object-safety verifizieren: wir koennen `&dyn TopicDescription`
-        // halten und nicht-statisch dispatchen. Aus mehreren konkreten
-        // Implementierungen sammeln.
+        // Verify object safety: we can hold `&dyn TopicDescription` and
+        // dispatch non-statically. Collect from several concrete
+        // implementations.
         let p = DomainParticipantFactory::instance()
             .create_participant_offline(8, DomainParticipantQos::default());
         let t = p
@@ -1039,9 +1034,9 @@ mod tests {
 
     #[test]
     fn topic_description_create_topic_rejects_empty_name() {
-        // §2.2.2.2.1.4 create_topic: leerer Topic-Name → BadParameter.
-        // Das ist die einzige Stelle, wo TopicDescription-Konsumenten
-        // einen ungueltigen TopicDescription-Bauversuch erleben.
+        // §2.2.2.2.1.4 create_topic: empty topic name → BadParameter.
+        // This is the only place where TopicDescription consumers
+        // encounter an invalid TopicDescription construction attempt.
         let p = DomainParticipantFactory::instance()
             .create_participant_offline(9, DomainParticipantQos::default());
         let res = p.create_topic::<RawBytes>("", TopicQos::default());
@@ -1160,7 +1155,7 @@ mod tests {
     fn multitopic_rejects_param_index_out_of_range() {
         let p = DomainParticipantFactory::instance()
             .create_participant_offline(0, DomainParticipantQos::default());
-        // Expression referenziert %1, params hat aber nur 1 Eintrag.
+        // Expression references %1, but params has only 1 entry.
         let res = p.create_multitopic::<RawBytes>(
             "MT",
             "T",
@@ -1184,7 +1179,7 @@ mod tests {
                 alloc::vec!["a".into(), "b".into()],
             )
             .unwrap();
-        // Set mit zu wenig Params → BadParameter.
+        // Set with too few params → BadParameter.
         let res = mt.set_expression_parameters(alloc::vec!["only_zero".into()]);
         assert!(matches!(res, Err(DdsError::BadParameter { .. })));
     }
@@ -1203,7 +1198,7 @@ mod tests {
             )
             .unwrap();
         let mt2 = mt.clone();
-        // Update auf einer Klone-Instanz reflektiert sich auf der anderen
+        // An update on one clone is reflected in the other
         // (shared Arc<RwLock<FilterParams>>).
         mt.set_expression_parameters(alloc::vec!["updated".into()])
             .unwrap();
@@ -1259,7 +1254,7 @@ mod tests {
             row.get("Customer.country"),
             Some(Value::String("DE".into()))
         );
-        assert_eq!(row.get("Order.country"), None); // praefix matched -> kein Field
+        assert_eq!(row.get("Order.country"), None); // prefix matched -> no field
     }
 
     #[test]
@@ -1273,9 +1268,9 @@ mod tests {
             ("Order".into(), &o as &dyn RowAccess),
             ("Customer".into(), &c as &dyn RowAccess),
         ]);
-        // "country" gibts nur in CustomerRow → wird gefunden via Fallback.
+        // "country" exists only in CustomerRow → found via fallback.
         assert_eq!(row.get("country"), Some(Value::String("DE".into())));
-        // "amount" gibt es nur in OrderRow.
+        // "amount" exists only in OrderRow.
         assert_eq!(row.get("amount"), Some(Value::Int(100)));
     }
 
@@ -1357,7 +1352,7 @@ mod tests {
             |row| mt.evaluate_joined(row),
         );
         assert_eq!(out.len(), 2);
-        // Erwarte ids 1 und 3 (DE), nicht 2 (US).
+        // Expect ids 1 and 3 (DE), not 2 (US).
         assert!(out.iter().any(|(i, _, _)| *i == 1));
         assert!(out.iter().any(|(i, _, _)| *i == 3));
         assert!(out.iter().all(|(_, _, c)| c == "DE"));
@@ -1407,7 +1402,7 @@ mod tests {
                 alloc::vec::Vec::new(),
             )
             .unwrap();
-        // Zwei Orders mit id=1, ein Customer mit id=1
+        // Two orders with id=1, one customer with id=1
         let orders = alloc::vec![
             OrderRow { id: 1, amount: 10 },
             OrderRow { id: 1, amount: 20 },
@@ -1435,7 +1430,7 @@ mod tests {
     fn hash_join_two_predicate_can_filter_pairs() {
         let p = DomainParticipantFactory::instance()
             .create_participant_offline(54, DomainParticipantQos::default());
-        // Predicate verlangt amount > 60.
+        // Predicate requires amount > 60.
         let mt = p
             .create_multitopic::<RawBytes>(
                 "Sales",
@@ -1469,7 +1464,7 @@ mod tests {
             |o, _| o.amount,
             |row| mt.evaluate_joined(row),
         );
-        // Nur amount=70 darf raus.
+        // Only amount=70 may pass.
         assert_eq!(out, alloc::vec![70]);
     }
 
@@ -1494,8 +1489,8 @@ mod tests {
 
     #[test]
     fn topic_description_get_participant_returns_owning_participant() {
-        // get_participant() liefert genau den Participant, an dem
-        // create_topic aufgerufen wurde — kein anderer.
+        // get_participant() returns exactly the participant on which
+        // create_topic was called — no other.
         let p1 = DomainParticipantFactory::instance()
             .create_participant_offline(11, DomainParticipantQos::default());
         let p2 = DomainParticipantFactory::instance()
@@ -1569,7 +1564,7 @@ mod tests {
         let r = row(&[("color", Value::String("RED".into()))]);
         assert_eq!(cft.evaluate(&r), Ok(true));
 
-        // Parameter updaten.
+        // Update the parameter.
         cft.set_filter_parameters(alloc::vec!["BLUE".into()])
             .unwrap();
         assert_eq!(cft.evaluate(&r), Ok(false));
@@ -1605,7 +1600,7 @@ mod tests {
         let topic = p
             .create_topic::<RawBytes>("T", TopicQos::default())
             .unwrap();
-        // Expression nutzt %0 + %1, aber wir liefern nur einen.
+        // Expression uses %0 + %1, but we provide only one.
         let err = p
             .create_contentfilteredtopic("CF", &topic, "x = %0 AND y = %1", alloc::vec!["1".into()])
             .unwrap_err();
@@ -1638,9 +1633,9 @@ mod tests {
         let topic = p
             .create_topic::<RawBytes>("T", TopicQos::default())
             .unwrap();
-        // Strings: Caller liefert sie ohne ''-Anfuehrungszeichen
-        // (Spec-Beispiele); die Wert-Konvertierung interpretiert sie
-        // als String-Default.
+        // Strings: the caller provides them without '' quotes (spec
+        // examples); the value conversion interprets them as a string
+        // default.
         let cft = p
             .create_contentfilteredtopic("CF", &topic, "name LIKE %0", alloc::vec!["foo%".into()])
             .unwrap();
@@ -1703,7 +1698,7 @@ mod tests {
             .create_contentfilteredtopic("CF", &topic, "color = %0", alloc::vec!["RED".into()])
             .unwrap();
         let cft2 = cft.clone();
-        // Update via cft → sichtbar in cft2 (Arc<RwLock>-shared).
+        // Update via cft → visible in cft2 (Arc<RwLock> shared).
         cft.set_filter_parameters(alloc::vec!["BLUE".into()])
             .unwrap();
         assert_eq!(

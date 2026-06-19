@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! IIOP-Transport-Fehler.
+//! IIOP transport errors.
 
 use alloc::string::String;
 
@@ -9,20 +9,20 @@ use zerodds_corba_giop::GiopError;
 
 use crate::profile_body::CdrError;
 
-/// IIOP-Transport-Fehler.
+/// IIOP transport error.
 #[derive(Debug)]
 pub enum IiopError {
-    /// TCP-Bind oder TCP-Connect-Fehler.
+    /// TCP bind or TCP connect error.
     Io(std::io::Error),
-    /// GIOP-Wire-Codec-Fehler.
+    /// GIOP wire-codec error.
     Giop(GiopError),
-    /// CDR-Marshalling-Fehler in ProfileBody / BiDir.
+    /// CDR marshalling error in ProfileBody / BiDir.
     Cdr(CdrError),
-    /// Connection wurde vom Peer geschlossen.
+    /// Connection was closed by the peer.
     Closed,
-    /// Pool ist erschoepft (`max_connections` erreicht).
+    /// Pool is exhausted (`max_connections` reached).
     PoolExhausted,
-    /// Diagnose-Sammelnachricht.
+    /// Catch-all diagnostic message.
     Other(String),
 }
 

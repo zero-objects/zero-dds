@@ -18,17 +18,17 @@ Pure-Rust no_std + alloc, `forbid(unsafe_code)`. Part of [**ZeroDDS**](../../REA
 
 ## Public-API-Module
 
-| Modul | Spec | Zweck |
+| Module | Spec | Purpose |
 |-------|------|-------|
 | `type_identifier` | §7.3.4.2 | Discriminated TypeIdentifier-Union (primitive/string/plain/hashed) |
-| `type_object` | §7.3.4 | Minimal + Complete TypeObject mit allen 10 Kinds (Struct/Union/Enum/Bitmask/Bitset/Alias/Array/Sequence/Map/Annotation) |
-| `type_information` | §7.3.5 | TypeInformation + Dependencies-Tracking |
-| `type_lookup` | §7.3.6 | getTypes / getTypeDependencies IDL-Service |
-| `builder` | (intern) | Programmatischer Builder für alle TypeObject-Kinds |
+| `type_object` | §7.3.4 | Minimal + Complete TypeObject with all 10 kinds (Struct/Union/Enum/Bitmask/Bitset/Alias/Array/Sequence/Map/Annotation) |
+| `type_information` | §7.3.5 | TypeInformation + dependency tracking |
+| `type_lookup` | §7.3.6 | getTypes / getTypeDependencies IDL service |
+| `builder` | (internal) | Programmatic builder for all TypeObject kinds |
 | `hash` | §7.3.1.2 | MD5 → 14-byte EquivalenceHash + NameHash |
-| `resolve` | §7.3.4.10 | TypeRegistry + Alias-Resolution + DoS-Caps |
-| `assignability` | §7.2.4 | Type-Compatibility-Regeln zwischen Writer + Reader |
-| `type_matcher` | §7.6.3.7 | TypeConsistencyEnforcement-aware Writer↔Reader-Match |
+| `resolve` | §7.3.4.10 | TypeRegistry + alias resolution + DoS caps |
+| `assignability` | §7.2.4 | Type-compatibility rules between writer + reader |
+| `type_matcher` | §7.6.3.7 | TypeConsistencyEnforcement-aware writer↔reader match |
 | `qos` | DDS 1.4 §2.2.3 | TypeConsistencyEnforcement + DataRepresentation |
 | `dynamic` | §7.5 + §7.6.3 | DynamicType / DynamicData + TypeObject-Bridge |
 
@@ -50,30 +50,30 @@ assert!(m.match_types(&writer, &reader, &registry).is_match());
 
 ## DynamicType ↔ TypeObject Bridge
 
-`zerodds_types::dynamic::DynamicType::to_type_object` unterstützt Bridge für: **Struct, Union, Enumeration, Bitmask, Alias**. Collection-Kinds (Array/Sequence/Map) werden via TypeIdentifier exklusiv repräsentiert (XTypes §7.3.4 — keine `CompleteTypeObject`-Variante). Bitset und Annotation benötigen MemberDescriptor-Erweiterungen.
+`zerodds_types::dynamic::DynamicType::to_type_object` supports the bridge for all 10 TypeObject kinds: **Struct, Union, Enumeration, Bitmask, Bitset, Annotation, Alias** plus the collection kinds **Sequence, Array, Map** (XTypes §7.3.4.4 — `CompleteSequenceType` / `CompleteArrayType` / `CompleteMapType`). Anonymous plain collections are additionally referenced inline via `TypeIdentifier` (PlainCollection).
 
-## Wiring-Status
+## Wiring status
 
-`assignability` und `type_matcher` sind Public-API für End-User-Code, der eigene Type-Compatibility-Checks außerhalb der DDS-Discovery-Pipeline durchführt (z.B. Bridge-Implementations, Schema-Registries). Die ZeroDDS-Discovery-Pipeline matched aktuell per `type_name` (DDS 1.4 §2.2.3 Default-Path); volle XTypes-1.3-§7.6 TypeIdentifier-aware Discovery ist eine eigene cross-layer Architektur-Epic (TypeIdentifier-Konstanten in Codegen + SEDP-Propagation + TypeRegistry-shared-state).
+`assignability` and `type_matcher` are public API for end-user code that does its own type-compatibility checks outside the DDS discovery pipeline (e.g. bridge implementations, schema registries).
 
-## Feature-Flags
+## Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std`   | ✅       | std-Re-Exports, implies `alloc` |
-| `alloc` | ✅       | mandatory (Vec / String / BTreeMap für TypeObject-Container) |
+| `std`   | ✅       | std re-exports, implies `alloc` |
+| `alloc` | ✅       | mandatory (Vec / String / BTreeMap for TypeObject containers) |
 
 ## Tests
 
-`cargo test -p zerodds-types`: 354+ Tests (285 unit + 9 dynamic + 40 compliance_typeobject + 5 fuzz_smoke + 5 proptest_assignability + 8 type_lookup_service + doctests).
+`cargo test -p zerodds-types`: 354+ tests (285 unit + 9 dynamic + 40 compliance_typeobject + 5 fuzz_smoke + 5 proptest_assignability + 8 type_lookup_service + doctests).
 
 ## Stability
 
-Alle Public-API-Items sind ab `1.0.0-rc.1` semver-stabil.
+All public-API items are semver-stable from `1.0.0-rc.1`.
 
 ## Links
 
 - Spec: [OMG XTypes 1.3](https://www.omg.org/spec/DDS-XTypes/1.3/)
 - CHANGELOG: [`CHANGELOG.md`](CHANGELOG.md)
-- Coverage-Doc: [`docs/spec-coverage/dds-xtypes-1.3.md`](../../docs/spec-coverage/dds-xtypes-1.3.md)
+- Coverage doc: [`docs/spec-coverage/dds-xtypes-1.3.md`](../../docs/spec-coverage/dds-xtypes-1.3.md)
 - RFC: [`docs/rfcs/0004-xtypes-integration.md`](../../docs/rfcs/0004-xtypes-integration.md)

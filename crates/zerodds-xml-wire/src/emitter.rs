@@ -2,18 +2,18 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Streaming-XML-Emitter — DDS-XML 1.0 §6.3.
 //!
-//! Spec §6.3: XML-Output muss XML 1.0 conform sein, mit korrekter
-//! Entity-Encoding fuer `<`, `>`, `&`, `"`, `'`.
+//! Spec §6.3: XML output must be XML 1.0 conformant, with correct
+//! entity encoding for `<`, `>`, `&`, `"`, `'`.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Emitter-Fehler.
+/// Emitter error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EmitError {
-    /// `end_element` ohne entsprechendes `start_element`.
+    /// `end_element` without a matching `start_element`.
     UnbalancedEnd,
-    /// `start_element` mit ungueltigem Tag-Namen (nicht XML-NameStartChar).
+    /// `start_element` with an invalid tag name (not an XML NameStartChar).
     InvalidTagName(String),
 }
 
@@ -37,7 +37,7 @@ pub struct XmlEmitter {
 }
 
 impl XmlEmitter {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -49,10 +49,10 @@ impl XmlEmitter {
             .push_str(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
     }
 
-    /// `<name>` oder `<name attr="...">`.
+    /// `<name>` or `<name attr="...">`.
     ///
     /// # Errors
-    /// `InvalidTagName` wenn der Tag-Name leer oder mit Zahl beginnt.
+    /// `InvalidTagName` if the tag name is empty or starts with a digit.
     pub fn start_element(&mut self, name: &str, attrs: &[(&str, &str)]) -> Result<(), EmitError> {
         if !is_valid_name(name) {
             return Err(EmitError::InvalidTagName(name.into()));
@@ -74,7 +74,7 @@ impl XmlEmitter {
     /// `</name>`.
     ///
     /// # Errors
-    /// `UnbalancedEnd` wenn kein offenes Element auf dem Stack.
+    /// `UnbalancedEnd` if there is no open element on the stack.
     pub fn end_element(&mut self) -> Result<(), EmitError> {
         let name = self.stack.pop().ok_or(EmitError::UnbalancedEnd)?;
         self.buf.push_str("</");
@@ -86,7 +86,7 @@ impl XmlEmitter {
     /// Selbstschliessendes Element `<name attr="..." />`.
     ///
     /// # Errors
-    /// `InvalidTagName` wenn der Tag-Name ungueltig.
+    /// `InvalidTagName` if the tag name is invalid.
     pub fn empty_element(&mut self, name: &str, attrs: &[(&str, &str)]) -> Result<(), EmitError> {
         if !is_valid_name(name) {
             return Err(EmitError::InvalidTagName(name.into()));
@@ -104,12 +104,12 @@ impl XmlEmitter {
         Ok(())
     }
 
-    /// Text-Inhalt mit Entity-Encoding.
+    /// Text content with entity encoding.
     pub fn text(&mut self, content: &str) {
         encode_to(&mut self.buf, content);
     }
 
-    /// `<![CDATA[...]]>`. CDATA-End-Sequenzen `]]>` werden gesplittet.
+    /// `<![CDATA[...]]>`. CDATA end sequences `]]>` are split.
     pub fn cdata(&mut self, content: &str) {
         self.buf.push_str("<![CDATA[");
         // Spec XML 1.0 §2.7: `]]>` in CDATA splitten zu `]]]]><![CDATA[>`
@@ -118,7 +118,7 @@ impl XmlEmitter {
         self.buf.push_str("]]>");
     }
 
-    /// Konsumiert den Emitter und gibt den XML-Output.
+    /// Consumes the emitter and returns the XML output.
     #[must_use]
     pub fn finish(self) -> String {
         self.buf
@@ -130,7 +130,7 @@ impl XmlEmitter {
         self.buf.len()
     }
 
-    /// `true` wenn keine Bytes emittiert.
+    /// `true` if no bytes were emitted.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.buf.is_empty()
@@ -202,7 +202,7 @@ mod tests {
         let mut e = XmlEmitter::new();
         e.cdata("contains ]]> within");
         let out = e.finish();
-        // `]]>` darf nicht roh erscheinen ohne CDATA-Re-Open
+        // `]]>` must not appear raw without a CDATA re-open
         assert!(out.contains("]]]]><![CDATA[>"));
     }
 

@@ -22,22 +22,38 @@ path = "src/lib.rs"
 
 [features]
 default = ["std"]
-# `zerodds-xml` braucht roxmltree (std-only); wir trennen es als
-# eigenes `xml-config`-Feature, das von `std` impliziert wird, aber
-# unter reinem `alloc` NICHT aktiv ist. Damit baut der XRCE-Wire-
-# Codec auf thumbv7em-none-eabihf ohne XML-Parser.
+# `zerodds-xml` needs roxmltree (std-only); we split it out as
+# its own `xml-config` feature, which is implied by `std` but
+# is NOT active under pure `alloc`. This way the XRCE wire
+# codec builds on thumbv7em-none-eabihf without an XML parser.
 std = ["alloc", "xml-config", "zerodds-xml/std"]
 alloc = []
 xml-config = ["alloc", "dep:zerodds-xml"]
 safety = []
+# Productive DTLS 1.2 for the §3.1.9 transport profile (non-normative). Opt-in:
+# pulls webrtc-dtls (pure-Rust, async) + tokio + a crypto provider — std-only,
+# NOT in the no_std wire-codec build. Mirrors crates/coap-bridge §7.1.
+dtls = ["std", "dep:webrtc-dtls", "dep:webrtc-util", "dep:tokio"]
+# Productive TLS 1.2/1.3 for the §3.1.10 transport profile (non-normative).
+# Opt-in: rustls over a std TcpStream + a self-signed cert (rcgen).
+tls = ["std", "dep:rustls", "dep:rustls-pki-types", "dep:rcgen"]
 
 [dependencies]
-# C6.2.C — XRCE-XML-Configuration (Spec §7.7.3 + §9.3). Re-Use des
-# DDS-XML-1.0-Loaders aus `crates/xml/` fuer Type/QoS-Profile-Resolution
-# (DDS-XML-Modul/I/J). Optional, weil roxmltree (transitiv via zerodds-xml)
-# `extern crate std` braucht und im thumbv7em-none-eabihf-Build nicht
-# kompiliert.
-zerodds-xml = { version = "1.0.0-rc.1", path = "../xml", default-features = false, features = ["alloc"], optional = true }
+# C6.2.C — XRCE XML configuration (Spec §7.7.3 + §9.3). Re-use of the
+# DDS-XML-1.0 loader from `crates/xml/` for type/QoS-profile resolution
+# (DDS-XML module I/J). Optional, because roxmltree (transitively via zerodds-xml)
+# needs `extern crate std` and does not compile in the
+# thumbv7em-none-eabihf build.
+zerodds-xml = { version = "1.0.0-rc.3", path = "../xml", default-features = false, features = ["alloc"], optional = true }
+# DTLS 1.2 (feature `dtls`) — pure-Rust DTLS over UDP. webrtc-util must match
+# webrtc-dtls 0.12's `^0.11` requirement (same pin as crates/coap-bridge).
+webrtc-dtls = { version = "0.12", optional = true }
+webrtc-util = { version = "0.11", optional = true, default-features = false, features = ["conn"] }
+tokio = { version = "1", optional = true, default-features = false, features = ["rt", "net", "io-util", "time"] }
+# TLS 1.2/1.3 (feature `tls`) — rustls over a std TcpStream + self-signed cert.
+rustls = { workspace = true, optional = true }
+rustls-pki-types = { workspace = true, optional = true }
+rcgen = { version = "0.13", optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

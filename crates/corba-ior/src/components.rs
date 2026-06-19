@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! TaggedComponent + strukturierte Decoder fuer wichtige Tags.
+//! TaggedComponent + structured decoders for important tags.
 //!
 //! Spec §13.6.7.3 + §15.6.6:
 //! ```text
@@ -11,8 +11,8 @@
 //! };
 //! ```
 //!
-//! `component_data` ist eine CDR-Encapsulation (Endianness-Octet +
-//! Body), Inhalt ist Tag-spezifisch.
+//! `component_data` is a CDR encapsulation (endianness octet + body),
+//! its content is tag-specific.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -23,20 +23,20 @@ use zerodds_corba_iiop::profile_body::CdrError;
 
 use crate::component_tags::ComponentId;
 
-/// `TaggedComponent` — Tag + Encapsulation.
+/// `TaggedComponent` — tag + encapsulation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaggedComponent {
-    /// Component-Tag.
+    /// Component tag.
     pub tag: ComponentId,
-    /// Encapsulation-Bytes (Endianness-Octet + tag-spezifischer Body).
+    /// Encapsulation bytes (endianness octet + tag-specific body).
     pub component_data: Vec<u8>,
 }
 
 impl TaggedComponent {
-    /// CDR-Encode.
+    /// CDR encode.
     ///
     /// # Errors
-    /// Buffer-Schreibfehler.
+    /// Buffer write error.
     pub fn encode(&self, w: &mut BufferWriter) -> Result<(), CdrError> {
         w.write_u32(self.tag.as_u32())?;
         let n = u32::try_from(self.component_data.len()).map_err(|_| CdrError::Overflow)?;
@@ -45,10 +45,10 @@ impl TaggedComponent {
         Ok(())
     }
 
-    /// CDR-Decode.
+    /// CDR decode.
     ///
     /// # Errors
-    /// Buffer-Lesefehler.
+    /// Buffer read error.
     pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, CdrError> {
         let tag = ComponentId::from_u32(r.read_u32()?);
         let n = r.read_u32()? as usize;
@@ -59,83 +59,79 @@ impl TaggedComponent {
         })
     }
 
-    /// Versucht, das Component als bekannten strukturierten Type
-    /// zu decoden.
+    /// Attempts to decode the component as a known structured type.
     ///
     /// # Errors
-    /// CDR-Fehler im Encapsulation-Body.
+    /// CDR error in the encapsulation body.
     pub fn structured(&self) -> Result<StructuredComponent, CdrError> {
         StructuredComponent::decode(self.tag, &self.component_data)
     }
 }
 
 // -------------------------------------------------------------------
-// Strukturierte Component-Bodies fuer die wichtigsten Tags.
+// Structured component bodies for the most important tags.
 // -------------------------------------------------------------------
 
-/// `TAG_ORB_TYPE` (Spec §13.6.6.1).
+/// `TAG_ORB_TYPE` (spec §13.6.6.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OrbType(pub u32);
 
-/// Code-Set-Component (Spec §13.10.2.4).
+/// Code-set component (spec §13.10.2.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodeSetComponent {
-    /// Native code set (z.B. `0x00010001` = ISO-8859-1).
+    /// Native code set (e.g. `0x00010001` = ISO-8859-1).
     pub native_code_set: u32,
-    /// Conversion-Code-Sets — wir halten den Liste-Header
-    /// (count); voller Inhalt ist bei Caller. CodeSetComponentInfo
-    /// modelliert das voll.
+    /// Conversion code sets — we hold the list header (count); the full
+    /// content is at the caller. CodeSetComponentInfo models that fully.
     pub conversion_code_sets: Vec<u32>,
 }
 
-/// `CodeSetComponentInfo` (Spec §13.10.2.4).
+/// `CodeSetComponentInfo` (spec §13.10.2.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodeSetComponentInfo {
-    /// Char-Codeset.
+    /// Char codeset.
     pub for_char_data: CodeSetComponent,
-    /// Wide-Char-Codeset.
+    /// Wide-char codeset.
     pub for_wchar_data: CodeSetComponent,
 }
 
-/// `TAG_ALTERNATE_IIOP_ADDRESS` (Spec §15.7.4).
+/// `TAG_ALTERNATE_IIOP_ADDRESS` (spec §15.7.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlternateIiopAddress {
-    /// Host-Name.
+    /// Host name.
     pub host: String,
-    /// TCP-Port.
+    /// TCP port.
     pub port: u16,
 }
 
-/// `TAG_SSL_SEC_TRANS` (Spec OMG `Security/SSLIOP`-Modul).
+/// `TAG_SSL_SEC_TRANS` (OMG `Security/SSLIOP` module spec).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ssl {
-    /// `target_supports` — Bitmask der unterstuetzten
-    /// AssociationOptions.
+    /// `target_supports` — bitmask of supported AssociationOptions.
     pub target_supports: u16,
-    /// `target_requires` — Bitmask der erzwungenen
-    /// AssociationOptions.
+    /// `target_requires` — bitmask of enforced AssociationOptions.
     pub target_requires: u16,
-    /// SSL-Port.
+    /// SSL port.
     pub port: u16,
 }
 
-/// `TAG_TLS_SEC_TRANS` (Spec OMG `Security/TLSIOP`-Modul) — Wire-
-/// Layout identisch zu SSL_SEC_TRANS plus TransportAddressList.
+/// `TAG_TLS_SEC_TRANS` (OMG `Security/TLSIOP` module spec) — wire layout
+/// identical to SSL_SEC_TRANS plus a TransportAddressList.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TlsSecTrans {
     /// `target_supports`.
     pub target_supports: u16,
     /// `target_requires`.
     pub target_requires: u16,
-    /// `addresses` — Liste alternativer TLS-Endpoints.
+    /// `addresses` — list of alternative TLS endpoints.
     pub addresses: Vec<AlternateIiopAddress>,
 }
 
-/// `TAG_RMI_CUSTOM_MAX_STREAM_FORMAT` (Spec §13.6.7.3 + JavaToIDL).
+/// `TAG_RMI_CUSTOM_MAX_STREAM_FORMAT` (spec §13.6.7.3 + JavaToIDL).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StreamFormatVersion(pub u8);
 
-/// Strukturierte Form fuer die wichtigsten Components.
+/// Structured form for the most important components.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StructuredComponent {
     /// `TAG_ORB_TYPE`.
@@ -148,13 +144,13 @@ pub enum StructuredComponent {
     Ssl(Ssl),
     /// `TAG_TLS_SEC_TRANS`.
     TlsSecTrans(TlsSecTrans),
-    /// `TAG_CSI_SEC_MECH_LIST = 33` (Spec CORBA 3.3 Part 2 §10.5).
+    /// `TAG_CSI_SEC_MECH_LIST = 33` (spec CORBA 3.3 Part 2 §10.5).
     CsiSecMechList(CompoundSecMechList),
     /// `TAG_RMI_CUSTOM_MAX_STREAM_FORMAT`.
     StreamFormatVersion(StreamFormatVersion),
-    /// `TAG_JAVA_CODEBASE` (Spec §13.6.6.7) — Liste codebase-URLs.
+    /// `TAG_JAVA_CODEBASE` (spec §13.6.6.7) — list of codebase URLs.
     JavaCodebase(String),
-    /// Andere Tags — opaque encapsulation.
+    /// Other tags — opaque encapsulation.
     Opaque {
         /// Tag.
         tag: ComponentId,
@@ -164,11 +160,11 @@ pub enum StructuredComponent {
 }
 
 impl StructuredComponent {
-    /// Decodiert eine Component-Encapsulation in eine strukturierte
-    /// Form, soweit der Tag bekannt ist.
+    /// Decodes a component encapsulation into a structured form, as far
+    /// as the tag is known.
     ///
     /// # Errors
-    /// CDR-Decode-Fehler im Body.
+    /// CDR decode error in the body.
     pub fn decode(tag: ComponentId, encap: &[u8]) -> Result<Self, CdrError> {
         let endianness = read_endianness(encap)?;
         let body = &encap[1..];
@@ -239,11 +235,11 @@ impl StructuredComponent {
         }
     }
 
-    /// Encodiert eine strukturierte Component in eine Encapsulation
-    /// (Endianness-Octet + Body).
+    /// Encodes a structured component into an encapsulation
+    /// (endianness octet + body).
     ///
     /// # Errors
-    /// Buffer-Schreibfehler.
+    /// Buffer write error.
     pub fn encode_encapsulation(&self, endianness: Endianness) -> Result<Vec<u8>, CdrError> {
         let mut out = Vec::with_capacity(64);
         out.push(endianness_to_byte(endianness));
@@ -277,8 +273,8 @@ impl StructuredComponent {
             Self::StreamFormatVersion(StreamFormatVersion(v)) => w.write_u8(*v)?,
             Self::JavaCodebase(s) => w.write_string(s)?,
             Self::Opaque { bytes, .. } => {
-                // Body bereits in `bytes` enthaelt schon die Endianness-
-                // Octet — wir geben es einfach 1:1 zurueck.
+                // The body in `bytes` already includes the endianness
+                // octet — we just return it verbatim.
                 return Ok(bytes.clone());
             }
         }
@@ -318,6 +314,74 @@ fn decode_code_set_component(r: &mut BufferReader<'_>) -> Result<CodeSetComponen
     })
 }
 
+/// Well-known `CodeSetId` fallbacks for the negotiation (OSF registry).
+const CS_UTF_8: u32 = 0x0501_0001;
+const CS_UTF_16: u32 = 0x0001_0109;
+
+impl CodeSetComponent {
+    /// Selects the transmission codeset between client and server for *one*
+    /// codeset axis (char OR wchar), per the algorithm from spec §13.10.2.6:
+    ///
+    /// 1. Native match → native (no conversion).
+    /// 2. Server-native ∈ client conversion → server-native (client converts).
+    /// 3. Client-native ∈ server conversion → client-native (server converts).
+    /// 4. Common conversion codeset → that one.
+    /// 5. `fallback` (e.g. UTF-8/UTF-16) supported by both → `fallback`.
+    /// 6. otherwise incompatible → `None` (caller throws `CODESET_INCOMPATIBLE`).
+    ///
+    /// `self` = client component, `server` = server component (from its IOR).
+    #[must_use]
+    pub fn negotiate(&self, server: &CodeSetComponent, fallback: u32) -> Option<u32> {
+        let cn = self.native_code_set;
+        let sn = server.native_code_set;
+        let supports = |c: &CodeSetComponent, id: u32| {
+            id != 0 && (c.native_code_set == id || c.conversion_code_sets.contains(&id))
+        };
+        // 1. Native match.
+        if cn != 0 && cn == sn {
+            return Some(cn);
+        }
+        // 2. Client can convert to server-native.
+        if sn != 0 && self.conversion_code_sets.contains(&sn) {
+            return Some(sn);
+        }
+        // 3. Server can convert to client-native.
+        if cn != 0 && server.conversion_code_sets.contains(&cn) {
+            return Some(cn);
+        }
+        // 4. Common conversion codeset.
+        if let Some(common) = self
+            .conversion_code_sets
+            .iter()
+            .find(|id| server.conversion_code_sets.contains(id))
+        {
+            return Some(*common);
+        }
+        // 5. Universal fallback, if both carry it (as native OR conversion).
+        if supports(self, fallback) && supports(server, fallback) {
+            return Some(fallback);
+        }
+        None
+    }
+}
+
+impl CodeSetComponentInfo {
+    /// Negotiates both axes (char + wchar) against the server component from
+    /// its IOR. `self` = client capabilities. Returns `(TCSC, TCSW)` or
+    /// `None` if one of the axes is incompatible (→ `CODESET_INCOMPATIBLE`).
+    /// Fallbacks: UTF-8 for `char`, UTF-16 for `wchar`.
+    #[must_use]
+    pub fn negotiate(&self, server: &CodeSetComponentInfo) -> Option<(u32, u32)> {
+        let tcsc = self
+            .for_char_data
+            .negotiate(&server.for_char_data, CS_UTF_8)?;
+        let tcsw = self
+            .for_wchar_data
+            .negotiate(&server.for_wchar_data, CS_UTF_16)?;
+        Some((tcsc, tcsw))
+    }
+}
+
 fn encode_code_set_component(w: &mut BufferWriter, c: &CodeSetComponent) -> Result<(), CdrError> {
     w.write_u32(c.native_code_set)?;
     let n = u32::try_from(c.conversion_code_sets.len()).map_err(|_| CdrError::Overflow)?;
@@ -335,7 +399,7 @@ mod tests {
 
     #[test]
     fn orb_type_round_trip() {
-        let s = StructuredComponent::OrbType(OrbType(0x4F4D_4732)); // "OMG2" Vendor-Style
+        let s = StructuredComponent::OrbType(OrbType(0x4F4D_4732)); // "OMG2" vendor style
         let bytes = s.encode_encapsulation(Endianness::Big).unwrap();
         let decoded = StructuredComponent::decode(ComponentId::OrbType, &bytes).unwrap();
         assert_eq!(decoded, s);
@@ -360,6 +424,87 @@ mod tests {
             StructuredComponent::CodeSets(d) => assert_eq!(d, info),
             other => panic!("expected CodeSets, got {other:?}"),
         }
+    }
+
+    fn cs(native: u32, conv: &[u32]) -> CodeSetComponent {
+        CodeSetComponent {
+            native_code_set: native,
+            conversion_code_sets: conv.to_vec(),
+        }
+    }
+
+    #[test]
+    fn negotiate_native_match() {
+        // Both native ISO-8859-1 → exactly that.
+        let client = cs(0x0001_0001, &[]);
+        let server = cs(0x0001_0001, &[]);
+        assert_eq!(client.negotiate(&server, CS_UTF_8), Some(0x0001_0001));
+    }
+
+    #[test]
+    fn negotiate_client_converts_to_server_native() {
+        // Server-native (UTF-8) is in the client conversion set → server-native.
+        let client = cs(0x0001_0001, &[CS_UTF_8]);
+        let server = cs(CS_UTF_8, &[]);
+        assert_eq!(client.negotiate(&server, CS_UTF_8), Some(CS_UTF_8));
+    }
+
+    #[test]
+    fn negotiate_server_converts_to_client_native() {
+        // Client-native (ISO) is in the server conversion set → client-native.
+        let client = cs(0x0001_0001, &[]);
+        let server = cs(CS_UTF_8, &[0x0001_0001]);
+        assert_eq!(client.negotiate(&server, CS_UTF_8), Some(0x0001_0001));
+    }
+
+    #[test]
+    fn negotiate_common_conversion_set() {
+        // No native bridge, but UTF-8 in both conversion lists.
+        let client = cs(0x0001_0002, &[CS_UTF_8]);
+        let server = cs(0x0001_0003, &[CS_UTF_8]);
+        assert_eq!(client.negotiate(&server, 0xDEAD), Some(CS_UTF_8));
+    }
+
+    #[test]
+    fn negotiate_universal_fallback() {
+        // Disjoint sets, but both carry the fallback (UTF-16) as native/conv.
+        let client = cs(CS_UTF_16, &[]);
+        let server = cs(0x0001_0100, &[CS_UTF_16]);
+        assert_eq!(client.negotiate(&server, CS_UTF_16), Some(CS_UTF_16));
+    }
+
+    #[test]
+    fn negotiate_incompatible_yields_none() {
+        let client = cs(0x0001_0002, &[0x0001_0004]);
+        let server = cs(0x0001_0003, &[0x0001_0005]);
+        assert_eq!(client.negotiate(&server, 0xBEEF), None);
+    }
+
+    #[test]
+    fn negotiate_info_both_axes_default_fallbacks() {
+        // Disjoint natives, but UTF-8/UTF-16 universal → default pair.
+        let client = CodeSetComponentInfo {
+            for_char_data: cs(0x0001_0001, &[CS_UTF_8]),
+            for_wchar_data: cs(CS_UTF_16, &[]),
+        };
+        let server = CodeSetComponentInfo {
+            for_char_data: cs(CS_UTF_8, &[]),
+            for_wchar_data: cs(CS_UTF_16, &[]),
+        };
+        assert_eq!(client.negotiate(&server), Some((CS_UTF_8, CS_UTF_16)));
+    }
+
+    #[test]
+    fn negotiate_info_none_if_one_axis_fails() {
+        let client = CodeSetComponentInfo {
+            for_char_data: cs(CS_UTF_8, &[]),
+            for_wchar_data: cs(0x0001_0002, &[]), // incompatible
+        };
+        let server = CodeSetComponentInfo {
+            for_char_data: cs(CS_UTF_8, &[]),
+            for_wchar_data: cs(0x0001_0003, &[]),
+        };
+        assert_eq!(client.negotiate(&server), None);
     }
 
     #[test]

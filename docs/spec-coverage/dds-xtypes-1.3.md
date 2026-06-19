@@ -1,18 +1,18 @@
 # DDS X-Types 1.3 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/dds-xtypes-1.3.pdf` (340 Seiten, OMG formal/2020-10-04)
+**Spec:** [OMG DDS-XTypes 1.3](https://www.omg.org/spec/DDS-XTypes/1.3/PDF) (340 Seiten, OMG formal/2020-10-04)
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
+Audit Item-für-Item
+gegen die Spec; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
 Status (`done` / `partial` / `open` / `n/a`).
 
-**Kontext:** `crates/types/` ist live mit ~25 Files + 255 Tests
-(assignability/builder/dynamic/error/hash/lib/qos/resolve/
-type_identifier/type_information/type_lookup/type_matcher/type_object).
-`crates/cdr/` ergaenzt mit 115 Tests (XCDR1+XCDR2 Encoder/Decoder +
-Extensibility-Pfade). XTypes-Stack: Type-System + TypeObject +
-TypeLookup + Assignability + DynamicType-Stack + DataRepresentation
-(CDR/PL_CDR/CDR2) live.
+**Kontext:** XTypes ist über zwei Crates verteilt:
+
+- `crates/types/` — Type-System, live mit ~25 Files + 255 Tests (assignability/builder/dynamic/error/hash/lib/qos/resolve/type_identifier/type_information/type_lookup/type_matcher/type_object)
+- `crates/cdr/` — DataRepresentation (XCDR1+XCDR2 Encoder/Decoder + Extensibility-Pfade), 115 Tests
+
+XTypes-Stack: Type-System + TypeObject + TypeLookup + Assignability +
+DynamicType-Stack + DataRepresentation (CDR/PL_CDR/CDR2) live.
 
 ---
 
@@ -22,7 +22,7 @@ TypeLookup + Assignability + DynamicType-Stack + DataRepresentation
 
 **Spec:** §1, S. 1.
 
-**Repo:** Crate-Trennung gemaess Concerns: `crates/types`,
+**Repo:** Crate-Trennung gemäß Concerns: `crates/types`,
 `crates/idl`, `crates/cdr`, `crates/xml`.
 
 **Tests:** Crate-weit.
@@ -55,7 +55,7 @@ builder/try_construct/bridge/builtin_types/descriptor/error/type_/mod).
 
 **Tests:** Dynamic-Tests.
 
-**Status:** done — DCPS-API live; Dynamic-Stack vollstaendig.
+**Status:** done — DCPS-API live; Dynamic-Stack vollständig.
 
 ### 2.2.1 Minimal Network-Interop: TypeObject + TopicModel + DataRep-QoS v2 + XCDR2 + Built-in Types
 
@@ -102,7 +102,7 @@ builder/try_construct/bridge/builtin_types/descriptor/error/type_/mod).
 ### 2.4 Optional XML Data Representation Profile
 
 **Spec:** §2.4 — XML-Wire-Format als alternative Sample-
-Repraesentation neben CDR-1/CDR-2.
+Repräsentation neben CDR-1/CDR-2.
 
 **Repo:** `crates/zerodds-xml-wire/src/{codec,emitter,parser,validator,
 xsd}.rs` (1465 SLOC) — XML↔CDR-Codec + XSD-Schema-Gen + Streaming-
@@ -121,7 +121,7 @@ Parser.
 **Spec:** §3.
 
 **Repo:** Implementiert via DCPS/RTPS/IDL/CDR-Crates + native f32/f64
-fuer IEEE-754 + Rust-stdlib UTF-8/UTF-16 fuer Unicode.
+für IEEE-754 + Rust-stdlib UTF-8/UTF-16 für Unicode.
 
 **Tests:** siehe pro Spec-Coverage.
 
@@ -308,6 +308,55 @@ extensibility.
 
 **Status:** done
 
+### 7.2.2.4.3 Collection — Bound-Enforcement im typisierten Codegen-Encode
+
+**Spec:** §7.2.2.4.3 + §7.4.3 — eine bounded `sequence<T,N>` / `string<N>` /
+`wstring<N>` / `map<K,V,N>` mit mehr als `N` Elementen ist beim Serialisieren
+eine Bound-Verletzung; strikte Vendoren lehnen sie am Draht ab (OpenDDS:
+`CORBA::BAD_PARAM` beim `write`).
+
+**Repo:** Der typisierte Codegen-Encode erzwingt die Bound in allen vier
+Sprach-Codegens:
+- `crates/idl-rust/src/struct_emit.rs` (`emit_bound_checks` /
+  `emit_bound_checks_decl` / `type_has_bounds`) + `union_emit.rs` — seq
+  (Top-Level + nested + Array-Element), narrow string (UTF-8-Byte), wstring
+  (UTF-16-Unit), map (size + keys + values), union-arms.
+- `crates/idl-java` + `crates/idl-csharp` TypeSupport-Encode — seq, narrow
+  string, wstring (`IllegalArgumentException` / `ArgumentException`).
+- `crates/idl-cpp/src/emitter.rs` (beide Value-Emitter) — seq (inkl. nested
+  via Rekursion), narrow string, wstring (`std::length_error`, konditionales
+  `<stdexcept>`).
+
+**Tests:** `idl-rust/tests/bounded_sequence.rs` (10),
+`idl-java/tests/bounded_collections.rs` (3),
+`idl-csharp/tests/bounded_collections.rs` (3),
+`idl-cpp/tests/bounded_collections.rs` (3).
+
+**Status:** done — alle vier Sprach-Codegens erzwingen die Bound: idl-rust/
+idl-java/idl-csharp + idl-cpp (seq inkl. nested via Rekursion, narrow string,
+wstring), plus map/union-arms wo der Codegen den Typ unterstützt.
+
+### 7.2.2.4.4 AggregatedType — idl-cpp XCDR2-Encode sequence<@appendable/@mutable struct>
+
+**Spec:** §7.2.2.4.4 + §7.4.3.
+
+**Repo:** `crates/idl-cpp/src/emitter.rs` — der gesamte idl-cpp-XCDR2-Codegen
+ist vollständig. Nested @appendable/@mutable struct *Member* werden encodiert
+(`scoped_struct`-Splice), und auch der frühere Rest — `sequence<@appendable
+struct>` / `sequence<@mutable struct>` — ist geschlossen: `typespec_supported`s
+Sequence-Arm akzeptiert jetzt Struct-Elemente jeder Extensibility, jedes
+non-finale Element wird pro Element 4-aligned + via eigenem DHEADER
+gesplict/sub-dekodiert (Encode + Decode, auch im @mutable-Member-Pfad mit
+`__body_origin`).
+
+**Tests:** `v_sequence_of_appendable_struct` (byte-exakt `1C…` Seq-DHEADER +
+Pt-DHEADER pro Element + Roundtrip) + `v_mutable_member_seq_of_appendable_struct`
+(Roundtrip im @mutable-Member-Pfad); Member-Fall weiterhin grün
+(`v_nested_appendable_struct_byte_exact`, `v_nested_mutable_struct_roundtrips`).
+
+**Status:** done — idl-cpp-XCDR2-Encoder deckt das volle Type-System ab,
+keine verbleibende Lücke.
+
 ### 7.2.2.4.4 AggregatedType: Struct/Union/Annotation, Member {id, key, must_understand, optional, shared, member_index}
 
 **Spec:** §7.2.2.4.4.
@@ -476,9 +525,11 @@ mit `AppliedVerbatimAnnotation` + `VerbatimPlacement`-Enum +
 IDL-Lowering: `crates/idl/src/semantics/annotations.rs::VerbatimSpec`
 + `PlacementKind` + `Lowered::verbatims_for_language(aliases)`.
 Codegen-Pfade pro Sprache:
+
 - `crates/idl-cpp/src/verbatim.rs` (Aliase: `c++`, `cpp`, `cxx`, `*`)
   + Hooks in `emit_struct`/`emit_enum`/`emit_union`/`emit_typedef`/
-  `emit_header` fuer alle 6 PlacementKinds.
+  `emit_header` für alle 6 PlacementKinds.
+
 - `crates/idl-csharp/src/verbatim.rs` (Aliase: `c#`, `csharp`, `cs`, `*`).
 - `crates/idl-java/src/verbatim.rs` (Alias: `java`, `*`).
 
@@ -504,7 +555,7 @@ Codegen-Pfade pro Sprache:
   verbatim_annotation_with_after_declaration_placement,
   verbatim_annotation_other_language_skipped_in_java}`.
 
-**Status:** done — Code-Gen-Templating Cross-Cutting voll erfuellt
+**Status:** done — Code-Gen-Templating Cross-Cutting voll erfüllt
 (C++, C#, Java).
 
 ### 7.2.2.4.9 External Data (@external): incomplete forward ref + self-ref erlaubt
@@ -513,7 +564,7 @@ Codegen-Pfade pro Sprache:
 
 **Repo:** `crates/types/src/type_object/flags.rs::StructMemberFlag::IS_EXTERNAL`;
 Forward-Resolution via `crates/types/src/resolve.rs::TypeRegistry::transitive_dependencies`
-mit seen-Set (verhindert Endlosschleife auch bei zirkulaeren
+mit seen-Set (verhindert Endlosschleife auch bei zirkulären
 @external-Referenzen).
 
 **Tests:** `crates/types/src/resolve.rs::tests`:
@@ -689,7 +740,7 @@ from any wire form and from assignability comparisons.
 `@ignore_literal_names` reduziert auf (value).
 
 **Repo:** `crates/types/src/assignability.rs` (enum-Vergleich
-beruecksichtigt `cfg.ignore_literal_names` ODER
+berücksichtigt `cfg.ignore_literal_names` ODER
 `EnumTypeFlag::IGNORE_LITERAL_NAMES` auf einer der Seiten);
 `crates/types/src/type_object/flags.rs::EnumTypeFlag::IGNORE_LITERAL_NAMES`;
 `crates/idl/src/semantics/annotations.rs::BuiltinAnnotation::IgnoreLiteralNames`
@@ -717,6 +768,7 @@ Map-Key-Validator `crates/idl/src/semantics/map_validation.rs`;
 Union default coverage in `crates/idl/src/semantics/union_validation.rs`.
 
 **Tests:**
+
 - `crates/idl/src/semantics/union_validation.rs::tests::union_default_coverage_required_when_partial_range`
 - `crates/idl/src/semantics/map_validation.rs::tests::map_key_element_type_must_be_primitive` (+ 5 Edge-Cases)
 - `crates/types/src/assignability.rs::tests::two_level_inheritance_assignability_chain`,
@@ -735,15 +787,15 @@ Union default coverage in `crates/idl/src/semantics/union_validation.rs`.
 **Spec:** §7.3 Tab.20.
 
 **Repo:** IDL (`crates/idl/`) + TypeObject (`crates/types/`) +
-XML (`crates/xml/`) live. Die vierte Repraesentation XSD wird via
-Iron-Rule-Eskalations-Klausel separat als Open-Item §7.3.3 getrackt
-(siehe `dds-xtypes-1.3.open.md`).
+XML (`crates/xml/`) live. Die vierte Repräsentation XSD ist eine bewusst
+zurückgestellte Iron-Rule-Erweiterung (§7.3.3) — drei der vier
+Repräsentationen sind implementiert.
 
 **Tests:** Crate-weite Test-Suiten plus `crates/idl/`,
-`crates/types/`, `crates/xml/` Tests fuer alle drei aktiven
-Repraesentationen.
+`crates/types/`, `crates/xml/` Tests für alle drei aktiven
+Repräsentationen.
 
-**Status:** done — IDL/XML/TypeObject vollstaendig; XSD als
+**Status:** done — IDL/XML/TypeObject vollständig; XSD als
 Iron-Rule-Open via §7.3.3.
 
 ### 7.3.1.1 IDL-Compatibility: Extensible-DDS-Profile von IDL 4.2
@@ -809,7 +861,7 @@ oben).
 
 **Repo:** `crates/idl/src/semantics/const_eval.rs` (`evaluate` mit
 SymbolTable-Resolution + Integer-/Float-/Bitwise-/Shift-Ops);
-verschachtelte `#define`-Refs ueber `crates/idl/src/preprocessor/mod.rs::expand_macros`
+verschachtelte `#define`-Refs über `crates/idl/src/preprocessor/mod.rs::expand_macros`
 mit `MAX_MACRO_EXPANSION_DEPTH = 32` Cycle-Cap.
 
 **Tests:** `crates/idl/src/preprocessor/mod.rs::tests`:
@@ -827,7 +879,7 @@ plus `crates/idl/src/semantics/const_eval.rs::tests` (Bestand).
 
 **Repo:** `crates/xml/src/xtypes_parser.rs` + `xtypes_def.rs` mit
 `<struct>`/`<enum>`/`<union>`/`<typedef>`/`<bitmask>`/`<bitset>`/
-`<module>` plus Phase-2-Konstrukte `<include>`, `<forward_dcl>`,
+`<module>` plus die Konstrukte `<include>`, `<forward_dcl>`,
 `<const>` (`IncludeEntry`, `ForwardDeclEntry`, `ConstEntry`).
 
 **Tests:** `crates/xml/src/xtypes_parser.rs::tests`:
@@ -987,7 +1039,7 @@ least the values of all the non-optional members."
 ### 7.4.2 XCDR Version 1 (Plain CDR1 + PL_CDR1)
 
 **Spec:** §7.4.2 + §7.4.1.2.2 (PID_EXTENDED) — PL_CDR1 mit Long-Header
-fuer Member-IDs >= 0x3F00 oder Body-Laenge > 0xFFFF.
+für Member-IDs >= 0x3F00 oder Body-Länge > 0xFFFF.
 
 **Repo:** `crates/cdr/src/xcdr1.rs` (PL_CDR1 mit `encode_pl_cdr1_member`,
 `read_pl_cdr1_member`, `PID_EXTENDED = 0x3F01`,
@@ -1070,7 +1122,7 @@ Spec-Regeln (DHEADER + EMHEADER + Sentinel) durchsetzen.
 
 **Spec:** §7.4.5 + §7.6.8.3.1.b — KeyHolder-Member MUESSEN nach
 `member_id` aufsteigend in PLAIN_CDR2-BE serialisiert werden, damit
-Encoder mit unterschiedlichen Member-Aufzaehl-Reihenfolgen denselben
+Encoder mit unterschiedlichen Member-Aufzähl-Reihenfolgen denselben
 KeyHash produzieren.
 
 **Repo:** `crates/cdr/src/key_hash.rs` (`compute_key_hash` zero-pad/MD5-
@@ -1178,7 +1230,7 @@ done.
 
 ## Audit-Status
 
-82 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+84 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
 
 Test-Lauf:
 
@@ -1189,4 +1241,5 @@ Test-Lauf:
 * `cargo test -p zerodds-xml-wire` — 40 Tests grün (§2.4 XML Data
   Representation Profile, Cross-Ref `zerodds-xml-1.0.md`).
 
-Keine offenen Punkte.
+Keine offenen Punkte: der idl-cpp-XCDR2-Encoder deckt das volle Type-System ab
+(auch `sequence<@appendable/@mutable struct>`, §7.2.2.4.4).

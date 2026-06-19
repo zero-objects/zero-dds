@@ -1,9 +1,22 @@
-# ShapeExtended-Type Support — RTI 7.x Default-Compat (offen)
+# ShapeExtended-Type Support — RTI 7.x Default-Compat
 
-**Status**: deferred (Quick-Win-Kandidat)
+**Status**: completed
+**Closed-Datum**: 2026-06-13
 **Datum**: 2026-05-07
 **Sprint-Kontext**: bei Cross-Vendor Live-Demo gegen RTI Connext Shapes Demo aufgekommen — RTI 7.x Default-DataType ist `ShapeExtended`, nicht `Shape`. Aktuell muss User RTI mit `-dataType Shape` flag starten, sonst Type-Name-Mismatch.
-**Verantwortlich**: open
+**Verantwortlich**: closed
+
+## Resolution (2026-06-13)
+
+`crates/dcps/src/interop.rs` ergänzt um `ShapeFillKind` (4-Byte-int32-Enum) +
+`ShapeExtendedType` (color/x/y/shapesize/fillKind/angle, `TYPE_NAME =
+"ShapeExtendedType"`, keyed auf color) als hand-implementierten `DdsType`
+(CDR-LE, `angle` als float32-Bitmuster via `write_u32(to_bits)`). Vier Unit-Tests
+(`shape_extended_round_trip`, `shape_extended_type_name_distinct_from_shape`,
+`shape_extended_wire_layout` byte-exakt, `fill_kind_round_trips_and_clamps`).
+Die Demo-Examples `shapes_demo_{publisher,subscriber}` schalten via
+`ZERODDS_SHAPE_EXTENDED=1` auf den Extended-Type — damit spricht ZeroDDS eine
+**unmodifizierte RTI-7.x-ShapesDemo ohne `-dataType Shape`-Flag** an.
 
 ## Was ist offen
 

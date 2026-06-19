@@ -1,41 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! §7.3 Topic-ACL — Read/Write-Permissions pro Topic mit
-//! Wildcard- und Group-Match.
+//! §7.3 topic ACL — read/write permissions per topic with wildcard
+//! and group matching.
 //!
-//! Match-Rules:
+//! Match rules:
 //!
-//! * `*` — alle Subjects (Wildcard).
-//! * `<name>` — exakter Match auf [`AuthSubject::name`].
+//! * `*` — all subjects (wildcard).
+//! * `<name>` — exact match on [`AuthSubject::name`].
 //! * `*group:<g>*` — `subject.groups.contains(<g>)`.
 //!
-//! Bei Failure: 403 (HTTP-Bridges) oder Subscribe-Reject (TCP).
+//! On failure: 403 (HTTP bridges) or subscribe reject (TCP).
 
 use std::collections::HashMap;
 
 use crate::auth::AuthSubject;
 
-/// Welche Operation der Caller ausführen will.
+/// Which operation the caller wants to perform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AclOp {
-    /// Lese-Permission (Subscribe / Read-Sample).
+    /// Read permission (subscribe / read sample).
     Read,
-    /// Schreib-Permission (Publish / Write-Sample).
+    /// Write permission (publish / write sample).
     Write,
 }
 
-/// ACL-Entry für ein Topic.
+/// ACL entry for a topic.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AclEntry {
-    /// Subjects mit Read-Permission.
+    /// Subjects with read permission.
     pub read: Vec<String>,
-    /// Subjects mit Write-Permission.
+    /// Subjects with write permission.
     pub write: Vec<String>,
 }
 
 impl AclEntry {
-    /// Convenience: alle dürfen lesen+schreiben.
+    /// Convenience: everyone may read + write.
     #[must_use]
     pub fn allow_all() -> Self {
         Self {
@@ -45,17 +45,17 @@ impl AclEntry {
     }
 }
 
-/// Komplette ACL über alle Topics.
+/// Complete ACL across all topics.
 #[derive(Debug, Clone, Default)]
 pub struct Acl {
     entries: HashMap<String, AclEntry>,
-    /// Default für Topics, die nicht in der Map sind.
-    /// `None` = deny-by-default (Spec §7.3 Default).
+    /// Default for topics that are not in the map.
+    /// `None` = deny-by-default (Spec §7.3 default).
     default: Option<AclEntry>,
 }
 
 impl Acl {
-    /// Leere ACL — alles deny.
+    /// Empty ACL — deny everything.
     #[must_use]
     pub fn deny_all() -> Self {
         Self {
@@ -64,7 +64,7 @@ impl Acl {
         }
     }
 
-    /// Open ACL — alles allow (für `--auth-mode none` ohne Topic-Limit).
+    /// Open ACL — allow everything (for `--auth-mode none` without topic limit).
     #[must_use]
     pub fn allow_all() -> Self {
         Self {
@@ -73,17 +73,17 @@ impl Acl {
         }
     }
 
-    /// Setze einen Topic-Entry.
+    /// Set a topic entry.
     pub fn set(&mut self, topic: impl Into<String>, entry: AclEntry) {
         self.entries.insert(topic.into(), entry);
     }
 
-    /// Setze den Default-Entry für unbekannte Topics.
+    /// Set the default entry for unknown topics.
     pub fn set_default(&mut self, entry: AclEntry) {
         self.default = Some(entry);
     }
 
-    /// Prüfe Permission. Liefert `true` = allow, `false` = deny.
+    /// Check permission. Returns `true` = allow, `false` = deny.
     #[must_use]
     pub fn check(&self, subject: &AuthSubject, op: AclOp, topic: &str) -> bool {
         let entry = self.entries.get(topic).or(self.default.as_ref());

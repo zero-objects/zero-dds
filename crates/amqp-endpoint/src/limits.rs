@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Resource-Limits + DoS-Caps fuer den DDS-AMQP-Endpoint.
+//! Resource limits + DoS caps for the DDS-AMQP endpoint.
 //!
-//! Spec-Quelle: dds-amqp-1.0-beta1.pdf Annex A IDL Configuration
-//! Schema (`ResourceLimits`-Struct) + §6.1 Implementation-Note.
+//! Spec source: dds-amqp-1.0-beta1.pdf Annex A IDL Configuration
+//! Schema (`ResourceLimits` struct) + §6.1 Implementation Note.
 
-/// Spec Annex A — `ResourceLimits` aus dem IDL-Schema.
+/// Spec Annex A — `ResourceLimits` from the IDL schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResourceLimits {
-    /// Maximale Anzahl gleichzeitiger Connections.
+    /// Maximum number of concurrent connections.
     pub max_connections: u32,
-    /// Maximale Anzahl Sessions pro Connection.
+    /// Maximum number of sessions per connection.
     pub max_sessions_per_connection: u32,
-    /// Maximale Anzahl Links pro Session.
+    /// Maximum number of links per session.
     pub max_links_per_session: u32,
-    /// Maximale Frame-Groesse (Bytes).
+    /// Maximum frame size (bytes).
     pub max_frame_size: u32,
-    /// Idle-Timeout in Millisekunden.
+    /// Idle timeout in milliseconds.
     pub idle_timeout_ms: u64,
 }
 
 impl Default for ResourceLimits {
     fn default() -> Self {
-        // Spec §6.1 Implementation-Note: Default-Caps sollten konservativ
-        // sein, damit Operations-Hardening from-day-one greift.
+        // Spec §6.1 Implementation Note: default caps should be
+        // conservative so that operational hardening applies from day one.
         Self {
             max_connections: 1024,
             max_sessions_per_connection: 8,

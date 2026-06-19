@@ -1,41 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Endpoint-Level-Protection Abstraktion.
+//! Endpoint-level protection abstraction.
 //!
-//! Bruecke zwischen dem Wire-Typ [`EndpointSecurityInfo`] und der
-//! Policy-Ebene [`ProtectionLevel`]. Haelt die Match-Logik fuer ein
-//! Writer/Reader-Paar: pro Endpoint traegt der Wire einen 2x u32-
-//! Bitmask-Block, die Policy-Engine entscheidet daraus, ob ein Match
-//! zustandekommt und mit welchem resultierenden Protection-Level.
+//! Bridge between the wire type [`EndpointSecurityInfo`] and the
+//! policy level [`ProtectionLevel`]. Holds the match logic for a
+//! writer/reader pair: per endpoint the wire carries a 2x u32
+//! bitmask block, from which the policy engine decides whether a match
+//! occurs and with which resulting protection level.
 //!
-//! # DoD-Matching-Matrix (Plan §Stufe 3)
+//! # DoD matching matrix (plan §stage 3)
 //!
-//! | Writer         | Reader          | Ergebnis                       |
+//! | Writer         | Reader          | Result                         |
 //! |----------------|-----------------|--------------------------------|
-//! | `Encrypt`      | keine Caps      | Match abgelehnt                |
-//! | `Sign`         | `Encrypt`       | Match, Endlevel = `Encrypt`    |
-//! | `None`         | `None`          | Match, Endlevel = `None`       |
-//! | `Encrypt`      | `Encrypt`       | Match, Endlevel = `Encrypt`    |
+//! | `Encrypt`      | no caps         | match rejected                 |
+//! | `Sign`         | `Encrypt`       | match, end level = `Encrypt`   |
+//! | `None`         | `None`          | match, end level = `None`      |
+//! | `Encrypt`      | `Encrypt`       | match, end level = `Encrypt`   |
 //!
-//! "Staerkster Wert gewinnt": `max(writer, reader)`. Wenn einer der
-//! Endpoints kein `EndpointSecurityInfo` liefert (Legacy-Peer), wird
-//! das Paar nur akzeptiert wenn **beide** effektiv `None` fahren.
+//! "Strongest value wins": `max(writer, reader)`. If one of the
+//! endpoints supplies no `EndpointSecurityInfo` (legacy peer), the
+//! pair is only accepted if **both** effectively run `None`.
 
 use zerodds_rtps::endpoint_security_info::{EndpointSecurityInfo, attrs, plugin_attrs};
 
 use crate::policy::ProtectionLevel;
 
-/// Policy-Sicht auf ein Endpoint: welches Protection-Level verlangt/
-/// bietet dieser Writer/Reader.
+/// Policy view of an endpoint: which protection level this writer/reader
+/// requires/offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EndpointProtection {
-    /// Verlangtes/angebotenes Protection-Level.
+    /// Required/offered protection level.
     pub level: ProtectionLevel,
 }
 
 impl EndpointProtection {
-    /// Kurzform: plaintext-Endpoint (Legacy oder bewusst `None`).
+    /// Shorthand: plaintext endpoint (legacy or deliberately `None`).
     pub const PLAIN: Self = Self {
         level: ProtectionLevel::None,
     };
@@ -46,21 +46,21 @@ impl EndpointProtection {
         Self { level }
     }
 
-    /// Ableitung aus einem [`EndpointSecurityInfo`]:
-    /// * Payload-encrypted → `Encrypt`
-    /// * Submessage-encrypted → `Encrypt`
-    /// * Submessage/Payload protected ohne Plugin-Encrypt-Flag → `Sign`
-    /// * Keine Protection-Bits → `None`
+    /// Derivation from an [`EndpointSecurityInfo`]:
+    /// * payload-encrypted → `Encrypt`
+    /// * submessage-encrypted → `Encrypt`
+    /// * submessage/payload protected without the plugin-encrypt flag → `Sign`
+    /// * no protection bits → `None`
     ///
-    /// `None` als Argument (Legacy-Endpoint) → `Self::PLAIN`.
+    /// `None` as the argument (legacy endpoint) → `Self::PLAIN`.
     #[must_use]
     pub fn from_info(info: Option<&EndpointSecurityInfo>) -> Self {
         let Some(info) = info else {
             return Self::PLAIN;
         };
         if !info.is_valid() {
-            // Spec §7.4.1.5: bei fehlendem IS_VALID sind die Bits
-            // nicht interpretierbar. Behandle als Legacy.
+            // Spec §7.4.1.5: with IS_VALID missing the bits are
+            // not interpretable. Treat as legacy.
             return Self::PLAIN;
         }
         if info.is_payload_encrypted() || info.is_submessage_encrypted() {
@@ -72,8 +72,8 @@ impl EndpointProtection {
         Self::PLAIN
     }
 
-    /// Serialisierung zurueck in [`EndpointSecurityInfo`] — fuer
-    /// SEDP-Announce unseres eigenen Endpoints.
+    /// Serialization back into [`EndpointSecurityInfo`] — for the
+    /// SEDP announce of our own endpoint.
     #[must_use]
     pub fn to_info(self) -> EndpointSecurityInfo {
         let mut endpoint = attrs::IS_VALID;
@@ -96,35 +96,35 @@ impl EndpointProtection {
     }
 }
 
-/// Ergebnis eines Writer/Reader-Match-Checks.
+/// Result of a writer/reader match check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndpointMatch {
-    /// Match akzeptiert, auf diesem effektiven Protection-Level
+    /// Match accepted, at this effective protection level
     /// (`max(writer, reader)`).
     Accept(ProtectionLevel),
-    /// Match abgelehnt — Peer kann die verlangte Protection nicht liefern.
+    /// Match rejected — the peer cannot supply the required protection.
     Reject(MatchRejectReason),
 }
 
-/// Warum das Matching ein Reject ist.
+/// Why the matching is a reject.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatchRejectReason {
-    /// Einer der Peers hat eine Protection-Anforderung, aber kein
-    /// `EndpointSecurityInfo` geliefert → als Legacy interpretiert —
-    /// Match nur bei beidseitigem `None` zulaessig.
+    /// One of the peers has a protection requirement but supplied no
+    /// `EndpointSecurityInfo` → interpreted as legacy —
+    /// the match is only admissible with `None` on both sides.
     LegacyPeerVsProtection,
 }
 
-/// Match Writer ↔ Reader. Aus den beiden [`EndpointProtection`]-
-/// Werten wird bestimmt:
-/// * Ist das Paar kompatibel?
-/// * Auf welchem Level wird kommuniziert?
+/// Match writer ↔ reader. From the two [`EndpointProtection`]
+/// values it is determined:
+/// * Is the pair compatible?
+/// * At which level is communication done?
 ///
-/// Regel (Plan §Stufe 3 DoD):
-/// * Writer `Encrypt`, Reader `None` ohne Info → `Reject`
-/// * Writer `None` ohne Info, Reader `Encrypt` → `Reject`
-/// * Writer `Sign`, Reader `Encrypt` → `Accept(Encrypt)` (stronger wins)
-/// * Alles andere → `Accept(max(w, r))`
+/// Rule (plan §stage 3 DoD):
+/// * writer `Encrypt`, reader `None` without info → `Reject`
+/// * writer `None` without info, reader `Encrypt` → `Reject`
+/// * writer `Sign`, reader `Encrypt` → `Accept(Encrypt)` (stronger wins)
+/// * everything else → `Accept(max(w, r))`
 #[must_use]
 pub fn match_endpoints(
     writer: &EndpointProtection,
@@ -132,8 +132,8 @@ pub fn match_endpoints(
     writer_has_info: bool,
     reader_has_info: bool,
 ) -> EndpointMatch {
-    // Wenn eine Seite Protection will und die andere ein Legacy-
-    // Endpoint ist (kein EndpointSecurityInfo), ist das ein Reject.
+    // If one side wants protection and the other is a legacy
+    // endpoint (no EndpointSecurityInfo), that is a reject.
     let writer_wants_protection = !matches!(writer.level, ProtectionLevel::None);
     let reader_wants_protection = !matches!(reader.level, ProtectionLevel::None);
     if writer_wants_protection && !reader_has_info {
@@ -166,8 +166,8 @@ mod tests {
 
     #[test]
     fn from_info_invalid_valid_bit_is_plain() {
-        // Flags gesetzt, aber kein IS_VALID -> Spec verbietet
-        // Interpretation -> Legacy.
+        // Flags set, but no IS_VALID -> spec forbids
+        // interpretation -> legacy.
         let info = EndpointSecurityInfo {
             endpoint_security_attributes: attrs::IS_SUBMESSAGE_PROTECTED,
             plugin_endpoint_security_attributes: plugin_attrs::IS_SUBMESSAGE_ENCRYPTED,
@@ -265,11 +265,11 @@ mod tests {
             let ep = EndpointProtection::new(lvl);
             let info = ep.to_info();
             let back = EndpointProtection::from_info(Some(&info));
-            assert_eq!(back, ep, "roundtrip scheitert fuer {lvl:?}");
+            assert_eq!(back, ep, "roundtrip fails for {lvl:?}");
         }
     }
 
-    // ---- match_endpoints — DoD-Matrix aus Plan §Stufe 3 ----
+    // ---- match_endpoints — DoD matrix from plan §stage 3 ----
 
     #[test]
     fn dod_writer_encrypt_reader_no_plugin_is_reject() {
@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn writer_none_reader_none_both_legacy_accepts_none() {
-        // Zwei legacy-Peers ohne Security-PID — legacy ↔ legacy ist ok.
+        // Two legacy peers without a security PID — legacy ↔ legacy is ok.
         let w = EndpointProtection::PLAIN;
         let r = EndpointProtection::PLAIN;
         let result = match_endpoints(&w, &r, false, false);
@@ -319,7 +319,7 @@ mod tests {
 
     #[test]
     fn writer_plain_reader_encrypt_rejects_if_writer_legacy() {
-        // Writer ist Legacy (no security info), Reader will Encrypt → Reject.
+        // Writer is legacy (no security info), reader wants Encrypt → reject.
         let w = EndpointProtection::PLAIN;
         let r = EndpointProtection::new(ProtectionLevel::Encrypt);
         let result = match_endpoints(&w, &r, /*writer_has_info=*/ false, true);
@@ -331,8 +331,8 @@ mod tests {
 
     #[test]
     fn writer_encrypt_reader_sign_accepts_with_encrypt() {
-        // Symmetrischer Fall zum DoD-Beispiel: Reader bietet SIGN,
-        // Writer ENCRYPT → stronger wins = ENCRYPT.
+        // Symmetric case to the DoD example: reader offers SIGN,
+        // writer ENCRYPT → stronger wins = ENCRYPT.
         let w = EndpointProtection::new(ProtectionLevel::Encrypt);
         let r = EndpointProtection::new(ProtectionLevel::Sign);
         let result = match_endpoints(&w, &r, true, true);
@@ -349,10 +349,10 @@ mod tests {
 
     #[test]
     fn writer_none_with_info_reader_sign_rejects_only_if_writer_cant() {
-        // Writer hat SecurityInfo aber Level=None (explizit plaintext);
-        // Reader will SIGN → das ist aus Reader-Sicht nicht erfuellbar
-        // — in heutiger Version akzeptieren wir den Match, weil beide
-        // SecurityInfo haben. Das DoD erlaubt "stronger wins".
+        // Writer has SecurityInfo but level=None (explicitly plaintext);
+        // reader wants SIGN → from the reader's perspective that is not satisfiable
+        // — in the current version we accept the match because both
+        // have SecurityInfo. The DoD allows "stronger wins".
         let w = EndpointProtection::PLAIN;
         let r = EndpointProtection::new(ProtectionLevel::Sign);
         let result = match_endpoints(&w, &r, true, true);

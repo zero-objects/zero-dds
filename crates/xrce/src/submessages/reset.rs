@@ -3,30 +3,30 @@
 
 //! `RESET` Submessage (id=12, Spec §8.3.5.13).
 //!
-//! Empty Payload. Setzt session_id-State zurueck.
+//! Empty payload. Resets the session_id state.
 
 extern crate alloc;
 
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// `RESET_Payload` — leer.
+/// `RESET_Payload` — empty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ResetPayload;
 
 impl ResetPayload {
-    /// Verpackt in `Submessage` mit leerem Body.
+    /// Packs into a `Submessage` with an empty body.
     ///
     /// # Errors
-    /// keine erwartet.
+    /// None expected.
     pub fn into_submessage(self) -> Result<Submessage, XrceError> {
         Submessage::new(SubmessageId::Reset, FLAG_E_LITTLE_ENDIAN, alloc::vec![])
     }
 
-    /// Extrahiert aus `Submessage`. Body muss leer sein.
+    /// Extracts from a `Submessage`. The body must be empty.
     ///
     /// # Errors
-    /// `ValueOutOfRange`, wenn ID falsch oder Body nicht leer.
+    /// `ValueOutOfRange` if the ID is wrong or the body is not empty.
     pub fn try_from_submessage(sm: &Submessage) -> Result<Self, XrceError> {
         if sm.header.submessage_id != SubmessageId::Reset {
             return Err(XrceError::ValueOutOfRange {

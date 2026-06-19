@@ -1,42 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! CST-Konstruktion aus Recognizer-Output.
+//! CST construction from recognizer output.
 //!
-//! Aus den Earley-State-Sets eines erfolgreichen [`recognize`-Laufs](crate::engine::Recognizer::recognize)
-//! wird der Concrete Syntax Tree per **Backtracking-Search** rekonstruiert:
+//! From the Earley state sets of a successful [`recognize` run](crate::engine::Recognizer::recognize)
+//! the concrete syntax tree is reconstructed via a **backtracking search**:
 //!
-//! 1. Im finalen State-Set `Sₙ` ein abgeschlossenes Item finden, das die
-//!    Start-Production matched (Origin 0, Dot am Ende).
-//! 2. Top-down Tree-Konstruktion durch die Alternative-Symbole:
-//!    - **Terminal**: passender Token wird als Leaf eingefuegt.
-//!    - **Nonterminal `B`**: alle in den State-Sets auffindbaren
-//!      abgeschlossenen `B`-Items mit `origin == aktuelle Position`
-//!      werden als Kandidaten ausprobiert. Der erste, der sich rekursiv
-//!      bauen laesst **und** dessen Rest-Symbole zum Ziel-Endpunkt fuehren,
-//!      gewinnt.
+//! 1. In the final state set `Sₙ`, find a completed item that matches the
+//!    start production (origin 0, dot at the end).
+//! 2. Top-down tree construction through the alternative's symbols:
+//!    - **Terminal**: the matching token is inserted as a leaf.
+//!    - **Nonterminal `B`**: all completed `B` items findable in the
+//!      state sets with `origin == current position`
+//!      are tried as candidates. The first one that recursively
+//!      builds **and** whose remaining symbols lead to the target endpoint
+//!      wins.
 //!
-//! Greedy-Longest-Match wird bewusst **nicht** verwendet: bei
-//! linksrekursiven Grammars (E ::= E "+" T) wuerde der Greedy-Pfad das
-//! Sub-E ueber das gesamte Rest-Input ziehen und nichts fuer die
-//! verbleibenden Symbole `"+" T` lassen. Backtracking probiert kleinere
-//! Sub-Spans und findet die korrekte Links-Assoziativitaet.
+//! Greedy longest-match is deliberately **not** used: with
+//! left-recursive grammars (E ::= E "+" T) the greedy path would pull the
+//! sub-E over the entire remaining input and leave nothing for the
+//! remaining symbols `"+" T`. Backtracking tries smaller
+//! sub-spans and finds the correct left associativity.
 //!
-//! Komplexitaet ohne Memoization: worst-case exponentiell wenn die
-//! Grammar viele nullable Nonterminals hat (jedes davon multipliziert die
-//! Position-Kandidaten fuer den naechsten Symbol-Match). Fuer
-//! IDL-4.2-Grammar mit `<annotation_appl_seq>`-Hooks ueberall ist das
+//! Complexity without memoization: worst-case exponential if the
+//! grammar has many nullable nonterminals (each of which multiplies the
+//! position candidates for the next symbol match). For the
+//! IDL-4.2 grammar with `<annotation_appl_seq>` hooks everywhere this is
 //! relevant.
 //!
-//! Mit der Memoization aus T6.0 (`(production, alternative, start, end)
-//! -> Option<CstNode>`) laeuft die Reconstruction in O(productions ×
-//! alternatives × n²) — polynomial. Cache lebt nur fuer einen
-//! `build_cst`-Call und wird beim Return verworfen.
+//! With the memoization from T6.0 (`(production, alternative, start, end)
+//! -> Option<CstNode>`) the reconstruction runs in O(productions ×
+//! alternatives × n²) — polynomial. The cache lives only for one
+//! `build_cst` call and is discarded on return.
 //!
-//! Repeat- und Choice-Symbole werden hier nicht behandelt — analog zur
-//! .  Desugaring-Pass folgt in einem spaeteren
-//! Task.
+//! Repeat and choice symbols are not handled here — analogous to the
+//! .  A desugaring pass follows in a later
+//! task.
 //!
-//! Siehe RFC 0001 §4.1 und §5.4.
+//! See RFC 0001 §4.1 and §5.4.
 
 use std::collections::HashMap;
 
@@ -47,22 +47,22 @@ use crate::lexer::Token;
 
 use super::node::CstNode;
 
-/// Cache-Key fuer [`Memo`]: `(production_id, alternative_index, start, end)`.
+/// Cache key for [`Memo`]: `(production_id, alternative_index, start, end)`.
 type MemoKey = (ProductionId, u32, u32, u32);
 
-/// Memoization-Tabelle fuer `build_internal_node`. Verhindert
-/// exponentielles Re-Exploration bei nullable-reichen Grammars (T6.0).
-/// `Option`-Wert reflektiert "kein gueltiger Build" — Misserfolge werden
-/// genauso gecacht wie Erfolge.
+/// Memoization table for `build_internal_node`. Prevents
+/// exponential re-exploration on nullable-rich grammars (T6.0).
+/// The `Option` value reflects "no valid build" — failures are
+/// cached just like successes.
 type Memo<'src> = HashMap<MemoKey, Option<CstNode<'src>>>;
 
-/// Baut den CST aus einem Recognizer-Resultat und der zugehoerigen
-/// Token-Sequenz.
+/// Builds the CST from a recognizer result and the associated
+/// token sequence.
 ///
-/// Liefert `None`, wenn das Recognition-Ergebnis abgelehnt wurde
-/// (`!result.accepted`) oder wenn die Reconstruction fehlschlaegt
-/// (z.B. wegen Grammar-Konstrukten, die die aktuelle Engine nicht
-/// behandelt — Repeat/Choice).
+/// Returns `None` if the recognition result was rejected
+/// (`!result.accepted`) or if the reconstruction fails
+/// (e.g. because of grammar constructs the current engine does not
+/// handle — repeat/choice).
 #[must_use]
 pub fn build_cst<'src, G: GrammarLike + ?Sized>(
     grammar: &G,
@@ -87,8 +87,8 @@ pub fn build_cst<'src, G: GrammarLike + ?Sized>(
     )
 }
 
-/// Sucht im finalen State-Set ein abgeschlossenes Item der Start-Production
-/// mit Origin 0.
+/// Searches the final state set for a completed item of the start production
+/// with origin 0.
 fn find_accepting_item<G: GrammarLike + ?Sized>(set: &StateSet, grammar: &G) -> Option<EarleyItem> {
     set.items()
         .iter()
@@ -96,12 +96,12 @@ fn find_accepting_item<G: GrammarLike + ?Sized>(set: &StateSet, grammar: &G) -> 
         .find(|it| it.production == grammar.start() && it.origin == 0 && it.is_complete(grammar))
 }
 
-/// Baut einen Internal-Node fuer ein bestimmtes Earley-Item, das die
-/// Tokens `[start..end]` ueberdeckt.
+/// Builds an internal node for a specific Earley item that covers the
+/// tokens `[start..end]`.
 ///
-/// Mit Memoization: bei Cache-Hit wird das gespeicherte Ergebnis
-/// (Erfolg oder Misserfolg) ohne erneute Backtracking-Suche
-/// zurueckgegeben. Cache-Key: `(production_id, alternative_index,
+/// With memoization: on a cache hit, the stored result
+/// (success or failure) is returned without a fresh backtracking
+/// search. Cache key: `(production_id, alternative_index,
 /// start, end)`.
 fn build_internal_node<'src, G: GrammarLike + ?Sized>(
     grammar: &G,
@@ -160,12 +160,12 @@ fn build_internal_node_uncached<'src, G: GrammarLike + ?Sized>(
     Some(node)
 }
 
-/// Versucht, die `symbols`-Sequenz beginnend bei Token-Position `start` zu
-/// matchen, sodass die Konsumation an Position `target_end` endet.
+/// Tries to match the `symbols` sequence starting at token position `start`,
+/// so that consumption ends at position `target_end`.
 ///
-/// Bei Erfolg sind die Children-Nodes in `accumulated` angehaengt und der
-/// Returnwert ist `Some(target_end)`.
-#[allow(clippy::too_many_arguments)] // Builder-Recursion mit Memo-State.
+/// On success the children nodes are appended into `accumulated` and the
+/// return value is `Some(target_end)`.
+#[allow(clippy::too_many_arguments)] // Builder recursion with memo state.
 /// zerodds-lint: recursion-depth 64 (Parser/AST-Walk; bounded by IDL nesting)
 fn try_match_symbols<'src, G: GrammarLike + ?Sized>(
     grammar: &G,
@@ -213,17 +213,17 @@ fn try_match_symbols<'src, G: GrammarLike + ?Sized>(
             }
         }
         Symbol::Nonterminal(nonterminal) => {
-            // Probiere alle abgeschlossenen B-Items mit Origin = start
-            // ueber alle moeglichen Endpunkte k in [start, target_end].
-            // Greedy-longest-first wuerde bei Linksrekursion fehlschlagen;
-            // wir gehen kuerzeste-zuerst, damit linksrekursive E-Sub-Trees
-            // nicht das ganze Rest-Input schlucken.
+            // Try all completed B items with origin = start
+            // over all possible endpoints k in [start, target_end].
+            // Greedy-longest-first would fail on left recursion;
+            // we go shortest-first, so that left-recursive E sub-trees
+            // do not swallow the entire remaining input.
             //
-            // k == start ist noetig fuer nullable Nonterminals (z.B.
+            // k == start is needed for nullable nonterminals (e.g.
             // empty `<annotation_appl_seq>`, `<definition_list>`,
-            // `<member_list>`). Earley liefert in dem Fall ein
-            // complete-Item mit origin == end == start, und die
-            // empty-Alternative der Production matcht via
+            // `<member_list>`). In that case Earley returns a
+            // complete item with origin == end == start, and the
+            // empty alternative of the production matches via
             // `symbols.is_empty() && start == target_end`.
             for k in start..=target_end {
                 if let Some(set) = state_sets.get(k) {
@@ -257,15 +257,15 @@ fn try_match_symbols<'src, G: GrammarLike + ?Sized>(
             None
         }
         Symbol::Repeat(_, _) | Symbol::Choice(_) => {
-            // Repeat/Choice werden nicht direkt
-            // gehandelt. Die Reconstruction schlaegt hier fehl; eine
-            // Desugaring-Pass-Erweiterung folgt in einem spaeteren Task.
+            // Repeat/choice are not handled directly.
+            // The reconstruction fails here; a
+            // desugaring-pass extension follows in a later task.
             None
         }
     }
 }
 
-/// Berechnet die Span ueber die Tokens `[start..end]`.
+/// Computes the span over the tokens `[start..end]`.
 fn compute_span(tokens: &[Token<'_>], start: usize, end: usize) -> Span {
     if start >= end || tokens.is_empty() {
         return Span::SYNTHETIC;
@@ -300,7 +300,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Akzeptanz-Pfade auf Toy-Grammar
+    // Acceptance paths on the toy grammar
     // -----------------------------------------------------------------
 
     #[test]
@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn cst_for_addition_has_e_plus_t_structure() {
-        // n + n → E (alt 0 = plus) mit Children [E, "+", T]
+        // n + n → E (alt 0 = plus) with children [E, "+", T]
         let cst = parse_to_cst(
             &TOY,
             &[
@@ -336,7 +336,7 @@ mod tests {
         )
         .expect("must build");
         assert_eq!(cst.production(), Some(ProductionId(0))); // E
-        // E (plus) hat 3 Children: E, +, T
+        // E (plus) has 3 children: E, +, T
         assert_eq!(cst.children.len(), 3);
         assert_eq!(cst.children[0].production(), Some(ProductionId(0))); // sub-E
         assert_eq!(cst.children[1].token_kind(), Some(TokenKind::Punct("+")));
@@ -345,7 +345,7 @@ mod tests {
 
     #[test]
     fn cst_for_multiplication_uses_times_alternative() {
-        // n * n → E (just_term) → T (times) mit Children [T, "*", F]
+        // n * n → E (just_term) → T (times) with children [T, "*", F]
         let cst = parse_to_cst(
             &TOY,
             &[
@@ -355,15 +355,15 @@ mod tests {
             ],
         )
         .expect("must build");
-        // Top-Level E sollte just_term-Alt nutzen (alt_index 1).
+        // Top-level E should use the just_term alt (alt_index 1).
         let CstKind::Internal {
             alternative_index, ..
         } = cst.kind
         else {
             panic!("expected Internal");
         };
-        assert_eq!(alternative_index, 1, "E sollte just_term-Alt nutzen");
-        // T sollte times-Alt nutzen.
+        assert_eq!(alternative_index, 1, "E should use the just_term alt");
+        // T should use the times alt.
         let t_node = &cst.children[0];
         let CstKind::Internal {
             alternative_index: t_alt,
@@ -372,7 +372,7 @@ mod tests {
         else {
             panic!("expected Internal");
         };
-        assert_eq!(t_alt, 0, "T sollte times-Alt nutzen");
+        assert_eq!(t_alt, 0, "T should use the times alt");
         assert_eq!(t_node.children.len(), 3);
     }
 
@@ -400,7 +400,7 @@ mod tests {
         else {
             panic!("expected Internal");
         };
-        assert_eq!(alternative_index, 0, "Top-E muss plus-Alt sein");
+        assert_eq!(alternative_index, 0, "top E must be the plus alt");
 
         // Sub-E (Top-E.children[0]): alt=plus (linksrekursiv)
         let sub_e = &cst.children[0];
@@ -413,7 +413,7 @@ mod tests {
         };
         assert_eq!(
             sub_alt, 0,
-            "Sub-E muss auch plus-Alt sein (Linksassoziativitaet)"
+            "sub-E must also be the plus alt (left associativity)"
         );
     }
 
@@ -429,7 +429,7 @@ mod tests {
             ],
         )
         .expect("must build");
-        // Steige hinab zu F-Knoten.
+        // Descend to the F node.
         let f_node = cst
             .children
             .first()
@@ -442,14 +442,14 @@ mod tests {
         else {
             panic!("expected Internal");
         };
-        assert_eq!(alternative_index, 1, "F muss paren-Alt sein");
+        assert_eq!(alternative_index, 1, "F must be the paren alt");
         assert_eq!(f_node.children.len(), 3);
         assert_eq!(f_node.children[0].token_kind(), Some(TokenKind::Punct("(")));
         assert_eq!(f_node.children[2].token_kind(), Some(TokenKind::Punct(")")));
     }
 
     // -----------------------------------------------------------------
-    // Reject-Pfade
+    // Reject paths
     // -----------------------------------------------------------------
 
     #[test]
@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn token_leaves_carry_their_lexer_span() {
-        // Tokens mit echten (statt synthetischen) Spans bauen.
+        // Build tokens with real (instead of synthetic) spans.
         let tokens = vec![
             Token::new(TokenKind::Keyword("n"), Span::new(0, 1), "n"),
             Token::new(TokenKind::Punct("+"), Span::new(2, 3), "+"),
@@ -479,7 +479,7 @@ mod tests {
         let result = Recognizer::new(&TOY).recognize(&tokens);
         let cst = build_cst(&TOY, &tokens, &result).expect("must build");
 
-        // Sammle alle Token-Leaf-Spans via Pre-order.
+        // Collect all token-leaf spans via pre-order.
         let mut spans: Vec<Span> = Vec::new();
         cst.walk_preorder(&mut |n| {
             if n.is_token() {
@@ -501,12 +501,12 @@ mod tests {
         ];
         let result = Recognizer::new(&TOY).recognize(&tokens);
         let cst = build_cst(&TOY, &tokens, &result).expect("must build");
-        // Top-E sollte Span 0..5 ueberdecken.
+        // Top E should cover span 0..5.
         assert_eq!(cst.span, Span::new(0, 5));
     }
 
     // -----------------------------------------------------------------
-    // E2E ueber Tokenizer (echter Lexer-Output → CST)
+    // E2E via the tokenizer (real lexer output → CST)
     // -----------------------------------------------------------------
 
     #[test]

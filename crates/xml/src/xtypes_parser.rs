@@ -2,11 +2,11 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DDS-XML 1.0 §7.3.3 Building Block "Types" — XML→AST-Parser.
 //!
-//! Liest `<types>`-Top-Level-Bloecke und produziert eine
-//! [`Vec<TypeLibrary>`]. Modul-Hierarchie wird als geschachtelte
-//! [`TypeDef::Module`]-Eintraege beibehalten.
+//! Reads `<types>` top-level blocks and produces a
+//! [`Vec<TypeLibrary>`]. The module hierarchy is kept as nested
+//! [`TypeDef::Module`] entries.
 //!
-//! Spec-Quelle: OMG DDS-XML 1.0 §7.3.3 (Types Building Block).
+//! Spec source: OMG DDS-XML 1.0 §7.3.3 (Types Building Block).
 
 use alloc::format;
 use alloc::string::ToString;
@@ -21,15 +21,15 @@ use crate::xtypes_def::{
     UnionDiscriminator, UnionType,
 };
 
-/// Parst alle `<types>`-Top-Level-Elemente eines DDS-XML-Dokuments.
+/// Parses all `<types>` top-level elements of a DDS-XML document.
 ///
-/// Der Top-Level-Wrapper `<dds>` ist NICHT erforderlich — `xml` darf direkt
-/// ein `<types>`-Wurzel-Element sein.
+/// The top-level wrapper `<dds>` is NOT required — `xml` may be directly
+/// a `<types>` root element.
 ///
 /// # Errors
-/// * [`XmlError::InvalidXml`] — kein wohlgeformtes XML.
-/// * [`XmlError::UnknownElement`] — unbekanntes Top-Level-Element.
-/// * [`XmlError::ValueOutOfRange`] — numerisches Attribut ausserhalb Range.
+/// * [`XmlError::InvalidXml`] — not well-formed XML.
+/// * [`XmlError::UnknownElement`] — unknown top-level element.
+/// * [`XmlError::ValueOutOfRange`] — numeric attribute out of range.
 pub fn parse_type_libraries(xml: &str) -> Result<Vec<TypeLibrary>, XmlError> {
     let doc = parse_xml_tree(xml)?;
     let mut out = Vec::new();
@@ -51,10 +51,10 @@ pub fn parse_type_libraries(xml: &str) -> Result<Vec<TypeLibrary>, XmlError> {
     Ok(out)
 }
 
-/// Parst ein einzelnes `<types>`-Element zu einer `TypeLibrary`.
+/// Parses a single `<types>` element into a `TypeLibrary`.
 ///
 /// # Errors
-/// Wie [`parse_type_libraries`].
+/// As [`parse_type_libraries`].
 pub fn parse_types_element(el: &XmlElement) -> Result<TypeLibrary, XmlError> {
     let name = el.attribute("name").unwrap_or("").to_string();
     let mut lib = TypeLibrary {
@@ -67,8 +67,8 @@ pub fn parse_types_element(el: &XmlElement) -> Result<TypeLibrary, XmlError> {
     Ok(lib)
 }
 
-/// zerodds-lint: recursion-depth = modul-schachtelungstiefe (indirekt via
-/// `parse_module`). DoS-Cap der XML-Foundation begrenzt Tiefe ≤ 16.
+/// zerodds-lint: recursion-depth = module nesting depth (indirectly via
+/// `parse_module`). The XML foundation's DoS cap limits the depth to ≤ 16.
 fn parse_type_def(el: &XmlElement) -> Result<TypeDef, XmlError> {
     match el.name.as_str() {
         "module" => Ok(TypeDef::Module(parse_module(el)?)),
@@ -92,7 +92,7 @@ fn parse_include(el: &XmlElement) -> Result<crate::xtypes_def::IncludeEntry, Xml
 
 fn parse_forward_dcl(el: &XmlElement) -> Result<crate::xtypes_def::ForwardDeclEntry, XmlError> {
     let name = require_attr(el, "name")?.to_string();
-    // kind ist optional; default "STRUCT".
+    // kind is optional; default "STRUCT".
     let kind = el.attribute("kind").unwrap_or("STRUCT").to_string();
     Ok(crate::xtypes_def::ForwardDeclEntry { name, kind })
 }
@@ -108,8 +108,8 @@ fn parse_const(el: &XmlElement) -> Result<crate::xtypes_def::ConstEntry, XmlErro
     })
 }
 
-/// zerodds-lint: recursion-depth = modul-schachtelungstiefe (indirekt via
-/// `parse_type_def`). DoS-Cap der XML-Foundation begrenzt Tiefe ≤ 16.
+/// zerodds-lint: recursion-depth = module nesting depth (indirectly via
+/// `parse_type_def`). The XML foundation's DoS cap limits the depth to ≤ 16.
 fn parse_module(el: &XmlElement) -> Result<ModuleEntry, XmlError> {
     let name = require_attr(el, "name")?.to_string();
     let mut types = Vec::new();
@@ -396,7 +396,7 @@ mod tests {
         assert!(matches!(err, XmlError::InvalidXml(_)));
     }
 
-    // ---- §7.3.2 XML-TypeRepr Erweiterte Konstrukte ----
+    // ---- §7.3.2 XML type repr extended constructs ----
 
     #[test]
     fn parse_include_element() {

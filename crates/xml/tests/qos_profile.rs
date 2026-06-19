@@ -1,18 +1,18 @@
-//! Integrations-Tests fuer DDS-XML 1.0 §7.3.2 QoS-Profile-Library.
+//! Integration tests for DDS-XML 1.0 §7.3.2 QoS profile library.
 //!
-//! Deckt:
-//! * Happy-Path Roundtrip (Reliability + History Policies).
-//! * Single-QoS-Shortcut fuer alle 6 Entity-Typen.
-//! * Inheritance (1, 2, 3 Generationen) + Override-Semantik.
-//! * Inheritance-Zyklus-Erkennung + Tiefen-Cap.
-//! * `base_name` zu nicht-existierendem Profile.
-//! * Topic-Filter Glob-Match.
-//! * 22-Policy-Coverage (jede Policy mind. ein Parse-Test).
-//! * DURATION_INFINITY-Sentinel + LENGTH_UNLIMITED.
-//! * Partition-Vec-Aufbau, UserData-Base64.
+//! Covers:
+//! * Happy-path roundtrip (reliability + history policies).
+//! * Single-QoS shortcut for all 6 entity types.
+//! * Inheritance (1, 2, 3 generations) + override semantics.
+//! * Inheritance cycle detection + depth cap.
+//! * `base_name` to a non-existent profile.
+//! * Topic filter glob match.
+//! * 22-policy coverage (each policy at least one parse test).
+//! * DURATION_INFINITY sentinel + LENGTH_UNLIMITED.
+//! * Partition Vec construction, UserData Base64.
 //! * Boolean-Case-Sensitivity.
-//! * DTD-Verbot.
-//! * Minimal-XML ohne Policies (None-Defaults).
+//! * DTD prohibition.
+//! * Minimal XML without policies (None defaults).
 
 #![allow(
     clippy::expect_used,
@@ -166,7 +166,7 @@ fn t04_three_level_inheritance_propagates() {
         dr.durability.expect("dur").kind,
         DurabilityKind::TransientLocal
     );
-    // Reliability: vom Grossparent.
+    // Reliability: from the grandparent.
     assert_eq!(
         dr.reliability.expect("rel").kind,
         ReliabilityKind::BestEffort
@@ -175,7 +175,7 @@ fn t04_three_level_inheritance_propagates() {
     assert_eq!(dr.history.expect("hist").kind, HistoryKind::KeepAll);
 }
 
-// ---------- 5. Cycle wird abgewiesen -----------------------------------
+// ---------- 5. Cycle is rejected ---------------------------------------
 
 #[test]
 fn t05_inheritance_cycle_rejected() {
@@ -383,7 +383,7 @@ fn t11_length_unlimited_in_resource_limits() {
     assert_eq!(rl.max_samples_per_instance, -1);
 }
 
-// ---------- 12. Partition Vec mit mehreren Namen ----------------------
+// ---------- 12. Partition Vec with multiple names ---------------------
 
 #[test]
 fn t12_partition_multiple_names_become_vec() {
@@ -441,7 +441,7 @@ fn t14_boolean_case_sensitive_strict() {
     </qos_profile></qos_library></dds>"#;
     let err = parse_qos_libraries(xml).expect_err("strict");
     assert!(matches!(err, XmlError::ValueOutOfRange(_)));
-    // Lowercase ist ok.
+    // Lowercase is ok.
     let ok = xml.replace("True", "true");
     let lib = parse_qos_library(&ok).expect("parse");
     let ef = lib.profiles[0]
@@ -453,7 +453,7 @@ fn t14_boolean_case_sensitive_strict() {
     assert!(ef.autoenable_created_entities);
 }
 
-// ---------- 15. DTD-Verbot bestaetigt --------------------------------
+// ---------- 15. DTD prohibition confirmed --------------------------------
 
 #[test]
 fn t15_dtd_rejected() {
@@ -464,7 +464,7 @@ fn t15_dtd_rejected() {
     assert!(matches!(err, XmlError::InvalidXml(_)));
 }
 
-// ---------- 16. Minimal Profile -> alle None -------------------------
+// ---------- 16. Minimal profile -> all None -------------------------
 
 #[test]
 fn t16_minimal_profile_all_none() {
@@ -481,7 +481,7 @@ fn t16_minimal_profile_all_none() {
     assert!(p.base_name.is_none());
 }
 
-// ---------- 17. Mehrere Libraries pro Dokument -----------------------
+// ---------- 17. Multiple libraries per document -----------------------
 
 #[test]
 fn t17_multiple_libraries_per_document() {
@@ -511,7 +511,7 @@ fn t18_into_writer_and_reader_qos_use_spec_defaults() {
     let lib = parse_qos_library(xml).expect("parse");
     let dw = lib.profiles[0].datawriter_qos.as_ref().expect("dw");
     let wq = dw.into_writer_qos();
-    // Reliability war explizit gesetzt.
+    // Reliability was explicitly set.
     assert_eq!(wq.reliability.kind, ReliabilityKind::BestEffort);
     // History uebernimmt Spec-Default (KeepLast, depth=1).
     assert_eq!(wq.history.kind, HistoryKind::KeepLast);

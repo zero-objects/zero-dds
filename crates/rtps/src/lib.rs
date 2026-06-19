@@ -3,12 +3,12 @@
 //! Writer/Reader state machines, RTPS submessages, fragmentation.
 //!
 //! Crate `zerodds-rtps`. Safety classification: **SAFE**.
-//! Siehe `docs/architecture/02_architecture.md §3` und
+//! See `docs/architecture/02_architecture.md §3` and
 //! `docs/architecture/04_safety_by_architecture.md §2`.
 //!
-//! RTPS-Wire-Types + Header (W1). Submessages
-//! (DATA/HEARTBEAT/ACKNACK/GAP) folgen in W2; Transport-Trait + UDP-
-//! Impl in W3; Best-Effort-Writer + E2E in W4. Siehe
+//! RTPS wire types + header (W1). Submessages
+//! (DATA/HEARTBEAT/ACKNACK/GAP) follow in W2; transport trait + UDP
+//! impl in W3; best-effort writer + E2E in W4. See
 //! `.planning/wp-0.5-rtps-prototyp/PLAN.md`.
 
 #![no_std]

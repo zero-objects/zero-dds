@@ -2,28 +2,28 @@
 // Copyright 2026 ZeroDDS Contributors
 //
 // writer.ts — Xcdr2Writer.
-// Konformanz: OMG XTypes 1.3 §7.4 + zerodds-xcdr2-bindings-conformance-1.0 §3.
+// Conformance: OMG XTypes 1.3 §7.4 + zerodds-xcdr2-bindings-conformance-1.0 §3.
 //
-// Alignment-Politik: relativ zum Buffer-Start (§7.4.1.5). Beginnt
-// ein Sub-Block (DHEADER / EMHEADER-NEXTINT) seine eigene Origin-
-// Stelle, kann der Caller `pushAlignmentOrigin()` setzen und nach
-// Block-Ende `popAlignmentOrigin()` aufrufen.
+// Alignment policy: relative to the buffer start (§7.4.1.5). If a
+// sub-block (DHEADER / EMHEADER NEXTINT) begins its own origin
+// point, the caller can set `pushAlignmentOrigin()` and call
+// `popAlignmentOrigin()` after the block ends.
 
 import { XcdrError } from './errors.js';
 import type { EndianMode } from './types.js';
 
-/// Buffer-Wachstums-Schrittweite (verdoppelt sich automatisch).
+/// Buffer growth step (doubles automatically).
 const INITIAL_CAPACITY = 64;
 
-/// XCDR2-Writer mit dynamisch wachsendem Uint8Array-Backing.
-/// Stateful: hat einen Schreib-Cursor `pos` und eine "Origin"-
-/// Position fuer Alignment-Berechnungen.
+/// XCDR2 writer with a dynamically growing Uint8Array backing.
+/// Stateful: has a write cursor `pos` and an "origin"
+/// position for alignment computations.
 export class Xcdr2Writer {
     private buf: Uint8Array;
     private view: DataView;
     private _pos: number;
     private readonly littleEndian: boolean;
-    /// Stack der Alignment-Origin-Positionen (default: [0]).
+    /// Stack of the alignment-origin positions (default: [0]).
     private originStack: number[];
 
     constructor(endian: EndianMode = 'le') {
@@ -34,18 +34,18 @@ export class Xcdr2Writer {
         this.originStack = [0];
     }
 
-    /// Aktuelle Schreib-Position (Bytes geschrieben).
+    /// Current write position (bytes written).
     get pos(): number {
         return this._pos;
     }
 
-    /// Liefert den geschriebenen Inhalt als neue Uint8Array
-    /// (kein Alias auf den internen Buffer).
+    /// Returns the written content as a new Uint8Array
+    /// (no alias on the internal buffer).
     toBytes(): Uint8Array {
         return this.buf.slice(0, this._pos);
     }
 
-    /// Endian-Mode fuer Multi-Byte-Werte.
+    /// Endian mode for multi-byte values.
     get endian(): EndianMode {
         return this.littleEndian ? 'le' : 'be';
     }
@@ -69,8 +69,8 @@ export class Xcdr2Writer {
         return this.originStack[this.originStack.length - 1] ?? 0;
     }
 
-    /// Padded den Cursor so dass `(pos - origin) % alignment == 0`.
-    /// Schreibt Null-Bytes als Padding.
+    /// Pads the cursor so that `(pos - origin) % alignment == 0`.
+    /// Writes null bytes as padding.
     align(alignment: number): void {
         if (alignment <= 1) {
             return;
@@ -82,22 +82,22 @@ export class Xcdr2Writer {
             return;
         }
         this.ensureCapacity(pad);
-        // Uint8Array ist 0-initialisiert; wir muessen aber sicher
-        // gehen, falls Buffer wiederverwendet wuerde — hier OK.
+        // Uint8Array is 0-initialized; but we must be sure
+        // in case the buffer were reused — OK here.
         for (let i = 0; i < pad; i++) {
             this.buf[this._pos + i] = 0;
         }
         this._pos += pad;
     }
 
-    /// Setzt eine neue Alignment-Origin auf die aktuelle Position.
-    /// XTypes §7.4.4.4 (DHEADER) reset interne Member-Offsets — Caller
-    /// kann das hiermit modellieren wenn die Sprach-Spec das verlangt.
+    /// Sets a new alignment origin at the current position.
+    /// XTypes §7.4.4.4 (DHEADER) resets internal member offsets — the caller
+    /// can model this with it when the language spec requires it.
     pushAlignmentOrigin(): void {
         this.originStack.push(this._pos);
     }
 
-    /// Restauriert die vorherige Alignment-Origin.
+    /// Restores the previous alignment origin.
     popAlignmentOrigin(): void {
         if (this.originStack.length <= 1) {
             throw new XcdrError('popAlignmentOrigin: stack underflow');
@@ -229,10 +229,10 @@ export class Xcdr2Writer {
     }
 
     /// XTypes §7.4.4.6 — bounded/unbounded UTF-8 string.
-    /// Wire-Format: uint32 length-with-NUL + UTF-8-bytes + NUL.
+    /// Wire format: uint32 length-with-NUL + UTF-8 bytes + NUL.
     writeString(s: string): void {
         const enc = new TextEncoder().encode(s);
-        // length = bytes + 1 (fuer NUL).
+        // length = bytes + 1 (for NUL).
         const len = enc.length + 1;
         this.writeUint32(len);
         this.ensureCapacity(len);
@@ -241,8 +241,8 @@ export class Xcdr2Writer {
         this.buf[this._pos++] = 0;
     }
 
-    /// XTypes §7.4.4.6 — wstring als UTF-16-LE auf der Wire.
-    /// Wire: uint32 length-in-bytes + UTF-16-LE-Code-Units (kein NUL).
+    /// XTypes §7.4.4.6 — wstring as UTF-16-LE on the wire.
+    /// Wire: uint32 length-in-bytes + UTF-16-LE code units (no NUL).
     writeWString(s: string): void {
         const codeUnits = s.length;
         const byteLen = codeUnits * 2;
@@ -255,16 +255,15 @@ export class Xcdr2Writer {
         }
     }
 
-    /// Schreibt rohe Bytes ohne Alignment.
+    /// Writes raw bytes without alignment.
     writeBytes(bytes: Uint8Array): void {
         this.ensureCapacity(bytes.length);
         this.buf.set(bytes, this._pos);
         this._pos += bytes.length;
     }
 
-    /// Patcht einen 32-bit-Wert an einer bereits geschriebenen
-    /// Position. Wird vom Codegen fuer EMHEADER-NEXTINT-Backpatching
-    /// benoetigt.
+    /// Patches a 32-bit value at an already-written
+    /// position. Needed by the codegen for EMHEADER NEXTINT backpatching.
     patchUint32(pos: number, value: number): void {
         if (pos < 0 || pos + 4 > this._pos) {
             throw new XcdrError(`patchUint32 out of bounds: pos=${pos}, written=${this._pos}`);
@@ -272,27 +271,27 @@ export class Xcdr2Writer {
         this.view.setUint32(pos, value >>> 0, this.littleEndian);
     }
 
-    // === Extensibility-Helper ===
+    // === Extensibility helpers ===
 
-    /// Beginnt einen Appendable-Block. Reserviert 4 Bytes fuer den
-    /// DHEADER (uint32 byte-size der folgenden Member), gibt Token
-    /// zurueck zum spaeteren `endAppendable(token)`-Aufruf.
-    /// Origin wird auf die Startposition des Member-Body gesetzt
-    /// (XTypes §7.4.4.4 — Alignment innerhalb des DHEADER ist
-    /// relativ zur Position direkt nach dem DHEADER).
+    /// Begins an appendable block. Reserves 4 bytes for the
+    /// DHEADER (uint32 byte-size of the following members), returns a token
+    /// for the later `endAppendable(token)` call.
+    /// The origin is set to the start position of the member body
+    /// (XTypes §7.4.4.4 — alignment within the DHEADER is
+    /// relative to the position directly after the DHEADER).
     beginAppendable(): number {
         this.align(4);
         const dheaderPos = this._pos;
         this.ensureCapacity(4);
-        // Placeholder — wird in endAppendable() geschrieben.
+        // Placeholder — written in endAppendable().
         this.view.setUint32(dheaderPos, 0, this.littleEndian);
         this._pos += 4;
         this.pushAlignmentOrigin();
         return dheaderPos;
     }
 
-    /// Schliesst einen Appendable-Block: berechnet die Body-Groesse
-    /// und schreibt sie an die DHEADER-Position zurueck.
+    /// Closes an appendable block: computes the body size
+    /// and writes it back to the DHEADER position.
     endAppendable(token: number): void {
         const bodyStart = token + 4;
         const size = this._pos - bodyStart;
@@ -300,35 +299,35 @@ export class Xcdr2Writer {
         this.popAlignmentOrigin();
     }
 
-    /// Beginnt einen Mutable-Block. Identisch zu `beginAppendable`
-    /// in Bezug auf DHEADER + Origin-Reset.
+    /// Begins a mutable block. Identical to `beginAppendable`
+    /// regarding DHEADER + origin reset.
     beginMutable(): number {
         return this.beginAppendable();
     }
 
-    /// Schliesst einen Mutable-Block (kein Sentinel; XCDR2 begrenzt
-    /// die Read-Range via DHEADER, vgl. §6 V-12).
+    /// Closes a mutable block (no sentinel; XCDR2 bounds
+    /// the read range via the DHEADER, cf. §6 V-12).
     endMutable(token: number): void {
         this.endAppendable(token);
     }
 
     /// XTypes §7.4.3.4.2 EMHEADER1 Encoding (PL_CDR2).
     ///
-    /// Wire-Layout (4 Bytes, **always Big-Endian** unabhaengig vom
-    /// Stream-Endian — siehe zerodds-xcdr2-bindings-conformance-1.0
+    /// Wire layout (4 bytes, **always big-endian** independent of the
+    /// stream endian — see zerodds-xcdr2-bindings-conformance-1.0
     /// §6 V-10/V-11A):
     ///   byte0 = (MU << 7) | (LC << 4) | (id_high_nibble & 0x0F)
     ///   byte1..3 = remaining id-bits in BE
     ///
-    /// LC-Werte (zerodds-xcdr2-bindings-conformance-1.0 §6):
-    ///   - LC=0/1/2 → inline-size 1/2/4 Bytes (Primitives)
-    ///   - LC=3   → fuer Primitives: inline 8 Bytes;
-    ///              fuer variable-size Member: Konvention "nextInt
-    ///              folgt = body-size in Bytes", siehe V-10
-    ///   - LC=4..7 → NEXTINT-Form (32-bit Body-Size)
+    /// LC values (zerodds-xcdr2-bindings-conformance-1.0 §6):
+    ///   - LC=0/1/2 → inline size 1/2/4 bytes (primitives)
+    ///   - LC=3   → for primitives: inline 8 bytes;
+    ///              for variable-size members: convention "nextInt
+    ///              follows = body-size in bytes", see V-10
+    ///   - LC=4..7 → NEXTINT form (32-bit body size)
     ///
-    /// EMHEADER1 + optionaler NEXTINT folgen beide dem ambient Stream-
-    /// Endian gemaess XTypes 1.3 §7.4.3.4.5. In LE-Stream → LE bytes.
+    /// EMHEADER1 + the optional NEXTINT both follow the ambient stream
+    /// endian per XTypes 1.3 §7.4.3.4.5. In an LE stream → LE bytes.
     writeEmHeader(memberId: number, lc: number, mustUnderstand = false, nextInt?: number): void {
         if (memberId < 0 || memberId > 0x0fffffff) {
             throw new XcdrError(`member-id out of 28-bit range: ${memberId}`);

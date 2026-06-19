@@ -44,7 +44,8 @@ public final class Time {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof Time other)) return false;
+        if (!(o instanceof Time)) return false;
+        Time other = (Time) o;
         return sec == other.sec && nanosec == other.nanosec;
     }
 

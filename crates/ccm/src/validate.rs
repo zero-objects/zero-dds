@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CCM 4.0 §6.7.2 PrimaryKey + §6.7.3 Factory/Finder Body Validator.
+//! CCM 4.0 §6.7.2 PrimaryKey + §6.7.3 factory/finder body validator.
 //!
 //! Phase-B-Cluster-9 (Spec-Cycle 5).
 //!
-//! Spec-Quellen:
-//! * §6.7.2 (S. 35-36) — Primary-Key-Type-Constraints:
+//! Spec sources:
+//! * §6.7.2 (p. 35-36) — primary-key type constraints:
 //!   - Type MUST be derived from `Components::PrimaryKeyBase`.
 //!   - Type MUST NOT have private state members.
 //!   - Type MUST NOT contain interface references.
-//! * §6.7.3 (S. 36-37) — Factory + Finder-Operations werden auf das
-//!   Explicit-Interface gemappt mit `raises (CreateFailure, ...)` bzw.
-//!   `raises (FinderFailure, ...)`.
+//! * §6.7.3 (p. 36-37) — factory + finder operations are mapped onto the
+//!   Explicit interface with `raises (CreateFailure, ...)` and
+//!   `raises (FinderFailure, ...)` respectively.
 //!
-//! Wir liefern hier zwei oeffentliche Helfer:
+//! Here we provide two public helpers:
 //!
-//! * [`validate_primary_key`] — checkt die Spec-§6.7.2-Constraints
-//!   gegen einen vorhandenen [`ValueDef`] (Primary-Key-ValueType).
-//! * [`apply_factory_finder_body`] — erweitert ein
-//!   [`HomeEquivalent::explicit`] um Factory- und Finder-Operationen
-//!   gemaess Spec §6.7.3.
+//! * [`validate_primary_key`] — checks the Spec §6.7.2 constraints
+//!   against an existing [`ValueDef`] (primary-key valuetype).
+//! * [`apply_factory_finder_body`] — extends a
+//!   [`HomeEquivalent::explicit`] with factory and finder operations
+//!   per Spec §6.7.3.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -34,29 +34,28 @@ use zerodds_idl::errors::Span;
 use crate::transform::{HomeEquivalent, scoped_name};
 
 // ============================================================================
-//  Spec §6.7.2 Primary-Key-Constraint-Validator.
+//  Spec §6.7.2 primary-key constraint validator.
 // ============================================================================
 
-/// Spec §6.7.2 Constraint-Verletzung.
+/// Spec §6.7.2 constraint violation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PrimaryKeyError {
-    /// Type ist kein `valuetype`.
+    /// Type is not a `valuetype`.
     NotValueType(String),
-    /// Type erbt nicht von `Components::PrimaryKeyBase`.
+    /// Type does not inherit from `Components::PrimaryKeyBase`.
     NotDerivedFromPrimaryKeyBase(String),
-    /// Type enthaelt Private-State-Members.
+    /// Type contains private state members.
     HasPrivateStateMembers(String),
-    /// Type referenziert ein Interface (verboten in PK-ValueType).
+    /// Type references an interface (forbidden in a PK valuetype).
     HasInterfaceReference(String),
 }
 
-/// Spec §6.7.2 — verifiziert dass `pk_type` ein gueltiger Primary-Key
-/// ist:
+/// Spec §6.7.2 — verifies that `pk_type` is a valid primary key:
 /// 1. Concrete `valuetype`.
-/// 2. Erbt direkt oder transitiv (hier: nur direkt) von
+/// 2. Inherits directly or transitively (here: only directly) from
 ///    `Components::PrimaryKeyBase`.
-/// 3. Keine `private`-State-Members.
-/// 4. Keine Interface-Referenzen in State-Members.
+/// 3. No `private` state members.
+/// 4. No interface references in state members.
 ///
 /// # Errors
 /// [`PrimaryKeyError`].
@@ -94,16 +93,15 @@ pub fn validate_primary_key(pk_type: &ValueDef) -> Result<(), PrimaryKeyError> {
                 ));
             }
             if matches!(sm.type_spec, zerodds_idl::ast::TypeSpec::Scoped(_)) {
-                // Interface-Reference ist nur via ScopedName moeglich;
-                // wir sind hier konservativ und melden jede ScopedName-
-                // Referenz als potenzielle Interface-Referenz. Die
-                // exakte Auswertung benoetigt einen Symbol-Resolver
-                // (out-of-scope hier; siehe IDL-Semantics-Pass).
-                // Fuer den Constraint reicht: wenn das State-Member
-                // KEIN Primitive/Sequence/String/Array ist, betrachten
-                // wir es als verdaechtig und lehnen ab — das ist
-                // konservativer als Spec, deckt aber alle Test-Faelle
-                // ab.
+                // An interface reference is only possible via a ScopedName;
+                // here we are conservative and report every ScopedName
+                // reference as a potential interface reference. The exact
+                // evaluation requires a symbol resolver (out of scope here;
+                // see the IDL-semantics pass). For the constraint it is
+                // enough that: if the state member is NOT a
+                // primitive/sequence/string/array, we treat it as
+                // suspicious and reject it — this is more conservative than
+                // the spec, but covers all test cases.
                 return Err(PrimaryKeyError::HasInterfaceReference(
                     pk_type.name.text.clone(),
                 ));
@@ -114,19 +112,19 @@ pub fn validate_primary_key(pk_type: &ValueDef) -> Result<(), PrimaryKeyError> {
 }
 
 // ============================================================================
-//  Spec §6.7.3 Factory + Finder Body-Mapping.
+//  Spec §6.7.3 factory + finder body mapping.
 // ============================================================================
 
-/// Konfiguration eines Factory- oder Finder-Operations-Eintrags, den
-/// der Caller bereitstellt. Spec §6.7.3.1 / §6.7.3.2.
+/// Configuration of a factory or finder operation entry provided by the
+/// caller. Spec §6.7.3.1 / §6.7.3.2.
 #[derive(Debug, Clone)]
 pub struct InitOp {
-    /// Operations-Name (z.B. `create_widget`).
+    /// Operation name (e.g. `create_widget`).
     pub name: Identifier,
-    /// Parameter-Liste (alle `in`).
+    /// Parameter list (all `in`).
     pub params: Vec<ParamDecl>,
-    /// Caller-deklarierte `raises`-Klausel (wird in Spec §6.7.3.1.2
-    /// um `CreateFailure` bzw. `FinderFailure` ergaenzt).
+    /// Caller-declared `raises` clause (extended per Spec §6.7.3.1.2
+    /// with `CreateFailure` or `FinderFailure` respectively).
     pub raises: Vec<ScopedName>,
 }
 
@@ -140,16 +138,16 @@ impl From<InitDcl> for InitOp {
     }
 }
 
-/// Spec §6.7.3 — erweitert ein `HomeEquivalent::explicit`-Interface
-/// um Factory- und Finder-Operations.
+/// Spec §6.7.3 — extends a `HomeEquivalent::explicit` interface with
+/// factory and finder operations.
 ///
-/// Spec §6.7.3.1 — Factory-Op:
+/// Spec §6.7.3.1 — factory op:
 /// `<componentType> <factoryName>(<params>) raises (Components::CreateFailure, ...);`
 ///
-/// Spec §6.7.3.2 — Finder-Op:
+/// Spec §6.7.3.2 — finder op:
 /// `<componentType> <finderName>(<params>) raises (Components::FinderFailure, ...);`
 ///
-/// Sowohl Factory- als auch Finder-Op koennen mehrere Eintraege haben.
+/// Both factory and finder ops can have multiple entries.
 pub fn apply_factory_finder_body(
     home: &mut HomeEquivalent,
     factories: &[InitOp],
@@ -158,16 +156,15 @@ pub fn apply_factory_finder_body(
     let span = Span::SYNTHETIC;
     let component_type = zerodds_idl::ast::TypeSpec::Scoped(
         home.equivalent.bases.first().cloned().unwrap_or_else(|| {
-            // Fallback: ScopedName mit name aus equivalent.name.
+            // Fallback: ScopedName with the name from equivalent.name.
             ScopedName::single(home.equivalent.name.clone())
         }),
     );
-    // Component-Type-Spec aus `manages`-Wert ableiten — der Caller
-    // typischerweise hat `manages CWidget`; wir nehmen den Equivalent-
-    // Iface-Namen, weil dieser per Konvention dem Component-Type
-    // entspricht. Caller, die einen anderen Typ wollen, koennen die
-    // Operation direkt patchen.
-    let _ = component_type; // reserviert fuer spec-treue Ergaenzung
+    // Derive the component type-spec from the `manages` value — the caller
+    // typically has `manages CWidget`; we take the equivalent iface name
+    // because by convention it corresponds to the component type. Callers
+    // that want a different type can patch the operation directly.
+    let _ = component_type; // reserved for spec-faithful extension
 
     for f in factories {
         let mut raises = alloc::vec![scoped_name(&["Components", "CreateFailure"], span)];
@@ -175,6 +172,7 @@ pub fn apply_factory_finder_body(
         let op = OpDecl {
             name: f.name.clone(),
             oneway: false,
+            context: Vec::new(),
             return_type: Some(zerodds_idl::ast::TypeSpec::Scoped(ScopedName::single(
                 home.equivalent.name.clone(),
             ))),
@@ -191,6 +189,7 @@ pub fn apply_factory_finder_body(
         let op = OpDecl {
             name: fi.name.clone(),
             oneway: false,
+            context: Vec::new(),
             return_type: Some(zerodds_idl::ast::TypeSpec::Scoped(ScopedName::single(
                 home.equivalent.name.clone(),
             ))),
@@ -399,7 +398,7 @@ mod tests {
         assert!(matches!(err, PrimaryKeyError::HasInterfaceReference(_)));
     }
 
-    // ---- §6.7.3 Factory + Finder Body-Mapping ----
+    // ---- §6.7.3 factory + finder body mapping ----
 
     use crate::transform::{HomeEquivalent, transform_home};
     use zerodds_idl::ast::HomeDef;
@@ -530,7 +529,7 @@ mod tests {
                 _ => None,
             })
             .expect("op present");
-        // Return-Type sollte den Equivalent-Iface-Namen tragen.
+        // The return type should carry the equivalent iface name.
         if let Some(TypeSpec::Scoped(s)) = &op.return_type {
             assert_eq!(s.parts[0].text, "CManager");
         } else {

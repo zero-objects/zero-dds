@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Grammar-Deltas (T6.4).
+//! Grammar deltas (T6.4).
 //!
-//! Ein [`GrammarDelta`] ist ein additives Patch fuer eine Base-Grammar:
+//! A [`GrammarDelta`] is an additive patch for a base grammar:
 //!
-//! - **Neue Productions** koennen hinzugefuegt werden (z.B. RTI-spezifische
-//!   Konstrukte wie `<rti_keylist_pragma>`).
-//! - **Bestehende Productions** koennen um zusaetzliche Alternativen
-//!   erweitert werden (z.B. neue Annotation-Variante).
+//! - **New productions** can be added (e.g. RTI-specific
+//!   constructs like `<rti_keylist_pragma>`).
+//! - **Existing productions** can be extended with additional alternatives
+//!   (e.g. a new annotation variant).
 //!
-//! Komposition via [`compose`] in [`super::compose`]: liefert eine
-//! [`CompiledGrammar`](super::compile::CompiledGrammar), die Base + Delta
-//! kombiniert. Mehrere Deltas koennen sequenziell appliziert werden
-//! (z.B. RTI-Delta + Vendor-X-Delta).
+//! Composition via [`compose`] in [`super::compose`]: returns a
+//! [`CompiledGrammar`](super::compile::CompiledGrammar) that combines
+//! base + delta. Multiple deltas can be applied sequentially
+//! (e.g. RTI delta + vendor-X delta).
 //!
-//! # Architektur-Begruendung
+//! # Architecture rationale
 //!
-//! Vendor-Migrations-Pfade (RTI, OpenSplice, Cyclone) brauchen oft nur
-//! ein paar zusaetzliche Konstrukte (Annotations, `#pragma`-Direktiven).
-//! Statt eine separate Grammar pro Vendor zu pflegen, addieren Deltas
-//! diese Erweiterungen auf die Base-Grammar — Single-Source-of-Truth
-//! fuer OMG-IDL-4.2 bleibt erhalten. Siehe RFC 0001 §5.5.
+//! Vendor migration paths (RTI, OpenSplice, Cyclone) often need only
+//! a few additional constructs (annotations, `#pragma` directives).
+//! Instead of maintaining a separate grammar per vendor, deltas add
+//! these extensions onto the base grammar — the single source of truth
+//! for OMG IDL 4.2 is preserved. See RFC 0001 §5.5.
 //!
-//! Phase 0: Konkrete Deltas folgen mit T6.5 (RTI). Hier nur die Typen.
+//! Phase 0: concrete deltas follow with T6.5 (RTI). Here only the types.
 
 pub mod rti_connext;
 
@@ -30,28 +30,28 @@ use super::{Alternative, Production, ProductionId};
 
 pub use rti_connext::RTI_CONNEXT;
 
-/// Additives Grammar-Patch.
+/// Additive grammar patch.
 ///
-/// Wird in [`super::compose::compose`] mit einer Base-Grammar kombiniert.
+/// Combined with a base grammar in [`super::compose::compose`].
 #[derive(Debug, Clone, Copy)]
 pub struct GrammarDelta {
-    /// Menschenlesbarer Name fuer Diagnostik (z.B. "RTI Connext 7.x").
+    /// Human-readable name for diagnostics (e.g. "RTI Connext 7.x").
     pub name: &'static str,
-    /// Neue Productions, die zur Base hinzugefuegt werden. Ihre IDs
-    /// werden bei der Komposition neu vergeben (ab
+    /// New productions added to the base. Their IDs
+    /// are reassigned during composition (from
     /// `base.production_count`).
     pub additional_productions: &'static [Production],
-    /// Existierende Productions um neue Alternativen erweitern.
+    /// Extend existing productions with new alternatives.
     pub alternative_extensions: &'static [AlternativeExtension],
 }
 
-/// Beschreibt eine Erweiterung an einer existierenden Production.
+/// Describes an extension to an existing production.
 #[derive(Debug, Clone, Copy)]
 pub struct AlternativeExtension {
-    /// ID der Base-Production, die erweitert wird.
+    /// ID of the base production being extended.
     pub target: ProductionId,
-    /// Zusaetzliche Alternativen, die ans Ende der bestehenden
-    /// `alternatives`-Liste angehaengt werden.
+    /// Additional alternatives appended to the end of the existing
+    /// `alternatives` list.
     pub extra_alternatives: &'static [Alternative],
 }
 

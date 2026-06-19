@@ -2,11 +2,11 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DynamicTypeBuilder + DynamicTypeBuilderFactory (XTypes 1.3 §7.5.4, §7.5.5).
 //!
-//! Spec-Verhalten:
-//! - `add_member` validiert Name und Id sofort gegen schon vorhandene
-//!   Members (Spec §7.5.4.1.2 Preconditions).
-//! - `build()` validiert die finale Struktur (Inheritance-Cycle,
-//!   Discriminator-Pflicht, etc.) und liefert eine immutable
+//! Spec behavior:
+//! - `add_member` validates name and id immediately against existing
+//!   members (spec §7.5.4.1.2 preconditions).
+//! - `build()` validates the final structure (inheritance cycle,
+//!   mandatory discriminator, etc.) and returns an immutable
 //!   `DynamicType`.
 
 use alloc::collections::BTreeMap;
@@ -28,7 +28,7 @@ pub struct DynamicTypeBuilder {
 }
 
 impl DynamicTypeBuilder {
-    /// Internal — die Factory erzeugt Builder.
+    /// Internal — the factory creates builders.
     pub(super) fn new(descriptor: TypeDescriptor) -> Self {
         Self {
             descriptor,
@@ -37,17 +37,17 @@ impl DynamicTypeBuilder {
         }
     }
 
-    /// Aktueller Descriptor (read-only-View).
+    /// Current descriptor (read-only view).
     #[must_use]
     pub fn descriptor(&self) -> &TypeDescriptor {
         &self.descriptor
     }
 
-    /// Setzt den Descriptor neu (Spec §7.5.4.1 SetDescriptor) — nur
-    /// erlaubt vor `build()`.
+    /// Sets the descriptor anew (spec §7.5.4.1 SetDescriptor) — only
+    /// allowed before `build()`.
     ///
     /// # Errors
-    /// `PreconditionNotMet` wenn schon `build()` aufgerufen wurde.
+    /// `PreconditionNotMet` if `build()` was already called.
     pub fn set_descriptor(&mut self, descriptor: TypeDescriptor) -> Result<(), DynamicError> {
         if self.sealed.load(Ordering::Acquire) {
             return Err(DynamicError::PreconditionNotMet(String::from(
@@ -61,20 +61,20 @@ impl DynamicTypeBuilder {
         Ok(())
     }
 
-    /// Fuegt einen Member hinzu (Spec §7.5.4.1.2 AddMember).
+    /// Adds a member (spec §7.5.4.1.2 AddMember).
     ///
-    /// Validiert sofort:
-    /// - Eindeutiger Name unter den bisherigen Members.
-    /// - Eindeutige Id (nur wenn Composite XCDR2-tauglich).
-    /// - Member-Typ ist konsistent.
-    /// - Kind erlaubt Members.
+    /// Validates immediately:
+    /// - Unique name among the existing members.
+    /// - Unique id (only when composite XCDR2-capable).
+    /// - The member type is consistent.
+    /// - The kind allows members.
     ///
-    /// `index` wird automatisch gesetzt, falls vom Caller auf 0
-    /// gelassen, sonst respektiert.
+    /// `index` is set automatically if the caller leaves it at 0,
+    /// otherwise respected.
     ///
     /// # Errors
-    /// `BuilderConflict` bei Dup-Name/Id, `IllegalOperation` wenn der
-    /// Kind keine Members traegt.
+    /// `BuilderConflict` on a dup name/id, `IllegalOperation` if the
+    /// kind carries no members.
     pub fn add_member(&mut self, mut descriptor: MemberDescriptor) -> Result<(), DynamicError> {
         if self.sealed.load(Ordering::Acquire) {
             return Err(DynamicError::PreconditionNotMet(String::from(
@@ -113,7 +113,7 @@ impl DynamicTypeBuilder {
                 descriptor.id
             )));
         }
-        // Auto-Index falls Caller index=0 fuer alle laesst (default-Pattern).
+        // Auto-index if the caller leaves index=0 for all (the default pattern).
         let auto_index = u32::try_from(self.members.len()).unwrap_or(u32::MAX);
         if descriptor.index == 0 && auto_index != 0 {
             descriptor.index = auto_index;
@@ -130,10 +130,10 @@ impl DynamicTypeBuilder {
         Ok(())
     }
 
-    /// Convenience-Wrapper fuer Strukturen.
+    /// Convenience wrapper for structs.
     ///
     /// # Errors
-    /// Siehe [`add_member`].
+    /// See [`add_member`].
     pub fn add_struct_member(
         &mut self,
         name: impl Into<String>,
@@ -145,13 +145,13 @@ impl DynamicTypeBuilder {
         self.add_member(d)
     }
 
-    /// Spec §7.5.4.1.1 Build — finalisiert den Builder.
+    /// Spec §7.5.4.1.1 Build — finalizes the builder.
     ///
-    /// Validierungen:
-    /// - alle Member-Descriptors konsistent
-    /// - Inheritance-Cycle ueber Namen
-    /// - Union: Discriminator + mind. 1 Case
-    /// - Eindeutige Labels in Union
+    /// Validations:
+    /// - all member descriptors consistent
+    /// - inheritance cycle via names
+    /// - union: discriminator + at least 1 case
+    /// - unique labels in a union
     ///
     /// # Errors
     /// `BuilderConflict` / `Inconsistent`.
@@ -164,11 +164,11 @@ impl DynamicTypeBuilder {
         self.descriptor
             .is_consistent()
             .map_err(DynamicError::inconsistent)?;
-        // Cycle-Check via Namen — robust fuer den common case.
+        // Cycle check via names — robust for the common case.
         if let Some(b) = &self.descriptor.base_type {
             check_inheritance_chain(&self.descriptor.name, b)?;
         }
-        // Union-spezifische Checks.
+        // Union-specific checks.
         if self.descriptor.kind == TypeKind::Union {
             if self.members.is_empty() {
                 return Err(DynamicError::builder(
@@ -205,8 +205,8 @@ impl DynamicTypeBuilder {
     }
 }
 
-/// Walk durch base_type-Kette — wenn ein Name doppelt vorkommt, ist es
-/// ein Cycle. Tiefe ist begrenzt auf 64 (DoS-Cap).
+/// Walk through the base_type chain — if a name appears twice, it is a
+/// cycle. Depth is capped at 64 (DoS cap).
 fn check_inheritance_chain(self_name: &str, base: &TypeDescriptor) -> Result<(), DynamicError> {
     let mut seen: alloc::vec::Vec<&str> = alloc::vec![self_name];
     let mut cur = base;
@@ -231,11 +231,11 @@ fn check_inheritance_chain(self_name: &str, base: &TypeDescriptor) -> Result<(),
     }
 }
 
-/// Konstruiert einen `DynamicTypeInner` aus einem `TypeDescriptor`
-/// (kein add_member-Cycle — Members werden aus
-/// `descriptor.bound`/`element_type`/`key_element_type` rekursiv
-/// abgeleitet, sind aber nicht im `members`-Vec, weil das nur fuer
-/// Composite-Typen mit benannten Members gilt).
+/// Constructs a `DynamicTypeInner` from a `TypeDescriptor` (no
+/// add_member cycle — members are derived recursively from
+/// `descriptor.bound`/`element_type`/`key_element_type`, but are not in
+/// the `members` vec, because that only applies to composite types with
+/// named members).
 pub(super) fn descriptor_to_dynamic_type_inner(
     desc: &TypeDescriptor,
 ) -> Result<DynamicTypeInner, DynamicError> {
@@ -248,15 +248,15 @@ pub(super) fn descriptor_to_dynamic_type_inner(
 
 /// XTypes §7.5.5 DynamicTypeBuilderFactory — Singleton im Spec-Sinne.
 ///
-/// Stateless: keine globalen Caches außer dem Primitive-Singleton-
-/// Pool, der über `OnceLock` lazy initialisiert wird.
+/// Stateless: no global caches except the primitive singleton pool,
+/// which is lazily initialized via `OnceLock`.
 pub struct DynamicTypeBuilderFactory;
 
 impl DynamicTypeBuilderFactory {
     /// Spec §7.5.5.1.1 `create_type(descriptor)`.
     ///
     /// # Errors
-    /// `Inconsistent` wenn Descriptor invalid.
+    /// `Inconsistent` if the descriptor is invalid.
     pub fn create_type(descriptor: TypeDescriptor) -> Result<DynamicTypeBuilder, DynamicError> {
         descriptor
             .is_consistent()
@@ -264,17 +264,17 @@ impl DynamicTypeBuilderFactory {
         Ok(DynamicTypeBuilder::new(descriptor))
     }
 
-    /// Convenience-Variante: erstellt direkt einen Struct-Builder.
+    /// Convenience variant: creates a struct builder directly.
     #[must_use]
     pub fn create_struct(name: impl Into<String>) -> DynamicTypeBuilder {
         DynamicTypeBuilder::new(TypeDescriptor::structure(name))
     }
 
-    /// Convenience-Variante: erstellt direkt einen Union-Builder mit
-    /// gegebenem Discriminator-Type.
+    /// Convenience variant: creates a union builder directly with the
+    /// given discriminator type.
     ///
     /// # Errors
-    /// `Inconsistent` wenn der Discriminator nicht zugelassen ist.
+    /// `Inconsistent` if the discriminator is not permitted.
     pub fn create_union(
         name: impl Into<String>,
         discriminator: TypeDescriptor,
@@ -285,11 +285,11 @@ impl DynamicTypeBuilderFactory {
 
     /// Spec §7.5.5.1.2 `get_primitive_type(kind)` — Singleton-Cache.
     ///
-    /// Mehrfach-Aufrufe mit gleichem `kind` liefern dieselbe
-    /// `DynamicType`-Instanz (gleicher `Arc`-Pointer).
+    /// Repeated calls with the same `kind` return the same
+    /// `DynamicType` instance (same `Arc` pointer).
     ///
     /// # Errors
-    /// `IllegalOperation` wenn `kind` kein Primitive ist.
+    /// `IllegalOperation` if `kind` is not a primitive.
     pub fn get_primitive_type(kind: TypeKind) -> Result<DynamicType, DynamicError> {
         if !kind.is_primitive() {
             return Err(DynamicError::IllegalOperation(alloc::format!(
@@ -348,9 +348,9 @@ fn primitive_singleton(kind: TypeKind) -> DynamicType {
         TypeKind::Float128 => cell!(),
         TypeKind::Char8 => cell!(),
         TypeKind::Char16 => cell!(),
-        // Defensiver Fallback fuer nicht-primitive Kinds: bauen jeden
-        // Aufruf neu — Singleton-Eigenschaft gilt nur fuer primitives,
-        // wie der Spec-Caller in `get_primitive_type` validiert.
+        // Defensive fallback for non-primitive kinds: build anew on each
+        // call — the singleton property only holds for primitives, as
+        // the spec caller in `get_primitive_type` validates.
         _ => {
             return DynamicType::from_inner(DynamicTypeInner {
                 descriptor: TypeDescriptor::primitive(
@@ -375,9 +375,9 @@ fn primitive_singleton(kind: TypeKind) -> DynamicType {
 
 #[cfg(not(feature = "std"))]
 fn primitive_singleton(kind: TypeKind) -> DynamicType {
-    // no_std-Pfad: keine OnceLock — wir bauen jedes Mal neu. Damit ist
-    // die Singleton-Eigenschaft strukturell (gleicher Inhalt) statt
-    // Identity-basiert.
+    // no_std path: no OnceLock — we build anew each time. The singleton
+    // property is thus structural (same content) instead of
+    // identity-based.
     DynamicType::from_inner(DynamicTypeInner {
         descriptor: TypeDescriptor::primitive(
             kind,
@@ -443,7 +443,7 @@ mod tests {
     fn primitive_singleton_returns_same_arc() {
         let a = DynamicTypeBuilderFactory::get_primitive_type(TypeKind::Int32).unwrap();
         let b = DynamicTypeBuilderFactory::get_primitive_type(TypeKind::Int32).unwrap();
-        // gleicher Arc-Pointer (Singleton).
+        // same Arc pointer (singleton).
         assert!(Arc::ptr_eq(&a.inner, &b.inner));
     }
 

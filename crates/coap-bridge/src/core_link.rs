@@ -3,7 +3,7 @@
 
 //! CoRE-Link-Format — RFC 6690.
 //!
-//! Spec §2: Resource-Discovery via `link-format`-String:
+//! Spec §2: resource discovery via a `link-format` string:
 //! ```text
 //!   </path>;rt="resource-type";if="interface";ct=40,
 //!   </other>;title="name"
@@ -12,17 +12,17 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// Ein einzelner Link (RFC 6690 §2).
+/// A single link (RFC 6690 §2).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CoreLink {
-    /// URI-Reference (zwischen `<` und `>`).
+    /// URI reference (between `<` and `>`).
     pub uri: String,
-    /// Attributes als (key, value) Tupel.
+    /// Attributes as (key, value) tuples.
     pub attrs: Vec<(String, String)>,
 }
 
 impl CoreLink {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(uri: &str) -> Self {
         Self {
@@ -31,14 +31,14 @@ impl CoreLink {
         }
     }
 
-    /// Fuegt ein Attribut hinzu.
+    /// Adds an attribute.
     #[must_use]
     pub fn attr(mut self, key: &str, value: &str) -> Self {
         self.attrs.push((key.into(), value.into()));
         self
     }
 
-    /// Lookup eines Attribut-Werts.
+    /// Looks up an attribute value.
     #[must_use]
     pub fn get(&self, key: &str) -> Option<&str> {
         self.attrs
@@ -48,14 +48,14 @@ impl CoreLink {
     }
 }
 
-/// Encode eine Link-Liste zu einem `link-format`-String. Spec §2.
+/// Encodes a link list into a `link-format` string. Spec §2.
 #[must_use]
 pub fn encode_links(links: &[CoreLink]) -> String {
     let mut parts: Vec<String> = Vec::with_capacity(links.len());
     for l in links {
         let mut s = alloc::format!("<{}>", l.uri);
         for (k, v) in &l.attrs {
-            // Spec §2: numerische Werte ohne Quotes, sonst quoted.
+            // Spec §2: numeric values without quotes, otherwise quoted.
             if v.chars().all(|c| c.is_ascii_digit()) {
                 s.push_str(&alloc::format!(";{k}={v}"));
             } else {
@@ -67,10 +67,10 @@ pub fn encode_links(links: &[CoreLink]) -> String {
     parts.join(",")
 }
 
-/// Decode einen `link-format`-String zu einer Link-Liste. Spec §2.
+/// Decodes a `link-format` string into a link list. Spec §2.
 ///
 /// # Errors
-/// Static-String wenn das Format nicht parsbar ist.
+/// Static string if the format cannot be parsed.
 pub fn decode_links(input: &str) -> Result<Vec<CoreLink>, &'static str> {
     let mut out = Vec::new();
     for chunk in split_top_level_commas(input) {

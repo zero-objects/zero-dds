@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Cross-Vendor-Interop-Tests gegen `grpcurl`.
+//! Cross-vendor interop tests against `grpcurl`.
 //!
 //! Spec: `zerodds-grpc-bridge-1.0.md` §10 + §12.3.
 //!
-//! Tests sind `#[ignore]`-markiert. Run via:
+//! Tests are marked `#[ignore]`. Run via:
 //! ```bash
 //! cargo test -p zerodds-grpc-bridge --features cross-vendor-tests \
 //!     --test cross_vendor -- --ignored
@@ -43,9 +43,9 @@ fn grpcurl_list_services_against_zerodds_daemon() {
         eprintln!("grpcurl not available; skipping");
         return;
     }
-    // Caller setup: starten Sie `zerodds-grpc-bridged` auf 127.0.0.1:50051
-    // mit `topics: [{ dds_name: Trade, dds_type: Trade, ... }]` per
-    // CLI/YAML; dieser Test erwartet die Reflection-Antwort
+    // Caller setup: start `zerodds-grpc-bridged` on 127.0.0.1:50051
+    // with `topics: [{ dds_name: Trade, dds_type: Trade, ... }]` via
+    // CLI/YAML; this test expects the reflection response
     // `zerodds.bridge.v1.TradeStream`.
     let out = Command::new("grpcurl")
         .args(["-plaintext", "127.0.0.1:50051", "list"])

@@ -1,7 +1,7 @@
-"""Tests fuer §6.1 — IDL-Topic-Pfad.
+"""Tests for §6.1 — IDL topic path.
 
-Verifiziert `zerodds.IdlTopic` / `IdlWriter` / `IdlReader` als
-pure-Python-Wrapper ueber `BytesTopic`-Surface.
+Verifies `zerodds.IdlTopic` / `IdlWriter` / `IdlReader` as
+pure-Python wrappers over the `BytesTopic` surface.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from zerodds.topic import IdlReader, IdlTopic, IdlWriter
 
 pytestmark = pytest.mark.skipif(
     not getattr(zerodds, "_CORE_AVAILABLE", False),
-    reason="zerodds._core nicht kompiliert — maturin develop noetig",
+    reason="zerodds._core not compiled — maturin develop needed",
 )
 
 
@@ -36,7 +36,7 @@ class Reading:
 
 
 def test_idl_topic_rejects_non_idl_struct():
-    """§6.1 — IdlTopic verlangt eine @idl_struct-dekorierte Klasse."""
+    """§6.1 — IdlTopic requires an @idl_struct-decorated class."""
     @dataclass
     class NotAnIdlStruct:
         x: int = 0
@@ -48,7 +48,7 @@ def test_idl_topic_rejects_non_idl_struct():
 
 
 def test_idl_topic_exposes_type_name_from_decorator():
-    """§6.1 — Topic-Type-Name kommt aus dem `@idl_struct(typename=...)`-Decorator."""
+    """§6.1 — the topic type name comes from the `@idl_struct(typename=...)` decorator."""
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(261)
     topic = IdlTopic(p, "Temperatures", Temperature)
@@ -59,7 +59,7 @@ def test_idl_topic_exposes_type_name_from_decorator():
 
 def test_idl_writer_encodes_and_reader_decodes_roundtrip():
     """§6.1 + §3.3 — IdlWriter.encode → BytesWriter; IdlReader.take()
-    decoded byte-genau in eine neue Instance."""
+    decodes byte-exactly into a new instance."""
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(262)
     topic = IdlTopic(p, "ReadingTopic", Reading)
@@ -67,22 +67,22 @@ def test_idl_writer_encodes_and_reader_decodes_roundtrip():
     reader = topic.create_reader(p.create_subscriber())
     assert isinstance(writer, IdlWriter)
     assert isinstance(reader, IdlReader)
-    # Offline-Participant: reader.take() liefert leere Liste.
+    # Offline participant: reader.take() returns an empty list.
     assert reader.take() == []
 
 
 def test_idl_writer_rejects_wrong_type():
-    """§6.1 — IdlWriter[T].write rejected ein Argument vom falschen Typ."""
+    """§6.1 — IdlWriter[T].write rejects an argument of the wrong type."""
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(263)
     topic = IdlTopic(p, "ReadingTopic2", Reading)
     writer = topic.create_writer(p.create_publisher())
-    with pytest.raises(TypeError, match="erwartet Reading"):
+    with pytest.raises(TypeError, match="expects Reading"):
         writer.write(Temperature(celsius=0, sensor_id="X"))
 
 
 def test_idl_writer_passthrough_status():
-    """§6.1 — Status-Getter werden durchgereicht (DDS 1.4 §2.2.4)."""
+    """§6.1 — status getters are passed through (DDS 1.4 §2.2.4)."""
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(264)
     topic = IdlTopic(p, "StatusReading", Reading)

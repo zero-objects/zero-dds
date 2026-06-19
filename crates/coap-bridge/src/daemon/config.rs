@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Config-Parser fuer `zerodds-coap-bridged`. Spec §3.
+//! Config parser for `zerodds-coap-bridged`. Spec §3.
 
 use std::fs;
 use std::path::Path;
@@ -10,7 +10,7 @@ use std::vec::Vec;
 
 use super::yaml::{YamlNode, expand_env_vars, parse};
 
-/// Daemon-Config.
+/// Daemon config.
 #[derive(Debug, Clone)]
 pub struct DaemonConfig {
     /// `domain:`.
@@ -19,7 +19,7 @@ pub struct DaemonConfig {
     pub log_level: String,
     /// `coap.bind:`.
     pub bind: String,
-    /// `coap.bind_dtls:` — L5-Stub.
+    /// `coap.bind_dtls:` — L5 stub.
     pub bind_dtls: Option<String>,
     /// `coap.max_message_size:`.
     pub max_message_size: usize,
@@ -31,23 +31,23 @@ pub struct DaemonConfig {
     pub observe_max_age_secs: u32,
     /// `topics:`.
     pub topics: Vec<TopicConfig>,
-    /// DTLS aktiv (L5-Stub) — bleibt rejected mit klarem Hinweis.
+    /// DTLS active (L5 stub) — stays rejected with a clear message.
     pub dtls_enabled: bool,
-    /// Spec §7.2 — Auth-Mode `none|bearer|jwt|mtls`.
+    /// Spec §7.2 — auth mode `none|bearer|jwt|mtls`.
     pub auth_mode: String,
     /// `auth.bearer_token:`.
     pub auth_bearer_token: Option<String>,
     /// `auth.bearer_subject:`.
     pub auth_bearer_subject: Option<String>,
-    /// Spec §7.3 — ACL pro CoAP-Resource-Path.
+    /// Spec §7.3 — ACL per CoAP resource path.
     pub topic_acl: std::collections::HashMap<String, (Vec<String>, Vec<String>)>,
-    /// `metrics.enabled` — schaltet den Prometheus-Endpoint (§8.2).
+    /// `metrics.enabled` — toggles the Prometheus endpoint (§8.2).
     pub metrics_enabled: bool,
-    /// `metrics.address` — Bind-Adresse fuer Catalog/Healthz/Metrics.
+    /// `metrics.address` — bind address for catalog/healthz/metrics.
     pub metrics_addr: String,
 }
 
-/// Topic-Eintrag.
+/// Topic entry.
 #[derive(Debug, Clone, Default)]
 pub struct TopicConfig {
     /// `dds_name:`.
@@ -66,20 +66,20 @@ pub struct TopicConfig {
     pub history_depth: i32,
 }
 
-/// Config-Fehler.
+/// Config error.
 #[derive(Debug, Clone)]
 pub enum ConfigError {
     /// IO.
     Io(String),
     /// Syntax.
     Syntax(String),
-    /// Pflichtfeld fehlt.
+    /// Required field missing.
     MissingField(String),
-    /// Wert nicht parsbar.
+    /// Value not parseable.
     BadValue {
-        /// Feld.
+        /// Field.
         field: String,
-        /// Wert.
+        /// Value.
         value: String,
     },
 }
@@ -104,7 +104,7 @@ impl Default for DaemonConfig {
 }
 
 impl DaemonConfig {
-    /// Default fuer Dev.
+    /// Default for dev.
     #[must_use]
     pub fn default_for_dev() -> Self {
         Self {
@@ -127,7 +127,7 @@ impl DaemonConfig {
         }
     }
 
-    /// Laedt aus File.
+    /// Loads from a file.
     ///
     /// # Errors
     /// [`ConfigError`].
@@ -136,7 +136,7 @@ impl DaemonConfig {
         Self::load_from_str(&raw)
     }
 
-    /// Parst aus String.
+    /// Parses from a string.
     ///
     /// # Errors
     /// [`ConfigError`].
@@ -290,7 +290,7 @@ impl DaemonConfig {
     }
 }
 
-/// Slug pro Spec §5.1: `Chat::Message` → `chat/message`.
+/// Slug per Spec §5.1: `Chat::Message` → `chat/message`.
 #[must_use]
 pub fn default_coap_path(topic: &str) -> String {
     let mut buf = String::new();

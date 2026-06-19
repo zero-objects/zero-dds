@@ -1,22 +1,22 @@
-//! Wire-Vektor-Konformanztests fuer den XCDR2-C++-Codegen.
+//! Wire-vector conformance tests for the XCDR2 C++ codegen.
 //!
-//! Pflicht-Korpus: V-1 .. V-12 aus
+//! Mandatory corpus: V-1 .. V-12 from
 //! `docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md` §6.
 //!
-//! Pro Vektor:
-//! 1. IDL parsen + C++-Header generieren.
-//! 2. C++-Test-Programm bauen, das die Sample-Werte konstruiert,
-//!    `topic_type_support<T>::encode(sample)` aufruft und die rohen
-//!    Bytes als Hex auf stdout druckt.
-//! 3. Bytes-Stream gegen die Soll-Sequenz vergleichen.
+//! Per vector:
+//! 1. Parse IDL + generate the C++ header.
+//! 2. Build a C++ test program that constructs the sample values,
+//!    calls `topic_type_support<T>::encode(sample)` and prints the raw
+//!    bytes as hex to stdout.
+//! 3. Compare the byte stream against the expected sequence.
 //!
 //! Ground-Truth:
-//! - Bytes von skalaren Primitives sind via `struct.pack('<...>')` /
-//!   IEEE-754 mathematisch eindeutig — wir nutzen sie als Wahrheit.
-//! - Vektoren V-3, V-8, V-10, V-11 enthalten in der Spec nachweislich
-//!   Tippfehler in den abgedruckten Bytes (siehe Test-Kommentare); wir
-//!   pruefen daher gegen die OMG XTypes 1.3 §7.4-konformen Werte.
-//! - Alle anderen Vektoren stimmen mit der Spec byte-genau ueberein.
+//! - Bytes of scalar primitives are mathematically unambiguous via
+//!   `struct.pack('<...>')` / IEEE-754 — we use them as the truth.
+//! - Vectors V-3, V-8, V-10, V-11 demonstrably contain typos in the
+//!   printed bytes in the spec (see test comments); we
+//!   therefore check against the OMG XTypes 1.3 §7.4-conformant values.
+//! - All other vectors match the spec byte-exactly.
 
 #![allow(
     clippy::expect_used,
@@ -202,9 +202,9 @@ fn v2_plain_primitives_final() {
 // ---------------------------------------------------------------------------
 // V-3 Mixed Primitives Final
 //
-// Spec §6 V-3 enthaelt Tippfehler in den hexadezimalen Bytes fuer ul und
-// ll (siehe Test-Kommentar). Wir pruefen gegen die OMG XTypes 1.3 §7.4
-// konformen Bytes (Python `struct.pack('<...>')`-verifiziert).
+// Spec §6 V-3 contains typos in the hexadecimal bytes for ul and
+// ll (see the test comment). We check against the OMG XTypes 1.3 §7.4
+// conformant bytes (Python `struct.pack('<...>')`-verified).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -233,8 +233,8 @@ fn v3_mixed_primitives_final() {
         0x4F, 0x97, 0x21, 0xC5, 0xFF, 0xFF, 0xFF, 0xFF, // ll = -987654321
         0x15, 0xCD, 0x5B, 0x07, 0x00, 0x00, 0x00, 0x00, // ull = 123456789
         0x00, 0x00, 0x20, 0x40, // f = 2.5
-        0x00, 0x00, 0x00, 0x00, // pad to align(8) for d
-        0x6E, 0x86, 0x1B, 0xF0, 0xF9, 0x21, 0x09, 0x40, // d = 3.14159
+        // XCDR2 §7.4.1.1.1: no 8-byte pad — double @ offset 36 (4-aligned).
+        0x6E, 0x86, 0x1B, 0xF0, 0xF9, 0x21, 0x09, 0x40, // d = 3.14159 @36
     ];
     assert_bytes("V-3", &bytes, &expected);
 }
@@ -292,9 +292,12 @@ fn v5_sequence_int_final() {
 // ---------------------------------------------------------------------------
 // V-6 Sequence<string> Final
 //
-// Layout: count(4) + str0(2-aligned to 4: count=2, "a\0", pad to 4) + str1
-// V-6 spec shows `02 00 00 00 02 00 00 00 61 00 00 00 03 00 00 00 62 63 00`
-// Strings inside a sequence: each string-length is 4-byte-aligned.
+// XCDR2 §7.4.3.5: sequence<string> has NON-primitive elements →
+// DHEADER (uint32 = byte length of [count + elements]) in front.
+// Layout: DHEADER(4)=19 + count(4) + str0("a\0", pad zu 4) + str1("bc\0").
+// V-6 Body: `02 00 00 00 02 00 00 00 61 00 00 00 03 00 00 00 62 63 00` (19 B),
+// with a DHEADER in front: `13 00 00 00 …`. Cyclone-DDS-verified (V-5
+// seq<long> primitive → no DHEADER; V-6 seq<string> → DHEADER).
 // "a\0" body = 4 (len) + 2 (bytes incl NUL) = 6 bytes ; needs pad to 4 for
 // next string-length. Pad 2 bytes -> next length at offset
 // 4(count) + 6 + 2 = 12, aligned to 4. ✓
@@ -315,6 +318,8 @@ fn v6_sequence_string_final() {
         "V-6",
         &bytes,
         &[
+            // XCDR2 §7.4.3.5: seq<string> (non-primitive) → DHEADER in front.
+            0x13, 0x00, 0x00, 0x00, // DHEADER = 19 (count + elements)
             0x02, 0x00, 0x00, 0x00, // count = 2
             0x02, 0x00, 0x00, 0x00, b'a', 0x00, // "a\0"
             0x00, 0x00, // pad to align(4) for next length
@@ -355,9 +360,9 @@ fn v7_nested_modules_final() {
 // ---------------------------------------------------------------------------
 // V-8 Keyed Struct (Final) + Key-Hash
 //
-// Spec §6 V-8 zeigt einen vermeintlich erwarteten Hash, der nicht zu
-// MD5(00 00 00 2A) passt (Spec-Tippfehler). Wir verifizieren gegen den
-// echten RFC-1321-MD5-Wert: a5 15 85 57 99 dd bd a0 8b c9 9f c2 ce 87 fa 79.
+// Spec §6 V-8 shows a supposedly expected hash that does not
+// MD5(00 00 00 2A) matches (spec typo). We verify against the
+// real RFC-1321 MD5 value: a5 15 85 57 99 dd bd a0 8b c9 9f c2 ce 87 fa 79.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -377,8 +382,8 @@ fn v8_keyed_struct_final() {
         &bytes,
         &[
             0x2A, 0x00, 0x00, 0x00, // id = 42 (LE)
-            0x00, 0x00, 0x00, 0x00, // pad to align(8) for double
-            0x1F, 0x85, 0xEB, 0x51, 0xB8, 0x1E, 0x09, 0x40, // value = 3.14
+            // XCDR2 §7.4.1.1.1: no 8-byte pad — double @ offset 4 (4-aligned).
+            0x1F, 0x85, 0xEB, 0x51, 0xB8, 0x1E, 0x09, 0x40, // value = 3.14 @4
         ],
     );
 
@@ -388,7 +393,7 @@ fn v8_keyed_struct_final() {
     __buf.assign(__h.begin(), __h.end());
 "#;
     let bytes_h = run_encode(idl, body_hash).expect("hash run");
-    // XTypes 1.3 §7.6.8.4: Holder (4 Bytes BE-int32 = 00 00 00 2A) ist
+    // XTypes 1.3 §7.6.8.4: the holder (4 bytes BE-int32 = 00 00 00 2A) is
     // ≤ 16 octets -> Hash = Holder + zero-padding auf 16 Bytes.
     let expected_hash: [u8; 16] = [
         0x00, 0x00, 0x00, 0x2A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -431,10 +436,10 @@ fn v9_appendable_struct() {
 // ---------------------------------------------------------------------------
 // V-10 Mutable Struct (DHEADER + EMHEADER pro Member)
 //
-// Spec §6 V-10 nennt DHEADER=20; tatsaechlich enthaelt der dort gezeigte
+// Spec §6 V-10 states DHEADER=20; in fact the shown
 // Body 23 Bytes (4 EMHEADER1 + 4 long + 4 EMHEADER2 + 4 NEXTINT + 7 string).
-// Per OMG XTypes 1.3 §7.4.4.4 ist DHEADER = body-size = 23. Wir testen
-// gegen die OMG-konforme Sequenz.
+// Per OMG XTypes 1.3 §7.4.4.4, DHEADER = body-size = 23. We test
+// against the OMG-conformant sequence.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -450,10 +455,12 @@ fn v10_mutable_struct() {
         return;
     };
     // Body-Layout (origin = byte after DHEADER), EMHEADER ambient-LE
-    // gemaess XTypes 1.3 §7.4.3.4.5:
+    // per XTypes 1.3 §7.4.3.4.5:
     //   off 0..4  : EMHEADER1 (LC=2, id=1, MU=0) = u32 0x20000001 LE = 01 00 00 20
     //   off 4..8  : a = 42 (LE int32) = 2A 00 00 00
-    //   off 8..12 : EMHEADER2 (LC=3, id=2, MU=0) = u32 0x30000002 LE = 02 00 00 30
+    //   off 8..12 : EMHEADER2 (LC=4, id=2, MU=0) = u32 0x40000002 LE = 02 00 00 40
+    //               LC=4 = variable body with NEXTINT (NOT LC=3 = fixed 8-byte;
+    //               a spec/Rust/Cyclone reader desyncs on LC=3 for a string).
     //   off 12..16: NEXTINT = 7 (string body bytes incl. length-prefix and NUL)
     //               = 07 00 00 00
     //   off 16..23: string "hi\0" with 4-byte len-prefix:
@@ -463,7 +470,7 @@ fn v10_mutable_struct() {
         0x17, 0x00, 0x00, 0x00, // DHEADER = 23
         0x01, 0x00, 0x00, 0x20, // EMHEADER1 LE: M=0 LC=2 id=1
         0x2A, 0x00, 0x00, 0x00, // a = 42
-        0x02, 0x00, 0x00, 0x30, // EMHEADER2 LE: M=0 LC=3 id=2
+        0x02, 0x00, 0x00, 0x40, // EMHEADER2 LE: M=0 LC=4 id=2 (variable + NEXTINT)
         0x07, 0x00, 0x00, 0x00, // NEXTINT = 7
         0x03, 0x00, 0x00, 0x00, b'h', b'i', 0x00, // string "hi\0"
     ];
@@ -474,7 +481,7 @@ fn v10_mutable_struct() {
 // V-11 Optional Member (Mutable)
 //
 // Sample-A (Some(7)): OMG-konformer DHEADER=8 (4 EMHEADER + 4 long).
-// Sample-B (None):    DHEADER=0 (Member ausgelassen).
+// Sample-B (None):    DHEADER=0 (member omitted).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -513,9 +520,9 @@ fn v11_optional_mutable_none() {
 // ---------------------------------------------------------------------------
 // V-12 Mutable Sentinel End-Marker
 //
-// Spec §6.V-12: Mutable-Streams DUERFEN keinen expliziten Sentinel
-// emittieren — die DHEADER-Groesse begrenzt das Lesen. Wir verifizieren
-// dass das Encoder-Output keinen PID_LIST_END (`0x3F02 0x00 0x00`) anhaengt.
+// Spec §6.V-12: mutable streams MUST NOT emit an explicit sentinel
+// — the DHEADER size bounds the reading. We verify
+// that the encoder output does not append a PID_LIST_END (`0x3F02 0x00 0x00`).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -543,7 +550,7 @@ fn v12_mutable_no_explicit_sentinel() {
 }
 
 // ---------------------------------------------------------------------------
-// Roundtrip-Sanity ueber ein paar Vektoren (decode(encode(v)) == v).
+// Roundtrip sanity over a few vectors (decode(encode(v)) == v).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -557,7 +564,7 @@ fn roundtrip_v2_v4_v5_v9() {
     let idl = "@final struct Point { long x; long y; };";
     let body = r#"    ::Point p; p.x(7); p.y(-3);
     auto __b = ::dds::topic::topic_type_support<::Point>::encode(p);
-    auto __q = ::dds::topic::topic_type_support<::Point>::decode(__b.data(), __b.size());
+    auto __q = ::dds::topic::topic_type_support<::Point>::decode(__b.data(), __b.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr1);
     if (__q.x() != 7 || __q.y() != -3) { std::fprintf(stderr, "v2 roundtrip fail\n"); return 1; }
     __buf.push_back(0xAA);
 "#;
@@ -568,7 +575,7 @@ fn roundtrip_v2_v4_v5_v9() {
     let idl9 = "@appendable struct V { long a; long b; };";
     let body9 = r#"    ::V v; v.a(11); v.b(22);
     auto __b = ::dds::topic::topic_type_support<::V>::encode(v);
-    auto __q = ::dds::topic::topic_type_support<::V>::decode(__b.data(), __b.size());
+    auto __q = ::dds::topic::topic_type_support<::V>::decode(__b.data(), __b.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr1);
     if (__q.a() != 11 || __q.b() != 22) { std::fprintf(stderr, "v9 roundtrip fail\n"); return 1; }
     __buf.push_back(0xBB);
 "#;
@@ -577,7 +584,7 @@ fn roundtrip_v2_v4_v5_v9() {
 }
 
 // ---------------------------------------------------------------------------
-// Header-Inhalts-Probe: extensibility() korrekt fuer alle 3 Modi.
+// Header content probe: extensibility() correct for all 3 modes.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -600,5 +607,823 @@ fn extensibility_all_three_modes() {
     assert!(
         header.contains("DataRepresentationKind::MUTABLE"),
         "@mutable must emit MUTABLE extensibility"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// V-XCDR2-ALIGN: @final with an 8-byte field after a 4-byte field. The DEFINITIVE
+// Difference XCDR1 vs XCDR2:
+//   XCDR1: double aligned to 8 -> 4 bytes padding -> 16 bytes total.
+//   XCDR2 (PLAIN_CDR2, @final): double aligned to min(8,4)=4 ->
+//          no padding -> 12 bytes total.
+// Proves that `encode(s, Xcdr2)` applies the XTypes-1.3-§7.4.3.4.2 alignment
+// rule applies and `encode(s)` (default) stays XCDR1.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn vxcdr2_final_alignment_differs_from_xcdr1() {
+    let idl = "@final struct M { long a; double d; };";
+
+    // XCDR2: no padding between a and d.
+    let body_x2 = r#"    ::M m;
+    m.a(7); m.d(1.0);
+    __buf = ::dds::topic::topic_type_support<::M>::encode(m, ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+"#;
+    let Some(x2) = run_encode(idl, body_x2) else {
+        eprintln!("WARNING: skipping VXCDR2-ALIGN, no C++ compiler");
+        return;
+    };
+    assert_bytes(
+        "VXCDR2-ALIGN/Xcdr2",
+        &x2,
+        &[
+            0x07, 0x00, 0x00, 0x00, // a=7
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // d=1.0 @ offset 4 (no pad)
+        ],
+    );
+
+    // XCDR1 (explicit): 4 bytes padding -> d @ offset 8. (The default is
+    // XCDR2 since the XCDR2 default flip, hence explicit Xcdr1 here.)
+    let body_x1 = r#"    ::M m;
+    m.a(7); m.d(1.0);
+    __buf = ::dds::topic::topic_type_support<::M>::encode(m, ::dds::topic::xcdr2::XcdrVersion::Xcdr1);
+"#;
+    let x1 = run_encode(idl, body_x1).expect("compiler war oben da");
+    assert_bytes(
+        "VXCDR2-ALIGN/Xcdr1",
+        &x1,
+        &[
+            0x07, 0x00, 0x00, 0x00, // a=7
+            0x00, 0x00, 0x00, 0x00, // padding auf 8-align
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // d=1.0 @ offset 8
+        ],
+    );
+
+    assert_eq!(x1.len(), 16, "XCDR1 with padding");
+    assert_eq!(x2.len(), 12, "XCDR2 without padding");
+}
+
+// ---------------------------------------------------------------------------
+// V-wstring  wstring (conformance §9.1: UTF-16 wire, byte-identical to Rust
+// `WString`): uint32 octets = (units+1)*2, BOM (LE = FF FE), UTF-16-LE units.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_wstring_bmp_roundtrips_byte_exact() {
+    let idl = "@final struct W { wstring label; };";
+    let body = "    ::W w;\n    w.label(L\"Hi\");\n    __buf = ::dds::topic::topic_type_support<::W>::encode(w);\n";
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-wstring, no C++ compiler");
+        return;
+    };
+    // octets=6 (2 units + BOM)*2 ; BOM FF FE ; 'H'=0x48 'i'=0x69 little-endian.
+    assert_bytes(
+        "V-wstring",
+        &bytes,
+        &[0x06, 0x00, 0x00, 0x00, 0xFF, 0xFE, 0x48, 0x00, 0x69, 0x00],
+    );
+}
+
+#[test]
+fn v_wstring_empty_is_zero_length() {
+    let idl = "@final struct W { wstring label; };";
+    let body = "    ::W w;\n    w.label(L\"\");\n    __buf = ::dds::topic::topic_type_support<::W>::encode(w);\n";
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-wstring-empty, no C++ compiler");
+        return;
+    };
+    // Empty wstring = uint32 length 0, no BOM (Rust + GIOP convention).
+    assert_bytes("V-wstring-empty", &bytes, &[0x00, 0x00, 0x00, 0x00]);
+}
+
+// ---------------------------------------------------------------------------
+// V-array  1-D fixed array of primitive: N contiguous elements, no length
+// prefix, no DHEADER (XTypes §7.4.3). `long vals[3]` = 3 × int32-LE.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_array_long3_roundtrips_byte_exact() {
+    let idl = "@final struct A { long vals[3]; };";
+    let body = "    ::A a;\n    auto __t = a.vals(); __t[0]=1; __t[1]=2; __t[2]=3; a.vals(__t);\n    __buf = ::dds::topic::topic_type_support<::A>::encode(a);\n";
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-array, no C++ compiler");
+        return;
+    };
+    assert_bytes(
+        "V-array",
+        &bytes,
+        &[0x01, 0, 0, 0, 0x02, 0, 0, 0, 0x03, 0, 0, 0],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// V-enum  enum member encoded as its int32 underlying type (Spec §7.4.1.4.2).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_enum_member_is_int32() {
+    let idl = "enum Color { RED, GREEN, BLUE }; @final struct S { Color c; };";
+    let body = "    ::S s;\n    s.c(::Color::GREEN);\n    __buf = ::dds::topic::topic_type_support<::S>::encode(s);\n";
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-enum, no C++ compiler");
+        return;
+    };
+    // GREEN = 1 → int32-LE.
+    assert_bytes("V-enum", &bytes, &[0x01, 0x00, 0x00, 0x00]);
+}
+
+// ---------------------------------------------------------------------------
+// V-nested  nested @final struct: members encoded inline, no DHEADER.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_nested_final_struct_inline() {
+    let idl =
+        "@final struct Inner { long a; long b; }; @final struct Outer { Inner inner; long tail; };";
+    let body = "    ::Outer o;\n    auto __i = o.inner(); __i.a(10); __i.b(20); o.inner(__i);\n    o.tail(30);\n    __buf = ::dds::topic::topic_type_support<::Outer>::encode(o);\n";
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-nested, no C++ compiler");
+        return;
+    };
+    // inner.a=10, inner.b=20, tail=30 — three int32-LE, no DHEADER (@final).
+    assert_bytes(
+        "V-nested",
+        &bytes,
+        &[0x0A, 0, 0, 0, 0x14, 0, 0, 0, 0x1E, 0, 0, 0],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// V-seqstruct  sequence<@final struct>: DHEADER (non-primitive element,
+// IS_PRIMITIVE=false in the canonical Rust encoder) + count + each element
+// inline. Byte-exact encode AND decode roundtrip in one TU.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_sequence_of_struct() {
+    let idl = "@final struct Pt { long x; long y; }; @final struct Path { sequence<Pt> pts; };";
+    let body = r#"    ::Path p;
+    std::vector<::Pt> __v;
+    ::Pt __e0; __e0.x(1); __e0.y(2); __v.push_back(__e0);
+    ::Pt __e1; __e1.x(3); __e1.y(4); __v.push_back(__e1);
+    p.pts(__v);
+    __buf = ::dds::topic::topic_type_support<::Path>::encode(p);
+    auto __q = ::dds::topic::topic_type_support<::Path>::decode(__buf.data(), __buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.pts().size() != 2 || __q.pts()[0].x() != 1 || __q.pts()[0].y() != 2
+        || __q.pts()[1].x() != 3 || __q.pts()[1].y() != 4) {
+        std::fprintf(stderr, "seq<struct> roundtrip fail\n"); return 1;
+    }
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-seqstruct, no C++ compiler");
+        return;
+    };
+    // DHEADER=0x14 (count4 + 2*8) + count=2 + (1,2) + (3,4), all int32-LE.
+    assert_bytes(
+        "V-seqstruct",
+        &bytes,
+        &[
+            0x14, 0, 0, 0, // DHEADER = 20
+            0x02, 0, 0, 0, // count = 2
+            0x01, 0, 0, 0, 0x02, 0, 0, 0, // {1,2}
+            0x03, 0, 0, 0, 0x04, 0, 0, 0, // {3,4}
+        ],
+    );
+}
+
+#[test]
+fn v_sequence_of_appendable_struct() {
+    // sequence<@appendable struct>: each element carries its own DHEADER and
+    // is 4-aligned before it. The earlier idl-cpp gap (seq elements gated to
+    // @final) — now closed via the per-element pad-to-4 + splice/sub-decode.
+    let idl =
+        "@appendable struct Pt { long x; long y; }; @final struct Path { sequence<Pt> pts; };";
+    let body = r#"    ::Path p;
+    std::vector<::Pt> __v;
+    ::Pt __e0; __e0.x(1); __e0.y(2); __v.push_back(__e0);
+    ::Pt __e1; __e1.x(3); __e1.y(4); __v.push_back(__e1);
+    p.pts(__v);
+    __buf = ::dds::topic::topic_type_support<::Path>::encode(p);
+    auto __q = ::dds::topic::topic_type_support<::Path>::decode(__buf.data(), __buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.pts().size() != 2 || __q.pts()[0].x() != 1 || __q.pts()[0].y() != 2
+        || __q.pts()[1].x() != 3 || __q.pts()[1].y() != 4) {
+        std::fprintf(stderr, "seq<@appendable struct> roundtrip fail\n"); return 1;
+    }
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-seq-appendable-struct, no C++ compiler");
+        return;
+    };
+    // Path @final → no outer DHEADER. seq DHEADER = count(4) + 2*[Pt-DHEADER(4)
+    // + x(4) + y(4)] = 4 + 24 = 28 = 0x1C. Each @appendable Pt element:
+    // DHEADER=8 (body x+y) then x, y; element starts 4-aligned.
+    assert_bytes(
+        "V-seq-appendable-struct",
+        &bytes,
+        &[
+            0x1C, 0, 0, 0, // seq DHEADER = 28
+            0x02, 0, 0, 0, // count = 2
+            0x08, 0, 0, 0, 0x01, 0, 0, 0, 0x02, 0, 0, 0, // elem0: Pt-DHEADER=8, {1,2}
+            0x08, 0, 0, 0, 0x03, 0, 0, 0, 0x04, 0, 0, 0, // elem1: Pt-DHEADER=8, {3,4}
+        ],
+    );
+}
+
+#[test]
+fn v_mutable_member_seq_of_appendable_struct() {
+    // sequence<@appendable struct> as a member of a @mutable struct (the
+    // EMHEADER body-origin path). Roundtrip-only: the @mutable EMHEADER framing
+    // is exercised by encode→decode; the C++ harness returns 1 on mismatch
+    // (run_encode panics on a non-zero exit), so a green run proves correctness.
+    let idl = "@appendable struct Pt { long x; long y; }; @mutable struct M { sequence<Pt> pts; };";
+    let body = r#"    ::M m;
+    std::vector<::Pt> __v;
+    ::Pt __e0; __e0.x(10); __e0.y(20); __v.push_back(__e0);
+    ::Pt __e1; __e1.x(30); __e1.y(40); __v.push_back(__e1);
+    m.pts(__v);
+    __buf = ::dds::topic::topic_type_support<::M>::encode(m);
+    auto __q = ::dds::topic::topic_type_support<::M>::decode(__buf.data(), __buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.pts().size() != 2 || __q.pts()[0].x() != 10 || __q.pts()[0].y() != 20
+        || __q.pts()[1].x() != 30 || __q.pts()[1].y() != 40) {
+        std::fprintf(stderr, "mutable-member seq<@appendable struct> roundtrip fail\n"); return 1;
+    }
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-mutable-seq-appendable-struct, no C++ compiler");
+        return;
+    };
+    assert!(
+        !bytes.is_empty(),
+        "encode produced no bytes (roundtrip enforced C++-side)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// V-seqenum  sequence<enum>: enum is non-primitive (IS_PRIMITIVE=false, per
+// XTypes §7.4.3.5 + canonical Rust `CdrEncode` default) -> DHEADER + count +
+// each element as int32-LE. Byte-exact encode AND decode roundtrip.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_sequence_of_enum() {
+    let idl = "enum Color { RED, GREEN, BLUE }; @final struct S { sequence<Color> cs; };";
+    let body = r#"    ::S s;
+    std::vector<::Color> __v;
+    __v.push_back(::Color::GREEN); __v.push_back(::Color::BLUE); __v.push_back(::Color::RED);
+    s.cs(__v);
+    __buf = ::dds::topic::topic_type_support<::S>::encode(s);
+    auto __q = ::dds::topic::topic_type_support<::S>::decode(__buf.data(), __buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.cs().size() != 3 || __q.cs()[0] != ::Color::GREEN
+        || __q.cs()[1] != ::Color::BLUE || __q.cs()[2] != ::Color::RED) {
+        std::fprintf(stderr, "seq<enum> roundtrip fail\n"); return 1;
+    }
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-seqenum, no C++ compiler");
+        return;
+    };
+    // DHEADER=0x10 (count4 + 3*4) + count=3 + GREEN(1),BLUE(2),RED(0).
+    assert_bytes(
+        "V-seqenum",
+        &bytes,
+        &[
+            0x10, 0, 0, 0, // DHEADER = 16
+            0x03, 0, 0, 0, // count = 3
+            0x01, 0, 0, 0, // GREEN
+            0x02, 0, 0, 0, // BLUE
+            0x00, 0, 0, 0, // RED
+        ],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// V-seqwstring  sequence<wstring>: non-primitive element -> DHEADER + count +
+// each wstring (uint32 octets + BOM + UTF-16-LE units, per Finding 1). Byte-
+// exact encode AND decode roundtrip.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_sequence_of_wstring() {
+    let idl = "@final struct W { sequence<wstring> ws; };";
+    let body = r#"    ::W w;
+    std::vector<std::wstring> __v;
+    __v.push_back(L"Hi");
+    w.ws(__v);
+    __buf = ::dds::topic::topic_type_support<::W>::encode(w);
+    auto __q = ::dds::topic::topic_type_support<::W>::decode(__buf.data(), __buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.ws().size() != 1 || __q.ws()[0] != L"Hi") {
+        std::fprintf(stderr, "seq<wstring> roundtrip fail\n"); return 1;
+    }
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-seqwstring, no C++ compiler");
+        return;
+    };
+    // DHEADER=0x0E (count4 + 10-byte wstring) + count=1 + "Hi" wstring.
+    assert_bytes(
+        "V-seqwstring",
+        &bytes,
+        &[
+            0x0E, 0, 0, 0, // DHEADER = 14
+            0x01, 0, 0, 0, // count = 1
+            0x06, 0, 0, 0, 0xFF, 0xFE, 0x48, 0x00, 0x69, 0x00, // "Hi"
+        ],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// V-fwdskip  Forward-compat: a reader whose @mutable schema lacks members the
+// writer sent MUST skip them by LengthCode. Exercises the two non-trivial skip
+// arms: a variable member (string, LC=4 -> skip NEXTINT bytes) and an 8-byte
+// primitive (double, LC=3 -> skip exactly 8 bytes, NO NEXTINT). With the prior
+// LC=3-for-variable bug, the string skip read a phantom NEXTINT and desynced.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_mutable_forward_compat_skip() {
+    let idl = r#"
+        @mutable struct Wide { @id(1) long a; @id(2) string s; @id(3) double d; @id(4) long c; };
+        @mutable struct Narrow { @id(1) long a; @id(4) long c; };
+    "#;
+    let body = r#"    ::Wide __w;
+    __w.a(7); __w.s("hello"); __w.d(2.5); __w.c(99);
+    auto __b = ::dds::topic::topic_type_support<::Wide>::encode(__w);
+    auto __n = ::dds::topic::topic_type_support<::Narrow>::decode(__b.data(), __b.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__n.a() != 7 || __n.c() != 99) {
+        std::fprintf(stderr, "fwd-compat skip fail: a=%ld c=%ld\n", (long)__n.a(), (long)__n.c());
+        return 1;
+    }
+    __buf.push_back(0xCC);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-fwdskip, no C++ compiler");
+        return;
+    };
+    // Runtime asserted the skip already; the sentinel confirms we reached the end.
+    assert_bytes("V-fwdskip", &bytes, &[0xCC]);
+}
+
+// ---------------------------------------------------------------------------
+// V-mutscoped  @mutable struct carrying an enum member (compact LC=2), a nested
+// @final struct member (LC=4 NEXTINT frame), and a sequence<enum> member.
+// Encode + decode roundtrip proves the mutable-path enum/struct/seq arms are
+// wired symmetrically (previously these members were silently dropped).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_mutable_enum_struct_seq_members() {
+    let idl = r#"
+        enum Color { RED, GREEN, BLUE };
+        @final struct Pt { long x; long y; };
+        @mutable struct MM { @id(1) Color c; @id(2) Pt p; @id(3) sequence<Color> cs; };
+    "#;
+    let body = r#"    ::MM __m;
+    __m.c(::Color::BLUE);
+    ::Pt __p; __p.x(5); __p.y(6); __m.p(__p);
+    std::vector<::Color> __cs; __cs.push_back(::Color::RED); __cs.push_back(::Color::GREEN); __m.cs(__cs);
+    auto __b = ::dds::topic::topic_type_support<::MM>::encode(__m);
+    auto __q = ::dds::topic::topic_type_support<::MM>::decode(__b.data(), __b.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.c() != ::Color::BLUE || __q.p().x() != 5 || __q.p().y() != 6
+        || __q.cs().size() != 2 || __q.cs()[0] != ::Color::RED || __q.cs()[1] != ::Color::GREEN) {
+        std::fprintf(stderr, "mutable enum/struct/seq roundtrip fail\n"); return 1;
+    }
+    __buf.push_back(0xDD);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-mutscoped, no C++ compiler");
+        return;
+    };
+    assert_bytes("V-mutscoped", &bytes, &[0xDD]);
+}
+
+// ---------------------------------------------------------------------------
+// V-nested-app  A nested @appendable struct MEMBER of a @final struct. The
+// nested struct contributes its OWN DHEADER (Plain-CDR2 §7.4.3.4.2) — unlike a
+// nested @final member which is inlined. Spliced from the nested type's own
+// encode; byte-exact for one inner long (no padding) + decode roundtrip.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_nested_appendable_struct_byte_exact() {
+    let idl = r#"
+        @appendable struct A { long x; };
+        @final struct Outer { A a; };
+    "#;
+    let body = r#"    ::Outer __o;
+    ::A __a; __a.x(7); __o.a(__a);
+    __buf = ::dds::topic::topic_type_support<::Outer>::encode(__o);
+    auto __q = ::dds::topic::topic_type_support<::Outer>::decode(__buf.data(), __buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.a().x() != 7) { std::fprintf(stderr, "nested appendable roundtrip fail\n"); return 1; }
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-nested-app, no C++ compiler");
+        return;
+    };
+    // Outer @final -> no DHEADER. Member A @appendable -> its own DHEADER = 4
+    // (one long body), then x=7 little-endian.
+    assert_bytes(
+        "V-nested-app",
+        &bytes,
+        &[
+            0x04, 0, 0, 0, // A's DHEADER = 4
+            0x07, 0, 0, 0, // A.x = 7
+        ],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// V-nested-mut  A nested @mutable struct MEMBER of a @final struct. Mutable
+// wire (DHEADER + EMHEADER stream) makes a hand-vector brittle, so roundtrip
+// only — proves the splice encode/decode is symmetric.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_nested_mutable_struct_roundtrips() {
+    let idl = r#"
+        @mutable struct M { @id(1) long v; @id(2) string s; };
+        @final struct OuterM { M m; };
+    "#;
+    let body = r#"    ::OuterM __o;
+    ::M __m; __m.v(99); __m.s("hi"); __o.m(__m);
+    __buf = ::dds::topic::topic_type_support<::OuterM>::encode(__o);
+    auto __q = ::dds::topic::topic_type_support<::OuterM>::decode(__buf.data(), __buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.m().v() != 99 || __q.m().s() != "hi") { std::fprintf(stderr, "nested mutable roundtrip fail\n"); return 1; }
+    __buf.clear(); __buf.push_back(0xEE);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-nested-mut, no C++ compiler");
+        return;
+    };
+    assert_bytes("V-nested-mut", &bytes, &[0xEE]);
+}
+
+// ---------------------------------------------------------------------------
+// V-nested-app-in-mut  A nested @appendable struct as a member of a @MUTABLE
+// struct: the member sits in an EMHEADER LC=4 NEXTINT frame, and the nested
+// struct's own DHEADER lives inside that frame. Roundtrip proves the mutable
+// splice arm (encode + decode) is symmetric.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_nested_appendable_in_mutable_member_roundtrips() {
+    let idl = r#"
+        @appendable struct A2 { long x; long y; };
+        @mutable struct Holder { @id(1) A2 a; @id(2) long tag; };
+    "#;
+    let body = r#"    ::Holder __h;
+    ::A2 __a; __a.x(3); __a.y(4); __h.a(__a); __h.tag(123);
+    __buf = ::dds::topic::topic_type_support<::Holder>::encode(__h);
+    auto __q = ::dds::topic::topic_type_support<::Holder>::decode(__buf.data(), __buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.a().x() != 3 || __q.a().y() != 4 || __q.tag() != 123) {
+        std::fprintf(stderr, "nested appendable-in-mutable roundtrip fail\n"); return 1;
+    }
+    __buf.clear(); __buf.push_back(0xFF);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-nested-app-in-mut, no C++ compiler");
+        return;
+    };
+    assert_bytes("V-nested-app-in-mut", &bytes, &[0xFF]);
+}
+
+// ---------------------------------------------------------------------------
+// V-map  map<K,V> (XTypes §7.4.4.6): non-primitive collection -> DHEADER +
+// count + interleaved key/value in ascending key order (std::map == BTreeMap).
+// Byte-exact for map<long,long> (all int32, no padding) + decode roundtrip.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_map_long_long() {
+    let idl = "@final struct M { map<long, long> m; };";
+    let body = r#"    ::M __o;
+    std::map<int32_t, int32_t> __mp;
+    __mp[1] = 10; __mp[2] = 20;
+    __o.m(__mp);
+    __buf = ::dds::topic::topic_type_support<::M>::encode(__o);
+    auto __q = ::dds::topic::topic_type_support<::M>::decode(__buf.data(), __buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.m().size() != 2 || __q.m().at(1) != 10 || __q.m().at(2) != 20) {
+        std::fprintf(stderr, "map<long,long> roundtrip fail\n"); return 1;
+    }
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-map, no C++ compiler");
+        return;
+    };
+    // DHEADER=0x14 (count4 + 2 entries*8) + count=2 + (1,10),(2,20) int32-LE.
+    assert_bytes(
+        "V-map",
+        &bytes,
+        &[
+            0x14, 0, 0, 0, // DHEADER = 20
+            0x02, 0, 0, 0, // count = 2
+            0x01, 0, 0, 0, 0x0A, 0, 0, 0, // 1 -> 10
+            0x02, 0, 0, 0, 0x14, 0, 0, 0, // 2 -> 20
+        ],
+    );
+}
+
+// map<long,string>: string values exercise per-entry variable-length encoding
+// + intra-body alignment. Roundtrip only (padding makes a hand-vector brittle).
+#[test]
+fn v_map_long_string_roundtrips() {
+    let idl = "@final struct M { map<long, string> m; };";
+    let body = r#"    ::M __o;
+    std::map<int32_t, std::string> __mp;
+    __mp[1] = "a"; __mp[2] = "bb"; __mp[3] = "ccc";
+    __o.m(__mp);
+    auto __b = ::dds::topic::topic_type_support<::M>::encode(__o);
+    auto __q = ::dds::topic::topic_type_support<::M>::decode(__b.data(), __b.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.m().size() != 3 || __q.m().at(1) != "a" || __q.m().at(2) != "bb" || __q.m().at(3) != "ccc") {
+        std::fprintf(stderr, "map<long,string> roundtrip fail\n"); return 1;
+    }
+    __buf.push_back(0xEE);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-map-str, no C++ compiler");
+        return;
+    };
+    assert_bytes("V-map-str", &bytes, &[0xEE]);
+}
+
+// @mutable struct with a map member: cpp<->cpp roundtrip (cross-vendor inner-
+// DHEADER question shared with mutable seq — Finding 6).
+#[test]
+fn v_mutable_map_roundtrips() {
+    let idl = "@mutable struct MM { @id(1) map<long, long> m; @id(2) long tail; };";
+    let body = r#"    ::MM __o;
+    std::map<int32_t, int32_t> __mp;
+    __mp[7] = 70; __mp[8] = 80;
+    __o.m(__mp);
+    __o.tail(42);
+    auto __b = ::dds::topic::topic_type_support<::MM>::encode(__o);
+    auto __q = ::dds::topic::topic_type_support<::MM>::decode(__b.data(), __b.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.m().size() != 2 || __q.m().at(7) != 70 || __q.m().at(8) != 80 || __q.tail() != 42) {
+        std::fprintf(stderr, "mutable map roundtrip fail\n"); return 1;
+    }
+    __buf.push_back(0xFE);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-mutmap, no C++ compiler");
+        return;
+    };
+    assert_bytes("V-mutmap", &bytes, &[0xFE]);
+}
+
+// sequence<map<K,V>> — a sequence whose element is a map. Each map carries its
+// own DHEADER inside the outer sequence's DHEADER. cpp<->cpp roundtrip.
+#[test]
+fn v_sequence_of_map_roundtrips() {
+    let idl = "@final struct M { sequence<map<long, long>> sm; };";
+    let body = r#"    ::M __o;
+    std::vector<std::map<int32_t, int32_t>> __v;
+    std::map<int32_t, int32_t> __m0; __m0[1] = 10; __v.push_back(__m0);
+    std::map<int32_t, int32_t> __m1; __m1[2] = 20; __m1[3] = 30; __v.push_back(__m1);
+    __o.sm(__v);
+    auto __b = ::dds::topic::topic_type_support<::M>::encode(__o);
+    auto __q = ::dds::topic::topic_type_support<::M>::decode(__b.data(), __b.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.sm().size() != 2 || __q.sm()[0].at(1) != 10 || __q.sm()[1].at(2) != 20 || __q.sm()[1].at(3) != 30) {
+        std::fprintf(stderr, "seq<map> roundtrip fail\n"); return 1;
+    }
+    __buf.push_back(0xEC);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-seqmap, no C++ compiler");
+        return;
+    };
+    assert_bytes("V-seqmap", &bytes, &[0xEC]);
+}
+
+// ---------------------------------------------------------------------------
+// V-seqseq  nested sequence<sequence<long>>: outer is non-primitive (inner
+// seq) -> outer DHEADER; the inner sequence<long> has primitive elements -> NO
+// inner DHEADER. Byte-exact + decode roundtrip.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_sequence_of_sequence() {
+    let idl = "@final struct M { sequence<sequence<long>> m; };";
+    let body = r#"    ::M __o;
+    std::vector<std::vector<int32_t>> __mm;
+    __mm.push_back(std::vector<int32_t>{1, 2});
+    __mm.push_back(std::vector<int32_t>{3});
+    __o.m(__mm);
+    __buf = ::dds::topic::topic_type_support<::M>::encode(__o);
+    auto __q = ::dds::topic::topic_type_support<::M>::decode(__buf.data(), __buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.m().size() != 2 || __q.m()[0].size() != 2 || __q.m()[0][0] != 1
+        || __q.m()[0][1] != 2 || __q.m()[1].size() != 1 || __q.m()[1][0] != 3) {
+        std::fprintf(stderr, "seq<seq<long>> roundtrip fail\n"); return 1;
+    }
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-seqseq, no C++ compiler");
+        return;
+    };
+    // outer DHEADER=0x18 (count4 + inner0[12] + inner1[8]); inner seqs carry NO
+    // DHEADER (long is primitive).
+    assert_bytes(
+        "V-seqseq",
+        &bytes,
+        &[
+            0x18, 0, 0, 0, // outer DHEADER = 24
+            0x02, 0, 0, 0, // outer count = 2
+            0x02, 0, 0, 0, 0x01, 0, 0, 0, 0x02, 0, 0, 0, // inner0 = [1,2]
+            0x01, 0, 0, 0, 0x03, 0, 0, 0, // inner1 = [3]
+        ],
+    );
+}
+
+// @mutable struct with a nested-sequence member: cpp<->cpp roundtrip (the
+// inner-DHEADER cross-vendor question is Finding 6, shared with mutable seq/map).
+#[test]
+fn v_mutable_sequence_of_sequence_roundtrips() {
+    let idl = "@mutable struct MM { @id(1) sequence<sequence<long>> m; @id(2) long tail; };";
+    let body = r#"    ::MM __o;
+    std::vector<std::vector<int32_t>> __mm;
+    __mm.push_back(std::vector<int32_t>{5, 6, 7});
+    __mm.push_back(std::vector<int32_t>{8});
+    __o.m(__mm);
+    __o.tail(99);
+    auto __b = ::dds::topic::topic_type_support<::MM>::encode(__o);
+    auto __q = ::dds::topic::topic_type_support<::MM>::decode(__b.data(), __b.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.m().size() != 2 || __q.m()[0].size() != 3 || __q.m()[0][2] != 7
+        || __q.m()[1].size() != 1 || __q.m()[1][0] != 8 || __q.tail() != 99) {
+        std::fprintf(stderr, "mutable seq<seq<long>> roundtrip fail\n"); return 1;
+    }
+    __buf.push_back(0xFD);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-mutseqseq, no C++ compiler");
+        return;
+    };
+    assert_bytes("V-mutseqseq", &bytes, &[0xFD]);
+}
+
+// ---------------------------------------------------------------------------
+// V-arr2d  multi-dimensional array long[2][3]: row-major, fixed size, NO
+// DHEADER (primitive elements; XTypes §7.4.3). Byte-exact + roundtrip.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_array_2d_long() {
+    let idl = "@final struct M { long grid[2][3]; };";
+    let body = r#"    ::M __o;
+    auto __g = __o.grid();
+    __g[0][0]=1; __g[0][1]=2; __g[0][2]=3;
+    __g[1][0]=4; __g[1][1]=5; __g[1][2]=6;
+    __o.grid(__g);
+    __buf = ::dds::topic::topic_type_support<::M>::encode(__o);
+    auto __q = ::dds::topic::topic_type_support<::M>::decode(__buf.data(), __buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.grid()[0][0] != 1 || __q.grid()[0][2] != 3 || __q.grid()[1][0] != 4 || __q.grid()[1][2] != 6) {
+        std::fprintf(stderr, "array[2][3] roundtrip fail\n"); return 1;
+    }
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-arr2d, no C++ compiler");
+        return;
+    };
+    // 6 int32-LE in row-major order, no length prefix, no DHEADER.
+    assert_bytes(
+        "V-arr2d",
+        &bytes,
+        &[
+            0x01, 0, 0, 0, 0x02, 0, 0, 0, 0x03, 0, 0, 0, // row 0
+            0x04, 0, 0, 0, 0x05, 0, 0, 0, 0x06, 0, 0, 0, // row 1
+        ],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// V-arrstruct  1-D array of @final struct: non-primitive elements -> a DHEADER
+// (XTypes §7.4.3.5), then N structs inline, NO count (fixed size). Byte-exact
+// + roundtrip.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_array_of_struct() {
+    let idl = "@final struct Pt { long x; long y; }; @final struct M { Pt path[2]; };";
+    let body = r#"    ::M __o;
+    auto __p = __o.path();
+    ::Pt __e0; __e0.x(1); __e0.y(2); __p[0] = __e0;
+    ::Pt __e1; __e1.x(3); __e1.y(4); __p[1] = __e1;
+    __o.path(__p);
+    __buf = ::dds::topic::topic_type_support<::M>::encode(__o);
+    auto __q = ::dds::topic::topic_type_support<::M>::decode(__buf.data(), __buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.path()[0].x() != 1 || __q.path()[0].y() != 2 || __q.path()[1].x() != 3 || __q.path()[1].y() != 4) {
+        std::fprintf(stderr, "array-of-struct roundtrip fail\n"); return 1;
+    }
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-arrstruct, no C++ compiler");
+        return;
+    };
+    // DHEADER=0x10 (2 structs * 8 bytes) + {1,2} + {3,4}, no count.
+    assert_bytes(
+        "V-arrstruct",
+        &bytes,
+        &[
+            0x10, 0, 0, 0, // DHEADER = 16
+            0x01, 0, 0, 0, 0x02, 0, 0, 0, // {1,2}
+            0x03, 0, 0, 0, 0x04, 0, 0, 0, // {3,4}
+        ],
+    );
+}
+
+// multi-dim array of @final struct: Pt grid[2][2] — non-primitive -> one DHEADER
+// wrapping 4 inline structs (row-major, no count). Byte-exact + roundtrip.
+#[test]
+fn v_array_2d_of_struct() {
+    let idl = "@final struct Pt { long x; long y; }; @final struct M { Pt grid[2][2]; };";
+    let body = r#"    ::M __o;
+    auto __g = __o.grid();
+    __g[0][0].x(1); __g[0][0].y(2); __g[0][1].x(3); __g[0][1].y(4);
+    __g[1][0].x(5); __g[1][0].y(6); __g[1][1].x(7); __g[1][1].y(8);
+    __o.grid(__g);
+    __buf = ::dds::topic::topic_type_support<::M>::encode(__o);
+    auto __q = ::dds::topic::topic_type_support<::M>::decode(__buf.data(), __buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.grid()[0][0].x() != 1 || __q.grid()[0][1].y() != 4 || __q.grid()[1][1].x() != 7 || __q.grid()[1][1].y() != 8) {
+        std::fprintf(stderr, "array[2][2]-of-struct roundtrip fail\n"); return 1;
+    }
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-arr2dstruct, no C++ compiler");
+        return;
+    };
+    // DHEADER=0x20 (4 structs * 8 bytes) + {1,2}{3,4}{5,6}{7,8}.
+    assert_bytes(
+        "V-arr2dstruct",
+        &bytes,
+        &[
+            0x20, 0, 0, 0, // DHEADER = 32
+            0x01, 0, 0, 0, 0x02, 0, 0, 0, 0x03, 0, 0, 0, 0x04, 0, 0, 0, // row 0
+            0x05, 0, 0, 0, 0x06, 0, 0, 0, 0x07, 0, 0, 0, 0x08, 0, 0, 0, // row 1
+        ],
+    );
+}
+
+// multi-dim array of string: string grid[2][2] — non-primitive -> one DHEADER
+// wrapping 4 inline strings. Roundtrip (string padding makes a hand-vector brittle).
+#[test]
+fn v_array_2d_of_string_roundtrips() {
+    let idl = "@final struct M { string grid[2][2]; };";
+    let body = r#"    ::M __o;
+    auto __g = __o.grid();
+    __g[0][0] = "a"; __g[0][1] = "bb"; __g[1][0] = "ccc"; __g[1][1] = "dddd";
+    __o.grid(__g);
+    auto __b = ::dds::topic::topic_type_support<::M>::encode(__o);
+    auto __q = ::dds::topic::topic_type_support<::M>::decode(__b.data(), __b.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.grid()[0][0] != "a" || __q.grid()[0][1] != "bb" || __q.grid()[1][0] != "ccc" || __q.grid()[1][1] != "dddd") {
+        std::fprintf(stderr, "string grid[2][2] roundtrip fail\n"); return 1;
+    }
+    __buf.push_back(0xEB);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-arr2dstr, no C++ compiler");
+        return;
+    };
+    assert_bytes("V-arr2dstr", &bytes, &[0xEB]);
+}
+
+// ---------------------------------------------------------------------------
+// V-mutseqstr-xvendor  @mutable { @id(1) sequence<string> } — BYTE-EXACT against
+// the Rust reference encoder (zerodds-cdr, Cyclone-interop-verified). Resolves
+// Finding 6: a non-primitive collection member carries its OWN inner DHEADER
+// inside the EMHEADER NEXTINT frame. Ground-truth bytes were captured from
+// zerodds_cdr::struct_enc::{encode_appendable, MutableStructEncoder} encoding
+// vec!["hi"] for member id 1 (LE, max_alignment=4):
+//   17 00 00 00            outer DHEADER = 23
+//   01 00 00 40            EMHEADER LC=4 id=1
+//   0F 00 00 00            NEXTINT = 15 (= inner-DHEADER 4 + count 4 + string 7)
+//   0B 00 00 00            inner DHEADER = 11 (= count 4 + string 7)
+//   01 00 00 00            count = 1
+//   03 00 00 00 68 69 00   "hi\0"
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_mutable_seq_string_matches_rust_wire() {
+    let idl = "@mutable struct M { @id(1) sequence<string> s; };";
+    let body = r#"    ::M __o;
+    std::vector<std::string> __s; __s.push_back("hi");
+    __o.s(__s);
+    __buf = ::dds::topic::topic_type_support<::M>::encode(__o);
+    auto __q = ::dds::topic::topic_type_support<::M>::decode(__buf.data(), __buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    if (__q.s().size() != 1 || __q.s()[0] != "hi") {
+        std::fprintf(stderr, "mutable seq<string> roundtrip fail\n"); return 1;
+    }
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-mutseqstr-xvendor, no C++ compiler");
+        return;
+    };
+    assert_bytes(
+        "V-mutseqstr-xvendor",
+        &bytes,
+        &[
+            0x17, 0, 0, 0, // outer DHEADER = 23
+            0x01, 0, 0, 0x40, // EMHEADER LC=4 id=1
+            0x0F, 0, 0, 0, // NEXTINT = 15
+            0x0B, 0, 0, 0, // inner DHEADER = 11
+            0x01, 0, 0, 0, // count = 1
+            0x03, 0, 0, 0, b'h', b'i', 0x00, // "hi\0"
+        ],
     );
 }

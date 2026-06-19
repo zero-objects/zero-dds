@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Best-Effort Stateless RTPS-Reader (W4).
+//! Best-effort stateless RTPS reader (W4).
 //!
-//! parst eingehende RTPS-Datagrams, filtert DATA-
-//! Submessages, die an unsere `EntityId` adressiert sind (oder
-//! ID_UNKNOWN als Wildcard), und liefert die Payload-Bytes an einen
-//! Listener-Callback.
+//! Parses incoming RTPS datagrams, filters DATA
+//! submessages addressed to our `EntityId` (or
+//! ID_UNKNOWN as a wildcard), and delivers the payload bytes to a
+//! listener callback.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -16,17 +16,17 @@ use crate::wire_types::{EntityId, EntityKind, Guid, GuidPrefix, SequenceNumber};
 
 /// Best-Effort Reader.
 ///
-/// Stateless ausser der eigenen GUID + dem akzeptierten Writer-GUID.
-/// Phase 0: 1:1-Modell. Forward-Kompatibel mit Mehr-Writer-Setup, weil
-/// `recv_datagram` jeden DATA-Submessage einzeln liefert und die
-/// Filterlogik im Caller liegen kann.
+/// Stateless except for the own GUID + the accepted writer GUID.
+/// Phase 0: 1:1 model. Forward-compatible with a multi-writer setup, because
+/// `recv_datagram` delivers each DATA submessage individually and the
+/// filter logic can live in the caller.
 #[derive(Debug, Clone)]
 pub struct BestEffortReader {
     guid: Guid,
 }
 
 impl BestEffortReader {
-    /// Konstruiert einen Reader.
+    /// Constructs a reader.
     #[must_use]
     pub fn new(participant_prefix: GuidPrefix, reader_id: EntityId) -> Self {
         Self {
@@ -34,20 +34,20 @@ impl BestEffortReader {
         }
     }
 
-    /// Eigene GUID.
+    /// Own GUID.
     #[must_use]
     pub fn guid(&self) -> Guid {
         self.guid
     }
 
-    /// Verarbeitet ein eingehendes Datagram.
+    /// Processes an incoming datagram.
     ///
-    /// Liefert Vec der DATA-Submessages, die an diesen Reader gerichtet
-    /// sind (matched auf `entity_key` ODER `entity_kind == Unknown` als
-    /// Wildcard).
+    /// Returns a Vec of the DATA submessages directed at this reader
+    /// (matched on `entity_key` OR `entity_kind == Unknown` as a
+    /// wildcard).
     ///
     /// # Errors
-    /// `WireError`, wenn das Datagram nicht parst.
+    /// `WireError` if the datagram does not parse.
     pub fn recv_datagram(&self, datagram: &[u8]) -> Result<Vec<DeliveredSample>, WireError> {
         let parsed = decode_datagram(datagram)?;
         let mut out = Vec::new();
@@ -57,34 +57,34 @@ impl BestEffortReader {
                     out.push(DeliveredSample {
                         writer_id: d.writer_id,
                         writer_sn: d.writer_sn,
-                        // WP 2.0a: d.serialized_payload ist bereits Arc<[u8]>
-                        // — kein zweiter Arc::from-Alloc, nur move.
+                        // WP 2.0a: d.serialized_payload is already Arc<[u8]>
+                        // — no second Arc::from alloc, just a move.
                         payload: d.serialized_payload,
                     });
                 }
             }
-            // Andere Submessages (HEARTBEAT/ACKNACK/GAP/Unknown) werden
-            // in Phase 0 ignoriert. Reliable-Pfad kommt mit Phase 1.
+            // Other submessages (HEARTBEAT/ACKNACK/GAP/Unknown) are
+            // ignored in phase 0. The reliable path comes with phase 1.
         }
         Ok(out)
     }
 }
 
-/// Eine DATA-Submessage, die der Reader an den Listener weiterreicht.
+/// A DATA submessage that the reader forwards to the listener.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeliveredSample {
-    /// Writer-GUID (nur EntityId; der Caller kennt den Participant
-    /// ueber den Datagram-Header).
+    /// Writer GUID (only EntityId; the caller knows the participant
+    /// via the datagram header).
     pub writer_id: EntityId,
-    /// Sequence-Number, mit der der Writer das Sample sendet.
+    /// Sequence number with which the writer sends the sample.
     pub writer_sn: SequenceNumber,
-    /// Payload-Bytes (XCDR2-codiert oder vendor-spezifisch),
-    /// referenzgezaehlt via `Arc::clone` aus dem Cache.
+    /// Payload bytes (XCDR2-encoded or vendor-specific),
+    /// reference-counted via `Arc::clone` from the cache.
     pub payload: alloc::sync::Arc<[u8]>,
 }
 
 fn matches_reader(target: &EntityId, our: &EntityId) -> bool {
-    // Wildcard: ID_UNKNOWN matched alles.
+    // Wildcard: ID_UNKNOWN matches everything.
     if target.entity_kind == EntityKind::Unknown && target.entity_key == [0; 3] {
         return true;
     }
@@ -149,12 +149,12 @@ mod tests {
 
     #[test]
     fn reader_handles_multiple_data_in_one_datagram() {
-        // Bauen manuell ein Datagram mit zwei DATA-Submessages an uns.
+        // Build a datagram with two DATA submessages addressed to us manually.
         let mut w = BestEffortWriter::new(prefix(), writer_id(), reader_id());
         let bytes_a = w.write(b"first").unwrap();
         let bytes_b = w.write(b"second").unwrap();
-        // Concat-Datagrams nicht direkt erlaubt — aber zwei aufeinander-
-        // folgende recv-Aufrufe simulieren das.
+        // Concatenated datagrams are not directly allowed — but two
+        // consecutive recv calls simulate it.
         let r = BestEffortReader::new(prefix(), reader_id());
         let s1 = r.recv_datagram(&bytes_a).unwrap();
         let s2 = r.recv_datagram(&bytes_b).unwrap();

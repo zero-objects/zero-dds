@@ -15,17 +15,17 @@
 use crate::time_base::{IntervalT, TimeT, UtcT};
 use crate::uto::Uto;
 
-/// `CosTime::OverlapType` (Spec §1.3.2.8) — Vier Faelle der Overlap-
-/// Beziehung zwischen zwei Intervallen.
+/// `CosTime::OverlapType` (spec §1.3.2.8) — four cases of the overlap
+/// relationship between two intervals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlapType {
-    /// `OTContainer` — Self enthaelt Other.
+    /// `OTContainer` — self contains other.
     Container,
-    /// `OTContained` — Self ist in Other enthalten.
+    /// `OTContained` — self is contained in other.
     Contained,
-    /// `OTOverlap` — partielle Ueberlappung (kein Containment).
+    /// `OTOverlap` — partial overlap (no containment).
     Overlap,
-    /// `OTNoOverlap` — Intervalle disjunkt.
+    /// `OTNoOverlap` — the intervals are disjoint.
     NoOverlap,
 }
 
@@ -36,7 +36,7 @@ pub struct Tio {
 }
 
 impl Tio {
-    /// Konstruiert TIO aus IntervalT. Spec §2.1.x (`new_interval`).
+    /// Constructs a TIO from an IntervalT. Spec §2.1.x (`new_interval`).
     #[must_use]
     pub const fn from_interval(interval: IntervalT) -> Self {
         Self { inner: interval }
@@ -48,11 +48,11 @@ impl Tio {
         self.inner
     }
 
-    /// Spec §1.3.5.2 — `spans(uto)`: Beziehung zwischen Self-Intervall
-    /// und der durch UTO definierten Inaccuracy-Range.
+    /// Spec §1.3.5.2 — `spans(uto)`: relationship between the self interval
+    /// and the inaccuracy range defined by the UTO.
     #[must_use]
     pub fn spans(self, uto: Uto) -> (OverlapType, Tio) {
-        // Self ist Interval A; UTO definiert Interval B als
+        // Self is interval A; the UTO defines interval B as
         // [time - inaccuracy, time + inaccuracy].
         let other_lo = uto.time().saturating_sub(uto.inaccuracy());
         let other_hi = uto.time().saturating_add(uto.inaccuracy());
@@ -64,15 +64,15 @@ impl Tio {
         compute_overlap(a, b)
     }
 
-    /// Spec §1.3.5.3 — `overlaps(tio)`: Beziehung zwischen Self und
-    /// Other.
+    /// Spec §1.3.5.3 — `overlaps(tio)`: relationship between self and
+    /// other.
     #[must_use]
     pub fn overlaps(self, other: Tio) -> (OverlapType, Tio) {
         compute_overlap(self.inner, other.inner)
     }
 
-    /// Spec §1.3.5.4 — `time()`: Liefert UTO mit time = Midpoint und
-    /// Inaccuracy = halbe Intervall-Breite.
+    /// Spec §1.3.5.4 — `time()`: returns a UTO with time = midpoint and
+    /// inaccuracy = half the interval width.
     #[must_use]
     pub fn time(self) -> Uto {
         let lo = self.inner.lower_bound;
@@ -83,11 +83,11 @@ impl Tio {
     }
 }
 
-/// Spec §1.3.2.8 — Overlap-Berechnung zwischen zwei Intervals.
+/// Spec §1.3.2.8 — overlap computation between two intervals.
 fn compute_overlap(a: IntervalT, b: IntervalT) -> (OverlapType, Tio) {
-    // OTNoOverlap: disjunkt.
+    // OTNoOverlap: disjoint.
     if a.upper_bound < b.lower_bound {
-        // Gap zwischen den beiden.
+        // Gap between the two.
         let gap = IntervalT {
             lower_bound: a.upper_bound,
             upper_bound: b.lower_bound,
@@ -102,16 +102,16 @@ fn compute_overlap(a: IntervalT, b: IntervalT) -> (OverlapType, Tio) {
         return (OverlapType::NoOverlap, Tio::from_interval(gap));
     }
 
-    // OTContainer: A enthaelt B vollstaendig.
+    // OTContainer: A fully contains B.
     if a.lower_bound <= b.lower_bound && a.upper_bound >= b.upper_bound {
         // Spec §1.3.2.8: "the overlap interval is the same as the interval B."
         return (OverlapType::Container, Tio::from_interval(b));
     }
-    // OTContained: A ist in B.
+    // OTContained: A is in B.
     if b.lower_bound <= a.lower_bound && b.upper_bound >= a.upper_bound {
         return (OverlapType::Contained, Tio::from_interval(a));
     }
-    // OTOverlap: partielle Ueberlappung.
+    // OTOverlap: partial overlap.
     let overlap_lo = max_t(a.lower_bound, b.lower_bound);
     let overlap_hi = min_t(a.upper_bound, b.upper_bound);
     let overlap_interval = IntervalT {
@@ -153,19 +153,19 @@ mod tests {
 
     #[test]
     fn overlaps_otcontainer() {
-        // A = [100, 300] enthaelt B = [150, 250]. Spec §1.3.2.8.
+        // A = [100, 300] contains B = [150, 250]. Spec §1.3.2.8.
         let a = Tio::from_interval(IntervalT::new(100, 300).expect("ok"));
         let b = Tio::from_interval(IntervalT::new(150, 250).expect("ok"));
         let (kind, overlap) = a.overlaps(b);
         assert_eq!(kind, OverlapType::Container);
-        // Spec §1.3.2.8: overlap-Interval ist B.
+        // Spec §1.3.2.8: the overlap interval is B.
         assert_eq!(overlap.time_interval().lower_bound, 150);
         assert_eq!(overlap.time_interval().upper_bound, 250);
     }
 
     #[test]
     fn overlaps_otcontained() {
-        // A = [150, 250] ist in B = [100, 300] enthalten.
+        // A = [150, 250] is contained in B = [100, 300].
         let a = Tio::from_interval(IntervalT::new(150, 250).expect("ok"));
         let b = Tio::from_interval(IntervalT::new(100, 300).expect("ok"));
         let (kind, overlap) = a.overlaps(b);
@@ -193,7 +193,7 @@ mod tests {
         let b = Tio::from_interval(IntervalT::new(300, 400).expect("ok"));
         let (kind, gap) = a.overlaps(b);
         assert_eq!(kind, OverlapType::NoOverlap);
-        // Spec §1.3.5.2/3: gap zwischen den Intervallen.
+        // Spec §1.3.5.2/3: gap between the intervals.
         assert_eq!(gap.time_interval().lower_bound, 200);
         assert_eq!(gap.time_interval().upper_bound, 300);
     }
@@ -201,12 +201,12 @@ mod tests {
     #[test]
     fn spans_uses_uto_inaccuracy_envelope() {
         // Self = [50, 250], UTO = time=150 ± 50 -> [100, 200].
-        // Self enthaelt UTO-Range -> OTContainer.
+        // Self contains the UTO range -> OTContainer.
         let a = Tio::from_interval(IntervalT::new(50, 250).expect("ok"));
         let uto = Uto::new(150, 50, 0);
         let (kind, overlap) = a.spans(uto);
         assert_eq!(kind, OverlapType::Container);
-        // overlap = UTO-Envelope.
+        // overlap = the UTO envelope.
         assert_eq!(overlap.time_interval().lower_bound, 100);
         assert_eq!(overlap.time_interval().upper_bound, 200);
     }

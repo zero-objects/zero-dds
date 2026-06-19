@@ -1,15 +1,15 @@
-//! Gemeinsame Helpers fuer Integration-Tests in `crates/rtps/tests/`.
+//! Shared helpers for integration tests in `crates/rtps/tests/`.
 //!
-//! Wird per `mod common;` eingebunden. Test-Dateien sollten keine
-//! Duplikate von Generatoren/Fixtures enthalten.
+//! Included via `mod common;`. Test files should not contain
+//! duplicates of generators/fixtures.
 
-#![allow(dead_code)] // jede Test-Datei nutzt nur einen Ausschnitt
+#![allow(dead_code)] // each test file uses only a subset
 
 use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix};
 
-/// Kanonische Test-GUIDs. Writer- und Reader-Seite muessen in E2E-Tests
-/// dieselben Werte verwenden, damit `handle_acknack(src_guid, ...)`
-/// korrekt dispatcht.
+/// Canonical test GUIDs. The writer and reader side must use the same
+/// values in E2E tests, so that `handle_acknack(src_guid, ...)`
+/// dispatches correctly.
 pub const TEST_WRITER_KEY: [u8; 3] = [0x10, 0x20, 0x30];
 pub const TEST_READER_KEY: [u8; 3] = [0xA0, 0xB0, 0xC0];
 
@@ -29,21 +29,21 @@ pub fn test_reader_guid() -> Guid {
     )
 }
 
-/// Deterministischer, aber nicht-trivialer Sample-Inhalt fuer
-/// byte-genaue Reassembly-Pruefung.
+/// Deterministic but non-trivial sample content for
+/// byte-exact reassembly checking.
 ///
-/// Formel: `byte[i] = (sn * K + i) & 0xFF`, wobei
-/// `K = 0x9E3779B1` (Knuth-Multiplikativ-Hash, Golden-Ratio-Fraktion).
-/// Diese Wahl:
-/// - streut die Bytes gleichmaessig (kein konstanter oder linearer
-///   Wert, der Reassembly-Bugs maskieren wuerde),
-/// - ist deterministisch (kein RNG-State; selbe sn ergibt identische
-///   Sequenz) — wichtig fuer Test-Reproduzierbarkeit,
-/// - ist o(len) berechenbar ohne Tabellen.
+/// Formula: `byte[i] = (sn * K + i) & 0xFF`, where
+/// `K = 0x9E3779B1` (Knuth multiplicative hash, golden-ratio fraction).
+/// This choice:
+/// - spreads the bytes evenly (no constant or linear
+///   value that would mask reassembly bugs),
+/// - is deterministic (no RNG state; the same sn yields an identical
+///   sequence) — important for test reproducibility,
+/// - is computable in o(len) without tables.
 ///
-/// Aendert sich diese Funktion, muessen alle Fragment-E2E-Tests
-/// entsprechend angepasst werden (sie vergleichen `pattern_for(i, n)`
-/// 1:1 mit dem reassemblierten Reader-Sample).
+/// If this function changes, all fragment E2E tests must be
+/// adapted accordingly (they compare `pattern_for(i, n)`
+/// 1:1 with the reassembled reader sample).
 #[must_use]
 pub fn pattern_for(sn: usize, len: usize) -> Vec<u8> {
     let seed = (sn as u32).wrapping_mul(0x9E37_79B1);

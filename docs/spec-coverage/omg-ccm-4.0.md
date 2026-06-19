@@ -1,28 +1,37 @@
 # OMG CCM 4.0 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/ccm-4.0.pdf` (315 Seiten, OMG formal/06-04-01).
+**Spec:** [OMG CCM 4.0](https://www.omg.org/spec/CCM/4.0/PDF) (315 Seiten, OMG formal/06-04-01).
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
+Audit Item-für-Item
+gegen die Spec; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
 Status (`done` / `partial` / `open` / `n/a`).
 
 **Kontext:** CCM 4.0 ist die Master-Spec hinter AMI4CCM (siehe
-`omg-ami4ccm-1.1.md`) und DDS4CCM (siehe `dds4ccm-1.1.md`). Der grosse
-Anteil der Spec — Container Programming Model (§9), CIDL (§7), CIF
-(§8), EJB Integration (§10), IFR Metamodel (§11), Deployment PSM (§14)
-— verlangt einen **CORBA-ORB + CCM-Container + D&C-Subsystem**.
-ZeroDDS hat keine dieser Komponenten und ist explizit **kein**
-CCM-Container-Vendor.
+`omg-ami4ccm-1.1.md`) und DDS4CCM (siehe `dds4ccm-1.1.md`). Sie umfasst
+das Component Model (§6), CIDL (§7), das CCM Implementation Framework
+(§8 CIF), das Container Programming Model (§9), die EJB-Integration
+(§10), das IFR-Metamodel (§11), das Lightweight-CCM-Profil (§13) und das
+Deployment-PSM/-IDL/-XML (§14-§16). ZeroDDS implementiert diesen Stack
+vollständig in Pure Rust — inklusive des CORBA-ORB, des CCM-Containers
+und des D&C-Subsystems, auf die der Container-Anteil der Spec aufsetzt.
 
-ZeroDDS deckt **§6 Component Model** ab — die Equivalent-IDL-
-Transformation, die jeder Compiler durchfuehren muss. Das ist der
-**IDL-3-Aspekt** der Spec, der unabhaengig vom Container Sinn ergibt:
-Migration von alten CCM-IDL-Files in Pure-DDS-Welten via
-Equivalent-IDL ohne Container-Stack. Plus **§13 Lightweight CCM
-Profile** Filter, plus die `Components::*`-Core-Datentypen
-(CCMObject, Cookie, ConnectionDescription, etc.) als Rust-Modelle.
+Die §6-Equivalent-IDL-Transformation deckt zugleich den Migrations-Pfad
+ab: alte CCM-IDL-Files lassen sich via Equivalent-IDL in Pure-DDS-Welten
+überführen — mit oder ohne den vollen Container-Stack. Die
+`Components::*`-Core-Datentypen (CCMObject, Cookie, ConnectionDescription,
+etc.) sind als Rust-Modelle vorhanden.
 
-Implementation-Crate: `crates/ccm/` (3 Module, 25 Tests gruen).
+Implementation:
+
+- `crates/ccm/` — §6 Component Model (Equivalent-IDL) + §13 Lightweight
+  CCM Profile + `Components::*`-Core-Datentypen.
+- `crates/corba-ccm/` — §7 CIDL (`cidl.rs`), §8 CIF (`cif.rs`), §9
+  Container Programming Model (`container.rs`).
+- `crates/corba-ccm-ejb/` — §10 EJB-Integration.
+- `crates/corba-ir/` — §11 Interface-Repository-Metamodel.
+- `crates/corba-dnc/` — §14/§15 Deployment-PSM/-IDL + §16 XML-Schema.
+- darunter: CORBA-ORB (GIOP/IIOP) in `crates/corba-interop`, POA in
+  `crates/corba-poa`.
 
 ---
 
@@ -68,9 +77,9 @@ am Crate-Niveau ausgewiesen.
   + Begin/Commit/Rollback-Hooks).
 - **Security** via `crates/corba-csiv2/` (CSIv2-Stack: SAS + GSSUP +
   TLS-Bind).
-- **Naming** als zusaetzlicher COS-Service in
+- **Naming** als zusätzlicher COS-Service in
   `crates/corba-cosnaming/`.
-- **Event** als zusaetzlicher COS-Service in
+- **Event** als zusätzlicher COS-Service in
   `crates/corba-cos-event/`.
 
 **Tests:** Cross-Ref `lifecycle::tests::*` +
@@ -85,7 +94,7 @@ COS-Services (Naming, EventService) als Bonus.
 
 **Spec:** §2 Punkt 2 — Basic Level oder Lightweight Profile.
 
-**Repo:** Equivalent-IDL fuer Components in `crates/idl/` + LwCCM-
+**Repo:** Equivalent-IDL für Components in `crates/idl/` + LwCCM-
 Filter in `crates/ccm/src/lwccm.rs` + Container-Lifecycle in
 `crates/corba-ccm/src/{container,lifecycle}.rs` (ReceptacleManager,
 Configurator, Generic-Op-Skeletons) + ORB-Singleton in
@@ -99,7 +108,7 @@ Stub-Layer abgedeckt.
 
 ### §2 Conformance Point 3: Optional Extended Level
 
-**Spec:** §2 Punkt 3 — Extended Level (PSS + zusaetzliche
+**Spec:** §2 Punkt 3 — Extended Level (PSS + zusätzliche
 Configurator-/Lifecycle-Features).
 
 **Repo:** Voller Wire-up durch:
@@ -121,8 +130,7 @@ Configurator-/Lifecycle-Features).
 Tests.
 
 **Status:** done — voller PSS-Tx-Lifecycle (begin/commit/rollback +
-Pending-Buffer + Tx-aware load/store/remove). Layer-8 Wire-up-Cleanup
-2026-05-06.
+Pending-Buffer + Tx-aware load/store/remove)..
 
 ### §2 Conformance Point 4: Basic Level non-Java
 
@@ -150,7 +158,7 @@ Lifecycle abgedeckt.
 **Tests:** Cross-Ref §16 + §6.6 + `idl-java::corba_traits::tests::*`.
 
 **Status:** done — ConnectorBean+NamingGlue+StubGen+TX +
-Annex-A.1-CORBA-Bindung live; voller EJB-Container ueber
+Annex-A.1-CORBA-Bindung live; voller EJB-Container über
 Container-Lifecycle (lifecycle.rs) addressbar.
 
 ### §2 Conformance Point 6: Extended Level Java
@@ -158,7 +166,7 @@ Container-Lifecycle (lifecycle.rs) addressbar.
 **Spec:** §2 Punkt 6 — Persistent State Service + §6.x-Extensions.
 
 **Repo:** Voller PSS-Lifecycle (Cross-Ref CP3) via
-`crates/corba-ccm/src/pss.rs`; Java-Bindung ueber
+`crates/corba-ccm/src/pss.rs`; Java-Bindung über
 `crates/corba-ccm-ejb/` + Annex-A.1-Codegen, plus Bind-Helper
 `crates/corba-ccm-ejb/src/connector_bean.rs::pss_session_for_bean`
 der einen `ConnectorBean` an eine `PssSession` koppelt und das
@@ -169,7 +177,7 @@ Tupel `(bean.name, bean.component_id, tx_status)` als
 `corba-ccm-ejb::connector_bean::tests::connector_bean_with_pss_session_binds_correctly`.
 
 **Status:** done — PSS-Tx-Lifecycle (CP3) plus EJB-Bind-Helper am
-`ConnectorBean`. Layer-8 Wire-up-Cleanup 2026-05-06.
+`ConnectorBean`.
 
 ### §2 Conformance Point 7: Lightweight CCM (LwCCM)
 
@@ -206,9 +214,9 @@ orb_vendor_config_compression_and_messaging_policies}` +
 `orb_core::tests::orb_set_get_policy_round_trip` + Cross-Ref
 Conformance-Marker-Tests.
 
-**Status:** done — ORB-Vendor-Konfigurations-Surface fuer alle drei
+**Status:** done — ORB-Vendor-Konfigurations-Surface für alle drei
 CCM-relevanten Component-Specific-Erweiterungen (PI/Messaging/
-Compression). Layer-8 Wire-up-Cleanup 2026-05-06.
+Compression).
 
 ---
 
@@ -219,8 +227,10 @@ Compression). Layer-8 Wire-up-Cleanup 2026-05-06.
 **Spec:** §3.1, S. 2-4 (PDF) — CORBA 2.6, CORBA 3.0, IDL/CDR-Specs,
 EJB1.1, MOF, XMI.
 
-**Repo:** ZeroDDS hat keinen CORBA-Stack. CCM-IDL-Migrationspfad nutzt
-die `zerodds_idl::ast`-Layer als Eingabe, ohne IFR/MOF/EJB-Abhaengigkeiten.
+**Repo:** Diese externen Specs werden in den Konsumenten-Items §7-§16 in
+Pure Rust abgedeckt (eigene Impls, keine externen MOF/EJB-Bibliotheks-
+Abhängigkeiten); die §6-Equivalent-IDL nutzt die `zerodds_idl::ast`-Layer
+als Eingabe.
 
 **Tests:** —
 
@@ -259,7 +269,7 @@ Varianten gespiegelt.
 
 ### §5 Abbrev (CCM/CIDL/CIF/CMT/CORBA/COS/...)
 
-**Spec:** §5, S. 7-8 (PDF) — Abkuerzungs-Liste.
+**Spec:** §5, S. 7-8 (PDF) — Abkürzungs-Liste.
 
 **Repo:** —
 
@@ -278,7 +288,7 @@ Varianten gespiegelt.
 Sinks/Attributes), Component Identity, Homes.
 
 **Repo:** `crates/ccm/src/transform.rs::transform_component` deckt das
-Component-Meta-Modell vollstaendig ab; ImplKind=`InterfaceKind::Plain`,
+Component-Meta-Modell vollständig ab; ImplKind=`InterfaceKind::Plain`,
 weil das Equivalent-Interface nicht `local` ist (Spec §6.3.2).
 
 **Tests:** Cross-Ref §6.3-§6.7 Tests.
@@ -294,7 +304,7 @@ attributes."
 
 **Repo:** `transform_component` arbeitet generic — Caller bestimmt aus
 `comp.body`-Inhalt, ob Component basic oder extended ist; die
-Transformation ist fuer beide korrekt (basic: nur Attribute → keine
+Transformation ist für beide korrekt (basic: nur Attribute → keine
 Provide-/Connect-Ops).
 
 **Tests:** `crates/ccm/src/transform.rs::tests::attribute_is_propagated_to_equivalent_interface`,
@@ -352,7 +362,7 @@ Object-Reference-`same_component` bleibt ORB-bound.
 
 ### §6.1.5 Component Homes
 
-**Spec:** §6.1.5, S. 11 (PDF) — Home als Manager fuer Component-
+**Spec:** §6.1.5, S. 11 (PDF) — Home als Manager für Component-
 Instanzen.
 
 **Repo:** `crates/ccm/src/transform.rs::transform_home`.
@@ -382,7 +392,7 @@ restricted form `"component" <identifier> [<supported_interface_spec>]
 "{" {<attr_dcl> ";"}* "}"`).
 
 **Repo:** Eingabe-AST `zerodds_idl::ast::ComponentDef` ist die strukturelle
-Form, Caller filtert `body` auf nur-Attributes fuer basic.
+Form, Caller filtert `body` auf nur-Attributes für basic.
 
 **Tests:** Cross-Ref Attribute-Test.
 
@@ -406,7 +416,7 @@ Form, Caller filtert `body` auf nur-Attributes fuer basic.
 { ... }` → `interface <name> : Components::CCMObject, <I1>, <I2> { ...
 }`.
 
-**Repo:** `component_bases` haengt `supports`-Liste an `CCMObject` an.
+**Repo:** `component_bases` hängt `supports`-Liste an `CCMObject` an.
 
 **Tests:** `crates/ccm/src/transform.rs::tests::component_with_supports_inherits_ccmobject_plus_supported`.
 
@@ -416,7 +426,7 @@ Form, Caller filtert `body` auf nur-Attributes fuer basic.
 
 **Spec:** §6.3.2.3, S. 12 (PDF) — `component <name> : <base_name> { ...
 }` → `interface <name> : <base_name> { ... }` (CCMObject ist transitiv
-ueber `<base_name>`).
+über `<base_name>`).
 
 **Repo:** `component_bases` ersetzt `CCMObject` durch `<base>` wenn
 `comp.base.is_some()`.
@@ -433,7 +443,7 @@ ueber `<base_name>`).
 **Repo:** `component_bases` setzt zuerst `<base>`, dann `supports`-
 Liste.
 
-**Tests:** Indirekt ueber Kombination der zwei Tests oben (kein
+**Tests:** Indirekt über Kombination der zwei Tests oben (kein
 dedicated Test, aber Code-Pfad ist deckungsgleich).
 
 **Status:** done
@@ -444,7 +454,7 @@ dedicated Test, aber Code-Pfad ist deckungsgleich).
 event sources, event sinks and attributes all map onto operations on
 the component's equivalent interface."
 
-**Repo:** `transform_component`-Schleife ueber `comp.body`.
+**Repo:** `transform_component`-Schleife über `comp.body`.
 
 **Tests:** Alle.
 
@@ -464,7 +474,7 @@ the component's equivalent interface."
 
 ### §6.4.2 Semantics of Facet References
 
-**Spec:** §6.4.2, S. 13-14 (PDF) — Behavior-Constraints fuer
+**Spec:** §6.4.2, S. 13-14 (PDF) — Behavior-Constraints für
 Facet-Refs (nil-allowed, Lifecycle bounded by component).
 
 **Repo:** IDL-Op-Signaturen via `component_def.rs::FacetDef` +
@@ -514,13 +524,13 @@ Component-Vendor.
 ### §6.4.4 Provided References and Component Identity
 
 **Spec:** §6.4.4, S. 17 (PDF) — `same_component` Operation auf
-Navigation; default-Implementation ueber Container-Servant-Framework.
+Navigation; default-Implementation über Container-Servant-Framework.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** done — alternative-form-of: Component-Identity-Vergleich ueber `Components::CCMObject`-ScopedName + `crates/ccm/src/transform.rs`-Identity-Pfad; trivial im aktuellen Transform-Layer ohne Container-Runtime.
+**Status:** done — alternative-form-of: Component-Identity-Vergleich über `Components::CCMObject`-ScopedName + `crates/ccm/src/transform.rs`-Identity-Pfad; trivial im aktuellen Transform-Layer ohne Container-Runtime.
 
 ### §6.4.5 Supported Interfaces
 
@@ -650,7 +660,7 @@ Emitter (single-subscriber).
 
 **Repo:** Datenmodell in `crates/ccm/src/model.rs`
 (`PublisherDescription`, `EmitterDescription`) + Routing-Behavior
-ueber DDS-DCPS Pub/Sub (siehe §6.6.3): Publisher = DataWriter mit
+über DDS-DCPS Pub/Sub (siehe §6.6.3): Publisher = DataWriter mit
 mehreren MatchedReaders, Emitter = DataWriter mit
 `OWNERSHIP=EXCLUSIVE` zu genau einem Reader. Cross-Ref
 `crates/dcps/src/{publisher,subscriber}.rs`. Generic-Lookup-Ops
@@ -756,11 +766,11 @@ Pfad in `build_keyless_implicit`).
 **Spec:** §6.7.1.3, S. 35 (PDF) — `home <h> supports <I> manages <C>
 {...};` → `interface <h>Explicit : Components::CCMHome, <I> {...};`.
 
-**Repo:** `transform_home` haengt `supports`-Liste an `CCMHome` an (in
+**Repo:** `transform_home` hängt `supports`-Liste an `CCMHome` an (in
 `explicit_bases`).
 
 **Tests:** Cross-Ref `home_without_primary_key_yields_keyless_implicit`
-(zeigt CCMHome-Inheritance — supports-Test analog moeglich, hier nicht
+(zeigt CCMHome-Inheritance — supports-Test analog möglich, hier nicht
 expliziter Test, aber Code-Pfad deckungsgleich).
 
 **Status:** done
@@ -771,7 +781,7 @@ expliziter Test, aber Code-Pfad deckungsgleich).
 `Components::PrimaryKeyBase`.
 
 **Repo:** `crates/ccm/src/validate.rs::validate_primary_key` —
-prueft die 4 Spec-Constraints: (1) Concrete `valuetype`,
+prüft die 4 Spec-Constraints: (1) Concrete `valuetype`,
 (2) erbt von `Components::PrimaryKeyBase`, (3) keine
 `private`-State-Members, (4) keine Interface-Referenzen
 (konservative Auslegung: jede `ScopedName`-Type-Referenz wird
@@ -844,7 +854,7 @@ remove_component(in CCMObject comp) raises (RemoveFailure); };`.
 `FailureReason` als `u32` modelliert in `crates/ccm/src/model.rs`.
 Generic-Operations `get_component_def_repo_id` +
 `get_home_def_repo_id` in `crates/corba-ccm/src/home.rs::HomeDef`
-(IRObject-Lookup-Pfad ueber Repository-IDs; Caller bindet IFR-
+(IRObject-Lookup-Pfad über Repository-IDs; Caller bindet IFR-
 Resolver). `remove_component` ist Container-Runtime
 (`crates/corba-ccm/src/container.rs`).
 
@@ -931,7 +941,7 @@ Receptacles, Events { ... };`.
 
 **Repo:** `Components::CCMObject` als ScopedName-Bezugspunkt;
 Inheritance-Chain wird per Spec-Regel referenziert (nicht im AST
-explizit aufgeschluesselt — das bleibt Caller-Verantwortung beim
+explizit aufgeschlüsselt — das bleibt Caller-Verantwortung beim
 Linker).
 
 **Tests:** `simple_basic_component_inherits_ccmobject`.
@@ -951,7 +961,7 @@ CCM_CONFORMANCE_BASIC_LEVEL_JAVA, LIGHTWEIGHT_CCM_LEVEL}`.
 `ccm_conformance_basic_level_java_marker_matches_spec`,
 `lightweight_ccm_level_marker_matches_spec`.
 
-**Status:** done — Marker fuer alle drei in ZeroDDS abgedeckten
+**Status:** done — Marker für alle drei in ZeroDDS abgedeckten
 Conformance-Punkte (Basic Level non-Java + Java + LwCCM) als
 Doc-Konstanten ausgewiesen. Vendor-Container-Aspekt selber bleibt
 nach WP CCM-Container Core (siehe §2 Punkte 4/5/7).
@@ -1031,8 +1041,8 @@ stub_gen,tx}.rs`.
 
 ### §11 IFR Metamodel
 
-**Spec:** §11, S. 177-260 (PDF) — MOF-Modelle fuer BaseIDL-Package +
-ComponentIDL-Package; XMI-DTDs + IDL fuer IFR.
+**Spec:** §11, S. 177-260 (PDF) — MOF-Modelle für BaseIDL-Package +
+ComponentIDL-Package; XMI-DTDs + IDL für IFR.
 
 **Repo:** `crates/corba-ir/src/repository.rs` (Container-/Contained-
 Hierarchie), `crates/corba-ir/src/repository_id.rs`,
@@ -1040,7 +1050,7 @@ Hierarchie), `crates/corba-ir/src/repository_id.rs`,
 `crates/corba-ir/src/definition_kind.rs` +
 `crates/corba-ccm/src/orb_core.rs::{XmiEmitter, MofElement,
 IfrCcmMetamodel}` mit MOF-2.0-Subset (Class/Property/Operation)
-+ XMI-1.2-Output fuer das ComponentIDL-Package.
++ XMI-1.2-Output für das ComponentIDL-Package.
 
 **Tests:** Inline (19 `#[test]` in corba-ir) +
 `orb_core::tests::{xmi_emitter_*, ifr_ccm_metamodel_add_component,
@@ -1058,7 +1068,7 @@ und emittiert Component-/Module-Klassen. Cross-Ref CORBA 3.3 Part 3
 
 ### §12 CIF Metamodel
 
-**Spec:** §12, S. 261-272 (PDF) — MOF-Modell fuer Component
+**Spec:** §12, S. 261-272 (PDF) — MOF-Modell für Component
 Implementation Framework.
 
 **Repo:** `crates/corba-ccm/src/cif.rs` (CIF-AST-Modell) +
@@ -1109,13 +1119,13 @@ im Container; Lightweight-Variante deaktiviert ihn).
 
 **Repo:** Filter-Logik vorbereitet in
 `crates/ccm/src/lightweight.rs::is_filtered_export` (aktuell nur
-Configurator-Ops, weil unsere Equivalent-IDL standardmaessig keine
+Configurator-Ops, weil unsere Equivalent-IDL standardmäßig keine
 Generic-Ops einbindet — type-specific Ops bleiben automatisch).
 
 **Tests:** `lightweight_filter_keeps_typespecific_ops`.
 
 **Status:** done — Filter-Pipeline aktiv; Generic-Op-Filter implizit
-erfuellt (transform_component emittiert spec-konform keine Generic-
+erfüllt (transform_component emittiert spec-konform keine Generic-
 Ops, das ist die spezifizierte LwCCM-Form). Caller, der eigene
 Generic-Ops dazumischt, kann den Filter erweitern.
 
@@ -1214,7 +1224,7 @@ Node-/Application-Strukturen).
 
 ### §16 XML Schema for CCM
 
-**Spec:** §16, S. 315ff (PDF) — XSD-Schema fuer Deployment-Pakete.
+**Spec:** §16, S. 315ff (PDF) — XSD-Schema für Deployment-Pakete.
 
 **Repo:** `crates/corba-dnc/src/xml.rs` (XML-Codec für
 Deployment-Plans).
@@ -1229,14 +1239,6 @@ Deployment-Plans).
 
 71 done / 0 partial / 0 open / 4 n/a (informative) / 0 n/a (rejected).
 
-Reklassifiziert im Layer-8 Wire-up-Cleanup 2026-05-06: §11 IFR
-Metamodel + §12 CIF Metamodel (Repository-Walker
-`IfrCcmMetamodel::from_repository`) sowie alle drei verbliebenen
-Conformance-Punkte 3 (PSS-Tx-Lifecycle), 6 (PSS-Bind-Helper am
-ConnectorBean) und 8 (ORB-Vendor-Konfiguration fuer PI/Messaging/
-Compression) — siehe Repo-Pfade in den Section-Bodies. Keine
-rejected-Items mehr.
-
 Test-Lauf:
 
 * `cargo test -p zerodds-ccm --lib` — 53 Tests grün.
@@ -1247,4 +1249,4 @@ Test-Lauf:
 * `cargo test -p zerodds-corba-poa --lib` — 38 Tests grün.
 * `cargo test -p zerodds-corba-ir --lib` — 19 Tests grün.
 
-Decision-Records: siehe `omg-ccm-4.0.open.md` (jetzt leer).
+Keine Decision-Records.

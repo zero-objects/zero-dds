@@ -6,11 +6,11 @@
 //! Spec REP-2008 §4 + ROS 2 IDL-Subset (`design.ros2.org/articles/
 //! idl_interface_definition.html`).
 //!
-//! ROS-2-IDL ist eine Teilmenge von OMG-IDL 4.2 mit zusaetzlichen
-//! Annotations (`@verbatim`, `@key`, `@default`). Die Type-Names
-//! werden im DDS-Wire-Format mit dem Pattern
-//! `<package>::<sub-namespace>::dds_::<TypeName>_` codiert
-//! (Convention aus `rosidl_typesupport_fastrtps_cpp`).
+//! ROS-2 IDL is a subset of OMG-IDL 4.2 with additional
+//! annotations (`@verbatim`, `@key`, `@default`). The type names
+//! are encoded in the DDS wire format with the pattern
+//! `<package>::<sub-namespace>::dds_::<TypeName>_`
+//! (convention from `rosidl_typesupport_fastrtps_cpp`).
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -28,7 +28,7 @@ pub enum RosNamespace {
 }
 
 impl RosNamespace {
-    /// Wire-Subnamespace-String laut Convention.
+    /// Wire sub-namespace string per the convention.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -51,7 +51,7 @@ pub struct RosTypeRef {
 }
 
 impl RosTypeRef {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(
         package: impl Into<String>,
@@ -65,7 +65,7 @@ impl RosTypeRef {
         }
     }
 
-    /// Render zur ROS-2-Slash-Form (`package/namespace/Type`).
+    /// Render to the ROS 2 slash form (`package/namespace/Type`).
     #[must_use]
     pub fn to_ros_form(&self) -> String {
         format!(
@@ -76,9 +76,9 @@ impl RosTypeRef {
         )
     }
 
-    /// Render zur DDS-Wire-Type-Name-Form fuer Cyclone-DDS / FastDDS-
-    /// Compat: `<package>::<namespace>::dds_::<TypeName>_`. Spec-
-    /// Convention aus `rosidl_typesupport_fastrtps_cpp`.
+    /// Renders to the DDS wire type-name form for Cyclone-DDS / FastDDS
+    /// compat: `<package>::<namespace>::dds_::<TypeName>_`. Spec
+    /// convention from `rosidl_typesupport_fastrtps_cpp`.
     #[must_use]
     pub fn to_dds_type_name(&self) -> String {
         format!(
@@ -89,10 +89,10 @@ impl RosTypeRef {
         )
     }
 
-    /// Parst eine ROS-2-Slash-Form (`package/namespace/Type`) zurueck.
+    /// Parses a ROS-2 slash form (`package/namespace/Type`) back.
     ///
     /// # Errors
-    /// Static-String wenn nicht 3 Slash-getrennte Segmente.
+    /// Static string if not 3 slash-separated segments.
     pub fn from_ros_form(s: &str) -> Result<Self, &'static str> {
         let parts: Vec<&str> = s.split('/').collect();
         if parts.len() != 3 {
@@ -112,8 +112,8 @@ impl RosTypeRef {
     }
 }
 
-/// XTypes-Mapping fuer einen ROS-2-Builtin-Type (rosidl-Type-Token).
-/// Spec REP-2008 §4.4: ROS-Builtins ↔ IDL-Builtins.
+/// XTypes mapping for a ROS-2 builtin type (rosidl type token).
+/// Spec REP-2008 §4.4: ROS builtins ↔ IDL builtins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RosBuiltinType {
     /// `bool` ↔ IDL `boolean`.
@@ -142,14 +142,14 @@ pub enum RosBuiltinType {
     Int64,
     /// `uint64` ↔ IDL `uint64`.
     Uint64,
-    /// `string` ↔ IDL `string` (bounded oder unbounded).
+    /// `string` ↔ IDL `string` (bounded or unbounded).
     String,
     /// `wstring` ↔ IDL `wstring`.
     WString,
 }
 
 impl RosBuiltinType {
-    /// IDL-Name laut REP-2008 §4.4 Tab.
+    /// IDL name per REP-2008 §4.4 Tab.
     #[must_use]
     pub const fn idl_name(self) -> &'static str {
         match self {
@@ -183,10 +183,10 @@ impl RosBuiltinType {
         }
     }
 
-    /// Parst einen ROS-IDL-Token-String zu `RosBuiltinType`.
+    /// Parses a ROS-IDL token string to `RosBuiltinType`.
     ///
     /// # Errors
-    /// Static-String wenn unbekannt.
+    /// Static string if unknown.
     pub fn from_ros_token(s: &str) -> Result<Self, &'static str> {
         match s {
             "bool" => Ok(Self::Bool),
@@ -258,8 +258,9 @@ mod tests {
     }
 
     #[test]
-    fn builtin_idl_names_match_rep_2008() {
-        // Spec REP-2008 §4.4 Tab.
+    fn builtin_idl_names_match_omg_idl() {
+        // rosidl builtin → OMG IDL 4.2 primitive spellings (DDS-XTypes 1.3
+        // §7.2.2.4.1.1 primitive kinds): the `.idl` names DDS sees on the wire.
         assert_eq!(RosBuiltinType::Bool.idl_name(), "boolean");
         assert_eq!(RosBuiltinType::Byte.idl_name(), "octet");
         assert_eq!(RosBuiltinType::Float32.idl_name(), "float");

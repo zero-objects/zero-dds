@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! HPACK Static + Dynamic Table — RFC 7541 §2.3.
+//! HPACK static + dynamic table — RFC 7541 §2.3.
 //!
-//! Static-Table: 61 fixed Eintraege (Spec Appendix A).
-//! Dynamic-Table: FIFO mit `header_table_size`-Limit (Caller via
-//! SETTINGS_HEADER_TABLE_SIZE konfiguriert).
+//! Static table: 61 fixed entries (Spec Appendix A).
+//! Dynamic table: FIFO with a `header_table_size` limit (configured
+//! by the caller via SETTINGS_HEADER_TABLE_SIZE).
 
 use alloc::collections::VecDeque;
 use alloc::string::String;
 
-/// Static-Table-Entry.
+/// Static-table entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StaticTableEntry {
-    /// Header-Name.
+    /// Header name.
     pub name: &'static str,
-    /// Default-Value (kann leer sein).
+    /// Default value (may be empty).
     pub value: &'static str,
 }
 
-/// RFC 7541 Appendix A — 61 Static-Table-Eintraege (Indices 1..=61).
+/// RFC 7541 Appendix A — 61 static-table entries (indices 1..=61).
 pub const STATIC_TABLE: [StaticTableEntry; 61] = [
     StaticTableEntry {
         name: ":authority",
@@ -267,7 +267,7 @@ pub const STATIC_TABLE: [StaticTableEntry; 61] = [
     },
 ];
 
-/// Header-Field (Owned) — wird in der Dynamic-Table gespeichert.
+/// Header field (owned) — stored in the dynamic table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeaderField {
     /// Name.
@@ -277,22 +277,22 @@ pub struct HeaderField {
 }
 
 impl HeaderField {
-    /// Spec §4.1 — Estimated-Size (32 + name.len + value.len).
+    /// Spec §4.1 — estimated size (32 + name.len + value.len).
     #[must_use]
     pub fn size(&self) -> usize {
         32 + self.name.len() + self.value.len()
     }
 }
 
-/// Combined-Lookup — Index in Static + Dynamic. RFC 7541 §2.3.
+/// Combined lookup — index into static + dynamic. RFC 7541 §2.3.
 ///
-/// Static = 1..=61, Dynamic = 62..=N.
+/// Static = 1..=61, dynamic = 62..=N.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Table {
     dynamic: VecDeque<HeaderField>,
-    /// Aktuelle Gesamtgroesse der Dynamic-Table (Spec §4.1).
+    /// Current total size of the dynamic table (Spec §4.1).
     size: usize,
-    /// Max-Size laut SETTINGS_HEADER_TABLE_SIZE.
+    /// Max size per SETTINGS_HEADER_TABLE_SIZE.
     max_size: usize,
 }
 
@@ -307,7 +307,7 @@ impl Default for Table {
 }
 
 impl Table {
-    /// Konstruktor mit `max_size`.
+    /// Constructor with `max_size`.
     #[must_use]
     pub fn new(max_size: usize) -> Self {
         Self {
@@ -317,12 +317,12 @@ impl Table {
         }
     }
 
-    /// Fuegt einen neuen Eintrag in die Dynamic-Table (vorne).
+    /// Adds a new entry to the dynamic table (at the front).
     /// Spec §4.4.
     pub fn add(&mut self, field: HeaderField) {
         let new_size = field.size();
         if new_size > self.max_size {
-            // Spec §4.4: ueberlanger Eintrag => Tabelle leeren.
+            // Spec §4.4: an oversized entry => clear the table.
             self.dynamic.clear();
             self.size = 0;
             return;
@@ -339,7 +339,7 @@ impl Table {
         self.dynamic.push_front(field);
     }
 
-    /// Lookup ueber kombinierten Index.
+    /// Lookup by combined index.
     #[must_use]
     pub fn get(&self, index: usize) -> Option<HeaderField> {
         if index == 0 {
@@ -356,9 +356,9 @@ impl Table {
         self.dynamic.get(dyn_index).cloned()
     }
 
-    /// Sucht einen Header-Field-Match. Liefert `(index, full_match)`.
-    /// `full_match=true`: Name + Value passen.
-    /// `full_match=false`: nur Name passt.
+    /// Searches for a header-field match. Returns `(index, full_match)`.
+    /// `full_match=true`: name + value match.
+    /// `full_match=false`: only the name matches.
     #[must_use]
     pub fn find(&self, name: &str, value: &str) -> Option<(usize, bool)> {
         let mut name_only: Option<usize> = None;
@@ -384,20 +384,20 @@ impl Table {
         name_only.map(|i| (i, false))
     }
 
-    /// Aktuelle Dynamic-Table-Size (Spec §4.1).
+    /// Current dynamic-table size (Spec §4.1).
     #[must_use]
     pub fn size(&self) -> usize {
         self.size
     }
 
-    /// Max-Size.
+    /// Max size.
     #[must_use]
     pub fn max_size(&self) -> usize {
         self.max_size
     }
 
-    /// Setzt eine neue Max-Size — bei Verkleinerung werden Eintraege
-    /// von hinten verworfen.
+    /// Sets a new max size — on shrink, entries are evicted from the
+    /// back.
     pub fn set_max_size(&mut self, new_max: usize) {
         self.max_size = new_max;
         while self.size > self.max_size {
@@ -409,13 +409,13 @@ impl Table {
         }
     }
 
-    /// Anzahl Dynamic-Table-Eintraege.
+    /// Number of dynamic-table entries.
     #[must_use]
     pub fn len(&self) -> usize {
         self.dynamic.len()
     }
 
-    /// `true` wenn Dynamic-Table leer.
+    /// `true` if the dynamic table is empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.dynamic.is_empty()

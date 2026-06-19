@@ -9,23 +9,23 @@
 //!
 //! # Scope
 //!
-//! Voller IIOP-TCP-Transport-Stack:
+//! Full IIOP-over-TCP transport stack:
 //!
-//! * **ProfileBody** — alle 4 IIOP-Versionen (1.0/1.1/1.2/1.3) inkl.
-//!   `host`/`port`/`object_key`/`components` (Spec §15.7.2). 1.0 hat
-//!   keine Components-Sequenz; ab 1.1 sind sie Pflicht-Bestandteil.
-//! * **Connection** — TCP-Stream-Wrapper, der GIOP-Messages frame-genau
-//!   liest und schreibt (12-Byte-Header -> `message_size` ->
-//!   Body-Read).
-//! * **Connector (Client)** — TCP-Connect mit Connection-Reuse und
-//!   thread-safe Pool, Connect-Timeout und automatische Reconnect-
-//!   Logik bei `CloseConnection`-Empfang.
-//! * **Acceptor (Server)** — TCP-Listener-Loop mit Per-Connection-
-//!   Worker-Thread.
-//! * **Bidirectional-GIOP** (Spec §15.9) — Server kann Requests an
-//!   den Client schicken nach Aushandlung via `BiDirIIOPServiceContext`.
+//! * **ProfileBody** — all 4 IIOP versions (1.0/1.1/1.2/1.3) incl.
+//!   `host`/`port`/`object_key`/`components` (Spec §15.7.2). 1.0 has
+//!   no components sequence; from 1.1 on they are a mandatory part.
+//! * **Connection** — TCP stream wrapper that reads and writes GIOP
+//!   messages frame-exactly (12-byte header -> `message_size` ->
+//!   body read).
+//! * **Connector (client)** — TCP connect with connection reuse and a
+//!   thread-safe pool, connect timeout and automatic reconnect logic
+//!   on receiving `CloseConnection`.
+//! * **Acceptor (server)** — TCP listener loop with a per-connection
+//!   worker thread.
+//! * **Bidirectional GIOP** (Spec §15.9) — the server can send
+//!   requests to the client after negotiation via `BiDirIIOPServiceContext`.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```
 //! use zerodds_corba_iiop::IiopVersion;
@@ -53,6 +53,8 @@ pub mod connector;
 pub mod error;
 #[cfg(feature = "std")]
 pub mod framing;
+#[cfg(feature = "tls")]
+pub mod tls;
 
 pub use bidir::{BiDirIiopListenPoint, BiDirIiopServiceContext, IIOP_BI_DIR_TAG};
 pub use profile_body::{IiopProfileBody, IiopVersion, TaggedComponent};

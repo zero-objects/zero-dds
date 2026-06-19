@@ -1,12 +1,12 @@
-//! Integration-Tests fuer C2.2-c: Hot-Path-Trigger fuer alle 12
-//! Listener-Status-Kinds. Spec §2.2.4.2.{4,5,6,7}.
+//! Integration tests for C2.2-c: hot-path triggers for all 12
+//! listener status kinds. Spec §2.2.4.2.{4,5,6,7}.
 //!
-//! Pro Status-Kind mindestens 2 Tests, die belegen dass:
-//! 1. Der Detector-Pfad den Counter inkrementiert (Runtime-Seite),
-//! 2. Der Listener-Bubble-Up via `dispatch_*` korrekt feuert.
+//! Per status kind at least 2 tests that show:
+//! 1. The detector path increments the counter (runtime side),
+//! 2. The listener bubble-up via `dispatch_*` fires correctly.
 //!
-//! Tests laufen offline (kein UDP) — wir steuern die Counter direkt
-//! ueber Runtime-Zustand bzw. via dispatcher-Module.
+//! Tests run offline (no UDP) — we drive the counters directly
+//! through runtime state or via the dispatcher module.
 
 #![allow(
     clippy::expect_used,
@@ -40,7 +40,7 @@ use zerodds_dcps::status::{
 use zerodds_dcps::*;
 
 // ----------------------------------------------------------------------------
-// Counter-Listener fuer alle 12 Statuses.
+// Counter listener for all 12 statuses.
 // ----------------------------------------------------------------------------
 
 #[derive(Default)]
@@ -102,7 +102,7 @@ struct TopicC {
 }
 impl TopicListener for TopicC {
     fn on_inconsistent_topic(&self, _t: InstanceHandle, s: InconsistentTopicStatus) {
-        // Nur zaehlen wenn Delta > 0 (sollte vom dispatcher schon gefiltert sein).
+        // Only count when delta > 0 (should already be filtered by the dispatcher).
         if s.total_count_change > 0 {
             self.inconsistent.fetch_add(1, Ordering::Relaxed);
         }
@@ -187,7 +187,7 @@ fn inconsistent_topic_listener_fires_on_type_mismatch() {
         .unwrap();
     let pc = Arc::new(TopicC::default());
     t1.set_listener(Some(pc.clone()), bits::ANY);
-    // Zweite create_topic mit gleichem Namen aber anderem Type schlaegt fehl.
+    // A second create_topic with the same name but a different type fails.
     use zerodds_dcps::dds_type::{DdsType, DecodeError, EncodeError};
     #[derive(Debug, Clone, Default)]
     struct Other;
@@ -216,7 +216,7 @@ fn inconsistent_topic_bubbles_to_participant_when_topic_listener_unset() {
         .unwrap();
     let pc = Arc::new(PartC::default());
     p.set_listener(Some(pc.clone()), bits::ANY);
-    // Manueller Trigger via record_inconsistent_topic.
+    // Manual trigger via record_inconsistent_topic.
     t.record_inconsistent_topic();
     let _ = t.inconsistent_topic_status();
     assert_eq!(pc.inconsistent.load(Ordering::Relaxed), 1);
@@ -227,7 +227,7 @@ fn inconsistent_topic_no_delta_no_listener() {
     let (_, t, _, _) = mk();
     let pc = Arc::new(TopicC::default());
     t.set_listener(Some(pc.clone()), bits::ANY);
-    // Kein Inkrement → kein Listener.
+    // No increment → no listener.
     let _ = t.inconsistent_topic_status();
     let _ = t.inconsistent_topic_status();
     assert_eq!(pc.inconsistent.load(Ordering::Relaxed), 0);
@@ -244,9 +244,9 @@ fn offered_deadline_missed_via_runtime_counter() {
         DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
     };
     use zerodds_rtps::wire_types::GuidPrefix;
-    // Tick-Period kuerzer als deadline-period, damit unter
-    // CI-Container-Drosselung (llvm-cov + serialized tests) genug
-    // tick-slots in den 250ms Sleep-Window passen.
+    // Tick period shorter than the deadline period so that under
+    // CI container throttling (llvm-cov + serialized tests) enough
+    // tick slots fit into the 250ms sleep window.
     let cfg = RuntimeConfig {
         tick_period: core::time::Duration::from_millis(5),
         ..RuntimeConfig::default()
@@ -273,13 +273,13 @@ fn offered_deadline_missed_via_runtime_counter() {
             data_representation_offer: None,
         })
         .unwrap();
-    // DDS 1.4 §2.2.3.1: Deadline = Maximum-Intervall zwischen *zwei*
-    // konsekutiven Writes. Der Counter startet erst nach dem ersten
-    // Write — solange wird `last_write = None` gehalten.
+    // DDS 1.4 §2.2.3.1: deadline = maximum interval between *two*
+    // consecutive writes. The counter only starts after the first
+    // write — until then `last_write = None` is held.
     rt.write_user_sample(eid, b"first".to_vec())
         .expect("first write");
-    // Danach 250ms warten (= 5x Deadline-Period) → mindestens ein
-    // Miss-Tick.
+    // Then wait 250ms (= 5x deadline period) → at least one
+    // miss tick.
     std::thread::sleep(std::time::Duration::from_millis(250));
     let n = rt.user_writer_offered_deadline_missed(eid);
     assert!(
@@ -297,8 +297,8 @@ fn offered_deadline_missed_listener_fires_on_delta() {
         .unwrap();
     let cnt = Arc::new(WriterC::default());
     w.set_listener(Some(cnt.clone()), bits::ANY);
-    // Im Offline-Mode bleibt der Counter bei 0; wir testen die
-    // Delta-Detection-Semantik via dispatcher direkt.
+    // In offline mode the counter stays at 0; we test the
+    // delta-detection semantics directly via the dispatcher.
     use zerodds_dcps::listener_dispatch::{WriterListenerChain, dispatch_offered_deadline_missed};
     let chain = WriterListenerChain {
         writer: Some((cnt.clone(), bits::ANY)),
@@ -326,9 +326,9 @@ fn requested_deadline_missed_via_runtime_counter() {
     use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserReaderConfig};
     use zerodds_qos::{DeadlineQosPolicy, DurabilityKind, LivelinessQosPolicy, OwnershipKind};
     use zerodds_rtps::wire_types::GuidPrefix;
-    // Siehe `offered_deadline_missed_via_runtime_counter` — tick=5ms
-    // damit der CI-Container deterministisch ticks im 250ms-Window
-    // schafft.
+    // See `offered_deadline_missed_via_runtime_counter` — tick=5ms
+    // so the CI container deterministically manages ticks within the
+    // 250ms window.
     let cfg = RuntimeConfig {
         tick_period: core::time::Duration::from_millis(5),
         ..RuntimeConfig::default()
@@ -368,7 +368,7 @@ fn requested_deadline_missed_listener_fires_on_delta() {
         .unwrap();
     let cnt = Arc::new(ReaderC::default());
     r.set_listener(Some(cnt.clone()), bits::ANY);
-    // Direkter Dispatcher-Call — Offline-Mode ohne Runtime-Counter.
+    // Direct dispatcher call — offline mode without a runtime counter.
     use zerodds_dcps::listener_dispatch::{
         ReaderListenerChain, dispatch_requested_deadline_missed,
     };
@@ -498,8 +498,8 @@ fn liveliness_lost_via_runtime_writer_lease() {
         OwnershipKind,
     };
     use zerodds_rtps::wire_types::GuidPrefix;
-    // Siehe `offered_deadline_missed_via_runtime_counter` — tick=5ms
-    // unter CI-Container-Drosselung.
+    // See `offered_deadline_missed_via_runtime_counter` — tick=5ms
+    // under CI container throttling.
     let cfg = RuntimeConfig {
         tick_period: core::time::Duration::from_millis(5),
         ..RuntimeConfig::default()
@@ -569,7 +569,7 @@ fn liveliness_changed_default_status_zero() {
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
         .unwrap();
     let (alive, ac, nc) = r.liveliness_changed_status();
-    // Offline-Mode → keine Werte.
+    // Offline mode → no values.
     assert!(!alive);
     assert_eq!(ac, 0);
     assert_eq!(nc, 0);
@@ -739,7 +739,7 @@ fn sample_rejected_dispatcher_fires_listener() {
 }
 
 // ============================================================================
-// 10. Integration: drive_listeners + bubble-up zum Participant.
+// 10. Integration: drive_listeners + bubble-up to the participant.
 // ============================================================================
 
 #[test]
@@ -761,8 +761,8 @@ fn drive_listeners_no_op_offline_mode() {
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
         .unwrap();
-    // Offline-Mode: drive_listeners darf nicht panicken und feuert
-    // keine Listener (alle Counter bleiben 0).
+    // Offline mode: drive_listeners must not panic and fires
+    // no listeners (all counters stay 0).
     let cnt_w = Arc::new(WriterC::default());
     let cnt_r = Arc::new(ReaderC::default());
     w.set_listener(Some(cnt_w.clone()), bits::ANY);
@@ -785,7 +785,7 @@ fn deadline_listener_does_not_fire_twice_for_same_count() {
         .unwrap();
     let cnt = Arc::new(WriterC::default());
     w.set_listener(Some(cnt.clone()), bits::ANY);
-    // Zweimaliger Aufruf bei gleichem Counter (offline = 0) → kein Fire.
+    // Two calls with the same counter (offline = 0) → no fire.
     let _ = w.offered_deadline_missed_count();
     let _ = w.offered_deadline_missed_count();
     assert_eq!(cnt.offered_deadline.load(Ordering::Relaxed), 0);
@@ -827,7 +827,7 @@ fn assert_liveliness_offline_no_op() {
     let w = pubr
         .create_datawriter::<RawBytes>(&t, DataWriterQos::default())
         .unwrap();
-    // Offline → no-op, darf nicht panicken.
+    // Offline → no-op, must not panic.
     w.assert_liveliness();
     assert_eq!(w.liveliness_lost_count(), 0);
 }

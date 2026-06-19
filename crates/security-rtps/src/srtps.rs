@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Message-Level-Schutz: `SRTPS_PREFIX` + `SRTPS_POSTFIX`.
+//! Message-level protection: `SRTPS_PREFIX` + `SRTPS_POSTFIX`.
 //!
-//! Spec §7.3.7: wickelt eine **ganze** RTPS-Message (mit eingebetteten
-//! Submessages) in einen äußeren Schutz-Layer. Genutzt für
-//! `rtps_protection_kind=ENCRYPT` im Governance-XML.
+//! Spec §7.3.7: wraps a **whole** RTPS message (with embedded
+//! submessages) into an outer protection layer. Used for
+//! `rtps_protection_kind=ENCRYPT` in the governance XML.
 //!
 //! zerodds-lint: allow no_dyn_in_safe
-//! (Wie `codec.rs` nimmt der Wrapper `&dyn CryptographicPlugin`.)
+//! (Like `codec.rs`, the wrapper takes `&dyn CryptographicPlugin`.)
 //!
 //! ```text
-//! [ RTPS-Header (20 byte, plaintext) ]
-//! [ SRTPS_PREFIX (4+16 byte) ]
+//! [ RTPS header (20 bytes, plaintext) ]
+//! [ SRTPS_PREFIX (4+16 bytes) ]
 //! [ <encrypted body> ... ]
-//! [ SRTPS_POSTFIX (4+0 byte, leere MAC-Liste im Single-Receiver-Modus) ]
+//! [ SRTPS_POSTFIX (4+0 bytes, empty MAC list in single-receiver mode) ]
 //! ```
 //!
-//! Der RTPS-Header (ersten 20 byte) bleibt **plaintext**, damit
-//! Receiver die Magic "RTPS" + Version + VendorId + Prefix sehen
-//! können, ohne erst zu entschluesseln. Alles dahinter wird via
-//! AES-GCM verschluesselt + authentifiziert.
+//! The RTPS header (first 20 bytes) stays **plaintext**, so that
+//! receivers can see the magic "RTPS" + version + VendorId + prefix
+//! without decrypting first. Everything after it is encrypted +
+//! authenticated via AES-GCM.
 
 use alloc::vec::Vec;
 
@@ -28,7 +28,7 @@ use zerodds_security::crypto::{CryptoHandle, CryptographicPlugin};
 
 use crate::codec::{SRTPS_POSTFIX, SRTPS_PREFIX, SecurityRtpsError};
 
-/// RTPS-Header-Groesse (Spec §8.3.3.1).
+/// RTPS header size (spec §8.3.3.1).
 pub const RTPS_HEADER_LEN: usize = 20;
 
 const FLAG_LE: u8 = 0x01;
@@ -36,15 +36,15 @@ const FLAG_LE: u8 = 0x01;
 /// `PreSharedKeyFlag` im SRTPS_PREFIX-Submessage-Header — Spec
 /// DDS-Security 1.2 §10.9.1.
 ///
-/// Wenn gesetzt, signalisiert der Sender, dass die Master-Keys aus
-/// einem **Pre-Shared-Key** abgeleitet sind (DDS:Crypto:PSK:AES-GCM-
-/// GMAC:1.2) statt aus einem X.509-DH-Handshake. Decoder duerfen das
-/// Bit beobachten, um den korrekten Crypto-Plugin auszuwaehlen — auf
-/// dem Wire bleibt der Body-Layout (TransformIdentifier, Body, MACs)
-/// identisch, nur die Key-Herkunft unterscheidet sich.
+/// When set, the sender signals that the master keys are derived from
+/// a **pre-shared key** (DDS:Crypto:PSK:AES-GCM-
+/// GMAC:1.2) instead of from an X.509 DH handshake. Decoders may observe the
+/// bit to select the correct crypto plugin — on
+/// the wire the body layout (TransformIdentifier, body, MACs)
+/// stays identical, only the key origin differs.
 ///
-/// Bit-Position 0x02 (Bit 1) — neben `FLAG_LE` (Bit 0). Andere
-/// Submessage-Flags (Bits 2..7) sind reserviert.
+/// Bit position 0x02 (bit 1) — next to `FLAG_LE` (bit 0). Other
+/// submessage flags (bits 2..7) are reserved.
 pub const PRE_SHARED_KEY_FLAG: u8 = 0x02;
 
 fn push_header(out: &mut Vec<u8>, id: u8, length: u16) {
@@ -59,12 +59,12 @@ fn push_header_with_flags(out: &mut Vec<u8>, id: u8, flags: u8, length: u16) {
     out.extend_from_slice(&length.to_le_bytes());
 }
 
-/// Wie [`encode_secured_rtps_message`], aber setzt zusaetzlich den
-/// `PreSharedKeyFlag` im SRTPS_PREFIX (Spec §10.9.1) — fuer den
-/// PSK-Crypto-Pfad.
+/// Like [`encode_secured_rtps_message`], but additionally sets the
+/// `PreSharedKeyFlag` in the SRTPS_PREFIX (spec §10.9.1) — for the
+/// PSK crypto path.
 ///
 /// # Errors
-/// Wie [`encode_secured_rtps_message`].
+/// Like [`encode_secured_rtps_message`].
 pub fn encode_secured_rtps_message_psk(
     plugin: &dyn CryptographicPlugin,
     local: CryptoHandle,
@@ -76,10 +76,10 @@ pub fn encode_secured_rtps_message_psk(
     }
     let (header, body) = message.split_at(RTPS_HEADER_LEN);
 
-    // AAD-Extension per DDS-Security 1.2 §7.4.6.6 (RTPS-Message-
-    // Protection): reserved-4 || RTPS-Header[0..20]. Schützt den
-    // Header gegen Tampering — der Plugin's `mat.aad(extension)`
-    // prependet zusätzlich `transformation_kind || key_id || session_id`.
+    // AAD extension per DDS-Security 1.2 §7.4.6.6 (RTPS message
+    // protection): reserved-4 || RTPS-Header[0..20]. Protects the
+    // header against tampering — the plugin's `mat.aad(extension)`
+    // additionally prepends `transformation_kind || key_id || session_id`.
     let mut aad_extension = Vec::with_capacity(4 + RTPS_HEADER_LEN);
     aad_extension.extend_from_slice(&[0u8; 4]);
     aad_extension.extend_from_slice(header);
@@ -94,7 +94,7 @@ pub fn encode_secured_rtps_message_psk(
     let mut out = Vec::with_capacity(RTPS_HEADER_LEN + 4 + 16 + 4 + ciphertext.len() + 4);
     out.extend_from_slice(header);
 
-    // SRTPS_PREFIX mit PSK-Flag.
+    // SRTPS_PREFIX with PSK flag.
     push_header_with_flags(&mut out, SRTPS_PREFIX, FLAG_LE | PRE_SHARED_KEY_FLAG, 16);
     out.extend_from_slice(&[0u8; 16]);
 
@@ -106,9 +106,9 @@ pub fn encode_secured_rtps_message_psk(
     Ok(out)
 }
 
-/// Liest den `PreSharedKeyFlag`-Bit aus dem SRTPS_PREFIX einer
-/// secured RTPS-Message. Liefert `None` wenn die Wire kein gueltiges
-/// SRTPS-Wrapping ist.
+/// Reads the `PreSharedKeyFlag` bit from the SRTPS_PREFIX of a
+/// secured RTPS message. Returns `None` if the wire is not a valid
+/// SRTPS wrapping.
 #[must_use]
 pub fn srtps_psk_flag(wire: &[u8]) -> Option<bool> {
     if wire.len() < RTPS_HEADER_LEN + 4 {
@@ -120,16 +120,16 @@ pub fn srtps_psk_flag(wire: &[u8]) -> Option<bool> {
     Some(wire[RTPS_HEADER_LEN + 1] & PRE_SHARED_KEY_FLAG != 0)
 }
 
-/// Schuetzt eine **ganze** RTPS-Message. Die ersten 20 byte (Header)
-/// bleiben plaintext; alles dahinter (Submessage-Stream) wird
-/// verschluesselt + authentifiziert. Output:
+/// Protects a **whole** RTPS message. The first 20 bytes (header)
+/// stay plaintext; everything after it (the submessage stream) is
+/// encrypted + authenticated. Output:
 ///
 /// ```text
 /// [ header (20) | SRTPS_PREFIX | encrypted body | SRTPS_POSTFIX ]
 /// ```
 ///
 /// # Errors
-/// Input zu kurz fuer den Header oder Crypto-Plugin-Fehler.
+/// Input too short for the header, or a crypto-plugin error.
 pub fn encode_secured_rtps_message(
     plugin: &dyn CryptographicPlugin,
     local: CryptoHandle,
@@ -141,10 +141,10 @@ pub fn encode_secured_rtps_message(
     }
     let (header, body) = message.split_at(RTPS_HEADER_LEN);
 
-    // AAD-Extension per DDS-Security 1.2 §7.4.6.6 (RTPS-Message-
-    // Protection): reserved-4 || RTPS-Header[0..20]. Schützt den
-    // Header gegen Tampering — der Plugin's `mat.aad(extension)`
-    // prependet zusätzlich `transformation_kind || key_id || session_id`.
+    // AAD extension per DDS-Security 1.2 §7.4.6.6 (RTPS message
+    // protection): reserved-4 || RTPS-Header[0..20]. Protects the
+    // header against tampering — the plugin's `mat.aad(extension)`
+    // additionally prepends `transformation_kind || key_id || session_id`.
     let mut aad_extension = Vec::with_capacity(4 + RTPS_HEADER_LEN);
     aad_extension.extend_from_slice(&[0u8; 4]);
     aad_extension.extend_from_slice(header);
@@ -164,30 +164,30 @@ pub fn encode_secured_rtps_message(
     );
     out.extend_from_slice(header);
 
-    // SRTPS_PREFIX: 16-byte TransformIdentifier (0x00..0x00 = Single-Plugin-Pfad; Multi-Plugin-Identifier sind im DCPS-Runtime hand-allokiert).
+    // SRTPS_PREFIX: 16-byte TransformIdentifier (0x00..0x00 = single-plugin path; multi-plugin identifiers are hand-allocated in the DCPS runtime).
     push_header(&mut out, SRTPS_PREFIX, 16);
     out.extend_from_slice(&[0u8; 16]);
 
-    // Cipherbody als einzelne Submessage-artige Struktur einhaengen.
-    // Hier setzen wir die CT-Bytes direkt — der Empfaenger weiss ueber
-    // den Submessage-Laengen-Header vom POSTFIX den Body-Umfang nicht,
-    // deshalb brauchen wir einen eigenen Length-Marker. Wir nutzen
-    // einen synthetischen SEC_BODY-Shape: [0x30 0x01 len_lo len_hi ...].
+    // Hook the cipher body in as a single submessage-like structure.
+    // Here we set the CT bytes directly — the receiver does not learn the body
+    // extent from the submessage length header of the POSTFIX,
+    // so we need our own length marker. We use
+    // a synthetic SEC_BODY shape: [0x30 0x01 len_lo len_hi ...].
     push_header(&mut out, crate::codec::SEC_BODY, body_len);
     out.extend_from_slice(&ciphertext);
 
-    // SRTPS_POSTFIX leer — Single-Receiver-Modus.
+    // SRTPS_POSTFIX empty — single-receiver mode.
     push_header(&mut out, SRTPS_POSTFIX, 0);
 
     Ok(out)
 }
 
-/// Unwrap eine ganze RTPS-Message. Erwartet das gleiche Format wie
-/// [`encode_secured_rtps_message`]. Liefert die rekonstruierte
-/// plaintext-Message (`[header | body]`).
+/// Unwraps a whole RTPS message. Expects the same format as
+/// [`encode_secured_rtps_message`]. Returns the reconstructed
+/// plaintext message (`[header | body]`).
 ///
 /// # Errors
-/// Tampered Header, Wire-Inkonsistenz, Crypto-Verify-Fail.
+/// Tampered header, wire inconsistency, crypto verify fail.
 pub fn decode_secured_rtps_message(
     plugin: &dyn CryptographicPlugin,
     local: CryptoHandle,
@@ -214,8 +214,8 @@ pub fn decode_secured_rtps_message(
     if rest[1] & FLAG_LE == 0 {
         return Err(SecurityRtpsError::BigEndianNotSupported);
     }
-    // prefix-body length (muss 16 sein, aber wir folgen blind dem
-    // Wert aus dem Header, damit zukuenftige Extensions stoeren).
+    // prefix-body length (must be 16, but we blindly follow the
+    // value from the header so future extensions are tolerated).
     let mut plen_b = [0u8; 2];
     plen_b.copy_from_slice(&rest[2..4]);
     let plen = u16::from_le_bytes(plen_b) as usize;
@@ -261,7 +261,7 @@ pub fn decode_secured_rtps_message(
         });
     }
 
-    // AAD-Extension symmetrisch zum Encoder.
+    // AAD extension symmetric to the encoder.
     let mut aad_extension = Vec::with_capacity(4 + RTPS_HEADER_LEN);
     aad_extension.extend_from_slice(&[0u8; 4]);
     aad_extension.extend_from_slice(header);
@@ -309,11 +309,11 @@ mod tests {
         let (p, local, remote) = make_plugin();
         let msg = fake_rtps_message(b"[DATA submessage plaintext]");
         let wire = encode_secured_rtps_message(&p, local, &[remote], &msg).unwrap();
-        // Erste 4 byte = "RTPS" magic.
+        // First 4 bytes = "RTPS" magic.
         assert_eq!(&wire[..4], b"RTPS");
-        // Rest der 20 byte ist identisch zu msg[..20].
+        // The rest of the 20 bytes is identical to msg[..20].
         assert_eq!(&wire[..RTPS_HEADER_LEN], &msg[..RTPS_HEADER_LEN]);
-        // SRTPS_PREFIX folgt direkt.
+        // SRTPS_PREFIX follows directly.
         assert_eq!(wire[RTPS_HEADER_LEN], SRTPS_PREFIX);
     }
 
@@ -325,8 +325,40 @@ mod tests {
         let wire = encode_secured_rtps_message(&p, local, &[remote], &msg).unwrap();
         assert!(
             !wire.windows(secret_body.len()).any(|w| w == secret_body),
-            "plaintext body muss verschluesselt sein"
+            "plaintext body must be encrypted"
         );
+    }
+
+    #[test]
+    fn cross_instance_srtps_roundtrip_via_token() {
+        // E3b reproduction: A encodes message-level SRTPS with ITS local key;
+        // B decodes with the key exchanged via ParticipantCryptoToken
+        // (two plugin instances = the real cross-instance/cross-vendor case).
+        // The existing #16 tests use ONLY the same handle (encode+decode with
+        // the same `local`) and never hit the slot/key asymmetry.
+        let mut pa = AesGcmCryptoPlugin::new();
+        let local_a = pa
+            .register_local_participant(IdentityHandle(1), &[])
+            .unwrap();
+        let token_a = pa
+            .create_local_participant_crypto_tokens(local_a, CryptoHandle(0))
+            .unwrap();
+
+        let mut pb = AesGcmCryptoPlugin::new();
+        let local_b = pb
+            .register_local_participant(IdentityHandle(1), &[])
+            .unwrap();
+        let remote_a_at_b = pb
+            .register_matched_remote_participant(local_b, IdentityHandle(2), SharedSecretHandle(1))
+            .unwrap();
+        pb.set_remote_participant_crypto_tokens(local_b, remote_a_at_b, &token_a)
+            .unwrap();
+
+        let msg = fake_rtps_message(b"[SEDP DATA cross-instance srtps]");
+        let wire = encode_secured_rtps_message(&pa, local_a, &[], &msg).unwrap();
+        let back = decode_secured_rtps_message(&pb, remote_a_at_b, remote_a_at_b, &wire)
+            .expect("cross-instance decode (E3b)");
+        assert_eq!(back, msg, "cross-instance SRTPS body must recover");
     }
 
     #[test]
@@ -351,7 +383,7 @@ mod tests {
         let (p, local, remote) = make_plugin();
         let msg = fake_rtps_message(b"secure submessage stream");
         let mut wire = encode_secured_rtps_message(&p, local, &[remote], &msg).unwrap();
-        // Flip byte im ciphertext-Bereich (nach header + prefix + body-hdr).
+        // Flip a byte in the ciphertext region (after header + prefix + body-hdr).
         let flip_idx = RTPS_HEADER_LEN + 4 + 16 + 4 + 12;
         wire[flip_idx] ^= 0x10;
         let err = decode_secured_rtps_message(&p, local, remote, &wire).unwrap_err();
@@ -386,7 +418,7 @@ mod tests {
         let msg = fake_rtps_message(b"psk-protected body");
         let wire = encode_secured_rtps_message_psk(&p, local, &[remote], &msg).unwrap();
         assert_eq!(wire[RTPS_HEADER_LEN], SRTPS_PREFIX);
-        // Flags-Byte traegt sowohl LE als auch PRE_SHARED_KEY_FLAG.
+        // The flags byte carries both LE and PRE_SHARED_KEY_FLAG.
         let flags = wire[RTPS_HEADER_LEN + 1];
         assert!(flags & FLAG_LE != 0);
         assert!(flags & PRE_SHARED_KEY_FLAG != 0);
@@ -403,9 +435,9 @@ mod tests {
 
     #[test]
     fn psk_encoded_message_decodes_with_classic_decoder() {
-        // Spec §10.9: das Wire-Layout ist identisch — der PSK-Flag im
-        // SRTPS_PREFIX ist informativ. Der klassische Decoder darf den
-        // body trotzdem auspacken (das LE-Bit ist gesetzt).
+        // Spec §10.9: the wire layout is identical — the PSK flag in the
+        // SRTPS_PREFIX is informative. The classic decoder may still
+        // unpack the body (the LE bit is set).
         let (p, local, remote) = make_plugin();
         let msg = fake_rtps_message(b"interop-test");
         let wire = encode_secured_rtps_message_psk(&p, local, &[remote], &msg).unwrap();
@@ -424,7 +456,7 @@ mod tests {
         let (p, local, remote) = make_plugin();
         let msg = fake_rtps_message(b"x");
         let mut wire = encode_secured_rtps_message(&p, local, &[remote], &msg).unwrap();
-        // Flags-Byte beim SRTPS_PREFIX auf BE setzen.
+        // Set the flags byte at SRTPS_PREFIX to BE.
         wire[RTPS_HEADER_LEN + 1] = 0x00;
         let err = decode_secured_rtps_message(&p, local, remote, &wire).unwrap_err();
         assert!(matches!(err, SecurityRtpsError::BigEndianNotSupported));

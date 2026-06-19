@@ -1,9 +1,9 @@
-//! WP QoS-Wiring T6 — DurabilityServiceQosPolicy Backend-Anschluss.
+//! WP QoS-Wiring T6 — DurabilityServiceQosPolicy backend hookup.
 //!
-//! Spec DDS 1.4 §2.2.3.5: bei Durability=Transient/Persistent legt der
-//! DataWriter Samples zusaetzlich in einem Backend ab. T6 verifiziert,
-//! dass das Backend bei Transient-Writers automatisch eingerichtet ist
-//! und Samples beim write() reinfliessen.
+//! Spec DDS 1.4 §2.2.3.5: with Durability=Transient/Persistent the
+//! DataWriter additionally stores samples in a backend. T6 verifies that
+//! the backend is set up automatically for transient writers and that
+//! samples flow into it on write().
 
 #![allow(
     clippy::expect_used,
@@ -84,17 +84,17 @@ fn volatile_writer_has_no_durability_backend() {
     let w = writer_with_durability(DurabilityKind::Volatile);
     assert!(
         w.durability_backend().is_none(),
-        "Volatile-Writer braucht kein Durability-Backend"
+        "volatile writer needs no durability backend"
     );
 }
 
 #[test]
 fn transient_local_writer_has_no_durability_backend() {
-    // TransientLocal liegt im Writer-History-Cache, kein separater Service.
+    // TransientLocal lives in the writer history cache, no separate service.
     let w = writer_with_durability(DurabilityKind::TransientLocal);
     assert!(
         w.durability_backend().is_none(),
-        "TransientLocal nutzt Writer-History, kein separates Backend"
+        "TransientLocal uses the writer history, no separate backend"
     );
 }
 
@@ -103,7 +103,7 @@ fn transient_writer_has_in_memory_backend() {
     let w = writer_with_durability(DurabilityKind::Transient);
     assert!(
         w.durability_backend().is_some(),
-        "Transient-Writer muss In-Memory-Backend haben"
+        "transient writer must have an in-memory backend"
     );
 }
 
@@ -117,7 +117,7 @@ fn transient_write_lands_in_backend() {
 
     let backend = w.durability_backend().expect("backend");
     let samples = backend.replay_for_topic("DurT").expect("replay");
-    assert_eq!(samples.len(), 2, "beide Samples muessen im Backend sein");
+    assert_eq!(samples.len(), 2, "both samples must be in the backend");
 }
 
 #[test]
@@ -127,17 +127,17 @@ fn volatile_write_does_not_touch_backend() {
     w.write(&s).expect("write");
     assert!(
         w.durability_backend().is_none(),
-        "Volatile-Write darf kein Backend triggern"
+        "volatile write must not trigger a backend"
     );
 }
 
 #[test]
 fn transient_backend_outlives_writer_cache_keep_last_eviction() {
-    // Setup: Writer mit Transient + KeepLast(1) — Writer-Cache haelt nur
-    // 1 Sample, aber Backend persistiert alle. Spec §2.2.3.5: das
-    // Backend ist die Single-Source-of-Truth fuer Late-Joiner-Replay
-    // bei Transient/Persistent (Writer-History wird durch HistoryDepth
-    // beschnitten).
+    // Setup: writer with Transient + KeepLast(1) — the writer cache holds
+    // only 1 sample, but the backend persists all of them. Spec §2.2.3.5:
+    // the backend is the single source of truth for late-joiner replay
+    // with Transient/Persistent (the writer history is trimmed by
+    // HistoryDepth).
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(0, DomainParticipantQos::default());
     let topic = p
@@ -158,7 +158,7 @@ fn transient_backend_outlives_writer_cache_keep_last_eviction() {
         .create_datawriter::<KeyedRecord>(&topic, qos)
         .expect("writer");
 
-    // 5 Samples, verschiedene Instanzen.
+    // 5 samples, different instances.
     for i in 1u32..=5 {
         w.write(&KeyedRecord {
             id: i,
@@ -171,8 +171,8 @@ fn transient_backend_outlives_writer_cache_keep_last_eviction() {
     let samples = backend.replay_for_topic("DurT").expect("replay");
     assert!(
         samples.len() >= 5,
-        "Backend muss alle 5 Samples halten (KeepLast-Depth nur fuer \
-         Wire-Cache, nicht fuer Backend); got {}",
+        "backend must hold all 5 samples (KeepLast depth only for the \
+         wire cache, not for the backend); got {}",
         samples.len()
     );
 }

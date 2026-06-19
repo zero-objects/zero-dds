@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! E2E-Test für TypeLookup-Service-Wiring (XTypes 1.3 §7.6.3.3.4).
+//! E2E test for TypeLookup service wiring (XTypes 1.3 §7.6.3.3.4).
 //!
-//! Verifiziert F-DCPS-typelookup-wiring: zwei `DcpsRuntime`s tauschen
-//! über die TL_SVC_*-Builtin-Endpoints einen TypeObject aus.
+//! Verifies F-DCPS-typelookup-wiring: two `DcpsRuntime`s exchange a
+//! TypeObject via the TL_SVC_* builtin endpoints.
 
 #![allow(
     clippy::expect_used,
@@ -73,7 +73,7 @@ fn register_type_object_exposes_hash() {
     let rt = runtime_with_random_port(102, 2);
     let obj = TypeObject::Minimal(sample_type());
     let hash = rt.register_type_object(obj.clone()).expect("register");
-    // Hash sollte deterministisch sein.
+    // Hash should be deterministic.
     let hash2 = rt.register_type_object(obj).expect("re-register");
     assert_eq!(hash, hash2, "deterministic hash");
 }
@@ -133,8 +133,8 @@ fn server_handles_inbound_get_types_request_via_dispatch() {
     };
     let datagram = encode_data_datagram(header, &[data]).expect("encode");
 
-    // Server-Locator hat 0.0.0.0-Bind; konstruiere echten Loopback-
-    // Locator mit dem gebundenen Port für den Send.
+    // The server locator has a 0.0.0.0 bind; construct a real loopback
+    // locator with the bound port for the send.
     let local = server_rt.user_locator();
     let port = local.port;
     let target = zerodds_rtps::wire_types::Locator::udp_v4([127, 0, 0, 1], port);

@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Observability-Substrate fuer ZeroDDS (zerodds-monitor-1.0): Metric-Registry (Counter/Gauge/Histogram) + Prometheus-Text-Exporter + W3C-Trace-Context-PID + Standard-Span-Schema."
+description = "Observability substrate for ZeroDDS (zerodds-monitor-1.1): metric registry (Counter/Gauge/Histogram) + Prometheus text exporter + W3C trace-context PID + standard span schema."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-monitor"
 readme = "README.md"
@@ -24,6 +24,6 @@ alloc = []
 prometheus-server = ["std"]
 
 [dependencies]
-zerodds-foundation = { version = "1.0.0-rc.1", path = "../foundation", default-features = false, features = ["std"] }
+zerodds-foundation = { version = "1.0.0-rc.3", path = "../foundation", default-features = false, features = ["std"] }
 
 [dev-dependencies]

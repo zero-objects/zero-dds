@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Endianness-Konfiguration fuer XCDR-Streams (XCDR2 §7.4.1).
+//! Endianness configuration for XCDR streams (XCDR2 §7.4.1).
 //!
-//! In XCDR ist die Endianness ein **Stream-Property** — sie wird einmal
-//! im RTPS-Header oder durch die `EncapsulationKind`-Markierung gesetzt
-//! und gilt fuer den gesamten payload. Encoder und Decoder werden mit
-//! der Endianness konstruiert; primitive Konvertierungen erfolgen
-//! anhand dieses Settings.
+//! In XCDR, endianness is a **stream property** — it is set once in the
+//! RTPS header or by the `EncapsulationKind` marker and applies to the
+//! entire payload. Encoder and decoder are constructed with the
+//! endianness; primitive conversions are performed according to this
+//! setting.
 
-/// Byte-Order eines CDR-Streams.
+/// Byte order of a CDR stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Endianness {
-    /// Big-Endian (Network-Byte-Order). Encapsulation `CDR2_BE` bzw.
-    /// `PL_CDR2_BE` in OMG-XTypes Tabelle 7-37.
+    /// Big-endian (network byte order). Encapsulation `CDR2_BE` or
+    /// `PL_CDR2_BE` in OMG XTypes Table 7-37.
     Big,
-    /// Little-Endian. Encapsulation `CDR2_LE` bzw. `PL_CDR2_LE`.
-    /// Default fuer die meisten DDS-Implementierungen auf x86/ARM.
+    /// Little-endian. Encapsulation `CDR2_LE` or `PL_CDR2_LE`.
+    /// Default for most DDS implementations on x86/ARM.
     #[default]
     Little,
 }
 
 impl Endianness {
-    /// Konvertiert ein `u16` in 2 Byte gemaess der Endianness.
+    /// Converts a `u16` to 2 bytes according to the endianness.
     #[must_use]
     pub fn write_u16(self, value: u16) -> [u8; 2] {
         match self {
@@ -30,7 +30,7 @@ impl Endianness {
         }
     }
 
-    /// Konvertiert ein `u32` in 4 Byte.
+    /// Converts a `u32` to 4 bytes.
     #[must_use]
     pub fn write_u32(self, value: u32) -> [u8; 4] {
         match self {
@@ -39,7 +39,7 @@ impl Endianness {
         }
     }
 
-    /// Konvertiert ein `u64` in 8 Byte.
+    /// Converts a `u64` to 8 bytes.
     #[must_use]
     pub fn write_u64(self, value: u64) -> [u8; 8] {
         match self {
@@ -48,7 +48,7 @@ impl Endianness {
         }
     }
 
-    /// Liest ein `u16` aus 2 Byte gemaess der Endianness.
+    /// Reads a `u16` from 2 bytes according to the endianness.
     #[must_use]
     pub fn read_u16(self, bytes: [u8; 2]) -> u16 {
         match self {
@@ -57,7 +57,7 @@ impl Endianness {
         }
     }
 
-    /// Liest ein `u32` aus 4 Byte.
+    /// Reads a `u32` from 4 bytes.
     #[must_use]
     pub fn read_u32(self, bytes: [u8; 4]) -> u32 {
         match self {
@@ -66,7 +66,7 @@ impl Endianness {
         }
     }
 
-    /// Liest ein `u64` aus 8 Byte.
+    /// Reads a `u64` from 8 bytes.
     #[must_use]
     pub fn read_u64(self, bytes: [u8; 8]) -> u64 {
         match self {

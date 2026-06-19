@@ -23,7 +23,7 @@
     Id ref default 0;
 };
 
-// Anwendung der Custom-Annotations.
+// Application of the custom annotations.
 @MyKey
 struct Topic {
     @Range(min=0, max=255) long sensor_id;

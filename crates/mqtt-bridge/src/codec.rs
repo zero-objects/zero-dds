@@ -12,25 +12,25 @@ use crate::data_types::{
 };
 use crate::packet::{ControlPacketType, FixedHeader};
 use crate::vbi::{VbiError, decode_vbi, encode_vbi};
+use crate::version::ProtocolVersion;
 
-/// Codec-Fehler fuer PUBLISH-Encode/Decode.
+/// Codec error for PUBLISH encode/decode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CodecError {
-    /// VBI-Encode/Decode-Fehler.
+    /// VBI encode/decode error.
     Vbi(VbiError),
-    /// Data-Type-Fehler.
+    /// Data-type error.
     DataType(DataTypeError),
-    /// Header-Byte fehlt.
+    /// Header byte missing.
     HeaderTooShort,
-    /// Wrong packet type fuer den Decoder (z.B. CONNECT-Bytes an
-    /// `decode_publish` uebergeben).
+    /// Wrong packet type for the decoder (e.g. CONNECT bytes passed to
+    /// `decode_publish`).
     WrongPacketType(u8),
-    /// Spec §3.3.2.2 — Packet Identifier muss bei QoS > 0 vorhanden
-    /// sein.
+    /// Spec §3.3.2.2 — packet identifier must be present at QoS > 0.
     MissingPacketIdentifier,
-    /// Spec §3.3.1.2 — QoS-Wert 3 ist Malformed Packet.
+    /// Spec §3.3.1.2 — QoS value 3 is a Malformed Packet.
     InvalidQoS(u8),
-    /// Spec §2.1.4 — Remaining-Length groesser als verfuegbare Bytes.
+    /// Spec §2.1.4 — remaining length greater than the available bytes.
     RemainingLengthMismatch,
 }
 
@@ -63,8 +63,8 @@ impl fmt::Display for CodecError {
 #[cfg(feature = "std")]
 impl std::error::Error for CodecError {}
 
-/// PUBLISH-Packet (Spec §3.3) — vereinfachte Form ohne Properties
-/// (Properties werden als opaque Bytes durchgereicht).
+/// PUBLISH packet (Spec §3.3) — simplified form without properties
+/// (properties are passed through as opaque bytes).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishPacket {
     /// Spec §3.3.1.1 — DUP flag.
@@ -75,22 +75,32 @@ pub struct PublishPacket {
     pub retain: bool,
     /// Spec §3.3.2.1 — Topic Name.
     pub topic: String,
-    /// Spec §3.3.2.2 — Packet Identifier (`Some` nur wenn `qos > 0`).
+    /// Spec §3.3.2.2 — Packet Identifier (`Some` only if `qos > 0`).
     pub packet_id: Option<u16>,
     /// Spec §3.3.2.3 — Properties (raw VBI-prefixed property block).
-    /// Caller kann Properties separat parsen via [`crate::properties`].
+    /// The caller can parse properties separately via [`crate::properties`].
     pub properties: Vec<u8>,
     /// Spec §3.3.3 — Application Message Payload.
     pub payload: Vec<u8>,
 }
 
-/// Encodiert ein PUBLISH-Packet zum Wire-Format.
+/// Encodes a PUBLISH packet to the wire format.
 ///
 /// # Errors
-/// * `InvalidQoS(q)` wenn `qos > 2`.
-/// * `MissingPacketIdentifier` wenn `qos > 0 && packet_id.is_none()`.
-/// * VBI-/DataType-Fehler bei Topic/Payload-Length-Limits.
+/// * `InvalidQoS(q)` if `qos > 2`.
+/// * `MissingPacketIdentifier` if `qos > 0 && packet_id.is_none()`.
+/// * VBI/DataType errors on topic/payload length limits.
 pub fn encode_publish(p: &PublishPacket) -> Result<Vec<u8>, CodecError> {
+    encode_publish_v(p, ProtocolVersion::V5)
+}
+
+/// Encodes a PUBLISH packet for a concrete version. MQTT 3.1.1 PUBLISH
+/// (§3.3 v3.1.1) has no property block between the packet identifier and
+/// the payload.
+///
+/// # Errors
+/// See [`encode_publish`].
+pub fn encode_publish_v(p: &PublishPacket, v: ProtocolVersion) -> Result<Vec<u8>, CodecError> {
     if p.qos > 2 {
         return Err(CodecError::InvalidQoS(p.qos));
     }
@@ -104,15 +114,17 @@ pub fn encode_publish(p: &PublishPacket) -> Result<Vec<u8>, CodecError> {
         let id = p.packet_id.ok_or(CodecError::MissingPacketIdentifier)?;
         var_header.extend_from_slice(&encode_two_byte_int(id));
     }
-    // Properties (Spec §2.2.2.1) — wir nehmen das raw-Bytes-Feld als
-    // Property-Block-Body; der Encoder schreibt VBI(len) + body. Caller
-    // muss kein VBI-Prefix mitliefern, sondern nur die rohen Property-
-    // Bytes nach der VBI-Length.
-    let prop_len_u32 =
-        u32::try_from(p.properties.len()).map_err(|_| CodecError::Vbi(VbiError::Malformed))?;
-    let prop_len_vbi = encode_vbi(prop_len_u32).ok_or(CodecError::Vbi(VbiError::Malformed))?;
-    var_header.extend_from_slice(&prop_len_vbi);
-    var_header.extend_from_slice(&p.properties);
+    // Properties (Spec §2.2.2.1) — MQTT 5.0 only. We take the raw-bytes field
+    // as the property-block body; the encoder writes VBI(len) + body. The caller
+    // need not supply a VBI prefix, only the raw property bytes
+    // after the VBI length. For 3.1.1 the block is dropped entirely.
+    if v.has_properties() {
+        let prop_len_u32 =
+            u32::try_from(p.properties.len()).map_err(|_| CodecError::Vbi(VbiError::Malformed))?;
+        let prop_len_vbi = encode_vbi(prop_len_u32).ok_or(CodecError::Vbi(VbiError::Malformed))?;
+        var_header.extend_from_slice(&prop_len_vbi);
+        var_header.extend_from_slice(&p.properties);
+    }
 
     // Payload.
     let mut body = var_header;
@@ -139,11 +151,24 @@ pub fn encode_publish(p: &PublishPacket) -> Result<Vec<u8>, CodecError> {
     Ok(out)
 }
 
-/// Decodiert ein PUBLISH-Packet aus dem Wire-Format.
+/// Decodes a PUBLISH packet from the wire format.
 ///
 /// # Errors
-/// Siehe [`CodecError`].
+/// See [`CodecError`].
 pub fn decode_publish(bytes: &[u8]) -> Result<(FixedHeader, PublishPacket), CodecError> {
+    decode_publish_v(bytes, ProtocolVersion::V5)
+}
+
+/// Decodes a PUBLISH packet for a concrete version. For 3.1.1 no
+/// property block is expected — the payload follows directly after the packet
+/// identifier (or after the topic at QoS 0).
+///
+/// # Errors
+/// See [`CodecError`].
+pub fn decode_publish_v(
+    bytes: &[u8],
+    v: ProtocolVersion,
+) -> Result<(FixedHeader, PublishPacket), CodecError> {
     if bytes.is_empty() {
         return Err(CodecError::HeaderTooShort);
     }
@@ -179,22 +204,26 @@ pub fn decode_publish(bytes: &[u8]) -> Result<(FixedHeader, PublishPacket), Code
     } else {
         None
     };
-    // Property-Length VBI. Wir normalisieren leere Property-Blocks
-    // (VBI=0) zu `Vec::new()` damit Round-Trip mit empty-properties-
-    // Input identisch ist; Caller, der raw-Properties haben moechte,
-    // kann die VBI manuell parsen.
-    let (prop_len, prop_vbi_used) = decode_vbi(&body[cursor..])?;
-    cursor += prop_vbi_used;
-    let prop_data_end = cursor + prop_len as usize;
-    if body.len() < prop_data_end {
-        return Err(CodecError::RemainingLengthMismatch);
-    }
-    let properties = if prop_len == 0 {
-        Vec::new()
+    // Property-length VBI (MQTT 5.0 only). We normalize empty property
+    // blocks (VBI=0) to `Vec::new()` so the round-trip is identical to an
+    // empty-properties input. For 3.1.1 the block is dropped — the payload follows directly.
+    let properties = if v.has_properties() {
+        let (prop_len, prop_vbi_used) = decode_vbi(&body[cursor..])?;
+        cursor += prop_vbi_used;
+        let prop_data_end = cursor + prop_len as usize;
+        if body.len() < prop_data_end {
+            return Err(CodecError::RemainingLengthMismatch);
+        }
+        let p = if prop_len == 0 {
+            Vec::new()
+        } else {
+            body[cursor..prop_data_end].to_vec()
+        };
+        cursor = prop_data_end;
+        p
     } else {
-        body[cursor..prop_data_end].to_vec()
+        Vec::new()
     };
-    cursor = prop_data_end;
 
     // Payload.
     let payload = body[cursor..].to_vec();
@@ -225,7 +254,7 @@ mod tests {
 
     #[test]
     fn publish_qos0_no_packet_id_round_trip() {
-        // Spec §3.3.2.2 — QoS=0 → kein Packet Identifier.
+        // Spec §3.3.2.2 — QoS=0 → no packet identifier.
         let p = PublishPacket {
             dup: false,
             qos: 0,
@@ -356,8 +385,8 @@ mod tests {
 
     #[test]
     fn non_empty_properties_round_trip_preserves_bytes() {
-        // Caller liefert raw Property-Block-Body (kein VBI-Prefix).
-        // Beispiel-Block: PayloadFormatIndicator(0x01)=0x01 +
+        // The caller supplies a raw property-block body (no VBI prefix).
+        // Example block: PayloadFormatIndicator(0x01)=0x01 +
         // ReceiveMaximum(0x21)=0x000A.
         let raw_props_payload = alloc::vec![0x01u8, 0x01, 0x21, 0x00, 0x0A];
         let p = PublishPacket {
@@ -376,7 +405,7 @@ mod tests {
 
     #[test]
     fn truncated_remaining_length_decode_fails() {
-        // Header sagt Remaining=10 aber nur 4 Body-Bytes.
+        // Header says Remaining=10 but only 4 body bytes.
         let bytes = [0x30u8, 0x0A, 0, 1, b'x'];
         assert_eq!(
             decode_publish(&bytes),
@@ -387,6 +416,49 @@ mod tests {
     #[test]
     fn empty_input_decode_fails() {
         assert_eq!(decode_publish(&[]), Err(CodecError::HeaderTooShort));
+    }
+
+    #[test]
+    fn v311_publish_has_no_property_block() {
+        // A 3.1.1 PUBLISH omits the property-length VBI between the variable
+        // header and the payload.
+        let p = PublishPacket {
+            dup: false,
+            qos: 1,
+            retain: false,
+            topic: String::from("t"),
+            packet_id: Some(9),
+            properties: Vec::new(),
+            payload: b"body".to_vec(),
+        };
+        let v5 = encode_publish_v(&p, ProtocolVersion::V5).expect("v5");
+        let v311 = encode_publish_v(&p, ProtocolVersion::V311).expect("v311");
+        assert_eq!(
+            v5.len(),
+            v311.len() + 1,
+            "v311 drops the property-length byte"
+        );
+        let (_, back) = decode_publish_v(&v311, ProtocolVersion::V311).expect("decode v311");
+        assert_eq!(back.topic, "t");
+        assert_eq!(back.packet_id, Some(9));
+        assert_eq!(back.payload, b"body");
+        assert!(back.properties.is_empty());
+    }
+
+    #[test]
+    fn v311_publish_qos0_round_trip() {
+        let p = PublishPacket {
+            dup: false,
+            qos: 0,
+            retain: true,
+            topic: String::from("sensors/x"),
+            packet_id: None,
+            properties: Vec::new(),
+            payload: alloc::vec![0xFF],
+        };
+        let bytes = encode_publish_v(&p, ProtocolVersion::V311).expect("encode");
+        let (_, parsed) = decode_publish_v(&bytes, ProtocolVersion::V311).expect("decode");
+        assert_eq!(parsed, p);
     }
 
     #[test]
@@ -403,10 +475,10 @@ mod tests {
             payload: alloc::vec![0xAB; 200],
         };
         let bytes = encode_publish(&p).expect("encode");
-        // bytes[0] = 0x30 (publish), bytes[1..3] = VBI fuer ~204.
+        // bytes[0] = 0x30 (publish), bytes[1..3] = VBI for ~204.
         assert_eq!(bytes[0], 0x30);
-        // Wir kontrollieren nicht den exakten Wert (variable je nach
-        // Topic-Length), aber dass Round-Trip funktioniert.
+        // We don't check the exact value (varies by
+        // topic length), only that the round-trip works.
         let (_, parsed) = decode_publish(&bytes).expect("decode");
         assert_eq!(parsed.payload.len(), 200);
     }

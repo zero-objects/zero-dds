@@ -1,55 +1,55 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
-Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
+versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [1.0.0-rc.1] — 2026-05-07
 
-Initiale Release-Materialisierung.
+Initial release materialization.
 
-### Spec-Referenzen
+### Spec references
 - `docs/specs/zerodds-xcdr2-rust-1.0.md` §11.1 — `#[derive(DdsType)]`
-  als Folge-Sprint klassifiziert; in dieser Crate voll implementiert.
-- OMG XTypes 1.3 §7.4 — Wire-Format der emittierten encode/decode-
-  Methoden.
-- OMG XTypes 1.3 §7.6.8.4 — Key-Hash-Berechnung (≤ 16 Bytes
-  zero-pad, sonst MD5).
+  classified as a follow-up sprint; fully implemented in this crate.
+- OMG XTypes 1.3 §7.4 — wire format of the emitted encode/decode
+  methods.
+- OMG XTypes 1.3 §7.6.8.4 — key-hash computation (≤ 16 bytes
+  zero-pad, otherwise MD5).
 
-### Public-API
-- [`DdsType`](src/lib.rs) — Proc-Macro-Derive-Attribut. Annotiert
-  einen Plain-`struct` und emittiert eine `impl DdsType`-Block.
-- Inner-Attribute:
-  - `#[dds(type_name = "...")]` — explizite TYPE_NAME-Override.
-  - `#[dds(key)]` — pro Member, markiert das Feld als `@key`.
+### Public API
+- [`DdsType`](src/lib.rs) — proc-macro derive attribute. Annotates
+  a plain `struct` and emits an `impl DdsType` block.
+- Inner attributes:
+  - `#[dds(type_name = "...")]` — explicit TYPE_NAME override.
+  - `#[dds(key)]` — per member, marks the field as `@key`.
 
-### Implementierung
-- AST-Walk via `syn 2`. `DeriveInput` -> `Data::Struct` ->
-  `Fields::Named` Iteration.
-- Pro-Field-Codegen via `quote::quote!`-Templates. Encode/decode
-  delegiert an `zerodds_cdr::CdrEncode`/`CdrDecode`-Traits — keine
-  Type-spezifische Match-Tabelle, jede primitive + composite Type
-  in `zerodds_cdr` hat ein `impl CdrEncode/Decode`.
-- Key-Hash-Pfad emittiert eine `encode_key_holder_be`-Override-
-  Methode wenn mindestens ein `#[dds(key)]`-Member vorhanden ist.
+### Implementation
+- AST walk via `syn 2`. `DeriveInput` -> `Data::Struct` ->
+  `Fields::Named` iteration.
+- Per-field codegen via `quote::quote!` templates. Encode/decode
+  delegates to the `zerodds_cdr::CdrEncode`/`CdrDecode` traits — no
+  type-specific match table; every primitive + composite type in
+  `zerodds_cdr` has an `impl CdrEncode/Decode`.
+- The key-hash path emits an `encode_key_holder_be` override method
+  when at least one `#[dds(key)]` member is present.
 
-Heute auf Final-Extensibility fokussiert (kein DHEADER, kein
-EMHEADER). Appendable + Mutable bleiben dem `idl-rust`-Codegen
-ueberlassen weil deren Logic auf Member-Granularitaet feiner ist
-als das Macro praktikabel emittieren kann.
+Currently focused on final extensibility (no DHEADER, no EMHEADER).
+Appendable + mutable are left to the `idl-rust` codegen because their
+logic is finer-grained at member granularity than the macro can
+practically emit.
 
-### Architektur
-- Layer: 1 Primitives (Helper-Crate fuer `zerodds-cdr` und
+### Architecture
+- Layer: 1 Primitives (helper crate for `zerodds-cdr` and
   `zerodds-dcps`).
 - Dependencies (in): `syn 2`, `quote 1`, `proc-macro2 1`.
-- Dependents (out): User-Code, der `#[derive(DdsType)]` nutzt.
-  Konsumiert die Trait-Implementations von `zerodds-cdr` und
-  `zerodds-dcps` zur Compile-Zeit (transitive build-Dependency).
-- Feature-Flags: keine.
+- Dependents (out): user code that uses `#[derive(DdsType)]`.
+  Consumes the trait implementations from `zerodds-cdr` and
+  `zerodds-dcps` at compile time (transitive build dependency).
+- Feature flags: none.
 
-### Stabilitaet
-- Alle `pub`-Items sind RC1-stabil.
-- Macro-Output-Form (genaues Token-Layout) ist NICHT stabil und kann
-  zwischen Minor-Versionen aendern; semantisch bleibt `impl DdsType`-
-  Spec-Form gleich.
+### Stability
+- All `pub` items are RC1-stable.
+- The macro output form (exact token layout) is NOT stable and may
+  change between minor versions; semantically the `impl DdsType` spec
+  form stays the same.
 
 [1.0.0-rc.1]: https://github.com/zero-objects/zero-dds/releases/tag/v1.0.0-rc.1

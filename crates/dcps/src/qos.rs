@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! DCPS-QoS — komplette 22-Policy-Sets fuer DataWriter/DataReader/Topic/
-//! Publisher/Subscriber/DomainParticipant gemaess DDS 1.4 §2.2.3.
+//! DCPS QoS — complete 22-policy sets for DataWriter/DataReader/Topic/
+//! Publisher/Subscriber/DomainParticipant per DDS 1.4 §2.2.3.
 //!
-//! Re-Exports der Policy-Datentypen aus dem `zerodds_qos`-Crate; die hier
-//! definierten Aggregate sind die DCPS-API-Sicht (was DataReader/Writer
-//! intern halten und worauf der Runtime-Pfad zugreift).
+//! Re-exports the policy data types from the `zerodds_qos` crate; the
+//! aggregates defined here are the DCPS-API view (what DataReader/Writer
+//! hold internally and what the runtime path accesses).
 
 pub use zerodds_qos::{
     DeadlineQosPolicy, DestinationOrderKind, DestinationOrderQosPolicy, DurabilityKind,
@@ -20,48 +20,54 @@ pub use zerodds_qos::{
 
 use zerodds_qos::Duration;
 
-/// QoS-Set fuer einen `DataWriter` — Spec §2.2.2.4.2 (alle Policies, die
-/// am DataWriter setzbar sind).
+/// QoS set for a `DataWriter` — Spec §2.2.2.4.2 (all policies settable
+/// on the DataWriter).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataWriterQos {
-    /// Reliability — Default Reliable.
+    /// Reliability — default Reliable.
     pub reliability: ReliabilityQosPolicy,
-    /// Durability — Default Volatile.
+    /// Durability — default Volatile.
     pub durability: DurabilityQosPolicy,
-    /// Konfiguriert den Persistence-Service (Spec §2.2.3.5).
+    /// Configures the persistence service (Spec §2.2.3.5).
     pub durability_service: DurabilityServiceQosPolicy,
-    /// Deadline — Default INFINITE.
+    /// Deadline — default INFINITE.
     pub deadline: DeadlineQosPolicy,
-    /// LatencyBudget — Hint, kein Match-Effekt (Spec §2.2.3.10).
+    /// LatencyBudget — hint, no match effect (Spec §2.2.3.10).
     pub latency_budget: LatencyBudgetQosPolicy,
-    /// Liveliness — Default Automatic / INFINITE.
+    /// Liveliness — default Automatic / INFINITE.
     pub liveliness: LivelinessQosPolicy,
-    /// DestinationOrder — Default ByReceptionTimestamp.
+    /// DestinationOrder — default ByReceptionTimestamp.
     pub destination_order: DestinationOrderQosPolicy,
-    /// Lifespan — Default INFINITE.
+    /// Lifespan — default INFINITE.
     pub lifespan: LifespanQosPolicy,
-    /// Ownership — Default Shared.
+    /// Ownership — default Shared.
     pub ownership: OwnershipQosPolicy,
-    /// Ownership-Strength — nur bei Exclusive.
+    /// Ownership strength — only with Exclusive.
     pub ownership_strength: OwnershipStrengthQosPolicy,
-    /// Partition — Default leer (matched only ""-Default-Partition).
+    /// Partition — default empty (matches only the ""-default partition).
     pub partition: PartitionQosPolicy,
-    /// Presentation — Default Instance/false/false.
+    /// Presentation — default Instance/false/false.
     pub presentation: PresentationQosPolicy,
-    /// History — Default KeepLast(1).
+    /// History — default KeepLast(1).
     pub history: HistoryQosPolicy,
-    /// Resource-Limits.
+    /// Resource limits.
     pub resource_limits: ResourceLimitsQosPolicy,
-    /// TransportPriority — Hint, kein Match-Effekt (Spec §2.2.3.15).
+    /// TransportPriority — hint, no match effect (Spec §2.2.3.15).
     pub transport_priority: TransportPriorityQosPolicy,
     /// WriterDataLifecycle — autodispose_unregistered_instances.
     pub writer_data_lifecycle: WriterDataLifecycleQosPolicy,
-    /// UserData — opaque `sequence<octet>`, ueber Discovery propagiert.
+    /// UserData — opaque `sequence<octet>`, propagated via discovery.
     pub user_data: UserDataQosPolicy,
-    /// TopicData — opaque `sequence<octet>`, ueber Discovery propagiert.
+    /// TopicData — opaque `sequence<octet>`, propagated via discovery.
     pub topic_data: TopicDataQosPolicy,
-    /// GroupData — opaque `sequence<octet>`, ueber Discovery propagiert.
+    /// GroupData — opaque `sequence<octet>`, propagated via discovery.
     pub group_data: GroupDataQosPolicy,
+    /// DataRepresentation (XTypes 1.3 §7.6.3.1.2): the offered
+    /// representation list (`XCDR=0`, `XCDR2=2`). `None` = runtime default
+    /// (`ZERODDS_DATA_REPR_OFFER` / `DEFAULT_OFFER`). Per-writer override
+    /// for targeted cross-vendor interop (e.g. `[XCDR1, XCDR2]` for
+    /// XCDR1 readers of ROS/RTI shapes) without a global default change.
+    pub data_representation: Option<alloc::vec::Vec<i16>>,
 }
 
 impl Default for DataWriterQos {
@@ -98,45 +104,51 @@ impl Default for DataWriterQos {
             user_data: UserDataQosPolicy::default(),
             topic_data: TopicDataQosPolicy::default(),
             group_data: GroupDataQosPolicy::default(),
+            data_representation: None,
         }
     }
 }
 
-/// QoS-Set fuer einen `DataReader` — Spec §2.2.2.5.2.
+/// QoS set for a `DataReader` — Spec §2.2.2.5.2.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataReaderQos {
-    /// Reliability — Reader-Default BestEffort (Spec §2.2.3.14.3).
+    /// Reliability — reader default BestEffort (Spec §2.2.3.14.3).
     pub reliability: ReliabilityQosPolicy,
-    /// Durability — Default Volatile.
+    /// Durability — default Volatile.
     pub durability: DurabilityQosPolicy,
-    /// Deadline — Default INFINITE.
+    /// Deadline — default INFINITE.
     pub deadline: DeadlineQosPolicy,
-    /// LatencyBudget — Hint, kein Match-Effekt.
+    /// LatencyBudget — hint, no match effect.
     pub latency_budget: LatencyBudgetQosPolicy,
-    /// Liveliness — Default Automatic / INFINITE.
+    /// Liveliness — default Automatic / INFINITE.
     pub liveliness: LivelinessQosPolicy,
-    /// DestinationOrder — Default ByReceptionTimestamp.
+    /// DestinationOrder — default ByReceptionTimestamp.
     pub destination_order: DestinationOrderQosPolicy,
-    /// Ownership — Default Shared.
+    /// Ownership — default Shared.
     pub ownership: OwnershipQosPolicy,
-    /// Partition — Default leer.
+    /// Partition — default empty.
     pub partition: PartitionQosPolicy,
     /// Presentation.
     pub presentation: PresentationQosPolicy,
-    /// History — Default KeepLast(1).
+    /// History — default KeepLast(1).
     pub history: HistoryQosPolicy,
-    /// Resource-Limits.
+    /// Resource limits.
     pub resource_limits: ResourceLimitsQosPolicy,
-    /// TimeBasedFilter — minimum_separation pro Instanz.
+    /// TimeBasedFilter — minimum_separation per instance.
     pub time_based_filter: TimeBasedFilterQosPolicy,
-    /// ReaderDataLifecycle — autopurge-Delays.
+    /// ReaderDataLifecycle — autopurge delays.
     pub reader_data_lifecycle: ReaderDataLifecycleQosPolicy,
-    /// UserData (Discovery-propagiert).
+    /// UserData (propagated via discovery).
     pub user_data: UserDataQosPolicy,
-    /// TopicData (Discovery-propagiert).
+    /// TopicData (propagated via discovery).
     pub topic_data: TopicDataQosPolicy,
-    /// GroupData (Discovery-propagiert).
+    /// GroupData (propagated via discovery).
     pub group_data: GroupDataQosPolicy,
+    /// DataRepresentation (XTypes 1.3 §7.6.3.1.2): the accepted
+    /// representation list (`XCDR=0`, `XCDR2=2`). `None` = runtime default.
+    /// Per-reader override so that a reader specifically matches XCDR1
+    /// writers (ROS/RTI shapes) (`[XCDR1, XCDR2]`) without a global default.
+    pub data_representation: Option<alloc::vec::Vec<i16>>,
 }
 
 impl Default for DataReaderQos {
@@ -170,72 +182,173 @@ impl Default for DataReaderQos {
             user_data: UserDataQosPolicy::default(),
             topic_data: TopicDataQosPolicy::default(),
             group_data: GroupDataQosPolicy::default(),
+            data_representation: None,
         }
     }
 }
 
-/// QoS-Set fuer einen `Topic` — Spec §2.2.2.3.2.
+/// QoS set for a `Topic` — Spec §2.2.2.3.2.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicQos {
-    /// Default-Durability des Topics.
+    /// Default durability of the topic.
     pub durability: DurabilityQosPolicy,
-    /// DurabilityService-Default des Topics.
+    /// DurabilityService default of the topic.
     pub durability_service: DurabilityServiceQosPolicy,
-    /// Default-Deadline.
+    /// Default deadline.
     pub deadline: DeadlineQosPolicy,
-    /// Default-LatencyBudget.
+    /// Default LatencyBudget.
     pub latency_budget: LatencyBudgetQosPolicy,
-    /// Default-Liveliness.
+    /// Default liveliness.
     pub liveliness: LivelinessQosPolicy,
-    /// Default-Reliability.
+    /// Default reliability.
     pub reliability: ReliabilityQosPolicy,
-    /// Default-DestinationOrder.
+    /// Default DestinationOrder.
     pub destination_order: DestinationOrderQosPolicy,
-    /// Default-History.
+    /// Default history.
     pub history: HistoryQosPolicy,
-    /// Default-Resource-Limits.
+    /// Default resource limits.
     pub resource_limits: ResourceLimitsQosPolicy,
-    /// Default-TransportPriority.
+    /// Default TransportPriority.
     pub transport_priority: TransportPriorityQosPolicy,
-    /// Default-Lifespan.
+    /// Default lifespan.
     pub lifespan: LifespanQosPolicy,
-    /// Default-Ownership.
+    /// Default ownership.
     pub ownership: OwnershipQosPolicy,
-    /// TopicData (Discovery-propagiert).
+    /// TopicData (propagated via discovery).
     pub topic_data: TopicDataQosPolicy,
 }
 
-/// QoS-Set fuer den `DomainParticipant` — Spec §2.2.2.2.2.
+/// QoS set for the `DomainParticipant` — Spec §2.2.2.2.2.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DomainParticipantQos {
-    /// UserData (Discovery-propagiert).
+    /// UserData (propagated via discovery).
     pub user_data: UserDataQosPolicy,
-    /// EntityFactory — Auto-Enable von Child-Entities.
+    /// EntityFactory — auto-enable of child entities.
     pub entity_factory: EntityFactoryQosPolicy,
 }
 
-/// QoS-Set fuer den `Publisher` — Spec §2.2.2.4.1.
+/// QoS set for the `Publisher` — Spec §2.2.2.4.1.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PublisherQos {
-    /// Presentation — Coherent/Ordered Access.
+    /// Presentation — coherent/ordered access.
     pub presentation: PresentationQosPolicy,
-    /// Partition — Default leer.
+    /// Partition — default empty.
     pub partition: PartitionQosPolicy,
-    /// GroupData (Discovery-propagiert).
+    /// GroupData (propagated via discovery).
     pub group_data: GroupDataQosPolicy,
-    /// EntityFactory — Auto-Enable von DataWritern.
+    /// EntityFactory — auto-enable of DataWriters.
     pub entity_factory: EntityFactoryQosPolicy,
 }
 
-/// QoS-Set fuer den `Subscriber` — Spec §2.2.2.5.1.
+/// QoS set for the `Subscriber` — Spec §2.2.2.5.1.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SubscriberQos {
-    /// Presentation — Coherent/Ordered Access.
+    /// Presentation — coherent/ordered access.
     pub presentation: PresentationQosPolicy,
-    /// Partition — Default leer.
+    /// Partition — default empty.
     pub partition: PartitionQosPolicy,
-    /// GroupData (Discovery-propagiert).
+    /// GroupData (propagated via discovery).
     pub group_data: GroupDataQosPolicy,
-    /// EntityFactory — Auto-Enable von DataReadern.
+    /// EntityFactory — auto-enable of DataReaders.
     pub entity_factory: EntityFactoryQosPolicy,
+}
+
+/// Materializes a DDS-XML-resolved [`zerodds_qos::WriterQos`] (e.g. from
+/// `zerodds_xml::QosProfileRegistry::writer_qos`) into the DCPS `DataWriterQos`.
+/// All shared policies carry over; DCPS-only policies not expressible in the
+/// qos-aggregate (`data_representation`) keep their default. Closes the
+/// DDS-XML-1.0 QoS-profile → entity-creation path.
+impl From<zerodds_qos::WriterQos> for DataWriterQos {
+    fn from(w: zerodds_qos::WriterQos) -> Self {
+        Self {
+            durability: w.durability,
+            durability_service: w.durability_service,
+            deadline: w.deadline,
+            latency_budget: w.latency_budget,
+            liveliness: w.liveliness,
+            reliability: w.reliability,
+            destination_order: w.destination_order,
+            history: w.history,
+            resource_limits: w.resource_limits,
+            transport_priority: w.transport_priority,
+            lifespan: w.lifespan,
+            ownership: w.ownership,
+            ownership_strength: w.ownership_strength,
+            presentation: w.presentation,
+            partition: w.partition,
+            writer_data_lifecycle: w.writer_data_lifecycle,
+            user_data: w.user_data,
+            topic_data: w.topic_data,
+            group_data: w.group_data,
+            ..Self::default()
+        }
+    }
+}
+
+/// Materializes a DDS-XML-resolved [`zerodds_qos::ReaderQos`] into the DCPS
+/// `DataReaderQos`. See [`From<zerodds_qos::WriterQos>`] for the writer side.
+impl From<zerodds_qos::ReaderQos> for DataReaderQos {
+    fn from(r: zerodds_qos::ReaderQos) -> Self {
+        Self {
+            durability: r.durability,
+            deadline: r.deadline,
+            latency_budget: r.latency_budget,
+            liveliness: r.liveliness,
+            reliability: r.reliability,
+            destination_order: r.destination_order,
+            history: r.history,
+            resource_limits: r.resource_limits,
+            ownership: r.ownership,
+            time_based_filter: r.time_based_filter,
+            presentation: r.presentation,
+            partition: r.partition,
+            reader_data_lifecycle: r.reader_data_lifecycle,
+            user_data: r.user_data,
+            topic_data: r.topic_data,
+            group_data: r.group_data,
+            ..Self::default()
+        }
+    }
+}
+
+#[cfg(test)]
+mod data_representation_tests {
+    use super::{DataReaderQos, DataWriterQos};
+
+    #[test]
+    fn data_representation_defaults_none_and_settable() {
+        // B5: per-endpoint DataRepresentation override (XTypes §7.6.3.1.2).
+        // Default None = runtime default; settable for a targeted XCDR1 offer.
+        assert_eq!(DataWriterQos::default().data_representation, None);
+        assert_eq!(DataReaderQos::default().data_representation, None);
+        let r = DataReaderQos {
+            data_representation: Some(alloc::vec![0_i16, 2]), // [XCDR1, XCDR2]
+            ..Default::default()
+        };
+        assert_eq!(r.data_representation.as_deref(), Some(&[0_i16, 2][..]));
+        let w = DataWriterQos {
+            data_representation: Some(alloc::vec![0_i16]), // XCDR1-only
+            ..Default::default()
+        };
+        assert_eq!(w.data_representation.as_deref(), Some(&[0_i16][..]));
+    }
+
+    #[test]
+    fn from_qos_aggregate_carries_policies() {
+        use zerodds_qos::{HistoryKind, ReliabilityKind};
+        let mut w = zerodds_qos::WriterQos::default();
+        w.history.kind = HistoryKind::KeepLast;
+        w.history.depth = 42;
+        w.reliability.kind = ReliabilityKind::Reliable;
+        let dw: DataWriterQos = w.into();
+        assert_eq!(dw.history.depth, 42);
+        assert_eq!(dw.reliability.kind, ReliabilityKind::Reliable);
+        assert_eq!(dw.data_representation, None); // DCPS-only → default
+
+        let mut rq = zerodds_qos::ReaderQos::default();
+        rq.history.depth = 7;
+        let dr: DataReaderQos = rq.into();
+        assert_eq!(dr.history.depth, 7);
+        assert_eq!(dr.data_representation, None);
+    }
 }

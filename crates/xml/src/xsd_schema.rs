@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! W3C XML Schema (XSD) → DDS-XTypes-Bridge (XTypes 1.3 §7.3.3).
+//! W3C XML Schema (XSD) → DDS-XTypes bridge (XTypes 1.3 §7.3.3).
 //!
-//! Spec OMG XTypes 1.3 §7.3.3 erlaubt XSD als alternative Type-
-//! Representation neben IDL/XML/TypeObject. Dieses Modul mappt eine
-//! Untermenge von W3C XSD 1.0/1.1 auf das interne [`TypeLibrary`]-
-//! Datenmodell aus [`crate::xtypes_def`]; via
-//! [`crate::typeobject_bridge`] wird daraus ein
-//! [`zerodds_types::TypeObject`] berechnet.
+//! Spec OMG XTypes 1.3 §7.3.3 allows XSD as an alternative type
+//! representation alongside IDL/XML/TypeObject. This module maps a
+//! subset of W3C XSD 1.0/1.1 onto the internal [`TypeLibrary`]
+//! data model from [`crate::xtypes_def`]; via
+//! [`crate::typeobject_bridge`] a
+//! [`zerodds_types::TypeObject`] is computed from it.
 //!
 //! # Mapping (XTypes 1.3 §7.3.3 Tab.6.x)
 //!
 //! ```text
-//! XSD                                    | DDS-Type
+//! XSD                                    | DDS type
 //! -------------------------------------- | -------------------------
-//! <xsd:schema>                           | TypeLibrary (Top-Level)
+//! <xsd:schema>                           | TypeLibrary (top-level)
 //! <xsd:complexType name=X>               | <struct name=X>
 //!   <xsd:sequence>                       |
 //!     <xsd:element name=f type=t/>       | <member name=f type=t/>
 //! <xsd:simpleType name=E>                | <enum name=E>
 //!   <xsd:restriction base="xsd:string">  |
 //!     <xsd:enumeration value=A/>         | <enumerator name=A/>
-//! minOccurs=0 (Element)                  | optional=true
+//! minOccurs=0 (element)                  | optional=true
 //! maxOccurs=unbounded                    | sequence
 //! maxOccurs=N (N>1)                      | bounded sequence
 //! ```
@@ -39,13 +39,13 @@
 //! -> float    double        string       sequence<octet>
 //! ```
 //!
-//! # Bewusst nicht im Crate
+//! # Deliberately not in the crate
 //!
-//! - Voller XSD-1.1-Validator (key/keyref, assertions).
-//! - `<xsd:choice>` als Union-Equivalent (Spec sieht das nicht
-//!   normativ vor; folgt evtl. Phase 2).
-//! - XSD `xsd:include`/`xsd:import` (Multi-File-Schemas).
-//! - Mixed Content / Attribute-as-Member.
+//! - A full XSD-1.1 validator (key/keyref, assertions).
+//! - `<xsd:choice>` as a union equivalent (the spec does not
+//!   provide for this normatively; may follow in phase 2).
+//! - XSD `xsd:include`/`xsd:import` (multi-file schemas).
+//! - Mixed content / attribute-as-member.
 
 extern crate alloc;
 
@@ -59,9 +59,9 @@ use crate::xtypes_def::{
     EnumLiteral, EnumType, PrimitiveType, StructMember, StructType, TypeDef, TypeLibrary, TypeRef,
 };
 
-/// Mapped einen W3C-XSD-Built-In-Type-Namen (mit oder ohne `xsd:`-
-/// Prefix) auf einen DDS-`PrimitiveType` oder, falls es ein
-/// User-Type ist, `None`.
+/// Maps a W3C-XSD built-in type name (with or without the `xsd:`
+/// prefix) onto a DDS `PrimitiveType` or, if it is a
+/// user type, `None`.
 fn map_builtin(local: &str) -> Option<PrimitiveType> {
     let trimmed = match local.split_once(':') {
         Some((_prefix, suffix)) => suffix,
@@ -84,15 +84,14 @@ fn map_builtin(local: &str) -> Option<PrimitiveType> {
     })
 }
 
-/// Aufloesung eines `type=...`-Attributs in einen `TypeRef`. Built-In-
-/// XSD-Typen werden auf [`PrimitiveType`] gemapped, alle anderen
-/// (User-Types, andere Namespaces) werden als [`TypeRef::Named`]
-/// durchgereicht.
+/// Resolves a `type=...` attribute into a `TypeRef`. Built-in
+/// XSD types are mapped onto [`PrimitiveType`], all others
+/// (user types, other namespaces) are passed through as [`TypeRef::Named`].
 fn resolve_type_ref(raw: &str) -> TypeRef {
     if let Some(prim) = map_builtin(raw) {
         TypeRef::Primitive(prim)
     } else {
-        // strip prefix wenn local-name unique ist (User-Types ohne ns).
+        // strip prefix when the local name is unique (user types without ns).
         let local = match raw.split_once(':') {
             Some((_p, s)) => s,
             None => raw,
@@ -101,11 +100,11 @@ fn resolve_type_ref(raw: &str) -> TypeRef {
     }
 }
 
-/// Parst ein XSD-Schema-Dokument und liefert eine [`TypeLibrary`].
+/// Parses an XSD schema document and returns a [`TypeLibrary`].
 ///
 /// # Errors
-/// * [`XmlError::InvalidXml`] — kein wohlgeformtes XML, fehlendes
-///   `<xsd:schema>`-Root, oder syntaktische Fehler in der XSD-Struktur.
+/// * [`XmlError::InvalidXml`] — not well-formed XML, missing
+///   `<xsd:schema>` root, or syntactic errors in the XSD structure.
 pub fn parse_xsd_schema(xml: &str) -> Result<TypeLibrary, XmlError> {
     let doc = parse_xml_tree(xml)?;
     if doc.root.name != "schema" {
@@ -123,13 +122,13 @@ pub fn parse_xsd_schema(xml: &str) -> Result<TypeLibrary, XmlError> {
                 if let Some(en) = parse_simple_type_as_enum(child)? {
                     lib.types.push(TypeDef::Enum(en));
                 }
-                // simpleType ohne enumeration ist Type-Alias auf einen
-                // built-in — wir ignorieren das auf dieser Stufe.
+                // A simpleType without enumeration is a type alias to a
+                // built-in — we ignore it at this stage.
             }
             "element" => {
-                // Top-Level `<xsd:element>` mit anonymem inline-
-                // complexType: wir behandeln das als Top-Level-Struct
-                // mit dem Element-Namen.
+                // Top-level `<xsd:element>` with an anonymous inline
+                // complexType: we treat it as a top-level struct
+                // with the element name.
                 if let Some(ct) = child.child("complexType") {
                     let mut s = parse_complex_type(ct)?;
                     if s.name.is_empty() {
@@ -141,12 +140,12 @@ pub fn parse_xsd_schema(xml: &str) -> Result<TypeLibrary, XmlError> {
                 }
             }
             "include" | "import" | "annotation" | "notation" | "group" | "attributeGroup" => {
-                // Nicht im Scope; still ignorieren (XSD-Includes sind
-                // Annotations rein dokumentarisch).
+                // Not in scope; silently ignore (XSD includes are
+                // purely documentary annotations).
             }
             _ => {
-                // Unbekanntes Top-Level-Element — strikt rejecten waere
-                // zu hart, also lax.
+                // Unknown top-level element — strictly rejecting would be
+                // too harsh, so lax.
             }
         }
     }
@@ -158,8 +157,8 @@ fn parse_complex_type(node: &XmlElement) -> Result<StructType, XmlError> {
     let name = node.attribute("name").unwrap_or_default().to_string();
 
     let mut members = Vec::new();
-    // `<xsd:sequence>` ist die normalisierte Member-Reihenfolge. Spec
-    // erlaubt auch `<xsd:all>` (unordered) — wir behandeln es identisch.
+    // `<xsd:sequence>` is the normalized member order. The spec
+    // also allows `<xsd:all>` (unordered) — we treat it identically.
     if let Some(seq) = node.child("sequence").or_else(|| node.child("all")) {
         for el in seq.children_named("element") {
             members.push(parse_element_as_member(el)?);
@@ -191,7 +190,7 @@ fn parse_complex_type(node: &XmlElement) -> Result<StructType, XmlError> {
 }
 
 /// Parst ein `<xsd:element name="..." type="..." minOccurs="..."
-/// maxOccurs="...">` als Struct-Member.
+/// maxOccurs="...">` as a struct member.
 fn parse_element_as_member(node: &XmlElement) -> Result<StructMember, XmlError> {
     let name = node.attribute("name").unwrap_or_default().to_string();
     let raw_type = node.attribute("type").unwrap_or("xsd:string");
@@ -226,9 +225,9 @@ fn parse_element_as_member(node: &XmlElement) -> Result<StructMember, XmlError> 
 
 /// Parst `<xsd:simpleType name="X"><xsd:restriction base="xsd:string">
 /// <xsd:enumeration value="A"/>...</xsd:restriction></xsd:simpleType>`
-/// und liefert `Some(EnumType)`. Wenn keine `<xsd:enumeration>`-
-/// Children vorhanden sind, ist das nur ein Type-Alias und wir liefern
-/// `None` (kein Enum).
+/// and returns `Some(EnumType)`. If no `<xsd:enumeration>`
+/// children are present, it is only a type alias and we return
+/// `None` (no enum).
 fn parse_simple_type_as_enum(node: &XmlElement) -> Result<Option<EnumType>, XmlError> {
     let name = node.attribute("name").unwrap_or_default().to_string();
     let restriction = match node.child("restriction") {
@@ -302,7 +301,7 @@ mod tests {
 
     #[test]
     fn xsd_long_maps_to_dds_longlong() {
-        // Spec §7.3.3 — xsd:long ist 64-bit → DDS longlong (§7.4.13).
+        // Spec §7.3.3 — xsd:long is 64-bit → DDS longlong (§7.4.13).
         let xml = r#"
             <xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema">
                 <xsd:complexType name="Big">
@@ -466,8 +465,8 @@ mod tests {
 
     #[test]
     fn complex_content_extension_yields_inheritance() {
-        // Spec — `<xsd:complexContent><xsd:extension base="P">` ist
-        // XSD-Inheritance, das auf DDS-Struct-Inheritance gemapped wird.
+        // Spec — `<xsd:complexContent><xsd:extension base="P">` is
+        // XSD inheritance, which is mapped onto DDS struct inheritance.
         let xml = r#"
             <xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema">
                 <xsd:complexType name="Parent">
@@ -500,15 +499,15 @@ mod tests {
     fn non_schema_root_is_rejected() {
         let xml = r#"<dds><types/></dds>"#;
         let r = parse_xsd_schema(xml);
-        assert!(r.is_err(), "non-<xsd:schema> root muss rejected werden");
+        assert!(r.is_err(), "non-<xsd:schema> root must be rejected");
     }
 
     #[test]
     fn xsd_to_typeobject_via_bridge_produces_minimal_struct() {
         // End-to-End: XSD-Source → TypeLibrary →
         // typeobject_bridge::bridge_library → MinimalTypeObject.
-        // Damit ist der Spec-Pfad XTypes 1.3 §7.3.3 voll abgedeckt
-        // (XSD → TypeObject auf Wire-Form).
+        // This fully covers the spec path XTypes 1.3 §7.3.3
+        // (XSD → TypeObject in wire form).
         use crate::typeobject_bridge::bridge_library;
 
         let xml = r#"
@@ -525,7 +524,7 @@ mod tests {
         let map = bridge_library(&lib).expect("bridge");
         assert!(
             map.contains_key("Sensor"),
-            "TypeObject fuer Sensor fehlt: {:?}",
+            "TypeObject for Sensor missing: {:?}",
             map.keys().collect::<Vec<_>>()
         );
     }

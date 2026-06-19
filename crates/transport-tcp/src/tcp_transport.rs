@@ -1,35 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `TcpTransport`: ZeroDDS-TCP-Transport-1.0-Implementation.
+//! `TcpTransport`: ZeroDDS TCP Transport 1.0 implementation.
 //!
-//! # Implementiert (RC1)
+//! # Implemented (RC1)
 //!
-//! - Length-Prefix-Framing (4-byte BE, 16 MiB DoS-Cap, siehe
-//!   [`framing`]) — DDSI-RTPS 2.5 §9.5-konform.
-//! - ZeroDDS-Handshake aus [`handshake`] (BindConnection-Request/
-//!   Response, Cyclone-Compat via Skip-Mode).
-//! - TCP-Connection-Pool (`MAX_PEERS=256`) mit lazy-connect +
+//! - Length-prefix framing (4-byte BE, 16 MiB DoS cap, see
+//!   [`framing`]) — DDSI-RTPS 2.5 §9.5 conformant.
+//! - ZeroDDS handshake from [`handshake`] (BindConnection request/
+//!   response, Cyclone compat via skip mode).
+//! - TCP connection pool (`MAX_PEERS=256`) with lazy connect +
 //!   exponential backoff (50 ms → 5 s).
-//! - Bounded Inbound-Queue mit Condvar-blocking `recv`.
-//! - `Transport`-Trait-Impl für Polymorphismus mit UDP.
-//! - Slow-Loris-DoS-Schutz im Accept-Pfad (Total-Budget + Per-syscall-
-//!   Slice-Timeout).
-//! - Deterministic Pool-Eviction (lowest-key) bei Cap-Erreichung —
-//!   bewusste Wahl statt LRU, da kein IndexMap-Dep nötig und mit
-//!   `MAX_PEERS=256` keine Eviction-Pressure-Probleme.
+//! - Bounded inbound queue with a Condvar-blocking `recv`.
+//! - `Transport` trait impl for polymorphism with UDP.
+//! - Slow-loris DoS protection in the accept path (total budget +
+//!   per-syscall slice timeout).
+//! - Deterministic pool eviction (lowest-key) on cap reach — a
+//!   deliberate choice over LRU, since no IndexMap dep is needed and
+//!   with `MAX_PEERS=256` there are no eviction-pressure problems.
 //!
-//! # Spec-Status
+//! # Spec status
 //!
-//! Siehe `lib.rs`-Header und
-//! `docs/spec-coverage/zerodds-tcp-transport-1.0.md`. Locator-Kind
-//! sowie Wire-Frame sind DDSI-RTPS-§9.4+§9.5-normativ; Handshake
-//! und Connection-Pool sind ZeroDDS-vendor-spezifisch.
+//! See the `lib.rs` header and
+//! `docs/spec-coverage/zerodds-tcp-transport-1.0.md`. The locator kind
+//! and wire frame are DDSI-RTPS §9.4+§9.5 normative; the handshake
+//! and connection pool are ZeroDDS-vendor-specific.
 //!
 //! [`framing`]: crate::framing
 //! [`handshake`]: crate::handshake
 
 use std::io::{BufReader, BufWriter};
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream};
+use std::net::{
+    Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, TcpListener, TcpStream,
+};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -42,40 +44,40 @@ use zerodds_transport::{ReceivedDatagram, RecvError, SendError, Transport};
 use crate::framing::{FramingError, read_frame, write_frame};
 use crate::handshake::{HandshakeError, client_handshake, server_handshake};
 
-/// Konstruktions- und Betriebsfehler eines `TcpTransport`.
+/// Construction and operation error of a `TcpTransport`.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum TcpTransportError {
-    /// Bind des Listeners fehlgeschlagen.
+    /// Binding the listener failed.
     Bind(std::io::Error),
-    /// Accept auf dem Listener fehlgeschlagen.
+    /// Accept on the listener failed.
     Accept(std::io::Error),
-    /// `set_read_timeout`/`set_nonblocking` fehlgeschlagen.
+    /// `set_read_timeout`/`set_nonblocking` failed.
     SetTimeout(std::io::Error),
-    /// Locator ist kein TCPv4-Locator.
+    /// Locator is not a TCPv4 locator.
     UnsupportedLocator,
-    /// Peer sendete ein Frame groesser als [`crate::framing::MAX_FRAME_SIZE`].
+    /// Peer sent a frame larger than [`crate::framing::MAX_FRAME_SIZE`].
     FrameTooLarge {
-        /// Angekuendigte Laenge aus dem Frame-Header.
+        /// Announced length from the frame header.
         announced: u32,
     },
-    /// Peer-I/O-Fehler waehrend `accept_one`.
+    /// Peer I/O error during `accept_one`.
     PeerIo(std::io::Error),
-    /// TCP-Handshake (DDS-TCP-PSM §5.2.1) fehlgeschlagen. Sender ist
-    /// vermutlich kein ZeroDDS-TCP-Peer oder hat inkompatible
-    /// Protokoll-Version.
+    /// TCP handshake (DDS-TCP-PSM §5.2.1) failed. The sender is
+    /// probably not a ZeroDDS TCP peer or has an incompatible
+    /// protocol version.
     Handshake(HandshakeError),
 }
 
-/// Detail-Grund, warum ein Locator fuer TCP nicht benutzbar ist.
+/// Detailed reason why a locator is not usable for TCP.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum InvalidLocator {
     /// LocatorKind != Tcpv4.
     WrongKind,
-    /// Port-Feld > u16::MAX (Spec erlaubt u32-Port, IPv4-TCP aber nur u16).
+    /// Port field > u16::MAX (the spec allows a u32 port, but IPv4 TCP only u16).
     PortOverflow {
-        /// Gelesener u32-Port-Wert.
+        /// The u32 port value read.
         port: u32,
     },
 }
@@ -99,36 +101,37 @@ impl core::fmt::Display for TcpTransportError {
 impl std::error::Error for TcpTransportError {}
 
 // ---------------------------------------------------------------------
-// Resource-Limits
+// Resource limits
 // ---------------------------------------------------------------------
 
-/// Maximale Anzahl Datagrams in der Inbound-Queue (Finding B8/#3).
+/// Maximum number of datagrams in the inbound queue (Finding B8/#3).
 pub const MAX_INBOUND_QUEUE: usize = 1024;
 
-/// Maximale Peer-Zahl im Connection-Pool (Finding B8/#4). Bei Ueberlauf
-/// wird der aelteste Eintrag entfernt (FIFO).
+/// Maximum number of peers in the connection pool (Finding B8/#4). On
+/// overflow the oldest entry is removed (FIFO).
 pub const MAX_PEERS: usize = 256;
 
-/// Backoff-Startwert beim Reconnect.
+/// Backoff start value on reconnect.
 const INITIAL_BACKOFF_MS: u64 = 50;
-/// Backoff-Cap (5 s).
+/// Backoff cap (5 s).
 const MAX_BACKOFF_MS: u64 = 5_000;
 
 // ---------------------------------------------------------------------
 // PeerConn
 // ---------------------------------------------------------------------
 
-/// Peer-Connection: Writer-Seite. Pro Peer in ein eigenes Mutex eingewickelt,
-/// damit `send()` die Pool-Lock nicht ueber blocking-I/O haelt.
+/// Peer connection: writer side. Wrapped per peer in its own mutex so
+/// that `send()` does not hold the pool lock across blocking I/O.
 struct PeerConn {
-    addr: SocketAddrV4,
+    addr: SocketAddr,
     writer: Option<BufWriter<TcpStream>>,
     backoff_ms: u64,
     last_attempt: Option<std::time::Instant>,
 }
 
 impl PeerConn {
-    fn new(addr: SocketAddrV4) -> Self {
+    fn new<A: Into<SocketAddr>>(addr: A) -> Self {
+        let addr = addr.into();
         Self {
             addr,
             writer: None,
@@ -153,10 +156,10 @@ impl PeerConn {
             match TcpStream::connect(self.addr) {
                 Ok(mut stream) => {
                     stream.set_nodelay(true)?;
-                    // ZeroDDS-Handshake (siehe crate::handshake-Modul-Doc).
-                    // logical_port = 0 signalisiert "default port" — DCPS
-                    // setzt den konkreten Endpoint-Port via eigenen
-                    // Connect-Pfad.
+                    // ZeroDDS handshake (see the crate::handshake module doc).
+                    // logical_port = 0 signals "default port" — DCPS
+                    // sets the concrete endpoint port via its own
+                    // connect path.
                     if let Err(e) = client_handshake(&mut stream, 0) {
                         self.bump_backoff();
                         return Err(std::io::Error::other(format!(
@@ -187,7 +190,7 @@ impl PeerConn {
 
     fn drop_writer(&mut self) {
         if let Some(w) = self.writer.take() {
-            // FIN schnell signalisieren, statt auf Drop zu warten.
+            // Signal FIN quickly instead of waiting for Drop.
             if let Ok(stream) = w.into_inner() {
                 let _ = stream.shutdown(std::net::Shutdown::Both);
             }
@@ -224,7 +227,7 @@ impl core::fmt::Debug for PeerConn {
 #[derive(Debug, Default)]
 struct InboundState {
     queue: VecDeque<ReceivedDatagram>,
-    /// Gesamtzahl Frames, die wegen Overflow gedroppt wurden.
+    /// Total number of frames dropped due to overflow.
     dropped: u64,
 }
 
@@ -232,23 +235,23 @@ struct InboundState {
 // TcpTransport
 // ---------------------------------------------------------------------
 
-/// TCP-basierter Transport.
+/// TCP-based transport.
 ///
-/// Siehe Modul-Doc und `docs/spec-coverage/zerodds-tcp-transport-1.0.md`
-/// für Spec-Status und Wire-Format.
+/// See the module doc and `docs/spec-coverage/zerodds-tcp-transport-1.0.md`
+/// for spec status and wire format.
 #[derive(Debug)]
 pub struct TcpTransport {
     listener: TcpListener,
     local_locator: Locator,
-    /// Peers: jeder Peer in eigenem Mutex → Pool-Lock nur fuer Lookup,
-    /// nicht ueber blocking-I/O (B8/#2).
-    peers: Mutex<BTreeMap<SocketAddrV4, Arc<Mutex<PeerConn>>>>,
+    /// Peers: each peer in its own mutex → the pool lock is only for
+    /// lookup, not across blocking I/O (B8/#2).
+    peers: Mutex<BTreeMap<SocketAddr, Arc<Mutex<PeerConn>>>>,
     inbound: Mutex<InboundState>,
     inbound_cv: Condvar,
 }
 
 impl TcpTransport {
-    /// Bindet an die gegebene Adresse. `port=0` = OS-gewaehlt.
+    /// Binds to the given address. `port=0` = OS-chosen.
     ///
     /// # Errors
     /// `TcpTransportError::Bind`.
@@ -273,40 +276,67 @@ impl TcpTransport {
         })
     }
 
-    /// Lokaler Locator.
+    /// Binds a TCPv6 listener socket on `addr:port`. `addr = ::1`
+    /// for loopback, `addr = ::` (UNSPECIFIED) for all-interface.
+    /// `port = 0` lets the OS choose the port.
+    ///
+    /// # Errors
+    /// `TcpTransportError::Bind`.
+    pub fn bind_v6(addr: Ipv6Addr, port: u16) -> Result<Self, TcpTransportError> {
+        let bind_addr = SocketAddrV6::new(addr, port, 0, 0);
+        let listener = TcpListener::bind(bind_addr).map_err(TcpTransportError::Bind)?;
+        let local = match listener.local_addr().map_err(TcpTransportError::Bind)? {
+            SocketAddr::V6(v6) => v6,
+            SocketAddr::V4(_) => {
+                return Err(TcpTransportError::Bind(std::io::Error::other(
+                    "got V4 address on V6 bind",
+                )));
+            }
+        };
+        let local_locator = Locator::tcp_v6(local.ip().octets(), u32::from(local.port()));
+        Ok(Self {
+            listener,
+            local_locator,
+            peers: Mutex::new(BTreeMap::new()),
+            inbound: Mutex::new(InboundState::default()),
+            inbound_cv: Condvar::new(),
+        })
+    }
+
+    /// Local locator.
     #[must_use]
     pub fn local_locator(&self) -> Locator {
         self.local_locator
     }
 
-    /// Akzeptiert eine eingehende Connection und liest alle Frames daraus
-    /// in die inbound-Queue, bis der Peer die Connection schliesst.
+    /// Accepts an incoming connection and reads all frames from it into
+    /// the inbound queue until the peer closes the connection.
     ///
-    /// In Phase 1 ist das eine Blocking-Funktion; Tests + Apps treiben das
-    /// explizit an (oder in einem eigenen Thread). Phase 2 liefert einen
-    /// Background-Accept-Thread.
+    /// In phase 1 this is a blocking function; tests + apps drive it
+    /// explicitly (or in their own thread). Phase 2 delivers a
+    /// background accept thread.
     ///
     /// # Errors
-    /// - `Accept(io::Error)` wenn der Listener scheitert,
-    /// - `UnsupportedLocator` wenn Peer kein IPv4-Socket ist,
-    /// - `FrameTooLarge { announced }` wenn Peer ein zu grosses Frame
-    ///   ankuendigt,
-    /// - `PeerIo(io::Error)` bei sonstigen Read-Fehlern.
+    /// - `Accept(io::Error)` if the listener fails,
+    /// - `UnsupportedLocator` if the peer is not an IPv4 socket,
+    /// - `FrameTooLarge { announced }` if the peer announces an
+    ///   oversized frame,
+    /// - `PeerIo(io::Error)` on other read errors.
     pub fn accept_one(&self) -> Result<(), TcpTransportError> {
         let (mut stream, peer) = self.listener.accept().map_err(TcpTransportError::Accept)?;
         stream
             .set_nodelay(true)
             .map_err(TcpTransportError::Accept)?;
-        // Slow-read DoS-Schutz: `set_read_timeout` wirkt per syscall,
-        // nicht über die gesamte Handshake-Dauer. Ein byte-chunked
-        // Slow-Loris kann 5 s pro Byte ziehen, insgesamt 16 * 5 = 80 s
-        // auf dem Accept-Thread verbraten. Fix via Gesamt-Deadline,
-        // kombiniert mit tight syscall-Timeout (200 ms).
+        // Slow-read DoS protection: `set_read_timeout` acts per syscall,
+        // not across the whole handshake duration. A byte-chunked
+        // slow-loris can pull 5 s per byte, burning 16 * 5 = 80 s in
+        // total on the accept thread. Fixed via a total deadline,
+        // combined with a tight syscall timeout (200 ms).
         //
-        // Gesamtbudget: 2 s fuer den kompletten 16-Byte-Handshake.
-        // Das reicht reichlich fuer legitimate peers (die antworten
-        // in <10 ms auf localhost, <100 ms auf LAN), bricht aber
-        // jede Byte-chunked-Slow-Loris-Variante.
+        // Total budget: 2 s for the complete 16-byte handshake. That is
+        // ample for legitimate peers (which answer in <10 ms on
+        // localhost, <100 ms on LAN) but breaks every byte-chunked
+        // slow-loris variant.
         let handshake_total_budget = Duration::from_secs(2);
         let handshake_syscall_slice = Duration::from_millis(200);
         let handshake_deadline = std::time::Instant::now() + handshake_total_budget;
@@ -316,15 +346,14 @@ impl TcpTransport {
         stream
             .set_write_timeout(Some(handshake_syscall_slice))
             .map_err(TcpTransportError::Accept)?;
-        let peer_v4 = match peer {
-            SocketAddr::V4(v4) => v4,
-            SocketAddr::V6(_) => return Err(TcpTransportError::UnsupportedLocator),
+        let source_locator = match peer {
+            SocketAddr::V4(v4) => Locator::tcp_v4(v4.ip().octets(), u32::from(v4.port())),
+            SocketAddr::V6(v6) => Locator::tcp_v6(v6.ip().octets(), u32::from(v6.port())),
         };
-        let source_locator = Locator::tcp_v4(peer_v4.ip().octets(), u32::from(peer_v4.port()));
-        // ZeroDDS-Handshake. Bei Reject gibt es eine eigene Error-
-        // Variante, damit der Caller die Ablehnung vom leeren-Frame-EOF
-        // unterscheiden kann. Deadline-Guard um den gesamten Handshake-
-        // Pfad.
+        // ZeroDDS handshake. On Reject there is a dedicated error
+        // variant so the caller can distinguish the rejection from an
+        // empty-frame EOF. Deadline guard around the entire handshake
+        // path.
         let handshake_result = server_handshake(&mut stream);
         if std::time::Instant::now() > handshake_deadline {
             return Err(TcpTransportError::Handshake(
@@ -344,8 +373,8 @@ impl TcpTransport {
             }
             Err(e) => return Err(TcpTransportError::Handshake(e)),
         }
-        // Nach erfolgreichem Handshake: Timeout wieder aufheben
-        // (normales Frame-Pump-Regime blockt erwartbar lang).
+        // After a successful handshake: lift the timeout again
+        // (the normal frame-pump regime blocks for expectedly long).
         stream
             .set_read_timeout(None)
             .map_err(TcpTransportError::Accept)?;
@@ -373,9 +402,10 @@ impl TcpTransport {
     fn push_inbound(&self, dg: ReceivedDatagram) {
         if let Ok(mut st) = self.inbound.lock() {
             if st.queue.len() >= MAX_INBOUND_QUEUE {
-                // Ueber-Cap: aeltestes Frame droppen (FIFO-Drop statt Neues
-                // wegwerfen — alte Frames werden zumeist durch Reliable-
-                // Reader-Layer ohnehin via ACKNACK nachgefordert).
+                // Over cap: drop the oldest frame (FIFO drop instead of
+                // discarding the new one — old frames are mostly
+                // re-requested anyway by the reliable reader layer via
+                // ACKNACK).
                 st.queue.pop_front();
                 st.dropped = st.dropped.saturating_add(1);
             }
@@ -384,18 +414,18 @@ impl TcpTransport {
         }
     }
 
-    /// Anzahl verworfener Frames wegen Queue-Overflow.
+    /// Number of frames discarded due to queue overflow.
     #[must_use]
     pub fn dropped_frames(&self) -> u64 {
         self.inbound.lock().map(|s| s.dropped).unwrap_or_default()
     }
 
-    /// Non-blocking pop aus der inbound-Queue. Nuetzlich fuer Tests und
-    /// Callsites, die selber polling-Kontrolle wollen (vs. die blocking
+    /// Non-blocking pop from the inbound queue. Useful for tests and
+    /// callsites that want polling control themselves (vs. the blocking
     /// [`Transport::recv`]).
     ///
     /// # Errors
-    /// [`RecvError::Timeout`] wenn die Queue leer ist.
+    /// [`RecvError::Timeout`] if the queue is empty.
     pub fn try_recv(&self) -> Result<ReceivedDatagram, RecvError> {
         let mut st = self.inbound.lock().map_err(|_| RecvError::Io {
             message: "inbound queue poisoned",
@@ -410,7 +440,7 @@ impl TcpTransport {
 
 impl Transport for TcpTransport {
     fn send(&self, dest: &Locator, data: &[u8]) -> Result<(), SendError> {
-        let addr = match locator_to_socket_v4(dest) {
+        let addr = match locator_to_socket(dest) {
             Ok(a) => a,
             Err(InvalidLocator::WrongKind) => return Err(SendError::UnsupportedLocator),
             Err(InvalidLocator::PortOverflow { port }) => {
@@ -423,21 +453,21 @@ impl Transport for TcpTransport {
                 });
             }
         };
-        // Schritt 1: Peer-Lookup/Insert unter Pool-Lock.
+        // Step 1: peer lookup/insert under the pool lock.
         let peer_arc = {
             let mut pool = self.peers.lock().map_err(|_| SendError::Io {
                 message: "peer pool poisoned",
             })?;
             if pool.len() >= MAX_PEERS && !pool.contains_key(&addr) {
-                // Pool-Eviction-Strategie: deterministisch lowest-key
-                // (kleinste SocketAddrV4). Bewusste Wahl gegen LRU,
-                // weil:
-                // - Mit MAX_PEERS=256 ist Eviction-Pressure ohnehin gering
-                //   (real-world DDS-Domain hat selten >100 Peers).
-                // - Lowest-key ist stable + deterministic — gut für
-                //   reproducible Debugging.
-                // - Vermeidet IndexMap-Dep bzw. Timestamp-Tracking-
-                //   Overhead pro Peer.
+                // Pool eviction strategy: deterministic lowest-key
+                // (smallest SocketAddrV4). A deliberate choice over LRU,
+                // because:
+                // - With MAX_PEERS=256 eviction pressure is low anyway
+                //   (a real-world DDS domain rarely has >100 peers).
+                // - Lowest-key is stable + deterministic — good for
+                //   reproducible debugging.
+                // - Avoids the IndexMap dep / per-peer timestamp-tracking
+                //   overhead.
                 if let Some(victim) = pool.keys().next().copied() {
                     pool.remove(&victim);
                 }
@@ -446,7 +476,7 @@ impl Transport for TcpTransport {
                 .or_insert_with(|| Arc::new(Mutex::new(PeerConn::new(addr))))
                 .clone()
         };
-        // Schritt 2: Pool-Lock freigeben, dann Peer-Lock fuer I/O.
+        // Step 2: release the pool lock, then take the peer lock for I/O.
         let mut conn = peer_arc.lock().map_err(|_| SendError::Io {
             message: "peer conn poisoned",
         })?;
@@ -463,13 +493,13 @@ impl Transport for TcpTransport {
     }
 
     fn recv(&self) -> Result<ReceivedDatagram, RecvError> {
-        // Inbound-Queue: Mutex + Condvar (kein MPSC-Channel) —
-        // `Condvar::wait(guard)` droppt das Mutex atomar und
-        // re-acquired beim Wake-up. Push-Pfad `push_inbound()` hält
-        // das Mutex nur für "enqueue + notify_one" (nicht-blockierend
-        // gegenüber dem Reader). Die Architektur ist final; ein
-        // MPSC-Refactor würde dieselbe Backpressure-Semantik liefern,
-        // ohne funktionalen Gewinn.
+        // Inbound queue: mutex + condvar (no MPSC channel) —
+        // `Condvar::wait(guard)` drops the mutex atomically and
+        // re-acquires it on wake-up. The push path `push_inbound()`
+        // holds the mutex only for "enqueue + notify_one"
+        // (non-blocking towards the reader). The architecture is final;
+        // an MPSC refactor would deliver the same backpressure
+        // semantics with no functional gain.
         let mut st = self.inbound.lock().map_err(|_| RecvError::Io {
             message: "inbound queue poisoned",
         })?;
@@ -502,6 +532,21 @@ fn locator_to_socket_v4(loc: &Locator) -> Result<SocketAddrV4, InvalidLocator> {
     let port =
         u16::try_from(loc.port).map_err(|_| InvalidLocator::PortOverflow { port: loc.port })?;
     Ok(SocketAddrV4::new(ip, port))
+}
+
+/// Dispatch between a TCPv4/TCPv6 locator and `SocketAddr` (v4 or v6).
+fn locator_to_socket(loc: &Locator) -> Result<SocketAddr, InvalidLocator> {
+    use zerodds_rtps::wire_types::LocatorKind;
+    match loc.kind {
+        LocatorKind::Tcpv4 => locator_to_socket_v4(loc).map(SocketAddr::V4),
+        LocatorKind::Tcpv6 => {
+            let port = u16::try_from(loc.port)
+                .map_err(|_| InvalidLocator::PortOverflow { port: loc.port })?;
+            let ip = Ipv6Addr::from(loc.address);
+            Ok(SocketAddr::V6(SocketAddrV6::new(ip, port, 0, 0)))
+        }
+        _ => Err(InvalidLocator::WrongKind),
+    }
 }
 
 #[cfg(test)]
@@ -551,15 +596,15 @@ mod tests {
         assert_eq!(t.dropped_frames(), 5);
     }
 
-    /// `try_recv` auf leere Queue liefert `Timeout` (Review-Finding: bisher
-    /// ungetesteter Error-Pfad).
+    /// `try_recv` on an empty queue returns `Timeout` (review finding:
+    /// previously untested error path).
     #[test]
     fn try_recv_empty_queue_is_timeout() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         assert!(matches!(t.try_recv(), Err(RecvError::Timeout)));
     }
 
-    /// `try_recv` nach push liefert das Frame zurueck.
+    /// `try_recv` after a push returns the frame.
     #[test]
     fn try_recv_returns_pushed_frame() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
@@ -571,9 +616,9 @@ mod tests {
         assert_eq!(&dg.data[..], &[7u8, 8, 9]);
     }
 
-    /// `Transport::recv` ist Condvar-blocking. Wir testen den Happy-Path,
-    /// indem wir aus einem Background-Thread ein Frame pushen; der recv-
-    /// Aufrufer muss aufwachen (deckt den `inbound_cv.wait`-Zweig).
+    /// `Transport::recv` is condvar-blocking. We test the happy path by
+    /// pushing a frame from a background thread; the recv caller must
+    /// wake up (covers the `inbound_cv.wait` branch).
     #[test]
     fn recv_wakes_on_push_from_other_thread() {
         use std::sync::Arc as StdArc;
@@ -594,8 +639,8 @@ mod tests {
         h.join().unwrap();
     }
 
-    /// `Transport::recv` fuer bereits gefuellte Queue laeuft loop → pop
-    /// Happy-Path ohne Condvar-Wait.
+    /// `Transport::recv` for an already-filled queue runs loop → pop,
+    /// the happy path without a condvar wait.
     #[test]
     fn recv_returns_immediately_if_queue_already_full() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
@@ -607,9 +652,9 @@ mod tests {
         assert_eq!(&dg.data[..], &[1u8]);
     }
 
-    /// MAX_PEERS-Eviction: wir fuellen den Pool direkt ueber die Mutex-
-    /// Innards — das spart echte Sockets. Beim naechsten send zu einer
-    /// neuen Adresse muss der kleinste Key evicted werden.
+    /// MAX_PEERS eviction: we fill the pool directly via the mutex
+    /// innards — that saves real sockets. On the next send to a new
+    /// address the smallest key must be evicted.
     #[test]
     fn max_peers_eviction_removes_first_key_on_new_peer() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
@@ -617,37 +662,40 @@ mod tests {
             let mut pool = t.peers.lock().unwrap();
             for i in 0..MAX_PEERS {
                 let port = u16::try_from(10_000 + i).unwrap();
-                let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, port);
+                let addr: SocketAddr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into();
                 pool.insert(addr, Arc::new(Mutex::new(PeerConn::new(addr))));
             }
             assert_eq!(pool.len(), MAX_PEERS);
         }
 
-        // Port 1 ist garantiert nicht im Pool; send scheitert mit Io,
-        // aber die Eviction-Branch wurde davor getroffen.
+        // Port 1 is guaranteed not in the pool; send fails with Io,
+        // but the eviction branch was hit before that.
         let fresh = Locator::tcp_v4([127, 0, 0, 1], 1);
         let _ = Transport::send(&t, &fresh, b"x");
 
         let pool = t.peers.lock().unwrap();
         assert_eq!(pool.len(), MAX_PEERS);
-        assert!(pool.contains_key(&SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1)));
-        // Port 1 ist jetzt das kleinste Element → die alten 10_000+ sind
-        // also nicht mehr das kleinste, aber das allererste (10_000) ist
-        // trotzdem evicted (weil kleinster vor insert).
-        assert!(!pool.contains_key(&SocketAddrV4::new(Ipv4Addr::LOCALHOST, 10_000)));
+        assert!(pool.contains_key(&SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1))));
+        // Port 1 is now the smallest element → the old 10_000+ are thus
+        // no longer the smallest, but the very first (10_000) is still
+        // evicted (because it was the smallest before insert).
+        assert!(!pool.contains_key(&SocketAddr::V4(SocketAddrV4::new(
+            Ipv4Addr::LOCALHOST,
+            10_000
+        ))));
     }
 
-    /// MAX_PEERS-Branch: wenn der Zielpeer bereits im Pool ist, darf
-    /// keine Eviction passieren (`&& !contains_key`-Gate greift).
+    /// MAX_PEERS branch: if the target peer is already in the pool, no
+    /// eviction may happen (the `&& !contains_key` gate kicks in).
     #[test]
     fn max_peers_no_eviction_for_existing_peer() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
-        let target_addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 2);
+        let target_addr: SocketAddr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 2).into();
         {
             let mut pool = t.peers.lock().unwrap();
             for i in 0..(MAX_PEERS - 1) {
                 let port = u16::try_from(20_000 + i).unwrap();
-                let a = SocketAddrV4::new(Ipv4Addr::LOCALHOST, port);
+                let a: SocketAddr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into();
                 pool.insert(a, Arc::new(Mutex::new(PeerConn::new(a))));
             }
             pool.insert(
@@ -663,7 +711,33 @@ mod tests {
         assert!(pool.contains_key(&target_addr));
     }
 
-    /// `PeerConn::bump_backoff` folgt Exponential-Ramp mit Cap.
+    /// TCPv6: bind + accept + send/recv via ::1.
+    #[test]
+    fn bind_v6_send_recv_loopback() {
+        use std::sync::Arc as StdArc;
+        let server = StdArc::new(TcpTransport::bind_v6(Ipv6Addr::LOCALHOST, 0).unwrap());
+        let port = match server.local_locator().port {
+            p if p > 0 && p < 65536 => p as u16,
+            _ => panic!("invalid v6 port"),
+        };
+        let dest = Locator::tcp_v6(Ipv6Addr::LOCALHOST.octets(), u32::from(port));
+        // Background accept thread (analogous to accept_one_reads_one_frame_then_eof).
+        let server_for_accept = StdArc::clone(&server);
+        let h = std::thread::spawn(move || {
+            let _ = server_for_accept.accept_one();
+        });
+        // Client: bind its own v6 listener (for peers-pool symmetry) and send.
+        let client = TcpTransport::bind_v6(Ipv6Addr::LOCALHOST, 0).unwrap();
+        Transport::send(&client, &dest, b"hello-v6-tcp").expect("send v6");
+        // accept-thread join: reads 1 frame and exits on EOF (drop of
+        // the client socket after scope end).
+        drop(client);
+        let _ = h.join();
+        let dg = Transport::recv(&*server).expect("recv v6 frame");
+        assert_eq!(&*dg.data, b"hello-v6-tcp");
+    }
+
+    /// `PeerConn::bump_backoff` follows an exponential ramp with a cap.
     #[test]
     fn peer_conn_bump_backoff_sequence() {
         let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1);
@@ -679,8 +753,8 @@ mod tests {
         assert_eq!(p.backoff_ms, MAX_BACKOFF_MS);
     }
 
-    /// `ensure_connected` erzwingt Backoff-Throttle, sofern das
-    /// `last_attempt`-Fenster noch laeuft (WouldBlock-Pfad).
+    /// `ensure_connected` enforces backoff throttling as long as the
+    /// `last_attempt` window is still running (WouldBlock path).
     #[test]
     fn peer_conn_backoff_throttles_connect() {
         let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1);
@@ -691,8 +765,8 @@ mod tests {
         assert_eq!(err.kind(), std::io::ErrorKind::WouldBlock);
     }
 
-    /// `drop_writer` auf einem frisch konstruierten PeerConn ist Noop
-    /// (kein Writer da — deckt die `if let Some` None-Branch).
+    /// `drop_writer` on a freshly constructed PeerConn is a no-op
+    /// (no writer present — covers the `if let Some` None branch).
     #[test]
     fn peer_conn_drop_writer_noop_without_connection() {
         let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1);
@@ -701,7 +775,7 @@ mod tests {
         assert!(p.writer.is_none());
     }
 
-    /// Debug-Format fuer PeerConn (Coverage der Debug-Impl).
+    /// Debug format for PeerConn (coverage of the Debug impl).
     #[test]
     fn peer_conn_debug_format_works() {
         let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1);
@@ -710,8 +784,8 @@ mod tests {
         assert!(s.contains("PeerConn"));
     }
 
-    /// Display/Debug aller TcpTransportError-Varianten zur Coverage des
-    /// Display-Match (inkl. FrameTooLarge + PeerIo).
+    /// Display/Debug of all TcpTransportError variants for coverage of
+    /// the Display match (incl. FrameTooLarge + PeerIo).
     #[test]
     fn tcp_transport_error_display_all_variants() {
         let bind = TcpTransportError::Bind(std::io::Error::other("x"));
@@ -730,7 +804,7 @@ mod tests {
         }
     }
 
-    /// `locator_to_socket_v4` gibt `WrongKind` fuer UDP zurueck.
+    /// `locator_to_socket_v4` returns `WrongKind` for UDP.
     #[test]
     fn locator_to_socket_v4_rejects_udp() {
         let udp = Locator::udp_v4([127, 0, 0, 1], 7400);
@@ -740,7 +814,7 @@ mod tests {
         ));
     }
 
-    /// `locator_to_socket_v4` mapped TCPv4 auf SocketAddrV4.
+    /// `locator_to_socket_v4` maps TCPv4 to SocketAddrV4.
     #[test]
     fn locator_to_socket_v4_maps_tcp() {
         let tcp = Locator::tcp_v4([10, 0, 0, 1], 7400);
@@ -749,7 +823,7 @@ mod tests {
         assert_eq!(sa.port(), 7400);
     }
 
-    /// `locator_to_socket_v4` lehnt Port > u16::MAX mit `PortOverflow` ab.
+    /// `locator_to_socket_v4` rejects port > u16::MAX with `PortOverflow`.
     #[test]
     fn locator_to_socket_v4_rejects_oversized_port() {
         let bad = Locator::tcp_v4([127, 0, 0, 1], u32::from(u16::MAX) + 1);
@@ -761,21 +835,21 @@ mod tests {
         }
     }
 
-    /// `dropped_frames` startet bei 0.
+    /// `dropped_frames` starts at 0.
     #[test]
     fn dropped_frames_zero_on_fresh_transport() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         assert_eq!(t.dropped_frames(), 0);
     }
 
-    /// local_locator() inherent und Trait liefern denselben Wert.
+    /// local_locator() inherent and trait return the same value.
     #[test]
     fn local_locator_inherent_and_trait_match() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         assert_eq!(t.local_locator(), Transport::local_locator(&t));
     }
 
-    /// Push haelt FIFO-Order fuer alle Frames unter der Queue-Cap.
+    /// Push keeps FIFO order for all frames below the queue cap.
     #[test]
     fn push_preserves_fifo_order() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
@@ -792,7 +866,7 @@ mod tests {
         assert!(matches!(t.try_recv(), Err(RecvError::Timeout)));
     }
 
-    /// send mit PortOverflow-Locator → SendError::Io.
+    /// send with a PortOverflow locator → SendError::Io.
     #[test]
     fn send_port_overflow_returns_io_error() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
@@ -801,8 +875,8 @@ mod tests {
         assert!(matches!(err, SendError::Io { .. }));
     }
 
-    /// send via UDP-Locator darf keinen Pool-Entry anlegen
-    /// (UnsupportedLocator wird vor dem Pool-Lookup geworfen).
+    /// send via a UDP locator must not create a pool entry
+    /// (UnsupportedLocator is thrown before the pool lookup).
     #[test]
     fn send_unsupported_locator_does_not_pollute_pool() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
@@ -811,9 +885,9 @@ mod tests {
         assert_eq!(t.peers.lock().unwrap().len(), 0);
     }
 
-    /// `accept_one` auf einem Listener mit geschlossenem Client liefert
-    /// bei EOF nach dem ersten Frame `Ok(())` (Happy-Path durch read_frame-
-    /// Schleife + UnexpectedEof-Branch).
+    /// `accept_one` on a listener with a closed client returns `Ok(())`
+    /// on EOF after the first frame (happy path through the read_frame
+    /// loop + UnexpectedEof branch).
     #[test]
     fn accept_one_reads_one_frame_then_eof() {
         use std::io::Write;
@@ -824,10 +898,10 @@ mod tests {
 
         let h = thread::spawn(move || {
             let mut s = TcpStream::connect(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)).unwrap();
-            // Handshake absolvieren, damit accept_one den Peer als
-            // ZeroDDS-TCP-Peer akzeptiert.
+            // Complete the handshake so accept_one accepts the peer as
+            // a ZeroDDS TCP peer.
             crate::handshake::client_handshake(&mut s, 0).unwrap();
-            // Ein valides length-prefixed Frame (BE length + payload).
+            // A valid length-prefixed frame (BE length + payload).
             let payload = b"abc";
             let len = u32::try_from(payload.len()).unwrap();
             s.write_all(&len.to_be_bytes()).unwrap();
@@ -841,8 +915,8 @@ mod tests {
         h.join().unwrap();
     }
 
-    /// `accept_one` mit Peer, der ein Frame groesser als Cap ankuendigt,
-    /// liefert `FrameTooLarge`.
+    /// `accept_one` with a peer that announces a frame larger than the
+    /// cap returns `FrameTooLarge`.
     #[test]
     fn accept_one_frame_too_large_errors() {
         use std::io::Write;
@@ -864,8 +938,8 @@ mod tests {
         h.join().unwrap();
     }
 
-    /// `accept_one` mit Peer, der **keinen** Handshake schickt (z.B.
-    /// kaputter HTTP-Probe), lehnt ab mit `TcpTransportError::Handshake`.
+    /// `accept_one` with a peer that sends **no** handshake (e.g. a
+    /// broken HTTP probe) rejects with `TcpTransportError::Handshake`.
     #[test]
     fn accept_one_rejects_peer_without_handshake() {
         use std::io::Write;
@@ -876,7 +950,7 @@ mod tests {
 
         let h = thread::spawn(move || {
             let mut s = TcpStream::connect(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)).unwrap();
-            // Spricht wie HTTP — falsche Magic-Bytes.
+            // Speaks like HTTP — wrong magic bytes.
             let _ = s.write_all(b"GET / HTTP/1.1\r\n\r\n12345");
             let _ = s.shutdown(std::net::Shutdown::Both);
         });
@@ -886,8 +960,8 @@ mod tests {
         h.join().unwrap();
     }
 
-    /// Nach erfolgreichem Connect muss `backoff_ms` auf 0 fallen.
-    /// Indirekt messen: zwei Sends auf Port, der erst down, dann up ist.
+    /// After a successful connect, `backoff_ms` must fall to 0.
+    /// Measure indirectly: two sends to a port that is first down, then up.
     #[test]
     fn backoff_resets_after_successful_connect() {
         use std::thread;
@@ -907,7 +981,7 @@ mod tests {
 
         thread::sleep(StdDuration::from_millis(INITIAL_BACKOFF_MS + 30));
         let Ok(server) = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, server_port) else {
-            // Port wurde vom OS zwischenzeitlich neu belegt → soft-skip.
+            // The OS reassigned the port in the meantime → soft-skip.
             return;
         };
         let h = thread::spawn(move || {
@@ -917,9 +991,9 @@ mod tests {
 
         let e2 = Transport::send(&client, &dest, b"b");
         assert!(e2.is_ok(), "send after server up failed: {e2:?}");
-        // Backoff muss auf 0 zurueck sein: direkter Blick auf PeerConn.
+        // Backoff must be back to 0: a direct look at PeerConn.
         let pool = client.peers.lock().unwrap();
-        let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, server_port);
+        let addr: SocketAddr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, server_port).into();
         let arc = pool.get(&addr).expect("peer present after success");
         let conn = arc.lock().unwrap();
         assert_eq!(conn.backoff_ms, 0);
@@ -930,23 +1004,23 @@ mod tests {
         h.join().unwrap();
     }
 
-    /// Nicht-einklagbarer Pfad: ein PeerConn mit gesetztem backoff_ms=0
-    /// haelt keinen Timer ein → `ensure_connected` versucht direkt connect.
-    /// Wir erwarten einen `io::Error` (Ziel auf Port 1).
+    /// Non-throttled path: a PeerConn with backoff_ms=0 set holds no
+    /// timer → `ensure_connected` tries to connect directly. We expect
+    /// an `io::Error` (target on port 1).
     #[test]
     fn ensure_connected_no_backoff_does_not_throttle() {
         let mut p = PeerConn::new(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1));
         assert_eq!(p.backoff_ms, 0);
-        // Direkte connect-Attempt auf Port 1 → Err, aber NICHT WouldBlock.
+        // Direct connect attempt on port 1 → Err, but NOT WouldBlock.
         let err = p.ensure_connected().unwrap_err();
         assert_ne!(err.kind(), std::io::ErrorKind::WouldBlock);
-        // Nach fehlgeschlagenem connect steigt backoff auf INITIAL_BACKOFF_MS.
+        // After a failed connect, backoff rises to INITIAL_BACKOFF_MS.
         assert_eq!(p.backoff_ms, INITIAL_BACKOFF_MS);
     }
 
-    /// `Transport::send` mit Payload > MAX_FRAME_SIZE → `PayloadTooLarge`
-    /// vom darunterliegenden write_frame (deckt den `FrameTooLarge`-Pfad
-    /// im send-Match).
+    /// `Transport::send` with a payload > MAX_FRAME_SIZE → `PayloadTooLarge`
+    /// from the underlying write_frame (covers the `FrameTooLarge` path
+    /// in the send match).
     #[test]
     fn send_oversized_payload_returns_payload_too_large() {
         use std::io::Write;
@@ -954,7 +1028,7 @@ mod tests {
 
         let server = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         let port = u16::try_from(server.local_locator().port).unwrap();
-        // Server-Thread liest einfach durch, bis Client closed.
+        // Server thread just reads through until the client closes.
         let h = thread::spawn(move || {
             let _ = server.accept_one();
         });
@@ -970,8 +1044,8 @@ mod tests {
                 assert_eq!(limit, crate::framing::MAX_FRAME_SIZE as usize);
             }
             other => {
-                // Platform kann je nach Timing Io statt PayloadTooLarge liefern;
-                // akzeptiere beides als Abdeckung des Fehler-Zweigs.
+                // Depending on timing the platform may return Io instead of
+                // PayloadTooLarge; accept both as coverage of the error branch.
                 assert!(
                     matches!(other, SendError::Io { .. }),
                     "unexpected: {other:?}"
@@ -979,23 +1053,23 @@ mod tests {
             }
         }
         drop(client);
-        // Writer ist egal fuer den Server; join blockt bis EOF kommt.
-        // Falls Payload zu gross sofort scheitert, wurde der TCP-Socket
-        // nichtmal angeschrieben → Server sitzt auf EOF.
+        // The writer is irrelevant for the server; join blocks until EOF
+        // arrives. If the payload fails immediately for being too large,
+        // the TCP socket was never even written → the server sits on EOF.
         let _ = std::io::sink().write_all(b"tickle"); // no-op, satisfies formatter
         h.join().unwrap();
     }
 
-    /// Wenn ein Peer mitten im Header-Read abbricht (TCP-RST via
-    /// linger=0 + shutdown), liefert `read_frame` den Io-Pfad. Wir koennen
-    /// auf macOS keinen deterministischen ECONNRESET erzwingen, daher
-    /// dokumentieren wir das als bekannt unbabdeckten Zweig.
-    /// (Test-Stummel haelt den Aufrufer grün.)
+    /// When a peer aborts mid header-read (TCP RST via linger=0 +
+    /// shutdown), `read_frame` returns the Io path. We cannot force a
+    /// deterministic ECONNRESET on macOS, so we document this as a
+    /// known uncovered branch.
+    /// (The test stub keeps the caller green.)
     #[test]
     fn peer_io_error_branch_documented() {
-        // Keine Assertion — das ist ein Marker-Test.
-        // Der PeerIo-Zweig ist via BufReader::read_exact nur sichtbar,
-        // wenn das OS einen IO-Fehler anstelle eines EOF liefert. Auf
-        // Linux/macOS verhaelt sich TCP nach shutdown() bestimmt als EOF.
+        // No assertion — this is a marker test.
+        // The PeerIo branch is only visible via BufReader::read_exact
+        // when the OS returns an IO error instead of an EOF. On
+        // Linux/macOS, TCP after shutdown() reliably behaves as EOF.
     }
 }

@@ -5,72 +5,72 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 /**
- * XCDR2-Encoder fuer Sprach-Bindings.
+ * XCDR2 encoder for language bindings.
  *
- * <p>Implementiert OMG XTypes 1.3 §7.4 (XCDR Version 2) byte-genau:
+ * <p>Implements OMG XTypes 1.3 §7.4 (XCDR version 2) byte-exact:
  * <ul>
- *   <li>§7.4.1.5: Padding/Alignment relativ zum Buffer-Start
- *       (natuerliche Alignment bis 8 fuer 8-byte-Primitive).</li>
- *   <li>§7.4.4.4: DHEADER fuer DELIMITED_CDR2 (Appendable).</li>
- *   <li>§7.4.3.4.5: EMHEADER fuer PL_CDR2 (Mutable).</li>
- *   <li>§7.4.4.6: String mit {@code uint32 length+1} + UTF-8 + NUL.</li>
+ *   <li>§7.4.1.5: padding/alignment relative to the buffer start
+ *       (natural alignment up to 8 for 8-byte primitives).</li>
+ *   <li>§7.4.4.4: DHEADER for DELIMITED_CDR2 (Appendable).</li>
+ *   <li>§7.4.3.4.5: EMHEADER for PL_CDR2 (Mutable).</li>
+ *   <li>§7.4.4.6: string with {@code uint32 length+1} + UTF-8 + NUL.</li>
  * </ul>
  *
- * <p>Spec-Anker: zerodds-xcdr2-bindings-conformance-1.0 §3,
+ * <p>Spec anchors: zerodds-xcdr2-bindings-conformance-1.0 §3,
  * zerodds-xcdr2-java-1.0 §3.
  *
- * <p>Default-Endianness ist Little-Endian (Wire-Default per
- * Conformance-Spec §3). Big-Endian wird ausschliesslich fuer
- * Key-Hash-Berechnung (XTypes §7.6.8) genutzt.
+ * <p>The default endianness is little-endian (wire default per
+ * Conformance spec §3). Big-endian is used exclusively for
+ * key-hash computation (XTypes §7.6.8).
  */
 public final class Xcdr2Writer {
 
-    /** Initial-Kapazitaet (waechst bei Bedarf). */
+    /** Initial capacity (grows as needed). */
     private static final int INITIAL_CAPACITY = 64;
 
     private byte[] buf;
     private int pos;
     private final EndianMode endian;
 
-    /** Konstruiert einen Writer mit Default-Kapazitaet. */
+    /** Constructs a writer with default capacity. */
     public Xcdr2Writer() {
         this(EndianMode.LITTLE_ENDIAN);
     }
 
-    /** Konstruiert einen Writer mit gegebener Endianness. */
+    /** Constructs a writer with a given endianness. */
     public Xcdr2Writer(EndianMode endian) {
         this.buf = new byte[INITIAL_CAPACITY];
         this.pos = 0;
         this.endian = endian;
     }
 
-    /** Aktuelle Schreibposition (Anzahl bisher geschriebener Bytes). */
+    /** Current write position (number of bytes written so far). */
     public int position() {
         return pos;
     }
 
-    /** Liefert die geschriebenen Bytes als Kopie. */
+    /** Returns the written bytes as a copy. */
     public byte[] toByteArray() {
         return Arrays.copyOf(buf, pos);
     }
 
     // ------------------------------------------------------------------
-    // Primitive-Writer
+    // Primitive writers
     // ------------------------------------------------------------------
 
-    /** Boolean: 1 Byte (0x00 oder 0x01). */
+    /** Boolean: 1 byte (0x00 or 0x01). */
     public void writeBoolean(boolean v) {
         ensure(1);
         buf[pos++] = (byte) (v ? 1 : 0);
     }
 
-    /** Octet: 1 Byte (vorzeichenfrei am IDL-Layer; Java {@code byte} hat Vorzeichen). */
+    /** Octet: 1 byte (unsigned at the IDL layer; Java {@code byte} is signed). */
     public void writeOctet(byte v) {
         ensure(1);
         buf[pos++] = v;
     }
 
-    /** uint8 mit Range-Check (Java has no unsigned). */
+    /** uint8 with range check (Java has no unsigned). */
     public void writeUInt8(int v) {
         if (v < 0 || v > 0xFF) {
             throw new XcdrException("uint8 out of range: " + v);
@@ -79,7 +79,7 @@ public final class Xcdr2Writer {
         buf[pos++] = (byte) v;
     }
 
-    /** Char: 1 Byte (ASCII; non-ASCII wirft). */
+    /** Char: 1 byte (ASCII; non-ASCII throws). */
     public void writeChar(char v) {
         if (v > 0x7F) {
             throw new XcdrException("char out of ASCII range: 0x" + Integer.toHexString(v));
@@ -87,7 +87,7 @@ public final class Xcdr2Writer {
         writeUInt8(v);
     }
 
-    /** Wchar: 2 Bytes UTF-16 LE (Endian-Flip bei BE). */
+    /** Wchar: 2 bytes UTF-16 LE (endian flip on BE). */
     public void writeWChar(char v) {
         align(2);
         writeShortRaw((short) v);
@@ -99,7 +99,7 @@ public final class Xcdr2Writer {
         writeShortRaw(v);
     }
 
-    /** UInt16 (als int passed; Range-Check). */
+    /** UInt16 (passed as int; range check). */
     public void writeUInt16(int v) {
         if (v < 0 || v > 0xFFFF) {
             throw new XcdrException("uint16 out of range: " + v);
@@ -113,7 +113,7 @@ public final class Xcdr2Writer {
         writeIntRaw(v);
     }
 
-    /** UInt32 (als long; Range-Check). */
+    /** UInt32 (as long; range check). */
     public void writeUInt32(long v) {
         if (v < 0 || v > 0xFFFF_FFFFL) {
             throw new XcdrException("uint32 out of range: " + v);
@@ -127,7 +127,7 @@ public final class Xcdr2Writer {
         writeLongRaw(v);
     }
 
-    /** UInt64 (Two's-Complement; alle long-Werte erlaubt). */
+    /** UInt64 (two's complement; all long values allowed). */
     public void writeUInt64(long v) {
         writeInt64(v);
     }
@@ -162,8 +162,8 @@ public final class Xcdr2Writer {
 
     /**
      * WString: {@code uint32 length} + UTF-16-LE Code-Units (XTypes
-     * §7.4.4.6 / Spec-Erratum §9.1). Length zaehlt Code-Units, NICHT
-     * Bytes; kein NUL.
+     * §7.4.4.6 / spec erratum §9.1). Length counts code units, NOT
+     * bytes; no NUL.
      */
     public void writeWString(String s) {
         if (s == null) {
@@ -177,7 +177,7 @@ public final class Xcdr2Writer {
         }
     }
 
-    /** Bytes ohne Alignment kopieren (z.B. raw payload). */
+    /** Copy bytes without alignment (e.g. raw payload). */
     public void writeBytes(byte[] data) {
         ensure(data.length);
         System.arraycopy(data, 0, buf, pos, data.length);
@@ -185,10 +185,10 @@ public final class Xcdr2Writer {
     }
 
     // ------------------------------------------------------------------
-    // Sequence-Helpers
+    // Sequence helpers
     // ------------------------------------------------------------------
 
-    /** Schreibt sequence-count + delegiert die Element-Encodierung an den Caller. */
+    /** Writes the sequence count + delegates element encoding to the caller. */
     public void writeSequenceCount(int count) {
         if (count < 0) {
             throw new XcdrException("sequence count negative: " + count);
@@ -197,32 +197,32 @@ public final class Xcdr2Writer {
     }
 
     // ------------------------------------------------------------------
-    // Extensibility-Frames
+    // Extensibility frames
     // ------------------------------------------------------------------
 
     /**
-     * Beginnt einen Appendable-Block: reserviert 4 Bytes fuer DHEADER
-     * und liefert die Position (zum spaeteren {@link
-     * #endDelimited(int)}-Aufruf).
+     * Begins an appendable block: reserves 4 bytes for the DHEADER
+     * and returns the position (for the later {@link
+     * #endDelimited(int)} call).
      *
-     * <p>XTypes §7.4.4.4: DHEADER ist {@code uint32} (Endianness wie
-     * Body), Wert = Anzahl Bytes nach DHEADER bis Block-Ende.
+     * <p>XTypes §7.4.4.4: DHEADER is {@code uint32} (endianness like the
+     * body), value = number of bytes after the DHEADER until block end.
      */
     public int beginAppendable() {
         align(4);
         int dhdrPos = pos;
         ensure(4);
-        // Platzhalter — wird in endDelimited gepatcht.
+        // Placeholder — patched in endDelimited.
         writeIntRaw(0);
         return dhdrPos;
     }
 
-    /** Identisch zu {@link #beginAppendable} — Mutable nutzt selben DHEADER-Mechanismus. */
+    /** Identical to {@link #beginAppendable} — Mutable uses the same DHEADER mechanism. */
     public int beginMutable() {
         return beginAppendable();
     }
 
-    /** Schliesst einen Appendable/Mutable-Block: patcht DHEADER mit Body-Size. */
+    /** Closes an appendable/mutable block: patches the DHEADER with the body size. */
     public void endDelimited(int dhdrPos) {
         int bodySize = pos - dhdrPos - 4;
         patchInt32At(dhdrPos, bodySize);
@@ -232,7 +232,7 @@ public final class Xcdr2Writer {
     // EMHEADER (PL_CDR2 / Mutable)
     // ------------------------------------------------------------------
 
-    /** Length-Code-Konstanten gemaess XTypes §7.4.3.4.5. */
+    /** Length-code constants per XTypes §7.4.3.4.5. */
     public static final int LC_BYTE = 0;        // 1-byte member
     public static final int LC_SHORT = 1;       // 2-byte member
     public static final int LC_INT32 = 2;       // 4-byte member
@@ -245,8 +245,8 @@ public final class Xcdr2Writer {
     /**
      * EMHEADER = M-Bit (must-understand) + LC (3 bits) + ID (28 bits).
      *
-     * <p>Auf der Wire ist EMHEADER ein {@code uint32} in
-     * Body-Endianness (XTypes §7.4.3.4.5).
+     * <p>On the wire EMHEADER is a {@code uint32} in
+     * body endianness (XTypes §7.4.3.4.5).
      */
     public void writeEmHeader(int memberId, int lc, boolean mustUnderstand) {
         if (memberId < 0 || memberId > 0x0FFF_FFFF) {
@@ -265,7 +265,7 @@ public final class Xcdr2Writer {
     }
 
     /**
-     * NEXTINT (4 Byte uint32) — Member-Size-Hint fuer LC>=4.
+     * NEXTINT (4 byte uint32) — member size hint for LC>=4.
      */
     public void writeNextInt(int size) {
         if (size < 0) {
@@ -276,10 +276,10 @@ public final class Xcdr2Writer {
     }
 
     // ------------------------------------------------------------------
-    // Optional present-byte (fuer Final/Appendable, NICHT Mutable)
+    // Optional present-byte (for Final/Appendable, NOT Mutable)
     // ------------------------------------------------------------------
 
-    /** Schreibt das Presence-Flag-Byte fuer @optional in Final/Appendable. */
+    /** Writes the presence-flag byte for @optional in Final/Appendable. */
     public void writePresenceFlag(boolean present) {
         writeBoolean(present);
     }
@@ -289,7 +289,7 @@ public final class Xcdr2Writer {
     // ------------------------------------------------------------------
 
     /**
-     * Padding-Insertion gemaess XTypes §7.4.1.5 (relativ zum
+     * Padding insertion per XTypes §7.4.1.5 (relative to the
      * Buffer-Start). Boundary {@code 1, 2, 4, 8}.
      */
     public void align(int boundary) {

@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! ConnectorBean — JEE-EJB-Lifecycle-Mapping zu CCM `ComponentExecutor`.
+//! ConnectorBean — JEE EJB lifecycle mapping to CCM `ComponentExecutor`.
 //!
-//! JEE-Container ruft auf:
+//! The JEE container calls:
 //!
 //! * `@PostConstruct` → CCM `ccm_activate`
 //! * `@PreDestroy` → CCM `ccm_passivate` + `ccm_remove`
-//! * `@Resource` (Injection) → CCM `set_context`
+//! * `@Resource` (injection) → CCM `set_context`
 //!
-//! Spec-Refs: CCM 4.0 §6.6 (Executor-Lifecycle), JSR 318 EJB 3.1
-//! §4.7 (Bean-Lifecycle-Callbacks).
+//! Spec refs: CCM 4.0 §6.6 (executor lifecycle), JSR 318 EJB 3.1
+//! §4.7 (bean lifecycle callbacks).
 
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Lifecycle-Phase. Spec CCM §6.6.
+/// Lifecycle phase. Spec CCM §6.6.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LifecyclePhase {
     /// `@PostConstruct` → `set_context` + `ccm_activate`.
@@ -29,22 +29,22 @@ pub enum LifecyclePhase {
     PostActivate,
 }
 
-/// Hook fuer eine Lifecycle-Phase. Caller-Layer (z.B. EJB-Container)
-/// invoket diese.
+/// Hook for a lifecycle phase. The caller layer (e.g. EJB container)
+/// invokes it.
 pub trait LifecycleCallback {
-    /// Wird vom Container gerufen, wenn die Phase eintritt.
+    /// Called by the container when the phase is entered.
     ///
     /// # Errors
-    /// Static-String wenn die Phase nicht abgeschlossen werden kann.
+    /// Static string if the phase cannot be completed.
     fn on_phase(&mut self, phase: LifecyclePhase) -> Result<(), &'static str>;
 }
 
-/// ConnectorBean — kapselt einen CCM-ComponentExecutor mit JEE-
-/// Lifecycle-Annotations.
+/// ConnectorBean — wraps a CCM `ComponentExecutor` with JEE lifecycle
+/// annotations.
 pub struct ConnectorBean {
-    /// Bean-Name (typisch `<Component>Bean`).
+    /// Bean name (typically `<Component>Bean`).
     pub name: String,
-    /// Component-Repository-ID (Spec CCM §6.2.6.1).
+    /// Component repository ID (Spec CCM §6.2.6.1).
     pub component_id: String,
     callback: Box<dyn LifecycleCallback + Send>,
     history: Vec<LifecyclePhase>,
@@ -61,7 +61,7 @@ impl core::fmt::Debug for ConnectorBean {
 }
 
 impl ConnectorBean {
-    /// Konstruktor.
+    /// Constructor.
     pub fn new<C>(name: String, component_id: String, callback: C) -> Self
     where
         C: LifecycleCallback + Send + 'static,
@@ -74,17 +74,17 @@ impl ConnectorBean {
         }
     }
 
-    /// Triggers die Lifecycle-Phase und protokolliert sie.
+    /// Triggers the lifecycle phase and records it.
     ///
     /// # Errors
-    /// Wenn der Callback fehlschlaegt.
+    /// If the callback fails.
     pub fn enter_phase(&mut self, phase: LifecyclePhase) -> Result<(), &'static str> {
         self.callback.on_phase(phase)?;
         self.history.push(phase);
         Ok(())
     }
 
-    /// Liste der absolvierten Phasen (in Aufruf-Reihenfolge).
+    /// List of completed phases (in invocation order).
     #[must_use]
     pub fn history(&self) -> &[LifecyclePhase] {
         &self.history
@@ -95,13 +95,13 @@ impl ConnectorBean {
 // CCM 4.0 §2 CP6 — PSS-Session-Bind-Helper.
 // ---------------------------------------------------------------------------
 
-/// Spec CCM 4.0 §2 CP6 — bindet eine PSS-Session an einen
-/// ConnectorBean. Liefert das Tupel `(bean.name, bean.component_id)`
-/// als Bind-Identifier zusammen mit dem aktuellen Tx-Status der
-/// PSS-Session (CP6 verlangt PSS-Lifecycle gekoppelt an Bean-
-/// Lifecycle).
+/// Spec CCM 4.0 §2 CP6 — binds a PSS session to a ConnectorBean.
+/// Returns the tuple `(bean.name, bean.component_id)` as the bind
+/// identifier together with the current Tx status of the PSS session
+/// (CP6 requires the PSS lifecycle to be coupled to the bean
+/// lifecycle).
 ///
-/// Cross-Ref `corba-ccm::pss::PssSession::tx_status`.
+/// Cross-ref `corba-ccm::pss::PssSession::tx_status`.
 #[cfg(feature = "std")]
 pub fn pss_session_for_bean<'b>(
     bean: &'b ConnectorBean,
@@ -114,7 +114,7 @@ pub fn pss_session_for_bean<'b>(
     }
 }
 
-/// Spec CCM 4.0 §2 CP6 — Ergebnis von [`pss_session_for_bean`].
+/// Spec CCM 4.0 §2 CP6 — result of [`pss_session_for_bean`].
 #[cfg(feature = "std")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PssBeanBinding<'b> {
@@ -122,7 +122,7 @@ pub struct PssBeanBinding<'b> {
     pub bean_name: &'b str,
     /// `ConnectorBean::component_id`.
     pub component_id: &'b str,
-    /// Aktueller PSS-Tx-Status zum Bind-Zeitpunkt.
+    /// Current PSS Tx status at bind time.
     pub tx_status: zerodds_corba_ccm::pss::PssTxStatus,
 }
 
@@ -201,7 +201,7 @@ mod tests {
         assert_eq!(binding.component_id, "IDL:demo/Echo:1.0");
         assert_eq!(binding.tx_status, PssTxStatus::NoTransaction);
 
-        // Bei aktiver Tx ist das Binding entsprechend markiert.
+        // With an active Tx the binding is marked accordingly.
         let _tx = pss.begin_transaction().expect("begin");
         let active_binding = pss_session_for_bean(&bean, &pss);
         assert_eq!(active_binding.tx_status, PssTxStatus::Active);

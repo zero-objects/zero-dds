@@ -1,41 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Fehler-Typen fuer den IDL → C#-Codegen.
+//! Error types for the IDL → C# codegen.
 
 use core::fmt;
 
-/// Top-Level-Fehler des C#-Code-Generators.
+/// Top-level error of the C# code generator.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CsGenError {
-    /// IDL-Konstrukt ist im aktuellen Foundation-Scope (C5.3-a) nicht
-    /// unterstuetzt. `construct` ist eine kurze Bezeichnung (z.B.
+    /// The IDL construct is not supported in the current foundation
+    /// scope (C5.3-a). `construct` is a short label (e.g.
     /// `"interface"`, `"valuetype"`, `"fixed"`, `"any"`, `"map"`,
     /// `"bitset"`, `"bitmask"`).
     UnsupportedConstruct {
-        /// Name des nicht-unterstuetzten Konstrukts.
+        /// Name of the unsupported construct.
         construct: String,
-        /// Optional: Identifier-Name (Type-Name oder Member-Name).
+        /// Optional: identifier name (type name or member name).
         context: Option<String>,
     },
-    /// Identifier kollidiert mit einem reservierten C#-Keyword.
-    /// Anders als bei C++ wird in C# nicht abgelehnt, sondern mit
-    /// `@`-Prefix escaped (Spec-Verhalten, §6 IDL4-CS-Mapping).
-    /// Dieser Fehler tritt nur auf, wenn der Name selbst nach Escape
-    /// noch ungueltig waere (leerer String, doppelter `@`, ...).
+    /// Identifier collides with a reserved C# keyword.
+    /// Unlike C++, C# does not reject but escapes with an
+    /// `@` prefix (spec behavior, §6 IDL4-CS mapping).
+    /// This error only occurs if the name itself would still be
+    /// invalid after escaping (empty string, double `@`, ...).
     InvalidName {
-        /// Der unzulaessige Identifier.
+        /// The invalid identifier.
         name: String,
-        /// Grund der Ablehnung.
+        /// Reason for the rejection.
         reason: String,
     },
-    /// Inheritance-Cycle im Struct-Graphen (Self-Reference oder
-    /// indirekte Schleife). Wird vor der Emission erkannt.
+    /// Inheritance cycle in the struct graph (self-reference or
+    /// indirect loop). Detected before emission.
     InheritanceCycle {
-        /// Beteiligter Type-Name am Cycle.
+        /// Type name involved in the cycle.
         type_name: String,
     },
-    /// Generierter Output ist intern inkonsistent (sollte nicht
-    /// auftreten — Bug-Indikator).
+    /// The generated output is internally inconsistent (should not
+    /// happen — bug indicator).
     Internal(String),
 }
 

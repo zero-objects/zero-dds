@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Spec §7.2.3 / §8.1.2 / §8.1.3 — AMQP-Bindings für IDL-Types in TypeScript.
+//! Spec §7.2.3 / §8.1.2 / §8.1.3 — AMQP bindings for IDL types in TypeScript.
 //!
-//! Hängt am Ende der generierten `.ts`-Datei eine Sektion mit
-//! `toAmqpValue<TypeName>(v)` und `toJsonString<TypeName>(v)` an.
+//! Appends a section with `toAmqpValue<TypeName>(v)` and
+//! `toJsonString<TypeName>(v)` to the end of the generated `.ts` file.
 //!
-//! # Runtime-Surface
+//! # Runtime surface
 //!
-//! Die emittierten Calls erwarten ein TypeScript-Runtime-Modul
-//! `@zerodds/amqp/codec` (separates Library-Crate). API-Skizze:
+//! The emitted calls expect a TypeScript runtime module
+//! `@zerodds/amqp/codec` (a separate library crate). API sketch:
 //!
 //! ```ts
 //! export interface Value { /* opaque */ }
@@ -35,7 +35,7 @@
 //! export function makeUnionBody(disc: Value, branch: Value): Value;
 //! export function boolValue(v: boolean): Value;
 //! export function int32Value(v: number): Value;
-//! /* ... weitere Faktories ... */
+//! /* ... more factories ... */
 //! export function toJson(v: Value): string;
 //! ```
 
@@ -50,8 +50,8 @@ use zerodds_idl::ast::{
 
 use crate::{IdlTsError, eval_const_int, typespec_to_ts};
 
-/// Hängt am Ende von `out` einen AMQP-Bindings-Block an, falls die
-/// Spec mindestens einen Top-Level-Struct/Union enthält.
+/// Appends an AMQP bindings block to the end of `out` if the spec
+/// contains at least one top-level struct/union.
 ///
 /// # Errors
 /// `IdlTsError::Unsupported` aus `typespec_to_ts`-Fallthrough.
@@ -305,21 +305,19 @@ fn emit_union_helpers(out: &mut String, scope: &[String], u: &UnionDef) -> Resul
     }
 
     if let Some(c) = default_arm {
-        // Default-Branch: erreicht alle Discriminator-Werte, die nicht
-        // explizit getroffen wurden. `u_` ist hier noch im breiten
-        // Union-Type, daher liest TypeScript `u_.discriminator` ohne
-        // never-Narrowing.
+        // Default branch: reaches all discriminator values not hit
+        // explicitly. `u_` is still in the broad union type here, so
+        // TypeScript reads `u_.discriminator` without never-narrowing.
         let field_name = c.element.declarator.name().text.clone();
         let branch_call = branch_factory_call(&c.element.type_spec, &field_name);
         out.push_str(&format!(
             "    return ddsAmqp.makeUnionBody(ddsAmqp.{disc_factory}((u_ as {{ discriminator: number }}).discriminator), {branch_call});\n",
         ));
     } else {
-        // Kein default-Branch: TypeScript narrowed `u_` zu `never`
-        // nach den exhaustiven case-Checks. Daher kein
-        // `u_.discriminator`-Zugriff im Fallback — wir werfen
-        // stattdessen, was zur Laufzeit "unreachable" bedeutet.
-        // TS-3-Finding 6 (gefixt 2026-05-01).
+        // No default branch: TypeScript narrows `u_` to `never` after
+        // the exhaustive case checks. Hence no `u_.discriminator` access
+        // in the fallback — we throw instead, which at runtime means
+        // "unreachable". TS-3 finding 6 (fixed 2026-05-01).
         out.push_str(
             "    throw new Error(\"toAmqpValue: union value did not match any explicit case\");\n",
         );
@@ -395,7 +393,7 @@ fn primitive_factory(p: PrimitiveType) -> &'static str {
     }
 }
 
-// Re-export für unused-imports-Diagnose im Codepfad.
+// Re-export for the unused-imports diagnostic in the code path.
 const _: fn(&TypeSpec) -> Result<String, IdlTsError> = typespec_to_ts;
 
 #[cfg(test)]
@@ -478,9 +476,9 @@ mod tests {
         assert!(ts.contains("ddsAmqp.makeUnionBody("));
         assert!(ts.contains("ddsAmqp.int32Value(1)"));
         assert!(ts.contains("ddsAmqp.int32Value(2)"));
-        // TS-3-Finding 6 (gefixt 2026-05-01): default-Pfad casted ueber
-        // den weiten Discriminator-Typ, nicht das nach exhaustivem
-        // Narrowing zu `never`-getypten `u_.discriminator`.
+        // TS-3 finding 6 (fixed 2026-05-01): the default path casts via
+        // the broad discriminator type, not the `u_.discriminator` typed
+        // to `never` after exhaustive narrowing.
         assert!(ts.contains("(u_ as { discriminator: number }).discriminator"));
         assert!(ts.contains("ddsAmqp.int32Value(u_.a)"));
         assert!(ts.contains("ddsAmqp.doubleValue(u_.b)"));
@@ -525,10 +523,10 @@ mod tests {
 
     #[test]
     fn union_without_default_emits_unreachable_throw() {
-        // TS-3-Finding 6 (gefixt 2026-05-01): bei fehlendem default-
-        // Branch narrowed TypeScript `u_` zu `never` nach exhaustiver
-        // Case-Behandlung. Der Codegen wirft an dieser Stelle, statt
-        // einen unerreichbaren `u_.discriminator`-Fallback zu erzeugen.
+        // TS-3 finding 6 (fixed 2026-05-01): with a missing default
+        // branch, TypeScript narrows `u_` to `never` after exhaustive
+        // case handling. The codegen throws at this point instead of
+        // producing an unreachable `u_.discriminator` fallback.
         let ts = gen_amqp("union U switch (long) { case 1: long a; };");
         assert!(ts.contains("throw new Error("));
         assert!(ts.contains("union value did not match any explicit case"));

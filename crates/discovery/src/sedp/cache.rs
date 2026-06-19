@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `DiscoveredEndpointsCache` — in-memory cache entdeckter SEDP-
-//! Publications und Subscriptions.
+//! `DiscoveredEndpointsCache` — in-memory cache of discovered SEDP
+//! publications and subscriptions.
 //!
-//! Pro in-flight Participant halten wir separat Pub/Sub-Maps mit
-//! LRU-Eviction bei Ueberlauf eines konfigurierbaren Caps (analog
-//! Fast-DDS `ReaderProxy.resource_limits.max_samples`, Recherche aus
-//! WP 1.2 Review). Eviction **pro Remote-Participant**, nicht global,
-//! damit ein chatty Remote nicht die Discoveries aus anderen
-//! Participants verdraengt.
+//! Per in-flight participant we keep separate pub/sub maps with
+//! LRU eviction on overflow of a configurable cap (analogous to
+//! Fast-DDS `ReaderProxy.resource_limits.max_samples`, from WP 1.2
+//! review research). Eviction **per remote participant**, not global,
+//! so that a chatty remote does not displace the discoveries from other
+//! participants.
 //!
-//! `on_participant_lost(prefix)` wirft alle Endpoints eines
-//! Remote-Participants auf einmal raus — notwendig, wenn SPDP einen
-//! Lease-Timeout erkennt.
+//! `on_participant_lost(prefix)` evicts all endpoints of a remote
+//! participant at once — necessary when SPDP detects a lease timeout.
 
 extern crate alloc;
 use alloc::collections::{BTreeMap, BTreeSet};
@@ -23,18 +22,18 @@ use zerodds_rtps::publication_data::PublicationBuiltinTopicData;
 use zerodds_rtps::subscription_data::SubscriptionBuiltinTopicData;
 use zerodds_rtps::wire_types::{Guid, GuidPrefix};
 
-/// Default-Cap fuer Publications pro Remote-Participant.
+/// Default cap for publications per remote participant.
 pub const DEFAULT_MAX_PUBLICATIONS_PER_PARTICIPANT: usize = 256;
-/// Default-Cap fuer Subscriptions pro Remote-Participant.
+/// Default cap for subscriptions per remote participant.
 pub const DEFAULT_MAX_SUBSCRIPTIONS_PER_PARTICIPANT: usize = 256;
 
-/// Konfiguration (DoS-Caps).
+/// Configuration (DoS caps).
 #[derive(Debug, Clone, Copy)]
 pub struct CacheCaps {
-    /// Max. Publications pro Remote-Participant. Ueberlauf → aelteste
-    /// Publication dieses Participants verworfen (LRU).
+    /// Max. publications per remote participant. Overflow → oldest
+    /// publication of this participant is discarded (LRU).
     pub max_publications_per_participant: usize,
-    /// Max. Subscriptions pro Remote-Participant. Gleiche Semantik.
+    /// Max. subscriptions per remote participant. Same semantics.
     pub max_subscriptions_per_participant: usize,
 }
 
@@ -47,41 +46,40 @@ impl Default for CacheCaps {
     }
 }
 
-/// Eine entdeckte Publication mit Zeitstempel.
+/// A discovered publication with a timestamp.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredPublication {
-    /// Wire-Daten aus der SEDP-DATA-Submessage.
+    /// Wire data from the SEDP DATA submessage.
     pub data: PublicationBuiltinTopicData,
-    /// Zeitpunkt der (letzten) Discovery — Uptime-basiert, fuer LRU.
+    /// Time of the (most recent) discovery — uptime-based, for LRU.
     pub discovered_at: Duration,
 }
 
-/// Eine entdeckte Subscription mit Zeitstempel.
+/// A discovered subscription with a timestamp.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredSubscription {
-    /// Wire-Daten aus der SEDP-DATA-Submessage.
+    /// Wire data from the SEDP DATA submessage.
     pub data: SubscriptionBuiltinTopicData,
-    /// Zeitpunkt der (letzten) Discovery.
+    /// Time of the (most recent) discovery.
     pub discovered_at: Duration,
 }
 
-/// Sekundär-Index pro Remote-Participant, sortiert nach
-/// `discovered_at`. Erlaubt O(log n) Count (`set.len()`) und O(log n)
-/// LRU-Eviction (`set.iter().next()` = aeltester Eintrag). Der Index
-/// muss bei jedem Update auf `publications`/`subscriptions`
-/// synchronisiert werden.
+/// Secondary index per remote participant, sorted by `discovered_at`.
+/// Allows O(log n) count (`set.len()`) and O(log n) LRU eviction
+/// (`set.iter().next()` = oldest entry). The index must be kept in sync
+/// with `publications`/`subscriptions` on every update.
 type PerPrefixIndex = BTreeMap<GuidPrefix, BTreeSet<(Duration, Guid)>>;
 
-/// In-memory Cache fuer SEDP-entdeckte Endpoints.
+/// In-memory cache for SEDP-discovered endpoints.
 #[derive(Debug, Clone, Default)]
 pub struct DiscoveredEndpointsCache {
     publications: BTreeMap<Guid, DiscoveredPublication>,
     subscriptions: BTreeMap<Guid, DiscoveredSubscription>,
-    // F3-Fix: Sekundaer-Indizes fuer O(log n) Count + LRU-Eviction.
-    // Gueltigkeit: fuer jeden Schluessel k in `publications` existiert
-    // genau ein Eintrag `(k-discovered_at, k)` in `pub_index[k.prefix]`.
-    // Selbiges fuer subscriptions/sub_index. Invariante wird in jedem
-    // Insert/Update/Remove-Pfad erhalten.
+    // F3 fix: secondary indices for O(log n) count + LRU eviction.
+    // Validity: for every key k in `publications` there is exactly one
+    // entry `(k-discovered_at, k)` in `pub_index[k.prefix]`. Same for
+    // subscriptions/sub_index. The invariant is maintained in every
+    // insert/update/remove path.
     pub_index: PerPrefixIndex,
     sub_index: PerPrefixIndex,
     caps: CacheCaps,
@@ -89,7 +87,7 @@ pub struct DiscoveredEndpointsCache {
 }
 
 impl DiscoveredEndpointsCache {
-    /// Neu mit den gegebenen Caps.
+    /// New with the given caps.
     #[must_use]
     pub fn new(caps: CacheCaps) -> Self {
         Self {
@@ -102,37 +100,37 @@ impl DiscoveredEndpointsCache {
         }
     }
 
-    /// Anzahl Publications insgesamt.
+    /// Total number of publications.
     #[must_use]
     pub fn publications_len(&self) -> usize {
         self.publications.len()
     }
 
-    /// Anzahl Subscriptions insgesamt.
+    /// Total number of subscriptions.
     #[must_use]
     pub fn subscriptions_len(&self) -> usize {
         self.subscriptions.len()
     }
 
-    /// Anzahl LRU-Evictions seit Start (DoS-Diagnose).
+    /// Number of LRU evictions since start (DoS diagnostics).
     #[must_use]
     pub fn evicted_count(&self) -> u64 {
         self.evicted
     }
 
-    /// Lookup einer Publication per Endpoint-GUID.
+    /// Looks up a publication by endpoint GUID.
     #[must_use]
     pub fn publication(&self, key: Guid) -> Option<&DiscoveredPublication> {
         self.publications.get(&key)
     }
 
-    /// Lookup einer Subscription per Endpoint-GUID.
+    /// Looks up a subscription by endpoint GUID.
     #[must_use]
     pub fn subscription(&self, key: Guid) -> Option<&DiscoveredSubscription> {
         self.subscriptions.get(&key)
     }
 
-    /// Iteriert alle Publications eines Remote-Participants.
+    /// Iterates all publications of a remote participant.
     pub fn publications_for(
         &self,
         prefix: GuidPrefix,
@@ -143,7 +141,7 @@ impl DiscoveredEndpointsCache {
             .map(|(_, p)| p)
     }
 
-    /// Iteriert alle Subscriptions eines Remote-Participants.
+    /// Iterates all subscriptions of a remote participant.
     pub fn subscriptions_for(
         &self,
         prefix: GuidPrefix,
@@ -154,30 +152,30 @@ impl DiscoveredEndpointsCache {
             .map(|(_, p)| p)
     }
 
-    /// Iteriert alle Publications (fuer Matching-Scan).
+    /// Iterates all publications (for the matching scan).
     pub fn publications(&self) -> impl Iterator<Item = &DiscoveredPublication> + '_ {
         self.publications.values()
     }
 
-    /// Iteriert alle Subscriptions.
+    /// Iterates all subscriptions.
     pub fn subscriptions(&self) -> impl Iterator<Item = &DiscoveredSubscription> + '_ {
         self.subscriptions.values()
     }
 
-    /// Insert oder Update einer Publication. Idempotent:
-    /// bei bereits vorhandener GUID wird `data` ueberschrieben und
-    /// `discovered_at` aktualisiert — **keine** Eviction-Runde.
+    /// Insert or update of a publication. Idempotent: for an
+    /// already-present GUID, `data` is overwritten and `discovered_at` is
+    /// updated — **no** eviction round.
     ///
-    /// Bei neuem Insert: wenn die Publications-Zahl dieses Participants
-    /// den Cap erreicht, wird die aelteste Publication desselben
-    /// Participants verworfen (LRU), `evicted_count` inkrementiert.
+    /// On a new insert: if this participant's publication count reaches
+    /// the cap, the oldest publication of the same participant is
+    /// discarded (LRU) and `evicted_count` is incremented.
     ///
-    /// Rueckgabe: `true` = neu eingefuegt, `false` = Update.
+    /// Returns: `true` = newly inserted, `false` = update.
     pub fn insert_publication(&mut self, data: PublicationBuiltinTopicData, now: Duration) -> bool {
         let key = data.key;
         let prefix = key.prefix;
         if let Some(existing) = self.publications.get_mut(&key) {
-            // Update-Pfad: Index auf neuen `discovered_at` nachziehen.
+            // Update path: move the index to the new `discovered_at`.
             let old_entry = (existing.discovered_at, key);
             if let Some(set) = self.pub_index.get_mut(&prefix) {
                 set.remove(&old_entry);
@@ -187,8 +185,8 @@ impl DiscoveredEndpointsCache {
             existing.discovered_at = now;
             return false;
         }
-        // Cap-Check + LRU-Eviction via Sekundaer-Index — O(log n) statt
-        // frueheres O(N) (F3-Fix).
+        // Cap check + LRU eviction via secondary index — O(log n) instead
+        // of the earlier O(N) (F3 fix).
         let set = self.pub_index.entry(prefix).or_default();
         if set.len() >= self.caps.max_publications_per_participant {
             if let Some(&oldest) = set.iter().next() {
@@ -208,7 +206,7 @@ impl DiscoveredEndpointsCache {
         true
     }
 
-    /// Insert oder Update einer Subscription. Semantik analog
+    /// Insert or update of a subscription. Semantics analogous to
     /// [`Self::insert_publication`].
     pub fn insert_subscription(
         &mut self,
@@ -246,8 +244,8 @@ impl DiscoveredEndpointsCache {
         true
     }
 
-    /// Entfernt eine Publication per GUID (z.B. nach expliziter
-    /// Withdrawal-Notification vom Remote).
+    /// Removes a publication by GUID (e.g. after an explicit withdrawal
+    /// notification from the remote).
     pub fn remove_publication(&mut self, key: Guid) -> Option<DiscoveredPublication> {
         let removed = self.publications.remove(&key)?;
         if let Some(set) = self.pub_index.get_mut(&key.prefix) {
@@ -259,7 +257,7 @@ impl DiscoveredEndpointsCache {
         Some(removed)
     }
 
-    /// Entfernt eine Subscription per GUID.
+    /// Removes a subscription by GUID.
     pub fn remove_subscription(&mut self, key: Guid) -> Option<DiscoveredSubscription> {
         let removed = self.subscriptions.remove(&key)?;
         if let Some(set) = self.sub_index.get_mut(&key.prefix) {
@@ -271,13 +269,13 @@ impl DiscoveredEndpointsCache {
         Some(removed)
     }
 
-    /// Entfernt alle Publications und Subscriptions eines Remote-
-    /// Participants. Aufruf z.B. bei SPDP-Lease-Timeout.
+    /// Removes all publications and subscriptions of a remote
+    /// participant. Called e.g. on an SPDP lease timeout.
     ///
-    /// Rueckgabe: (removed_pubs, removed_subs).
+    /// Returns: (removed_pubs, removed_subs).
     pub fn on_participant_lost(&mut self, prefix: GuidPrefix) -> (usize, usize) {
-        // Sekundaer-Index hat die exakte Key-Liste pro prefix — O(k)
-        // statt O(N)-retain.
+        // The secondary index has the exact key list per prefix — O(k)
+        // instead of an O(N) retain.
         let removed_pubs = if let Some(set) = self.pub_index.remove(&prefix) {
             for (_, g) in &set {
                 self.publications.remove(g);
@@ -297,8 +295,8 @@ impl DiscoveredEndpointsCache {
         (removed_pubs, removed_subs)
     }
 
-    /// Findet alle Publications, die zu einem `(topic_name, type_name)`
-    /// passen — fuer Reader-seitiges Matching (T4/T5).
+    /// Finds all publications matching a `(topic_name, type_name)` —
+    /// for reader-side matching (T4/T5).
     pub fn match_publications<'a>(
         &'a self,
         topic: &'a str,
@@ -309,8 +307,8 @@ impl DiscoveredEndpointsCache {
             .filter(move |p| p.data.topic_name == topic && p.data.type_name == type_name)
     }
 
-    /// Findet alle Subscriptions, die zu einem `(topic_name, type_name)`
-    /// passen — fuer Writer-seitiges Matching.
+    /// Finds all subscriptions matching a `(topic_name, type_name)` —
+    /// for writer-side matching.
     pub fn match_subscriptions<'a>(
         &'a self,
         topic: &'a str,
@@ -321,11 +319,26 @@ impl DiscoveredEndpointsCache {
             .filter(move |s| s.data.topic_name == topic && s.data.type_name == type_name)
     }
 
-    /// Sammelt die GUIDs aller Publications (fuer Snapshot-Tests /
-    /// Diagnose).
+    /// Collects the GUIDs of all publications (for snapshot tests /
+    /// diagnostics).
     #[must_use]
     pub fn publication_keys(&self) -> Vec<Guid> {
         self.publications.keys().copied().collect()
+    }
+
+    /// True if any discovered publication OR subscription carries the given
+    /// `topic_name` but a *different* `type_name` — the DDS 1.4 §2.2.4.2.4
+    /// inconsistent-topic condition (same topic, incompatible type). Used by
+    /// the matching path to raise `on_inconsistent_topic`.
+    #[must_use]
+    pub fn topic_name_conflicts(&self, topic: &str, type_name: &str) -> bool {
+        self.publications
+            .values()
+            .any(|p| p.data.topic_name == topic && p.data.type_name != type_name)
+            || self
+                .subscriptions
+                .values()
+                .any(|s| s.data.topic_name == topic && s.data.type_name != type_name)
     }
 }
 
@@ -373,7 +386,22 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         }
+    }
+
+    #[test]
+    fn topic_name_conflicts_detects_type_mismatch() {
+        let mut c = DiscoveredEndpointsCache::default();
+        // pub_data sets type_name = "T" on topic "X".
+        c.insert_publication(pub_data([1; 12], [1, 0, 0], "X"), Duration::ZERO);
+        // Same topic + same type → no conflict.
+        assert!(!c.topic_name_conflicts("X", "T"));
+        // Same topic + different type → inconsistent topic.
+        assert!(c.topic_name_conflicts("X", "U"));
+        // Different topic → no conflict regardless of type.
+        assert!(!c.topic_name_conflicts("Y", "U"));
     }
 
     #[test]
@@ -429,11 +457,11 @@ mod tests {
             max_subscriptions_per_participant: 2,
         };
         let mut c = DiscoveredEndpointsCache::new(caps);
-        // 3 Publications vom gleichen Participant, je 1 Sekunde Abstand.
+        // 3 publications from the same participant, 1 second apart each.
         c.insert_publication(pub_data([1; 12], [1, 0, 0], "A"), Duration::from_secs(1));
         c.insert_publication(pub_data([1; 12], [2, 0, 0], "B"), Duration::from_secs(2));
         c.insert_publication(pub_data([1; 12], [3, 0, 0], "C"), Duration::from_secs(3));
-        // Aelteste (A) raus, B+C drin
+        // Oldest (A) out, B+C in
         assert_eq!(c.publications_len(), 2);
         assert!(c.publication(guid([1; 12], [1, 0, 0])).is_none());
         assert!(c.publication(guid([1; 12], [2, 0, 0])).is_some());
@@ -448,8 +476,8 @@ mod tests {
             ..CacheCaps::default()
         };
         let mut c = DiscoveredEndpointsCache::new(caps);
-        // Pro Participant 1 Publication — insgesamt 3 Participants, also
-        // 3 Publications insgesamt, keine Eviction.
+        // 1 publication per participant — 3 participants total, so
+        // 3 publications total, no eviction.
         c.insert_publication(pub_data([1; 12], [1, 0, 0], "A"), Duration::ZERO);
         c.insert_publication(pub_data([2; 12], [2, 0, 0], "B"), Duration::ZERO);
         c.insert_publication(pub_data([3; 12], [3, 0, 0], "C"), Duration::ZERO);
@@ -528,6 +556,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         };
         c.insert_subscription(sub, Duration::ZERO);
         assert_eq!(c.subscriptions_len(), 1);
@@ -543,7 +573,7 @@ mod tests {
         };
         let mut c = DiscoveredEndpointsCache::new(caps);
         c.insert_publication(pub_data([1; 12], [1, 0, 0], "A"), Duration::from_secs(1));
-        // Reinsert gleicher GUID darf keine Eviction triggern
+        // Reinserting the same GUID must not trigger an eviction
         c.insert_publication(pub_data([1; 12], [1, 0, 0], "B"), Duration::from_secs(2));
         assert_eq!(c.publications_len(), 1);
         assert_eq!(c.evicted_count(), 0, "update must not count as eviction");

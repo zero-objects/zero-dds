@@ -1,39 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Peer-Class-Matching-Engine.
+//! Peer-class matching engine.
 //!
-//! Diese Schicht nimmt die aus dem Governance-XML geparsten
-//! [`PeerClass`]-Regeln und klassifiziert einen Remote-Peer (repraesentiert
-//! durch seine [`PeerCapabilities`]) in die passende Klasse. Die
-//! [`GovernancePolicyEngine`](crate::GovernancePolicyEngine) konsultiert
-//! das Resultat und gibt das entsprechende Protection-Level aus.
+//! This layer takes the [`PeerClass`] rules parsed from the
+//! governance XML and classifies a remote peer (represented
+//! by its [`PeerCapabilities`]) into the matching class. The
+//! [`GovernancePolicyEngine`](crate::GovernancePolicyEngine) consults
+//! the result and emits the corresponding protection level.
 //!
-//! # Matching-Regel
+//! # Matching rule
 //!
-//! * Iteration ueber `domain_rule.peer_classes` in XML-Reihenfolge —
+//! * Iteration over `domain_rule.peer_classes` in XML order —
 //!   **first match wins**.
-//! * Eine Peer-Klasse passt, wenn **alle** gesetzten
-//!   `match_criteria`-Felder erfuellt sind (UND-Verknuepfung):
-//!   * `auth_plugin_class` — exakter String-Vergleich. `""` matcht
-//!     `None` im Peer (Legacy-Peer ohne Plugin).
-//!   * `cert_cn_pattern` — Wildcard-Vergleich via
+//! * A peer class matches if **all** set
+//!   `match_criteria` fields are satisfied (AND combination):
+//!   * `auth_plugin_class` — exact string comparison. `""` matches
+//!     `None` in the peer (legacy peer without a plugin).
+//!   * `cert_cn_pattern` — wildcard comparison via
 //!     [`cn_pattern_match`](zerodds_security_permissions::cn_pattern_match).
-//!     Ein Peer ohne Cert-CN matcht nicht.
-//!   * `suite` — der Peer muss die Suite in seinen
-//!     `supported_suites` listen (CSV-String-Vergleich).
-//!   * `require_ocsp` — `PeerCapabilities::has_valid_cert` muss `true`
-//!     sein.
-//! * Leere `match_criteria` (alle Felder `None`/`false`) matcht
-//!   **jeden** Peer — das ist die Default-/Fallback-Klasse, die
-//!   typischerweise als letzter Eintrag im XML steht.
+//!     A peer without a cert CN does not match.
+//!   * `suite` — the peer must list the suite in its
+//!     `supported_suites` (CSV string comparison).
+//!   * `require_ocsp` — `PeerCapabilities::has_valid_cert` must be `true`.
+//! * Empty `match_criteria` (all fields `None`/`false`) matches
+//!   **every** peer — this is the default/fallback class, which
+//!   typically is the last entry in the XML.
 //!
-//! # Spec-Referenz
+//! # Spec reference
 //!
 //! * `docs/architecture/08_heterogeneous_security.md` §5.
-//! * Plan-DoD §Stufe 8: "Governance-Beispiel mit 4 Peer-Classes
-//!   (Legacy/Fast/Secure/HA) wird korrekt geparst" — `resolve_peer_class`
-//!   ist die Runtime-Verifikation genau dieses Beispiels.
+//! * Plan DoD §stage 8: "governance example with 4 peer classes
+//!   (legacy/fast/secure/HA) is parsed correctly" — `resolve_peer_class`
+//!   is the runtime verification of exactly this example.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -46,9 +45,9 @@ use zerodds_security_pki::SignatureAlgorithm;
 use crate::caps::PeerCapabilities;
 use crate::policy::SuiteHint;
 
-/// Konvertiert einen [`SuiteHint`]-Wert in den String, den
-/// `<match suite="...">` erwartet. Muss konsistent mit
-/// [`crate::caps_wire`] sein.
+/// Converts a [`SuiteHint`] value into the string that
+/// `<match suite="...">` expects. Must be consistent with
+/// [`crate::caps_wire`].
 fn suite_hint_name(s: SuiteHint) -> &'static str {
     match s {
         SuiteHint::Aes128Gcm => "AES_128_GCM",
@@ -57,16 +56,16 @@ fn suite_hint_name(s: SuiteHint) -> &'static str {
     }
 }
 
-/// Prueft ob eine [`PeerClass`] zu den Peer-Capabilities passt.
+/// Checks whether a [`PeerClass`] matches the peer capabilities.
 #[must_use]
 pub fn peer_matches_class(caps: &PeerCapabilities, class: &PeerClass) -> bool {
     let m = &class.match_criteria;
 
     if let Some(expected) = &m.auth_plugin_class {
         match (expected.as_str(), caps.auth_plugin_class.as_deref()) {
-            // Leerer String im XML = Peer ohne Plugin (Legacy).
+            // Empty string in the XML = peer without a plugin (legacy).
             ("", None) => {}
-            // Sonst muss der Peer genau diesen Plugin-Class-String tragen.
+            // Otherwise the peer must carry exactly this plugin-class string.
             (_, Some(actual)) if actual == expected => {}
             _ => return false,
         }
@@ -80,7 +79,7 @@ pub fn peer_matches_class(caps: &PeerCapabilities, class: &PeerClass) -> bool {
     }
 
     if let Some(required) = &m.suite {
-        // Der Peer muss die Suite in `supported_suites` anbieten.
+        // The peer must offer the suite in `supported_suites`.
         let offers_suite = caps
             .supported_suites
             .iter()
@@ -94,34 +93,33 @@ pub fn peer_matches_class(caps: &PeerCapabilities, class: &PeerClass) -> bool {
         return false;
     }
 
-    // delegation_profile-Check passiert in `peer_matches_class_with_delegation`
-    // — der einfache `peer_matches_class` ignoriert das Feld bewusst, damit
-    // die RC1-Tests ihren bisherigen Pfad behalten und Caller, die
-    // Delegation aktiv nutzen wollen, explizit die erweiterte Funktion
-    // aufrufen muessen.
+    // The delegation_profile check happens in `peer_matches_class_with_delegation`
+    // — the plain `peer_matches_class` deliberately ignores the field, so
+    // the RC1 tests keep their existing path and callers that want to
+    // actively use delegation must explicitly call the extended function.
     true
 }
 
-/// Erweiterte Variante von [`peer_matches_class`], die zusaetzlich
-/// `delegation_profile`-Referenzen aufloest.
+/// Extended variant of [`peer_matches_class`] that additionally
+/// resolves `delegation_profile` references.
 ///
-/// Wenn `class.match_criteria.delegation_profile` gesetzt ist:
-/// 1. Der Peer MUSS eine [`DelegationChain`](zerodds_security_pki::DelegationChain)
-///    in seinen Capabilities haben.
-/// 2. Das referenzierte Profile MUSS in `profiles` existieren.
-/// 3. [`validate_chain`] gegen Profile + `now` MUSS Erfolg liefern
-///    (Trust-Anchor, Algorithm, Time, Sig, Depth, Scope).
+/// If `class.match_criteria.delegation_profile` is set:
+/// 1. The peer MUST have a [`DelegationChain`](zerodds_security_pki::DelegationChain)
+///    in its capabilities.
+/// 2. The referenced profile MUST exist in `profiles`.
+/// 3. [`validate_chain`] against the profile + `now` MUST succeed
+///    (trust anchor, algorithm, time, sig, depth, scope).
 ///
-/// `pubkey_resolver` wird an [`validate_chain`] durchgereicht und
-/// liefert PubKeys fuer Sub-Hop-Delegators (>1-Hop-Chains). Bei
-/// 1-Hop-Chain reicht der Trust-Anchor.
+/// `pubkey_resolver` is passed through to [`validate_chain`] and
+/// provides pubkeys for sub-hop delegators (>1-hop chains). For a
+/// 1-hop chain the trust anchor suffices.
 ///
-/// Wenn `delegation_profile` `None` ist, wird der reine
-/// [`peer_matches_class`]-Pfad genutzt — keine Chain-Erwartung.
+/// If `delegation_profile` is `None`, the plain
+/// [`peer_matches_class`] path is used — no chain expectation.
 ///
-/// Output: `Ok(Some(ValidatedChain))` wenn Delegation erfolgreich,
-/// `Ok(None)` wenn Class matched aber ohne Delegation-Path,
-/// `Err(())` wenn Delegation gefordert aber Validation fehlschlaegt.
+/// Output: `Ok(Some(ValidatedChain))` if delegation succeeded,
+/// `Ok(None)` if the class matched but without a delegation path,
+/// `Err(())` if delegation was required but validation fails.
 pub fn peer_matches_class_with_delegation<F>(
     caps: &PeerCapabilities,
     class: &PeerClass,
@@ -136,7 +134,7 @@ where
         return Err("class match criteria failed");
     }
     let Some(profile_name) = &class.match_criteria.delegation_profile else {
-        // Klasse fordert keine Delegation — direkter Pfad ok.
+        // The class requires no delegation — direct path ok.
         return Ok(None);
     };
     let profile = profiles
@@ -151,9 +149,9 @@ where
         .map_err(|_| "delegation chain failed validation")
 }
 
-/// Sucht die erste matchende Peer-Klasse fuer einen Peer. Gibt
-/// `None` zurueck wenn keine Klasse passt — der Caller faellt dann
-/// auf die Domain-Default-Protection zurueck.
+/// Finds the first matching peer class for a peer. Returns
+/// `None` if no class matches — the caller then falls back
+/// to the domain default protection.
 #[must_use]
 pub fn resolve_peer_class<'a>(
     caps: &PeerCapabilities,
@@ -162,8 +160,8 @@ pub fn resolve_peer_class<'a>(
     classes.iter().find(|c| peer_matches_class(caps, c))
 }
 
-/// Extrahiert das Protection-Level einer matchenden Peer-Class.
-/// `None` wenn keine Klasse matched.
+/// Extracts the protection level of a matching peer class.
+/// `None` if no class matched.
 #[must_use]
 pub fn resolve_protection(
     caps: &PeerCapabilities,
@@ -172,11 +170,11 @@ pub fn resolve_protection(
     resolve_peer_class(caps, classes).map(|c| c.protection)
 }
 
-/// Erlaubt-Liste-Check: darf ein Peer einer bestimmten Klasse auf
-/// dem gegebenen Interface kommunizieren?
+/// Allow-list check: may a peer of a given class communicate on
+/// the given interface?
 ///
-/// `peer_class_filter` ist leer → jede Klasse ist erlaubt.
-/// Sonst muss der `class_name` in der Filterliste auftauchen.
+/// `peer_class_filter` is empty → every class is allowed.
+/// Otherwise the `class_name` must appear in the filter list.
 #[must_use]
 pub fn interface_accepts_class(class_name: &str, peer_class_filter: &[String]) -> bool {
     peer_class_filter.is_empty() || peer_class_filter.iter().any(|f| f == class_name)
@@ -244,9 +242,9 @@ mod tests {
     }
 
     fn fast_caps() -> PeerCapabilities {
-        // Fast-Peer: hat Auth-Plugin (sonst wuerde legacy zuerst
-        // matchen wegen leerem auth_plugin_class=""), aber nutzt HMAC-
-        // only + hat einen Cert-CN im .fast.example-Namensraum.
+        // Fast peer: has an auth plugin (otherwise legacy would match
+        // first due to the empty auth_plugin_class=""), but uses HMAC
+        // only + has a cert CN in the .fast.example namespace.
         PeerCapabilities {
             auth_plugin_class: Some("DDS:Auth:PKI-DH:1.2".into()),
             cert_cn: Some("writer1.fast.example".into()),
@@ -289,7 +287,7 @@ mod tests {
     fn secure_caps_need_both_auth_and_suite() {
         assert!(peer_matches_class(&secure_caps(), &secure_class()));
 
-        // Peer mit Auth aber ohne Suite → kein Match.
+        // Peer with auth but without a suite → no match.
         let only_auth = PeerCapabilities {
             auth_plugin_class: Some("DDS:Auth:PKI-DH:1.2".into()),
             supported_suites: alloc::vec![],
@@ -297,7 +295,7 @@ mod tests {
         };
         assert!(!peer_matches_class(&only_auth, &secure_class()));
 
-        // Peer mit Suite aber falschem Plugin → kein Match.
+        // Peer with a suite but the wrong plugin → no match.
         let wrong_auth = PeerCapabilities {
             auth_plugin_class: Some("DDS:Auth:Custom".into()),
             supported_suites: alloc::vec![SuiteHint::Aes128Gcm],
@@ -310,7 +308,7 @@ mod tests {
     fn ha_caps_need_ocsp() {
         assert!(peer_matches_class(&ha_caps(), &ha_class()));
 
-        // Gleiche Caps, aber has_valid_cert=false → kein Match.
+        // Same caps but has_valid_cert=false → no match.
         let no_ocsp = PeerCapabilities {
             has_valid_cert: false,
             ..ha_caps()
@@ -337,7 +335,7 @@ mod tests {
 
     #[test]
     fn legacy_class_rejects_peer_with_plugin() {
-        // auth_plugin_class="" matcht NUR Peers ohne Plugin.
+        // auth_plugin_class="" matches ONLY peers without a plugin.
         let secured = secure_caps();
         assert!(!peer_matches_class(&secured, &legacy_class()));
     }
@@ -368,8 +366,8 @@ mod tests {
 
     #[test]
     fn resolve_peer_class_no_match_returns_none() {
-        // Caps mit ausschliesslich cert_cn der weder fast noch ha
-        // matcht, kein Plugin, keine Suite.
+        // Caps with only a cert_cn that matches neither fast nor ha,
+        // no plugin, no suite.
         let caps = PeerCapabilities {
             cert_cn: Some("misc.corp".into()),
             ..Default::default()
@@ -444,7 +442,7 @@ mod tests {
             name: "delegated-edge".into(),
             protection: ProtectionKind::Encrypt,
             match_criteria: PeerClassMatch {
-                auth_plugin_class: Some(String::new()), // edge ohne eigenes plugin
+                auth_plugin_class: Some(String::new()), // edge without its own plugin
                 delegation_profile: Some(profile_name.into()),
                 ..Default::default()
             },
@@ -525,7 +523,7 @@ mod tests {
         let gw = [0xAA; 16];
         let edge = [0xBB; 16];
         let (chain, _pk_correct) = make_chain_signed_by(gw, edge, &["sensor/*"]);
-        // Anchor mit falschem PubKey → Validation fehlschlaegt.
+        // Anchor with the wrong pubkey → validation fails.
         let mut profiles = BTreeMap::new();
         profiles.insert(
             "vehicle-edges".to_string(),
@@ -551,7 +549,7 @@ mod tests {
 
     #[test]
     fn class_without_delegation_profile_returns_ok_none() {
-        // Direkt-Auth-Pfad: Klasse ohne delegation_profile.
+        // Direct auth path: class without delegation_profile.
         let caps = PeerCapabilities {
             auth_plugin_class: Some("DDS:Auth:PKI-DH:1.2".into()),
             supported_suites: alloc::vec![SuiteHint::Aes128Gcm],
@@ -587,7 +585,7 @@ mod tests {
             ..Default::default()
         };
         let class = delegated_class("vehicle-edges");
-        // now = 50_000 ist weit nach not_after=9_000
+        // now = 50_000 is well after not_after=9_000
         let err = peer_matches_class_with_delegation(&caps, &class, &profiles, 50_000, |_| None)
             .expect_err("must fail");
         assert!(err.contains("validation"));

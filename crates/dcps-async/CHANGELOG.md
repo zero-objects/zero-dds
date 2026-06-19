@@ -1,44 +1,44 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-dcps-async`-Crate.
+Initial release materialization of the `zerodds-dcps-async` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **`docs/specs/zerodds-async-1.0.md`** §1–§9 — komplette async-Wrapper-API: §2 (Newtypes), §3 (Stream-Semantik + Reader-Slot-Waker), §5 (Backpressure-Retry), §6 (Listener-Bridge: `data_available_stream`/`publication_matched_stream`), §7 (Error-Mapping), §8 (Test-Strategie), §9 (Performance-Targets).
-- **OMG DDS 1.4** §2.2.2.4 (DataWriter) + §2.2.2.5 (DataReader) — gespiegelte Sync-API. §2.2.4.1 SUBSCRIPTION_MATCHED — Status-Struct, der vom `PublicationMatchedStream` emittiert wird.
+- **`docs/specs/zerodds-async-1.0.md`** §1–§9 — complete async wrapper API: §2 (newtypes), §3 (stream semantics + Reader-Slot waker), §5 (backpressure retry), §6 (listener bridge: `data_available_stream`/`publication_matched_stream`), §7 (error mapping), §8 (test strategy), §9 (performance targets).
+- **OMG DDS 1.4** §2.2.2.4 (DataWriter) + §2.2.2.5 (DataReader) — mirrored sync API. §2.2.4.1 SUBSCRIPTION_MATCHED — status struct emitted by the `PublicationMatchedStream`.
 
-### Public-API
+### Public API
 
-- `AsyncDomainParticipantFactory` — Singleton-Wrapper um `DomainParticipantFactory`. `instance()`, `create_participant_offline`, `create_participant`, `create_participant_with_qos`.
-- `AsyncDomainParticipant` — Topic/Publisher/Subscriber-Erzeugung; teilt Arc-State mit dem Sync-Pendant.
+- `AsyncDomainParticipantFactory` — singleton wrapper around `DomainParticipantFactory`. `instance()`, `create_participant_offline`, `create_participant`, `create_participant_with_qos`.
+- `AsyncDomainParticipant` — topic/publisher/subscriber creation; shares Arc state with the sync counterpart.
 - `AsyncPublisher` / `AsyncDataWriter<T>` — `write(&sample).await`, `register_instance`, `dispose`, `unregister_instance`, `wait_for_matched_subscription(min_count, timeout).await`, `matched_subscription_count`, `qos`, `as_sync`.
 - `AsyncSubscriber` / `AsyncDataReader<T>` — `take(timeout).await`, `take_stream() -> SampleStream<T>`, `wait_for_matched_publication`, `matched_publication_count`, `data_available_stream() -> DataAvailableStream<T>`, `publication_matched_stream() -> PublicationMatchedStream<T>`, `qos`, `as_sync`.
-- Streams: `SampleStream<T>`, `DataAvailableStream<T>`, `PublicationMatchedStream<T>` — alle implementieren `futures_core::Stream`.
-- Re-Exports: `DataReaderQos`, `DataWriterQos`, `DdsError`, `DdsType`, `DomainParticipantQos`, `InstanceHandle`, `PublisherQos`, `Result`, `SubscriberQos`, `Topic`, `TopicQos`, `SubscriptionMatchedStatus`.
+- Streams: `SampleStream<T>`, `DataAvailableStream<T>`, `PublicationMatchedStream<T>` — all implement `futures_core::Stream`.
+- Re-exports: `DataReaderQos`, `DataWriterQos`, `DdsError`, `DdsType`, `DomainParticipantQos`, `InstanceHandle`, `PublisherQos`, `Result`, `SubscriberQos`, `Topic`, `TopicQos`, `SubscriptionMatchedStatus`.
 
-### Implementierung
+### Implementation
 
-`AsyncDataWriter::write` ist eine Future-Form ueber `DataWriter::write` mit yield-basierter Retry-Schleife: bei `OutOfResources` (Queue voll + Reliable + `max_blocking_time > 0`) suspendiert der Future via `yield_for(2 ms)` und retried bis Drain oder Deadline. Statt `Condvar::wait_timeout` (Sync-Pfad) bleibt der Caller-Task cancelable.
+`AsyncDataWriter::write` is a Future form over `DataWriter::write` with a yield-based retry loop: on `OutOfResources` (queue full + Reliable + `max_blocking_time > 0`) the Future suspends via `yield_for(2 ms)` and retries until drain or deadline. Instead of `Condvar::wait_timeout` (sync path), the caller task stays cancelable.
 
-`SampleStream::poll_next` registriert sich im Live-Mode mit `register_user_reader_waker` an der `DcpsRuntime` — der Waker wird beim `sample_tx.send` direkt gefeuert (kein Polling). Im Offline-Mode greift ein detached-Thread-Sleep als Polling-Fallback. Buffered Samples werden eins-pro-Poll yielded.
+`SampleStream::poll_next` registers in live mode with `register_user_reader_waker` on the `DcpsRuntime` — the waker fires directly on `sample_tx.send` (no polling). In offline mode a detached-thread sleep serves as the polling fallback. Buffered samples are yielded one per poll.
 
-`DataAvailableStream::poll_next` ruft den nicht-konsumierenden `DataReader::read()` (DDS 1.4 §2.2.2.5.3.5) und vergleicht die Sample-Anzahl mit der bei der letzten Emission. Steigender Count → emit `()`-Event. Samples bleiben im Reader-Cache; Caller muss sie via `take()`/`take_stream` separat konsumieren. Live-Mode-Wake via `register_user_reader_waker`, Offline-Mode-Polling als Fallback.
+`DataAvailableStream::poll_next` calls the non-consuming `DataReader::read()` (DDS 1.4 §2.2.2.5.3.5) and compares the sample count against the one at the last emission. Rising count → emit `()` event. Samples stay in the reader cache; the caller must consume them separately via `take()`/`take_stream`. Live-mode wake via `register_user_reader_waker`, offline-mode polling as fallback.
 
-`PublicationMatchedStream::poll_next` ueberwacht `matched_publication_count` und emittiert pro Aenderung einen `SubscriptionMatchedStatus`-Snapshot mit synthetisierten `total_count`/`current_count`/`*_change`-Feldern (Reader-side Counter, da der Sync-Pfad keinen direkten `subscription_matched_status()`-Getter exponiert).
+`PublicationMatchedStream::poll_next` watches `matched_publication_count` and emits, per change, a `SubscriptionMatchedStatus` snapshot with synthesized `total_count`/`current_count`/`*_change` fields (reader-side counter, since the sync path does not expose a direct `subscription_matched_status()` getter).
 
-`yield_for` ist runtime-agnostisch: ohne `tokio-glue`-Feature spawnt ein detached-Thread, der den Waker nach Ablauf weckt; mit `tokio-glue` nutzt es `tokio::time::sleep`.
+`yield_for` is runtime-agnostic: without the `tokio-glue` feature it spawns a detached thread that wakes the waker after expiry; with `tokio-glue` it uses `tokio::time::sleep`.
 
-### Architektur
+### Architecture
 
 - **Layer:** 4 (Core Services).
-- **Dependencies (in):** `zerodds-dcps`, `zerodds-qos`, `futures-core`. Optional: `tokio` (Feature `tokio-glue`).
-- **Dependents (out):** End-User-Anwendungen, die DDS via async-Pfad konsumieren wollen; Bridges (mqtt-/coap-/grpc-bridge) wo die Async-Form fuer das jeweilige Bridge-Backend natuerlich ist.
-- **Feature-Flags:** `std` (default), `tokio-glue`.
+- **Dependencies (in):** `zerodds-dcps`, `zerodds-qos`, `futures-core`. Optional: `tokio` (feature `tokio-glue`).
+- **Dependents (out):** end-user applications that want to consume DDS via the async path; bridges (mqtt-/coap-/grpc-bridge) where the async form is natural for the respective bridge backend.
+- **Feature flags:** `std` (default), `tokio-glue`.
 
-### Stabilitaet
+### Stability
 
-Alle `pub`-Items sind RC1-stabil; Breaking-Changes erfordern Major-Bump auf `2.0.0`.
+All `pub` items are RC1-stable; breaking changes require a major bump to `2.0.0`.

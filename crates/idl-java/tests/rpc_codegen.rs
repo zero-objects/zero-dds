@@ -1,10 +1,10 @@
-//! Integration-Tests fuer den DDS-RPC Java-PSM-Codegen
-//! (Cluster C6.1.D-java).
+//! Integration tests for the DDS-RPC Java PSM codegen
+//! (cluster C6.1.D-java).
 //!
-//! Pro Test: parse eine `@service`-IDL, generiere die fuenf Java-Files
-//! (Interface, Async-Interface, Handler-Interface, Requester, Replier)
-//! und asserte semantische Anker auf Stringsuche-Basis. Marker-basiertes
-//! Snapshot-Format — robust gegen Whitespace-Drift.
+//! Per test: parse a `@service` IDL, generate the five Java files
+//! (interface, async interface, handler interface, requester, replier)
+//! and assert semantic anchors via string search. A marker-based
+//! snapshot format — robust against whitespace drift.
 
 #![allow(
     clippy::expect_used,
@@ -78,6 +78,7 @@ fn op(
         return_type: ret,
         params,
         raises,
+        context: Vec::new(),
         annotations: Vec::new(),
         span: sp(),
     }
@@ -212,7 +213,7 @@ fn sync_interface_returns_unboxed_primitive() {
     );
     let files = gen_files(&spec_of(svc));
     let f = find(&files, "Calc");
-    // Sync-Variante: long-Return, kein Boxing.
+    // Sync variant: long return, no boxing.
     assert!(f.source.contains("long add(long a)"));
 }
 
@@ -323,7 +324,6 @@ fn requester_implements_both_sync_and_async() {
     assert!(f.source.contains("implements Calc, CalcAsync"));
 }
 
-#[cfg(not(feature = "jni"))]
 #[test]
 fn requester_holds_runtime_handle() {
     let svc = iface(
@@ -518,7 +518,6 @@ fn service_with_empty_method_list_still_emits_all_files() {
     assert_eq!(files.len(), 5);
 }
 
-#[cfg(not(feature = "jni"))]
 #[test]
 fn requester_async_method_uses_send_request() {
     let svc = iface(
@@ -538,7 +537,6 @@ fn requester_async_method_uses_send_request() {
     assert!(f.source.contains("requester.sendRequest"));
 }
 
-#[cfg(not(feature = "jni"))]
 #[test]
 fn requester_oneway_uses_send_oneway() {
     let svc = iface(
@@ -581,8 +579,8 @@ fn sync_method_signature_in_requester_overrides() {
     );
     let files = gen_files(&spec_of(svc));
     let f = find(&files, "CalcRequester");
-    // Requester implementiert sync (non-Async) interface — Override-
-    // Annotation muss vorhanden sein.
+    // The requester implements the sync (non-async) interface — the
+    // override annotation must be present.
     assert!(f.source.contains("@Override"));
     assert!(f.source.contains("public void compute()"));
 }
@@ -631,7 +629,7 @@ fn service_name_annotation_overrides_iface_name() {
         Vec::new(),
     );
     let files = gen_files(&spec_of(svc));
-    // Files werden weiterhin nach Annotation-Name benannt.
+    // Files are still named by the annotation name.
     let names: Vec<&str> = files.iter().map(|f| f.class_name.as_str()).collect();
     assert!(names.contains(&"PublicName"));
     let f = find(&files, "PublicName");
@@ -643,12 +641,12 @@ fn service_name_annotation_overrides_iface_name() {
 
 #[test]
 fn non_service_interface_emits_plain_java_interface() {
-    // Frueher Reject; jetzt voll abgedeckt — Spec idl4-java §7.4
+    // Previously rejected; now fully covered — Spec idl4-java §7.4
     // (CORBA-Migration-Pfad).
     let plain_iface = iface(
         "PlainNonService",
         vec![op("op", false, None, Vec::new(), Vec::new())],
-        Vec::new(), // kein @service
+        Vec::new(), // no @service
         Vec::new(),
     );
     let spec = spec_of(plain_iface);
@@ -694,16 +692,16 @@ fn requester_non_oneway_with_no_return_uses_get_for_void() {
     );
     let files = gen_files(&spec_of(svc));
     let f = find(&files, "CalcRequester");
-    // void-return: body ruft `.get()` ohne `return` davor.
+    // void return: the body calls `.get()` with no `return` before it.
     assert!(f.source.contains("pingAsync().get()"));
     assert!(!f.source.contains("return pingAsync().get()"));
 }
 
 #[test]
 fn service_context_skeleton_referenced_in_runtime() {
-    // Sanity: `org.zerodds.rpc.ServiceContext` ist als Runtime-Klasse
-    // gemeint; der Codegen referenziert sie nicht direkt, aber das
-    // Replier-Dispatch-Skelett ist mit ihr kompatibel.
+    // Sanity: `org.zerodds.rpc.ServiceContext` is intended as a runtime
+    // class; the codegen does not reference it directly, but the
+    // replier dispatch skeleton is compatible with it.
     let svc = iface(
         "Calc",
         vec![op("noop", false, None, Vec::new(), Vec::new())],
@@ -712,9 +710,9 @@ fn service_context_skeleton_referenced_in_runtime() {
     );
     let files = gen_files(&spec_of(svc));
     let f = find(&files, "CalcReplier");
-    // Wir erwarten zumindest, dass Replier-Class kompilierbar ist
-    // (ServiceContext-Wiring ist Runtime-Aufgabe; das Codegen-Output
-    // muss konsistent sein).
+    // We at least expect the replier class to be compilable
+    // (ServiceContext wiring is a runtime task; the codegen output must
+    // be consistent).
     assert!(f.source.contains("public final class CalcReplier"));
 }
 
@@ -778,11 +776,10 @@ fn async_string_return_uses_boxed_string() {
     );
 }
 
-#[cfg(not(feature = "jni"))]
 #[test]
 fn requester_implements_close_via_runtime_field() {
-    // Skeleton: kein expliziter close()-Code emittiert — Requester ist
-    // ein dünner Wrapper, das Runtime-Interface stellt close() bereit.
+    // Skeleton: no explicit close() code emitted — the requester is a
+    // thin wrapper, the runtime interface provides close().
     let svc = iface(
         "Calc",
         vec![op("noop", false, None, Vec::new(), Vec::new())],
@@ -791,7 +788,7 @@ fn requester_implements_close_via_runtime_field() {
     );
     let files = gen_files(&spec_of(svc));
     let f = find(&files, "CalcRequester");
-    // Klasse haelt Reference auf Runtime-Requester.
+    // Class holds a reference to the runtime requester.
     assert!(f.source.contains("private final org.zerodds.rpc.Requester"));
 }
 
@@ -843,25 +840,4 @@ fn multiple_methods_async_have_independent_signatures() {
         f.source
             .contains("java.util.concurrent.CompletableFuture<Void> bazAsync()")
     );
-}
-
-// ---------------------------------------------------------------------
-// JNI-Feature: Codegen emittiert RustRequesterFFI-basierte Klassen
-// ---------------------------------------------------------------------
-
-#[cfg(feature = "jni")]
-#[test]
-fn requester_with_jni_feature_uses_rust_requester_ffi() {
-    let svc = iface(
-        "Calc",
-        vec![op("ping", false, Some(long_t()), Vec::new(), Vec::new())],
-        vec![ann("service")],
-        Vec::new(),
-    );
-    let files = gen_files(&spec_of(svc));
-    let f = find(&files, "CalcRequester");
-    // Ctor + Field referenzieren `RustRequesterFFI`.
-    assert!(f.source.contains("org.zerodds.rpc.RustRequesterFFI"));
-    // Async-Body ruft sendRequestAsync.
-    assert!(f.source.contains("sendRequestAsync"));
 }

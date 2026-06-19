@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! SETTINGS Frame — RFC 9113 §6.5.
+//! SETTINGS frame — RFC 9113 §6.5.
 //!
-//! Spec §6.5.1: jeder Setting-Eintrag ist 6 Bytes (2 Byte Identifier
-//! + 4 Byte Value).
+//! Spec §6.5.1: each setting entry is 6 bytes (2-byte identifier
+//! + 4-byte value).
 
 use alloc::vec::Vec;
 
 use crate::error::Http2Error;
 
-/// Setting-Identifier (RFC 9113 §6.5.2).
+/// Setting identifier (RFC 9113 §6.5.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum SettingId {
@@ -29,9 +29,9 @@ pub enum SettingId {
 }
 
 impl SettingId {
-    /// `u16 -> SettingId`. Spec §6.5.2: Empfaenger sollen unbekannte
-    /// IDs ignorieren, aber wir liefern hier `None`, der Caller
-    /// entscheidet.
+    /// `u16 -> SettingId`. Spec §6.5.2: receivers should ignore
+    /// unknown IDs, but here we return `None` and let the caller
+    /// decide.
     #[must_use]
     pub fn from_u16(v: u16) -> Option<Self> {
         match v {
@@ -46,7 +46,7 @@ impl SettingId {
     }
 }
 
-/// Ein einzelner Setting-Eintrag.
+/// A single setting entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Setting {
     /// Identifier.
@@ -55,14 +55,14 @@ pub struct Setting {
     pub value: u32,
 }
 
-/// Settings-Map mit Defaults laut Spec §6.5.2.
+/// Settings map with defaults per spec §6.5.2.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     /// `HEADER_TABLE_SIZE` (default 4096).
     pub header_table_size: u32,
     /// `ENABLE_PUSH` (default 1).
     pub enable_push: u32,
-    /// `MAX_CONCURRENT_STREAMS` (default unlimited, repraesentiert als
+    /// `MAX_CONCURRENT_STREAMS` (default unlimited, represented as
     /// `u32::MAX`).
     pub max_concurrent_streams: u32,
     /// `INITIAL_WINDOW_SIZE` (default 65_535).
@@ -88,12 +88,12 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// Wendet einen Setting-Eintrag an.
+    /// Applies a setting entry.
     ///
     /// # Errors
-    /// `Protocol(FlowControlError)` wenn `INITIAL_WINDOW_SIZE`
-    /// groesser als 2^31-1 (Spec §6.5.2). `Protocol(ProtocolError)`
-    /// bei `ENABLE_PUSH` != 0/1 oder `MAX_FRAME_SIZE` ausserhalb
+    /// `Protocol(FlowControlError)` if `INITIAL_WINDOW_SIZE` is
+    /// larger than 2^31-1 (Spec §6.5.2). `Protocol(ProtocolError)`
+    /// for `ENABLE_PUSH` != 0/1 or `MAX_FRAME_SIZE` outside
     /// [16384, 16777215].
     pub fn apply(&mut self, s: Setting) -> Result<(), Http2Error> {
         use crate::error::ErrorCode;
@@ -124,12 +124,12 @@ impl Settings {
     }
 }
 
-/// Decodiert einen SETTINGS-Frame-Payload zu einer Liste von
-/// Settings. Spec §6.5.1.
+/// Decodes a SETTINGS frame payload into a list of
+/// settings. Spec §6.5.1.
 ///
 /// # Errors
-/// `Protocol(FrameSizeError)` wenn die Length nicht ein Vielfaches
-/// von 6 ist.
+/// `Protocol(FrameSizeError)` if the length is not a multiple
+/// of 6.
 pub fn decode_settings(payload: &[u8]) -> Result<Vec<Setting>, Http2Error> {
     use crate::error::ErrorCode;
     if payload.len() % 6 != 0 {
@@ -146,13 +146,13 @@ pub fn decode_settings(payload: &[u8]) -> Result<Vec<Setting>, Http2Error> {
         if let Some(id) = SettingId::from_u16(id_u) {
             out.push(Setting { id, value });
         }
-        // Spec §6.5.2: unbekannte IDs werden ignoriert.
+        // Spec §6.5.2: unknown IDs are ignored.
         i += 6;
     }
     Ok(out)
 }
 
-/// Encode eine Liste von Settings zu einem SETTINGS-Frame-Payload.
+/// Encodes a list of settings into a SETTINGS frame payload.
 #[must_use]
 pub fn encode_settings(settings: &[Setting]) -> Vec<u8> {
     let mut out = Vec::with_capacity(settings.len() * 6);

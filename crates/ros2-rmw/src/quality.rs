@@ -28,7 +28,7 @@ pub enum QualityLevel {
 }
 
 impl QualityLevel {
-    /// Numerischer Level (1-5; lower = higher quality).
+    /// Numeric level (1-5; lower = higher quality).
     #[must_use]
     pub const fn numeric(self) -> u8 {
         match self {
@@ -40,7 +40,7 @@ impl QualityLevel {
         }
     }
 
-    /// Konstruiert aus numerischem Level.
+    /// Constructs from a numeric level.
     #[must_use]
     pub const fn from_numeric(v: u8) -> Option<Self> {
         match v {
@@ -73,8 +73,8 @@ mod tests {
 
     #[test]
     fn quality_level_ordering_q1_is_highest() {
-        // Q1 < Q5 in der Enum-Ordering ist falsch, weil wir vom
-        // niedrigeren-Level zum hoeheren ordnen. Aber numerically
+        // Q1 < Q5 in the enum ordering is wrong, because we
+        // order the lower level to the higher one. But numerically
         // Q1=1 < Q5=5.
         assert!(QualityLevel::Q1.numeric() < QualityLevel::Q5.numeric());
     }

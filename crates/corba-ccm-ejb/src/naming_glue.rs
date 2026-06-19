@@ -1,48 +1,47 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! JNDI ↔ CosNaming Glue.
+//! JNDI ↔ CosNaming glue.
 //!
-//! JEE benutzt JNDI mit Pfaden wie `java:global/<app>/<module>/<bean>`,
-//! CORBA verwendet CosNaming mit `<name>.<kind>/<name>.<kind>`.
+//! JEE uses JNDI with paths like `java:global/<app>/<module>/<bean>`,
+//! CORBA uses CosNaming with `<name>.<kind>/<name>.<kind>`.
 //!
-//! Wir mappen:
+//! We map:
 //!
 //! * `java:global/X/Y/Bean` ↔ CosNaming `[("X", ""), ("Y", ""),
 //!   ("Bean", "")]`
 //!
-//! Dies ist eine pragmatische Convention — Spec CCM 4.0 §11
-//! (Container Programming Model) gibt keinen Standard fuer JNDI-
-//! Mapping vor.
+//! This is a pragmatic convention — Spec CCM 4.0 §11 (Container
+//! Programming Model) does not prescribe a standard for JNDI mapping.
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// Eine JNDI-Bindung — Name + zugewiesene Object-Reference (als
-/// opaque IOR-Bytes).
+/// A JNDI binding — name + associated object reference (as opaque IOR
+/// bytes).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JndiBinding {
-    /// Vollqualifizierter JNDI-Name (z.B. `java:global/my-app/Echo`).
+    /// Fully qualified JNDI name (e.g. `java:global/my-app/Echo`).
     pub name: String,
-    /// IOR-Bytes (kein Codec — Caller-Layer).
+    /// IOR bytes (no codec — caller-layer).
     pub ior: Vec<u8>,
 }
 
-/// JNDI-Context mit linearer Lookup-Tabelle. Production-Caller wird
-/// das auf einen JNDI-Provider mappen; In-Memory-Form ist fuer Tests.
+/// JNDI context with a linear lookup table. A production caller will
+/// map this onto a JNDI provider; the in-memory form is for tests.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct JndiContext {
     bindings: Vec<JndiBinding>,
 }
 
 impl JndiContext {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Bindet einen Namen an eine IOR.
+    /// Binds a name to an IOR.
     pub fn bind(&mut self, name: String, ior: Vec<u8>) {
         if let Some(b) = self.bindings.iter_mut().find(|b| b.name == name) {
             b.ior = ior;
@@ -51,7 +50,7 @@ impl JndiContext {
         }
     }
 
-    /// Liefert die IOR-Bytes fuer einen Namen (kopiert).
+    /// Returns the IOR bytes for a name (copied).
     #[must_use]
     pub fn lookup(&self, name: &str) -> Option<Vec<u8>> {
         self.bindings
@@ -60,24 +59,24 @@ impl JndiContext {
             .map(|b| b.ior.clone())
     }
 
-    /// Loescht eine Bindung.
+    /// Removes a binding.
     pub fn unbind(&mut self, name: &str) -> bool {
         let before = self.bindings.len();
         self.bindings.retain(|b| b.name != name);
         before != self.bindings.len()
     }
 
-    /// Liste aller Bindings.
+    /// List of all bindings.
     #[must_use]
     pub fn list(&self) -> &[JndiBinding] {
         &self.bindings
     }
 }
 
-/// Konvertiert einen JNDI-Pfad in eine CosNaming-NameComponent-Liste.
+/// Converts a JNDI path into a CosNaming NameComponent list.
 ///
 /// `java:global/foo/bar/Bean` → `[("foo",""), ("bar",""), ("Bean","")]`
-/// Der `java:global/`-Prefix wird gestripped.
+/// The `java:global/` prefix is stripped.
 #[must_use]
 pub fn jndi_to_cos_naming(jndi: &str) -> Vec<(String, String)> {
     let path = jndi
@@ -90,8 +89,8 @@ pub fn jndi_to_cos_naming(jndi: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Konvertiert eine CosNaming-NameComponent-Liste zurueck in einen
-/// `java:global/...`-Pfad.
+/// Converts a CosNaming NameComponent list back into a
+/// `java:global/...` path.
 #[must_use]
 pub fn cos_naming_to_jndi(name: &[(String, String)]) -> String {
     let mut out = String::from("java:global/");

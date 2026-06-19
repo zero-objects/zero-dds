@@ -1,45 +1,44 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Crate `zerodds-security-rtps`. Safety classification: **SAFE** (reiner Wire-Format-Adapter; die eigentliche Crypto delegiert an ein [`CryptographicPlugin`]).
+//! Crate `zerodds-security-rtps`. Safety classification: **SAFE** (a pure wire-format adapter; the actual crypto delegates to a [`CryptographicPlugin`]).
 //!
-//! Secure-Submessage-Wrapper (OMG DDS-Security 1.1 §7.3.6) +
-//! RTPS-Header-AAD-Codec (§9.5).
+//! Secure submessage wrapper (OMG DDS-Security 1.1 §7.3.6) +
+//! RTPS header AAD codec (§9.5).
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 4 — Core Services. Konsumiert `zerodds-security` (SPI) +
-//! `zerodds-rtps` (RTPS-Submessage-Layout). Wird vom DCPS-Runtime via
-//! `Box<dyn CryptographicPlugin>` und dem Inbound/Outbound-Datapath
-//! genutzt.
+//! Layer 4 — Core Services. Consumes `zerodds-security` (SPI) +
+//! `zerodds-rtps` (RTPS submessage layout). Used by the DCPS runtime via
+//! `Box<dyn CryptographicPlugin>` and the inbound/outbound datapath.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! Nimmt eine oder mehrere plain-RTPS-Submessages (als opaque Bytes)
-//! und wrapped sie in:
+//! Takes one or more plain RTPS submessages (as opaque bytes)
+//! and wraps them into:
 //!
 //! ```text
 //! SEC_PREFIX  | SEC_BODY (ciphertext)  | SEC_POSTFIX
 //! ```
 //!
-//! Auf Empfaenger-Seite macht `decode_secured_submessage` den Schritt
-//! rueckwaerts: SEC_BODY extrahieren, durch den Crypto-Plugin schicken,
-//! plaintext zurueckgeben.
+//! On the receiver side `decode_secured_submessage` does the step
+//! in reverse: extract SEC_BODY, send it through the crypto plugin,
+//! return the plaintext.
 //!
-//! - Submessage-IDs + -Flags gemaess Spec §7.3.6.
-//! - `encode_secured_submessage` + `decode_secured_submessage` mit
-//!   `&mut dyn CryptographicPlugin`-Callback — damit AES-GCM, HMAC,
-//!   oder zukuenftige Backends austauschbar sind.
-//! - SRTPS-Wrap (§9.5 RTPS-Message-Protection): `SRTPS_PREFIX` + `SRTPS_POSTFIX`-Codec.
-//! - Receiver-Specific-MAC-Liste im POSTFIX (`MAX_RECEIVER_MACS`): pro
-//!   Remote-Reader ein 16-byte MAC; Single-Receiver-Pfade lassen die
-//!   Liste leer (Spec §7.3.6.3 erlaubt das).
-//! - Little-Endian-Submessage-Header (`0x01` flag).
+//! - Submessage IDs + flags per spec §7.3.6.
+//! - `encode_secured_submessage` + `decode_secured_submessage` with a
+//!   `&mut dyn CryptographicPlugin` callback — so AES-GCM, HMAC,
+//!   or future backends are interchangeable.
+//! - SRTPS wrap (§9.5 RTPS message protection): `SRTPS_PREFIX` + `SRTPS_POSTFIX` codec.
+//! - Receiver-specific MAC list in the POSTFIX (`MAX_RECEIVER_MACS`): one
+//!   16-byte MAC per remote reader; single-receiver paths leave the
+//!   list empty (spec §7.3.6.3 allows that).
+//! - Little-endian submessage header (`0x01` flag).
 //!
-//! ## Nicht-Ziele
+//! ## Non-goals
 //!
-//! - Big-Endian-Submessage-Header — Spec erlaubt beide; alle Vendoren
-//!   nutzen LE per Default. Re-Add additiv bei Major-2.0.
+//! - Big-endian submessage header — the spec allows both; all vendors
+//!   use LE by default. Re-add additively in major-2.0.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]

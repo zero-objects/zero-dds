@@ -1,67 +1,67 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CoAP-Reliability — RFC 7252 §4.2-§4.7.
+//! CoAP reliability — RFC 7252 §4.2-§4.7.
 //!
-//! Spec §4.2: CON-Messages erwarten ACK; bei Timeout wird mit
-//! exponentiellem Backoff retransmittet bis `MAX_RETRANSMIT`.
+//! Spec §4.2: CON messages expect an ACK; on timeout they are
+//! retransmitted with exponential backoff up to `MAX_RETRANSMIT`.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-/// Retransmit-Default-Konstanten — RFC 7252 §4.8.
+/// Default retransmit constants — RFC 7252 §4.8.
 pub const ACK_TIMEOUT_MS: u64 = 2000;
-/// `ACK_RANDOM_FACTOR` (Spec §4.8) — wir verwenden 1.5 gerundet auf
-/// einen Multiplikator von 3/2.
+/// `ACK_RANDOM_FACTOR` (Spec §4.8) — we use 1.5 expressed as a
+/// multiplier of 3/2.
 pub const ACK_RANDOM_FACTOR_NUM: u64 = 3;
-/// Nenner zu `ACK_RANDOM_FACTOR_NUM`.
+/// Denominator for `ACK_RANDOM_FACTOR_NUM`.
 pub const ACK_RANDOM_FACTOR_DEN: u64 = 2;
 /// `MAX_RETRANSMIT` (Spec §4.8).
 pub const MAX_RETRANSMIT: u32 = 4;
 
-/// Pending-CON-Eintrag in der Reliability-Queue.
+/// Pending CON entry in the reliability queue.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingConfirmable {
-    /// Message-Id (16-Bit).
+    /// Message ID (16-bit).
     pub message_id: u16,
-    /// Token-Bytes (0..=8).
+    /// Token bytes (0..=8).
     pub token: Vec<u8>,
-    /// Encoded Message-Bytes — werden bei Retransmit re-emittiert.
+    /// Encoded message bytes — re-emitted on retransmit.
     pub bytes: Vec<u8>,
-    /// Verbleibende Retransmits (start = `MAX_RETRANSMIT`).
+    /// Remaining retransmits (starts at `MAX_RETRANSMIT`).
     pub retransmits_left: u32,
-    /// Naechstes Timeout (in Millisekunden seit Start).
+    /// Next timeout (in milliseconds since start).
     pub next_timeout_ms: u64,
-    /// Aktuelles Timeout-Intervall (verdoppelt sich pro Retransmit).
+    /// Current timeout interval (doubles per retransmit).
     pub current_interval_ms: u64,
 }
 
-/// Reliability-Tracker — Caller pumpt Zeit + Empfangs-Events rein,
-/// Tracker liefert Retransmit/Drop-Decisions.
+/// Reliability tracker — the caller feeds in time and receive events,
+/// the tracker returns retransmit/drop decisions.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ReliabilityTracker {
     pending: BTreeMap<u16, PendingConfirmable>,
 }
 
-/// Output eines `tick`-Schritts.
+/// Output of a `tick` step.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TickOutput {
-    /// Messages, die retransmittiert werden muessen (Bytes-Slice
-    /// bereits enthalten).
+    /// Messages that must be retransmitted (byte slice already
+    /// included).
     pub retransmit: Vec<PendingConfirmable>,
-    /// Message-Ids, deren `MAX_RETRANSMIT` erschoepft sind und
-    /// deren Verbindung als verloren angesehen wird.
+    /// Message IDs whose `MAX_RETRANSMIT` is exhausted and whose
+    /// connection is considered lost.
     pub timed_out: Vec<u16>,
 }
 
 impl ReliabilityTracker {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Sendet eine CON — registriert sie zur Retransmission.
+    /// Sends a CON — registers it for retransmission.
     pub fn send_confirmable(
         &mut self,
         message_id: u16,
@@ -82,18 +82,18 @@ impl ReliabilityTracker {
         );
     }
 
-    /// ACK empfangen — entferne Pending-Eintrag.
+    /// ACK received — remove the pending entry.
     pub fn receive_ack(&mut self, message_id: u16) -> bool {
         self.pending.remove(&message_id).is_some()
     }
 
-    /// RST empfangen — entferne Pending-Eintrag (Spec §4.2: RST
-    /// terminiert ohne Retransmit).
+    /// RST received — remove the pending entry (Spec §4.2: RST
+    /// terminates without retransmit).
     pub fn receive_rst(&mut self, message_id: u16) -> bool {
         self.pending.remove(&message_id).is_some()
     }
 
-    /// Tick — pruefe ob ein Pending faellig ist.
+    /// Tick — check whether a pending entry is due.
     pub fn tick(&mut self, now_ms: u64) -> TickOutput {
         let mut out = TickOutput::default();
         let mut to_drop = Vec::new();
@@ -117,7 +117,7 @@ impl ReliabilityTracker {
         out
     }
 
-    /// Anzahl pending CONs.
+    /// Number of pending CONs.
     #[must_use]
     pub fn pending_count(&self) -> usize {
         self.pending.len()

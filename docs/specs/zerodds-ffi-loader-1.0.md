@@ -559,7 +559,7 @@ Pro Sprach-Crate (`crates/py/`, `crates/cpp/`, `crates/cs/`, etc.):
 - Pure-Java-Implementation: `crates/java-omgdds/java/`
 - Wire-Format: `zerodds-xcdr2-bindings-conformance-1.0`.
 - Packaging: `zerodds-deployment-1.0`.
-- DCPS-Spec: `zerodds-listener-callbacks-1.0` für Listener-Threads.
+- DCPS-Spec: `zerodds-listener-callbacks-1.1` für Listener-Threads.
 
 ## §10 Versioning
 

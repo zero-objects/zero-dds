@@ -3,11 +3,11 @@
 
 //! AMQP 1.0 Type System — Spec `amqp-1.0-types`.
 //!
-//! Implementiert die Format-Code-Constructors fuer Primitive-Types
-//! und Variable-Width-Encodings. Compound-Types (list/map) werden mit
-//! Length-Prefix-Validation unterstuetzt; die innere Struktur ist
-//! Caller-Layer (Caller serialisiert Elemente und uebergibt
-//! Element-Count + Element-Bytes).
+//! Implements the format-code constructors for primitive types
+//! and variable-width encodings. Compound types (list/map) are
+//! supported with length-prefix validation; the inner structure is
+//! the caller's layer (the caller serializes elements and passes
+//! element count + element bytes).
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -15,7 +15,7 @@ use core::fmt;
 
 /// AMQP 1.0 Format Codes — Spec §1.2 Table 1-1.
 ///
-/// Wir geben die wichtigsten benannten Konstanten + Kategorie-Helpers.
+/// We expose the most important named constants + category helpers.
 pub mod codes {
     /// `0x40` — null (fixed-0).
     pub const NULL: u8 = 0x40;
@@ -108,21 +108,21 @@ pub mod codes {
 /// Format-Code-Kategorie (Spec §1.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormatCode {
-    /// Spec §1.2.1 — fixed-width: 0..=8 octets payload, kategorie 0x4*-0x9*.
+    /// Spec §1.2.1 — fixed-width: 0..=8 octets payload, category 0x4*-0x9*.
     Fixed(u8),
-    /// Spec §1.2.2 — variable-width: 1- oder 4-byte length + bytes,
-    /// kategorie 0xA*/0xB*.
+    /// Spec §1.2.2 — variable-width: 1- or 4-byte length + bytes,
+    /// category 0xA*/0xB*.
     Variable(u8),
-    /// Spec §1.2.3 — compound: 1- oder 4-byte size + count + items,
-    /// kategorie 0xC*/0xD*.
+    /// Spec §1.2.3 — compound: 1- or 4-byte size + count + items,
+    /// category 0xC*/0xD*.
     Compound(u8),
-    /// Spec §1.2.4 — array: 1- oder 4-byte size + count + element-
-    /// constructor + items, kategorie 0xE*/0xF*.
+    /// Spec §1.2.4 — array: 1- or 4-byte size + count + element-
+    /// constructor + items, category 0xE*/0xF*.
     Array(u8),
 }
 
 impl FormatCode {
-    /// Bestimmt Kategorie aus dem Format-Code-Byte (Spec §1.2 Table 1-1
+    /// Determines the category from the format-code byte (Spec §1.2 Table 1-1
     /// Subcategory column).
     #[must_use]
     pub const fn from_byte(b: u8) -> Self {
@@ -136,18 +136,18 @@ impl FormatCode {
     }
 }
 
-/// AMQP-Wert (Subset der Primitive-Types).
+/// AMQP value (subset of the primitive types).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AmqpValue {
     /// `null`.
     Null,
     /// `boolean`.
     Boolean(bool),
-    /// `ulong` (oder smallulong/ulong0 je nach Wert).
+    /// `ulong` (or smallulong/ulong0 depending on the value).
     Ulong(u64),
     /// `long`.
     Long(i64),
-    /// `binary` (max u32::MAX-Bytes).
+    /// `binary` (max u32::MAX bytes).
     Binary(Vec<u8>),
     /// `string` (UTF-8).
     String(String),
@@ -155,19 +155,19 @@ pub enum AmqpValue {
     Symbol(String),
 }
 
-/// Type-Codec-Fehler.
+/// Type-codec error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeError {
     /// Input bytes truncated.
     Truncated,
-    /// Unknown / unsupported Format-Code.
+    /// Unknown / unsupported format code.
     UnsupportedFormatCode(u8),
-    /// String hat invalides UTF-8.
+    /// String has invalid UTF-8.
     InvalidUtf8,
-    /// Symbol enthaelt non-ASCII (Spec §1.6.21: "Symbols are encoded
+    /// Symbol contains non-ASCII (Spec §1.6.21: "Symbols are encoded
     /// as ASCII").
     NonAsciiSymbol,
-    /// Length-Praefix > u32::MAX (geht nicht ueber Wire).
+    /// Length prefix > u32::MAX (does not fit on the wire).
     LengthTooLarge,
 }
 
@@ -192,7 +192,7 @@ pub fn encode_null() -> Vec<u8> {
     alloc::vec![codes::NULL]
 }
 
-/// Spec §1.6.2 — `boolean`. Wir nutzen die kompakte Form 0x41/0x42
+/// Spec §1.6.2 — `boolean`. We use the compact form 0x41/0x42
 /// (fixed-0).
 #[must_use]
 pub fn encode_boolean(v: bool) -> Vec<u8> {
@@ -203,8 +203,8 @@ pub fn encode_boolean(v: bool) -> Vec<u8> {
     }]
 }
 
-/// Spec §1.6.6 — `ulong`. Wir waehlen die kompakteste Form (ulong0
-/// fuer 0, smallulong fuer 1..=255, ulong sonst).
+/// Spec §1.6.6 — `ulong`. We choose the most compact form (ulong0
+/// for 0, smallulong for 1..=255, ulong otherwise).
 #[must_use]
 pub fn encode_ulong(v: u64) -> Vec<u8> {
     if v == 0 {
@@ -220,8 +220,8 @@ pub fn encode_ulong(v: u64) -> Vec<u8> {
     }
 }
 
-/// Spec §1.6.10 — `long`. Wir waehlen smalllong fuer -128..=127, long
-/// (full 8-byte) sonst.
+/// Spec §1.6.10 — `long`. We choose smalllong for -128..=127, long
+/// (full 8-byte) otherwise.
 #[must_use]
 pub fn encode_long(v: i64) -> Vec<u8> {
     if (i64::from(i8::MIN)..=i64::from(i8::MAX)).contains(&v) {
@@ -235,10 +235,10 @@ pub fn encode_long(v: i64) -> Vec<u8> {
     }
 }
 
-/// Spec §1.6.19 — `binary`. Waehlt vbin8 fuer len <= 255, vbin32 sonst.
+/// Spec §1.6.19 — `binary`. Chooses vbin8 for len <= 255, vbin32 otherwise.
 ///
 /// # Errors
-/// `LengthTooLarge` wenn `data.len() > u32::MAX`.
+/// `LengthTooLarge` if `data.len() > u32::MAX`.
 pub fn encode_binary(data: &[u8]) -> Result<Vec<u8>, TypeError> {
     let len = data.len();
     if len > u32::MAX as usize {
@@ -261,10 +261,10 @@ pub fn encode_binary(data: &[u8]) -> Result<Vec<u8>, TypeError> {
     }
 }
 
-/// Spec §1.6.20 — `string`. Waehlt str8 fuer len <= 255, str32 sonst.
+/// Spec §1.6.20 — `string`. Chooses str8 for len <= 255, str32 otherwise.
 ///
 /// # Errors
-/// `LengthTooLarge` wenn `s.len() > u32::MAX`.
+/// `LengthTooLarge` if `s.len() > u32::MAX`.
 pub fn encode_string(s: &str) -> Result<Vec<u8>, TypeError> {
     let bytes = s.as_bytes();
     let len = bytes.len();
@@ -288,11 +288,11 @@ pub fn encode_string(s: &str) -> Result<Vec<u8>, TypeError> {
     }
 }
 
-/// Spec §1.6.21 — `symbol`. Waehlt sym8 fuer len <= 255, sym32 sonst.
+/// Spec §1.6.21 — `symbol`. Chooses sym8 for len <= 255, sym32 otherwise.
 ///
 /// # Errors
-/// * `NonAsciiSymbol` wenn der String non-ASCII enthaelt.
-/// * `LengthTooLarge` wenn `s.len() > u32::MAX`.
+/// * `NonAsciiSymbol` if the string contains non-ASCII.
+/// * `LengthTooLarge` if `s.len() > u32::MAX`.
 pub fn encode_symbol(s: &str) -> Result<Vec<u8>, TypeError> {
     if !s.is_ascii() {
         return Err(TypeError::NonAsciiSymbol);
@@ -319,11 +319,11 @@ pub fn encode_symbol(s: &str) -> Result<Vec<u8>, TypeError> {
     }
 }
 
-/// Decodiert einen einzigen `AmqpValue` ab `bytes[0]`. Liefert
+/// Decodes a single `AmqpValue` starting at `bytes[0]`. Returns
 /// `Ok((value, consumed_bytes))`.
 ///
 /// # Errors
-/// Siehe [`TypeError`].
+/// See [`TypeError`].
 pub fn decode_value(bytes: &[u8]) -> Result<(AmqpValue, usize), TypeError> {
     if bytes.is_empty() {
         return Err(TypeError::Truncated);
@@ -570,7 +570,7 @@ mod tests {
 
     #[test]
     fn unsupported_format_code_yields_error() {
-        // 0xFF ist Reserved/unsupported in unserer Subset-Implementation.
+        // 0xFF is reserved/unsupported in our subset implementation.
         assert_eq!(
             decode_value(&[0xFF]),
             Err(TypeError::UnsupportedFormatCode(0xFF))
@@ -580,14 +580,14 @@ mod tests {
     #[test]
     fn truncated_inputs_yield_error() {
         assert_eq!(decode_value(&[]), Err(TypeError::Truncated));
-        assert_eq!(decode_value(&[0xA0]), Err(TypeError::Truncated)); // vbin8 ohne len.
+        assert_eq!(decode_value(&[0xA0]), Err(TypeError::Truncated)); // vbin8 without len.
         assert_eq!(decode_value(&[0xA0, 5, 1]), Err(TypeError::Truncated)); // vbin8 truncated body.
         assert_eq!(decode_value(&[0x80, 0, 0, 0]), Err(TypeError::Truncated)); // ulong truncated.
     }
 
     #[test]
     fn invalid_utf8_in_str_yields_error() {
-        // str8 mit invalid UTF-8 byte 0xFF.
+        // str8 with invalid UTF-8 byte 0xFF.
         assert_eq!(
             decode_value(&[0xA1, 0x01, 0xFF]),
             Err(TypeError::InvalidUtf8)

@@ -1,20 +1,20 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-recorder`-Crate.
+Initial release materialization of the `zerodds-recorder` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **`docs/specs/zddsrec-1.0.md`** §1-§5 — Wire-Format-Spec.
+- **`docs/specs/zddsrec-1.0.md`** §1-§5 — wire-format spec.
 
-### Public-API
+### Public API
 
-**Wire-Format:**
+**Wire format:**
 - `Header`, `Frame`, `FrameView`, `SampleKind`, `ParticipantEntry`, `TopicEntry`.
-- Konstanten: `ZDDSREC_MAGIC = "ZDDS"`, `ZDDSREC_VERSION = 1`, `FRAME_MAGIC = b'F'`.
+- Constants: `ZDDSREC_MAGIC = "ZDDS"`, `ZDDSREC_VERSION = 1`, `FRAME_MAGIC = b'F'`.
 
 **Writer:**
 - `RecordWriter::{new, write_header, write_frame, finish}`.
@@ -28,23 +28,23 @@ Initiale Release-Materialisierung der `zerodds-recorder`-Crate.
 - `RecordingSession::{new, record_sample, frames_count, bytes_written, finish}`.
 - `SessionOptions`, `TopicKey`, `SessionError`.
 
-### Implementierung
+### Implementation
 
-`Header`-Struktur traegt Magic + Version + UNIX-Time-Base + Participant-Array + Topic-Array, alle Multi-Byte-Felder little-endian. Pro Sample wird ein `Frame` mit `TimestampDelta` (relativ zum `time_base_unix_ns`), Participant-/Topic-Indizes und `SampleKind` geschrieben. Frames sind nach einmal gelesenem Header eigenstaendig parsebar — Reader und Writer arbeiten beide inkrementell.
+The `Header` structure carries magic + version + UNIX time base + participant array + topic array, all multi-byte fields little-endian. For each sample a `Frame` is written with `TimestampDelta` (relative to `time_base_unix_ns`), participant/topic indices and `SampleKind`. Frames are independently parseable once the header has been read — reader and writer both work incrementally.
 
-`RecordingSession` baut darauf eine high-level Live-API: lazy-Header-Schreiben, atomare Frame-/Byte-Counter fuer Dashboard-Telemetrie, Mutex-protected Writer-Ingress fuer thread-safen Multi-Producer-Use.
+`RecordingSession` builds a high-level live API on top of this: lazy header writing, atomic frame/byte counters for dashboard telemetry, mutex-protected writer ingress for thread-safe multi-producer use.
 
-`forbid(unsafe_code)` ist gesetzt (per Workspace-Lints).
+`forbid(unsafe_code)` is set (via workspace lints).
 
-### Architektur
+### Architecture
 
-- **Layer:** 4 (Core Services).
-- **Dependencies (in):** keine (pure-Rust + `alloc`).
-- **Dependents (out):** `tools/replay`, `tools/recorder-bridge`, end-user-Builds direkt.
-- **Feature-Flags:** `std` (default), `alloc` (via std), `safety` (Reserve-Hook).
+- **Layer:** 4 (core services).
+- **Dependencies (in):** none (pure Rust + `alloc`).
+- **Dependents (out):** `tools/replay`, `tools/recorder-bridge`, end-user builds directly.
+- **Feature flags:** `std` (default), `alloc` (via std), `safety` (reserve hook).
 
-### Stabilitaet
+### Stability
 
-- Public-API: RC1-stabil.
-- Wire-Format `ZDDSREC_VERSION = 1`: stabil; inkompatible Aenderung wuerde Major-Bump und Versionswechsel erfordern.
-- Reader lehnt unbekannte FrameMagic-Bytes mit `ReadError::UnknownFrameMagic` ab — additive Frame-Typen (z.B. `IndexAddFrame`, `CompressedFrame`) koennen sicher in einer 2.0-Major hinzugefuegt werden.
+- Public API: RC1-stable.
+- Wire format `ZDDSREC_VERSION = 1`: stable; an incompatible change would require a major bump and a version change.
+- The reader rejects unknown FrameMagic bytes with `ReadError::UnknownFrameMagic` — additive frame types (e.g. `IndexAddFrame`, `CompressedFrame`) can be added safely in a 2.0 major.

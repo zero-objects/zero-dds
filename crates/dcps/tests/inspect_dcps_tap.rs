@@ -1,7 +1,7 @@
-//! WP-D Integration-Test: DCPS-Tap-Hook empfaengt einen Frame nach
+//! WP-D integration test: the DCPS tap hook receives a frame after
 //! `write_user_sample`.
 //!
-//! Nur aktiv wenn das Feature `inspect` an ist.
+//! Only active when the `inspect` feature is on.
 
 #![cfg(feature = "inspect")]
 #![allow(
@@ -25,9 +25,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use zerodds_inspect_endpoint::{Frame, FrameKind, TapHook, tap};
 
-/// Hook der einen geteilten Atomic + Vec befuellt. Wird via
-/// `Box<CapturingHook>` registriert; die innere Mutex erlaubt
-/// dem Test auf die Frames zuzugreifen.
+/// Hook that fills a shared atomic + Vec. Registered via
+/// `Box<CapturingHook>`; the inner Mutex lets the test
+/// access the frames.
 struct CapturingHook {
     state: Arc<HookState>,
 }
@@ -63,12 +63,11 @@ impl TapHook for CapturingHook {
 
 #[test]
 fn dcps_tap_sees_frames_when_dispatched_directly() {
-    // Smoke-Test der Tap-Registry — verifiziert dass die
-    // dispatch-API erreichbar ist und die Hook-Sammlung
-    // funktioniert. Ein End-to-End-Test der durch den
-    // DcpsRuntime laeuft braucht ein vollstaendiges
-    // Participant-Setup mit Discovery, das ist Aufgabe
-    // separater e2e-Tests.
+    // Smoke test of the tap registry — verifies that the
+    // dispatch API is reachable and that the hook collection
+    // works. An end-to-end test running through the
+    // DcpsRuntime needs a complete participant setup with
+    // discovery; that is the job of separate e2e tests.
     let (hook, state) = CapturingHook::new();
     tap::register_dcps_tap(Box::new(hook));
 
@@ -78,7 +77,7 @@ fn dcps_tap_sees_frames_when_dispatched_directly() {
     assert!(state.count.load(Ordering::SeqCst) >= 1);
     let frames = state.frames.lock().expect("frames lock");
     let speed_frame = frames.iter().find(|f| f.topic == "Speed");
-    assert!(speed_frame.is_some(), "Speed-Frame nicht empfangen");
+    assert!(speed_frame.is_some(), "Speed frame not received");
     let speed_frame = speed_frame.expect("found above");
     assert_eq!(speed_frame.kind, FrameKind::Dcps);
     assert_eq!(speed_frame.payload, vec![1, 2, 3]);
@@ -86,10 +85,9 @@ fn dcps_tap_sees_frames_when_dispatched_directly() {
 
 #[test]
 fn dcps_tap_handles_alive_payload() {
-    // Verifiziert dass Frame::dcps fuer typische Receive-Payloads
-    // (CDR-encoded Sample) korrekt routed wird. Volle End-to-End-
-    // Tests durch handle_user_datagram leben separat in den e2e-
-    // Suites.
+    // Verifies that Frame::dcps is routed correctly for typical receive
+    // payloads (CDR-encoded sample). Full end-to-end tests through
+    // handle_user_datagram live separately in the e2e suites.
     let (hook, state) = CapturingHook::new();
     tap::register_dcps_tap(Box::new(hook));
 

@@ -2,6 +2,10 @@
 
 **Quelle:** `docs/specs/zerodds-mqtt-bridge-1.0.md`
 
+Implementation:
+
+- `crates/mqtt-bridge/` — DDS↔MQTT-Bridge.
+
 ## §1 Conformance-Levels
 
 ### §1 L1-L6 Conformance-Matrix
@@ -392,4 +396,4 @@ Protocol-Changes (MQTT-5.x→6).
 
 Test-Lauf: `cargo test -p zerodds-mqtt-bridge` — Tests grün, 0 failed.
 
-Offene Punkte und Decision-Records: siehe `zerodds-mqtt-bridge-1.0.open.md`.
+Keine offenen Punkte oder Decision-Records — alle Items `done` / `n/a (informative)`.

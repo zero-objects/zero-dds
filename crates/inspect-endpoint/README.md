@@ -1,41 +1,41 @@
 # `zerodds-inspect-endpoint`
 
-ZeroDDS Inspect-Endpoint — feature-gated Tap-Hooks fuer den externen
+ZeroDDS inspect endpoint — feature-gated tap hooks for the external
 PDE Reality Inspector (zerodds-pde).
 
 Part of [**ZeroDDS**](../../README.md). Safety classification: **STANDARD**.
 
 ## Status
 
-Debug-Tool-Crate, vollstaendig `#[cfg(feature = "inspect")]`-gated und
-`#![forbid(unsafe_code)]`. Im Production-Build (Feature aus) faellt
-der gesamte Tap-Mechanismus weg — kein Hot-Path-Branch (R-099, C-021).
+Debug-tool crate, fully `#[cfg(feature = "inspect")]`-gated and
+`#![forbid(unsafe_code)]`. In the production build (feature off) the
+entire tap mechanism is dropped — no hot-path branch (R-099, C-021).
 
-## Architektur
+## Architecture
 
-* `tap` — Trait + Registry fuer Tap-Hooks an DCPS/RTPS/Transport.
-* `frame` — Wire-Frame fuer den Side-Channel.
-* `auth` — `cert.d`-Loader fuer X.509-PEM-Certs (R-100..R-104).
-* `server` (feature `inspect`) — Broadcast-Hook + Inspect-Server.
+* `tap` — trait + registry for tap hooks on DCPS/RTPS/transport.
+* `frame` — wire frame for the side channel.
+* `auth` — `cert.d` loader for X.509 PEM certs (R-100..R-104).
+* `server` (feature `inspect`) — broadcast hook + inspect server.
 
-## Sicherheits-Invarianten
+## Security invariants
 
-* **Ghost-Inject** (R-110): Inject-Funktionen sind separate API-Pfade
-  und publishen direkt in den DDS-Production-Datenpfad, **ohne** durch
-  die Tap-Hooks zu laufen. Production-Taps sehen den Inject nicht.
-* **Idle-Branch-Elision**: Tap-Hook-Aufrufe in dcps/rtps/transport
-  sind hinter `#[cfg(feature = "inspect")]` versteckt. Ohne Feature
-  kein Branch im Hot-Path.
+* **Ghost inject** (R-110): inject functions are separate API paths
+  and publish directly into the DDS production data path, **without** going
+  through the tap hooks. Production taps do not see the inject.
+* **Idle-branch elision**: tap-hook calls in dcps/rtps/transport
+  are hidden behind `#[cfg(feature = "inspect")]`. Without the feature
+  there is no branch in the hot path.
 
-## Verwendung
+## Usage
 
 ```toml
 [dependencies]
 zerodds-inspect-endpoint = { version = "1", features = ["inspect"] }
 ```
 
-Default ist OFF — `inspect` muss explizit aktiviert werden, damit
-die Tap-Hooks und der Server-Pfad uebersetzt werden.
+The default is OFF — `inspect` must be enabled explicitly so that
+the tap hooks and the server path are compiled.
 
 ## Tests
 
@@ -43,9 +43,9 @@ die Tap-Hooks und der Server-Pfad uebersetzt werden.
 cargo test -p zerodds-inspect-endpoint --features inspect
 ```
 
-## Siehe auch
+## See also
 
 * [`docs/architecture/04_safety_by_architecture.md`](../../docs/architecture/04_safety_by_architecture.md) —
-  Safety-Klassifikation.
-* [`crates/dcps/Cargo.toml`](../dcps/Cargo.toml) `inspect`-Feature —
-  optionaler Konsument der Tap-Hooks.
+  safety classification.
+* [`crates/dcps/Cargo.toml`](../dcps/Cargo.toml) `inspect` feature —
+  optional consumer of the tap hooks.

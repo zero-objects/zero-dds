@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `SecurityGate` — governance-aware Submessage-Wrap.
+//! `SecurityGate` — governance-aware submessage wrap.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -15,17 +15,17 @@ use zerodds_security_rtps::{
     decode_secured_submessage, encode_secured_rtps_message, encode_secured_submessage,
 };
 
-/// Fehler-Klasse fuer das Gate.
+/// Error class for the gate.
 #[derive(Debug)]
 pub enum SecurityGateError {
-    /// Crypto-Plugin konnte keinen lokalen Handle registrieren.
+    /// The crypto plugin could not register a local handle.
     CryptoSetup(SecurityError),
-    /// Encode/Decode des Secured-Wrappers fehlgeschlagen.
+    /// Encode/decode of the secured wrapper failed.
     Wrapper(SecurityRtpsError),
-    /// Crypto-Operation selbst fehlgeschlagen.
+    /// The crypto operation itself failed.
     Crypto(SecurityError),
-    /// Inbound erwartete SEC_PREFIX-Stream, bekam aber ein anderes
-    /// Submessage-Format (z.B. plaintext wo Governance `SIGN` verlangt).
+    /// Inbound expected a SEC_PREFIX stream but got a different
+    /// submessage format (e.g. plaintext where governance requires `SIGN`).
     PolicyViolation(String),
 }
 
@@ -49,19 +49,19 @@ impl From<SecurityRtpsError> for SecurityGateError {
     }
 }
 
-/// Entscheidet pro Topic ob/wie ausgehende Submessages verschluesselt
-/// oder signiert werden muessen.
+/// Decides per topic whether/how outgoing submessages must be
+/// encrypted or signed.
 pub struct SecurityGate<'c, P: CryptographicPlugin> {
     domain_id: u32,
     governance: Governance,
     crypto: &'c mut P,
-    /// Lokal registrierter CryptoHandle. Lazy erzeugt beim ersten
-    /// encode, damit ein Gate auch ohne Handshake konstruierbar ist.
+    /// Locally registered CryptoHandle. Created lazily on the first
+    /// encode, so a gate is constructible even without a handshake.
     local: Option<CryptoHandle>,
 }
 
 impl<'c, P: CryptographicPlugin> SecurityGate<'c, P> {
-    /// Konstruktor.
+    /// Constructor.
     pub fn new(domain_id: u32, governance: Governance, crypto: &'c mut P) -> Self {
         Self {
             domain_id,
@@ -71,8 +71,8 @@ impl<'c, P: CryptographicPlugin> SecurityGate<'c, P> {
         }
     }
 
-    /// Liefert den CryptoHandle des lokalen Participants; registriert
-    /// ihn beim Crypto-Plugin, wenn noch nicht geschehen.
+    /// Returns the CryptoHandle of the local participant; registers
+    /// it with the crypto plugin if not already done.
     fn ensure_local(&mut self) -> Result<CryptoHandle, SecurityGateError> {
         if let Some(h) = self.local {
             return Ok(h);
@@ -85,8 +85,8 @@ impl<'c, P: CryptographicPlugin> SecurityGate<'c, P> {
         Ok(h)
     }
 
-    /// Entscheidet, ob ausgehende Submessage fuer `topic_name` wrapped
-    /// werden muss.
+    /// Decides whether the outgoing submessage for `topic_name` must be
+    /// wrapped.
     #[must_use]
     pub fn outbound_protection(&self, topic_name: &str) -> ProtectionKind {
         self.governance
@@ -95,12 +95,12 @@ impl<'c, P: CryptographicPlugin> SecurityGate<'c, P> {
             .unwrap_or(ProtectionKind::None)
     }
 
-    /// Wrap ausgehende Submessage wenn Governance es verlangt.
-    /// Protection-Kind `None` liefert das Original-Byte-Slice
-    /// unveraendert zurueck (Passthrough).
+    /// Wraps the outgoing submessage if governance requires it.
+    /// Protection kind `None` returns the original byte slice
+    /// unchanged (passthrough).
     ///
     /// # Errors
-    /// Siehe [`SecurityGateError`].
+    /// See [`SecurityGateError`].
     pub fn encode_outbound(
         &mut self,
         topic_name: &str,
@@ -117,17 +117,17 @@ impl<'c, P: CryptographicPlugin> SecurityGate<'c, P> {
         }
     }
 
-    /// Unwrap eingehende Submessage. Wenn das Format KEIN SEC_PREFIX
-    /// zeigt, aber Governance `SIGN`/`ENCRYPT` verlangt → Policy-
-    /// Violation. Wenn Governance `None` und die Bytes kein SEC_PREFIX,
-    /// einfach passthrough.
+    /// Unwraps an incoming submessage. If the format shows NO SEC_PREFIX
+    /// but governance requires `SIGN`/`ENCRYPT` → policy
+    /// violation. If governance is `None` and the bytes are not a SEC_PREFIX,
+    /// simply passthrough.
     ///
     /// # Errors
-    /// Siehe [`SecurityGateError`].
+    /// See [`SecurityGateError`].
     ///
-    /// **Loopback-only:** dieses Convenience-Entry nutzt den lokalen
-    /// Slot fuer Key-Lookup; echte Cross-Participant-Decoding laeuft
-    /// ueber [`Self::decode_inbound_message`] mit `remote_slot`.
+    /// **Loopback-only:** this convenience entry uses the local
+    /// slot for key lookup; real cross-participant decoding goes
+    /// via [`Self::decode_inbound_message`] with `remote_slot`.
     pub fn decode_inbound(
         &mut self,
         topic_name: &str,
@@ -143,17 +143,17 @@ impl<'c, P: CryptographicPlugin> SecurityGate<'c, P> {
                     .map_err(SecurityGateError::from)
             }
             (_, false) => Err(SecurityGateError::PolicyViolation(alloc::format!(
-                "topic '{topic_name}' verlangt {kind:?}, bekam plain-submessage"
+                "topic '{topic_name}' requires {kind:?}, got a plain submessage"
             ))),
         }
     }
 
-    /// Registriert einen Remote-Peer. Der zurueckgegebene Handle ist
-    /// der CryptoHandle im **lokalen** Plugin, an dem der Remote-Key
-    /// danach via [`Self::set_remote_token`] angelegt wird.
+    /// Registers a remote peer. The returned handle is
+    /// the CryptoHandle in the **local** plugin at which the remote key
+    /// is then created via [`Self::set_remote_token`].
     ///
     /// # Errors
-    /// Siehe [`SecurityGateError`].
+    /// See [`SecurityGateError`].
     pub fn register_remote(
         &mut self,
         remote_identity: IdentityHandle,
@@ -165,11 +165,11 @@ impl<'c, P: CryptographicPlugin> SecurityGate<'c, P> {
             .map_err(SecurityGateError::CryptoSetup)
     }
 
-    /// Liefert den Crypto-Token des lokalen Participants (zu senden an
-    /// Remote via SEDP-Participant-CryptoToken-Submessage).
+    /// Returns the crypto token of the local participant (to be sent to
+    /// the remote via the SEDP ParticipantCryptoToken submessage).
     ///
     /// # Errors
-    /// `CryptoSetup`/`Crypto` wenn der lokale Handle nicht existiert.
+    /// `CryptoSetup`/`Crypto` if the local handle does not exist.
     pub fn local_token(&mut self) -> Result<Vec<u8>, SecurityGateError> {
         let local = self.ensure_local()?;
         self.crypto
@@ -177,11 +177,11 @@ impl<'c, P: CryptographicPlugin> SecurityGate<'c, P> {
             .map_err(SecurityGateError::Crypto)
     }
 
-    /// Akzeptiert einen Remote-Crypto-Token und installiert ihn unter
-    /// dem uebergebenen Remote-Handle.
+    /// Accepts a remote crypto token and installs it under
+    /// the supplied remote handle.
     ///
     /// # Errors
-    /// Siehe [`SecurityGateError`].
+    /// See [`SecurityGateError`].
     pub fn set_remote_token(
         &mut self,
         remote: CryptoHandle,
@@ -193,8 +193,8 @@ impl<'c, P: CryptographicPlugin> SecurityGate<'c, P> {
             .map_err(SecurityGateError::Crypto)
     }
 
-    /// Ist fuer diese Domain ein RTPS-Message-Level-Schutz konfiguriert?
-    /// Schaut in das erste matchende `<domain_rule>` und liefert den
+    /// Is an RTPS message-level protection configured for this domain?
+    /// Looks into the first matching `<domain_rule>` and returns the
     /// `rtps_protection_kind`.
     #[must_use]
     pub fn message_protection(&self) -> ProtectionKind {
@@ -204,11 +204,11 @@ impl<'c, P: CryptographicPlugin> SecurityGate<'c, P> {
             .unwrap_or(ProtectionKind::None)
     }
 
-    /// Wrap eine komplette RTPS-Message (inkl. 20-byte Header) wenn
-    /// `rtps_protection_kind` != None. Sonst passthrough.
+    /// Wraps a complete RTPS message (incl. 20-byte header) if
+    /// `rtps_protection_kind` != None. Otherwise passthrough.
     ///
     /// # Errors
-    /// Siehe [`SecurityGateError`].
+    /// See [`SecurityGateError`].
     pub fn encode_outbound_message(
         &mut self,
         message: &[u8],
@@ -223,17 +223,17 @@ impl<'c, P: CryptographicPlugin> SecurityGate<'c, P> {
         }
     }
 
-    /// Unwrap eine eingehende RTPS-Message. `remote_slot` ist der
-    /// `CryptoHandle` unter dem der **Sender-Key** registriert ist
-    /// (liefert `register_remote` + `set_remote_token` zurueck).
+    /// Unwraps an incoming RTPS message. `remote_slot` is the
+    /// `CryptoHandle` under which the **sender key** is registered
+    /// (returned by `register_remote` + `set_remote_token`).
     ///
-    /// Implementation-Detail: der Plugin-Trait nutzt `local` als
-    /// Key-Slot-Identifier (siehe OMG §8.5.1.9.4 Mapping), daher
-    /// reichen wir `remote_slot` als `local`-Arg an den Codec durch —
-    /// das ist der Slot in dem Alice's Master-Key liegt.
+    /// Implementation detail: the plugin trait uses `local` as the
+    /// key-slot identifier (see OMG §8.5.1.9.4 mapping), so we
+    /// pass `remote_slot` as the `local` arg through to the codec —
+    /// that is the slot where Alice's master key lives.
     ///
     /// # Errors
-    /// Siehe [`SecurityGateError`].
+    /// See [`SecurityGateError`].
     pub fn decode_inbound_message(
         &mut self,
         remote_slot: CryptoHandle,
@@ -244,12 +244,12 @@ impl<'c, P: CryptographicPlugin> SecurityGate<'c, P> {
         match (kind, looks_secured) {
             (ProtectionKind::None, false) => Ok(wire.to_vec()),
             (_, true) => {
-                // Key-Lookup ueber remote_slot (dort ist der Sender-Key).
+                // Key lookup via remote_slot (the sender key is there).
                 decode_secured_rtps_message(self.crypto, remote_slot, remote_slot, wire)
                     .map_err(SecurityGateError::from)
             }
             (_, false) => Err(SecurityGateError::PolicyViolation(alloc::format!(
-                "domain {} verlangt {kind:?}, bekam plain-rtps-message",
+                "domain {} requires {kind:?}, got a plain rtps message",
                 self.domain_id
             ))),
         }
@@ -312,7 +312,7 @@ mod tests {
         assert_eq!(wire[0], SEC_PREFIX, "must begin with SEC_PREFIX");
         assert!(
             !wire.windows(10).any(|w| w == b"top-secret"),
-            "plaintext sollte nicht im wire sein"
+            "plaintext should not be in the wire"
         );
     }
 
@@ -331,7 +331,7 @@ mod tests {
         let gov = parse_governance_xml(GOV).unwrap();
         let mut crypto = AesGcmCryptoPlugin::new();
         let mut gate = SecurityGate::new(0, gov, &mut crypto);
-        // Peer schickt plain auf `SecretOrder` — Policy verlangt ENCRYPT.
+        // The peer sends plain on `SecretOrder` — the policy requires ENCRYPT.
         let err = gate
             .decode_inbound("SecretOrder", b"plaintext-leak")
             .unwrap_err();
@@ -349,7 +349,7 @@ mod tests {
 
     #[test]
     fn missing_domain_rule_defaults_to_none() {
-        // Governance definiert Domain 0, wir laufen in Domain 99.
+        // Governance defines domain 0, we run in domain 99.
         let gov = parse_governance_xml(GOV).unwrap();
         let mut crypto = AesGcmCryptoPlugin::new();
         let gate = SecurityGate::new(99, gov, &mut crypto);
@@ -363,7 +363,7 @@ mod tests {
     // RC1.2 — Message-Level + Cross-Participant E2E
     // -------------------------------------------------------------
 
-    /// Governance mit `rtps_protection_kind=ENCRYPT` fuer Domain 0.
+    /// Governance with `rtps_protection_kind=ENCRYPT` for domain 0.
     const GOV_RTPS: &str = r#"
 <domain_access_rules>
   <domain_rule>
@@ -394,7 +394,7 @@ mod tests {
 
     #[test]
     fn message_encode_none_is_passthrough() {
-        // Default-Governance (ohne RTPS-Schutz) liefert None.
+        // Default governance (without RTPS protection) returns None.
         let gov = parse_governance_xml(GOV).unwrap();
         let mut crypto = AesGcmCryptoPlugin::new();
         let mut gate = SecurityGate::new(0, gov, &mut crypto);
@@ -419,7 +419,7 @@ mod tests {
         let gov = parse_governance_xml(GOV_RTPS).unwrap();
         let mut crypto = AesGcmCryptoPlugin::new();
         let mut gate = SecurityGate::new(0, gov, &mut crypto);
-        // Plain-RTPS-Message eingehend — aber Governance will ENCRYPT.
+        // Plain RTPS message incoming — but governance wants ENCRYPT.
         let plain = fake_rtps_message(b"nope");
         let err = gate
             .decode_inbound_message(CryptoHandle(1), &plain)
@@ -427,8 +427,8 @@ mod tests {
         assert!(matches!(err, SecurityGateError::PolicyViolation(_)));
     }
 
-    /// E2E-Test: Alice + Bob — jede Seite ihr eigenes Crypto-Plugin,
-    /// Token-Austausch, dann Message-Roundtrip.
+    /// E2E test: Alice + Bob — each side its own crypto plugin,
+    /// token exchange, then a message roundtrip.
     #[test]
     fn e2e_cross_participant_message_roundtrip() {
         let gov1 = parse_governance_xml(GOV_RTPS).unwrap();
@@ -439,13 +439,13 @@ mod tests {
         let mut alice = SecurityGate::new(0, gov1, &mut alice_crypto);
         let mut bob = SecurityGate::new(0, gov2, &mut bob_crypto);
 
-        // 1) Jeder zieht seinen Token und tauscht aus. In Produktion
-        //    laeuft das ueber SEDP-ParticipantCryptoToken-Submessage.
+        // 1) Each pulls its token and exchanges it. In production
+        //    this goes via the SEDP ParticipantCryptoToken submessage.
         let alice_token = alice.local_token().unwrap();
         let bob_token = bob.local_token().unwrap();
 
-        // 2) Jeder registriert den Gegenueber als Remote-Handle und
-        //    installiert den empfangenen Token dort.
+        // 2) Each registers the counterpart as a remote handle and
+        //    installs the received token there.
         let alice_view_of_bob = alice
             .register_remote(IdentityHandle(2), SharedSecretHandle(1))
             .unwrap();
@@ -459,11 +459,11 @@ mod tests {
         bob.set_remote_token(bob_view_of_alice, &alice_token)
             .unwrap();
 
-        // 3) Alice sendet eine verschluesselte Message.
+        // 3) Alice sends an encrypted message.
         let msg = fake_rtps_message(b"[DATA:cross-participant]");
         let wire = alice.encode_outbound_message(&msg).unwrap();
 
-        // 4) Bob entschluesselt (mit dem slot fuer Alice).
+        // 4) Bob decrypts (with the slot for Alice).
         let back = bob
             .decode_inbound_message(bob_view_of_alice, &wire)
             .unwrap();

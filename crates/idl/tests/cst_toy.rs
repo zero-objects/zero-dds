@@ -1,9 +1,9 @@
-//! Integration-Tests fuer den vollstaendigen End-to-End-Pfad
+//! Integration tests for the complete end-to-end path
 //! `&str → Tokenizer → Recognizer → build_cst → CstNode`.
 //!
-//! Komplementaer zu den Inline-Tests in `cst/build.rs` und `cst/walk.rs`,
-//! die jeweils einen Layer fokussieren — diese Datei zeigt die Public-API
-//! aus Endkonsumenten-Sicht.
+//! Complementary to the inline tests in `cst/build.rs` and `cst/walk.rs`,
+//! which each focus on one layer — this file shows the public API
+//! from the end-consumer perspective.
 
 #![allow(
     clippy::expect_used,
@@ -28,27 +28,27 @@ use zerodds_idl::grammar::TokenKind;
 use zerodds_idl::grammar::toy::TOY;
 use zerodds_idl::lexer::Tokenizer;
 
-/// Helper: fuehrt die ganze Pipeline aus und liefert den CST.
+/// Helper: runs the whole pipeline and returns the CST.
 fn parse(source: &'static str) -> zerodds_idl::cst::CstNode<'static> {
     let tokenizer = Tokenizer::for_grammar(&TOY);
     let stream: zerodds_idl::lexer::TokenStream<'static> =
         tokenizer.tokenize(source).expect("tokenize must succeed");
     let result = Recognizer::new(&TOY).recognize(stream.tokens());
 
-    // Detach: stream lebt nur in dieser Funktion, aber CstNode<'static> haelt
-    // Slices, die in den 'static-Source-String zeigen — also OK.
+    // Detach: stream only lives in this function, but CstNode<'static> holds
+    // slices pointing into the 'static source string — so that's OK.
     build_cst(&TOY, stream.tokens(), &result).expect("build must succeed")
 }
 
 // ---------------------------------------------------------------------------
-// Strukturelle Akzeptanz-Tests
+// Structural acceptance tests
 // ---------------------------------------------------------------------------
 
 #[test]
 fn end_to_end_single_n_produces_three_internal_levels() {
     let cst = parse("n");
     assert_eq!(cst.production(), Some(ProductionId(0))); // E
-    // E → T → F → Token. Tiefe: 3 (root=E, depth=3 nach walk::depth-Konvention)
+    // E → T → F → Token. Depth: 3 (root=E, depth=3 per walk::depth convention)
     assert_eq!(walk::depth(&cst), 3);
     let tokens = walk::tokens_only(&cst);
     assert_eq!(tokens.len(), 1);
@@ -57,7 +57,7 @@ fn end_to_end_single_n_produces_three_internal_levels() {
 
 #[test]
 fn end_to_end_addition_has_three_e_nodes_for_n_plus_n_plus_n() {
-    // n + n + n → drei E-Knoten dank Linksrekursion: Top, Sub, Sub-Sub
+    // n + n + n → three E nodes thanks to left recursion: top, sub, sub-sub
     let cst = parse("n + n + n");
     let es = walk::find_by_production(&cst, ProductionId(0));
     assert_eq!(es.len(), 3);
@@ -67,32 +67,32 @@ fn end_to_end_addition_has_three_e_nodes_for_n_plus_n_plus_n() {
 fn end_to_end_precedence_multiplication_binds_tighter() {
     // n + n * n  → E (plus) [E_left, "+", T (times)]
     let cst = parse("n + n * n");
-    // Top-E ist plus-Alt
+    // Top E is the plus alt
     let CstKind::Internal {
         alternative_index: top_alt,
         ..
     } = cst.kind
     else {
-        panic!("Top muss Internal sein");
+        panic!("top must be Internal");
     };
-    assert_eq!(top_alt, 0, "Top-E muss plus-Alt sein");
-    // Rechtes Kind (T) muss times-Alt sein, weil "*" hoehere Praezedenz hat.
+    assert_eq!(top_alt, 0, "top E must be the plus alt");
+    // The right child (T) must be the times alt, because "*" has higher precedence.
     let right_t = &cst.children[2];
     let CstKind::Internal {
         alternative_index: t_alt,
         ..
     } = right_t.kind
     else {
-        panic!("Right child muss Internal sein");
+        panic!("right child must be Internal");
     };
-    assert_eq!(t_alt, 0, "Right T muss times-Alt sein");
+    assert_eq!(t_alt, 0, "right T must be the times alt");
 }
 
 #[test]
 fn end_to_end_parens_override_precedence() {
-    // (n + n) * n  — die Klammer macht das + vor *, statt umgekehrt.
+    // (n + n) * n  — the parens make the + bind before *, instead of the reverse.
     let cst = parse("(n + n) * n");
-    // Top-E ist just_term, weil hoechster Operator ist *
+    // top E is just_term, because the highest operator is *
     let CstKind::Internal {
         alternative_index: top_alt,
         ..
@@ -100,8 +100,8 @@ fn end_to_end_parens_override_precedence() {
     else {
         panic!();
     };
-    assert_eq!(top_alt, 1, "Top-E muss just_term-Alt sein");
-    // Inneres T muss times-Alt sein, dessen erstes F muss paren-Alt sein.
+    assert_eq!(top_alt, 1, "top E must be the just_term alt");
+    // The inner T must be the times alt, whose first F must be the paren alt.
     let t_node = &cst.children[0];
     let CstKind::Internal {
         alternative_index: t_alt,
@@ -110,10 +110,10 @@ fn end_to_end_parens_override_precedence() {
     else {
         panic!();
     };
-    assert_eq!(t_alt, 0, "T muss times-Alt sein");
-    let first_f = &t_node.children[0]; // T (times) Children: [T, "*", F]
-    // first_f sollte ein T sein (Times-Alt), nicht direkt F. Lass mich klarer prüfen:
-    // T (times) ::= T "*" F. Das erste Children ist T.
+    assert_eq!(t_alt, 0, "T must be the times alt");
+    let first_f = &t_node.children[0]; // T (times) children: [T, "*", F]
+    // first_f should be a T (times alt), not F directly. Let me check more clearly:
+    // T (times) ::= T "*" F. The first child is T.
     assert_eq!(first_f.production(), Some(ProductionId(1)));
 }
 
@@ -147,7 +147,7 @@ fn end_to_end_token_text_slices_match_source_substrings() {
 }
 
 // ---------------------------------------------------------------------------
-// Walk-Helper auf realer Struktur
+// Walk helpers on a real structure
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -175,12 +175,12 @@ fn end_to_end_depth_grows_with_nested_parentheses() {
 }
 
 // ---------------------------------------------------------------------------
-// Reject-Pfade
+// Reject paths
 // ---------------------------------------------------------------------------
 
 #[test]
 fn end_to_end_invalid_input_rejected_at_recognizer_or_lexer() {
-    // Reject-Pfad ueber den Lexer (unbekanntes Zeichen "@")
+    // Reject path via the lexer (unknown character "@")
     let tokenizer = Tokenizer::for_grammar(&TOY);
     assert!(tokenizer.tokenize("n @ n").is_err());
 }
@@ -188,10 +188,10 @@ fn end_to_end_invalid_input_rejected_at_recognizer_or_lexer() {
 #[test]
 fn end_to_end_partial_expression_rejected_at_recognizer() {
     let tokenizer = Tokenizer::for_grammar(&TOY);
-    // Lexer akzeptiert "n +" → 2 Tokens; Recognizer akzeptiert nicht.
+    // The lexer accepts "n +" → 2 tokens; the recognizer does not.
     let stream = tokenizer.tokenize("n +").expect("lex must succeed");
     let result = Recognizer::new(&TOY).recognize(stream.tokens());
     assert!(!result.accepted);
     let cst = build_cst(&TOY, stream.tokens(), &result);
-    assert!(cst.is_none(), "Reject muss kein CST liefern");
+    assert!(cst.is_none(), "reject must not yield a CST");
 }

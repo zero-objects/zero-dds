@@ -1,6 +1,6 @@
 #![no_main]
-//! Fuzz-Target: Per-Submessage-Decoder. Verteilt den Input nach
-//! erstem Byte auf die einzelnen read_body-Pfade.
+//! Fuzz target: per-submessage decoder. Distributes the input by
+//! the first byte across the individual read_body paths.
 
 use libfuzzer_sys::fuzz_target;
 

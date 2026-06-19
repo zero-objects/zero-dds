@@ -7,7 +7,7 @@ Stacks; Spec-Coverage durch dedizierte Tests in jedem Crate.
 
 **Hinweis:** Diese Datei ist KEIN Spec-Coverage-Doc nach
 `docs/spec-coverage/PROCESS.md` — sie ist ein **Test-Inventar** der
-Cross-Vendor-Validations-Tests. Sie erfaellt aber das gleiche
+Cross-Vendor-Validations-Tests. Sie erfüllt aber das gleiche
 Pro-Item-Format mit Spec-Pointer + Test-Pfad + Status, damit jeder
 Test direkt einer Spec-Section zugeordnet ist.
 
@@ -18,8 +18,8 @@ Test direkt einer Spec-Section zugeordnet ist.
 Beweisen, dass ZeroDDS v1.0 byte-genau und QoS-korrekt mit den
 beiden anderen relevanten Open-Source-DDS-Stacks interoperiert:
 
-- **Cyclone DDS** (Eclipse-Stiftung, Reference-Stack fuer ROS 2)
-- **FastDDS** (eProsima, Reference-Stack fuer ROS 2-Default-Middleware)
+- **Cyclone DDS** (Eclipse-Stiftung, Reference-Stack für ROS 2)
+- **FastDDS** (eProsima, Reference-Stack für ROS 2-Default-Middleware)
 
 RTI Connext ist commercial-only und nicht in der Lab-Pipeline.
 
@@ -29,8 +29,8 @@ RTI Connext ist commercial-only und nicht in der Lab-Pipeline.
 
 | Vendor       | Version  | Tooling             | Live-Host          |
 |--------------|----------|---------------------|--------------------|
-| Cyclone DDS  | 0.10.2   | `ddsperf`           | `llvm@llvm` (LXC)  |
-| FastDDS      | 2.9.1    | `fastdds shape`, `fastdds discovery` | `llvm@llvm` (LXC) |
+| Cyclone DDS  | 0.10.2   | `ddsperf`           | `Linux-Bench-Host` (LXC)  |
+| FastDDS      | 2.9.1    | `fastdds shape`, `fastdds discovery` | `Linux-Bench-Host` (LXC) |
 | RTI Connext  | -        | (nicht installiert) | -                  |
 
 ---
@@ -216,7 +216,7 @@ Protocol.
 **Status:** done — beide Pfade live: Sender setzt `MUST_UNDERSTAND_BIT`
 explizit via `with_must_understand`, Decoder rejected unbekannte
 MU-PIDs. Live-Test gegen Cyclone DDS bleibt `#[ignore]` bis
-Lab-Setup in CI verfuegbar.
+Lab-Setup in CI verfügbar.
 
 ### CV-18 cyclone_full_interop
 
@@ -301,14 +301,14 @@ cargo test -p zerodds-dcps --test cyclone_live_wlp_manual -- --ignored
 cargo test -p zerodds-discovery --test cyclone_typelookup_responder
 ```
 
-### Lab-Run auf llvm
+### Lab-Run auf dem Linux-Bench-Host
 
 Voraussetzungen:
 
-- SSH-Zugriff `llvm@llvm` (Passwort `llvm`, Lab-Konvention)
+- SSH-Zugriff auf den Bench-Host (Lab-Konvention)
 - `sshpass` installiert
-- PVE-Multicast-Setup aktiv (siehe `reference_pve_multicast_setup`)
-- Auf llvm: `ip link set enp6s18 allmulticast on`
+- Multicast-Setup auf dem Virtualisierungs-Host aktiv
+- Auf dem Bench-Host: `ip link set enp6s18 allmulticast on`
 
 Aufruf:
 
@@ -332,23 +332,23 @@ cargo test -p zerodds-dcps --features live-interop \
    `Circle` (case-sensitive). ZeroDDS `create_topic::<ShapeType>(name)`
    akzeptiert beliebige Strings — Test setzt Default-Konvention.
 
-2. **FastDDS-Discovery-Server-TCP**: `fastdds discovery -i 0` hoert
+2. **FastDDS-Discovery-Server-TCP**: `fastdds discovery -i 0` hört
    nur auf TCP, nicht auf SPDP-Multicast. `fastdds_live_spdp.rs`
-   testet daher zwei Pfade: (a) Server-TCP-Mode, (b) regulaerer
+   testet daher zwei Pfade: (a) Server-TCP-Mode, (b) regulärer
    `fastdds shape publisher` als SPDP-Sender.
 
-3. **PVE-Multicast**: VM-Kernel droppt Multicast ohne
+3. **VM-Host-Multicast**: VM-Kernel droppt Multicast ohne
    `allmulticast on` auf dem virtio-Interface. Ohne diesen Workaround
-   sehen die Tests keine Cyclone/FastDDS-Beacons. Memory-Eintrag
-   `reference_pve_multicast_setup` dokumentiert die Bridge-Konfig.
+   sehen die Tests keine Cyclone/FastDDS-Beacons. Die Bridge-Konfig des
+   Virtualisierungs-Hosts ist separat dokumentiert.
 
 4. **`ddsperf`-Flag-Falle**: `-D` ist Duration in Sekunden, `-i` ist
-   Domain-ID. Verwechseln fuehrt zu schwer debug-baren Match-Fehlern.
+   Domain-ID. Verwechseln führt zu schwer debug-baren Match-Fehlern.
    Helper `start_cyclone_ddsperf_*` in `cross_vendor.rs` setzt das
    richtig.
 
-5. **Multi-Host-Stretch-Goal**: `pivot@pivot` ist hardware-maessig
-   verfuegbar, SSH-Auth ist aber nicht setup. Multi-Host-Tests
+5. **Multi-Host-Stretch-Goal**: ein zweiter Bench-Host ist hardware-mäßig
+   verfügbar, SSH-Auth ist aber nicht setup. Multi-Host-Tests
    bleiben Phase-7-Bench-Suite-Scope.
 
 ---
@@ -356,7 +356,7 @@ cargo test -p zerodds-dcps --features live-interop \
 ## Nicht-Ziele
 
 - **RTI Connext** (commercial, nicht installierbar)
-- **Multi-Host-Discovery** (pivot-Auth nicht setup)
+- **Multi-Host-Discovery** (Zweit-Host-Auth nicht setup)
 - **FastDDS-Compile-from-Source** (Binary-Tools reichen)
 - **Performance-Benchmarks** (Phase-7-Bench-Suite)
 
@@ -366,7 +366,7 @@ cargo test -p zerodds-dcps --features live-interop \
 
 **23 Test-Cluster** mappen zu konkreten Spec-Sections in DDS 1.4 +
 RTPS 2.5 + XTypes 1.3 + DDS-Security 1.2; alle Compile-/Lint-clean,
-im macOS-Dev-Setup ohne Lab gruen ignored, mit
+im macOS-Dev-Setup ohne Lab grün ignored, mit
 `LLVM_HOST_AVAILABLE=1 + --features live-interop` aktivierbar.
 
 Cross-Vendor-Coverage spannt:
@@ -388,7 +388,44 @@ Side Must-Understand-Bit-Generierung wurde durch
 `Parameter::with_must_understand`-Helper + Test abgeschlossen.
 
 `cargo test -p zerodds-rtps --test cyclone_he_must_understand`: 3 passed,
-1 ignored (Live-Cyclone-Test bleibt fuer CI-Lab-Setup reserviert).
+1 ignored (Live-Cyclone-Test bleibt für CI-Lab-Setup reserviert).
 fmt + clippy + zerodds-lint clean.
 
 K13 abgeschlossen — K14 (dds-psm-cxx-1.0) kann beginnen.
+
+---
+
+## Addendum 2026-06-08 — ROS-2-Wire Live-Interop (C5 Cross-Vendor)
+
+Ergänzend zu den 23 K13-Clustern: **Live-Interop auf dem ROS-2-Wire**
+ZeroDDS ↔ CycloneDDS (= `rmw_cyclonedds` = echtes ROS 2), Topic
+`rt/chatter`, Typ `std_msgs::msg::dds_::String_`. **Bidirektional 20/20
+Samples** (codepit, CycloneDDS 11.0.1).
+
+| Richtung / Messung | Ergebnis |
+|---|---|
+| Cyclone-Talker → ZeroDDS-Sub | 20/20 Samples |
+| ZeroDDS-Pub → Cyclone-Listener | 20/20 Samples |
+| ZeroDDS ↔ ZeroDDS (Regression) | grün |
+| ZeroDDS↔Cyclone multicast-frei (`run_multicast_free_xvendor.sh`) | matched=1, 20/20 |
+| C3 Real-WiFi Large-Data m1→codepit (2/4 MB) | byte-perfekt; Throughput **10,8 MiB/s** |
+| C3 Latenz RTT (Loopback, 256 B) | **p50=40 µs / p99=83 µs** |
+| C3 Latenz RTT (Cross-Machine WiFi) \* | **p50=4342 µs** (mymac wired ↔ m1 WiFi, 256 B, 0 lost, voller Discovery); Root-Cause der `participants=0`-Saga A/B-bewiesen = **802.11-Power-Save am WiFi-Client** (mit `tcpdump`/Promiscuous → läuft, ohne → Timeout), **kein ZeroDDS-Limit** |
+
+\* Auf anderer Host-Combi gemessen als der übrige codepit-Stack
+(mymac-wired ↔ m1-WiFi) und mit wachgehaltener WiFi-NIC (Promiscuous), da
+Idle-WiFi-Power-Save sonst die Discovery-Unicasts verwirft — Detail-A/B in
+`docs/interop/ros2-c3-large-data-wifi-followup.md`.
+
+**Repo:** `crates/ros2-rmw/interop/` (`run_interop.sh`, `GROUND_TRUTH.md`,
+`cyclone_ros_{talker,listener}.c`) + `crates/dcps/examples/
+ros2_chatter_{publisher,subscriber}.rs`.
+
+**Spec:** ddsi-rtps-2.5 §9.3.1.2 (entityKind keyed/no-key),
+dds-xtypes-1.3 §7.6.3 (DataRepresentation-Match).
+
+**Befund (gefixt):** keyless Typen erzeugten WithKey-Entityids →
+Cross-Vendor-Match-Reject. Fix: entityKind aus `DdsType::HAS_KEY`. Belegt
+direkt die C5-These „interoperiert dort, wo Fast↔Cyclone praktisch bricht"
+am realen ROS-2-Wire. Verbleibende XCDR1-Reader-Offer-Lücke:
+`docs/interop/ros2-reader-xcdr1-offer-followup.md`.

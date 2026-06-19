@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Iceoryx2-Bridge — parallele Pub/Sub-API fuer
+//! Iceoryx2 bridge — parallel pub/sub API for
 //! [Eclipse iceoryx2](https://github.com/eclipse-iceoryx/iceoryx2)
-//! (Bosch / Apex.AI), als optionales Feature `iceoryx2-bridge`.
+//! (Bosch / Apex.AI), as the optional feature `iceoryx2-bridge`.
 //!
-//! # Warum eine separate API
+//! # Why a separate API
 //!
-//! `zerodds-flatdata-1.0` §8/§9 spezifiziert eine
-//! `loan/commit/receive`-Pub/Sub-Form. Der built-in
-//! [`SlotBackend`](crate::SlotBackend)-Trait fuer den In-Memory-
-//! und POSIX-Backend exponiert eine **Random-Access-Slot-Pool**-
-//! Form; iceoryx2 ist dagegen FIFO-Pub/Sub mit interner Refcount-
-//! Verwaltung und kennt keine wahlfreien Slot-Reads. Die zwei
-//! Modelle laufen nicht auf den selben Trait, also ist die
-//! Bridge eine eigene API:
+//! `zerodds-flatdata-1.0` §8/§9 specifies a
+//! `loan/commit/receive` pub/sub form. The built-in
+//! [`SlotBackend`](crate::SlotBackend) trait for the in-memory
+//! and POSIX backends exposes a **random-access slot-pool**
+//! form; iceoryx2, by contrast, is FIFO pub/sub with internal
+//! refcount management and has no random slot reads. The two
+//! models do not run on the same trait, so the
+//! bridge is its own API:
 //!
-//! - [`Iceoryx2Publisher<T>`] — `loan` + `send` (mappt direkt auf
+//! - [`Iceoryx2Publisher<T>`] — `loan` + `send` (maps directly to
 //!   `publisher.loan_slice_uninit` + `sample.send`).
-//! - [`Iceoryx2Subscriber<T>`] — `receive` (mappt auf
+//! - [`Iceoryx2Subscriber<T>`] — `receive` (maps to
 //!   `subscriber.receive`).
 //!
-//! Die spec-§6.1-Type-Hash-Cross-Validation wird beim
-//! Service-Build durchgereicht (Service-Name encodiert den Hash).
+//! The spec §6.1 type-hash cross-validation is carried through at
+//! service build time (the service name encodes the hash).
 //!
-//! # Beispiel
+//! # Example
 //!
 //! ```no_run
 //! # #[cfg(feature = "iceoryx2-bridge")] {
@@ -50,30 +50,38 @@
 use core::marker::PhantomData;
 
 use iceoryx2::node::{Node, NodeBuilder};
+use iceoryx2::port::listener::Listener;
+use iceoryx2::port::notifier::Notifier;
 use iceoryx2::port::publisher::Publisher;
 use iceoryx2::port::subscriber::Subscriber;
 use iceoryx2::service::ipc::Service;
 use iceoryx2::service::port_factory::publish_subscribe::PortFactory;
 
+/// Thread-safe cross-process service. The `Raw*` ports below use this so they
+/// are `Send + Sync` and can live in a process-global registry (the C-API
+/// `Iceoryx` delivery mode keys them by `(runtime, eid)`). The typed
+/// `Iceoryx2Publisher`/`Subscriber` keep `ipc::Service` (single-thread ports).
+use iceoryx2::service::ipc_threadsafe::Service as TsService;
+
 use crate::FlatStruct;
 
-/// Fehlerklasse fuer die iceoryx2-Bridge.
+/// Error class for the iceoryx2 bridge.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Iceoryx2Error {
-    /// Service-Build / Connect-Fehler.
+    /// Service build / connect error.
     Service(alloc::string::String),
-    /// Publisher-Build-Fehler.
+    /// Publisher build error.
     Publisher(alloc::string::String),
-    /// Subscriber-Build-Fehler.
+    /// Subscriber build error.
     Subscriber(alloc::string::String),
-    /// Loan-/Send-Fehler.
+    /// Loan / send error.
     Send(alloc::string::String),
-    /// Receive-Fehler.
+    /// Receive error.
     Receive(alloc::string::String),
-    /// Type-Hash-Mismatch zwischen Publisher und Subscriber (Spec §6.1).
+    /// Type-hash mismatch between publisher and subscriber (spec §6.1).
     TypeHashMismatch,
-    /// Service-Name leer.
+    /// Service name empty.
     EmptyServiceName,
 }
 
@@ -93,10 +101,10 @@ impl core::fmt::Display for Iceoryx2Error {
 
 impl std::error::Error for Iceoryx2Error {}
 
-/// Der Service-Name wird mit `T::TYPE_HASH` zu einem
-/// kollisionssicheren Identifier verbunden, sodass Schema-Drift
-/// (Pub und Sub haben unterschiedliche `T`-Layouts) iceoryx2-seitig
-/// im Service-Match abgewiesen wird (Spec §6.1).
+/// The service name is combined with `T::TYPE_HASH` into a
+/// collision-safe identifier, so that schema drift
+/// (pub and sub having different `T` layouts) is rejected on the
+/// iceoryx2 side in the service match (spec §6.1).
 fn build_service_name<T: FlatStruct>(base: &str) -> alloc::string::String {
     use core::fmt::Write;
     let mut s = alloc::string::String::with_capacity(base.len() + 1 + 32);
@@ -108,9 +116,9 @@ fn build_service_name<T: FlatStruct>(base: &str) -> alloc::string::String {
     s
 }
 
-/// Iceoryx2-Pub/Sub-Service-Wrapper. Haelt Node + ServiceFactory,
-/// die Lebenszeit gilt fuer die Lebenszeit des `Iceoryx2Publisher`/
-/// `Iceoryx2Subscriber`-Owner-Objekts.
+/// Iceoryx2 pub/sub service wrapper. Holds the Node + ServiceFactory;
+/// the lifetime applies for the lifetime of the `Iceoryx2Publisher`/
+/// `Iceoryx2Subscriber` owner object.
 struct ServiceCtx<T: FlatStruct> {
     _node: Node<Service>,
     factory: PortFactory<Service, [u8], ()>,
@@ -143,8 +151,8 @@ impl<T: FlatStruct> ServiceCtx<T> {
     }
 }
 
-/// Iceoryx2-Publisher fuer einen `FlatStruct`-Type. Schreibt Samples
-/// direkt in iceoryx2-SHM via `loan_slice_uninit` + `send` (Spec
+/// Iceoryx2 publisher for a `FlatStruct` type. Writes samples
+/// directly into iceoryx2 SHM via `loan_slice_uninit` + `send` (spec
 /// §8.1 zerodds-flatdata-1.0).
 pub struct Iceoryx2Publisher<T: FlatStruct> {
     ctx: ServiceCtx<T>,
@@ -152,15 +160,15 @@ pub struct Iceoryx2Publisher<T: FlatStruct> {
 }
 
 impl<T: FlatStruct> Iceoryx2Publisher<T> {
-    /// Erzeugt einen Publisher fuer den gegebenen Service-Namen.
-    /// Der iceoryx2-Service-Identifier wird intern aus
-    /// `service_base#<hex(TYPE_HASH)>` zusammengesetzt — Subscriber
-    /// muessen denselben `T` verwenden, sonst greift der iceoryx2-
-    /// Service-Match nicht.
+    /// Creates a publisher for the given service name.
+    /// The iceoryx2 service identifier is assembled internally from
+    /// `service_base#<hex(TYPE_HASH)>` — subscribers
+    /// must use the same `T`, otherwise the iceoryx2
+    /// service match does not take effect.
     ///
     /// # Errors
-    /// `Service` bei Service-Build-Fehler; `Publisher` bei
-    /// Publisher-Build-Fehler; `EmptyServiceName` bei leerem Namen.
+    /// `Service` on a service-build error; `Publisher` on a
+    /// publisher-build error; `EmptyServiceName` on an empty name.
     pub fn create(service_name: &str) -> Result<Self, Iceoryx2Error> {
         let ctx = ServiceCtx::<T>::open_or_create(service_name)?;
         let publisher = ctx
@@ -172,16 +180,16 @@ impl<T: FlatStruct> Iceoryx2Publisher<T> {
         Ok(Self { ctx, publisher })
     }
 
-    /// Spec §8.1 `write_flat` — kopiert das Sample in einen geliehenen
-    /// iceoryx2-Slot und sendet. Zero-Copy bezogen auf den IPC-Pfad
-    /// (kein `memcpy` zum Kernel und zurueck), ein einzelnes
-    /// `core::ptr::copy_nonoverlapping` von Stack/Heap in den SHM.
+    /// Spec §8.1 `write_flat` — copies the sample into a loaned
+    /// iceoryx2 slot and sends it. Zero-copy with respect to the IPC path
+    /// (no `memcpy` to the kernel and back), a single
+    /// `core::ptr::copy_nonoverlapping` from stack/heap into the SHM.
     ///
     /// # Errors
-    /// `Send` bei Loan-/Send-Fehlern (z.B. wenn der Subscriber-Buffer
-    /// voll ist und `UnableToDeliverStrategy::Block` aktiv waere — der
-    /// Default ist `DiscardData`, da uns der Spec-§4.2-Cross-Host-
-    /// Pfad parallel sichert).
+    /// `Send` on loan/send errors (e.g. when the subscriber buffer
+    /// is full and `UnableToDeliverStrategy::Block` would be active — the
+    /// default is `DiscardData`, since the spec §4.2 cross-host
+    /// path covers us in parallel).
     pub fn send(&self, sample: &T) -> Result<(), Iceoryx2Error> {
         let bytes = sample.as_bytes();
         let loan = self
@@ -195,32 +203,191 @@ impl<T: FlatStruct> Iceoryx2Publisher<T> {
         Ok(())
     }
 
-    /// Service-Name-Identifier (mit `TYPE_HASH`-Suffix), z.B. fuer
-    /// Diagnose oder Logging.
+    /// Service name identifier (with `TYPE_HASH` suffix), e.g. for
+    /// diagnostics or logging.
     #[must_use]
     pub fn service_name(&self) -> alloc::string::String {
-        // Kann nur reproduziert werden — iceoryx2 gibt den Namen nicht
-        // direkt zurueck. Wir koennen aber TYPE_HASH plus Caller-Base
-        // nicht trennen, also liefern wir eine reproduzierte Form.
-        // Fuer Diagnosezwecke ausreichend.
+        // Can only be reproduced — iceoryx2 does not return the name
+        // directly. We cannot separate TYPE_HASH from the caller base,
+        // so we return a reproduced form.
+        // Sufficient for diagnostic purposes.
         let _ = &self.ctx;
         alloc::format!("zerodds-flatdata#TYPE_HASH={:02x?}", T::TYPE_HASH)
     }
 }
 
-/// Iceoryx2-Subscriber. Empfaengt Samples via FIFO-`receive`
-/// (Spec §9.1 zerodds-flatdata-1.0).
+/// Byte-oriented iceoryx2 publisher — no `FlatStruct` type parameter.
+///
+/// The service name is used **verbatim** (no `TYPE_HASH` suffix): cross-stack
+/// peers must agree on the name and on the payload layout out of band. This
+/// powers the C-API `Iceoryx` delivery mode, where the FFI is byte-oriented and
+/// has no Rust type to derive a hash from. For typed, hash-namespaced services
+/// use [`Iceoryx2Publisher`] instead.
+pub struct RawIceoryx2Publisher {
+    _node: Node<TsService>,
+    publisher: Publisher<TsService, [u8], ()>,
+    /// Event notifier on the same service name — pinged on every `send` so a
+    /// blocking subscriber ([`RawIceoryx2Subscriber::wait`]) wakes event-driven.
+    notifier: Notifier<TsService>,
+}
+
+impl RawIceoryx2Publisher {
+    /// Creates a publisher on `service_name` with a maximum payload of
+    /// `max_len` bytes per sample.
+    ///
+    /// # Errors
+    /// `EmptyServiceName` on an empty name; `Service`/`Publisher` on build
+    /// errors.
+    pub fn create(service_name: &str, max_len: usize) -> Result<Self, Iceoryx2Error> {
+        if service_name.is_empty() {
+            return Err(Iceoryx2Error::EmptyServiceName);
+        }
+        let node = NodeBuilder::new()
+            .create::<TsService>()
+            .map_err(|e| Iceoryx2Error::Service(alloc::format!("{e:?}")))?;
+        let svc_id = service_name
+            .try_into()
+            .map_err(|e| Iceoryx2Error::Service(alloc::format!("invalid service name: {e:?}")))?;
+        let factory = node
+            .service_builder(&svc_id)
+            .publish_subscribe::<[u8]>()
+            .open_or_create()
+            .map_err(|e| Iceoryx2Error::Service(alloc::format!("{e:?}")))?;
+        let publisher = factory
+            .publisher_builder()
+            .initial_max_slice_len(max_len)
+            .create()
+            .map_err(|e| Iceoryx2Error::Publisher(alloc::format!("{e:?}")))?;
+        // Event service on the same name (a service can host both the
+        // publish_subscribe and the event messaging pattern) for blocking-wait.
+        let event = node
+            .service_builder(&svc_id)
+            .event()
+            .open_or_create()
+            .map_err(|e| Iceoryx2Error::Service(alloc::format!("event: {e:?}")))?;
+        let notifier = event
+            .notifier_builder()
+            .create()
+            .map_err(|e| Iceoryx2Error::Publisher(alloc::format!("notifier: {e:?}")))?;
+        Ok(Self {
+            _node: node,
+            publisher,
+            notifier,
+        })
+    }
+
+    /// Loans an iceoryx2 slot, writes `bytes` into it and sends. Zero-copy with
+    /// respect to the IPC path (a single copy into the SHM slot, no kernel
+    /// round-trip).
+    ///
+    /// # Errors
+    /// `Send` on loan/send errors.
+    pub fn send(&self, bytes: &[u8]) -> Result<(), Iceoryx2Error> {
+        let loan = self
+            .publisher
+            .loan_slice_uninit(bytes.len())
+            .map_err(|e| Iceoryx2Error::Send(alloc::format!("loan: {e:?}")))?;
+        let initialized = loan.write_from_slice(bytes);
+        initialized
+            .send()
+            .map_err(|e| Iceoryx2Error::Send(alloc::format!("send: {e:?}")))?;
+        // Wake any blocking subscriber (best-effort — delivery already happened).
+        let _ = self.notifier.notify();
+        Ok(())
+    }
+}
+
+/// Byte-oriented iceoryx2 subscriber — the receive counterpart to
+/// [`RawIceoryx2Publisher`]. `receive` copies the sample payload out into an
+/// owned buffer (the byte FFI hands the caller an owned region anyway).
+pub struct RawIceoryx2Subscriber {
+    _node: Node<TsService>,
+    subscriber: Subscriber<TsService, [u8], ()>,
+    /// Event listener on the same service name — blocks in [`Self::wait`] until
+    /// the publisher's notifier pings (a sample was sent).
+    listener: Listener<TsService>,
+}
+
+impl RawIceoryx2Subscriber {
+    /// Creates a subscriber on `service_name`.
+    ///
+    /// # Errors
+    /// `EmptyServiceName` on an empty name; `Service`/`Subscriber` on build
+    /// errors.
+    pub fn create(service_name: &str) -> Result<Self, Iceoryx2Error> {
+        if service_name.is_empty() {
+            return Err(Iceoryx2Error::EmptyServiceName);
+        }
+        let node = NodeBuilder::new()
+            .create::<TsService>()
+            .map_err(|e| Iceoryx2Error::Service(alloc::format!("{e:?}")))?;
+        let svc_id = service_name
+            .try_into()
+            .map_err(|e| Iceoryx2Error::Service(alloc::format!("invalid service name: {e:?}")))?;
+        let factory = node
+            .service_builder(&svc_id)
+            .publish_subscribe::<[u8]>()
+            .open_or_create()
+            .map_err(|e| Iceoryx2Error::Service(alloc::format!("{e:?}")))?;
+        let subscriber = factory
+            .subscriber_builder()
+            .create()
+            .map_err(|e| Iceoryx2Error::Subscriber(alloc::format!("{e:?}")))?;
+        let event = node
+            .service_builder(&svc_id)
+            .event()
+            .open_or_create()
+            .map_err(|e| Iceoryx2Error::Service(alloc::format!("event: {e:?}")))?;
+        let listener = event
+            .listener_builder()
+            .create()
+            .map_err(|e| Iceoryx2Error::Subscriber(alloc::format!("listener: {e:?}")))?;
+        Ok(Self {
+            _node: node,
+            subscriber,
+            listener,
+        })
+    }
+
+    /// Blocks until the publisher signals a new sample or `timeout` elapses
+    /// (event-driven via the iceoryx2 listener — no busy-poll). Returns `true` if
+    /// woken by a notification. A spurious `true` is harmless: the caller then
+    /// `receive`s and finds nothing.
+    #[must_use]
+    pub fn wait(&self, timeout: core::time::Duration) -> bool {
+        matches!(self.listener.timed_wait_one(timeout), Ok(Some(_)))
+    }
+
+    /// Receives the next available sample (FIFO), copied into an owned buffer.
+    /// `Ok(None)` means "no new sample", not end of stream.
+    ///
+    /// # Errors
+    /// `Receive` on iceoryx2 receive errors.
+    pub fn receive(&self) -> Result<Option<alloc::vec::Vec<u8>>, Iceoryx2Error> {
+        let Some(sample) = self
+            .subscriber
+            .receive()
+            .map_err(|e| Iceoryx2Error::Receive(alloc::format!("{e:?}")))?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(sample.payload().to_vec()))
+    }
+}
+
+/// Iceoryx2 subscriber. Receives samples via FIFO `receive`
+/// (spec §9.1 zerodds-flatdata-1.0).
 pub struct Iceoryx2Subscriber<T: FlatStruct> {
     _ctx: ServiceCtx<T>,
     subscriber: Subscriber<Service, [u8], ()>,
 }
 
 impl<T: FlatStruct> Iceoryx2Subscriber<T> {
-    /// Erzeugt einen Subscriber fuer den gegebenen Service-Namen.
+    /// Creates a subscriber for the given service name.
     ///
     /// # Errors
-    /// `Service`/`Subscriber` bei Service- bzw. Subscriber-Build-
-    /// Fehler.
+    /// `Service`/`Subscriber` on a service- or subscriber-build
+    /// error.
     pub fn create(service_name: &str) -> Result<Self, Iceoryx2Error> {
         let ctx = ServiceCtx::<T>::open_or_create(service_name)?;
         let subscriber = ctx
@@ -234,20 +401,20 @@ impl<T: FlatStruct> Iceoryx2Subscriber<T> {
         })
     }
 
-    /// Spec §9.1 `read_flat` — empfaengt das naechste verfuegbare
-    /// Sample (FIFO). `Ok(None)` bedeutet "kein neues Sample", nicht
-    /// Stream-Ende.
+    /// Spec §9.1 `read_flat` — receives the next available
+    /// sample (FIFO). `Ok(None)` means "no new sample", not
+    /// end of stream.
     ///
-    /// Spec §6.1 Type-Hash-Cross-Validation ist beim
-    /// Service-Build-Match erfolgt (der Service-Name encodiert
-    /// `TYPE_HASH`); ein Subscriber mit anderem `T` wuerde einen
-    /// anderen iceoryx2-Service oeffnen und keine Samples bekommen.
-    /// Wir validieren zusaetzlich die Slice-Laenge gegen
+    /// Spec §6.1 type-hash cross-validation has already happened at the
+    /// service-build match (the service name encodes
+    /// `TYPE_HASH`); a subscriber with a different `T` would open a
+    /// different iceoryx2 service and receive no samples.
+    /// We additionally validate the slice length against
     /// `T::WIRE_SIZE`.
     ///
     /// # Errors
-    /// `Receive` bei iceoryx2-Receive-Fehlern. Verworfen wird ein
-    /// Sample mit unzulaessiger Slice-Laenge (logged + None).
+    /// `Receive` on iceoryx2 receive errors. A sample with an
+    /// invalid slice length is discarded (logged + None).
     pub fn receive(&self) -> Result<Option<T>, Iceoryx2Error> {
         let Some(sample) = self
             .subscriber
@@ -258,11 +425,11 @@ impl<T: FlatStruct> Iceoryx2Subscriber<T> {
         };
         let bytes: &[u8] = sample.payload();
         if bytes.len() < T::WIRE_SIZE {
-            // Schema-Drift / Truncation — Spec §6.1.
+            // Schema drift / truncation — spec §6.1.
             return Ok(None);
         }
-        // SAFETY: WIRE_SIZE-Check oben + Service-Name-TYPE_HASH-Match
-        // garantiert Layout-Consistency.
+        // SAFETY: the WIRE_SIZE check above + the service-name TYPE_HASH
+        // match guarantee layout consistency.
         let value = unsafe { T::from_bytes_unchecked(bytes) };
         Ok(Some(value))
     }
@@ -281,7 +448,7 @@ mod tests {
         z: f64,
     }
 
-    // SAFETY: repr(C) + Copy + 'static + alle Felder Primitiv.
+    // SAFETY: repr(C) + Copy + 'static + all fields primitive.
     unsafe impl FlatStruct for Pose {
         const TYPE_HASH: [u8; 16] = [0xCC; 16];
     }
@@ -294,15 +461,15 @@ mod tests {
         z: f64,
     }
 
-    // SAFETY: repr(C) + Copy + 'static + alle Felder Primitiv.
+    // SAFETY: repr(C) + Copy + 'static + all fields primitive.
     unsafe impl FlatStruct for OtherPose {
-        const TYPE_HASH: [u8; 16] = [0xDD; 16]; // anderer Hash
+        const TYPE_HASH: [u8; 16] = [0xDD; 16]; // different hash
     }
 
     fn unique_service_name(suffix: &str) -> alloc::string::String {
-        // iceoryx2 lebt im /dev/shm namespace; pro Test einen
-        // eindeutigen Service damit Test-Reihenfolge und parallele
-        // Ausfuehrung sich nicht beissen.
+        // iceoryx2 lives in the /dev/shm namespace; use a unique
+        // service per test so that test ordering and parallel
+        // execution do not conflict.
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -323,8 +490,8 @@ mod tests {
         };
         publisher.send(&p).expect("send");
 
-        // iceoryx2 ist synchron im Same-Process-Pfad — receive sollte
-        // das soeben gesendete Sample sofort liefern.
+        // iceoryx2 is synchronous on the same-process path — receive
+        // should deliver the just-sent sample immediately.
         let got = subscriber.receive().expect("receive");
         assert_eq!(got, Some(p));
     }
@@ -339,12 +506,12 @@ mod tests {
 
     #[test]
     fn type_hash_mismatch_isolates_services() {
-        // Spec §6.1: Schema-Drift → unterschiedlicher iceoryx2-
-        // Service-Name → Pub und Sub matchen nicht, Sub bekommt
-        // keine Samples.
+        // Spec §6.1: schema drift → different iceoryx2
+        // service name → pub and sub do not match, sub receives
+        // no samples.
         let svc = unique_service_name("drift");
         let publisher = Iceoryx2Publisher::<Pose>::create(&svc).expect("publisher");
-        // Subscriber mit anderem Hash → eigener Service.
+        // Subscriber with a different hash → its own service.
         let other_subscriber =
             Iceoryx2Subscriber::<OtherPose>::create(&svc).expect("other subscriber");
 
@@ -364,5 +531,30 @@ mod tests {
     fn empty_service_name_rejected() {
         let res = Iceoryx2Publisher::<Pose>::create("");
         assert!(matches!(res, Err(Iceoryx2Error::EmptyServiceName)));
+    }
+
+    #[test]
+    fn raw_byte_publisher_subscriber_roundtrip() {
+        let svc = unique_service_name("raw");
+        let publisher = RawIceoryx2Publisher::create(&svc, 64).expect("raw publisher");
+        let subscriber = RawIceoryx2Subscriber::create(&svc).expect("raw subscriber");
+
+        let payload: [u8; 8] = [0x2a, 0, 0, 0, 0xFF, 0xEE, 0xDD, 0xCC];
+        publisher.send(&payload).expect("raw send");
+
+        let got = subscriber.receive().expect("raw receive");
+        assert_eq!(got.as_deref(), Some(&payload[..]));
+    }
+
+    #[test]
+    fn raw_empty_service_name_rejected() {
+        assert!(matches!(
+            RawIceoryx2Publisher::create("", 16),
+            Err(Iceoryx2Error::EmptyServiceName)
+        ));
+        assert!(matches!(
+            RawIceoryx2Subscriber::create(""),
+            Err(Iceoryx2Error::EmptyServiceName)
+        ));
     }
 }

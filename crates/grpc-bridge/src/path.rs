@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! gRPC HTTP `:path` Parsing — Spec §"Call-Definition".
+//! gRPC HTTP `:path` parsing — Spec §"Call-Definition".
 
 use alloc::string::String;
 use core::fmt;
 
-/// Path-Parsing-Fehler.
+/// Path parsing error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PathError {
-    /// Path startet nicht mit `/`.
+    /// Path does not start with `/`.
     NotAbsolute,
-    /// Path hat nicht das Format `/<service>/<method>`.
+    /// Path does not have the format `/<service>/<method>`.
     MalformedPath,
 }
 
@@ -29,7 +29,7 @@ impl std::error::Error for PathError {}
 
 /// Spec §"Path" — `:path` "/" Service-Name "/" {method-name}.
 ///
-/// Liefert `(service_name, method_name)`. Beide MUST non-empty sein.
+/// Returns `(service_name, method_name)`. Both MUST be non-empty.
 ///
 /// # Errors
 /// Siehe [`PathError`].
@@ -55,7 +55,7 @@ mod tests {
 
     #[test]
     fn parses_standard_grpc_path() {
-        // Spec §"Path" Beispiel.
+        // Spec §"Path" example.
         let (s, m) = parse_path("/helloworld.Greeter/SayHello").expect("ok");
         assert_eq!(s, "helloworld.Greeter");
         assert_eq!(m, "SayHello");
@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn rejects_method_with_slash() {
-        // Spec — method ist single segment.
+        // Spec — method is a single segment.
         assert_eq!(
             parse_path("/Service/Method/Sub"),
             Err(PathError::MalformedPath)
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn parses_dotted_service_name() {
-        // Spec — Service-Name kann fully-qualified sein.
+        // Spec — the service name can be fully qualified.
         let (s, m) = parse_path("/google.api.something.LongServiceName/MyMethod").expect("ok");
         assert_eq!(s, "google.api.something.LongServiceName");
         assert_eq!(m, "MyMethod");

@@ -3,15 +3,15 @@
 
 //! Crate `zerodds-websocket-bridge`. Safety classification: **STANDARD**.
 //!
-//! WebSocket (RFC 6455) komplettes Stack-Set — pure-Rust `no_std +
-//! alloc`, `forbid(unsafe_code)`. Implementiert die volle WebSocket-
-//! Spec inklusive Base-Framing-Protocol (§5.2 + §5.3), Opening-
-//! Handshake (§4) mit `Sec-WebSocket-Accept`-SHA1-Berechnung,
-//! Extension- + Subprotocol-Negotiation (§9), Close-Frame-Status-
-//! Code-Semantik (§7.4) inkl. Forbidden-on-Wire-Pruefung,
-//! permessage-deflate Extension (RFC 7692), URI-Parser (`ws://` /
-//! `wss://`, RFC 6455 §3), Streaming-UTF-8-Validator (§8.1) fuer
-//! Text-Frames, sowie einen WebSocket↔DDS-Topic-Bridge.
+//! Complete WebSocket (RFC 6455) stack set — pure-Rust `no_std +
+//! alloc`, `forbid(unsafe_code)`. Implements the full WebSocket
+//! spec including the base framing protocol (§5.2 + §5.3), opening
+//! handshake (§4) with `Sec-WebSocket-Accept` SHA1 computation,
+//! extension + subprotocol negotiation (§9), close-frame status
+//! code semantics (§7.4) incl. forbidden-on-wire checking,
+//! the permessage-deflate extension (RFC 7692), a URI parser (`ws://` /
+//! `wss://`, RFC 6455 §3), a streaming UTF-8 validator (§8.1) for
+//! text frames, as well as a WebSocket↔DDS topic bridge.
 //!
 //! Spec-Referenzen:
 //!
@@ -19,17 +19,17 @@
 //! - **RFC 7692** — Compression Extensions for WebSocket
 //!   (`permessage-deflate`).
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 5 — Bridges. Substrat fuer Browser↔DDS-Endpoint-Mapping
-//! (Web-UIs, Realtime-Dashboards, DDS-Web-Gateway).
+//! Layer 5 — bridges. Substrate for browser↔DDS endpoint mapping
+//! (web UIs, realtime dashboards, DDS web gateway).
 //!
 //! ## Public API (Stand 1.0.0-rc.1)
 //!
-//! - [`Frame`] / [`Opcode`] — Frame-Modell (§5.2).
-//! - [`encode`] / [`decode`] / [`CodecError`] — Wire-Codec inklusive
-//!   Payload-Length-Encoding (7-bit / 7+16-bit / 7+64-bit) und
-//!   Masking-Application.
+//! - [`Frame`] / [`Opcode`] — frame model (§5.2).
+//! - [`encode`] / [`decode`] / [`CodecError`] — wire codec including
+//!   payload length encoding (7-bit / 7+16-bit / 7+64-bit) and
+//!   mask application.
 //! - [`apply_mask`] / [`generate_masking_key`] /
 //!   [`MaskingKeyProvider`] / [`InsecureSplitmixProvider`] /
 //!   [`ClosureMaskingKeyProvider`] — XOR-Masking (§5.3).
@@ -38,25 +38,25 @@
 //! - [`ClientHandshake`] / [`ServerHandshake`] /
 //!   [`compute_accept`] / [`parse_client_request`] /
 //!   [`build_server_response`] / [`render_server_response`] /
-//!   [`HandshakeError`] — Opening-Handshake (§4).
+//!   [`HandshakeError`] — opening handshake (§4).
 //! - [`PermessageDeflateParams`] / [`parse_offer`] / [`render_accept`]
 //!   / [`append_tail`] / [`strip_tail`] / [`DEFLATE_TAIL`] /
-//!   [`NegotiationError`] — RFC 7692 permessage-deflate Negotiation.
+//!   [`NegotiationError`] — RFC 7692 permessage-deflate negotiation.
 //! - [`WebSocketUri`] / [`parse_websocket_uri`] / [`default_port`] /
 //!   [`is_local_loopback`] / [`resource_name`] / [`UriError`] —
-//!   `ws://` / `wss://` URI-Parser (§3).
+//!   `ws://` / `wss://` URI parser (§3).
 //! - [`StreamingValidator`] / [`validate_utf8`] / [`Utf8Error`] —
-//!   Text-Frame-UTF-8-Validator (§8.1).
+//!   text-frame UTF-8 validator (§8.1).
 //! - [`SubscriptionRegistry`] / [`Notification`] / [`BridgeOp`] /
 //!   [`BridgeError`] / [`parse_op`] / [`render_notification`] —
-//!   WebSocket↔DDS-Topic-Bridge.
+//!   WebSocket↔DDS topic bridge.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust
 //! use zerodds_websocket_bridge::{compute_accept};
 //!
-//! // RFC 6455 §1.3: Sec-WebSocket-Accept-Beispiel.
+//! // RFC 6455 §1.3: Sec-WebSocket-Accept example.
 //! let accept = compute_accept("dGhlIHNhbXBsZSBub25jZQ==");
 //! assert_eq!(accept, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
 //! ```

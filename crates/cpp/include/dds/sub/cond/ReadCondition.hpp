@@ -21,7 +21,7 @@ namespace cond {
 template <typename T>
 class ReadCondition : public ::dds::core::cond::Condition {
 public:
-    /// Konstruiert ueber DataReader + state-mask.
+    /// Constructs via DataReader + state mask.
     ReadCondition(DataReader<T>& dr, uint32_t sample_states,
                   uint32_t view_states, uint32_t instance_states)
         : Condition(zerodds_dr_create_readcondition(dr.native_handle(),
@@ -47,7 +47,7 @@ private:
 template <typename T>
 class QueryCondition : public ::dds::core::cond::Condition {
 public:
-    /// Konstruiert mit Filter-Expression + Parameter.
+    /// Constructs with a filter expression + parameters.
     QueryCondition(DataReader<T>& dr, uint32_t sample_states,
                    uint32_t view_states, uint32_t instance_states,
                    const std::string& expression,

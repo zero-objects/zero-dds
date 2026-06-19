@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! AMQP-Error-Code-Mapping + Diagnostic-Description-Format.
+//! AMQP error-code mapping + diagnostic-description format.
 //!
-//! Spec-Quellen:
+//! Spec sources:
 //! * dds-amqp-1.0 §11.1 Encode/Decode Failures.
 //! * §11.2 Connection / Session / Link Lifecycle Failures.
 //! * §11.3 Instance-Lifecycle Failures.
-//! * §11.4 Diagnostic Description Strings (Format
+//! * §11.4 Diagnostic Description Strings (format
 //!   `<spec-section>: <human-readable>`).
 //!
-//! Ergaenzt §7.5.1 — `ResolutionError::NoRoute` ↔
-//! `amqp:not-found`-Link-Error wenn `permit_dynamic_topics =
+//! Complements §7.5.1 — `ResolutionError::NoRoute` ↔
+//! `amqp:not-found` link error when `permit_dynamic_topics =
 //! false`.
 
 use alloc::string::String;
@@ -20,47 +20,47 @@ use core::fmt;
 use crate::mapping::MappingError;
 use crate::routing::ResolutionError;
 
-/// Spec §11 — Disposition-Scope eines Errors.
+/// Spec §11 — disposition scope of an error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorScope {
-    /// Per-Transfer Disposition `rejected`. Link bleibt offen.
+    /// Per-transfer disposition `rejected`. The link stays open.
     Transfer,
-    /// Link-Error. Per Spec auch der entsprechende Detach.
+    /// Link error. Per spec, also the corresponding detach.
     Link,
-    /// Connection-Close mit Frame.
+    /// Connection close with a frame.
     Connection,
 }
 
-/// Spec §11 — kanonische AMQP-Error-Conditions, die der Endpoint
-/// emittiert.
+/// Spec §11 — canonical AMQP error conditions emitted by the
+/// endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AmqpErrorCondition {
-    /// `amqp:decode-error` — XCDR2-Decode/Body-Mismatch/Type-
-    /// Collision.
+    /// `amqp:decode-error` — XCDR2 decode / body mismatch / type
+    /// collision.
     DecodeError,
     /// `amqp:not-implemented` — durability=unsettled-state,
-    /// unbekannter `dds:operation`-Wert, etc.
+    /// unknown `dds:operation` value, etc.
     NotImplemented,
-    /// `amqp:not-found` — Address nicht im Catalog und
+    /// `amqp:not-found` — address not in catalog and
     /// `permit_dynamic_topics = false`.
     NotFound,
     /// `amqp:resource-limit-exceeded` — max-connections,
     /// catalog-cap, max-frame-size, idle-timeout.
     ResourceLimitExceeded,
-    /// `amqp:unauthorized-access` — DDS-Security AccessControl-
-    /// Plugin lehnt ab.
+    /// `amqp:unauthorized-access` — the DDS-Security AccessControl
+    /// plugin denies.
     UnauthorizedAccess,
     /// `amqp:precondition-failed` — `dds:operation = unregister`
-    /// auf unbekannter Instanz, Reply-Validation D.4.1
+    /// on an unknown instance, reply validation D.4.1
     /// `correlation-id absent`.
     PreconditionFailed,
-    /// `amqp:connection:framing-error` — Frame-Size ueberschreitet
+    /// `amqp:connection:framing-error` — frame size exceeds
     /// `max-frame-size`.
     FramingError,
 }
 
 impl AmqpErrorCondition {
-    /// Spec-konformer Wire-String fuer das `error.condition`-Feld.
+    /// Spec-conformant wire string for the `error.condition` field.
     #[must_use]
     pub const fn as_symbol(self) -> &'static str {
         match self {
@@ -75,19 +75,19 @@ impl AmqpErrorCondition {
     }
 }
 
-/// Spec §11.4 — `error.description`-String mit kanonischem
-/// `<spec-section>: <human-text>`-Format.
+/// Spec §11.4 — `error.description` string with the canonical
+/// `<spec-section>: <human-text>` format.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ErrorDescription {
-    /// `<spec-section>` (z.B. `§7.2.1.3` oder `Annex D §D.4.1`).
+    /// `<spec-section>` (e.g. `§7.2.1.3` or `Annex D §D.4.1`).
     pub spec_section: String,
-    /// Mensch-lesbarer Text (Englisch; Spec verlangt ASCII-only
-    /// nicht, aber die OMG-Konvention ist Englisch).
+    /// Human-readable text (English; the spec does not require
+    /// ASCII-only, but the OMG convention is English).
     pub message: String,
 }
 
 impl ErrorDescription {
-    /// Konstruktor.
+    /// Constructor.
     pub fn new(spec_section: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             spec_section: spec_section.into(),
@@ -95,7 +95,7 @@ impl ErrorDescription {
         }
     }
 
-    /// Spec §11.4 — Wire-String `<§-Ref>: <Text>`.
+    /// Spec §11.4 — wire string `<§-ref>: <text>`.
     #[must_use]
     pub fn render(&self) -> String {
         alloc::format!("{}: {}", self.spec_section, self.message)
@@ -108,20 +108,20 @@ impl fmt::Display for ErrorDescription {
     }
 }
 
-/// Spec §11 — vollstaendige Error-Information, die der Endpoint
-/// ueber AMQP zurueckmeldet.
+/// Spec §11 — complete error information the endpoint reports
+/// back over AMQP.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AmqpError {
-    /// AMQP-Wire-Error-Condition.
+    /// AMQP wire error condition.
     pub condition: AmqpErrorCondition,
-    /// Disposition-Scope (Transfer / Link / Connection).
+    /// Disposition scope (Transfer / Link / Connection).
     pub scope: ErrorScope,
-    /// Diagnostic-Description fuer den `error.description`-String.
+    /// Diagnostic description for the `error.description` string.
     pub description: ErrorDescription,
 }
 
 impl AmqpError {
-    /// Konstruktor.
+    /// Constructor.
     pub fn new(
         condition: AmqpErrorCondition,
         scope: ErrorScope,
@@ -136,11 +136,11 @@ impl AmqpError {
 }
 
 // ============================================================
-// Spec-Mapping-Helpers
+// Spec mapping helpers
 // ============================================================
 
-/// Spec §11.1 — `MappingError` aus dem Body-Encoding-Pfad auf
-/// AMQP-Errors abbilden.
+/// Spec §11.1 — map a `MappingError` from the body-encoding path
+/// onto AMQP errors.
 #[must_use]
 pub fn map_mapping_error(err: &MappingError) -> AmqpError {
     match err {
@@ -162,17 +162,18 @@ pub fn map_mapping_error(err: &MappingError) -> AmqpError {
     }
 }
 
-/// Spec §7.5.1 — `ResolutionError::NoRoute` auf
-/// `amqp:not-found`-Link-Error abbilden, wenn
+/// Spec §7.5.1 — map `ResolutionError::NoRoute` onto an
+/// `amqp:not-found` link error when
 /// `permit_dynamic_topics = false`.
 #[must_use]
 pub fn map_resolution_error(err: &ResolutionError, permit_dynamic_topics: bool) -> AmqpError {
     match err {
         ResolutionError::NoRoute(addr) => {
             if permit_dynamic_topics {
-                // permit_dynamic_topics=true: Caller soll on-the-fly
-                // anlegen; hier melden wir es als NotFound mit
-                // Hinweis auf §7.5.1, das Caller-Verhalten regelt.
+                // permit_dynamic_topics=true: the caller should
+                // create it on the fly; here we report it as NotFound
+                // with a reference to §7.5.1, which governs caller
+                // behavior.
                 AmqpError::new(
                     AmqpErrorCondition::NotFound,
                     ErrorScope::Link,
@@ -204,7 +205,7 @@ pub fn map_resolution_error(err: &ResolutionError, permit_dynamic_topics: bool) 
     }
 }
 
-/// Spec §11.2 — Resource-Limit-Verletzungen.
+/// Spec §11.2 — resource-limit violations.
 #[must_use]
 pub fn resource_limit_exceeded(
     spec_section: impl Into<String>,
@@ -217,7 +218,7 @@ pub fn resource_limit_exceeded(
     )
 }
 
-/// Spec §11.2 — `terminus.durable=unsettled-state`-Reject.
+/// Spec §11.2 — `terminus.durable=unsettled-state` reject.
 #[must_use]
 pub fn unsettled_state_not_implemented() -> AmqpError {
     AmqpError::new(
@@ -230,7 +231,7 @@ pub fn unsettled_state_not_implemented() -> AmqpError {
     )
 }
 
-/// Spec §11.2 — Unbekannter `dds:operation`-Wert.
+/// Spec §11.2 — unknown `dds:operation` value.
 #[must_use]
 pub fn unknown_dds_operation(value: &str) -> AmqpError {
     AmqpError::new(
@@ -243,8 +244,8 @@ pub fn unknown_dds_operation(value: &str) -> AmqpError {
     )
 }
 
-/// Spec §11.3 — Instance-Lifecycle-Failure: `unregister`/`dispose`
-/// auf unbekannter Instanz.
+/// Spec §11.3 — instance-lifecycle failure: `unregister`/`dispose`
+/// on an unknown instance.
 #[must_use]
 pub fn instance_unknown(op: &str, key: &str) -> AmqpError {
     AmqpError::new(
@@ -257,7 +258,7 @@ pub fn instance_unknown(op: &str, key: &str) -> AmqpError {
     )
 }
 
-/// Spec §11.3 — `register` ohne Key-Felder im Body.
+/// Spec §11.3 — `register` without key fields in the body.
 #[must_use]
 pub fn register_missing_key() -> AmqpError {
     AmqpError::new(
@@ -270,7 +271,7 @@ pub fn register_missing_key() -> AmqpError {
     )
 }
 
-/// Spec §11.2 — DDS-Security AccessControl-Reject.
+/// Spec §11.2 — DDS-Security AccessControl reject.
 #[must_use]
 pub fn access_denied(subject: &str, address: &str) -> AmqpError {
     AmqpError::new(
@@ -319,7 +320,7 @@ mod tests {
         );
     }
 
-    // --- §11.4 Diagnostic-Format ---
+    // --- §11.4 diagnostic format ---
 
     #[test]
     fn description_renders_spec_section_then_text() {
@@ -333,7 +334,7 @@ mod tests {
         assert_eq!(alloc::format!("{d}"), d.render());
     }
 
-    // --- §11.1 Mapping-Error-Mapper ---
+    // --- §11.1 mapping-error mapper ---
 
     #[test]
     fn invalid_utf8_maps_to_decode_error_transfer() {
@@ -356,7 +357,7 @@ mod tests {
         assert_eq!(e.condition, AmqpErrorCondition::DecodeError);
     }
 
-    // --- §7.5.1 NoRoute-Mapping ---
+    // --- §7.5.1 NoRoute mapping ---
 
     #[test]
     fn no_route_with_dynamic_disabled_yields_not_found_link() {
@@ -373,9 +374,9 @@ mod tests {
 
     #[test]
     fn no_route_with_dynamic_enabled_still_not_found() {
-        // Spec §7.5.1 — `true`-Pfad wird Caller-seitig in
-        // dynamic-topic-creation umgesetzt; wir liefern hier
-        // dieselbe Condition aber andere Description.
+        // Spec §7.5.1 — the `true` path is turned into
+        // dynamic-topic creation on the caller side; here we return
+        // the same condition but a different description.
         let e = map_resolution_error(&ResolutionError::NoRoute("X".into()), true);
         assert_eq!(e.condition, AmqpErrorCondition::NotFound);
         assert!(
@@ -392,7 +393,7 @@ mod tests {
         assert_eq!(e.scope, ErrorScope::Link);
     }
 
-    // --- §11.2 Resource-Limits + Durability ---
+    // --- §11.2 resource limits + durability ---
 
     #[test]
     fn resource_limit_exceeded_is_connection_scope() {
@@ -416,7 +417,7 @@ mod tests {
         assert!(e.description.message.contains("teleport"));
     }
 
-    // --- §11.3 Instance-Lifecycle ---
+    // --- §11.3 instance lifecycle ---
 
     #[test]
     fn instance_unknown_yields_precondition_failed() {
@@ -434,7 +435,7 @@ mod tests {
         assert!(e.description.message.contains("register"));
     }
 
-    // --- §10.3.3 AccessControl-Reject ---
+    // --- §10.3.3 AccessControl reject ---
 
     #[test]
     fn access_denied_yields_unauthorized_access_link() {

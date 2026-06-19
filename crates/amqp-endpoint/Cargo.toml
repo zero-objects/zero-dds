@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "DDS-AMQP 1.0 bidirektionaler Endpoint-Stack: SASL + Session-/Link-Lifecycle + Routing + Mapping + Properties + Disposition-Mapper-Wire-up + Annex-A-Configuration. Sitzt auf zerodds-amqp-bridge."
+description = "DDS-AMQP 1.0 bidirectional endpoint stack: SASL + session/link lifecycle + routing + mapping + properties + disposition-mapper wire-up + Annex-A configuration. Sits on top of zerodds-amqp-bridge."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-amqp-endpoint"
 readme = "README.md"
@@ -20,7 +20,7 @@ workspace = true
 [lib]
 path = "src/lib.rs"
 
-# Spec `zerodds-amqp-bridge-daemon-1.0` §2 — Daemon-Binary.
+# Spec `zerodds-amqp-bridge-daemon-1.0` §2 — daemon binary.
 [[bin]]
 name = "zerodds-amqp-bridged"
 path = "src/bin/zerodds-amqp-bridged.rs"
@@ -40,36 +40,42 @@ std = [
     "dep:signal-hook",
 ]
 alloc = []
-# Cross-Vendor-Interop-Tests gegen RabbitMQ/qpid (Spec §10 + §12.3).
+# Cross-vendor interop tests against RabbitMQ/qpid (Spec §10 + §12.3).
 cross-vendor-tests = ["std"]
 
 [dependencies]
-# Wire-Codec aus dem Schwester-Crate.
-zerodds-amqp-bridge = { version = "1.0.0-rc.1", path = "../amqp-bridge", default-features = false, features = ["alloc"] }
-# SHA-256 fuer §7.6.1 group-id (KeyHash → hex digest).
+# Wire codec from the sibling crate.
+zerodds-amqp-bridge = { version = "1.0.0-rc.3", path = "../amqp-bridge", default-features = false, features = ["alloc"] }
+# SHA-256 for §7.6.1 group-id (KeyHash → hex digest) + SASL SCRAM-SHA-256.
 sha2 = { workspace = true }
-# Spec §9.2 — XML-Configuration-Loader (std-only).
+# SASL SCRAM-SHA-256 (RFC 7677): HMAC + PBKDF2 (built on hmac) + base64 wire.
+hmac = { workspace = true }
+base64 = { workspace = true }
+# Spec §9.2 — XML configuration loader (std-only).
 roxmltree = { workspace = true, optional = true }
-# Bridge-Security-Substrat (Bridge-Spec §7.1 TLS / §7.2 Auth / §7.3 ACL).
-zerodds-bridge-security = { version = "1.0.0-rc.1", path = "../bridge-security", optional = true }
+# Bridge-security substrate (Bridge-Spec §7.1 TLS / §7.2 Auth / §7.3 ACL).
+zerodds-bridge-security = { version = "1.0.0-rc.3", path = "../bridge-security", optional = true }
 rustls = { workspace = true, optional = true }
-# Cross-Cutting Daemon-Observability: Prometheus + OTLP + Shutdown-Watcher + QoS-Mapper.
-zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
-zerodds-observability-otlp = { version = "1.0.0-rc.1", path = "../observability-otlp", optional = true }
-zerodds-qos = { version = "1.0.0-rc.1", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+# Cross-cutting daemon observability: Prometheus + OTLP + shutdown watcher + QoS mapper.
+zerodds-monitor = { version = "1.0.0-rc.3", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "1.0.0-rc.3", path = "../observability-otlp", optional = true }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
 signal-hook = { workspace = true, optional = true }
 
 [dev-dependencies]
-# §9.1 Annex-A IDL-Roundtrip-Test: parser-Verifikation, dass das
-# `module zerodds::amqp` aus der Spec parsen + die annex_a.rs-
-# Spiegelung deckungsgleich ist.
+# §9.1 Annex-A IDL roundtrip test: parser verification that the
+# `module zerodds::amqp` from the spec parses and that the annex_a.rs
+# mirror matches it exactly.
 zerodds-idl = { path = "../idl" }
 proptest = { workspace = true }
-# Self-signed Certs + PEM-Loader fuer §7.1 TLS-Tests in
-# `tests/security_e2e.rs`. Per-Crate, kein Workspace-Edit.
+# Self-signed certs + PEM loader for the §7.1 TLS tests in
+# `tests/security_e2e.rs`. Per-crate, no workspace edit.
 rcgen = "0.13"
 rustls-pemfile = { workspace = true }
-# SIGTERM-graceful Shutdown im DaemonGuard (sonst SIGKILL → korrupte
-# `.profraw` unter cargo-llvm-cov). Unix-only via cfg-Gate.
+# Cross-stack interop capstone: drive the AMQP 0.9.1 client (Path B) alongside
+# the in-crate AMQP 1.0 client (Path A) against the same RabbitMQ queue.
+zerodds-amqp-0-9-1 = { path = "../amqp-0-9-1" }
+# SIGTERM-graceful shutdown in DaemonGuard (otherwise SIGKILL → corrupt
+# `.profraw` under cargo-llvm-cov). Unix-only via cfg gate.
 [target.'cfg(unix)'.dev-dependencies]
 libc = { workspace = true, features = ["std"] }

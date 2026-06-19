@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! QoS C-FFI Strukturen + Konvertierungen (Spec §2.2.3 + DDS-PSM-Cxx §7.2.4).
+//! QoS C-FFI structs + conversions (Spec §2.2.3 + DDS-PSM-Cxx §7.2.4).
 //!
-//! Alle 22 normativen QoS-Policies sind als `#[repr(C)]`-Strukturen mit
-//! exaktem Field-Layout exponiert. Caller fuellt sie direkt in C aus
-//! (kein Builder-Boilerplate).
+//! All 22 normative QoS policies are exposed as `#[repr(C)]` structs with
+//! an exact field layout. The caller fills them in directly in C
+//! (no builder boilerplate).
 //!
-//! `Vec<u8>`/`Vec<String>`-Felder (UserData, TopicData, GroupData, Partition)
-//! werden als `(ptr, len)`-Paare gefuehrt. Die FFI-Strukturen besitzen die
-//! gepuntete Daten **nicht** — Caller bleibt Owner; bei `set_qos` kopiert
-//! der Konverter die Bytes/Strings in den Rust-Heap.
+//! `Vec<u8>`/`Vec<String>` fields (UserData, TopicData, GroupData, Partition)
+//! are carried as `(ptr, len)` pairs. The FFI structs do **not** own the
+//! pointed-to data — the caller remains the owner; on `set_qos` the
+//! converter copies the bytes/strings into the Rust heap.
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -40,6 +40,18 @@ use crate::ZeroDdsStatus;
 // Time / Duration
 // ---------------------------------------------------------------------------
 
+/// Time point (Spec §2.2.3.5 + IDL §9.3.2). seconds + nanoseconds form
+/// (the spec's `zerodds_Time`; cbindgen emits it as `zerodds_ZeroDdsTime`,
+/// like every other FFI struct). Used by `zerodds_dp_get_current_time`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ZeroDdsTime {
+    /// Seconds.
+    pub sec: i32,
+    /// Nanoseconds.
+    pub nanosec: u32,
+}
+
 /// Duration (Spec §2.2.3.5 + IDL §9.3.2). seconds + nanoseconds form.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -51,7 +63,7 @@ pub struct ZeroDdsDuration {
 }
 
 impl ZeroDdsDuration {
-    /// INFINITE-Marker.
+    /// INFINITE marker.
     pub const INFINITE: Self = Self {
         sec: i32::MAX,
         nanosec: u32::MAX,
@@ -195,7 +207,7 @@ pub struct ZeroDdsDurabilityQosPolicy {
 pub struct ZeroDdsHistoryQosPolicy {
     /// Kind (0=KeepLast, 1=KeepAll).
     pub kind: u32,
-    /// Depth (für KeepLast).
+    /// Depth (for KeepLast).
     pub depth: i32,
 }
 
@@ -356,13 +368,13 @@ pub type ZeroDdsTopicDataQosPolicy = ZeroDdsUserDataQosPolicy;
 /// GroupDataQosPolicy.
 pub type ZeroDdsGroupDataQosPolicy = ZeroDdsUserDataQosPolicy;
 
-/// PartitionQosPolicy. Liste C-string-Pointer + Anzahl.
+/// PartitionQosPolicy. List of C-string pointers + count.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct ZeroDdsPartitionQosPolicy {
     /// Array von C-String-Pointern (Caller-owned).
     pub names: *const *const c_char,
-    /// Anzahl.
+    /// Count.
     pub names_len: usize,
 }
 
@@ -528,7 +540,7 @@ unsafe fn slice_or_empty<'a>(p: *const u8, n: usize) -> &'a [u8] {
     if p.is_null() || n == 0 {
         &[]
     } else {
-        // SAFETY: Caller-Kontrakt ((p,n) gueltiger Bereich).
+        // SAFETY: caller contract ((p,n) valid range).
         unsafe { slice::from_raw_parts(p, n) }
     }
 }
@@ -538,14 +550,14 @@ unsafe fn cstr_vec(arr: *const *const c_char, n: usize) -> Vec<String> {
     if arr.is_null() || n == 0 {
         return Vec::new();
     }
-    // SAFETY: Caller-Kontrakt: arr[0..n] valide.
+    // SAFETY: caller contract: arr[0..n] valid.
     let slc = unsafe { slice::from_raw_parts(arr, n) };
     let mut out = Vec::with_capacity(n);
     for &p in slc {
         if p.is_null() {
             continue;
         }
-        // SAFETY: Caller-Kontrakt: p ist NUL-terminierter String.
+        // SAFETY: caller contract: p is a NUL-terminated string.
         let cs = unsafe { CStr::from_ptr(p) };
         if let Ok(s) = cs.to_str() {
             out.push(s.to_string());
@@ -846,17 +858,17 @@ impl From<DurabilityServiceQosPolicy> for ZeroDdsDurabilityServiceQosPolicy {
 // QoS-Set Konvertierungen
 // ---------------------------------------------------------------------------
 
-/// Konvertiert FFI-Pointer (NULL = Default) in `DataWriterQos`.
+/// Converts an FFI pointer (NULL = default) into a `DataWriterQos`.
 ///
 /// # Safety
-/// `c` darf NULL sein. Wenn nicht NULL, muss er auf eine valide
-/// `ZeroDdsDataWriterQos`-Struktur zeigen.
+/// `c` may be NULL. If not NULL, it must point to a valid
+/// `ZeroDdsDataWriterQos` struct.
 pub unsafe fn dw_qos_from_c(c: *const ZeroDdsDataWriterQos) -> DataWriterQos {
     if c.is_null() {
         return DataWriterQos::default();
     }
-    // SAFETY: see fn # Safety doc — c NULL-checked above; alle Helper-Calls
-    // (cstr_vec, slice_or_empty) erben den Caller-Pledge fuer (ptr,len)-Felder.
+    // SAFETY: see fn # Safety doc — c NULL-checked above; all helper calls
+    // (cstr_vec, slice_or_empty) inherit the caller pledge for (ptr,len) fields.
     unsafe {
         let q = &*c;
         DataWriterQos {
@@ -887,6 +899,8 @@ pub unsafe fn dw_qos_from_c(c: *const ZeroDdsDataWriterQos) -> DataWriterQos {
             group_data: GroupDataQosPolicy {
                 value: slice_or_empty(q.group_data.value, q.group_data.value_len).to_vec(),
             },
+            // The C-API does not (yet) model DataRepresentation → runtime default.
+            data_representation: None,
         }
     }
 }
@@ -927,6 +941,8 @@ pub unsafe fn dr_qos_from_c(c: *const ZeroDdsDataReaderQos) -> DataReaderQos {
             group_data: GroupDataQosPolicy {
                 value: slice_or_empty(q.group_data.value, q.group_data.value_len).to_vec(),
             },
+            // The C-API does not (yet) model DataRepresentation → runtime default.
+            data_representation: None,
         }
     }
 }
@@ -1047,15 +1063,15 @@ pub unsafe fn dpf_qos_from_c(
     }
 }
 
-/// Schreibt einen `DomainParticipantQos`-Snapshot in den Caller-Buffer.
-/// Variable-Laenge-Felder (UserData) werden in einen vom Caller
-/// allokierten Buffer kopiert wenn `out.user_data.value` non-NULL ist
-/// und `out.user_data.value_len` ausreichend gross. Bei zu kleinem
-/// Buffer wird `value_len` mit der erforderlichen Groesse beschrieben
-/// und `OUT_OF_RESOURCES` zurueckgeliefert.
+/// Writes a `DomainParticipantQos` snapshot into the caller buffer.
+/// Variable-length fields (UserData) are copied into a caller-
+/// allocated buffer if `out.user_data.value` is non-NULL
+/// and `out.user_data.value_len` is large enough. On a too-small
+/// buffer `value_len` is written with the required size
+/// and `OUT_OF_RESOURCES` is returned.
 ///
 /// # Safety
-/// `out` valide.
+/// `out` valid.
 pub unsafe fn dp_qos_to_c(
     r: &DomainParticipantQos,
     out: *mut ZeroDdsDomainParticipantQos,
@@ -1063,8 +1079,8 @@ pub unsafe fn dp_qos_to_c(
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — out NULL-checked above; user_data.value Buffer
-    // hat mindestens user_data.value_len Bytes Kapazitaet (Caller-Pledge).
+    // SAFETY: see fn # Safety doc — out NULL-checked above; the user_data.value buffer
+    // has at least user_data.value_len bytes of capacity (caller pledge).
     unsafe {
         let needed = r.user_data.value.len();
         let cap = (*out).user_data.value_len;
@@ -1082,17 +1098,17 @@ pub unsafe fn dp_qos_to_c(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Schreibt einen `TopicQos`-Snapshot in den Caller-Buffer.
-/// Variable-Length-Felder (TopicData) wie bei `dp_qos_to_c`.
+/// Writes a `TopicQos` snapshot into the caller buffer.
+/// Variable-length fields (TopicData) as in `dp_qos_to_c`.
 ///
 /// # Safety
-/// `out` valide.
+/// `out` valid.
 pub unsafe fn topic_qos_to_c(r: &TopicQos, out: *mut ZeroDdsTopicQos) -> c_int {
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — out NULL-checked above; topic_data.value Buffer
-    // hat mindestens topic_data.value_len Bytes Kapazitaet (Caller-Pledge).
+    // SAFETY: see fn # Safety doc — out NULL-checked above; the topic_data.value buffer
+    // has at least topic_data.value_len bytes of capacity (caller pledge).
     unsafe {
         let needed = r.topic_data.value.len();
         let cap = (*out).topic_data.value_len;
@@ -1121,20 +1137,20 @@ pub unsafe fn topic_qos_to_c(r: &TopicQos, out: *mut ZeroDdsTopicQos) -> c_int {
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Schreibt einen `DataWriterQos`-Snapshot. UserData/TopicData/GroupData
-/// muessen ausreichende Buffer haben; Partition wird im RC1 als len=0
-/// zurueckgegeben (Caller muss separat lesen — Folge-Patch).
+/// Writes a `DataWriterQos` snapshot. UserData/TopicData/GroupData
+/// must have sufficient buffers; Partition is returned as len=0 in RC1
+/// (the caller must read it separately — follow-up patch).
 ///
 /// # Safety
-/// `out` valide.
+/// `out` valid.
 pub unsafe fn dw_qos_to_c(r: &DataWriterQos, out: *mut ZeroDdsDataWriterQos) -> c_int {
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — out NULL-checked above; UserData/TopicData/GroupData
-    // value-Buffer haben mindestens value_len Bytes Kapazitaet (Caller-Pledge).
+    // SAFETY: see fn # Safety doc — out NULL-checked above; the UserData/TopicData/GroupData
+    // value buffers have at least value_len bytes of capacity (caller pledge).
     unsafe {
-        // Inline-Macro: nicht-NULL-Check + Cap-Check + ptr::copy + final length-write
+        // Inline macro: non-NULL check + cap check + ptr::copy + final length write
         macro_rules! copy_bytes {
             ($field:ident) => {{
                 let needed = r.$field.value.len();
@@ -1168,23 +1184,23 @@ pub unsafe fn dw_qos_to_c(r: &DataWriterQos, out: *mut ZeroDdsDataWriterQos) -> 
         (*out).resource_limits = r.resource_limits.into();
         (*out).transport_priority = r.transport_priority.into();
         (*out).writer_data_lifecycle = r.writer_data_lifecycle.into();
-        // Partition als len=0 (variable-length, Folge-Patch).
+        // Partition as len=0 (variable-length, follow-up patch).
         (*out).partition.names = ptr::null();
         (*out).partition.names_len = 0;
     }
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Schreibt einen `DataReaderQos`-Snapshot.
+/// Writes a `DataReaderQos` snapshot.
 ///
 /// # Safety
-/// `out` valide.
+/// `out` valid.
 pub unsafe fn dr_qos_to_c(r: &DataReaderQos, out: *mut ZeroDdsDataReaderQos) -> c_int {
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — out NULL-checked above; UserData/TopicData/GroupData
-    // value-Buffer haben mindestens value_len Bytes Kapazitaet (Caller-Pledge).
+    // SAFETY: see fn # Safety doc — out NULL-checked above; the UserData/TopicData/GroupData
+    // value buffers have at least value_len bytes of capacity (caller pledge).
     unsafe {
         macro_rules! copy_bytes {
             ($field:ident) => {{
@@ -1222,16 +1238,16 @@ pub unsafe fn dr_qos_to_c(r: &DataReaderQos, out: *mut ZeroDdsDataReaderQos) -> 
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Schreibt einen `PublisherQos`-Snapshot.
+/// Writes a `PublisherQos` snapshot.
 ///
 /// # Safety
-/// `out` valide.
+/// `out` valid.
 pub unsafe fn pub_qos_to_c(r: &PublisherQos, out: *mut ZeroDdsPublisherQos) -> c_int {
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — out NULL-checked above; group_data.value Buffer
-    // hat mindestens group_data.value_len Bytes Kapazitaet (Caller-Pledge).
+    // SAFETY: see fn # Safety doc — out NULL-checked above; the group_data.value buffer
+    // has at least group_data.value_len bytes of capacity (caller pledge).
     unsafe {
         let needed = r.group_data.value.len();
         let cap = (*out).group_data.value_len;
@@ -1252,17 +1268,17 @@ pub unsafe fn pub_qos_to_c(r: &PublisherQos, out: *mut ZeroDdsPublisherQos) -> c
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Schreibt einen `SubscriberQos`-Snapshot. Identisches Layout wie
+/// Writes a `SubscriberQos` snapshot. Identical layout to
 /// PublisherQos.
 ///
 /// # Safety
-/// `out` valide.
+/// `out` valid.
 pub unsafe fn sub_qos_to_c(r: &SubscriberQos, out: *mut ZeroDdsSubscriberQos) -> c_int {
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — out NULL-checked above; group_data.value Buffer
-    // hat mindestens group_data.value_len Bytes Kapazitaet (Caller-Pledge).
+    // SAFETY: see fn # Safety doc — out NULL-checked above; the group_data.value buffer
+    // has at least group_data.value_len bytes of capacity (caller pledge).
     unsafe {
         let needed = r.group_data.value.len();
         let cap = (*out).group_data.value_len;
@@ -1293,8 +1309,8 @@ mod tests {
         let r = Duration::from_millis(250);
         let c: ZeroDdsDuration = r.into();
         let back: Duration = c.into();
-        // Konversion via nanosec hat moeglicherweise minimal-Drift —
-        // pruefe nur Sekunden + grobe nanosec.
+        // Conversion via nanosec may have minimal drift —
+        // check only seconds + coarse nanosec.
         assert_eq!(back.seconds, r.seconds);
         assert!((back.fraction as i64 - r.fraction as i64).abs() < 1024);
     }
@@ -1396,9 +1412,9 @@ mod tests {
         let mut c: ZeroDdsDataWriterQos = unsafe { core::mem::zeroed() };
         c.partition.names = arr.as_ptr();
         c.partition.names_len = 2;
-        // Reliability/History/ResourceLimits sind via zeroed() = 0
-        // (BestEffort=1 ist nicht 0, aber ReliabilityKind::from_u32 mappt
-        // 0 auf BestEffort als Fallback). Pruefe nur Partition.
+        // Reliability/History/ResourceLimits are via zeroed() = 0
+        // (BestEffort=1 is not 0, but ReliabilityKind::from_u32 maps
+        // 0 to BestEffort as a fallback). Check only Partition.
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
         let q = unsafe { dw_qos_from_c(&c) };
         assert_eq!(

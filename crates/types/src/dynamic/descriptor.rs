@@ -2,14 +2,14 @@
 // Copyright 2026 ZeroDDS Contributors
 //! TypeDescriptor + MemberDescriptor (XTypes 1.3 §7.5.1, §7.5.2).
 //!
-//! Ein `TypeDescriptor` beschreibt einen DynamicType vollstaendig: kind +
-//! Name + Bound + Element-Type usw. Er ist der **konstruktive** Eingang
-//! zu `DynamicTypeBuilderFactory::create_type` (Spec §7.5.5.1).
+//! A `TypeDescriptor` fully describes a DynamicType: kind +
+//! name + bound + element type etc. It is the **constructive** entry point
+//! to `DynamicTypeBuilderFactory::create_type` (Spec §7.5.5.1).
 //!
-//! Ein `MemberDescriptor` beschreibt einen Member innerhalb eines
-//! Composite-Types (Struct/Union/Annotation). Spec §7.5.2 listet alle
-//! Felder, die hier 1:1 abgebildet sind. Apply-Logik fuer
-//! `try_construct` (DISCARD/USE_DEFAULT/TRIM) wird in C4.7 ergaenzt.
+//! A `MemberDescriptor` describes a member within a
+//! composite type (struct/union/annotation). Spec §7.5.2 lists all
+//! fields, which are mapped 1:1 here. The apply logic for
+//! `try_construct` (DISCARD/USE_DEFAULT/TRIM) is added in C4.7.
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -17,12 +17,12 @@ use alloc::vec::Vec;
 
 /// XTypes 1.3 TypeKind-Enum (§7.5.1 Table 10).
 ///
-/// Deckt die 24 in der Spec genannten Kinds. `NoType` entspricht
+/// Covers the 24 kinds named in the spec. `NoType` corresponds to
 /// `TK_NONE`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum TypeKind {
-    /// Kein Typ — Sentinel-Wert.
+    /// No type — sentinel value.
     NoType,
     /// `boolean`.
     Boolean,
@@ -81,8 +81,8 @@ pub enum TypeKind {
 }
 
 impl TypeKind {
-    /// `true` wenn der Kind ein primitiver, atomarer Typ ist (kein
-    /// Composite, keine Collection). Spec §7.5.1.
+    /// `true` if the kind is a primitive, atomic type (not a
+    /// composite, not a collection). Spec §7.5.1.
     #[must_use]
     pub const fn is_primitive(self) -> bool {
         matches!(
@@ -105,7 +105,7 @@ impl TypeKind {
         )
     }
 
-    /// `true` wenn dieser Kind Members tragen kann (Struct/Union/
+    /// `true` if this kind can carry members (Struct/Union/
     /// Annotation/Bitset/Bitmask/Enum).
     #[must_use]
     pub const fn is_aggregable(self) -> bool {
@@ -121,14 +121,14 @@ impl TypeKind {
     }
 }
 
-/// Extensibility-Kind (§7.2.2.4).
+/// Extensibility kind (§7.2.2.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExtensibilityKind {
-    /// `@final` — Typ ist abgeschlossen.
+    /// `@final` — the type is closed.
     Final,
-    /// `@appendable` — neue Felder am Ende erlaubt (Default).
+    /// `@appendable` — new fields at the end allowed (default).
     Appendable,
-    /// `@mutable` — beliebige Evolution mit `@id`-Bindings.
+    /// `@mutable` — arbitrary evolution with `@id` bindings.
     Mutable,
 }
 
@@ -140,15 +140,15 @@ impl Default for ExtensibilityKind {
 
 /// Try-Construct-Strategie (Spec §7.5.2 + §7.6.4).
 ///
-/// Apply-Semantik (was passiert bei Decoder-Fehlschlag) wird in C4.7
-/// implementiert — hier ist nur das Enum + Member-Feld.
+/// The apply semantics (what happens on a decoder failure) is implemented
+/// in C4.7 — here only the enum + member field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TryConstructKind {
-    /// Werfe das Sample weg.
+    /// Discard the sample.
     Discard,
-    /// Setze auf den Default-Wert.
+    /// Set to the default value.
     UseDefault,
-    /// Truncate auf Bound (Strings/Sequences).
+    /// Truncate to the bound (strings/sequences).
     Trim,
 }
 
@@ -158,42 +158,42 @@ impl Default for TryConstructKind {
     }
 }
 
-/// `MemberId` — konsistent mit XTypes 1.3 §7.3.1.1 (32 bits).
+/// `MemberId` — consistent with XTypes 1.3 §7.3.1.1 (32 bits).
 pub type MemberId = u32;
 
 /// XTypes §7.5.1.2 TypeDescriptor.
 ///
-/// Beschreibt einen DynamicType — zur Konstruktion via
-/// [`crate::dynamic::DynamicTypeBuilderFactory::create_type`] oder als
-/// Read-only-Sicht via [`crate::dynamic::DynamicType::descriptor`].
+/// Describes a DynamicType — for construction via
+/// [`crate::dynamic::DynamicTypeBuilderFactory::create_type`] or as a
+/// read-only view via [`crate::dynamic::DynamicType::descriptor`].
 ///
-/// Felder, die fuer einen gegebenen Kind irrelevant sind, koennen leer
-/// bleiben (z.B. `bound` fuer Struct = `Vec::new()`).
+/// Fields that are irrelevant for a given kind can be left empty
+/// (e.g. `bound` for a struct = `Vec::new()`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeDescriptor {
     /// TypeKind.
     pub kind: TypeKind,
-    /// Voll qualifizierter Name, z.B. `"::sensors::Chatter"`.
+    /// Fully qualified name, e.g. `"::sensors::Chatter"`.
     pub name: String,
-    /// Base-Type fuer Inheritance (Struct/Union).
+    /// Base type for inheritance (struct/union).
     pub base_type: Option<Box<TypeDescriptor>>,
-    /// Discriminator-Type fuer `kind == Union` (Pflicht).
+    /// Discriminator type for `kind == Union` (mandatory).
     pub discriminator_type: Option<Box<TypeDescriptor>>,
-    /// Bound — Array-Dimensionen, oder `[max]` fuer Sequence/String/Map.
-    /// Leer fuer Composite/Primitive.
+    /// Bound — array dimensions, or `[max]` for sequence/string/map.
+    /// Empty for composite/primitive.
     pub bound: Vec<u32>,
-    /// Element-Type fuer Array/Sequence/Map.
+    /// Element type for array/sequence/map.
     pub element_type: Option<Box<TypeDescriptor>>,
-    /// Key-Type fuer Map.
+    /// Key type for map.
     pub key_element_type: Option<Box<TypeDescriptor>>,
-    /// Extensibility-Kind (relevant fuer Struct/Union).
+    /// Extensibility kind (relevant for struct/union).
     pub extensibility_kind: ExtensibilityKind,
-    /// `@nested` — Type ist nicht als Top-Level-Topic gedacht.
+    /// `@nested` — the type is not intended as a top-level topic.
     pub is_nested: bool,
 }
 
 impl TypeDescriptor {
-    /// Konstruiert einen primitiven Descriptor.
+    /// Constructs a primitive descriptor.
     #[must_use]
     pub fn primitive(kind: TypeKind, name: impl Into<String>) -> Self {
         Self {
@@ -209,7 +209,7 @@ impl TypeDescriptor {
         }
     }
 
-    /// Konstruiert einen Struct-Descriptor.
+    /// Constructs a struct descriptor.
     #[must_use]
     pub fn structure(name: impl Into<String>) -> Self {
         Self {
@@ -225,7 +225,7 @@ impl TypeDescriptor {
         }
     }
 
-    /// Konstruiert einen Union-Descriptor.
+    /// Constructs a union descriptor.
     #[must_use]
     pub fn union(name: impl Into<String>, discriminator: TypeDescriptor) -> Self {
         Self {
@@ -241,7 +241,7 @@ impl TypeDescriptor {
         }
     }
 
-    /// Konstruiert einen Sequence-Descriptor.
+    /// Constructs a sequence descriptor.
     #[must_use]
     pub fn sequence(name: impl Into<String>, element: TypeDescriptor, max: u32) -> Self {
         Self {
@@ -257,7 +257,7 @@ impl TypeDescriptor {
         }
     }
 
-    /// Konstruiert einen Array-Descriptor.
+    /// Constructs an array descriptor.
     #[must_use]
     pub fn array(name: impl Into<String>, element: TypeDescriptor, dims: Vec<u32>) -> Self {
         Self {
@@ -273,7 +273,7 @@ impl TypeDescriptor {
         }
     }
 
-    /// Konstruiert einen Map-Descriptor.
+    /// Constructs a map descriptor.
     #[must_use]
     pub fn map(
         name: impl Into<String>,
@@ -294,7 +294,7 @@ impl TypeDescriptor {
         }
     }
 
-    /// Konstruiert einen String-Descriptor (`string<bound>`).
+    /// Constructs a string descriptor (`string<bound>`).
     #[must_use]
     pub fn string8(bound: u32) -> Self {
         Self {
@@ -310,7 +310,7 @@ impl TypeDescriptor {
         }
     }
 
-    /// Konstruiert einen WString-Descriptor.
+    /// Constructs a WString descriptor.
     #[must_use]
     pub fn string16(bound: u32) -> Self {
         Self {
@@ -326,7 +326,7 @@ impl TypeDescriptor {
         }
     }
 
-    /// Konstruiert einen Enum-Descriptor.
+    /// Constructs an enum descriptor.
     #[must_use]
     pub fn enumeration(name: impl Into<String>) -> Self {
         Self {
@@ -344,16 +344,16 @@ impl TypeDescriptor {
 
     /// Validierung — Spec §7.5.1.4 `is_consistent()`.
     ///
-    /// Prueft die in der Spec festgelegten Constraints fuer ein
-    /// Descriptor-Object: Discriminator-Pflicht bei Union, Bound-Pflicht
-    /// bei Array/Sequence/String/Map etc.
+    /// Checks the constraints defined in the spec for a
+    /// descriptor object: a discriminator is mandatory for a union, a bound
+    /// is mandatory for array/sequence/string/map etc.
     ///
     /// # Errors
-    /// `String` mit menschen-lesbarer Fehlerbeschreibung.
+    /// `String` with a human-readable error description.
     pub fn is_consistent(&self) -> Result<(), String> {
-        // Cycle-Check: ein Descriptor darf sich nicht selbst als
-        // base_type oder element_type referenzieren (durch struktur-
-        // gleichheit erkannt — robusten Cycle-Check macht der Builder).
+        // Cycle check: a descriptor may not reference itself as
+        // base_type or element_type (detected by structural
+        // equality — the builder performs the robust cycle check).
         if self.name.is_empty() && self.kind != TypeKind::NoType {
             return Err(String::from("descriptor without name"));
         }
@@ -401,8 +401,8 @@ impl TypeDescriptor {
             }
             _ => {}
         }
-        // Inheritance-Cycle-Check (1 Ebene; tiefere Ebenen werden im
-        // Builder via `build()` gegen die finale DynamicType gecheckt).
+        // Inheritance cycle check (1 level; deeper levels are checked in the
+        // builder via `build()` against the final DynamicType).
         if let Some(b) = &self.base_type {
             if b.name == self.name && !self.name.is_empty() {
                 return Err(String::from("inheritance cycle: base_type == self"));
@@ -414,26 +414,26 @@ impl TypeDescriptor {
 
 /// XTypes §7.5.2.2 MemberDescriptor.
 ///
-/// Beschreibt einen Member innerhalb eines Composite-Types (Struct,
-/// Union, Annotation, Bitset, Bitmask). Fuer Bitmask repraesentiert
-/// `member_type` typisch `Boolean`, `id` ist die Bit-Position.
+/// Describes a member within a composite type (struct,
+/// union, annotation, bitset, bitmask). For a bitmask,
+/// `member_type` is typically `Boolean` and `id` is the bit position.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemberDescriptor {
-    /// Member-Name (case-sensitive, eindeutig im Composite).
+    /// Member name (case-sensitive, unique within the composite).
     pub name: String,
-    /// Member-Id (eindeutig im Composite, fuer XCDR2).
+    /// Member id (unique within the composite, for XCDR2).
     pub id: MemberId,
-    /// Type des Members.
+    /// Type of the member.
     pub member_type: Box<TypeDescriptor>,
-    /// Default-Wert in canonical IDL-Literal-Form.
+    /// Default value in canonical IDL literal form.
     pub default_value: Option<String>,
-    /// Reihenfolgen-Index (0-basiert) — fuer `member_by_index`.
+    /// Order index (0-based) — for `member_by_index`.
     pub index: u32,
-    /// Union-Case-Labels. Spec §7.5.2 — nur fuer Union belegt.
+    /// Union case labels. Spec §7.5.2 — only populated for unions.
     pub label: Vec<i64>,
-    /// Try-Construct-Strategie (Apply in C4.7).
+    /// Try-construct strategy (apply in C4.7).
     pub try_construct: TryConstructKind,
-    /// `@key` — Member ist Teil des Topic-Keys.
+    /// `@key` — the member is part of the topic key.
     pub is_key: bool,
     /// `@optional`.
     pub is_optional: bool,
@@ -441,13 +441,17 @@ pub struct MemberDescriptor {
     pub is_must_understand: bool,
     /// `@external` — indirect storage (shared_ptr in C++).
     pub is_shared: bool,
-    /// `default:` Branch fuer Union.
+    /// `default:` branch for a union.
     pub is_default_label: bool,
+    /// Bitfield-Breite in Bits (1..=64) — nur fuer `Bitset`-Felder belegt;
+    /// `id` traegt dabei die Bit-Startposition. Wird vom DynamicType →
+    /// TypeObject-Bridge (XTypes §7.3.4.4 CompleteBitfield) ausgewertet.
+    pub bit_bound: Option<u8>,
 }
 
 impl MemberDescriptor {
-    /// Erstellt einen MemberDescriptor mit den verbreitetsten Defaults
-    /// fuer Struct-Members.
+    /// Creates a MemberDescriptor with the most common defaults
+    /// for struct members.
     #[must_use]
     pub fn new(name: impl Into<String>, id: MemberId, ty: TypeDescriptor) -> Self {
         Self {
@@ -463,13 +467,14 @@ impl MemberDescriptor {
             is_must_understand: false,
             is_shared: false,
             is_default_label: false,
+            bit_bound: None,
         }
     }
 
     /// Validierung — Spec §7.5.2.4 `is_consistent()`.
     ///
     /// # Errors
-    /// `String` mit Fehlertext.
+    /// `String` with the error text.
     pub fn is_consistent(&self) -> Result<(), String> {
         if self.name.is_empty() {
             return Err(String::from("member without name"));
@@ -484,8 +489,8 @@ impl MemberDescriptor {
     }
 }
 
-/// True, wenn der TypeKind ein gueltiger Union-Discriminator ist
-/// (Spec §7.4.1.4.4: integral oder enum oder boolean oder char).
+/// True if the TypeKind is a valid union discriminator
+/// (Spec §7.4.1.4.4: integral or enum or boolean or char).
 const fn is_valid_discriminator(kind: TypeKind) -> bool {
     matches!(
         kind,

@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Safety-Klassifikation pro Crate, gelesen aus dem `lib.rs`-Doc-Kommentar.
+//! Safety classification per crate, read from the `lib.rs` doc comment.
 //!
-//! Quelle der Wahrheit: jede Crate enthaelt am Anfang von `src/lib.rs` einen
-//! Marker `Safety classification: **{SAFE|STANDARD|COMFORT|TOOLING}**`. Dieser
-//! wird von `zerodds-lint` extrahiert und steuert, welche Lints fuer welche Crate
-//! aktiv sind.
+//! Source of truth: every crate contains at the start of `src/lib.rs` a
+//! Marker `Safety classification: **{SAFE|STANDARD|COMFORT|TOOLING}**`. This
+//! is extracted by `zerodds-lint` and controls which lints are active for which crate
+//! .
 
 use std::fmt;
 use std::path::Path;
 
-/// Safety-Klasse einer Crate (siehe `04_safety_by_architecture.md §2`).
+/// Safety class of a crate (see `04_safety_by_architecture.md §2`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SafetyClass {
-    /// `#![forbid(unsafe_code)]`, no_std-faehig, kein panic im Hot-Pfad.
+    /// `#![forbid(unsafe_code)]`, no_std-capable, no panic in the hot path.
     Safe,
-    /// `#![deny(unsafe_code)]`, std erlaubt, mit FFI-Modulen.
+    /// `#![deny(unsafe_code)]`, std allowed, with FFI modules.
     Standard,
-    /// `#![warn(unsafe_code)]`, alles erlaubt mit SAFETY-Kommentar-Pflicht.
+    /// `#![warn(unsafe_code)]`, everything allowed with a mandatory SAFETY comment.
     Comfort,
-    /// Build-/Tooling-Crate, kein Runtime-Code.
+    /// Build/tooling crate, no runtime code.
     Tooling,
 }
 
@@ -34,17 +34,17 @@ impl fmt::Display for SafetyClass {
     }
 }
 
-/// Extrahiert die Klassifikation aus einem `lib.rs`-Quelltext.
+/// Extracts the classification from a `lib.rs` source text.
 ///
-/// Erwartet ein Vorkommen von `Safety classification: **<KLASSE>**` in einem
-/// der ersten ~50 Zeilen. Toleriert Suffix-Modifier wie
+/// Expects an occurrence of `Safety classification: **<CLASS>**` in a
+/// the first ~50 lines. Tolerates suffix modifiers like
 /// `**SAFE (std-only)**`.
 #[must_use]
 pub fn parse_from_lib_rs(content: &str) -> Option<SafetyClass> {
     for line in content.lines().take(60) {
         if let Some(idx) = line.find("Safety classification: **") {
             let rest = &line[idx + "Safety classification: **".len()..];
-            // Klasse ist alles bis zum naechsten Whitespace, '*' oder '('.
+            // The class is everything up to the next whitespace, '*' or '('.
             let end = rest
                 .find(|c: char| c.is_whitespace() || c == '*' || c == '(')
                 .unwrap_or(rest.len());
@@ -60,11 +60,11 @@ pub fn parse_from_lib_rs(content: &str) -> Option<SafetyClass> {
     None
 }
 
-/// Liest die Klassifikation aus einer Datei. Gibt `Ok(None)` zurueck wenn die
-/// Datei existiert aber keine Klassifikation enthaelt.
+/// Reads the classification from a file. Returns `Ok(None)` if the
+/// the file exists but contains no classification.
 ///
 /// # Errors
-/// I/O-Fehler beim Lesen der Datei.
+/// I/O error reading the file.
 pub fn read_from_file(path: &Path) -> std::io::Result<Option<SafetyClass>> {
     let content = std::fs::read_to_string(path)?;
     Ok(parse_from_lib_rs(&content))

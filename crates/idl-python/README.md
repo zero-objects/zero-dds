@@ -1,18 +1,18 @@
 # `zerodds-idl-python`
 
-IDL4 → **Python-Codegen** fuer ZeroDDS. Emittiert `@idl_struct(...)` +
-`@dataclass`-Klassen, die direkt mit `zerodds.IdlTopic(MyClass)`
-nutzbar sind — der Encoder/Decoder kommt aus der `zerodds-py`-
-Laufzeit, dieser Codegen liefert nur die annotierten Klassen.
+IDL4 → **Python codegen** for ZeroDDS. Emits `@idl_struct(...)` +
+`@dataclass` classes usable directly with `zerodds.IdlTopic(MyClass)`
+— the encoder/decoder comes from the `zerodds-py`
+runtime, this codegen only delivers the annotated classes.
 
-Teil des Projekts [**ZeroDDS**](../../README.md). Safety-Klasse
-**STANDARD** — `forbid(unsafe_code)`, deterministischer Codegen.
+Part of the [**ZeroDDS**](../../README.md) project. Safety class
+**STANDARD** — `forbid(unsafe_code)`, deterministic codegen.
 
-> **Status RC-Phase**: Phase-2-Coverage abgeschlossen — struct (mit
-> Inheritance), enum, bitmask, bitset, union, typedef, exception,
-> module-nesting, primitives, string, sequence. Nicht unterstuetzt
-> bleiben: `valuetype`, `interface`, `fixed`, `map`, `any` — diese geben
-> sauberen `IdlPythonError::Unsupported`.
+> **Status RC phase**: phase-2 coverage complete — struct (with
+> inheritance), enum, bitmask, bitset, union, typedef, exception,
+> module nesting, primitives, string, sequence. Not supported
+> remain: `valuetype`, `interface`, `fixed`, `map`, `any` — these return
+> a clean `IdlPythonError::Unsupported`.
 
 ---
 
@@ -36,13 +36,13 @@ assert!(py_src.contains("class Greeting:"));
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-Im CLI uebernimmt `zerodds-idlc --python -o <dir> <file.idl>` den
-Codegen. Output landet als `<basename>.py` und importiert die Brands
-aus `zerodds.idl`.
+In the CLI, `zerodds-idlc --python -o <dir> <file.idl>` handles the
+codegen. Output lands as `<basename>.py` and imports the brands
+from `zerodds.idl`.
 
-## Erzeugter Code
+## Generated code
 
-Eingabe:
+Input:
 
 ```idl
 module sensors {
@@ -56,7 +56,7 @@ module sensors {
 };
 ```
 
-Ausgabe (gekuerzt):
+Output (abbreviated):
 
 ```python
 # SPDX-License-Identifier: Apache-2.0
@@ -81,7 +81,7 @@ class sensors_Reading:
     history: List[Float64]
 ```
 
-Lerner-Nutzung:
+Application usage:
 
 ```python
 from zerodds import DomainParticipant, IdlTopic
@@ -98,55 +98,55 @@ writer.write(sensors_Reading(
 ))
 ```
 
-## Konstrukt-Mapping
+## Construct mapping
 
 | IDL | Python |
 | --- | --- |
 | `struct` | `@idl_struct(typename=...)` + `@dataclass class` |
 | `struct Foo : Base` | `class Foo(Base):` (dataclass inheritance) |
 | `enum` | `class X(IntEnum)` |
-| `bitmask` | `class X(IntFlag)` mit `member = 1 << position` |
-| `bitset` | `X: TypeAlias = Int64` + `class X_Bits:` mit `_SHIFT`/`_WIDTH`/`_MASK`-Konstanten pro Bitfield |
+| `bitmask` | `class X(IntFlag)` with `member = 1 << position` |
+| `bitset` | `X: TypeAlias = Int64` + `class X_Bits:` with `_SHIFT`/`_WIDTH`/`_MASK` constants per bitfield |
 | `union` | `X = idl_union(typename=..., discriminator=..., cases={...}, default=...)` |
 | `typedef T name` | `name: TypeAlias = T` |
 | `exception` | `@idl_struct(typename=...)` + `@dataclass class X(Exception):` |
-| `module M { ... }` | flacher Klassenname `M_Inner` (Python-PSM, Annex B) |
+| `module M { ... }` | flat class name `M_Inner` (Python PSM, Annex B) |
 | `boolean` | `bool` |
-| `octet` | `Octet` (zerodds.idl-Brand) |
+| `octet` | `Octet` (zerodds.idl brand) |
 | `short`/`long`/`long long` | `Int16` / `Int32` / `Int64` |
 | `unsigned short`/`unsigned long`/`unsigned long long` | `UInt16` / `UInt32` / `UInt64` |
 | `int8` / `uint8` | `Int8` / `UInt8` |
 | `float` / `double` / `long double` | `Float32` / `Float64` / `LongDouble` |
 | `char` / `wchar` | `Char` / `WChar` |
-| `string` / `wstring` (bounded oder unbounded) | `String` / `WString` |
+| `string` / `wstring` (bounded or unbounded) | `String` / `WString` |
 | `sequence<T>` | `List[T]` |
-| `T[N]` (Array) | `List[T]` (multi-dim verschachtelt) |
-| Python-Reserved-Word als Feldname | mit `_`-Suffix escapt (`class` → `class_`) |
+| `T[N]` (array) | `List[T]` (multi-dim nested) |
+| Python reserved word as field name | escaped with a `_` suffix (`class` → `class_`) |
 
-## Phase-3 (heute `IdlPythonError::Unsupported`)
+## Phase 3 (today `IdlPythonError::Unsupported`)
 
 - `valuetype`, `interface`
 - `fixed`, `map`, `any`
-- Union-Cases mit `case ENUM_MEMBER:` (Scoped-Const-Expression — Folge-Iteration)
-- Union-Cases mit Binary-Const-Expressions (`case A | B:` etc.)
+- union cases with `case ENUM_MEMBER:` (scoped const expression — follow-up iteration)
+- union cases with binary const expressions (`case A | B:` etc.)
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec-Dokument | Abschnitt |
+| Spec document | Section |
 | --- | --- |
-| OMG IDL 4.2 (ISO/IEC 19516) | §7 — Konstrukt-Mapping |
-| OMG XTypes 1.3 Annex B (Python PSM) | Klassen-Namens-Konvention, Discriminator-Layout |
-| ZeroDDS `zerodds-py-1.0` (vendor spec) | `@idl_struct`-Decorator-API, Type-Brand-Names |
+| OMG IDL 4.2 (ISO/IEC 19516) | §7 — construct mapping |
+| OMG XTypes 1.3 Annex B (Python PSM) | class naming convention, discriminator layout |
+| ZeroDDS `zerodds-py-1.0` (vendor spec) | `@idl_struct` decorator API, type-brand names |
 
 ## Features
 
 * `default = []` — std-only.
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.2`. CLI- und Library-API stabil; emittierter Code kann sich
-bis 1.0.0-final noch in Details aendern (Brand-Imports koennten nach
-Code-Review konsolidiert werden).
+`1.0.0-rc.2`. The CLI and library API are stable; emitted code may still
+change in details before 1.0.0-final (brand imports could be consolidated
+after a code review).
 
 ## Tests
 
@@ -154,13 +154,13 @@ Code-Review konsolidiert werden).
 cargo test -p zerodds-idl-python
 ```
 
-26 Smoke-Tests (Phase 1 + Phase 2: typedef, exception, bitmask,
-bitset, union, struct-inheritance, module-nesting fuer Phase-2-
-Konstrukte) + 1 Doc-Test.
+26 smoke tests (phase 1 + phase 2: typedef, exception, bitmask,
+bitset, union, struct inheritance, module nesting for phase-2
+constructs) + 1 doc-test.
 
 ## See also
 
-- [`zerodds-idl`](../idl/README.md) — Parser + AST.
-- [`zerodds-py`](../py/README.md) — Python-Runtime mit `@idl_struct` + `IdlTopic`.
-- [`zerodds-idlc`](../../tools/idlc/README.md) — CLI mit `--python` Flag.
-- [`packaging/docker/py-runtime/`](../../packaging/docker/py-runtime/) — Sandbox-Image.
+- [`zerodds-idl`](../idl/README.md) — parser + AST.
+- [`zerodds-py`](../py/README.md) — Python runtime with `@idl_struct` + `IdlTopic`.
+- [`zerodds-idlc`](../../tools/idlc/README.md) — CLI with the `--python` flag.
+- [`packaging/docker/py-runtime/`](../../packaging/docker/py-runtime/) — sandbox image.

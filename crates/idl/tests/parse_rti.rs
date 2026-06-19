@@ -1,8 +1,8 @@
-//! T6.8 — End-to-End-Tests fuer den RTI-Connext-Workflow:
-//! Preprocessor → Tokenizer → Recognizer (mit RTI-Delta) → CST → AST.
+//! T6.8 — end-to-end tests for the RTI Connext workflow:
+//! preprocessor → tokenizer → recognizer (with RTI delta) → CST → AST.
 //!
-//! Stellt sicher, dass die kombinierte Pipeline RTI-typische IDL parst,
-//! die ohne RTI-Delta scheitert.
+//! Ensures that the combined pipeline parses RTI-typical IDL
+//! that fails without the RTI delta.
 
 #![allow(
     clippy::expect_used,
@@ -60,7 +60,7 @@ fn rti_keylist_rejected_without_delta() {
 #[test]
 fn rti_pipeline_with_preprocessor() {
     // Vollstaendige Pipeline: Preprocessor expandiert #include + #define,
-    // dann Parser mit RTI-Delta.
+    // then parse with the RTI delta.
     let pp = Preprocessor::new(build_resolver());
     let processed = pp
         .process("with_preprocessor.idl", WITH_PREPROCESSOR)
@@ -78,8 +78,8 @@ fn rti_pipeline_with_preprocessor() {
 
 #[test]
 fn rti_pipeline_with_define_activates_debug_block() {
-    // Mit ENABLE_DEBUG aktivem #define: DebugChannel + zweite keylist
-    // muss im Output sein.
+    // With an active ENABLE_DEBUG #define: DebugChannel + the second keylist
+    // must be in the output.
     let mut src = String::from("#define ENABLE_DEBUG\n");
     src.push_str(WITH_PREPROCESSOR);
     let pp = Preprocessor::new(build_resolver());
@@ -102,7 +102,7 @@ fn rti_pipeline_with_define_activates_debug_block() {
 
 #[test]
 fn rti_pipeline_without_define_skips_debug_block() {
-    // Ohne ENABLE_DEBUG: DebugChannel-Block entfaellt.
+    // Without ENABLE_DEBUG: the DebugChannel block is dropped.
     let pp = Preprocessor::new(build_resolver());
     let processed = pp
         .process("with_preprocessor.idl", WITH_PREPROCESSOR)

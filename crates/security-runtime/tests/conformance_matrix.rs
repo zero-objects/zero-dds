@@ -1,26 +1,26 @@
-//! Conformance-Matrix fuer DDS-Security 1.2 §1.1 + §1.2 + §2.1.
+//! Conformance matrix for DDS-Security 1.2 §1.1 + §1.2 + §2.1.
 //!
-//! Verifiziert produktiv, dass:
+//! Verifies in production that:
 //!
-//! 1. Alle 5 SPI-Traits aus `zerodds-security` werden durch je einen
-//!    Builtin-Plugin im Workspace erfuellt (`accepts_builtin_plugin`).
-//! 2. Jedes SPI rejected ein "misimplemented" Plugin (Plugin mit
-//!    leerer Class-Id oder Error-only-Verhalten) gemaess
-//!    Spec-Vertrag (`rejects_misimplemented_plugin`).
-//! 3. Die Conformance-Points-Tabelle aus §2.1 (Builtin Plugins,
-//!    Plugin-Framework, Plugin-Language-APIs, Logging+Tagging-Profil)
-//!    ist als Test-Tabelle exhaustiv abgedeckt.
+//! 1. All 5 SPI traits from `zerodds-security` are fulfilled by one
+//!    builtin plugin each in the workspace (`accepts_builtin_plugin`).
+//! 2. Each SPI rejects a "misimplemented" plugin (a plugin with
+//!    an empty class id or error-only behavior) according to the
+//!    spec contract (`rejects_misimplemented_plugin`).
+//! 3. The conformance-points table from §2.1 (builtin plugins,
+//!    plugin framework, plugin language APIs, logging+tagging profile)
+//!    is covered exhaustively as a test table.
 //!
 //! Spec OMG DDS-Security 1.2:
-//! * §1.1 — DDS-Security-Compliance-Profile als Erweiterung von DDS.
+//! * §1.1 — DDS-Security compliance profile as an extension of DDS.
 //! * §1.2 — 5 SPIs: Authentication, AccessControl, Cryptographic,
 //!   Logging, DataTagging.
-//! * §2.1 — Conformance-Points: Builtin / Plugin-Framework /
-//!   Plugin-Language-APIs / Logging+Tagging.
+//! * §2.1 — conformance points: Builtin / Plugin Framework /
+//!   Plugin Language APIs / Logging+Tagging.
 //!
 //! zerodds-lint: allow no_dyn_in_safe
-//! (Conformance-Matrix testet das Plugin-SPI gerade ueber `Box<dyn>`-
-//! Erasure — das ist Sinn des Tests.)
+//! (the conformance matrix tests the plugin SPI precisely over `Box<dyn>`
+//! erasure — that is the point of the test.)
 
 #![allow(
     clippy::expect_used,
@@ -61,19 +61,19 @@ use zerodds_security_runtime::BuiltinDataTaggingPlugin;
 fn auth_accepts_builtin_pki_plugin() {
     let mut plugin: Box<dyn AuthenticationPlugin> = Box::new(PkiAuthenticationPlugin::new());
     assert_eq!(plugin.plugin_class_id(), "DDS:Auth:PKI-DH:1.2");
-    // Spec-Anforderung: ungueltige PropertyList → AuthenticationFailed
-    // (nicht panic, nicht silent-success). Keine Cert-Properties =
-    // misconfigured Local-Identity → muss Error sein.
+    // Spec requirement: an invalid PropertyList → AuthenticationFailed
+    // (not panic, not silent success). No cert properties =
+    // misconfigured local identity → must be an error.
     let res = plugin.validate_local_identity(&PropertyList::new(), [0xAA; 16]);
     assert!(
         res.is_err(),
-        "Builtin Auth muss ohne Cert-Properties Error liefern"
+        "Builtin Auth must return an error without cert properties"
     );
 }
 
 #[test]
 fn auth_rejects_misimplemented_plugin() {
-    /// Plugin mit leerer Class-Id (verletzt Spec §8.3.1.1).
+    /// A plugin with an empty class id (violates spec §8.3.1.1).
     struct BrokenAuth;
     impl AuthenticationPlugin for BrokenAuth {
         fn validate_local_identity(
@@ -83,7 +83,7 @@ fn auth_rejects_misimplemented_plugin() {
         ) -> SecurityResult<IdentityHandle> {
             Err(SecurityError::new(
                 SecurityErrorKind::AuthenticationFailed,
-                "broken: niemals success",
+                "broken: never success",
             ))
         }
         fn validate_remote_identity(
@@ -144,17 +144,17 @@ fn auth_rejects_misimplemented_plugin() {
             ))
         }
         fn plugin_class_id(&self) -> &str {
-            "" // Spec-Verletzung — Class-Id muss nicht-leer sein.
+            "" // Spec violation — the class id must be non-empty.
         }
     }
 
     let mut plugin: Box<dyn AuthenticationPlugin> = Box::new(BrokenAuth);
-    // Spec §8.3.1.1: Class-Id eindeutig + nicht-leer.
+    // Spec §8.3.1.1: class id unique + non-empty.
     assert!(
         plugin.plugin_class_id().is_empty(),
-        "BrokenAuth-Stub demonstriert leere Class-Id (= Misimplementation)"
+        "the BrokenAuth stub demonstrates an empty class id (= misimplementation)"
     );
-    // Negativer SPI-Vertrag: jeder Call liefert Error.
+    // Negative SPI contract: every call returns an error.
     let r = plugin.validate_local_identity(&PropertyList::new(), [0; 16]);
     assert!(matches!(
         r.unwrap_err().kind,
@@ -163,27 +163,27 @@ fn auth_rejects_misimplemented_plugin() {
 }
 
 // ============================================================================
-// §1.2 Conformance-Point 2 — AccessControl SPI (Builtin: Permissions)
+// §1.2 conformance point 2 — AccessControl SPI (builtin: Permissions)
 // ============================================================================
 
 #[test]
 fn access_control_accepts_builtin_permissions_plugin() {
     let mut plugin: Box<dyn AccessControlPlugin> = Box::new(PermissionsAccessControl::new());
     assert_eq!(plugin.plugin_class_id(), "DDS:Access:Permissions:1.2");
-    // Builtin laeuft ohne registrierte Permissions → liefert Error
-    // (Spec-konform: AccessControl ist non-default-permissive).
+    // The builtin runs without registered permissions → returns an error
+    // (spec-conform: AccessControl is non-default-permissive).
     let res =
         plugin.validate_local_permissions(IdentityHandle(1), [0xAA; 16], &PropertyList::new());
     assert!(
         res.is_err(),
-        "Builtin AccessControl muss ohne registered Permissions Error liefern"
+        "the builtin AccessControl must return an error without registered permissions"
     );
 }
 
 #[test]
 fn access_control_rejects_misimplemented_plugin() {
-    /// Plugin das immer "Permit" zurueckgibt — Spec §9.4 verlangt
-    /// dass non-validated Permissions stets `Deny` ergeben.
+    /// A plugin that always returns "Permit" — spec §9.4 requires
+    /// that non-validated permissions always yield `Deny`.
     struct AlwaysPermit;
     impl AccessControlPlugin for AlwaysPermit {
         fn validate_local_permissions(
@@ -239,21 +239,21 @@ fn access_control_rejects_misimplemented_plugin() {
     }
 
     let plugin: Box<dyn AccessControlPlugin> = Box::new(AlwaysPermit);
-    // Misimplementation-Demonstration: Permit auf NICHT-validated
-    // PermissionsHandle(0). Der Builtin (`PermissionsAccessControl`)
-    // wuerde hier `Deny` liefern (siehe `access_control_accepts_*`-Test
-    // oben — Builtin ist non-default-permissive).
+    // Misimplementation demonstration: Permit on a NON-validated
+    // PermissionsHandle(0). The builtin (`PermissionsAccessControl`)
+    // would return `Deny` here (see the `access_control_accepts_*` test
+    // above — the builtin is non-default-permissive).
     let decision = plugin
         .check_create_datawriter(PermissionsHandle(0), "any-topic")
         .expect("ok");
     assert!(
         decision.is_permitted(),
-        "AlwaysPermit-Stub demonstriert Permissions-Bypass (= Misimplementation)"
+        "the AlwaysPermit stub demonstrates a permissions bypass (= misimplementation)"
     );
 }
 
 // ============================================================================
-// §1.2 Conformance-Point 3 — Cryptographic SPI (Builtin: AES-GCM-GMAC)
+// §1.2 conformance point 3 — Cryptographic SPI (builtin: AES-GCM-GMAC)
 // ============================================================================
 
 #[test]
@@ -264,8 +264,8 @@ fn crypto_accepts_builtin_aes_gcm_plugin() {
 
 #[test]
 fn crypto_rejects_misimplemented_plugin() {
-    /// Crypto-Plugin mit leerer Class-Id + jede Operation liefert
-    /// `CryptoFailed` (Spec-Verletzung: leere Class-Id verletzt §8.5).
+    /// A crypto plugin with an empty class id + every operation returns
+    /// `CryptoFailed` (spec violation: an empty class id violates §8.5).
     struct BrokenCrypto;
     impl CryptographicPlugin for BrokenCrypto {
         fn register_local_participant(
@@ -352,24 +352,24 @@ fn crypto_rejects_misimplemented_plugin() {
     let plugin: Box<dyn CryptographicPlugin> = Box::new(BrokenCrypto);
     assert!(
         plugin.plugin_class_id().is_empty(),
-        "BrokenCrypto demonstriert leere Class-Id (= Misimplementation)"
+        "BrokenCrypto demonstrates an empty class id (= misimplementation)"
     );
-    // Negative Smoke: encrypt-Call liefert CryptoFailed.
+    // Negative smoke: the encrypt call returns CryptoFailed.
     let r = plugin.encrypt_submessage(CryptoHandle(0), &[], b"x", &[]);
     assert_eq!(r.unwrap_err().kind, SecurityErrorKind::CryptoFailed);
 }
 
 // ============================================================================
-// §1.2 Conformance-Point 4 — Logging SPI (Builtin: stderr-sink)
+// §1.2 conformance point 4 — Logging SPI (builtin: stderr sink)
 // ============================================================================
 
 #[test]
 fn logging_accepts_builtin_stderr_plugin() {
     let plugin: Box<dyn LoggingPlugin> = Box::new(StderrLoggingPlugin::new());
     assert_eq!(plugin.plugin_class_id(), "DDS:Logging:stderr");
-    // Spec §8.6: Logging-Plugin darf nicht panic'en. Critical-Event
-    // schreibt eine Zeile an stderr — der Test fuehrt dies durch und
-    // verifiziert das Plugin nicht stuerzt.
+    // Spec §8.6: a logging plugin must not panic. A critical event
+    // writes a line to stderr — the test does this and
+    // verifies the plugin does not crash.
     plugin.log(
         LogLevel::Critical,
         [0xAA; 16],
@@ -380,33 +380,33 @@ fn logging_accepts_builtin_stderr_plugin() {
 
 #[test]
 fn logging_rejects_misimplemented_plugin() {
-    // Mock-Plugin sammelt Events; "Misimplementation" = Plugin droppt
-    // alle Events silently. Diese Variante ist Spec-erlaubt (Plugin
-    // darf filtern), aber die Mock-Variante zeigt: ein Plugin das
-    // events explizit verwirft, kann dadurch erkannt werden (sink ist
-    // leer nach log-Call).
+    // The mock plugin collects events; "misimplementation" = the plugin drops
+    // all events silently. This variant is spec-allowed (a plugin
+    // may filter), but the mock variant shows: a plugin that
+    // explicitly discards events can be detected by this (the sink is
+    // empty after the log call).
     struct DropEverything;
     impl LoggingPlugin for DropEverything {
         fn log(&self, _l: LogLevel, _p: [u8; 16], _c: &str, _m: &str) {
-            // explizit no-op
+            // explicit no-op
         }
         fn plugin_class_id(&self) -> &str {
             "DDS:Logging:DropEverything"
         }
     }
-    // Vergleich mit MockLoggingPlugin (collects → sichtbar).
+    // Comparison with MockLoggingPlugin (collects → visible).
     let sink: MockLogSink = Arc::new(Mutex::new(Vec::<MockLogEntry>::new()));
     let collector = MockLoggingPlugin::new(Arc::clone(&sink));
     collector.log(LogLevel::Critical, [0; 16], "test", "msg");
-    assert_eq!(sink.lock().unwrap().len(), 1, "Mock muss Event sammeln");
+    assert_eq!(sink.lock().unwrap().len(), 1, "mock must collect the event");
 
     let dropper: Box<dyn LoggingPlugin> = Box::new(DropEverything);
     let sink2: MockLogSink = Arc::new(Mutex::new(Vec::<MockLogEntry>::new()));
-    // DropEverything ignoriert events — Test-Sink bleibt leer.
+    // DropEverything ignores events — the test sink stays empty.
     dropper.log(LogLevel::Critical, [0; 16], "test", "msg");
     assert!(
         sink2.lock().unwrap().is_empty(),
-        "DropEverything-Stub verwirft alle Events (Misimplementation)"
+        "DropEverything stub discards all events (misimplementation)"
     );
 }
 
@@ -431,8 +431,8 @@ fn data_tagging_accepts_builtin_plugin() {
 
 #[test]
 fn data_tagging_rejects_misimplemented_plugin() {
-    /// Plugin das set_tags ignoriert — get_tags liefert immer leere
-    /// Liste. Verletzt SPI-Vertrag (set/get-Roundtrip).
+    /// A plugin that ignores set_tags — get_tags always returns an empty
+    /// list. Violates the SPI contract (set/get roundtrip).
     struct AmnesiacTagger;
     impl DataTaggingPlugin for AmnesiacTagger {
         fn set_tags(&mut self, _e: [u8; 16], _t: Vec<DataTag>) {}
@@ -453,25 +453,25 @@ fn data_tagging_rejects_misimplemented_plugin() {
     );
     assert!(
         plugin.get_tags([1; 16]).is_empty(),
-        "Amnesiac-Stub demonstriert verletzten set/get-Roundtrip (Misimplementation)"
+        "the Amnesiac stub demonstrates a broken set/get roundtrip (misimplementation)"
     );
 }
 
 // ============================================================================
-// §2.1 Conformance-Points-Tabelle — alle 5 SPIs gleichzeitig
+// §2.1 conformance-points table — all 5 SPIs at once
 // ============================================================================
 
 #[test]
 fn conformance_points_full_matrix() {
-    // Tabelle: Spec §2.1 listet 4 Conformance-Points.
-    // 1. Builtin Plugins — alle 5 SPIs haben einen produktiven Builtin.
+    // Table: spec §2.1 lists 4 conformance points.
+    // 1. Builtin plugins — all 5 SPIs have a production builtin.
     let _auth: Box<dyn AuthenticationPlugin> = Box::new(PkiAuthenticationPlugin::new());
     let _access: Box<dyn AccessControlPlugin> = Box::new(PermissionsAccessControl::new());
     let _crypto: Box<dyn CryptographicPlugin> = Box::new(AesGcmCryptoPlugin::new());
     let _logging: Box<dyn LoggingPlugin> = Box::new(StderrLoggingPlugin::new());
     let _tagging: Box<dyn DataTaggingPlugin> = Box::new(BuiltinDataTaggingPlugin::new());
 
-    // 2. Plugin-Framework — Class-Ids unterscheiden sich pro SPI-Slot.
+    // 2. Plugin framework — class ids differ per SPI slot.
     let class_ids = [
         ("Auth", _auth.plugin_class_id()),
         ("Access", _access.plugin_class_id()),
@@ -480,28 +480,28 @@ fn conformance_points_full_matrix() {
         ("Tagging", _tagging.plugin_class_id()),
     ];
     for (slot, id) in &class_ids {
-        assert!(!id.is_empty(), "{slot}-Plugin hat leere Class-Id");
+        assert!(!id.is_empty(), "the {slot} plugin has an empty class id");
         assert!(
             id.starts_with("DDS:"),
-            "{slot}-Plugin Class-Id verletzt Konvention 'DDS:<Service>:<Variant>': {id}"
+            "the {slot} plugin class id violates the convention 'DDS:<Service>:<Variant>': {id}"
         );
     }
-    // Eindeutigkeit der Class-Ids ueber alle Slots.
+    // Uniqueness of the class ids across all slots.
     let mut seen = std::collections::BTreeSet::new();
     for (_, id) in &class_ids {
         assert!(
             seen.insert(id.to_string()),
-            "Class-Id-Konflikt: {id} doppelt belegt"
+            "class-id conflict: {id} used twice"
         );
     }
 
-    // 3. Plugin-Language-APIs — n/a (Rust-only Crate-Boundary). Wir
-    //    verifizieren stattdessen, dass jeder Plugin als `Box<dyn>`
-    //    bedienbar ist (via die obigen Casts) — das ist Rusts
-    //    Aequivalent zur Plugin-Language-API-Conformance.
+    // 3. Plugin language APIs — n/a (Rust-only crate boundary). We
+    //    instead verify that each plugin is usable as a `Box<dyn>`
+    //    (via the casts above) — that is Rust's
+    //    equivalent to plugin-language-API conformance.
 
-    // 4. Logging+Tagging-Profil — beide Plugins stellen die Profil-
-    //    spezifischen Operationen bereit.
+    // 4. Logging+Tagging profile — both plugins provide the profile-
+    //    specific operations.
     _logging.log(
         LogLevel::Informational,
         [0; 16],

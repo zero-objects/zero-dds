@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DdsBridgeComponent — bidirektionale CCM↔DDS-Bridge.
+//! DdsBridgeComponent — bidirectional CCM↔DDS bridge.
 //!
-//! Spec-Refs:
+//! Spec refs:
 //! * CCM 4.0 §6.4 (EventSource/EventSink Ports)
 //! * DDS 1.4 §2.2.2 (DCPS Topic/Publisher/Subscriber)
 //!
-//! Diese Component mappt:
+//! This component maps:
 //!
-//! * CCM-EventSink → DDS-DataReader (publishing in DDS-Topic)
-//! * CCM-EventSource → DDS-DataWriter (forwarding from DDS-Topic)
+//! * CCM EventSink → DDS DataReader (publishing into a DDS topic)
+//! * CCM EventSource → DDS DataWriter (forwarding from a DDS topic)
 //!
-//! Die konkreten DCPS-Calls macht die ausgewaehlte DDS-Runtime
-//! (`zerodds-dcps`); diese Component liefert nur das Mapping-Modell und
-//! die Lifecycle-Hooks.
+//! The concrete DCPS calls are made by the selected DDS runtime
+//! (`zerodds-dcps`); this component only provides the mapping model and
+//! the lifecycle hooks.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -24,36 +24,36 @@ use alloc::vec::Vec;
 use zerodds_corba_ccm::cif::{CifError, ComponentExecutor};
 use zerodds_corba_ccm::context::ComponentContext;
 
-/// Mapping-Direction: Component-Port-zu-DDS oder DDS-zu-Component-Port.
+/// Mapping direction: component-port-to-DDS or DDS-to-component-port.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MappingDirection {
-    /// CCM-EventSink → DDS-DataReader (Subscriber).
+    /// CCM EventSink → DDS DataReader (subscriber).
     SinkSubscribesTopic,
-    /// CCM-EventSource → DDS-DataWriter (Publisher).
+    /// CCM EventSource → DDS DataWriter (publisher).
     SourcePublishesTopic,
 }
 
-/// Eine konkrete Bridge-Mapping-Definition.
+/// A concrete bridge mapping definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopicMapping {
-    /// CCM-Port-Name (Source oder Sink).
+    /// CCM port name (source or sink).
     pub port_name: String,
-    /// DDS-Topic-Name.
+    /// DDS topic name.
     pub topic_name: String,
-    /// Type-Name (vollqualifiziert).
+    /// Type name (fully qualified).
     pub type_name: String,
-    /// Mapping-Direction.
+    /// Mapping direction.
     pub direction: MappingDirection,
 }
 
-/// Bridge-Component-Fehler.
+/// Bridge component error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BridgeError {
-    /// Mapping mit gleichem Port-Name existiert bereits.
+    /// A mapping with the same port name already exists.
     DuplicatePort(String),
-    /// Component nicht aktiviert.
+    /// Component not activated.
     NotActive,
-    /// Generic CCM-Error.
+    /// Generic CCM error.
     Cif(CifError),
 }
 
@@ -70,7 +70,7 @@ impl core::fmt::Display for BridgeError {
 #[cfg(feature = "std")]
 impl std::error::Error for BridgeError {}
 
-/// DDS-Bridge-Component — production-ready CCM-Component.
+/// DDS bridge component — production-ready CCM component.
 #[derive(Default)]
 pub struct DdsBridgeComponent {
     mappings: BTreeMap<String, TopicMapping>,
@@ -89,17 +89,17 @@ impl core::fmt::Debug for DdsBridgeComponent {
 }
 
 impl DdsBridgeComponent {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Fuegt ein Topic-Mapping hinzu.
+    /// Adds a topic mapping.
     ///
     /// # Errors
-    /// `DuplicatePort` wenn ein Mapping mit demselben Port-Name
-    /// bereits registriert ist.
+    /// `DuplicatePort` if a mapping with the same port name is
+    /// already registered.
     pub fn add_mapping(&mut self, m: TopicMapping) -> Result<(), BridgeError> {
         if self.mappings.contains_key(&m.port_name) {
             return Err(BridgeError::DuplicatePort(m.port_name));
@@ -108,13 +108,13 @@ impl DdsBridgeComponent {
         Ok(())
     }
 
-    /// Liste aller Mappings.
+    /// List of all mappings.
     #[must_use]
     pub fn mappings(&self) -> Vec<&TopicMapping> {
         self.mappings.values().collect()
     }
 
-    /// Anzahl Subscriber-Mappings.
+    /// Number of subscriber mappings.
     #[must_use]
     pub fn subscriber_count(&self) -> usize {
         self.mappings
@@ -123,7 +123,7 @@ impl DdsBridgeComponent {
             .count()
     }
 
-    /// Anzahl Publisher-Mappings.
+    /// Number of publisher mappings.
     #[must_use]
     pub fn publisher_count(&self) -> usize {
         self.mappings
@@ -132,8 +132,7 @@ impl DdsBridgeComponent {
             .count()
     }
 
-    /// Liefert `true` wenn der Container `ccm_activate` aufgerufen
-    /// hat.
+    /// Returns `true` if the container has called `ccm_activate`.
     #[must_use]
     pub fn is_active(&self) -> bool {
         self.activated

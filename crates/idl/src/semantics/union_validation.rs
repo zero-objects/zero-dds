@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Union-Validierung (C4.6 §1.8 / Spec §7.4.13.5).
+//! Union validation (C4.6 §1.8 / spec §7.4.13.5).
 //!
-//! - Discriminator muss primitiver Integer / Char / Boolean / Octet /
-//!   (resolved) Enum sein. Float/Double/Strings sind verboten.
-//! - Default-Branch maximal einmal.
-//! - Case-Labels muessen unique sein und zum Discriminator-Type passen.
-//! - Jedes Member muss mindestens ein `case`-Label haben (oder default).
+//! - The discriminator must be a primitive integer / char / boolean / octet /
+//!   (resolved) enum. Float/double/strings are forbidden.
+//! - At most one default branch.
+//! - Case labels must be unique and match the discriminator type.
+//! - Each member must have at least one `case` label (or default).
 //!
-//! Die Validierung laeuft als Post-Pass auf einer Specification — sie
-//! liefert eine Liste von [`UnionValidationError`].
+//! The validation runs as a post-pass on a Specification — it
+//! returns a list of [`UnionValidationError`].
 
 use crate::ast::{
     CaseLabel, ConstExpr, ConstrTypeDecl, Definition, LiteralKind, Specification, SwitchTypeSpec,
@@ -17,61 +17,61 @@ use crate::ast::{
 };
 use crate::errors::Span;
 
-/// Validierungs-Fehler einer Union.
+/// Validation error of a union.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnionValidationError {
-    /// Discriminator-Typ ist nicht zulaessig.
+    /// The discriminator type is not permitted.
     InvalidDiscriminator {
-        /// Beschreibung (z.B. `"float"`).
+        /// Description (e.g. `"float"`).
         kind: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// Mehr als ein `default`-Branch.
+    /// More than one `default` branch.
     DuplicateDefault {
-        /// Quellort des zweiten Defaults.
+        /// Source location of the second default.
         span: Span,
     },
-    /// Case-Label dupliziert (selber Wert mehrfach).
+    /// Case label duplicated (same value multiple times).
     DuplicateCaseLabel {
-        /// Roh-Repraesentation des Labels.
+        /// Raw representation of the label.
         label: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// Case-Label-Type passt nicht zum Discriminator.
+    /// The case-label type does not match the discriminator.
     LabelTypeMismatch {
-        /// Discriminator-Beschreibung.
+        /// Discriminator description.
         discriminator: String,
-        /// Roh-Label.
+        /// Raw label.
         label: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// Member ohne irgendein `case`-Label oder `default`.
+    /// Member without any `case` label or `default`.
     MissingCaseLabel {
-        /// Quellort des Members.
+        /// Source location of the member.
         span: Span,
     },
-    /// §7.4.1.4.4.4.2 — Element-Declarators in einer Union muessen
-    /// eindeutig sein.
+    /// §7.4.1.4.4.4.2 — element declarators in a union must be
+    /// unique.
     DuplicateElementDeclarator {
-        /// Wiederholter Member-Name.
+        /// Repeated member name.
         name: String,
-        /// Quellort des wiederholten Members.
+        /// Source location of the repeated member.
         span: Span,
     },
-    /// §7.4.1.4.4.4.2 — `default` ist redundant, wenn die Non-Default-
-    /// Labels den gesamten Discriminator-Range abdecken.
+    /// §7.4.1.4.4.4.2 — `default` is redundant if the non-default
+    /// labels cover the entire discriminator range.
     DefaultLabelRedundant {
-        /// Discriminator-Beschreibung.
+        /// Discriminator description.
         discriminator: String,
-        /// Quellort des Defaults.
+        /// Source location of the default.
         span: Span,
     },
 }
 
-/// Fuehrt die Validierung fuer alle Unions in `spec` durch.
+/// Runs the validation for all unions in `spec`.
 #[must_use]
 pub fn validate_unions(spec: &Specification) -> Vec<UnionValidationError> {
     let mut errs = Vec::new();
@@ -96,12 +96,12 @@ fn walk_def(d: &Definition, errs: &mut Vec<UnionValidationError>) {
     }
 }
 
-/// Public-Helfer: validiere eine konkrete Union.
+/// Public helper: validate a concrete union.
 pub fn validate_union(u: &UnionDef, errs: &mut Vec<UnionValidationError>) {
-    // 1. Discriminator-Type.
+    // 1. Discriminator type.
     let disc_kind = check_discriminator(&u.switch_type, errs);
 
-    // 2. Default + Case-Labels + Type-Compat.
+    // 2. Default + case labels + type compat.
     let mut default_seen = false;
     let mut default_span: Option<Span> = None;
     let mut seen_labels: Vec<String> = Vec::new();
@@ -109,8 +109,8 @@ pub fn validate_union(u: &UnionDef, errs: &mut Vec<UnionValidationError>) {
     let mut bool_value_labels: Vec<bool> = Vec::new();
 
     for case in &u.cases {
-        // §7.4.1.4.4.4.2: Element-Declarator muss in der Union eindeutig
-        // sein.
+        // §7.4.1.4.4.4.2: an element declarator must be unique within the
+        // union.
         let decl_name = case.element.declarator.name().text.clone();
         if seen_declarators.iter().any(|n| n == &decl_name) {
             errs.push(UnionValidationError::DuplicateElementDeclarator {
@@ -152,7 +152,7 @@ pub fn validate_union(u: &UnionDef, errs: &mut Vec<UnionValidationError>) {
                                 span: case.span,
                             });
                         }
-                        // Bool-Coverage tracken fuer Default-Redundanz.
+                        // Track bool coverage for default redundancy.
                         if disc == "boolean" {
                             if let ConstExpr::Literal(l) = expr {
                                 if matches!(l.kind, LiteralKind::Boolean) {
@@ -176,10 +176,10 @@ pub fn validate_union(u: &UnionDef, errs: &mut Vec<UnionValidationError>) {
         }
     }
 
-    // §7.4.1.4.4.4.2: default ist redundant wenn Non-Default-Labels den
-    // gesamten Discriminator-Range abdecken. Implementiert fuer
-    // Boolean-Discriminator (full coverage = beide TRUE und FALSE
-    // gelistet).
+    // §7.4.1.4.4.4.2: default is redundant if the non-default labels cover
+    // the entire discriminator range. Implemented for a
+    // boolean discriminator (full coverage = both TRUE and FALSE
+    // listed).
     if default_seen {
         if let Some(ref disc) = disc_kind {
             if disc == "boolean" && bool_value_labels.len() == 2 {
@@ -199,9 +199,9 @@ fn check_discriminator(s: &SwitchTypeSpec, errs: &mut Vec<UnionValidationError>)
         SwitchTypeSpec::Boolean => Some("boolean".to_string()),
         SwitchTypeSpec::Octet => Some("octet".to_string()),
         SwitchTypeSpec::Scoped(_) => Some("enum".to_string()), // best-effort
-        // Floats/Strings koennen aktuell als SwitchTypeSpec nicht auftauchen
-        // (Grammar weist sie ab); aber ein Pseudo-Path bleibt fuer
-        // Vendor-pragmatische Modi:
+        // Floats/strings cannot currently appear as a SwitchTypeSpec
+        // (the grammar rejects them); but a pseudo-path remains for
+        // vendor-pragmatic modes:
         #[allow(unreachable_patterns)]
         other => {
             errs.push(UnionValidationError::InvalidDiscriminator {
@@ -231,12 +231,12 @@ fn const_expr_str(e: &ConstExpr) -> String {
 
 fn label_matches_disc(expr: &ConstExpr, disc: &str) -> bool {
     match (expr, disc) {
-        // Integer-discriminator akzeptiert integer + scoped (enum/const).
+        // Integer discriminator accepts integer + scoped (enum/const).
         (ConstExpr::Literal(l), "integer" | "octet") => matches!(l.kind, LiteralKind::Integer),
         (ConstExpr::Literal(l), "char") => matches!(l.kind, LiteralKind::Char),
         (ConstExpr::Literal(l), "boolean") => matches!(l.kind, LiteralKind::Boolean),
         (ConstExpr::Scoped(_), _) => true, // Const/Enum-Reference
-        // Unary/Binary: vorsichtig akzeptieren, wenn integer-artiger Disc.
+        // Unary/Binary: accept cautiously if the disc is integer-like.
         (ConstExpr::Unary { .. } | ConstExpr::Binary { .. }, "integer" | "octet") => true,
         _ => false,
     }
@@ -297,7 +297,7 @@ mod tests {
         let ast =
             parse_to_ast("union U switch (boolean) { case TRUE: long a; case FALSE: long b; };");
         let errs = validate_unions(&ast);
-        // FALSE/TRUE werden als Scoped erkannt → durchgewunken.
+        // FALSE/TRUE are recognized as scoped → waved through.
         assert!(errs.is_empty(), "got {errs:?}");
     }
 
@@ -312,8 +312,8 @@ mod tests {
 
     #[test]
     fn union_with_duplicate_element_declarator_errors() {
-        // Spec §7.4.1.4.4.4.2: zwei Cases mit gleichem Member-Namen
-        // sind illegal.
+        // Spec §7.4.1.4.4.4.2: two cases with the same member name
+        // are illegal.
         let ast = parse_to_ast(
             "union U switch (long) { case 1: long a; case 2: long a; default: long b; };",
         );
@@ -325,12 +325,12 @@ mod tests {
         );
     }
 
-    // §7.4.1.4.4.4.2 — Default-Coverage
+    // §7.4.1.4.4.4.2 — default coverage
 
     #[test]
     fn union_default_redundant_for_full_boolean_coverage_errors() {
-        // Spec §7.4.1.4.4.4.2: default redundant wenn TRUE und FALSE
-        // beide gelistet sind.
+        // Spec §7.4.1.4.4.4.2: default is redundant when TRUE and FALSE
+        // are both listed.
         let ast = parse_to_ast(
             "union U switch (boolean) { case TRUE: long a; case FALSE: long b; default: long c; };",
         );
@@ -344,8 +344,8 @@ mod tests {
 
     #[test]
     fn union_default_required_for_partial_int_coverage_ok() {
-        // Spec: bei Integer-Discriminator deckt eine Liste nie den
-        // gesamten Range ab — default ist immer erlaubt, nicht
+        // Spec: with an integer discriminator a list never covers the
+        // entire range — default is always allowed, not
         // redundant.
         let ast = parse_to_ast(
             "union U switch (long) { case 1: long a; case 2: long b; default: long c; };",
@@ -361,18 +361,18 @@ mod tests {
 
     #[test]
     fn union_default_coverage_required_when_partial_range() {
-        // §7.2.4.4.4.4 — partial-Range Union OHNE default ist Spec-konform:
-        // implicit_default_member wird benutzt. Validator MUSS NICHT
-        // erzwingen, dass ein default existiert (das waere zu strikt).
-        // Test stellt sicher, dass keine UnionValidationError aufkommt
-        // bei partial-Range ohne Default.
+        // §7.2.4.4.4.4 — a partial-range union WITHOUT a default is spec-compliant:
+        // implicit_default_member is used. The validator MUST NOT
+        // enforce that a default exists (that would be too strict).
+        // The test ensures that no UnionValidationError arises
+        // for a partial range without a default.
         let ast = parse_to_ast(
             "union U switch (octet) { case 1: long a; case 2: long b; case 3: long c; };",
         );
         let errs = validate_unions(&ast);
         assert!(
             errs.is_empty(),
-            "partial-range no-default unzulaessig? errs={errs:?}"
+            "partial-range no-default disallowed? errs={errs:?}"
         );
     }
 }

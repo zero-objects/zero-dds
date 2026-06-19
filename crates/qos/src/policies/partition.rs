@@ -2,45 +2,45 @@
 // Copyright 2026 ZeroDDS Contributors
 //! PartitionQosPolicy (DDS 1.4 §2.2.3.13).
 //!
-//! Wire-Format: `sequence<string>` (u32 length + N × CDR-String).
+//! Wire format: `sequence<string>` (u32 length + N × CDR string).
 //!
-//! Compatibility (§2.2.3.13.6): Partitionen matchen via **fnmatch**-
-//! Glob-Patterns (`*`, `?`, `[abc]`, `[!abc]`). Pattern-Seiten wurde
-//! auf dem Wire als String serialisiert; beim Match pruefen wir, ob
-//! **mindestens ein** offered-Pattern zu **einem** requested-Pattern
-//! matched (oder umgekehrt).
+//! Compatibility (§2.2.3.13.6): partitions match via **fnmatch**
+//! glob patterns (`*`, `?`, `[abc]`, `[!abc]`). The pattern sides are
+//! serialized on the wire as strings; on a match we check whether
+//! **at least one** offered pattern matches **one** requested pattern
+//! (or vice versa).
 //!
-//! Beispiele aus der Spec:
+//! Examples from the spec:
 //! - offered=["sensor_data"], requested=["sensor_*"] → MATCH.
 //! - offered=["alarm_?"], requested=["alarm_1"] → MATCH.
-//! - offered=[], requested=[] → MATCH (beide im Default).
-//! - offered=["a"], requested=[] → NO MATCH (nicht-leer vs leer).
+//! - offered=[], requested=[] → MATCH (both in the default).
+//! - offered=["a"], requested=[] → NO MATCH (non-empty vs empty).
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 
-/// DoS-Cap: maximale Anzahl Partition-Namen in einer QoS-Policy.
-/// Cyclone/Fast-DDS-Apps selbst in grossen Topologien bleiben
-/// deutlich unter 1024; Praxis-Obergrenze ist ~8.
+/// DoS cap: maximum number of partition names in a QoS policy.
+/// Cyclone/Fast-DDS apps even in large topologies stay
+/// well below 1024; the practical upper bound is ~8.
 pub const MAX_PARTITIONS: usize = 1024;
 
-/// Maximale Laenge eines einzelnen Partition-Namens.
+/// Maximum length of a single partition name.
 pub const MAX_PARTITION_NAME_LEN: usize = 256;
 
 /// PartitionQosPolicy.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PartitionQosPolicy {
-    /// Partition-Namen (ggf. mit Glob-Pattern).
+    /// Partition names (possibly with a glob pattern).
     pub names: Vec<String>,
 }
 
 impl PartitionQosPolicy {
-    /// Wire-Encoding.
+    /// Wire encoding.
     ///
     /// # Errors
-    /// `ValueOutOfRange` bei u32-Ueberlauf.
+    /// `ValueOutOfRange` on u32 overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         let len = u32::try_from(self.names.len()).map_err(|_| EncodeError::ValueOutOfRange {
             message: "partition list length exceeds u32::MAX",
@@ -52,13 +52,13 @@ impl PartitionQosPolicy {
         Ok(())
     }
 
-    /// Wire-Decoding mit DoS-Cap fuer Anzahl Partitionen (hart,
-    /// [`MAX_PARTITIONS`]) und Laenge pro Namen ([`MAX_PARTITION_NAME_LEN`]).
+    /// Wire decoding with a DoS cap for the number of partitions (hard,
+    /// [`MAX_PARTITIONS`]) and length per name ([`MAX_PARTITION_NAME_LEN`]).
     ///
     /// # Errors
-    /// Buffer-Underflow; `InvalidString` bei Namen ueber
-    /// `MAX_PARTITION_NAME_LEN`; `LengthExceeded` bei mehr als
-    /// `MAX_PARTITIONS` Eintraegen.
+    /// Buffer underflow; `InvalidString` for names over
+    /// `MAX_PARTITION_NAME_LEN`; `LengthExceeded` for more than
+    /// `MAX_PARTITIONS` entries.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let len = r.read_u32()? as usize;
         if len > MAX_PARTITIONS {
@@ -68,7 +68,7 @@ impl PartitionQosPolicy {
                 offset: 0,
             });
         }
-        // Zusaetzlicher Byte-Level-Cap: jeder Eintrag mind. 4 byte.
+        // Additional byte-level cap: each entry at least 4 bytes.
         if len > r.remaining() / 4 {
             return Err(DecodeError::LengthExceeded {
                 announced: len,
@@ -90,36 +90,36 @@ impl PartitionQosPolicy {
         Ok(Self { names })
     }
 
-    /// Leer (entspricht Default-Partition).
+    /// Empty (corresponds to the default partition).
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.names.is_empty()
     }
 }
 
-/// fnmatch-style-Glob-Matching (POSIX-Subset; DDS 1.4 §2.2.3.13.6 nennt
-/// POSIX-`fnmatch`).
+/// fnmatch-style glob matching (POSIX subset; DDS 1.4 §2.2.3.13.6 names
+/// POSIX `fnmatch`).
 ///
-/// Unterstuetzte Syntax:
-/// - `*` beliebig viele Zeichen
-/// - `?` genau ein Zeichen
-/// - `[abc]` Character-Class (Einzelchars)
-/// - `[a-z]` Range
-/// - `[!abc]` bzw. `[^abc]` negierte Class
+/// Supported syntax:
+/// - `*` any number of characters
+/// - `?` exactly one character
+/// - `[abc]` character class (single chars)
+/// - `[a-z]` range
+/// - `[!abc]` or `[^abc]` negated class
 ///
-/// Malformed-Patterns (z.B. `[` ohne `]`) liefern **no-match** (POSIX-
-/// Verhalten: `FNM_NOMATCH`). Keine Escape-Semantik — Backslashes sind
-/// literal. Partition-Namen sind auf [`MAX_PARTITION_NAME_LEN`]
-/// gekappt, die Star-Expansion ist dadurch implizit O(n²) beschraenkt.
+/// Malformed patterns (e.g. `[` without `]`) return **no-match** (POSIX
+/// behavior: `FNM_NOMATCH`). No escape semantics — backslashes are
+/// literal. Partition names are capped to [`MAX_PARTITION_NAME_LEN`],
+/// so the star expansion is implicitly bounded to O(n²).
 #[must_use]
 pub fn fnmatch(pattern: &str, text: &str) -> bool {
     fnmatch_bytes(pattern.as_bytes(), text.as_bytes())
 }
 
-/// Iterative fnmatch-Implementierung (kein rekursiver Call, kein
-/// ReDoS-Risiko). `star_pat` / `star_txt` merken sich den letzten
-/// `*`-Punkt; bei Mismatch wird dorthin zurueckgesprungen und der
-/// Text ein Zeichen weitergelaufen. O(|pat| × |txt|) Worst-Case.
+/// Iterative fnmatch implementation (no recursive call, no
+/// ReDoS risk). `star_pat` / `star_txt` remember the last
+/// `*` point; on a mismatch it jumps back there and the
+/// text advances by one character. O(|pat| × |txt|) worst case.
 fn fnmatch_bytes(pat: &[u8], txt: &[u8]) -> bool {
     let mut p = 0usize;
     let mut t = 0usize;
@@ -141,8 +141,8 @@ fn fnmatch_bytes(pat: &[u8], txt: &[u8]) -> bool {
                     continue;
                 }
                 b'[' => {
-                    // Parse Character-Class bis ']'. Malformed (kein
-                    // schliessendes ']') ⇒ POSIX-NOMATCH.
+                    // Parse the character class up to ']'. Malformed (no
+                    // closing ']') ⇒ POSIX NOMATCH.
                     let Some(close) = pat[p + 1..].iter().position(|&c| c == b']') else {
                         return false;
                     };
@@ -152,7 +152,7 @@ fn fnmatch_bytes(pat: &[u8], txt: &[u8]) -> bool {
                         _ => (false, class),
                     };
                     if matches_class(members, txt[t]) == negate {
-                        // Mismatch — pruefe Fallback auf Star.
+                        // Mismatch — check the fallback to star.
                         if let Some(sp) = star_pat {
                             p = sp;
                             star_txt += 1;
@@ -161,7 +161,7 @@ fn fnmatch_bytes(pat: &[u8], txt: &[u8]) -> bool {
                         }
                         return false;
                     }
-                    p += close + 2; // ueberspringt `[...]`
+                    p += close + 2; // skips `[...]`
                     t += 1;
                     continue;
                 }
@@ -173,7 +173,7 @@ fn fnmatch_bytes(pat: &[u8], txt: &[u8]) -> bool {
                 _ => {}
             }
         }
-        // Mismatch — auf Star zurueckfallen, falls vorhanden.
+        // Mismatch — fall back to star, if present.
         if let Some(sp) = star_pat {
             p = sp;
             star_txt += 1;
@@ -182,7 +182,7 @@ fn fnmatch_bytes(pat: &[u8], txt: &[u8]) -> bool {
             return false;
         }
     }
-    // Text aufgebraucht — noch verbleibende `*` im Pattern sind OK.
+    // Text exhausted — any remaining `*` in the pattern are OK.
     while p < pat.len() && pat[p] == b'*' {
         p += 1;
     }
@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn decoder_rejects_too_many_partitions() {
         let mut bytes = alloc::vec::Vec::new();
-        // Laenge `MAX_PARTITIONS + 1` → LengthExceeded.
+        // Length `MAX_PARTITIONS + 1` → LengthExceeded.
         bytes.extend_from_slice(&(MAX_PARTITIONS as u32 + 1).to_le_bytes());
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let err = PartitionQosPolicy::decode_from(&mut r).unwrap_err();
@@ -307,56 +307,55 @@ mod tests {
 
     // ---- Edge cases (Round-2 review R1/R3/R4) ----
 
-    /// POSIX-Subset: malformed `[` ohne `]` ist NOMATCH (nicht literal).
+    /// POSIX subset: malformed `[` without `]` is NOMATCH (not literal).
     #[test]
     fn fnmatch_unterminated_class_is_nomatch() {
         assert!(!fnmatch("[abc", "a"));
         assert!(!fnmatch("[abc", "[abc"));
     }
 
-    /// Alternative Negations-Syntax `[^...]` (POSIX) wird wie `[!...]`
-    /// behandelt.
+    /// Alternative negation syntax `[^...]` (POSIX) is treated like `[!...]`.
     #[test]
     fn fnmatch_caret_negation_equivalent() {
         assert!(fnmatch("[^abc]", "d"));
         assert!(!fnmatch("[^abc]", "b"));
     }
 
-    /// Pattern laenger als Text scheitert, wenn keine `*` drin sind.
+    /// A pattern longer than the text fails if there are no `*` in it.
     #[test]
     fn fnmatch_pattern_longer_than_text() {
         assert!(!fnmatch("abcdef", "abc"));
         assert!(!fnmatch("ab?de", "ab"));
     }
 
-    /// Mehrere `*` + Character-Classes kombiniert.
+    /// Multiple `*` + character classes combined.
     #[test]
     fn fnmatch_star_and_class_combined() {
         assert!(fnmatch("log_[0-9]*", "log_5_debug"));
         assert!(!fnmatch("log_[0-9]*", "log_x_debug"));
     }
 
-    /// Trailing-`*` matcht auch leeren Rest.
+    /// A trailing `*` also matches an empty remainder.
     #[test]
     fn fnmatch_trailing_star_matches_empty() {
         assert!(fnmatch("foo*", "foo"));
     }
 
-    /// Empty pattern matcht nur empty text.
+    /// Empty pattern matches only empty text.
     #[test]
     fn fnmatch_empty_pattern() {
         assert!(fnmatch("", ""));
         assert!(!fnmatch("", "x"));
     }
 
-    /// Empty text gegen `*`-only pattern matcht.
+    /// Empty text matches a `*`-only pattern.
     #[test]
     fn fnmatch_empty_text_star_only() {
         assert!(fnmatch("*", ""));
         assert!(fnmatch("***", ""));
     }
 
-    /// ReDoS-Sanity-Check: pathological pattern bei MAX-len-Text
+    /// ReDoS sanity check: pathological pattern with MAX-len text
     /// terminiert in &lt;50 ms (iterative Impl ist O(n*m)).
     #[test]
     fn fnmatch_pathological_pattern_terminates_fast() {
@@ -365,8 +364,8 @@ mod tests {
         let start = core::time::Duration::from_secs(0);
         let _ = start;
         let result = fnmatch(pat, &txt);
-        // Pattern kann nie matchen (kein 'b' im Text) — Erwartung: false
-        // und vor allem: terminiert.
+        // The pattern can never match (no 'b' in the text) — expectation: false
+        // and above all: it terminates.
         assert!(!result);
     }
 }

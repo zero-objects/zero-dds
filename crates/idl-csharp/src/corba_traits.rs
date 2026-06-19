@@ -1,21 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! IDL-to-C# 1.0 Annex A.1 — CORBA-spezifische Type-Mappings.
+//! IDL-to-C# 1.0 Annex A.1 — CORBA-specific type mappings.
 //!
-//! Spec: `idl4-csharp-1.0` Annex A.1. Das C#-PSM kennt keine direkten
-//! Type-Traits wie das C++-PSM; CORBA-Mappings für C# sind primaer:
+//! Spec: `idl4-csharp-1.0` Annex A.1. The C# PSM has no direct
+//! type traits like the C++ PSM; CORBA mappings for C# are primarily:
 //!
-//! 1. **Parameter-Direction-Konvention** (in/out/inout) als
-//!    Sprach-Modifier `in`/`out`/`ref` auf der Aufruf-Seite.
-//! 2. **Marker-Attribut** `[Corba.ValueTypeAttribute]` pro
-//!    Top-Level-Type, fuer ORB-seitiges Stub/Skeleton-Discovery
-//!    (analog zu `IIOP.NET`).
-//! 3. **Static Helper** `Corba.Traits` mit per-Type-Konstanten als
-//!    Doc-Marker, sodass Tooling die in/out/inout-Direction
-//!    wiederfinden kann.
+//! 1. **Parameter-direction convention** (in/out/inout) as
+//!    language modifiers `in`/`out`/`ref` on the call side.
+//! 2. **Marker attribute** `[Corba.ValueTypeAttribute]` per
+//!    top-level type, for ORB-side stub/skeleton discovery
+//!    (analogous to `IIOP.NET`).
+//! 3. **Static helper** `Corba.Traits` with per-type constants as
+//!    doc markers, so tooling can locate the in/out/inout direction.
 //!
-//! Die A.1-Schicht wird opt-in als zusaetzlicher Codegen-Block
-//! emittiert (`CsGenOptions::emit_corba_traits = true`).
+//! The A.1 layer is emitted opt-in as an additional codegen block
+//! (`CsGenOptions::emit_corba_traits = true`).
 
 use std::fmt::Write;
 
@@ -26,10 +25,10 @@ use zerodds_idl::ast::{
 
 use crate::error::CsGenError;
 
-/// Emittiert Annex-A.1 CORBA-Markers (ValueType-Attribut + Trait-Helper).
+/// Emits Annex A.1 CORBA markers (ValueType attribute + Trait helper).
 ///
 /// # Errors
-/// `CsGenError::Internal` bei `fmt::Write`-Fehler.
+/// `CsGenError::Internal` on `fmt::Write` failure.
 pub(crate) fn emit_corba_traits(out: &mut String, spec: &Specification) -> Result<(), CsGenError> {
     let mut emitted = Vec::new();
     collect_top_level(&spec.definitions, &mut Vec::new(), &mut emitted);
@@ -37,17 +36,17 @@ pub(crate) fn emit_corba_traits(out: &mut String, spec: &Specification) -> Resul
         return Ok(());
     }
 
-    writeln!(out, "// Annex A.1 — CORBA-spezifische Type-Mappings.").map_err(fmt_err)?;
+    writeln!(out, "// Annex A.1 — CORBA-specific type mappings.").map_err(fmt_err)?;
     writeln!(
         out,
-        "// Erfordert CORBA-Runtime: IIOP.NET, Remoting.Corba, oder Aequivalent."
+        "// Requires CORBA runtime: IIOP.NET, Remoting.Corba, or equivalent."
     )
     .map_err(fmt_err)?;
     writeln!(out, "namespace Corba").map_err(fmt_err)?;
     writeln!(out, "{{").map_err(fmt_err)?;
     writeln!(
         out,
-        "    /// Marker-Attribut fuer Annex-A.1 CORBA-Value-Types."
+        "    /// Marker attribute for Annex A.1 CORBA value types."
     )
     .map_err(fmt_err)?;
     writeln!(out, "    [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct | System.AttributeTargets.Enum)]").map_err(fmt_err)?;
@@ -77,7 +76,7 @@ pub(crate) fn emit_corba_traits(out: &mut String, spec: &Specification) -> Resul
 
     writeln!(
         out,
-        "    /// Per-Type Traits-Helper analog zu CORBA::traits<T> in C++."
+        "    /// Per-type traits helper analogous to CORBA::traits<T> in C++."
     )
     .map_err(fmt_err)?;
     writeln!(out, "    public static class Traits").map_err(fmt_err)?;

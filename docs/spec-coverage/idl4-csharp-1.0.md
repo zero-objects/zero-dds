@@ -1,15 +1,19 @@
 # IDL4 to C# Language Mapping 1.0 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/idl4-csharp-1.0.pdf` (61 Seiten, OMG formal/2021-07-01)
+**Spec:** [OMG IDL4-CSHARP 1.0](https://www.omg.org/spec/IDL4-CSHARP/1.0/PDF) (61 Seiten, OMG formal/2021-07-01)
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
+Audit Item-für-Item
+gegen die Spec; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
 Status (`done` / `partial` / `open` / `n/a`).
 
-**Kontext:** `crates/idl-csharp/` ist live mit 6 Files + 124 Tests
-(annotations/emitter/error/keywords/lib/type_map). Code-Gen deckt §6
-Type-Mapping + §7.2 Aggregate-Types weitgehend ab; Runtime-Library
-(`Omg.Types.ISequence<T>`/`Omg.Types.Holder<T>`/etc.) ist nicht im Repo.
+**Kontext:** Code-Gen deckt §6 Type-Mapping + §7.2 Aggregate-Types
+weitgehend ab; die Runtime-Library liegt im Repo
+(`Omg.Types.*` in `crates/idl-csharp/runtime/Omg.Types.cs`, der
+XCDR2-`*TypeSupport`-Stack `ZeroDDS.Cdr` unter `crates/cs/csharp/ZeroDDS.Cdr/`).
+
+Implementation:
+
+- `crates/idl-csharp/` — live mit 10 Files + 219 Tests (annotations/bitset/corba_traits/emitter/error/keywords/lib/type_map/typesupport/verbatim).
 
 ---
 
@@ -236,7 +240,7 @@ Field; default ist .NET-Naming.
 
 **Status:** done
 
-### 7.1.1.0 Name-Kollision: `@`-Praefix bei C#-Keyword, `_`-Praefix bei sonstigem Konflikt
+### 7.1.1.0 Name-Kollision: `@`-Präfix bei C#-Keyword, `_`-Präfix bei sonstigem Konflikt
 
 **Spec:** §7.1.1, S. 5 — "if a mapped name or identifier collides
 with one of the names reserved in Clause 7.1.2, the collision shall
@@ -264,7 +268,7 @@ shall map to C# names and identifiers without case transformation."
 
 **Repo:** Field `apply_naming_convention` in `CsGenOptions`. Spec
 gibt zwei Optionen (IDL_NAMING vs. .NET); ZeroDDS-Default ist .NET
-gemaess §7.1.1.2.
+gemäß §7.1.1.2.
 
 **Tests:** `spec_conformance::idl_naming_default_uses_dotnet_pascal_case`.
 
@@ -336,7 +340,7 @@ Mindestversionen.
 
 **Status:** done
 
-### 7.1.4 Mapping Extensibility: Implementer duerfen C#-Types extenden mit neuen Constructors/Methods/Interfaces
+### 7.1.4 Mapping Extensibility: Implementer dürfen C#-Types extenden mit neuen Constructors/Methods/Interfaces
 
 **Spec:** §7.1.4, S. 7 — "implementers of this specification may
 extend C# types mapped according to the rules specified in this
@@ -594,7 +598,7 @@ strings shall be encoded in UTF-16 format."
 
 **Repo:** `type_map.rs`.
 
-**Tests:** `string_member_uses_string` (gilt fuer beide).
+**Tests:** `string_member_uses_string` (gilt für beide).
 
 **Status:** done
 
@@ -607,7 +611,7 @@ necessary."
 
 **Repo:** `crates/idl-csharp/src/emitter.rs::typespec_to_cs` mapped
 `fixed<digits, scale>` auf C# `decimal` (Built-In, 28-29 stellige
-Decimal-Praezision; range-overflow wirft `System.OverflowException`).
+Decimal-Präzision; range-overflow wirft `System.OverflowException`).
 
 **Tests:** `spec_conformance::{fixed_member_emits_csharp_decimal,
 fixed_type_emits_decimal}`, `edge_cases::fixed_type_emits_decimal`.
@@ -615,7 +619,7 @@ fixed_type_emits_decimal}`, `edge_cases::fixed_type_emits_decimal`.
 **Status:** done
 
 ### 7.2.4.3.1 IDL struct -> C# public class mit:
-- public property pro Member (Getter+Setter; Sequence/Map: nur Getter ausser @external)
+- public property pro Member (Getter+Setter; Sequence/Map: nur Getter außer @external)
 - public default constructor
 - public copy constructor
 - public all-values constructor
@@ -629,7 +633,7 @@ Records bringen automatisch alle vier Spec-Anforderungen:
 - Default-Constructor automatisch.
 - Copy-Constructor automatisch via `with`-Expression.
 - All-Values-Constructor automatisch via Primary-Constructor-Syntax.
-Damit ist `record class` semantisch streng-aequivalent zu Spec-`class`.
+Damit ist `record class` semantisch streng-äquivalent zu Spec-`class`.
 
 **Tests:** `top_level_struct_implements_topic_type_marker`,
 `primitive_struct_member_uses_correct_cs_types`,
@@ -646,8 +650,8 @@ Damit ist `record class` semantisch streng-aequivalent zu Spec-`class`.
 `struct_with_inheritance_keeps_base_and_adds_topic_marker` +
 `spec_conformance::struct_emits_public_class_or_record_class`.
 
-**Status:** done — `record class` ist Spec-konform-aequivalent zu
-`class` (alle vier Anforderungen automatisch erfuellt).
+**Status:** done — `record class` ist Spec-konform-äquivalent zu
+`class` (alle vier Anforderungen automatisch erfüllt).
 
 ### 7.2.4.3.2 IDL union -> C# (dispatch-Discriminator pattern)
 
@@ -656,7 +660,7 @@ Sub-Items).
 
 **Repo:** `emitter.rs::union_uses_discriminator_record`-Pfad emittiert
 record-class mit Discriminator-Property + Member-Properties + Active-
-Case-Logik. Semantisch aequivalent zur Spec-class-with-_d().
+Case-Logik. Semantisch äquivalent zur Spec-class-with-_d().
 
 **Tests:** `union_uses_discriminator_record`,
 `union_top_level_implements_topic_type`,
@@ -679,9 +683,9 @@ Case-Logik. Semantisch aequivalent zur Spec-class-with-_d().
 
 **Spec:** §7.2.4.3.4 — analog idl4-java.
 
-**Repo:** C# hat Reference-Semantik fuer alle Reference-Types
+**Repo:** C# hat Reference-Semantik für alle Reference-Types
 (class/record), daher sind rekursive Konstruktionen automatisch
-unterstuetzt — typedef-Aliase + record-Class-Self-Reference.
+unterstützt — typedef-Aliase + record-Class-Self-Reference.
 
 **Tests:** `typedef_emits_alias_record` +
 `spec_conformance::typedef_alias_works_for_recursive_pattern`.
@@ -793,11 +797,16 @@ ist (siehe §7.4), ist Forward-Decl im DDS-Use-Case n/a.
 
 **Spec:** §7.5 — analog idl4-java §7.5.
 
-**Repo:** Non-service-Interface ist Unsupported (siehe §7.4); §7.5
-fallt aus dem Scope. DDS-RPC-Services nutzen Spec-§10-Pfad statt
-generische §7.5-Form (analog idl4-cpp).
+**Repo:** `crates/idl-csharp/src/emitter.rs::emit_interface_stub` emittiert
+embedded `struct`/`enum`/`const`/`exception`-Decls **verschachtelt** im
+C#-Interface (C# 8+ erlaubt nested Types + Konstanten im Interface); der
+Import-Collector (`collect_in_def`) läuft jetzt in die Interface-Exports, damit
+die Runtime-Usings (`Omg.Types`, `ZeroDDS.Cdr`) für deren TypeSupport gezogen
+werden. Zuvor wurden diese Decls still verworfen (`_ => {}`).
 
-**Tests:** Cross-Ref §7.4.
+**Tests:** `edge_cases::interface_embedded_types_are_emitted_not_dropped`,
+`compile_check::compiles_interface_with_embedded_types` (echtes `dotnet`/Roslyn,
+.NET 8).
 
 **Status:** done
 
@@ -816,7 +825,7 @@ rendert 2 Klassen pro valuetype:
   Properties pro private-state, `public abstract void`-Methoden pro
   factory.
 - `<Name>` als `public class : <Name>Abstract` Concrete-Skelett
-  fuer User-Implementation.
+  für User-Implementation.
 
 **Tests:** `spec_conformance::{valuetype_emits_abstract_and_concrete_class,
 valuetype_private_state_emits_protected_property,
@@ -924,8 +933,8 @@ class."
 **Spec:** §7.14.2 — analog idl4-java.
 
 **Repo:** Generator-Pfad in `emitter.rs::union_uses_discriminator_record`
-unterstuetzt alle integralen Discriminator-Types (8-Bit-Integer +
-wchar + octet) ueber `type_map.rs`.
+unterstützt alle integralen Discriminator-Types (8-Bit-Integer +
+wchar + octet) über `type_map.rs`.
 
 **Tests:** `union_uses_discriminator_record` +
 `spec_conformance::union_with_octet_discriminator_supported`.
@@ -993,11 +1002,11 @@ represented by a C# class extending System.Attribute."
 
 **Repo:** ZeroDDS-Codegen propagiert User-Annotations nicht (analog
 idl4-cpp §7.16). Annotations sind reine IDL-Metadata; bei Bedarf
-kann der Caller eigene Attribute-Klassen separat hinzufuegen.
+kann der Caller eigene Attribute-Klassen separat hinzufügen.
 
 **Tests:** Cross-Ref `unrelated_annotation_is_ignored` (no-output).
 
-**Status:** done — no-propagation ist Spec-konform fuer User-Annotations.
+**Status:** done — no-propagation ist Spec-konform für User-Annotations.
 
 ### 7.16.2 Apply User-Defined Annotations: C#-Element mit Attribute markieren
 
@@ -1110,7 +1119,7 @@ bitset-spezifisch (bitset Unsupported, analog idl4-cpp §7.17.4).
 **Repo:** `@verbatim` ist Cross-Cutting mit XTypes 1.3 §7.2.2.4.8
 voll implementiert via `crates/idl-csharp/src/verbatim.rs` (Aliase
 `c#`, `csharp`, `cs`, `*`). Hooks in
-`emitter::{emit_struct,emit_enum,emit_union,emit_header}` fuer alle
+`emitter::{emit_struct,emit_enum,emit_union,emit_header}` für alle
 6 Spec-PlacementKinds.
 
 **Tests:** `spec_conformance::{verbatim_annotation_with_csharp_language_inlines_text,
@@ -1118,14 +1127,14 @@ verbatim_annotation_csharp_alias_cs_matches,
 verbatim_annotation_other_language_not_emitted_in_csharp}`.
 
 **Status:** done — Code-Gen-Templating-Pfad live; XTypes 1.3
-§7.2.2.4.8 mit dieser Aufloesung geschlossen.
+§7.2.2.4.8 mit dieser Auflösung geschlossen.
 
 ### 7.17.6 Interfaces: @service, @oneway, @ami
 
 **Spec:** §7.17.6.
 
 **Repo:** `@service`/`@oneway` sind RPC-Spec-Annotations (Spec
-Tab.7.20 erlaubt platform-specific Impact); ZeroDDS unterstuetzt
+Tab.7.20 erlaubt platform-specific Impact); ZeroDDS unterstützt
 sie via zerodds-rpc-Crate. Reines Service-Interface-Codegen folgt
 zerodds-rpc-1.0-Spec §10 (siehe `zerodds-rpc-1.0.md`-K9-Audit).
 
@@ -1153,7 +1162,7 @@ default 'Constants'; ... }"
 
 **Status:** done — `CsGenOptions` deckt die Spec-Annotation-Parameter
 (NamingConvention, constants_container, etc.) als Codegen-Options
-ab. Annotation-Recognition als IDL-Hint ist Subject zukuenftiger
+ab. Annotation-Recognition als IDL-Hint ist Subject zukünftiger
 Erweiterung (Caller setzt Options direkt).
 
 ### 8.1.1 apply_naming_convention Tab.8.1: 17 IDL-Konstrukte
@@ -1189,7 +1198,7 @@ lizenziert beide Mappings als Alternativen.
 ### A.1 CORBA-Specific Mappings
 
 **Spec:** Annex A — CORBA-Spec-Anpassungen (Marker-Attribute +
-Type-Trait-Konstanten fuer Tooling).
+Type-Trait-Konstanten für Tooling).
 
 **Repo:** `crates/idl-csharp/src/corba_traits.rs::emit_corba_traits`
 (opt-in via `CsGenOptions::emit_corba_traits = true` oder

@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Publisher + DataWriter — das Sende-Ende der DCPS-API.
+//! Publisher + DataWriter — the send end of the DCPS API.
 //!
-//! Spec-Referenz: OMG DDS 1.4 §2.2.2.4 `Publisher`, §2.2.2.4.2
+//! Spec reference: OMG DDS 1.4 §2.2.2.4 `Publisher`, §2.2.2.4.2
 //! `DataWriter`.
 //!
 //! # Scope v1.2
 //!
 //! - `Publisher::create_datawriter<T>(topic, qos)` → `DataWriter<T>`.
-//! - `DataWriter::write(&sample)` encodiert via `T::encode` und
-//!   uebergibt an einen **in-memory Queue** (wiring zum
-//!   ReliableWriter erfolgt in Runtime).
-//! - Noch kein Matching gegen Remote-Reader.
-//! - Noch kein QoS-Conflict-Check.
+//! - `DataWriter::write(&sample)` encodes via `T::encode` and hands off
+//!   to an **in-memory queue** (wiring to the ReliableWriter happens in
+//!   the runtime).
+//! - No matching against remote readers yet.
+//! - No QoS conflict check yet.
 //!
-//! # Thread-Safety
+//! # Thread safety
 //!
-//! `DataWriter` ist `Send`+`Sync` via `Arc<Mutex<_>>`. Mehrere
-//! Application-Threads duerfen parallel `write()` aufrufen.
+//! `DataWriter` is `Send`+`Sync` via `Arc<Mutex<_>>`. Multiple
+//! application threads may call `write()` in parallel.
 
 extern crate alloc;
 use alloc::boxed::Box;
@@ -49,58 +49,57 @@ use zerodds_qos::ReliabilityKind;
 #[cfg(feature = "std")]
 use zerodds_rtps::wire_types::EntityId;
 
-/// Publisher — Entity-Gruppe fuer DataWriter.
+/// Publisher — entity group for DataWriters.
 ///
-/// In DDS 1.4 hat der Publisher eigene QoS (Partition, Group-Data,
-/// Presentation). v1.2 implementiert nur die API-Shape ohne
-/// Partition-Matching.
+/// In DDS 1.4 the publisher has its own QoS (Partition, GroupData,
+/// Presentation). v1.2 implements only the API shape without partition
+/// matching.
 #[derive(Debug)]
 pub struct Publisher {
     pub(crate) inner: Arc<PublisherInner>,
 }
 
 pub(crate) struct PublisherInner {
-    /// Mutable QoS. .1 (Entity-Lifecycle): set_qos prueft
-    /// Immutability nach enable().
+    /// Mutable QoS. .1 (entity lifecycle): set_qos checks immutability
+    /// after enable().
     #[cfg(feature = "std")]
     pub(crate) qos: std::sync::Mutex<PublisherQos>,
     #[cfg(not(feature = "std"))]
     #[allow(dead_code)]
     pub(crate) qos: PublisherQos,
-    /// Entity-Lifecycle (DCPS §2.2.2.1).
+    /// Entity lifecycle (DCPS §2.2.2.1).
     pub(crate) entity_state: alloc::sync::Arc<crate::entity::EntityState>,
-    /// Runtime-Handle (wenn der Publisher von einem Live-Participant
-    /// erzeugt wurde). None im offline-Modus → DataWriter fallen
-    /// auf in-memory queue zurueck.
+    /// Runtime handle (when the publisher was created by a live
+    /// participant). None in offline mode → DataWriters fall back to the
+    /// in-memory queue.
     #[cfg(feature = "std")]
     pub(crate) runtime: Option<Arc<DcpsRuntime>>,
     /// optionaler [`ArcPublisherListener`] + [`StatusMask`]
     /// (Spec §2.2.2.4.3.x set_listener / Bubble-Up §2.2.4.2.3).
     #[cfg(feature = "std")]
     pub(crate) listener: std::sync::Mutex<Option<(ArcPublisherListener, StatusMask)>>,
-    /// Schwacher Back-Pointer auf den Participant — fuer Bubble-Up
-    /// vom Publisher zum Participant. Wird von
-    /// `DomainParticipant::create_publisher` gesetzt. `Weak`
-    /// vermeidet einen Refcount-Cycle Participant↔Publisher.
+    /// Weak back-pointer to the participant — for bubble-up from the
+    /// publisher to the participant. Set by
+    /// `DomainParticipant::create_publisher`. `Weak` avoids a refcount
+    /// cycle participant↔publisher.
     #[cfg(feature = "std")]
     pub(crate) participant:
         std::sync::Mutex<Option<alloc::sync::Weak<crate::participant::ParticipantInner>>>,
-    /// `suspend_publications`-Flag (Spec §2.2.2.4.1.10). Wenn `true`,
-    /// hat der Publisher die Hint gegeben, dass Writes gepuffert werden
-    /// sollen — Writer kann das als Optimization-Hint nutzen
-    /// (z.B. Coalescing). Nicht binnenkonsistent erzwungen, weil Spec
-    /// es explizit als "hint to the Service" definiert.
+    /// `suspend_publications` flag (Spec §2.2.2.4.1.10). When `true`, the
+    /// publisher has hinted that writes should be buffered — the writer
+    /// may use that as an optimization hint (e.g. coalescing). Not
+    /// strictly enforced, because the spec explicitly defines it as a
+    /// "hint to the Service".
     suspended: core::sync::atomic::AtomicBool,
-    /// DataWriter-Handles (per `create_datawriter` getrackt) fuer
-    /// rekursives `DomainParticipant::contains_entity`
-    /// (Spec §2.2.2.2.1.10).
+    /// DataWriter handles (tracked per `create_datawriter`) for recursive
+    /// `DomainParticipant::contains_entity` (Spec §2.2.2.2.1.10).
     #[cfg(feature = "std")]
     pub(crate) datawriters:
         std::sync::Mutex<alloc::vec::Vec<crate::instance_handle::InstanceHandle>>,
 }
 
-// Manueller Debug-Impl, weil `dyn PublisherListener` kein Debug
-// implementiert. Wir geben nur "Some/None" und die Mask aus.
+// Manual Debug impl, because `dyn PublisherListener` does not implement
+// Debug. We only print "Some/None" and the mask.
 impl core::fmt::Debug for PublisherInner {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let listener_present = self.listener.lock().map(|s| s.is_some()).unwrap_or(false);
@@ -138,8 +137,8 @@ impl Publisher {
         }
     }
 
-    /// Spec §2.2.2.2.1.10 — `true` wenn `handle` ein DataWriter ist,
-    /// der ueber diesen Publisher erzeugt wurde.
+    /// Spec §2.2.2.2.1.10 — `true` if `handle` is a DataWriter created
+    /// through this publisher.
     #[cfg(feature = "std")]
     #[must_use]
     pub fn contains_writer(&self, handle: crate::instance_handle::InstanceHandle) -> bool {
@@ -150,8 +149,8 @@ impl Publisher {
             .unwrap_or(false)
     }
 
-    /// setzt den `PublisherListener` + StatusMask. `None`
-    /// loescht den Slot. Spec §2.2.2.4.3.x.
+    /// Sets the `PublisherListener` + StatusMask. `None` clears the slot.
+    /// Spec §2.2.2.4.3.x.
     #[cfg(feature = "std")]
     pub fn set_listener(&self, listener: Option<ArcPublisherListener>, mask: StatusMask) {
         if let Ok(mut slot) = self.inner.listener.lock() {
@@ -160,7 +159,7 @@ impl Publisher {
         self.inner.entity_state.set_listener_mask(mask);
     }
 
-    /// aktueller Listener-Klon, sofern vorhanden.
+    /// Current listener clone, if present.
     #[cfg(feature = "std")]
     #[must_use]
     pub fn get_listener(&self) -> Option<ArcPublisherListener> {
@@ -171,8 +170,8 @@ impl Publisher {
             .and_then(|s| s.as_ref().map(|(l, _)| Arc::clone(l)))
     }
 
-    /// Setzt den schwachen Back-Pointer auf den Participant. Wird
-    /// vom `DomainParticipant::create_publisher` aufgerufen.
+    /// Sets the weak back-pointer to the participant. Called by
+    /// `DomainParticipant::create_publisher`.
     #[cfg(feature = "std")]
     pub(crate) fn attach_participant(
         &self,
@@ -183,10 +182,10 @@ impl Publisher {
         }
     }
 
-    /// Liefert die [`crate::listener_dispatch::WriterListenerChain`]
-    /// fuer einen Writer dieses Publishers — Reader-Pfad-Pendant in
-    /// Subscriber. Klont alle drei Listener-Stufen unter ihren
-    /// Mutexen und gibt das Bundle frei zurueck (Lock-Discipline).
+    /// Returns the [`crate::listener_dispatch::WriterListenerChain`] for
+    /// a writer of this publisher — the reader-path counterpart in
+    /// Subscriber. Clones all three listener stages under their mutexes
+    /// and returns the bundle lock-free (lock discipline).
     #[cfg(feature = "std")]
     #[must_use]
     pub(crate) fn snapshot_writer_chain(
@@ -216,33 +215,32 @@ impl Publisher {
         }
     }
 
-    /// Spec §2.2.2.4.1.10 `suspend_publications` — Hint an die Service,
-    /// dass nachfolgende `write()`-Aufrufe gepuffert werden duerfen
-    /// (z.B. fuer Coalescing). Hat keine Pflicht-Semantik fuer den
-    /// Caller; der Flag ist via `is_suspended()` lesbar fuer die
-    /// Writer-Implementation.
+    /// Spec §2.2.2.4.1.10 `suspend_publications` — a hint to the Service
+    /// that subsequent `write()` calls may be buffered (e.g. for
+    /// coalescing). Has no mandatory semantics for the caller; the flag
+    /// is readable via `is_suspended()` for the writer implementation.
     ///
-    /// Idempotent: ein zweites `suspend_publications()` ohne
-    /// `resume_publications()` dazwischen ist erlaubt.
+    /// Idempotent: a second `suspend_publications()` without a
+    /// `resume_publications()` in between is allowed.
     pub fn suspend_publications(&self) {
         self.inner
             .suspended
             .store(true, core::sync::atomic::Ordering::Release);
     }
 
-    /// Spec §2.2.2.4.1.11 `resume_publications` — Gegenstueck zu
-    /// `suspend_publications`. Bei aktivem Suspend-Flag ist das
-    /// Verhalten "Service can stop coalescing"; bei inaktivem Flag ist
-    /// das ein No-Op.
+    /// Spec §2.2.2.4.1.11 `resume_publications` — counterpart to
+    /// `suspend_publications`. With the suspend flag active the behavior
+    /// is "Service can stop coalescing"; with the flag inactive it is a
+    /// no-op.
     pub fn resume_publications(&self) {
         self.inner
             .suspended
             .store(false, core::sync::atomic::Ordering::Release);
     }
 
-    /// `true` wenn `suspend_publications()` aktiv ist und
-    /// `resume_publications()` noch nicht gerufen wurde. Wird vom
-    /// Writer-Send-Pfad als Coalescing-Hint gelesen.
+    /// `true` if `suspend_publications()` is active and
+    /// `resume_publications()` has not yet been called. Read by the
+    /// writer send path as a coalescing hint.
     #[must_use]
     pub fn is_suspended(&self) -> bool {
         self.inner
@@ -250,39 +248,39 @@ impl Publisher {
             .load(core::sync::atomic::Ordering::Acquire)
     }
 
-    /// Spec §2.2.2.4.1.13 `copy_from_topic_qos` — kopiert die zwischen
-    /// Topic- und DataWriter-Qos teilbaren Policies aus `topic_qos`
-    /// nach `dw_qos`. Spec-Liste der gemeinsamen Policies (DCPS 1.4
+    /// Spec §2.2.2.4.1.13 `copy_from_topic_qos` — copies the policies
+    /// shareable between topic and DataWriter QoS from `topic_qos` into
+    /// `dw_qos`. The spec's list of common policies (DCPS 1.4
     /// §2.2.2.4.1.13): DURABILITY, DEADLINE, LATENCY_BUDGET, LIVELINESS,
     /// RELIABILITY, DESTINATION_ORDER, HISTORY, RESOURCE_LIMITS,
     /// TRANSPORT_PRIORITY, LIFESPAN, OWNERSHIP.
     ///
     /// # Errors
-    /// `DdsError::BadParameter` wenn das Resultat eine inkonsistente
-    /// QoS-Kombination ergibt — wird vom QoS-Compatibility-Check des
-    /// Caller-DataWriter validiert (analog `set_qos`).
+    /// `DdsError::BadParameter` if the result yields an inconsistent QoS
+    /// combination — validated by the caller DataWriter's
+    /// QoS-compatibility check (analogous to `set_qos`).
     pub fn copy_from_topic_qos(
         dw_qos: &mut DataWriterQos,
         topic_qos: &crate::qos::TopicQos,
     ) -> Result<()> {
-        // Die folgenden Felder sind in beiden QoS-Strukturen vorhanden
-        // und werden 1:1 ueberschrieben. DataWriter-only Policies
-        // (OWNERSHIP_STRENGTH, PARTITION, RESOURCE_LIMITS, HISTORY,
-        // LIFESPAN, DEADLINE, LIVELINESS, OWNERSHIP) bleiben
-        // unangetastet, weil TopicQos sie aktuell nicht traegt.
-        // Wenn TopicQos um eines dieser Felder erweitert wird, MUSS
-        // diese Liste mit-erweitert werden — Spec §2.2.2.4.1.13.
+        // The following fields are present in both QoS structs and are
+        // overwritten 1:1. DataWriter-only policies (OWNERSHIP_STRENGTH,
+        // PARTITION, RESOURCE_LIMITS, HISTORY, LIFESPAN, DEADLINE,
+        // LIVELINESS, OWNERSHIP) are left untouched, because TopicQos
+        // currently does not carry them. If TopicQos is extended with one
+        // of these fields, this list MUST be extended too — Spec
+        // §2.2.2.4.1.13.
         dw_qos.durability = topic_qos.durability;
         dw_qos.reliability = topic_qos.reliability;
         Ok(())
     }
 
-    /// Erzeugt einen typed `DataWriter<T>`. Spec §2.2.2.4.1.5
+    /// Creates a typed `DataWriter<T>`. Spec §2.2.2.4.1.5
     /// `create_datawriter`.
     ///
     /// # Errors
-    /// - `BadParameter` wenn `topic.type_name() != T::TYPE_NAME`
-    ///   (sollte statisch garantiert sein, aber defensiv pruefen).
+    /// - `BadParameter` if `topic.type_name() != T::TYPE_NAME` (should be
+    ///   statically guaranteed, but we check defensively).
     pub fn create_datawriter<T: DdsType + Send + 'static>(
         &self,
         topic: &Topic<T>,
@@ -295,38 +293,44 @@ impl Publisher {
         }
         #[cfg(feature = "std")]
         if let Some(rt) = self.inner.runtime.as_ref() {
-            // Live-Mode: registriere einen echten User-Writer bei
-            // der Runtime. Matching und User-Data-Flow laufen ab
-            // jetzt ueber SEDP + UDP.
+            // Live mode: register a real user writer with the runtime.
+            // Matching and user-data flow run over SEDP + UDP from now on.
             let reliable = qos.reliability.kind == ReliabilityKind::Reliable;
-            let eid = rt.register_user_writer(crate::runtime::UserWriterConfig {
-                topic_name: topic.name().into(),
-                type_name: T::TYPE_NAME.into(),
-                reliable,
-                durability: qos.durability.kind,
-                deadline: qos.deadline,
-                lifespan: qos.lifespan,
-                liveliness: qos.liveliness,
-                ownership: qos.ownership.kind,
-                ownership_strength: qos.ownership_strength.value,
-                partition: qos.partition.names.clone(),
-                user_data: qos.user_data.value.clone(),
-                topic_data: qos.topic_data.value.clone(),
-                group_data: qos.group_data.value.clone(),
-                // F-TYPES-3: Topic-Type-Identifier weitergeben.
-                type_identifier: T::TYPE_IDENTIFIER.clone(),
-                // D.5g — `None` = nutze Runtime-Default. Per-Writer-
-                // Override via QoS-Policy ist TBD (`DataWriterQos::
-                // representation`); die DataRepresentationQosPolicy
-                // ist noch nicht in DataWriterQos modelliert.
-                data_representation_offer: None,
-            })?;
+            // Derive the entityKind from the type keyedness (Spec §9.3.1.2:
+            // 0x02=WithKey / 0x03=NoKey). A keyless type (`HAS_KEY=false`)
+            // MUST produce a NoKey writer, otherwise cross-vendor readers
+            // (CycloneDDS/ROS 2) reject the endpoint match due to an
+            // entityKind mismatch (keyed vs no-key) — silently, without a
+            // log.
+            let eid = rt.register_user_writer_kind(
+                crate::runtime::UserWriterConfig {
+                    topic_name: topic.name().into(),
+                    type_name: T::TYPE_NAME.into(),
+                    reliable,
+                    durability: qos.durability.kind,
+                    deadline: qos.deadline,
+                    lifespan: qos.lifespan,
+                    liveliness: qos.liveliness,
+                    ownership: qos.ownership.kind,
+                    ownership_strength: qos.ownership_strength.value,
+                    partition: qos.partition.names.clone(),
+                    user_data: qos.user_data.value.clone(),
+                    topic_data: qos.topic_data.value.clone(),
+                    group_data: qos.group_data.value.clone(),
+                    // F-TYPES-3: pass on the topic type identifier.
+                    type_identifier: T::TYPE_IDENTIFIER.clone(),
+                    // Per-writer DataRepresentation override from the QoS
+                    // (`None` = runtime default). XTypes 1.3 §7.6.3.1.2.
+                    data_representation_offer: qos.data_representation.clone(),
+                },
+                T::HAS_KEY,
+            )?;
             let dw =
                 DataWriter::new_live(topic.clone(), qos, self.inner.clone(), Arc::clone(rt), eid);
-            // Spec §2.2.3.5 — bei Durability=Transient/Persistent das
-            // Writer-eigene Backend an die Runtime weiterreichen, damit
-            // der Match-Pfad beim ersten Late-Joiner-Match die
-            // Backend-Samples in den HistoryCache re-injiziert (siehe
+            // Spec §2.2.3.5 — with Durability=Transient/Persistent, pass
+            // the writer's own backend to the runtime so that the match
+            // path re-injects the backend samples into the HistoryCache on
+            // the first late-joiner match (see
             // `DcpsRuntime::attach_durability_backend`).
             if let Some(backend) = dw.durability_backend() {
                 let _ = rt.attach_durability_backend(eid, backend);
@@ -345,7 +349,7 @@ impl Publisher {
         if let Ok(mut list) = self.inner.datawriters.lock() {
             list.push(handle);
         }
-        // Propagiere zum Participant fuer rekursives contains_entity.
+        // Propagate to the participant for recursive contains_entity.
         if let Ok(slot) = self.inner.participant.lock() {
             if let Some(weak) = slot.as_ref() {
                 if let Some(p_inner) = weak.upgrade() {
@@ -359,7 +363,7 @@ impl Publisher {
 }
 
 // ============================================================================
-// Entity-Trait (DCPS §2.2.2.1) —
+// Entity trait (DCPS §2.2.2.1) —
 // ============================================================================
 
 #[cfg(feature = "std")]
@@ -371,9 +375,9 @@ impl crate::entity::Entity for Publisher {
     }
 
     fn set_qos(&self, qos: Self::Qos) -> Result<()> {
-        // PublisherQos hat keine immutable Felder per DDS-Spec §2.2.3 —
-        // Partition / GroupData / Presentation sind alle Changeable=YES.
-        // Wir koennen also pre- und post-enable einfach uebernehmen.
+        // PublisherQos has no immutable fields per DDS spec §2.2.3 —
+        // Partition / GroupData / Presentation are all Changeable=YES.
+        // So we can simply adopt them both pre- and post-enable.
         if let Ok(mut current) = self.inner.qos.lock() {
             *current = qos;
         }
@@ -390,73 +394,72 @@ impl crate::entity::Entity for Publisher {
     }
 }
 
-/// Typed DataWriter — schickt Samples an alle matched Reader des Topics.
+/// Typed DataWriter — sends samples to all matched readers of the topic.
 ///
-/// Zwei Modi:
-/// - **Live** (`runtime: Some`, `entity_id: Some`): write() delegiert
-///   an die Runtime → ReliableWriter → UDP.
-/// - **Offline** (Offline-Fallback, Runtime=None): write() queued
-///   in-memory; fuer Unit-Tests ohne Netz.
+/// Two modes:
+/// - **Live** (`runtime: Some`, `entity_id: Some`): write() delegates to
+///   the runtime → ReliableWriter → UDP.
+/// - **Offline** (offline fallback, runtime=None): write() queues
+///   in-memory; for unit tests without a network.
 pub struct DataWriter<T: DdsType> {
     topic: Topic<T>,
     qos: Mutex<DataWriterQos>,
-    /// Entity-Lifecycle (DCPS §2.2.2.1).
+    /// Entity lifecycle (DCPS §2.2.2.1).
     entity_state: Arc<crate::entity::EntityState>,
-    /// Parent-Publisher (clone des `Arc`) — fuer Bubble-Up zum
-    /// Publisher- und Participant-Listener.
+    /// Parent publisher (clone of the `Arc`) — for bubble-up to the
+    /// publisher and participant listeners.
     publisher: Arc<PublisherInner>,
-    /// optionaler `DataWriterListener` + `StatusMask`.
+    /// Optional `DataWriterListener` + `StatusMask`.
     #[cfg(feature = "std")]
     listener: Mutex<Option<(ArcDataWriterListener, StatusMask)>>,
-    /// zuletzt gesehene Anzahl matched Reader. Wird vom
-    /// `poll_status_changes` (lazy von Public-API-Pfaden gerufen)
-    /// genutzt, um eine Delta-Detection fuer
-    /// `on_publication_matched` zu fahren — Spec §2.2.4.2.4.4.
+    /// Last seen number of matched readers. Used by `poll_status_changes`
+    /// (called lazily from public-API paths) to drive delta detection for
+    /// `on_publication_matched` — Spec §2.2.4.2.4.4.
     #[cfg(feature = "std")]
     last_match_count: std::sync::atomic::AtomicI64,
-    /// zuletzt gesehener offered_deadline_missed-Counter.
+    /// Last seen offered_deadline_missed counter.
     #[cfg(feature = "std")]
     last_offered_deadline_missed: std::sync::atomic::AtomicU64,
-    /// zuletzt gesehener liveliness_lost-Counter.
+    /// Last seen liveliness_lost counter.
     #[cfg(feature = "std")]
     last_liveliness_lost: std::sync::atomic::AtomicU64,
-    /// zuletzt gesehener offered_incompatible_qos.total_count.
+    /// Last seen offered_incompatible_qos.total_count.
     #[cfg(feature = "std")]
     last_offered_incompatible_qos: std::sync::atomic::AtomicI64,
-    /// Offline Fallback-Queue.
+    /// Offline fallback queue.
     queue: Arc<Mutex<Vec<Vec<u8>>>>,
-    /// Drain-Notify-Pair (Spec §2.2.3.19 RESOURCE_LIMITS Reliable-Block).
-    /// `write()` blockt am Condvar wenn die Queue full ist + RELIABLE +
-    /// `max_blocking_time > 0`; `__drain_pending` notifies alle wartenden
-    /// Writer-Threads.
+    /// Drain notify pair (Spec §2.2.3.19 RESOURCE_LIMITS reliable block).
+    /// `write()` blocks on the condvar when the queue is full + RELIABLE +
+    /// `max_blocking_time > 0`; `__drain_pending` notifies all waiting
+    /// writer threads.
     #[cfg(feature = "std")]
     drain_signal: Arc<std::sync::Condvar>,
     #[cfg(feature = "std")]
     runtime: Option<Arc<DcpsRuntime>>,
     #[cfg(feature = "std")]
     entity_id: Option<EntityId>,
-    /// Instanz-Buchhaltung.
+    /// Instance bookkeeping.
     #[cfg(feature = "std")]
     instances: InstanceTracker,
-    /// Lokaler Publication-Handle — wird in `SampleInfo.publication_handle`
-    /// auf der Reader-Seite eingetragen, sobald Live-Wiring greift.
+    /// Local publication handle — entered into
+    /// `SampleInfo.publication_handle` on the reader side once live wiring
+    /// takes effect.
     #[cfg(feature = "std")]
     publication_handle: InstanceHandle,
-    /// Spec §2.2.3.5 DurabilityServiceQosPolicy: bei
-    /// Durability=Transient/Persistent legt der Writer Samples zusaetzlich
-    /// in einem Backend ab, damit Late-Joiner-Reader sie auch nach
-    /// Writer-History-Cleanup beziehen koennen.
+    /// Spec §2.2.3.5 DurabilityServiceQosPolicy: with
+    /// Durability=Transient/Persistent the writer additionally stores
+    /// samples in a backend so that late-joiner readers can still obtain
+    /// them after the writer's history cleanup.
     #[cfg(feature = "std")]
     durability_backend: Option<Arc<dyn crate::durability_service::DurabilityBackend>>,
-    /// Monoton steigende Writer-Sequenz fuer Durability-Backend-Storage
-    /// (DDS 1.4 §2.2.3.5 + Backend-Replay-Reihenfolge).
+    /// Monotonically increasing writer sequence for durability-backend
+    /// storage (DDS 1.4 §2.2.3.5 + backend replay order).
     #[cfg(feature = "std")]
     durability_seq: std::sync::atomic::AtomicU64,
-    /// Optional konfigurierter Flatdata-SlotBackend fuer Same-Host-
-    /// Zero-Copy-Pfad (`zerodds-flatdata-1.0` §4.1 + §8.1). Wird via
-    /// `set_flat_backend` (siehe `flatdata_integration`-Modul) gesetzt;
-    /// bei `None` faellt `write_flat()` auf den klassischen UDP-Pfad
-    /// zurueck.
+    /// Optionally configured Flatdata SlotBackend for the same-host
+    /// zero-copy path (`zerodds-flatdata-1.0` §4.1 + §8.1). Set via
+    /// `set_flat_backend` (see the `flatdata_integration` module); with
+    /// `None`, `write_flat()` falls back to the classic UDP path.
     #[cfg(all(feature = "std", feature = "flatdata-integration"))]
     pub(crate) flat_backend: Mutex<
         Option<(
@@ -508,8 +511,8 @@ impl<T: DdsType> DataWriter<T> {
         }
     }
 
-    /// Liefert das Durability-Backend (None bei Volatile/TransientLocal).
-    /// Test-/Inspektions-Hilfsfunktion — Spec §2.2.3.5.
+    /// Returns the durability backend (None for Volatile/TransientLocal).
+    /// Test/inspection helper — Spec §2.2.3.5.
     #[doc(hidden)]
     #[cfg(feature = "std")]
     #[must_use]
@@ -519,13 +522,13 @@ impl<T: DdsType> DataWriter<T> {
         self.durability_backend.clone()
     }
 
-    /// Spec §2.2.3.5: bei Durability=Transient legt der Writer ein
-    /// In-Memory-Backend an. Persistent ohne Root-Pfad wird nicht
-    /// auto-konfiguriert — Caller muss `set_durability_backend`
-    /// Default-Pfad fuer Persistent: `ZERODDS_DURABILITY_DIR` Env-Var,
-    /// sonst `std::env::temp_dir().join("zerodds-durability")`. Caller
-    /// kann den Pfad ueber die Env-Var ueberschreiben fuer Production-
-    /// Deployments (z.B. `/var/lib/zerodds/durability`).
+    /// Spec §2.2.3.5: with Durability=Transient the writer creates an
+    /// in-memory backend. Persistent without a root path is not
+    /// auto-configured — the caller must `set_durability_backend`.
+    /// Default path for Persistent: the `ZERODDS_DURABILITY_DIR` env var,
+    /// otherwise `std::env::temp_dir().join("zerodds-durability")`. The
+    /// caller can override the path via the env var for production
+    /// deployments (e.g. `/var/lib/zerodds/durability`).
     #[cfg(feature = "std")]
     fn build_durability_backend(
         qos: &DataWriterQos,
@@ -559,10 +562,9 @@ impl<T: DdsType> DataWriter<T> {
         entity_id: EntityId,
     ) -> Self {
         let tracker = InstanceTracker::new();
-        // Wir leiten den Publication-Handle aus der EntityId ab — das macht ihn
-        // ueber Test-Runs reproduzierbar und vermeidet eine Pool-Kollision mit
-        // Instance-Handles. Spec sagt ohnehin nur, dass es sich um ein opakes
-        // u64 handelt.
+        // We derive the publication handle from the EntityId — that makes it
+        // reproducible across test runs and avoids a pool collision with
+        // instance handles. The spec only says it is an opaque u64 anyway.
         let key = entity_id.entity_key;
         let pub_handle = InstanceHandle::from_raw(
             0xFFFF_0000_0000_0000
@@ -609,14 +611,14 @@ impl<T: DdsType> DataWriter<T> {
         }
     }
 
-    /// Topic, an das gesendet wird.
+    /// The topic that is sent to.
     #[must_use]
     pub fn topic(&self) -> &Topic<T> {
         &self.topic
     }
 
-    /// setzt den `DataWriterListener` + StatusMask. `None`
-    /// loescht den Slot. Spec §2.2.2.4.2.x set_listener.
+    /// Sets the `DataWriterListener` + StatusMask. `None` clears the slot.
+    /// Spec §2.2.2.4.2.x set_listener.
     #[cfg(feature = "std")]
     pub fn set_listener(&self, listener: Option<ArcDataWriterListener>, mask: StatusMask) {
         if let Ok(mut slot) = self.listener.lock() {
@@ -625,7 +627,7 @@ impl<T: DdsType> DataWriter<T> {
         self.entity_state.set_listener_mask(mask);
     }
 
-    /// aktueller Listener-Klon, sofern vorhanden.
+    /// Current listener clone, if present.
     #[cfg(feature = "std")]
     #[must_use]
     pub fn get_listener(&self) -> Option<ArcDataWriterListener> {
@@ -635,8 +637,8 @@ impl<T: DdsType> DataWriter<T> {
             .and_then(|s| s.as_ref().map(|(l, _)| Arc::clone(l)))
     }
 
-    /// Snapshot der Bubble-Up-Kette (Writer → Publisher → Participant).
-    /// Fuer Hot-Path-Listener-Dispatch genutzt.
+    /// Snapshot of the bubble-up chain (writer → publisher → participant).
+    /// Used for hot-path listener dispatch.
     #[cfg(feature = "std")]
     #[must_use]
     pub(crate) fn listener_chain(&self) -> crate::listener_dispatch::WriterListenerChain {
@@ -645,35 +647,34 @@ impl<T: DdsType> DataWriter<T> {
             .lock()
             .ok()
             .and_then(|s| s.as_ref().map(|(l, m)| (Arc::clone(l), *m)));
-        // Wir reichen den Writer-Klon an den Publisher-Snapshot weiter,
-        // der Publisher- und Participant-Stage befuellt.
+        // We pass the writer clone on to the publisher snapshot, which
+        // fills in the publisher and participant stages.
         let pub_handle = Publisher {
             inner: Arc::clone(&self.publisher),
         };
         pub_handle.snapshot_writer_chain(writer)
     }
 
-    /// Aktuelle QoS (cloned, .1).
+    /// Current QoS (cloned, .1).
     #[must_use]
     pub fn qos(&self) -> DataWriterQos {
         self.qos.lock().map(|q| q.clone()).unwrap_or_default()
     }
 
-    /// Sendet einen Sample an alle matched Reader.
+    /// Sends a sample to all matched readers.
     ///
-    /// **Spec §2.2.3.19 RESOURCE_LIMITS Reliable-Block:** Wenn der
-    /// lokale Writer-Cache `max_samples` erreicht hat UND
-    /// Reliability=RELIABLE UND `max_blocking_time > 0`, blockt
-    /// `write()` bis Reader ACK den Slot freigibt oder das Timeout
-    /// abgelaufen ist. Im Best-Effort-Mode oder mit
-    /// `max_blocking_time = 0` schlaegt `write()` sofort fehl mit
+    /// **Spec §2.2.3.19 RESOURCE_LIMITS reliable block:** If the local
+    /// writer cache has reached `max_samples` AND Reliability=RELIABLE AND
+    /// `max_blocking_time > 0`, `write()` blocks until a reader ACK frees
+    /// the slot or the timeout expires. In best-effort mode or with
+    /// `max_blocking_time = 0`, `write()` fails immediately with
     /// `OutOfResources`.
     ///
     /// # Errors
-    /// - `WireError` wenn `T::encode` fehlschlaegt.
-    /// - `OutOfResources` wenn die Queue full ist + Best-Effort/keine
-    ///   Block-Zeit, oder wenn der Block-Timeout vor einem Drain abgelaufen ist.
-    /// - `PreconditionNotMet` bei Lock-Poisoning.
+    /// - `WireError` if `T::encode` fails.
+    /// - `OutOfResources` if the queue is full + best-effort/no blocking
+    ///   time, or if the block timeout expired before a drain.
+    /// - `PreconditionNotMet` on lock poisoning.
     pub fn write(&self, sample: &T) -> Result<()> {
         let mut buf = Vec::new();
         sample.encode(&mut buf).map_err(|e| DdsError::WireError {
@@ -683,15 +684,15 @@ impl<T: DdsType> DataWriter<T> {
         crate::metrics::inc_sample_written(self.topic.name());
         #[cfg(feature = "metrics")]
         crate::metrics::record_sample_size(self.topic.name(), buf.len());
-        // Spec §2.2.3.5 DurabilityServiceQosPolicy: Sample zusaetzlich
-        // ins Backend ablegen (Transient/Persistent), damit Late-Joiner-
-        // Reader nach Writer-History-Cleanup noch beziehen koennen.
+        // Spec §2.2.3.5 DurabilityServiceQosPolicy: also store the sample
+        // in the backend (Transient/Persistent) so that late-joiner
+        // readers can still obtain it after the writer's history cleanup.
         #[cfg(feature = "std")]
         if let Some(backend) = self.durability_backend.as_ref() {
             let key_bytes = Self::keyhash_and_holder(sample)
                 .map(|(kh, _)| kh)
                 .unwrap_or([0u8; 16]);
-            // Monotone Writer-Sequenz fuer Backend-Replay-Reihenfolge
+            // Monotonic writer sequence for backend replay order
             // (DDS 1.4 §2.2.3.5).
             let seq = self
                 .durability_seq
@@ -704,12 +705,12 @@ impl<T: DdsType> DataWriter<T> {
                 created_at: std::time::SystemTime::now(),
             });
         }
-        // Live-Mode: delegiere an Runtime → ReliableWriter → UDP.
+        // Live mode: delegate to the runtime → ReliableWriter → UDP.
         #[cfg(feature = "std")]
         if let (Some(rt), Some(eid)) = (&self.runtime, self.entity_id) {
             return rt.write_user_sample(eid, buf);
         }
-        // Offline-Fallback: in-memory queue mit RESOURCE_LIMITS-Block.
+        // Offline fallback: in-memory queue with RESOURCE_LIMITS block.
         #[cfg(feature = "std")]
         {
             let qos = self.qos.lock().map(|q| q.clone()).unwrap_or_default();
@@ -733,7 +734,7 @@ impl<T: DdsType> DataWriter<T> {
                         what: "datawriter queue full (best-effort or no max_blocking_time)",
                     });
                 }
-                // Reliable + max_blocking_time > 0 → wait_timeout am Condvar.
+                // Reliable + max_blocking_time > 0 → wait_timeout on the condvar.
                 let deadline = std::time::Instant::now() + max_block_dur;
                 loop {
                     let now = std::time::Instant::now();
@@ -750,7 +751,7 @@ impl<T: DdsType> DataWriter<T> {
                     if q.len() < max_samples as usize {
                         break;
                     }
-                    // sonst spurious wakeup → weiter warten.
+                    // otherwise spurious wakeup → keep waiting.
                 }
             }
             q.push(buf);
@@ -769,22 +770,22 @@ impl<T: DdsType> DataWriter<T> {
         }
     }
 
-    /// Anzahl bisher geschriebener Samples. Test-Hilfsfunktion,
-    /// in Runtime durch echte HistoryCache-Counter ersetzt.
+    /// Number of samples written so far. Test helper, replaced by real
+    /// HistoryCache counters in the runtime.
     #[must_use]
     pub fn samples_pending(&self) -> usize {
         self.queue.lock().map(|q| q.len()).unwrap_or(0)
     }
 
-    /// Anzahl matched Remote-Reader. Im Offline-Mode immer 0.
+    /// Number of matched remote readers. Always 0 in offline mode.
     ///
     /// Spec: OMG DDS 1.4 §2.2.2.4.2.11 `get_matched_subscriptions`.
-    /// Dort wird eine Liste zurueckgegeben; liefert nur
-    /// den Count, die volle Liste kommt mit Listener-Callbacks.
+    /// That returns a list; this returns only the count, the full list
+    /// comes with listener callbacks.
     ///
-    /// Seiteneffekt — bei einer Aenderung des Matched-Count
-    /// gegenueber dem letzten Aufruf wird `on_publication_matched`
-    /// via Bubble-Up-Kette gefeuert (Spec §2.2.4.2.4.4).
+    /// Side effect — on a change of the matched count relative to the
+    /// last call, `on_publication_matched` is fired via the bubble-up
+    /// chain (Spec §2.2.4.2.4.4).
     #[must_use]
     pub fn matched_subscription_count(&self) -> usize {
         #[cfg(feature = "std")]
@@ -796,10 +797,10 @@ impl<T: DdsType> DataWriter<T> {
         0
     }
 
-    /// vergleicht den `current`-Count mit
-    /// `last_match_count` und feuert `on_publication_matched` wenn
-    /// sich der Wert geaendert hat. Initial ist `last_match_count == -1`,
-    /// d.h. der erste Aufruf mit n>=0 triggert immer.
+    /// Compares the `current` count with `last_match_count` and fires
+    /// `on_publication_matched` if the value has changed. Initially
+    /// `last_match_count == -1`, i.e. the first call with n>=0 always
+    /// triggers.
     #[cfg(feature = "std")]
     pub(crate) fn poll_publication_matched(&self, current: usize) {
         let curr = current as i64;
@@ -830,9 +831,9 @@ impl<T: DdsType> DataWriter<T> {
         );
     }
 
-    /// Delta-Detect fuer `on_offered_deadline_missed`.
-    /// Liest den Counter aus der Runtime und feuert den Listener bei
-    /// Delta. Spec §2.2.4.2.4.1.
+    /// Delta detection for `on_offered_deadline_missed`. Reads the
+    /// counter from the runtime and fires the listener on a delta. Spec
+    /// §2.2.4.2.4.1.
     #[cfg(feature = "std")]
     pub(crate) fn poll_offered_deadline_missed(&self, current: u64) {
         let prev = self
@@ -855,7 +856,7 @@ impl<T: DdsType> DataWriter<T> {
         );
     }
 
-    /// Delta-Detect fuer `on_liveliness_lost`. Spec §2.2.4.2.4.3.
+    /// Delta detection for `on_liveliness_lost`. Spec §2.2.4.2.4.3.
     #[cfg(feature = "std")]
     pub(crate) fn poll_liveliness_lost(&self, current: u64) {
         let prev = self
@@ -877,7 +878,7 @@ impl<T: DdsType> DataWriter<T> {
         );
     }
 
-    /// Delta-Detect fuer `on_offered_incompatible_qos`.
+    /// Delta detection for `on_offered_incompatible_qos`.
     /// Spec §2.2.4.2.4.2.
     #[cfg(feature = "std")]
     pub(crate) fn poll_offered_incompatible_qos(
@@ -906,19 +907,19 @@ impl<T: DdsType> DataWriter<T> {
         );
     }
 
-    /// Blockiert, bis mindestens `min_count` Remote-Reader matched
-    /// sind oder `timeout` verstreicht. Event-driven via Runtime-Condvar
-    /// (D.5e Phase-1) — wakup direkt wenn SEDP einen Match propagiert,
-    /// kein 20-ms-Polling mehr.
+    /// Blocks until at least `min_count` remote readers are matched or
+    /// `timeout` elapses. Event-driven via a runtime condvar (D.5e
+    /// phase 1) — wakes up directly when SEDP propagates a match, no more
+    /// 20-ms polling.
     ///
-    /// Verwandt zu OMG DDS 1.4 §2.2.2.4.2.22 `wait_for_acknowledgments`,
-    /// aber fokussiert auf Matching statt ACK. Deckt den typischen
-    /// Producer-Pattern "erst Writer anlegen, dann auf Subscriber warten,
-    /// dann schreiben" ab.
+    /// Related to OMG DDS 1.4 §2.2.2.4.2.22 `wait_for_acknowledgments`,
+    /// but focused on matching rather than ACK. Covers the typical
+    /// producer pattern "first create the writer, then wait for
+    /// subscribers, then write".
     ///
     /// # Errors
-    /// [`DdsError::Timeout`] wenn `min_count` im Zeitfenster nicht
-    /// erreicht wird.
+    /// [`DdsError::Timeout`] if `min_count` is not reached within the
+    /// time window.
     #[cfg(feature = "std")]
     pub fn wait_for_matched_subscription(
         &self,
@@ -942,13 +943,13 @@ impl<T: DdsType> DataWriter<T> {
         }
     }
 
-    /// Counter fuer offered-Deadline-Verletzungen (Spec
-    /// §2.2.4.2.9 `OFFERED_DEADLINE_MISSED_STATUS`). Monoton steigend;
-    /// steigt um 1 pro abgelaufenem Deadline-Fenster ohne Write.
-    /// Im Offline-Mode oder bei `deadline=INFINITE` immer 0.
+    /// Counter for offered-deadline violations (Spec §2.2.4.2.9
+    /// `OFFERED_DEADLINE_MISSED_STATUS`). Monotonically increasing;
+    /// increments by 1 per expired deadline window without a write.
+    /// Always 0 in offline mode or with `deadline=INFINITE`.
     ///
-    /// feuert ggf. `on_offered_deadline_missed` ueber die
-    /// Bubble-Up-Kette bei Delta gegenueber dem letzten Aufruf.
+    /// Fires `on_offered_deadline_missed` over the bubble-up chain on a
+    /// delta relative to the last call, if applicable.
     #[must_use]
     pub fn offered_deadline_missed_count(&self) -> u64 {
         #[cfg(feature = "std")]
@@ -960,8 +961,8 @@ impl<T: DdsType> DataWriter<T> {
         0
     }
 
-    /// Counter fuer LivelinessLost-Detections (Spec §2.2.4.2.10).
-    /// Triggert ggf. `on_liveliness_lost` via Bubble-Up.
+    /// Counter for LivelinessLost detections (Spec §2.2.4.2.10).
+    /// Triggers `on_liveliness_lost` via bubble-up, if applicable.
     #[must_use]
     pub fn liveliness_lost_count(&self) -> u64 {
         #[cfg(feature = "std")]
@@ -973,8 +974,8 @@ impl<T: DdsType> DataWriter<T> {
         0
     }
 
-    /// aktueller `OfferedIncompatibleQosStatus` (Spec
-    /// §2.2.4.2.4.2). Triggert ggf. `on_offered_incompatible_qos`.
+    /// Current `OfferedIncompatibleQosStatus` (Spec §2.2.4.2.4.2).
+    /// Triggers `on_offered_incompatible_qos`, if applicable.
     #[must_use]
     pub fn offered_incompatible_qos_status(&self) -> crate::status::OfferedIncompatibleQosStatus {
         #[cfg(feature = "std")]
@@ -986,8 +987,8 @@ impl<T: DdsType> DataWriter<T> {
         crate::status::OfferedIncompatibleQosStatus::default()
     }
 
-    /// pollt alle Statuses einmal und feuert pending Listener.
-    /// Convenient Helper fuer Tests + periodische Tick-Aufrufer.
+    /// Polls all statuses once and fires pending listeners. Convenience
+    /// helper for tests + periodic tick callers.
     #[cfg(feature = "std")]
     pub fn drive_listeners(&self) {
         let _ = self.matched_subscription_count();
@@ -996,9 +997,9 @@ impl<T: DdsType> DataWriter<T> {
         let _ = self.offered_incompatible_qos_status();
     }
 
-    /// Manual-Liveliness-Assert. Spec §2.2.2.4.2.20
-    /// `assert_liveliness`. Setzt den `last_liveliness_assert`-Timestamp;
-    /// bei Automatic-Liveliness no-op (jeder write asserts ohnehin).
+    /// Manual liveliness assert. Spec §2.2.2.4.2.20 `assert_liveliness`.
+    /// Sets the `last_liveliness_assert` timestamp; a no-op with
+    /// automatic liveliness (every write asserts anyway).
     #[cfg(feature = "std")]
     pub fn assert_liveliness(&self) {
         if let (Some(rt), Some(eid)) = (&self.runtime, self.entity_id) {
@@ -1006,22 +1007,23 @@ impl<T: DdsType> DataWriter<T> {
         }
     }
 
-    /// Blockiert, bis alle matched Remote-Reader alle bis jetzt
-    /// geschriebenen Samples acknowledgt haben, oder `timeout` abläuft.
+    /// Blocks until all matched remote readers have acknowledged all
+    /// samples written so far, or `timeout` elapses.
     ///
     /// Spec: OMG DDS 1.4 §2.2.2.4.2.22 `wait_for_acknowledgments`.
-    /// Im Offline-Mode und ohne gematchte Reader sofort `Ok(())`.
+    /// Returns `Ok(())` immediately in offline mode and without matched
+    /// readers.
     ///
     /// # Errors
-    /// [`DdsError::Timeout`] wenn nicht alle Samples im Zeitfenster
-    /// acknowledgt sind.
+    /// [`DdsError::Timeout`] if not all samples are acknowledged within
+    /// the time window.
     #[cfg(feature = "std")]
     pub fn wait_for_acknowledgments(&self, timeout: core::time::Duration) -> Result<()> {
         let deadline = std::time::Instant::now() + timeout;
         loop {
             let all_acked = match (&self.runtime, self.entity_id) {
                 (Some(rt), Some(eid)) => rt.user_writer_all_acknowledged(eid),
-                _ => true, // offline: nichts zu bestaetigen
+                _ => true, // offline: nothing to acknowledge
             };
             if all_acked {
                 return Ok(());
@@ -1030,7 +1032,7 @@ impl<T: DdsType> DataWriter<T> {
             if now >= deadline {
                 return Err(DdsError::Timeout);
             }
-            // D.5e Phase-1: event-driven via Runtime-ack-event-Cvar.
+            // D.5e phase 1: event-driven via the runtime ack-event condvar.
             if let Some(rt) = self.runtime.as_ref() {
                 let _ = rt.wait_ack_event(deadline - now);
             } else {
@@ -1039,8 +1041,8 @@ impl<T: DdsType> DataWriter<T> {
         }
     }
 
-    /// Nimmt alle pending Samples aus der Offline-Queue heraus. Nur
-    /// fuer Tests; wird mit Live-Mode-Wiring entfernt.
+    /// Takes all pending samples out of the offline queue. For tests
+    /// only; removed with live-mode wiring.
     #[doc(hidden)]
     pub fn __drain_pending(&self) -> Vec<Vec<u8>> {
         let drained = self
@@ -1048,7 +1050,7 @@ impl<T: DdsType> DataWriter<T> {
             .lock()
             .map(|mut q| core::mem::take(&mut *q))
             .unwrap_or_default();
-        // Spec §2.2.3.19: Drain-Signal an wartende `write()`-Threads.
+        // Spec §2.2.3.19: drain signal to waiting `write()` threads.
         #[cfg(feature = "std")]
         self.drain_signal.notify_all();
         drained
@@ -1058,31 +1060,31 @@ impl<T: DdsType> DataWriter<T> {
     // Instance-API.4 / DDS 1.4 §2.2.2.4.2.{5,7,10,13,14}
     // ========================================================================
 
-    /// Lokaler Publication-Handle dieses DataWriters (Spec §2.2.2.5.1.11).
-    /// Wird im `publication_handle`-Feld des `SampleInfo` mitgegeben.
-    /// **Achtung**: das ist NICHT derselbe Handle wie der Entity-
-    /// `InstanceHandle` (Spec §2.2.2.1.1) — siehe [`Self::instance_handle`].
+    /// Local publication handle of this DataWriter (Spec §2.2.2.5.1.11).
+    /// Passed along in the `publication_handle` field of `SampleInfo`.
+    /// **Note**: this is NOT the same handle as the entity
+    /// `InstanceHandle` (Spec §2.2.2.1.1) — see [`Self::instance_handle`].
     #[cfg(feature = "std")]
     #[must_use]
     pub fn publication_handle(&self) -> InstanceHandle {
         self.publication_handle
     }
 
-    /// Spec §2.2.2.1.1 `get_instance_handle` — Entity-Identifier
-    /// dieses DataWriters fuer Vergleiche via
+    /// Spec §2.2.2.1.1 `get_instance_handle` — entity identifier of this
+    /// DataWriter for comparisons via
     /// `DomainParticipant::contains_entity`.
     #[must_use]
     pub fn instance_handle(&self) -> InstanceHandle {
         self.entity_state.instance_handle()
     }
 
-    /// Liefert den aktuellen [`InstanceTracker`] (geteilt mit der
-    /// internen Buchhaltung). Hauptsaechlich fuer Tests / Inspection.
+    /// Returns the current [`InstanceTracker`] (shared with the internal
+    /// bookkeeping). Mainly for tests / inspection.
     #[cfg(feature = "std")]
     #[must_use]
-    /// Liefert (Runtime, EntityId), wenn der Writer im Live-Mode laeuft.
-    /// Cross-Crate-Hook fuer FFI-Layer (zerodds-c-api), die
-    /// rt.write_user_lifecycle direkt aufrufen muessen.
+    /// Returns (runtime, EntityId) if the writer runs in live mode.
+    /// Cross-crate hook for the FFI layer (zerodds-c-api), which needs to
+    /// call rt.write_user_lifecycle directly.
     #[doc(hidden)]
     #[cfg(feature = "std")]
     pub fn runtime_handle(&self) -> Option<(Arc<DcpsRuntime>, EntityId)> {
@@ -1092,14 +1094,14 @@ impl<T: DdsType> DataWriter<T> {
         }
     }
 
-    /// Liefert den geteilten Instance-Tracker des Writers (Test- und
-    /// Inspection-Helper, Spec §2.2.2.4.2.5+ Lifecycle-Buchhaltung).
+    /// Returns the writer's shared instance tracker (test and inspection
+    /// helper, Spec §2.2.2.4.2.5+ lifecycle bookkeeping).
     pub fn instance_tracker(&self) -> InstanceTracker {
         self.instances.clone()
     }
 
-    /// Berechnet den KeyHash + den PLAIN_CDR2-BE-Key-Holder fuer ein
-    /// Sample. Liefert `None` fuer non-keyed Topics.
+    /// Computes the KeyHash + the PLAIN_CDR2-BE key holder for a sample.
+    /// Returns `None` for non-keyed topics.
     #[cfg(feature = "std")]
     fn keyhash_and_holder(sample: &T) -> Option<(crate::instance_tracker::KeyHash, Vec<u8>)> {
         if !T::HAS_KEY {
@@ -1113,24 +1115,22 @@ impl<T: DdsType> DataWriter<T> {
         Some((kh, bytes))
     }
 
-    /// Registriert eine Instanz beim DataWriter und liefert ihren
-    /// stabilen [`InstanceHandle`] zurueck. Spec §2.2.2.4.2.5
-    /// `register_instance`.
+    /// Registers an instance with the DataWriter and returns its stable
+    /// [`InstanceHandle`]. Spec §2.2.2.4.2.5 `register_instance`.
     ///
-    /// Fuer non-keyed Topics liefert der Aufruf [`HANDLE_NIL`] zurueck
-    /// (jedes Sample ist seine eigene "Instanz", die Spec sagt explizit
-    /// dass register/unregister/dispose hier optional sind).
+    /// For non-keyed topics the call returns [`HANDLE_NIL`] (each sample
+    /// is its own "instance"; the spec explicitly says register/
+    /// unregister/dispose are optional here).
     ///
     /// # Errors
-    /// Aktuell kann der Aufruf nicht fehlschlagen. Spaeter (Live-Mode)
-    /// koennen Resource-Limits hier einen `OutOfResources`-Fehler
-    /// liefern.
+    /// Currently the call cannot fail. Later (live mode) resource limits
+    /// may return an `OutOfResources` error here.
     #[cfg(feature = "std")]
     pub fn register_instance(&self, instance: &T) -> Result<InstanceHandle> {
         self.register_instance_w_timestamp(instance, get_current_time())
     }
 
-    /// Wie `register_instance`, aber mit explizitem Timestamp.
+    /// Like `register_instance`, but with an explicit timestamp.
     /// Spec §2.2.2.4.2.6.
     #[cfg(feature = "std")]
     pub fn register_instance_w_timestamp(
@@ -1144,9 +1144,9 @@ impl<T: DdsType> DataWriter<T> {
         Ok(self.instances.register(kh, holder, Some(timestamp)))
     }
 
-    /// Macht aus einem Sample-Wert den dazugehoerigen lokalen
-    /// [`InstanceHandle`], oder [`HANDLE_NIL`] wenn unbekannt /
-    /// non-keyed. Spec §2.2.2.4.2.14 `lookup_instance`.
+    /// Turns a sample value into its corresponding local
+    /// [`InstanceHandle`], or [`HANDLE_NIL`] if unknown / non-keyed.
+    /// Spec §2.2.2.4.2.14 `lookup_instance`.
     #[cfg(feature = "std")]
     #[must_use]
     pub fn lookup_instance(&self, instance: &T) -> InstanceHandle {
@@ -1156,26 +1156,25 @@ impl<T: DdsType> DataWriter<T> {
         self.instances.lookup(&kh).unwrap_or(HANDLE_NIL)
     }
 
-    /// Entfernt die Instanz aus dem Writer-Set (Spec §2.2.2.4.2.7).
-    /// Setzt den Lifecycle-Zustand auf `NOT_ALIVE_NO_WRITERS`, sobald
-    /// der letzte Writer sich abgemeldet hat.
+    /// Removes the instance from the writer set (Spec §2.2.2.4.2.7).
+    /// Sets the lifecycle state to `NOT_ALIVE_NO_WRITERS` once the last
+    /// writer has unregistered.
     ///
     /// # Errors
-    /// `BadParameter` wenn `handle` nicht zur Instanz von `instance`
-    /// passt (Spec verlangt diese Konsistenz-Pruefung). Wenn
-    /// `handle == HANDLE_NIL`, wird der Handle aus `instance`
-    /// abgeleitet.
+    /// `BadParameter` if `handle` does not match the instance of
+    /// `instance` (the spec requires this consistency check). If
+    /// `handle == HANDLE_NIL`, the handle is derived from `instance`.
     #[cfg(feature = "std")]
     pub fn unregister_instance(&self, instance: &T, handle: InstanceHandle) -> Result<()> {
         self.unregister_instance_w_timestamp(instance, handle, get_current_time())
     }
 
-    /// Wie `unregister_instance`, aber mit Timestamp. Spec §2.2.2.4.2.8.
+    /// Like `unregister_instance`, but with a timestamp. Spec §2.2.2.4.2.8.
     ///
-    /// Spec §2.2.3.21 WriterDataLifecycle: wenn
-    /// `autodispose_unregistered_instances=true` (Default), wird die
-    /// Instanz zusaetzlich zum Unregister auch disposed — Reader sehen
-    /// dann sowohl `NOT_ALIVE_DISPOSED` als auch `NOT_ALIVE_NO_WRITERS`.
+    /// Spec §2.2.3.21 WriterDataLifecycle: if
+    /// `autodispose_unregistered_instances=true` (default), the instance
+    /// is also disposed in addition to being unregistered — readers then
+    /// see both `NOT_ALIVE_DISPOSED` and `NOT_ALIVE_NO_WRITERS`.
     #[cfg(feature = "std")]
     pub fn unregister_instance_w_timestamp(
         &self,
@@ -1199,9 +1198,9 @@ impl<T: DdsType> DataWriter<T> {
                 what: "unknown instance handle",
             });
         }
-        // Wire-Side (Spec §9.6.3.9 PID_STATUS_INFO): an alle matched Reader
-        // einen Lifecycle-Marker schicken. Bei autodispose=true setzen wir
-        // beide Bits, sonst nur UNREGISTERED.
+        // Wire side (Spec §9.6.3.9 PID_STATUS_INFO): send a lifecycle
+        // marker to all matched readers. With autodispose=true we set both
+        // bits, otherwise only UNREGISTERED.
         #[cfg(feature = "std")]
         if let (Some(rt), Some(eid), Some((kh, _))) = (
             &self.runtime,
@@ -1217,18 +1216,18 @@ impl<T: DdsType> DataWriter<T> {
         Ok(())
     }
 
-    /// Disposed eine Instanz (Spec §2.2.2.4.2.10). Markiert sie als
-    /// `NOT_ALIVE_DISPOSED`; Reader sehen dann ein Sample mit
+    /// Disposes an instance (Spec §2.2.2.4.2.10). Marks it as
+    /// `NOT_ALIVE_DISPOSED`; readers then see a sample with
     /// `valid_data == false`.
     ///
     /// # Errors
-    /// Wie `unregister_instance`.
+    /// Like `unregister_instance`.
     #[cfg(feature = "std")]
     pub fn dispose(&self, instance: &T, handle: InstanceHandle) -> Result<()> {
         self.dispose_w_timestamp(instance, handle, get_current_time())
     }
 
-    /// Wie `dispose`, aber mit Timestamp. Spec §2.2.2.4.2.11.
+    /// Like `dispose`, but with a timestamp. Spec §2.2.2.4.2.11.
     #[cfg(feature = "std")]
     pub fn dispose_w_timestamp(
         &self,
@@ -1242,7 +1241,7 @@ impl<T: DdsType> DataWriter<T> {
                 what: "unknown instance handle",
             });
         }
-        // Wire-Side (Spec §9.6.3.9 PID_STATUS_INFO).
+        // Wire side (Spec §9.6.3.9 PID_STATUS_INFO).
         #[cfg(feature = "std")]
         if let (Some(rt), Some(eid), Some((kh, _))) = (
             &self.runtime,
@@ -1255,17 +1254,16 @@ impl<T: DdsType> DataWriter<T> {
         Ok(())
     }
 
-    /// Gibt den Sample-Wert mit nur den `@key`-Feldern befuellt zurueck
-    /// (Spec §2.2.2.4.2.13 `get_key_value`). Implementierung: wir
-    /// rekonstruieren `T` via `decode` aus dem gespeicherten
-    /// PLAIN_CDR2-BE-Key-Holder. Damit das funktioniert, muss `T::decode`
-    /// einen Key-only-Stream akzeptieren — fuer einfache Records ist das
-    /// trivialerweise der Fall.
+    /// Returns the sample value with only the `@key` fields populated
+    /// (Spec §2.2.2.4.2.13 `get_key_value`). Implementation: we
+    /// reconstruct `T` via `decode` from the stored PLAIN_CDR2-BE key
+    /// holder. For this to work, `T::decode` must accept a key-only
+    /// stream — for simple records this is trivially the case.
     ///
     /// # Errors
-    /// * `BadParameter` wenn der Handle unbekannt ist.
-    /// * `WireError` wenn der Key-Holder nicht via `T::decode`
-    ///   rekonstruierbar ist.
+    /// * `BadParameter` if the handle is unknown.
+    /// * `WireError` if the key holder cannot be reconstructed via
+    ///   `T::decode`.
     #[cfg(feature = "std")]
     pub fn get_key_value(&self, handle: InstanceHandle) -> Result<T> {
         let Some(bytes) = self.instances.get_key_holder(handle) else {
@@ -1278,8 +1276,8 @@ impl<T: DdsType> DataWriter<T> {
         })
     }
 
-    /// Hilfsfunktion: `handle == HANDLE_NIL` → aus `instance` ableiten.
-    /// Sonst: pruefen, dass `handle` zur Instanz von `instance` passt.
+    /// Helper: `handle == HANDLE_NIL` → derive from `instance`.
+    /// Otherwise: check that `handle` matches the instance of `instance`.
     #[cfg(feature = "std")]
     fn resolve_handle(&self, instance: &T, handle: InstanceHandle) -> Result<InstanceHandle> {
         let derived = self.lookup_instance(instance);
@@ -1299,23 +1297,23 @@ impl<T: DdsType> DataWriter<T> {
         Ok(handle)
     }
 
-    /// Schreibt ein Sample mit explizitem Timestamp (Spec §2.2.2.4.2.16
-    /// `write_w_timestamp`) und aktualisiert die Instanz-Buchhaltung.
+    /// Writes a sample with an explicit timestamp (Spec §2.2.2.4.2.16
+    /// `write_w_timestamp`) and updates the instance bookkeeping.
     ///
     /// # Errors
-    /// Wie [`Self::write`].
+    /// Like [`Self::write`].
     #[cfg(feature = "std")]
     pub fn write_w_timestamp(&self, sample: &T, timestamp: Time) -> Result<()> {
-        // Auto-Register: wenn die Instanz noch nicht bekannt ist,
-        // registrieren wir sie implizit (Spec §2.2.2.4.2.16 erlaubt das).
+        // Auto-register: if the instance is not yet known, we register it
+        // implicitly (Spec §2.2.2.4.2.16 allows that).
         if let Some((kh, holder)) = Self::keyhash_and_holder(sample) {
             if self.instances.lookup(&kh).is_none() {
                 self.instances.register(kh, holder, Some(timestamp));
             } else {
-                // Bei Re-Activation nach Dispose / NoWriters bumpt das
-                // register den Generation-Counter, fuegt aber gleichzeitig
-                // einen Writer-Count hinzu, den wir nicht wollen — daher
-                // direkt wieder dekrementieren.
+                // On re-activation after Dispose / NoWriters, register
+                // bumps the generation counter but also adds a writer
+                // count that we don't want — so decrement it again right
+                // away.
                 let prev = self.instances.get_by_keyhash(&kh);
                 if let Some(state) = prev {
                     if !matches!(state.kind, crate::sample_info::InstanceStateKind::Alive) {
@@ -1338,7 +1336,7 @@ impl<T: DdsType> crate::entity::Entity for DataWriter<T> {
     }
 
     /// Spec §2.2.3 / §2.2.2.4.2: DURABILITY, RELIABILITY, HISTORY,
-    /// RESOURCE_LIMITS, OWNERSHIP, LIVELINESS sind Changeable=NO post-enable.
+    /// RESOURCE_LIMITS, OWNERSHIP, LIVELINESS are Changeable=NO post-enable.
     fn set_qos(&self, qos: Self::Qos) -> Result<()> {
         let enabled = self.entity_state.is_enabled();
         if let Ok(mut current) = self.qos.lock() {
@@ -1377,8 +1375,8 @@ impl<T: DdsType> crate::entity::Entity for DataWriter<T> {
     }
 }
 
-// ---- Boxed-typemapped variant, damit Publisher eine heterogene
-// Writer-Liste halten kann (Live-Mode-Vorbereitung) ----
+// ---- Boxed type-mapped variant, so the publisher can hold a
+// heterogeneous writer list (live-mode preparation) ----
 #[allow(dead_code)]
 pub(crate) trait AnyDataWriter: Send + Sync + core::fmt::Debug {
     fn topic_name(&self) -> &str;
@@ -1428,6 +1426,32 @@ mod tests {
         assert_eq!(w.topic().name(), "Chatter");
     }
 
+    /// Regression (ROS-2 cross-vendor): create_datawriter MUST derive the
+    /// entityKind from `DdsType::HAS_KEY`. `RawBytes` is keyless
+    /// (`HAS_KEY=false`), so the live writer MUST get a NoKey entityid
+    /// (0x03) — otherwise a keyless CycloneDDS/ROS-2 reader silently
+    /// rejects the match (entityKind mismatch). Before the fix, WithKey
+    /// (0x02) was hard-coded.
+    #[test]
+    fn live_datawriter_entity_kind_is_nokey_for_keyless_type() {
+        use zerodds_rtps::wire_types::EntityKind;
+        let participant = DomainParticipantFactory::instance()
+            .create_participant(0, DomainParticipantQos::default())
+            .expect("live participant");
+        let topic = participant
+            .create_topic::<RawBytes>("KindChatter", TopicQos::default())
+            .expect("topic");
+        let pubr = participant.create_publisher(PublisherQos::default());
+        let w = pubr
+            .create_datawriter::<RawBytes>(&topic, DataWriterQos::default())
+            .expect("writer");
+        assert_eq!(
+            w.entity_id.expect("live writer has entity_id").entity_kind,
+            EntityKind::UserWriterNoKey,
+            "keyless type must yield a NoKey writer entityid"
+        );
+    }
+
     #[test]
     fn datawriter_write_queues_encoded_sample() {
         let p = Publisher::new(PublisherQos::default(), None);
@@ -1456,7 +1480,7 @@ mod tests {
         assert!(w.get_listener().is_none());
         w.set_listener(Some(Arc::new(L)), crate::psm_constants::status::ANY);
         assert!(w.get_listener().is_some());
-        // Mask wird nach EntityState gespiegelt.
+        // The mask is mirrored to the EntityState.
         assert_eq!(
             w.entity_state.listener_mask(),
             crate::psm_constants::status::ANY
@@ -1482,19 +1506,19 @@ mod tests {
         let cnt = Arc::new(Cnt(AtomicU32::new(0)));
         w.set_listener(Some(cnt.clone()), crate::psm_constants::status::ANY);
 
-        // 0 → 0 (Initial-Aufruf, AtomicI64 ist -1, also Delta da).
+        // 0 → 0 (initial call, AtomicI64 is -1, so there is a delta).
         w.poll_publication_matched(0);
         assert_eq!(cnt.0.load(Ordering::Relaxed), 1);
-        // 0 → 1 (Aenderung).
+        // 0 → 1 (change).
         w.poll_publication_matched(1);
         assert_eq!(cnt.0.load(Ordering::Relaxed), 2);
-        // 1 → 1 (kein Delta).
+        // 1 → 1 (no delta).
         w.poll_publication_matched(1);
         assert_eq!(cnt.0.load(Ordering::Relaxed), 2);
         // 1 → 2.
         w.poll_publication_matched(2);
         assert_eq!(cnt.0.load(Ordering::Relaxed), 3);
-        // 2 → 1 (Reader weg).
+        // 2 → 1 (reader gone).
         w.poll_publication_matched(1);
         assert_eq!(cnt.0.load(Ordering::Relaxed), 4);
     }
@@ -1505,8 +1529,8 @@ mod tests {
         let w = p
             .create_datawriter::<RawBytes>(&mk_topic(), DataWriterQos::default())
             .unwrap();
-        // Kein Listener gesetzt — darf weder panicken noch Delta-State
-        // korrumpieren.
+        // No listener set — must neither panic nor corrupt the delta
+        // state.
         w.poll_publication_matched(0);
         w.poll_publication_matched(5);
     }
@@ -1529,7 +1553,7 @@ mod tests {
         let w = p
             .create_datawriter::<RawBytes>(&mk_topic(), DataWriterQos::default())
             .unwrap();
-        // Kein Writer-Listener → Publisher empfaengt.
+        // No writer listener → the publisher receives it.
         w.poll_publication_matched(1);
         assert_eq!(pl.0.load(Ordering::Relaxed), 1);
     }
@@ -1556,14 +1580,14 @@ mod tests {
     fn suspend_publications_is_idempotent() {
         let p = Publisher::new(PublisherQos::default(), None);
         p.suspend_publications();
-        p.suspend_publications(); // zweiter Call ist No-Op
+        p.suspend_publications(); // second call is a no-op
         assert!(p.is_suspended());
     }
 
     #[test]
     fn resume_without_suspend_is_noop() {
         let p = Publisher::new(PublisherQos::default(), None);
-        // Spec §2.2.2.4.1.11 — resume ohne aktivem suspend ist No-Op.
+        // Spec §2.2.2.4.1.11 — resume without an active suspend is a no-op.
         p.resume_publications();
         assert!(!p.is_suspended());
     }
@@ -1578,7 +1602,7 @@ mod tests {
         topic.reliability.kind = ReliabilityKind::Reliable;
 
         let mut dw = DataWriterQos::default();
-        // Setze etwas anderes, damit wir die Aenderung sehen.
+        // Set something different so that we can see the change.
         dw.durability.kind = DurabilityKind::Volatile;
         Publisher::copy_from_topic_qos(&mut dw, &topic).unwrap();
         assert_eq!(dw.durability.kind, DurabilityKind::TransientLocal);
@@ -1607,12 +1631,12 @@ mod tests {
         let _ = HistoryQosPolicy::default();
         let w = p.create_datawriter::<RawBytes>(&mk_topic(), qos).unwrap();
         let s = RawBytes::new(b"x".to_vec());
-        // Erst beide Slots fuellen (no block).
+        // First fill both slots (no block).
         w.write(&s).unwrap();
         w.write(&s).unwrap();
         assert_eq!(w.samples_pending(), 2);
 
-        // Dritter write blockt; in einem zweiten Thread drain wir nach 50ms.
+        // The third write blocks; in a second thread we drain after 50ms.
         let w_clone_q = w.queue.clone();
         let w_clone_signal = w.drain_signal.clone();
         let drain_handle = std::thread::spawn(move || {
@@ -1655,7 +1679,7 @@ mod tests {
         let w = p.create_datawriter::<RawBytes>(&mk_topic(), qos).unwrap();
         let s = RawBytes::new(b"x".to_vec());
         w.write(&s).unwrap();
-        // Zweiter write hat Reliable + 50ms Block; ohne drain → Timeout.
+        // The second write has Reliable + 50ms block; without a drain → timeout.
         let res = w.write(&s);
         assert!(matches!(res, Err(DdsError::Timeout)));
     }
@@ -1685,7 +1709,7 @@ mod tests {
 
     #[test]
     fn write_does_not_block_when_max_samples_unlimited() {
-        // max_samples = -1 (LENGTH_UNLIMITED) → kein Cap, kein Block.
+        // max_samples = -1 (LENGTH_UNLIMITED) → no cap, no block.
         let p = Publisher::new(PublisherQos::default(), None);
         let w = p
             .create_datawriter::<RawBytes>(&mk_topic(), DataWriterQos::default())
@@ -1702,8 +1726,8 @@ mod tests {
         use crate::qos::TopicQos;
         let topic = TopicQos::default();
         let mut dw = DataWriterQos::default();
-        // Setze ownership_strength auf einen konkreten Wert; sollte
-        // nach copy unangetastet bleiben (kein TopicQos-Counterpart).
+        // Set ownership_strength to a concrete value; it should remain
+        // untouched after the copy (no TopicQos counterpart).
         dw.ownership_strength.value = 42;
         Publisher::copy_from_topic_qos(&mut dw, &topic).unwrap();
         assert_eq!(dw.ownership_strength.value, 42);

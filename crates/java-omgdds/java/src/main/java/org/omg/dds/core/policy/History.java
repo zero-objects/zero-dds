@@ -38,7 +38,8 @@ public final class History {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof History other)) return false;
+        if (!(o instanceof History)) return false;
+        History other = (History) o;
         return kind == other.kind && depth == other.depth;
     }
 

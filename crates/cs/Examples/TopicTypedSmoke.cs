@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// TopicTypedSmoke.cs — Referenz-Smoke fuer zerodds-xcdr2-csharp-1.0 §10.
+// TopicTypedSmoke.cs — reference smoke for zerodds-xcdr2-csharp-1.0 §10.
 //
-// Zeigt encode/decode-Roundtrip eines hand-implementierten
-// `IDdsTopicType<Point>` (entspricht dem was idl-csharp pro IDL-`struct`
-// emittieren wuerde). Kein Live-DDS — nur das XCDR2-Wire-Layer.
+// Shows the encode/decode roundtrip of a hand-implemented
+// `IDdsTopicType<Point>` (equivalent to what idl-csharp would emit per
+// IDL `struct`). No live DDS — only the XCDR2 wire layer.
 //
 // Run:
 //   cd crates/cs/Examples

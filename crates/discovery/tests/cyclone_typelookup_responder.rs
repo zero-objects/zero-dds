@@ -1,20 +1,19 @@
-//! C5.5 — Cyclone-Lueckenfueller: TypeLookup-Responder-Side.
+//! C5.5 — Cyclone gap-filler: TypeLookup responder side.
 //!
-//! `cyclone_live_typelookup.rs` deckt nur die Requester-Seite (wir
-//! schicken einen Request und parsen die Reply). Dieser Test
-//! verifiziert die **Responder-Seite**: Cyclone-aehnliche TL-Requests
-//! parsen und passende Replies bauen.
+//! `cyclone_live_typelookup.rs` only covers the requester side (we send
+//! a request and parse the reply). This test verifies the **responder
+//! side**: parse Cyclone-like TL requests and build matching replies.
 //!
-//! Da der Full-Live-RPC erst mit WP 1.6+ verdrahtet wird, simulieren
-//! wir den Wire-Loop deterministisch: Request via Requester-API
-//! bauen, an Responder durchreichen, und auf Cyclone-Spec-Konformitaet
-//! der gebauten Reply pruefen.
+//! Since the full live RPC is only wired up in WP 1.6+, we simulate the
+//! wire loop deterministically: build a request via the requester API,
+//! pass it to the responder, and check the built reply for Cyclone spec
+//! conformance.
 //!
-//! # Spec-Bezug
+//! # Spec reference
 //!
-//! - DDS-XTypes 1.3 §7.6.3.3 — TypeLookup-Service-RPC
-//! - Wire-Compat: Reply-Bytes muessen byte-genau mit Cyclone's
-//!   `dds-type-lookup`-Implementierung uebereinstimmen.
+//! - DDS-XTypes 1.3 §7.6.3.3 — TypeLookup service RPC
+//! - Wire compat: the reply bytes must match Cyclone's
+//!   `dds-type-lookup` implementation byte-exact.
 
 #![allow(
     clippy::expect_used,
@@ -38,7 +37,7 @@ use zerodds_types::{MinimalTypeObject, PrimitiveKind, TypeIdentifier};
 
 #[test]
 fn typelookup_responder_builds_cyclone_compatible_reply() {
-    // Server (Cyclone-Side-Simulation): hat einen Type registriert.
+    // Server (Cyclone-side simulation): has a type registered.
     let mut responder = TypeLookupStack::new(GuidPrefix::from_bytes([0x11; 12]));
     let m = MinimalTypeObject::Struct(
         TypeObjectBuilder::struct_type("::ShapeType")
@@ -57,20 +56,20 @@ fn typelookup_responder_builds_cyclone_compatible_reply() {
     let hash = zerodds_types::compute_minimal_hash(&m).unwrap();
     responder.registry.insert_minimal(hash, m);
 
-    // Client (ZeroDDS-Side): schickt Request.
+    // Client (ZeroDDS side): sends a request.
     let mut requester = TypeLookupStack::new(GuidPrefix::from_bytes([0x22; 12]));
     let (req_bytes, _seq) = requester
         .make_get_types_request(&[hash], true)
         .expect("request");
     eprintln!("request bytes: {}", req_bytes.len());
 
-    // Responder baut Reply.
+    // Responder builds a reply.
     let reply_bytes = responder
         .build_get_types_reply(&[hash], true)
         .expect("reply");
     eprintln!("reply bytes: {}", reply_bytes.len());
 
-    // Wire-Sanity: Reply beginnt mit 4-Byte-Count > 0.
+    // Wire sanity: the reply begins with a 4-byte count > 0.
     assert!(reply_bytes.len() >= 4, "reply too short");
     let count_le = u32::from_le_bytes(reply_bytes[..4].try_into().unwrap());
     assert_eq!(
@@ -78,7 +77,7 @@ fn typelookup_responder_builds_cyclone_compatible_reply() {
         "expected exactly 1 type in reply, got {count_le}"
     );
 
-    // Round-Trip: Client parst Reply.
+    // Round trip: client parses the reply.
     let n = requester
         .handle_get_types_reply(&reply_bytes)
         .expect("handle reply");
@@ -91,17 +90,17 @@ fn typelookup_responder_builds_cyclone_compatible_reply() {
 
 #[test]
 fn typelookup_responder_unknown_hash_yields_empty_reply() {
-    // Cross-Vendor-Edge-Case: Client fragt nach einem Hash, den
-    // Server nicht hat. Cyclone schickt in diesem Fall eine Reply
-    // mit leerer types-Liste (kein Error). Wir muessen das Wire-Format
-    // dieser leeren Reply byte-genau treffen.
+    // Cross-vendor edge case: the client asks for a hash the server
+    // doesn't have. In this case Cyclone sends a reply with an empty
+    // types list (no error). We must hit the wire format of this empty
+    // reply byte-exact.
     let responder = TypeLookupStack::new(GuidPrefix::from_bytes([0x33; 12]));
-    // Kein insert.
+    // No insert.
     let hash = zerodds_types::EquivalenceHash([0xAA; 14]);
     let reply = responder
         .build_get_types_reply(&[hash], true)
         .expect("reply");
-    // Mind. 4 Bytes (count = 0).
+    // At least 4 bytes (count = 0).
     assert!(reply.len() >= 4);
     let count = u32::from_le_bytes(reply[..4].try_into().unwrap());
     assert_eq!(count, 0, "expected empty types-list, got count={count}");

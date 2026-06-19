@@ -3,53 +3,53 @@
 
 //! Crate `zerodds-rpc`. Safety classification: **STANDARD**.
 //!
-//! DDS-RPC 1.0 (OMG `formal/16-12-04`) Request/Reply-Framework auf
-//! dem ZeroDDS-DCPS-Stack.
+//! DDS-RPC 1.0 (OMG `formal/16-12-04`) request/reply framework on
+//! the ZeroDDS DCPS stack.
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 4 — Core Services. Baut auf `zerodds-dcps` (DataWriter/
-//! DataReader) + `zerodds-idl` (IDL-AST) + `zerodds-qos` (DDS-QoS) +
-//! `zerodds-xml` (Profile-Loader).
+//! Layer 4 — core services. Builds on `zerodds-dcps` (DataWriter/
+//! DataReader) + `zerodds-idl` (IDL AST) + `zerodds-qos` (DDS QoS) +
+//! `zerodds-xml` (profile loader).
 //!
 //! ## Public API (Stand 1.0.0-rc.1)
 //!
 //! **Foundation (Spec §7.3-§7.5):**
 //! * [`common_types`] — `RequestHeader`, `ReplyHeader`, `SampleIdentity`,
-//!   `RemoteExceptionCode_t` (Spec §7.5.1.1.1) mit XCDR2-Encode/Decode.
-//! * [`topic_naming`] — Topic-Naming-Konvention `<Service>_Request` /
-//!   `<Service>_Reply` (Spec §7.8.2) plus Service-Name-Validation.
-//! * [`annotations`] — Lowering der RPC-IDL-Annotations `@service`,
+//!   `RemoteExceptionCode_t` (Spec §7.5.1.1.1) with XCDR2 encode/decode.
+//! * [`topic_naming`] — topic naming convention `<Service>_Request` /
+//!   `<Service>_Reply` (Spec §7.8.2) plus service name validation.
+//! * [`annotations`] — lowering of the RPC IDL annotations `@service`,
 //!   `@oneway`, `@in`, `@out`, `@inout` (Spec §7.3).
-//! * [`service_mapping`] — Datenmodell-Lowering einer IDL-Service-
-//!   Definition zu `ServiceDef`/`MethodDef`/`ParamDef` (Spec §7.4).
-//! * [`codegen`] — Request/Reply-Struct-Pairs (Basic + Enhanced) +
+//! * [`service_mapping`] — data-model lowering of an IDL service
+//!   definition to `ServiceDef`/`MethodDef`/`ParamDef` (Spec §7.4).
+//! * [`codegen`] — request/reply struct pairs (basic + enhanced) +
 //!   `CallUnion` (Spec §7.5.1).
-//! * [`rpc_hash`] — `rpc_member_hash` fuer Spec-§7.5.4 Member-Hash.
+//! * [`rpc_hash`] — `rpc_member_hash` for the Spec §7.5.4 member hash.
 //!
 //! **Runtime (Spec §7.9-§7.11):**
-//! * [`requester`] — `Requester<TIn, TOut>`: Request senden, Reply via
-//!   `SampleIdentity`-Korrelation, blocking + tick-driven API.
-//! * [`replier`] — `Replier<TIn, TOut>` inkl. `ReplierHandler`-Trait +
-//!   `FnHandler`-Adapter.
-//! * [`qos_profile`] — `RpcQos` mit Spec-Defaults + XML-Profile-
-//!   Resolution gegen `zerodds-xml::DdsXml`.
-//! * [`wire_codec`] — Encoder/Decoder fuer Request- und Reply-Frames
-//!   (Header XCDR2 + User-Payload).
-//! * [`endpoint`] — `RpcEndpointBuilder` als Convenience-Konstruktor.
+//! * [`requester`] — `Requester<TIn, TOut>`: send a request, reply via
+//!   `SampleIdentity` correlation, blocking + tick-driven API.
+//! * [`replier`] — `Replier<TIn, TOut>` incl. the `ReplierHandler` trait +
+//!   `FnHandler` adapter.
+//! * [`qos_profile`] — `RpcQos` with spec defaults + XML profile
+//!   resolution against `zerodds-xml::DdsXml`.
+//! * [`wire_codec`] — encoder/decoder for request and reply frames
+//!   (header XCDR2 + user payload).
+//! * [`endpoint`] — `RpcEndpointBuilder` as a convenience constructor.
 //!
-//! **Cross-Cutting (Spec §7.6-§7.8):**
-//! * [`discovery_ext`] — `PublicationBuiltinTopicDataExt` + Service-Match-Logik.
+//! **Cross-cutting (Spec §7.6-§7.8):**
+//! * [`discovery_ext`] — `PublicationBuiltinTopicDataExt` + service-match logic.
 //! * [`function_call`] — `FunctionStub` / `FunctionSkeleton` /
 //!   `dispatch_request` (Spec §7.7).
-//! * [`evolution_rules`] — Compatibility-Mappings (Spec §7.6.5).
-//! * [`request_identity`] — `RequestIdentity` (Spec-Layer-Wrapper).
+//! * [`evolution_rules`] — compatibility mappings (Spec §7.6.5).
+//! * [`request_identity`] — `RequestIdentity` (spec-layer wrapper).
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust,ignore
 //! use zerodds_rpc::{Requester, RpcEndpointBuilder};
-//! // ... siehe README.md fuer ein vollstaendiges Quickstart-Beispiel.
+//! // ... see README.md for a complete quickstart example.
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -112,6 +112,6 @@ pub use topic_naming::{
 mod tests {
     #[test]
     fn crate_compiles() {
-        // Smoke-Test: Crate kompiliert und Testharness laeuft.
+        // Smoke test: the crate compiles and the test harness runs.
     }
 }

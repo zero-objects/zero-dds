@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Home-Definition + Finder — Spec §6.7.
+//! Home definition + finder — spec §6.7.
 //!
-//! Ein Home ist eine Factory + Finder fuer einen oder mehrere
-//! Component-Types. Spec §6.7.1: jedes Home managt genau einen
-//! Component-Type (deklariert via `manages`).
+//! A home is a factory + finder for one or more
+//! component types. Spec §6.7.1: each home manages exactly one
+//! component type (declared via `manages`).
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -13,49 +13,49 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::sync::Mutex;
 
-/// Home-Definition.
+/// Home definition.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct HomeDef {
-    /// Home-Name.
+    /// Home name.
     pub name: String,
-    /// Home-Repository-ID.
+    /// Home repository ID.
     pub repository_id: String,
-    /// Verwalteter Component-Type (Repository-ID).
+    /// Managed component type (repository ID).
     pub managed_component_id: String,
-    /// Optional: PrimaryKey-Type-ID (`primarykey K`).
+    /// Optional: primary-key type ID (`primarykey K`).
     pub primary_key_id: Option<String>,
 }
 
 impl HomeDef {
     /// Spec §6.7.6 — `get_component_def() -> ComponentIR::ComponentDef`.
-    /// Liefert die Repository-ID des verwalteten Component-Types;
-    /// Caller setzt darauf den IFR-Lookup auf.
+    /// Returns the repository ID of the managed component type;
+    /// the caller builds the IFR lookup on top of it.
     #[must_use]
     pub fn get_component_def_repo_id(&self) -> &str {
         &self.managed_component_id
     }
 
     /// Spec §6.7.6 — `get_home_def() -> ComponentIR::HomeDef`.
-    /// Liefert die eigene Repository-ID; Caller setzt darauf den
-    /// IFR-Lookup auf.
+    /// Returns this home's own repository ID; the caller builds the
+    /// IFR lookup on top of it.
     #[must_use]
     pub fn get_home_def_repo_id(&self) -> &str {
         &self.repository_id
     }
 }
 
-/// Component-Reference im Home-Finder.
+/// Component reference in the home finder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComponentRef {
-    /// Component-Repository-ID.
+    /// Component repository ID.
     pub repository_id: String,
-    /// Eindeutige Component-Instance-Id (POA-ObjectKey-equivalent).
+    /// Unique component instance ID (POA-ObjectKey equivalent).
     pub instance_id: Vec<u8>,
 }
 
-/// HomeFinder — Spec §6.7.1.
+/// HomeFinder — spec §6.7.1.
 pub struct HomeFinder {
-    /// Aktive Component-Instances per `(repo_id, primary_key_bytes)`.
+    /// Active component instances by `(repo_id, primary_key_bytes)`.
     instances: Mutex<BTreeMap<(String, Vec<u8>), ComponentRef>>,
 }
 
@@ -66,7 +66,7 @@ impl Default for HomeFinder {
 }
 
 impl HomeFinder {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -74,14 +74,14 @@ impl HomeFinder {
         }
     }
 
-    /// `create` — Spec §6.7.1.1.
+    /// `create` — spec §6.7.1.1.
     pub fn create(&self, repo_id: &str, key_bytes: Vec<u8>) -> Arc<ComponentRef> {
         let mut g = match self.instances.lock() {
             Ok(g) => g,
             Err(_) => return Arc::new(empty_ref()),
         };
         let instance_id = if key_bytes.is_empty() {
-            // Spec §6.7.2.5: SYSTEM-generated Id fuer unkeyed Comps.
+            // Spec §6.7.2.5: system-generated ID for unkeyed components.
             alloc::format!("system-{}", g.len() + 1).into_bytes()
         } else {
             key_bytes.clone()
@@ -94,7 +94,7 @@ impl HomeFinder {
         Arc::new(r)
     }
 
-    /// `find_by_primary_key` — Spec §6.7.1.2.
+    /// `find_by_primary_key` — spec §6.7.1.2.
     pub fn find_by_primary_key(
         &self,
         repo_id: &str,
@@ -107,7 +107,7 @@ impl HomeFinder {
         })
     }
 
-    /// `remove` — Spec §6.7.1.3.
+    /// `remove` — spec §6.7.1.3.
     pub fn remove(&self, repo_id: &str, key_bytes: &[u8]) -> bool {
         self.instances
             .lock()
@@ -119,7 +119,7 @@ impl HomeFinder {
             .unwrap_or(false)
     }
 
-    /// Anzahl aktiver Instances.
+    /// Number of active instances.
     #[must_use]
     pub fn instance_count(&self) -> usize {
         self.instances.lock().map(|g| g.len()).unwrap_or(0)
@@ -167,11 +167,11 @@ mod tests {
         let f = HomeFinder::new();
         let r1 = f.create("IDL:demo/Trader:1.0", alloc::vec![]);
         let r2 = f.create("IDL:demo/Trader:1.0", alloc::vec![]);
-        // Spec §6.7.2.5: bei leeren Keys generiert System-Ids;
-        // unkeyed: pro `(repo_id, [])`-Schluessel ueberschreibt — wir
-        // tracken nur den letzten. Tests zeigen, dass beide Calls
-        // einen Ref liefern und der zweite die `system-1`-Form
-        // ueberschreibt.
+        // Spec §6.7.2.5: empty keys generate system IDs;
+        // unkeyed: each `(repo_id, [])` key overwrites — we
+        // only track the last one. The tests show that both calls
+        // return a ref and the second one overwrites the `system-1`
+        // form.
         assert!(r1.instance_id.starts_with(b"system-"));
         assert!(r2.instance_id.starts_with(b"system-"));
     }

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Annex-A.1 Special-Types — Spec OMG CORBA 3.3.
+//! Annex-A.1 special types — Spec OMG CORBA 3.3.
 //!
-//! 13 IDL-Sprach-Konstrukte, die in den drei OMG-PSMs (C++, C#, Java)
-//! eine besondere Mapping-Behandlung benoetigen.
+//! 13 IDL language constructs that require special mapping treatment
+//! in the three OMG PSMs (C++, C#, Java).
 
-/// Ziel-Sprache fuer das Codegen.
+/// Target language for the codegen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TargetLanguage {
     /// C++ (`formal/2008-01-09` IDL-to-C++).
@@ -15,38 +15,38 @@ pub enum TargetLanguage {
     CSharp,
     /// Java (`formal/2008-01-04` IDL-to-Java).
     Java,
-    /// Rust (`zerodds-corba-rust-1.0` Vendor-Spec — kein offizielles
-    /// OMG-Mapping fuer Rust).
+    /// Rust (`zerodds-corba-rust-1.0` vendor spec — no official
+    /// OMG mapping for Rust).
     Rust,
 }
 
-/// Die 13 Special-Types aus Annex-A.1.
+/// The 13 special types from Annex-A.1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SpecialType {
     /// `Object` (Spec Annex-A.1).
     Object,
-    /// `ValueBase` (Value-Type Root).
+    /// `ValueBase` (value-type root).
     ValueBase,
-    /// `AbstractBase` (Abstract-Interface Root).
+    /// `AbstractBase` (abstract-interface root).
     AbstractBase,
-    /// `Native`-Reference (Spec §7.5.5).
+    /// `Native` reference (Spec §7.5.5).
     NativeRef,
     /// `TypeCode` (Spec §10.7).
     TypeCode,
     /// `CORBA::any` (Spec §7.6).
     Any,
-    /// `sequence<any>` — explizit als Special-Type weil Caller-
-    /// PSMs spezielle Helper-Klassen brauchen.
+    /// `sequence<any>` — explicitly a special type because caller
+    /// PSMs need special helper classes.
     SequenceOfAny,
-    /// `string` (Spec §7.4.4) — Marshalling als length-prefix
-    /// + null-terminator.
+    /// `string` (Spec §7.4.4) — marshalled as length-prefix
+    /// + null terminator.
     String,
-    /// `wstring` (Spec §7.4.5) — UTF-16 mit Endianness-Mark.
+    /// `wstring` (Spec §7.4.5) — UTF-16 with an endianness mark.
     WString,
     /// `Time` (Spec §7.4.6) — `unsigned long long` ticks since UTC.
     Time,
-    /// `fixed<digits, scale>` (Spec §7.4.10) — Decimal mit max 31
-    /// Digits.
+    /// `fixed<digits, scale>` (Spec §7.4.10) — decimal with at most
+    /// 31 digits.
     Fixed,
     /// `unsigned long long` (Spec §7.4.1.5).
     ULongLong,
@@ -54,9 +54,9 @@ pub enum SpecialType {
     LongDouble,
 }
 
-/// Liefert das Mapping eines Special-Types in der Ziel-Sprache.
+/// Returns the mapping of a special type in the target language.
 ///
-/// Spec-Quellen:
+/// Spec sources:
 /// * IDL-to-C++ (`formal/2008-01-09`) Tab 1-3.
 /// * IDL-to-CSharp (`formal/2003-09-04`) Annex A.
 /// * IDL-to-Java (`formal/2008-01-04`) Tab 4-1.
@@ -103,7 +103,7 @@ pub fn language_mapping(t: SpecialType, lang: TargetLanguage) -> &'static str {
         (SpecialType::LongDouble, TargetLanguage::CSharp) => "decimal",
         (SpecialType::LongDouble, TargetLanguage::Java) => "double",
 
-        // Rust-Mappings (zerodds-corba-rust-1.0).
+        // Rust mappings (zerodds-corba-rust-1.0).
         (SpecialType::Object, TargetLanguage::Rust) => "zerodds_corba_rust::ObjectReference",
         (SpecialType::ValueBase, TargetLanguage::Rust) => "dyn zerodds_corba_rust::ValueBase",
         (SpecialType::AbstractBase, TargetLanguage::Rust) => "dyn zerodds_corba_rust::ValueBase",
@@ -122,7 +122,7 @@ pub fn language_mapping(t: SpecialType, lang: TargetLanguage) -> &'static str {
     }
 }
 
-/// Liefert alle 13 Special-Types in Spec-Reihenfolge.
+/// Returns all 13 special types in spec order.
 #[must_use]
 pub const fn all_special_types() -> [SpecialType; 13] {
     [

@@ -3,74 +3,74 @@
 
 //! Crate `zerodds-amqp-bridge`. Safety classification: **STANDARD**.
 //!
-//! AMQP 1.0 (OASIS Standard) Wire-Codec — pure-Rust no_std + alloc,
-//! `forbid(unsafe_code)`. Implementiert das vollstaendige AMQP-1.0
-//! Type-System, Frame-Format, alle 9 Performatives und alle 7
-//! Message-Sections, plus den DDS-AMQP-1.0 Codec-/Codec-Lite-Profile-
-//! Marker.
+//! AMQP 1.0 (OASIS Standard) wire codec — pure Rust no_std + alloc,
+//! `forbid(unsafe_code)`. Implements the full AMQP 1.0
+//! type system, frame format, all 9 performatives and all 7
+//! message sections, plus the DDS-AMQP-1.0 codec/codec-lite profile
+//! marker.
 //!
-//! Spec-Referenzen:
+//! Spec references:
 //!
 //! - **OASIS AMQP 1.0** Part 1 (Types), Part 2 (Transport), Part 3
 //!   (Messaging), Part 4 (Transactions), Part 5 (Security).
 //! - **OMG DDS-AMQP 1.0 (formal/2024-08-01)** §2.3 (Codec Profile),
 //!   §2.4 (Codec-Lite Profile), §6.1 (Direct-Embed Topology), §7
-//!   (Type-System-Mapping), §8 (Message-Section-Mapping).
+//!   (type-system mapping), §8 (message-section mapping).
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 5 — Bridges. Substrat fuer:
+//! Layer 5 — bridges. Substrate for:
 //!
 //! - [`zerodds-amqp-endpoint`](../zerodds_amqp_endpoint/index.html) —
-//!   DDS-AMQP-1.0 Endpoint-Layer mit Direct-Embed-Topology.
+//!   DDS-AMQP-1.0 endpoint layer with direct-embed topology.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! **Type-System (`types`-Modul):**
+//! **Type system (`types` module):**
 //!
 //! - [`AmqpValue`] / [`FormatCode`] / [`TypeError`].
 //! - [`encode_null`] / [`encode_boolean`] / [`encode_long`] /
 //!   [`encode_ulong`] / [`encode_string`] / [`encode_symbol`] /
-//!   [`encode_binary`] — Primitiv-Encoder.
-//! - [`decode_value`] — Variant-Decoder ueber alle Format-Codes.
+//!   [`encode_binary`] — primitive encoders.
+//! - [`decode_value`] — variant decoder over all format codes.
 //!
-//! **Extended Types (`extended_types`-Modul):**
+//! **Extended Types (`extended_types` module):**
 //!
-//! - [`AmqpExtValue`] — Vollstaendiges Variant-Modell (Primitive +
-//!   Compound: list / map / array).
-//! - Encoder/Decoder fuer ubyte / ushort / uint / byte / short / int /
+//! - [`AmqpExtValue`] — full variant model (primitives +
+//!   compound: list / map / array).
+//! - Encoder/decoder for ubyte / ushort / uint / byte / short / int /
 //!   float / double / char / decimal32-64-128 / timestamp / uuid.
 //!
-//! **Frame-Format (`frame`-Modul):**
+//! **Frame format (`frame` module):**
 //!
 //! - [`FrameHeader`] / [`FrameType`] / [`FrameError`].
-//! - [`encode_frame_header`] / [`decode_frame_header`] — 4-Byte SIZE
-//!   BE + DOFF + TYPE + CHANNEL BE + Extended-Header.
+//! - [`encode_frame_header`] / [`decode_frame_header`] — 4-byte SIZE
+//!   BE + DOFF + TYPE + CHANNEL BE + extended header.
 //!
-//! **Performatives (`performatives`-Modul):**
+//! **Performatives (`performatives` module):**
 //!
 //! - [`open`] / [`begin`] / [`attach`] / [`flow`] / [`transfer`] /
-//!   [`disposition`] / [`detach`] / [`end`] / [`close`] — die 9
-//!   Transport-Performatives.
+//!   [`disposition`] / [`detach`] / [`end`] / [`close`] — the 9
+//!   transport performatives.
 //! - [`encode_performative`] / [`decode_performative`].
 //!
-//! **Message-Sections (`sections`-Modul):**
+//! **Message sections (`sections` module):**
 //!
 //! - [`MessageSection`] — Header / Delivery-Annotations / Message-
 //!   Annotations / Properties / Application-Properties / AmqpValue /
 //!   AmqpSequence / Data / Footer.
-//! - [`validate_section_sequence`] — Reihenfolge-Pruefung gemaess
+//! - [`validate_section_sequence`] — order check per
 //!   AMQP-1.0 Messaging §3.2.
 //!
-//! **Codec-Profile (`codec_profile`-Modul):**
+//! **Codec profile (`codec_profile` module):**
 //!
 //! - `CodecProfile::{Full, Lite}`.
-//! - `active_profile()` (const) — `Full` per Default, `Lite` mit
-//!   Cargo-Feature `codec-lite`.
-//! - `is_codec_lite_value` / `is_codec_lite_section` — Conformance-
-//!   Pruefer fuer DDS-AMQP-1.0 §2.4.
+//! - `active_profile()` (const) — `Full` by default, `Lite` with
+//!   the `codec-lite` Cargo feature.
+//! - `is_codec_lite_value` / `is_codec_lite_section` — conformance
+//!   checkers for DDS-AMQP-1.0 §2.4.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust
 //! use zerodds_amqp_bridge::{decode_value, encode_long, AmqpValue};
@@ -102,8 +102,10 @@ pub use extended_types::{
 };
 pub use frame::{FrameError, FrameHeader, FrameType, decode_frame_header, encode_frame_header};
 pub use performatives::{
-    attach, begin, close, decode_performative, detach, disposition, encode_performative, end, flow,
-    open, transfer,
+    attach, attach_to, begin, close, data_payload_from_transfer, decode_performative, descriptor,
+    detach, disposition, disposition_accept, encode_performative, end, flow, flow_link_credit,
+    open, sasl_init, sasl_mechanisms_from_body, sasl_outcome_code, sasl_plain_response,
+    sasl_response, transfer, transfer_message,
 };
 pub use sections::{MessageSection, validate_section_sequence};
 pub use types::{

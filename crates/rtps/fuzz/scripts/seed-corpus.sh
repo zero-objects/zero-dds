@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Seed die cargo-fuzz-Corpora aus den Cyclone-Fixtures.
+# Seed the cargo-fuzz corpora from the Cyclone fixtures.
 #
-# Hex-Fixtures (mit `#`-Kommentarzeilen, Whitespace) werden zu Binary-
-# Bytes dekodiert und in fuzz/corpus/<target>/ abgelegt. Coverage-
-# guided Fuzzer nutzen diese als Startpunkt — findet Panic-Pfade, die
-# nahe an realem RTPS-Traffic liegen.
+# Hex fixtures (with `#` comment lines, whitespace) are decoded to binary
+# bytes and placed in fuzz/corpus/<target>/. Coverage-
+# guided fuzzers use these as a starting point — finding panic paths that
+# are close to real RTPS traffic.
 #
-# Aufruf: bash crates/rtps/fuzz/scripts/seed-corpus.sh
+# Invocation: bash crates/rtps/fuzz/scripts/seed-corpus.sh
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -16,30 +16,30 @@ FIXTURES="${FUZZ_ROOT}/../tests/fixtures/cyclone"
 hex_to_bin() {
     local src=$1 dst=$2
     mkdir -p "$(dirname "$dst")"
-    # Zeilen-Kommentare (`#`) und Whitespace entfernen, dann xxd -r -p
+    # Strip line comments (`#`) and whitespace, then xxd -r -p
     sed -e 's/#.*//' -e 's/[[:space:]]//g' "$src" | xxd -r -p > "$dst"
 }
 
-# decode_datagram bekommt ganze Datagrams — alle drei Fixtures
+# decode_datagram gets whole datagrams — all three fixtures
 for f in "${FIXTURES}"/*.hex; do
     name=$(basename "$f" .hex)
     hex_to_bin "$f" "${FUZZ_ROOT}/corpus/decode_datagram/cyclone_${name}"
 done
 
-# submessage_decoders bekommt je 1 Byte ID-Selector + body. Wir hashen
-# die Submessage-Body-Bytes direkt rein (Selector=0 → DataSubmessage).
-# Realistisch wuerden wir die Submessages erst aus den Datagrams
-# extrahieren — fuer ein Bootstrap-Corpus reicht das Ganze-Datagram
-# als "zufaellige Bytes mit RTPS-Header" schon.
+# submessage_decoders gets a 1-byte ID selector + body each. We hash
+# the submessage body bytes directly in (selector=0 → DataSubmessage).
+# Realistically we would first extract the submessages from the datagrams
+# — for a bootstrap corpus the whole datagram
+# as "random bytes with an RTPS header" is already enough.
 for f in "${FIXTURES}"/*.hex; do
     name=$(basename "$f" .hex)
     hex_to_bin "$f" "${FUZZ_ROOT}/corpus/submessage_decoders/cyclone_${name}"
 done
 
-# fragment_assembler: wir haben keine DATA_FRAG-Fixture (offener Punkt
-# fuer WP 1.4). Stattdessen konstruieren wir ein minimales synthetisches
-# Seed: 20 Null-Bytes + "hello" — zwingt den Fuzzer nicht in eine
-# Ecke, gibt ihm aber valide Byte-Laengen als Startpunkt.
+# fragment_assembler: we have no DATA_FRAG fixture (open item
+# for WP 1.4). Instead we construct a minimal synthetic
+# seed: 20 null bytes + "hello" — does not force the fuzzer into a
+# corner, but gives it valid byte lengths as a starting point.
 mkdir -p "${FUZZ_ROOT}/corpus/fragment_assembler"
 printf '\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0hello' \
     > "${FUZZ_ROOT}/corpus/fragment_assembler/seed_minimal"

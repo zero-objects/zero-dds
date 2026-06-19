@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Orchestriert Scanner + Lints + Reporter.
+//! Orchestrates scanner + lints + reporter.
 //!
-//! Eintrittspunkt: [`run`].
+//! Entry point: [`run`].
 
 use std::path::Path;
 
@@ -12,28 +12,28 @@ use crate::diagnostic::{Diagnostic, Severity};
 use crate::lints::{FileLint, FileLintContext, default_crate_lints, default_file_lints};
 use crate::scanner::{self, CrateInfo};
 
-/// Konfiguration fuer einen Lint-Run.
+/// Configuration for a lint run.
 #[derive(Debug, Clone)]
 pub struct RunConfig {
-    /// Workspace-Wurzel (enthaelt die Workspace-`Cargo.toml`).
+    /// Workspace root (contains the workspace `Cargo.toml`).
     pub workspace_root: std::path::PathBuf,
-    /// Wenn `true`, brechen Warnings ebenfalls den Run ab.
+    /// If `true`, warnings also abort the run.
     pub fail_on_warning: bool,
 }
 
-/// Ergebnis eines Lint-Runs.
+/// Result of a lint run.
 #[derive(Debug, Default)]
 pub struct RunReport {
-    /// Alle Findings (Errors + Warnings).
+    /// All findings (errors + warnings).
     pub diagnostics: Vec<Diagnostic>,
-    /// Anzahl gescannter Crates.
+    /// Number of scanned crates.
     pub crates_scanned: usize,
-    /// Anzahl gescannter Dateien.
+    /// Number of scanned files.
     pub files_scanned: usize,
 }
 
 impl RunReport {
-    /// Anzahl Errors.
+    /// Number of errors.
     #[must_use]
     pub fn error_count(&self) -> usize {
         self.diagnostics
@@ -42,7 +42,7 @@ impl RunReport {
             .count()
     }
 
-    /// Anzahl Warnings.
+    /// Number of warnings.
     #[must_use]
     pub fn warning_count(&self) -> usize {
         self.diagnostics
@@ -52,12 +52,12 @@ impl RunReport {
     }
 }
 
-/// Fuehrt alle Default-Lints auf dem Workspace aus.
+/// Runs all default lints on the workspace.
 ///
 /// # Errors
-/// Fehler beim Lesen einzelner Quelldateien werden als Diagnose im Report
-/// vermerkt; nur fundamentale I/O-Fehler (z.B. Workspace-Manifest fehlt)
-/// brechen den Run als `Err` ab.
+/// Errors reading individual source files are noted as diagnostics in the report;
+/// only fundamental I/O errors (e.g. a missing workspace manifest)
+/// abort the run as `Err`.
 pub fn run(cfg: &RunConfig) -> Result<RunReport> {
     let crates = scanner::scan_workspace(&cfg.workspace_root)?;
     let file_lints = default_file_lints();
@@ -90,7 +90,7 @@ fn check_file(file: &Path, krate: &CrateInfo, lints: &[Box<dyn FileLint>]) -> Ve
                 0,
                 0,
                 "dds_io_error",
-                format!("konnte Datei nicht lesen: {e}"),
+                format!("could not read file: {e}"),
             )];
         }
     };
@@ -121,13 +121,13 @@ fn check_file(file: &Path, krate: &CrateInfo, lints: &[Box<dyn FileLint>]) -> Ve
     out
 }
 
-/// Eingangsstelle fuer das CLI: ermittelt Workspace-Wurzel ueber
-/// `cargo locate-project` falls noetig.
+/// Entry point for the CLI: determines the workspace root via
+/// `cargo locate-project` if needed.
 ///
 /// # Errors
-/// Wenn `cargo` nicht erreichbar ist oder kein Workspace gefunden wird.
+/// If `cargo` is not reachable or no workspace is found.
 pub fn locate_workspace_root(start: &Path) -> Result<std::path::PathBuf> {
-    // Direkter Weg: gibt es im Start-Pfad eine `Cargo.toml` mit `[workspace]`?
+    // Direct path: is there a `Cargo.toml` with `[workspace]` in the start path?
     let mut cur = start.to_path_buf();
     loop {
         let manifest = cur.join("Cargo.toml");
@@ -139,7 +139,7 @@ pub fn locate_workspace_root(start: &Path) -> Result<std::path::PathBuf> {
             }
         }
         if !cur.pop() {
-            anyhow::bail!("kein Workspace-Cargo.toml gefunden ab {}", start.display());
+            anyhow::bail!("no workspace Cargo.toml found from {}", start.display());
         }
     }
 }

@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Bridge-Coexistence Loop-Prevention.
+//! Bridge-coexistence loop prevention.
 //!
-//! Spec-Quelle: dds-amqp-1.0 §7.11 (`sec:bridge-coexistence`).
-//! Endpoint und Bridge teilen denselben DDS-Domain mit weiteren
-//! Forwarding-Agents (andere DDS-AMQP-Endpoints, MQTT-DDS-Bridges,
-//! DDS-Web-Gateways). Ohne explizite Loop-Prevention re-eintritt
-//! ein bereits weitergeleitetes Sample durch DDS und wird zweimal
-//! forwarded → exponentielle Duplikation.
+//! Spec source: dds-amqp-1.0 §7.11 (`sec:bridge-coexistence`).
+//! Endpoint and bridge share the same DDS domain with other
+//! forwarding agents (other DDS-AMQP endpoints, MQTT-DDS bridges,
+//! DDS web gateways). Without explicit loop prevention, an
+//! already-forwarded sample re-enters through DDS and is forwarded
+//! twice → exponential duplication.
 //!
-//! Drei Mechanismen:
-//! 1. **Self-Tag Drop**: enthaelt `dds:bridge-id` die eigene
-//!    `bridge_id`, wird das Sample silently gedroppt.
-//! 2. **Hop-Cap**: `dds:bridge-hop > bridge_hop_cap` → drop.
-//! 3. **Outbound-Stamp**: beim Forwarden eigene `bridge_id`
-//!    anhaengen + `dds:bridge-hop` inkrementieren.
+//! Three mechanisms:
+//! 1. **Self-tag drop**: if `dds:bridge-id` contains our own
+//!    `bridge_id`, the sample is silently dropped.
+//! 2. **Hop cap**: `dds:bridge-hop > bridge_hop_cap` → drop.
+//! 3. **Outbound stamp**: when forwarding, append our own `bridge_id`
+//!    + increment `dds:bridge-hop`.
 //!
-//! Wires gegen die `dds:bridge-id`/`dds:bridge-hop`-App-Properties
-//! aus [`crate::properties::app_keys`].
+//! Wired against the `dds:bridge-id`/`dds:bridge-hop` app properties
+//! from [`crate::properties::app_keys`].
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -26,26 +26,26 @@ use zerodds_amqp_bridge::extended_types::AmqpExtValue;
 
 use crate::properties::app_keys;
 
-/// Bridge-Identifier (RFC-4122 UUID als 36-char canonical string).
-/// Process-wide stabil — Spec §7.11 verbietet pro-Topic-Werte.
+/// Bridge identifier (RFC-4122 UUID as a 36-char canonical string).
+/// Process-wide stable — spec §7.11 forbids per-topic values.
 pub type BridgeId = String;
 
-/// Spec-Default + Maximum fuer den Hop-Cap.
+/// Spec default + maximum for the hop cap.
 pub const DEFAULT_HOP_CAP: u32 = 8;
-/// Spec-Maximum fuer den Hop-Cap (operatorisch erhoehbar bis hier).
+/// Spec maximum for the hop cap (operator-raisable up to this).
 pub const MAX_HOP_CAP: u32 = 16;
 
-/// Konfiguration der Loop-Prevention pro Endpoint/Bridge-Prozess.
+/// Loop-prevention configuration per endpoint/bridge process.
 #[derive(Debug, Clone)]
 pub struct CoexistenceConfig {
-    /// Eigene stabile UUID. Spec §7.11.
+    /// Our own stable UUID. Spec §7.11.
     pub bridge_id: BridgeId,
-    /// Hop-Cap (default 8, max 16 unless explicitly overridden).
+    /// Hop cap (default 8, max 16 unless explicitly overridden).
     pub hop_cap: u32,
 }
 
 impl CoexistenceConfig {
-    /// Konstruktor mit Default-Hop-Cap.
+    /// Constructor with the default hop cap.
     #[must_use]
     pub fn new(bridge_id: BridgeId) -> Self {
         Self {
@@ -55,61 +55,60 @@ impl CoexistenceConfig {
     }
 }
 
-/// Spec §7.11 — Resultat einer Inbound-Inspektion.
+/// Spec §7.11 — result of an inbound inspection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InboundDecision {
-    /// Sample weiter-forwarden (kein Loop, hop in cap).
+    /// Forward the sample onward (no loop, hop within cap).
     Forward,
-    /// Self-Tag erkannt → silently droppen, `transfers.dropped.loop`
-    /// inkrementieren.
+    /// Self-tag detected → silently drop, increment
+    /// `transfers.dropped.loop`.
     DropLoop,
-    /// Hop-Cap ueberschritten → silently droppen,
-    /// `transfers.dropped.hop-cap` inkrementieren.
+    /// Hop cap exceeded → silently drop, increment
+    /// `transfers.dropped.hop-cap`.
     DropHopCap,
 }
 
-/// Spec §7.11.3 (Inbound Drop) + §7.11.4 (Hop-Cap) — eingehende
-/// Application-Properties pruefen.
+/// Spec §7.11.3 (inbound drop) + §7.11.4 (hop cap) — inspect
+/// incoming application properties.
 ///
-/// `app_props` ist die Application-Properties-Map (typischerweise
-/// das Map-Body-Composite des `application-properties`-Sections).
-/// Liefert das Routing-Verdikt.
+/// `app_props` is the application-properties map (typically the
+/// map body composite of the `application-properties` section).
+/// Returns the routing verdict.
 ///
-/// `bridge-id` wird als comma-separated string oder als
-/// `AmqpExtValue::List<Str>` akzeptiert (Spec §8.3 erlaubt beide
-/// Repraesentationen fuer history-Listen).
+/// `bridge-id` is accepted as a comma-separated string or as
+/// `AmqpExtValue::List<Str>` (spec §8.3 allows both representations
+/// for history lists).
 #[must_use]
 pub fn inspect_inbound(cfg: &CoexistenceConfig, app_props: &AmqpExtValue) -> InboundDecision {
-    // Hop-Cap zuerst — schneller Pfad.
+    // Hop cap first — fast path.
     if let Some(hop) = read_uint_key(app_props, app_keys::BRIDGE_HOP) {
         if hop > cfg.hop_cap {
             return InboundDecision::DropHopCap;
         }
     }
-    // Self-Tag-Drop: liegt eigene bridge_id in der bridge-id-Liste?
+    // Self-tag drop: is our own bridge_id in the bridge-id list?
     if has_self_tag(app_props, &cfg.bridge_id) {
         return InboundDecision::DropLoop;
     }
     InboundDecision::Forward
 }
 
-/// Spec §7.11.2 (Outbound Stamp) — beim Forwarden eigene
-/// `bridge_id` anhaengen + `dds:bridge-hop` inkrementieren.
+/// Spec §7.11.2 (outbound stamp) — when forwarding, append our own
+/// `bridge_id` + increment `dds:bridge-hop`.
 ///
-/// Mutiert die uebergebene Map. Erstellt die Properties wenn nicht
-/// vorhanden.
+/// Mutates the passed map. Creates the properties if absent.
 pub fn stamp_outbound(cfg: &CoexistenceConfig, app_props: &mut AmqpExtValue) {
     if !matches!(app_props, AmqpExtValue::Map(_)) {
-        // Falsch-getypte Properties-Section: ueberschreiben mit
-        // initialer Map (defensives Verhalten — Spec laesst
-        // diesen Fall offen, aber fail-open ist falsch).
+        // Wrong-typed properties section: overwrite with an
+        // initial map (defensive behavior — the spec leaves this
+        // case open, but fail-open is wrong).
         *app_props = AmqpExtValue::Map(Vec::new());
     }
     let AmqpExtValue::Map(entries) = app_props else {
         return;
     };
 
-    // bridge-id anhaengen.
+    // Append bridge-id.
     let key_id = AmqpExtValue::Str(app_keys::BRIDGE_ID.to_string());
     let new_id_value = match entries.iter_mut().find(|(k, _)| k == &key_id) {
         Some((_, AmqpExtValue::Str(existing))) => {
@@ -122,7 +121,7 @@ pub fn stamp_outbound(cfg: &CoexistenceConfig, app_props: &mut AmqpExtValue) {
             None
         }
         Some((_, slot)) => {
-            // Falscher Typ in vorhandenem Eintrag — ueberschreiben.
+            // Wrong type in an existing entry — overwrite.
             *slot = AmqpExtValue::Str(cfg.bridge_id.clone());
             None
         }
@@ -132,7 +131,7 @@ pub fn stamp_outbound(cfg: &CoexistenceConfig, app_props: &mut AmqpExtValue) {
         entries.push((key_id, v));
     }
 
-    // bridge-hop inkrementieren.
+    // Increment bridge-hop.
     let key_hop = AmqpExtValue::Str(app_keys::BRIDGE_HOP.to_string());
     let mut bumped = false;
     for (k, v) in entries.iter_mut() {
@@ -155,7 +154,7 @@ pub fn stamp_outbound(cfg: &CoexistenceConfig, app_props: &mut AmqpExtValue) {
     }
 }
 
-// ---------------- Hilfen ----------------
+// ---------------- Helpers ----------------
 
 fn read_uint_key(app_props: &AmqpExtValue, key: &str) -> Option<u32> {
     let entries = match app_props {
@@ -261,7 +260,7 @@ mod tests {
 
     #[test]
     fn forward_at_hop_cap_limit() {
-        // Hop = cap (=) ist noch erlaubt, > cap droppt.
+        // Hop = cap (=) is still allowed, > cap drops.
         let p = props_with(alloc::vec![(app_keys::BRIDGE_HOP, AmqpExtValue::Uint(8))]);
         let mut c = cfg("self-uuid");
         c.hop_cap = 8;
@@ -341,8 +340,8 @@ mod tests {
 
     #[test]
     fn round_trip_stamp_then_inspect_drops_loop() {
-        // Wenn ich stample und dann selbst inspect — der eigene
-        // Tag muss zu DropLoop fuehren.
+        // If I stamp and then inspect myself — my own tag must
+        // lead to DropLoop.
         let mut p = AmqpExtValue::Map(Vec::new());
         let c = cfg("loop-uuid");
         stamp_outbound(&c, &mut p);

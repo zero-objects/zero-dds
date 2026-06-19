@@ -1,8 +1,8 @@
-//! WP QoS-Wiring T3 — ReaderDataLifecycle autopurge.
+//! WP QoS wiring T3 — ReaderDataLifecycle autopurge.
 //!
-//! Spec DDS 1.4 §2.2.3.22: NotAliveDisposed / NotAliveNoWriters Instanzen
-//! werden nach `autopurge_disposed_samples_delay` /
-//! `autopurge_nowriter_samples_delay` aus dem Reader-Cache entfernt.
+//! Spec DDS 1.4 §2.2.3.22: NotAliveDisposed / NotAliveNoWriters instances
+//! are removed from the reader cache after
+//! `autopurge_disposed_samples_delay` / `autopurge_nowriter_samples_delay`.
 
 #![allow(
     clippy::expect_used,
@@ -97,16 +97,16 @@ fn pump(w: &zerodds_dcps::DataWriter<KeyedRecord>, r: &zerodds_dcps::DataReader<
 
 #[test]
 fn default_infinite_delay_keeps_disposed_instance() {
-    // Default: beide delays = INFINITE → autopurge tut nichts.
+    // Default: both delays = INFINITE → autopurge does nothing.
     let (w, r) = pair_with_rqos(DataReaderQos::default());
     let s = KeyedRecord { id: 1, value: 10 };
     w.write(&s).expect("write");
     pump(&w, &r);
 
-    // Schreibe Sample, dispose Instanz, ingest erneut.
+    // Write sample, dispose instance, ingest again.
     let _ = r.take().expect("take initial");
 
-    // Lifecycle-Marker: Disposed.
+    // Lifecycle marker: Disposed.
     let mut holder = PlainCdr2BeKeyHolder::new();
     s.encode_key_holder_be(&mut holder);
     let key_bytes = holder.as_bytes().to_vec();
@@ -118,7 +118,7 @@ fn default_infinite_delay_keeps_disposed_instance() {
     thread::sleep(Duration::from_millis(150));
     let _ = r.take().expect("take");
 
-    // Tracker hat die Instanz noch — autopurge mit INFINITE purgt nicht.
+    // The tracker still holds the instance — autopurge with INFINITE does not purge.
     let tracker = r.instance_tracker();
     let handle = r.lookup_instance(&s);
     assert!(
@@ -152,16 +152,16 @@ fn finite_disposed_delay_purges_after_window() {
         .expect("push lifecycle");
     let _ = r.take().expect("take dispose marker");
 
-    // 200ms warten — Delay 100ms ist abgelaufen.
+    // Wait 200ms — the 100ms delay has elapsed.
     thread::sleep(Duration::from_millis(200));
-    // Trigger des autopurge-Hooks via take().
+    // Trigger the autopurge hook via take().
     let _ = r.take().expect("take after purge window");
 
     let tracker = r.instance_tracker();
     let handle = r.lookup_instance(&s);
     assert!(
         tracker.get_by_handle(handle).is_none(),
-        "100ms-Delay nach 200ms muss disposed Instanz gepurgt haben"
+        "100ms delay after 200ms must have purged the disposed instance"
     );
 }
 
@@ -197,6 +197,6 @@ fn finite_nowriter_delay_purges_after_window() {
     let handle = r.lookup_instance(&s);
     assert!(
         tracker.get_by_handle(handle).is_none(),
-        "100ms-NoWriter-Delay nach 200ms muss Instanz gepurgt haben"
+        "100ms NoWriter delay after 200ms must have purged the instance"
     );
 }

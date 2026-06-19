@@ -4,20 +4,20 @@
 //!
 //! XTypes 1.3 §7.4.7 / IDL4 §7.4.13:
 //!
-//! - `bitset` ist eine packed-Bitfeld-Struktur. Wir mappen sie auf
-//!   einen `pub struct Name { storage: <integer> }` mit Getter/Setter
-//!   pro benamtem Bitfield. Wire-Storage richtet sich nach der
-//!   Gesamtbreite (≤8 → u8, ≤16 → u16, ≤32 → u32, ≤64 → u64).
-//! - `bitmask` ist eine Aufzaehlung von Bit-Positionen mit OR-baren
-//!   Werten. Wir mappen sie auf `pub struct Name(u32)` (oder u8/u16/u64
-//!   je nach Bit-Anzahl) mit `const`-pro-Wert und bitwise-Operations.
+//! - `bitset` is a packed bitfield structure. We map it to a
+//!   `pub struct Name { storage: <integer> }` with a getter/setter
+//!   per named bitfield. Wire storage is chosen based on total width
+//!   (≤8 → u8, ≤16 → u16, ≤32 → u32, ≤64 → u64).
+//! - `bitmask` is an enumeration of bit positions with OR-able values.
+//!   We map it to `pub struct Name(u32)` (or u8/u16/u64 depending on
+//!   the number of bits) with a `const` per value and bitwise operations.
 
 use zerodds_idl::ast::types::{BitValue, BitmaskDecl, BitsetDecl};
 
 use crate::error::{Result, RustGenError};
 use crate::type_map::{const_expr_as_usize, escape_keyword};
 
-/// Emittiert eine IDL-`bitset`-Definition als Rust-`pub struct`.
+/// Emits an IDL `bitset` definition as a Rust `pub struct`.
 pub fn emit_bitset(out: &mut String, b: &BitsetDecl) -> Result<()> {
     let total_bits = b
         .bitfields
@@ -36,7 +36,7 @@ pub fn emit_bitset(out: &mut String, b: &BitsetDecl) -> Result<()> {
 
     out.push_str(&format!("impl {name} {{\n"));
     out.push_str(&format!(
-        "    /// Konstruiert einen `{name}` mit allen Bits = 0.\n"
+        "    /// Constructs a `{name}` with all bits set to 0.\n"
     ));
     out.push_str("    #[must_use]\n");
     out.push_str("    pub const fn new() -> Self {\n");
@@ -45,7 +45,7 @@ pub fn emit_bitset(out: &mut String, b: &BitsetDecl) -> Result<()> {
     ));
     out.push_str("    }\n\n");
 
-    out.push_str(&format!("    /// Roh-Storage als `{storage_type}`.\n"));
+    out.push_str(&format!("    /// Raw storage as `{storage_type}`.\n"));
     out.push_str("    #[must_use]\n");
     out.push_str(&format!(
         "    pub const fn as_raw(self) -> {storage_type} {{\n"
@@ -53,9 +53,7 @@ pub fn emit_bitset(out: &mut String, b: &BitsetDecl) -> Result<()> {
     out.push_str("        self.storage\n");
     out.push_str("    }\n\n");
 
-    out.push_str(&format!(
-        "    /// Konstruiert aus rohem `{storage_type}`.\n"
-    ));
+    out.push_str(&format!("    /// Constructs from raw `{storage_type}`.\n"));
     out.push_str("    #[must_use]\n");
     out.push_str(&format!(
         "    pub const fn from_raw(storage: {storage_type}) -> Self {{\n"
@@ -76,7 +74,7 @@ pub fn emit_bitset(out: &mut String, b: &BitsetDecl) -> Result<()> {
     }
     out.push_str("}\n\n");
 
-    // CdrEncode/CdrDecode: einfacher Storage-Roundtrip.
+    // CdrEncode/CdrDecode: simple storage round-trip.
     out.push_str(&format!("impl zerodds_cdr::CdrEncode for {name} {{\n"));
     out.push_str("    fn encode(&self, w: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {\n");
     out.push_str(&format!(
@@ -112,9 +110,9 @@ fn emit_bitfield_accessors(
     };
 
     if width == 1 {
-        // Single-Bit-Pfad: bool-Getter/Setter
+        // Single-bit path: bool getter/setter
         out.push_str(&format!(
-            "\n    /// Getter fuer `{field_name}` (1 bit @ offset {offset}).\n"
+            "\n    /// Getter for `{field_name}` (1 bit @ offset {offset}).\n"
         ));
         out.push_str("    #[must_use]\n");
         out.push_str(&format!(
@@ -124,7 +122,7 @@ fn emit_bitfield_accessors(
         out.push_str("    }\n");
 
         out.push_str(&format!(
-            "\n    /// Setter fuer `{field_name}` (1 bit @ offset {offset}).\n"
+            "\n    /// Setter for `{field_name}` (1 bit @ offset {offset}).\n"
         ));
         out.push_str(&format!(
             "    pub fn set_{escaped_name}(&mut self, value: bool) {{\n"
@@ -139,9 +137,9 @@ fn emit_bitfield_accessors(
         out.push_str("        }\n");
         out.push_str("    }\n");
     } else {
-        // Multi-Bit-Pfad: Integer-Getter/Setter
+        // Multi-bit path: integer getter/setter
         out.push_str(&format!(
-            "\n    /// Getter fuer `{field_name}` ({width} bits @ offset {offset}).\n"
+            "\n    /// Getter for `{field_name}` ({width} bits @ offset {offset}).\n"
         ));
         out.push_str("    #[must_use]\n");
         out.push_str(&format!(
@@ -153,7 +151,7 @@ fn emit_bitfield_accessors(
         out.push_str("    }\n");
 
         out.push_str(&format!(
-            "\n    /// Setter fuer `{field_name}` ({width} bits @ offset {offset}).\n"
+            "\n    /// Setter for `{field_name}` ({width} bits @ offset {offset}).\n"
         ));
         out.push_str(&format!(
             "    pub fn set_{escaped_name}(&mut self, value: {storage_type}) {{\n"
@@ -179,8 +177,8 @@ fn bitset_storage_type(total_bits: usize) -> &'static str {
     }
 }
 
-/// Emittiert eine IDL-`bitmask`-Definition als Rust-Wrapper-Type
-/// mit `const`-Werten + bitwise-Ops.
+/// Emits an IDL `bitmask` definition as a Rust wrapper type
+/// with `const` values and bitwise operations.
 pub fn emit_bitmask(out: &mut String, m: &BitmaskDecl) -> Result<()> {
     let bit_count = m.values.len();
     let storage_type = bitset_storage_type(bit_count);
@@ -195,13 +193,13 @@ pub fn emit_bitmask(out: &mut String, m: &BitmaskDecl) -> Result<()> {
         emit_bitmask_value(out, value, storage_type, idx);
     }
 
-    out.push_str("\n    /// Konstruiert eine leere Bitmaske (alle Bits = 0).\n");
+    out.push_str("\n    /// Constructs an empty bitmask (all bits = 0).\n");
     out.push_str("    #[must_use]\n");
     out.push_str("    pub const fn empty() -> Self {\n");
     out.push_str(&format!("        Self(0 as {storage_type})\n"));
     out.push_str("    }\n");
 
-    out.push_str(&format!("\n    /// Roh-Storage als `{storage_type}`.\n"));
+    out.push_str(&format!("\n    /// Raw storage as `{storage_type}`.\n"));
     out.push_str("    #[must_use]\n");
     out.push_str(&format!(
         "    pub const fn bits(self) -> {storage_type} {{\n"
@@ -209,7 +207,7 @@ pub fn emit_bitmask(out: &mut String, m: &BitmaskDecl) -> Result<()> {
     out.push_str("        self.0\n");
     out.push_str("    }\n");
 
-    out.push_str("\n    /// Prueft ob alle Bits in `other` gesetzt sind.\n");
+    out.push_str("\n    /// Returns true if all bits in `other` are set.\n");
     out.push_str("    #[must_use]\n");
     out.push_str("    pub const fn contains(self, other: Self) -> bool {\n");
     out.push_str("        (self.0 & other.0) == other.0\n");
@@ -254,7 +252,7 @@ pub fn emit_bitmask(out: &mut String, m: &BitmaskDecl) -> Result<()> {
 fn emit_bitmask_value(out: &mut String, value: &BitValue, storage_type: &str, position: usize) {
     let const_name = value.name.text.to_uppercase();
     out.push_str(&format!(
-        "    /// Bit-Wert `{name}` (Position {position}).\n",
+        "    /// Bit value `{name}` (position {position}).\n",
         name = value.name.text
     ));
     out.push_str(&format!(

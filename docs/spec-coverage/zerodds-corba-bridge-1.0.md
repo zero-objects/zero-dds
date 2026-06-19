@@ -2,6 +2,10 @@
 
 **Quelle:** `docs/specs/zerodds-corba-bridge-1.0.md`
 
+Implementation:
+
+- `crates/corba-dds-bridge/` — CORBA↔DDS-Bridge (DDS4CCM-Connector).
+
 ## §1 Conformance-Levels
 
 ### §1 L1-L6 Conformance-Matrix
@@ -417,4 +421,4 @@ Major=Wire-Protocol-Changes.
 
 Test-Lauf: `cargo test -p zerodds-corba-dds-bridge` — Tests grün, 0 failed.
 
-Offene Punkte und Decision-Records: siehe `zerodds-corba-bridge-1.0.open.md`.
+Keine offenen Punkte oder Decision-Records — alle Items `done` / `n/a (informative)`.

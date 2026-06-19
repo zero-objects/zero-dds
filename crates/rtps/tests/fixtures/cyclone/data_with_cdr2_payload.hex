@@ -1,7 +1,7 @@
-# DATA submessage mit CDR2-LE-Payload (4-byte u32 = 42)
+# DATA submessage with CDR2-LE payload (4-byte u32 = 42)
 # RTPS Header (20 bytes)
 # Submessage Header: id=0x15, flags=0x05 (E+D), octetsToNextHeader=0x001C=28
-# DATA body header (20 bytes) — wie oben aber writerSN=42
+# DATA body header (20 bytes) — like above but writerSN=42
 # Encapsulation header (4 bytes):
 #   CDR2_LE = 0x00 0x11 (BE in wire-format), options 0x00 0x00
 # CDR2-Payload (4 bytes):

@@ -2,7 +2,7 @@
 // Copyright 2026 ZeroDDS Contributors
 //! TrafficSpecification — Spec §7.2.3 Tab 7.16 (IEEE 802.1Qcc).
 
-/// Spec — `TransmissionSelection`-Algorithmus pro Stream.
+/// Spec — `TransmissionSelection` algorithm per stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TransmissionSelection {
     /// `0` Strict-Priority (Default IEEE 802.1Q).
@@ -17,14 +17,14 @@ pub enum TransmissionSelection {
 
 /// Spec §7.2.3 Tab 7.16 — `TrafficSpecification`.
 ///
-/// Beschreibt die Traffic-Pattern-Anforderungen eines TSN-Streams an
-/// das Bridge-Network: Inter-Frame-Interval + Max-Frame-Size +
-/// Max-Frames-per-Interval + Transmission-Selection-Algorithmus.
+/// Describes a TSN stream's traffic-pattern requirements on the
+/// bridge network: inter-frame interval + max frame size +
+/// max frames per interval + transmission-selection algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TrafficSpecification {
-    /// Spec — `interval` (ns) zwischen Frames.
+    /// Spec — `interval` (ns) between frames.
     pub interval_nanoseconds: u64,
-    /// Spec — `max_frame_size` (bytes) inkl. L2-Header.
+    /// Spec — `max_frame_size` (bytes) incl. L2 header.
     pub max_frame_size: u32,
     /// Spec — `max_frames_per_interval`.
     pub max_frames_per_interval: u32,
@@ -33,13 +33,13 @@ pub struct TrafficSpecification {
 }
 
 impl TrafficSpecification {
-    /// Konvertiert die spezifizierte Datenrate zu Bytes/Sekunde.
-    /// Hilfreich zum Sanity-Check ob die TSN-Bridge die Bandwidth
-    /// reservieren kann.
+    /// Converts the specified data rate to bytes/second.
+    /// Helpful for a sanity check on whether the TSN bridge can
+    /// reserve the bandwidth.
     #[must_use]
     pub const fn bytes_per_second(self) -> u64 {
         if self.interval_nanoseconds == 0 {
-            return u64::MAX; // unrealistisch — Caller sollte das pruefen.
+            return u64::MAX; // unrealistic — the caller should check this.
         }
         // bytes/interval * 1e9 / interval_ns = bytes/s
         let bytes_per_interval = self.max_frame_size as u64 * self.max_frames_per_interval as u64;

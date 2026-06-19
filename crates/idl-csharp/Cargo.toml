@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["dds", "idl", "codegen", "csharp"]
 categories = ["development-tools"]
 authors.workspace = true
-description = "OMG IDL4 → C# 10 Code-Generator (idl4-csharp-1.0) für ZeroDDS."
+description = "OMG IDL4 → C# 10 code generator (idl4-csharp-1.0) for ZeroDDS."
 publish = true
 
 [lints]
@@ -21,11 +21,12 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std"]
 std = []
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.1", path = "../idl" }
+zerodds-idl = { version = "1.0.0-rc.3", path = "../idl" }
 
 [dev-dependencies]
 insta = { workspace = true }

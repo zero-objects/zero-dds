@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Governance-XML-Parser (OMG DDS-Security 1.1 §9.4.1.2).
+//! Governance XML parser (OMG DDS-Security 1.1 §9.4.1.2).
 //!
-//! Governance-XML legt pro Domain fest, welche **Topic-Klassen** wie
-//! geschuetzt werden muessen (Discovery-Protection, Read-/Write-Access,
-//! Metadata-/Data-Protection-Kind). Die Datei wird typischerweise
-//! mit der Permissions-CA signiert und vom Access-Control-Plugin
-//! beim Participant-Start geladen.
+//! The governance XML specifies per domain which **topic classes** must
+//! be protected how (discovery protection, read/write access,
+//! metadata/data protection kind). The file is typically
+//! signed with the permissions CA and loaded by the access-control plugin
+//! at participant start.
 //!
 //! # Scope
 //!
-//! * Parser fuer `<domain_access_rules>` → `<domain_rule>` →
+//! * Parser for `<domain_access_rules>` → `<domain_rule>` →
 //!   `<topic_access_rules>` → `<topic_rule>`.
-//! * Domain-Filter via `<domains><id>N</id></domains>` (einfaches
-//!   `id` oder `<id_range>min..max</id_range>`).
-//! * Topic-Expression-Matching mit Wildcards via [`crate::topic_match`].
-//! * Protection-Kinds fuer `metadata_protection_kind` und
+//! * Domain filter via `<domains><id>N</id></domains>` (simple
+//!   `id` or `<id_range>min..max</id_range>`).
+//! * Topic-expression matching with wildcards via [`crate::topic_match`].
+//! * Protection kinds for `metadata_protection_kind` and
 //!   `data_protection_kind`.
 //!
-//! # Nicht-Ziele
+//! # Non-goals
 //!
-//! * XML-Signatur-Verifikation — **future-major**.
-//! * `<allow_unauthenticated_participants>`-Enforcement — **future-major**.
+//! * XML signature verification — **future-major**.
+//! * `<allow_unauthenticated_participants>` enforcement — **future-major**.
 
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
@@ -34,19 +34,19 @@ use zerodds_security_pki::SignatureAlgorithm;
 use crate::topic_match::topic_match;
 use crate::xml::PermissionsError;
 
-/// Topic-Protection-Kind (Spec §9.4.1.2 Tabelle 48).
+/// Topic protection kind (spec §9.4.1.2 table 48).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ProtectionKind {
-    /// Keine Schutzmassnahme.
+    /// No protection.
     #[default]
     None,
-    /// Nur Integrity (HMAC / Signature).
+    /// Integrity only (HMAC / signature).
     Sign,
-    /// Integrity + Confidentiality (AEAD).
+    /// Integrity + confidentiality (AEAD).
     Encrypt,
-    /// Wie `Sign`, aber pro Remote-Reader eigene MAC.
+    /// Like `Sign`, but an own MAC per remote reader.
     SignWithOriginAuthentication,
-    /// Wie `Encrypt`, aber pro Remote-Reader eigene MAC.
+    /// Like `Encrypt`, but an own MAC per remote reader.
     EncryptWithOriginAuthentication,
 }
 
@@ -58,29 +58,29 @@ impl ProtectionKind {
             "ENCRYPT" => Self::Encrypt,
             "SIGN_WITH_ORIGIN_AUTHENTICATION" => Self::SignWithOriginAuthentication,
             "ENCRYPT_WITH_ORIGIN_AUTHENTICATION" => Self::EncryptWithOriginAuthentication,
-            _ => Self::None, // unbekannte → NONE (Fail-Open nur fuer
-                             // Development; Produktion validiert via
-                             // XML-Schema).
+            _ => Self::None, // unknown → NONE (fail-open only for
+                             // development; production validates via
+                             // the XML schema).
         }
     }
 }
 
-/// Regel fuer eine Topic-Klasse (oder Wildcard).
+/// Rule for a topic class (or wildcard).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopicRule {
-    /// Topic-Pattern (Wildcards `*` `?` wie in Permissions).
+    /// Topic pattern (wildcards `*` `?` as in permissions).
     pub topic_expression: String,
-    /// Discovery-Schutz — SEDP wird verschluesselt.
+    /// Discovery protection — SEDP is encrypted.
     pub enable_discovery_protection: bool,
-    /// Liveliness-Schutz — `PARTICIPANT_MESSAGE` signiert.
+    /// Liveliness protection — `PARTICIPANT_MESSAGE` signed.
     pub enable_liveliness_protection: bool,
-    /// Read-Access per Permissions pruefen.
+    /// Check read access via permissions.
     pub enable_read_access_control: bool,
-    /// Write-Access per Permissions pruefen.
+    /// Check write access via permissions.
     pub enable_write_access_control: bool,
-    /// SEC_PREFIX-Schutz fuer Submessage-Metadaten.
+    /// SEC_PREFIX protection for submessage metadata.
     pub metadata_protection_kind: ProtectionKind,
-    /// SEC_BODY-Schutz fuer Payload-Daten.
+    /// SEC_BODY protection for payload data.
     pub data_protection_kind: ProtectionKind,
 }
 
@@ -98,17 +98,17 @@ impl Default for TopicRule {
     }
 }
 
-/// Domain-Filter: Liste von (min, max)-Ranges. Eine einzelne Id wird
-/// als `min == max` gespeichert.
+/// Domain filter: list of (min, max) ranges. A single id is
+/// stored as `min == max`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DomainFilter {
-    /// Inklusive Ranges. Wenn leer: matcht alle Domains (Spec-Default).
+    /// Inclusive ranges. If empty: matches all domains (spec default).
     pub ranges: Vec<(u32, u32)>,
 }
 
 impl DomainFilter {
-    /// `true` wenn `domain_id` in einem Range liegt oder die Filter-
-    /// Liste leer ist.
+    /// `true` if `domain_id` is in a range or the filter
+    /// list is empty.
     #[must_use]
     pub fn matches(&self, domain_id: u32) -> bool {
         if self.ranges.is_empty() {
@@ -120,176 +120,175 @@ impl DomainFilter {
     }
 }
 
-/// Eine Domain-Regel im Governance-XML.
+/// A domain rule in the governance XML.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DomainRule {
-    /// Filter fuer Domain-IDs.
+    /// Filter for domain ids.
     pub domains: DomainFilter,
-    /// Erlaubt unauthenticated Participants im Discovery. Default false.
+    /// Allows unauthenticated participants in discovery. Default false.
     pub allow_unauthenticated_participants: bool,
-    /// Pflicht-Access-Control auf Participant-Join.
+    /// Mandatory access control on participant join.
     pub enable_join_access_control: bool,
-    /// Discovery-Schutz auf Participant-Level.
+    /// Discovery protection at participant level.
     pub discovery_protection_kind: ProtectionKind,
-    /// Liveliness-Schutz auf Participant-Level.
+    /// Liveliness protection at participant level.
     pub liveliness_protection_kind: ProtectionKind,
-    /// Signatur-Schutz fuer den RTPS-Header.
+    /// Signature protection for the RTPS header.
     pub rtps_protection_kind: ProtectionKind,
-    /// Pro Topic-Klasse eine Regel.
+    /// One rule per topic class.
     pub topic_rules: Vec<TopicRule>,
-    /// ZeroDDS-Extension: Peer-Klassen fuer Heterogeneous-
-    /// Security. Leer bei reinen OMG-Governance-Dokumenten — das ist
-    /// der Legacy-Pfad. Namespace-scoped im XML:
+    /// ZeroDDS extension: peer classes for heterogeneous
+    /// security. Empty for pure OMG governance documents — that is
+    /// the legacy path. Namespace-scoped in the XML:
     /// `<zerodds:peer_classes>`.
     pub peer_classes: Vec<PeerClass>,
-    /// ZeroDDS-Extension: pro Interface-Name eine Regel,
-    /// die Protection-Overrides und Peer-Class-Filter ausdrueckt.
+    /// ZeroDDS extension: one rule per interface name,
+    /// expressing protection overrides and peer-class filters.
     /// Namespace-scoped: `<zerodds:interface_bindings>`.
     pub interface_bindings: Vec<InterfaceBindingRule>,
 }
 
-/// Peer-Klasse aus `<zerodds:peer_class>` (RC1, Spec: Architektur-
-/// Doc §5).
+/// Peer class from `<zerodds:peer_class>` (RC1, spec: architecture
+/// doc §5).
 ///
-/// Jeder Remote-Peer wird anhand seiner [`crate::PeerCapabilities`] +
-/// Cert-CN einer Peer-Klasse zugeordnet. Die erste matchende Klasse
-/// in [`DomainRule::peer_classes`] gewinnt — Reihenfolge im XML also
+/// Each remote peer is mapped to a peer class by its [`crate::PeerCapabilities`] +
+/// cert CN. The first matching class
+/// in [`DomainRule::peer_classes`] wins — so order in the XML is
 /// relevant.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PeerClass {
-    /// Freier Name zum Diagnose-Zweck (z.B. `"legacy"`, `"fast"`,
+    /// Free-form name for diagnostic purposes (e.g. `"legacy"`, `"fast"`,
     /// `"secure"`, `"highassurance"`).
     pub name: String,
-    /// Protection-Level, das fuer Peers dieser Klasse durchgesetzt
-    /// wird. Default `None`.
+    /// Protection level enforced for peers of this class.
+    /// Default `None`.
     pub protection: ProtectionKind,
-    /// Match-Kriterien (wenn alle erfuellt, passt der Peer zu dieser
-    /// Klasse).
+    /// Match criteria (if all are met, the peer fits this
+    /// class).
     pub match_criteria: PeerClassMatch,
 }
 
-/// Match-Kriterien einer Peer-Klasse. Alle gesetzten Felder muessen
-/// erfuellt sein (UND-Verknuepfung). `None`/Default-Werte werden
-/// ignoriert.
+/// Match criteria of a peer class. All set fields must
+/// be met (AND combination). `None`/default values are
+/// ignored.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PeerClassMatch {
-    /// Erwartete Auth-Plugin-Class (z.B. `"DDS:Auth:PKI-DH:1.2"`).
-    /// Der Leerstring `""` matcht explizit Peers **ohne** Plugin
-    /// (Legacy-Klassifikation). `None` = dieses Kriterium wird nicht
-    /// geprueft.
+    /// Expected auth plugin class (e.g. `"DDS:Auth:PKI-DH:1.2"`).
+    /// The empty string `""` explicitly matches peers **without** a plugin
+    /// (legacy classification). `None` = this criterion is not
+    /// checked.
     pub auth_plugin_class: Option<String>,
-    /// Wildcard-Pattern fuer den Cert-CN (`*` joker). Beispiel:
-    /// `"*.ha.example"` matcht `"writer1.ha.example"`.
+    /// Wildcard pattern for the cert CN (`*` joker). Example:
+    /// `"*.ha.example"` matches `"writer1.ha.example"`.
     pub cert_cn_pattern: Option<String>,
-    /// Suite-Anforderung. Der Peer muss diese Suite in seinen
-    /// `supported_suites` listen. Beispiel: `"AES_128_GCM"`.
+    /// Suite requirement. The peer must list this suite in its
+    /// `supported_suites`. Example: `"AES_128_GCM"`.
     pub suite: Option<String>,
-    /// OCSP-Live-Check-Flag — der Peer muss einen gueltigen Cert-
-    /// Status haben (spiegelt `has_valid_cert` in den Peer-Caps).
+    /// OCSP live-check flag — the peer must have a valid cert
+    /// status (mirrors `has_valid_cert` in the peer caps).
     pub require_ocsp: bool,
-    /// Delegation-Profile-Referenz. Wenn gesetzt, MUSS
-    /// der Peer eine [`DelegationChain`](zerodds_security_pki::DelegationChain)
-    /// in seinen Capabilities haben, die gegen das Profil
-    /// validiert. `None` = direkter Auth-Pfad ohne Delegation.
+    /// Delegation profile reference. If set, the
+    /// peer MUST have a [`DelegationChain`](zerodds_security_pki::DelegationChain)
+    /// in its capabilities that validates against the profile.
+    /// `None` = direct auth path without delegation.
     pub delegation_profile: Option<String>,
 }
 
-/// Interface-spezifische Regel aus `<zerodds:interface_bindings>`
-///.
+/// Interface-specific rule from `<zerodds:interface_bindings>`.
 ///
-/// Bindet logische Interface-Namen an Protection-Overrides und
-/// zugelassene Peer-Klassen. Ergaenzt die socket-basierte Binding-
-/// Struktur aus Stufe 6, ohne sie zu ersetzen — der Governance-
-/// Eintrag ist die Policy-Sicht, das Socket-Binding ist die Transport-
-/// Sicht.
+/// Binds logical interface names to protection overrides and
+/// allowed peer classes. Complements the socket-based binding
+/// structure from stage 6, without replacing it — the governance
+/// entry is the policy view, the socket binding is the transport
+/// view.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct InterfaceBindingRule {
-    /// Name des Interfaces (muss mit `InterfaceBindingSpec::name` im
-    /// dcps-Runtime-Config uebereinstimmen).
+    /// Name of the interface (must match `InterfaceBindingSpec::name` in
+    /// the dcps runtime config).
     pub name: String,
-    /// Ueberschreibt das Domain-Protection-Kind auf diesem Interface.
-    /// `None` = kein Override; Domain-Default gilt.
+    /// Overrides the domain protection kind on this interface.
+    /// `None` = no override; the domain default applies.
     pub protection_override: Option<ProtectionKind>,
-    /// Zugelassene Peer-Klassen auf diesem Interface. Leer = keine
-    /// Einschraenkung (alle Klassen erlaubt).
+    /// Allowed peer classes on this interface. Empty = no
+    /// restriction (all classes allowed).
     pub peer_class_filter: Vec<String>,
-    /// Minimales Protection-Level auf diesem Interface. Ergebnis ist
-    /// `max(peer_class.protection, protection_min)`. `None` = kein
-    /// Minimum.
+    /// Minimum protection level on this interface. The result is
+    /// `max(peer_class.protection, protection_min)`. `None` = no
+    /// minimum.
     pub protection_min: Option<ProtectionKind>,
 }
 
-/// XML-Namespace-URI fuer ZeroDDS-Extensions in Governance.xml.
+/// XML namespace URI for ZeroDDS extensions in Governance.xml.
 pub const ZERODDS_NS: &str = "https://zerodds.org/schema/security/heterogeneous";
 
-/// Edge-Identity-Mode.
+/// Edge identity mode.
 ///
-/// Architektur-Referenz: `09_delegation.md` §5 (Edge-Identities).
-/// `Static` = stabile GuidPrefix ueber Restart hinweg, manuell
-/// konfiguriert. `Ephemeral` = pseudozufaellige GuidPrefix mit
-/// Lifetime-Rotation, fuer Privacy-/Replay-Resistenz.
+/// Architecture reference: `09_delegation.md` §5 (edge identities).
+/// `Static` = stable GuidPrefix across restart, manually
+/// configured. `Ephemeral` = pseudo-random GuidPrefix with
+/// lifetime rotation, for privacy/replay resistance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub enum EdgeIdentityMode {
-    /// Stabiler Prefix, kein Auto-Rotate.
+    /// Stable prefix, no auto-rotate.
     #[default]
     Static,
-    /// Auto-Rotate nach `lifetime_seconds` ohne expliziten Trigger.
+    /// Auto-rotate after `lifetime_seconds` without an explicit trigger.
     Ephemeral,
 }
 
-/// Edge-Identity-Konfiguration aus `<zerodds:edge_identities>`.
+/// Edge identity configuration from `<zerodds:edge_identities>`.
 ///
-/// Pro Edge ein Eintrag mit Name, Mode, optional fixer GuidPrefix
-/// (12 byte; Static-Default), und Lifetime fuer Ephemeral-Rotation.
+/// One entry per edge with name, mode, optionally a fixed GuidPrefix
+/// (12 bytes; static default), and lifetime for ephemeral rotation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EdgeIdentityConfig {
-    /// Logischer Edge-Name (z.B. `"lidar-A"`, `"turm-imu"`).
+    /// Logical edge name (e.g. `"lidar-A"`, `"turm-imu"`).
     pub name: String,
-    /// Static oder Ephemeral.
+    /// Static or ephemeral.
     pub mode: EdgeIdentityMode,
-    /// 12-byte GuidPrefix; Pflicht fuer `Static`, optional fuer
-    /// `Ephemeral` (initialer Wert).
+    /// 12-byte GuidPrefix; mandatory for `Static`, optional for
+    /// `Ephemeral` (initial value).
     pub guid_prefix: Option<[u8; 12]>,
-    /// Lifetime in Sekunden — nur `Ephemeral`. `None` = Default 300s.
+    /// Lifetime in seconds — `Ephemeral` only. `None` = default 300s.
     pub lifetime_seconds: Option<u32>,
 }
 
-/// Default-Lifetime fuer Ephemeral-Edge-Identities (Sekunden).
+/// Default lifetime for ephemeral edge identities (seconds).
 pub const DEFAULT_EPHEMERAL_LIFETIME_SECS: u32 = 300;
 
 impl EdgeIdentityConfig {
-    /// Effektive Lifetime in Sekunden — mit Default-Fallback.
+    /// Effective lifetime in seconds — with a default fallback.
     #[must_use]
     pub fn effective_lifetime(&self) -> u32 {
         self.lifetime_seconds
             .unwrap_or(DEFAULT_EPHEMERAL_LIFETIME_SECS)
     }
 
-    /// True wenn der Mode `Ephemeral` ist.
+    /// True if the mode is `Ephemeral`.
     #[must_use]
     pub fn is_ephemeral(&self) -> bool {
         matches!(self.mode, EdgeIdentityMode::Ephemeral)
     }
 }
 
-/// Vollstaendige Governance-Config.
+/// Complete governance config.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Governance {
-    /// Alle Domain-Regeln. Reihenfolge relevant (erster Match gewinnt).
+    /// All domain rules. Order matters (first match wins).
     pub domain_rules: Vec<DomainRule>,
-    /// Edge-Identity-Configs aus `<zerodds:edge_identities>`. Wird vom
-    /// GatewayBridge gelesen.
+    /// Edge identity configs from `<zerodds:edge_identities>`. Read by the
+    /// GatewayBridge.
     pub edge_identities: Vec<EdgeIdentityConfig>,
-    /// Delegation-Profiles aus `<zerodds:delegation_profiles>`.
-    /// Lookup per Profile-Name (Referenz aus
+    /// Delegation profiles from `<zerodds:delegation_profiles>`.
+    /// Looked up by profile name (referenced from
     /// [`PeerClassMatch::delegation_profile`]).
     pub delegation_profiles: BTreeMap<String, DelegationProfile>,
 }
 
 impl Governance {
-    /// Findet die passende [`DomainRule`] fuer eine Domain-ID. `None`
-    /// wenn keine matcht — Caller entscheidet Default-Policy.
+    /// Finds the matching [`DomainRule`] for a domain id. `None`
+    /// if none matches — the caller decides the default policy.
     #[must_use]
     pub fn find_domain_rule(&self, domain_id: u32) -> Option<&DomainRule> {
         self.domain_rules
@@ -297,9 +296,9 @@ impl Governance {
             .find(|r| r.domains.matches(domain_id))
     }
 
-    /// Findet die passende [`TopicRule`] innerhalb einer Domain-Regel.
-    /// Erster Match in `topic_rules` gewinnt; bei keiner Regel wird
-    /// `TopicRule::default()` (keine Protection) zurueckgegeben.
+    /// Finds the matching [`TopicRule`] within a domain rule.
+    /// The first match in `topic_rules` wins; if no rule matches,
+    /// `TopicRule::default()` (no protection) is returned.
     #[must_use]
     pub fn find_topic_rule<'a>(
         &'a self,
@@ -311,11 +310,52 @@ impl Governance {
             .iter()
             .find(|r| topic_match(&r.topic_expression, topic_name))
     }
+
+    /// DDS-Security §8.4.2.9.3 `check_create_participant` — the spec-correct
+    /// participant-create gate, consulting **both** governance and permissions:
+    ///
+    /// - No domain rule covering `domain_id` → deny.
+    /// - `enable_join_access_control = false` → allow (open join; no permission
+    ///   needed).
+    /// - `enable_join_access_control = true` → allow **iff** `permissions` holds
+    ///   a grant valid at `now` whose `<domains>` matches `domain_id`.
+    ///
+    /// This is the **only** participant-create gate; it consults the
+    /// permissions grant, not just the governance topology. A fully
+    /// access-controlled governance (`enable_join_access_control=TRUE` + every
+    /// topic read+write-AC=TRUE) is **NOT** un-joinable per se — it is joinable
+    /// by a participant whose permissions grant the domain (verified
+    /// empirically: Cyclone DDS and Fast DDS both join such a governance with a
+    /// matching grant; the SROS2 full-lockdown profile relies on exactly this).
+    /// An earlier governance-topology-only gate denied it unconditionally — a
+    /// spec bug that blocked ZeroDDS from every fully-locked secured domain.
+    /// (OpenDDS reads Table 63 literally and self-rejects such a governance;
+    /// that is an OpenDDS-specific stance, not binding on conformant peers.)
+    #[must_use]
+    pub fn check_create_participant(
+        &self,
+        permissions: &crate::xml::Permissions,
+        domain_id: u32,
+        now: u64,
+    ) -> bool {
+        match self.find_domain_rule(domain_id) {
+            None => false,
+            Some(dr) => {
+                if !dr.enable_join_access_control {
+                    return true;
+                }
+                permissions
+                    .grants
+                    .iter()
+                    .any(|g| g.is_valid_at(now) && g.matches_domain(domain_id))
+            }
+        }
+    }
 }
 
-/// Parst ein Governance-XML-Dokument.
+/// Parses a governance XML document.
 ///
-/// Akzeptiert das Spec-Schema aus §9.4.1.2:
+/// Accepts the spec schema from §9.4.1.2:
 /// ```xml
 /// <dds>
 ///   <domain_access_rules>
@@ -342,8 +382,8 @@ impl Governance {
 /// ```
 ///
 /// # Errors
-/// Siehe [`PermissionsError`] (wiederverwendet — Governance und
-/// Permissions teilen XML-Parse-Fehler-Klasse).
+/// See [`PermissionsError`] (reused — governance and
+/// permissions share the XML-parse error class).
 pub fn parse_governance_xml(xml: &str) -> Result<Governance, PermissionsError> {
     let doc =
         roxmltree::Document::parse(xml).map_err(|e| PermissionsError::InvalidXml(e.to_string()))?;
@@ -365,7 +405,7 @@ pub fn parse_governance_xml(xml: &str) -> Result<Governance, PermissionsError> {
 // RC1: Delegation-Profiles XML
 // ============================================================================
 
-/// zerodds-lint: recursion-depth = xml-tree-depth (≤ 16 in Praxis).
+/// zerodds-lint: recursion-depth = xml-tree-depth (≤ 16 in practice).
 fn walk_delegation_profiles(
     node: roxmltree::Node<'_, '_>,
     out: &mut BTreeMap<String, DelegationProfile>,
@@ -509,7 +549,7 @@ fn parse_trust_anchor(
     }))
 }
 
-/// 16-byte (32-hex-char) GUID-Parser fuer Trust-Anchor.
+/// 16-byte (32-hex-char) GUID parser for the trust anchor.
 fn parse_guid_prefix_hex_16(s: &str) -> Option<[u8; 16]> {
     let cleaned: String = s
         .chars()
@@ -529,7 +569,7 @@ fn parse_guid_prefix_hex_16(s: &str) -> Option<[u8; 16]> {
     Some(out)
 }
 
-/// Base64-Decoder fuer Trust-Anchor-PubKey-Bytes.
+/// Base64 decoder for trust-anchor public-key bytes.
 fn base64_decode_anchor(input: &str) -> Option<Vec<u8>> {
     // Remove whitespace (PEM-style multiline).
     let cleaned: String = input.chars().filter(|c| !c.is_whitespace()).collect();
@@ -573,10 +613,10 @@ fn base64_decode_anchor(input: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// Sucht rekursiv nach `<zerodds:edge_identities>`-Elementen und parst
-/// deren `<edge>`-Kinder.
+/// Searches recursively for `<zerodds:edge_identities>` elements and parses
+/// their `<edge>` children.
 ///
-/// zerodds-lint: recursion-depth = xml-tree-depth (≤ 16 in Praxis).
+/// zerodds-lint: recursion-depth = xml-tree-depth (≤ 16 in practice).
 fn walk_edge_identities(
     node: roxmltree::Node<'_, '_>,
     out: &mut Vec<EdgeIdentityConfig>,
@@ -630,8 +670,8 @@ fn parse_edge(
     })
 }
 
-/// Parst Hex-encoded 12-byte GuidPrefix mit optionalen Trennzeichen
-/// (`:`, `-`, whitespace). Beispiele:
+/// Parses a hex-encoded 12-byte GuidPrefix with optional separators
+/// (`:`, `-`, whitespace). Examples:
 /// * `"01020304050607080910111213"`  (24 hex chars, 12 byte)
 /// * `"01:02:03:04:05:06:07:08:09:10:11:12"`
 fn parse_guid_prefix_hex(s: &str) -> Option<[u8; 12]> {
@@ -653,7 +693,7 @@ fn parse_guid_prefix_hex(s: &str) -> Option<[u8; 12]> {
     Some(out)
 }
 
-/// zerodds-lint: recursion-depth = xml-tree-depth (≤ 16 in Praxis).
+/// zerodds-lint: recursion-depth = xml-tree-depth (≤ 16 in practice).
 fn walk_domain_rules(
     node: roxmltree::Node<'_, '_>,
     out: &mut Vec<DomainRule>,
@@ -699,9 +739,9 @@ fn parse_domain_rule(rule: roxmltree::Node<'_, '_>) -> Result<DomainRule, Permis
                     out.topic_rules.push(parse_topic_rule(tr));
                 }
             }
-            // RC1: zerodds-Extensions. Wir matchen uebers Namespace-
-            // URI — Elementname ist nur `peer_classes` ohne Praefix
-            // (roxmltree resolved das bereits).
+            // RC1: zerodds extensions. We match by the namespace
+            // URI — the element name is only `peer_classes` without a prefix
+            // (roxmltree already resolved that).
             "peer_classes" if child.tag_name().namespace() == Some(ZERODDS_NS) => {
                 for pc in child.children().filter(roxmltree::Node::is_element) {
                     if pc.tag_name().name() == "peer_class"
@@ -736,9 +776,9 @@ fn parse_peer_class(node: roxmltree::Node<'_, '_>) -> PeerClass {
         match_criteria: PeerClassMatch::default(),
     };
     for child in node.children().filter(roxmltree::Node::is_element) {
-        // Wir akzeptieren `<match>` sowohl mit als auch ohne Namespace-
-        // Praefix — praktischer fuer XML-Autoren, die das Element
-        // innerhalb des parent-Namespace schreiben.
+        // We accept `<match>` both with and without a namespace
+        // prefix — more convenient for XML authors who write the element
+        // inside the parent namespace.
         if child.tag_name().name() != "match" {
             continue;
         }
@@ -782,40 +822,40 @@ fn parse_interface_binding(node: roxmltree::Node<'_, '_>) -> InterfaceBindingRul
     }
 }
 
-/// Wildcard-Matcher fuer Cert-CN-Patterns. Einziger Joker ist `*`,
-/// matcht beliebig viele Zeichen (inkl. `.`). Leeres Pattern matcht
-/// nur leere Strings. Fuer `*.fast.example` gilt:
+/// Wildcard matcher for cert-CN patterns. The only joker is `*`,
+/// matching any number of characters (incl. `.`). An empty pattern matches
+/// only empty strings. For `*.fast.example`:
 /// `"w1.fast.example"` → `true`, `"fast.example"` → `false`.
 #[must_use]
 pub fn cn_pattern_match(pattern: &str, cn: &str) -> bool {
-    // Splitten an `*`, dann iterativ im Haystack finden.
-    // Keine Regex-Dependency — das Projekt haelt den Safety-Crate-
-    // Footprint klein.
+    // Split on `*`, then find iteratively in the haystack.
+    // No regex dependency — the project keeps the safety-crate
+    // footprint small.
     let parts: Vec<&str> = pattern.split('*').collect();
     if parts.len() == 1 {
         return pattern == cn;
     }
     let mut idx = 0usize;
-    // Prefix muss am Anfang passen.
+    // The prefix must match at the start.
     if !parts[0].is_empty() {
         if !cn.starts_with(parts[0]) {
             return false;
         }
         idx = parts[0].len();
     }
-    // Mittelstuecke finden.
+    // Find the middle pieces.
     for (i, p) in parts.iter().enumerate().skip(1) {
         if p.is_empty() {
-            // Zwei `*` hintereinander → leeres Mittelstueck; skip.
+            // Two `*` in a row → empty middle piece; skip.
             continue;
         }
         let is_last = i == parts.len() - 1;
         if is_last {
-            // Letztes Stueck muss am Ende stehen.
+            // The last piece must be at the end.
             if !cn[idx..].ends_with(p) {
                 return false;
             }
-            // Und darf nicht ueberlappen mit bereits matchten Bytes.
+            // And it must not overlap with already-matched bytes.
             let need = idx + p.len();
             if cn.len() < need {
                 return false;
@@ -905,6 +945,70 @@ fn parse_bool(node: roxmltree::Node<'_, '_>) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn check_create_participant_consults_permissions() {
+        use crate::xml::parse_permissions_xml;
+        // Full-AC governance for domain 200 (join-AC + single * topic RW-AC).
+        // This is NOT un-joinable per se — it is joinable by a participant
+        // whose permissions grant the domain (§8.4.2.9.3), exactly as Cyclone
+        // and Fast DDS treat it.
+        let full_ac = parse_governance_xml(
+            r#"<dds><domain_access_rules><domain_rule>
+                 <domains><id>200</id></domains>
+                 <enable_join_access_control>true</enable_join_access_control>
+                 <topic_access_rules><topic_rule>
+                   <topic_expression>*</topic_expression>
+                   <enable_read_access_control>true</enable_read_access_control>
+                   <enable_write_access_control>true</enable_write_access_control>
+                 </topic_rule></topic_access_rules>
+               </domain_rule></domain_access_rules></dds>"#,
+        )
+        .unwrap();
+
+        // A grant allowing domain 200 → create ALLOWED (the fix; Cyclone/FastDDS
+        // join such a domain with this grant).
+        let grant_200 = parse_permissions_xml(
+            r#"<permissions><grant><subject_name>CN=ping</subject_name>
+                 <allow_rule><domains><id>200</id></domains>
+                   <publish><topics><topic>*</topic></topics></publish></allow_rule>
+               </grant></permissions>"#,
+        )
+        .unwrap();
+        assert!(
+            full_ac.check_create_participant(&grant_200, 200, 0),
+            "full-AC + matching grant → joinable (spec §8.4.2.9.3)"
+        );
+
+        // A grant for a different domain → deny (no grant covers domain 200).
+        let grant_5 = parse_permissions_xml(
+            r#"<permissions><grant><subject_name>CN=ping</subject_name>
+                 <allow_rule><domains><id>5</id></domains>
+                   <publish><topics><topic>*</topic></topics></publish></allow_rule>
+               </grant></permissions>"#,
+        )
+        .unwrap();
+        assert!(
+            !full_ac.check_create_participant(&grant_5, 200, 0),
+            "no grant for the domain → deny"
+        );
+
+        // join-AC=false → allow regardless of permissions (open join).
+        let open = parse_governance_xml(
+            r#"<dds><domain_access_rules><domain_rule>
+                 <domains><id>200</id></domains>
+                 <enable_join_access_control>false</enable_join_access_control>
+               </domain_rule></domain_access_rules></dds>"#,
+        )
+        .unwrap();
+        assert!(
+            open.check_create_participant(&grant_5, 200, 0),
+            "open join → allow"
+        );
+
+        // No domain rule → deny.
+        assert!(!full_ac.check_create_participant(&grant_200, 999, 0));
+    }
+
     const SAMPLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <dds>
   <domain_access_rules>
@@ -971,7 +1075,7 @@ mod tests {
         assert!(g.find_domain_rule(10).is_some());
         assert!(g.find_domain_rule(15).is_some());
         assert!(g.find_domain_rule(20).is_some());
-        // 21 liegt ausserhalb aller Ranges (0-0, 10-20), also None.
+        // 21 is outside all ranges (0-0, 10-20), so None.
         assert!(g.find_domain_rule(21).is_none());
     }
 
@@ -1010,7 +1114,7 @@ mod tests {
     }
 
     // =======================================================================
-    // RC1 Stufe 8 — Peer-Classes + Interface-Bindings (zerodds-ns)
+    // RC1 stage 8 — peer classes + interface bindings (zerodds-ns)
     // =======================================================================
 
     const HETERO_GOV: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -1198,32 +1302,32 @@ mod tests {
 
     #[test]
     fn pure_omg_governance_yields_empty_peer_classes_and_bindings() {
-        // Ein Governance-Dokument ohne zerodds:-Namespace soll exakt
-        // wie heute arbeiten (Abwaerts-Kompatibilitaet).
+        // A governance document without the zerodds: namespace should work
+        // exactly as today (backward compatibility).
         let g = parse_governance_xml(SAMPLE).unwrap();
         for rule in &g.domain_rules {
             assert!(
                 rule.peer_classes.is_empty(),
-                "OMG-only-Doc darf keine peer_classes triggern"
+                "an OMG-only doc must not trigger peer_classes"
             );
             assert!(
                 rule.interface_bindings.is_empty(),
-                "OMG-only-Doc darf keine interface_bindings triggern"
+                "an OMG-only doc must not trigger interface_bindings"
             );
         }
     }
 
     #[test]
     fn cyclone_style_without_namespace_declaration_ignores_zerodds_elements() {
-        // Cyclone-Perspektive: sie parsen Governance-XML und werfen
-        // unbekannte Namespaces weg. Wir simulieren das indem ein XML
-        // die zerodds-Elemente ohne Namespace-Deklaration benutzt —
-        // dann matched unser Namespace-Filter nicht und das Element
-        // wird still ignoriert.
+        // Cyclone perspective: they parse the governance XML and throw away
+        // unknown namespaces. We simulate that by having an XML
+        // use the zerodds elements without a namespace declaration —
+        // then our namespace filter does not match and the element
+        // is silently ignored.
         //
-        // Das ist die Vendor-Interop-Garantie: Cyclone/FastDDS sehen
-        // zerodds:-Tags, ignorieren sie wenn sie den Namespace nicht
-        // kennen, und fallen auf rtps_protection_kind zurueck.
+        // This is the vendor-interop guarantee: Cyclone/FastDDS see
+        // zerodds: tags, ignore them if they do not know the namespace,
+        // and fall back to rtps_protection_kind.
         const MIXED: &str = r#"<?xml version="1.0"?>
 <dds>
   <domain_access_rules>
@@ -1240,7 +1344,7 @@ mod tests {
         let rule = g.find_domain_rule(0).unwrap();
         assert!(
             rule.peer_classes.is_empty(),
-            "peer_classes ohne zerodds-namespace muss ignoriert werden"
+            "peer_classes without the zerodds namespace must be ignored"
         );
         assert_eq!(rule.rtps_protection_kind, ProtectionKind::Encrypt);
     }
@@ -1352,8 +1456,8 @@ mod tests {
 
     #[test]
     fn edge_identity_without_namespace_is_ignored() {
-        // Ohne zerodds:-Namespace darf nichts geparst werden — ZeroDDS-
-        // Extension-Pflicht.
+        // Without the zerodds: namespace nothing may be parsed — the ZeroDDS
+        // extension requirement.
         const XML: &str = r#"<?xml version="1.0"?>
 <dds>
   <edge_identities>
@@ -1368,8 +1472,8 @@ mod tests {
     // RC1: Delegation-Profile XML
     // ========================================================================
 
-    /// Test-Helper — generiert ein PubKey im richtigen Format und encodiert
-    /// es als Base64.
+    /// Test helper — generates a public key in the right format and encodes
+    /// it as Base64.
     fn ecdsa_p256_test_pubkey_base64() -> String {
         use ring::rand::SystemRandom;
         use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, KeyPair};
@@ -1510,7 +1614,7 @@ mod tests {
         );
         let g = parse_governance_xml(&xml).unwrap();
         let p = g.delegation_profiles.get("bad").unwrap();
-        // Default = DirectOrDelegated wenn Wert nicht parsebar.
+        // Default = DirectOrDelegated if the value is not parseable.
         assert!(matches!(p.trust_policy, TrustPolicy::DirectOrDelegated));
     }
 

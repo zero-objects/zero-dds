@@ -528,20 +528,21 @@ typedef struct {
 Diese C-FFI-Spec bildet die Foundation. Folgende Vendor-Specs detailieren
 spezifische Teilbereiche oder dokumentieren nachgelagerte Schichten:
 
-- **`zerodds-listener-callbacks-1.0.md`** — Listener-Callback-Pattern fuer
+- **`zerodds-listener-callbacks-1.1.md`** — Listener-Callback-Pattern fuer
   alle 6 Entity-Typen (DP/Pub/Sub/DW/DR/Topic). Spec §2.2.4 hat fuer C
   keinen normativen Mapping-Pfad; diese Vendor-Spec definiert das
   vtable+user_data-Pattern.
 - **`zerodds-async-1.0.md`** — Async-DDS-API (Rust-Pendant zur Sync-DCPS),
   benutzt aber nicht das C-FFI; lebt parallel.
 - **`zerodds-java-omgdds-1.0.md`** — Pure-Java-Pfad ohne JNI; benutzt
-  nicht das C-FFI, sondern InProcessBus + (Phase-2) gRPC-Bridge.
+  nicht das C-FFI, sondern InProcessBus + (v1.1) gRPC-Bridge.
 
-## §13 RC1-Phase-1 vs. Phase-2 Status
+## §13 FFI-Surface-Status
 
-Stand 2026-05-06 nach erweiterter RC1-Welle:
+Den authoritativen Item-Status führt das Coverage-Audit
+`docs/spec-coverage/zerodds-c-api-1.0.md`.
 
-### Phase-1 (RC1 live)
+### Exponierte Surface (v1.0)
 
 - DomainParticipantFactory: 7 Funktionen (vollstaendig) ✅
 - DomainParticipant: 21 Funktionen (16 init + 5 erweiterung) ✅
@@ -558,7 +559,7 @@ Stand 2026-05-06 nach erweiterter RC1-Welle:
 
 **Total: ~130 FFI-Funktionen exponiert.**
 
-### Phase-2 (geplant)
+### Geplante Erweiterungen (v1.1)
 
 - **Listener-Active-Wireup**: Runtime-Worker-Thread feuert die Callbacks
   bei Status-Counter-Increments. Status-Mask-Filter aktiv.
@@ -568,8 +569,8 @@ Stand 2026-05-06 nach erweiterter RC1-Welle:
 - **`read` vs. `take`**: lokale Read-State-Map pro Reader; aktuell aliased.
 - **`wait_for_historical_data`**: TransientLocal-Reader bind an Durability-Service.
 
-### Phase-3 (Stretch)
+### Optionale Erweiterungen
 
-- **TypeLookup-Service-Wireup** in C-FFI (Phase-1 hat es nicht exponiert).
+- **TypeLookup-Service-Wireup** in C-FFI (in v1.0 nicht exponiert).
 - **DDS-Security-Plugin-FFI** fuer C/C++-Plugin-Anwender.
 - **DCPSPSM-Cxx-AnyXxx** type-erased Wrappers in C-Headern.

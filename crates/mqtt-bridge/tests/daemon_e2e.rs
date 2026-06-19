@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! E2E-Test fuer `zerodds-mqtt-bridged`. Spec §12.2.
+//! E2E test for `zerodds-mqtt-bridged`. Spec §12.2.
 //!
-//! Strategie: ein Tiny-MQTT-5-Broker im Test-Process (verwendet die
-//! crate-eigenen Codec-Module + `Broker`-Logik), und der Daemon wird
-//! im selben Prozess via `daemon::server::start()` gegen ihn
-//! verbunden. Wir verifizieren:
+//! Strategy: a tiny MQTT-5 broker in the test process (uses the
+//! crate's own codec modules + `Broker` logic), and the daemon is
+//! connected against it in the same process via `daemon::server::start()`.
+//! We verify:
 //!
-//! * L1 — Daemon spricht MQTT-5 Wire (CONNECT/CONNACK roundtrip
-//!   sichtbar im Mock-Broker).
-//! * L3 — Bidir-Pump: ein anderer MQTT-Client published, Daemon
-//!   schreibt das Sample in die DDS-Domain (intern); umgekehrt
-//!   leider mit Multicast-Loopback-Caveat (siehe Note unten).
+//! * L1 — the daemon speaks MQTT-5 wire (CONNECT/CONNACK roundtrip
+//!   visible in the mock broker).
+//! * L3 — bidir pump: another MQTT client publishes, the daemon
+//!   writes the sample into the DDS domain (internally); the reverse
+//!   unfortunately with a multicast-loopback caveat (see note below).
 
 #![cfg(feature = "daemon")]
 #![allow(
@@ -46,12 +46,12 @@ use zerodds_mqtt_bridge::daemon::server;
 use zerodds_mqtt_bridge::packet::ControlPacketType;
 use zerodds_mqtt_bridge::vbi::{decode_vbi, encode_vbi};
 
-/// Minimaler MQTT-5-Mock-Broker fuer Test-Zwecke.
+/// Minimal MQTT-5 mock broker for test purposes.
 ///
-/// Akzeptiert genau einen Client (den Daemon), antwortet auf CONNECT
-/// mit CONNACK, schluckt SUBSCRIBE, leitet PUBLISH-Frames an einen
-/// `Arc<Mutex<Vec<...>>>`-Recorder weiter und kann zusaetzliche
-/// PUBLISH-Frames an den Client einschleusen.
+/// Accepts exactly one client (the daemon), answers CONNECT
+/// with CONNACK, swallows SUBSCRIBE, forwards PUBLISH frames to an
+/// `Arc<Mutex<Vec<...>>>` recorder and can inject additional
+/// PUBLISH frames to the client.
 pub struct MockBroker {
     pub bind_addr: String,
     pub stop: Arc<AtomicBool>,
@@ -110,7 +110,7 @@ impl MockBroker {
         }
     }
 
-    /// Sendet ein PUBLISH vom Broker an den Client.
+    /// Sends a PUBLISH from the broker to the client.
     pub fn inject_publish(&self, topic: &str, payload: &[u8]) {
         let pkt = PublishPacket {
             dup: false,
@@ -137,11 +137,11 @@ fn handle_client(mut stream: TcpStream, state: Arc<MockState>, stop: Arc<AtomicB
                 if e.kind() == std::io::ErrorKind::WouldBlock
                     || e.kind() == std::io::ErrorKind::TimedOut =>
             {
-                // MockBroker hat broker-seitig set_read_timeout(200 ms)
-                // — bei idle-TCP liefert read_exact ein WouldBlock,
-                // das KEIN Connection-Drop ist. Weiter loopen, sonst
-                // beendet handle_client die Session vorzeitig (vor dem
-                // ersten PUBLISH-Frame des Daemons).
+                // The MockBroker has set_read_timeout(200 ms) broker-side
+                // — on idle TCP, read_exact returns a WouldBlock,
+                // which is NOT a connection drop. Keep looping, otherwise
+                // handle_client ends the session prematurely (before the
+                // daemon's first PUBLISH frame).
                 continue;
             }
             Err(_) => break,
@@ -199,7 +199,7 @@ fn handle_client(mut stream: TcpStream, state: Arc<MockState>, stop: Arc<AtomicB
                     for s in &sub.subscriptions {
                         subs.push(s.topic_filter.clone());
                     }
-                    // SUBACK senden.
+                    // Send SUBACK.
                     let mut suback_body = Vec::new();
                     suback_body.extend_from_slice(&sub.packet_id.to_be_bytes());
                     suback_body.push(0); // properties length VBI
@@ -259,7 +259,7 @@ fn daemon_connects_and_subscribes() {
     let cfg = make_test_config(&broker.bind_addr);
     let mut handle = server::start(cfg).expect("daemon start");
 
-    // Warte bis der CONNECT ankommt + SUBSCRIBE registriert ist.
+    // Wait until the CONNECT arrives + SUBSCRIBE is registered.
     let deadline = Instant::now() + Duration::from_secs(3);
     while Instant::now() < deadline {
         if broker.state.connect_seen.load(Ordering::SeqCst) > 0
@@ -285,52 +285,52 @@ fn daemon_connects_and_subscribes() {
 
 #[test]
 fn mqtt_publish_to_daemon_does_not_crash_and_subscribe_arrived() {
-    // Beweis dass der Inbound-Pfad (MQTT-PUBLISH → DDS-Writer) wired
-    // ist und keinen Panic ausloest. Das DDS-Subscriber-Side-Sniffing
-    // braucht Multicast-Loopback (Linux-only) und ist daher hier
-    // nur indirekt verifiziert.
+    // Proof that the inbound path (MQTT PUBLISH → DDS writer) is wired
+    // and does not trigger a panic. The DDS subscriber-side sniffing
+    // needs multicast loopback (Linux-only) and is therefore only
+    // indirectly verified here.
 
     let broker = MockBroker::start();
     let cfg = make_test_config(&broker.bind_addr);
     let mut handle = server::start(cfg).expect("daemon start");
 
-    // CONNECT + SUBSCRIBE handshake abwarten.
+    // Await the CONNECT + SUBSCRIBE handshake.
     thread::sleep(Duration::from_millis(500));
     assert!(broker.state.connect_seen.load(Ordering::SeqCst) > 0);
 
-    // Inject PUBLISH vom Broker an Daemon.
+    // Inject a PUBLISH from the broker to the daemon.
     broker.inject_publish("trade", b"AAPL@200.5");
 
-    // Etwas warten — Daemon hat Lock auf den TCP-Stream den der
-    // Broker beobachtet. Wir checken dass kein Crash passiert + kein
-    // weiterer DISCONNECT vom Daemon kommt.
+    // Wait a bit — the daemon holds a lock on the TCP stream the
+    // broker watches. We check that no crash happens + no
+    // further DISCONNECT comes from the daemon.
     thread::sleep(Duration::from_millis(500));
 
     handle.shutdown();
     broker.shutdown();
-    // Wenn wir hier ankommen ohne panic ist L1+L3-Inbound wired.
+    // If we get here without a panic, L1+L3 inbound is wired.
 }
 
 #[test]
 fn dds_publish_pumps_to_mqtt_broker() {
-    // L3-Outbound: Wir injizieren einen synthetischen Alive-Sample
-    // direkt in den mpsc::Receiver-Channel, der den Bridge-Pump-Thread
-    // füttert (via `DcpsRuntime::test_inject_user_alive`). Damit
-    // umgehen wir den Cross-Participant-RTPS-Pfad (Multicast-Loopback,
-    // der in CI-Containern unzuverlässig ist), exerzieren aber den
-    // vollen Pump-Pfad in Produktionsform: Reader-Channel → ACL-Read-
-    // Check → MqttClient::publish → MQTT-PUBLISH am Broker.
+    // L3 outbound: we inject a synthetic alive sample
+    // directly into the mpsc::Receiver channel that feeds the bridge
+    // pump thread (via `DcpsRuntime::test_inject_user_alive`). This
+    // bypasses the cross-participant RTPS path (multicast loopback,
+    // which is unreliable in CI containers) but exercises the
+    // full pump path in production form: reader channel → ACL read
+    // check → MqttClient::publish → MQTT PUBLISH at the broker.
 
     let broker = MockBroker::start();
     let cfg = make_test_config(&broker.bind_addr);
     let mut handle = server::start(cfg).expect("daemon start");
 
-    // Daemon-Bringup (MQTT-CONNECT + Reader-Pump-Threads).
+    // Daemon bringup (MQTT CONNECT + reader-pump threads).
     thread::sleep(Duration::from_millis(500));
 
-    // Synthetische Sample-Injection direkt auf den Reader-Channel des
-    // Daemon-Runtimes — bypassed Wire+Discovery, exerziert aber den
-    // vollen Pump-Pfad (mpsc::recv → ACL-Check → MQTT-PUBLISH).
+    // Synthetic sample injection directly onto the reader channel of the
+    // daemon runtime — bypasses wire+discovery but exercises the
+    // full pump path (mpsc::recv → ACL check → MQTT PUBLISH).
     let reader_eid = *handle
         .user_readers
         .get("Trade")
@@ -342,8 +342,8 @@ fn dds_publish_pumps_to_mqtt_broker() {
         "test_inject_user_alive failed (reader slot missing or channel closed)"
     );
 
-    // Warte auf Pump → MQTT-PUBLISH. CI-Runner und Coverage-Instrumentation
-    // sind 2-5x langsamer als Dev-Laptop, deshalb adaptiv.
+    // Wait for pump → MQTT PUBLISH. CI runners and coverage instrumentation
+    // are 2-5x slower than a dev laptop, hence adaptive.
     let pump_timeout = if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         Duration::from_secs(30)
     } else if std::env::var_os("CI").is_some() {

@@ -1,7 +1,7 @@
-//! Integration-Tests fuer die XML→TypeObject-Bridge (C4.5-b).
+//! Integration tests for the XML→TypeObject bridge (C4.5-b).
 //!
-//! Lader-Pipeline: `<types>`-XML → [`xsd_loader`]-Pass →
-//! [`TypeLibrary`] → [`bridge_library`] → `MinimalTypeObject`-Map.
+//! Loader pipeline: `<types>` XML → [`xsd_loader`] pass →
+//! [`TypeLibrary`] → [`bridge_library`] → `MinimalTypeObject` map.
 
 #![allow(
     clippy::expect_used,
@@ -93,13 +93,13 @@ fn end_to_end_xml_string_to_typeobject_map() {
         panic!("Sample not a struct");
     }
 
-    // Vec3: typedef mit arrayDimensions → MinimalArray.
+    // Vec3: typedef with arrayDimensions → MinimalArray.
     assert!(matches!(map["Vec3"], MinimalTypeObject::Array(_)));
     if let MinimalTypeObject::Array(a) = &map["Vec3"] {
         assert_eq!(a.bound_seq, alloc::vec![3]);
     }
 
-    // Permissions: Bitmask mit bitBound 8.
+    // Permissions: bitmask with bitBound 8.
     if let MinimalTypeObject::Bitmask(bm) = &map["Permissions"] {
         assert_eq!(bm.bit_bound, 8);
         assert_eq!(bm.flag_seq.len(), 3);

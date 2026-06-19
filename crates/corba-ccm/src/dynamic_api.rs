@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CORBA 3.3 Part 1 §11 DII + §12 DSI + §13 DynAny — Dynamic-API.
+//! CORBA 3.3 Part 1 §11 DII + §12 DSI + §13 DynAny — dynamic API.
 //!
-//! Spec-Quelle:
+//! Spec source:
 //! - §11 Dynamic Invocation Interface — `Request`, `NVList`, `NamedValue`.
 //! - §12 Dynamic Skeleton Interface — `ServerRequest`.
 //! - §13 Dynamic Management of Any Values — `DynAny`.
 //!
-//! ## Wire-up gegen GIOP / TypeCode (Layer-8-Cleanup)
+//! ## Wire-up against GIOP / TypeCode (Layer-8 cleanup)
 //!
-//! Die DII/DSI/DynAny-Layer waren historisch reine Daten-Modelle
-//! ohne Wire-Pfad. Ab dem Layer-8-Cleanup sind sie produktiv
-//! verdrahtet:
+//! The DII/DSI/DynAny layers were historically pure data models
+//! without a wire path. As of the Layer-8 cleanup they are
+//! productively wired:
 //!
-//! * §11 DII — [`Request::encode_giop_request`] konvertiert eine
-//!   DII-`Request` (NVList aus In/InOut-Args) in ein
-//!   `corba_giop::Request`-Wire-Frame.
-//! * §12 DSI — [`DsiServant`]-Trait gibt Servants einen generischen
-//!   Server-Side-Dispatch-Pfad ohne kompilierten Skeleton.
+//! * §11 DII — [`Request::encode_giop_request`] converts a
+//!   DII `Request` (NVList of in/inout args) into a
+//!   `corba_giop::Request` wire frame.
+//! * §12 DSI — the [`DsiServant`] trait gives servants a generic
+//!   server-side dispatch path without a compiled skeleton.
 //! * §13 DynAny — [`DynAny::from_type_code`] / [`DynAny::to_cdr`]
-//!   walken einen `corba_ir::TypeCode` ueber CDR-`any`-Bytes.
+//!   walk a `corba_ir::TypeCode` over CDR `any` bytes.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -29,19 +29,19 @@ use alloc::vec::Vec;
 // §11 Dynamic Invocation Interface (DII)
 // ---------------------------------------------------------------------------
 
-/// Spec §11.1.2 — `NamedValue`-Struktur (Name + Value + Flags).
+/// Spec §11.1.2 — `NamedValue` structure (name + value + flags).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NamedValue {
-    /// Argument-Name (kann leer sein bei positionaler Argumentation).
+    /// Argument name (may be empty for positional arguments).
     pub name: String,
-    /// Value als CDR-encoded Bytes (Spec verwendet Any; wir nehmen
-    /// die serialisierte Form).
+    /// Value as CDR-encoded bytes (the spec uses Any; we take
+    /// the serialized form).
     pub value: Vec<u8>,
-    /// Spec §11.1.2 — Argument-Flags: `ARG_IN`/`ARG_OUT`/`ARG_INOUT`.
+    /// Spec §11.1.2 — argument flags: `ARG_IN`/`ARG_OUT`/`ARG_INOUT`.
     pub flags: ArgFlag,
 }
 
-/// Spec §11.1.2 — Argument-Direction-Flags.
+/// Spec §11.1.2 — argument direction flags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgFlag {
     /// `ARG_IN` (1).
@@ -53,7 +53,7 @@ pub enum ArgFlag {
 }
 
 impl ArgFlag {
-    /// Wire-Wert nach Spec §11.1.2.
+    /// Wire value per spec §11.1.2.
     #[must_use]
     pub const fn to_u8(self) -> u8 {
         match self {
@@ -63,10 +63,10 @@ impl ArgFlag {
         }
     }
 
-    /// Konvertierung vom Wire-Wert.
+    /// Conversion from the wire value.
     ///
     /// # Errors
-    /// `()` wenn Wert nicht 1/2/3.
+    /// `()` if the value is not 1/2/3.
     #[allow(clippy::result_unit_err)]
     pub const fn from_u8(v: u8) -> Result<Self, ()> {
         match v {
@@ -77,22 +77,22 @@ impl ArgFlag {
         }
     }
 
-    /// `true` wenn Argument zum Server uebertragen wird (In/InOut).
+    /// `true` if the argument is transmitted to the server (in/inout).
     #[must_use]
     pub const fn is_input(self) -> bool {
         matches!(self, Self::In | Self::InOut)
     }
 }
 
-/// Spec §11.1.3 — `NVList` (Sequence of NamedValue).
+/// Spec §11.1.3 — `NVList` (sequence of NamedValue).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NvList {
-    /// Eintraege.
+    /// Entries.
     pub entries: Vec<NamedValue>,
 }
 
 impl NvList {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -107,28 +107,28 @@ impl NvList {
         });
     }
 
-    /// Anzahl Eintraege (Spec `count()`).
+    /// Number of entries (spec `count()`).
     #[must_use]
     pub fn count(&self) -> usize {
         self.entries.len()
     }
 }
 
-/// Spec §11.2 — DII-`Request`.
+/// Spec §11.2 — DII `Request`.
 #[derive(Debug, Clone)]
 pub struct Request {
-    /// Operation-Name (z.B. `"getStatus"`).
+    /// Operation name (e.g. `"getStatus"`).
     pub operation: String,
-    /// Argument-Liste (in/out/inout).
+    /// Argument list (in/out/inout).
     pub arguments: NvList,
-    /// Return-Value (post-invoke).
+    /// Return value (post-invoke).
     pub result: Option<NamedValue>,
-    /// User-Exception-IDs die der Server raisen darf.
+    /// User exception IDs the server is allowed to raise.
     pub user_exceptions: Vec<String>,
 }
 
 impl Request {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(operation: impl Into<String>) -> Self {
         Self {
@@ -149,17 +149,17 @@ impl Request {
         self.arguments.add_value(name, Vec::new(), ArgFlag::Out);
     }
 
-    /// Encodiert den DII-Request als GIOP 1.2 `Request`-Body.
+    /// Encodes the DII request as a GIOP 1.2 `Request` body.
     ///
-    /// Spec §11.2 (DII) + §15.4.2 (GIOP-Wire). Die NVList::values mit
-    /// `ArgFlag::In`/`ArgFlag::InOut` werden als bereits-CDR-encodete
-    /// Bytes konkateniert (Caller liefert die einzelnen Argument-
-    /// Bytes spec-konform pre-encoded — analog zum `body`-Vertrag von
+    /// Spec §11.2 (DII) + §15.4.2 (GIOP wire). NVList values with
+    /// `ArgFlag::In`/`ArgFlag::InOut` are concatenated as already
+    /// CDR-encoded bytes (the caller supplies the individual argument
+    /// bytes pre-encoded per spec — analogous to the `body` contract of
     /// `corba_giop::Request`).
     ///
     /// # Errors
-    /// [`GiopRequestError::ObjectKeyTooLong`] wenn `object_key` die
-    /// `u32::MAX`-Grenze sprengt.
+    /// [`GiopRequestError::ObjectKeyTooLong`] if `object_key` exceeds
+    /// the `u32::MAX` limit.
     pub fn encode_giop_request(
         &self,
         request_id: u32,
@@ -168,7 +168,7 @@ impl Request {
         if u32::try_from(object_key.len()).is_err() {
             return Err(GiopRequestError::ObjectKeyTooLong);
         }
-        // Konkateniere alle Input-Args. Caller hat sie pre-encoded.
+        // Concatenate all input args. The caller pre-encoded them.
         let mut body: Vec<u8> = Vec::new();
         for nv in &self.arguments.entries {
             if nv.flags.is_input() {
@@ -186,12 +186,48 @@ impl Request {
         req.body = body;
         Ok(req)
     }
+
+    /// Spec §7.2 — DII **live invoke**: sends the in/inout args as a real
+    /// GIOP request through the [`zerodds_corba_rust::CorbaConnection`]
+    /// abstraction (transport-agnostic: IIOP/SSLIOP/UIOP) and stores the
+    /// NoException reply body as the return value in [`Request::result`].
+    /// Server-side `UserException`/`SystemException` come back as `Err`.
+    ///
+    /// Out/inout args with their own reply position require a
+    /// TypeCode-driven split of the reply body (DynAny walk) — see
+    /// `docs/corba-extra-mile-plan-2026-06-07.md` (DII refinement); the
+    /// canonical §7 case (in-args + return value) is fully wire-capable here.
+    ///
+    /// # Errors
+    /// Wire error or server-side exception (`CorbaException`).
+    pub fn invoke(
+        &mut self,
+        conn: &dyn zerodds_corba_rust::CorbaConnection,
+        target: &zerodds_corba_rust::ObjectReference,
+        endianness: zerodds_cdr::Endianness,
+    ) -> Result<(), zerodds_corba_rust::CorbaException> {
+        // Concatenate input args (the caller pre-encoded them, same logic
+        // as encode_giop_request).
+        let mut payload: Vec<u8> = Vec::new();
+        for nv in &self.arguments.entries {
+            if nv.flags.is_input() {
+                payload.extend_from_slice(&nv.value);
+            }
+        }
+        let (reply_body, _reply_e) = conn.invoke(target, &self.operation, endianness, &payload)?;
+        self.result = Some(NamedValue {
+            name: String::from("return"),
+            value: reply_body,
+            flags: ArgFlag::Out,
+        });
+        Ok(())
+    }
 }
 
-/// Fehler beim Encode eines DII-Requests in einen GIOP-Frame.
+/// Error while encoding a DII request into a GIOP frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GiopRequestError {
-    /// `object_key` ueberschreitet die `u32::MAX`-Grenze.
+    /// `object_key` exceeds the `u32::MAX` limit.
     ObjectKeyTooLong,
 }
 
@@ -210,21 +246,21 @@ impl std::error::Error for GiopRequestError {}
 // §12 Dynamic Skeleton Interface (DSI)
 // ---------------------------------------------------------------------------
 
-/// Spec §12.1 — `ServerRequest` (Server-Side Counterpart von DII-Request).
+/// Spec §12.1 — `ServerRequest` (server-side counterpart of DII Request).
 #[derive(Debug, Clone)]
 pub struct ServerRequest {
-    /// Operation-Name (vom Client gewaehlt).
+    /// Operation name (chosen by the client).
     pub operation: String,
-    /// Empfangene Argumente.
+    /// Received arguments.
     pub arguments: NvList,
-    /// Reply-Value (vom Servant gesetzt vor `set_result`).
+    /// Reply value (set by the servant before `set_result`).
     pub reply: Option<NamedValue>,
-    /// Exception-Reply (alternative zu `reply`).
+    /// Exception reply (alternative to `reply`).
     pub exception: Option<NamedValue>,
 }
 
 impl ServerRequest {
-    /// Konstruktor (typically vom DSI-Stub).
+    /// Constructor (typically from the DSI stub).
     #[must_use]
     pub fn new(operation: impl Into<String>, arguments: NvList) -> Self {
         Self {
@@ -253,9 +289,9 @@ impl ServerRequest {
         });
     }
 
-    /// Konkateniert In/InOut-Bytes zu einem flachen Body — wird vom
-    /// Default-`DsiServant`-Adapter benutzt um den DSI-Pfad auf den
-    /// klassischen `Servant::invoke(operation, body)`-Pfad zu mappen.
+    /// Concatenates in/inout bytes into a flat body — used by the
+    /// default `DsiServant` adapter to map the DSI path onto the
+    /// classic `Servant::invoke(operation, body)` path.
     #[must_use]
     pub fn input_body(&self) -> Vec<u8> {
         let mut body = Vec::new();
@@ -268,31 +304,66 @@ impl ServerRequest {
     }
 }
 
-/// Spec §12 — DSI-Servant-Trait.
+/// Spec §12 — DSI servant trait.
 ///
-/// Der klassische Servant-Trait (in `crates/corba-poa/src/servant.rs`)
-/// arbeitet operations-bytes-getrieben. DSI verlangt zusaetzlich einen
-/// generischen Pfad ueber `ServerRequest`. Implementierende Crates
-/// koennen diesen Trait neben `Servant` implementieren; die
-/// Default-Impl fasst die In/InOut-Args via [`ServerRequest::input_body`]
-/// zusammen und delegiert an einen Caller-gestellten Body-Handler.
+/// The classic servant trait (in `crates/corba-poa/src/servant.rs`)
+/// works operation-bytes-driven. DSI additionally requires a
+/// generic path via `ServerRequest`. Implementing crates
+/// can implement this trait alongside `Servant`; the
+/// default impl gathers the in/inout args via [`ServerRequest::input_body`]
+/// and delegates to a caller-provided body handler.
 ///
-/// Der Trait ist bewusst _orthogonal_ zu `corba-poa::Servant` gehalten,
-/// damit `corba-ccm` keine Abhaengigkeit zu `corba-poa` braucht (das
-/// wuerde einen Layer-Zyklus aufmachen — `corba-poa` ist Layer 8.16,
-/// `corba-ccm` ist Layer 8.3).
+/// The trait is deliberately kept _orthogonal_ to `corba-poa::Servant`
+/// so that `corba-ccm` does not need a dependency on `corba-poa` (which
+/// would create a layer cycle — `corba-poa` is layer 8.16,
+/// `corba-ccm` is layer 8.3).
 pub trait DsiServant {
-    /// Spec §12 — Generic-Dispatch. Implementierer entscheiden anhand
-    /// von `req.operation` + `req.arguments`, was passiert; Reply via
-    /// [`ServerRequest::set_result`] oder [`ServerRequest::set_exception`].
+    /// Spec §12 — generic dispatch. Implementers decide based on
+    /// `req.operation` + `req.arguments` what happens; reply via
+    /// [`ServerRequest::set_result`] or [`ServerRequest::set_exception`].
     fn dynamic_invoke(&self, req: &mut ServerRequest);
+}
+
+/// Spec §12 — **DSI server bind**: adapts a [`DsiServant`] to the
+/// generic `(operation, body, endianness) -> SkeletonResult` dispatcher
+/// signature (identical to the generated `dispatch_<iface>`). Directly
+/// registrable with a CorbaServer — the incoming GIOP request body is packed
+/// as a single in-arg into a [`ServerRequest`], `dynamic_invoke` is called, and
+/// `reply`/`exception` are mapped onto the [`SkeletonResult`].
+///
+/// The `exception` value MUST be the complete UserException reply body
+/// (`string repository_id` + members, continuous CDR) — the dynamic
+/// servant encodes it itself.
+#[must_use]
+pub fn dispatch_dsi(
+    servant: &dyn DsiServant,
+    operation: &str,
+    body: &[u8],
+    endianness: zerodds_cdr::Endianness,
+) -> zerodds_corba_rust::SkeletonResult {
+    use zerodds_corba_rust::{CorbaException, SkeletonResult};
+    let mut args = NvList::new();
+    args.add_value("body", body.to_vec(), ArgFlag::In);
+    let mut req = ServerRequest::new(operation, args);
+    servant.dynamic_invoke(&mut req);
+    if let Some(exc) = req.exception {
+        return SkeletonResult::Exception(CorbaException::UserException {
+            repository_id: exc.name,
+            body: exc.value,
+            endianness,
+        });
+    }
+    match req.reply {
+        Some(r) => SkeletonResult::Reply(r.value),
+        None => SkeletonResult::Reply(Vec::new()),
+    }
 }
 
 // ---------------------------------------------------------------------------
 // §13 Dynamic Management of Any Values (DynAny)
 // ---------------------------------------------------------------------------
 
-/// Spec §13.1 — `DynAny`-Type-Discriminator.
+/// Spec §13.1 — `DynAny` type discriminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DynAnyKind {
     /// `DynBoolean` etc.
@@ -318,21 +389,21 @@ pub enum DynAnyKind {
 /// Spec §13.2 — `DynAny`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DynAny {
-    /// Type-Kind (Spec §13.1 Discriminator).
+    /// Type kind (spec §13.1 discriminator).
     pub kind: DynAnyKind,
-    /// Repository-ID des Types (z.B. `IDL:demo/MyStruct:1.0`).
+    /// Repository ID of the type (e.g. `IDL:demo/MyStruct:1.0`).
     pub repository_id: String,
-    /// CDR-encoded Wert.
+    /// CDR-encoded value.
     pub value: Vec<u8>,
 }
 
-/// Fehler beim TypeCode-getriebenen DynAny-Walk.
+/// Error during the TypeCode-driven DynAny walk.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DynAnyError {
-    /// CDR-Decode-Fehler beim Walken eines primitiven Wertes.
+    /// CDR decode error while walking a primitive value.
     Decode(zerodds_cdr::DecodeError),
-    /// `tk_kind` wird vom DynAny-Walker noch nicht abgedeckt
-    /// (z.B. Custom-Marshal-ValueTypes).
+    /// `tk_kind` is not yet covered by the DynAny walker
+    /// (e.g. custom-marshal valuetypes).
     UnsupportedKind(zerodds_corba_ir::TcKind),
 }
 
@@ -355,7 +426,7 @@ impl From<zerodds_cdr::DecodeError> for DynAnyError {
 }
 
 impl DynAny {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(kind: DynAnyKind, repository_id: impl Into<String>, value: Vec<u8>) -> Self {
         Self {
@@ -365,7 +436,7 @@ impl DynAny {
         }
     }
 
-    /// Spec §13.2 — `equal(other)` mit Typ + Wert-Vergleich.
+    /// Spec §13.2 — `equal(other)` with type + value comparison.
     #[must_use]
     pub fn equal(&self, other: &Self) -> bool {
         self == other
@@ -387,26 +458,26 @@ impl DynAny {
         self.value.clone()
     }
 
-    /// Spec §13.1 — TypeCode-getriebene `any`-Inspection.
+    /// Spec §13.1 — TypeCode-driven `any` inspection.
     ///
-    /// Walked den `TypeCode` ueber das `raw`-Buffer (CDR-Bytes der
-    /// `any`-Payload, Endianness-Marker im Stream). Fuer primitive
-    /// Typen (`Long` / `ULong` / `Boolean` / ...) wird der Wert geprueft
-    /// (Decode-Fehler werden propagiert); fuer komplexe Typen (`Struct`/
-    /// `Sequence`/`Array`) bleiben die rohen Bytes als opake Payload
-    /// erhalten — der Caller kann die Sub-DynAny via Re-Eintritt mit
-    /// dem Member-TypeCode auswerten.
+    /// Walks the `TypeCode` over the `raw` buffer (CDR bytes of the
+    /// `any` payload, endianness marker in the stream). For primitive
+    /// types (`Long` / `ULong` / `Boolean` / ...) the value is checked
+    /// (decode errors are propagated); for complex types (`Struct`/
+    /// `Sequence`/`Array`) the raw bytes are preserved as an opaque payload
+    /// — the caller can evaluate the sub-DynAny via re-entry with
+    /// the member TypeCode.
     ///
     /// # Errors
-    /// [`DynAnyError::Decode`] bei CDR-Inkonsistenzen,
-    /// [`DynAnyError::UnsupportedKind`] fuer Custom-Marshaling-Pfade.
+    /// [`DynAnyError::Decode`] on CDR inconsistencies,
+    /// [`DynAnyError::UnsupportedKind`] for custom-marshaling paths.
     pub fn from_type_code(
         tc: &zerodds_corba_ir::TypeCode,
         raw: &[u8],
     ) -> Result<Self, DynAnyError> {
         let kind = map_kind(tc.kind);
         let repository_id = tc.id().unwrap_or("").to_string();
-        // Sanity-Walk fuer primitive Typen (Decoding-Fehler frueh).
+        // Sanity walk for primitive types (catch decoding errors early).
         if matches!(kind, DynAnyKind::Primitive) {
             let mut r = zerodds_cdr::BufferReader::new(raw, zerodds_cdr::Endianness::Little);
             walk_primitive(&mut r, tc.kind)?;
@@ -414,16 +485,16 @@ impl DynAny {
         Ok(Self::new(kind, repository_id, raw.to_vec()))
     }
 
-    /// Projiziert die DynAny zurueck auf CDR-`any`-Bytes (rohe Payload,
-    /// kein Type-Tag-Prefix — Caller ist fuer `tk_kind`-Encoding
-    /// zustaendig wenn ein `Any`-Wrapper noetig ist).
+    /// Projects the DynAny back onto CDR `any` bytes (raw payload,
+    /// no type-tag prefix — the caller is responsible for `tk_kind`
+    /// encoding if an `Any` wrapper is needed).
     #[must_use]
     pub fn to_cdr(&self) -> Vec<u8> {
         self.value.clone()
     }
 }
 
-/// Mapping `TcKind` → `DynAnyKind` (Spec §13.1 Tab 13-1).
+/// Mapping `TcKind` → `DynAnyKind` (spec §13.1 Table 13-1).
 fn map_kind(k: zerodds_corba_ir::TcKind) -> DynAnyKind {
     use zerodds_corba_ir::TcKind as K;
     match k {
@@ -461,8 +532,8 @@ fn map_kind(k: zerodds_corba_ir::TcKind) -> DynAnyKind {
     }
 }
 
-/// Walk-Funktion fuer primitive TypeCodes — verifiziert dass der CDR-
-/// Buffer mindestens das primitive Layout aufnehmen kann.
+/// Walk function for primitive TypeCodes — verifies that the CDR
+/// buffer can hold at least the primitive layout.
 fn walk_primitive(
     r: &mut zerodds_cdr::BufferReader<'_>,
     k: zerodds_corba_ir::TcKind,
@@ -492,7 +563,7 @@ fn walk_primitive(
             Ok(())
         }
         // LongDouble + TypeCode + Principal + Any: format-specific —
-        // wir akzeptieren die rohen Bytes ohne tieferen Walk.
+        // we accept the raw bytes without a deeper walk.
         _ => Ok(()),
     }
 }
@@ -547,7 +618,7 @@ mod tests {
         let mut r = Request::new("ping");
         r.add_in_arg("a", alloc::vec![0xde, 0xad]);
         r.add_in_arg("b", alloc::vec![0xbe, 0xef]);
-        // OUT-Arg darf nicht in den Body wandern.
+        // The OUT arg must not go into the body.
         r.add_out_arg("c");
         let req = r.encode_giop_request(42, &[0x10, 0x20]).expect("encode ok");
         assert_eq!(req.request_id, 42);
@@ -570,7 +641,7 @@ mod tests {
 
     #[test]
     fn dii_encode_giop_request_round_trip_via_giop_codec() {
-        // DII-Pfad → GIOP-1.2 Wire-Frame → decode → Felder identisch.
+        // DII path → GIOP 1.2 wire frame → decode → fields identical.
         let mut r = Request::new("getStatus");
         r.add_in_arg("client_id", alloc::vec![0x01, 0x02, 0x03, 0x04]);
         let req = r.encode_giop_request(7, &[0xab, 0xcd]).expect("encode ok");
@@ -679,7 +750,7 @@ mod tests {
     #[test]
     fn dyn_any_from_type_code_long_round_trip() {
         let tc = zerodds_corba_ir::TypeCode::primitive(zerodds_corba_ir::TcKind::Long);
-        // Little-endian-Encoding eines `long`-Wertes 0x12345678.
+        // Little-endian encoding of a `long` value 0x12345678.
         let raw = alloc::vec![0x78, 0x56, 0x34, 0x12];
         let dyn_any = DynAny::from_type_code(&tc, &raw).expect("walk ok");
         assert_eq!(dyn_any.kind, DynAnyKind::Primitive);
@@ -689,7 +760,7 @@ mod tests {
     #[test]
     fn dyn_any_from_type_code_long_rejects_truncated_buffer() {
         let tc = zerodds_corba_ir::TypeCode::primitive(zerodds_corba_ir::TcKind::Long);
-        // Nur 3 bytes — long verlangt 4.
+        // Only 3 bytes — long requires 4.
         let raw = alloc::vec![0x01, 0x02, 0x03];
         let err = DynAny::from_type_code(&tc, &raw).expect_err("must fail");
         assert!(matches!(err, DynAnyError::Decode(_)));
@@ -701,7 +772,7 @@ mod tests {
             zerodds_corba_ir::TypeCode::primitive(zerodds_corba_ir::TcKind::Long),
             10,
         );
-        // Komplexer Typ → keine primitive-Validation, raw bytes preserved.
+        // Complex type → no primitive validation, raw bytes preserved.
         let raw = alloc::vec![0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa];
         let dyn_any = DynAny::from_type_code(&tc, &raw).expect("walk ok");
         assert_eq!(dyn_any.kind, DynAnyKind::Sequence);

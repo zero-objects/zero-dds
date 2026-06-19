@@ -12,18 +12,18 @@
 /// HISTORY-QoS-Kind aus DDS PSM (Spec OMG DDS 1.4 §2.2.3.18).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistoryQosKind {
-    /// `KEEP_LAST` — nur die letzten N Samples pro Instance.
+    /// `KEEP_LAST` — only the last N samples per instance.
     KeepLast,
-    /// `KEEP_ALL` — alle Samples bis Resource-Limits zwingen.
+    /// `KEEP_ALL` — all samples until resource limits force otherwise.
     KeepAll,
 }
 
-/// Validator fuer DataReader-HISTORY-QoS gegen §9.3.4.4-Anforderungen.
+/// Validator for the DataReader HISTORY QoS against the §9.3.4.4 requirements.
 #[derive(Debug, Clone, Copy)]
 pub struct HistoryQosValidator {
-    /// Mindest-HISTORY-DEPTH, die der Gateway-Configurator als
-    /// "ausreichend fuer den gewuenschten Time-Span" verlangt
-    /// (Spec laesst die Zahl dem Implementer; default 1024).
+    /// Minimum HISTORY DEPTH that the gateway configurator requires as
+    /// "sufficient for the desired time span"
+    /// (the spec leaves the number to the implementer; default 1024).
     pub minimum_depth: u32,
 }
 
@@ -35,26 +35,26 @@ impl Default for HistoryQosValidator {
     }
 }
 
-/// Spec-Verletzung — Was an der HISTORY-QoS nicht §9.3.4.4-konform ist.
+/// Spec violation — what about the HISTORY QoS is not §9.3.4.4-conformant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistoryQosViolation {
-    /// `KEEP_LAST` mit `depth < minimum_depth`.
+    /// `KEEP_LAST` with `depth < minimum_depth`.
     KeepLastDepthTooSmall {
-        /// Konfigurierte depth.
+        /// Configured depth.
         depth: u32,
-        /// Vom Validator geforderter Mindestwert.
+        /// Minimum value required by the validator.
         minimum: u32,
     },
 }
 
 impl HistoryQosValidator {
-    /// Validiert die HISTORY-QoS-Konfiguration eines DataReaders gegen
+    /// Validates the HISTORY QoS configuration of a DataReader against
     /// Spec §9.3.4.4.
     ///
     /// # Errors
-    /// `HistoryQosViolation::KeepLastDepthTooSmall` wenn `kind ==
-    /// KeepLast` und `depth < minimum_depth`. `KeepAll` ist immer
-    /// gueltig (Spec laesst Resource-Limits dem Implementer).
+    /// `HistoryQosViolation::KeepLastDepthTooSmall` if `kind ==
+    /// KeepLast` and `depth < minimum_depth`. `KeepAll` is always
+    /// valid (the spec leaves resource limits to the implementer).
     pub fn validate(&self, kind: HistoryQosKind, depth: u32) -> Result<(), HistoryQosViolation> {
         match kind {
             HistoryQosKind::KeepAll => Ok(()),

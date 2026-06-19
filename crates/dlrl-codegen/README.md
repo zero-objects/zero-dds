@@ -1,6 +1,6 @@
 # `zerodds-dlrl-codegen`
 
-DLRL Code-Gen-Helpers: emittiert Home/Object-Boilerplate fuer cpp/csharp/java/ts
+DLRL code-gen helpers: emits home/object boilerplate for cpp/csharp/java/ts
 
 Part of [**ZeroDDS**](../../README.md). Safety classification: **STANDARD**.
 

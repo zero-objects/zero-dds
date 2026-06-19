@@ -1,31 +1,31 @@
 # `zerodds-lint`
 
-> **Internal Tooling — nicht auf crates.io.**
+> **Internal tooling — not on crates.io.**
 
-Custom-Lints und Projekt-Regeln für ZeroDDS, AST-basiert auf stable Rust (kein Nightly, kein dylint). Wird in CI und im pre-commit-Hook ausgeführt; erzwingt **0 errors / 0 warnings workspace-weit** als RC1-DoD-Gate.
+Custom lints and project rules for ZeroDDS, AST-based on stable Rust (no Nightly, no dylint). Runs in CI and the pre-commit hook; enforces **0 errors / 0 warnings workspace-wide** as the RC1 DoD gate.
 
 Safety classification: **TOOLING**. Part of [**ZeroDDS**](../../README.md).
 
-## Lints (7 aktiv)
+## Lints (7 active)
 
-| Lint | Scope | Zweck |
+| Lint | Scope | Purpose |
 |------|-------|-------|
-| `dds_require_safety_comment` | File | Erzwingt Safety-Kommentar bei jeder `unsafe`-Verwendung. |
-| `dds_no_dyn_in_safe` | File | Verbietet `dyn Trait` in Safe-Class-Crates (Vtable-Indirektion). |
-| `dds_no_panic_in_safe` | File | Verbietet `panic!`/`unreachable!`/`todo!`/`unimplemented!` in Safe-Class. |
-| `dds_no_alloc_in_hot_path` | File | Verbietet `Vec::new`/`Box::new`/`String::from` in `// zerodds-lint: hot-path`-Funktionen. |
-| `dds_no_realloc_in_hot_path` | File | Verbietet `vec.push`/`vec.extend` in Hot-Path (Reallocations). |
-| `dds_bounded_recursion` | File | Erzwingt `// zerodds-lint: recursion-depth N` Annotation an rekursiven Funktionen. |
-| `dds_safety_classification_present` | Crate | Erzwingt `Safety classification: <KLASSE>` im `lib.rs`-Crate-Doc. |
+| `dds_require_safety_comment` | File | Enforces a safety comment on every `unsafe` use. |
+| `dds_no_dyn_in_safe` | File | Forbids `dyn Trait` in safe-class crates (vtable indirection). |
+| `dds_no_panic_in_safe` | File | Forbids `panic!`/`unreachable!`/`todo!`/`unimplemented!` in safe-class. |
+| `dds_no_alloc_in_hot_path` | File | Forbids `Vec::new`/`Box::new`/`String::from` in `// zerodds-lint: hot-path` functions. |
+| `dds_no_realloc_in_hot_path` | File | Forbids `vec.push`/`vec.extend` in the hot path (reallocations). |
+| `dds_bounded_recursion` | File | Enforces a `// zerodds-lint: recursion-depth N` annotation on recursive functions. |
+| `dds_safety_classification_present` | Crate | Enforces `Safety classification: <CLASS>` in the `lib.rs` crate doc. |
 
-Vollständige Spec der Lints: `docs/architecture/04_safety_by_architecture.md §3.4`.
+Full spec of the lints: `docs/architecture/04_safety_by_architecture.md §3.4`.
 
 ## CLI
 
 ```bash
-cargo run -p zerodds-lint -- check                 # Workspace-weit
-cargo run -p zerodds-lint -- check --root <path>   # Custom-Root
-cargo run -p zerodds-lint -- check --fail-on-warning   # Strict-Mode
+cargo run -p zerodds-lint -- check                 # workspace-wide
+cargo run -p zerodds-lint -- check --root <path>   # custom root
+cargo run -p zerodds-lint -- check --fail-on-warning   # strict mode
 ```
 
 ## Annotations (in production code)
@@ -43,16 +43,16 @@ fn parse_module(module: &Module) { ... }
 
 ## CI-Integration
 
-- GitLab CI: `.gitlab-ci.yml::zerodds-lint` job läuft `cargo run -p zerodds-lint -- check`.
-- Pre-commit hook: `scripts/pre-commit.sh` ruft denselben Command vor jedem `git commit`.
+- GitLab CI: the `.gitlab-ci.yml::zerodds-lint` job runs `cargo run -p zerodds-lint -- check`.
+- Pre-commit hook: `scripts/pre-commit.sh` invokes the same command before every `git commit`.
 
 ## Tests
 
 ```bash
-cargo test -p zerodds-lint    # 67 Unit-Tests
+cargo test -p zerodds-lint    # 67 unit tests
 ```
 
 ## See also
 
-- [`docs/architecture/04_safety_by_architecture.md §3.4`](../../docs/architecture/04_safety_by_architecture.md) — Lint-Spezifikationen.
-- [`docs/architecture/02_architecture.md`](../../docs/architecture/02_architecture.md) — Schichten-Architektur.
+- [`docs/architecture/04_safety_by_architecture.md §3.4`](../../docs/architecture/04_safety_by_architecture.md) — lint specifications.
+- [`docs/architecture/02_architecture.md`](../../docs/architecture/02_architecture.md) — layered architecture.

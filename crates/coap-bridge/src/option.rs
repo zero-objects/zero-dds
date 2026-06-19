@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CoAP Option Model — RFC 7252 §3.1, §5.10 + RFC 7641 §2.
+//! CoAP option model — RFC 7252 §3.1, §5.10 + RFC 7641 §2.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Option-Number-Registry — RFC 7252 §12.2 + RFC 7641 §2.
+/// Option-number registry — RFC 7252 §12.2 + RFC 7641 §2.
 ///
-/// Modelliert ueber `u16` (Spec: option numbers up to 16-bit theoretical)
-/// — wir geben fuer die Standard-Numbers benannte Konstanten.
+/// Modeled as `u16` (spec: option numbers up to 16-bit theoretical)
+/// — we provide named constants for the standard numbers.
 pub type OptionNumber = u16;
 
-/// Standard-Option-Numbers aus RFC 7252 §5.10 + RFC 7641 §2.
+/// Standard option numbers from RFC 7252 §5.10 + RFC 7641 §2.
 pub mod numbers {
     /// `If-Match` (RFC 7252 §5.10.8.1).
     pub const IF_MATCH: u16 = 1;
@@ -68,7 +68,7 @@ pub enum OptionValue {
 }
 
 impl OptionValue {
-    /// Liefert die wire-Bytes (RFC 7252 §3.2).
+    /// Returns the wire bytes (RFC 7252 §3.2).
     #[must_use]
     pub fn to_wire_bytes(&self) -> Vec<u8> {
         match self {
@@ -97,7 +97,7 @@ fn uint_to_minimal_bytes(v: u64) -> Vec<u8> {
 /// prepared to process values with leading zero bytes").
 ///
 /// # Errors
-/// Liefert `None` wenn `bytes.len() > 8` (uint kann maximal `u64` sein).
+/// Returns `None` if `bytes.len() > 8` (a uint can be at most `u64`).
 #[must_use]
 pub fn uint_from_bytes(bytes: &[u8]) -> Option<u64> {
     if bytes.len() > 8 {
@@ -113,39 +113,39 @@ pub fn uint_from_bytes(bytes: &[u8]) -> Option<u64> {
 /// CoAP Option (Number + Value).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoapOption {
-    /// Option-Number (RFC 7252 §3.1).
+    /// Option number (RFC 7252 §3.1).
     pub number: OptionNumber,
-    /// Option-Value.
+    /// Option value.
     pub value: OptionValue,
 }
 
 impl CoapOption {
-    /// Konstruktor mit Number + Value.
+    /// Constructor with number + value.
     #[must_use]
     pub const fn new(number: OptionNumber, value: OptionValue) -> Self {
         Self { number, value }
     }
 
-    /// Convenience-Konstruktor fuer `Uri-Path`-Option (RFC 7252 §5.10.1).
+    /// Convenience constructor for the `Uri-Path` option (RFC 7252 §5.10.1).
     #[must_use]
     pub fn uri_path(segment: impl Into<String>) -> Self {
         Self::new(numbers::URI_PATH, OptionValue::String(segment.into()))
     }
 
-    /// Convenience fuer `Observe`-Option (RFC 7641 §2). Value 0 =
+    /// Convenience for the `Observe` option (RFC 7641 §2). Value 0 =
     /// "register", 1 = "deregister", 2-0xFFFFFF = sequence number.
     #[must_use]
     pub const fn observe(value: u32) -> Self {
         Self::new(numbers::OBSERVE, OptionValue::Uint(value as u64))
     }
 
-    /// Convenience fuer `Content-Format` (RFC 7252 §5.10.3).
+    /// Convenience for `Content-Format` (RFC 7252 §5.10.3).
     #[must_use]
     pub const fn content_format(format: u16) -> Self {
         Self::new(numbers::CONTENT_FORMAT, OptionValue::Uint(format as u64))
     }
 
-    /// Convenience fuer `Block1` (RFC 7959 §2.1) als Opaque-encoded value.
+    /// Convenience for `Block1` (RFC 7959 §2.1) as an opaque-encoded value.
     #[must_use]
     pub fn block1(num: u32, more: bool, szx: u8) -> Self {
         let v = crate::blockwise::BlockValue { num, more, szx };
@@ -153,7 +153,7 @@ impl CoapOption {
         Self::new(numbers::BLOCK1, OptionValue::Opaque(bytes))
     }
 
-    /// Convenience fuer `Block2` (RFC 7959 §2.1) als Opaque-encoded value.
+    /// Convenience for `Block2` (RFC 7959 §2.1) as an opaque-encoded value.
     #[must_use]
     pub fn block2(num: u32, more: bool, szx: u8) -> Self {
         let v = crate::blockwise::BlockValue { num, more, szx };
@@ -161,7 +161,7 @@ impl CoapOption {
         Self::new(numbers::BLOCK2, OptionValue::Opaque(bytes))
     }
 
-    /// Convenience fuer `Size2` (RFC 7959 §4).
+    /// Convenience for `Size2` (RFC 7959 §4).
     #[must_use]
     pub const fn size2(size: u64) -> Self {
         Self::new(numbers::SIZE2, OptionValue::Uint(size))

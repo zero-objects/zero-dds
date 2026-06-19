@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CoAP Caching + Proxying nach RFC 7252 §2.3 / §5.6 / §5.7 +
-//! HTTP-Cross-Proto-Mapping nach RFC 7252 §10.
+//! CoAP caching + proxying per RFC 7252 §2.3 / §5.6 / §5.7 +
+//! HTTP cross-protocol mapping per RFC 7252 §10.
 //!
-//! Wir liefern hier den Configuration-Layer + State-Tracking. Die
-//! tatsaechliche HTTP-Translation ist Caller-seitig (z.B. via
-//! `crates/grpc-bridge/src/server.rs` als HTTP-Adapter).
+//! Here we provide the configuration layer + state tracking. The
+//! actual HTTP translation is on the caller side (e.g. via
+//! `crates/grpc-bridge/src/server.rs` as an HTTP adapter).
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -20,10 +20,10 @@ use crate::message::CoapMessage;
 // §5.6 Caching — Freshness + Validation
 // ---------------------------------------------------------------------------
 
-/// Spec §5.6.1 — Default Max-Age = 60 Sekunden.
+/// Spec §5.6.1 — Default Max-Age = 60 seconds.
 pub const DEFAULT_MAX_AGE: Duration = Duration::from_secs(60);
 
-/// Cache-Entry: Response + Freshness-Lifetime + ETag.
+/// Cache entry: response + freshness lifetime + ETag.
 struct CacheEntry {
     response: CoapMessage,
     inserted: Instant,
@@ -40,12 +40,12 @@ impl core::fmt::Debug for CacheEntry {
     }
 }
 
-/// CoAP Response-Cache nach RFC 7252 §5.6.
+/// CoAP response cache per RFC 7252 §5.6.
 #[derive(Default)]
 pub struct CoapCache {
-    /// Cache-Key = (Method-Code, full Request-Path) → CacheEntry.
+    /// Cache key = (method code, full request path) → CacheEntry.
     entries: Mutex<BTreeMap<Vec<u8>, CacheEntry>>,
-    /// Spec §5.6.x — DoS-Cap.
+    /// Spec §5.6.x — DoS cap.
     pub max_entries: usize,
 }
 
@@ -59,25 +59,25 @@ impl core::fmt::Debug for CoapCache {
     }
 }
 
-/// Cache-Lookup-Result.
+/// Cache lookup result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CacheLookup {
-    /// Kein Eintrag.
+    /// No entry.
     Miss,
-    /// Frischer Eintrag — direkt als Response verwendbar.
+    /// Fresh entry — usable directly as a response.
     Fresh(CoapMessage),
-    /// Eintrag vorhanden aber stale — Validation via ETag noetig.
+    /// Entry present but stale — validation via ETag required.
     Stale {
-        /// Cached Response (kann reused werden falls Server 2.03 Valid
-        /// liefert).
+        /// Cached response (can be reused if the server returns 2.03
+        /// Valid).
         response: CoapMessage,
-        /// ETag fuer If-None-Match-Header in Validation-Request.
+        /// ETag for the If-None-Match header in the validation request.
         etag: Vec<u8>,
     },
 }
 
 impl CoapCache {
-    /// Konstruktor mit DoS-Cap.
+    /// Constructor with DoS cap.
     #[must_use]
     pub fn new(max_entries: usize) -> Self {
         Self {
@@ -96,7 +96,7 @@ impl CoapCache {
     ) {
         if let Ok(mut g) = self.entries.lock() {
             if g.len() >= self.max_entries {
-                // FIFO-Eviction wenn Cap erreicht.
+                // FIFO eviction when the cap is reached.
                 if let Some(first) = g.keys().next().cloned() {
                     g.remove(&first);
                 }
@@ -113,7 +113,7 @@ impl CoapCache {
         }
     }
 
-    /// Spec §5.6.1 / §5.6.2 — Lookup mit Freshness-Check.
+    /// Spec §5.6.1 / §5.6.2 — Lookup with freshness check.
     pub fn lookup(&self, key: &[u8]) -> CacheLookup {
         let g = match self.entries.lock() {
             Ok(g) => g,
@@ -130,17 +130,17 @@ impl CoapCache {
                 etag,
             }
         } else {
-            // Stale ohne ETag → cannot validate, treat as Miss.
+            // Stale without ETag → cannot validate, treat as Miss.
             CacheLookup::Miss
         }
     }
 
-    /// Anzahl Eintraege.
+    /// Number of entries.
     pub fn len(&self) -> usize {
         self.entries.lock().map_or(0, |g| g.len())
     }
 
-    /// `true` bei leerem Cache.
+    /// `true` when the cache is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -161,25 +161,25 @@ impl CoapCache {
 // §5.7 Proxying — Forward-Proxy-Configuration
 // ---------------------------------------------------------------------------
 
-/// Spec §5.7.2 — Proxy-Mode.
+/// Spec §5.7.2 — Proxy mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProxyMode {
-    /// `Forward-Proxy` — Client referenziert Proxy via `Proxy-Uri`-Option.
+    /// `Forward-Proxy` — client references the proxy via the `Proxy-Uri` option.
     Forward,
-    /// `Reverse-Proxy` — Proxy ist transparent fuer den Client.
+    /// `Reverse-Proxy` — the proxy is transparent to the client.
     Reverse,
 }
 
-/// Spec §5.7.x — Proxy-Konfiguration.
+/// Spec §5.7.x — Proxy configuration.
 #[derive(Debug, Clone)]
 pub struct ProxyConfig {
-    /// Modus (Forward/Reverse).
+    /// Mode (Forward/Reverse).
     pub mode: ProxyMode,
-    /// `true` wenn der Proxy CoAP↔CoAP forwardet.
+    /// `true` when the proxy forwards CoAP↔CoAP.
     pub coap_to_coap: bool,
-    /// `true` wenn der Proxy CoAP↔HTTP translatiert (Spec §10).
+    /// `true` when the proxy translates CoAP↔HTTP (Spec §10).
     pub http_translation: bool,
-    /// Maximaler Hop-Count (Spec §5.7.1: Schutz gegen Forwarding-Loops).
+    /// Maximum hop count (Spec §5.7.1: protection against forwarding loops).
     pub max_hops: u8,
 }
 
@@ -189,20 +189,20 @@ impl Default for ProxyConfig {
             mode: ProxyMode::Forward,
             coap_to_coap: true,
             http_translation: false,
-            // Spec §5.7.1 — empfohlen ≤ 16 Hops.
+            // Spec §5.7.1 — recommended ≤ 16 hops.
             max_hops: 16,
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// §10 HTTP-Cross-Proto-Mapping
+// §10 HTTP cross-protocol mapping
 // ---------------------------------------------------------------------------
 
-/// Spec §10.1 — HTTP-Status-Codes auf CoAP-Codes mappen.
+/// Spec §10.1 — Map HTTP status codes onto CoAP codes.
 ///
-/// Liefert das CoAP-Code-Tupel `(class, detail)` fuer HTTP-Status-Codes
-/// nach §10.1 Table 8.
+/// Returns the CoAP code tuple `(class, detail)` for HTTP status codes
+/// per §10.1 Table 8.
 #[must_use]
 pub fn http_status_to_coap(http_status: u16) -> Option<(u8, u8)> {
     match http_status {
@@ -227,7 +227,7 @@ pub fn http_status_to_coap(http_status: u16) -> Option<(u8, u8)> {
     }
 }
 
-/// Spec §10.1 — Inverses Mapping (CoAP-Code auf HTTP-Status).
+/// Spec §10.1 — Inverse mapping (CoAP code to HTTP status).
 #[must_use]
 pub fn coap_to_http_status(class: u8, detail: u8) -> Option<u16> {
     match (class, detail) {
@@ -252,11 +252,11 @@ pub fn coap_to_http_status(class: u8, detail: u8) -> Option<u16> {
     }
 }
 
-/// Spec §10.2 — HTTP-Method auf CoAP-Method.
+/// Spec §10.2 — HTTP method to CoAP method.
 ///
-/// Liefert `(class=0, detail)` fuer GET/POST/PUT/DELETE; `None` fuer
-/// HTTP-spezifische Methods (HEAD/OPTIONS/PATCH/etc.) — die werden
-/// vom Proxy abgewiesen.
+/// Returns `(class=0, detail)` for GET/POST/PUT/DELETE; `None` for
+/// HTTP-specific methods (HEAD/OPTIONS/PATCH/etc.) — these are
+/// rejected by the proxy.
 #[must_use]
 pub fn http_method_to_coap(method: &str) -> Option<u8> {
     match method.to_uppercase().as_str() {
@@ -268,7 +268,7 @@ pub fn http_method_to_coap(method: &str) -> Option<u8> {
     }
 }
 
-/// Spec §10.2 — Inverses Mapping (CoAP-Method auf HTTP).
+/// Spec §10.2 — Inverse mapping (CoAP method to HTTP).
 #[must_use]
 pub fn coap_method_to_http(method_detail: u8) -> Option<&'static str> {
     match method_detail {

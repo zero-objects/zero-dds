@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! E2E-Test fuer `zerodds-grpc-bridged` §7 Security-Wireup.
+//! E2E test for the `zerodds-grpc-bridged` §7 security wireup.
 //!
-//! Deckt:
-//! * §7.1 TLS — `build_grpc_tls_config` mit ALPN `h2`.
-//! * §7.2 Auth — Bearer-Token via HTTP/2-`authorization`-Metadata.
-//! * §7.3 Topic-ACL — Path → Topic-Mapping mit Read/Write-Check.
+//! Covers:
+//! * §7.1 TLS — `build_grpc_tls_config` with ALPN `h2`.
+//! * §7.2 Auth — bearer token via the HTTP/2 `authorization` metadata.
+//! * §7.3 Topic ACL — path → topic mapping with a read/write check.
 
 #![cfg(feature = "std")]
 #![allow(
@@ -60,7 +60,7 @@ fn build_grpc_tls_config_sets_alpn_h2() {
     let c = write_temp("grpc_cert.pem", cert.as_bytes());
     let k = write_temp("grpc_key.pem", key.as_bytes());
     let cfg: Arc<rustls::ServerConfig> = build_grpc_tls_config(c, k, None).expect("build cfg");
-    // ALPN-Liste muss exakt [b"h2"] sein.
+    // The ALPN list must be exactly [b"h2"].
     assert_eq!(cfg.alpn_protocols.len(), 1);
     assert_eq!(cfg.alpn_protocols[0], b"h2");
 }

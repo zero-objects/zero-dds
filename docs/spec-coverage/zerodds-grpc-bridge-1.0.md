@@ -2,6 +2,10 @@
 
 **Quelle:** `docs/specs/zerodds-grpc-bridge-1.0.md`
 
+Implementation:
+
+- `crates/grpc-bridge/` — DDS↔gRPC-Bridge.
+
 ## §1 Conformance-Levels
 
 ### §1 L1-L6 Conformance-Matrix
@@ -84,11 +88,28 @@ authorization; Streaming pro Sample.
 
 **Repo:** `crates/grpc-bridge/src/server.rs`,
 `crates/grpc-bridge/src/metadata.rs`,
-`crates/grpc-bridge/src/timeout.rs`.
+`crates/grpc-bridge/src/timeout.rs`. **L2-DDS-Anbindung** (Feature
+`dds-runtime`): `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs`
+(`mod bridge_dds`) — `Publish` schreibt die `Sample.payload` via
+`DcpsRuntime::write_user_sample_borrowed` auf einen echten DataWriter,
+`Subscribe` drained den DataReader-Channel (`UserSample::Alive`). Ersetzt
+den vormaligen `FUTURE (L2)`-Echo-Stub.
 
-**Tests:** `crates/grpc-bridge/tests/bridge_e2e.rs::http2_roundtrip_publish_topic`.
+**Tests:** `crates/grpc-bridge/tests/bridge_e2e.rs::http2_roundtrip_publish_topic`;
+`crates/grpc-bridge/tests/dds_bridge_e2e.rs::dds_publish_then_subscribe_roundtrip`
+(gRPC Publish → DataWriter → Loopback-DataReader → gRPC Subscribe,
+byte-gleiche Payload durch echtes DDS).
 
 **Status:** done
+
+> **F2b — Java-Multi-Process-Bridge:** Der pure-Java gRPC-Client
+> `org.zerodds.bridge.GrpcBridgeClient` (`crates/java-omgdds/java`)
+> spricht dieselbe gRPC-Wire (minimaler raw-HTTP/2-Framer über Socket,
+> da der Daemon prior-knowledge-h2c ist). Java↔Rust-e2e
+> `GrpcBridgeClientTest` + `crates/java-omgdds/run_grpc_bridge_e2e.sh`
+> (3/3 grün): Java publisht über gRPC → DDS → Java subscribt zurück.
+> Realisiert den listener-callbacks §7.3 „gRPC-Bridge-Pfad (pure-Java
+> per Vendor-Extension)".
 
 ### §4.4 Length-Prefix-Wrapper
 
@@ -396,4 +417,4 @@ Wire-Protocol-Change (HTTP/3 + gRPC-over-QUIC).
 
 Test-Lauf: `cargo test -p zerodds-grpc-bridge` — Tests grün, 0 failed.
 
-Offene Punkte und Decision-Records: siehe `zerodds-grpc-bridge-1.0.open.md`.
+Keine offenen Punkte oder Decision-Records — alle Items `done` / `n/a (informative)`.

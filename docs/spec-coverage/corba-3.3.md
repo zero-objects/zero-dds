@@ -1,16 +1,11 @@
 # OMG CORBA 3.3 — Spec-Coverage (WP CORBA-Coexistence)
 
 **Quelle:** OMG CORBA 3.3 — drei Bände als formal-Dokumente:
-* Part 1 (Interfaces, 532 S.) — `formal/12-11-12`,
-  `docs/standards/cache/omg/corba-3.3-part1.pdf`
-* Part 2 (Interoperability, 249 S.) — `formal/12-11-14`,
-  `docs/standards/cache/omg/corba-3.3-part2.pdf`
-* Part 3 (Component Model, 380 S.) — `formal/12-11-16`,
-  `docs/standards/cache/omg/corba-3.3-part3.pdf`
+* Part 1 (Interfaces, 532 S.) — [`formal/12-11-12`](https://www.omg.org/spec/CORBA/3.3/Interfaces/PDF)
+* Part 2 (Interoperability, 249 S.) — [`formal/12-11-14`](https://www.omg.org/spec/CORBA/3.3/Interoperability/PDF)
+* Part 3 (Component Model, 380 S.) — [`formal/12-11-16`](https://www.omg.org/spec/CORBA/3.3/Components/PDF)
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`.
-
-**Kontext.** ZeroDDS deckt mit `crates/dcps/`, `crates/rpc/` und der
+**Kontext.** ZeroDDS deckt mit dem DDS-Kern und der
 `idl-cpp`/`idl-csharp`/`idl-java`-Codegen-Familie das DDS-PSM
 vollständig ab. Für die Migration von Bestands-CORBA-Anwendungen in
 der Finanzindustrie soll ZeroDDS als **Drop-in-Backend** auftretbar
@@ -19,24 +14,25 @@ Annex-A.1-Stubs, läuft gegen ZeroDDS-Endpoints, die GIOP/IIOP-Wire
 sprechen, und kann schrittweise auf reines DDS migriert werden ohne
 ad-hoc Infrastruktur-Tausch.
 
-**Crate-Mapping:**
+Die CORBA-Coexistence ist über mehrere Implementierungs-Crates verteilt:
 
-| Spec-Bereich | Crate(s) |
-|---|---|
-| Part 1 §7 IDL-Syntax | `crates/idl/`, `crates/corba-codegen/` |
-| Part 1 §14 Interface Repository | `crates/corba-ir/` |
-| Part 1 §15 POA | `crates/corba-poa/` |
-| Part 2 §9 GIOP | `crates/corba-giop/` |
-| Part 2 §9.7 IIOP | `crates/corba-iiop/` |
-| Part 2 §9.4 / Part 2 §10.5 IOR | `crates/corba-ior/` |
-| Part 2 §10 CSIv2 | `crates/corba-csiv2/` |
-| Part 3 §6-§9 Component Model | `crates/corba-ccm/` |
-| Part 3 §10 Container | `crates/corba-ccm-lib/` |
-| Part 3 §11 EJB-Integration | `crates/corba-ccm-ejb/` |
-| Part 3 §15-§17 D&C | `crates/corba-dnc/` |
-| ZeroDDS-Bridge (kein OMG-Item) | `crates/corba-dds-bridge/` |
-| COS Naming v1.3 (separate Spec) | `crates/corba-cosnaming/` |
-| COS Event Service v1.2 (separate Spec) | `crates/corba-cos-event/` |
+- `crates/idl/` — IDL-Grammatik (Part 1 §7 IDL-Syntax)
+- `crates/corba-codegen/` — Annex-A.1-Codegen (Stubs/Skeletons, Part 1 §7)
+- `crates/corba-ir/` — Interface Repository (Part 1 §14)
+- `crates/corba-poa/` — Portable Object Adapter (Part 1 §15)
+- `crates/corba-giop/` — GIOP-Wire-Protokoll (Part 2 §9)
+- `crates/corba-iiop/` — IIOP-Transport (Part 2 §9.7)
+- `crates/corba-ior/` — IOR-Kodierung (Part 2 §9.4 / §10.5)
+- `crates/corba-csiv2/` — CSIv2-Security (Part 2 §10)
+- `crates/corba-ccm/` — Component Model (Part 3 §6-§9)
+- `crates/corba-ccm-lib/` — CCM-Container (Part 3 §10)
+- `crates/corba-ccm-ejb/` — EJB-Integration (Part 3 §11)
+- `crates/corba-dnc/` — Deployment & Configuration (Part 3 §15-§17)
+- `crates/corba-dds-bridge/` — ZeroDDS-Bridge (kein OMG-Item)
+- `crates/corba-cosnaming/` — COS Naming v1.3 (separate Spec)
+- `crates/corba-cos-event/` — COS Event Service v1.2 (separate Spec)
+- `crates/dcps/` — DDS-PSM-Kern (DDS-Migrationsziel)
+- `crates/rpc/` — DDS-RPC-Kern (DDS-Migrationsziel)
 
 CosNaming und CosEventService sind eigenständige OMG-Specs (formal/04-10-03
 und formal/04-10-02); CosEvent hat eine eigene Spec-Coverage-Datei
@@ -221,7 +217,7 @@ dsi_servant_default_dispatch_via_input_body}`.
 **Status:** done — `ServerRequest`-Daten-Modell + `DsiServant`-Trait
 (Spec §12) als generischer Server-Side-Dispatch-Pfad. Wegen Layer-
 Trennung (corba-ccm Layer 8.3 / corba-poa Layer 8.16) ist der Trait
-orthogonal zu `corba-poa::Servant` definiert und kann zusaetzlich
+orthogonal zu `corba-poa::Servant` definiert und kann zusätzlich
 implementiert werden. `ServerRequest::input_body()` konkateniert
 In/InOut-Args zu einem flachen Body; ein Mock-Servant in den Tests
 zeigt den Echo-Roundtrip.
@@ -244,12 +240,12 @@ dyn_any_from_type_code_sequence_preserves_bytes,
 dyn_any_from_type_code_struct_preserves_bytes_and_id}`.
 
 **Status:** done — DynAny-Daten-Modell + Wire-up `from_type_code(tc, raw)`
-walked einen `corba_ir::TypeCode` ueber CDR-`any`-Bytes; primitive
+walked einen `corba_ir::TypeCode` über CDR-`any`-Bytes; primitive
 Typen (`Long`/`ULong`/`Short`/`Boolean`/`String`/...) werden via
 `zerodds_cdr::BufferReader` validiert (Decode-Fehler werden
 propagiert), komplexe Typen (Struct/Sequence/Array) preserven die
 rohen Bytes plus Repository-ID. `to_cdr()` projiziert die DynAny
-zurueck.
+zurück.
 
 ### §14 The Interface Repository
 
@@ -316,7 +312,7 @@ registry_walk_ior_collects_tags}` +
 pipeline_walks_server_receive_request, ior_interceptor_fires_on_walk_ior}`.
 
 **Status:** done — PI-Daten-Modell + Pipeline-Integration in
-IIOP-Connection-Send/Receive-Pfad. Layer-8 Wire-up-Cleanup 2026-05-06.
+IIOP-Connection-Send/Receive-Pfad.
 
 ### §17 CORBA Messaging
 
@@ -343,7 +339,7 @@ persistent_request_store_add_poll_timeout}`.
 
 **Status:** done — AMI-Reply-Dispatch-Bridge auf `corba_giop::Reply`
 + TII Persistent-Request-Store + Wire-Mapping aller 10 Messaging-
-Policies. Layer-8 Wire-up-Cleanup 2026-05-06.
+Policies.
 
 ### §18 Compression
 
@@ -365,7 +361,7 @@ compression_lzma_returns_unsupported, compression_zlib_handles_large_block}`.
 und `decompress(input)` decken `None` (passthrough), `Zlib` (RFC 1950),
 `Gzip` (RFC 1952), `Deflate` (RFC 1951) ab. `Lzma` liefert
 `CompressionError::Unsupported` mit Decision-Record (xz2/liblzma-
-Build-Risiko unverhaeltnismaessig). 10-kB-Block-Test belegt das
+Build-Risiko unverhältnismäßig). 10-kB-Block-Test belegt das
 Roundtrip-Verhalten.
 
 ---
@@ -412,13 +408,13 @@ Implementations-Pflichten in §8-§12.
 **Repo:** `crates/corba-dds-bridge/src/mapping.rs` (CORBA↔DDS Mapping),
 `crates/corba-dds-bridge/src/servant.rs`, `sync.rs` +
 `crates/corba-ccm/src/orb_extensions.rs::{BridgeMode, BridgeConfig}`
-fuer Inline/Request-Level-Mode-Klassifikation.
+für Inline/Request-Level-Mode-Klassifikation.
 
 **Tests:** 15 inline `#[test]`-Funktionen in `crates/corba-dds-bridge/src/`
 + `orb_extensions::tests::{bridge_modes_distinct, bridge_config_construct}`.
 
 **Status:** done — DDS-Bridge (Request-Level) + Inline-Bridge-API
-ueber BridgeMode/BridgeConfig live; Wire-Implementation der
+über BridgeMode/BridgeConfig live; Wire-Implementation der
 generischen Inline-Bridge ist Caller-Layer.
 
 ### §9 General Inter-ORB Protocol (GIOP)
@@ -506,7 +502,7 @@ BiDirGIOP-Policy.
 **Repo:** `crates/corba-iiop/src/bidir.rs` (Wire-Codec) +
 `crates/corba-ccm/src/orb_extensions.rs::{BiDirPolicy,
 BiDirServiceContext}` (Policy-Lifecycle: Normal/Both;
-listen_points-Liste fuer §9.9.1).
+listen_points-Liste für §9.9.1).
 
 **Tests:** Inline-Tests in `bidir.rs` +
 `orb_extensions::tests::{bidir_policy_distinct,
@@ -600,7 +596,7 @@ CORBA_PART2_10_6_CSIV2_LEVEL_1, CORBA_PART2_10_6_CSIV2_LEVEL_2}`.
 
 **Tests:** `conformance_tests::csiv2_level_markers_match_spec`.
 
-**Status:** done — Conformance-Marker fuer alle drei Levels
+**Status:** done — Conformance-Marker für alle drei Levels
 explizit ausgewiesen.
 
 #### §10.7 Sample Message Flows and Scenarios
@@ -645,7 +641,7 @@ Port + TTL + Loopback-Flag (Default 239.255.0.1:5683 TTL=1) plus
 voller MIOP-Frame-Codec (16-Byte-Header inkl. `MIOP`-Magic-Bytes,
 Version `0x10`, Flags-Endian/Last-Frag-Bit, Packet-Length, Unique-ID,
 Packet-Number, Number-of-Packets) und `MiopSender::send_giop` der
-GIOP-Bytes als Single-Packet bzw. Multi-Packet-Set ueber einen
+GIOP-Bytes als Single-Packet bzw. Multi-Packet-Set über einen
 `MulticastSink`-Adapter versendet (Adapter-Trait, damit `corba-ccm`
 keinen `transport-udp`-Layer-Zyklus erzeugt).
 
@@ -654,8 +650,7 @@ miop_frame_encode_decode_roundtrip, miop_frame_decode_rejects_bad_magic_and_vers
 miop_sender_single_packet_fits_mtu, miop_sender_fragments_multi_packet_over_small_mtu}`.
 
 **Status:** done — MIOP-Frame-Codec + Sender-Pfad mit Single-/
-Multi-Packet-Fragmentierung + Multicast-Sink-Adapter-Trait. Layer-8
-Wire-up-Cleanup 2026-05-06.
+Multi-Packet-Fragmentierung + Multicast-Sink-Adapter-Trait..
 
 ### §12 ZIOP Protocol
 
@@ -668,7 +663,7 @@ Compression-Policies.
 **Tests:** Cross-Ref §18 Compression Tests (`compression_*_round_trip`).
 
 **Status:** done — ZIOP-Config-Daten-Modell + produktiver Compression-
-Codec (Cross-Ref §18 Compression). `ZiopConfig.algorithm` waehlt aus
+Codec (Cross-Ref §18 Compression). `ZiopConfig.algorithm` wählt aus
 den Backends (`None`/`Zlib`/`Gzip`/`Deflate`) den Codec; LZMA bleibt
 explizit unsupported.
 
@@ -840,7 +835,7 @@ EJB-View, EJB-Bean → CCM-View), TX-Bridging, Naming-Glue.
 fähige `Container`/`Contained`-Hierarchie) +
 `crates/corba-ccm/src/orb_core.rs::{XmiEmitter, MofElement,
 IfrCcmMetamodel}` mit MOF-2.0-Subset (Class/Property/Operation) +
-XMI-1.2-Output fuer das Component-Modell.
+XMI-1.2-Output für das Component-Modell.
 
 **Tests:** `orb_core::tests::{xmi_emitter_empty_yields_minimal_doc,
 xmi_emitter_class_with_inheritance, xmi_emitter_property_emits,
@@ -860,13 +855,13 @@ ist getestet; Metamodel-Output ist als XMI-Doc serialisierbar.
 
 **Repo:** `crates/corba-ccm/src/cif.rs` (CIF-AST) +
 `crates/corba-ccm/src/orb_core.rs::{XmiEmitter, MofElement}`
-fuer den XMI-Emitter symmetrisch zu §12.
+für den XMI-Emitter symmetrisch zu §12.
 
 **Tests:** Inline + `orb_core::tests::xmi_emitter_*`.
 
 **Status:** done — CIF-AST (`corba-ccm::cif`) + MOF-XMI-Emitter
 symmetrisch zu §12 IFR; Repository-Walker ingestiert Component-/
-Composition-Definitionen ueber `IfrCcmMetamodel::from_repository`.
+Composition-Definitionen über `IfrCcmMetamodel::from_repository`.
 
 ### §14 Lightweight CCM Profile
 
@@ -962,17 +957,6 @@ zur schrittweisen Ablösung von CORBA-Endpoints durch DDS-Wire.
 
 51 done / 0 partial / 0 open / 12 n/a (informative) / 0 n/a (rejected).
 
-Reklassifiziert im Layer-8 Wire-up-Cleanup 2026-05-06: §11 DII (Wire-
-up auf `corba_giop::Request`), §12 DSI (`DsiServant`-Trait + default-
-dispatch), §13 DynAny (`from_type_code` + `to_cdr` ueber CDR-`any`-
-Bytes), §18 Compression (produktiver Codec via flate2), Part 2 §12
-ZIOP (cross-ref §18), Part 3 §12 IFR Metamodel + §13 CIF Metamodel
-(Repository-Walker), §16 Portable Interceptors (Pipeline-Walks in
-`corba-iiop::Connection::with_interceptors`), §17 CORBA Messaging
-(`dispatch_async_reply` + `PersistentRequestStore` + Wire-Mapping
-aller 10 Policy-Types) und Part 2 §11 MIOP (Frame-Codec + Sender-
-Pfad mit `MulticastSink`-Adapter). Keine rejected-Items mehr.
-
 Test-Lauf:
 
 * `cargo test -p zerodds-corba-giop --lib` — 69 Tests grün.
@@ -990,4 +974,4 @@ Test-Lauf:
 * `cargo test -p zerodds-corba-dnc --lib` — 30 Tests grün.
 * `cargo test -p zerodds-corba-dds-bridge --lib` — 17 Tests grün.
 
-Decision-Records: siehe `corba-3.3.open.md` (jetzt leer).
+Keine offenen, partial oder zurückgewiesenen Punkte.

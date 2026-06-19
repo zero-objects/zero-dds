@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "DDS-Security 1.1 Permissions/Governance-XML-Parser + Access-Control-Plugin (S/MIME-CMS-Signatur via rustls-webpki, Topic-Wildcard-Match, Delegation-Chain)."
+description = "DDS-Security 1.1 permissions/governance XML parser + access-control plugin (S/MIME-CMS signature via rustls-webpki, topic wildcard match, delegation chain)."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-security-permissions"
 readme = "README.md"
@@ -21,35 +21,36 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std"]
 std = []
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.3", path = "../security" }
 # DelegationLink + Sign/Verify + Chain.
-zerodds-security-pki = { version = "1.0.0-rc.1", path = "../security-pki" }
-# PSK-Profile-Bundle erlaubt PSK-Crypto + PSK-Auth + PSK-Access
-# zusammen aus einem Caller-Pfad zu erzeugen.
-zerodds-security-crypto = { version = "1.0.0-rc.1", path = "../security-crypto" }
-# Read-only XML parser. Apache-2.0 / MIT. Pure-Rust, leichtgewichtig.
+zerodds-security-pki = { version = "1.0.0-rc.3", path = "../security-pki" }
+# The PSK profile bundle allows creating PSK-Crypto + PSK-Auth + PSK-Access
+# together from one caller path.
+zerodds-security-crypto = { version = "1.0.0-rc.3", path = "../security-crypto" }
+# Read-only XML parser. Apache-2.0 / MIT. Pure Rust, lightweight.
 roxmltree = { workspace = true }
-# PKCS#7/CMS-SignedData parser (RFC 5652). Apache-2.0 / MIT.
+# PKCS#7/CMS SignedData parser (RFC 5652). Apache-2.0 / MIT.
 cms = { version = "0.2", default-features = false, features = ["std"] }
-# X.509-Cert struct (RFC 5280) — kompatibel mit `cms` SignerInfo.
+# X.509 cert struct (RFC 5280) — compatible with `cms` SignerInfo.
 x509-cert = { version = "0.2", default-features = false, features = ["pem", "std"] }
-# ASN.1-DER fuer PKCS#7-Decoding und Re-Encoding der signed-attributes.
+# ASN.1-DER for PKCS#7 decoding and re-encoding of the signed attributes.
 der = { version = "0.7", default-features = false, features = ["alloc", "oid", "derive"] }
-# Algorithmus-OIDs.
+# Algorithm OIDs.
 const-oid = { version = "0.9", default-features = false }
-# SHA-256 fuer message-digest in CMS signed-attrs.
+# SHA-256 for the message digest in CMS signed-attrs.
 sha2 = { workspace = true }
-# Signature-Verify (ECDSA/RSA-PKCS1) — gleicher Backend wie webpki.
+# Signature verify (ECDSA/RSA-PKCS1) — same backend as webpki.
 ring = { workspace = true }
-# Trust-Anchor-DER + PEM-Parser.
+# Trust-anchor DER + PEM parser.
 rustls-pki-types = { workspace = true }
-# Chain-Validation gegen Permissions-CA.
+# Chain validation against the permissions CA.
 rustls-webpki = { workspace = true }
 
 [dev-dependencies]
-# Test-Keys fuer Chain-Validation-Tests.
+# Test keys for chain-validation tests.
 ring = { workspace = true }

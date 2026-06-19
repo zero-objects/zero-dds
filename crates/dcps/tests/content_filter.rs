@@ -1,12 +1,12 @@
-//! Content-Filter Topic (Closure-basiert).
+//! Content-filter topic (closure-based).
 //!
-//! Spec OMG DDS 1.4 §2.2.2.5.4 `ContentFilteredTopic`: Reader evaluiert
-//! einen Filter pro Sample und leitet nur gematchte Samples weiter.
-//! Statt der SQL-artigen Expression aus der Spec nutzen wir eine
-//! Rust-Closure (idiomatisch, typsicher, keine Parser-Runtime).
+//! Spec OMG DDS 1.4 §2.2.2.5.4 `ContentFilteredTopic`: the reader
+//! evaluates a filter per sample and only forwards matched samples.
+//! Instead of the SQL-like expression from the spec, we use a
+//! Rust closure (idiomatic, type-safe, no parser runtime).
 //!
-//! SQL-Parser + SEDP-Propagation fuer Cross-Vendor-Kompatibilitaet
-//! folgen in der nachgelagerten SQL-Filter-Erweiterung.
+//! An SQL parser + SEDP propagation for cross-vendor compatibility
+//! follow in the downstream SQL-filter extension.
 
 #![allow(
     clippy::expect_used,
@@ -39,10 +39,10 @@ fn filter_drops_samples_that_return_false() {
     let reader = subscriber
         .create_datareader::<RawBytes>(&topic, DataReaderQos::default())
         .expect("reader")
-        // Nur Samples mit gerader erster Byte durchlassen.
+        // Only let through samples with an even first byte.
         .with_filter(|s| s.data.first().is_some_and(|b| b % 2 == 0));
 
-    // Pushe 4 Samples: 0x02 (pass), 0x03 (drop), 0x04 (pass), 0x07 (drop).
+    // Push 4 samples: 0x02 (pass), 0x03 (drop), 0x04 (pass), 0x07 (drop).
     reader.__push_raw(vec![0x02, 0xFF]).unwrap();
     reader.__push_raw(vec![0x03, 0xFF]).unwrap();
     reader.__push_raw(vec![0x04, 0xFF]).unwrap();
@@ -76,7 +76,7 @@ fn without_filter_all_samples_pass_through() {
 
 #[test]
 fn filter_applies_also_to_read_peek() {
-    // `read()` peekt (entfernt nicht), muss aber auch filtern.
+    // `read()` peeks (does not remove), but must also filter.
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(82, DomainParticipantQos::default());
     let topic = p
@@ -94,10 +94,10 @@ fn filter_applies_also_to_read_peek() {
 
     let peeked = reader.read().expect("read");
     assert_eq!(peeked.len(), 2);
-    // Peek ist non-destructive — zweites read liefert wieder 2.
+    // Peek is non-destructive — a second read returns 2 again.
     let peeked2 = reader.read().expect("read2");
     assert_eq!(peeked2.len(), 2);
-    // take konsumiert dann endgueltig.
+    // take then consumes for good.
     let taken = reader.take().expect("take");
     assert_eq!(taken.len(), 2);
     let after = reader.take().expect("take3");

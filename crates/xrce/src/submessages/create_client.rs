@@ -3,12 +3,12 @@
 
 //! `CREATE_CLIENT` Submessage (id=0, Spec §8.3.5.1).
 //!
-//! Direction: Client → Agent. Payload ist ein XCDR2-encodetes
+//! Direction: Client → Agent. The payload is an XCDR2-encoded
 //! `CLIENT_Representation` (xrce_cookie + version + vendor + timestamp
 //! + client_key + session_id + optional PropertySeq).
 //!
-//! In C6.2.A wird das als opake Bytes behandelt; die innere Struktur
-//! folgt in C6.2.B.
+//! In C6.2.A this is treated as opaque bytes; the inner structure
+//! follows in C6.2.B.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -16,18 +16,18 @@ use alloc::vec::Vec;
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// Opaker Body fuer `CREATE_CLIENT`.
+/// Opaque body for `CREATE_CLIENT`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CreateClientPayload {
-    /// XCDR2-Bytes des `CLIENT_Representation`.
+    /// XCDR2 bytes of the `CLIENT_Representation`.
     pub representation: Vec<u8>,
 }
 
 impl CreateClientPayload {
-    /// Verpackt den Payload in eine `Submessage` mit LE-Body-Flag.
+    /// Packs the payload into a `Submessage` with the LE body flag.
     ///
     /// # Errors
-    /// `PayloadTooLarge`, wenn der Body > `u16::MAX` ist.
+    /// `PayloadTooLarge` if the body is > `u16::MAX`.
     pub fn into_submessage(self) -> Result<Submessage, XrceError> {
         Submessage::new(
             SubmessageId::CreateClient,
@@ -36,11 +36,11 @@ impl CreateClientPayload {
         )
     }
 
-    /// Extrahiert den Body aus einer Submessage. Validiert nur, dass
-    /// die ID stimmt — die innere XCDR2-Struktur ist out-of-scope.
+    /// Extracts the body from a submessage. Only validates that
+    /// the ID matches — the inner XCDR2 structure is out of scope.
     ///
     /// # Errors
-    /// `ValueOutOfRange`, wenn die Submessage-ID nicht `CreateClient` ist.
+    /// `ValueOutOfRange` if the submessage ID is not `CreateClient`.
     pub fn try_from_submessage(sm: &Submessage) -> Result<Self, XrceError> {
         if sm.header.submessage_id != SubmessageId::CreateClient {
             return Err(XrceError::ValueOutOfRange {

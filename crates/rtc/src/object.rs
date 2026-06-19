@@ -9,14 +9,14 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use crate::lifecycle::{ComponentAction, LifeCycleState, is_valid_transition};
 use crate::return_code::ReturnCode;
 
-/// `ExecutionContextHandle_t` (Spec §5.2.2.8, S. 30) — opaque Handle
-/// fuer die Assoziation eines RTC mit einem Execution-Context.
+/// `ExecutionContextHandle_t` (spec §5.2.2.8, p. 30) — opaque handle
+/// for the association of an RTC with an execution context.
 pub type ExecutionContextHandle = u32;
 
-/// Sentinel-Wert "kein Handle" (analog `INVALID_HANDLE_VALUE`).
+/// Sentinel value "no handle" (analogous to `INVALID_HANDLE_VALUE`).
 pub const INVALID_HANDLE: ExecutionContextHandle = 0;
 
-/// Monoton wachsende Handle-Generation.
+/// Monotonically increasing handle generation.
 fn next_handle() -> ExecutionContextHandle {
     static COUNTER: AtomicU32 = AtomicU32::new(1);
     let n = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -27,31 +27,31 @@ fn next_handle() -> ExecutionContextHandle {
     }
 }
 
-/// `LightweightRTObject` — Spec §5.2.2.2 (S. 12-19).
+/// `LightweightRTObject` — spec §5.2.2.2 (p. 12-19).
 ///
-/// Verwaltet:
-/// * Lifecycle-State pro Execution-Context (Spec §5.2.2.3).
-/// * Liste aller Contexts in denen das RTC participates.
-/// * Owner-Context-Handle (das RTC kann selbst Owner eines Contexts
-///   sein — autonomous RTC, Spec §5.2.2.5).
-/// * Reference auf den ComponentAction-Callbacks (`Box<dyn>` damit
-///   Caller eigene Behavior einbauen kann).
+/// Manages:
+/// * Lifecycle state per execution context (spec §5.2.2.3).
+/// * List of all contexts in which the RTC participates.
+/// * Owner-context handle (the RTC can itself be the owner of a context
+///   — autonomous RTC, spec §5.2.2.5).
+/// * Reference to the ComponentAction callbacks (`Box<dyn>` so the
+///   caller can plug in its own behavior).
 ///
-/// State-Machine wird zentral hier durchgesetzt — alle Operations
-/// pruefen Pre-Conditions und liefern `PRECONDITION_NOT_MET` im
-/// Fehlerfall (Spec §5.2.2.2.x).
+/// The state machine is enforced centrally here — all operations
+/// check preconditions and return `PRECONDITION_NOT_MET` on
+/// error (spec §5.2.2.2.x).
 pub struct LightweightRtObject {
-    /// Globaler Lifecycle-State (Created → Alive → Finalized).
+    /// Global lifecycle state (Created → Alive → Finalized).
     /// Spec §5.2.2.2.3 (`is_alive`): "is alive or not regardless of
     /// the execution context from which it is observed".
     is_alive: bool,
-    /// Pro-Context-State (Map handle → state).
+    /// Per-context state (map handle → state).
     contexts: Vec<ContextEntry>,
     /// User-supplied callbacks.
     callbacks: alloc::boxed::Box<dyn ComponentAction>,
 }
 
-/// Per-Context-Status-Eintrag.
+/// Per-context status entry.
 #[derive(Debug, Clone)]
 struct ContextEntry {
     handle: ExecutionContextHandle,
@@ -68,8 +68,8 @@ impl core::fmt::Debug for LightweightRtObject {
 }
 
 impl LightweightRtObject {
-    /// Konstruiert ein neues, noch nicht initialisiertes RTC im
-    /// `Created`-Zustand. Spec §5.2.2.3.1.
+    /// Constructs a new, not-yet-initialized RTC in the
+    /// `Created` state. Spec §5.2.2.3.1.
     #[must_use]
     pub fn new(callbacks: alloc::boxed::Box<dyn ComponentAction>) -> Self {
         Self {
@@ -125,8 +125,8 @@ impl LightweightRtObject {
         self.is_alive
     }
 
-    /// Spec §5.2.2.2.5 — `attach_context`: registriert das RTC fuer
-    /// einen Context. Liefert ein neues Handle.
+    /// Spec §5.2.2.2.5 — `attach_context`: registers the RTC for
+    /// a context. Returns a new handle.
     ///
     /// "This operation is intended to be invoked by
     /// ExecutionContextOperations::add_component. It is not intended
@@ -156,15 +156,15 @@ impl LightweightRtObject {
         ReturnCode::Ok
     }
 
-    /// Spec §5.2.2.2.9 — `get_participating_contexts`. Liefert eine
-    /// Liste der Handles in denen dieses RTC participates.
+    /// Spec §5.2.2.2.9 — `get_participating_contexts`. Returns a
+    /// list of the handles this RTC participates in.
     #[must_use]
     pub fn get_participating_contexts(&self) -> Vec<ExecutionContextHandle> {
         self.contexts.iter().map(|c| c.handle).collect()
     }
 
-    /// Spec §5.2.2.6.x via Caller invoked — Ueberprueft ob das RTC im
-    /// gegebenen Context im erwarteten State ist.
+    /// Spec §5.2.2.6.x invoked via the caller — checks whether the RTC is in
+    /// the expected state in the given context.
     #[must_use]
     pub fn get_context_state(&self, handle: ExecutionContextHandle) -> Option<LifeCycleState> {
         self.contexts
@@ -173,8 +173,8 @@ impl LightweightRtObject {
             .map(|c| c.state)
     }
 
-    /// Internal: Inactive → Active im gegebenen Context. Wird von
-    /// `ExecutionContext::activate_component` invoked. Spec §5.2.2.6.8.
+    /// Internal: Inactive → Active in the given context. Invoked by
+    /// `ExecutionContext::activate_component`. Spec §5.2.2.6.8.
     pub(crate) fn activate(&mut self, handle: ExecutionContextHandle) -> ReturnCode {
         let Some(entry) = self.contexts.iter_mut().find(|c| c.handle == handle) else {
             return ReturnCode::BadParameter;
@@ -185,7 +185,7 @@ impl LightweightRtObject {
         entry.state = LifeCycleState::Active;
         let cb = self.callbacks.on_activated(handle);
         if !cb.is_ok() {
-            // Spec §5.2.2.4.7: on_activated-Failure → Active → Error.
+            // Spec §5.2.2.4.7: on_activated failure → Active → Error.
             entry.state = LifeCycleState::Error;
             self.callbacks.on_aborting(handle);
             return cb;
@@ -221,9 +221,9 @@ impl LightweightRtObject {
         cb
     }
 
-    /// Forciert Active → Error nach Callback-Fehler in User-Code.
-    /// Spec §5.2.2.4.7 — `on_aborting` wird einmalig invoked,
-    /// danach uebernimmt `on_error` (siehe Periodic-Tick-Loop).
+    /// Forces Active → Error after a callback error in user code.
+    /// Spec §5.2.2.4.7 — `on_aborting` is invoked once,
+    /// after which `on_error` takes over (see the periodic-tick loop).
     pub fn transition_to_error(&mut self, handle: ExecutionContextHandle) {
         if let Some(entry) = self.contexts.iter_mut().find(|c| c.handle == handle) {
             if entry.state == LifeCycleState::Active {
@@ -233,9 +233,9 @@ impl LightweightRtObject {
         }
     }
 
-    /// Liefert mutable-Zugriff auf die Callbacks. Wird vom
-    /// `ExecutionContext::tick`-Loop benoetigt, um die periodischen
-    /// `on_execute`/`on_state_update`/`on_error`-Callbacks zu invoken.
+    /// Returns mutable access to the callbacks. Needed by the
+    /// `ExecutionContext::tick` loop to invoke the periodic
+    /// `on_execute`/`on_state_update`/`on_error` callbacks.
     pub fn callbacks_mut(&mut self) -> &mut dyn ComponentAction {
         self.callbacks.as_mut()
     }
@@ -410,8 +410,8 @@ mod tests {
 
     #[test]
     fn initialize_failure_keeps_rtc_in_created_state() {
-        // Spec §5.2.2.2.1 — wenn on_initialize fehlschlaegt, bleibt
-        // RTC im Created-State.
+        // Spec §5.2.2.2.1 — if on_initialize fails, the
+        // RTC stays in the Created state.
         let mut r = LightweightRtObject::new(alloc::boxed::Box::new(CountingCallbacks {
             initialize: 0,
             finalize: 0,

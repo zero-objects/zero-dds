@@ -3,39 +3,39 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-monitor/badge.svg)](https://docs.rs/zerodds-monitor)
 
-Observability-Substrate fuer den [ZeroDDS](https://zerodds.org)-Stack:
-Counter/Gauge/Histogram-Registry, Prometheus-Text-Exporter,
-W3C-Trace-Context-PID-Codec, Standard-Span-Schema. Safety
+Observability substrate for the [ZeroDDS](https://zerodds.org) stack:
+counter/gauge/histogram registry, Prometheus text exporter,
+W3C trace-context PID codec, standard span schema. Safety
 classification: **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| ZeroDDS-Monitor 1.0 | §1 (Datenmodell), §2 (Metric-Naming, 31 Metriken), §3 (Prometheus-Text-Format), §4 (PID 0x0D00 W3C-Trace-Context), §5 (Span-Schema), §6 (Lifecycle), §7 (Hook-Point-Tabelle) |
-| OpenMetrics | Counter/Gauge/Histogram-Konventionen |
-| W3C-Trace-Context 1.0 | `traceparent` + `tracestate` Wire-Format |
+| ZeroDDS-Monitor 1.0 | §1 (data model), §2 (metric naming, 31 metrics), §3 (Prometheus text format), §4 (PID 0x0D00 W3C trace context), §5 (span schema), §6 (lifecycle), §7 (hook-point table) |
+| OpenMetrics | counter/gauge/histogram conventions |
+| W3C-Trace-Context 1.0 | `traceparent` + `tracestate` wire format |
 
-## Was ist drin
+## What's inside
 
-- **`Counter` / `Gauge` / `LabeledHistogram`** — atomare Metric-Typen.
-- **`Labels`** — sortierte `&'static str → String`-Pairs.
-- **`Registry` / `default_registry()`** — Single-Source-of-Truth, idempotenter Lookup.
-- **`render_prometheus(&snapshot) -> String`** — OpenMetrics-Text-Exposition mit Label-Escaping.
-- **`serve_prometheus(addr, registry)`** (Feature `prometheus-server`) — Mini-HTTP `/metrics`-Endpoint.
-- **`PID_VENDOR_TRACE_CONTEXT` (0x0D00)** + `TraceContextPid::encode_inline_qos / decode_inline_qos` — RTPS-Inline-QoS-Codec fuer W3C-Trace-Context-Propagation.
-- **`metric_names::*`** — 31 Standard-Metric-Konstanten (Transport / RTPS / DCPS / Discovery / Security).
-- **`span_names::*`** + `attr::*` — 9 Standard-Span-Namen + DDS-Attribut-Keys.
-- **`MonitorConfig` / `TraceContextEmission`** — Lifecycle-Konfiguration.
+- **`Counter` / `Gauge` / `LabeledHistogram`** — atomic metric types.
+- **`Labels`** — sorted `&'static str → String` pairs.
+- **`Registry` / `default_registry()`** — single source of truth, idempotent lookup.
+- **`render_prometheus(&snapshot) -> String`** — OpenMetrics text exposition with label escaping.
+- **`serve_prometheus(addr, registry)`** (feature `prometheus-server`) — mini-HTTP `/metrics` endpoint.
+- **`PID_VENDOR_TRACE_CONTEXT` (0x0D00)** + `TraceContextPid::encode_inline_qos / decode_inline_qos` — RTPS inline-QoS codec for W3C trace-context propagation.
+- **`metric_names::*`** — 31 standard metric constants (transport / RTPS / DCPS / discovery / security).
+- **`span_names::*`** + `attr::*` — 9 standard span names + DDS attribute keys.
+- **`MonitorConfig` / `TraceContextEmission`** — lifecycle configuration.
 
-## Schichten-Position
+## Layer position
 
-Layer 4 — Core Services. Substrate fuer:
-- `zerodds-observability-otlp` (OTLP/HTTP/JSON-Exporter)
-- `tools/dashboard` (Prometheus-Scrape)
-- `tools/perf` (Latenz-Histogramme)
+Layer 4 — core services. Substrate for:
+- `zerodds-observability-otlp` (OTLP/HTTP/JSON exporter)
+- `tools/dashboard` (Prometheus scrape)
+- `tools/perf` (latency histograms)
 
-Foundation-Substrate (`Histogram`, `Span`, `TraceId`, `SpanId`, `Event`, `Sink`-Trait) lebt weiterhin in `zerodds-foundation` — `monitor` re-exportiert das `Histogram` und nutzt die anderen via Module-Path.
+The foundation substrate (`Histogram`, `Span`, `TraceId`, `SpanId`, `Event`, `Sink` trait) still lives in `zerodds-foundation` — `monitor` re-exports the `Histogram` and uses the others via the module path.
 
 ## Quickstart
 
@@ -54,7 +54,7 @@ assert_eq!(counter.get(), 6);
 println!("{}", reg.render_prometheus());
 ```
 
-PID 0x0D00 Roundtrip:
+PID 0x0D00 roundtrip:
 
 ```rust,ignore
 use zerodds_monitor::{TraceContextPid, TraceParent, TraceState};
@@ -71,19 +71,19 @@ pid.encode_inline_qos(&mut buf);
 let decoded = TraceContextPid::decode_inline_qos(&buf).expect("roundtrip");
 ```
 
-## Feature-Flags
+## Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std` | ✅ | Standard-Library + Mutex + Atomics. |
+| `std` | ✅ | standard library + Mutex + atomics. |
 | `alloc` | ✅ (via std) | `Vec`/`Arc`/`String`. |
-| `prometheus-server` | ✅ | Mini-HTTP-Server fuer `/metrics` (kein hyper-Dep). |
+| `prometheus-server` | ✅ | mini-HTTP server for `/metrics` (no hyper dep). |
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1` ist die initiale Release-Materialisierung. Public-API,
-Metric-Namen, Label-Keys, PID-0x0D00-Wire-Format und Span-Namen sind
-RC1-stabil; Breaking-Changes erfordern Major-Bump.
+`1.0.0-rc.1` is the initial release materialization. The public API,
+metric names, label keys, PID-0x0D00 wire format and span names are
+RC1-stable; breaking changes require a major bump.
 
 ## Tests
 
@@ -91,17 +91,17 @@ RC1-stabil; Breaking-Changes erfordern Major-Bump.
 cargo test -p zerodds-monitor
 ```
 
-40 Unit-Tests + 1 Doc-Test, davon 28 fuer den Counter/Gauge/Histogram/
-Registry/Prometheus-Render-Pfad, 8 fuer den PID-0x0D00-Codec, 2 fuer
-den Mini-HTTP-Server, je 2 fuer Metric-Namen + Span-Namen.
+40 unit tests + 1 doc test, of which 28 cover the counter/gauge/histogram/
+registry/Prometheus render path, 8 the PID-0x0D00 codec, 2 the
+mini-HTTP server, and 2 each metric names + span names.
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../../LICENSE).
+Apache-2.0. See [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
-- [`docs/specs/zerodds-monitor-1.0.md`](../../docs/specs/zerodds-monitor-1.0.md) — Spec.
-- [`docs/architecture/05_observability_and_tooling.md`](../../docs/architecture/05_observability_and_tooling.md) — Architektur.
-- [`zerodds-observability-otlp`](../observability-otlp) — OTLP/HTTP/JSON-Exporter (konsumiert `Span`/`Histogram`/`Event` aus foundation).
-- [`zerodds-foundation`](../foundation) — Substrate (`tracing`, `observability`).
+- [`docs/specs/zerodds-monitor-1.1.md`](../../docs/specs/zerodds-monitor-1.1.md) — spec.
+- [`docs/architecture/05_observability_and_tooling.md`](../../docs/architecture/05_observability_and_tooling.md) — architecture.
+- [`zerodds-observability-otlp`](../observability-otlp) — OTLP/HTTP/JSON exporter (consumes `Span`/`Histogram`/`Event` from foundation).
+- [`zerodds-foundation`](../foundation) — substrate (`tracing`, `observability`).

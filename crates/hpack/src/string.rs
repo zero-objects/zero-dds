@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! String-Literal-Coding — RFC 7541 §5.2.
+//! String-literal coding — RFC 7541 §5.2.
 //!
-//! Header-Strings koennen plain (raw) oder Huffman-coded sein. Wir
-//! liefern eine Convenience-API; Huffman-Pfad delegiert an
+//! Header strings can be plain (raw) or Huffman-coded. We provide a
+//! convenience API; the Huffman path delegates to
 //! `crate::huffman`.
 
 use alloc::string::String;
@@ -13,18 +13,18 @@ use alloc::vec::Vec;
 use crate::huffman;
 use crate::integer::{IntegerError, decode_integer, encode_integer};
 
-/// String-Coding-Fehler.
+/// String coding error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StringError {
-    /// Integer-Length-Decode-Fehler.
+    /// Integer length decode error.
     Integer(IntegerError),
-    /// Buffer endet vor angekuendigter Length.
+    /// Buffer ends before the announced length.
     Truncated,
-    /// Huffman-Decode-Fehler.
+    /// Huffman decode error.
     Huffman,
-    /// String enthaelt invalides UTF-8 (HPACK erlaubt Octet-Strings,
-    /// aber HTTP-Header sind ASCII; Caller kann ueber `decode_bytes`
-    /// rohe Bytes lesen).
+    /// String contains invalid UTF-8 (HPACK allows octet strings,
+    /// but HTTP headers are ASCII; the caller can read raw bytes via
+    /// `decode_bytes`).
     NotUtf8,
 }
 
@@ -48,10 +48,10 @@ impl From<IntegerError> for StringError {
     }
 }
 
-/// Encode einen String. `huffman_compress=true` aktiviert Huffman.
+/// Encode a string. `huffman_compress=true` enables Huffman.
 ///
-/// Format: 1 Byte Header (`H`-Flag in Bit 7 + 7-Bit-Length-Prefix) +
-/// Length-Continuation + Octets.
+/// Format: 1-byte header (`H` flag in bit 7 + 7-bit length prefix) +
+/// length continuation + octets.
 #[must_use]
 pub fn encode_string(s: &str, huffman_compress: bool) -> Vec<u8> {
     let octets: Vec<u8> = if huffman_compress {
@@ -65,9 +65,9 @@ pub fn encode_string(s: &str, huffman_compress: bool) -> Vec<u8> {
     out
 }
 
-/// Decode einen String aus einem Byte-Slice.
+/// Decode a string from a byte slice.
 ///
-/// Liefert `(decoded_string, bytes_consumed)`.
+/// Returns `(decoded_string, bytes_consumed)`.
 ///
 /// # Errors
 /// Siehe [`StringError`].
@@ -77,7 +77,7 @@ pub fn decode_string(input: &[u8]) -> Result<(String, usize), StringError> {
     Ok((s, consumed))
 }
 
-/// Decode roh als Bytes (kein UTF-8-Check). Spec §5.2.
+/// Decode raw as bytes (no UTF-8 check). Spec §5.2.
 ///
 /// # Errors
 /// `Integer` / `Truncated` / `Huffman`.

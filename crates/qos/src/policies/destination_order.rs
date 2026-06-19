@@ -31,7 +31,7 @@ impl DestinationOrderKind {
         }
     }
 
-    /// Forward-kompatibler Mapper.
+    /// Forward-compatible mapper.
     #[must_use]
     pub const fn from_u32(v: u32) -> Self {
         match v {
@@ -60,7 +60,7 @@ impl DestinationOrderQosPolicy {
     /// Wire-Decoding (strict).
     ///
     /// # Errors
-    /// Buffer-Underflow oder unbekannter Kind-Wert.
+    /// Buffer underflow or unknown kind value.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let v = r.read_u32()?;
         let kind = DestinationOrderKind::try_from_u32(v).ok_or(DecodeError::InvalidEnum {
@@ -107,15 +107,15 @@ mod tests {
         }
     }
 
-    /// `try_from_u32` muss für unbekannte Werte `None` liefern (strict).
+    /// `try_from_u32` must return `None` for unknown values (strict).
     #[test]
     fn try_from_u32_unknown_is_none() {
         assert_eq!(DestinationOrderKind::try_from_u32(2), None);
         assert_eq!(DestinationOrderKind::try_from_u32(u32::MAX), None);
     }
 
-    /// Forward-kompatibler Mapper: unbekannt -> `ByReceptionTimestamp`
-    /// (konservativster Default; matcht Cyclone-Verhalten).
+    /// Forward-compatible mapper: unknown -> `ByReceptionTimestamp`
+    /// (most conservative default; matches Cyclone behavior).
     #[test]
     fn from_u32_forward_compatible() {
         assert_eq!(
@@ -132,7 +132,7 @@ mod tests {
         );
     }
 
-    /// Decode mit unbekanntem kind-Discriminator → `InvalidEnum` Fehler
+    /// Decode with an unknown kind discriminator → `InvalidEnum` error.
     /// (Round-2-Review-Finding: Error-Path bisher ungetestet).
     #[test]
     fn decode_unknown_kind_errors() {
@@ -150,7 +150,7 @@ mod tests {
         ));
     }
 
-    /// Buffer ohne Bytes -> short-read error auf `read_u32`.
+    /// Buffer with no bytes -> short-read error on `read_u32`.
     #[test]
     fn decode_empty_buffer_errors() {
         let bytes: [u8; 0] = [];

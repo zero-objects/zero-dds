@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Datagram-Encoder/-Decoder: kombiniert RTPS-Header und Submessages
-//! zu einem fertigen Wire-Datagram (W4).
+//! Datagram encoder/decoder: combines the RTPS header and submessages
+//! into a finished wire datagram (W4).
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -19,9 +19,9 @@ use crate::submessages::{
     InfoReplySubmessage, InfoSourceSubmessage, InfoTimestampSubmessage, NackFragSubmessage,
 };
 
-/// Encoded ein RTPS-Datagram = `RtpsHeader` + Sequenz von `DATA`-
-/// Submessages. Variante: alle Submessages sind LE; ein
-/// Datagram traegt eine Liste DATA-Bodies.
+/// Encodes an RTPS datagram = `RtpsHeader` + a sequence of `DATA`
+/// submessages. Variant: all submessages are LE; a datagram carries a
+/// list of DATA bodies.
 pub fn encode_data_datagram(
     header: RtpsHeader,
     data_submessages: &[DataSubmessage],
@@ -44,32 +44,32 @@ pub fn encode_data_datagram(
     Ok(out)
 }
 
-/// Geparstes Datagram: Header + alle erkannten Submessages.
+/// Parsed datagram: header + all recognized submessages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedDatagram {
-    /// RTPS-Header.
+    /// RTPS header.
     pub header: RtpsHeader,
-    /// Alle erkannten Submessages in Reihenfolge.
+    /// All recognized submessages in order.
     pub submessages: Vec<ParsedSubmessage>,
 }
 
-/// Eine erkannte Submessage. unterstützt DATA/HEARTBEAT/ACKNACK/GAP/DATA_FRAG/HEARTBEAT_FRAG/NACK_FRAG/INFO_*; andere werden via `octets_to_next_header`
-/// uebersprungen und als [`ParsedSubmessage::Unknown`] gemerkt.
+/// A recognized submessage. Supports DATA/HEARTBEAT/ACKNACK/GAP/DATA_FRAG/HEARTBEAT_FRAG/NACK_FRAG/INFO_*; others are skipped via `octets_to_next_header`
+/// and recorded as [`ParsedSubmessage::Unknown`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParsedSubmessage {
-    /// DATA-Submessage.
+    /// DATA submessage.
     Data(DataSubmessage),
-    /// DATA_FRAG-Submessage (Fragmentation).
+    /// DATA_FRAG submessage (fragmentation).
     DataFrag(DataFragSubmessage),
-    /// HEARTBEAT-Submessage.
+    /// HEARTBEAT submessage.
     Heartbeat(HeartbeatSubmessage),
-    /// HEARTBEAT_FRAG-Submessage.
+    /// HEARTBEAT_FRAG submessage.
     HeartbeatFrag(HeartbeatFragSubmessage),
-    /// ACKNACK-Submessage.
+    /// ACKNACK submessage.
     AckNack(AckNackSubmessage),
-    /// NACK_FRAG-Submessage.
+    /// NACK_FRAG submessage.
     NackFrag(NackFragSubmessage),
-    /// GAP-Submessage.
+    /// GAP submessage.
     Gap(GapSubmessage),
     /// HeaderExtension-Submessage (DDSI-RTPS 2.5 §8.3.3.2).
     HeaderExtension(HeaderExtension),
@@ -79,34 +79,36 @@ pub enum ParsedSubmessage {
     InfoReply(InfoReplySubmessage),
     /// InfoTimestamp-Submessage (§8.3.8.5 / §8.3.7.5).
     InfoTimestamp(InfoTimestampSubmessage),
-    /// Andere Submessage-Klasse (geskippt). Traegt id + flags fuer
-    /// Diagnostik.
+    /// Another submessage class (skipped). Carries id + flags for
+    /// diagnostics.
     Unknown {
-        /// Submessage-ID-Byte.
+        /// Submessage ID byte.
         id: u8,
-        /// Flag-Byte.
+        /// Flag byte.
         flags: u8,
     },
 }
 
-/// Submessage-Header Must-Understand-Bit (Bit 7 des Flag-Bytes,
-/// DDSI-RTPS 2.5 §8.3.3.2). Bei unbekannter Submessage-ID + gesetztem
-/// Bit MUSS die ganze RTPS-Message verworfen werden.
+/// Submessage-header must-understand bit (bit 7 of the flag byte,
+/// DDSI-RTPS 2.5 §8.3.3.2). On an unknown submessage ID + set bit, the
+/// whole RTPS message MUST be discarded.
 pub const SUBMESSAGE_FLAG_MUST_UNDERSTAND: u8 = 0x80;
 
-/// Decoded ein RTPS-Datagram in Header + Submessage-Liste.
+/// Decodes an RTPS datagram into header + submessage list.
 ///
-/// `octets_to_next_header == 0` (Last-Submessage-Marker, Spec §8.3.4.2)
-/// wird so behandelt: die Submessage erstreckt sich bis zum Ende des
-/// Datagrams.
+/// `octets_to_next_header == 0` (last-submessage marker, spec §8.3.4.2)
+/// is treated as: the submessage extends to the end of the datagram.
 ///
 /// # Errors
-/// `InvalidMagic`, `UnexpectedEof`, oder Sub-Decoder-Fehler. Unbekannte
-/// Submessage-IDs werden als `Unknown` markiert (kein Fehler).
+/// `InvalidMagic`, `UnexpectedEof`, or a sub-decoder error. Unknown
+/// submessage IDs are marked as `Unknown` (not an error).
 pub fn decode_datagram(bytes: &[u8]) -> Result<ParsedDatagram, WireError> {
     let header = RtpsHeader::from_bytes(bytes)?;
     let mut pos = RtpsHeader::WIRE_SIZE;
-    let mut submessages = Vec::new();
+    // Typical RTPS packets carry 1–3 submessages (DATA, DATA+HB,
+    // INFO_TS+DATA+HB). Pre-allocating to 4 avoids the Vec::push
+    // realloc step on the recv-thread hot path.
+    let mut submessages = Vec::with_capacity(4);
 
     while pos < bytes.len() {
         if bytes.len() < pos + SubmessageHeader::WIRE_SIZE {
@@ -115,8 +117,8 @@ pub fn decode_datagram(bytes: &[u8]) -> Result<ParsedDatagram, WireError> {
                 offset: pos,
             });
         }
-        // Wir lesen den Submessage-Header zuerst; bei Unknown-ID
-        // resilient skippen.
+        // We read the submessage header first; on an unknown ID skip
+        // resiliently.
         let id_byte = bytes[pos];
         let flags = bytes[pos + 1];
         let mut len_bytes = [0u8; 2];
@@ -218,17 +220,17 @@ pub fn decode_datagram(bytes: &[u8]) -> Result<ParsedDatagram, WireError> {
                     multicast_flag,
                 )?)
             }
-            // HeaderExtension (SubmessageId 0x80, ausserhalb der
-            // Enum-Range — wir matchen explizit ueber das
-            // ID-Byte). Spec §8.3.7.3: HE MUSS direkt nach dem Header
-            // stehen (also als erste Submessage). Anderenfalls reject.
+            // HeaderExtension (SubmessageId 0x80, outside the enum
+            // range — we match explicitly via the ID byte). Spec
+            // §8.3.7.3: HE MUST appear directly after the header (i.e.
+            // as the first submessage). Otherwise reject.
             //
-            // Vendor-Compat: nur RTPS >= 2.5 hat 0x80 als HE definiert.
-            // Bei aelteren Vendoren (z.B. Cyclone-2.1, FastDDS-2.x mit
-            // protocol_version=2.1) faellt 0x80 in den Vendor-Specific-
-            // Range [0x80, 0xFF] (Spec §8.3.3.2). Solche Submessages
-            // werden — sofern Must-Understand-Flag nicht gesetzt —
-            // einfach als `Unknown` markiert und uebersprungen.
+            // Vendor compat: only RTPS >= 2.5 defines 0x80 as HE. For
+            // older vendors (e.g. Cyclone 2.1, FastDDS 2.x with
+            // protocol_version=2.1) 0x80 falls into the vendor-specific
+            // range [0x80, 0xFF] (spec §8.3.3.2). Such submessages are —
+            // unless the must-understand flag is set — simply marked as
+            // `Unknown` and skipped.
             Ok(_) | Err(WireError::UnknownSubmessageId { .. })
                 if id_byte == SUBMESSAGE_ID_HEADER_EXTENSION
                     && header.protocol_version
@@ -245,9 +247,9 @@ pub fn decode_datagram(bytes: &[u8]) -> Result<ParsedDatagram, WireError> {
                 }
                 ParsedSubmessage::HeaderExtension(he)
             }
-            // Unbekannte Submessage-ID + Must-Understand-Bit:
-            // SPEC §8.3.3.2 / §9.4.5.1 — ganze RTPS-Message
-            // verwerfen.
+            // Unknown submessage ID + must-understand bit:
+            // SPEC §8.3.3.2 / §9.4.5.1 — discard the whole RTPS
+            // message.
             Ok(_) | Err(WireError::UnknownSubmessageId { .. })
                 if (flags & SUBMESSAGE_FLAG_MUST_UNDERSTAND) != 0 =>
             {
@@ -255,8 +257,8 @@ pub fn decode_datagram(bytes: &[u8]) -> Result<ParsedDatagram, WireError> {
                     message: "Unknown submessage id with must-understand flag",
                 });
             }
-            // Andere bekannte Submessage-IDs ohne Decoder
-            // (PAD, InfoTs, …): skippen und als Unknown markieren.
+            // Other known submessage IDs without a decoder
+            // (PAD, InfoTs, …): skip and mark as Unknown.
             Ok(_) | Err(WireError::UnknownSubmessageId { .. }) => {
                 ParsedSubmessage::Unknown { id: id_byte, flags }
             }
@@ -353,13 +355,13 @@ mod tests {
 
     #[test]
     fn decode_handles_last_submessage_zero_length() {
-        // Manuell konstruieren: Header + DATA-SH mit octets=0
-        // Body ist DATA-Format (mind. 20 byte + payload).
+        // Construct manually: header + DATA-SH with octets=0
+        // Body is DATA format (at least 20 bytes + payload).
         let h = header();
         let mut bytes = h.to_bytes().to_vec();
         let d = data_msg(7, b"X");
         let (body, flags) = d.write_body(true);
-        // Submessage-Header mit octets=0 (last-marker)
+        // Submessage header with octets=0 (last marker)
         let sh = SubmessageHeader {
             submessage_id: SubmessageId::Data,
             flags,
@@ -378,11 +380,11 @@ mod tests {
 
     #[test]
     fn decode_marks_unknown_submessage_id_without_failing() {
-        // Header + Sub-Header mit ID 0x01 (PAD-Submessage). Wir nutzen
-        // PAD als Stand-In, weil InfoTs jetzt typed dekodiert wird (R3).
+        // Header + sub-header with ID 0x01 (PAD submessage). We use
+        // PAD as a stand-in, because InfoTs is now typed-decoded (R3).
         let h = header();
         let mut bytes = h.to_bytes().to_vec();
-        let body = [0u8; 0]; // PAD hat keinen Body
+        let body = [0u8; 0]; // PAD has no body
         let sh = SubmessageHeader {
             submessage_id: SubmessageId::Pad,
             flags: FLAG_E_LITTLE_ENDIAN,
@@ -403,8 +405,8 @@ mod tests {
 
     #[test]
     fn decode_heartbeat_preserves_final_and_liveliness_flags() {
-        // Regression fuer WP-1.1-Finding: F/L-Flag aus Submessage-Header
-        // muss in HeartbeatSubmessage verfuegbar sein.
+        // Regression for the WP-1.1 finding: the F/L flag from the
+        // submessage header must be available in HeartbeatSubmessage.
         let h = header();
         let hb = HeartbeatSubmessage {
             reader_id: crate::wire_types::EntityId::user_reader_with_key([1, 2, 3]),
@@ -563,7 +565,7 @@ mod tests {
         }
     }
 
-    // ---- WP 1.E Stufe-E/F: InfoSource + InfoReply via Datagram ----
+    // ---- WP 1.E stage E/F: InfoSource + InfoReply via datagram ----
 
     #[test]
     fn decode_info_source_via_datagram() {
@@ -649,18 +651,18 @@ mod tests {
 
     #[test]
     fn decode_rejects_unknown_submessage_with_must_understand() {
-        // Submessage-ID 0x7E mit Must-Understand-Bit (0x80 im flag-byte)
+        // Submessage ID 0x7E with must-understand bit (0x80 in the flag byte)
         // → ganze Message verwerfen.
         let h = header();
         let mut bytes = h.to_bytes().to_vec();
         let body = [0u8; 4];
         let sh = SubmessageHeader {
-            submessage_id: SubmessageId::Pad, // ID-Wert wird gleich ueberschrieben
+            submessage_id: SubmessageId::Pad, // the ID value is overwritten shortly
             flags: FLAG_E_LITTLE_ENDIAN | SUBMESSAGE_FLAG_MUST_UNDERSTAND,
             octets_to_next_header: body.len() as u16,
         };
         let mut sh_bytes = sh.to_bytes();
-        sh_bytes[0] = 0x7E; // unbekannte ID, ausserhalb 0x80-Range
+        sh_bytes[0] = 0x7E; // unknown ID, outside the 0x80 range
         bytes.extend_from_slice(&sh_bytes);
         bytes.extend_from_slice(&body);
         let res = decode_datagram(&bytes);
@@ -672,7 +674,7 @@ mod tests {
 
     #[test]
     fn decode_skips_unknown_submessage_without_must_understand() {
-        // Ohne Must-Understand-Bit: skippen + als Unknown markieren.
+        // Without the Must-Understand bit: skip + mark as Unknown.
         let h = header();
         let mut bytes = h.to_bytes().to_vec();
         let body = [0u8; 4];
@@ -724,9 +726,9 @@ mod tests {
 
     #[test]
     fn decode_rejects_header_extension_after_data_submessage() {
-        // Spec §8.3.7.3: HE MUSS direkt nach dem RTPS-Header stehen.
-        // Wenn vorher eine andere Submessage parst wurde, reject.
-        // Wire-Layout: RtpsHeader || DATA || HE.
+        // Spec §8.3.7.3: HE MUST appear directly after the RTPS header.
+        // If another submessage was parsed before it, reject.
+        // Wire layout: RtpsHeader || DATA || HE.
         let h = header();
         let d = data_msg(7, b"first");
         let he = crate::header_extension::HeaderExtension {
@@ -754,7 +756,7 @@ mod tests {
     fn decode_rejects_data_with_unknown_must_understand_pid_in_inline_qos() {
         use crate::parameter_list::{MUST_UNDERSTAND_BIT, Parameter, ParameterList};
         let h = header();
-        // Inline-QoS mit unbekannter MU-PID 0x3500 (kein Standard-PID).
+        // Inline QoS with an unknown MU PID 0x3500 (not a standard PID).
         let mut pl = ParameterList::new();
         pl.push(Parameter::new(
             MUST_UNDERSTAND_BIT | 0x3500,
@@ -788,7 +790,7 @@ mod tests {
         use crate::parameter_list::{MUST_UNDERSTAND_BIT, Parameter, ParameterList, pid};
         let h = header();
         let mut pl = ParameterList::new();
-        // KEY_HASH ist Standard-PID, MU-Bit erlaubt.
+        // KEY_HASH is a standard PID, MU bit allowed.
         pl.push(Parameter::new(
             MUST_UNDERSTAND_BIT | pid::KEY_HASH,
             vec![0; 16],
@@ -822,7 +824,7 @@ mod tests {
         };
         let h = header();
         let mut pl = ParameterList::new();
-        // Vendor-spezifische MU-PID — Spec §9.6.2 erlaubt ignorieren.
+        // Vendor-specific MU PID — Spec §9.6.2 allows ignoring.
         pl.push(Parameter::new(
             MUST_UNDERSTAND_BIT | VENDOR_SPECIFIC_BIT | 0x0050,
             vec![0xCA, 0xFE, 0xBA, 0xBE],
@@ -853,13 +855,13 @@ mod tests {
     fn rtps_2_1_treats_0x80_as_vendor_specific_not_header_extension() {
         use crate::wire_types::ProtocolVersion;
         // Spec §8.3.7.3: HeaderExtension (0x80) ist ein 2.5-Submessage.
-        // Aeltere Vendoren (z.B. Cyclone-2.1) duerfen 0x80 als Vendor-
-        // Specific verwenden. Wir verwerfen NICHT, sondern skippen.
+        // Older vendors (e.g. Cyclone 2.1) may use 0x80 as
+        // vendor-specific. We do NOT discard, but skip.
         let mut h = header();
         h.protocol_version = ProtocolVersion::V2_1;
         let mut bytes = h.to_bytes().to_vec();
-        // Erst eine echte DATA-Submessage (damit `submessages` non-empty
-        // wird), dann 0x80 als Vendor-Submessage hinten dran.
+        // First a real DATA submessage (so `submessages` becomes
+        // non-empty), then 0x80 as a vendor submessage appended.
         let d = data_msg(1, b"x");
         let (body, flags) = d.write_body(true);
         let sh = SubmessageHeader {
@@ -869,10 +871,10 @@ mod tests {
         };
         bytes.extend_from_slice(&sh.to_bytes());
         bytes.extend_from_slice(&body);
-        // Vendor-Submessage 0x80 mit 4 Byte Body, kein MU-Bit.
+        // Vendor submessage 0x80 with a 4-byte body, no MU bit.
         bytes.extend_from_slice(&[0x80, FLAG_E_LITTLE_ENDIAN, 4, 0]);
         bytes.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
-        let parsed = decode_datagram(&bytes).expect("0x80 unter RTPS-2.1 muss skippen");
+        let parsed = decode_datagram(&bytes).expect("0x80 under RTPS 2.1 must skip");
         assert!(matches!(
             parsed.submessages.last(),
             Some(ParsedSubmessage::Unknown { id: 0x80, .. })

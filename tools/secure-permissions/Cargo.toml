@@ -1,0 +1,46 @@
+[package]
+name = "zerodds-secure-permissions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "ZeroDDS DDS-Security tooling — CMS/PKCS#7 sign governance & permissions XML for the builtin AccessControl plugin."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-secure-permissions"
+readme = "README.md"
+keywords = ["dds", "security", "permissions", "cms", "pkcs7"]
+categories = ["command-line-utilities", "cryptography"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "zerodds_secure_permissions"
+path = "src/lib.rs"
+
+[[bin]]
+name = "zerodds-secure-permissions"
+path = "src/main.rs"
+
+[dependencies]
+cms = { version = "0.2", default-features = false, features = ["std", "builder"] }
+x509-cert = { version = "0.2", default-features = false, features = ["pem", "std", "builder"] }
+der = { version = "0.7", default-features = false, features = ["alloc", "oid", "pem", "std"] }
+spki = { version = "0.7", default-features = false, features = ["alloc", "std"] }
+const-oid = { version = "0.9", default-features = false, features = ["db"] }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "pem", "pkcs8", "std"] }
+sha2 = { workspace = true, features = ["oid"] }
+base64 = "0.22"
+
+# For the round-trip self-check against the real verifier.
+zerodds-security-permissions = { version = "1.0.0-rc.3", path = "../../crates/security-permissions" }
+
+[dev-dependencies]
+rand_core = { version = "0.6", features = ["getrandom"] }
+# Integration proof of the #2 -> #3 pipeline: rcgen mints adapter identities,
+# our signer produces the permissions, security-runtime's from_files consumes both.
+rcgen = "0.13"
+zerodds-security-runtime = { path = "../../crates/security-runtime" }

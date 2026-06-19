@@ -1,8 +1,8 @@
-"""Tests fuer §6.3 — AsyncIO-Wrapper in `zerodds.aio`.
+"""Tests for §6.3 — AsyncIO wrapper in `zerodds.aio`.
 
-Verifiziert die Async-Wrapper-Klassen unter einem asyncio-Event-Loop.
-Skip wenn `_core` fehlt (alle wait/write-Methoden delegieren auf das
-PyO3-Extension-Modul).
+Verifies the async wrapper classes under an asyncio event loop.
+Skipped if `_core` is missing (all wait/write methods delegate to the
+PyO3 extension module).
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from zerodds import aio as zaio
 
 pytestmark = pytest.mark.skipif(
     not getattr(zerodds, "_CORE_AVAILABLE", False),
-    reason="zerodds._core nicht kompiliert — maturin develop noetig",
+    reason="zerodds._core not compiled — maturin develop needed",
 )
 
 
@@ -29,7 +29,7 @@ def _make_writer_reader(domain: int = 250):
 
 
 def test_async_wrappers_are_constructible():
-    """§6.3 — Wrapper-Konstruktoren akzeptieren die jeweiligen Inner-PyClasses."""
+    """§6.3 — wrapper constructors accept the respective inner PyClasses."""
     writer, reader = _make_writer_reader(251)
     async_w = zaio.AsyncBytesWriter(writer)
     async_r = zaio.AsyncBytesReader(reader)
@@ -38,7 +38,7 @@ def test_async_wrappers_are_constructible():
 
 
 def test_async_passthrough_status_getters():
-    """§6.3 — Status-Getter werden direkt durchgereicht (non-blocking)."""
+    """§6.3 — status getters are passed through directly (non-blocking)."""
     writer, reader = _make_writer_reader(252)
     async_w = zaio.AsyncBytesWriter(writer)
     async_r = zaio.AsyncBytesReader(reader)
@@ -49,16 +49,16 @@ def test_async_passthrough_status_getters():
 
 
 def test_async_take_returns_list_passthrough():
-    """§6.3 — `take()` ist non-blocking und gibt eine Liste zurueck."""
+    """§6.3 — `take()` is non-blocking and returns a list."""
     _w, reader = _make_writer_reader(253)
     async_r = zaio.AsyncBytesReader(reader)
     assert async_r.take() == []
 
 
 def test_async_wait_for_data_uses_event_loop():
-    """§6.3 — Async-Wait blockiert den Event-Loop nicht; ein anderer
-    Coroutine kann parallel laufen. Verifiziert durch eine parallele
-    `asyncio.sleep`-Task die innerhalb der Wait-Frist completed."""
+    """§6.3 — async wait does not block the event loop; another
+    coroutine can run in parallel. Verified by a parallel
+    `asyncio.sleep` task that completes within the wait window."""
     _w, reader = _make_writer_reader(254)
     async_r = zaio.AsyncBytesReader(reader)
 
@@ -69,7 +69,7 @@ def test_async_wait_for_data_uses_event_loop():
             await asyncio.sleep(0.05)
             completed_in_parallel.append(True)
 
-        # Beide Tasks gleichzeitig: wait_for_data blockiert nicht den Loop.
+        # Both tasks at once: wait_for_data does not block the loop.
         await asyncio.gather(
             async_r.wait_for_data(0.3),
             parallel_task(),
@@ -77,12 +77,12 @@ def test_async_wait_for_data_uses_event_loop():
         )
 
     asyncio.run(main())
-    assert completed_in_parallel == [True], "Parallele Task hat nicht gelaufen — Event-Loop blockiert?"
+    assert completed_in_parallel == [True], "parallel task did not run — event loop blocked?"
 
 
 def test_async_waitset_wait_raises_timeout():
-    """§6.3 + §1.2.13 — AsyncWaitSet.wait wirft `TimeoutError`, wenn
-    keine Condition innerhalb des Timeouts flippt."""
+    """§6.3 + §1.2.13 — AsyncWaitSet.wait raises `TimeoutError` if
+    no condition flips within the timeout."""
     gc = zerodds.GuardCondition()
     ws = zerodds.WaitSet()
     ws.attach_guard_condition(gc)

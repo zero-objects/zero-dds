@@ -25,10 +25,10 @@ use crate::qos_ffi::{ZeroDdsDataWriterQos, dw_qos_from_c};
 // Publisher: lookup / participant / suspend / resume
 // ---------------------------------------------------------------------------
 
-/// Liefert den Owning-Participant.
+/// Returns the owning participant.
 ///
 /// # Safety
-/// `pub_` valide.
+/// `pub_` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_get_participant(
     pub_: *mut ZeroDdsPublisher,
@@ -40,11 +40,11 @@ pub unsafe extern "C" fn zerodds_pub_get_participant(
     unsafe { (*pub_).participant }
 }
 
-/// Suspend publications (Spec §2.2.2.4.1.10). Setzt Flag — der
-/// Hot-Path queued Writes statt sie zu senden, bis `resume_publications`.
+/// Suspend publications (Spec §2.2.2.4.1.10). Sets a flag — the
+/// hot path queues writes instead of sending them, until `resume_publications`.
 ///
 /// # Safety
-/// `pub_` valide.
+/// `pub_` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_suspend_publications(pub_: *mut ZeroDdsPublisher) -> c_int {
     if pub_.is_null() {
@@ -62,7 +62,7 @@ pub unsafe extern "C" fn zerodds_pub_suspend_publications(pub_: *mut ZeroDdsPubl
 /// Resume publications.
 ///
 /// # Safety
-/// `pub_` valide.
+/// `pub_` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_resume_publications(pub_: *mut ZeroDdsPublisher) -> c_int {
     if pub_.is_null() {
@@ -77,12 +77,12 @@ pub unsafe extern "C" fn zerodds_pub_resume_publications(pub_: *mut ZeroDdsPubli
     ZeroDdsStatus::Ok as c_int
 }
 
-/// begin_coherent_changes (Spec §2.2.2.4.1.12). Im RC1 ein No-Bracket-
-/// Marker — spec-konformer Tracker auf Pub-Ebene; CoherentSet-
-/// Ergebnis-Wire-Frames lebt auf Writer-Ebene und greift unabhaengig.
+/// begin_coherent_changes (Spec §2.2.2.4.1.12). In RC1 a no-bracket
+/// marker — a spec-conformant tracker at the publisher level; the coherent-set
+/// result wire frames live at the writer level and take effect independently.
 ///
 /// # Safety
-/// `pub_` valide.
+/// `pub_` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_begin_coherent_changes(pub_: *mut ZeroDdsPublisher) -> c_int {
     if pub_.is_null() {
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn zerodds_pub_begin_coherent_changes(pub_: *mut ZeroDdsPu
 /// end_coherent_changes.
 ///
 /// # Safety
-/// `pub_` valide.
+/// `pub_` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_end_coherent_changes(pub_: *mut ZeroDdsPublisher) -> c_int {
     if pub_.is_null() {
@@ -103,11 +103,11 @@ pub unsafe extern "C" fn zerodds_pub_end_coherent_changes(pub_: *mut ZeroDdsPubl
     ZeroDdsStatus::Ok as c_int
 }
 
-/// wait_for_acknowledgments(timeout_ms) — wartet bis alle DWs akkied
-/// sind oder Timeout schlaegt.
+/// wait_for_acknowledgments(timeout_ms) — waits until all DWs are
+/// acked or the timeout fires.
 ///
 /// # Safety
-/// `pub_` valide.
+/// `pub_` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_wait_for_acknowledgments(
     pub_: *mut ZeroDdsPublisher,
@@ -116,8 +116,8 @@ pub unsafe extern "C" fn zerodds_pub_wait_for_acknowledgments(
     if pub_.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: see fn # Safety doc — pub_ NULL-checked above; dws-Liste aus
-    // pub_create_datawriter (Box::into_raw), lebt fuer Publisher-Lifetime.
+    // SAFETY: see fn # Safety doc — pub_ NULL-checked above; the dws list from
+    // pub_create_datawriter (Box::into_raw), lives for the publisher lifetime.
     let dws: Vec<*mut ZeroDdsDataWriter> = unsafe {
         (*pub_)
             .datawriters
@@ -131,7 +131,7 @@ pub unsafe extern "C" fn zerodds_pub_wait_for_acknowledgments(
             if dw.is_null() {
                 return true;
             }
-            // SAFETY: dw aus Box::into_raw in pub_create_datawriter.
+            // SAFETY: dw from Box::into_raw in pub_create_datawriter.
             unsafe { (*dw).rt.user_writer_all_acknowledged((*dw).eid) }
         });
         if all_acked {
@@ -148,10 +148,10 @@ pub unsafe extern "C" fn zerodds_pub_wait_for_acknowledgments(
 // Publisher → DataWriter
 // ---------------------------------------------------------------------------
 
-/// Erzeugt einen DataWriter ueber das Topic.
+/// Creates a DataWriter over the topic.
 ///
 /// # Safety
-/// `pub_`, `topic` valide; `qos` darf NULL sein (Default = pub.default_dw_qos).
+/// `pub_`, `topic` valid; `qos` may be NULL (default = pub.default_dw_qos).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_create_datawriter(
     pub_: *mut ZeroDdsPublisher,
@@ -162,12 +162,12 @@ pub unsafe extern "C" fn zerodds_pub_create_datawriter(
         return ptr::null_mut();
     }
     // SAFETY: see fn # Safety doc — pub_+topic NULL-checked above; participant
-    // aus dp_create_publisher; qos NULL-tolerant.
+    // from dp_create_publisher; qos NULL-tolerant.
     unsafe {
         let pp = &*pub_;
         let tt = &*topic;
 
-        // Participant erforderlich um an die Runtime zu kommen.
+        // The participant is required to reach the runtime.
         let dp_handle = pp.participant;
         if dp_handle.is_null() {
             return ptr::null_mut();
@@ -224,10 +224,10 @@ pub unsafe extern "C" fn zerodds_pub_create_datawriter(
     }
 }
 
-/// Loescht einen DataWriter.
+/// Deletes a DataWriter.
 ///
 /// # Safety
-/// `pub_`, `dw` valide und zugehoerig.
+/// `pub_`, `dw` valid and belonging together.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_delete_datawriter(
     pub_: *mut ZeroDdsPublisher,
@@ -236,7 +236,7 @@ pub unsafe extern "C" fn zerodds_pub_delete_datawriter(
     if pub_.is_null() || dw.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: see fn # Safety doc — pub_+dw NULL-checked above; dw aus pub_create_datawriter.
+    // SAFETY: see fn # Safety doc — pub_+dw NULL-checked above; dw from pub_create_datawriter.
     unsafe {
         if (*dw).publisher != pub_ {
             return ZeroDdsStatus::PreconditionNotMet as c_int;
@@ -249,15 +249,21 @@ pub unsafe extern "C" fn zerodds_pub_delete_datawriter(
                 return ZeroDdsStatus::BadHandle as c_int;
             }
         }
+        // Drop any zero-copy SHM loan state keyed by this writer's (runtime, eid).
+        #[cfg(feature = "flatdata-loan")]
+        {
+            let dwr = &*dw;
+            crate::shm_loan_ffi::forget_writer(&dwr.rt, dwr.eid);
+        }
         let _ = Box::from_raw(dw);
     }
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Liefert den DataWriter zu einem Topic-Namen, oder NULL.
+/// Returns the DataWriter for a topic name, or NULL.
 ///
 /// # Safety
-/// `pub_`, `topic_name` valide.
+/// `pub_`, `topic_name` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_lookup_datawriter(
     pub_: *mut ZeroDdsPublisher,
@@ -267,7 +273,7 @@ pub unsafe extern "C" fn zerodds_pub_lookup_datawriter(
         return ptr::null_mut();
     }
     // SAFETY: see fn # Safety doc — pub_+topic_name NULL-checked above; datawriters
-    // und ihre topic-Pointer aus pub_create_datawriter (Box::into_raw).
+    // and their topic pointers from pub_create_datawriter (Box::into_raw).
     unsafe {
         let cs = std::ffi::CStr::from_ptr(topic_name);
         let name = match cs.to_str() {
@@ -290,10 +296,10 @@ pub unsafe extern "C" fn zerodds_pub_lookup_datawriter(
     ptr::null_mut()
 }
 
-/// Loescht alle vom Publisher gehaltenen DataWriter.
+/// Deletes all DataWriters held by the publisher.
 ///
 /// # Safety
-/// `pub_` valide.
+/// `pub_` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_delete_contained_entities(
     pub_: *mut ZeroDdsPublisher,
@@ -301,7 +307,7 @@ pub unsafe extern "C" fn zerodds_pub_delete_contained_entities(
     if pub_.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: see fn # Safety doc — pub_ NULL-checked above; datawriters aus
+    // SAFETY: see fn # Safety doc — pub_ NULL-checked above; datawriters from
     // pub_create_datawriter (Box::into_raw).
     unsafe {
         let dws: Vec<*mut ZeroDdsDataWriter> = (*pub_)
@@ -322,10 +328,10 @@ pub unsafe extern "C" fn zerodds_pub_delete_contained_entities(
 // DataWriter: write, dispose, statuses, accessors
 // ---------------------------------------------------------------------------
 
-/// Liefert das Topic.
+/// Returns the topic.
 ///
 /// # Safety
-/// `dw` valide.
+/// `dw` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_get_topic(dw: *mut ZeroDdsDataWriter) -> *mut ZeroDdsTopic {
     if dw.is_null() {
@@ -335,10 +341,10 @@ pub unsafe extern "C" fn zerodds_dw_get_topic(dw: *mut ZeroDdsDataWriter) -> *mu
     unsafe { (*dw).topic }
 }
 
-/// Liefert den Publisher.
+/// Returns the publisher.
 ///
 /// # Safety
-/// `dw` valide.
+/// `dw` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_get_publisher(
     dw: *mut ZeroDdsDataWriter,
@@ -350,13 +356,13 @@ pub unsafe extern "C" fn zerodds_dw_get_publisher(
     unsafe { (*dw).publisher }
 }
 
-/// Schreibt einen vorgefertigten CDR-Payload (Caller serialisiert via
-/// idl-Codegen oder DynamicData). Das Encap-Header-Prefix wird vom
-/// Runtime hinzugefuegt.
+/// Writes a pre-made CDR payload (the caller serializes via
+/// idl codegen or DynamicData). The encap header prefix is added by the
+/// runtime.
 ///
 /// # Safety
-/// `dw`, `payload[0..len]` valide. `handle` ist Spec-Pflicht-Param der
-/// die Instance kennzeichnet — `0` = HANDLE_NIL = "Writer rechnet aus".
+/// `dw`, `payload[0..len]` valid. `handle` is a spec-mandatory param that
+/// identifies the instance — `0` = HANDLE_NIL = "writer computes it".
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_write(
     dw: *mut ZeroDdsDataWriter,
@@ -368,7 +374,7 @@ pub unsafe extern "C" fn zerodds_dw_write(
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — dw+payload NULL-checked above; payload[0..len]
-    // valide wenn len > 0 (Caller-Pledge).
+    // valid if len > 0 (caller pledge).
     let (rt, eid, buf) = unsafe {
         let dwr = &*dw;
         let buf = if len == 0 {
@@ -384,11 +390,11 @@ pub unsafe extern "C" fn zerodds_dw_write(
     }
 }
 
-/// Schreibt mit Source-Timestamp. RC1-Surface: leitet auf `write` durch
-/// — Source-Timestamp landet in der zukuenftigen Inline-QoS-Implementation.
+/// Writes with a source timestamp. RC1 surface: forwards to `write`
+/// — the source timestamp lands in the future inline-QoS implementation.
 ///
 /// # Safety
-/// Wie `zerodds_dw_write`.
+/// Like `zerodds_dw_write`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_write_w_timestamp(
     dw: *mut ZeroDdsDataWriter,
@@ -398,14 +404,14 @@ pub unsafe extern "C" fn zerodds_dw_write_w_timestamp(
     _ts_sec: i32,
     _ts_nanosec: u32,
 ) -> c_int {
-    // SAFETY: see fn # Safety doc — Delegation an zerodds_dw_write mit identischem Vertrag.
+    // SAFETY: see fn # Safety doc — delegation to zerodds_dw_write with an identical contract.
     unsafe { zerodds_dw_write(dw, payload, len, handle) }
 }
 
-/// Dispose: emittiert ein DISPOSED-Lifecycle-Marker fuer die Instance.
+/// Dispose: emits a DISPOSED lifecycle marker for the instance.
 ///
 /// # Safety
-/// `dw` valide; `key_hash[0..16]` lesbar. `handle` informational.
+/// `dw` valid; `key_hash[0..16]` readable. `handle` informational.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_dispose(
     dw: *mut ZeroDdsDataWriter,
@@ -416,7 +422,7 @@ pub unsafe extern "C" fn zerodds_dw_dispose(
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — dw+key_hash NULL-checked above; key_hash[0..16]
-    // valide (Caller-Pledge).
+    // valid (caller pledge).
     let (rt, eid, k) = unsafe {
         let dwr = &*dw;
         let raw = slice::from_raw_parts(key_hash, 16);
@@ -424,7 +430,7 @@ pub unsafe extern "C" fn zerodds_dw_dispose(
         k.copy_from_slice(raw);
         (dwr.rt.clone(), dwr.eid, k)
     };
-    // Status-Bits: DISPOSED nach RTPS Inline-QoS Status-Info §9.6.4.10.
+    // Status bits: DISPOSED per RTPS inline-QoS status info §9.6.4.10.
     const STATUS_DISPOSED: u32 = 0x0000_0001;
     match rt.write_user_lifecycle(eid, k, STATUS_DISPOSED) {
         Ok(()) => ZeroDdsStatus::Ok as c_int,
@@ -432,10 +438,10 @@ pub unsafe extern "C" fn zerodds_dw_dispose(
     }
 }
 
-/// Wartet bis alle aktuell ausstehenden Writes ackd sind oder Timeout.
+/// Waits until all currently outstanding writes are acked or a timeout.
 ///
 /// # Safety
-/// `dw` valide.
+/// `dw` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_wait_for_acknowledgments(
     dw: *mut ZeroDdsDataWriter,
@@ -458,10 +464,10 @@ pub unsafe extern "C" fn zerodds_dw_wait_for_acknowledgments(
     }
 }
 
-/// Liveliness fuer diesen Writer manuell asserten.
+/// Manually asserts liveliness for this writer.
 ///
 /// # Safety
-/// `dw` valide.
+/// `dw` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_assert_liveliness(dw: *mut ZeroDdsDataWriter) -> c_int {
     if dw.is_null() {
@@ -472,10 +478,10 @@ pub unsafe extern "C" fn zerodds_dw_assert_liveliness(dw: *mut ZeroDdsDataWriter
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Wartet bis mindestens `min` matched Subscriptions vorhanden sind oder Timeout.
+/// Waits until at least `min` matched subscriptions exist or a timeout.
 ///
 /// # Safety
-/// `dw` valide.
+/// `dw` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_wait_for_matched(
     dw: *mut ZeroDdsDataWriter,
@@ -532,8 +538,8 @@ pub struct ZeroDdsOfferedDeadlineMissedStatus {
     pub last_instance_handle: u64,
 }
 
-/// OfferedIncompatibleQosStatus (Spec §2.2.4.1, ohne Per-Policy-Liste —
-/// `last_policy_id` deckt den Pflicht-Pfad).
+/// OfferedIncompatibleQosStatus (Spec §2.2.4.1, without a per-policy list —
+/// `last_policy_id` covers the mandatory path).
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ZeroDdsOfferedIncompatibleQosStatus {
@@ -545,7 +551,7 @@ pub struct ZeroDdsOfferedIncompatibleQosStatus {
 /// `LIVELINESS_LOST_STATUS` (Spec §2.2.2.4.2.x).
 ///
 /// # Safety
-/// `dw` und `out` valide.
+/// `dw` and `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_get_liveliness_lost_status(
     dw: *mut ZeroDdsDataWriter,
@@ -569,7 +575,7 @@ pub unsafe extern "C" fn zerodds_dw_get_liveliness_lost_status(
 /// `OFFERED_DEADLINE_MISSED_STATUS`.
 ///
 /// # Safety
-/// `dw` und `out` valide.
+/// `dw` and `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_get_offered_deadline_missed_status(
     dw: *mut ZeroDdsDataWriter,
@@ -594,7 +600,7 @@ pub unsafe extern "C" fn zerodds_dw_get_offered_deadline_missed_status(
 /// `OFFERED_INCOMPATIBLE_QOS_STATUS`.
 ///
 /// # Safety
-/// `dw` und `out` valide.
+/// `dw` and `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_get_offered_incompatible_qos_status(
     dw: *mut ZeroDdsDataWriter,
@@ -619,7 +625,7 @@ pub unsafe extern "C" fn zerodds_dw_get_offered_incompatible_qos_status(
 /// `PUBLICATION_MATCHED_STATUS`.
 ///
 /// # Safety
-/// `dw` und `out` valide.
+/// `dw` and `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_get_publication_matched_status(
     dw: *mut ZeroDdsDataWriter,
@@ -670,7 +676,7 @@ mod tests {
         let f = zerodds_dpf_get_instance();
         let n = c"PubTopic";
         let tn = c"PubType";
-        // SAFETY: f aus dpf_get_instance, n+tn statisch valide.
+        // SAFETY: f from dpf_get_instance, n+tn statically valid.
         unsafe {
             let p = zerodds_dpf_create_participant(f, domain, ptr::null());
             let pubh = zerodds_dp_create_publisher(p, ptr::null());
@@ -681,7 +687,7 @@ mod tests {
 
     fn cleanup(p: *mut ZeroDdsDomainParticipant) {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: p aus mk_pub_topic; f statisch.
+        // SAFETY: p from mk_pub_topic; f static.
         unsafe {
             zerodds_dp_delete_contained_entities(p);
             zerodds_dpf_delete_participant(f, p);
@@ -692,7 +698,7 @@ mod tests {
     fn create_delete_datawriter_roundtrip() {
         let (p, pubh, t) = mk_pub_topic(41);
         assert!(!p.is_null() && !pubh.is_null() && !t.is_null());
-        // SAFETY: pubh+t aus mk.
+        // SAFETY: pubh+t from mk.
         unsafe {
             let dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
             assert!(!dw.is_null());
@@ -706,7 +712,7 @@ mod tests {
     fn lookup_datawriter_finds_existing() {
         let (p, pubh, t) = mk_pub_topic(42);
         let n = c"PubTopic";
-        // SAFETY: pubh+t aus mk; n statisch.
+        // SAFETY: pubh+t from mk; n static.
         unsafe {
             let dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
             assert!(!dw.is_null());
@@ -721,7 +727,7 @@ mod tests {
     fn lookup_datawriter_unknown_returns_null() {
         let (p, pubh, t) = mk_pub_topic(43);
         let n = c"Other";
-        // SAFETY: pubh+t aus mk; n statisch.
+        // SAFETY: pubh+t from mk; n static.
         unsafe {
             let _dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
             let found = zerodds_pub_lookup_datawriter(pubh, n.as_ptr());
@@ -734,7 +740,7 @@ mod tests {
     fn write_returns_ok_or_error() {
         let (p, pubh, t) = mk_pub_topic(44);
         let payload: [u8; 4] = [1, 2, 3, 4];
-        // SAFETY: pubh+t aus mk; payload Stack-lokal.
+        // SAFETY: pubh+t from mk; payload stack-local.
         unsafe {
             let dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
             let rc = zerodds_dw_write(dw, payload.as_ptr(), payload.len(), 0);
@@ -746,7 +752,7 @@ mod tests {
     #[test]
     fn dw_get_topic_publisher_roundtrip() {
         let (p, pubh, t) = mk_pub_topic(45);
-        // SAFETY: pubh+t aus mk.
+        // SAFETY: pubh+t from mk.
         unsafe {
             let dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
             assert_eq!(zerodds_dw_get_topic(dw), t);
@@ -758,7 +764,7 @@ mod tests {
     #[test]
     fn pub_suspend_resume_clean() {
         let (p, pubh, _t) = mk_pub_topic(46);
-        // SAFETY: pubh aus mk.
+        // SAFETY: pubh from mk.
         unsafe {
             assert_eq!(
                 zerodds_pub_suspend_publications(pubh),
@@ -779,7 +785,7 @@ mod tests {
         let mut deadl = ZeroDdsOfferedDeadlineMissedStatus::default();
         let mut incompat = ZeroDdsOfferedIncompatibleQosStatus::default();
         let mut matched = ZeroDdsPublicationMatchedStatus::default();
-        // SAFETY: pubh+t aus mk; status-Slots Stack-lokal.
+        // SAFETY: pubh+t from mk; status slots stack-local.
         unsafe {
             let dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
             let ok = ZeroDdsStatus::Ok as c_int;

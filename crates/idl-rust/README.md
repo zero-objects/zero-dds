@@ -3,32 +3,32 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-idl-rust/badge.svg)](https://docs.rs/zerodds-idl-rust)
 
-IDL4 → Rust Code-Generator für [ZeroDDS](https://zerodds.org)-DataTypes.
+IDL4 → Rust code generator for [ZeroDDS](https://zerodds.org) DataTypes.
 
-Liest den IDL-AST aus `zerodds-idl` und emittiert Rust-Code mit:
+Reads the IDL AST from `zerodds-idl` and emits Rust code with:
 - `pub struct` / `pub enum` / `pub type`
 - `impl zerodds_dcps::DdsType` (`encode`/`decode`/`encode_key_holder_be`)
-- `impl zerodds_cdr::CdrEncode` / `CdrDecode` für Enums
+- `impl zerodds_cdr::CdrEncode` / `CdrDecode` for enums
 
-Ergänzt die anderen Sprach-Codegens `idl-cpp` / `idl-csharp` / `idl-java` / `idl-ts` um den Rust-Pfad — End-User können IDL-First-Workflows auch in Rust nutzen.
+Complements the other language codegens `idl-cpp` / `idl-csharp` / `idl-java` / `idl-ts` with the Rust path — end users can use IDL-first workflows in Rust too.
 
-## Schichten-Position
+## Layer position
 
-Layer 3 (Schema). Build-Zeit-Tool, std-only, `forbid(unsafe_code)`.
+Layer 3 (schema). Build-time tool, std-only, `forbid(unsafe_code)`.
 
-## Was wird emittiert
+## What is emitted
 
 | IDL | Rust |
 |-----|------|
-| `struct` (final) | `pub struct` + `impl DdsType` mit XCDR2-Final-Wire |
-| `struct` (`@appendable`) | mit `zerodds_cdr::struct_enc::encode_appendable` |
-| `struct` (`@mutable`) | mit `zerodds_cdr::struct_enc::MutableStructEncoder` |
+| `struct` (final) | `pub struct` + `impl DdsType` with XCDR2 final wire |
+| `struct` (`@appendable`) | with `zerodds_cdr::struct_enc::encode_appendable` |
+| `struct` (`@mutable`) | with `zerodds_cdr::struct_enc::MutableStructEncoder` |
 | `enum` | `pub enum #[repr(i32)]` + `from_wire` + `CdrEncode/Decode` |
-| `union` | `pub enum` mit Variants pro Case |
+| `union` | `pub enum` with variants per case |
 | `typedef` | `pub type X = Y;` |
-| `module` | `pub mod m { ... }` mit nested Definitions |
-| `@key` | `encode_key_holder_be` Implementation, member-id-sortiert |
-| `@id(N)` | Member-ID für mutable extensibility und KeyHolder-Sortierung |
+| `module` | `pub mod m { ... }` with nested definitions |
+| `@key` | `encode_key_holder_be` implementation, member-id-sorted |
+| `@id(N)` | member ID for mutable extensibility and KeyHolder sorting |
 
 ## Quickstart
 
@@ -47,22 +47,22 @@ println!("{rust_src}");
 
 ## Tests
 
-- **Snapshot-Tests** (`tests/snapshot_codegen.rs`) — 13 Tests, jeder vergleicht den emittierten Code gegen einen committed `.snap`-File.
-- **Compile-Check-Tests** (`tests/compile_check.rs`, `--include-ignored`) — 8 Tests, jeder kompiliert den emittierten Code tatsächlich gegen ein temp-Crate mit Pfad-Deps auf `zerodds-cdr`+`zerodds-dcps`. Belegt dass der Output nicht nur snapshot-konsistent sondern auch real-kompilierbar ist.
+- **Snapshot tests** (`tests/snapshot_codegen.rs`) — 13 tests, each compares the emitted code against a committed `.snap` file.
+- **Compile-check tests** (`tests/compile_check.rs`, `--include-ignored`) — 8 tests, each actually compiles the emitted code against a temp crate with path deps on `zerodds-cdr`+`zerodds-dcps`. Proves the output is not only snapshot-consistent but also really compilable.
 
 ```bash
 cargo test -p zerodds-idl-rust --tests                                  # snapshot + smoke
 cargo test -p zerodds-idl-rust --test compile_check -- --include-ignored # real-compile
 ```
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../../LICENSE).
+Apache-2.0. See [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
-- [`docs/architecture/02_architecture.md`](../../docs/architecture/02_architecture.md) — Schichten-Architektur
-- [`crates/idl-cpp`](../idl-cpp/) — Vorbild-Codegen (C++17 Header)
-- [`crates/idl-csharp`](../idl-csharp/) — C# P/Invoke Codegen
-- [`crates/idl-java`](../idl-java/) — Java JNI Codegen
-- [`crates/idl-ts`](../idl-ts/) — TypeScript Codegen
+- [`docs/architecture/02_architecture.md`](../../docs/architecture/02_architecture.md) — layer architecture
+- [`crates/idl-cpp`](../idl-cpp/) — reference codegen (C++17 header)
+- [`crates/idl-csharp`](../idl-csharp/) — C# P/Invoke codegen
+- [`crates/idl-java`](../idl-java/) — Java JNI codegen
+- [`crates/idl-ts`](../idl-ts/) — TypeScript codegen

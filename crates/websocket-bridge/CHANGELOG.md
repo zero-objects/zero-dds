@@ -1,56 +1,55 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.2] — 2026-05-15
 
-Hotfix für zwei Bugs, die `zerodds-ws-bridged` in produktionsnahen
-Deployments unbrauchbar machten. ZeroCollab Wave 2b war auf den
-Workaround „YAML statt CLI" verschoben — mit rc.2 funktionieren beide
-Pfade.
+Hotfix for two bugs that made `zerodds-ws-bridged` unusable in
+production-like deployments. ZeroCollab Wave 2b had been deferred to
+the workaround "YAML instead of CLI" — with rc.2 both paths work.
 
 ### Fixed
 
-- **CLI-Merge:** `bin/zerodds-ws-bridged.rs::run()` mergte bisher nur
-  `--listen`, `--domain` und `--log-level` aus den geparsten `CliArgs`
-  in die `DaemonConfig`. `--topic`, `--auth-token`, `--tls-cert`,
-  `--tls-key` und `--metrics` blieben no-op. Spec §2 sagt „CLI
-  überschreibt File-Werte" — galt nur partiell. Fix: `apply_cli_overrides`
-  als testbare Funktion extrahiert; `--topic` additiv mit
+- **CLI merge:** `bin/zerodds-ws-bridged.rs::run()` previously merged only
+  `--listen`, `--domain` and `--log-level` from the parsed `CliArgs`
+  into the `DaemonConfig`. `--topic`, `--auth-token`, `--tls-cert`,
+  `--tls-key` and `--metrics` stayed no-op. Spec §2 says "the CLI
+  overrides file values" — which only held partially. Fix: `apply_cli_overrides`
+  extracted as a testable function; `--topic` additive with
   `default_ws_path`/`type_name=name`/`direction="bidir"` (Spec §5);
-  `--auth-token` impliziert `auth_mode="bearer"`; `--tls-cert`/`--tls-key`
-  impliziert `tls_enabled=true`; `--metrics` impliziert
-  `metrics_enabled=true`. Acht Unit-Tests im bin-Crate. (GitHub #1, PR #5.)
+  `--auth-token` implies `auth_mode="bearer"`; `--tls-cert`/`--tls-key`
+  implies `tls_enabled=true`; `--metrics` implies
+  `metrics_enabled=true`. Eight unit tests in the bin crate. (GitHub #1, PR #5.)
 
-- **yaml.example matched nicht Parser-Schema:** Die ausgelieferte
-  `packaging/linux/configs/ws-bridged.yaml.example` hatte
-  verschachtelte Top-Level-Keys (`participant:`, `websocket:`,
-  `routes:`, `observability:`). Der Parser erwartet flache Keys
+- **yaml.example did not match the parser schema:** The shipped
+  `packaging/linux/configs/ws-bridged.yaml.example` had
+  nested top-level keys (`participant:`, `websocket:`,
+  `routes:`, `observability:`). The parser expects flat keys
   (`listen/domain/log_level/tls/auth/acl/metrics/topics` per Spec §3)
-  und ignorierte unbekannte Keys stillschweigend → Bridge bootete
-  mit Defaults. Example umgeschrieben, Spec-§-Ref von §4 (Wire) auf
-  §3 (Config-File-Format) korrigiert. Neuer Integration-Test
-  `tests/example_yaml_loadback.rs` bindet das ausgelieferte
-  example-yaml via `include_str!` ein und fährt es durch
-  `DaemonConfig::load_from_str` — Drift fällt sofort als
-  Test-Fail auf statt erst im Feld. (GitHub #3, PR #5.)
+  and ignored unknown keys silently → the bridge booted
+  with defaults. Example rewritten, spec §-ref corrected from §4 (wire) to
+  §3 (config file format). New integration test
+  `tests/example_yaml_loadback.rs` includes the shipped
+  example yaml via `include_str!` and runs it through
+  `DaemonConfig::load_from_str` — drift surfaces immediately as a
+  test failure instead of only in the field. (GitHub #3, PR #5.)
 
 ### Added
 
-- **Parser-WARN für unbekannte Top-Level-Keys:**
-  `DaemonConfig::load_from_str` ignoriert unbekannte Keys nicht mehr
-  stillschweigend, sondern emittiert eine WARN-Zeile auf stderr mit
-  Hinweis auf erwartete Keys und Spec-Ref §3. Forward-Compatibility
-  bleibt (kein `ConfigError`). Unit-Test friert die Semantik ein.
+- **Parser WARN for unknown top-level keys:**
+  `DaemonConfig::load_from_str` no longer ignores unknown keys
+  silently, but emits a WARN line on stderr with a
+  hint about the expected keys and spec-ref §3. Forward compatibility
+  is kept (no `ConfigError`). A unit test freezes the semantics.
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-websocket-bridge`-Crate.
+Initial release materialization of the `zerodds-websocket-bridge` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **RFC 6455** (WebSocket): §3 (URI), §4 (Opening-Handshake), §5.2 (Base-Framing-Protocol), §5.3 (Client-to-Server-Masking), §6 (Send/Receive-Algorithm), §7.4 (Status-Codes), §8.1 (UTF-8-Handling), §9 (Extensions + Subprotocols).
-- **RFC 7692** (permessage-deflate): Compression-Extension fuer WebSocket.
+- **RFC 6455** (WebSocket): §3 (URI), §4 (opening handshake), §5.2 (base framing protocol), §5.3 (client-to-server masking), §6 (send/receive algorithm), §7.4 (status codes), §8.1 (UTF-8 handling), §9 (extensions + subprotocols).
+- **RFC 7692** (permessage-deflate): compression extension for WebSocket.
 
 ### Public-API
 
@@ -59,75 +58,75 @@ Initiale Release-Materialisierung der `zerodds-websocket-bridge`-Crate.
 - `encode(&Frame, &mut Vec<u8>)`, `decode(&[u8]) -> Result<(Frame, usize), CodecError>`, `CodecError`.
 - `apply_mask(payload, mask_key)`, `generate_masking_key`, `MaskingKeyProvider` (Trait), `InsecureSplitmixProvider`, `ClosureMaskingKeyProvider`.
 
-**Handshake (`handshake`-Modul):**
+**Handshake (`handshake` module):**
 - `WEBSOCKET_GUID`, `WEBSOCKET_VERSION`.
 - `ClientHandshake`, `ServerHandshake`, `HandshakeError`.
 - `compute_accept`, `parse_client_request`, `build_server_response`, `render_server_response`.
 
-**Negotiation (`negotiation`-Modul):**
+**Negotiation (`negotiation` module):**
 - `ExtensionOffer`, `parse_extensions`, `parse_subprotocols`, `select_subprotocol`.
 - `SUBPROTOCOL_HEADER`, `EXTENSIONS_HEADER`.
 
-**Close (`close`-Modul):**
+**Close (`close` module):**
 - `CloseCode`, `ClosePayload`, `StatusCodeRange`.
 - `encode_close_payload`, `decode_close_payload`.
 - `classify_status_code`, `is_forbidden_on_wire`, `validate_wire_status_code`.
 
-**permessage-deflate (`permessage_deflate`-Modul):**
+**permessage-deflate (`permessage_deflate` module):**
 - `PermessageDeflateParams { server_no_context_takeover, client_no_context_takeover, server_max_window_bits, client_max_window_bits }`.
 - `parse_offer`, `render_accept`, `NegotiationError`.
 - `append_tail`, `strip_tail`, `DEFLATE_TAIL` (`[0x00, 0x00, 0xFF, 0xFF]`).
 
-**URI (`uri`-Modul):**
+**URI (`uri` module):**
 - `WebSocketUri`, `parse_websocket_uri`, `default_port`, `is_local_loopback`, `resource_name`, `UriError`.
 
-**UTF-8 (`utf8`-Modul):**
+**UTF-8 (`utf8` module):**
 - `StreamingValidator`, `validate as validate_utf8`, `Utf8Error`.
 
-**DDS-Bridge (`dds_bridge`-Modul):**
+**DDS bridge (`dds_bridge` module):**
 - `BridgeOp::{Subscribe, Unsubscribe, Publish}`, `BridgeError`.
 - `Notification`, `SubscriptionRegistry`.
 - `parse_op`, `render_notification`.
 
-**Message (`message`-Modul):**
-- §6.1 / §6.2 Send- / Receive-Algorithmus mit Fragmentation-Reassembly.
+**Message (`message` module):**
+- §6.1 / §6.2 send / receive algorithm with fragmentation reassembly.
 
-### Implementierung
+### Implementation
 
-`encode`/`decode` macht das WebSocket-Wire-Format §5.2 exakt, inklusive der Spec-Anforderung "Payload-Length MUST be encoded in the minimum number of bytes" (Decoder rejected non-minimal Encoding wenn z.B. ein 16-bit-Length verwendet wird obwohl 7-bit reichen wuerde).
+`encode`/`decode` implements the WebSocket wire format §5.2 exactly, including the spec requirement "Payload-Length MUST be encoded in the minimum number of bytes" (the decoder rejects non-minimal encoding when, e.g., a 16-bit length is used even though 7-bit would suffice).
 
-`compute_accept` realisiert §4.2.2-Schritt-5: SHA1(`client_key` + WEBSOCKET_GUID), Base64-encoded. WebSocket-GUID `258EAFA5-E914-47DA-95CA-C5AB0DC85B11` ist als Konstante exposed.
+`compute_accept` realizes §4.2.2 step 5: SHA1(`client_key` + WEBSOCKET_GUID), Base64-encoded. The WebSocket GUID `258EAFA5-E914-47DA-95CA-C5AB0DC85B11` is exposed as a constant.
 
-`StreamingValidator` ist ein incremental UTF-8-Validator, der byte-fuer-byte fuettern kann (fuer Text-Frames wo Payload ueber mehrere Frames fragmentiert sein kann); rejected Surrogates (D800-DFFF), Overlong-Encodings, und Code-Points > 0x10FFFF.
+`StreamingValidator` is an incremental UTF-8 validator that can be fed byte-by-byte (for text frames where the payload may be fragmented across multiple frames); it rejects surrogates (D800-DFFF), overlong encodings, and code points > 0x10FFFF.
 
-`PermessageDeflateParams` parst und rendert nur die Negotiation-Header — die eigentliche Compression delegiert der Caller an `flate2` oder eine andere zlib-Bridge (no_std-kompatibel; permessage-deflate selbst ist in der Crate Spec-konform negotiated).
+`PermessageDeflateParams` only parses and renders the negotiation headers — the actual compression is delegated by the caller to `flate2` or another zlib bridge (no_std-compatible; permessage-deflate itself is negotiated spec-conformantly in the crate).
 
-`#![forbid(unsafe_code)]` ist gesetzt. `extern crate alloc;`.
+`#![forbid(unsafe_code)]` is set. `extern crate alloc;`.
 
-### Architektur
+### Architecture
 
-- **Layer:** 5 (Bridges).
-- **Dependencies (in):** keine (Substrat-Crate). Nur `core` + `alloc`.
-- **Dependents (out):** (vorgesehen) DDS-Web-Gateway / Browser-Endpoint-Layer.
-- **Feature-Flags:** `std` (default), `alloc` (via std).
+- **Layer:** 5 (bridges).
+- **Dependencies (in):** none (substrate crate). Only `core` + `alloc`.
+- **Dependents (out):** (planned) DDS web gateway / browser endpoint layer.
+- **Feature flags:** `std` (default), `alloc` (via std).
 
-### Stabilitaet
+### Stability
 
-- Public-API: RC1-stabil.
-- Wire-Format: durch RFC 6455 / RFC 7692 fixiert.
-- Fehler-Diskriminanten: stabil; neue Diskriminanten sind Major-additive.
+- Public API: RC1-stable.
+- Wire format: fixed by RFC 6455 / RFC 7692.
+- Error discriminants: stable; new discriminants are major-additive.
 
-### Added — Daemon-Wireup
+### Added — daemon wireup
 
-- Cross-Cutting Daemon-Runtime: `daemon`-Feature aktiviert
-  Prometheus-Metrics (§8.2), Catalog/Healthz/Metrics-Admin-Endpoint
-  (§5.2), Signal-Watcher fuer Graceful-Shutdown (§9.2), und
-  OTLP-Span-Exporter (§8.3).
-- Bridge-Security: TLS-Acceptor (rustls 0.23 ServerConnection-Wrapping
-  von TcpStream) + Auth-Modes + Topic-ACL via `zerodds-bridge-security`
-  Substrat (Bridge-Spec §7.1/§7.2/§7.3); SIGHUP-Hook fuer
-  TLS-Cert-Hot-Reload via `RotatingTlsConfig`.
-- Cross-Vendor-Interop: `cross_vendor.rs`-Modul fuer Konformitaets-
-  Tests gegen externe WebSocket-Implementationen.
-- DDS-QoS → WebSocket-Behavior-Translation in `qos_translation`
-  (Bridge-Spec §6).
+- Cross-cutting daemon runtime: the `daemon` feature enables
+  Prometheus metrics (§8.2), the catalog/healthz/metrics admin endpoint
+  (§5.2), a signal watcher for graceful shutdown (§9.2), and the
+  OTLP span exporter (§8.3).
+- Bridge security: TLS acceptor (rustls 0.23 ServerConnection wrapping
+  of TcpStream) + auth modes + topic ACL via the `zerodds-bridge-security`
+  substrate (bridge spec §7.1/§7.2/§7.3); SIGHUP hook for
+  TLS cert hot-reload via `RotatingTlsConfig`.
+- Cross-vendor interop: `cross_vendor.rs` module for conformance
+  tests against external WebSocket implementations.
+- DDS QoS → WebSocket behavior translation in `qos_translation`
+  (bridge spec §6).

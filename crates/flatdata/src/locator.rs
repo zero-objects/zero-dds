@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! ShmLocator — Wire-Format fuer PID_SHM_LOCATOR (Spec §3.1).
+//! ShmLocator — wire format for PID_SHM_LOCATOR (spec §3.1).
 //!
 //! Layout (little-endian):
 //!
@@ -14,41 +14,41 @@
 //! +------------------------+
 //! ```
 //!
-//! Caller-Layer (Discovery) sendet das via PID_SHM_LOCATOR=0x8001
-//! im SEDP-Sample. Reader auf demselben Host matcht (siehe
+//! The caller layer (discovery) sends this via PID_SHM_LOCATOR=0x8001
+//! in the SEDP sample. A reader on the same host matches (see
 //! `SameHostMatch`).
 
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// SHM-Locator: alle Daten die ein Same-Host-Reader braucht um zu
-/// einem Writer-SHM-Segment zu attachen.
+/// SHM locator: all the data a same-host reader needs to attach to
+/// a writer SHM segment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShmLocator {
-    /// FNV-1a Hash des Hostnamens. Same-Host-Match-Anker.
+    /// FNV-1a hash of the hostname. Same-host match anchor.
     pub hostname_hash: u32,
-    /// POSIX-UID des Writer-Prozesses. Verhindert Cross-User-Attaches
-    /// auf shared Hosts.
+    /// POSIX UID of the writer process. Prevents cross-user attaches
+    /// on shared hosts.
     pub uid: u32,
-    /// Anzahl Slots im Segment.
+    /// Number of slots in the segment.
     pub slot_count: u32,
-    /// Slot-Total-Size (Header + Daten + Padding).
+    /// Total slot size (header + data + padding).
     pub slot_size: u32,
-    /// SHM-Segment-Pfad (z.B. `/zddspub_<entity_id>`).
+    /// SHM segment path (e.g. `/zddspub_<entity_id>`).
     pub segment_path: String,
 }
 
-/// Fehler beim Encode/Decode.
+/// Error during encode/decode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LocatorError {
-    /// Buffer zu kurz fuer den fixen Header (16 byte).
+    /// Buffer too short for the fixed header (16 byte).
     TruncatedHeader,
-    /// String-Length-Prefix passt nicht zum Buffer.
+    /// String length prefix does not fit the buffer.
     TruncatedString,
-    /// Path enthaelt Non-UTF-8.
+    /// Path contains non-UTF-8.
     InvalidUtf8,
-    /// Path zu lang (> 256 byte als DoS-Cap).
+    /// Path too long (> 256 byte as a DoS cap).
     PathTooLong,
 }
 
@@ -66,14 +66,14 @@ impl core::fmt::Display for LocatorError {
 #[cfg(feature = "std")]
 impl std::error::Error for LocatorError {}
 
-/// Maximale Pfad-Laenge (DoS-Cap).
+/// Maximum path length (DoS cap).
 const MAX_PATH_LEN: usize = 256;
 
 impl ShmLocator {
-    /// Encoded little-endian. Layout siehe Modul-Doku.
+    /// Encodes little-endian. For the layout, see the module docs.
     ///
     /// # Errors
-    /// `PathTooLong` wenn `segment_path.len() > 256`.
+    /// `PathTooLong` when `segment_path.len() > 256`.
     pub fn to_bytes_le(&self) -> Result<Vec<u8>, LocatorError> {
         let path_bytes = self.segment_path.as_bytes();
         if path_bytes.len() > MAX_PATH_LEN {
@@ -95,7 +95,7 @@ impl ShmLocator {
         Ok(out)
     }
 
-    /// Decoded aus little-endian-Bytes.
+    /// Decodes from little-endian bytes.
     ///
     /// # Errors
     /// `TruncatedHeader`, `TruncatedString`, `InvalidUtf8`, `PathTooLong`.
@@ -114,7 +114,7 @@ impl ShmLocator {
         if 20 + str_len > bytes.len() {
             return Err(LocatorError::TruncatedString);
         }
-        // String inkl. null-terminator.
+        // String incl. null terminator.
         let raw = &bytes[20..20 + str_len];
         let str_no_null = if raw.last() == Some(&0) {
             &raw[..raw.len() - 1]
@@ -133,8 +133,8 @@ impl ShmLocator {
     }
 }
 
-/// FNV-1a Hash des Hostnamens (32-bit). Wird vom Writer beim Discovery
-/// gesetzt; Reader prueft gegen den eigenen.
+/// FNV-1a hash of the hostname (32-bit). Set by the writer during
+/// discovery; the reader checks it against its own.
 #[must_use]
 pub fn fnv1a_32(bytes: &[u8]) -> u32 {
     const OFFSET: u32 = 0x811c_9dc5;
@@ -147,9 +147,9 @@ pub fn fnv1a_32(bytes: &[u8]) -> u32 {
     h
 }
 
-/// Same-Host-Match-Helper. Caller passes (lokaler hostname, lokaler uid)
-/// und einen empfangenen `ShmLocator`; liefert `true` wenn beides
-/// uebereinstimmt — d.h. wir koennen mmap auf das Segment.
+/// Same-host match helper. The caller passes (local hostname, local uid)
+/// and a received `ShmLocator`; returns `true` when both
+/// match — i.e. we can mmap the segment.
 #[must_use]
 pub fn is_same_host(local_hostname: &str, local_uid: u32, locator: &ShmLocator) -> bool {
     let local_hash = fnv1a_32(local_hostname.as_bytes());
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn fnv1a_known_value() {
-        // Offizieller FNV-1a-Test-Vektor: hash("hello") = 0x4f9f2cab.
+        // Official FNV-1a test vector: hash("hello") = 0x4f9f2cab.
         assert_eq!(fnv1a_32(b"hello"), 0x4f9f_2cab);
     }
 

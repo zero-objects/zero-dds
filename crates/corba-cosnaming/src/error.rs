@@ -8,39 +8,39 @@ use crate::name::Name;
 /// `NotFoundReason` — Spec §2.5.4.6.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotFoundReason {
-    /// `missing_node` — Pfad bricht an einem nicht-existenten Knoten ab.
+    /// `missing_node` — the path breaks off at a non-existent node.
     MissingNode,
-    /// `not_context` — referenzierter Knoten ist kein Context.
+    /// `not_context` — the referenced node is not a context.
     NotContext,
-    /// `not_object` — referenzierter Knoten ist ein Context, aber
-    /// nicht das gesuchte Object.
+    /// `not_object` — the referenced node is a context, but not the
+    /// object being looked up.
     NotObject,
 }
 
-/// Naming-Service-Fehler. Spec §2.5.4 listet die fuenf normativen
-/// User-Exceptions; wir aggregieren sie hier.
+/// Naming service error. Spec §2.5.4 lists the five normative user
+/// exceptions; we aggregate them here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NamingError {
     /// `NotFound { why, rest_of_name }`.
     NotFound {
-        /// Reason-Code.
+        /// Reason code.
         why: NotFoundReason,
-        /// Verbleibender Name-Anteil ab dem Fehlpunkt.
+        /// Remaining portion of the name from the failure point.
         rest_of_name: Name,
     },
-    /// `CannotProceed { cxt, rest_of_name }` — der Context konnte den
-    /// Resolve-Schritt nicht durchfuehren (z.B. Federation-Probleme).
-    /// `cxt`-Kontext ist Caller-Eigenschaft; wir tragen nur den
-    /// Rest-Namen.
+    /// `CannotProceed { cxt, rest_of_name }` — the context could not
+    /// perform the resolve step (e.g. federation problems). The `cxt`
+    /// context is the caller's responsibility; we carry only the
+    /// remaining name.
     CannotProceed {
-        /// Verbleibender Name.
+        /// Remaining name.
         rest_of_name: Name,
     },
-    /// `InvalidName` — Name leer oder enthaelt ungueltige Eintraege.
+    /// `InvalidName` — name is empty or contains invalid entries.
     InvalidName,
-    /// `AlreadyBound` — Binding mit identischem Namen existiert.
+    /// `AlreadyBound` — a binding with an identical name exists.
     AlreadyBound,
-    /// `NotEmpty` — Context kann nicht zerstoert werden, weil noch
-    /// Bindings drin sind.
+    /// `NotEmpty` — the context cannot be destroyed because it still
+    /// contains bindings.
     NotEmpty,
 }

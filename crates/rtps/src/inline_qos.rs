@@ -1,44 +1,44 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Inline-QoS-Helper fuer DDS-RPC und SEDP (DDS-RPC 1.0 §7.8.2).
+//! Inline-QoS helpers for DDS-RPC and SEDP (DDS-RPC 1.0 §7.8.2).
 //!
-//! Inline-QoS ist eine [`crate::parameter_list::ParameterList`] im Body
-//! einer DATA/DATA_FRAG-Submessage (Q-Flag, Spec §9.4.5.3). Phase 2 nutzt
-//! sie bereits fuer `PID_KEY_HASH`, `PID_STATUS_INFO` etc. — dieses Modul
-//! ergaenzt Helper fuer die RPC-spezifischen Inline-QoS-PIDs:
+//! Inline QoS is a [`crate::parameter_list::ParameterList`] in the body
+//! of a DATA/DATA_FRAG submessage (Q flag, Spec §9.4.5.3). Phase 2 already uses
+//! it for `PID_KEY_HASH`, `PID_STATUS_INFO` etc. — this module
+//! adds helpers for the RPC-specific inline-QoS PIDs:
 //!
-//! * `PID_RELATED_SAMPLE_IDENTITY = 0x0083` (DDS-RPC 1.0 §7.8.2): wird
-//!   vom Reply-Writer in der Inline-QoS jeder Reply-DATA gesetzt; Wert
-//!   ist die `request_id` (`SampleIdentity` = 16 byte writer_guid +
-//!   8 byte sequence_number) des korrelierten Requests. Encoding:
-//!   XCDR2-Final, Alignment-Cap=4, also 24 byte ohne Padding.
+//! * `PID_RELATED_SAMPLE_IDENTITY = 0x0083` (DDS-RPC 1.0 §7.8.2): is
+//!   set by the reply writer in the inline QoS of every reply DATA; the value
+//!   is the `request_id` (`SampleIdentity` = 16 byte writer_guid +
+//!   8 byte sequence_number) of the correlated request. Encoding:
+//!   XCDR2-Final, alignment cap=4, i.e. 24 bytes without padding.
 //!
-//! Wir kapseln Encode/Decode hier, damit `zerodds-rpc` ohne harte Abhaengigkeit
-//! auf RTPS-Internas wie `Parameter`-Layout arbeiten kann.
+//! We encapsulate encode/decode here so that `zerodds-rpc` can work without a
+//! hard dependency on RTPS internals like the `Parameter` layout.
 
 use crate::error::WireError;
 use crate::parameter_list::{
     MUST_UNDERSTAND_BIT, Parameter, ParameterList, VENDOR_SPECIFIC_BIT, pid,
 };
 
-/// Spec-Konstante: 16 byte writer-GUID + 8 byte sequence-number.
+/// Spec constant: 16 byte writer GUID + 8 byte sequence number.
 pub const SAMPLE_IDENTITY_WIRE_SIZE: usize = 24;
 
-/// Wire-Repraesentation einer `SampleIdentity` (DDS-RPC 1.0 §7.5.1.1.1).
+/// Wire representation of a `SampleIdentity` (DDS-RPC 1.0 §7.5.1.1.1).
 ///
-/// Identisch zum Layout in `zerodds-rpc::common_types::SampleIdentity`, hier
-/// aber als reiner Byte-Helper modelliert — `zerodds-rtps` darf nicht auf
-/// `zerodds-rpc` zurueckgreifen (Crate-Abhaengigkeitsrichtung).
+/// Identical to the layout in `zerodds-rpc::common_types::SampleIdentity`, but
+/// modeled here as a pure byte helper — `zerodds-rtps` must not depend on
+/// `zerodds-rpc` (crate dependency direction).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct SampleIdentityBytes {
     /// 16 byte writer-GUID.
     pub writer_guid: [u8; 16],
-    /// 64-bit Sequence-Number.
+    /// 64-bit sequence number.
     pub sequence_number: u64,
 }
 
 impl SampleIdentityBytes {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new(writer_guid: [u8; 16], sequence_number: u64) -> Self {
         Self {
@@ -47,8 +47,8 @@ impl SampleIdentityBytes {
         }
     }
 
-    /// XCDR2-Final-Encoder mit gegebener Endianness.
-    /// Layout: 16 byte GUID + 8 byte u64 (Alignment-Cap=4 ⇒ kein Padding).
+    /// XCDR2-Final encoder with the given endianness.
+    /// Layout: 16 byte GUID + 8 byte u64 (alignment cap=4 ⇒ no padding).
     #[must_use]
     pub fn to_bytes(&self, little_endian: bool) -> [u8; SAMPLE_IDENTITY_WIRE_SIZE] {
         let mut out = [0u8; SAMPLE_IDENTITY_WIRE_SIZE];
@@ -62,10 +62,10 @@ impl SampleIdentityBytes {
         out
     }
 
-    /// XCDR2-Final-Decoder.
+    /// XCDR2-Final decoder.
     ///
     /// # Errors
-    /// `WireError::UnexpectedEof` wenn Buffer kuerzer als 24 byte ist.
+    /// `WireError::UnexpectedEof` if the buffer is shorter than 24 bytes.
     pub fn from_bytes(bytes: &[u8], little_endian: bool) -> Result<Self, WireError> {
         if bytes.len() < SAMPLE_IDENTITY_WIRE_SIZE {
             return Err(WireError::UnexpectedEof {
@@ -89,8 +89,8 @@ impl SampleIdentityBytes {
     }
 }
 
-/// Baut einen `Parameter` mit `PID_RELATED_SAMPLE_IDENTITY` (0x0083) und
-/// dem 24-byte XCDR2-Encoding der `SampleIdentity` als Value.
+/// Builds a `Parameter` with `PID_RELATED_SAMPLE_IDENTITY` (0x0083) and
+/// the 24-byte XCDR2 encoding of the `SampleIdentity` as the value.
 #[must_use]
 pub fn related_sample_identity_param(id: SampleIdentityBytes, little_endian: bool) -> Parameter {
     Parameter::new(
@@ -99,10 +99,10 @@ pub fn related_sample_identity_param(id: SampleIdentityBytes, little_endian: boo
     )
 }
 
-/// Baut eine Inline-QoS-`ParameterList`, die nur den
-/// `PID_RELATED_SAMPLE_IDENTITY` traegt — gut genug fuer die Reply-DATA
-/// einer einfachen RPC-Operation. Caller koennen weitere Parameter
-/// (`PID_KEY_HASH` etc.) per `push` ergaenzen.
+/// Builds an inline-QoS `ParameterList` that carries only the
+/// `PID_RELATED_SAMPLE_IDENTITY` — good enough for the reply DATA
+/// of a simple RPC operation. Callers can add further parameters
+/// (`PID_KEY_HASH` etc.) via `push`.
 #[must_use]
 pub fn reply_inline_qos(id: SampleIdentityBytes, little_endian: bool) -> ParameterList {
     let mut pl = ParameterList::new();
@@ -110,29 +110,29 @@ pub fn reply_inline_qos(id: SampleIdentityBytes, little_endian: bool) -> Paramet
     pl
 }
 
-/// Spec §9.6.3.9 — `PID_STATUS_INFO`-Bits.
+/// Spec §9.6.3.9 — `PID_STATUS_INFO` bits.
 pub mod status_info {
-    /// Bit 0: Sample wurde via `dispose` als NOT_ALIVE_DISPOSED markiert.
+    /// Bit 0: the sample was marked NOT_ALIVE_DISPOSED via `dispose`.
     pub const DISPOSED: u32 = 0x0000_0001;
-    /// Bit 1: Sample wurde via `unregister_instance` als
-    /// NOT_ALIVE_NO_WRITERS markiert.
+    /// Bit 1: the sample was marked NOT_ALIVE_NO_WRITERS via
+    /// `unregister_instance`.
     pub const UNREGISTERED: u32 = 0x0000_0002;
-    /// Bit 2: Sample wurde vom Writer per Content-Filter gefiltert.
+    /// Bit 2: the sample was filtered by the writer via a content filter.
     pub const FILTERED: u32 = 0x0000_0004;
 }
 
-/// Baut einen `Parameter` mit `PID_STATUS_INFO` (0x0071). Wert ist ein
-/// 4-byte Statusword (Bits per [`status_info`]). Spec verlangt
-/// **Big-Endian**-Encoding unabhaengig vom RTPS-Header-Endianess
+/// Builds a `Parameter` with `PID_STATUS_INFO` (0x0071). The value is a
+/// 4-byte status word (bits per [`status_info`]). The spec requires
+/// **big-endian** encoding independent of the RTPS header endianness
 /// (DDSI-RTPS 2.5 §9.6.3.9).
 #[must_use]
 pub fn status_info_param(bits: u32) -> Parameter {
     Parameter::new(pid::STATUS_INFO, bits.to_be_bytes().to_vec())
 }
 
-/// Liest `PID_STATUS_INFO` aus einer Inline-QoS-Liste. Liefert das
-/// 4-byte Statusword, oder `None` wenn die PID fehlt / das Value
-/// nicht 4 byte ist.
+/// Reads `PID_STATUS_INFO` from an inline-QoS list. Returns the
+/// 4-byte status word, or `None` if the PID is missing / the value
+/// is not 4 bytes.
 #[must_use]
 pub fn find_status_info(pl: &ParameterList) -> Option<u32> {
     let p = pl.find(pid::STATUS_INFO)?;
@@ -144,10 +144,10 @@ pub fn find_status_info(pl: &ParameterList) -> Option<u32> {
     Some(u32::from_be_bytes(b))
 }
 
-/// Liest `PID_KEY_HASH` aus einer Inline-QoS-Liste (Spec §9.6.4.8 +
-/// XTypes 1.3 §7.6.8). Liefert die 16-byte Identitaet der Instanz,
-/// oder `None` wenn die PID fehlt / das Value eine unzulaessige
-/// Laenge hat.
+/// Reads `PID_KEY_HASH` from an inline-QoS list (Spec §9.6.4.8 +
+/// XTypes 1.3 §7.6.8). Returns the 16-byte identity of the instance,
+/// or `None` if the PID is missing / the value has an invalid
+/// length.
 #[must_use]
 pub fn find_key_hash(pl: &ParameterList) -> Option<[u8; 16]> {
     let p = pl.find(pid::KEY_HASH)?;
@@ -159,9 +159,9 @@ pub fn find_key_hash(pl: &ParameterList) -> Option<[u8; 16]> {
     Some(b)
 }
 
-/// Baut eine Inline-QoS-`ParameterList` fuer einen Lifecycle-Marker —
-/// `PID_KEY_HASH` (16 byte) + `PID_STATUS_INFO` (4 byte). Wird vom
-/// Writer beim `dispose`/`unregister_instance` gesendet.
+/// Builds an inline-QoS `ParameterList` for a lifecycle marker —
+/// `PID_KEY_HASH` (16 byte) + `PID_STATUS_INFO` (4 byte). Sent by the
+/// writer on `dispose`/`unregister_instance`.
 #[must_use]
 pub fn lifecycle_inline_qos(key_hash: [u8; 16], status_bits: u32) -> ParameterList {
     let mut pl = ParameterList::new();
@@ -170,10 +170,10 @@ pub fn lifecycle_inline_qos(key_hash: [u8; 16], status_bits: u32) -> ParameterLi
     pl
 }
 
-/// Spec §8.7.9 — `PID_ORIGINAL_WRITER_INFO` als Inline-QoS. 24-byte
-/// Wert: 16 byte original GUID + 8 byte SequenceNumber (signed i64).
-/// Vom Persistence-Service gesetzt, wenn er ein historisches Sample
-/// im Auftrag eines anderen Writers weiterleitet.
+/// Spec §8.7.9 — `PID_ORIGINAL_WRITER_INFO` as inline QoS. 24-byte
+/// value: 16 byte original GUID + 8 byte SequenceNumber (signed i64).
+/// Set by the persistence service when it forwards a historical sample
+/// on behalf of another writer.
 #[must_use]
 pub fn original_writer_info_param(
     original_guid: [u8; 16],
@@ -191,10 +191,10 @@ pub fn original_writer_info_param(
     Parameter::new(pid::ORIGINAL_WRITER_INFO, value)
 }
 
-/// Liest `PID_ORIGINAL_WRITER_INFO` aus einer Inline-QoS-Liste.
+/// Reads `PID_ORIGINAL_WRITER_INFO` from an inline-QoS list.
 ///
 /// # Errors
-/// `WireError::UnexpectedEof` wenn der Value-Slice unter 24 byte liegt.
+/// `WireError::UnexpectedEof` if the value slice is below 24 bytes.
 pub fn find_original_writer_info(
     pl: &ParameterList,
     little_endian: bool,
@@ -224,22 +224,22 @@ pub fn find_original_writer_info(
     Ok(None)
 }
 
-/// Spec §8.7.7 / §9.6.2.2.5 — `PID_DIRECTED_WRITE` als Inline-QoS.
-/// Markiert ein Sample als Punkt-zu-Punkt-Send an einen einzigen
-/// Ziel-Reader (16 byte GUID). Andere Reader, die das Sample
-/// empfangen (z.B. via Multicast), MUESSEN es verwerfen.
+/// Spec §8.7.7 / §9.6.2.2.5 — `PID_DIRECTED_WRITE` as inline QoS.
+/// Marks a sample as a point-to-point send to a single
+/// target reader (16 byte GUID). Other readers that receive the sample
+/// (e.g. via multicast) MUST discard it.
 #[must_use]
 pub fn directed_write_param(target_reader_guid: [u8; 16]) -> Parameter {
     Parameter::new(pid::DIRECTED_WRITE, target_reader_guid.to_vec())
 }
 
-/// Liest `PID_DIRECTED_WRITE` aus einer Inline-QoS-Liste.
+/// Reads `PID_DIRECTED_WRITE` from an inline-QoS list.
 ///
-/// Liefert `Ok(None)` wenn die PID nicht gesetzt ist (Sample ist nicht
-/// directed). Ansonsten liefert die 16-byte Ziel-GUID.
+/// Returns `Ok(None)` if the PID is not set (the sample is not
+/// directed). Otherwise returns the 16-byte target GUID.
 ///
 /// # Errors
-/// `WireError::UnexpectedEof` wenn der Value-Slice unter 16 byte liegt.
+/// `WireError::UnexpectedEof` if the value slice is below 16 bytes.
 pub fn find_directed_write(pl: &ParameterList) -> Result<Option<[u8; 16]>, WireError> {
     let target = pid::DIRECTED_WRITE;
     for p in &pl.parameters {
@@ -259,14 +259,14 @@ pub fn find_directed_write(pl: &ParameterList) -> Result<Option<[u8; 16]>, WireE
     Ok(None)
 }
 
-/// Spec §8.7.7 — Receiver-side Filter: liefert `true`, wenn das Sample
-/// an den Reader mit `own_reader_guid` adressiert ist (oder kein
-/// Directed-Write gesetzt ist). `false` wenn ein PID_DIRECTED_WRITE
-/// vorhanden ist und der Wert NICHT mit own_guid uebereinstimmt — der
-/// Caller MUSS dann das Sample verwerfen.
+/// Spec §8.7.7 — receiver-side filter: returns `true` if the sample
+/// is addressed to the reader with `own_reader_guid` (or no
+/// directed write is set). `false` if a PID_DIRECTED_WRITE
+/// is present and the value does NOT match own_guid — the
+/// caller MUST then discard the sample.
 ///
 /// # Errors
-/// Wire-Decoding-Fehler aus `find_directed_write`.
+/// Wire decoding error from `find_directed_write`.
 pub fn directed_write_matches_reader(
     pl: &ParameterList,
     own_reader_guid: [u8; 16],
@@ -277,14 +277,14 @@ pub fn directed_write_matches_reader(
     })
 }
 
-/// Liest `PID_RELATED_SAMPLE_IDENTITY` aus einer Inline-QoS-Liste.
+/// Reads `PID_RELATED_SAMPLE_IDENTITY` from an inline-QoS list.
 ///
-/// Maskiert Must-Understand-Bit + Vendor-Bit. Liefert `Ok(None)` wenn
-/// die PID nicht vorhanden ist (Inline-QoS ohne RPC-Korrelation —
-/// z.B. ein User-Sample-DATA das nichts mit RPC zu tun hat).
+/// Masks the must-understand bit + vendor bit. Returns `Ok(None)` if
+/// the PID is not present (inline QoS without RPC correlation —
+/// e.g. a user-sample DATA that has nothing to do with RPC).
 ///
 /// # Errors
-/// `WireError::UnexpectedEof` wenn der Value-Slice unter 24 byte liegt.
+/// `WireError::UnexpectedEof` if the value slice is below 24 bytes.
 pub fn find_related_sample_identity(
     pl: &ParameterList,
     little_endian: bool,
@@ -319,10 +319,10 @@ mod tests {
         let bytes_be = id.to_bytes(false);
         assert_eq!(bytes_le.len(), SAMPLE_IDENTITY_WIRE_SIZE);
         assert_eq!(bytes_be.len(), SAMPLE_IDENTITY_WIRE_SIZE);
-        // Erste 16 byte = GUID (endianness-unabhaengig).
+        // First 16 bytes = GUID (endianness-independent).
         assert_eq!(&bytes_le[..16], &[0xAB; 16]);
         assert_eq!(&bytes_be[..16], &[0xAB; 16]);
-        // Letzte 8 byte = Sequence-Number, je Endianness anders.
+        // Last 8 bytes = sequence number, different per endianness.
         assert_eq!(&bytes_le[16..], &0x0102_0304_0506_0708u64.to_le_bytes());
         assert_eq!(&bytes_be[16..], &0x0102_0304_0506_0708u64.to_be_bytes());
     }
@@ -379,8 +379,8 @@ mod tests {
 
     #[test]
     fn find_related_sample_identity_with_must_understand_bit_works() {
-        // Cyclone setzt Inline-QoS-PIDs gerne mit MU-Bit. Maskierung muss
-        // greifen.
+        // Cyclone likes to set inline-QoS PIDs with the MU bit. Masking must
+        // take effect.
         let id = sample_id();
         let mut pl = ParameterList::new();
         pl.push(Parameter::new(
@@ -404,8 +404,8 @@ mod tests {
 
     #[test]
     fn roundtrip_in_data_submessage_inline_qos() {
-        // E2E: DataSubmessage mit Q-Flag + PID 0x0083 in Inline-QoS,
-        // dann roundtrip durch write_body / read_body_with_flags.
+        // E2E: DataSubmessage with Q flag + PID 0x0083 in inline QoS,
+        // then roundtrip through write_body / read_body_with_flags.
         use crate::submessages::{DATA_FLAG_INLINE_QOS, DataSubmessage};
         use crate::wire_types::{EntityId, SequenceNumber};
 
@@ -430,7 +430,7 @@ mod tests {
         let pl = decoded.inline_qos.unwrap();
         let back = find_related_sample_identity(&pl, true).unwrap();
         assert_eq!(back, Some(id));
-        // Payload byte-identisch.
+        // Payload byte-identical.
         assert_eq!(&decoded.serialized_payload[..], &[1, 2, 3, 4]);
     }
 
@@ -485,7 +485,7 @@ mod tests {
     #[test]
     fn directed_write_matches_reader_returns_true_when_no_directed_write() {
         let pl = ParameterList::new();
-        // Kein Directed-Write → jeder Reader passt.
+        // No directed write → every reader matches.
         assert!(directed_write_matches_reader(&pl, [0; 16]).unwrap());
     }
 

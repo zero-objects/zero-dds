@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DDS-WEB Bridge zur DDS-DCPS Public API — Spec §7.4.
+//! DDS-WEB bridge to the DDS-DCPS public API — Spec §7.4.
 //!
-//! Implementiert §7.4 §7.4 Class-Operationen
-//! Application + Participant + Topic + Pub/Sub + Writer/Reader von
-//! partial auf done.
+//! Implements §7.4 §7.4 class operations
+//! Application + Participant + Topic + Pub/Sub + Writer/Reader from
+//! partial to done.
 //!
-//! Spec-Quelle: OMG DDS-WEB 1.0 §7.4 (S. 17-58) — alle CRUD-
-//! Operationen des Web-Object-Models, das auf die DDS-Public-API
-//! abgebildet wird.
+//! Spec source: OMG DDS-WEB 1.0 §7.4 (pp. 17-58) — all CRUD
+//! operations of the web object model that is mapped to the DDS
+//! public API.
 //!
-//! # Schicht-Disziplin
+//! # Layer discipline
 //!
-//! Wir definieren hier ein Trait [`DdsBackend`], das die zwei
-//! Schichten entkoppelt:
+//! Here we define a trait [`DdsBackend`] that decouples the two
+//! layers:
 //!
-//! * `crates/web/` definiert REST-Routes (siehe `rest.rs`) und
-//!   Web-Object-Model (siehe `model.rs`).
-//! * Eine konkrete Backend-Implementation in einer hoeheren Schicht
-//!   (z.B. einem Daemon-Crate) implementiert `DdsBackend` und
-//!   ruft die DDS-Public-API auf (`crates/dcps/`).
+//! * `crates/web/` defines REST routes (see `rest.rs`) and the
+//!   web object model (see `model.rs`).
+//! * A concrete backend implementation in a higher layer
+//!   (e.g. a daemon crate) implements `DdsBackend` and
+//!   calls the DDS public API (`crates/dcps/`).
 //!
-//! Das Trait halten wir bewusst minimal — eine Method pro Operation,
-//! keine versteckte Async-Runtime. Caller, die async-Backends
-//! brauchen, koennen via `tokio::task::spawn_blocking` adaptieren.
+//! We keep the trait deliberately minimal — one method per operation,
+//! no hidden async runtime. Callers that need async backends
+//! can adapt via `tokio::task::spawn_blocking`.
 //!
 //! Cross-Ref: Spec §7.4 Tab 5 + §8.3.3 (PIM-zu-REST-Mapping).
 
@@ -33,60 +33,60 @@ use alloc::vec::Vec;
 
 use crate::access_control::Decision;
 
-/// Operations-Resultat: entweder ein neu erzeugter Resource-Identifier,
-/// eine Liste oder ein opaker Body.
+/// Operation result: either a newly created resource identifier,
+/// a list, or an opaque body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackendResult {
-    /// Erfolgreiche CREATE/UPDATE — liefert neuen Resource-Pfad
-    /// (z.B. `app1/topics/Sensor`).
+    /// Successful CREATE/UPDATE — returns the new resource path
+    /// (e.g. `app1/topics/Sensor`).
     Created(String),
-    /// Erfolgreiche DELETE / no-content-Operation.
+    /// Successful DELETE / no-content operation.
     Deleted,
-    /// Liste von Resource-Pfaden (z.B. fuer `get_applications`).
+    /// List of resource paths (e.g. for `get_applications`).
     List(Vec<String>),
-    /// Opaker Resource-Body als XML/JSON (Spec §8.1).
+    /// Opaque resource body as XML/JSON (Spec §8.1).
     Body {
-        /// MIME-Type (z.B. `application/zerodds-web+xml`).
+        /// MIME type (e.g. `application/zerodds-web+xml`).
         content_type: String,
-        /// Body-Bytes.
+        /// Body bytes.
         body: Vec<u8>,
     },
 }
 
-/// Backend-Fehler.
+/// Backend error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackendError {
-    /// Resource nicht gefunden.
+    /// Resource not found.
     NotFound(String),
-    /// Resource existiert bereits.
+    /// Resource already exists.
     Conflict(String),
-    /// Anfrage-Body nicht parsbar.
+    /// Request body not parsable.
     BadRequest(String),
-    /// AccessController hat Decision::Deny zurueckgegeben.
+    /// The AccessController returned Decision::Deny.
     Forbidden,
-    /// Unerwarteter interner Fehler.
+    /// Unexpected internal error.
     Internal(String),
 }
 
-/// Bridge-Trait — konkrete Backend-Implementation routet diese
-/// Method-Calls auf `crates/dcps/`-Public-API.
+/// Bridge trait — a concrete backend implementation routes these
+/// method calls to the `crates/dcps/` public API.
 ///
-/// Spec §7.4 fordert genau diese Operationen pro Object-Type
+/// Spec §7.4 requires exactly these operations per object type
 /// (Application/Participant/Topic/Publisher/Subscriber/DataWriter/
-/// DataReader/WaitSet). Wir buendeln sie thematisch.
+/// DataReader/WaitSet). We bundle them thematically.
 pub trait DdsBackend {
     // ---- Application (Spec §7.4.1) ----------------------------------
 
     /// `POST /dds/rest1/applications` — create_application.
     ///
     /// # Errors
-    /// `Conflict` wenn Application-Name bereits existiert.
+    /// `Conflict` if the application name already exists.
     fn create_application(&mut self, app_name: &str) -> Result<BackendResult, BackendError>;
 
     /// `DELETE /dds/rest1/applications/{name}`.
     ///
     /// # Errors
-    /// `NotFound` wenn Name unbekannt.
+    /// `NotFound` if the name is unknown.
     fn delete_application(&mut self, app_name: &str) -> Result<BackendResult, BackendError>;
 
     /// `GET /dds/rest1/applications` (Spec §7.4.1.4 fnmatch).
@@ -186,14 +186,14 @@ pub trait DdsBackend {
     ) -> Result<BackendResult, BackendError>;
 }
 
-/// Decision-Wrapper, der vor jedem Backend-Call die
-/// AccessController-Permission prueft.
+/// Decision wrapper that checks the AccessController permission
+/// before every backend call.
 ///
-/// Spec §7.3 Decision-Engine + §7.4 §7.4 Class-Operationen werden so
-/// orthogonal komponiert.
+/// Spec §7.3 decision engine + §7.4 class operations are thus
+/// composed orthogonally.
 ///
 /// # Errors
-/// `BackendError::Forbidden` wenn `decision == Decision::Deny`.
+/// `BackendError::Forbidden` if `decision == Decision::Deny`.
 pub fn enforce(decision: Decision) -> Result<(), BackendError> {
     match decision {
         Decision::Permit => Ok(()),
@@ -208,8 +208,8 @@ mod tests {
     use crate::access_control::{Decision, Operation, Permissions, Rule};
     use alloc::collections::BTreeMap;
 
-    /// Minimaler In-Memory-Backend fuer den Test (zaehlt nur
-    /// Operations-Calls, keine echte DDS-Bridge).
+    /// Minimal in-memory backend for the test (counts only
+    /// operation calls, not a real DDS bridge).
     #[derive(Default)]
     struct InMemoryBackend {
         apps: BTreeMap<String, ()>,
@@ -306,7 +306,7 @@ mod tests {
             rules: alloc::vec![Rule::allow("*", alloc::vec![Operation::Admin])],
         };
         let mut backend = InMemoryBackend::default();
-        // Alice darf eine Application erzeugen.
+        // Alice is allowed to create an application.
         let dec = perms.evaluate(Operation::Admin, "App1");
         assert!(enforce(dec).is_ok());
         let r = backend.create_application("App1").expect("ok");

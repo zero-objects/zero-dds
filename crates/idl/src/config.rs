@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Konfiguration fuer die Public-`parse()`-API (T5.5).
+//! Configuration for the public `parse()` API (T5.5).
 //!
-//! [`ParserConfig`] kombiniert die Grammar-Auswahl ([`IdlVersion`]),
-//! den Strenge-Grad ([`CompatMode`]) und Vendor-spezifische Erweiterungen
-//! ([`VendorExt`]). Default ist OMG-konform IDL 4.2.
+//! [`ParserConfig`] combines the grammar selection ([`IdlVersion`]),
+//! the strictness level ([`CompatMode`]) and vendor-specific extensions
+//! ([`VendorExt`]). The default is OMG-compliant IDL 4.2.
 //!
-//! Vendor-Extensions sind in Phase 0 leer (Hooks nur). Konkrete
-//! RTI-/OpenSplice-Deltas folgen mit Task 6.4 (`grammar::deltas`).
+//! Vendor extensions are empty in phase 0 (hooks only). Concrete
+//! RTI/OpenSplice deltas follow with Task 6.4 (`grammar::deltas`).
 
 use crate::features::IdlFeatures;
 use crate::grammar::IdlVersion;
 
-/// Konfiguration fuer den Top-Level-Parser.
+/// Configuration for the top-level parser.
 ///
-/// # Beispiel
+/// # Example
 /// ```
 /// use zerodds_idl::config::ParserConfig;
 /// let cfg = ParserConfig::default();
@@ -22,22 +22,22 @@ use crate::grammar::IdlVersion;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ParserConfig {
-    /// Welche IDL-Spec-Version geparst werden soll. Default: V4_2.
+    /// Which IDL spec version to parse. Default: V4_2.
     pub version: IdlVersion,
-    /// Wie streng wird das OMG-Grammatik-Regelwerk durchgesetzt.
+    /// How strictly the OMG grammar rule set is enforced.
     pub compat: CompatMode,
-    /// Welche Vendor-Extension(s) zusaetzlich aktiv sind. Legacy-Hook;
-    /// pro-Konstrukt-Aktivierung steuert jetzt [`IdlFeatures`].
+    /// Which vendor extension(s) are additionally active. Legacy hook;
+    /// per-construct activation is now controlled by [`IdlFeatures`].
     pub vendor: VendorExt,
-    /// Building-Block-Profil (§2.3 + §9). Steuert welche Spec-Sektionen
-    /// (DDS-Basic, DDS-Extensible, Full mit CORBA/CCM) als gueltig
-    /// angesehen werden. Default `DdsExtensible` reflektiert den
-    /// ZeroDDS-Use-Case (DDS-Stack mit XTypes).
+    /// Building-block profile (§2.3 + §9). Controls which spec sections
+    /// (DDS-Basic, DDS-Extensible, Full with CORBA/CCM) are considered
+    /// valid. The default `DdsExtensible` reflects the
+    /// ZeroDDS use case (DDS stack with XTypes).
     pub profile: Profile,
-    /// Feature-Flag-Maske fuer pro-Konstrukt-Aktivierung. Default
-    /// folgt dem `profile`-Feld; User kann zusaetzlich einzelne Flags
-    /// togglen (z.B. CORBA-Template-Modules in DDS-Extensible-Profil
-    /// fuer DDS-RPC-Service-Templates).
+    /// Feature-flag mask for per-construct activation. The default
+    /// follows the `profile` field; the user can additionally toggle
+    /// individual flags (e.g. CORBA template modules in the DDS-Extensible profile
+    /// for DDS-RPC service templates).
     pub features: IdlFeatures,
 }
 
@@ -54,7 +54,7 @@ impl Default for ParserConfig {
 }
 
 impl ParserConfig {
-    /// Convenience: strikte OMG-IDL-4.2-Konfiguration (== `Default`).
+    /// Convenience: strict OMG-IDL-4.2 configuration (== `Default`).
     #[must_use]
     pub const fn strict_4_2() -> Self {
         Self {
@@ -66,8 +66,8 @@ impl ParserConfig {
         }
     }
 
-    /// Convenience: vendor-pragmatische Konfiguration mit lockerer
-    /// Strict-Auslegung (z.B. leere `<member_list>` zugelassen).
+    /// Convenience: vendor-pragmatic configuration with a looser
+    /// strict interpretation (e.g. empty `<member_list>` allowed).
     #[must_use]
     pub const fn pragmatic_4_2() -> Self {
         Self {
@@ -79,8 +79,8 @@ impl ParserConfig {
         }
     }
 
-    /// Convenience: Plain-DDS-Profil (§2.3a) — minimal DDS-Stack ohne
-    /// XTypes-Erweiterungen, ohne CORBA/CCM-Konstrukte. Strict.
+    /// Convenience: plain-DDS profile (§2.3a) — minimal DDS stack without
+    /// XTypes extensions, without CORBA/CCM constructs. Strict.
     #[must_use]
     pub const fn plain_dds_4_2() -> Self {
         Self {
@@ -92,8 +92,8 @@ impl ParserConfig {
         }
     }
 
-    /// Convenience: Full-Profil — IDL 4.2 mit allen Building-Blocks
-    /// (inkl. CORBA-Profile, falls in der Grammar aktiviert).
+    /// Convenience: full profile — IDL 4.2 with all building blocks
+    /// (incl. CORBA profiles, if activated in the grammar).
     #[must_use]
     pub const fn full_4_2() -> Self {
         Self {
@@ -105,8 +105,8 @@ impl ParserConfig {
         }
     }
 
-    /// OpenSplice-Legacy-Migration-Profil: CORBA-Full + Legacy-Pragmas.
-    /// Fuer Referenz-Kunden, die uralte OpenSplice-IDLs upgraden.
+    /// OpenSplice legacy migration profile: CORBA-Full + legacy pragmas.
+    /// For reference customers upgrading ancient OpenSplice IDLs.
     #[must_use]
     pub const fn opensplice_legacy() -> Self {
         Self {
@@ -118,7 +118,7 @@ impl ParserConfig {
         }
     }
 
-    /// OpenSplice-Modern-Profil.
+    /// OpenSplice modern profile.
     #[must_use]
     pub const fn opensplice_modern() -> Self {
         Self {
@@ -130,7 +130,7 @@ impl ParserConfig {
         }
     }
 
-    /// RTI-Connext-Profil.
+    /// RTI Connext profile.
     #[must_use]
     pub const fn rti_connext() -> Self {
         Self {
@@ -142,7 +142,7 @@ impl ParserConfig {
         }
     }
 
-    /// Cyclone-DDS-Profil.
+    /// Cyclone DDS profile.
     #[must_use]
     pub const fn cyclonedds() -> Self {
         Self {
@@ -154,7 +154,7 @@ impl ParserConfig {
         }
     }
 
-    /// FastDDS-Profil.
+    /// FastDDS profile.
     #[must_use]
     pub const fn fastdds() -> Self {
         Self {
@@ -167,67 +167,67 @@ impl ParserConfig {
     }
 }
 
-/// Wie streng der Parser die OMG-Spec auslegt.
+/// How strictly the parser interprets the OMG spec.
 ///
-/// In Phase 0 hat das Setting noch keinen Verhaltens-Effekt — die Grammar
-/// ist hardgecodet vendor-pragmatisch (leere member_list etc.). Mit T6.x
-/// (`grammar::deltas`) wird `Strict` die Pragmatik-Lockerungen abdrehen.
+/// In phase 0 the setting has no behavioral effect yet — the grammar
+/// is hard-coded vendor-pragmatic (empty member_list etc.). With T6.x
+/// (`grammar::deltas`) `Strict` will turn off the pragmatic relaxations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum CompatMode {
-    /// OMG-konform mit allen `+`/`*`-Quantor-Pflichten.
+    /// OMG-compliant with all `+`/`*` quantifier obligations.
     #[default]
     Strict,
-    /// Vendor-pragmatisch: leere Listen wo Spec `+` fordert, weiche
-    /// Disambiguation an Stellen mit ueblichen Vendor-Erweiterungen.
+    /// Vendor-pragmatic: empty lists where the spec requires `+`, soft
+    /// disambiguation at points with common vendor extensions.
     Pragmatic,
 }
 
-/// Building-Block-Profil (§2.3 + §9 — IDL 4.2 Conformance).
+/// Building-block profile (§2.3 + §9 — IDL 4.2 conformance).
 ///
-/// IDL 4.2 ist modular aus Building-Blocks aufgebaut. Diese Achse
-/// selektiert welche Sektionen aktiv sind:
+/// IDL 4.2 is built modularly from building blocks. This axis
+/// selects which sections are active:
 ///
-/// - **`DdsBasic`** — minimales DDS-Profil: nur `module`/`struct`/`union`/
-///   `enum`/`typedef`/`const`/`exception` plus DDS-Annotations. Kein
-///   `interface`, kein `valuetype`, kein XTypes-Map/Bitset/Bitmask, keine
-///   CORBA/CCM-Konstrukte. Spec-Konformitaets-Ziel fuer schlanke
-///   Topic-Type-IDLs.
+/// - **`DdsBasic`** — minimal DDS profile: only `module`/`struct`/`union`/
+///   `enum`/`typedef`/`const`/`exception` plus DDS annotations. No
+///   `interface`, no `valuetype`, no XTypes map/bitset/bitmask, no
+///   CORBA/CCM constructs. Spec-conformance target for lean
+///   topic-type IDLs.
 /// - **`DdsExtensible`** — DDS plus XTypes (§7.4.13: map/bitset/bitmask/
-///   any), Annotation-Defs, `interface` fuer DDS-RPC. Default fuer den
-///   ZeroDDS-Use-Case.
-/// - **`Full`** — alle Building-Blocks der IDL 4.2 inkl. (zukuenftiger)
-///   CORBA-Profile (Components/Homes/Template-Modules). Heute identisch
-///   zu `DdsExtensible`, weil CORBA-Konstrukte noch nicht implementiert
-///   sind (siehe `idl-4.2.open.md` Sektion 7).
+///   any), annotation defs, `interface` for DDS-RPC. Default for the
+///   ZeroDDS use case.
+/// - **`Full`** — all building blocks of IDL 4.2 incl. (future)
+///   CORBA profiles (components/homes/template-modules). Today identical
+///   to `DdsExtensible`, because CORBA constructs are not yet implemented
+///   (see `idl-4.2.open.md` section 7).
 ///
-/// Profil ist *deklarativ* — die Grammar selbst ist
-/// monolithisch und akzeptiert immer den `DdsExtensible`-Umfang. Der
-/// Profil-Selektor wird mit CORBA-Konstrukten greifen
-/// (selektive Production-Aktivierung im `GrammarComposer`).
+/// The profile is *declarative* — the grammar itself is
+/// monolithic and always accepts the `DdsExtensible` scope. The
+/// profile selector will take effect with CORBA constructs
+/// (selective production activation in the `GrammarComposer`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Profile {
-    /// Plain-DDS — minimaler DDS-Topic-Type-Umfang.
+    /// Plain DDS — minimal DDS topic-type scope.
     DdsBasic,
-    /// DDS + XTypes + DDS-RPC (Default fuer DDS-Stacks).
+    /// DDS + XTypes + DDS-RPC (default for DDS stacks).
     #[default]
     DdsExtensible,
-    /// Full IDL 4.2 inkl. (zukuenftiger) CORBA/CCM-Profile.
+    /// Full IDL 4.2 incl. (future) CORBA/CCM profiles.
     Full,
 }
 
-/// Aktive Vendor-Extension fuer den Parser-Lauf.
+/// Active vendor extension for the parser run.
 ///
-/// Mit der Einfuehrung der Feature-Flag-Achse [`IdlFeatures`] ist dieser
-/// Enum primaer ein UI-/Routing-Hint; die eigentliche Aktivierung der
-/// Vendor-Konstrukte steuert das `features`-Feld.
+/// With the introduction of the feature-flag axis [`IdlFeatures`], this
+/// enum is primarily a UI/routing hint; the actual activation of the
+/// vendor constructs is controlled by the `features` field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum VendorExt {
-    /// Keine Vendor-Erweiterung. Default.
+    /// No vendor extension. Default.
     #[default]
     None,
     /// RTI Connext DDS.
     Rti,
-    /// OpenSplice (modern oder legacy — siehe `IdlFeatures::vendor_*`).
+    /// OpenSplice (modern or legacy — see `IdlFeatures::vendor_*`).
     OpenSplice,
     /// Cyclone DDS.
     CycloneDds,
@@ -327,7 +327,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // §2.3 + §9 — Profile-Selektor (§10 Open-List)
+    // §2.3 + §9 — profile selector (§10 open-list)
     // -----------------------------------------------------------------
 
     #[test]
@@ -352,8 +352,8 @@ mod tests {
 
     #[test]
     fn strict_pragmatic_use_extensible_profile() {
-        // strict_4_2 + pragmatic_4_2 muessen identisch zu Default-Profil
-        // bleiben (kein implizites Upgrade auf Full).
+        // strict_4_2 + pragmatic_4_2 must stay identical to the default profile
+        // (no implicit upgrade to Full).
         assert_eq!(ParserConfig::strict_4_2().profile, Profile::DdsExtensible);
         assert_eq!(
             ParserConfig::pragmatic_4_2().profile,

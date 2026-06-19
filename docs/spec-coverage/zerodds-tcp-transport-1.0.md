@@ -3,10 +3,14 @@
 ZeroDDS-vendor-spezifische TCP-Transport-Spec. Analog zu Cyclone's
 `ddsi_tcp`, FastDDS-TCPv4 und RTI-DDS-TCP. **Nicht OMG-normativ.**
 
+Implementation:
+
+- `crates/transport-tcp/` — TCP-Transport (Length-Prefix-Framing + 16-Byte-Handshake).
+
 | Spec-Family | Status |
 |---|---|
 | **OMG-normativ** | DDSI-RTPS 2.5 §9.4 (Locator-Kind) + §9.5 (Wire-Mapping) — voll abgedeckt; siehe `ddsi-rtps-2.5.md` Sektion 9.4/9.5 |
-| **ZeroDDS-eigene Spec** | Length-Prefix-Framing + 16-Byte-Handshake — diese Datei |
+| **ZeroDDS-eigene Spec** | Length-Prefix-Framing + 16-Byte-Handshake — [`zerodds-tcp-transport-1.0.md`](https://github.com/zero-objects/zero-dds/blob/main/docs/spec-coverage/zerodds-tcp-transport-1.0.md) |
 
 ## §1 Scope und Spec-Status
 
@@ -20,6 +24,7 @@ DDSI-RTPS 2.5 normiert für TCP nur:
   nicht weiter normiert.
 
 ZeroDDS-Implementation:
+
 - `crates/rtps/src/wire_types.rs` — LocatorKind-Konstanten.
 - `crates/transport-tcp/src/framing.rs` — RTPS-Frame-Mapping auf Stream.
 
@@ -200,4 +205,4 @@ Audit-Datum.
 **Voll abgedeckt**. ZeroDDS-TCP-Transport ist eine vollständige,
 in-sich-kohärente Spec; alle §-Sektionen sind implementiert und
 getestet. Cross-Vendor-Erweiterungspunkte (§6) sind als optional
-markiert — kein versteckter TODO, kein Deferral.
+markiert.

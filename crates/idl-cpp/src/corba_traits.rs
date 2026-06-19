@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! IDL-to-C++ Annex A.1 — CORBA-spezifische Type-Traits.
+//! IDL-to-C++ Annex A.1 — CORBA-specific type traits.
 //!
-//! Spec: `idl4-cpp-1.0` Annex A.1. Emittiert CORBA-Trait-Spezialisierungen
-//! pro Top-Level-Struct/Union/Typedef/Enum, die ein CORBA-C++-Mapping
-//! erwartet:
+//! Spec: `idl4-cpp-1.0` Annex A.1. Emits CORBA trait specializations
+//! for each top-level struct/union/typedef/enum that a CORBA C++ mapping
+//! expects:
 //!
 //! ```cpp
 //! namespace CORBA {
@@ -18,14 +18,14 @@
 //! }
 //! ```
 //!
-//! Annex A.1 unterscheidet fixed-size vs. variable-size:
+//! Annex A.1 distinguishes fixed-size vs. variable-size:
 //!
-//! - **fixed-size** (nur primitive Member, kein string/sequence):
+//! - **fixed-size** (only primitive members, no string/sequence):
 //!   `out_type = T&`.
-//! - **variable-size** (mindestens ein string/sequence/scoped-Member):
-//!   `out_type = T*&` (Heap-Pointer-Reference).
+//! - **variable-size** (at least one string/sequence/scoped member):
+//!   `out_type = T*&` (heap-pointer reference).
 //!
-//! Cross-Ref dds-psm-cxx §6.4.6.1 (Layout-Klassifikation).
+//! Cross-ref dds-psm-cxx §6.4.6.1 (layout classification).
 
 use std::fmt::Write;
 
@@ -36,10 +36,10 @@ use zerodds_idl::ast::{
 
 use crate::error::CppGenError;
 
-/// Emittiert Annex-A.1 CORBA-Trait-Spezialisierungen.
+/// Emits Annex A.1 CORBA trait specializations.
 ///
 /// # Errors
-/// `CppGenError::Internal` bei `fmt::Write`-Fehler.
+/// `CppGenError::Internal` on `fmt::Write` error.
 pub(crate) fn emit_corba_traits(out: &mut String, spec: &Specification) -> Result<(), CppGenError> {
     let mut emitted = Vec::new();
     collect_top_level(&spec.definitions, &mut Vec::new(), &mut emitted);
@@ -48,11 +48,7 @@ pub(crate) fn emit_corba_traits(out: &mut String, spec: &Specification) -> Resul
     }
 
     writeln!(out, "// Annex A.1 — CORBA-spezifische Type-Traits.").map_err(fmt_err)?;
-    writeln!(
-        out,
-        "// Erfordert CORBA-Header: <CORBA.h> oder Aequivalent."
-    )
-    .map_err(fmt_err)?;
+    writeln!(out, "// Requires a CORBA header: <CORBA.h> or equivalent.").map_err(fmt_err)?;
     writeln!(out, "namespace CORBA {{").map_err(fmt_err)?;
     for entry in emitted {
         emit_one(out, &entry)?;
@@ -128,9 +124,9 @@ fn type_is_variable(ts: &TypeSpec) -> bool {
         TypeSpec::String(_) => true,
         TypeSpec::Sequence(_) => true,
         TypeSpec::Map(_) => true,
-        // Scoped-Refs koennen alles sein — konservativ als variable
-        // klassifiziert (Annex A.1 erlaubt over-classification, weil
-        // const T& bzw. T*& kompiliert in beiden Faellen).
+        // Scoped refs can be anything — conservatively classified as variable
+        // (Annex A.1 allows over-classification because
+        // const T& and T*& both compile in either case).
         TypeSpec::Scoped(_) => true,
         TypeSpec::Any => true,
     }

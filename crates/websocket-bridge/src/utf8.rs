@@ -1,34 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! UTF-8 Validation nach RFC 6455 §8.1 + §8.2.
+//! UTF-8 validation per RFC 6455 §8.1 + §8.2.
 //!
-//! Spec: WebSocket-Server MUST close den Connect mit Status 1007 wenn
-//! ein Text-Frame UTF-8-invalid ist. Symmetrisch fuer den Client.
+//! Spec: a WebSocket server MUST close the connection with status 1007 if
+//! a text frame is UTF-8-invalid. Symmetric for the client.
 //!
-//! Wir validieren strict (RFC 3629), inkl.:
-//! - Surrogate-Pair-Codepoints (U+D800..=U+DFFF) sind verboten.
-//! - Overlong-Encoding ist verboten.
-//! - Codepoints > U+10FFFF sind verboten.
+//! We validate strictly (RFC 3629), incl.:
+//! - Surrogate-pair codepoints (U+D800..=U+DFFF) are forbidden.
+//! - Overlong encoding is forbidden.
+//! - Codepoints > U+10FFFF are forbidden.
 
 use core::result::Result;
 
-/// UTF-8-Validation-Errors.
+/// UTF-8 validation errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Utf8Error {
-    /// Truncated multi-byte sequence (Continuation-Byte am Ende fehlt).
+    /// Truncated multi-byte sequence (a continuation byte is missing at the end).
     Truncated,
-    /// Continuation-Byte ohne Lead-Byte (10xxxxxx isoliert).
+    /// Continuation byte without a lead byte (10xxxxxx isolated).
     UnexpectedContinuation,
-    /// Lead-Byte ist invalid (z.B. `0xC0`, `0xC1`, `0xF5`-`0xFF`).
+    /// The lead byte is invalid (e.g. `0xC0`, `0xC1`, `0xF5`-`0xFF`).
     InvalidLeadByte,
-    /// Surrogate-Codepoint U+D800..=U+DFFF.
+    /// Surrogate codepoint U+D800..=U+DFFF.
     SurrogateCodepoint,
-    /// Overlong-Encoding (z.B. `0xC0 0x80` fuer NUL).
+    /// Overlong encoding (e.g. `0xC0 0x80` for NUL).
     OverlongEncoding,
     /// Codepoint > U+10FFFF.
     CodepointOutOfRange,
-    /// Continuation-Byte ist nicht `10xxxxxx`.
+    /// The continuation byte is not `10xxxxxx`.
     InvalidContinuation,
 }
 
@@ -49,13 +49,13 @@ impl core::fmt::Display for Utf8Error {
 #[cfg(feature = "std")]
 impl std::error::Error for Utf8Error {}
 
-/// Validiert eine komplette UTF-8-Byte-Sequenz nach RFC 3629.
+/// Validates a complete UTF-8 byte sequence per RFC 3629.
 ///
-/// Liefert `Ok(())` wenn alle Bytes ein gueltiges UTF-8-Stream
-/// sind, sonst die erste gefundene Verletzung.
+/// Returns `Ok(())` if all bytes form a valid UTF-8 stream,
+/// otherwise the first violation found.
 ///
 /// # Errors
-/// Siehe [`Utf8Error`].
+/// See [`Utf8Error`].
 pub fn validate(bytes: &[u8]) -> Result<(), Utf8Error> {
     let mut i = 0;
     while i < bytes.len() {
@@ -128,12 +128,12 @@ pub fn validate(bytes: &[u8]) -> Result<(), Utf8Error> {
     Ok(())
 }
 
-/// Streamender UTF-8-Validator fuer fragmentierte Text-Frames.
+/// Streaming UTF-8 validator for fragmented text frames.
 ///
-/// WebSocket-Spec §6.2 kann Text-Frames in mehrere DATA-Frames
-/// (FIN=0) aufteilen — der UTF-8-Stream darf dabei mitten in einer
-/// multi-byte-Sequenz unterbrochen werden. Dieser Validator pflegt
-/// einen kleinen internen Puffer fuer das angefangene Codepoint.
+/// WebSocket spec §6.2 may split text frames into multiple DATA frames
+/// (FIN=0) — the UTF-8 stream may be interrupted in the middle of a
+/// multi-byte sequence. This validator maintains a small internal
+/// buffer for the codepoint that has been started.
 #[derive(Debug, Default)]
 pub struct StreamingValidator {
     pending: [u8; 4],
@@ -142,17 +142,17 @@ pub struct StreamingValidator {
 }
 
 impl StreamingValidator {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Ein Chunk Bytes pruefen. Liefert `Ok(())` wenn (zusammen mit
-    /// vorigem State) alles bisher valid ist.
+    /// Check a chunk of bytes. Returns `Ok(())` if (together with the
+    /// previous state) everything so far is valid.
     ///
     /// # Errors
-    /// Siehe [`Utf8Error`].
+    /// See [`Utf8Error`].
     pub fn feed(&mut self, chunk: &[u8]) -> Result<(), Utf8Error> {
         let mut buf: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
         buf.extend_from_slice(&self.pending[..self.pending_len]);
@@ -195,12 +195,12 @@ impl StreamingValidator {
         Ok(())
     }
 
-    /// `true` wenn der Stream auf Codepoint-Grenze endet (kein
-    /// pending byte). Ein Text-Frame mit FIN=1 MUSS diesen Zustand
-    /// erreichen — sonst Truncated-Fehler.
+    /// `true` if the stream ends on a codepoint boundary (no
+    /// pending byte). A text frame with FIN=1 MUST reach this state —
+    /// otherwise a truncated error.
     ///
     /// # Errors
-    /// `Utf8Error::Truncated` wenn pending Bytes uebrig sind.
+    /// `Utf8Error::Truncated` if pending bytes remain.
     pub fn finalize(self) -> Result<(), Utf8Error> {
         if self.pending_len == 0 {
             Ok(())
@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     fn rejects_truncated_2_byte() {
-        // 0xC3 (lead) ohne continuation
+        // 0xC3 (lead) without continuation
         assert_eq!(validate(&[0xC3]), Err(Utf8Error::Truncated));
     }
 

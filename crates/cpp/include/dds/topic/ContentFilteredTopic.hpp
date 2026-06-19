@@ -20,7 +20,7 @@ namespace topic {
 template <typename T>
 class ContentFilteredTopic : public TopicDescription {
 public:
-    /// Konstruiert ueber Related-Topic + Filter-Expression + Parameter.
+    /// Constructed from related topic + filter expression + parameters.
     ContentFilteredTopic(::dds::domain::DomainParticipant& dp,
                          const std::string& name, Topic<T>& related_topic,
                          const std::string& filter_expression,
@@ -40,10 +40,10 @@ public:
             throw ::dds::core::Error("ContentFilteredTopic::create failed");
         }
         related_topic_ = related_topic.native_handle();
-        // Im RC1: TopicDescription::handle_ bleibt der Topic-Pointer, da
-        // CFT auf C-FFI-Ebene als opaque Sub-Type ist und in DataReader-
-        // create-Pfad als TopicDescription-Pointer durchgereicht wird.
-        // (Folge-Wave: richtige Reader-Bind via cft_handle_.)
+        // In RC1: TopicDescription::handle_ stays the Topic pointer, since
+        // the CFT is an opaque sub-type at the C-FFI level and is passed
+        // through the DataReader create path as a TopicDescription pointer.
+        // (Follow-up wave: proper reader bind via cft_handle_.)
         handle_ = related_topic.native_handle();
     }
 

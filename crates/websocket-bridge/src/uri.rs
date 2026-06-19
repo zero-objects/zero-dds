@@ -1,38 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! WebSocket URI-Scheme-Parser nach RFC 6455 §3.
+//! WebSocket URI scheme parser per RFC 6455 §3.
 //!
 //! Spec: `ws-URI = "ws:" "//" host [ ":" port ] path [ "?" query ]`,
 //! `wss-URI = "wss:" "//" host [ ":" port ] path [ "?" query ]`.
-//! Default-Ports: 80 (ws), 443 (wss).
-//! Fragment ist explizit verboten in §3.
+//! Default ports: 80 (ws), 443 (wss).
+//! A fragment is explicitly forbidden in §3.
 
 use alloc::string::String;
 
-/// Parsed WebSocket URI nach RFC 6455 §3.
+/// Parsed WebSocket URI per RFC 6455 §3.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WebSocketUri {
-    /// `true` wenn `wss://` (TLS).
+    /// `true` if `wss://` (TLS).
     pub secure: bool,
-    /// Host (IP oder DNS-Name; nicht percent-decoded).
+    /// Host (IP or DNS name; not percent-decoded).
     pub host: String,
-    /// Port; default 80 (ws) oder 443 (wss).
+    /// Port; default 80 (ws) or 443 (wss).
     pub port: u16,
     /// Path; default "/".
     pub resource_name: String,
-    /// Optional Query-String (ohne fuehrendes "?").
+    /// Optional query string (without the leading "?").
     pub query: Option<String>,
 }
 
-/// URI-Parser-Errors nach RFC 6455 §3.
+/// URI parser errors per RFC 6455 §3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UriError {
-    /// Scheme ist nicht `ws://` oder `wss://`.
+    /// The scheme is not `ws://` or `wss://`.
     InvalidScheme,
-    /// Host fehlt.
+    /// The host is missing.
     MissingHost,
-    /// Port ist nicht parseable als u16.
+    /// The port is not parseable as u16.
     InvalidPort,
     /// Spec §3: "fragment identifier MUST NOT be used".
     FragmentNotAllowed,
@@ -52,10 +52,10 @@ impl core::fmt::Display for UriError {
 #[cfg(feature = "std")]
 impl std::error::Error for UriError {}
 
-/// Parsed eine `ws://` oder `wss://` URI nach RFC 6455 §3.
+/// Parses a `ws://` or `wss://` URI per RFC 6455 §3.
 ///
 /// # Errors
-/// Siehe [`UriError`].
+/// See [`UriError`].
 pub fn parse_websocket_uri(input: &str) -> Result<WebSocketUri, UriError> {
     let (secure, rest) = if let Some(r) = input.strip_prefix("ws://") {
         (false, r)
@@ -69,7 +69,7 @@ pub fn parse_websocket_uri(input: &str) -> Result<WebSocketUri, UriError> {
         return Err(UriError::FragmentNotAllowed);
     }
 
-    // Aufteilen Authority vs Path/Query.
+    // Split authority vs path/query.
     let (authority, path_query) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),
         None => (rest, "/"),
@@ -79,9 +79,9 @@ pub fn parse_websocket_uri(input: &str) -> Result<WebSocketUri, UriError> {
         return Err(UriError::MissingHost);
     }
 
-    // Authority: host[:port]. Note: IPv6-Literale [::1] werden hier
-    // nicht unterstuetzt (RFC 6874 — Caller-Layer); wir akzeptieren
-    // Hostnames + IPv4-Literale.
+    // Authority: host[:port]. Note: IPv6 literals [::1] are not
+    // supported here (RFC 6874 — caller layer); we accept
+    // hostnames + IPv4 literals.
     let (host, port) = if let Some(colon) = authority.rfind(':') {
         let host_part = &authority[..colon];
         let port_str = &authority[colon + 1..];
@@ -94,7 +94,7 @@ pub fn parse_websocket_uri(input: &str) -> Result<WebSocketUri, UriError> {
         (authority.to_string(), if secure { 443 } else { 80 })
     };
 
-    // Path/Query splitten.
+    // Split path/query.
     let (path, query) = match path_query.find('?') {
         Some(q) => (
             path_query[..q].to_string(),
@@ -112,13 +112,13 @@ pub fn parse_websocket_uri(input: &str) -> Result<WebSocketUri, UriError> {
     })
 }
 
-/// Default-Port nach Scheme.
+/// Default port by scheme.
 #[must_use]
 pub fn default_port(secure: bool) -> u16 {
     if secure { 443 } else { 80 }
 }
 
-/// Sammelt die `Resource-Name`-Form nach Spec (`<path> [ "?" <query> ]`).
+/// Assembles the `Resource-Name` form per spec (`<path> [ "?" <query> ]`).
 #[must_use]
 pub fn resource_name(uri: &WebSocketUri) -> String {
     match &uri.query {
@@ -132,8 +132,8 @@ pub fn resource_name(uri: &WebSocketUri) -> String {
     }
 }
 
-/// `true` wenn `host` als bekannter Local-Loopback-Wert akzeptiert
-/// werden darf (Same-Origin-Policy-Hint fuer Browser-Pfad).
+/// `true` if `host` may be accepted as a known local-loopback value
+/// (same-origin-policy hint for the browser path).
 #[must_use]
 pub fn is_local_loopback(host: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "::1")

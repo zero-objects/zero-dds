@@ -13,7 +13,7 @@
     <xs:include schemaLocation="dds-xml_domain_participants_definitions_nonamespace.xsd"/>
     <xs:include schemaLocation="dds-xml_applications_definitions_nonamespace.xsd"/>
 
-    <!-- <dds>-Root: Top-Level fuer ein vollstaendiges System. -->
+    <!-- <dds> root: top level for a complete system. -->
     <xs:complexType name="ddsSystem">
         <xs:sequence>
             <xs:element name="qos_library" type="qosLibrary"

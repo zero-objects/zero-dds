@@ -1,64 +1,64 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Wire-Format fuer Secure-Submessages.
+//! Wire format for secure submessages.
 //!
 //! zerodds-lint: allow no_dyn_in_safe
-//! (Der Codec nimmt `&dyn CryptographicPlugin` entgegen, damit die
-//! Crypto-Implementation austauschbar bleibt — architektur-bedingt.)
+//! (The codec accepts `&dyn CryptographicPlugin`, so the
+//! crypto implementation stays interchangeable — architectural.)
 //!
 //! ```text
-//! Submessage-Header (4 bytes):
+//! Submessage header (4 bytes):
 //!   +---+---+-------+
 //!   | id|flg| length|
 //!   +---+---+-------+
-//!     u8  u8  u16 (LE wenn flg & 0x01 gesetzt)
+//!     u8  u8  u16 (LE if flg & 0x01 is set)
 //! ```
 //!
-//! SEC_PREFIX:   id=0x31, body = TransformIdentifier (16 byte)
+//! SEC_PREFIX:   id=0x31, body = TransformIdentifier (16 bytes)
 //! SEC_BODY:     id=0x30, body = u32 length + ciphertext
-//! SEC_POSTFIX:  id=0x32, body = MAC-Liste fuer Receiver-Specific-MACs
+//! SEC_POSTFIX:  id=0x32, body = MAC list for receiver-specific MACs
 
 use alloc::vec::Vec;
 
 use zerodds_security::crypto::{CryptoHandle, CryptographicPlugin, ReceiverMac};
 use zerodds_security::error::SecurityError;
 
-/// SEC_PREFIX Submessage-ID (Spec §7.3.6.2).
+/// SEC_PREFIX submessage ID (spec §7.3.6.2).
 pub const SEC_PREFIX: u8 = 0x31;
-/// SEC_POSTFIX Submessage-ID (Spec §7.3.6.3).
+/// SEC_POSTFIX submessage ID (spec §7.3.6.3).
 pub const SEC_POSTFIX: u8 = 0x32;
-/// SEC_BODY Submessage-ID (Spec §7.3.6.4).
+/// SEC_BODY submessage ID (spec §7.3.6.4).
 pub const SEC_BODY: u8 = 0x30;
-/// SRTPS_PREFIX Submessage-ID (Spec §7.3.6.5).
+/// SRTPS_PREFIX submessage ID (spec §7.3.6.5).
 pub const SRTPS_PREFIX: u8 = 0x33;
-/// SRTPS_POSTFIX Submessage-ID (Spec §7.3.6.6).
+/// SRTPS_POSTFIX submessage ID (spec §7.3.6.6).
 pub const SRTPS_POSTFIX: u8 = 0x34;
 
-/// Endianness-Flag: `0x01` bedeutet Little-Endian in der Submessage.
+/// Endianness flag: `0x01` means little-endian in the submessage.
 const FLAG_LE: u8 = 0x01;
 
-/// Fehler beim Kodieren/Dekodieren.
+/// Error on encode/decode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SecurityRtpsError {
-    /// Input-Bytes zu kurz fuer die erwartete Submessage-Struktur.
+    /// Input bytes too short for the expected submessage structure.
     Truncated(&'static str),
-    /// Submessage-ID passt nicht zum erwarteten Slot (z.B. SEC_PREFIX
-    /// fehlt oder SEC_BODY-ID falsch).
+    /// Submessage ID does not match the expected slot (e.g. SEC_PREFIX
+    /// missing or SEC_BODY ID wrong).
     UnexpectedSubmessageId {
-        /// Position der Submessage im Container (0-indexed).
+        /// Position of the submessage in the container (0-indexed).
         pos: usize,
-        /// Erwartete ID.
+        /// Expected ID.
         expected: u8,
-        /// Tatsaechlich gelesene ID.
+        /// Actually read ID.
         got: u8,
     },
-    /// Big-Endian-Sec-Submessage — Big-Endian-Sec-Submessage (Major-2.0-additive).
+    /// Big-endian sec submessage — big-endian sec submessage (major-2.0 additive).
     BigEndianNotSupported,
-    /// Ciphertext-Laenge im SEC_BODY stimmt nicht mit dem Submessage-
-    /// Length-Header ueberein (Wire-Tampering?).
+    /// The ciphertext length in the SEC_BODY does not match the submessage
+    /// length header (wire tampering?).
     InconsistentLength,
-    /// Crypto-Plugin-Fehler durchgereicht.
+    /// Crypto-plugin error passed through.
     Crypto(SecurityError),
 }
 
@@ -89,38 +89,38 @@ impl From<SecurityError> for SecurityRtpsError {
     }
 }
 
-/// Kodiert ein plain-Submessage-Blob als **secured** Submessage-
-/// Sequenz (SEC_PREFIX + SEC_BODY + SEC_POSTFIX).
+/// Encodes a plain submessage blob as a **secured** submessage
+/// sequence (SEC_PREFIX + SEC_BODY + SEC_POSTFIX).
 ///
-/// Der Crypto-Plugin liefert den eigentlichen Ciphertext; dieses
-/// Modul kuemmert sich nur ums Wire-Framing.
+/// The crypto plugin produces the actual ciphertext; this
+/// module only takes care of the wire framing.
 ///
 /// # Errors
-/// Weitergereichter Crypto-Error oder Laengen-Overflow (u16).
+/// A passed-through crypto error or a length overflow (u16).
 pub fn encode_secured_submessage(
     plugin: &dyn CryptographicPlugin,
     local: CryptoHandle,
     remote_list: &[CryptoHandle],
     plaintext: &[u8],
 ) -> Result<Vec<u8>, SecurityRtpsError> {
-    // SEC_PREFIX-Body: 16 byte TransformIdentifier (TransformKindId(4)
-    // + KeyId(4) + TransformId(8)). Aktuell alle Null — der dynamische
-    // Wert kommt mit der DCPS-RTPS-Handle-Map-Integration.
+    // SEC_PREFIX body: 16-byte TransformIdentifier (TransformKindId(4)
+    // + KeyId(4) + TransformId(8)). Currently all zero — the dynamic
+    // value comes with the DCPS-RTPS handle-map integration.
     let sec_prefix_body = [0u8; 16];
 
-    // AAD-Extension per DDS-Security 1.2 §10.5.2 Tab.78 (Submessage-
-    // Protection): reserved-4 || SEC_PREFIX-CryptoHeader. Der Plugin's
-    // `mat.aad(extension)` prependet zusätzlich `transformation_kind ||
-    // key_id || session_id`. Damit ist der SEC_PREFIX-Header gegen
-    // Tampering geschützt.
+    // AAD extension per DDS-Security 1.2 §10.5.2 Tab.78 (submessage
+    // protection): reserved-4 || SEC_PREFIX CryptoHeader. The plugin's
+    // `mat.aad(extension)` additionally prepends `transformation_kind ||
+    // key_id || session_id`. This protects the SEC_PREFIX header against
+    // tampering.
     let mut aad_extension = Vec::with_capacity(4 + 16);
     aad_extension.extend_from_slice(&[0u8; 4]); // reserved-4
     aad_extension.extend_from_slice(&sec_prefix_body);
 
-    // 1) Crypto-Plugin verschlüsselt mit Spec-konformer AAD.
+    // 1) The crypto plugin encrypts with the spec-conformant AAD.
     let ciphertext = plugin.encrypt_submessage(local, remote_list, plaintext, &aad_extension)?;
 
-    // 2) SEC_PREFIX-Submessage schreiben.
+    // 2) Write the SEC_PREFIX submessage.
     let mut out = Vec::with_capacity(4 + 16 + 4 + 4 + ciphertext.len() + 4);
     push_header(&mut out, SEC_PREFIX, 16);
     out.extend_from_slice(&sec_prefix_body);
@@ -134,19 +134,19 @@ pub fn encode_secured_submessage(
     out.extend_from_slice(&ct_len.to_le_bytes());
     out.extend_from_slice(&ciphertext);
 
-    // 4) SEC_POSTFIX: leer (Single-MAC-Pfad). Multi-MAC-Variante:
+    // 4) SEC_POSTFIX: empty (single-MAC path). Multi-MAC variant:
     //    `encode_secured_submessage_multi`.
     push_header(&mut out, SEC_POSTFIX, 0);
 
     Ok(out)
 }
 
-/// Dekodiert eine Secure-Submessage-Sequenz und liefert den
-/// plaintext zurueck.
+/// Decodes a secure-submessage sequence and returns the
+/// plaintext.
 ///
 /// # Errors
-/// Bei Wire-Tampering (Submessage-IDs falsch, Laengen inkonsistent),
-/// Big-Endian, oder Crypto-Verify-Fail.
+/// On wire tampering (submessage IDs wrong, lengths inconsistent),
+/// big-endian, or a crypto verify fail.
 pub fn decode_secured_submessage(
     plugin: &dyn CryptographicPlugin,
     local: CryptoHandle,
@@ -155,8 +155,8 @@ pub fn decode_secured_submessage(
 ) -> Result<Vec<u8>, SecurityRtpsError> {
     let mut cur = Cursor::new(secured_bytes);
 
-    // SEC_PREFIX. Body-Bytes (16 Byte TransformIdentifier) sind Teil
-    // der AAD-Extension — symmetrisch zum Encoder.
+    // SEC_PREFIX. The body bytes (16-byte TransformIdentifier) are part
+    // of the AAD extension — symmetric to the encoder.
     let (id, _flags, plen) = read_header(&mut cur, "SEC_PREFIX")?;
     if id != SEC_PREFIX {
         return Err(SecurityRtpsError::UnexpectedSubmessageId {
@@ -185,7 +185,7 @@ pub fn decode_secured_submessage(
     }
     let ciphertext = cur.read_bytes(ct_len_raw as usize, "SEC_BODY ciphertext")?;
 
-    // SEC_POSTFIX (leer im Single-Receiver-Modus; ID-Check gibt Wire-Integrity).
+    // SEC_POSTFIX (empty in single-receiver mode; the ID check gives wire integrity).
     let (id, _flags, postlen) = read_header(&mut cur, "SEC_POSTFIX")?;
     if id != SEC_POSTFIX {
         return Err(SecurityRtpsError::UnexpectedSubmessageId {
@@ -206,35 +206,35 @@ fn push_header(out: &mut Vec<u8>, id: u8, length: u16) {
     out.extend_from_slice(&length.to_le_bytes());
 }
 
-/// DoS-Cap fuer die MAC-Liste im SEC_POSTFIX. Jeder MAC ist 20 Bytes;
-/// 256 MACs = 5 KiB — ausreichend fuer Hetero-Deployments mit
-/// hundertschaft Readers pro Writer, aber weit unter RAM-Angriffs-
-/// Threshold.
+/// DoS cap for the MAC list in the SEC_POSTFIX. Each MAC is 20 bytes;
+/// 256 MACs = 5 KiB — enough for heterogeneous deployments with
+/// hundreds of readers per writer, but far below the RAM-attack
+/// threshold.
 pub const MAX_RECEIVER_MACS: usize = 256;
 
-/// Encoded ein plain-Submessage-Blob als secured Sequenz MIT
-/// Receiver-Specific-MACs im SEC_POSTFIX(Spec §7.3.6.3).
+/// Encodes a plain submessage blob as a secured sequence WITH
+/// receiver-specific MACs in the SEC_POSTFIX (spec §7.3.6.3).
 ///
-/// Der Crypto-Plugin liefert einen gemeinsamen Ciphertext plus eine
-/// Liste von `(key_id, mac)`-Eintraegen, einer pro Reader.
+/// The crypto plugin produces a common ciphertext plus a
+/// list of `(key_id, mac)` entries, one per reader.
 ///
-/// # Wire-Layout SEC_POSTFIX (body)
+/// # Wire layout SEC_POSTFIX (body)
 /// ```text
 ///   u32  count
-///   [ u32 key_id ; u8 mac[16] ] * count     // 20 byte pro Eintrag
+///   [ u32 key_id ; u8 mac[16] ] * count     // 20 bytes per entry
 /// ```
 ///
 /// # Errors
-/// * `Crypto` durchgereicht vom Plugin.
-/// * `Truncated` wenn die MAC-Liste > `MAX_RECEIVER_MACS` ist oder
-///   der Ciphertext > `u32::MAX` / SEC_POSTFIX-body > `u16::MAX`.
+/// * `Crypto` passed through from the plugin.
+/// * `Truncated` if the MAC list > `MAX_RECEIVER_MACS` or
+///   the ciphertext > `u32::MAX` / SEC_POSTFIX body > `u16::MAX`.
 pub fn encode_secured_submessage_multi(
     plugin: &dyn CryptographicPlugin,
     local: CryptoHandle,
     receivers: &[(CryptoHandle, u32)],
     plaintext: &[u8],
 ) -> Result<Vec<u8>, SecurityRtpsError> {
-    // SEC_PREFIX-Body + AAD-Extension (analog encode_secured_submessage).
+    // SEC_PREFIX body + AAD extension (analogous to encode_secured_submessage).
     let sec_prefix_body = [0u8; 16];
     let mut aad_extension = Vec::with_capacity(4 + 16);
     aad_extension.extend_from_slice(&[0u8; 4]);
@@ -267,7 +267,7 @@ pub fn encode_secured_submessage_multi(
     out.extend_from_slice(&ct_len.to_le_bytes());
     out.extend_from_slice(&ciphertext);
 
-    // SEC_POSTFIX mit Multi-MAC-Payload.
+    // SEC_POSTFIX with the multi-MAC payload.
     push_header(&mut out, SEC_POSTFIX, postfix_body_len_u16);
     let n =
         u32::try_from(macs.len()).map_err(|_| SecurityRtpsError::Truncated("mac count > u32"))?;
@@ -280,20 +280,20 @@ pub fn encode_secured_submessage_multi(
     Ok(out)
 }
 
-/// Dekodiert eine Secure-Submessage-Sequenz MIT Multi-MAC-SEC_POSTFIX
-/// und liefert den plaintext zurueck.
+/// Decodes a secure-submessage sequence WITH a multi-MAC SEC_POSTFIX
+/// and returns the plaintext.
 ///
-/// `own_receiver_handle` identifiziert unsere eigene Empfaenger-
-/// Position in der MAC-Liste — der Plugin nutzt das, um den richtigen
-/// MAC-Eintrag zu finden und zu validieren (Spec §7.3.6.3).
+/// `own_receiver_handle` identifies our own receiver
+/// position in the MAC list — the plugin uses it to find the correct
+/// MAC entry and validate it (spec §7.3.6.3).
 ///
-/// Wenn die eingebettete MAC-Liste leer ist, wird auf den
-/// v1.4-Pfad `decode_secured_submessage` zurueckgefallen (Backward-
-/// Compat: ein Legacy-Sender hat nur `common_mac` im AEAD-Tag).
+/// If the embedded MAC list is empty, this falls back to the
+/// v1.4 path `decode_secured_submessage` (backward
+/// compat: a legacy sender has only `common_mac` in the AEAD tag).
 ///
 /// # Errors
-/// * `Crypto` bei MAC-Mismatch / AEAD-Verify-Fail.
-/// * `Truncated` bei zu kurzen Eingaben.
+/// * `Crypto` on a MAC mismatch / AEAD verify fail.
+/// * `Truncated` on inputs that are too short.
 pub fn decode_secured_submessage_multi(
     plugin: &dyn CryptographicPlugin,
     local: CryptoHandle,
@@ -304,8 +304,8 @@ pub fn decode_secured_submessage_multi(
 ) -> Result<Vec<u8>, SecurityRtpsError> {
     let mut cur = Cursor::new(secured_bytes);
 
-    // SEC_PREFIX. Body-Bytes (16 Byte TransformIdentifier) sind Teil
-    // der AAD-Extension — symmetrisch zum Encoder.
+    // SEC_PREFIX. The body bytes (16-byte TransformIdentifier) are part
+    // of the AAD extension — symmetric to the encoder.
     let (id, _flags, plen) = read_header(&mut cur, "SEC_PREFIX")?;
     if id != SEC_PREFIX {
         return Err(SecurityRtpsError::UnexpectedSubmessageId {
@@ -334,7 +334,7 @@ pub fn decode_secured_submessage_multi(
     }
     let ciphertext = cur.read_bytes(ct_len_raw as usize, "SEC_BODY ciphertext")?;
 
-    // SEC_POSTFIX mit Multi-MAC-Payload.
+    // SEC_POSTFIX with the multi-MAC payload.
     let (id, _flags, postlen) = read_header(&mut cur, "SEC_POSTFIX")?;
     if id != SEC_POSTFIX {
         return Err(SecurityRtpsError::UnexpectedSubmessageId {
@@ -458,9 +458,9 @@ mod tests {
         let (p, local, remote) = make_plugin();
         let plain = b"plain-rtps-submessage-bytes";
         let secured = encode_secured_submessage(&p, local, &[remote], plain).unwrap();
-        // Erste Bytes: SEC_PREFIX-Header.
+        // First bytes: SEC_PREFIX header.
         assert_eq!(secured[0], SEC_PREFIX);
-        // Irgendwo in den folgenden Bytes steht SEC_BODY und SEC_POSTFIX.
+        // Somewhere in the following bytes are SEC_BODY and SEC_POSTFIX.
         assert!(secured.contains(&SEC_BODY));
         assert!(secured.contains(&SEC_POSTFIX));
     }
@@ -480,9 +480,9 @@ mod tests {
         let plain = b"0123456789abcdef";
         let mut secured = encode_secured_submessage(&p, local, &[remote], plain).unwrap();
 
-        // SEC_BODY beginnt bei offset 4 (PREFIX header) + 16 (PREFIX body) =
-        // 20, dann 4 (BODY header) + 4 (u32 ct_len) = 28. Byte 30 liegt im
-        // ciphertext nach nonce.
+        // SEC_BODY starts at offset 4 (PREFIX header) + 16 (PREFIX body) =
+        // 20, then 4 (BODY header) + 4 (u32 ct_len) = 28. Byte 30 lies in
+        // the ciphertext after the nonce.
         secured[30 + 12] ^= 0x10;
 
         let err = decode_secured_submessage(&p, local, remote, &secured).unwrap_err();
@@ -537,9 +537,9 @@ mod tests {
     // Multi-MAC-Encoding (Receiver-Specific-MACs)
     // =======================================================================
 
-    /// Baut 3 Receiver-Slots mit jeweils eigenem random-master-key
-    /// (Simulation: pro Receiver ein eigener HMAC-Schluessel, wie er
-    /// aus getrennten SharedSecrets abgeleitet wuerde).
+    /// Builds 3 receiver slots, each with its own random master key
+    /// (simulation: one HMAC key per receiver, as it would be
+    /// derived from separate SharedSecrets).
     fn make_plugin_with_three_receivers() -> (
         AesGcmCryptoPlugin,
         CryptoHandle,
@@ -551,19 +551,19 @@ mod tests {
             .register_local_participant(IdentityHandle(1), &[])
             .unwrap();
 
-        // Pro Receiver: auf Sender-Seite ein eigener Handle (der
-        // spaeter als Multi-MAC-Key genutzt wird). Wir registrieren
-        // einfach 3 lokale Endpoints (jeder bekommt random key_material)
-        // und kopieren ihre Tokens auf die "Receiver-Seite" im selben
-        // Plugin.
+        // Per receiver: an own handle on the sender side (later
+        // used as the multi-MAC key). We simply register
+        // 3 local endpoints (each gets random key_material)
+        // and copy their tokens to the "receiver side" in the same
+        // plugin.
         let r1_sender = p.register_local_endpoint(sender, true, &[]).unwrap();
         let r2_sender = p.register_local_endpoint(sender, true, &[]).unwrap();
         let r3_sender = p.register_local_endpoint(sender, true, &[]).unwrap();
 
-        // Die gleichen Keys auf Receiver-Seite "registrieren" — in der
-        // realen Welt kommen sie via SharedSecret-Token-Austausch rein,
-        // hier im Unit-Test umgehen wir den Handshake indem wir die
-        // Tokens direkt zurueckspielen.
+        // "Register" the same keys on the receiver side — in the
+        // real world they come in via SharedSecret token exchange,
+        // here in the unit test we bypass the handshake by replaying the
+        // tokens directly.
         let t1 = p
             .create_local_participant_crypto_tokens(r1_sender, CryptoHandle(0))
             .unwrap();
@@ -599,9 +599,9 @@ mod tests {
     }
 
     fn bindings_with_ids(handles: &[CryptoHandle]) -> Vec<(CryptoHandle, u32)> {
-        // Im Unit-Test leiten wir key_id fuer den Receiver deterministisch
-        // aus dem Index ab (1001, 1002, 1003, ...). Realistisch kommt die
-        // ID aus dem Handshake.
+        // In the unit test we derive key_id for the receiver deterministically
+        // from the index (1001, 1002, 1003, ...). Realistically the
+        // ID comes from the handshake.
         handles
             .iter()
             .enumerate()
@@ -616,16 +616,16 @@ mod tests {
         let plain = b"hetero-broadcast-with-3-macs";
         let wire = encode_secured_submessage_multi(&p, sender, &receivers, plain).unwrap();
 
-        // SEC_POSTFIX-ID muss im Wire stehen.
+        // The SEC_POSTFIX ID must be present on the wire.
         let ptr = wire.windows(1).position(|w| w[0] == SEC_POSTFIX);
         assert!(ptr.is_some());
     }
 
     #[test]
     fn multi_mac_roundtrip_each_receiver_validates_own_mac() {
-        // DoD §Stufe 7 wortwoertlich: 3 Reader mit gleicher Suite,
-        // unterschiedlichen Tokens. Writer produziert ein Ciphertext +
-        // 3 MACs. Jeder Reader validiert seinen spezifischen MAC.
+        // DoD §stage 7 literally: 3 readers with the same suite,
+        // different tokens. The writer produces one ciphertext +
+        // 3 MACs. Each reader validates its specific MAC.
         let (p, sender, r_sender, _r_recv) = make_plugin_with_three_receivers();
         let receivers = bindings_with_ids(&r_sender);
         let plain = b"multi-mac-dod";
@@ -645,8 +645,8 @@ mod tests {
         let plain = b"rogue-attempt";
         let wire = encode_secured_submessage_multi(&p, sender, &receivers, plain).unwrap();
 
-        // Unbekannter Receiver: 4. Slot mit key_id 9999 — NICHT in der
-        // MAC-Liste.
+        // Unknown receiver: 4th slot with key_id 9999 — NOT in the
+        // MAC list.
         let foreign = p.register_local_endpoint(sender, true, &[]).unwrap();
         let err =
             decode_secured_submessage_multi(&p, sender, sender, 9999, foreign, &wire).unwrap_err();
@@ -663,7 +663,7 @@ mod tests {
         let plain = b"honest-plaintext";
         let mut wire = encode_secured_submessage_multi(&p, sender, &receivers, plain).unwrap();
 
-        // Flip ein Byte im Ciphertext (~offset 32).
+        // Flip a byte in the ciphertext (~offset 32).
         wire[32] ^= 0x20;
 
         let (own_h, own_id) = receivers[0];
@@ -678,10 +678,10 @@ mod tests {
     #[test]
     fn multi_mac_count_cap_enforced() {
         let (p, sender, _r_sender, _r_recv) = make_plugin_with_three_receivers();
-        // Baue ein Wire mit malformem SEC_POSTFIX: count > MAX_RECEIVER_MACS.
-        // Wir konstruieren das manuell statt via Plugin, um den Cap
-        // im Decoder explizit zu triggern.
-        let ct = b"ciphertext-x"; // irgendwas
+        // Build a wire with a malformed SEC_POSTFIX: count > MAX_RECEIVER_MACS.
+        // We construct it manually instead of via the plugin, to trigger the cap
+        // in the decoder explicitly.
+        let ct = b"ciphertext-x"; // anything
         let mut wire = Vec::new();
         // SEC_PREFIX
         wire.push(SEC_PREFIX);
@@ -695,14 +695,14 @@ mod tests {
         wire.extend_from_slice(&body_len.to_le_bytes());
         wire.extend_from_slice(&(ct.len() as u32).to_le_bytes());
         wire.extend_from_slice(ct);
-        // SEC_POSTFIX mit "count" = MAX+1
+        // SEC_POSTFIX with "count" = MAX+1
         wire.push(SEC_POSTFIX);
         wire.push(FLAG_LE);
         let bad_body_len = 4u16 + ((MAX_RECEIVER_MACS as u16 + 1) * 20);
         wire.extend_from_slice(&bad_body_len.to_le_bytes());
         wire.extend_from_slice(&((MAX_RECEIVER_MACS as u32) + 1).to_le_bytes());
-        // (die 20*N Bytes muessen gar nicht da sein — der Count-Check
-        //  laeuft vor dem Read)
+        // (the 20*N bytes need not even be present — the count check
+        //  runs before the read)
 
         let err =
             decode_secured_submessage_multi(&p, sender, sender, 0, sender, &wire).unwrap_err();
@@ -711,9 +711,9 @@ mod tests {
 
     #[test]
     fn multi_mac_empty_mac_list_falls_back_to_normal_decrypt() {
-        // Wenn der Sender via klassischem `encode_secured_submessage`
-        // encoded hat (SEC_POSTFIX leer), soll der Multi-Decoder
-        // trotzdem funktionieren — Backward-Compat.
+        // If the sender encoded via the classic `encode_secured_submessage`
+        // (SEC_POSTFIX empty), the multi-decoder should
+        // still work — backward compat.
         let (p, sender, _, _) = make_plugin_with_three_receivers();
         let plain = b"legacy-encoded-path";
         let wire = encode_secured_submessage(&p, sender, &[sender], plain).unwrap();

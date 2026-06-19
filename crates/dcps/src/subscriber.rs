@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Subscriber + DataReader — das Empfangs-Ende der DCPS-API.
+//! Subscriber + DataReader — the receive end of the DCPS API.
 //!
-//! Spec-Referenz: OMG DDS 1.4 §2.2.2.5 `Subscriber`, §2.2.2.5.2
+//! Spec reference: OMG DDS 1.4 §2.2.2.5 `Subscriber`, §2.2.2.5.2
 //! `DataReader`.
 //!
 //! # Scope v1.2
 //!
 //! - `Subscriber::create_datareader<T>(topic, qos)` → `DataReader<T>`.
-//! - `DataReader::take()` entnimmt alle zwischengespeicherten Samples.
-//! - `DataReader::read()` peekt ohne zu entfernen (Offline: identisch
-//!   zu take, kein Statement-Wechsel — Spec §2.2.2.5.3.4 sample-state
-//!   wird in Live-Mode implementiert).
-//! - Listener / WaitSet: Live-Mode.
+//! - `DataReader::take()` removes all cached samples.
+//! - `DataReader::read()` peeks without removing (offline: identical to
+//!   take, no state change — spec §2.2.2.5.3.4 sample-state is
+//!   implemented in live mode).
+//! - Listener / WaitSet: live mode.
 
 extern crate alloc;
 use alloc::boxed::Box;
@@ -53,7 +53,7 @@ use zerodds_qos::ReliabilityKind;
 #[cfg(feature = "std")]
 use zerodds_rtps::wire_types::EntityId;
 
-/// Subscriber — Entity-Gruppe fuer DataReader.
+/// Subscriber — entity group for DataReaders.
 #[derive(Debug)]
 pub struct Subscriber {
     pub(crate) inner: Arc<SubscriberInner>,
@@ -68,21 +68,20 @@ pub(crate) struct SubscriberInner {
     pub(crate) entity_state: alloc::sync::Arc<crate::entity::EntityState>,
     #[cfg(feature = "std")]
     pub(crate) runtime: Option<Arc<DcpsRuntime>>,
-    /// optionaler `SubscriberListener` + StatusMask.
-    /// Bubble-Up-Target fuer Reader-Events.
+    /// Optional `SubscriberListener` + StatusMask.
+    /// Bubble-up target for reader events.
     #[cfg(feature = "std")]
     pub(crate) listener: std::sync::Mutex<Option<(ArcSubscriberListener, StatusMask)>>,
-    /// Schwacher Back-Pointer auf den Participant (Bubble-Up,
-    /// Cycle-Vermeidung via Weak).
+    /// Weak back-pointer to the participant (bubble-up, cycle avoidance
+    /// via Weak).
     #[cfg(feature = "std")]
     pub(crate) participant:
         std::sync::Mutex<Option<alloc::sync::Weak<crate::participant::ParticipantInner>>>,
-    /// Group-Access-Scope fuer §2.2.2.5.2.8/.9 begin/end_access.
-    /// Counter-basiert (rekursiv nestable per Spec).
+    /// Group access scope for §2.2.2.5.2.8/.9 begin/end_access.
+    /// Counter-based (recursively nestable per spec).
     pub(crate) access_scope: Arc<crate::coherent_set::GroupAccessScope>,
-    /// DataReader-Handles (per `create_datareader` getrackt) fuer
-    /// rekursives `DomainParticipant::contains_entity`
-    /// (Spec §2.2.2.2.1.10).
+    /// DataReader handles (tracked per `create_datareader`) for recursive
+    /// `DomainParticipant::contains_entity` (spec §2.2.2.2.1.10).
     #[cfg(feature = "std")]
     pub(crate) datareaders:
         std::sync::Mutex<alloc::vec::Vec<crate::instance_handle::InstanceHandle>>,
@@ -114,8 +113,8 @@ impl Subscriber {
         }
     }
 
-    /// Spec §2.2.2.2.1.10 — `true` wenn `handle` ein DataReader ist,
-    /// der ueber diesen Subscriber erzeugt wurde.
+    /// Spec §2.2.2.2.1.10 — `true` if `handle` is a DataReader created
+    /// via this Subscriber.
     #[cfg(feature = "std")]
     #[must_use]
     pub fn contains_reader(&self, handle: crate::instance_handle::InstanceHandle) -> bool {
@@ -131,7 +130,7 @@ impl Subscriber {
         if let Ok(mut list) = self.inner.datareaders.lock() {
             list.push(handle);
         }
-        // Propagiere zum Participant fuer rekursives contains_entity.
+        // Propagate to the participant for recursive contains_entity.
         if let Ok(slot) = self.inner.participant.lock() {
             if let Some(weak) = slot.as_ref() {
                 if let Some(p_inner) = weak.upgrade() {
@@ -153,31 +152,30 @@ impl Subscriber {
         }
     }
 
-    /// Spec §2.2.2.5.2.8 `begin_access` — markiert den Beginn eines
-    /// kohaerenten Read-Sets. Verschachtelung ist erlaubt; jeder
-    /// Aufruf erhoeht einen internen Counter, jedes `end_access`
-    /// erniedrigt ihn.
+    /// Spec §2.2.2.5.2.8 `begin_access` — marks the start of a coherent
+    /// read set. Nesting is allowed; each call increments an internal
+    /// counter, each `end_access` decrements it.
     pub fn begin_access(&self) {
         self.inner.access_scope.begin();
     }
 
-    /// Spec §2.2.2.5.2.9 `end_access` — Gegenstueck zu `begin_access`.
+    /// Spec §2.2.2.5.2.9 `end_access` — counterpart to `begin_access`.
     ///
     /// # Errors
-    /// `DdsError::PreconditionNotMet` wenn `end_access` ohne
-    /// vorhergehendes `begin_access` gerufen wird.
+    /// `DdsError::PreconditionNotMet` if `end_access` is called without a
+    /// preceding `begin_access`.
     pub fn end_access(&self) -> Result<()> {
         self.inner.access_scope.end()
     }
 
-    /// `true` wenn aktuell ein Group-Access offen ist.
+    /// `true` if a group access is currently open.
     #[must_use]
     pub fn is_access_open(&self) -> bool {
         self.inner.access_scope.is_active()
     }
 
-    /// setzt den `SubscriberListener` + StatusMask. `None`
-    /// loescht den Slot. Spec §2.2.2.5.6.x set_listener.
+    /// Sets the `SubscriberListener` + StatusMask. `None` clears the
+    /// slot. Spec §2.2.2.5.6.x set_listener.
     #[cfg(feature = "std")]
     pub fn set_listener(&self, listener: Option<ArcSubscriberListener>, mask: StatusMask) {
         if let Ok(mut slot) = self.inner.listener.lock() {
@@ -186,7 +184,7 @@ impl Subscriber {
         self.inner.entity_state.set_listener_mask(mask);
     }
 
-    /// aktueller Listener-Klon.
+    /// Current listener clone.
     #[cfg(feature = "std")]
     #[must_use]
     pub fn get_listener(&self) -> Option<ArcSubscriberListener> {
@@ -197,7 +195,7 @@ impl Subscriber {
             .and_then(|s| s.as_ref().map(|(l, _)| Arc::clone(l)))
     }
 
-    /// Setzt den schwachen Back-Pointer auf den Participant.
+    /// Sets the weak back-pointer to the participant.
     #[cfg(feature = "std")]
     pub(crate) fn attach_participant(
         &self,
@@ -208,8 +206,8 @@ impl Subscriber {
         }
     }
 
-    /// Snapshot der Reader-Bubble-Up-Kette: gegebenes
-    /// `reader_listener`-Tupel + Subscriber-Stage + Participant-Stage.
+    /// Snapshot of the reader bubble-up chain: the given
+    /// `reader_listener` tuple + subscriber stage + participant stage.
     #[cfg(feature = "std")]
     #[must_use]
     pub(crate) fn snapshot_reader_chain(
@@ -239,10 +237,10 @@ impl Subscriber {
         }
     }
 
-    /// Erzeugt einen typed `DataReader<T>`.
+    /// Creates a typed `DataReader<T>`.
     ///
     /// # Errors
-    /// `BadParameter` bei Type-Name-Mismatch.
+    /// `BadParameter` on a type-name mismatch.
     pub fn create_datareader<T: DdsType + Send + 'static>(
         &self,
         topic: &Topic<T>,
@@ -256,26 +254,33 @@ impl Subscriber {
         #[cfg(feature = "std")]
         if let Some(rt) = self.inner.runtime.as_ref() {
             let reliable = qos.reliability.kind == ReliabilityKind::Reliable;
-            let (eid, rx) = rt.register_user_reader(crate::runtime::UserReaderConfig {
-                topic_name: topic.name().into(),
-                type_name: T::TYPE_NAME.into(),
-                reliable,
-                durability: qos.durability.kind,
-                deadline: qos.deadline,
-                liveliness: qos.liveliness,
-                ownership: qos.ownership.kind,
-                partition: qos.partition.names.clone(),
-                user_data: qos.user_data.value.clone(),
-                topic_data: qos.topic_data.value.clone(),
-                group_data: qos.group_data.value.clone(),
-                // F-TYPES-3: Topic-Type-Identifier + TCE-QoS weitergeben.
-                type_identifier: T::TYPE_IDENTIFIER.clone(),
-                type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-                // D.5g — Per-Reader-Override TBD (DataReaderQos::
-                // representation noch nicht modelliert). Default
-                // `None` = Runtime-Default.
-                data_representation_offer: None,
-            })?;
+            // Derive entityKind from the type's keyedness (spec §9.3.1.2:
+            // 0x04=NoKey / 0x07=WithKey). A keyless type (`HAS_KEY=false`)
+            // MUST produce a NoKey reader; otherwise cross-vendor writers
+            // (CycloneDDS/ROS 2) reject the endpoint match due to an
+            // entityKind mismatch (keyed vs no-key) — silently, with no log.
+            let (eid, rx) = rt.register_user_reader_kind(
+                crate::runtime::UserReaderConfig {
+                    topic_name: topic.name().into(),
+                    type_name: T::TYPE_NAME.into(),
+                    reliable,
+                    durability: qos.durability.kind,
+                    deadline: qos.deadline,
+                    liveliness: qos.liveliness,
+                    ownership: qos.ownership.kind,
+                    partition: qos.partition.names.clone(),
+                    user_data: qos.user_data.value.clone(),
+                    topic_data: qos.topic_data.value.clone(),
+                    group_data: qos.group_data.value.clone(),
+                    // F-TYPES-3: pass through the topic type identifier + TCE QoS.
+                    type_identifier: T::TYPE_IDENTIFIER.clone(),
+                    type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
+                    // Per-reader DataRepresentation override from the QoS
+                    // (`None` = runtime default). XTypes 1.3 §7.6.3.1.2.
+                    data_representation_offer: qos.data_representation.clone(),
+                },
+                T::HAS_KEY,
+            )?;
             let dr = DataReader::new_live(
                 topic.clone(),
                 qos,
@@ -307,8 +312,8 @@ impl crate::entity::Entity for Subscriber {
     }
 
     fn set_qos(&self, qos: Self::Qos) -> Result<()> {
-        // SubscriberQos: Partition / GroupData / Presentation sind alle
-        // Changeable=YES per Spec §2.2.3 — kein Immutable-Check nötig.
+        // SubscriberQos: Partition / GroupData / Presentation are all
+        // Changeable=YES per spec §2.2.3 — no immutable check needed.
         if let Ok(mut current) = self.inner.qos.lock() {
             *current = qos;
         }
@@ -325,48 +330,48 @@ impl crate::entity::Entity for Subscriber {
     }
 }
 
-/// Typed DataReader — entnimmt Samples, die der RTPS-Reader fuer
-/// das Topic empfangen hat.
+/// Typed DataReader — removes samples that the RTPS reader has received
+/// for the topic.
 ///
-/// Live-Mode: `rx: Some` liefert Samples aus der Runtime-mpsc.
-/// Offline-Mode: in-memory `inbox` fuer Unit-Tests.
+/// Live mode: `rx: Some` delivers samples from the runtime mpsc.
+/// Offline mode: in-memory `inbox` for unit tests.
 pub struct DataReader<T: DdsType> {
     topic: Topic<T>,
     qos: Mutex<DataReaderQos>,
-    /// Entity-Lifecycle (DCPS §2.2.2.1).
+    /// Entity lifecycle (DCPS §2.2.2.1).
     entity_state: Arc<crate::entity::EntityState>,
-    /// Parent-Subscriber — fuer Bubble-Up zum Subscriber- und
-    /// Participant-Listener.
+    /// Parent subscriber — for bubble-up to the subscriber and
+    /// participant listeners.
     subscriber: Arc<SubscriberInner>,
-    /// optionaler `DataReaderListener` + StatusMask.
+    /// Optional `DataReaderListener` + StatusMask.
     #[cfg(feature = "std")]
     listener: Mutex<Option<(ArcDataReaderListener, StatusMask)>>,
-    /// zuletzt gesehene Anzahl matched Writer (fuer
-    /// Delta-Detection im poll_subscription_matched).
+    /// Last seen number of matched writers (for delta detection in
+    /// poll_subscription_matched).
     #[cfg(feature = "std")]
     last_match_count: std::sync::atomic::AtomicI64,
-    /// zuletzt gesehener requested_deadline_missed-Counter.
+    /// Last seen requested_deadline_missed counter.
     #[cfg(feature = "std")]
     last_requested_deadline_missed: std::sync::atomic::AtomicU64,
-    /// zuletzt gesehener (alive_count, not_alive_count).
+    /// Last seen (alive_count, not_alive_count).
     #[cfg(feature = "std")]
     last_liveliness_alive: std::sync::atomic::AtomicI64,
-    /// zuletzt gesehener not_alive-Counter.
+    /// Last seen not_alive counter.
     #[cfg(feature = "std")]
     last_liveliness_not_alive: std::sync::atomic::AtomicI64,
-    /// zuletzt gesehener requested_incompatible_qos.total_count.
+    /// Last seen requested_incompatible_qos.total_count.
     #[cfg(feature = "std")]
     last_requested_incompatible_qos: std::sync::atomic::AtomicI64,
-    /// zuletzt gesehener sample_lost-Counter.
+    /// Last seen sample_lost counter.
     #[cfg(feature = "std")]
     last_sample_lost: std::sync::atomic::AtomicU64,
-    /// zuletzt gesehener sample_rejected.total_count.
+    /// Last seen sample_rejected.total_count.
     #[cfg(feature = "std")]
     last_sample_rejected: std::sync::atomic::AtomicI64,
-    /// Offline-Fallback-Inbox. Speichert volle [`UserSample`]-Werte
-    /// (inkl. writer_guid + writer_strength bei Alive), damit
-    /// `take()`/`read()` den Exclusive-Ownership-Filter spec-konform
-    /// anwenden koennen.
+    /// Offline fallback inbox. Stores full [`UserSample`] values
+    /// (including writer_guid + writer_strength for Alive) so that
+    /// `take()`/`read()` can apply the exclusive-ownership filter in a
+    /// spec-compliant way.
     inbox: Arc<Mutex<Vec<crate::runtime::UserSample>>>,
     #[cfg(feature = "std")]
     #[allow(dead_code)]
@@ -374,32 +379,31 @@ pub struct DataReader<T: DdsType> {
     #[cfg(feature = "std")]
     #[allow(dead_code)]
     entity_id: Option<EntityId>,
-    /// Runtime-Channel fuer ankommende Samples (Live-Mode).
+    /// Runtime channel for incoming samples (live mode).
     #[cfg(feature = "std")]
     rx: Option<Mutex<mpsc::Receiver<crate::runtime::UserSample>>>,
-    /// Optional Content-Filter-Closure. Wird in `take()`
-    /// nach dem Decode auf jedes Sample angewendet; liefert `true` →
-    /// Sample wird ausgeliefert, `false` → verworfen.
+    /// Optional content-filter closure. Applied to each sample in
+    /// `take()` after decoding; returns `true` → sample is delivered,
+    /// `false` → discarded.
     ///
-    /// Spec-Bezug: OMG DDS 1.4 §2.2.2.5.4 `ContentFilteredTopic`.
-    /// Diese Rust-Closure-Variante ist idiomatischer als die SQL-
-    /// Expression-Syntax der Spec und reicht fuer alle In-Process
-    /// Use-Cases. SQL-Parser + Cross-Vendor-SEDP-Propagation kommen
-    /// mit .
+    /// Spec reference: OMG DDS 1.4 §2.2.2.5.4 `ContentFilteredTopic`.
+    /// This Rust closure variant is more idiomatic than the spec's SQL
+    /// expression syntax and is sufficient for all in-process use cases.
+    /// SQL parser + cross-vendor SEDP propagation follow later.
     #[allow(clippy::type_complexity)]
     filter: Option<Arc<dyn Fn(&T) -> bool + Send + Sync>>,
-    ///  Instanz-Buchhaltung (Spec §2.2.2.5.1).
+    /// Instance bookkeeping (spec §2.2.2.5.1).
     #[cfg(feature = "std")]
     instances: InstanceTracker,
-    ///  Sample-Cache mit aufgeloester [`SampleInfo`]. Der Cache
-    /// wird beim Eingang via `ingest_bytes` befuellt; `take`/`read`/
-    /// `take_with_info`/`read_with_info` lesen daraus.
+    /// Sample cache with resolved [`SampleInfo`]. The cache is filled on
+    /// arrival via `ingest_bytes`; `take`/`read`/`take_with_info`/
+    /// `read_with_info` read from it.
     #[cfg(feature = "std")]
     cache: Arc<Mutex<Vec<CachedSample>>>,
-    /// Optional konfigurierter Flatdata-SlotBackend fuer den Same-Host-
-    /// Zero-Copy-Lese-Pfad (`zerodds-flatdata-1.0` §4.1 + §9.1). Wird
-    /// via `set_flat_backend` gesetzt; `read_flat()` faellt auf
-    /// klassisches `take()` zurueck wenn `None`.
+    /// Optionally configured Flatdata SlotBackend for the same-host
+    /// zero-copy read path (`zerodds-flatdata-1.0` §4.1 + §9.1). Set via
+    /// `set_flat_backend`; `read_flat()` falls back to classic `take()`
+    /// when `None`.
     #[cfg(all(feature = "std", feature = "flatdata-integration"))]
     #[allow(clippy::type_complexity)]
     pub(crate) flat_backend: Mutex<
@@ -412,16 +416,16 @@ pub struct DataReader<T: DdsType> {
     _t: PhantomData<fn() -> T>,
 }
 
-/// Intern: ein dekodierter Sample im Reader-Cache.
+/// Internal: a decoded sample in the reader cache.
 ///
-/// Wir tragen die Bytes (statt `T`), damit der Reader-Cache nicht an
-/// `T: Clone` gebunden ist und damit `T::decode` lazy passieren kann.
-/// Lifecycle-Marker (Dispose/Unregister) haben `bytes == None`.
+/// We carry the bytes (instead of `T`) so the reader cache is not bound
+/// to `T: Clone` and so `T::decode` can happen lazily. Lifecycle markers
+/// (dispose/unregister) have `bytes == None`.
 #[cfg(feature = "std")]
 #[derive(Debug)]
 pub(crate) struct CachedSample {
-    /// Zero-Copy-Container: SampleBytes haelt einen Arc<[u8]>-Slice auf
-    /// das RTPS-Wire-Datagram. None bei Lifecycle-Markern (Spec §2.2.2.5.1.13).
+    /// Zero-copy container: SampleBytes holds an Arc<[u8]> slice onto the
+    /// RTPS wire datagram. None for lifecycle markers (spec §2.2.2.5.1.13).
     pub bytes: Option<crate::sample_bytes::SampleBytes>,
     pub info: SampleInfo,
 }
@@ -512,12 +516,12 @@ impl<T: DdsType> DataReader<T> {
         }
     }
 
-    /// Konstruktor fuer Builtin-Topic-Reader.
+    /// Constructor for builtin-topic readers.
     ///
-    /// Anders als `new_offline` teilt sich dieser Reader die Inbox mit
-    /// dem `DcpsRuntime`-Discovery-Hook: SPDP-/SEDP-Receive pusht
-    /// ueber denselben `Arc<Mutex<Vec<crate::runtime::UserSample>>>` ein encoded Sample,
-    /// das hier per `take()`/`read()` ausgelesen wird.
+    /// Unlike `new_offline`, this reader shares the inbox with the
+    /// `DcpsRuntime` discovery hook: SPDP/SEDP receive pushes an encoded
+    /// sample through the same `Arc<Mutex<Vec<crate::runtime::UserSample>>>`,
+    /// which is read here via `take()`/`read()`.
     #[cfg(feature = "std")]
     pub(crate) fn new_builtin(
         topic: Topic<T>,
@@ -551,13 +555,13 @@ impl<T: DdsType> DataReader<T> {
         }
     }
 
-    /// Setzt einen Content-Filter, der auf jedem Sample im `take()`-
-    /// Pfad evaluiert wird. Rueckgabe `false` verwirft das Sample.
+    /// Sets a content filter that is evaluated on every sample in the
+    /// `take()` path. Returning `false` discards the sample.
     ///
-    /// Builder-Stil: `reader.with_filter(|s| s.value > 0)`.
+    /// Builder style: `reader.with_filter(|s| s.value > 0)`.
     ///
-    /// .7a — SQL-Expression-Syntax via `set_filter_expression`
-    /// folgt in .
+    /// .7a — SQL expression syntax via `set_filter_expression` follows
+    /// later.
     #[must_use]
     pub fn with_filter<F>(mut self, filter: F) -> Self
     where
@@ -567,22 +571,22 @@ impl<T: DdsType> DataReader<T> {
         self
     }
 
-    /// Topic, von dem gelesen wird.
+    /// The topic being read from.
     #[must_use]
     pub fn topic(&self) -> &Topic<T> {
         &self.topic
     }
 
-    /// Spec §2.2.2.5.3.6 / §2.2.2.1.1 — `InstanceHandle` dieses
-    /// DataReaders. Stabile Identitaet fuer
+    /// Spec §2.2.2.5.3.6 / §2.2.2.1.1 — `InstanceHandle` of this
+    /// DataReader. A stable identity for
     /// `DomainParticipant::contains_entity`.
     #[must_use]
     pub fn subscription_handle(&self) -> crate::instance_handle::InstanceHandle {
         self.entity_state.instance_handle()
     }
 
-    /// setzt den `DataReaderListener` + StatusMask. `None`
-    /// loescht den Slot. Spec §2.2.2.5.7.x set_listener.
+    /// Sets the `DataReaderListener` + StatusMask. `None` clears the
+    /// slot. Spec §2.2.2.5.7.x set_listener.
     #[cfg(feature = "std")]
     pub fn set_listener(&self, listener: Option<ArcDataReaderListener>, mask: StatusMask) {
         if let Ok(mut slot) = self.listener.lock() {
@@ -591,7 +595,7 @@ impl<T: DdsType> DataReader<T> {
         self.entity_state.set_listener_mask(mask);
     }
 
-    /// aktueller Listener-Klon, sofern vorhanden.
+    /// Current listener clone, if any.
     #[cfg(feature = "std")]
     #[must_use]
     pub fn get_listener(&self) -> Option<ArcDataReaderListener> {
@@ -601,8 +605,8 @@ impl<T: DdsType> DataReader<T> {
             .and_then(|s| s.as_ref().map(|(l, _)| Arc::clone(l)))
     }
 
-    /// Snapshot der Bubble-Up-Kette (Reader → Subscriber → Participant)
-    /// fuer Hot-Path-Listener-Dispatch.
+    /// Snapshot of the bubble-up chain (Reader → Subscriber → Participant)
+    /// for hot-path listener dispatch.
     #[cfg(feature = "std")]
     #[must_use]
     pub(crate) fn listener_chain(&self) -> crate::listener_dispatch::ReaderListenerChain {
@@ -617,34 +621,34 @@ impl<T: DdsType> DataReader<T> {
         sub_handle.snapshot_reader_chain(reader)
     }
 
-    /// Aktuelle QoS (cloned, .1).
+    /// Current QoS (cloned, .1).
     #[must_use]
     pub fn qos(&self) -> DataReaderQos {
         self.qos.lock().map(|q| q.clone()).unwrap_or_default()
     }
 
-    /// Nimmt alle zwischengespeicherten Samples und entfernt sie aus
-    /// der Inbox. Liefert leeren Vec wenn nichts da ist.
+    /// Takes all cached samples and removes them from the inbox. Returns
+    /// an empty Vec if there is nothing.
     ///
     /// # Errors
-    /// - `WireError` wenn ein gespeicherter Payload sich nicht mehr
-    ///   decoden laesst (type-eval mismatch).
+    /// - `WireError` if a stored payload can no longer be decoded
+    ///   (type-eval mismatch).
     pub fn take(&self) -> Result<Vec<T>> {
-        // Spec §2.2.3.22 ReaderDataLifecycle.autopurge — bei jedem read/take
-        // pruefen, ob abgelaufene Instanzen aus dem Tracker zu entfernen sind.
+        // Spec §2.2.3.22 ReaderDataLifecycle.autopurge — on every read/take,
+        // check whether expired instances must be removed from the tracker.
         #[cfg(feature = "std")]
         {
             let now = get_current_time();
             let mut empty: Vec<CachedSample> = Vec::new();
             self.run_reader_autopurge(now, &mut empty);
         }
-        // Live-Mode: zuerst Staging-Inbox (gefuellt von wait_for_data)
-        // drainen, dann alle noch unpollten Samples aus mpsc ziehen.
+        // Live mode: first drain the staging inbox (filled by
+        // wait_for_data), then pull all not-yet-polled samples from mpsc.
         #[cfg(feature = "std")]
         if let Some(rx_mu) = self.rx.as_ref() {
             let mut out = Vec::new();
-            // TimeBasedFilter (Spec §2.2.3.13) min_separation aus QoS lesen,
-            // damit Live-Mode dieselbe Filterung wie ingest_into_cache anwendet.
+            // Read TimeBasedFilter (spec §2.2.3.13) min_separation from QoS
+            // so live mode applies the same filtering as ingest_into_cache.
             let min_sep_nanos = {
                 let qos = self.qos.lock().unwrap_or_else(|e| e.into_inner());
                 qos.time_based_filter.minimum_separation.to_nanos()
@@ -664,6 +668,7 @@ impl<T: DdsType> DataReader<T> {
                         payload: bytes,
                         writer_guid,
                         writer_strength,
+                        ..
                     } => {
                         let sample = T::decode(&bytes).map_err(|e| DdsError::WireError {
                             message: e.to_string(),
@@ -674,17 +679,17 @@ impl<T: DdsType> DataReader<T> {
                         if !self.live_mode_time_based_filter_pass(&sample, min_sep_nanos) {
                             continue;
                         }
-                        // §2.2.3.23 Exclusive-Ownership-Filter.
+                        // §2.2.3.23 exclusive-ownership filter.
                         if !self.passes_exclusive_ownership(&sample, writer_guid, writer_strength) {
                             continue;
                         }
                         out.push(sample);
                     }
                     crate::runtime::UserSample::Lifecycle { .. } => {
-                        // Lifecycle in der Staging-Inbox: in der
-                        // Live-Mode-take()-Schleife wird sie sofort
-                        // unten via __push_lifecycle behandelt — hier
-                        // einfach uebergehen; sie kommt naechste Runde.
+                        // Lifecycle in the staging inbox: in the
+                        // live-mode take() loop it is handled
+                        // immediately below via __push_lifecycle — just
+                        // skip it here; it comes around next round.
                     }
                 }
             }
@@ -697,6 +702,7 @@ impl<T: DdsType> DataReader<T> {
                         payload: bytes,
                         writer_guid,
                         writer_strength,
+                        ..
                     } => {
                         let sample = T::decode(&bytes).map_err(|e| DdsError::WireError {
                             message: e.to_string(),
@@ -707,15 +713,15 @@ impl<T: DdsType> DataReader<T> {
                         if !self.live_mode_time_based_filter_pass(&sample, min_sep_nanos) {
                             continue;
                         }
-                        // §2.2.3.23 Exclusive-Ownership-Filter.
+                        // §2.2.3.23 exclusive-ownership filter.
                         if !self.passes_exclusive_ownership(&sample, writer_guid, writer_strength) {
                             continue;
                         }
                         out.push(sample);
                     }
                     crate::runtime::UserSample::Lifecycle { key_hash, kind } => {
-                        // Lifecycle-Marker via __push_lifecycle in den
-                        // Tracker fuettern (Spec §8.2.1.2).
+                        // Feed lifecycle markers into the tracker via
+                        // __push_lifecycle (spec §8.2.1.2).
                         let mut holder_bytes = Vec::with_capacity(16);
                         holder_bytes.extend_from_slice(&key_hash);
                         let lc_kind = match kind {
@@ -734,7 +740,7 @@ impl<T: DdsType> DataReader<T> {
             }
             return Ok(out);
         }
-        // Offline-Fallback.
+        // Offline fallback.
         let raw = {
             let mut inbox = self
                 .inbox
@@ -750,6 +756,7 @@ impl<T: DdsType> DataReader<T> {
                 payload: bytes,
                 writer_guid,
                 writer_strength,
+                ..
             } = staged_item
             else {
                 continue;
@@ -760,10 +767,10 @@ impl<T: DdsType> DataReader<T> {
             if !self.sample_passes_filter(&sample) {
                 continue;
             }
-            // §2.2.3.23 Exclusive-Ownership-Filter (auch im Offline-
-            // Fallback). Builtin-Inject-Pfad nutzt writer_guid=[0;16]
-            // mit Shared-Ownership-Default; passes_exclusive_ownership
-            // returnt dann immer `true`.
+            // §2.2.3.23 exclusive-ownership filter (also in the offline
+            // fallback). The builtin-inject path uses writer_guid=[0;16]
+            // with a shared-ownership default; passes_exclusive_ownership
+            // then always returns `true`.
             if !self.passes_exclusive_ownership(&sample, writer_guid, writer_strength) {
                 continue;
             }
@@ -772,7 +779,7 @@ impl<T: DdsType> DataReader<T> {
         Ok(out)
     }
 
-    /// Hilfsfunktion — evaluiert den Content-Filter wenn gesetzt.
+    /// Helper — evaluates the content filter if set.
     fn sample_passes_filter(&self, sample: &T) -> bool {
         match &self.filter {
             Some(f) => f(sample),
@@ -780,15 +787,16 @@ impl<T: DdsType> DataReader<T> {
         }
     }
 
-    /// Spec §2.2.3.23 / §2.2.2.5.5 — Exclusive-Ownership-Filter.
+    /// Spec §2.2.3.23 / §2.2.2.5.5 — exclusive-ownership filter.
     ///
-    /// Gibt `true` zurueck wenn das Sample geliefert werden darf:
-    /// - Reader-Ownership-QoS = Shared → immer `true` (kein Filter).
-    /// - Keyless Topic → immer `true` (keine Per-Instance-Owner-State).
-    /// - Sonst: berechnet KeyHash und konsultiert
-    ///   [`instance_tracker::InstanceTracker::should_accept_sample_under_exclusive_ownership`]
-    ///   das pro Instanz den (writer_guid, writer_strength) der bisher
-    ///   gewinnenden Source haelt und Samples schwaecherer Writer rejectet.
+    /// Returns `true` if the sample may be delivered:
+    /// - Reader ownership QoS = Shared → always `true` (no filter).
+    /// - Keyless topic → always `true` (no per-instance owner state).
+    /// - Otherwise: computes the KeyHash and consults
+    ///   [`instance_tracker::InstanceTracker::should_accept_sample_under_exclusive_ownership`],
+    ///   which holds the (writer_guid, writer_strength) of the
+    ///   currently-winning source per instance and rejects samples from
+    ///   weaker writers.
     #[cfg(feature = "std")]
     fn passes_exclusive_ownership(
         &self,
@@ -803,9 +811,9 @@ impl<T: DdsType> DataReader<T> {
         if kind != zerodds_qos::OwnershipKind::Exclusive {
             return true;
         }
-        // Spec §2.2.3.23: Ownership-Resolution greift per-Instanz; bei
-        // keyless Topics behandeln wir das Topic als einzige Instanz mit
-        // synthetischem all-zero KeyHash.
+        // Spec §2.2.3.23: ownership resolution applies per instance; for
+        // keyless topics we treat the topic as a single instance with a
+        // synthetic all-zero KeyHash.
         let (kh, key_bytes) = if T::HAS_KEY {
             let mut holder = crate::dds_type::PlainCdr2BeKeyHolder::new();
             sample.encode_key_holder_be(&mut holder);
@@ -815,21 +823,21 @@ impl<T: DdsType> DataReader<T> {
         } else {
             ([0u8; 16], Vec::new())
         };
-        // Instance muss registriert sein, damit der Owner-Tracker den
-        // Slot anlegen kann (`should_accept` returnt sonst `true` bei
-        // unbekannter Instance, was die Filterung umgeht).
+        // The instance must be registered so the owner tracker can
+        // create the slot (`should_accept` otherwise returns `true` for
+        // an unknown instance, which bypasses the filtering).
         let _ = self.instances.observe_sample(kh, key_bytes, None);
         self.instances
             .should_accept_sample_under_exclusive_ownership(&kh, writer_guid, writer_strength)
     }
 
-    /// Spec §2.2.3.13 TIME_BASED_FILTER fuer den Live-Mode-Pfad.
-    /// Gibt `true` zurueck, wenn das Sample geliefert werden darf.
-    /// Bei keyless Types oder min_separation=0 immer `true`.
-    /// Bei keyed Types: keyhash via `encode_key_holder_be` berechnen,
-    /// gegen instance_tracker pruefen, und bei `true` direkt
-    /// `record_delivery` aufrufen, damit nachfolgende Samples derselben
-    /// Instanz richtig gefiltert werden.
+    /// Spec §2.2.3.13 TIME_BASED_FILTER for the live-mode path.
+    /// Returns `true` if the sample may be delivered.
+    /// For keyless types or min_separation=0, always `true`.
+    /// For keyed types: compute the keyhash via `encode_key_holder_be`,
+    /// check it against instance_tracker, and on `true` call
+    /// `record_delivery` directly so subsequent samples of the same
+    /// instance are filtered correctly.
     #[cfg(feature = "std")]
     fn live_mode_time_based_filter_pass(&self, sample: &T, min_sep_nanos: u128) -> bool {
         if min_sep_nanos == 0 || !T::HAS_KEY {
@@ -852,12 +860,12 @@ impl<T: DdsType> DataReader<T> {
         true
     }
 
-    /// Liest alle Samples ohne sie zu entfernen. aktuell identisch
-    /// zu `take` minus entfernen. Sample-State (`ReadCondition`
-    /// §2.2.2.5.8) folgt im Wire-Up.
+    /// Reads all samples without removing them. Currently identical to
+    /// `take` minus the removal. Sample state (`ReadCondition`
+    /// §2.2.2.5.8) follows during wire-up.
     ///
     /// # Errors
-    /// Wie `take`.
+    /// Same as `take`.
     pub fn read(&self) -> Result<Vec<T>> {
         let raw = {
             let inbox = self
@@ -874,6 +882,7 @@ impl<T: DdsType> DataReader<T> {
                 payload: bytes,
                 writer_guid,
                 writer_strength,
+                ..
             } = staged_item
             else {
                 continue;
@@ -884,10 +893,10 @@ impl<T: DdsType> DataReader<T> {
             if !self.sample_passes_filter(&sample) {
                 continue;
             }
-            // §2.2.3.23 Exclusive-Ownership-Filter (auch im Offline-
-            // Fallback). Builtin-Inject-Pfad nutzt writer_guid=[0;16]
-            // mit Shared-Ownership-Default; passes_exclusive_ownership
-            // returnt dann immer `true`.
+            // §2.2.3.23 exclusive-ownership filter (also in the offline
+            // fallback). The builtin-inject path uses writer_guid=[0;16]
+            // with a shared-ownership default; passes_exclusive_ownership
+            // then always returns `true`.
             if !self.passes_exclusive_ownership(&sample, writer_guid, writer_strength) {
                 continue;
             }
@@ -896,13 +905,13 @@ impl<T: DdsType> DataReader<T> {
         Ok(out)
     }
 
-    /// Anzahl matched Remote-Writer. Im Offline-Mode immer 0.
+    /// Number of matched remote writers. Always 0 in offline mode.
     ///
     /// Spec: OMG DDS 1.4 §2.2.2.5.3.15 `get_matched_publications`.
     ///
-    /// Seiteneffekt — bei einer Aenderung des Matched-Count
-    /// gegenueber dem letzten Aufruf wird `on_subscription_matched`
-    /// via Bubble-Up-Kette gefeuert (Spec §2.2.4.2.6.7).
+    /// Side effect — when the matched count changes versus the last
+    /// call, `on_subscription_matched` is fired via the bubble-up chain
+    /// (spec §2.2.4.2.6.7).
     #[must_use]
     pub fn matched_publication_count(&self) -> usize {
         #[cfg(feature = "std")]
@@ -914,7 +923,7 @@ impl<T: DdsType> DataReader<T> {
         0
     }
 
-    /// Delta-Detect-Helper fuer `on_subscription_matched`.
+    /// Delta-detect helper for `on_subscription_matched`.
     #[cfg(feature = "std")]
     pub(crate) fn poll_subscription_matched(&self, current: usize) {
         let curr = current as i64;
@@ -945,7 +954,7 @@ impl<T: DdsType> DataReader<T> {
         );
     }
 
-    /// Delta-Detect fuer `on_requested_deadline_missed`.
+    /// Delta-detect for `on_requested_deadline_missed`.
     /// Spec §2.2.4.2.6.4.
     #[cfg(feature = "std")]
     pub(crate) fn poll_requested_deadline_missed(&self, current: u64) {
@@ -969,9 +978,9 @@ impl<T: DdsType> DataReader<T> {
         );
     }
 
-    /// Delta-Detect fuer `on_liveliness_changed`. Spec
-    /// §2.2.4.2.6.6. Beachtet beide Counter (alive + not_alive); jeder
-    /// Wechsel triggert genau einmal.
+    /// Delta-detect for `on_liveliness_changed`. Spec §2.2.4.2.6.6.
+    /// Considers both counters (alive + not_alive); each change triggers
+    /// exactly once.
     #[cfg(feature = "std")]
     pub(crate) fn poll_liveliness_changed(&self, alive_count: u64, not_alive_count: u64) {
         let curr_alive = alive_count as i64;
@@ -982,8 +991,8 @@ impl<T: DdsType> DataReader<T> {
         let prev_not = self
             .last_liveliness_not_alive
             .swap(curr_not, std::sync::atomic::Ordering::AcqRel);
-        // Erste Beobachtung (prev == -1) zaehlt nur wenn der Counter
-        // ungleich 0 ist; sonst kein triggern.
+        // First observation (prev == -1) only counts if the counter is
+        // nonzero; otherwise no trigger.
         let alive_changed = if prev_alive < 0 {
             curr_alive != 0
         } else {
@@ -1022,7 +1031,7 @@ impl<T: DdsType> DataReader<T> {
         );
     }
 
-    /// Delta-Detect fuer `on_requested_incompatible_qos`.
+    /// Delta-detect for `on_requested_incompatible_qos`.
     /// Spec §2.2.4.2.6.5.
     #[cfg(feature = "std")]
     pub(crate) fn poll_requested_incompatible_qos(
@@ -1051,7 +1060,7 @@ impl<T: DdsType> DataReader<T> {
         );
     }
 
-    /// Delta-Detect fuer `on_sample_lost`. Spec §2.2.4.2.6.2.
+    /// Delta-detect for `on_sample_lost`. Spec §2.2.4.2.6.2.
     #[cfg(feature = "std")]
     pub(crate) fn poll_sample_lost(&self, current: u64) {
         let prev = self
@@ -1073,7 +1082,7 @@ impl<T: DdsType> DataReader<T> {
         );
     }
 
-    /// Delta-Detect fuer `on_sample_rejected`. Spec §2.2.4.2.6.3.
+    /// Delta-detect for `on_sample_rejected`. Spec §2.2.4.2.6.3.
     #[cfg(feature = "std")]
     pub(crate) fn poll_sample_rejected(&self, snapshot: crate::status::SampleRejectedStatus) {
         let curr = i64::from(snapshot.total_count);
@@ -1098,14 +1107,14 @@ impl<T: DdsType> DataReader<T> {
         );
     }
 
-    /// Blockiert, bis mindestens `min_count` Remote-Writer matched
-    /// sind oder `timeout` verstreicht. Event-driven via Runtime-Condvar
-    /// (D.5e Phase-1) — wakup direkt wenn SEDP einen Match propagiert,
-    /// kein 20-ms-Polling mehr.
+    /// Blocks until at least `min_count` remote writers are matched or
+    /// `timeout` elapses. Event-driven via the runtime condvar
+    /// (D.5e phase 1) — wakeup directly when SEDP propagates a match, no
+    /// more 20-ms polling.
     ///
     /// # Errors
-    /// [`DdsError::Timeout`] wenn `min_count` im Zeitfenster nicht
-    /// erreicht wird.
+    /// [`DdsError::Timeout`] if `min_count` is not reached within the
+    /// time window.
     #[cfg(feature = "std")]
     pub fn wait_for_matched_publication(
         &self,
@@ -1121,23 +1130,23 @@ impl<T: DdsType> DataReader<T> {
             if now >= deadline {
                 return Err(DdsError::Timeout);
             }
-            // Live-Mode: park auf Runtime-match-event. Spurious wake-ups
-            // sind fine — wir checken den count auf naechster iteration.
+            // Live mode: park on the runtime match event. Spurious
+            // wakeups are fine — we check the count on the next iteration.
             if let Some(rt) = self.runtime.as_ref() {
                 let _ = rt.wait_match_event(deadline - now);
             } else {
-                // Offline-Mode: keine Match-Events, sleep-fallback.
+                // Offline mode: no match events, sleep fallback.
                 std::thread::sleep(core::time::Duration::from_millis(20));
             }
         }
     }
 
-    /// Counter fuer requested-Deadline-Verletzungen (Spec
-    /// §2.2.4.2.11 `REQUESTED_DEADLINE_MISSED_STATUS`). Monoton steigend;
-    /// steigt um 1 pro abgelaufenem Deadline-Fenster ohne empfangenes
-    /// Sample. Offline / INFINITE → 0.
+    /// Counter for requested-deadline violations (spec §2.2.4.2.11
+    /// `REQUESTED_DEADLINE_MISSED_STATUS`). Monotonically increasing;
+    /// rises by 1 per expired deadline window without a received sample.
+    /// Offline / INFINITE → 0.
     ///
-    /// feuert ggf. `on_requested_deadline_missed`.
+    /// May fire `on_requested_deadline_missed`.
     #[must_use]
     pub fn requested_deadline_missed_count(&self) -> u64 {
         #[cfg(feature = "std")]
@@ -1149,8 +1158,8 @@ impl<T: DdsType> DataReader<T> {
         0
     }
 
-    /// aktueller `RequestedIncompatibleQosStatus`. Spec
-    /// §2.2.4.2.6.5. Triggert ggf. `on_requested_incompatible_qos`.
+    /// Current `RequestedIncompatibleQosStatus`. Spec §2.2.4.2.6.5.
+    /// May trigger `on_requested_incompatible_qos`.
     #[must_use]
     pub fn requested_incompatible_qos_status(
         &self,
@@ -1164,7 +1173,7 @@ impl<T: DdsType> DataReader<T> {
         crate::status::RequestedIncompatibleQosStatus::default()
     }
 
-    /// SampleLost-Counter. Spec §2.2.4.2.6.2.
+    /// SampleLost counter. Spec §2.2.4.2.6.2.
     #[must_use]
     pub fn sample_lost_count(&self) -> u64 {
         #[cfg(feature = "std")]
@@ -1176,7 +1185,7 @@ impl<T: DdsType> DataReader<T> {
         0
     }
 
-    /// SampleRejected-Status. Spec §2.2.4.2.6.3.
+    /// SampleRejected status. Spec §2.2.4.2.6.3.
     #[must_use]
     pub fn sample_rejected_status(&self) -> crate::status::SampleRejectedStatus {
         #[cfg(feature = "std")]
@@ -1188,8 +1197,8 @@ impl<T: DdsType> DataReader<T> {
         crate::status::SampleRejectedStatus::default()
     }
 
-    /// pollt alle Reader-Statuses einmal und feuert pending
-    /// Listener. Convenience-Helper fuer Tests + periodische Tick-Aufrufer.
+    /// Polls all reader statuses once and fires pending listeners.
+    /// Convenience helper for tests + periodic tick callers.
     #[cfg(feature = "std")]
     pub fn drive_listeners(&self) {
         let _ = self.matched_publication_count();
@@ -1201,44 +1210,46 @@ impl<T: DdsType> DataReader<T> {
         let _ = self.sample_rejected_status();
     }
 
-    /// Liveliness-Status des matched Writers (Spec §2.2.4.2.14
+    /// Liveliness status of the matched writer (spec §2.2.4.2.14
     /// `LIVELINESS_CHANGED_STATUS`): `(alive, alive_count, not_alive_count)`.
     ///
-    /// * `alive`: aktueller Zustand (true = Writer hat Sample innerhalb
-    ///   seiner Lease-Duration geliefert).
-    /// * `alive_count`: Zaehler der "not_alive → alive"-Transitions.
-    /// * `not_alive_count`: Zaehler der "alive → not_alive"-Transitions.
+    /// * `alive`: current state (true = writer delivered a sample within
+    ///   its lease duration).
+    /// * `alive_count`: counter of "not_alive → alive" transitions.
+    /// * `not_alive_count`: counter of "alive → not_alive" transitions.
     ///
-    /// Offline / INFINITE-Lease → `(false, 0, 0)` / `(true, 0, 0)` je
-    /// nach Init. Fuer v1.3 wird nur `LivelinessKind::Automatic` ueberwacht.
+    /// Offline / INFINITE lease → `(false, 0, 0)` / `(true, 0, 0)`
+    /// depending on init. For v1.3 only `LivelinessKind::Automatic` is
+    /// monitored.
     #[must_use]
     pub fn liveliness_changed_status(&self) -> (bool, u64, u64) {
         #[cfg(feature = "std")]
         if let (Some(rt), Some(eid)) = (&self.runtime, self.entity_id) {
             let triple = rt.user_reader_liveliness_status(eid);
-            // Listener-Trigger via Delta-Detection.
+            // Listener trigger via delta detection.
             self.poll_liveliness_changed(triple.1, triple.2);
             return triple;
         }
         (false, 0, 0)
     }
 
-    /// Blockiert, bis mindestens ein Sample verfuegbar ist oder der
-    /// Timeout abgelaufen ist. Das Sample wird dabei nicht entnommen —
-    /// es wird in einen Staging-Buffer gelegt, den der naechste `take()`
-    /// ausliest. Damit bleibt `wait_for_data` + `take()` der kanonische
-    /// Subscriber-Loop, statt busy-polling im Application-Code.
+    /// Blocks until at least one sample is available or the timeout has
+    /// elapsed. The sample is not removed in the process — it is placed
+    /// in a staging buffer that the next `take()` reads. This keeps
+    /// `wait_for_data` + `take()` the canonical subscriber loop instead
+    /// of busy-polling in application code.
     ///
-    /// Spec-Analog: OMG DDS 1.4 §2.2.2.5.8 `ReadCondition` + `WaitSet`.
-    /// Diese API liefert die wichtigste Semantik (wake-on-data) ohne die
-    /// komplette WaitSet/Condition-Infrastruktur.
+    /// Spec analog: OMG DDS 1.4 §2.2.2.5.8 `ReadCondition` + `WaitSet`.
+    /// This API provides the most important semantics (wake-on-data)
+    /// without the full WaitSet/Condition infrastructure.
     ///
     /// # Errors
-    /// [`DdsError::Timeout`] wenn im Zeitfenster nichts ankommt.
+    /// [`DdsError::Timeout`] if nothing arrives within the time window.
     #[cfg(feature = "std")]
     pub fn wait_for_data(&self, timeout: core::time::Duration) -> Result<()> {
         let Some(rx_mu) = self.rx.as_ref() else {
-            // Offline-Mode: wenn inbox schon was hat, OK, sonst Timeout.
+            // Offline mode: if the inbox already has something, OK,
+            // otherwise timeout.
             let inbox_has = self.inbox.lock().map(|i| !i.is_empty()).unwrap_or(false);
             if inbox_has {
                 return Ok(());
@@ -1246,7 +1257,7 @@ impl<T: DdsType> DataReader<T> {
             return Err(DdsError::Timeout);
         };
 
-        // Schon was in der Staging-Inbox?
+        // Anything already in the staging inbox?
         {
             let inbox = self
                 .inbox
@@ -1299,8 +1310,7 @@ impl<T: DdsType> DataReader<T> {
                 })
             }
         };
-        // Lock zuerst freigeben, dann Listener feuern (
-        // Lock-Discipline).
+        // Release the lock first, then fire listeners (lock discipline).
         drop(rx);
         if result.is_ok() {
             self.notify_data_arrived();
@@ -1308,29 +1318,28 @@ impl<T: DdsType> DataReader<T> {
         result
     }
 
-    /// Builtin-Topic-Helper: gibt den Arc auf die geteilte Inbox
-    /// zurueck (Reader-Klone teilen sich denselben Buffer).
+    /// Builtin-topic helper: returns the Arc to the shared inbox (reader
+    /// clones share the same buffer).
     #[doc(hidden)]
     #[cfg(feature = "std")]
     pub fn __inbox_handle(&self) -> Arc<Mutex<Vec<crate::runtime::UserSample>>> {
         Arc::clone(&self.inbox)
     }
 
-    /// Test-Helper: fuegt einen encoded Payload in die Inbox ein.
-    /// In Runtime wird das durch den ReliableReader-Delivery-Pfad
-    /// ersetzt.
+    /// Test helper: inserts an encoded payload into the inbox.
+    /// At runtime this is replaced by the ReliableReader delivery path.
     ///
-    /// triggert die Listener-Bubble-Up-Kette
-    /// `on_data_on_readers` (Subscriber-Stage) und `on_data_available`
-    /// (Reader-Stage). Spec §2.2.4.2.7.1 / §2.2.4.2.6.1.
+    /// Triggers the listener bubble-up chain `on_data_on_readers`
+    /// (subscriber stage) and `on_data_available` (reader stage). Spec
+    /// §2.2.4.2.7.1 / §2.2.4.2.6.1.
     #[doc(hidden)]
     pub fn __push_raw(&self, bytes: Vec<u8>) -> Result<()> {
         self.__push_raw_with_writer(bytes, [0u8; 16], 0)
     }
 
-    /// Test-Hook: pusht ein Sample mit explizitem Writer-GUID und
-    /// `ownership_strength` in die Inbox. Wird vom Cyclone-Interop-
-    /// Harness und den Exclusive-Ownership-Tests benutzt.
+    /// Test hook: pushes a sample with an explicit writer GUID and
+    /// `ownership_strength` into the inbox. Used by the Cyclone interop
+    /// harness and the exclusive-ownership tests.
     #[doc(hidden)]
     pub fn __push_raw_with_writer(
         &self,
@@ -1349,21 +1358,21 @@ impl<T: DdsType> DataReader<T> {
                 payload: crate::sample_bytes::SampleBytes::from_vec(bytes),
                 writer_guid,
                 writer_strength,
+                // Test hook: raw-bytes injection, XCDR1 baseline.
+                representation: 0,
             });
         }
-        // Listener-Notify ausserhalb des Inbox-Locks, um Re-Entrancy
-        // zu vermeiden.
+        // Listener notify outside the inbox lock to avoid re-entrancy.
         self.notify_data_arrived();
         Ok(())
     }
 
-    /// ruft die `on_data_on_readers`- und
-    /// `on_data_available`-Bubble-Up-Pfade. Spec §2.2.4.1: pro
-    /// neuem Sample wird `data_on_readers` (Subscriber-Level) und
-    /// `data_available` (Reader-Level) als unabhaengige Statuses
-    /// gesetzt; wenn der Subscriber `data_on_readers` konsumiert
-    /// hat, soll `data_available` *nicht* unterdrueckt werden — die
-    /// beiden Status sind getrennte Bits in der Mask.
+    /// Calls the `on_data_on_readers` and `on_data_available` bubble-up
+    /// paths. Spec §2.2.4.1: for each new sample, `data_on_readers`
+    /// (subscriber level) and `data_available` (reader level) are set as
+    /// independent statuses; once the subscriber has consumed
+    /// `data_on_readers`, `data_available` must *not* be suppressed — the
+    /// two statuses are separate bits in the mask.
     #[cfg(feature = "std")]
     pub(crate) fn notify_data_arrived(&self) {
         let chain = self.listener_chain();
@@ -1373,21 +1382,30 @@ impl<T: DdsType> DataReader<T> {
     }
 
     // ========================================================================
-    // SampleInfo-Statechart + Instance-Lifecycle.
+    // SampleInfo statechart + instance lifecycle.
     // Spec §2.2.2.5.1, §2.2.2.5.3.{5,27,28}.
     // ========================================================================
 
-    /// Liefert den aktuellen [`InstanceTracker`] (geteilt mit der
-    /// internen Buchhaltung). Hauptsaechlich fuer Tests / Inspection.
+    /// Returns the current [`InstanceTracker`] (shared with the internal
+    /// bookkeeping). Mainly for tests / inspection.
     #[cfg(feature = "std")]
     #[must_use]
     pub fn instance_tracker(&self) -> InstanceTracker {
         self.instances.clone()
     }
 
-    /// Liefert (Runtime, EntityId), wenn der Reader im Live-Mode laeuft.
-    /// Cross-Crate-Hook fuer Async-Layer (dcps-async), der den Waker-
-    /// Slot direkt registrieren muss.
+    /// This reader's instance handle (GUID-derived). Lets the application
+    /// ignore the reader's own subscription — e.g. a durability service
+    /// ignoring its ingest reader on the replay-writer side to avoid an echo
+    /// loop. Mirrors [`crate::DataWriter::instance_handle`].
+    #[must_use]
+    pub fn instance_handle(&self) -> crate::instance_handle::InstanceHandle {
+        self.entity_state.instance_handle()
+    }
+
+    /// Returns (Runtime, EntityId) when the reader runs in live mode.
+    /// Cross-crate hook for the async layer (dcps-async), which must
+    /// register the waker slot directly.
     #[doc(hidden)]
     #[cfg(feature = "std")]
     pub fn runtime_handle(
@@ -1399,32 +1417,32 @@ impl<T: DdsType> DataReader<T> {
         }
     }
 
-    /// Spec §2.2.3.23 — Hook fuer "Writer X hat Liveliness verloren".
-    /// Macht zwei Dinge:
-    ///   1. clear OWNERSHIP=EXCLUSIVE-Owner fuer alle Instanzen, deren
-    ///      Owner dieser Writer war (so dass der naechste Sample eines
-    ///      anderen Writers via `should_accept_sample_under_exclusive_ownership`
-    ///      neu gewinnen kann);
-    ///   2. liefert die Anzahl betroffener Instanzen zurueck.
+    /// Spec §2.2.3.23 — hook for "writer X lost liveliness". Does two
+    /// things:
+    ///   1. clears the OWNERSHIP=EXCLUSIVE owner for all instances whose
+    ///      owner was this writer (so the next sample from another writer
+    ///      can win again via
+    ///      `should_accept_sample_under_exclusive_ownership`);
+    ///   2. returns the number of affected instances.
     ///
-    /// Wird aus dem WLP-Pfad gerufen, sobald ein Writer-Lease abgelaufen
-    /// ist (siehe `wlp::WlpEndpoint::lost_peers`).
+    /// Called from the WLP path once a writer lease has expired (see
+    /// `wlp::WlpEndpoint::lost_peers`).
     #[must_use]
     pub fn notify_writer_liveliness_lost(&self, writer_guid: [u8; 16]) -> usize {
         self.instances.clear_owner_for_writer(writer_guid)
     }
 
-    /// Wie [`Self::notify_writer_liveliness_lost`], aber Match nur ueber
-    /// die ersten 12 Bytes (GuidPrefix). Erlaubt Failover, wenn nur die
-    /// Participant-Identitaet (z.B. bei SPDP-Lease-Expiry) bekannt ist.
+    /// Like [`Self::notify_writer_liveliness_lost`], but matches only on
+    /// the first 12 bytes (GuidPrefix). Allows failover when only the
+    /// participant identity is known (e.g. on SPDP lease expiry).
     #[must_use]
     pub fn notify_participant_liveliness_lost(&self, prefix: [u8; 12]) -> usize {
         self.instances.clear_owner_for_writer_prefix(prefix)
     }
 
-    /// Macht aus einem Sample-Wert den dazugehoerigen lokalen
-    /// [`InstanceHandle`], oder [`HANDLE_NIL`] wenn unbekannt /
-    /// non-keyed. Spec §2.2.2.5.3.26 `lookup_instance` (Reader-Variante).
+    /// Turns a sample value into its corresponding local
+    /// [`InstanceHandle`], or [`HANDLE_NIL`] if unknown / non-keyed.
+    /// Spec §2.2.2.5.3.26 `lookup_instance` (reader variant).
     #[cfg(feature = "std")]
     #[must_use]
     pub fn lookup_instance(&self, instance: &T) -> InstanceHandle {
@@ -1439,13 +1457,13 @@ impl<T: DdsType> DataReader<T> {
         self.instances.lookup(&kh).unwrap_or(HANDLE_NIL)
     }
 
-    /// Spec §2.2.2.5.3.25 `get_key_value`. Liefert den Sample-Wert mit
-    /// nur den `@key`-Feldern befuellt (rekonstruiert aus dem
-    /// gespeicherten Key-Holder via `T::decode`).
+    /// Spec §2.2.2.5.3.25 `get_key_value`. Returns the sample value with
+    /// only the `@key` fields filled in (reconstructed from the stored
+    /// key holder via `T::decode`).
     ///
     /// # Errors
-    /// `BadParameter` wenn `handle` unbekannt; `WireError` wenn
-    /// `T::decode` den Key-Stream nicht rekonstruieren kann.
+    /// `BadParameter` if `handle` is unknown; `WireError` if `T::decode`
+    /// cannot reconstruct the key stream.
     #[cfg(feature = "std")]
     pub fn get_key_value(&self, handle: InstanceHandle) -> Result<T> {
         let Some(bytes) = self.instances.get_key_holder(handle) else {
@@ -1458,23 +1476,21 @@ impl<T: DdsType> DataReader<T> {
         })
     }
 
-    /// Drainiert alle pending Bytes aus rx + inbox in den internen
-    /// Sample-Cache. Dabei wird pro Sample der KeyHash berechnet, die
-    /// Instanz registriert (falls neu) und ein passendes [`SampleInfo`]
-    /// erzeugt.
+    /// Drains all pending bytes from rx + inbox into the internal sample
+    /// cache. For each sample the KeyHash is computed, the instance is
+    /// registered (if new), and a matching [`SampleInfo`] is created.
     ///
-    /// Wird automatisch von den `*_with_info`/`*_instance`-APIs
-    /// aufgerufen.
+    /// Called automatically by the `*_with_info`/`*_instance` APIs.
     #[cfg(feature = "std")]
     fn ingest_into_cache(&self) -> Result<()> {
-        // Schritt 1: alle eingehenden Samples einsammeln. `raw` traegt
-        // (bytes, writer_guid, writer_strength) damit der Exclusive-
-        // Ownership-Filter (DDS 1.4 §2.2.3.23) anwendbar ist.
+        // Step 1: collect all incoming samples. `raw` carries
+        // (bytes, writer_guid, writer_strength) so the exclusive-
+        // ownership filter (DDS 1.4 §2.2.3.23) is applicable.
         //
-        // Welle 2.1 Zero-Copy: `raw` traegt jetzt `SampleBytes` (refcounted
-        // Arc<[u8]>) statt `Vec<u8>`. Decode geht via Deref<[u8]> direkt
-        // ohne to_vec. Spart 2 Hot-Path-Copies pro recv'd Alive-Sample.
-        // Spec: docs/specs/zerodds-zero-copy-1.0.md §6 Welle 2.1.
+        // Wave 2.1 zero-copy: `raw` now carries `SampleBytes` (refcounted
+        // Arc<[u8]>) instead of `Vec<u8>`. Decode goes via Deref<[u8]>
+        // directly without to_vec. Saves 2 hot-path copies per recv'd
+        // Alive sample. Spec: docs/specs/zerodds-zero-copy-1.0.md §6 wave 2.1.
         let mut raw: Vec<(crate::sample_bytes::SampleBytes, [u8; 16], i32)> = Vec::new();
         {
             let mut inbox = self
@@ -1488,14 +1504,15 @@ impl<T: DdsType> DataReader<T> {
                     payload,
                     writer_guid,
                     writer_strength,
+                    ..
                 } = item
                 {
                     raw.push((payload, writer_guid, writer_strength));
                 }
             }
         }
-        // Live-Mode-Channel: Alive-Samples in `raw` einreihen,
-        // Lifecycle-Marker direkt via __push_lifecycle behandeln.
+        // Live-mode channel: enqueue Alive samples into `raw`, handle
+        // lifecycle markers directly via __push_lifecycle.
         let mut lifecycle_pending: Vec<(
             crate::instance_tracker::KeyHash,
             crate::sample_info::InstanceStateKind,
@@ -1510,6 +1527,7 @@ impl<T: DdsType> DataReader<T> {
                         payload: bytes,
                         writer_guid,
                         writer_strength,
+                        ..
                     } => raw.push((bytes, writer_guid, writer_strength)),
                     crate::runtime::UserSample::Lifecycle { key_hash, kind } => {
                         let lc_kind = match kind {
@@ -1527,8 +1545,8 @@ impl<T: DdsType> DataReader<T> {
                 }
             }
         }
-        // Lifecycle-Marker erst NACH Drain anwenden, damit der Lock-Pfad
-        // sauber bleibt (__push_lifecycle nimmt eigene Locks).
+        // Apply lifecycle markers only AFTER draining so the lock path
+        // stays clean (__push_lifecycle takes its own locks).
         for (kh, lc_kind) in lifecycle_pending {
             let mut holder_bytes = Vec::with_capacity(16);
             holder_bytes.extend_from_slice(&kh);
@@ -1542,22 +1560,22 @@ impl<T: DdsType> DataReader<T> {
                 reason: "datareader cache poisoned",
             })?;
         if raw.is_empty() {
-            // Auch ohne neue Bytes muss autopurge laufen, sonst verfallen
-            // disposed/nowriter-Instanzen nie ausserhalb von Sample-Zufluss.
+            // Even without new bytes, autopurge must run; otherwise
+            // disposed/nowriter instances never expire outside sample inflow.
             self.run_reader_autopurge(now, &mut cache);
             return Ok(());
         }
         for (bytes, writer_guid, writer_strength) in raw {
-            // Decode T um (a) den Filter zu evaluieren und (b) den
-            // KeyHash zu berechnen.
+            // Decode T to (a) evaluate the filter and (b) compute the
+            // KeyHash.
             let sample = T::decode(&bytes).map_err(|e| DdsError::WireError {
                 message: alloc::string::ToString::to_string(&e),
             })?;
             if !self.sample_passes_filter(&sample) {
                 continue;
             }
-            // §2.2.3.23 Exclusive-Ownership-Filter: rejecte Samples
-            // schwaecherer Writer bevor sie in den Cache wandern.
+            // §2.2.3.23 exclusive-ownership filter: reject samples from
+            // weaker writers before they enter the cache.
             if !self.passes_exclusive_ownership(&sample, writer_guid, writer_strength) {
                 continue;
             }
@@ -1567,8 +1585,8 @@ impl<T: DdsType> DataReader<T> {
                 let key_bytes = holder.as_bytes().to_vec();
                 let max = T::KEY_HOLDER_MAX_SIZE.unwrap_or(usize::MAX);
                 let kh = crate::dds_type::compute_key_hash(&key_bytes, max);
-                // QoS-Filter VOR observe_sample, damit verworfene Samples
-                // den Sample-Zustand nicht beeinflussen.
+                // QoS filter BEFORE observe_sample so discarded samples do
+                // not affect the sample state.
                 let (min_sep_nanos, by_source_ts) = {
                     let qos = self.qos.lock().unwrap_or_else(|e| e.into_inner());
                     (
@@ -1577,18 +1595,18 @@ impl<T: DdsType> DataReader<T> {
                             == zerodds_qos::DestinationOrderKind::BySourceTimestamp,
                     )
                 };
-                // Spec §2.2.3.13 TIME_BASED_FILTER: drop, wenn weniger als
-                // minimum_separation seit dem letzten gelieferten Sample
-                // dieser Instanz vergangen ist.
+                // Spec §2.2.3.13 TIME_BASED_FILTER: drop if less than
+                // minimum_separation has elapsed since the last delivered
+                // sample of this instance.
                 if !self
                     .instances
                     .should_deliver_under_time_based_filter(&kh, now, min_sep_nanos)
                 {
                     continue;
                 }
-                // Spec §2.2.3.18 DESTINATION_ORDER: bei BY_SOURCE_TIMESTAMP
-                // nur Samples mit strikt groesserem source_ts liefern,
-                // sonst out-of-order Resolution greift.
+                // Spec §2.2.3.18 DESTINATION_ORDER: under BY_SOURCE_TIMESTAMP
+                // only deliver samples with a strictly greater source_ts,
+                // otherwise out-of-order resolution kicks in.
                 if !self
                     .instances
                     .should_deliver_under_destination_order(&kh, now, by_source_ts)
@@ -1599,7 +1617,7 @@ impl<T: DdsType> DataReader<T> {
                 self.instances.record_delivery(&kh, now);
                 let state = match self.instances.get_by_handle(handle) {
                     Some(s) => s,
-                    None => continue, // sollte nie passieren — defensiv
+                    None => continue, // should never happen — defensive
                 };
                 SampleInfo {
                     sample_state: SampleStateKind::NotRead,
@@ -1617,10 +1635,10 @@ impl<T: DdsType> DataReader<T> {
                     ..SampleInfo::default()
                 }
             } else {
-                // Non-keyed Topics: ein "Pseudo-Handle" pro Sample
-                // waere overkill — wir lassen es bei HANDLE_NIL (Spec
-                // §2.2.2.5.1.10 erlaubt das, weil die Instance-Sicht
-                // fuer non-keyed Topics formal "alles eine Instanz" ist).
+                // Non-keyed topics: a "pseudo handle" per sample would be
+                // overkill — we leave it at HANDLE_NIL (spec §2.2.2.5.1.10
+                // allows that, since the instance view for non-keyed
+                // topics is formally "everything is one instance").
                 SampleInfo {
                     sample_state: SampleStateKind::NotRead,
                     view_state: ViewStateKind::NotNew,
@@ -1635,16 +1653,16 @@ impl<T: DdsType> DataReader<T> {
                 info,
             });
         }
-        // Spec §2.2.3.22 ReaderDataLifecycle: Instanzen, die laenger als
-        // autopurge_*_samples_delay in NotAlive-Disposed bzw. NotAlive-
-        // NoWriters sind, aus dem Tracker und Cache entfernen.
+        // Spec §2.2.3.22 ReaderDataLifecycle: remove instances from the
+        // tracker and cache that have been in NotAlive-Disposed or
+        // NotAlive-NoWriters longer than autopurge_*_samples_delay.
         self.run_reader_autopurge(now, &mut cache);
         Ok(())
     }
 
-    /// Wendet `ReaderDataLifecycle.autopurge_*` an: entfernt abgelaufene
-    /// Instanzen aus Tracker + Cache. Aufgerufen von `ingest_into_cache`
-    /// und beim Einlesen ohne neue Bytes.
+    /// Applies `ReaderDataLifecycle.autopurge_*`: removes expired
+    /// instances from the tracker + cache. Called by `ingest_into_cache`
+    /// and when reading with no new bytes.
     #[cfg(feature = "std")]
     fn run_reader_autopurge(&self, now: Time, cache: &mut Vec<CachedSample>) {
         let (purge_disp, purge_now) = {
@@ -1673,9 +1691,9 @@ impl<T: DdsType> DataReader<T> {
         }
     }
 
-    /// Push eines reinen Lifecycle-Markers (Dispose / Unregister)
-    /// in den Cache. Wird von der Runtime aufgerufen, sobald ein Writer
-    /// `dispose`/`unregister_instance` schickt.
+    /// Pushes a pure lifecycle marker (dispose / unregister) into the
+    /// cache. Called by the runtime as soon as a writer sends
+    /// `dispose`/`unregister_instance`.
     #[cfg(feature = "std")]
     #[doc(hidden)]
     pub fn __push_lifecycle(
@@ -1685,8 +1703,8 @@ impl<T: DdsType> DataReader<T> {
         kind: InstanceStateKind,
     ) -> Result<()> {
         let now = get_current_time();
-        // Erst die Instanz im Tracker im richtigen Zustand bringen.
-        // observe_sample registriert sie ggf. neu und macht sie alive.
+        // First bring the instance into the right state in the tracker.
+        // observe_sample re-registers it if needed and makes it alive.
         let (handle, _) = self
             .instances
             .observe_sample(keyhash, key_holder, Some(now));
@@ -1700,7 +1718,7 @@ impl<T: DdsType> DataReader<T> {
             InstanceStateKind::Alive => {}
         }
         let Some(state) = self.instances.get_by_handle(handle) else {
-            return Ok(()); // sollte nie passieren — defensiv
+            return Ok(()); // should never happen — defensive
         };
         let info = SampleInfo {
             source_timestamp: now,
@@ -1726,12 +1744,12 @@ impl<T: DdsType> DataReader<T> {
         Ok(())
     }
 
-    /// `take` mit voller [`SampleInfo`]. Spec §2.2.2.5.3.5
-    /// `take`. Konsumiert die Samples aus dem Cache (`NOT_READ → READ`-
-    /// Transition entfaellt, weil sie weg sind).
+    /// `take` with full [`SampleInfo`]. Spec §2.2.2.5.3.5 `take`.
+    /// Consumes the samples from the cache (the `NOT_READ → READ`
+    /// transition is moot since they are gone).
     ///
     /// # Errors
-    /// Wie [`Self::take`].
+    /// Same as [`Self::take`].
     #[cfg(feature = "std")]
     pub fn take_with_info(&self) -> Result<Vec<Sample<T>>> {
         self.take_filtered(
@@ -1741,11 +1759,11 @@ impl<T: DdsType> DataReader<T> {
         )
     }
 
-    /// `read` mit voller [`SampleInfo`]. Konsumiert nicht — markiert
-    /// die Samples nur als `READ` (Spec §2.2.2.5.3.4).
+    /// `read` with full [`SampleInfo`]. Does not consume — only marks
+    /// the samples as `READ` (spec §2.2.2.5.3.4).
     ///
     /// # Errors
-    /// Wie [`Self::read`].
+    /// Same as [`Self::read`].
     #[cfg(feature = "std")]
     pub fn read_with_info(&self) -> Result<Vec<Sample<T>>> {
         self.read_filtered(
@@ -1755,10 +1773,10 @@ impl<T: DdsType> DataReader<T> {
         )
     }
 
-    /// `take` mit State-Masken (Spec §2.2.2.5.3.6 `take_w_condition`).
+    /// `take` with state masks (spec §2.2.2.5.3.6 `take_w_condition`).
     ///
     /// # Errors
-    /// Wie [`Self::take`].
+    /// Same as [`Self::take`].
     #[cfg(feature = "std")]
     pub fn take_filtered(
         &self,
@@ -1791,10 +1809,10 @@ impl<T: DdsType> DataReader<T> {
         Ok(out)
     }
 
-    /// `read` mit State-Masken (Spec §2.2.2.5.3.3 `read_w_condition`).
+    /// `read` with state masks (spec §2.2.2.5.3.3 `read_w_condition`).
     ///
     /// # Errors
-    /// Wie [`Self::read`].
+    /// Same as [`Self::read`].
     #[cfg(feature = "std")]
     pub fn read_filtered(
         &self,
@@ -1814,12 +1832,12 @@ impl<T: DdsType> DataReader<T> {
             if !s.info.matches_states(sample_mask, view_mask, instance_mask) {
                 continue;
             }
-            // Snapshot bauen (mit aktueller Sample-State-Sicht).
+            // Build a snapshot (with the current sample-state view).
             let snapshot = Sample::new(
                 self.decode_or_keyholder(s.bytes.as_deref(), s.info.instance_handle)?,
                 s.info,
             );
-            // Sample-State Transition NOT_READ → READ (Spec §2.2.2.5.3.4).
+            // Sample-state transition NOT_READ → READ (spec §2.2.2.5.3.4).
             s.info.sample_state = SampleStateKind::Read;
             self.instances.mark_view_seen(s.info.instance_handle);
             out.push(snapshot);
@@ -1827,12 +1845,12 @@ impl<T: DdsType> DataReader<T> {
         Ok(out)
     }
 
-    /// `read_w_condition` (Spec §2.2.2.5.3.7) — wendet zusaetzlich zur
-    /// State-Mask den SQL-Filter der QueryCondition pro Sample an.
-    /// Samples bleiben im Cache (Sample-State NOT_READ → READ).
+    /// `read_w_condition` (spec §2.2.2.5.3.7) — in addition to the state
+    /// mask, applies the QueryCondition's SQL filter per sample. Samples
+    /// stay in the cache (sample state NOT_READ → READ).
     ///
     /// # Errors
-    /// `PreconditionNotMet` bei Lock-Poisoning oder SQL-Eval-Fehler.
+    /// `PreconditionNotMet` on lock poisoning or SQL eval error.
     #[cfg(feature = "std")]
     pub fn read_w_condition(
         &self,
@@ -1857,9 +1875,9 @@ impl<T: DdsType> DataReader<T> {
             }
             let decoded = self.decode_or_keyholder(s.bytes.as_deref(), s.info.instance_handle)?;
             let row = crate::dds_type::DdsTypeRow::new(&decoded);
-            // Filter-Eval-Fehler -> Sample wird abgelehnt (Spec: "filter
-            // expression false" Semantik), aber wir propagieren keinen
-            // harten Error nach oben, ausser Lock-Poisoning.
+            // Filter eval error -> sample is rejected (spec: "filter
+            // expression false" semantics), but we do not propagate a
+            // hard error upward, except for lock poisoning.
             if !condition.evaluate(&row).unwrap_or(false) {
                 continue;
             }
@@ -1871,11 +1889,11 @@ impl<T: DdsType> DataReader<T> {
         Ok(out)
     }
 
-    /// `take_w_condition` (Spec §2.2.2.5.3.8) — wie `read_w_condition`,
-    /// aber konsumiert die Samples (entfernt aus dem Cache).
+    /// `take_w_condition` (spec §2.2.2.5.3.8) — like `read_w_condition`,
+    /// but consumes the samples (removes them from the cache).
     ///
     /// # Errors
-    /// `PreconditionNotMet` bei Lock-Poisoning oder SQL-Eval-Fehler.
+    /// `PreconditionNotMet` on lock poisoning or SQL eval error.
     #[cfg(feature = "std")]
     pub fn take_w_condition(
         &self,
@@ -1917,11 +1935,11 @@ impl<T: DdsType> DataReader<T> {
         Ok(out)
     }
 
-    /// `read_instance` (Spec §2.2.2.5.3.27). Liefert nur Samples der
-    /// angegebenen Instanz.
+    /// `read_instance` (spec §2.2.2.5.3.27). Returns only samples of the
+    /// given instance.
     ///
     /// # Errors
-    /// `BadParameter` wenn `handle == HANDLE_NIL`.
+    /// `BadParameter` if `handle == HANDLE_NIL`.
     #[cfg(feature = "std")]
     pub fn read_instance(&self, handle: InstanceHandle) -> Result<Vec<Sample<T>>> {
         if handle.is_nil() {
@@ -1952,10 +1970,10 @@ impl<T: DdsType> DataReader<T> {
         Ok(out)
     }
 
-    /// `take_instance` (Spec §2.2.2.5.3.27, Take-Variante). Konsumiert.
+    /// `take_instance` (spec §2.2.2.5.3.27, take variant). Consumes.
     ///
     /// # Errors
-    /// `BadParameter` wenn `handle == HANDLE_NIL`.
+    /// `BadParameter` if `handle == HANDLE_NIL`.
     #[cfg(feature = "std")]
     pub fn take_instance(&self, handle: InstanceHandle) -> Result<Vec<Sample<T>>> {
         if handle.is_nil() {
@@ -1987,14 +2005,13 @@ impl<T: DdsType> DataReader<T> {
         Ok(out)
     }
 
-    /// `read_next_instance` (Spec §2.2.2.5.3.28). Liefert die Samples
-    /// der **naechsten** Instanz (nach Sortier-Ordnung) hinter
-    /// `previous`.
+    /// `read_next_instance` (spec §2.2.2.5.3.28). Returns the samples of
+    /// the **next** instance (in sort order) after `previous`.
     ///
-    /// `previous == HANDLE_NIL` startet beim ersten Handle.
+    /// `previous == HANDLE_NIL` starts at the first handle.
     ///
     /// # Errors
-    /// Wie `read`.
+    /// Same as `read`.
     #[cfg(feature = "std")]
     pub fn read_next_instance(&self, previous: InstanceHandle) -> Result<Vec<Sample<T>>> {
         let Some(next) = self.instances.next_handle_after(previous) else {
@@ -2003,10 +2020,10 @@ impl<T: DdsType> DataReader<T> {
         self.read_instance(next)
     }
 
-    /// `take_next_instance` (Spec §2.2.2.5.3.28). Take-Variante.
+    /// `take_next_instance` (spec §2.2.2.5.3.28). Take variant.
     ///
     /// # Errors
-    /// Wie `take`.
+    /// Same as `take`.
     #[cfg(feature = "std")]
     pub fn take_next_instance(&self, previous: InstanceHandle) -> Result<Vec<Sample<T>>> {
         let Some(next) = self.instances.next_handle_after(previous) else {
@@ -2015,10 +2032,10 @@ impl<T: DdsType> DataReader<T> {
         self.take_instance(next)
     }
 
-    /// Hilfsfunktion: aus einem CachedSample ein `Sample<T>` machen.
-    /// Bei Lifecycle-Markern (`bytes == None`) wird `T` aus dem
-    /// gespeicherten Key-Holder rekonstruiert (Spec §2.2.2.5.1.13:
-    /// `data` enthaelt dann nur den Key-Anteil).
+    /// Helper: turns a CachedSample into a `Sample<T>`. For lifecycle
+    /// markers (`bytes == None`), `T` is reconstructed from the stored
+    /// key holder (spec §2.2.2.5.1.13: `data` then contains only the key
+    /// portion).
     #[cfg(feature = "std")]
     fn materialize(&self, s: CachedSample) -> Result<Sample<T>> {
         let data = self.decode_or_keyholder(s.bytes.as_deref(), s.info.instance_handle)?;
@@ -2027,9 +2044,9 @@ impl<T: DdsType> DataReader<T> {
         Ok(Sample::new(data, s.info))
     }
 
-    /// Decode-Helper: bei `Some(bytes)` via `T::decode`, bei `None`
-    /// (Lifecycle-Marker) ueber den Key-Holder der Instanz; falls
-    /// auch der nicht verfuegbar, faellt zurueck auf `T::decode(&[])`.
+    /// Decode helper: for `Some(bytes)` via `T::decode`, for `None`
+    /// (lifecycle marker) via the instance's key holder; if that is also
+    /// unavailable, falls back to `T::decode(&[])`.
     #[cfg(feature = "std")]
     fn decode_or_keyholder(&self, bytes: Option<&[u8]>, handle: InstanceHandle) -> Result<T> {
         if let Some(b) = bytes {
@@ -2057,7 +2074,7 @@ impl<T: DdsType> crate::entity::Entity for DataReader<T> {
     }
 
     /// Spec §2.2.3 / §2.2.2.5.3: DURABILITY, RELIABILITY, HISTORY,
-    /// RESOURCE_LIMITS, OWNERSHIP sind Changeable=NO post-enable.
+    /// RESOURCE_LIMITS, OWNERSHIP are Changeable=NO post-enable.
     fn set_qos(&self, qos: Self::Qos) -> Result<()> {
         let enabled = self.entity_state.is_enabled();
         if let Ok(mut current) = self.qos.lock() {
@@ -2096,7 +2113,7 @@ impl<T: DdsType> crate::entity::Entity for DataReader<T> {
     }
 }
 
-// ---- Boxed-typemapped variant fuer heterogene Reader-Listen ----
+// ---- Boxed type-mapped variant for heterogeneous reader lists ----
 #[allow(dead_code)]
 pub(crate) trait AnyDataReader: Send + Sync + core::fmt::Debug {
     fn topic_name(&self) -> &str;
@@ -2157,7 +2174,7 @@ mod tests {
         assert_eq!(samples.len(), 2);
         assert_eq!(samples[0].data, vec![1, 2, 3]);
         assert_eq!(samples[1].data, vec![4, 5]);
-        // Inbox ist jetzt leer.
+        // The inbox is now empty.
         let again = r.take().unwrap();
         assert!(again.is_empty());
     }
@@ -2175,7 +2192,7 @@ mod tests {
         assert_eq!(second.len(), 1);
     }
 
-    // poll_subscription_matched + Listener-Slot-API.
+    // poll_subscription_matched + listener-slot API.
 
     use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -2258,7 +2275,7 @@ mod tests {
         r.set_listener(Some(rc.clone()), crate::psm_constants::status::ANY);
         r.notify_data_arrived();
         assert_eq!(rc.0.load(Ordering::Relaxed), 1);
-        // sub_matched-Counter unveraendert (anderer Status-Bit).
+        // sub_matched counter unchanged (different status bit).
         assert_eq!(rc.1.load(Ordering::Relaxed), 0);
     }
 
@@ -2276,7 +2293,7 @@ mod tests {
 
     #[test]
     fn subscriber_end_access_without_begin_returns_precondition_not_met() {
-        // Spec §2.2.2.5.2.9 — end ohne begin ist Spec-Verletzung.
+        // Spec §2.2.2.5.2.9 — end without begin is a spec violation.
         let s = Subscriber::new(SubscriberQos::default(), None);
         let res = s.end_access();
         assert!(matches!(
@@ -2287,24 +2304,24 @@ mod tests {
 
     #[test]
     fn subscriber_begin_access_is_nestable() {
-        // Spec §2.2.2.5.2.8 — Verschachtelung erlaubt; jedes
-        // begin braucht ein eigenes end.
+        // Spec §2.2.2.5.2.8 — nesting allowed; each begin needs its own
+        // end.
         let s = Subscriber::new(SubscriberQos::default(), None);
         s.begin_access();
         s.begin_access();
         assert!(s.is_access_open());
         s.end_access().unwrap();
-        // Nach erstem end noch offen (rekursive Verschachtelung).
+        // Still open after the first end (recursive nesting).
         assert!(s.is_access_open());
         s.end_access().unwrap();
-        // Erst nach zweitem end ist der Scope wieder zu.
+        // Only after the second end is the scope closed again.
         assert!(!s.is_access_open());
     }
 
     #[test]
     fn subscriber_too_many_ends_after_balanced_returns_error() {
-        // Negativ: nach balanciertem begin/end ist der naechste end
-        // ein Underflow → PreconditionNotMet.
+        // Negative: after a balanced begin/end, the next end is an
+        // underflow → PreconditionNotMet.
         let s = Subscriber::new(SubscriberQos::default(), None);
         s.begin_access();
         s.end_access().unwrap();

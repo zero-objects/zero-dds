@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! PEM-Parsing + Trust-Anchor-Chain-Validation.
+//! PEM parsing + trust-anchor chain validation.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -9,32 +9,32 @@ use alloc::vec::Vec;
 use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::{CertificateDer, TrustAnchor};
 
-/// Ein-Input fuer [`crate::PkiAuthenticationPlugin::validate_with_config`]:
-/// Identity-Zertifikat + zugehoerige CA (beide PEM).
+/// One input for [`crate::PkiAuthenticationPlugin::validate_with_config`]:
+/// identity certificate + associated CA (both PEM).
 #[derive(Debug, Clone)]
 pub struct IdentityConfig {
-    /// PEM-kodiertes X.509-Identity-Zertifikat (einzelnes Cert).
+    /// PEM-encoded X.509 identity certificate (a single cert).
     pub identity_cert_pem: Vec<u8>,
-    /// PEM-kodiertes CA-Bundle (kann mehrere Trust-Anchors enthalten).
+    /// PEM-encoded CA bundle (may contain multiple trust anchors).
     pub identity_ca_pem: Vec<u8>,
-    /// PKCS8-PEM-kodierter Private-Key passend zum Identity-Cert.
-    /// Wird zum Signieren von Handshake-Tokens und Delegation-Links
-    /// verwendet. `None` = nur Validation-Modus (kein Handshake-Sign
-    /// moeglich).
+    /// PKCS8-PEM-encoded private key matching the identity cert.
+    /// Used for signing handshake tokens and delegation links.
+    /// `None` = validation-only mode (no handshake sign
+    /// possible).
     pub identity_key_pem: Option<Vec<u8>>,
 }
 
-/// Interne Fehler des PKI-Backends. Werden in
-/// [`zerodds_security::SecurityError`] gehuellt.
+/// Internal errors of the PKI backend. Wrapped in
+/// [`zerodds_security::SecurityError`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PkiError {
-    /// PEM-Parsing fehlgeschlagen.
+    /// PEM parsing failed.
     InvalidPem(String),
-    /// PEM enthielt **keine** Zertifikate.
+    /// PEM contained **no** certificates.
     NoCertInPem,
-    /// Cert-Chain-Verifikation fehlgeschlagen (Signatur, Expiry, Name).
+    /// Cert chain verification failed (signature, expiry, name).
     CertInvalid(String),
-    /// Trust-Anchor-Bundle leer.
+    /// Trust-anchor bundle empty.
     EmptyTrustAnchors,
 }
 
@@ -51,36 +51,36 @@ impl core::fmt::Display for PkiError {
 
 impl std::error::Error for PkiError {}
 
-/// Parsed-Repräsentation einer validierten Identity.
+/// Parsed representation of a validated identity.
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedIdentity {
-    /// Cert-DER des Identity-Zertifikats. Wird in C3.1 fuer signierte
-    /// Handshake-Tokens (`c.id`-Property) verwendet.
+    /// Cert DER of the identity certificate. Used in C3.1 for signed
+    /// handshake tokens (`c.id` property).
     pub cert_der: Vec<u8>,
-    /// Trust-Anchor-DER-Liste (self-contained, damit das Objekt
-    /// verschiebbar bleibt).
+    /// Trust-anchor DER list (self-contained, so the object
+    /// stays movable).
     pub trust_anchors_der: Vec<Vec<u8>>,
-    /// PKCS8-DER des Private-Keys (extrahiert aus PEM). `None` =
-    /// nur-Validation, kein Sign.
+    /// PKCS8 DER of the private key (extracted from PEM). `None` =
+    /// validation-only, no sign.
     pub private_key_pkcs8_der: Option<Vec<u8>>,
-    /// Detektierter Cert-Key-Algorithmus.
+    /// Detected cert key algorithm.
     pub key_algo: CertKeyAlgo,
 }
 
-/// Detektierter Algorithmus aus dem Identity-Cert. Entscheidet, welche
-/// `c.dsign_algo`-Werte und Sign-Routinen genutzt werden.
+/// Detected algorithm from the identity cert. Determines which
+/// `c.dsign_algo` values and sign routines are used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CertKeyAlgo {
-    /// ECDSA P-256 mit SHA-256 (rcgen-Default; Spec-Standard).
+    /// ECDSA P-256 with SHA-256 (rcgen default; spec standard).
     EcdsaP256Sha256,
-    /// RSA-2048 PSS-SHA256 (Legacy/Interop).
+    /// RSA-2048 PSS-SHA256 (legacy/interop).
     RsaPssSha256,
-    /// Unbekannt — Cert-Public-Key-Algorithmus nicht in der Whitelist.
+    /// Unknown — cert public-key algorithm not in the whitelist.
     Unknown,
 }
 
 impl ParsedIdentity {
-    /// Parsed das Cert + CA-Bundle und verifiziert die Signatur-Kette.
+    /// Parses the cert + CA bundle and verifies the signature chain.
     pub fn from_config(cfg: &IdentityConfig) -> Result<Self, PkiError> {
         let cert_der = first_cert_der(&cfg.identity_cert_pem)?;
         let trust_anchors_der = all_certs_der(&cfg.identity_ca_pem)?;
@@ -101,21 +101,25 @@ impl ParsedIdentity {
         })
     }
 
-    /// Verifiziert ein Remote-DER-Zertifikat gegen die gespeicherten
-    /// Trust-Anchors.
+    /// Verifies a remote DER certificate against the stored
+    /// trust anchors.
     pub fn verify_remote_der(&self, remote_cert_der: &[u8]) -> Result<(), PkiError> {
         verify_cert_chain(remote_cert_der, &self.trust_anchors_der)
     }
 }
 
-fn first_cert_der(pem: &[u8]) -> Result<Vec<u8>, PkiError> {
+/// Extracts the DER of the **first** certificate from a PEM block.
+///
+/// # Errors
+/// `PkiError::NoCertInPem` if no certificate is contained.
+pub fn first_cert_der(pem: &[u8]) -> Result<Vec<u8>, PkiError> {
     let certs = all_certs_der(pem)?;
     certs.into_iter().next().ok_or(PkiError::NoCertInPem)
 }
 
 fn all_certs_der(pem: &[u8]) -> Result<Vec<Vec<u8>>, PkiError> {
-    // `rustls-pki-types` >= 1.9 bringt einen integrierten PEM-Parser
-    // (RUSTSEC-2025-0134 → wir haben rustls-pemfile entfernt).
+    // `rustls-pki-types` >= 1.9 ships an integrated PEM parser
+    // (RUSTSEC-2025-0134 → we removed rustls-pemfile).
     let mut out = Vec::new();
     for item in CertificateDer::pem_slice_iter(pem) {
         let cert = item.map_err(|e| PkiError::InvalidPem(alloc::format!("{e:?}")))?;
@@ -129,10 +133,10 @@ fn verify_cert_chain(end_entity_der: &[u8], trust_anchors_der: &[Vec<u8>]) -> Re
     let end_entity = webpki::EndEntityCert::try_from(&ee)
         .map_err(|e| PkiError::CertInvalid(alloc::format!("parse: {e:?}")))?;
 
-    // TrustAnchors aus den DER-Bytes ableiten. CertificateDer muss
-    // lange genug leben, damit der daraus abgeleitete Anchor gilt —
-    // deshalb erst alle CertificateDer-Wrapper materialisieren, dann
-    // die TrustAnchors darauf.
+    // Derive the TrustAnchors from the DER bytes. CertificateDer must
+    // live long enough for the anchor derived from it to be valid —
+    // therefore first materialize all CertificateDer wrappers, then
+    // the TrustAnchors on top of them.
     let ta_certs: Vec<CertificateDer<'_>> = trust_anchors_der
         .iter()
         .map(|b| CertificateDer::from_slice(b))
@@ -144,15 +148,15 @@ fn verify_cert_chain(end_entity_der: &[u8], trust_anchors_der: &[Vec<u8>]) -> Re
         anchors.push(ta);
     }
 
-    // Aktuelle Zeit (kein no_std hier — `std`-Feature vorausgesetzt).
+    // Current time (no no_std here — `std` feature assumed).
     let now = rustls_pki_types::UnixTime::now();
 
-    // Akzeptierte Signatur-Algorithmen: ring-default-Set.
+    // Accepted signature algorithms: the ring default set.
     let algs = webpki::ALL_VERIFICATION_ALGS;
 
-    // Keine Zwischen-Certs im default-Pfad — Identity-Cert ist direkt
-    // CA-signed (Sub-CA-Setups laufen ueber den Delegation-Chain-Pfad
-    // im `delegation`-Modul plus `security-permissions::delegation_check`).
+    // No intermediate certs in the default path — the identity cert is directly
+    // CA-signed (sub-CA setups run over the delegation-chain path
+    // in the `delegation` module plus `security-permissions::delegation_check`).
     end_entity
         .verify_for_usage(
             algs,
@@ -168,22 +172,22 @@ fn verify_cert_chain(end_entity_der: &[u8], trust_anchors_der: &[Vec<u8>]) -> Re
     Ok(())
 }
 
-/// Crate-internes Re-Export, damit `plugin.rs` die OID-Detection auf
-/// Peer-Cert-DER nochmal ausfuehren kann (kein eigener Helper-Bedarf).
+/// Crate-internal re-export so that `plugin.rs` can run the OID detection on
+/// peer cert DER again (no need for its own helper).
 pub(crate) fn detect_cert_algo_pub(der: &[u8]) -> CertKeyAlgo {
     detect_cert_algo(der)
 }
 
-/// Detektiert den Public-Key-Algorithmus aus dem Cert-DER. Dies ist
-/// ein pragmatischer SPKI-Match — wir suchen nach OID-Bytes in den
-/// ersten 200 byte des DER-Streams.
+/// Detects the public-key algorithm from the cert DER. This is
+/// a pragmatic SPKI match — we look for OID bytes in the
+/// first 200 bytes of the DER stream.
 ///
 /// * 1.2.840.10045.2.1 (id-ecPublicKey) + 1.2.840.10045.3.1.7 (P-256) → ECDSA P-256.
 /// * 1.2.840.113549.1.1.1 (rsaEncryption) → RSA.
 fn detect_cert_algo(der: &[u8]) -> CertKeyAlgo {
     // OID encoded as DER: 06 LL ...
-    // ECDSA P-256 SPKI hat: 1.2.840.10045.2.1 = 06 07 2A 86 48 CE 3D 02 01
-    // und params 1.2.840.10045.3.1.7 = 06 08 2A 86 48 CE 3D 03 01 07
+    // ECDSA P-256 SPKI has: 1.2.840.10045.2.1 = 06 07 2A 86 48 CE 3D 02 01
+    // and params 1.2.840.10045.3.1.7 = 06 08 2A 86 48 CE 3D 03 01 07
     const ECDSA_OID: &[u8] = &[0x06, 0x07, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
     const P256_OID: &[u8] = &[0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07];
     const RSA_OID: &[u8] = &[
@@ -219,7 +223,7 @@ fn parse_pkcs8_pem(pem: &[u8]) -> Result<Vec<u8>, PkiError> {
 mod mutation_killers {
     use super::*;
 
-    /// Display-Format aller Error-Variants. Faengt Mutation
+    /// Display format of all error variants. Catches mutation
     /// `replace fmt with Ok(Default::default())`.
     #[test]
     fn pki_error_display_messages_are_specific() {
@@ -247,8 +251,8 @@ mod mutation_killers {
         );
     }
 
-    /// `detect_cert_algo` braucht BEIDE OIDs (id-ecPublicKey UND P-256
-    /// curve), nicht nur eine. Faengt `&&` -> `||` Mutation.
+    /// `detect_cert_algo` needs BOTH OIDs (id-ecPublicKey AND the P-256
+    /// curve), not just one. Catches the `&&` -> `||` mutation.
     #[test]
     fn detect_cert_algo_requires_both_ecdsa_oids() {
         let only_ecdsa = [0x06, 0x07, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
@@ -263,8 +267,8 @@ mod mutation_killers {
         assert_eq!(detect_cert_algo(&both), CertKeyAlgo::EcdsaP256Sha256);
     }
 
-    /// `contains_subseq` ist NICHT konstant `true`. Faengt
-    /// `replace contains_subseq -> bool with true` Mutation.
+    /// `contains_subseq` is NOT constant `true`. Catches the
+    /// `replace contains_subseq -> bool with true` mutation.
     #[test]
     fn contains_subseq_not_constant_true() {
         assert!(!contains_subseq(b"abc", b"xyz"));
@@ -272,24 +276,24 @@ mod mutation_killers {
         assert!(!contains_subseq(b"a", b"abc"));
     }
 
-    /// `contains_subseq` Empty-Needle: `needle.is_empty() || hay<needle.len()`
-    /// muss bei leerem Needle false liefern. Faengt `||` -> `&&`.
+    /// `contains_subseq` empty needle: `needle.is_empty() || hay<needle.len()`
+    /// must return false for an empty needle. Catches `||` -> `&&`.
     #[test]
     fn contains_subseq_empty_needle_returns_false() {
         assert!(!contains_subseq(b"abc", b""));
         assert!(!contains_subseq(b"", b""));
     }
 
-    /// `contains_subseq` Hay==Needle muss true liefern.
-    /// Faengt `<` -> `==` und `<` -> `<=` auf der Length-Pre-Check-Branch.
+    /// `contains_subseq` hay==needle must return true.
+    /// Catches `<` -> `==` and `<` -> `<=` on the length pre-check branch.
     #[test]
     fn contains_subseq_exact_match_at_equal_length() {
         assert!(contains_subseq(b"abc", b"abc"));
         assert!(contains_subseq(b"\x06\x07\x2A", b"\x06\x07\x2A"));
     }
 
-    /// `contains_subseq` ohne Match liefert false. Faengt `==` -> `!=`
-    /// Mutation in der windows.any()-Pruefung.
+    /// `contains_subseq` without a match returns false. Catches the `==` -> `!=`
+    /// mutation in the windows.any() check.
     #[test]
     fn contains_subseq_no_match_returns_false() {
         assert!(!contains_subseq(b"abcde", b"xyz"));

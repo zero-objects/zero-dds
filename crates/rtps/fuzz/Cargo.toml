@@ -13,7 +13,7 @@ libfuzzer-sys = "0.4"
 [dependencies.zerodds-rtps]
 path = ".."
 
-# Excluded from workspace — fuzzing ist ein nightly-only Opt-in.
+# Excluded from workspace — fuzzing is a nightly-only opt-in.
 [workspace]
 
 [[bin]]

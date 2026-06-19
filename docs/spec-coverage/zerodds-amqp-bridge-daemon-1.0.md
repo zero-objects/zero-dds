@@ -2,6 +2,10 @@
 
 **Quelle:** `docs/specs/zerodds-amqp-bridge-daemon-1.0.md`
 
+Implementation:
+
+- `crates/amqp-endpoint/` — AMQP-Bridge-Daemon-Endpoint.
+
 ## §1 Conformance-Levels
 
 ### §1 L1-L6 Conformance-Matrix
@@ -411,4 +415,4 @@ Protocol-Change (AMQP-1.0→2).
 
 Test-Lauf: `cargo test -p zerodds-amqp-endpoint` — Tests grün, 0 failed.
 
-Offene Punkte und Decision-Records: siehe `zerodds-amqp-bridge-daemon-1.0.open.md`.
+Keine offenen Punkte oder Decision-Records — alle Items `done` / `n/a (informative)`.

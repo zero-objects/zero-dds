@@ -3,13 +3,13 @@
 
 //! TypeCode — Spec §10.7.
 //!
-//! `TypeCode` ist die Laufzeit-Repraesentation eines IDL-Types.
-//! Spec §10.7.2 definiert 32 `TCKind`-Werte (`tk_null`..`tk_local_interface`).
+//! `TypeCode` is the runtime representation of an IDL type.
+//! Spec §10.7.2 defines 32 `TCKind` values (`tk_null`..`tk_local_interface`).
 //!
-//! Wir modellieren TCKind als Enum + den TypeCode als Struct mit
-//! `kind` plus optionalen Body-Daten. Komplexe Types (Struct/Union/
-//! Enum/Sequence/Array/Alias/Except/Interface/ValueType) tragen
-//! ihre IDL-Member-Listen.
+//! We model TCKind as an enum and the TypeCode as a struct with
+//! `kind` plus optional body data. Complex types (struct/union/
+//! enum/sequence/array/alias/except/interface/valuetype) carry
+//! their IDL member lists.
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -90,147 +90,147 @@ pub enum TcKind {
 }
 
 impl TcKind {
-    /// Roher Diskriminanten-Wert (`unsigned long`).
+    /// Raw discriminant value (`unsigned long`).
     #[must_use]
     pub const fn as_u32(self) -> u32 {
         self as u32
     }
 }
 
-/// Union-Member fuer `tk_union`.
+/// Union member for `tk_union`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnionMember {
-    /// Member-Label (CDR-encoded Discriminator-Value).
+    /// Member label (CDR-encoded discriminator value).
     pub label_bytes: Vec<u8>,
-    /// Member-Name.
+    /// Member name.
     pub name: String,
-    /// Member-Type.
+    /// Member type.
     pub type_code: TypeCode,
 }
 
-/// Struct/Except-Member.
+/// Struct/except member.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructMember {
-    /// Field-Name.
+    /// Field name.
     pub name: String,
-    /// Field-Type.
+    /// Field type.
     pub type_code: TypeCode,
 }
 
-/// `TypeCode`-Body — Daten je nach `kind`.
+/// `TypeCode` body — data depending on `kind`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeCodeBody {
-    /// Primitive Types ohne Body.
+    /// Primitive types without a body.
     Primitive,
-    /// `tk_string` mit max-bound (0 = unbounded).
+    /// `tk_string` with a max bound (0 = unbounded).
     String {
-        /// Max-Length (0 = unbounded).
+        /// Max length (0 = unbounded).
         bound: u32,
     },
-    /// `tk_wstring` mit max-bound.
+    /// `tk_wstring` with a max bound.
     WString {
-        /// Max-Length (0 = unbounded).
+        /// Max length (0 = unbounded).
         bound: u32,
     },
-    /// `tk_fixed` mit Digits + Scale.
+    /// `tk_fixed` with digits and scale.
     Fixed {
-        /// Total-Digits.
+        /// Total digits.
         digits: u16,
-        /// Decimal-Scale (kann negativ sein).
+        /// Decimal scale (may be negative).
         scale: i16,
     },
     /// `tk_objref` / `tk_native` / `tk_abstract_interface` /
-    /// `tk_local_interface`. RepositoryId + simple-name.
+    /// `tk_local_interface`. RepositoryId + simple name.
     Interface {
-        /// Repository-ID.
+        /// Repository ID.
         id: String,
-        /// Simple-Name.
+        /// Simple name.
         name: String,
     },
     /// `tk_struct` / `tk_except`.
     Struct {
-        /// Repository-ID.
+        /// Repository ID.
         id: String,
-        /// Simple-Name.
+        /// Simple name.
         name: String,
-        /// Member.
+        /// Members.
         members: Vec<StructMember>,
     },
     /// `tk_union`.
     Union {
-        /// Repository-ID.
+        /// Repository ID.
         id: String,
-        /// Simple-Name.
+        /// Simple name.
         name: String,
-        /// Discriminator-Type.
+        /// Discriminator type.
         discriminator: Box<TypeCode>,
-        /// Default-Index (`-1` = none).
+        /// Default index (`-1` = none).
         default_index: i32,
         /// Members.
         members: Vec<UnionMember>,
     },
     /// `tk_enum`.
     Enum {
-        /// Repository-ID.
+        /// Repository ID.
         id: String,
-        /// Simple-Name.
+        /// Simple name.
         name: String,
-        /// Member-Names in Reihenfolge.
+        /// Member names in order.
         members: Vec<String>,
     },
     /// `tk_sequence`.
     Sequence {
-        /// Element-TypeCode.
+        /// Element TypeCode.
         element: Box<TypeCode>,
         /// Bound (0 = unbounded).
         bound: u32,
     },
     /// `tk_array`.
     Array {
-        /// Element-TypeCode.
+        /// Element TypeCode.
         element: Box<TypeCode>,
         /// Length.
         length: u32,
     },
     /// `tk_alias`.
     Alias {
-        /// Repository-ID.
+        /// Repository ID.
         id: String,
-        /// Simple-Name.
+        /// Simple name.
         name: String,
-        /// Original-TypeCode.
+        /// Original TypeCode.
         original: Box<TypeCode>,
     },
     /// `tk_value`.
     Value {
-        /// Repository-ID.
+        /// Repository ID.
         id: String,
-        /// Simple-Name.
+        /// Simple name.
         name: String,
-        /// Value-Modifier (NONE/CUSTOM/ABSTRACT/TRUNCATABLE).
+        /// Value modifier (NONE/CUSTOM/ABSTRACT/TRUNCATABLE).
         modifier: i16,
-        /// Concrete-Base-Type (`Null`-TC = keine Basis).
+        /// Concrete base type (`Null` TC = no base).
         concrete_base: Box<TypeCode>,
         /// Members.
         members: Vec<ValueMember>,
     },
     /// `tk_value_box`.
     ValueBox {
-        /// Repository-ID.
+        /// Repository ID.
         id: String,
-        /// Simple-Name.
+        /// Simple name.
         name: String,
-        /// Boxed-Type.
+        /// Boxed type.
         boxed: Box<TypeCode>,
     },
 }
 
-/// Value-Type-Member.
+/// Valuetype member.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ValueMember {
-    /// Field-Name.
+    /// Field name.
     pub name: String,
-    /// Field-Type.
+    /// Field type.
     pub type_code: TypeCode,
     /// Visibility (`PRIVATE_MEMBER = 0`, `PUBLIC_MEMBER = 1`).
     pub access: i16,
@@ -241,12 +241,12 @@ pub struct ValueMember {
 pub struct TypeCode {
     /// `kind`.
     pub kind: TcKind,
-    /// Body-Daten je nach `kind`.
+    /// Body data depending on `kind`.
     pub body: TypeCodeBody,
 }
 
 impl TypeCode {
-    /// Konstruktor fuer Primitive-Types.
+    /// Constructor for primitive types.
     #[must_use]
     pub const fn primitive(kind: TcKind) -> Self {
         Self {
@@ -255,19 +255,19 @@ impl TypeCode {
         }
     }
 
-    /// Konstruktor `tk_null`.
+    /// `tk_null` constructor.
     #[must_use]
     pub const fn null() -> Self {
         Self::primitive(TcKind::Null)
     }
 
-    /// Konstruktor `tk_void`.
+    /// `tk_void` constructor.
     #[must_use]
     pub const fn void() -> Self {
         Self::primitive(TcKind::Void)
     }
 
-    /// `tk_string` mit Bound.
+    /// `tk_string` with a bound.
     #[must_use]
     pub const fn string(bound: u32) -> Self {
         Self {
@@ -306,7 +306,7 @@ impl TypeCode {
         }
     }
 
-    /// Liefert die Repository-ID falls vorhanden (Spec §10.7.1.1).
+    /// Returns the repository ID if present (Spec §10.7.1.1).
     #[must_use]
     pub fn id(&self) -> Option<&str> {
         match &self.body {
@@ -321,7 +321,7 @@ impl TypeCode {
         }
     }
 
-    /// Liefert den simple-Name falls vorhanden.
+    /// Returns the simple name if present.
     #[must_use]
     pub fn name(&self) -> Option<&str> {
         match &self.body {

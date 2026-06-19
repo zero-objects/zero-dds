@@ -4,14 +4,14 @@
 [![docs.rs](https://docs.rs/zerodds-rtc/badge.svg)](https://docs.rs/zerodds-rtc)
 
 OMG RTC 1.0 (`formal/2008-04-04`) — Robotic Technology Component.
-Lightweight RTC + ExecutionContext + Lifecycle-State-Machine +
-Periodic/Stimulus/Mode-Profile + Resource-Introspection. Local PSM
-(§6.3) konform; `no_std + alloc`, `forbid(unsafe_code)`. Safety
+Lightweight RTC + ExecutionContext + lifecycle state machine +
+Periodic/Stimulus/Mode profiles + resource introspection. Local PSM
+(§6.3) compliant; `no_std + alloc`, `forbid(unsafe_code)`. Safety
 classification: **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
 | OMG RTC 1.0 | §5.2.1 ReturnCode_t |
 | OMG RTC 1.0 | §5.2.2.2 LightweightRTObject |
@@ -23,35 +23,35 @@ classification: **STANDARD**.
 | OMG RTC 1.0 | §5.4 Resource Data Model |
 | OMG RTC 1.0 | §6.3 Local PSM |
 
-## Was ist drin
+## What's included
 
-- **`return_code`** — `ReturnCode` mit allen 6 Status-Codes plus
-  `is_ok()` / `into_result()` Helper.
+- **`return_code`** — `ReturnCode` with all 6 status codes plus
+  `is_ok()` / `into_result()` helpers.
 - **`lifecycle`** — `LifeCycleState`, `ExecutionKind`,
-  `ComponentAction`-Trait + State-Machine-Enforcement.
+  `ComponentAction` trait + state-machine enforcement.
 - **`object`** — `LightweightRtObject`, `ExecutionContextHandle`.
-- **`execution`** — `ExecutionContext`, `ExecutionContextOperations`-Trait.
+- **`execution`** — `ExecutionContext`, `ExecutionContextOperations` trait.
 - **`semantics`** — `DataFlowComponentAction` (Periodic),
   `FsmComponentAction` (Stimulus), `MultiModeComponentAction` +
   `ModeOfOperation` (Modes).
 - **`resource`** — `Introspection`, `ComponentProfile`, `PortProfile`,
   `ConnectorProfile`, `PortDirection`, `ProfileId`.
 
-## Was nicht abgedeckt ist
+## What's not covered
 
-- **CORBA PSM** (§6.5) — verlangt CORBA-ORB; ZeroDDS hat keinen.
-- **Lightweight CCM PSM** (§6.4) — verlangt LwCCM-Container; siehe
-  `crates/ccm/` welche die IDL-Equivalent-Transformation liefert,
-  aber keinen Container bereitstellt.
-- **§5.4 Discovery-/Wire-Aspekt** — partial: Resource-Daten-Modell
-  ist im Crate, der Discovery-Wire-Aspekt nicht.
+- **CORBA PSM** (§6.5) — requires a CORBA ORB; ZeroDDS has none.
+- **Lightweight CCM PSM** (§6.4) — requires an LwCCM container; see
+  `crates/ccm/`, which provides the IDL-equivalent transformation
+  but no container.
+- **§5.4 discovery/wire aspect** — partial: the resource data model
+  is in the crate, the discovery wire aspect is not.
 
-## Beispiel
+## Example
 
 ```rust
 use zerodds_rtc::ReturnCode;
 
-// Spec §5.2.1.1: ReturnCode::Ok ist der einzige OK-Code.
+// Spec §5.2.1.1: ReturnCode::Ok is the only OK code.
 assert!(ReturnCode::Ok.is_ok());
 assert!(!ReturnCode::PreconditionNotMet.is_ok());
 assert_eq!(ReturnCode::Ok.into_result(), Ok(()));

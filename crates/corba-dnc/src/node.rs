@@ -3,9 +3,9 @@
 
 //! NodeManager / NodeApplicationManager — D&C §9.2.
 //!
-//! Spec §9.2: ein `NodeManager` lebt auf jedem Deployment-Node und
-//! wird vom `DomainApplicationManager` (per Plan) gerufen, um lokale
-//! Instances aufzubringen.
+//! Spec §9.2: a `NodeManager` lives on each deployment node and is
+//! invoked by the `DomainApplicationManager` (per plan) to bring up
+//! local instances.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -16,11 +16,11 @@ use crate::plan::InstanceDeploymentDescription;
 /// `NodeApplication` — D&C §9.2.3.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NodeApplication {
-    /// Node-Name.
+    /// Node name.
     pub node: String,
-    /// Liste der lokalen Instances.
+    /// List of local instances.
     pub instances: Vec<InstanceDeploymentDescription>,
-    /// Aktive (post-launch) Instance-Namen.
+    /// Active (post-launch) instance names.
     pub active: Vec<String>,
 }
 
@@ -32,13 +32,13 @@ pub struct NodeApplicationManager {
 }
 
 impl NodeApplicationManager {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(node: String, instances: Vec<InstanceDeploymentDescription>) -> Self {
         Self { node, instances }
     }
 
-    /// Spec §9.2.2 `startLaunch` — bringt die Instances online.
+    /// Spec §9.2.2 `startLaunch` — brings the instances online.
     #[must_use]
     pub fn start_launch(&self) -> NodeApplication {
         NodeApplication {
@@ -57,14 +57,14 @@ impl NodeApplicationManager {
 /// `NodeManager` — D&C §9.2.1.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct NodeManager {
-    /// Node-Name.
+    /// Node name.
     pub name: String,
-    /// Aktive NodeApplications.
+    /// Active NodeApplications.
     apps: BTreeMap<String, NodeApplication>,
 }
 
 impl NodeManager {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(name: String) -> Self {
         Self {
@@ -73,9 +73,8 @@ impl NodeManager {
         }
     }
 
-    /// Spec §9.2.1 `preparePlan` — fuer eine Liste von Instances
-    /// (die fuer diesen Node bestimmt sind) einen
-    /// `NodeApplicationManager` erzeugen.
+    /// Spec §9.2.1 `preparePlan` — creates a `NodeApplicationManager`
+    /// for a list of instances (those assigned to this node).
     #[must_use]
     pub fn prepare_plan(
         &self,
@@ -84,19 +83,19 @@ impl NodeManager {
         NodeApplicationManager::new(self.name.clone(), instances)
     }
 
-    /// Registriert eine `NodeApplication` (Caller pflegt das, nachdem
-    /// `start_launch` aufgerufen wurde).
+    /// Registers a `NodeApplication` (the caller maintains this after
+    /// `start_launch` has been called).
     pub fn register_application(&mut self, plan_label: String, app: NodeApplication) {
         self.apps.insert(plan_label, app);
     }
 
-    /// Liefert die aktiven Application-Plan-Labels auf diesem Node.
+    /// Returns the active application plan labels on this node.
     #[must_use]
     pub fn active_plans(&self) -> Vec<String> {
         self.apps.keys().cloned().collect()
     }
 
-    /// Pop eine NodeApplication beim Tear-down.
+    /// Pops a NodeApplication at tear-down.
     pub fn unregister_application(&mut self, plan_label: &str) -> Option<NodeApplication> {
         self.apps.remove(plan_label)
     }
@@ -134,7 +133,7 @@ mod tests {
         let mut app = nm.prepare_plan(alloc::vec![make_inst("a")]).start_launch();
         NodeApplicationManager::destroy_application(&mut app);
         assert!(app.active.is_empty());
-        assert_eq!(app.instances.len(), 1, "instance metadata bleibt erhalten");
+        assert_eq!(app.instances.len(), 1, "instance metadata is preserved");
     }
 
     #[test]

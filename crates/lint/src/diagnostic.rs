@@ -7,12 +7,12 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-/// Schweregrad einer Diagnose.
+/// Severity of a diagnostic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
-    /// Hartes Fehler — laesst CI rot werden.
+    /// Hard error — turns CI red.
     Error,
-    /// Warning — kein Exit-Fail, aber sichtbar.
+    /// Warning — no exit failure, but visible.
     Warning,
 }
 
@@ -25,20 +25,20 @@ impl fmt::Display for Severity {
     }
 }
 
-/// Eine einzelne Lint-Findung.
+/// A single lint finding.
 #[derive(Debug, Clone)]
 pub struct Diagnostic {
-    /// Datei, in der die Findung auftritt.
+    /// File in which the finding occurs.
     pub file: PathBuf,
-    /// Zeile (1-basiert) im Quelltext.
+    /// Line (1-based) in the source text.
     pub line: usize,
     /// Spalte (1-basiert).
     pub column: usize,
     /// Lint-Name (z.B. `dds_require_safety_comment`).
     pub lint: &'static str,
-    /// Schweregrad.
+    /// Severity.
     pub severity: Severity,
-    /// Menschen-lesbare Beschreibung.
+    /// Human-readable description.
     pub message: String,
 }
 
@@ -58,7 +58,7 @@ impl fmt::Display for Diagnostic {
 }
 
 impl Diagnostic {
-    /// Erzeugt eine Error-Diagnose.
+    /// Creates an error diagnostic.
     #[must_use]
     pub fn error(
         file: &Path,
@@ -77,7 +77,7 @@ impl Diagnostic {
         }
     }
 
-    /// Erzeugt eine Warning-Diagnose.
+    /// Creates a warning diagnostic.
     #[must_use]
     pub fn warning(
         file: &Path,

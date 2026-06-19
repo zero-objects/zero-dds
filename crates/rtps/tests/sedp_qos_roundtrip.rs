@@ -1,4 +1,4 @@
-//! WP 3.X SEDP-PID-Extension: Roundtrip-Tests fuer die neu eingefuehrten
+//! WP 3.X SEDP PID extension: roundtrip tests for the newly introduced
 //! Wire-Felder in `PublicationBuiltinTopicData` +
 //! `SubscriptionBuiltinTopicData`.
 //!
@@ -82,6 +82,8 @@ fn publication_data_roundtrip_preserves_all_new_qos_policies() {
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
+        unicast_locators: vec![],
+        multicast_locators: vec![],
     };
 
     let bytes = orig.to_pl_cdr_le().expect("encode");
@@ -100,7 +102,7 @@ fn publication_data_roundtrip_preserves_all_new_qos_policies() {
     assert_eq!(decoded.partition[0], "alpha");
     assert_eq!(decoded.partition[1], "beta");
     assert_eq!(decoded.partition[2], "");
-    // Sanity: die bestehenden PIDs ueberleben auch.
+    // Sanity: the existing PIDs survive as well.
     assert_eq!(decoded.durability, DurabilityKind::TransientLocal);
     assert_eq!(decoded.reliability.kind, ReliabilityKind::Reliable);
     assert_eq!(decoded.topic_name, "SensorData");
@@ -138,6 +140,8 @@ fn subscription_data_roundtrip_preserves_reader_qos_policies() {
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
+        unicast_locators: vec![],
+        multicast_locators: vec![],
     };
 
     let bytes = orig.to_pl_cdr_le().expect("encode");
@@ -155,7 +159,7 @@ fn subscription_data_roundtrip_preserves_reader_qos_policies() {
 
 #[test]
 fn defaults_roundtrip_stays_default() {
-    // Wenn Writer alle neuen Felder im Default laesst, muss Decoder
+    // If the writer leaves all new fields at default, the decoder must
     // dieselben Defaults rekonstruieren.
     let orig = PublicationBuiltinTopicData {
         key: writer_guid(),
@@ -180,6 +184,8 @@ fn defaults_roundtrip_stays_default() {
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
+        unicast_locators: vec![],
+        multicast_locators: vec![],
     };
     let bytes = orig.to_pl_cdr_le().unwrap();
     let decoded = PublicationBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();

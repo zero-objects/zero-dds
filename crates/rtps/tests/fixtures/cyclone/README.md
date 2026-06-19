@@ -1,48 +1,48 @@
 # Cyclone-DDS Reference-Frames
 
-Diese Datei dokumentiert die hand-kuratierten RTPS-Frames in
-diesem Verzeichnis.
+This file documents the hand-curated RTPS frames in
+this directory.
 
-## Wichtige Notiz
+## Important note
 
-Die Frames sind **nicht** durch echte tshark-Captures aus einem
-laufenden Cyclone-DDS gewonnen, sondern hand-konstruiert nach der
-DDSI-RTPS-2.5-Spec mit Cyclone-typischen Parametern (VendorId,
-GuidPrefix-Konvention). Sie dienen als Wire-Format-Compliance-Test:
+The frames are **not** obtained from real tshark captures of a
+running Cyclone DDS, but hand-constructed per the
+DDSI-RTPS 2.5 spec with Cyclone-typical parameters (VendorId,
+GuidPrefix convention). They serve as a wire-format compliance test:
 
-> Wenn unser Reader diese Bytes als gueltige RTPS-Datagrams parst
-> und unser Writer Bytes mit der gleichen Struktur produziert, ist
-> die Wire-Format-Konformitaet zu Cyclone-DDS plausibel.
+> If our reader parses these bytes as valid RTPS datagrams
+> and our writer produces bytes with the same structure, then
+> wire-format conformance with Cyclone DDS is plausible.
 
-Echte Live-Interop kommt mit WP 0.7+ (Discovery) und WP-Phase-1
-(Reliable + Endpoint-Matching).
+Real live interop comes with WP 0.7+ (discovery) and WP phase 1
+(reliable + endpoint matching).
 
 ## Cyclone-DDS VendorId
 
-Eclipse Cyclone DDS verwendet VendorId `0x01_10` (registriert beim
-OMG Vendor-ID-Repository als "ADLINK / Eclipse Cyclone DDS").
-Manche aeltere Builds nutzen `0x01_0F` (Vortex Cafe / Lite). Beide
-sind als Test-Fixtures akzeptabel — wir akzeptieren beliebige
-VendorIds im Wire-Decoder.
+Eclipse Cyclone DDS uses VendorId `0x01_10` (registered with the
+OMG vendor-ID repository as "ADLINK / Eclipse Cyclone DDS").
+Some older builds use `0x01_0F` (Vortex Cafe / Lite). Both
+are acceptable as test fixtures — we accept arbitrary
+VendorIds in the wire decoder.
 
-## Frame-Capture-Anleitung (Phase 1)
+## Frame capture guide (phase 1)
 
-Fuer echte Captures:
+For real captures:
 
 ```bash
-# Cyclone-Container starten (siehe ../docker-compose.yml)
+# Start the Cyclone container (see ../docker-compose.yml)
 docker compose -f tests/interop/docker-compose.yml up -d
 
-# Frame-Capture mit tshark
+# Frame capture with tshark
 sudo tshark -i any -f "udp port 7400 or udp port 7410" \
             -w cyclone_dump.pcap -c 50
 
-# Hex-Export einzelner DATA-Frames mit Wireshark-GUI:
+# Hex export of individual DATA frames with the Wireshark GUI:
 # File → Export Packet Bytes...
 ```
 
-## Format der Hex-Files
+## Format of the hex files
 
-Jede `.hex`-Datei enthaelt **eine** Zeile pro Datagram, hex-encoded
-ohne Leerzeichen oder `0x`-Prefix. Multi-Line ist erlaubt — Whitespace
-wird ignoriert.
+Each `.hex` file contains **one** line per datagram, hex-encoded
+without spaces or `0x` prefix. Multi-line is allowed — whitespace
+is ignored.

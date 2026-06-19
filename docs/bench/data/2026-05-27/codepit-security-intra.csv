@@ -1,0 +1,8 @@
+host,transport,security,ping,pong,n,min,p50,p90,p99,p999,max,status
+codepit,UDPv4,plain,cyclone,cyclone,30,30.157,36.299,49.875,57.479,86.734,86.734,ok
+codepit,UDPv4,DDS-Security-1.2,cyclone,cyclone,30,81.574,100.049,159.572,181.304,193.055,193.055,ok
+codepit,UDPv4,plain,fastdds,fastdds,30,30.959,58.370,90.451,118.995,122.192,122.192,ok
+codepit,UDPv4,DDS-Security-1.2,fastdds,fastdds,30,174.270,201.481,243.221,312.823,312.823,368.468,ok
+codepit,UDPv4,DDS-Security-1.2,rti,rti,0,,,,,,,license_eval_blocked
+codepit,UDPv4,DDS-Security-1.2,opendds,opendds,2000,,131.6,,,,,ok_data_encrypt_see_4x4_csv
+codepit,UDPv4,DDS-Security-1.2,zerodds,zerodds,2000,,65.7,,,,,ok_data_encrypt_see_4x4_csv

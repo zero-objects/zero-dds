@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `dds_no_panic_in_safe` — panic-erzeugende Operationen in
-//! [`SafetyClass::Safe`]-Crates sperren.
+//! `dds_no_panic_in_safe` — block panic-producing operations in
+//! [`SafetyClass::Safe`] crates.
 //!
-//! Erfasst:
-//! - `.unwrap()` und `.expect(...)`-Method-Calls
-//! - `panic!(...)`, `unreachable!(...)`, `todo!(...)`, `unimplemented!(...)`-Makros
+//! Captures:
+//! - `.unwrap()` and `.expect(...)` method calls
+//! - `panic!(...)`, `unreachable!(...)`, `todo!(...)`, `unimplemented!(...)` macros
 //!
-//! Ausnahmen:
-//! - Dateipfad enthaelt `/tests/` oder `/examples/`
-//! - File-Level-Marker `zerodds-lint: allow no_panic_in_safe`
-//! - Item hat `#[test]`, `#[cfg(test)]` oder analog test-spezifische cfgs
-//! - Item liegt in einem `#[cfg(test)]`-Modul (Visitor-Zustand)
+//! Exceptions:
+//! - file path contains `/tests/` or `/examples/`
+//! - file-level marker `zerodds-lint: allow no_panic_in_safe`
+//! - item has `#[test]`, `#[cfg(test)]` or analogous test-specific cfgs
+//! - item lives in a `#[cfg(test)]` module (visitor state)
 //!
 //! Spec: `docs/architecture/04_safety_by_architecture.md §3.4`.
 //!
@@ -26,7 +26,7 @@ use crate::diagnostic::Diagnostic;
 
 use super::{FileLint, FileLintContext};
 
-/// Lint-Implementierung.
+/// Lint implementation.
 pub struct NoPanicInSafe;
 
 const NAME: &str = "dds_no_panic_in_safe";
@@ -47,8 +47,8 @@ impl FileLint for NoPanicInSafe {
         if is_test_path(ctx.file) {
             return Vec::new();
         }
-        // Ganze Datei via `#![cfg(test)]` als test markiert? — syn sammelt das
-        // als inner attribute auf File.
+        // Whole file marked as test via `#![cfg(test)]`? — syn collects it
+        // as an inner attribute on the file.
         if has_cfg_test(&ctx.ast.attrs) {
             return Vec::new();
         }
@@ -62,7 +62,7 @@ impl FileLint for NoPanicInSafe {
     }
 }
 
-/// True wenn der Pfad unter einem `tests/` oder `examples/` Verzeichnis liegt.
+/// True if the path is under a `tests/` or `examples/` directory.
 fn is_test_path(file: &std::path::Path) -> bool {
     file.components().any(|c| {
         matches!(
@@ -72,7 +72,7 @@ fn is_test_path(file: &std::path::Path) -> bool {
     })
 }
 
-/// Sucht in einer Attribut-Liste nach `#[test]`, `#[cfg(test)]` oder
+/// Searches an attribute list for `#[test]`, `#[cfg(test)]` or
 /// `#[cfg(any(..., test, ...))]`/`#[cfg(all(..., test, ...))]`.
 fn has_cfg_test(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|a| {
@@ -87,10 +87,10 @@ fn has_cfg_test(attrs: &[Attribute]) -> bool {
 }
 
 fn cfg_references_test(meta: &Meta) -> bool {
-    // Wir behandeln jedes Vorkommen des Identifier-Tokens "test" als
-    // Test-Indikator. Das ist konservativ (false positives bei z.B.
-    // cfg(feature="testing") sind moeglich), aber im Kontext "panic in
-    // tests erlauben" unkritisch: im Zweifel wird Code nicht gelinted.
+    // We treat every occurrence of the identifier token "test" as a
+    // test indicator. This is conservative (false positives e.g. for
+    // cfg(feature="testing") are possible), but in the context "allow panic
+    // in tests" uncritical: when in doubt, code is not linted.
     match meta {
         Meta::Path(p) => p.is_ident("test"),
         Meta::List(l) => l
@@ -105,7 +105,7 @@ fn cfg_references_test(meta: &Meta) -> bool {
 struct Visitor<'a> {
     file: &'a std::path::Path,
     diagnostics: Vec<Diagnostic>,
-    /// Nicht-null, wenn wir aktuell unter einem `#[cfg(test)]`-Item sind.
+    /// Non-null when we are currently under a `#[cfg(test)]` item.
     in_test_depth: usize,
 }
 
@@ -121,8 +121,8 @@ impl Visitor<'_> {
             start.column.saturating_add(1),
             NAME,
             format!(
-                "{what} in SAFE-Crate; nutze Result/Option oder \
-                 markiere mit `zerodds-lint: allow no_panic_in_safe`"
+                "{what} in a SAFE crate; use Result/Option or \
+                 mark with `zerodds-lint: allow no_panic_in_safe`"
             ),
         ));
     }

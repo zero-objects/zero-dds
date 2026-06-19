@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Lexer-Stufe der IDL-Pipeline.
+//! Lexer stage of the IDL pipeline.
 //!
-//! Die Lexer-Schicht zerlegt den Source-Text in eine Sequenz von [`Token`]s,
-//! die der Recognizer (siehe [`crate::engine`]) konsumieren kann. Lexer-
-//! Datentypen leben in [`token`]; die Token-Regel-Extraktion aus
-//! Grammar-Daten und der eigentliche Tokenizer folgen in Tasks 2.2/2.3.
+//! The lexer layer splits the source text into a sequence of [`Token`]s
+//! that the recognizer (see [`crate::engine`]) can consume. Lexer
+//! data types live in [`token`]; the token-rule extraction from
+//! grammar data and the actual tokenizer follow in Tasks 2.2/2.3.
 //!
-//! Siehe RFC 0001 §4.1 (Pipeline) und §5.x (Lexer).
+//! See RFC 0001 §4.1 (pipeline) and §5.x (lexer).
 
 pub mod rules;
 pub mod token;

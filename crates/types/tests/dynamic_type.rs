@@ -1,8 +1,8 @@
-//! Integration-Tests fuer die XTypes 1.3 §7.5 DynamicType-API
-//! (C4.1 Foundation-Cluster).
+//! Integration tests for the XTypes 1.3 §7.5 DynamicType API
+//! (C4.1 foundation cluster).
 //!
-//! Tests sind nach den Auftrags-Bloecken A-E gruppiert und decken die
-//! im Plan geforderten Spec-Varianten ab.
+//! Tests are grouped by the task blocks A-E and cover the
+//! spec variants required in the plan.
 
 #![allow(
     clippy::expect_used,
@@ -390,9 +390,9 @@ fn block_c_data_complex_value_nested_struct() {
 
 #[test]
 fn block_c_data_sequence_get_item_count_reports_size() {
-    // Seq-Element-Type: ein 1-Member-Struct (member-id=1 kann gesetzt
-    // werden). Damit treibt der Test die Sequence-API ohne primitive-
-    // Element-Storage-Edge-Case.
+    // Seq element type: a 1-member struct (member-id=1 can be set).
+    // This drives the sequence API without the primitive-
+    // element storage edge case.
     let mut elem = DynamicTypeBuilderFactory::create_struct("::Item");
     elem.add_struct_member("v", 1, TypeDescriptor::primitive(TypeKind::Int32, "int32"))
         .unwrap();
@@ -483,7 +483,7 @@ fn block_d_factory_create_type_happy_path() {
 fn block_d_factory_get_primitive_singleton_returns_same_type() {
     let a = DynamicTypeBuilderFactory::get_primitive_type(TypeKind::Int64).unwrap();
     let b = DynamicTypeBuilderFactory::get_primitive_type(TypeKind::Int64).unwrap();
-    // Identitaet via equals — gleicher Inhalt + (idR.) gleicher Arc.
+    // Identity via equals — same content + (usually) same Arc.
     assert!(a.equals(&b));
     assert_eq!(a.kind(), TypeKind::Int64);
 }
@@ -508,9 +508,9 @@ fn block_d_typeobject_roundtrip_preserves_equality() {
         .unwrap();
     assert!(
         t.equals(&t2),
-        "DynamicType→TypeObject→DynamicType muss equals=true geben"
+        "DynamicType→TypeObject→DynamicType must give equals=true"
     );
-    // Sanity: TypeObject ist Complete-Variante (XTypes 1.3 §7.6.3).
+    // Sanity: TypeObject is the Complete variant (XTypes 1.3 §7.6.3).
     assert!(matches!(
         to,
         TypeObject::Complete(CompleteTypeObject::Struct(_))
@@ -563,12 +563,12 @@ fn block_e_loan_and_return_then_loan_again_succeeds() {
         .unwrap();
     let t = b.build().unwrap();
     let mut d = DynamicDataFactory::create_data(&t).unwrap();
-    // Zwei Members koennen parallel geliehen werden.
+    // Two members can be loaned in parallel.
     let l1 = d.loan_value(1).unwrap();
     let l2 = d.loan_value(2).unwrap();
     d.return_loaned_value(l1).unwrap();
     d.return_loaned_value(l2).unwrap();
-    // Erneuter Loan auf #1 ist nach return wieder erlaubt.
+    // A new loan on #1 is allowed again after return.
     let l3 = d.loan_value(1).unwrap();
     d.return_loaned_value(l3).unwrap();
 }

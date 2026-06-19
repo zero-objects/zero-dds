@@ -15,26 +15,26 @@ use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, DecodeError,
 pub struct Permissions(u8);
 
 impl Permissions {
-    /// Bit-Wert `READ` (Position 0).
+    /// Bit value `READ` (position 0).
     pub const READ: Self = Self((1 as u8) << 0);
-    /// Bit-Wert `WRITE` (Position 1).
+    /// Bit value `WRITE` (position 1).
     pub const WRITE: Self = Self((1 as u8) << 1);
-    /// Bit-Wert `EXECUTE` (Position 2).
+    /// Bit value `EXECUTE` (position 2).
     pub const EXECUTE: Self = Self((1 as u8) << 2);
 
-    /// Konstruiert eine leere Bitmaske (alle Bits = 0).
+    /// Constructs an empty bitmask (all bits = 0).
     #[must_use]
     pub const fn empty() -> Self {
         Self(0 as u8)
     }
 
-    /// Roh-Storage als `u8`.
+    /// Raw storage as `u8`.
     #[must_use]
     pub const fn bits(self) -> u8 {
         self.0
     }
 
-    /// Prueft ob alle Bits in `other` gesetzt sind.
+    /// Returns true if all bits in `other` are set.
     #[must_use]
     pub const fn contains(self, other: Self) -> bool {
         (self.0 & other.0) == other.0

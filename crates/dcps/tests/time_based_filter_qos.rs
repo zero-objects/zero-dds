@@ -1,8 +1,8 @@
-//! WP QoS-Wiring T1 — TimeBasedFilter QoS Tests.
+//! WP QoS-Wiring T1 — TimeBasedFilter QoS tests.
 //!
-//! Spec DDS 1.4 §2.2.3.13 TIME_BASED_FILTER: Reader-side; nur ein
-//! Sample pro `minimum_separation` pro Instanz wird ans User-API
-//! geliefert; weitere Samples in dem Fenster werden geschluckt.
+//! Spec DDS 1.4 §2.2.3.13 TIME_BASED_FILTER: reader-side; only one
+//! sample per `minimum_separation` per instance is delivered to the
+//! user API; further samples within that window are dropped.
 
 #![allow(
     clippy::expect_used,
@@ -92,7 +92,11 @@ mod linux {
         thread::sleep(Duration::from_millis(200));
 
         let samples = reader.take().expect("take");
-        assert_eq!(samples.len(), 5, "min_separation=0 darf alles durchlassen");
+        assert_eq!(
+            samples.len(),
+            5,
+            "min_separation=0 may let everything through"
+        );
     }
     #[serial_test::serial(dcps)]
     #[test]
@@ -105,7 +109,7 @@ mod linux {
         };
         let (writer, reader) = pair_with_qos(unique_domain(80), "TbfFilterSquare", rqos);
 
-        // 5 Samples derselben Instanz im 50-ms-Takt = 250 ms gesamt.
+        // 5 samples of the same instance at a 50-ms cadence = 250 ms total.
         for i in 0..5 {
             writer
                 .write(&ShapeType::new("RED", i, i, 30))
@@ -118,7 +122,7 @@ mod linux {
         let samples = reader.take().expect("take");
         assert!(
             (1..=3).contains(&samples.len()),
-            "minimum_separation=200ms bei 5 Writes alle 50ms → 1-3 Samples; got {}",
+            "minimum_separation=200ms with 5 writes every 50ms → 1-3 samples; got {}",
             samples.len()
         );
     }
@@ -133,7 +137,7 @@ mod linux {
         };
         let (writer, reader) = pair_with_qos(unique_domain(80), "TbfPerInstance", rqos);
 
-        // Verschiedene Keys = verschiedene Instanzen. Filter ist pro Instanz.
+        // Different keys = different instances. The filter is per instance.
         writer
             .write(&ShapeType::new("RED", 0, 0, 30))
             .expect("write red");
@@ -144,6 +148,6 @@ mod linux {
         thread::sleep(Duration::from_millis(200));
 
         let samples = reader.take().expect("take");
-        assert_eq!(samples.len(), 2, "verschiedene Instanzen → keine Filterung");
+        assert_eq!(samples.len(), 2, "different instances → no filtering");
     }
 }

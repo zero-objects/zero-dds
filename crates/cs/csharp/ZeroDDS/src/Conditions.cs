@@ -14,7 +14,7 @@ public abstract class Condition
 {
     internal IntPtr Handle;
     internal Condition(IntPtr handle) { Handle = handle; }
-    /// <summary>Trigger-Wert.</summary>
+    /// <summary>Trigger value.</summary>
     public bool TriggerValue => Handle != IntPtr.Zero && Native.ConditionGetTrigger(Handle);
 }
 
@@ -27,7 +27,7 @@ public sealed class GuardCondition : Condition, IDisposable
         if (Handle == IntPtr.Zero) throw new DdsError("GuardCondition::create failed");
     }
 
-    /// <summary>Setzt den Trigger-Wert.</summary>
+    /// <summary>Sets the trigger value.</summary>
     public void SetTriggerValue(bool v) =>
         StatusCheck.Check(Native.GuardConditionSetTrigger(Handle, v),
             "GuardCondition::SetTriggerValue");

@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Datenmodell fuer die DDS-XML 1.0 §7.3.2 QoS-Profile-Library.
+//! Data model for the DDS-XML 1.0 §7.3.2 QoS profile library.
 //!
-//! Spec-Quelle: OMG DDS-XML 1.0 §7.3.2 (QoS Library Building Block) +
-//! DDS 1.4 §2.2.3 (22 Standard-QoS-Policies).
+//! Spec source: OMG DDS-XML 1.0 §7.3.2 (QoS Library Building Block) +
+//! DDS 1.4 §2.2.3 (22 standard QoS policies).
 //!
-//! # Schicht-Disziplin
+//! # Layer discipline
 //!
-//! Die einzelnen Policy-Strukturen (`DurabilityQosPolicy`, …) und die
-//! Aggregat-Container (`WriterQos`, `ReaderQos`) leben im Crate
-//! [`zerodds_qos`] (Wire-Format-Quelle). `zerodds-xml` re-nutzt sie hier
-//! direkt — *keine Duplikate*.
+//! The individual policy structures (`DurabilityQosPolicy`, …) and the
+//! aggregate containers (`WriterQos`, `ReaderQos`) live in the crate
+//! [`zerodds_qos`] (wire-format source). `zerodds-xml` reuses them here
+//! directly — *no duplicates*.
 //!
-//! Die XML-spezifischen Container [`EntityQos`] (sechs Auspraegungen
-//! fuer DataWriter/DataReader/Topic/Publisher/Subscriber/
-//! DomainParticipant) tragen pro Policy ein `Option<…>`. `None` =
-//! "Spec-Default" (uebernommen aus `zerodds-qos::*::Default`); `Some(p)` =
-//! im XML explizit gesetzt. Die Override-Semantik der Inheritance
-//! (siehe [`crate::qos_inheritance`]) operiert auf diesen Optionen:
-//! ein Kind-Profile mit `Some(p)` ueberschreibt das geerbte `Some/None`,
-//! ein Kind-Profile mit `None` erbt unveraendert.
+//! The XML-specific containers [`EntityQos`] (six variants
+//! for DataWriter/DataReader/Topic/Publisher/Subscriber/
+//! DomainParticipant) carry an `Option<…>` per policy. `None` =
+//! "spec default" (taken from `zerodds-qos::*::Default`); `Some(p)` =
+//! explicitly set in the XML. The override semantics of inheritance
+//! (see [`crate::qos_inheritance`]) operate on these options:
+//! a child profile with `Some(p)` overrides the inherited `Some/None`,
+//! a child profile with `None` inherits unchanged.
 //!
-//! # XML-Element zu Rust-Type Mapping (DDS-XML 1.0 §7.3.2 + DDS 1.4 §2.2.3)
+//! # XML element to Rust type mapping (DDS-XML 1.0 §7.3.2 + DDS 1.4 §2.2.3)
 //!
 //! ```text
-//! XML-Element                            | Rust-Type
+//! XML element                            | Rust type
 //! ---------------------------------------+----------------------------------
 //! <qos_library name=…>                   | QosLibrary
 //! <qos_profile name=… base_name=…>       | QosProfile
@@ -71,67 +71,67 @@ use zerodds_qos::{
     TransportPriorityQosPolicy, UserDataQosPolicy, WriterDataLifecycleQosPolicy, WriterQos,
 };
 
-/// Container fuer 1+ QoS-Profile gemaess DDS-XML 1.0 §7.3.2.
+/// Container for 1+ QoS profiles per DDS-XML 1.0 §7.3.2.
 ///
-/// Mehrere Libraries duerfen pro Dokument vorkommen; jede Library traegt
-/// einen `name`-Attribut. Lookups quer ueber Bibliotheken erfolgen via
-/// 2-Segment-Pfad `library::profile`.
+/// Multiple libraries may appear per document; each library carries
+/// a `name` attribute. Lookups across libraries happen via the
+/// 2-segment path `library::profile`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QosLibrary {
-    /// Name der Library (`<qos_library name="…">`-Attribut).
+    /// Name of the library (`<qos_library name="…">` attribute).
     pub name: String,
-    /// Profile in dieser Library, in Dokument-Reihenfolge.
+    /// Profiles in this library, in document order.
     pub profiles: Vec<QosProfile>,
 }
 
 impl QosLibrary {
-    /// Sucht ein Profile innerhalb dieser Library nach Namen.
+    /// Looks up a profile within this library by name.
     #[must_use]
     pub fn profile(&self, name: &str) -> Option<&QosProfile> {
         self.profiles.iter().find(|p| p.name == name)
     }
 }
 
-/// Ein einzelnes `<qos_profile>`-Element (§7.3.2.4).
+/// A single `<qos_profile>` element (§7.3.2.4).
 ///
-/// Jeder `EntityQos`-Container ist `Option<…>` — `None` heisst "im XML
-/// nicht aufgefuehrt", was beim Resolve in den Spec-Default-Aggregat-Typ
-/// uebergeht (siehe [`crate::qos_inheritance::resolve_profile`]).
+/// Each `EntityQos` container is `Option<…>` — `None` means "not listed
+/// in the XML", which on resolve transitions to the spec-default aggregate
+/// type (see [`crate::qos_inheritance::resolve_profile`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct QosProfile {
-    /// Name des Profile (`name`-Attribut).
+    /// Name of the profile (`name` attribute).
     pub name: String,
-    /// Optionaler `base_name` fuer Inheritance (Spec §7.3.2.4.2). Format:
-    /// entweder `"profile"` (innerhalb derselben Library) oder
-    /// `"library::profile"` (cross-Library-Referenz).
+    /// Optional `base_name` for inheritance (Spec §7.3.2.4.2). Format:
+    /// either `"profile"` (within the same library) or
+    /// `"library::profile"` (cross-library reference).
     pub base_name: Option<String>,
-    /// Optionaler Topic-Filter (Glob, `*`/`?`) zur Profile-zu-Topic-
-    /// Bindung. Mehrere `<topic_filter>` werden zu **einem** Pattern
-    /// zusammengezogen (letztes gewinnt) — Spec deckt nur einen Filter
-    /// pro Profile sinnvoll ab.
+    /// Optional topic filter (glob, `*`/`?`) for profile-to-topic
+    /// binding. Multiple `<topic_filter>` are collapsed into **one** pattern
+    /// (last wins) — the spec only meaningfully covers one filter
+    /// per profile.
     pub topic_filter: Option<String>,
-    /// `<datawriter_qos>`-Container.
+    /// `<datawriter_qos>` container.
     pub datawriter_qos: Option<EntityQos>,
-    /// `<datareader_qos>`-Container.
+    /// `<datareader_qos>` container.
     pub datareader_qos: Option<EntityQos>,
-    /// `<topic_qos>`-Container.
+    /// `<topic_qos>` container.
     pub topic_qos: Option<EntityQos>,
-    /// `<publisher_qos>`-Container.
+    /// `<publisher_qos>` container.
     pub publisher_qos: Option<EntityQos>,
-    /// `<subscriber_qos>`-Container.
+    /// `<subscriber_qos>` container.
     pub subscriber_qos: Option<EntityQos>,
-    /// `<domainparticipant_qos>`-Container.
+    /// `<domainparticipant_qos>` container.
     pub domainparticipant_qos: Option<EntityQos>,
 }
 
-/// Optional-pro-Policy-Container fuer alle 22 OMG-DDS-1.4-QoS-Policies.
+/// Optional-per-policy container for all 22 OMG-DDS-1.4 QoS policies.
 ///
-/// Ein nicht-gesetztes `Option` heisst: im XML nicht aufgefuehrt → Spec-
-/// Default beim Resolve. Wird *als ein Container fuer alle 6 Entity-Typen
-/// wiederverwendet* — DDS-XML 1.0 erlaubt grundsaetzlich alle Policies in
-/// allen 6 Containern; semantische Filterung (z.B. dass
-/// `OwnershipStrength` nur am Writer Sinn ergibt) findet beim Materialisieren
-/// in `WriterQos`/`ReaderQos` statt (siehe [`Self::into_writer_qos`] /
+/// An unset `Option` means: not listed in the XML → spec
+/// default on resolve. *Reused as one container for all 6 entity types* —
+/// DDS-XML 1.0 in principle allows all policies in
+/// all 6 containers; semantic filtering (e.g. that
+/// `OwnershipStrength` only makes sense on the writer) happens when
+/// materializing into `WriterQos`/`ReaderQos` (see [`Self::into_writer_qos`] /
 /// [`Self::into_reader_qos`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EntityQos {
@@ -182,10 +182,10 @@ pub struct EntityQos {
 }
 
 impl EntityQos {
-    /// Mergt `override_` ueber `self`: jede explizit gesetzte Policy in
-    /// `override_` ueberschreibt die in `self`. Kommutativ ist die
-    /// Operation **nicht** — Reihenfolge: `parent.merge(child)` heisst
-    /// "Child gewinnt, wo Child explizit gesetzt".
+    /// Merges `override_` over `self`: each explicitly set policy in
+    /// `override_` overrides the one in `self`. The operation is **not**
+    /// commutative — order: `parent.merge(child)` means
+    /// "child wins where the child explicitly set a value".
     #[must_use]
     pub fn merge(mut self, override_: &Self) -> Self {
         macro_rules! merge_field {
@@ -220,13 +220,13 @@ impl EntityQos {
         self
     }
 
-    /// Materialisiert einen `WriterQos` aus den im `EntityQos` gesetzten
-    /// Policies. `None`-Eintraege werden mit den Spec-Defaults aus
-    /// `zerodds_qos::WriterQos::default()` aufgefuellt.
+    /// Materializes a `WriterQos` from the policies set in the `EntityQos`.
+    /// `None` entries are filled with the spec defaults from
+    /// `zerodds_qos::WriterQos::default()`.
     ///
-    /// Policies, die fuer Writer keinen Sinn ergeben (z.B.
-    /// `time_based_filter`, `reader_data_lifecycle`), werden hier
-    /// bewusst ignoriert — Sie werden nur fuer ReaderQos materialisiert.
+    /// Policies that make no sense for a writer (e.g.
+    /// `time_based_filter`, `reader_data_lifecycle`) are
+    /// deliberately ignored here — they are only materialized for ReaderQos.
     #[must_use]
     pub fn into_writer_qos(&self) -> WriterQos {
         let mut q = WriterQos::default();
@@ -290,7 +290,7 @@ impl EntityQos {
         q
     }
 
-    /// Materialisiert einen `ReaderQos` analog zu [`Self::into_writer_qos`].
+    /// Materializes a `ReaderQos` analogous to [`Self::into_writer_qos`].
     #[must_use]
     pub fn into_reader_qos(&self) -> ReaderQos {
         let mut q = ReaderQos::default();
@@ -346,17 +346,16 @@ impl EntityQos {
     }
 }
 
-/// Topic-Filter-Match (DDS-XML 1.0 §7.3.2.5).
+/// Topic filter match (DDS-XML 1.0 §7.3.2.5).
 ///
-/// POSIX-fnmatch-Style mit `*` (null oder mehr Zeichen) und `?` (genau
-/// ein Zeichen). Wird genutzt um zu pruefen ob ein
-/// `<topic_filter>foo_*</topic_filter>` einen konkreten Topic-Namen
-/// abdeckt.
+/// POSIX-fnmatch style with `*` (zero or more characters) and `?` (exactly
+/// one character). Used to check whether a
+/// `<topic_filter>foo_*</topic_filter>` covers a concrete topic name.
 ///
-/// Implementiert per dynamischer Programmierung (siehe Duplikat in
-/// `crates/security-permissions/src/topic_match.rs` — wir duplizieren
-/// bewusst, um keine `zerodds-xml → zerodds-security-permissions`-Dep zu
-/// erzeugen).
+/// Implemented via dynamic programming (see the duplicate in
+/// `crates/security-permissions/src/topic_match.rs` — we duplicate
+/// deliberately, to avoid creating a `zerodds-xml → zerodds-security-permissions`
+/// dependency).
 #[must_use]
 pub fn topic_filter_matches(filter: &str, topic_name: &str) -> bool {
     let p: Vec<char> = filter.chars().collect();

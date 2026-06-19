@@ -3,17 +3,17 @@
 //! DDS-Security 1.2 §7.3.11-§7.3.15 — Algorithm-Info-Strukturen + PIDs
 //! 0x1010-0x1013 (C3.5-Rest).
 //!
-//! Spec verlangt drei neue Properties im SPDP-Announce, damit Peers
-//! ueber unterschiedliche Algorithm-Familien negotiate koennen:
+//! The spec requires three new properties in the SPDP announce so that peers
+//! can negotiate over different algorithm families:
 //!
-//! | PID    | Spec                       | Inhalt                                  |
+//! | PID    | Spec                       | Content                                 |
 //! |--------|----------------------------|-----------------------------------------|
 //! | 0x1010 | §7.3.11                    | DigitalSignatureAlgorithmInfo (sig)     |
 //! | 0x1011 | §7.3.12                    | KeyEstablishmentAlgorithmInfo (kx)      |
 //! | 0x1012 | §7.3.13                    | SymmetricCipherAlgorithmInfo (sym)      |
-//! | 0x1013 | §7.3.15 (Endpoint-Level)   | EndpointSymmetricCipherAlgorithmInfo    |
+//! | 0x1013 | §7.3.15 (endpoint level)   | EndpointSymmetricCipherAlgorithmInfo    |
 //!
-//! Bit-Konstanten (Spec §8.1 Tab.22 + §8.2 + §8.3, "CBIT" = CryptoBit):
+//! Bit constants (Spec §8.1 Tab.22 + §8.2 + §8.3, "CBIT" = CryptoBit):
 //!
 //! Symmetric (`SymmetricCipherBitId`):
 //! - bit 0 = AES128 (covers GCM + GMAC)
@@ -30,8 +30,8 @@
 //! - bit 1 = ECDHE-CEUM+P256
 //! - bit 2 = ECDHE-CEUM+P384
 //!
-//! Spec-Defaults (verwendet wenn ein Peer keine Algorithm-Info-PID
-//! schickt — Backwards-Compat mit DDS-Security 1.1):
+//! Spec defaults (used when a peer sends no algorithm-info PID
+//! — backwards compat with DDS-Security 1.1):
 //! - sig.trust_chain: supported = required = (RSASSA_PSS | ECDSA_P256)
 //! - sig.message_auth: supported = required = (RSASSA_PSS | ECDSA_P256)
 //! - kx.shared_secret: supported = required = (DHE_MODP | ECDHE_P256)
@@ -46,18 +46,18 @@ use alloc::vec::Vec;
 use crate::error::WireError;
 
 // ----------------------------------------------------------------------
-// Bit-Konstanten (Spec §8.1 Tab.22, §8.2, §8.3)
+// Bit constants (Spec §8.1 Tab.22, §8.2, §8.3)
 // ----------------------------------------------------------------------
 
-/// Symmetric-Cipher-Bit-IDs (Spec §8.1).
+/// Symmetric-cipher bit IDs (Spec §8.1).
 pub mod symmetric_bit {
-    /// AES-128 (GCM oder GMAC).
+    /// AES-128 (GCM or GMAC).
     pub const AES128: u32 = 1 << 0;
-    /// AES-256 (GCM oder GMAC).
+    /// AES-256 (GCM or GMAC).
     pub const AES256: u32 = 1 << 1;
 }
 
-/// Digital-Signature-Bit-IDs (Spec §8.2).
+/// Digital-signature bit IDs (Spec §8.2).
 pub mod digital_signature_bit {
     /// RSASSA-PSS-MGF1SHA256+2048+SHA256.
     pub const RSASSA_PSS_2048_SHA256: u32 = 1 << 0;
@@ -69,9 +69,9 @@ pub mod digital_signature_bit {
     pub const ECDSA_P384_SHA384: u32 = 1 << 3;
 }
 
-/// Key-Establishment-Bit-IDs (Spec §8.3).
+/// Key-establishment bit IDs (Spec §8.3).
 pub mod key_establishment_bit {
-    /// DHE+MODP-2048-256 (RFC 5114 Group).
+    /// DHE+MODP-2048-256 (RFC 5114 group).
     pub const DHE_MODP_2048_256: u32 = 1 << 0;
     /// ECDHE-CEUM+P256 (NIST P-256 ephemeral).
     pub const ECDHE_CEUM_P256: u32 = 1 << 1;
@@ -84,19 +84,19 @@ pub mod key_establishment_bit {
 // ----------------------------------------------------------------------
 
 /// Spec §7.3.10 — `AlgorithmRequirements { supported_mask, required_mask }`.
-/// Beide u32 BE auf der Wire (8 byte total).
+/// Both u32 BE on the wire (8 bytes total).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AlgorithmRequirements {
-    /// Maske aller von diesem Participant unterstuetzten Algorithmen.
+    /// Mask of all algorithms supported by this participant.
     pub supported: u32,
-    /// Maske der Algorithmen, die der Participant *erfordert*. Eine
-    /// Compatibility-Pruefung (Spec §7.3.10) verlangt
+    /// Mask of the algorithms the participant *requires*. A
+    /// compatibility check (Spec §7.3.10) requires
     /// `(remote.supported & local.required) == local.required`.
     pub required: u32,
 }
 
 impl AlgorithmRequirements {
-    /// Wire-Size: 4 byte supported + 4 byte required = 8 byte.
+    /// Wire size: 4 byte supported + 4 byte required = 8 bytes.
     pub const WIRE_SIZE: usize = 8;
 
     /// Encode (4 byte u32 LE/BE × 2).
@@ -113,10 +113,10 @@ impl AlgorithmRequirements {
         out
     }
 
-    /// Decode aus 8 byte.
+    /// Decode from 8 bytes.
     ///
     /// # Errors
-    /// `ValueOutOfRange` bei Slice-Mismatch.
+    /// `ValueOutOfRange` on slice mismatch.
     pub fn from_bytes(bytes: &[u8], little_endian: bool) -> Result<Self, WireError> {
         if bytes.len() < 8 {
             return Err(WireError::ValueOutOfRange {
@@ -140,8 +140,8 @@ impl AlgorithmRequirements {
         })
     }
 
-    /// Compatibility-Check (Spec §7.3.10): pruefe ob `remote.supported`
-    /// alle Bits von `self.required` enthaelt.
+    /// Compatibility check (Spec §7.3.10): check whether `remote.supported`
+    /// contains all bits of `self.required`.
     #[must_use]
     pub fn is_compatible_with(&self, remote_supported: u32) -> bool {
         (remote_supported & self.required) == self.required
@@ -152,20 +152,20 @@ impl AlgorithmRequirements {
 // PID 0x1010 — ParticipantSecurityDigitalSignatureAlgorithmInfo
 // ----------------------------------------------------------------------
 
-/// Spec §7.3.11 — Sig-Algorithm-Info pro Participant.
+/// Spec §7.3.11 — sig algorithm info per participant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParticipantSecurityDigitalSignatureAlgorithmInfo {
-    /// Trust-Chain-Algorithmen (Cert-Sig-Verify).
+    /// Trust-chain algorithms (cert sig verify).
     pub trust_chain: AlgorithmRequirements,
-    /// Message-Authentication-Algorithmen (Handshake-Signaturen, OCSP).
+    /// Message-authentication algorithms (handshake signatures, OCSP).
     pub message_auth: AlgorithmRequirements,
 }
 
 impl ParticipantSecurityDigitalSignatureAlgorithmInfo {
-    /// Wire-Size: 16 byte (2 × `AlgorithmRequirements`).
+    /// Wire size: 16 bytes (2 × `AlgorithmRequirements`).
     pub const WIRE_SIZE: usize = 16;
 
-    /// Spec-Default (siehe Modul-Doku).
+    /// Spec default (see module docs).
     #[must_use]
     pub fn spec_default() -> Self {
         let mask = digital_signature_bit::RSASSA_PSS_2048_SHA256
@@ -182,7 +182,7 @@ impl ParticipantSecurityDigitalSignatureAlgorithmInfo {
         }
     }
 
-    /// Encode (16 byte).
+    /// Encode (16 bytes).
     #[must_use]
     pub fn to_bytes(&self, little_endian: bool) -> [u8; 16] {
         let mut out = [0u8; 16];
@@ -191,10 +191,10 @@ impl ParticipantSecurityDigitalSignatureAlgorithmInfo {
         out
     }
 
-    /// Decode (16 byte).
+    /// Decode (16 bytes).
     ///
     /// # Errors
-    /// `ValueOutOfRange` bei Slice-Mismatch.
+    /// `ValueOutOfRange` on slice mismatch.
     pub fn from_bytes(bytes: &[u8], little_endian: bool) -> Result<Self, WireError> {
         if bytes.len() < 16 {
             return Err(WireError::ValueOutOfRange {
@@ -212,18 +212,18 @@ impl ParticipantSecurityDigitalSignatureAlgorithmInfo {
 // PID 0x1011 — ParticipantSecurityKeyEstablishmentAlgorithmInfo
 // ----------------------------------------------------------------------
 
-/// Spec §7.3.12 — Key-Establishment-Algorithm-Info pro Participant.
+/// Spec §7.3.12 — key-establishment algorithm info per participant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParticipantSecurityKeyEstablishmentAlgorithmInfo {
-    /// Shared-Secret-Algorithmen (DH/ECDH).
+    /// Shared-secret algorithms (DH/ECDH).
     pub shared_secret: AlgorithmRequirements,
 }
 
 impl ParticipantSecurityKeyEstablishmentAlgorithmInfo {
-    /// Wire-Size: 8 byte.
+    /// Wire size: 8 bytes.
     pub const WIRE_SIZE: usize = 8;
 
-    /// Spec-Default.
+    /// Spec default.
     #[must_use]
     pub fn spec_default() -> Self {
         let mask =
@@ -236,16 +236,16 @@ impl ParticipantSecurityKeyEstablishmentAlgorithmInfo {
         }
     }
 
-    /// Encode (8 byte).
+    /// Encode (8 bytes).
     #[must_use]
     pub fn to_bytes(&self, little_endian: bool) -> [u8; 8] {
         self.shared_secret.to_bytes(little_endian)
     }
 
-    /// Decode (8 byte).
+    /// Decode (8 bytes).
     ///
     /// # Errors
-    /// `ValueOutOfRange` bei Slice-Mismatch.
+    /// `ValueOutOfRange` on slice mismatch.
     pub fn from_bytes(bytes: &[u8], little_endian: bool) -> Result<Self, WireError> {
         Ok(Self {
             shared_secret: AlgorithmRequirements::from_bytes(bytes, little_endian)?,
@@ -257,28 +257,28 @@ impl ParticipantSecurityKeyEstablishmentAlgorithmInfo {
 // PID 0x1012 — ParticipantSecuritySymmetricCipherAlgorithmInfo
 // ----------------------------------------------------------------------
 
-/// Spec §7.3.13 — Symmetric-Cipher-Algorithm-Info pro Participant.
+/// Spec §7.3.13 — symmetric-cipher algorithm info per participant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParticipantSecuritySymmetricCipherAlgorithmInfo {
-    /// Mask aller unterstuetzten Symmetric-Cipher-Familien
-    /// (siehe [`symmetric_bit`]).
+    /// Mask of all supported symmetric-cipher families
+    /// (see [`symmetric_bit`]).
     pub supported_mask: u32,
-    /// Mask der Required-Algos fuer Builtin-Endpoints (Discovery,
-    /// Liveliness, Volatile, Stateless).
+    /// Mask of the required algos for builtin endpoints (discovery,
+    /// liveliness, volatile, stateless).
     pub builtin_endpoints_required_mask: u32,
-    /// Mask der Required-Algos fuer Builtin-KX-Endpoints (Crypto-Token-
-    /// Exchange via VolatileMessageSecure).
+    /// Mask of the required algos for builtin KX endpoints (crypto-token
+    /// exchange via VolatileMessageSecure).
     pub builtin_kx_endpoints_required_mask: u32,
-    /// Default-Mask fuer User-Endpoints (kann von User-Endpoint-PID
-    /// 0x1013 ueberschrieben werden).
+    /// Default mask for user endpoints (can be overwritten by the
+    /// user-endpoint PID 0x1013).
     pub user_endpoints_default_required_mask: u32,
 }
 
 impl ParticipantSecuritySymmetricCipherAlgorithmInfo {
-    /// Wire-Size: 16 byte (4 × u32).
+    /// Wire size: 16 bytes (4 × u32).
     pub const WIRE_SIZE: usize = 16;
 
-    /// Spec-Default.
+    /// Spec default.
     #[must_use]
     pub fn spec_default() -> Self {
         Self {
@@ -289,7 +289,7 @@ impl ParticipantSecuritySymmetricCipherAlgorithmInfo {
         }
     }
 
-    /// Encode (16 byte).
+    /// Encode (16 bytes).
     #[must_use]
     pub fn to_bytes(&self, little_endian: bool) -> [u8; 16] {
         let mut out = [0u8; 16];
@@ -310,10 +310,10 @@ impl ParticipantSecuritySymmetricCipherAlgorithmInfo {
         out
     }
 
-    /// Decode (16 byte).
+    /// Decode (16 bytes).
     ///
     /// # Errors
-    /// `ValueOutOfRange` bei Slice-Mismatch.
+    /// `ValueOutOfRange` on slice mismatch.
     pub fn from_bytes(bytes: &[u8], little_endian: bool) -> Result<Self, WireError> {
         if bytes.len() < 16 {
             return Err(WireError::ValueOutOfRange {
@@ -342,20 +342,20 @@ impl ParticipantSecuritySymmetricCipherAlgorithmInfo {
 // PID 0x1013 — EndpointSecuritySymmetricCipherAlgorithmInfo
 // ----------------------------------------------------------------------
 
-/// Spec §7.3.15 — Symmetric-Cipher-Algorithm-Info pro Endpoint
-/// (DataWriter / DataReader). Wird in Pub/SubscriptionBuiltinTopicData
-/// gefuehrt — ueberschreibt den Participant-Default fuer diesen Slot.
+/// Spec §7.3.15 — symmetric-cipher algorithm info per endpoint
+/// (DataWriter / DataReader). Kept in Pub/SubscriptionBuiltinTopicData
+/// — overrides the participant default for this slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EndpointSecuritySymmetricCipherAlgorithmInfo {
-    /// Required-Mask fuer diesen Endpoint (siehe [`symmetric_bit`]).
+    /// Required mask for this endpoint (see [`symmetric_bit`]).
     pub required_mask: u32,
 }
 
 impl EndpointSecuritySymmetricCipherAlgorithmInfo {
-    /// Wire-Size: 4 byte.
+    /// Wire size: 4 bytes.
     pub const WIRE_SIZE: usize = 4;
 
-    /// Encode (4 byte).
+    /// Encode (4 bytes).
     #[must_use]
     pub fn to_bytes(&self, little_endian: bool) -> [u8; 4] {
         if little_endian {
@@ -365,10 +365,10 @@ impl EndpointSecuritySymmetricCipherAlgorithmInfo {
         }
     }
 
-    /// Decode (4 byte).
+    /// Decode (4 bytes).
     ///
     /// # Errors
-    /// `ValueOutOfRange` bei Slice-Mismatch.
+    /// `ValueOutOfRange` on slice mismatch.
     pub fn from_bytes(bytes: &[u8], little_endian: bool) -> Result<Self, WireError> {
         if bytes.len() < 4 {
             return Err(WireError::ValueOutOfRange {
@@ -387,7 +387,7 @@ impl EndpointSecuritySymmetricCipherAlgorithmInfo {
     }
 }
 
-/// Suppress-warning fuer `Vec`-Import (wird in Tests benutzt).
+/// Suppress warning for the `Vec` import (used in tests).
 #[allow(dead_code)]
 fn _vec_keepalive(v: Vec<u8>) -> Vec<u8> {
     v
@@ -422,7 +422,7 @@ mod tests {
 
     #[test]
     fn algorithm_requirements_layout_be() {
-        // Spec-konforme BE: 4 byte supported + 4 byte required.
+        // Spec-conformant BE: 4 byte supported + 4 byte required.
         let a = AlgorithmRequirements {
             supported: 0x01,
             required: 0x02,
@@ -436,13 +436,13 @@ mod tests {
             supported: 0,
             required: 0b101,
         };
-        // Remote unterstuetzt alle 3 → kompatibel.
+        // Remote supports all 3 → compatible.
         assert!(local.is_compatible_with(0b111));
-        // Remote unterstuetzt bit 0 + 2 (genau die required Bits) → ok.
+        // Remote supports bit 0 + 2 (exactly the required bits) → ok.
         assert!(local.is_compatible_with(0b101));
-        // Remote unterstuetzt bit 0 alleine → fehlt bit 2 → reject.
+        // Remote supports bit 0 alone → missing bit 2 → reject.
         assert!(!local.is_compatible_with(0b001));
-        // Remote unterstuetzt nichts → reject.
+        // Remote supports nothing → reject.
         assert!(!local.is_compatible_with(0));
     }
 
@@ -532,8 +532,8 @@ mod tests {
 
     #[test]
     fn spec_bit_constants_match() {
-        // Spec §8.1 Tab.22 + §8.2 + §8.3 — diese Konstanten duerfen
-        // NIE driften, sonst sieht ein Cyclone-Peer unsere Caps falsch.
+        // Spec §8.1 Tab.22 + §8.2 + §8.3 — these constants must
+        // NEVER drift, otherwise a Cyclone peer sees our caps wrong.
         assert_eq!(symmetric_bit::AES128, 0x01);
         assert_eq!(symmetric_bit::AES256, 0x02);
         assert_eq!(digital_signature_bit::RSASSA_PSS_2048_SHA256, 0x01);

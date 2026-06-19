@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Grammar-Validation — statische Konsistenz-Checks ueber eine [`Grammar`].
+//! Grammar validation — static consistency checks over a [`Grammar`].
 //!
-//! Findet Konstruktions-Fehler und problematische Muster, bevor die
-//! Parse-Engine gestartet wird:
+//! Finds construction errors and problematic patterns before the
+//! parse engine is started:
 //!
-//! - **Invalid-Start**: `Grammar::start` zeigt auf eine nicht existierende
-//!   Production.
-//! - **Dangling-Reference**: eine [`Symbol::Nonterminal(id)`] verweist auf
-//!   eine ProductionId, die nicht in `Grammar::productions` enthalten ist.
-//! - **Left-Recursion**: eine Production erreicht sich selbst ueber die
-//!   leftmost Nonterminal-Kette. Earley handelt Linksrekursion korrekt,
-//!   aber wir flaggen sie als Warnung fuer Grammar-Review. Pfade werden
-//!   als Sequenz von [`PathStep`] gemeldet, damit die betroffene
-//!   Alternative pro Schritt identifizierbar ist.
-//! - **Unused-Production**: eine Production ist vom Start aus nicht
-//!   erreichbar. Solche Eintraege sind entweder toter BNF-Code oder ein
-//!   fehlender Verweis.
-//! - **First/First-Conflict**: zwei Alternativen derselben Production haben
-//!   ueberlappende FIRST-Mengen. Die Berechnung nutzt die klassische
-//!   transitive-Closure-Methode (Dragon Book) ueber alle Productions mit
-//!   Epsilon-Propagation durch `Repeat`/`Choice`/leere Alternativen.
+//! - **Invalid-start**: `Grammar::start` points to a non-existent
+//!   production.
+//! - **Dangling-reference**: a [`Symbol::Nonterminal(id)`] refers to
+//!   a ProductionId not contained in `Grammar::productions`.
+//! - **Left-recursion**: a production reaches itself via the
+//!   leftmost nonterminal chain. Earley handles left recursion correctly,
+//!   but we flag it as a warning for grammar review. Paths are
+//!   reported as a sequence of [`PathStep`], so that the affected
+//!   alternative is identifiable per step.
+//! - **Unused-production**: a production is not reachable from the start.
+//!   Such entries are either dead BNF code or a
+//!   missing reference.
+//! - **First/first-conflict**: two alternatives of the same production have
+//!   overlapping FIRST sets. The computation uses the classic
+//!   transitive-closure method (Dragon Book) over all productions with
+//!   epsilon propagation through `Repeat`/`Choice`/empty alternatives.
 //!
-//! Siehe RFC 0001 §5.1 und §9 Q-1. Scope-Deviation in
+//! See RFC 0001 §5.1 and §9 Q-1. Scope deviation in
 //! `.planning/wp-0.3-idl-parser/PLAN.md` (Task 1.2b).
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -31,15 +31,15 @@ use std::fmt;
 use super::compile::CompiledGrammar;
 use super::{AltRef, Grammar, Production, ProductionId, RepeatKind, Symbol, TokenKind};
 
-/// Schweregrad eines Validation-Befunds.
+/// Severity of a validation finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Severity {
-    /// Grammar ist nicht verwendbar — Engine wuerde fehlschlagen oder
-    /// definitiv falsches Ergebnis liefern.
+    /// The grammar is unusable — the engine would fail or
+    /// definitely return a wrong result.
     Error,
-    /// Grammar ist verwendbar, aber ein Muster deutet auf einen Bug oder
-    /// auf Wartungs-Risiken hin (unused productions, left recursion,
-    /// FIRST/FIRST-Konflikte).
+    /// The grammar is usable, but a pattern indicates a bug or
+    /// maintenance risks (unused productions, left recursion,
+    /// FIRST/FIRST conflicts).
     Warning,
 }
 
@@ -52,69 +52,69 @@ impl fmt::Display for Severity {
     }
 }
 
-/// Ein Schritt im Rekursions-Pfad einer [`ValidationIssue::LeftRecursion`].
+/// A step in the recursion path of a [`ValidationIssue::LeftRecursion`].
 ///
-/// Traegt sowohl die Production als auch die konkrete Alternative, ueber
-/// die der Pfad weiterlaeuft. Bei direkter Rekursion (`A ::= A ...`) hat
-/// `path` die Form `[step(A, alt0), step(A, alt0)]`.
+/// Carries both the production and the concrete alternative via
+/// which the path continues. For direct recursion (`A ::= A ...`),
+/// `path` has the form `[step(A, alt0), step(A, alt0)]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PathStep {
-    /// Production an dieser Stelle des Zyklus.
+    /// Production at this point of the cycle.
     pub production: ProductionId,
-    /// Die Alternative, ueber die der naechste Schritt erreicht wurde.
+    /// The alternative via which the next step was reached.
     pub alternative: AltRef,
 }
 
-/// Ein konkreter Validation-Befund.
+/// A concrete validation finding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationIssue {
-    /// `Grammar::start` zeigt auf eine nicht existierende ProductionId.
+    /// `Grammar::start` points to a non-existent ProductionId.
     InvalidStart {
-        /// Die ungueltige ID.
+        /// The invalid ID.
         requested: ProductionId,
-        /// Anzahl tatsaechlich vorhandener Productions.
+        /// Number of actually present productions.
         production_count: usize,
     },
-    /// Ein `Symbol::Nonterminal(to)` verweist auf eine ProductionId, die
-    /// nicht existiert.
+    /// A `Symbol::Nonterminal(to)` refers to a ProductionId that
+    /// does not exist.
     DanglingReference {
-        /// Production, in der der Verweis steht.
+        /// Production in which the reference appears.
         from: ProductionId,
-        /// Die Alternative innerhalb der `from`-Production.
+        /// The alternative within the `from` production.
         from_alt: AltRef,
-        /// Production, auf die verwiesen wurde.
+        /// Production that was referenced.
         to: ProductionId,
     },
-    /// Direkte oder indirekte Linksrekursion.
+    /// Direct or indirect left recursion.
     LeftRecursion {
-        /// Rekursions-Pfad, beginnend und endend bei derselben ProductionId.
-        /// Jeder Schritt enthaelt die durchlaufene Alternative.
+        /// Recursion path, beginning and ending at the same ProductionId.
+        /// Each step contains the traversed alternative.
         path: Vec<PathStep>,
     },
-    /// Production ist vom Start aus nicht erreichbar.
+    /// A production is not reachable from the start.
     UnusedProduction {
-        /// ID der unerreichbaren Production.
+        /// ID of the unreachable production.
         id: ProductionId,
-        /// Name der Production (aus `Production::name`).
+        /// Name of the production (from `Production::name`).
         name: &'static str,
     },
-    /// Zwei Alternativen derselben Production haben ueberlappende
-    /// FIRST-Mengen. Meldet pro Konflikt-Paar einen Report.
+    /// Two alternatives of the same production have overlapping
+    /// FIRST sets. Reports one entry per conflicting pair.
     FirstFirstConflict {
-        /// Die betroffene Production.
+        /// The affected production.
         production: ProductionId,
-        /// Die erste der beiden konfligierenden Alternativen (kleinerer Index).
+        /// The first of the two conflicting alternatives (smaller index).
         left: AltRef,
-        /// Die zweite der beiden konfligierenden Alternativen.
+        /// The second of the two conflicting alternatives.
         right: AltRef,
-        /// Terminals, die in beiden FIRST-Mengen vorkommen. Sortiert nach
-        /// interner Ordnung (deterministisch ueber Laeufe hinweg).
+        /// Terminals appearing in both FIRST sets. Sorted by
+        /// internal order (deterministic across runs).
         shared_terminals: Vec<TokenKind>,
     },
 }
 
 impl ValidationIssue {
-    /// Schweregrad des Befunds.
+    /// Severity of the finding.
     #[must_use]
     pub const fn severity(&self) -> Severity {
         match self {
@@ -126,7 +126,7 @@ impl ValidationIssue {
     }
 }
 
-/// Gesammelte Befunde eines Validation-Laufs.
+/// Collected findings of a validation run.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ValidationReport {
     issues: Vec<ValidationIssue>,
@@ -139,61 +139,60 @@ impl ValidationReport {
         Self { issues: Vec::new() }
     }
 
-    /// Fuegt einen Befund hinzu.
+    /// Adds a finding.
     pub fn push(&mut self, issue: ValidationIssue) {
         self.issues.push(issue);
     }
 
-    /// Alle Befunde in Hinzufuege-Reihenfolge.
+    /// All findings in insertion order.
     #[must_use]
     pub fn issues(&self) -> &[ValidationIssue] {
         &self.issues
     }
 
-    /// Nur die `Error`-Befunde.
+    /// Only the `Error` findings.
     pub fn errors(&self) -> impl Iterator<Item = &ValidationIssue> {
         self.issues
             .iter()
             .filter(|i| i.severity() == Severity::Error)
     }
 
-    /// Nur die `Warning`-Befunde.
+    /// Only the `Warning` findings.
     pub fn warnings(&self) -> impl Iterator<Item = &ValidationIssue> {
         self.issues
             .iter()
             .filter(|i| i.severity() == Severity::Warning)
     }
 
-    /// `true`, wenn mindestens ein `Error` vorliegt — Grammar ist dann
-    /// nicht Engine-fest.
+    /// `true` if at least one `Error` is present — the grammar is then
+    /// not engine-safe.
     #[must_use]
     pub fn has_errors(&self) -> bool {
         self.errors().next().is_some()
     }
 
-    /// Gesamt-Anzahl Befunde.
+    /// Total number of findings.
     #[must_use]
     pub fn len(&self) -> usize {
         self.issues.len()
     }
 
-    /// `true`, wenn der Report leer ist (Grammar sauber).
+    /// `true` if the report is empty (grammar clean).
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.issues.is_empty()
     }
 }
 
-/// Validation-Sweep ueber eine [`CompiledGrammar`] (T6.9).
+/// Validation sweep over a [`CompiledGrammar`] (T6.9).
 ///
-/// prueft nur die kritischen Errors (Invalid-Start +
-/// Dangling-Reference). Die warning-stufigen Checks (Left-Recursion,
-/// Unused-Production, First/First-Conflict) sind speziell auf
-/// [`Grammar`] gemuenzt und werden in Phase 1 generalisiert.
+/// Checks only the critical errors (invalid-start +
+/// dangling-reference). The warning-level checks (left-recursion,
+/// unused-production, first/first-conflict) are specifically aimed at
+/// [`Grammar`] and are generalized in phase 1.
 ///
-/// Wird typischerweise nach [`super::compose::compose`] aufgerufen,
-/// um sicherzustellen, dass ein Vendor-Delta keine Dangling-Refs
-/// einfuehrt.
+/// Typically called after [`super::compose::compose`],
+/// to ensure that a vendor delta does not introduce dangling refs.
 #[must_use]
 pub fn validate_compiled(compiled: &CompiledGrammar) -> ValidationReport {
     let mut report = ValidationReport::new();
@@ -223,11 +222,11 @@ pub fn validate_compiled(compiled: &CompiledGrammar) -> ValidationReport {
     report
 }
 
-/// Fuehrt alle Validation-Checks auf der Grammar aus und liefert einen Report.
+/// Runs all validation checks on the grammar and returns a report.
 ///
-/// Die Checks laufen in fester Reihenfolge; bei Invalid-Start bricht die
-/// Validation ab, damit nicht weitere irrefuehrende Warnungen produziert
-/// werden.
+/// The checks run in a fixed order; on invalid-start the
+/// validation aborts, so that no further misleading warnings are
+/// produced.
 #[must_use]
 pub fn validate(grammar: &Grammar) -> ValidationReport {
     let mut report = ValidationReport::new();
@@ -245,7 +244,7 @@ pub fn validate(grammar: &Grammar) -> ValidationReport {
 }
 
 // ---------------------------------------------------------------------------
-// Start-Check
+// Start check
 // ---------------------------------------------------------------------------
 
 fn check_start(grammar: &Grammar, report: &mut ValidationReport) -> bool {
@@ -283,7 +282,7 @@ fn check_dangling_references(grammar: &Grammar, report: &mut ValidationReport) {
     }
 }
 
-/// zerodds-lint: recursion-depth 64 (Parser/AST-Walk; bounded by IDL nesting)
+/// zerodds-lint: recursion-depth 64 (parser/AST walk; bounded by IDL nesting)
 fn collect_nonterminal_refs(symbols: &[Symbol]) -> Vec<ProductionId> {
     let mut out = Vec::new();
     for sym in symbols {
@@ -302,7 +301,7 @@ fn collect_nonterminal_refs(symbols: &[Symbol]) -> Vec<ProductionId> {
 }
 
 // ---------------------------------------------------------------------------
-// Left-Recursion mit PathStep
+// Left recursion with PathStep
 // ---------------------------------------------------------------------------
 
 fn check_left_recursion(grammar: &Grammar, report: &mut ValidationReport) {
@@ -320,13 +319,13 @@ fn check_left_recursion(grammar: &Grammar, report: &mut ValidationReport) {
     }
 }
 
-/// DFS entlang der leftmost Nonterminal-Kette. Liefert den Pfad zurueck zum
-/// Startknoten, wenn eine Rekursion gefunden wird.
+/// DFS along the leftmost nonterminal chain. Returns the path back to the
+/// start node if a recursion is found.
 ///
-/// Jeder `PathStep` enthaelt die Alternative, ueber die der naechste Knoten
-/// erreicht wurde. Der zurueckgelieferte Pfad beginnt und endet auf `start`.
+/// Each `PathStep` contains the alternative via which the next node
+/// was reached. The returned path begins and ends at `start`.
 fn find_left_recursion_path(grammar: &Grammar, start: ProductionId) -> Option<Vec<PathStep>> {
-    // Frame: (aktuelle Production, Iterator ueber (AltRef, leftmost-Nonterminal-Option)-Paare)
+    // Frame: (current production, iterator over (AltRef, leftmost-nonterminal-option) pairs)
     let start_prod = grammar.production(start)?;
     let mut visited: HashSet<ProductionId> = HashSet::new();
     visited.insert(start);
@@ -335,18 +334,18 @@ fn find_left_recursion_path(grammar: &Grammar, start: ProductionId) -> Option<Ve
 
     while let Some((_, moves)) = stack.last_mut() {
         let Some((alt_ref, next)) = moves.pop() else {
-            // Frame erschoepft. Pop den Frame; der Parent-Frame trifft seine
-            // naechste Move-Wahl in der naechsten Loop-Iteration. Wir duerfen
-            // hier den Parent nicht weiter konsumieren — sonst werden ungeprobte
-            // Move-Alternativen uebersprungen (Bug, der LR durch
-            // nicht-leftmost Alternativen unsichtbar machte).
+            // Frame exhausted. Pop the frame; the parent frame makes its
+            // next move choice in the next loop iteration. We must not
+            // consume the parent further here — otherwise untried
+            // move alternatives are skipped (a bug that made LR via
+            // non-leftmost alternatives invisible).
             stack.pop();
             continue;
         };
 
         if next == start {
-            // Zyklus gefunden. Rekonstruiere Pfad entlang der Stack-Prefix:
-            // fuer jede Ebene die Alternative, die zum naechsten Knoten fuehrt.
+            // Cycle found. Reconstruct the path along the stack prefix:
+            // for each level the alternative leading to the next node.
             return Some(rebuild_left_recursion_path(grammar, start, &stack, alt_ref));
         }
 
@@ -360,28 +359,28 @@ fn find_left_recursion_path(grammar: &Grammar, start: ProductionId) -> Option<Ve
     None
 }
 
-/// Rekonstruiert den Rekursions-Pfad in `PathStep`-Form.
+/// Reconstructs the recursion path in `PathStep` form.
 ///
-/// Vorgehen: wiederhole die DFS ohne Backtracking, nur entlang der Stack-
-/// Prefix, und gib fuer jede Ebene den tatsaechlich gewaehlten `AltRef`
-/// zurueck (den letzten konsumierten Move der jeweiligen Ebene).
+/// Approach: repeat the DFS without backtracking, only along the stack
+/// prefix, and return for each level the actually chosen `AltRef`
+/// (the last consumed move of the respective level).
 fn rebuild_left_recursion_path(
     grammar: &Grammar,
     start: ProductionId,
     stack: &[(ProductionId, Vec<(AltRef, ProductionId)>)],
     final_alt: AltRef,
 ) -> Vec<PathStep> {
-    // Wir haben im Stack pro Ebene `moves_left`. Der gerade konsumierte Move
-    // war der oberste Eintrag vor dem pop; da wir pop() nach dem Konsum
-    // gemacht haben, liegt der konsumierte Move nicht mehr in der Liste.
-    // Wir re-laufen von start aus entlang der Productions im Stack und
-    // waehlen jeweils den leftmost-Move zum naechsten Production-Knoten.
+    // In the stack we have `moves_left` per level. The just-consumed move
+    // was the top entry before the pop; since we called pop() after the
+    // consume, the consumed move is no longer in the list.
+    // We re-run from start along the productions in the stack and
+    // each time choose the leftmost move to the next production node.
     let mut path: Vec<PathStep> = Vec::with_capacity(stack.len() + 1);
     for (i, (pid, _)) in stack.iter().enumerate() {
         let next_pid = if i + 1 < stack.len() {
             stack[i + 1].0
         } else {
-            start // letzter Schritt fuehrt zurueck zum Startknoten
+            start // the last step leads back to the start node
         };
         let Some(production) = grammar.production(*pid) else {
             continue;
@@ -392,7 +391,7 @@ fn rebuild_left_recursion_path(
             alternative: alt_ref,
         });
     }
-    // Abschluss: Zielknoten explizit anzeigen.
+    // Conclusion: show the target node explicitly.
     path.push(PathStep {
         production: start,
         alternative: final_alt,
@@ -400,8 +399,8 @@ fn rebuild_left_recursion_path(
     path
 }
 
-/// Findet die erste Alternative einer Production, deren leftmost-Kette auf
-/// `target` fuehrt.
+/// Finds the first alternative of a production whose leftmost chain leads to
+/// `target`.
 fn find_alt_leading_to(production: &Production, target: ProductionId) -> Option<AltRef> {
     for (idx, alt) in production.alternatives.iter().enumerate() {
         if leftmost_nonterminal_of(alt.symbols) == Some(target) {
@@ -414,8 +413,8 @@ fn find_alt_leading_to(production: &Production, target: ProductionId) -> Option<
     None
 }
 
-/// Pro Alternative der Production: `(AltRef, naechstes-leftmost-Nonterminal)`.
-/// Alternativen, die terminal beginnen oder leer sind, werden weggelassen.
+/// Per alternative of the production: `(AltRef, next leftmost nonterminal)`.
+/// Alternatives that begin with a terminal or are empty are omitted.
 fn leftmost_moves(production: &Production) -> Vec<(AltRef, ProductionId)> {
     let mut out = Vec::new();
     for (idx, alt) in production.alternatives.iter().enumerate() {
@@ -449,9 +448,9 @@ fn leftmost_nonterminal_of(symbols: &[Symbol]) -> Option<ProductionId> {
 fn check_unused_productions(grammar: &Grammar, report: &mut ValidationReport) {
     let reachable = reachable_from_start(grammar);
     for production in grammar.productions.iter() {
-        // ID kommt aus der Production selbst — nicht der Slice-Index,
-        // weil Productions nicht zwingend in ID-Reihenfolge im Slice
-        // sind (Eintragungs-Reihenfolge vs. ID-Allokation).
+        // The ID comes from the production itself — not the slice index,
+        // because productions are not necessarily in ID order in the slice
+        // (insertion order vs. ID allocation).
         if !reachable.contains(&production.id) {
             report.push(ValidationIssue::UnusedProduction {
                 id: production.id,
@@ -486,8 +485,8 @@ fn reachable_from_start(grammar: &Grammar) -> BTreeSet<ProductionId> {
 // FIRST-Set-Computation (transitive closure, klassisch Dragon Book)
 // ---------------------------------------------------------------------------
 
-/// FIRST-Menge einer Symbol-Sequenz oder Production. Epsilon wird separat
-/// getrackt, nicht als synthetisches Terminal.
+/// FIRST set of a symbol sequence or production. Epsilon is tracked
+/// separately, not as a synthetic terminal.
 #[derive(Debug, Clone, Default)]
 struct First {
     terminals: BTreeSet<TokenKind>,
@@ -502,11 +501,11 @@ impl First {
     }
 }
 
-/// Berechnet FIRST-Mengen fuer alle Productions einer Grammar.
+/// Computes FIRST sets for all productions of a grammar.
 ///
-/// Klassische Fixpoint-Iteration: initial alle Mengen leer, pro Iteration
-/// werden die FIRST-Mengen jeder Production aus FIRST ihrer Alternativen
-/// erweitert, bis Konvergenz.
+/// Classic fixpoint iteration: initially all sets empty, per iteration
+/// the FIRST sets of each production are extended from FIRST of their
+/// alternatives, until convergence.
 fn compute_first_sets(grammar: &Grammar) -> BTreeMap<ProductionId, First> {
     let mut sets: BTreeMap<ProductionId, First> = grammar
         .productions
@@ -536,8 +535,8 @@ fn compute_first_sets(grammar: &Grammar) -> BTreeMap<ProductionId, First> {
     sets
 }
 
-/// FIRST einer Symbol-Sequenz, basierend auf aktuellen Production-FIRST-
-/// Mengen.
+/// FIRST of a symbol sequence, based on the current production FIRST
+/// sets.
 /// zerodds-lint: recursion-depth 64 (Parser/AST-Walk; bounded by IDL nesting)
 fn first_of_sequence(symbols: &[Symbol], sets: &BTreeMap<ProductionId, First>) -> First {
     let mut result = First::default();
@@ -558,7 +557,7 @@ fn first_of_sequence(symbols: &[Symbol], sets: &BTreeMap<ProductionId, First>) -
     result
 }
 
-/// FIRST eines einzelnen Symbols.
+/// FIRST of a single symbol.
 /// zerodds-lint: recursion-depth 64 (Parser/AST-Walk; bounded by IDL nesting)
 fn first_of_symbol(symbol: &Symbol, sets: &BTreeMap<ProductionId, First>) -> First {
     match symbol {
@@ -570,8 +569,8 @@ fn first_of_symbol(symbol: &Symbol, sets: &BTreeMap<ProductionId, First>) -> Fir
         Symbol::Nonterminal(id) => sets.get(id).cloned().unwrap_or_default(),
         Symbol::Repeat(kind, inner) => {
             let mut first = first_of_sequence(inner, sets);
-            // ZeroOrMore und Optional koennen epsilon produzieren, auch wenn
-            // der innere Body das nicht kann.
+            // ZeroOrMore and Optional can produce epsilon, even if
+            // the inner body cannot.
             if matches!(kind, RepeatKind::ZeroOrMore | RepeatKind::Optional) {
                 first.epsilon = true;
             }
@@ -594,7 +593,7 @@ fn first_of_symbol(symbol: &Symbol, sets: &BTreeMap<ProductionId, First>) -> Fir
 }
 
 // ---------------------------------------------------------------------------
-// First/First-Conflict (pairwise, ueber echtes FIRST)
+// First/first-conflict (pairwise, via real FIRST)
 // ---------------------------------------------------------------------------
 
 fn check_first_first_conflicts(grammar: &Grammar, report: &mut ValidationReport) {
@@ -942,16 +941,16 @@ mod tests {
 
     #[test]
     fn first_first_conflict_through_nonterminal_is_detected() {
-        // Regression gegen die alte Heuristik: eine Alt beginnt mit einem
-        // Nonterminal, das wiederum mit demselben Terminal wie die andere Alt
-        // anfaengt. Die alte Heuristik hat das nicht gefunden — FIRST-Set
-        // ueber transitive Closure muss.
+        // Regression against the old heuristic: one alt begins with a
+        // nonterminal that in turn begins with the same terminal as the other alt.
+        // The old heuristic did not find this — the FIRST set
+        // via transitive closure must.
         //
         // A ::= B | "x"
         // B ::= "x" "y"
         //
         // FIRST(B) = {"x"}, FIRST(A's alt 0) via B = {"x"}, FIRST(alt 1) = {"x"}
-        // → Konflikt auf "x" erwartet.
+        // → conflict on "x" expected.
         const GR: Grammar = Grammar {
             name: "transitive_conflict",
             version: IdlVersion::V4_2,
@@ -1008,7 +1007,7 @@ mod tests {
         assert_eq!(
             conflict_shared,
             vec![vec![TokenKind::Keyword("x")]],
-            "FIRST-Set-Closure muss Konflikt durch Nonterminal-Kette finden"
+            "FIRST-set closure must find the conflict through a nonterminal chain"
         );
     }
 
@@ -1016,8 +1015,8 @@ mod tests {
     fn first_set_handles_epsilon_via_optional_repeat() {
         // A ::= [ "x" ] "y" | "y"
         //
-        // FIRST(alt 0): { "x", "y" } (Optional kann epsilon, dann faellt FIRST
-        // durch zu "y"), FIRST(alt 1): { "y" } → Konflikt auf "y".
+        // FIRST(alt 0): { "x", "y" } (Optional can be epsilon, then FIRST falls
+        // through to "y"), FIRST(alt 1): { "y" } → conflict on "y".
         const GR: Grammar = Grammar {
             name: "optional_epsilon",
             version: IdlVersion::V4_2,
@@ -1060,13 +1059,13 @@ mod tests {
         });
         assert!(
             has_y_conflict,
-            "Epsilon-Propagation durch Optional muss 'y' als shared erkennen"
+            "epsilon propagation through Optional must recognize 'y' as shared"
         );
     }
 
     #[test]
     fn no_false_positive_on_disjoint_first_sets() {
-        // A ::= "x" | "y" — disjunkt, kein Konflikt.
+        // A ::= "x" | "y" — disjoint, no conflict.
         const GR: Grammar = Grammar {
             name: "disjoint",
             version: IdlVersion::V4_2,
@@ -1097,7 +1096,7 @@ mod tests {
                 .issues()
                 .iter()
                 .any(|i| matches!(i, ValidationIssue::FirstFirstConflict { .. })),
-            "disjunkte FIRST-Mengen duerfen keinen Konflikt melden"
+            "disjoint FIRST sets must not report a conflict"
         );
     }
 
@@ -1207,13 +1206,13 @@ mod tests {
             token_rules: &[],
         };
         let report = validate(&GR);
-        // coverage: justified — assert!-Fehlermeldung nur bei Test-Failure.
+        // coverage: justified — assert! error message only on test failure.
         assert!(
             !report
                 .issues()
                 .iter()
                 .any(|i| matches!(i, ValidationIssue::UnusedProduction { .. })),
-            "B und C muessen als erreichbar gelten, Report: {:?}",
+            "B and C must be considered reachable, report: {:?}",
             report.issues()
         );
     }
@@ -1245,8 +1244,8 @@ mod tests {
             start: ProductionId(0),
             token_rules: &[],
         };
-        // Keine Unused / Dangling / InvalidStart — epsilon + "x" sind disjunkt,
-        // kein FirstFirstConflict.
+        // No Unused / Dangling / InvalidStart — epsilon + "x" are disjoint,
+        // no FirstFirstConflict.
         let report = validate(&GR);
         assert!(
             report.is_empty(),
@@ -1256,7 +1255,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // T6.9 — validate_compiled fuer CompiledGrammar / Composition
+    // T6.9 — validate_compiled for CompiledGrammar / composition
     // -----------------------------------------------------------------
 
     #[test]
@@ -1272,7 +1271,7 @@ mod tests {
     fn validate_compiled_detects_invalid_start() {
         use super::super::IdlVersion;
         use super::super::compile::CompiledGrammar;
-        // Production-IDs starten bei 0; start = ProductionId(99) ist invalid.
+        // Production IDs start at 0; start = ProductionId(99) is invalid.
         const PRODS: &[Production] = &[Production {
             id: ProductionId(0),
             name: "a",

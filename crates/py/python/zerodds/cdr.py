@@ -1,27 +1,27 @@
-"""Minimaler XCDR2-Little-Endian Codec für Python.
+"""Minimal XCDR2 little-endian codec for Python.
 
-OMG XTypes 1.3 §7.4. Wird vom `@idl_struct`-Dekorator genutzt, damit
-Nutzer `@dataclass`-Typen direkt ueber Bytes-Topics pumpen koennen,
-ohne selbst Encoder schreiben zu muessen.
+OMG XTypes 1.3 §7.4. Used by the `@idl_struct` decorator so that
+users can pump `@dataclass` types directly over bytes topics,
+without writing their own encoder.
 
-**Scope aktueller Scope:**
+**Current scope:**
 
-* Primitive: `bool`, `int8`, `uint8`, `int16`, `uint16`, `int32`,
+* Primitives: `bool`, `int8`, `uint8`, `int16`, `uint16`, `int32`,
   `uint32`, `int64`, `uint64`, `float32`, `float64`.
-* `str` als `string<N>` mit CDR-Null-Terminator + Length-Prefix +
-  Alignment-Padding.
-* `bytes` als `sequence<octet>` (u32 Länge + bytes).
-* CDR-Alignment-Rules (natural alignment auf 1/2/4/8).
+* `str` as `string<N>` with CDR null terminator + length prefix +
+  alignment padding.
+* `bytes` as `sequence<octet>` (u32 length + bytes).
+* CDR alignment rules (natural alignment on 1/2/4/8).
 
-**Nicht in aktuelle Variante:**
+**Not in the current variant:**
 
-* Nested Structs (koennen via ein zusätzlicher Decorator kommen —
+* Nested structs (may come via an additional decorator —
   v1.4).
-* ``sequence<T>`` fuer beliebige T (ausser octet).
-* Arrays mit fester Laenge.
-* Optional / Discriminated-Unions.
+* ``sequence<T>`` for arbitrary T (except octet).
+* Fixed-length arrays.
+* Optional / discriminated unions.
 
-Der Codec ist byte-genau kompatibel mit dem Rust-Seiten-Encoder
+The codec is byte-exactly compatible with the Rust-side encoder
 in `dds_cdr::buffer::BufferWriter` / `BufferReader`.
 """
 
@@ -85,14 +85,14 @@ class CdrWriter:
         self.buf.extend(struct.pack("<d", v))
 
     def write_string(self, s: str) -> None:
-        """CDR-String: u32 Laenge inkl. Null-Terminator + UTF-8 Bytes + 0x00."""
+        """CDR string: u32 length incl. null terminator + UTF-8 bytes + 0x00."""
         encoded = s.encode("utf-8")
         self.write_u32(len(encoded) + 1)
         self.buf.extend(encoded)
         self.buf.append(0)
 
     def write_bytes(self, b: bytes) -> None:
-        """sequence<octet>: u32 Laenge + raw Bytes."""
+        """sequence<octet>: u32 length + raw bytes."""
         self.write_u32(len(b))
         self.buf.extend(b)
 

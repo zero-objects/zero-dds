@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// QosBridge.cs — Konvertierung ZeroDDS.Qos.* → C-FFI Native.* structs.
+// QosBridge.cs — converts ZeroDDS.Qos.* → C-FFI Native.* structs.
 
 using System;
 using System.Runtime.InteropServices;
@@ -307,7 +307,7 @@ public static class QosBridge
 
     public static NativePublisherQos ToNative(SubscriberQos q, NativeQosScope scope)
     {
-        // Identical layout — Pub/Sub Qos haben gleiche Felder per Spec §2.2.3.x.
+        // Identical layout — Pub/Sub QoS have the same fields per Spec §2.2.3.x.
         return new NativePublisherQos
         {
             Presentation = new NativePresentation

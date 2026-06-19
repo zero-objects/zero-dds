@@ -3,31 +3,45 @@
 
 //! ROS 2 Standard QoS Profiles — REP-2003 + RMW Defaults.
 
-/// QoS-Reliability — DDS-Mapping.
+/// QoS-Reliability — DDS-Mapping (`rmw_qos_reliability_policy_t`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Reliability {
+    /// `SYSTEM_DEFAULT` — sentinel: do not set, use the DDS implementation
+    /// default (`rmw_qos_profile_system_default`).
+    SystemDefault,
     /// `RELIABLE` — packets retransmitted on loss (DDS Reliable).
     Reliable,
     /// `BEST_EFFORT` — no retransmission (DDS BestEffort).
     BestEffort,
+    /// `UNKNOWN` — unbestimmt (Reflection-/Fehlerpfade,
+    /// `rmw_qos_profile_unknown`).
+    Unknown,
 }
 
-/// QoS-Durability — DDS-Mapping.
+/// QoS-Durability — DDS-Mapping (`rmw_qos_durability_policy_t`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Durability {
+    /// `SYSTEM_DEFAULT` — Sentinel: DDS-Default verwenden.
+    SystemDefault,
     /// `VOLATILE` — late-joining subscribers don't get past samples.
     Volatile,
     /// `TRANSIENT_LOCAL` — last-N samples cached for late-joiners.
     TransientLocal,
+    /// `UNKNOWN` — unbestimmt.
+    Unknown,
 }
 
-/// QoS-History — DDS-Mapping.
+/// QoS-History — DDS-Mapping (`rmw_qos_history_policy_t`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum History {
+    /// `SYSTEM_DEFAULT` — Sentinel: DDS-Default-History/-Depth verwenden.
+    SystemDefault,
     /// `KEEP_LAST(n)`.
     KeepLast(u32),
     /// `KEEP_ALL`.
     KeepAll,
+    /// `UNKNOWN` — unbestimmt.
+    Unknown,
 }
 
 /// ROS 2 QoS Profile (Subset). Spec REP-2003 + `rmw/qos_profiles.h`.
@@ -39,18 +53,20 @@ pub struct QosProfile {
     pub durability: Durability,
     /// History.
     pub history: History,
-    /// Liveliness lease — `None` = INFINITE.
+    /// Liveliness lease — `None` = system-default/unspecified (DDS-Default,
+    /// effektiv INFINITE).
     pub liveliness_lease_secs: Option<u32>,
-    /// Deadline — `None` = INFINITE.
+    /// Deadline — `None` = system-default/unspecified (DDS-Default, effektiv
+    /// INFINITE).
     pub deadline_secs: Option<u32>,
 }
 
-/// Standard-Profile aus `rmw/qos_profiles.h` und REP-2003.
+/// Standard profiles from `rmw/qos_profiles.h` and REP-2003.
 pub mod profiles {
     use super::*;
 
-    /// `rmw_qos_profile_default` — DEFAULT-Profile fuer normale ROS-2-
-    /// Topics: Reliable + Volatile + KeepLast(10).
+    /// `rmw_qos_profile_default` — DEFAULT profile for normal ROS-2
+    /// topics: Reliable + Volatile + KeepLast(10).
     pub const DEFAULT: QosProfile = QosProfile {
         reliability: Reliability::Reliable,
         durability: Durability::Volatile,
@@ -108,35 +124,47 @@ pub mod profiles {
         deadline_secs: None,
     };
 
-    /// `rmw_qos_profile_system_default` — Implementation-defined; wir
-    /// liefern dasselbe wie DEFAULT (siehe Spec-Coverage-Doc fuer
-    /// Sentinel-vs-Alias-Diskussion).
-    pub const SYSTEM_DEFAULT: QosProfile = DEFAULT;
-
-    /// `rmw_qos_profile_unknown` — Sentinel fuer ungesetzte/
-    /// fehlerhafte Werte. Die RMW-API verwendet dieses Profile in
-    /// Fehlerpfaden (z.B. wenn `rmw_get_endpoint_info` keinen
-    /// gueltigen Wert liefert).
-    ///
-    /// Wir modellieren das als marker-Konstante mit
-    /// `KeepLast(0)`-History, was in der Spec-Bedeutung "kein
-    /// gueltiger Wert" entspricht.
-    pub const UNKNOWN: QosProfile = QosProfile {
-        reliability: Reliability::BestEffort,
-        durability: Durability::Volatile,
-        history: History::KeepLast(0),
+    /// `rmw_qos_profile_system_default` — **every field** as a
+    /// `*_SYSTEM_DEFAULT` sentinel (Spec: implementation-defined; each
+    /// field's DDS default is used, not the rmw DEFAULT values).
+    /// The resolution happens only at DDS-entity creation — a
+    /// `SystemDefault` field is *not set* there.
+    pub const SYSTEM_DEFAULT: QosProfile = QosProfile {
+        reliability: Reliability::SystemDefault,
+        durability: Durability::SystemDefault,
+        history: History::SystemDefault,
         liveliness_lease_secs: None,
         deadline_secs: None,
     };
 
-    /// `is_unknown(profile)` — Predicate fuer den Spec-konformen
-    /// "ungesetzt"-Marker.
+    /// `rmw_qos_profile_unknown` — **every field** as an `*_UNKNOWN` sentinel.
+    /// The RMW API uses this profile in reflection/error paths
+    /// (e.g. when `rmw_get_endpoint_info` returns no valid value).
+    pub const UNKNOWN: QosProfile = QosProfile {
+        reliability: Reliability::Unknown,
+        durability: Durability::Unknown,
+        history: History::Unknown,
+        liveliness_lease_secs: None,
+        deadline_secs: None,
+    };
+
+    /// `is_unknown(profile)` — detects the `rmw_qos_profile_unknown`
+    /// (all policy fields as the `Unknown` sentinel).
     #[must_use]
     pub fn is_unknown(p: &QosProfile) -> bool {
-        matches!(p.history, History::KeepLast(0))
-            && p.reliability == Reliability::BestEffort
-            && p.liveliness_lease_secs.is_none()
-            && p.deadline_secs.is_none()
+        matches!(p.reliability, Reliability::Unknown)
+            && matches!(p.durability, Durability::Unknown)
+            && matches!(p.history, History::Unknown)
+    }
+
+    /// `is_system_default(profile)` — detects the
+    /// `rmw_qos_profile_system_default` (all policy fields as the
+    /// `SystemDefault` sentinel).
+    #[must_use]
+    pub fn is_system_default(p: &QosProfile) -> bool {
+        matches!(p.reliability, Reliability::SystemDefault)
+            && matches!(p.durability, Durability::SystemDefault)
+            && matches!(p.history, History::SystemDefault)
     }
 }
 
@@ -192,8 +220,15 @@ mod tests {
     }
 
     #[test]
-    fn system_default_aliases_default() {
-        assert_eq!(profiles::SYSTEM_DEFAULT, profiles::DEFAULT);
+    fn system_default_is_all_sentinels() {
+        // Spec-faithful: every field is the *_SYSTEM_DEFAULT sentinel, NOT
+        // an alias to the rmw DEFAULT values.
+        let p = profiles::SYSTEM_DEFAULT;
+        assert_eq!(p.reliability, Reliability::SystemDefault);
+        assert_eq!(p.durability, Durability::SystemDefault);
+        assert_eq!(p.history, History::SystemDefault);
+        assert!(profiles::is_system_default(&p));
+        assert_ne!(p, profiles::DEFAULT);
     }
 
     #[test]
@@ -214,8 +249,11 @@ mod tests {
     }
 
     #[test]
-    fn unknown_profile_uses_keep_last_zero_marker() {
-        assert_eq!(profiles::UNKNOWN.history, History::KeepLast(0));
+    fn unknown_profile_is_all_unknown() {
+        let p = profiles::UNKNOWN;
+        assert_eq!(p.reliability, Reliability::Unknown);
+        assert_eq!(p.durability, Durability::Unknown);
+        assert_eq!(p.history, History::Unknown);
     }
 
     #[test]
@@ -224,8 +262,16 @@ mod tests {
     }
 
     #[test]
-    fn is_unknown_rejects_real_profiles() {
+    fn is_unknown_rejects_real_and_system_default_profiles() {
         assert!(!profiles::is_unknown(&profiles::DEFAULT));
         assert!(!profiles::is_unknown(&profiles::SENSOR_DATA));
+        assert!(!profiles::is_unknown(&profiles::SYSTEM_DEFAULT));
+    }
+
+    #[test]
+    fn system_default_and_unknown_are_distinct() {
+        assert_ne!(profiles::SYSTEM_DEFAULT, profiles::UNKNOWN);
+        assert!(!profiles::is_system_default(&profiles::UNKNOWN));
+        assert!(!profiles::is_unknown(&profiles::SYSTEM_DEFAULT));
     }
 }

@@ -1,21 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `InstanceHandle` — opaker, lokaler Identifier fuer Entities und
-//! Sample-Instanzen (DDS DCPS 1.4 §2.3.3 IDL-PSM, §2.2.2.5.1
+//! `InstanceHandle` — opaque, local identifier for entities and sample
+//! instances (DDS DCPS 1.4 §2.3.3 IDL-PSM, §2.2.2.5.1
 //! SampleInfo.instance_handle).
 //!
-//! In der Spec ist `InstanceHandle_t` ein Builtin-Type ohne fixe
-//! Wire-Form — er wird **nie** auf den Wire gestellt, sondern dient
-//! ausschliesslich der lokalen Identifikation (z.B. um in
-//! `DataReader::read_instance()` einen Sample-Stream zu adressieren).
-//! Die Spec stellt nur sicher, dass `HANDLE_NIL` einen reservierten
-//! "kein Handle"-Wert hat.
+//! In the spec, `InstanceHandle_t` is a builtin type with no fixed wire
+//! form — it is **never** placed on the wire, but serves solely for
+//! local identification (e.g. to address a sample stream in
+//! `DataReader::read_instance()`). The spec only guarantees that
+//! `HANDLE_NIL` has a reserved "no handle" value.
 //!
-//! Wir kodieren ihn als **opake `u64`**:
-//! * Eindeutig pro Entity / Sample-Instanz innerhalb einer Runtime.
-//! * `HANDLE_NIL` = 0 (Spec-Konvention).
-//! * Erzeugung via [`InstanceHandleAllocator`] mit monoton steigendem
-//!   Counter — keine Wiederverwendung gedroppter Handles.
+//! We encode it as an **opaque `u64`**:
+//! * Unique per entity / sample instance within a runtime.
+//! * `HANDLE_NIL` = 0 (spec convention).
+//! * Created via [`InstanceHandleAllocator`] with a monotonically
+//!   increasing counter — no reuse of dropped handles.
 
 extern crate alloc;
 
@@ -23,44 +22,43 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use zerodds_rtps::wire_types::Guid;
 
-/// Opaker `InstanceHandle_t` (DDS-DCPS 1.4 §2.3.3).
+/// Opaque `InstanceHandle_t` (DDS-DCPS 1.4 §2.3.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct InstanceHandle(u64);
 
 impl InstanceHandle {
-    /// Reservierter "kein Handle"-Wert (Spec-Konvention).
+    /// Reserved "no handle" value (spec convention).
     pub const NIL: Self = Self(0);
 
-    /// Konstruktor aus einem rohen u64-Wert. Niedrige API — ueblicherweise
-    /// erzeugt der [`InstanceHandleAllocator`] die Werte.
+    /// Constructor from a raw u64 value. Low-level API — normally the
+    /// [`InstanceHandleAllocator`] produces the values.
     #[must_use]
     pub const fn from_raw(raw: u64) -> Self {
         Self(raw)
     }
 
-    /// Roher Wert.
+    /// Raw value.
     #[must_use]
     pub const fn as_raw(&self) -> u64 {
         self.0
     }
 
-    /// `true` wenn der Handle [`Self::NIL`] ist.
+    /// `true` if the handle is [`Self::NIL`].
     #[must_use]
     pub const fn is_nil(&self) -> bool {
         self.0 == 0
     }
 
-    /// Deterministische Ableitung eines [`InstanceHandle`] aus einem
-    /// `Guid` (16 Byte BuiltinTopicKey). Wird fuer
-    /// `ignore_*`-/`get_discovered_*`-APIs (DDS DCPS 1.4
-    /// §2.2.2.2.1.14-17, §2.2.2.2.1.27-30) verwendet, weil die Spec
-    /// dort `InstanceHandle_t` als Argument verlangt, der Builtin-
-    /// Subscriber aber `BuiltinTopicKey_t` (=Guid) als Sample-Key
-    /// fuehrt.
+    /// Deterministic derivation of an [`InstanceHandle`] from a `Guid`
+    /// (16-byte BuiltinTopicKey). Used for the `ignore_*` /
+    /// `get_discovered_*` APIs (DDS DCPS 1.4 §2.2.2.2.1.14-17,
+    /// §2.2.2.2.1.27-30), because there the spec requires
+    /// `InstanceHandle_t` as the argument, while the builtin subscriber
+    /// keeps `BuiltinTopicKey_t` (= Guid) as the sample key.
     ///
-    /// Implementation: 64-bit FNV-1a ueber alle 16 Bytes — schnell,
-    /// no_std, kollisionsarm fuer einige tausend Discovered Entities.
-    /// `HANDLE_NIL` wird durch Anheben auf 1 vermieden.
+    /// Implementation: 64-bit FNV-1a over all 16 bytes — fast, no_std,
+    /// low collision for a few thousand discovered entities.
+    /// `HANDLE_NIL` is avoided by bumping it up to 1.
     #[must_use]
     pub fn from_guid(guid: Guid) -> Self {
         const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
@@ -84,14 +82,13 @@ impl core::fmt::Display for InstanceHandle {
     }
 }
 
-/// Spec-Alias fuer den NIL-Handle (DDS-DCPS 1.4 §2.3.3).
+/// Spec alias for the NIL handle (DDS-DCPS 1.4 §2.3.3).
 pub const HANDLE_NIL: InstanceHandle = InstanceHandle::NIL;
 
-/// Atomarer Counter zur Vergabe eindeutiger [`InstanceHandle`]-Werte.
+/// Atomic counter for handing out unique [`InstanceHandle`] values.
 ///
-/// Eine Instanz pro Runtime/Process — ueblicherweise auf der
-/// `DcpsRuntime` als gemeinsame Allokationsquelle fuer Entities und
-/// Sample-Instanzen.
+/// One instance per runtime/process — typically on the `DcpsRuntime`
+/// as the shared allocation source for entities and sample instances.
 #[derive(Debug)]
 pub struct InstanceHandleAllocator {
     next: AtomicU64,
@@ -104,8 +101,8 @@ impl Default for InstanceHandleAllocator {
 }
 
 impl InstanceHandleAllocator {
-    /// Neuer Allocator. Erste Vergabe liefert `1` (HANDLE_NIL=0 ist
-    /// reserviert).
+    /// New allocator. The first allocation returns `1` (HANDLE_NIL=0 is
+    /// reserved).
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -113,14 +110,13 @@ impl InstanceHandleAllocator {
         }
     }
 
-    /// Liefert den naechsten freien Handle (monoton steigend).
+    /// Returns the next free handle (monotonically increasing).
     /// Thread-safe.
     #[must_use]
     pub fn allocate(&self) -> InstanceHandle {
         let v = self.next.fetch_add(1, Ordering::Relaxed);
-        // Wraparound-Defense: u64 reicht > 580 Jahre bei 1 Mio Handles/s.
-        // Falls trotzdem 0 → NIL → wir ueberspringen und nehmen den
-        // naechsten.
+        // Wraparound defense: u64 lasts > 580 years at 1M handles/s.
+        // If it still hits 0 → NIL → we skip it and take the next one.
         if v == 0 {
             self.allocate()
         } else {

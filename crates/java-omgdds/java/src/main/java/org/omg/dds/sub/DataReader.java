@@ -51,13 +51,13 @@ public final class DataReader<T> implements Entity {
 
     /** Spec §7.2.4 — read returns a snapshot of available samples without removing them. */
     public List<Sample<T>> read() {
-        if (closed || !enabled) return List.of();
+        if (closed || !enabled) return new ArrayList<>();
         return new ArrayList<>(queue);
     }
 
     /** Spec §7.2.4 — take removes samples from the cache and returns them. */
     public List<Sample<T>> take() {
-        if (closed || !enabled) return List.of();
+        if (closed || !enabled) return new ArrayList<>();
         List<Sample<T>> out = new ArrayList<>();
         Sample<T> s;
         while ((s = queue.poll()) != null) {

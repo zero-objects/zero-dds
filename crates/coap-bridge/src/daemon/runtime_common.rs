@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Cross-Cutting Daemon-Runtime fuer `zerodds-coap-bridged`.
+//! Cross-cutting daemon runtime for `zerodds-coap-bridged`.
 
 #![allow(clippy::print_stderr)]
 
@@ -121,7 +121,7 @@ pub struct CatalogSnapshot {
 }
 
 impl CatalogSnapshot {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn from_config(cfg: &DaemonConfig) -> Self {
         Self {
@@ -182,7 +182,7 @@ fn push_json_str(out: &mut String, s: &str) {
     }
 }
 
-/// Admin-HTTP-Server (TCP, da der Daemon-Pfad selbst UDP/CoAP ist).
+/// Admin HTTP server (TCP, since the daemon path itself is UDP/CoAP).
 pub fn serve_admin_endpoints(
     addr: SocketAddr,
     catalog: Arc<CatalogSnapshot>,
@@ -389,6 +389,6 @@ pub fn install_signal_watcher(
     _reload_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> std::io::Result<std::thread::JoinHandle<()>> {
     // Windows: signal_hook::iterator nur POSIX. Spawn dummy thread,
-    // shutdown laeuft ueber die normalen socket-close-Pfade.
+    // shutdown runs over the normal socket-close paths.
     Ok(std::thread::spawn(|| {}))
 }

@@ -1,56 +1,56 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `SampleInfo` — Metadaten pro Sample, die `DataReader::read`/`take`
-//! mit jedem Sample mitliefern.
+//! `SampleInfo` — per-sample metadata that `DataReader::read`/`take`
+//! deliver alongside each sample.
 //!
-//! Spec-Referenz: OMG DDS-DCPS 1.4 §2.2.2.5.1 `SampleInfo`. Die Spec
-//! definiert 11 Felder, die zusammen das **Statechart** eines Samples
-//! beschreiben:
+//! Spec reference: OMG DDS-DCPS 1.4 §2.2.2.5.1 `SampleInfo`. The spec
+//! defines 11 fields that together describe the **statechart** of a
+//! sample:
 //!
-//! 1. `sample_state`: ob der Reader das Sample schon einmal gelesen hat
-//!    (`READ`) oder nicht (`NOT_READ`).
-//! 2. `view_state`: ob die Reader-Instanz neu ist (`NEW`) oder schon
-//!    bekannt (`NOT_NEW`).
-//! 3. `instance_state`: Lifecycle-Zustand der Instanz (`ALIVE`,
+//! 1. `sample_state`: whether the reader has already read the sample
+//!    (`READ`) or not (`NOT_READ`).
+//! 2. `view_state`: whether the reader instance is new (`NEW`) or
+//!    already known (`NOT_NEW`).
+//! 3. `instance_state`: lifecycle state of the instance (`ALIVE`,
 //!    `NOT_ALIVE_DISPOSED`, `NOT_ALIVE_NO_WRITERS`).
-//! 4. `disposed_generation_count`: Anzahl der Uebergaenge
-//!    `NOT_ALIVE_DISPOSED → ALIVE` seit dem ersten Sample dieser Instanz.
-//! 5. `no_writers_generation_count`: Anzahl der Uebergaenge
-//!    `NOT_ALIVE_NO_WRITERS → ALIVE` seit dem ersten Sample dieser Instanz.
-//! 6. `sample_rank`: Anzahl Samples in derselben Instanz, die nach
-//!    diesem im Cache stehen (Spec §2.2.2.5.1.5).
-//! 7. `generation_rank`: Differenz der Generation-Counts zwischen diesem
-//!    und dem letzten Sample der Instanz im selben Read-Set.
-//! 8. `absolute_generation_rank`: wie `generation_rank`, aber relativ
-//!    zum **aktuellen** Generation-Count.
-//! 9. `source_timestamp`: Wall-Clock-Zeitpunkt der Schreiboperation.
-//! 10. `instance_handle`: lokaler Handle der Instanz (Key-basiert).
-//! 11. `publication_handle`: lokaler Handle des sendenden DataWriters.
-//! 12. `valid_data`: `false` fuer Dispose-/Unregister-Markers ohne
-//!     Nutzdaten (Spec §2.2.2.5.1.13).
+//! 4. `disposed_generation_count`: number of `NOT_ALIVE_DISPOSED → ALIVE`
+//!    transitions since the first sample of this instance.
+//! 5. `no_writers_generation_count`: number of `NOT_ALIVE_NO_WRITERS → ALIVE`
+//!    transitions since the first sample of this instance.
+//! 6. `sample_rank`: number of samples in the same instance that follow
+//!    this one in the cache (spec §2.2.2.5.1.5).
+//! 7. `generation_rank`: difference in generation counts between this
+//!    sample and the last sample of the instance in the same read set.
+//! 8. `absolute_generation_rank`: like `generation_rank`, but relative
+//!    to the **current** generation count.
+//! 9. `source_timestamp`: wall-clock time of the write operation.
+//! 10. `instance_handle`: local handle of the instance (key-based).
+//! 11. `publication_handle`: local handle of the sending DataWriter.
+//! 12. `valid_data`: `false` for dispose/unregister markers without
+//!     payload (spec §2.2.2.5.1.13).
 //!
-//! Hinweis: die Spec listet `valid_data` als 12. Feld; einige Texte
-//! zaehlen es nicht mit, daher findet man sowohl "11" als auch "12"
-//! Felder in der Doku. Wir tragen alle.
+//! Note: the spec lists `valid_data` as the 12th field; some texts do
+//! not count it, so you will find both "11" and "12" fields in the
+//! documentation. We carry all of them.
 
 extern crate alloc;
 
 use crate::instance_handle::{HANDLE_NIL, InstanceHandle};
 use crate::time::Time;
 
-/// `SampleStateKind` (DDS 1.4 §2.2.2.5.1.1) — pro Reader gepflegt.
+/// `SampleStateKind` (DDS 1.4 §2.2.2.5.1.1) — maintained per reader.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum SampleStateKind {
-    /// Sample wurde noch nie via `read`/`take` an die Application
-    /// uebergeben.
+    /// Sample has never been delivered to the application via
+    /// `read`/`take`.
     NotRead,
-    /// Sample wurde schon mindestens einmal via `read` ausgeliefert
-    /// (nach `take` ist es weg, daher relevant nur fuer `read`).
+    /// Sample has already been delivered at least once via `read`
+    /// (after `take` it is gone, so this only matters for `read`).
     Read,
 }
 
 impl SampleStateKind {
-    /// `true` wenn dies ein noch ungelesenes Sample ist.
+    /// `true` if this is an as-yet-unread sample.
     #[must_use]
     pub const fn is_not_read(&self) -> bool {
         matches!(self, Self::NotRead)
@@ -63,13 +63,13 @@ impl Default for SampleStateKind {
     }
 }
 
-/// `ViewStateKind` (DDS 1.4 §2.2.2.5.1.2) — pro Instanz gepflegt.
+/// `ViewStateKind` (DDS 1.4 §2.2.2.5.1.2) — maintained per instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ViewStateKind {
-    /// Erstes Sample dieser Instanz (oder erstes nach
+    /// First sample of this instance (or first after
     /// `NOT_ALIVE_NO_WRITERS → ALIVE`).
     New,
-    /// Reader hat fuer diese Instanz schon Samples ausgeliefert.
+    /// Reader has already delivered samples for this instance.
     NotNew,
 }
 
@@ -79,26 +79,26 @@ impl Default for ViewStateKind {
     }
 }
 
-/// `InstanceStateKind` (DDS 1.4 §2.2.2.5.1.3) — pro Instanz gepflegt.
+/// `InstanceStateKind` (DDS 1.4 §2.2.2.5.1.3) — maintained per instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum InstanceStateKind {
-    /// Mindestens ein DataWriter hat die Instanz registriert und sie
-    /// wurde nicht disposed.
+    /// At least one DataWriter has registered the instance and it has
+    /// not been disposed.
     Alive,
-    /// Mindestens ein DataWriter hat die Instanz disposed.
+    /// At least one DataWriter has disposed the instance.
     NotAliveDisposed,
-    /// Alle DataWriter, die die Instanz registriert hatten, haben
-    /// `unregister_instance` aufgerufen oder sind weg.
+    /// All DataWriters that had registered the instance have called
+    /// `unregister_instance` or are gone.
     NotAliveNoWriters,
 }
 
 impl InstanceStateKind {
-    /// `true` wenn die Instanz noch lebt.
+    /// `true` if the instance is still alive.
     #[must_use]
     pub const fn is_alive(&self) -> bool {
         matches!(self, Self::Alive)
     }
-    /// `true` wenn die Instanz entweder disposed oder no-writers ist.
+    /// `true` if the instance is either disposed or no-writers.
     #[must_use]
     pub const fn is_not_alive(&self) -> bool {
         !self.is_alive()
@@ -111,28 +111,28 @@ impl Default for InstanceStateKind {
     }
 }
 
-/// Bitmask-Maske fuer Sample-State-Filter in `read`/`take`-Calls
+/// Bitmask for sample-state filtering in `read`/`take` calls
 /// (DDS 1.4 §2.2.2.5.1.4 `SampleStateMask`).
 pub mod sample_state_mask {
     /// `NOT_READ` only.
     pub const NOT_READ: u32 = 1 << 0;
     /// `READ` only.
     pub const READ: u32 = 1 << 1;
-    /// `READ | NOT_READ` — beide.
+    /// `READ | NOT_READ` — both.
     pub const ANY: u32 = NOT_READ | READ;
 }
 
-/// Bitmask-Maske fuer View-State-Filter (§2.2.2.5.1.4 `ViewStateMask`).
+/// Bitmask for view-state filtering (§2.2.2.5.1.4 `ViewStateMask`).
 pub mod view_state_mask {
     /// `NEW`.
     pub const NEW: u32 = 1 << 0;
     /// `NOT_NEW`.
     pub const NOT_NEW: u32 = 1 << 1;
-    /// Beide.
+    /// Both.
     pub const ANY: u32 = NEW | NOT_NEW;
 }
 
-/// Bitmask-Maske fuer Instance-State-Filter (§2.2.2.5.1.4
+/// Bitmask for instance-state filtering (§2.2.2.5.1.4
 /// `InstanceStateMask`).
 pub mod instance_state_mask {
     /// `ALIVE`.
@@ -143,19 +143,18 @@ pub mod instance_state_mask {
     pub const NOT_ALIVE_NO_WRITERS: u32 = 1 << 2;
     /// `NOT_ALIVE_DISPOSED | NOT_ALIVE_NO_WRITERS`.
     pub const NOT_ALIVE: u32 = NOT_ALIVE_DISPOSED | NOT_ALIVE_NO_WRITERS;
-    /// Alle drei.
+    /// All three.
     pub const ANY: u32 = ALIVE | NOT_ALIVE;
 }
 
-/// `SampleInfo` (DDS 1.4 §2.2.2.5.1) — Metadaten pro Sample.
+/// `SampleInfo` (DDS 1.4 §2.2.2.5.1) — per-sample metadata.
 ///
-/// Wird vom DataReader im `take`/`read`-Pfad gefuellt. Application-
-/// Code soll sich auf diese Felder verlassen, um:
-/// * neue Samples vs. wiederholt gelesene zu unterscheiden
-///   (`sample_state`),
-/// * neue Instanzen zu erkennen (`view_state == NEW`),
-/// * Lifecycle-Events zu sehen (`instance_state`, `valid_data == false`),
-/// * Reordering / Generations-Wechsel zu folgen (`*_generation_count`,
+/// Filled by the DataReader in the `take`/`read` path. Application
+/// code is meant to rely on these fields to:
+/// * distinguish new samples from re-read ones (`sample_state`),
+/// * detect new instances (`view_state == NEW`),
+/// * observe lifecycle events (`instance_state`, `valid_data == false`),
+/// * follow reordering / generation changes (`*_generation_count`,
 ///   `*_rank`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SampleInfo {
@@ -165,30 +164,30 @@ pub struct SampleInfo {
     pub view_state: ViewStateKind,
     /// Instance-State (`ALIVE` / `NOT_ALIVE_*`).
     pub instance_state: InstanceStateKind,
-    /// Wieviele Mal die Instanz `NOT_ALIVE_DISPOSED → ALIVE` durchlaufen
-    /// hat seit ihrem ersten Sample.
+    /// How many times the instance has gone through `NOT_ALIVE_DISPOSED → ALIVE`
+    /// since its first sample.
     pub disposed_generation_count: i32,
-    /// Wieviele Mal die Instanz `NOT_ALIVE_NO_WRITERS → ALIVE`
-    /// durchlaufen hat seit ihrem ersten Sample.
+    /// How many times the instance has gone through `NOT_ALIVE_NO_WRITERS → ALIVE`
+    /// since its first sample.
     pub no_writers_generation_count: i32,
-    /// Anzahl Samples in derselben Instanz, die nach diesem im Cache
-    /// stehen (§2.2.2.5.1.5).
+    /// Number of samples in the same instance that follow this one in
+    /// the cache (§2.2.2.5.1.5).
     pub sample_rank: i32,
-    /// Differenz `generation_count` zwischen diesem und dem letzten
-    /// Sample der Instanz im selben Read-Set.
+    /// Difference in `generation_count` between this sample and the last
+    /// sample of the instance in the same read set.
     pub generation_rank: i32,
-    /// Differenz `generation_count` zwischen diesem und dem **aktuellen**
-    /// Generation-Count.
+    /// Difference in `generation_count` between this sample and the
+    /// **current** generation count.
     pub absolute_generation_rank: i32,
-    /// Wall-Clock-Zeitpunkt des `write`/`dispose`/`unregister`.
+    /// Wall-clock time of the `write`/`dispose`/`unregister`.
     pub source_timestamp: Time,
-    /// Lokaler Handle der Instanz.
+    /// Local handle of the instance.
     pub instance_handle: InstanceHandle,
-    /// Lokaler Handle des sendenden DataWriters (im offline / unbekannten
-    /// Fall `HANDLE_NIL`).
+    /// Local handle of the sending DataWriter (`HANDLE_NIL` in the
+    /// offline / unknown case).
     pub publication_handle: InstanceHandle,
-    /// `true` wenn das Sample Nutzdaten enthaelt; `false` bei
-    /// reinem Dispose-/Unregister-Marker (§2.2.2.5.1.13).
+    /// `true` if the sample carries payload; `false` for a plain
+    /// dispose/unregister marker (§2.2.2.5.1.13).
     pub valid_data: bool,
 }
 
@@ -212,8 +211,8 @@ impl Default for SampleInfo {
 }
 
 impl SampleInfo {
-    /// Konstruiert einen Default-Info-Block fuer ein frisches Sample
-    /// einer **neuen** Instanz mit `valid_data = true`.
+    /// Constructs a default info block for a fresh sample of a **new**
+    /// instance with `valid_data = true`.
     #[must_use]
     pub fn new_alive(
         instance: InstanceHandle,
@@ -232,8 +231,8 @@ impl SampleInfo {
         }
     }
 
-    /// Prueft, ob dieses `SampleInfo` durch die uebergebenen
-    /// State-Masks akzeptiert wird (Spec §2.2.2.5.3.1, `read_w_condition`).
+    /// Checks whether this `SampleInfo` is accepted by the given state
+    /// masks (spec §2.2.2.5.3.1, `read_w_condition`).
     #[must_use]
     pub fn matches_states(&self, sample_mask: u32, view_mask: u32, instance_mask: u32) -> bool {
         let sample_bit = match self.sample_state {
@@ -330,13 +329,13 @@ mod tests {
         assert_eq!(info.instance_state, InstanceStateKind::Alive);
     }
 
-    // ---- §2.2.2.5.5 alle 12 SampleInfo-Felder verfuegbar ----
+    // ---- §2.2.2.5.5 all 12 SampleInfo fields available ----
 
     #[test]
     fn sample_info_all_spec_fields_accessible() {
-        // Spec §2.2.2.5.5 listet 12 Felder; alle muessen lesbar +
-        // setzbar sein. Test ueberprueft die Feld-Identitaet via
-        // konkrete Werte.
+        // Spec §2.2.2.5.5 lists 12 fields; all must be readable and
+        // settable. The test verifies field identity via concrete
+        // values.
         let info = SampleInfo {
             sample_state: SampleStateKind::Read,
             view_state: ViewStateKind::NotNew,
@@ -368,9 +367,9 @@ mod tests {
 
     #[test]
     fn sample_info_dispose_marker_has_invalid_data() {
-        // §2.2.2.5.1.13 — Dispose-/Unregister-Marker hat valid_data=false.
-        // Negativ: ein Sample mit valid_data=false hat keine Nutzdaten,
-        // der Caller MUSS sample.data nicht auswerten.
+        // §2.2.2.5.1.13 — dispose/unregister marker has valid_data=false.
+        // Negative: a sample with valid_data=false has no payload; the
+        // caller MUST NOT evaluate sample.data.
         let info = SampleInfo {
             valid_data: false,
             instance_state: InstanceStateKind::NotAliveDisposed,
@@ -382,8 +381,8 @@ mod tests {
 
     #[test]
     fn sample_info_three_state_dimensions_independent() {
-        // Spec §2.2.2.5.1 — drei orthogonale State-Dimensionen.
-        // matches_states muss auf jede einzeln filtern.
+        // Spec §2.2.2.5.1 — three orthogonal state dimensions.
+        // matches_states must filter on each one individually.
         let info = SampleInfo {
             sample_state: SampleStateKind::Read,
             view_state: ViewStateKind::NotNew,
@@ -406,7 +405,7 @@ mod tests {
 
     #[test]
     fn sample_info_generation_rank_starts_zero() {
-        // Default-Sample: alle Generation-Counter 0.
+        // Default sample: all generation counters 0.
         let info = SampleInfo::default();
         assert_eq!(info.disposed_generation_count, 0);
         assert_eq!(info.no_writers_generation_count, 0);

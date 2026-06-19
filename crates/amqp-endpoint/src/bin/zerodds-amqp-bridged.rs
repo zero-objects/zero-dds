@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// `zerodds-amqp-bridged` — DDS↔AMQP-1.0-Bridge-Daemon (Client-Modus).
+// `zerodds-amqp-bridged` — DDS↔AMQP-1.0 bridge daemon (client mode).
 //
-// Spec: `docs/specs/zerodds-amqp-bridge-daemon-1.0.md`. Implementiert
-// die L1-L4-Pflichtschicht: AMQP-1.0-Client connect zu Broker
-// (RabbitMQ, ActiveMQ, Qpid, Solace, Azure-ServiceBus), Container/
-// Session/Link-Lifecycle, YAML-Config-Loader, CLI-Surface §2.
+// Spec: `docs/specs/zerodds-amqp-bridge-daemon-1.0.md`. Implements the
+// mandatory L1-L4 layer: AMQP-1.0 client connect to a broker
+// (RabbitMQ, ActiveMQ, Qpid, Solace, Azure ServiceBus), container/
+// session/link lifecycle, YAML config loader, CLI surface §2.
 //
-// L5 (TLS+SASL) und L6 (Multi-Tenant) sind als FUTURE-Hooks markiert.
+// L5 (TLS+SASL) and L6 (multi-tenant) are marked as FUTURE hooks.
 
 #![allow(
     clippy::expect_used,
@@ -248,16 +248,16 @@ fn run() -> Result<(), DaemonError> {
     let shutdown = Arc::new(AtomicBool::new(false));
     let reload = Arc::new(AtomicBool::new(false));
 
-    // Metrics-Registry + Standard-Counter (§8.2 Prometheus).
+    // Metrics registry + standard counters (§8.2 Prometheus).
     let registry = Arc::new(Registry::new());
     let metrics = BridgeMetrics::register(&registry);
 
-    // Signal-Watcher (§9.2 Graceful Shutdown).
+    // Signal watcher (§9.2 graceful shutdown).
     if let Err(e) = install_signal_watcher(Arc::clone(&shutdown), Arc::clone(&reload)) {
         eprintln!("{{\"event\":\"signal_watcher_init_failed\",\"err\":\"{e}\"}}");
     }
 
-    // Admin-Endpoint (§5.2 Catalog/Healthz + §8.2 Metrics).
+    // Admin endpoint (§5.2 catalog/healthz + §8.2 metrics).
     let admin_handle = if let Some(addr_s) = metrics_addr_for(&metrics_cli, &cfg) {
         match addr_s.parse::<std::net::SocketAddr>() {
             Ok(sa) => {
@@ -296,7 +296,7 @@ fn run() -> Result<(), DaemonError> {
         None
     };
 
-    // OTLP-Exporter (§8.3).
+    // OTLP exporter (§8.3).
     let _otlp_handle = if let Some(otlp_cfg) = otlp_config_from_env(SERVICE_NAME) {
         let exp = Arc::new(OtlpExporter::new(otlp_cfg));
         spawn_otlp_flush_loop(exp, Arc::clone(&shutdown), Duration::from_secs(5)).ok()
@@ -304,12 +304,12 @@ fn run() -> Result<(), DaemonError> {
         None
     };
 
-    // FUTURE (L2): DcpsRuntime::start(domain, …) — DDS-Side. Im
-    // L1-L4-Pflichtumfang reicht der AMQP-Wire-Pump.
+    // FUTURE (L2): DcpsRuntime::start(domain, …) — DDS side. For the
+    // mandatory L1-L4 scope the AMQP wire pump is sufficient.
 
     let res = bridge_loop(&cfg, shutdown.clone(), once, connect_timeout_ms, &metrics);
 
-    // Setze healthy auf false beim Drop, damit /healthz 503 zurueckliefert.
+    // Set healthy to false on drop so that /healthz returns 503.
     if let Some((_h, healthy)) = admin_handle {
         healthy.store(false, Ordering::SeqCst);
     }

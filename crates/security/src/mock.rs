@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Mock-Plugins fuer Tests.
+//! Mock plugins for tests.
 //!
-//! Die Mocks akzeptieren **jeden** Peer und simulieren einen
-//! Handshake in genau zwei Schritten. Niemals fuer Produktion — sie
-//! liefern keine echte Crypto.
+//! The mocks accept **every** peer and simulate a
+//! handshake in exactly two steps. Never for production — they
+//! provide no real crypto.
 //!
-//! Zweck:
-//! 1. Das SPI-Interface gegen einen tatsaechlich funktionierenden Flow
-//!    validieren (Signature-Checks, Handshake-State-Machine).
-//! 2. DCPS-Layer kann ab v1.4 gegen den Mock sub-testen, bevor der
-//!    Produktions-Plugin fertig ist.
+//! Purpose:
+//! 1. Validate the SPI interface against an actually working flow
+//!    (signature checks, handshake state machine).
+//! 2. From v1.4 on the DCPS layer can sub-test against the mock before the
+//!    production plugin is finished.
 //!
 //! zerodds-lint: allow no_dyn_in_safe
-//! (Tests instanziieren `Box<dyn AuthenticationPlugin>`.)
+//! (tests instantiate `Box<dyn AuthenticationPlugin>`.)
 
 extern crate alloc;
 
@@ -40,7 +40,7 @@ use crate::properties::PropertyList;
 // MockAuthenticationPlugin
 // ============================================================================
 
-/// Mock-Implementation — akzeptiert alles, Handshake-Step-Count
+/// Mock implementation — accepts everything, handshake step count
 /// hard-coded.
 #[derive(Debug, Default)]
 pub struct MockAuthenticationPlugin {
@@ -49,15 +49,15 @@ pub struct MockAuthenticationPlugin {
 }
 
 impl MockAuthenticationPlugin {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     fn next_id(&self) -> u64 {
-        // `fetch_add` auf AtomicU64 — kein `&mut self` benoetigt,
-        // daher koennen `validate_*` read-only-Semantik implizieren.
+        // `fetch_add` on AtomicU64 — no `&mut self` needed,
+        // so `validate_*` can imply read-only semantics.
         self.next_handle.fetch_add(1, Ordering::Relaxed) + 1
     }
 }
@@ -86,7 +86,7 @@ impl AuthenticationPlugin for MockAuthenticationPlugin {
         _replier: IdentityHandle,
     ) -> SecurityResult<(HandshakeHandle, HandshakeStepOutcome)> {
         let h = HandshakeHandle(self.next_id());
-        // Mock-Handshake: Request-Token ist ein Fixtext.
+        // Mock handshake: the request token is a fixed text.
         Ok((
             h,
             HandshakeStepOutcome::SendMessage {
@@ -104,12 +104,12 @@ impl AuthenticationPlugin for MockAuthenticationPlugin {
         if request_token != b"MOCK-REQUEST" {
             return Err(SecurityError::new(
                 SecurityErrorKind::AuthenticationFailed,
-                "mock: unerwartetes Request-Token",
+                "mock: unexpected request token",
             ));
         }
         let h = HandshakeHandle(self.next_id());
-        // Reply-Token, nach dessen Empfang der Initiator den Handshake
-        // abschliessen kann.
+        // Reply token, on receipt of which the initiator can complete
+        // the handshake.
         Ok((
             h,
             HandshakeStepOutcome::SendMessage {
@@ -129,7 +129,7 @@ impl AuthenticationPlugin for MockAuthenticationPlugin {
             return Ok(HandshakeStepOutcome::Complete { secret });
         }
         if token == b"MOCK-FINAL-ACK" {
-            // Replier-Seite abgeschlossen.
+            // Replier side completed.
             let secret = self
                 .handshakes
                 .get(&handshake)
@@ -139,7 +139,7 @@ impl AuthenticationPlugin for MockAuthenticationPlugin {
         }
         Err(SecurityError::new(
             SecurityErrorKind::AuthenticationFailed,
-            "mock: unbekanntes handshake-token",
+            "mock: unknown handshake token",
         ))
     }
 
@@ -147,7 +147,7 @@ impl AuthenticationPlugin for MockAuthenticationPlugin {
         self.handshakes.get(&handshake).copied().ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "mock: handshake-handle unbekannt",
+                "mock: handshake handle unknown",
             )
         })
     }
@@ -158,17 +158,17 @@ impl AuthenticationPlugin for MockAuthenticationPlugin {
 }
 
 // ============================================================================
-// MockAccessControlPlugin — jedes Topic erlaubt (Permit-Everything).
+// MockAccessControlPlugin — every topic allowed (permit-everything).
 // ============================================================================
 
-/// Mock-Access-Control: erlaubt alles. Nur fuer Tests.
+/// Mock access control: allows everything. Tests only.
 #[derive(Debug, Default)]
 pub struct MockAccessControlPlugin {
     next_handle: AtomicU64,
 }
 
 impl MockAccessControlPlugin {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -239,10 +239,10 @@ impl AccessControlPlugin for MockAccessControlPlugin {
 }
 
 // ============================================================================
-// MockLoggingPlugin — sammelt Events in einem Vec fuer Test-Assertions
+// MockLoggingPlugin — collects events in a Vec for test assertions
 // ============================================================================
 
-/// Ein Log-Eintrag — fuer Test-Assertions gesammelt.
+/// A log entry — collected for test assertions.
 #[cfg(feature = "std")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MockLogEntry {
@@ -256,12 +256,12 @@ pub struct MockLogEntry {
     pub message: String,
 }
 
-/// Shared Sink-Typ — `Arc<Mutex<Vec<MockLogEntry>>>`.
+/// Shared sink type — `Arc<Mutex<Vec<MockLogEntry>>>`.
 #[cfg(feature = "std")]
 pub type MockLogSink = std::sync::Arc<std::sync::Mutex<Vec<MockLogEntry>>>;
 
-/// Mock-Logger: sammelt alle Events in einem `MockLogSink`, damit Tests
-/// die Events nachtraeglich inspizieren koennen.
+/// Mock logger: collects all events in a `MockLogSink` so tests
+/// can inspect the events afterwards.
 #[cfg(feature = "std")]
 pub struct MockLoggingPlugin {
     sink: MockLogSink,
@@ -269,7 +269,7 @@ pub struct MockLoggingPlugin {
 
 #[cfg(feature = "std")]
 impl MockLoggingPlugin {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(sink: MockLogSink) -> Self {
         Self { sink }
@@ -295,19 +295,19 @@ impl LoggingPlugin for MockLoggingPlugin {
 }
 
 // ============================================================================
-// MockDataTaggingPlugin — minimaler Tag-Store fuer Tests
+// MockDataTaggingPlugin — minimal tag store for tests
 // ============================================================================
 
-/// Mock-DataTagging-Plugin: speichert Tag-Listen pro Endpoint-GUID in
-/// einer In-Memory-Map. Liefert auf Unknown-GUID einen leeren Vec
-/// (Spec-konformer Default).
+/// Mock DataTagging plugin: stores tag lists per endpoint GUID in
+/// an in-memory map. Returns an empty Vec for an unknown GUID
+/// (spec-compliant default).
 #[derive(Debug, Default)]
 pub struct MockDataTaggingPlugin {
     tags: BTreeMap<[u8; 16], Vec<DataTag>>,
 }
 
 impl MockDataTaggingPlugin {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -339,7 +339,7 @@ mod tests {
 
     #[test]
     fn mock_authentication_end_to_end_handshake() {
-        // Zwei Plugins simulieren zwei Participants.
+        // Two plugins simulate two participants.
         let mut alice = MockAuthenticationPlugin::new();
         let mut bob = MockAuthenticationPlugin::new();
 
@@ -364,16 +364,16 @@ mod tests {
             .expect("request");
         let request_token = match outcome1 {
             HandshakeStepOutcome::SendMessage { token } => token,
-            other => panic!("erwartet SendMessage, got {other:?}"),
+            other => panic!("expected SendMessage, got {other:?}"),
         };
 
-        // Bob antwortet.
+        // Bob answers.
         let (bob_h, outcome2) = bob
             .begin_handshake_reply(bob_id, alice_remote_at_bob, &request_token)
             .expect("reply");
         let reply_token = match outcome2 {
             HandshakeStepOutcome::SendMessage { token } => token,
-            other => panic!("erwartet SendMessage, got {other:?}"),
+            other => panic!("expected SendMessage, got {other:?}"),
         };
 
         // Alice verarbeitet Reply → Complete.
@@ -382,16 +382,16 @@ mod tests {
             .expect("proc");
         let alice_secret = match outcome3 {
             HandshakeStepOutcome::Complete { secret } => secret,
-            other => panic!("erwartet Complete, got {other:?}"),
+            other => panic!("expected Complete, got {other:?}"),
         };
 
-        // Bob-Seite: final-ack abschliessen.
+        // Bob side: complete the final-ack.
         let outcome4 = bob
             .process_handshake(bob_h, b"MOCK-FINAL-ACK")
             .expect("proc bob");
         assert!(matches!(outcome4, HandshakeStepOutcome::Complete { .. }));
 
-        // Secret-Handle auf Alice-Seite ist queryable.
+        // The secret handle on Alice's side is queryable.
         let fetched = alice.shared_secret(alice_h).expect("fetch");
         assert_eq!(fetched, alice_secret);
     }

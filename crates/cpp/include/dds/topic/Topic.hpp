@@ -55,9 +55,9 @@ class Topic : public TopicDescription {
 public:
     /// Default-konstruiert ein leeres Topic-Handle.
     Topic() = default;
-    /// Konstruiert ein Topic via Participant + Name. QoS = Default.
+    /// Constructs a topic via Participant + Name. QoS = default.
     Topic(::dds::domain::DomainParticipant& dp, const std::string& name);
-    /// Konstruiert ein Topic via Participant + Name + QoS.
+    /// Constructs a topic via Participant + Name + QoS.
     Topic(::dds::domain::DomainParticipant& dp, const std::string& name,
           const ::dds::core::TopicQos& qos);
 

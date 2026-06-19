@@ -1,8 +1,8 @@
-Beispiele
-=========
+Examples
+========
 
-Im Verzeichnis ``crates/py/examples/`` stehen drei selbst-laufende
-Skripte. Jedes wird ueber ``python examples/NN_foo.py`` gestartet.
+The ``crates/py/examples/`` directory contains three self-running
+scripts. Each is started via ``python examples/NN_foo.py``.
 
 01 — Bytes-Pub/Sub
 ------------------
@@ -18,7 +18,7 @@ Skripte. Jedes wird ueber ``python examples/NN_foo.py`` gestartet.
    :language: python
    :linenos:
 
-03 — Eigener IDL-Typ per ``@idl_struct``
+03 — Custom IDL type via ``@idl_struct``
 -----------------------------------------
 
 .. literalinclude:: ../examples/03_idl_struct_cdr.py
@@ -28,14 +28,14 @@ Skripte. Jedes wird ueber ``python examples/NN_foo.py`` gestartet.
 ROS2-Interop
 ------------
 
-Wenn ``ros2``-Python installiert ist, kann man eine zerodds-Publisher
-gegen einen ROS2-``std_msgs/String``-Subscriber laufen lassen, solange
-der IDL-Decorator den korrekten ``typename`` traegt::
+If ``ros2`` Python is installed, you can run a zerodds publisher
+against a ROS2 ``std_msgs/String`` subscriber, as long as
+the IDL decorator carries the correct ``typename``::
 
    @idl_struct(typename="std_msgs::msg::String")
    @dataclass
    class StdMsgsString:
        data: str
 
-Der volle ROS2-IDL-Subset (``geometry_msgs``, ``sensor_msgs``) kommt
-ueber den IDL→Python-Dataclass-Generator wenn dieser aktiviert wird.
+The full ROS2 IDL subset (``geometry_msgs``, ``sensor_msgs``) comes
+via the IDL→Python dataclass generator when that is enabled.

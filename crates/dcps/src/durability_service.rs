@@ -1,35 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Durability-Service Storage-Backend (Spec §2.2.3.5 + §2.2.3.4
-//! TRANSIENT/PERSISTENT-Pfad).
+//! Durability-service storage backend (Spec §2.2.3.5 + §2.2.3.4
+//! TRANSIENT/PERSISTENT path).
 //!
-//! In DDS sind die Durability-Stufen wie folgt charakterisiert
-//! (Spec §2.2.3.4 Tab. 16):
-//! * `VOLATILE`: keine History fuer Late-Joiner.
-//! * `TRANSIENT_LOCAL`: Writer-History bis Disconnect.
-//! * `TRANSIENT`: separater Storage-Service haelt die History
-//!   ueber Writer-Lifetime; ueberlebt aber NICHT den Service-Crash.
-//! * `PERSISTENT`: wie TRANSIENT, aber Disk-persistent.
+//! In DDS the durability levels are characterized as follows (Spec
+//! §2.2.3.4 Tab. 16):
+//! * `VOLATILE`: no history for late joiners.
+//! * `TRANSIENT_LOCAL`: writer history until disconnect.
+//! * `TRANSIENT`: a separate storage service holds the history beyond
+//!   the writer lifetime, but does NOT survive a service crash.
+//! * `PERSISTENT`: like TRANSIENT, but disk-persistent.
 //!
-//! Dieses Modul implementiert die Backend-Abstraktion fuer
-//! TRANSIENT + PERSISTENT. Der RTPS-Pfad fuettert es im
-//! Writer-DataPath (`runtime.rs::handle_user_publish`) und
-//! konsumiert es beim Late-Joiner-Match (zusaetzlich zur
-//! Writer-eigenen TRANSIENT_LOCAL-History).
+//! This module implements the backend abstraction for TRANSIENT +
+//! PERSISTENT. The RTPS path feeds it in the writer data path
+//! (`runtime.rs::handle_user_publish`) and consumes it on late-joiner
+//! match (in addition to the writer's own TRANSIENT_LOCAL history).
 //!
-//! Architektur:
+//! Architecture:
 //!
-//! 1. [`DurabilityBackend`] — Trait mit `store`, `replay_for_topic`,
+//! 1. [`DurabilityBackend`] — trait with `store`, `replay_for_topic`,
 //!    `cleanup_after_delay`.
-//! 2. [`InMemoryDurabilityBackend`] — Default fuer TRANSIENT-Kind.
-//! 3. [`OnDiskDurabilityBackend`] — fuer PERSISTENT-Kind, persistiert
-//!    auf einer Verzeichnis-Hierarchie (eine Datei pro `(topic,
-//!    instance, sequence)`).
+//! 2. [`InMemoryDurabilityBackend`] — default for the TRANSIENT kind.
+//! 3. [`OnDiskDurabilityBackend`] — for the PERSISTENT kind, persists
+//!    on a directory hierarchy (one file per `(topic, instance,
+//!    sequence)`).
 //!
-//! Beide Backends respektieren `DurabilityServiceQosPolicy`:
-//! `service_cleanup_delay` (Wartezeit nach `unregister` bevor die
-//! Instance entfernt wird), `history_kind`/`history_depth` (Cap pro
-//! Instance), `max_samples`/`max_instances`/`max_samples_per_instance`.
+//! Both backends respect `DurabilityServiceQosPolicy`:
+//! `service_cleanup_delay` (wait time after `unregister` before the
+//! instance is removed), `history_kind`/`history_depth` (cap per
+//! instance), `max_samples`/`max_instances`/`max_samples_per_instance`.
 
 extern crate alloc;
 
@@ -48,46 +47,46 @@ use zerodds_qos::policies::resource_limits::LENGTH_UNLIMITED;
 
 use crate::error::{DdsError, Result};
 
-/// Stable Sample-Slot in der Durability-History.
+/// Stable sample slot in the durability history.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DurabilitySample {
-    /// Topic-Name.
+    /// Topic name.
     pub topic: String,
-    /// Instance-KeyHash.
+    /// Instance KeyHash.
     pub instance_key: [u8; 16],
-    /// Sequence-Number (Writer-vergeben, monoton).
+    /// Sequence number (writer-assigned, monotonic).
     pub sequence: u64,
-    /// Encoded Payload (XCDR2 Body).
+    /// Encoded payload (XCDR2 body).
     pub payload: Vec<u8>,
-    /// Erzeugungszeitpunkt (Wall-Clock).
+    /// Creation timestamp (wall clock).
     pub created_at: SystemTime,
 }
 
-/// Trait fuer Durability-Storage-Backends. Beide Implementationen
-/// (in-memory + on-disk) erfuellen das gleiche Interface, damit der
-/// Runtime-Pfad sie austauschen kann.
+/// Trait for durability storage backends. Both implementations
+/// (in-memory + on-disk) satisfy the same interface so the runtime
+/// path can swap them.
 pub trait DurabilityBackend: Send + Sync {
-    /// Persistiert ein Sample.
+    /// Persists a sample.
     ///
     /// # Errors
-    /// `OutOfResources` bei ueberschrittenen `max_samples`-Caps;
-    /// I/O-Fehler bei On-Disk-Backends.
+    /// `OutOfResources` when the `max_samples` caps are exceeded;
+    /// I/O error for on-disk backends.
     fn store(&self, sample: DurabilitySample) -> Result<()>;
 
-    /// Liefert alle gespeicherten Samples fuer ein Topic in der
-    /// Reihenfolge ihrer Sequence-Number (sortiert pro Instance).
+    /// Returns all stored samples for a topic in order of their
+    /// sequence number (sorted per instance).
     ///
     /// # Errors
-    /// I/O-Fehler bei On-Disk-Backends.
+    /// I/O error for on-disk backends.
     fn replay_for_topic(&self, topic: &str) -> Result<Vec<DurabilitySample>>;
 
-    /// Markiert eine Instance als `unregister`, sodass nach
-    /// `service_cleanup_delay` die zugehoerigen Samples entfernt
-    /// werden. `now` ist die aktuelle Wall-Clock; das eigentliche
-    /// Loeschen passiert spaeter via [`Self::cleanup`].
+    /// Marks an instance as `unregister` so that its associated
+    /// samples are removed after `service_cleanup_delay`. `now` is the
+    /// current wall clock; the actual deletion happens later via
+    /// [`Self::cleanup`].
     ///
     /// # Errors
-    /// I/O-Fehler bei On-Disk-Backends.
+    /// I/O error for on-disk backends.
     fn unregister_instance(
         &self,
         topic: &str,
@@ -95,31 +94,31 @@ pub trait DurabilityBackend: Send + Sync {
         now: SystemTime,
     ) -> Result<()>;
 
-    /// Loescht alle Instanzen, deren `unregister`-Zeitpunkt + Cleanup-
-    /// Delay vor `now` liegt. Liefert die Anzahl entfernter Instanzen.
+    /// Deletes all instances whose `unregister` timestamp + cleanup
+    /// delay is before `now`. Returns the number of removed instances.
     ///
     /// # Errors
-    /// I/O-Fehler bei On-Disk-Backends.
+    /// I/O error for on-disk backends.
     fn cleanup(&self, now: SystemTime) -> Result<usize>;
 }
 
-/// Helper: Service-Cleanup-Delay aus QoS in `core::time::Duration`.
+/// Helper: service cleanup delay from QoS into `core::time::Duration`.
 ///
-/// QoS-Duration speichert `fraction` als `2^-32 s`, nicht als Nanos.
+/// QoS Duration stores `fraction` as `2^-32 s`, not as nanos.
 fn cleanup_delay(qos: &DurabilityServiceQosPolicy) -> CoreDuration {
     let secs = u64::try_from(qos.service_cleanup_delay.seconds.max(0)).unwrap_or(0);
-    // fraction (2^-32 s) → Nanosekunden
+    // fraction (2^-32 s) → nanoseconds
     let frac = u64::from(qos.service_cleanup_delay.fraction);
     let nanos = (frac.saturating_mul(1_000_000_000) >> 32) as u32;
     CoreDuration::new(secs, nanos)
 }
 
-/// Pro-Instance-Slot mit ringbuffer-aehnlicher History.
+/// Per-instance slot with ringbuffer-like history.
 #[derive(Debug, Default, Clone)]
 struct InstanceSlot {
     samples: Vec<DurabilitySample>,
-    /// `unregister`-Zeitpunkt; bei `Some(t)` wird die Instance nach
-    /// `t + service_cleanup_delay` aus dem Backend entfernt.
+    /// `unregister` timestamp; when `Some(t)`, the instance is removed
+    /// from the backend after `t + service_cleanup_delay`.
     unregistered_at: Option<SystemTime>,
 }
 
@@ -131,7 +130,7 @@ impl InstanceSlot {
         history_depth: i32,
         max_samples_per_instance: i32,
     ) -> Result<()> {
-        // History-Kind-Cap.
+        // History-kind cap.
         match history_kind {
             HistoryKind::KeepLast => {
                 let depth_unsigned = if history_depth <= 0 {
@@ -158,7 +157,7 @@ impl InstanceSlot {
     }
 }
 
-/// `(topic, instance_key)`-Lookup-Key.
+/// `(topic, instance_key)` lookup key.
 type Key = (String, [u8; 16]);
 
 #[derive(Debug, Default)]
@@ -167,14 +166,14 @@ struct InMemoryState {
     total_samples: usize,
 }
 
-/// In-Memory-Durability-Backend (Default fuer DurabilityKind::Transient).
+/// In-memory durability backend (default for DurabilityKind::Transient).
 pub struct InMemoryDurabilityBackend {
     qos: DurabilityServiceQosPolicy,
     state: Mutex<InMemoryState>,
 }
 
 impl InMemoryDurabilityBackend {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(qos: DurabilityServiceQosPolicy) -> Self {
         Self {
@@ -183,13 +182,13 @@ impl InMemoryDurabilityBackend {
         }
     }
 
-    /// Anzahl gespeicherter Samples (Diagnose / Tests).
+    /// Number of stored samples (diagnostics / tests).
     #[must_use]
     pub fn len(&self) -> usize {
         self.state.lock().map(|s| s.total_samples).unwrap_or(0)
     }
 
-    /// True wenn keine Samples gespeichert sind.
+    /// True if no samples are stored.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
@@ -204,7 +203,7 @@ impl DurabilityBackend for InMemoryDurabilityBackend {
             .map_err(|_| DdsError::PreconditionNotMet {
                 reason: "in-memory durability backend poisoned",
             })?;
-        // Cap auf max_samples / max_instances.
+        // Cap on max_samples / max_instances.
         if self.qos.max_samples != LENGTH_UNLIMITED
             && g.total_samples >= self.qos.max_samples as usize
         {
@@ -300,21 +299,21 @@ impl DurabilityBackend for InMemoryDurabilityBackend {
 
 // --------------------- On-Disk-Backend (PERSISTENT) ---------------------
 
-/// On-Disk-Durability-Backend (DurabilityKind::Persistent).
+/// On-disk durability backend (DurabilityKind::Persistent).
 ///
-/// Layout: `<root>/<topic>/<hex(instance_key)>/<sequence>.bin` enthaelt
-/// den Encoded-Payload; `<root>/<topic>/<hex(instance_key)>/.unregistered`
-/// markiert den Instance-Cleanup-Zeitpunkt (Unix-Nanos als ASCII).
+/// Layout: `<root>/<topic>/<hex(instance_key)>/<sequence>.bin` holds
+/// the encoded payload; `<root>/<topic>/<hex(instance_key)>/.unregistered`
+/// marks the instance cleanup timestamp (Unix nanos as ASCII).
 pub struct OnDiskDurabilityBackend {
     qos: DurabilityServiceQosPolicy,
     root: PathBuf,
 }
 
 impl OnDiskDurabilityBackend {
-    /// Konstruktor — erzeugt den Root-Pfad falls nicht vorhanden.
+    /// Constructor — creates the root path if it does not exist.
     ///
     /// # Errors
-    /// Filesystem-Fehler beim Anlegen des Roots.
+    /// Filesystem error while creating the root.
     pub fn new<P: Into<PathBuf>>(root: P, qos: DurabilityServiceQosPolicy) -> Result<Self> {
         let root = root.into();
         std::fs::create_dir_all(&root).map_err(|e| DdsError::PreconditionNotMet {
@@ -380,7 +379,7 @@ fn io_static_msg(_e: &std::io::Error, msg: &'static str) -> &'static str {
 }
 
 fn sanitize_topic(topic: &str) -> String {
-    // Schraenke auf [A-Za-z0-9_.-] ein, Rest mit '_' ersetzen.
+    // Restrict to [A-Za-z0-9_.-], replacing the rest with '_'.
     topic
         .chars()
         .map(|c| {
@@ -406,7 +405,7 @@ fn hex16(b: &[u8; 16]) -> String {
 
 impl DurabilityBackend for OnDiskDurabilityBackend {
     fn store(&self, sample: DurabilitySample) -> Result<()> {
-        // Caps vorpruefen.
+        // Pre-check caps.
         if self.qos.max_samples != LENGTH_UNLIMITED {
             let total = self.count_total_samples()?;
             if total >= self.qos.max_samples as usize {
@@ -428,7 +427,7 @@ impl DurabilityBackend for OnDiskDurabilityBackend {
         std::fs::create_dir_all(&inst_dir).map_err(|e| DdsError::PreconditionNotMet {
             reason: io_static_msg(&e, "durability backend: mkdir failed"),
         })?;
-        // History-Kind-Cap.
+        // History-kind cap.
         match self.qos.history_kind {
             HistoryKind::KeepLast => {
                 let depth = if self.qos.history_depth <= 0 {
@@ -603,13 +602,13 @@ fn parse_hex16(s: &str) -> Option<[u8; 16]> {
     Some(out)
 }
 
-/// Factory: erzeugt das passende Backend fuer die uebergebene
-/// Durability-Stufe. `root` wird nur fuer Persistent benoetigt.
+/// Factory: creates the appropriate backend for the given durability
+/// level. `root` is only needed for Persistent.
 ///
 /// # Errors
-/// Filesystem-Fehler bei On-Disk-Backend-Initialisierung;
-/// `BadParameter` wenn `kind == Volatile/TransientLocal` (kein
-/// Durability-Service noetig) oder `Persistent` ohne `root`.
+/// Filesystem error during on-disk backend initialization;
+/// `BadParameter` if `kind == Volatile/TransientLocal` (no durability
+/// service needed) or `Persistent` without a `root`.
 pub fn make_backend(
     kind: DurabilityKind,
     qos: DurabilityServiceQosPolicy,
@@ -685,7 +684,7 @@ mod tests {
             b.store(sample("T", 1, i, &i.to_le_bytes())).unwrap();
         }
         let out = b.replay_for_topic("T").unwrap();
-        // Depth=2 → nur letzte 2 sequences
+        // Depth=2 → only the last 2 sequences
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].sequence, 4);
         assert_eq!(out[1].sequence, 5);
@@ -747,10 +746,10 @@ mod tests {
         let t0 = SystemTime::now();
         b.store(sample("T", 1, 1, b"a")).unwrap();
         b.unregister_instance("T", [1u8; 16], t0).unwrap();
-        // Vor Delay: cleanup tut nichts.
+        // Before the delay: cleanup does nothing.
         assert_eq!(b.cleanup(t0 + StdDuration::from_millis(50)).unwrap(), 0);
         assert_eq!(b.replay_for_topic("T").unwrap().len(), 1);
-        // Nach Delay: cleanup entfernt.
+        // After the delay: cleanup removes.
         assert_eq!(b.cleanup(t0 + StdDuration::from_millis(150)).unwrap(), 1);
         assert!(b.replay_for_topic("T").unwrap().is_empty());
     }
@@ -863,7 +862,7 @@ mod tests {
             let b = OnDiskDurabilityBackend::new(&root, keep_all_qos()).unwrap();
             b.store(sample("Pers", 9, 42, b"alive")).unwrap();
         } // drop
-        // Neuer Backend mit gleicher Root-Pfad sieht das Sample.
+        // A new backend with the same root path sees the sample.
         let b2 = OnDiskDurabilityBackend::new(&root, keep_all_qos()).unwrap();
         let out = b2.replay_for_topic("Pers").unwrap();
         assert_eq!(out.len(), 1);

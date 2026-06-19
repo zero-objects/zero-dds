@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Cross-Cutting Daemon-Runtime fuer den AMQP-Daemon.
+//! Cross-cutting daemon runtime for the AMQP daemon.
 //!
 //! Bietet Standard-Counter (§8.2 Prometheus), `/catalog`-/`/healthz`-
 //! /`/metrics`-Endpoint (§5.2), Signal-Watcher (§9.2), OTLP-Exporter
-//! (§8.3) — alle als generische, im Binary-Mainloop wired-up
+//! (§8.3) — all as generic ones, wired up in the binary main loop
 //! Komponenten.
 
 #![allow(clippy::print_stderr)]
@@ -19,12 +19,12 @@ use std::time::Duration;
 use zerodds_monitor::{Counter, Gauge, Labels, Registry};
 use zerodds_observability_otlp::{OtlpConfig, OtlpExporter};
 
-/// Service-Name (verwendet im Catalog + OTel-Resource).
+/// Service name (used in the catalog + OTel resource).
 pub const SERVICE_NAME: &str = "zerodds-amqp-bridged";
 /// Crate-Version.
 pub const SERVICE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Standard-Metric-Set fuer den AMQP-Daemon.
+/// Standard metric set for the AMQP daemon.
 #[derive(Clone)]
 pub struct BridgeMetrics {
     /// Eingehende AMQP-Frames.
@@ -48,7 +48,7 @@ pub struct BridgeMetrics {
 }
 
 impl BridgeMetrics {
-    /// Registriert das Standard-Set.
+    /// Registers the standard set.
     pub fn register(registry: &Registry) -> Self {
         registry.set_help("zerodds_amqp_frames_in_total", "AMQP frames received");
         registry.set_help("zerodds_amqp_frames_out_total", "AMQP frames sent");
@@ -84,7 +84,7 @@ impl BridgeMetrics {
     }
 }
 
-/// Catalog-Topic-Eintrag — Daemon-typ-unabhaengig.
+/// Catalog topic entry — daemon-type-independent.
 #[derive(Clone, Debug)]
 pub struct CatalogTopic {
     /// DDS-Topic-Name.
@@ -107,7 +107,7 @@ pub struct CatalogSnapshot {
 }
 
 impl CatalogSnapshot {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(topics: Vec<CatalogTopic>) -> Self {
         Self {
@@ -117,7 +117,7 @@ impl CatalogSnapshot {
         }
     }
 
-    /// JSON-Render fuer `/catalog`.
+    /// JSON render for `/catalog`.
     #[must_use]
     pub fn render_json(&self) -> String {
         let mut out = String::with_capacity(256 + self.topics.len() * 96);
@@ -393,6 +393,6 @@ pub fn install_signal_watcher(
     _reload_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> std::io::Result<std::thread::JoinHandle<()>> {
     // Windows: signal_hook::iterator nur POSIX. Spawn dummy thread,
-    // shutdown laeuft ueber die normalen socket-close-Pfade.
+    // shutdown runs over the normal socket-close paths.
     Ok(std::thread::spawn(|| {}))
 }

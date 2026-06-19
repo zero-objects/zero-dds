@@ -1,34 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Fehler-Familie des Rust-Codegens.
+//! Error family of the Rust codegen.
 
 use core::fmt;
 
-/// Fehler beim Erzeugen von Rust-Code aus dem IDL-AST.
+/// Error while generating Rust code from the IDL AST.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RustGenError {
-    /// IDL-Konstrukt wird vom Rust-Codegen aktuell nicht unterstuetzt.
+    /// The IDL construct is currently not supported by the Rust codegen.
     ///
-    /// Ist kein Spec-Bug — manche IDL-Features (Fixed, Map, Any, Bitset,
-    /// Bitmask, Valuetype, Interface, Component, Home) sind ausserhalb
-    /// des DDS-DataType-Pfades. Wer DDS-DataTypes generiert braucht sie
-    /// nicht.
+    /// Not a spec bug — some IDL features (Fixed, Map, Any, Bitset,
+    /// Bitmask, Valuetype, Interface, Component, Home) are outside
+    /// the DDS-DataType path. Whoever generates DDS DataTypes does not
+    /// need them.
     Unsupported {
-        /// Konstrukt-Name (z.B. `"fixed"`).
+        /// Construct name (e.g. `"fixed"`).
         what: &'static str,
-        /// Position im IDL-Source (Byte-Offset vom AST-Span).
+        /// Position in the IDL source (byte offset from the AST span).
         at: usize,
     },
-    /// Annotation-Wert konnte nicht ausgewertet werden.
+    /// The annotation value could not be evaluated.
     InvalidAnnotation {
-        /// Annotation-Name (z.B. `"@id"`).
+        /// Annotation name (e.g. `"@id"`).
         name: String,
-        /// Begruendung.
+        /// Reason.
         reason: &'static str,
     },
-    /// Type-Reference konnte nicht aufgeloest werden.
+    /// The type reference could not be resolved.
     UnresolvedType {
-        /// Voll-qualifizierter Name.
+        /// Fully qualified name.
         scoped: String,
     },
 }

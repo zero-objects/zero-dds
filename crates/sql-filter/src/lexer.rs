@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Tokenizer für Content-Filter-Expressions.
+//! Tokenizer for content-filter expressions.
 //!
-//! Alle Keywords case-insensitive. String-Literale: `'...'` mit
-//! `''`-Escape (SQL-92).
+//! All keywords case-insensitive. String literals: `'...'` with
+//! `''` escaping (SQL-92).
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -119,7 +119,7 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
             continue;
         }
 
-        // String-Literal: '...' mit '' -> '.
+        // String literal: '...' with '' -> '.
         if c == b'\'' {
             let mut s = String::new();
             let mut j = i + 1;
@@ -175,19 +175,19 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
             if saw_dot || saw_exp {
                 let f: f64 = slice
                     .parse()
-                    .map_err(|_| LexError(alloc::format!("kein Float: '{slice}'")))?;
+                    .map_err(|_| LexError(alloc::format!("not a float: '{slice}'")))?;
                 out.push(Token::FloatLit(f));
             } else {
                 let n: i64 = slice
                     .parse()
-                    .map_err(|_| LexError(alloc::format!("kein Integer: '{slice}'")))?;
+                    .map_err(|_| LexError(alloc::format!("not an integer: '{slice}'")))?;
                 out.push(Token::IntLit(n));
             }
             i = j;
             continue;
         }
 
-        // Identifier oder Keyword. Erlaubt: [A-Za-z_][A-Za-z0-9_.]*
+        // Identifier or keyword. Allowed: [A-Za-z_][A-Za-z0-9_.]*
         if c.is_ascii_alphabetic() || c == b'_' {
             let mut j = i + 1;
             while j < bytes.len() {

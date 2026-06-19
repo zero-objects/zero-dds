@@ -2,8 +2,8 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Submessage-Header (DDSI-RTPS 2.5 §8.3.4).
 //!
-//! Jedes Submessage in einem RTPS-Datagram beginnt mit einem 4-Byte-
-//! Header:
+//! Every submessage in an RTPS datagram begins with a 4-byte
+//! header:
 //!
 //! ```text
 //!   0                   1                   2                   3
@@ -13,14 +13,14 @@
 //!  +---------------+---------------+---------------+---------------+
 //! ```
 //!
-//! `flags` traegt mindestens das **E-Flag** (Bit 0) fuer Endianness
-//! des Submessage-Bodies (1 = LE, 0 = BE). `octetsToNextHeader` ist
-//! die Body-Laenge in Bytes; `0` markiert ein Last-Submessage-Spezial-
-//! Verhalten (siehe Spec §8.3.4.2).
+//! `flags` carries at least the **E flag** (bit 0) for the endianness
+//! of the submessage body (1 = LE, 0 = BE). `octetsToNextHeader` is
+//! the body length in bytes; `0` marks a last-submessage special
+//! behavior (see Spec §8.3.4.2).
 
 use crate::error::WireError;
 
-/// Submessage-IDs, die in Phase 0 unterstuetzt sind. Werte aus
+/// Submessage IDs supported in phase 0. Values from
 /// Spec-Tabelle 8.13.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -42,16 +42,16 @@ pub enum SubmessageId {
 }
 
 impl SubmessageId {
-    /// Roher Wire-Wert.
+    /// Raw wire value.
     #[must_use]
     pub fn as_u8(self) -> u8 {
         self as u8
     }
 
-    /// Konvertiert ein Byte. Unbekannte IDs sind erlaubt — Spec
-    /// fordert, dass Reader unbekannte Submessages **skippen** (via
-    /// `octetsToNextHeader`). Dafuer nutzen wir die UnknownSubmessageId-
-    /// Variante des Errors nur bei expliziter Validation.
+    /// Converts a byte. Unknown IDs are allowed — the spec
+    /// requires readers to **skip** unknown submessages (via
+    /// `octetsToNextHeader`). For that we use the UnknownSubmessageId
+    /// variant of the error only on explicit validation.
     ///
     /// # Errors
     /// `UnknownSubmessageId`.
@@ -81,13 +81,13 @@ pub const FLAG_E_LITTLE_ENDIAN: u8 = 0x01;
 /// Submessage-Header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SubmessageHeader {
-    /// ID der Submessage-Klasse.
+    /// ID of the submessage class.
     pub submessage_id: SubmessageId,
-    /// Flag-Byte (Bit 0 = E = Little-Endian-Body; weitere Bits
-    /// submessage-spezifisch).
+    /// Flag byte (bit 0 = E = little-endian body; further bits
+    /// submessage-specific).
     pub flags: u8,
-    /// Body-Laenge in Bytes. `0` hat Spezial-Bedeutung (siehe
-    /// Spec §8.3.4.2): Reader liest "bis Ende des Datagrams".
+    /// Body length in bytes. `0` has special meaning (see
+    /// Spec §8.3.4.2): the reader reads "to the end of the datagram".
     pub octets_to_next_header: u16,
 }
 
@@ -95,15 +95,15 @@ impl SubmessageHeader {
     /// Wire-Size: 4 Bytes.
     pub const WIRE_SIZE: usize = 4;
 
-    /// `true`, wenn das E-Flag gesetzt ist (LE-Body).
+    /// `true` if the E flag is set (LE body).
     #[must_use]
     pub fn is_little_endian(self) -> bool {
         (self.flags & FLAG_E_LITTLE_ENDIAN) != 0
     }
 
-    /// LE-Encoder. `octets_to_next_header` wird mit der durch
-    /// `is_little_endian()` gegebenen Endianness geschrieben — der
-    /// Sub-Header selbst nutzt dieselbe Endianness wie sein Body
+    /// LE encoder. `octets_to_next_header` is written with the endianness
+    /// given by `is_little_endian()` — the
+    /// sub-header itself uses the same endianness as its body
     /// (Spec §8.3.4.1).
     #[must_use]
     pub fn to_bytes(self) -> [u8; 4] {
@@ -119,7 +119,7 @@ impl SubmessageHeader {
         out
     }
 
-    /// Decoded einen 4-Byte-Slice.
+    /// Decodes a 4-byte slice.
     ///
     /// # Errors
     /// `UnexpectedEof`, `UnknownSubmessageId`.

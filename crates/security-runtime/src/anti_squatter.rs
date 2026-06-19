@@ -1,73 +1,73 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! GUID-zu-Identity-Bindings-Cache (C3.8).
+//! GUID-to-identity bindings cache (C3.8).
 //!
-//! Spec DDS-Security 1.2 §7.4.3 (Identity-Cert-Bind), §9.3.1 + §10.3.4:
-//! ein boeswilliger Peer kann eine fremde GUID schadhaft "squatting"
-//! versuchen, indem er SPDP-Beacons mit gleicher `GuidPrefix` aber
-//! abweichendem IdentityToken sendet. Ohne Bindings-Tracking wuerde
-//! der Peer-Cache den Squatter genauso behandeln wie den legitimen
-//! Original-Peer und im SEDP-Match-Verfahren beginnt eine Confusion-
-//! Phase, die ein DoS-/Cred-Exfil-Vektor ist.
+//! Spec DDS-Security 1.2 §7.4.3 (identity-cert bind), §9.3.1 + §10.3.4:
+//! a malicious peer can attempt to maliciously "squat" a foreign GUID
+//! by sending SPDP beacons with the same `GuidPrefix` but a
+//! differing IdentityToken. Without bindings tracking the
+//! peer cache would treat the squatter exactly like the legitimate
+//! original peer, and in the SEDP match procedure a confusion
+//! phase begins which is a DoS / cred-exfil vector.
 //!
-//! Der `IdentityBindingCache` hier merkt sich pro `GuidPrefix` den
-//! Hash des **erstmals gesehenen** IdentityToken. Bei nachfolgenden
-//! Announces mit gleicher GuidPrefix wird der Hash neu berechnet und
-//! verglichen — Mismatch fuehrt zur Ablehnung.
+//! The `IdentityBindingCache` here remembers, per `GuidPrefix`, the
+//! hash of the **first-seen** IdentityToken. On subsequent
+//! announces with the same GuidPrefix the hash is recomputed and
+//! compared — a mismatch leads to rejection.
 //!
-//! # Was hier nicht gemacht wird
+//! # What is not done here
 //!
-//! - **Identity-zu-GUID-Ableitung**: Spec §9.3.1.1 erlaubt eine
-//!   deterministische Bindung GuidPrefix = Hash(Cert-Public-Key). Das
-//!   ist eine staerkere Garantie, kommt aber erst mit dem vollen PKI-
-//!   Handshake-Pfad (C3.1).
-//! - **Time-bounded Re-Binding**: ein Peer der seine Identity-Cert
-//!   rotiert (OCSP-revoked → neues Cert) braucht ein Re-Binding-Path.
-//!   Aktuell muss er aus dem Cache evicted werden, dann re-discovered
-//!   wird er mit der neuen Bindung akzeptiert. Optionale Spec-Sektion
-//!   §10.3.3.2 OCSP — kommt mit C3.9.
+//! - **Identity-to-GUID derivation**: spec §9.3.1.1 allows a
+//!   deterministic binding GuidPrefix = Hash(cert public key). That
+//!   is a stronger guarantee but only arrives with the full PKI
+//!   handshake path (C3.1).
+//! - **Time-bounded re-binding**: a peer that rotates its identity cert
+//!   (OCSP-revoked → new cert) needs a re-binding path.
+//!   Currently it must be evicted from the cache, then once re-discovered
+//!   it is accepted with the new binding. Optional spec section
+//!   §10.3.3.2 OCSP — arrives with C3.9.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-/// SHA-256 wuerde es auch tun, aber wir wollen keine zusaetzliche
-/// Crypto-Dep im Cache-Layer. Statt Hash speichern wir den
-/// vollstaendigen Token-Bytes — der ist im Worst-Case ~ 1 KiB pro Peer
-/// und der Cache haelt typisch < 1000 Peers. Bei Ueberlauf trim'd der
-/// Caller (siehe [`IdentityBindingCache::with_capacity`]).
+/// SHA-256 would also do, but we don't want an additional
+/// crypto dep in the cache layer. Instead of a hash we store the
+/// full token bytes — worst case ~ 1 KiB per peer
+/// and the cache typically holds < 1000 peers. On overflow the
+/// caller trims (see [`IdentityBindingCache::with_capacity`]).
 type IdentityFingerprint = Vec<u8>;
 
-/// 12-byte `GuidPrefix` aus DDSI-RTPS (Wire-Layout).
+/// 12-byte `GuidPrefix` from DDSI-RTPS (wire layout).
 pub type GuidPrefixBytes = [u8; 12];
 
-/// Cache der ersten beobachteten Identity-Bindung pro `GuidPrefix`.
+/// Cache of the first observed identity binding per `GuidPrefix`.
 #[derive(Debug, Default)]
 pub struct IdentityBindingCache {
     bindings: BTreeMap<GuidPrefixBytes, IdentityFingerprint>,
     capacity: usize,
 }
 
-/// Bewertung eines neuen IdentityToken-Announces durch den Cache.
+/// Evaluation of a new IdentityToken announce by the cache.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BindingDecision {
-    /// Erste Bindung — aufgenommen.
+    /// First binding — recorded.
     NewBinding,
-    /// Bindung existiert und passt — der Peer ist konsistent.
+    /// The binding exists and matches — the peer is consistent.
     Reaffirmed,
-    /// **Konflikt** — gleiche GuidPrefix, abweichendes IdentityToken.
-    /// Der ankommende Announce muss abgelehnt werden.
+    /// **Conflict** — same GuidPrefix, differing IdentityToken.
+    /// The incoming announce must be rejected.
     SquatterRejected {
-        /// Bytes des bisher gespeicherten Fingerprints (zum Logging).
+        /// Bytes of the previously stored fingerprint (for logging).
         previous: Vec<u8>,
     },
-    /// Cache ist voll und der Peer ist neu — Caller entscheidet
-    /// (Eviction-Strategie, sonst Reject).
+    /// The cache is full and the peer is new — the caller decides
+    /// (eviction strategy, otherwise reject).
     CapacityExhausted,
 }
 
 impl IdentityBindingCache {
-    /// Cache mit unlimitierter Kapazitaet (default fuer Tests).
+    /// Cache with unlimited capacity (default for tests).
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -76,9 +76,9 @@ impl IdentityBindingCache {
         }
     }
 
-    /// Cache mit explizitem Cap (DoS-Schutz). Bei Erreichen liefert
-    /// [`Self::observe`] `CapacityExhausted` und der Caller muss
-    /// evictieren oder ablehnen.
+    /// Cache with an explicit cap (DoS protection). On reaching it,
+    /// [`Self::observe`] returns `CapacityExhausted` and the caller must
+    /// evict or reject.
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
@@ -87,21 +87,21 @@ impl IdentityBindingCache {
         }
     }
 
-    /// Aktuelle Anzahl der Bindings.
+    /// Current number of bindings.
     #[must_use]
     pub fn len(&self) -> usize {
         self.bindings.len()
     }
 
-    /// True wenn keine Bindings im Cache sind.
+    /// True if there are no bindings in the cache.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.bindings.is_empty()
     }
 
-    /// Beobachtet eine GuidPrefix-zu-IdentityToken-Bindung.
-    /// `identity_token_bytes` ist der **rohe CDR-DataHolder-Blob** aus
-    /// dem `PID_IDENTITY_TOKEN`-Wert (siehe C3.5).
+    /// Observes a GuidPrefix-to-IdentityToken binding.
+    /// `identity_token_bytes` is the **raw CDR DataHolder blob** from
+    /// the `PID_IDENTITY_TOKEN` value (see C3.5).
     pub fn observe(
         &mut self,
         guid_prefix: GuidPrefixBytes,
@@ -124,15 +124,15 @@ impl IdentityBindingCache {
         BindingDecision::NewBinding
     }
 
-    /// Entfernt eine Bindung — z.B. wenn ein Peer evicted wurde nach
-    /// Lease-Timeout oder OCSP-Revoke. Erlaubt dem Peer, mit neuer
-    /// Identity zurueck-zu-discoveren.
+    /// Removes a binding — e.g. when a peer was evicted after a
+    /// lease timeout or OCSP revoke. Allows the peer to re-discover
+    /// with a new identity.
     pub fn evict(&mut self, guid_prefix: &GuidPrefixBytes) -> bool {
         self.bindings.remove(guid_prefix).is_some()
     }
 
-    /// Liest den aktuellen Fingerprint zu einer GuidPrefix (fuer Audit/
-    /// Logging).
+    /// Reads the current fingerprint for a GuidPrefix (for audit/
+    /// logging).
     #[must_use]
     pub fn fingerprint_for(&self, guid_prefix: &GuidPrefixBytes) -> Option<&[u8]> {
         self.bindings.get(guid_prefix).map(Vec::as_slice)
@@ -176,7 +176,7 @@ mod tests {
             }
             other => panic!("expected SquatterRejected, got {other:?}"),
         }
-        // Cache hat den Original-Fingerprint behalten.
+        // The cache kept the original fingerprint.
         assert_eq!(c.fingerprint_for(&px(0xAA)), Some(&b"identity-token-A"[..]));
     }
 
@@ -225,8 +225,8 @@ mod tests {
     fn capacity_cap_still_allows_reaffirm() {
         let mut c = IdentityBindingCache::with_capacity(1);
         c.observe(px(0x01), b"a");
-        // Cache ist voll, aber re-affirm eines bekannten Peers darf
-        // weiter funktionieren.
+        // The cache is full, but re-affirming a known peer must
+        // keep working.
         assert_eq!(c.observe(px(0x01), b"a"), BindingDecision::Reaffirmed);
     }
 
@@ -234,8 +234,8 @@ mod tests {
     fn capacity_cap_still_detects_squatter() {
         let mut c = IdentityBindingCache::with_capacity(1);
         c.observe(px(0x01), b"a");
-        // Cache ist voll. Bekannter Prefix mit anderem Token ist
-        // weiterhin Squatter — nicht "CapacityExhausted".
+        // The cache is full. A known prefix with a different token is
+        // still a squatter — not "CapacityExhausted".
         match c.observe(px(0x01), b"b") {
             BindingDecision::SquatterRejected { .. } => {}
             other => panic!("expected SquatterRejected, got {other:?}"),

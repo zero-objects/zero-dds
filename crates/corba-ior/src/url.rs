@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `corbaloc:` und `corbaname:` URL-Parser — Spec §13.6.10.
+//! `corbaloc:` and `corbaname:` URL parsers — spec §13.6.10.
 //!
 //! ## `corbaloc:`
 //! ```text
 //! corbaloc:[iiop]:1.2@host:port/<object_key_str>
-//! corbaloc:rir:/<object_key_str>           // referenziert Default-ORB
+//! corbaloc:rir:/<object_key_str>           // references the default ORB
 //! corbaloc::host:port/<object_key_str>     // protocol implicit IIOP
 //! ```
 //!
-//! `<object_key_str>` ist eine ASCII-Form des Object-Keys mit
-//! `%XX`-Encoding fuer non-printable.
+//! `<object_key_str>` is an ASCII form of the object key with
+//! `%XX` encoding for non-printable bytes.
 //!
 //! ## `corbaname:`
 //! ```text
 //! corbaname:[iiop]:1.2@host:port/<object_key>#<stringified_name>
 //! ```
 //!
-//! Erweitert `corbaloc:` um eine NamingContext-Lookup-Spezifikation
-//! im Fragment-Teil.
+//! Extends `corbaloc:` with a NamingContext lookup specification
+//! in the fragment part.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -28,43 +28,43 @@ use zerodds_corba_iiop::IiopVersion;
 
 use crate::error::{IorError, IorResult};
 
-/// Eine `corbaloc:`-Adresse — Liste alternativer Endpoints.
+/// A `corbaloc:` address — list of alternative endpoints.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CorbalocAddress {
-    /// Protokoll-Endpoints (typisch IIOP).
+    /// Protocol endpoints (typically IIOP).
     pub endpoints: Vec<CorbalocEndpoint>,
-    /// Object-Key in seiner Roh-Octet-Form (nach `%XX`-Decoding).
+    /// Object key in its raw octet form (after `%XX` decoding).
     pub object_key: Vec<u8>,
 }
 
-/// Ein Endpoint innerhalb einer `corbaloc:`-Adresse.
+/// An endpoint within a `corbaloc:` address.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CorbalocEndpoint {
-    /// Protokoll-Identifier (`iiop`/`rir`/Vendor).
+    /// Protocol identifier (`iiop`/`rir`/vendor).
     pub protocol: String,
-    /// IIOP-Version (default 1.0 wenn nicht angegeben).
+    /// IIOP version (defaults to 1.0 if not given).
     pub iiop_version: IiopVersion,
-    /// Host (leer bei `rir:`).
+    /// Host (empty for `rir:`).
     pub host: String,
-    /// Port (Default 2809 fuer IIOP wenn nicht angegeben).
+    /// Port (defaults to 2809 for IIOP if not given).
     pub port: u16,
 }
 
-/// Eine `corbaname:`-Adresse — `corbaloc:`-Adresse plus
-/// Naming-Context-Pfad.
+/// A `corbaname:` address — `corbaloc:` address plus
+/// naming-context path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CorbanameAddress {
-    /// Endpoint + Object-Key des NamingContext.
+    /// Endpoint + object key of the NamingContext.
     pub address: CorbalocAddress,
-    /// Stringified-Name (Naming-Service-Pfad).
+    /// Stringified name (naming-service path).
     pub stringified_name: String,
 }
 
-/// Parsiert eine `corbaloc:`-URL.
+/// Parses a `corbaloc:` URL.
 ///
 /// # Errors
-/// `InvalidUrlScheme`, `InvalidCorbalocAddress`, oder `InvalidHexChar`
-/// im Object-Key-Decoding.
+/// `InvalidUrlScheme`, `InvalidCorbalocAddress`, or `InvalidHexChar`
+/// in object-key decoding.
 pub fn parse_corbaloc(url: &str) -> IorResult<CorbalocAddress> {
     let payload = url
         .strip_prefix("corbaloc:")
@@ -72,10 +72,10 @@ pub fn parse_corbaloc(url: &str) -> IorResult<CorbalocAddress> {
     parse_corbaloc_payload(payload)
 }
 
-/// Parsiert eine `corbaname:`-URL.
+/// Parses a `corbaname:` URL.
 ///
 /// # Errors
-/// Wie `parse_corbaloc` plus Fragment-Validierung.
+/// Same as `parse_corbaloc` plus fragment validation.
 pub fn parse_corbaname(url: &str) -> IorResult<CorbanameAddress> {
     let payload = url
         .strip_prefix("corbaname:")
@@ -92,7 +92,7 @@ pub fn parse_corbaname(url: &str) -> IorResult<CorbanameAddress> {
 }
 
 fn parse_corbaloc_payload(payload: &str) -> IorResult<CorbalocAddress> {
-    // Split address-list und object_key am ersten unescaped `/`.
+    // Split the address list and object_key at the first unescaped `/`.
     let (addr_list, key_part) = match payload.split_once('/') {
         Some((a, k)) => (a, k),
         None => {
@@ -129,7 +129,7 @@ fn parse_endpoint(s: &str) -> IorResult<CorbalocEndpoint> {
         Some(i) => (s[..i].to_string(), &s[i + 1..]),
         None => return Err(IorError::InvalidCorbalocAddress(s.into())),
     };
-    // optionale `<major>.<minor>@` IIOP-Version.
+    // optional `<major>.<minor>@` IIOP version.
     let (iiop_version, rest) = match rest.find('@') {
         Some(i) => {
             let v = &rest[..i];
@@ -138,7 +138,7 @@ fn parse_endpoint(s: &str) -> IorResult<CorbalocEndpoint> {
         }
         None => (IiopVersion::V1_0, rest),
     };
-    // host:port — Default-Port 2809 wenn ohne Port (Spec §13.6.10.1).
+    // host:port — default port 2809 when no port is given (spec §13.6.10.1).
     let (host, port) = match rest.rsplit_once(':') {
         Some((h, p)) if !p.is_empty() => (
             h.to_string(),
@@ -169,8 +169,8 @@ fn parse_version(s: &str) -> IorResult<IiopVersion> {
 }
 
 fn decode_object_key(s: &str) -> IorResult<Vec<u8>> {
-    // `%XX`-Hex-Decoding fuer non-printable bytes; printable bytes
-    // bleiben as-is.
+    // `%XX` hex decoding for non-printable bytes; printable bytes
+    // stay as-is.
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;

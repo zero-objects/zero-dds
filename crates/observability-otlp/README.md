@@ -3,22 +3,22 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-observability-otlp/badge.svg)](https://docs.rs/zerodds-observability-otlp)
 
-OTLP/HTTP/JSON-Exporter fuer [ZeroDDS](https://zerodds.org) —
-buffered Span/Histogram/Event-Push an einen OpenTelemetry-Collector
-ohne `prost`/`tonic`/`hyper`-Dep. Safety classification: **STANDARD**.
+OTLP/HTTP/JSON exporter for [ZeroDDS](https://zerodds.org) —
+buffered span/histogram/event push to an OpenTelemetry collector
+without a `prost`/`tonic`/`hyper` dep. Safety classification: **STANDARD**.
 
 ## Spec-Mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| ZeroDDS-Observability-OTLP 1.0 | §1 (Architektur), §2.1-§2.3 (Endpoints), §3 (Konfiguration), §4 (Lifecycle), §5 (Bridge zu monitor::Registry) |
+| ZeroDDS-Observability-OTLP 1.0 | §1 (architecture), §2.1-§2.3 (endpoints), §3 (configuration), §4 (lifecycle), §5 (bridge to monitor::Registry) |
 | OpenTelemetry Protocol 1.4 | OTLP/HTTP/JSON Encoding |
 
 ## Was ist drin
 
 - **`OtlpExporter`** — Buffered Span/Histogram/Event-Sammler mit `flush()`-getriggertem Batch-POST.
 - **`OtlpConfig`** — Host/Port/Service-Name/Service-Version/Timeout (Defaults: 127.0.0.1:4318).
-- **Drei Endpoints:** `/v1/traces`, `/v1/metrics`, `/v1/logs` als JSON.
+- **Three endpoints:** `/v1/traces`, `/v1/metrics`, `/v1/logs` as JSON.
 - **`ExportError`** — Io / HttpStatus / Poisoned.
 
 ## Schichten-Position
@@ -47,14 +47,14 @@ let span = Span {
 exp.add_span(span);
 exp.add_histogram(Histogram::new("dds.write.latency"));
 
-// Periodisch (z.B. alle 5s)
+// Periodically (e.g. every 5s)
 let _ = exp.flush();
 ```
 
 ## Stabilitaet
 
-`1.0.0-rc.1`. Wire-Format an OTel-Spec v1.4 angelehnt — Aenderung
-durch upstream-OTel ist Major-Bump.
+`1.0.0-rc.1`. Wire format modeled on OTel spec v1.4 — a change
+driven by upstream OTel is a major bump.
 
 ## Tests
 
@@ -66,7 +66,7 @@ cargo test -p zerodds-observability-otlp
 
 Apache-2.0.
 
-## Siehe auch
+## See also
 
 - [`docs/specs/zerodds-observability-otlp-1.0.md`](../../docs/specs/zerodds-observability-otlp-1.0.md)
 - [`zerodds-monitor`](../monitor) — Counter/Gauge/Histogram-Registry + Prometheus-Exporter.

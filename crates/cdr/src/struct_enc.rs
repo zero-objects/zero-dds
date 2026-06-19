@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Struct-Encoding mit Extensibility (W3, XCDR2 §7.4.3, §7.4.5).
+//! Struct encoding with extensibility (W3, XCDR2 §7.4.3, §7.4.5).
 //!
-//! XCDR2 kennt drei Struct-Layouts:
+//! XCDR2 has three struct layouts:
 //!
-//! - **`@final`**: tight-packed, kein Header. Members in deklarierter
-//!   Reihenfolge. Reader und Writer muessen die Member-Liste exakt
-//!   teilen — keine forward/backward compatibility.
-//! - **`@appendable`**: 4-byte **DHEADER** (uint32 = Byte-Laenge des
-//!   Bodys nach dem Header) + tight-packed Members. Forward-Kompatibel:
-//!   Reader kann Bytes nach den bekannten Members ueberspringen.
-//! - **`@mutable`**: Pro Member ein **EMHEADER** + Wert. EMHEADER =
-//!   `uint32` mit Member-ID + Length-Code. Backward-/forward-kompatibel
-//!   durch Member-ID-basierte Zuordnung.
+//! - **`@final`**: tight-packed, no header. Members in declared order.
+//!   Reader and writer must share the member list exactly — no
+//!   forward/backward compatibility.
+//! - **`@appendable`**: 4-byte **DHEADER** (uint32 = byte length of the
+//!   body after the header) + tight-packed members. Forward-compatible:
+//!   the reader can skip bytes after the known members.
+//! - **`@mutable`**: one **EMHEADER** + value per member. EMHEADER =
+//!   `uint32` with member ID + length code. Backward/forward-compatible
+//!   through member-ID-based matching.
 //!
-//! Helpers für alle 3 Modi mit klassischem 2-pass Encoder (inner
-//! Buffer für Body, dann Header + Body in outer). Length-Codes:
-//! LC0..LC7 vollständig implementiert (Default-Konstruktor `LC4`
-//! Variable-Length mit separatem `uint32` NEXTINT; LC0..LC3 kompakte
-//! 1/2/4/8-byte ohne NEXTINT; LC5..LC7 sequence/array-spezifisch).
+//! Helpers for all 3 modes with a classic 2-pass encoder (inner buffer
+//! for the body, then header + body into the outer one). Length codes:
+//! LC0..LC7 fully implemented (default constructor `LC4` variable-length
+//! with a separate `uint32` NEXTINT; LC0..LC3 compact 1/2/4/8-byte
+//! without NEXTINT; LC5..LC7 sequence/array-specific).
 //!
-//! Alignment: Body-Inhalt eines DHEADER-/EMHEADER-Frames startet bei
-//! Offset 0 relativ zum Body-Start (XCDR2 §7.4.3.4.5).
+//! Alignment: the body content of a DHEADER/EMHEADER frame starts at
+//! offset 0 relative to the body start (XCDR2 §7.4.3.4.5).
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -33,17 +33,20 @@ use crate::error::{DecodeError, EncodeError};
 // @appendable
 // ============================================================================
 
-/// Encoded eine `@appendable`-Struktur. Der Body wird in einen inneren
-/// Buffer geschrieben, dann Length + Body in den Outer-Writer.
+/// Encodes an `@appendable` struct. The body is written into an inner
+/// buffer, then length + body into the outer writer.
 ///
 /// # Errors
-/// Encoder-Fehler aus dem Body oder `ValueOutOfRange`, wenn der Body
-/// `u32::MAX` Bytes ueberschreitet.
+/// Encoder error from the body, or `ValueOutOfRange` if the body
+/// exceeds `u32::MAX` bytes.
 pub fn encode_appendable<F>(writer: &mut BufferWriter, body: F) -> Result<(), EncodeError>
 where
     F: FnOnce(&mut BufferWriter) -> Result<(), EncodeError>,
 {
-    let mut inner = BufferWriter::new(writer.endianness());
+    // The inner body inherits the parent's alignment cap (XCDR2=4) —
+    // otherwise a 64-bit member inside the DHEADER body would re-align to 8.
+    let mut inner =
+        BufferWriter::new(writer.endianness()).with_max_alignment(writer.max_alignment());
     body(&mut inner)?;
     let bytes = inner.into_bytes();
     let len = u32::try_from(bytes.len()).map_err(|_| EncodeError::ValueOutOfRange {
@@ -54,14 +57,14 @@ where
     Ok(())
 }
 
-/// Decoded eine `@appendable`-Struktur. Liest die DHEADER-Length, baut
-/// einen Sub-Reader auf den Body und uebergibt ihn an `body`. Der
-/// Sub-Reader erlaubt dem Body, weniger Bytes zu konsumieren als
-/// announced — ungenutzte Bytes werden uebersprungen.
+/// Decodes an `@appendable` struct. Reads the DHEADER length, builds a
+/// sub-reader over the body, and hands it to `body`. The sub-reader lets
+/// the body consume fewer bytes than announced — unused bytes are
+/// skipped.
 ///
 /// # Errors
-/// Decoder-Fehler aus dem Body oder `LengthExceeded`/`UnexpectedEof`,
-/// wenn die Length nicht in den Stream passt.
+/// Decoder error from the body, or `LengthExceeded`/`UnexpectedEof` if
+/// the length does not fit in the stream.
 pub fn decode_appendable<T, F>(reader: &mut BufferReader<'_>, body: F) -> Result<T, DecodeError>
 where
     F: FnOnce(&mut BufferReader<'_>) -> Result<T, DecodeError>,
@@ -75,7 +78,10 @@ where
         });
     }
     let body_bytes = reader.read_bytes(len)?;
-    let mut sub = BufferReader::new(body_bytes, reader.endianness());
+    // The inner body inherits the alignment cap (XCDR2=4) — symmetric to
+    // the encode side, otherwise the reader skips wrong 64-bit padding.
+    let mut sub = BufferReader::new(body_bytes, reader.endianness())
+        .with_max_alignment(reader.max_alignment());
     body(&mut sub)
 }
 
@@ -83,7 +89,7 @@ where
 // @mutable
 // ============================================================================
 
-/// Length-Code-Variante (XTypes 1.3 §7.4.3.4.2). WP 1.A: alle 8 LCs.
+/// Length-code variant (XTypes 1.3 §7.4.3.4.2). WP 1.A: all 8 LCs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum LengthCode {
@@ -97,16 +103,16 @@ pub enum LengthCode {
     Lc3 = 3,
     /// Variable-length body, NEXTINT (uint32) = body length in bytes.
     Lc4 = 4,
-    /// Variable-length aggregate, NEXTINT = body length INKL. DHEADER.
+    /// Variable-length aggregate, NEXTINT = body length INCLUDING DHEADER.
     Lc5 = 5,
-    /// Array of 4-Byte-Primitives, NEXTINT = #Elemente, body = `4 + 4*N`.
+    /// Array of 4-byte primitives, NEXTINT = element count, body = `4 + 4*N`.
     Lc6 = 6,
-    /// Array of 8-Byte-Primitives, NEXTINT = #Elemente, body = `4 + 8*N`.
+    /// Array of 8-byte primitives, NEXTINT = element count, body = `4 + 8*N`.
     Lc7 = 7,
 }
 
 impl LengthCode {
-    /// Body-Laenge in Bytes fuer diesen LC, gegeben der NEXTINT-Wert.
+    /// Body length in bytes for this LC, given the NEXTINT value.
     #[must_use]
     pub fn body_len(self, nextint: u32) -> u64 {
         match self {
@@ -120,13 +126,13 @@ impl LengthCode {
         }
     }
 
-    /// `true` wenn der LC ein NEXTINT-Feld nach dem EMHEADER traegt.
+    /// `true` if the LC carries a NEXTINT field after the EMHEADER.
     #[must_use]
     pub const fn has_nextint(self) -> bool {
         matches!(self, Self::Lc4 | Self::Lc5 | Self::Lc6 | Self::Lc7)
     }
 
-    /// Decode aus dem 3-bit Wire-Feld eines EMHEADER.
+    /// Decode from the 3-bit wire field of an EMHEADER.
     #[must_use]
     pub const fn from_wire(value: u8) -> Option<Self> {
         match value {
@@ -143,10 +149,10 @@ impl LengthCode {
     }
 }
 
-/// Encoded ein `@mutable`-Member mit **LC4** (Default-Universal-Code).
+/// Encodes a `@mutable` member with **LC4** (the default universal code).
 ///
 /// # Errors
-/// Body-Fehler oder Member-ID > 0x0FFF_FFFF.
+/// Body error or member ID > 0x0FFF_FFFF.
 pub fn encode_mutable_member<F>(
     writer: &mut BufferWriter,
     member_id: u32,
@@ -159,11 +165,11 @@ where
     encode_mutable_member_lc(writer, member_id, must_understand, LengthCode::Lc4, body)
 }
 
-/// Encoded ein `@mutable`-Member mit explizitem Length-Code.
+/// Encodes a `@mutable` member with an explicit length code.
 ///
 /// # Errors
-/// `ValueOutOfRange` bei Member-ID-Overflow oder Body-Length-Mismatch
-/// fuer den gewaehlten LC.
+/// `ValueOutOfRange` on member-ID overflow or body-length mismatch for
+/// the chosen LC.
 pub fn encode_mutable_member_lc<F>(
     writer: &mut BufferWriter,
     member_id: u32,
@@ -179,7 +185,10 @@ where
             message: "EMHEADER member_id exceeds 28-bit field",
         });
     }
-    let mut inner = BufferWriter::new(writer.endianness());
+    // The inner body inherits the parent's alignment cap (XCDR2=4) —
+    // otherwise a 64-bit member inside the DHEADER body would re-align to 8.
+    let mut inner =
+        BufferWriter::new(writer.endianness()).with_max_alignment(writer.max_alignment());
     body(&mut inner)?;
     let body_bytes = inner.into_bytes();
     let body_len = body_bytes.len();
@@ -224,9 +233,9 @@ where
             Some(n)
         }
         LengthCode::Lc6 => {
-            // `body_len % 4 != 0` ist aequivalent zu `(body_len - 4) % 4 != 0`
-            // fuer body_len >= 4 (nach dem ersten Check). Eliminiert eine
-            // mathematisch-aequivalente `-4`/`+4`-Mutation.
+            // `body_len % 4 != 0` is equivalent to `(body_len - 4) % 4 != 0`
+            // for body_len >= 4 (after the first check). Eliminates a
+            // mathematically-equivalent `-4`/`+4` mutation.
             if body_len < 4 || body_len % 4 != 0 {
                 return Err(EncodeError::ValueOutOfRange {
                     message: "LC6 body must be DHEADER + 4n bytes",
@@ -239,12 +248,12 @@ where
             Some(n)
         }
         LengthCode::Lc7 => {
-            // body_len < 4: Reject. body_len in {4,12,20,...}: Pass.
-            // body_len in {5,6,7}: Pass body_len % 8 ≠ 0 → Reject. Aber
-            // Boundary-Check muss aufpassen: body_len=8 hat body_len%8=0,
-            // aber (8-4)/8=0.5 ist kein gueltiges n. Wir brauchen
-            // `(body_len - 4) % 8 == 0`, was aequivalent zu
-            // `body_len % 8 == 4` ist.
+            // body_len < 4: reject. body_len in {4,12,20,...}: pass.
+            // body_len in {5,6,7}: body_len % 8 ≠ 0 → reject. But the
+            // boundary check must be careful: body_len=8 has body_len%8=0,
+            // yet (8-4)/8=0.5 is not a valid n. We need
+            // `(body_len - 4) % 8 == 0`, which is equivalent to
+            // `body_len % 8 == 4`.
             if body_len < 4 || body_len % 8 != 4 {
                 return Err(EncodeError::ValueOutOfRange {
                     message: "LC7 body must be DHEADER + 8n bytes",
@@ -260,11 +269,11 @@ where
 
     let m_bit = u32::from(must_understand) << 31;
     let lc_bits = (lc as u32) << 28;
-    // Arithmetic form statt OR: bit-positions ueberlappen nicht
-    // (m_bit=Bit31, lc_bits=Bits 28-30, member_id<=Bits 0-27).
-    // Mathematisch identisch zu `m_bit | lc_bits | member_id`,
-    // aber mutation-detection-freundlicher: `+` vs `^`/`-`/`*`
-    // sind nicht aequivalent zueinander.
+    // Arithmetic form instead of OR: the bit positions don't overlap
+    // (m_bit=bit 31, lc_bits=bits 28-30, member_id<=bits 0-27).
+    // Mathematically identical to `m_bit | lc_bits | member_id`, but
+    // more mutation-detection-friendly: `+` vs `^`/`-`/`*` are not
+    // equivalent to each other.
     let emheader = m_bit + lc_bits + member_id;
     writer.write_u32(emheader)?;
     if let Some(ni) = nextint {
@@ -274,18 +283,18 @@ where
     Ok(())
 }
 
-/// Encoder fuer einen `@mutable`-Struct mit Validierung der
-/// non-optional-Member-Vollstaendigkeit (XTypes 1.3 §7.4.1.2.3).
+/// Encoder for a `@mutable` struct that validates non-optional member
+/// completeness (XTypes 1.3 §7.4.1.2.3).
 ///
-/// Vor jedem Member-Encode wird `member_id` als "emitted" gemerkt; beim
-/// `finish` muss jede in `required_ids` aufgelistete Member-ID emittiert
-/// worden sein, sonst wird `EncodeError::MissingNonOptionalMember`
-/// zurueckgegeben.
+/// Before each member encode, `member_id` is recorded as "emitted"; at
+/// `finish`, every member ID listed in `required_ids` must have been
+/// emitted, otherwise `EncodeError::MissingNonOptionalMember` is
+/// returned.
 ///
-/// Spec-Hintergrund: Eine `EXTENSIBLE` (final/appendable/mutable)-Encode
-/// MUSS alle non-optional Member enthalten. Dieser Validator schliesst
-/// das Encoder-Loch fuer @mutable, weil bei MUTABLE die EMHEADER-Reihenfolge
-/// nicht festliegt und Encoder-Bugs sonst stillschweigend passierten.
+/// Spec background: an `EXTENSIBLE` (final/appendable/mutable) encode
+/// MUST contain all non-optional members. This validator closes the
+/// encoder gap for @mutable, because with MUTABLE the EMHEADER order is
+/// not fixed and encoder bugs would otherwise pass silently.
 pub struct MutableStructEncoder<'a> {
     writer: &'a mut BufferWriter,
     required_ids: Vec<u32>,
@@ -293,9 +302,9 @@ pub struct MutableStructEncoder<'a> {
 }
 
 impl<'a> MutableStructEncoder<'a> {
-    /// Neuer Encoder. `required_ids` ist die Liste der Member-IDs,
-    /// die spec-konform alle emittiert werden MUESSEN (= alle
-    /// non-optional Member des Structs).
+    /// New encoder. `required_ids` is the list of member IDs that, per
+    /// spec, MUST all be emitted (= all non-optional members of the
+    /// struct).
     pub fn new(writer: &'a mut BufferWriter, required_ids: Vec<u32>) -> Self {
         Self {
             writer,
@@ -304,11 +313,11 @@ impl<'a> MutableStructEncoder<'a> {
         }
     }
 
-    /// Member encoden. Verhalten wie `encode_mutable_member`, plus
-    /// Tracking der emittierten ID.
+    /// Encode a member. Behaves like `encode_mutable_member`, plus
+    /// tracking of the emitted ID.
     ///
     /// # Errors
-    /// Wie `encode_mutable_member`.
+    /// Same as `encode_mutable_member`.
     pub fn encode_member<F>(
         &mut self,
         member_id: u32,
@@ -323,10 +332,10 @@ impl<'a> MutableStructEncoder<'a> {
         Ok(())
     }
 
-    /// Member mit explizitem Length-Code.
+    /// Member with an explicit length code.
     ///
     /// # Errors
-    /// Wie `encode_mutable_member_lc`.
+    /// Same as `encode_mutable_member_lc`.
     pub fn encode_member_lc<F>(
         &mut self,
         member_id: u32,
@@ -342,13 +351,12 @@ impl<'a> MutableStructEncoder<'a> {
         Ok(())
     }
 
-    /// Schliesst die Mutable-Sequenz ab und prueft, dass jede in
-    /// `required_ids` aufgelistete Member-ID auch emittiert wurde.
+    /// Finishes the mutable sequence and checks that every member ID
+    /// listed in `required_ids` was emitted.
     ///
     /// # Errors
-    /// `MissingNonOptionalMember { member_id }` mit der ersten
-    /// fehlenden ID (deterministisch in Reihenfolge der `required_ids`-
-    /// Liste).
+    /// `MissingNonOptionalMember { member_id }` with the first missing
+    /// ID (deterministic in the order of the `required_ids` list).
     pub fn finish(self) -> Result<(), EncodeError> {
         for required in &self.required_ids {
             if !self.emitted_ids.contains(required) {
@@ -361,23 +369,23 @@ impl<'a> MutableStructEncoder<'a> {
     }
 }
 
-/// Geparstes EMHEADER + Body-Slice eines `@mutable`-Members.
+/// Parsed EMHEADER + body slice of a `@mutable` member.
 #[derive(Debug, Clone)]
 pub struct MutableMember<'a> {
-    /// 28-bit Member-ID.
+    /// 28-bit member ID.
     pub member_id: u32,
-    /// `must_understand`-Flag.
+    /// `must_understand` flag.
     pub must_understand: bool,
-    /// Length-Code.
+    /// Length code.
     pub length_code: LengthCode,
-    /// Body als unverbrauchter Slice.
+    /// Body as an unconsumed slice.
     pub body: &'a [u8],
 }
 
-/// Liest einen `@mutable`-Member-Eintrag (EMHEADER + NEXTINT + Body).
+/// Reads a `@mutable` member entry (EMHEADER + NEXTINT + body).
 ///
 /// # Errors
-/// `UnexpectedEof` / `LengthExceeded` bei truncated/oversize Body.
+/// `UnexpectedEof` / `LengthExceeded` on a truncated/oversize body.
 pub fn read_mutable_member<'a>(
     reader: &mut BufferReader<'a>,
 ) -> Result<Option<MutableMember<'a>>, DecodeError> {
@@ -422,11 +430,11 @@ pub fn read_mutable_member<'a>(
     }))
 }
 
-/// Aller-Members-eines-`@mutable`-Structs in eine Map sammeln. Erlaubt
-/// dem Caller, Members nach ID zu suchen statt sequenziell zu lesen.
+/// Collect all members of a `@mutable` struct into a list. Lets the
+/// caller look up members by ID instead of reading sequentially.
 ///
 /// # Errors
-/// Wie [`read_mutable_member`].
+/// Same as [`read_mutable_member`].
 pub fn read_all_mutable_members<'a>(
     reader: &mut BufferReader<'a>,
 ) -> Result<Vec<MutableMember<'a>>, DecodeError> {
@@ -438,15 +446,15 @@ pub fn read_all_mutable_members<'a>(
 }
 
 // ============================================================================
-// @final (no-op-Wrapper)
+// @final (no-op wrapper)
 // ============================================================================
 
-/// `@final`-Struct: tight-packed, kein Header. Diese Funktion ist ein
-/// reiner Convenience-Wrapper, damit die 3 Extensibility-Modi
-/// uniforme Aufruf-Sites haben.
+/// `@final` struct: tight-packed, no header. This function is a pure
+/// convenience wrapper so the 3 extensibility modes have uniform call
+/// sites.
 ///
 /// # Errors
-/// Body-Fehler.
+/// Body error.
 pub fn encode_final<F>(writer: &mut BufferWriter, body: F) -> Result<(), EncodeError>
 where
     F: FnOnce(&mut BufferWriter) -> Result<(), EncodeError>,
@@ -454,10 +462,10 @@ where
     body(writer)
 }
 
-/// Decoder-Pendant: einfach den Body aufrufen.
+/// Decoder counterpart: just call the body.
 ///
 /// # Errors
-/// Body-Fehler.
+/// Body error.
 pub fn decode_final<T, F>(reader: &mut BufferReader<'_>, body: F) -> Result<T, DecodeError>
 where
     F: FnOnce(&mut BufferReader<'_>) -> Result<T, DecodeError>,
@@ -537,9 +545,9 @@ mod tests {
 
     #[test]
     fn appendable_decoder_skips_extra_trailing_bytes() {
-        // Schreibe Encoder-Struktur mit 2 Members, aber Decoder liest
-        // nur das erste — der Sub-Reader-Trick wirft die zweiten Bytes
-        // weg ohne Fehler.
+        // Encode a struct with 2 members, but the decoder reads only the
+        // first — the sub-reader trick discards the remaining bytes
+        // without error.
         let mut w = BufferWriter::new(Endianness::Little);
         encode_appendable(&mut w, |w| {
             42u32.encode(w)?;
@@ -552,7 +560,7 @@ mod tests {
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let only_first = decode_appendable(&mut r, u32::decode).unwrap();
         assert_eq!(only_first, 42);
-        // Outer-Reader hat alles konsumiert (DHEADER + komplettem Body).
+        // The outer reader consumed everything (DHEADER + full body).
         assert_eq!(r.remaining(), 0);
     }
 
@@ -583,7 +591,7 @@ mod tests {
         let mut w = BufferWriter::new(Endianness::Little);
         let mut enc = MutableStructEncoder::new(&mut w, vec![1, 2, 3]);
         enc.encode_member(1, false, |w| 42u32.encode(w)).unwrap();
-        // Member 2 wird nicht emittiert — Spec-Verletzung.
+        // Member 2 is not emitted — a spec violation.
         enc.encode_member(3, false, |w| 99u16.encode(w)).unwrap();
         let err = enc.finish().unwrap_err();
         assert_eq!(err, EncodeError::MissingNonOptionalMember { member_id: 2 });
@@ -594,15 +602,15 @@ mod tests {
         let mut w = BufferWriter::new(Endianness::Little);
         let mut enc = MutableStructEncoder::new(&mut w, vec![10, 20, 30]);
         enc.encode_member(20, false, |w| 5u32.encode(w)).unwrap();
-        // 10 und 30 fehlen — Encoder meldet 10 zuerst.
+        // 10 and 30 are missing — the encoder reports 10 first.
         let err = enc.finish().unwrap_err();
         assert_eq!(err, EncodeError::MissingNonOptionalMember { member_id: 10 });
     }
 
     #[test]
     fn mutable_encode_optional_only_with_no_required_succeeds() {
-        // Wenn alle Member optional sind, ist required_ids leer und der
-        // Encoder darf auch null Member emittieren.
+        // If all members are optional, required_ids is empty and the
+        // encoder may emit zero members.
         let mut w = BufferWriter::new(Endianness::Little);
         let enc = MutableStructEncoder::new(&mut w, vec![]);
         enc.finish().unwrap();
@@ -610,7 +618,7 @@ mod tests {
 
     #[test]
     fn mutable_encode_extra_optional_emitted_does_not_break_finish() {
-        // required = [1]; emitted = [1, 99]; OK — 99 ist optional.
+        // required = [1]; emitted = [1, 99]; OK — 99 is optional.
         let mut w = BufferWriter::new(Endianness::Little);
         let mut enc = MutableStructEncoder::new(&mut w, vec![1]);
         enc.encode_member(1, false, |w| 42u32.encode(w)).unwrap();
@@ -796,18 +804,18 @@ mod tests {
 
     #[test]
     fn lc6_lc7_roundtrip_against_cyclone_sample() {
-        // Spec §7.4.3.4.2: LC=6 fuer 4-byte-Element-Arrays; LC=7 fuer
-        // 8-byte-Element-Arrays. Beide Encoder erzeugen dasselbe
-        // Wire-Layout, das Cyclone DDS und FastDDS dekodieren koennen.
-        // Wir verifizieren byte-genau drei Stellen:
-        //   - LC=6 EMHEADER (Bits 30-28 = 110)
-        //   - NEXTINT = element-count (4 byte)
+        // Spec §7.4.3.4.2: LC=6 for 4-byte-element arrays; LC=7 for
+        // 8-byte-element arrays. Both encoders produce the same wire
+        // layout that Cyclone DDS and FastDDS can decode. We verify three
+        // places byte-exactly:
+        //   - LC=6 EMHEADER (bits 30-28 = 110)
+        //   - NEXTINT = element count (4 bytes)
         //   - DHEADER + payload
         let mut w = BufferWriter::new(Endianness::Little);
-        // LC=6 Body-Layout: DHEADER (4) + 4n element-bytes.
-        // 100 u32 Elemente = 400 byte → body_len = 404.
+        // LC=6 body layout: DHEADER (4) + 4n element bytes.
+        // 100 u32 elements = 400 bytes → body_len = 404.
         encode_mutable_member_lc(&mut w, 0xABCD, false, LengthCode::Lc6, |w| {
-            // DHEADER: gibt die Anzahl der Element-Bytes an (400).
+            // DHEADER: gives the number of element bytes (400).
             400u32.encode(w)?;
             for i in 0..100u32 {
                 i.encode(w)?;
@@ -820,12 +828,12 @@ mod tests {
         // EMHEADER: must_understand=0, lc=6, member_id=0xABCD.
         // → 0x6000_ABCD LE = [0xCD, 0xAB, 0x00, 0x60].
         assert_eq!(&bytes[0..4], &[0xCD, 0xAB, 0x00, 0x60]);
-        // NEXTINT = element-count = 100 LE.
+        // NEXTINT = element count = 100 LE.
         assert_eq!(&bytes[4..8], &[100, 0, 0, 0]);
-        // Payload: DHEADER 4 + 100 * 4 = 404 byte ab Offset 8.
+        // Payload: DHEADER 4 + 100 * 4 = 404 bytes starting at offset 8.
         assert_eq!(bytes.len(), 8 + 404);
 
-        // Decoder akzeptiert.
+        // Decoder accepts.
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let m = read_mutable_member(&mut r).unwrap().unwrap();
         assert_eq!(m.length_code, LengthCode::Lc6);
@@ -835,12 +843,12 @@ mod tests {
 
     #[test]
     fn lc6_with_many_elements_decodes_correctly() {
-        // 70_000 Elemente — Encoder schreibt LC=6 mit grossem NEXTINT.
-        // Verifiziert, dass der Decoder den >= u16 NEXTINT korrekt
-        // liest (kein silent-truncate).
+        // 70_000 elements — the encoder writes LC=6 with a large NEXTINT.
+        // Verifies that the decoder reads the >= u16 NEXTINT correctly
+        // (no silent truncation).
         let mut w = BufferWriter::new(Endianness::Little);
         encode_mutable_member_lc(&mut w, 5, false, LengthCode::Lc6, |w| {
-            // DHEADER = element-bytes-count (70_000 * 4 = 280_000).
+            // DHEADER = element byte count (70_000 * 4 = 280_000).
             280_000u32.encode(w)?;
             for i in 0..70_000u32 {
                 i.encode(w)?;
@@ -853,7 +861,7 @@ mod tests {
         assert_eq!(nextint, 70_000);
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let m = read_mutable_member(&mut r).unwrap().unwrap();
-        // body inkl. DHEADER = 4 + 280_000.
+        // body including DHEADER = 4 + 280_000.
         assert_eq!(m.body.len(), 4 + 70_000 * 4);
     }
 
@@ -950,10 +958,10 @@ mod tests {
         assert_eq!((a, b), (42, 100));
     }
 
-    // ---- Mutation-Killer fuer encode_mutable_member_lc ----
+    // ---- Mutation killers for encode_mutable_member_lc ----
 
-    /// Faengt Mutation `>` -> `>=` auf member_id-Boundary (Zeile 176).
-    /// member_id == 0x0FFFFFFF (= 28-bit-MAX) muss DURCHGEHEN.
+    /// Catches the `>` -> `>=` mutation on the member_id boundary.
+    /// member_id == 0x0FFFFFFF (= 28-bit MAX) must PASS.
     #[test]
     fn mutable_member_id_at_28bit_max_accepted() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -966,9 +974,9 @@ mod tests {
         );
     }
 
-    /// Member_id ueber 28-Bit muss ABGELEHNT werden.
-    /// Faengt `>` -> `==` Mutation auf der gleichen Zeile (=> nur exact
-    /// match wuerde erroren, alle hoeheren wuerden Pass werden).
+    /// A member_id above 28 bits must be REJECTED.
+    /// Catches the `>` -> `==` mutation on the same line (=> only an exact
+    /// match would error, all higher values would pass).
     #[test]
     fn mutable_member_id_29bit_rejected() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -978,8 +986,8 @@ mod tests {
         assert!(matches!(res, Err(EncodeError::ValueOutOfRange { .. })));
     }
 
-    /// Faengt Mutation `<` -> `==` auf body_len < 4 in Lc6 (Zeile 226).
-    /// body_len < 4 muss erroren — egal welcher Wert.
+    /// Catches the `<` -> `==` mutation on body_len < 4 in Lc6.
+    /// body_len < 4 must error — regardless of the value.
     #[test]
     fn lc6_body_len_less_than_4_rejected() {
         for short_len in [0usize, 1, 2, 3] {
@@ -994,8 +1002,8 @@ mod tests {
         }
     }
 
-    /// Faengt `<` -> `<=` Mutation: body_len == 4 (DHEADER allein, n=0)
-    /// muss DURCHGEHEN bei Lc6 (4-4=0, 0%4=0).
+    /// Catches the `<` -> `<=` mutation: body_len == 4 (DHEADER alone, n=0)
+    /// must PASS for Lc6 (4-4=0, 0%4=0).
     #[test]
     fn lc6_body_len_exactly_4_accepted() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -1005,9 +1013,9 @@ mod tests {
         assert!(res.is_ok(), "Lc6 body_len=4 must succeed, got {res:?}");
     }
 
-    /// Faengt Mutation `-` -> `+` auf `(body_len - 4) / 4` fuer Lc6.
-    /// nextint muss EXAKT (body_len - 4) / 4 sein, nicht (body_len + 4) / 4.
-    /// body_len=12 → original n=2, mutiert n=4.
+    /// Catches the `-` -> `+` mutation on `(body_len - 4) / 4` for Lc6.
+    /// nextint must be EXACTLY (body_len - 4) / 4, not (body_len + 4) / 4.
+    /// body_len=12 → original n=2, mutated n=4.
     #[test]
     fn lc6_nextint_value_is_minus_4_div_4() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -1025,8 +1033,8 @@ mod tests {
         assert_eq!(nextint, 2, "nextint must be (12-4)/4=2, not (12+4)/4=4");
     }
 
-    /// Lc7-Variante: gleiche Mutationen wie Lc6 mit `% 8` und `/ 8`.
-    /// body_len < 4 muss erroren.
+    /// Lc7 variant: same mutations as Lc6 but with `% 8` and `/ 8`.
+    /// body_len < 4 must error.
     #[test]
     fn lc7_body_len_less_than_4_rejected() {
         for short_len in [0usize, 1, 2, 3] {
@@ -1041,8 +1049,8 @@ mod tests {
         }
     }
 
-    /// Lc7 body_len==4 (DHEADER + 0 elements) muss durchgehen.
-    /// Faengt `<` -> `<=` Mutation.
+    /// Lc7 body_len==4 (DHEADER + 0 elements) must pass.
+    /// Catches the `<` -> `<=` mutation.
     #[test]
     fn lc7_body_len_exactly_4_accepted() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -1053,7 +1061,7 @@ mod tests {
     }
 
     /// Lc7 nextint = (body_len - 4) / 8. body_len=20 → n=2 original,
-    /// n=3 mit `+`-Mutation.
+    /// n=3 with the `+` mutation.
     #[test]
     fn lc7_nextint_value_is_minus_4_div_8() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -1070,10 +1078,10 @@ mod tests {
         assert_eq!(nextint, 2, "nextint must be (20-4)/8=2, not (20+4)/8=3");
     }
 
-    /// Lc6 body_len=8 muss erroren ((8-4)%4=0 ok, also Pass — kein
-    /// Boundary-Fail). Hier Test fuer Lc6 body_len=6: (6-4)%4=2 ≠ 0 → Error.
-    /// Faengt `||` -> `&&` (Zeile 226 wurde nicht direkt missed, aber
-    /// Test fuer Vollstaendigkeit).
+    /// Lc6 body_len=8 must pass ((8-4)%4=0 ok, so pass — no boundary
+    /// fail). Here we test Lc6 body_len=6: (6-4)%4=2 ≠ 0 → error.
+    /// Catches `||` -> `&&` (the line was not directly missed, but this
+    /// test is for completeness).
     #[test]
     fn lc6_misaligned_body_len_rejected() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -1083,7 +1091,7 @@ mod tests {
         assert!(matches!(res, Err(EncodeError::ValueOutOfRange { .. })));
     }
 
-    /// Lc7 misaligned body. Faengt `||` -> `&&` (Zeile 238).
+    /// Lc7 misaligned body. Catches `||` -> `&&`.
     /// body_len=12: (12-4)%8 = 8%8 = 0 ok. Need body_len=10: (10-4)%8 = 6.
     #[test]
     fn lc7_misaligned_body_len_rejected() {
@@ -1094,9 +1102,9 @@ mod tests {
         assert!(matches!(res, Err(EncodeError::ValueOutOfRange { .. })));
     }
 
-    /// EMHEADER must_understand-Bit + LC-Bits werden korrekt gesetzt.
-    /// Faengt `|` -> `^`/`-`/`*` Mutationen auf der EMHEADER-
-    /// Konstruktion (nach Refactor zu `+`).
+    /// EMHEADER must_understand bit + LC bits are set correctly.
+    /// Catches `|` -> `^`/`-`/`*` mutations on the EMHEADER construction
+    /// (after the refactor to `+`).
     #[test]
     fn emheader_combines_must_understand_lc_and_member_id() {
         let mut w = BufferWriter::new(Endianness::Little);

@@ -3,43 +3,43 @@
 
 //! DDS → OPC UA Type Mapping — Spec §9.2.
 //!
-//! Bildet beliebige DDS-XTypes-Typen rekursiv auf OPC-UA-Nodes
-//! (DataType + VariableType + Variable + References) ab. Die Mapping-
-//! Regeln aus §9.2.1-§9.2.8 sind hier vollstaendig:
+//! Maps arbitrary DDS-XTypes types recursively onto OPC-UA nodes
+//! (DataType + VariableType + Variable + References). The mapping
+//! rules from §9.2.1-§9.2.8 are complete here:
 //!
 //! * `§9.2.1 Primitive Types` — Tab 9.1/9.2 (Boolean → Boolean, Int32
 //!   → Int32, ...).
-//! * `§9.2.2 String Types` — String8/String16 als String-Variants.
-//! * `§9.2.3 Enumerated Types` — `<EnumName>DataType` als Enumeration
-//!   mit EnumValues-Property.
+//! * `§9.2.2 String Types` — String8/String16 as string variants.
+//! * `§9.2.3 Enumerated Types` — `<EnumName>DataType` as an enumeration
+//!   with an EnumValues property.
 //! * `§9.2.3 Bitmask Types` (Tab 9.11-9.14) — `<BitmaskName>DataType`
-//!   als OptionSet + Gap-Auffuellung mit `UndefinedPosition_<N>`.
-//! * `§9.2.4 Aggregated Types` (Struct + Union):
-//!   - Struct → DataType + VariableType + HasComponent References.
-//!   - Union → UnionDataType (subtype Union) mit consecutive switch
+//!   as an OptionSet + gap filling with `UndefinedPosition_<N>`.
+//! * `§9.2.4 Aggregated Types` (struct + union):
+//!   - Struct → DataType + VariableType + HasComponent references.
+//!   - Union → UnionDataType (subtype Union) with consecutive switch
 //!     values 1..N.
-//! * `§9.2.5 Collection Types` (Array + Sequence + Map):
-//!   - Array of Primitive/String → Variable mit ValueRank=N≥1.
-//!   - Array of Enum/Bitmask → wie Skalar, aber ValueRank=N.
-//!   - Array of Struct/Union → ValueRank≥1 + HasOrderedComponent
-//!     References pro Element zu `<TypeName>_<index>`-Variables.
-//!   - Sequence — wie Array, aber unbeschraenkt (max bound im
-//!     ArrayDimensions-Wert reflektiert).
-//!   - Map — Tab 9.40/9.41 als Object mit MapEntry-Variables.
-//! * `§9.2.6 Nested Types` — Rekursion: Struct-im-Struct, Sequence-im-
-//!   Map, etc. greifen unveraendert auf den gleichen Walker zu.
-//! * `§9.2.7 Alias Types` — durchsichtig (Walker resolved den Alias).
-//! * `§9.2.8 Keyed Types` — Annotations werden an die DataType-Nodes
-//!   propagiert (Property `IsKey: Boolean[]`).
+//! * `§9.2.5 Collection Types` (array + sequence + map):
+//!   - Array of primitive/string → Variable with ValueRank=N≥1.
+//!   - Array of enum/bitmask → like a scalar, but ValueRank=N.
+//!   - Array of struct/union → ValueRank≥1 + HasOrderedComponent
+//!     references per element to `<TypeName>_<index>` variables.
+//!   - Sequence — like an array, but unbounded (max bound reflected
+//!     in the ArrayDimensions value).
+//!   - Map — Tab 9.40/9.41 as an Object with MapEntry variables.
+//! * `§9.2.6 Nested Types` — recursion: struct-in-struct, sequence-in-
+//!   map, etc. use the same walker unchanged.
+//! * `§9.2.7 Alias Types` — transparent (the walker resolves the alias).
+//! * `§9.2.8 Keyed Types` — annotations are propagated to the DataType
+//!   nodes (property `IsKey: Boolean[]`).
 //!
-//! # Output-Modell
+//! # Output model
 //!
-//! [`NodeSpec`] ist der symbolische Output: BrowseName, NodeClass,
-//! DataType-Reference (per Symbol-Name, kein NodeId), HasComponent /
-//! HasSubtype / HasOrderedComponent References. Der Caller materialisiert
-//! das in OPC-UA-Server-AddressSpace-API-Calls oder XML-NodeSet-
-//! Files. Dieses Modul liefert die Spec-konforme Schema-Information,
-//! nicht die Wire-Encoding-Schicht.
+//! [`NodeSpec`] is the symbolic output: BrowseName, NodeClass,
+//! DataType reference (by symbol name, no NodeId), HasComponent /
+//! HasSubtype / HasOrderedComponent references. The caller materializes
+//! this into OPC-UA server AddressSpace API calls or XML NodeSet
+//! files. This module provides the spec-conformant schema information,
+//! not the wire-encoding layer.
 
 pub mod naming;
 pub mod node_spec;

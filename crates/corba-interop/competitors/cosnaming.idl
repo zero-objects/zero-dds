@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: Apache-2.0
+// Standard OMG CosNaming IDL (formal/2004-10-03), a subset for cross-ORB
+// interop against the ZeroDDS NamingContext server. `#pragma prefix "omg.org"`
+// produces the normative RepositoryId IDL:omg.org/CosNaming/NamingContext:1.0 —
+// the same one ZeroDDS publishes in the IOR type_id, so that foreign-ORB clients
+// (omniORB via omniidl, TAO via tao_idl) can narrow the IOR.
+//
+// The wire is identical to the ZeroDDS FEATURE_MATRIX (flat-generated
+// NamingContext): Name = sequence<NameComponent{id,kind}>, operations are
+// bare GIOP names (bind/resolve/…), module-independent.
+#pragma prefix "omg.org"
+
+module CosNaming {
+    typedef string Istring;
+    struct NameComponent {
+        Istring id;
+        Istring kind;
+    };
+    typedef sequence<NameComponent> Name;
+
+    enum NotFoundReason { missing_node, not_context, not_object };
+
+    interface NamingContext {
+        exception NotFound { NotFoundReason why; Name rest_of_name; };
+        exception CannotProceed { NamingContext cxt; Name rest_of_name; };
+        exception InvalidName {};
+        exception AlreadyBound {};
+        exception NotEmpty {};
+
+        void   bind(in Name n, in Object obj)
+                 raises(NotFound, CannotProceed, InvalidName, AlreadyBound);
+        void   rebind(in Name n, in Object obj)
+                 raises(NotFound, CannotProceed, InvalidName);
+        Object resolve(in Name n)
+                 raises(NotFound, CannotProceed, InvalidName);
+        void   unbind(in Name n)
+                 raises(NotFound, CannotProceed, InvalidName);
+        // Federation (Spec §2.5.4.7/.8): sub-context graph. Wire-identical to
+        // the ZeroDDS FEATURE_MATRIX, so the TAO client traverses compound names
+        // from the root and can narrow the returned sub-context ref.
+        NamingContext new_context();
+        NamingContext bind_new_context(in Name n)
+                 raises(NotFound, AlreadyBound, CannotProceed, InvalidName);
+    };
+};

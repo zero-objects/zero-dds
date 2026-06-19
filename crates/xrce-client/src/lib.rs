@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! XRCE Client — synchrones Interface ohne Callbacks (Spec §7.2).
+//! XRCE Client — synchronous interface without callbacks (spec §7.2).
 //!
 //! Crate `zerodds-xrce-client`.
 //!
-//! # Spec-Mapping
+//! # Spec mapping
 //!
-//! OMG DDS-XRCE 1.0 §7.2: "XRCE Client: simplified Interface, keine
-//! Callbacks, Text-Parameter; Session ueberbrueckt Sleep/Wakeup-
-//! Zyklen."
+//! OMG DDS-XRCE 1.0 §7.2: "XRCE Client: simplified interface, no
+//! callbacks, text parameters; the session bridges sleep/wakeup
+//! cycles."
 //!
-//! Wir liefern eine synchrone State-Machine [`XrceClient`] mit
-//! folgenden Operationen:
+//! We provide a synchronous state machine [`XrceClient`] with the
+//! following operations:
 //!
-//! | Methode             | Spec-Bezug              |
+//! | Method              | Spec reference          |
 //! |---------------------|-------------------------|
 //! | [`XrceClient::new`] | §7.8.2 (CREATE_CLIENT)  |
 //! | [`XrceClient::connect`]    | §8.4.5 (Handshake) |
@@ -24,8 +24,8 @@
 //! | [`XrceClient::request_read`]  | §7.8.5 (READ_DATA) |
 //! | [`XrceClient::disconnect`]    | §8.4.5 |
 //!
-//! Transport ist abstrahiert via [`ClientTransport`]-Trait — konkrete
-//! Impls (UDP/TCP/DTLS/Serial) leben in `crates/xrce/src/transport_*`.
+//! The transport is abstracted via the [`ClientTransport`] trait — concrete
+//! impls (UDP/TCP/DTLS/Serial) live in `crates/xrce/src/transport_*`.
 //!
 //! Safety classification: **SAFE**.
 
@@ -42,62 +42,62 @@ use zerodds_xrce::object_id::ObjectId;
 use zerodds_xrce::object_repr::ObjectVariant;
 use zerodds_xrce::submessages::Submessage;
 
-/// Transport-abstraktion fuer den XRCE-Client.
+/// Transport abstraction for the XRCE client.
 ///
-/// Implementierungen (UDP/TCP/DTLS/Serial) liegen in
+/// Implementations (UDP/TCP/DTLS/Serial) live in
 /// `crates/xrce/src/transport_*.rs`.
 pub trait ClientTransport {
-    /// Sendet ein Submessage-Bundle an den Agent.
+    /// Sends a submessage bundle to the agent.
     ///
     /// # Errors
-    /// Transport-spezifisch.
+    /// Transport-specific.
     fn send(&mut self, payload: &[u8]) -> Result<(), ClientError>;
 
-    /// Pollt eingehende Daten vom Agent. Blockiert nicht — wenn keine
-    /// Daten anliegen, liefert `Ok(None)`.
+    /// Polls incoming data from the agent. Does not block — if no
+    /// data is available, returns `Ok(None)`.
     ///
     /// # Errors
-    /// Transport-spezifisch.
+    /// Transport-specific.
     fn try_recv(&mut self) -> Result<Option<Vec<u8>>, ClientError>;
 }
 
-/// XRCE-Client-Lifecycle-Status.
+/// XRCE client lifecycle status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientState {
-    /// Initial: Client kennt seine ClientKey, ist aber nicht
-    /// verbunden.
+    /// Initial: the client knows its ClientKey but is not yet
+    /// connected.
     Disconnected,
-    /// Connect-Handshake im Gange (CREATE_CLIENT gesendet, STATUS_AGENT
-    /// noch nicht empfangen).
+    /// Connect handshake in progress (CREATE_CLIENT sent, STATUS_AGENT
+    /// not yet received).
     Connecting,
-    /// Verbunden — Operations sind moeglich.
+    /// Connected — operations are possible.
     Connected,
 }
 
-/// Client-spezifische Error-Klassen.
+/// Client-specific error classes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientError {
-    /// Operation in falschem Lifecycle-Status (z.B. send-without-connect).
+    /// Operation in the wrong lifecycle status (e.g. send-without-connect).
     InvalidState,
-    /// Transport-Layer-Fehler (Connection-Reset etc.).
+    /// Transport-layer error (connection reset etc.).
     Transport,
-    /// Submessage konnte nicht eingereiht werden (Wire-Cap erreicht).
+    /// The submessage could not be enqueued (wire cap reached).
     QueueFull,
 }
 
-/// Synchroner XRCE-Client.
+/// Synchronous XRCE client.
 pub struct XrceClient<T: ClientTransport> {
     client_key: ClientKey,
     state: ClientState,
     transport: T,
     next_request_id: u16,
-    /// Gepufferte ausgehende Submessages, die der Caller per
-    /// [`XrceClient::flush`] in das Transport-Layer schiebt.
+    /// Buffered outgoing submessages that the caller pushes into the
+    /// transport layer via [`XrceClient::flush`].
     out_queue: Vec<Submessage>,
 }
 
 impl<T: ClientTransport> XrceClient<T> {
-    /// Konstruktor.
+    /// Constructor.
     pub fn new(client_key: ClientKey, transport: T) -> Self {
         Self {
             client_key,
@@ -108,22 +108,22 @@ impl<T: ClientTransport> XrceClient<T> {
         }
     }
 
-    /// Aktueller Lifecycle-Status.
+    /// Current lifecycle status.
     #[must_use]
     pub fn state(&self) -> ClientState {
         self.state
     }
 
-    /// Liefert die ClientKey.
+    /// Returns the ClientKey.
     #[must_use]
     pub fn client_key(&self) -> ClientKey {
         self.client_key
     }
 
-    /// Initiiert den Handshake (sendet CREATE_CLIENT).
+    /// Initiates the handshake (sends CREATE_CLIENT).
     ///
     /// # Errors
-    /// `InvalidState` wenn bereits connected.
+    /// `InvalidState` if already connected.
     pub fn connect(&mut self) -> Result<(), ClientError> {
         if self.state != ClientState::Disconnected {
             return Err(ClientError::InvalidState);
@@ -132,8 +132,8 @@ impl<T: ClientTransport> XrceClient<T> {
         Ok(())
     }
 
-    /// Markiert den Handshake als abgeschlossen (Caller hat
-    /// STATUS_AGENT empfangen).
+    /// Marks the handshake as complete (the caller has
+    /// received STATUS_AGENT).
     ///
     /// # Errors
     /// `InvalidState`.
@@ -145,11 +145,10 @@ impl<T: ClientTransport> XrceClient<T> {
         Ok(())
     }
 
-    /// Submitiert eine CREATE-Operation. Gibt eine `request_id`
-    /// zurueck.
+    /// Submits a CREATE operation. Returns a `request_id`.
     ///
     /// # Errors
-    /// `InvalidState` wenn nicht connected.
+    /// `InvalidState` if not connected.
     pub fn create_object(
         &mut self,
         _object_id: ObjectId,
@@ -158,12 +157,12 @@ impl<T: ClientTransport> XrceClient<T> {
         self.require_connected()?;
         let req = self.next_request_id;
         self.next_request_id = self.next_request_id.wrapping_add(1).max(1);
-        // Submessage-Encoding deleguert der Caller; wir tracken nur
-        // den State.
+        // The caller delegates submessage encoding; we only track
+        // the state.
         Ok(req)
     }
 
-    /// Submitiert eine DELETE-Operation.
+    /// Submits a DELETE operation.
     ///
     /// # Errors
     /// `InvalidState`.
@@ -174,7 +173,7 @@ impl<T: ClientTransport> XrceClient<T> {
         Ok(req)
     }
 
-    /// Submitiert eine WRITE_DATA-Operation.
+    /// Submits a WRITE_DATA operation.
     ///
     /// # Errors
     /// `InvalidState`.
@@ -189,7 +188,7 @@ impl<T: ClientTransport> XrceClient<T> {
         Ok(req)
     }
 
-    /// Submitiert eine READ_DATA-Operation (Pull-basiert).
+    /// Submits a READ_DATA operation (pull-based).
     ///
     /// # Errors
     /// `InvalidState`.
@@ -200,13 +199,13 @@ impl<T: ClientTransport> XrceClient<T> {
         Ok(req)
     }
 
-    /// Schließt die Session — geht zurueck nach `Disconnected`.
+    /// Closes the session — goes back to `Disconnected`.
     pub fn disconnect(&mut self) {
         self.state = ClientState::Disconnected;
         self.out_queue.clear();
     }
 
-    /// Prueft, dass der Client connected ist.
+    /// Checks that the client is connected.
     fn require_connected(&self) -> Result<(), ClientError> {
         if self.state != ClientState::Connected {
             return Err(ClientError::InvalidState);
@@ -214,13 +213,13 @@ impl<T: ClientTransport> XrceClient<T> {
         Ok(())
     }
 
-    /// Anzahl ausstehender Submessages in der Out-Queue.
+    /// Number of pending submessages in the out queue.
     #[must_use]
     pub fn out_queue_len(&self) -> usize {
         self.out_queue.len()
     }
 
-    /// Direkten Transport-Zugriff (z.B. fuer Read-Pull-Polling).
+    /// Direct transport access (e.g. for read-pull polling).
     pub fn transport_mut(&mut self) -> &mut T {
         &mut self.transport
     }
@@ -233,7 +232,7 @@ mod tests {
     use alloc::vec::Vec;
     use zerodds_xrce::header::CLIENT_KEY_LEN;
 
-    /// Mock-Transport: sammelt sent payloads.
+    /// Mock transport: collects sent payloads.
     struct MockTransport {
         sent: Vec<Vec<u8>>,
     }
@@ -323,7 +322,7 @@ mod tests {
         let r2 = c.delete_object(oid).expect("delete");
         let r3 = c.request_write(oid, b"x").expect("write");
         let r4 = c.request_read(oid).expect("read");
-        // Request-IDs sind streng monoton.
+        // Request IDs are strictly monotonic.
         assert_eq!(r1, 1);
         assert_eq!(r2, 2);
         assert_eq!(r3, 3);

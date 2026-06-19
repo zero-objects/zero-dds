@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Reliable RTPS-Writer (1:N Reader-Proxies) — DDSI-RTPS 2.5 §8.4.9.
+//! Reliable RTPS writer (1:N reader proxies) — DDSI-RTPS 2.5 §8.4.9.
 //!
-//! Entspricht der [`StatefulWriter`]-Rolle mit 1..N matched Readers.
-//! keine Heartbeat-Liveliness. Fragmentation
-//! (§8.4.14) ist unterstuetzt. Multi-Reader + Submessage-Aggregation
-//! (Fast-DDS-Alignment) sind ab WP 1.4 T3 drin.
+//! Corresponds to the [`StatefulWriter`] role with 1..N matched readers.
+//! No heartbeat liveliness. Fragmentation
+//! (§8.4.14) is supported. Multi-reader + submessage aggregation
+//! (Fast-DDS alignment) are in since WP 1.4 T3.
 //!
-//! # API-Form
+//! # API shape
 //!
-//! Die State-Machine ist tick-getrieben. `now` ist eine `Duration`
-//! seit Writer-Start (no_std-kompatibel, ohne std::Instant).
+//! The state machine is tick-driven. `now` is a `Duration`
+//! since writer start (no_std-compatible, without std::Instant).
 //!
 //! ```text
 //!   let mut w = ReliableWriter::new(...);
@@ -42,32 +42,43 @@ use crate::header::RtpsHeader;
 use crate::history_cache::{CacheChange, HistoryCache, HistoryKind};
 use crate::message_builder::{AddError, MessageBuilder, OutboundDatagram};
 use crate::reader_proxy::ReaderProxy;
-use crate::submessage_header::SubmessageId;
+use crate::submessage_header::{FLAG_E_LITTLE_ENDIAN, SubmessageId};
 use crate::submessages::{
-    DataFragSubmessage, DataSubmessage, GapSubmessage, HeartbeatSubmessage, NackFragSubmessage,
-    SequenceNumberSet,
+    DATA_FLAG_DATA, DataFragSubmessage, DataSubmessage, GapSubmessage, HeartbeatSubmessage,
+    NackFragSubmessage, SequenceNumberSet,
 };
 use crate::wire_types::{EntityId, FragmentNumber, Guid, Locator, SequenceNumber, VendorId};
 
-/// Default-Heartbeat-Periode.
+/// Default heartbeat period.
 ///
-/// DDSI-RTPS §8.4.15 spezifiziert keine fixe Default — "implementation-defined,
-/// typically 1 s". Cyclone DDS und FastDDS verwenden 100 ms; das ist auch unser
-/// Wert weil:
-/// 1. Bei Reliable + KEEP_LAST(N) treibt die HB-Period den Worst-Case-Latency-
-///    Floor (Reader sendet ACK auf HB, Writer kann erst danach Cache schrumpfen).
-/// 2. 1 s default war Pre-D.5d Initial-Implementation; die jetzige
-///    Event-driven-ACKNACK + Per-Peer-Scheduler-Architektur (D.5d+) macht
-///    den HB-Floor zur reinen "idle keep-alive"-Pulse, nicht mehr zum
-///    Latency-Determinismus.
-/// 3. Spec ist erfuellt: Period < lease_duration, period > 0, period stabil.
+/// DDSI-RTPS §8.4.15 specifies no fixed default — "implementation-defined,
+/// typically 1 s". Cyclone DDS and FastDDS use 100 ms; that is also our
+/// value because:
+/// 1. With Reliable + KEEP_LAST(N) the HB period drives the worst-case latency
+///    floor (the reader sends an ACK on the HB, the writer can only shrink the cache after).
+/// 2. The 1 s default was the pre-D.5d initial implementation; the current
+///    event-driven ACKNACK + per-peer scheduler architecture (D.5d+) makes
+///    the HB floor a pure "idle keep-alive" pulse, no longer a
+///    latency determinant.
+/// 3. The spec is satisfied: period < lease_duration, period > 0, period stable.
 pub const DEFAULT_HEARTBEAT_PERIOD: Duration = Duration::from_millis(100);
 
-/// Default-Fragment-Size in Bytes. 1344 = 1400 MTU − 20 RTPS-Header −
-/// ~32 Byte Submessage-Overhead.
+/// Default fragment size in bytes. 1344 = 1400 MTU − 20 RTPS header −
+/// ~32 bytes submessage overhead.
 pub const DEFAULT_FRAGMENT_SIZE: u32 = 1344;
 
-/// Ein Reliable-Writer mit 0..N Reader-Proxies.
+/// Fragment size for loopback/same-host paths. The loopback MTU is
+/// 65536 — a sample up to ~63 kB goes there in **one** datagram,
+/// instead of N 1344-B fragments. The DCPS layer sets this via
+/// [`ReliableWriter::set_fragmentation`] when all matched readers run
+/// on the same host. 63000 < `u16::MAX` (wire field `fragmentSize`).
+pub const LOOPBACK_FRAGMENT_SIZE: u32 = 63_000;
+
+/// MTU budget for loopback/same-host paths (matching
+/// [`LOOPBACK_FRAGMENT_SIZE`]).
+pub const LOOPBACK_MTU: usize = 64_000;
+
+/// A reliable writer with 0..N reader proxies.
 #[derive(Debug, Clone)]
 pub struct ReliableWriter {
     guid: Guid,
@@ -78,48 +89,65 @@ pub struct ReliableWriter {
     last_heartbeat: Option<Duration>,
     heartbeat_count: i32,
     nackfrag_count: i32,
-    /// ACKNACK/NACK_FRAG-Nachrichten von unbekannten `src_guid`-Remotes.
-    /// Diagnose: weist auf Misrouting, veraltete Proxies oder
-    /// boesartige Sender hin.
+    /// ACKNACK/NACK_FRAG messages from unknown `src_guid` remotes.
+    /// Diagnosis: indicates misrouting, stale proxies or
+    /// malicious senders.
     unknown_src_count: u64,
     next_sn: i64,
     fragment_size: u32,
     mtu: usize,
+    /// If true: every outgoing datagram begins with INFO_DST(target
+    /// proxy prefix). Mandatory for cyclone's filtered VolatileSecure reader,
+    /// which matches by full GUID (otherwise dst=0:0:0 -> no match ->
+    /// wn->last_seq hangs -> ddsi_reorder_nackmap maxseq-0 deadlock).
+    emit_info_dst: bool,
+    /// Hot-path recycling pool for payload `Arc<[u8]>`. On cache
+    /// eviction the evicted `Arc<[u8]>` is parked here and reused on the
+    /// next same-sized `stage_sample` allocation
+    /// (Arc::get_mut + memcpy into the existing
+    /// buffer). Eliminates the `Arc::from(payload)` allocation per
+    /// write for workloads with constant payload size (bench,
+    /// fixed-size sensor streams, RPC with a fixed request size).
+    /// On changing sizes the pool entry is dropped and a fresh one
+    /// allocated.
+    payload_pool: alloc::vec::Vec<alloc::sync::Arc<[u8]>>,
+    /// Pool cap (default 8) — prevents unbounded pool growth
+    /// on cache-depth spikes.
+    payload_pool_cap: usize,
 }
 
-/// Konfiguration beim Anlegen.
+/// Configuration at creation.
 #[derive(Debug, Clone)]
 pub struct ReliableWriterConfig {
-    /// GUID des Writer-Endpoints.
+    /// GUID of the writer endpoint.
     pub guid: Guid,
-    /// VendorId fuer den RTPS-Header.
+    /// VendorId for the RTPS header.
     pub vendor_id: VendorId,
-    /// Initiale Reader-Proxies. Weitere via `add_reader_proxy`.
+    /// Initial reader proxies. More via `add_reader_proxy`.
     pub reader_proxies: Vec<ReaderProxy>,
-    /// Absolute Obergrenze fuer Cache-Eintraege. Wirkt als Kapazitaet;
-    /// die Semantik bei Ueberlauf ist von [`history_kind`](Self::history_kind)
-    /// bestimmt.
+    /// Absolute upper bound for cache entries. Acts as a capacity;
+    /// the semantics on overflow are determined by [`history_kind`](Self::history_kind).
     pub max_samples: usize,
-    /// History-QoS:
-    /// - `KeepAll`: write() schlaegt bei Overflow fehl
-    ///   (No-Loss-Szenarien, z.B. Logging).
-    /// - `KeepLast { depth }`: aeltestes Sample faellt bei Overflow raus
-    ///   (Spec-Default; Stalled Reader blockt nicht die ganze Pipeline).
+    /// History QoS:
+    /// - `KeepAll`: write() fails on overflow
+    ///   (no-loss scenarios, e.g. logging).
+    /// - `KeepLast { depth }`: the oldest sample drops out on overflow
+    ///   (spec default; a stalled reader does not block the whole pipeline).
     pub history_kind: HistoryKind,
-    /// Heartbeat-Periode (Default: 1 s).
+    /// Heartbeat period (default: 1 s).
     pub heartbeat_period: Duration,
-    /// Fragment-Size in Bytes ([`DEFAULT_FRAGMENT_SIZE`]).
+    /// Fragment size in bytes ([`DEFAULT_FRAGMENT_SIZE`]).
     pub fragment_size: u32,
-    /// MTU fuer Submessage-Aggregation ([`DEFAULT_MTU`]).
+    /// MTU for submessage aggregation ([`DEFAULT_MTU`]).
     pub mtu: usize,
 }
 
 impl ReliableWriter {
-    /// Erzeugt einen leeren Writer.
+    /// Creates an empty writer.
     ///
     /// # Panics
     /// - `cfg.fragment_size == 0`
-    /// - `cfg.mtu < 20` (RTPS-Header passt nicht rein)
+    /// - `cfg.mtu < 20` (the RTPS header does not fit)
     #[must_use]
     pub fn new(cfg: ReliableWriterConfig) -> Self {
         assert!(cfg.fragment_size > 0, "fragment_size must be > 0");
@@ -137,13 +165,34 @@ impl ReliableWriter {
             next_sn: 0,
             fragment_size: cfg.fragment_size,
             mtu: cfg.mtu,
+            emit_info_dst: false,
+            payload_pool: alloc::vec::Vec::with_capacity(8),
+            payload_pool_cap: 8,
         }
     }
 
-    /// GUID des Writers.
+    /// GUID of the writer.
     #[must_use]
     pub fn guid(&self) -> Guid {
         self.guid
+    }
+
+    /// Enables INFO_DST(target-prefix) before each datagram (RTPS 2.5
+    /// §8.3.7). Needed for receivers that match directed submessages by full
+    /// GUID (cyclone filtered VolatileSecure reader).
+    pub fn set_emit_info_dst(&mut self, v: bool) {
+        self.emit_info_dst = v;
+    }
+
+    /// Opens a MessageBuilder for proxy `idx`; prepends INFO_DST with
+    /// the target prefix if `emit_info_dst`.
+    fn open_builder(&self, idx: usize, targets: &Rc<Vec<Locator>>) -> MessageBuilder {
+        let mut b = MessageBuilder::open(self.rtps_header(), Rc::clone(targets), self.mtu);
+        if self.emit_info_dst {
+            let prefix = self.reader_proxies[idx].remote_reader_guid.prefix;
+            let _ = b.try_add_submessage(SubmessageId::InfoDst, 0, &prefix.to_bytes());
+        }
+        b
     }
 
     /// Read-only-Slice der registrierten Reader-Proxies.
@@ -152,30 +201,30 @@ impl ReliableWriter {
         &self.reader_proxies
     }
 
-    /// Anzahl registrierter Reader-Proxies.
+    /// Number of registered reader proxies.
     #[must_use]
     pub fn reader_proxy_count(&self) -> usize {
         self.reader_proxies.len()
     }
 
-    /// Entfernt Samples mit SN < `up_to_exclusive` aus dem Cache. Wird
-    /// von hoeheren Layern fuer Lifespan-Expire genutzt (Spec §2.2.3.16):
-    /// abgelaufene Samples verschwinden so, dass auch spaete
-    /// Reader-Proxies sie nicht mehr bekommen.
+    /// Removes samples with SN < `up_to_exclusive` from the cache. Used
+    /// by higher layers for lifespan expiry (Spec §2.2.3.16):
+    /// expired samples disappear so that even late
+    /// reader proxies no longer get them.
     pub fn remove_samples_up_to(&mut self, up_to_exclusive: SequenceNumber) -> usize {
         self.cache.remove_up_to(up_to_exclusive)
     }
 
-    /// History-Cache (read-only).
+    /// History cache (read-only).
     #[must_use]
     pub fn cache(&self) -> &HistoryCache {
         &self.cache
     }
 
-    /// **Expert-only**: setzt History-Kind + `max_samples` des Caches zur
-    /// Laufzeit. Used by `DcpsRuntime` fuer Durability-Backend-Replay-Burst
-    /// (Spec §2.2.3.5) — der Cache muss waehrend des Bursts alle Replay-
-    /// Samples halten, danach wieder auf User-QoS zurueck.
+    /// **Expert-only**: sets the history kind + `max_samples` of the cache at
+    /// runtime. Used by `DcpsRuntime` for the durability-backend replay burst
+    /// (Spec §2.2.3.5) — the cache must hold all replay
+    /// samples during the burst, then return to the user QoS.
     pub fn set_cache_kind_and_max(
         &mut self,
         kind: crate::history_cache::HistoryKind,
@@ -184,45 +233,62 @@ impl ReliableWriter {
         self.cache.set_kind_and_max(kind, max_samples);
     }
 
-    /// Anzahl gesendeter HEARTBEATs.
+    /// Number of HEARTBEATs sent.
     #[must_use]
     pub fn heartbeat_count(&self) -> i32 {
         self.heartbeat_count
     }
 
-    /// Anzahl empfangener NACK_FRAGs.
+    /// Number of NACK_FRAGs received.
     #[must_use]
     pub fn nackfrag_count(&self) -> i32 {
         self.nackfrag_count
     }
 
-    /// Anzahl ACKNACK/NACK_FRAG-Nachrichten von **unbekannten** Quellen
-    /// seit Writer-Start. Typische Ursachen: Misrouting auf Multicast,
-    /// veraltete Proxies nach `remove_reader_proxy`, GUID-Spoofing.
+    /// Number of ACKNACK/NACK_FRAG messages from **unknown** sources
+    /// since writer start. Typical causes: misrouting on multicast,
+    /// stale proxies after `remove_reader_proxy`, GUID spoofing.
     #[must_use]
     pub fn unknown_src_count(&self) -> u64 {
         self.unknown_src_count
     }
 
-    /// Aktuelle Fragment-Size-Konfiguration.
+    /// Current fragment-size configuration.
     #[must_use]
     pub fn fragment_size(&self) -> u32 {
         self.fragment_size
     }
 
-    /// True wenn ein Payload dieser Groesse fragmentiert wird
-    /// (Payload-Laenge > `fragment_size`).
+    /// Sets fragment size + MTU budget anew — called by the DCPS layer
+    /// when the path MTU of the matched readers changes: if ALL
+    /// readers run on the same host (loopback, MTU 65536), one
+    /// datagram per sample suffices ([`LOOPBACK_FRAGMENT_SIZE`]); if a reader
+    /// is remote, it stays at the Ethernet-safe [`DEFAULT_FRAGMENT_SIZE`]
+    /// (otherwise an oversized datagram gets IP-fragmented on the 1500 path,
+    /// and a lost IP fragment costs the whole sample).
+    ///
+    /// # Panics
+    /// `fragment_size == 0` or `mtu < 20`.
+    pub fn set_fragmentation(&mut self, fragment_size: u32, mtu: usize) {
+        assert!(fragment_size > 0, "fragment_size must be > 0");
+        assert!(mtu >= 20, "mtu must accommodate RTPS header");
+        self.fragment_size = fragment_size;
+        self.mtu = mtu;
+    }
+
+    /// True if a payload of this size is fragmented
+    /// (payload length > `fragment_size`).
     #[must_use]
     fn needs_fragmentation(&self, payload: &[u8]) -> bool {
         u32::try_from(payload.len()).unwrap_or(u32::MAX) > self.fragment_size && !payload.is_empty()
     }
 
-    /// Prueft, ob alle Reader-Proxies den aktuell hoechsten Sample-SN
-    /// im Cache bereits acknowledged haben. Liefert `true` auch wenn
-    /// der Cache leer ist oder keine Proxies existieren (nichts zu
-    /// bestaetigen).
+    /// Checks whether all reader proxies have already acknowledged the
+    /// currently highest sample SN in the cache. Returns `true` even if
+    /// the cache is empty or no proxies exist (nothing to
+    /// acknowledge).
     ///
-    /// Spec-Basis fuer `DataWriter::wait_for_acknowledgments`
+    /// Spec basis for `DataWriter::wait_for_acknowledgments`
     /// (OMG DDS 1.4 §2.2.2.4.2.22).
     #[must_use]
     pub fn all_samples_acknowledged(&self) -> bool {
@@ -234,17 +300,17 @@ impl ReliableWriter {
             .all(|p| p.highest_acked_sn() >= max_sn)
     }
 
-    /// Fuegt einen Reader-Proxy hinzu. Idempotent: wenn ein Proxy mit
-    /// gleichem `remote_reader_guid` existiert, wird er ersetzt.
+    /// Adds a reader proxy. Idempotent: if a proxy with the
+    /// same `remote_reader_guid` exists, it is replaced.
     ///
-    /// Setzt `last_heartbeat = None`, damit der naechste `tick()` sofort
-    /// einen Heartbeat an **alle** Proxies (inkl. den neuen) emittiert.
-    /// RTPS §8.4.15.4: frisch hinzugefuegter ReaderProxy muss Gelegenheit
-    /// zu AckNack bekommen, sonst wartet er bis zur naechsten periodischen
-    /// Heartbeat-Runde (Default 1 s) — und bei spaet-gewireten Proxies
-    /// (nach Cache-Inserts) ist das die einzige Moeglichkeit, die frueh
-    /// eingefuegten Samples nachzuliefern, da `write_sample_with_datagrams`
-    /// nur direkt sendet, wenn der Proxy synchron ist.
+    /// Sets `last_heartbeat = None`, so the next `tick()` immediately
+    /// emits a heartbeat to **all** proxies (incl. the new one).
+    /// RTPS §8.4.15.4: a freshly added ReaderProxy must get an opportunity
+    /// to AckNack, otherwise it waits until the next periodic
+    /// heartbeat round (default 1 s) — and for late-wired proxies
+    /// (after cache inserts) this is the only way to catch up the early-
+    /// inserted samples, since `write_sample_with_datagrams`
+    /// only sends directly if the proxy is synchronous.
     pub fn add_reader_proxy(&mut self, proxy: ReaderProxy) {
         let guid = proxy.remote_reader_guid;
         if let Some(idx) = self
@@ -256,12 +322,12 @@ impl ReliableWriter {
         } else {
             self.reader_proxies.push(proxy);
         }
-        // Zwinge naechsten tick zu HB — neuer Proxy braucht ihn fuer
-        // AckNack-getriebenen Catch-up.
+        // Force the next tick to HB — the new proxy needs it for
+        // AckNack-driven catch-up.
         self.last_heartbeat = None;
     }
 
-    /// Entfernt den Proxy mit gegebener GUID.
+    /// Removes the proxy with the given GUID.
     pub fn remove_reader_proxy(&mut self, guid: Guid) -> Option<ReaderProxy> {
         let idx = self
             .reader_proxies
@@ -272,15 +338,187 @@ impl ReliableWriter {
 
     // ---------- Write ----------
 
-    /// Schreibt einen neuen Sample und fan-outet an alle Proxies.
+    /// Writes a new sample and fans it out to all proxies.
     ///
-    /// Pro Proxy entsteht (aggregiert):
-    /// - 1 DATA-Datagram wenn `payload.len() <= fragment_size`
-    /// - N DATA_FRAG-Datagramme (je Fragment 1 Datagram, kein Mix)
+    /// Per proxy this produces (aggregated):
+    /// - 1 DATA datagram if `payload.len() <= fragment_size`
+    /// - N DATA_FRAG datagrams (one datagram per fragment, no mix)
     ///
     /// # Errors
-    /// SN-Overflow, Cache voll, Body zu gross.
+    /// SN overflow, cache full, body too large.
     pub fn write(&mut self, payload: &[u8]) -> Result<Vec<OutboundDatagram>, WireError> {
+        let (sn, payload) = self.stage_sample(payload)?;
+
+        let mut out = Vec::new();
+        for idx in 0..self.reader_proxies.len() {
+            // `next_unsent_change(cache_max)` advances the proxy by exactly
+            // one SN. Two cases:
+            //
+            // * The proxy was synchronous (`highest_sent_sn == sn - 1`): advance
+            //   returns `Some(sn)`, we can send the sample directly to the
+            //   peer — saving a heartbeat round.
+            //
+            // * The proxy lags (wired late via SEDP, the cache already had
+            //   older samples): advance returns an older SN. Then
+            //   it would be wrong to send the *new* payload with the *new* SN
+            //   directly — the proxy thinks an early SN went out first
+            //   while the reader sees the new one. Instead
+            //   we let `tick()` resolve the gap via heartbeat + AckNack-
+            //   controlled resend (the standard reliable path).
+            let advanced = self.reader_proxies[idx].next_unsent_change(sn);
+            if advanced != Some(sn) {
+                continue;
+            }
+            let reader_id = self.reader_proxies[idx].remote_reader_guid.entity_id;
+            let targets = self.targets_for(idx);
+            // The encapsulation header (payload bytes 0..4, RTPS 2.5
+            // §10.5) is already set honestly by the caller and reflects
+            // the actual body encoding. No per-peer
+            // relabeling — restamping an encap byte without re-encoding the body
+            // would fake a wrong representation to the reader
+            // (XTypes 1.3 §7.4: XCDR1/XCDR2 differ
+            // in alignment, so they are NOT bit-identical).
+            out.extend(self.build_sample_datagrams(sn, &payload, reader_id, &targets)?);
+        }
+        Ok(out)
+    }
+
+    /// D.5e phase 2: write + piggyback HEARTBEAT in one operation.
+    ///
+    /// Cyclone DDS and FastDDS additionally send a HEARTBEAT on every `write()`,
+    /// so the reader can trigger an ACKNACK
+    /// immediately. Without the piggyback the reader must wait until the next periodic
+    /// HB (default 100 ms) — which becomes the latency floor for a
+    /// 1-in-flight roundtrip.
+    ///
+    /// This method is a superset of [`Self::write`]: it emits
+    /// all DATA datagrams and appends a HEARTBEAT datagram per matched
+    /// reader proxy. `last_heartbeat = now` is set so that
+    /// `tick()` does not fire twice.
+    ///
+    /// # Errors
+    /// Wire encode error.
+    pub fn write_with_heartbeat(
+        &mut self,
+        payload: &[u8],
+        now: Duration,
+    ) -> Result<Vec<OutboundDatagram>, WireError> {
+        let (sn, payload) = self.stage_sample(payload)?;
+        // first_sn for the HEARTBEAT. final_flag=false: the reader MUST
+        // respond with ACKNACK (RTPS 2.5 §8.4.15.5).
+        let cache_min = self.cache.min_sn().unwrap_or(SequenceNumber(1));
+        let fragmented = self.needs_fragmentation(&payload);
+        let mut out = Vec::new();
+        for idx in 0..self.reader_proxies.len() {
+            let advanced = self.reader_proxies[idx].next_unsent_change(sn) == Some(sn);
+            let reader_id = self.reader_proxies[idx].remote_reader_guid.entity_id;
+            let targets = self.targets_for(idx);
+            // Per-proxy HEARTBEAT `first_sn` (RTPS 2.5 §8.4.12.1: the
+            // smallest SN relevant FOR THIS READER) —
+            // identical to the `tick` logic. A volatile late-joiner proxy
+            // has advanced via `skip_samples_up_to` past the global `cache_min`;
+            // with `cache_min` as first_sn the
+            // HEARTBEAT would prompt it to re-request the deliberately skipped pre-
+            // history — a lossy NACK→GAP roundtrip that
+            // stalls under load (flake `volatile_writer_…`). `highest_acked
+            // + 1` returns instead exactly its first relevant SN.
+            let hb_first_sn = cache_min.max(SequenceNumber(
+                self.reader_proxies[idx]
+                    .highest_acked_sn()
+                    .0
+                    .saturating_add(1),
+            ));
+            if advanced && !fragmented {
+                // Perf: DATA + piggyback HEARTBEAT share ONE
+                // RTPS message / ONE datagram — one `sendto` instead of two
+                // (and one fewer `recvfrom` + wakeup at the reader).
+                // RTPS 2.5 allows multiple submessages per message; this
+                // is Cyclone's "piggyback heartbeat" 1:1. If the
+                // HEARTBEAT no longer fits the MTU,
+                // `append_submessage` automatically splits into two datagrams.
+                let mut builder = self.open_builder(idx, &targets);
+                self.append_data(&mut builder, sn, &payload, reader_id, &mut out, &targets)?;
+                // Piggyback ONLY if the DATA submessage ends on a
+                // 32-bit boundary (RTPS 2.5 §8.3.4.1: every submessage
+                // starts 4-byte-aligned). With an odd serializedData
+                // length the HEARTBEAT would start misaligned — strict
+                // readers (Cyclone DDS, RTI Connext) then reject the message
+                // as malformed.
+                //
+                // NOTE: inserting a PAD submessage between DATA and HB does
+                // NOT work, because then PAD itself starts at an
+                // unaligned offset — Cyclone reports
+                // `malformed packet state parse:DATA`. Real inlining via
+                // serializedData padding would be the other option, but breaks
+                // `RawBytes` readers (zerodds-self tests see the
+                // pad as trailing bytes). Currently: 2 datagrams for
+                // odd payloads — wire conformance before perf.
+                let coframe = builder.len() % 4 == 0;
+                if coframe {
+                    self.append_heartbeat(
+                        &mut builder,
+                        reader_id,
+                        hb_first_sn,
+                        false,
+                        &mut out,
+                        &targets,
+                    )?;
+                }
+                if let Some(dg) = builder.finish() {
+                    out.push(dg);
+                }
+                if !coframe {
+                    let mut hb_builder = self.open_builder(idx, &targets);
+                    self.append_heartbeat(
+                        &mut hb_builder,
+                        reader_id,
+                        hb_first_sn,
+                        false,
+                        &mut out,
+                        &targets,
+                    )?;
+                    if let Some(dg) = hb_builder.finish() {
+                        out.push(dg);
+                    }
+                }
+            } else {
+                // Fragmentierter Sample → eigene DATA_FRAG-Datagramme;
+                // lagging Proxy (advanced=false) → nur HEARTBEAT. Das
+                // HEARTBEAT goes out here as its own datagram.
+                if advanced {
+                    out.extend(self.build_sample_datagrams(sn, &payload, reader_id, &targets)?);
+                }
+                let mut builder = self.open_builder(idx, &targets);
+                self.append_heartbeat(
+                    &mut builder,
+                    reader_id,
+                    hb_first_sn,
+                    false,
+                    &mut out,
+                    &targets,
+                )?;
+                if let Some(dg) = builder.finish() {
+                    out.push(dg);
+                }
+            }
+        }
+        self.last_heartbeat = Some(now);
+        Ok(out)
+    }
+
+    /// SN allocation + HistoryCache insert. The payload `Arc<[u8]>` is
+    /// **recycled** if the pool has a matching buffer
+    /// (cache eviction → pool → the next `stage_sample` writes directly
+    /// into it, instead of allocating `Arc::from(payload)` anew). Cyclone's
+    /// `nn_xmsg_pool` equivalent for the payload buffer.
+    ///
+    /// Recycling condition: the pooled buffer has the **same length** and
+    /// `strong_count == 1` (no one else holds it). Otherwise drop the
+    /// pool entry + a fresh `Arc::from(payload)` allocation.
+    fn stage_sample(
+        &mut self,
+        payload: &[u8],
+    ) -> Result<(SequenceNumber, alloc::sync::Arc<[u8]>), WireError> {
         let sn_value = self
             .next_sn
             .checked_add(1)
@@ -289,130 +527,54 @@ impl ReliableWriter {
             })?;
         self.next_sn = sn_value;
         let sn = SequenceNumber(sn_value);
-        // Slice → Arc allokiert genau einmal pro Sample; danach nur
-        // noch Arc-clone (refcount-increment) im Cache + pro Datagram
-        // (Perf-Audit F7/F8). caller darf einen
-        // PoolBuffer<SMALL> reinreichen, damit das Pre-Framing
-        // heap-frei laeuft.
-        let payload: alloc::sync::Arc<[u8]> = alloc::sync::Arc::from(payload);
-        self.cache
-            .insert(CacheChange::alive_arc(
+
+        // Try recycle from the pool. We pop from the back end (LIFO,
+        // cache-warm). On a miss (refcount > 1 or length != payload)
+        // we drop the pool entry and try the next.
+        let arc_payload = loop {
+            match self.payload_pool.pop() {
+                None => {
+                    // Pool empty → allocate fresh (legacy path).
+                    break alloc::sync::Arc::<[u8]>::from(payload);
+                }
+                Some(mut arc) => {
+                    let len_match = arc.len() == payload.len();
+                    let exclusive = alloc::sync::Arc::strong_count(&arc) == 1
+                        && alloc::sync::Arc::weak_count(&arc) == 0;
+                    if len_match && exclusive {
+                        // SAFETY: strong_count == 1, weak_count == 0,
+                        // so exclusive access → `get_mut` is Some.
+                        if let Some(slice) = alloc::sync::Arc::get_mut(&mut arc) {
+                            slice.copy_from_slice(payload);
+                            break arc;
+                        }
+                        // Theoretically unreachable (pre-check above);
+                        // defensive: drop + next.
+                    }
+                    // Pool entry does not fit — drop it + try the next
+                    // loop iteration.
+                    drop(arc);
+                }
+            }
+        };
+
+        // Insert into the cache and capture the evicted Arc for the pool.
+        let evicted = self
+            .cache
+            .insert_returning_evicted(CacheChange::alive_arc(
                 sn,
-                alloc::sync::Arc::clone(&payload),
+                alloc::sync::Arc::clone(&arc_payload),
             ))
             .map_err(|_| WireError::ValueOutOfRange {
                 message: "history cache full or duplicate",
             })?;
-
-        let mut out = Vec::new();
-        for idx in 0..self.reader_proxies.len() {
-            // `next_unsent_change(cache_max)` rueckt den Proxy um genau
-            // eine SN vor. Zwei Faelle:
-            //
-            // * Proxy war synchron (`highest_sent_sn == sn - 1`): advance
-            //   liefert `Some(sn)`, wir koennen das Sample direkt an den
-            //   Peer schicken — spart eine Heartbeat-Runde.
-            //
-            // * Proxy ist lag (spaet via SEDP gewired, Cache hatte schon
-            //   aeltere Samples): advance liefert eine aeltere SN. Dann
-            //   waere es falsch, das *neue* Payload mit dem *neuen* SN
-            //   direkt zu schicken — der Proxy denkt, erst eine fruehe SN
-            //   sei raus, waehrend der Reader die neue sieht. Stattdessen
-            //   lassen wir `tick()` die Luecke via Heartbeat + AckNack-
-            //   gesteuertem Resend aufloesen (Standard-Reliable-Pfad).
-            let advanced = self.reader_proxies[idx].next_unsent_change(sn);
-            if advanced != Some(sn) {
-                continue;
+        if let Some(evicted_change) = evicted {
+            if self.payload_pool.len() < self.payload_pool_cap {
+                self.payload_pool.push(evicted_change.payload);
             }
-            let reader_id = self.reader_proxies[idx].remote_reader_guid.entity_id;
-            let targets = self.targets_for(idx);
-            // D.5g — Per-Peer Wire-Format. Payload-bytes 0..4 sind
-            // der Encap-Header (RTPS 2.5 §10.5). Wenn dieser
-            // Reader-Proxy XCDR1 ausgehandelt hat (legacy peer),
-            // klonen wir das Payload und ueberschreiben byte 1 von
-            // `0x07` (PLAIN_CDR2_LE) auf `0x01` (CDR_LE).
-            // Body-Bytes (offset 4..) bleiben fuer @final-Primitive-
-            // Structs bit-identisch zwischen XCDR1/XCDR2-LE.
-            let proxy_payload = self.adapt_payload_for_proxy(idx, &payload);
-            out.extend(self.build_sample_datagrams(sn, &proxy_payload, reader_id, &targets)?);
+            // otherwise drop (pool full — typically not in steady state).
         }
-        Ok(out)
-    }
-
-    /// D.5g — Bereitet die Payload-Bytes fuer einen bestimmten Reader-
-    /// Proxy auf. Wenn das ausgehandelte Wire-Format vom Cache-Default
-    /// abweicht, klont es das Payload und ueberschreibt byte 1 des
-    /// Encap-Headers entsprechend.
-    fn adapt_payload_for_proxy(
-        &self,
-        idx: usize,
-        payload: &alloc::sync::Arc<[u8]>,
-    ) -> alloc::sync::Arc<[u8]> {
-        let negotiated = self.reader_proxies[idx].negotiated_data_representation();
-        // Cache-default Encap (vom Caller gesetzt) ist XCDR2 = 0x07.
-        // Bei legacy-Reader (XCDR1) overriden wir byte 1.
-        if negotiated == crate::publication_data::data_representation::XCDR2 || payload.len() < 4 {
-            return alloc::sync::Arc::clone(payload);
-        }
-        let target_byte = match negotiated {
-            crate::publication_data::data_representation::XCDR => 0x01_u8,
-            _ => return alloc::sync::Arc::clone(payload),
-        };
-        if payload[1] == target_byte {
-            return alloc::sync::Arc::clone(payload);
-        }
-        let mut adapted: alloc::vec::Vec<u8> = payload.to_vec();
-        adapted[1] = target_byte;
-        alloc::sync::Arc::from(adapted.into_boxed_slice())
-    }
-
-    /// D.5e Phase-2: Write + piggyback HEARTBEAT in einer Operation.
-    ///
-    /// Cyclone DDS und FastDDS senden bei jedem `write()` zusaetzlich
-    /// einen HEARTBEAT, damit der Reader sofort einen ACKNACK triggern
-    /// kann. Ohne piggyback muss der Reader bis zum naechsten periodic-
-    /// HB (default 100 ms) warten — das wird bei 1-in-flight-Roundtrip
-    /// zum Latenz-Floor.
-    ///
-    /// Diese Methode ist ein Superset von [`Self::write`]: emittiert
-    /// alle DATA-Datagrams und haengt pro matched Reader-Proxy ein
-    /// HEARTBEAT-Datagram an. `last_heartbeat = now` wird gesetzt damit
-    /// `tick()` nicht doppelt feuert.
-    ///
-    /// # Errors
-    /// Wire-Encode-Fehler.
-    pub fn write_with_heartbeat(
-        &mut self,
-        payload: &[u8],
-        now: Duration,
-    ) -> Result<Vec<OutboundDatagram>, WireError> {
-        let mut out = self.write(payload)?;
-        if self.cache.is_empty() {
-            return Ok(out);
-        }
-        // Piggyback HEARTBEAT pro matched Reader-Proxy. final_flag=false
-        // damit der Reader den HB als "respond please"-Pulse interpretiert
-        // (RTPS 2.5 §8.4.15.5).
-        let cache_min = self.cache.min_sn().unwrap_or(SequenceNumber(1));
-        for idx in 0..self.reader_proxies.len() {
-            let reader_id = self.reader_proxies[idx].remote_reader_guid.entity_id;
-            let targets = self.targets_for(idx);
-            let mut builder =
-                MessageBuilder::open(self.rtps_header(), Rc::clone(&targets), self.mtu);
-            self.append_heartbeat(
-                &mut builder,
-                reader_id,
-                cache_min,
-                /*final_flag=*/ false,
-                &mut out,
-                &targets,
-            )?;
-            if let Some(dg) = builder.finish() {
-                out.push(dg);
-            }
-        }
-        self.last_heartbeat = Some(now);
-        Ok(out)
+        Ok((sn, arc_payload))
     }
 
     // ---------- Tick ----------
@@ -420,7 +582,7 @@ impl ReliableWriter {
     /// Tick-Event: HEARTBEATs + Resends + NACK_FRAG-Responses, aggregiert.
     ///
     /// # Errors
-    /// Wire-Encode-Fehler.
+    /// Wire-encode error.
     pub fn tick(&mut self, now: Duration) -> Result<Vec<OutboundDatagram>, WireError> {
         let should_heartbeat = match self.last_heartbeat {
             None => true,
@@ -435,7 +597,7 @@ impl ReliableWriter {
             let reader_id = self.reader_proxies[idx].remote_reader_guid.entity_id;
             let targets = self.targets_for(idx);
 
-            // 1) Fragment-Resends (aus NACK_FRAG) — je 1 Datagramm pro Fragment
+            // 1) Fragment resends (from NACK_FRAG) — one datagram per fragment
             while let Some((sn, frag)) = self.reader_proxies[idx].next_requested_fragment() {
                 match self.cache.get(sn) {
                     Some(change) => {
@@ -454,9 +616,8 @@ impl ReliableWriter {
                 }
             }
 
-            // 2) Aggregiertes Datagramm fuer ganze-SN-Resends + optional HB
-            let mut builder =
-                MessageBuilder::open(self.rtps_header(), Rc::clone(&targets), self.mtu);
+            // 2) Aggregated datagram for whole-SN resends + optional HB
+            let mut builder = self.open_builder(idx, &targets);
 
             while let Some(sn) = self.reader_proxies[idx].next_requested_change() {
                 #[cfg(feature = "metrics")]
@@ -464,7 +625,7 @@ impl ReliableWriter {
                 match self.cache.get(sn) {
                     Some(change) => {
                         let payload = change.payload.clone();
-                        // Wenn Fragmentation noetig → eigene Datagramme, Builder flushen falls noetig.
+                        // If fragmentation is needed → separate datagrams, flush the builder if needed.
                         if self.needs_fragmentation(&payload) {
                             if let Some(dg) = builder.finish() {
                                 out.push(dg);
@@ -494,23 +655,23 @@ impl ReliableWriter {
                 }
             }
 
-            // 3) Piggyback-HEARTBEAT am Ende (wenn faellig).
+            // 3) Piggyback HEARTBEAT at the end (if due).
             //
-            // `first_sn` ist per-Proxy: `max(cache.min_sn, proxy.highest_acked + 1)`.
-            // Das per-Proxy `highest_acked + 1` verhindert, dass Volatile-
-            // proxies (die via `skip_samples_up_to` ueber den cache-min
-            // hinaus vorgerueckt sind) den Reader auffordern, alte
-            // Samples nachzufordern. Spec §8.4.12.1: firstSN ist die
+            // `first_sn` is per-proxy: `max(cache.min_sn, proxy.highest_acked + 1)`.
+            // The per-proxy `highest_acked + 1` prevents volatile
+            // proxies (which advanced past the cache-min via `skip_samples_up_to`)
+            // from asking the reader to re-request old
+            // samples. Spec §8.4.12.1: firstSN is the
             // "smallest sequence number considered relevant FOR THE READER".
             //
-            // **FinalFlag (WP 1.E Stufe-A, §8.4.9.2.7):** Periodische
-            // HEARTBEATs MUESSEN `FinalFlag = NOT_SET` tragen, damit der
-            // Reader zur Antwort verpflichtet ist (Reliable-Liveness).
-            // Ein gesetztes Final-Bit wuerde dem Reader signalisieren
-            // "Du musst nichts tun" — was dazu fuehrt, dass nach Discovery
-            // bei voll-acknowledged Cache nie wieder ACKNACK kommt und
-            // der Writer in einen Zombie-State faellt. Daher hier hart
-            // `false`.
+            // **FinalFlag (WP 1.E stage A, §8.4.9.2.7):** periodic
+            // HEARTBEATs MUST carry `FinalFlag = NOT_SET`, so that the
+            // reader is obliged to respond (reliable liveness).
+            // A set final bit would signal to the reader
+            // "you need do nothing" — which leads to never receiving an ACKNACK
+            // again after discovery with a fully-acknowledged cache, and
+            // the writer falling into a zombie state. Hence hard
+            // `false` here.
             if emit_hb {
                 let cache_min = self.cache.min_sn().unwrap_or(SequenceNumber(1));
                 let per_proxy_first = SequenceNumber(
@@ -545,8 +706,8 @@ impl ReliableWriter {
 
     // ---------- Incoming Control ----------
 
-    /// Verarbeitet eine eingegangene ACKNACK von `src_guid`.
-    /// Unbekannter Sender → no-op.
+    /// Processes a received ACKNACK from `src_guid`.
+    /// Unknown sender → no-op.
     pub fn handle_acknack(
         &mut self,
         src_guid: Guid,
@@ -563,15 +724,34 @@ impl ReliableWriter {
             self.unknown_src_count = self.unknown_src_count.saturating_add(1);
             return;
         };
+        let requested: alloc::vec::Vec<SequenceNumber> = requested.into_iter().collect();
+        let bitmap_empty = requested.is_empty();
         self.reader_proxies[idx].acked_changes_set(base);
         self.reader_proxies[idx].requested_changes_set(requested);
-        // Cache-GC **entfernt** im Per-Destination-Queue-Modell (T3-
-        // Refactor): Der Cache wird nur noch durch HistoryKind::KeepLast
-        // getrimmt. Ein stalled Reader blockt damit nicht mehr die
-        // Pipeline — bei zu-alten Samples bekommt er GAP-Responses.
+        // Cross-vendor reliability: a reader that lags behind the writer cache
+        // via a **pure ACK** (base, empty NACK bitmap) requests no
+        // concrete SNs — but relies on the writer pushing the
+        // unacknowledged tail (RTPS §8.4.2.3.3: non-acked changes are
+        // to be delivered reliably). cyclone sends exactly such a "1/0" ACKNACK after
+        // an early security decode drop; without this tail request
+        // the race-discarded VolatileSecure samples would remain permanently
+        // undelivered. With a non-empty bitmap (ZeroDDS reader) unchanged.
+        if bitmap_empty {
+            if let Some(max_sn) = self.cache.max_sn() {
+                let proxy = &mut self.reader_proxies[idx];
+                if proxy.unacked_changes(max_sn) {
+                    let from = proxy.highest_acked_sn().0 + 1;
+                    proxy.requested_changes_set((from..=max_sn.0).map(SequenceNumber));
+                }
+            }
+        }
+        // Cache GC **removed** in the per-destination-queue model (T3
+        // refactor): the cache is only trimmed by HistoryKind::KeepLast
+        // anymore. A stalled reader thereby no longer blocks the
+        // pipeline — for too-old samples it gets GAP responses.
     }
 
-    /// Verarbeitet ein eingegangenes NACK_FRAG von `src_guid`.
+    /// Processes a received NACK_FRAG from `src_guid`.
     pub fn handle_nackfrag(&mut self, src_guid: Guid, nf: &NackFragSubmessage) {
         if nf.writer_id != self.guid.entity_id {
             return;
@@ -589,14 +769,14 @@ impl ReliableWriter {
         self.reader_proxies[idx].requested_fragments_set(nf.writer_sn, missing);
     }
 
-    // ---------- Build-Helfer ----------
+    // ---------- Build helpers ----------
 
     fn rtps_header(&self) -> RtpsHeader {
         RtpsHeader::new(self.vendor_id, self.guid.prefix)
     }
 
-    /// Ziel-Locator-Set fuer den Proxy `idx`. Multicast bevorzugt
-    /// (Netzwerk-Latenz und Bandbreite), Unicast als Fallback.
+    /// Target locator set for proxy `idx`. Multicast preferred
+    /// (network latency and bandwidth), unicast as fallback.
     fn targets_for(&self, idx: usize) -> Rc<Vec<Locator>> {
         let p = &self.reader_proxies[idx];
         if !p.multicast_locators.is_empty() {
@@ -615,27 +795,53 @@ impl ReliableWriter {
         out: &mut Vec<OutboundDatagram>,
         targets: &Rc<Vec<Locator>>,
     ) -> Result<(), WireError> {
-        let data = DataSubmessage {
-            extra_flags: 0,
-            reader_id,
-            writer_id: self.guid.entity_id,
-            writer_sn: sn,
-            // WP 2.0a: Arc::clone statt to_vec — Zero-Copy in den Wire-Pfad.
-            inline_qos: None,
-            key_flag: false,
-            non_standard_flag: false,
-            serialized_payload: alloc::sync::Arc::clone(payload),
-        };
-        let (body, flags) = data.write_body(true);
-        self.append_submessage(
-            builder,
-            SubmessageId::Data,
-            flags,
-            &body,
-            out,
-            targets,
-            "DATA",
-        )
+        // Hot-path zero-copy: the 20-byte fixed header (extra_flags +
+        // octetsToInlineQos + reader_id + writer_id + writer_sn) is
+        // written directly into a stack buffer; the serializedData
+        // are borrowed by `try_add_submessage_split` from the Arc
+        // slice, without materializing an intermediate Vec. Saves
+        // per DATA write 1 Vec heap alloc + 1 memcpy of N bytes
+        // payload (typically 100..8000 B). Cyclone does this via iovec /
+        // sendmmsg; we do it via two extend_from_slice into the
+        // existing MessageBuilder Vec — semantically identical in
+        // wire output, one allocation and one copy fewer.
+        let mut header = [0u8; 20];
+        // extra_flags (2 byte LE = 0)
+        header[0] = 0;
+        header[1] = 0;
+        // octetsToInlineQos = 16
+        header[2] = 16;
+        header[3] = 0;
+        // reader_id (4 byte)
+        header[4..8].copy_from_slice(&reader_id.to_bytes());
+        // writer_id (4 byte)
+        header[8..12].copy_from_slice(&self.guid.entity_id.to_bytes());
+        // writer_sn (8 byte LE)
+        header[12..20].copy_from_slice(&sn.to_bytes_le());
+        let flags = FLAG_E_LITTLE_ENDIAN | DATA_FLAG_DATA;
+        // append_submessage_split — the builder writes the SubmessageHeader
+        // (4 B) + fixed header (20 B) + payload (N B) directly one after another
+        // into its Vec, no extra alloc.
+        match builder.try_add_submessage_split(SubmessageId::Data, flags, &header, payload) {
+            Ok(()) => Ok(()),
+            Err(AddError::BodyTooLarge) => Err(WireError::ValueOutOfRange {
+                message: "DATA body exceeds u16::MAX",
+            }),
+            Err(AddError::WouldExceedMtu { .. }) => {
+                let finished = core::mem::replace(
+                    builder,
+                    MessageBuilder::open(self.rtps_header(), Rc::clone(targets), self.mtu),
+                );
+                if let Some(dg) = finished.finish() {
+                    out.push(dg);
+                }
+                builder
+                    .try_add_submessage_split(SubmessageId::Data, flags, &header, payload)
+                    .map_err(|_| WireError::ValueOutOfRange {
+                        message: "submessage does not fit into fresh datagram",
+                    })
+            }
+        }
     }
 
     fn append_gap(
@@ -705,7 +911,7 @@ impl ReliableWriter {
         )
     }
 
-    /// Gemeinsamer Submessage-Append mit Overflow-Handling.
+    /// Shared submessage append with overflow handling.
     #[allow(clippy::too_many_arguments)]
     fn append_submessage(
         &self,
@@ -744,8 +950,8 @@ impl ReliableWriter {
         }
     }
 
-    /// Erzeugt je 1 Datagramm pro Fragment (DATA) oder 1 DATA-Datagramm
-    /// (wenn unter `fragment_size`). Kein Aggregieren mit anderen DATAs.
+    /// Produces one datagram per fragment (DATA) or one DATA datagram
+    /// (if below `fragment_size`). No aggregation with other DATAs.
     fn build_sample_datagrams(
         &self,
         sn: SequenceNumber,
@@ -800,7 +1006,7 @@ impl ReliableWriter {
             reader_id,
             writer_id: self.guid.entity_id,
             writer_sn: sn,
-            // WP 2.0a: Arc::clone statt to_vec — Zero-Copy in den Wire-Pfad.
+            // WP 2.0a: Arc::clone instead of to_vec — zero-copy into the wire path.
             inline_qos: None,
             key_flag: false,
             non_standard_flag: false,
@@ -817,11 +1023,11 @@ impl ReliableWriter {
         })
     }
 
-    /// Spec §9.6.3.9 PID_STATUS_INFO Lifecycle-Sample: DATA mit
-    /// `key_flag=true` + Inline-QoS [PID_KEY_HASH + PID_STATUS_INFO].
-    /// Payload bleibt leer (Spec erlaubt das, der Reader rekonstruiert
-    /// die Instanz aus dem Key-Hash). Wird vom DCPS-Layer beim
-    /// `dispose`/`unregister_instance` aufgerufen.
+    /// Spec §9.6.3.9 PID_STATUS_INFO lifecycle sample: DATA with
+    /// `key_flag=true` + inline QoS [PID_KEY_HASH + PID_STATUS_INFO].
+    /// The payload stays empty (the spec allows it, the reader reconstructs
+    /// the instance from the key hash). Called by the DCPS layer on
+    /// `dispose`/`unregister_instance`.
     fn build_lifecycle_datagram(
         &self,
         sn: SequenceNumber,
@@ -853,19 +1059,19 @@ impl ReliableWriter {
         })
     }
 
-    /// Sendet einen Lifecycle-Marker (dispose/unregister) an alle matched
-    /// Reader. Allokiert eine neue Sequence-Number, persistiert eine
-    /// `CacheChange` mit dem entsprechenden ChangeKind und baut pro
-    /// Reader-Proxy eine DATA mit Key-Hash + StatusInfo.
+    /// Sends a lifecycle marker (dispose/unregister) to all matched
+    /// readers. Allocates a new sequence number, persists a
+    /// `CacheChange` with the corresponding ChangeKind and builds a DATA
+    /// with key hash + StatusInfo per reader proxy.
     ///
-    /// `status_bits` ist die ODER-Verknuepfung der gewuenschten Bits aus
+    /// `status_bits` is the OR combination of the desired bits from
     /// [`crate::inline_qos::status_info`]:
     /// - DISPOSED: NotAliveDisposed
     /// - UNREGISTERED: NotAliveUnregistered
     /// - DISPOSED | UNREGISTERED: NotAliveDisposedUnregistered
     ///
     /// # Errors
-    /// Wire-Encode-Fehler oder Sequence-Number-Overflow.
+    /// Wire encode error or sequence-number overflow.
     pub fn write_lifecycle(
         &mut self,
         key_hash: [u8; 16],
@@ -894,8 +1100,8 @@ impl ReliableWriter {
             }
         };
 
-        // CacheChange persistieren — Late-Joiner-Replay (T9) liest darauf
-        // auf, und das History-Cache-Bookkeeping bleibt konsistent.
+        // Persist the CacheChange — late-joiner replay (T9) reads from it,
+        // and the history-cache bookkeeping stays consistent.
         self.cache
             .insert(crate::history_cache::CacheChange::lifecycle(
                 sn,
@@ -984,17 +1190,17 @@ impl ReliableWriter {
             fragments_in_submessage: 1,
             fragment_size,
             sample_size,
-            // WP 2.0a: chunk ist ein Sub-Slice des vollen Arc-Payloads.
+            // WP 2.0a: chunk is a sub-slice of the full Arc payload.
             //
-            // **Zero-Copy-Scope-Claim:** der
-            // `Arc::from(chunk)` hier ALLOZIERT einen neuen Refcount-
-            // Block und kopiert die chunk-Bytes. Das ist **nicht**
-            // Zero-Copy. Der WP-2.0a-Claim „3-7 % Gewinn" bezieht
-            // sich ausschliesslich auf den unfragmentierten
-            // DATA-Pfad (`build_single_data_datagram`), wo
-            // `Arc::clone` den vollen Payload teilt. Fragmentation-
-            // Pfade bleiben copy-per-Chunk bis WP 2.0a-2 (iovec)
-            // die Submessage-Builder-Seite eliminiert.
+            // **Zero-copy scope claim:** the
+            // `Arc::from(chunk)` here ALLOCATES a new refcount
+            // block and copies the chunk bytes. This is **not**
+            // zero-copy. The WP-2.0a claim "3-7 % gain" refers
+            // exclusively to the unfragmented
+            // DATA path (`build_single_data_datagram`), where
+            // `Arc::clone` shares the full payload. Fragmentation
+            // paths stay copy-per-chunk until WP 2.0a-2 (iovec)
+            // eliminates the submessage-builder side.
             serialized_payload: alloc::sync::Arc::from(chunk),
             inline_qos_flag: false,
             hash_key_flag: false,
@@ -1149,13 +1355,12 @@ mod tests {
             w.write(&alloc::vec![i as u8]).unwrap();
         }
         w.handle_acknack(rguid, sn(4), [sn(2)]);
-        // Per-destination-queue-Modell: Cache bleibt voll (KeepAll),
-        // GC passiert nur via History-QoS. ACKNACK-State wird aber
-        // am Proxy korrekt getrackt.
+        // Per-destination-queue model: the cache stays full (KeepAll),
+        // GC happens only via history QoS. The ACKNACK state is, however,
+        // tracked correctly at the proxy.
         assert_eq!(w.cache().len(), 3, "cache intact under KeepAll");
         assert_eq!(first_proxy(&w).highest_acked_sn(), sn(3));
-        // sn(2) war acked durch base=4 → gar nicht erst als requested
-        // gemerkt
+        // sn(2) was acked by base=4 → not even remembered as requested
         assert_eq!(first_proxy(&w).pending_requested_count(), 0);
     }
 
@@ -1167,7 +1372,7 @@ mod tests {
             w.write(&alloc::vec![i as u8]).unwrap();
         }
         w.handle_acknack(rguid, sn(2), [sn(2), sn(3)]);
-        // Cache voll unter KeepAll.
+        // Cache full under KeepAll.
         assert_eq!(w.cache().len(), 3);
         assert_eq!(first_proxy(&w).highest_acked_sn(), sn(1));
         assert_eq!(first_proxy(&w).pending_requested_count(), 2);
@@ -1199,7 +1404,7 @@ mod tests {
             w.write(&alloc::vec![i as u8])
                 .expect("keep_last never fails");
         }
-        // Cache haelt nur die letzten 3 (SN 3, 4, 5)
+        // Cache holds only the last 3 (SN 3, 4, 5)
         assert_eq!(w.cache().len(), 3);
         assert_eq!(w.cache().min_sn(), Some(sn(3)));
         assert_eq!(w.cache().max_sn(), Some(sn(5)));
@@ -1208,9 +1413,9 @@ mod tests {
 
     #[test]
     fn keep_last_stalled_reader_does_not_block_fresh_writes() {
-        // Scenario: zwei Proxies, einer "stalled" (nie acked),
-        // der andere aktiv. Unter KeepLast schreibt der Writer
-        // weiter, der stalled Reader bekommt spaeter GAPs.
+        // Scenario: two proxies, one "stalled" (never acked),
+        // the other active. Under KeepLast the writer keeps
+        // writing, the stalled reader gets GAPs later.
         let writer_guid = Guid::new(
             GuidPrefix::from_bytes([1; 12]),
             EntityId::user_writer_with_key([0x10, 0x20, 0x30]),
@@ -1240,13 +1445,13 @@ mod tests {
             fragment_size: DEFAULT_FRAGMENT_SIZE,
             mtu: DEFAULT_MTU,
         });
-        // 10 samples — stalled nie acked, aber write schlaegt nicht fehl
+        // 10 samples — stalled never acked, but write does not fail
         for i in 1..=10 {
             w.write(&alloc::vec![i as u8]).expect("never blocks");
         }
         assert_eq!(w.cache().len(), 3);
         assert_eq!(w.cache().min_sn(), Some(sn(8)));
-        // Aktiver Reader fragt spaeter sn(2) an → ist evicted, bekommt GAP
+        // The active reader later requests sn(2) → it is evicted, gets a GAP
         w.handle_acknack(reader_guid(), sn(1), [sn(2)]);
         let out = w.tick(Duration::ZERO).unwrap();
         let has_gap = out.iter().any(|d| {
@@ -1315,8 +1520,8 @@ mod tests {
             .submessages
             .iter()
             .any(|s| matches!(s, ParsedSubmessage::Heartbeat(_)));
-        assert!(has_data_2, "DATA-Resend fuer sn(2)");
-        assert!(has_hb, "Piggyback-HEARTBEAT im gleichen Datagramm");
+        assert!(has_data_2, "DATA resend for sn(2)");
+        assert!(has_hb, "Piggyback HEARTBEAT in the same datagram");
     }
 
     #[test]
@@ -1358,14 +1563,14 @@ mod tests {
     #[test]
     fn heartbeat_count_wraps_around_at_i32_max_per_spec_8_4_15_7() {
         // Spec §8.4.15.7: counts MUST be wrap-around-tolerant
-        // (modular arithmetic). i32 wraps wenn der Counter
-        // i32::MAX erreicht.
+        // (modular arithmetic). i32 wraps when the counter
+        // reaches i32::MAX.
         let mut w = make_writer(10, Duration::from_millis(100));
         w.write(&alloc::vec![1]).unwrap();
-        // Manuell auf MAX setzen (kein Public-Setter; aber wir tracken
-        // den Counter ueber `heartbeat_count.wrapping_add(1)` →
-        // wrap-Verhalten ist garantiert per Code).
-        // Teste die wrapping-Semantik direkt:
+        // Set manually to MAX (no public setter; but we track
+        // the counter via `heartbeat_count.wrapping_add(1)` →
+        // wrap behaviour is guaranteed by code).
+        // Test the wrapping semantics directly:
         let counter: i32 = i32::MAX;
         let next = counter.wrapping_add(1);
         assert_eq!(next, i32::MIN, "i32::MAX + 1 wraps to i32::MIN");
@@ -1497,6 +1702,37 @@ mod tests {
         assert_eq!(hb.last_sn, sn(3));
     }
 
+    #[test]
+    fn emit_info_dst_prepends_info_dst_with_peer_prefix() {
+        // cyclones filtered VolatileSecure-Reader matcht per voller GUID;
+        // without INFO_DST it resolves dst=0:0:0:<eid> -> no match -> deadlock.
+        let mut w = make_writer(10, Duration::from_secs(1));
+        w.set_emit_info_dst(true);
+        // The volatile writer uses write_with_heartbeat (not plain write).
+        let d = w
+            .write_with_heartbeat(&alloc::vec![0xAA], Duration::ZERO)
+            .expect("whb");
+        let bytes = &d[0].bytes;
+        assert_eq!(bytes[20], 0x0E, "first submessage must be INFO_DST");
+        assert_eq!(
+            u16::from_le_bytes([bytes[22], bytes[23]]),
+            12,
+            "INFO_DST body = 12-byte prefix"
+        );
+        assert_eq!(
+            &bytes[24..36],
+            &[2u8; 12],
+            "INFO_DST carries peer (reader) prefix"
+        );
+    }
+
+    #[test]
+    fn no_info_dst_by_default() {
+        let mut w = make_writer(10, Duration::from_secs(1));
+        let d = w.write(&alloc::vec![0xAA]).expect("write");
+        assert_ne!(d[0].bytes[20], 0x0E, "no INFO_DST emitted by default");
+    }
+
     // ---------- Multi-Reader (WP 1.4 T3b) ----------
 
     #[test]
@@ -1567,8 +1803,8 @@ mod tests {
             w.write(&alloc::vec![i as u8]).unwrap();
         }
         w.handle_acknack(rguid1, sn(4), []);
-        // Proxy 1 zeigt highest_acked=3, Proxy 2 unveraendert=0.
-        // Cache-GC ist entkoppelt vom acknack (Per-destination-queue-Modell).
+        // Proxy 1 shows highest_acked=3, proxy 2 unchanged=0.
+        // Cache GC is decoupled from the acknack (per-destination-queue model).
         assert_eq!(w.reader_proxies()[0].highest_acked_sn(), sn(3));
         assert_eq!(w.reader_proxies()[1].highest_acked_sn(), sn(0));
         assert_eq!(w.cache().len(), 3, "KeepAll cache intact");
@@ -1604,11 +1840,11 @@ mod tests {
         assert_eq!(w.reader_proxies()[1].pending_requested_fragment_count(), 0);
     }
 
-    // ---------- WP 1.E Stufe-A: HEARTBEAT FinalFlag-Default ----------
+    // ---------- WP 1.E stage A: HEARTBEAT FinalFlag default ----------
 
-    /// §8.4.9.2.7: Periodische HEARTBEATs muessen `FinalFlag=NOT_SET`
-    /// tragen, sonst antwortet der Reader nicht mit ACKNACK und der
-    /// Reliable-Liveness-Loop bricht.
+    /// §8.4.9.2.7: periodic HEARTBEATs must carry `FinalFlag=NOT_SET`,
+    /// otherwise the reader does not respond with ACKNACK and the
+    /// reliable-liveness loop breaks.
     #[test]
     fn periodic_heartbeat_has_final_flag_unset() {
         let mut w = make_writer(10, Duration::from_millis(50));
@@ -1632,9 +1868,9 @@ mod tests {
         );
     }
 
-    /// Ad-hoc HB direkt nach `add_reader_proxy`: setzt `last_heartbeat=None`,
-    /// d.h. naechster `tick()` emittiert sofort einen HB. Dieser HB ist
-    /// ebenfalls non-final, damit der frische Reader sicher antwortet.
+    /// Ad-hoc HB directly after `add_reader_proxy`: sets `last_heartbeat=None`,
+    /// i.e. the next `tick()` immediately emits an HB. This HB is
+    /// also non-final, so the fresh reader reliably responds.
     #[test]
     fn heartbeat_after_add_reader_proxy_is_non_final() {
         let mut w = make_writer(10, Duration::from_secs(60));
@@ -1675,10 +1911,10 @@ mod tests {
         for i in 1..=3 {
             w.write(&alloc::vec![i as u8]).unwrap();
         }
-        // Alle 3 als requested
+        // All 3 as requested
         w.handle_acknack(rguid, sn(1), [sn(1), sn(2), sn(3)]);
         let out = w.tick(Duration::ZERO).unwrap();
-        // Ein Datagramm enthaelt mehrere DATAs + HEARTBEAT
+        // One datagram contains multiple DATAs + HEARTBEAT
         assert_eq!(out.len(), 1, "all resends aggregated into single datagram");
         let parsed = decode_datagram(&out[0].bytes).unwrap();
         let data_count = parsed

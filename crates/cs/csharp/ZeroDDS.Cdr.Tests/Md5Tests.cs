@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// MD5-Implementations-Tests.  Vector-Quelle: RFC 1321 Anhang A.5 +
+// MD5 implementation tests.  Vector source: RFC 1321 appendix A.5 +
 // NIST FIPS-180-Test-Suite.
 
 using System;
@@ -53,7 +53,7 @@ public class Md5Tests
     [Fact]
     public void V8KeyHolder_BytesProduceCorrectMd5()
     {
-        // PlainCdr2BeKeyHolder fuer V-8 (4-byte BE id=42).
+        // PlainCdr2BeKeyHolder for V-8 (4-byte BE id=42).
         var hash = Md5.Hash(new byte[] { 0x00, 0x00, 0x00, 0x2A });
         // Hash matches `md5sum`: a515855799ddbda08bc99fc2ce87fa79.
         Assert.Equal("a515855799ddbda08bc99fc2ce87fa79", ToHex(hash));

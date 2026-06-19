@@ -1,32 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `HistoryCache` — geordnete Sample-Ablage fuer Reliable Writer/Reader.
+//! `HistoryCache` — ordered sample storage for reliable writer/reader.
 //!
-//! DDSI-RTPS 2.5 §8.4.8. Beide Seiten (Writer + Reader) halten je eine
-//! eigene Cache-Instanz:
+//! DDSI-RTPS 2.5 §8.4.8. Both sides (writer + reader) hold their own
+//! cache instance:
 //!
-//! - **Writer-Cache**: per `write()` abgelegte `CacheChange`s, aus denen
-//!   auf AckNack-Request hin re-gesendet wird. Entfernt Samples erst,
-//!   wenn **alle** matched Reader sie via AckNack bestaetigt haben.
-//! - **Reader-Cache**: empfangene `CacheChange`s in SN-Reihenfolge, fuer
-//!   in-order Delivery an die Applikations-Schicht. Kann via
-//!   `remove_up_to` nach Delivery geleert werden.
+//! - **Writer cache**: `CacheChange`s stored via `write()`, from which
+//!   re-sends happen on AckNack request. Removes samples only
+//!   once **all** matched readers have confirmed them via AckNack.
+//! - **Reader cache**: received `CacheChange`s in SN order, for
+//!   in-order delivery to the application layer. Can be cleared via
+//!   `remove_up_to` after delivery.
 //!
-//! **History-QoS (WP 1.4 T3-Follow-up):** der Cache wird ueber
-//! [`HistoryKind`] konfiguriert — `KeepAll` (hart-begrenzt, Error bei
-//! Overflow) vs. `KeepLast(depth)` (Ring-Buffer, aeltestes Sample faellt
-//! bei Overflow heraus). KeepLast ist Spec-gerecht (§8.7.4) und
-//! entkoppelt Writer-Cache-GC von Reader-ACKNACK-Progress — ein
-//! stalled Reader verhindert damit nicht mehr, dass andere
-//! Reader weitere Samples bekommen ("per-destination queue"-Modell).
+//! **History QoS (WP 1.4 T3 follow-up):** the cache is configured via
+//! [`HistoryKind`] — `KeepAll` (hard-bounded, error on
+//! overflow) vs. `KeepLast(depth)` (ring buffer, the oldest sample drops
+//! out on overflow). KeepLast is spec-conformant (§8.7.4) and
+//! decouples writer-cache GC from reader-ACKNACK progress — a
+//! stalled reader thereby no longer prevents other
+//! readers from getting further samples ("per-destination queue" model).
 
 extern crate alloc;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-// portable_atomic statt core::sync::atomic, damit AtomicI64/AtomicU64
-// auch auf Cortex-M-Targets ohne native 64-bit-Atomics funktionieren.
-// Auf x86_64/aarch64 Linux ist das identisch zur Stdlib.
+// portable_atomic instead of core::sync::atomic, so AtomicI64/AtomicU64
+// also work on Cortex-M targets without native 64-bit atomics.
+// On x86_64/aarch64 Linux this is identical to the stdlib.
 use portable_atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
 
 use crate::wire_types::SequenceNumber;
@@ -46,80 +46,80 @@ fn dispatch_rtps_tap(label: &str, sn: SequenceNumber, payload: Vec<u8>) {
     zerodds_inspect_endpoint::tap::dispatch(&frame);
 }
 
-/// Art eines Cache-Eintrags (DDSI-RTPS §8.2.1.2 / §8.7.2.2.2).
+/// Kind of a cache entry (DDSI-RTPS §8.2.1.2 / §8.7.2.2.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeKind {
-    /// Gueltiges Sample, von DDS-DataReader-Filter akzeptiert.
+    /// Valid sample, accepted by the DDS DataReader filter.
     Alive,
-    /// Gueltiges Sample, vom Reader-side Filter (TIME_BASED_FILTER /
-    /// ContentFilteredTopic) verworfen — bleibt aber im NACK-Pfad
-    /// "available", damit Reliable-Writer es nicht erneut sendet
-    /// (filteredCount-Zaehler in `ChangeFromWriter`).
+    /// Valid sample, discarded by the reader-side filter (TIME_BASED_FILTER /
+    /// ContentFilteredTopic) — but stays "available" in the NACK
+    /// path, so the reliable writer does not re-send it
+    /// (filteredCount counter in `ChangeFromWriter`).
     AliveFiltered,
-    /// `dispose`-Marker.
+    /// `dispose` marker.
     NotAliveDisposed,
-    /// `unregister`-Marker.
+    /// `unregister` marker.
     NotAliveUnregistered,
-    /// Kombinierter dispose+unregister.
+    /// Combined dispose+unregister.
     NotAliveDisposedUnregistered,
 }
 
 impl ChangeKind {
-    /// Spec §8.4.10.5 — `is_relevant` true fuer alle Live-Kinds; nur
-    /// `AliveFiltered` ist explizit *nicht* relevant fuer den DDS-
-    /// User-API-Path (zaehlt aber im NACK-Pfad als "received").
+    /// Spec §8.4.10.5 — `is_relevant` true for all live kinds; only
+    /// `AliveFiltered` is explicitly *not* relevant for the DDS
+    /// user-API path (but counts as "received" in the NACK path).
     #[must_use]
     pub fn is_relevant(self) -> bool {
         !matches!(self, Self::AliveFiltered)
     }
 
-    /// Spec §8.4.10.5 — `is_alive_kind` umfasst Alive + AliveFiltered.
+    /// Spec §8.4.10.5 — `is_alive_kind` covers Alive + AliveFiltered.
     #[must_use]
     pub fn is_alive_kind(self) -> bool {
         matches!(self, Self::Alive | Self::AliveFiltered)
     }
 }
 
-/// Einzelner Cache-Eintrag.
+/// Single cache entry.
 ///
-/// `payload` wird als `Arc<[u8]>` gehalten — Cache, Writer-Build-
-/// Datagram-Pfad und Reader-Delivery teilen sich eine einzige
-/// Allocation. Das spart im Reliable-Writer-Tick den n-fachen
-/// `Vec::clone()` pro Reader-Proxy (Perf-Audit F7/F8/F10, ~30-50 %
-/// Throughput-Gewinn bei grossen Payloads).
+/// `payload` is held as `Arc<[u8]>` — the cache, the writer build-
+/// datagram path and reader delivery share a single
+/// allocation. This saves the n-fold `Vec::clone()` per reader proxy
+/// in the reliable-writer tick (perf audit F7/F8/F10, ~30-50 %
+/// throughput gain for large payloads).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CacheChange {
-    /// Sequence-Number (writer-lokal eindeutig).
+    /// Sequence number (writer-locally unique).
     pub sequence_number: SequenceNumber,
-    /// Nutzlast (serialisierter Sample), referenzgezaehlt.
+    /// Payload (serialized sample), reference-counted.
     pub payload: Arc<[u8]>,
-    /// Art des Events.
+    /// Kind of the event.
     pub kind: ChangeKind,
-    /// Optionaler `PID_KEY_HASH` aus dem Inline-QoS (Spec §9.6.4.8).
-    /// Reader-Side: bei keyed Topics + ALIVE-Samples mit Inline-Hash
-    /// oder bei Lifecycle-Markern (Disposed/Unregistered) gefuellt
-    /// vom Reader-Pfad. Writer-Side: gesetzt vom Writer wenn der Pfad
-    /// den Hash entlang der Sample-Pipeline propagiert.
+    /// Optional `PID_KEY_HASH` from the inline QoS (Spec §9.6.4.8).
+    /// Reader side: filled for keyed topics + ALIVE samples with an inline hash
+    /// or for lifecycle markers (Disposed/Unregistered)
+    /// by the reader path. Writer side: set by the writer when the path
+    /// propagates the hash along the sample pipeline.
     pub key_hash: Option<[u8; 16]>,
 }
 
 impl CacheChange {
-    /// Erstellt ein Alive-Change. Nimmt `Vec<u8>` entgegen und
-    /// konvertiert einmalig in `Arc<[u8]>`. Fuer Call-Sites, die die
-    /// Allocation bereits als Arc haben, gibt es [`Self::alive_arc`].
+    /// Creates an alive change. Takes `Vec<u8>` and
+    /// converts once into `Arc<[u8]>`. For call sites that already have the
+    /// allocation as an Arc, there is [`Self::alive_arc`].
     #[must_use]
     pub fn alive(sn: SequenceNumber, payload: Vec<u8>) -> Self {
         Self::alive_arc(sn, Arc::from(payload))
     }
 
-    /// Erstellt ein Alive-Change aus einer bereits existierenden
-    /// `Arc<[u8]>`-Payload. Zero-Copy-Pfad fuer Caller, die die
-    /// Allocation teilen (Writer ↔ Cache ↔ Datagram).
+    /// Creates an alive change from an already-existing
+    /// `Arc<[u8]>` payload. Zero-copy path for callers that share the
+    /// allocation (writer ↔ cache ↔ datagram).
     ///
-    /// **Crate-intern:** externe Nutzer sollen via [`Self::alive`] mit
-    /// `Vec<u8>` eintreten — der Arc-Pfad ist reine Writer/Reader-
-    /// interne Optimierung und soll nicht versehentlich Teil der
-    /// ffentlichen API werden.
+    /// **Crate-internal:** external users should enter via [`Self::alive`] with
+    /// `Vec<u8>` — the Arc path is a pure writer/reader-
+    /// internal optimization and should not accidentally become part of the
+    /// public API.
     #[must_use]
     pub(crate) fn alive_arc(sn: SequenceNumber, payload: Arc<[u8]>) -> Self {
         Self {
@@ -130,9 +130,9 @@ impl CacheChange {
         }
     }
 
-    /// Erstellt einen Lifecycle-Marker (Spec §8.2.1.2). `payload` ist die
-    /// Key-Only-Serialisierung der disposed/unregistered Instanz —
-    /// genau das, was als `PID_KEY_HASH` in der Inline-QoS landet.
+    /// Creates a lifecycle marker (Spec §8.2.1.2). `payload` is the
+    /// key-only serialization of the disposed/unregistered instance —
+    /// exactly what lands as `PID_KEY_HASH` in the inline QoS.
     #[must_use]
     pub fn lifecycle(sn: SequenceNumber, payload: Vec<u8>, kind: ChangeKind) -> Self {
         Self {
@@ -147,68 +147,68 @@ impl CacheChange {
 /// History-QoS (DDSI-RTPS §8.7.4, Spec Table 17).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistoryKind {
-    /// Cache ist hart begrenzt; bei Overflow liefert `insert` einen
-    /// `CapacityExceeded`-Fehler. Nuetzlich fuer No-Loss-Szenarien, in
-    /// denen der Writer eher blockieren als Daten verwerfen will
-    /// (Dateitransfer, Logging).
+    /// The cache is hard-bounded; on overflow `insert` returns a
+    /// `CapacityExceeded` error. Useful for no-loss scenarios in
+    /// which the writer prefers to block rather than discard data
+    /// (file transfer, logging).
     KeepAll,
-    /// Cache haelt maximal `depth` neueste Samples. Bei Overflow faellt
-    /// automatisch das **aelteste** Sample raus — Writer-`insert`
-    /// schlaegt nie wegen Kapazitaet fehl. Spec-Default fuer DDS.
+    /// The cache holds at most `depth` newest samples. On overflow the
+    /// **oldest** sample drops out automatically — the writer `insert`
+    /// never fails due to capacity. The spec default for DDS.
     KeepLast {
-        /// Maximalzahl Samples im Cache.
+        /// Maximum number of samples in the cache.
         depth: usize,
     },
 }
 
-/// Fehler-Varianten fuer Cache-Operationen.
+/// Error variants for cache operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CacheError {
-    /// `KeepAll`-Cache hat seine Kapazitaet erreicht.
+    /// The `KeepAll` cache has reached its capacity.
     CapacityExceeded,
-    /// Dieselbe SN wurde bereits eingefuegt.
+    /// The same SN was already inserted.
     DuplicateSequenceNumber,
-    /// `KeepLast` mit `depth == 0` — jedes Insert waere sofortiges
-    /// Drop. Der Fall wird bei `insert` abgelehnt statt silent akzeptiert.
+    /// `KeepLast` with `depth == 0` — every insert would be an immediate
+    /// drop. This case is rejected at `insert` instead of silently accepted.
     ZeroDepth,
 }
 
-/// Sentinel-Wert fuer "kein Eintrag" in den `AtomicI64`-Stats. Wird
-/// gewaehlt damit jeder gueltige `SequenceNumber.0` (>= 1 per Spec)
-/// als positiver Wert eindeutig unterscheidbar ist.
+/// Sentinel value for "no entry" in the `AtomicI64` stats. Chosen
+/// so that every valid `SequenceNumber.0` (>= 1 per spec)
+/// is uniquely distinguishable as a positive value.
 const STATS_SENTINEL_NO_SN: i64 = i64::MIN;
 
-/// Atomar-aktualisierte Snapshot-Statistik eines [`HistoryCache`].
+/// Atomically updated snapshot statistics of a [`HistoryCache`].
 ///
-/// **** das eigentliche `BTreeMap`-Storage des Caches
-/// braucht weiter `&mut self` zum Mutieren (lese-/schreib-konkurrente
-/// `BTreeMap`-Mutation gibt's in `std` nicht), aber **Statistik-Werte**
-/// (Laenge, max/min SN, Eviction-Counter) werden parallel in einem
-/// `Arc<HistoryCacheStats>` mitgefuehrt. Monitoring-Threads, SEDP-Tick-
-/// Loops und Telemetrie koennen so zustimmungsfrei pollen, ohne den
-/// Writer/Reader-Lock zu nehmen.
+/// **Note:** the actual `BTreeMap` storage of the cache
+/// still needs `&mut self` to mutate (concurrent read/write
+/// `BTreeMap` mutation does not exist in `std`), but **statistics values**
+/// (length, max/min SN, eviction counter) are carried in parallel in an
+/// `Arc<HistoryCacheStats>`. Monitoring threads, SEDP tick
+/// loops and telemetry can thus poll lock-free, without taking the
+/// writer/reader lock.
 ///
-/// Konsistenz-Garantie: jede mutierende Methode des Caches updated die
-/// Atomics **nach** der `BTreeMap`-Mutation, mit `Release`-Ordering.
-/// Reader nutzen `Acquire`-Ordering — sie sehen einen konsistenten
-/// Stand der **letzten** abgeschlossenen Cache-Operation, nie einen
-/// halb-aktualisierten Zustand der einzelnen Atomics.
+/// Consistency guarantee: every mutating method of the cache updates the
+/// atomics **after** the `BTreeMap` mutation, with `Release` ordering.
+/// Readers use `Acquire` ordering — they see a consistent
+/// state of the **last** completed cache operation, never a
+/// half-updated state of the individual atomics.
 ///
-/// Was *nicht* garantiert ist: cross-field-Konsistenz. Wenn ein
-/// Reader `len` und dann `max_sn` liest, koennen zwischen den
-/// Loads weitere Inserts passiert sein. Das ist akzeptabel fuer
-/// Monitoring; fuer harte Wire-Pfade (Heartbeat-Build) wird weiter
-/// der Writer-Lock genommen.
+/// What is *not* guaranteed: cross-field consistency. If a
+/// reader reads `len` and then `max_sn`, further inserts can have
+/// happened between the loads. That is acceptable for
+/// monitoring; for hard wire paths (heartbeat build) the
+/// writer lock is still taken.
 #[derive(Debug)]
 pub struct HistoryCacheStats {
-    /// Anzahl Changes im Cache (entspricht `BTreeMap::len`).
+    /// Number of changes in the cache (corresponds to `BTreeMap::len`).
     pub len: AtomicUsize,
-    /// Anzahl per `KeepLast`-Eviction verworfener Samples seit Start.
+    /// Number of samples discarded by `KeepLast` eviction since start.
     pub evicted: AtomicU64,
-    /// Hoechste SN im Cache, oder [`STATS_SENTINEL_NO_SN`] wenn leer.
+    /// Highest SN in the cache, or [`STATS_SENTINEL_NO_SN`] if empty.
     pub max_sn: AtomicI64,
-    /// Niedrigste SN im Cache, oder [`STATS_SENTINEL_NO_SN`] wenn leer.
+    /// Lowest SN in the cache, or [`STATS_SENTINEL_NO_SN`] if empty.
     pub min_sn: AtomicI64,
 }
 
@@ -224,9 +224,9 @@ impl Default for HistoryCacheStats {
 }
 
 impl HistoryCacheStats {
-    /// Snapshot der vier Atomics als Plain-Old-Data-Struct. Wird mit
-    /// `Acquire`-Ordering geladen — synchronisiert mit der
-    /// `Release`-Speicheroperation in [`HistoryCache::insert`] /
+    /// Snapshot of the four atomics as a plain-old-data struct. Loaded with
+    /// `Acquire` ordering — synchronized with the
+    /// `Release` store in [`HistoryCache::insert`] /
     /// [`HistoryCache::remove_up_to`].
     #[must_use]
     pub fn snapshot(&self) -> HistoryCacheSnapshot {
@@ -262,29 +262,29 @@ fn encode_sn_atom(sn: Option<SequenceNumber>) -> i64 {
     sn.map_or(STATS_SENTINEL_NO_SN, |s| s.0)
 }
 
-/// Plain-Old-Data-Snapshot der `HistoryCache`-Statistiken zu einem
-/// einzelnen Zeitpunkt. Wird von [`HistoryCacheStats::snapshot`]
-/// erzeugt; jede Komponente ist mit `Acquire`-Ordering geladen.
+/// Plain-old-data snapshot of the `HistoryCache` statistics at a
+/// single point in time. Produced by [`HistoryCacheStats::snapshot`];
+/// each component is loaded with `Acquire` ordering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HistoryCacheSnapshot {
-    /// Anzahl Changes.
+    /// Number of changes.
     pub len: usize,
-    /// Anzahl per `KeepLast`-Eviction verworfener Samples.
+    /// Number of samples discarded by `KeepLast` eviction.
     pub evicted: u64,
-    /// Hoechste SN, falls vorhanden.
+    /// Highest SN, if present.
     pub max_sn: Option<SequenceNumber>,
-    /// Niedrigste SN, falls vorhanden.
+    /// Lowest SN, if present.
     pub min_sn: Option<SequenceNumber>,
 }
 
-/// Geordnete Sample-Ablage.
+/// Ordered sample storage.
 ///
-/// Interner Storage: `BTreeMap` fuer O(log n) Insert/Lookup und effizienten
-/// Range-Iterator.
+/// Internal storage: `BTreeMap` for O(log n) insert/lookup and an efficient
+/// range iterator.
 ///
-/// **** die schreibenden Methoden brauchen weiter
-/// `&mut self` (BTreeMap ist nicht concurrent-safe), aber Stats sind
-/// in einem `Arc<HistoryCacheStats>` parallel verfuegbar — siehe
+/// **Note:** the writing methods still need
+/// `&mut self` (BTreeMap is not concurrent-safe), but stats are
+/// available in parallel in an `Arc<HistoryCacheStats>` — see
 /// [`stats`](Self::stats).
 #[derive(Debug)]
 pub struct HistoryCache {
@@ -293,19 +293,19 @@ pub struct HistoryCache {
     max_samples: usize,
     evicted_count: u64,
     stats: Arc<HistoryCacheStats>,
-    /// Optionaler Label fuer Inspect-Endpoint-Tap (R-026). Nur mit
-    /// Cargo-Feature `inspect` gesetzt; sonst phantom.
+    /// Optional label for the inspect-endpoint tap (R-026). Set only with
+    /// the cargo feature `inspect`; otherwise phantom.
     #[cfg(feature = "inspect")]
     inspect_label: Option<alloc::string::String>,
 }
 
 impl Clone for HistoryCache {
     fn clone(&self) -> Self {
-        // Jeder Klon bekommt ein **eigenes** `Arc<HistoryCacheStats>`,
-        // damit Mutationen am Klon nicht die Stats des Originals
-        // verfaelschen. Der initiale Wert wird aus dem Original
-        // uebernommen, sodass ein Cache.clone() einen aequivalenten
-        // Snapshot zeigt.
+        // Each clone gets its **own** `Arc<HistoryCacheStats>`,
+        // so mutations on the clone do not corrupt the stats of the
+        // original. The initial value is taken from the original,
+        // so a Cache.clone() shows an equivalent
+        // snapshot.
         Self {
             changes: self.changes.clone(),
             kind: self.kind,
@@ -319,9 +319,9 @@ impl Clone for HistoryCache {
 }
 
 impl HistoryCache {
-    /// Erzeugt einen neuen Cache. `max_samples` ist die obere Grenze:
-    /// bei `KeepAll` fuehrt Ueberschreitung zu `CapacityExceeded`, bei
-    /// `KeepLast` zu LRU-Eviction des aeltesten Samples.
+    /// Creates a new cache. `max_samples` is the upper bound:
+    /// with `KeepAll` exceeding it leads to `CapacityExceeded`, with
+    /// `KeepLast` to LRU eviction of the oldest sample.
     #[must_use]
     pub fn new_with_kind(kind: HistoryKind, max_samples: usize) -> Self {
         Self {
@@ -335,26 +335,26 @@ impl HistoryCache {
         }
     }
 
-    /// Setzt das Inspect-Endpoint-Label fuer den RTPS-Layer-Tap.
-    /// No-op wenn Feature `inspect` aus ist.
+    /// Sets the inspect-endpoint label for the RTPS-layer tap.
+    /// No-op if the `inspect` feature is off.
     #[cfg(feature = "inspect")]
     pub fn set_inspect_label(&mut self, label: alloc::string::String) {
         self.inspect_label = Some(label);
     }
 
-    /// Geteilter Stats-Handle fuer **lock-freies** Monitoring.
+    /// Shared stats handle for **lock-free** monitoring.
     ///
-    /// Konsumenten halten einen `Arc<HistoryCacheStats>` und pollen die
-    /// Atomics mit `Acquire`-Ordering. Werte spiegeln immer eine
-    /// abgeschlossene Cache-Mutation; cross-field-Konsistenz zwischen
-    /// `len` und `max_sn` ist nicht garantiert (Tear-Risiko).
+    /// Consumers hold an `Arc<HistoryCacheStats>` and poll the
+    /// atomics with `Acquire` ordering. Values always reflect a
+    /// completed cache mutation; cross-field consistency between
+    /// `len` and `max_sn` is not guaranteed (tear risk).
     #[must_use]
     pub fn stats(&self) -> Arc<HistoryCacheStats> {
         Arc::clone(&self.stats)
     }
 
-    /// Synchronisiert die Atomics mit dem aktuellen `BTreeMap`-Zustand.
-    /// Wird von allen mutierenden Methoden am Ende aufgerufen.
+    /// Synchronizes the atomics with the current `BTreeMap` state.
+    /// Called at the end of all mutating methods.
     fn refresh_stats(&self) {
         self.stats.len.store(self.changes.len(), Ordering::Release);
         self.stats
@@ -370,66 +370,84 @@ impl HistoryCache {
             .store(encode_sn_atom(min), Ordering::Release);
     }
 
-    /// Legacy-Konstruktor — erzeugt einen `KeepAll`-Cache mit harter
-    /// Kapazitaets-Grenze. Fuer neue Nutzer [`new_with_kind`] bevorzugen.
+    /// Legacy constructor — creates a `KeepAll` cache with a hard
+    /// capacity limit. For new users prefer [`new_with_kind`].
     #[must_use]
     pub fn new(max_samples: usize) -> Self {
         Self::new_with_kind(HistoryKind::KeepAll, max_samples)
     }
 
-    /// History-Kind dieses Caches.
+    /// History kind of this cache.
     #[must_use]
     pub fn kind(&self) -> HistoryKind {
         self.kind
     }
 
-    /// **Expert-only**: setzt History-Kind und `max_samples`-Cap zur Laufzeit.
+    /// **Expert-only**: sets the history kind and `max_samples` cap at runtime.
     ///
-    /// Verwendung: kurzfristige Expansion fuer einen Backend-Replay-Burst
-    /// (DurabilityService §2.2.3.5), wenn KeepLast(1) das Replay-Window
-    /// kollabieren lassen wuerde. Caller muss den ursprunglichen Kind
-    /// danach wiederherstellen.
+    /// Usage: short-term expansion for a backend replay burst
+    /// (DurabilityService §2.2.3.5), when KeepLast(1) would collapse the
+    /// replay window. The caller must restore the original kind
+    /// afterwards.
     ///
-    /// Diese Methode verschiebt **keine** bestehenden Samples. Wenn der
-    /// neue Cap kleiner ist als die aktuelle Sample-Anzahl, sind die
-    /// vorhandenen Samples weiter sichtbar — der naechste `insert` wird
-    /// dann nach KeepLast-Regeln evictieren.
+    /// This method moves **no** existing samples. If the
+    /// new cap is smaller than the current sample count, the
+    /// existing samples stay visible — the next `insert` then
+    /// evicts by KeepLast rules.
     pub fn set_kind_and_max(&mut self, kind: HistoryKind, max_samples: usize) {
         self.kind = kind;
         self.max_samples = max_samples;
     }
 
-    /// `max_samples`-Cap des Caches.
+    /// `max_samples` cap of the cache.
     #[must_use]
     pub fn max_samples(&self) -> usize {
         self.max_samples
     }
 
-    /// Anzahl per `KeepLast`-Eviction verworfener Samples seit
-    /// Start.
+    /// Number of samples discarded by `KeepLast` eviction since
+    /// start.
     #[must_use]
     pub fn evicted_count(&self) -> u64 {
         self.evicted_count
     }
 
-    /// Fuegt ein Change ein.
+    /// Inserts a change.
     ///
     /// # Errors
-    /// - `CapacityExceeded`: nur bei `KeepAll`, Cache voll.
-    /// - `DuplicateSequenceNumber`: SN bereits vorhanden.
+    /// - `CapacityExceeded`: only with `KeepAll`, cache full.
+    /// - `DuplicateSequenceNumber`: SN already present.
     /// - `ZeroDepth`: `KeepLast { depth: 0 }`.
     pub fn insert(&mut self, change: CacheChange) -> Result<(), CacheError> {
+        // Backward-compat wrapper — callers that want the evicted sample back for
+        // their payload pool use
+        // `insert_returning_evicted` directly.
+        self.insert_returning_evicted(change).map(|_| ())
+    }
+
+    /// Like [`Self::insert`], but returns the evicted `CacheChange`
+    /// (or `None` if nothing was evicted). Allows the caller to
+    /// recycle the payload `Arc<[u8]>` instead of dropping it — see
+    /// the `ReliableWriter::stage_sample` hot-path pool.
+    ///
+    /// # Errors
+    /// As [`Self::insert`].
+    pub fn insert_returning_evicted(
+        &mut self,
+        change: CacheChange,
+    ) -> Result<Option<CacheChange>, CacheError> {
         if self.changes.contains_key(&change.sequence_number) {
             return Err(CacheError::DuplicateSequenceNumber);
         }
         let cap = self.effective_max_samples()?;
+        let mut evicted: Option<CacheChange> = None;
         if self.changes.len() >= cap {
             match self.kind {
                 HistoryKind::KeepAll => return Err(CacheError::CapacityExceeded),
                 HistoryKind::KeepLast { .. } => {
-                    // Aeltestes Sample raus (LRU nach SN-Reihenfolge).
+                    // Oldest sample out (LRU by SN order).
                     if let Some((&oldest, _)) = self.changes.iter().next() {
-                        self.changes.remove(&oldest);
+                        evicted = self.changes.remove(&oldest);
                         self.evicted_count = self.evicted_count.saturating_add(1);
                     }
                 }
@@ -449,7 +467,7 @@ impl HistoryCache {
         if let Some((label, sn, payload)) = tap_view {
             dispatch_rtps_tap(&label, sn, payload);
         }
-        Ok(())
+        Ok(evicted)
     }
 
     /// Effective max-samples = min(max_samples, depth).
@@ -465,14 +483,14 @@ impl HistoryCache {
         }
     }
 
-    /// Holt ein Change per SN.
+    /// Fetches a change by SN.
     #[must_use]
     pub fn get(&self, sn: SequenceNumber) -> Option<&CacheChange> {
         self.changes.get(&sn)
     }
 
-    /// Entfernt alle Changes mit SN ≤ `sn`.
-    /// Liefert die Anzahl entfernter Eintraege.
+    /// Removes all changes with SN ≤ `sn`.
+    /// Returns the number of removed entries.
     pub fn remove_up_to(&mut self, sn: SequenceNumber) -> usize {
         let keep = self.changes.split_off(&SequenceNumber(sn.0 + 1));
         let removed = self.changes.len();
@@ -481,8 +499,8 @@ impl HistoryCache {
         removed
     }
 
-    /// Iteriert in SN-Reihenfolge ueber Changes im Bereich `[lo, hi]`
-    /// (beide inklusiv).
+    /// Iterates in SN order over changes in the range `[lo, hi]`
+    /// (both inclusive).
     pub fn iter_range(
         &self,
         lo: SequenceNumber,
@@ -491,31 +509,31 @@ impl HistoryCache {
         self.changes.range(lo..=hi).map(|(_, v)| v)
     }
 
-    /// Kleinste SN im Cache.
+    /// Smallest SN in the cache.
     #[must_use]
     pub fn min_sn(&self) -> Option<SequenceNumber> {
         self.changes.keys().next().copied()
     }
 
-    /// Groesste SN im Cache.
+    /// Largest SN in the cache.
     #[must_use]
     pub fn max_sn(&self) -> Option<SequenceNumber> {
         self.changes.keys().next_back().copied()
     }
 
-    /// Anzahl Changes.
+    /// Number of changes.
     #[must_use]
     pub fn len(&self) -> usize {
         self.changes.len()
     }
 
-    /// True wenn keine Changes.
+    /// True if no changes.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.changes.is_empty()
     }
 
-    /// Maximale Kapazitaet.
+    /// Maximum capacity.
     #[must_use]
     pub fn capacity(&self) -> usize {
         self.max_samples
@@ -525,43 +543,41 @@ impl HistoryCache {
 // ============================================================================
 // LockFreeReadHistoryCache — // ============================================================================
 
-/// `HistoryCache`-Variante mit lock-free Lese-Pfad via RCU/Copy-on-Write.
+/// `HistoryCache` variant with a lock-free read path via RCU/copy-on-write.
 ///
-/// **** Reader (z.B. SEDP-Tick, Heartbeat-Bau,
-/// Resend-Iteration) sehen einen `Arc`-stabilen Snapshot des
-/// `BTreeMap`-Storage; sie greifen ohne weiteren Lock-Touch darauf zu.
-/// Writer serialisieren ueber einen internen [`RcuCell`]-Mutex und
-/// publizieren copy-on-write.
+/// **Note:** readers (e.g. the SEDP tick, heartbeat build,
+/// resend iteration) see an `Arc`-stable snapshot of the
+/// `BTreeMap` storage; they access it without a further lock touch.
+/// Writers serialize over an internal [`RcuCell`] mutex and
+/// publish copy-on-write.
 ///
-/// # Trade-Offs
+/// # Trade-offs
 ///
-/// * **Read-Pfad**: 1× Mutex-Acquire fuer Refcount-Inc + 0 weitere
-///   Locks. Concurrent Reader sehen denselben Arc; Read-Iteration ist
-///   im Wesentlichen Lock-Frei.
-/// * **Write-Pfad**: O(n) pro Insert/Remove, weil der `BTreeMap`-
-///   Inhalt geklont werden muss. Akzeptabel fuer kleine Caches
-///   (<= 1000 Samples). Fuer write-heavy Pfade weiter [`HistoryCache`]
-///   nutzen.
-/// * **Memory**: aktive Snapshots verbrauchen Speicher bis sie freigegeben
-///   werden (Reader-Lebensdauer). Cache-Mutationen invalidieren keine
-///   bestehenden Reader-Snapshots.
+/// * **Read path**: 1× mutex acquire for the refcount inc + 0 further
+///   locks. Concurrent readers see the same Arc; read iteration is
+///   essentially lock-free.
+/// * **Write path**: O(n) per insert/remove, because the `BTreeMap`
+///   content must be cloned. Acceptable for small caches
+///   (<= 1000 samples). For write-heavy paths keep using [`HistoryCache`].
+/// * **Memory**: active snapshots consume memory until they are released
+///   (reader lifetime). Cache mutations do not invalidate
+///   existing reader snapshots.
 ///
-/// # Wann verwenden
+/// # When to use
 ///
-/// * Discovery-Caches, die haeufig von SEDP-Tick + Match-Loops gelesen,
-///   aber nur bei `announce_publication`/`subscription` mutiert werden.
-/// * Monitoring-/Tooling-Pfade, die ohne Lock-Touch ueber den Cache
-///   iterieren wollen.
+/// * Discovery caches that are read frequently by the SEDP tick + match loops,
+///   but mutated only on `announce_publication`/`subscription`.
+/// * Monitoring/tooling paths that want to iterate over the cache
+///   without a lock touch.
 ///
-/// # Wann NICHT verwenden
+/// # When NOT to use
 ///
-/// * Reliable-Writer-Cache mit hoher Insert-Rate (jede Insert klont
-///   den ganzen BTreeMap). Da bleibt [`HistoryCache`] besser.
+/// * Reliable-writer cache with a high insert rate (every insert clones
+///   the whole BTreeMap). There [`HistoryCache`] stays better.
 ///
-/// Persistente Datenstrukturen (`im::OrdMap`) wuerden den
-/// Write-Cost-Aufwand auf O(log n) druecken — das ist die
-/// natuerliche Folge-Optimierung wenn diese Variante in Production
-/// landet.
+/// Persistent data structures (`im::OrdMap`) would push the
+/// write-cost effort to O(log n) — that is the
+/// natural follow-up optimization once this variant lands in production.
 #[cfg(feature = "std")]
 #[derive(Debug)]
 pub struct LockFreeReadHistoryCache {
@@ -569,19 +585,19 @@ pub struct LockFreeReadHistoryCache {
     stats: Arc<HistoryCacheStats>,
 }
 
-/// Innerer Zustand des [`LockFreeReadHistoryCache`]. Wird von
-/// [`LockFreeReadHistoryCache::snapshot`] als `Arc<LockFreeInner>`
-/// nach aussen gegeben — Reader iterieren ueber `changes` direkt.
+/// Inner state of the [`LockFreeReadHistoryCache`]. Handed out by
+/// [`LockFreeReadHistoryCache::snapshot`] as an `Arc<LockFreeInner>`
+/// — readers iterate over `changes` directly.
 #[cfg(feature = "std")]
 #[derive(Debug, Clone)]
 pub struct LockFreeInner {
     /// Sample-Map keyed by SequenceNumber.
     pub changes: BTreeMap<SequenceNumber, CacheChange>,
-    /// History-QoS-Kind.
+    /// History QoS kind.
     pub kind: HistoryKind,
-    /// Cap aus QoS.
+    /// Cap from QoS.
     pub max_samples: usize,
-    /// Eviction-Counter.
+    /// Eviction counter.
     pub evicted_count: u64,
 }
 
@@ -602,7 +618,7 @@ impl LockFreeInner {
 
 #[cfg(feature = "std")]
 impl LockFreeReadHistoryCache {
-    /// Erzeugt eine neue Lock-Free-Read-Cache.
+    /// Creates a new lock-free read cache.
     #[must_use]
     pub fn new_with_kind(kind: HistoryKind, max_samples: usize) -> Self {
         Self {
@@ -616,77 +632,77 @@ impl LockFreeReadHistoryCache {
         }
     }
 
-    /// Legacy-Konstruktor — `KeepAll`.
+    /// Legacy constructor — `KeepAll`.
     #[must_use]
     pub fn new(max_samples: usize) -> Self {
         Self::new_with_kind(HistoryKind::KeepAll, max_samples)
     }
 
-    /// Lock-free Read-Snapshot von Stats.
+    /// Lock-free read snapshot of stats.
     #[must_use]
     pub fn stats(&self) -> Arc<HistoryCacheStats> {
         Arc::clone(&self.stats)
     }
 
-    /// Liefert einen `Arc`-Snapshot des aktuellen Cache-Stand fuer
-    /// lock-free-Iteration.
+    /// Returns an `Arc` snapshot of the current cache state for
+    /// lock-free iteration.
     #[must_use]
     pub fn snapshot(&self) -> Arc<LockFreeInner> {
         self.inner.read()
     }
 
-    /// History-Kind.
+    /// History kind.
     #[must_use]
     pub fn kind(&self) -> HistoryKind {
         self.inner.read().kind
     }
 
-    /// Anzahl per `KeepLast`-Eviction verworfener Samples.
+    /// Number of samples discarded by `KeepLast` eviction.
     #[must_use]
     pub fn evicted_count(&self) -> u64 {
         self.stats.evicted.load(Ordering::Acquire)
     }
 
-    /// Anzahl Changes (Acquire-Load des Atomic).
+    /// Number of changes (Acquire load of the atomic).
     #[must_use]
     pub fn len(&self) -> usize {
         self.stats.len.load(Ordering::Acquire)
     }
 
-    /// True wenn keine Changes.
+    /// True if no changes.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Kleinste SN aus Atom — lock-frei.
+    /// Smallest SN from the atom — lock-free.
     #[must_use]
     pub fn min_sn(&self) -> Option<SequenceNumber> {
         decode_sn_atom(self.stats.min_sn.load(Ordering::Acquire))
     }
 
-    /// Groesste SN aus Atom — lock-frei.
+    /// Largest SN from the atom — lock-free.
     #[must_use]
     pub fn max_sn(&self) -> Option<SequenceNumber> {
         decode_sn_atom(self.stats.max_sn.load(Ordering::Acquire))
     }
 
-    /// Maximale Kapazitaet.
+    /// Maximum capacity.
     #[must_use]
     pub fn capacity(&self) -> usize {
         self.inner.read().max_samples
     }
 
-    /// Holt ein Change per SN — geklont (CacheChange ist Arc-payload-
-    /// gewrapped, also ein Refcount-Inc).
+    /// Fetches a change by SN — cloned (CacheChange is Arc-payload-
+    /// wrapped, so a refcount inc).
     #[must_use]
     pub fn get(&self, sn: SequenceNumber) -> Option<CacheChange> {
         self.inner.read().changes.get(&sn).cloned()
     }
 
-    /// Sample-Snapshot im SN-Bereich `[lo, hi]`. Liefert Vec
-    /// — wir koennen keine Iter `<'a>` ueber einen Arc-Snapshot
-    /// zurueckgeben, wenn der Snapshot nicht referenziert wird.
+    /// Sample snapshot in the SN range `[lo, hi]`. Returns a Vec
+    /// — we cannot return an Iter `<'a>` over an Arc snapshot
+    /// when the snapshot is not referenced.
     #[must_use]
     pub fn iter_range_snapshot(&self, lo: SequenceNumber, hi: SequenceNumber) -> Vec<CacheChange> {
         let snap = self.inner.read();
@@ -696,13 +712,13 @@ impl LockFreeReadHistoryCache {
             .collect()
     }
 
-    /// Fuegt ein Change ein. Copy-on-Write des BTreeMap.
+    /// Inserts a change. Copy-on-write of the BTreeMap.
     ///
     /// # Errors
-    /// Wie [`HistoryCache::insert`].
+    /// As [`HistoryCache::insert`].
     pub fn insert(&self, change: CacheChange) -> Result<(), CacheError> {
-        // Pre-Check: BTreeMap-Klon vermeiden, wenn wir schon wissen dass
-        // der Insert fehlschlaegt (Duplicate, ZeroDepth, KeepAll-Full).
+        // Pre-check: avoid the BTreeMap clone if we already know
+        // the insert fails (Duplicate, ZeroDepth, KeepAll-full).
         let dup_or_full: Result<(), CacheError> = {
             let snap = self.inner.read();
             if snap.changes.contains_key(&change.sequence_number) {
@@ -713,7 +729,7 @@ impl LockFreeReadHistoryCache {
                     if matches!(snap.kind, HistoryKind::KeepAll) {
                         Err(CacheError::CapacityExceeded)
                     } else {
-                        Ok(()) // KeepLast: evict im write-with
+                        Ok(()) // KeepLast: evict in the write-with
                     }
                 } else {
                     Ok(())
@@ -722,7 +738,7 @@ impl LockFreeReadHistoryCache {
         };
         dup_or_full?;
         self.inner.modify(|inner| {
-            // Eviction-Logik: KeepLast laesst aelteste fallen.
+            // Eviction logic: KeepLast drops the oldest.
             let cap = match inner.effective_max_samples() {
                 Ok(c) => c,
                 Err(_) => return,
@@ -741,7 +757,7 @@ impl LockFreeReadHistoryCache {
         Ok(())
     }
 
-    /// Entfernt alle Changes mit SN ≤ `sn`. Liefert Anzahl entfernter.
+    /// Removes all changes with SN ≤ `sn`. Returns the number removed.
     pub fn remove_up_to(&self, sn: SequenceNumber) -> usize {
         let mut removed = 0;
         self.inner.modify(|inner| {
@@ -885,7 +901,7 @@ mod tests {
         assert_eq!(ch.payload.as_ref(), &[1, 2, 3][..]);
     }
 
-    // ---- §8.2.1.2 ChangeKind_t alle 4 Spec-Varianten + AliveFiltered ----
+    // ---- §8.2.1.2 ChangeKind_t all 4 spec variants + AliveFiltered ----
 
     #[test]
     fn change_kind_alive_is_relevant_and_alive() {
@@ -895,7 +911,7 @@ mod tests {
 
     #[test]
     fn change_kind_alive_filtered_is_alive_but_not_relevant() {
-        // Spec §8.4.10.5: AliveFiltered ist alive_kind aber !is_relevant.
+        // Spec §8.4.10.5: AliveFiltered is alive_kind but !is_relevant.
         assert!(ChangeKind::AliveFiltered.is_alive_kind());
         assert!(!ChangeKind::AliveFiltered.is_relevant());
     }
@@ -914,7 +930,7 @@ mod tests {
 
     #[test]
     fn change_kind_distinct_variants() {
-        // Identity-Sanity — alle 5 Varianten sind verschieden.
+        // Identity sanity — all 5 variants are distinct.
         let v = [
             ChangeKind::Alive,
             ChangeKind::AliveFiltered,
@@ -981,9 +997,9 @@ mod tests {
 
     #[test]
     fn stats_arc_is_shared_across_clones_of_handle() {
-        // Mehrere `cache.stats()`-Aufrufe liefern denselben Arc — sodass
-        // ein Reader, der den Handle einmalig zieht, alle nachfolgenden
-        // Cache-Mutationen sieht.
+        // Multiple `cache.stats()` calls return the same Arc — so that
+        // a reader that pulls the handle once sees all subsequent
+        // cache mutations.
         let mut c = HistoryCache::new(10);
         let s1 = c.stats();
         let s2 = c.stats();
@@ -995,8 +1011,8 @@ mod tests {
 
     #[test]
     fn stats_reader_thread_sees_inserts_concurrently() {
-        // Lock-Free-Read aus einem zweiten Thread waehrend der Writer
-        // mutiert. Korrektheits-Test fuer die Acquire/Release-Ordering.
+        // Lock-free read from a second thread while the writer
+        // mutated. Correctness test for the Acquire/Release ordering.
         use std::sync::Arc as StdArc;
         use std::sync::Mutex as StdMutex;
         use std::thread;
@@ -1015,10 +1031,10 @@ mod tests {
 
         let reader_stats = StdArc::clone(&stats);
         let reader = thread::spawn(move || {
-            // Lese 100x Stats, ohne den Writer-Lock zu nehmen.
+            // Read stats 100x without taking the writer lock.
             for _ in 0..100 {
                 let snap = reader_stats.snapshot();
-                // len darf nur monoton wachsen waehrend Writer laeuft.
+                // len may only grow monotonically while the writer runs.
                 assert!(snap.len <= 1_000);
                 if let Some(max) = snap.max_sn {
                     assert!(max.0 >= 1 && max.0 <= 1_000);
@@ -1038,8 +1054,8 @@ mod tests {
 
     #[test]
     fn clone_creates_independent_stats_handles() {
-        // Cache.clone() darf nicht den Stats-Arc des Originals teilen,
-        // sonst wuerden Mutationen am Klon das Original verfaelschen.
+        // Cache.clone() must not share the stats Arc of the original,
+        // otherwise mutations on the clone would corrupt the original.
         let mut a = HistoryCache::new(10);
         a.insert(alive(1)).unwrap();
         let b = a.clone();
@@ -1073,7 +1089,7 @@ mod tests {
         #[test]
         fn lock_free_insert_and_get() {
             let c = LockFreeReadHistoryCache::new(10);
-            // Insert ohne &mut self — reine Interior-Mutability.
+            // Insert without &mut self — pure interior mutability.
             c.insert(alive(1)).unwrap();
             c.insert(alive(2)).unwrap();
             assert_eq!(
@@ -1150,8 +1166,8 @@ mod tests {
 
         #[test]
         fn lock_free_snapshot_outlives_writes() {
-            // Snapshot-API-Garantie: ein Reader-Arc bleibt unveraendert,
-            // auch wenn der Writer den Cache spaeter mutiert.
+            // Snapshot API guarantee: a reader Arc stays unchanged,
+            // even if the writer mutates the cache later.
             let c = LockFreeReadHistoryCache::new(10);
             c.insert(alive(1)).unwrap();
             let snap = c.snapshot();
@@ -1159,10 +1175,10 @@ mod tests {
 
             c.insert(alive(2)).unwrap();
             c.insert(alive(3)).unwrap();
-            // Original-Snapshot: immer noch nur SN 1.
+            // Original snapshot: still only SN 1.
             assert_eq!(snap.changes.len(), 1);
             assert!(snap.changes.contains_key(&sn(1)));
-            // Live-Cache: 3 Eintraege.
+            // Live cache: 3 entries.
             assert_eq!(c.len(), 3);
         }
 
@@ -1184,8 +1200,8 @@ mod tests {
             let reader = thread::spawn(move || {
                 for _ in 0..200 {
                     let snap = cache_r.snapshot();
-                    // Snapshot ist intern konsistent: changes.len matches
-                    // den Range zwischen min und max.
+                    // The snapshot is internally consistent: changes.len matches
+                    // the range between min and max.
                     if let (Some(min), Some(max)) = (
                         snap.changes.keys().next().copied(),
                         snap.changes.keys().next_back().copied(),

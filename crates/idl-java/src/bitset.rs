@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Bitset/Bitmask → Java-Codegen (C5.4-b Cluster E).
+//! Bitset/Bitmask → Java code generation (C5.4-b Cluster E).
 //!
-//! Java hat keine native Bitset-Syntax. Wir waehlen folgendes Mapping
-//! (dokumentiert in `runtime/README.md`):
+//! Java has no native bitset syntax. We use the following mapping
+//! (documented in `runtime/README.md`):
 //!
 //! ## Bitmask
 //! `@bit_bound(N) bitmask Flags { @position(K) READ, ... };`
-//! → ein Inner-Enum `Flag` mit den Werten + ein Wrapper-Class
-//! `Flags`, deren Feld `EnumSet<Flag> bits` ist. Vorteil ggue.
-//! `java.util.BitSet`: typsicher, idiomatisch, statisch begrenzt auf
-//! die deklarierten Werte. `bit_bound` >= 64 → Mapping bleibt; der
-//! parser erzwingt schon `bit_bound <= 64`.
+//! → an inner enum `Flag` with the values + a wrapper class
+//! `Flags` whose field `EnumSet<Flag> bits` holds the set. Advantage over
+//! `java.util.BitSet`: type-safe, idiomatic, statically bounded to the
+//! declared values. `bit_bound` >= 64 → mapping remains; the
+//! parser already enforces `bit_bound <= 64`.
 //!
 //! ## Bitset
 //! `bitset MyBits { bitfield<3> a; bitfield<5> b; };`
-//! → eine Klasse `MyBits` mit privatem `long bits`-Feld + Getter/
-//! Setter pro Bitfield, die Maske + Shift inline in den Code
-//! emittieren. Anonyme Bitfields (`name == None`) erhoehen nur den
-//! Bit-Cursor. Summe der Widths > 64 → harter Fehler
+//! → a class `MyBits` with a private `long bits` field + getter/
+//! setter per bitfield, emitting mask + shift inline into the code.
+//! Anonymous bitfields (`name == None`) only advance the bit cursor.
+//! Sum of widths > 64 → hard error
 //! [`JavaGenError::UnsupportedConstruct`].
 //!
-//! Beide Konstrukte sind self-contained — sie referenzieren keine
-//! Runtime-Hilfen. Die Annotations `@bit_bound` und `@position` werden
-//! im Member-Layout aufgegangen, nicht im Java-Quelltext gespiegelt.
+//! Both constructs are self-contained — they reference no runtime
+//! helpers. The annotations `@bit_bound` and `@position` are absorbed
+//! into the member layout, not mirrored in the Java source text.
 
 use std::fmt::Write;
 
@@ -37,12 +37,12 @@ use crate::error::JavaGenError;
 use crate::keywords::sanitize_identifier;
 
 const DEFAULT_BIT_BOUND: u32 = 32;
-/// Java-`long` ist 64 Bit signed — das ist die maximale Breite, die
-/// wir fuer Bitset/Bitmask abbilden koennen.
+/// Java `long` is 64-bit signed — this is the maximum width that
+/// can be represented for bitset/bitmask.
 const MAX_BIT_BOUND: u32 = 64;
 
-/// Bitmask → Wrapper-Klasse `Flags` mit nested-Enum `Flag` und
-/// `EnumSet<Flag> bits`-Feld.
+/// Bitmask → wrapper class `Flags` with nested enum `Flag` and
+/// `EnumSet<Flag> bits` field.
 pub(crate) fn emit_bitmask_file(
     b: &BitmaskDecl,
     pkg: &str,
@@ -218,7 +218,7 @@ pub(crate) fn emit_bitset_file(
 
     for f in &fields {
         if f.anonymous {
-            // Padding-Bitfield — kein Accessor, nur Layout-Kommentar.
+            // Padding bitfield — no accessor, layout comment only.
             writeln!(
                 body,
                 "{ind}// padding: width={} offset={}",

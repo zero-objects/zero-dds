@@ -1,10 +1,10 @@
-//! WP QoS-Wiring T8c — End-to-End-Test: Writer.dispose ueber Wire,
-//! Reader sieht NotAliveDisposed.
+//! WP QoS-Wiring T8c — end-to-end test: Writer.dispose over the wire,
+//! reader sees NotAliveDisposed.
 //!
 //! Spec DDS 1.4 §2.2.2.4.2.10/.7 + §9.6.3.9: dispose/unregister
-//! schicken eine DATA mit `key_flag=true` + PID_STATUS_INFO. Der
-//! Remote-Reader klassifiziert das als Lifecycle-Marker und setzt
-//! den Instance-State seines Trackers entsprechend.
+//! send a DATA with `key_flag=true` + PID_STATUS_INFO. The
+//! remote reader classifies it as a lifecycle marker and sets
+//! its tracker's instance state accordingly.
 
 #![allow(
     clippy::expect_used,
@@ -26,7 +26,6 @@ mod common;
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use std::thread;
     use std::time::Duration;
 
     use zerodds_dcps::dds_type::{DecodeError, EncodeError, PlainCdr2BeKeyHolder};
@@ -126,7 +125,7 @@ mod linux {
 
     #[test]
     fn dispose_propagates_over_wire_to_reader() {
-        // Default-WriterQos => autodispose=true; dispose schickt Wire-Marker.
+        // Default WriterQos => autodispose=true; dispose sends a wire marker.
         let (writer, reader) =
             pair_with_writer_qos(unique_domain(85), "DisposeWire", DataWriterQos::default());
 
@@ -136,16 +135,24 @@ mod linux {
         let _ = reader.wait_for_data(Duration::from_secs(2));
         let _ = reader.take_with_info().expect("take initial");
 
-        // Dispose -> sollte als Wire-Marker beim Reader ankommen.
+        // Dispose -> wire marker at the reader. A reliable writer => the marker IS
+        // delivered; wait for the event (poll until deadline), do NOT assume a fixed
+        // sleep duration — the latter breaks deterministically under slow
+        // load/instrumentation (the marker arrives after >500 ms, and a single take misses
+        // it). Event-driven instead of a timing assumption.
         writer.dispose(&s, h).expect("dispose");
-        thread::sleep(Duration::from_millis(500));
-
-        let samples = reader.take_with_info().expect("take after dispose");
-        assert!(
-            samples.iter().any(|s| {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut got = false;
+        while !got && std::time::Instant::now() < deadline {
+            let _ = reader.wait_for_data(Duration::from_millis(200));
+            let samples = reader.take_with_info().expect("take after dispose");
+            got = samples.iter().any(|s| {
                 !s.info.valid_data && s.info.instance_state == InstanceStateKind::NotAliveDisposed
-            }),
-            "Reader muss disposed-marker via Wire empfangen, got {samples:?}"
+            });
+        }
+        assert!(
+            got,
+            "reader must receive the disposed marker via wire (reliable, within 10s)"
         );
     }
 
@@ -165,16 +172,22 @@ mod linux {
         let _ = reader.wait_for_data(Duration::from_secs(2));
         let _ = reader.take_with_info().expect("take initial");
 
+        // Reliable => the NoWriters marker is delivered; wait for the event instead
+        // of sleeping fixed (otherwise a timing break under instrumentation).
         writer.unregister_instance(&s, h).expect("unregister");
-        thread::sleep(Duration::from_millis(500));
-
-        let samples = reader.take_with_info().expect("take after unregister");
-        // Bei autodispose=false sehen wir NoWriters (kein Disposed).
-        assert!(
-            samples
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut got = false;
+        while !got && std::time::Instant::now() < deadline {
+            let _ = reader.wait_for_data(Duration::from_millis(200));
+            let samples = reader.take_with_info().expect("take after unregister");
+            // With autodispose=false we see NoWriters (no Disposed).
+            got = samples
                 .iter()
-                .any(|s| s.info.instance_state == InstanceStateKind::NotAliveNoWriters),
-            "Reader muss NoWriters-Marker bei autodispose=false sehen, got {samples:?}"
+                .any(|s| s.info.instance_state == InstanceStateKind::NotAliveNoWriters);
+        }
+        assert!(
+            got,
+            "reader must see the NoWriters marker with autodispose=false (reliable, within 10s)"
         );
     }
 }

@@ -1,54 +1,54 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-corba-codegen`-Crate.
+Initial release materialization of the `zerodds-corba-codegen` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **OMG CORBA 3.3 Part 1**: Annex A (IDL-Type-Mappings), §10.7.3.1 (Repository-ID-Format).
+- **OMG CORBA 3.3 Part 1**: Annex A (IDL type mappings), §10.7.3.1 (repository ID format).
 - **OMG IDL-to-C++** (`formal/2008-01-09`).
 - **OMG IDL-to-Java** (`formal/2008-01-04`).
 
-### Public-API
+### Public API
 
-**Special-Types (`special_types`-Modul):**
-- `SpecialType::{Object, ValueBase, AbstractBase, NativeRef, TypeCode, Any, SequenceOfAny, String, WString, Time, Fixed, ULongLong, LongDouble}` (alle 13 Annex-A.1 Special-Types).
+**Special types (`special_types` module):**
+- `SpecialType::{Object, ValueBase, AbstractBase, NativeRef, TypeCode, Any, SequenceOfAny, String, WString, Time, Fixed, ULongLong, LongDouble}` (all 13 Annex-A.1 special types).
 - `TargetLanguage::{Cpp, CSharp, Java}`.
 - `language_mapping(special, lang) -> &'static str`.
 
-**Repository-ID (`repository_id`-Modul):**
+**Repository ID (`repository_id` module):**
 - `build_repository_id(modules: &[&str], type_name: &str, major: u16, minor: u16) -> String`.
 
-**Stub-Template (`stub`-Modul):**
+**Stub template (`stub` module):**
 - `StubOp { operation_name, return_type, parameters, raises }`.
-- `render_stub_op(op) -> String` — Code-Skeleton fuer Client-Stub.
+- `render_stub_op(op) -> String` — code skeleton for the client stub.
 
-**Skeleton-Template (`skeleton`-Modul):**
-- `SkeletonOp` (Server-Side-Dispatch-Operation).
-- `render_skeleton_dispatch(ops) -> String` — Operation-Name-Switch.
+**Skeleton template (`skeleton` module):**
+- `SkeletonOp` (server-side dispatch operation).
+- `render_skeleton_dispatch(ops) -> String` — operation-name switch.
 
-### Implementierung
+### Implementation
 
-`special_types::language_mapping` ist eine 13×3-Lookup-Tabelle, die statisch alle 39 Mappings enthaelt (z.B. `(SpecialType::Object, TargetLanguage::Cpp) → "CORBA::Object_var"`, `(SpecialType::Time, TargetLanguage::Java) → "org.omg.TimeBase.UtcT"`).
+`special_types::language_mapping` is a 13×3 lookup table that statically contains all 39 mappings (e.g. `(SpecialType::Object, TargetLanguage::Cpp) → "CORBA::Object_var"`, `(SpecialType::Time, TargetLanguage::Java) → "org.omg.TimeBase.UtcT"`).
 
-`build_repository_id` setzt die Spec-§10.7.3.1-Form zusammen: `IDL:<module>/.../<type-name>:<major>.<minor>`.
+`build_repository_id` assembles the Spec §10.7.3.1 form: `IDL:<module>/.../<type-name>:<major>.<minor>`.
 
-`render_stub_op` und `render_skeleton_dispatch` sind String-basierte Code-Templates, die von den drei OMG-PSM-Crates (idl-cpp / idl-csharp / idl-java) konsumiert werden.
+`render_stub_op` and `render_skeleton_dispatch` are string-based code templates consumed by the three OMG PSM crates (idl-cpp / idl-csharp / idl-java).
 
-`#![cfg_attr(not(feature = "std"), no_std)]` mit `extern crate alloc` (Feature `alloc`); `#![forbid(unsafe_code)]`.
+`#![cfg_attr(not(feature = "std"), no_std)]` with `extern crate alloc` (feature `alloc`); `#![forbid(unsafe_code)]`.
 
-### Architektur
+### Architecture
 
-- **Layer:** 8 (CORBA-Stack, Tier-A).
-- **Dependencies (in):** keine (Substrat-Crate).
+- **Layer:** 8 (CORBA stack, Tier-A).
+- **Dependencies (in):** none (substrate crate).
 - **Dependents (out):** `zerodds-idl-cpp`, `zerodds-idl-csharp`, `zerodds-idl-java`.
-- **Feature-Flags:** `std` (default), `alloc` (via std).
+- **Feature flags:** `std` (default), `alloc` (via std).
 
-### Stabilitaet
+### Stability
 
-- Public-API: RC1-stabil.
-- Annex-A.1-Mapping-Tabellen: durch OMG-Spec fixiert.
-- Stub/Skeleton-Templates: stable; neue Template-Methoden sind Major-additive.
+- Public API: RC1-stable.
+- Annex-A.1 mapping tables: fixed by the OMG spec.
+- Stub/skeleton templates: stable; new template methods are major-additive.

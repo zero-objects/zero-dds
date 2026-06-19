@@ -2,8 +2,8 @@
 // Copyright 2026 ZeroDDS Contributors
 //! XTypes 1.3 §7.6.5 + Annex E — Built-in Types Set (C4.4).
 //!
-//! Spec definiert vier vorregistrierte Common-Types, die jede Spec-
-//! konforme DDS-Implementation als Topic-Type nutzen koennen MUSS:
+//! The spec defines four pre-registered common types that every spec-
+//! conformant DDS implementation MUST be able to use as a topic type:
 //!
 //! ```idl
 //! @nested
@@ -13,7 +13,7 @@
 //!
 //! @nested
 //! struct DDS::KeyedString {
-//!     @key string key;       // Topic-Key
+//!     @key string key;       // topic key
 //!     string value;
 //! };
 //!
@@ -29,14 +29,14 @@
 //! };
 //! ```
 //!
-//! Anwendungsfall: Cross-Vendor-Demos und Tutorials (Cyclone DDS,
-//! FastDDS, RTI Connext) registrieren diese Types per Default. Ohne
-//! sie laesst sich `IDLPub <topic-name> "Hello"` nicht ohne Custom-
-//! Type-Definition starten.
+//! Use case: cross-vendor demos and tutorials (Cyclone DDS,
+//! FastDDS, RTI Connext) register these types by default. Without
+//! them, `IDLPub <topic-name> "Hello"` cannot be started without a custom
+//! type definition.
 //!
-//! Die Types werden hier als Singleton-Funktionen exposed — der Caller
-//! `register_type` rueft sie auf, sobald ein DDS-Participant enabled
-//! wird (Spec §7.6.5).
+//! The types are exposed here as singleton functions — the caller
+//! `register_type` calls them once a DDS participant is enabled
+//! (Spec §7.6.5).
 
 extern crate alloc;
 use alloc::boxed::Box;
@@ -64,8 +64,8 @@ pub const NAME_DDS_KEYED_BYTES: &str = "DDS::KeyedBytes";
 /// `@nested struct DDS::String { string value; };`
 ///
 /// # Errors
-/// Build-Fehler wenn die DynamicTypeBuilder-API streikt — sollte fuer
-/// diesen statisch definierten Type nie passieren.
+/// Build error if the DynamicTypeBuilder API balks — should never
+/// happen for this statically defined type.
 pub fn dds_string() -> Result<DynamicType, DynamicError> {
     let mut desc = TypeDescriptor::structure(NAME_DDS_STRING);
     desc.is_nested = true;
@@ -144,12 +144,12 @@ pub fn dds_keyed_bytes() -> Result<DynamicType, DynamicError> {
     builder.build()
 }
 
-/// Liefert alle 4 Builtin-Types in Spec-Reihenfolge. Convenience-Helper
-/// fuer `Participant::enable()`-Pfade die alle Builtin-Types
-/// gleichzeitig registrieren.
+/// Returns all 4 builtin types in spec order. Convenience helper
+/// for `Participant::enable()` paths that register all builtin types
+/// at once.
 ///
 /// # Errors
-/// siehe [`dds_string`].
+/// See [`dds_string`].
 pub fn all_builtin_types() -> Result<[(String, DynamicType); 4], DynamicError> {
     Ok([
         (String::from(NAME_DDS_STRING), dds_string()?),
@@ -159,7 +159,7 @@ pub fn all_builtin_types() -> Result<[(String, DynamicType); 4], DynamicError> {
     ])
 }
 
-/// Discriminator: ist `name` einer der 4 Builtin-Type-Spec-Namen?
+/// Discriminator: is `name` one of the 4 builtin-type spec names?
 #[must_use]
 pub fn is_builtin_type_name(name: &str) -> bool {
     matches!(
@@ -175,8 +175,8 @@ mod tests {
 
     #[test]
     fn spec_names_match_annex_e() {
-        // Spec §7.6.5 — diese Strings duerfen NIE driften, sonst sind
-        // Cyclone-/FastDDS-Topic-Match unmoeglich.
+        // Spec §7.6.5 — these strings may NEVER drift, otherwise
+        // Cyclone/FastDDS topic matching is impossible.
         assert_eq!(NAME_DDS_STRING, "DDS::String");
         assert_eq!(NAME_DDS_KEYED_STRING, "DDS::KeyedString");
         assert_eq!(NAME_DDS_BYTES, "DDS::Bytes");
@@ -258,8 +258,8 @@ mod tests {
 
     #[test]
     fn all_builtin_types_have_nested_annotation() {
-        // Spec §7.6.5: alle 4 sind `@nested` (nicht als Top-Level-Topic
-        // gedacht, aber als Member-Type oder Topic-via-Wrap usable).
+        // Spec §7.6.5: all 4 are `@nested` (not intended as a top-level topic,
+        // but usable as a member type or topic-via-wrap).
         for (name, t) in all_builtin_types().unwrap() {
             assert!(
                 t.descriptor().is_nested,

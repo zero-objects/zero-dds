@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! §7.1 TLS — `rustls 0.23` ServerConfig-Builder.
+//! §7.1 TLS — `rustls 0.23` ServerConfig builder.
 //!
-//! Eingangspunkt: [`load_server_config`] nimmt PEM-Cert-Pfad +
-//! PEM-Key-Pfad und liefert ein `Arc<rustls::ServerConfig>`. Das wird
-//! pro Daemon entweder beim Start oder im SIGHUP-Reload-Pfad
-//! aufgerufen.
+//! Entry point: [`load_server_config`] takes a PEM cert path + PEM key
+//! path and returns an `Arc<rustls::ServerConfig>`. This is called per
+//! daemon either at startup or in the SIGHUP reload path.
 //!
-//! Cipher-Suites: rustls-Default (TLS 1.3 + TLS 1.2 mit AEAD-Suiten).
-//! Spec §7.1: TLS 1.2 minimum, TLS 1.3 bevorzugt — passt.
+//! Cipher suites: rustls default (TLS 1.3 + TLS 1.2 with AEAD suites).
+//! Spec §7.1: TLS 1.2 minimum, TLS 1.3 preferred — matches.
 
 use std::fs::File;
 use std::io::BufReader;
@@ -20,19 +19,19 @@ use rustls::ServerConfig;
 use rustls_pemfile::Item;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
-/// Fehler beim Aufbau einer `ServerConfig`.
+/// Error while building a `ServerConfig`.
 #[derive(Debug)]
 pub enum TlsConfigError {
-    /// Cert-File-Read schlug fehl.
+    /// Cert file read failed.
     CertFileRead(String),
-    /// Key-File-Read schlug fehl.
+    /// Key file read failed.
     KeyFileRead(String),
-    /// Cert-PEM enthielt keine Cert-Sektion.
+    /// Cert PEM contained no certificate section.
     NoCertificateInPem,
-    /// Key-PEM enthielt keinen unterstützten Private-Key.
+    /// Key PEM contained no supported private key.
     NoSupportedPrivateKeyInPem,
-    /// rustls-internal: ServerConfig-Build fehlgeschlagen
-    /// (z.B. Cert/Key-Mismatch).
+    /// rustls-internal: ServerConfig build failed
+    /// (e.g. cert/key mismatch).
     Rustls(String),
 }
 
@@ -52,12 +51,12 @@ impl core::fmt::Display for TlsConfigError {
 
 impl std::error::Error for TlsConfigError {}
 
-/// Lädt ein PEM-Cert + PEM-Key und baut eine `ServerConfig` ohne
-/// Client-Auth (no-mTLS-Default; mTLS wird über
-/// [`load_server_config_with_client_auth`] aktiviert).
+/// Loads a PEM cert + PEM key and builds a `ServerConfig` without
+/// client auth (no-mTLS default; mTLS is enabled via
+/// [`load_server_config_with_client_auth`]).
 ///
 /// # Errors
-/// [`TlsConfigError`] bei IO-, PEM-Parse- oder Build-Fehler.
+/// [`TlsConfigError`] on IO, PEM-parse, or build error.
 pub fn load_server_config(
     cert_pem_path: &Path,
     key_pem_path: &Path,
@@ -74,15 +73,15 @@ pub fn load_server_config(
     Ok(Arc::new(cfg))
 }
 
-/// Wie [`load_server_config`], aber mit Client-Cert-Auth (mTLS).
+/// Like [`load_server_config`], but with client cert auth (mTLS).
 ///
-/// `client_ca_pem_path` ist eine PEM-Datei mit ein oder mehr Root-Certs,
-/// die als Trust-Anchor für Client-Cert-Validation dienen. Spec §7.2:
-/// im `mtls`-Auth-Mode darf nur ein TLS-Handshake erfolgreich enden,
-/// dessen Client-Cert in dieser CA-Chain validiert.
+/// `client_ca_pem_path` is a PEM file with one or more root certs that
+/// serve as the trust anchor for client cert validation. Spec §7.2: in
+/// `mtls` auth mode, only a TLS handshake whose client cert validates
+/// against this CA chain may complete successfully.
 ///
 /// # Errors
-/// [`TlsConfigError`] bei IO-, PEM- oder Build-Fehler.
+/// [`TlsConfigError`] on IO, PEM, or build error.
 pub fn load_server_config_with_client_auth(
     cert_pem_path: &Path,
     key_pem_path: &Path,
@@ -173,7 +172,7 @@ mod tests {
         let c = write_temp("cert.pem", cert_pem.as_bytes());
         let k = write_temp("key.pem", key_pem.as_bytes());
         let cfg = load_server_config(&c, &k).expect("ServerConfig");
-        // Smoke: rustls validiert Cert/Key intern beim with_single_cert-Aufruf.
+        // Smoke: rustls validates cert/key internally in the with_single_cert call.
         assert!(Arc::strong_count(&cfg) >= 1);
     }
 

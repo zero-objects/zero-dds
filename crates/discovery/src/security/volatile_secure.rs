@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Builtin-Endpoint `DCPSParticipantVolatileMessageSecure` — DDS-Security
+//! Builtin endpoint `DCPSParticipantVolatileMessageSecure` — DDS-Security
 //! 1.2 §7.4.5 + §10.5.4.
 //!
-//! Wire-Profil:
+//! Wire profile:
 //! - Reliability: Reliable (Spec §7.5.4 Tab.20).
-//! - Durability:  Volatile (KEEP_LAST 1 nach Spec, wir nehmen
-//!   konservativ KEEP_LAST 16 fuer Re-Send-Fenster).
-//! - Topic-Type:  `ParticipantGenericMessage` (Spec §7.5.5).
+//! - Durability:  Volatile (KEEP_LAST 1 per spec, we conservatively use
+//!   KEEP_LAST 16 for the re-send window).
+//! - Topic type:  `ParticipantGenericMessage` (Spec §7.5.5).
 //! - EntityIds:   `BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_{WRITER,READER}`.
 //!
-//! Wrapper um [`zerodds_rtps::reliable_writer::ReliableWriter`] +
-//! [`zerodds_rtps::reliable_reader::ReliableReader`] mit festen EntityIds —
-//! analog zu den SEDP-Endpoints, nur mit anderem Topic-Type-Codec.
+//! Wrapper around [`zerodds_rtps::reliable_writer::ReliableWriter`] +
+//! [`zerodds_rtps::reliable_reader::ReliableReader`] with fixed EntityIds —
+//! analogous to the SEDP endpoints, only with a different topic-type codec.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -38,82 +38,85 @@ use zerodds_security::generic_message::ParticipantGenericMessage;
 
 use crate::security::codec::{decode_generic_message, encode_generic_message};
 
-/// Default-History-Tiefe (Spec sagt KEEP_LAST 1 — wir nehmen
-/// konservativ 16, damit kurze Crypto-Token-Bursts beim Onboarding nicht
-/// einzelne Tokens droppen).
+/// Default history depth (the spec says KEEP_LAST 1 — we conservatively
+/// use 16, so that short crypto-token bursts during onboarding do not
+/// drop individual tokens).
 pub const VOLATILE_SECURE_DEFAULT_DEPTH: usize = 16;
 
-/// Default-HEARTBEAT-Periode. Kuerzer als SEDP-Default — wir wollen
-/// schnelle Crypto-Token-Lieferung beim Auth-Onboarding.
+/// Default HEARTBEAT period. Shorter than the SEDP default — we want
+/// fast crypto-token delivery during auth onboarding.
 pub const VOLATILE_SECURE_HEARTBEAT_PERIOD: Duration = Duration::from_millis(250);
 
-/// Reader-Cache-Tiefe (analog zu SEDP-Reader 256).
+/// Reader cache depth (analogous to the SEDP reader 256).
 pub const VOLATILE_SECURE_READER_CAPACITY: usize = 64;
 
-/// Writer fuer `DCPSParticipantVolatileMessageSecure`.
+/// Writer for `DCPSParticipantVolatileMessageSecure`.
 #[derive(Debug)]
 pub struct VolatileSecureMessageWriter {
     inner: ReliableWriter,
 }
 
 impl VolatileSecureMessageWriter {
-    /// Erzeugt einen Writer fuer den lokalen Participant.
+    /// Creates a writer for the local participant.
     #[must_use]
     pub fn new(participant_prefix: GuidPrefix, vendor_id: VendorId) -> Self {
         let guid = Guid::new(
             participant_prefix,
             EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_WRITER,
         );
-        Self {
-            inner: ReliableWriter::new(ReliableWriterConfig {
-                guid,
-                vendor_id,
-                reader_proxies: Vec::new(),
-                max_samples: VOLATILE_SECURE_DEFAULT_DEPTH,
-                history_kind: HistoryKind::KeepLast {
-                    depth: VOLATILE_SECURE_DEFAULT_DEPTH,
-                },
-                heartbeat_period: VOLATILE_SECURE_HEARTBEAT_PERIOD,
-                fragment_size: DEFAULT_FRAGMENT_SIZE,
-                mtu: DEFAULT_MTU,
-            }),
-        }
+        let mut inner = ReliableWriter::new(ReliableWriterConfig {
+            guid,
+            vendor_id,
+            reader_proxies: Vec::new(),
+            max_samples: VOLATILE_SECURE_DEFAULT_DEPTH,
+            history_kind: HistoryKind::KeepLast {
+                depth: VOLATILE_SECURE_DEFAULT_DEPTH,
+            },
+            heartbeat_period: VOLATILE_SECURE_HEARTBEAT_PERIOD,
+            fragment_size: DEFAULT_FRAGMENT_SIZE,
+            mtu: DEFAULT_MTU,
+        });
+        // cyclones filtered VolatileSecure-Reader matcht per voller GUID:
+        // without INFO_DST, cyclone resolves dst=0:0:0:ff0202c4 -> no match
+        // -> wn->last_seq haengt -> maxseq-0-base-N-Deadlock (Trace-belegt).
+        inner.set_emit_info_dst(true);
+        Self { inner }
     }
 
-    /// GUID des Writers.
+    /// GUID of the writer.
     #[must_use]
     pub fn guid(&self) -> Guid {
         self.inner.guid()
     }
 
-    /// Anzahl registrierter Reader-Proxies.
+    /// Number of registered reader proxies.
     #[must_use]
     pub fn reader_proxy_count(&self) -> usize {
         self.inner.reader_proxy_count()
     }
 
-    /// Read-only-Zugriff auf den ReliableWriter (Tests/Diagnose).
+    /// Read-only access to the ReliableWriter (tests/diagnostics).
     #[must_use]
     pub fn inner(&self) -> &ReliableWriter {
         &self.inner
     }
 
-    /// Fuegt einen Reader-Proxy hinzu.
+    /// Adds a reader proxy.
     pub fn add_reader_proxy(&mut self, proxy: ReaderProxy) {
         self.inner.add_reader_proxy(proxy);
     }
 
-    /// Entfernt einen Reader-Proxy.
+    /// Removes a reader proxy.
     pub fn remove_reader_proxy(&mut self, guid: Guid) -> Option<ReaderProxy> {
         self.inner.remove_reader_proxy(guid)
     }
 
-    /// Sendet eine `ParticipantGenericMessage`. Liefert pro Reader-
-    /// Proxy ein Datagramm.
+    /// Sends a `ParticipantGenericMessage`. Returns one datagram per
+    /// reader proxy.
     ///
     /// # Errors
-    /// `WireError` aus dem Reliable-Writer (Cache-Overflow bei
-    /// `KeepAll`, Sequence-Overflow).
+    /// `WireError` from the reliable writer (cache overflow on
+    /// `KeepAll`, sequence overflow).
     pub fn write(
         &mut self,
         msg: &ParticipantGenericMessage,
@@ -122,15 +125,37 @@ impl VolatileSecureMessageWriter {
         self.inner.write(&payload)
     }
 
-    /// Tick (HEARTBEAT + Resends).
+    /// Write + piggyback HEARTBEAT in ONE operation (RTPS 2.5 §8.4.15.5).
+    ///
+    /// Security tokens (Kx, per-endpoint crypto) are reliable and
+    /// time-critical: the remote must NACK a loss IMMEDIATELY, not only at
+    /// the periodic HEARTBEAT (`VOLATILE_SECURE_HEARTBEAT_PERIOD` =
+    /// 250ms). Cross-vendor, the token otherwise falls behind Cyclone's
+    /// AUTHOK `delete_pending_match` and is never applied. The piggyback
+    /// HEARTBEAT (final_flag=false) forces the prompt ACKNACK response —
+    /// per-send, so robust for late joiners / rediscovery (no global
+    /// state).
     ///
     /// # Errors
-    /// Wire-Encode-Fehler.
+    /// Wire encode errors.
+    pub fn write_with_heartbeat(
+        &mut self,
+        msg: &ParticipantGenericMessage,
+        now: Duration,
+    ) -> Result<Vec<OutboundDatagram>, WireError> {
+        let payload = encode_generic_message(msg);
+        self.inner.write_with_heartbeat(&payload, now)
+    }
+
+    /// Tick (HEARTBEAT + resends).
+    ///
+    /// # Errors
+    /// Wire encode errors.
     pub fn tick(&mut self, now: Duration) -> Result<Vec<OutboundDatagram>, WireError> {
         self.inner.tick(now)
     }
 
-    /// Dispatch eines ACKNACK vom Remote-Reader.
+    /// Dispatch of an ACKNACK from the remote reader.
     pub fn handle_acknack(
         &mut self,
         src_guid: Guid,
@@ -140,20 +165,20 @@ impl VolatileSecureMessageWriter {
         self.inner.handle_acknack(src_guid, base, requested);
     }
 
-    /// Dispatch eines NACK_FRAG vom Remote-Reader.
+    /// Dispatch of a NACK_FRAG from the remote reader.
     pub fn handle_nackfrag(&mut self, src_guid: Guid, nf: &NackFragSubmessage) {
         self.inner.handle_nackfrag(src_guid, nf);
     }
 }
 
-/// Reader fuer `DCPSParticipantVolatileMessageSecure`.
+/// Reader for `DCPSParticipantVolatileMessageSecure`.
 #[derive(Debug)]
 pub struct VolatileSecureMessageReader {
     inner: ReliableReader,
 }
 
 impl VolatileSecureMessageReader {
-    /// Erzeugt einen Reader fuer den lokalen Participant.
+    /// Creates a reader for the local participant.
     #[must_use]
     pub fn new(participant_prefix: GuidPrefix, vendor_id: VendorId) -> Self {
         let guid = Guid::new(
@@ -172,81 +197,89 @@ impl VolatileSecureMessageReader {
         }
     }
 
-    /// GUID des Readers.
+    /// GUID of the reader.
     #[must_use]
     pub fn guid(&self) -> Guid {
         self.inner.guid()
     }
 
-    /// Anzahl registrierter Writer-Proxies.
+    /// Number of registered writer proxies.
     #[must_use]
     pub fn writer_proxy_count(&self) -> usize {
         self.inner.writer_proxy_count()
     }
 
-    /// Read-only-Zugriff auf den ReliableReader (Tests/Diagnose).
+    /// Read-only access to the ReliableReader (tests/diagnostics).
     #[must_use]
     pub fn inner(&self) -> &ReliableReader {
         &self.inner
     }
 
-    /// Fuegt einen Writer-Proxy hinzu.
+    /// Adds a writer proxy.
     pub fn add_writer_proxy(&mut self, proxy: WriterProxy) {
         self.inner.add_writer_proxy(proxy);
     }
 
-    /// Entfernt einen Writer-Proxy.
+    /// Removes a writer proxy.
     pub fn remove_writer_proxy(&mut self, guid: Guid) -> Option<WriterProxy> {
         self.inner.remove_writer_proxy(guid)
     }
 
-    /// Verarbeitet eine eingehende DATA-Submessage und liefert
-    /// dekodierte Generic-Messages.
+    /// Processes an incoming DATA submessage and returns decoded
+    /// generic messages.
     ///
     /// # Errors
-    /// `BadArgument` wenn die Encapsulation/CDR-Decode scheitert.
+    /// `BadArgument` if the encapsulation/CDR decode fails.
     pub fn handle_data(
         &mut self,
+        source_prefix: GuidPrefix,
         data: &DataSubmessage,
     ) -> SecurityResult<Vec<ParticipantGenericMessage>> {
-        let samples = self.inner.handle_data(data);
+        let samples = self.inner.handle_data(source_prefix, data);
         decode_samples(samples.into_iter().map(|s| s.payload))
     }
 
-    /// DATA_FRAG verarbeiten.
+    /// Process DATA_FRAG.
     ///
     /// # Errors
-    /// siehe [`handle_data`](Self::handle_data).
+    /// see [`handle_data`](Self::handle_data).
     pub fn handle_data_frag(
         &mut self,
+        source_prefix: GuidPrefix,
         df: &DataFragSubmessage,
         now: Duration,
     ) -> SecurityResult<Vec<ParticipantGenericMessage>> {
-        let samples = self.inner.handle_data_frag(df, now);
+        let samples = self.inner.handle_data_frag(source_prefix, df, now);
         decode_samples(samples.into_iter().map(|s| s.payload))
     }
 
-    /// GAP verarbeiten.
+    /// Process GAP.
     ///
     /// # Errors
-    /// siehe [`handle_data`](Self::handle_data).
+    /// see [`handle_data`](Self::handle_data).
     pub fn handle_gap(
         &mut self,
+        source_prefix: GuidPrefix,
         gap: &GapSubmessage,
     ) -> SecurityResult<Vec<ParticipantGenericMessage>> {
-        let samples = self.inner.handle_gap(gap);
+        let samples = self.inner.handle_gap(source_prefix, gap);
         decode_samples(samples.into_iter().map(|s| s.payload))
     }
 
     /// HEARTBEAT verarbeiten.
-    pub fn handle_heartbeat(&mut self, hb: &HeartbeatSubmessage, now: Duration) {
-        self.inner.handle_heartbeat(hb, now);
+    pub fn handle_heartbeat(
+        &mut self,
+        source_prefix: GuidPrefix,
+        hb: &HeartbeatSubmessage,
+        now: Duration,
+    ) {
+        self.inner.handle_heartbeat(source_prefix, hb, now);
     }
 
-    /// Tick (ACKNACK / NACK_FRAG-Outbound).
+    /// Tick (ACKNACK / NACK_FRAG outbound).
     ///
     /// # Errors
-    /// Wire-Encode-Fehler.
+    /// Wire encode errors.
     pub fn tick_outbound(&mut self, now: Duration) -> Result<Vec<OutboundDatagram>, WireError> {
         self.inner.tick_outbound(now)
     }
@@ -259,16 +292,16 @@ where
 {
     let mut out = Vec::new();
     for p in payloads {
-        // Original-SecurityError direkt durchreichen — der Detail-String
-        // im Codec ist bereits aussagekraeftig genug, kein Topic-spezi-
-        // fischer Wrapper noetig (Spec §7.5.5 macht keine Unterscheidung
-        // pro Topic auf der Codec-Ebene).
+        // Propagate the original SecurityError directly — the detail string
+        // in the codec is already descriptive enough, no topic-specific
+        // wrapper needed (Spec §7.5.5 makes no per-topic distinction at the
+        // codec level).
         out.push(decode_generic_message(p.as_ref())?);
     }
     Ok(out)
 }
 
-// Marker, dass beide Imports oben dauerhaft genutzt werden.
+// Marker that both imports above are permanently used.
 const _: Option<SecurityErrorKind> = None;
 const _: Option<SecurityError> = None;
 
@@ -357,6 +390,50 @@ mod tests {
     }
 
     #[test]
+    fn write_with_heartbeat_piggybacks_heartbeat_submessage() {
+        use zerodds_rtps::datagram::{ParsedSubmessage, decode_datagram};
+        let mut w = VolatileSecureMessageWriter::new(local_prefix(), VendorId::ZERODDS);
+        let remote = Guid::new(
+            remote_prefix(),
+            EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER,
+        );
+        w.add_reader_proxy(ReaderProxy::new(
+            remote,
+            alloc::vec![Locator::udp_v4([127, 0, 0, 1], 7411)],
+            alloc::vec![],
+            true,
+        ));
+        // §8.4.15.5: token delivery must be prompt. A plain `write()`
+        // makes the reader wait until the periodic HEARTBEAT (250ms) before
+        // it NACKs a loss — cross-vendor the endpoint crypto token thereby
+        // falls behind Cyclone's AUTHOK match. A piggyback HEARTBEAT
+        // directly with the DATA solves this per-send (robust for late joiners).
+        let dgs = w
+            .write_with_heartbeat(&sample_msg(), Duration::from_millis(0))
+            .unwrap();
+        assert_eq!(
+            dgs.len(),
+            1,
+            "DATA + piggyback HEARTBEAT share one datagram"
+        );
+        let parsed = decode_datagram(&dgs[0].bytes).expect("decode");
+        assert!(
+            parsed
+                .submessages
+                .iter()
+                .any(|s| matches!(s, ParsedSubmessage::Data(_))),
+            "DATA submessage missing"
+        );
+        assert!(
+            parsed
+                .submessages
+                .iter()
+                .any(|s| matches!(s, ParsedSubmessage::Heartbeat(_))),
+            "piggyback HEARTBEAT missing — Volatile token would otherwise wait 250ms for periodic HB"
+        );
+    }
+
+    #[test]
     fn add_remove_reader_proxy_roundtrip() {
         let mut w = VolatileSecureMessageWriter::new(local_prefix(), VendorId::ZERODDS);
         let remote = Guid::new(
@@ -412,7 +489,7 @@ mod tests {
             non_standard_flag: false,
             serialized_payload: payload.into(),
         };
-        let out = r.handle_data(&data).unwrap();
+        let out = r.handle_data(remote_prefix(), &data).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], msg);
     }
@@ -420,7 +497,7 @@ mod tests {
     #[test]
     fn reader_drops_data_from_unknown_writer() {
         let mut r = VolatileSecureMessageReader::new(local_prefix(), VendorId::ZERODDS);
-        // Kein Writer-Proxy registriert → handle_data muss leer liefern
+        // No writer proxy registered → handle_data must return empty
         let msg = sample_msg();
         let payload = encode_generic_message(&msg);
         let data = DataSubmessage {
@@ -433,7 +510,7 @@ mod tests {
             non_standard_flag: false,
             serialized_payload: payload.into(),
         };
-        let out = r.handle_data(&data).unwrap();
+        let out = r.handle_data(remote_prefix(), &data).unwrap();
         assert!(out.is_empty());
     }
 
@@ -455,7 +532,7 @@ mod tests {
             non_standard_flag: false,
             serialized_payload: alloc::vec![0x00, 0x99, 0, 0].into(),
         };
-        let err = r.handle_data(&data).unwrap_err();
+        let err = r.handle_data(remote_prefix(), &data).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
     }
 }

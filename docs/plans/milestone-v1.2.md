@@ -34,7 +34,7 @@ Phase 2.1 — Public API (~3-4 PT)
 Phase 2.2 — Semantics (~7-9 PT)
   2.2a QoS-Matching + 22 Policies + Compat-Matrix
   2.2b History-Backend (KEEP_LAST(N) + KEEP_ALL + VOLATILE + TRANSIENT_LOCAL)
-  2.2c Durability-Service (TRANSIENT + PERSISTENT, sqlite-backed, Standalone-Binary)
+  2.2c Durability-Service (TRANSIENT + PERSISTENT, sqlite-backed, Standalone-Binary) ✅ done (auf main, ADR 0009)
 
 Phase 2.3 — Proof (~4-5 PT)
   2.3 Interop + Perf Harness (abrufbar, dokumentiert, regressions-gated)
@@ -296,6 +296,12 @@ für `VOLATILE` + `TRANSIENT_LOCAL`.
 Cyclone (pcap-verifiziert).
 
 ### WP 2.2c Durability-Service — TRANSIENT + PERSISTENT
+
+> **Konkretisiert durch [ADR 0009](../adr/0009-durability-service.md) (2026-06-10).**
+> Der grobe „sqlite-WAL-Daemon"-Plan unten ist verfeinert: adapter-getriebener
+> Schnitt (`DurabilityStore`-Trait + sqlite/file/lakehouse-Adapter), QoS=Contract /
+> Memory-Budget=nur-Hot-Cache, Cross-Vendor via RTPS. Umsetzung: Branch
+> `feat/durability-service`, Phasen P1–P5.
 
 **Ziel:** Vollständige Durability-Leiter aus §2.2.3.4. Das ist der
 Feature-Claim, der ZeroDDS von "Proof-of-Concept" zu "kann Cyclone

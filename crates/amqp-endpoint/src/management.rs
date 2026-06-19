@@ -1,20 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Management-Surface Producer.
+//! Management-surface producer.
 //!
-//! Spec-Quellen:
-//! * dds-amqp-1.0 §7.5 Discovery Bridging — `$catalog`-Address
-//!   liefert die Topic-Mapping-Eintraege.
-//! * §7.9.1 Catalog Address — Format der Eintraege.
-//! * §7.9.2 Metrics Address — `$metrics`-Sample-Producer
-//!   (liest aus [`MetricsHub`]).
-//! * §sec:audit-channel — `$audit`-Event-Stream.
+//! Spec sources:
+//! * dds-amqp-1.0 §7.5 Discovery Bridging — the `$catalog` address
+//!   provides the topic-mapping entries.
+//! * §7.9.1 Catalog Address — format of the entries.
+//! * §7.9.2 Metrics Address — `$metrics` sample producer
+//!   (reads from [`MetricsHub`]).
+//! * §sec:audit-channel — `$audit` event stream.
 //!
-//! Dieses Modul liefert die in-process Producer-Schicht, die
-//! AMQP-Sample-Bodies (Map-Bodies gemaess Spec-Tabellen)
-//! erzeugt. Die Wire-Anbindung an Receiver-Links liegt im
-//! Daemon-Layer.
+//! This module provides the in-process producer layer that
+//! generates AMQP sample bodies (map bodies per the spec tables).
+//! Wiring to receiver links lives in the daemon layer.
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -25,13 +24,13 @@ use crate::mapping::BodyEncodingMode;
 use crate::metrics::{MANDATORY_METRIC_NAMES, MetricsHub};
 use crate::routing::AddressResolution;
 
-/// Spec §7.9.1 — Reserved-Address-Konstanten.
+/// Spec §7.9.1 — reserved-address constants.
 pub mod addresses {
-    /// `$catalog` Receiver-Address.
+    /// `$catalog` receiver address.
     pub const CATALOG: &str = "$catalog";
-    /// `$metrics` Receiver-Address.
+    /// `$metrics` receiver address.
     pub const METRICS: &str = "$metrics";
-    /// `$audit` Receiver-Address (Spec §sec:audit-channel).
+    /// `$audit` receiver address (Spec §sec:audit-channel).
     pub const AUDIT: &str = "$audit";
 }
 
@@ -39,19 +38,19 @@ pub mod addresses {
 // Catalog (§7.5 + §7.9.1)
 // ============================================================
 
-/// Spec §7.5 — Forward-Direction des Topic-Mappings.
+/// Spec §7.5 — forward direction of the topic mapping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CatalogDirection {
-    /// AMQP-Producer schreibt nach DDS.
+    /// AMQP producer writes to DDS.
     ProducerToDds,
-    /// DDS schreibt zu AMQP-Consumer.
+    /// DDS writes to AMQP consumer.
     DdsToConsumer,
-    /// Bidirektional.
+    /// Bidirectional.
     Both,
 }
 
 impl CatalogDirection {
-    /// AMQP-symbol-form per Spec §7.5.
+    /// AMQP symbol form per Spec §7.5.
     #[must_use]
     pub const fn as_symbol(self) -> &'static str {
         match self {
@@ -62,13 +61,13 @@ impl CatalogDirection {
     }
 }
 
-/// Spec §7.5 — Form des TypeIdentifier-Feldes (`DESC_FULL` →
+/// Spec §7.5 — form of the TypeIdentifier field (`DESC_FULL` →
 /// AMQP `symbol`, `DESC_TRUNCATED` → AMQP `ulong` 8B BE).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CatalogTypeId {
-    /// `DESC_FULL` (Spec §7.2.1.2): voller 14-Byte-Symbol-String.
+    /// `DESC_FULL` (Spec §7.2.1.2): full 14-byte symbol string.
     Symbolic(String),
-    /// `DESC_TRUNCATED` (Spec §7.2.1.1): 8-Byte-BE-ulong.
+    /// `DESC_TRUNCATED` (Spec §7.2.1.1): 8-byte BE ulong.
     Truncated(u64),
 }
 
@@ -81,46 +80,46 @@ impl CatalogTypeId {
     }
 }
 
-/// Spec §7.5 — Catalog-Eintrag.
+/// Spec §7.5 — catalog entry.
 #[derive(Debug, Clone)]
 pub struct CatalogEntry {
-    /// AMQP-Address (z.B. `domain://0/Sensor` oder Alias).
+    /// AMQP address (e.g. `domain://0/Sensor` or an alias).
     pub amqp_address: String,
-    /// DDS-Topic-Name + Domain + Partitionen.
+    /// DDS topic name + domain + partitions.
     pub dds: AddressResolution,
-    /// DDS-Type-Name (z.B. `org::ros2::Pose`).
+    /// DDS type name (e.g. `org::ros2::Pose`).
     pub dds_type_name: String,
     /// TypeIdentifier (Spec §7.2.1).
     pub type_id: CatalogTypeId,
-    /// Erreichbare Richtungen.
+    /// Reachable directions.
     pub direction: CatalogDirection,
 }
 
-/// Catalog-Producer.
+/// Catalog producer.
 ///
-/// Haelt den aktuellen Set von Topic-Mappings; produziert pro
-/// Eintrag ein AMQP-`map`-Body, das ein Receiver auf
-/// `$catalog` als Sample empfaengt.
+/// Holds the current set of topic mappings; produces one
+/// AMQP `map` body per entry, which a receiver on
+/// `$catalog` receives as a sample.
 #[derive(Debug, Default)]
 pub struct CatalogProducer {
     entries: Vec<CatalogEntry>,
 }
 
 impl CatalogProducer {
-    /// Frischer leerer Producer.
+    /// Fresh empty producer.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Eintrag hinzufuegen + `topics.exposed`-Counter inkrementieren.
+    /// Add an entry and increment the `topics.exposed` counter.
     pub fn add(&mut self, entry: CatalogEntry, metrics: &MetricsHub) {
         self.entries.push(entry);
         metrics.on_topic_added();
     }
 
-    /// Eintrag per `amqp_address` entfernen (gauge senken).
-    /// Liefert `true` wenn entfernt.
+    /// Remove an entry by `amqp_address` (lower the gauge).
+    /// Returns `true` if removed.
     pub fn remove(&mut self, amqp_address: &str, metrics: &MetricsHub) -> bool {
         let before = self.entries.len();
         self.entries.retain(|e| e.amqp_address != amqp_address);
@@ -132,23 +131,23 @@ impl CatalogProducer {
         }
     }
 
-    /// Anzahl Eintraege.
+    /// Number of entries.
     #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
-    /// Leer?
+    /// Empty?
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
-    /// Spec §7.5 — alle Eintraege als AMQP-Sample-Bodies fuer
-    /// `$catalog`-Receiver.
+    /// Spec §7.5 — all entries as AMQP sample bodies for the
+    /// `$catalog` receiver.
     ///
-    /// Pro Eintrag wird ein `AmqpExtValue::Map` erzeugt mit den
-    /// Schluesseln aus der Spec-Itemize-Liste.
+    /// One `AmqpExtValue::Map` is produced per entry with the
+    /// keys from the spec's itemized list.
     #[must_use]
     pub fn snapshot(&self) -> Vec<AmqpExtValue> {
         self.entries
@@ -201,12 +200,12 @@ fn catalog_entry_to_map(e: CatalogEntry) -> AmqpExtValue {
 // Metrics ($metrics)
 // ============================================================
 
-/// Spec §7.9.2 — Snapshot aller Mandatory-Metriken als
-/// AMQP-Sample-Bodies (eine Message pro Metric mit
-/// `{name, value, unit, timestamp}`-Map).
+/// Spec §7.9.2 — snapshot of all mandatory metrics as
+/// AMQP sample bodies (one message per metric with a
+/// `{name, value, unit, timestamp}` map).
 ///
-/// `now_ms` ist die Caller-Clock (Unix-ms-since-epoch); wird
-/// in jedes Sample als `timestamp` eingebettet.
+/// `now_ms` is the caller clock (Unix ms since epoch); it is
+/// embedded into each sample as `timestamp`.
 #[must_use]
 pub fn metrics_snapshot(hub: &MetricsHub, now_ms: i64) -> Vec<AmqpExtValue> {
     MANDATORY_METRIC_NAMES
@@ -245,57 +244,57 @@ fn metric_sample(name: &str, value: i64, unit: &str, ts_ms: i64) -> AmqpExtValue
 // Audit ($audit)
 // ============================================================
 
-/// Spec §sec:audit-channel — Event-Typen.
+/// Spec §sec:audit-channel — event types.
 #[derive(Debug, Clone)]
 pub enum AuditEvent {
-    /// Connection erfolgreich akzeptiert.
+    /// Connection accepted successfully.
     ConnectionOpened {
-        /// Authentifiziertes Subject (z.B. PLAIN-Username oder
-        /// EXTERNAL-Cert-Subject).
+        /// Authenticated subject (e.g. PLAIN username or
+        /// EXTERNAL cert subject).
         subject: String,
-        /// Remote-Address (best-effort String, z.B. `1.2.3.4:5672`).
+        /// Remote address (best-effort string, e.g. `1.2.3.4:5672`).
         remote: String,
     },
-    /// Connection geschlossen.
+    /// Connection closed.
     ConnectionClosed {
-        /// Authentifiziertes Subject (siehe `ConnectionOpened`).
+        /// Authenticated subject (see `ConnectionOpened`).
         subject: String,
-        /// Begruendung (close-Performative `error.condition` oder
+        /// Reason (close performative `error.condition` or
         /// `tcp-reset`).
         reason: String,
     },
-    /// SASL-Negotiation erfolgreich.
+    /// SASL negotiation succeeded.
     SaslSuccess {
-        /// Authentifiziertes Subject.
+        /// Authenticated subject.
         subject: String,
-        /// Mechanismus (`PLAIN`/`ANONYMOUS`/`EXTERNAL`/`SCRAM-SHA-256`).
+        /// Mechanism (`PLAIN`/`ANONYMOUS`/`EXTERNAL`/`SCRAM-SHA-256`).
         mechanism: String,
     },
-    /// SASL-Negotiation fehlgeschlagen.
+    /// SASL negotiation failed.
     SaslFailure {
-        /// Begruendung (`auth`/`sys`/`sys-perm`/...).
+        /// Reason (`auth`/`sys`/`sys-perm`/...).
         reason: String,
     },
-    /// AccessControl-Plugin reject.
+    /// AccessControl plugin reject.
     Unauthorized {
-        /// Authentifiziertes Subject.
+        /// Authenticated subject.
         subject: String,
-        /// Resource-Address (Topic / Address).
+        /// Resource address (topic / address).
         resource: String,
     },
-    /// Link-Attach erfolgreich.
+    /// Link attach succeeded.
     LinkAttached {
-        /// Authentifiziertes Subject.
+        /// Authenticated subject.
         subject: String,
-        /// Link-Name (Spec §2.6.1).
+        /// Link name (Spec §2.6.1).
         link: String,
-        /// AMQP-Address des Terminus.
+        /// AMQP address of the terminus.
         address: String,
     },
 }
 
 impl AuditEvent {
-    /// Spec-Symbol fuer das `event-type`-Feld.
+    /// Spec symbol for the `event-type` field.
     #[must_use]
     pub const fn event_type(&self) -> &'static str {
         match self {
@@ -389,22 +388,22 @@ impl AuditEvent {
     }
 }
 
-/// Spec §sec:audit-channel — Audit-Event als AMQP-Sample-Body.
+/// Spec §sec:audit-channel — audit event as an AMQP sample body.
 ///
-/// Map-Form mit `event-type` (symbol), `timestamp` (timestamp)
-/// und event-spezifischen Feldern. Caller kann die Liste an einen
-/// Receiver auf `$audit` streamen.
+/// Map form with `event-type` (symbol), `timestamp` (timestamp)
+/// and event-specific fields. The caller can stream the list to a
+/// receiver on `$audit`.
 #[must_use]
 pub fn audit_event_sample(event: AuditEvent, now_ms: i64) -> AmqpExtValue {
     AmqpExtValue::Map(event.into_map_entries(now_ms))
 }
 
-/// Audit-Producer mit ringbuffered Queue.
+/// Audit producer with a ring-buffered queue.
 ///
-/// Der Producer haelt einen FIFO der letzten `cap` Events;
-/// AMQP-Receiver-Links lesen Events out-of-band (per `pop()` oder
-/// `drain_into_samples`). Spec §sec:audit-channel verlangt
-/// keinen persistenten Audit-Trail.
+/// The producer holds a FIFO of the last `cap` events;
+/// AMQP receiver links read events out-of-band (via `pop()` or
+/// `drain_into_samples`). Spec §sec:audit-channel does not require
+/// a persistent audit trail.
 #[derive(Debug)]
 pub struct AuditProducer {
     cap: usize,
@@ -412,7 +411,7 @@ pub struct AuditProducer {
 }
 
 impl AuditProducer {
-    /// Capacity-bounded Audit-Queue.
+    /// Capacity-bounded audit queue.
     #[must_use]
     pub fn new(cap: usize) -> Self {
         Self {
@@ -421,8 +420,8 @@ impl AuditProducer {
         }
     }
 
-    /// Event aufnehmen; bei voller Queue wird das aelteste Event
-    /// verdraengt (ringbuffer).
+    /// Record an event; when the queue is full the oldest event is
+    /// evicted (ring buffer).
     pub fn push(&mut self, event: AuditEvent, ts_ms: i64) {
         if self.queue.len() == self.cap {
             self.queue.pop_front();
@@ -430,7 +429,7 @@ impl AuditProducer {
         self.queue.push_back((event, ts_ms));
     }
 
-    /// Pendente Events als Sample-Liste herausziehen (FIFO).
+    /// Pull pending events as a sample list (FIFO).
     pub fn drain_samples(&mut self) -> Vec<AmqpExtValue> {
         let mut out = Vec::with_capacity(self.queue.len());
         while let Some((event, ts)) = self.queue.pop_front() {
@@ -439,13 +438,13 @@ impl AuditProducer {
         out
     }
 
-    /// Aktuelle Queue-Laenge.
+    /// Current queue length.
     #[must_use]
     pub fn len(&self) -> usize {
         self.queue.len()
     }
 
-    /// Queue leer?
+    /// Queue empty?
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
@@ -456,22 +455,22 @@ impl AuditProducer {
 // Address-Recognition (Caller-Helper)
 // ============================================================
 
-/// Klassifiziert eine AMQP-Address als `$catalog`/`$metrics`/
-/// `$audit` oder `Topic` (alles andere). Caller dispatcht
-/// entsprechend.
+/// Classifies an AMQP address as `$catalog`/`$metrics`/
+/// `$audit` or `Topic` (everything else). The caller dispatches
+/// accordingly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddressKind {
-    /// Receiver-Link auf `$catalog`.
+    /// Receiver link on `$catalog`.
     Catalog,
-    /// Receiver-Link auf `$metrics`.
+    /// Receiver link on `$metrics`.
     Metrics,
-    /// Receiver-Link auf `$audit`.
+    /// Receiver link on `$audit`.
     Audit,
-    /// Anwender-Topic.
+    /// User topic.
     Topic,
 }
 
-/// Adressklassifizierung.
+/// Address classification.
 #[must_use]
 pub fn classify_address(address: &str) -> AddressKind {
     match address {
@@ -482,8 +481,8 @@ pub fn classify_address(address: &str) -> AddressKind {
     }
 }
 
-// Doc-tie zur §7.9.2-Body-Mode-Erwartung — nuechtern: Producer
-// ist Wire-Format-agnostic.
+// Doc tie to the §7.9.2 body-mode expectation — plainly: the producer
+// is wire-format agnostic.
 const _: BodyEncodingMode = BodyEncodingMode::PassThrough;
 
 #[cfg(test)]
@@ -506,7 +505,7 @@ mod tests {
         }
     }
 
-    // --- Address-Klassifizierung ---
+    // --- Address classification ---
 
     #[test]
     fn classify_address_recognises_reserved() {
@@ -545,7 +544,7 @@ mod tests {
                 AmqpExtValue::Map(v) => v,
                 other => panic!("expected map, got {other:?}"),
             };
-            // Pflicht-Schluessel enthalten.
+            // Required keys present.
             let keys: Vec<String> = entries
                 .iter()
                 .map(|(k, _)| match k {
@@ -723,7 +722,7 @@ mod tests {
 
     #[test]
     fn audit_sample_carries_subject_and_link() {
-        // §C.1.14 verlangt subject_name im audit-record.
+        // §C.1.14 requires subject_name in the audit record.
         let s = audit_event_sample(
             AuditEvent::LinkAttached {
                 subject: "alice".into(),
@@ -776,9 +775,9 @@ mod tests {
         );
         assert_eq!(p.len(), 2);
         let s = p.drain_samples();
-        // Aelteste (subject=a) wurde verdraengt; b dann c.
+        // The oldest (subject=a) was evicted; b then c.
         assert_eq!(s.len(), 2);
-        // Verifiziere dass subject 'a' nicht mehr da ist.
+        // Verify that subject 'a' is no longer present.
         let any_a = s.iter().any(|m| {
             if let AmqpExtValue::Map(entries) = m {
                 entries

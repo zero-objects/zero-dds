@@ -31,14 +31,24 @@ public sealed class SensorTypeSupport : IDdsTopicType<Sensor>
     public byte[] Encode(Sensor sample, EndianMode endian)
     {
         var w = new Xcdr2Writer(endian);
+        EncodeInto(w, sample);
+        return w.ToArray();
+    }
+
+    public void EncodeInto(Xcdr2Writer w, Sensor sample)
+    {
         w.WriteInt32(sample.Id);
         w.WriteFloat64(sample.Value);
-        return w.ToArray();
     }
 
     public Sensor Decode(ReadOnlySpan<byte> bytes)
     {
         var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
+        return DecodeFrom(r);
+    }
+
+    public Sensor DecodeFrom(Xcdr2Reader r)
+    {
         int __m0 = default;
         __m0 = r.ReadInt32();
         double __m1 = default;

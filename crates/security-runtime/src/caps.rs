@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Peer-Capabilities und -Cache.
+//! Peer capabilities and cache.
 //!
-//! [`PeerCapabilities`] ist der Snapshot dessen, was ein Remote-
-//! Participant ueber seine Security-Faehigkeiten kommuniziert hat
-//! (Auth-/Crypto-/Access-Plugin-Class, akzeptierte Suites,
-//! angebotenes Protection-Level, Validity-Window etc.). In RC1
-//! wird dieser Snapshot aus SPDP-Properties befuellt; hier
-//! definieren wir nur das Datenmodell plus einen in-memory-Cache
-//! fuer die Runtime.
+//! [`PeerCapabilities`] is the snapshot of what a remote
+//! participant has communicated about its security capabilities
+//! (auth/crypto/access plugin class, accepted suites,
+//! offered protection level, validity window, etc.). In RC1
+//! this snapshot is populated from SPDP properties; here we
+//! only define the data model plus an in-memory cache
+//! for the runtime.
 //!
-//! Der Cache ist bewusst ein schlanker [`alloc::collections::BTreeMap`]-
-//! Wrapper: Peers kommen und gehen, Lookups haeufig, das typische
-//! Peer-Setup hat dutzende bis niedrige Tausender von Eintraegen
-//! — also keine Hash-Overhead-Diskussion.
+//! The cache is deliberately a lean [`alloc::collections::BTreeMap`]
+//! wrapper: peers come and go, lookups are frequent, the typical
+//! peer setup has dozens to low thousands of entries
+//! — so no hash-overhead discussion.
 //!
-//! Siehe `docs/architecture/08_heterogeneous_security.md` §3.2
-//! und §4.3 (Upgrade-Pfad per `update_partial`).
+//! See `docs/architecture/08_heterogeneous_security.md` §3.2
+//! and §4.3 (upgrade path via `update_partial`).
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -28,86 +28,86 @@ use zerodds_security_pki::DelegationChain;
 use crate::policy::{ProtectionLevel, SuiteHint};
 use crate::shared::PeerKey;
 
-/// Gueltigkeitsfenster einer Peer-Identity (Unix-Seconds).
+/// Validity window of a peer identity (Unix seconds).
 ///
-/// Minimal-Repraesentation ohne chrono-Dep — die konkreten
-/// Zeitvergleiche passieren im Authentication-Plugin. Diese Struct
-/// dient als transparenter Durchreich-Container in den
+/// Minimal representation without a chrono dep — the actual
+/// time comparisons happen in the authentication plugin. This struct
+/// serves as a transparent pass-through container inside
 /// [`PeerCapabilities`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Validity {
-    /// Nicht gueltig vor diesem Zeitpunkt (Unix-Seconds).
+    /// Not valid before this point in time (Unix seconds).
     pub not_before: i64,
-    /// Nicht gueltig nach diesem Zeitpunkt (Unix-Seconds).
+    /// Not valid after this point in time (Unix seconds).
     pub not_after: i64,
 }
 
 impl Validity {
-    /// Prueft, ob `now` im Validity-Fenster liegt (inklusiv).
+    /// Checks whether `now` lies within the validity window (inclusive).
     #[must_use]
     pub const fn contains(&self, now: i64) -> bool {
         now >= self.not_before && now <= self.not_after
     }
 }
 
-/// Security-relevante Capabilities eines Remote-Peers.
+/// Security-relevant capabilities of a remote peer.
 ///
-/// Wird aus SPDP-Properties (Auth-/Crypto-/Access-Plugin-Class,
+/// Populated from SPDP properties (auth/crypto/access plugin class,
 /// `zerodds.sec.supported_suites`, `zerodds.sec.offered_protection`)
-/// sowie aus SEDP-Permissions-Tokens befuellt. Legacy-Peers ohne
-/// Security-Properties landen mit `auth_plugin_class=None` hier —
-/// kein Drop, die [`crate::PolicyEngine`] entscheidet pro
-/// Domain-Rule, ob Legacy akzeptiert wird.
+/// as well as from SEDP permissions tokens. Legacy peers without
+/// security properties land here with `auth_plugin_class=None` —
+/// no drop, the [`crate::PolicyEngine`] decides per
+/// domain rule whether legacy is accepted.
 ///
-/// Alle Felder sind `Option`-/`Vec`-basiert, damit Partial-Updates
-/// (Upgrade-Pfad in §4.3 der Architektur-Doc) sauber moeglich sind.
+/// All fields are `Option`/`Vec`-based so that partial updates
+/// (upgrade path in §4.3 of the architecture doc) are cleanly possible.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PeerCapabilities {
-    /// `DDS:Auth:PKI-DH:1.2` (Spec 1.2 §10.3.2.1) etc. `None` = Legacy-
-    /// Peer ohne Auth-Plugin.
+    /// `DDS:Auth:PKI-DH:1.2` (spec 1.2 §10.3.2.1) etc. `None` = legacy
+    /// peer without an auth plugin.
     pub auth_plugin_class: Option<String>,
-    /// `DDS:Crypto:AES-GCM-GMAC:1.2` (Spec 1.2 §10.5) etc.
+    /// `DDS:Crypto:AES-GCM-GMAC:1.2` (spec 1.2 §10.5) etc.
     pub crypto_plugin_class: Option<String>,
-    /// `DDS:Access:Permissions:1.2` (Spec 1.2 §10.4) etc.
+    /// `DDS:Access:Permissions:1.2` (spec 1.2 §10.4) etc.
     pub access_plugin_class: Option<String>,
-    /// Suites, die der Peer laut SPDP-Annonce akzeptieren wuerde.
+    /// Suites the peer would accept according to its SPDP announce.
     pub supported_suites: Vec<SuiteHint>,
-    /// Protection-Level, das der Peer **selbst** anbietet.
+    /// Protection level the peer **itself** offers.
     pub offered_protection: ProtectionLevel,
-    /// `true` wenn Cert-Chain + OCSP geprueft und ok — wird vom
-    /// Authentication-Plugin gesetzt, nicht aus SPDP.
+    /// `true` if the cert chain + OCSP were checked and ok — set by the
+    /// authentication plugin, not from SPDP.
     pub has_valid_cert: bool,
-    /// Validity-Window aus dem Permissions-Token.
+    /// Validity window from the permissions token.
     pub validity_window: Option<Validity>,
-    /// Vendor-Identifikation (z.B. `"Cyclone DDS"`, `"Fast DDS"`)
-    /// fuer Quirks.
+    /// Vendor identification (e.g. `"Cyclone DDS"`, `"Fast DDS"`)
+    /// for quirks.
     pub vendor_hint: Option<String>,
-    /// Subject-Common-Name aus dem Peer-Cert (z.B.
-    /// `"writer1.fast.example"`). Wird vom Authentication-Plugin nach
-    /// erfolgreichem Handshake gesetzt; **nicht** via SPDP propagiert.
-    /// Genutzt fuer `<zerodds:peer_class><match cert_cn_pattern=...>`
+    /// Subject common name from the peer cert (e.g.
+    /// `"writer1.fast.example"`). Set by the authentication plugin after
+    /// a successful handshake; **not** propagated via SPDP.
+    /// Used for `<zerodds:peer_class><match cert_cn_pattern=...>`
     ///.
     pub cert_cn: Option<String>,
-    /// Delegation-Chain. Wird vom Edge- oder Sub-Gateway
-    /// via SPDP-Property `zerodds.sec.delegation_chain` propagiert.
-    /// Validation gegen ein Delegation-Profile passiert in
-    /// `peer_matches_class` (j-d). `None` = Peer ohne Chain (= direkt
-    /// authentifizierter Peer oder Legacy).
+    /// Delegation chain. Propagated by the edge or sub-gateway
+    /// via the SPDP property `zerodds.sec.delegation_chain`.
+    /// Validation against a delegation profile happens in
+    /// `peer_matches_class` (j-d). `None` = peer without a chain (= directly
+    /// authenticated peer or legacy).
     pub delegation_chain: Option<DelegationChain>,
 }
 
 impl PeerCapabilities {
-    /// Mischt nicht-leere Felder aus `other` in `self`. Leere Felder
-    /// (`None`, `[]`) bleiben unveraendert — damit sind mehrere
-    /// partielle SPDP-Updates idempotent und reihenfolge-tolerant.
+    /// Merges non-empty fields from `other` into `self`. Empty fields
+    /// (`None`, `[]`) stay unchanged — so multiple
+    /// partial SPDP updates are idempotent and order-tolerant.
     ///
-    /// Sonderregeln:
-    /// * `offered_protection` wird immer uebernommen (monoton steigend
-    ///   via [`ProtectionLevel::stronger`]) — ein Peer kann sein
-    ///   Level upgraden, aber nicht still herunterstufen.
-    /// * `has_valid_cert=true` ist sticky: einmal validiert, kann es
-    ///   nicht zu `false` zurueckfallen (Cert-Rotation erfordert
-    ///   explizites [`PeerCache::forget`]).
+    /// Special rules:
+    /// * `offered_protection` is always taken over (monotonically increasing
+    ///   via [`ProtectionLevel::stronger`]) — a peer can upgrade its
+    ///   level but not silently downgrade it.
+    /// * `has_valid_cert=true` is sticky: once validated, it cannot
+    ///   fall back to `false` (cert rotation requires an
+    ///   explicit [`PeerCache::forget`]).
     pub fn merge_update(&mut self, other: &PeerCapabilities) {
         if other.auth_plugin_class.is_some() {
             self.auth_plugin_class = other.auth_plugin_class.clone();
@@ -140,54 +140,54 @@ impl PeerCapabilities {
     }
 }
 
-/// In-memory-Cache `PeerKey → PeerCapabilities`.
+/// In-memory cache `PeerKey → PeerCapabilities`.
 ///
-/// Eine Instanz pro Participant; gelebte Lebensdauer entspricht dem
-/// Participant selbst. Thread-Safety liefert der Aufrufer via
-/// `Arc<Mutex<PeerCache>>` oder `Arc<RwLock<PeerCache>>` — der Cache
-/// selbst ist intentional **nicht** thread-safe, weil pro-Tick
-/// meist nur eine Writer-/Reader-Task ihn anfasst.
+/// One instance per participant; its lifetime matches the
+/// participant itself. Thread safety is provided by the caller via
+/// `Arc<Mutex<PeerCache>>` or `Arc<RwLock<PeerCache>>` — the cache
+/// itself is intentionally **not** thread-safe, because per tick
+/// usually only one writer/reader task touches it.
 #[derive(Debug, Default, Clone)]
 pub struct PeerCache {
     inner: BTreeMap<PeerKey, PeerCapabilities>,
 }
 
 impl PeerCache {
-    /// Leeren Cache bauen.
+    /// Build an empty cache.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Anzahl bekannter Peers.
+    /// Number of known peers.
     #[must_use]
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
-    /// `true` wenn kein Peer bekannt.
+    /// `true` if no peer is known.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 
-    /// Vollstaendiger Upsert. Ueberschreibt einen vorhandenen Eintrag
-    /// mit den neuen Capabilities. Fuer Teil-Updates
-    /// [`Self::update_partial`] nehmen.
+    /// Full upsert. Overwrites an existing entry
+    /// with the new capabilities. For partial updates
+    /// use [`Self::update_partial`].
     pub fn insert(&mut self, key: PeerKey, caps: PeerCapabilities) {
         self.inner.insert(key, caps);
     }
 
-    /// Liest die Capabilities eines Peers.
+    /// Reads the capabilities of a peer.
     #[must_use]
     pub fn get(&self, key: &PeerKey) -> Option<&PeerCapabilities> {
         self.inner.get(key)
     }
 
-    /// Merged neue Informationen in den existierenden Eintrag.
-    /// Ist der Peer neu → wird er eingefuegt.
+    /// Merges new information into the existing entry.
+    /// If the peer is new → it is inserted.
     ///
-    /// Semantik siehe [`PeerCapabilities::merge_update`].
+    /// For the semantics see [`PeerCapabilities::merge_update`].
     pub fn update_partial(&mut self, key: PeerKey, update: &PeerCapabilities) {
         self.inner
             .entry(key)
@@ -195,13 +195,13 @@ impl PeerCache {
             .or_insert_with(|| update.clone());
     }
 
-    /// Entfernt einen Peer aus dem Cache. Liefert die alten Caps
-    /// falls vorhanden — praktisch fuers Logging bei Session-End.
+    /// Removes a peer from the cache. Returns the old caps
+    /// if present — handy for logging at session end.
     pub fn forget(&mut self, key: &PeerKey) -> Option<PeerCapabilities> {
         self.inner.remove(key)
     }
 
-    /// Iterator ueber alle `(PeerKey, PeerCapabilities)`-Paare.
+    /// Iterator over all `(PeerKey, PeerCapabilities)` pairs.
     pub fn iter(&self) -> impl Iterator<Item = (&PeerKey, &PeerCapabilities)> {
         self.inner.iter()
     }
@@ -273,7 +273,7 @@ mod tests {
         let orig = base.clone();
         base.merge_update(&PeerCapabilities::default());
         // offered_protection default = None, stronger(Encrypt, None) = Encrypt
-        // has_valid_cert: default=false darf sticky-true NICHT zuruecksetzen
+        // has_valid_cert: default=false must NOT reset the sticky-true
         assert_eq!(base, orig);
     }
 
@@ -305,7 +305,7 @@ mod tests {
         assert_eq!(
             base.offered_protection,
             ProtectionLevel::Encrypt,
-            "downgrade darf offered_protection nicht reduzieren"
+            "downgrade must not reduce offered_protection"
         );
     }
 
@@ -319,10 +319,7 @@ mod tests {
             has_valid_cert: false,
             ..Default::default()
         });
-        assert!(
-            base.has_valid_cert,
-            "sticky: true darf nicht zu false werden"
-        );
+        assert!(base.has_valid_cert, "sticky: true must not become false");
     }
 
     #[test]
@@ -403,7 +400,7 @@ mod tests {
         assert_eq!(
             merged.auth_plugin_class.as_deref(),
             Some("DDS:Auth:PKI-DH:1.2"),
-            "pre-existing Felder bleiben erhalten"
+            "pre-existing fields are preserved"
         );
     }
 

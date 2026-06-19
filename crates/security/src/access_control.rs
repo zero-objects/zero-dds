@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Access-Control-Plugin SPI (OMG DDS-Security 1.1 §8.4).
+//! Access control plugin SPI (OMG DDS-Security 1.1 §8.4).
 //!
-//! Entscheidet pro Topic / pro Operation, ob ein authentifizierter
-//! Participant die Aktion ausfuehren darf. Eingaben:
-//! * Governance-XML — Topic-Level-Rules (Discovery, Publishing,
-//!   Subscribing, Encrypt-Flag).
-//! * Permissions-XML — wer darf was (signiert mit Permissions-CA).
+//! Decides per topic / per operation whether an authenticated
+//! participant may perform the action. Inputs:
+//! * Governance XML — topic-level rules (discovery, publishing,
+//!   subscribing, encrypt flag).
+//! * Permissions XML — who may do what (signed with the permissions CA).
 //!
-//! Die XML-Dateien werden als Properties uebergeben (Pfade). Das
-//! Plugin parst + validiert + cacht intern.
+//! The XML files are passed as properties (paths). The
+//! plugin parses + validates + caches internally.
 //!
 //! zerodds-lint: allow no_dyn_in_safe
-//! (Plugin-SPI benötigt `Box<dyn AccessControlPlugin>`.)
+//! (The plugin SPI needs `Box<dyn AccessControlPlugin>`.)
 
 extern crate alloc;
 
@@ -23,35 +23,35 @@ use crate::authentication::IdentityHandle;
 use crate::error::SecurityResult;
 use crate::properties::PropertyList;
 
-/// Opaker Handle fuer validierte Permissions. Erzeugt durch
-/// [`AccessControlPlugin::validate_local_permissions`] bzw.
+/// Opaque handle for validated permissions. Created by
+/// [`AccessControlPlugin::validate_local_permissions`] or
 /// `validate_remote_permissions`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct PermissionsHandle(pub u64);
 
-/// Ob eine Aktion durchgefuehrt werden darf. Bewusst sparsam — keine
-/// Reason-String, weil der Reason an den Remote nichts verraten soll
-/// (Logging via [`crate::LoggingPlugin`]).
+/// Whether an action may be performed. Deliberately sparse — no
+/// reason string, because the reason must not reveal anything to the
+/// remote (logging via [`crate::LoggingPlugin`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessDecision {
-    /// Erlaubt.
+    /// Allowed.
     Permit,
-    /// Verweigert.
+    /// Denied.
     Deny,
 }
 
 impl AccessDecision {
-    /// `true` wenn `Permit`.
+    /// `true` if `Permit`.
     #[must_use]
     pub fn is_permitted(self) -> bool {
         matches!(self, Self::Permit)
     }
 }
 
-/// Access-Control-Plugin-Trait (Spec §8.4.2.9).
+/// Access control plugin trait (spec §8.4.2.9).
 pub trait AccessControlPlugin: Send + Sync {
-    /// Validiert lokale Permissions (Governance.xml + Permissions.xml
-    /// + Signatur-Check gegen Permissions-CA).
+    /// Validates local permissions (Governance.xml + Permissions.xml
+    /// + signature check against the permissions CA).
     ///
     /// # Spec §8.4.2.9.1
     fn validate_local_permissions(
@@ -61,7 +61,7 @@ pub trait AccessControlPlugin: Send + Sync {
         props: &PropertyList,
     ) -> SecurityResult<PermissionsHandle>;
 
-    /// Validiert Remote-Permissions aus dem SEDP-Handshake.
+    /// Validates remote permissions from the SEDP handshake.
     ///
     /// # Spec §8.4.2.9.2
     fn validate_remote_permissions(
@@ -72,8 +72,7 @@ pub trait AccessControlPlugin: Send + Sync {
         remote_credential: &[u8],
     ) -> SecurityResult<PermissionsHandle>;
 
-    /// Darf dieser Participant einen DataWriter auf diesem Topic
-    /// erzeugen?
+    /// May this participant create a DataWriter on this topic?
     ///
     /// # Spec §8.4.2.9.4 `check_create_datawriter`.
     fn check_create_datawriter(
@@ -82,8 +81,7 @@ pub trait AccessControlPlugin: Send + Sync {
         topic_name: &str,
     ) -> SecurityResult<AccessDecision>;
 
-    /// Darf dieser Participant einen DataReader auf diesem Topic
-    /// erzeugen?
+    /// May this participant create a DataReader on this topic?
     ///
     /// # Spec §8.4.2.9.5 `check_create_datareader`.
     fn check_create_datareader(
@@ -92,7 +90,7 @@ pub trait AccessControlPlugin: Send + Sync {
         topic_name: &str,
     ) -> SecurityResult<AccessDecision>;
 
-    /// Darf der lokale Reader die Publication des Remote matchen?
+    /// May the local reader match the remote's publication?
     ///
     /// # Spec §8.4.2.9.17 `check_remote_datawriter_match`.
     fn check_remote_datawriter_match(
@@ -102,7 +100,7 @@ pub trait AccessControlPlugin: Send + Sync {
         topic_name: &str,
     ) -> SecurityResult<AccessDecision>;
 
-    /// Spiegelbildlich: darf Remote-Reader unseren Writer matchen?
+    /// Mirror image: may a remote reader match our writer?
     fn check_remote_datareader_match(
         &self,
         local_perms: PermissionsHandle,
@@ -110,15 +108,15 @@ pub trait AccessControlPlugin: Send + Sync {
         topic_name: &str,
     ) -> SecurityResult<AccessDecision>;
 
-    /// Plugin-Class-Id (z.B. "DDS:Access:Permissions:1.2") fuer SPDP-
-    /// Annoncierung.
+    /// Plugin class id (e.g. "DDS:Access:Permissions:1.2") for SPDP
+    /// announcing.
     fn plugin_class_id(&self) -> &str;
 
     /// Spec §9.4.2.5: `check_create_participant`. Default: permit
-    /// (kein Plugin-spezifisches Filtern).
+    /// (no plugin-specific filtering).
     ///
     /// # Errors
-    /// Implementations-spezifisch.
+    /// Implementation-specific.
     fn check_create_participant(
         &self,
         _local_perms: PermissionsHandle,
@@ -127,11 +125,11 @@ pub trait AccessControlPlugin: Send + Sync {
         Ok(AccessDecision::Permit)
     }
 
-    /// Spec §9.4.2.6: `check_remote_participant` — darf Remote-
-    /// Participant in unsere Domain joinen? Default: permit.
+    /// Spec §9.4.2.6: `check_remote_participant` — may the remote
+    /// participant join our domain? Default: permit.
     ///
     /// # Errors
-    /// Implementations-spezifisch.
+    /// Implementation-specific.
     fn check_remote_participant(
         &self,
         _local_perms: PermissionsHandle,
@@ -141,11 +139,11 @@ pub trait AccessControlPlugin: Send + Sync {
         Ok(AccessDecision::Permit)
     }
 
-    /// Spec §9.4.2.10: `check_create_topic` — darf der lokale
-    /// Subject ein Topic mit dem Namen erzeugen? Default: permit.
+    /// Spec §9.4.2.10: `check_create_topic` — may the local
+    /// subject create a topic with that name? Default: permit.
     ///
     /// # Errors
-    /// Implementations-spezifisch.
+    /// Implementation-specific.
     fn check_create_topic(
         &self,
         _local_perms: PermissionsHandle,
@@ -154,12 +152,12 @@ pub trait AccessControlPlugin: Send + Sync {
         Ok(AccessDecision::Permit)
     }
 
-    /// Spec §9.4.2.13: `get_permissions_token` — opaker
-    /// Permissions-Token fuer SPDP-Annoncierung
-    /// (`PID_PERMISSIONS_TOKEN` 0x1002). Default: leer.
+    /// Spec §9.4.2.13: `get_permissions_token` — opaque
+    /// permissions token for SPDP announcing
+    /// (`PID_PERMISSIONS_TOKEN` 0x1002). Default: empty.
     ///
     /// # Errors
-    /// Implementations-spezifisch.
+    /// Implementation-specific.
     fn get_permissions_token(
         &self,
         _local_perms: PermissionsHandle,
@@ -167,13 +165,13 @@ pub trait AccessControlPlugin: Send + Sync {
         Ok(alloc::vec::Vec::new())
     }
 
-    /// Spec §9.4.2.14: `get_permissions_credential_token` — opake
-    /// Credential, die im Authentication-Plugin via
-    /// `set_permissions_credential_and_token` weitergereicht wird.
-    /// Default: leer.
+    /// Spec §9.4.2.14: `get_permissions_credential_token` — opaque
+    /// credential passed on in the authentication plugin via
+    /// `set_permissions_credential_and_token`.
+    /// Default: empty.
     ///
     /// # Errors
-    /// Implementations-spezifisch.
+    /// Implementation-specific.
     fn get_permissions_credential_token(
         &self,
         _local_perms: PermissionsHandle,
@@ -182,7 +180,7 @@ pub trait AccessControlPlugin: Send + Sync {
     }
 }
 
-/// Factory-Alias.
+/// Factory alias.
 pub type AccessControlBox = Box<dyn AccessControlPlugin>;
 
 #[cfg(test)]

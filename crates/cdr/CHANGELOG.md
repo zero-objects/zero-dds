@@ -1,6 +1,6 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
@@ -29,73 +29,73 @@ Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionie
 
 ## [1.0.0-rc.1]
 
-Initiale Release-Materialisierung der `zerodds-cdr`-Crate.
+Initial release materialization of the `zerodds-cdr` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **OMG XTypes 1.3** §7.4 — Wire-Encoding für XCDR1, Plain CDR2, Delimited CDR2, PL_CDR2.
-- **OMG XTypes 1.3** §7.4.1.2 — PL_CDR1 Member-Codec (Standard-Header + Extended-Header + PID_LIST_END Sentinel).
-- **OMG XTypes 1.3** §7.4.2 — XCDR2 Plain/Delimited/Parameter-List Encodings.
-- **OMG XTypes 1.3** §7.4.4 — Composite Types (String, Sequence, Array, Optional).
-- **OMG XTypes 1.3** §7.4.5 — Struct-Extensibility (`final`, `appendable`, `mutable`).
-- **OMG XTypes 1.3** §7.6.8 — KeyHash (PlainCdr2BeKeyHolder mit MD5-Fallback bei `max_size > 16 byte`).
-- **DDSI-RTPS 2.5** §10 — Wire-Encapsulation, RepresentationIdentifier-Bytes (CDR_LE/CDR_BE/PL_CDR_LE/PL_CDR_BE).
-- **OMG IDL 4.2** §7.4.13 — `fixed<P, S>` Decimal-Type (BCD-Encoding).
-- **RFC 1321** — MD5 (via `zerodds-foundation::md5`) für KeyHash + EquivalenceHash.
+- **OMG XTypes 1.3** §7.4 — wire encoding for XCDR1, Plain CDR2, Delimited CDR2, PL_CDR2.
+- **OMG XTypes 1.3** §7.4.1.2 — PL_CDR1 member codec (standard header + extended header + PID_LIST_END sentinel).
+- **OMG XTypes 1.3** §7.4.2 — XCDR2 Plain/Delimited/Parameter-List encodings.
+- **OMG XTypes 1.3** §7.4.4 — composite types (String, Sequence, Array, Optional).
+- **OMG XTypes 1.3** §7.4.5 — struct extensibility (`final`, `appendable`, `mutable`).
+- **OMG XTypes 1.3** §7.6.8 — KeyHash (PlainCdr2BeKeyHolder with MD5 fallback when `max_size > 16 byte`).
+- **DDSI-RTPS 2.5** §10 — wire encapsulation, RepresentationIdentifier bytes (CDR_LE/CDR_BE/PL_CDR_LE/PL_CDR_BE).
+- **OMG IDL 4.2** §7.4.13 — `fixed<P, S>` decimal type (BCD encoding).
+- **RFC 1321** — MD5 (via `zerodds-foundation::md5`) for KeyHash + EquivalenceHash.
 
-### Public-API
+### Public API
 
-**Buffer-I/O:**
-- `BufferReader<'a>` — Alignment-tracking Byte-Reader mit `read_u8`/`read_u16`/`read_u32`/`read_u64`/`read_i*`/`read_f*`/`read_bytes`/`read_string`.
-- `BufferWriter` — Alignment-tracking Byte-Writer mit `write_*`-Familie und `into_bytes`.
-- `Endianness::{Little, Big}` — Endianness-Marker für alle CDR-Operationen.
+**Buffer I/O:**
+- `BufferReader<'a>` — alignment-tracking byte reader with `read_u8`/`read_u16`/`read_u32`/`read_u64`/`read_i*`/`read_f*`/`read_bytes`/`read_string`.
+- `BufferWriter` — alignment-tracking byte writer with the `write_*` family and `into_bytes`.
+- `Endianness::{Little, Big}` — endianness marker for all CDR operations.
 
-**Trait-Familie:**
-- `CdrEncode` / `CdrDecode` — Serializer-Traits für alle XCDR2-Wire-Primitives.
+**Trait family:**
+- `CdrEncode` / `CdrDecode` — serializer traits for all XCDR2 wire primitives.
 
-**Composite-Type-Impls** (`composite`-Modul, `alloc`-Feature):
+**Composite-type impls** (`composite` module, `alloc` feature):
 - `impl CdrEncode for str / String / Vec<T> / [T; N] / Option<T>` (XTypes §7.4.4).
 
-**Struct-Extensibility-Encoder** (`struct_enc`-Modul):
+**Struct-extensibility encoder** (`struct_enc` module):
 - `encode_final` / `decode_final` — XCDR2 Plain CDR2 (§7.4.2.1).
 - `encode_appendable` / `decode_appendable` — XCDR2 Delimited CDR2 (§7.4.2.2, DHEADER + body).
-- `MutableStructEncoder` — XCDR2 Parameter-List Encoder mit Required-Members-Validierung (§7.4.2.4).
-- `encode_mutable_member` / `encode_mutable_member_lc` — Low-Level EMHEADER-Emit.
-- `read_mutable_member` / `read_all_mutable_members` — EMHEADER-Decode mit Length-Code-Switch.
-- `MutableMember<'a>` — geparsten Member-Slice.
-- `LengthCode` — XCDR2 Length-Code (LC0–LC7) gemäß Tabelle 7-19.
+- `MutableStructEncoder` — XCDR2 Parameter-List encoder with required-members validation (§7.4.2.4).
+- `encode_mutable_member` / `encode_mutable_member_lc` — low-level EMHEADER emit.
+- `read_mutable_member` / `read_all_mutable_members` — EMHEADER decode with length-code switch.
+- `MutableMember<'a>` — parsed member slice.
+- `LengthCode` — XCDR2 length code (LC0–LC7) per Table 7-19.
 
-**XCDR1 / PL_CDR1** (`xcdr1`-Modul):
-- `encode_pl_cdr1_member` — Standard-Header + Extended-Header automatisch wählend (§7.4.1.2.2).
-- `read_pl_cdr1_member` / `read_all_pl_cdr1_members` — Decoder mit Sentinel-Erkennung.
-- `write_pl_cdr1_sentinel` — `PID_LIST_END (0x3F02)` Terminator.
-- Konstanten: `PID_LIST_END`, `PID_EXTENDED`, `PID_EXTENDED_THRESHOLD`.
-- `PlCdr1Member` — geparsten Member.
+**XCDR1 / PL_CDR1** (`xcdr1` module):
+- `encode_pl_cdr1_member` — automatically selecting standard header + extended header (§7.4.1.2.2).
+- `read_pl_cdr1_member` / `read_all_pl_cdr1_members` — decoder with sentinel detection.
+- `write_pl_cdr1_sentinel` — `PID_LIST_END (0x3F02)` terminator.
+- Constants: `PID_LIST_END`, `PID_EXTENDED`, `PID_EXTENDED_THRESHOLD`.
+- `PlCdr1Member` — parsed member.
 
-**Fixed-Decimal** (`fixed`-Modul, `alloc`-Feature):
-- `Fixed<const P: u32, const S: u32>` — IDL-`fixed<P, S>`-Type mit BCD-Wire-Format (IDL 4.2 §7.4.13).
+**Fixed decimal** (`fixed` module, `alloc` feature):
+- `Fixed<const P: u32, const S: u32>` — IDL `fixed<P, S>` type with BCD wire format (IDL 4.2 §7.4.13).
 
-**KeyHash** (`key_hash`-Modul, `alloc`-Feature):
+**KeyHash** (`key_hash` module, `alloc` feature):
 - `compute_key_hash(holder: &[u8], max_size: usize) -> [u8; 16]` — XTypes 1.3 §7.6.8.
-- `PlainCdr2BeKeyHolder` — CDR_BE-encoded Key-Holder-Struktur.
-- `KEY_HASH_LEN` — `16` (Konstante).
+- `PlainCdr2BeKeyHolder` — CDR_BE-encoded key-holder structure.
+- `KEY_HASH_LEN` — `16` (constant).
 
-**Error-Familie:**
-- `EncodeError::{BufferFull, ValueOutOfRange, MissingNonOptionalMember}` mit Offset/Member-ID-Kontext.
-- `DecodeError::{UnexpectedEof, InvalidString, LengthExceeded, InvalidEnum, InvalidBoolean, InvalidEncapsulation}` mit Offset-Kontext.
+**Error family:**
+- `EncodeError::{BufferFull, ValueOutOfRange, MissingNonOptionalMember}` with offset/member-ID context.
+- `DecodeError::{UnexpectedEof, InvalidString, LengthExceeded, InvalidEnum, InvalidBoolean, InvalidEncapsulation}` with offset context.
 
-### Implementierung
+### Implementation
 
-- `forbid(unsafe_code)` über die ganze Crate.
-- `#![no_std]` + opt-in `alloc`-Feature für composite/fixed/key_hash/struct_enc/xcdr1.
-- Alignment-Tracking via Position-Counter + `pad_to`-Berechnung; Padding wird vor jedem Multibyte-Field automatisch eingefügt.
-- 199 Tests grün (170 unit + 1 compliance_xcdr2 + 7 fuzz_smoke + 7 integration_topic + 15 proptest_roundtrip + 1 doc-test).
-- Bench-Suite `encode_decode_hotpaths` (criterion) für u32/string/sequence/struct.
-- Fuzz-Targets im `fuzz/`-Verzeichnis (libFuzzer): `read_pl_cdr1_member`, `read_all_pl_cdr1_members`, plus zentrale composite/struct_enc-Targets.
+- `forbid(unsafe_code)` across the whole crate.
+- `#![no_std]` + opt-in `alloc` feature for composite/fixed/key_hash/struct_enc/xcdr1.
+- Alignment tracking via a position counter + `pad_to` computation; padding is inserted automatically before every multibyte field.
+- 199 tests passing (170 unit + 1 compliance_xcdr2 + 7 fuzz_smoke + 7 integration_topic + 15 proptest_roundtrip + 1 doc-test).
+- Bench suite `encode_decode_hotpaths` (criterion) for u32/string/sequence/struct.
+- Fuzz targets in the `fuzz/` directory (libFuzzer): `read_pl_cdr1_member`, `read_all_pl_cdr1_members`, plus central composite/struct_enc targets.
 
-### Feature-Flags
+### Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std`   | ✅      | Re-exports + std-Error-Impl. Implies `alloc`. |
-| `alloc` | ✅      | Aktiviert `composite`/`fixed`/`key_hash`/`struct_enc`/`xcdr1` (die alle `Vec`/`String` brauchen). |
+| `std`   | ✅      | Re-exports + std error impl. Implies `alloc`. |
+| `alloc` | ✅      | Enables `composite`/`fixed`/`key_hash`/`struct_enc`/`xcdr1` (all of which need `Vec`/`String`). |

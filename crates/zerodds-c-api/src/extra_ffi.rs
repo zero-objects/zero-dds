@@ -1,31 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Erweitere C-FFI fuer Spec-Vollstaendigkeit (DDS 1.4 §2.2.2).
+//! Extended C-FFI for spec completeness (DDS 1.4 §2.2.2).
 //!
-//! Diese Datei buendelt die in der ersten RC1-Welle ausgelassenen
-//! Operationen:
-//!  * QoS get/set fuer alle 6 Entity-Typen (Spec §2.2.2.{1,2,3,4,5})
-//!  * Instance-Operations auf DataWriter (register_instance,
+//! This file bundles the operations omitted in the first RC1 wave:
+//!  * QoS get/set for all 6 entity types (Spec §2.2.2.{1,2,3,4,5})
+//!  * Instance operations on DataWriter (register_instance,
 //!    unregister_instance, lookup_instance, get_key_value,
 //!    dispose_w_timestamp, register_instance_w_timestamp,
 //!    unregister_instance_w_timestamp) — Spec §2.2.2.4.2.5..
-//!  * DataReader read/take Varianten (read_instance, take_instance,
+//!  * DataReader read/take variants (read_instance, take_instance,
 //!    read_next_instance, take_next_instance, read_w_condition,
 //!    take_w_condition, get_key_value, lookup_instance,
 //!    wait_for_historical_data) — Spec §2.2.2.5.3
-//!  * Matched-Subscription / Matched-Publication-Listings
-//!  * Loan-API (loan_message, commit_loan, discard_loan)
+//!  * Matched-subscription / matched-publication listings
+//!  * Loan API (loan_message, commit_loan, discard_loan)
 //!  * `lookup_topicdescription` + `get_builtin_subscriber`
-//!  * copy_from_topic_qos auf Pub/Sub
+//!  * copy_from_topic_qos on Pub/Sub
 //!
-//! ## Vendor-Erweiterung: Instance-Operations mit Raw-Key-Bytes
+//! ## Vendor extension: instance operations with raw key bytes
 //!
-//! Die DDS-Spec definiert `register_instance(T instance_data)` mit
-//! generischem Topic-Type `T`. Im byte-orientierten C-FFI ist `T` nicht
-//! bekannt — Caller liefert daher die **Key-Hash-Bytes (16 byte)** der
-//! Instance, die durch IDL-Codegen-Side per `T::encode_key_holder` erzeugt
-//! werden. Siehe `docs/specs/zerodds-c-api-1.0.md §2.6 Vendor-Extension`.
+//! The DDS spec defines `register_instance(T instance_data)` with a
+//! generic topic type `T`. In the byte-oriented C-FFI `T` is not
+//! known — the caller therefore provides the **key-hash bytes (16 byte)** of the
+//! instance, produced by the IDL codegen side via `T::encode_key_holder`.
+//! See `docs/specs/zerodds-c-api-1.0.md §2.6 Vendor-Extension`.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -52,10 +51,10 @@ use crate::qos_ffi::{
 // ===========================================================================
 
 /// `lookup_topicdescription(name)` — Spec §2.2.2.2.1.13.
-/// Liefert das erste Topic mit gleichem Namen, oder NULL.
+/// Returns the first topic with the same name, or NULL.
 ///
 /// # Safety
-/// `p`, `name` valide.
+/// `p`, `name` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_lookup_topicdescription(
     p: *mut ZeroDdsDomainParticipant,
@@ -64,8 +63,8 @@ pub unsafe extern "C" fn zerodds_dp_lookup_topicdescription(
     if p.is_null() || name.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: see fn # Safety doc — p+name NULL-checked above; topics-Liste haelt
-    // nur valide Box-Pointer aus dp_create_topic.
+    // SAFETY: see fn # Safety doc — p+name NULL-checked above; the topics list holds
+    // only valid box pointers from dp_create_topic.
     unsafe {
         let pp = &*p;
         let cs = std::ffi::CStr::from_ptr(name);
@@ -89,9 +88,9 @@ pub unsafe extern "C" fn zerodds_dp_lookup_topicdescription(
 
 /// Opaque BuiltinSubscriber-Handle (Spec §2.2.2.2.1.7).
 pub struct ZeroDdsBuiltinSubscriber {
-    /// Backref auf Participant fuer Lifetime-Tracking.
+    /// Back-reference to the participant for lifetime tracking.
     pub participant: *mut ZeroDdsDomainParticipant,
-    /// Geklonter Arc auf den DCPS-internen BuiltinSubscriber.
+    /// Cloned Arc on the DCPS-internal BuiltinSubscriber.
     pub inner: alloc::sync::Arc<zerodds_dcps::builtin_subscriber::BuiltinSubscriber>,
 }
 
@@ -101,11 +100,11 @@ unsafe impl Send for ZeroDdsBuiltinSubscriber {}
 unsafe impl Sync for ZeroDdsBuiltinSubscriber {}
 
 /// `get_builtin_subscriber()` — Spec §2.2.2.2.1.7.
-/// Liefert einen Pointer auf einen Wrapper um den DCPS-BuiltinSubscriber.
-/// Caller muss `zerodds_builtin_subscriber_destroy` rufen.
+/// Returns a pointer to a wrapper around the DCPS BuiltinSubscriber.
+/// The caller must call `zerodds_builtin_subscriber_destroy`.
 ///
 /// # Safety
-/// `p` valide.
+/// `p` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_get_builtin_subscriber(
     p: *mut ZeroDdsDomainParticipant,
@@ -121,13 +120,13 @@ pub unsafe extern "C" fn zerodds_dp_get_builtin_subscriber(
     }))
 }
 
-/// Loescht ein BuiltinSubscriber-Wrapper.
+/// Deletes a BuiltinSubscriber wrapper.
 ///
 /// # Safety
-/// `bs` valide oder NULL.
+/// `bs` valid or NULL.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_builtin_subscriber_destroy(bs: *mut ZeroDdsBuiltinSubscriber) {
-    // SAFETY: Caller-Pledge: bs stammt aus get_builtin_subscriber (Box::into_raw).
+    // SAFETY: caller pledge: bs comes from get_builtin_subscriber (Box::into_raw).
     unsafe { Owned::from_raw_drop(bs) };
 }
 
@@ -135,10 +134,10 @@ pub unsafe extern "C" fn zerodds_builtin_subscriber_destroy(bs: *mut ZeroDdsBuil
 // QoS get/set per Entity (Spec §2.2.2.x.y)
 // ===========================================================================
 
-/// Setzt die DomainParticipant-QoS (Spec §2.2.2.2.1.3).
+/// Sets the DomainParticipant QoS (Spec §2.2.2.2.1.3).
 ///
 /// # Safety
-/// `p` valide; `qos` darf NULL sein (Reset auf Default).
+/// `p` valid; `qos` darf NULL sein (Reset auf Default).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_set_qos(
     p: *mut ZeroDdsDomainParticipant,
@@ -162,13 +161,13 @@ pub unsafe extern "C" fn zerodds_dp_set_qos(
     }
 }
 
-/// Liest die DomainParticipant-QoS in `out` (Spec §2.2.2.2.1.4).
-/// `out.user_data.value` muss vom Caller mit ausreichendem Buffer
-/// initialisiert sein. Bei zu kleinem Buffer wird die erforderliche
-/// Groesse in `out.user_data.value_len` zurueckgeschrieben + `OutOfResources`.
+/// Reads the DomainParticipant QoS into `out` (Spec §2.2.2.2.1.4).
+/// `out.user_data.value` must be initialized by the caller with a sufficient
+/// buffer. On a too-small buffer the required
+/// size is written back into `out.user_data.value_len` + `OutOfResources`.
 ///
 /// # Safety
-/// `p`, `out` valide.
+/// `p`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_get_qos(
     p: *mut ZeroDdsDomainParticipant,
@@ -177,7 +176,7 @@ pub unsafe extern "C" fn zerodds_dp_get_qos(
     if p.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — pp valid (NULL-checked above), out valid (Caller-Pledge).
+    // SAFETY: see fn # Safety doc — pp valid (NULL-checked above), out valid (caller pledge).
     unsafe {
         let pp = &*p;
         let qos = pp.dp.qos();
@@ -188,7 +187,7 @@ pub unsafe extern "C" fn zerodds_dp_get_qos(
 /// Set-Default-Topic-QoS.
 ///
 /// # Safety
-/// `p` valide; `qos` darf NULL sein.
+/// `p` valid; `qos` darf NULL sein.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_set_default_topic_qos(
     p: *mut ZeroDdsDomainParticipant,
@@ -215,7 +214,7 @@ pub unsafe extern "C" fn zerodds_dp_set_default_topic_qos(
 /// Get-Default-Topic-QoS-Snapshot.
 ///
 /// # Safety
-/// `p`, `out` valide.
+/// `p`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_get_default_topic_qos(
     p: *mut ZeroDdsDomainParticipant,
@@ -239,7 +238,7 @@ pub unsafe extern "C" fn zerodds_dp_get_default_topic_qos(
 /// Set-Default-Publisher-QoS.
 ///
 /// # Safety
-/// `p` valide.
+/// `p` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_set_default_publisher_qos(
     p: *mut ZeroDdsDomainParticipant,
@@ -266,7 +265,7 @@ pub unsafe extern "C" fn zerodds_dp_set_default_publisher_qos(
 /// Get-Default-Publisher-QoS.
 ///
 /// # Safety
-/// `p`, `out` valide.
+/// `p`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_get_default_publisher_qos(
     p: *mut ZeroDdsDomainParticipant,
@@ -290,7 +289,7 @@ pub unsafe extern "C" fn zerodds_dp_get_default_publisher_qos(
 /// Set-Default-Subscriber-QoS.
 ///
 /// # Safety
-/// `p` valide.
+/// `p` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_set_default_subscriber_qos(
     p: *mut ZeroDdsDomainParticipant,
@@ -317,7 +316,7 @@ pub unsafe extern "C" fn zerodds_dp_set_default_subscriber_qos(
 /// Get-Default-Subscriber-QoS.
 ///
 /// # Safety
-/// `p`, `out` valide.
+/// `p`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_get_default_subscriber_qos(
     p: *mut ZeroDdsDomainParticipant,
@@ -341,7 +340,7 @@ pub unsafe extern "C" fn zerodds_dp_get_default_subscriber_qos(
 /// Publisher set/get QoS.
 ///
 /// # Safety
-/// `pub_` valide.
+/// `pub_` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_set_qos(
     pub_: *mut ZeroDdsPublisher,
@@ -368,7 +367,7 @@ pub unsafe extern "C" fn zerodds_pub_set_qos(
 /// Publisher get_qos.
 ///
 /// # Safety
-/// `pub_`, `out` valide.
+/// `pub_`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_get_qos(
     pub_: *mut ZeroDdsPublisher,
@@ -388,7 +387,7 @@ pub unsafe extern "C" fn zerodds_pub_get_qos(
 /// Pub set_default_datawriter_qos.
 ///
 /// # Safety
-/// `pub_` valide.
+/// `pub_` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_set_default_datawriter_qos(
     pub_: *mut ZeroDdsPublisher,
@@ -415,7 +414,7 @@ pub unsafe extern "C" fn zerodds_pub_set_default_datawriter_qos(
 /// Pub get_default_datawriter_qos.
 ///
 /// # Safety
-/// `pub_`, `out` valide.
+/// `pub_`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_get_default_datawriter_qos(
     pub_: *mut ZeroDdsPublisher,
@@ -436,11 +435,11 @@ pub unsafe extern "C" fn zerodds_pub_get_default_datawriter_qos(
     }
 }
 
-/// Pub copy_from_topic_qos: kopiert die Policies aus TopicQos in
-/// die DataWriterQos-`history`/`durability`/`reliability`/etc. Inplace.
+/// Pub copy_from_topic_qos: copies the policies from TopicQos into
+/// the DataWriterQos `history`/`durability`/`reliability`/etc. in place.
 ///
 /// # Safety
-/// Beide Pointer valide.
+/// Both pointers valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_copy_from_topic_qos(
     _pub: *mut ZeroDdsPublisher,
@@ -472,7 +471,7 @@ pub unsafe extern "C" fn zerodds_pub_copy_from_topic_qos(
 /// Sub set/get QoS.
 ///
 /// # Safety
-/// `sub` valide.
+/// `sub` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_set_qos(
     sub: *mut ZeroDdsSubscriber,
@@ -499,7 +498,7 @@ pub unsafe extern "C" fn zerodds_sub_set_qos(
 /// Sub get_qos.
 ///
 /// # Safety
-/// `sub`, `out` valide.
+/// `sub`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_get_qos(
     sub: *mut ZeroDdsSubscriber,
@@ -519,7 +518,7 @@ pub unsafe extern "C" fn zerodds_sub_get_qos(
 /// Sub set_default_datareader_qos.
 ///
 /// # Safety
-/// `sub` valide.
+/// `sub` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_set_default_datareader_qos(
     sub: *mut ZeroDdsSubscriber,
@@ -546,7 +545,7 @@ pub unsafe extern "C" fn zerodds_sub_set_default_datareader_qos(
 /// Sub get_default_datareader_qos.
 ///
 /// # Safety
-/// `sub`, `out` valide.
+/// `sub`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_get_default_datareader_qos(
     sub: *mut ZeroDdsSubscriber,
@@ -570,7 +569,7 @@ pub unsafe extern "C" fn zerodds_sub_get_default_datareader_qos(
 /// Sub copy_from_topic_qos.
 ///
 /// # Safety
-/// Beide Pointer valide.
+/// Both pointers valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_sub_copy_from_topic_qos(
     _sub: *mut ZeroDdsSubscriber,
@@ -599,7 +598,7 @@ pub unsafe extern "C" fn zerodds_sub_copy_from_topic_qos(
 /// DataWriter set_qos.
 ///
 /// # Safety
-/// `dw` valide.
+/// `dw` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_set_qos(
     dw: *mut ZeroDdsDataWriter,
@@ -626,7 +625,7 @@ pub unsafe extern "C" fn zerodds_dw_set_qos(
 /// DataWriter get_qos.
 ///
 /// # Safety
-/// `dw`, `out` valide.
+/// `dw`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_get_qos(
     dw: *mut ZeroDdsDataWriter,
@@ -646,7 +645,7 @@ pub unsafe extern "C" fn zerodds_dw_get_qos(
 /// DataReader set_qos.
 ///
 /// # Safety
-/// `dr` valide.
+/// `dr` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_set_qos(
     dr: *mut ZeroDdsDataReader,
@@ -673,7 +672,7 @@ pub unsafe extern "C" fn zerodds_dr_set_qos(
 /// DataReader get_qos.
 ///
 /// # Safety
-/// `dr`, `out` valide.
+/// `dr`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_get_qos(
     dr: *mut ZeroDdsDataReader,
@@ -694,11 +693,11 @@ pub unsafe extern "C" fn zerodds_dr_get_qos(
 // DataWriter Instance-Operations (Spec §2.2.2.4.2.5..14)
 // ===========================================================================
 
-/// `register_instance` — Vendor-Variante: caller liefert 16-byte Key-Hash
-/// statt generic `T instance_data`. Der Wire-Pfad kennt nur Bytes.
+/// `register_instance` — vendor variant: the caller provides a 16-byte key hash
+/// instead of a generic `T instance_data`. The wire path knows only bytes.
 ///
 /// # Safety
-/// `dw` valide; `key`+`out_handle` valide.
+/// `dw` valid; `key`+`out_handle` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_register_instance(
     dw: *mut ZeroDdsDataWriter,
@@ -723,8 +722,8 @@ pub unsafe extern "C" fn zerodds_dw_register_instance(
     })
 }
 
-/// `register_instance_w_timestamp`. RC1: Source-Timestamp ignoriert
-/// (gleicher Pfad wie register_instance, dokumentiert in Vendor-Spec).
+/// `register_instance_w_timestamp`. RC1: source timestamp ignored
+/// (same path as register_instance, documented in the vendor spec).
 ///
 /// # Safety
 /// Wie `register_instance`.
@@ -737,14 +736,14 @@ pub unsafe extern "C" fn zerodds_dw_register_instance_w_timestamp(
     _ts_nanosec: u32,
     out_handle: *mut u64,
 ) -> c_int {
-    // SAFETY: see fn # Safety doc — Delegation an register_instance mit gleichem Vertrag.
+    // SAFETY: see fn # Safety doc — delegation to register_instance with the same contract.
     unsafe { zerodds_dw_register_instance(dw, key, key_len, out_handle) }
 }
 
-/// `unregister_instance` — emittiert UNREGISTERED-Lifecycle.
+/// `unregister_instance` — emits the UNREGISTERED lifecycle.
 ///
 /// # Safety
-/// `dw` valide; `handle` muss aus `register_instance` stammen.
+/// `dw` valid; `handle` must come from `register_instance`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_unregister_instance(
     dw: *mut ZeroDdsDataWriter,
@@ -753,7 +752,7 @@ pub unsafe extern "C" fn zerodds_dw_unregister_instance(
     if dw.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // Status-Bits: UNREGISTERED nach RTPS Inline-QoS Status-Info §9.6.4.10.
+    // Status bits: UNREGISTERED per RTPS inline-QoS status info §9.6.4.10.
     const STATUS_UNREGISTERED: u32 = 0x0000_0002;
     let mut k = [0u8; 16];
     k[..8].copy_from_slice(&handle.to_le_bytes());
@@ -776,15 +775,15 @@ pub unsafe extern "C" fn zerodds_dw_unregister_instance_w_timestamp(
     _ts_sec: i32,
     _ts_nanosec: u32,
 ) -> c_int {
-    // SAFETY: see fn # Safety doc — Delegation an unregister_instance mit gleichem Vertrag.
+    // SAFETY: see fn # Safety doc — delegation to unregister_instance with the same contract.
     unsafe { zerodds_dw_unregister_instance(dw, handle) }
 }
 
-/// `lookup_instance` — Vendor-Variante: liefert deterministischen
-/// Handle aus den ersten 8 Key-Hash-Bytes.
+/// `lookup_instance` — vendor variant: returns a deterministic
+/// handle from the first 8 key-hash bytes.
 ///
 /// # Safety
-/// `key[0..16]` valide.
+/// `key[0..16]` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_lookup_instance(
     _dw: *mut ZeroDdsDataWriter,
@@ -808,12 +807,12 @@ pub unsafe extern "C" fn zerodds_dw_lookup_instance(
     })
 }
 
-/// `get_key_value(handle)` — bei C-FFI nur Vendor-Variante: kopiert
-/// 8 Bytes des Handles in `out_buf[0..8]`. Volle Spec-Round-trip
-/// (T-Encoded-Key) ist Codegen-Pfad.
+/// `get_key_value(handle)` — in the C-FFI only a vendor variant: copies
+/// 8 bytes of the handle into `out_buf[0..8]`. The full spec round-trip
+/// (T-encoded key) is the codegen path.
 ///
 /// # Safety
-/// `dw` valide; `out_buf[0..*inout_len]` valide.
+/// `dw` valid; `out_buf[0..*inout_len]` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_get_key_value(
     _dw: *mut ZeroDdsDataWriter,
@@ -824,7 +823,7 @@ pub unsafe extern "C" fn zerodds_dw_get_key_value(
     if out_buf.is_null() || inout_len.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — out_buf+inout_len NULL-checked above; out_buf[0..*inout_len] valide.
+    // SAFETY: see fn # Safety doc — out_buf+inout_len NULL-checked above; out_buf[0..*inout_len] valid.
     unsafe {
         if *inout_len < 8 {
             *inout_len = 8;
@@ -848,7 +847,7 @@ pub unsafe extern "C" fn zerodds_dw_dispose_w_timestamp(
     _ts_sec: i32,
     _ts_nanosec: u32,
 ) -> c_int {
-    // SAFETY: see fn # Safety doc — Delegation an dw_dispose mit gleichem Vertrag.
+    // SAFETY: see fn # Safety doc — delegation to dw_dispose with the same contract.
     unsafe { crate::publisher_ffi::zerodds_dw_dispose(dw, key_hash, handle) }
 }
 
@@ -856,11 +855,11 @@ pub unsafe extern "C" fn zerodds_dw_dispose_w_timestamp(
 // DataWriter Matched-Subscriptions
 // ===========================================================================
 
-/// `get_matched_subscriptions` — Liste der `InstanceHandle`s aller
-/// matched Remote-Reader (Spec §2.2.2.4.2.x).
+/// `get_matched_subscriptions` — list of the `InstanceHandle`s of all
+/// matched remote readers (Spec §2.2.2.4.2.x).
 ///
 /// # Safety
-/// `dw` valide; `out_handles[0..cap]` writeable; `out_count` valide.
+/// `dw` valid; `out_handles[0..cap]` writeable; `out_count` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_get_matched_subscriptions(
     dw: *mut ZeroDdsDataWriter,
@@ -872,7 +871,7 @@ pub unsafe extern "C" fn zerodds_dw_get_matched_subscriptions(
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — dw+out_count NULL-checked above; out_handles[0..cap]
-    // writeable wenn non-NULL (Caller-Pledge).
+    // writeable if non-NULL (caller pledge).
     unsafe {
         let dwr = &*dw;
         let handles = dwr.rt.user_writer_matched_subscription_handles(dwr.eid);
@@ -889,11 +888,11 @@ pub unsafe extern "C" fn zerodds_dw_get_matched_subscriptions(
 }
 
 /// `get_matched_subscription_data(handle)` — Spec §2.2.2.4.2.x.
-/// Liefert die `SubscriptionBuiltinTopicData` zu einem matched
-/// Reader, gewonnen aus dem BuiltinSubscriber-SEDP-Cache.
+/// Returns the `SubscriptionBuiltinTopicData` for a matched
+/// reader, obtained from the BuiltinSubscriber SEDP cache.
 ///
 /// # Safety
-/// `dw` und `out` valide.
+/// `dw` and `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_get_matched_subscription_data(
     dw: *mut ZeroDdsDataWriter,
@@ -903,8 +902,8 @@ pub unsafe extern "C" fn zerodds_dw_get_matched_subscription_data(
     if dw.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — dw+out NULL-checked above; dwr.publisher und
-    // pub_.participant aus create_datawriter+create_publisher (Box::into_raw).
+    // SAFETY: see fn # Safety doc — dw+out NULL-checked above; dwr.publisher and
+    // pub_.participant from create_datawriter+create_publisher (Box::into_raw).
     let bs = unsafe {
         let dwr = &*dw;
         if dwr.publisher.is_null() {
@@ -933,21 +932,21 @@ pub unsafe extern "C" fn zerodds_dw_get_matched_subscription_data(
 // DataWriter Loan-API (Zero-Copy Vendor-Extension)
 // ===========================================================================
 
-/// `loan_message` — Zero-Copy-Loan via Heap-Box (Vendor-Variante).
-/// Allokiert einen Box<[u8]>, leakt den Pointer; Caller schreibt in
-/// den Buffer und ruft `commit_loan` (sendet via write_user_sample)
-/// oder `discard_loan` (gibt Buffer frei ohne zu senden).
+/// `loan_message` — zero-copy loan via a heap box (vendor variant).
+/// Allocates a Box<[u8]>, leaks the pointer; the caller writes into
+/// the buffer and calls `commit_loan` (sends via write_user_sample)
+/// or `discard_loan` (frees the buffer without sending).
 ///
-/// **Vendor-Decision (Spec §2.2.2.4.2 Loan-API + Vendor-Spec
-/// `zerodds-flatdata-1.0.md` §4):** Echtes Iceoryx-SHM-Zero-Copy
-/// erfordert separate `zerodds-flatdata`-Iceoryx-Backend-Wireup;
-/// die hier exponierte Heap-Loan-Variante erfuellt das DDS-Spec-
-/// Vertragsbild (Caller schreibt in den Buffer, dann commit/discard)
-/// ohne SHM-Optimierung. Die echte SHM-Loan ist transparent ueber den
-/// `zerodds-flatdata`-Iceoryx-Backend wenn dieser Aktiv ist.
+/// **Vendor decision (Spec §2.2.2.4.2 loan API + vendor spec
+/// `zerodds-flatdata-1.0.md` §4):** real Iceoryx SHM zero-copy
+/// requires a separate `zerodds-flatdata` Iceoryx backend wireup;
+/// the heap-loan variant exposed here fulfills the DDS spec
+/// contract (the caller writes into the buffer, then commit/discard)
+/// without the SHM optimization. The real SHM loan is transparent via the
+/// `zerodds-flatdata` Iceoryx backend when it is active.
 ///
 /// # Safety
-/// Alle Pointers valide; `len > 0`.
+/// Alle Pointers valid; `len > 0`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_loan_message(
     dw: *mut ZeroDdsDataWriter,
@@ -958,10 +957,20 @@ pub unsafe extern "C" fn zerodds_dw_loan_message(
     if dw.is_null() || out_ptr.is_null() || out_len.is_null() || len == 0 {
         return ZeroDdsStatus::BadParameter as c_int;
     }
+    // Zero-copy SHM path when the writer has `zerodds_dw_enable_shm_loan`
+    // active; otherwise fall through to the heap-box variant below.
+    #[cfg(feature = "flatdata-loan")]
+    // SAFETY: dw NULL-checked above; out_ptr/out_len NULL-checked above.
+    if let Some(rc) = unsafe {
+        let dwr = &*dw;
+        crate::shm_loan_ffi::try_loan(&dwr.rt, dwr.eid, len, out_ptr, out_len)
+    } {
+        return rc;
+    }
     let buf: Box<[u8]> = vec![0u8; len].into_boxed_slice();
     let raw = Box::into_raw(buf) as *mut u8;
-    // SAFETY: see fn # Safety doc — out_ptr+out_len NULL-checked above; raw aus
-    // Box::into_raw, Caller besitzt jetzt das Buffer-Eigentum bis commit/discard.
+    // SAFETY: see fn # Safety doc — out_ptr+out_len NULL-checked above; raw from
+    // Box::into_raw, the caller now owns the buffer until commit/discard.
     unsafe {
         *out_ptr = raw;
         *out_len = len;
@@ -969,11 +978,11 @@ pub unsafe extern "C" fn zerodds_dw_loan_message(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// `commit_loan` — schreibt den Loan-Buffer als Sample und gibt den
-/// Buffer frei.
+/// `commit_loan` — writes the loan buffer as a sample and frees the
+/// buffer.
 ///
 /// # Safety
-/// `dw`, `ptr` valide; `(ptr, len)` aus `loan_message`.
+/// `dw`, `ptr` valid; `(ptr, len)` from `loan_message`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_commit_loan(
     dw: *mut ZeroDdsDataWriter,
@@ -983,8 +992,17 @@ pub unsafe extern "C" fn zerodds_dw_commit_loan(
     if dw.is_null() || ptr.is_null() || len == 0 {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — dw+ptr NULL-checked above; ptr+len stammen aus
-    // loan_message (Box::into_raw); rebuild + into_vec ist konform.
+    // Zero-copy SHM commit when `ptr` is an active SHM loan; else heap path.
+    #[cfg(feature = "flatdata-loan")]
+    // SAFETY: dw NULL-checked above; ptr valid per the contract.
+    if let Some(rc) = unsafe {
+        let dwr = &*dw;
+        crate::shm_loan_ffi::try_commit(&dwr.rt, dwr.eid, ptr, len)
+    } {
+        return rc;
+    }
+    // SAFETY: see fn # Safety doc — dw+ptr NULL-checked above; ptr+len come from
+    // loan_message (Box::into_raw); rebuild + into_vec is conformant.
     let (rt, eid, payload) = unsafe {
         let dwr = &*dw;
         let boxed: Box<[u8]> = Box::from_raw(core::slice::from_raw_parts_mut(ptr, len));
@@ -996,10 +1014,10 @@ pub unsafe extern "C" fn zerodds_dw_commit_loan(
     }
 }
 
-/// `discard_loan` — gibt den Loan-Buffer frei ohne zu senden.
+/// `discard_loan` — frees the loan buffer without sending.
 ///
 /// # Safety
-/// `dw`, `ptr` valide; `(ptr, len)` aus `loan_message`.
+/// `dw`, `ptr` valid; `(ptr, len)` from `loan_message`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_discard_loan(
     _dw: *mut ZeroDdsDataWriter,
@@ -1009,7 +1027,19 @@ pub unsafe extern "C" fn zerodds_dw_discard_loan(
     if ptr.is_null() || len == 0 {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — ptr+len aus loan_message (Box::into_raw); rebuild + drop.
+    // Zero-copy SHM discard when `ptr` is an active SHM loan; else heap path.
+    // `_dw` is not NULL-checked by this fn's contract, so guard it here.
+    #[cfg(feature = "flatdata-loan")]
+    if !_dw.is_null() {
+        // SAFETY: _dw checked non-null just above; ptr valid per the contract.
+        if let Some(rc) = unsafe {
+            let dwr = &*_dw;
+            crate::shm_loan_ffi::try_discard(&dwr.rt, dwr.eid, ptr)
+        } {
+            return rc;
+        }
+    }
+    // SAFETY: see fn # Safety doc — ptr+len from loan_message (Box::into_raw); rebuild + drop.
     let _: Box<[u8]> = unsafe { Box::from_raw(core::slice::from_raw_parts_mut(ptr, len)) };
     ZeroDdsStatus::Ok as c_int
 }
@@ -1018,11 +1048,11 @@ pub unsafe extern "C" fn zerodds_dw_discard_loan(
 // DataReader Instance-Variants
 // ===========================================================================
 
-/// `read_instance(handle)` — Spec §2.2.2.5.3.5: liefert nur Samples
-/// dieser Instance.
+/// `read_instance(handle)` — Spec §2.2.2.5.3.5: returns only samples
+/// of this instance.
 ///
 /// # Safety
-/// `dr`, `out` valide.
+/// `dr`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_read_instance(
     dr: *mut ZeroDdsDataReader,
@@ -1033,8 +1063,8 @@ pub unsafe extern "C" fn zerodds_dr_read_instance(
     v: u32,
     i: u32,
 ) -> c_int {
-    // SAFETY: see fn # Safety doc — Delegation an dr_read mit gleichem Pointer-Vertrag,
-    // dann safe in-place Filter auf das resultierende SampleArray.
+    // SAFETY: see fn # Safety doc — delegation to dr_read with the same pointer contract,
+    // then a safe in-place filter on the resulting SampleArray.
     let rc = unsafe { crate::subscriber_ffi::zerodds_dr_read(dr, out, max, s, v, i) };
     if rc != ZeroDdsStatus::Ok as c_int {
         return rc;
@@ -1045,7 +1075,7 @@ pub unsafe extern "C" fn zerodds_dr_read_instance(
 /// `take_instance(handle)`.
 ///
 /// # Safety
-/// `dr`, `out` valide.
+/// `dr`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_take_instance(
     dr: *mut ZeroDdsDataReader,
@@ -1056,7 +1086,7 @@ pub unsafe extern "C" fn zerodds_dr_take_instance(
     v: u32,
     i: u32,
 ) -> c_int {
-    // SAFETY: see fn # Safety doc — Delegation an dr_take + in-place filter.
+    // SAFETY: see fn # Safety doc — delegation to dr_take + in-place filter.
     let rc = unsafe { crate::subscriber_ffi::zerodds_dr_take(dr, out, max, s, v, i) };
     if rc != ZeroDdsStatus::Ok as c_int {
         return rc;
@@ -1064,11 +1094,11 @@ pub unsafe extern "C" fn zerodds_dr_take_instance(
     crate::subscriber_ffi::sample_array_filter_instance(out, handle)
 }
 
-/// `read_next_instance(prev_handle)` — Spec §2.2.2.5.3.7: liefert
-/// Samples der naechsten Instance > prev_handle.
+/// `read_next_instance(prev_handle)` — Spec §2.2.2.5.3.7: returns
+/// samples of the next instance > prev_handle.
 ///
 /// # Safety
-/// `dr`, `out` valide.
+/// `dr`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_read_next_instance(
     dr: *mut ZeroDdsDataReader,
@@ -1079,7 +1109,7 @@ pub unsafe extern "C" fn zerodds_dr_read_next_instance(
     v: u32,
     i: u32,
 ) -> c_int {
-    // SAFETY: see fn # Safety doc — Delegation an dr_read + in-place filter.
+    // SAFETY: see fn # Safety doc — delegation to dr_read + in-place filter.
     let rc = unsafe { crate::subscriber_ffi::zerodds_dr_read(dr, out, max, s, v, i) };
     if rc != ZeroDdsStatus::Ok as c_int {
         return rc;
@@ -1090,7 +1120,7 @@ pub unsafe extern "C" fn zerodds_dr_read_next_instance(
 /// `take_next_instance(prev_handle)`.
 ///
 /// # Safety
-/// `dr`, `out` valide.
+/// `dr`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_take_next_instance(
     dr: *mut ZeroDdsDataReader,
@@ -1101,7 +1131,7 @@ pub unsafe extern "C" fn zerodds_dr_take_next_instance(
     v: u32,
     i: u32,
 ) -> c_int {
-    // SAFETY: see fn # Safety doc — Delegation an dr_take + in-place filter.
+    // SAFETY: see fn # Safety doc — delegation to dr_take + in-place filter.
     let rc = unsafe { crate::subscriber_ffi::zerodds_dr_take(dr, out, max, s, v, i) };
     if rc != ZeroDdsStatus::Ok as c_int {
         return rc;
@@ -1109,12 +1139,12 @@ pub unsafe extern "C" fn zerodds_dr_take_next_instance(
     crate::subscriber_ffi::sample_array_filter_next_instance(out, prev_handle)
 }
 
-/// `read_w_condition` — Spec §2.2.2.5.3.4: liefert nur Samples die
-/// zur Condition-State-Mask passen (ReadCondition.sample_states/
+/// `read_w_condition` — Spec §2.2.2.5.3.4: returns only samples that
+/// match the condition state mask (ReadCondition.sample_states/
 /// view_states/instance_states).
 ///
 /// # Safety
-/// `dr`, `out` valide; `cond` ist eine ReadCondition oder QueryCondition.
+/// `dr`, `out` valid; `cond` is a ReadCondition or QueryCondition.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_read_w_condition(
     dr: *mut ZeroDdsDataReader,
@@ -1122,8 +1152,8 @@ pub unsafe extern "C" fn zerodds_dr_read_w_condition(
     max: usize,
     cond: *mut core::ffi::c_void,
 ) -> c_int {
-    // SAFETY: see fn # Safety doc — cond muss eine ReadCondition/QueryCondition sein,
-    // condition_state_masks vererbt den Caller-Pledge; dann Delegation an dr_read.
+    // SAFETY: see fn # Safety doc — cond must be a ReadCondition/QueryCondition,
+    // condition_state_masks inherits the caller pledge; then delegation to dr_read.
     let (rc, masks) = unsafe {
         let masks = match crate::condition_ffi::condition_state_masks(cond) {
             Some(m) => m,
@@ -1149,8 +1179,8 @@ pub unsafe extern "C" fn zerodds_dr_take_w_condition(
     max: usize,
     cond: *mut core::ffi::c_void,
 ) -> c_int {
-    // SAFETY: see fn # Safety doc — cond muss eine ReadCondition/QueryCondition sein,
-    // condition_state_masks vererbt den Caller-Pledge; dann Delegation an dr_take.
+    // SAFETY: see fn # Safety doc — cond must be a ReadCondition/QueryCondition,
+    // condition_state_masks inherits the caller pledge; then delegation to dr_take.
     let (rc, masks) = unsafe {
         let masks = match crate::condition_ffi::condition_state_masks(cond) {
             Some(m) => m,
@@ -1168,7 +1198,7 @@ pub unsafe extern "C" fn zerodds_dr_take_w_condition(
 /// `lookup_instance` (Reader).
 ///
 /// # Safety
-/// `key[0..16]` valide; `out_handle` valide.
+/// `key[0..16]` valid; `out_handle` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_lookup_instance(
     _dr: *mut ZeroDdsDataReader,
@@ -1195,7 +1225,7 @@ pub unsafe extern "C" fn zerodds_dr_lookup_instance(
 /// `get_key_value` (Reader) — analog zu Writer.
 ///
 /// # Safety
-/// `out_buf[0..*inout_len]` valide.
+/// `out_buf[0..*inout_len]` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_get_key_value(
     _dr: *mut ZeroDdsDataReader,
@@ -1206,7 +1236,7 @@ pub unsafe extern "C" fn zerodds_dr_get_key_value(
     if out_buf.is_null() || inout_len.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — out_buf+inout_len NULL-checked above; out_buf[0..*inout_len] valide.
+    // SAFETY: see fn # Safety doc — out_buf+inout_len NULL-checked above; out_buf[0..*inout_len] valid.
     unsafe {
         if *inout_len < 8 {
             *inout_len = 8;
@@ -1218,10 +1248,10 @@ pub unsafe extern "C" fn zerodds_dr_get_key_value(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// `wait_for_historical_data(timeout)` — RC1: Volatile-default → Ok ohne Wait.
+/// `wait_for_historical_data(timeout)` — RC1: Volatile default → Ok without wait.
 ///
 /// # Safety
-/// `dr` valide.
+/// `dr` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_wait_for_historical_data(
     dr: *mut ZeroDdsDataReader,
@@ -1231,17 +1261,17 @@ pub unsafe extern "C" fn zerodds_dr_wait_for_historical_data(
     if dr.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // Volatile-Reader: keine historischen Daten — Ok ohne Wait.
-    // Bei TransientLocal-Reader wuerde RC1 hier `Unsupported`
-    // liefern, weil Historie-Service nicht eingehakt ist.
+    // Volatile reader: no historical data — Ok without waiting.
+    // For a TransientLocal reader RC1 would return `Unsupported`
+    // here, because the history service is not hooked in.
     ZeroDdsStatus::Ok as c_int
 }
 
-/// `get_matched_publications` — Liste der `InstanceHandle`s aller
-/// matched Remote-Writer (Spec §2.2.2.5.x).
+/// `get_matched_publications` — list of the `InstanceHandle`s of all
+/// matched remote writers (Spec §2.2.2.5.x).
 ///
 /// # Safety
-/// `dr` valide; `out_handles[0..cap]` writeable; `out_count` valide.
+/// `dr` valid; `out_handles[0..cap]` writeable; `out_count` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_get_matched_publications(
     dr: *mut ZeroDdsDataReader,
@@ -1253,7 +1283,7 @@ pub unsafe extern "C" fn zerodds_dr_get_matched_publications(
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — dr+out_count NULL-checked above; out_handles[0..cap]
-    // writeable wenn non-NULL (Caller-Pledge).
+    // writeable if non-NULL (caller pledge).
     unsafe {
         let drr = &*dr;
         let handles = drr.rt.user_reader_matched_publication_handles(drr.eid);
@@ -1270,10 +1300,10 @@ pub unsafe extern "C" fn zerodds_dr_get_matched_publications(
 }
 
 /// `get_matched_publication_data(handle)` — Spec §2.2.2.5.x.
-/// Liefert `PublicationBuiltinTopicData` aus dem BuiltinSubscriber-Cache.
+/// Returns `PublicationBuiltinTopicData` from the BuiltinSubscriber cache.
 ///
 /// # Safety
-/// `dr`, `out` valide.
+/// `dr`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_get_matched_publication_data(
     dr: *mut ZeroDdsDataReader,
@@ -1284,7 +1314,7 @@ pub unsafe extern "C" fn zerodds_dr_get_matched_publication_data(
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — dr+out NULL-checked above; subscriber+participant
-    // aus create_*-fns (Box::into_raw).
+    // from create_* fns (Box::into_raw).
     let bs = unsafe {
         let drr = &*dr;
         if drr.subscriber.is_null() {
@@ -1383,12 +1413,12 @@ mod tests {
 
     fn mk(domain: u32) -> *mut ZeroDdsDomainParticipant {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: f aus dpf_get_instance, statisch valide.
+        // SAFETY: f from dpf_get_instance, statically valid.
         unsafe { zerodds_dpf_create_participant(f, domain, ptr::null()) }
     }
     fn cleanup(p: *mut ZeroDdsDomainParticipant) {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: p aus mk() / dpf_create_participant; f statisch valide.
+        // SAFETY: p from mk() / dpf_create_participant; f statically valid.
         unsafe {
             zerodds_dp_delete_contained_entities(p);
             zerodds_dpf_delete_participant(f, p);
@@ -1407,7 +1437,7 @@ mod tests {
                 autoenable_created_entities: true,
             },
         };
-        // SAFETY: p aus mk(), valide bis cleanup. qos lebt fuer den Test.
+        // SAFETY: p from mk(), valid until cleanup. qos lives for the test.
         unsafe {
             assert_eq!(zerodds_dp_set_qos(p, &qos), ZeroDdsStatus::Ok as c_int);
             assert_eq!(zerodds_dp_get_qos(p, &mut qos), ZeroDdsStatus::Ok as c_int);
@@ -1418,7 +1448,7 @@ mod tests {
     #[test]
     fn dp_default_topic_qos_roundtrip() {
         let p = mk(71);
-        // SAFETY: p aus mk(), valide bis cleanup. tqos lebt fuer den Test.
+        // SAFETY: p from mk(), valid until cleanup. tqos lives for the test.
         unsafe {
             let mut tqos: ZeroDdsTopicQos = core::mem::zeroed();
             assert_eq!(
@@ -1439,7 +1469,7 @@ mod tests {
         let n = c"T";
         let tn = c"TT";
         let key = [0xABu8; 16];
-        // SAFETY: p+n+tn+key leben fuer den Test; extern fns dokumentieren ihre Pledges.
+        // SAFETY: p+n+tn+key live for the test; the extern fns document their pledges.
         unsafe {
             let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
             let pubh = zerodds_dp_create_publisher(p, ptr::null());
@@ -1469,7 +1499,7 @@ mod tests {
         let tn = c"TT";
         let mut buf = [0u8; 4];
         let mut len: usize = 4;
-        // SAFETY: p+n+tn leben fuer den Test; buf+len writeable.
+        // SAFETY: p+n+tn live for the test; buf+len writeable.
         unsafe {
             let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
             let pubh = zerodds_dp_create_publisher(p, ptr::null());
@@ -1492,7 +1522,7 @@ mod tests {
         let mut len_buf: usize = 0;
         let mut p2: *mut u8 = ptr::null_mut();
         let mut l2: usize = 0;
-        // SAFETY: p+n+tn leben fuer den Test; alle out-Pointer auf Stack-lokalen Slots.
+        // SAFETY: p+n+tn live for the test; all out-pointers on stack-local slots.
         unsafe {
             let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
             let pubh = zerodds_dp_create_publisher(p, ptr::null());
@@ -1529,7 +1559,7 @@ mod tests {
         let tn = c"TT";
         let mut buf = [0u64; 16];
         let mut count = 0usize;
-        // SAFETY: p+n+tn leben fuer den Test.
+        // SAFETY: p+n+tn live for the test.
         unsafe {
             let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
             let sub = zerodds_dp_create_subscriber(p, ptr::null());
@@ -1548,7 +1578,7 @@ mod tests {
         let p = mk(76);
         let n = c"T";
         let tn = c"TT";
-        // SAFETY: p+n+tn leben fuer den Test.
+        // SAFETY: p+n+tn live for the test.
         unsafe {
             let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
             let sub = zerodds_dp_create_subscriber(p, ptr::null());
@@ -1568,7 +1598,7 @@ mod tests {
         let tn = c"TT";
         let mut buf = [0u64; 16];
         let mut count = 0usize;
-        // SAFETY: p+n+tn leben fuer den Test.
+        // SAFETY: p+n+tn live for the test.
         unsafe {
             let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
             let pubh = zerodds_dp_create_publisher(p, ptr::null());
@@ -1589,7 +1619,7 @@ mod tests {
         let tn = c"TT";
         let mut buf = [0u64; 16];
         let mut count = 0usize;
-        // SAFETY: p+n+tn leben fuer den Test.
+        // SAFETY: p+n+tn live for the test.
         unsafe {
             let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
             let sub = zerodds_dp_create_subscriber(p, ptr::null());
@@ -1626,7 +1656,7 @@ mod tests {
                 autoenable_created_entities: true,
             },
         };
-        // SAFETY: p+bytes+out_buf leben fuer den Test.
+        // SAFETY: p+bytes+out_buf live for the test.
         unsafe {
             assert_eq!(zerodds_dp_set_qos(p, &qos_in), ZeroDdsStatus::Ok as c_int);
             assert_eq!(
@@ -1642,7 +1672,7 @@ mod tests {
     #[test]
     fn pub_copy_from_topic_qos_propagates_policies() {
         let p = mk(77);
-        // SAFETY: p lebt fuer den Test; tqos+dwqos auf Stack zeroed.
+        // SAFETY: p lives for the test; tqos+dwqos zeroed on the stack.
         unsafe {
             let pubh = zerodds_dp_create_publisher(p, ptr::null());
             let mut tqos: ZeroDdsTopicQos = core::mem::zeroed();

@@ -4,14 +4,14 @@
 [![docs.rs](https://docs.rs/zerodds-ccm/badge.svg)](https://docs.rs/zerodds-ccm)
 
 OMG CCM 4.0 (`formal/06-04-01`) — CORBA Component Model.
-Equivalent-IDL-Transformation fuer Component / Home / EventType,
-Components::* Core-Types, Lightweight-CCM-Profile (§13).
+Equivalent-IDL transformation for Component / Home / EventType,
+Components::* core types, Lightweight CCM Profile (§13).
 `no_std + alloc`, `forbid(unsafe_code)`. Safety classification:
 **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
 | OMG CCM 4.0 | §6.3.2 (Component Implied-IDL) |
 | OMG CCM 4.0 | §6.4.1 (Home Implied-IDL + PrimaryKey) |
@@ -21,31 +21,31 @@ Components::* Core-Types, Lightweight-CCM-Profile (§13).
 | OMG CCM 4.0 | §13 (Lightweight CCM Profile) |
 | OMG DDS4CCM 1.1 | §6 (DDS4CCM-Connector-Patterns) |
 
-## Was ist drin
+## What's inside
 
 - **`model`** — `Cookie`, `PortDescription`, `FacetDescription`,
   `ReceptacleDescription`, `ConsumerDescription`, `EmitterDescription`,
   `SubscriberDescription`, `PublisherDescription`,
-  `ConnectionDescription`, `ConfigValue` als Components::*-Valuetypes.
+  `ConnectionDescription`, `ConfigValue` as Components::* valuetypes.
 - **`transform`** — `transform_component` / `transform_home` /
-  `transform_event_type` erzeugen die Spec-konformen Implied-IDL-
-  Definitionen aus `zerodds_idl::ast`-Inputs.
-- **`lightweight`** — `filter_to_lightweight(spec)` reduziert ein
-  voll-CCM-AST auf das LwCCM-Subset (Spec §13).
+  `transform_event_type` produce the spec-conformant implied-IDL
+  definitions from `zerodds_idl::ast` inputs.
+- **`lightweight`** — `filter_to_lightweight(spec)` reduces a full-CCM
+  AST to the LwCCM subset (Spec §13).
 - **`validate`** — `validate_primary_key`, `apply_factory_finder_body`,
-  `InitOp` fuer die Spec §6.4.1-Constraints.
-- **`dds4ccm`** — DDS4CCM-spezifische Equivalent-IDL-Erweiterungen.
+  `InitOp` for the Spec §6.4.1 constraints.
+- **`dds4ccm`** — DDS4CCM-specific Equivalent-IDL extensions.
 
-## Was nicht abgedeckt ist
+## What's not covered
 
-CCM 4.0 §7 (CIDL), §8 (Implementation-Framework), §9 (Container),
-§10 (EJB-Integration), §11 (IFR-Metamodel), §12 (CIF-Metamodel), §14
-(Deployment-PSM), §15 (Deployment-IDL), §16 (XSD) sind explizit `n/a`
-in dieser Crate, weil sie eine CORBA-ORB- + CCM-Container-Runtime
-verlangen, die ZeroDDS bewusst nicht selbst hostet (siehe
-`crates/corba-ccm-ejb/` fuer EJB-Bridge auf Modell-Ebene).
+CCM 4.0 §7 (CIDL), §8 (Implementation Framework), §9 (Container),
+§10 (EJB integration), §11 (IFR Metamodel), §12 (CIF Metamodel), §14
+(Deployment PSM), §15 (Deployment IDL), §16 (XSD) are explicitly `n/a`
+in this crate, because they require a CORBA-ORB + CCM-container runtime
+that ZeroDDS deliberately does not host itself (see
+`crates/corba-ccm-ejb/` for an EJB bridge at the model level).
 
-## Beispiel
+## Example
 
 ```rust
 use zerodds_ccm::Cookie;

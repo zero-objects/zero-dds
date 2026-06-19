@@ -1,5 +1,5 @@
 // smoke.test.mjs — WASM-Codec-Roundtrip im Node.
-// Browser-Smoke (welt 4b 2nd half) waere identisch ueber import "../pkg-web/...".
+// Browser smoke (welt 4b 2nd half) would be identical via import "../pkg-web/...".
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -36,7 +36,7 @@ test("wasm encode-decode big-endian", () => {
   const enc = new CdrEncoder(1); // big-endian
   enc.writeU32(0x01020304);
   const bytes = enc.finish();
-  // BE: bytes sind 01 02 03 04
+  // BE: bytes are 01 02 03 04
   assert.deepEqual(Array.from(bytes), [0x01, 0x02, 0x03, 0x04]);
   const dec = new CdrDecoder(bytes, 1);
   assert.equal(dec.readU32(), 0x01020304);

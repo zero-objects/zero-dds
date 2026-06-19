@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Typisierter Abstract Syntax Tree fuer OMG IDL 4.2 (T5.1).
+//! Typed abstract syntax tree for OMG IDL 4.2 (T5.1).
 //!
-//! Im Gegensatz zum [`crate::cst`] verliert der AST grammatik-spezifische
-//! Boilerplate (Listen-Helfer, Disambiguation-Alternativen) und behaelt nur
-//! die semantisch relevante Struktur. Jeder Node traegt eine [`Span`] auf
-//! den Source-Text fuer Diagnostik.
+//! In contrast to [`crate::cst`], the AST loses grammar-specific
+//! boilerplate (list helpers, disambiguation alternatives) and keeps only
+//! the semantically relevant structure. Each node carries a [`Span`] into
+//! the source text for diagnostics.
 //!
 //! # Layout
-//! - [`types`] — alle AST-Strukturen und Enums.
-//! - `builder` (T5.2) — CST → AST-Konversion.
-//! - `print` (T5.3) — Display/Pretty-Print.
+//! - [`types`] — all AST structures and enums.
+//! - `builder` (T5.2) — CST → AST conversion.
+//! - `print` (T5.3) — Display/pretty-print.
 //!
-//! Modul-Wurzel re-exportiert die Public-Types fuer ergonomischen Zugriff.
+//! The module root re-exports the public types for ergonomic access.
 
 pub mod builder;
 pub mod print;

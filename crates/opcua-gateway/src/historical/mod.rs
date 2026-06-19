@@ -3,29 +3,29 @@
 
 //! Historical Data Reading — Spec §9.3.4.4.
 //!
-//! Conformance Point 4 ("Complete") aus §2 Tab 2.1. Enthaelt:
+//! Conformance Point 4 ("Complete") from §2 Tab 2.1. Contains:
 //!
-//! * **HistoricalNodeConfig** — die fuer §9.3.4.4 erforderlichen
-//!   OPC-UA-Variable-Attribute (`Historizing = true`, `HistoryRead`-
-//!   Bit im `AccessLevel`, optionale `HasHistoricalConfiguration`-
-//!   Reference auf eine HA-Configuration-Node).
-//! * **HistoryQosValidator** — verifiziert, dass die HISTORY-QoS-
-//!   Policy des unterliegenden DataReaders Spec §9.3.4.4 konform ist:
-//!   `KEEP_ALL` oder `KEEP_LAST` mit ausreichender `HISTORY_DEPTH`.
-//! * **HistoricalSampleAdapter** — Trait + Default-Impl, die einen
-//!   Snapshot des Reader-History-Cache in der Form ausliefert, die
-//!   ein OPC-UA-Server fuer die `HistoryRead`-Service-Implementation
-//!   benoetigt (read-event / read-raw / read-at-time / read-processed
-//!   gemaess Spec Tab 8.6 Attribute Service Set).
+//! * **HistoricalNodeConfig** — the OPC-UA variable attributes required
+//!   for §9.3.4.4 (`Historizing = true`, `HistoryRead`
+//!   bit in `AccessLevel`, optional `HasHistoricalConfiguration`
+//!   reference to an HA configuration node).
+//! * **HistoryQosValidator** — verifies that the HISTORY QoS
+//!   policy of the underlying DataReader is conformant with Spec §9.3.4.4:
+//!   `KEEP_ALL` or `KEEP_LAST` with a sufficient `HISTORY_DEPTH`.
+//! * **HistoricalSampleAdapter** — trait + default impl that delivers a
+//!   snapshot of the reader history cache in the form that
+//!   an OPC-UA server needs for the `HistoryRead` service implementation
+//!   (read-event / read-raw / read-at-time / read-processed
+//!   per Spec Tab 8.6 Attribute Service Set).
 //!
-//! # Was hier nicht ist
+//! # What is not here
 //!
-//! Wir liefern die **Spec-Compliance-Schicht**: Konfiguration,
-//! QoS-Validation, Adapter-Contract. Die eigentliche Sample-
-//! Persistierung (z.B. on-disk, falls KEEP_ALL ueber Memory-Limits
-//! hinaus geht) liegt im Daemon-Crate, das den DataReader-Cache von
-//! `crates/dcps/` an einen konkreten History-Backend-Provider
-//! (in-memory / RocksDB / TimescaleDB / ...) klemmt.
+//! We provide the **spec-compliance layer**: configuration,
+//! QoS validation, adapter contract. The actual sample
+//! persistence (e.g. on-disk, if KEEP_ALL goes beyond memory limits)
+//! lives in the daemon crate, which clamps the DataReader cache from
+//! `crates/dcps/` to a concrete history backend provider
+//! (in-memory / RocksDB / TimescaleDB / ...).
 
 pub mod adapter;
 pub mod config;

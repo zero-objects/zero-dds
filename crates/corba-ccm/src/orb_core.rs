@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CORBA 3.3 ORB-Core — Stub-Layer fuer:
-//! - Part 1 §8 ORB Interface (ORB_init/shutdown/Threading/PolicyDomain)
-//! - Part 1 §9 Value Type Custom-Marshal-Streams + Sending-Context
-//! - Part 3 §12 IFR Metamodel CCM-Erweiterung
-//! - Part 3 §13 CIF Metamodel
+//! CORBA 3.3 ORB core — stub layer for:
+//! - Part 1 §8 ORB Interface (ORB_init/shutdown/threading/policy domain)
+//! - Part 1 §9 Value Type custom-marshal streams + sending context
+//! - Part 3 §12 IFR metamodel CCM extension
+//! - Part 3 §13 CIF metamodel
 //!
-//! ZeroDDS hat keinen vollen ORB; diese Module liefern Configuration-
-//! + Datenmodell-Layer als Stub. XMI-Emitter nutzt MOF-2.0-Subset.
+//! ZeroDDS has no full ORB; these modules provide a configuration
+//! + data-model layer as a stub. The XMI emitter uses a MOF-2.0 subset.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -22,42 +22,42 @@ use crate::orb_extensions::{CompressionAlgorithm, InterceptorRegistry, Messaging
 // Part 1 §8 ORB Interface
 // ===========================================================================
 
-/// Spec §8.2.1 — ORB-Initialization-State.
+/// Spec §8.2.1 — ORB initialization state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrbState {
-    /// `ORB_init` noch nicht aufgerufen.
+    /// `ORB_init` not yet called.
     Uninitialized,
-    /// `ORB_init` erfolgreich; ORB ist running.
+    /// `ORB_init` succeeded; the ORB is running.
     Running,
-    /// `shutdown` aufgerufen, wartet auf Outstanding-Requests.
+    /// `shutdown` called, waiting on outstanding requests.
     ShuttingDown,
-    /// `shutdown` abgeschlossen; ORB ist `destroy`-fertig.
+    /// `shutdown` complete; the ORB is ready for `destroy`.
     Shutdown,
 }
 
-/// Spec §8.2.5 — Threading-Operations am ORB.
+/// Spec §8.2.5 — threading operations on the ORB.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThreadingMode {
-    /// `single-threaded` — alle Requests sequentiell.
+    /// `single-threaded` — all requests sequential.
     SingleThreaded,
-    /// `thread-per-request` — neuer Thread pro Request.
+    /// `thread-per-request` — a new thread per request.
     ThreadPerRequest,
-    /// `thread-pool` — Worker-Pool mit fixer Thread-Anzahl.
+    /// `thread-pool` — worker pool with a fixed thread count.
     ThreadPool {
-        /// Anzahl Worker-Threads.
+        /// Number of worker threads.
         size: usize,
     },
 }
 
-/// ORB-Singleton-Lifecycle nach Spec §8.2.1.
+/// ORB singleton lifecycle per spec §8.2.1.
 pub struct Orb {
     state: Mutex<OrbState>,
     threading: ThreadingMode,
-    /// Spec §8.10 — Policy-Domain-Manager (Mapping policy_type → policy).
+    /// Spec §8.10 — policy domain manager (mapping policy_type → policy).
     policies: Mutex<BTreeMap<u32, Vec<u8>>>,
-    /// CCM 4.0 §2 CP8 — Component-Specific-Erweiterungen am ORB:
-    /// optionale Interceptor-Registry, gewaehlte Messaging-Policies,
-    /// Compression-Algorithm.
+    /// CCM 4.0 §2 CP8 — component-specific extensions on the ORB:
+    /// optional interceptor registry, selected messaging policies,
+    /// compression algorithm.
     interceptors: Mutex<Option<Arc<InterceptorRegistry>>>,
     messaging_policies: Mutex<Vec<MessagingPolicy>>,
     compression: Mutex<CompressionAlgorithm>,
@@ -75,7 +75,7 @@ impl core::fmt::Debug for Orb {
 }
 
 impl Orb {
-    /// Spec §8.2.1 — `ORB_init`. Konstruktor.
+    /// Spec §8.2.1 — `ORB_init`. Constructor.
     #[must_use]
     pub fn init(threading: ThreadingMode) -> Self {
         Self {
@@ -88,7 +88,7 @@ impl Orb {
         }
     }
 
-    /// Aktueller State.
+    /// Current state.
     #[must_use]
     pub fn state(&self) -> OrbState {
         self.state
@@ -97,7 +97,7 @@ impl Orb {
             .unwrap_or(OrbState::Uninitialized)
     }
 
-    /// Threading-Mode.
+    /// Threading mode.
     #[must_use]
     pub fn threading(&self) -> ThreadingMode {
         self.threading
@@ -112,7 +112,7 @@ impl Orb {
         }
     }
 
-    /// Spec §8.2.4 — `destroy`. Endgueltiger Lifecycle-Schluss.
+    /// Spec §8.2.4 — `destroy`. Final lifecycle close.
     pub fn destroy(&self) {
         if let Ok(mut g) = self.state.lock() {
             *g = OrbState::Shutdown;
@@ -136,30 +136,30 @@ impl Orb {
     }
 
     // -----------------------------------------------------------------
-    // CCM 4.0 §2 CP8 — Component-Specific-Erweiterungen am ORB.
-    // Cross-Ref `corba-3.3.md` §16 (PI), §17 (Messaging), §18
-    // (Compression). Diese Methoden konfigurieren den ORB-Singleton
-    // fuer die drei Vendor-Erweiterungen.
+    // CCM 4.0 §2 CP8 — component-specific extensions on the ORB.
+    // Cross-ref `corba-3.3.md` §16 (PI), §17 (Messaging), §18
+    // (Compression). These methods configure the ORB singleton
+    // for the three vendor extensions.
     // -----------------------------------------------------------------
 
-    /// CCM 4.0 §2 CP8 — installiert eine [`InterceptorRegistry`] am
-    /// ORB. Subsequent `iiop::Connection`-Instanzen koennen sie via
-    /// `interceptor_registry()` abholen und verdrahten.
+    /// CCM 4.0 §2 CP8 — installs an [`InterceptorRegistry`] on the
+    /// ORB. Subsequent `iiop::Connection` instances can fetch and
+    /// wire it via `interceptor_registry()`.
     pub fn with_interceptor_registry(&self, r: Arc<InterceptorRegistry>) {
         if let Ok(mut g) = self.interceptors.lock() {
             *g = Some(r);
         }
     }
 
-    /// CCM 4.0 §2 CP8 — Liefert die aktuelle Registry (None wenn keine
-    /// installiert).
+    /// CCM 4.0 §2 CP8 — returns the current registry (None if none
+    /// installed).
     #[must_use]
     pub fn interceptor_registry(&self) -> Option<Arc<InterceptorRegistry>> {
         self.interceptors.lock().ok().and_then(|g| g.clone())
     }
 
-    /// CCM 4.0 §2 CP8 — Aktiviert eine Messaging-Policy am ORB.
-    /// Cross-Ref `corba-ccm::orb_extensions::MessagingPolicy`.
+    /// CCM 4.0 §2 CP8 — activates a messaging policy on the ORB.
+    /// Cross-ref `corba-ccm::orb_extensions::MessagingPolicy`.
     pub fn with_messaging_policy(&self, p: MessagingPolicy) {
         if let Ok(mut g) = self.messaging_policies.lock() {
             if !g.contains(&p) {
@@ -168,7 +168,7 @@ impl Orb {
         }
     }
 
-    /// CCM 4.0 §2 CP8 — Liste der aktiven Messaging-Policies.
+    /// CCM 4.0 §2 CP8 — list of active messaging policies.
     #[must_use]
     pub fn messaging_policies(&self) -> Vec<MessagingPolicy> {
         self.messaging_policies
@@ -177,15 +177,15 @@ impl Orb {
             .unwrap_or_default()
     }
 
-    /// CCM 4.0 §2 CP8 — Setzt den ORB-weiten Compression-Algorithmus.
-    /// Cross-Ref `corba-ccm::orb_extensions::CompressionAlgorithm`.
+    /// CCM 4.0 §2 CP8 — sets the ORB-wide compression algorithm.
+    /// Cross-ref `corba-ccm::orb_extensions::CompressionAlgorithm`.
     pub fn with_compression(&self, algo: CompressionAlgorithm) {
         if let Ok(mut g) = self.compression.lock() {
             *g = algo;
         }
     }
 
-    /// CCM 4.0 §2 CP8 — Liefert den aktiven Compression-Algorithmus.
+    /// CCM 4.0 §2 CP8 — returns the active compression algorithm.
     #[must_use]
     pub fn compression(&self) -> CompressionAlgorithm {
         self.compression
@@ -199,48 +199,48 @@ impl Orb {
 // Part 1 §9 Value Type — Custom-Marshal-Streams + Sending-Context
 // ===========================================================================
 
-/// Spec §9.5 — `StreamableValue` Custom-Marshal-Streams.
+/// Spec §9.5 — `StreamableValue` custom-marshal streams.
 pub trait StreamableValue: Send + Sync {
-    /// Repository-ID des Value-Types (z.B. `IDL:demo/MyValue:1.0`).
+    /// Repository ID of the value type (e.g. `IDL:demo/MyValue:1.0`).
     fn repository_id(&self) -> &str;
-    /// Marshal-Operation: schreibe das Wert-State in den Stream.
+    /// Marshal operation: write the value state into the stream.
     fn marshal(&self) -> Vec<u8>;
-    /// Unmarshal-Operation: lade aus Stream-Bytes.
+    /// Unmarshal operation: load from stream bytes.
     ///
     /// # Errors
-    /// `()` bei invalid Bytes.
+    /// `()` on invalid bytes.
     #[allow(clippy::result_unit_err)]
     fn unmarshal(&mut self, bytes: &[u8]) -> Result<(), ()>;
 }
 
-/// Spec §9.6 — `SendingContext::RunTime` (per-Sender-State).
+/// Spec §9.6 — `SendingContext::RunTime` (per-sender state).
 #[derive(Debug, Clone, Default)]
 pub struct SendingContext {
-    /// Per-Receiver Truncation-Tracking.
+    /// Per-receiver truncation tracking.
     truncation_codebase: Option<String>,
-    /// Code-Set (Char-Encoding).
+    /// Code set (char encoding).
     code_set: u32,
 }
 
 impl SendingContext {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Spec §9.6 — Setzt die Codebase-URL (fuer Truncation-Recovery).
+    /// Spec §9.6 — sets the codebase URL (for truncation recovery).
     pub fn set_truncation_codebase(&mut self, url: impl Into<String>) {
         self.truncation_codebase = Some(url.into());
     }
 
-    /// Code-Set abrufen (Spec §9.6.1).
+    /// Get the code set (spec §9.6.1).
     #[must_use]
     pub fn code_set(&self) -> u32 {
         self.code_set
     }
 
-    /// Code-Set setzen.
+    /// Set the code set.
     pub fn set_code_set(&mut self, cs: u32) {
         self.code_set = cs;
     }
@@ -250,71 +250,71 @@ impl SendingContext {
 // Part 3 §12 IFR Metamodel + §13 CIF Metamodel — XMI-Emitter
 // ===========================================================================
 
-/// MOF-2.0-Element fuer den XMI-Emitter (Subset).
+/// MOF-2.0 element for the XMI emitter (subset).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MofElement {
-    /// `Class` — entspricht IDL-`interface`/`component`.
+    /// `Class` — corresponds to IDL `interface`/`component`.
     Class {
         /// Name.
         name: String,
-        /// Repository-ID.
+        /// Repository ID.
         repo_id: String,
         /// Inheritance.
         bases: Vec<String>,
     },
-    /// `Property` — entspricht IDL-Attribute oder Struct-Member.
+    /// `Property` — corresponds to an IDL attribute or struct member.
     Property {
         /// Name.
         name: String,
-        /// Type-Reference.
+        /// Type reference.
         type_ref: String,
-        /// `true` wenn read-only.
+        /// `true` if read-only.
         read_only: bool,
     },
-    /// `Operation` — entspricht IDL-Operation.
+    /// `Operation` — corresponds to an IDL operation.
     Operation {
         /// Name.
         name: String,
-        /// Return-Type.
+        /// Return type.
         return_type: String,
-        /// Parameter-Liste.
+        /// Parameter list.
         parameters: Vec<(String, String)>,
     },
 }
 
-/// MOF-2.0 → XMI-1.2 Emitter (Subset fuer IFR + CIF Metamodel).
+/// MOF-2.0 → XMI-1.2 emitter (subset for IFR + CIF metamodel).
 #[derive(Debug, Clone, Default)]
 pub struct XmiEmitter {
     elements: Vec<MofElement>,
 }
 
 impl XmiEmitter {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Spec Part 3 §12.3 / §13.x — fuegt ein MOF-Element hinzu.
+    /// Spec Part 3 §12.3 / §13.x — adds a MOF element.
     pub fn add_element(&mut self, e: MofElement) {
         self.elements.push(e);
     }
 
-    /// Anzahl Elemente.
+    /// Number of elements.
     #[must_use]
     pub fn len(&self) -> usize {
         self.elements.len()
     }
 
-    /// `true` wenn keine Elemente.
+    /// `true` if there are no elements.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.elements.is_empty()
     }
 
-    /// Emittiert XMI-1.2-XML (Subset). Caller bekommt einen
-    /// Spec-konformen XMI-Document-String, den ein MOF-Tool
-    /// (z.B. EMF) konsumieren kann.
+    /// Emits XMI-1.2 XML (subset). The caller gets a
+    /// spec-compliant XMI document string that a MOF tool
+    /// (e.g. EMF) can consume.
     #[must_use]
     pub fn emit_xmi(&self) -> String {
         let mut out = String::new();
@@ -368,9 +368,9 @@ impl XmiEmitter {
     }
 }
 
-/// Spec Part 3 §12 — IFR-Metamodel-Erweiterung fuer CCM.
-/// Wraps einen XmiEmitter mit CCM-spezifischer Vorkonfiguration
-/// (Component-Class als Mof.Class mit dem Marker `ccm:Component`).
+/// Spec Part 3 §12 — IFR metamodel extension for CCM.
+/// Wraps an XmiEmitter with CCM-specific preconfiguration
+/// (component class as a Mof.Class with the marker `ccm:Component`).
 pub struct IfrCcmMetamodel {
     inner: Arc<Mutex<XmiEmitter>>,
 }
@@ -388,7 +388,7 @@ impl Default for IfrCcmMetamodel {
 }
 
 impl IfrCcmMetamodel {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -396,7 +396,7 @@ impl IfrCcmMetamodel {
         }
     }
 
-    /// Fuegt eine Component-Klasse als Mof.Class hinzu.
+    /// Adds a component class as a Mof.Class.
     pub fn add_component(&self, name: &str, repo_id: &str, bases: Vec<String>) {
         if let Ok(mut g) = self.inner.lock() {
             g.add_element(MofElement::Class {
@@ -407,28 +407,28 @@ impl IfrCcmMetamodel {
         }
     }
 
-    /// Emittiert XMI fuer das gesamte Component-Modell.
+    /// Emits XMI for the entire component model.
     #[must_use]
     pub fn emit_xmi(&self) -> String {
         self.inner.lock().map(|g| g.emit_xmi()).unwrap_or_default()
     }
 
-    /// Anzahl registrierter Elemente.
+    /// Number of registered elements.
     #[must_use]
     pub fn len(&self) -> usize {
         self.inner.lock().map(|g| g.len()).unwrap_or(0)
     }
 
-    /// `true` wenn leer.
+    /// `true` if empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Spec Part 3 §12.3 — laed eine `corba-ir::Repository` in den
-    /// Metamodel-Emitter. Jede Top-Level-Definition wird als
-    /// Mof.Class registriert; Sub-Contents (Module-Hierarchie) werden
-    /// rekursiv eingehaengt.
+    /// Spec Part 3 §12.3 — loads a `corba-ir::Repository` into the
+    /// metamodel emitter. Each top-level definition is registered as a
+    /// Mof.Class; sub-contents (module hierarchy) are
+    /// attached recursively.
     pub fn ingest_repository(&self, repo: &zerodds_corba_ir::Repository) {
         if let Ok(mut g) = self.inner.lock() {
             for id in repo.ids() {
@@ -439,7 +439,7 @@ impl IfrCcmMetamodel {
         }
     }
 
-    /// Konstruktor mit Repository-Ingestion.
+    /// Constructor with repository ingestion.
     #[must_use]
     pub fn from_repository(repo: &zerodds_corba_ir::Repository) -> Self {
         let m = Self::new();
@@ -649,7 +649,7 @@ mod tests {
         assert!(xmi.contains("Trader"));
     }
 
-    // CCM 4.0 §2 CP8 — ORB-Vendor-Konfiguration
+    // CCM 4.0 §2 CP8 — ORB vendor configuration
 
     #[test]
     fn orb_vendor_config_interceptor_registry() {
@@ -658,7 +658,7 @@ mod tests {
         let r = Arc::new(InterceptorRegistry::new());
         o.with_interceptor_registry(r.clone());
         let got = o.interceptor_registry().expect("registry installed");
-        // Beide Arc zeigen auf dieselbe Registry.
+        // Both Arcs point to the same registry.
         assert!(Arc::ptr_eq(&r, &got));
     }
 
@@ -669,11 +669,11 @@ mod tests {
         o.with_compression(CompressionAlgorithm::Zlib);
         assert_eq!(o.compression(), CompressionAlgorithm::Zlib);
 
-        // Messaging-Policy-Liste wird append-only befuellt.
+        // The messaging-policy list is filled append-only.
         assert!(o.messaging_policies().is_empty());
         o.with_messaging_policy(MessagingPolicy::SyncScope);
         o.with_messaging_policy(MessagingPolicy::Routing);
-        // Doppelte Eintraege werden dedupliziert.
+        // Duplicate entries are deduplicated.
         o.with_messaging_policy(MessagingPolicy::SyncScope);
         let p = o.messaging_policies();
         assert_eq!(p.len(), 2);

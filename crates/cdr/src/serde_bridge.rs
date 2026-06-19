@@ -1,26 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Serde-Bridge fuer XCDR2 Encoder/Decoder.
+//! Serde bridge for the XCDR2 encoder/decoder.
 //!
-//! Implementiert `zerodds-xcdr2-rust-1.0` §11.3 — Optional-Feature
-//! `serde-bridge`. Erlaubt es, einen beliebigen `serde::Serialize`-Type
-//! ueber JSON-Zwischenform in einen `Vec<u8>` zu encodieren der **dem
-//! gleichen Wire-Format** folgt wie eine native `DdsType`-Implementation
-//! — vorausgesetzt der Type hat ein deterministisches Field-Layout.
+//! Implements `zerodds-xcdr2-rust-1.0` §11.3 — the optional `serde-bridge`
+//! feature. Lets you encode any `serde::Serialize` type, via a JSON
+//! intermediate form, into a `Vec<u8>` that follows the **same wire
+//! format** as a native `DdsType` implementation — provided the type has
+//! a deterministic field layout.
 //!
-//! **Wichtig:** Diese Bridge ist **kein Ersatz** fuer `#[derive(DdsType)]`
-//! oder `idl-rust`-Codegen. Sie ist eine Convenience-Schicht fuer
-//! Apps die ihre Datenmodelle bereits `serde`-modelliert haben und
-//! XCDR2-Wire ohne separate Type-Definition erzeugen wollen.
+//! **Important:** This bridge is **not a replacement** for `#[derive(DdsType)]`
+//! or `idl-rust` codegen. It is a convenience layer for apps that already
+//! model their data with `serde` and want to produce XCDR2 wire output
+//! without a separate type definition.
 //!
-//! Wire-Format: serde -> JSON-String -> XCDR2-string-encoded. Decoder
-//! parst JSON-String zurueck. Kompatibel mit jedem DDS-Topic-Type
-//! `Greeting{ string text; }` der das JSON als Plain-String empfaengt.
+//! Wire format: serde -> JSON string -> XCDR2 string-encoded. The decoder
+//! parses the JSON string back. Compatible with any DDS topic type
+//! `Greeting{ string text; }` that receives the JSON as a plain string.
 //!
-//! Das Modul wird nur kompiliert wenn das `serde-bridge` Feature aktiv
-//! ist; das `#[cfg(...)]`-Gate liegt am `pub mod serde_bridge` in
-//! `lib.rs`.
+//! The module is only compiled when the `serde-bridge` feature is active;
+//! the `#[cfg(...)]` gate sits on `pub mod serde_bridge` in `lib.rs`.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -32,12 +31,12 @@ use crate::buffer::{BufferReader, BufferWriter};
 use crate::endianness::Endianness;
 use crate::error::{DecodeError, EncodeError};
 
-/// Serialisiert einen `serde::Serialize`-Type zu JSON, dann als
-/// XCDR2-string encoded. Default-Endian: Little-Endian.
+/// Serializes a `serde::Serialize` type to JSON, then XCDR2-string
+/// encodes it. Default endianness: little-endian.
 ///
 /// # Errors
-/// - `EncodeError::ValueOutOfRange` bei serde-Serialization-Fehler.
-/// - `EncodeError::*` aus dem CDR-String-Writer.
+/// - `EncodeError::ValueOutOfRange` on a serde serialization error.
+/// - `EncodeError::*` from the CDR string writer.
 pub fn encode_via_serde<T: Serialize>(value: &T) -> Result<Vec<u8>, EncodeError> {
     let json = serde_json::to_string(value).map_err(|_| EncodeError::ValueOutOfRange {
         message: "serde_json::to_string failed for serde-bridge",
@@ -47,28 +46,28 @@ pub fn encode_via_serde<T: Serialize>(value: &T) -> Result<Vec<u8>, EncodeError>
     Ok(writer.into_bytes())
 }
 
-/// Deserialisiert einen XCDR2-encoded String zurueck zu einem
-/// `serde::DeserializeOwned`-Type via JSON.
+/// Deserializes an XCDR2-encoded string back into a
+/// `serde::DeserializeOwned` type via JSON.
 ///
 /// # Errors
-/// - `DecodeError::*` aus dem CDR-String-Reader.
-/// - `DecodeError::InvalidUtf8` bei serde-Deserialization-Fehler
-///   (offset = 0; serde-error-detail im Fehler-String wird heute nicht
-///   weitergereicht, weil `DecodeError`-Variants `&'static str`
-///   verwenden).
+/// - `DecodeError::*` from the CDR string reader.
+/// - `DecodeError::InvalidUtf8` on a serde deserialization error
+///   (offset = 0; the serde error detail is currently not propagated in
+///   the error string, because `DecodeError` variants use
+///   `&'static str`).
 pub fn decode_via_serde<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, DecodeError> {
     let mut reader = BufferReader::new(bytes, Endianness::Little);
     let json = reader.read_string()?;
     serde_json::from_str(&json).map_err(|_| DecodeError::InvalidUtf8 { offset: 0 })
 }
 
-/// Convenience-Wrapper: encoded Bytes als JSON-String zurueck.
+/// Convenience wrapper: return encoded bytes as a JSON string.
 ///
-/// Nuetzlich fuer Logging/Debugging — gibt die JSON-Zwischenform
-/// zurueck, nicht die Bytes.
+/// Useful for logging/debugging — returns the JSON intermediate form,
+/// not the bytes.
 ///
 /// # Errors
-/// `DecodeError` wenn die Bytes kein gueltiger XCDR2-string sind.
+/// `DecodeError` if the bytes are not a valid XCDR2 string.
 pub fn decoded_json_repr(bytes: &[u8]) -> Result<String, DecodeError> {
     let mut reader = BufferReader::new(bytes, Endianness::Little);
     reader.read_string()

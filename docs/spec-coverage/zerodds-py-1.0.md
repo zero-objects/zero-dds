@@ -4,7 +4,10 @@ Audit der Vendor-Spec `docs/specs/zerodds-py-1.0.md` gegen
 `crates/py/` Code-Realität.
 
 **Source:** `docs/specs/zerodds-py-1.0.md` (Vendor-Spec, Draft 2026-05-15).
-**Repo:** `crates/py/` (Rust-PyO3-Bridge + Python-Wrapper).
+
+Implementation:
+
+- `crates/py/` — Rust-PyO3-Bridge + Python-Wrapper.
 
 ---
 
@@ -201,7 +204,7 @@ Methoden in `ffi.rs:590-609`. Modul-Registration:
 **Tests:** `crates/py/python/tests/test_conditions.py::test_guard_condition_default_trigger_is_false`,
 `test_guard_condition_set_trigger_roundtrip`,
 `test_guard_condition_via_outer_namespace`. `zerodds.GuardCondition`
-ist im aeusseren Namespace re-exportiert
+ist im äußeren Namespace re-exportiert
 (`crates/py/python/zerodds/__init__.py:50` + `__all__`).
 
 **Status:** done
@@ -218,7 +221,7 @@ Methoden in `ffi.rs:617-642`. Modul-Registration:
 **Tests:** `crates/py/python/tests/test_conditions.py::test_waitset_attach_and_wait_raises_timeout`,
 `test_waitset_wakes_when_guard_condition_fires`,
 `test_waitset_via_outer_namespace`. `zerodds.WaitSet` ist im
-aeusseren Namespace re-exportiert.
+äußeren Namespace re-exportiert.
 
 **Status:** done
 
@@ -310,9 +313,9 @@ gefunden wird; vor einem CI-Lauf muss `cargo build -p zerodds-c-api`
 gelaufen sein (oder `ZERODDS_LIB` gesetzt).
 
 **Status:** done — Tests laufen grün auf
-`llvm@llvm` (Debian 12, libzerodds.so aus
+`Linux-Bench-Host` (Debian 12, libzerodds.so aus
 `~/zerodds/target/debug/libzerodds.so`, `ZERODDS_LIB`-ENV-Override).
-Verifikation 2026-05-15. Auf Systemen ohne gebauten Artefakt skippen
+ Auf Systemen ohne gebauten Artefakt skippen
 die Tests sauber.
 
 ### §1.4 Zwei-Pfad-Wahl
@@ -328,7 +331,7 @@ ctypes-Pfad: `crates/py/python/zerodds/loader.py` +
 ctypes-Pfad via `test_loader_smoke.py` (Conditional-Skip; siehe §1.3.4).
 
 **Status:** done — beide Pfade auf
-`llvm@llvm` live verifiziert (PyO3 via maturin + ctypes via
+`Linux-Bench-Host` live verifiziert (PyO3 via maturin + ctypes via
 libzerodds.so).
 
 ### §1.5 Schichten-Position
@@ -464,9 +467,9 @@ ShapeReader analog in `ffi.rs:546-583`.
 
 **Spec:** §2.6 — `WaitSet`, `GuardCondition` mit
 `attach_guard_condition`, `wait`, `set/get_trigger_value`.
-`ReadCondition`/`QueryCondition` als Phase-2 angekündigt. `WaitSet`
+`ReadCondition`/`QueryCondition` sind über §6.6 verfügbar. `WaitSet`
 + `GuardCondition` in v1.0 nur über `zerodds._core` direkt
-erreichbar, nicht im aeusseren Namespace.
+erreichbar, nicht im äußeren Namespace.
 
 **Repo:** `crates/py/src/ffi.rs:585-642`. Modul-Registration:
 `ffi.rs:660-661`.
@@ -476,7 +479,7 @@ WaitSet, 6 Tests, siehe §1.2.12/§1.2.13) +
 `crates/py/python/tests/test_read_conditions.py` (ReadCondition +
 QueryCondition + Bitmask-Konstanten, 11 Tests, siehe §6.6).
 `zerodds.GuardCondition`, `zerodds.WaitSet`, `zerodds.ReadCondition`,
-`zerodds.QueryCondition` sind alle im aeusseren Namespace
+`zerodds.QueryCondition` sind alle im äußeren Namespace
 re-exportiert.
 
 **Status:** done
@@ -615,8 +618,8 @@ spawnt zwei `python -m`-Subprocesses (Publisher + Subscriber) und
 verifiziert Cross-Process-Pub/Sub auf gleicher Domain-ID. Test skippt
 auf Windows (Loopback-Multicast-Setup linux/macOS-spezifisch).
 
-**Status:** done — Test laeuft grün auf
-`llvm@llvm` (Debian 12, enp6s18 NIC, SPDP-Multicast). Skip auf
+**Status:** done — Test läuft grün auf
+`Linux-Bench-Host` (Debian 12, enp6s18 NIC, SPDP-Multicast). Skip auf
 Windows.
 
 ### §5.3 Cross-Vendor Python ↔ andere Sprachen
@@ -643,18 +646,18 @@ gleicher Type-Name + RTPS-2.5-Wire.
 `type_name = "ShapeType"`); RTPS-2.5-Wire über `crates/rtps/`
 + `crates/transport-udp/`.
 
-**Tests:** Rust-Side bleibt die kanonische Quelle fuer Byte-Identitaet
+**Tests:** Rust-Side bleibt die kanonische Quelle für Byte-Identität
 (`crates/discovery/tests/cyclone_live_*.rs`). Python-Side hat
 `crates/py/python/tests/test_shapesdemo_interop.py` mit 2 Tests:
 `test_shape_type_name_matches_shapesdemo_convention` (Topic-Type-Name
 `"ShapeType"` matches Cyclone-Konvention),
 `test_cross_vendor_participant_discovery_against_ddsperf`
 (SPDP-Multicast-Discovery: Cyclone `ddsperf -i <domain> pub 1Hz`
-startet einen Participant, ZeroDDS sieht ihn ueber
+startet einen Participant, ZeroDDS sieht ihn über
 `discovered_participants_count() >= 1`).
 
-**Status:** done — Cross-Vendor-SPDP-Wire-Kompatibilitaet auf
-`llvm@llvm` mit Cyclone DDS 0.10.2 verifiziert (Test laeuft grün).
+**Status:** done — Cross-Vendor-SPDP-Wire-Kompatibilität auf
+`Linux-Bench-Host` mit Cyclone DDS 0.10.2 verifiziert (Test läuft grün).
 
 ### §5.5 `@idl_struct`-Custom-Type ↔ Rust-Codegen
 
@@ -670,7 +673,7 @@ Reference-Bytes).
 
 **Status:** done
 
-## §6 Phase-2-Plan
+## §6 IDL-Topic, QoS, Async + erweiterte API
 
 ### §6.1 `IdlTopic` / `IdlWriter` / `IdlReader` mit Codegen-Loop
 
@@ -680,7 +683,7 @@ Reference-Bytes).
 
 **Repo:** `crates/py/python/zerodds/topic.py` mit drei pure-Python-
 Klassen (`IdlTopic`, `IdlWriter`, `IdlReader`) plus
-`_ensure_idl_struct`-Guard. Re-Export ueber
+`_ensure_idl_struct`-Guard. Re-Export über
 `zerodds.__init__.py` als `zerodds.IdlTopic` etc.
 
 **Tests:** `crates/py/python/tests/test_idl_topic.py` (5 Tests):
@@ -695,13 +698,13 @@ Klassen (`IdlTopic`, `IdlWriter`, `IdlReader`) plus
 ### §6.2 QoS-Builder (alle 22 Policies)
 
 **Spec:** §6 — `DataWriterQos`/`DataReaderQos`-PyClass mit Settern
-fuer alle 22 Policies aus DDS 1.4 §2.2.3 plus
+für alle 22 Policies aus DDS 1.4 §2.2.3 plus
 `Publisher.create_*_writer_with_qos` /
 `Subscriber.create_*_reader_with_qos`.
 
 **Repo:** `crates/py/src/qos.rs` (~530 Zeilen) — zwei PyClasses
 `PyDataWriterQos`, `PyDataReaderQos` mit insgesamt 18 + 16 Settern
-fuer die 22 Policies, sieben Enum-Parser-Helpers
+für die 22 Policies, sieben Enum-Parser-Helpers
 (`parse_reliability_kind`, `parse_durability_kind`,
 `parse_history_kind`, `parse_liveliness_kind`,
 `parse_ownership_kind`, `parse_destination_order_kind`,
@@ -736,7 +739,7 @@ fuer die 22 Policies, sieben Enum-Parser-Helpers
 `AsyncBytesWriter`, `AsyncBytesReader`, `AsyncShapeWriter`,
 `AsyncShapeReader`, `AsyncWaitSet`. Non-blocking Calls werden
 direkt durchgereicht (`take`, Status-Getter); blocking Calls
-laufen ueber `_to_thread`-Helper (Backport-freundlich fuer Py3.8).
+laufen über `_to_thread`-Helper (Backport-freundlich für Py3.8).
 
 **Tests:** `crates/py/python/tests/test_aio.py` (5 Tests):
 `test_async_wrappers_are_constructible`,
@@ -760,12 +763,14 @@ plus `test_rmw_zerodds_interop.py` mit 2 Tests
 (`test_rclpy_init_succeeds_with_zerodds_rmw`,
 `test_rclpy_publish_subscribe_string_roundtrip`).
 
-**Tests:** auf einem ROS-2-Host: beide Tests laufen. In normalem
-pytest-Run werden sie geskipped.
+**Tests:** `test_rclpy_init_succeeds_with_zerodds_rmw` +
+`test_rclpy_publish_subscribe_string_roundtrip` — **codepit-grün verifiziert**
+(2 passed, ROS 2 Humble via RoboStack); host-freier Run skippt sauber.
 
-**Status:** partial — Test-Skeleton geschrieben + Skip-Logic. Echte
-Verifikation braucht ROS-2-Setup + `rmw_zerodds_shim` als
-RMW-Implementation (siehe `crates/rmw-zerodds-shim/`).
+**Status:** done — echte `launch_pytest`-Integrationstests laufen grün gegen
+einen ROS-2-Host mit ZeroDDS als RMW (Runner `run_ros2_pytest.sh`); im
+host-freien CI conditional-skipped. Ein dedizierter ROS-2-CI-Job, der den
+Runner ausführt, ist eine reine Infra-Aufgabe (kein Code-Gap).
 
 ### §6.5 Status-Listener-Callbacks
 
@@ -803,7 +808,7 @@ und rufen die Python-Callbacks unter GIL-Acquire. `set_listener` /
 Expression für QueryCondition.
 
 **Repo:** `crates/py/src/conditions.rs` (~135 Zeilen) — zwei PyClasses
-`PyReadCondition`, `PyQueryCondition` ueber den Rust-Conditions
+`PyReadCondition`, `PyQueryCondition` über den Rust-Conditions
 aus `crates/dcps/src/condition.rs`. SampleState/ViewState/
 InstanceState-Bitmask-Konstanten in `ffi.rs` exportiert als
 `SAMPLE_STATE_*`, `VIEW_STATE_*`, `INSTANCE_STATE_*` Modul-
@@ -827,12 +832,12 @@ liefern den pythonischen Namespace. `PyWaitSet::attach_read_condition` /
 
 ### §6.7 sphinx-Doc-Pfad
 
-**Spec:** §6 — `crates/py/docs/` schon angelegt; Phase-2 ergänzt
-API-Inventarisierung aus `_core` über autodoc.
+**Spec:** §6 — `crates/py/docs/` mit API-Inventarisierung aus `_core`
+über autodoc.
 
 **Repo:** `crates/py/docs/conf.py` mit `autodoc`/`napoleon`/`viewcode`/
 `intersphinx` extensions, `autodoc_default_options` und
-`autodoc_mock_imports = ["zerodds._core"]` fuer RTD-Build ohne
+`autodoc_mock_imports = ["zerodds._core"]` für RTD-Build ohne
 maturin. `crates/py/docs/api.rst` listet voll alle PyClasses und
 pure-Python-Module mit `autoclass`/`automodule`.
 
@@ -887,19 +892,19 @@ und PEP 384.
 
 ## Audit-Status
 
-**41 done / 1 partial / 0 open / 5 n/a (informative) / 0 n/a (rejected).**
+**42 done / 0 partial / 0 open / 5 n/a (informative) / 0 n/a (rejected).**
 
-Test-Laeufe:
+Test-Läufe:
 
 - **Lokal (macOS, Apple Silicon)**: `cd crates/py && SDKROOT=$(xcrun --show-sdk-path) maturin develop --features extension-module && python3 -m pytest python/tests/` — 96 Tests grün, 9 Conditional-Skip.
-- **Bench-Host `llvm@llvm` (Debian 12, x86_64, Cyclone DDS 0.10.2)**: identischer pytest-Aufruf, plus
+- **Bench-Host `Linux-Bench-Host` (Debian 12, x86_64, Cyclone DDS 0.10.2)**: identischer pytest-Aufruf, plus
   `ZERODDS_LIB=$HOME/zerodds/target/debug/libzerodds.so` und
   `LD_LIBRARY_PATH=$HOME/zerodds/target/debug` — **102 Tests grün,
   3 Conditional-Skip** (ROS-2 fehlt + 1 live-E2E-Placeholder).
-  Verifikation 2026-05-15.
+  
 
-Auf llvm laufen die loader-smoke-Suite (libzerodds.so verfuegbar),
+Auf dem Linux-Bench-Host laufen die loader-smoke-Suite (libzerodds.so verfügbar),
 Multi-Process-Subprocess-Roundtrip und Cross-Vendor-SPDP-Discovery
 gegen Cyclone `ddsperf` durch.
 
-Offene Punkte: siehe `docs/spec-coverage/zerodds-py-1.0.open.md` (1 partial). 0 open. Keine `n/a (rejected)`-Items.
+Keine offenen Punkte.

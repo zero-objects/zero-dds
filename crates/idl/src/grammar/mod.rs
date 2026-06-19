@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Grammar-Datenmodell fuer den grammatik-getriebenen IDL-Parser.
+//! Grammar data model for the grammar-driven IDL parser.
 //!
-//! Grammatiken sind als `&'static`-Daten definiert (Compile-Zeit-Konstanten),
-//! nicht als Code. Die Parse-Engine (`crate::engine`) traversiert die
-//! Grammar-Daten, um Tokens in einen Concrete Syntax Tree zu ueberfuehren.
+//! Grammars are defined as `&'static` data (compile-time constants),
+//! not as code. The parse engine (`crate::engine`) traverses the
+//! grammar data to convert tokens into a concrete syntax tree.
 //!
-//! Siehe RFC 0001 §5.1 fuer das Entwurfs-Rationale.
+//! See RFC 0001 §5.1 for the design rationale.
 //!
-//! Ein statischer Validator fuer Grammar-Daten lebt im Submodul
-//! [`validate`] — siehe dort fuer die Liste der erkannten Probleme.
+//! A static validator for grammar data lives in the submodule
+//! [`validate`] — see there for the list of detected problems.
 //!
-//! ## Entwurfs-Invarianten
+//! ## Design invariants
 //!
-//! - Keine Heap-Allokation fuer Grammar-Daten zur Laufzeit. Produktionen,
-//!   Alternativen und Symbole sind `&'static [...]`-Slices im Binary-Segment.
-//! - Jede [`Production`] traegt einen [`SpecRef`] — die exakte Section-Nummer
-//!   in der zugrundeliegenden Spec (OMG IDL 4.2 §7.x). Dieser Anker wird von
-//!   `tools/traceability` konsumiert und gehoert zur Audit-Evidenz
+//! - No heap allocation for grammar data at runtime. Productions,
+//!   alternatives and symbols are `&'static [...]` slices in the binary segment.
+//! - Each [`Production`] carries a [`SpecRef`] — the exact section number
+//!   in the underlying spec (OMG IDL 4.2 §7.x). This anchor is consumed by
+//!   `tools/traceability` and is part of the audit evidence
 //!   (`docs/architecture/04_safety_by_architecture.md §4`).
-//! - [`ProductionId`] ist ein newtype-wrapper um `u32` und wird zum Verweis
-//!   zwischen Productions benutzt (Nonterminal-Referenzen).
+//! - [`ProductionId`] is a newtype wrapper around `u32` and is used to refer
+//!   between productions (nonterminal references).
 
 use core::fmt;
 
@@ -31,19 +31,19 @@ pub mod idl42;
 pub mod toy;
 pub mod validate;
 
-/// Version der IDL-Spec, an die sich eine Grammar haelt.
+/// Version of the IDL spec a grammar adheres to.
 ///
-/// Version-Deltas (Task 6.4, `grammar::deltas`) komponieren eine Basis-Grammar
-/// mit Versions-spezifischen Abweichungen.
+/// Version deltas (Task 6.4, `grammar::deltas`) compose a base grammar
+/// with version-specific deviations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IdlVersion {
-    /// Pre-OMG-4.0. Historisch relevant fuer Migration aus aelteren Codebasen.
+    /// Pre-OMG-4.0. Historically relevant for migration from older codebases.
     V3_5,
-    /// Erste OMG-4.x-Fassung.
+    /// First OMG 4.x edition.
     V4_0,
-    /// Zwischenrevision.
+    /// Intermediate revision.
     V4_1,
-    /// Aktueller Ziel-Standard fuer ZeroDDS. Default.
+    /// Current target standard for ZeroDDS. Default.
     V4_2,
 }
 
@@ -53,14 +53,14 @@ impl Default for IdlVersion {
     }
 }
 
-/// Eindeutiger Identifier fuer eine Production innerhalb einer Grammar.
+/// Unique identifier for a production within a grammar.
 ///
-/// Newtype um `u32`. Indizes sind stabil innerhalb einer Grammar-Konstante.
+/// Newtype around `u32`. Indices are stable within a grammar constant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ProductionId(pub u32);
 
 impl ProductionId {
-    /// Der rohe Index als `usize` — fuer Array-Lookups.
+    /// The raw index as `usize` — for array lookups.
     #[inline]
     #[must_use]
     pub const fn as_usize(self) -> usize {
@@ -68,24 +68,24 @@ impl ProductionId {
     }
 }
 
-/// Eindeutiger Identifier fuer eine Token-Regel innerhalb einer Grammar.
+/// Unique identifier for a token rule within a grammar.
 ///
-/// Newtype um `u32`. Wird beim Extrahieren der Token-Regeln aus Terminals
-/// vergeben (Task 2.2).
+/// Newtype around `u32`. Assigned when extracting the token rules from terminals
+/// (Task 2.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TokenRuleId(pub u32);
 
-/// Referenz auf eine Spec-Section.
+/// Reference to a spec section.
 ///
-/// Beispiel: `SpecRef { doc: "OMG IDL 4.2", section: "7.4.1.4.4.2" }` verweist
-/// auf die `<struct_def>`-Production im IDL-4.2-Dokument.
+/// Example: `SpecRef { doc: "OMG IDL 4.2", section: "7.4.1.4.4.2" }` refers
+/// to the `<struct_def>` production in the IDL 4.2 document.
 ///
-/// `Display` rendert als `"OMG IDL 4.2 §7.4.1.4.4.2"`.
+/// `Display` renders as `"OMG IDL 4.2 §7.4.1.4.4.2"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SpecRef {
-    /// Menschenlesbarer Dokument-Name (z.B. `"OMG IDL 4.2"`).
+    /// Human-readable document name (e.g. `"OMG IDL 4.2"`).
     pub doc: &'static str,
-    /// Section-Pfad innerhalb des Dokuments (z.B. `"7.4.1.4.4.2"`).
+    /// Section path within the document (e.g. `"7.4.1.4.4.2"`).
     pub section: &'static str,
 }
 
@@ -95,82 +95,82 @@ impl fmt::Display for SpecRef {
     }
 }
 
-/// Klassifikation eines Terminal-Tokens.
+/// Classification of a terminal token.
 ///
-/// Token-Ebene der Grammar: was der Lexer aus dem Source-Text erkennt.
-/// Konkrete Lexer-Regeln werden aus den Terminals einer Grammar extrahiert
-/// (Task 2.2). Der Lexer-Satz wird in Woche 2 ausgebaut; fuer Task 1.1 reicht
-/// die Grundkategorisierung.
+/// Token level of the grammar: what the lexer recognizes from the source text.
+/// Concrete lexer rules are extracted from the terminals of a grammar
+/// (Task 2.2). The lexer set is expanded in week 2; for Task 1.1 the
+/// basic categorization suffices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum TokenKind {
-    /// Reserviertes Schluesselwort (`struct`, `module`, `interface`, ...).
+    /// Reserved keyword (`struct`, `module`, `interface`, ...).
     Keyword(&'static str),
-    /// Interpunktion oder Operator (`{`, `;`, `::`, `<`, ...).
+    /// Punctuation or operator (`{`, `;`, `::`, `<`, ...).
     Punct(&'static str),
-    /// Bezeichner (Identifier).
+    /// Identifier.
     Ident,
-    /// Ganzzahlen-Literal.
+    /// Integer literal.
     IntegerLiteral,
-    /// Gleitkomma-Literal.
+    /// Floating-point literal.
     FloatLiteral,
-    /// String-Literal.
+    /// String literal.
     StringLiteral,
-    /// Char-Literal.
+    /// Char literal.
     CharLiteral,
-    /// Boolean-Literal (`TRUE`, `FALSE`).
+    /// Boolean literal (`TRUE`, `FALSE`).
     BoolLiteral,
-    /// Wide-Char-Literal (`L'x'`, IDL 4.2 §7.2.6.3).
+    /// Wide-char literal (`L'x'`, IDL 4.2 §7.2.6.3).
     WideCharLiteral,
-    /// Wide-String-Literal (`L"..."`, IDL 4.2 §7.2.6.5).
+    /// Wide-string literal (`L"..."`, IDL 4.2 §7.2.6.5).
     WideStringLiteral,
-    /// Fixed-Point-Literal (z.B. `1.234d`, IDL 4.2 §7.2.6.6).
+    /// Fixed-point literal (e.g. `1.234d`, IDL 4.2 §7.2.6.6).
     FixedPtLiteral,
-    /// Anfang oder Ende der Eingabe (synthetisch vom Engine verwendet).
+    /// Start or end of the input (used synthetically by the engine).
     EndOfInput,
 }
 
-/// Wiederholung innerhalb einer Production-Alternative.
+/// Repetition within a production alternative.
 ///
-/// Entspricht den EBNF-Metasymbolen:
+/// Corresponds to the EBNF metasymbols:
 /// - [`RepeatKind::ZeroOrMore`] — `{ X }*`
 /// - [`RepeatKind::OneOrMore`] — `{ X }+`
 /// - [`RepeatKind::Optional`] — `[ X ]`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RepeatKind {
-    /// Null oder mehr Wiederholungen.
+    /// Zero or more repetitions.
     ZeroOrMore,
-    /// Eine oder mehr Wiederholungen.
+    /// One or more repetitions.
     OneOrMore,
-    /// Optional — null oder eine Wiederholung.
+    /// Optional — zero or one repetition.
     Optional,
 }
 
-/// Element einer Alternative.
+/// Element of an alternative.
 ///
-/// Rekursives Enum: Terminals (Tokens), Nonterminals (Verweise auf andere
-/// Productions), Wiederholungen und Inline-Alternativen.
+/// Recursive enum: terminals (tokens), nonterminals (references to other
+/// productions), repetitions and inline alternatives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Symbol {
-    /// Terminal — vom Lexer erzeugter Token.
+    /// Terminal — a token produced by the lexer.
     Terminal(TokenKind),
-    /// Nonterminal — Referenz auf eine andere Production.
+    /// Nonterminal — a reference to another production.
     Nonterminal(ProductionId),
-    /// Wiederholung einer Teilsequenz.
+    /// Repetition of a subsequence.
     Repeat(RepeatKind, &'static [Symbol]),
-    /// Inline-Alternativen — mehrere Zweige an Ort und Stelle.
+    /// Inline alternatives — several branches in place.
     Choice(&'static [&'static [Symbol]]),
 }
 
 impl Symbol {
-    /// `true` wenn das Symbol ein Terminal ist (d.h. ein Lexer-Token).
+    /// `true` if the symbol is a terminal (i.e. a lexer token).
     #[inline]
     #[must_use]
     pub const fn is_terminal(self) -> bool {
         matches!(self, Self::Terminal(_))
     }
 
-    /// `true` wenn das Symbol ein Nonterminal ist (d.h. ein Verweis auf eine
-    /// andere Production).
+    /// `true` if the symbol is a nonterminal (i.e. a reference to
+    /// another production).
     #[inline]
     #[must_use]
     pub const fn is_nonterminal(self) -> bool {
@@ -178,48 +178,48 @@ impl Symbol {
     }
 }
 
-/// Eine Alternative innerhalb einer Production.
+/// An alternative within a production.
 ///
-/// Entspricht einem Zweig einer EBNF-Rechte-Seite, z.B. in
-/// `<type_spec> ::= <simple_type_spec> | <template_type_spec>` sind die
-/// beiden Nonterminals jeweils eine Alternative.
+/// Corresponds to a branch of an EBNF right-hand side, e.g. in
+/// `<type_spec> ::= <simple_type_spec> | <template_type_spec>` the
+/// two nonterminals are each an alternative.
 #[derive(Debug, Clone, Copy)]
 pub struct Alternative {
-    /// Optionaler Name der Alternative (z.B. `"prefixed"`, `"unqualified"`).
-    /// Nützlich fuer AST-Builder-Dispatch (Task 5.2) und als Diagnostik-
-    /// Anker in Validation-Reports.
+    /// Optional name of the alternative (e.g. `"prefixed"`, `"unqualified"`).
+    /// Useful for AST-builder dispatch (Task 5.2) and as a diagnostic
+    /// anchor in validation reports.
     pub name: Option<&'static str>,
-    /// Die Sequenz von Symbolen, die diese Alternative bilden.
+    /// The sequence of symbols that form this alternative.
     pub symbols: &'static [Symbol],
-    /// Optionale Review-Notiz (z.B. Hinweis auf Vendor-Spezifika oder
-    /// Unklarheiten in der Spec). Erscheint im Grammar-Validation-Report.
+    /// Optional review note (e.g. a hint about vendor specifics or
+    /// ambiguities in the spec). Appears in the grammar validation report.
     pub note: Option<&'static str>,
 }
 
-/// Referenz auf eine spezifische Alternative einer Production.
+/// Reference to a specific alternative of a production.
 ///
-/// Wird in Validation-Reports verwendet, um Issues exakt zu verorten.
+/// Used in validation reports to locate issues exactly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AltRef {
-    /// Index der Alternative innerhalb von `Production::alternatives`.
+    /// Index of the alternative within `Production::alternatives`.
     pub index: usize,
-    /// Kopie des optionalen Namens (siehe `Alternative::name`).
+    /// Copy of the optional name (see `Alternative::name`).
     pub name: Option<&'static str>,
 }
 
-/// Optionaler Hinweis fuer den AST-Builder, welche Builder-Funktion fuer
-/// diese Production aufgerufen werden soll. Details werden in Woche 5
-/// (Task 5.2) spezifiziert.
+/// Optional hint for the AST builder, which builder function to call for
+/// this production. Details are specified in week 5
+/// (Task 5.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AstHint {
-    /// Trigger fuer den AST-Builder unter diesem symbolischen Namen.
-    /// Der Builder dispatcht auf diesen Namen, nicht auf die Production-ID.
+    /// Trigger for the AST builder under this symbolic name.
+    /// The builder dispatches on this name, not on the production ID.
     Named(&'static str),
 }
 
-/// Eine Production — die linke Seite einer EBNF-Regel.
+/// A production — the left-hand side of an EBNF rule.
 ///
-/// Beispiel:
+/// Example:
 ///
 /// ```rust,ignore
 /// const PROD_MODULE: Production = Production {
@@ -232,69 +232,69 @@ pub enum AstHint {
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Production {
-    /// Eindeutige ID innerhalb der Grammar.
+    /// Unique ID within the grammar.
     pub id: ProductionId,
-    /// Menschenlesbarer Name (entspricht dem EBNF-Nonterminal-Namen).
+    /// Human-readable name (corresponds to the EBNF nonterminal name).
     pub name: &'static str,
-    /// Verweis auf die Spec-Section, aus der diese Production stammt.
+    /// Reference to the spec section this production stems from.
     pub spec_ref: SpecRef,
-    /// Die Zweige der rechten Seite.
+    /// The branches of the right-hand side.
     pub alternatives: &'static [Alternative],
-    /// Optionaler Builder-Hinweis.
+    /// Optional builder hint.
     pub ast_hint: Option<AstHint>,
 }
 
-/// Token-Match-Regel fuer den Lexer.
+/// Token-match rule for the lexer.
 ///
-/// Vorerst nur Struktur. Match-Logik wird in Woche 2 (Task 2.3) implementiert.
+/// For now only structure. The match logic is implemented in week 2 (Task 2.3).
 #[derive(Debug, Clone, Copy)]
 pub struct TokenRule {
-    /// ID der Regel innerhalb der Grammar.
+    /// ID of the rule within the grammar.
     pub id: TokenRuleId,
-    /// Welcher TokenKind wird erzeugt.
+    /// Which TokenKind is produced.
     pub kind: TokenKind,
-    /// Match-Literal (fuer `Keyword` und `Punct`) oder Pattern-Name (fuer
-    /// regex-artige Tokens wie Identifier). Pattern-Namen werden vom Lexer
-    /// auf eine handgeschriebene Match-Funktion gemappt (Task 2.3).
+    /// Match literal (for `Keyword` and `Punct`) or pattern name (for
+    /// regex-like tokens such as identifiers). Pattern names are mapped by the lexer
+    /// to a hand-written match function (Task 2.3).
     pub pattern: &'static str,
 }
 
-/// Eine Grammar — die komplette Beschreibung einer Sprach-Syntax.
+/// A grammar — the complete description of a language syntax.
 ///
-/// Zusammengesetzt aus Productions (Nonterminals) und einer Menge von
-/// Token-Regeln (Terminals). Start-Production wird per [`Grammar::start`]
-/// referenziert.
+/// Composed of productions (nonterminals) and a set of
+/// token rules (terminals). The start production is referenced via
+/// [`Grammar::start`].
 #[derive(Debug, Clone, Copy)]
 pub struct Grammar {
-    /// Menschenlesbarer Name (z.B. `"IDL 4.2"`).
+    /// Human-readable name (e.g. `"IDL 4.2"`).
     pub name: &'static str,
-    /// IDL-Version, an der sich die Grammar orientiert.
+    /// IDL version the grammar is oriented to.
     pub version: IdlVersion,
-    /// Die Produktions-Menge. Index `i` entspricht `ProductionId(i as u32)`.
+    /// The production set. Index `i` corresponds to `ProductionId(i as u32)`.
     pub productions: &'static [Production],
-    /// Die Start-Production — typischerweise `<specification>` bei IDL.
+    /// The start production — typically `<specification>` for IDL.
     pub start: ProductionId,
-    /// Token-Regeln fuer den Lexer.
+    /// Token rules for the lexer.
     pub token_rules: &'static [TokenRule],
 }
 
-/// Abstraktion ueber [`Grammar`] und [`compile::CompiledGrammar`] —
-/// einheitlicher Lookup-Trait fuer den Recognizer.
+/// Abstraction over [`Grammar`] and [`compile::CompiledGrammar`] —
+/// a uniform lookup trait for the recognizer.
 pub trait GrammarLike {
-    /// Sucht eine Production anhand ihrer ID.
+    /// Looks up a production by its ID.
     fn production(&self, id: ProductionId) -> Option<&Production>;
-    /// Start-Production-ID.
+    /// Start production ID.
     fn start(&self) -> ProductionId;
-    /// Slice ueber alle Productions (in ID-Reihenfolge).
+    /// Slice over all productions (in ID order).
     fn productions_slice(&self) -> &[Production];
 }
 
 impl GrammarLike for Grammar {
     fn production(&self, id: ProductionId) -> Option<&Production> {
-        // Productions sind nicht garantiert in ID-Reihenfolge im Slice
-        // (Eintragungs-Reihenfolge in IDL_42.productions kann von der
-        // numerischen ID-Reihenfolge abweichen, z.B. ID 100 wird nach
-        // ID 116 eingetragen). Linearer Scan nach `id`.
+        // Productions are not guaranteed to be in ID order in the slice
+        // (the insertion order in IDL_42.productions can deviate from the
+        // numeric ID order, e.g. ID 100 is inserted after
+        // ID 116). Linear scan for `id`.
         self.productions.iter().find(|p| p.id == id)
     }
     fn start(&self) -> ProductionId {
@@ -306,33 +306,33 @@ impl GrammarLike for Grammar {
 }
 
 impl Grammar {
-    /// Sucht eine Production anhand ihrer ID.
+    /// Looks up a production by its ID.
     ///
-    /// Gibt `None` zurueck, wenn die ID nicht vorhanden ist.
+    /// Returns `None` if the ID does not exist.
     #[must_use]
     pub fn production(&self, id: ProductionId) -> Option<&Production> {
         self.productions.iter().find(|p| p.id == id)
     }
 
-    /// Gibt die Start-Production zurueck.
+    /// Returns the start production.
     ///
     /// # Errors
-    /// Liefert `None`, wenn `self.start` auf eine nicht existierende
-    /// Production verweist — dann liegt ein Grammar-Konstruktionsfehler vor,
-    /// der von [`crate::grammar::validate`] (Task 1.2) erkannt wird.
+    /// Returns `None` if `self.start` refers to a non-existent
+    /// production — in that case there is a grammar construction error,
+    /// which is detected by [`crate::grammar::validate`] (Task 1.2).
     #[must_use]
     pub fn start_production(&self) -> Option<&Production> {
         self.production(self.start)
     }
 
-    /// Anzahl Productions.
+    /// Number of productions.
     #[inline]
     #[must_use]
     pub fn production_count(&self) -> usize {
         self.productions.len()
     }
 
-    /// Iteriert ueber alle Productions.
+    /// Iterates over all productions.
     pub fn productions_iter(&self) -> impl Iterator<Item = &Production> {
         self.productions.iter()
     }
@@ -342,9 +342,9 @@ impl Grammar {
 mod tests {
     use super::*;
 
-    /// Minimal-Grammar fuer Tests: ein einziger nichtterminaler Zweig, der
-    /// zwei Terminals akzeptiert (`module <Ident>`). Keine vollstaendige
-    /// IDL-Grammar, nur Testdaten.
+    /// Minimal grammar for tests: a single nonterminal branch that
+    /// accepts two terminals (`module <Ident>`). Not a complete
+    /// IDL grammar, just test data.
     const PROD_DUMMY_MODULE: Production = Production {
         id: ProductionId(0),
         name: "dummy_module",

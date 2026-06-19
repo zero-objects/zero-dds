@@ -1,58 +1,58 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [1.0.0-rc.1] — 2026-05-07
 
-Initiale Release-Materialisierung der `zerodds-corba-ccm-lib`-Crate.
+Initial release materialization of the `zerodds-corba-ccm-lib` crate.
 
-### Spec-Referenzen
+### Spec references
 
 - **OMG CCM 4.0** (`formal/2006-04-01`): §6 (Component Model),
   §10 (Persistent State Service), §6.10 (Events).
-- **OMG DDS 1.4**: §2.2 (DCPS) — Topic-Mapping CCM-Port→DDS-Topic.
-- **ZeroDDS Monitor-Topic-Spec** — `__ZeroDDS_CcmTelemetry`.
+- **OMG DDS 1.4**: §2.2 (DCPS) — topic mapping CCM port → DDS topic.
+- **ZeroDDS monitor topic spec** — `__ZeroDDS_CcmTelemetry`.
 
-### Public-API
+### Public API
 
 - `dds_bridge::{BridgeError, DdsBridgeComponent, MappingDirection,
-  TopicMapping}` — bidirektionale CCM↔DDS-Bridge-Component, mappt
-  CCM-EventSinks und EventSources auf DDS-DataReader/Writer.
+  TopicMapping}` — bidirectional CCM↔DDS bridge component, maps
+  CCM EventSinks and EventSources onto DDS DataReader/Writer.
 - `persistence::{PersistenceError, PersistenceStorageComponent,
-  StorageEntry}` — Persistent-State-Service §10 Storage-Component.
+  StorageEntry}` — Persistent State Service §10 storage component.
 - `telemetry::{TelemetryComponent, TelemetryEvent, TelemetryKind}`
-  — Component-Lifecycle-Telemetrie auf DCPS-Topic
+  — component lifecycle telemetry on DCPS topic
   `__ZeroDDS_CcmTelemetry`.
 
-### Implementierung
+### Implementation
 
-`#![no_std]` mit `extern crate alloc`; `#![forbid(unsafe_code)]`.
-Alle drei Komponenten implementieren `corba-ccm::ComponentExecutor`
-und durchlaufen den Standard-Lifecycle (`set_session_context` →
-`ccm_activate` → Operation → `ccm_passivate` → `ccm_remove`).
+`#![no_std]` with `extern crate alloc`; `#![forbid(unsafe_code)]`.
+All three components implement `corba-ccm::ComponentExecutor`
+and run through the standard lifecycle (`set_session_context` →
+`ccm_activate` → operation → `ccm_passivate` → `ccm_remove`).
 
-`DdsBridgeComponent` traegt eine Liste von `TopicMapping`-Eintraegen
-mit `MappingDirection::SinkSubscribesTopic` (DDS-Reader speist CCM-Sink)
-oder `SourcePublishesTopic` (CCM-Source speist DDS-Writer). Die
-DDS-Seite wird Caller-Layer-resolved (Hosting muss `dcps`-Handles
-fuer Reader/Writer bereitstellen).
+`DdsBridgeComponent` carries a list of `TopicMapping` entries
+with `MappingDirection::SinkSubscribesTopic` (DDS reader feeds the CCM sink)
+or `SourcePublishesTopic` (CCM source feeds the DDS writer). The
+DDS side is resolved by the caller layer (the host must provide `dcps`
+handles for reader/writer).
 
-`PersistenceStorageComponent` speichert `StorageEntry`-Records
-key→value in einem in-memory `BTreeMap`-Storage gemaess §10
-Storage-Home-Semantik.
+`PersistenceStorageComponent` stores `StorageEntry` records
+key→value in an in-memory `BTreeMap` storage following §10
+storage-home semantics.
 
-`TelemetryComponent` emittiert `TelemetryEvent`s mit `TelemetryKind::
-{Activated, Passivated, Removed, ConfigurationCompleted}` auf das
-ZeroDDS-Monitor-Topic.
+`TelemetryComponent` emits `TelemetryEvent`s with `TelemetryKind::
+{Activated, Passivated, Removed, ConfigurationCompleted}` onto the
+ZeroDDS monitor topic.
 
-### Architektur
+### Architecture
 
-- **Layer:** 8 (CORBA-Stack, Tier-B).
+- **Layer:** 8 (CORBA stack, Tier B).
 - **Dependencies (in):** `zerodds-corba-ccm`.
-- **Dependents (out):** Hosting-Anwendungen (Caller-Layer).
-- **Feature-Flags:** `std` (default), `alloc` (via std).
+- **Dependents (out):** hosting applications (caller layer).
+- **Feature flags:** `std` (default), `alloc` (via std).
 
-### Stabilitaet
+### Stability
 
-- Public-API: RC1-stabil.
-- DCPS-Anbindung: Caller-Layer-Trait-Implementations.
+- Public API: RC1-stable.
+- DCPS binding: caller-layer trait implementations.

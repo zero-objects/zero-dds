@@ -2,19 +2,19 @@
 // Copyright 2026 ZeroDDS Contributors
 //! XTypes 1.3 §7.5.4.1.2 — TryConstruct-Apply (C4.7).
 //!
-//! Wenn beim Decoden oder Setter-Aufruf ein Wert nicht in den Ziel-
-//! Member passt (z.B. String laenger als der bound, Sequence ueber
-//! max-Length, Enum-Wert ausserhalb des Wertebereichs), entscheidet
-//! der `try_construct`-Strategy, was passiert:
+//! When a value does not fit the target member on decode or a setter
+//! call (e.g. a string longer than the bound, a sequence over its
+//! max length, an enum value outside the value range), the
+//! `try_construct` strategy decides what happens:
 //!
-//! - `Discard` — Wert verwerfen, Member bleibt unset.
-//! - `UseDefault` — Wert ignorieren, `member.default_value` setzen.
-//! - `Trim` — auf den Bound truncieren (Strings + Sequences); fuer
-//!   andere Bound-Violations Fallback auf Discard.
+//! - `Discard` — discard the value, the member stays unset.
+//! - `UseDefault` — ignore the value, set `member.default_value`.
+//! - `Trim` — truncate to the bound (strings + sequences); for other
+//!   bound violations fall back to discard.
 //!
-//! Diese Logik wird **nur dann** ausgewertet wenn ein Bound-Violation
-//! tatsaechlich vorliegt — un-bounded Setter (Member-Type ohne
-//! `bound`-Limit) bleiben unveraendert.
+//! This logic is evaluated **only** when a bound violation actually
+//! exists — un-bounded setters (member type without a `bound` limit)
+//! stay unchanged.
 
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -23,23 +23,22 @@ use super::data::DynamicValue;
 use super::descriptor::{TryConstructKind, TypeKind};
 use super::type_::DynamicTypeMember;
 
-/// Ergebnis einer TryConstruct-Auswertung.
+/// Result of a try-construct evaluation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TryConstructOutcome {
-    /// Wert ist innerhalb der Bounds — `set` darf ihn unveraendert
-    /// schreiben.
+    /// The value is within bounds — `set` may write it unchanged.
     Accept(DynamicValue),
-    /// Wert wird verworfen — Member bleibt unset.
+    /// The value is discarded — the member stays unset.
     Discard,
-    /// Wert wird durch den default_value ersetzt.
+    /// The value is replaced by the default_value.
     UseDefault(DynamicValue),
-    /// Wert wird auf den Bound trunciert.
+    /// The value is truncated to the bound.
     Trim(DynamicValue),
 }
 
-/// Wendet die `try_construct`-Strategie auf einen Setter-Wert an.
-/// Wenn keine Bound-Violation vorliegt, liefert die Funktion
-/// `Accept(value)` unveraendert zurueck.
+/// Applies the `try_construct` strategy to a setter value.
+/// If there is no bound violation, the function returns
+/// `Accept(value)` unchanged.
 #[must_use]
 pub fn apply_try_construct(member: &DynamicTypeMember, value: DynamicValue) -> TryConstructOutcome {
     let descriptor = member.descriptor();
@@ -66,9 +65,9 @@ pub fn apply_try_construct(member: &DynamicTypeMember, value: DynamicValue) -> T
     }
 }
 
-/// Liefert das `max_length`-Bound aus dem Member-Type, falls relevant.
-/// `0` als Wert (Spec §7.5.1.2.4: 0 = unbounded) wird als `None`
-/// behandelt — un-bounded Setter umgehen die Apply-Logik.
+/// Returns the `max_length` bound from the member type, if relevant.
+/// `0` as a value (spec §7.5.1.2.4: 0 = unbounded) is treated as
+/// `None` — un-bounded setters bypass the apply logic.
 fn bound_max_length(member: &DynamicTypeMember) -> Option<usize> {
     let descriptor = member.dynamic_type().descriptor();
     match descriptor.kind {
@@ -79,7 +78,7 @@ fn bound_max_length(member: &DynamicTypeMember) -> Option<usize> {
             .filter(|&b| b != 0)
             .map(|b| b as usize),
         TypeKind::Array => {
-            // Array hat fixed dimensions — Bound ist Produkt aller dims.
+            // An array has fixed dimensions — the bound is the product of all dims.
             if descriptor.bound.is_empty() {
                 None
             } else {
@@ -128,9 +127,9 @@ fn trim_value(
     let max = bound_max?;
     match (value, target_kind) {
         (DynamicValue::String(mut s), TypeKind::String8) => {
-            // String-Trim auf Byte-Grenze, aber niemals mitten in einem
-            // UTF-8-Codepoint. Wir koerzieren auf die naechstkleinere
-            // Char-Boundary.
+            // String trim on a byte boundary, but never in the middle of
+            // a UTF-8 codepoint. We coerce to the next-smaller char
+            // boundary.
             if s.len() > max {
                 let mut cut = max;
                 while !s.is_char_boundary(cut) && cut > 0 {
@@ -152,8 +151,8 @@ fn trim_value(
             }
             Some(DynamicValue::Sequence(s))
         }
-        // Array-Length-Mismatch: kein sinnvoller Trim, weil ein Array
-        // exakte Dimension hat. Fallback auf Discard.
+        // Array length mismatch: no meaningful trim, because an array
+        // has an exact dimension. Fall back to discard.
         _ => None,
     }
 }
@@ -259,8 +258,8 @@ mod tests {
 
     #[test]
     fn trim_respects_utf8_codepoint_boundaries() {
-        // "héllo" mit é = 2 byte. Bound 3 würde mitten in é trim → muss
-        // auf 2 byte zurueckfallen ("h" + Anfang von é → boundary 1 → "h").
+        // "héllo" with é = 2 bytes. Bound 3 would trim in the middle of é →
+        // must fall back to 2 bytes ("h" + start of é → boundary 1 → "h").
         let ty = make_struct_with_bounded_string(3, TryConstructKind::Trim, None);
         let member = ty.member_by_id(1).unwrap();
         let outcome = apply_try_construct(member, DynamicValue::String("héllo".into()));

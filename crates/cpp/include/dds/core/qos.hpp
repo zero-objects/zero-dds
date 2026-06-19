@@ -98,7 +98,7 @@ public:
     policy_ns::EntityFactory entity_factory;
 };
 
-/// SubscriberQos (gleicher Field-Set wie PublisherQos per Spec §7.5.6).
+/// SubscriberQos (same field set as PublisherQos per Spec §7.5.6).
 class SubscriberQos {
 public:
     policy_ns::Presentation presentation;

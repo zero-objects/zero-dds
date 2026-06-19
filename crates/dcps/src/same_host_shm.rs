@@ -1,26 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Welle 4b.3 (Spec `docs/specs/zerodds-zero-copy-1.0.md` §6 Welle 3):
-//! feature-gated Bruecke zwischen [`crate::same_host`] (no_std-Tracker)
-//! und `zerodds_transport_shm::PosixShmTransport`.
+//! Wave 4b.3 (Spec `docs/specs/zerodds-zero-copy-1.0.md` §6 Wave 3):
+//! feature-gated bridge between [`crate::same_host`] (no_std tracker)
+//! and `zerodds_transport_shm::PosixShmTransport`.
 //!
-//! Nur kompiliert mit `same-host-shm`-Feature aktiviert. Ohne das
-//! Feature bleibt der Tracker reine Pending-State-Machine und der
-//! Hot-Path faellt auf UDP zurueck.
+//! Only compiled with the `same-host-shm` feature enabled. Without the
+//! feature the tracker stays a pure pending state machine and the hot
+//! path falls back to UDP.
 //!
-//! # Pfad-Resolution
+//! # Path resolution
 //!
 //! `flink_dir = ${TMPDIR}/zerodds-shm/${host_id_hex}/`
 //!
-//! `host_id_hex` ist die Hex-Repraesentation der ersten 4 Bytes des
-//! lokalen GuidPrefixes (Welle 4a host-id). Damit kollidieren
-//! Same-Host-Segmente nicht ueber unterschiedliche Hosts auf
-//! NFS-Mounts hinweg.
+//! `host_id_hex` is the hex representation of the first 4 bytes of the
+//! local GuidPrefix (Wave 4a host-id). This prevents same-host segments
+//! from colliding across different hosts on NFS mounts.
 //!
-//! Die Segment-Dateinamen leiten sich via
-//! [`crate::same_host::shm_segment_filename`] vom 128-Bit-Hash des
-//! `(writer_guid, reader_guid)`-Paares ab. Beide Seiten kommen ohne
-//! extra Discovery-Roundtrip auf denselben Pfad.
+//! The segment file names are derived via
+//! [`crate::same_host::shm_segment_filename`] from the 128-bit hash of
+//! the `(writer_guid, reader_guid)` pair. Both sides arrive at the same
+//! path without an extra discovery round-trip.
 
 #![cfg(feature = "same-host-shm")]
 
@@ -33,60 +32,73 @@ use zerodds_transport_shm::{PosixShmTransport, ShmConfig};
 
 use crate::same_host::Role;
 
-/// Default-Datagram-Limit fuer den Same-Host-SHM-Pfad. Liberaler
-/// als der DDSI-RTPS-MTU (1472 Byte), damit grosse Fragments lokal
-/// nicht unnoetig zerlegt werden muessen.
+/// Default datagram limit for the same-host SHM path. More liberal than
+/// the DDSI-RTPS MTU (1472 bytes) so that large fragments don't need to
+/// be split up unnecessarily locally.
 pub const DEFAULT_MAX_DATAGRAM: usize = 64 * 1024;
 
-/// Default-Ringbuffer-Kapazitaet (Bytes). Muss `>= 2 * max_datagram`
-/// sein (PosixShmTransport-Constraint).
+/// Default ring-buffer capacity (bytes). Must be `>= 2 * max_datagram`
+/// (PosixShmTransport constraint).
 pub const DEFAULT_CAPACITY: usize = 2 * 1024 * 1024;
 
-/// Berechnet den `ShmConfig` fuer ein Same-Host-Paar.
+/// Computes the `ShmConfig` for a same-host pair.
 ///
-/// Resultat-`flink_dir` ist absolut und enthaelt den `host_id_hex`-
-/// Sub-Ordner. `${TMPDIR}` faellt auf `/tmp` zurueck, wenn die
-/// Env-Var nicht gesetzt ist.
+/// The resulting `flink_dir` is absolute and contains the `host_id_hex`
+/// sub-folder. `${TMPDIR}` falls back to `/tmp` if the env var is not
+/// set.
 #[must_use]
 pub fn shm_config_for_pair(local_prefix: GuidPrefix) -> ShmConfig {
     let host_id = local_prefix.host_id();
     let host_hex = bytes_to_hex(&host_id);
     let base = std::env::temp_dir();
     let flink_dir = base.join("zerodds-shm").join(host_hex);
+    // C3 variable zero-copy: the SHM ring buffer is length-prefixed, so
+    // already **variable-size** (no Iceoryx fixed pool). The only cap is
+    // `max_datagram` — but the 64 KiB default is too small for ROS
+    // PointCloud2/Image (several MB) (the consumer drops
+    // `len > max_datagram`). `ZERODDS_SHM_MAX_DATAGRAM` (bytes) raises it;
+    // the ring capacity is scaled along accordingly (`>= 2*max + 16`).
+    let max_datagram = std::env::var("ZERODDS_SHM_MAX_DATAGRAM")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_MAX_DATAGRAM);
+    let capacity = DEFAULT_CAPACITY.max(max_datagram * 2 + 4096);
     ShmConfig {
-        capacity: DEFAULT_CAPACITY,
+        capacity,
         flink_dir,
-        max_datagram: DEFAULT_MAX_DATAGRAM,
-        recv_timeout: Some(Duration::from_millis(50)),
+        max_datagram,
+        // Short poll timeout: with one sample per recv() the round-trip
+        // latency is at most `recv_timeout`. 1ms is a compromise between
+        // CPU load (busy-spin) and latency (waiting too long).
+        recv_timeout: Some(Duration::from_millis(1)),
     }
 }
 
-/// Versucht, ein `PosixShmTransport`-Segment als `Owner` aufzusetzen.
+/// Attempts to set up a `PosixShmTransport` segment as `Owner`.
 ///
-/// Die Owner-Seite ist im DCPS-Modell der **Writer** — er erzeugt
-/// das Segment und schreibt Sample-Datagrams hinein. Der Reader
-/// attached spaeter als Consumer.
+/// The owner side is the **writer** in the DCPS model — it creates the
+/// segment and writes sample datagrams into it. The reader attaches
+/// later as a consumer.
 ///
-/// Liefert bei Erfolg ein opakes `Arc<dyn Any + Send + Sync>`, das
-/// vom [`crate::same_host::SameHostTracker`] in `Bound { transport,
-/// role: Owner }` gespeichert wird. Der Hot-Path-Sender (Welle 4b.4)
-/// downcastet zurueck nach `PosixShmTransport`.
+/// On success returns an opaque `Arc<dyn Any + Send + Sync>` that is
+/// stored by the [`crate::same_host::SameHostTracker`] as `Bound {
+/// transport, role: Owner }`. The hot-path sender (Wave 4b.4) downcasts
+/// back to `PosixShmTransport`.
 ///
-/// Bei Fehler liefert die Funktion eine statische Diagnose-String;
-/// der Caller markiert den Tracker-Entry als `Failed` und faellt auf
-/// UDP zurueck.
+/// On failure the function returns a static diagnostic string; the
+/// caller marks the tracker entry as `Failed` and falls back to UDP.
 pub fn open_owner_segment(
     local_prefix: GuidPrefix,
     writer_guid: Guid,
     reader_guid: Guid,
 ) -> Result<Arc<dyn Any + Send + Sync>, &'static str> {
     let cfg = shm_config_for_pair(local_prefix);
-    // flink_dir muss existieren; PosixShmTransport::open_owner ruft
-    // intern ensure_base_dir, aber wir wollen einen klaren Fehlerpfad.
+    // flink_dir must exist; PosixShmTransport::open_owner calls
+    // ensure_base_dir internally, but we want a clear error path.
     if std::fs::create_dir_all(&cfg.flink_dir).is_err() {
         return Err("shm: flink_dir create failed");
     }
-    // Owner = Writer; peer = Reader.
+    // Owner = writer; peer = reader.
     let local_id = writer_guid.to_bytes();
     let peer_id = reader_guid.to_bytes();
     match PosixShmTransport::open_owner(local_id, peer_id, cfg) {
@@ -95,21 +107,19 @@ pub fn open_owner_segment(
     }
 }
 
-/// Versucht, ein `PosixShmTransport`-Segment als `Consumer` zu
-/// attachen.
+/// Attempts to attach a `PosixShmTransport` segment as `Consumer`.
 ///
-/// Der Owner (Writer-Seite) muss das Segment vorher aufgesetzt
-/// haben. Bei Owner-noch-nicht-da liefert `PosixShmTransport::
-/// open_consumer` einen `MapOpenFailed`, dann markiert der Caller
-/// `Failed`. Spaeterer SEDP-Re-Match darf einen erneuten Versuch
-/// triggern (Welle 4b.4-Folge).
+/// The owner (writer side) must have set up the segment beforehand. If
+/// the owner is not yet present, `PosixShmTransport::open_consumer`
+/// returns a `MapOpenFailed`, and the caller then marks `Failed`. A
+/// later SEDP re-match may trigger another attempt (Wave 4b.4 follow-up).
 pub fn open_consumer_segment(
     local_prefix: GuidPrefix,
     writer_guid: Guid,
     reader_guid: Guid,
 ) -> Result<Arc<dyn Any + Send + Sync>, &'static str> {
     let cfg = shm_config_for_pair(local_prefix);
-    // Consumer = Reader; peer = Writer (Owner).
+    // Consumer = reader; peer = writer (Owner).
     let local_id = reader_guid.to_bytes();
     let peer_id = writer_guid.to_bytes();
     match PosixShmTransport::open_consumer(local_id, peer_id, cfg) {
@@ -118,13 +128,13 @@ pub fn open_consumer_segment(
     }
 }
 
-/// Helper: `Role` fuer einen `(writer, reader)`-Pair in dem Sinne,
-/// dass `local_prefix` einer der beiden Seiten ist.
+/// Helper: `Role` for a `(writer, reader)` pair in the sense that
+/// `local_prefix` is one of the two sides.
 ///
-/// Liefert `Some(Role::Owner)` wenn `local_prefix == writer.prefix`
-/// (Writer-Seite produziert), `Some(Role::Consumer)` wenn
-/// `local_prefix == reader.prefix` (Reader-Seite konsumiert),
-/// `None` bei beidem (selbst-Match) oder keinem (Fehler im Caller).
+/// Returns `Some(Role::Owner)` if `local_prefix == writer.prefix`
+/// (writer side produces), `Some(Role::Consumer)` if
+/// `local_prefix == reader.prefix` (reader side consumes), `None` for
+/// both (self-match) or neither (error in the caller).
 #[must_use]
 pub fn local_role_for_pair(local_prefix: GuidPrefix, writer: Guid, reader: Guid) -> Option<Role> {
     let is_writer = local_prefix == writer.prefix;
@@ -146,15 +156,34 @@ fn bytes_to_hex(bytes: &[u8]) -> alloc::string::String {
     s
 }
 
-// Sanity-Cross-Check: `shm_segment_filename` produziert deterministische
-// Hex-Strings; das wird im no-std-Modul `same_host` getestet. Hier nur
-// die Bytes-to-Hex-Variante fuer host_id.
+// Sanity cross-check: `shm_segment_filename` produces deterministic hex
+// strings; that is tested in the no_std module `same_host`. Here only the
+// bytes-to-hex variant for host_id.
 
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     use super::*;
     use zerodds_rtps::wire_types::EntityId;
+
+    #[test]
+    fn shm_config_satisfies_capacity_constraint_and_default() {
+        // B8 / C3 variable zero-copy: the length-prefixed ring is
+        // variable-size; `capacity >= 2*max_datagram + 16` is the
+        // PosixShmTransport invariant. Default path (no env).
+        let cfg = shm_config_for_pair(GuidPrefix::from_bytes([7u8; 12]));
+        assert_eq!(cfg.max_datagram, DEFAULT_MAX_DATAGRAM);
+        assert!(
+            cfg.capacity >= cfg.max_datagram * 2 + 16,
+            "capacity {} < 2*max_datagram {} + 16",
+            cfg.capacity,
+            cfg.max_datagram
+        );
+        // The capacity formula scales correctly with a large max_datagram:
+        // at 8 MiB max_datagram this yields >= 16 MiB capacity.
+        let big = 8 * 1024 * 1024usize;
+        assert!(DEFAULT_CAPACITY.max(big * 2 + 4096) >= big * 2 + 16);
+    }
 
     fn writer_guid(seed: u8, host: [u8; 4]) -> Guid {
         let mut p = [0u8; 12];
@@ -227,23 +256,21 @@ mod tests {
         assert!(role.is_none());
     }
 
-    /// Welle 4c — E2E-Test: open_owner_segment +
-    /// open_consumer_segment finden einander ueber die globale
-    /// Pfad-Convention (`shm_config_for_pair`, also
-    /// `${TMPDIR}/zerodds-shm/${host_hex}/...`) ohne explizite
-    /// Config-Sharing. Validiert dass beide Seiten den
-    /// SHM-Segment-Pfad deterministisch ableiten und Bytes
-    /// roundtrippen.
+    /// Wave 4c — E2E test: open_owner_segment + open_consumer_segment
+    /// find each other via the global path convention
+    /// (`shm_config_for_pair`, i.e. `${TMPDIR}/zerodds-shm/${host_hex}/...`)
+    /// without explicit config sharing. Validates that both sides derive
+    /// the SHM-segment path deterministically and that bytes round-trip.
     ///
-    /// GUIDs werden bewusst hoch-eindeutig gewaehlt (Test-uniques
-    /// 0xE2E2 prefix), damit kein Konflikt mit parallel laufenden
-    /// Tests auf demselben System.
+    /// The GUIDs are deliberately chosen to be highly unique (test-unique
+    /// 0xE2E2 prefix) so there is no conflict with tests running in
+    /// parallel on the same system.
     #[test]
     fn welle_4c_pair_setup_via_path_convention_roundtrip() {
         use zerodds_transport::Transport;
-        // Eindeutige GuidPrefixe: gleicher host_id (4b match
-        // detection), aber abweichende PIDs/Counter — analog Welle
-        // 4a-Schema in participant::random_guid_prefix.
+        // Unique GuidPrefixes: same host_id (4b match detection), but
+        // diverging PIDs/counters — analogous to the Wave 4a scheme in
+        // participant::random_guid_prefix.
         let mut writer_prefix_bytes = [0u8; 12];
         writer_prefix_bytes[..4].copy_from_slice(&[0xE2, 0xE2, 0xC4, 0x01]);
         writer_prefix_bytes[4..8].copy_from_slice(&0x11111111u32.to_le_bytes());
@@ -261,8 +288,8 @@ mod tests {
             EntityId::user_reader_with_key([0xC7, 0x01, 0x01]),
         );
 
-        // Setup wie SEDP-Hook: Writer-Seite oeffnet Owner zuerst,
-        // Reader-Seite attached als Consumer.
+        // Setup like the SEDP hook: writer side opens Owner first, reader
+        // side attaches as Consumer.
         let owner_any = open_owner_segment(writer.prefix, writer, reader)
             .expect("open_owner via path convention");
         let consumer_any = open_consumer_segment(reader.prefix, writer, reader)
@@ -282,9 +309,9 @@ mod tests {
         assert_eq!(&got.data[..], b"welle-4c-e2e");
     }
 
-    /// Writer (Owner) → Reader (Consumer) Roundtrip via tempdir.
-    /// Validiert die DCPS-Rollen-Konvention: Writer schreibt,
-    /// Reader liest.
+    /// Writer (Owner) → Reader (Consumer) round-trip via tempdir.
+    /// Validates the DCPS role convention: the writer writes, the reader
+    /// reads.
     #[test]
     fn writer_owner_to_reader_consumer_roundtrip() {
         use zerodds_transport::Transport;
@@ -299,12 +326,12 @@ mod tests {
         let host = [0xAA, 0xBB, 0xCC, 0xDD];
         let w = writer_guid(1, host);
         let r = reader_guid(2, host);
-        // Owner = Writer; Consumer = Reader.
+        // Owner = writer; Consumer = reader.
         let owner = PosixShmTransport::open_owner(w.to_bytes(), r.to_bytes(), cfg.clone())
             .expect("open_owner");
         let consumer = PosixShmTransport::open_consumer(r.to_bytes(), w.to_bytes(), cfg)
             .expect("open_consumer");
-        // Writer (Owner) sendet, Reader (Consumer) empfaengt.
+        // Writer (Owner) sends, reader (Consumer) receives.
         let consumer_loc = consumer.local_locator();
         owner.send(&consumer_loc, b"hello-same-host").expect("send");
         let got = consumer.recv().expect("recv");

@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Crate `zerodds-ts-wasm`. Safety classification: **STANDARD** (FFI-Boundary
-//! ueber wasm-bindgen; std erlaubt; kein direkter Hardware-/Syscall-Zugriff).
+//! Crate `zerodds-ts-wasm`. Safety classification: **STANDARD** (FFI boundary
+//! via wasm-bindgen; std allowed; no direct hardware/syscall access).
 //!
-//! WASM-Bindings fuer den ZeroDDS-XCDR-Codec. Im Gegensatz zur Node-Variante
-//! (`zerodds-ts-node`) kann WASM keine UDP-Sockets oder Threads benutzen —
-//! Live-DDS im Browser braucht eine WebSocket-Bridge
+//! WASM bindings for the ZeroDDS XCDR codec. Unlike the Node variant
+//! (`zerodds-ts-node`), WASM cannot use UDP sockets or threads —
+//! live DDS in the browser needs a WebSocket bridge
 //! (`crates/websocket-bridge`).
 //!
-//! Was hier exposed ist:
-//!   * XCDR1/XCDR2 Encoder + Decoder fuer Primitive + Strings + Bytes
-//!   * KeyHash-Berechnung (XTypes 1.3 §7.6.8)
-//!   * Endianness-Konstanten + Version-String
+//! What is exposed here:
+//!   * XCDR1/XCDR2 encoder + decoder for primitives + strings + bytes
+//!   * KeyHash computation (XTypes 1.3 §7.6.8)
+//!   * endianness constants + version string
 //!
-//! Use-Cases:
-//!   * Browser-Frontend wandelt Form-Daten in XCDR um, schickt's per
-//!     WebSocket an einen DDS-Gateway
-//!   * Browser empfaengt XCDR-Bytes, decodiert clientseitig
-//!   * Schema-Validation + Type-Checks ohne Server-Roundtrip
+//! Use cases:
+//!   * a browser frontend converts form data into XCDR, sends it via
+//!     WebSocket to a DDS gateway
+//!   * the browser receives XCDR bytes, decodes them client-side
+//!   * schema validation + type checks without a server roundtrip
 
 #![no_std]
-// FFI-Bindings ueber `#[wasm_bindgen]`-Makros — die generierten Wrapper
-// bekommen automatisch keine rustdoc und werden vom JS-Layer aus
-// dokumentiert. Allow das hier auf Crate-Ebene; eigene fns sind
-// trotzdem doc'd.
+// FFI bindings via `#[wasm_bindgen]` macros — the generated wrappers
+// automatically get no rustdoc and are documented from the JS layer.
+// Allow that here at the crate level; our own fns are
+// doc'd anyway.
 #![allow(missing_docs)]
 
 extern crate alloc;
@@ -46,7 +46,7 @@ pub fn version() -> String {
     "zerodds-wasm 0.0.0".to_string()
 }
 
-/// Endianness-Tag fuer JS — 0 = little, 1 = big.
+/// Endianness tag for JS — 0 = little, 1 = big.
 #[wasm_bindgen(js_name = endiannessLittle)]
 pub fn endianness_little() -> u8 {
     0
@@ -64,7 +64,7 @@ fn endianness_from_u8(value: u8) -> Result<Endianness, JsError> {
     }
 }
 
-/// XCDR-Encoder. Buffert Bytes bis `finish()` aufgerufen wird.
+/// XCDR encoder. Buffers bytes until `finish()` is called.
 #[wasm_bindgen]
 pub struct CdrEncoder {
     inner: BufferWriter,
@@ -130,14 +130,14 @@ impl CdrEncoder {
         self.inner.position()
     }
 
-    /// Schliesst den Encoder ab und returnt die akkumulierten Bytes.
-    /// Nach finish() ist der Encoder unbrauchbar.
+    /// Finalizes the encoder and returns the accumulated bytes.
+    /// After finish() the encoder is unusable.
     pub fn finish(self) -> Vec<u8> {
         self.inner.into_bytes()
     }
 }
 
-/// XCDR-Decoder. Liest Bytes-Slice via Position-Pointer.
+/// XCDR decoder. Reads a byte slice via a position pointer.
 #[wasm_bindgen]
 pub struct CdrDecoder {
     bytes: Vec<u8>,
@@ -159,8 +159,8 @@ impl CdrDecoder {
 
     fn reader(&self) -> BufferReader<'_> {
         let mut r = BufferReader::new(&self.bytes, self.endianness);
-        // Reader-Position ist intern in BufferReader — wir tracken sie
-        // separat und legen sie via skip() vor jedem Read an.
+        // The reader position is internal to BufferReader — we track it
+        // separately and set it via skip() before each read.
         let _ = r.read_bytes(self.position);
         r
     }

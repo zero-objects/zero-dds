@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Autobahn|TestSuite WebSocket Conformance-Subset — RFC 6455.
+//! Autobahn|TestSuite WebSocket conformance subset — RFC 6455.
 //!
-//! Wir implementieren die Spec-Test-Vektoren aus RFC 6455 selbst
-//! direkt — die externe Autobahn-Suite (Python) kann zusaetzlich
-//! im `live-interop`-Job laufen, ist aber nicht gating.
+//! We implement the spec test vectors from RFC 6455 directly
+//! ourselves — the external Autobahn suite (Python) can additionally
+//! run in the `live-interop` job, but is not gating.
 
 use crate::{CaseResult, TestCase};
 
@@ -19,7 +19,7 @@ use zerodds_websocket_bridge::{
 // Section 1 — RFC 6455 §1.3 Handshake
 // ============================================================================
 
-/// Spec §1.3 — Sec-WebSocket-Accept Test-Vektor (Sample-Nonce).
+/// Spec §1.3 — Sec-WebSocket-Accept test vector (sample nonce).
 fn case_1_1_accept_sample_nonce() -> CaseResult {
     let key = "dGhlIHNhbXBsZSBub25jZQ==";
     let expected = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=";
@@ -30,7 +30,7 @@ fn case_1_1_accept_sample_nonce() -> CaseResult {
     }
 }
 
-/// Spec §4.2.2 Step 5 — Accept ist case-sensitiv exakt.
+/// Spec §4.2.2 Step 5 — Accept is exactly case-sensitive.
 fn case_1_2_accept_case_sensitive() -> CaseResult {
     let key = "dGhlIHNhbXBsZSBub25jZQ==";
     let expected = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=";
@@ -45,7 +45,7 @@ fn case_1_2_accept_case_sensitive() -> CaseResult {
 // Section 2 — RFC 6455 §7.4 Close-Codes
 // ============================================================================
 
-/// Spec §7.4.1 — Close-Code 1000 (Normal Closure) round-trip.
+/// Spec §7.4.1 — close code 1000 (Normal Closure) round-trip.
 fn case_2_1_close_normal_round_trip() -> CaseResult {
     let p = ClosePayload {
         code: CloseCode::Normal,
@@ -62,7 +62,7 @@ fn case_2_1_close_normal_round_trip() -> CaseResult {
     }
 }
 
-/// Spec §7.4.2 — Reserved-Codes (1005, 1006, 1015) MUSS reject auf Wire.
+/// Spec §7.4.2 — reserved codes (1005, 1006, 1015) MUST be rejected on the wire.
 fn case_2_2_reserved_codes_rejected() -> CaseResult {
     for code in [1005u16, 1006, 1015] {
         let buf = code.to_be_bytes();
@@ -75,7 +75,7 @@ fn case_2_2_reserved_codes_rejected() -> CaseResult {
     CaseResult::Pass
 }
 
-/// Spec §5.5.1 — Close-Reason max 123 Bytes.
+/// Spec §5.5.1 — close reason max 123 bytes.
 fn case_2_3_close_reason_size_limit() -> CaseResult {
     let mut buf = alloc::vec![0x03, 0xe8];
     buf.extend(core::iter::repeat_n(b'a', 124));
@@ -90,7 +90,7 @@ fn case_2_3_close_reason_size_limit() -> CaseResult {
 // Section 3 — RFC 7692 permessage-deflate
 // ============================================================================
 
-/// RFC 7692 §7.1 — Tail-Marker `00 00 FF FF` Strip/Append.
+/// RFC 7692 §7.1 — tail marker `00 00 FF FF` strip/append.
 fn case_3_1_deflate_tail_round_trip() -> CaseResult {
     let raw = b"hello";
     let with_tail = append_tail(raw);
@@ -103,7 +103,7 @@ fn case_3_1_deflate_tail_round_trip() -> CaseResult {
     CaseResult::Pass
 }
 
-/// RFC 7692 §7.2 — Negotiation mit allen 4 Parametern.
+/// RFC 7692 §7.2 — negotiation with all 4 parameters.
 fn case_3_2_deflate_full_negotiation() -> CaseResult {
     let offer = "permessage-deflate; server_no_context_takeover; \
                  client_no_context_takeover; \
@@ -126,7 +126,7 @@ fn case_3_2_deflate_full_negotiation() -> CaseResult {
     CaseResult::Pass
 }
 
-/// RFC 7692 §7.1 — Window-Bits ausserhalb 8..=15 muss reject.
+/// RFC 7692 §7.1 — window bits outside 8..=15 must be rejected.
 fn case_3_3_deflate_invalid_window_rejected() -> CaseResult {
     for v in [7, 16, 0, 255] {
         let offer = alloc::format!("permessage-deflate; server_max_window_bits={v}");
@@ -134,7 +134,7 @@ fn case_3_3_deflate_invalid_window_rejected() -> CaseResult {
             return CaseResult::Fail(alloc::format!("§7.1: window_bits={v} must be rejected"));
         }
     }
-    // Boolean-Param mit Value muss reject.
+    // Boolean param with a value must be rejected.
     if !matches!(
         parse_offer("permessage-deflate; server_no_context_takeover=yes"),
         Err(NegotiationError::BooleanWithValue(_))
@@ -144,7 +144,7 @@ fn case_3_3_deflate_invalid_window_rejected() -> CaseResult {
     CaseResult::Pass
 }
 
-/// Spec §1.3 GUID-Constant ist Spec-Verbatim.
+/// Spec §1.3 GUID constant is spec-verbatim.
 fn case_4_1_guid_verbatim() -> CaseResult {
     use zerodds_websocket_bridge::handshake::WEBSOCKET_GUID;
     if WEBSOCKET_GUID == "258EAFA5-E914-47DA-95CA-C5AB0DC85B11" {
@@ -154,7 +154,7 @@ fn case_4_1_guid_verbatim() -> CaseResult {
     }
 }
 
-/// Default-Profile = "permessage-deflate" raw (alle 4 Felder Spec-Defaults).
+/// Default profile = "permessage-deflate" raw (all 4 fields are spec defaults).
 fn case_4_2_default_profile_renders_bare() -> CaseResult {
     let s = render_accept(&PermessageDeflateParams::default());
     if s == "permessage-deflate" {
@@ -164,7 +164,7 @@ fn case_4_2_default_profile_renders_bare() -> CaseResult {
     }
 }
 
-/// Komplette Test-Suite.
+/// Complete test suite.
 pub const SUITE: &[TestCase] = &[
     TestCase {
         name: "rfc6455-1.3-accept-sample-nonce",

@@ -82,8 +82,12 @@ static void test_status_getters() {
     auto pmst = dw.publication_matched_status();
     auto smst = dr.subscription_matched_status();
     auto lost = dr.sample_lost_status();
-    EXPECT(pmst.total_count == 0, "pmst zero");
-    EXPECT(smst.total_count == 0, "smst zero");
+    // Writer + Reader live in the SAME participant on the same topic/type, so
+    // they match each other (intra-participant self-match, DDS §2.2.2.4 — now
+    // correctly reported since the F-DCPS-latency-self-match fix). One match
+    // each; no samples written, so nothing lost.
+    EXPECT(pmst.total_count == 1, "pmst one (self-match)");
+    EXPECT(smst.total_count == 1, "smst one (self-match)");
     EXPECT(lost.total_count == 0, "lost zero");
 }
 

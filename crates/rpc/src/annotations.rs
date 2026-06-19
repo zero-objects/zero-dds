@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DDS-RPC IDL-Annotations — Spec §7.3.
+//! DDS-RPC IDL annotations — Spec §7.3.
 //!
-//! Lowering der RPC-spezifischen Annotations:
+//! Lowering of the RPC-specific annotations:
 //!
-//! * `@service(name="<svc>")` — markiert eine Interface-Definition als
-//!   RPC-Service. Wenn `name` fehlt, wird der Interface-Name verwendet.
-//! * `@oneway` — Methode ohne Reply-Erwartung. Aequivalent zum nativen
-//!   IDL-`oneway`-Keyword (das im AST bereits durch `OpDecl::oneway`
-//!   abgebildet ist).
-//! * `@in`, `@out`, `@inout` — explizite Parameter-Direction. Aequivalent
-//!   zu den nativen IDL-Direction-Keywords (`ParamAttribute::In/Out/InOut`).
+//! * `@service(name="<svc>")` — marks an interface definition as an
+//!   RPC service. If `name` is missing, the interface name is used.
+//! * `@oneway` — a method without reply expectation. Equivalent to the native
+//!   IDL `oneway` keyword (which is already represented in the AST via
+//!   `OpDecl::oneway`).
+//! * `@in`, `@out`, `@inout` — explicit parameter direction. Equivalent
+//!   to the native IDL direction keywords (`ParamAttribute::In/Out/InOut`).
 //!
-//! Architektur-Entscheidung: das `zerodds-idl`-Crate kennt bewusst nur die
-//! Standard-XTypes-Annotations (siehe Memo `project_codegen_templates_scope`
-//! — RPC-Specifics gehoeren nicht ins idl-Crate). Diese Bridge konsumiert
-//! die generischen `Annotation`-Werte aus dem AST und lowert sie zu
-//! `RpcAnnotation`-Variants.
+//! Architecture decision: the `zerodds-idl` crate deliberately knows only the
+//! standard XTypes annotations (see the memo `project_codegen_templates_scope`
+//! — RPC specifics do not belong in the idl crate). This bridge consumes
+//! the generic `Annotation` values from the AST and lowers them to
+//! `RpcAnnotation` variants.
 
 extern crate alloc;
 
@@ -26,59 +26,59 @@ use alloc::vec::Vec;
 
 use zerodds_idl::ast::{Annotation, AnnotationParams, ConstExpr, LiteralKind, NamedParam};
 
-/// Typisierte Repraesentation der RPC-spezifischen Builtin-Annotations.
+/// Typed representation of the RPC-specific builtin annotations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RpcAnnotation {
-    /// `@service` oder `@service(name="...")`.
+    /// `@service` or `@service(name="...")`.
     Service {
-        /// Optional `name="..."`-Attribut.
+        /// Optional `name="..."` attribute.
         name: Option<String>,
     },
-    /// `@oneway` (Annotation-Form; orthogonal zum AST-`oneway`-Keyword).
+    /// `@oneway` (annotation form; orthogonal to the AST `oneway` keyword).
     Oneway,
-    /// `@in` (Annotation-Form; orthogonal zu `ParamAttribute::In`).
+    /// `@in` (annotation form; orthogonal to `ParamAttribute::In`).
     In,
     /// `@out`.
     Out,
     /// `@inout`.
     InOut,
     /// `@RPCInterfaceQos(profile="<lib::profile>")` (Spec §7.10.1).
-    /// Verweist auf ein QoS-Profile aus einer XML-QoS-Library, das
-    /// auf Service-Endpoints (Request-Writer/Reader, Reply-
-    /// Writer/Reader) angewendet wird.
+    /// References a QoS profile from an XML QoS library that is
+    /// applied to service endpoints (request writer/reader, reply
+    /// writer/reader).
     InterfaceQos {
-        /// `lib::profile`-Verweis (Spec-Konvention).
+        /// `lib::profile` reference (spec convention).
         profile_ref: String,
     },
     /// `@DDSRequestTopic("<topic>")` (Spec §7.4.2.2).
-    /// Override des Default-Request-Topic-Namens.
+    /// Override of the default request topic name.
     DdsRequestTopic(String),
     /// `@DDSReplyTopic("<topic>")` (Spec §7.4.2.2).
     DdsReplyTopic(String),
     /// `@RPCRequestType` (Spec §7.3.1.4).
-    /// Markiert einen IDL-Struct als Pair-of-Types Request-Type.
+    /// Marks an IDL struct as a pair-of-types request type.
     RpcRequestType,
     /// `@RPCReplyType` (Spec §7.3.1.4).
     RpcReplyType,
     /// `@RPCRequest` (Spec §7.3.1.2 Enhanced).
-    /// Markiert eine IDL-Operation-Inputs-Struktur.
+    /// Marks an IDL operation inputs struct.
     RpcRequest,
     /// `@RPCReply` (Spec §7.3.1.2 Enhanced).
     RpcReply,
 }
 
-/// Ergebnis eines RPC-Annotation-Lowerings — getrennte Listen fuer
-/// erkannte und durchgereichte (unbekannte) Annotations.
+/// Result of an RPC annotation lowering — separate lists for
+/// recognized and passed-through (unknown) annotations.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LoweredRpc {
     /// Erkannte RPC-Builtins.
     pub builtins: Vec<RpcAnnotation>,
-    /// Nicht erkannt (vendor-spezifisch oder XTypes-Builtin).
+    /// Not recognized (vendor-specific or an XTypes builtin).
     pub custom: Vec<Annotation>,
 }
 
 impl LoweredRpc {
-    /// `true` wenn `@service` (mit oder ohne Argument) gesetzt ist.
+    /// `true` if `@service` (with or without argument) is set.
     #[must_use]
     pub fn is_service(&self) -> bool {
         self.builtins
@@ -86,7 +86,7 @@ impl LoweredRpc {
             .any(|a| matches!(a, RpcAnnotation::Service { .. }))
     }
 
-    /// Liefert den expliziten `@service(name="...")`-Wert, falls gesetzt.
+    /// Returns the explicit `@service(name="...")` value, if set.
     #[must_use]
     pub fn service_name(&self) -> Option<&str> {
         self.builtins.iter().find_map(|a| match a {
@@ -95,7 +95,7 @@ impl LoweredRpc {
         })
     }
 
-    /// `true` wenn `@oneway`-Annotation gesetzt ist.
+    /// `true` if the `@oneway` annotation is set.
     #[must_use]
     pub fn has_oneway(&self) -> bool {
         self.builtins
@@ -103,7 +103,7 @@ impl LoweredRpc {
             .any(|a| matches!(a, RpcAnnotation::Oneway))
     }
 
-    /// Spec §7.10.1: liefert das `@RPCInterfaceQos(profile=...)`-Argument.
+    /// Spec §7.10.1: returns the `@RPCInterfaceQos(profile=...)` argument.
     #[must_use]
     pub fn interface_qos_profile(&self) -> Option<&str> {
         self.builtins.iter().find_map(|a| match a {
@@ -112,7 +112,7 @@ impl LoweredRpc {
         })
     }
 
-    /// Spec §7.4.2.2: liefert den `@DDSRequestTopic`-Override.
+    /// Spec §7.4.2.2: returns the `@DDSRequestTopic` override.
     #[must_use]
     pub fn dds_request_topic(&self) -> Option<&str> {
         self.builtins.iter().find_map(|a| match a {
@@ -121,7 +121,7 @@ impl LoweredRpc {
         })
     }
 
-    /// Spec §7.4.2.2: liefert den `@DDSReplyTopic`-Override.
+    /// Spec §7.4.2.2: returns the `@DDSReplyTopic` override.
     #[must_use]
     pub fn dds_reply_topic(&self) -> Option<&str> {
         self.builtins.iter().find_map(|a| match a {
@@ -130,7 +130,7 @@ impl LoweredRpc {
         })
     }
 
-    /// Spec §7.3.1.4: `true` wenn `@RPCRequestType` gesetzt.
+    /// Spec §7.3.1.4: `true` if `@RPCRequestType` is set.
     #[must_use]
     pub fn is_rpc_request_type(&self) -> bool {
         self.builtins
@@ -138,7 +138,7 @@ impl LoweredRpc {
             .any(|a| matches!(a, RpcAnnotation::RpcRequestType))
     }
 
-    /// Spec §7.3.1.4: `true` wenn `@RPCReplyType` gesetzt.
+    /// Spec §7.3.1.4: `true` if `@RPCReplyType` is set.
     #[must_use]
     pub fn is_rpc_reply_type(&self) -> bool {
         self.builtins
@@ -146,7 +146,7 @@ impl LoweredRpc {
             .any(|a| matches!(a, RpcAnnotation::RpcReplyType))
     }
 
-    /// Spec §7.3.1.2: `true` wenn `@RPCRequest` gesetzt.
+    /// Spec §7.3.1.2: `true` if `@RPCRequest` is set.
     #[must_use]
     pub fn is_rpc_request(&self) -> bool {
         self.builtins
@@ -154,7 +154,7 @@ impl LoweredRpc {
             .any(|a| matches!(a, RpcAnnotation::RpcRequest))
     }
 
-    /// Spec §7.3.1.2: `true` wenn `@RPCReply` gesetzt.
+    /// Spec §7.3.1.2: `true` if `@RPCReply` is set.
     #[must_use]
     pub fn is_rpc_reply(&self) -> bool {
         self.builtins
@@ -191,9 +191,9 @@ fn extract_named<'a>(named: &'a [NamedParam], key: &str) -> Option<&'a ConstExpr
     named.iter().find(|p| p.name.text == key).map(|p| &p.value)
 }
 
-/// Lower eine einzelne Annotation auf ihre RPC-typisierte Form.
-/// Liefert `None` wenn sie kein RPC-Builtin ist (Caller stellt sie dann
-/// in `LoweredRpc::custom` ab).
+/// Lower a single annotation into its RPC-typed form.
+/// Returns `None` if it is not an RPC builtin (the caller then stores it
+/// in `LoweredRpc::custom`).
 #[must_use]
 pub fn lower_single(ann: &Annotation) -> Option<RpcAnnotation> {
     let name = name_tail(ann);
@@ -250,7 +250,7 @@ pub fn lower_single(ann: &Annotation) -> Option<RpcAnnotation> {
     }
 }
 
-/// Lower eine Annotation-Liste in das RPC-Builtin-Modell.
+/// Lower a list of annotations into the RPC builtin model.
 #[must_use]
 pub fn lower_rpc_annotations(anns: &[Annotation]) -> LoweredRpc {
     let mut out = LoweredRpc::default();
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn service_single_string_arg_lowers_with_name() {
-        // Toleranter Pfad: @service("Foo") wird wie name="Foo" behandelt.
+        // Tolerant path: @service("Foo") is treated like name="Foo".
         let a = lower_single(&ann(
             "service",
             AnnotationParams::Single(lit(LiteralKind::String, "\"Foo\"")),
@@ -388,7 +388,7 @@ mod tests {
     fn lower_rpc_annotations_splits_builtins_and_custom() {
         let anns = alloc::vec![
             ann("service", AnnotationParams::None),
-            ann("topic", AnnotationParams::None), // XTypes-builtin, nicht RPC
+            ann("topic", AnnotationParams::None), // XTypes builtin, not RPC
             ann("oneway", AnnotationParams::None),
         ];
         let lowered = lower_rpc_annotations(&anns);

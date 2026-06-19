@@ -1,7 +1,7 @@
-"""Smoke-Tests fuer das Python-Binding.
+"""Smoke tests for the Python binding.
 
-Nur offline-Pfade — volle E2E-Tests kommen mit ROS2-pytest-Integration
-in Multi-Process-Test-Setup. Zum Laufen:
+Offline paths only — full E2E tests come with the ROS2 pytest integration
+in the multi-process test setup. To run:
 
     maturin develop --features extension-module
     pytest crates/py/python/tests/
@@ -13,13 +13,13 @@ import zerodds
 
 
 def test_version_exposed():
-    """`__version__` ist auch ohne `_core` exponiert (Fallback in `__init__.py`)."""
+    """`__version__` is exposed even without `_core` (fallback in `__init__.py`)."""
     assert isinstance(zerodds.__version__, str)
     assert len(zerodds.__version__) > 0
 
 
 _NO_CORE = not getattr(zerodds, "_CORE_AVAILABLE", False)
-_NO_CORE_REASON = "zerodds._core nicht kompiliert — maturin develop noetig"
+_NO_CORE_REASON = "zerodds._core not compiled — maturin develop needed"
 
 
 @pytest.mark.skipif(_NO_CORE, reason=_NO_CORE_REASON)
@@ -40,7 +40,7 @@ def test_bytes_topic_and_reader_are_creatable_offline():
 
     subscriber = p.create_subscriber()
     reader = subscriber.create_bytes_reader(topic)
-    # Nichts geschrieben → take liefert leere Liste.
+    # Nothing written → take returns an empty list.
     samples = reader.take()
     assert samples == []
 
@@ -50,8 +50,8 @@ def test_shape_topic_matches_vendor_interop_type_name():
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(101)
     topic = p.create_shape_topic("Square")
-    # Dieser Type-Name ist Interop-kritisch. Aendern wuerde SEDP-
-    # Matching mit Cyclone/Fast-DDS-ShapesDemo brechen.
+    # This type name is interop-critical. Changing it would break SEDP
+    # matching with Cyclone/Fast-DDS ShapesDemo.
     assert topic.type_name == "ShapeType"
 
 
@@ -71,10 +71,10 @@ def test_shape_default_shapesize_is_30():
     assert s.shapesize == 30
 
 
-@pytest.mark.skipif(True, reason="Live-E2E braucht Linux-Multicast — in Multi-Process-Test-Setup mit pytest-xdist")
+@pytest.mark.skipif(True, reason="live E2E needs Linux multicast — in the multi-process test setup with pytest-xdist")
 def test_pub_sub_roundtrip_live():
-    """Placeholder fuer Live-E2E. Wird in Multi-Process-Test-Setup mit Multi-Process-
-    Fixtures aktiviert."""
+    """Placeholder for live E2E. Activated in the multi-process test setup with
+    multi-process fixtures."""
     factory = zerodds.DomainParticipantFactory.instance()
     pub_p = factory.create_participant_fast(200)
     sub_p = factory.create_participant_fast(200)

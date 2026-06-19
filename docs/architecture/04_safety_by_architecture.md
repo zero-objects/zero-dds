@@ -1,24 +1,24 @@
 # Safety-by-Architecture
 
 > **Status:** Draft v0.2
-> **Abhängigkeiten:** `02_architecture.md`, `03_profiles_and_platforms.md`
-> **Eigentümer:** Safety Engineering Lead
+> **Dependencies:** `02_architecture.md`, `03_profiles_and_platforms.md`
+> **Owner:** Safety Engineering Lead
 
-Dieses Dokument ist der verbindliche Vertrag für alle Safety-relevanten architektonischen Entscheidungen. Jede Code-Änderung in Safe-klassifizierten Crates muss diesem Dokument genügen. Verstöße werden durch CI blockiert.
+This document is the binding contract for all safety-relevant architectural decisions. Every code change in safe-classified crates must satisfy this document. Violations are blocked by CI.
 
-## 1 Philosophie
+## 1 Philosophy
 
-Safety-by-Architecture bedeutet: die Codebase ist so strukturiert, dass Safety-Zertifizierung (ISO 26262 ASIL D, DO-178C DAL B+, IEC 61508 SIL 3+) **möglich** ist — ohne dass jede Änderung kontinuierliche Safety-Reviews erfordert. Die architektonischen Regeln werden einmalig fest verankert und durchgehend automatisch durchgesetzt. Safety-Audit am Ende ist dann ein Dokumentations- und Validierungs-Schritt, kein Refactoring-Schritt.
+Safety-by-architecture means: the codebase is structured such that safety certification (ISO 26262 ASIL D, DO-178C DAL B+, IEC 61508 SIL 3+) is **possible** — without every change requiring continuous safety reviews. The architectural rules are anchored once and enforced automatically throughout. The safety audit at the end is then a documentation and validation step, not a refactoring step.
 
-Drei Grundsätze:
+Three principles:
 
-1. **Statische Durchsetzung vor Runtime-Checks.** Regelverletzungen werden zur Compile-Zeit oder in CI erkannt, nicht zur Laufzeit.
-2. **Separation of Concerns zwischen Safe und Comfort.** Sicherheitskritische Crates haben andere Regeln als Comfort-Crates. Die Grenze ist klar und physisch im Workspace manifestiert.
-3. **Traceability als Nebenprodukt, nicht als Nachlauf.** Commits, Tests und Code-Annotationen erzeugen die Artefakte, die ein Auditor braucht, im laufenden Betrieb — nicht retrospektiv.
+1. **Static enforcement before runtime checks.** Rule violations are detected at compile time or in CI, not at runtime.
+2. **Separation of concerns between Safe and Comfort.** Safety-critical crates have different rules than comfort crates. The boundary is clear and physically manifested in the workspace.
+3. **Traceability as a by-product, not as a follow-up.** Commits, tests and code annotations produce the artifacts an auditor needs during ongoing work — not retrospectively.
 
-## 2 Safe-Subset-Vertrag
+## 2 Safe-Subset contract
 
-Die folgenden Crates sind als **Safe-Subset** klassifiziert:
+The following crates are classified as the **safe subset**:
 
 ```
 zerodds-foundation
@@ -28,137 +28,142 @@ zerodds-qos
 zerodds-rtps
 zerodds-discovery
 zerodds-transport (trait-only)
-zerodds-transport-udp (ohne tokio-feature)
-zerodds-transport-shm
-zerodds-security (Kern-Plugin-API, ohne Plugin-Implementierungen)
+zerodds-transport-udp (without the tokio feature)
+zerodds-security (core plugin API, without plugin implementations)
 zerodds-xrce-client
-zerodds-sys (stabile C-ABI-Oberfläche)
+zerodds-sys (stable C-ABI surface)
 ```
 
-Diese Crates müssen den folgenden Vertrag einhalten.
+This safe subset is bundled in the meta crate **`crates/safe-crates-only`**;
+`cargo build -p safe-crates-only --no-default-features --features safety` builds it
+as the no_std safe profile (see the §3 gates). `zerodds-transport-shm` and
+`zerodds-dcps` are **STANDARD**-classified (not in the safe subset), the
+`zerodds-idl*` codegen tools are std-only — all three do not belong in the
+no_std profile build.
 
-### 2.1 Sprach-Einschränkungen
+These crates must comply with the following contract.
 
-| Regel | Durchsetzung |
+### 2.1 Language restrictions
+
+| Rule | Enforcement |
 |---|---|
-| Keine `panic!()`, `unreachable!()`, `todo!()`, `unimplemented!()` außerhalb `#[cfg(debug_assertions)]` oder Tests | `clippy::panic = "deny"`, `clippy::unreachable = "deny"`, `clippy::todo = "deny"`, `clippy::unimplemented = "deny"` |
-| Keine `.unwrap()`, `.expect()` außerhalb Tests | `clippy::unwrap_used = "deny"`, `clippy::expect_used = "deny"` |
-| Keine `.unwrap_or_default()` wenn Default unerwünscht ist | manuelles Review |
-| Kein `unsafe`-Code ohne SAFETY-Kommentar | Custom lint `dds_require_safety_comment` |
-| Keine `dyn Trait` außer in explizit markierten Plugin-Boundaries | Custom lint `dds_no_dyn_in_safe` |
-| Keine `std`-Dependencies (nur `core` + `alloc`) | `#![no_std]` + `extern crate alloc` |
-| Keine `tokio` oder andere Async-Runtimes (stattdessen Executor-agnostic über `core::future::Future` und `futures-core`) | Dependency-Check in CI |
-| Keine `HashMap` (verwendet Randomness für DoS-Resistenz, nicht deterministisch) | Clippy-Lint: `disallowed-types` |
-| `Vec` nur mit bounded Capacity; bevorzugt `heapless::Vec` | Review + Custom lint |
-| Keine Rekursion ohne dokumentierte obere Tiefenschranke | Review-Regel, kein automatischer Lint |
+| No `panic!()`, `unreachable!()`, `todo!()`, `unimplemented!()` outside `#[cfg(debug_assertions)]` or tests | `clippy::panic = "deny"`, `clippy::unreachable = "deny"`, `clippy::todo = "deny"`, `clippy::unimplemented = "deny"` |
+| No `.unwrap()`, `.expect()` outside tests | `clippy::unwrap_used = "deny"`, `clippy::expect_used = "deny"` |
+| No `.unwrap_or_default()` when the default is undesired | manual review |
+| No `unsafe` code without a SAFETY comment | custom lint `dds_require_safety_comment` |
+| No `dyn Trait` except in explicitly marked plugin boundaries | custom lint `dds_no_dyn_in_safe` |
+| No `std` dependencies (only `core` + `alloc`) | `#![no_std]` + `extern crate alloc` |
+| No `tokio` or other async runtimes (instead executor-agnostic via `core::future::Future` and `futures-core`) | dependency check in CI |
+| No `HashMap` (uses randomness for DoS resistance, not deterministic) | clippy lint: `disallowed-types` |
+| `Vec` only with bounded capacity; prefer `heapless::Vec` | review + custom lint |
+| No recursion without a documented upper depth bound | review rule, no automatic lint |
 
-### 2.2 Speicher-Disziplin
+### 2.2 Memory discipline
 
-Alle Safe-Crates halten sich an strenge Speicher-Regeln:
+All safe crates adhere to strict memory rules:
 
-- **Keine dynamische Allocation in Hot Paths.** "Hot Path" ist definiert als jeder Code, der in einem Sample-Verarbeitungspfad (Receive, Deserialize, Deliver) läuft.
-- **Static-Allocation first.** Interne Datenstrukturen nutzen `heapless::Vec`, `heapless::FnvIndexMap`, vorab allozierte Pools aus `zerodds-foundation::pool`.
-- **Bounded Queues.** Jede Queue hat eine explizite Obergrenze. Overflow-Verhalten ist policy-gesteuert (Drop, Block, Reject), nie undefined.
-- **Kein unbeschränktes `Vec::push` auf User-Input.** Länge-Limits werden vor jedem Wachstum geprüft.
-- **Owned vs. Borrowed klar.** Hot-Path-APIs akzeptieren `&[u8]` oder `Bytes`, nie `Vec<u8>`.
+- **No dynamic allocation in hot paths.** A "hot path" is defined as any code that runs in a sample processing path (receive, deserialize, deliver).
+- **Static allocation first.** Internal data structures use `heapless::Vec`, `heapless::FnvIndexMap`, pre-allocated pools from `zerodds-foundation::pool`.
+- **Bounded queues.** Every queue has an explicit upper bound. Overflow behavior is policy-controlled (drop, block, reject), never undefined.
+- **No unbounded `Vec::push` on user input.** Length limits are checked before every growth.
+- **Owned vs. borrowed clear.** Hot-path APIs accept `&[u8]` or `Bytes`, never `Vec<u8>`.
 
-### 2.3 Fehler-Behandlung
+### 2.3 Error handling
 
-- Jeder fehlbare Call gibt ein `Result<T, E>` zurück. Fehler-Enums sind per `thiserror` definiert, exhaustive, und stabil (SemVer-Pflicht).
-- Keine `io::Error` in Public-APIs von Safe-Crates (Abhängigkeit auf `std::io`).
-- Panics sind nur akzeptabel in Invariant-Verletzungen, die logisch unmöglich sind — und auch dann werden sie zu `Result<_, InvariantViolation>` umgewandelt, wo ein Fehlerpfad existiert.
+- Every fallible call returns a `Result<T, E>`. Error enums are defined via `thiserror`, exhaustive, and stable (SemVer obligation).
+- No `io::Error` in the public APIs of safe crates (dependency on `std::io`).
+- Panics are only acceptable on invariant violations that are logically impossible — and even then they are converted to `Result<_, InvariantViolation>` where an error path exists.
 
 ### 2.4 Concurrency
 
-- **Keine `std::sync::Mutex`** (verwendet Futex auf Linux, nicht analysierbar in Safety-Kontext).
-- Stattdessen: `spin::Mutex` (mit dokumentierten Wait-Verhalten-Garantien) oder OS-spezifische Primitive, die von der Ziel-RTOS qualifiziert sind.
-- **Kein `std::thread::spawn`** in Safe-Crates; Concurrency wird extern injiziert (Executor-agnostisches Future-API).
-- **Atomic-Operationen** sind erlaubt, aber jede Memory-Ordering-Annotation (`Ordering::Acquire` etc.) muss kommentiert und gerechtfertigt sein.
+- **No `std::sync::Mutex`** (uses a futex on Linux, not analyzable in a safety context).
+- Instead: `spin::Mutex` (with documented wait-behavior guarantees) or OS-specific primitives qualified by the target RTOS.
+- **No `std::thread::spawn`** in safe crates; concurrency is injected externally (executor-agnostic future API).
+- **Atomic operations** are allowed, but every memory-ordering annotation (`Ordering::Acquire` etc.) must be commented and justified.
 
-### 2.5 Generik und Monomorphisierung
+### 2.5 Generics and monomorphization
 
-- Generics werden bevorzugt über `dyn Trait` in Performance-kritischen Pfaden, um Devirtualisierung zu garantieren.
-- Explizite `Box<dyn Trait>` ist in Plugin-Boundaries (Security-Plugins, Transport-Plugins) erlaubt und erforderlich, aber muss in Trait-Objects mit `'static` Bound sein und als `#[allow(dds_no_dyn_in_safe)]` markiert werden.
-- Monomorphisierungs-Explosion wird vermieden durch Facette-Traits und sekundäre Object-Safe-Traits für die API-Surface.
+- Generics are preferred over `dyn Trait` in performance-critical paths to guarantee devirtualization.
+- Explicit `Box<dyn Trait>` is allowed and required in plugin boundaries (security plugins, transport plugins), but must be in trait objects with a `'static` bound and marked as `#[allow(dds_no_dyn_in_safe)]`.
+- Monomorphization explosion is avoided through facet traits and secondary object-safe traits for the API surface.
 
-## 3 CI-Durchsetzung
+## 3 CI enforcement
 
-Die folgende CI-Pipeline läuft bei jedem PR und muss grün sein für Merge. Safety-relevante Jobs sind nicht überspringbar.
+The following CI pipeline runs on every PR and must be green for a merge. Safety-relevant jobs are not skippable.
 
-### 3.1 Build-Jobs
+### 3.1 Build jobs
 
-| Job | Zweck | Blocking? |
+| Job | Purpose | Blocking? |
 |---|---|---|
-| `cargo build --all --all-features` | Baut Full-Profile | ✓ |
-| `cargo build -p safe-crates-only --no-default-features --features safety` | Baut Safe-Profile ohne std | ✓ |
-| `cargo build --target aarch64-unknown-none -p zerodds-rtps -p zerodds-xrce-client` | Cross-compile für bare-metal | ✓ |
-| `cargo build --target thumbv7em-none-eabihf -p zerodds-xrce-client` | Micro-Profile Cortex-M7 | ✓ |
-| Ferrocene build für Safe-Crates | Qualified toolchain | ✓ |
+| `cargo build --all --all-features` | Builds the full profile | ✓ |
+| `cargo build -p safe-crates-only --no-default-features --features safety` | Builds the safe profile without std | ✓ |
+| `cargo build --target aarch64-unknown-none -p zerodds-rtps -p zerodds-xrce-client` | Cross-compile for bare metal | ✓ |
+| `cargo build --target thumbv7em-none-eabihf -p zerodds-xrce-client` | Micro profile Cortex-M7 | ✓ |
+| Ferrocene build for safe crates | Qualified toolchain | ✓ |
 
-### 3.2 Lint-Jobs
+### 3.2 Lint jobs
 
-| Job | Inhalt | Blocking? |
+| Job | Content | Blocking? |
 |---|---|---|
-| `cargo clippy -- -D warnings` | Workspace-weite Clippy-Lints | ✓ |
-| `cargo clippy -p <safe-crate> --features safety -- -D clippy::unwrap_used -D clippy::panic -D clippy::unreachable` | Safe-spezifische Lints | ✓ |
-| Custom `zerodds-lint` (eigener Clippy-Plugin) | Projekt-spezifische Regeln (siehe unten) | ✓ |
-| `cargo fmt -- --check` | Formatierung | ✓ |
-| `cargo deny check` | License + Security Audit | ✓ |
+| `cargo clippy -- -D warnings` | Workspace-wide clippy lints | ✓ |
+| `cargo clippy -p <safe-crate> --features safety -- -D clippy::unwrap_used -D clippy::panic -D clippy::unreachable` | Safe-specific lints | ✓ |
+| Custom `zerodds-lint` (own clippy plugin) | Project-specific rules (see below) | ✓ |
+| `cargo fmt -- --check` | Formatting | ✓ |
+| `cargo deny check` | License + security audit | ✓ |
 
-### 3.3 Test-Jobs
+### 3.3 Test jobs
 
-| Job | Inhalt | Blocking? |
+| Job | Content | Blocking? |
 |---|---|---|
-| `cargo test --workspace` | Unit + Integration Tests | ✓ |
-| `cargo miri test -p zerodds-cdr -p zerodds-rtps` | Undefined-Behavior-Detection | ✓ |
-| `cargo kani -p zerodds-foundation -p zerodds-cdr -p zerodds-qos` | Model-Checking für formalisierbare Properties | Nightly |
-| `cargo fuzz run rtps_parser` | Fuzz-Testing für Wire-Parser | Nightly, mindestens 1h pro Run |
-| OMG-Conformance-Test-Suite | Spec-Compliance-Tests | ✓ |
-| Interop gegen CycloneDDS, Fast DDS | Docker-compose-Harness | ✓ |
-| Performance-Regression (Criterion) | Keine >5% Regression in Hot-Path-Benchmarks | ✓ |
+| `cargo test --workspace` | Unit + integration tests | ✓ |
+| `cargo miri test -p zerodds-cdr -p zerodds-rtps` | Undefined-behavior detection | ✓ |
+| `cargo kani -p zerodds-foundation -p zerodds-cdr -p zerodds-qos` | Model checking for formalizable properties | Nightly |
+| `cargo fuzz run rtps_parser` | Fuzz testing for the wire parser | Nightly, at least 1h per run |
+| OMG conformance test suite | Spec compliance tests | ✓ |
+| Interop against CycloneDDS, Fast DDS | docker-compose harness | ✓ |
+| Performance regression (Criterion) | No >5% regression in hot-path benchmarks | ✓ |
 
-### 3.4 Custom Lints (`zerodds-lint` Crate)
+### 3.4 Custom lints (`zerodds-lint` crate)
 
-`zerodds-lint` ist ein eigenes Binary-Crate (`crates/lint`), das die folgenden
-Projekt-Regeln **AST-basiert auf stable Rust** durchsetzt — kein
-Nightly-Toolchain, kein dylint, keine Type-Info. Aufruf in CI:
-`cargo run -p zerodds-lint -- check` (siehe GitLab-CI-Job `zerodds-lint`).
+`zerodds-lint` is a dedicated binary crate (`crates/lint`) that enforces the following
+project rules **AST-based on stable Rust** — no
+nightly toolchain, no dylint, no type info. Invocation in CI:
+`cargo run -p zerodds-lint -- check` (see the GitLab CI job `zerodds-lint`).
 
-Stand WP 0.7 (Phase 0):
+As of WP 0.7 (Phase 0):
 
-| Lint | Status | Markierung zur Ausnahme |
+| Lint | Status | Exception marker |
 |---|---|---|
-| `dds_require_safety_comment` | implementiert | `// SAFETY: <begruendung>` direkt vor unsafe-Block/fn/impl |
-| `dds_no_dyn_in_safe` | implementiert | File-Marker `zerodds-lint: allow no_dyn_in_safe` |
-| `dds_safety_classification_present` | implementiert | jede Crate mit `lib.rs` braucht `Safety classification: **<KLASSE>**` im Doc-Header |
-| `dds_no_panic_in_safe` | implementiert | tests/examples ausgenommen, File-Marker `zerodds-lint: allow no_panic_in_safe` |
-| `dds_no_alloc_in_hot_path` | implementiert | aktiviert per Doc-Marker `/// zerodds-lint: hot-path` an Funktion oder Modul |
-| `dds_bounded_recursion` | implementiert (Phase-0-Approximation: intra-File, max. 1-Hop indirekt) | Doc-Marker `/// zerodds-lint: recursion-depth N` |
-| `dds_spec_annotated` | nicht aktiv | Bestand braucht Migration; Phase 1 |
+| `dds_require_safety_comment` | implemented | `// SAFETY: <rationale>` directly before the unsafe block/fn/impl |
+| `dds_no_dyn_in_safe` | implemented | file marker `zerodds-lint: allow no_dyn_in_safe` |
+| `dds_safety_classification_present` | implemented | every crate with a `lib.rs` needs `Safety classification: **<CLASS>**` in the doc header |
+| `dds_no_panic_in_safe` | implemented | tests/examples excluded, file marker `zerodds-lint: allow no_panic_in_safe` |
+| `dds_no_alloc_in_hot_path` | implemented | enabled via the doc marker `/// zerodds-lint: hot-path` on a function or module |
+| `dds_bounded_recursion` | implemented (Phase-0 approximation: intra-file, max. 1-hop indirect) | doc marker `/// zerodds-lint: recursion-depth N` |
+| `dds_spec_annotated` | not active | the existing code needs migration; Phase 1 |
 
-**Phase-0-Limitierungen** (alle bewusst):
+**Phase-0 limitations** (all intentional):
 
-- Keine Type-Info: `.unwrap()` flaggt unabhaengig vom Receiver-Typ.
-- Custom-Attribute (`#[dds_hot_path]`, `#[dds_recursion_depth(N)]`) sind auf
-  stable Rust ohne `register_tool` nicht ohne Proc-Macro syntaktisch
-  erlaubt — wir ersetzen sie durch Doc-Comment-Marker
-  (`/// zerodds-lint: hot-path`, `/// zerodds-lint: recursion-depth N`), die als
-  regulaere `#[doc = "..."]`-Attribute geparst werden.
-- Rekursions-Erkennung ist intra-File und maximal 1-Hop indirekt; cycles
-  laenger als zwei Funktionen oder cross-file Rekursion (Trait-Impls,
-  mod-Splits) sind nicht erfasst.
-- Tests, Examples und Benches werden flaechendeckend von den Lints
-  ausgenommen.
+- No type info: `.unwrap()` is flagged regardless of the receiver type.
+- Custom attributes (`#[dds_hot_path]`, `#[dds_recursion_depth(N)]`) are not
+  syntactically allowed on stable Rust without `register_tool` and a proc macro
+  — we replace them with doc-comment markers
+  (`/// zerodds-lint: hot-path`, `/// zerodds-lint: recursion-depth N`) that are parsed as
+  regular `#[doc = "..."]` attributes.
+- Recursion detection is intra-file and at most 1-hop indirect; cycles
+  longer than two functions or cross-file recursion (trait impls,
+  mod splits) are not captured.
+- Tests, examples and benches are excluded comprehensively from the lints.
 
-Echte Clippy-Plugin-Variante mit Type-Info (dylint oder rustc-driver) ist
-fuer Phase 1 vorgesehen, sobald sich die Anforderungen aus realer
-Anwendung herauskristallisieren.
+A real clippy-plugin variant with type info (dylint or rustc-driver) is
+planned for Phase 1, once the requirements crystallize from real
+usage.
 
-## 4 Traceability-Infrastruktur
+## 4 Traceability infrastructure
 
-### 4.1 Commit-Konvention
+### 4.1 Commit convention
 
-Alle Commits folgen Conventional Commits mit zusätzlichem Requirements-Tag:
+All commits follow Conventional Commits with an additional requirements tag:
 
 ```
 <type>(<scope>): <description> [REQ-<id>]
@@ -168,7 +173,7 @@ Alle Commits folgen Conventional Commits mit zusätzlichem Requirements-Tag:
 <footer>
 ```
 
-Beispiele:
+Examples:
 
 ```
 feat(rtps): implement Heartbeat submessage [REQ-RTPS-0047]
@@ -180,9 +185,9 @@ Tests: tests/heartbeat_roundtrip.rs, tests/heartbeat_spec_vectors.rs
 Covers: REQ-RTPS-0047, REQ-RTPS-0048, REQ-RTPS-0049
 ```
 
-`REQ-<id>` verweist auf Einträge im Requirements-Tracker (Polarion, DOORS, oder projekteigen).
+`REQ-<id>` references entries in the requirements tracker (Polarion, DOORS, or project-owned).
 
-### 4.2 Code-Annotationen
+### 4.2 Code annotations
 
 ```rust
 /// Implements DDSI-RTPS 2.5 §8.3.7.3 Heartbeat Submessage.
@@ -201,12 +206,12 @@ pub struct Heartbeat {
 }
 ```
 
-Die Annotationen werden vom `zerodds-traceability`-Tool aggregiert in eine Matrix:
-- Requirements → Code (welcher Code implementiert welches Req)
-- Code → Tests (welche Tests decken welchen Code)
-- Requirements → Tests (welche Tests verifizieren welches Req)
+The annotations are aggregated by the `zerodds-traceability` tool into a matrix:
+- Requirements → code (which code implements which req)
+- Code → tests (which tests cover which code)
+- Requirements → tests (which tests verify which req)
 
-### 4.3 Test-Annotationen
+### 4.3 Test annotations
 
 ```rust
 /// Verifies DDSI-RTPS 2.5 §8.3.7.3.1 Heartbeat validity invariant.
@@ -218,21 +223,21 @@ fn heartbeat_validates_sn_ordering() {
 }
 ```
 
-## 5 Ferrocene-Integration (Expansion-Era)
+## 5 Ferrocene integration (expansion era)
 
-Ferrocene ist der qualifizierte Rust-Compiler, der für formale Safety-Zertifizierung des Safe-Subsets erforderlich ist. Ferrocene ist TÜV-Süd-qualifiziert nach ISO 26262 ASIL D, IEC 61508 SIL 3, IEC 62304 Class C, und unterstützt Qualifizierungs-Bemühungen bis SIL 4 und DO-178C DAL C.
+Ferrocene is the qualified Rust compiler required for formal safety certification of the safe subset. Ferrocene is TÜV-Süd-qualified per ISO 26262 ASIL D, IEC 61508 SIL 3, IEC 62304 Class C, and supports qualification efforts up to SIL 4 and DO-178C DAL C.
 
-**Aktueller Plan-Status:** Ferrocene-Integration ist ein **Expansion-Era-Thema** (Track B in `06_roadmap.md` §8.1). In Bootstrap- und Proof-Era wird der Safe-Subset mit stable Rust gebaut. Die Architektur-Disziplin (no_panic, no_alloc-in-hot-path, strukturelle Trennung) ist ab Tag 1 in Kraft und von stable Rust durchsetzbar — Ferrocene fügt die formale Qualifikation hinzu, ändert aber nicht den Code-Stil.
+**Current plan status:** Ferrocene integration is an **expansion-era topic** (Track B in `06_roadmap.md` §8.1). In the bootstrap and proof eras the safe subset is built with stable Rust. The architectural discipline (no_panic, no_alloc-in-hot-path, structural separation) is in force from day 1 and enforceable by stable Rust — Ferrocene adds the formal qualification but does not change the code style.
 
-Damit der Umstieg auf Ferrocene später ohne Refactoring-Kosten möglich ist, gelten folgende Regeln bereits in Bootstrap-Era:
+So that the switch to Ferrocene is possible later without refactoring cost, the following rules already apply in the bootstrap era:
 
-- Safe-Crates verwenden nur APIs, die im Ferrocene Certified Core Subset enthalten sind (ISO 26262 ASIL B / IEC 61508 SIL 2), soweit bekannt. Clippy-`disallowed-methods`-Konfiguration wird entsprechend gepflegt.
-- Toolchain-Pinning ist vorbereitet, nur aktuell noch auf stable Rust (`rust-toolchain.toml`). Der Switch-over auf Ferrocene-Channel erfordert nur eine Konfigurations-Änderung.
-- Target-Triples werden in CI bereits so gewählt, dass sie mit dem Ferrocene-Target-Portfolio kompatibel sind.
+- Safe crates use only APIs contained in the Ferrocene Certified Core Subset (ISO 26262 ASIL B / IEC 61508 SIL 2), as far as known. The clippy `disallowed-methods` configuration is maintained accordingly.
+- Toolchain pinning is prepared, just currently still on stable Rust (`rust-toolchain.toml`). The switch-over to the Ferrocene channel requires only a configuration change.
+- Target triples are already chosen in CI so that they are compatible with the Ferrocene target portfolio.
 
-### 5.1 Ferrocene-Release-Pinning (wird in Track B aktiviert)
+### 5.1 Ferrocene release pinning (activated in Track B)
 
-Bei Expansion-Era-Switch wird ein spezifisches Ferrocene-Release gepinnt:
+On the expansion-era switch a specific Ferrocene release is pinned:
 
 ```toml
 [toolchain]
@@ -241,85 +246,85 @@ components = ["rust-src"]
 targets = ["aarch64-unknown-nto-qnx710", "..."]
 ```
 
-Release-Upgrades werden formell durch Safety-Review gezogen.
+Release upgrades are drawn formally through a safety review.
 
-### 5.2 Certified Core Subset (ab Expansion-Era relevant)
+### 5.2 Certified Core Subset (relevant from the expansion era)
 
-Das Ferrocene Certified Core Subset (aktuell ISO 26262 ASIL B, IEC 61508 SIL 2) wird in Safe-Crates als Design-Maßstab bereits in Bootstrap-Era verwendet. Verfügbare APIs umfassen `Option`, `Result`, `Clone`, `str`, Pointer-Types, die meisten Primitives, `core::slice`, `core::iter`, `core::ffi`. Nicht-zertifizierte APIs sind in Safe-Crates verboten via `disallowed-methods` Clippy-Konfiguration.
+The Ferrocene Certified Core Subset (currently ISO 26262 ASIL B, IEC 61508 SIL 2) is already used in safe crates as a design benchmark in the bootstrap era. Available APIs include `Option`, `Result`, `Clone`, `str`, pointer types, most primitives, `core::slice`, `core::iter`, `core::ffi`. Non-certified APIs are forbidden in safe crates via the `disallowed-methods` clippy configuration.
 
-### 5.3 Target-Platforms für Safe-Builds (Expansion-Era)
+### 5.3 Target platforms for safe builds (expansion era)
 
-Aktuell von Ferrocene qualifizierte Ziel-Plattformen (Stand Prüfung bei Track-B-Start):
+Target platforms currently qualified by Ferrocene (as checked at Track-B start):
 - `x86_64-unknown-linux-gnu`
-- `aarch64-unknown-linux-gnu` (aktuelle Release-Coverage prüfen)
-- `aarch64-unknown-none` (bare-metal)
+- `aarch64-unknown-linux-gnu` (check current release coverage)
+- `aarch64-unknown-none` (bare metal)
 - `x86_64-pc-nto-qnx710`, `aarch64-unknown-nto-qnx710`
 - `armv8r-none-eabihf` (Cortex-R)
 
-Weitere Targets werden je nach Projekt-Bedarf mit Ferrous Systems als Engineering-Partnerschaft verhandelt.
+Further targets are negotiated with Ferrous Systems as an engineering partnership depending on project need.
 
-## 6 Audit-Pfad (Expansion-Era)
+## 6 Audit path (expansion era)
 
-Der formale Safety-Audit ist ein **Expansion-Era-Thema** (Track C in `06_roadmap.md` §8.1). Die Vorbereitung dafür läuft aber bereits in Bootstrap- und Proof-Era mit.
+The formal safety audit is an **expansion-era topic** (Track C in `06_roadmap.md` §8.1). The preparation for it, however, runs along already in the bootstrap and proof eras.
 
-### 6.1 Bootstrap- und Proof-Era-Vorbereitung
+### 6.1 Bootstrap and proof era preparation
 
-- Safety-by-Architecture-Disziplin wird ab Tag 1 etabliert und automatisch durchgesetzt (Lints, CI).
-- Traceability-Annotationen und Commit-Konventionen werden ab Tag 1 gelebt (siehe §4).
-- Am Ende der Proof-Era (Phase 4) werden die Audit-Artefakte grundsätzlich erstellbar sein — ohne dass jemand sie aktiv als Artefakte verpackt hat.
+- Safety-by-architecture discipline is established from day 1 and enforced automatically (lints, CI).
+- Traceability annotations and commit conventions are lived from day 1 (see §4).
+- At the end of the proof era (Phase 4) the audit artifacts will fundamentally be producible — without anyone having actively packaged them as artifacts.
 
-Das spart erhebliche Retrofit-Kosten, falls und wenn Track C aktiviert wird.
+This saves considerable retrofit cost, if and when Track C is activated.
 
-### 6.2 Expansion-Era-Arbeitspakete
+### 6.2 Expansion-era work packages
 
-Bei Track-C-Aktivierung sind folgende Schritte erforderlich:
-- Safety-Engineer ins Team aufnehmen (dedizierte Rolle)
-- Requirements-Extraktion und formale Traceability-Matrix-Konsolidierung
-- MC/DC-Coverage-Push (für DAL B+)
-- Safety-Case-Dokumentation
-- Externer Audit durch TÜV Süd oder Alternative
+On Track-C activation the following steps are required:
+- Add a safety engineer to the team (dedicated role)
+- Requirements extraction and formal traceability matrix consolidation
+- MC/DC coverage push (for DAL B+)
+- Safety-case documentation
+- External audit by TÜV Süd or an alternative
 
-### 6.3 Benötigte Artefakte für Audit
+### 6.3 Required artifacts for an audit
 
-Die folgende Liste definiert, welche Artefakte bei Track-C-Aktivierung vorhanden sein müssen. Die meisten sind durch die architektonische Disziplin bereits ansatzweise vorhanden; Safety-Engineer konsolidiert und ergänzt.
+The following list defines which artifacts must be present on Track-C activation. Most are already partly present through the architectural discipline; the safety engineer consolidates and supplements.
 
-1. **Safety Plan** — Dokument das beschreibt, wie Safety im Projekt umgesetzt wird (dieses Dokument + Ergänzungen).
-2. **Requirements Specification** — formale Anforderungen an den Safe-Subset, jeweils mit eindeutiger ID.
-3. **Architecture Specification** — `02_architecture.md` + Zusatz für Safe-Subset-Interna.
-4. **Module Specification** — pro Crate im Safe-Subset eine detaillierte Modul-Spec.
-5. **Test Specification** — welche Tests welche Requirements verifizieren.
-6. **Verification Report** — Ergebnisse aller Tests, Coverage-Reports (inkl. MC/DC für DAL B+), Static-Analysis-Reports.
-7. **Validation Report** — Nachweis, dass das Produkt in Zielumgebungen korrekt funktioniert (Interop-Tests, Target-Hardware-Tests).
-8. **Safety Manual** — Anleitung für Integratoren, wie das Produkt in einem zertifizierten System korrekt eingesetzt wird.
-9. **Change Management Log** — vollständige Git-History mit `[REQ-...]`-Tags, aggregiert als Change-Log.
-10. **Tool Qualification Report** — Ferrocene-Qualifikations-Artefakte, verlinkt von Ferrous Systems.
-11. **SBOM** — CycloneDX Software Bill of Materials pro Release.
-12. **Vulnerability Analysis** — `cargo-audit`-Reports, threat-modeling-Dokumente, CVE-Tracking.
+1. **Safety Plan** — document describing how safety is implemented in the project (this document + supplements).
+2. **Requirements Specification** — formal requirements for the safe subset, each with a unique ID.
+3. **Architecture Specification** — `02_architecture.md` + addendum for safe-subset internals.
+4. **Module Specification** — a detailed module spec per crate in the safe subset.
+5. **Test Specification** — which tests verify which requirements.
+6. **Verification Report** — results of all tests, coverage reports (incl. MC/DC for DAL B+), static-analysis reports.
+7. **Validation Report** — evidence that the product works correctly in target environments (interop tests, target-hardware tests).
+8. **Safety Manual** — guidance for integrators on how the product is used correctly in a certified system.
+9. **Change Management Log** — complete git history with `[REQ-...]` tags, aggregated as a change log.
+10. **Tool Qualification Report** — Ferrocene qualification artifacts, linked from Ferrous Systems.
+11. **SBOM** — CycloneDX Software Bill of Materials per release.
+12. **Vulnerability Analysis** — `cargo-audit` reports, threat-modeling documents, CVE tracking.
 
-### 6.4 Ziel-Standards
+### 6.4 Target standards
 
-Bei Track-C-Aktivierung werden diese Standards angestrebt (in Priorität):
+On Track-C activation these standards are targeted (in priority):
 
-1. **ISO 26262 ASIL D** (Automotive) — primär für Automotive SDV-Kunden.
-2. **IEC 61508 SIL 3** (Industrielle Basis) — Grundlage für weitere industrielle Standards.
-3. **DO-178C DAL B** initial, DAL A perspektivisch (Avionik).
-4. **IEC 62304 Class C** (Medizintechnik) — sekundär, je nach Kunden-Nachfrage.
-5. **EN 50128/50716** (Bahn) — sekundär.
+1. **ISO 26262 ASIL D** (automotive) — primary, for automotive SDV customers.
+2. **IEC 61508 SIL 3** (industrial baseline) — basis for further industrial standards.
+3. **DO-178C DAL B** initially, DAL A prospectively (avionics).
+4. **IEC 62304 Class C** (medical) — secondary, depending on customer demand.
+5. **EN 50128/50716** (railway) — secondary.
 
-## 7 Violations-Protokoll
+## 7 Violations protocol
 
-Wenn ein Commit die Safety-Regeln verletzt:
+When a commit violates the safety rules:
 
-1. **CI blockiert den Merge.** Lint- oder Test-Failures erscheinen im PR.
-2. **Auto-Fix wo möglich.** Claude-Teams-Agenten können viele Verletzungen automatisch beheben (z.B. `.unwrap()` durch explizites Error-Handling ersetzen).
-3. **Eskalation bei echten Konflikten.** Wenn eine Safety-Regel aus technischer Notwendigkeit gebrochen werden muss (z.B. Performance-kritischer `unsafe`-Block), ist ein formeller Safety-Waiver-Request erforderlich. Dieser erfordert:
-   - Technische Begründung
-   - Alternativ-Analyse (warum andere Wege nicht funktionieren)
-   - Risiko-Bewertung
-   - Kompensatorische Maßnahmen (z.B. zusätzliche Tests, Fuzz-Coverage)
-   - Zustimmung vom Safety-Engineering-Lead und einem Senior-Engineer aus einem anderen Team
-4. **Dokumentation im Safety-Waiver-Register.** Alle erteilten Waiver werden im Repo unter `docs/safety-waivers/` dokumentiert und in Audit einbezogen.
+1. **CI blocks the merge.** Lint or test failures appear in the PR.
+2. **Auto-fix where possible.** Claude-team agents can fix many violations automatically (e.g. replace `.unwrap()` with explicit error handling).
+3. **Escalation on genuine conflicts.** When a safety rule must be broken out of technical necessity (e.g. a performance-critical `unsafe` block), a formal safety-waiver request is required. It requires:
+   - A technical justification
+   - An alternatives analysis (why other ways do not work)
+   - A risk assessment
+   - Compensating measures (e.g. additional tests, fuzz coverage)
+   - Approval from the Safety Engineering Lead and a senior engineer from another team
+4. **Documentation in the safety-waiver register.** All granted waivers are documented in the repo under `docs/safety-waivers/` and included in the audit.
 
-## 8 Rückblick und Review
+## 8 Retrospective and review
 
-Diese Safety-Architektur wird mindestens einmal pro Projektphase formell reviewt. Änderungen erfordern Safety-Engineering-Lead-Zustimmung und werden in den Release-Notes prominent vermerkt.
+This safety architecture is formally reviewed at least once per project phase. Changes require Safety Engineering Lead approval and are noted prominently in the release notes.

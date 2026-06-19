@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Hot-Path-Hook-Points fuer `zerodds-monitor` (zerodds-monitor-1.0 §2.5).
+//! Hot-path hook points for `zerodds-monitor` (zerodds-monitor-1.1 §2.5).
 //!
-//! Existiert nur unter `cfg(feature = "metrics")`. Call-Sites in
-//! `plugin.rs` tragen ein eigenes `#[cfg(feature = "metrics")]`-Attribut.
+//! Exists only under `cfg(feature = "metrics")`. Call sites in
+//! `plugin.rs` carry their own `#[cfg(feature = "metrics")]` attribute.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -15,7 +15,7 @@ fn op_counter(operation: &'static str) -> Arc<Counter> {
     let r = default_registry();
     r.set_help(
         metric_names::DDS_SECURITY_CRYPTO_OPERATIONS_TOTAL,
-        "Crypto-Operationen (zerodds-monitor-1.0 §2.5)",
+        "Crypto operations (zerodds-monitor-1.1 §2.5)",
     );
     r.counter(
         metric_names::DDS_SECURITY_CRYPTO_OPERATIONS_TOTAL,
@@ -27,7 +27,7 @@ fn op_histogram(operation: &'static str) -> Arc<LabeledHistogram> {
     let r = default_registry();
     r.set_help(
         metric_names::DDS_SECURITY_CRYPTO_LATENCY_SECONDS,
-        "Crypto-Latency (zerodds-monitor-1.0 §2.5)",
+        "Crypto-Latency (zerodds-monitor-1.1 §2.5)",
     );
     r.histogram(
         metric_names::DDS_SECURITY_CRYPTO_LATENCY_SECONDS,
@@ -35,15 +35,15 @@ fn op_histogram(operation: &'static str) -> Arc<LabeledHistogram> {
     )
 }
 
-/// RAII-Span um eine Crypto-Operation: bei Drop werden Counter +
-/// Histogramm aktualisiert.
+/// RAII span around a crypto operation: on drop the counter +
+/// histogram are updated.
 pub struct CryptoOp {
     operation: &'static str,
     start: Instant,
 }
 
 impl CryptoOp {
-    /// Startet einen Crypto-Op-Tracker.
+    /// Starts a crypto-op tracker.
     pub fn start(operation: &'static str) -> Self {
         Self {
             operation,

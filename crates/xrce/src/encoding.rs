@@ -1,44 +1,44 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Endianness-Helpers fuer XRCE-Submessage-Bodies.
+//! Endianness helpers for XRCE submessage bodies.
 //!
-//! XRCE-Submessage-Bodies sind nach Spec §8.3.4 entweder Little-Endian
-//! oder Big-Endian (E-Flag). Innerhalb eines Streams ist die Endianness
-//! konstant (§8.2.3). Submessage-spezifische Skalare-Felder (z.B. die
-//! `short`-Felder im ACKNACK-Body) folgen dieser Endianness.
+//! XRCE submessage bodies are, per Spec §8.3.4, either little-endian
+//! or big-endian (E-flag). Within a stream the endianness is
+//! constant (§8.2.3). Submessage-specific scalar fields (e.g. the
+//! `short` fields in the ACKNACK body) follow this endianness.
 //!
-//! Diese Datei kapselt die wenigen Primitiven, die wir brauchen:
-//! `u8`, `u16`, `u32`, sowie die kanonischen Read/Write-Helfer.
+//! This file encapsulates the few primitives we need:
+//! `u8`, `u16`, `u32`, as well as the canonical read/write helpers.
 //!
-//! Volle XCDR2-Strukturen werden in C6.2.B direkt ueber `zerodds-cdr`
-//! kodiert; in C6.2.A behandeln wir die Submessage-Payloads als
-//! opake Byte-Sequenz mit explizit benannten skalaren Praefix-Feldern.
+//! Full XCDR2 structures are encoded directly via `zerodds-cdr` in
+//! C6.2.B; in C6.2.A we treat the submessage payloads as an
+//! opaque byte sequence with explicitly named scalar prefix fields.
 
 use crate::error::XrceError;
 
-/// Wire-Endianness fuer XRCE-Submessage-Bodies.
+/// Wire endianness for XRCE submessage bodies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Endianness {
-    /// Big-Endian (E-Flag = 0).
+    /// Big-endian (E-flag = 0).
     Big,
-    /// Little-Endian (E-Flag = 1) — Default in fast allen XRCE-Stacks.
+    /// Little-endian (E-flag = 1) — default in almost all XRCE stacks.
     #[default]
     Little,
 }
 
 impl Endianness {
-    /// `true`, wenn LE.
+    /// `true` if LE.
     #[must_use]
     pub fn is_little(self) -> bool {
         matches!(self, Self::Little)
     }
 }
 
-/// Schreibt `u16` in `out[..2]` mit gewuenschter Endianness.
+/// Writes `u16` into `out[..2]` with the desired endianness.
 ///
 /// # Errors
-/// `WriteOverflow`, wenn `out.len() < 2`.
+/// `WriteOverflow` if `out.len() < 2`.
 pub fn write_u16(out: &mut [u8], value: u16, e: Endianness) -> Result<(), XrceError> {
     if out.len() < 2 {
         return Err(XrceError::WriteOverflow {
@@ -55,10 +55,10 @@ pub fn write_u16(out: &mut [u8], value: u16, e: Endianness) -> Result<(), XrceEr
     Ok(())
 }
 
-/// Liest `u16` aus `bytes[..2]` mit gewuenschter Endianness.
+/// Reads `u16` from `bytes[..2]` with the desired endianness.
 ///
 /// # Errors
-/// `UnexpectedEof`, wenn `bytes.len() < 2`.
+/// `UnexpectedEof` if `bytes.len() < 2`.
 pub fn read_u16(bytes: &[u8], e: Endianness) -> Result<u16, XrceError> {
     if bytes.len() < 2 {
         return Err(XrceError::UnexpectedEof {
@@ -75,26 +75,26 @@ pub fn read_u16(bytes: &[u8], e: Endianness) -> Result<u16, XrceError> {
     }
 }
 
-/// Schreibt `i16` in `out[..2]`.
+/// Writes `i16` into `out[..2]`.
 ///
 /// # Errors
-/// `WriteOverflow`, wenn `out.len() < 2`.
+/// `WriteOverflow` if `out.len() < 2`.
 pub fn write_i16(out: &mut [u8], value: i16, e: Endianness) -> Result<(), XrceError> {
     write_u16(out, value as u16, e)
 }
 
-/// Liest `i16` aus `bytes[..2]`.
+/// Reads `i16` from `bytes[..2]`.
 ///
 /// # Errors
-/// `UnexpectedEof`, wenn `bytes.len() < 2`.
+/// `UnexpectedEof` if `bytes.len() < 2`.
 pub fn read_i16(bytes: &[u8], e: Endianness) -> Result<i16, XrceError> {
     Ok(read_u16(bytes, e)? as i16)
 }
 
-/// Schreibt `u32` in `out[..4]`.
+/// Writes `u32` into `out[..4]`.
 ///
 /// # Errors
-/// `WriteOverflow`, wenn `out.len() < 4`.
+/// `WriteOverflow` if `out.len() < 4`.
 pub fn write_u32(out: &mut [u8], value: u32, e: Endianness) -> Result<(), XrceError> {
     if out.len() < 4 {
         return Err(XrceError::WriteOverflow {
@@ -111,10 +111,10 @@ pub fn write_u32(out: &mut [u8], value: u32, e: Endianness) -> Result<(), XrceEr
     Ok(())
 }
 
-/// Liest `u32` aus `bytes[..4]`.
+/// Reads `u32` from `bytes[..4]`.
 ///
 /// # Errors
-/// `UnexpectedEof`, wenn `bytes.len() < 4`.
+/// `UnexpectedEof` if `bytes.len() < 4`.
 pub fn read_u32(bytes: &[u8], e: Endianness) -> Result<u32, XrceError> {
     if bytes.len() < 4 {
         return Err(XrceError::UnexpectedEof {

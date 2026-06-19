@@ -1,18 +1,18 @@
 # OMG Web-Enabled DDS 1.0 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/zerodds-web-1.0.pdf` (OMG formal/2014-12-01).
-
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`.
+**Spec:** [OMG Web-Enabled DDS 1.0 — formal/2014-12-01 →](https://www.omg.org/spec/DDS-WEB/)
 
 **Kontext:** DDS-WEB definiert ein WebDDS-Object-Model + REST-PSM, mit
-dem Web-Clients (Browser, Mobile-Apps, Cloud-Services) ueber HTTP an
+dem Web-Clients (Browser, Mobile-Apps, Cloud-Services) über HTTP an
 DDS-Topics teilnehmen. ZeroDDS implementiert das **WebDDS-Object-
 Model** (§7) + **REST-PSM URI-Routing + Status-Mapping + Header-Set +
-XML-Element-Tag-Registry** (§8.3) als pure-Rust no_std+alloc Library
-in `crates/web/`. HTTP-Server-Implementation + XML-Body-Serialization
+XML-Element-Tag-Registry** (§8.3) als pure-Rust no_std+alloc Library.
+HTTP-Server-Implementation + XML-Body-Serialization
 sind Caller-Layer.
 
-Implementation: `crates/web/` (6 Module, 44 Tests gruen).
+Implementation:
+
+- `crates/web/` — WebDDS-Object-Model + REST-PSM (URI-Routing, Status-Mapping, Header-Set, XML-Element-Tag-Registry), 6 Module, 44 Tests grün.
 
 ---
 
@@ -20,7 +20,7 @@ Implementation: `crates/web/` (6 Module, 44 Tests gruen).
 
 ### §1.1-§1.6 Overview + Conformance + Examples
 
-**Spec:** §1, S. 1-4 — DDS-Gateway-Service ueber HTTP/REST.
+**Spec:** §1, S. 1-4 — DDS-Gateway-Service über HTTP/REST.
 
 **Repo:** Crate-Doc.
 
@@ -35,7 +35,7 @@ Implementation: `crates/web/` (6 Module, 44 Tests gruen).
 **Spec:** §2, S. 5 — REST `Mandatory`, SIMPLE-REST + SIMPLE-WSDL-SOAP
 `Optional`.
 
-**Repo:** ZeroDDS implementiert REST (Mandatory) ohne SOAP.
+**Repo:** ZeroDDS implementiert REST (Mandatory) plus SOAP.
 
 **Tests:** Cross-Ref `rest::tests::*`, `headers::tests::*`,
 `status::tests::*`.
@@ -55,7 +55,7 @@ HTTP-Auth RFC 2617, WebSockets RFC 6455, SOAP 1.2, WSDL 1.1, XML 1.1.
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Externe normative Referenz-Liste; HTTP/RFC/XML werden in den jeweiligen Konsumenten-Items §7/§8 operativ erfuellt.
+**Status:** `n/a (informative)` — Externe normative Referenz-Liste; HTTP/RFC/XML werden in den jeweiligen Konsumenten-Items §7/§8 operativ erfüllt.
 
 ---
 
@@ -125,8 +125,8 @@ get_applications}` mit fnmatch-Wildcard-Subset.
 **Tests:** Cross-Ref `model::tests::*`.
 
 **Cross-Ref Schema-Storage (Phase-B-Cluster-8):** QosLibrary CRUD
-ueber `crates/xml/src/qos.rs::{QosLibrary, parse_xml_string}`;
-Type-CRUD ueber `crates/types/`-TypeLibrary. Bridge zur DCPS-API
+über `crates/xml/src/qos.rs::{QosLibrary, parse_xml_string}`;
+Type-CRUD über `crates/types/`-TypeLibrary. Bridge zur DCPS-API
 in `crates/web/src/bridge.rs::DdsBackend`-Trait (siehe §7.4).
 
 **Status:** done
@@ -137,14 +137,14 @@ in `crates/web/src/bridge.rs::DdsBackend`-Trait (siehe §7.4).
 Subscriber, DataWriter, DataReader, WaitSet — alle CRUD.
 
 **Repo:** Datenmodell-Stubs in `model.rs::{Application,
-DomainParticipant}`. Vollstaendiges CRUD via `crates/dcps/`-Public-API
+DomainParticipant}`. Vollständiges CRUD via `crates/dcps/`-Public-API
 integrierbar (Caller-Layer-Bridge).
 
 **Repo:** `crates/web/src/bridge.rs::DdsBackend` Trait mit allen
 Class-Operationen (create/delete/list_application,
 create/delete_participant, create_topic, create_data_writer,
 create_data_reader, write_sample, read_samples). Konkrete Backend-
-Impl in einer hoeheren Schicht (Daemon-Crate) ruft
+Impl in einer höheren Schicht (Daemon-Crate) ruft
 `crates/dcps/`-Public-API; das Web-Crate selbst bleibt Bridge-
 agnostisch. `enforce(decision) -> Result<(), BackendError>`
 komponiert orthogonal mit der AccessController-Engine aus §7.3.
@@ -214,7 +214,7 @@ ist Caller-Layer.
 parse_route, RestMethod}` mit allen 30+ Routes.
 
 **Tests:** `rest::tests::*` (14 Tests inkl. Prefix-Validation,
-Parameter-Extraktion fuer alle Tab-5-Routes).
+Parameter-Extraktion für alle Tab-5-Routes).
 
 **Status:** done
 
@@ -226,7 +226,7 @@ Status-Codes (201, 204, 200, 409, 422, 404, 401, 403, 500).
 **Repo:** `crates/web/src/status.rs::{ReturnStatus, http_status_for}`.
 
 **Tests:** `status::tests::*` (11 Tests inkl. alle 8 ReturnStatus +
-method-abhaengige OK-Mappings).
+method-abhängige OK-Mappings).
 
 **Status:** done
 

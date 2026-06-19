@@ -4,7 +4,7 @@
 //! `READ_DATA` Submessage (id=8, Spec §8.3.5.9).
 //!
 //! Direction: Client → Agent. Payload = `READ_DATA_Payload`
-//! (extends `BaseObjectRequest` mit `ReadSpecification`).
+//! (extends `BaseObjectRequest` with `ReadSpecification`).
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// Opaker Body fuer `READ_DATA`.
+/// Opaque body for `READ_DATA`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ReadDataPayload {
     /// XCDR2 `BaseObjectRequest + ReadSpecification`.
@@ -20,7 +20,7 @@ pub struct ReadDataPayload {
 }
 
 impl ReadDataPayload {
-    /// Verpackt in `Submessage`.
+    /// Packs into a `Submessage`.
     ///
     /// # Errors
     /// `PayloadTooLarge`.
@@ -32,7 +32,7 @@ impl ReadDataPayload {
         )
     }
 
-    /// Extrahiert aus `Submessage`.
+    /// Extracts from a `Submessage`.
     ///
     /// # Errors
     /// `ValueOutOfRange`.

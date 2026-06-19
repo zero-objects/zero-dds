@@ -10,9 +10,9 @@ Pure-Rust no_std + alloc, `forbid(unsafe_code)`. Part of [**ZeroDDS**](../../REA
 
 ## Spec
 
-- **DDS 1.4** §2.2.3 — alle 22 Standard-Policies + Compatibility-Matrix.
-- **DDS 1.4** §2.2.3.23 / §2.2.2.5.5 — Exclusive-Ownership-Resolver-Logik.
-- **DDSI-RTPS 2.5** §9.6.3.2 — Wire-PIDs für ParameterList.
+- **DDS 1.4** §2.2.3 — all 22 standard policies + compatibility matrix.
+- **DDS 1.4** §2.2.3.23 / §2.2.2.5.5 — exclusive-ownership resolver logic.
+- **DDSI-RTPS 2.5** §9.6.3.2 — wire PIDs for ParameterList.
 
 ## Quick Start
 
@@ -38,22 +38,22 @@ assert!(matches!(
 
 **Top-Level:** `Duration`, `Pid`, `CompatibilityResult`, `IncompatibleReason`, `check_compatibility`.
 
-**Policies-Modul:** 22 Standard-Policies plus Kind-Enums plus QoS-Aggregate (`ReaderQos`, `WriterQos`).
+**Policies module:** 22 standard policies plus kind enums plus QoS aggregates (`ReaderQos`, `WriterQos`).
 
-**Exclusive-Ownership-Resolver:** `exclusive_ownership::{OwnershipResolver, OwnershipCandidate, resolve_strongest, WriterGuidBytes}`.
+**Exclusive-ownership resolver:** `exclusive_ownership::{OwnershipResolver, OwnershipCandidate, resolve_strongest, WriterGuidBytes}`.
 
-Volle Liste in der [rustdoc](https://docs.rs/zerodds-qos).
+Full list in the [rustdoc](https://docs.rs/zerodds-qos).
 
-## Feature-Flags
+## Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std`   | ✅       | std-Re-Exports, implies `alloc` |
-| `alloc` | ✅       | mandatory (Partition-Strings, GenericData, …); kept for consistency |
+| `std`   | ✅       | std re-exports, implies `alloc` |
+| `alloc` | ✅       | mandatory (partition strings, GenericData, …); kept for consistency |
 
 ## Stability
 
-Alle in der Public API gelisteten Items sind ab `1.0.0-rc.1` semver-stabil.
+All items listed in the public API are semver-stable from `1.0.0-rc.1`.
 
 ## Links
 

@@ -1,12 +1,12 @@
-//! E2E-Loopback-SPDP-Tests fuer zerodds-discovery (WP-0.7-A.1).
+//! E2E loopback SPDP tests for zerodds-discovery (WP-0.7-A.1).
 //!
-//! Diese Tests verifizieren, dass die SPDP-Pipeline End-to-End ueber
-//! UDP-Multicast funktioniert — ohne Container, ohne externen DDS-
-//! Stack. Sie laufen in CI und garantieren, dass die ZeroDDS-Seite
-//! des Discovery-Pfads korrekt implementiert ist.
+//! These tests verify that the SPDP pipeline works end-to-end over
+//! UDP multicast — without containers, without an external DDS
+//! stack. They run in CI and guarantee that the ZeroDDS side of the
+//! discovery path is implemented correctly.
 //!
-//! Live-Vendor-Tests (Cyclone, Fast-DDS) brauchen Docker + Linux mit
-//! IP-Multicast — siehe `tests/interop/run_interop.sh`.
+//! Live vendor tests (Cyclone, Fast-DDS) need Docker + Linux with
+//! IP multicast — see `tests/interop/run_interop.sh`.
 
 #![allow(
     clippy::expect_used,
@@ -60,6 +60,7 @@ fn make_participant(prefix_byte: u8, port: u32) -> ParticipantBuiltinTopicData {
         properties: Default::default(),
         identity_token: None,
         permissions_token: None,
+        participant_security_info: None,
         identity_status_token: None,
         sig_algo_info: None,
         kx_algo_info: None,
@@ -67,8 +68,8 @@ fn make_participant(prefix_byte: u8, port: u32) -> ParticipantBuiltinTopicData {
     }
 }
 
-/// Hilfs-Test: kann diese Plattform Multicast? Wenn nein, skip
-/// nachfolgende Multicast-Tests.
+/// Helper: can this platform do multicast? If not, skip the
+/// subsequent multicast tests.
 fn multicast_available(port: u16) -> bool {
     let group = Ipv4Addr::from(SPDP_DEFAULT_MULTICAST_ADDRESS);
     UdpTransport::bind_multicast_v4(group, port, Ipv4Addr::UNSPECIFIED).is_ok()
@@ -76,9 +77,9 @@ fn multicast_available(port: u16) -> bool {
 
 #[test]
 fn loopback_multicast_self_discovery() {
-    // Ein Participant sendet sein eigenes Beacon und entdeckt sich
-    // selbst via Loopback-Multicast. Wenn die Plattform kein
-    // Multicast unterstuetzt, skippen wir.
+    // A participant sends its own beacon and discovers itself via
+    // loopback multicast. If the platform does not support
+    // multicast, we skip.
     let port = spdp_multicast_port(0) as u16;
     if !multicast_available(port) {
         eprintln!("Multicast not available; skipping loopback_multicast_self_discovery");
@@ -98,8 +99,8 @@ fn loopback_multicast_self_discovery() {
     let datagram = beacon.serialize().expect("serialize");
     let dest = Locator::udp_v4(SPDP_DEFAULT_MULTICAST_ADDRESS, u32::from(port));
 
-    // Ein paar Mal senden, weil das erste Datagram ggf. verloren geht
-    // (IGMP-Setup auf machtem OS, Loopback-Routing-Initialisierung).
+    // Send a few times, since the first datagram may be lost
+    // (IGMP setup on some OSes, loopback routing initialization).
     let stop = Arc::new(AtomicBool::new(false));
     let stop_send = Arc::clone(&stop);
     let send_handle = thread::spawn(move || {
@@ -109,7 +110,7 @@ fn loopback_multicast_self_discovery() {
         }
     });
 
-    // Empfaenger: bis zu 3 Sekunden auf eigenen Beacon warten.
+    // Receiver: wait up to 3 seconds for our own beacon.
     let reader = SpdpReader::new();
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut found = false;
@@ -134,8 +135,8 @@ fn loopback_multicast_self_discovery() {
 
 #[test]
 fn two_zerodds_participants_discover_each_other() {
-    // Simuliert zwei ZeroDDS-Participants auf derselben Maschine,
-    // die sich ueber Multicast gegenseitig entdecken.
+    // Simulates two ZeroDDS participants on the same machine that
+    // discover each other over multicast.
     let port = spdp_multicast_port(0) as u16;
     if !multicast_available(port) {
         eprintln!("Multicast not available; skipping two-participant test");
@@ -143,9 +144,9 @@ fn two_zerodds_participants_discover_each_other() {
     }
     let group = Ipv4Addr::from(SPDP_DEFAULT_MULTICAST_ADDRESS);
 
-    // Zwei separate Receiver (gleiche Group, unterschiedliche Sockets).
-    // Auf macOS Phase-0 ohne SO_REUSEADDR ist der zweite Bind ggf.
-    // problematisch; dann skippen.
+    // Two separate receivers (same group, different sockets).
+    // On macOS Phase 0 without SO_REUSEADDR the second bind may be
+    // problematic; skip then.
     let receiver_a = match UdpTransport::bind_multicast_v4(group, port, Ipv4Addr::UNSPECIFIED) {
         Ok(t) => t,
         Err(_) => {
@@ -156,8 +157,8 @@ fn two_zerodds_participants_discover_each_other() {
     .with_timeout(Some(Duration::from_millis(500)))
     .expect("set timeout a");
 
-    // Receiver B braucht eigenen Socket. Ohne REUSEADDR werden viele
-    // OSes den zweiten Bind ablehnen — wir geben einen anderen Port.
+    // Receiver B needs its own socket. Without REUSEADDR many OSes
+    // reject the second bind — we use a different port.
     let receiver_b = match UdpTransport::bind_multicast_v4(group, 0, Ipv4Addr::UNSPECIFIED) {
         Ok(t) => t,
         Err(e) => {
@@ -189,7 +190,7 @@ fn two_zerodds_participants_discover_each_other() {
     let stop = Arc::new(AtomicBool::new(false));
     let stop_send = Arc::clone(&stop);
 
-    // Sender-Thread: beide Beacons periodisch.
+    // Sender thread: both beacons periodically.
     let send_handle = thread::spawn(move || {
         while !stop_send.load(Ordering::Relaxed) {
             let _ = sender_a.send(&dest, &datagram_a);
@@ -198,7 +199,7 @@ fn two_zerodds_participants_discover_each_other() {
         }
     });
 
-    // Beide Receiver: laufen 3 Sekunden, sammeln Cache.
+    // Both receivers: run for 3 seconds, accumulate cache.
     let reader = SpdpReader::new();
     let deadline = Instant::now() + Duration::from_secs(3);
     while Instant::now() < deadline {
@@ -221,9 +222,9 @@ fn two_zerodds_participants_discover_each_other() {
     eprintln!("Receiver A discovered {n_a} participants");
     eprintln!("Receiver B discovered {n_b} participants");
 
-    // Mind. eine Discovery in mind. einem Cache — schwacher Assert,
-    // aber resistent gegen Loss-Rate von Loopback-Multicast auf
-    // restriktiven CI-Umgebungen.
+    // At least one discovery in at least one cache — a weak assert,
+    // but resistant to the loss rate of loopback multicast in
+    // restrictive CI environments.
     assert!(
         n_a >= 1 || n_b >= 1,
         "at least one receiver should discover at least one participant"

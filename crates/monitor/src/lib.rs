@@ -3,30 +3,30 @@
 
 //! Crate `zerodds-monitor`. Safety classification: **STANDARD**.
 //!
-//! Observability-Substrate fuer ZeroDDS — Metric-Registry,
-//! Prometheus-Text-Exporter, W3C-Trace-Context-PID-Codec, Span-Schema.
+//! Observability substrate for ZeroDDS — metric registry,
+//! Prometheus text exporter, W3C trace-context PID codec, span schema.
 //!
-//! Spec: `docs/specs/zerodds-monitor-1.0.md`.
+//! Spec: `docs/specs/zerodds-monitor-1.1.md`.
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 4 — Core Services. Konsumenten-Pfad-Aufbau ueber den
-//! Foundation-Tracing-Primitives ([`zerodds_foundation::tracing`]).
+//! Layer 4 — core services. The consumer path builds on the
+//! foundation tracing primitives ([`zerodds_foundation::tracing`]).
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! - [`Counter`] / [`Gauge`] / [`LabeledHistogram`] — Metric-Typen.
-//! - [`Labels`] — Schluessel/Wert-Paare fuer Metric-Identitaet.
-//! - [`Registry`] / [`default_registry`] — Single-Source-of-Truth.
-//! - [`render_prometheus`] — Prometheus-Text-Exposition.
-//! - [`TraceContextPid`] — `PID_VENDOR_TRACE_CONTEXT` (0x0D00) Codec.
-//! - [`MonitorConfig`] / [`TraceContextEmission`] — Lifecycle-Config.
-//! - [`metric_names`] / [`span_names`] — Standard-Konstanten der 31
-//!   Spec-Metrics + 9 Spec-Spans.
+//! - [`Counter`] / [`Gauge`] / [`LabeledHistogram`] — metric types.
+//! - [`Labels`] — key/value pairs for metric identity.
+//! - [`Registry`] / [`default_registry`] — single source of truth.
+//! - [`render_prometheus`] — Prometheus text exposition.
+//! - [`TraceContextPid`] — `PID_VENDOR_TRACE_CONTEXT` (0x0D00) codec.
+//! - [`MonitorConfig`] / [`TraceContextEmission`] — lifecycle config.
+//! - [`metric_names`] / [`span_names`] — standard constants of the 31
+//!   spec metrics + 9 spec spans.
 //! - [`serve_prometheus`] (Feature `prometheus-server`) — Mini-HTTP-
 //!   `/metrics`-Endpoint.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust
 //! use std::sync::Arc;
@@ -76,12 +76,15 @@ pub use trace_context::{
     PID_VENDOR_TRACE_CONTEXT, TraceContextError, TraceContextPid, TraceParent, TraceState,
 };
 
-pub use config::{MonitorConfig, TraceContextEmission};
+pub use config::{
+    GuidLabelPolicy, MonitorConfig, TopicLabelPolicy, TraceContextEmission, active_config,
+    guid_label, set_config, topic_label,
+};
 
 #[cfg(feature = "prometheus-server")]
 pub use server::{ServeError, serve_prometheus};
 
-/// Re-Export: das `foundation::tracing::Histogram` ist die Substrate-
-/// Datenstruktur. Der monitor-Crate fuegt nur Labels + Registry-
-/// Indirektion hinzu.
+/// Re-export: `foundation::tracing::Histogram` is the substrate data
+/// structure. The monitor crate only adds labels + registry
+/// indirection.
 pub use zerodds_foundation::tracing::Histogram;

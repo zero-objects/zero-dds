@@ -1,4 +1,4 @@
-// Fixture: alle primitives in einem struct (inkl. unsigned-Workaround).
+// Fixture: all primitives in one struct (incl. unsigned workaround).
 struct Primitives {
     boolean a_bool;
     octet a_octet;

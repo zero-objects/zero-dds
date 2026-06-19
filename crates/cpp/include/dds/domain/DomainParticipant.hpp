@@ -22,7 +22,7 @@ namespace domain {
 /// DomainParticipant (Spec §7.5.11.5).
 class DomainParticipant {
 public:
-    /// Konstruiert einen Participant fuer die gegebene Domain-Id mit Default-QoS.
+    /// Constructs a participant for the given domain id with default QoS.
     explicit DomainParticipant(uint32_t domain_id) {
         const zerodds_ZeroDdsDomainParticipantFactory* f = zerodds_dpf_get_instance();
         handle_ = zerodds_dpf_create_participant(f, domain_id, nullptr);
@@ -30,10 +30,10 @@ public:
             throw ::dds::core::Error("DomainParticipant::create failed");
         }
     }
-    /// Konstruiert mit expliziter QoS. UserData-Bytes-Lifetime: Caller
-    /// muss `qos.user_data().value()` waehrend des `create_participant`-
-    /// Aufrufs am Leben halten — die C-FFI kopiert die Bytes in den
-    /// Rust-Heap.
+    /// Constructs with explicit QoS. UserData bytes lifetime: the caller
+    /// must keep `qos.user_data().value()` alive during the
+    /// `create_participant` call — the C FFI copies the bytes into the
+    /// Rust heap.
     DomainParticipant(uint32_t domain_id, const ::dds::core::DomainParticipantQos& qos) {
         const zerodds_ZeroDdsDomainParticipantFactory* f = zerodds_dpf_get_instance();
         auto native = ::dds::core::detail::to_native(qos);
@@ -58,12 +58,12 @@ public:
     }
     ~DomainParticipant() { close(); }
 
-    /// Domain-Id.
+    /// Domain id.
     uint32_t domain_id() const {
         return zerodds_dp_get_domain_id(handle_);
     }
 
-    /// Liveliness fuer alle MANUAL_BY_PARTICIPANT-Writers asserten.
+    /// Assert liveliness for all MANUAL_BY_PARTICIPANT writers.
     void assert_liveliness() {
         int rc = zerodds_dp_assert_liveliness(handle_);
         ::dds::core::check_status(rc, "DomainParticipant::assert_liveliness");
@@ -115,7 +115,7 @@ public:
         return out;
     }
 
-    /// Native Handle (fuer Topic/Pub/Sub-Konstruktion).
+    /// Native handle (for Topic/Pub/Sub construction).
     zerodds_ZeroDdsDomainParticipant* native_handle() const { return handle_; }
 
 private:
@@ -133,11 +133,11 @@ private:
 /// DomainParticipantFactory (Spec §7.5.11.4). Singleton.
 class DomainParticipantFactory {
 public:
-    /// Erzeugt Participant.
+    /// Creates a participant.
     static DomainParticipant create_participant(uint32_t domain_id) {
         return DomainParticipant(domain_id);
     }
-    /// Erzeugt Participant mit QoS.
+    /// Creates a participant with QoS.
     static DomainParticipant create_participant(uint32_t domain_id,
                                                 const ::dds::core::DomainParticipantQos& qos) {
         return DomainParticipant(domain_id, qos);
@@ -147,7 +147,7 @@ public:
 } // namespace domain
 } // namespace dds
 
-// Topic-Constructor-Implementations (forward-deklariert in Topic.hpp).
+// Topic constructor implementations (forward-declared in Topic.hpp).
 namespace dds {
 namespace topic {
 

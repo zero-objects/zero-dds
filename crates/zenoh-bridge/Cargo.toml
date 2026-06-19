@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Bidirektionale Bridge zwischen ZeroDDS-DCPS und Eclipse-Zenoh: Topic-Mapping + QoS-Translation + optionaler Live-Runtime via Feature `zenoh-runtime`."
+description = "Bidirectional bridge between ZeroDDS DCPS and Eclipse Zenoh: topic mapping + QoS translation + optional live runtime via the `zenoh-runtime` feature."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-zenoh-bridge"
 readme = "README.md"
@@ -18,9 +18,9 @@ publish = true
 workspace = true
 
 [features]
-# Default ohne zenoh — Crate baut als Skeleton (Topic-Map, Mapping-Logik)
-# fuer Workspace-CI ohne externe Dep. Echter Zenoh-Bridge-Pfad mit
-# `--features zenoh-runtime` (zieht zerodds-dcps + zenoh + tokio).
+# Default without zenoh — the crate builds as a skeleton (topic map, mapping logic)
+# for workspace CI without an external dep. The real Zenoh bridge path with
+# `--features zenoh-runtime` (pulls zerodds-dcps + zenoh + tokio).
 default = ["std"]
 std = []
 zenoh-runtime = [
@@ -31,10 +31,10 @@ zenoh-runtime = [
 ]
 
 [dependencies]
-zerodds-qos = { version = "1.0.0-rc.1", path = "../qos" }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos" }
 
-# Optional, nur bei zenoh-runtime aktiv.
-zerodds-dcps = { version = "1.0.0-rc.1", path = "../dcps", optional = true }
+# Optional, active only with zenoh-runtime.
+zerodds-dcps = { version = "1.0.0-rc.3", path = "../dcps", optional = true }
 zenoh = { version = "1", optional = true }
 tokio = { version = "1", optional = true, features = ["rt", "rt-multi-thread", "sync", "macros"] }
 thiserror = { version = "2", optional = true }

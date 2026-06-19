@@ -1,0 +1,34 @@
+[package]
+name = "zerodds-durability-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Standalone DDS Durability-Service daemon (ADR 0009): ingests TRANSIENT/PERSISTENT topics over RTPS and replays them to late-joiners, surviving writer death and service restart."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-durability-service"
+readme = "README.md"
+keywords = ["dds", "durability", "persistence", "daemon"]
+categories = ["network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-dcps = { version = "1.0.0-rc.3", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos" }
+zerodds-types = { version = "1.0.0-rc.3", path = "../types" }
+zerodds-durability-store = { version = "1.0.0-rc.3", path = "../durability-store" }
+
+[dev-dependencies]
+zerodds-dcps = { version = "1.0.0-rc.3", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos" }
+zerodds-types = { version = "1.0.0-rc.3", path = "../types" }
+zerodds-durability-store-sqlite = { version = "1.0.0-rc.3", path = "../durability-store-sqlite" }
+zerodds-durability-store-file = { version = "1.0.0-rc.3", path = "../durability-store-file" }

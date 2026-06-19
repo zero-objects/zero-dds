@@ -179,5 +179,5 @@ L1-L4 gegen [`zerodds-xcdr2-bindings-conformance-1.0`](zerodds-xcdr2-bindings-co
   `{ get; init; }`-Pattern (immutable nach Constructor); Decode nutzt
   Object-Initializer-Syntax.
 - **§11.4 Source-Generators**: idl-csharp emittiert `.cs`-Files;
-  Roslyn-Source-Generator bleibt Folge-Sprint (kein Bestandteil dieser
-  v1.0-Spec).
+  ein Roslyn-Source-Generator ist optional und nicht Bestandteil dieser
+  v1.0-Spec.

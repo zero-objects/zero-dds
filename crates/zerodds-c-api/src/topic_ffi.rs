@@ -10,11 +10,11 @@ use core::ptr;
 use crate::ZeroDdsStatus;
 use crate::entities::{ZeroDdsDomainParticipant, ZeroDdsTopic};
 
-/// Liefert den Topic-Namen als heap-allokierten C-String. Caller muss
-/// `zerodds_string_free` rufen.
+/// Returns the topic name as a heap-allocated C string. The caller must
+/// call `zerodds_string_free`.
 ///
 /// # Safety
-/// `t` valide.
+/// `t` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_topic_get_name(t: *mut ZeroDdsTopic) -> *mut c_char {
     if t.is_null() {
@@ -28,10 +28,10 @@ pub unsafe extern "C" fn zerodds_topic_get_name(t: *mut ZeroDdsTopic) -> *mut c_
     }
 }
 
-/// Liefert den Topic-Type-Namen. Caller muss `zerodds_string_free` rufen.
+/// Returns the topic type name. The caller must call `zerodds_string_free`.
 ///
 /// # Safety
-/// `t` valide.
+/// `t` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_topic_get_type_name(t: *mut ZeroDdsTopic) -> *mut c_char {
     if t.is_null() {
@@ -45,10 +45,10 @@ pub unsafe extern "C" fn zerodds_topic_get_type_name(t: *mut ZeroDdsTopic) -> *m
     }
 }
 
-/// Liefert den Owning-Participant.
+/// Returns the owning participant.
 ///
 /// # Safety
-/// `t` valide.
+/// `t` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_topic_get_participant(
     t: *mut ZeroDdsTopic,
@@ -60,26 +60,26 @@ pub unsafe extern "C" fn zerodds_topic_get_participant(
     unsafe { (*t).participant }
 }
 
-/// Gibt einen vorher von `zerodds_topic_get_*` allokierten C-String frei.
+/// Frees a C string previously allocated by `zerodds_topic_get_*`.
 ///
 /// # Safety
-/// `s` muss aus einer `zerodds_*_get_*`-Funktion stammen, die einen
-/// `*mut c_char` per `CString::into_raw` produziert.
+/// `s` must come from a `zerodds_*_get_*` function that produces a
+/// `*mut c_char` via `CString::into_raw`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_string_free(s: *mut c_char) {
     if s.is_null() {
         return;
     }
-    // SAFETY: see fn # Safety doc — s aus CString::into_raw von einer zerodds_*_get_*-fn.
+    // SAFETY: see fn # Safety doc — s from CString::into_raw of a zerodds_*_get_* fn.
     let _ = unsafe { CString::from_raw(s) };
 }
 
-/// Get-QoS in `out` (Spec §2.2.2.3.2.x).
-/// `out` ist `*mut ZeroDdsTopicQos` mit Caller-supplied Buffer fuer
-/// `topic_data.value` (variable Laenge).
+/// Get QoS into `out` (Spec §2.2.2.3.2.x).
+/// `out` is `*mut ZeroDdsTopicQos` with a caller-supplied buffer for
+/// `topic_data.value` (variable length).
 ///
 /// # Safety
-/// `t`, `out` valide.
+/// `t`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_topic_get_qos(
     t: *mut ZeroDdsTopic,
@@ -89,17 +89,17 @@ pub unsafe extern "C" fn zerodds_topic_get_qos(
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — t+out NULL-checked above; topic_qos_to_c
-    // handhabt variable-Length-Felder.
+    // handles variable-length fields.
     unsafe {
         let qos = (*t).qos.lock().map(|g| g.clone()).unwrap_or_default();
         crate::qos_ffi::topic_qos_to_c(&qos, out)
     }
 }
 
-/// Set-QoS (Spec §2.2.2.3.2.x). NULL = Default.
+/// Set QoS (Spec §2.2.2.3.2.x). NULL = default.
 ///
 /// # Safety
-/// `t` valide.
+/// `t` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_topic_set_qos(
     t: *mut ZeroDdsTopic,
@@ -132,10 +132,10 @@ pub struct ZeroDdsInconsistentTopicStatus {
     pub total_count_change: i32,
 }
 
-/// Liefert den InconsistentTopicStatus.
+/// Returns the InconsistentTopicStatus.
 ///
 /// # Safety
-/// `t` und `out` valide.
+/// `t` and `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_topic_get_inconsistent_topic_status(
     t: *mut ZeroDdsTopic,
@@ -163,7 +163,7 @@ mod tests {
 
     fn mk_participant(domain: u32) -> *mut ZeroDdsDomainParticipant {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: f aus dpf_get_instance, statisch valide.
+        // SAFETY: f from dpf_get_instance, statically valid.
         unsafe { zerodds_dpf_create_participant(f, domain, ptr::null()) }
     }
 
@@ -173,7 +173,7 @@ mod tests {
         let n = c"Hello";
         let tn = c"WorldType";
         let f = zerodds_dpf_get_instance();
-        // SAFETY: p aus mk; n+tn statisch; f statisch; raw_*-CStrings aus zerodds_topic_get_*.
+        // SAFETY: p from mk; n+tn static; f static; raw_* C strings from zerodds_topic_get_*.
         unsafe {
             let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
             assert!(!t.is_null());
@@ -202,7 +202,7 @@ mod tests {
         let tn = c"TT";
         let f = zerodds_dpf_get_instance();
         let mut s = ZeroDdsInconsistentTopicStatus::default();
-        // SAFETY: p aus mk; n+tn statisch; f statisch; s Stack-lokal.
+        // SAFETY: p from mk; n+tn static; f static; s stack-local.
         unsafe {
             let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
             let rc = zerodds_topic_get_inconsistent_topic_status(t, &mut s);

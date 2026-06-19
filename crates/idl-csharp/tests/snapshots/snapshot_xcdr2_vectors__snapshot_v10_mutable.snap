@@ -32,6 +32,12 @@ public sealed class MTypeSupport : IDdsTopicType<M>
     public byte[] Encode(M sample, EndianMode endian)
     {
         var w = new Xcdr2Writer(endian);
+        EncodeInto(w, sample);
+        return w.ToArray();
+    }
+
+    public void EncodeInto(Xcdr2Writer w, M sample)
+    {
         using (var __scope = w.BeginMutable())
         {
             w.WriteEmHeader(1u, 2, false);
@@ -40,24 +46,28 @@ public sealed class MTypeSupport : IDdsTopicType<M>
                 var __sub = new Xcdr2Writer(endian);
                 __sub.WriteString(sample.B);
                 var __subBytes = __sub.ToArray();
-                w.WriteEmHeader(2u, 3, false);
+                w.WriteEmHeader(2u, 4, false);
                 w.WriteUInt32((uint)__subBytes.Length);
                 w.WriteBytes(__subBytes);
             }
         }
-        return w.ToArray();
     }
 
     public M Decode(ReadOnlySpan<byte> bytes)
     {
         var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
+        return DecodeFrom(r);
+    }
+
+    public M DecodeFrom(Xcdr2Reader r)
+    {
         int __m0 = default;
         string __m1 = default;
         var __scope = r.BeginDHeader();
         while (!r.DHeaderDone(__scope))
         {
             var (__id, __lc, __mu) = r.ReadEmHeader();
-            if (__lc >= 3) { var __nx = r.ReadUInt32(); _ = __nx; }
+            if (__lc >= 4) { var __nx = r.ReadUInt32(); _ = __nx; }
             switch (__id)
             {
                 case 1u:

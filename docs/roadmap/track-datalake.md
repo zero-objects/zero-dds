@@ -1,12 +1,23 @@
 # Track RC2-A — Tiered-Storage Datalake-Engine
 
+> **⚠️ SUPERSEDED durch [ADR 0009](../adr/0009-durability-service.md) (2026-06-10).**
+> Der „Standalone-Tiered-Engine"-Schnitt wurde durch das **adapter-getriebene**
+> `DurabilityStore`-Trait ersetzt: das Lakehouse (Parquet + DuckDB) ist als
+> Cold-Tier-Adapter `crates/durability-store-lakehouse` geliefert, die
+> Tiering-Logik in `crates/durability-store` (`tiered.rs`). Statt einer
+> separaten Engine sind File-/SQLite-/Lakehouse-Adapter unter einem Trait
+> austauschbar; der Persistence-Daemon (`crates/durability-service`) nutzt sie.
+> Inhalt unten = historischer Plan.
+
 **Goal:** ZeroDDS bekommt eine konfigurierbare Tiered-Storage-Engine die
 DDS-Samples über lange Zeiträume aus zigtausenden Sensoren aggregiert,
 mit klar abgegrenzten Hot/Warm/Cold-Tiers und einer Persistent-API die
 sowohl als Builtin als auch über externe Engines (Postgres, Object-Store)
 betrieben werden kann.
 
-**Status:** 📋 todo
+**Status:** ⛔ superseded by ADR 0009 — Lakehouse-Cold-Tier als Adapter
+`durability-store-lakehouse` geliefert, Tiering in `durability-store`
+(war: 📋 todo)
 
 **Estimate:** 3-5 Personenwochen.
 

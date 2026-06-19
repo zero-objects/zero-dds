@@ -3,9 +3,9 @@
 //
 // dds/dds.hpp — DDS-PSM-Cxx 1.0 master include (Spec §2.2.3 file-layout).
 //
-// Spec-konforme C++-API ueber das ZeroDDS C-FFI (zerodds.h).
+// Spec-compliant C++ API over the ZeroDDS C-FFI (zerodds.h).
 //
-// Beispiel:
+// Example:
 //
 //   #include <dds/dds.hpp>
 //   using namespace dds;

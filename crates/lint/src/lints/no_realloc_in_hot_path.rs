@@ -1,33 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `dds_no_realloc_in_hot_path` — flaggt **Heap-Reallokationen** in
-//! Funktionen oder Modulen, die als Hot-Path-Realloc-Free markiert sind.
+//! `dds_no_realloc_in_hot_path` — flags **heap reallocations** in
+//! functions or modules marked as hot-path-realloc-free.
 //!
-//! # Zweck
+//! # Purpose
 //!
-//! Dieser Lint ist eine **strikt fokussierte Untermenge** von
-//! [`no_alloc_in_hot_path`](super::no_alloc_in_hot_path) — er flaggt
-//! nur die Allokations-Patterns, die spezifisch im DDS-Hot-Path
-//! verboten sind:
+//! This lint is a **strictly focused subset** of
+//! [`no_alloc_in_hot_path`](super::no_alloc_in_hot_path) — it flags
+//! only the allocation patterns that are specifically forbidden in the
+//! DDS hot path:
 //!
-//! * `Vec::with_capacity(...)` — Pro-Sample-Realloc, soll durch
-//!   `PoolBuffer<CAP>` ersetzt werden.
-//! * `Vec::new()` — wird in 90 % der Faelle direkt mit Push/Extend
-//!   befuellt und impliziert mehrfache Reallocs.
-//! * `Box::new(...)`, `Rc::new(...)`, `Arc::new(...)` — Heap-
-//!   Allokation pro Hot-Path-Iteration.
+//! * `Vec::with_capacity(...)` — per-sample realloc, should be replaced by
+//!   `PoolBuffer<CAP>`.
+//! * `Vec::new()` — in 90 % of cases it is immediately filled via push/extend
+//!   and implies multiple reallocs.
+//! * `Box::new(...)`, `Rc::new(...)`, `Arc::new(...)` — heap
+//!   allocation per hot-path iteration.
 //!
-//! Was dieser Lint **nicht** flaggt: `String::from`, `format!`,
-//! `.clone()`, `.push()`, `.to_string()`, `.collect()`. Diese sind in
-//! Error-Pfaden / Slow-Paths haeufig legitim, und der striktere
-//! `no_alloc_in_hot_path`-Lint deckt sie ab fuer voll-realtime-
-//! kritische Loops.
+//! What this lint does **not** flag: `String::from`, `format!`,
+//! `.clone()`, `.push()`, `.to_string()`, `.collect()`. These are often
+//! legitimate in error paths / slow paths, and the stricter
+//! `no_alloc_in_hot_path` lint covers them for fully-realtime-
+//! critical loops.
 //!
 //! Spec: WP 5.D.1c (`docs/PHASE5_PLAN.md`).
 //!
-//! # Markierung
+//! # Marking
 //!
-//! Doc-Kommentar-Marker in einer Funktion oder einem Modul:
+//! Doc-comment marker in a function or a module:
 //!
 //! ```ignore
 //! /// zerodds-lint: hot-path-realloc-free
@@ -43,7 +43,7 @@ use crate::diagnostic::Diagnostic;
 
 use super::{FileLint, FileLintContext};
 
-/// Lint-Implementierung.
+/// Lint implementation.
 pub struct NoReallocInHotPath;
 
 const NAME: &str = "dds_no_realloc_in_hot_path";
@@ -103,12 +103,12 @@ impl Visitor<'_> {
             start.line,
             start.column.saturating_add(1),
             NAME,
-            format!("Realloc `{what}` im Hot-Path (verwende `PoolBuffer<CAP>`)"),
+            format!("realloc `{what}` in the hot path (use `PoolBuffer<CAP>`)"),
         ));
     }
 }
 
-/// Allokations-Konstruktoren, die wir flaggen. Tuple `(typ, fn)`.
+/// Allocation constructors that we flag. Tuple `(type, fn)`.
 const REALLOC_CALLS: &[(&str, &str)] = &[
     ("Vec", "with_capacity"),
     ("Vec", "new"),
@@ -233,8 +233,8 @@ mod tests {
 
     #[test]
     fn string_from_not_flagged() {
-        // Anders als no_alloc_in_hot_path: String::from ist OK
-        // (haeufig in Error-Pfaden).
+        // Unlike no_alloc_in_hot_path: String::from is OK
+        // (often in error paths).
         let src = concat!(
             "/// zerodds-lint: hot-path-realloc-free\n",
             "fn f() { let _ = String::from(\"x\"); }\n",
@@ -244,9 +244,9 @@ mod tests {
 
     #[test]
     fn arc_from_not_flagged() {
-        // Arc::from(slice) ist die einzige unvermeidbare Allokation
-        // pro Sample fuer Cache+Fanout (Reliable-Writer). Bewusst NICHT
-        // geflaggt.
+        // Arc::from(slice) is the only unavoidable allocation
+        // per sample for cache+fanout (Reliable writer). Deliberately NOT
+        // flagged.
         let src = concat!(
             "/// zerodds-lint: hot-path-realloc-free\n",
             "fn f() { let _ = std::sync::Arc::<[u8]>::from(&[1u8, 2u8][..]); }\n",

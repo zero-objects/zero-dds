@@ -3,7 +3,7 @@
 //! Reader/Writer DataLifecycle (DDS 1.4 §2.2.3.20, §2.2.3.21).
 //!
 //! Wire-Format:
-//! - `WriterDataLifecycle`: bool autodispose (4 byte mit Padding).
+//! - `WriterDataLifecycle`: bool autodispose (4 bytes with padding).
 //! - `ReaderDataLifecycle`: 2 × Duration (16 byte).
 
 use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
@@ -14,7 +14,7 @@ use crate::wire_helpers::{read_bool_padded, write_bool_padded};
 /// WriterDataLifecycleQosPolicy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriterDataLifecycleQosPolicy {
-    /// Ob Autodispose bei unregister_instance. Default: `true`.
+    /// Whether to autodispose on unregister_instance. Default: `true`.
     pub autodispose_unregistered_instances: bool,
 }
 

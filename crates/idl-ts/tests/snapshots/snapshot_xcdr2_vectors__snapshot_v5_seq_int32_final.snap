@@ -54,20 +54,26 @@ export const BagTypeSupport: DdsTopicType<Bag> = {
     typeName: "Bag",
     isKeyed: false,
     extensibility: "final",
-    encode(s: Bag, endian: EndianMode = "le"): Uint8Array {
-        const w = new Xcdr2Writer(endian);
+    encodeInto(w: Xcdr2Writer, s: Bag): void {
         w.writeUint32(s.ids.length);
         for (const _e of s.ids) {
             w.writeInt32(_e);
         }
+    },
+    encode(s: Bag, endian: EndianMode = "le"): Uint8Array {
+        const w = new Xcdr2Writer(endian);
+        this.encodeInto(w, s);
         return w.toBytes();
     },
-    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): Bag {
-        const r = new Xcdr2Reader(bytes, offset, length, "le");
+    decodeFrom(r: Xcdr2Reader): Bag {
         const _f_ids: Array<number> = ((): Array<number> => { const _n = r.readUint32(); const _o: Array<number> = []; for (let _i = 0; _i < _n; _i++) { _o.push(r.readInt32()); } return _o; })();
         return {
             ids: _f_ids,
         };
+    },
+    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): Bag {
+        const r = new Xcdr2Reader(bytes, offset, length, "le");
+        return this.decodeFrom(r);
     },
     keyHash(s: Bag): Uint8Array {
         return new Uint8Array(16);

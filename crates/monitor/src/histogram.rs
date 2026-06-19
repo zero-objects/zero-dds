@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Labeled-Histogram — wraps `foundation::tracing::Histogram` mit Labels (Spec §1.4).
+//! Labeled histogram — wraps `foundation::tracing::Histogram` with labels (spec §1.4).
 
 use std::sync::Mutex;
 
@@ -9,7 +9,7 @@ use zerodds_foundation::tracing::Histogram;
 
 use crate::Labels;
 
-/// Histogram + Labels + Mutex-Schutz fuer parallele `record_ns`-Calls.
+/// Histogram + labels + mutex protection for parallel `record_ns` calls.
 #[derive(Debug)]
 pub struct LabeledHistogram {
     name: &'static str,
@@ -18,7 +18,7 @@ pub struct LabeledHistogram {
 }
 
 impl LabeledHistogram {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(name: &'static str, labels: Labels) -> Self {
         Self {
@@ -28,20 +28,20 @@ impl LabeledHistogram {
         }
     }
 
-    /// Misst einen Wert in Nanosekunden.
+    /// Measures a value in nanoseconds.
     pub fn record_ns(&self, ns: u64) {
         if let Ok(mut h) = self.inner.lock() {
             h.record_ns(ns);
         }
     }
 
-    /// Misst einen Wert in Sekunden (konvertiert intern zu ns).
+    /// Measures a value in seconds (converted internally to ns).
     pub fn record_seconds(&self, seconds: f64) {
         let ns = (seconds * 1.0e9).max(0.0) as u64;
         self.record_ns(ns);
     }
 
-    /// Snapshot des aktuellen Histogram-States (Clone).
+    /// Snapshot of the current histogram state (clone).
     #[must_use]
     pub fn snapshot(&self) -> Histogram {
         self.inner

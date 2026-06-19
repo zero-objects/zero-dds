@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `AccessControlPlugin`-Impl auf Basis der parsten Permissions-XML.
+//! `AccessControlPlugin` impl based on the parsed permissions XML.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -15,15 +15,15 @@ use zerodds_security::properties::PropertyList;
 use crate::topic_match::topic_match;
 use crate::xml::{Grant, Permissions, parse_permissions_xml};
 
-/// Property-Key fuer das Permissions-XML (inline als String).
+/// Property key for the permissions XML (inline as a string).
 pub const PROP_PERMISSIONS_XML: &str = "dds.sec.access.permissions";
-/// Property-Key fuer das Subject-Name (CN aus dem X.509). Bis future-major
-/// wird das explizit vom Caller gesetzt — spaeter direkt aus dem
-/// `IdentityHandle` abgeleitet.
+/// Property key for the subject name (CN from the X.509). Until future-major
+/// it is set explicitly by the caller — later derived directly from the
+/// `IdentityHandle`.
 pub const PROP_SUBJECT_NAME: &str = "dds.sec.access.subject_name";
 
-/// Access-Control-Plugin: erlaubt Topics nur, wenn sie im Permissions-
-/// XML fuer den Subject-Name matchen.
+/// Access-control plugin: allows topics only if they match in the permissions
+/// XML for the subject name.
 pub struct PermissionsAccessControl {
     next_handle: AtomicU64,
     slots: BTreeMap<PermissionsHandle, Slot>,
@@ -41,7 +41,7 @@ impl Default for PermissionsAccessControl {
 }
 
 impl PermissionsAccessControl {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -54,8 +54,8 @@ impl PermissionsAccessControl {
         self.next_handle.fetch_add(1, Ordering::Relaxed) + 1
     }
 
-    /// Programmatischer Constructor fuer Slot — nuetzlich fuer Tests
-    /// ohne PropertyList-Weg.
+    /// Programmatic constructor for a slot — useful for tests
+    /// without the PropertyList path.
     pub fn register(
         &mut self,
         subject_name: String,
@@ -97,7 +97,7 @@ fn decide(grant: Option<&Grant>, topic: &str, is_publish: bool) -> AccessDecisio
             } else if g.default_deny {
                 AccessDecision::Deny
             } else {
-                // Default-Allow (selten) — trotzdem respektieren.
+                // Default-allow (rare) — respect it anyway.
                 AccessDecision::Permit
             }
         }
@@ -114,13 +114,13 @@ impl AccessControlPlugin for PermissionsAccessControl {
         let xml = props.get(PROP_PERMISSIONS_XML).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::InvalidConfiguration,
-                "permissions: fehlt dds.sec.access.permissions",
+                "permissions: missing dds.sec.access.permissions",
             )
         })?;
         let subject = props.get(PROP_SUBJECT_NAME).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::InvalidConfiguration,
-                "permissions: fehlt dds.sec.access.subject_name",
+                "permissions: missing dds.sec.access.subject_name",
             )
         })?;
         let perms = parse_permissions_xml(xml).map_err(|e| {
@@ -139,13 +139,13 @@ impl AccessControlPlugin for PermissionsAccessControl {
         remote_permissions_token: &[u8],
         _remote_credential: &[u8],
     ) -> SecurityResult<PermissionsHandle> {
-        // Remote-Permissions-Token = das Permissions-XML als UTF-8.
-        // Subject-Name aus dem Credential extrahieren ist future-major —
-        // hier nutzen wir den Token selbst als Subject-Quelle.
+        // Remote permissions token = the permissions XML as UTF-8.
+        // Extracting the subject name from the credential is future-major —
+        // here we use the token itself as the subject source.
         let xml = core::str::from_utf8(remote_permissions_token).map_err(|_| {
             SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "permissions: remote_permissions_token ist kein UTF-8",
+                "permissions: remote_permissions_token is not UTF-8",
             )
         })?;
         let perms = parse_permissions_xml(xml).map_err(|e| {
@@ -154,7 +154,7 @@ impl AccessControlPlugin for PermissionsAccessControl {
                 alloc::format!("permissions: {e}"),
             )
         })?;
-        // Wir speichern den ersten Subject-Namen als den des Remote.
+        // We store the first subject name as that of the remote.
         let subject = perms
             .grants
             .first()
@@ -171,7 +171,7 @@ impl AccessControlPlugin for PermissionsAccessControl {
         let (_, g) = self.grant(perms).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "permissions: unbekannter PermissionsHandle",
+                "permissions: unknown PermissionsHandle",
             )
         })?;
         Ok(decide(g, topic_name, true))
@@ -185,7 +185,7 @@ impl AccessControlPlugin for PermissionsAccessControl {
         let (_, g) = self.grant(perms).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "permissions: unbekannter PermissionsHandle",
+                "permissions: unknown PermissionsHandle",
             )
         })?;
         Ok(decide(g, topic_name, false))
@@ -197,8 +197,8 @@ impl AccessControlPlugin for PermissionsAccessControl {
         remote: PermissionsHandle,
         topic_name: &str,
     ) -> SecurityResult<AccessDecision> {
-        // Match nur wenn der Remote-Writer auch wirklich publish-Recht
-        // auf dem Topic hat.
+        // Match only if the remote writer actually has publish rights
+        // on the topic.
         self.check_create_datawriter(remote, topic_name)
     }
 

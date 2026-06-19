@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: Apache-2.0
+// Shared cross-ORB interop IDL — identical to the ZeroDDS FEATURE_MATRIX_IDL
+// (build.rs). Both sides (ZeroDDS codegen AND omniORB/TAO/JacORB) generate
+// stubs/skeletons from this, so that a ZeroDDS server can be called by a
+// foreign-ORB client and vice versa.
+
+interface Echo {
+    string ping(in string msg);
+};
+
+// omniidl/TAO do not allow anonymous inline sequences in signatures → typedef.
+// The CDR wire is identical to the ZeroDDS inline sequence<long> (pure sequence).
+typedef sequence<long> LongSeq;
+
+exception RangeError { long requested; long limit; };
+
+// Struct for the structured-any cross-ORB test: the foreign ORB places an
+// AnyPair into a CORBA::Any (its IDL-generated TypeCode), ZeroDDS decodes
+// + re-encodes it. RepositoryId IDL:AnyPair:1.0 (no prefix).
+struct AnyPair { long k; string v; };
+
+interface Bench {
+    long      add(in long a, in long b);
+    double    scale(in double x, in double factor);
+    long long add64(in long long a, in long long b);
+    char      next_char(in char c);
+    string    concat(in string a, in string b);
+    // wstring (UTF-16 wire with BOM §15.3.1.6 + codeset negotiation §13.10):
+    // cross-ORB roundtrip against omniORB/TAO/JacORB.
+    wstring   wecho(in wstring w);
+    // any-Echo: struct/sequence im any (§15.3.5 TypeCode) cross-ORB.
+    any       aecho(in any a);
+    LongSeq   reverse(in LongSeq xs);
+    void      divmod(in long a, in long b, out long quotient, out long remainder);
+    void      increment(inout long x);
+    // Object reference as in + return (Wire = IOR, §15.3.3).
+    Object    echo_ref(in Object o);
+    // Typisierte User-Exception (raises) — Wire = UserException-Reply.
+    long      checked(in long idx, in long limit) raises(RangeError);
+};

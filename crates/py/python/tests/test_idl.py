@@ -1,13 +1,13 @@
-"""aktuelle Variante — IDL-Dataclass-Tests.
+"""Current variant — IDL dataclass tests.
 
-Zentraler Test: die Python-Serialisierung einer ShapeType-aequivalenten
-``@dataclass`` muss **byte-genau** die gleichen XCDR2-LE-Bytes produzieren
-wie die Rust-Seite in `crates/dcps/src/interop.rs` (= `dds_dcps::
+Central test: the Python serialization of a ShapeType-equivalent
+``@dataclass`` must produce **byte-exactly** the same XCDR2-LE bytes
+as the Rust side in `crates/dcps/src/interop.rs` (= `dds_dcps::
 interop::ShapeType`).
 
-Das stellt sicher, dass Python-Publisher und Rust-Subscriber über einen
-``BytesTopic`` mit korrektem ``typename`` bidirektional reden koennen —
-ohne Rust-Codegen.
+This ensures that a Python publisher and a Rust subscriber can talk
+bidirectionally over a ``BytesTopic`` with the correct ``typename`` —
+without Rust codegen.
 """
 
 from dataclasses import dataclass
@@ -49,8 +49,8 @@ def test_cdr_primitive_roundtrip() -> None:
 
 
 def test_cdr_string_alignment_padding() -> None:
-    # "AB\0" ist 3 Bytes Raw, dann 1 Byte Padding zu 4-aligned, dann x int32.
-    # Identisches Layout wie Rust-ShapeType "AB":
+    # "AB\0" is 3 raw bytes, then 1 byte of padding to 4-aligned, then x int32.
+    # Identical layout to the Rust ShapeType "AB":
     #   04 00 00 00  length=3
     #   41 42 00     "AB\0"
     #   00           pad
@@ -63,7 +63,7 @@ def test_cdr_string_alignment_padding() -> None:
             0x03,
             0x00,
             0x00,
-            0x00,  # length = 3 (inkl null)
+            0x00,  # length = 3 (incl. null)
             0x41,
             0x42,
             0x00,  # "AB\0"
@@ -78,7 +78,7 @@ def test_cdr_string_alignment_padding() -> None:
 
 
 def test_cdr_reader_rejects_truncated_string() -> None:
-    # Length sagt 3, aber nur 2 bytes folgen.
+    # Length says 3, but only 2 bytes follow.
     data = bytes([0x03, 0x00, 0x00, 0x00, 0x41, 0x42])
     r = CdrReader(data)
     with pytest.raises(ValueError):
@@ -102,7 +102,7 @@ class PyShape:
 def test_pyshape_byte_roundtrip() -> None:
     s = PyShape(color="RED", x=42, y=77, shapesize=30)
     encoded = s.encode()
-    # Referenz exakt wie in crates/dcps/tests/shapes_type_wire.rs.
+    # Reference exactly as in crates/dcps/tests/shapes_type_wire.rs.
     expected = bytes(
         [
             0x04,
@@ -128,11 +128,11 @@ def test_pyshape_byte_roundtrip() -> None:
         ],
     )
     assert encoded == expected, (
-        f"Python-CDR-Encoder weicht von Rust-Referenz ab.\n"
+        f"Python CDR encoder deviates from the Rust reference.\n"
         f"  got: {encoded.hex(' ')}\n"
         f"  exp: {expected.hex(' ')}"
     )
-    # Rueckweg.
+    # Return path.
     back = PyShape.decode(encoded)
     assert back == s
 
@@ -142,7 +142,7 @@ def test_pyshape_type_name_set_by_decorator() -> None:
 
 
 def test_idl_struct_requires_dataclass() -> None:
-    # Plain class → Fehler.
+    # Plain class → error.
     with pytest.raises(TypeError):
 
         @idl_struct(typename="x")
@@ -171,7 +171,7 @@ def test_sensor_mixed_fields_roundtrip() -> None:
 
 
 def test_auto_map_python_primitives() -> None:
-    # Ohne explizite Idl-Annotation: `int` → Int32, `str` → String, etc.
+    # Without an explicit IDL annotation: `int` → Int32, `str` → String, etc.
     @idl_struct(typename="auto::Test")
     @dataclass
     class Auto:
@@ -184,7 +184,7 @@ def test_auto_map_python_primitives() -> None:
 
 
 # =============================================================================
-# Composite-Erweiterung — Composite-Types: Nested Struct, Sequence, Array, Optional
+# Composite extension — composite types: nested struct, sequence, array, optional
 # =============================================================================
 
 
@@ -269,7 +269,7 @@ def test_optional_present_and_absent() -> None:
 
 
 # =============================================================================
-# IntEnum-Erweiterung — IntEnum als IDL-Feldtyp
+# IntEnum extension — IntEnum as an IDL field type
 # =============================================================================
 
 
@@ -298,7 +298,7 @@ def test_enum_roundtrip() -> None:
 
 
 # =============================================================================
-# Union-Erweiterung — Discriminated Unions
+# Union extension — discriminated unions
 # =============================================================================
 
 
@@ -328,7 +328,7 @@ def test_union_case_string_roundtrip() -> None:
 
 
 def test_union_default_branch_used_for_unknown_disc() -> None:
-    # Discriminator 99 matcht keinen Case → default (Float64) wird genommen.
+    # Discriminator 99 matches no case → the default (Float64) is taken.
     v = MyUnion.make(99, 3.14)
     back = MyUnion.decode(MyUnion.encode(v))
     assert abs(back.value - 3.14) < 1e-9
@@ -345,9 +345,9 @@ def test_union_without_default_rejects_unknown_disc() -> None:
 
 
 def test_enum_unknown_value_raises() -> None:
-    # Handgebaute Bytes mit Severity=99 (nicht im Enum).
-    # code=0 | severity=99 | message="x" → simuliert via _idl_fields-
-    # internen Encoder mit einer raw_int statt Enum-Variante.
+    # Hand-built bytes with Severity=99 (not in the enum).
+    # code=0 | severity=99 | message="x" → simulated via the _idl_fields-
+    # internal encoder with a raw_int instead of an enum variant.
     from zerodds.cdr import CdrWriter
 
     w = CdrWriter()
@@ -360,9 +360,9 @@ def test_enum_unknown_value_raises() -> None:
 
 
 def test_idl_struct_resolves_pep563_stringified_annotations() -> None:
-    # Mit `from __future__ import annotations` sind alle Felder-Types
-    # Strings zur Runtime. Der Decorator muss die im Modul-Namespace
-    # aufloesen — Regression-Test fuer Multi-Process-Tests Example-Bug.
+    # With `from __future__ import annotations`, all field types are
+    # strings at runtime. The decorator must resolve them in the module
+    # namespace — regression test for the multi-process tests example bug.
     import textwrap
     import types
 

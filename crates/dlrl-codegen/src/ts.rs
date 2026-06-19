@@ -8,7 +8,7 @@ use alloc::string::String;
 
 use crate::DlrlTypeInfo;
 
-/// Erzeugt ein TypeScript-Interface mit Key-Markern (`__dlrlKey: true`).
+/// Generates a TypeScript interface with key markers (`__dlrlKey: true`).
 #[allow(clippy::format_collect)]
 #[must_use]
 pub fn generate_ts_interface(info: &DlrlTypeInfo) -> String {
@@ -32,7 +32,7 @@ export interface {cls} {{\n{key_lines}{rel_lines}}}\n"
     )
 }
 
-/// Erzeugt eine TypeScript-Class mit Home-Factory-Stub.
+/// Generates a TypeScript class with a home-factory stub.
 #[allow(clippy::format_collect)]
 #[must_use]
 pub fn generate_ts_class(info: &DlrlTypeInfo) -> String {

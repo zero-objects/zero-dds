@@ -1,33 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `dds_no_alloc_in_hot_path` — flaggt Heap-Allokationen in Funktionen
-//! oder Modulen, die als Hot-Path markiert sind.
+//! `dds_no_alloc_in_hot_path` — flags heap allocations in functions
+//! or modules marked as hot-path.
 //!
-//! # Markierung
+//! # Marking
 //!
-//! Die Spec sieht `#[dds_hot_path]` als Custom-Attribut vor. Auf stable
-//! Rust ohne `register_tool` ist das syntaktisch nicht ohne Proc-Macro
-//! moeglich. Fuer Phase 0 nutzen wir stattdessen einen **Doc-Comment-
-//! Marker**, der syntaktisch ein regulaerer `#[doc = "..."]`-Attribut
-//! ist und nichts an der Kompilierung aendert:
+//! The spec envisages `#[dds_hot_path]` as a custom attribute. On stable
+//! Rust without `register_tool` this is syntactically not possible without a
+//! proc-macro. For phase 0 we use a **doc-comment
+//! marker** instead, which is syntactically a regular `#[doc = "..."]`
+//! attribute and changes nothing about compilation:
 //!
 //! ```ignore
 //! /// zerodds-lint: hot-path
 //! fn tight_loop() { ... }
 //! ```
 //!
-//! Ein Doc-Kommentar mit dem Marker **irgendwo** im Body markiert das
-//! Item als Hot-Path. Fuer Module gilt die Markierung transitiv fuer
-//! alle enthaltenen Funktionen (inkl. geschachtelter Module).
+//! A doc comment with the marker **anywhere** in the body marks the
+//! item as hot-path. For modules the marking applies transitively to
+//! all contained functions (incl. nested modules).
 //!
-//! # Erfasste Allokationen
+//! # Captured allocations
 //!
-//! - `Vec::new()`, `Vec::with_capacity(...)`, `vec![...]`-Macro
+//! - `Vec::new()`, `Vec::with_capacity(...)`, `vec![...]` macro
 //! - `Box::new(...)`, `Rc::new(...)`, `Arc::new(...)`
-//! - `String::new()`, `String::from(...)`, `format!(...)`-Macro
-//! - Method-Calls `.to_string()`, `.to_owned()`, `.to_vec()`, `.collect()`, `.clone()`
-//! - `.push(...)` auf Collections — heuristisch flagged (false positives
-//!   moeglich, aber im Hot-Path aufmerksamkeitswert)
+//! - `String::new()`, `String::from(...)`, `format!(...)` macro
+//! - method calls `.to_string()`, `.to_owned()`, `.to_vec()`, `.collect()`, `.clone()`
+//! - `.push(...)` on collections — heuristically flagged (false positives
+//!   possible, but worth attention in the hot path)
 //!
 //! Spec: `docs/architecture/04_safety_by_architecture.md §3.4`.
 
@@ -40,7 +40,7 @@ use crate::diagnostic::Diagnostic;
 
 use super::{FileLint, FileLintContext};
 
-/// Lint-Implementierung.
+/// Lint implementation.
 pub struct NoAllocInHotPath;
 
 const NAME: &str = "dds_no_alloc_in_hot_path";
@@ -52,9 +52,9 @@ impl FileLint for NoAllocInHotPath {
     }
 
     fn check(&self, ctx: &FileLintContext<'_>) -> Vec<Diagnostic> {
-        // Schnell-Check: Marker irgendwo in der Datei? Strenge Form
-        // (nicht via Substring-Match), damit `hot-path-realloc-free`
-        // diesen Lint nicht aktiviert.
+        // Quick check: marker anywhere in the file? Strict form
+        // (not via substring match), so that `hot-path-realloc-free`
+        // does not activate this lint.
         if !marker_present(ctx.source, HOT_PATH_MARKER) {
             return Vec::new();
         }
@@ -68,11 +68,11 @@ impl FileLint for NoAllocInHotPath {
     }
 }
 
-/// Sucht in Doc-Kommentaren (via `#[doc = "..."]`-Attributen) nach dem
-/// Hot-Path-Marker. Match ist absichtlich streng: "hot-path" muss am
-/// Wort-Ende stehen, sonst matchen Verwandte wie
-/// `hot-path-realloc-free` (siehe `no_realloc_in_hot_path`-Lint) den
-/// strikten Marker mit.
+/// Searches doc comments (via `#[doc = "..."]` attributes) for the
+/// hot-path marker. The match is intentionally strict: "hot-path" must be at
+/// the word end, otherwise relatives like
+/// `hot-path-realloc-free` (see the `no_realloc_in_hot_path` lint) would also
+/// match the strict marker.
 fn has_hot_path_marker(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|a| {
         if !a.path().is_ident("doc") {
@@ -91,9 +91,9 @@ fn has_hot_path_marker(attrs: &[Attribute]) -> bool {
     })
 }
 
-/// Prueft, ob `marker` als isolierter Token in `text` vorkommt — d.h.
-/// nach dem Marker steht entweder Zeilenende, Whitespace oder
-/// Satzzeichen, aber kein Buchstabe oder Bindestrich.
+/// Checks whether `marker` occurs as an isolated token in `text` — i.e.
+/// after the marker there is either end-of-line, whitespace or
+/// punctuation, but no letter or hyphen.
 pub(crate) fn marker_present(text: &str, marker: &str) -> bool {
     text.match_indices(marker).any(|(i, _)| {
         let after = i + marker.len();
@@ -122,7 +122,7 @@ impl Visitor<'_> {
             start.line,
             start.column.saturating_add(1),
             NAME,
-            format!("Allokation `{what}` im Hot-Path"),
+            format!("allocation `{what}` in the hot path"),
         ));
     }
 }
@@ -134,7 +134,7 @@ fn is_alloc_call(call: &ExprCall) -> Option<String> {
     let syn::Expr::Path(p) = call.func.as_ref() else {
         return None;
     };
-    // z.B. Vec::new() => segments [Vec, new]
+    // e.g. Vec::new() => segments [Vec, new]
     let segs: Vec<String> = p
         .path
         .segments

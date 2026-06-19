@@ -12,10 +12,10 @@ using System.Text;
 namespace ZeroDDS.Cdr;
 
 /// <summary>
-/// XCDR2-Decoder.  Inverse zu <see cref="Xcdr2Writer"/>.
+/// XCDR2 decoder. Inverse of <see cref="Xcdr2Writer"/>.
 ///
-/// Alignment-Regel laut XTypes 1.3 §7.4.1.5 ist relativ zur aktuellen
-/// Origin (initial 0; bei DHEADER-Body neu gesetzt).
+/// Per XTypes 1.3 §7.4.1.5 the alignment rule is relative to the current
+/// origin (initially 0; reset at the DHEADER body).
 /// </summary>
 public ref struct Xcdr2Reader
 {
@@ -24,10 +24,10 @@ public ref struct Xcdr2Reader
     private int _pos;
     private int _origin;
 
-    /// <summary>Konstruktor mit Default-Endianness (Little-Endian).</summary>
+    /// <summary>Constructor with default endianness (little-endian).</summary>
     public Xcdr2Reader(ReadOnlySpan<byte> bytes) : this(bytes, EndianMode.LittleEndian) { }
 
-    /// <summary>Konstruktor mit expliziter Endianness.</summary>
+    /// <summary>Constructor with explicit endianness.</summary>
     public Xcdr2Reader(ReadOnlySpan<byte> bytes, EndianMode endian)
     {
         _buf = bytes;
@@ -36,20 +36,20 @@ public ref struct Xcdr2Reader
         _origin = 0;
     }
 
-    /// <summary>Aktive Endianness.</summary>
+    /// <summary>Active endianness.</summary>
     public EndianMode Endian => _endian;
 
-    /// <summary>Gelesene Byte-Position.</summary>
+    /// <summary>Current read byte position.</summary>
     public int Position => _pos;
 
-    /// <summary>Anzahl noch verfuegbarer Bytes ab `Position`.</summary>
+    /// <summary>Number of bytes still available from `Position`.</summary>
     public int Remaining => _buf.Length - _pos;
 
     // ---------------------------------------------------------------------
     // Alignment + raw bytes
     // ---------------------------------------------------------------------
 
-    /// <summary>Padding-Skip zur N-Byte-Boundary relativ zur Origin.</summary>
+    /// <summary>Skips padding to the N-byte boundary relative to the origin.</summary>
     public void Align(int alignment)
     {
         if (alignment != 1 && alignment != 2 && alignment != 4 && alignment != 8)
@@ -67,7 +67,7 @@ public ref struct Xcdr2Reader
         _pos += pad;
     }
 
-    /// <summary>Liefert einen Slice der naechsten N Bytes ohne Endianness-Konvertierung.</summary>
+    /// <summary>Returns a slice of the next N bytes without endianness conversion.</summary>
     public ReadOnlySpan<byte> ReadBytes(int count)
     {
         if (count < 0) throw new ArgumentOutOfRangeException(nameof(count));
@@ -85,7 +85,7 @@ public ref struct Xcdr2Reader
     // Primitives
     // ---------------------------------------------------------------------
 
-    /// <summary>IDL `boolean` -> 1 Byte.</summary>
+    /// <summary>IDL `boolean` -> 1 byte.</summary>
     public bool ReadBool()
     {
         var b = ReadByte();
@@ -96,7 +96,7 @@ public ref struct Xcdr2Reader
         return b != 0;
     }
 
-    /// <summary>IDL `octet` / `char` -> 1 Byte.</summary>
+    /// <summary>IDL `octet` / `char` -> 1 byte.</summary>
     public byte ReadByte()
     {
         if (_pos >= _buf.Length)
@@ -106,10 +106,10 @@ public ref struct Xcdr2Reader
         return _buf[_pos++];
     }
 
-    /// <summary>IDL `octet` (alias auf ReadByte fuer Symmetrie zu Writer).</summary>
+    /// <summary>IDL `octet` (alias of ReadByte for symmetry with the writer).</summary>
     public byte ReadOctet() => ReadByte();
 
-    /// <summary>IDL `short` -> 2 Byte Align(2).</summary>
+    /// <summary>IDL `short` -> 2 bytes, Align(2).</summary>
     public short ReadInt16()
     {
         Align(2);
@@ -119,7 +119,7 @@ public ref struct Xcdr2Reader
             : BinaryPrimitives.ReadInt16BigEndian(s);
     }
 
-    /// <summary>IDL `unsigned short` -> 2 Byte Align(2).</summary>
+    /// <summary>IDL `unsigned short` -> 2 bytes, Align(2).</summary>
     public ushort ReadUInt16()
     {
         Align(2);
@@ -129,7 +129,7 @@ public ref struct Xcdr2Reader
             : BinaryPrimitives.ReadUInt16BigEndian(s);
     }
 
-    /// <summary>IDL `long` -> 4 Byte Align(4).</summary>
+    /// <summary>IDL `long` -> 4 bytes, Align(4).</summary>
     public int ReadInt32()
     {
         Align(4);
@@ -139,7 +139,7 @@ public ref struct Xcdr2Reader
             : BinaryPrimitives.ReadInt32BigEndian(s);
     }
 
-    /// <summary>IDL `unsigned long` -> 4 Byte Align(4).</summary>
+    /// <summary>IDL `unsigned long` -> 4 bytes, Align(4).</summary>
     public uint ReadUInt32()
     {
         Align(4);
@@ -149,7 +149,7 @@ public ref struct Xcdr2Reader
             : BinaryPrimitives.ReadUInt32BigEndian(s);
     }
 
-    /// <summary>IDL `long long` -> 8 Byte Align(8).</summary>
+    /// <summary>IDL `long long` -> 8 bytes, Align(8).</summary>
     public long ReadInt64()
     {
         Align(8);
@@ -159,7 +159,7 @@ public ref struct Xcdr2Reader
             : BinaryPrimitives.ReadInt64BigEndian(s);
     }
 
-    /// <summary>IDL `unsigned long long` -> 8 Byte Align(8).</summary>
+    /// <summary>IDL `unsigned long long` -> 8 bytes, Align(8).</summary>
     public ulong ReadUInt64()
     {
         Align(8);
@@ -169,7 +169,7 @@ public ref struct Xcdr2Reader
             : BinaryPrimitives.ReadUInt64BigEndian(s);
     }
 
-    /// <summary>IDL `float` -> 4 Byte IEEE-754 Align(4).</summary>
+    /// <summary>IDL `float` -> 4 bytes IEEE-754, Align(4).</summary>
     public float ReadFloat32()
     {
         Align(4);
@@ -179,7 +179,7 @@ public ref struct Xcdr2Reader
             : BinaryPrimitives.ReadSingleBigEndian(s);
     }
 
-    /// <summary>IDL `double` -> 8 Byte IEEE-754 Align(8).</summary>
+    /// <summary>IDL `double` -> 8 bytes IEEE-754, Align(8).</summary>
     public double ReadFloat64()
     {
         Align(8);
@@ -189,7 +189,7 @@ public ref struct Xcdr2Reader
             : BinaryPrimitives.ReadDoubleBigEndian(s);
     }
 
-    /// <summary>IDL `wchar` -> 2 Byte UTF-16 Code-Unit, Align(2).</summary>
+    /// <summary>IDL `wchar` -> 2-byte UTF-16 code unit, Align(2).</summary>
     public char ReadWChar() => (char)ReadUInt16();
 
     // ---------------------------------------------------------------------
@@ -198,7 +198,7 @@ public ref struct Xcdr2Reader
 
     /// <summary>
     /// IDL `string` -> uint32 length-incl-NUL + UTF-8 bytes + NUL.
-    /// Wirft bei fehlendem terminierenden NUL.
+    /// Throws if the terminating NUL is missing.
     /// </summary>
     public string ReadString()
     {
@@ -208,7 +208,7 @@ public ref struct Xcdr2Reader
             throw new XcdrException("string length must be >= 1 (NUL terminator required)");
         }
         var bytes = ReadBytes((int)len);
-        // Letztes Byte MUSS NUL sein.
+        // The last byte MUST be NUL.
         if (bytes[bytes.Length - 1] != 0)
         {
             throw new XcdrException("string is not NUL-terminated");
@@ -217,7 +217,7 @@ public ref struct Xcdr2Reader
     }
 
     /// <summary>
-    /// IDL `wstring` -> uint32 length (Code-Units, ohne NUL) + UTF-16-LE Code-Units.
+    /// IDL `wstring` -> uint32 length (code units, no NUL) + UTF-16-LE code units.
     /// </summary>
     public string ReadWString()
     {
@@ -230,7 +230,7 @@ public ref struct Xcdr2Reader
         return sb.ToString();
     }
 
-    /// <summary>Liest den Sequenz-Counter (uint32, Align(4)).</summary>
+    /// <summary>Reads the sequence counter (uint32, Align(4)).</summary>
     public int ReadSequenceLength()
     {
         uint len = ReadUInt32();
@@ -246,9 +246,9 @@ public ref struct Xcdr2Reader
     // ---------------------------------------------------------------------
 
     /// <summary>
-    /// Liest 4-Byte DHEADER (object-size in Bytes), setzt eine neue
-    /// Alignment-Origin auf die Position direkt hinter dem Header und
-    /// liefert ein Token zum Restore + Bound-Check.
+    /// Reads the 4-byte DHEADER (object-size in bytes), sets a new
+    /// alignment origin at the position right after the header, and
+    /// returns a token for restore + bound check.
     /// </summary>
     public DHeaderReadScope BeginDHeader()
     {
@@ -265,8 +265,8 @@ public ref struct Xcdr2Reader
     }
 
     /// <summary>
-    /// Schliesst den DHEADER-Scope: skipt verbleibendes Trailing-Padding
-    /// bis zum object-size-Ende und stellt die alte Origin wieder her.
+    /// Closes the DHEADER scope: skips any remaining trailing padding
+    /// up to the object-size end and restores the previous origin.
     /// </summary>
     public void EndDHeader(DHeaderReadScope scope)
     {
@@ -279,12 +279,12 @@ public ref struct Xcdr2Reader
         _origin = scope.PreviousOrigin;
     }
 
-    /// <summary>`true` wenn die aktuelle Position das Body-Ende des DHEADER-Scopes erreicht hat.</summary>
+    /// <summary>`true` when the current position has reached the body-end of the DHEADER scope.</summary>
     public bool DHeaderDone(DHeaderReadScope scope) => _pos >= scope.BodyEnd;
 
     /// <summary>
-    /// Liest einen 4-Byte EMHEADER (ambient Stream-Endian gemaess XTypes 1.3
-    /// §7.4.3.4.5) und liefert (memberId, lc, must_understand).
+    /// Reads a 4-byte EMHEADER (ambient stream-endian per XTypes 1.3
+    /// §7.4.3.4.5) and returns (memberId, lc, must_understand).
     /// </summary>
     public (uint MemberId, int Lc, bool MustUnderstand) ReadEmHeader()
     {
@@ -297,18 +297,18 @@ public ref struct Xcdr2Reader
 }
 
 /// <summary>
-/// Token fuer einen DHEADER-Scope beim Lesen. Haelt das absolute Body-Ende
-/// und die vorherige Alignment-Origin.
+/// Token for a DHEADER scope while reading. Holds the absolute body-end
+/// and the previous alignment origin.
 /// </summary>
 public readonly struct DHeaderReadScope
 {
-    /// <summary>Absolute Buffer-Position des Body-Starts (direkt hinter dem 4-Byte-Header).</summary>
+    /// <summary>Absolute buffer position of the body start (right after the 4-byte header).</summary>
     public int BodyStart { get; }
 
-    /// <summary>Absolute Buffer-Position direkt hinter dem letzten Body-Byte.</summary>
+    /// <summary>Absolute buffer position right after the last body byte.</summary>
     public int BodyEnd { get; }
 
-    /// <summary>Origin vor dem `BeginDHeader`-Call, fuer Restore in `EndDHeader`.</summary>
+    /// <summary>Origin before the `BeginDHeader` call, for restore in `EndDHeader`.</summary>
     public int PreviousOrigin { get; }
 
     internal DHeaderReadScope(int bodyStart, int bodyEnd, int previousOrigin)

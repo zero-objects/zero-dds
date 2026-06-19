@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Cross-Vendor-Interop-Tests gegen Mosquitto.
+//! Cross-vendor interop tests against Mosquitto.
 //!
 //! Spec: `zerodds-mqtt-bridge-1.0.md` §10 + §12.3.
 //!
-//! Diese Tests verifizieren, dass die ZeroDDS-MQTT-Bridge gegen einen
-//! externen Mosquitto-Broker kommuniziert (Wire-Compliance gegen
-//! OASIS MQTT 5.0). Sie benötigen `mosquitto`-Binary + `mosquitto_pub`/
-//! `mosquitto_sub` und sind daher `#[ignore]`-markiert.
+//! These tests verify that the ZeroDDS MQTT bridge communicates against an
+//! external Mosquitto broker (wire compliance against
+//! OASIS MQTT 5.0). They need the `mosquitto` binary + `mosquitto_pub`/
+//! `mosquitto_sub` and are therefore marked `#[ignore]`.
 //!
 //! Run via:
 //! ```bash

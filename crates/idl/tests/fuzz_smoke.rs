@@ -1,12 +1,12 @@
-//! Stable-Rust Fuzz-Smoke-Tests fuer den IDL-Parser.
+//! Stable-Rust fuzz smoke tests for the IDL parser.
 //!
-//! Pseudo-random UTF-8-Strings in `zerodds_idl::parse`. Der Parser darf
-//! auf keinem Input panicen — nur `Ok(..)` oder `Err(..)` sind
-//! erlaubt. Ergaenzt die in `crates/idl/tests/`-Verzeichnis bereits
-//! vorhandenen IDL-spezifischen Compliance-Tests um adversarial
-//! Input-Robustheit.
+//! Pseudo-random UTF-8 strings into `zerodds_idl::parse`. The parser must not
+//! panic on any input — only `Ok(..)` or `Err(..)` are
+//! allowed. Complements the IDL-specific compliance tests already
+//! present in the `crates/idl/tests/` directory with adversarial
+//! input robustness.
 //!
-//! Spec-Anker: OMG IDL 4.2 — Lexer + Parser-State-Machine.
+//! Spec anchor: OMG IDL 4.2 — lexer + parser state machine.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
@@ -29,17 +29,17 @@ impl XorShift32 {
     }
 }
 
-/// Erzeugt einen pseudo-random ASCII-String der Laenge `len`.
-/// Beschraenkt auf den printable ASCII-Range plus `\n\t` — der
-/// Parser muss UTF-8-validen Input akzeptieren, aber wir wollen
-/// hier den Lexer/Parser-Pfad hammern, nicht die UTF-8-Validierung.
+/// Generates a pseudo-random ASCII string of length `len`.
+/// Limited to the printable ASCII range plus `\n\t` — the
+/// parser must accept UTF-8-valid input, but here we want to
+/// hammer the lexer/parser path, not the UTF-8 validation.
 fn random_ascii(rng: &mut XorShift32, len: usize) -> String {
     let mut out = String::with_capacity(len);
     while out.len() < len {
         let w = rng.next_u32();
         for shift in 0..4 {
             let b = ((w >> (shift * 8)) & 0x7F) as u8;
-            // Map ungueltige Steuerzeichen (ausser \n \t) auf Space.
+            // Map invalid control characters (except \n \t) to space.
             let c = match b {
                 b'\n' | b'\t' => b as char,
                 0..=0x1F | 0x7F => ' ',
@@ -54,9 +54,9 @@ fn random_ascii(rng: &mut XorShift32, len: usize) -> String {
     out
 }
 
-/// Erzeugt pseudo-random Bytes und versucht sie als UTF-8 zu
-/// interpretieren. Bei Bad-UTF-8 nehmen wir den lossy-Pfad — auch
-/// daraus muss der Parser sauber `Err` liefern.
+/// Generates pseudo-random bytes and tries to interpret them as UTF-8.
+/// On bad UTF-8 we take the lossy path — from that too
+/// the parser must cleanly return `Err`.
 fn random_utf8_lossy(rng: &mut XorShift32, len: usize) -> String {
     let mut bytes = Vec::with_capacity(len);
     while bytes.len() < len {
@@ -100,7 +100,7 @@ fn fuzz_idl_parse_no_panic() {
 #[test]
 fn empty_input_parses_to_empty_spec() {
     let res = zerodds_idl::parse("", &ParserConfig::default());
-    // Leere Spec ist ein valider IDL-Korpus ("nichts deklariert").
+    // An empty spec is a valid IDL corpus ("nothing declared").
     assert!(res.is_ok());
 }
 
@@ -113,15 +113,15 @@ fn single_char_inputs_no_panic() {
     }
 }
 
-/// Tief verschachtelte Module: depth `module M { ... }` ineinander.
-/// Spec-konform, aber Stack-Overflow-DoS-Vektor; recursion-cap
-/// muss greifen oder Parser muss iterativ arbeiten.
+/// Deeply nested modules: depth `module M { ... }` inside each other.
+/// Spec-compliant, but a stack-overflow DoS vector; the recursion cap
+/// must kick in or the parser must work iteratively.
 ///
-/// Aktuell mit depth=64 — empirisch unterhalb der Stack-Grenze des
-/// rekursiv-deszendierenden Parsers. **Hoehere Tiefen triggern
-/// Stack-Overflow** (TS-1-Finding 2026-05-01); siehe
-/// `deeply_nested_modules_known_overflow` fuer das ignorierte
-/// Reproduktions-Test, und Open-Issue zu Parser-Recursion-Cap.
+/// Currently at depth=64 — empirically below the stack limit of the
+/// recursive-descent parser. **Higher depths trigger
+/// stack overflow** (TS-1 finding 2026-05-01); see
+/// `deeply_nested_modules_known_overflow` for the ignored
+/// reproduction test, and the open issue on the parser recursion cap.
 #[test]
 fn deeply_nested_modules_within_safe_depth() {
     let mut src = String::new();
@@ -135,11 +135,11 @@ fn deeply_nested_modules_within_safe_depth() {
     let _ = zerodds_idl::parse(&src, &ParserConfig::default());
 }
 
-/// Spec-Kontrolltest: 256 nested Module triggern den Pre-Tokenization-
-/// Cap (`parser::MAX_NESTING_DEPTH = 64`) — Parser MUSS einen
-/// `DepthLimit`-Fehler liefern, nicht in Stack-Overflow laufen.
+/// Spec control test: 256 nested modules trigger the pre-tokenization
+/// cap (`parser::MAX_NESTING_DEPTH = 64`) — the parser MUST return a
+/// `DepthLimit` error, not run into stack overflow.
 ///
-/// TS-1-Finding 1 (gefixt 2026-05-01).
+/// TS-1 finding 1 (fixed 2026-05-01).
 #[test]
 fn deeply_nested_modules_rejected_by_depth_cap() {
     let mut src = String::new();
@@ -157,8 +157,8 @@ fn deeply_nested_modules_rejected_by_depth_cap() {
     );
 }
 
-/// Sehr lange Identifiers (10k Zeichen) — Lexer muss begrenzen
-/// oder ohne Allokations-Explosion durchgehen.
+/// Very long identifiers (10k characters) — the lexer must bound them
+/// or pass through without an allocation explosion.
 #[test]
 fn very_long_identifier_no_panic() {
     let ident: String = "a".repeat(10_000);
@@ -166,8 +166,8 @@ fn very_long_identifier_no_panic() {
     let _ = zerodds_idl::parse(&src, &ParserConfig::default());
 }
 
-/// Realistische Anzahl Annotations: `@final @final ... struct S{};`
-/// Mit 50 Annotations laeuft der Parser in <1s durch.
+/// Realistic number of annotations: `@final @final ... struct S{};`
+/// With 50 annotations the parser runs through in <1s.
 #[test]
 fn many_annotations_no_panic_realistic() {
     let mut src = String::new();
@@ -178,16 +178,16 @@ fn many_annotations_no_panic_realistic() {
     let _ = zerodds_idl::parse(&src, &ParserConfig::default());
 }
 
-/// Spec-Kontrolltest: 100 aufeinanderfolgende Annotations triggern
-/// den Pre-Tokenization-Cap (`parser::MAX_CONSECUTIVE_ANNOTATIONS = 64`)
-/// — Parser MUSS einen `AnnotationLimit`-Fehler liefern, statt in
-/// O(n²) CST-Build-Kosten zu laufen.
+/// Spec control test: 100 consecutive annotations trigger
+/// the pre-tokenization cap (`parser::MAX_CONSECUTIVE_ANNOTATIONS = 64`)
+/// — the parser MUST return an `AnnotationLimit` error, instead of running into
+/// O(n²) CST-build costs.
 ///
-/// TS-1-Finding 2 (gefixt 2026-05-01).
+/// TS-1 finding 2 (fixed 2026-05-01).
 ///
-/// Anzahl bewusst niedrig (100, nicht 1000): bei mutation-test-runs
-/// die den Cap deaktivieren laeuft Recognize ueber alle Annotations.
-/// 1000 wuerde dort den 90s-Mutation-Timeout reissen, 100 nicht.
+/// The count is deliberately low (100, not 1000): on mutation-test runs
+/// that disable the cap, recognize runs over all annotations.
+/// 1000 would blow the 90s mutation timeout there, 100 does not.
 #[test]
 fn many_annotations_rejected_by_annotation_cap() {
     let mut src = String::new();
@@ -202,9 +202,9 @@ fn many_annotations_rejected_by_annotation_cap() {
     );
 }
 
-/// Mutation-Test: depth=MAX_NESTING_DEPTH+1 muss exakt fuer `> MAX`
-/// triggern (faengt `>` -> `==` und `>` -> `>=` Mutationen).
-/// MAX_NESTING_DEPTH=64; 65 nested {} muss DepthLimit liefern.
+/// Mutation test: depth=MAX_NESTING_DEPTH+1 must trigger exactly for `> MAX`
+/// (catches `>` -> `==` and `>` -> `>=` mutations).
+/// MAX_NESTING_DEPTH=64; 65 nested {} must return DepthLimit.
 #[test]
 fn nesting_depth_just_over_cap_rejected() {
     let depth = 65; // = MAX_NESTING_DEPTH + 1
@@ -222,8 +222,8 @@ fn nesting_depth_just_over_cap_rejected() {
     );
 }
 
-/// Mutation-Test: depth=MAX_NESTING_DEPTH (64) muss NICHT triggern
-/// (faengt `>` -> `>=` Mutation, die schon bei 64 erroren wuerde).
+/// Mutation test: depth=MAX_NESTING_DEPTH (64) must NOT trigger
+/// (catches the `>` -> `>=` mutation that would already error at 64).
 #[test]
 fn nesting_depth_at_cap_accepted() {
     let depth = 64; // = MAX_NESTING_DEPTH
@@ -235,16 +235,16 @@ fn nesting_depth_at_cap_accepted() {
         src.push_str("};");
     }
     let res = zerodds_idl::parse(&src, &ParserConfig::default());
-    // Erwartet: KEIN DepthLimit-Error. Andere Errors (Lex/Parse) sind
-    // hier akzeptabel, der Cap selbst darf nicht greifen.
+    // Expected: NO DepthLimit error. Other errors (lex/parse) are
+    // acceptable here, the cap itself must not kick in.
     assert!(
         !matches!(res, Err(zerodds_idl::Error::DepthLimit { .. })),
         "depth=64 must NOT trigger DepthLimit, got {res:?}"
     );
 }
 
-/// Mutation-Test: 65 consecutive Annotations triggern den Cap.
-/// Faengt `>` -> `==` und `>` -> `>=` Mutationen am Annotation-Limit.
+/// Mutation test: 65 consecutive annotations trigger the cap.
+/// Catches `>` -> `==` and `>` -> `>=` mutations at the annotation limit.
 #[test]
 fn consecutive_annotations_just_over_cap_rejected() {
     let mut src = String::new();
@@ -259,8 +259,8 @@ fn consecutive_annotations_just_over_cap_rejected() {
     );
 }
 
-/// Mutation-Test: 64 consecutive Annotations duerfen NICHT triggern.
-/// Faengt `>` -> `>=` Mutation am Annotation-Limit.
+/// Mutation test: 64 consecutive annotations must NOT trigger.
+/// Catches the `>` -> `>=` mutation at the annotation limit.
 #[test]
 fn consecutive_annotations_at_cap_accepted() {
     let mut src = String::new();
@@ -275,11 +275,11 @@ fn consecutive_annotations_at_cap_accepted() {
     );
 }
 
-/// Mutation-Test: Semicolon resettet den Annotation-Counter.
-/// Beweis: 200 `@final;` hintereinander darf NICHT in AnnotationLimit
-/// laufen, weil jeder `;` den Counter resettet (auch wenn der Parser
-/// dann bei Recognize wegen Syntax scheitert).
-/// Faengt `==` -> `!=` Mutation auf der `;`-Reset-Branch (line 86).
+/// Mutation test: a semicolon resets the annotation counter.
+/// Proof: 200 `@final;` in a row must NOT run into AnnotationLimit,
+/// because each `;` resets the counter (even if the parser
+/// then fails at recognize due to syntax).
+/// Catches the `==` -> `!=` mutation on the `;`-reset branch (line 86).
 #[test]
 fn semicolon_resets_annotation_counter() {
     let mut src = String::new();
@@ -287,26 +287,25 @@ fn semicolon_resets_annotation_counter() {
         src.push_str("@final; ");
     }
     let res = zerodds_idl::parse(&src, &ParserConfig::default());
-    // Originalverhalten: pre-check passes (`;` resets), recognize
-    // schlaegt syntaktisch fehl. Mutation `!=`: pre-check sammelt 200
-    // `@`s ohne Reset und feuert AnnotationLimit ab dem 65sten.
+    // Original behavior: pre-check passes (`;` resets), recognize
+    // fails syntactically. Mutation `!=`: the pre-check collects 200
+    // `@`s without resetting and fires AnnotationLimit from the 65th.
     assert!(
         !matches!(res, Err(zerodds_idl::Error::AnnotationLimit { .. })),
         "semicolons must reset annotation counter — got AnnotationLimit unexpectedly: {res:?}"
     );
 }
 
-/// Mutation-Test: `}`-Branch decrementiert depth korrekt; `@`-Branch
-/// muss separat erreicht werden, nicht vom `}`-`!=`-Mutation
-/// "swallowed" werden.
+/// Mutation test: the `}` branch decrements depth correctly; the `@` branch
+/// must be reached separately, not "swallowed" by the `}`-`!=` mutation.
 ///
-/// Beweis: 65 `@final` ohne Block-Strukturen MUSS in AnnotationLimit
-/// laufen. Mit der Mutation `} else if p == "}"` -> `} else if p != "}"`
-/// wuerde jeder `@` in den `}`-Branch fallen (weil `@` != `}`) und
-/// `consecutive_at` waere immer 0, kein Cap-Trigger.
+/// Proof: 65 `@final` without block structures MUST run into AnnotationLimit.
+/// With the mutation `} else if p == "}"` -> `} else if p != "}"`,
+/// every `@` would fall into the `}` branch (because `@` != `}`) and
+/// `consecutive_at` would always be 0, no cap trigger.
 ///
-/// Eingabe ohne `{` `}` damit der `}`-Branch der einzige sein-koennte
-/// der `@` "stiehlt" — der `;`-Branch greift erst nach `@`-Branch.
+/// Input without `{` `}` so that the `}` branch is the only one that could
+/// "steal" `@` — the `;` branch only kicks in after the `@` branch.
 #[test]
 fn close_brace_branch_does_not_swallow_at() {
     let mut src = String::new();
@@ -321,9 +320,9 @@ fn close_brace_branch_does_not_swallow_at() {
     );
 }
 
-/// Mutation-Test: `@`-Branch tut tatsaechlich `consecutive_at += 1`,
-/// nicht `*=` (wuerde 0 -> 0 -> 0 -> ... nie ueberlaufen).
-/// Faengt `+=` -> `*=` Mutation.
+/// Mutation test: the `@` branch actually does `consecutive_at += 1`,
+/// not `*=` (which would go 0 -> 0 -> 0 -> ... never overflowing).
+/// Catches the `+=` -> `*=` mutation.
 #[test]
 fn at_branch_increments_not_multiplies() {
     let mut src = String::new();
@@ -332,8 +331,8 @@ fn at_branch_increments_not_multiplies() {
     }
     src.push_str("struct S { long x; };");
     let res = zerodds_idl::parse(&src, &ParserConfig::default());
-    // Mit `*=`: `consecutive_at` startet 0, jedes `@` macht 0*1+0=0 oder
-    // 0*1=0; nie > MAX. Original: jedes `@` ist +=1, faengt nach 65.
+    // With `*=`: `consecutive_at` starts at 0, every `@` does 0*1+0=0 or
+    // 0*1=0; never > MAX. Original: every `@` is +=1, fires after 65.
     assert!(
         matches!(res, Err(zerodds_idl::Error::AnnotationLimit { .. })),
         "increment-not-multiply: 70 @final must trigger AnnotationLimit, got {res:?}"

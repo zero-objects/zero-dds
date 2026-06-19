@@ -1,72 +1,71 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Crate-weites Diagnostik-Grundgeruest.
+//! Crate-wide diagnostics scaffolding.
 //!
-//! Drei Schichten:
+//! Three layers:
 //!
-//! - [`Span`] — Byte-Offset-Bereich im Source-Text. Klein, `Copy`,
-//!   trivial mergebar.
-//! - [`Diagnostic`] — strukturierte Fehler-/Warnungs-Meldung mit
-//!   primary span, optional secondary spans (rustc-inspiriert).
-//! - [`ParseError`] — domaenenspezifische Fehler-Familie, die spaeter
-//!   vom Lexer (Task 2.x) und der Engine konsumiert wird; `to_diagnostic`
-//!   konvertiert in das uniforme Anzeige-Format.
+//! - [`Span`] — byte-offset range in the source text. Small, `Copy`,
+//!   trivially mergeable.
+//! - [`Diagnostic`] — structured error/warning message with a
+//!   primary span, optional secondary spans (rustc-inspired).
+//! - [`ParseError`] — domain-specific error family that is later
+//!   consumed by the lexer (Task 2.x) and the engine; `to_diagnostic`
+//!   converts into the uniform display format.
 //!
-//! Diese Schicht ist Grundgeruest: die Datentypen stehen, aber Lexer und
-//! Engine produzieren noch keine [`ParseError`]-Werte. Die Anbindung
-//! erfolgt schrittweise in Woche 2, wenn der Lexer mit Spans arbeitet
-//! und der Recognizer auf Token-Wrapper (statt nackten [`crate::grammar::TokenKind`])
-//! umgestellt wird.
+//! This layer is scaffolding: the data types are in place, but the lexer and
+//! engine do not yet produce [`ParseError`] values. The wiring
+//! happens incrementally in week 2, when the lexer works with spans
+//! and the recognizer is switched to token wrappers (instead of bare [`crate::grammar::TokenKind`]).
 //!
-//! Siehe RFC 0001 §5.5 (Error-Reporting).
+//! See RFC 0001 §5.5 (error reporting).
 
 use core::fmt;
 
 use crate::grammar::TokenKind;
 
-/// Byte-Offset-Bereich `[start, end)` im Source-Text.
+/// Byte-offset range `[start, end)` in the source text.
 ///
-/// Halb-offenes Intervall: `start` inklusive, `end` exklusive. Eine
-/// Zero-length-Span (`start == end`) markiert eine Position ohne Inhalt
-/// — typisch fuer EOF-Caret oder Insertion-Vorschlaege.
+/// Half-open interval: `start` inclusive, `end` exclusive. A
+/// zero-length span (`start == end`) marks a position without content
+/// — typical for an EOF caret or insertion suggestions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Span {
-    /// Startposition (inklusive, byte-offset).
+    /// Start position (inclusive, byte offset).
     pub start: usize,
-    /// Endposition (exklusive, byte-offset).
+    /// End position (exclusive, byte offset).
     pub end: usize,
 }
 
 impl Span {
-    /// Synthetische Span ohne Quellort. Wird fuer interne, nicht-quellbasierte
-    /// Diagnostiken verwendet (z.B. Grammar-Konstruktionsfehler).
+    /// Synthetic span without a source location. Used for internal, non-source-based
+    /// diagnostics (e.g. grammar construction errors).
     pub const SYNTHETIC: Self = Self { start: 0, end: 0 };
 
-    /// Konstruiert eine neue Span aus Start- und End-Offset.
+    /// Constructs a new span from a start and end offset.
     #[must_use]
     pub const fn new(start: usize, end: usize) -> Self {
         Self { start, end }
     }
 
-    /// Span mit Laenge 0 an einer Position (z.B. EOF-Marker).
+    /// Span with length 0 at a position (e.g. EOF marker).
     #[must_use]
     pub const fn point(at: usize) -> Self {
         Self { start: at, end: at }
     }
 
-    /// Anzahl der ueberdeckten Bytes.
+    /// Number of bytes covered.
     #[must_use]
     pub const fn len(&self) -> usize {
         self.end.saturating_sub(self.start)
     }
 
-    /// `true`, wenn Start == End (Zero-length).
+    /// `true` if start == end (zero-length).
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.start == self.end
     }
 
-    /// Liefert die kleinste Span, die beide ueberdeckt. Symmetrisch.
+    /// Returns the smallest span covering both. Symmetric.
     #[must_use]
     pub const fn merge(self, other: Self) -> Self {
         Self {
@@ -83,7 +82,7 @@ impl Span {
         }
     }
 
-    /// `true`, wenn `byte_offset` innerhalb dieser Span liegt.
+    /// `true` if `byte_offset` lies within this span.
     #[must_use]
     pub const fn contains_offset(&self, byte_offset: usize) -> bool {
         byte_offset >= self.start && byte_offset < self.end
@@ -96,16 +95,16 @@ impl fmt::Display for Span {
     }
 }
 
-/// Schweregrad einer [`Diagnostic`]. Entspricht den rustc-Standardstufen.
+/// Severity of a [`Diagnostic`]. Corresponds to the rustc standard levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Severity {
-    /// Hilfreicher Hinweis (z.B. Vorschlag einer Korrektur).
+    /// Helpful hint (e.g. a suggested correction).
     Help,
-    /// Kontextuelle Anmerkung zu einer anderen Diagnostik.
+    /// Contextual note relating to another diagnostic.
     Note,
-    /// Warnung — Code laeuft, koennte aber problematisch sein.
+    /// Warning — the code runs, but could be problematic.
     Warning,
-    /// Fehler — Verarbeitung kann nicht fortgesetzt werden.
+    /// Error — processing cannot continue.
     Error,
 }
 
@@ -121,34 +120,34 @@ impl fmt::Display for Severity {
     }
 }
 
-/// Zusaetzliche Span mit erlaeuterndem Text (sekundaerer Anker einer
+/// Additional span with explanatory text (secondary anchor of a
 /// [`Diagnostic`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Label {
-    /// Span im Source-Text.
+    /// Span in the source text.
     pub span: Span,
-    /// Erlaeuterungs-Text (wird neben dem Span angezeigt).
+    /// Explanatory text (shown next to the span).
     pub message: String,
 }
 
-/// Strukturierte Diagnose-Meldung.
+/// Structured diagnostic message.
 ///
-/// Modelliert nach rustc-Diagnostics: ein Schweregrad, eine Hauptbotschaft,
-/// ein primary-Span und beliebig viele zusaetzliche Labels mit eigenem Text.
+/// Modeled after rustc diagnostics: a severity, a main message,
+/// a primary span and any number of additional labels with their own text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
-    /// Schweregrad.
+    /// Severity.
     pub severity: Severity,
-    /// Kompakter Text (eine Zeile, ohne Punkt am Ende).
+    /// Compact text (one line, no trailing period).
     pub message: String,
-    /// Primary-Anker im Source-Text.
+    /// Primary anchor in the source text.
     pub primary_span: Span,
-    /// Zusaetzliche Anker mit Erlaeuterungen.
+    /// Additional anchors with explanations.
     pub labels: Vec<Label>,
 }
 
 impl Diagnostic {
-    /// Konstruktor fuer Fehler-Diagnostiken.
+    /// Constructor for error diagnostics.
     #[must_use]
     pub fn error(message: impl Into<String>, primary_span: Span) -> Self {
         Self {
@@ -159,7 +158,7 @@ impl Diagnostic {
         }
     }
 
-    /// Konstruktor fuer Warnung-Diagnostiken.
+    /// Constructor for warning diagnostics.
     #[must_use]
     pub fn warning(message: impl Into<String>, primary_span: Span) -> Self {
         Self {
@@ -170,7 +169,7 @@ impl Diagnostic {
         }
     }
 
-    /// Builder-Methode: zusaetzliches Label anhaengen.
+    /// Builder method: append an additional label.
     #[must_use]
     pub fn with_label(mut self, span: Span, message: impl Into<String>) -> Self {
         self.labels.push(Label {
@@ -181,43 +180,43 @@ impl Diagnostic {
     }
 }
 
-/// Domaenenspezifische Parser-Fehler.
+/// Domain-specific parser errors.
 ///
-/// Wird vom Lexer (Woche 2), Recognizer (spaetere Anbindung), CST-Builder
-/// und AST-Builder konsumiert. Jede Variante laesst sich via
-/// [`ParseError::to_diagnostic`] in eine [`Diagnostic`] ueberfuehren.
+/// Consumed by the lexer (week 2), recognizer (later wiring), CST builder
+/// and AST builder. Each variant can be converted via
+/// [`ParseError::to_diagnostic`] into a [`Diagnostic`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// Erwartet wurde eine bestimmte Token-Menge, gefunden wurde ein
-    /// anderes Token.
+    /// A specific set of tokens was expected, but a different token
+    /// was found.
     UnexpectedToken {
-        /// Was tatsaechlich gelesen wurde.
+        /// What was actually read.
         found: TokenKind,
-        /// Welche Tokens erwartet waren (aus dem Earley-Expected-Set).
+        /// Which tokens were expected (from the Earley expected-set).
         expected: Vec<TokenKind>,
-        /// Position des unerwarteten Tokens.
+        /// Position of the unexpected token.
         span: Span,
     },
-    /// Eingabe endete vor Abschluss der Production. Erwartet wurde noch
-    /// mindestens ein Token.
+    /// Input ended before the production was complete. At least one more
+    /// token was expected.
     UnexpectedEof {
-        /// Was an dieser Stelle erwartet war.
+        /// What was expected at this position.
         expected: Vec<TokenKind>,
-        /// Endposition der Eingabe.
+        /// End position of the input.
         span: Span,
     },
-    /// Lexer-spezifischer Fehler (ungueltige Zeichen-Sequenz, unterminated
-    /// String, etc.). Detail-Text ist lexer-spezifisch.
+    /// Lexer-specific error (invalid character sequence, unterminated
+    /// string, etc.). The detail text is lexer-specific.
     LexerError {
-        /// Beschreibung des Lexer-Problems.
+        /// Description of the lexer problem.
         message: String,
-        /// Position der fehlerhaften Sequenz.
+        /// Position of the faulty sequence.
         span: Span,
     },
 }
 
 impl ParseError {
-    /// Konvertiert einen Parser-Fehler in eine uniforme [`Diagnostic`].
+    /// Converts a parser error into a uniform [`Diagnostic`].
     #[must_use]
     pub fn to_diagnostic(&self) -> Diagnostic {
         match self {
@@ -244,7 +243,7 @@ impl ParseError {
         }
     }
 
-    /// Position des Fehlers im Source-Text.
+    /// Position of the error in the source text.
     #[must_use]
     pub const fn span(&self) -> Span {
         match self {
@@ -255,8 +254,8 @@ impl ParseError {
     }
 }
 
-/// Formatiert eine Liste erwarteter Tokens fuer die Anzeige in
-/// Diagnostik-Texten.
+/// Formats a list of expected tokens for display in
+/// diagnostic texts.
 fn format_expected(expected: &[TokenKind]) -> String {
     match expected {
         [] => "(nothing)".to_string(),
@@ -310,8 +309,8 @@ mod tests {
     #[test]
     fn span_merge_with_synthetic_keeps_real_bounds() {
         let real = Span::new(10, 20);
-        // SYNTHETIC ist 0..0; merge nimmt min(start)=0 — das ist semantisch
-        // erwartet (synthetic verbreitert nach 0). Als Doku-Anker.
+        // SYNTHETIC is 0..0; merge takes min(start)=0 — that is semantically
+        // expected (synthetic widens to 0). As a documentation anchor.
         let merged = real.merge(Span::SYNTHETIC);
         assert_eq!(merged, Span::new(0, 20));
     }

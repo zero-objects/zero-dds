@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! XRCE Object-Repr-Typen aus Spec §7.7.7 - §7.7.13.
+//! XRCE object-repr types from Spec §7.7.7 - §7.7.13.
 //!
-//! Modul implementiert die Wire-Strukturen, die in den
-//! CREATE/STATUS/GET_INFO/INFO-Submessage-Bodies vorkommen:
+//! This module implements the wire structures that occur in the
+//! CREATE/STATUS/GET_INFO/INFO submessage bodies:
 //!
-//! * **§7.7.7** [`ResultStatusCode`] — 11 Spec-konforme Status-Codes
-//!   plus generischer `ResultStatus` (status_code + implementation_status).
+//! * **§7.7.7** [`ResultStatusCode`] — 11 spec-conformant status codes
+//!   plus the generic `ResultStatus` (status_code + implementation_status).
 //! * **§7.7.8** [`BaseObjectRequest`] — RequestId(2) + ObjectId(2).
 //! * **§7.7.9** [`BaseObjectReply`] — BaseObjectRequest + ResultStatus.
 //! * **§7.7.10** [`RelatedObjectRequest`] — BaseObjectRequest +
-//!   ObjectIdRef (zweite ObjectId).
-//! * **§7.7.12** [`ActivityInfoVariant`] — Discriminated-Union mit
-//!   AgentActivity oder DataReader/Writer-Activity.
-//! * **§7.7.13** [`ObjectInfo`] — Compound-Type fuer GET_INFO-Reply.
+//!   ObjectIdRef (second ObjectId).
+//! * **§7.7.12** [`ActivityInfoVariant`] — discriminated union with
+//!   AgentActivity or DataReader/Writer activity.
+//! * **§7.7.13** [`ObjectInfo`] — compound type for the GET_INFO reply.
 //!
-//! Alle Wire-Codecs sind little-endian (Spec §8.3.4: Submessage-Body-
-//! Endianness wird via Submessage-Header-Flag E gewaehlt; XCDR2 ohne
-//! Padding zwischen u8/u16/u32-Feldern in dieser Struktur-Familie).
+//! All wire codecs are little-endian (Spec §8.3.4: the submessage body
+//! endianness is chosen via submessage header flag E; XCDR2 with no
+//! padding between u8/u16/u32 fields in this struct family).
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -30,45 +30,45 @@ use crate::object_id::ObjectId;
 // §7.7.7 ResultStatus
 // ============================================================================
 
-/// Spec-Tab.7.7.7: 11 Status-Codes (OK/OK_MATCHED + 9 Error-Klassen).
+/// Spec Tab.7.7.7: 11 status codes (OK/OK_MATCHED + 9 error classes).
 ///
-/// Jeder Code ist 1 Byte; Werte > 10 sind nicht in der Spec.
+/// Each code is 1 byte; values > 10 are not in the spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ResultStatusCode {
-    /// `STATUS_OK` — Operation erfolgreich.
+    /// `STATUS_OK` — operation successful.
     Ok = 0x00,
-    /// `STATUS_OK_MATCHED` — Operation erfolgreich, matched bestehendes Objekt.
+    /// `STATUS_OK_MATCHED` — operation successful, matched an existing object.
     OkMatched = 0x01,
-    /// `STATUS_ERR_DDS_ERROR` — generischer DDS-Fehler.
+    /// `STATUS_ERR_DDS_ERROR` — generic DDS error.
     DdsError = 0x80,
-    /// `STATUS_ERR_MISMATCH` — Cert/Type/QoS-Mismatch zwischen Peers.
+    /// `STATUS_ERR_MISMATCH` — cert/type/QoS mismatch between peers.
     Mismatch = 0x81,
-    /// `STATUS_ERR_ALREADY_EXISTS` — Object mit dieser ID existiert bereits.
+    /// `STATUS_ERR_ALREADY_EXISTS` — an object with this ID already exists.
     AlreadyExists = 0x82,
-    /// `STATUS_ERR_DENIED` — AccessControl hat Operation abgelehnt.
+    /// `STATUS_ERR_DENIED` — access control rejected the operation.
     Denied = 0x83,
-    /// `STATUS_ERR_UNKNOWN_REFERENCE` — Referenzierte Resource fehlt.
+    /// `STATUS_ERR_UNKNOWN_REFERENCE` — referenced resource is missing.
     UnknownReference = 0x84,
-    /// `STATUS_ERR_INVALID_DATA` — Wire-Body nicht parsbar.
+    /// `STATUS_ERR_INVALID_DATA` — wire body not parseable.
     InvalidData = 0x85,
-    /// `STATUS_ERR_INCOMPATIBLE` — Spec-Konflikt (Version etc.).
+    /// `STATUS_ERR_INCOMPATIBLE` — spec conflict (version etc.).
     Incompatible = 0x86,
-    /// `STATUS_ERR_RESOURCES` — Speicher/Slots aufgebraucht.
+    /// `STATUS_ERR_RESOURCES` — memory/slots exhausted.
     Resources = 0x87,
-    /// `STATUS_ERR_UNSUPPORTED` — Profile/Operation nicht unterstuetzt.
+    /// `STATUS_ERR_UNSUPPORTED` — profile/operation not supported.
     Unsupported = 0x88,
 }
 
 impl ResultStatusCode {
-    /// Wire-Wert (1 byte).
+    /// Wire value (1 byte).
     #[must_use]
     pub fn as_u8(self) -> u8 {
         self as u8
     }
 
-    /// Konvertiert ein Byte. Werte ausserhalb der Spec-Liste werden
-    /// abgelehnt.
+    /// Converts a byte. Values outside the spec list are
+    /// rejected.
     ///
     /// # Errors
     /// `ValueOutOfRange`.
@@ -91,7 +91,7 @@ impl ResultStatusCode {
         }
     }
 
-    /// `true` wenn Status `Ok` oder `OkMatched`.
+    /// `true` if the status is `Ok` or `OkMatched`.
     #[must_use]
     pub fn is_success(self) -> bool {
         matches!(self, Self::Ok | Self::OkMatched)
@@ -100,21 +100,21 @@ impl ResultStatusCode {
 
 /// Spec §7.7.7: `ResultStatus { status_code, implementation_status }`.
 ///
-/// `implementation_status` ist Vendor-spezifisch und wird als 1 Byte
-/// transparent durchgereicht.
+/// `implementation_status` is vendor-specific and is passed through
+/// transparently as 1 byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResultStatus {
-    /// Status-Code aus Spec-Tab.7.7.7.
+    /// Status code from Spec Tab.7.7.7.
     pub status_code: ResultStatusCode,
-    /// Vendor-spezifischer Status (1 Byte, opak).
+    /// Vendor-specific status (1 byte, opaque).
     pub implementation_status: u8,
 }
 
 impl ResultStatus {
-    /// Wire-Size (2 Bytes: status + implementation_status).
+    /// Wire size (2 bytes: status + implementation_status).
     pub const WIRE_SIZE: usize = 2;
 
-    /// Erfolgs-Status (`Ok`).
+    /// Success status (`Ok`).
     #[must_use]
     pub fn ok() -> Self {
         Self {
@@ -123,17 +123,17 @@ impl ResultStatus {
         }
     }
 
-    /// Encode als 2 Bytes.
+    /// Encode as 2 bytes.
     #[must_use]
     pub fn encode(&self) -> [u8; 2] {
         [self.status_code.as_u8(), self.implementation_status]
     }
 
-    /// Decode aus 2 Bytes.
+    /// Decode from 2 bytes.
     ///
     /// # Errors
-    /// `UnexpectedEof` bei < 2 Bytes; `ValueOutOfRange` bei
-    /// unbekanntem Status-Code.
+    /// `UnexpectedEof` on < 2 bytes; `ValueOutOfRange` on an
+    /// unknown status code.
     pub fn decode(bytes: &[u8]) -> Result<(Self, usize), XrceError> {
         if bytes.len() < Self::WIRE_SIZE {
             return Err(XrceError::UnexpectedEof {
@@ -160,27 +160,27 @@ impl ResultStatus {
 /// Spec §7.7.8: `BaseObjectRequest { RequestId(2 octets), ObjectId(2 octets) }`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BaseObjectRequest {
-    /// Request-Identifier (2 octets, eindeutig pro Stream).
+    /// Request identifier (2 octets, unique per stream).
     pub request_id: [u8; 2],
-    /// Ziel-Objekt der Operation.
+    /// Target object of the operation.
     pub object_id: ObjectId,
 }
 
 impl BaseObjectRequest {
-    /// Wire-Size = 4 Bytes.
+    /// Wire size = 4 bytes.
     pub const WIRE_SIZE: usize = 4;
 
-    /// Encode als 4 Bytes.
+    /// Encode as 4 bytes.
     #[must_use]
     pub fn encode(&self) -> [u8; 4] {
         let oid = self.object_id.to_bytes();
         [self.request_id[0], self.request_id[1], oid[0], oid[1]]
     }
 
-    /// Decode aus 4 Bytes.
+    /// Decode from 4 bytes.
     ///
     /// # Errors
-    /// `UnexpectedEof`, `ValueOutOfRange` bei ObjectId-Problemen.
+    /// `UnexpectedEof`, `ValueOutOfRange` on ObjectId problems.
     pub fn decode(bytes: &[u8]) -> Result<(Self, usize), XrceError> {
         if bytes.len() < Self::WIRE_SIZE {
             return Err(XrceError::UnexpectedEof {
@@ -208,17 +208,17 @@ impl BaseObjectRequest {
 /// result: ResultStatus }`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BaseObjectReply {
-    /// Originaler Request, auf den sich die Reply bezieht.
+    /// Original request the reply refers to.
     pub related_request: BaseObjectRequest,
-    /// Result-Status der Operation.
+    /// Result status of the operation.
     pub result: ResultStatus,
 }
 
 impl BaseObjectReply {
-    /// Wire-Size = 6 Bytes.
+    /// Wire size = 6 bytes.
     pub const WIRE_SIZE: usize = BaseObjectRequest::WIRE_SIZE + ResultStatus::WIRE_SIZE;
 
-    /// Encode als 6 Bytes.
+    /// Encode as 6 bytes.
     #[must_use]
     pub fn encode(&self) -> [u8; 6] {
         let req = self.related_request.encode();
@@ -226,10 +226,10 @@ impl BaseObjectReply {
         [req[0], req[1], req[2], req[3], res[0], res[1]]
     }
 
-    /// Decode aus 6 Bytes.
+    /// Decode from 6 bytes.
     ///
     /// # Errors
-    /// Wie [`BaseObjectRequest::decode`] / [`ResultStatus::decode`].
+    /// As [`BaseObjectRequest::decode`] / [`ResultStatus::decode`].
     pub fn decode(bytes: &[u8]) -> Result<(Self, usize), XrceError> {
         let (related_request, n1) = BaseObjectRequest::decode(bytes)?;
         let (result, n2) = ResultStatus::decode(&bytes[n1..])?;
@@ -250,21 +250,21 @@ impl BaseObjectReply {
 /// Spec §7.7.10: `RelatedObjectRequest { base: BaseObjectRequest,
 /// related_object: ObjectId }`.
 ///
-/// Wird verwendet, wenn eine Operation zwei Objekte referenzieren
-/// muss (z.B. CREATE_DATAWRITER + dazugehoeriges Topic).
+/// Used when an operation must reference two objects
+/// (e.g. CREATE_DATAWRITER + its associated topic).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RelatedObjectRequest {
-    /// Basis-Request mit RequestId + Primary-ObjectId.
+    /// Base request with RequestId + primary ObjectId.
     pub base: BaseObjectRequest,
-    /// Sekundaere ObjectId (Related-Object).
+    /// Secondary ObjectId (related object).
     pub related_object: ObjectId,
 }
 
 impl RelatedObjectRequest {
-    /// Wire-Size = 6 Bytes.
+    /// Wire size = 6 bytes.
     pub const WIRE_SIZE: usize = BaseObjectRequest::WIRE_SIZE + 2;
 
-    /// Encode als 6 Bytes.
+    /// Encode as 6 bytes.
     #[must_use]
     pub fn encode(&self) -> [u8; 6] {
         let b = self.base.encode();
@@ -272,10 +272,10 @@ impl RelatedObjectRequest {
         [b[0], b[1], b[2], b[3], r[0], r[1]]
     }
 
-    /// Decode aus 6 Bytes.
+    /// Decode from 6 bytes.
     ///
     /// # Errors
-    /// Siehe [`BaseObjectRequest::decode`].
+    /// See [`BaseObjectRequest::decode`].
     pub fn decode(bytes: &[u8]) -> Result<(Self, usize), XrceError> {
         let (base, n1) = BaseObjectRequest::decode(bytes)?;
         if bytes.len() < n1 + 2 {
@@ -299,42 +299,42 @@ impl RelatedObjectRequest {
 // §7.7.12 ActivityInfoVariant
 // ============================================================================
 
-/// Spec §7.7.12: Discriminated-Union mit Stream- oder Object-Activity.
+/// Spec §7.7.12: discriminated union with stream or object activity.
 ///
-/// Wir modellieren beide produktiven Varianten:
-/// * **AgentActivity** — fuer OBJK_AGENT (`address_seq` + `availability`).
-/// * **DataReaderActivity** — fuer OBJK_DATAREADER
+/// We model both productive variants:
+/// * **AgentActivity** — for OBJK_AGENT (`address_seq` + `availability`).
+/// * **DataReaderActivity** — for OBJK_DATAREADER
 ///   (`highest_acked_num` + `unread_sample_count`).
-/// * **DataWriterActivity** — fuer OBJK_DATAWRITER
+/// * **DataWriterActivity** — for OBJK_DATAWRITER
 ///   (`unacked_sample_count` + `sample_seq_num`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActivityInfoVariant {
-    /// Agent-Liveness (1 byte availability + IP-List).
+    /// Agent liveness (1 byte availability + IP list).
     Agent {
         /// `1` = available, `0` = not.
         availability: u8,
-        /// Liste von IP-Adress-Octets (transparent).
+        /// List of IP address octets (transparent).
         address_seq: Vec<u8>,
     },
-    /// DataReader-Activity.
+    /// DataReader activity.
     DataReader {
-        /// Hoechste bestaetigte Sample-Nummer.
+        /// Highest acknowledged sample number.
         highest_acked_num: i16,
-        /// Anzahl ungelesener Samples im Reader-Buffer.
+        /// Number of unread samples in the reader buffer.
         unread_sample_count: u32,
     },
-    /// DataWriter-Activity.
+    /// DataWriter activity.
     DataWriter {
-        /// Anzahl unacked Samples.
+        /// Number of unacked samples.
         unacked_sample_count: u32,
-        /// Letzte gesendete Sample-Sequence-Number.
+        /// Last sent sample sequence number.
         sample_seq_num: i64,
     },
 }
 
 impl ActivityInfoVariant {
-    /// Discriminator — entspricht dem ObjectKind, fuer den die Activity
-    /// gilt (siehe `OBJK_AGENT` / `OBJK_DATAREADER` / `OBJK_DATAWRITER`
+    /// Discriminator — corresponds to the ObjectKind for which the activity
+    /// applies (see `OBJK_AGENT` / `OBJK_DATAREADER` / `OBJK_DATAWRITER`
     /// in `object_kind.rs`).
     #[must_use]
     pub fn discriminator(&self) -> u8 {
@@ -345,8 +345,8 @@ impl ActivityInfoVariant {
         }
     }
 
-    /// Encode mit fuehrendem Discriminator-Byte + Variant-spezifischem
-    /// Payload.
+    /// Encode with a leading discriminator byte + variant-specific
+    /// payload.
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(16);
@@ -379,10 +379,10 @@ impl ActivityInfoVariant {
         out
     }
 
-    /// Decode mit fuehrendem Discriminator-Byte.
+    /// Decode with a leading discriminator byte.
     ///
     /// # Errors
-    /// `UnexpectedEof`, `ValueOutOfRange` bei unbekanntem Discriminator.
+    /// `UnexpectedEof`, `ValueOutOfRange` on an unknown discriminator.
     pub fn decode(bytes: &[u8]) -> Result<(Self, usize), XrceError> {
         if bytes.is_empty() {
             return Err(XrceError::UnexpectedEof {
@@ -464,22 +464,22 @@ impl ActivityInfoVariant {
 // §7.7.13 ObjectInfo
 // ============================================================================
 
-/// Spec §7.7.13: GET_INFO-Reply-Payload.
+/// Spec §7.7.13: GET_INFO reply payload.
 ///
-/// Spec definiert ObjectInfo als optional config + optional activity.
-/// Wir modellieren es als zwei Optionals mit fuehrenden Presence-Bytes
-/// (1 = present, 0 = absent), gefolgt vom jeweiligen Payload.
+/// The spec defines ObjectInfo as optional config + optional activity.
+/// We model it as two optionals with leading presence bytes
+/// (1 = present, 0 = absent), followed by the respective payload.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ObjectInfo {
-    /// XCDR2-encoded `OBJK_*Representation` (opake Bytes); `None`
-    /// wenn keine Config-Info verfuegbar.
+    /// XCDR2-encoded `OBJK_*Representation` (opaque bytes); `None`
+    /// when no config info is available.
     pub config: Option<Vec<u8>>,
-    /// Activity-Info des Objects.
+    /// Activity info of the object.
     pub activity: Option<ActivityInfoVariant>,
 }
 
 impl ObjectInfo {
-    /// Encode mit zwei Presence-Bytes.
+    /// Encode with two presence bytes.
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(16);
@@ -500,7 +500,7 @@ impl ObjectInfo {
         out
     }
 
-    /// Decode mit zwei Presence-Bytes.
+    /// Decode with two presence bytes.
     ///
     /// # Errors
     /// `UnexpectedEof`, `ValueOutOfRange`.
@@ -589,7 +589,7 @@ mod tests {
 
     #[test]
     fn result_status_code_unknown_byte_rejected() {
-        // Werte zwischen 0x02 und 0x7F sind nicht in der Spec.
+        // Values between 0x02 and 0x7F are not in the spec.
         assert!(ResultStatusCode::from_u8(0x02).is_err());
         assert!(ResultStatusCode::from_u8(0x7F).is_err());
         assert!(ResultStatusCode::from_u8(0x89).is_err());
@@ -742,7 +742,7 @@ mod tests {
 
     #[test]
     fn activity_info_decode_truncated_rejected() {
-        // Discriminator OK, body fehlt
+        // Discriminator OK, body missing
         assert!(ActivityInfoVariant::decode(&[0x06, 0x01]).is_err());
     }
 
@@ -798,7 +798,7 @@ mod tests {
 
     #[test]
     fn object_info_truncated_returns_eof() {
-        // Presence-Byte signalisiert config, aber length-Bytes fehlen.
+        // The presence byte signals config, but the length bytes are missing.
         assert!(ObjectInfo::decode(&[1u8]).is_err());
     }
 }

@@ -1,27 +1,27 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
-Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
+versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [1.0.0-rc.1] — 2026-05-07
 
-Initiale Release-Materialisierung des Crates **`zerodds-rs`** als Layer-6-PSM-/-Binding.
+Initial release materialization of the **`zerodds-rs`** crate as a Layer-6 PSM/binding.
 
-### Spec-Referenzen
-- OMG DDS 1.4 §2.2.2 + DDS-PSM-Cxx 1.0 §7.5: PSM-API-Surface
-- ZeroDDS-Vendor-Spec `zerodds-c-api-1.0` (C-FFI Foundation)
+### Spec references
+- OMG DDS 1.4 §2.2.2 + DDS-PSM-Cxx 1.0 §7.5: PSM API surface
+- ZeroDDS vendor spec `zerodds-c-api-1.0` (C-FFI foundation)
 
-### Public-API
-Siehe `README.md` + `src/lib.rs` Doc-Comments + zugehoerige Coverage-Doc.
+### Public API
+See `README.md` + `src/lib.rs` doc comments + the associated coverage doc.
 
-### Implementierung
+### Implementation
 Idiomatic Rust SDK, async/await, streams
 
-### Architektur
-- Layer: 6 (PSMs / Bindings)
-- Dependencies (in): `zerodds-c-api` (Foundation) + Sprach-spezifische Helper-Crates
-- Dependents (out): Anwender-Code
+### Architecture
+- Layer: 6 (PSMs / bindings)
+- Dependencies (in): `zerodds-c-api` (foundation) + language-specific helper crates
+- Dependents (out): application code
 
-### Stabilitaet
-Alle `pub`-Items sind RC1-stabil; Breaking-Changes erfordern Major-Bump.
+### Stability
+All `pub` items are RC1-stable; breaking changes require a major bump.
 

@@ -6,13 +6,13 @@
 //! Crate `zerodds-corba-ccm`. Safety classification: **STANDARD**.
 //! Spec OMG CCM 4.0 (`formal/2006-04-01`) §6 + §13 (Lightweight Profile).
 //!
-//! Voller CCM-Container-Stack mit Component-Modell, Home-Modell,
-//! CIDL-Datenmodell, CIF (Component Implementation Framework),
-//! Container-Runtime, ORB-Extensions, Persistent-State-Service-Stub,
-//! Time-PSM und TimerEventService inkl. CosEventService-Adapter
-//! (Feature `cos-event`).
+//! Full CCM container stack with component model, home model,
+//! CIDL data model, CIF (Component Implementation Framework),
+//! container runtime, ORB extensions, persistent-state-service stub,
+//! Time PSM and TimerEventService including a CosEventService adapter
+//! (feature `cos-event`).
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```
 //! use zerodds_corba_ccm::conformance::CCM_CONFORMANCE_BASIC_LEVEL;
@@ -67,73 +67,73 @@ pub use cos_event_bridge::EventChannelTimerCallback;
 pub use timer::{TimerEventService, TimerHandle, TimerKind};
 
 // ---------------------------------------------------------------------------
-// OMG CCM 4.0 §2 Conformance-Markers
+// OMG CCM 4.0 §2 conformance markers
 // ---------------------------------------------------------------------------
 
-/// OMG CCM 4.0 §2 Conformance-Levels — formal-Identifier pro
-/// Vendor-Conformance-Pfad. Tooling kann diese Strings als
-/// Capability-Marker konsumieren.
+/// OMG CCM 4.0 §2 conformance levels — formal identifier per
+/// vendor conformance path. Tooling can consume these strings as
+/// capability markers.
 pub mod conformance {
-    /// §2 Punkt 4 — Basic Level non-Java (IDL-Extensions + CIDL +
-    /// Container + XML-D&C, ORB-Voraussetzung). Aktiv, sobald
-    /// CIDL-AST + Container-Runtime-Lifecycle eingebunden sind.
+    /// §2 item 4 — Basic Level non-Java (IDL extensions + CIDL +
+    /// container + XML D&C, ORB prerequisite). Active once
+    /// the CIDL AST + container-runtime lifecycle are wired in.
     pub const CCM_CONFORMANCE_BASIC_LEVEL: &str = "OMG-CCM-4.0:Basic";
 
-    /// §2 Punkt 5 — Basic Level Java (EJB1.1 + java-to-IDL).
-    /// Cross-Ref `crates/corba-ccm-ejb/`.
+    /// §2 item 5 — Basic Level Java (EJB1.1 + java-to-IDL).
+    /// Cross-ref `crates/corba-ccm-ejb/`.
     pub const CCM_CONFORMANCE_BASIC_LEVEL_JAVA: &str = "OMG-CCM-4.0:BasicJava";
 
-    /// §2 Punkt 7 — Lightweight CCM Profile (Subset gemaess §13).
+    /// §2 item 7 — Lightweight CCM Profile (subset per §13).
     pub const LIGHTWEIGHT_CCM_LEVEL: &str = "OMG-CCM-4.0:Lightweight";
 
-    /// §6.12 / §13.10 — Restriction-Marker fuer Lightweight-Filter.
+    /// §6.12 / §13.10 — restriction marker for the lightweight filter.
     pub const LWCCM_RESTRICTIONS_ENFORCED: &str = "OMG-CCM-4.0:LwCCM-Restrictions";
 
-    /// §13.3 — Lightweight Profile: Filter aktiviert, no-introspection,
-    /// keine generic Navigation, keine Type-Specific-Generic-Ops.
+    /// §13.3 — Lightweight Profile: filter active, no introspection,
+    /// no generic navigation, no type-specific generic ops.
     pub const LWCCM_FILTER_ACTIVE: &str = "OMG-CCM-4.0:LwCCM-Filter";
 
     // -----------------------------------------------------------------
-    // CORBA 3.3 Part 3 — CCM-bezogene Conformance-Marker
+    // CORBA 3.3 Part 3 — CCM-related conformance markers
     // -----------------------------------------------------------------
 
     /// CORBA 3.3 Part 3 §6.13 — CCM Conformance Requirements
-    /// (Doc-Marker; folgt §2 wenn IDL-Subset abgedeckt).
+    /// (doc marker; follows §2 once the IDL subset is covered).
     pub const CORBA_PART3_6_13_CCM_CONFORMANCE: &str = "OMG-CORBA-3.3-P3:6.13-CCM-Conformance";
 
     /// CORBA 3.3 Part 3 §7 — Generic Interaction Support
-    /// (Simple Connectors §7.2 abgedeckt; Templated-Connectors §7.3/§7.4
-    /// als Codegen-Erweiterung addressbar).
+    /// (Simple Connectors §7.2 covered; templated connectors §7.3/§7.4
+    /// addressable as a codegen extension).
     pub const CORBA_PART3_7_GENERIC_INTERACTION: &str = "OMG-CORBA-3.3-P3:7-Generic-Interaction";
 
-    /// CORBA 3.3 Part 3 §14 — Lightweight CCM Profile-Constants/
-    /// Doc-Marker. Code unterstuetzt das volle Modell + LwCCM-Filter,
-    /// dieser Marker hebt das formale LwCCM-Conformance-Level hervor.
+    /// CORBA 3.3 Part 3 §14 — Lightweight CCM Profile constants/
+    /// doc marker. The code supports the full model + LwCCM filter;
+    /// this marker highlights the formal LwCCM conformance level.
     pub const CORBA_PART3_14_LIGHTWEIGHT_CCM_PROFILE: &str = "OMG-CORBA-3.3-P3:14-LwCCM-Profile";
 
     /// CORBA 3.3 Part 2 §10.6 — CSIv2 Conformance Levels.
-    /// Spec listet drei Levels (0=ServerAuth, 1=ClientAuthN+Server,
-    /// 2=ClientAuthZ-Identity-Assertion). ZeroDDS deckt alle drei
-    /// via `crates/corba-csiv2/` ab.
+    /// The spec lists three levels (0=ServerAuth, 1=ClientAuthN+Server,
+    /// 2=ClientAuthZ identity assertion). ZeroDDS covers all three
+    /// via `crates/corba-csiv2/`.
     pub const CORBA_PART2_10_6_CSIV2_LEVEL_0: &str = "OMG-CORBA-3.3-P2:10.6-CSIv2-L0";
-    /// CSIv2 Level 1 (Client-Authentication zusaetzlich).
+    /// CSIv2 Level 1 (client authentication in addition).
     pub const CORBA_PART2_10_6_CSIV2_LEVEL_1: &str = "OMG-CORBA-3.3-P2:10.6-CSIv2-L1";
-    /// CSIv2 Level 2 (Identity-Assertion + Authorization).
+    /// CSIv2 Level 2 (identity assertion + authorization).
     pub const CORBA_PART2_10_6_CSIV2_LEVEL_2: &str = "OMG-CORBA-3.3-P2:10.6-CSIv2-L2";
 
     // -----------------------------------------------------------------
-    // CCM 4.0 §2 Optional Conformance-Marker (Punkte 3 + 8)
+    // CCM 4.0 §2 optional conformance markers (items 3 + 8)
     // -----------------------------------------------------------------
 
-    /// CCM 4.0 §2 Punkt 3 — Optional Extended Level. ZeroDDS-Stub-
-    /// Layer adressiert Persistent-State (`crates/ccm-pss`) und
-    /// Configurator-Iface; voller Extended Level ohne Vendor-ORB
-    /// nicht zertifizierbar.
+    /// CCM 4.0 §2 item 3 — Optional Extended Level. The ZeroDDS stub
+    /// layer addresses persistent state (`crates/ccm-pss`) and the
+    /// configurator interface; the full Extended Level is not
+    /// certifiable without a vendor ORB.
     pub const CCM_OPTIONAL_EXTENDED_LEVEL: &str = "OMG-CCM-4.0:Optional-Extended";
 
-    /// CCM 4.0 §2 Punkt 8 — ORB-Vendor. ZeroDDS liefert
-    /// `corba-ccm::orb_core::Orb` als Configuration-Layer-Stub
-    /// fuer Component-Specific-Erweiterungen am ORB.
+    /// CCM 4.0 §2 item 8 — ORB vendor. ZeroDDS provides
+    /// `corba-ccm::orb_core::Orb` as a configuration-layer stub
+    /// for component-specific extensions on the ORB.
     pub const CCM_ORB_VENDOR_STUB: &str = "OMG-CCM-4.0:ORB-Vendor-Stub";
 }
 

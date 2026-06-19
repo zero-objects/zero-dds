@@ -2,9 +2,9 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DDS QoS-Policies (DDS 1.4 §2.2.3).
 //!
-//! Jede Policy liegt in einem eigenen Sub-Modul und wird hier
-//! reexportiert. Die Submodule enthalten Kind-Enums, Policy-Structs,
-//! Wire-Encoder/Decoder und Spec-Referenzen.
+//! Each policy lives in its own submodule and is re-exported here.
+//! The submodules contain kind enums, policy structs,
+//! Wire encoders/decoders and spec references.
 
 pub use self::data_lifecycle::{ReaderDataLifecycleQosPolicy, WriterDataLifecycleQosPolicy};
 pub use self::deadline::DeadlineQosPolicy;

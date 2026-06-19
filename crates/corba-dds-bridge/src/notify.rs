@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CosNotification-Mapping (DDS-Topic ↔ CORBA-Notification-Channel).
+//! CosNotification mapping (DDS topic ↔ CORBA notification channel).
 //!
 //! Spec: `zerodds-corba-bridge-1.0.md` §4.4 (= OMG CosNotification 1.1).
 //!
-//! Diese Schicht liefert die **Mapping-Tabelle** und die **Translation
-//! Helpers**, NICHT die volle Notify-Service-Implementierung. Der
-//! konkrete `EventChannel`-IDL-Adapter lebt in `crates/corba-cos-event`.
+//! This layer provides the **mapping table** and the **translation
+//! helpers**, NOT the full notify-service implementation. The concrete
+//! `EventChannel` IDL adapter lives in `crates/corba-cos-event`.
 //!
-//! ZeroDDS-Mapping-Entscheidungen (RC1):
-//! * Ein DDS-Topic ⇔ ein Notify-Channel.
-//! * `StructuredEvent` (Spec §2.3.4) ist die Standard-Wire-Form;
-//!   `untyped EventTypes` werden auf `_GenericEvent` abgebildet.
-//! * QoS-Property-Filter werden best-effort auf DDS-QoS-Policies
-//!   uebersetzt — `MaximumBatchSize` → DDS-Lifespan; `Persistence` →
-//!   DDS-Durability. Spec §4.4-Tabelle 7.
+//! ZeroDDS mapping decisions (RC1):
+//! * One DDS topic ⇔ one notify channel.
+//! * `StructuredEvent` (spec §2.3.4) is the standard wire form;
+//!   `untyped EventTypes` are mapped onto `_GenericEvent`.
+//! * QoS property filters are translated best-effort onto DDS QoS
+//!   policies — `MaximumBatchSize` → DDS lifespan; `Persistence` →
+//!   DDS durability. Spec §4.4 table 7.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Eine `StructuredEvent` (CosNotification §2.3.4) reduziert auf die
-/// drei wire-tragenden Felder. Volle Notify-Header-Felder
-/// (`event_type.domain_name`/`event_type.type_name`/`event_name`) werden
-/// als `EventName` aggregiert.
+/// A `StructuredEvent` (CosNotification §2.3.4) reduced to the three
+/// wire-bearing fields. The full notify header fields
+/// (`event_type.domain_name`/`event_type.type_name`/`event_name`) are
+/// aggregated as `EventName`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StructuredEventLite {
     /// `domain_name::type_name` (CosNotification EventType).
@@ -37,7 +37,7 @@ pub struct StructuredEventLite {
     pub remainder_body: Vec<u8>,
 }
 
-/// Notify-Channel-Mapping: pro DDS-Topic ein Notify-Channel.
+/// Notify channel mapping: one notify channel per DDS topic.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NotifyChannelMap {
     /// `dds_topic_name` ⇒ `notify_channel_name`.
@@ -45,24 +45,24 @@ pub struct NotifyChannelMap {
 }
 
 impl NotifyChannelMap {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Registriere ein Mapping.
+    /// Registers a mapping.
     pub fn map(&mut self, dds_topic: impl Into<String>, channel: impl Into<String>) {
         self.topics.insert(dds_topic.into(), channel.into());
     }
 
-    /// Lookup Channel-Name fuer einen DDS-Topic.
+    /// Looks up the channel name for a DDS topic.
     #[must_use]
     pub fn channel_for(&self, dds_topic: &str) -> Option<&str> {
         self.topics.get(dds_topic).map(String::as_str)
     }
 
-    /// Reverse-Lookup DDS-Topic fuer einen Channel-Name.
+    /// Reverse lookup of the DDS topic for a channel name.
     #[must_use]
     pub fn topic_for_channel(&self, channel: &str) -> Option<&str> {
         self.topics
@@ -71,24 +71,24 @@ impl NotifyChannelMap {
             .map(|(t, _)| t.as_str())
     }
 
-    /// Anzahl Mappings.
+    /// Number of mappings.
     #[must_use]
     pub fn len(&self) -> usize {
         self.topics.len()
     }
 
-    /// Leer?
+    /// Empty?
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.topics.is_empty()
     }
 }
 
-/// Translation: DDS-Sample (Bytes) → StructuredEvent.
+/// Translation: DDS sample (bytes) → StructuredEvent.
 ///
-/// Spec §4.4: das ZeroDDS-Mapping nutzt den DDS-Topic-Namen als
-/// `event_type.type_name` und `dds.publish` als `event_name`. Das
-/// payload wandert in `remainder_body`.
+/// Spec §4.4: the ZeroDDS mapping uses the DDS topic name as
+/// `event_type.type_name` and `dds.publish` as `event_name`. The
+/// payload goes into `remainder_body`.
 #[must_use]
 pub fn dds_to_structured_event(topic: &str, payload: &[u8]) -> StructuredEventLite {
     StructuredEventLite {
@@ -99,11 +99,10 @@ pub fn dds_to_structured_event(topic: &str, payload: &[u8]) -> StructuredEventLi
     }
 }
 
-/// Translation: StructuredEvent → DDS-Sample (Bytes).
+/// Translation: StructuredEvent → DDS sample (bytes).
 ///
-/// Identitaets-Operation auf `remainder_body`. `filterable`-Felder
-/// werden RC1 nicht an DDS-Properties durchgereicht; das ist
-/// RC2-Backlog.
+/// Identity operation on `remainder_body`. In RC1 the `filterable`
+/// fields are not forwarded to DDS properties; that is RC2 backlog.
 #[must_use]
 pub fn structured_event_to_dds(event: &StructuredEventLite) -> Vec<u8> {
     event.remainder_body.clone()

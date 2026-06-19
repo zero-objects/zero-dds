@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Cross-Cutting Daemon-Runtime fuer `zerodds-mqtt-bridged`:
-//! §8.2 Prometheus, §8.3 OTLP-Spans, §9.2 Graceful Shutdown,
-//! §5.2 Catalog/Healthz, §6 QoS-Mapping.
+//! Cross-cutting daemon runtime for `zerodds-mqtt-bridged`:
+//! §8.2 Prometheus, §8.3 OTLP spans, §9.2 graceful shutdown,
+//! §5.2 catalog/healthz, §6 QoS mapping.
 
 #![allow(clippy::print_stderr)]
 
@@ -18,7 +18,7 @@ use zerodds_observability_otlp::{OtlpConfig, OtlpExporter};
 
 use super::config::{DaemonConfig, TopicConfig};
 
-/// Service-Name fuer Catalog/OTel.
+/// Service name for catalog/OTel.
 pub const SERVICE_NAME: &str = "zerodds-mqtt-bridged";
 
 /// Crate-Version.
@@ -28,7 +28,7 @@ pub const SERVICE_VERSION: &str = env!("CARGO_PKG_VERSION");
 // A2 — Prometheus-Metrics-Set (§8.2).
 // ============================================================================
 
-/// Standard-Counter fuer den MQTT-Daemon.
+/// Standard counters for the MQTT daemon.
 #[derive(Clone)]
 pub struct BridgeMetrics {
     /// Eingehende MQTT-Frames (Publish/Suback/...).
@@ -39,7 +39,7 @@ pub struct BridgeMetrics {
     pub bytes_in_total: Arc<Counter>,
     /// Bytes out.
     pub bytes_out_total: Arc<Counter>,
-    /// Active Broker-Connections (typischerweise 1).
+    /// Active broker connections (typically 1).
     pub connections_active: Arc<Gauge>,
     /// Lifetime Broker-Connect-Attempts.
     pub connections_total: Arc<Counter>,
@@ -205,7 +205,7 @@ fn push_json_str(out: &mut String, s: &str) {
     }
 }
 
-/// Mini-HTTP-Server der `/catalog`, `/healthz`, `/metrics` bedient.
+/// Mini HTTP server serving `/catalog`, `/healthz`, `/metrics`.
 pub fn serve_admin_endpoints(
     addr: SocketAddr,
     catalog: Arc<CatalogSnapshot>,
@@ -300,7 +300,7 @@ fn admin_handle(
 // A3 — OTLP (§8.3).
 // ============================================================================
 
-/// Parst einen Endpoint-String in eine `OtlpConfig`.
+/// Parses an endpoint string into an `OtlpConfig`.
 #[must_use]
 pub fn otlp_config_from_endpoint(service_name: &str, raw: &str) -> OtlpConfig {
     let trimmed = raw
@@ -321,7 +321,7 @@ pub fn otlp_config_from_endpoint(service_name: &str, raw: &str) -> OtlpConfig {
     }
 }
 
-/// Lese aus ENV.
+/// Reads from ENV.
 #[must_use]
 pub fn otlp_config_from_env(service_name: &str) -> Option<OtlpConfig> {
     let raw = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok()?;
@@ -441,7 +441,7 @@ pub fn install_signal_watcher(
     _shutdown_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     _reload_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> std::io::Result<std::thread::JoinHandle<()>> {
-    // Windows: signal_hook::iterator nur POSIX. Spawn dummy thread,
-    // shutdown laeuft ueber die normalen socket-close-Pfade.
+    // Windows: signal_hook::iterator is POSIX-only. Spawn a dummy thread,
+    // shutdown runs over the normal socket-close paths.
     Ok(std::thread::spawn(|| {}))
 }

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `TIMESTAMP` Submessage (id=14, Spec §8.3.5.15) und gemeinsamer
-//! `Time_t`-Helper (Annex A).
+//! `TIMESTAMP` Submessage (id=14, Spec §8.3.5.15) and shared
+//! `Time_t` helper (Annex A).
 //!
-//! `Time_t = { long seconds; unsigned long nanoseconds; }` — 8 Byte
-//! Body in der Endianness des E-Flags.
+//! `Time_t = { long seconds; unsigned long nanoseconds; }` — 8-byte
+//! body in the endianness of the E-flag.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -14,20 +14,20 @@ use crate::encoding::{Endianness, read_u32, write_u32};
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// Wire-Size eines `Time_t`-Felds.
+/// Wire size of a `Time_t` field.
 pub const TIME_T_WIRE_SIZE: usize = 8;
 
-/// `Time_t`-Repraesentation.
+/// `Time_t` representation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct TimePoint {
-    /// Sekunden (signed).
+    /// Seconds (signed).
     pub seconds: i32,
-    /// Nanosekunden (unsigned).
+    /// Nanoseconds (unsigned).
     pub nanoseconds: u32,
 }
 
 impl TimePoint {
-    /// Encodiert in 8-Byte-Slice.
+    /// Encodes into an 8-byte slice.
     ///
     /// # Errors
     /// `WriteOverflow`.
@@ -43,7 +43,7 @@ impl TimePoint {
         Ok(())
     }
 
-    /// Decodiert aus 8-Byte-Slice.
+    /// Decodes from an 8-byte slice.
     ///
     /// # Errors
     /// `UnexpectedEof`.
@@ -66,22 +66,22 @@ impl TimePoint {
 /// `TIMESTAMP_Payload`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct TimestampPayload {
-    /// Sende-Zeitstempel.
+    /// Transmit timestamp.
     pub transmit_timestamp: TimePoint,
 }
 
 impl TimestampPayload {
-    /// Encodiert den Body.
+    /// Encodes the body.
     ///
     /// # Errors
-    /// keine erwartet.
+    /// None expected.
     pub fn encode_body(self, e: Endianness) -> Result<Vec<u8>, XrceError> {
         let mut out = alloc::vec![0u8; TIME_T_WIRE_SIZE];
         self.transmit_timestamp.encode(&mut out, e)?;
         Ok(out)
     }
 
-    /// Decodiert den Body.
+    /// Decodes the body.
     ///
     /// # Errors
     /// `UnexpectedEof`.
@@ -91,7 +91,7 @@ impl TimestampPayload {
         })
     }
 
-    /// Verpackt in `Submessage` (LE).
+    /// Packs into a `Submessage` (LE).
     ///
     /// # Errors
     /// `PayloadTooLarge`.
@@ -100,7 +100,7 @@ impl TimestampPayload {
         Submessage::new(SubmessageId::Timestamp, FLAG_E_LITTLE_ENDIAN, body)
     }
 
-    /// Extrahiert aus `Submessage`.
+    /// Extracts from a `Submessage`.
     ///
     /// # Errors
     /// `ValueOutOfRange`, `UnexpectedEof`.
@@ -139,7 +139,7 @@ mod tests {
         };
         let mut buf = [0u8; 8];
         t.encode(&mut buf, Endianness::Big).unwrap();
-        // -1 as u32 = 0xFFFF_FFFF → BE: alle 0xFF
+        // -1 as u32 = 0xFFFF_FFFF → BE: all 0xFF
         assert_eq!(buf[0..4], [0xFF, 0xFF, 0xFF, 0xFF]);
         let t2 = TimePoint::decode(&buf, Endianness::Big).unwrap();
         assert_eq!(t2, t);

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! AMI4CCM Connector-Fragment — Spec §7.6 + Annex A.
+//! AMI4CCM connector fragment — spec §7.6 + Annex A.
 //!
-//! Spec §7.6 (S. 11-12) und Annex A (S. 17) definieren das
-//! Templated-Module `CCM_AMI::Connector_T<interface T, interface
-//! AMI4CCM_T>` mit:
+//! Spec §7.6 (p. 11-12) and Annex A (p. 17) define the
+//! templated module `CCM_AMI::Connector_T<interface T, interface
+//! AMI4CCM_T>` with:
 //!
 //! ```idl
 //! porttype AMI4CCM_Port_Type {
@@ -22,55 +22,55 @@
 //! };
 //! ```
 //!
-//! Wir produzieren auf der AST-Ebene zwei Strukturen:
+//! At the AST level we produce two structures:
 //!
-//! 1. [`PortType`] — `AMI4CCM_Port_Type<T, AMI4CCM_T>` mit zwei
-//!    Facets (`ami4ccm_provides` AMI4CCM_T, `ami4ccm_sync_provides` T)
-//!    und einem Receptacle (`ami4ccm_uses` T).
-//! 2. [`Connector`] — Concrete `AMI4CCM_<Iface>_Connector` mit
-//!    instanziierten Type-Parametern und einem Port.
+//! 1. [`PortType`] — `AMI4CCM_Port_Type<T, AMI4CCM_T>` with two
+//!    facets (`ami4ccm_provides` AMI4CCM_T, `ami4ccm_sync_provides` T)
+//!    and one receptacle (`ami4ccm_uses` T).
+//! 2. [`Connector`] — concrete `AMI4CCM_<Iface>_Connector` with
+//!    instantiated type parameters and one port.
 
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 
-/// PortType-Facet — repräsentiert eine `provides`-Klausel.
+/// PortType facet — represents a `provides` clause.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Facet {
-    /// Lokaler Facet-Name (im IDL: `provides AMI4CCM_T ami4ccm_provides;`
+    /// Local facet name (in IDL: `provides AMI4CCM_T ami4ccm_provides;`
     /// → `ami4ccm_provides`).
     pub name: String,
-    /// Repository-/Scoped-Name des facetierten Interfaces.
+    /// Repository/scoped name of the faceted interface.
     pub interface_type: String,
 }
 
-/// PortType-Receptacle — repräsentiert eine `uses`-Klausel.
+/// PortType receptacle — represents a `uses` clause.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsesPort {
-    /// Receptacle-Name (im IDL: `uses T ami4ccm_uses;` → `ami4ccm_uses`).
+    /// Receptacle name (in IDL: `uses T ami4ccm_uses;` → `ami4ccm_uses`).
     pub name: String,
-    /// Repository-/Scoped-Name des verwendeten Interfaces.
+    /// Repository/scoped name of the used interface.
     pub interface_type: String,
 }
 
-/// `porttype AMI4CCM_Port_Type` — Spec §7.6, S. 11 + Annex A, S. 17.
+/// `porttype AMI4CCM_Port_Type` — spec §7.6, p. 11 + Annex A, p. 17.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PortType {
-    /// Templated-Name (typisch `AMI4CCM_Port_Type`).
+    /// Templated name (typically `AMI4CCM_Port_Type`).
     pub name: String,
-    /// Type-Parameter `T` (Original-Iface) und `AMI4CCM_T`
-    /// (transformiertes Iface).
+    /// Type parameters `T` (original iface) and `AMI4CCM_T`
+    /// (transformed iface).
     pub type_params: Vec<String>,
-    /// Facets — laut Spec zwei: `provides AMI4CCM_T ami4ccm_provides;`
-    /// und `provides T ami4ccm_sync_provides;`.
+    /// Facets — per the spec, two: `provides AMI4CCM_T ami4ccm_provides;`
+    /// and `provides T ami4ccm_sync_provides;`.
     pub provides: Vec<Facet>,
-    /// Receptacle — laut Spec genau eines: `uses T ami4ccm_uses;`.
+    /// Receptacle — per the spec, exactly one: `uses T ami4ccm_uses;`.
     pub uses: Vec<UsesPort>,
 }
 
 impl PortType {
-    /// Standard-`AMI4CCM_Port_Type<T, AMI4CCM_T>` aus Spec Annex A (S. 17):
+    /// Standard `AMI4CCM_Port_Type<T, AMI4CCM_T>` from spec Annex A (p. 17):
     ///
     /// ```idl
     /// porttype AMI4CCM_Port_Type {
@@ -102,39 +102,39 @@ impl PortType {
     }
 }
 
-/// Receptacle-Klausel im Connector — `uses [multiple]
+/// Receptacle clause in the connector — `uses [multiple]
 /// AMI4CCM_Port_Type<T,AMI4CCM_T> ami4ccm_port;`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectorPort {
-    /// Receptacle-Name (Spec §7.6 default: `ami4ccm_port`).
+    /// Receptacle name (spec §7.6 default: `ami4ccm_port`).
     pub name: String,
-    /// Type-Reference auf den `PortType` (instanziiert).
+    /// Type reference to the `PortType` (instantiated).
     pub port_type: String,
-    /// Multiplex (Spec §7.7, S. 13): `uses multiple` vs `uses`.
+    /// Multiplex (spec §7.7, p. 13): `uses multiple` vs `uses`.
     pub multiplex: bool,
 }
 
-/// `connector AMI4CCM_<Iface>_Connector` — Spec §7.6 + Annex A
-/// `formal/2015-08-03` S. 17.
+/// `connector AMI4CCM_<Iface>_Connector` — spec §7.6 + Annex A
+/// `formal/2015-08-03` p. 17.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Connector {
-    /// Connector-Name (typisch `AMI4CCM_<Iface>_Connector`).
+    /// Connector name (typically `AMI4CCM_<Iface>_Connector`).
     pub name: String,
-    /// Repository-ID (Spec `omg.org/CCM_AMI/...`).
+    /// Repository ID (spec `omg.org/CCM_AMI/...`).
     pub repository_id: String,
-    /// Erbt von `Components::EnterpriseComponent` (Spec §7.6 IDL2-
-    /// Lowering).
+    /// Inherits from `Components::EnterpriseComponent` (spec §7.6 IDL2
+    /// lowering).
     pub base: String,
-    /// Templated-Type-Args — ([T-Original-Iface, AMI4CCM_T-Iface]).
+    /// Templated type args — ([T original iface, AMI4CCM_T iface]).
     pub type_args: Vec<String>,
-    /// Concrete-Port (Spec: `port AMI4CCM_Port_Type ami4ccm_port;`).
+    /// Concrete port (spec: `port AMI4CCM_Port_Type ami4ccm_port;`).
     pub ports: Vec<ConnectorPort>,
 }
 
 impl Connector {
-    /// Konstruktor fuer einen Connector zum Original-Interface
-    /// `<original_iface>` und seinem AMI4CCM-Pendant
-    /// `AMI4CCM_<original_iface>`. Spec §7.6 (S. 11-12).
+    /// Constructor for a connector to the original interface
+    /// `<original_iface>` and its AMI4CCM counterpart
+    /// `AMI4CCM_<original_iface>`. Spec §7.6 (p. 11-12).
     #[must_use]
     pub fn for_interface(original_iface: &str) -> Self {
         let connector_name = format!("AMI4CCM_{original_iface}_Connector");
@@ -152,14 +152,14 @@ impl Connector {
         }
     }
 
-    /// Aktiviert Multiplex-Mode auf dem `ami4ccm_port` (Spec §7.7, S. 13).
+    /// Enables multiplex mode on the `ami4ccm_port` (spec §7.7, p. 13).
     pub fn enable_multiplex(&mut self) {
         if let Some(port) = self.ports.iter_mut().find(|p| p.name == "ami4ccm_port") {
             port.multiplex = true;
         }
     }
 
-    /// Spec §7.6 — Connector ist ein `local interface` nach IDL2-Lowering.
+    /// Spec §7.6 — the connector is a `local interface` after IDL2 lowering.
     #[must_use]
     pub fn is_local(&self) -> bool {
         true
@@ -176,14 +176,14 @@ mod tests {
         let pt = PortType::ami4ccm_port_type();
         assert_eq!(pt.type_params, vec!["T", "AMI4CCM_T"]);
 
-        // Annex A: zwei Facets in der vorgeschriebenen Reihenfolge.
+        // Annex A: two facets in the prescribed order.
         assert_eq!(pt.provides.len(), 2);
         assert_eq!(pt.provides[0].name, "ami4ccm_provides");
         assert_eq!(pt.provides[0].interface_type, "AMI4CCM_T");
         assert_eq!(pt.provides[1].name, "ami4ccm_sync_provides");
         assert_eq!(pt.provides[1].interface_type, "T");
 
-        // Annex A: ein Receptacle `uses T ami4ccm_uses`.
+        // Annex A: one receptacle `uses T ami4ccm_uses`.
         assert_eq!(pt.uses.len(), 1);
         assert_eq!(pt.uses[0].name, "ami4ccm_uses");
         assert_eq!(pt.uses[0].interface_type, "T");

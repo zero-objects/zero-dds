@@ -45,7 +45,7 @@ public sealed class Subscriber : IDisposable
         if (_handle == IntPtr.Zero) throw new DdsError("Subscriber::create failed");
     }
 
-    /// <summary>Konstruiert mit expliziter QoS (Spec §2.2.2.2.1.7).</summary>
+    /// <summary>Constructs with explicit QoS (Spec §2.2.2.2.1.7).</summary>
     public Subscriber(DomainParticipant dp, ZeroDDS.Qos.SubscriberQos qos)
     {
         _participant = dp.Handle;
@@ -87,7 +87,7 @@ public sealed class DataReader<T> : IDisposable
         _traits = topic.Traits;
     }
 
-    /// <summary>Konstruiert mit expliziter QoS (Spec §2.2.2.5.1.5).</summary>
+    /// <summary>Constructs with explicit QoS (Spec §2.2.2.5.1.5).</summary>
     public DataReader(Subscriber sub, Topic<T> topic, ZeroDDS.Qos.DataReaderQos qos)
     {
         _subscriber = sub.Handle;

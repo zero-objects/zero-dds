@@ -22,27 +22,46 @@ name = "rmw_zerodds"
 crate-type = ["cdylib", "staticlib", "rlib"]
 path = "src/lib.rs"
 
-# Spec `zerodds-ros2-bridge-1.0` §2 — Diagnose-CLI (kein Daemon).
+# Spec `zerodds-ros2-bridge-1.0` §2 — diagnostics CLI (no daemon).
 [[bin]]
 name = "zerodds-ros2-shim"
 path = "src/bin/zerodds-ros2-shim.rs"
 
 [dependencies]
-zerodds-ros2-rmw = { version = "1.0.0-rc.1", path = "../ros2-rmw" }
-# Hinweis: zerodds-c-api exportiert per `[lib] name = "zerodds"`.
-# Die rmw-shim nutzt `use zerodds::*` (`ZeroDdsRuntime`, `ZeroDdsWriter`,
-# `zerodds_runtime_create`, `zerodds_writer_*`, `zerodds_reader_*`) >40-mal,
-# daher wird die Crate trotz `name`-Drift produktiv referenziert.
-zerodds-c-api = { version = "1.0.0-rc.1", path = "../zerodds-c-api" }
-# Service-Layer ueber zerodds-rpc Topic-Naming (REP-2008).
-zerodds-rpc = { version = "1.0.0-rc.1", path = "../rpc" }
-# REP-2009 Type-Hash via SHA-256.
+zerodds-ros2-rmw = { version = "1.0.0-rc.3", path = "../ros2-rmw" }
+# Note: zerodds-c-api exports via `[lib] name = "zerodds"`.
+# The rmw shim uses `use zerodds::*` (`ZeroDdsRuntime`, `ZeroDdsWriter`,
+# `zerodds_runtime_create`, `zerodds_writer_*`, `zerodds_reader_*`) >40 times,
+# so the crate is referenced productively despite the `name` drift.
+zerodds-c-api = { version = "1.0.0-rc.3", path = "../zerodds-c-api" }
+# Service layer over zerodds-rpc topic naming (REP-2008).
+zerodds-rpc = { version = "1.0.0-rc.3", path = "../rpc" }
+# REP-2009 type hash via SHA-256.
 sha2 = { workspace = true, features = ["std"] }
-# Diagnose-CLI-Observability: Catalog/Metrics/OTLP fuer `catalog`/`metrics`/
-# `selftest`-Subcommands (CLI ist exempt von SIGTERM-Watcher §9.2).
-zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", default-features = false, features = ["std"] }
-zerodds-observability-otlp = { version = "1.0.0-rc.1", path = "../observability-otlp" }
-zerodds-qos = { version = "1.0.0-rc.1", path = "../qos", default-features = false, features = ["alloc"] }
+# Diagnostics-CLI observability: catalog/metrics/OTLP for `catalog`/`metrics`/
+# `selftest` subcommands (the CLI is exempt from the SIGTERM watcher §9.2).
+zerodds-monitor = { version = "1.0.0-rc.3", path = "../monitor", default-features = false, features = ["std"] }
+zerodds-observability-otlp = { version = "1.0.0-rc.3", path = "../observability-otlp" }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos", default-features = false, features = ["alloc"] }
+
+[features]
+default = ["flatdata-loan"]
+# C7 "secure by default" ROS: build with `--features security` so
+# rmw_zerodds_init loads an SROS2 enclave from `ZERODDS_SECURITY_DIR`
+# (pulls the DDS-Security crypto stack via zerodds-c-api/security). Default
+# rmw builds stay lean (plain participant).
+security = ["zerodds-c-api/security"]
+# Same-host zero-copy message loaning (delivery mode `RawSameHost`,
+# zerodds-delivery-modes-1.0): the bridge calls the c-api SHM loan surface
+# (`zerodds_writer_enable_shm_loan` / `_loan_message` / `_commit_loan`,
+# `zerodds_reader_enable_shm` / `_take_shm` / `_release_shm`). On by default;
+# without it the loan path stays `Portable`-only (serialized, interop-safe).
+flatdata-loan = ["zerodds-c-api/flatdata-loan"]
+# Cross-stack same-host delivery via Eclipse iceoryx2 (delivery mode `Iceoryx`,
+# §3.3). Pulls the iceoryx2 runtime through zerodds-c-api. Off by default
+# (heavy dep + needs the iceoryx2 runtime); `ZERODDS_DELIVERY_MODE=iceoryx`
+# falls back to `Portable` when the shim is built without it.
+delivery-iceoryx = ["flatdata-loan", "zerodds-c-api/delivery-iceoryx"]
 
 [build-dependencies]
 cbindgen = "0.29"

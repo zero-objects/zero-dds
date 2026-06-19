@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `CCM_AMI::ExceptionHolder` Modell — Spec §7.4.1.
+//! `CCM_AMI::ExceptionHolder` model — spec §7.4.1.
 //!
-//! Spec-IDL (Annex A — `ami4ccm.idl`):
+//! Spec IDL (Annex A — `ami4ccm.idl`):
 //! ```idl
 //! module CCM_AMI {
 //!     native UserExceptionBase;
@@ -16,29 +16,29 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// `CCM_AMI::UserExceptionBase` (Spec §7.4.1, S. 9).
+/// `CCM_AMI::UserExceptionBase` (spec §7.4.1, p. 9).
 ///
-/// Spec-Zitat: "Language mapping of this native type should allow any
+/// Spec quote: "Language mapping of this native type should allow any
 /// user exception to be raised from this method. For instance, it is
 /// mapped to CORBA::UserException in C++ and to org.omg.CORBA.
 /// UserException in java."
 ///
-/// In ZeroDDS modellieren wir die `native`-Form als (Repository-ID,
-/// marshaled-Bytes)-Paar. Das ist ausreichend, um eine User-Exception
-/// von Server-Side serialisiert und im Client wieder rekonstruiert zu
-/// erhalten — Sprach-Mapping (CORBA::UserException, java.lang.Throwable,
-/// etc.) erfolgt beim Codegen.
+/// In ZeroDDS we model the `native` form as a (repository ID,
+/// marshaled bytes) pair. This is sufficient to serialize a user
+/// exception on the server side and reconstruct it on the client —
+/// the language mapping (CORBA::UserException, java.lang.Throwable,
+/// etc.) happens at codegen.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserExceptionBase {
-    /// CORBA Repository-ID der originalen Exception
-    /// (z.B. `IDL:Stock/InvalidStock:1.0`).
+    /// CORBA repository ID of the original exception
+    /// (e.g. `IDL:Stock/InvalidStock:1.0`).
     pub repository_id: String,
-    /// CDR-marshaled Member-State der Exception.
+    /// CDR-marshaled member state of the exception.
     pub marshaled_exception: Vec<u8>,
 }
 
 impl UserExceptionBase {
-    /// Konstruiert eine `UserExceptionBase` aus Repository-ID + Bytes.
+    /// Constructs a `UserExceptionBase` from a repository ID + bytes.
     #[must_use]
     pub fn new(repository_id: impl Into<String>, marshaled_exception: Vec<u8>) -> Self {
         Self {
@@ -48,42 +48,42 @@ impl UserExceptionBase {
     }
 }
 
-/// `CCM_AMI::ExceptionHolder`-Instanz (Spec §7.4.1, S. 9).
+/// `CCM_AMI::ExceptionHolder` instance (spec §7.4.1, p. 9).
 ///
-/// Spec-Zitat: "The CCM_AMI::ExceptionHolder interface encapsulates the
+/// Spec quote: "The CCM_AMI::ExceptionHolder interface encapsulates the
 /// exception data and enough information to turn that data back into a
 /// raised exception."
 ///
-/// Operation `raise_exception()` (Spec §7.4.1) rekonstruiert die
-/// Exception aus dem Holder. In ZeroDDS modellieren wir das als
-/// `Result<(), UserExceptionBase>` — `Err(...)` ist der "raise"-Pfad.
+/// The `raise_exception()` operation (spec §7.4.1) reconstructs the
+/// exception from the holder. In ZeroDDS we model this as
+/// `Result<(), UserExceptionBase>` — `Err(...)` is the "raise" path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExceptionHolder {
     inner: UserExceptionBase,
 }
 
 impl ExceptionHolder {
-    /// Konstruiert `ExceptionHolder` aus `UserExceptionBase`.
+    /// Constructs `ExceptionHolder` from `UserExceptionBase`.
     #[must_use]
     pub fn new(exception: UserExceptionBase) -> Self {
         Self { inner: exception }
     }
 
-    /// Spec §7.4.1 — `raise_exception()`. Liefert die enthaltene
-    /// Exception als `Err`-Variante. Da Exceptions nicht auf
-    /// `core::error::Error`-Trait gemappt werden (das ist Sprach-spezifisch),
-    /// ist der Rueckgabe-Typ `Err(UserExceptionBase)`.
+    /// Spec §7.4.1 — `raise_exception()`. Returns the contained
+    /// exception as the `Err` variant. Since exceptions are not mapped
+    /// to the `core::error::Error` trait (that is language-specific),
+    /// the return type is `Err(UserExceptionBase)`.
     ///
     /// # Errors
-    /// Diese Operation gibt **immer** `Err` zurueck — der Holder
-    /// existiert genau, um eine Exception zu transportieren. Der `Ok(())`-
-    /// Pfad ist nur formal, um den Spec-Signature-Style abzubilden.
+    /// This operation **always** returns `Err` — the holder
+    /// exists precisely to transport an exception. The `Ok(())`
+    /// path is only formal, to mirror the spec signature style.
     pub fn raise_exception(&self) -> Result<(), UserExceptionBase> {
         Err(self.inner.clone())
     }
 
-    /// Read-Only-Zugriff auf die enthaltene Exception (z.B. fuer
-    /// Diagnostik, ohne sie zu "raisen").
+    /// Read-only access to the contained exception (e.g. for
+    /// diagnostics, without "raising" it).
     #[must_use]
     pub const fn user_exception(&self) -> &UserExceptionBase {
         &self.inner

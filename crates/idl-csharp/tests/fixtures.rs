@@ -1,12 +1,12 @@
-//! Fixture-Tests fuer den IDL→C#-Codegen.
+//! Fixture tests for the IDL→C# codegen.
 //!
-//! Pro Fixture: parse IDL → generate C# → asserte eine Liste von
-//! Marker-Substrings, die zwingend im Output erscheinen muessen.
+//! Per fixture: parse IDL → generate C# → assert a list of marker
+//! substrings that must appear in the output.
 //!
-//! Marker-basierte Snapshots sind robuster als Byte-equal-Snapshots —
-//! Whitespace-Drift im Emitter (Phase-3-Polishing) bricht die Tests
-//! nicht, solange die semantischen Anker (Type-Namen, using-Imports,
-//! Inheritance-Klauseln) erhalten bleiben.
+//! Marker-based snapshots are more robust than byte-equal snapshots —
+//! whitespace drift in the emitter (phase 3 polishing) does not break
+//! the tests as long as the semantic anchors (type names, using
+//! imports, inheritance clauses) are preserved.
 
 #![allow(
     clippy::expect_used,
@@ -157,7 +157,7 @@ fn all_fixtures_generate_required_markers() {
     }
 }
 
-// Pro Fixture ein eigener `#[test]`, damit Failure-Lokalisierung praezise ist.
+// One `#[test]` per fixture so that failure localization is precise.
 
 macro_rules! fixture_test {
     ($name:ident) => {
@@ -166,8 +166,8 @@ macro_rules! fixture_test {
             let src = include_str!(concat!("fixtures/", stringify!($name), ".idl"));
             let ast = zerodds_idl::parse(src, &ParserConfig::default()).expect("parse");
             let cs = generate_csharp(&ast, &CsGenOptions::default()).expect("gen");
-            // Mindest-Anker: jedes Fixture muss `#nullable enable` und
-            // `using System;` enthalten (Praeambel-Invariante).
+            // Minimum anchor: every fixture must contain `#nullable enable`
+            // and `using System;` (preamble invariant).
             assert!(
                 cs.contains("#nullable enable"),
                 "missing #nullable enable in {}",

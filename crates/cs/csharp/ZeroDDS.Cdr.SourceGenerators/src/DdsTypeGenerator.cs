@@ -29,7 +29,7 @@ public sealed class DdsTypeGenerator : IIncrementalGenerator
 #nullable enable
 namespace ZeroDDS.Cdr
 {
-    /// <summary>Markiert eine partial class fuer Source-Gen-emittiertes
+    /// <summary>Marks a partial class for a source-generator-emitted
     /// IDdsTopicType&lt;T&gt;.</summary>
     [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct,
         AllowMultiple = false, Inherited = false)]
@@ -172,7 +172,7 @@ namespace ZeroDDS.Cdr
                 sb.Append("            ").Append(WriteCall(m.Type, $"sample.{m.Name}")).AppendLine();
             }
             sb.AppendLine("            var holder = w.ToArray();");
-            sb.AppendLine("            // XTypes 1.3 §7.6.8.4: holder ≤ 16 octets -> zero-pad; sonst MD5.");
+            sb.AppendLine("            // XTypes 1.3 §7.6.8.4: holder ≤ 16 octets -> zero-pad; otherwise MD5.");
             sb.AppendLine("            if (holder.Length <= 16)");
             sb.AppendLine("            {");
             sb.AppendLine("                var h = new byte[16];");

@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Cross-ORB capture fixture for truncatable valuetypes (#1 follow-up, §15.3.4.3
+// chunked encoding). JacORB 3.9 emits chunked + a RepositoryId list for
+// truncatable values; a Base reader truncates to {id}.
+valuetype Base {
+  public long id;
+};
+valuetype Derived : truncatable Base {
+  public string extra;
+};

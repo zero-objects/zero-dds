@@ -3,7 +3,7 @@
 
 //! Built-in Topic Data + Discovered Endpoints C-FFI (Spec §2.2.5).
 //!
-//! Liefert die 4 normativen Builtin-Topics:
+//! Provides the 4 normative builtin topics:
 //! - `DCPSParticipant` (§2.2.5.1) → `ZeroDdsParticipantBuiltinTopicData`
 //! - `DCPSTopic` (§2.2.5.2) → `ZeroDdsTopicBuiltinTopicData`
 //! - `DCPSPublication` (§2.2.5.3) → `ZeroDdsPublicationBuiltinTopicData`
@@ -21,50 +21,50 @@ use crate::ZeroDdsStatus;
 use crate::entities::ZeroDdsDomainParticipant;
 
 // ---------------------------------------------------------------------------
-// Strukturen
+// Structs
 // ---------------------------------------------------------------------------
 
-/// `DCPSParticipant`-Sample (Spec §2.2.5.1).
+/// `DCPSParticipant` sample (Spec §2.2.5.1).
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct ZeroDdsParticipantBuiltinTopicData {
     /// 16-byte GUID.
     pub guid: [u8; 16],
-    /// Pointer auf UserData-Bytes (statisch ueber `dp`-Lifetime im RC1
-    /// Snapshot — Caller kopiert wenn er die Daten ueberlebt).
+    /// Pointer to UserData bytes (static over the `dp` lifetime in the RC1
+    /// snapshot — the caller copies if it outlives the data).
     pub user_data: *const u8,
-    /// UserData-Laenge.
+    /// UserData length.
     pub user_data_len: usize,
 }
 
-/// `DCPSTopic`-Sample (Spec §2.2.5.2).
+/// `DCPSTopic` sample (Spec §2.2.5.2).
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct ZeroDdsTopicBuiltinTopicData {
-    /// Synthetischer Topic-Key (16 byte).
+    /// Synthetic topic key (16 byte).
     pub key: [u8; 16],
-    /// Topic-Name als C-String (heap-allokiert; Caller muss
-    /// `zerodds_string_free` rufen).
+    /// Topic name as a C string (heap-allocated; the caller must
+    /// call `zerodds_string_free`).
     pub name: *mut c_char,
-    /// Type-Name (heap-allokiert; Caller muss `zerodds_string_free` rufen).
+    /// Type name (heap-allocated; the caller must call `zerodds_string_free`).
     pub type_name: *mut c_char,
-    /// Durability-Kind (0=Volatile, 1=TransientLocal, 2=Transient, 3=Persistent).
+    /// Durability kind (0=Volatile, 1=TransientLocal, 2=Transient, 3=Persistent).
     pub durability_kind: u32,
-    /// Reliability-Kind (1=BestEffort, 2=Reliable).
+    /// Reliability kind (1=BestEffort, 2=Reliable).
     pub reliability_kind: u32,
 }
 
-/// `DCPSPublication`-Sample (Spec §2.2.5.3).
+/// `DCPSPublication` sample (Spec §2.2.5.3).
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct ZeroDdsPublicationBuiltinTopicData {
-    /// Endpoint-GUID (Writer).
+    /// Endpoint GUID (writer).
     pub key: [u8; 16],
-    /// Owning-Participant-GUID.
+    /// Owning participant GUID.
     pub participant_key: [u8; 16],
-    /// Topic-Name (heap-allokiert; via `zerodds_string_free`).
+    /// Topic name (heap-allocated; via `zerodds_string_free`).
     pub topic_name: *mut c_char,
-    /// Type-Name (heap-allokiert).
+    /// Type name (heap-allocated).
     pub type_name: *mut c_char,
     /// Durability.
     pub durability_kind: u32,
@@ -72,27 +72,27 @@ pub struct ZeroDdsPublicationBuiltinTopicData {
     pub reliability_kind: u32,
     /// Ownership (0=Shared, 1=Exclusive).
     pub ownership_kind: u32,
-    /// Ownership-Strength.
+    /// Ownership strength.
     pub ownership_strength: i32,
-    /// Liveliness-Lease in Sekunden.
+    /// Liveliness lease in seconds.
     pub liveliness_lease_seconds: i32,
-    /// Deadline-Period in Sekunden.
+    /// Deadline period in seconds.
     pub deadline_seconds: i32,
-    /// Lifespan-Duration in Sekunden.
+    /// Lifespan duration in seconds.
     pub lifespan_seconds: i32,
 }
 
-/// `DCPSSubscription`-Sample (Spec §2.2.5.4).
+/// `DCPSSubscription` sample (Spec §2.2.5.4).
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct ZeroDdsSubscriptionBuiltinTopicData {
-    /// Endpoint-GUID (Reader).
+    /// Endpoint GUID (reader).
     pub key: [u8; 16],
-    /// Owning-Participant-GUID.
+    /// Owning participant GUID.
     pub participant_key: [u8; 16],
-    /// Topic-Name (heap-allokiert).
+    /// Topic name (heap-allocated).
     pub topic_name: *mut c_char,
-    /// Type-Name (heap-allokiert).
+    /// Type name (heap-allocated).
     pub type_name: *mut c_char,
     /// Durability.
     pub durability_kind: u32,
@@ -100,9 +100,9 @@ pub struct ZeroDdsSubscriptionBuiltinTopicData {
     pub reliability_kind: u32,
     /// Ownership.
     pub ownership_kind: u32,
-    /// Liveliness-Lease in Sekunden.
+    /// Liveliness lease in seconds.
     pub liveliness_lease_seconds: i32,
-    /// Deadline-Period in Sekunden.
+    /// Deadline period in seconds.
     pub deadline_seconds: i32,
 }
 
@@ -110,10 +110,10 @@ pub struct ZeroDdsSubscriptionBuiltinTopicData {
 // DP → Discovered Topics + Data
 // ---------------------------------------------------------------------------
 
-/// Liefert die InstanceHandles aller entdeckten Topics.
+/// Returns the InstanceHandles of all discovered topics.
 ///
 /// # Safety
-/// `p`, `out`, `out_count` valide.
+/// `p`, `out`, `out_count` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_get_discovered_topics(
     p: *mut ZeroDdsDomainParticipant,
@@ -125,7 +125,7 @@ pub unsafe extern "C" fn zerodds_dp_get_discovered_topics(
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — p+out+out_count NULL-checked above; out[0..cap]
-    // muss writeable sein (Caller-Pledge).
+    // must be writeable (caller pledge).
     unsafe {
         let pp = &*p;
         let handles = pp.dp.get_discovered_topics();
@@ -139,10 +139,10 @@ pub unsafe extern "C" fn zerodds_dp_get_discovered_topics(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Liefert die `ParticipantBuiltinTopicData` zu einem InstanceHandle.
+/// Returns the `ParticipantBuiltinTopicData` for an InstanceHandle.
 ///
 /// # Safety
-/// `p`, `out` valide.
+/// `p`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_get_discovered_participant_data(
     p: *mut ZeroDdsDomainParticipant,
@@ -152,8 +152,8 @@ pub unsafe extern "C" fn zerodds_dp_get_discovered_participant_data(
     if p.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — p+out NULL-checked above; user_data wird per
-    // Box::leak in einen Slice gehievt, Caller gibt via builtin_userdata_free zurueck.
+    // SAFETY: see fn # Safety doc — p+out NULL-checked above; user_data is lifted into
+    // a slice via Box::leak, the caller returns it via builtin_userdata_free.
     unsafe {
         let pp = &*p;
         let data = match pp
@@ -181,24 +181,24 @@ pub unsafe extern "C" fn zerodds_dp_get_discovered_participant_data(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Gibt einen vorher allokierten UserData-Slice zurueck.
+/// Returns a previously allocated UserData slice.
 ///
 /// # Safety
-/// `p[0..len]` muss aus `dp_get_discovered_participant_data` stammen.
+/// `p[0..len]` must come from `dp_get_discovered_participant_data`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_builtin_userdata_free(p: *const u8, len: usize) {
     if p.is_null() || len == 0 {
         return;
     }
-    // SAFETY: see fn # Safety doc — p+len aus dp_get_discovered_participant_data
+    // SAFETY: see fn # Safety doc — p+len from dp_get_discovered_participant_data
     // Box::leak roundtrip.
     let _ = unsafe { Box::from_raw(slice::from_raw_parts_mut(p as *mut u8, len)) };
 }
 
-/// Liefert die `TopicBuiltinTopicData` zu einem InstanceHandle.
+/// Returns the `TopicBuiltinTopicData` for an InstanceHandle.
 ///
 /// # Safety
-/// `p`, `out` valide.
+/// `p`, `out` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_get_discovered_topic_data(
     p: *mut ZeroDdsDomainParticipant,
@@ -208,8 +208,8 @@ pub unsafe extern "C" fn zerodds_dp_get_discovered_topic_data(
     if p.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — p+out NULL-checked above; name/type_name werden
-    // als CString::into_raw uebergeben, Caller via zerodds_string_free.
+    // SAFETY: see fn # Safety doc — p+out NULL-checked above; name/type_name are
+    // passed as CString::into_raw, the caller via zerodds_string_free.
     unsafe {
         let pp = &*p;
         let data = match pp
@@ -238,10 +238,10 @@ pub unsafe extern "C" fn zerodds_dp_get_discovered_topic_data(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Anzahl entdeckter Publications (Spec §2.2.2.2.1.13).
+/// Number of discovered publications (Spec §2.2.2.2.1.13).
 ///
 /// # Safety
-/// `p` valide.
+/// `p` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_discovered_publications_count(
     p: *mut ZeroDdsDomainParticipant,
@@ -253,10 +253,10 @@ pub unsafe extern "C" fn zerodds_dp_discovered_publications_count(
     unsafe { (*p).dp.discovered_publications_count() }
 }
 
-/// Anzahl entdeckter Subscriptions.
+/// Number of discovered subscriptions.
 ///
 /// # Safety
-/// `p` valide.
+/// `p` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dp_discovered_subscriptions_count(
     p: *mut ZeroDdsDomainParticipant,
@@ -283,13 +283,13 @@ mod tests {
 
     fn mk(domain: u32) -> *mut ZeroDdsDomainParticipant {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: f statisch.
+        // SAFETY: f static.
         unsafe { zerodds_dpf_create_participant(f, domain, ptr::null()) }
     }
 
     fn cleanup(p: *mut ZeroDdsDomainParticipant) {
         let f = zerodds_dpf_get_instance();
-        // SAFETY: p aus mk; f statisch.
+        // SAFETY: p from mk; f static.
         unsafe {
             zerodds_dp_delete_contained_entities(p);
             zerodds_dpf_delete_participant(f, p);
@@ -301,7 +301,7 @@ mod tests {
         let p = mk(61);
         let mut buf = [0u64; 16];
         let mut count = 0usize;
-        // SAFETY: p aus mk; buf+count Stack-lokal.
+        // SAFETY: p from mk; buf+count stack-local.
         let rc = unsafe { zerodds_dp_get_discovered_topics(p, buf.as_mut_ptr(), &mut count, 16) };
         assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
         assert_eq!(count, 0);
@@ -311,7 +311,7 @@ mod tests {
     #[test]
     fn discovered_publications_count_starts_zero() {
         let p = mk(62);
-        // SAFETY: p aus mk.
+        // SAFETY: p from mk.
         unsafe {
             assert_eq!(zerodds_dp_discovered_publications_count(p), 0);
             assert_eq!(zerodds_dp_discovered_subscriptions_count(p), 0);
@@ -327,7 +327,7 @@ mod tests {
             user_data: ptr::null(),
             user_data_len: 0,
         };
-        // SAFETY: p aus mk; data Stack-lokal.
+        // SAFETY: p from mk; data stack-local.
         let rc = unsafe { zerodds_dp_get_discovered_participant_data(p, 0xDEAD, &mut data) };
         assert_eq!(rc, ZeroDdsStatus::BadParameter as c_int);
         cleanup(p);

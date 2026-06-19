@@ -1,40 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CoAP-Bridge §7.x Security-Wireup.
+//! CoAP bridge §7.x security wireup.
 //!
 //! Spec: `zerodds-coap-bridge-1.0.md` §7.
 //!
-//! **§7.1 TLS-Status**: rustls 0.23 hat keinen DTLS-Server-Mode (DTLS
-//! liegt auf UDP, rustls bedient nur TLS auf TCP). Eine pure-Rust
-//! DTLS-Server-Lib (z.B. webrtc-dtls) ist im Workspace nicht
-//! freigegeben. Spec §7.1 für CoAP wird daher in zwei Teilschritten
-//! erfüllt:
+//! **§7.1 TLS status**: rustls 0.23 has no DTLS server mode (DTLS
+//! sits on UDP, rustls only handles TLS over TCP). A pure-Rust
+//! DTLS server library (e.g. webrtc-dtls) is not approved in the
+//! workspace. Spec §7.1 for CoAP is therefore fulfilled in two
+//! sub-steps:
 //!
-//! 1. **Diese Schicht**: Auth (§7.2 — Bearer in CoAP-Option `Auth-Token`
-//!    via Option-Number 65000 als private extension, nicht IANA-fixed)
-//!    + Topic-ACL (§7.3) voll wired.
-//! 2. **Folge-Phase**: DTLS-Acceptor-Wireup mit pure-Rust DTLS-Lib
-//!    (Tracking: `coap-bridge` Issue „DTLS in next phase").
+//! 1. **This layer**: auth (§7.2 — bearer in CoAP option `Auth-Token`
+//!    via option number 65000 as a private extension, not IANA-fixed)
+//!    + topic ACL (§7.3) fully wired.
+//! 2. **Follow-up phase**: DTLS acceptor wireup with a pure-Rust DTLS
+//!    library (tracking: `coap-bridge` issue "DTLS in next phase").
 //!
-//! Wenn CLI `--tls-cert <FILE>` gesetzt wird, gibt das Daemon-Setup
-//! den klaren Fehler aus, dass DTLS in der Folge-Phase kommt — kein
-//! stille Failure.
+//! When the CLI sets `--tls-cert <FILE>`, the daemon setup emits a
+//! clear error that DTLS is coming in the follow-up phase — no
+//! silent failure.
 //!
-//! Auth-Hook für CoAP: erstes Byte-Array aus dem Request, das in der
-//! `Auth-Token`-Option steht (typisch `Bearer <jwt>`-Format).
+//! Auth hook for CoAP: the first byte array from the request that is
+//! present in the `Auth-Token` option (typically `Bearer <jwt>` format).
 
 pub use zerodds_bridge_security::{
     Acl, AclEntry, AclOp, AuthError, AuthMode, AuthSubject, SecurityConfig, SecurityCtx,
     SecurityError, authorize, build_ctx,
 };
 
-/// Übersetzt eine [`super::config::DaemonConfig`] in einen
-/// [`SecurityCtx`]. CoAP-spezifisch: TLS bleibt rejected (DTLS in next
-/// phase), aber Auth + ACL werden voll wired.
+/// Translates a [`super::config::DaemonConfig`] into a
+/// [`SecurityCtx`]. CoAP-specific: TLS stays rejected (DTLS in next
+/// phase), but auth + ACL are fully wired.
 ///
 /// # Errors
-/// [`SecurityError`] bei Auth-Mode-Konfig-Fehler.
+/// [`SecurityError`] on auth-mode config error.
 pub fn ctx_from_daemon_config(
     cfg: &super::config::DaemonConfig,
 ) -> Result<SecurityCtx, SecurityError> {
@@ -65,15 +65,15 @@ pub fn ctx_from_daemon_config(
 /// per RFC 7252 §12.2). Spec §7.2.
 pub const COAP_OPTION_AUTH_TOKEN: u16 = 65000;
 
-/// CoAP-spezifischer Auth-Hook: der Bearer-Token kommt aus einer
-/// CoAP-Option (Option-Number = 65000 wir verwenden den
-/// "private extension" range RFC 7252 §12.2).
+/// CoAP-specific auth hook: the bearer token comes from a
+/// CoAP option (option number = 65000; we use the
+/// "private extension" range, RFC 7252 §12.2).
 ///
-/// Der Daemon-Code liest die Option aus dem Request und reicht sie
-/// hier rein. Format ist erwartungsgemäß `Bearer <token>` (RFC 6750).
+/// The daemon code reads the option from the request and passes it
+/// in here. The format is expected to be `Bearer <token>` (RFC 6750).
 ///
 /// # Errors
-/// [`AuthError`] bei missing/malformed/rejected.
+/// [`AuthError`] on missing/malformed/rejected.
 pub fn authenticate_coap(
     auth: &AuthMode,
     auth_token_option: Option<&[u8]>,
@@ -88,11 +88,11 @@ pub fn authenticate_coap(
     zerodds_bridge_security::authenticate(auth, header_str, None, None)
 }
 
-/// Wirft einen klaren Fehler, wenn TLS-Cert-Pfade gesetzt sind aber
-/// der CoAP-Daemon noch keine DTLS-Lib hat.
+/// Throws a clear error when TLS cert paths are set but the CoAP
+/// daemon does not yet have a DTLS library.
 ///
 /// # Errors
-/// [`SecurityError::Tls`] mit "DTLS in next phase"-Hinweis.
+/// [`SecurityError::Tls`] with a "DTLS in next phase" hint.
 pub fn forbid_tls_until_dtls_lib(cfg: &SecurityConfig) -> Result<(), SecurityError> {
     if cfg.tls_cert.is_some() || cfg.tls_key.is_some() {
         return Err(SecurityError::Tls(

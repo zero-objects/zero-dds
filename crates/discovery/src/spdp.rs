@@ -2,15 +2,15 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Simple Participant Discovery Protocol (DDSI-RTPS 2.5 §8.5.3).
 //!
-//! Best-Effort-Beacon. Beacon-Sender baut ein DATA-Datagram mit
-//! `ParticipantBuiltinTopicData` als PL_CDR_LE-Payload; der Caller
-//! sendet es periodisch via Multicast. Beacon-Receiver parst
-//! eingehende DATA-Submessages mit der SPDP-Reader-EntityId und liefert
-//! ein `DiscoveredParticipant` an den Cache.
+//! Best-effort beacon. The beacon sender builds a DATA datagram with
+//! `ParticipantBuiltinTopicData` as PL_CDR_LE payload; the caller
+//! sends it periodically via multicast. The beacon receiver parses
+//! incoming DATA submessages with the SPDP reader EntityId and delivers
+//! a `DiscoveredParticipant` to the cache.
 //!
-//! Lease-Tracking: `DiscoveredParticipantsCache` führt `last_seen` pro
-//! Participant; Caller (DCPS-Runtime) räumt abgelaufene Einträge gemäss
-//! `participant.lease_duration` (PID_PARTICIPANT_LEASE_DURATION) auf.
+//! Lease tracking: `DiscoveredParticipantsCache` keeps `last_seen` per
+//! participant; the caller (DCPS runtime) purges expired entries per
+//! `participant.lease_duration` (PID_PARTICIPANT_LEASE_DURATION).
 
 extern crate alloc;
 use alloc::collections::BTreeMap;
@@ -25,14 +25,14 @@ use zerodds_rtps::participant_data::ParticipantBuiltinTopicData;
 use zerodds_rtps::submessages::DataSubmessage;
 use zerodds_rtps::wire_types::{EntityId, GuidPrefix, SequenceNumber, VendorId};
 
-/// SPDP-spezifische Fehler.
+/// SPDP-specific errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SpdpError {
-    /// Wire-Decoding-Fehler (Datagram, Submessage, ParameterList).
+    /// Wire decoding error (datagram, submessage, ParameterList).
     Wire(WireError),
-    /// Datagram enthaelt keine SPDP-DATA-Submessage (Reader/Writer-IDs
-    /// passen nicht).
+    /// Datagram contains no SPDP DATA submessage (reader/writer IDs
+    /// do not match).
     NotSpdp,
 }
 
@@ -58,40 +58,43 @@ impl std::error::Error for SpdpError {}
 // Beacon-Sender
 // ============================================================================
 
-/// SPDP-Beacon-Sender. Stateless: ruft `serialize()` auf, um ein
-/// fertiges Datagram zu produzieren, das der Caller via Multicast
-/// sendet.
+/// SPDP beacon sender. Stateless: call `serialize()` to produce a
+/// ready datagram that the caller sends via multicast.
 #[derive(Debug, Clone)]
 pub struct SpdpBeacon {
-    /// Eigene Participant-Daten.
+    /// Own participant data.
     pub data: ParticipantBuiltinTopicData,
-    /// VendorId fuer den RTPS-Header (default ZeroDDS).
+    /// VendorId for the RTPS header (default ZeroDDS).
     pub vendor_id: VendorId,
-    /// Naechste Sequence-Number fuer DATA-Submessages.
+    /// Next sequence number for DATA submessages.
     pub next_sn: i64,
+    /// Sequence number for the reliable secure SPDP writer (0xff0101c2,
+    /// FastDDS interop). Its own SN space, separate from the plain SPDP writer.
+    pub secure_next_sn: i64,
 }
 
 impl SpdpBeacon {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(data: ParticipantBuiltinTopicData) -> Self {
         Self {
             data,
             vendor_id: VendorId::ZERODDS,
             next_sn: 1,
+            secure_next_sn: 1,
         }
     }
 
-    /// Setzt eine bestimmte VendorId (sonst Default `ZERODDS`).
+    /// Sets a specific VendorId (otherwise default `ZERODDS`).
     pub fn set_vendor_id(&mut self, vendor: VendorId) {
         self.vendor_id = vendor;
     }
 
-    /// Encoded ein SPDP-Beacon-Datagram.
+    /// Encodes an SPDP beacon datagram.
     ///
     /// # Errors
-    /// `WireError`, wenn DATA-Body groesser als u16::MAX oder Encoding
-    /// scheitert.
+    /// `WireError` if the DATA body is larger than u16::MAX or encoding
+    /// fails.
     pub fn serialize(&mut self) -> Result<Vec<u8>, WireError> {
         #[cfg(feature = "metrics")]
         crate::metrics::inc_spdp_announcement_sent();
@@ -116,35 +119,71 @@ impl SpdpBeacon {
         let header = RtpsHeader::new(self.vendor_id, self.data.guid.prefix);
         encode_data_datagram(header, &[data])
     }
+
+    /// Encodes the beacon on the **reliable secure SPDP writer**
+    /// (0xff0101c2/c7, FastDDS `ENTITYID_SPDP_RELIABLE_BUILTIN_PARTICIPANT_
+    /// SECURE_*`). Content identical to the plain beacon; only the writer/reader
+    /// EntityId + its own SN space. FastDDS announces its full secured
+    /// participant data over this channel and gates the crypto-token
+    /// reciprocation/endpoint matching on it (cyclone does not need it).
+    ///
+    /// # Errors
+    /// `WireError` like [`Self::serialize`].
+    pub fn serialize_secure(&mut self) -> Result<Vec<u8>, WireError> {
+        let payload = self.data.to_pl_cdr_le();
+        // Durable single sample: ALWAYS SN=1. The secure SPDP carries ONE
+        // participant instance, reliably re-announced; a fixed SN makes
+        // re-sends (Phase-2b NACK resend) duplicates instead of gaps — otherwise
+        // FastDDS' reliable reader sees non-continuous SNs and NACKs
+        // forever.
+        let sn = SequenceNumber(1);
+        let _ = &mut self.secure_next_sn;
+        let data = DataSubmessage {
+            extra_flags: 0,
+            reader_id: EntityId::SPDP_RELIABLE_BUILTIN_PARTICIPANTS_SECURE_READER,
+            writer_id: EntityId::SPDP_RELIABLE_BUILTIN_PARTICIPANTS_SECURE_WRITER,
+            writer_sn: sn,
+            inline_qos: None,
+            key_flag: false,
+            non_standard_flag: false,
+            serialized_payload: payload.into(),
+        };
+        let header = RtpsHeader::new(self.vendor_id, self.data.guid.prefix);
+        encode_data_datagram(header, &[data])
+    }
 }
 
 // ============================================================================
 // Beacon-Receiver
 // ============================================================================
 
-/// SPDP-Beacon-Receiver. Stateless: nimmt ein Datagram und versucht,
-/// daraus eine DiscoveredParticipant-Info zu extrahieren.
+/// SPDP beacon receiver. Stateless: takes a datagram and tries to
+/// extract a DiscoveredParticipant from it.
 #[derive(Debug, Clone, Default)]
 pub struct SpdpReader;
 
 impl SpdpReader {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self
     }
 
-    /// Versucht, einen DiscoveredParticipant aus einem Datagram zu
-    /// extrahieren.
+    /// Tries to extract a DiscoveredParticipant from a datagram.
     ///
     /// # Errors
-    /// - `SpdpError::Wire` bei Decoder-Fehler.
-    /// - `SpdpError::NotSpdp` wenn keine SPDP-DATA-Submessage darin ist.
+    /// - `SpdpError::Wire` on decoder error.
+    /// - `SpdpError::NotSpdp` if there is no SPDP DATA submessage in it.
     pub fn parse_datagram(&self, datagram: &[u8]) -> Result<DiscoveredParticipant, SpdpError> {
         let parsed = decode_datagram(datagram)?;
         for sub in parsed.submessages {
             if let ParsedSubmessage::Data(d) = sub {
-                if d.writer_id == EntityId::SPDP_BUILTIN_PARTICIPANT_WRITER {
+                // Plain-SPDP (0x000100c2) ODER FastDDS' reliabler Secure-SPDP
+                // (0xff0101c2) — both carry ParticipantBuiltinTopicData. FastDDS
+                // places its identity_token/security_info over the secure channel.
+                if d.writer_id == EntityId::SPDP_BUILTIN_PARTICIPANT_WRITER
+                    || d.writer_id == EntityId::SPDP_RELIABLE_BUILTIN_PARTICIPANTS_SECURE_WRITER
+                {
                     match ParticipantBuiltinTopicData::from_pl_cdr_le(&d.serialized_payload) {
                         Ok(data) => {
                             return Ok(DiscoveredParticipant {
@@ -153,9 +192,9 @@ impl SpdpReader {
                                 data,
                             });
                         }
-                        // Fremde Encapsulation (z.B. PL_CDR2 von Cyclone/Fast-DDS):
-                        // kein echter Bug, einfach stillschweigend ueberspringen.
-                        // Wird bei XCDR2-Rollout (Phase 1/2) ersetzt.
+                        // Foreign encapsulation (e.g. PL_CDR2 from Cyclone/Fast-DDS):
+                        // not a real bug, just skip it silently.
+                        // Will be replaced at XCDR2 rollout (phase 1/2).
                         Err(WireError::UnsupportedEncapsulation { .. }) => continue,
                         Err(e) => return Err(SpdpError::Wire(e)),
                     }
@@ -166,15 +205,15 @@ impl SpdpReader {
     }
 }
 
-/// Ergebnis einer SPDP-Beacon-Reception.
+/// Result of an SPDP beacon reception.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredParticipant {
-    /// GuidPrefix aus dem RTPS-Header (sollte mit `data.guid.prefix`
-    /// uebereinstimmen, kann bei Mis-Configuration abweichen).
+    /// GuidPrefix from the RTPS header (should match `data.guid.prefix`,
+    /// may diverge on misconfiguration).
     pub sender_prefix: GuidPrefix,
-    /// VendorId aus dem RTPS-Header.
+    /// VendorId from the RTPS header.
     pub sender_vendor: VendorId,
-    /// Geparste Participant-Daten.
+    /// Parsed participant data.
     pub data: ParticipantBuiltinTopicData,
 }
 
@@ -182,17 +221,17 @@ pub struct DiscoveredParticipant {
 // Cache
 // ============================================================================
 
-/// In-Memory-Cache aller bisher entdeckten Participants. `last_seen`
-/// pro Eintrag wird vom Caller (DCPS-Runtime) gegen
-/// `participant.lease_duration` geprüft, um abgelaufene Participants zu
-/// purgen — der Cache selbst erzwingt kein Timeout.
+/// In-memory cache of all participants discovered so far. `last_seen`
+/// per entry is checked by the caller (DCPS runtime) against
+/// `participant.lease_duration` to purge expired participants —
+/// the cache itself enforces no timeout.
 #[derive(Debug, Clone, Default)]
 pub struct DiscoveredParticipantsCache {
     inner: BTreeMap<GuidPrefix, DiscoveredParticipant>,
 }
 
 impl DiscoveredParticipantsCache {
-    /// Leerer Cache.
+    /// Empty cache.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -200,8 +239,8 @@ impl DiscoveredParticipantsCache {
         }
     }
 
-    /// Insert/Update. Liefert `true` wenn ein NEUER Participant
-    /// hinzugekommen ist (Caller kann darauf einen Listener aufrufen).
+    /// Insert/update. Returns `true` if a NEW participant
+    /// was added (the caller can invoke a listener on it).
     pub fn insert(&mut self, p: DiscoveredParticipant) -> bool {
         let inserted = self.inner.insert(p.data.guid.prefix, p).is_none();
         if inserted {
@@ -211,25 +250,25 @@ impl DiscoveredParticipantsCache {
         inserted
     }
 
-    /// Anzahl bekannte Participants.
+    /// Number of known participants.
     #[must_use]
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
-    /// `true` wenn leer.
+    /// `true` if empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 
-    /// Lookup nach Prefix.
+    /// Lookup by prefix.
     #[must_use]
     pub fn get(&self, prefix: &GuidPrefix) -> Option<&DiscoveredParticipant> {
         self.inner.get(prefix)
     }
 
-    /// Iter ueber alle bekannten Participants.
+    /// Iterate over all known participants.
     pub fn iter(&self) -> impl Iterator<Item = &DiscoveredParticipant> {
         self.inner.values()
     }
@@ -263,6 +302,7 @@ mod tests {
             sig_algo_info: None,
             kx_algo_info: None,
             sym_cipher_algo_info: None,
+            participant_security_info: None,
         }
     }
 
@@ -304,7 +344,7 @@ mod tests {
 
     #[test]
     fn reader_rejects_non_spdp_datagram() {
-        // Ein normales User-DATA, kein SPDP.
+        // A normal user DATA, not SPDP.
         let header = RtpsHeader::new(VendorId::ZERODDS, GuidPrefix::from_bytes([1; 12]));
         let data = DataSubmessage {
             extra_flags: 0,
@@ -344,7 +384,7 @@ mod tests {
         let p = SpdpReader::new().parse_datagram(&datagram).unwrap();
         assert!(c.insert(p.clone()));
         assert_eq!(c.len(), 1);
-        // Zweites Insert mit gleichem Prefix → false.
+        // Second insert with the same prefix → false.
         assert!(!c.insert(p));
         assert_eq!(c.len(), 1);
     }

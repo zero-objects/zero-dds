@@ -1,0 +1,53 @@
+Source: zerodds
+Section: net
+Priority: optional
+Maintainer: ZeroDDS Maintainers <maintainers@zerodds.io>
+Build-Depends: debhelper-compat (= 13),
+               dh-cargo,
+               cargo (>= 1.85),
+               rustc (>= 1.85),
+               libssl-dev,
+               pkg-config
+Standards-Version: 4.6.2
+Homepage: https://zerodds.io
+Vcs-Browser: https://gitlab.sandra-kessler.eu/fishermen21/zerodds
+Vcs-Git: https://gitlab.sandra-kessler.eu/fishermen21/zerodds.git
+Rules-Requires-Root: no
+
+Package: zerodds-tools
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: ZeroDDS command-line tools
+ Pure-Rust DDS implementation conformant to OMG DDS 1.4 + DDSI-RTPS 2.5
+ + DDS-Security 1.2 + DDS-XTypes 1.3.
+ .
+ This package provides the user-facing CLI tools:
+   * dds-admin       — runtime introspection + topic listing
+   * dds-perf        — throughput / latency benchmark generator
+   * dds-idlc        — OMG-IDL compiler with C++/C#/Java/TS/Python backends
+   * dds-xmlc        — DDS-XML schema/sample compiler
+   * dds-replay      — recording playback (.zddsrec format)
+   * dds-traceability — wire-trace decoder
+   * dds-chaos       — network-chaos proxy for soak testing
+   * roundtrip-1us   — sub-microsecond latency bench
+
+Package: libzerodds-dev
+Architecture: any
+Depends: ${misc:Depends}
+Description: ZeroDDS C-FFI development headers
+ C/C++ headers + import-libraries for linking ZeroDDS into native
+ applications via the dds-c-api FFI layer (zerodds.h).
+
+Package: libzerodds0
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: ZeroDDS C-FFI runtime library
+ Shared-object form of the dds-c-api crate; required at runtime by C/C++
+ applications + ROS-2 RMW shim consumers.
+
+Package: librmw-zerodds
+Architecture: any
+Depends: libzerodds0 (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Description: ROS-2 RMW implementation backed by ZeroDDS
+ ROS-2 plugin (ament-cmake-package) implementing the RMW (ROS Middleware)
+ interface against ZeroDDS. Compatible with ROS-2 Humble, Iron, Jazzy.

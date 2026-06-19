@@ -4,9 +4,9 @@ build-backend = "maturin"
 
 [project]
 name = "zerodds"
-# Maturin liest die Version aus crates/py/Cargo.toml (= workspace
-# Cargo.toml ueber version.workspace = true), damit PyPI- und
-# Rust-Crate-Version garantiert synchron sind.
+# Maturin reads the version from crates/py/Cargo.toml (= workspace
+# Cargo.toml via version.workspace = true), so that the PyPI and
+# Rust crate versions are guaranteed to be in sync.
 dynamic = ["version"]
 description = "Python bindings for ZeroDDS — pure-Rust DDS 1.4 / RTPS 2.5 / XTypes 1.3 implementation"
 readme = "README.md"
@@ -45,10 +45,10 @@ Issues = "https://github.com/zero-objects/zero-dds/issues"
 Changelog = "https://github.com/zero-objects/zero-dds/blob/main/crates/py/CHANGELOG.md"
 
 [tool.maturin]
-# Cargo-Paket-Name ist `zerodds-py`, aber der Python-Extension-Module heisst
-# `zerodds_py` (via #[pymodule]-Name im ffi.rs).
+# The Cargo package name is `zerodds-py`, but the Python extension module is
+# named `zerodds_py` (via the #[pymodule] name in ffi.rs).
 features = ["extension-module"]
-# Das `zerodds`-Python-Package liegt in python/ und re-exportiert aus
-# _core (= der Rust cdylib).
+# The `zerodds` Python package lives in python/ and re-exports from
+# _core (= the Rust cdylib).
 python-source = "python"
 module-name = "zerodds._core"

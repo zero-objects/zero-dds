@@ -2,14 +2,14 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Type-Assignability (XTypes 1.3 §7.2.4.1).
 //!
-//! Bestimmt ob ein Typ `T1` einem Typ `T2` zugewiesen werden kann —
-//! entspricht "kompatibel fuer Publication/Subscription-Match". Die
-//! Regeln haengen von Extensibility (Final/Appendable/Mutable) +
-//! TypeConsistencyEnforcement ab.
+//! Determines whether a type `T1` can be assigned to a type `T2` —
+//! corresponds to "compatible for publication/subscription match". The
+//! rules depend on extensibility (final/appendable/mutable) +
+//! TypeConsistencyEnforcement.
 //!
-//! Core-Regeln fuer Primitives, Strings,
-//! Collections, Aliases (via Resolver), Enums + Structs mit
-//! Final/Appendable/Mutable-Semantik. Strict-vs-lax-Variante ueber
+//! Core rules for primitives, strings,
+//! collections, aliases (via the resolver), enums + structs with
+//! final/appendable/mutable semantics. Strict-vs-lax variant via
 //! `AssignabilityConfig`.
 
 use crate::resolve::{TypeRegistry, resolve_alias_chain};
@@ -17,41 +17,41 @@ use crate::type_identifier::{PrimitiveKind, TypeIdentifier};
 use crate::type_object::flags::StructTypeFlag;
 use crate::type_object::minimal::{MinimalStructType, MinimalTypeObject};
 
-/// Fehler beim Flatten einer Inheritance-Kette.
+/// Error while flattening an inheritance chain.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InheritanceError {
-    /// `base_type` zeigt auf eine `EquivalenceHash`, die nicht in der
-    /// Registry liegt.
+    /// `base_type` points to an `EquivalenceHash` that is not in the
+    /// registry.
     UnknownBase {
-        /// Der ungeloeste Hash.
+        /// The unresolved hash.
         hash: crate::type_identifier::EquivalenceHash,
     },
-    /// `base_type` zeigt auf einen TypeObject, der kein Struct ist
-    /// (z.B. Enum oder Alias auf Enum).
+    /// `base_type` points to a TypeObject that is not a struct
+    /// (e.g. an enum or an alias to an enum).
     BaseNotAStruct,
-    /// Inheritance-Cycle erkannt.
+    /// Inheritance cycle detected.
     Cycle,
-    /// Maximum-Depth ueberschritten.
+    /// Maximum depth exceeded.
     DepthExceeded {
         /// Limit.
         limit: usize,
     },
-    /// Member-Name oder Member-ID kollidiert zwischen Base und Derived
+    /// Member name or member ID collides between base and derived
     /// (XTypes 1.3 §7.2.2.4.5).
     InheritanceConflict {
-        /// Bezugs-ID oder -Name.
+        /// Reference ID or name.
         member_id: u32,
-        /// Beschreibung.
+        /// Description.
         reason: &'static str,
     },
 }
 
-/// Baut die "hypothetical flat type"-Struktur aus einer Single-Inheritance-
-/// Kette (XTypes 1.3 §7.2.2.4.5). Resolved `base_type` rekursiv und
-/// concatenated Base- gefolgt von Derived-Membern. Bei Member-Name- oder
-/// Member-ID-Kollisionen wird `InheritanceConflict` zurueckgegeben.
+/// Builds the "hypothetical flat type" structure from a single-inheritance
+/// chain (XTypes 1.3 §7.2.2.4.5). Resolves `base_type` recursively and
+/// concatenates the base members followed by the derived members. On member-name
+/// or member-ID collisions, `InheritanceConflict` is returned.
 ///
-/// `max_depth` limitiert die Tiefe der Inheritance-Kette (Cycle-Schutz).
+/// `max_depth` limits the depth of the inheritance chain (cycle protection).
 ///
 /// # Errors
 /// Siehe [`InheritanceError`].
@@ -92,8 +92,8 @@ pub fn flatten_inheritance(
         return Err(InheritanceError::DepthExceeded { limit: max_depth });
     }
 
-    // chain ist [Derived, Mid1, Mid2, ..., Root].
-    // Spec §7.2.2.4.5: Konkateniere von Root zu Derived (Base-Member zuerst).
+    // chain is [Derived, Mid1, Mid2, ..., Root].
+    // Spec §7.2.2.4.5: concatenate from root to derived (base members first).
     let mut flat_members: alloc::vec::Vec<crate::type_object::minimal::MinimalStructMember> =
         alloc::vec::Vec::new();
     let mut seen_ids: BTreeSet<u32> = BTreeSet::new();
@@ -116,8 +116,8 @@ pub fn flatten_inheritance(
         }
     }
 
-    // Resultat: Derived's Header (incl. base_type=None nach Flatten) +
-    // konkat. Member.
+    // Result: the derived's header (incl. base_type=None after flatten) +
+    // concatenated members.
     let Some(derived) = chain.first().cloned() else {
         return Err(InheritanceError::DepthExceeded { limit: max_depth });
     };
@@ -127,28 +127,28 @@ pub fn flatten_inheritance(
     Ok(flat)
 }
 
-/// Konfiguration fuer Assignability-Checks.
+/// Configuration for assignability checks.
 ///
-/// Die Felder ausser `max_depth` entsprechen 1:1 den Flags der DDS-QoS
+/// The fields other than `max_depth` correspond 1:1 to the flags of the DDS-QoS
 /// `TypeConsistencyEnforcement` (XTypes §7.6.3.7). `TypeMatcher`
-/// uebersetzt eine konkrete TCE-Policy in dieses Struct.
+/// translates a concrete TCE policy into this struct.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AssignabilityConfig {
-    /// Erlaubt Type-Coercion (int32 ↔ int64 etc.)?
+    /// Allow type coercion (int32 ↔ int64 etc.)?
     pub allow_type_coercion: bool,
-    /// Ignoriert Sequence-Bounds (Writer darf groesser als Reader sein).
+    /// Ignore sequence bounds (the writer may be larger than the reader).
     pub ignore_sequence_bounds: bool,
-    /// Ignoriert String-Bounds.
+    /// Ignore string bounds.
     pub ignore_string_bounds: bool,
-    /// Ignoriert Member-Namen — Mutable-Structs matchen dann
-    /// nur via `@id`-Member-ID, nicht ueber NameHash.
+    /// Ignore member names — mutable structs then match
+    /// only via the `@id` member ID, not via the NameHash.
     pub ignore_member_names: bool,
-    /// `@ignore_literal_names` global (XTypes §7.2.4.4.7) — Enum-Compat
-    /// vergleicht nur Ordinalwerte, nicht Literal-Namen. Zusaetzlich
-    /// kann das per `EnumTypeFlag::IGNORE_LITERAL_NAMES` auf einer
-    /// einzelnen Seite gesetzt werden; die Disjunktion gewinnt.
+    /// `@ignore_literal_names` globally (XTypes §7.2.4.4.7) — enum compat
+    /// compares only ordinal values, not literal names. Additionally
+    /// this can be set per `EnumTypeFlag::IGNORE_LITERAL_NAMES` on a
+    /// single side; the disjunction wins.
     pub ignore_literal_names: bool,
-    /// Maximum-Depth fuer rekursives Aufloesen.
+    /// Maximum depth for recursive resolution.
     pub max_depth: usize,
 }
 
@@ -165,43 +165,43 @@ impl Default for AssignabilityConfig {
     }
 }
 
-/// Ergebnis des Assignability-Checks.
+/// Result of the assignability check.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Assignable {
-    /// Kompatibel.
+    /// Compatible.
     Yes,
-    /// Nicht kompatibel mit Begruendung.
+    /// Not compatible, with a reason.
     No(&'static str),
 }
 
 impl Assignable {
-    /// `true` wenn kompatibel.
+    /// `true` if compatible.
     #[must_use]
     pub const fn is_yes(&self) -> bool {
         matches!(self, Self::Yes)
     }
 }
 
-/// Prueft ob der Writer-Typ `w` fuer den Reader-Typ `r` kompatibel ist.
+/// Checks whether the writer type `w` is compatible for the reader type `r`.
 ///
 /// zerodds-lint: recursion-depth 64
 ///
-/// **Wichtig zur Tiefen-Zahl**: die `64` ist der *Default*
-/// ([`DEFAULT_MAX_RESOLVE_DEPTH`]) und **nicht** enforced durch Code —
-/// `cfg.max_depth` ist runtime-konfigurierbar. Tests fahren Werte bis
-/// 512 (`resolve_depth_exceeded`-Tests), Produktions-Aufrufer sollten
-/// die Default-`AssignabilityConfig` nutzen, sonst den Wert explizit
-/// mit der Risikobewertung abstimmen.
+/// **Important on the depth number**: the `64` is the *default*
+/// ([`DEFAULT_MAX_RESOLVE_DEPTH`]) and **not** enforced by code —
+/// `cfg.max_depth` is runtime-configurable. Tests run values up to
+/// 512 (`resolve_depth_exceeded` tests); production callers should
+/// use the default `AssignabilityConfig`, otherwise tune the value
+/// explicitly with the risk assessment.
 ///
-/// Rekursion via `check_direct` → `is_assignable` (nested Sequences,
-/// Struct-Member).
+/// Recursion via `check_direct` → `is_assignable` (nested sequences,
+/// struct members).
 pub fn is_assignable(
     w: &TypeIdentifier,
     r: &TypeIdentifier,
     registry: &TypeRegistry,
     cfg: &AssignabilityConfig,
 ) -> Assignable {
-    // Alias-Resolution auf beiden Seiten.
+    // Alias resolution on both sides.
     let Ok(w) = resolve_alias_chain(w, registry, cfg.max_depth) else {
         return Assignable::No("writer alias resolution failed");
     };
@@ -214,16 +214,16 @@ pub fn is_assignable(
 
 /// zerodds-lint: recursion-depth 64
 ///
-/// Dispatcht die Assignability-Checks pro TypeIdentifier-Variante.
-/// Nested-Types (Sequence, Struct-Member) rufen `is_assignable` rekursiv
-/// — Depth-Cap via `cfg.max_depth`.
+/// Dispatches the assignability checks per TypeIdentifier variant.
+/// Nested types (sequence, struct member) call `is_assignable` recursively
+/// — depth cap via `cfg.max_depth`.
 fn check_direct(
     w: &TypeIdentifier,
     r: &TypeIdentifier,
     registry: &TypeRegistry,
     cfg: &AssignabilityConfig,
 ) -> Assignable {
-    // Exakte Identitaet → immer Yes.
+    // Exact identity → always Yes.
     if w == r {
         return Assignable::Yes;
     }
@@ -233,8 +233,8 @@ fn check_direct(
         (TypeIdentifier::Primitive(wp), TypeIdentifier::Primitive(rp)) => {
             primitive_compatible(*wp, *rp, cfg)
         }
-        // String-Kompatibilitaet. Small/Large ist nur Encoding-Detail;
-        // Bounds werden per `ignore_string_bounds` gefiltert.
+        // String compatibility. Small/Large is only an encoding detail;
+        // bounds are filtered via `ignore_string_bounds`.
         (
             TypeIdentifier::String8Small { .. } | TypeIdentifier::String8Large { .. },
             TypeIdentifier::String8Small { .. } | TypeIdentifier::String8Large { .. },
@@ -258,9 +258,9 @@ fn check_direct(
             }
         }
 
-        // Sequence-Kompatibilitaet: Small ↔ Small/Large, Large ↔ Large/Small.
-        // Small vs Large ist nur Wire-Encoding; Bounds werden auf u32
-        // normalisiert und per Policy gefiltert.
+        // Sequence compatibility: Small ↔ Small/Large, Large ↔ Large/Small.
+        // Small vs Large is only wire encoding; bounds are normalized to u32
+        // and filtered per policy.
         (
             TypeIdentifier::PlainSequenceSmall { .. } | TypeIdentifier::PlainSequenceLarge { .. },
             TypeIdentifier::PlainSequenceSmall { .. } | TypeIdentifier::PlainSequenceLarge { .. },
@@ -273,10 +273,10 @@ fn check_direct(
             is_assignable(we, re, registry, cfg)
         }
 
-        // Array: feste Dimensionen. `bound_seq`-Vergleich ist strukturell;
-        // Ignore-Bounds gilt hier nicht (Array-Bounds sind keine Policy-Sache).
-        // Array: Small + Large untereinander; Bounds auf u32-Vec normalisieren
-        // und strukturell vergleichen.
+        // Array: fixed dimensions. The `bound_seq` comparison is structural;
+        // ignore-bounds does not apply here (array bounds are not a policy matter).
+        // Array: Small + Large among each other; normalize bounds to a u32 vec
+        // and compare structurally.
         (
             TypeIdentifier::PlainArraySmall { .. } | TypeIdentifier::PlainArrayLarge { .. },
             TypeIdentifier::PlainArraySmall { .. } | TypeIdentifier::PlainArrayLarge { .. },
@@ -305,7 +305,7 @@ fn check_direct(
             }
         }
 
-        // Hash-Refs: beide auf Minimal → strukturelle Gleichheit.
+        // Hash refs: both on Minimal → structural equality.
         (
             TypeIdentifier::EquivalenceHashMinimal(wh),
             TypeIdentifier::EquivalenceHashMinimal(rh),
@@ -313,7 +313,7 @@ fn check_direct(
             if wh == rh {
                 return Assignable::Yes;
             }
-            // TypeObjects aus Registry vergleichen.
+            // Compare TypeObjects from the registry.
             match (registry.get_minimal(wh), registry.get_minimal(rh)) {
                 (Some(wobj), Some(robj)) => check_minimal_types(wobj, robj, registry, cfg),
                 _ => Assignable::No("unknown type objects for hash comparison"),
@@ -396,10 +396,10 @@ fn primitive_compatible(
     if !cfg.allow_type_coercion {
         return Assignable::No("primitive kinds differ (no coercion allowed)");
     }
-    // Koerzions-Matrix fuer Numerics — widening OK, narrowing nein.
-    // Signed-Widening (Int8/16/32 → Int64), Unsigned-Widening (UInt8/16/32
-    // → UInt64 + auch in signed-wider-Typen, da alle Werte verlustfrei
-    // passen), Float-Widening (Float32 → Float64).
+    // Coercion matrix for numerics — widening OK, narrowing no.
+    // Signed widening (Int8/16/32 → Int64), unsigned widening (UInt8/16/32
+    // → UInt64 + also into signed-wider types, since all values fit
+    // losslessly), float widening (Float32 → Float64).
     use PrimitiveKind::*;
     let ok = matches!(
         (w, r),
@@ -418,8 +418,8 @@ fn primitive_compatible(
     }
 }
 
-/// Drei-Werte-Extensibility aus den Flag-Bits. Default (keine Flags) =
-/// Appendable, entsprechend XTypes §7.2.2.4.
+/// Three-valued extensibility from the flag bits. Default (no flags) =
+/// Appendable, per XTypes §7.2.2.4.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StructExt {
     Final,
@@ -445,11 +445,11 @@ fn check_minimal_types(
 ) -> Assignable {
     match (w, r) {
         (MinimalTypeObject::Struct(ws), MinimalTypeObject::Struct(rs)) => {
-            // Extensibility-Check: writer + reader muessen
-            // dieselbe Extensibility-Kategorie haben (§7.2.4.4).
-            // Bugfix (#10): Konsolidiere Flag-Bits auf einen drei-Werte-
-            // Enum-Vergleich, um Corner-Case "beide haben keine Flag-Bits
-            // gesetzt" = Appendable == Appendable korrekt zu erfassen.
+            // Extensibility check: writer + reader must have
+            // the same extensibility category (§7.2.4.4).
+            // Bugfix (#10): consolidate the flag bits into a three-valued
+            // enum comparison to correctly capture the corner case "both have
+            // no flag bits set" = Appendable == Appendable.
             let w_ext = struct_extensibility(ws.struct_flags);
             let r_ext = struct_extensibility(rs.struct_flags);
             if w_ext != r_ext {
@@ -459,7 +459,7 @@ fn check_minimal_types(
             let w_mut = matches!(w_ext, StructExt::Mutable);
 
             if w_final {
-                // Strict gleich (selbe Anzahl + gleiche Types in Reihenfolge).
+                // Strictly equal (same count + same types in order).
                 if ws.member_seq.len() != rs.member_seq.len() {
                     return Assignable::No("final struct member count mismatch");
                 }
@@ -479,10 +479,10 @@ fn check_minimal_types(
                 }
                 Assignable::Yes
             } else if w_mut {
-                // Mutable: match per @id (member_id). Reader-Member mit
-                // @id=X muss im Writer existieren und kompatibel sein,
-                // wenn nicht optional. Mit `ignore_member_names=false`
-                // muss auch der NameHash matchen (§7.6.3.7.2.2).
+                // Mutable: match per @id (member_id). A reader member with
+                // @id=X must exist in the writer and be compatible,
+                // if not optional. With `ignore_member_names=false`
+                // the NameHash must also match (§7.6.3.7.2.2).
                 for rm in &rs.member_seq {
                     let rm_optional = rm
                         .common
@@ -515,8 +515,8 @@ fn check_minimal_types(
                 }
                 Assignable::Yes
             } else {
-                // Appendable (default): writer muss mindestens alle
-                // reader-Felder als Prefix haben; extra writer-Felder OK.
+                // Appendable (default): the writer must have at least all
+                // reader fields as a prefix; extra writer fields OK.
                 if ws.member_seq.len() < rs.member_seq.len() {
                     return Assignable::No("appendable: writer has fewer members than reader");
                 }
@@ -538,15 +538,15 @@ fn check_minimal_types(
             }
         }
         (MinimalTypeObject::Enumerated(we), MinimalTypeObject::Enumerated(re)) => {
-            // §7.2.4.4.4.3: writer-Values muessen alle im reader-Set
-            // enthalten sein (writer ⊆ reader). Reader darf zusaetzliche
-            // Literale haben — er konsumiert weniger als er erkennt.
-            // Bit-Bound muss identisch sein (Wire-Breite).
+            // §7.2.4.4.4.3: all writer values must
+            // be contained in the reader set (writer ⊆ reader). The reader may have additional
+            // literals — it consumes less than it recognizes.
+            // The bit bound must be identical (wire width).
             if we.header.common.bit_bound != re.header.common.bit_bound {
                 return Assignable::No("enum bit_bound mismatch");
             }
-            // §7.2.4.4.7 — Default vergleicht (value, name_hash); mit
-            // `@ignore_literal_names` auf einer Seite oder via Config nur (value).
+            // §7.2.4.4.7 — by default compares (value, name_hash); with
+            // `@ignore_literal_names` on one side or via config only (value).
             let ignore_names = cfg.ignore_literal_names
                 || we
                     .enum_flags
@@ -616,7 +616,7 @@ mod tests {
             )
             .is_yes()
         );
-        // Narrowing bleibt verboten
+        // Narrowing remains forbidden
         assert!(
             !is_assignable(
                 &TypeIdentifier::Primitive(PrimitiveKind::Int64),
@@ -695,8 +695,8 @@ mod tests {
     #[test]
     fn mutable_struct_member_id_matching() {
         let mut reg = TypeRegistry::new();
-        // Reader hat @id(1) und @id(2) — writer hat @id(2) und @id(3).
-        // Reader @id(1) fehlt im writer, aber markieren wir als optional.
+        // Reader has @id(1) and @id(2) — writer has @id(2) and @id(3).
+        // Reader @id(1) is missing in the writer, but we mark it as optional.
         let writer = MinimalTypeObject::Struct(
             TypeObjectBuilder::struct_type("::X")
                 .extensibility(Extensibility::Mutable)
@@ -836,7 +836,7 @@ mod tests {
             bound: 10,
             element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
         };
-        // `ignore_sequence_bounds=false` erzwingt den Bound-Check.
+        // `ignore_sequence_bounds=false` forces the bound check.
         let cfg = AssignabilityConfig {
             ignore_sequence_bounds: false,
             ..Default::default()
@@ -846,8 +846,8 @@ mod tests {
         assert!(matches!(a, Assignable::No(msg) if msg.contains("bound")));
     }
 
-    /// Mit `ignore_sequence_bounds=true` (TCE-Default) akzeptieren wir
-    /// die Sequence, obwohl Writer-Bound > Reader-Bound.
+    /// With `ignore_sequence_bounds=true` (TCE default) we accept
+    /// the sequence even though the writer bound > reader bound.
     #[test]
     fn sequence_bounds_ignored_when_policy_allows() {
         let w = TypeIdentifier::PlainSequenceSmall {
@@ -962,10 +962,10 @@ mod tests {
 
     #[test]
     fn equivalence_hash_identical_short_circuits_to_yes() {
-        // Bei identischen Hashes nimmt `check_direct` den Early-Exit
-        // `wh == rh → Yes` (siehe match-Arm). Voraussetzung ist nur,
-        // dass `resolve_alias_chain` erfolgreich ist — dafuer muss
-        // der Hash in der Registry auf einen Nicht-Alias verweisen.
+        // For identical hashes, `check_direct` takes the early exit
+        // `wh == rh → Yes` (see the match arm). The only precondition is
+        // that `resolve_alias_chain` succeeds — for that the
+        // hash must point to a non-alias in the registry.
         let mut reg = reg();
         let to = MinimalTypeObject::Struct(
             TypeObjectBuilder::struct_type("::T")
@@ -986,8 +986,8 @@ mod tests {
 
     #[test]
     fn equivalence_hash_unresolved_writer_is_no() {
-        // Alias-Resolution schlaegt fehl, weil der Hash nicht in der
-        // Registry liegt → Frueh-Exit mit `No("writer alias resolution failed")`.
+        // Alias resolution fails because the hash is not in the
+        // registry → early exit with `No("writer alias resolution failed")`.
         let reg = reg();
         let wh = crate::type_identifier::EquivalenceHash([0x01; 14]);
         let rh = crate::type_identifier::EquivalenceHash([0x02; 14]);
@@ -1003,7 +1003,7 @@ mod tests {
 
     #[test]
     fn equivalence_hash_unresolved_reader_is_no() {
-        // Writer ist registriert, reader nicht → Fehler beim Reader-Resolve.
+        // Writer is registered, reader is not → error on the reader resolve.
         let mut reg = reg();
         let to = MinimalTypeObject::Struct(
             TypeObjectBuilder::struct_type("::T")
@@ -1026,7 +1026,7 @@ mod tests {
 
     #[test]
     fn mixed_kinds_report_kinds_do_not_match() {
-        // Primitive vs String → kein Arm matched → `No("kinds do not match")`.
+        // Primitive vs string → no arm matched → `No("kinds do not match")`.
         let a = is_assignable(
             &TypeIdentifier::Primitive(PrimitiveKind::Int32),
             &TypeIdentifier::String8Small { bound: 10 },
@@ -1110,7 +1110,7 @@ mod tests {
                 .bit_bound(32)
                 .literal("A", 1)
                 .literal("B", 2)
-                .literal("C", 3) // reader kennt extra label, writer-labels sind subset
+                .literal("C", 3) // reader knows an extra label, writer labels are a subset
                 .build_minimal(),
         );
         let wh = crate::hash::compute_minimal_hash(&w).unwrap();
@@ -1141,7 +1141,7 @@ mod tests {
 
     #[test]
     fn flatten_inheritance_two_levels_concatenates_base_first() {
-        // Root → Mid → Derived. Result Member-Reihenfolge: [Root, Mid, Derived].
+        // Root → Mid → Derived. Result member order: [Root, Mid, Derived].
         let mut reg = reg();
         let root = TypeObjectBuilder::struct_type("::Root")
             .member("r", TypeIdentifier::Primitive(PrimitiveKind::Int8), |m| {
@@ -1168,10 +1168,10 @@ mod tests {
             .build_minimal();
 
         let flat = flatten_inheritance(&derived, &reg, 8).unwrap();
-        // 3 Member, base_type weg.
+        // 3 members, base_type gone.
         assert_eq!(flat.header.base_type, TypeIdentifier::None);
         assert_eq!(flat.member_seq.len(), 3);
-        // Erster Member ist 'r' (root); letzter 'd' (derived).
+        // First member is 'r' (root); last is 'd' (derived).
         let first_id = flat.member_seq[0].common.member_id;
         let last_id = flat.member_seq[2].common.member_id;
         assert_ne!(first_id, last_id);
@@ -1191,7 +1191,7 @@ mod tests {
         let derived = TypeObjectBuilder::struct_type("::D")
             .base(TypeIdentifier::EquivalenceHashMinimal(bh))
             .member("c", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
-                m.id(7) // selbe ID wie Base-Member 'a' → Konflikt
+                m.id(7) // same ID as base member 'a' → conflict
             })
             .build_minimal();
         let err = flatten_inheritance(&derived, &reg, 8).unwrap_err();
@@ -1221,7 +1221,7 @@ mod tests {
                 "dup",
                 TypeIdentifier::Primitive(PrimitiveKind::Int32),
                 |m| {
-                    m.id(2) // andere ID, aber gleicher Name → Konflikt
+                    m.id(2) // different ID, but same name → conflict
                 },
             )
             .build_minimal();
@@ -1235,9 +1235,9 @@ mod tests {
 
     #[test]
     fn flat_type_construction_two_levels() {
-        // §7.2.2.4.5 — die hypothetische flache Repraesentation eines
-        // 2-Stufen-Inheritance-Konstrukts hat Members in Base-Derived-
-        // Reihenfolge.
+        // §7.2.2.4.5 — the hypothetical flat representation of a
+        // 2-level inheritance construct has members in base-derived
+        // order.
         let mut reg = reg();
         let base = TypeObjectBuilder::struct_type("::Base")
             .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
@@ -1266,11 +1266,11 @@ mod tests {
 
     #[test]
     fn two_level_inheritance_assignability_chain() {
-        // Writer und Reader haben jeweils 2-Stufen-Inheritance, beide
-        // produzieren dieselbe flache Member-Sequenz → assignable.
+        // Writer and reader each have 2-level inheritance, both
+        // produce the same flat member sequence → assignable.
         let mut reg = reg();
 
-        // ---- Writer-Seite ----
+        // ---- Writer side ----
         let w_root = TypeObjectBuilder::struct_type("::WRoot")
             .member("r", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
                 m.id(1)
@@ -1289,7 +1289,7 @@ mod tests {
         let w_flat = flatten_inheritance(&w_mid, &reg, 8).unwrap();
         assert_eq!(w_flat.member_seq.len(), 2);
 
-        // ---- Reader-Seite (gleiche Struktur, andere Type-Namen) ----
+        // ---- Reader side (same structure, different type names) ----
         let r_root = TypeObjectBuilder::struct_type("::RRoot")
             .member("r", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
                 m.id(1)
@@ -1308,7 +1308,7 @@ mod tests {
         let r_flat = flatten_inheritance(&r_mid, &reg, 8).unwrap();
         assert_eq!(r_flat.member_seq.len(), 2);
 
-        // Direkter Member-by-Member-Compare via Assignability.
+        // Direct member-by-member compare via assignability.
         let w_to = MinimalTypeObject::Struct(w_flat.clone());
         let r_to = MinimalTypeObject::Struct(r_flat.clone());
         let wh = compute_minimal_hash(&w_to).unwrap();
@@ -1326,9 +1326,9 @@ mod tests {
 
     #[test]
     fn enum_not_assignable_strict_default() {
-        // Selber Wert, aber unterschiedliche Namen → strict-Default
-        // (keine `@ignore_literal_names`-Annotation, kein Config-Flag)
-        // muss assignable=No liefern.
+        // Same value, but different names → the strict default
+        // (no `@ignore_literal_names` annotation, no config flag)
+        // must return assignable=No.
         let mut reg = reg();
         let w = MinimalTypeObject::Enumerated(
             TypeObjectBuilder::enum_type("::E")
@@ -1339,7 +1339,7 @@ mod tests {
         let r = MinimalTypeObject::Enumerated(
             TypeObjectBuilder::enum_type("::E")
                 .bit_bound(32)
-                .literal("ROUGE", 1) // selber Wert, anderer Name
+                .literal("ROUGE", 1) // same value, different name
                 .build_minimal(),
         );
         let wh = crate::hash::compute_minimal_hash(&w).unwrap();
@@ -1358,8 +1358,8 @@ mod tests {
 
     #[test]
     fn enum_assignable_with_ignore_literal_names() {
-        // Selber Wert, andere Namen — aber Config oder Flag setzt
-        // ignore_literal_names; Result muss Yes sein.
+        // Same value, different names — but config or a flag sets
+        // ignore_literal_names; the result must be Yes.
         let mut reg = reg();
         let w = MinimalTypeObject::Enumerated(
             TypeObjectBuilder::enum_type("::E")
@@ -1395,8 +1395,8 @@ mod tests {
 
     #[test]
     fn enum_assignable_with_ignore_literal_names_via_writer_flag() {
-        // Wenn der Writer `EnumTypeFlag::IGNORE_LITERAL_NAMES` setzt,
-        // wirkt das fuer den Vergleich genauso wie der Config-Flag.
+        // When the writer sets `EnumTypeFlag::IGNORE_LITERAL_NAMES`,
+        // it acts for the comparison just like the config flag.
         let mut reg = reg();
         let mut w_e = TypeObjectBuilder::enum_type("::E")
             .bit_bound(32)

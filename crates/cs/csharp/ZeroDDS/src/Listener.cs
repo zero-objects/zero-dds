@@ -36,12 +36,12 @@ public interface IDataReaderListener<T>
 
 /// <summary>
 /// Bridge DataWriter+IDataWriterListener → C-FFI vtable.
-/// vtable wird gesetzt; Active-Wireup via `ListenerPoll.PollAll()`
-/// — siehe Vendor-Spec `zerodds-listener-callbacks-1.0` §6.2.
+/// The vtable is set; active wireup via `ListenerPoll.PollAll()`
+/// — see vendor spec `zerodds-listener-callbacks-1.0` §6.2.
 /// </summary>
 public static class DataWriterListenerBridge<T>
 {
-    /// <summary>Bindet einen Listener an einen DataWriter.</summary>
+    /// <summary>Binds a listener to a DataWriter.</summary>
     public static IDisposable Attach(DataWriter<T> dw, IDataWriterListener<T> listener,
         StatusKind statusMask = (StatusKind)0xFFFFFFFF)
     {
@@ -70,7 +70,7 @@ public static class DataWriterListenerBridge<T>
 /// </summary>
 public static class DataReaderListenerBridge<T>
 {
-    /// <summary>Bindet einen Listener an einen DataReader.</summary>
+    /// <summary>Binds a listener to a DataReader.</summary>
     public static IDisposable Attach(DataReader<T> dr, IDataReaderListener<T> listener,
         StatusKind statusMask = (StatusKind)0xFFFFFFFF)
     {
@@ -110,14 +110,14 @@ internal sealed class EmptyDisposable : IDisposable
     public void Dispose() { }
 }
 
-/// <summary>Caller-driven Listener-Poll-API (Spec-Vendor: Spec-konformer
-/// Active-Wireup ueber expliziten Poll-Call). Caller ruft das periodisch
-/// im Main-Loop. Liefert Anzahl gefeuerter Callbacks zurueck.</summary>
+/// <summary>Caller-driven listener poll API (vendor spec: spec-conformant
+/// active wireup via an explicit poll call). The caller invokes this
+/// periodically in its main loop. Returns the number of callbacks fired.</summary>
 public static class ListenerPoll
 {
-    /// <summary>Pollt alle registrierten Listener auf Status-Counter-Delta
-    /// und feuert die Callbacks. Threading: Callbacks feuern auf dem
-    /// Caller-Thread.</summary>
+    /// <summary>Polls all registered listeners for status-counter deltas
+    /// and fires the callbacks. Threading: callbacks fire on the
+    /// caller thread.</summary>
     public static int PollAll()
     {
         return (int)(uint)Native.PollListeners();

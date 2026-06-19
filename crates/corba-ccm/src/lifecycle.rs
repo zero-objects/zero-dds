@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CCM 4.0 Lifecycle-Constraints + Receptacle-State-Machine +
-//! Configurator-Iface — Spec §6.4.2 / §6.5.2 / §6.10.
+//! CCM 4.0 lifecycle constraints + receptacle state machine +
+//! configurator interface — spec §6.4.2 / §6.5.2 / §6.10.
 //!
-//! Diese Module decken die Datenmodell-Seite der Lifecycle-Regeln
-//! ab. Die echte Container-Runtime-Durchsetzung erfolgt in
-//! `container.rs`; wir liefern hier die Constraint-Validators und
-//! State-Machinen, die diese Runtime nutzen kann.
+//! These modules cover the data-model side of the lifecycle rules.
+//! The actual container-runtime enforcement happens in
+//! `container.rs`; here we provide the constraint validators and
+//! state machines that this runtime can use.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -21,28 +21,28 @@ use crate::component_def::{AttributeDef, ComponentDef};
 // §6.4.2 Semantics of Facet References — Lifecycle-Constraints
 // ---------------------------------------------------------------------------
 
-/// Spec §6.4.2 — Facet-Lifetime-Constraint.
+/// Spec §6.4.2 — facet lifetime constraint.
 ///
 /// "The lifetime of a facet [...] is bound to the lifetime of the
-/// component instance that provides it." Wir modellieren das als
-/// Constraint-Check: ein Facet-Reference darf NICHT laenger leben
-/// als die Component-Instance.
+/// component instance that provides it." We model this as a
+/// constraint check: a facet reference must NOT outlive
+/// the component instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FacetLifetimeViolation {
-    /// Facet wurde nach Component-Destroy noch verwendet.
+    /// The facet was used after the component was destroyed.
     UseAfterComponentDestroy,
-    /// Facet-Reference ist orphaned (keine Component-Backref).
+    /// The facet reference is orphaned (no component back-ref).
     OrphanedFacetReference,
 }
 
-/// Validiert eine Facet-Reference gegen den Component-Lifecycle.
+/// Validates a facet reference against the component lifecycle.
 ///
-/// `component_alive` muss `true` sein wenn die Component-Instance
-/// noch existiert; `facet_in_component` muss `true` sein wenn das
-/// Facet wirklich zur Component gehoert.
+/// `component_alive` must be `true` if the component instance
+/// still exists; `facet_in_component` must be `true` if the
+/// facet really belongs to the component.
 ///
 /// # Errors
-/// `FacetLifetimeViolation` wenn das Constraint verletzt ist.
+/// `FacetLifetimeViolation` if the constraint is violated.
 pub fn check_facet_lifetime(
     component_alive: bool,
     facet_in_component: bool,
@@ -60,36 +60,36 @@ pub fn check_facet_lifetime(
 // §6.5.2 Receptacles — Connection-State-Machine
 // ---------------------------------------------------------------------------
 
-/// Spec §6.5.2 — Connection-State-Machine fuer Receptacles.
+/// Spec §6.5.2 — connection state machine for receptacles.
 ///
-/// Ein Receptacle durchlaeuft die States `Disconnected → Connected →
-/// Disconnected`. `connect()` bei Simplex-Multiplicity ist nur in
-/// `Disconnected` erlaubt; `disconnect()` nur in `Connected`.
+/// A receptacle moves through the states `Disconnected → Connected →
+/// Disconnected`. `connect()` for simplex multiplicity is only allowed in
+/// `Disconnected`; `disconnect()` only in `Connected`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionState {
-    /// Kein Provider gebunden.
+    /// No provider bound.
     Disconnected,
-    /// Provider gebunden (Object-Reference vorhanden).
+    /// Provider bound (object reference present).
     Connected,
 }
 
-/// Connection-Lifecycle-Errors.
+/// Connection lifecycle errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionError {
-    /// `connect` auf einem bereits verbundenen Simplex-Receptacle.
+    /// `connect` on an already-connected simplex receptacle.
     AlreadyConnected,
-    /// `disconnect` auf einem ungebundenen Receptacle.
+    /// `disconnect` on an unbound receptacle.
     NoConnection,
-    /// Receptacle existiert nicht in der Component.
+    /// The receptacle does not exist in the component.
     UnknownReceptacle,
 }
 
-/// Receptacle-Connection-Manager.
+/// Receptacle connection manager.
 ///
-/// Pflegt pro `(receptacle_name, connection_id)` den Connection-
-/// State. Bei Multiplex-Receptacles koennen mehrere Connections
-/// parallel existieren; bei Simplex-Receptacles ist `connect`
-/// nur bei `Disconnected` erlaubt.
+/// Tracks the connection state per `(receptacle_name, connection_id)`.
+/// For multiplex receptacles multiple connections can exist in
+/// parallel; for simplex receptacles `connect` is
+/// only allowed in `Disconnected`.
 #[derive(Default)]
 pub struct ReceptacleManager {
     states: Mutex<BTreeMap<(String, u64), ConnectionState>>,
@@ -103,20 +103,20 @@ impl core::fmt::Debug for ReceptacleManager {
 }
 
 impl ReceptacleManager {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Spec §6.5.2 — `connect(receptacle, ref) -> connection_id`.
-    /// Liefert eine neue `ConnectionId`; bei Simplex (caller muss
-    /// `is_simplex` setzen) wird ein bereits existierender Connect
-    /// als `AlreadyConnected` rejected.
+    /// Returns a new `ConnectionId`; for simplex (the caller must
+    /// set `is_simplex`) an already-existing connection is
+    /// rejected as `AlreadyConnected`.
     ///
     /// # Errors
-    /// `ConnectionError::AlreadyConnected` wenn Simplex-Receptacle
-    /// schon verbunden.
+    /// `ConnectionError::AlreadyConnected` if the simplex receptacle
+    /// is already connected.
     pub fn connect(&self, receptacle: &str, is_simplex: bool) -> Result<u64, ConnectionError> {
         let mut g = self
             .states
@@ -138,8 +138,8 @@ impl ReceptacleManager {
     /// Spec §6.5.2 — `disconnect(receptacle, connection_id)`.
     ///
     /// # Errors
-    /// `ConnectionError::NoConnection` wenn die Connection nicht
-    /// existiert oder bereits getrennt wurde.
+    /// `ConnectionError::NoConnection` if the connection does not
+    /// exist or was already disconnected.
     pub fn disconnect(&self, receptacle: &str, id: u64) -> Result<(), ConnectionError> {
         let mut g = self
             .states
@@ -155,7 +155,7 @@ impl ReceptacleManager {
         }
     }
 
-    /// Anzahl aktive Connections (state = Connected).
+    /// Number of active connections (state = Connected).
     pub fn active_connections(&self, receptacle: &str) -> usize {
         self.states.lock().map_or(0, |g| {
             g.iter()
@@ -169,39 +169,39 @@ impl ReceptacleManager {
 // §6.10 Configuration with Attributes — Configurator
 // ---------------------------------------------------------------------------
 
-/// Spec §6.10 — Configuration-Errors.
+/// Spec §6.10 — configuration errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigError {
-    /// Attribut existiert nicht in der Component-Definition.
+    /// The attribute does not exist in the component definition.
     UnknownAttribute(String),
-    /// Attribut ist read-only und kann nicht gesetzt werden.
+    /// The attribute is read-only and cannot be set.
     ReadOnly(String),
-    /// Wertkonvertierung fehlgeschlagen.
+    /// Value conversion failed.
     InvalidValue(String),
 }
 
-/// Spec §6.10 — Configurator-Interface.
+/// Spec §6.10 — configurator interface.
 ///
-/// Ein Configurator setzt Attribute auf einer Component-Instance,
-/// typischerweise vor `configuration_complete()`. Wir modellieren
-/// das als Trait, sodass Caller eigene Configurators registrieren
-/// koennen.
+/// A configurator sets attributes on a component instance,
+/// typically before `configuration_complete()`. We model
+/// this as a trait, so that callers can register their own
+/// configurators.
 pub trait Configurator: Send + Sync {
-    /// Setzt ein Attribut.
+    /// Sets an attribute.
     ///
     /// # Errors
-    /// Siehe [`ConfigError`].
+    /// See [`ConfigError`].
     fn set_attribute(&self, name: &str, value: &[u8]) -> Result<(), ConfigError>;
 
-    /// Liest ein Attribut.
+    /// Reads an attribute.
     ///
     /// # Errors
-    /// `ConfigError::UnknownAttribute` wenn nicht gesetzt.
+    /// `ConfigError::UnknownAttribute` if not set.
     fn get_attribute(&self, name: &str) -> Result<Vec<u8>, ConfigError>;
 }
 
-/// Default-Configurator-Implementation auf Basis der
-/// `ComponentDef::attributes`-Liste mit BTreeMap-Storage.
+/// Default configurator implementation based on the
+/// `ComponentDef::attributes` list with BTreeMap storage.
 pub struct StandardConfigurator {
     schema: Vec<AttributeDef>,
     values: Mutex<BTreeMap<String, Vec<u8>>>,
@@ -216,7 +216,7 @@ impl core::fmt::Debug for StandardConfigurator {
 }
 
 impl StandardConfigurator {
-    /// Konstruktor — leitet Schema aus `ComponentDef::attributes` ab.
+    /// Constructor — derives the schema from `ComponentDef::attributes`.
     #[must_use]
     pub fn new(component: &ComponentDef) -> Self {
         Self {
@@ -255,7 +255,7 @@ impl Configurator for StandardConfigurator {
     }
 }
 
-/// Configurator-Registry fuer Container-Wide Configurator-Lookup.
+/// Configurator registry for container-wide configurator lookup.
 #[derive(Default)]
 pub struct ConfiguratorRegistry {
     by_repo_id: Mutex<BTreeMap<String, Arc<dyn Configurator>>>,
@@ -268,20 +268,20 @@ impl core::fmt::Debug for ConfiguratorRegistry {
 }
 
 impl ConfiguratorRegistry {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Registriert einen Configurator fuer eine Component-Repo-ID.
+    /// Registers a configurator for a component repo ID.
     pub fn register(&self, repo_id: &str, c: Arc<dyn Configurator>) {
         if let Ok(mut g) = self.by_repo_id.lock() {
             g.insert(repo_id.to_string(), c);
         }
     }
 
-    /// Liefert den Configurator fuer eine Repo-ID.
+    /// Returns the configurator for a repo ID.
     pub fn get(&self, repo_id: &str) -> Option<Arc<dyn Configurator>> {
         self.by_repo_id
             .lock()

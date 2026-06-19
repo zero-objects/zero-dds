@@ -1,9 +1,9 @@
-"""Tests fuer §5.2 — Multi-Process Python ↔ Python.
+"""Tests for §5.2 — multi-process Python ↔ Python.
 
-Zwei `python -m` Subprocesses tauschen Bytes ueber RTPS-Loopback aus.
-Der Test braucht `_core` (PyO3-Modul) und eine Linux/macOS-Loopback-
-Multicast-Konfiguration. Auf nicht-supportenden Plattformen wird
-geskipped.
+Two `python -m` subprocesses exchange bytes over RTPS loopback.
+The test needs `_core` (the PyO3 module) and a Linux/macOS loopback
+multicast configuration. On unsupported platforms it is
+skipped.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import zerodds
 
 pytestmark = pytest.mark.skipif(
     not getattr(zerodds, "_CORE_AVAILABLE", False),
-    reason="zerodds._core nicht kompiliert — maturin develop noetig",
+    reason="zerodds._core not compiled — maturin develop needed",
 )
 
 
@@ -65,10 +65,10 @@ _SUBSCRIBER_SCRIPT = textwrap.dedent("""
 
 @pytest.mark.skipif(
     sys.platform == "win32",
-    reason="Multi-Proc-Loopback-Multicast braucht ein Linux/macOS-Setup",
+    reason="multi-proc loopback multicast needs a Linux/macOS setup",
 )
 def test_multiproc_python_python_roundtrip(tmp_path: object) -> None:
-    """§5.2 — Zwei Subprocess-Python, ein BytesTopic, ein Payload."""
+    """§5.2 — two subprocess Pythons, one BytesTopic, one payload."""
     env = {
         **os.environ,
         "TEST_DOMAIN": "210",
@@ -95,7 +95,7 @@ def test_multiproc_python_python_roundtrip(tmp_path: object) -> None:
     except subprocess.TimeoutExpired:
         subscriber.kill()
         publisher.kill()
-        pytest.fail("Multi-Proc-Roundtrip-Timeout")
+        pytest.fail("multi-proc roundtrip timeout")
 
     assert subscriber.returncode == 0, (
         f"subscriber returncode={subscriber.returncode}, "

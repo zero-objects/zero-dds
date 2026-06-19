@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Flow-Control — RFC 9113 §5.2 + §6.9.
+//! Flow control — RFC 9113 §5.2 + §6.9.
 //!
-//! Spec §5.2: pro Stream UND Connection gibt es ein Flow-Window.
-//! Sender darf nicht mehr als `min(stream_window, conn_window)` an
-//! `DATA`-Bytes senden, bevor `WINDOW_UPDATE` empfangen wurde.
+//! Spec §5.2: there is a flow window per stream AND per connection.
+//! A sender may not send more than `min(stream_window, conn_window)`
+//! of `DATA` bytes before receiving a `WINDOW_UPDATE`.
 
 use crate::error::Http2Error;
 
-/// Initiale Window-Size laut Spec §6.5.2 (`SETTINGS_INITIAL_WINDOW_SIZE`).
+/// Initial window size per Spec §6.5.2 (`SETTINGS_INITIAL_WINDOW_SIZE`).
 pub const INITIAL_WINDOW_SIZE: i64 = 65_535;
 
-/// Flow-Control-Window mit signed-i64 (Spec §6.9: kann transient
-/// negativ werden, wenn Settings das Window verkleinern).
+/// Flow-control window with signed i64 (Spec §6.9: can transiently
+/// become negative when settings shrink the window).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FlowControl {
     window: i64,
@@ -30,7 +30,7 @@ impl Default for FlowControl {
 }
 
 impl FlowControl {
-    /// Konstruktor mit Initial-Window-Size.
+    /// Constructor with initial window size.
     #[must_use]
     pub fn new(initial: i64) -> Self {
         Self {
@@ -39,16 +39,16 @@ impl FlowControl {
         }
     }
 
-    /// Aktuelles Window.
+    /// Current window.
     #[must_use]
     pub fn window(&self) -> i64 {
         self.window
     }
 
-    /// Konsumiert `n` Bytes vom Window. Spec §6.9.1.
+    /// Consumes `n` bytes from the window. Spec §6.9.1.
     ///
     /// # Errors
-    /// `FlowControlExceeded` wenn das Window negativ wuerde.
+    /// `FlowControlExceeded` if the window would become negative.
     pub fn consume(&mut self, n: u32) -> Result<(), Http2Error> {
         let n = i64::from(n);
         if n > self.window {
@@ -58,10 +58,10 @@ impl FlowControl {
         Ok(())
     }
 
-    /// Wendet einen `WINDOW_UPDATE` an. Spec §6.9.1.
+    /// Applies a `WINDOW_UPDATE`. Spec §6.9.1.
     ///
     /// # Errors
-    /// `Protocol(FlowControlError)` wenn das Window
+    /// `Protocol(FlowControlError)` if the window
     /// 2^31-1 ueberschreitet.
     pub fn apply_window_update(&mut self, increment: u32) -> Result<(), Http2Error> {
         use crate::error::ErrorCode;
@@ -78,16 +78,16 @@ impl FlowControl {
         Ok(())
     }
 
-    /// Anwendung einer neuen `INITIAL_WINDOW_SIZE` aus SETTINGS-Update
-    /// (Spec §6.9.2): das Window wird um die Differenz angepasst.
+    /// Apply a new `INITIAL_WINDOW_SIZE` from a SETTINGS update
+    /// (spec §6.9.2): the window is adjusted by the difference.
     pub fn apply_initial_window_size_change(&mut self, old: i64, new: i64) {
         let delta = new - old;
         self.window += delta;
     }
 }
 
-/// Encoded ein WINDOW_UPDATE-Frame-Payload (4 Bytes, R-Bit + 31-bit
-/// Increment). Spec §6.9.
+/// Encodes a WINDOW_UPDATE frame payload (4 bytes, R bit + 31-bit
+/// increment). Spec §6.9.
 #[must_use]
 pub fn encode_window_update(increment: u32) -> [u8; 4] {
     let v = increment & 0x7fff_ffff;
@@ -99,10 +99,10 @@ pub fn encode_window_update(increment: u32) -> [u8; 4] {
     ]
 }
 
-/// Decoded ein WINDOW_UPDATE-Frame-Payload (4 Bytes).
+/// Decodes a WINDOW_UPDATE frame payload (4 bytes).
 ///
 /// # Errors
-/// `Protocol(FrameSizeError)` wenn das Payload nicht 4 Bytes ist.
+/// `Protocol(FrameSizeError)` if the payload is not 4 bytes.
 pub fn decode_window_update(payload: &[u8]) -> Result<u32, Http2Error> {
     use crate::error::ErrorCode;
     if payload.len() != 4 {

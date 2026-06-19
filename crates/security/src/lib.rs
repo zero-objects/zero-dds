@@ -1,60 +1,60 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Crate `zerodds-security`. Safety classification: **SAFE** (die
-//! Security-Plugins werden gegen Produktions-Vertrauensgrenzen
-//! ausgefuehrt; der SPI-Layer selbst ist trust-neutral).
+//! Crate `zerodds-security`. Safety classification: **SAFE** (the
+//! security plugins run against production trust boundaries; the SPI
+//! layer itself is trust-neutral).
 //!
-//! DDS-Security 1.1 (formal/2018-04-01) Plugin-SPI: definiert die
-//! abstrakten Plugin-Traits + Datentypen + Generic-Message-Topics;
-//! Produktions-Implementationen leben in Schwester-Crates.
+//! DDS-Security 1.1 (formal/2018-04-01) plugin SPI: defines the
+//! abstract plugin traits + data types + generic-message topics;
+//! production implementations live in sister crates.
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 4 — Core Services (SPI-Crate). Pure-Rust + `alloc`, **keine**
-//! ZeroDDS-Crate-Deps.
+//! Layer 4 — Core Services (SPI crate). Pure Rust + `alloc`, **no**
+//! ZeroDDS crate deps.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! | Spec                  | Trait / Modul                                       | Konkrete Impl |
+//! | Spec                  | Trait / module                                      | Concrete impl |
 //! |-----------------------|-----------------------------------------------------|---------------|
 //! | §8.3 Authentication   | [`AuthenticationPlugin`] in [`authentication`]      | `zerodds-security-pki` (X.509 + RSA-PSS + ECDSA + OCSP/CRL) |
-//! | §8.4 Access Control   | [`AccessControlPlugin`] in [`access_control`]       | `zerodds-security-permissions` (Governance + Permissions-XML) |
-//! | §8.5 Cryptographic    | [`CryptographicPlugin`] in [`crypto`]               | `zerodds-security-crypto` (AES-GCM 128/256 + HMAC-SHA256 + Receiver-Specific-MACs) |
+//! | §8.4 Access Control   | [`AccessControlPlugin`] in [`access_control`]       | `zerodds-security-permissions` (Governance + Permissions XML) |
+//! | §8.5 Cryptographic    | [`CryptographicPlugin`] in [`crypto`]               | `zerodds-security-crypto` (AES-GCM 128/256 + HMAC-SHA256 + receiver-specific MACs) |
 //! | §8.6 Logging          | [`LoggingPlugin`] in [`logging`]                    | `zerodds-security-logging` |
-//! | §8.7 Data Tagging     | [`DataTaggingPlugin`] in [`data_tagging`]           | `zerodds-security-runtime` (Built-in DataTagging) |
+//! | §8.7 Data Tagging     | [`DataTaggingPlugin`] in [`data_tagging`]           | `zerodds-security-runtime` (built-in DataTagging) |
 //!
-//! Plus Querschnitt:
+//! Plus cross-cutting:
 //! - [`token`] — `IdentityToken`, `PermissionsToken`, `CryptoToken`, `DataHolder`, `BinaryProperty`.
-//! - [`generic_message`] — `ParticipantGenericMessage`, `MessageIdentity` + Topic-Konstanten fuer DCPSParticipantStatelessMessage / DCPSParticipantVolatileMessageSecure.
-//! - [`properties`] — `Property` / `PropertyList` fuer Plugin-Konfiguration.
-//! - [`security_topic_qos`] — Built-in-Security-Topic-QoS-Profile.
+//! - [`generic_message`] — `ParticipantGenericMessage`, `MessageIdentity` + topic constants for DCPSParticipantStatelessMessage / DCPSParticipantVolatileMessageSecure.
+//! - [`properties`] — `Property` / `PropertyList` for plugin configuration.
+//! - [`security_topic_qos`] — built-in security-topic QoS profiles.
 //! - [`error`] — `SecurityError`.
-//! - [`mock`] (Feature `std`) — Test-Mock-Plugins, niemals produktiv.
+//! - [`mock`] (feature `std`) — test mock plugins, never in production.
 //!
-//! ## Architektur
+//! ## Architecture
 //!
-//! Das SPI ist Trait-basiert + `Box<dyn Plugin>`-erasable, damit
-//! verschiedene Backends (rustls vs. ring vs. mbedtls) ohne Crate-
-//! Wiring austauschbar sind. Jeder Plugin-Trait ist in sich geschlossen
-//! — keine Cross-References — damit Erweiterungen in einem Plugin nicht
-//! andere brechen.
+//! The SPI is trait-based + `Box<dyn Plugin>`-erasable, so that
+//! different backends (rustls vs. ring vs. mbedtls) are interchangeable
+//! without crate wiring. Each plugin trait is self-contained
+//! — no cross-references — so that extensions in one plugin do not
+//! break others.
 //!
-//! ## API-Stability-Pledge
+//! ## API stability pledge
 //!
-//! Dieses Interface ist **API-frozen** ab `1.0.0-rc.1`. Breaking
-//! Changes erfordern ein v2.0-Major-Bump. Semver-Patch + Minor duerfen
-//! nur neue Methoden mit Default-Body oder non-breaking Enum-Varianten
-//! hinzufuegen.
+//! This interface is **API-frozen** as of `1.0.0-rc.1`. Breaking
+//! changes require a v2.0 major bump. Semver patch + minor may
+//! only add new methods with a default body or non-breaking enum
+//! variants.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 // zerodds-lint: allow no_dyn_in_safe
-// Plugin-SPI benötigt `Box<dyn Plugin>` für austauschbare Backends
-// (rustls/ring/mbedtls). Dies ist architektur-bedingt und keine Speicher-
-// Sicherheits-Schwäche.
+// The plugin SPI needs `Box<dyn Plugin>` for interchangeable backends
+// (rustls/ring/mbedtls). This is architectural and not a memory-safety
+// weakness.
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -94,9 +94,9 @@ pub use token::{
 mod tests {
     #[test]
     fn plugin_trait_objects_are_object_safe() {
-        // Smoketest: jeder Plugin-Trait ist object-safe (`dyn Plugin`
-        // konstruierbar). Faellt an Compile-Zeit wenn jemand versehentlich
-        // `Self: Sized` oder generische Methoden einfuegt.
+        // Smoke test: every plugin trait is object-safe (`dyn Plugin`
+        // constructible). Fails at compile time if someone accidentally
+        // adds `Self: Sized` or generic methods.
         fn _assert_object_safe<T: ?Sized>() {}
         _assert_object_safe::<dyn super::AuthenticationPlugin>();
         _assert_object_safe::<dyn super::AccessControlPlugin>();

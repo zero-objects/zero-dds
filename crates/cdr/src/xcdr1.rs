@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! XCDR1 / PL_CDR1 — Plain CDR Version 1 mit Parameter-List für `@mutable`
-//! Strukturen (XTypes 1.3 §7.4.2 / §7.4.1.2).
+//! XCDR1 / PL_CDR1 — Plain CDR Version 1 with a parameter list for
+//! `@mutable` structs (XTypes 1.3 §7.4.2 / §7.4.1.2).
 //!
-//! Wire-Form pro Member:
+//! Wire form per member:
 //!
-//! - Standard-Header (16-Bit Member-ID, 16-Bit Length):
-//!   `[id_lo id_hi length_lo length_hi] [body padded auf 4 Byte]`
-//!   Gueltig wenn `member_id < 0x3F00` und `length <= 0xFFFF`.
+//! - Standard header (16-bit member ID, 16-bit length):
+//!   `[id_lo id_hi length_lo length_hi] [body padded to 4 bytes]`
+//!   Valid when `member_id < 0x3F00` and `length <= 0xFFFF`.
 //!
-//! - Extended-Header (PID_EXTENDED + 32-Bit Member-ID + 32-Bit Length):
+//! - Extended header (PID_EXTENDED + 32-bit member ID + 32-bit length):
 //!   `[0x01 0x3F 0x08 0x00] [member_id u32 LE] [length u32 LE]`
-//!   `[body padded auf 4 Byte]`
-//!   Pflicht wenn `member_id >= 0x3F00` ODER `length > 0xFFFF`.
+//!   `[body padded to 4 bytes]`
+//!   Mandatory when `member_id >= 0x3F00` OR `length > 0xFFFF`.
 //!
-//! Liste endet mit Sentinel `[0x02 0x3F 0x00 0x00]` (PID_LIST_END).
+//! The list ends with the sentinel `[0x02 0x3F 0x00 0x00]` (PID_LIST_END).
 //!
-//! # Spec-Quelle
-//! XTypes 1.3 §7.4.1.2 (Tabellen "Parameter ID layout"); §7.4.2.
+//! # Spec source
+//! XTypes 1.3 §7.4.1.2 ("Parameter ID layout" tables); §7.4.2.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -25,33 +25,33 @@ use alloc::vec::Vec;
 use crate::buffer::{BufferReader, BufferWriter};
 use crate::error::{DecodeError, EncodeError};
 
-/// PID_LIST_END (XTypes 1.3 §7.4.1.2.4) — Sentinel-Terminator einer
-/// PL_CDR1-ParameterList.
+/// PID_LIST_END (XTypes 1.3 §7.4.1.2.4) — sentinel terminator of a
+/// PL_CDR1 parameter list.
 pub const PID_LIST_END: u16 = 0x3F02;
 
-/// PID_EXTENDED (XTypes 1.3 §7.4.1.2.2) — Indikator fuer Long-Header
-/// mit 32-Bit Member-ID und 32-Bit Length.
+/// PID_EXTENDED (XTypes 1.3 §7.4.1.2.2) — indicator for the long header
+/// with a 32-bit member ID and 32-bit length.
 pub const PID_EXTENDED: u16 = 0x3F01;
 
-/// Threshold fuer Member-IDs, ab der der Long-Header (PID_EXTENDED) Pflicht
-/// ist. IDs >= dieses Werts kollidieren mit den reservierten 0x3FXX-PIDs
-/// und MUESSEN extended encoded werden.
+/// Threshold for member IDs at and above which the long header
+/// (PID_EXTENDED) is mandatory. IDs >= this value collide with the
+/// reserved 0x3FXX PIDs and MUST be encoded extended.
 pub const PID_EXTENDED_THRESHOLD: u32 = 0x3F00;
 
-/// Geparstes PL_CDR1-Member.
+/// Parsed PL_CDR1 member.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlCdr1Member {
-    /// 32-Bit Member-ID (extended-Header) bzw. 16-Bit (Standard).
+    /// 32-bit member ID (extended header) or 16-bit (standard).
     pub member_id: u32,
-    /// Body-Bytes (ohne Padding, Caller-relevant).
+    /// Body bytes (without padding, the caller-relevant part).
     pub body: Vec<u8>,
 }
 
-/// Encodes ein einzelnes Member; waehlt automatisch zwischen Standard-
-/// und Extended-Header.
+/// Encodes a single member; automatically chooses between the standard
+/// and extended header.
 ///
 /// # Errors
-/// `ValueOutOfRange` wenn der Body groesser als `u32::MAX` ist.
+/// `ValueOutOfRange` if the body is larger than `u32::MAX`.
 pub fn encode_pl_cdr1_member<F>(
     writer: &mut BufferWriter,
     member_id: u32,
@@ -63,15 +63,15 @@ where
     let mut inner = BufferWriter::new(writer.endianness());
     body(&mut inner)?;
     let mut body_bytes = inner.into_bytes();
-    // Pad zu 4-Byte-Boundary.
+    // Pad to a 4-byte boundary.
     while body_bytes.len() % 4 != 0 {
         body_bytes.push(0);
     }
     let body_len = body_bytes.len();
     let needs_extended = member_id >= PID_EXTENDED_THRESHOLD || body_len > 0xFFFF;
     if needs_extended {
-        // Extended-Header: PID_EXTENDED, length=8 (header-len), dann
-        // 32-Bit member-id + 32-Bit length, dann Body.
+        // Extended header: PID_EXTENDED, length=8 (header length), then
+        // 32-bit member id + 32-bit length, then body.
         writer.write_u16(PID_EXTENDED)?;
         writer.write_u16(8u16)?;
         writer.write_u32(member_id)?;
@@ -94,20 +94,20 @@ where
     Ok(())
 }
 
-/// Schreibt den Sentinel-Terminator (PID_LIST_END).
+/// Writes the sentinel terminator (PID_LIST_END).
 ///
 /// # Errors
-/// Buffer-Overflow.
+/// Buffer overflow.
 pub fn write_pl_cdr1_sentinel(writer: &mut BufferWriter) -> Result<(), EncodeError> {
     writer.write_u16(PID_LIST_END)?;
     writer.write_u16(0u16)
 }
 
-/// Decodes ein einzelnes PL_CDR1-Member. Gibt `None` zurueck, wenn der
-/// naechste PID das Sentinel ist.
+/// Decodes a single PL_CDR1 member. Returns `None` if the next PID is the
+/// sentinel.
 ///
 /// # Errors
-/// `UnexpectedEof` bei truncated; `LengthExceeded` bei oversize Body.
+/// `UnexpectedEof` on truncation; `LengthExceeded` on an oversize body.
 pub fn read_pl_cdr1_member(
     reader: &mut BufferReader<'_>,
 ) -> Result<Option<PlCdr1Member>, DecodeError> {
@@ -152,10 +152,10 @@ pub fn read_pl_cdr1_member(
     Ok(Some(PlCdr1Member { member_id, body }))
 }
 
-/// Liest alle PL_CDR1-Members bis zum Sentinel.
+/// Reads all PL_CDR1 members up to the sentinel.
 ///
 /// # Errors
-/// Wie [`read_pl_cdr1_member`].
+/// Same as [`read_pl_cdr1_member`].
 pub fn read_all_pl_cdr1_members(
     reader: &mut BufferReader<'_>,
 ) -> Result<Vec<PlCdr1Member>, DecodeError> {
@@ -187,8 +187,8 @@ mod tests {
 
     #[test]
     fn extended_header_for_id_above_threshold() {
-        // member_id = 16129 (0x3F01) — kollidiert mit PID_EXTENDED-Slot,
-        // muss daher mit PID_EXTENDED encoded werden.
+        // member_id = 16129 (0x3F01) — collides with the PID_EXTENDED slot,
+        // so it must be encoded with PID_EXTENDED.
         let mut w = BufferWriter::new(Endianness::Little);
         encode_pl_cdr1_member(&mut w, 16_129, |w| 99u32.encode(w)).unwrap();
         let bytes = w.into_bytes();
@@ -196,7 +196,7 @@ mod tests {
         assert_eq!(&bytes[0..4], &[0x01, 0x3F, 0x08, 0x00]);
         // member_id = 16129 LE.
         assert_eq!(&bytes[4..8], &[0x01, 0x3F, 0x00, 0x00]);
-        // length-feld = 4 LE.
+        // length field = 4 LE.
         assert_eq!(&bytes[8..12], &[0x04, 0x00, 0x00, 0x00]);
         // body 99 00 00 00.
         assert_eq!(&bytes[12..16], &[99, 0, 0, 0]);
@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     fn extended_header_for_large_body_length() {
-        // Body > 0xFFFF bytes → muss extended sein.
+        // Body > 0xFFFF bytes → must be extended.
         let mut w = BufferWriter::new(Endianness::Little);
         let big = vec![0xABu8; 70_000];
         encode_pl_cdr1_member(&mut w, 1, |w| {
@@ -219,14 +219,14 @@ mod tests {
         assert_eq!(&bytes[0..4], &[0x01, 0x3F, 0x08, 0x00]);
         // member_id = 1 LE.
         assert_eq!(&bytes[4..8], &[0x01, 0x00, 0x00, 0x00]);
-        // body length 70000 padded auf naechste 4-Byte-Grenze = 70000.
+        // body length 70000 padded to the next 4-byte boundary = 70000.
         let len_field = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
         assert_eq!(len_field, 70_000);
     }
 
     #[test]
     fn xcdr1_pl_cdr_long_header_roundtrip() {
-        // Mehrere Member: einer standard, einer extended.
+        // Multiple members: one standard, one extended.
         let mut w = BufferWriter::new(Endianness::Little);
         encode_pl_cdr1_member(&mut w, 10, |w| 0xCAFEu32.encode(w)).unwrap();
         encode_pl_cdr1_member(&mut w, 70_000, |w| 0xBEEFu32.encode(w)).unwrap();
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn xcdr1_member_id_above_threshold_uses_extended_pid() {
-        // Schwellen-Wert exakt: 0x3F00 = 16128 → muss extended sein.
+        // Exact threshold value: 0x3F00 = 16128 → must be extended.
         let mut w = BufferWriter::new(Endianness::Little);
         encode_pl_cdr1_member(&mut w, 0x3F00, |w| 1u8.encode(w)).unwrap();
         let bytes = w.into_bytes();
@@ -253,16 +253,16 @@ mod tests {
 
     #[test]
     fn xcdr1_member_id_just_below_threshold_uses_standard() {
-        // 0x3EFF (16127) — gerade noch standard.
+        // 0x3EFF (16127) — just barely standard.
         let mut w = BufferWriter::new(Endianness::Little);
         encode_pl_cdr1_member(&mut w, 0x3EFF, |w| 1u8.encode(w)).unwrap();
         let bytes = w.into_bytes();
-        assert_eq!(&bytes[0..2], &[0xFF, 0x3E]); // member_id LE, NICHT PID_EXTENDED
+        assert_eq!(&bytes[0..2], &[0xFF, 0x3E]); // member_id LE, NOT PID_EXTENDED
     }
 
     #[test]
     fn xcdr1_sentinel_terminates_decode() {
-        // Nur Sentinel: read_all liefert leere Liste.
+        // Sentinel only: read_all returns an empty list.
         let bytes = vec![0x02, 0x3F, 0x00, 0x00];
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let members = read_all_pl_cdr1_members(&mut r).unwrap();
@@ -271,7 +271,7 @@ mod tests {
 
     #[test]
     fn xcdr1_truncated_extended_header_rejected() {
-        // PID_EXTENDED announced, aber length-Feld != 8 → Error.
+        // PID_EXTENDED announced, but length field != 8 → error.
         let bytes = vec![0x01, 0x3F, 0x04, 0x00, 0, 0, 0, 0];
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let res = read_pl_cdr1_member(&mut r);
@@ -280,7 +280,7 @@ mod tests {
 
     #[test]
     fn xcdr1_truncated_body_rejected() {
-        // Standard-Header ankuendigt 100 byte body, nur 8 da.
+        // Standard header announces a 100-byte body, only 8 present.
         let bytes = vec![0x01, 0x00, 0x64, 0x00, 1, 2, 3, 4, 5, 6, 7, 8];
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let res = read_pl_cdr1_member(&mut r);

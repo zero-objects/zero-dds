@@ -3,12 +3,12 @@
 
 //! Subscription-Mapping Configuration — Spec Tab 8.8-8.15.
 //!
-//! Datenmodell fuer das Gateway-Config-File (XML/IDL/JSON), das die
-//! OPC-UA-Subscriptions, MonitoredItems und Input/Output-Mappings
-//! beschreibt. Pure Rust-Structs ohne IO — Wire-Loader sind separat
-//! (`crates/opcua-gateway/src/xml.rs` fuer den vereinfachten
-//! Bridge-Loader; ein voller Subscription-Mapping-XML-Loader laesst
-//! sich darauf aufbauen).
+//! Data model for the gateway config file (XML/IDL/JSON), which
+//! describes the OPC-UA subscriptions, MonitoredItems and input/output
+//! mappings. Pure Rust structs without IO — wire loaders are separate
+//! (`crates/opcua-gateway/src/xml.rs` for the simplified
+//! bridge loader; a full subscription-mapping XML loader can be
+//! built on top of it).
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -52,9 +52,9 @@ pub struct OpcUaConnection {
 
 /// Spec Tab 8.11 — `SubscriptionProtocol` (`@nested`).
 ///
-/// `requested_publishing_interval` ist `f64` (ms). Spec erlaubt 0/Negativ
-/// fuer "Server waehlt schnellstmoeglich"; das ist ein Wert-Aspekt, kein
-/// Type-Aspekt — der Caller muss die Sentinel-Semantik ehren.
+/// `requested_publishing_interval` is `f64` (ms). The spec allows 0/negative
+/// for "server picks as fast as possible"; that is a value aspect, not a
+/// type aspect — the caller must honor the sentinel semantics.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubscriptionProtocol {
     /// `double requested_publishing_interval` (ms).
@@ -73,12 +73,12 @@ pub struct SubscriptionProtocol {
 }
 
 impl SubscriptionProtocol {
-    /// Spec §8.4.1.1: `requested_lifetime_count` muss mindestens
-    /// `3 * requested_max_keepalive_count` sein. Liefert `false` wenn
-    /// die Spec-Constraint verletzt ist.
+    /// Spec §8.4.1.1: `requested_lifetime_count` must be at least
+    /// `3 * requested_max_keepalive_count`. Returns `false` if
+    /// the spec constraint is violated.
     #[must_use]
     pub fn lifetime_constraint_ok(&self) -> bool {
-        // u64 zur Vermeidung von u32-Overflow bei keepalive*3.
+        // u64 to avoid u32 overflow on keepalive*3.
         u64::from(self.requested_lifetime_count)
             >= 3u64 * u64::from(self.requested_max_keepalive_count)
     }
@@ -88,8 +88,8 @@ impl SubscriptionProtocol {
 // Tab 8.12 — MonitoredItem (DataItem/EventItem-Union).
 // -------------------------------------------------------------------
 
-/// Spec Tab 8.12 — `DataChangeFilter` Re-Export aus Tab 8.3 — wir
-/// re-nutzen die Subscription-`DataChangeFilter`-Definition.
+/// Spec Tab 8.12 — `DataChangeFilter` re-export from Tab 8.3 — we
+/// reuse the subscription `DataChangeFilter` definition.
 pub use crate::service_sets::attribute::AggregateConfiguration;
 
 /// Spec Tab 8.3 — `DataChangeTrigger`.
@@ -129,8 +129,8 @@ pub struct AggregateFilter {
     pub aggregate_configuration: AggregateConfiguration,
 }
 
-/// Spec Tab 8.12 — `DataItem` (`@nested`). Genau einer der zwei
-/// Filter darf gesetzt sein (Spec normativ "they shall not be combined").
+/// Spec Tab 8.12 — `DataItem` (`@nested`). Exactly one of the two
+/// filters may be set (Spec normative "they shall not be combined").
 #[derive(Debug, Clone, PartialEq)]
 pub struct DataItem {
     /// `NodeId node_id`.
@@ -150,12 +150,12 @@ pub struct DataItem {
 }
 
 impl DataItem {
-    /// Spec §8.4.2.2.4 normativ: ein DataItem darf hoechstens einen
-    /// Filter haben. Liefert `Err(DualFilterError)` wenn beide gesetzt.
+    /// Spec §8.4.2.2.4 normative: a DataItem may have at most one
+    /// filter. Returns `Err(DualFilterError)` if both are set.
     ///
     /// # Errors
-    /// `DualFilterError` wenn sowohl `data_change_filter` als auch
-    /// `aggregate_filter` `Some` sind.
+    /// `DualFilterError` if both `data_change_filter` and
+    /// `aggregate_filter` are `Some`.
     pub fn validate_filters(&self) -> Result<(), DualFilterError> {
         if self.data_change_filter.is_some() && self.aggregate_filter.is_some() {
             return Err(DualFilterError);
@@ -164,7 +164,7 @@ impl DataItem {
     }
 }
 
-/// Validierungs-Fehler `DataItem mit zwei Filtern`.
+/// Validation error `DataItem with two filters`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DualFilterError;
 
@@ -244,27 +244,27 @@ pub struct DdsRegisterType {
 
 /// Spec Tab 8.14 — `DdsDomainParticipant` (`@nested`).
 ///
-/// `participant_qos` aus DDS PSM ist hier als `String` (XML-Snippet)
-/// modelliert; ein voller `DomainParticipantQos`-Typ aus
-/// `crates/dcps/` waere zyklisch und ist hier nicht noetig — dieses
-/// Modul ist Schema-Ebene, der Caller materialisiert das QoS.
+/// `participant_qos` from the DDS PSM is modeled here as a `String`
+/// (XML snippet); a full `DomainParticipantQos` type from
+/// `crates/dcps/` would be cyclic and is not needed here — this
+/// module is the schema level, the caller materializes the QoS.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DdsDomainParticipant {
     /// `int32 domain_id`.
     pub domain_id: i32,
     /// `sequence<DdsRegisterType> register_types`.
     pub register_types: Vec<DdsRegisterType>,
-    /// `DDS::DomainParticipantQos participant_qos` — als XML-Snippet
-    /// oder andere Caller-Repraesentation; leerer String = Default-QoS.
+    /// `DDS::DomainParticipantQos participant_qos` — as an XML snippet
+    /// or another caller representation; empty string = default QoS.
     pub participant_qos: String,
 }
 
 /// Spec Tab 8.13 — `DdsOutput` (`@nested`).
 ///
-/// `domain_participant_ref` ist `@external` in der IDL — also ein
-/// Verweis, kein eingebetteter Wert. Hier modelliert als
-/// `Box<DdsDomainParticipant>` damit der Verweis Owner-frei resolved
-/// wird; Spec laesst die Aufloesung an den Caller.
+/// `domain_participant_ref` is `@external` in the IDL — i.e. a
+/// reference, not an embedded value. Modeled here as
+/// `Box<DdsDomainParticipant>` so that the reference resolves owner-free;
+/// the spec leaves the resolution to the caller.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DdsOutput {
     /// `string name`.
@@ -295,18 +295,18 @@ pub enum AssignmentKind {
     ConstantValue,
 }
 
-/// Spec Tab 8.15 — `DataItemRef` — Name eines DataItems aus dem Input.
+/// Spec Tab 8.15 — `DataItemRef` — name of a DataItem from the input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataItemRef {
-    /// `string data_item_name` — referenziert `DataItem` ueber den
-    /// Namen, den der Konfigurator definiert hat.
+    /// `string data_item_name` — references the `DataItem` by the
+    /// name that the configurator defined.
     pub data_item_name: String,
 }
 
 /// Spec Tab 8.15 — `EventFieldRef`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EventFieldRef {
-    /// `string event_name` — referenziert ein EventItem.
+    /// `string event_name` — references an EventItem.
     pub event_name: String,
     /// `uint32 event_field_index` — Index in den `event_fields` aus
     /// dem `EventFieldList` (Spec §8.4.3.2.2 normativ).
@@ -343,8 +343,8 @@ pub struct FieldAssignment {
     /// des Topic-Type-Felds (`<member>[.<nested>]*`, Spec §8.4.2.4
     /// normativ).
     pub dds_output_field_ref: String,
-    /// `@optional @external OpcUaInput opcua_input_ref` — wenn None,
-    /// gilt der Default-Input aus der `Assignment`-Ebene.
+    /// `@optional @external OpcUaInput opcua_input_ref` — if None,
+    /// the default input from the `Assignment` level applies.
     pub opcua_input_ref: Option<String>,
     /// `AssignmentInput assignment_input`.
     pub assignment_input: AssignmentInput,
@@ -353,9 +353,9 @@ pub struct FieldAssignment {
 /// Spec Tab 8.15 — `Assignment` (`@nested`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Assignment {
-    /// `@external DdsOutput dds_output_ref` — Verweis (per Name).
+    /// `@external DdsOutput dds_output_ref` — reference (by name).
     pub dds_output_ref: String,
-    /// `@external OpcUaInput opcua_input_ref` — Verweis (per Name).
+    /// `@external OpcUaInput opcua_input_ref` — reference (by name).
     pub opcua_input_ref: String,
     /// `sequence<FieldAssignment> field_assignments`.
     pub field_assignments: Vec<FieldAssignment>,

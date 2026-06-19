@@ -1,31 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CORBA-Object ↔ DDS-Topic Bridge.
+//! CORBA-object ↔ DDS-topic bridge.
 //!
 //! Crate `zerodds-corba-dds-bridge`. Safety classification: **STANDARD**.
 //!
 //! # Scope
 //!
-//! Brueckt CORBA-Object-Method-Invocations bidirektional auf DDS-
-//! Topic-Publish/Subscribe:
+//! Bridges CORBA object method invocations bidirectionally onto DDS
+//! topic publish/subscribe:
 //!
-//! * **CORBA → DDS**: Eine GIOP-Request, die der Bridge-POA empfaengt,
-//!   wird in ein DDS-Sample umgewandelt und auf dem assoziierten
-//!   Topic publiziert. Der Reply kommt aus einem zweiten Reply-Topic.
-//! * **DDS → CORBA**: Ein DDS-Sample auf einem Source-Topic wird in
-//!   eine GIOP-Request konvertiert und an einen CORBA-Client-Endpoint
-//!   gesendet (Forwarding-Modus).
+//! * **CORBA → DDS**: A GIOP request received by the bridge POA is
+//!   converted into a DDS sample and published on the associated
+//!   topic. The reply comes from a second reply topic.
+//! * **DDS → CORBA**: A DDS sample on a source topic is converted into
+//!   a GIOP request and sent to a CORBA client endpoint (forwarding
+//!   mode).
 //!
-//! Der `BridgeMapping` erlaubt eine Many-to-Many-Konfiguration: ein
-//! CORBA-Object kann mehrere Topics bedienen, ein DDS-Topic kann
-//! Requests von mehreren CORBA-Objects akzeptieren.
+//! The `BridgeMapping` allows a many-to-many configuration: a CORBA
+//! object can serve multiple topics, and a DDS topic can accept
+//! requests from multiple CORBA objects.
 //!
-//! Konkrete Wire-Anbindung an die CORBA-Welt liegt in [`wire`]:
-//! [`decode_giop_request_bytes`] und [`object_key_from_ior`] kapseln
-//! die Cross-Crate-Aufrufe an `corba-giop` bzw. `corba-ior`.
+//! The concrete wire binding to the CORBA world lives in [`wire`]:
+//! [`decode_giop_request_bytes`] and [`object_key_from_ior`] encapsulate
+//! the cross-crate calls into `corba-giop` and `corba-ior` respectively.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```
 //! use zerodds_corba_dds_bridge::Direction;
@@ -39,11 +39,11 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-// Bridge-Security-Adapter (Bridge-Spec §7.1 TLS via rustls/SSLIOP,
-// §7.2 Auth-Modes, §7.3 Topic-ACL). std-only.
+// Bridge security adapter (bridge spec §7.1 TLS via rustls/SSLIOP,
+// §7.2 auth modes, §7.3 topic ACL). std-only.
 #[cfg(feature = "std")]
 pub mod bridge_security;
-// Daemon-Runtime-Adapter + QoS-Translation. std-only.
+// Daemon runtime adapter + QoS translation. std-only.
 pub mod csiv2_wire;
 #[cfg(feature = "std")]
 pub mod daemon_runtime;

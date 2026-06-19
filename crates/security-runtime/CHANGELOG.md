@@ -1,18 +1,18 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-security-runtime`-Crate.
+Initial release materialization of the `zerodds-security-runtime` crate.
 
-### Spec-Referenzen
+### Spec references
 
 - **OMG DDS-Security 1.1** §8.5.3, §9.5.
-- **OMG DDS-Security 1.2** §8.7 (DataTagging).
-- **ZeroDDS-Architektur §09** Heterogeneous-Mesh + Delegation.
+- **OMG DDS-Security 1.2** §8.7 (data tagging).
+- **ZeroDDS architecture §09** heterogeneous mesh + delegation.
 
-### Public-API
+### Public API
 
 - `SecurityGate`.
 - `engine::{GovernancePolicyEngine, PolicyEngine}`.
@@ -25,31 +25,31 @@ Initiale Release-Materialisierung der `zerodds-security-runtime`-Crate.
 - `builtin_topics::*`.
 - `anti_squatter::*`.
 - `gateway_bridge::GatewayBridge`.
-- `shared::*` Shared-Verdict-Types.
+- `shared::*` shared verdict types.
 
-### Implementierung
+### Implementation
 
-`SecurityGate` haelt Governance + Crypto-Plugin als Mut-Refs und exponiert `encode_outbound`/`decode_inbound`. `GovernancePolicyEngine` durchsucht `<topic_access_rule>`-Liste fuer eine Domain-Topic-Kombi und liefert `PolicyDecision` mit Suite + Protection-Kind + Receiver-MAC-Set.
+`SecurityGate` holds the governance + crypto plugin as mut-refs and exposes `encode_outbound`/`decode_inbound`. `GovernancePolicyEngine` searches the `<topic_access_rule>` list for a domain-topic combination and returns a `PolicyDecision` with suite + protection kind + receiver-MAC set.
 
-`PeerCapabilitiesCache` haelt pro Peer-GUID die zuletzt gesehenen Capabilities, das angebotene Protection-Level, ein Validity-Window, sowie optional eine `DelegationChain`. SPDP-Wire-Codec via `caps_wire`-Modul.
+`PeerCapabilitiesCache` holds, per peer GUID, the last-seen capabilities, the offered protection level, a validity window, and optionally a `DelegationChain`. SPDP wire codec via the `caps_wire` module.
 
-`peer_class::*` macht den `<peer_class>`-Match fuer Heterogeneous-Mesh-Setups (Vehicle ↔ C4I-Backend) — CIDR-Pattern, Subject-Patterns, Profile-Lookup.
+`peer_class::*` does the `<peer_class>` match for heterogeneous-mesh setups (vehicle ↔ C4I backend) — CIDR patterns, subject patterns, profile lookup.
 
-`data_tagging::DataTaggingDefault` ist die Built-in DataTaggingPlugin-Impl (Spec 1.2 §8.7).
+`data_tagging::DataTaggingDefault` is the built-in DataTaggingPlugin impl (spec 1.2 §8.7).
 
-`anti_squatter` implementiert Spec §8.5.3: ein Replier muss am ENT-Endpoint registriert sein, sonst Reject.
+`anti_squatter` implements spec §8.5.3: a replier must be registered at the ENT endpoint, otherwise reject.
 
-`gateway_bridge::GatewayBridge` ist der Edge-↔-Backend-Hop fuer ZeroDDS-Heterogeneous-Mesh.
+`gateway_bridge::GatewayBridge` is the edge ↔ backend hop for the ZeroDDS heterogeneous mesh.
 
 `forbid(unsafe_code)`.
 
-### Architektur
+### Architecture
 
-- **Layer:** 4 (Core Services).
-- **Dependencies (in):** alle 7 Security-Schwester-Crates + `zerodds-rtps` + `zerodds-qos`.
-- **Dependents (out):** `dcps` (Feature `security`), end-user-Builds.
-- **Feature-Flags:** `std` (default).
+- **Layer:** 4 (core services).
+- **Dependencies (in):** all 7 security sibling crates + `zerodds-rtps` + `zerodds-qos`.
+- **Dependents (out):** `dcps` (feature `security`), end-user builds.
+- **Feature flags:** `std` (default).
 
-### Stabilitaet
+### Stability
 
-Public-API + Peer-Caps-SPDP-Mapping + DataTagging-Wire RC1-stabil.
+Public API + peer-caps SPDP mapping + data-tagging wire RC1-stable.

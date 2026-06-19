@@ -20,7 +20,7 @@ use crate::type_object::flags::{CollectionElementFlag, CollectionTypeFlag};
 pub struct CommonCollectionElement {
     /// Flags.
     pub element_flags: CollectionElementFlag,
-    /// Element-Typ.
+    /// Element type.
     pub type_id: TypeIdentifier,
 }
 
@@ -40,7 +40,7 @@ impl CommonCollectionElement {
     }
 }
 
-/// MinimalCollectionElement = Common + (kein Detail).
+/// MinimalCollectionElement = Common + (no detail).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MinimalCollectionElement {
     /// Common.
@@ -68,7 +68,7 @@ impl MinimalCollectionElement {
 pub struct MinimalSequenceType {
     /// Flags.
     pub collection_flag: CollectionTypeFlag,
-    /// Max-Groesse (0 = unbounded).
+    /// Max size (0 = unbounded).
     pub bound: u32,
     /// Element.
     pub element: MinimalCollectionElement,
@@ -78,7 +78,7 @@ impl MinimalSequenceType {
     /// Encode.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u16(self.collection_flag.0)?;
         w.write_u32(self.bound)?;
@@ -88,7 +88,7 @@ impl MinimalSequenceType {
     /// Decode.
     ///
     /// # Errors
-    /// Buffer-Underflow.
+    /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let collection_flag = CollectionTypeFlag(r.read_u16()?);
         let bound = r.read_u32()?;
@@ -110,7 +110,7 @@ impl MinimalSequenceType {
 pub struct MinimalArrayType {
     /// Flags.
     pub collection_flag: CollectionTypeFlag,
-    /// Dimensionen (mindestens 1).
+    /// Dimensions (at least 1).
     pub bound_seq: Vec<u32>,
     /// Element.
     pub element: MinimalCollectionElement,
@@ -120,7 +120,7 @@ impl MinimalArrayType {
     /// Encode.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u16(self.collection_flag.0)?;
         encode_seq(w, &self.bound_seq, |w, dim| w.write_u32(*dim))?;
@@ -130,7 +130,7 @@ impl MinimalArrayType {
     /// Decode.
     ///
     /// # Errors
-    /// Buffer-Underflow.
+    /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let collection_flag = CollectionTypeFlag(r.read_u16()?);
         let bound_seq = decode_seq(r, |r| r.read_u32())?;
@@ -152,11 +152,11 @@ impl MinimalArrayType {
 pub struct MinimalMapType {
     /// Flags.
     pub collection_flag: CollectionTypeFlag,
-    /// Max-Groesse.
+    /// Max size.
     pub bound: u32,
-    /// Key-Element.
+    /// Key element.
     pub key: MinimalCollectionElement,
-    /// Value-Element.
+    /// Value element.
     pub element: MinimalCollectionElement,
 }
 
@@ -164,7 +164,7 @@ impl MinimalMapType {
     /// Encode.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u16(self.collection_flag.0)?;
         w.write_u32(self.bound)?;
@@ -175,7 +175,7 @@ impl MinimalMapType {
     /// Decode.
     ///
     /// # Errors
-    /// Buffer-Underflow.
+    /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let collection_flag = CollectionTypeFlag(r.read_u16()?);
         let bound = r.read_u32()?;

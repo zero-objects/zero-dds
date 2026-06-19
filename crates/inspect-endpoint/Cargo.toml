@@ -1,6 +1,6 @@
 [package]
 name = "zerodds-inspect-endpoint"
-description = "ZeroDDS Inspect-Endpoint — feature-gated Tap-Hooks + Wire-Frame + cert.d-Auth fuer den externen PDE Reality Inspector. Default-OFF (R-099/C-021): kein Hot-Path-Branch im Production-Build."
+description = "ZeroDDS inspect endpoint — feature-gated tap hooks + wire frame + cert.d auth for the external PDE Reality Inspector. Default-OFF (R-099/C-021): no hot-path branch in the production build."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,12 +17,12 @@ publish = true
 [lints]
 workspace = true
 
-# Aktivieren mit `--features inspect-endpoint/inspect`. Default OFF
-# (R-034 / R-070): Production-Builds enthalten keinen Debug-Code.
+# Enable with `--features inspect-endpoint/inspect`. Default OFF
+# (R-034 / R-070): production builds contain no debug code.
 #
-# Wenn `inspect` aus, ist die public API leer (alle pub fns sind
-# `#[cfg(feature = "inspect")]`-gated) — das Crate compiliert weiter,
-# der DDS-Stack zieht keine Logik daraus, kein Hot-Path-Branch.
+# When `inspect` is off, the public API is empty (all pub fns are
+# `#[cfg(feature = "inspect")]`-gated) — the crate still compiles,
+# the DDS stack draws no logic from it, no hot-path branch.
 
 [features]
 default = []

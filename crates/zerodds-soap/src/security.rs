@@ -11,7 +11,7 @@
 //! * X.509-Token (Token Profile 1.1, §3.2).
 //! * Timestamp (WS-Security Core 1.1 §10.2).
 //!
-//! Cipher-Material + Signature-Computation ist Caller-Layer.
+//! Cipher material + signature computation is the caller layer.
 
 use alloc::format;
 use alloc::string::String;
@@ -29,9 +29,9 @@ pub const WSU_NS: &str =
 pub struct UsernameToken {
     /// Username.
     pub username: String,
-    /// Password (Cleartext oder Digest — Caller entscheidet).
+    /// Password (cleartext or digest — caller decides).
     pub password: String,
-    /// `Type`-Attribut auf dem `<wsse:Password>`-Element.
+    /// `Type` attribute on the `<wsse:Password>` element.
     pub password_type: PasswordType,
     /// Optional Nonce (Base64-codiert).
     pub nonce: Option<String>,
@@ -45,8 +45,8 @@ pub enum PasswordType {
     /// `#PasswordText` — Cleartext.
     #[default]
     Text,
-    /// `#PasswordDigest` — Caller liefert SHA1(nonce + created +
-    /// password) base64-codiert.
+    /// `#PasswordDigest` — the caller provides SHA1(nonce + created +
+    /// password) base64-encoded.
     Digest,
 }
 
@@ -68,7 +68,7 @@ impl PasswordType {
 /// X.509-Token — WSS X.509 Token Profile 1.1.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct X509Token {
-    /// Cert (Base64- oder Hex-codiert).
+    /// Cert (Base64- or hex-encoded).
     pub cert_b64: String,
     /// `EncodingType`-Attribut auf `<wsse:BinarySecurityToken>`.
     pub encoding_type: String,
@@ -109,7 +109,7 @@ pub struct SecurityHeader {
 }
 
 impl SecurityHeader {
-    /// Render zu XML — als Inhalt eines `<soap:Header>`. Spec
+    /// Render to XML — as the content of a `<soap:Header>`. Spec
     /// `<wsse:Security>` Skeleton.
     #[must_use]
     pub fn to_xml(&self) -> String {

@@ -5,23 +5,23 @@
 //!
 //! Crate `zerodds-corba-ccm-ejb`. Safety classification: **STANDARD**.
 //!
-//! Diese Bridge erlaubt es, CCM-Components in einem JEE-Container zu
-//! deployen oder umgekehrt EJBs als CCM-Receptacle zu konsumieren. Der
-//! Crate liefert die abstrakten Mappings — die konkreten JNI-/JVM-
-//! Bindings sind Caller-Layer (EJB-Container-Vendor).
+//! This bridge allows CCM components to be deployed in a JEE container,
+//! or conversely EJBs to be consumed as CCM receptacles. The crate
+//! provides the abstract mappings — the concrete JNI/JVM bindings are
+//! caller-layer (EJB container vendor).
 //!
-//! # Module
+//! # Modules
 //!
-//! * [`tx`] — CosTransactions ↔ JTA-UserTransaction-Mapping (OMG
+//! * [`tx`] — CosTransactions ↔ JTA UserTransaction mapping (OMG
 //!   Transaction Service §10 + JEE JTA 1.3 §3.2).
-//! * [`connector_bean`] — ConnectorBean-Lifecycle: `@PostConstruct`,
-//!   `@PreDestroy`, `@Resource`, `@TransactionAttribute` mapping zur
-//!   CCM `ComponentExecutor`-Lifecycle.
-//! * [`stub_gen`] — Java-CCM-Stub-Codegen (Spec CCM 4.0 Annex A,
-//!   Java-PSM): `<Comp>Bean.java` aus `ComponentDef`.
-//! * [`naming_glue`] — JNDI-Namespace ↔ CosNaming-NamingContext.
+//! * [`connector_bean`] — ConnectorBean lifecycle: `@PostConstruct`,
+//!   `@PreDestroy`, `@Resource`, `@TransactionAttribute` mapping to the
+//!   CCM `ComponentExecutor` lifecycle.
+//! * [`stub_gen`] — Java CCM stub codegen (Spec CCM 4.0 Annex A,
+//!   Java PSM): `<Comp>Bean.java` from `ComponentDef`.
+//! * [`naming_glue`] — JNDI namespace ↔ CosNaming NamingContext.
 //!
-//! # Beispiel
+//! # Example
 //!
 //! ```
 //! use zerodds_corba_ccm_ejb::{JtaStatus, TxStatus, jta_status_from_cos};

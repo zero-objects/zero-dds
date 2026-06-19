@@ -3,11 +3,11 @@
 
 //! AMQP 1.0 Extended Type Codecs — Spec §1.6 Tail + §1.6.22-§1.6.24.
 //!
-//! Erweitert das Primitiv-Set aus `types` um die fehlenden integer-
-//! Typen (`ubyte`/`ushort`/`uint`/`byte`/`short`/`int`), Floating-
-//! Point (`float`/`double`), `char`, `decimal32`/`64`/`128`,
-//! `timestamp` und `uuid`, plus die Compound-Typen `list`, `map` und
-//! `array` mit DoS-Cap fuer die Recursion-Tiefe.
+//! Extends the primitive set from `types` with the missing integer
+//! types (`ubyte`/`ushort`/`uint`/`byte`/`short`/`int`), floating-
+//! point (`float`/`double`), `char`, `decimal32`/`64`/`128`,
+//! `timestamp` and `uuid`, plus the compound types `list`, `map` and
+//! `array` with a DoS cap on the recursion depth.
 //!
 //! Cross-Ref: DDS-AMQP-1.0 §7.1 (Type-System-Mapping) + §7.2
 //! (Composite-Type-Mapping).
@@ -18,7 +18,7 @@ use core::fmt;
 
 use crate::types::{AmqpValue, TypeError, codes};
 
-// DoS-Cap fuer Compound-Recursion (Spec §3.3.1.4 analog,
+// DoS cap for compound recursion (analogous to Spec §3.3.1.4,
 // DDS-AMQP-1.0 §6.1 implementation note).
 const MAX_COMPOUND_DEPTH: usize = 32;
 
@@ -62,7 +62,7 @@ pub fn decode_ushort(bytes: &[u8]) -> Result<(u16, usize), TypeError> {
     Ok((u16::from_be_bytes([bytes[1], bytes[2]]), 3))
 }
 
-/// Spec §1.6.5 uint mit Compact-Selection (uint0 / smalluint / uint).
+/// Spec §1.6.5 uint with compact selection (uint0 / smalluint / uint).
 #[must_use]
 pub fn encode_uint(v: u32) -> Vec<u8> {
     if v == 0 {
@@ -77,7 +77,7 @@ pub fn encode_uint(v: u32) -> Vec<u8> {
     }
 }
 
-/// Decode uint (alle drei Formen).
+/// Decode uint (all three forms).
 ///
 /// # Errors
 /// `Truncated` / `UnsupportedFormatCode`.
@@ -145,7 +145,7 @@ pub fn decode_short(bytes: &[u8]) -> Result<(i16, usize), TypeError> {
     Ok((i16::from_be_bytes([bytes[1], bytes[2]]), 3))
 }
 
-/// Spec §1.6.9 int mit Compact-Selection (smallint / int).
+/// Spec §1.6.9 int with compact selection (smallint / int).
 #[must_use]
 pub fn encode_int(v: i32) -> Vec<u8> {
     if (-128..=127).contains(&v) {
@@ -330,11 +330,11 @@ pub fn encode_decimal128(bid: [u8; 16]) -> Vec<u8> {
 //  Compound: List, Map, Array.
 // ============================================================================
 
-/// Erweiterter AMQP-Werte-Typ. Wir vermeiden Aenderungen an
-/// `crate::types::AmqpValue`, weil das Type-Modul stable ist;
-/// stattdessen ein eigenes Enum mit allen Primitiv- und Compound-
-/// Varianten und einer From-Conversion zu/von `AmqpValue` fuer den
-/// Subset.
+/// Extended AMQP value type. We avoid changes to
+/// `crate::types::AmqpValue` because the type module is stable;
+/// instead, a dedicated enum with all primitive and compound
+/// variants and a From conversion to/from `AmqpValue` for the
+/// subset.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AmqpExtValue {
     /// Spec §1.6.1
@@ -379,6 +379,15 @@ pub enum AmqpExtValue {
     Map(Vec<(AmqpExtValue, AmqpExtValue)>),
     /// Spec §1.6.24
     Array(Vec<AmqpExtValue>),
+    /// Spec §1.3.4 — a **described type**: `0x00` + descriptor (ulong) + value.
+    /// Used for composite types like `source`/`target`/message sections that
+    /// appear nested inside performative lists.
+    Described {
+        /// The descriptor code (e.g. `0x29` for `target`, `0x28` for `source`).
+        descriptor: u64,
+        /// The described value (typically a `List`).
+        value: alloc::boxed::Box<AmqpExtValue>,
+    },
 }
 
 impl Eq for AmqpExtValue {}
@@ -422,6 +431,13 @@ impl AmqpExtValue {
             Self::List(items) => encode_list(items, depth),
             Self::Map(entries) => encode_map(entries, depth),
             Self::Array(items) => encode_array(items, depth),
+            Self::Described { descriptor, value } => {
+                // 0x00 + ulong(descriptor) + encoded value.
+                let mut out = alloc::vec![0x00u8];
+                out.extend_from_slice(&crate::types::encode_ulong(*descriptor));
+                out.extend_from_slice(&value.encode_at(depth + 1)?);
+                Ok(out)
+            }
         }
     }
 
@@ -442,6 +458,22 @@ impl AmqpExtValue {
         }
         let code = bytes[0];
         match code {
+            // Described type (§1.3.4): 0x00 + descriptor(ulong) + value.
+            0x00 => {
+                let (desc, dn) = crate::types::decode_value(&bytes[1..])?;
+                let descriptor = match desc {
+                    AmqpValue::Ulong(u) => u,
+                    _ => return Err(TypeError::UnsupportedFormatCode(code)),
+                };
+                let (value, vn) = Self::decode_at(&bytes[1 + dn..], depth + 1)?;
+                Ok((
+                    Self::Described {
+                        descriptor,
+                        value: alloc::boxed::Box::new(value),
+                    },
+                    1 + dn + vn,
+                ))
+            }
             codes::NULL => Ok((Self::Null, 1)),
             codes::BOOLEAN_TRUE => Ok((Self::Boolean(true), 1)),
             codes::BOOLEAN_FALSE => Ok((Self::Boolean(false), 1)),
@@ -524,7 +556,7 @@ fn encode_list(items: &[AmqpExtValue], depth: usize) -> Result<Vec<u8>, TypeErro
         body.extend_from_slice(&it.encode_at(depth + 1)?);
     }
     let count = items.len();
-    let size = body.len() + 1; // +1 = count-Byte fuer list8 / 4-byte fuer list32
+    let size = body.len() + 1; // +1 = count byte for list8 / 4 bytes for list32
     let use_short = body.len() <= 254 && count <= u8::MAX as usize;
     if use_short {
         let mut out = alloc::vec![codes::LIST8];
@@ -741,7 +773,7 @@ fn decode_array(bytes: &[u8], depth: usize) -> Result<(AmqpExtValue, usize), Typ
         elem.extend_from_slice(&bytes[cur..total]);
         let (v, n) = AmqpExtValue::decode_at(&elem, depth + 1)?;
         items.push(v);
-        cur += n - 1; // -1 fuer den prepended constructor byte
+        cur += n - 1; // -1 for the prepended constructor byte
     }
     Ok((AmqpExtValue::Array(items), total))
 }
@@ -926,12 +958,12 @@ mod tests {
     }
 
     // -------------------------------------------------------------
-    // Mutation-Killer (Welle 2026-05-02) — extended_types.rs
+    // Mutation killers — extended_types.rs
     // -------------------------------------------------------------
 
-    /// Faengt `Display::fmt -> Ok(default)` Mutation (line 508).
-    /// Display delegiert auf Debug ({self:?}); Mutation wuerde ""
-    /// liefern.
+    /// Catches the `Display::fmt -> Ok(default)` mutation (line 508).
+    /// Display delegates to Debug ({self:?}); the mutation would
+    /// return "".
     #[test]
     fn ext_value_display_non_empty() {
         let s = alloc::format!("{}", AmqpExtValue::Ubyte(42));
@@ -940,12 +972,12 @@ mod tests {
         assert!(s2.contains("true") || s2.contains("Boolean"));
     }
 
-    /// Faengt `decode_at` depth-cap-Boundary `>` -> `==`/`>=` (line 433).
-    /// MAX_COMPOUND_DEPTH=32. Depth=32 muss durchgehen, Depth=33 erroren.
-    /// Test direkt via decode_at-Aufruf statt voll-nested Encoding.
+    /// Catches the `decode_at` depth-cap boundary `>` -> `==`/`>=` (line 433).
+    /// MAX_COMPOUND_DEPTH=32. Depth=32 must pass, depth=33 must error.
+    /// Tested directly via a decode_at call instead of fully-nested encoding.
     #[test]
     fn decode_at_depth_at_cap_accepted() {
-        // Simple Wert, depth=MAX → muss durchgehen.
+        // Simple value, depth=MAX → must pass.
         let bytes = AmqpExtValue::Ubyte(7).encode().unwrap();
         let res = AmqpExtValue::decode_at(&bytes, MAX_COMPOUND_DEPTH);
         assert!(res.is_ok(), "depth=MAX must decode, got {res:?}");
@@ -958,13 +990,13 @@ mod tests {
         assert!(matches!(res, Err(TypeError::LengthTooLarge)));
     }
 
-    /// Faengt `&& -> ||` in encode_map use_short-Boundary (line 598).
-    /// Mit `||`: count > 254 ABER body.len() <= 254 wuerde trotzdem
-    /// MAP8 nutzen — und count als u8 truncaten. Test mit count > 254.
-    /// Map mit 128 Eintraegen (=256 elements; > u8::MAX=255).
+    /// Catches `&& -> ||` in the encode_map use_short boundary (line 598).
+    /// With `||`: count > 254 BUT body.len() <= 254 would still
+    /// use MAP8 — and truncate count to u8. Tested with count > 254.
+    /// Map with 128 entries (=256 elements; > u8::MAX=255).
     #[test]
     fn encode_map_uses_long_form_when_count_exceeds_u8() {
-        // 130 Entries → count=260 > 255 → MUSS MAP32 nutzen.
+        // 130 entries → count=260 > 255 → MUST use MAP32.
         let mut entries = Vec::new();
         for i in 0..130u32 {
             entries.push((AmqpExtValue::Uint(i), AmqpExtValue::Uint(i + 1)));
@@ -972,13 +1004,13 @@ mod tests {
         let bytes = AmqpExtValue::Map(entries.clone()).encode().unwrap();
         // MAP8 = 0xC1; MAP32 = 0xD1.
         assert_eq!(bytes[0], codes::MAP32, "expected MAP32 for count>255");
-        // Roundtrip muss funktionieren.
+        // Round-trip must work.
         let (parsed, _) = AmqpExtValue::decode(&bytes).unwrap();
         assert_eq!(parsed, AmqpExtValue::Map(entries));
     }
 
-    /// Faengt `&& -> ||` in encode_array use_short (line 681).
-    /// Array mit count > 255 muss ARRAY32 nutzen.
+    /// Catches `&& -> ||` in encode_array use_short (line 681).
+    /// An array with count > 255 must use ARRAY32.
     #[test]
     fn encode_array_uses_long_form_when_count_exceeds_u8() {
         let items: Vec<AmqpExtValue> = (0..300u32)
@@ -991,18 +1023,18 @@ mod tests {
         assert_eq!(parsed, AmqpExtValue::Array(items));
     }
 
-    /// decode_array Boundary `bytes.len() < 3` (Zeile 712 ARRAY8) und
-    /// `bytes.len() < 9` (Zeile 718 ARRAY32). Faengt `<` -> `<=` Mutationen:
-    /// genau-3-byte-buf bei ARRAY8 / genau-9-byte-buf bei ARRAY32 muessen
-    /// PASSIEREN (kein Truncated).
+    /// decode_array boundary `bytes.len() < 3` (line 712 ARRAY8) and
+    /// `bytes.len() < 9` (line 718 ARRAY32). Catches `<` -> `<=` mutations:
+    /// an exactly-3-byte buf for ARRAY8 / an exactly-9-byte buf for ARRAY32 must
+    /// PASS (no Truncated).
     #[test]
     fn decode_array_at_minimum_buffer_size() {
-        // ARRAY8 mit body.len()=1 (nur constructor) und count=0 — minimal.
+        // ARRAY8 with body.len()=1 (constructor only) and count=0 — minimal.
         // Bytes: [ARRAY8, size=1, count=0, constructor_for_first_item]
-        // size=1 weil body=[constructor], total=2+1=3 → bytes.len() muss
-        // mindestens 3 sein, plus 1 byte fuer constructor = 4.
-        // Wir koennen das nicht trivial bauen weil array empty=Error.
-        // Stattdessen: ARRAY8 mit 1 Element.
+        // size=1 because body=[constructor], total=2+1=3 → bytes.len() must
+        // be at least 3, plus 1 byte for the constructor = 4.
+        // We can't build that trivially because an empty array = Error.
+        // Instead: ARRAY8 with 1 element.
         let bytes = AmqpExtValue::Array(vec![AmqpExtValue::Ubyte(0xAB)])
             .encode()
             .unwrap();
@@ -1018,9 +1050,9 @@ mod tests {
         }
     }
 
-    /// Roundtrip mit konkreten Werten testet die `+ -> *` und
-    /// `+ -> -` Arithm-Mutationen in encode/decode-Bodies indirekt:
-    /// falsch berechnete Offsets/Sizes brechen den Roundtrip.
+    /// Round-trip with concrete values indirectly tests the `+ -> *` and
+    /// `+ -> -` arithmetic mutations in the encode/decode bodies:
+    /// incorrectly computed offsets/sizes break the round-trip.
     #[test]
     fn list_map_array_roundtrip_concrete_values() {
         roundtrip(AmqpExtValue::List(vec![
@@ -1037,7 +1069,7 @@ mod tests {
             AmqpExtValue::Ubyte(20),
             AmqpExtValue::Ubyte(30),
         ]));
-        // Nested compound — testet rekursive depth + 1 Increments.
+        // Nested compound — tests recursive depth + 1 increments.
         roundtrip(AmqpExtValue::List(vec![AmqpExtValue::List(vec![
             AmqpExtValue::Ubyte(42),
         ])]));

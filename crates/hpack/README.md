@@ -3,45 +3,45 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-hpack/badge.svg)](https://docs.rs/zerodds-hpack)
 
-HPACK (RFC 7541) Header-Compression-Codec fuer HTTP/2: Variable-
-Length-Integer, String-Literals (mit/ohne Huffman, Appendix B),
-Static-Table (61 Eintraege, Appendix A), Dynamic-Table mit
-SETTINGS_HEADER_TABLE_SIZE-Lifecycle und alle vier Header-Field-
-Repraesentationen aus §6. `no_std + alloc`,
+HPACK (RFC 7541) header-compression codec for HTTP/2: variable-
+length integer, string literals (with/without Huffman, Appendix B),
+static table (61 entries, Appendix A), dynamic table with
+SETTINGS_HEADER_TABLE_SIZE lifecycle and all four header-field
+representations from §6. `no_std + alloc`,
 `forbid(unsafe_code)`. Safety classification: **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| RFC 7541 (HPACK) | §2.3 (Indexing-Tables), §4 (Dynamic-Table-Management), §5.1 (Integer), §5.2 (String-Literals), §6.1 (Indexed-Header), §6.2.1 (Literal-with-Indexing), §6.2.2 (Literal-without-Indexing), §6.2.3 (Literal-Never-Indexed), §6.3 (Dynamic-Table-Size-Update), Appendix A (Static-Table), Appendix B (Huffman) |
+| RFC 7541 (HPACK) | §2.3 (indexing tables), §4 (dynamic-table management), §5.1 (integer), §5.2 (string literals), §6.1 (indexed header), §6.2.1 (literal with indexing), §6.2.2 (literal without indexing), §6.2.3 (literal never indexed), §6.3 (dynamic-table size update), Appendix A (static table), Appendix B (Huffman) |
 
-## Was ist drin
+## What's inside
 
-- **`Encoder` / `Decoder`** — High-Level-Codec mit eigener Dynamic-
-  Table und Indexing-Strategie (Voll-Match → indexed; Name-Only →
-  literal-with-indexing-indexed-name; sonst → literal-with-indexing-
-  new-name).
-- **`Table` / `HeaderField`** — Combined-Lookup ueber Static + Dynamic
-  (Index 1..=61 = Static, 62..N = Dynamic), Eviction per Spec §4.4
-  (Single-Entry-Too-Large clears die Tabelle).
-- **`STATIC_TABLE` / `StaticTableEntry`** — die 61 Appendix-A-Eintraege
-  als `&'static`-Konstante.
-- **`encode_integer` / `decode_integer`** — Variable-Length-Integer
-  mit konfigurierbarer Prefix-Bit-Position (§5.1).
-- **`encode_string` / `decode_string`** — String-Literal mit optional
-  Huffman-Compression (§5.2).
-- **`huffman::encode` / `huffman::decode`** — Static-Huffman-Code aus
-  Appendix B mit EOS-Padding-Detection.
+- **`Encoder` / `Decoder`** — high-level codec with its own dynamic
+  table and indexing strategy (full match → indexed; name-only →
+  literal-with-indexing indexed name; otherwise → literal-with-indexing
+  new name).
+- **`Table` / `HeaderField`** — combined lookup over static + dynamic
+  (index 1..=61 = static, 62..N = dynamic), eviction per spec §4.4
+  (a single entry too large clears the table).
+- **`STATIC_TABLE` / `StaticTableEntry`** — the 61 Appendix A entries
+  as a `&'static` constant.
+- **`encode_integer` / `decode_integer`** — variable-length integer
+  with configurable prefix-bit position (§5.1).
+- **`encode_string` / `decode_string`** — string literal with optional
+  Huffman compression (§5.2).
+- **`huffman::encode` / `huffman::decode`** — static Huffman code from
+  Appendix B with EOS-padding detection.
 
-## Schichten-Position
+## Layer position
 
-Layer 5 — Bridges. Substrat fuer:
+Layer 5 — Bridges. Substrate for:
 
-- [`zerodds-http2`](../http2) — RFC 9113 Framing + Stream-State-
-  Machine.
+- [`zerodds-http2`](../http2) — RFC 9113 framing + stream state
+  machine.
 - [`zerodds-grpc-bridge`](../grpc-bridge) — gRPC-over-HTTP/2 +
-  gRPC-Web Length-Prefixed-Message-Codec.
+  gRPC-Web length-prefixed-message codec.
 
 ## Quickstart
 
@@ -62,7 +62,7 @@ let decoded = decoder.decode(&wire).expect("roundtrip");
 assert_eq!(decoded, headers);
 ```
 
-Huffman-Compression aktivieren:
+Enable Huffman compression:
 
 ```rust
 use zerodds_hpack::Encoder;
@@ -71,8 +71,8 @@ let mut encoder = Encoder::new();
 encoder.use_huffman = true;
 ```
 
-Dynamic-Table-Size konfigurieren (z.B. wenn HTTP/2-Peer
-`SETTINGS_HEADER_TABLE_SIZE` schickt):
+Configure the dynamic-table size (e.g. when an HTTP/2 peer
+sends `SETTINGS_HEADER_TABLE_SIZE`):
 
 ```rust
 use zerodds_hpack::Decoder;
@@ -81,20 +81,20 @@ let mut decoder = Decoder::with_max_size(8192);
 decoder.table_mut().set_max_size(4096);
 ```
 
-## Feature-Flags
+## Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std` | ✅ | `std::error::Error` fuer alle Fehler-Typen. |
+| `std` | ✅ | `std::error::Error` for all error types. |
 | `alloc` | ✅ (via std) | `Vec` / `String` / `VecDeque`. |
 
-Crate ist `no_std`-fahig: `default-features = false, features = ["alloc"]`.
+The crate is `no_std`-capable: `default-features = false, features = ["alloc"]`.
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1` ist die initiale Release-Materialisierung. Public-API,
-Wire-Format (RFC 7541) und Fehler-Diskriminanten sind RC1-stabil;
-Breaking-Changes erfordern Major-Bump.
+`1.0.0-rc.1` is the initial release materialization. The public API,
+wire format (RFC 7541) and error discriminants are RC1-stable;
+breaking changes require a major bump.
 
 ## Tests
 
@@ -102,17 +102,17 @@ Breaking-Changes erfordern Major-Bump.
 cargo test -p zerodds-hpack
 ```
 
-49 Unit-Tests: Integer-Coding (8, davon 3 RFC-7541-Appendix-C-1-
-Vektoren), String-Coding (7, inkl. Huffman-Roundtrip), Huffman (7),
-Table-Management (14), Encoder (7), Decoder (8 inkl. RFC-7541-Appendix-
-C-2.1-Vektor + Dynamic-Table-Size-Update + Invalid-Index-Rejection).
+49 unit tests: integer coding (8, of which 3 are RFC 7541 Appendix C.1
+vectors), string coding (7, incl. Huffman roundtrip), Huffman (7),
+table management (14), encoder (7), decoder (8, incl. RFC 7541 Appendix
+C.2.1 vector + dynamic-table size update + invalid-index rejection).
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../../LICENSE).
+Apache-2.0. See [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
-- [`docs/release/rc1-reviews/hpack.md`](../../docs/release/rc1-reviews/hpack.md) — RC1-Review.
-- [`zerodds-http2`](../http2) — HTTP/2-Framing-Konsument.
-- [`zerodds-grpc-bridge`](../grpc-bridge) — gRPC-Konsument.
+- [`docs/release/rc1-reviews/hpack.md`](../../docs/release/rc1-reviews/hpack.md) — RC1 review.
+- [`zerodds-http2`](../http2) — HTTP/2 framing consumer.
+- [`zerodds-grpc-bridge`](../grpc-bridge) — gRPC consumer.

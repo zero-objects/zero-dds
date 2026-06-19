@@ -26,8 +26,8 @@ verschoben, nicht der Scope gekuerzt.
 2026 Q3 │ v1.3 — OSS-Parity [VORGEZOGEN: 7/7 QoS schon 2026-04-23 drin,
         │                    Python+Security noch offen]
 2026 Q4 │ v1.4 Part A (Security 1.1 + C-Binding)
-2027 Q1 │ v1.4 Part B (Persistence Transient + rmw_zerodds)
-2027 Q2 │ v1.5 (TSN + RPC + Persistent)
+2027 Q1 │ v1.4 Part B (rmw_zerodds)  [Persistence ✅ vorgezogen — geliefert auf main, ADR 0009]
+2027 Q2 │ v1.5 (TSN + RPC)           [Persistent ✅ vorgezogen — geliefert auf main, ADR 0009]
 2027 Q3 │ v2.0 (Bridges + HA + Security 1.2 HSM)
 2027 Q4 │ v2.0-Patch-Phase, Zertifizierungs-Partnerschaften
 ```
@@ -478,8 +478,8 @@ Transient-Durability."
 - async-API parallel zur sync-API
 
 **Part B (Q1 2027, ~12-14 Wochen):**
-- **Persistence-Service** (`zerodds-persistence`-Daemon)
-- Transient-Durability (nutzt Persistence-Service optional)
+- **Persistence-Service** (`zerodds-persistence`-Daemon) — ✅ **vorgezogen, geliefert auf main** (adapter-Daemon `crates/durability-service`, ADR 0009)
+- Transient-Durability (nutzt Persistence-Service optional) — ✅ geliefert (TRANSIENT + PERSISTENT, ADR 0009)
 - **rmw_zerodds** (ROS2-Middleware-Layer)
 - Zero-Copy / FlatData fuer SHM-Transport
 - Builder-Generator-Integration im `idlc`
@@ -836,7 +836,7 @@ Architektur: [`docs/architecture/09_delegation.md`](../architecture/09_delegatio
 - WP 4.10 — C++-Binding on-top-of-C (modern C++17, RAII)
 - WP 4.11 — async-API (tokio-basiert, Option<Runtime>-Pattern)
 
-**Persistence-Track:**
+**Persistence-Track:** ✅ **GELIEFERT auf main (2026-06-10, [ADR 0009](../adr/0009-durability-service.md))** — vorgezogen, realisiert als adapter-getriebener Daemon (`crates/durability-service` + `durability-store{,-file,-sqlite,-lakehouse}`). TRANSIENT + PERSISTENT, RTPS-Ingest/Replay, Crash-Recovery (P4), Cross-Vendor-Ingest gegen Cyclone wire-bewiesen. Die WP-Zeilen unten = historischer Plan (Storage-Backend wurde Trait-Adapter statt „SQLite+Sled", Discovery via DCPSDurability statt special-Subscriber).
 - WP 4.12 — Persistence-Service Binary (`zerodds-persistence`)
 - WP 4.13 — Storage-Backend: SQLite + Sled-DB (pluggable)
 - WP 4.14 — Service-Discovery: registriert sich als special-Subscriber auf Transient-Topics

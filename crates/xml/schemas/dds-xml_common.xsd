@@ -3,14 +3,14 @@
     DDS-XML 1.0 — Common Datatypes (chameleon, no targetNamespace).
     Spec OMG DDS-XML 1.0 §7.2.2 + §7.1.4 Tab.7.1.
 
-    Wird via xs:include von den Building-Block-Definitions-Files
-    referenziert (Chameleon-Pattern §7.1.3).
+    Referenced via xs:include from the building-block definition files
+    (chameleon pattern §7.1.3).
 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
            elementFormDefault="unqualified"
            attributeFormDefault="unqualified">
 
-    <!-- §7.1.4 Tab.7.1: boolean-Werte case-sensitive. -->
+    <!-- §7.1.4 Tab.7.1: boolean values case-sensitive. -->
     <xs:simpleType name="boolean">
         <xs:restriction base="xs:string">
             <xs:enumeration value="true"/>
@@ -56,7 +56,7 @@
         </xs:all>
     </xs:complexType>
 
-    <!-- §7.2.4.2 Octet-Sequenzen: Decimal/Hex-Comma-Liste. -->
+    <!-- §7.2.4.2 octet sequences: decimal/hex comma list. -->
     <xs:simpleType name="octetSequence">
         <xs:restriction base="xs:string">
             <xs:pattern value="((0x[0-9a-fA-F]+|[0-9]+)(\s*,\s*(0x[0-9a-fA-F]+|[0-9]+))*)?"/>

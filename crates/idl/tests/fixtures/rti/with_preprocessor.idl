@@ -1,5 +1,5 @@
-// with_preprocessor.idl — Kombination aus #include + RTI-keylist.
-// Hand-kuratiert; siehe LICENSES.md.
+// with_preprocessor.idl — combination of #include + RTI keylist.
+// Hand-curated; see LICENSES.md.
 
 #include "sensor_common.idl"
 

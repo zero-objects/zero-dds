@@ -1,63 +1,63 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! RPC-Discovery-Extensions (Spec §7.6.2.x).
+//! RPC discovery extensions (Spec §7.6.2.x).
 //!
-//! `PublicationBuiltinTopicDataExt` und `SubscriptionBuiltinTopicDataExt`
-//! erweitern die Standard-DCPS-Discovery-Daten um RPC-Service-
-//! Identitaet (Service-Name, Mapping-Profil, Topic-Aliases fuer
-//! Inheritance).
+//! `PublicationBuiltinTopicDataExt` and `SubscriptionBuiltinTopicDataExt`
+//! extend the standard DCPS discovery data with RPC service
+//! identity (service name, mapping profile, topic aliases for
+//! inheritance).
 //!
-//! # Spec-Mapping
+//! # Spec mapping
 //!
 //! * **§7.6.2.1.1** [`PublicationBuiltinTopicDataExt`] — extended
-//!   Publication-Data mit RPC-Felder.
-//! * **§7.6.2.1.2** [`SubscriptionBuiltinTopicDataExt`] — analog.
-//! * **§7.6.2.2.1** [`client_matches_service`] — Client-Matching-Helper.
-//! * **§7.6.2.2.2** [`service_matches_client`] — Service-Matching-Helper.
+//!   publication data with RPC fields.
+//! * **§7.6.2.1.2** [`SubscriptionBuiltinTopicDataExt`] — analogous.
+//! * **§7.6.2.2.1** [`client_matches_service`] — client-matching helper.
+//! * **§7.6.2.2.2** [`service_matches_client`] — service-matching helper.
 
 extern crate alloc;
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Spec §7.6.2.1.1 Extension der Standard-PublicationBuiltinTopicData.
+/// Spec §7.6.2.1.1 extension of the standard PublicationBuiltinTopicData.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PublicationBuiltinTopicDataExt {
-    /// Service-Name aus IDL-`@service`-Annotation.
+    /// Service name from the IDL `@service` annotation.
     pub service_name: String,
-    /// Mapping-Profil ("Basic" oder "Enhanced").
+    /// Mapping profile ("Basic" or "Enhanced").
     pub mapping_profile: ServiceMappingProfile,
-    /// Topic-Aliases fuer Interface-Inheritance (Spec §7.5.1.2.6).
+    /// Topic aliases for interface inheritance (Spec §7.5.1.2.6).
     pub topic_aliases: Vec<String>,
 }
 
-/// Spec §7.6.2.1.2 Extension der Standard-SubscriptionBuiltinTopicData.
+/// Spec §7.6.2.1.2 extension of the standard SubscriptionBuiltinTopicData.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SubscriptionBuiltinTopicDataExt {
-    /// Service-Name aus IDL-`@service`-Annotation.
+    /// Service name from the IDL `@service` annotation.
     pub service_name: String,
-    /// Mapping-Profil.
+    /// Mapping profile.
     pub mapping_profile: ServiceMappingProfile,
-    /// Topic-Aliases fuer Interface-Inheritance.
+    /// Topic aliases for interface inheritance.
     pub topic_aliases: Vec<String>,
 }
 
-/// Service-Mapping-Profil (Spec §2.1 + §2.2).
+/// Service mapping profile (Spec §2.1 + §2.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ServiceMappingProfile {
-    /// Basic-Mapping (default).
+    /// Basic mapping (default).
     #[default]
     Basic,
-    /// Enhanced-Mapping mit X-Types-Aliases.
+    /// Enhanced mapping with X-Types aliases.
     Enhanced,
 }
 
-/// Spec §7.6.2.2.1: Client-Side-Matching via extended publication data.
+/// Spec §7.6.2.2.1: client-side matching via extended publication data.
 ///
-/// Client matched einen Service wenn:
-/// 1. Service-Name uebereinstimmt.
-/// 2. Mapping-Profil kompatibel (Enhanced akzeptiert Basic-Subset).
+/// A client matches a service if:
+/// 1. The service name matches.
+/// 2. The mapping profile is compatible (Enhanced accepts the Basic subset).
 #[must_use]
 pub fn client_matches_service(
     client_pub_data: &PublicationBuiltinTopicDataExt,
@@ -72,7 +72,7 @@ pub fn client_matches_service(
     )
 }
 
-/// Spec §7.6.2.2.2: Service-Side-Matching analog.
+/// Spec §7.6.2.2.2: service-side matching analogously.
 #[must_use]
 pub fn service_matches_client(
     service_pub_data: &PublicationBuiltinTopicDataExt,
@@ -87,8 +87,8 @@ pub fn service_matches_client(
     )
 }
 
-/// Profile-Kompatibilitaet: gleicher Profile-Typ matched immer; Basic
-/// und Enhanced sind nicht direkt cross-kompatibel (Spec §2.1: "must
+/// Profile compatibility: the same profile type always matches; Basic
+/// and Enhanced are not directly cross-compatible (Spec §2.1: "must
 /// use the same Service Mapping").
 fn profile_compatible(a: ServiceMappingProfile, b: ServiceMappingProfile) -> bool {
     a == b
@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn client_does_not_match_service_with_different_profile() {
-        // Spec §2.1: Client+Service muessen dasselbe Mapping nutzen.
+        // Spec §2.1: client + service must use the same mapping.
         let p = pub_data("Calc", ServiceMappingProfile::Basic);
         let s = sub_data("Calc", ServiceMappingProfile::Enhanced);
         assert!(!client_matches_service(&p, &s));

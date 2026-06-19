@@ -3,11 +3,11 @@
 
 //! `FRAGMENT` Submessage (id=13, Spec §8.3.5.14).
 //!
-//! Direction: bidirektional, nur in reliable Streams. Body ist opake
-//! Fortsetzung der zerlegten Original-Submessage. Bit 1 der Flags
-//! markiert das letzte Fragment.
+//! Direction: bidirectional, only in reliable streams. The body is an
+//! opaque continuation of the split original submessage. Bit 1 of the flags
+//! marks the last fragment.
 //!
-//! Reassembly ist State-Machine-Logik (C6.2.B); hier nur Wire-Format.
+//! Reassembly is state-machine logic (C6.2.B); here only the wire format.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -15,20 +15,20 @@ use alloc::vec::Vec;
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// FRAGMENT-Flag: Last-Fragment (Bit 1).
+/// FRAGMENT flag: last fragment (bit 1).
 pub const FRAGMENT_FLAG_LAST: u8 = 0x02;
 
-/// `FRAGMENT_Payload` mit Last-Marker.
+/// `FRAGMENT_Payload` with a last marker.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FragmentPayload {
-    /// Opake Bytes des Fragments.
+    /// Opaque bytes of the fragment.
     pub data: Vec<u8>,
-    /// `true`, wenn dies das letzte Fragment ist.
+    /// `true` if this is the last fragment.
     pub last_fragment: bool,
 }
 
 impl FragmentPayload {
-    /// Berechnet das Flag-Byte.
+    /// Computes the flag byte.
     #[must_use]
     pub fn flags(&self) -> u8 {
         let mut f = FLAG_E_LITTLE_ENDIAN;
@@ -38,7 +38,7 @@ impl FragmentPayload {
         f
     }
 
-    /// Verpackt in `Submessage`.
+    /// Packs into a `Submessage`.
     ///
     /// # Errors
     /// `PayloadTooLarge`.
@@ -47,7 +47,7 @@ impl FragmentPayload {
         Submessage::new(SubmessageId::Fragment, flags, self.data)
     }
 
-    /// Extrahiert aus `Submessage`.
+    /// Extracts from a `Submessage`.
     ///
     /// # Errors
     /// `ValueOutOfRange`.

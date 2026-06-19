@@ -9,5 +9,5 @@ cargo +nightly fuzz run parse_dds_xml
 cargo +nightly fuzz run parse_qos_libraries
 ```
 
-Bekanntes Finding 3: Stack-Overflow bei tiefer Tag-Verschachtelung
+Known finding 3: stack overflow on deep tag nesting
 (siehe `docs/test-harness/plan.md`).

@@ -2,6 +2,10 @@
 
 **Quelle:** `docs/specs/zerodds-xcdr2-c-1.0.md` (185 Zeilen) -- ZeroDDS C-FFI XCDR2-Encoding-Spec.
 
+Implementation:
+
+- `crates/zerodds-c-api/` — C-FFI XCDR2-TypeSupport-Encoding.
+
 ## §1 Motivation
 
 ### §1 Keine OMG-DDS-C-PSM-Spec
@@ -64,9 +68,9 @@
 
 ## §6 Memory-Ownership
 
-### §6 Caller/Callee-Vertrag fuer Encode/Decode/Free
+### §6 Caller/Callee-Vertrag für Encode/Decode/Free
 
-**Spec:** §6, Tabelle 4 Eintraege -- Caller bietet `out_buf` (oder NULL fuer Size-Probe), Callee schreibt `out_len`; Decode allokiert Strings/Sequences im Sample; `ts.sample_free` gibt heap-Pointer frei.
+**Spec:** §6, Tabelle 4 Einträge -- Caller bietet `out_buf` (oder NULL für Size-Probe), Callee schreibt `out_len`; Decode allokiert Strings/Sequences im Sample; `ts.sample_free` gibt heap-Pointer frei.
 
 **Repo:** `crates/zerodds-c-api/src/xcdr2.rs::zerodds_xcdr2_encode` Size-Probe mit NULL `out_buf` (returns required size in `out_len`). Decode-Pfad allokiert via Codegen-emittierter `MyType_decode`.
 
@@ -78,7 +82,7 @@
 
 ### §7 L1 Wire (V-1..V-12 byte-genau via FFI)
 
-**Spec:** §7 -- "L1 (Wire): `crates/zerodds-c-api/tests/xcdr2_wire_vectors.rs` prueft V-1..V-12 byte-genau via FFI."
+**Spec:** §7 -- "L1 (Wire): `crates/zerodds-c-api/tests/xcdr2_wire_vectors.rs` prüft V-1..V-12 byte-genau via FFI."
 
 **Repo:** `crates/zerodds-c-api/tests/xcdr2_wire_vectors.rs` (13 tests).
 
@@ -108,13 +112,13 @@
 
 ### §7 L4 Cross-Vendor
 
-**Spec:** §7 -- "L4 (Cross-Vendor): C-FFI ueber RTPS gegen Cyclone DDS."
+**Spec:** §7 -- "L4 (Cross-Vendor): C-FFI über RTPS gegen Cyclone DDS."
 
-**Repo:** `tests/interop/xcdr2_cross_vendor.sh` orchestriert Cross-Vendor-Setup; Fixture-Tree `crates/discovery/tests/fixtures/cyclone-xcdr2/` haelt V-1..V-12 spec-derived + V-2 als recorded Cyclone-Capture (`v2_cyclone_recorded.bin`). C-FFI-Encoder dispatcht ueber dieselbe `crates/cdr`-Logik; daher deckt `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` Cyclone-Equivalenz fuer C-FFI mit ab. V-3..V-12 ohne live Cyclone-Capture.
+**Repo:** `tests/interop/xcdr2_cross_vendor.sh` orchestriert Cross-Vendor-Setup; Fixture-Tree `crates/discovery/tests/fixtures/cyclone-xcdr2/` hält V-1..V-12. C-FFI-Encoder dispatcht über dieselbe `crates/cdr`-Logik; daher deckt `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` Cyclone-Äquivalenz für C-FFI mit ab. Alle 12 Vektoren wurden live gegen Cyclone DDS 0.11 (erzwungenes XCDR2) auf dem Linux-Bench-Host aufgenommen und byte-genau verglichen: V-2..V-9 + V-11b byte-genau (V-3/V-8 belegen den XCDR2-64-Bit-Alignment-Cap §7.4.1.1.1, V-6 den `sequence<string>`-DHEADER §7.4.3.5); V-10/V-11a konforme LC-Divergenz (kein Bug, Spec §6 erlaubt, Decoder liest alle LCs). Beide aufgedeckten Gaps (Alignment + Sequence-DHEADER) sind über alle 6 Bindings gefixt; `v6.bin` korrigiert.
 
-**Tests:** `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests, Encoder-Logik shared mit zerodds-c-api).
+**Tests:** `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests); Encoder-Seite `crates/zerodds-c-api/tests/xcdr2_wire_vectors.rs` (13 Tests) gegen die korrigierten Vektoren grün (V-6 mit DHEADER, V-3/V-8 4-Byte-aligned).
 
-**Status:** partial -- V-2 Cyclone-recorded; V-3..V-12 spec-derived ohne Cyclone-Live-Capture.
+**Status:** done -- alle deterministischen Vektoren (V-1..V-9, V-11b) byte-genau gegen Cyclone DDS 0.11; mutable V-10/V-11a konforme LC-Divergenz (spec-erlaubt, Roundtrip-Interop). Per-Capture-Verfahren auf dem Linux-Bench-Host reproduzierbar.
 
 ## §8 Examples
 
@@ -140,9 +144,9 @@
 
 **Status:** done
 
-### §9.2 Sequence-Bound-Pruefung
+### §9.2 Sequence-Bound-Prüfung
 
-**Spec:** §9.2 -- "Generierter decode prueft Bound aus IDL `sequence<T, N>`-Annotation und faellt bei Verletzung mit -7 zurueck."
+**Spec:** §9.2 -- "Generierter decode prüft Bound aus IDL `sequence<T, N>`-Annotation und fällt bei Verletzung mit -7 zurück."
 
 **Repo:** `crates/idl-cpp/src/c_mode.rs::emit_sequence_read` mit Bound-Check.
 
@@ -156,13 +160,13 @@
 
 **Repo:** `#[repr(C)]`-Struct + `extern "C"`-Wrappers in `xcdr2.rs`.
 
-**Tests:** `xcdr2_c_compile.rs` compiliert C99 + C++ Konsumenten gleichermassen.
+**Tests:** `xcdr2_c_compile.rs` compiliert C99 + C++ Konsumenten gleichermaßen.
 
 **Status:** done
 
 ### §9.4 enum-Width int32_t
 
-**Spec:** §9.4 -- "C-Codegen emittiert enum-Typen mit explizitem `int32_t`-Storage (nicht `int`) fuer ABI-Stabilitaet."
+**Spec:** §9.4 -- "C-Codegen emittiert enum-Typen mit explizitem `int32_t`-Storage (nicht `int`) für ABI-Stabilität."
 
 **Repo:** `crates/idl-cpp/src/c_mode.rs` enum-Pfad emittiert `int32_t`-typedef.
 
@@ -174,8 +178,6 @@
 
 ## Audit-Status
 
-13 done / 1 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+14 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-c-api` -- unittest 68 + smoke_ffi 1 + xcdr2_c_codegen 12 + xcdr2_c_compile 11 + xcdr2_wire_vectors 13 = 105 Tests gruen, 0 failed; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_3_c_ffi_binding` -- 1 Test gruen; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 Tests gruen.
-
-Offene Items: `zerodds-xcdr2-c-1.0.open.md`.
+Test-Lauf: `cargo test -p zerodds-c-api` -- unittest 68 + smoke_ffi 1 + xcdr2_c_codegen 12 + xcdr2_c_compile 11 + xcdr2_wire_vectors 13 = 105 Tests grün, 0 failed; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_3_c_ffi_binding` -- 1 Test grün; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 Tests grün.

@@ -1,18 +1,18 @@
-//! D.5e — Latenz-Assertion-Tests fuer den Reliable-DCPS-Pfad.
+//! D.5e — latency assertion tests for the Reliable DCPS path.
 //!
-//! Diese Tests schuetzen die Phase-1+2 Latenz-Wins (D.5e):
-//!  * `DEFAULT_HEARTBEAT_PERIOD = 100ms` (statt 1s)
-//!  * `DEFAULT_TICK_PERIOD = 5ms` (statt 50ms)
-//!  * `DEFAULT_HEARTBEAT_RESPONSE_DELAY = 0ms` (statt 200ms)
-//!  * Synchroner ACKNACK im recv-thread
-//!  * HEARTBEAT-Piggyback in `write_with_heartbeat`
+//! These tests protect the Phase-1+2 latency wins (D.5e):
+//!  * `DEFAULT_HEARTBEAT_PERIOD = 100ms` (instead of 1s)
+//!  * `DEFAULT_TICK_PERIOD = 5ms` (instead of 50ms)
+//!  * `DEFAULT_HEARTBEAT_RESPONSE_DELAY = 0ms` (instead of 200ms)
+//!  * Synchronous ACKNACK in the recv thread
+//!  * HEARTBEAT piggyback in `write_with_heartbeat`
 //!
-//! Wenn jemand einen dieser Wins regredieren laesst (z.B. Period-Const
-//! wieder auf Sekunden hochsetzen), schlagen diese Tests an.
+//! If anyone lets one of these wins regress (e.g. raises a period const
+//! back to seconds), these tests fire.
 //!
-//! **Spec-conform**: alle Werte sind vom Spec erlaubt (Period
-//! "implementation-defined"); der Test asserted nur **Performance**, nicht
-//! Compliance. Compliance-Tests sind in `cyclone_compliance.rs` etc.
+//! **Spec-conformant**: all values are permitted by the spec (period
+//! "implementation-defined"); the test asserts only **performance**, not
+//! compliance. Compliance tests are in `cyclone_compliance.rs` etc.
 
 #![cfg(target_os = "linux")]
 #![allow(
@@ -42,7 +42,7 @@ use zerodds_dcps::{
 #[path = "common/mod.rs"]
 mod common;
 
-// Eindeutige Domain-IDs damit Tests nicht via SPDP-Multicast cross-talken.
+// Unique domain IDs so tests don't cross-talk via SPDP multicast.
 static NEXT_DOMAIN: AtomicU32 = AtomicU32::new(150);
 
 fn fresh_domain() -> u32 {
@@ -57,20 +57,16 @@ fn fresh_runtime_config() -> RuntimeConfig {
     }
 }
 
-/// Cluster-A-Test: ein einzelner Roundtrip muss unter 50 ms liegen.
+/// Cluster-A test: a single roundtrip must be under 50 ms.
 ///
-/// Floor war pre-D.5e: Heartbeat-Period 1s + heartbeat-response-delay
-/// 200ms = ~1.2 s pro Roundtrip. Ein Sample muss heute deutlich
-/// schneller durch.
+/// Floor was pre-D.5e: heartbeat period 1s + heartbeat-response-delay
+/// 200ms = ~1.2 s per roundtrip. A sample must get through much
+/// faster today.
 ///
-/// Schwelle 50 ms = sehr loose CI-Gate (akzeptiert Loaded-CI-Hosts);
-/// echtes Ziel ist <500 µs auf bare-metal, gemessen via
-/// `roundtrip-typed`-Bench.
+/// Threshold 50 ms = very loose CI gate (accepts loaded CI hosts);
+/// the real target is <500 µs on bare metal, measured via the
+/// `roundtrip-typed` bench.
 #[test]
-#[ignore = "F-DCPS-latency-self-match-timeout (docs/dcps/latency-self-match-timeout-followup.md): \
-            wait_for_matched_subscription(1, 5s) timeoutet auf GitLab-Runner \
-            in single-Participant-Self-Match-Pfad. Nicht reproduzierbar auf macOS \
-            (cfg gated to Linux). Owner: DCPS-Discovery."]
 fn single_roundtrip_under_50ms() {
     let domain = fresh_domain();
     let factory = DomainParticipantFactory::instance();
@@ -97,9 +93,9 @@ fn single_roundtrip_under_50ms() {
     let pong_reader = subscriber
         .create_datareader::<RawBytes>(&topic_req, DataReaderQos::default())
         .expect("pong reader");
-    // Ping-side: writer-on-req + reader-on-echo, gleicher Participant
-    // (intra-process via SEDP-Self-Match — funktioniert wenn
-    // ignore_local_subscriptions/publications nicht gesetzt sind).
+    // Ping-side: writer-on-req + reader-on-echo, same participant
+    // (intra-process via SEDP self-match — works when
+    // ignore_local_subscriptions/publications are not set).
     let ping_writer = publisher
         .create_datawriter::<RawBytes>(&topic_req, DataWriterQos::default())
         .expect("ping writer");
@@ -107,7 +103,7 @@ fn single_roundtrip_under_50ms() {
         .create_datareader::<RawBytes>(&topic_echo, DataReaderQos::default())
         .expect("ping reader");
 
-    // Sync-Punkt: alle 4 Endpoints matched.
+    // Sync point: all 4 endpoints matched.
     ping_writer
         .wait_for_matched_subscription(1, common::match_timeout())
         .expect("ping writer sees pong reader");
@@ -121,12 +117,12 @@ fn single_roundtrip_under_50ms() {
         .wait_for_matched_publication(1, common::match_timeout())
         .expect("ping reader sees pong writer");
 
-    // Ein Roundtrip messen. Ping → pong-reader-take → pong-writer-write → ping-reader-take.
+    // Measure one roundtrip. Ping → pong-reader-take → pong-writer-write → ping-reader-take.
     let payload = RawBytes::new(vec![0xAB; 64]);
     let t_start = Instant::now();
     ping_writer.write(&payload).expect("ping write");
 
-    // Pong: warten, take, echo.
+    // Pong: wait, take, echo.
     pong_reader
         .wait_for_data(Duration::from_secs(2))
         .expect("pong sees req");
@@ -134,7 +130,7 @@ fn single_roundtrip_under_50ms() {
     assert_eq!(req.len(), 1, "pong got exactly one sample");
     pong_writer.write(&req[0]).expect("pong echo");
 
-    // Ping: warten, take.
+    // Ping: wait, take.
     ping_reader
         .wait_for_data(Duration::from_secs(2))
         .expect("ping sees echo");
@@ -146,19 +142,17 @@ fn single_roundtrip_under_50ms() {
     eprintln!("[lat-assert] single_roundtrip elapsed = {elapsed:?}");
     assert!(
         elapsed < Duration::from_millis(50),
-        "Roundtrip-Latenz {elapsed:?} ueber 50ms-Threshold — D.5e-Regress?"
+        "Roundtrip latency {elapsed:?} over 50ms threshold — D.5e regress?"
     );
 }
 
-/// Cluster-B-Test: 100 sustained Roundtrips ohne Sample-Loss + p99 < 100ms.
+/// Cluster-B test: 100 sustained roundtrips without sample loss + p99 < 100ms.
 ///
-/// Der Sample-Loss-Aspekt schuetzt den Reliable-Garantie-Pfad
-/// (D.5e Phase-2 + write_with_heartbeat): bei pre-D.5e fielen 22% der
-/// Samples bei sustained Roundtrip aus, weil HB-Period 1s den Reader
-/// stallt und Cache-Overflows erzeugt.
+/// The sample-loss aspect protects the Reliable guarantee path
+/// (D.5e Phase-2 + write_with_heartbeat): pre-D.5e, 22% of the
+/// samples were lost during sustained roundtrips, because a 1s HB period
+/// stalls the reader and produces cache overflows.
 #[test]
-#[ignore = "F-DCPS-latency-self-match-timeout (docs/dcps/latency-self-match-timeout-followup.md): \
-            self-match Timeout auf GitLab-Runner."]
 fn sustained_roundtrip_no_loss_p99_under_100ms() {
     let domain = fresh_domain();
     let factory = DomainParticipantFactory::instance();
@@ -236,7 +230,7 @@ fn sustained_roundtrip_no_loss_p99_under_100ms() {
     );
     assert!(
         delivered >= N * 99 / 100,
-        "Sample-loss zu hoch: {delivered}/{N} (Reliable-Garantie verletzt?)"
+        "Sample loss too high: {delivered}/{N} (Reliable guarantee violated?)"
     );
 
     rtts.sort_unstable();
@@ -245,6 +239,6 @@ fn sustained_roundtrip_no_loss_p99_under_100ms() {
     eprintln!("[lat-assert] sustained: p50={p50:?} p99={p99:?}");
     assert!(
         p99 < Duration::from_millis(100),
-        "p99 RTT {p99:?} ueber 100ms — D.5e-Regress?"
+        "p99 RTT {p99:?} over 100ms — D.5e regress?"
     );
 }

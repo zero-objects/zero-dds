@@ -84,66 +84,53 @@ Loan-Modell ist nur Heap-Box-emuliert.
 | Same-Host (SHM) | 5 Copies (faellt auf UDP-Pfad zurueck) | **0 Copies** via flatdata + iceoryx Slot-Backend |
 | Loan-API (C-FFI) | Heap-Box, danach `commit_loan = write` ⇒ Vec-Copy | Slot-Pointer aus SHM-Backend, `commit_loan` ⇒ Slot-Publish |
 
-## 6 Migrations-Wellen
+## 6 Zero-Copy-Pfade
 
-### Welle 1 — C-FFI Loan-API echt Zero-Copy
+### Reader-Path (UDP-Pool + Arc)
 
-**Scope:** `zerodds_writer_loan_message` + `zerodds_dw_loan_message`
-auf einen pluggable Slot-Backend umstellen. Default-Backend bleibt
-Heap-Box (no-op Aenderung); SHM-Backend nutzt iceoryx2-Slot wenn
-Feature aktiv.
+UDP-Recv allokiert aus einem Slab-Pool und gibt `Arc<[u8]>` zurück;
+`strip_user_encap` arbeitet offset-basiert ohne `.to_vec()`;
+`UserSample::Alive` hält den Payload als Arc-Slice auf das Wire-Datagram
+(kein Heap-Re-Alloc). Cross-language Bindings sehen weiter `(*mut u8, len)`;
+der Vec-Materialization-Step liegt nur an der FFI-Boundary.
+→ −2 Copies pro empfangenem Sample.
 
-**ABI-Stabilitaet:** Funktionssignaturen unveraendert.
+### Same-Host-SHM-Hot-Path
 
-**Reduktion:** -1 Copy pro `commit_loan` wenn SHM-Backend an.
+Die DCPS-Runtime erkennt zur Write-Zeit einen Same-Host-Reader (via
+`is_same_host` + `SameHostTracker`) und publiziert über ein POSIX-SHM-Segment
+statt UDP; der Reader liest das Segment direkt (mmap'd), ohne Wire-Decode.
+→ Same-Host-Pfad 5 Copies → **0 Copies**.
 
-### Welle 2 — Reader-Path Zero-Copy (UDP-Pool + Arc)
+Opt-in über das Feature `same-host-shm` (default-off); alternative Backends
+`same-host-uds` (UnixDatagram) und `same-host-iceoryx2` (iceoryx2-Slot-Pool).
 
-**Scope:**
-1. UDP-Recv: stack-buf → Slab-Pool-Alloc, return `Arc<[u8]>`
-2. `strip_user_encap` ohne `.to_vec()` (offset + Arc-slice)
-3. `UserSample::Alive { payload: Bytes }` statt `Vec<u8>`
+| Komponente | Status |
+|---|---|
+| `GuidPrefix::host_id` + `is_same_host` (FNV1a-Hash von gethostname in `bytes[0..4]`) | ✓ done |
+| `dcps::same_host` Modul: SHM-Pfad-Convention + SameHostTracker mit Pending/Bound/Failed-State | ✓ done |
+| SEDP-Match-Hook in `wire_writer_to_remote_reader`/`wire_reader_to_remote_writer` registriert Same-Host-Paare im Tracker | ✓ done |
+| `same_host_shm`-Bridge: `open_owner_segment` (Reader-Seite) / `open_consumer_segment` (Writer-Seite), `mark_bound` schliesst das Lifecycle ab | ✓ done |
+| `send_on_best_interface` nutzt bei `Bound { transport, Consumer }` `PosixShmTransport`, UDP-Fallback bei `Pending`/`Failed` | ✓ done |
+| Per-Owner-SHM-Recv-Worker `recv_user_shm_loop`: dispatcht `handle_user_datagram` analog UDP-Pfad | ✓ done |
+| Cross-Process-E2E `crates/dcps/tests/same_host_e2e.rs` (Writer/Reader getrennte Prozesse, gleicher Host) | ✓ done |
 
-**ABI:** Cross-language Bindings sehen weiter `(*mut u8, len)` —
-C-FFI hat eigenen Vec-Materialization-Step nur an der FFI-Boundary.
+### C-FFI Loan-API
 
-**Reduktion:** -2 Copies pro empfangenem Sample.
+`zerodds_writer_loan_message` / `zerodds_dw_loan_message` mit
+`commit_loan`/`discard_loan` (ABI: `(*mut u8, len)`, Signaturen stabil). Der
+Loan-Buffer ist aktuell heap-allokiert (`commit_loan` = Vec-Copy); ein
+SHM-Slot-backed Loan (Slot-Pointer aus dem SHM-Backend, `commit_loan` =
+Slot-Publish) ist noch **offen**.
 
-### Welle 3 — Iceoryx-Backend-Hot-Path-Wiring (= Roadmap-Welle 4)
-
-**Scope:** DCPS-Runtime erkennt zur Write-Zeit ob Same-Host-Reader
-existiert, dann publish via flatdata-Slot statt UDP-Datagram.
-Reader liest Slot direkt (mmap'd), kein Wire-Decode noetig.
-
-**Voraussetzungen:** flatdata-Iceoryx-Backend stable, Welle 1 + 2
-abgeschlossen, Discovery erkennt Same-Host-Peers (SPDP enthaelt
-PID + Host-ID).
-
-**Reduktion:** Same-Host-Pfad geht von 5 Copies auf **0 Copies**.
-
-#### Implementierungs-Status (2026-05-18)
-
-Diese Welle ist in fuenf Sub-Sprints (4a/4b.1-4b.5) untergliedert.
-Stand aktueller Branch:
-
-| Sub | Beschreibung | Status |
-|---|---|---|
-| 4a | `GuidPrefix::host_id` + `is_same_host` (FNV1a-Hash von gethostname in `bytes[0..4]`) | ✓ done (commit 456f3265) |
-| 4b.1 | `dcps::same_host` Modul: SHM-Pfad-Convention + SameHostTracker mit Pending/Bound/Failed-State | ✓ done (commit 6b140ead) |
-| 4b.2 | SEDP-Match-Hook in `wire_writer_to_remote_reader` und `wire_reader_to_remote_writer` registriert Same-Host-Paare im Tracker | ✓ done (commit f056ff46) |
-| 4b.3 | DCPS-Cargo.toml: `zerodds-transport-shm` als feature-gated Dep (`same-host-shm`, default-off). Hook setzt nach `register_pending` den konkreten `PosixShmTransport` auf via `open_owner` (Reader-Seite) bzw. `open_consumer` (Writer-Seite). `mark_bound` schliesst das Lifecycle ab. | ⏳ open |
-| 4b.4 | `send_on_best_interface` konsultiert vor UDP-Send den `SameHostTracker.lookup(writer_guid, reader_guid)`. Bei `Bound { transport, Consumer }` wird `transport.downcast_ref::<PosixShmTransport>().send(bytes)` aufgerufen; UDP-Fallback bei `Pending`/`Failed`. | ⏳ open |
-| 4b.5 | Per-Owner-SHM-Recv-Worker: neuer Thread `recv_user_shm_loop`, der ueber alle Reader-Side Bound-Eintraege polled und `handle_user_datagram(&dg.data, ...)` analog UDP-Pfad dispatcht. | ⏳ open |
-| 4c | Cross-Process-Test: Writer in Proc A, Reader in Proc B (gleicher Host), UDP-Sniffer auf 127.0.0.1 darf 0 User-Sample-Bytes sehen. | ⏳ open |
-
-**Architektur-Notiz zu 4b.3+:**
+**Architektur-Notiz zum Backend-Wireup:**
 
 `zerodds-transport-shm::PosixShmTransport` ist eine SpSc-Ringbuffer-
 Implementation auf POSIX `shm_open` + `mmap` (Linux/macOS) bzw.
 `CreateFileMapping` (Windows). Die 1:1-Owner/Consumer-Paarung
 matched genau auf das DCPS-Modell `(Writer, Reader) -> Datagram-
 Stream`. Pro Same-Host-Paar wird ein eigenes Segment angelegt
-(Pfad via `shm_segment_filename` aus dem 4b.1-Modul, Verzeichnis
+(Pfad via `shm_segment_filename` aus dem `dcps::same_host`-Modul, Verzeichnis
 `${TMPDIR}/zerodds-shm/${host_id_hex}/`).
 
 Eine Race liegt zwischen Owner-Bind (Reader-Seite) und Consumer-
@@ -153,7 +140,7 @@ und auf den naechsten Match-Versuch warten (SEDP ist periodisch),
 oder spaeter beim ersten Send retry. UDP-Fallback bleibt jederzeit
 aktiv, so dass kein Sample verloren geht.
 
-**Optionale Feature-Gates** (4b.5 / separater Sprint):
+**Optionale Feature-Gates:**
 
 - `same-host-iceoryx2`: nutzt `zerodds-flatdata::iceoryx` statt
   POSIX-Shm. Liefert echtes Zero-Copy fuer `T: FlatStruct`-Samples,
@@ -165,11 +152,11 @@ aktiv, so dass kein Sample verloren geht.
 
 ## 7 Tests + Verifikation
 
-| Welle | Test |
+| Pfad | Test |
 |---|---|
-| Welle 1 | bench `loan_message + commit_loan`-Cycle: heap-vs-iceoryx-Slot-Vergleich |
-| Welle 2 | bench `recv_loop`-Throughput vorher/nachher; Miri auf Arc<[u8]>-Lifecycle |
-| Welle 3 | Same-Host-Cross-Process-Test mit zwei prozessen, verify zero Bytes durch UDP |
+| C-FFI Loan-API | bench `loan_message + commit_loan`-Cycle: heap-vs-iceoryx-Slot-Vergleich |
+| Reader-Path | bench `recv_loop`-Throughput; Miri auf Arc<[u8]>-Lifecycle |
+| Same-Host-SHM | Same-Host-Cross-Process-Test mit zwei Prozessen, verify 0 Bytes durch UDP |
 
 ABI-Snapshot-Test bleibt durchgehend gruen — keine extern fn-Signaturen
 aendern sich.

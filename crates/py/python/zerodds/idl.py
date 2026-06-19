@@ -1,10 +1,10 @@
-"""IDL-Annotations für Python-Dataclasses (aktuelle Variante).
+"""IDL annotations for Python dataclasses (current variant).
 
-Der Nutzer definiert eine normale `@dataclass`, markiert die Felder
-mit IDL-Primitive-Types, und bekommt einen Encoder/Decoder der
-byte-genau mit dem Rust-Seiten-XCDR2-LE matcht.
+The user defines a normal `@dataclass`, marks the fields
+with IDL primitive types, and gets an encoder/decoder that
+matches the Rust-side XCDR2-LE byte-exactly.
 
-Beispiel::
+Example::
 
     from dataclasses import dataclass
     from zerodds.idl import idl_struct, Int32, String, Bytes
@@ -21,15 +21,15 @@ Beispiel::
 
     writer.write(Temperature(celsius=23, sensor_id="A7", raw_blob=b"\\x01"))
 
-Ohne den Decorator bleibt die Klasse eine normale Dataclass.
+Without the decorator the class stays a normal dataclass.
 
-Scope dieser MVP-Implementation (aktuelle Variante):
+Scope of this MVP implementation (current variant):
 
-* Felder-Types: `Bool`, `Int8/16/32/64`, `UInt8/16/32/64`,
+* Field types: `Bool`, `Int8/16/32/64`, `UInt8/16/32/64`,
   `Float32/64`, `String`, `Bytes` (= sequence<octet>).
-* Felder-Reihenfolge: ``@dataclass``-declaration-order.
-* **Nicht dabei (Composite-Erweiterung / v1.4):** Nested structs, sequence<T> für
-  beliebige T, fixed-size arrays, Unions, Optional.
+* Field order: ``@dataclass`` declaration order.
+* **Not included (composite extension / v1.4):** nested structs, sequence<T> for
+  arbitrary T, fixed-size arrays, unions, Optional.
 """
 
 from __future__ import annotations
@@ -43,9 +43,9 @@ T = TypeVar("T")
 
 
 # =============================================================================
-# IDL-Primitive-Typen als Type-Annotations. Python-seitig sind das
-# einfache Aliase auf int/float/str/bytes/bool — der Decorator inspiziert
-# nur die _idl_kind_-Marker, nicht den eigentlichen Type-Check.
+# IDL primitive types as type annotations. On the Python side these are
+# simple aliases for int/float/str/bytes/bool — the decorator inspects
+# only the _idl_kind_ markers, not the actual type check.
 # =============================================================================
 
 
@@ -82,14 +82,14 @@ Bytes = _IdlKind("bytes", CdrWriter.write_bytes, CdrReader.read_bytes)
 
 
 # =============================================================================
-# Composite-Markers fuer Composite-Erweiterung: Sequence, Array, Optional, Nested-Struct.
-# Alle implementieren `_IdlKind`-kompatibles write/read auf Instance-Level.
+# Composite markers for the composite extension: Sequence, Array, Optional, nested struct.
+# All implement `_IdlKind`-compatible write/read at the instance level.
 # =============================================================================
 
 
 class _IdlSequence(_IdlKind):
-    """``sequence<T>`` — u32 Laenge + N Elemente. `T` ist ein ``_IdlKind``
-    oder ein ``@idl_struct``-dekorierter Dataclass-Typ."""
+    """``sequence<T>`` — u32 length + N elements. `T` is an ``_IdlKind``
+    or an ``@idl_struct``-decorated dataclass type."""
 
     __slots__ = ("inner",)
 
@@ -114,13 +114,13 @@ class _IdlSequence(_IdlKind):
 
 
 class _IdlArray(_IdlKind):
-    """``T[N]`` — fester Count, **kein** Length-Prefix. Spec XCDR2 §7.4.3."""
+    """``T[N]`` — fixed count, **no** length prefix. Spec XCDR2 §7.4.3."""
 
     __slots__ = ("inner", "count")
 
     def __init__(self, inner: Any, count: int) -> None:
         if count <= 0:
-            raise ValueError(f"Array-Count muss > 0 sein, got {count}")
+            raise ValueError(f"array count must be > 0, got {count}")
         self.inner = inner
         self.count = count
         self.name = f"array<{_describe(inner)}, {count}>"
@@ -131,7 +131,7 @@ class _IdlArray(_IdlKind):
         values = list(values or [])
         if len(values) != self.count:
             raise ValueError(
-                f"Array[{self.count}]: erwartet genau {self.count} Elemente, "
+                f"Array[{self.count}]: expected exactly {self.count} elements, "
                 f"got {len(values)}",
             )
         for v in values:
@@ -142,13 +142,13 @@ class _IdlArray(_IdlKind):
 
     def __class_getitem__(cls, args: Any) -> "_IdlArray":
         if not isinstance(args, tuple) or len(args) != 2:
-            raise TypeError("Array[T, N] braucht genau zwei Parameter")
+            raise TypeError("Array[T, N] requires exactly two parameters")
         inner, count = args
         return cls(inner, int(count))
 
 
 class _IdlOptional(_IdlKind):
-    """``Optional<T>`` — u8 present-Flag + (falls gesetzt) Wert."""
+    """``Optional<T>`` — u8 present flag + (if set) value."""
 
     __slots__ = ("inner",)
 
@@ -176,13 +176,13 @@ class _IdlOptional(_IdlKind):
 
 
 class _IdlEnum(_IdlKind):
-    """Python-``IntEnum`` → XCDR2-Int32. Ermoeglicht typisierte Enum-
-    Felder, die on-the-wire als Int32 codiert werden.
+    """Python ``IntEnum`` → XCDR2 Int32. Enables typed enum
+    fields that are encoded on the wire as Int32.
 
     Encoding:
-    * Write: ``int(enum_value)`` als Int32.
-    * Read: ``EnumCls(raw_int)`` (wirft ``ValueError`` bei unbekanntem
-      Wert — das erzwingt forward-kompatibel Strenge).
+    * Write: ``int(enum_value)`` as Int32.
+    * Read: ``EnumCls(raw_int)`` (raises ``ValueError`` on an unknown
+      value — this enforces forward-compatible strictness).
     """
 
     __slots__ = ("enum_cls",)
@@ -195,7 +195,7 @@ class _IdlEnum(_IdlKind):
 
     def _write(self, w: CdrWriter, value: Any) -> None:
         if value is None:
-            raise ValueError(f"Enum {self.enum_cls.__name__} darf nicht None sein")
+            raise ValueError(f"Enum {self.enum_cls.__name__} must not be None")
         w.write_i32(int(value))
 
     def _read(self, r: CdrReader) -> Any:
@@ -204,18 +204,18 @@ class _IdlEnum(_IdlKind):
 
 
 class _IdlUnion(_IdlKind):
-    """Discriminated-Union (IDL ``union T switch(D)`` §7.4.1.4.4).
+    """Discriminated union (IDL ``union T switch(D)`` §7.4.1.4.4).
 
-    Wire-Format: Discriminator (Int32 oder IntEnum) + Value der dem
-    Discriminator zugeordneten Variante.
+    Wire format: discriminator (Int32 or IntEnum) + the value of the
+    variant associated with the discriminator.
 
-    Python-Mapping:
+    Python mapping:
 
-    * Ein `@idl_union(...)`-Dekorator baut eine Klasse mit den
-      Attributen ``discriminator`` und ``value``.
-    * Das Mapping ``cases = {disc_val: (field_name, inner_kind)}``
-      sagt pro Discriminator-Wert, welches Feld serialisiert wird.
-    * Ein optionaler ``default`` wird bei unbekanntem Disc genommen.
+    * An `@idl_union(...)` decorator builds a class with the
+      attributes ``discriminator`` and ``value``.
+    * The mapping ``cases = {disc_val: (field_name, inner_kind)}``
+      says per discriminator value which field is serialized.
+    * An optional ``default`` is taken for an unknown discriminator.
     """
 
     __slots__ = ("cases", "disc_kind", "default")
@@ -241,12 +241,12 @@ class _IdlUnion(_IdlKind):
 
     def _write(self, w: CdrWriter, value: Any) -> None:
         if value is None:
-            raise ValueError("Union-Value darf nicht None sein")
+            raise ValueError("union value must not be None")
         disc = value.discriminator
         self.disc_kind.write(w, disc)
         case = self._resolve_case(disc)
         if case is None:
-            raise ValueError(f"kein Case fuer Discriminator {disc!r} und kein default")
+            raise ValueError(f"no case for discriminator {disc!r} and no default")
         _fname, inner = case
         _write_any(w, inner, value.value)
 
@@ -254,15 +254,15 @@ class _IdlUnion(_IdlKind):
         disc = self.disc_kind.read(r)
         case = self._resolve_case(disc)
         if case is None:
-            raise ValueError(f"kein Case fuer Discriminator {disc!r} und kein default")
+            raise ValueError(f"no case for discriminator {disc!r} and no default")
         _fname, inner = case
         val = _read_any(r, inner)
         return _UnionValue(discriminator=disc, value=val)
 
 
 class _UnionValue:
-    """Runtime-Container eines Union-Wertes. Stellt den Discriminator
-    und den gewaehlten Case-Wert bereit."""
+    """Runtime container of a union value. Provides the discriminator
+    and the selected case value."""
 
     __slots__ = ("discriminator", "value")
 
@@ -286,10 +286,10 @@ def idl_union(
     cases: dict[int, tuple[str, Any]],
     default: tuple[str, Any] | None = None,
 ) -> _IdlKind:
-    """Construct-Helfer: erstellt einen `_IdlUnion`-IdlKind und liefert
-    zusaetzlich `TYPE_NAME` + Constructor-Helper fuer Nutzer.
+    """Construction helper: creates an `_IdlUnion` IdlKind and additionally
+    provides `TYPE_NAME` + a constructor helper for users.
 
-    Beispiel::
+    Example::
 
         from zerodds.idl import idl_union, Int32, String, Float64
 
@@ -300,7 +300,7 @@ def idl_union(
             default=("f", Float64),
         )
 
-        # Nutzer-Code:
+        # User code:
         val = MyUnion.make(0, 42)       # case 0 → Int32
         encoded = MyUnion.encode(val)
         decoded = MyUnion.decode(encoded)
@@ -308,8 +308,8 @@ def idl_union(
     kind = _IdlUnion(discriminator, cases, default)
 
     class _UnionFacade:
-        """Wrapper um einen _IdlUnion, mit ``encode``/``decode``/``make``/
-        ``TYPE_NAME`` fuer Nutzer-Code."""
+        """Wrapper around an _IdlUnion, with ``encode``/``decode``/``make``/
+        ``TYPE_NAME`` for user code."""
 
         TYPE_NAME = typename
 
@@ -328,15 +328,15 @@ def idl_union(
         def make(disc: Any, value: Any) -> _UnionValue:
             return _UnionValue(discriminator=disc, value=value)
 
-        # Erlaubt Nutzung als nested IDL-Kind: inner-kind in @idl_struct.
+        # Allows use as a nested IDL kind: inner kind in @idl_struct.
         _idl_union_kind = kind
 
     return _UnionFacade
 
 
 class _IdlStruct(_IdlKind):
-    """Nested ``@idl_struct`` — encode/decode via innerer ``encode()``/
-    ``decode()``-Methoden."""
+    """Nested ``@idl_struct`` — encode/decode via the inner ``encode()``/
+    ``decode()`` methods."""
 
     __slots__ = ("cls",)
 
@@ -348,10 +348,10 @@ class _IdlStruct(_IdlKind):
 
     def _write(self, w: CdrWriter, value: Any) -> None:
         if value is None:
-            raise ValueError(f"Nested-Struct {self.name} darf nicht None sein")
-        # Wir schreiben in den existierenden Buffer weiter — nutzen also
-        # die internen Kind-Calls statt encode() (das wuerde einen neuen
-        # Buffer bauen und Alignment verlieren).
+            raise ValueError(f"nested struct {self.name} must not be None")
+        # We keep writing into the existing buffer — so we use
+        # the internal kind calls instead of encode() (which would build a
+        # new buffer and lose alignment).
         for fname, kind in self.cls._idl_fields:  # type: ignore[attr-defined]
             kind.write(w, getattr(value, fname))
 
@@ -384,7 +384,7 @@ def _write_any(w: CdrWriter, kind: Any, value: Any) -> None:
     if isinstance(kind, type) and is_dataclass(kind):
         _IdlStruct(kind).write(w, value)
         return
-    raise TypeError(f"_write_any: nicht unterstuetzter Kind {kind!r}")
+    raise TypeError(f"_write_any: unsupported kind {kind!r}")
 
 
 def _read_any(r: CdrReader, kind: Any) -> Any:
@@ -392,23 +392,23 @@ def _read_any(r: CdrReader, kind: Any) -> Any:
         return kind.read(r)
     if isinstance(kind, type) and is_dataclass(kind):
         return _IdlStruct(kind).read(r)
-    raise TypeError(f"_read_any: nicht unterstuetzter Kind {kind!r}")
+    raise TypeError(f"_read_any: unsupported kind {kind!r}")
 
 
 def _kind_from_annotation(annot: Any) -> _IdlKind:
-    """Erlaubt sowohl `field: Int32` als auch die Raw-Classes."""
+    """Allows both `field: Int32` and the raw classes."""
     import enum as _enum
 
     if isinstance(annot, _IdlKind):
         return annot
-    # IntEnum-Klasse → wird als Int32 serialisiert.
+    # IntEnum class → serialized as Int32.
     if isinstance(annot, type) and issubclass(annot, _enum.IntEnum):
         return _IdlEnum(annot)
-    # Nested Dataclass → wird als _IdlStruct eingewickelt.
+    # Nested dataclass → wrapped as an _IdlStruct.
     if isinstance(annot, type) and is_dataclass(annot):
         return _IdlStruct(annot)
-    # Fallback: wenn jemand `int` / `str` / `bytes` / `bool` nutzt,
-    # mappen wir auf den natuerlichen Rust-Typ.
+    # Fallback: if someone uses `int` / `str` / `bytes` / `bool`,
+    # we map it to the natural Rust type.
     if annot is int:
         return Int32
     if annot is bool:
@@ -420,10 +420,10 @@ def _kind_from_annotation(annot: Any) -> _IdlKind:
     if annot is bytes:
         return Bytes
     raise TypeError(
-        f"@idl_struct: feldtyp {annot!r} nicht unterstuetzt. "
-        f"Nutze Bool/Int8/.../UInt64/Float32/Float64/String/Bytes, "
-        f"Sequence[T], Array[T, N], Optional[T], eine nested @idl_struct-"
-        f"Dataclass oder Standard-Primitives (int/bool/float/str/bytes).",
+        f"@idl_struct: field type {annot!r} not supported. "
+        f"Use Bool/Int8/.../UInt64/Float32/Float64/String/Bytes, "
+        f"Sequence[T], Array[T, N], Optional[T], a nested @idl_struct "
+        f"dataclass or standard primitives (int/bool/float/str/bytes).",
     )
 
 
@@ -433,15 +433,15 @@ def _kind_from_annotation(annot: Any) -> _IdlKind:
 
 
 def idl_struct(*, typename: str) -> Callable[[Type[T]], Type[T]]:
-    """Dekorator. Macht eine `@dataclass` zu einem ZeroDDS-IDL-Type.
+    """Decorator. Turns a `@dataclass` into a ZeroDDS IDL type.
 
-    Fuegt an:
+    Adds:
     * ``TYPE_NAME = typename`` (class-level const).
     * ``encode(self) -> bytes`` — XCDR2-LE.
     * ``decode(cls, data: bytes) -> cls`` — classmethod.
 
-    Der Decorator **darf nach `@dataclass` stehen**, damit er die
-    `__dataclass_fields__`-Metadaten inspizieren kann::
+    The decorator **must be placed after `@dataclass`**, so that it can
+    inspect the `__dataclass_fields__` metadata::
 
         @idl_struct(typename="foo::Bar")
         @dataclass
@@ -452,21 +452,21 @@ def idl_struct(*, typename: str) -> Callable[[Type[T]], Type[T]]:
     def apply(cls: Type[T]) -> Type[T]:
         if not is_dataclass(cls):
             raise TypeError(
-                f"@idl_struct: {cls.__name__} ist keine @dataclass — "
-                f"deklaration-reihenfolge: @idl_struct(...) ueber @dataclass.",
+                f"@idl_struct: {cls.__name__} is not a @dataclass — "
+                f"declaration order: @idl_struct(...) above @dataclass.",
             )
-        # Bei `from __future__ import annotations` (PEP 563) sind die
-        # `f.type`-Werte Strings. Wir loesen sie im Modul-Namespace der
-        # Klasse + zerodds.idl-Namespace auf.
+        # With `from __future__ import annotations` (PEP 563), the
+        # `f.type` values are strings. We resolve them in the class's
+        # module namespace + the zerodds.idl namespace.
         import sys
 
         module_globals: dict[str, Any] = {}
         mod = sys.modules.get(cls.__module__)
         if mod is not None:
             module_globals.update(vars(mod))
-        # Immer auch die eigenen Idl-Kind-Konstanten dazunehmen, damit
-        # der Nutzer sie weder importieren noch re-exportieren muss,
-        # solange er via `zerodds.<Kind>` arbeitet.
+        # Always also include the own IDL-kind constants, so that
+        # the user need neither import nor re-export them,
+        # as long as they work via `zerodds.<Kind>`.
         module_globals.setdefault("Bool", Bool)
         for _name, _kind in (
             ("Int8", Int8), ("UInt8", UInt8),
@@ -484,10 +484,10 @@ def idl_struct(*, typename: str) -> Callable[[Type[T]], Type[T]]:
                     return eval(annot, module_globals)  # noqa: S307
                 except NameError as exc:
                     raise TypeError(
-                        f"@idl_struct: annotation-string {annot!r} nicht "
-                        f"aufloesbar im modul {cls.__module__!r}. Beim Gebrauch "
-                        f"von `from __future__ import annotations` muessen die "
-                        f"Kind-Konstanten im Modul importiert sein.",
+                        f"@idl_struct: annotation string {annot!r} not "
+                        f"resolvable in module {cls.__module__!r}. When using "
+                        f"`from __future__ import annotations`, the "
+                        f"kind constants must be imported in the module.",
                     ) from exc
             return annot
 
@@ -521,13 +521,13 @@ def idl_struct(*, typename: str) -> Callable[[Type[T]], Type[T]]:
 
 
 def is_idl_struct(obj: Any) -> bool:
-    """True wenn ``obj`` (oder dessen Klasse) mit ``@idl_struct`` dekoriert ist."""
+    """True if ``obj`` (or its class) is decorated with ``@idl_struct``."""
     cls: Any = obj if isinstance(obj, type) else type(obj)
     return hasattr(cls, "TYPE_NAME") and hasattr(cls, "_idl_fields")
 
 
 def type_name_of(cls_or_obj: Any) -> str:
-    """Liefert den IDL-TYPE_NAME eines dekorierten Dataclass-Typs/-Objekts."""
+    """Returns the IDL TYPE_NAME of a decorated dataclass type/object."""
     cls: Any = cls_or_obj if isinstance(cls_or_obj, type) else type(cls_or_obj)
     name: ClassVar[str] = getattr(cls, "TYPE_NAME", None)  # type: ignore[assignment]
     if name is None:

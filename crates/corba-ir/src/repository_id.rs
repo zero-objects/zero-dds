@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! RepositoryId — Spec §10.7.3.
+//! RepositoryId — spec §10.7.3.
 //!
-//! Format: `IDL:<scoped-name>:<major>.<minor>`. Beispiel:
+//! Format: `IDL:<scoped-name>:<major>.<minor>`. Example:
 //! `IDL:omg.org/CosNaming/NamingContext:1.0`.
 
 use alloc::string::{String, ToString};
 
 use crate::error::{IrError, IrResult};
 
-/// Strukturierte RepositoryId.
+/// Structured RepositoryId.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RepositoryId {
-    /// Scoped-Name in `:`-getrenntem Format (z.B.
+    /// Scoped name in `:`-separated format (e.g.
     /// `omg.org/CosNaming/NamingContext`).
     pub scoped_name: String,
-    /// Major-Version (`1`).
+    /// Major version (`1`).
     pub major: u16,
-    /// Minor-Version (`0`).
+    /// Minor version (`0`).
     pub minor: u16,
 }
 
 impl RepositoryId {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(scoped_name: impl Into<String>, major: u16, minor: u16) -> Self {
         Self {
@@ -33,10 +33,10 @@ impl RepositoryId {
         }
     }
 
-    /// Parst eine kanonische RepositoryId-String.
+    /// Parses a canonical RepositoryId string.
     ///
     /// # Errors
-    /// `InvalidRepositoryId` bei nicht-`IDL:<scoped>:<m>.<n>`-Form.
+    /// `InvalidRepositoryId` for forms other than `IDL:<scoped>:<m>.<n>`.
     pub fn parse(s: &str) -> IrResult<Self> {
         let payload = s
             .strip_prefix("IDL:")
@@ -60,7 +60,7 @@ impl RepositoryId {
         })
     }
 
-    /// Liefert die kanonische String-Form.
+    /// Returns the canonical string form.
     #[must_use]
     pub fn to_canonical(&self) -> String {
         alloc::format!("IDL:{}:{}.{}", self.scoped_name, self.major, self.minor)

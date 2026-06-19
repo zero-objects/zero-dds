@@ -1,67 +1,67 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! XRCE-Wire-Format-Fehler.
+//! XRCE wire format errors.
 //!
-//! Analog zu `zerodds_rtps::WireError`, aber mit XRCE-spezifischen
-//! Varianten (z.B. fuer fehlende ClientKey-Praesenz).
+//! Analogous to `zerodds_rtps::WireError`, but with XRCE-specific
+//! variants (e.g. for a missing ClientKey presence).
 
 use core::fmt;
 
-/// Fehler beim Encodieren oder Decodieren von XRCE-Wire-Daten.
+/// Error while encoding or decoding XRCE wire data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum XrceError {
-    /// Ausgabe-Buffer zu klein.
+    /// Output buffer too small.
     WriteOverflow {
-        /// Wieviele Bytes gebraucht worden waeren.
+        /// How many bytes would have been needed.
         needed: usize,
-        /// Wieviele tatsaechlich verfuegbar waren.
+        /// How many were actually available.
         available: usize,
     },
-    /// Eingabe endete vor dem erwarteten Ende.
+    /// Input ended before the expected end.
     UnexpectedEof {
-        /// Wieviele Bytes noch erwartet wurden.
+        /// How many bytes were still expected.
         needed: usize,
-        /// Position im Stream zum Zeitpunkt des Fehlers.
+        /// Position in the stream at the time of the error.
         offset: usize,
     },
-    /// Submessage-ID ist nicht in 0..=15 (Spec §8.3.5).
+    /// Submessage ID is not in 0..=15 (Spec §8.3.5).
     UnknownSubmessageId {
-        /// Roher Submessage-ID-Byte.
+        /// Raw submessage ID byte.
         id: u8,
     },
-    /// SubmessageHeader-Length deutet auf Body, der ueber das Datagram-
-    /// Ende hinaus reichen wuerde (Truncation).
+    /// The SubmessageHeader length points to a body that would extend
+    /// beyond the end of the datagram (truncation).
     TruncatedSubmessageBody {
-        /// Header-Wert `submessage_length`.
+        /// Header value `submessage_length`.
         declared: u16,
-        /// Tatsaechlich verfuegbare Bytes ab Body-Start.
+        /// Actually available bytes from the body start.
         available: usize,
     },
-    /// Anzahl Submessages in einer Message ueberschreitet
-    /// `DOSC_MAX_SUBMESSAGES` — DoS-Schutz.
+    /// The number of submessages in a message exceeds
+    /// `DOSC_MAX_SUBMESSAGES` — DoS protection.
     TooManySubmessages {
-        /// Festes Limit.
+        /// Fixed limit.
         limit: usize,
     },
-    /// Payload-Groesse ueberschreitet `DOSC_MAX_PAYLOAD_SIZE` —
-    /// DoS-Schutz.
+    /// Payload size exceeds `DOSC_MAX_PAYLOAD_SIZE` —
+    /// DoS protection.
     PayloadTooLarge {
         /// Limit.
         limit: usize,
-        /// Tatsaechliche Groesse.
+        /// Actual size.
         actual: usize,
     },
-    /// SubmessageLength ist nicht zum 4-Byte-Alignment passend
-    /// (§8.3.3: Offset jeder Submessage muss multiple von 4 sein).
+    /// SubmessageLength does not fit the 4-byte alignment
+    /// (§8.3.3: the offset of each submessage must be a multiple of 4).
     UnalignedSubmessage {
-        /// Offset, an dem das Problem auftrat.
+        /// Offset at which the problem occurred.
         offset: usize,
     },
-    /// Numerischer Wert ueberschreitet das Wire-Feld.
+    /// Numeric value exceeds the wire field.
     ValueOutOfRange {
-        /// Beschreibung.
+        /// Description.
         message: &'static str,
     },
 }

@@ -8,7 +8,7 @@ use zerodds_dcps::{DataWriterQos, DdsType, Publisher, Result, Topic};
 
 use crate::AsyncDataWriter;
 
-/// Async-Wrapper um `Publisher`.
+/// Async wrapper around `Publisher`.
 #[derive(Clone)]
 pub struct AsyncPublisher {
     inner: Arc<Publisher>,
@@ -21,10 +21,10 @@ impl AsyncPublisher {
         }
     }
 
-    /// Erstellt einen DataWriter.
+    /// Creates a DataWriter.
     ///
     /// # Errors
-    /// Wie `Publisher::create_datawriter`.
+    /// As `Publisher::create_datawriter`.
     pub fn create_datawriter<T: DdsType + Send + Sync + 'static>(
         &self,
         topic: &Topic<T>,
@@ -34,7 +34,7 @@ impl AsyncPublisher {
         Ok(AsyncDataWriter::from_sync(writer))
     }
 
-    /// Liefert die zugrundeliegende sync-Variante.
+    /// Returns the underlying sync variant.
     #[must_use]
     pub fn as_sync(&self) -> &Publisher {
         &self.inner

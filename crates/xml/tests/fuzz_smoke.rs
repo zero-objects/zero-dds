@@ -1,12 +1,12 @@
-//! Stable-Rust Fuzz-Smoke-Tests fuer den XML-Parser.
+//! Stable-Rust fuzz smoke tests for the XML parser.
 //!
-//! Pseudo-random String-Inputs in alle Top-Level-Parser
+//! Pseudo-random string inputs into all top-level parsers
 //! (`parse_xml_tree`, `parse_dds_xml`, `parse_qos_libraries`,
 //! `parse_domain_libraries`, `parse_application_libraries`,
-//! `parse_domain_participant_libraries`). Kein Parser darf
-//! panicen — nur `Ok(..)` oder `Err(..)`.
+//! `parse_domain_participant_libraries`). No parser may
+//! panic — only `Ok(..)` or `Err(..)`.
 //!
-//! Spec-Anker: DDS-XML 1.0 (XSD-getriebener Loader).
+//! Spec anchor: DDS-XML 1.0 (XSD-driven loader).
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
@@ -35,7 +35,7 @@ impl XorShift32 {
 }
 
 fn random_ascii_xml_like(rng: &mut XorShift32, len: usize) -> String {
-    // ASCII-Charakter-Set mit XML-typischen Zeichen ueberrepraesentiert.
+    // ASCII character set with XML-typical characters overrepresented.
     const ALPHABET: &[u8] = b"<>/\"'= \tabcdefghijklmnopqrstuvwxyzABCDEFGHIJ0123456789-_:";
     let mut out = String::with_capacity(len);
     while out.len() < len {
@@ -120,8 +120,8 @@ fn empty_input_no_panic() {
     let _ = parse_domain_participant_libraries("");
 }
 
-/// Verschachtelte unclosed Tags: `<a><a><a>...` 50 mal — empirisch
-/// unterhalb der Stack-Grenze.
+/// Nested unclosed tags: `<a><a><a>...` 50 times — empirically
+/// below the stack limit.
 #[test]
 fn nested_unclosed_tags_within_safe_depth() {
     let mut src = String::new();
@@ -131,11 +131,11 @@ fn nested_unclosed_tags_within_safe_depth() {
     let _ = parse_xml_tree(&src);
 }
 
-/// Spec-Kontrolltest: 1000 unclosed Tags triggern den Pre-Validation-
-/// Cap (`parser::MAX_TREE_DEPTH = 64`) — Parser MUSS einen
-/// `LimitExceeded`-Fehler liefern, nicht in Stack-Overflow laufen.
+/// Spec control test: 1000 unclosed tags trigger the pre-validation
+/// cap (`parser::MAX_TREE_DEPTH = 64`) — the parser MUST return a
+/// `LimitExceeded` error, not run into a stack overflow.
 ///
-/// TS-1-Finding 3 (gefixt 2026-05-01).
+/// TS-1 finding 3 (fixed 2026-05-01).
 #[test]
 fn deeply_nested_unclosed_tags_rejected_by_depth_cap() {
     let mut src = String::new();

@@ -2,46 +2,47 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DDS-XML 1.0 Loader — well-formed Foundation (Cluster F).
 //!
-//! Crate `zerodds-xml`. Implementiert die gemeinsame Wohlgeformtheits- und
-//! IDL-PSM-Mapping-Schicht aus DDS-XML 1.0 §7.1 und §7.2. Building-Block-
-//! spezifische Decoder (QoS-Library, Types, Domains, Participants,
-//! Applications, Samples) bauen auf diesem Crate auf — siehe
+//! Crate `zerodds-xml`. Implements the shared well-formedness and
+//! IDL-PSM mapping layer from DDS-XML 1.0 §7.1 and §7.2. Building-block-
+//! specific decoders (QoS library, types, domains, participants,
+//! applications, samples) build on this crate — see
 //! `docs/spec-coverage/zerodds-xml-1.0.open.md` Cluster G/H/I/J.
 //!
-//! # Spec-Quellen
+//! # Spec sources
 //!
-//! * OMG DDS-XML 1.0, formal/18-10-01, Dezember 2018.
-//! * §7.1 — XML Representation Syntax (General Rules + Schema +
-//!   Chameleon Pattern).
-//! * §7.2 — XML Representation of DDS IDL PSM (Datentyp-Mapping).
-//! * §7.2.2 — Symbol-Konstanten (`LENGTH_UNLIMITED`, `DURATION_INFINITE_*`).
-//! * §7.2.6 — `Duration_t`-Repraesentation.
+//! * OMG DDS-XML 1.0, formal/18-10-01, December 2018.
+//! * §7.1 — XML Representation Syntax (general rules + schema +
+//!   chameleon pattern).
+//! * §7.2 — XML Representation of DDS IDL PSM (data type mapping).
+//! * §7.2.2 — symbol constants (`LENGTH_UNLIMITED`, `DURATION_INFINITE_*`).
+//! * §7.2.6 — `Duration_t` representation.
 //!
-//! # Public API (Foundation)
+//! # Public API (foundation)
 //!
-//! * [`parse_xml_tree`] — Generischer Wohlgeformtheits-Loader, liefert
+//! * [`parse_xml_tree`] — generic well-formedness loader, returns
 //!   [`DdsXmlDocument`].
-//! * [`parse_dds_xml`] — High-Level Building-Block-Loader, liefert
+//! * [`parse_dds_xml`] — high-level building-block loader, returns
 //!   [`DdsXml`] (Cluster G+H+I+J).
-//! * [`DdsXmlDocument`] / [`XmlElement`] — In-Memory-Baum.
-//! * Datentyp-Helper aus [`types`] (Boolean, Long, ULong, Duration,
-//!   Enum-Whitelist, String).
-//! * Inheritance-Aufloesung aus [`inheritance::resolve_chain`] mit
-//!   Cycle-Detection.
-//! * Fehler aus [`XmlError`].
+//! * [`DdsXmlDocument`] / [`XmlElement`] — in-memory tree.
+//! * Data type helpers from [`types`] (boolean, long, ulong, Duration,
+//!   enum whitelist, string).
+//! * Inheritance resolution from [`inheritance::resolve_chain`] with
+//!   cycle detection.
+//! * Errors from [`XmlError`].
 //!
 //! Safety classification: **STANDARD**.
 //!
-//! Siehe `docs/architecture/02_architecture.md §3` und
+//! See `docs/architecture/02_architecture.md §3` and
 //! `docs/architecture/04_safety_by_architecture.md §2`.
 //!
-//! Das Crate ist `#![forbid(unsafe_code)]`, `no_std + alloc`, und
-//! verwendet ausschliesslich `roxmltree` (Apache-2.0 / MIT, pure-Rust)
-//! als XML-Backend.
+//! The crate is `#![forbid(unsafe_code)]`, `no_std + alloc`, and
+//! uses exclusively `roxmltree` (Apache-2.0 / MIT, pure-Rust)
+//! as the XML backend.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+#![cfg_attr(test, allow(clippy::panic, clippy::unwrap_used, clippy::expect_used))]
 
 extern crate alloc;
 
@@ -58,6 +59,7 @@ pub mod participant;
 pub mod qos;
 pub mod qos_inheritance;
 pub mod qos_parser;
+pub mod registry;
 pub mod resolver;
 pub mod sample;
 pub mod schemas;
@@ -87,6 +89,7 @@ pub use qos_parser::{
     parse_bool_strict, parse_entity_qos_public, parse_qos_libraries, parse_qos_library,
     parse_qos_library_element_public,
 };
+pub use registry::QosProfileRegistry;
 pub use resolver::{LibraryRef, parse_library_ref};
 pub use sample::{
     PrimitiveValue, SampleValue, parse_sample, parse_sample_element, serialize_sample,

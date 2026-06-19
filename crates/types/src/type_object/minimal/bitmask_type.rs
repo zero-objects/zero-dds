@@ -52,7 +52,7 @@ pub struct MinimalBitmaskType {
     pub bitmask_flags: BitmaskTypeFlag,
     /// Bit-Breite (Header).
     pub bit_bound: u16,
-    /// Flag-Liste.
+    /// Flag list.
     pub flag_seq: Vec<MinimalBitflag>,
 }
 

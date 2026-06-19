@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Properties + Application-Properties Producer.
+//! Properties + application-properties producer.
 //!
-//! Spec-Quellen:
-//! * dds-amqp-1.0 §8.2 — Properties-Section (`message-id`,
+//! Spec sources:
+//! * dds-amqp-1.0 §8.2 — properties section (`message-id`,
 //!   `group-id`, `creation-time`, `absolute-expiry-time`, ...).
-//! * dds-amqp-1.0 §8.3 — Application-Properties (`dds:*` keys).
+//! * dds-amqp-1.0 §8.3 — application properties (`dds:*` keys).
 //!
-//! Dieses Modul liefert die normativ vorgeschriebenen Belegungs-
-//! Funktionen und stellt sicher, dass der per-Sample
-//! `message-id`-Identifier (24 Byte: writer-GUID || RTPS-seqnum)
-//! statt des per-Instanz `InstanceHandle_t` benutzt wird (siehe
+//! This module provides the normatively prescribed population
+//! functions and ensures that the per-sample
+//! `message-id` identifier (24 bytes: writer GUID || RTPS seqnum)
+//! is used instead of the per-instance `InstanceHandle_t` (see
 //! Spec §8.2 Rationale).
 
 use alloc::string::{String, ToString};
@@ -20,11 +20,11 @@ use zerodds_amqp_bridge::extended_types::AmqpExtValue;
 
 use crate::keyhash;
 
-/// Spec §8.2 — DDS-Sample-Operation, die in der App-Property
-/// `dds:operation` codiert wird.
+/// Spec §8.2 — DDS sample operation encoded in the app property
+/// `dds:operation`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DdsOperation {
-    /// Reines Datum-Sample (Default wenn `dds:operation` fehlt).
+    /// Plain data sample (default when `dds:operation` is absent).
     #[default]
     Write,
     /// `register_instance`.
@@ -36,7 +36,7 @@ pub enum DdsOperation {
 }
 
 impl DdsOperation {
-    /// String-Repraesentation gemaess Spec §7.7.
+    /// String representation per Spec §7.7.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -47,10 +47,10 @@ impl DdsOperation {
         }
     }
 
-    /// Inverse-Decode aus `dds:operation`-String.
+    /// Inverse decode from a `dds:operation` string.
     ///
     /// # Errors
-    /// `Err(input)` bei unbekanntem Wert (Spec §11.2 →
+    /// `Err(input)` for an unknown value (Spec §11.2 →
     /// `amqp:not-implemented`).
     pub fn parse(s: &str) -> Result<Self, &str> {
         match s {
@@ -63,43 +63,43 @@ impl DdsOperation {
     }
 }
 
-/// Eingabe-Daten fuer den Properties-Producer pro Sample.
+/// Input data for the properties producer, per sample.
 #[derive(Debug, Clone)]
 pub struct SampleHeader {
-    /// RTPS Writer-GUID (16 Byte).
+    /// RTPS writer GUID (16 bytes).
     pub writer_guid: [u8; 16],
-    /// RTPS Sequence-Number.
+    /// RTPS sequence number.
     pub seqnum: u64,
-    /// DDS `Time_t.sec * 1000 + nanosec/1_000_000` (ms-Praezision).
+    /// DDS `Time_t.sec * 1000 + nanosec/1_000_000` (ms precision).
     pub source_timestamp_ms: i64,
-    /// Sub-Millisekunden-Anteil aus `Time_t.nanosec % 1_000_000`.
+    /// Sub-millisecond part from `Time_t.nanosec % 1_000_000`.
     pub source_nsec_remainder: u32,
-    /// XCDR2-KeyHash-Bytes (Source fuer §7.6.1 group-id);
-    /// `None` bei unkeyed Topic (group-id wird weggelassen).
+    /// XCDR2 KeyHash bytes (source for §7.6.1 group-id);
+    /// `None` for an unkeyed topic (group-id is omitted).
     pub keyhash: Option<Vec<u8>>,
-    /// `InstanceHandle_t` (16 Byte) — wandert auf
-    /// `dds:instance-handle` App-Property statt auf `message-id`.
+    /// `InstanceHandle_t` (16 bytes) — goes to the
+    /// `dds:instance-handle` app property instead of `message-id`.
     pub instance_handle: [u8; 16],
-    /// Optionaler verbleibender LIFESPAN-Rest in Millisekunden;
-    /// wenn `Some`, fuettert `absolute-expiry-time`.
+    /// Optional remaining LIFESPAN remainder in milliseconds;
+    /// when `Some`, feeds `absolute-expiry-time`.
     pub lifespan_remaining_ms: Option<i64>,
-    /// DDS-Sample-Operation (Default `Write`).
+    /// DDS sample operation (default `Write`).
     pub operation: DdsOperation,
-    /// X-Types-TypeIdentifier in voller 14-Byte-Hex-Form;
-    /// PFLICHT bei `descriptor_form = DESC_TRUNCATED` (Spec
-    /// §7.2.1.3), sonst `None`.
+    /// X-Types TypeIdentifier in full 14-byte hex form;
+    /// MANDATORY when `descriptor_form = DESC_TRUNCATED` (Spec
+    /// §7.2.1.3), otherwise `None`.
     pub type_id_hex: Option<String>,
-    /// DDS Domain-Id.
+    /// DDS domain id.
     pub domain_id: u32,
-    /// DDS Partition-QoS (sequence; `vec![]` = Default-Partition).
+    /// DDS partition QoS (sequence; `vec![]` = default partition).
     pub partitions: Vec<String>,
 }
 
-/// Spec §8.2 — `message-id` als 24-Byte-binary erzeugen.
+/// Spec §8.2 — produce `message-id` as a 24-byte binary.
 ///
-/// Format: `writer_guid (16B BE) || seqnum (8B BE)`. Eindeutig
-/// pro Sample (verhindert Broker-Dedup-Falle wie z.B. Service Bus
-/// `EnableDuplicateDetection`, vgl. §8.2 Rationale).
+/// Format: `writer_guid (16B BE) || seqnum (8B BE)`. Unique
+/// per sample (avoids the broker dedup trap such as Service Bus
+/// `EnableDuplicateDetection`, cf. §8.2 Rationale).
 #[must_use]
 pub fn message_id(writer_guid: [u8; 16], seqnum: u64) -> Vec<u8> {
     let mut out = Vec::with_capacity(24);
@@ -108,7 +108,7 @@ pub fn message_id(writer_guid: [u8; 16], seqnum: u64) -> Vec<u8> {
     out
 }
 
-/// Hex-encode 16 oder 24 Byte fuer JSON-Mode-Surface (§8.1.2).
+/// Hex-encode 16 or 24 bytes for the JSON-mode surface (§8.1.2).
 #[must_use]
 pub fn hex_lower(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -118,32 +118,32 @@ pub fn hex_lower(bytes: &[u8]) -> String {
     out
 }
 
-/// Spec §8.2 — produzierte Properties-Section-Felder.
+/// Spec §8.2 — produced properties-section fields.
 ///
-/// Wir liefern eine Sub-Struktur mit den von dieser Spec
-/// belegten Feldern; der Caller (Endpoint-Daemon) baut daraus
-/// das `MessageSection::Properties`-AMQP-list-Composite.
+/// We return a sub-structure with the fields populated by this
+/// spec; the caller (endpoint daemon) builds the
+/// `MessageSection::Properties` AMQP list composite from it.
 #[derive(Debug, Clone)]
 pub struct ProducedProperties {
-    /// `message-id` als binary(24).
+    /// `message-id` as binary(24).
     pub message_id: Vec<u8>,
-    /// `creation-time` (8 Byte BE Timestamp ms-since-epoch).
+    /// `creation-time` (8-byte BE timestamp, ms since epoch).
     pub creation_time_ms: i64,
-    /// `absolute-expiry-time` (Timestamp ms) — `None` wenn LIFESPAN
-    /// nicht konfiguriert.
+    /// `absolute-expiry-time` (timestamp ms) — `None` when LIFESPAN
+    /// is not configured.
     pub absolute_expiry_time_ms: Option<i64>,
-    /// `group-id` (SHA-256-Hex-Digest aus KeyHash) — `None` bei
-    /// unkeyed Topic.
+    /// `group-id` (SHA-256 hex digest from KeyHash) — `None` for an
+    /// unkeyed topic.
     pub group_id: Option<String>,
 }
 
-/// Spec §8.2 — Properties-Section aus Sample-Header bauen.
+/// Spec §8.2 — build the properties section from a sample header.
 ///
-/// Liefert die normativ belegten Felder. `to`, `subject`,
+/// Returns the normatively populated fields. `to`, `subject`,
 /// `reply-to`, `correlation-id`, `content-type`,
 /// `content-encoding`, `group-sequence`, `reply-to-group-id`,
-/// `user-id` sind optional und Caller-Sache (subject z.B.
-/// applikations-spezifischer Routing-Key).
+/// `user-id` are optional and up to the caller (subject, e.g., an
+/// application-specific routing key).
 #[must_use]
 pub fn produce_properties(hdr: &SampleHeader) -> ProducedProperties {
     ProducedProperties {
@@ -156,19 +156,19 @@ pub fn produce_properties(hdr: &SampleHeader) -> ProducedProperties {
     }
 }
 
-/// Spec §8.3 — Standard-`dds:*`-App-Property-Keys.
+/// Spec §8.3 — standard `dds:*` app-property keys.
 pub mod app_keys {
-    /// `dds:nsec` — sub-Millisekunden-Anteil von `Time_t`.
+    /// `dds:nsec` — sub-millisecond part of `Time_t`.
     pub const NSEC: &str = "dds:nsec";
-    /// `dds:partition` — DDS Partition-QoS (list-of-string oder string).
+    /// `dds:partition` — DDS partition QoS (list-of-string or string).
     pub const PARTITION: &str = "dds:partition";
-    /// `dds:domain-id` — DDS Domain-Id (Integer).
+    /// `dds:domain-id` — DDS domain id (integer).
     pub const DOMAIN_ID: &str = "dds:domain-id";
-    /// `dds:type-id` — XTypes TypeIdentifier hex (PFLICHT bei TRUNCATED).
+    /// `dds:type-id` — XTypes TypeIdentifier hex (MANDATORY for TRUNCATED).
     pub const TYPE_ID: &str = "dds:type-id";
-    /// `dds:source-guid` — Originating-Endpoint-GUID hex.
+    /// `dds:source-guid` — originating-endpoint GUID hex.
     pub const SOURCE_GUID: &str = "dds:source-guid";
-    /// `dds:lifespan-ms` — Rest-LIFESPAN in Millisekunden.
+    /// `dds:lifespan-ms` — remaining LIFESPAN in milliseconds.
     pub const LIFESPAN_MS: &str = "dds:lifespan-ms";
     /// `dds:sample-state` — read / not-read.
     pub const SAMPLE_STATE: &str = "dds:sample-state";
@@ -178,11 +178,11 @@ pub mod app_keys {
     pub const INSTANCE_STATE: &str = "dds:instance-state";
     /// `dds:operation` — write / register / unregister / dispose.
     pub const OPERATION: &str = "dds:operation";
-    /// `dds:bridge-id` — Liste durchgelaufener Bridge-UUIDs (Loop-Prevention).
+    /// `dds:bridge-id` — list of traversed bridge UUIDs (loop prevention).
     pub const BRIDGE_ID: &str = "dds:bridge-id";
-    /// `dds:bridge-hop` — Hop-Counter (Loop-Prevention).
+    /// `dds:bridge-hop` — hop counter (loop prevention).
     pub const BRIDGE_HOP: &str = "dds:bridge-hop";
-    /// `dds:instance-handle` — DDS InstanceHandle_t als binary(16).
+    /// `dds:instance-handle` — DDS InstanceHandle_t as binary(16).
     pub const INSTANCE_HANDLE: &str = "dds:instance-handle";
 }
 
@@ -190,40 +190,40 @@ pub mod app_keys {
 // §7.2.1.3 — Receiver-Side Type-ID Collision Inspector
 // ============================================================
 
-/// Spec §7.2.1.3 — Resultat einer Type-ID-Inspektion.
+/// Spec §7.2.1.3 — result of a type-id inspection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeIdCheck {
-    /// `dds:type-id` matched die lokal erwartete TypeIdentifier-
-    /// Hex-Form. Decode kann fortgesetzt werden.
+    /// `dds:type-id` matched the locally expected TypeIdentifier
+    /// hex form. Decode may proceed.
     Match,
-    /// `dds:type-id` fehlt (Sender hat `descriptor_form = DESC_FULL`
-    /// benutzt). Decode kann fortgesetzt werden.
+    /// `dds:type-id` is absent (the sender used
+    /// `descriptor_form = DESC_FULL`). Decode may proceed.
     Absent,
-    /// `dds:type-id` matched NICHT die erwartete Form — Hash-
-    /// Truncation-Kollision detektiert. Receiver muss den Transfer
-    /// mit `amqp:decode-error` rejecten (Spec §7.2.1.3).
+    /// `dds:type-id` did NOT match the expected form — a hash-
+    /// truncation collision was detected. The receiver must reject
+    /// the transfer with `amqp:decode-error` (Spec §7.2.1.3).
     Mismatch {
-        /// `dds:type-id`-Wert aus der Application-Property.
+        /// `dds:type-id` value from the application property.
         received: String,
-        /// Lokal erwartete TypeIdentifier-Hex-Form.
+        /// Locally expected TypeIdentifier hex form.
         expected: String,
     },
 }
 
-/// Spec §7.2.1.3 — Receiver-Side Inspektor fuer
-/// Hash-Truncation-Kollisionen.
+/// Spec §7.2.1.3 — receiver-side inspector for
+/// hash-truncation collisions.
 ///
-/// Wenn der Sender mit `descriptor_form = DESC_TRUNCATED` arbeitet
-/// (default), MUSS er die volle 14-Byte-TypeIdentifier-Hex-Form
-/// als `dds:type-id`-Application-Property mitgeben. Der Receiver
-/// vergleicht das gegen die lokal-bekannte Type-Form. Bei
-/// Mismatch ist ein Hash-Truncation-Kollisionspaar entdeckt
-/// worden — Sample MUSS rejected werden.
+/// When the sender uses `descriptor_form = DESC_TRUNCATED`
+/// (default), it MUST include the full 14-byte TypeIdentifier hex
+/// form as the `dds:type-id` application property. The receiver
+/// compares it against the locally known type form. On a
+/// mismatch, a hash-truncation collision pair has been detected —
+/// the sample MUST be rejected.
 ///
-/// Liefert [`TypeIdCheck::Match`] wenn property gesetzt und
-/// matcht; [`TypeIdCheck::Absent`] wenn nicht gesetzt
-/// (DESC_FULL-Pfad); [`TypeIdCheck::Mismatch`] wenn gesetzt
-/// und nicht matcht.
+/// Returns [`TypeIdCheck::Match`] when the property is set and
+/// matches; [`TypeIdCheck::Absent`] when not set
+/// (DESC_FULL path); [`TypeIdCheck::Mismatch`] when set
+/// and not matching.
 #[must_use]
 pub fn inspect_dds_type_id(app_props: &AmqpExtValue, expected_hex: &str) -> TypeIdCheck {
     let entries = match app_props {
@@ -252,17 +252,17 @@ pub fn inspect_dds_type_id(app_props: &AmqpExtValue, expected_hex: &str) -> Type
     TypeIdCheck::Absent
 }
 
-/// Spec §8.3 — Application-Properties-Map aus Sample-Header bauen.
+/// Spec §8.3 — build the application-properties map from a sample header.
 ///
-/// Liefert eine `AmqpExtValue::Map` mit den Standard-Keys, die
-/// normativ aus `SampleHeader` ableitbar sind. Der Caller darf
-/// weitere applikations-eigene Keys ergaenzen — diese duerfen
-/// per Spec den Praefix `dds:` nicht verwenden.
+/// Returns an `AmqpExtValue::Map` with the standard keys that are
+/// normatively derivable from `SampleHeader`. The caller may add
+/// further application-specific keys — per the spec these must
+/// not use the `dds:` prefix.
 #[must_use]
 pub fn produce_application_properties(hdr: &SampleHeader) -> AmqpExtValue {
     let mut map: Vec<(AmqpExtValue, AmqpExtValue)> = Vec::new();
 
-    // dds:nsec — nur wenn Sub-Millisekunden-Anteil > 0.
+    // dds:nsec — only when the sub-millisecond part is > 0.
     if hdr.source_nsec_remainder != 0 {
         map.push((
             AmqpExtValue::Str(app_keys::NSEC.to_string()),
@@ -270,9 +270,9 @@ pub fn produce_application_properties(hdr: &SampleHeader) -> AmqpExtValue {
         ));
     }
 
-    // dds:partition — sequence<string> oder einzelner string.
+    // dds:partition — sequence<string> or a single string.
     match hdr.partitions.len() {
-        0 => {} // Default-Partition: weglassen.
+        0 => {} // Default partition: omit.
         1 => {
             map.push((
                 AmqpExtValue::Str(app_keys::PARTITION.to_string()),
@@ -298,8 +298,8 @@ pub fn produce_application_properties(hdr: &SampleHeader) -> AmqpExtValue {
         AmqpExtValue::Uint(hdr.domain_id),
     ));
 
-    // dds:type-id — bei TRUNCATED Pflicht (Spec §7.2.1.3); der
-    // Caller muss `type_id_hex` setzen wenn descriptor_form =
+    // dds:type-id — mandatory for TRUNCATED (Spec §7.2.1.3); the
+    // caller must set `type_id_hex` when descriptor_form =
     // DESC_TRUNCATED.
     if let Some(hex) = &hdr.type_id_hex {
         map.push((
@@ -308,7 +308,7 @@ pub fn produce_application_properties(hdr: &SampleHeader) -> AmqpExtValue {
         ));
     }
 
-    // dds:lifespan-ms — wenn LIFESPAN-Rest verfuegbar.
+    // dds:lifespan-ms — when a LIFESPAN remainder is available.
     if let Some(rem) = hdr.lifespan_remaining_ms {
         map.push((
             AmqpExtValue::Str(app_keys::LIFESPAN_MS.to_string()),
@@ -316,7 +316,7 @@ pub fn produce_application_properties(hdr: &SampleHeader) -> AmqpExtValue {
         ));
     }
 
-    // dds:operation — Default `write` weglassen (Spec §7.7.1).
+    // dds:operation — omit the default `write` (Spec §7.7.1).
     if hdr.operation != DdsOperation::Write {
         map.push((
             AmqpExtValue::Str(app_keys::OPERATION.to_string()),
@@ -324,7 +324,7 @@ pub fn produce_application_properties(hdr: &SampleHeader) -> AmqpExtValue {
         ));
     }
 
-    // dds:instance-handle — immer (16 Byte binary).
+    // dds:instance-handle — always (16-byte binary).
     map.push((
         AmqpExtValue::Str(app_keys::INSTANCE_HANDLE.to_string()),
         AmqpExtValue::Binary(hdr.instance_handle.to_vec()),
@@ -366,9 +366,9 @@ mod tests {
 
     #[test]
     fn message_id_distinguishes_consecutive_samples_same_instance() {
-        // Spec-Rationale: ueber zwei Samples desselben Keys soll
-        // message-id verschieden sein, sonst feuert Service-Bus-
-        // Dedup faelschlich (Round-12-P0.3).
+        // Spec rationale: across two samples of the same key the
+        // message-id should differ, otherwise Service Bus dedup
+        // fires incorrectly (Round-12-P0.3).
         let g = [0xAAu8; 16];
         let m1 = message_id(g, 1);
         let m2 = message_id(g, 2);
@@ -422,7 +422,7 @@ mod tests {
 
     #[test]
     fn application_properties_default_minimal_set() {
-        // Default-Header: nur dds:domain-id und dds:instance-handle.
+        // Default header: only dds:domain-id and dds:instance-handle.
         let m = produce_application_properties(&header());
         let entries = match m {
             AmqpExtValue::Map(v) => v,
@@ -437,9 +437,9 @@ mod tests {
             .collect();
         assert!(keys.contains(&"dds:domain-id"));
         assert!(keys.contains(&"dds:instance-handle"));
-        // Default-write wird weggelassen.
+        // The default write is omitted.
         assert!(!keys.contains(&"dds:operation"));
-        // Sub-millisekunden = 0 wird weggelassen.
+        // Sub-milliseconds = 0 is omitted.
         assert!(!keys.contains(&"dds:nsec"));
     }
 
@@ -575,8 +575,8 @@ mod tests {
 
     #[test]
     fn type_id_inspector_mismatch_detects_collision() {
-        // Spec §7.2.1.3: descriptor matched (8-Byte ulong), aber
-        // dds:type-id differs → Hash-Truncation-Kollision.
+        // Spec §7.2.1.3: descriptor matched (8-byte ulong), but
+        // dds:type-id differs → hash-truncation collision.
         let p = props_with(alloc::vec![(
             app_keys::TYPE_ID,
             AmqpExtValue::Str("deadbeefcafebabe1111111111ff".to_string()),

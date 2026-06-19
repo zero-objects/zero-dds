@@ -70,7 +70,7 @@ private:
     SampleInfo info_{};
 };
 
-/// LoanedSamples<T>: Container fuer take/read-Resultate.
+/// LoanedSamples<T>: container for take/read results.
 template <typename T>
 class LoanedSamples {
 public:
@@ -157,7 +157,7 @@ template <typename T>
 class DataReader {
 public:
     DataReader() = default;
-    /// Konstruiert via Sub + Topic mit Default-QoS.
+    /// Constructed via Sub + Topic with default QoS.
     DataReader(Subscriber& sub, ::dds::topic::Topic<T>& topic)
         : subscriber_(sub.native_handle()) {
         handle_ = zerodds_sub_create_datareader(subscriber_, topic.native_handle(), nullptr);
@@ -192,7 +192,7 @@ public:
     }
     ~DataReader() { close(); }
 
-    /// `take` — entnimmt alle bisher empfangenen Samples.
+    /// `take` — removes all samples received so far.
     LoanedSamples<T> take(size_t max_samples = 0) {
         zerodds_ZeroDdsSampleArray arr{};
         int rc = zerodds_dr_take(handle_, &arr, max_samples, 0, 0, 0);
@@ -215,7 +215,7 @@ public:
         zerodds_dr_return_loan(handle_, &arr);
         return LoanedSamples<T>(std::move(out));
     }
-    /// `read` — wie `take` aber non-destructive (RC1: gleicher Pfad wie take).
+    /// `read` — like `take` but non-destructive (RC1: same path as take).
     LoanedSamples<T> read(size_t max_samples = 0) { return take(max_samples); }
 
     /// `wait_for_matched`.

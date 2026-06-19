@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `WriterProxy` — Reader-seitiger Zustand ueber **einen** Remote-Writer.
+//! `WriterProxy` — reader-side state over **one** remote writer.
 //!
-//! DDSI-RTPS 2.5 §8.4.6.5 (Stateful Reader behavior). Der Reader fuehrt
-//! pro matched Writer einen `WriterProxy`, in dem er die Range
-//! `[first_available_sn, last_available_sn]` aus HEARTBEATs mitverfolgt,
-//! bereits empfangene SNs markiert und fehlende als **missing** erkennt.
-//! Die missing-Menge speist den AckNack-Bitmap.
+//! DDSI-RTPS 2.5 §8.4.6.5 (stateful reader behavior). The reader keeps
+//! a `WriterProxy` per matched writer, in which it tracks the range
+//! `[first_available_sn, last_available_sn]` from HEARTBEATs,
+//! marks already-received SNs and recognizes missing ones as **missing**.
+//! The missing set feeds the AckNack bitmap.
 //!
-//! ein Reader hat aktuell einen Writer (Single-Writer-
-//! Annahme).
+//! A reader currently has one writer (single-writer
+//! assumption).
 
 extern crate alloc;
 use alloc::collections::BTreeSet;
@@ -17,31 +17,31 @@ use alloc::vec::Vec;
 
 use crate::wire_types::{Guid, Locator, SequenceNumber};
 
-/// Reader-seitiger State fuer einen Remote-Writer.
+/// Reader-side state for one remote writer.
 #[derive(Debug, Clone)]
 pub struct WriterProxy {
-    /// GUID des Remote-Writer-Endpoints.
+    /// GUID of the remote writer endpoint.
     pub remote_writer_guid: Guid,
-    /// Unicast-Locators des Writers (z.B. fuer gerichtete Re-Sends).
+    /// Unicast locators of the writer (e.g. for directed re-sends).
     pub unicast_locators: Vec<Locator>,
-    /// Multicast-Locators.
+    /// Multicast locators.
     pub multicast_locators: Vec<Locator>,
-    /// Reliable-Kind.
+    /// Reliable kind.
     pub is_reliable: bool,
-    /// Kleinste SN, die der Writer **noch** im Cache haelt (aus HEARTBEAT.first_sn).
+    /// Smallest SN the writer **still** holds in the cache (from HEARTBEAT.first_sn).
     first_available_sn: SequenceNumber,
-    /// Groesste SN, die der Writer annonciert hat (aus HEARTBEAT.last_sn).
+    /// Largest SN the writer announced (from HEARTBEAT.last_sn).
     last_available_sn: SequenceNumber,
-    /// Hoechste SN, die dieser Reader tatsaechlich **empfangen** hat.
+    /// Highest SN this reader has actually **received**.
     highest_received_sn: SequenceNumber,
-    /// Bereits empfangene SNs (fuer Dup-Rejection + in-order Delivery).
+    /// Already-received SNs (for dup rejection + in-order delivery).
     received: BTreeSet<SequenceNumber>,
-    /// Von GAP-Submessages als irrelevant markierte SNs.
+    /// SNs marked irrelevant by GAP submessages.
     irrelevant: BTreeSet<SequenceNumber>,
 }
 
 impl WriterProxy {
-    /// Erzeugt einen frischen Proxy.
+    /// Creates a fresh proxy.
     #[must_use]
     pub fn new(
         remote_writer_guid: Guid,
@@ -62,17 +62,31 @@ impl WriterProxy {
         }
     }
 
-    /// Verarbeitet einen HEARTBEAT.
+    /// Updates only the locators (re-discovery of the same writer), without
+    /// touching the reliability state (SN bounds, received/irrelevant).
+    /// A renewed SPDP/SEDP announce must not discard the reader progress
+    /// — otherwise the reader falsely reports "nothing missing" after a
+    /// HEARTBEAT and the writer never delivers the DATA.
+    pub fn refresh_locators(
+        &mut self,
+        unicast_locators: Vec<Locator>,
+        multicast_locators: Vec<Locator>,
+    ) {
+        self.unicast_locators = unicast_locators;
+        self.multicast_locators = multicast_locators;
+    }
+
+    /// Processes a HEARTBEAT.
     ///
-    /// Gemaess §8.4.15: `first_sn` ist die kleinste SN, die der Writer
-    /// re-liefern kann; `last_sn` die groesste annoncierte.
+    /// Per §8.4.15: `first_sn` is the smallest SN the writer
+    /// can re-deliver; `last_sn` the largest announced.
     pub fn update_from_heartbeat(&mut self, first_sn: SequenceNumber, last_sn: SequenceNumber) {
-        // Monoton wachsende Bounds.
+        // Monotonically growing bounds.
         if first_sn > self.first_available_sn {
             self.first_available_sn = first_sn;
-            // SNs, die **vor** first_sn liegen, sind verloren und koennen
-            // nicht mehr angefragt werden — aus received/irrelevant werfen
-            // wir sie; sie werden auch nicht mehr missing sein.
+            // SNs **before** first_sn are lost and can no longer be
+            // requested — we drop them from received/irrelevant; they
+            // will also no longer be missing.
             let split = self.received.split_off(&first_sn);
             self.received = split;
             let split = self.irrelevant.split_off(&first_sn);
@@ -83,10 +97,10 @@ impl WriterProxy {
         }
     }
 
-    /// Markiert eine SN als empfangen.
+    /// Marks an SN as received.
     pub fn received_change_set(&mut self, sn: SequenceNumber) {
         if sn < self.first_available_sn {
-            // Liegt vor dem annoncierten Range — ignorieren.
+            // Lies before the announced range — ignore.
             return;
         }
         self.received.insert(sn);
@@ -95,7 +109,7 @@ impl WriterProxy {
         }
     }
 
-    /// Markiert eine SN als irrelevant (per GAP).
+    /// Marks an SN as irrelevant (via GAP).
     pub fn irrelevant_change_set(&mut self, sn: SequenceNumber) {
         if sn < self.first_available_sn {
             return;
@@ -103,17 +117,17 @@ impl WriterProxy {
         self.irrelevant.insert(sn);
     }
 
-    /// True wenn SN bereits empfangen oder als irrelevant markiert.
+    /// True if the SN is already received or marked irrelevant.
     #[must_use]
     pub fn is_known(&self, sn: SequenceNumber) -> bool {
         self.received.contains(&sn) || self.irrelevant.contains(&sn)
     }
 
-    /// Liefert alle **fehlenden** SNs (weder empfangen noch irrelevant) im
-    /// Bereich `[first_available_sn, last_available_sn]`.
+    /// Returns all **missing** SNs (neither received nor irrelevant) in the
+    /// range `[first_available_sn, last_available_sn]`.
     ///
-    /// Vektor ist nach SN aufsteigend sortiert. Begrenzt auf `max_count`
-    /// Eintraege — der erwartete RTPS-Bitmap-Window ist 256 SNs.
+    /// The vector is sorted ascending by SN. Limited to `max_count`
+    /// entries — the expected RTPS bitmap window is 256 SNs.
     #[must_use]
     pub fn missing_changes(&self, max_count: usize) -> Vec<SequenceNumber> {
         let mut out = Vec::new();
@@ -130,34 +144,34 @@ impl WriterProxy {
         out
     }
 
-    /// True wenn fehlende SNs vorhanden sind.
+    /// True if there are missing SNs.
     #[must_use]
     pub fn has_missing_changes(&self) -> bool {
         !self.missing_changes(1).is_empty()
     }
 
-    /// Getter: kleinste annoncierte SN.
+    /// Getter: smallest announced SN.
     #[must_use]
     pub fn first_available_sn(&self) -> SequenceNumber {
         self.first_available_sn
     }
 
-    /// Getter: groesste annoncierte SN.
+    /// Getter: largest announced SN.
     #[must_use]
     pub fn last_available_sn(&self) -> SequenceNumber {
         self.last_available_sn
     }
 
-    /// Getter: hoechste empfangene SN.
+    /// Getter: highest received SN.
     #[must_use]
     pub fn highest_received_sn(&self) -> SequenceNumber {
         self.highest_received_sn
     }
 
-    /// Passender AckNack-Base: kleinste noch nicht acked SN.
+    /// Matching AckNack base: smallest not-yet-acked SN.
     ///
-    /// Convention: alle SN < `acknack_base` sind acked. Wir liefern
-    /// die kleinste noch-nicht-empfangene-oder-irrelevante SN in `[first, last+1]`.
+    /// Convention: all SN < `acknack_base` are acked. We return
+    /// the smallest not-yet-received-or-irrelevant SN in `[first, last+1]`.
     #[must_use]
     pub fn acknack_base(&self) -> SequenceNumber {
         let mut sn = self.first_available_sn;
@@ -203,7 +217,7 @@ mod tests {
         p.update_from_heartbeat(sn(1), sn(5));
         assert_eq!(p.first_available_sn(), sn(1));
         assert_eq!(p.last_available_sn(), sn(5));
-        // Noch nichts empfangen → alles missing
+        // Nothing received yet → everything missing
         assert_eq!(
             p.missing_changes(10),
             alloc::vec![sn(1), sn(2), sn(3), sn(4), sn(5)]
@@ -248,10 +262,10 @@ mod tests {
         p.update_from_heartbeat(sn(1), sn(10));
         p.received_change_set(sn(3));
         p.received_change_set(sn(7));
-        // Writer rotiert Cache → first jetzt bei 5
+        // Writer rotates the cache → first now at 5
         p.update_from_heartbeat(sn(5), sn(10));
         assert_eq!(p.first_available_sn(), sn(5));
-        // sn(3) aus received entfernt, sn(7) bleibt
+        // sn(3) removed from received, sn(7) stays
         assert!(!p.is_known(sn(3)));
         assert!(p.is_known(sn(7)));
     }

@@ -30,17 +30,27 @@ public sealed class VTypeSupport : IDdsTopicType<V>
     public byte[] Encode(V sample, EndianMode endian)
     {
         var w = new Xcdr2Writer(endian);
+        EncodeInto(w, sample);
+        return w.ToArray();
+    }
+
+    public void EncodeInto(Xcdr2Writer w, V sample)
+    {
         using (var __scope = w.BeginAppendable())
         {
             w.WriteInt32(sample.A);
             w.WriteInt32(sample.B);
         }
-        return w.ToArray();
     }
 
     public V Decode(ReadOnlySpan<byte> bytes)
     {
         var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
+        return DecodeFrom(r);
+    }
+
+    public V DecodeFrom(Xcdr2Reader r)
+    {
         var __scope = r.BeginDHeader();
         int __m0 = default;
         __m0 = r.ReadInt32();

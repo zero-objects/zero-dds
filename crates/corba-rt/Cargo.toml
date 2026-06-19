@@ -1,0 +1,29 @@
+[package]
+name = "zerodds-corba-rt"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG Real-Time CORBA 1.0 — Priority/PriorityModel, PriorityMapping, thread pools with lanes, PriorityBandedConnections, RTCORBA::Current (no_std + alloc)."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-rt"
+readme = "README.md"
+keywords = ["dds", "corba", "real-time", "priority", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr" }

@@ -3,33 +3,33 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-security-permissions/badge.svg)](https://docs.rs/zerodds-security-permissions)
 
-DDS-Security 1.1 §9.4 ("Builtin Access Control Plugin") fuer den
-[ZeroDDS](https://zerodds.org)-Stack: Permissions/Governance-XML-Parser
-+ S/MIME-CMS-Signatur-Verifier + Topic-Wildcard-Match + Delegation-
-Chain + PSK-Profile. Safety classification: **SAFE**.
+DDS-Security 1.1 §9.4 ("Builtin Access Control Plugin") for the
+[ZeroDDS](https://zerodds.org) stack: permissions/governance XML parser
++ S/MIME-CMS signature verifier + topic wildcard match + delegation
+chain + PSK profile. Safety classification: **SAFE**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| OMG DDS-Security 1.1 | §9.4 (Builtin Access Control), §10.4.1 (XML-Format) |
-| OMG DDS-Security 1.2 | §10.4.1.1 (S/MIME-CMS), §10.8 (PSK-Profile) |
+| OMG DDS-Security 1.1 | §9.4 (builtin access control), §10.4.1 (XML format) |
+| OMG DDS-Security 1.2 | §10.4.1.1 (S/MIME-CMS), §10.8 (PSK profile) |
 | RFC 5751/5652/5280 | S/MIME / CMS / X.509 |
 
-## Was ist drin
+## What's inside
 
-- **`PermissionsAccessControl`** — `AccessControlPlugin`-Implementation.
-- **`xml`-Modul** — Permissions-XML-Parser.
-- **`governance`-Modul** — Governance-XML inkl. ZeroDDS-Extension-Namespace.
-- **`signature`-Modul** — `XmlSignatureVerifier`-Trait + `NoOpVerifier` (Dev) + `EnvelopeCheckVerifier` + `open_signed_permissions`.
-- **`cms`-Modul** — produktiver CMS/PKCS#7-Verifier (RFC 5751/5652/5280) auf `rustls-webpki`.
-- **`topic_match`-Modul** — Wildcard `*`/`?`.
-- **`delegation_check`-Modul** — Permissions-Delegation-Chain (4 Trust-Policies).
-- **`psk_access`-Modul** — Pre-Shared-Key-Access-Control (Spec §10.8).
+- **`PermissionsAccessControl`** — `AccessControlPlugin` implementation.
+- **`xml` module** — permissions XML parser.
+- **`governance` module** — governance XML incl. the ZeroDDS extension namespace.
+- **`signature` module** — `XmlSignatureVerifier` trait + `NoOpVerifier` (dev) + `EnvelopeCheckVerifier` + `open_signed_permissions`.
+- **`cms` module** — production CMS/PKCS#7 verifier (RFC 5751/5652/5280) on `rustls-webpki`.
+- **`topic_match` module** — wildcard `*`/`?`.
+- **`delegation_check` module** — permissions delegation chain (4 trust policies).
+- **`psk_access` module** — pre-shared-key access control (spec §10.8).
 
-## Schichten-Position
+## Layer position
 
-Layer 4. Konsumiert `zerodds-security`, `zerodds-security-pki`, `zerodds-security-crypto`.
+Layer 4. Consumes `zerodds-security`, `zerodds-security-pki`, `zerodds-security-crypto`.
 
 ## Quickstart
 
@@ -40,9 +40,9 @@ use zerodds_security_permissions::signature::NoOpVerifier;
 let plugin = PermissionsAccessControl::new(NoOpVerifier);
 ```
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1`. Public-API + XML-Schema + CMS-Wire-Format RC1-stabil.
+`1.0.0-rc.1`. Public API + XML schema + CMS wire format RC1-stable.
 
 ## Tests
 
@@ -50,7 +50,7 @@ let plugin = PermissionsAccessControl::new(NoOpVerifier);
 cargo test -p zerodds-security-permissions
 ```
 
-136+ Tests + 3 Integration-Suites grün.
+136+ tests + 3 integration suites green.
 
 ## Lizenz
 

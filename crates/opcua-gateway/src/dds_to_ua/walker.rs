@@ -3,12 +3,12 @@
 
 //! Recursive Type-Walker — Spec §9.2.4-§9.2.8.
 //!
-//! Konsumiert eine [`DdsType`] (lightweight DDS-XTypes-Tree) und
-//! emittiert OPC-UA-Node-Specs. Vollstaendige Rekursion: nested
-//! Structures, Sequence-of-Struct, Map<String, Sequence<Struct>>,
-//! Alias-Aufloesung etc. — der Walker wendet die Mapping-Regeln aus
-//! §9.2 fuer jeden Typ unabhaengig an und springt rekursiv in die
-//! Member.
+//! Consumes a [`DdsType`] (lightweight DDS-XTypes tree) and
+//! emits OPC-UA node specs. Complete recursion: nested
+//! structures, sequence-of-struct, Map<String, Sequence<Struct>>,
+//! alias resolution etc. — the walker applies the mapping rules from
+//! §9.2 to each type independently and recurses into the
+//! members.
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -16,9 +16,9 @@ use alloc::vec::Vec;
 use super::naming::{data_type_name, variable_type_name};
 use super::node_spec::{NodeSpec, ReferenceKind, TypeRef, ValueRank, VariableSpec};
 
-/// DDS-XTypes-Type-Tree — Lightweight-Modell, das das Mapping-Walker
-/// verarbeitet. Caller konvertieren ihre eigenen TypeObject-Repraesen-
-/// tationen in dieses Modell (z.B. aus `crates/types/`).
+/// DDS-XTypes type tree — lightweight model that the mapping walker
+/// processes. Callers convert their own TypeObject representations
+/// into this model (e.g. from `crates/types/`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum DdsType {
     /// `boolean`. Spec Tab 9.2.
@@ -51,113 +51,113 @@ pub enum DdsType {
     String8,
     /// `wstring`.
     String16,
-    /// Enumeration mit Name + Werten.
+    /// Enumeration with name + values.
     Enum(EnumDef),
-    /// Bitmask mit Name + Bitflags + bound.
+    /// Bitmask with name + bitflags + bound.
     Bitmask(BitmaskDef),
-    /// `typedef`-Alias (transparent — Walker resolved den).
+    /// `typedef` alias (transparent — the walker resolves it).
     Alias {
-        /// Alias-Name.
+        /// Alias name.
         name: String,
-        /// Aufgeloester Element-Type.
+        /// Resolved element type.
         target: alloc::boxed::Box<DdsType>,
     },
-    /// Struct (Aggregated).
+    /// Struct (aggregated).
     Struct(StructDef),
-    /// Union (Aggregated).
+    /// Union (aggregated).
     Union(UnionDef),
     /// Array — fixed-size N-dim.
     Array {
-        /// Element-Type.
+        /// Element type.
         element: alloc::boxed::Box<DdsType>,
-        /// Pro-Dim-Bound (Outer-First).
+        /// Per-dimension bound (outer-first).
         dimensions: Vec<u32>,
     },
-    /// Sequence — bounded oder unbounded.
+    /// Sequence — bounded or unbounded.
     Sequence {
-        /// Element-Type.
+        /// Element type.
         element: alloc::boxed::Box<DdsType>,
-        /// Max-Bound (`None` = unbounded).
+        /// Max bound (`None` = unbounded).
         bound: Option<u32>,
     },
     /// Map<K, V>.
     Map {
-        /// Key-Type.
+        /// Key type.
         key: alloc::boxed::Box<DdsType>,
-        /// Value-Type.
+        /// Value type.
         value: alloc::boxed::Box<DdsType>,
-        /// Max-Bound (`None` = unbounded).
+        /// Max bound (`None` = unbounded).
         bound: Option<u32>,
     },
 }
 
-/// Enumeration-Beschreibung — Spec §9.2.3.1.
+/// Enumeration description — Spec §9.2.3.1.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumDef {
-    /// IDL-Name.
+    /// IDL name.
     pub name: String,
-    /// Liste `(Name, Value)` der Enumeratoren.
+    /// List `(name, value)` of the enumerators.
     pub literals: Vec<(String, i64)>,
 }
 
-/// Bitmask-Beschreibung — Spec §9.2.3.2.
+/// Bitmask description — Spec §9.2.3.2.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BitmaskDef {
-    /// IDL-Name.
+    /// IDL name.
     pub name: String,
-    /// Bound (Bit-Anzahl, max).
+    /// Bound (bit count, max).
     pub bound: u32,
-    /// Liste `(Name, Position)` der Bitflags. Positionen ohne Eintrag
-    /// werden im OPC-UA-OptionSetValues mit `UndefinedPosition_<N>`
-    /// aufgefuellt (Spec Tab 9.11).
+    /// List `(name, position)` of the bitflags. Positions without an entry
+    /// are filled in the OPC-UA OptionSetValues with `UndefinedPosition_<N>`
+    /// (Spec Tab 9.11).
     pub bits: Vec<(String, u32)>,
 }
 
-/// Struct-Beschreibung — Spec §9.2.4.1.
+/// Struct description — Spec §9.2.4.1.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructDef {
-    /// IDL-Name.
+    /// IDL name.
     pub name: String,
-    /// Members in Source-Reihenfolge.
+    /// Members in source order.
     pub members: Vec<MemberDef>,
 }
 
-/// Union-Beschreibung — Spec §9.2.4.2.
+/// Union description — Spec §9.2.4.2.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnionDef {
-    /// IDL-Name.
+    /// IDL name.
     pub name: String,
-    /// Discriminator-Type — muss in
+    /// Discriminator type — must be in
     /// `{Boolean, Byte, Char8, Char16, Int16, UInt16, Int32, UInt32,
-    /// Int64, UInt64, Enum, Bitmask}` sein (Spec §9.2.4.2.1).
+    /// Int64, UInt64, Enum, Bitmask}` (Spec §9.2.4.2.1).
     pub discriminator: alloc::boxed::Box<DdsType>,
-    /// Cases in Source-Reihenfolge. Spec §9.2.4.2.2: Switch-Values
-    /// werden 1..N konsekutiv vergeben.
+    /// Cases in source order. Spec §9.2.4.2.2: switch values
+    /// are assigned consecutively 1..N.
     pub cases: Vec<UnionCase>,
 }
 
-/// Union-Case — Spec §9.2.4.2.2.
+/// Union case — Spec §9.2.4.2.2.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnionCase {
-    /// Member-Name.
+    /// Member name.
     pub name: String,
-    /// Member-Type.
+    /// Member type.
     pub member_type: DdsType,
-    /// `true` wenn das der `default`-Case ist.
+    /// `true` if this is the `default` case.
     pub is_default: bool,
 }
 
-/// Member eines Struct/Union — Spec §9.2.4.1/§9.2.6.
+/// Member of a struct/union — Spec §9.2.4.1/§9.2.6.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemberDef {
-    /// Field-Name (= BrowseName, Spec §9.2.4.1).
+    /// Field name (= BrowseName, Spec §9.2.4.1).
     pub name: String,
-    /// Element-Type (kann selbst Struct/Sequence/...).
+    /// Element type (can itself be struct/sequence/...).
     pub member_type: DdsType,
     /// `@optional` — Spec Tab 9.16 ModelingRule "Optional" vs
     /// "Mandatory".
     pub is_optional: bool,
-    /// Spec §9.2.8 — `@key` propagiert auf Variable als IsKey-Property.
+    /// Spec §9.2.8 — `@key` propagates to the variable as an IsKey property.
     pub is_key: bool,
 }
 
@@ -173,10 +173,10 @@ impl MemberDef {
     }
 }
 
-/// Member-Kategorie — Diagnose-Hilfe fuer Caller.
+/// Member category — diagnostic aid for the caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemberKind {
-    /// Primitiv/String/Enum/Bitmask (atomar).
+    /// Primitive/string/enum/bitmask (atomic).
     Atomic,
     /// Aggregated (Struct/Union).
     Aggregated,
@@ -187,7 +187,7 @@ pub enum MemberKind {
 }
 
 impl DdsType {
-    /// Liefert die Member-Kategorie des Typs.
+    /// Returns the member category of the type.
     #[must_use]
     pub fn member_kind(&self) -> MemberKind {
         match self {
@@ -214,7 +214,7 @@ impl DdsType {
         }
     }
 
-    /// Resolved Alias-Layer transparent — gibt den Underlying-Type zurueck.
+    /// Resolves the alias layer transparently — returns the underlying type.
     #[must_use]
     pub fn resolve_alias(&self) -> &Self {
         match self {
@@ -223,8 +223,8 @@ impl DdsType {
         }
     }
 
-    /// IDL-Type-Spec als String fuer den DataType-Pointer (Spec Tab
-    /// 9.1/9.2 — primitiver Mapping-Name).
+    /// IDL type spec as a string for the DataType pointer (Spec Tab
+    /// 9.1/9.2 — primitive mapping name).
     #[must_use]
     pub fn opc_ua_data_type(&self) -> String {
         match self.resolve_alias() {
@@ -251,43 +251,43 @@ impl DdsType {
                 element.opc_ua_data_type()
             }
             Self::Map { .. } => "MapEntry".to_string(),
-            // resolve_alias removed Alias above — fallback liefert
-            // einen sicheren Default statt clippy-disallowed unreachable!
+            // resolve_alias removed the alias above — the fallback returns
+            // a safe default instead of a clippy-disallowed unreachable!
             Self::Alias { .. } => "BaseDataType".to_string(),
         }
     }
 }
 
-/// Walker-Output — die Liste emittierter Node-Specs + nicht-fatale
-/// Diagnose-Notizen.
+/// Walker output — the list of emitted node specs + non-fatal
+/// diagnostic notes.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct WalkOutput {
-    /// Node-Specs in Generierungs-Reihenfolge.
+    /// Node specs in generation order.
     pub nodes: Vec<NodeSpec>,
-    /// Diagnose: Liste der Top-Level-Type-Namen, die ueber den Walker
-    /// generiert wurden (fuer Caller-Side-Validierung).
+    /// Diagnostic: list of the top-level type names that were generated
+    /// via the walker (for caller-side validation).
     pub generated_types: Vec<String>,
 }
 
-/// Walker-Fehler — Spec-Konformitaet ist nicht eindeutig herstellbar.
+/// Walker error — spec conformance cannot be unambiguously established.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WalkError {
-    /// Spec §9.2.4.2.1 normativ: Discriminator muss in der Spec-Liste
-    /// sein (Boolean/Byte/Char8/Char16/Int16/UInt16/Int32/UInt32/
-    /// Int64/UInt64/Enum/Bitmask). Andere Types sind unsupported.
+    /// Spec §9.2.4.2.1 normative: the discriminator must be in the spec list
+    /// (Boolean/Byte/Char8/Char16/Int16/UInt16/Int32/UInt32/
+    /// Int64/UInt64/Enum/Bitmask). Other types are unsupported.
     InvalidUnionDiscriminator(String),
-    /// Spec §9.2.4.2.2 normativ: Unions mit > 2^32-1 Cases sind
+    /// Spec §9.2.4.2.2 normative: unions with > 2^32-1 cases are
     /// "unsupported by this specification".
     UnionTooManyCases(usize),
-    /// Spec §9.2.5: Map-Bound > 2^32-1 ist nicht darstellbar.
+    /// Spec §9.2.5: a map bound > 2^32-1 is not representable.
     MapBoundOverflow,
 }
 
-/// Hauptfunktion — emittiert die OPC-UA-Node-Specs fuer den uebergebenen
-/// DDS-Type. Rekursiv fuer Nested-Types.
+/// Main function — emits the OPC-UA node specs for the given
+/// DDS type. Recursive for nested types.
 ///
 /// # Errors
-/// Siehe [`WalkError`].
+/// See [`WalkError`].
 pub fn walk_dds_type(ty: &DdsType) -> Result<WalkOutput, WalkError> {
     let mut out = WalkOutput::default();
     walk(ty, &mut out)?;
@@ -296,10 +296,10 @@ pub fn walk_dds_type(ty: &DdsType) -> Result<WalkOutput, WalkError> {
 
 /// zerodds-lint: recursion-depth 64
 ///
-/// Begrenzung: DDS-XTypes-Type-Trees sind in der Praxis sehr flach
-/// (typisch <10 Ebenen). 64 deckt selbst pathologische Konfig-Files
-/// mit verschachtelten Maps/Sequences/Structs ab; tiefer ist ein
-/// Caller-Bug, kein gueltiger Spec-Type.
+/// Bound: DDS-XTypes type trees are very flat in practice
+/// (typically <10 levels). 64 covers even pathological config files
+/// with nested maps/sequences/structs; deeper is a
+/// caller bug, not a valid spec type.
 fn walk(ty: &DdsType, out: &mut WalkOutput) -> Result<(), WalkError> {
     match ty {
         DdsType::Alias { target, .. } => walk(target, out),
@@ -310,15 +310,15 @@ fn walk(ty: &DdsType, out: &mut WalkOutput) -> Result<(), WalkError> {
         DdsType::Array { element, .. } | DdsType::Sequence { element, .. } => walk(element, out),
         DdsType::Map { key, value, bound } => {
             if let Some(b) = bound {
-                // u32-Bound ist immer in u32-Range — ueberlauf-frei.
+                // u32 bound is always in u32 range — overflow-free.
                 let _ = *b;
             }
             walk(key, out)?;
             walk(value, out)?;
             Ok(())
         }
-        // Primitive / Strings — keine eigenen DataTypes (sie nutzen
-        // OPC-UA-Builtin-Types direkt, Spec Tab 9.2).
+        // Primitive / strings — no own DataTypes (they use
+        // OPC-UA builtin types directly, Spec Tab 9.2).
         DdsType::Boolean
         | DdsType::Int8
         | DdsType::UInt8
@@ -357,29 +357,29 @@ fn emit_bitmask(b: &BitmaskDef, out: &mut WalkOutput) -> Result<(), WalkError> {
 
 /// zerodds-lint: recursion-depth 64
 ///
-/// Indirekt rekursiv via `walk` (Member-Type kann Struct/Sequence/Map).
-/// Selbe Bound wie `walk` (siehe dort).
+/// Indirectly recursive via `walk` (a member type can be struct/sequence/map).
+/// Same bound as `walk` (see there).
 fn emit_struct(s: &StructDef, out: &mut WalkOutput) -> Result<(), WalkError> {
-    // Spec §9.2.4.1.2 — DataType (Subtype von Structure).
+    // Spec §9.2.4.1.2 — DataType (subtype of Structure).
     let dt_name = data_type_name(&s.name);
     let vt_name = variable_type_name(&s.name);
 
     let mut dt_node = NodeSpec::data_type(dt_name.clone(), TypeRef::new("Structure"));
 
-    // VariableType mit HasComponent References pro Member (Tab 9.16).
+    // VariableType with HasComponent references per member (Tab 9.16).
     let mut vt_node = NodeSpec::variable_type(vt_name.clone(), TypeRef::new(dt_name.clone()));
     for m in &s.members {
-        // Member-Variable (im VariableType) — BrowseName = Member-Name.
+        // Member variable (in the VariableType) — BrowseName = member name.
         let var_spec = build_member_variable_spec(&m.member_type);
         let _member_var = NodeSpec::variable(m.name.clone(), var_spec.clone());
-        // VariableType verlinkt per HasComponent zur Member-Variable.
+        // The VariableType links via HasComponent to the member variable.
         vt_node = vt_node.with_ref(ReferenceKind::HasComponent, TypeRef::new(m.name.clone()));
 
-        // DataType selbst sammelt die Member als Felder ueber Tab 9.15
-        // ebenfalls per HasComponent (zu BaseDataVariableType).
+        // The DataType itself collects the members as fields via Tab 9.15
+        // also via HasComponent (to BaseDataVariableType).
         dt_node = dt_node.with_ref(ReferenceKind::HasComponent, TypeRef::new(m.name.clone()));
 
-        // Rekursion: Member-Type kann selbst Struct/Sequence/...
+        // Recursion: the member type can itself be a struct/sequence/...
         walk(&m.member_type, out)?;
     }
 
@@ -392,10 +392,10 @@ fn emit_struct(s: &StructDef, out: &mut WalkOutput) -> Result<(), WalkError> {
 
 /// zerodds-lint: recursion-depth 64
 ///
-/// Indirekt rekursiv via `walk` (Case-Member-Type kann Struct/Sequence/Map).
-/// Selbe Bound wie `walk` (siehe dort).
+/// Indirectly recursive via `walk` (a case member type can be struct/sequence/map).
+/// Same bound as `walk` (see there).
 fn emit_union(u: &UnionDef, out: &mut WalkOutput) -> Result<(), WalkError> {
-    // Spec §9.2.4.2.1: Discriminator muss erlaubt sein.
+    // Spec §9.2.4.2.1: the discriminator must be allowed.
     if !is_valid_union_discriminator(&u.discriminator) {
         return Err(WalkError::InvalidUnionDiscriminator(
             u.discriminator.opc_ua_data_type(),
@@ -408,7 +408,7 @@ fn emit_union(u: &UnionDef, out: &mut WalkOutput) -> Result<(), WalkError> {
 
     let dt_name = data_type_name(&u.name);
     let mut node = NodeSpec::data_type(dt_name.clone(), TypeRef::new("Union"));
-    // SwitchField als erster Member mit consecutive 1..N Switch-Values.
+    // SwitchField as the first member with consecutive 1..N switch values.
     node = node.with_ref(ReferenceKind::HasComponent, TypeRef::new("SwitchField"));
 
     for c in &u.cases {
@@ -453,8 +453,8 @@ fn build_member_variable_spec(t: &DdsType) -> VariableSpec {
         DdsType::Sequence { element, bound } => VariableSpec {
             data_type: TypeRef::new(element.opc_ua_data_type()),
             value_rank: ValueRank(1),
-            // Spec §9.2.5.2.x: Sequence ohne explizite Bound bekommt
-            // ArrayDimensions = [0] (= "ungebunden"); mit Bound = [N].
+            // Spec §9.2.5.2.x: a sequence without an explicit bound gets
+            // ArrayDimensions = [0] (= "unbounded"); with a bound = [N].
             array_dimensions: alloc::vec![bound.unwrap_or(0)],
             type_definition: TypeRef::new("BaseDataVariableType"),
         },
@@ -528,7 +528,7 @@ mod tests {
 
     #[test]
     fn nested_struct_recurses() {
-        // outer struct mit einem inner-Struct-Member.
+        // outer struct with one inner-struct member.
         let inner = StructDef {
             name: "Inner".into(),
             members: alloc::vec![MemberDef {
@@ -620,7 +620,7 @@ mod tests {
     fn union_with_invalid_discriminator_is_rejected() {
         let u = UnionDef {
             name: "Bad".into(),
-            // Float ist kein erlaubter Discriminator (Spec §9.2.4.2.1).
+            // Float is not an allowed discriminator (Spec §9.2.4.2.1).
             discriminator: alloc::boxed::Box::new(DdsType::Float32),
             cases: alloc::vec![],
         };
@@ -668,7 +668,7 @@ mod tests {
             target: alloc::boxed::Box::new(DdsType::Struct(shape_struct())),
         };
         let out = walk_dds_type(&aliased).unwrap();
-        // Alias selbst emittiert keine Node, aber das Target-Struct schon.
+        // The alias itself emits no node, but the target struct does.
         assert!(out.generated_types.iter().any(|s| s == "ShapeTypeDataType"));
     }
 

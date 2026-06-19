@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! §7.4.1.4.4.3.4 — Fixed-Praezisions-Constraints.
+//! §7.4.1.4.4.3.4 — fixed-precision constraints.
 //!
-//! Spec: `fixed<P, S>` mit `P <= 31` (max 31 total digits) und
-//! `S <= P` (scale darf total nicht ueberschreiten).
+//! Spec: `fixed<P, S>` with `P <= 31` (max 31 total digits) and
+//! `S <= P` (scale must not exceed the total).
 
 use crate::ast::{
     ConstExpr, ConstrTypeDecl, Definition, FixedPtType, LiteralKind, Specification, TypeDecl,
@@ -11,28 +11,28 @@ use crate::ast::{
 };
 use crate::errors::Span;
 
-/// Fixed-Type-Validierungs-Fehler.
+/// Fixed-type validation error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FixedValidationError {
-    /// `fixed<P, S>` mit `P > 31`.
+    /// `fixed<P, S>` with `P > 31`.
     TotalDigitsExceeded {
-        /// Tatsaechlicher Wert P.
+        /// Actual value P.
         digits: u64,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// `fixed<P, S>` mit `S > P`.
+    /// `fixed<P, S>` with `S > P`.
     ScaleExceedsDigits {
-        /// Wert P.
+        /// Value P.
         digits: u64,
-        /// Wert S.
+        /// Value S.
         scale: u64,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
 }
 
-/// Top-Level: alle Fixed-Type-Verwendungen in der Spec validieren.
+/// Top level: validate all fixed-type uses in the spec.
 #[must_use]
 pub fn validate_fixed_types(spec: &Specification) -> Vec<FixedValidationError> {
     let mut errs = Vec::new();

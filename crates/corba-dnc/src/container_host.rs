@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! ContainerHost — bindet einen [`zerodds_corba_ccm::container::Container`] an
-//! einen D&C-Plan-Application-Run.
+//! ContainerHost — binds a [`zerodds_corba_ccm::container::Container`] to
+//! a D&C plan-application run.
 //!
-//! Spec D&C §11 (Container Programming Model) legt fest, dass jede
-//! Component-Instance einen Container braucht. ContainerHost ist die
-//! Brücke: nimmt den Plan-Output (`NodeApplication`) entgegen und
-//! installiert die Component-Instances in einen CCM-Container.
+//! Spec D&C §11 (Container Programming Model) requires that every
+//! component instance needs a container. ContainerHost is the bridge:
+//! it takes the plan output (`NodeApplication`) and installs the
+//! component instances into a CCM container.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -19,12 +19,12 @@ use zerodds_corba_ccm::cif::ComponentExecutor;
 use zerodds_corba_ccm::container::{Container, ContainerType, LifecycleState};
 use zerodds_corba_ccm::context::ComponentContext;
 
-/// ContainerHost-Fehler.
+/// ContainerHost error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostError {
-    /// Instance schon installiert.
+    /// Instance already installed.
     AlreadyInstalled(String),
-    /// Container-Operation lieferte Fehler.
+    /// Container operation returned an error.
     ContainerError(String),
 }
 
@@ -40,9 +40,9 @@ impl core::fmt::Display for HostError {
 #[cfg(feature = "std")]
 impl std::error::Error for HostError {}
 
-/// Default-Executor — fuer Plan-Boot, wenn der Caller keine konkrete
-/// Executor-Implementation reicht. Implementiert `ComponentExecutor`
-/// mit Default-Verhalten.
+/// Default executor — for plan boot when the caller does not supply a
+/// concrete executor implementation. Implements `ComponentExecutor`
+/// with default behavior.
 #[derive(Default)]
 pub struct PlanExecutor {
     ctx: Option<Box<dyn ComponentContext>>,
@@ -62,7 +62,7 @@ impl ComponentExecutor for PlanExecutor {
     }
 }
 
-/// Default-Context — anonyme Identity.
+/// Default context — anonymous identity.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct AnonContext;
 
@@ -72,8 +72,8 @@ impl ComponentContext for AnonContext {
     }
 }
 
-/// ContainerHost — pro Node ein Host, der je `CompositionCategory`
-/// einen Container haelt.
+/// ContainerHost — one host per node, holding one container per
+/// `CompositionCategory`.
 #[derive(Debug, Default)]
 pub struct ContainerHost {
     containers: BTreeMap<ContainerType, Container>,
@@ -81,7 +81,7 @@ pub struct ContainerHost {
 }
 
 impl ContainerHost {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -102,12 +102,12 @@ impl ContainerHost {
             .or_insert_with(|| Container::new(kind))
     }
 
-    /// Installiert eine Component-Instance mit Default-Executor +
-    /// Anon-Context. Caller, der einen konkreten Executor hat, kann
-    /// `install_with` benutzen.
+    /// Installs a component instance with the default executor + anon
+    /// context. A caller that has a concrete executor can use
+    /// `install_with`.
     ///
     /// # Errors
-    /// `HostError::AlreadyInstalled` wenn die Instance schon existiert.
+    /// `HostError::AlreadyInstalled` if the instance already exists.
     pub fn install(
         &mut self,
         instance_name: &str,
@@ -121,10 +121,10 @@ impl ContainerHost {
         )
     }
 
-    /// Installiert mit konkretem Executor + Context.
+    /// Installs with a concrete executor + context.
     ///
     /// # Errors
-    /// `HostError::AlreadyInstalled` wenn die Instance schon existiert.
+    /// `HostError::AlreadyInstalled` if the instance already exists.
     pub fn install_with(
         &mut self,
         instance_name: &str,
@@ -143,11 +143,10 @@ impl ContainerHost {
         Ok(())
     }
 
-    /// Aktiviert eine Instance — `ccm_activate`.
+    /// Activates an instance — `ccm_activate`.
     ///
     /// # Errors
-    /// Wenn die Instance unbekannt oder die Container-Transition
-    /// fehlschlaegt.
+    /// If the instance is unknown or the container transition fails.
     pub fn activate(&self, instance_name: &str) -> Result<(), HostError> {
         let kind = *self.instances.get(instance_name).ok_or_else(|| {
             HostError::ContainerError(alloc::format!("unknown instance `{instance_name}`"))
@@ -160,11 +159,10 @@ impl ContainerHost {
             .map_err(|e| HostError::ContainerError(format_cif(&e)))
     }
 
-    /// Passiviert eine Instance — `ccm_passivate`.
+    /// Passivates an instance — `ccm_passivate`.
     ///
     /// # Errors
-    /// Wenn die Instance unbekannt oder die Container-Transition
-    /// fehlschlaegt.
+    /// If the instance is unknown or the container transition fails.
     pub fn passivate(&self, instance_name: &str) -> Result<(), HostError> {
         let kind = *self.instances.get(instance_name).ok_or_else(|| {
             HostError::ContainerError(alloc::format!("unknown instance `{instance_name}`"))
@@ -177,11 +175,10 @@ impl ContainerHost {
             .map_err(|e| HostError::ContainerError(format_cif(&e)))
     }
 
-    /// Tear-down einer Instance — `ccm_remove`.
+    /// Tear-down of an instance — `ccm_remove`.
     ///
     /// # Errors
-    /// Wenn die Instance unbekannt oder die Container-Transition
-    /// fehlschlaegt.
+    /// If the instance is unknown or the container transition fails.
     pub fn remove(&mut self, instance_name: &str) -> Result<(), HostError> {
         let kind = self.instances.remove(instance_name).ok_or_else(|| {
             HostError::ContainerError(alloc::format!("unknown instance `{instance_name}`"))
@@ -194,14 +191,14 @@ impl ContainerHost {
             .map_err(|e| HostError::ContainerError(format_cif(&e)))
     }
 
-    /// Aktueller Lifecycle-State einer Instance.
+    /// Current lifecycle state of an instance.
     #[must_use]
     pub fn state(&self, instance_name: &str) -> Option<LifecycleState> {
         let kind = self.instances.get(instance_name)?;
         self.containers.get(kind)?.state_of(instance_name)
     }
 
-    /// Liste aller Instance-Namen.
+    /// List of all instance names.
     #[must_use]
     pub fn instances(&self) -> Vec<String> {
         self.instances.keys().cloned().collect()

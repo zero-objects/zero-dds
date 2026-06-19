@@ -50,12 +50,17 @@ struct topic_type_support<::Base> {
     static constexpr bool is_keyed() { return false; }
     static constexpr ::dds::topic::core::policy::DataRepresentationKind extensibility() { return ::dds::topic::core::policy::DataRepresentationKind::APPENDABLE; }
     static std::vector<uint8_t> encode(const ::Base& __v) {
+        return encode(__v, ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    }
+    static std::vector<uint8_t> encode(const ::Base& __v, ::dds::topic::xcdr2::XcdrVersion __repr) {
         std::vector<uint8_t> __out;
         (void)__v;
+        const size_t __max_align = ::dds::topic::xcdr2::xcdr_max_align(__repr);
+        (void)__max_align;
         const auto __dh = ::dds::topic::xcdr2::dheader_begin(__out);
         const size_t __origin = __out.size();
         (void)__origin;
-        ::dds::topic::xcdr2::write_le_origin<int32_t>(__out, __origin, __v.base_field());
+        ::dds::topic::xcdr2::write_le_origin<int32_t>(__out, __origin, __v.base_field(), __max_align);
         ::dds::topic::xcdr2::dheader_end(__out, __dh);
         return __out;
     }
@@ -69,15 +74,16 @@ struct topic_type_support<::Base> {
         ::dds::topic::xcdr2::dheader_end(__out, __dh);
         return __out;
     }
-    static ::Base decode(const uint8_t* __buf, size_t __len) {
+    static ::Base decode(const uint8_t* __buf, size_t __len, ::dds::topic::xcdr2::XcdrVersion __repr) {
         size_t __pos = 0;
         ::Base __v;
-        (void)__buf; (void)__len; (void)__pos;
+        const size_t __max_align = ::dds::topic::xcdr2::xcdr_max_align(__repr);
+        (void)__buf; (void)__len; (void)__pos; (void)__max_align;
         const auto __dh = ::dds::topic::xcdr2::dheader_read(__buf, __pos, __len);
         const size_t __origin = __pos;
         const size_t __end = __origin + __dh;
         (void)__end;
-        __v.base_field(::dds::topic::xcdr2::read_le_origin<int32_t>(__buf, __pos, __len, __origin));
+        __v.base_field(::dds::topic::xcdr2::read_le_origin<int32_t>(__buf, __pos, __len, __origin, __max_align));
         if (__pos < __end) __pos = __end;
         return __v;
     }
@@ -93,12 +99,17 @@ struct topic_type_support<::Child> {
     static constexpr bool is_keyed() { return false; }
     static constexpr ::dds::topic::core::policy::DataRepresentationKind extensibility() { return ::dds::topic::core::policy::DataRepresentationKind::APPENDABLE; }
     static std::vector<uint8_t> encode(const ::Child& __v) {
+        return encode(__v, ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    }
+    static std::vector<uint8_t> encode(const ::Child& __v, ::dds::topic::xcdr2::XcdrVersion __repr) {
         std::vector<uint8_t> __out;
         (void)__v;
+        const size_t __max_align = ::dds::topic::xcdr2::xcdr_max_align(__repr);
+        (void)__max_align;
         const auto __dh = ::dds::topic::xcdr2::dheader_begin(__out);
         const size_t __origin = __out.size();
         (void)__origin;
-        ::dds::topic::xcdr2::write_le_origin<int32_t>(__out, __origin, __v.child_field());
+        ::dds::topic::xcdr2::write_le_origin<int32_t>(__out, __origin, __v.child_field(), __max_align);
         ::dds::topic::xcdr2::dheader_end(__out, __dh);
         return __out;
     }
@@ -112,15 +123,16 @@ struct topic_type_support<::Child> {
         ::dds::topic::xcdr2::dheader_end(__out, __dh);
         return __out;
     }
-    static ::Child decode(const uint8_t* __buf, size_t __len) {
+    static ::Child decode(const uint8_t* __buf, size_t __len, ::dds::topic::xcdr2::XcdrVersion __repr) {
         size_t __pos = 0;
         ::Child __v;
-        (void)__buf; (void)__len; (void)__pos;
+        const size_t __max_align = ::dds::topic::xcdr2::xcdr_max_align(__repr);
+        (void)__buf; (void)__len; (void)__pos; (void)__max_align;
         const auto __dh = ::dds::topic::xcdr2::dheader_read(__buf, __pos, __len);
         const size_t __origin = __pos;
         const size_t __end = __origin + __dh;
         (void)__end;
-        __v.child_field(::dds::topic::xcdr2::read_le_origin<int32_t>(__buf, __pos, __len, __origin));
+        __v.child_field(::dds::topic::xcdr2::read_le_origin<int32_t>(__buf, __pos, __len, __origin, __max_align));
         if (__pos < __end) __pos = __end;
         return __v;
     }

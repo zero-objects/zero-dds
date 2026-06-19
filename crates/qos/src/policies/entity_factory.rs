@@ -2,9 +2,9 @@
 // Copyright 2026 ZeroDDS Contributors
 //! EntityFactoryQosPolicy (DDS 1.4 §2.2.3.27).
 //!
-//! Wire-Format: bool (1 byte + 3 pad = 4 byte). Lokale Policy; wird
-//! normalerweise nicht ueber Wire propagiert, nur der Vollstaendigkeit
-//! halber implementiert.
+//! Wire format: bool (1 byte + 3 pad = 4 bytes). A local policy;
+//! normally not propagated over the wire, implemented only for
+//! completeness.
 
 use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 
@@ -13,7 +13,7 @@ use crate::wire_helpers::{read_bool_padded, write_bool_padded};
 /// EntityFactoryQosPolicy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EntityFactoryQosPolicy {
-    /// Entities werden bei Erzeugung automatisch enabled. Default: `true`.
+    /// Entities are enabled automatically on creation. Default: `true`.
     pub autoenable_created_entities: bool,
 }
 

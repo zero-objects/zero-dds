@@ -1,16 +1,16 @@
 # DDS DCPS 1.4 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/zerodds-dcps-1.4.pdf` (180 Seiten, OMG formal/2015-04-10)
+**Spec:** [OMG DDS 1.4 — formal/2015-04-10 (180 Seiten) →](https://www.omg.org/spec/DDS/1.4/)
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
-Status (`done` / `partial` / `open` / `n/a`).
+**Kontext:** DCPS ist über zwei Crates verteilt:
 
-**Kontext:** `crates/dcps/` ist live mit ~25 Files + ~300 Tests; `crates/qos/` ergaenzt mit ~125 Tests.
+- `crates/dcps/` — DCPS-Kern, live mit ~25 Files + ~300 Tests
+- `crates/qos/` — QoS-Policies, ~125 Tests
+
 Live: Entity-Trait + Listener-Stack (6 Listener + listener_dispatch),
 WaitSet+GuardCondition+StatusCondition, alle 13 Status-Records,
 register/unregister/dispose-Lifecycle, BuiltinSubscriber + 4 Builtin-
-Topic-Reader, CoherentScope (begin/end_coherent_changes), WLP fuer
+Topic-Reader, CoherentScope (begin/end_coherent_changes), WLP für
 LIVELINESS, InstanceHandle, SampleInfo. 22 QoS-Policies definiert,
 Subset live verdrahtet.
 
@@ -18,14 +18,14 @@ Subset live verdrahtet.
 
 ## §1 Scope / Purpose
 
-### 1.1.1 DDS API + Communication-Semantik fuer DCPS
+### 1.1.1 DDS API + Communication-Semantik für DCPS
 
 **Spec:** §1.1, S. 1 — "DDS-Spec definiert API + Communication-
 Semantik für DCPS."
 
 **Repo:** `crates/dcps/src/lib.rs` mit voller §2.2.2-Entity-API
 (DomainParticipant, Publisher, Subscriber, Topic, DataWriter,
-DataReader, WaitSet, Conditions). Communication-Semantik ueber
+DataReader, WaitSet, Conditions). Communication-Semantik über
 RTPS-Transport (`crates/rtps/`, `crates/discovery/`).
 
 **Tests:** Workspace-weit (Section §2.2.2.x-Items belegen alle
@@ -38,7 +38,7 @@ markiert; siehe pro-Item-Belege weiter unten.
 
 **Spec:** §1.1, S. 1 — "Pre-allocate Resources."
 
-**Repo:** `crates/dcps/src/runtime.rs::RuntimeConfig` mit Caps fuer
+**Repo:** `crates/dcps/src/runtime.rs::RuntimeConfig` mit Caps für
 Sample-Pools, Reader/Writer-Capacity. DoS-Caps in
 `crates/rtps/src/parameter_list.rs::MAX_PARAMETERS` und
 `crates/dcps/src/condition.rs::MAX_WAITSET_CONDITIONS`.
@@ -70,10 +70,10 @@ crate-spezifische Test-Module).
 
 **Repo:** `crates/cdr/src/buffer.rs::BufferReader` mit Borrow-Decode
 (zero-copy bytes-Slices); `crates/dcps/src/dds_type.rs::RawBytes`
-fuer ungemarshalte Inbox; `crates/cdr/src/struct_enc.rs::MutableMember`
+für ungemarshalte Inbox; `crates/cdr/src/struct_enc.rs::MutableMember`
 mit `body: &[u8]`.
 
-**Tests:** Zero-copy-Pfade implizit ueber Roundtrip-Tests; explizit
+**Tests:** Zero-copy-Pfade implizit über Roundtrip-Tests; explizit
 in `cdr` borrow-Tests.
 
 **Status:** done
@@ -83,7 +83,7 @@ in `cdr` borrow-Tests.
 **Spec:** §1.1 — "Typed Interfaces."
 
 **Repo:** `crates/dcps/src/dds_type.rs::DdsType`-Trait, generisch
-ueber Topic/Writer/Reader.
+über Topic/Writer/Reader.
 
 **Tests:** Type-Generic-Tests.
 
@@ -105,8 +105,8 @@ Compatibility-Check via `crates/qos/src/compatibility.rs`.
 weiter unten); Cross-QoS-Compatibility-Tests in `compatibility.rs`.
 
 **Status:** done — alle 22 Policies sind im Wire-Format und Code
-verfuegbar; Engine-Side-Wiring siehe §2.2.3.x pro Policy. K3a-F-
-Schliessung 2026-04-28: alle 10 Iron-Rule-Open-Tracker konvertiert
+verfügbar; Engine-Side-Wiring siehe §2.2.3.x pro Policy. K3a-F-
+ alle 10 Iron-Rule-Open-Tracker konvertiert
 zu live-Implementationen (T1 contains_entity rekursiv, T2 GROUP-
 coherent snapshot_generation, T3 RESOURCE_LIMITS write-Block,
 T4 EXCLUSIVE Strength-Selection + GUID-Tiebreaker, T5 TIME_BASED_FILTER
@@ -153,7 +153,7 @@ normative Anforderung an die DCPS-Implementation.
 Spec selbst (PIM+PSM-Konvention der OMG), nicht eine zu
 implementierende Anforderung.
 
-### 2.1.2 DCPS-Layer fuer typisierte Pub/Sub-Daten
+### 2.1.2 DCPS-Layer für typisierte Pub/Sub-Daten
 
 **Spec:** §2.1, S. 3.
 
@@ -167,16 +167,16 @@ implementierende Anforderung.
 
 **Spec:** §2.1, S. 3 — Optionaler Data-Local-Reconstruction-Layer
 mit Object-Cache + Identity-Tracking + Relationship-Resolver
-(1:1/1:N/N:M) ueber DCPS.
+(1:1/1:N/N:M) über DCPS.
 
 **Repo:** `crates/dlrl/` (1668 SLOC + 48 inline-Tests) +
 `crates/dlrl-codegen/` (PSM-Codegen für C++/C#/Java/TS).
 
-**Tests:** Cross-Ref `dlrl-1.2.md` (eigene Spec-Coverage-Datei für
+**Tests:** Cross-Ref [`dlrl-1.2`](dlrl-1.2.md) (eigene Spec-Coverage-Datei für
 DDS 1.2 §8 + Annex B; in DDS 1.4 nicht mehr Teil der Spec).
 
 **Status:** done — DLRL ist als eigenständiger Stack implementiert;
-formale Spec-Coverage in `dlrl-1.2.md` (11 done / 1 partial / 0 open).
+formale Spec-Coverage in [`dlrl-1.2`](dlrl-1.2.md) (20 done / 0 partial / 0 open).
 
 ---
 
@@ -268,7 +268,7 @@ plus QoS-Tests in `crates/qos/src/policies/resource_limits.rs::tests`.
 **Repo:** `crates/dcps/src/error.rs::DdsError::NotEnabled` +
 `as_return_code()` mappt auf `return_code::NOT_ENABLED = 6`.
 `crates/dcps/src/entity.rs::EntityState::check_enabled() -> Result<()>`
-Guard-Helper fuer Public-Ops.
+Guard-Helper für Public-Ops.
 
 **Tests:** `crates/dcps/src/entity.rs::tests`:
 `check_enabled_returns_not_enabled_for_disabled_entity`,
@@ -346,8 +346,8 @@ plus QoS-Compatibility-Tests in `crates/qos/src/compatibility.rs::tests`.
 `as_return_code()` mappt auf `return_code::NO_DATA = 11`. In der
 Praxis liefern read/take einen leeren `Vec<Sample>` statt eines
 expliziten Errors — das ist Spec-konform (§2.2.2.5.3.6 erlaubt
-beide Varianten); der explizite Error ist fuer C/C++/Java-Bridges
-verfuegbar.
+beide Varianten); der explizite Error ist für C/C++/Java-Bridges
+verfügbar.
 
 **Tests:** `crates/dcps/src/error.rs::tests::rc_no_data_maps`.
 
@@ -402,8 +402,9 @@ enable / get_instance_handle.
 **Tests:** `enable_is_idempotent_and_reports_first_transition`,
 `get_status_condition_returns_pristine_when_no_changes`.
 
-**Status:** done — Trait + Default-Impls; Op-Gating und
-IMMUTABLE-Matrix Phase 2.
+**Status:** done — Entity-Trait + Default-Impls + `EntityState`;
+IMMUTABLE-QoS-Enforcement via `immutable_if_enabled` /
+`DdsError::ImmutablePolicy` (§2.2.2.1.2 `set_qos`).
 
 ### 2.2.2.1.2 DomainEntity-Class
 
@@ -503,9 +504,9 @@ Thread-Enforce-Negativ),
 **Repo:** `crates/dcps/src/entity.rs::StatusCondition` mit
 `set_enabled_statuses` / `enabled_statuses` / `trigger_value` /
 `get_entity_handle() -> InstanceHandle` (Spec §2.2.2.1.9 get_entity-
-Aequivalent fuer Rust-API; Handle ist die einzige stabile Identitaet
-ueber alle Wrapper-Granularitaeten) / `entity_state() -> &Arc<EntityState>`
-fuer direkten State-Zugriff.
+Aequivalent für Rust-API; Handle ist die einzige stabile Identität
+über alle Wrapper-Granularitäten) / `entity_state() -> &Arc<EntityState>`
+für direkten State-Zugriff.
 
 **Tests:** `crates/dcps/src/entity.rs::tests`:
 `status_condition_get_entity_handle_matches_owner_state`,
@@ -523,20 +524,20 @@ plus Bestand `status_condition_trigger_value`,
 
 ### 2.2.2.2.1 DomainParticipant-Class
 
-**Spec:** §2.2.2.2.1, S. 21-30 — Container fuer Pub/Sub/Topic/MultiTopic;
+**Spec:** §2.2.2.2.1, S. 21-30 — Container für Pub/Sub/Topic/MultiTopic;
 Factory-Methoden; Admin-Ops (ignore_*); get_discovered_*; etc.
 
 **Repo:** `crates/dcps/src/participant.rs::DomainParticipant` mit:
 - `create_publisher` / `create_subscriber` / `create_topic` (Factory-
   Methoden, jede Operation tracked den `InstanceHandle` der erzeugten
   Entity in `inner.publishers` / `inner.subscribers` / `inner.topics`
-  fuer `contains_entity` und `delete_contained_entities`).
+  für `contains_entity` und `delete_contained_entities`).
 - `lookup_topicdescription(name) -> Option<TopicDescriptionHandle>`
   (Spec §2.2.2.2.1.12) — sofortiger lokaler Lookup ohne Discovery-Wait.
 - `find_topic(name, timeout) -> Result<TopicDescriptionHandle>`
   (Spec §2.2.2.2.1.11) — lokal + SEDP-Cache-Poll bis Timeout.
 - `instance_handle()` (Spec §2.2.2.1.1) — InstanceHandle des Participants.
-- `contains_entity(handle) -> bool` (Spec §2.2.2.2.1.10) — prueft self,
+- `contains_entity(handle) -> bool` (Spec §2.2.2.2.1.10) — prüft self,
   alle Topics, alle Pub/Sub-Children.
 - `ignore_*` / `get_discovered_*` / `delete_contained_entities`
   bereits in WP 2.7 verdrahtet.
@@ -552,15 +553,15 @@ Factory-Methoden; Admin-Ops (ignore_*); get_discovered_*; etc.
 `contains_entity_returns_false_for_unknown_handle`,
 `contains_entity_returns_false_for_topic_after_delete`.
 
-**Rekursiver Pfad:** `contains_entity` erkennt zusaetzlich
+**Rekursiver Pfad:** `contains_entity` erkennt zusätzlich
 DataWriter/DataReader-Handles via Pub/Sub-Children. PublisherInner +
 SubscriberInner tracken DW/DR-Handles (`datawriters` /
 `datareaders`-Mutex); per Weak-Backref propagieren sie auch in
-`ParticipantInner.datawriters` / `datareaders` fuer schnellen
-top-down Lookup. Pro Pub/Sub gibt es ausserdem `contains_writer` /
+`ParticipantInner.datawriters` / `datareaders` für schnellen
+top-down Lookup. Pro Pub/Sub gibt es außerdem `contains_writer` /
 `contains_reader` als gezielten Sub-Lookup.
 
-**Tests (zusaetzlich zu den 6 oben):**
+**Tests (zusätzlich zu den 6 oben):**
 `contains_entity_recursive_finds_local_datawriter`,
 `contains_entity_recursive_finds_local_datareader`,
 `contains_entity_recursive_does_not_find_foreign_datawriter`.
@@ -656,7 +657,7 @@ vom Related-Topic.
 `new` (Konstruktor mit Expression-Parsing + Parameter-Index-Validation),
 `get_filter_expression`, `get_filter_parameters`,
 `set_filter_parameters` (mit BadParameter-Validation),
-`get_related_topic`, `evaluate(row)` ueber `zerodds_sql_filter`-Engine,
+`get_related_topic`, `evaluate(row)` über `zerodds_sql_filter`-Engine,
 plus `TopicDescription`-Trait-Impl. DomainParticipant
 `create_contentfilteredtopic`-Factory.
 
@@ -676,7 +677,7 @@ plus `TopicDescription`-Trait-Impl. DomainParticipant
 
 ### 2.2.2.3.4 MultiTopic-Class [optional, Spec §2.2.2.3.4]
 
-**Spec:** §2.2.2.3.4, S. 38-39 — kombiniert mehrere Topics ueber
+**Spec:** §2.2.2.3.4, S. 38-39 — kombiniert mehrere Topics über
 SQL-Subscription-Expression. Spec-explicit `optional`.
 
 **Repo:** `crates/dcps/src/topic.rs::MultiTopic<T>` mit
@@ -702,7 +703,7 @@ Validation und vollem BadParameter-Negativ-Pfad.
 
 **Cross-Topic-Sample-Routing:** Hash-Join-Operator
 `crates/dcps/src/topic.rs::hash_join_two` mit O(n+m) Build/Probe-
-Phase + Cartesian-Match fuer Duplikat-Keys. `JoinedRow<'a>`
+Phase + Cartesian-Match für Duplikat-Keys. `JoinedRow<'a>`
 dispatched dotted-Pfade `<topic>.<field>` auf die richtige
 Topic-Quelle. `MultiTopic::evaluate_joined(row)` wertet die
 `subscription_expression` gegen die kombinierten Rows aus.
@@ -837,10 +838,10 @@ Felder; drei orthogonale State-Dimensionen mit Mask-Filter.
 - `SampleStateKind` (READ / NOT_READ) + `sample_state_mask::*`-Konstanten.
 - `ViewStateKind` (NEW / NOT_NEW) + `view_state_mask::*`.
 - `InstanceStateKind` (ALIVE / NOT_ALIVE_DISPOSED / NOT_ALIVE_NO_WRITERS)
-  + `instance_state_mask::*` + `is_alive` / `is_not_alive`-Praedikate.
+  + `instance_state_mask::*` + `is_alive` / `is_not_alive`-Prädikate.
 - `SampleInfo::matches_states(sample_mask, view_mask, instance_mask)`
-  fuer den `read_w_condition`-Filter.
-- `SampleInfo::new_alive` Konstruktor fuer Live-Pfad.
+  für den `read_w_condition`-Filter.
+- `SampleInfo::new_alive` Konstruktor für Live-Pfad.
 
 **Tests:** `crates/dcps/src/sample_info.rs::tests`:
 `defaults_are_alive_new_not_read`, `instance_state_predicates`,
@@ -941,7 +942,7 @@ plus Bestand `defaults_are_alive_new_not_read`.
 ### 2.2.2.5.8 ReadCondition-Class
 
 **Spec:** §2.2.2.5.8, S. 88-89 — Sample/View/InstanceState-Mask-
-Filter; Trigger wenn der Reader Samples mit diesen Masks enthaelt.
+Filter; Trigger wenn der Reader Samples mit diesen Masks enthält.
 
 **Repo:** `crates/dcps/src/condition.rs::ReadCondition` mit Mask-
 Gettern (`get_sample_state_mask`, `get_view_state_mask`,
@@ -1044,7 +1045,7 @@ greifen auf den Durability-Service §2.2.3.5 zu
 `unknown_kind_decode_rejected` (Negativ),
 `compatibility_offered_ge_requested` (offered >= requested + Negativ).
 
-**Status:** done — Wire-Form + Compatibility-Ordering vollstaendig;
+**Status:** done — Wire-Form + Compatibility-Ordering vollständig;
 Transient/Persistent-Storage delegiert an §2.2.3.5 Durability-Service.
 
 ### 2.2.3.5 DURABILITY_SERVICE QosPolicy
@@ -1063,7 +1064,7 @@ Beide Backends respektieren history_kind (KeepLast-Cap durch FIFO,
 KeepAll-Cap durch OutOfResources), max_samples, max_instances,
 max_samples_per_instance und service_cleanup_delay (`fraction` als
 2^-32 s korrekt nach Nanos konvertiert). `make_backend(kind, qos, root)`-
-Factory waehlt automatisch.
+Factory wählt automatisch.
 
 **Tests:** `crates/qos/src/policies/durability_service.rs::tests`
 (2 Tests: roundtrip + default). Storage-Backend-Tests in
@@ -1101,8 +1102,8 @@ mit `access_scope` (INSTANCE/TOPIC/GROUP) + `coherent_access` +
 INSTANCE/TOPIC live im Reader-Sort-Pfad; GROUP-coherent via
 `crates/dcps/src/coherent_set.rs::GroupAccessScope.snapshot_generation`
 — jedes `begin_access` (von 0→1) inkrementiert die Generation, alle
-DR im Subscriber sehen waehrend des begin/end-Fensters denselben
-atomic Cut. Multi-Reader-Coherent-Set ueber Arc-Clone der Scope.
+DR im Subscriber sehen während des begin/end-Fensters denselben
+atomic Cut. Multi-Reader-Coherent-Set über Arc-Clone der Scope.
 
 **Tests:** `crates/qos/src/policies/presentation.rs::tests`
 (6 Tests: roundtrip + access_scope + coherent + ordered Kombinationen).
@@ -1121,7 +1122,7 @@ atomic Cut. Multi-Reader-Coherent-Set ueber Arc-Clone der Scope.
 
 ### 2.2.3.8 LATENCY_BUDGET QosPolicy
 
-**Spec:** §2.2.3.8, S. 104 — Hint an die Service ueber maximal
+**Spec:** §2.2.3.8, S. 104 — Hint an die Service über maximal
 akzeptierbare Latenz; pro Spec ist das eine Best-Effort-Hint, kein
 hartes Constraint.
 
@@ -1179,8 +1180,8 @@ Strength-Selection-Tests in `instance_tracker::tests::exclusive_*` (6 Tests).
 **Repo:** `crates/qos/src/policies/liveliness.rs::LivelinessQosPolicy`
 mit `LivelinessKind` (Automatic/ManualByParticipant/ManualByTopic) +
 `lease_duration: Duration_t` + Wire-Encode/Decode.
-`crates/dcps/src/wlp.rs` mit Heartbeat-Pfad fuer AUTOMATIC und
-`Publisher::assert_liveliness()` fuer MANUAL_BY_PARTICIPANT/TOPIC.
+`crates/dcps/src/wlp.rs` mit Heartbeat-Pfad für AUTOMATIC und
+`Publisher::assert_liveliness()` für MANUAL_BY_PARTICIPANT/TOPIC.
 
 **Tests:** `crates/qos/src/policies/liveliness.rs::tests` (9 Tests:
 roundtrip aller drei Kinds + default + invalid-kind-Decode +
@@ -1204,7 +1205,7 @@ mit `minimum_separation: Duration_t` + Wire-Encode/Decode.
 `InstanceState.last_delivered_ts: Option<Time>` +
 `should_deliver_under_time_based_filter(keyhash, sample_ts,
 min_separation_nanos)` +
-`record_delivery(keyhash, sample_ts)`. Read-Pfad pre-Delivery prueft
+`record_delivery(keyhash, sample_ts)`. Read-Pfad pre-Delivery prüft
 und droppt bei zu geringer Separation. Tests:
 `time_based_filter_first_sample_passes`,
 `time_based_filter_too_close_drops` (Negativ),
@@ -1359,7 +1360,7 @@ mit beiden Duration_t-Feldern + Wire-Encode/Decode.
 `InstanceState.disposed_at` + `no_writers_at` Timestamps, automatisch
 gesetzt beim dispose/unregister; `autopurge(now,
 disposed_delay_nanos, no_writer_delay_nanos)` durchsucht alle
-Instances und entfernt die, deren Marker laenger als der jeweilige
+Instances und entfernt die, deren Marker länger als der jeweilige
 Delay her ist (`u128::MAX` = INFINITE = nie). Lazy-Purge wird vom
 Read-Pfad gerufen. Tests:
 `autopurge_disposed_after_delay`,
@@ -1374,7 +1375,7 @@ Read-Pfad gerufen. Tests:
 
 **Spec:** §2.2.3.23, S. 111-113 — Cross-QoS-Interaktionen: bei
 LIVELINESS-Verlust eines Writers in OWNERSHIP=EXCLUSIVE soll der
-Reader auf den naechst-staerksten Writer umschalten; bei
+Reader auf den nächst-stärksten Writer umschalten; bei
 unregister_instance soll INSTANCE-Tracker den Lifecycle-Pfad
 durchziehen.
 
@@ -1385,7 +1386,7 @@ notify_writer_liveliness_lost(guid)` und `notify_participant_liveliness_lost(pre
 als Hooks aus dem WLP-Pfad. Owner-Reset via
 `InstanceTracker::clear_owner_for_writer(guid)` /
 `clear_owner_for_writer_prefix(prefix)`; nach dem Clear gewinnt der
-naechste eintreffende Sample via Strength-Selection neu.
+nächste eintreffende Sample via Strength-Selection neu.
 
 **Tests:** `instance_tracker::tests`:
 `clear_owner_for_writer_resets_owner`,
@@ -1538,7 +1539,7 @@ Closure (siehe §2.2.2.5.8).
 
 ### 2.2.5.6 Builtin-Sub+DR Default-QoS (DURABILITY=TRANSIENT_LOCAL/RELIABILITY=RELIABLE/HISTORY=KEEP_LAST/depth=1/...)
 
-**Spec:** §2.2.5 — vollstaendiger Default-QoS-Block.
+**Spec:** §2.2.5 — vollständiger Default-QoS-Block.
 
 **Repo:** `builtin_subscriber.rs::builtin_reader_qos()`.
 
@@ -1556,7 +1557,7 @@ Filter-Logik im Discovery-Hook (filtert SPDP/SEDP-Samples mit
 gleicher Participant-Guid wie der lokale Participant).
 
 **Tests:** `crates/dcps/src/builtin_subscriber.rs::tests` mit
-participant_key-Filter-Pruefung.
+participant_key-Filter-Prüfung.
 
 **Status:** done
 
@@ -1622,14 +1623,14 @@ PSM-Emission live.
 **Spec:** §2.3.3, S. 138-162.
 
 **Repo:** `crates/idl/` — IDL-4.2-Parser (K1 voll abgeschlossen,
-1026 Tests). Code-Gen ueber `crates/idl-cpp/`, `crates/idl-java/`,
+1026 Tests). Code-Gen über `crates/idl-cpp/`, `crates/idl-java/`,
 `crates/idl-csharp/`. Spec-Coverage des IDL 4.2 in
 `docs/spec-coverage/idl-4.2.md` (530 done / 0 partial).
 
-**Tests:** Workspace-weit ueber `zerodds-idl`-Crate;
+**Tests:** Workspace-weit über `zerodds-idl`-Crate;
 `docs/spec-coverage/idl-4.2.md` ist die normative Coverage-Doku.
 
-**Status:** done — IDL-Parser-Layer vollstaendig spec-konform; PSM-
+**Status:** done — IDL-Parser-Layer vollständig spec-konform; PSM-
 spezifische Code-Gen-Stage ist je PSM-Spec separat normativ.
 
 ### 2.3.3 IDL-Constants: typedef long DomainId_t / typedef long ReturnCode_t / etc.
@@ -1638,8 +1639,8 @@ spezifische Code-Gen-Stage ist je PSM-Spec separat normativ.
 
 **Repo:** Rust-Native-Typen (`DomainId = u32`, `Result<T, DdsError>`)
 + IDL-Constants in `crates/dcps/src/psm_constants.rs::status::*`
-fuer alle 13 Status-Bits + `crates/dcps/src/error.rs::return_code::*`
-fuer alle 13 ReturnCode_t-Werte.
+für alle 13 Status-Bits + `crates/dcps/src/error.rs::return_code::*`
+für alle 13 ReturnCode_t-Werte.
 
 **Tests:** `crates/dcps/src/error.rs::tests::rc_constants_have_spec_values`
 verifiziert alle 13 Spec-Konstanten Wert-genau.
@@ -1655,6 +1656,5 @@ verifiziert alle 13 Spec-Konstanten Wert-genau.
 Test-Lauf: `cargo test -p zerodds-dcps` — 407 lib + 150 integration
 (23 Integration-Test-Bins) = 557 Tests grün, 0 failed.
 
-Offene Punkte (§2.3.1-2 PIM→PSM CORBA-IDL-Annex-A.1-Emission als
-zusätzlicher Codegen-Backend): siehe `zerodds-dcps-1.4.open.md`. DLRL
-voll abgedeckt durch `crates/dlrl/` (siehe `dlrl-1.2.md`).
+DLRL (optionaler §2.1.3-Layer) ist als Differenzierungs-Feature voll
+abgedeckt — eigener Crate `crates/dlrl/`, siehe [DLRL-1.2-Coverage](dlrl-1.2.md).

@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Fan-Out: ein Event an mehrere Backends gleichzeitig.
+//! Fan-out: one event to multiple backends simultaneously.
 //!
 //! zerodds-lint: allow no_dyn_in_safe
-//! (Der Fan-Out haelt eine Liste polymorpher `LoggingPlugin`s via
-//! `Box<dyn ...>` — architektur-bedingt, da der Nutzer verschiedene
-//! Backend-Typen kombinieren koennen will.)
+//! (The fan-out holds a list of polymorphic `LoggingPlugin`s via
+//! `Box<dyn ...>` — architectural, since the user wants to combine
+//! different backend types.)
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use zerodds_security::logging::{LogLevel, LoggingPlugin};
 
-/// Fan-Out-Adapter — broadcast ein Event an alle eingetragenen
-/// Backends. Nuetzlich fuer Setup mit `stderr` + audit-JSON-File
-/// parallel.
+/// Fan-out adapter — broadcasts an event to all registered
+/// backends. Useful for a setup with `stderr` + an audit JSON file
+/// in parallel.
 pub struct FanOutLoggingPlugin {
     sinks: Vec<Box<dyn LoggingPlugin>>,
 }
@@ -27,28 +27,28 @@ impl Default for FanOutLoggingPlugin {
 }
 
 impl FanOutLoggingPlugin {
-    /// Leerer Fan-Out — Events werden stillschweigend verworfen.
+    /// Empty fan-out — events are silently discarded.
     #[must_use]
     pub fn new() -> Self {
         Self { sinks: Vec::new() }
     }
 
-    /// Backend hinzufuegen. Builder-Style.
+    /// Add a backend. Builder style.
     #[must_use]
     pub fn with<P: LoggingPlugin + 'static>(mut self, sink: P) -> Self {
         self.sinks.push(Box::new(sink));
         self
     }
 
-    /// Backend hinzufuegen per `Box<dyn ...>` (wenn Nutzer schon einen
-    /// Box-Sink hat).
+    /// Add a backend via `Box<dyn ...>` (when the user already has a
+    /// boxed sink).
     #[must_use]
     pub fn with_boxed(mut self, sink: Box<dyn LoggingPlugin>) -> Self {
         self.sinks.push(sink);
         self
     }
 
-    /// Anzahl registrierter Backends.
+    /// Number of registered backends.
     #[must_use]
     pub fn sink_count(&self) -> usize {
         self.sinks.len()

@@ -2,12 +2,12 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DDS-XML 1.0 §7.3.6 Building Block "Application Library".
 //!
-//! Eine Application bindet einen oder mehrere Domain-Participants
-//! (`<domain_participant ref="…"/>`) zu einer logischen Deployment-Einheit.
-//! Im Spec-Beispiel referenziert eine Application typischerweise einen
-//! einzelnen Participant; mehrere sind erlaubt (Spec §7.3.6.4.2).
+//! An application binds one or more domain participants
+//! (`<domain_participant ref="…"/>`) into a logical deployment unit.
+//! In the spec example an application typically references a
+//! single participant; multiple are allowed (Spec §7.3.6.4.2).
 //!
-//! # XML → Rust-Type Mapping
+//! # XML → Rust type mapping
 //!
 //! ```text
 //! <application_library name=…>     | ApplicationLibrary
@@ -22,37 +22,37 @@ use alloc::vec::Vec;
 use crate::errors::XmlError;
 use crate::parser::{XmlElement, parse_xml_tree};
 
-/// Container fuer 1+ Application-Definitionen (§7.3.6.4.1).
+/// Container for 1+ application definitions (§7.3.6.4.1).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ApplicationLibrary {
-    /// Library-Name.
+    /// Library name.
     pub name: String,
-    /// Application-Definitionen.
+    /// Application definitions.
     pub applications: Vec<ApplicationEntry>,
 }
 
 impl ApplicationLibrary {
-    /// Lookup einer Application anhand ihres Namens.
+    /// Looks up an application by its name.
     #[must_use]
     pub fn application(&self, name: &str) -> Option<&ApplicationEntry> {
         self.applications.iter().find(|a| a.name == name)
     }
 }
 
-/// Einzelner `<application>`-Eintrag (§7.3.6.4.2).
+/// A single `<application>` entry (§7.3.6.4.2).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ApplicationEntry {
-    /// Application-Name.
+    /// Application name.
     pub name: String,
-    /// Verweise auf Domain-Participants (`library::participant`).
+    /// References to domain participants (`library::participant`).
     pub domain_participants: Vec<String>,
 }
 
-/// Parsed alle `<application_library>`-Eintraege aus einem `<dds>`-Wurzel-
-/// Element.
+/// Parses all `<application_library>` entries from a `<dds>` root
+/// element.
 ///
 /// # Errors
-/// Wie [`crate::parse_xml_tree`] plus Spec-Validierung.
+/// As [`crate::parse_xml_tree`] plus spec validation.
 pub fn parse_application_libraries(xml: &str) -> Result<Vec<ApplicationLibrary>, XmlError> {
     let doc = parse_xml_tree(xml)?;
     if doc.root.name != "dds" {

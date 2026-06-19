@@ -1,12 +1,12 @@
-//! Edge-Case-Integration-Tests fuer den IDL→C++-Codegen.
+//! Edge-case integration tests for the IDL→C++ codegen.
 //!
-//! - Empty IDL → preamble-only Header
-//! - Reserved C++-Keyword als IDL-Field-Name → Error
-//! - Inheritance-Cycle (Self-Reference) → Error
-//! - Include-Set vollstaendigkeit
-//! - Namespace-Tiefe
-//! - Indent-Width ≠ default
-//! - C++-Konstrukt-Negative: interface, valuetype, fixed, any, map, bitset, bitmask
+//! - Empty IDL → preamble-only header
+//! - Reserved C++ keyword as IDL field name → error
+//! - Inheritance cycle (self-reference) → error
+//! - Include-set completeness
+//! - Namespace depth
+//! - Indent width ≠ default
+//! - C++ construct negatives: interface, valuetype, fixed, any, map, bitset, bitmask
 
 #![allow(
     clippy::expect_used,
@@ -42,9 +42,9 @@ fn empty_ast_produces_preamble_only() {
 
 #[test]
 fn struct_with_reserved_field_name_is_rejected() {
-    // IDL erlaubt 'class' nicht als Identifier (es ist auch in IDL kein
-    // Keyword, aber der C++-Generator muss es ablehnen).
-    // 'register' ist in C++ reserviert, in IDL nicht — perfekter Test.
+    // IDL does not allow 'class' as an identifier (it is not a keyword
+    // in IDL either, but the C++ generator must reject it).
+    // 'register' is reserved in C++, not in IDL — a perfect test.
     let ast = parse("struct Foo { long register; };");
     let res = generate_cpp_header(&ast, &CppGenOptions::default());
     match res {
@@ -57,13 +57,13 @@ fn struct_with_reserved_field_name_is_rejected() {
 
 #[test]
 fn inheritance_self_loop_is_rejected() {
-    // Self-loop ueber forward-decl + def. IDL erlaubt zwar nicht
-    // direkt `struct X : X;`, aber wir koennen es manuell konstruieren.
-    // Wir bauen einen AST mit Self-Reference per parse('forward + def'),
-    // wobei IDL einen Self-Loop in der Grammar nicht erlaubt — daher
-    // testen wir das ueber zwei Structs, die sich gegenseitig erben.
-    // Der direkte Self-Loop wird in einem dedizierten Builder-Path
-    // konstruiert. Hier: indirekter A->B->A-Cycle.
+    // Self-loop via forward-decl + def. IDL does not allow `struct X : X;`
+    // directly, but we can construct it manually.
+    // We build an AST with a self-reference via parse('forward + def'),
+    // where IDL does not allow a self-loop in the grammar — so we test
+    // this via two structs that inherit from each other.
+    // The direct self-loop is constructed in a dedicated builder path.
+    // Here: indirect A->B->A cycle.
     let ast = parse(
         "struct A : B { long a; };\n\
          struct B : A { long b; };",
@@ -110,9 +110,9 @@ fn namespace_three_level_hierarchy_emits_open_close_pairs() {
         &CppGenOptions::default(),
     )
     .expect("gen");
-    // open + close fuer alle drei Module sichtbar
+    // open + close visible for all three modules
     let opens = cpp.matches("namespace ").count();
-    // 'namespace ' erscheint sowohl in `namespace X {` als auch in
+    // 'namespace ' appears both in `namespace X {` and in
     // `} // namespace X` — 3 opens + 3 closes = 6.
     assert!(opens >= 6, "namespace tokens count: {opens}");
 }
@@ -151,7 +151,7 @@ fn any_type_emits_dds_core_any() {
 
 #[test]
 fn fixed_type_emits_dds_core_template() {
-    // Frueher Reject; jetzt voll abgedeckt — siehe
+    // Previously rejected; now fully covered — see
     // `spec_conformance::fixed_member_emits_dds_core_fixed_template`.
     let ast = parse("typedef fixed<5, 2> Money;");
     let cpp = generate_cpp_header(&ast, &CppGenOptions::default()).expect("ok");
@@ -161,7 +161,7 @@ fn fixed_type_emits_dds_core_template() {
 
 #[test]
 fn bitset_emits_struct_with_bitfields() {
-    // Frueher Unsupported-Reject; jetzt voll abgedeckt — siehe
+    // Previously an unsupported-reject; now fully covered — see
     // `spec_conformance::bitset_emits_struct_with_value_field`.
     let ast = parse("bitset Flags { bitfield<3> a; };");
     let cpp = generate_cpp_header(&ast, &CppGenOptions::default()).expect("ok");
@@ -189,7 +189,7 @@ fn double_quoted_namespace_prefix_appears_outermost() {
         },
     )
     .expect("gen");
-    // ZeroDDS-Open muss VOR Inner-Open kommen.
+    // The ZeroDDS open must come BEFORE the Inner open.
     let zerodds_open = cpp.find("namespace ZeroDDS {").expect("zerodds open");
     let inner_open = cpp.find("namespace Inner {").expect("inner open");
     assert!(zerodds_open < inner_open);
@@ -202,15 +202,15 @@ fn forward_declared_struct_is_emitted_as_class_decl() {
         &CppGenOptions::default(),
     )
     .expect("gen");
-    // Erste Erscheinung ist eine Forward-Class-Decl:
+    // First appearance is a forward class decl:
     assert!(cpp.contains("class Forward;"));
-    // Spaeter folgt die volle Definition:
+    // The full definition follows later:
     assert!(cpp.contains("class Forward {"));
 }
 
 #[test]
 fn single_module_with_constant_does_not_emit_unwanted_includes() {
-    // Sicherstellen, dass <vector> nicht erscheint, wenn keine Sequence vorkommt.
+    // Ensure that <vector> does not appear when no sequence is present.
     let cpp = generate_cpp_header(
         &parse("module M { const long N = 10; };"),
         &CppGenOptions::default(),

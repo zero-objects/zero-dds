@@ -1,8 +1,8 @@
-//! C3.2 — Integration-Tests fuer den `CmsPkcs7Verifier`.
+//! C3.2 — integration tests for the `CmsPkcs7Verifier`.
 //!
-//! Fixtures werden mit OpenSSL erzeugt (siehe
-//! `tests/fixtures/generate_fixtures.sh`) und sind im Repo committed,
-//! damit der Test ohne OpenSSL-Build-Time-Dependency laeuft.
+//! Fixtures are generated with OpenSSL (see
+//! `tests/fixtures/generate_fixtures.sh`) and committed to the repo,
+//! so the test runs without an OpenSSL build-time dependency.
 
 #![allow(
     clippy::expect_used,
@@ -82,10 +82,10 @@ fn pem_pkcs7_detached_with_explicit_content_passes() {
     let xml = verifier
         .verify_and_extract(VALID_PEM)
         .expect("verify pem pkcs7");
-    // PEM-detached: extracted bytes sind die kanonische CRLF-Form des
-    // signierten Contents (RFC 1847). Der originale `permissions.xml`
-    // hat LF-Zeilenende; der Verifier liefert CRLF zurueck (und der
-    // XML-Parser ist whitespace-tolerant).
+    // PEM-detached: the extracted bytes are the canonical CRLF form of the
+    // signed content (RFC 1847). The original `permissions.xml`
+    // has LF line endings; the verifier returns CRLF (and the
+    // XML parser is whitespace-tolerant).
     let s = std::str::from_utf8(&xml).unwrap();
     assert!(s.contains("CN=alice"));
     assert!(s.contains("\r\n") || !s.contains('\n'));
@@ -113,9 +113,9 @@ fn wrong_ca_signature_is_rejected() {
 
 #[test]
 fn wrong_ca_accepts_when_using_its_own_ca() {
-    // Sanity-check: wenn der Caller die rogue-CA als Trust-Anchor
-    // setzt, geht die Validation durch (Cyclone-Live-Workflow waere
-    // wenn ein Op die Permissions-CA versehentlich tauscht).
+    // Sanity check: if the caller sets the rogue CA as the trust anchor,
+    // validation passes (the Cyclone live workflow would be an
+    // operator accidentally swapping the permissions CA).
     let verifier = CmsPkcs7Verifier::new(WRONG_CA_PEM).expect("rogue ca pem");
     let xml = verifier
         .verify_and_extract(WRONG_CA)
@@ -128,11 +128,11 @@ fn wrong_ca_accepts_when_using_its_own_ca() {
 fn tampered_xml_is_rejected() {
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
     let err = verifier.verify_and_extract(TAMPERED).unwrap_err();
-    // Tampering kann auf zwei Arten kollidieren:
-    //   - DER decode failure (wenn das geflippte Byte den ASN.1-
-    //     Container brechen wuerde),
-    //   - oder messageDigest/verify mismatch.
-    // Beide muessen Malformed sein.
+    // Tampering can collide in two ways:
+    //   - DER decode failure (if the flipped byte would break the ASN.1
+    //     container),
+    //   - or a messageDigest/verify mismatch.
+    // Both must be Malformed.
     assert!(
         matches!(err, PermissionsError::Malformed(_)),
         "unexpected: {err}"
@@ -142,7 +142,7 @@ fn tampered_xml_is_rejected() {
 #[test]
 fn truncated_smime_is_rejected() {
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
-    // Schneide nach dem Header, lass den Body leer.
+    // Cut after the header, leave the body empty.
     let split = VALID_OPAQUE
         .windows(4)
         .position(|w| w == b"\r\n\r\n")
@@ -167,12 +167,12 @@ fn missing_content_type_header_is_rejected() {
 #[test]
 fn multipart_without_two_parts_is_rejected() {
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
-    // Boundary deklariert, aber nur eine Boundary-Marke im Body.
+    // Boundary declared, but only one boundary marker in the body.
     let bad = b"Content-Type: multipart/signed; boundary=\"BB\"\r\n\r\n\
                 --BB\r\nbody1\r\n";
     let err = verifier.verify_and_extract(bad).unwrap_err();
     assert!(
-        matches!(err, PermissionsError::Malformed(ref m) if m.contains("Boundaries") || m.contains("Body-Parts"))
+        matches!(err, PermissionsError::Malformed(ref m) if m.contains("boundaries") || m.contains("body parts"))
     );
 }
 
@@ -236,17 +236,17 @@ fn property_driven_missing_ca_is_rejected() {
 
 #[test]
 fn empty_signature_in_signer_info_is_rejected() {
-    // Konstruieren eines Synth-Mini-PKCS#7 mit leerer Signatur ist
-    // aufwaendig — wir testen die Code-Path indirekt: nimm das
-    // valid-opaque-File und ersetze die Signatur-Bytes durch Nullen
-    // gleicher Laenge. Das produziert einen DER-syntaktisch validen
-    // Container mit zerstoerter Signatur — der ring-Verify schlaegt
-    // fehl, was als Malformed kommt.
+    // Constructing a synthetic mini PKCS#7 with an empty signature is
+    // laborious — we test the code path indirectly: take the
+    // valid-opaque file and replace the signature bytes with zeros
+    // of the same length. This produces a DER-syntactically valid
+    // container with a destroyed signature — the ring verify fails,
+    // which comes through as Malformed.
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
     let mut bytes = VALID_OPAQUE.to_vec();
-    // Brute: alle `0x30` SEQUENCE-Tags lassen wir, aber wir flippen
-    // die letzten 64 Body-Bytes — landen typisch in der base64-
-    // Signatur-Region.
+    // Brute: we keep all `0x30` SEQUENCE tags, but flip
+    // the last 64 body bytes — typically landing in the base64
+    // signature region.
     let len = bytes.len();
     for b in &mut bytes[len - 200..len - 50] {
         *b = match *b {
@@ -265,11 +265,11 @@ fn empty_signature_in_signer_info_is_rejected() {
 
 #[test]
 fn ca_pem_parser_accepts_multi_anchor_bundle() {
-    // CA + WRONG_CA in einer Datei → beide werden Trust-Anchors.
+    // CA + WRONG_CA in one file → both become trust anchors.
     let mut combined = CA_PEM.to_vec();
     combined.extend_from_slice(WRONG_CA_PEM);
     let verifier = CmsPkcs7Verifier::new(&combined).expect("multi-anchor");
-    // Beide Inputs muessen jetzt validieren.
+    // Both inputs must now validate.
     assert!(verifier.verify_and_extract(VALID_OPAQUE).is_ok());
     assert!(verifier.verify_and_extract(WRONG_CA).is_ok());
 }

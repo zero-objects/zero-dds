@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Inheritance-Resolver fuer QoS-Profile gemaess DDS-XML 1.0 §7.3.2.4.2.
+//! Inheritance resolver for QoS profiles per DDS-XML 1.0 §7.3.2.4.2.
 //!
-//! Override-Semantik: Ein Kind-Profile mit `base_name="parent"` erbt alle
-//! Policies vom Parent; jede explizit gesetzte Policy im Kind ueberschreibt
-//! die geerbte. Multi-Level-Vererbung (Grossparent-Kette) wird ueber den
-//! Foundation-`resolve_chain`-Helper realisiert (mit Zyklus-Erkennung und
-//! Tiefen-Cap).
+//! Override semantics: a child profile with `base_name="parent"` inherits all
+//! policies from the parent; each explicitly set policy in the child overrides
+//! the inherited one. Multi-level inheritance (grandparent chain) is realized
+//! via the foundation `resolve_chain` helper (with cycle detection and a
+//! depth cap).
 //!
-//! Lookup-Pfade: ein `base_name` darf entweder einen einzelnen
-//! Profile-Namen (innerhalb derselben Library) oder einen 2-Segment-Pfad
-//! `library::profile` (cross-Library) tragen. Die `lookup_path`-API in
-//! diesem Modul nutzt das gleiche 2-Segment-Format zum Bestimmen des
-//! Aufloesungs-Startpunkts.
+//! Lookup paths: a `base_name` may carry either a single
+//! profile name (within the same library) or a 2-segment path
+//! `library::profile` (cross-library). The `lookup_path` API in
+//! this module uses the same 2-segment format to determine the
+//! resolution start point.
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -21,61 +21,60 @@ use crate::errors::XmlError;
 use crate::inheritance::resolve_chain;
 use crate::qos::{EntityQos, QosLibrary, QosProfile};
 
-/// Aufloesungs-Resultat: ein flach gemergter Profile-Snapshot.
+/// Resolution result: a flat merged profile snapshot.
 ///
-/// Alle 6 Entity-QoS-Container werden erschoepfend gemergt: `None` heisst
-/// "auch nach Auflosung weder im Kind noch im Parent gesetzt", was bei
-/// der Materialisierung in `WriterQos`/`ReaderQos` zu Spec-Defaults
-/// abgebildet wird.
+/// All 6 entity QoS containers are merged exhaustively: `None` means
+/// "still set in neither child nor parent after resolution", which on
+/// materialization into `WriterQos`/`ReaderQos` is mapped to spec defaults.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResolvedQos {
-    /// Voller Lookup-Pfad des aufgeloesten Profile (`library::profile`).
+    /// Full lookup path of the resolved profile (`library::profile`).
     pub lookup_path: String,
-    /// Effektiver Topic-Filter (nach Inheritance-Override).
+    /// Effective topic filter (after the inheritance override).
     pub topic_filter: Option<String>,
-    /// Gemergtes `<datawriter_qos>`.
+    /// Merged `<datawriter_qos>`.
     pub datawriter_qos: Option<EntityQos>,
-    /// Gemergtes `<datareader_qos>`.
+    /// Merged `<datareader_qos>`.
     pub datareader_qos: Option<EntityQos>,
-    /// Gemergtes `<topic_qos>`.
+    /// Merged `<topic_qos>`.
     pub topic_qos: Option<EntityQos>,
-    /// Gemergtes `<publisher_qos>`.
+    /// Merged `<publisher_qos>`.
     pub publisher_qos: Option<EntityQos>,
-    /// Gemergtes `<subscriber_qos>`.
+    /// Merged `<subscriber_qos>`.
     pub subscriber_qos: Option<EntityQos>,
-    /// Gemergtes `<domainparticipant_qos>`.
+    /// Merged `<domainparticipant_qos>`.
     pub domainparticipant_qos: Option<EntityQos>,
 }
 
-/// Loest ein Profile inkl. Vererbungs-Kette auf und liefert einen
-/// flach gemergten Snapshot.
+/// Resolves a profile incl. its inheritance chain and returns a
+/// flat merged snapshot.
 ///
-/// `lookup_path` ist `"library::profile"` (Spec §7.3.2.4.2-Konvention).
-/// Falls das Profile keinen `base_name` hat, wird der Snapshot
-/// einfach 1:1 aus dem Profile uebernommen.
+/// `lookup_path` is `"library::profile"` (Spec §7.3.2.4.2 convention).
+/// If the profile has no `base_name`, the snapshot is
+/// simply taken 1:1 from the profile.
 ///
 /// # Errors
-/// * [`XmlError::UnresolvedReference`] — `lookup_path` zeigt auf keine
-///   existierende Library oder kein existierendes Profile.
-/// * [`XmlError::CircularInheritance`] — `base_name`-Kette enthaelt einen
-///   Zyklus.
-/// * [`XmlError::LimitExceeded`] — Inheritance-Tiefe ueberschritten.
+/// * [`XmlError::UnresolvedReference`] — `lookup_path` points to no
+///   existing library or no existing profile.
+/// * [`XmlError::CircularInheritance`] — the `base_name` chain contains a
+///   cycle.
+/// * [`XmlError::LimitExceeded`] — inheritance depth exceeded.
 pub fn resolve_profile(
     libraries: &[QosLibrary],
     lookup_path: &str,
 ) -> Result<ResolvedQos, XmlError> {
-    // Pfad in (lib, profile) zerlegen.
+    // Split the path into (lib, profile).
     let (lib_name, prof_name) = split_path(lookup_path)?;
 
-    // resolve_chain operiert auf den Profile-Namen innerhalb des
-    // gleichen Library-Scope. base_name darf aber selbst ein
-    // 2-Segment-Pfad sein — wir flatten das, indem wir intern Keys der
-    // Form "lib::profile" benutzen.
+    // resolve_chain operates on the profile names within the
+    // same library scope. But base_name may itself be a
+    // 2-segment path — we flatten that by internally using keys of the
+    // form "lib::profile".
     let chain = resolve_chain(&format!("{lib_name}::{prof_name}"), |canonical| {
         let (l, p) = split_path(canonical)?;
         let prof = locate(libraries, l, p)?;
-        // base_name normalisieren: Ein-Segment-Form bleibt in derselben
-        // Library; Zwei-Segment-Form ueberschreibt die Library.
+        // Normalize base_name: the one-segment form stays in the same
+        // library; the two-segment form overrides the library.
         Ok(prof.base_name.as_deref().map(|b| {
             if b.contains("::") {
                 b.to_string()
@@ -85,8 +84,8 @@ pub fn resolve_profile(
         }))
     })?;
 
-    // chain ist base-first: [grandparent, parent, child].
-    // Jeder Eintrag ist ein "lib::profile"-Key.
+    // chain is base-first: [grandparent, parent, child].
+    // Each entry is a "lib::profile" key.
     let mut topic_filter: Option<String> = None;
     let mut dw: Option<EntityQos> = None;
     let mut dr: Option<EntityQos> = None;
@@ -121,7 +120,7 @@ pub fn resolve_profile(
     })
 }
 
-/// Zerlegt einen Lookup-Pfad `library::profile` in seine zwei Segmente.
+/// Splits a lookup path `library::profile` into its two segments.
 fn split_path(path: &str) -> Result<(&str, &str), XmlError> {
     match path.split_once("::") {
         Some((l, p)) if !l.is_empty() && !p.is_empty() => Ok((l, p)),
@@ -144,8 +143,8 @@ fn locate<'a>(
         .ok_or_else(|| XmlError::UnresolvedReference(format!("profile `{lib_name}::{prof_name}`")))
 }
 
-/// Mergt `child` (override) auf `acc` (Parent-Akku). Nimmt die Override-
-/// Semantik aus [`EntityQos::merge`].
+/// Merges `child` (override) onto `acc` (parent accumulator). Takes the
+/// override semantics from [`EntityQos::merge`].
 fn merge_entity(acc: Option<EntityQos>, child: Option<&EntityQos>) -> Option<EntityQos> {
     match (acc, child) {
         (None, None) => None,
@@ -206,7 +205,7 @@ mod tests {
         let libs = parse(xml);
         let r = resolve_profile(&libs, "L::Derived").expect("resolve");
         let dw = r.datawriter_qos.as_ref().expect("dw");
-        // Reliability geerbt von Base.
+        // Reliability inherited from Base.
         assert_eq!(
             dw.reliability.unwrap().kind,
             zerodds_qos::ReliabilityKind::Reliable

@@ -1,36 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! OTLP/HTTP/JSON-Exporter fuer ZeroDDS-Telemetrie.
+//! OTLP/HTTP/JSON exporter for ZeroDDS telemetry.
 //!
 //! Crate `zerodds-observability-otlp`. Safety classification: **STANDARD**.
 //!
 //! Spec: `docs/specs/zerodds-observability-otlp-1.0.md`.
-//! Schichten-Position: Layer 4 — Core Services (Konsumenten-Pfad fuer
+//! Layer position: Layer 4 — core services (consumer path for
 //! `foundation::tracing::{Span, Histogram}` + `foundation::observability::Event`).
 //!
-//! # Was wird exportiert?
+//! # What is exported?
 //!
-//! Drei OTLP-Endpunkte werden bedient:
+//! Three OTLP endpoints are served:
 //!
-//! * **`/v1/traces`** — Spans aus [`foundation::tracing::Span`].
-//! * **`/v1/metrics`** — Histograms aus [`foundation::tracing::Histogram`].
-//! * **`/v1/logs`** — Events aus [`foundation::observability::Event`].
+//! * **`/v1/traces`** — spans from [`foundation::tracing::Span`].
+//! * **`/v1/metrics`** — histograms from [`foundation::tracing::Histogram`].
+//! * **`/v1/logs`** — events from [`foundation::observability::Event`].
 //!
-//! Wir benutzen das **OTLP/HTTP/JSON**-Format laut OpenTelemetry-Spec
+//! We use the **OTLP/HTTP/JSON** format per the OpenTelemetry spec
 //! v1.4 (https://github.com/open-telemetry/opentelemetry-proto/blob/v1.4.0/
-//! docs/specification.md#otlphttp). JSON ist offiziell unterstuetzt
-//! und braucht keine Protobuf-Codegen-Pipeline — perfekt fuer
-//! pure-Rust ohne `prost`/`tonic`.
+//! docs/specification.md#otlphttp). JSON is officially supported
+//! and needs no Protobuf codegen pipeline — perfect for
+//! pure Rust without `prost`/`tonic`.
 //!
-//! Pro Tick werden alle gepufferten Spans/Histogramme/Events in
-//! einer Batch-Request POSTed.
+//! Per tick all buffered spans/histograms/events are POSTed in
+//! one batch request.
 //!
-//! # Default-Endpoints
+//! # Default endpoints
 //!
-//! Standardmaessig laeuft ein lokaler OTel-Collector auf
-//! `http://127.0.0.1:4318/v1/traces` etc. — siehe
-//! `examples/otel/jaeger-compose.yml` fuer einen Local-Stack.
+//! By default a local OTel collector runs on
+//! `http://127.0.0.1:4318/v1/traces` etc. — see
+//! `examples/otel/jaeger-compose.yml` for a local stack.
 
 #![warn(missing_docs)]
 
@@ -42,21 +42,21 @@ use std::time::Duration;
 use zerodds_foundation::observability::{Component, Event, Level};
 use zerodds_foundation::tracing::{Histogram, Span, SpanKind, SpanStatus};
 
-/// Defaults — OTel-Collector auf localhost (Jaeger-compose).
+/// Defaults — OTel collector on localhost (Jaeger compose).
 pub const DEFAULT_OTLP_HOST: &str = "127.0.0.1";
-/// Default OTLP/HTTP-Port (OTel-Spec).
+/// Default OTLP/HTTP port (OTel spec).
 pub const DEFAULT_OTLP_PORT: u16 = 4318;
 
-/// Konfiguration fuer den Exporter.
+/// Configuration for the exporter.
 #[derive(Clone, Debug)]
 pub struct OtlpConfig {
-    /// OTel-Collector-Host.
+    /// OTel collector host.
     pub host: String,
-    /// OTel-Collector-Port (HTTP).
+    /// OTel collector port (HTTP).
     pub port: u16,
-    /// Service-Name fuer alle Resource-Attributes.
+    /// Service name for all resource attributes.
     pub service_name: String,
-    /// Service-Version (z.B. Cargo-Version).
+    /// Service version (e.g. the Cargo version).
     pub service_version: String,
     /// Connect/Write-Timeout.
     pub timeout: Duration,
@@ -74,8 +74,8 @@ impl Default for OtlpConfig {
     }
 }
 
-/// Exporter-Handle. Buffert Spans/Histogramme/Events und flush'd
-/// sie via POST an den OTel-Collector.
+/// Exporter handle. Buffers spans/histograms/events and flushes
+/// them via POST to the OTel collector.
 pub struct OtlpExporter {
     cfg: OtlpConfig,
     buf: Mutex<ExporterBuffers>,
@@ -88,7 +88,7 @@ struct ExporterBuffers {
     events: Vec<Event>,
 }
 
-/// Fehler beim Export.
+/// Error during export.
 #[derive(Debug)]
 pub enum ExportError {
     /// Connect/Write/Read fehlgeschlagen.
@@ -100,7 +100,7 @@ pub enum ExportError {
         /// Body-Snippet (max 256 byte).
         body_snippet: String,
     },
-    /// Mutex vergiftet.
+    /// Mutex poisoned.
     Poisoned,
 }
 
@@ -119,7 +119,7 @@ impl std::fmt::Display for ExportError {
 impl std::error::Error for ExportError {}
 
 impl OtlpExporter {
-    /// Neuer Exporter mit der gegebenen Config.
+    /// New exporter with the given config.
     #[must_use]
     pub fn new(cfg: OtlpConfig) -> Self {
         Self {
@@ -128,32 +128,32 @@ impl OtlpExporter {
         }
     }
 
-    /// Fuegt einen Span zur Pending-Queue hinzu.
+    /// Adds a span to the pending queue.
     pub fn add_span(&self, span: Span) {
         if let Ok(mut b) = self.buf.lock() {
             b.spans.push(span);
         }
     }
 
-    /// Fuegt ein Histogram (Snapshot) hinzu.
+    /// Adds a histogram (snapshot).
     pub fn add_histogram(&self, h: Histogram) {
         if let Ok(mut b) = self.buf.lock() {
             b.histograms.push(h);
         }
     }
 
-    /// Fuegt ein Event hinzu.
+    /// Adds an event.
     pub fn add_event(&self, e: Event) {
         if let Ok(mut b) = self.buf.lock() {
             b.events.push(e);
         }
     }
 
-    /// Flush + POST. Blockiert bis Collector geantwortet hat oder
-    /// Timeout erreicht ist. Leert die Buffer auch bei Fehler.
+    /// Flush + POST. Blocks until the collector has responded or
+    /// the timeout is reached. Clears the buffer even on error.
     ///
     /// # Errors
-    /// IO/HTTP-Fehler aus dem POST-Request.
+    /// IO/HTTP error from the POST request.
     pub fn flush(&self) -> Result<(), ExportError> {
         let (spans, histograms, events) = {
             let mut b = self.buf.lock().map_err(|_| ExportError::Poisoned)?;
@@ -178,7 +178,7 @@ impl OtlpExporter {
         Ok(())
     }
 
-    /// Direct HTTP-POST nach `path`. JSON content-type.
+    /// Direct HTTP POST to `path`. JSON content-type.
     fn post(&self, path: &str, body: &str) -> Result<(), ExportError> {
         let addr = format!("{}:{}", self.cfg.host, self.cfg.port);
         let mut stream = TcpStream::connect(&addr).map_err(ExportError::Io)?;
@@ -230,7 +230,7 @@ fn parse_http_status(resp: &str) -> (u16, usize) {
 }
 
 // ============================================================================
-// JSON-Builder — minimaler Serializer nach OTLP/HTTP/JSON-Spec.
+// JSON builder — minimal serializer per the OTLP/HTTP/JSON spec.
 // ============================================================================
 
 fn build_traces_json(cfg: &OtlpConfig, spans: &[Span]) -> String {
@@ -540,9 +540,9 @@ mod tests {
             attributes: Vec::new(),
         });
         let r = exp.flush();
-        // Erwartet: IO-Fehler beim Connect.
+        // Expected: IO error on connect.
         assert!(r.is_err());
-        // Buffer wurde dennoch geleert.
+        // Buffer was emptied nonetheless.
         let r2 = exp.flush();
         assert!(r2.is_ok(), "second flush with empty buffers should be ok");
     }

@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! RPC-Endpoint-Helper — Spec §7.6.2.
+//! RPC endpoint helper — Spec §7.6.2.
 //!
-//! Ein RPC-Endpoint ist ein Tupel von zwei DDS-Endpoints:
+//! An RPC endpoint is a tuple of two DDS endpoints:
 //!
-//! * **Requester**: Request-Writer (sendet Anfragen) + Reply-Reader (liest
-//!   Antworten).
-//! * **Replier**: Request-Reader (empfaengt Anfragen) + Reply-Writer
-//!   (sendet Antworten).
+//! * **Requester**: request writer (sends requests) + reply reader (reads
+//!   replies).
+//! * **Replier**: request reader (receives requests) + reply writer
+//!   (sends replies).
 //!
-//! Spec §7.6.2 fordert, dass die zwei zusammengehoerigen Endpoints in der
-//! SEDP-Discovery als logisches Bundle erkennbar sind. Wir setzen dafuer:
+//! Spec §7.6.2 requires that the two related endpoints are recognizable
+//! as a logical bundle in SEDP discovery. We set for this:
 //!
-//! * `PID_SERVICE_INSTANCE_NAME` (0x0080) auf beide Endpoints — Service-
-//!   Identifikation.
-//! * `PID_RELATED_ENTITY_GUID` (0x0081) — auf jeden Endpoint zeigt diese
-//!   PID auf den GUID des Pendant-Endpoints (Request-Writer ↔ Reply-Reader
-//!   beim Requester; Request-Reader ↔ Reply-Writer beim Replier).
-//! * `PID_TOPIC_ALIASES` (0x0082) optional — alternative Topic-Namen.
+//! * `PID_SERVICE_INSTANCE_NAME` (0x0080) on both endpoints — service
+//!   identification.
+//! * `PID_RELATED_ENTITY_GUID` (0x0081) — on each endpoint this
+//!   PID points to the GUID of the counterpart endpoint (request writer ↔ reply reader
+//!   for the requester; request reader ↔ reply writer for the replier).
+//! * `PID_TOPIC_ALIASES` (0x0082) optional — alternative topic names.
 //!
-//! Diese Stufe (C6.1.B) baut nur die **statische Konstruktion** auf:
-//! GUIDs zuweisen, Topic-Namen ableiten, Discovery-PIDs in
-//! [`PublicationBuiltinTopicData`] / [`SubscriptionBuiltinTopicData`]
-//! eintragen. Threading, History-Caches und Korrelation per
-//! `PID_RELATED_SAMPLE_IDENTITY` sind C6.1.C.
+//! This stage (C6.1.B) only builds the **static construction**:
+//! assign GUIDs, derive topic names, enter discovery PIDs into
+//! [`PublicationBuiltinTopicData`] / [`SubscriptionBuiltinTopicData`].
+//! Threading, history caches and correlation via
+//! `PID_RELATED_SAMPLE_IDENTITY` are C6.1.C.
 
 extern crate alloc;
 
@@ -43,7 +43,7 @@ use crate::topic_naming::ServiceTopicNames;
 // Builder
 // ---------------------------------------------------------------------
 
-/// Builder fuer ein RPC-Endpoint-Pair (Requester _oder_ Replier).
+/// Builder for an RPC endpoint pair (requester _or_ replier).
 #[derive(Debug, Clone)]
 pub struct RpcEndpointBuilder {
     service: ServiceDef,
@@ -57,24 +57,24 @@ pub struct RpcEndpointBuilder {
 }
 
 impl RpcEndpointBuilder {
-    /// Neuer Builder fuer einen Service.
+    /// New builder for a service.
     ///
-    /// `participant_prefix` ist der GUID-Prefix des hostenden Participants.
-    /// `request_entity`/`reply_entity` sind die EntityIds, die intern fuer
-    /// den Request- bzw. Reply-Endpoint vergeben werden — der Aufrufer
-    /// (DCPS-Layer) muss sicherstellen, dass sie eindeutig sind.
+    /// `participant_prefix` is the GUID prefix of the hosting participant.
+    /// `request_entity`/`reply_entity` are the EntityIds assigned internally
+    /// for the request and reply endpoint respectively — the caller
+    /// (DCPS layer) must ensure they are unique.
     ///
     /// # Errors
-    /// `RpcError::InvalidServiceName` wenn der Service-Name keinem
-    /// IDL-Identifier entspricht.
+    /// `RpcError::InvalidServiceName` if the service name does not
+    /// correspond to an IDL identifier.
     pub fn new(
         service: ServiceDef,
         participant_prefix: GuidPrefix,
         request_entity: EntityId,
         reply_entity: EntityId,
     ) -> RpcResult<Self> {
-        // Validierungs-Round-Trip ueber `topic_names()` — wirft
-        // InvalidServiceName, falls der Name leer/illegal ist.
+        // Validation round-trip via `topic_names()` — throws
+        // InvalidServiceName if the name is empty/illegal.
         let _ = service.topic_names()?;
         let type_name_request = alloc::format!("{}_Request", service.name);
         let type_name_reply = alloc::format!("{}_Reply", service.name);
@@ -90,45 +90,45 @@ impl RpcEndpointBuilder {
         })
     }
 
-    /// Setzt den `PID_SERVICE_INSTANCE_NAME` (DDS-RPC §7.8.2). Erlaubt
-    /// es, mehrere Instanzen desselben Service-Typs auf einem Participant
-    /// disjunkt zu adressieren (z.B. `"calc-A"` vs. `"calc-B"`).
+    /// Sets the `PID_SERVICE_INSTANCE_NAME` (DDS-RPC §7.8.2). Allows
+    /// addressing multiple instances of the same service type on one
+    /// participant disjointly (e.g. `"calc-A"` vs. `"calc-B"`).
     #[must_use]
     pub fn instance_name(mut self, name: impl Into<String>) -> Self {
         self.instance_name = Some(name.into());
         self
     }
 
-    /// Setzt `PID_TOPIC_ALIASES`. Reihenfolge bleibt erhalten.
+    /// Sets `PID_TOPIC_ALIASES`. Order is preserved.
     #[must_use]
     pub fn topic_aliases(mut self, aliases: Vec<String>) -> Self {
         self.topic_aliases = aliases;
         self
     }
 
-    /// Override des per-Default abgeleiteten Type-Names der Request-
-    /// Wire-Struktur (`<Service>_Request`).
+    /// Override the type name of the request wire structure derived by
+    /// default (`<Service>_Request`).
     #[must_use]
     pub fn request_type_name(mut self, n: impl Into<String>) -> Self {
         self.type_name_request = n.into();
         self
     }
 
-    /// Override des per-Default abgeleiteten Type-Names der Reply-
-    /// Wire-Struktur.
+    /// Override the type name of the reply wire structure derived by
+    /// default.
     #[must_use]
     pub fn reply_type_name(mut self, n: impl Into<String>) -> Self {
         self.type_name_reply = n.into();
         self
     }
 
-    /// Baut das Requester-Pair: Request-**Writer**-Discovery + Reply-
-    /// **Reader**-Discovery, mit korrekt ueberkreuzten `RELATED_ENTITY_GUID`-
-    /// Verweisen.
+    /// Builds the requester pair: request **writer** discovery + reply
+    /// **reader** discovery, with correctly cross-referenced `RELATED_ENTITY_GUID`
+    /// references.
     ///
     /// # Errors
-    /// `RpcError::EmptyService` wenn der Service keine Methoden hat
-    /// (nichts zu transportieren).
+    /// `RpcError::EmptyService` if the service has no methods
+    /// (nothing to transport).
     pub fn build_requester(&self) -> RpcResult<RequesterEndpoint> {
         self.check_non_empty()?;
         let topics = self.service.topic_names()?;
@@ -153,11 +153,11 @@ impl RpcEndpointBuilder {
         })
     }
 
-    /// Baut das Replier-Pair: Request-**Reader**-Discovery + Reply-
-    /// **Writer**-Discovery.
+    /// Builds the replier pair: request **reader** discovery + reply
+    /// **writer** discovery.
     ///
     /// # Errors
-    /// Siehe [`Self::build_requester`].
+    /// See [`Self::build_requester`].
     pub fn build_replier(&self) -> RpcResult<ReplierEndpoint> {
         self.check_non_empty()?;
         let topics = self.service.topic_names()?;
@@ -228,6 +228,8 @@ impl RpcEndpointBuilder {
                 Some(self.topic_aliases.clone())
             },
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: Vec::new(),
+            multicast_locators: Vec::new(),
         }
     }
 
@@ -269,6 +271,8 @@ impl RpcEndpointBuilder {
                 Some(self.topic_aliases.clone())
             },
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: Vec::new(),
+            multicast_locators: Vec::new(),
         }
     }
 }
@@ -344,6 +348,7 @@ mod tests {
                 span: sp(),
             }],
             raises: Vec::new(),
+            context: Vec::new(),
             annotations: Vec::new(),
             span: sp(),
         };

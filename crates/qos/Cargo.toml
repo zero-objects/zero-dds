@@ -21,13 +21,14 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std"]
-# `alloc` ist mandatory (zerodds-qos benoetigt String/Vec fuer Partition,
-# GenericData, ResourceLimits). Das Feature bleibt aus Konsistenz-
-# Gruenden mit den anderen ZeroDDS-Crates erhalten.
+# `alloc` is mandatory (zerodds-qos needs String/Vec for Partition,
+# GenericData, ResourceLimits). The feature is kept for consistency
+# with the other ZeroDDS crates.
 std = ["alloc"]
 alloc = []
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr", default-features = false, features = ["alloc"] }
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]

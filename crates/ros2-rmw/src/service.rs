@@ -1,35 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! ROS-2 Service-Pattern (Request-Reply) als 2-Topic-Pair.
+//! ROS 2 service pattern (request-reply) as a 2-topic pair.
 //!
 //! Spec: `zerodds-ros2-bridge-1.0.md` §4.2 (= REP-2003 §3.4).
 //!
-//! Ein ROS-2-Service `/foo/bar` mit `Foo.srv` wird auf zwei DDS-Topics
-//! abgebildet:
+//! A ROS-2 service `/foo/bar` with `Foo.srv` is mapped to two DDS topics:
 //! * **Request**:  `rq/foo/barRequest`  (Reliable+KeepLast)
 //! * **Reply**:    `rr/foo/barReply`    (Reliable+KeepLast)
 //!
-//! Plus: in den Sample-Properties stehen `client_guid` (16-Byte) +
-//! `sequence_number` (i64), so dass mehrere Clients parallel
-//! requesten koennen. Wir liefern hier die Topic-Name-Generation und
-//! eine in-memory Correlation-Map.
+//! Plus: the sample properties carry `client_guid` (16 bytes) +
+//! `sequence_number` (i64), so that multiple clients can
+//! request in parallel. Here we provide the topic-name generation and
+//! an in-memory correlation map.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Topic-Name-Paar fuer einen ROS-2-Service.
+/// Topic-name pair for a ROS-2 service.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceTopics {
-    /// `rq/<base>Request`-Topic.
+    /// `rq/<base>Request` topic.
     pub request: String,
-    /// `rr/<base>Reply`-Topic.
+    /// `rr/<base>Reply` topic.
     pub reply: String,
 }
 
 impl ServiceTopics {
-    /// Generiere die Topic-Namen aus dem ROS-2-Service-Path.
+    /// Generates the topic names from the ROS-2 service path.
     /// Spec §4.2: prefix `rq/`/`rr/`, suffix `Request`/`Reply`.
     #[must_use]
     pub fn from_service(ros_service_name: &str) -> Self {
@@ -41,32 +40,32 @@ impl ServiceTopics {
     }
 }
 
-/// Korrelation-Token: 16-Byte client_guid + i64 sequence_number.
+/// Correlation token: 16-byte client_guid + i64 sequence_number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ServiceRequestId {
-    /// Client-GUID (DDS-Side oft GUID_PREFIX || EntityId).
+    /// Client GUID (DDS side often GUID_PREFIX || EntityId).
     pub client_guid: [u8; 16],
-    /// Aufsteigend pro Client.
+    /// Ascending per client.
     pub sequence_number: i64,
 }
 
-/// Pending-Request-Tracker. Caller-Thread legt ein Token an, der
-/// Reply-Listener-Thread loest es auf.
+/// Pending-request tracker. The caller thread creates a token, the
+/// reply-listener thread resolves it.
 #[derive(Debug, Clone, Default)]
 pub struct PendingRequests {
     pending: BTreeMap<ServiceRequestId, Vec<u8>>,
 }
 
 impl PendingRequests {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Registriere einen ausstehenden Request mit dem serialisierten
-    /// Request-Body (fuer Re-Send-Cases). Liefert `false` wenn das
-    /// Token schon registriert war.
+    /// Registers an outstanding request with the serialized
+    /// request body (for re-send cases). Returns `false` if the
+    /// token was already registered.
     pub fn register(&mut self, id: ServiceRequestId, body: Vec<u8>) -> bool {
         if self.pending.contains_key(&id) {
             return false;
@@ -75,13 +74,13 @@ impl PendingRequests {
         true
     }
 
-    /// Match einen eingehenden Reply mit der `request_id` ab. Liefert
-    /// das vorher registrierte Request-Body wenn ein Match existiert.
+    /// Matches an incoming reply against the `request_id`. Returns
+    /// the previously registered request body if a match exists.
     pub fn match_reply(&mut self, id: ServiceRequestId) -> Option<Vec<u8>> {
         self.pending.remove(&id)
     }
 
-    /// Wieviele Requests sind noch offen?
+    /// How many requests are still outstanding?
     #[must_use]
     pub fn outstanding(&self) -> usize {
         self.pending.len()

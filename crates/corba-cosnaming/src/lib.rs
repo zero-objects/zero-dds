@@ -7,10 +7,10 @@
 //! Spec OMG CosNaming 1.3 (`formal/2004-10-03`).
 //!
 //! Voller NamingContext + NamingContextExt + Stringified-Name +
-//! corbaname-URL-Unterstuetzung. In-Memory-Implementation, voll
-//! spec-konform inkl. aller 5 Exception-Klassen.
+//! corbaname URL support. In-memory implementation, fully
+//! spec-compliant incl. all 5 exception classes.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```
 //! use zerodds_corba_cosnaming::NameComponent;

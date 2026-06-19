@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DLRL 1.2 Metamodel + Mapping + Entity-Hierarchie + Exception-Types.
+//! DLRL 1.2 metamodel + mapping + entity hierarchy + exception types.
 //!
-//! Spec-Quelle: `dds-1.2.pdf` §8 DLRL. Wir liefern die UML-Metamodel-
-//! Klassen-Hierarchie + Mapping-Information + die 17 Entity-Klassen
-//! + 8 Exception-Types + Default-Mapping-Convention als Stub-Layer.
+//! Spec source: `dds-1.2.pdf` §8 DLRL. We provide the UML metamodel
+//! class hierarchy + mapping information + the 17 entity classes
+//! + 8 exception types + default mapping convention as a stub layer.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
 // ===========================================================================
-// §8.1.3.2.1 ObjectRoot — Inheritance-Basis
+// §8.1.3.2.1 ObjectRoot — inheritance base
 // ===========================================================================
 
-/// Spec §8.1.3.2.1 — `ObjectRoot` als gemeinsame abstrakte Basis fuer
-/// alle DLRL-Objects.
+/// Spec §8.1.3.2.1 — `ObjectRoot` as the common abstract base for all
+/// DLRL objects.
 pub trait ObjectRoot: Send + Sync {
-    /// Spec §8.1.3.1 — Object-Identity (oid).
+    /// Spec §8.1.3.1 — object identity (oid).
     fn oid(&self) -> u64;
-    /// Repository-ID des Object-Type.
+    /// Repository ID of the object type.
     fn repository_id(&self) -> &str;
     /// Spec §8.1.3.1 — `is_modified()`.
     fn is_modified(&self) -> bool;
@@ -28,78 +28,78 @@ pub trait ObjectRoot: Send + Sync {
 }
 
 // ===========================================================================
-// §8.1.3.3 + §8.1.4.4 Metamodel mit Mapping-Information
+// §8.1.3.3 + §8.1.4.4 Metamodel with mapping information
 // ===========================================================================
 
-/// Spec §8.1.3.3 — `Class`-Metamodel-Element.
+/// Spec §8.1.3.3 — `Class` metamodel element.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClassMetamodel {
-    /// Class-Name.
+    /// Class name.
     pub name: String,
-    /// Repository-ID.
+    /// Repository ID.
     pub repository_id: String,
-    /// Spec §8.1.4.4 — DCPS-Topic-Mapping (Default = `<Class>`).
+    /// Spec §8.1.4.4 — DCPS topic mapping (default = `<Class>`).
     pub main_topic: String,
-    /// Spec §8.1.4.4 — Field-Name fuer oid (Default = `oid`).
+    /// Spec §8.1.4.4 — field name for oid (default = `oid`).
     pub oid_field: String,
-    /// Spec §8.1.4.4 — Field-Name fuer Class (Default = `class`).
+    /// Spec §8.1.4.4 — field name for class (default = `class`).
     pub class_field: String,
-    /// Spec §8.1.4.4 — `full_oid_required`-Flag.
+    /// Spec §8.1.4.4 — `full_oid_required` flag.
     pub full_oid_required: bool,
-    /// Spec §8.1.4.4 — `final` Flag (kein Sub-Class).
+    /// Spec §8.1.4.4 — `final` flag (no subclass).
     pub final_class: bool,
 }
 
-/// Spec §8.1.3.3 — `MultiAttribute`-Element (Sequence/List).
+/// Spec §8.1.3.3 — `MultiAttribute` element (sequence/list).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MultiAttributeMetamodel {
-    /// Attribute-Name.
+    /// Attribute name.
     pub name: String,
-    /// Topic-Mapping (Default = `<Class>.<attribute>`).
+    /// Topic mapping (default = `<Class>.<attribute>`).
     pub topic: String,
-    /// Spec §8.1.4.4 — `target_field`-Name.
+    /// Spec §8.1.4.4 — `target_field` name.
     pub target_field: String,
-    /// Spec §8.1.4.4 — `index_field` fuer Multi-Attribute.
+    /// Spec §8.1.4.4 — `index_field` for multi-attribute.
     pub index_field: String,
-    /// Spec §8.1.4.4 — `key_fields` (Liste).
+    /// Spec §8.1.4.4 — `key_fields` (list).
     pub key_fields: Vec<String>,
 }
 
-/// Spec §8.1.3.3 — `MonoRelation`-Element (1:1-Beziehung).
+/// Spec §8.1.3.3 — `MonoRelation` element (1:1 relationship).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MonoRelationMetamodel {
-    /// Relation-Name.
+    /// Relation name.
     pub name: String,
-    /// Topic-Mapping.
+    /// Topic mapping.
     pub topic: String,
-    /// Target-Fields (Liste).
+    /// Target fields (list).
     pub target_fields: Vec<String>,
-    /// Key-Fields (Liste).
+    /// Key fields (list).
     pub key_fields: Vec<String>,
-    /// `full_oid_required`-Flag.
+    /// `full_oid_required` flag.
     pub full_oid_required: bool,
-    /// `is_composition`-Flag.
+    /// `is_composition` flag.
     pub is_composition: bool,
 }
 
-/// Spec §8.1.4.3 — Default-Mapping-Convention.
+/// Spec §8.1.4.3 — default mapping convention.
 pub mod default_mapping {
-    /// Default-Topic-Name = `<Class>`.
+    /// Default topic name = `<Class>`.
     #[must_use]
     pub fn topic_name(class: &str) -> alloc::string::String {
         class.into()
     }
 
-    /// Default-OID-Field-Name.
+    /// Default oid field name.
     pub const DEFAULT_OID_FIELD: &str = "oid";
 
-    /// Default-Class-Field-Name.
+    /// Default class field name.
     pub const DEFAULT_CLASS_FIELD: &str = "class";
 
-    /// Default-Index-Field-Name fuer Multi-Attribute.
+    /// Default index field name for multi-attribute.
     pub const DEFAULT_INDEX_FIELD: &str = "index";
 
-    /// Default-Multi-Topic-Form = `<Class>.<attribute>`.
+    /// Default multi-topic form = `<Class>.<attribute>`.
     #[must_use]
     pub fn multi_topic(class: &str, attribute: &str) -> alloc::string::String {
         alloc::format!("{class}.{attribute}")
@@ -107,10 +107,10 @@ pub mod default_mapping {
 }
 
 // ===========================================================================
-// §8.1.6.2 — 17 DLRL-Entity-Klassen
+// §8.1.6.2 — 17 DLRL entity classes
 // ===========================================================================
 
-/// Spec §8.1.6.2 — DLRL-Entity-Klassen-Liste.
+/// Spec §8.1.6.2 — DLRL entity class list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DlrlEntityKind {
     /// `CacheFactory`.
@@ -150,7 +150,7 @@ pub enum DlrlEntityKind {
 }
 
 impl DlrlEntityKind {
-    /// Spec §8.1.6.2 — Spec-Klassen-Name.
+    /// Spec §8.1.6.2 — spec class name.
     #[must_use]
     pub const fn spec_name(self) -> &'static str {
         match self {
@@ -174,7 +174,7 @@ impl DlrlEntityKind {
         }
     }
 
-    /// Liste aller 17 Entity-Kinds.
+    /// List of all 17 entity kinds.
     #[must_use]
     pub fn all() -> [Self; 17] {
         [
@@ -200,45 +200,45 @@ impl DlrlEntityKind {
 }
 
 // ===========================================================================
-// §8.1.6.2 — 8 Exception-Typen
+// §8.1.6.2 — 8 exception types
 // ===========================================================================
 
-/// Spec §8.1.6.2 — DLRL-Exception-Hierarchie.
+/// Spec §8.1.6.2 — DLRL exception hierarchy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DlrlException {
-    /// `DCPSError` — Generic-Error vom DCPS-Layer.
+    /// `DCPSError` — generic error from the DCPS layer.
     DcpsError {
-        /// Reason-String.
+        /// Reason string.
         reason: String,
     },
-    /// `BadHomeDefinition` — Class-/Home-Mismatch.
+    /// `BadHomeDefinition` — class/home mismatch.
     BadHomeDefinition {
-        /// Reason-String.
+        /// Reason string.
         reason: String,
     },
-    /// `NotFound` — Object/Selection nicht im Cache.
+    /// `NotFound` — object/selection not in the cache.
     NotFound,
-    /// `AlreadyExisting` — Object mit dem Key existiert bereits.
+    /// `AlreadyExisting` — an object with that key already exists.
     AlreadyExisting,
-    /// `AlreadyDeleted` — Operation auf bereits geloeschtem Object.
+    /// `AlreadyDeleted` — operation on an already-deleted object.
     AlreadyDeleted,
-    /// `PreconditionNotMet` — Constraint-Violation (z.B.
-    /// is_modified-Tracking-Pflicht).
+    /// `PreconditionNotMet` — constraint violation (e.g. the
+    /// is_modified tracking requirement).
     PreconditionNotMet {
-        /// Constraint-Beschreibung.
+        /// Constraint description.
         constraint: String,
     },
-    /// `NoSuchElement` — Iterator-/Collection-Out-of-Range.
+    /// `NoSuchElement` — iterator/collection out of range.
     NoSuchElement,
-    /// `SQLError` — Annex-B-Query-Filter-Parse-Error.
+    /// `SQLError` — Annex B query-filter parse error.
     SqlError {
-        /// Reason-String.
+        /// Reason string.
         reason: String,
     },
 }
 
 impl DlrlException {
-    /// Spec-Exception-ID (Repository-ID-Form).
+    /// Spec exception ID (repository-ID form).
     #[must_use]
     pub const fn repository_id(&self) -> &'static str {
         match self {
@@ -255,46 +255,46 @@ impl DlrlException {
 }
 
 // ===========================================================================
-// §8.1.5 Cache-DCPS-Lifecycle (Attachment + Creation + QoS)
+// §8.1.5 Cache-DCPS lifecycle (attachment + creation + QoS)
 // ===========================================================================
 
-/// Spec §8.1.5.1 — Cache-Attachment-State.
+/// Spec §8.1.5.1 — cache attachment state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheAttachmentState {
-    /// Cache nicht an DCPS-Pub/Sub gebunden.
+    /// Cache not bound to a DCPS pub/sub.
     Detached,
-    /// Cache an Subscriber gebunden (Read-Only).
+    /// Cache bound to a subscriber (read-only).
     AttachedSubscriber,
-    /// Cache an Publisher gebunden (Write-Only).
+    /// Cache bound to a publisher (write-only).
     AttachedPublisher,
-    /// Cache an beide (Read-Write).
+    /// Cache bound to both (read-write).
     AttachedBoth,
 }
 
-/// Spec §8.1.5 — Cache-Mode (Spec §8.1.6.1.2).
+/// Spec §8.1.5 — cache mode (Spec §8.1.6.1.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheMode {
-    /// `Transparent` — Cache laedt automatisch, kein Caller-Pull.
+    /// `Transparent` — cache loads automatically, no caller pull.
     Transparent,
-    /// `OnDemand` — Caller laedt explizit via `refresh`.
+    /// `OnDemand` — caller loads explicitly via `refresh`.
     OnDemand,
 }
 
 // ===========================================================================
-// Annex B — Query/Filter mit SQL-92-Subset
+// Annex B — query/filter with SQL-92 subset
 // ===========================================================================
 
-/// Annex B — `QueryCriterion`-Expression.
+/// Annex B — `QueryCriterion` expression.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryExpression {
-    /// SQL-92-Subset-Expression (z.B. `"price > 100 AND symbol = 'AAPL'"`).
+    /// SQL-92 subset expression (e.g. `"price > 100 AND symbol = 'AAPL'"`).
     pub expr: String,
-    /// Bind-Parameter.
+    /// Bind parameters.
     pub params: Vec<String>,
 }
 
 impl QueryExpression {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(expr: impl Into<String>) -> Self {
         Self {
@@ -303,7 +303,7 @@ impl QueryExpression {
         }
     }
 
-    /// Fuegt einen Bind-Parameter hinzu.
+    /// Adds a bind parameter.
     pub fn add_param(&mut self, p: impl Into<String>) {
         self.params.push(p.into());
     }
@@ -403,7 +403,7 @@ mod tests {
         assert!(r.full_oid_required);
     }
 
-    // §8.1.6.2 17 Entity-Klassen
+    // §8.1.6.2 17 entity classes
     #[test]
     fn dlrl_entity_kinds_count_17() {
         assert_eq!(DlrlEntityKind::all().len(), 17);
@@ -426,7 +426,7 @@ mod tests {
         assert_eq!(DlrlEntityKind::IntMap.spec_name(), "IntMap");
     }
 
-    // §8.1.6.2 8 Exception-Typen
+    // §8.1.6.2 8 exception types
     #[test]
     fn dlrl_exception_repository_ids_distinct() {
         let exceptions = [
@@ -463,7 +463,7 @@ mod tests {
         }
     }
 
-    // §8.1.5 Cache-Lifecycle
+    // §8.1.5 cache lifecycle
     #[test]
     fn cache_attachment_states_distinct() {
         assert_ne!(

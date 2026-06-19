@@ -1,13 +1,16 @@
-//! PSK-Profile Integration-Tests (Spec §10.7-§10.9, C3.9).
+//! PSK profile integration tests (spec §10.7-§10.9, C3.9).
 //!
-//! End-to-End: PSK-Authentication-Handshake → SharedSecret → AES-GCM-
-//! Crypto-Plugin (via SharedSecretProvider). Demonstriert dass das
-//! PSK-Profile interoperabel mit dem bestehenden Symmetric-Cipher-
-//! Pfad ist (gleiche Wire-Bytes, andere Key-Source).
+//! End-to-end: PSK authentication handshake → SharedSecret → AES-GCM
+//! crypto plugin (via SharedSecretProvider). Demonstrates that the
+//! PSK profile is interoperable with the existing symmetric-cipher path:
+//! the Kx key is derived from the shared secret, which protects the
+//! crypto-token exchange; the actual data key is transferred (FU2
+//! dual-key, spec §9.5.3.5) via a token, not derived
+//! directly.
 //!
 //! zerodds-lint: allow no_dyn_in_safe
-//! (Integration-Test nutzt `Arc<dyn SharedSecretProvider>` — der Trait-
-//! Object-Typ ist genau das Plugin-Substitution-Interface.)
+//! (the integration test uses `Arc<dyn SharedSecretProvider>` — the trait
+//! object type is exactly the plugin substitution interface.)
 
 #![allow(
     clippy::expect_used,
@@ -65,9 +68,9 @@ fn run_handshake(
     (alice_hs, bob_hs)
 }
 
-/// Sammelt die Bytes eines abgeschlossenen Handshakes ueber einen
-/// `Arc<dyn SharedSecretProvider>`-Wrapper. Erlaubt dass der Crypto-
-/// Plugin via PKI-Crypto-Hook den Master-Key aus dem PSK-Secret zieht.
+/// Collects the bytes of a completed handshake via an
+/// `Arc<dyn SharedSecretProvider>` wrapper. Allows the crypto
+/// plugin to pull the master key from the PSK secret via the PKI crypto hook.
 struct ArcWrapper(Arc<dyn SharedSecretProvider>);
 
 impl SharedSecretProvider for ArcWrapper {
@@ -81,7 +84,7 @@ impl SharedSecretProvider for ArcWrapper {
 
 #[test]
 fn psk_handshake_then_aes_gcm_roundtrip_uses_shared_secret() {
-    // 1) Beide Seiten haben den gleichen PSK.
+    // 1) Both sides have the same PSK.
     let psk = vec![0x55u8; 32];
     let mut alice_auth = PskAuthenticationPlugin::new();
     let mut bob_auth = PskAuthenticationPlugin::new();
@@ -90,19 +93,19 @@ fn psk_handshake_then_aes_gcm_roundtrip_uses_shared_secret() {
     let alice_id = alice_auth.validate_local_psk_identity("ab").unwrap();
     let bob_id = bob_auth.validate_local_psk_identity("ab").unwrap();
 
-    // 2) Handshake durchlaufen.
+    // 2) Run the handshake.
     let (alice_hs, bob_hs) = run_handshake(&mut alice_auth, &mut bob_auth, alice_id, bob_id);
     let alice_secret = alice_auth.shared_secret(alice_hs).unwrap();
     let bob_secret = bob_auth.shared_secret(bob_hs).unwrap();
 
-    // 3) Verify: beide Seiten haben gleichen Secret.
+    // 3) Verify: both sides have the same secret.
     let alice_bytes = alice_auth.secret_bytes(alice_secret).unwrap().to_vec();
     let bob_bytes = bob_auth.secret_bytes(bob_secret).unwrap().to_vec();
     assert_eq!(alice_bytes, bob_bytes);
 
-    // 4) AES-GCM-Plugin auf beiden Seiten via SharedSecretProvider.
-    //    SharedSecretProvider ist nicht Object-safe-clone-bar; wir
-    //    bauen eine Mem-Provider-Bridge mit den gleichen 32 byte.
+    // 4) AES-GCM plugin on both sides via SharedSecretProvider.
+    //    SharedSecretProvider is not object-safe-cloneable; we
+    //    build a mem-provider bridge with the same 32 bytes.
     use std::collections::BTreeMap;
     use std::sync::RwLock as StdRwLock;
     struct MemProvider {
@@ -153,6 +156,19 @@ fn psk_handshake_then_aes_gcm_roundtrip_uses_shared_secret() {
         .register_matched_remote_participant(bob_local, IdentityHandle(1), bob_secret)
         .unwrap();
 
+    // FU2 dual-key (spec §9.5.3.5): the data slot is a locally generated
+    // random key — NOT derived from the shared secret. It is transferred to
+    // the peer via a crypto token (live over the VolatileSecure topic, which
+    // is itself protected with the Kx key derived from the shared secret).
+    // Here alice exports her send key and bob installs it for
+    // the decode — only after that does the user DATA round-trip.
+    let alice_data_token = alice_crypto
+        .create_local_participant_crypto_tokens(alice_to_bob, alice_to_bob)
+        .unwrap();
+    bob_crypto
+        .set_remote_participant_crypto_tokens(bob_to_alice, bob_to_alice, &alice_data_token)
+        .unwrap();
+
     let plain = b"psk-driven aes-gcm sample";
     let wire = alice_crypto
         .encrypt_submessage(alice_to_bob, &[], plain, &[])
@@ -195,9 +211,9 @@ fn psk_profile_bundle_factory_assembles_three_plugins() {
         "DDS:Crypto:PSK:AES-GCM-GMAC:1.2"
     );
 
-    // Permission-Test direkt auf dem Bundle.
+    // Permission test directly on the bundle.
     use zerodds_security::access_control::PermissionsHandle;
-    // Die Permissions wurden bereits im Konstruktor registriert (Handle 1).
+    // The permissions were already registered in the constructor (handle 1).
     let h = PermissionsHandle(1);
     assert_eq!(
         bundle
@@ -242,7 +258,7 @@ fn psk_handshake_with_completely_different_psks_fails() {
         HandshakeStepOutcome::SendMessage { token } => token,
         _ => panic!(),
     };
-    // Alice prueft Bobs HMAC mit Alice's Key → Mismatch.
+    // Alice checks Bob's HMAC with Alice's key → mismatch.
     let err = alice_auth.process_handshake(alice_hs, &reply).unwrap_err();
     assert_eq!(
         err.kind,

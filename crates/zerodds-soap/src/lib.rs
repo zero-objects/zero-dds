@@ -6,16 +6,16 @@
 //!
 //! Crate `zerodds-soap`. Safety classification: **STANDARD**.
 //!
-//! Liefert einen produktionsreifen SOAP-Stack zur Anbindung
-//! Java-2000er-Bestand-Clients und JEE-Web-Services an DDS-Topics.
+//! Provides a production-ready SOAP stack for connecting
+//! legacy Java-2000s clients and JEE web services to DDS topics.
 //!
-//! # Module
+//! # Modules
 //!
 //! * [`envelope`] — SOAP 1.2 Envelope/Header/Body (W3C SOAP 1.2 §5).
-//! * [`fault`] — SOAP-Fault-Codes (`Sender`/`Receiver`/`MustUnderstand`/
+//! * [`fault`] — SOAP fault codes (`Sender`/`Receiver`/`MustUnderstand`/
 //!   `VersionMismatch`/`DataEncodingUnknown`).
 //! * [`wsdl`] — WSDL 1.1 (`http://schemas.xmlsoap.org/wsdl/`) + WSDL
-//!   2.0 (`http://www.w3.org/ns/wsdl`)-Generation aus IDL-Service-Defs.
+//!   2.0 (`http://www.w3.org/ns/wsdl`) generation from IDL service defs.
 //! * [`mtom`] — MTOM/XOP-Attachments (W3C MTOM Rec.).
 //! * [`addressing`] — WS-Addressing 1.0 (W3C 2006).
 //! * [`security`] — WS-Security 1.1 (OASIS WSS-1.1) — UsernameToken,

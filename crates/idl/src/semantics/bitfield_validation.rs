@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Bitset/Bitmask-Validierung (C4.6 §1.9 / Spec §7.4.13.4.3).
+//! Bitset/bitmask validation (C4.6 §1.9 / spec §7.4.13.4.3).
 //!
-//! - Bitmask: `@bit_bound`-Wert >= max(position) + 1, max 64.
-//! - Bitmask: `@position`-Werte unique + im Range `[0, bit_bound)`.
-//! - Bitset: `bit_bound` einzelner Bitfields ≤ 64; Summe ≤ 64.
+//! - Bitmask: `@bit_bound` value >= max(position) + 1, max 64.
+//! - Bitmask: `@position` values unique + in the range `[0, bit_bound)`.
+//! - Bitset: `bit_bound` of individual bitfields ≤ 64; sum ≤ 64.
 
 use crate::ast::{
     Annotation, AnnotationParams, BitmaskDecl, BitsetDecl, ConstExpr, ConstrTypeDecl, Definition,
@@ -12,74 +12,74 @@ use crate::ast::{
 };
 use crate::errors::Span;
 
-/// Bitset/Bitmask-Validierungs-Fehler.
+/// Bitset/bitmask validation error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BitfieldValidationError {
     /// `position(N)` >= `bit_bound`.
     PositionOutOfRange {
-        /// Bitmask-Name.
+        /// Bitmask name.
         bitmask: String,
-        /// Position-Wert.
+        /// Position value.
         position: u32,
-        /// Effektiver bit_bound.
+        /// Effective bit_bound.
         bit_bound: u32,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// Doppelter `position`-Wert.
+    /// Duplicate `position` value.
     DuplicatePosition {
-        /// Bitmask-Name.
+        /// Bitmask name.
         bitmask: String,
-        /// Doppelter Wert.
+        /// Duplicate value.
         position: u32,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
     /// `@bit_bound` > 64.
     BitBoundTooLarge {
-        /// Konstrukt-Name (Bitmask oder Bitset).
+        /// Construct name (bitmask or bitset).
         name: String,
-        /// Wert.
+        /// Value.
         value: u32,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// Bitset: Summe der Widths > 64.
+    /// Bitset: sum of widths > 64.
     BitsetTotalTooLarge {
-        /// Bitset-Name.
+        /// Bitset name.
         name: String,
-        /// Tatsaechliche Summe.
+        /// Actual sum.
         total: u32,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// Bitfield-Width > 64.
+    /// Bitfield width > 64.
     BitfieldWidthTooLarge {
-        /// Bitset-Name.
+        /// Bitset name.
         bitset: String,
         /// Width.
         width: u32,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.4.13.4.3.2 — Bitfield-Width > Storage-Cap des dest_type.
+    /// §7.4.13.4.3.2 — bitfield width > storage cap of the dest_type.
     /// Boolean→1, Octet→8, Short/UShort→16, Long/ULong→32,
     /// LongLong/ULongLong→64.
     BitfieldExceedsStorageCap {
-        /// Bitset-Name.
+        /// Bitset name.
         bitset: String,
         /// Width.
         width: u32,
-        /// Maximum-Width fuer den dest_type.
+        /// Maximum width for the dest_type.
         cap: u32,
-        /// Name des dest_type.
+        /// Name of the dest_type.
         dest_type: &'static str,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
 }
 
-/// Top-Level: Bitset+Bitmask-Validierung pro Specification.
+/// Top level: bitset+bitmask validation per specification.
 #[must_use]
 pub fn validate_bitfields(spec: &Specification) -> Vec<BitfieldValidationError> {
     let mut errs = Vec::new();
@@ -121,7 +121,7 @@ fn extract_annotation<'a>(anns: &'a [Annotation], name: &str) -> Option<&'a Anno
         .find(|a| a.name.parts.last().map(|p| p.text.as_str()) == Some(name))
 }
 
-/// Bitmask-Validierung.
+/// Bitmask validation.
 pub fn validate_bitmask(b: &BitmaskDecl, errs: &mut Vec<BitfieldValidationError>) {
     let bit_bound = extract_annotation(&b.annotations, "bit_bound")
         .and_then(|a| extract_int_arg(&a.params))
@@ -162,7 +162,7 @@ pub fn validate_bitmask(b: &BitmaskDecl, errs: &mut Vec<BitfieldValidationError>
     }
 }
 
-/// Bitset-Validierung.
+/// Bitset validation.
 pub fn validate_bitset(b: &BitsetDecl, errs: &mut Vec<BitfieldValidationError>) {
     let mut total: u32 = 0;
     for bf in &b.bitfields {
@@ -178,8 +178,8 @@ pub fn validate_bitset(b: &BitsetDecl, errs: &mut Vec<BitfieldValidationError>) 
                 span: bf.span,
             });
         }
-        // §7.4.13.4.3.2: width darf nicht groesser sein als der
-        // Storage-Cap des dest_type (falls angegeben).
+        // §7.4.13.4.3.2: width must not be larger than the
+        // storage cap of the dest_type (if specified).
         if let Some((cap, name)) = bf.spec.dest_type.and_then(dest_type_cap) {
             if width > cap {
                 errs.push(BitfieldValidationError::BitfieldExceedsStorageCap {
@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn bitfield_size_exceeds_octet_destination_is_error() {
-        // octet hat Cap 8.
+        // octet has cap 8.
         let ast = parse_to_ast("bitset BS { bitfield<9, octet> b; };");
         let errs = validate_bitfields(&ast);
         assert!(
@@ -327,7 +327,7 @@ mod tests {
 
     #[test]
     fn bitfield_size_exceeds_short_destination_is_error() {
-        // short hat Cap 16.
+        // short has cap 16.
         let ast = parse_to_ast("bitset BS { bitfield<17, short> b; };");
         let errs = validate_bitfields(&ast);
         assert!(

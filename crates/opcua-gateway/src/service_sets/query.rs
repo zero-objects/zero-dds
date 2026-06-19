@@ -5,7 +5,7 @@
 //!
 //! Modul: `OMG::DDSOPCUA::OPCUA2DDS::QUERY`. Interface: `Query`.
 //!
-//! Methoden: `query_first`, `query_next`.
+//! Methods: `query_first`, `query_next`.
 
 use alloc::vec::Vec;
 
@@ -49,13 +49,13 @@ pub struct NodeTypeDescription {
     pub data_to_return: Vec<QueryDataDescription>,
 }
 
-/// Methoden-Namen-Konstanten (Spec §8.3.3.2 IDL).
+/// Method-name constants (Spec §8.3.3.2 IDL).
 pub struct QueryServiceMethods;
 
 impl QueryServiceMethods {
-    /// Methode `query_first`.
+    /// Method `query_first`.
     pub const QUERY_FIRST: &'static str = "query_first";
-    /// Methode `query_next`.
+    /// Method `query_next`.
     pub const QUERY_NEXT: &'static str = "query_next";
 }
 
@@ -158,7 +158,7 @@ const METHODS: &[ServiceMethod] = &[
     },
 ];
 
-/// Query-Service-Set-Beschreibung (Spec §8.3.3.2).
+/// Query service set description (Spec §8.3.3.2).
 pub const SERVICE_SET: ServiceSet = ServiceSet {
     module_path: IDL_MODULE_QUERY,
     interface_name: "Query",

@@ -1,7 +1,6 @@
 # OMG DDS 1.2 — Data Local Reconstruction Layer (DLRL) — Spec-Coverage
 
-**Quelle:** OMG DDS v1.2 — `formal/07-01-01`, January 2007. Ablage:
-`docs/standards/cache/omg/dds-1.2.pdf` (393 S.). DLRL liegt in
+**Spec:** [OMG DDS v1.2 — formal/07-01-01, January 2007 →](https://www.omg.org/spec/DDS/1.2/) (393 S.). DLRL liegt in
 **§8 Data Local Reconstruction Layer** (S. 173-211) und **Annex B
 Syntax for DLRL Queries and Filters** (S. 245).
 
@@ -10,18 +9,18 @@ Revisionen haben den DCPS-Teil herausgelöst (`zerodds-dcps-1.4.md`); die
 DLRL-Spezifikation wurde nicht in 1.4 übernommen und bleibt damit als
 DDS 1.2 §8 die maßgebliche normative Quelle für DLRL.
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`.
-
 **Kontext.** DLRL ist die optionale Object-orientierte Schicht oberhalb
 DCPS (DDS-Topic-Welt → Domain-Object-Welt). ZeroDDS implementiert eine
-**Subset-Variante** im Crate `crates/dlrl/`, die die Kernkonzepte
-abdeckt (ObjectCache, Relationship, Query, Subscription, Transaction)
-aber nicht die volle Spec-Hierarchie der ~16 DLRL-Entity-Klassen
-(CacheFactory, CacheBase, Cache, CacheAccess, ObjectHome, Selection
-etc.) als eigenständige Klassen exposed. Das ist eine bewusste
-Vereinfachung für den Migrations-Pfad älterer DDS-1.x-Anwendungen
-mit `pragma DLRL`-IDL — viele Spec-Klassen sind dort nur indirekt
-verwendet.
+**Subset-Variante**, die die Kernkonzepte abdeckt (ObjectCache,
+Relationship, Query, Subscription, Transaction) aber nicht die volle
+Spec-Hierarchie der ~16 DLRL-Entity-Klassen (CacheFactory, CacheBase,
+Cache, CacheAccess, ObjectHome, Selection etc.) als eigenständige Klassen
+exposed. Das ist eine bewusste Vereinfachung für den Migrations-Pfad
+älterer DDS-1.x-Anwendungen mit `pragma DLRL`-IDL — viele Spec-Klassen
+sind dort nur indirekt verwendet. Verteilt über:
+
+- `crates/dlrl/` — DLRL-Subset-Runtime (ObjectCache, Relationship, Query, Subscription, Transaction, pragma-Parsing)
+- `crates/dlrl-codegen/` — Code-Generierung für den Generation Process (§8.2.2)
 
 **Crate-Mapping:**
 
@@ -115,7 +114,7 @@ DLRL objects."
 
 **Repo:** `crates/dlrl/src/metamodel.rs::ObjectRoot`-Trait mit
 `oid/repository_id/is_modified/is_deleted`-Operations als
-gemeinsame Basisklasse fuer alle DLRL-Objects.
+gemeinsame Basisklasse für alle DLRL-Objects.
 
 **Tests:** `metamodel::tests::object_root_trait_callable`.
 
@@ -495,4 +494,3 @@ relationship 7 + subscription 5 + transaction 9), `zerodds-dlrl-codegen`
 
 Keine offenen Punkte. Spec-Treue durch
 `crates/dlrl/src/metamodel.rs`-Stub-Layer hergestellt
-(siehe `dlrl-1.2.open.md`).

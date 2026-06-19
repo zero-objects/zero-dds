@@ -1,9 +1,13 @@
 # DDS Consolidated XML Syntax 1.0 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/zerodds-xml-1.0.pdf` (33 Seiten, OMG formal/24-04-04)
+**Spec:** [OMG DDS-XML 1.0](https://www.omg.org/spec/DDS-XML/1.0/PDF) (33 Seiten, OMG formal/24-04-04)
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
+Implementation:
+
+- `crates/xml/` — DDS-XML-Konfigurationssyntax + Loader.
+
+Audit Item-für-Item
+gegen die Spec; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
 Status (`done` / `partial` / `open` / `n/a`).
 
 ---
@@ -39,7 +43,7 @@ this document relative to referenced specifications."
 
 ## §2 Conformance Criteria
 
-### 2.1 Keine eigenstaendigen Conformance-Punkte
+### 2.1 Keine eigenständigen Conformance-Punkte
 
 **Spec:** §2, S. 1 — "This document contains no independent conformance
 points. Rather, it defines XML Schemas to be used to describe DDS
@@ -85,7 +89,7 @@ selection of building blocks where all selected building blocks shall
 be supported entirely."
 
 **Repo:** `crates/xml/src/conformance.rs::SUPPORTED_BUILDING_BLOCKS`
-— atomare Liste der 6 unterstuetzten Building-Blocks
+— atomare Liste der 6 unterstützten Building-Blocks
 (QoS/Types/Domains/DomainParticipants/Applications/DataSamples) mit
 Modul-Verweis + Top-Level-Element. Module:
 `crates/xml/src/{qos,xtypes_def,domain,participant,application,sample}.rs`.
@@ -95,7 +99,7 @@ Modul-Verweis + Top-Level-Element. Module:
 `supported_blocks_have_unique_root_elements`.
 
 **Status:** done — Conformance-Marker pro Block ist exponiert; die
-3 Tabelle-Tests stellen Vollstaendigkeit + Eindeutigkeit sicher.
+3 Tabelle-Tests stellen Vollständigkeit + Eindeutigkeit sicher.
 
 ---
 
@@ -126,7 +130,7 @@ chameleon + namespaced) als `include_str!`. XSD-1.1-Strukturen
 (`xs:complexType`, `xs:element`, `xs:attribute`, `xs:sequence`,
 `xs:all`, `xs:any`, `xs:include`) werden im DDS-XML-Footprint
 verwendet und durch `roxmltree::Document::parse` strukturell
-geprueft.
+geprüft.
 
 **Tests:** `xsd_loader::tests::data_uri_plain_loads`,
 `data_uri_base64_loads`, `file_uri_loads_existing_file`,
@@ -136,7 +140,7 @@ geprueft.
 XSD-Files parsen syntaktisch wohlgeformt).
 
 **Status:** done — XSD-1.1-Subset (alle in DDS-XML 1.0 §7-§8
-verwendeten Strukturen) deckt unseren Footprint vollstaendig ab.
+verwendeten Strukturen) deckt unseren Footprint vollständig ab.
 
 ### 3.3 [XSD-2] XML Schema Definition Language 1.1 Part 2: Datatypes
 
@@ -147,7 +151,7 @@ verwendeten Strukturen) deckt unseren Footprint vollstaendig ab.
 (`boolean`, `nonNegativeInteger_UNLIMITED`, `positiveInteger_UNLIMITED`,
 `nonNegativeInteger_Duration_SEC/_NSEC`, `duration`, `octetSequence`)
 + Custom-Datatype-Parser in `crates/xml/src/types.rs` und
-`crates/xml/src/qos_parser.rs` fuer Tab.7.1+7.2.
+`crates/xml/src/qos_parser.rs` für Tab.7.1+7.2.
 
 **Tests:** `types::tests::*` (41 Tests):
 `bool_false_variants`, `bool_invalid`, `bool_true_variants`,
@@ -352,7 +356,7 @@ block contains two normative XSD files."
 
 **Repo:** Alle 14 normativen XSD-Files in
 `crates/xml/schemas/`: `dds-xml_common.xsd` +
-`dds-xml_<bb>_definitions[_nonamespace].xsd` fuer 6 Building-Blocks
+`dds-xml_<bb>_definitions[_nonamespace].xsd` für 6 Building-Blocks
 (QoS/Types/Domains/DomainParticipants/Applications/DataSamples) +
 `dds-xml_dds_system_definitions[_nonamespace].xsd`. Embedded via
 `include_str!` in `crates/xml/src/schemas.rs`. Loader weiterhin in
@@ -373,7 +377,7 @@ pro Block.
 
 ### 7.1.3 XML Chameleon Schema Definition Pattern (non-normativ)
 
-**Spec:** §7.1.3, S. 5 — Erklaerung des Chameleon-Pattern (XSD ohne
+**Spec:** §7.1.3, S. 5 — Erklärung des Chameleon-Pattern (XSD ohne
 `targetNamespace` als wiederverwendbarer Bestandteil). Section ist
 explizit "(non-normative)".
 
@@ -381,7 +385,7 @@ explizit "(non-normative)".
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Spec markiert §7.1.3 explizit als "(non-normative)"; Chameleon-Pattern ist Erklaerung der XSD-Wiederverwendung, keine Implementierungs-Anforderung.
+**Status:** `n/a (informative)` — Spec markiert §7.1.3 explizit als "(non-normative)"; Chameleon-Pattern ist Erklärung der XSD-Wiederverwendung, keine Implementierungs-Anforderung.
 
 ---
 
@@ -434,7 +438,7 @@ LENGTH_UNLIMITED-Symbol.
 **Spec:** §7.1.4 Tab.7.1, S. 7 — "unsigned long: 0 to 4294967296 or
 0 to 0xffffffff. A 32-bit unsigned integer."
 
-**Repo:** `crates/xml/src/qos_parser.rs` — Decimal+Hex-Parser fuer
+**Repo:** `crates/xml/src/qos_parser.rs` — Decimal+Hex-Parser für
 ulong.
 
 **Tests:** `qos_parser::tests::ulong_decimal_and_hex`, `ulong_invalid`.
@@ -463,10 +467,10 @@ to be escaped within an element content. The characters `>`, `'`, and
 
 ### 7.1.5.1 Attribute-Wert `boolean` case-sensitive
 
-**Spec:** §7.1.5 Tab.7.2, S. 8 — Identisch zu §7.1.4.1 fuer Attribute.
+**Spec:** §7.1.5 Tab.7.2, S. 8 — Identisch zu §7.1.4.1 für Attribute.
 
 **Repo:** `crates/xml/src/parser.rs::XmlElement::attribute` liefert
-String; `qos_parser` reuse `parse_bool_strict` fuer Attribute.
+String; `qos_parser` reuse `parse_bool_strict` für Attribute.
 
 **Tests:** dieselben Boolean-Tests wie §7.1.4.1.
 
@@ -527,7 +531,7 @@ correspond to data-types defined in the DDS IDL PSM [DDS] is obtained
 by performing a 1-to-1 mapping of the corresponding IDL data type."
 
 **Repo:** `crates/xml/src/conformance.rs::IDL_TO_XML_MAPPING` —
-explizite Tabelle mit 17 Eintraegen (boolean/long/ulong/string/enum/
+explizite Tabelle mit 17 Einträgen (boolean/long/ulong/string/enum/
 LENGTH_UNLIMITED/DURATION_INFINITE_*/Duration_ZERO_*/non/
 positiveInteger_UNLIMITED/Duration_SEC/_NSEC/struct/sequence<T>/
 sequence<octet>/T[N]/Duration_t) jeweils mit Spec-Sektion + Repo-
@@ -538,7 +542,7 @@ Pfad. QoS-Policy-Mapping in `qos.rs::EntityQos::into_writer_qos` /
 (Pflicht-Kategorien aus §7.1.4 + §7.2.x), `idl_mapping_entries_unique`
 (keine Duplikate), `idl_mapping_includes_section_7_2_x_items` (alle
 §7.2.x-Items live), plus `qos.rs::tests::entity_qos_into_*_uses_*`
-fuer QoS-Mapping.
+für QoS-Mapping.
 
 **Status:** done — Mapping-Tabelle deckt alle in DDS-XML 1.0 §7.2
 gelisteten IDL-Datentyp-Kategorien ab.
@@ -551,7 +555,7 @@ restriction of a string that can take values of the enumeration
 literals." Beispiel `historyKind` mit `KEEP_LAST_HISTORY_QOS`/
 `KEEP_ALL_HISTORY_QOS` (non-normativ).
 
-**Repo:** `crates/xml/src/qos_parser.rs` — Enum-Parsing fuer
+**Repo:** `crates/xml/src/qos_parser.rs` — Enum-Parsing für
 HistoryKind/ReliabilityKind/DurabilityKind als String-Restriktionen.
 
 **Tests:** `qos_parser::tests::parse_reliability_and_history`,
@@ -662,7 +666,7 @@ exportiert via `crates/xml/src/lib.rs`.
 
 **Repo:** `crates/xml/src/types.rs::parse_positive_long_unlimited`
 — eigener Parser, der das Spec-Pattern `(LENGTH_UNLIMITED|[1-9]([0-9])*)?`
-durchsetzt: Wert `0`, fuehrende Nullen, Hex und negative Werte
+durchsetzt: Wert `0`, führende Nullen, Hex und negative Werte
 werden mit `XmlError::ValueOutOfRange` abgelehnt; nur
 `LENGTH_UNLIMITED`-Symbol oder Dezimalwerte ab `1` passieren.
 
@@ -716,7 +720,7 @@ defines default values for the structure fields, the corresponding
 XSD element definition shall provide the same default value."
 
 **Repo:** `crates/xml/src/qos_parser.rs` — Reliability/History/
-Resource-Limits werden mit Default-Konstanten gefuellt wenn Element
+Resource-Limits werden mit Default-Konstanten gefüllt wenn Element
 fehlt; rekursive QoS-Container.
 
 **Tests:** `qos.rs::tests::entity_qos_into_writer_uses_defaults_for_unset`,
@@ -737,7 +741,7 @@ inside each element is the XSD schema obtained from mapping the IDL
 type of the element itself."
 
 **Repo:** `crates/xml/src/parser.rs::XmlElement::sequence_elements`
-— generischer Iterator ueber `<element>`-Kinder, nutzbar fuer
+— generischer Iterator über `<element>`-Kinder, nutzbar für
 beliebige IDL-Sequenzen. Existing QoS-Pfade (z.B. `<partition>`)
 bleiben kompatibel; neuer Top-Level-Helper.
 
@@ -756,9 +760,9 @@ represented in decimal or hexadecimal, or alternatively using Base64
 binary. Differentiated by element name (`value` vs. `valueB64`)."
 
 **Repo:** Base64-Pfad in `crates/xml/src/qos_parser.rs::base64_decode`
-(fuer `<valueB64>`-Elemente); Decimal/Hex-Comma-Liste in
-`crates/xml/src/types.rs::parse_octet_sequence` (fuer
-`<value>`-Elemente). Caller waehlt anhand des Element-Namens.
+(für `<valueB64>`-Elemente); Decimal/Hex-Comma-Liste in
+`crates/xml/src/types.rs::parse_octet_sequence` (für
+`<value>`-Elemente). Caller wählt anhand des Element-Namens.
 
 **Tests:** Base64-Pfad: `qos_parser::tests::base64_decode_basic`,
 `base64_decode_with_padding`, `base64_decode_invalid_returns_none`.
@@ -787,7 +791,7 @@ the same as it would be for IDL sequences of the same element type."
 
 **Repo:** Re-use des `<element>`-Iterators
 `crates/xml/src/parser.rs::XmlElement::sequence_elements` —
-identische API fuer fixed-size Arrays + variable Sequences. QoS-
+identische API für fixed-size Arrays + variable Sequences. QoS-
 Pfade in `qos_parser` nutzen denselben Mechanismus.
 
 **Tests:** `parser::tests::array_uses_same_element_tag_as_sequence`
@@ -850,7 +854,7 @@ QoS, Types, Domains, DomainParticipants, Applications, DataSamples,
 DDSSystem.
 
 **Tests:** `schemas::tests::nonamespace_xsds_omit_target_namespace`
-(prueft pro File, dass das `<xs:schema>`-Tag KEIN
+(prüft pro File, dass das `<xs:schema>`-Tag KEIN
 `targetNamespace`-Attribut hat).
 
 **Status:** done
@@ -882,7 +886,7 @@ XSD-Files alle live.
 
 ## §7.3.2 Building Block QoS
 
-### 7.3.2.1 Purpose: DDS QoS in XML repraesentieren
+### 7.3.2.1 Purpose: DDS QoS in XML repräsentieren
 
 **Spec:** §7.3.2.1, S. 13 — "This building block defines the syntax
 to represent DDS QoS in XML."
@@ -894,7 +898,7 @@ to represent DDS QoS in XML."
 
 **Status:** done
 
-### 7.3.2.2 Keine Abhaengigkeit zu anderen BBs
+### 7.3.2.2 Keine Abhängigkeit zu anderen BBs
 
 **Spec:** §7.3.2.2, S. 13 — "This building block has no dependencies
 on other building blocks."
@@ -920,9 +924,9 @@ akzeptiert.
 
 **Tests:** `qos_parser::tests::parse_minimal_library`,
 `missing_library_name_rejected` +
-`schemas::tests::namespaced_xsds_define_top_level_element` (prueft
+`schemas::tests::namespaced_xsds_define_top_level_element` (prüft
 explizit, dass das namespaced-XSD `xs:element name="qos_library"`
-enthaelt).
+enthält).
 
 **Status:** done — beide XSD-Files embedded + Parser live.
 
@@ -986,7 +990,7 @@ over a QoS without filter."
 
 **Spec:** §7.3.2.4.4, S. 15 — "The definition of an individual QoS
 is a shortcut for defining a QoS profile with a single QoS." Beispiel
-`<datawriter_qos name="..."/>` aequivalent zu `<qos_profile
+`<datawriter_qos name="..."/>` äquivalent zu `<qos_profile
 name="..."/><datawriter_qos>...</datawriter_qos></qos_profile>`.
 
 **Repo:** `crates/xml/src/qos_parser.rs::parse_single_qos_shortcut`
@@ -1016,11 +1020,11 @@ and management of types."
 **Repo:** `crates/xml/src/types.rs`, `crates/xml/src/xtypes_def.rs`,
 `crates/xml/src/xtypes_parser.rs`, `crates/xml/src/typeobject_bridge.rs`.
 
-**Tests:** 30+ Tests fuer Struct/Union/Enum/Bitset/Bitmask/Typedef.
+**Tests:** 30+ Tests für Struct/Union/Enum/Bitset/Bitmask/Typedef.
 
 **Status:** done
 
-### 7.3.3.2 Keine Abhaengigkeit zu anderen BBs
+### 7.3.3.2 Keine Abhängigkeit zu anderen BBs
 
 **Spec:** §7.3.3.2, S. 15 — "This building block has no dependencies
 on other building blocks."
@@ -1068,7 +1072,7 @@ und `topics`.
 
 **Status:** done
 
-### 7.3.4.2 Abhaengigkeiten: BB QoS + BB Types
+### 7.3.4.2 Abhängigkeiten: BB QoS + BB Types
 
 **Spec:** §7.3.4.2, S. 16 — "This building block depends on the
 Building Block QoS and the Building Block Types."
@@ -1149,7 +1153,7 @@ DataWriters/DataReaders.
 
 **Status:** done
 
-### 7.3.5.2 Abhaengigkeiten: BB QoS + BB Types + BB Domains
+### 7.3.5.2 Abhängigkeiten: BB QoS + BB Types + BB Domains
 
 **Spec:** §7.3.5.2, S. 17 — "This building block depends on the
 Building Block QoS, the Building Block Types, and the Building Block
@@ -1257,7 +1261,7 @@ in the DDS Global Data Space."
 
 **Status:** done
 
-### 7.3.6.2 Abhaengigkeiten: BB QoS + BB Types + BB Domains + BB DomainParticipants
+### 7.3.6.2 Abhängigkeiten: BB QoS + BB Types + BB Domains + BB DomainParticipants
 
 **Spec:** §7.3.6.2, S. 18 — "This building block depends on the
 Building Block QoS, the Building Block Types, the Building Block
@@ -1323,7 +1327,7 @@ DP-Library-Lookup).
 represent Data Samples that may be exchanged between different DDS
 applications."
 
-**Repo:** `crates/xml/src/sample.rs` — Sample-Parsing fuer
+**Repo:** `crates/xml/src/sample.rs` — Sample-Parsing für
 Struct/Union/Sequence/Array (alle 4 SampleValue-Varianten).
 
 **Tests:** `sample::tests::parse_simple_struct_sample`,
@@ -1335,7 +1339,7 @@ Struct/Union/Sequence/Array (alle 4 SampleValue-Varianten).
 
 **Status:** done
 
-### 7.3.7.2 Keine Abhaengigkeit zu anderen BBs
+### 7.3.7.2 Keine Abhängigkeit zu anderen BBs
 
 **Spec:** §7.3.7.2, S. 19 — "This building block has no dependencies
 on other building blocks."
@@ -1370,7 +1374,7 @@ mapping the IDL type of the element itself."
 
 **Repo:** `crates/xml/src/sample.rs::parse_member_value` —
 Sequence/Array iteriert via `el.children_named("item")`;
-`serialize_sample` emittiert `<item>` fuer beide Faelle. Empty-
+`serialize_sample` emittiert `<item>` für beide Fälle. Empty-
 Sequence (`<seq></seq>`) wird via `sequence_max_length`-Hint
 erkannt.
 
@@ -1383,7 +1387,7 @@ erkannt.
 
 ### 7.3.7.4 Examples (non-normativ)
 
-**Spec:** §7.3.7.4, S. 20-22 — Beispiele fuer Struct/Union/Sequence/
+**Spec:** §7.3.7.4, S. 20-22 — Beispiele für Struct/Union/Sequence/
 Array/Primitive-Samples. Section ist explizit "(non-normative)".
 
 **Repo:** —
@@ -1403,7 +1407,7 @@ describe a complete DDS system. It contains: Building Block QoS,
 Types, Domains, DomainParticipants, Applications." (BB DataSamples
 NICHT enthalten.)
 
-**Repo:** `crates/xml/src/zerodds_xml.rs::DdsXml` mit Feldern fuer
+**Repo:** `crates/xml/src/zerodds_xml.rs::DdsXml` mit Feldern für
 `qos_libraries`, `type_libraries`, `domain_libraries`,
 `participant_libraries`, `application_libraries`.
 

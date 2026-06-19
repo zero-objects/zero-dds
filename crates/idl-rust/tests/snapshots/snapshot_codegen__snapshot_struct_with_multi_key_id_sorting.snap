@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
-assertion_line: 148
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -27,7 +26,7 @@ impl zerodds_dcps::DdsType for Composite {
     const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x28, 0x94, 0xbb, 0xd4, 0xa5, 0x9b, 0xb4, 0x8d, 0xfc, 0xed, 0x0a, 0x96, 0x84, 0x9b]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
-        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
         <_ as zerodds_cdr::CdrEncode>::encode(&self.b, &mut writer)?;
         <_ as zerodds_cdr::CdrEncode>::encode(&self.a, &mut writer)?;
         <_ as zerodds_cdr::CdrEncode>::encode(&self.payload, &mut writer)?;
@@ -36,7 +35,7 @@ impl zerodds_dcps::DdsType for Composite {
     }
 
     fn decode(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
-        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little).xcdr2();
         let b = <i32 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         let a = <i32 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         let payload = <String as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
@@ -59,5 +58,27 @@ impl zerodds_dcps::DdsType for Composite {
             "payload" => ::core::option::Option::Some(zerodds_sql_filter::Value::String(self.payload.clone())),
             _ => ::core::option::Option::None,
         }
+    }
+}
+
+impl zerodds_cdr::CdrEncode for Composite {
+    fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.b, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.a, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.payload, writer)?;
+        ::core::result::Result::Ok(())
+    }
+}
+
+impl zerodds_cdr::CdrDecode for Composite {
+    fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
+        let b = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let a = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let payload = <String as zerodds_cdr::CdrDecode>::decode(reader)?;
+        ::core::result::Result::Ok(Self {
+            b,
+            a,
+            payload,
+        })
     }
 }

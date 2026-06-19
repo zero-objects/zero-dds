@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `dds_bounded_recursion` — Funktionen, die sich (intra-File) direkt oder
-//! ueber einen 1-Hop-Indirect-Pfad selbst aufrufen, muessen einen
-//! Doc-Comment-Marker `zerodds-lint: recursion-depth N` tragen.
+//! `dds_bounded_recursion` — functions that call themselves (intra-file)
+//! directly or via a 1-hop indirect path must carry a
+//! doc-comment marker `zerodds-lint: recursion-depth N`.
 //!
-//! Phase-0-Approximation:
-//! - Nur **innerhalb derselben Datei** wird der Call-Graph aufgebaut.
-//!   File-uebergreifende Rekursion (z.B. via Trait-Implementierungen
-//!   oder mod-Splits) erkennt der Lint nicht.
-//! - Nur freie Funktionsaufrufe (`foo()`) und Pfad-Aufrufe (`Self::foo()`,
-//!   `Type::foo()`) werden analysiert; `self.foo()`-Methodenaufrufe
-//!   werden uebersprungen, weil ihre Aufloesung Type-Info erfordert.
-//! - Cycles laenger als 2 (A → B → C → A) werden nicht erkannt; das
-//!   waere DFS auf dem Call-Graph, in Phase 1 ergaenzbar.
+//! Phase-0 approximation:
+//! - The call graph is built **only within the same file**.
+//!   Cross-file recursion (e.g. via trait implementations
+//!   or mod splits) is not detected by the lint.
+//! - Only free function calls (`foo()`) and path calls (`Self::foo()`,
+//!   `Type::foo()`) are analyzed; `self.foo()` method calls
+//!   are skipped, because resolving them requires type info.
+//! - Cycles longer than 2 (A → B → C → A) are not detected; that
+//!   would be a DFS on the call graph, addable in phase 1.
 //!
 //! # Marker
 //!
@@ -21,8 +21,8 @@
 //! fn recursive_fn() { recursive_fn(); }
 //! ```
 //!
-//! Der Lint prueft nur **Anwesenheit** des Markers, nicht die genannte
-//! Tiefe — die Tiefen-Annahme ist Dokumentation fuer Reviewer.
+//! The lint only checks the **presence** of the marker, not the stated
+//! depth — the depth assumption is documentation for reviewers.
 //!
 //! Spec: `docs/architecture/04_safety_by_architecture.md §3.4`.
 
@@ -36,7 +36,7 @@ use crate::diagnostic::Diagnostic;
 
 use super::{FileLint, FileLintContext};
 
-/// True wenn Pfad unter `tests/`, `examples/` oder `benches/` liegt.
+/// True if the path is under `tests/`, `examples/` or `benches/`.
 fn is_test_path(file: &std::path::Path) -> bool {
     file.components().any(|c| {
         matches!(
@@ -46,7 +46,7 @@ fn is_test_path(file: &std::path::Path) -> bool {
     })
 }
 
-/// True wenn Attribute `#[test]`, `#[cfg(test)]` oder `cfg(... test ...)` enthaelt.
+/// True if the attributes contain `#[test]`, `#[cfg(test)]` or `cfg(... test ...)`.
 fn has_cfg_test(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|a| {
         if a.path().is_ident("test") {
@@ -67,7 +67,7 @@ fn has_cfg_test(attrs: &[Attribute]) -> bool {
     })
 }
 
-/// Lint-Implementierung.
+/// Lint implementation.
 pub struct BoundedRecursion;
 
 const NAME: &str = "dds_bounded_recursion";
@@ -97,12 +97,17 @@ impl FileLint for BoundedRecursion {
             if info.has_marker {
                 continue;
             }
-            // Direkt rekursiv?
+            // Directly recursive?
             if info.calls.contains(name) {
-                diags.push(diagnostic_for(ctx.file, name, info.span, "direkt rekursiv"));
+                diags.push(diagnostic_for(
+                    ctx.file,
+                    name,
+                    info.span,
+                    "directly recursive",
+                ));
                 continue;
             }
-            // 1-Hop indirekt: ruft `info` ein `B` auf, das wiederum `name` aufruft?
+            // 1-hop indirect: does `info` call a `B` that in turn calls `name`?
             for callee in &info.calls {
                 let Some(callee_info) = collector.fns.get(callee.as_str()) else {
                     continue;
@@ -112,7 +117,7 @@ impl FileLint for BoundedRecursion {
                         ctx.file,
                         name,
                         info.span,
-                        format!("indirekt rekursiv via `{callee}`").as_str(),
+                        format!("indirectly recursive via `{callee}`").as_str(),
                     ));
                     break;
                 }
@@ -130,8 +135,8 @@ fn diagnostic_for(file: &std::path::Path, fn_name: &str, span: Span, why: &str) 
         start.column.saturating_add(1),
         NAME,
         format!(
-            "Funktion `{fn_name}` ist {why}; ergaenze Doc-Kommentar \
-             `/// {MARKER_PREFIX} N` mit erwarteter Tiefe"
+            "function `{fn_name}` is {why}; add a doc comment \
+             `/// {MARKER_PREFIX} N` with the expected depth"
         ),
     )
 }
@@ -145,7 +150,7 @@ struct FnInfo {
 
 struct FnCollector {
     fns: HashMap<String, FnInfo>,
-    /// Nicht-null wenn aktuell unter einem `#[cfg(test)]`/`#[test]`-Item.
+    /// Non-null when currently under a `#[cfg(test)]`/`#[test]` item.
     test_depth: usize,
 }
 
@@ -264,14 +269,14 @@ mod tests {
         let src = "fn a() { a(); }\n";
         let d = run(src);
         assert_eq!(d.len(), 1);
-        assert!(d[0].message.contains("direkt rekursiv"));
+        assert!(d[0].message.contains("directly recursive"));
     }
 
     #[test]
     fn indirect_one_hop_recursion_flagged() {
         let src = "fn a() { b(); }\nfn b() { a(); }\n";
         let d = run(src);
-        // Beide werden geflaggt, weil beide Teil des Cycles sind.
+        // Both are flagged because both are part of the cycle.
         assert_eq!(d.len(), 2);
     }
 
@@ -288,7 +293,7 @@ mod tests {
             "fn a() { b(); }\n",
             "fn b() { a(); }\n",
         );
-        // a hat Marker, b nicht
+        // a has a marker, b does not
         let d = run(src);
         assert_eq!(d.len(), 1);
         assert!(d[0].message.contains("`b`") || d[0].message.contains("indirekt"));
@@ -296,14 +301,14 @@ mod tests {
 
     #[test]
     fn type_qualified_call_counted() {
-        // `Self::a()` zaehlt als Aufruf von `a` — vereinfachte Annahme.
+        // `Self::a()` counts as a call to `a` — simplified assumption.
         let src = "fn a() { Self::a(); }\n";
         assert_eq!(run(src).len(), 1);
     }
 
     #[test]
     fn three_hop_cycle_not_detected_phase0_limit() {
-        // A->B->C->A wird in Phase 0 NICHT erkannt (keine Ausgabe).
+        // A->B->C->A is NOT detected in phase 0 (no output).
         let src = "fn a() { b(); }\nfn b() { c(); }\nfn c() { a(); }\n";
         assert!(run(src).is_empty());
     }

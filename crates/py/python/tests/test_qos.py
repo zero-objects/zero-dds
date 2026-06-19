@@ -1,8 +1,8 @@
-"""Tests fuer §6.2 — QoS-Builder (DataWriterQos + DataReaderQos).
+"""Tests for §6.2 — QoS builder (DataWriterQos + DataReaderQos).
 
-Verifiziert die 22-Policy-Surface (DDS 1.4 §2.2.3) ueber die
-`DataWriterQos`/`DataReaderQos`-PyClasses und die
-`create_*_writer_with_qos`/`create_*_reader_with_qos`-Methoden.
+Verifies the 22-policy surface (DDS 1.4 §2.2.3) via the
+`DataWriterQos`/`DataReaderQos` PyClasses and the
+`create_*_writer_with_qos`/`create_*_reader_with_qos` methods.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import zerodds
 
 pytestmark = pytest.mark.skipif(
     not getattr(zerodds, "_CORE_AVAILABLE", False),
-    reason="zerodds._core nicht kompiliert — maturin develop noetig",
+    reason="zerodds._core not compiled — maturin develop needed",
 )
 
 
@@ -39,7 +39,7 @@ def test_reader_qos_defaults():
 
 
 def test_writer_qos_reliability_setter():
-    """§6.2 — `set_reliability` flippt zwischen Reliable und BestEffort."""
+    """§6.2 — `set_reliability` flips between Reliable and BestEffort."""
     qos = zerodds.DataWriterQos()
     qos.set_reliability("BestEffort", 0.0)
     assert qos.reliability_kind() == "BestEffort"
@@ -92,10 +92,10 @@ def test_writer_qos_setters_with_durations():
 
 
 def test_reader_qos_full_setter_chain():
-    """§6.2 — DataReaderQos hat reader-spezifische Policies (time_based_filter,
-    reader_data_lifecycle); Writer-spezifische (ownership_strength,
-    writer_data_lifecycle, durability_service, transport_priority) sind
-    NICHT auf Reader."""
+    """§6.2 — DataReaderQos has reader-specific policies (time_based_filter,
+    reader_data_lifecycle); writer-specific ones (ownership_strength,
+    writer_data_lifecycle, durability_service, transport_priority) are
+    NOT on the reader."""
     qos = zerodds.DataReaderQos()
     qos.set_reliability("Reliable", 0.1)
     qos.set_durability("TransientLocal")
@@ -123,8 +123,8 @@ def test_reader_qos_full_setter_chain():
 
 
 def test_create_bytes_writer_with_qos_offline():
-    """§6.2 — Publisher.create_bytes_writer_with_qos akzeptiert eine
-    DataWriterQos und erzeugt einen Writer."""
+    """§6.2 — Publisher.create_bytes_writer_with_qos accepts a
+    DataWriterQos and creates a writer."""
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(310)
     topic = p.create_bytes_topic("QosTopic")
@@ -138,7 +138,7 @@ def test_create_bytes_writer_with_qos_offline():
 
 
 def test_create_bytes_reader_with_qos_offline():
-    """§6.2 — Subscriber.create_bytes_reader_with_qos akzeptiert eine
+    """§6.2 — Subscriber.create_bytes_reader_with_qos accepts a
     DataReaderQos."""
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(311)

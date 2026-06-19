@@ -2,7 +2,7 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Crate `zerodds-discovery`. Safety classification: **SAFE**.
 //!
-//! DDSI-RTPS-Discovery für ZeroDDS — SPDP, SEDP, TypeLookup-Service.
+//! DDSI-RTPS discovery for ZeroDDS — SPDP, SEDP, TypeLookup service.
 //!
 //! ## Spec
 //!
@@ -12,29 +12,29 @@
 //! - **XTypes 1.3 §7.6.3.3.4** — TypeLookup-Service
 //!   (`TL_SVC_REQ_{WRITER,READER}` + `TL_SVC_REPLY_{WRITER,READER}`).
 //! - **DDS-Security 1.2 §7.4.2** — Stateless + Volatile-Secure
-//!   Builtin-Endpoints (sub-module `security`).
+//!   builtin endpoints (sub-module `security`).
 //!
 //! ## Public API
 //!
-//! - [`spdp`] — SPDP Beacon-Sender + -Receiver +
-//!   `DiscoveredParticipantsCache` mit `last_seen`-Lease-Tracking.
-//! - [`sedp`] — SEDP Stack (Cache, Reader, Writer).
-//! - [`type_lookup`] — TypeLookup-Service Server + Client +
-//!   Builtin-Endpoint-GUIDs.
+//! - [`spdp`] — SPDP beacon sender + receiver +
+//!   `DiscoveredParticipantsCache` with `last_seen` lease tracking.
+//! - [`sedp`] — SEDP stack (cache, reader, writer).
+//! - [`type_lookup`] — TypeLookup service server + client +
+//!   builtin-endpoint GUIDs.
 //! - [`security`] — DDS-Security Stateless + Volatile-Secure
-//!   Builtin-Endpoint-Slots.
-//! - [`capabilities::PeerCapabilities`] — DDSI-Capability-Bits.
+//!   builtin-endpoint slots.
+//! - [`capabilities::PeerCapabilities`] — DDSI capability bits.
 //!
-//! ## Wiring an DCPS-Runtime
+//! ## Wiring into the DCPS runtime
 //!
-//! Die Discovery-Primitives sind wire-format-vollständig. Die
-//! Instantiierung der Builtin-Endpoint-Reliable-Writer/Reader-Pairs
-//! liegt im DCPS-Layer (`crates/dcps/src/runtime.rs`):
-//! - SPDP: Best-Effort Writer + Reader auf `ParticipantBuiltinTopicData`.
-//! - SEDP: Reliable Writer + Reader auf
+//! The discovery primitives are wire-format-complete. Instantiation of
+//! the builtin-endpoint reliable writer/reader pairs lives in the DCPS
+//! layer (`crates/dcps/src/runtime.rs`):
+//! - SPDP: best-effort writer + reader on `ParticipantBuiltinTopicData`.
+//! - SEDP: reliable writer + reader on
 //!   `Publication-/Subscription-BuiltinTopicData`.
-//! - TypeLookup: Reliable Writer + Reader auf `TypesRequest`/
-//!   `TypesReply`-Topic mit Service-Instance-Name.
+//! - TypeLookup: reliable writer + reader on the `TypesRequest`/
+//!   `TypesReply` topic with a service instance name.
 
 #![no_std]
 #![forbid(unsafe_code)]

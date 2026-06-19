@@ -3,10 +3,10 @@
 
 //! XML Object-Representation Tags — Spec §8.3.4 Tab 6.
 
-/// Spec §8.3.5 — Content-Type fuer alle WebDDS-REST-Bodies.
+/// Spec §8.3.5 — Content-Type for all WebDDS REST bodies.
 pub const CONTENT_TYPE_DDS_WEB_XML: &str = "application/zerodds-web+xml";
 
-/// Spec §8.3.4 Tab 6 — Object-Representation-Kategorien.
+/// Spec §8.3.4 Tab 6 — object-representation categories.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RepresentationKind {
     /// Single object (e.g., `<application>`).
@@ -15,7 +15,7 @@ pub enum RepresentationKind {
     List,
 }
 
-/// Wire-Element-Name fuer ein Object/List Tab 6 (Spec §8.3.4).
+/// Wire element name for an object/list Tab 6 (Spec §8.3.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ContentType {
     /// `qos_library` / `qos_library_list`.
@@ -26,7 +26,7 @@ pub enum ContentType {
     Application,
     /// `domain_participant` / `domain_participant_list`.
     DomainParticipant,
-    /// `types` (XML-Type-Definition aus DDS-XTYPES).
+    /// `types` (XML type definition from DDS-XTYPES).
     Types,
     /// `waitset` / `waitset_list`.
     Waitset,
@@ -46,7 +46,7 @@ pub enum ContentType {
     WriteSampleSeq,
 }
 
-/// Liefert das XML-Element-Name aus Spec §8.3.4 Tab 6.
+/// Returns the XML element name from Spec §8.3.4 Tab 6.
 #[must_use]
 pub const fn element_name(kind: ContentType, repr: RepresentationKind) -> &'static str {
     use RepresentationKind::*;
@@ -118,7 +118,7 @@ mod tests {
 
     #[test]
     fn types_representation_uses_dds_xtypes_root() {
-        // Spec — types-XML wird via DDS-XTYPES Root-Element representiert.
+        // Spec — types XML is represented via the DDS-XTYPES root element.
         assert_eq!(
             element_name(ContentType::Types, RepresentationKind::Object),
             "types"

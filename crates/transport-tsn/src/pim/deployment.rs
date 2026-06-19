@@ -2,7 +2,7 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Deployment Configuration — Spec §7.2.2 Tab 7.10-7.14.
 //!
-//! Repraesentiert das Deployment-Modell aus Figur 7.2:
+//! Represents the deployment model from Figure 7.2:
 //! `NodeLibrary` (Tab 7.10) - `Node` (Tab 7.11) - `DeploymentLibrary`
 //! (Tab 7.12) - `Deployment` (Tab 7.13) - `DeploymentConfiguration`
 //! (Tab 7.14, optionally referencing a TsnConfiguration).
@@ -10,17 +10,17 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// 6-Byte MAC-Adresse aus Spec Tab 7.20 (Caller-Form). Der bestehende
-/// `mac::MacAddress`-Typ aus dem Transport-Layer kann hier nicht
-/// re-used werden, weil dieses Modul std-feature-frei nutzbar bleibt.
+/// 6-byte MAC address from Spec Tab 7.20 (caller form). The existing
+/// `mac::MacAddress` type from the transport layer cannot be
+/// reused here, because this module stays usable std-feature-free.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct MacAddr(pub [u8; 6]);
 
-/// IPv4-Adresse als 4 Bytes Big-Endian.
+/// IPv4 address as 4 bytes big-endian.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct IpV4(pub [u8; 4]);
 
-/// IPv6-Adresse als 16 Bytes.
+/// IPv6 address as 16 bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct IpV6(pub [u8; 16]);
 
@@ -62,30 +62,30 @@ pub struct DeploymentLibrary {
 pub struct Deployment {
     /// `name` (Mult 1).
     pub name: String,
-    /// `node_ref` (Mult 1) — vollqualifizierter Name eines `Node`s.
+    /// `node_ref` (Mult 1) — fully qualified name of a `Node`.
     pub node_ref: String,
-    /// `application_list` (Mult 1..*) — vollqualifizierte
-    /// `Application.name`-Verweise.
+    /// `application_list` (Mult 1..*) — fully qualified
+    /// `Application.name` references.
     pub application_refs: Vec<String>,
     /// `configuration` (Mult 0..1) — `DeploymentConfiguration`.
     pub configuration: Option<DeploymentConfiguration>,
 }
 
-/// Spec Tab 7.14 — `DeploymentConfiguration`. Aktuell hat die Spec
-/// nur das `tsn`-Feld; wir lassen den `TsnConfiguration`-Verweis als
-/// generisches String-Feld stehen, damit dieses Modul nicht zyklisch
-/// auf den TSN-Stream-Layer aus `crate::stream` zugreifen muss.
-/// Caller resolved den Verweis ueber den `name`.
+/// Spec Tab 7.14 — `DeploymentConfiguration`. Currently the spec has
+/// only the `tsn` field; we keep the `TsnConfiguration` reference as a
+/// generic string field so this module does not have to access the
+/// TSN stream layer from `crate::stream` cyclically.
+/// The caller resolves the reference via the `name`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DeploymentConfiguration {
-    /// `tsn` (Mult 0..1) — Verweis auf eine `TsnConfiguration` per
-    /// Name (siehe `crate::stream::TsnTalker`/`TsnListener`).
+    /// `tsn` (Mult 0..1) — reference to a `TsnConfiguration` by
+    /// name (see `crate::stream::TsnTalker`/`TsnListener`).
     pub tsn_configuration_ref: Option<String>,
 }
 
 impl Deployment {
-    /// Spec Tab 7.13 normativ: `application_list` ist Mult 1..* (mind.
-    /// eine Application). Liefert `Err(())` wenn die Liste leer ist.
+    /// Spec Tab 7.13 normative: `application_list` is Mult 1..* (at least
+    /// one application). Returns `Err(())` if the list is empty.
     ///
     /// # Errors
     /// `DeploymentValidationError::NoApplications`.
@@ -98,10 +98,10 @@ impl Deployment {
     }
 }
 
-/// Spec-Validierungs-Fehler.
+/// Spec validation error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeploymentValidationError {
-    /// `application_list` muss mind. ein Element haben (Spec Tab 7.13
+    /// `application_list` must have at least one element (Spec Tab 7.13
     /// Mult 1..*).
     NoApplications,
 }
@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn deployment_without_apps_is_invalid_per_spec_mult_1_star() {
-        // Spec Tab 7.13: application_list ist Mult 1..* (nicht 0..*).
+        // Spec Tab 7.13: application_list is Mult 1..* (not 0..*).
         let d = Deployment {
             name: "main".into(),
             node_ref: "Edge1".into(),

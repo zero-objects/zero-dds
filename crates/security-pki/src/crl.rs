@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CRL-Validation (Certificate-Revocation-List, RFC 5280 §5).
+//! CRL validation (certificate revocation list, RFC 5280 §5).
 //!
-//! Spec OMG DDS-Security 1.2 §8.8 verlangt CRL-Fallback fuer den Fall,
-//! dass kein OCSP-Responder erreichbar ist. Dieses Modul parst eine
-//! DER-encodete `CertificateList`, extrahiert die Liste der revoked
-//! Serial-Numbers und liefert ein `validate_crl(crl, cert_serial)`,
-//! das `Err(AuthenticationFailed)` zurueckgibt, sobald `cert_serial`
-//! in der Liste steht.
+//! Spec OMG DDS-Security 1.2 §8.8 requires a CRL fallback for the case
+//! that no OCSP responder is reachable. This module parses a
+//! DER-encoded `CertificateList`, extracts the list of revoked
+//! serial numbers and provides a `validate_crl(crl, cert_serial)`
+//! that returns `Err(AuthenticationFailed)` as soon as `cert_serial`
+//! is in the list.
 //!
 //! # ASN.1-Struktur (RFC 5280 §5.1)
 //!
@@ -36,18 +36,18 @@
 //!
 //! # Scope
 //!
-//! * Pragmatischer DER-Walker — kein vollstaendiger ASN.1-Parser.
-//! * Erkennt die `revokedCertificates`-SEQUENCE heuristisch ueber das
-//!   Inner-Pattern (INTEGER + UTCTime/GeneralizedTime), ohne issuer/
-//!   signatureAlgorithm explizit zu modellieren.
-//! * Keine Signatur-Validierung der CRL — der Caller hat sie ueber
-//!   einen vertrauenswuerdigen Pfad (HTTPS, fixed bundle) bezogen. Eine
-//!   spaetere Erweiterung kann `webpki::SignedData` einklinken.
+//! * Pragmatic DER walker — not a complete ASN.1 parser.
+//! * Detects the `revokedCertificates` SEQUENCE heuristically via the
+//!   inner pattern (INTEGER + UTCTime/GeneralizedTime), without modeling
+//!   issuer / signatureAlgorithm explicitly.
+//! * No signature validation of the CRL — the caller obtained it over
+//!   a trustworthy path (HTTPS, fixed bundle). A
+//!   later extension can hook in `webpki::SignedData`.
 //!
 //! # API
 //!
-//! * [`parse_crl_serials`] — extrahiert alle Revoked-Serials.
-//! * [`validate_crl`] — prueft `cert_serial` gegen die CRL.
+//! * [`parse_crl_serials`] — extracts all revoked serials.
+//! * [`validate_crl`] — checks `cert_serial` against the CRL.
 
 extern crate alloc;
 
@@ -60,34 +60,34 @@ const TAG_SEQUENCE: u8 = 0x30;
 const TAG_UTCTIME: u8 = 0x17;
 const TAG_GENERALIZED_TIME: u8 = 0x18;
 
-/// Lokaler Parse-Fehler. Wird durch [`validate_crl`] in
-/// `SecurityError::BadArgument` gemappt.
+/// Local parse error. Mapped by [`validate_crl`] into
+/// `SecurityError::BadArgument`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CrlParseError {
-    /// Eingabe war leer.
+    /// Input was empty.
     Empty,
-    /// DER-Header (tag/length) konnte nicht gelesen werden.
+    /// DER header (tag/length) could not be read.
     Truncated,
-    /// Auessere CertificateList ist keine SEQUENCE.
+    /// The outer CertificateList is not a SEQUENCE.
     NotASequence,
-    /// TBSCertList fehlt oder ist nicht-konform.
+    /// TBSCertList is missing or non-conformant.
     MissingTbsCertList,
-    /// `revokedCertificates`-Struktur konnte nicht lokalisiert werden
-    /// (kann legitim leer sein — siehe [`parse_crl_serials`]).
+    /// The `revokedCertificates` structure could not be located
+    /// (may legitimately be empty — see [`parse_crl_serials`]).
     MissingRevokedList,
-    /// Ein Revoked-Eintrag enthielt keinen Serial-INTEGER.
+    /// A revoked entry contained no serial INTEGER.
     MissingSerial,
 }
 
-/// Parst eine DER-CRL und liefert die Liste aller Revoked-Serial-Bytes
-/// (Big-Endian, INTEGER-encoded — fuehrendes Null-Byte fuer
-/// non-negative Serials wird beibehalten, RFC-5280-konform).
+/// Parses a DER CRL and returns the list of all revoked serial bytes
+/// (big-endian, INTEGER-encoded — a leading null byte for
+/// non-negative serials is kept, RFC-5280-conformant).
 ///
-/// Eine CRL **ohne** `revokedCertificates` (leere Liste) liefert
+/// A CRL **without** `revokedCertificates` (empty list) returns
 /// `Ok(Vec::new())`.
 ///
 /// # Errors
-/// * [`CrlParseError`] bei strukturellen DER-Fehlern.
+/// * [`CrlParseError`] on structural DER errors.
 pub fn parse_crl_serials(crl_der: &[u8]) -> Result<Vec<Vec<u8>>, CrlParseError> {
     if crl_der.is_empty() {
         return Err(CrlParseError::Empty);
@@ -97,14 +97,14 @@ pub fn parse_crl_serials(crl_der: &[u8]) -> Result<Vec<Vec<u8>>, CrlParseError> 
     if tag != TAG_SEQUENCE {
         return Err(CrlParseError::NotASequence);
     }
-    // TBSCertList SEQUENCE (erstes Inner-Element).
+    // TBSCertList SEQUENCE (first inner element).
     let (tbs_tag, tbs_inner, _) = read_tlv(certlist_inner)?;
     if tbs_tag != TAG_SEQUENCE {
         return Err(CrlParseError::MissingTbsCertList);
     }
-    // Iteriere TBS-Inhalt; suche nach SEQUENCE deren erstes Inner-Element
-    // wieder eine SEQUENCE ist, die mit INTEGER + UTCTime/GeneralizedTime
-    // beginnt — das ist `revokedCertificates`.
+    // Iterate the TBS content; look for a SEQUENCE whose first inner element
+    // is again a SEQUENCE that begins with INTEGER + UTCTime/GeneralizedTime
+    // — that is `revokedCertificates`.
     let mut cursor = tbs_inner;
     while !cursor.is_empty() {
         let (t, inner, rest) = read_tlv(cursor).map_err(|_| CrlParseError::MissingRevokedList)?;
@@ -116,18 +116,18 @@ pub fn parse_crl_serials(crl_der: &[u8]) -> Result<Vec<Vec<u8>>, CrlParseError> 
             return Ok(serials);
         }
     }
-    // Keine revokedCertificates-Struktur → leere Liste (RFC erlaubt das).
+    // No revokedCertificates structure → empty list (the RFC allows that).
     Ok(Vec::new())
 }
 
-/// Prueft, ob ein gegebenes Cert (per Serial-Bytes) gegen eine CRL
-/// valide ist.
+/// Checks whether a given cert (by serial bytes) is valid against a
+/// CRL.
 ///
 /// # Errors
-/// * `BadArgument` wenn die CRL nicht parsbar ist (entspricht dem
-///   OCSP-Modul-Verhalten).
-/// * `AuthenticationFailed` wenn `cert_serial` in der Revoked-Liste
-///   steht.
+/// * `BadArgument` if the CRL is not parseable (matches the
+///   OCSP module behavior).
+/// * `AuthenticationFailed` if `cert_serial` is in the revoked
+///   list.
 pub fn validate_crl(crl_der: &[u8], cert_serial: &[u8]) -> Result<(), SecurityError> {
     let revoked = parse_crl_serials(crl_der).map_err(|e| {
         SecurityError::new(SecurityErrorKind::BadArgument, crl_parse_error_message(e))
@@ -135,7 +135,7 @@ pub fn validate_crl(crl_der: &[u8], cert_serial: &[u8]) -> Result<(), SecurityEr
     if revoked.iter().any(|s| s.as_slice() == cert_serial) {
         return Err(SecurityError::new(
             SecurityErrorKind::AuthenticationFailed,
-            "crl: cert ist revoked",
+            "crl: cert is revoked",
         ));
     }
     Ok(())
@@ -143,26 +143,26 @@ pub fn validate_crl(crl_der: &[u8], cert_serial: &[u8]) -> Result<(), SecurityEr
 
 fn crl_parse_error_message(e: CrlParseError) -> &'static str {
     match e {
-        CrlParseError::Empty => "crl: leere eingabe",
+        CrlParseError::Empty => "crl: empty input",
         CrlParseError::Truncated => "crl: truncated DER",
-        CrlParseError::NotASequence => "crl: outer ist keine SEQUENCE",
-        CrlParseError::MissingTbsCertList => "crl: TBSCertList fehlt",
+        CrlParseError::NotASequence => "crl: outer is not a SEQUENCE",
+        CrlParseError::MissingTbsCertList => "crl: TBSCertList missing",
         CrlParseError::MissingRevokedList => "crl: revokedCertificates malformed",
-        CrlParseError::MissingSerial => "crl: revoked-eintrag ohne serial",
+        CrlParseError::MissingSerial => "crl: revoked entry without serial",
     }
 }
 
-/// Versucht, `inner` als Inhalt der `revokedCertificates`-SEQUENCE zu
-/// interpretieren. Liefert `Ok(Some(serials))` bei Match,
-/// `Ok(None)` wenn der Inhalt nicht zur RevokedCert-Form passt
-/// (Caller iteriert weiter), `Err` bei strukturellen Defekten in einem
-/// als Match erkannten Pfad.
+/// Tries to interpret `inner` as the content of the
+/// `revokedCertificates` SEQUENCE. Returns `Ok(Some(serials))` on a match,
+/// `Ok(None)` if the content does not fit the RevokedCert form
+/// (the caller keeps iterating), `Err` on structural defects in a
+/// path recognized as a match.
 fn try_parse_revoked_list(inner: &[u8]) -> Result<Option<Vec<Vec<u8>>>, CrlParseError> {
     if inner.is_empty() {
         return Ok(None);
     }
-    // Erste Inner-TLV pruefen — muss SEQUENCE sein, deren Inner mit
-    // INTEGER + UTCTime/GeneralizedTime beginnt.
+    // Check the first inner TLV — must be a SEQUENCE whose inner begins with
+    // INTEGER + UTCTime/GeneralizedTime.
     let (first_tag, first_inner, _) = match read_tlv(inner) {
         Ok(v) => v,
         Err(_) => return Ok(None),
@@ -185,7 +185,7 @@ fn try_parse_revoked_list(inner: &[u8]) -> Result<Option<Vec<Vec<u8>>>, CrlParse
         return Ok(None);
     }
 
-    // Match — iteriere alle Revoked-Cert-Einträge und sammle Serials.
+    // Match — iterate all revoked-cert entries and collect serials.
     let mut serials = Vec::new();
     let mut cursor = inner;
     while !cursor.is_empty() {
@@ -204,7 +204,7 @@ fn try_parse_revoked_list(inner: &[u8]) -> Result<Option<Vec<Vec<u8>>>, CrlParse
     Ok(Some(serials))
 }
 
-/// Liest ein DER-TLV-Element und liefert `(tag, value, rest)`.
+/// Reads a DER TLV element and returns `(tag, value, rest)`.
 fn read_tlv(buf: &[u8]) -> Result<(u8, &[u8], &[u8]), CrlParseError> {
     if buf.len() < 2 {
         return Err(CrlParseError::Truncated);
@@ -220,9 +220,9 @@ fn read_tlv(buf: &[u8]) -> Result<(u8, &[u8], &[u8]), CrlParseError> {
     Ok((tag, value, rest))
 }
 
-/// Liest ein DER-Length-Feld und liefert `(length, length_field_bytes)`.
-/// Unterstuetzt Short-Form (1 byte, < 0x80) und Long-Form (0x81..0x84,
-/// d.h. bis zu 4 Length-Bytes — reicht fuer alle realistischen CRLs).
+/// Reads a DER length field and returns `(length, length_field_bytes)`.
+/// Supports short form (1 byte, < 0x80) and long form (0x81..0x84,
+/// i.e. up to 4 length bytes — enough for all realistic CRLs).
 fn read_length(buf: &[u8]) -> Result<(usize, usize), CrlParseError> {
     if buf.is_empty() {
         return Err(CrlParseError::Truncated);
@@ -233,7 +233,7 @@ fn read_length(buf: &[u8]) -> Result<(usize, usize), CrlParseError> {
     }
     let n = (first & 0x7F) as usize;
     if n == 0 || n > 4 {
-        // Indefinite-Length oder zu lang fuer DoS-Schutz.
+        // Indefinite length or too long, for DoS protection.
         return Err(CrlParseError::Truncated);
     }
     if buf.len() < 1 + n {
@@ -241,9 +241,9 @@ fn read_length(buf: &[u8]) -> Result<(usize, usize), CrlParseError> {
     }
     let mut len = 0usize;
     for &b in &buf[1..1 + n] {
-        // Arithmetic form statt `(len << 8) | b`: mathematisch identisch
-        // bei BE-Encoding (kein Bit-Overlap), aber mutation-detection-
-        // freundlicher — `*` und `+` sind nicht aequivalent zueinander.
+        // Arithmetic form instead of `(len << 8) | b`: mathematically identical
+        // for BE encoding (no bit overlap), but more mutation-detection-
+        // friendly — `*` and `+` are not equivalent to each other.
         len = len * 256 + b as usize;
     }
     Ok((len, 1 + n))
@@ -258,10 +258,10 @@ fn read_length(buf: &[u8]) -> Result<(usize, usize), CrlParseError> {
 mod tests {
     use super::*;
 
-    /// Baut eine minimale syntaktisch valide CRL mit einer
-    /// `revokedCertificates`-Liste der gegebenen Serials.
+    /// Builds a minimal syntactically valid CRL with a
+    /// `revokedCertificates` list of the given serials.
     ///
-    /// Layout (alle short-form, Length < 128):
+    /// Layout (all short form, length < 128):
     /// ```text
     ///   CertificateList SEQUENCE {
     ///     TBSCertList SEQUENCE {
@@ -272,12 +272,12 @@ mod tests {
     ///         UTCTime revocationDate
     ///       } *
     ///     }
-    ///     -- signatureAlgorithm + signatureValue weglassen; Parser
-    ///     -- braucht sie nicht.
+    ///     -- omit signatureAlgorithm + signatureValue; the parser
+    ///     -- does not need them.
     ///   }
     /// ```
     fn build_test_crl(revoked_serials: &[&[u8]]) -> Vec<u8> {
-        // 1. issuer-stub: SEQUENCE { SET {} } — leer, valide DER
+        // 1. issuer stub: SEQUENCE { SET {} } — empty, valid DER
         let issuer = der_seq(&der_set(&[]));
         // 2. thisUpdate: UTCTime "260101000000Z" (13 bytes)
         let this_update = der_utctime(b"260101000000Z");
@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn parse_serials_keeps_leading_zero_byte_for_positive_serials() {
-        // RFC 5280: Serials > 2^(8n-1) brauchen fuehrenden 0-Byte.
+        // RFC 5280: serials > 2^(8n-1) need a leading 0 byte.
         let crl = build_test_crl(&[&[0x00, 0xFF]]);
         let serials = parse_crl_serials(&crl).expect("parse");
         assert_eq!(serials, vec![vec![0x00, 0xFF]]);
@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn parse_serials_handles_long_serial() {
-        // 20 bytes — typische CA-Serial-Laenge.
+        // 20 bytes — typical CA serial length.
         let serial: [u8; 20] = [
             0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
             0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC,
@@ -397,7 +397,7 @@ mod tests {
 
     #[test]
     fn validate_crl_signature_invalid_rejects() {
-        // Korrupte CRL — outer ist kein SEQUENCE → BadArgument.
+        // Corrupt CRL — outer is not a SEQUENCE → BadArgument.
         let bad = vec![0x05, 0x00, 0x00, 0x00];
         let err = validate_crl(&bad, &[0x01]).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
@@ -411,7 +411,7 @@ mod tests {
 
     #[test]
     fn validate_crl_truncated_input_returns_bad_argument() {
-        // SEQUENCE-Header sagt 50 bytes, aber nur 5 da.
+        // SEQUENCE header says 50 bytes, but only 5 present.
         let bad = vec![0x30, 0x32, 0x01, 0x02, 0x03];
         let err = validate_crl(&bad, &[0x01]).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
@@ -419,7 +419,7 @@ mod tests {
 
     #[test]
     fn parse_serials_rejects_non_sequence_outer() {
-        // Outer ist INTEGER statt SEQUENCE.
+        // Outer is INTEGER instead of SEQUENCE.
         let bad = vec![0x02, 0x01, 0x00];
         let err = parse_crl_serials(&bad).unwrap_err();
         assert_eq!(err, CrlParseError::NotASequence);
@@ -433,15 +433,15 @@ mod tests {
 
     #[test]
     fn parse_serials_handles_long_form_length() {
-        // CRL mit > 128 byte Inhalt → Long-Form-Length wird benoetigt.
+        // CRL with > 128 bytes of content → long-form length is needed.
         let mut serials_refs: Vec<Vec<u8>> = Vec::new();
         for i in 0..10u8 {
             serials_refs.push(vec![i, i.wrapping_add(1), i.wrapping_add(2)]);
         }
         let serials_slice: Vec<&[u8]> = serials_refs.iter().map(|v| v.as_slice()).collect();
         let crl = build_test_crl(&serials_slice);
-        // CRL muss > 128 byte sein damit die Long-Form-Length getriggert wird.
-        assert!(crl.len() > 128, "test-crl muss long-form-length triggern");
+        // The CRL must be > 128 bytes so the long-form length is triggered.
+        assert!(crl.len() > 128, "test crl must trigger long-form length");
         let parsed = parse_crl_serials(&crl).expect("parse");
         assert_eq!(parsed.len(), 10);
         for (got, want) in parsed.iter().zip(serials_refs.iter()) {
@@ -451,10 +451,10 @@ mod tests {
 
     #[test]
     fn parse_serials_rejects_indefinite_length() {
-        // Indefinite-Length (0x80) ist BER, nicht DER → Truncated.
+        // Indefinite length (0x80) is BER, not DER → Truncated.
         let bad = vec![0x30, 0x80, 0x00, 0x00];
         let err = parse_crl_serials(&bad).unwrap_err();
-        // Length 0x80 = indefinite — wir akzeptieren nicht.
+        // Length 0x80 = indefinite — we do not accept it.
         assert!(matches!(
             err,
             CrlParseError::Truncated | CrlParseError::MissingTbsCertList
@@ -463,21 +463,21 @@ mod tests {
 
     #[test]
     fn validate_crl_with_two_revoked_finds_second() {
-        // Sicherstellen dass auch nicht-erste Serials erkannt werden.
+        // Make sure non-first serials are also detected.
         let crl = build_test_crl(&[&[0x01], &[0x02], &[0x03]]);
         let err = validate_crl(&crl, &[0x03]).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::AuthenticationFailed);
     }
 
-    // ---- Mutation-Killer fuer crl_parse_error_message + read_length ----
+    // ---- Mutation killers for crl_parse_error_message + read_length ----
 
-    /// Faengt Mutation `crl_parse_error_message -> ""` und `-> "xyzzy"`.
-    /// Jede CrlParseError-Variant muss eine spezifische Message liefern.
+    /// Catches mutation `crl_parse_error_message -> ""` and `-> "xyzzy"`.
+    /// Each CrlParseError variant must return a specific message.
     #[test]
     fn parse_error_messages_are_specific_per_variant() {
         assert_eq!(
             crl_parse_error_message(CrlParseError::Empty),
-            "crl: leere eingabe"
+            "crl: empty input"
         );
         assert_eq!(
             crl_parse_error_message(CrlParseError::Truncated),
@@ -485,11 +485,11 @@ mod tests {
         );
         assert_eq!(
             crl_parse_error_message(CrlParseError::NotASequence),
-            "crl: outer ist keine SEQUENCE"
+            "crl: outer is not a SEQUENCE"
         );
         assert_eq!(
             crl_parse_error_message(CrlParseError::MissingTbsCertList),
-            "crl: TBSCertList fehlt"
+            "crl: TBSCertList missing"
         );
         assert_eq!(
             crl_parse_error_message(CrlParseError::MissingRevokedList),
@@ -497,17 +497,17 @@ mod tests {
         );
         assert_eq!(
             crl_parse_error_message(CrlParseError::MissingSerial),
-            "crl: revoked-eintrag ohne serial"
+            "crl: revoked entry without serial"
         );
     }
 
-    /// Faengt Mutation `!=` -> `==` in `try_parse_revoked_list`.
-    /// Time-Tag-Pruefung: Ein nicht-time-Tag muss zu Ok(None) fuehren
-    /// (Caller probiert weiter), nicht zu erfolgreichem Match.
+    /// Catches mutation `!=` -> `==` in `try_parse_revoked_list`.
+    /// Time-tag check: a non-time tag must lead to Ok(None)
+    /// (the caller keeps trying), not to a successful match.
     #[test]
     fn try_parse_revoked_list_rejects_non_time_tag() {
-        // SEQUENCE { INTEGER 0x42, INTEGER 0x99 } — nach Serial kommt
-        // erneut INTEGER, nicht UTCTime/GeneralizedTime → kein Match.
+        // SEQUENCE { INTEGER 0x42, INTEGER 0x99 } — after the serial comes
+        // another INTEGER, not UTCTime/GeneralizedTime → no match.
         let inner = [
             0x30, 0x06, // outer SEQUENCE, len=6
             0x02, 0x01, 0x42, // INTEGER serial=0x42
@@ -519,89 +519,89 @@ mod tests {
 
     // --- read_length boundary tests ---
 
-    /// Faengt Mutation `< 0x80` -> `<= 0x80` (Zeile 228).
-    /// 0x80 ist long-form-marker (n=0 → DoS-Reject), nicht short-form.
+    /// Catches mutation `< 0x80` -> `<= 0x80` (line 228).
+    /// 0x80 is the long-form marker (n=0 → DoS reject), not short form.
     #[test]
     fn read_length_0x80_is_long_form_marker_not_short() {
-        // first=0x80, n=(0x80 & 0x7F)=0 → reject als indefinite/0
+        // first=0x80, n=(0x80 & 0x7F)=0 → reject as indefinite/0
         let res = read_length(&[0x80, 0xAA]);
         assert!(matches!(res, Err(CrlParseError::Truncated)), "got {res:?}");
     }
 
-    /// Faengt Mutation `||` -> `&&` (Zeile 232).
-    /// `n == 0 || n > 4` muss BEIDE Faelle verwerfen — n=0 UND n=5+.
-    /// Mutation `&&`: nur n==0 UND n>4 (unmoeglich) → Reject geht weg.
+    /// Catches mutation `||` -> `&&` (line 232).
+    /// `n == 0 || n > 4` must reject BOTH cases — n=0 AND n=5+.
+    /// Mutation `&&`: only n==0 AND n>4 (impossible) → the reject goes away.
     #[test]
     fn read_length_rejects_n_greater_than_four() {
-        // first = 0x85 → n = 5 → muss erroren.
+        // first = 0x85 → n = 5 → must error.
         let buf = [0x85, 0x00, 0x00, 0x00, 0x00, 0x00];
         let res = read_length(&buf);
         assert!(matches!(res, Err(CrlParseError::Truncated)), "got {res:?}");
     }
 
-    /// Faengt Mutation `>` -> `==` und `>` -> `>=` auf `n > 4`.
-    /// Boundary: n=4 muss DURCHGEHEN (Long-Form mit 4 Length-Bytes ok),
-    /// n=5 muss ERRORN.
+    /// Catches mutation `>` -> `==` and `>` -> `>=` on `n > 4`.
+    /// Boundary: n=4 must PASS (long form with 4 length bytes ok),
+    /// n=5 must ERROR.
     #[test]
     fn read_length_n_equals_four_accepted() {
-        // first=0x84 → n=4. Buffer hat Header + 4 Length-Bytes + payload.
+        // first=0x84 → n=4. Buffer has header + 4 length bytes + payload.
         let buf = [0x84, 0x00, 0x00, 0x01, 0x00, 0xAA, 0xBB];
         let (len, hdr) = read_length(&buf).expect("n=4 must be accepted");
         assert_eq!(len, 0x100);
         assert_eq!(hdr, 5);
     }
 
-    /// Faengt Mutation `<` -> `==` und `<` -> `<=` auf `buf.len() < 1+n`
-    /// (Zeile 236). Buffer EXAKT 1+n bytes muss durchgehen (genug).
+    /// Catches mutation `<` -> `==` and `<` -> `<=` on `buf.len() < 1+n`
+    /// (line 236). A buffer of EXACTLY 1+n bytes must pass (enough).
     #[test]
     fn read_length_buf_exactly_one_plus_n_accepted() {
-        // first=0x82 → n=2. 1 (length-byte) + 2 (content) = 3 byte buffer.
+        // first=0x82 → n=2. 1 (length byte) + 2 (content) = 3-byte buffer.
         let buf = [0x82, 0x12, 0x34];
         let (len, hdr) = read_length(&buf).expect("buf.len()==1+n must succeed");
         assert_eq!(len, 0x1234);
         assert_eq!(hdr, 3);
     }
 
-    /// Faengt Mutation `+` -> `*` auf `1 + n`.
-    /// Mit `*`: `buf.len() < 1*n = n`. Bei n=2: erlaubt buf.len()<2,
-    /// also 1-byte-buf wuerde Truncated, 2-byte ok. Original verlangt
-    /// 3-byte. Ein 2-byte-buf MUSS Truncated geben.
+    /// Catches mutation `+` -> `*` on `1 + n`.
+    /// With `*`: `buf.len() < 1*n = n`. For n=2: allows buf.len()<2,
+    /// so a 1-byte buf would be Truncated, 2-byte ok. The original requires
+    /// 3 bytes. A 2-byte buf MUST give Truncated.
     #[test]
     fn read_length_buf_one_plus_n_minus_one_truncated() {
-        // first=0x82 → n=2. 1 length-byte + 1 content-byte = 2-byte buf.
+        // first=0x82 → n=2. 1 length byte + 1 content byte = 2-byte buf.
         // Original: 2 < 3 → Truncated. Mutation `*`: 2 < 2 false → continues
-        // → liest nur 1 byte als length, panic via OOB on buf[2] oder
-        // unerwarteter Wert.
+        // → reads only 1 byte as length, panics via OOB on buf[2] or
+        // an unexpected value.
         let buf = [0x82, 0x12];
         let res = read_length(&buf);
         assert!(matches!(res, Err(CrlParseError::Truncated)), "got {res:?}");
     }
 
-    /// Faengt Mutation `<<` -> `>>` auf `len << 8` (Zeile 241).
-    /// Multi-byte length encoding muss High-Byte-First sein (BE).
-    /// Mit `>>`: pro Iteration verliert sich der vorherige Inhalt.
+    /// Catches mutation `<<` -> `>>` on `len << 8` (line 241).
+    /// Multi-byte length encoding must be high-byte-first (BE).
+    /// With `>>`: each iteration loses the previous content.
     #[test]
     fn read_length_two_byte_length_high_byte_first() {
-        // first=0x82, length-bytes=[0x01, 0x00] → len=256.
-        // Mit `>>` Mutation: erste iter: len = (0 >> 8) | 0x01 = 0x01.
-        // zweite iter: len = (0x01 >> 8) | 0x00 = 0. → 0, nicht 256.
+        // first=0x82, length bytes=[0x01, 0x00] → len=256.
+        // With the `>>` mutation: first iter: len = (0 >> 8) | 0x01 = 0x01.
+        // second iter: len = (0x01 >> 8) | 0x00 = 0. → 0, not 256.
         let buf = [0x82, 0x01, 0x00];
         let (len, hdr) = read_length(&buf).expect("must parse");
         assert_eq!(len, 256, "multi-byte length must be BE — high byte first");
         assert_eq!(hdr, 3);
     }
 
-    /// Faengt Mutation `|` -> `^` auf der Length-Akkumulation (Zeile 241).
-    /// In dieser Schleife sind OR und XOR mathematisch aequivalent (keine
-    /// Bit-Ueberlappung wegen `<< 8`-Shift). Dieser Test waere KEINE
-    /// Diskriminierung — die Mutation ist equivalent. cargo-mutants
-    /// erkennt das nicht; der Test dient als Dokumentation, nicht als
-    /// Killer.
+    /// Catches mutation `|` -> `^` on the length accumulation (line 241).
+    /// In this loop OR and XOR are mathematically equivalent (no
+    /// bit overlap because of the `<< 8` shift). This test would NOT
+    /// discriminate — the mutation is equivalent. cargo-mutants
+    /// does not recognize that; the test serves as documentation, not as a
+    /// killer.
     ///
-    /// Wir asserten trotzdem das korrekte Ergebnis bei mehrfacher
-    /// gesetzter Bytes — falls der Shift sich aendert (z.B. << 4),
-    /// wuerden OR und XOR plotzlich differenzieren und der Test
-    /// faengt indirekt.
+    /// We assert the correct result for multiple set bytes anyway —
+    /// if the shift changes (e.g. << 4),
+    /// OR and XOR would suddenly diverge and the test
+    /// catches it indirectly.
     #[test]
     fn read_length_three_byte_length_correct() {
         // 0x83 0xFF 0x00 0xFF → len = 0xFF00FF

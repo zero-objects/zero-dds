@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// Core.cs — DDS-PSM-Cxx 1.0 §7.5 Core types portiert nach C#.
+// Core.cs — DDS-PSM-Cxx 1.0 §7.5 core types ported to C#.
 
 using System;
 

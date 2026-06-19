@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Wire-Conformance-Tests fuer den ValueBase-Stream (§8.3 + §4.4).
+//! Wire conformance tests for the ValueBase stream (§8.3 + §4.4).
 //!
-//! Belegt das Roundtrip-Verhalten der ValueStreamWriter/ValueStreamReader
-//! gegen byte-genaue Erwartungswerte:
+//! Validates the roundtrip behavior of ValueStreamWriter/ValueStreamReader
+//! against byte-exact expected values:
 //! * single-repo-id value-tag (CDR §15.3.4.2 — `0x7FFFFF02`),
 //! * multi-repo-id list (CDR §15.3.4.2 — `0x7FFFFF06`),
-//! * chunked-encoding mit list (CDR §15.3.4.3 — `0x7FFFFF0A`).
+//! * chunked encoding with list (CDR §15.3.4.3 — `0x7FFFFF0A`).
 
 #![allow(
     clippy::expect_used,
@@ -39,7 +39,7 @@ fn wire_value_tag_roundtrip() {
     let bytes = writer.into_bytes();
     assert!(bytes.len() >= 4, "must contain at least the tag");
 
-    // Tag-Praefix muss 0x7FFFFF02 in Little-Endian sein.
+    // Tag prefix must be 0x7FFFFF02 in little-endian.
     assert_eq!(&bytes[0..4], &0x7FFF_FF02_u32.to_le_bytes());
 
     let mut reader = BufferReader::new(&bytes, Endianness::Little);
@@ -50,7 +50,7 @@ fn wire_value_tag_roundtrip() {
 
 #[test]
 fn wire_value_tag_null_reference() {
-    // Null-Value-Tag = 0x00000000 (CDR §15.3.4.2).
+    // Null value-tag = 0x00000000 (CDR §15.3.4.2).
     let bytes = 0x0000_0000_u32.to_le_bytes();
     let mut reader = BufferReader::new(&bytes, Endianness::Little);
     let mut vr = ValueStreamReader::new(&mut reader);
@@ -60,8 +60,8 @@ fn wire_value_tag_null_reference() {
 
 #[test]
 fn wire_value_tag_truly_unsupported_returns_error() {
-    // 0x7FFFFF22 ist im aktuellen Wire-Codec nicht implementiert
-    // (z.B. codeset-Variante).
+    // 0x7FFFFF22 is not implemented in the current wire codec
+    // (e.g. codeset variant).
     let bytes = 0x7FFF_FF22_u32.to_le_bytes();
     let mut reader = BufferReader::new(&bytes, Endianness::Little);
     let mut vr = ValueStreamReader::new(&mut reader);
@@ -95,7 +95,7 @@ fn wire_value_tag_multi_repo_id_list_round_trip() {
 
 #[test]
 fn wire_value_tag_chunked_with_list_round_trip() {
-    // Schreibt: chunked-tag → 2 repo-ids → chunk(0xAA, 0xBB, 0xCC) →
+    // Writes: chunked-tag → 2 repo-ids → chunk(0xAA, 0xBB, 0xCC) →
     // chunk(0xDD, 0xEE) → end-tag (-1, outermost value).
     let ids = ["IDL:Derived:1.0", "IDL:Base:1.0"];
     let chunk1 = [0xAA_u8, 0xBB, 0xCC];
@@ -123,12 +123,12 @@ fn wire_value_tag_chunked_with_list_round_trip() {
     assert_eq!(read_ids.len(), 2);
     assert_eq!(read_ids[0], ids[0]);
 
-    // Erster Chunk: size = 3, dann 3 bytes.
+    // First chunk: size = 3, then 3 bytes.
     let s1 = vr.read_chunk_size().expect("chunk1 size");
     assert_eq!(s1, 3);
-    // Zweiter Chunk: size = 2, dann 2 bytes.
-    // Wir muessen die Bytes selbst aus dem Buffer lesen — dafuer
-    // klammern wir den Reader auf und greifen direkt zu.
+    // Second chunk: size = 2, then 2 bytes.
+    // We have to read the bytes from the buffer ourselves — to do that
+    // we open up the reader and access it directly.
     drop(vr);
     let mut reader2 = BufferReader::new(&bytes, Endianness::Little);
     let mut vr2 = ValueStreamReader::new(&mut reader2);
@@ -153,7 +153,7 @@ fn wire_value_tag_chunked_with_list_round_trip() {
     }
     assert_eq!(buf2, chunk2);
 
-    // End-Tag.
+    // End tag.
     let end_raw = reader2.read_u32().expect("end tag");
     let end = end_raw as i32;
     assert_eq!(end, -1, "outermost end-tag must be -1");

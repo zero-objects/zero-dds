@@ -11,7 +11,7 @@ pub const LENGTH_UNLIMITED: i32 = -1;
 
 /// ResourceLimitsQosPolicy.
 ///
-/// `LENGTH_UNLIMITED` (= -1) signalisiert keine harte Grenze.
+/// `LENGTH_UNLIMITED` (= -1) signals no hard limit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResourceLimitsQosPolicy {
     /// Max-Samples.
@@ -33,9 +33,9 @@ impl Default for ResourceLimitsQosPolicy {
 }
 
 impl ResourceLimitsQosPolicy {
-    /// Validiert die konsistenten Bedingungen laut §2.2.3.19.3:
-    /// `max_samples_per_instance <= max_samples` (falls beide gesetzt).
-    /// Gibt `false` bei Verletzung, sonst `true`.
+    /// Validates the consistency conditions per §2.2.3.19.3:
+    /// `max_samples_per_instance <= max_samples` (if both are set).
+    /// Returns `false` on a violation, `true` otherwise.
     #[must_use]
     pub fn is_consistent(self) -> bool {
         if self.max_samples == LENGTH_UNLIMITED || self.max_samples_per_instance == LENGTH_UNLIMITED

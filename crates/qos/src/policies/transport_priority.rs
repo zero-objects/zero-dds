@@ -2,8 +2,8 @@
 // Copyright 2026 ZeroDDS Contributors
 //! TransportPriorityQosPolicy (DDS 1.4 §2.2.3.15).
 //!
-//! Wire-Format: i32 value (4 byte). Hinweis fuer Transport; kein
-//! Match-Effekt.
+//! Wire format: i32 value (4 bytes). A hint for transport; no
+//! match effect.
 
 use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 

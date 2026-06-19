@@ -2,64 +2,63 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Crate `zerodds-transport-uds`. Safety classification: **STANDARD**.
 //!
-//! ZeroDDS-Unix-Domain-Socket-Transport — Container-IPC für ZeroDDS.
+//! ZeroDDS Unix domain socket transport — container IPC for ZeroDDS.
 //!
 //! ## Spec
 //!
-//! - **DDSI-RTPS 2.5 §9.4** — Locator-Kind `LOCATOR_KIND_UDS`
-//!   (vendor-reservierter Wert `0x81000001`, in
+//! - **DDSI-RTPS 2.5 §9.4** — locator kind `LOCATOR_KIND_UDS`
+//!   (vendor-reserved value `0x81000001`, in
 //!   `crates/rtps/src/wire_types.rs`).
-//! - **ZeroDDS-UDS-Transport 1.0** — vendor-spezifischer Transport-
-//!   Spec (Filesystem-Pfad-Resolution, Abstract-Namespace, SOCK_DGRAM
-//!   Wire-Format), `docs/spec-coverage/zerodds-uds-transport-1.0.md`.
+//! - **ZeroDDS-UDS-Transport 1.0** — vendor-specific transport spec
+//!   (filesystem path resolution, abstract namespace, SOCK_DGRAM
+//!   wire format), `docs/spec-coverage/zerodds-uds-transport-1.0.md`.
 //!
-//! ## Hinweis zur OMG-Normativität
+//! ## Note on OMG normativity
 //!
-//! OMG normiert keinen UDS-Transport für DDS. Cyclone DDS und FastDDS
-//! haben keinen offiziellen UDS-Transport (nutzen iceoryx oder
-//! shared memory). ZeroDDS definiert seine eigene Variante explizit
-//! als ZeroDDS-UDS-Transport-1.0-Spec.
+//! OMG does not standardize a UDS transport for DDS. Cyclone DDS and
+//! Fast DDS have no official UDS transport (they use iceoryx or shared
+//! memory). ZeroDDS defines its own variant explicitly as the
+//! ZeroDDS-UDS-Transport-1.0 spec.
 //!
-//! ## Use Case
+//! ## Use case
 //!
-//! Container-IPC, wenn Multicast geblockt ist und POSIX-SHM
-//! cross-Container unpraktisch (UID-Mapping, `/dev/shm`-Sichtbarkeit,
-//! SELinux). Ein gemountetes Volume mit UDS-Sockets ist das
-//! realistische Docker/Kubernetes-Pattern.
+//! Container IPC when multicast is blocked and POSIX SHM is impractical
+//! cross-container (UID mapping, `/dev/shm` visibility, SELinux). A
+//! mounted volume with UDS sockets is the realistic Docker/Kubernetes
+//! pattern.
 //!
-//! ## Implementiert (RC1)
+//! ## Implemented (RC1)
 //!
-//! - `SOCK_DGRAM` über Filesystem-Sockets (Default-Modus).
-//! - Linux Abstract-Namespace-Support via `abstract_dgram`-Modul
-//!   (Datagrams ohne Filesystem-Inode).
-//! - Lazy Base-Directory-Erstellung mit Mode `0700`.
-//! - TOCTOU-sichere Socket-Erstellung (path.exists + fail-fast).
-//! - Differenzierte `io::Error`-Klassifikation für Diagnose.
+//! - `SOCK_DGRAM` over filesystem sockets (default mode).
+//! - Linux abstract-namespace support via the `abstract_dgram` module
+//!   (datagrams without a filesystem inode).
+//! - Lazy base-directory creation with mode `0700`.
+//! - TOCTOU-safe socket creation (path.exists + fail-fast).
+//! - Differentiated `io::Error` classification for diagnostics.
 //!
-//! ## Cross-Vendor-Interop
+//! ## Cross-vendor interop
 //!
-//! Nicht vorgesehen — UDS ist intra-Container/intra-Host-IPC.
-//! Cross-Vendor-Interop mit Cyclone/FastDDS bleibt UDP/TCP/SHM-Domain.
+//! Not intended — UDS is intra-container/intra-host IPC. Cross-vendor
+//! interop with Cyclone/Fast DDS stays in the UDP/TCP/SHM domain.
 //!
-//! ## Wire-Format
+//! ## Wire format
 //!
-//! Jedes Datagram ist eine `SOCK_DGRAM`-Message; Kernel erhält die
-//! Message-Grenzen. Default-Path-Resolution: 16-Byte `Locator`-Adresse
-//! → `<base_dir>/<lowercase-hex>.sock`. Default `base_dir` =
+//! Every datagram is a `SOCK_DGRAM` message; the kernel preserves the
+//! message boundaries. Default path resolution: 16-byte `Locator`
+//! address → `<base_dir>/<lowercase-hex>.sock`. Default `base_dir` =
 //! `/tmp/zerodds/uds`.
 //!
-//! ## Safety / Unsafe-Scope
+//! ## Safety / unsafe scope
 //!
-//! Default-DGRAM-Modul (`lib.rs`) ist safe-only (`std::os::unix::net::UnixDatagram`).
-//! Linux-only `abstract_dgram`-Modul nutzt `libc::sendto`/`libc::recvfrom`
-//! plus raw `sockaddr_un`-Konstruktion für Abstract-Namespace —
-//! enthält begrenzte, mit SAFETY-Kommentaren dokumentierte
-//! `unsafe`-Blöcke.
+//! The default DGRAM module (`lib.rs`) is safe-only (`std::os::unix::net::UnixDatagram`).
+//! The Linux-only `abstract_dgram` module uses `libc::sendto`/`libc::recvfrom`
+//! plus raw `sockaddr_un` construction for the abstract namespace — it
+//! contains limited `unsafe` blocks documented with SAFETY comments.
 
 #![warn(missing_docs)]
-// Unix Domain Sockets gibt es nur unter POSIX — auf Windows kompiliert
-// dieses Crate zu einer leeren lib. Konsumenten gaten ihre uds-Nutzung
-// per `#[cfg(unix)]`.
+// Unix domain sockets exist only on POSIX — on Windows this crate
+// compiles to an empty lib. Consumers gate their uds usage with
+// `#[cfg(unix)]`.
 #![cfg(unix)]
 
 use std::fs;
@@ -160,17 +159,16 @@ impl Drop for UdsTransport {
 }
 
 fn ensure_base_dir(path: &Path) -> io::Result<()> {
-    // TOCTOU-Fix: `path.exists()` + darauf
-    // folgender `set_permissions` ist racy — ein Angreifer koennte
-    // zwischen check und set einen Symlink auf einen fremden Pfad
-    // legen und uns dazu bringen, 0o700 auf /etc oder /root zu
-    // chmod'en.
+    // TOCTOU fix: `path.exists()` followed by `set_permissions` is racy
+    // — an attacker could place a symlink to a foreign path between the
+    // check and the set, tricking us into chmod'ing 0o700 onto /etc or
+    // /root.
     //
-    // Fix: `symlink_metadata` (folgt keine links) + hard-ablehnen
-    // falls path existiert UND kein normales Verzeichnis ist. Wenn
-    // path nicht existiert, `create_dir_all` + `set_permissions` auf
-    // den frisch angelegten Pfad (dessen Ownership wir kennen, weil
-    // wir ihn gerade angelegt haben).
+    // Fix: `symlink_metadata` (does not follow links) + hard-reject if
+    // the path exists AND is not a regular directory. If the path does
+    // not exist, `create_dir_all` + `set_permissions` on the
+    // freshly-created path (whose ownership we know, because we just
+    // created it).
     match fs::symlink_metadata(path) {
         Ok(meta) => {
             if meta.file_type().is_symlink() {
@@ -186,7 +184,7 @@ fn ensure_base_dir(path: &Path) -> io::Result<()> {
                 ));
             }
             // Exists + directory + no symlink → OK, nothing to do.
-            // Wir setzen bewusst NICHT mehr `0o700` auf fremde Dirs.
+            // We deliberately no longer set `0o700` on foreign dirs.
             return Ok(());
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -199,9 +197,9 @@ fn ensure_base_dir(path: &Path) -> io::Result<()> {
     {
         use std::os::unix::fs::PermissionsExt;
         let perms = fs::Permissions::from_mode(0o700);
-        // Re-check: der Pfad existiert jetzt, aber symlink_metadata
-        // noch einmal um Race zwischen create_dir_all und chmod zu
-        // vermeiden (jemand koennte zwischen den Calls rename+symlink).
+        // Re-check: the path exists now, but run symlink_metadata once
+        // more to avoid a race between create_dir_all and chmod (someone
+        // could rename+symlink between the calls).
         let meta_after = fs::symlink_metadata(path)?;
         if meta_after.file_type().is_symlink() {
             return Err(io::Error::new(
@@ -260,11 +258,10 @@ impl Transport for UdsTransport {
     }
 }
 
-/// Differenzierte `io::Error`-Klassifikation.
-/// Bisher wurden alle Fehler auf einen generischen `SendError::Io`
-/// kollabiert, sodass z.B. „Peer noch nicht gebunden" von
-/// „Permissions verweigert" oder „Kernel buffer full" nicht
-/// unterscheidbar war.
+/// Differentiated `io::Error` classification.
+/// Previously all errors collapsed onto a generic `SendError::Io`, so
+/// that e.g. "peer not yet bound" was indistinguishable from
+/// "permission denied" or "kernel buffer full".
 fn classify_send_error(e: &io::Error) -> SendError {
     match e.kind() {
         io::ErrorKind::NotFound => SendError::Io {
@@ -521,6 +518,6 @@ mod tests {
     }
 }
 
-/// `SOCK_DGRAM` mit Abstract-Namespace (Linux-only, T5).
+/// `SOCK_DGRAM` with abstract namespace (Linux-only, T5).
 #[cfg(target_os = "linux")]
 pub mod abstract_dgram;

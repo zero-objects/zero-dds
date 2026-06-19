@@ -1,57 +1,57 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! RTPS-Wire-Format-Fehler.
+//! RTPS wire-format errors.
 
 use core::fmt;
 
-/// Fehler beim Encodieren oder Decodieren von RTPS-Wire-Daten.
+/// Error when encoding or decoding RTPS wire data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum WireError {
-    /// Buffer ist zu klein fuer den Schreib-Vorgang.
+    /// Buffer is too small for the write operation.
     WriteOverflow {
-        /// Wieviele Bytes gebraucht worden waeren.
+        /// How many bytes would have been needed.
         needed: usize,
-        /// Wieviele tatsaechlich verfuegbar waren.
+        /// How many were actually available.
         available: usize,
     },
-    /// Eingabe endete vor dem erwarteten Ende.
+    /// Input ended before the expected end.
     UnexpectedEof {
-        /// Wieviele Bytes noch erwartet wurden.
+        /// How many more bytes were expected.
         needed: usize,
-        /// Position im Stream.
+        /// Position in the stream.
         offset: usize,
     },
-    /// Magic-Bytes des RTPS-Headers stimmen nicht ("RTPS").
+    /// Magic bytes of the RTPS header do not match ("RTPS").
     InvalidMagic {
-        /// Tatsaechlich gelesene 4 Bytes.
+        /// The 4 bytes actually read.
         found: [u8; 4],
     },
-    /// Submessage-ID ist nicht im supported-Set.
+    /// Submessage ID is not in the supported set.
     UnknownSubmessageId {
-        /// Roher Submessage-ID-Byte.
+        /// Raw submessage-ID byte.
         id: u8,
     },
-    /// Locator-Kind hat unerwarteten Wert.
+    /// Locator kind has an unexpected value.
     InvalidLocatorKind {
-        /// Roher i32-Wert.
+        /// Raw i32 value.
         kind: i32,
     },
-    /// Numerischer Wert ueberschreitet das Wire-Feld.
+    /// Numeric value exceeds the wire field.
     ValueOutOfRange {
-        /// Beschreibung.
+        /// Description.
         message: &'static str,
     },
-    /// Encapsulation-Kind im CDR-Header wird nicht unterstuetzt
-    /// (z.B. PL_CDR2, CDR_LE bei erwartetem PL_CDR).
+    /// Encapsulation kind in the CDR header is not supported
+    /// (e.g. PL_CDR2, CDR_LE when PL_CDR is expected).
     UnsupportedEncapsulation {
-        /// Die beiden Encapsulation-Bytes `[kind_hi, kind_lo]`.
+        /// The two encapsulation bytes `[kind_hi, kind_lo]`.
         kind: [u8; 2],
     },
-    /// Spec-konformes Wire-Feature, das in dieser Phase (noch) nicht
-    /// unterstuetzt wird (z.B. Inline-QoS in DATA_FRAG).
+    /// Spec-conformant wire feature that is (not yet) supported in this
+    /// phase (e.g. inline QoS in DATA_FRAG).
     UnsupportedFeature {
-        /// Name/Kurzbeschreibung des Features.
+        /// Name/short description of the feature.
         what: &'static str,
     },
 }

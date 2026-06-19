@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Bridge von SEDP-BuiltinTopicData (Wire) zu zerodds-qos-Policies.
+//! Bridge from SEDP BuiltinTopicData (wire) to zerodds-qos policies.
 //!
-//! `as_writer_qos()` / `as_reader_qos()` ziehen die wire-getragenen
-//! QoS-Felder auf eine vollständige `WriterQos`/`ReaderQos`-Form hoch;
-//! restliche Policies bleiben auf Default.
+//! `as_writer_qos()` / `as_reader_qos()` lift the wire-carried QoS
+//! fields up to a full `WriterQos`/`ReaderQos` form; the remaining
+//! policies stay at their defaults.
 
 use crate::publication_data::PublicationBuiltinTopicData;
 use crate::subscription_data::SubscriptionBuiltinTopicData;
@@ -13,29 +13,29 @@ use zerodds_qos::{DurabilityQosPolicy, ReaderQos, WriterQos};
 
 // ---------- BuiltinTopicData → Qos-Aggregate ----------
 //
-// **Wichtig:** `PublicationBuiltinTopicData` /
-// `SubscriptionBuiltinTopicData` tragen aktuell nur eine Teilmenge
-// der QoS auf Wire (Durability, Reliability). Die übrigen Policies
-// (Deadline, Liveliness, Partition, Ownership, …) bleiben auf den
-// zerodds-qos-Defaults, wenn sie nicht explizit gesetzt werden.
+// **Important:** `PublicationBuiltinTopicData` /
+// `SubscriptionBuiltinTopicData` currently carry only a subset of the
+// QoS on the wire (durability, reliability). The remaining policies
+// (deadline, liveliness, partition, ownership, …) stay at the
+// zerodds-qos defaults if they are not set explicitly.
 //
-// Effekt auf `zerodds_qos::check_compatibility`: wenn ein Peer real
-// eine strenge Deadline requestet, wir aber den Default INFINITE
-// annehmen, meldet der Check "Compatible", obwohl die reale Wire-
-// Verbindung den OFFERED_INCOMPATIBLE_QOS-Listener triggern würde.
+// Effect on `zerodds_qos::check_compatibility`: if a peer actually
+// requests a strict deadline but we assume the default INFINITE, the
+// check reports "Compatible" even though the real wire connection
+// would trigger the OFFERED_INCOMPATIBLE_QOS listener.
 //
-// Für lokal konstruierte QoS (z.B. im DCPS-Layer) können Anwendungen
-// die `with_*`-Helpers nutzen, um vollständige QoS in den Bridge-
-// Typen mitzuführen.
+// For locally constructed QoS (e.g. in the DCPS layer), applications
+// can use the `with_*` helpers to carry a full QoS along in the bridge
+// types.
 
 impl PublicationBuiltinTopicData {
-    /// Baut aus den Wire-Felder eine `WriterQos`.
+    /// Builds a `WriterQos` from the wire fields.
     ///
-    /// **Einschraenkung:** Nur Durability + Reliability werden aus
-    /// `self` uebernommen; alle anderen Policies bleiben auf ihren
-    /// `WriterQos::default()`-Werten. Anwendungen, die gegen den
-    /// discovered Peer matchen wollen, muessen dieser Einschraenkung
-    /// bewusst sein — siehe Modul-Dokumentation.
+    /// **Limitation:** only durability + reliability are taken from
+    /// `self`; all other policies stay at their `WriterQos::default()`
+    /// values. Applications that want to match against the discovered
+    /// peer must be aware of this limitation — see the module
+    /// documentation.
     #[must_use]
     pub fn as_writer_qos(&self) -> WriterQos {
         WriterQos {
@@ -47,9 +47,9 @@ impl PublicationBuiltinTopicData {
         }
     }
 
-    /// Wendet eine vollstaendige `WriterQos` auf diesen Builtin-Topic-
-    /// Data-Payload an, soweit Wire-Felder es erlauben.
-    /// Policies, die (noch) nicht serialisiert werden, gehen verloren.
+    /// Applies a full `WriterQos` to this builtin-topic-data payload,
+    /// as far as the wire fields allow.
+    /// Policies not (yet) serialized are lost.
     #[must_use]
     pub fn with_writer_qos(mut self, qos: &WriterQos) -> Self {
         self.durability = qos.durability.kind;
@@ -59,10 +59,10 @@ impl PublicationBuiltinTopicData {
 }
 
 impl SubscriptionBuiltinTopicData {
-    /// Analog [`PublicationBuiltinTopicData::as_writer_qos`] fuer Reader.
+    /// Analogous to [`PublicationBuiltinTopicData::as_writer_qos`] for readers.
     ///
-    /// **Einschraenkung:** Nur Durability + Reliability; uebrige
-    /// Policies auf `ReaderQos::default()`.
+    /// **Limitation:** only durability + reliability; the remaining
+    /// policies at `ReaderQos::default()`.
     #[must_use]
     pub fn as_reader_qos(&self) -> ReaderQos {
         ReaderQos {
@@ -74,7 +74,7 @@ impl SubscriptionBuiltinTopicData {
         }
     }
 
-    /// Analog [`PublicationBuiltinTopicData::with_writer_qos`] fuer Reader.
+    /// Analogous to [`PublicationBuiltinTopicData::with_writer_qos`] for readers.
     #[must_use]
     pub fn with_reader_qos(mut self, qos: &ReaderQos) -> Self {
         self.durability = qos.durability.kind;
@@ -93,8 +93,8 @@ mod tests {
 
     #[test]
     fn durability_kind_is_reexport_not_duplicate() {
-        // Nach der // Der Test haelt diese Invariante fest — wenn jemand die
-        // Typen wieder duplizieren wollte, bricht er hier.
+        // The test pins this invariant — if someone wanted to duplicate
+        // the types again, it breaks here.
         fn assert_same_type<T>(_a: &T, _b: &T) {}
         let rtps = DurabilityKind::Transient;
         let qos = zerodds_qos::DurabilityKind::Transient;
@@ -150,6 +150,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         };
         let sub_data = SubscriptionBuiltinTopicData {
             key: Guid::new(
@@ -182,6 +184,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         };
         let wq = pub_data.as_writer_qos();
         let rq = sub_data.as_reader_qos();
@@ -190,9 +194,9 @@ mod tests {
 
     /// #24 Round-2-Review: bridged negative-compatibility test.
     ///
-    /// BestEffort-Writer (discovered) + Reliable-Reader (lokal) darf nach
-    /// Bridge-Konvertierung NICHT kompatibel sein — sonst verschleiert die
-    /// Bridge einen echten QoS-Mismatch.
+    /// A BestEffort writer (discovered) + reliable reader (local) must
+    /// NOT be compatible after bridge conversion — otherwise the bridge
+    /// masks a real QoS mismatch.
     #[test]
     fn besteffort_writer_reliable_reader_is_incompatible_via_bridge() {
         let pub_data = PublicationBuiltinTopicData {
@@ -227,6 +231,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         };
         let sub_data = SubscriptionBuiltinTopicData {
             key: Guid::new(
@@ -259,6 +265,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         };
         let wq = pub_data.as_writer_qos();
         let rq = sub_data.as_reader_qos();
@@ -313,6 +321,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         };
         let sub_data = SubscriptionBuiltinTopicData {
             key: Guid::new(
@@ -345,6 +355,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         };
         let wq = pub_data.as_writer_qos();
         let rq = sub_data.as_reader_qos();

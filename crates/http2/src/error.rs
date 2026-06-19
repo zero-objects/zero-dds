@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! HTTP/2 Error-Codes — RFC 9113 §7.
+//! HTTP/2 error codes — RFC 9113 §7.
 
 use core::fmt;
 
-/// Error-Code (RFC 9113 §7).
+/// Error code (RFC 9113 §7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum ErrorCode {
@@ -40,9 +40,9 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
-    /// Mapping `u32 -> ErrorCode`. Unbekannte Codes liefern
-    /// `InternalError` als Fallback (Spec §7: Empfaenger duerfen
-    /// unbekannte Codes als `INTERNAL_ERROR` behandeln).
+    /// Mapping `u32 -> ErrorCode`. Unknown codes return
+    /// `InternalError` as a fallback (Spec §7: receivers may treat
+    /// unknown codes as `INTERNAL_ERROR`).
     #[must_use]
     pub fn from_u32(v: u32) -> Self {
         match v {
@@ -65,33 +65,33 @@ impl ErrorCode {
     }
 }
 
-/// HTTP/2-Layer-Fehler.
+/// HTTP/2-layer error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Http2Error {
-    /// Frame-Header zu kurz (< 9 Bytes).
+    /// Frame header too short (< 9 bytes).
     ShortFrameHeader,
-    /// Payload zu kurz fuer den Frame-Type.
+    /// Payload too short for the frame type.
     ShortPayload,
-    /// Frame-Length ueberschreitet `MAX_FRAME_SIZE`.
+    /// Frame length exceeds `MAX_FRAME_SIZE`.
     FrameTooLarge {
-        /// Erhaltene Length.
+        /// Received length.
         got: u32,
-        /// Aktuelle Max-Frame-Size.
+        /// Current max frame size.
         max: u32,
     },
-    /// Unbekannter/Reserved Frame-Type (Spec §4.1: SHOULD ignore).
+    /// Unknown/reserved frame type (Spec §4.1: SHOULD ignore).
     UnknownFrameType(u8),
-    /// Falscher Connection-Preface.
+    /// Wrong connection preface.
     BadPreface,
-    /// Stream-State erlaubt diesen Frame-Type nicht.
+    /// Stream state does not allow this frame type.
     InvalidState,
-    /// Stream-Id 0, wo Stream != 0 erforderlich.
+    /// Stream id 0 where stream != 0 is required.
     StreamIdZero,
-    /// Stream-Id != 0, wo Stream == 0 erforderlich (z.B. SETTINGS).
+    /// Stream id != 0 where stream == 0 is required (e.g. SETTINGS).
     StreamIdNonZero,
-    /// Flow-Control-Window-Underrun.
+    /// Flow-control window underrun.
     FlowControlExceeded,
-    /// Generic Protocol-Error mit Code.
+    /// Generic protocol error with code.
     Protocol(ErrorCode),
 }
 

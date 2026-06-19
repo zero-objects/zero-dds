@@ -8,42 +8,41 @@
 //!
 //! # Scope
 //!
-//! AMI4CCM ist eine Transformations-Spec: aus einer normalen IDL-
-//! `interface`-Definition werden zwei zusaetzliche Local-Interfaces
-//! abgeleitet (Spec §7.3 + §7.5):
+//! AMI4CCM is a transformation spec: from a normal IDL
+//! `interface` definition, two additional local interfaces are
+//! derived (spec §7.3 + §7.5):
 //!
-//! 1. `AMI4CCM_<Iface>` — Async-Operations mit `sendc_`-Praefix.
-//! 2. `AMI4CCM_<Iface>ReplyHandler` — Type-spezifische Callbacks +
-//!    `_excep`-Operations.
+//! 1. `AMI4CCM_<Iface>` — async operations with a `sendc_` prefix.
+//! 2. `AMI4CCM_<Iface>ReplyHandler` — type-specific callbacks +
+//!    `_excep` operations.
 //!
-//! Plus `CCM_AMI::ExceptionHolder` als Datenmodell fuer Exception-
-//! Lieferung (Spec §7.4.1) und Pragma-Parsing fuer
-//! `#pragma ami4ccm interface "<name>"` und
-//! `#pragma ami4ccm receptacle "<comp>::<recep>"` (Spec §7.7).
+//! Plus `CCM_AMI::ExceptionHolder` as the data model for exception
+//! delivery (spec §7.4.1) and pragma parsing for
+//! `#pragma ami4ccm interface "<name>"` and
+//! `#pragma ami4ccm receptacle "<comp>::<recep>"` (spec §7.7).
 //!
-//! Die Transformation arbeitet auf dem AST-Layer von [`zerodds_idl::ast`]:
-//! Eingabe ist `InterfaceDef`, Ausgabe sind zwei neu konstruierte
-//! `InterfaceDef`-Instanzen (`InterfaceKind::Local`), die jedes
-//! Codegen-Backend (cpp/cs/java/ts) wie normale Interfaces behandeln
-//! kann.
+//! The transformation operates on the AST layer of [`zerodds_idl::ast`]:
+//! the input is `InterfaceDef`, the output is two newly constructed
+//! `InterfaceDef` instances (`InterfaceKind::Local`), which every
+//! codegen backend (cpp/cs/java/ts) can treat like normal interfaces.
 //!
-//! # Was nicht abgedeckt ist
+//! # What is not covered
 //!
-//! * **AMI4CCM Connector + Deployment** (Spec §7.6 + §7.8) — der
-//!   Connector-Fragment-Code wird via D&C in einen CCM-Container
-//!   deployed (`Components::EnterpriseComponent`,
-//!   `CCM_AMI::Connector_T`-Templated-Module). ZeroDDS hat keinen CCM-
-//!   Container/Executor; siehe Audit-File
-//!   `docs/spec-coverage/omg-ami4ccm-1.1.md`. Die **Implied-IDL-
-//!   Transformation** (Conformance-Punkt 1) ist voll abgedeckt; der
-//!   **Connector-Fragment** (Conformance-Punkt 2) ist `n/a` ohne
-//!   CCM-Runtime.
-//! * **CCM-Pragma-Pre-Processor-Integration** — Pragma-Parsing ist als
-//!   eigenstaendige Funktion realisiert; Integration in den IDL-
-//!   Preprocessor laesst sich darauf aufbauen, sobald CCM ein
-//!   Top-Level-Vorhaben ist.
+//! * **AMI4CCM connector + deployment** (spec §7.6 + §7.8) — the
+//!   connector fragment code is deployed via D&C into a CCM container
+//!   (`Components::EnterpriseComponent`,
+//!   `CCM_AMI::Connector_T` templated module). ZeroDDS has no CCM
+//!   container/executor; see audit file
+//!   `docs/spec-coverage/omg-ami4ccm-1.1.md`. The **implied-IDL
+//!   transformation** (conformance point 1) is fully covered; the
+//!   **connector fragment** (conformance point 2) is `n/a` without
+//!   a CCM runtime.
+//! * **CCM pragma pre-processor integration** — pragma parsing is
+//!   realized as a standalone function; integration into the IDL
+//!   preprocessor can be built on top of it once CCM is a
+//!   top-level undertaking.
 //!
-//! # Beispiel
+//! # Example
 //!
 //! ```
 //! use zerodds_ami4ccm::{Ami4CcmPragma, parse_pragma};

@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Cross-Vendor-Interop-Tests fuer WebSocket-Bridge.
+//! Cross-vendor interop tests for the WebSocket bridge.
 //!
 //! Spec: `zerodds-ws-bridge-1.0.md` §10 + §12.3.
 //!
-//! Verifiziert RFC-6455-Konformitaet via raw-TCP-Client mit
-//! handgeschriebenem Handshake (mockt Browser-WS-Client). Dieser Test
-//! laeuft gegen den eigenen ZeroDDS-Daemon im selben Prozess — das ist
-//! die "Cross-Vendor"-Variante, weil unser Codec-Stack die Browser-
-//! Client-Seite simuliert.
+//! Verifies RFC-6455 conformance via a raw TCP client with a
+//! hand-written handshake (mocks a browser WS client). This test
+//! runs against the own ZeroDDS daemon in the same process — that is
+//! the "cross-vendor" variant, because our codec stack simulates the
+//! browser client side.
 //!
-//! Fuer echte Browser-Validierung kann ein externes Tool wie
-//! `websocat` oder Node-`ws` benutzt werden — siehe ignore-tests.
+//! For real browser validation an external tool like
+//! `websocat` or Node `ws` can be used — see the ignored tests.
 //!
 //! Run via:
 //! ```bash

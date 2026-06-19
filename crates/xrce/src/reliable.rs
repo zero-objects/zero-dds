@@ -3,22 +3,22 @@
 
 //! XRCE Reliable-Stream-State-Machine (Spec §8.4.10/§8.4.11).
 //!
-//! Pro reliable Stream (StreamId mit Bit 7 gesetzt → `id >= 128`)
-//! laeuft eine `ReliableStreamState`, die folgende Aufgaben hat:
+//! Per reliable stream (StreamId with bit 7 set → `id >= 128`)
+//! a `ReliableStreamState` runs, which has the following tasks:
 //!
-//! - **Sender-Seite**: `submit(seq, payload)` puffert ausgehende
-//!   `WRITE_DATA`-Bodies, sendet periodisch `HEARTBEAT` (`pending_heartbeat`).
-//!   `recv_acknack(...)` raeumt bestaetigte Sequence-Numbers.
+//! - **Sender side**: `submit(seq, payload)` buffers outgoing
+//!   `WRITE_DATA` bodies, periodically sends `HEARTBEAT` (`pending_heartbeat`).
+//!   `recv_acknack(...)` clears acknowledged sequence numbers.
 //!
-//! - **Receiver-Seite**: `recv_data(seq, payload)` puffert eingehende
-//!   Samples in einem Out-Of-Order-Buffer und liefert sie via
-//!   `drain_in_order()` ab `expected_seq` aus. `pending_acknack()`
-//!   meldet die fehlenden seqnrs als 16-Bit-Bitmap.
+//! - **Receiver side**: `recv_data(seq, payload)` buffers incoming
+//!   samples in an out-of-order buffer and delivers them via
+//!   `drain_in_order()` starting at `expected_seq`. `pending_acknack()`
+//!   reports the missing seqnrs as a 16-bit bitmap.
 //!
-//! Der Stream nutzt RFC-1982 16-Bit-Sequence-Numbers, was 32 768
-//! gleichzeitig in-flight Samples zulaesst (Spec §8.3.2.3). Wir
-//! deckeln das Sender-Window mit `SENDER_WINDOW_CAP = 16` (passt zur
-//! 16-Bit-Bitmap des ACKNACK).
+//! The stream uses RFC-1982 16-bit sequence numbers, which allows 32,768
+//! simultaneously in-flight samples (Spec §8.3.2.3). We
+//! cap the sender window at `SENDER_WINDOW_CAP = 16` (matches the
+//! 16-bit bitmap of the ACKNACK).
 
 extern crate alloc;
 use alloc::collections::BTreeMap;
@@ -30,30 +30,30 @@ use crate::header::StreamId;
 use crate::serial_number::SerialNumber16;
 use crate::submessages::{AckNackPayload, HeartbeatPayload};
 
-/// Default-Heartbeat-Periode (Spec-Empfehlung 100 ms; konservativ
-/// hier 500 ms, weil wir keine Tx-Pacing-Schicht darunter haben).
+/// Default heartbeat period (spec recommendation 100 ms; conservatively
+/// 500 ms here, because we have no Tx pacing layer underneath).
 pub const DEFAULT_HEARTBEAT_PERIOD: Duration = Duration::from_millis(500);
 
-/// Sender-Window-Cap: 16 Samples in-flight (passt zum 16-Bit
-/// `nack_bitmap` im ACKNACK-Body).
+/// Sender window cap: 16 samples in-flight (matches the 16-bit
+/// `nack_bitmap` in the ACKNACK body).
 pub const SENDER_WINDOW_CAP: usize = 16;
 
-/// Receiver-Buffer-Cap: 64 out-of-order Samples (DoS-Schutz: ein
-/// boeswilliger Sender koennte sonst beliebig viele Reorder-Buckets
-/// allokieren).
+/// Receiver buffer cap: 64 out-of-order samples (DoS protection: a
+/// malicious sender could otherwise allocate arbitrarily many reorder
+/// buckets).
 pub const RECEIVER_BUFFER_CAP: usize = 64;
 
-/// Pro-Sample-Payload-Cap: 64 KiB (= u16-Submessage-Length-Limit).
+/// Per-sample payload cap: 64 KiB (= u16 submessage length limit).
 pub const RELIABLE_MAX_PAYLOAD: usize = 65_535;
 
-/// Konfiguration des Reliable-Stream.
+/// Configuration of the reliable stream.
 #[derive(Debug, Clone, Copy)]
 pub struct ReliableConfig {
-    /// Heartbeat-Periode (Sender → Receiver).
+    /// Heartbeat period (sender → receiver).
     pub heartbeat_period: Duration,
-    /// Max. Sender-Window-Groesse (in-flight unbestaetigte Samples).
+    /// Max. sender window size (in-flight unacknowledged samples).
     pub sender_window: usize,
-    /// Max. out-of-order Samples im Receiver-Buffer.
+    /// Max. out-of-order samples in the receiver buffer.
     pub receiver_buffer: usize,
 }
 
@@ -67,33 +67,33 @@ impl Default for ReliableConfig {
     }
 }
 
-/// State-Machine eines reliable XRCE-Streams.
+/// State machine of a reliable XRCE stream.
 #[derive(Debug, Clone)]
 pub struct ReliableStreamState {
     stream_id: StreamId,
     config: ReliableConfig,
 
-    // -------- Sender-State -----------
-    /// Naechste auszugebende Seqnr (monoton, RFC-1982).
+    // -------- Sender state -----------
+    /// Next seqnr to emit (monotonic, RFC-1982).
     next_seq: SerialNumber16,
-    /// In-flight Samples: seq → payload. BTreeMap, damit das
-    /// First-/Last-Pair via `keys()` einfach ist.
+    /// In-flight samples: seq → payload. BTreeMap so that the
+    /// first/last pair via `keys()` is simple.
     in_flight: BTreeMap<u16, Vec<u8>>,
-    /// Letzter gesendeter Heartbeat (`uptime`-relativ).
+    /// Last sent heartbeat (`uptime`-relative).
     last_heartbeat: Option<Duration>,
 
-    // -------- Receiver-State ---------
-    /// Naechste erwartete eingehende Seqnr.
+    // -------- Receiver state ---------
+    /// Next expected incoming seqnr.
     expected_seq: SerialNumber16,
-    /// Out-of-order Buffer: seq → payload.
+    /// Out-of-order buffer: seq → payload.
     received: BTreeMap<u16, Vec<u8>>,
 }
 
 impl ReliableStreamState {
-    /// Konstruktor.
+    /// Constructor.
     ///
     /// # Panics
-    /// `stream_id` muss reliable sein (`is_reliable()`).
+    /// `stream_id` must be reliable (`is_reliable()`).
     #[must_use]
     pub fn new(stream_id: StreamId, config: ReliableConfig) -> Self {
         assert!(
@@ -117,13 +117,13 @@ impl ReliableStreamState {
         self.stream_id
     }
 
-    /// Anzahl in-flight Samples auf der Sender-Seite.
+    /// Number of in-flight samples on the sender side.
     #[must_use]
     pub fn in_flight_count(&self) -> usize {
         self.in_flight.len()
     }
 
-    /// Anzahl out-of-order Samples auf der Receiver-Seite.
+    /// Number of out-of-order samples on the receiver side.
     #[must_use]
     pub fn out_of_order_count(&self) -> usize {
         self.received.len()
@@ -139,12 +139,12 @@ impl ReliableStreamState {
     // Sender-Seite
     // ---------------------------------------------------------------
 
-    /// Submit eines neuen Sample. Liefert die zugewiesene Seqnr.
+    /// Submits a new sample. Returns the assigned seqnr.
     ///
     /// # Errors
-    /// - `PayloadTooLarge`, wenn `payload.len() > RELIABLE_MAX_PAYLOAD`.
-    /// - `ValueOutOfRange`, wenn das Sender-Window voll ist (`sender_window`
-    ///   in-flight Samples). Caller muss vorher ACKNACKs verarbeiten.
+    /// - `PayloadTooLarge` if `payload.len() > RELIABLE_MAX_PAYLOAD`.
+    /// - `ValueOutOfRange` if the sender window is full (`sender_window`
+    ///   in-flight samples). The caller must process ACKNACKs first.
     pub fn submit(&mut self, payload: Vec<u8>) -> Result<SerialNumber16, XrceError> {
         if payload.len() > RELIABLE_MAX_PAYLOAD {
             return Err(XrceError::PayloadTooLarge {
@@ -163,14 +163,14 @@ impl ReliableStreamState {
         Ok(seq)
     }
 
-    /// Lookup eines in-flight Payloads (z.B. fuer Resend).
+    /// Looks up an in-flight payload (e.g. for resend).
     #[must_use]
     pub fn get_in_flight(&self, seq: SerialNumber16) -> Option<&[u8]> {
         self.in_flight.get(&seq.raw()).map(Vec::as_slice)
     }
 
-    /// Tick: liefert `Some(HEARTBEAT)`, falls die Heartbeat-Periode
-    /// abgelaufen ist und in-flight Samples existieren.
+    /// Tick: returns `Some(HEARTBEAT)` if the heartbeat period
+    /// has elapsed and in-flight samples exist.
     pub fn pending_heartbeat(&mut self, now: Duration) -> Option<HeartbeatPayload> {
         if self.in_flight.is_empty() {
             return None;
@@ -186,34 +186,34 @@ impl ReliableStreamState {
         let first = *self.in_flight.keys().next()?;
         let last = *self.in_flight.keys().next_back()?;
         Some(HeartbeatPayload {
-            // i16 reinterpret-cast — RFC-1982-Vergleich passiert auf
-            // Empfaenger-Seite via `wrapping_*`.
+            // i16 reinterpret cast — RFC-1982 comparison happens on the
+            // receiver side via `wrapping_*`.
             first_unacked_seq_nr: first as i16,
             last_unacked_seq_nr: last as i16,
             stream_id: self.stream_id.0,
         })
     }
 
-    /// Verarbeitet eingehendes ACKNACK auf der Sender-Seite.
+    /// Processes an incoming ACKNACK on the sender side.
     ///
-    /// `first_unacked` ist die kleinste seqnr, die der Receiver noch
-    /// erwartet; alles strikt davor wird als bestaetigt entfernt.
-    /// `nack_bitmap` ist 16-Bit; Bit `i` = "seqnr `first_unacked + i`
-    /// fehlt noch". Wir entfernen also alle Samples `< first_unacked`
-    /// und alle Samples in `[first_unacked, first_unacked+16)`, deren
-    /// Bit nicht gesetzt ist.
+    /// `first_unacked` is the smallest seqnr the receiver still
+    /// expects; everything strictly before it is removed as acknowledged.
+    /// `nack_bitmap` is 16-bit; bit `i` = "seqnr `first_unacked + i`
+    /// still missing". So we remove all samples `< first_unacked`
+    /// and all samples in `[first_unacked, first_unacked+16)` whose
+    /// bit is not set.
     pub fn recv_acknack(&mut self, payload: AckNackPayload) {
         let base = payload.first_unacked_seq_num as u16;
         let bitmap = u16::from_le_bytes(payload.nack_bitmap);
 
-        // 1) Alles vor base bestaetigen.
+        // 1) Acknowledge everything before base.
         let to_remove: Vec<u16> = self
             .in_flight
             .keys()
             .copied()
             .filter(|&k| {
                 let diff = base.wrapping_sub(k);
-                // k < base nach RFC-1982?
+                // k < base per RFC-1982?
                 diff > 0 && diff < SerialNumber16::HALF_WINDOW
             })
             .collect();
@@ -221,34 +221,34 @@ impl ReliableStreamState {
             self.in_flight.remove(&k);
         }
 
-        // 2) Innerhalb des Bitmap-Fensters: Bit gesetzt → fehlt → behalten.
-        //    Bit nicht gesetzt → bestaetigt → loeschen.
+        // 2) Within the bitmap window: bit set → missing → keep.
+        //    Bit not set → acknowledged → delete.
         for i in 0u16..16 {
             let seq = base.wrapping_add(i);
             let bit = (bitmap >> i) & 1;
             if bit == 0 {
-                // bestaetigt
+                // acknowledged
                 self.in_flight.remove(&seq);
             }
         }
     }
 
     // ---------------------------------------------------------------
-    // Receiver-Seite
+    // Receiver side
     // ---------------------------------------------------------------
 
-    /// Receiver: ein Sample mit `seq + payload` ist eingelaufen.
-    /// Speichert es im Out-Of-Order-Buffer (oder verwirft als Duplikat).
+    /// Receiver: a sample with `seq + payload` has arrived.
+    /// Stores it in the out-of-order buffer (or discards it as a duplicate).
     ///
     /// # Errors
-    /// `ValueOutOfRange`, wenn der Receiver-Buffer voll ist (DoS-Schutz).
+    /// `ValueOutOfRange` if the receiver buffer is full (DoS protection).
     pub fn recv_data(&mut self, seq: SerialNumber16, payload: Vec<u8>) -> Result<(), XrceError> {
-        // Schon zugestellt (vor expected_seq)?
+        // Already delivered (before expected_seq)?
         if seq.wrapping_lt(self.expected_seq) {
-            return Ok(()); // Duplikat → silently drop
+            return Ok(()); // duplicate → silently drop
         }
         if self.received.contains_key(&seq.raw()) {
-            return Ok(()); // schon im Buffer
+            return Ok(()); // already in the buffer
         }
         if self.received.len() >= self.config.receiver_buffer {
             return Err(XrceError::ValueOutOfRange {
@@ -259,8 +259,8 @@ impl ReliableStreamState {
         Ok(())
     }
 
-    /// Receiver: liefert alle in-Order verfuegbaren Samples ab
-    /// `expected_seq` und schiebt `expected_seq` weiter.
+    /// Receiver: returns all in-order available samples starting at
+    /// `expected_seq` and advances `expected_seq`.
     pub fn drain_in_order(&mut self) -> Vec<(SerialNumber16, Vec<u8>)> {
         let mut out = Vec::new();
         loop {
@@ -275,28 +275,28 @@ impl ReliableStreamState {
         out
     }
 
-    /// Receiver: berechnet das passende ACKNACK-Payload, das die
-    /// fehlenden Seqnrs ab `expected_seq` markiert. Liefert
-    /// `Some(ACKNACK)`, wenn out-of-order Samples vorliegen ODER
-    /// `last_recv_seen` (HEARTBEAT-Hint) eine Luecke offenlegt.
+    /// Receiver: computes the appropriate ACKNACK payload that marks the
+    /// missing seqnrs starting at `expected_seq`. Returns
+    /// `Some(ACKNACK)` when out-of-order samples are present OR
+    /// `last_recv_seen` (HEARTBEAT hint) reveals a gap.
     #[must_use]
     pub fn pending_acknack(&self, hint_last_seen: Option<SerialNumber16>) -> AckNackPayload {
         let base = self.expected_seq;
         let mut bitmap: u16 = 0;
-        // Wir markieren ALLE Slots im Fenster als fehlend, die NICHT im
-        // received-Buffer liegen — dabei ist das Fenster
-        // [base, base+16). Wenn `hint_last_seen` gegeben ist, werden
-        // Slots strikt nach `hint_last_seen` als nicht-fehlend behandelt.
+        // We mark ALL slots in the window as missing that are NOT in the
+        // received buffer — where the window is
+        // [base, base+16). If `hint_last_seen` is given,
+        // slots strictly after `hint_last_seen` are treated as not-missing.
         for i in 0u16..16 {
             let seq = base.next().0.wrapping_sub(1).wrapping_add(i);
             let s = SerialNumber16::new(seq);
-            // skip falls > hint_last_seen
+            // skip if > hint_last_seen
             if let Some(h) = hint_last_seen {
                 if s.wrapping_gt(h) {
                     continue;
                 }
             }
-            // missing falls nicht im received-Buffer
+            // missing if not in the received buffer
             if !self.received.contains_key(&seq) {
                 bitmap |= 1u16 << i;
             }
@@ -308,7 +308,7 @@ impl ReliableStreamState {
         }
     }
 
-    /// Setzt den Stream-State zurueck (z.B. nach `RESET`-Submessage).
+    /// Resets the stream state (e.g. after a `RESET` submessage).
     pub fn reset(&mut self) {
         self.next_seq = SerialNumber16::new(0);
         self.in_flight.clear();
@@ -373,9 +373,9 @@ mod tests {
         let mut s = rs();
         s.submit(alloc::vec![1]).unwrap();
         assert!(s.pending_heartbeat(Duration::from_millis(0)).is_some());
-        // direkt danach: noch keine 500ms vergangen
+        // immediately after: no 500ms elapsed yet
         assert!(s.pending_heartbeat(Duration::from_millis(100)).is_none());
-        // nach 600ms: ja
+        // after 600ms: yes
         assert!(s.pending_heartbeat(Duration::from_millis(600)).is_some());
     }
 
@@ -392,8 +392,8 @@ mod tests {
         s.submit(alloc::vec![0xA1]).unwrap(); // seq 1
         s.submit(alloc::vec![0xA2]).unwrap(); // seq 2
         assert_eq!(s.in_flight_count(), 3);
-        // base=2, bitmap=0b0001 → seq 2 fehlt, also alles davor (0,1) bestaetigt
-        // und seq 2 selbst markiert als noch fehlend
+        // base=2, bitmap=0b0001 → seq 2 missing, so everything before (0,1) acknowledged
+        // and seq 2 itself marked as still missing
         let ack = AckNackPayload {
             first_unacked_seq_num: 2,
             nack_bitmap: [0x01, 0x00],
@@ -410,7 +410,7 @@ mod tests {
         for _ in 0..5 {
             s.submit(alloc::vec![0]).unwrap();
         }
-        // base=5, bitmap=0 → alles bestaetigt
+        // base=5, bitmap=0 → everything acknowledged
         let ack = AckNackPayload {
             first_unacked_seq_num: 5,
             nack_bitmap: [0, 0],
@@ -441,11 +441,11 @@ mod tests {
             .unwrap();
         s.recv_data(SerialNumber16::new(0), alloc::vec![20])
             .unwrap();
-        // Ohne seq 1 koennen wir nur 0 liefern, dann blockieren.
+        // Without seq 1 we can only deliver 0, then block.
         let d1 = s.drain_in_order();
         assert_eq!(d1.len(), 1);
         assert_eq!(d1[0].0.raw(), 0);
-        // seq 1 nachreichen
+        // deliver seq 1 belatedly
         s.recv_data(SerialNumber16::new(1), alloc::vec![21])
             .unwrap();
         let d2 = s.drain_in_order();
@@ -459,7 +459,7 @@ mod tests {
         let mut s = rs();
         s.recv_data(SerialNumber16::new(0), alloc::vec![1]).unwrap();
         s.drain_in_order();
-        // jetzt nochmal seq 0 → silently dropped
+        // now seq 0 again → silently dropped
         s.recv_data(SerialNumber16::new(0), alloc::vec![99])
             .unwrap();
         assert_eq!(s.out_of_order_count(), 0);
@@ -468,7 +468,7 @@ mod tests {
     #[test]
     fn recv_data_rejects_when_buffer_full() {
         let mut s = rs();
-        // Buffer mit 64 OOO-Samples (seq 1..=64 → expected ist 0)
+        // Buffer with 64 OOO samples (seq 1..=64 → expected is 0)
         for i in 1..=RECEIVER_BUFFER_CAP as u16 {
             s.recv_data(SerialNumber16::new(i), alloc::vec![1]).unwrap();
         }
@@ -482,16 +482,16 @@ mod tests {
     #[test]
     fn pending_acknack_marks_missing_slots() {
         let mut s = rs();
-        // expected=0; wir kriegen seq 1 + 3 → 0 und 2 fehlen
+        // expected=0; we get seq 1 + 3 → 0 and 2 missing
         s.recv_data(SerialNumber16::new(1), alloc::vec![1]).unwrap();
         s.recv_data(SerialNumber16::new(3), alloc::vec![3]).unwrap();
         let ack = s.pending_acknack(Some(SerialNumber16::new(3)));
         let bitmap = u16::from_le_bytes(ack.nack_bitmap);
-        // bit 0 → seq 0 fehlt, bit 2 → seq 2 fehlt
+        // bit 0 → seq 0 missing, bit 2 → seq 2 missing
         assert!(bitmap & (1 << 0) != 0);
         assert!(bitmap & (1 << 2) != 0);
-        assert!(bitmap & (1 << 1) == 0); // seq 1 da
-        assert!(bitmap & (1 << 3) == 0); // seq 3 da
+        assert!(bitmap & (1 << 1) == 0); // seq 1 present
+        assert!(bitmap & (1 << 3) == 0); // seq 3 present
     }
 
     #[test]
@@ -511,81 +511,81 @@ mod tests {
         let _ = ReliableStreamState::new(StreamId(1), ReliableConfig::default());
     }
 
-    /// Spec §8.4.14 + §9.2 — End-to-End Sender → Receiver mit
+    /// Spec §8.4.14 + §9.2 — end-to-end sender → receiver with
     /// Loss-Recovery via ACKNACK.
     ///
-    /// Szenario:
-    /// 1. Sender submit'tet 3 Payloads.
-    /// 2. Receiver sieht nur seq=0 und seq=2 (seq=1 verloren).
-    /// 3. Receiver berechnet pending_acknack → markiert seq=1 als
-    ///    fehlend.
-    /// 4. Sender ruft recv_acknack(...) auf — clearred die acked
-    ///    Slots, behaelt seq=1.
-    /// 5. Sender sendet seq=1 erneut, Receiver kann
-    ///    drain_in_order alle 3 Samples liefern.
+    /// Scenario:
+    /// 1. Sender submits 3 payloads.
+    /// 2. Receiver sees only seq=0 and seq=2 (seq=1 lost).
+    /// 3. Receiver computes pending_acknack → marks seq=1 as
+    ///    missing.
+    /// 4. Sender calls recv_acknack(...) — clears the acked
+    ///    slots, keeps seq=1.
+    /// 5. Sender resends seq=1, receiver can
+    ///    deliver all 3 samples via drain_in_order.
     #[test]
     fn end_to_end_sender_receiver_with_loss_recovery() {
         let mut sender = ReliableStreamState::new(StreamId(0x80), ReliableConfig::default());
         let mut receiver = ReliableStreamState::new(StreamId(0x80), ReliableConfig::default());
 
-        // Sender submit'tet 3 Payloads
+        // Sender submits 3 payloads
         let s0 = sender.submit(alloc::vec![10]).expect("submit 0");
         let s1 = sender.submit(alloc::vec![11]).expect("submit 1");
         let s2 = sender.submit(alloc::vec![12]).expect("submit 2");
         assert_eq!(sender.in_flight_count(), 3);
 
-        // Receiver sieht s0, s2; s1 verloren
+        // Receiver sees s0, s2; s1 lost
         receiver.recv_data(s0, alloc::vec![10]).expect("recv s0");
         receiver.recv_data(s2, alloc::vec![12]).expect("recv s2");
 
-        // Drain liefert nur s0 (s2 blockt wegen fehlendem s1).
+        // Drain delivers only s0 (s2 blocks due to the missing s1).
         let drained = receiver.drain_in_order();
         assert_eq!(drained.len(), 1);
         assert_eq!(drained[0].1, alloc::vec![10]);
 
-        // Receiver berechnet pending_acknack → seq=1 fehlt.
+        // Receiver computes pending_acknack → seq=1 missing.
         let acknack = receiver.pending_acknack(Some(s2));
-        // Sender verarbeitet ACKNACK — entfernt acked, behaelt fehlende.
+        // Sender processes the ACKNACK — removes acked, keeps the missing.
         sender.recv_acknack(acknack);
-        // s0 ist acknowledged (drained), nur s1 + s2 sind in-flight
-        // bis zum naechsten ACKNACK; nach Receiver's drain liegt s2 zwar
-        // im Buffer, aber Sender kennt das nicht. Daher kann der Sender
-        // hier mindestens s1 noch im in_flight haben.
+        // s0 is acknowledged (drained), only s1 + s2 are in-flight
+        // until the next ACKNACK; after the receiver's drain s2 is
+        // in the buffer, but the sender does not know that. So the sender
+        // can have at least s1 still in in_flight here.
         assert!(
             sender.get_in_flight(s1).is_some(),
-            "s1 muss retransmittable sein"
+            "s1 must be retransmittable"
         );
 
         // Sender retransmittet s1
         let s1_payload = sender.get_in_flight(s1).expect("s1 retx").to_vec();
         receiver.recv_data(s1, s1_payload).expect("recv retx s1");
 
-        // Jetzt drain liefert s1 + s2 in-order.
+        // Now drain delivers s1 + s2 in-order.
         let drained2 = receiver.drain_in_order();
         assert_eq!(drained2.len(), 2);
         assert_eq!(drained2[0].1, alloc::vec![11]);
         assert_eq!(drained2[1].1, alloc::vec![12]);
     }
 
-    /// Spec §9.2 — Remote-Configuration via CREATE/DELETE/UPDATE
-    /// nutzt denselben reliable-Stream-Pfad fuer at-most-once-
-    /// Delivery der Config-Submessages.
+    /// Spec §9.2 — Remote configuration via CREATE/DELETE/UPDATE
+    /// uses the same reliable stream path for at-most-once
+    /// delivery of the config submessages.
     #[test]
     fn config_submessages_delivered_in_order_via_reliable_stream() {
         // Demonstrates that the reliable-Stream is suitable for
         // CREATE/DELETE/UPDATE-Submessages (§9.2): in-order delivery
-        // even when ACKNACK-Recovery erforderlich.
+        // even when ACKNACK recovery is required.
         let mut sender = ReliableStreamState::new(StreamId(0x80), ReliableConfig::default());
         let mut receiver = ReliableStreamState::new(StreamId(0x80), ReliableConfig::default());
 
-        // 5 simulierte Config-Operations.
+        // 5 simulated config operations.
         let mut seqs = Vec::new();
         for i in 0..5u8 {
             let seq = sender.submit(alloc::vec![i]).expect("submit");
             seqs.push(seq);
         }
 
-        // Receiver bekommt sie in zufaelliger Reihenfolge: 2, 0, 4, 1, 3.
+        // Receiver gets them in random order: 2, 0, 4, 1, 3.
         let order = [2usize, 0, 4, 1, 3];
         for idx in order {
             receiver
@@ -593,7 +593,7 @@ mod tests {
                 .expect("recv");
         }
 
-        // drain_in_order garantiert Spec-konforme Reihenfolge.
+        // drain_in_order guarantees spec-compliant order.
         let drained = receiver.drain_in_order();
         assert_eq!(drained.len(), 5);
         for (i, (_, payload)) in drained.iter().enumerate() {

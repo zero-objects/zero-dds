@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Top-Level GIOP-Message-Codec — dispatcht auf alle 8 Message-Types.
+//! Top-level GIOP message codec — dispatches to all 8 message types.
 
 use alloc::vec::Vec;
 
@@ -21,7 +21,7 @@ use crate::reply::Reply;
 use crate::request::Request;
 use crate::version::Version;
 
-/// Vollstaendige GIOP-Message — Header + typisierter Body.
+/// Complete GIOP message — header + typed body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
     /// Request (Spec §15.4.2).
@@ -43,7 +43,7 @@ pub enum Message {
 }
 
 impl Message {
-    /// Liefert das `MessageType` der Variante.
+    /// Returns the `MessageType` of the variant.
     #[must_use]
     pub const fn message_type(&self) -> MessageType {
         match self {
@@ -59,14 +59,14 @@ impl Message {
     }
 }
 
-/// Encodiert eine vollstaendige GIOP-Message inkl. 12-Byte-Header.
+/// Encodes a complete GIOP message including the 12-byte header.
 ///
-/// `endianness` waehlt die On-Wire-Byte-Order (Bit 0 des
-/// `flags`-Octets). `more_fragments` setzt das Fragment-Bit
-/// (Spec §15.4.9; nur ab GIOP 1.1 erlaubt).
+/// `endianness` selects the on-wire byte order (bit 0 of the
+/// `flags` octet). `more_fragments` sets the fragment bit
+/// (spec §15.4.9; only allowed from GIOP 1.1 onward).
 ///
 /// # Errors
-/// Buffer-Fehler oder Spec-Verletzung (z.B. Fragment-Bit in 1.0).
+/// Buffer error or spec violation (e.g. fragment bit in 1.0).
 pub fn encode_message(
     version: Version,
     endianness: Endianness,
@@ -79,8 +79,12 @@ pub fn encode_message(
             minor: version.minor,
         });
     }
-    // Body separat encodieren, dann Header mit echter Body-Groesse.
-    let mut body_writer = BufferWriter::new(endianness);
+    // Encode the body separately, then build the header with the real body size.
+    // `align_origin = HEADER_SIZE`: the CDR alignment origin is the start of the
+    // message (byte 0 of the 12-byte header), not the start of the body —
+    // otherwise the mandatory 8-aligned GIOP 1.2 body lands at absolute offset
+    // ≡4 mod 8 and breaks interop with omniORB/TAO (CORBA §15.4.2/§15.4.4).
+    let mut body_writer = BufferWriter::new(endianness).with_align_origin(HEADER_SIZE);
     encode_body(version, msg, &mut body_writer)?;
     let body = body_writer.into_bytes();
     let body_size =
@@ -108,13 +112,28 @@ fn encode_body(version: Version, msg: &Message, w: &mut BufferWriter) -> GiopRes
     }
 }
 
-/// Decodiert eine GIOP-Message inkl. Header und gibt die
-/// verbleibenden Bytes nach der Message zurueck.
+/// Decodes a GIOP message including the header and returns the
+/// remaining bytes after the message.
 ///
 /// # Errors
-/// Buffer-/Spec-Fehler.
+/// Buffer/spec error.
 pub fn decode_message(bytes: &[u8]) -> GiopResult<(Message, &[u8])> {
+    let (msg, _endianness, rest) = decode_message_ctx(bytes)?;
+    Ok((msg, rest))
+}
+
+/// Like [`decode_message`], but additionally returns the message's on-wire
+/// byte order (from the GIOP header `byte_order` flag, spec §15.4.1).
+///
+/// Needed to decode the opaque `Request`/`Reply` `body` (CDR-encoded operation
+/// args) in the correct order — CDR is "receiver makes it right", i.e. foreign
+/// ORBs send in their native order and flag it.
+///
+/// # Errors
+/// Buffer/spec error.
+pub fn decode_message_ctx(bytes: &[u8]) -> GiopResult<(Message, zerodds_cdr::Endianness, &[u8])> {
     let (header, body) = MessageHeader::decode(bytes)?;
+    let endianness = header.endianness();
     let body_size = header.message_size as usize;
     if body.len() < body_size {
         return Err(GiopError::BodyTooLarge {
@@ -123,9 +142,10 @@ pub fn decode_message(bytes: &[u8]) -> GiopResult<(Message, &[u8])> {
         });
     }
     let body_slice = &body[..body_size];
-    let mut r = BufferReader::new(body_slice, header.endianness());
+    // Mirror image of the encode: alignment origin = start of message.
+    let mut r = BufferReader::new(body_slice, endianness).with_align_origin(HEADER_SIZE);
     let msg = decode_body(header, &mut r)?;
-    Ok((msg, &body[body_size..]))
+    Ok((msg, endianness, &body[body_size..]))
 }
 
 fn decode_body(header: MessageHeader, r: &mut BufferReader<'_>) -> GiopResult<Message> {
@@ -188,7 +208,7 @@ mod tests {
     fn round_trip_close_connection() {
         let m = Message::CloseConnection(CloseConnection);
         let bytes = encode_message(Version::V1_2, Endianness::Big, false, &m).unwrap();
-        // Header 12 Bytes + 0 Body.
+        // Header 12 bytes + 0 body.
         assert_eq!(bytes.len(), 12);
         let (decoded, _) = decode_message(&bytes).unwrap();
         assert_eq!(decoded, m);
@@ -210,7 +230,7 @@ mod tests {
             body: alloc::vec![0; 32],
         });
         let bytes = encode_message(Version::V1_2, Endianness::Big, true, &m).unwrap();
-        // Fragment-Bit muss im Header gesetzt sein.
+        // Fragment bit must be set in the header.
         assert_eq!(bytes[6] & Flags::FRAGMENT_BIT, Flags::FRAGMENT_BIT);
         let (decoded, _) = decode_message(&bytes).unwrap();
         assert_eq!(decoded, m);

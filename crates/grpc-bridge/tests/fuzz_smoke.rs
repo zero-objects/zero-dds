@@ -1,4 +1,4 @@
-//! Stable-Rust Fuzz-Smoke-Tests fuer den gRPC-Wire-Decoder.
+//! Stable-Rust fuzz smoke tests for the gRPC wire decoder.
 //! Spec: gRPC HTTP/2 Protocol § Length-Prefixed Message + Path/Timeout.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
@@ -111,8 +111,8 @@ fn empty_inputs_no_panic() {
     let _ = decode_timeout("");
 }
 
-/// 32-bit Length-Prefix-Overflow: gRPC-Frame `[0x00 0xFF 0xFF 0xFF 0xFF]`
-/// — Decoder muss `Err` liefern, nicht `Vec::with_capacity(u32::MAX)`.
+/// 32-bit length-prefix overflow: gRPC frame `[0x00 0xFF 0xFF 0xFF 0xFF]`
+/// — the decoder must return `Err`, not `Vec::with_capacity(u32::MAX)`.
 #[test]
 fn message_oversized_length_no_oom() {
     let buf = [0x00, 0xFF, 0xFF, 0xFF, 0xFF];

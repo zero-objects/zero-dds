@@ -8,36 +8,36 @@ ConnectorBean-Lifecycle, JNDI↔CosNaming-Glue, Java-CCM-Bean-Stub-
 Codegen. `no_std + alloc`, `forbid(unsafe_code)`. Safety
 classification: **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
-|------|-----------|
-| OMG CCM 4.0 | §16 (CCM↔EJB-Equivalents, ConnectorBean-Lifecycle) |
+| Spec | Section |
+|------|---------|
+| OMG CCM 4.0 | §16 (CCM↔EJB equivalents, ConnectorBean lifecycle) |
 | OMG Transaction Service 1.4 | §10 (CosTransactions::Status, Coordinator/Resource) |
-| JEE JTA 1.3 | §3.2 (`javax.transaction.Status` Constants) |
-| JNDI 1.2 | Sub-Context-Naming |
+| JEE JTA 1.3 | §3.2 (`javax.transaction.Status` constants) |
+| JNDI 1.2 | Sub-context naming |
 
-## Was ist drin
+## What's inside
 
-- **`tx`** — bijektives Mapping `TxStatus` ↔ `JtaStatus` (alle 10
-  Werte), `TxBridge`-Trait, `InMemoryTxBridge`-Impl fuer Test-Hosting.
-- **`connector_bean`** — `ConnectorBean` JEE-EJB-3-Modell mit
-  CCM-Lifecycle-Mapping (`@PostConstruct`, `@PreDestroy`, `@Resource`,
+- **`tx`** — bijective mapping `TxStatus` ↔ `JtaStatus` (all 10
+  values), `TxBridge` trait, `InMemoryTxBridge` impl for test hosting.
+- **`connector_bean`** — `ConnectorBean` JEE EJB 3 model with CCM
+  lifecycle mapping (`@PostConstruct`, `@PreDestroy`, `@Resource`,
   `@TransactionAttribute`).
-- **`stub_gen`** — `generate_bean_stub(component, kind)` emittiert
-  `<Comp>Bean.java` aus AST-Component (CCM 4.0 Annex A Java-PSM).
+- **`stub_gen`** — `generate_bean_stub(component, kind)` emits
+  `<Comp>Bean.java` from an AST component (CCM 4.0 Annex A Java PSM).
 - **`naming_glue`** — `cos_naming_to_jndi` + `jndi_to_cos_naming`
-  bidirektionales Namespace-Mapping.
+  bidirectional namespace mapping.
 
-## Was nicht abgedeckt ist
+## What's not covered
 
-- **JNI-/JVM-Bindings** — konkrete Container-Bindings (JBoss EAP,
-  WildFly, GlassFish, Open Liberty) sind Caller-Layer; diese Crate
-  liefert das Mapping-Layer auf Modell-Ebene.
-- **EJB-Container-Hosting** — wir starten keine JVM; der ConnectorBean-
-  Lifecycle wird vom externen JEE-Container getrieben.
+- **JNI/JVM bindings** — concrete container bindings (JBoss EAP,
+  WildFly, GlassFish, Open Liberty) are caller-layer; this crate
+  provides the mapping layer at the model level.
+- **EJB container hosting** — we do not start a JVM; the ConnectorBean
+  lifecycle is driven by the external JEE container.
 
-## Beispiel
+## Example
 
 ```rust
 use zerodds_corba_ccm_ejb::{JtaStatus, TxStatus, jta_status_from_cos};
@@ -56,5 +56,5 @@ cargo test -p zerodds-corba-ccm-ejb
 
 - [Architecture](../../docs/architecture/02_architecture.md)
 - [Components](../../documentation/02-architecture/components.md)
-- [`zerodds-ccm`](../ccm/README.md) — CCM-Equivalent-IDL-Layer (Modell-
-  Eingabe fuer den Stub-Codegen).
+- [`zerodds-ccm`](../ccm/README.md) — CCM equivalent IDL layer (model
+  input for the stub codegen).

@@ -1,11 +1,11 @@
 #![no_main]
-//! Fuzz-Target: Performative-Dekoder.
+//! Fuzz target: performative decoder.
 //!
 //! Spec OASIS amqp-1.0-transport §2.7 — open/begin/attach/flow/
-//! transfer/disposition/detach/end/close. Liefert
-//! `(descriptor: u64, body: AmqpExtValue, consumed: usize)`. Ziel:
-//! Descriptor-Switch + Composite-Body-Validierung gegen feindlichen
-//! Wire-Input.
+//! transfer/disposition/detach/end/close. Returns
+//! `(descriptor: u64, body: AmqpExtValue, consumed: usize)`. Goal:
+//! descriptor switch + composite-body validation against hostile
+//! wire input.
 
 use libfuzzer_sys::fuzz_target;
 

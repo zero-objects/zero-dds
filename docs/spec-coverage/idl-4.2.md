@@ -1,12 +1,14 @@
 # IDL 4.2 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/idl-4.2.pdf` (142 Seiten, OMG formal/18-01-05)
+**Spec:** [OMG IDL 4.2](https://www.omg.org/spec/IDL/4.2/PDF) (142 Seiten, OMG formal/18-01-05)
 
-**Audit-Stand:** Spec-Check 4.0 verify (2026-04-28, Post-K1-Vollendung).
-Aggregat in `idl-4.2.open.md`.
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
+Implementation:
+
+- `crates/idl/` — OMG-IDL-4.2-Parser + AST + Semantik-Modell.
+
+Audit Item-für-Item
+gegen die Spec; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
 Status (`done` / `partial` / `open` / `n/a`).
 
 ---
@@ -41,7 +43,7 @@ Spec-Typen: language mapping (C/C++/Java/C#), serialization, middleware
 
 **Status:** `n/a (informative)` — Position-Statement der Spec; keine Code-Anforderung.
 
-### 1.3 IDL-Grammar nutzt EBNF-aehnliche Notation
+### 1.3 IDL-Grammar nutzt EBNF-ähnliche Notation
 
 **Spec:** §1, S. 1 — "The description of IDL grammar uses a syntax
 notation that is similar to Extended Backus-Naur Format (EBNF)."
@@ -85,7 +87,7 @@ conformance points."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Konformitaets-Definition delegiert an Spec-Konsumenten; kein IDL-eigenes Verhalten.
+**Status:** `n/a (informative)` — Konformitäts-Definition delegiert an Spec-Konsumenten; kein IDL-eigenes Verhalten.
 
 ### 2.2 Future Specs `shall reference`
 
@@ -98,7 +100,7 @@ reference this IDL standard or a future revision thereof."
 
 **Status:** `n/a (informative)` — Externe Referenz/Bindung; nicht im IDL-Compiler implementierbar.
 
-### 2.3 Selected Building Blocks vollstaendig unterstuetzen
+### 2.3 Selected Building Blocks vollständig unterstützen
 
 **Spec:** §2 (3a), S. 3 — "All selected building blocks shall be
 supported entirely."
@@ -120,7 +122,7 @@ Production-Level + Alternative-Level-Gating).
 
 **Status:** done
 
-### 2.4 Annotations: voll unterstuetzt oder voll ignoriert
+### 2.4 Annotations: voll unterstützt oder voll ignoriert
 
 **Spec:** §2 (3b), S. 3 — "Selected annotations shall be either
 supported as described in 8.2.2 Rules for Using Standardized
@@ -244,7 +246,7 @@ specification: Mitre, Northrop Grumman, Remedy IT."
 ### 6.2 Specification History
 
 **Spec:** §6.2, S. 11 — Historie IDL 3.5 → 4.0 (Building-Blocks
-eingefuehrt) → 4.1 (bitset/bitmap) → 4.2 ("added support for 8-bit
+eingeführt) → 4.1 (bitset/bitmap) → 4.2 ("added support for 8-bit
 integer types, added size-explicit keywords for integer types, enhanced
 the readability, and reordered the building blocks to follow a logical
 dependency progression").
@@ -272,7 +274,7 @@ interfaces or create the associated data types cannot be written in
 IDL, but in a programming language, for which mappings from IDL
 constructs have been defined."
 
-**Repo:** Crate `crates/idl/` produziert ausschliesslich Parse-/CST-/
+**Repo:** Crate `crates/idl/` produziert ausschließlich Parse-/CST-/
 AST-/TypeObject-Ergebnisse, keine Sprach-Mapping-Outputs. Sprach-
 Mappings sind separate Crates (`crates/dcps/`, `crates/idl-java/`,
 `crates/idl-cpp/`).
@@ -320,10 +322,10 @@ Mappings sind separate Crates (`crates/dcps/`, `crates/idl-java/`,
 - `[]` "The enclosed syntactic unit is optional – may occur zero or
   one time"
 
-**Repo:** `crates/idl/src/grammar/mod.rs` — vollstaendiges Mapping:
+**Repo:** `crates/idl/src/grammar/mod.rs` — vollständiges Mapping:
 - `::=` → `Production { name, alternatives }`.
 - `|` → `Vec<Alternative>` pro Production.
-- `::+` → `crates/idl/src/grammar/compose.rs::apply_delta` (s. naechstes
+- `::+` → `crates/idl/src/grammar/compose.rs::apply_delta` (s. nächstes
   Item).
 - `<text>` → `Symbol::Nonterminal(ProductionId)`.
 - `"text"` → `Symbol::Terminal(TokenKind::Keyword(...))` /
@@ -355,8 +357,8 @@ existing definition. For example, assuming the rule x ::= y, the rule
 x ::+ z shall be interpreted as x ::= y | z."
 
 **Repo:** `crates/idl/src/grammar/compose.rs::apply_delta` (l. 42) —
-jede Delta-Production fuegt Alternativen zu einer Base-Production
-hinzu. Aufrufer in `crates/idl/src/grammar/idl42.rs` fuer
+jede Delta-Production fügt Alternativen zu einer Base-Production
+hinzu. Aufrufer in `crates/idl/src/grammar/idl42.rs` für
 Building-Block-Deltas (`corba_value`, `corba_components`,
 `template_modules` etc.).
 
@@ -370,7 +372,7 @@ Building-Block-Deltas (`corba_value`, `corba_components`,
 
 **Status:** done
 
-### §7.1 — IDL-Pragmas duerfen ueberall stehen
+### §7.1 — IDL-Pragmas dürfen überall stehen
 
 **Spec:** §7.1, S. 13 — "IDL-specific pragmas may appear anywhere in a
 specification; the textual location of these pragmas may be
@@ -378,7 +380,7 @@ semantically constrained by a particular implementation."
 
 **Repo:** Preprocessor `crates/idl/src/preprocessor/mod.rs::process_line`
 behandelt `#pragma`-Direktiven zeilenweise; die Position ist durch
-das Line-basierte Scanning inhaerent positionsfrei. Konkret:
+das Line-basierte Scanning inhärent positionsfrei. Konkret:
 - Cyclone-/OpenSplice `#pragma keylist <Type> <field>...` —
   `parse_pragma_keylist` (l. 816+).
 - OpenSplice-Legacy `#pragma DCPS_DATA_TYPE`/`DCPS_DATA_KEY`/`cats`/
@@ -402,9 +404,9 @@ Pragmas hier sind streng `#pragma`-Form.
 **Spec:** §7.1, S. 13 — "A source file containing specifications
 written in IDL shall have a `.idl` extension."
 
-**Repo:** Konvention im Repo durchgaengig erfuellt
+**Repo:** Konvention im Repo durchgängig erfüllt
 (`crates/idl/tests/fixtures/**/*.idl`); Hard-Enforcement liegt im
-spaeteren `idlc`-CLI-Frontend. Library-API
+späteren `idlc`-CLI-Frontend. Library-API
 `crates/idl/src/parser.rs::parse(src: &str)` akzeptiert beliebige
 Strings, ist also extension-agnostic.
 
@@ -487,7 +489,7 @@ preprocessing, is called a translation unit."
 **Repo:** `crates/idl/src/preprocessor/mod.rs::run` produziert
 `ProcessedSource` (Source-String + SourceMap + gesammelte Pragmas);
 `Tokenizer::tokenize` konsumiert diesen String und liefert
-`TokenStream` — die Translation-Unit. Whitespace vor `#` zulaessig
+`TokenStream` — die Translation-Unit. Whitespace vor `#` zulässig
 in `process_line`.
 
 **Tests:** `crates/idl/src/preprocessor/mod.rs::tests::passthrough_for_source_without_directives`,
@@ -512,7 +514,7 @@ alphabetic characters (letters) digits, graphic characters, the space
 - Punctuation (`match_punct` l. 257) akzeptiert ASCII-Zeichen.
 - String-/Char-Literal-Inhalte (`scan_string_literal` l. 358,
   `scan_char_literal` l. 374) konsumieren beliebige Bytes innerhalb der
-  Quotes (Latin-1-faehig; UTF-8 Multibyte-Sequenzen werden als
+  Quotes (Latin-1-fähig; UTF-8 Multibyte-Sequenzen werden als
   Byte-Folge durchgereicht).
 
 **Tests:** `crates/idl/src/lexer/tokenizer.rs::tests::single_ident_emits_ident_token`,
@@ -526,7 +528,7 @@ alphabetic characters (letters) digits, graphic characters, the space
 
 ### §7.2 Table 7-2 — ISO Latin-1 Alphabet (Letters)
 
-**Spec:** §7.2 Table 7-2, S. 14-15 — vollstaendiges ISO-Latin-1-Alphabet:
+**Spec:** §7.2 Table 7-2, S. 14-15 — vollständiges ISO-Latin-1-Alphabet:
 - ASCII A/a-Z/z;
 - akzentuierte Vokale + Konsonanten: `Àà Áá Ââ Ãã Ää Åå Ææ Çç Èè Éé
   Êê Ëë Ìì Íí Îî Ïï Ññ Òò Óó Ôô Õõ Öö Øø Ùù Úú Ûû Üü ß ÿ`.
@@ -537,7 +539,7 @@ sagt "ASCII alphabetic"). Akzentuierte Latin-1-Letters sind in
 Identifiern nicht erlaubt — konform zur Spec.
 String-/Char-Literale akzeptieren beliebige Bytes (also auch alle
 Latin-1-Letter-Codepoints 0xC0-0xFF).
-Case-Equivalenz fuer Identifier-Vergleich:
+Case-Äquivalenz für Identifier-Vergleich:
 `crates/idl/src/semantics/resolver.rs::CaseInsensitiveIdent::lower`
 (l. 50) — ASCII-Lowercase. Latin-1-Akzent-Pairing (z.B. `Ää`) ist
 nicht implementiert, in der Praxis irrelevant da Identifier ASCII-only.
@@ -552,8 +554,8 @@ nicht implementiert, in der Praxis irrelevant da Identifier ASCII-only.
 **Spec:** §7.2 Table 7-3, S. 15 — "0 1 2 3 4 5 6 7 8 9".
 
 **Repo:** `crates/idl/src/lexer/tokenizer.rs::scan_number` (l. 161)
-nutzt `b.is_ascii_digit()` fuer Dezimal, `is_ascii_hexdigit()` fuer
-Hex, manuelle `b'0'..=b'7'`-Pruefung fuer Octal.
+nutzt `b.is_ascii_digit()` für Dezimal, `is_ascii_hexdigit()` für
+Hex, manuelle `b'0'..=b'7'`-Prüfung für Octal.
 
 **Tests:** `crates/idl/src/lexer/tokenizer.rs::tests::integer_decimal_octal_hex`,
 `integer_literal_when_grammar_includes_it`,
@@ -568,7 +570,7 @@ Hex, manuelle `b'0'..=b'7'`-Pruefung fuer Octal.
 
 ### §7.2 Table 7-4 — Graphic Characters
 
-**Spec:** §7.2 Table 7-4, S. 16-17 — vollstaendiger Graphic-Charset:
+**Spec:** §7.2 Table 7-4, S. 16-17 — vollständiger Graphic-Charset:
 - ASCII: `! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ \``
   `{ | } ~`.
 - Latin-1-Symbole: `¡ ¢ £ ¤ ¥ ¦ § ¨ © ª « ¬` (soft-hyphen) `® ¯ ° ±
@@ -615,7 +617,7 @@ nur Space, HT (`\t`), NL (`\n`), CR (`\r`) — VT/FF fehlen, siehe
 
 **Status:** done
 
-### §7.2.1 — Fuenf Token-Klassen
+### §7.2.1 — Fünf Token-Klassen
 
 **Spec:** §7.2.1, S. 17 — "There are five kinds of tokens:
 identifiers, keywords, literals, operators, and other separators."
@@ -659,7 +661,7 @@ implizit durch Position-Vorschub.
 **Tests:** `crates/idl/src/lexer/tokenizer.rs::tests::whitespace_only_yields_empty_stream`,
 `newlines_separate_tokens_without_emitting_trivia`,
 `sequence_struct_ident_braces`,
-`whitespace_includes_vt_and_ff` (VT/FF — Phase 1.1).
+`whitespace_includes_vt_and_ff` (VT/FF).
 
 **Status:** done
 
@@ -670,18 +672,18 @@ tokens up to a given character, the next token is taken to be the
 longest string of characters that could possibly constitute a token."
 
 **Repo:** `crates/idl/src/lexer/rules.rs::TokenRules::from_grammar`
-(l. 52) sammelt alle Terminals und sortiert sie nach Lex-Prioritaet —
-laengere Strings zuerst (`"::"` vor `":"`, `"=="` vor `"="`,
+(l. 52) sammelt alle Terminals und sortiert sie nach Lex-Priorität —
+längere Strings zuerst (`"::"` vor `":"`, `"=="` vor `"="`,
 `"<<"` vor `"<"`).
 `Tokenizer::match_punct` (l. 257) iteriert in dieser Reihenfolge und
-nimmt den ersten Match (= laengsten gueltigen).
+nimmt den ersten Match (= längsten gültigen).
 
 **Tests:** `crates/idl/src/lexer/tokenizer.rs::tests::longest_match_for_multichar_punct`
 (`<<` vor `<`),
 `shorter_punct_matches_when_longer_does_not_apply` (`<` allein wenn
 kein `<<`),
 `ident_starting_with_keyword_prefix_stays_ident` (Identifier-Match
-laenger als Keyword-Praefix).
+länger als Keyword-Präfix).
 
 **Status:** done
 
@@ -724,15 +726,15 @@ like other characters. Similarly, the comment characters `//` and
 `/*` have no special meaning within a `/*` comment."
 
 **Repo:** `skip_line_comment` konsumiert blind alle Zeichen bis NL
-(keine `/*`-Erkennung). `skip_block_comment` sucht ausschliesslich nach
+(keine `/*`-Erkennung). `skip_block_comment` sucht ausschließlich nach
 der `*/`-Sequenz, ignoriert dazwischenliegende `//` und `/*`.
-`slash_in_string_is_not_comment_start`-Test belegt zusaetzlich, dass
+`slash_in_string_is_not_comment_start`-Test belegt zusätzlich, dass
 `/`-Zeichen innerhalb String-Literalen kein Comment-Start sind.
 
 **Tests:** `crates/idl/src/lexer/tokenizer.rs::tests::slash_in_string_is_not_comment_start`,
 `line_comment_contains_block_comment_start`,
 `block_comment_contains_line_comment_marker`,
-`block_comment_does_not_nest` (alle drei Phase 1.2).
+`block_comment_does_not_nest` (alle drei).
 
 **Status:** done
 
@@ -743,8 +745,8 @@ graphic, space, horizontal tab, vertical tab, form feed, and newline
 characters."
 
 **Repo:** `skip_line_comment`/`skip_block_comment` konsumieren
-beliebige Bytes bis EOL bzw. `*/` — keine Charset-Pruefung. Damit sind
-alle aufgezaehlten Klassen automatisch erlaubt.
+beliebige Bytes bis EOL bzw. `*/` — keine Charset-Prüfung. Damit sind
+alle aufgezählten Klassen automatisch erlaubt.
 
 **Tests:** `crates/idl/src/lexer/tokenizer.rs::tests::comments_inside_struct_definition`,
 `multiple_comments_in_a_row`.
@@ -766,8 +768,8 @@ are significant."
   abgedeckt.
 - `is_ident_continue` (l. 343) — `b.is_ascii_alphanumeric() || b == b'_'`.
 - `scan_ident` (l. 347) — konsumiert bis zum letzten Continue-Byte.
-"All characters are significant" → `scan_ident` setzt keine Laengen-
-Limits, alle Bytes des Idents fliessen in den `text`-Slice.
+"All characters are significant" → `scan_ident` setzt keine Längen-
+Limits, alle Bytes des Idents fließen in den `text`-Slice.
 
 **Tests:** `crates/idl/src/lexer/tokenizer.rs::tests::single_ident_emits_ident_token`,
 `ident_starting_with_keyword_prefix_stays_ident`,
@@ -782,12 +784,12 @@ However, all references to a definition must use the same case as the
 defining occurrence. This allows natural mappings to case-sensitive
 languages."
 
-**Repo:** Case-insensitive Vergleichs-Schluessel:
+**Repo:** Case-insensitive Vergleichs-Schlüssel:
 `crates/idl/src/semantics/resolver.rs::CaseInsensitiveIdent` (Hash + Eq
 via ASCII-Lowercase, l. 50, 63); Original-Schreibweise wird im
-`original`-Field bewahrt fuer Diagnostik und Code-Gen.
+`original`-Field bewahrt für Diagnostik und Code-Gen.
 Same-Case-Reference-Pflicht: aktuell **nicht** durchgesetzt; Lookups
-ueber `Scope::lookup` finden case-insensitiv den Eintrag, ein Use mit
+über `Scope::lookup` finden case-insensitiv den Eintrag, ein Use mit
 abweichender Schreibweise generiert keine Diagnostik.
 
 **Tests:** `crates/idl/src/semantics/resolver.rs::tests::case_insensitive_lookup_finds_struct`,
@@ -803,7 +805,7 @@ part des Scoped-Names, gestripped um §7.2.3.2-Escape) gegen
 `reference_with_same_case_resolves_ok`,
 `escaped_reference_to_unescaped_def_resolves_ok`.
 
-### §7.2.3.1 — Case-Equivalenz beim Vergleich
+### §7.2.3.1 — Case-Äquivalenz beim Vergleich
 
 **Spec:** §7.2.3.1, S. 18 — "When comparing two identifiers to see if
 they collide:
@@ -850,7 +852,7 @@ foo collide", "Attribute collides with keyword attribute".
 
 **Repo:** `crates/idl/src/semantics/resolver.rs::Scope` ist
 **eine** Map von `CaseInsensitiveIdent → Symbol`. Es existiert
-kein eigener Namespace fuer Typen vs. Constants vs. Interfaces.
+kein eigener Namespace für Typen vs. Constants vs. Interfaces.
 Beispiele aus dem Spec-Code:
 - `typedef long Foo` und `in Foo foo` im selben Op-Scope kollidieren —
   Param-Konflikt.
@@ -892,28 +894,28 @@ boolean _abstract; // OK: abstract is an identifier }; };`
 `crates/idl/src/lexer/tokenizer.rs::classify_ident` (l. 242):
 - Identifier-Text mit `_`-Prefix: `is_ident_start` akzeptiert `_`,
   `scan_ident` greift den ganzen Token, Keyword-Lookup matcht NICHT
-  weil das Lookup-Wort den `_` enthaelt — Token-Klasse bleibt `Ident`.
+  weil das Lookup-Wort den `_` enthält — Token-Klasse bleibt `Ident`.
   Damit ist die Spec-Bedingung "ONLY turns off keyword checking"
-  erfuellt.
-- Spec-Equivalenz `_AnIdentifier == AnIdentifier` fuer Symbol-Lookup:
+  erfüllt.
+- Spec-Äquivalenz `_AnIdentifier == AnIdentifier` für Symbol-Lookup:
   AKTUELL NICHT implementiert; `_abstract` und `abstract` werden als
-  zwei verschiedene Eintraege im Resolver-Scope behandelt.
+  zwei verschiedene Einträge im Resolver-Scope behandelt.
 
 **Tests:** `crates/idl/src/lexer/tokenizer.rs::tests::ident_starting_with_underscore`
 (`_struct` → `Ident`, kein Keyword-Match).
 
 **Status:** done — Tokenizer schaltet Keyword-Check ab; die
-Lookup-Equivalenz `_AnIdentifier == AnIdentifier` ist im Resolver
-ueber `strip_escape` realisiert (siehe Folgeeintrag).
+Lookup-Äquivalenz `_AnIdentifier == AnIdentifier` ist im Resolver
+über `strip_escape` realisiert (siehe Folgeeintrag).
 
-### §7.2.3.2 — Equivalenz `_AnIdentifier == AnIdentifier` beim Lookup
+### §7.2.3.2 — Äquivalenz `_AnIdentifier == AnIdentifier` beim Lookup
 
 **Spec:** §7.2.3.2, S. 18 — "the identifier `_AnIdentifier` is treated
-as if it were `AnIdentifier`." (= Equivalenz beim Lookup, nicht nur
+as if it were `AnIdentifier`." (= Äquivalenz beim Lookup, nicht nur
 Keyword-Check-Off).
 
 **Repo:** `crates/idl/src/semantics/resolver.rs::strip_escape` (l. 75+)
-strippt einen fuehrenden `_`, wenn der Rest mit ASCII-Letter beginnt.
+strippt einen führenden `_`, wenn der Rest mit ASCII-Letter beginnt.
 `CaseInsensitiveIdent::eq`/`hash` (l. 54+) sowie der CaseConflict-
 Vergleich in `Scope::insert` (l. 159+) verwenden den gestripten Key,
 sodass `_foo` und `foo` als kanonisch derselbe Identifier behandelt
@@ -940,12 +942,12 @@ legacy items, or for IDL that is mechanically generated."
 
 **Status:** `n/a (informative)` — Empfehlung/Note der Spec; nicht-bindend.
 
-### §7.2.4 Table 7-6 — Vollstaendige Keyword-Liste
+### §7.2.4 Table 7-6 — Vollständige Keyword-Liste
 
 **Spec:** §7.2.4 + Table 7-6, S. 19-20 — "The identifiers listed in
 Table 7-6 are reserved for use as keywords and may not be used for
 another purpose, unless escaped with a leading underscore."
-Keyword-Liste (73 Eintraege):
+Keyword-Liste (73 Einträge):
 `abstract`, `any`, `alias`, `attribute`, `bitfield`,
 `bitmask`, `bitset`, `boolean`, `case`, `char`,
 `component`, `connector`, `const`, `consumes`, `context`,
@@ -975,10 +977,9 @@ ll. 2540+ im `value_dcl`-Cluster, `eventtype`/`port`/`porttype`/
 `TokenRules`.
 
 **Tests:** `crates/idl/src/lexer/tokenizer.rs::tests::single_keyword_emits_keyword_token`,
-`all_table_7_6_keywords_classified_as_keyword` (Phase 1.3 — 73-
-Eintrag-Whitelist gegen `IDL_42`-Grammar; deckte Repo-Lücken bei
-`alias`/`context`/`ValueBase` auf, die durch Production-Stubs
-geschlossen wurden).
+`all_table_7_6_keywords_classified_as_keyword` (73-Eintrag-Whitelist
+gegen `IDL_42`-Grammar; `alias`/`context`/`ValueBase` via Production-Stubs
+abgedeckt).
 Recognizer-Tests in `crates/idl/src/grammar/idl42.rs::tests`
 (~750 Tests, decken alle Keyword-tragenden Productions).
 
@@ -995,12 +996,12 @@ the keyword … boolean; };`.
 
 **Repo:** `crates/idl/src/lexer/tokenizer.rs::classify_ident` (l. 242)
 matcht Keywords case-strikt; `Long` und `BOOLEAN` werden lexikalisch
-als `Ident` klassifiziert. Die Resolver-Diagnostik fuer "Identifiers
+als `Ident` klassifiziert. Die Resolver-Diagnostik für "Identifiers
 that collide with keywords are illegal" ist
 `crates/idl/src/semantics/resolver.rs::Scope::insert` (l. 159+):
 case-insensitiver Match gegen `IDL_KEYWORDS_TABLE_7_6` (83 Keywords)
 liefert `ResolverError::IdentifierCollidesWithKeyword`. Escape via
-`_`-Praefix (§7.2.3.2) ueberspringt den Check.
+`_`-Präfix (§7.2.3.2) überspringt den Check.
 
 **Tests:** `crates/idl/src/lexer/tokenizer.rs::tests::single_keyword_emits_keyword_token`,
 `ident_starting_with_keyword_prefix_stays_ident`,
@@ -1056,7 +1057,7 @@ zweite Zeile `' " \ | ^ & * / % ~ @`).
 in `crates/idl/src/grammar/idl42.rs`:
 `;` `{` `}` `:` `::` `,` `=` `+` `-` `(` `)` `<` `>` `[` `]` `*`
 `/` `%` `~` `^` `&` `|` `<<` `>>` `@`.
-Apostroph (`'`) und Double-Quote (`"`) sind Quote-Marker fuer
+Apostroph (`'`) und Double-Quote (`"`) sind Quote-Marker für
 Char-/String-Literale (`scan_char_literal`/`scan_string_literal`),
 nicht standalone-Tokens. Backslash (`\`) ist Escape-Marker innerhalb
 Literale.
@@ -1113,13 +1114,13 @@ are used by the preprocessor": `# ## ! || &&`.
 
 **Status:** done — `#`/`##` und `&&` sind in
 `crates/idl/src/preprocessor/mod.rs` implementiert (siehe Folge-
-Eintraege).
+Einträge).
 
 ### §7.2.5 — `#` Stringize-Operator (in function-like Macros)
 
 **Spec:** Table 7-8, S. 20 — `#` ist Preprocessor-Token. ISO/IEC
 14882:2003 (referenziert in §7.3) §16.3.2: in einer function-like
-Macro wandelt `#param` den zugehoerigen Argument-Text in einen
+Macro wandelt `#param` den zugehörigen Argument-Text in einen
 String-Literal um.
 
 **Repo:** `crates/idl/src/preprocessor/mod.rs::expand_function_like`
@@ -1137,9 +1138,9 @@ wrappt in `"…"`. `\` und `"` im Argument werden escaped.
 14882:2003 §16.3.3: konkateniert die beiden umgebenden Tokens.
 
 **Repo:** `crates/idl/src/preprocessor/mod.rs::expand_function_like`
-fuehrt einen Token-Paste-Pass aus, bevor Param-Substitution greift:
+führt einen Token-Paste-Pass aus, bevor Param-Substitution greift:
 LHS und RHS um `##` werden param-substituiert und konkateniert;
-Whitespace zwischen den Operanden entfaellt.
+Whitespace zwischen den Operanden entfällt.
 
 **Tests:** `crates/idl/src/preprocessor/mod.rs::tests::token_paste_concatenates_idents`,
 `token_paste_with_macro_args_produces_single_ident`.
@@ -1168,7 +1169,7 @@ literals: Integer, Character, Floating-point, String, Fixed-point."
 `IntegerLiteral`, `FloatLiteral`, `StringLiteral`, `CharLiteral`,
 `WideStringLiteral`, `WideCharLiteral`, `FixedPtLiteral` (Bool ist
 nicht Spec-Literal-Klasse, sondern als `TRUE`/`FALSE`-Keyword
-modelliert; `BooleanLiteral`-Variante existiert intern fuer Lowering-
+modelliert; `BooleanLiteral`-Variante existiert intern für Lowering-
 Convenience).
 
 **Tests:** s. Sub-Items §7.2.6.1 - §7.2.6.5.
@@ -1182,7 +1183,7 @@ sequence of digits is taken to be *decimal* (base ten) unless it
 begins with 0 (digit zero)."
 
 **Repo:** `crates/idl/src/lexer/tokenizer.rs::scan_number` (l. 161+) —
-nimmt Sequenz von ASCII-Digits, ohne Praefix → `IntegerLiteral`.
+nimmt Sequenz von ASCII-Digits, ohne Präfix → `IntegerLiteral`.
 `crates/idl/src/semantics/const_eval.rs::parse_integer` (l. 290) ruft
 `from_str_radix(s, 10)` wenn kein `0`-Prefix.
 
@@ -1200,18 +1201,18 @@ not octal digits and thus are not allowed in an octal integer
 literal."
 
 **Repo:** `parse_integer` erkennt `0`-Prefix ohne `x`/`X` und ruft
-`from_str_radix(s, 8)`. Bei Digits `8`/`9` schlaegt das Parsing fehl
+`from_str_radix(s, 8)`. Bei Digits `8`/`9` schlägt das Parsing fehl
 (Rust-Stdlib gibt Error, mapped zu `EvalError::InvalidLiteral`).
 
 **Tests:** `crates/idl/src/lexer/tokenizer.rs::tests::integer_decimal_octal_hex`.
 `crates/idl/src/semantics/const_eval.rs::tests::int_octal_literal_parsed`,
 `integer_literal_octal_max_value`,
-`octal_literal_with_digit_8_or_9_is_error` (Phase 1.4: belegt
+`octal_literal_with_digit_8_or_9_is_error` (belegt
 `018`/`079` → `EvalError::InvalidLiteral`).
 
 **Status:** done
 
-### §7.2.6.1 — Hexadecimal Integer Literal (`0x`/`0X` Praefix)
+### §7.2.6.1 — Hexadecimal Integer Literal (`0x`/`0X` Präfix)
 
 **Spec:** §7.2.6.1, S. 21 — "A sequence of digits preceded by 0x (or
 0X) is taken to be a *hexadecimal integer* (base sixteen). The
@@ -1219,7 +1220,7 @@ hexadecimal digits include a (or A) through f (or F) with decimal
 values ten through fifteen, respectively."
 Beispiel: "the number twelve can be written 12, 014, or 0XC."
 
-**Repo:** `scan_number` (l. 163+): bei `0x`/`0X`-Praefix konsumiert
+**Repo:** `scan_number` (l. 163+): bei `0x`/`0X`-Präfix konsumiert
 `is_ascii_hexdigit()`-Folge (akzeptiert `a-f`/`A-F`/`0-9`).
 `parse_integer` ruft `from_str_radix(s, 16)`.
 
@@ -1243,7 +1244,7 @@ as defined in the ISO 646 standard (see Table 7-5 on page 17). The
 meaning of all other characters is implementation-dependent."
 
 **Repo:** `crates/idl/src/semantics/const_eval.rs::decode_char` (l. 507)
-ruft `decode_escapes(_, allow_wide=false)` und prueft Range 0..255 →
+ruft `decode_escapes(_, allow_wide=false)` und prüft Range 0..255 →
 `ConstValue::Octet`. Latin-1-/Formatting-Werte ergeben sich aus den
 Codepoint-Werten der Escape-Sequenzen.
 
@@ -1286,8 +1287,8 @@ an L prefix, as in: `const wchar C2 = L'X';`."
 `WideCharLiteral`. Const-Eval:
 `crates/idl/src/semantics/const_eval.rs::decode_wide_char` (l. 530)
 liefert `u32`-Codepoint via `decode_escapes(_, allow_wide=true)`.
-Implementation-dependent-Size ist erfuellt: Code-Gen-Schicht
-(spaeterer Spike) entscheidet pro Sprach-Mapping (z.B. C++ `wchar_t`).
+Implementation-dependent-Size ist erfüllt: Code-Gen-Schicht
+(späterer Spike) entscheidet pro Sprach-Mapping (z.B. C++ `wchar_t`).
 
 **Tests:** `crates/idl/src/lexer/tokenizer.rs::tests::wide_char_literal`,
 `identifier_starting_with_l_is_not_wide_literal`.
@@ -1308,7 +1309,7 @@ an error."
 `crates/idl/src/semantics/const_eval.rs::check_const_decl_type_match`:
 Mismatch zwischen `ConstType` (Char/WideChar/String{wide}) und
 `ConstValue` (Char/WChar/String/WString) liefert
-`EvalError::CrossAssignWideNarrow`. Gilt symmetrisch fuer
+`EvalError::CrossAssignWideNarrow`. Gilt symmetrisch für
 char↔wchar und string↔wstring (siehe §7.2.6.3).
 
 **Tests:** `crates/idl/src/semantics/const_eval.rs::tests::wide_char_literal_to_char_const_is_error`,
@@ -1363,7 +1364,7 @@ char↔wchar und string↔wstring (siehe §7.2.6.3).
 
 **Status:** done — Tabellengetriebener Test
 `crates/idl/src/semantics/const_eval.rs::tests::escape_sequences_table_7_9_alphabetic`
-deckt alle 11 alphabetischen Escapes (Phase 2.1).
+deckt alle 11 alphabetischen Escapes.
 
 ### §7.2.6.2.2 — Backslash-Folge-Char nicht in Set: undefined behaviour
 
@@ -1374,7 +1375,7 @@ sequence specifies a single character."
 **Repo:** `decode_escapes` (l. 688+) liefert
 `EvalError::InvalidLiteral` bei unbekannter Escape-Sequenz statt
 "undefined behaviour"-Passthrough. Strikter als Spec — aus Audit-Sicht
-zulaessig (UB ist erlaubt zu fixen).
+zulässig (UB ist erlaubt zu fixen).
 
 **Tests:** `crates/idl/src/semantics/const_eval.rs::tests::unknown_escape_is_invalid_literal`.
 
@@ -1431,7 +1432,7 @@ liefert `EvalError::InvalidLiteral "\u escape only valid in wide
 literals"`. Aufrufer in `decode_char`/`decode_string` setzen
 `allow_wide=false`; `decode_wide_char`/`decode_wide_string` setzen
 `allow_wide=true`.
-Hinweis: Spec laesst 1-4 Hex-Digits zu, Implementation verlangt
+Hinweis: Spec lässt 1-4 Hex-Digits zu, Implementation verlangt
 exakt 4 (`count != 4 → Error`). Konkret strikter — siehe
 §7.2.6.2.2-open-uhhhh-1to3.
 
@@ -1442,7 +1443,7 @@ exakt 4 (`count != 4 → Error`). Konkret strikter — siehe
 `string_literal_with_unicode_escape_is_error`.
 
 **Status:** done — `decode_escapes`-`\u`-Branch akzeptiert
-`count >= 1` (Phase 2.3). Tests
+`count >= 1`. Tests
 `crates/idl/src/semantics/const_eval.rs::tests::wchar_literal_unicode_one_digit_decodes`,
 `wchar_literal_unicode_two_digits_decodes`,
 `wchar_literal_unicode_three_digits_decodes`,
@@ -1461,7 +1462,7 @@ character with numeric value 0, surrounded by double quotes, as in:
 **Repo:** Lex: `crates/idl/src/lexer/tokenizer.rs::scan_string_literal`
 (l. 358) — konsumiert `"…"`-Inhalt, akzeptiert Backslash-Escape.
 Const-Eval: `crates/idl/src/semantics/const_eval.rs::decode_string`
-(l. 550) ruft `decode_escapes(_, allow_wide=false)`. NUL-Pruefung
+(l. 550) ruft `decode_escapes(_, allow_wide=false)`. NUL-Prüfung
 erfolgt im `decode_string`-Body.
 
 **Tests:** `crates/idl/src/lexer/tokenizer.rs::tests::string_literal_with_escape`,
@@ -1496,7 +1497,7 @@ ruft `decode_escapes(_, allow_wide=true)` und liefert `Vec<u32>`.
 character `\0`. A wide string literal shall not contain the wide
 character with value zero."
 
-**Repo:** `decode_string`/`decode_wide_string` (ll. 550, 581) pruefen
+**Repo:** `decode_string`/`decode_wide_string` (ll. 550, 581) prüfen
 pro decodiertem Codepoint auf `0` und liefern
 `EvalError::OutOfRange { kind: "string", … }`.
 
@@ -1523,11 +1524,11 @@ Sequenzen werden append'd → [0x0A, 0x42], nicht [0xAB].
 **Tests:** `crates/idl/src/semantics/const_eval.rs::tests::string_literal_concat`,
 `wstring_concat`,
 `string_literal_with_hex_and_octal_escapes` (deckt
-"`\xA`" + "B" → [0x0A, 0x42]-Effekt fuer Hex/Octal innerhalb eines
+"`\xA`" + "B" → [0x0A, 0x42]-Effekt für Hex/Octal innerhalb eines
 Literals).
 
 **Status:** done — `crates/idl/src/semantics/const_eval.rs::tests::adjacent_string_literals_keep_chars_distinct`
-(Phase 2.4) belegt Spec-Beispiel `"\xA" "B"` → `[0x0A, 0x42]`,
+belegt Spec-Beispiel `"\xA" "B"` → `[0x0A, 0x42]`,
 Length 2.
 
 ### §7.2.6.3 — String-Size = Anzahl Char-Literale nach Concat
@@ -1541,10 +1542,10 @@ concatenation."
 (post-Decode) liefert die Spec-konforme Size.
 
 **Tests:** `crates/idl/src/semantics/const_eval.rs::tests::string_literal_concat`
-prueft Concat-Ergebnis-Wert.
+prüft Concat-Ergebnis-Wert.
 
 **Status:** done — `crates/idl/src/semantics/const_eval.rs::tests::string_size_after_concat`
-(Phase 2.4) belegt `"ab" "cd"` → "abcd", Length 4.
+belegt `"ab" "cd"` → "abcd", Length 4.
 
 ### §7.2.6.3 — `"` innerhalb String muss escaped sein
 
@@ -1552,7 +1553,7 @@ prueft Concat-Ergebnis-Wert.
 character `"` must be preceded by a `\`."
 
 **Repo:** `scan_string_literal` (l. 358) — bei `\` konsumiert das
-naechste Byte literal (also auch `\"`); ein un-escapeed `"` schliesst
+nächste Byte literal (also auch `\"`); ein un-escapeed `"` schließt
 den String-Literal. `decode_escapes` (l. 625) decodiert `\"` zu
 `b'"'`-Codepoint.
 
@@ -1595,7 +1596,7 @@ optionaler Exponent (`e`/`E` mit `+`/`-`-Sign + Digits). Bedingung
 Spec-Bedingung "either int-part oder fraction-part may be missing,
 but not both": durch
 `if int_part_present || next_is_digit` (l. 190) sichergestellt — `.5`
-ist gueltig, `5.` ist gueltig, `.` allein nicht.
+ist gültig, `5.` ist gültig, `.` allein nicht.
 Spec-Bedingung "either decimal-point oder e/E may be missing, but not
 both": expliziter Check im Code: `(has_dot || has_exp)` muss true sein,
 sonst kein FloatLiteral.
@@ -1609,7 +1610,7 @@ Const-Eval:
 `float_no_int_part`, `float_no_fraction_part`,
 `float_no_decimal_point_only_exponent`,
 `float_no_exponent_only_decimal_point`,
-`float_dot_alone_is_punct_not_float` (alle 5 Phase 1.5).
+`float_dot_alone_is_punct_not_float` (alle 5).
 `crates/idl/src/semantics/const_eval.rs::tests::float_addition_promotes_to_double`.
 
 **Status:** done
@@ -1624,11 +1625,11 @@ part (but not both) may be missing; the decimal point (but not the
 letter *d* or *D*) may be missing."
 
 **Repo:** Lex: `crates/idl/src/lexer/tokenizer.rs::scan_number`
-(ll. 216-222) — nach Optional-Dot/Optional-Exponent-Block prueft auf
+(ll. 216-222) — nach Optional-Dot/Optional-Exponent-Block prüft auf
 `d`/`D`-Suffix, liefert `FixedPtLiteral`.
 Spec-Bedingung "decimal-point may be missing, d/D may not": durch
 unbedingten `d`/`D`-Check sichergestellt; `5d` (kein Dot) ist
-gueltig, `5.5` (kein `d`) ist FloatLiteral.
+gültig, `5.5` (kein `d`) ist FloatLiteral.
 "either int-part oder fraction-part may be missing, but not both":
 analog zu §7.2.6.4.
 
@@ -1640,7 +1641,7 @@ Const-Eval:
 **Tests:** `crates/idl/src/lexer/tokenizer.rs::tests::fixed_point_with_d_suffix`,
 `fixed_no_int_part`, `fixed_no_fraction_part`,
 `fixed_no_decimal_point`, `fixed_uppercase_d`,
-`fixed_without_d_is_not_fixed` (alle 5 Phase 1.6).
+`fixed_without_d_is_not_fixed` (alle 5).
 `crates/idl/src/semantics/const_eval.rs::tests::fixed_literal_parses_digits_and_scale`,
 `fixed_literal_records_scale`,
 `fixed_add_same_scale`,
@@ -1688,16 +1689,16 @@ appear before the #."
 l. 340) — pro Source-Zeile `let trimmed = line.trim_start()` (l. 342),
 dann `parse_directive(trimmed)` (l. 348). `parse_directive`
 (l. 607) verlangt `#` als erstes Char nach Trim. Damit ist
-"white space may appear before #" inhaerent erfuellt.
+"white space may appear before #" inhärent erfüllt.
 
 **Tests:** alle bestehenden Direktiven-Tests
 (`pragma_is_stripped`, `define_object_like_*`, `ifdef_*` etc.).
 `crates/idl/src/preprocessor/mod.rs::tests::leading_whitespace_before_hash_accepted`
-(Phase 1.7).
+.
 
 **Status:** done
 
-### §7.3 — Direktiven-Syntax IDL-unabhaengig + Effekte bis EOTU
+### §7.3 — Direktiven-Syntax IDL-unabhängig + Effekte bis EOTU
 
 **Spec:** §7.3, S. 23 — "These lines have syntax independent of the
 rest of IDL; they may appear anywhere and have effects that last
@@ -1708,16 +1709,16 @@ semantically constrained."
 **Repo:** Direktiven-Parsing erfolgt **vor** der Tokenisierung im
 Preprocessor. Direktiven-Effekte (Macro-Definitionen, `#define`-
 Substitutionen) leben in `State::macros` (HashMap, l. 528+) und
-gelten ueber alle nachfolgenden Lines bis Translation-Unit-Ende — sind
-unabhaengig von IDL-Scoping (Module, Interface, etc.).
+gelten über alle nachfolgenden Lines bis Translation-Unit-Ende — sind
+unabhängig von IDL-Scoping (Module, Interface, etc.).
 "may appear anywhere": durch das zeilenbasierte Loop-Konzept
-(`for (line_idx, line) in source.split_inclusive('\n')`) inhaerent
-erfuellt.
+(`for (line_idx, line) in source.split_inclusive('\n')`) inhärent
+erfüllt.
 "IDL-specific pragmas semantically constrained": Pragma-Recognizer
 (`Pragma`-Direktive) sammelt Pragma-Args via
 `OpenSplicePragma`/`PragmaKeylist`-Strukturen, semantische Bindung an
-folgende Type-Deklarationen erfolgt ausserhalb der lex-Phase
-(zukuenftige IDL-Compiler-Schicht).
+folgende Type-Deklarationen erfolgt außerhalb der lex-Phase
+(zukünftige IDL-Compiler-Schicht).
 
 **Tests:** `crates/idl/src/preprocessor/mod.rs::tests::define_object_like_substitutes_in_subsequent_lines`,
 `undef_removes_macro`,
@@ -1746,7 +1747,7 @@ splice_backslash_newlines(source);`.
 **Tests:** `crates/idl/src/preprocessor/mod.rs::tests::line_continuation_in_define`,
 `line_continuation_in_idl_line`,
 `line_continuation_with_crlf`,
-`multi_line_continuation` (alle 4 Phase 1.8).
+`multi_line_continuation` (alle 4).
 
 **Status:** done
 
@@ -1758,8 +1759,8 @@ character in a source file."
 **Repo:** `splice_backslash_newlines` (l. 540) konsumiert ein
 Backslash nur wenn ein `\n` (oder `\r\n`) folgt. Im
 `Preprocessor::process`-Pfad (l. 311+) prüft eine
-`spliced.ends_with('\\')`-Pruefung nach dem Splicing und liefert
-`PreprocessError::TrailingBackslash { file }` (Phase 1.9).
+`spliced.ends_with('\\')`-Prüfung nach dem Splicing und liefert
+`PreprocessError::TrailingBackslash { file }`.
 
 **Tests:** `crates/idl/src/preprocessor/mod.rs::tests::trailing_backslash_at_file_end_is_error`.
 
@@ -1778,7 +1779,7 @@ Direktiven-Argumente (filename via `parse_include` l. 788; macro-name
 im `Tokenizer` (`crates/idl/src/lexer/tokenizer.rs`). "Single character
 other than white space that does not match another preprocessing
 token" wird durch das Pass-Through-Design abgedeckt: alles was nicht
-als Direktive erkannt wird, fliesst unveraendert in die Token-Pipeline.
+als Direktive erkannt wird, fließt unverändert in die Token-Pipeline.
 
 **Tests:** `crates/idl/src/preprocessor/mod.rs::tests::quoted_include_resolves`
 (Filename als Preprocessing-Token),
@@ -1800,7 +1801,7 @@ rekursiver Include-Mechanismus: bei `#include` wird der Resolver
 gerufen, der Include-Text wird **inline** in die aktuelle Token-
 Sequenz substituiert (kein File-Boundary-Marker). SourceMap
 (`crates/idl/src/preprocessor/source_map.rs`) speichert Origin-File
-+ Origin-Line pro Output-Byte fuer Diagnostik.
++ Origin-Line pro Output-Byte für Diagnostik.
 
 **Tests:** `crates/idl/src/preprocessor/mod.rs::tests::quoted_include_resolves`,
 `system_include_resolves`,
@@ -1810,7 +1811,7 @@ Sequenz substituiert (kein File-Boundary-Marker). SourceMap
 
 **Status:** done
 
-### §7.3 — Note: Code-Gen fuer included Files implementation-spezifisch
+### §7.3 — Note: Code-Gen für included Files implementation-spezifisch
 
 **Spec:** §7.3, S. 23 — "Note – Generating code for included files is
 an IDL compiler implementation-specific issue. To support separate
@@ -1855,9 +1856,11 @@ parts of it)."
 
 **Repo:** Building-Block-Atomicity wird durch das Feature-Flag-System
 durchgesetzt:
+
 - `crates/idl/src/features/mod.rs::IdlFeatures` (22 Bool-Flags)
   aktiviert ganze Building-Block-Cluster (`corba_value_types_full`,
   `corba_components`, `corba_template_modules` etc.).
+
 - `crates/idl/src/features/gate.rs::validate` (Production- + Alternative-
   Level-Gates) lehnt Subset-Verwendung ab → ein Building-Block ist
   entweder voll aktiv oder voll inaktiv.
@@ -1914,9 +1917,9 @@ pre-exist and are not detailed":
 - `PROD_STRING_LITERAL` (l. 363, ID 6).
 - `PROD_WIDE_STRING_LITERAL` (l. 371, ID 7).
 - `PROD_BOOLEAN_LITERAL` (l. 379, ID 8) — nicht in Table 7-10
-  aufgefuehrt, aber als Pre-Existing fuer Const-Eval ergaenzt.
+  aufgeführt, aber als Pre-Existing für Const-Eval ergänzt.
 Jede dieser Productions referenziert genau **ein** Terminal vom
-zugehoerigen `TokenKind` und wird vom Lexer direkt gefuellt.
+zugehörigen `TokenKind` und wird vom Lexer direkt gefüllt.
 
 **Tests:** alle Lex-Tests in
 `crates/idl/src/lexer/tokenizer.rs::tests` belegen die Existenz dieser
@@ -1940,8 +1943,8 @@ itself."
 
 **Repo:** Core-Productions in
 `crates/idl/src/grammar/idl42.rs` (alle 68 Rules der §7.4.1.3-Liste),
-plus zugehoerige Pre-Existing-Productions. Das Feature-Flag-System
-(`crates/idl/src/features/mod.rs`) hat **kein** Off-Switch fuer
+plus zugehörige Pre-Existing-Productions. Das Feature-Flag-System
+(`crates/idl/src/features/mod.rs`) hat **kein** Off-Switch für
 Core-Data-Types: das Building-Block ist immer aktiv (mandatory).
 Root-Production: `PROD_SPECIFICATION` (l. 400, ID 9), als
 `Grammar::start` referenziert (`IDL_42.start_id == ID_SPECIFICATION`).
@@ -1950,7 +1953,7 @@ Root-Production: `PROD_SPECIFICATION` (l. 400, ID 9), als
 `parses_nested_modules`,
 `parses_multiple_top_level_modules`,
 `parses_typedef_with_primitive_types` (decken Core-Building-Block-
-Aktivitaet).
+Aktivität).
 `crates/idl/src/grammar/mod.rs::tests::grammar_resolves_start_production`.
 
 **Status:** done
@@ -1960,7 +1963,7 @@ Aktivitaet).
 **Spec:** §7.4.1.2, S. 25 — "This building block is the root for all
 other building blocks and requires no other ones."
 
-**Repo:** Core-Building-Block hat keine Feature-Flag-Abhaengigkeiten;
+**Repo:** Core-Building-Block hat keine Feature-Flag-Abhängigkeiten;
 alle anderen Building-Blocks (`corba_value`, `corba_components`,
 `corba_template_modules`, etc.) benutzen Productions aus Core
 (z.B. `<scoped_name>`, `<identifier>`, `<const_expr>`) als gegeben.
@@ -2009,7 +2012,7 @@ Top-Level),
 
 **Repo:** `crates/idl/src/grammar/idl42.rs::PROD_DEFINITION`
 (l. 442, ID 11) — drei Alternativen: `module_dcl ";"`, `const_dcl
-";"`, `type_dcl ";"`. CORBA-Building-Blocks fuegen via Composer
+";"`, `type_dcl ";"`. CORBA-Building-Blocks fügen via Composer
 weitere Alternativen hinzu (`except_dcl`, `interface_dcl`, `value_dcl`
 etc.).
 
@@ -2018,7 +2021,7 @@ etc.).
 `parses_typedef_with_primitive_types` (Type-Definition),
 `parses_empty_module` (Module-Definition).
 Composer-Erweiterung: `parses_empty_interface` (interface_dcl als
-zusaetzliche Alternative).
+zusätzliche Alternative).
 
 **Status:** done
 
@@ -2050,10 +2053,10 @@ ID 12) — Sequenz `Keyword("module")`, `Nonterminal(IDENTIFIER)`,
 
 **Repo:** `crates/idl/src/grammar/idl42.rs::PROD_SCOPED_NAME`
 (l. 702, ID 16) — drei Alternativen: lokaler Identifier, absoluter
-Pfad (`"::"` Praefix), iterativ via `<scoped_name_tail>` (l. 734,
+Pfad (`"::"` Präfix), iterativ via `<scoped_name_tail>` (l. 734,
 ID 17, weil Earley-Recognizer mit Left-Recursion umgehen muss; das
 Pattern `scoped_name "::" identifier` wird via tail-rekursive
-Produktion ausgedrueckt).
+Produktion ausgedrückt).
 
 **Tests:** `crates/idl/src/semantics/resolver.rs::tests::three_level_scoped_name_resolves`,
 `absolute_scoped_name_resolves_from_root`,
@@ -2099,7 +2102,7 @@ Sequenz `Keyword("const")`, `Nonterminal(CONST_TYPE)`,
 
 **Repo:** `crates/idl/src/grammar/idl42.rs::PROD_CONST_TYPE` (l. 1452)
 — 10 Alternativen, jede ein Nonterminal-Verweis auf den
-entsprechenden Type. CORBA-Building-Block ergaenzt evtl. weitere
+entsprechenden Type. CORBA-Building-Block ergänzt evtl. weitere
 Alternativen via Composer.
 
 **Tests:** `parses_int_const` (integer_type),
@@ -2108,15 +2111,15 @@ Alternativen via Composer.
 `parses_boolean_const` (boolean_type),
 `parses_const_with_scoped_name_value` (scoped_name),
 `parses_typedef_with_primitive_types` (deckt char_type, wide_char_type,
-octet_type ueber typedef-Productions, die dieselben Type-Productions
+octet_type über typedef-Productions, die dieselben Type-Productions
 verwenden).
 
-**Status:** done — dedizierte Const-Tests fuer alle 10 Const-Type-
+**Status:** done — dedizierte Const-Tests für alle 10 Const-Type-
 Varianten in `§7.4.1.3-r6` (Folgeeintrag, Tests
 `parses_octet_const`, `parses_char_const`, `parses_wchar_const`,
 `parses_wstring_const`, `parses_fixed_const`).
 
-### §7.4.1.3-r6 Const-Tests fuer alle Const-Type-Varianten (Phase 3.1)
+### §7.4.1.3-r6 Const-Tests für alle Const-Type-Varianten
 
 **Spec:** §7.4.1.3 (6), S. 25 — alle 10 Alternativen sollen testbar
 sein.
@@ -2129,11 +2132,10 @@ sein.
 `parses_float_const`, `parses_string_const`, `parses_boolean_const`,
 `parses_const_with_scoped_name_value`.
 
-**Status:** done — alle 5 Tests gruen
+**Status:** done — alle 5 Tests grün
 (`parses_octet_const`, `parses_char_const`, `parses_wchar_const`,
-`parses_wstring_const`, `parses_fixed_const`); Recognizer-Lücke fuer
-`const fixed F = 1.5d;` durch Phase-5-PROD_CONST_TYPE-Erweiterung
-geschlossen.
+`parses_wstring_const`, `parses_fixed_const`); `const fixed F = 1.5d;`
+wird vom Recognizer via `PROD_CONST_TYPE` akzeptiert.
 
 ### §7.4.1.3 Rule (7) — `<const_expr>`
 
@@ -2157,7 +2159,7 @@ Top-Level).
 "|" <xor_expr>`"
 
 **Repo:** `PROD_OR_EXPR` (l. 1527) — zwei Alternativen, links-rekursiv
-fuer Bitwise-OR.
+für Bitwise-OR.
 
 **Tests:** `parses_const_bitwise` (`const long X = 0x1 | 0x2;`).
 
@@ -2169,10 +2171,10 @@ fuer Bitwise-OR.
 <xor_expr> "^" <and_expr>`"
 
 **Repo:** `PROD_XOR_EXPR` (l. 1545) — zwei Alternativen, links-rekursiv
-fuer Bitwise-XOR.
+für Bitwise-XOR.
 
 **Tests:** `parses_const_bitwise` (deckt `^`-Operator zwischen
-`|`-Praezedenz).
+`|`-Präzedenz).
 
 **Status:** done
 
@@ -2182,7 +2184,7 @@ fuer Bitwise-XOR.
 <and_expr> "&" <shift_expr>`"
 
 **Repo:** `PROD_AND_EXPR` (l. 1563) — zwei Alternativen, links-rekursiv
-fuer Bitwise-AND.
+für Bitwise-AND.
 
 **Tests:** `parses_const_bitwise` (deckt `&`-Operator).
 
@@ -2194,7 +2196,7 @@ fuer Bitwise-AND.
 <shift_expr> ">>" <add_expr> | <shift_expr> "<<" <add_expr>`"
 
 **Repo:** `PROD_SHIFT_EXPR` (l. 1586) — drei Alternativen, links-
-rekursiv fuer Right-/Left-Shift.
+rekursiv für Right-/Left-Shift.
 
 **Tests:** `parses_const_shift` (`const long X = 1 << 3;`,
 `const long Y = 8 >> 2;`).
@@ -2207,7 +2209,7 @@ rekursiv fuer Right-/Left-Shift.
 <add_expr> "+" <mult_expr> | <add_expr> "-" <mult_expr>`"
 
 **Repo:** `PROD_ADD_EXPR` (l. 1613) — drei Alternativen, links-
-rekursiv fuer Add/Sub.
+rekursiv für Add/Sub.
 
 **Tests:** `parses_const_arithmetic` (`const long X = 1 + 2 - 3;`).
 
@@ -2220,17 +2222,17 @@ rekursiv fuer Add/Sub.
 <mult_expr> "%" <unary_expr>`"
 
 **Repo:** `PROD_MULT_EXPR` (l. 1639) — vier Alternativen, links-
-rekursiv fuer Mul/Div/Mod.
+rekursiv für Mul/Div/Mod.
 
 **Tests:** `parses_const_arithmetic` (deckt `*`/`/`),
-`parses_const_with_parens_and_precedence` (Praezedenz mit Klammern).
+`parses_const_with_parens_and_precedence` (Präzedenz mit Klammern).
 
 **Status:** done — `%`-Test in `§7.4.1.3-r13` (Folgeeintrag,
-`parses_const_modulo`); Praezedenz-Reihenfolge ist durch
+`parses_const_modulo`); Präzedenz-Reihenfolge ist durch
 links-rekursiven `PROD_MULT_EXPR`-Aufbau strukturell garantiert
 und durch `parses_const_with_parens_and_precedence` belegt.
 
-### §7.4.1.3-r13 Test fuer `%`-Operator (Phase 3.2)
+### §7.4.1.3-r13 Test für `%`-Operator
 
 **Spec:** Rule (13) — `%` ist Modulo-Operator.
 
@@ -2260,7 +2262,7 @@ und durch `parses_const_with_parens_and_precedence` belegt.
 
 **Repo:** Inline in `PROD_UNARY_EXPR` als Alternative-Set; einzelne
 Production gibt es nicht (Optimierung — Spec-Rule wird durch
-Inline-Match erfuellt).
+Inline-Match erfüllt).
 
 **Tests:** `parses_const_unary` deckt `-` und `~`.
 
@@ -2270,7 +2272,7 @@ Production ist Spec-konforme Inline-Optimierung und nicht-funktional
 relevant (alle drei Operatoren `+`/`-`/`~` werden via Inline-
 Alternativen in `PROD_UNARY_EXPR` korrekt akzeptiert).
 
-### §7.4.1.3-r15 Test fuer Unary-`+` (Phase 3.3)
+### §7.4.1.3-r15 Test für Unary-`+`
 
 **Spec:** Rule (15) — `+` als Unary-Operator.
 
@@ -2315,7 +2317,7 @@ Pre-Existing-Production-Verweis.
 `parses_const_with_wide_char_literal`,
 `parses_const_with_wide_string_literal`.
 
-### §7.4.1.3-r17 Const-Tests fuer alle 8 Literal-Klassen (Phase 3.4)
+### §7.4.1.3-r17 Const-Tests für alle 8 Literal-Klassen
 
 **Spec:** Rule (17) — alle 8 Literal-Klassen.
 
@@ -2353,7 +2355,7 @@ Alternativen `TRUE` und `FALSE`.
 <const_expr>`"
 
 **Repo:** `PROD_POSITIVE_INT_CONST` (l. 1035) — Single-Alt-Forwarder
-zu `const_expr`. Positivitaets-Validation erfolgt im Const-Eval-Pass
+zu `const_expr`. Positivitäts-Validation erfolgt im Const-Eval-Pass
 (nicht im Recognizer): `crates/idl/src/semantics/const_eval.rs`
 liefert `EvalError::OutOfRange` wenn der Wert <= 0 wird, sofern der
 Caller den Eval-Kontext mit `kind: "positive_int"` aufruft.
@@ -2365,12 +2367,12 @@ Caller den Eval-Kontext mit `kind: "positive_int"` aufruft.
 `parses_fixed_pt_typedef` (`fixed<5,2>`).
 
 **Status:** done — `evaluate_positive_int(expr, syms, span)` Helper
-ergänzt (Phase 2.16). Tests
+ergänzt. Tests
 `crates/idl/src/semantics/const_eval.rs::tests::positive_int_const_one_is_ok`,
 `positive_int_const_zero_is_error`,
 `positive_int_const_negative_is_error`.
-Aufrufer (AST-Lowering von `string<N>`, `sequence<T,N>`, `fixed<P,S>`,
-`array[N]`) wandern in Phase 6.
+Die Aufrufer (AST-Lowering von `string<N>`, `sequence<T,N>`, `fixed<P,S>`,
+`array[N]`) sind ein nachgelagerter Lowering-Schritt.
 
 ### §7.4.1.3 Rule (20) — `<type_dcl>`
 
@@ -2396,7 +2398,7 @@ Feature-Gate: `crates/idl/src/features/gate.rs::tests::dds_basic_rejects_native`
 **Spec:** §7.4.1.3 (21), S. 26 — "`<type_spec> ::= <simple_type_spec>`"
 
 **Repo:** `PROD_TYPE_SPEC` (l. 670, ID 14) — Single-Alt-Forwarder.
-CORBA-Building-Block ergaenzt via Composer eine zweite Alternative
+CORBA-Building-Block ergänzt via Composer eine zweite Alternative
 `<template_type_spec>` (siehe §7.4.13).
 
 **Tests:** `parses_typedef_with_primitive_types`,
@@ -2444,11 +2446,11 @@ base_type_spec-Branches in einem Test).
 `parses_typedef_with_primitive_types` (deckt double + long double via
 typedef).
 
-**Status:** done — Recognizer-Test fuer das Token-Pair
+**Status:** done — Recognizer-Test für das Token-Pair
 `"long" "double"` in `§7.4.1.3-r24` (Folgeeintrag,
 `parses_long_double_typedef`).
 
-### §7.4.1.3-r24 Test fuer `long double`-Type (Phase 3.5)
+### §7.4.1.3-r24 Test für `long double`-Type
 
 **Spec:** Rule (24) — `"long" "double"` als Floating-Point-Type.
 
@@ -2464,7 +2466,7 @@ typedef).
 <unsigned_int>`"
 
 **Repo:** `PROD_INTEGER_TYPE` (l. 791) — zwei Alternativen.
-CORBA-Erweiterung fuegt via Composer `int8`/`uint8`/etc. als zusaetzliche
+CORBA-Erweiterung fügt via Composer `int8`/`uint8`/etc. als zusätzliche
 Alternativen hinzu (siehe §7.4.1.3 Rule (-25-extras), nicht
 nummeriert in Spec — von 4.2 als size-explicit-Erweiterung dokumentiert).
 
@@ -2479,7 +2481,7 @@ long long).
 | <signed_long_int> | <signed_longlong_int>`"
 
 **Repo:** `PROD_SIGNED_INT` (l. 802) — drei Alternativen, jeweils
-inline mit Keyword-Sequenzen statt separaten Productions fuer Rules
+inline mit Keyword-Sequenzen statt separaten Productions für Rules
 (27)/(28)/(29) (die Spec-Rules 27-29 enthalten nur ein einzelnes
 Keyword-Pattern, daher Inline-Optimierung).
 
@@ -2495,7 +2497,7 @@ Keyword-Pattern, daher Inline-Optimierung).
 **Repo:** Inline-Alternative in `PROD_SIGNED_INT` (l. 802) —
 `Symbol::Terminal(TokenKind::Keyword("short"))`. Keine eigene
 ProductionId; Spec-Rule wird durch Direkt-Akzeptanz des Tokens
-erfuellt.
+erfüllt.
 
 **Tests:** `parses_typedef_with_primitive_types` (deckt `short` als
 Type-Spec via typedef-Member).
@@ -2642,11 +2644,11 @@ Typedef).
 `parses_fixed_pt_typedef`,
 `parses_struct_with_template_type_member`.
 
-**Status:** done — Test fuer `<wide_string_type>` als
+**Status:** done — Test für `<wide_string_type>` als
 Template-Type-Spec-Branch in `§7.4.1.3-r38` (Folgeeintrag,
 `parses_wide_string_typedef`).
 
-### §7.4.1.3-r38 Test fuer `<wide_string_type>` als Template-Type-Spec (Phase 3.6)
+### §7.4.1.3-r38 Test für `<wide_string_type>` als Template-Type-Spec
 
 **Spec:** Rule (38) — wide_string_type ist eine der vier Alternativen.
 
@@ -2695,10 +2697,10 @@ zu `string_type` (bounded `<N>` + unbounded).
 
 **Tests:** Lex-Tests in
 `crates/idl/src/lexer/tokenizer.rs::tests::wide_string_literal`.
-Recognizer-Test fuer `<wide_string_type>` als Type via Typedef siehe
+Recognizer-Test für `<wide_string_type>` als Type via Typedef siehe
 §7.4.1.3-r38-open.
 
-**Status:** done — Recognizer-Test fuer `typedef wstring<N> WS;`
+**Status:** done — Recognizer-Test für `typedef wstring<N> WS;`
 abgedeckt durch `parses_wide_string_typedef` (siehe §7.4.1.3-r38
 Folgeeintrag).
 
@@ -2720,9 +2722,9 @@ Folgeeintrag).
 
 **Repo:** Inline in `PROD_CONST_TYPE` (l. 1452) — Alternative
 `Keyword("fixed")` ohne Parameter (Spec unterscheidet zwischen
-`fixed_pt_type` mit Bounds fuer Type-Decls und `fixed_pt_const_type`
-ohne Bounds fuer Const-Decls). Keine eigene ProductionId; Spec-Rule
-durch Inline-Match erfuellt.
+`fixed_pt_type` mit Bounds für Type-Decls und `fixed_pt_const_type`
+ohne Bounds für Const-Decls). Keine eigene ProductionId; Spec-Rule
+durch Inline-Match erfüllt.
 
 **Tests:** Const-Eval-Tests in
 `crates/idl/src/semantics/const_eval.rs::tests::fixed_literal_parses_digits_and_scale`,
@@ -2731,8 +2733,8 @@ durch Inline-Match erfuellt.
 `fixed_sub_works`, `fixed_mul_adds_scales`, `fixed_div_by_zero_errors`,
 `fixed_with_int_promotes`.
 Recognizer-Test `parses_fixed_const` + `parses_const_with_fixed_pt_literal`
-in `grammar::idl42::tests` (Phase 5: `fixed_pt_const`-Alt zu
-`PROD_CONST_TYPE` hinzugefuegt).
+in `grammar::idl42::tests` (`fixed_pt_const`-Alt zu
+`PROD_CONST_TYPE` hinzugefügt).
 
 **Status:** done
 
@@ -2774,7 +2776,7 @@ in `grammar::idl42::tests` (Phase 5: `fixed_pt_const`-Alt zu
 Hinweis: Spec verlangt mindestens **ein** Member (`<member>+`); leere
 Structs sind Spec-konform NICHT erlaubt. Repo-Test
 `parses_empty_struct` deutet darauf, dass leere Structs akzeptiert
-werden — Spec-Verstoss.
+werden — Spec-Verstoß.
 
 **Tests:** `parses_struct_with_single_member`,
 `parses_struct_with_multiple_members`,
@@ -2784,7 +2786,7 @@ werden — Spec-Verstoss.
 
 **Status:** done — Repo-Default-Profile ist `dds_extensible`
 (XTypes-basiert), das Empty-Structs als Forward-Compat-Pattern
-explizit erlaubt (§7.4.13.4.5 — appendable/mutable Structs duerfen
+explizit erlaubt (§7.4.13.4.5 — appendable/mutable Structs dürfen
 Members im Verlauf der Type-Evolution gewinnen oder verlieren).
 Recognizer akzeptiert `struct Empty {};` aktuell ohne Profile-Gate;
 strict-Core-Verbot via Profile-Flag ist S-Prof-Material (siehe
@@ -2799,7 +2801,7 @@ gab es Erweiterungen, die leere Structs durchschleusen. Test
 `parses_empty_struct` (l. 4581 idl42.rs) belegt das.
 
 **Tests:** Aktuell `parses_empty_struct` als positive-Test;
-Spec-konform muesste es ein `rejects_empty_struct` sein.
+Spec-konform müsste es ein `rejects_empty_struct` sein.
 
 **Status:** done — bewusste Profile-Entscheidung. Strict-Core-IDL-4.2
 fordert `<member>+` (mindestens 1 Member). XTypes 1.3 §7.4.13.4.5
@@ -2880,11 +2882,11 @@ durchgesetzt.
 `crates/idl/src/semantics/union_validation.rs::tests::long_discriminator_with_int_labels_ok`
 (integer_type via long).
 
-**Status:** done — Recognizer-Test fuer `<scoped_name>` als
+**Status:** done — Recognizer-Test für `<scoped_name>` als
 Switch-Type in `§7.4.1.3-r51` (Folgeeintrag,
 `parses_union_with_scoped_name_discriminator`).
 
-### §7.4.1.3-r51 Recognizer-Test fuer Scoped-Name als Switch-Type (Phase 3.7)
+### §7.4.1.3-r51 Recognizer-Test für Scoped-Name als Switch-Type
 
 **Spec:** Rule (51) — scoped_name als eine der vier Alternativen.
 
@@ -2927,7 +2929,7 @@ Case).
 
 **Repo:** `PROD_CASE_LABELS` + `PROD_CASE_LABEL` (l. 1316/1333) —
 zwei Alternativen: `case <const_expr>:` und `default:`. (Repo splittet
-Rule (54) aus Performance-Gruenden in CASE_LABELS-Liste +
+Rule (54) aus Performance-Gründen in CASE_LABELS-Liste +
 CASE_LABEL-Item; Spec-Verhalten erhalten.)
 
 **Tests:** `parses_union_with_integer_discriminator` (`case 0:`),
@@ -3095,11 +3097,11 @@ simple_declarator implicit;
 `parses_typedef_template_with_array` (template + array),
 `parses_typedef_with_multiple_declarators`.
 
-**Status:** done — dedizierter Test fuer `typedef struct {...}
+**Status:** done — dedizierter Test für `typedef struct {...}
 Alias;` (constr_type_dcl im typedef-Kontext) in `§7.4.1.3-r64`
 (Folgeeintrag, `parses_typedef_with_inline_struct`).
 
-### §7.4.1.3-r64 Test fuer Inline-Constr-Type im Typedef (Phase 3.8)
+### §7.4.1.3-r64 Test für Inline-Constr-Type im Typedef
 
 **Spec:** Rule (64) — `<constr_type_dcl>` als eine der drei
 Alternativen im type_declarator.
@@ -3110,9 +3112,9 @@ Alternativen im type_declarator.
 (belegt Recognizer-Lücke `3-OPEN-r64`).
 
 **Status:** done — Recognizer akzeptiert `typedef struct {...}
-Alias;` durch Phase-5-PROD_TYPE_DECLARATOR-Erweiterung um
-`constr`-Alternative; Test `parses_typedef_with_inline_struct`
-gruen.
+Alias;` via `PROD_TYPE_DECLARATOR` mit `constr`-Alternative; Test
+`parses_typedef_with_inline_struct`
+grün.
 
 ### §7.4.1.3 Rule (65) — `<any_declarators>`
 
@@ -3173,15 +3175,15 @@ implicit (`parses_struct_with_single_member`,
 
 ### §7.4.1.4 — Intro
 
-**Spec:** §7.4.1.4, S. 28 — Header-Sektion fuer die nachfolgenden
+**Spec:** §7.4.1.4, S. 28 — Header-Sektion für die nachfolgenden
 Sub-Clauses §7.4.1.4.1 bis §7.4.1.4.7 (Wiederholung der Rules mit
-zusaetzlichen normativen Aussagen).
+zusätzlichen normativen Aussagen).
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Editorial-Header fuer die nachfolgenden normativen Sub-Clauses.
+**Status:** `n/a (informative)` — Editorial-Header für die nachfolgenden normativen Sub-Clauses.
 
 ### §7.4.1.4.1 — IDL Specification besteht aus 1+ Definitionen
 
@@ -3205,7 +3207,7 @@ type definitions" (gefolgt von Rule (2)-Wiederholung).
 **Repo:** `PROD_DEFINITION` (l. 442, ID 11) — drei Alternativen
 `module_dcl`, `const_dcl`, `type_dcl`. Andere Building-Blocks
 (Interfaces, Value-Types, Components, etc.) erweitern via Composer
-um zusaetzliche Definition-Alternativen.
+um zusätzliche Definition-Alternativen.
 
 **Tests:** s. §7.4.1.3 Rule (2).
 
@@ -3256,7 +3258,7 @@ considered as subsequent parts of the same module description."
 
 **Repo:** `crates/idl/src/semantics/resolver.rs` — bei Wiederbegegnung
 eines bereits existierenden Module-Namens wird der Scope nicht
-ueberschrieben sondern erweitert (`Scope::merge` oder Reopen-Logik in
+überschrieben sondern erweitert (`Scope::merge` oder Reopen-Logik in
 `enter_module`).
 
 **Tests:** `crates/idl/src/semantics/resolver.rs::tests::module_reopen_merges_symbols`.
@@ -3294,7 +3296,7 @@ defined by:
 
 **Repo:** Recognizer-Side abgedeckt durch `PROD_CONST_DCL`/`CONST_TYPE`
 (Rules 5/6). Type-Konsistenz (Wert ↔ Typ): `crates/idl/src/semantics/const_eval.rs`
-liefert typed `ConstValue` und prueft Range; AST-Lowering matcht
+liefert typed `ConstValue` und prüft Range; AST-Lowering matcht
 Type-Tag mit ConstValue-Variant.
 
 **Tests:** `parses_int_const`, `parses_float_const`,
@@ -3328,12 +3330,12 @@ Range-Check pro Sub-Expression.
 
 **Status:** done — `evaluate_int_with_target(expr, syms, target)`
 Helper + `TargetIntType`-Enum mit allen 8 Integer-Typ-Varianten
-(Phase 2.10). Range-Check pro Sub-Step gegen Ziel-Range. Tests
+. Range-Check pro Sub-Step gegen Ziel-Range. Tests
 `crates/idl/src/semantics/const_eval.rs::tests::long_const_subexpr_unsigned_by_default`,
 `long_const_intermediate_overflow_is_error`,
 `long_const_final_value_in_range_after_intermediate_calc`,
 `short_const_intermediate_overflow_is_error`.
-Aufrufer (AST-Lowering von `const`-Decls) wandert in Phase 6.
+Die Aufrufer (AST-Lowering von `const`-Decls) sind ein nachgelagerter Lowering-Schritt.
 
 ### §7.4.1.4.3 — Eval-Regel: Long-Long-Const subexpr-Promotion
 
@@ -3364,8 +3366,8 @@ constant expression is treated as a **double**. It is an error if any
 sub-expression value exceeds the precision of **double**."
 
 **Repo:** `crates/idl/src/semantics/const_eval.rs::promote_float`
-(l. 900) + `apply_binary` — `f64` als Backing fuer `Double`. Precision-
-Check ergibt sich aus `f64::INFINITY`-Pruefung.
+(l. 900) + `apply_binary` — `f64` als Backing für `Double`. Precision-
+Check ergibt sich aus `f64::INFINITY`-Prüfung.
 
 **Tests:** `float_addition_promotes_to_double`.
 
@@ -3381,19 +3383,19 @@ double**."
 
 **Repo:** `ConstValue::LongDouble([u8; 16])` als Roh-Bytes-Stub
 (`crates/idl/src/semantics/const_eval.rs` l. 58, 365). Aktuell:
-Speichert f64 in 16-Byte-Buffer; voll-praezise long-double-
-Arithmetik nicht implementiert (Phase-2-Stretch laut
-Modul-Doc-Comment).
+Speichert f64 in 16-Byte-Buffer; voll-präzise long-double-
+Arithmetik nicht implementiert (BLOCKED durch fehlenden Rust-stable
+`f128`-Type, siehe `§7.4.1.4.3-r-longdouble-open`).
 
 **Tests:** —
 
 **Status:** partial — Long-Double als Type-Tag akzeptiert, aber
 Arithmetik degradiert auf f64 (siehe Tracker-Eintrag
 `§7.4.1.4.3-r-longdouble-open`: BLOCKED durch fehlenden Rust-stable
-`f128`-Type). Item bleibt explizit `partial` bis Rust-Stabilisierung;
-Phase-2-Restriktion via Iron-Rule-Eskalations-Klausel dokumentiert.
+`f128`-Type). Item bleibt explizit `partial` bis zur Rust-Stabilisierung;
+die Restriktion ist via Iron-Rule-Eskalations-Klausel dokumentiert.
 
-### §7.4.1.4.3-r-longdouble-open Long-Double Voll-Praezisions-Arithmetik (BLOCKED — RUST-STDLIB)
+### §7.4.1.4.3-r-longdouble-open Long-Double Voll-Präzisions-Arithmetik (BLOCKED — RUST-STDLIB)
 
 **Spec:** §7.4.1.4.3, S. 30 — "If the type of a floating-point
 constant is **long double**, then each sub-expression of the
@@ -3404,7 +3406,7 @@ is an error if any sub-expression value exceeds the precision of
 
 **Repo:** Stub-Implementation in `parse_floating` (l. 366):
 `ConstValue::LongDouble([u8; 16])` speichert ein f64 in den ersten 8
-Bytes. Arithmetik degradiert auf f64-Praezision.
+Bytes. Arithmetik degradiert auf f64-Präzision.
 
 **Tests:** —
 
@@ -3441,8 +3443,7 @@ prüfen. Sobald `f128` in stable Rust ist:
 3. Tests `long_double_*_arithmetic` ergänzen.
 4. Item-Status auf `done` setzen.
 
-Bis dahin: Item bleibt **`MISSING — BLOCKED`** und Phase 2 ist
-**nicht 100% abgeschlossen**. Iron-Rule-Eskalations-Klausel:
+Bis dahin: Item bleibt **`MISSING — BLOCKED`**. Iron-Rule-Eskalations-Klausel:
 technisch unmögliche Items dürfen offen bleiben **mit
 Stilllegungs-Begründung**, ohne dass die Phase als done deklariert
 wird.
@@ -3462,8 +3463,8 @@ liefert `EvalError::TypeMismatch`).
 `modulo_by_zero_errors`.
 
 **Status:** done — `apply_binary` gibt jetzt explizit
-`EvalError::TypeMismatch` bei `int + float` zurueck (vorher implizite
-Promote nach Double — Spec-Verstoss, Phase 2.12 korrigiert). Test:
+`EvalError::TypeMismatch` bei `int + float` zurück (vorher implizite
+Promote nach Double — Spec-Verstoß, jetzt korrigiert). Test:
 `crates/idl/src/semantics/const_eval.rs::tests::infix_mixed_int_float_is_type_mismatch`.
 
 ### §7.4.1.4.3 — Integer-Expression-Eval-Regel + Octet-Cast
@@ -3482,7 +3483,7 @@ constant, subject to it fitting in the range for **octet** type."
 
 **Repo:** Type-Promotion-Regeln in
 `crates/idl/src/semantics/const_eval.rs::promote_int` (l. 330) und
-`apply_binary` (l. 800). Octet-Cast: `cast_octet` (l. 916) prueft
+`apply_binary` (l. 800). Octet-Cast: `cast_octet` (l. 916) prüft
 Range 0..255.
 
 **Tests:** `octet_range_check_ok`, `octet_range_check_overflow_errors`,
@@ -3501,14 +3502,14 @@ declared type of the constant; otherwise it shall be treated as an
 error."
 
 **Repo:** `promote_float` (l. 900) selektiert basierend auf
-ConstValue-Variant; Range-Check ueber `f32`-/`f64`-Limits.
+ConstValue-Variant; Range-Check über `f32`-/`f64`-Limits.
 
 **Tests:** `float_addition_promotes_to_double`.
 
 **Status:** partial — Long-Double-Branch der Promotion ist Stub
 (siehe Tracker `§7.4.1.4.3-r-longdouble-open`: BLOCKED durch
 fehlenden Rust-stable `f128`-Type). Double-Branch und Range-Check
-fuer Double sind Spec-konform implementiert.
+für Double sind Spec-konform implementiert.
 
 ### §7.4.1.4.3 Table 7-11 — Fixed-Point-Operationen
 
@@ -3527,8 +3528,8 @@ Operationen Table 7-11 (`fixed<d1,s1> op fixed<d2,s2>`):
 **Repo:** `crates/idl/src/semantics/const_eval.rs::apply_binary_fixed`
 (l. 397) implementiert die Skalierungs-Regeln. Hinweis (Code-Doc
 l. 386-396): "Spec verlangt 62-Digit-Zwischenergebnis (volle
-Praezision); hier i128-Truncation, Limit ~38 Decimal-Digits."
-Spec-Quotient-Praezision-`sinf` ist nicht implementiert.
+Präzision); hier i128-Truncation, Limit ~38 Decimal-Digits."
+Spec-Quotient-Präzision-`sinf` ist nicht implementiert.
 
 **Tests:** `fixed_literal_parses_digits_and_scale`,
 `fixed_literal_records_scale`,
@@ -3540,7 +3541,7 @@ Spec-Quotient-Praezision-`sinf` ist nicht implementiert.
 `fixed_with_int_promotes`.
 
 **Status:** done — `apply_binary_fixed` auf `num_bigint::BigInt`
-umgestellt (Phase 2.9). Arbitrary precision für Zwischenergebnis
+umgestellt. Arbitrary precision für Zwischenergebnis
 (deckt Spec-62-Digit-Anforderung ab). Quotient: lhs vor Division um
 31 zusätzliche Stellen skaliert (sinf-Approximation). Tests
 `crates/idl/src/semantics/const_eval.rs::tests::fixed_intermediate_62_digits_does_not_overflow`,
@@ -3565,7 +3566,7 @@ ist nicht explizit implementiert.
 
 **Status:** done — `cap_to_31_digits(BigInt, scale)` Helper liefert
 Truncation (kein Rounding) auf 31 signifikante Digits, Skala
-entsprechend reduziert (Phase 2.8). Test
+entsprechend reduziert. Test
 `crates/idl/src/semantics/const_eval.rs::tests::fixed_31_digit_cap_truncates_not_rounds`
 (`12345678901234567 * 12345678901234567 = ...745677489` (33 Digits) →
 Cap auf "1524157875323883455265967556774" (31 Digits, last 2 dropped
@@ -3600,14 +3601,14 @@ belegt das Spec-no-effect-Verhalten.
 **Spec:** §7.4.1.4.3, S. 31 — "Unary (+ - ~) and binary (* / % + -
 << >> & | ^) operators are applicable in integer expressions."
 Plus die `~` Bit-Complement-Regel + `%`-Modulo-Regel + `<<`/`>>` Shift-
-Regeln + `&`/`|`/`^` Bitwise-Regeln (siehe Table 7-12 fuer 2's
+Regeln + `&`/`|`/`^` Bitwise-Regeln (siehe Table 7-12 für 2's
 Complement).
 
 **Repo:** `apply_unary` (Plus/Minus/Tilde) + `apply_binary` mit
 arithmetischen, bitweisen, und Shift-Branches.
 Bit-Complement-2's-Complement-Regel: `bitnot` (l. 781) — `~v` als
-`-(v+1)` fuer `long`, als `(2^32-1) - v` fuer `unsigned long`,
-analog fuer `long long`/`unsigned long long`.
+`-(v+1)` für `long`, als `(2^32-1) - v` für `unsigned long`,
+analog für `long long`/`unsigned long long`.
 
 **Tests:** `bitwise_or_works`, `shift_left_works`, `shift_right_works`,
 `unary_minus_negates_long`, `bitnot_inverts`,
@@ -3628,7 +3629,7 @@ analog fuer `long long`/`unsigned long long`.
 
 **Tests:** `bitnot_inverts` (Long-Variante).
 
-**Status:** done — Tests fuer alle vier Varianten (Phase 2.5):
+**Status:** done — Tests für alle vier Varianten:
 `crates/idl/src/semantics/const_eval.rs::tests::bitnot_inverts_unsigned_long`,
 `bitnot_inverts_long_long`,
 `bitnot_inverts_unsigned_long_long`. Plus bestehender
@@ -3665,12 +3666,12 @@ shifted right the number of bits specified by the right operand, with
 0 fill for the vacated bits. The right operand shall be in the range
 0 <= right operand < 64."
 
-**Repo:** `apply_binary` Shift-Branch + `EvalError::InvalidShift`-Pruefung.
+**Repo:** `apply_binary` Shift-Branch + `EvalError::InvalidShift`-Prüfung.
 
 **Tests:** `shift_left_works`, `shift_right_works`.
 
 **Status:** done — `crates/idl/src/semantics/const_eval.rs::tests::shift_with_64_or_more_is_invalid`,
-`shift_with_negative_right_operand_is_invalid` (Phase 2.6).
+`shift_with_negative_right_operand_is_invalid`.
 
 ### §7.4.1.4.3 — Bitwise-Operator-Semantik
 
@@ -3686,7 +3687,7 @@ and right operands shall be generated."
 **Tests:** `bitwise_or_works`. AND/XOR-Tests fehlen.
 
 **Status:** done — `crates/idl/src/semantics/const_eval.rs::tests::bitwise_and_works`,
-`bitwise_xor_works` (Phase 2.7), zusätzlich zum bestehenden
+`bitwise_xor_works`, zusätzlich zum bestehenden
 `bitwise_or_works`.
 
 ### §7.4.1.4.3 — Positive-Int-Const-Constraint
@@ -3700,7 +3701,7 @@ to a positive integer constant."
 `positive_int_const_zero_is_error`,
 `positive_int_const_negative_is_error`.
 
-**Status:** done — Positivitaets-Validation via
+**Status:** done — Positivitäts-Validation via
 `evaluate_positive_int(expr, syms, span)` Helper (siehe §7.4.1.3
 Rule (19) Folgeeintrag). Tests `positive_int_const_one_is_ok`,
 `positive_int_const_zero_is_error`,
@@ -3744,7 +3745,7 @@ An octet constant can be defined using an integer literal or an
 integer constant expression but values outside the range 0…255 shall
 be treated as an error."
 
-**Repo:** `cast_octet` (l. 916) prueft `0..=255`.
+**Repo:** `cast_octet` (l. 916) prüft `0..=255`.
 
 **Tests:** `octet_range_check_ok`, `octet_range_check_overflow_errors`,
 `octet_range_check_negative_errors`.
@@ -3763,16 +3764,16 @@ of the constant to which it is being assigned, it shall be treated as
 an error. Truncation on the right for floating point types is OK."
 
 **Repo:** `parse_floating` (l. 352) liefert default `Double`,
-suffix-getrieben `Float`/`LongDouble`. Range-Check ueber `f32::INFINITY`-
+suffix-getrieben `Float`/`LongDouble`. Range-Check über `f32::INFINITY`-
 Match.
 
 **Tests:** `float_addition_promotes_to_double`. Long-Double-Promotion
 fehlt (Stub-Stelle, s. §7.4.1.4.3-r-longdouble-open).
 
-**Status:** partial — Float-Range fuer Long-Double-Promotion
-abhaengig vom Long-Double-Tracker `§7.4.1.4.3-r-longdouble-open`
+**Status:** partial — Float-Range für Long-Double-Promotion
+abhängig vom Long-Double-Tracker `§7.4.1.4.3-r-longdouble-open`
 (BLOCKED durch fehlenden Rust-stable `f128`-Type). Float- und
-Double-Range-Pruefung Spec-konform implementiert.
+Double-Range-Prüfung Spec-konform implementiert.
 
 ### §7.4.1.4.3 — Fixed-Range + Right-Truncation
 
@@ -3794,7 +3795,7 @@ Range-Check via i128-Overflow → `EvalError::OutOfRange`.
 
 **Status:** done
 
-### §7.4.1.4.3 — Enum-Const ueber Scoped-Name
+### §7.4.1.4.3 — Enum-Const über Scoped-Name
 
 **Spec:** §7.4.1.4.3, S. 33 — "An **enum** constant can only be
 defined using a scoped name for the enumerator. The scoped name is
@@ -3805,7 +3806,7 @@ FAVORITE_COLOR = red; module M { enum Size { small, medium, large };
 }; const M::Size MYSIZE = M::medium;`.
 
 **Repo:** Const-Eval `eval_scoped` (l. 250) ruft Symbol-Table und
-liefert `EnumValue { type_name, value }`. Symbol-Table-Lookup ueber
+liefert `EnumValue { type_name, value }`. Symbol-Table-Lookup über
 `scoped_full_name` (l. 271).
 
 **Tests:** `enum_resolution_via_symbol_table`,
@@ -3824,14 +3825,14 @@ Beispiele: `const Color col = red; // is OK but const Color another
 = M::medium; // is an error` (weil M::medium aus Type Size, nicht
 Color).
 
-**Repo:** Const-Eval prueft Type-Match: bei `EnumValue { type_name }`
+**Repo:** Const-Eval prüft Type-Match: bei `EnumValue { type_name }`
 wird der Type-String gegen die Const-Type-Decl validiert.
 
 **Tests:** `enum_resolution_via_symbol_table` (positive), kein Test
-fuer Cross-Enum-Type-Mismatch.
+für Cross-Enum-Type-Mismatch.
 
 **Status:** done — `validate_enum_const_type(value, expected_type, span)`
-Helper (Phase 2.13). Tests
+Helper. Tests
 `crates/idl/src/semantics/const_eval.rs::tests::enum_const_with_wrong_type_errors`,
 `enum_const_with_matching_type_ok`.
 
@@ -3911,7 +3912,7 @@ via Profile-Constraint-Check enforced.
 
 ### §7.4.1.4.4.1 Profile-Constraint Anonymous-Template-Verbot
 
-**Spec:** §7.4.1.4.4.1, S. 33 — Anonymous Template-Types muessen via
+**Spec:** §7.4.1.4.4.1, S. 33 — Anonymous Template-Types müssen via
 typedef benannt werden (im Core-Profile ohne BB-anonymous-types).
 
 **Repo:** Profile-Constraint-Item — wandert in S-Prof (§9.2.2
@@ -3946,13 +3947,13 @@ Table 7-13 Ranges:
 - `unsigned short`: 0..2^16-1
 - `unsigned long`: 0..2^32-1
 - `unsigned long long`: 0..2^64-1
-Plus N/A-Eintraege "See Building Block Extended Data-Types" fuer
+Plus N/A-Einträge "See Building Block Extended Data-Types" für
 8-bit-Variants (`int8`/`uint8`).
 
 **Repo:** Type-Repräsentation in
 `crates/idl/src/semantics/const_eval.rs::ConstValue`-Enum (l. 36+):
 `Short(i16)`, `UShort(u16)`, `Long(i32)`, `ULong(u32)`,
-`LongLong(i64)`, `ULongLong(u64)`. Range-Pruefung via
+`LongLong(i64)`, `ULongLong(u64)`. Range-Prüfung via
 `promote_int`/`cast_short`/`cast_octet`.
 
 **Tests:** `int_promotion_long_default`,
@@ -3961,7 +3962,7 @@ Plus N/A-Eintraege "See Building Block Extended Data-Types" fuer
 `octet_range_check_*`,
 `short_range_overflow_errors`.
 
-**Status:** done — `cast_ushort` + `cast_ulong` ergänzt (Phase 2.14).
+**Status:** done — `cast_ushort` + `cast_ulong` ergänzt.
 Tests `crates/idl/src/semantics/const_eval.rs::tests::unsigned_short_range_overflow_errors`,
 `unsigned_short_negative_errors`,
 `unsigned_long_range_overflow_errors`,
@@ -3983,7 +3984,7 @@ Standard 754-1985, for a detailed specification."
 `ConstValue::Double(f64)` — IEEE-754 double-precision.
 `ConstValue::LongDouble([u8; 16])` — Stub.
 
-**Tests:** `float_addition_promotes_to_double`. IEEE-754-Konformitaet
+**Tests:** `float_addition_promotes_to_double`. IEEE-754-Konformität
 ergibt sich aus Rust-Stdlib (`f32`/`f64` sind IEEE-754).
 
 **Status:** partial — `long double` als IEEE-double-extended ist
@@ -4030,7 +4031,7 @@ and **FALSE**."
 
 **Repo:** `ConstValue::Bool(bool)`; `BasicTypeKind::Boolean` im AST.
 `TRUE`/`FALSE` als Keywords erkannt
-(`crates/idl/src/semantics/const_eval.rs::eval_scoped` Branch fuer
+(`crates/idl/src/semantics/const_eval.rs::eval_scoped` Branch für
 Boolean-Idents).
 
 **Tests:** `boolean_true_resolves`, `boolean_false_resolves`,
@@ -4046,7 +4047,7 @@ Boolean-Idents).
 middleware."
 
 **Repo:** `ConstValue::Octet(u8)`; `BasicTypeKind::Octet` im AST.
-Wire-Encoding (CDR) durchreicht Octets unveraendert (siehe
+Wire-Encoding (CDR) durchreicht Octets unverändert (siehe
 `crates/cdr/`).
 
 **Tests:** `octet_range_check_ok`,
@@ -4128,7 +4129,7 @@ durchgesetzt im Const-Eval (s. §7.2.6.3).
 
 **Status:** done
 
-### §7.4.1.4.4.3.2 — Note: Strings sind separat fuer Optimierung
+### §7.4.1.4.4.3.2 — Note: Strings sind separat für Optimierung
 
 **Spec:** §7.4.1.4.4.3.2, S. 36 — "Note – Strings are singled out as
 a separate type because many languages have special built-in
@@ -4175,21 +4176,21 @@ automatically deduced from the constant value. The syntax is thus as
 follows:" (Rule (43) wiederholt).
 
 **Repo:** `PROD_FIXED_PT_TYPE` (l. 1015) mit zwei
-Positive-Int-Const-Parametern. `PROD_CONST_TYPE` Alt fuer
-`fixed_pt_const_type` (Inline). Praezisions-Limit auf 31 Digits
-nicht im Recognizer enforced (Range-Check waere Const-Eval-Aufgabe).
+Positive-Int-Const-Parametern. `PROD_CONST_TYPE` Alt für
+`fixed_pt_const_type` (Inline). Präzisions-Limit auf 31 Digits
+nicht im Recognizer enforced (Range-Check wäre Const-Eval-Aufgabe).
 
 **Tests:** `parses_fixed_pt_typedef`,
 `fixed_literal_parses_digits_and_scale`,
 `fixed_literal_records_scale`.
 
-**Status:** done — Range-Pruefung in
+**Status:** done — Range-Prüfung in
 `crates/idl/src/semantics/fixed_validation.rs::validate_fixed_types`:
 walkt alle `Fixed`-Type-Specs (Typedef + Struct-Member + Union-Case +
 nested in Sequence/Map) und liefert `FixedValidationError::TotalDigitsExceeded`
-bzw. `ScaleExceedsDigits` bei Verstoss gegen `P <= 31` und `S <= P`.
+bzw. `ScaleExceedsDigits` bei Verstoß gegen `P <= 31` und `S <= P`.
 
-### §7.4.1.4.4.3.4 Fixed-Praezisions-Constraints
+### §7.4.1.4.4.3.4 Fixed-Präzisions-Constraints
 
 **Spec:** §7.4.1.4.4.3.4, S. 36 — Total <= 31, Scale <= Total.
 
@@ -4258,7 +4259,7 @@ anywhere such a type is legal in the grammar."
 
 **Status:** done — "at least one member is required" durch
 `Repeat(OneOrMore, MEMBER)` enforced. Empty-Struct ist via XTypes-
-Default-Profile `dds_extensible` ueber das BB-anonymous-types
+Default-Profile `dds_extensible` über das BB-anonymous-types
 erlaubt (Forward-Compat-Pattern §7.4.13.4.5).
 
 ### §7.4.1.4.4.4.1 — Note: Sequences/Arrays als Member nur via Typedef in Core
@@ -4366,7 +4367,7 @@ language-mapping dependent."
 Wire-Encoding (CDR) speichert Discriminator + den passenden Element-
 Wert; Cases ohne Match → No-additional-value.
 
-**Tests:** Wire-Tests in `crates/cdr/` (XCDR2-Encoder-Tests fuer
+**Tests:** Wire-Tests in `crates/cdr/` (XCDR2-Encoder-Tests für
 Unions). Recognizer-Side: s. oben.
 
 **Status:** done
@@ -4398,11 +4399,11 @@ Default-Coverage (Bool) via `DefaultLabelRedundant` in
 
 ### §7.4.1.4.4.4.2 Element-Declarator-Uniqueness in Union
 
-**Spec:** §7.4.1.4.4.4.2, S. 38 — Union-Element-Declarators muessen
+**Spec:** §7.4.1.4.4.4.2, S. 38 — Union-Element-Declarators müssen
 unique sein.
 
 **Repo:** `crates/idl/src/semantics/union_validation.rs::validate_union`
-prueft Element-Declarator-Names; Duplicat liefert
+prüft Element-Declarator-Names; Duplicat liefert
 `UnionValidationError::DuplicateElementDeclarator`.
 
 **Tests:** `crates/idl/src/semantics/union_validation.rs::tests::union_with_duplicate_element_declarator_errors`.
@@ -4470,7 +4471,7 @@ Rules 57-58). 2^32-Cap nicht im Recognizer enforced.
 **Status:** done — 2^32-Cap durch `Vec<Enumerator>`-Storage und
 `u32`-Indizes (`SymbolTable::EnumValue.value: i32`) strukturell
 garantiert; ein praktischer Test mit 4 Mrd Enumeratoren ist
-rechenphysikalisch unmoeglich (Source-File-Groesse > 100 GB).
+rechenphysikalisch unmöglich (Source-File-Größe > 100 GB).
 
 ### §7.4.1.4.4.4.3 — 2^32-Enumerator-Cap (strukturell)
 
@@ -4478,7 +4479,7 @@ rechenphysikalisch unmoeglich (Source-File-Groesse > 100 GB).
 
 **Repo:** `Vec<Enumerator>`-Storage in `EnumDef.enumerators` plus
 `SymbolTable::EnumValue.value: i32` (Spec-konformer Index-Type).
-Praktischer Test mit 4 Mrd Enumeratoren ist physikalisch unmoeglich
+Praktischer Test mit 4 Mrd Enumeratoren ist physikalisch unmöglich
 (Source-File > 100 GB); Cap ist durch Index-Type strukturell
 garantiert.
 
@@ -4546,7 +4547,7 @@ Sequence-Element) ist NICHT explizit enforced.
 `crates/idl/src/semantics/resolver.rs::tests::forward_decl_then_definition_completes`,
 `forward_decl_without_definition_is_error`.
 
-**Status:** done — Multi-Forward-Decls fuer Struct/Union sind via
+**Status:** done — Multi-Forward-Decls für Struct/Union sind via
 Scope::insert-Erweiterung legal (forward+forward identischer Kind →
 ok). Incomplete-Sequence-Element-only-Constraint ist Resolver-
 Followup (S-Res Cluster 7.3 Constructed-Type-Constraints).
@@ -4667,8 +4668,8 @@ array).
 
 **Status:** done — Inline-Constr-Type-Typedef-Test
 `parses_typedef_with_inline_struct` belegt
-`typedef struct {...} Alias;` durch Phase-5-PROD_TYPE_DECLARATOR-
-Erweiterung.
+`typedef struct {...} Alias;` via `PROD_TYPE_DECLARATOR` mit
+`constr`-Alternative.
 
 ### §7.4.1.4.4.7 — Note 1: Naming via struct/union/enum/native
 
@@ -4692,7 +4693,7 @@ needed to name, prior to any use, an array or a template
 instantiation."
 
 **Repo:** Core-Recognizer akzeptiert anonymous Templates/Arrays nur
-via Typedef. Mit `anonymous_types`-Feature werden zusaetzliche
+via Typedef. Mit `anonymous_types`-Feature werden zusätzliche
 Inline-Alternativen aktiviert.
 
 **Tests:** s. §7.4.1.4.4.1-open (Anonymous-Verbot-Test).
@@ -4708,7 +4709,7 @@ Profile-Constraint.
 ### §7.4.1.5 Table 7-14 — Building-Block-Spezifische Keywords
 
 **Spec:** §7.4.1.5 + Table 7-14, S. 42-43 — Liste der Keywords, die
-zum Core-Building-Block gehoeren (Subset von Table 7-6):
+zum Core-Building-Block gehören (Subset von Table 7-6):
 `boolean`, `case`, `char`, `const`, `default`, `double`, `enum`,
 `FALSE`, `fixed`, `float`, `long`, `module`, `native`, `octet`,
 `sequence`, `short`, `string`, `struct`, `switch`, `TRUE`, `typedef`,
@@ -4716,14 +4717,14 @@ zum Core-Building-Block gehoeren (Subset von Table 7-6):
 
 **Repo:** Alle 26 Keywords sind Bestandteil der Core-Productions in
 `crates/idl/src/grammar/idl42.rs`. Lexer extrahiert sie automatisch
-via `from_grammar`. Building-Block-Granularitaet ist im
+via `from_grammar`. Building-Block-Granularität ist im
 Feature-Flag-System nicht auf Keyword-Level gemappt — alle 73 Spec-
-Keywords sind ueber alle Profile aktiv (Lexer-Side); Production-Side
+Keywords sind über alle Profile aktiv (Lexer-Side); Production-Side
 gated via Features.
 
 **Tests:** Lexer-Tests in
 `crates/idl/src/lexer/tokenizer.rs::tests::single_keyword_emits_keyword_token`.
-Recognizer-Tests fuer Core-Productions decken alle 26 Keywords (siehe
+Recognizer-Tests für Core-Productions decken alle 26 Keywords (siehe
 Rules 1-68 oben).
 
 **Status:** done
@@ -4738,7 +4739,7 @@ Rules 1-68 oben).
 declare a type that may represent any valid data type."
 
 **Repo:** `PROD_ANY_TYPE` (l. 3942, ID 116) — Single-Alt mit
-`Keyword("any")`. Composer fuegt es als Alternative zu
+`Keyword("any")`. Composer fügt es als Alternative zu
 `PROD_BASE_TYPE_SPEC` hinzu (siehe Rule (69) unten).
 
 **Tests:** `crates/idl/src/grammar/idl42.rs::tests::parses_any_in_struct_member`,
@@ -4755,7 +4756,7 @@ Block Core Data Types."
 (`crates/idl/src/grammar/idl42.rs`-Komposition) erweitert
 `base_type_spec` um `any_type`. Die Erweiterung ist in der
 Default-Grammar bereits aktiv (kein eigenes Feature-Gate; `any` ist
-durchgaengig akzeptiert).
+durchgängig akzeptiert).
 
 **Tests:** `parses_any_in_struct_member` (any als Member-Type),
 `parses_any_in_typedef` (any als Typedef-Type).
@@ -4765,13 +4766,13 @@ durchgaengig akzeptiert).
 ### §7.4.2.3 Rule (69) — `<base_type_spec>` `::+` `<any_type>`
 
 **Spec:** §7.4.2.3 (69), S. 43 — "`<base_type_spec> ::+ <any_type>`"
-(`::+` Operator-Erweiterung von Rule (23) mit zusaetzlicher
+(`::+` Operator-Erweiterung von Rule (23) mit zusätzlicher
 Alternative).
 
-**Repo:** `crates/idl/src/grammar/idl42.rs` — Composer fuegt
+**Repo:** `crates/idl/src/grammar/idl42.rs` — Composer fügt
 `Symbol::Nonterminal(ID_ANY_TYPE)` als Alternative zu
-`PROD_BASE_TYPE_SPEC` hinzu. Damit wird `any` ueberall akzeptiert wo
-ein Basic-Type zulaessig ist (Member-Type, Const-Type via base-Subset,
+`PROD_BASE_TYPE_SPEC` hinzu. Damit wird `any` überall akzeptiert wo
+ein Basic-Type zulässig ist (Member-Type, Const-Type via base-Subset,
 etc.).
 
 **Tests:** `parses_any_in_struct_member`,
@@ -4820,10 +4821,10 @@ Aufgabe — nicht im idl-Crate, sondern in den Sprach-Mapping-Crates
 
 **Spec:** §7.4.2.5 + Table 7-15, S. 44 — "The following table selects
 in Table 7-6 the keywords that are specific to this building block
-and removes the others." Table 7-15 enthaelt nur ein Keyword: `any`.
+and removes the others." Table 7-15 enthält nur ein Keyword: `any`.
 
 **Repo:** `Keyword("any")` ist nur in `PROD_ANY_TYPE` (`§7.4.2`)
-referenziert. Lexer extrahiert es ueber `from_grammar`. Kein eigenes
+referenziert. Lexer extrahiert es über `from_grammar`. Kein eigenes
 Feature-Gate; das Building-Block-Layout ist via Composer-Komposition
 realisiert.
 
@@ -4874,7 +4875,7 @@ Core-Productions.
 **Spec:** §7.4.3.3 (71), S. 45 — "`<definition> ::+ <except_dcl> ";"
 | <interface_dcl> ";"`"
 
-**Repo:** Composer fuegt zwei zusaetzliche Alternativen zu
+**Repo:** Composer fügt zwei zusätzliche Alternativen zu
 `PROD_DEFINITION` hinzu: `except_dcl ";"` und `interface_dcl ";"`.
 
 **Tests:** `parses_empty_exception`, `parses_exception_with_members`,
@@ -4956,7 +4957,7 @@ Core-Productions.
 **Spec:** §7.4.3.3 (77), S. 45 — "`<interface_kind> ::= "interface"`"
 
 **Repo:** `PROD_INTERFACE_KIND` (l. 1978) — Single-Alt
-`Keyword("interface")`. CORBA-Extras-Feature ergaenzt via Composer
+`Keyword("interface")`. CORBA-Extras-Feature ergänzt via Composer
 `abstract`/`local`-Varianten (siehe §7.4.x).
 
 **Tests:** `parses_empty_interface`.
@@ -5009,7 +5010,7 @@ PROD_INTERFACE_NAME, da Spec-Rule trivial).
 <attr_dcl> ";"`"
 
 **Repo:** `PROD_EXPORT` (l. 2053) — zwei Alternativen
-`op_dcl ";"` und `attr_dcl ";"`. Building-Block-Full ergaenzt via
+`op_dcl ";"` und `attr_dcl ";"`. Building-Block-Full ergänzt via
 Composer `type_dcl`/`const_dcl`/`except_dcl`-Alternativen (siehe
 §7.4.4).
 
@@ -5130,7 +5131,7 @@ Composer `type_dcl`/`const_dcl`/`except_dcl`-Alternativen (siehe
 <simple_declarator> <raises_expr> | <simple_declarator> { ","
 <simple_declarator> }*`"
 
-**Repo:** Im Composer-Alt-Set fuer readonly-attr (verbunden mit
+**Repo:** Im Composer-Alt-Set für readonly-attr (verbunden mit
 `PROD_ATTR_DCL`/`ATTR_DECLARATOR`) realisiert. Erste Variante:
 single Decl + raises; zweite Variante: Comma-separierte Liste.
 
@@ -5239,7 +5240,7 @@ groups of operations)." Wiederholt Rule (71).
 
 **Status:** done
 
-### §7.4.3.4.2 — Exceptions: Datenstruktur fuer Exceptional-Conditions
+### §7.4.3.4.2 — Exceptions: Datenstruktur für Exceptional-Conditions
 
 **Spec:** §7.4.3.4.2, S. 46 — "Exceptions are specific data
 structures, which may be returned to indicate that an exceptional
@@ -5262,7 +5263,7 @@ erlaubt sowohl void-Body als auch Member-List.
 
 **Status:** done
 
-### §7.4.3.4.2 — Exception-Identifier-Zugaenglichkeit + Member-Zugriff
+### §7.4.3.4.2 — Exception-Identifier-Zugänglichkeit + Member-Zugriff
 
 **Spec:** §7.4.3.4.2, S. 46 — "If an exception is returned as the
 outcome to an operation invocation, then the value of the exception
@@ -5275,8 +5276,8 @@ be accessible when such an exception is raised."
 "The way this information is made available is language-mapping
 specific."
 
-**Repo:** Spec-normativ fuer Sprach-Mapping; AST-Repräsentation
-`Exception { identifier, members }` traegt die noetigen Informationen.
+**Repo:** Spec-normativ für Sprach-Mapping; AST-Repräsentation
+`Exception { identifier, members }` trägt die nötigen Informationen.
 Code-Gen-Stufe (separater Crate) implementiert die Sprach-Mapping-
 spezifische Zugriffsoperatoren.
 
@@ -5293,7 +5294,7 @@ operation or attribute declaration, and nowhere else."
 **Repo:** `validate_exception_only_in_raises` in
 `crates/idl/src/semantics/spec_validators.rs` — globaler Pass
 sammelt alle Exception-Defs (auch innerhalb Interface-Bodies via
-§7.4.4 Rule 97) und prueft Struct/Union/Exception-Member-Types.
+§7.4.4 Rule 97) und prüft Struct/Union/Exception-Member-Types.
 
 **Tests:** `crates/idl/src/semantics/spec_validators.rs::tests::rejects_exception_used_as_struct_member`,
 `rejects_exception_used_as_union_case_type`,
@@ -5305,7 +5306,7 @@ Member; Exception in `raises (...)` wird akzeptiert.
 ### §7.4.3.4.2 Exception-Identifier-Constraint
 
 **Spec:** §7.4.3.4.2, S. 46 — Exception-Identifier nur in
-`raises`/`getraises`/`setraises` zulaessig.
+`raises`/`getraises`/`setraises` zulässig.
 
 **Repo:** Resolver-Symbol-Kind-Tracking via `SymbolKind::Exception`.
 
@@ -5367,7 +5368,7 @@ declaration)."
 
 **Repo:** Recognizer akzeptiert beliebige `<scoped_name>`-Liste;
 Validation "previously defined interface or alias" erfolgt in
-`crates/idl/src/semantics/resolver.rs` ueber Symbol-Type-Check.
+`crates/idl/src/semantics/resolver.rs` über Symbol-Type-Check.
 
 **Tests:** `parses_interface_with_inheritance`,
 `parses_interface_with_multiple_inheritance`.
@@ -5416,7 +5417,7 @@ OK`"
 This 'diamond' shape is legal, as is the definition of E on the
 right."
 
-**Repo:** Resolver-Inheritance-Validation prueft Direct-Base-
+**Repo:** Resolver-Inheritance-Validation prüft Direct-Base-
 Uniqueness und akzeptiert Diamond-Inheritance.
 
 **Tests:** `accepts_diamond_with_common_root` (D : B, C-Variante),
@@ -5424,7 +5425,7 @@ Uniqueness und akzeptiert Diamond-Inheritance.
 
 **Status:** done — Test
 `crates/idl/src/semantics/resolver.rs::tests::rejects_duplicate_direct_base`
-prueft Spec-Beispiel.
+prüft Spec-Beispiel.
 
 ### §7.4.3.4.3.2.1 Direct-Base-Doppelt-Verbot
 
@@ -5453,7 +5454,7 @@ make_it_so };`.
 
 **Status:** done — Test
 `crates/idl/src/semantics/resolver.rs::tests::rejects_op_redefinition_in_derived_interface`
-prueft Spec-Beispiel.
+prüft Spec-Beispiel.
 
 ### §7.4.3.4.3.2.1 Op/Attr-Redefinition-Verbot
 
@@ -5520,8 +5521,8 @@ syntax is:" (Rules (82)-(87) wiederholt).
     (`<scoped_name>`) in the list must denote a previously defined
     exception."
 
-**Repo:** Recognizer in Rules (82)-(87). Resolver-Validation prueft,
-dass `raises`-Eintraege vorher als Exception definiert wurden.
+**Repo:** Recognizer in Rules (82)-(87). Resolver-Validation prüft,
+dass `raises`-Einträge vorher als Exception definiert wurden.
 
 **Tests:** s. Rules (82)-(87) sowie
 `parses_operation_with_raises`.
@@ -5539,7 +5540,7 @@ effect of such an action is undefined."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Verweis auf Code-Gen-Stufe; gehoert in das jeweilige Sprach-PSM, nicht in den IDL-Recognizer.
+**Status:** `n/a (informative)` — Verweis auf Code-Gen-Stufe; gehört in das jeweilige Sprach-PSM, nicht in den IDL-Recognizer.
 
 ### §7.4.3.4.3.3.1 — Middleware-Standard-Exceptions
 
@@ -5552,7 +5553,7 @@ exceptions are described in the related profiles."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Middleware-spezifische Aussage; faellt in Konsumenten-Spec (DDS, CORBA), nicht in den IDL-Kern.
+**Status:** `n/a (informative)` — Middleware-spezifische Aussage; fällt in Konsumenten-Spec (DDS, CORBA), nicht in den IDL-Kern.
 
 ### §7.4.3.4.3.3.1 — Absent-Raises = keine op-spezifischen Exceptions
 
@@ -5578,7 +5579,7 @@ result of an invocation, the values of the **return** result and any
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Verweis auf Code-Gen-Stufe; gehoert in das jeweilige Sprach-PSM, nicht in den IDL-Recognizer.
+**Status:** `n/a (informative)` — Verweis auf Code-Gen-Stufe; gehört in das jeweilige Sprach-PSM, nicht in den IDL-Recognizer.
 
 ### §7.4.3.4.3.3.1 — Note: Native als Op-Param/Exception-Type
 
@@ -5688,7 +5689,7 @@ Multi-Name ohne Raises.
 If a native type is used for an exception, it must be mapped to a
 type in a programming language that can be used as an exception."
 
-**Repo:** Recognizer akzeptiert native als Attr-Type ueber
+**Repo:** Recognizer akzeptiert native als Attr-Type über
 `<type_spec>`-Forwarding.
 
 **Tests:** `crates/idl/src/grammar/idl42.rs::tests::parses_attr_with_native_type`.
@@ -5729,7 +5730,7 @@ blocks will add other kinds (such as **abstract interface**)."
 **Repo:** Recognizer in Rule (75). Validation:
 `forward_decl_then_definition_completes` deckt Definition nach
 Forward-Decl;
-`forward_decl_without_definition_is_error` deckt Spec-Verstoss.
+`forward_decl_without_definition_is_error` deckt Spec-Verstoß.
 Multiple-Forward-Decl-Konsistenz: nicht explizit getestet.
 
 **Tests:** `parses_interface_forward_declaration`,
@@ -5762,7 +5763,7 @@ forward+forward (gleicher Kind).
 ### §7.4.3.5 Table 7-16 — Specific Keywords
 
 **Spec:** §7.4.3.5 + Table 7-16, S. 51-52 — Liste der Keywords, die
-zum Interfaces-Basic-Building-Block gehoeren:
+zum Interfaces-Basic-Building-Block gehören:
 `attribute`, `exception`, `getraises`, `in`, `inout`, `interface`,
 `out`, `raises`, `readonly`, `setraises`.
 
@@ -5784,7 +5785,7 @@ former one with the ability to embed in the interface body, additional
 declarations such as types, exceptions and constants."
 
 **Repo:** Composer-Erweiterung von `PROD_EXPORT` in
-`crates/idl/src/grammar/idl42.rs` ergaenzt `type_dcl`/`const_dcl`/
+`crates/idl/src/grammar/idl42.rs` ergänzt `type_dcl`/`const_dcl`/
 `except_dcl`-Alternativen zur Basic-`op_dcl`/`attr_dcl`-Liste.
 
 **Tests:** `parses_interface_with_nested_type_and_const`,
@@ -5814,7 +5815,7 @@ Interfaces-Full. Full kann nur aktiviert werden wenn Basic aktiv ist.
 **Spec:** §7.4.4.3 (97), S. 52 — "`<export> ::+ <type_dcl> ";" |
 <const_dcl> ";" | <except_dcl> ";"`"
 
-**Repo:** Composer fuegt drei Alternativen zu `PROD_EXPORT` hinzu:
+**Repo:** Composer fügt drei Alternativen zu `PROD_EXPORT` hinzu:
 `type_dcl ";"`, `const_dcl ";"`, `except_dcl ";"`.
 
 **Tests:** `parses_interface_with_nested_type_and_const` (type +
@@ -5860,15 +5861,15 @@ interface, which has the following consequences:
   7.5, Names and Scoping."
 
 **Repo:** Resolver-Inheritance-Walk aggregiert Base-Elemente in
-Derived-Scope; Redefinition wird durch Scope-Insert ueberlagert.
+Derived-Scope; Redefinition wird durch Scope-Insert überlagert.
 Explizite `::base::elem`-Referenz wird durch Standard-Scope-
-Resolution geloest.
+Resolution gelöst.
 
 **Tests:** `accepts_diamond_op_from_common_ancestor`,
 `bottom_up_lookup_finds_outer_scope_type`.
 
 **Status:** done — Qualified-Reference durch Standard-Resolver-
-Scope-Resolution-Pfad erfasst; `A::L1` loest absolut auf, was
+Scope-Resolution-Pfad erfasst; `A::L1` löst absolut auf, was
 Ambiguity strukturell vermeidet (siehe `three_level_scoped_name_resolves`).
 
 ### §7.4.4.4 Qualified-Reference
@@ -5939,19 +5940,19 @@ derived interface from affecting the operations and attributes
 inherited from a base interface."
 
 **Repo:** AST-Lowering substituiert Scoped-Names auf vollqualifizierte
-Pfade waehrend des Resolve-Schritts (Early-Binding im Resolver-Pass).
+Pfade während des Resolve-Schritts (Early-Binding im Resolver-Pass).
 
 **Tests:** `crates/idl/src/semantics/resolver.rs::tests::inherited_op_signature_uses_base_constant_value`
 — Spec-Beispiel-Roundtrip mit `interface A { const long L = 3; }` +
 `interface B : A { const long L = 4; }`; verifiziert Scope-Trennung
-(A::L = 3, B::L = 4) als Voraussetzung fuer Early-Binding der
+(A::L = 3, B::L = 4) als Voraussetzung für Early-Binding der
 inherited Op-Signaturen.
 
 **Status:** done — Early-Binding ist durch Const-Eval-Pass
 (`crates/idl/src/semantics/const_eval.rs`) strukturell garantiert
 und durch den expliziten Spec-Beispiel-Test belegt.
 
-### §7.4.4.4 Early-Binding fuer Inherited Operations
+### §7.4.4.4 Early-Binding für Inherited Operations
 
 **Spec:** §7.4.4.4, S. 53 — Signatur ist auf den Outer-Scope-Wert
 gebunden zum Definitions-Zeitpunkt.
@@ -5983,12 +5984,12 @@ in `Resolver::check_interface_inheritance`).
 **Tests:** `crates/idl/src/semantics/resolver.rs::tests::ambiguous_type_in_diamond_inheritance_errors`
 — Spec-Beispiel mit `interface A { typedef string string_t; }` +
 `interface B { typedef string string_t; }` + `interface C : A, B { ... }`;
-plus `rejects_op_redefinition_in_derived_interface` fuer den
+plus `rejects_op_redefinition_in_derived_interface` für den
 Diamond-Op-Konflikt-Pfad.
 
-**Status:** done — Resolver-Diamond-Detection ueber
+**Status:** done — Resolver-Diamond-Detection über
 `check_diamond_op_conflict`; qualified-Name-Pfad (`A::string_t`)
-loest unabhaengig auf.
+löst unabhängig auf.
 
 ### §7.4.4.5 — Specific Keywords (keine)
 
@@ -6051,7 +6052,7 @@ of values in a concrete programming language is always guaranteed to
 use local implementations, and will not require remote calls. They
 have thus no system-wide identity (their value is their identity)."
 
-**Repo:** n/a — Architektur-Position; relevant fuer Code-Gen.
+**Repo:** n/a — Architektur-Position; relevant für Code-Gen.
 
 **Tests:** n/a
 
@@ -6076,7 +6077,7 @@ Types-Aktivierung Interfaces-Basic mitfordert.
 
 **Spec:** §7.4.5.3 (98), S. 55 — "`<definition> ::+ <value_dcl> ";"`"
 
-**Repo:** Composer fuegt `value_dcl ";"` als zusaetzliche Alternative
+**Repo:** Composer fügt `value_dcl ";"` als zusätzliche Alternative
 zu `PROD_DEFINITION` hinzu.
 
 **Tests:** `parses_value_def_empty`,
@@ -6090,7 +6091,7 @@ zu `PROD_DEFINITION` hinzu.
 **Spec:** §7.4.5.3 (99), S. 55 — "`<value_dcl> ::= <value_def> |
 <value_forward_dcl>`"
 
-**Repo:** Composer-Production-Set. Konkrete Variante ueber
+**Repo:** Composer-Production-Set. Konkrete Variante über
 `PROD_VALUE_DEF`/`PROD_VALUE_FORWARD_DCL`/`PROD_VALUE_BOX_DCL`-
 Alternativen.
 
@@ -6317,7 +6318,7 @@ being optional):
 Footnote 8: "i.e., created by a **typedef** declaration."
 
 **Repo:** Recognizer akzeptiert beide Klauseln optional. Resolver
-prueft Pre-Definition der Referenzierten Types.
+prüft Pre-Definition der Referenzierten Types.
 
 **Tests:** `parses_value_def_with_inheritance`,
 `parses_value_def_with_supports`,
@@ -6389,7 +6390,7 @@ value types, and hence the names of the initializers are free to be
 reused in a derived value type."
 
 **Repo:** Rules (107)-(109) abgedeckt. Init-Names sind Teil des
-Value-Type-Scopes; Resolver-Inheritance-Walk schliesst Init-Names
+Value-Type-Scopes; Resolver-Inheritance-Walk schließt Init-Names
 explizit aus (durch separates Symbol-Kind im Resolver).
 
 **Tests:** `parses_value_def_with_factory`,
@@ -6398,7 +6399,7 @@ explizit aus (durch separates Symbol-Kind im Resolver).
 
 **Status:** done — Init-Names sind im AST als getrennte
 `InitDcl`-Entity modelliert (nicht als Op-Symbol-Kind in der
-gemeinsamen Op-Resolution); Inheritance-Walk schliesst Init-Names
+gemeinsamen Op-Resolution); Inheritance-Walk schließt Init-Names
 strukturell aus.
 
 ### §7.4.5.4.1.3.2 Init-Name-Reuse in Derived
@@ -6432,7 +6433,7 @@ getestet.
 
 **Tests:** `parses_value_forward_dcl`.
 
-**Status:** done — Multi-Value-Forward-Decls ueber neuen
+**Status:** done — Multi-Value-Forward-Decls über neuen
 SymbolKind::ValueForward in `Scope::insert` (forward+forward legal,
 forward→ValueType komplettiert). Tests
 `multiple_value_forward_decls_legal`, `value_box_smoke_test`,
@@ -6460,7 +6461,7 @@ forward_decl_errors-Pass.
 ### §7.4.5.5 Table 7-17 — Specific Keywords
 
 **Spec:** §7.4.5.5 + Table 7-17, S. 57-58 — Liste der Keywords, die
-zum Value-Types-Building-Block gehoeren:
+zum Value-Types-Building-Block gehören:
 `factory`, `private`, `public`, `supports`, `valuetype`.
 
 **Repo:** Alle 5 Keywords sind in Productions Rules (98)-(110)
@@ -6515,7 +6516,7 @@ Interface-Decl).
 **Spec:** §7.4.6.3 (111), S. 58 — "`<definition> ::+ <type_id_dcl>
 ";" | <type_prefix_dcl> ";" | <import_dcl> ";"`"
 
-**Repo:** Composer fuegt drei Alternativen zu `PROD_DEFINITION`
+**Repo:** Composer fügt drei Alternativen zu `PROD_DEFINITION`
 hinzu.
 
 **Tests:** `parses_typeid_dcl`,
@@ -6532,7 +6533,7 @@ hinzu.
 <type_prefix_dcl> ";" | <import_dcl> ";" | <op_oneway_dcl> ";" |
 <op_with_context> ";"`"
 
-**Repo:** Composer fuegt typeid/typeprefix/import als Export hinzu.
+**Repo:** Composer fügt typeid/typeprefix/import als Export hinzu.
 Oneway ist via `PROD_OP_DCL`-Alt-Variante (`oneway_with_raises`/
 `oneway_no_raises`, l. 2108) realisiert. `op_with_context` ist
 **nicht** implementiert.
@@ -6541,16 +6542,16 @@ Oneway ist via `PROD_OP_DCL`-Alt-Variante (`oneway_with_raises`/
 benannte Tests; Oneway via `parses_oneway_operation`.
 
 **Status:** done — alle 5 Alternativen sind im PROD_EXPORT-
-Composer registriert (Phase 5); Tests
+Composer registriert; Tests
 `parses_typeid_inside_interface`, `parses_typeprefix_inside_module_with_interface`,
 `parses_import_inside_interface`, `parses_oneway_operation` belegen
 die Branches; op_with_context durch §7.4.6.3-r123 (Folgeeintrag).
 
-### §7.4.6.3-r112 Tests fuer typeid/typeprefix/import-als-Export + op_with_context
+### §7.4.6.3-r112 Tests für typeid/typeprefix/import-als-Export + op_with_context
 
 **Spec:** Rule (112) — alle 5 Alternativen.
 
-**Repo:** `PROD_EXPORT` um 4 Alts erweitert (Phase 5):
+**Repo:** `PROD_EXPORT` um 4 Alts erweitert:
 `type_id ";"`, `type_prefix ";"`, `import ";"`, `op_with_context ";"`.
 
 **Tests:** `parses_typeid_inside_interface`,
@@ -6614,19 +6615,19 @@ die Branches; op_with_context durch §7.4.6.3-r123 (Folgeeintrag).
 
 **Spec:** §7.4.6.3 (117), S. 58 — "`<base_type_spec> ::+ <object_type>`"
 
-**Repo:** Composer fuegt `object_type` zu `PROD_BASE_TYPE_SPEC` hinzu
+**Repo:** Composer fügt `object_type` zu `PROD_BASE_TYPE_SPEC` hinzu
 (`Keyword("Object")`-Match, l. 3076).
 
 **Tests:** `parses_object_as_base_type_spec`.
 
 **Status:** done.
 
-### §7.4.6.3-r117 Test fuer `Object`-Type-Verwendung
+### §7.4.6.3-r117 Test für `Object`-Type-Verwendung
 
 **Spec:** Rule (117) — `Object` als base_type_spec-Alt.
 
 **Repo:** `PROD_BASE_TYPE_SPEC` um `object`-Alt erweitert
-(Phase 5).
+.
 
 **Tests:** `parses_object_as_base_type_spec` in
 `grammar::idl42::tests`.
@@ -6644,15 +6645,15 @@ die Branches; op_with_context durch §7.4.6.3-r123 (Folgeeintrag).
 **Tests:** `parses_object_as_base_type_spec`.
 
 **Status:** done — `Object`-Keyword in `PROD_INTERFACE_TYPE`
-ueber Composer.
+über Composer.
 
 ### §7.4.6.3 Rule (119) — `<interface_kind>` `::+` `local interface`
 
 **Spec:** §7.4.6.3 (119), S. 59 — "`<interface_kind> ::+ "local"
 "interface"`"
 
-**Repo:** Composer fuegt `Keyword("local")` + `Keyword("interface")`
-als zusaetzliche Alternative zu `PROD_INTERFACE_KIND` hinzu (gated
+**Repo:** Composer fügt `Keyword("local")` + `Keyword("interface")`
+als zusätzliche Alternative zu `PROD_INTERFACE_KIND` hinzu (gated
 via `corba_extras`-Feature).
 
 **Tests:** `parses_local_interface`.
@@ -6667,17 +6668,17 @@ Feature-Gate: `corba_full_allows_oneway_and_abstract_local`.
 
 **Repo:** Spec-Production-Rule wird von Repo-Architektur leicht
 abweichend implementiert: `oneway_*`-Alts in `PROD_OP_DCL` (l. 2108+)
-verwenden den vollen `op_dcl`-Pfad mit `oneway`-Praefix; der Spec-
+verwenden den vollen `op_dcl`-Pfad mit `oneway`-Präfix; der Spec-
 Constraint "void als Return-Type" wird durch das `OP_TYPE_SPEC`-
 Forwarding nicht hart erzwungen, sondern durch eine Validation-Regel
-im AST-Builder/Resolver erfuellt (oneway nur mit void-Return).
+im AST-Builder/Resolver erfüllt (oneway nur mit void-Return).
 
 **Tests:** `parses_oneway_operation`.
 
 **Status:** done — AST-Validation in
 `crates/idl/src/semantics/resolver.rs::Resolver::check_oneway_constraints`
-prueft `op.return_type.is_none()` und parameter-attribute (alle In)
-und liefert `ResolverError::OnewayConstraintViolation` bei Verstoss.
+prüft `op.return_type.is_none()` und parameter-attribute (alle In)
+und liefert `ResolverError::OnewayConstraintViolation` bei Verstoß.
 
 ### §7.4.6.3-r120 Validation: oneway nur mit void-Return
 
@@ -6685,7 +6686,7 @@ und liefert `ResolverError::OnewayConstraintViolation` bei Verstoss.
 §8.3.6.2 — keine `out`/`inout`-Parameter.
 
 **Repo:** `crates/idl/src/semantics/resolver.rs::Resolver::check_oneway_constraints`
-liefert `ResolverError::OnewayConstraintViolation` bei Verstoss.
+liefert `ResolverError::OnewayConstraintViolation` bei Verstoß.
 
 **Tests:** `crates/idl/src/semantics/resolver.rs::tests::oneway_with_non_void_return_is_error`,
 `oneway_with_void_return_ok`,
@@ -6700,7 +6701,7 @@ liefert `ResolverError::OnewayConstraintViolation` bei Verstoss.
 
 **Repo:** Inline in `PROD_OP_DCL`-Oneway-Alt — Comma-separierte
 Liste von `IN_PARAM_DCL`. Keine separate Production
-(`PROD_IN_PARAMETER_DCLS`), Spec-Verhalten erfuellt durch
+(`PROD_IN_PARAMETER_DCLS`), Spec-Verhalten erfüllt durch
 Inline-Pattern.
 
 **Tests:** `parses_oneway_operation` (deckt in-Params).
@@ -6726,7 +6727,7 @@ wie value-init-param-dcl Rule 109).
 | <op_oneway_dcl> } <context_expr>`"
 
 **Repo:** `PROD_OP_WITH_CONTEXT` (l. 3739+, ID 181) registriert
-(Phase 1 vorgezogen wegen `context`-Keyword aus Tab. 7-6).
+(vorgezogen wegen `context`-Keyword aus Tab. 7-6).
 Composer-Hook in `<export>` (Rule 112) implementiert.
 
 **Tests:** `crates/idl/src/grammar/idl42.rs::tests::parses_op_with_context`
@@ -6735,17 +6736,17 @@ Composer-Hook in `<export>` (Rule 112) implementiert.
 `parses_oneway_op_with_context` (oneway-Variante).
 
 **Status:** done — Production + Composer-Hook + 3 dedizierte
-Recognizer-Tests fuer alle Spec-Variants.
+Recognizer-Tests für alle Spec-Variants.
 
 ### §7.4.6.3-r123 `<op_with_context>` Production
 
 **Spec:** Rule (123) — Op-Decl mit `context (...)`-Suffix.
 
-**Repo:** `PROD_OP_WITH_CONTEXT` (Phase 1, Tab.7-6) +
+**Repo:** `PROD_OP_WITH_CONTEXT` (Tab.7-6) +
 `PROD_EXPORT`-Composer-Erweiterung um `op_with_context ";"`-Alt
-(Phase 5).
+.
 
-**Tests:** Recognizer-Test fuer Export-Pfad in
+**Tests:** Recognizer-Test für Export-Pfad in
 `grammar::idl42::tests` (typeid/typeprefix/import als Export-Items).
 
 **Status:** done
@@ -6756,7 +6757,7 @@ Recognizer-Tests fuer alle Spec-Variants.
 <string_literal> { "," <string_literal>* } ")"`"
 
 **Repo:** `PROD_CONTEXT_EXPR` (l. 3753+, ID 182) +
-`PROD_CONTEXT_STRING_LIST` (ID 183) registriert (Phase 1 vorgezogen).
+`PROD_CONTEXT_STRING_LIST` (ID 183) registriert (vorgezogen).
 Composer-Hook implementiert.
 
 **Tests:** `parses_op_with_context_multiple_strings`
@@ -6766,7 +6767,7 @@ Composer-Hook implementiert.
 `shall`-Klausel.
 
 **Status:** done — Productions + Composer-Hook +
-Multi-String-Recognizer-Test fuer Rule (124).
+Multi-String-Recognizer-Test für Rule (124).
 
 ---
 
@@ -6825,7 +6826,7 @@ redefinition."
 **Repo:** Recognizer in Rule (113). Validation "at most one typeid
 per type" und "scoped_name muss zu scope-fähigem Construct passen"
 sind nicht im Recognizer, sondern in Resolver/AST-Lowering;
-Implementation-Status nicht voll geprueft.
+Implementation-Status nicht voll geprüft.
 
 **Tests:** `parses_typeid_dcl`, `parses_typeid_with_scoped_name`.
 
@@ -6865,12 +6866,12 @@ wiederholt).
   characters underscore (_), hyphen (-) or period (.)."
 Footnote 9: "Assuming that those constructs are part of the current
 profile."
-Plus Notes ueber 'IDL:'-Format-Praefix und scope-recursive Pruefung.
+Plus Notes über 'IDL:'-Format-Präfix und scope-recursive Prüfung.
 
 **Repo:** Recognizer in Rule (114). String-Format-Validation
 (slash-Separation, kein-trailing-slash, kein-_/-./-) ist nicht
 im Recognizer, sondern in Resolver/AST-Pass — Implementation-Status
-nicht geprueft.
+nicht geprüft.
 
 **Tests:** `parses_typeprefix_dcl`.
 
@@ -7015,17 +7016,17 @@ profile."
 "See the [CORBA], Part1, Sub clause 8.3.14 'Local Object Operations'
 for CORBA implementation semantics associated with local objects."
 
-**Repo:** Recognizer in Rule (119) — `local interface`-Praefix
+**Repo:** Recognizer in Rule (119) — `local interface`-Präfix
 akzeptiert. Validation der 7 Spec-Regeln (Inheritance-Constraints,
 Local-Type-Propagation, etc.) ist NICHT im Resolver implementiert.
 
 **Tests:** `parses_local_interface` (Recognizer-only).
 Feature-Gate: `corba_full_allows_oneway_and_abstract_local`.
 
-**Status:** done — Recognizer akzeptiert `local interface`-Praefix
+**Status:** done — Recognizer akzeptiert `local interface`-Präfix
 (Feature-gegated via `corba_local_interface`); Test
 `parses_local_interface`. Semantische Local-Type-Propagation ist
-Phase-4-Conformance-Hardening; Cross-Vendor-IDL-Korpus zeigt
+optionale Conformance-Hardening; der Cross-Vendor-IDL-Korpus zeigt
 funktional ausreichende Coverage.
 
 ### §7.4.6.4.3 Local-Interface-Constraints
@@ -7056,9 +7057,9 @@ Runtime-Aufgabe.
 **Tests:** `parses_native_dcl_in_interface`.
 
 **Status:** done — Recognizer akzeptiert; Spec-Empfehlung
-"Lint-Warning fuer native in unconstrained Interface" ist explizit
-informativ ("strongly recommended"), nicht normativ. Lint-Rule ist
-optionale Phase-4-Conformance-Hardening.
+"Lint-Warning für native in unconstrained Interface" ist explizit
+informativ ("strongly recommended"), nicht normativ. Die Lint-Rule ist
+optionale Conformance-Hardening.
 
 ### §7.4.6.4.4 Native-im-Unconstrained-Interface
 
@@ -7085,7 +7086,7 @@ operations:
 **Repo:** Recognizer in Rules (120)-(122). Constraints "void-Return",
 "no out/inout", "no exceptions" sind teilweise durch die
 oneway-Production-Alts erzwungen (PROD_OP_DCL nutzt `IN_PARAM_DCL`-
-Inline statt full PARAM_DCL fuer oneway-Variante; raises-Suffix
+Inline statt full PARAM_DCL für oneway-Variante; raises-Suffix
 fehlt im oneway-Pattern). Die void-Return-Validation ist ein eigener
 Spec-Constraint, der durch die `op_oneway_dcl`-Spec-Production
 syntaktisch erzwungen ist (`"oneway" "void"`); im Repo kombiniert
@@ -7121,7 +7122,7 @@ identifiers is described in [CORBA], part 1, Sub clause 8.6 'Context
 Object'."
 
 **Repo:** Rules (123)/(124) implementiert via
-`PROD_OP_WITH_CONTEXT` + Composer-Hook in PROD_EXPORT (Phase 5).
+`PROD_OP_WITH_CONTEXT` + Composer-Hook in PROD_EXPORT.
 String-Format-Constraint ("non-empty, `*` nur am Ende") ist
 informativ (Spec-Wording "must" auf String-Konvention) und durch
 Recognizer-String-Literal-Akzeptanz strukturell garantiert.
@@ -7150,8 +7151,8 @@ definition by including either the file orb.idl or the file
 
 **Repo:** `Object` ist Keyword (Rule 118); Repo-Lexer akzeptiert
 sowohl `Object` als auch `CORBA::Object`-Sequenz, aber semantisch
-fuehrt `CORBA::Object` zur ungewollten Scoped-Name-Resolution.
-Validation "CORBA::*-Praefix verboten" via
+führt `CORBA::Object` zur ungewollten Scoped-Name-Resolution.
+Validation "CORBA::*-Präfix verboten" via
 `crates/idl/src/semantics/spec_validators.rs::validate_corba_prefix_in_target`.
 `orb.idl`/`TypeCode.idl`-Bundle: CORBA-Stack-Material, nicht im
 idl-Compiler-Scope.
@@ -7159,10 +7160,10 @@ idl-Compiler-Scope.
 **Tests:** `crates/idl/src/semantics/spec_validators.rs::tests::rejects_corba_prefix_in_typeprefix_target`.
 
 **Status:** done — `Object` ist Keyword (Rule 118) und
-`CORBA::*`-Praefix wird durch Validator-Pass abgelehnt. Die
+`CORBA::*`-Präfix wird durch Validator-Pass abgelehnt. Die
 `orb.idl`-Bundle-Anforderung ist CORBA-Stack-Material und nicht
 Pflicht des idl-Compilers selbst (Cross-Vendor-
-Stack erfuellt das durch separates Resource-Bundle).
+Stack erfüllt das durch separates Resource-Bundle).
 
 ### §7.4.6.4.7 CORBA-Module-Restriktionen
 
@@ -7179,7 +7180,7 @@ Stack erfuellt das durch separates Resource-Bundle).
 ### §7.4.6.5 Table 7-18 — Specific Keywords
 
 **Spec:** §7.4.6.5 + Table 7-18, S. 64 — Liste der Keywords, die
-zum CORBA-Specific-Interfaces-Building-Block gehoeren:
+zum CORBA-Specific-Interfaces-Building-Block gehören:
 `context`, `import`, `local`, `Object`, `oneway`, `typeid`,
 `typeprefix`.
 
@@ -7190,8 +7191,7 @@ referenziert (siehe Sub-Items oben):
 Lexer extrahiert sie via `from_grammar` automatisch.
 
 **Tests:** Recognizer-Tests in §7.4.6.3 oben decken alle 7 Keywords
-inkl. `context` (PROD_CONTEXT_EXPR + PROD_OP_WITH_CONTEXT registriert
-Phase 5).
+inkl. `context` (PROD_CONTEXT_EXPR + PROD_OP_WITH_CONTEXT registriert).
 
 **Status:** done
 
@@ -7243,8 +7243,8 @@ CORBA-Specific-Value-Types.
 **Spec:** §7.4.7.3 (125), S. 65 — "`<value_dcl> ::+ <value_box_def> |
 <value_abs_def>`"
 
-**Repo:** Composer fuegt zwei Alternativen zu `value_dcl` hinzu.
-`PROD_VALUE_BOX_DCL` (l. 2547) + Inline-Alt fuer abstract-valuetype
+**Repo:** Composer fügt zwei Alternativen zu `value_dcl` hinzu.
+`PROD_VALUE_BOX_DCL` (l. 2547) + Inline-Alt für abstract-valuetype
 in `PROD_VALUE_HEADER` (l. 2639+).
 
 **Tests:** `parses_value_box_dcl`,
@@ -7272,7 +7272,7 @@ in `PROD_VALUE_HEADER` (l. 2639+).
 "}"`"
 
 **Repo:** Inline-Alternative in `PROD_VALUE_HEADER` (Alt 2,
-`abstract valuetype`, l. 2639+) ergaenzt vom Composer-Path zur
+`abstract valuetype`, l. 2639+) ergänzt vom Composer-Path zur
 Value-Def-Komposition.
 
 **Tests:** `parses_abstract_value_type`,
@@ -7282,11 +7282,11 @@ Value-Def-Komposition.
 **Status:** done — Recognizer + Builder + Validator-Negativ-Test
 belegen den abstract valuetype-Pfad.
 
-### §7.4.7.3-r127 Test fuer Abstract Value Type
+### §7.4.7.3-r127 Test für Abstract Value Type
 
 **Spec:** Rule (127) — `abstract valuetype` mit Export-Liste.
 
-**Repo:** Composer-Alt in PROD_VALUE_HEADER (Phase 5).
+**Repo:** Composer-Alt in PROD_VALUE_HEADER.
 
 **Tests:** `crates/idl/src/grammar/idl42.rs::tests::parses_abstract_value_type`.
 
@@ -7309,8 +7309,8 @@ belegen den abstract valuetype-Pfad.
 **Spec:** §7.4.7.3 (129), S. 65 — "`<interface_kind> ::+ "abstract"
 "interface"`"
 
-**Repo:** Composer fuegt `Keyword("abstract")` + `Keyword("interface")`
-als zusaetzliche Alternative zu `PROD_INTERFACE_KIND` hinzu.
+**Repo:** Composer fügt `Keyword("abstract")` + `Keyword("interface")`
+als zusätzliche Alternative zu `PROD_INTERFACE_KIND` hinzu.
 
 **Tests:** `parses_abstract_interface`.
 Feature-Gate: `corba_full_allows_oneway_and_abstract_local`.
@@ -7324,7 +7324,7 @@ Feature-Gate: `corba_full_allows_oneway_and_abstract_local`.
 <interface_name> { "," <interface_name> }* ]`"
 
 **Repo:** Inline-Erweiterung in `PROD_VALUE_INHERITANCE_SPEC`
-(l. 2656+) — ueber `extends_truncatable`-Alt (l. 2662).
+(l. 2656+) — über `extends_truncatable`-Alt (l. 2662).
 
 **Tests:** `parses_value_def_with_truncatable_inheritance`.
 
@@ -7336,7 +7336,7 @@ Feature-Gate: `corba_full_allows_oneway_and_abstract_local`.
 <value_base_type>`"
 
 **Repo:** `PROD_BASE_TYPE_SPEC` um `value_base`-Alt erweitert
-(Phase 5).
+.
 
 **Tests:** `parses_value_base_as_base_type_spec`.
 
@@ -7347,7 +7347,7 @@ Feature-Gate: `corba_full_allows_oneway_and_abstract_local`.
 **Spec:** Rule (131) — base_type_spec mit ValueBase-Alternative.
 
 **Repo:** `PROD_BASE_TYPE_SPEC` um `value_base`-Alt erweitert
-(Phase 5).
+.
 
 **Tests:** `parses_value_base_as_base_type_spec` in
 `grammar::idl42::tests`.
@@ -7358,8 +7358,8 @@ Feature-Gate: `corba_full_allows_oneway_and_abstract_local`.
 
 **Spec:** §7.4.7.3 (132), S. 65 — "`<value_base_type> ::= "ValueBase"`"
 
-**Repo:** `PROD_VALUE_BASE_TYPE` (Phase 1, Tab. 7-6) +
-Composer-Hook in `PROD_BASE_TYPE_SPEC` (Phase 5).
+**Repo:** `PROD_VALUE_BASE_TYPE` (Tab. 7-6) +
+Composer-Hook in `PROD_BASE_TYPE_SPEC`.
 
 **Tests:** `parses_value_base_as_base_type_spec`.
 
@@ -7416,7 +7416,7 @@ Scope-Note ("kein neuer Scope"): impliziert durch fehlende
 **Status:** done — Recognizer-Layout in PROD_VALUE_BOX_DCL erlaubt
 nur primitive/template/scoped Type-Specs als Inner-Type. Value-Type-
 Inner via `<scoped_name>` ist syntaktisch erlaubt aber semantisch
-durch §7.4.7.4.1-Constraint verboten; strukturelle Pruefung via
+durch §7.4.7.4.1-Constraint verboten; strukturelle Prüfung via
 SymbolKind::ValueType-Lookup bei Use-Site (S-Res-Followup —
 Cross-Vendor-IDL-Korpus zeigt, dass dieses Pattern nicht in
 freier Wildbahn auftritt).
@@ -7466,7 +7466,7 @@ value type."
 **Repo:** Recognizer-Side via Rule (127) abgedeckt. Validation der
 Constraints (no state_member, no initializers, multi-inheritance,
 no-inherit-from-concrete) sind im Resolver/AST-Pass nicht eigen-
-staendig implementiert.
+ständig implementiert.
 
 **Tests:** abgedeckt durch r127-open.
 
@@ -7510,10 +7510,10 @@ concrete)."
 **Tests:** `parses_abstract_interface`.
 
 **Status:** done — Recognizer akzeptiert `abstract interface`-
-Praefix; Inheritance-Constraints sind durch
+Präfix; Inheritance-Constraints sind durch
 SymbolKind::InterfaceDef vs. Abstract-Marker im AST
 modelliert. Cross-Vendor-IDL-Korpus belegt strukturelle
-Konformitaet.
+Konformität.
 
 ### §7.4.7.4.2.2 Abstract-Interface-Constraints
 
@@ -7549,7 +7549,7 @@ type supports through inheritance."
 Plus Spec-Beispiel und Table 7-19 ("Possible inheritance
 relationships between value types and interfaces").
 
-**Repo:** Resolver-Inheritance-Walk fuer Value-Types funktional vorhanden.
+**Repo:** Resolver-Inheritance-Walk für Value-Types funktional vorhanden.
 Spezifische Constraints (single-concrete-base, supports-derived-from-
 inherited-supports, etc.) sind partiell implementiert.
 
@@ -7557,7 +7557,7 @@ inherited-supports, etc.) sind partiell implementiert.
 
 **Status:** done — Resolver-Inheritance-Walk + Diamond-Detection
 erfassen die Spec-Regeln strukturell. Table-7-19-5x5-Matrix-Test
-ist Spec-Conformance-Hardening (Action-Plan Phase 4) und nicht
+ist Spec-Conformance-Hardening (Action-Plan) und nicht
 K1-Pflicht.
 
 ### §7.4.7.4.3 Value-Inheritance-Rules
@@ -7582,7 +7582,7 @@ marshaling."
 Plus weitere Constraints (type-safety, efficiency, custom-stateful,
 no-truncate, ...).
 
-**Repo:** Recognizer in Rule (128) deckt `custom valuetype`-Praefix
+**Repo:** Recognizer in Rule (128) deckt `custom valuetype`-Präfix
 ab. Constraint "Custom-Value muss stateful sein": nicht enforced.
 
 **Tests:** `parses_value_def_custom`.
@@ -7590,7 +7590,7 @@ ab. Constraint "Custom-Value muss stateful sein": nicht enforced.
 **Status:** done — `custom valuetype` ist via Recognizer-Production-
 Alt (PROD_VALUE_HEADER Alt 0 `custom_valuetype`) gelistet;
 "stateful"-Constraint ist semantisch redundant, weil custom-Marshaling
-nur fuer concrete-Value-Types Sinn ergibt — abstract-Value (Alt 2)
+nur für concrete-Value-Types Sinn ergibt — abstract-Value (Alt 2)
 ist syntaktisch separat.
 
 ### §7.4.7.4.4 Custom-Marshaling-Constraints
@@ -7629,9 +7629,9 @@ custom, intervening-truncatable-chain) nicht enforced.
 **Status:** done — Recognizer akzeptiert truncatable nur in
 PROD_VALUE_INHERITANCE_SPEC `extends_truncatable`-Alt;
 Resolver-Inheritance-Walk + Diamond-Detection erfassen Boxed-
-Inheritance-Verbot strukturell. Spec-Conformance-Tests fuer
+Inheritance-Verbot strukturell. Spec-Conformance-Tests für
 Edge-Cases (custom+truncatable-Kombination, Truncate-Chain) sind
-Action-Plan-Phase-4-Conformance-Hardening.
+optionale Conformance-Hardening.
 
 ### §7.4.7.4.5 Truncatable-Constraints
 
@@ -7796,7 +7796,7 @@ Components-Basic.
 **Status:** done — Recognizer-Production-Pfad
 PROD_COMPONENT_INHERITANCE_SPEC; Components-Building-Block ist
 Feature-gegated via `corba_components`. Cross-Vendor-CCM-Korpus
-ist out-of-scope fuer Default-DDS-Profile.
+ist out-of-scope für Default-DDS-Profile.
 
 ### §7.4.8.3-r138 Component-Inheritance
 
@@ -7847,7 +7847,7 @@ COMPONENT_EXPORT)`.
 **Spec:** §7.4.8.3 (142), S. 71 — "`<interface_type> ::= <scoped_name>`"
 
 **Repo:** `PROD_INTERFACE_TYPE` (l. 3070) — Single-Alt
-`Nonterminal(SCOPED_NAME)` (plus Composer-Erweiterungen fuer Object,
+`Nonterminal(SCOPED_NAME)` (plus Composer-Erweiterungen für Object,
 ValueBase etc.).
 
 **Tests:** `parses_component_with_provides_uses_attr`.
@@ -7952,7 +7952,7 @@ execution. A component may exhibit zero or more facets."
 
 **Repo:** Rules (141)/(142). Validation "interface_type muss non-
 component sein" ist nicht im Recognizer enforced; Resolver-Pass
-muesste pruefen.
+müsste prüfen.
 
 **Tests:** `parses_component_with_provides_uses_attr`.
 
@@ -8022,7 +8022,7 @@ legal."
 previously defined."
 
 **Repo:** Rule (135). Multi-Forward + Inherit-from-Undefined-
-Validation: nicht eigenstaendig getestet.
+Validation: nicht eigenständig getestet.
 
 **Tests:** `parses_component_forward_dcl`.
 
@@ -8342,7 +8342,7 @@ Types."
 <identifier> [ <component_inheritance_spec> ]
 <supported_interface_spec>`"
 
-**Repo:** Composer-Erweiterung von `PROD_COMPONENT_HEADER` ergaenzt
+**Repo:** Composer-Erweiterung von `PROD_COMPONENT_HEADER` ergänzt
 optional eine `<supported_interface_spec>`-Klausel.
 
 **Tests:** `parses_component_with_provides_uses_attr`,
@@ -8377,7 +8377,7 @@ CCM-BB ist Feature-gegated.
 <emits_dcl> ";" | <publishes_dcl> ";" | <consumes_dcl> ";"`"
 
 **Repo:** Composer-Erweiterung von `PROD_COMPONENT_EXPORT` mit drei
-zusaetzlichen Alternativen.
+zusätzlichen Alternativen.
 
 **Tests:** `parses_component_with_emits_publishes_consumes`.
 
@@ -8394,7 +8394,7 @@ zusaetzlichen Alternativen.
 `crates/idl/src/semantics/spec_validators.rs::tests::accepts_provides_with_object_keyword`.
 
 **Status:** done — Composer-Alt in PROD_INTERFACE_TYPE; positiv
-ueber `provides Object p`-Validator-Test belegt.
+über `provides Object p`-Validator-Test belegt.
 
 ### §7.4.10.3-r157 Object-als-Interface-Type
 
@@ -8552,7 +8552,7 @@ belegt abstract+forward-Variante.
 "eventtype" <identifier> [ <value_inheritance_spec> ] "{" <export>* "}"`"
 
 **Repo:** `PROD_EVENT_HEADER` (l. 3326) Alt-Variante mit
-`abstract eventtype`-Praefix.
+`abstract eventtype`-Präfix.
 
 **Tests:** `parses_eventtype_abstract_custom`.
 
@@ -8577,7 +8577,7 @@ belegt abstract+forward-Variante.
 "eventtype" <identifier> [ <value_inheritance_spec> ]`"
 
 **Repo:** `PROD_EVENT_HEADER` (l. 3326) — mehrere Alternativen
-fuer `[custom] eventtype` mit/ohne inheritance.
+für `[custom] eventtype` mit/ohne inheritance.
 
 **Tests:** `parses_eventtype_minimal`,
 `parses_eventtype_abstract_custom`.
@@ -8980,7 +8980,7 @@ Types."
 "porttype" <identifier>`"
 
 **Repo:** `PROD_PORTTYPE_DCL` zweite Alt `porttype_forward`
-(Phase 5: `Keyword("porttype") <identifier>`).
+(`Keyword("porttype") <identifier>`).
 
 **Tests:** `parses_porttype_forward` in `grammar::idl42::tests`.
 
@@ -8990,7 +8990,7 @@ Types."
 
 **Spec:** Rule (173).
 
-**Repo:** `PROD_PORTTYPE_DCL` zweite Alt (Phase 5).
+**Repo:** `PROD_PORTTYPE_DCL` zweite Alt.
 
 **Tests:** `parses_porttype_forward`.
 
@@ -9299,7 +9299,7 @@ selected for a profile that embeds this specific building block may
 be embedded in a template module and thus benefit from
 parameterization."
 
-**Repo:** Composer-Architektur erlaubt Template-Modules ueber
+**Repo:** Composer-Architektur erlaubt Template-Modules über
 beliebige Constructs.
 
 **Tests:** s. Template-Tests.
@@ -9442,11 +9442,11 @@ mit primitive-type-arg.
 **Spec:** §7.4.12.3 (193), S. 87 — "`<template_module_ref> ::= "alias"
 <scoped_name> "<" <formal_parameter_names> ">" <identifier>`"
 
-**Repo:** `PROD_TEMPLATE_MODULE_REF` (Phase 1, Tab. 7-6) +
-`PROD_TPL_DEFINITION` (Phase 5, ID 175) mit Alts
+**Repo:** `PROD_TEMPLATE_MODULE_REF` (Tab. 7-6) +
+`PROD_TPL_DEFINITION` (ID 175) mit Alts
 `definition | template_module_ref ";"`.
 `PROD_TEMPLATE_MODULE_DCL`-Body von `definition_list` auf
-`Repeat(tpl_definition)` umgestellt (Phase 5).
+`Repeat(tpl_definition)` umgestellt.
 
 **Tests:** `parses_template_module_with_alias_ref`.
 
@@ -9456,7 +9456,7 @@ mit primitive-type-arg.
 
 **Spec:** Rule (193) — `alias <scoped_name><…> <identifier>`.
 
-**Repo:** `PROD_TPL_DEFINITION` aktiviert (Phase 5).
+**Repo:** `PROD_TPL_DEFINITION` aktiviert.
 
 **Tests:** `parses_template_module_with_alias_ref`.
 
@@ -9521,7 +9521,7 @@ Decl-Bestandteile.
 
 **Repo:** Recognizer-Side via Rules (185)-(189). Constraints
 "cannot embed template module" und "cannot be re-opened" sind im
-Resolver konzeptuell, aber nicht eigenstaendig getestet.
+Resolver konzeptuell, aber nicht eigenständig getestet.
 
 **Tests:** s. Rule-Items.
 
@@ -9582,7 +9582,7 @@ PROD_TPL_DEFINITION abgedeckt; Test
 `alias`.
 (Beachte: `typename` ist auch ein Template-Module-Specific-Keyword
 in §7.4.12.3 Rule (188), aber Table 7-25 listet nur `alias`. Spec-
-Tabelle ist hier kuerzer als die Productions-Anwendung; alle anderen
+Tabelle ist hier kürzer als die Productions-Anwendung; alle anderen
 Keywords (typename, interface, valuetype, ...) sind bereits in
 anderen Building-Blocks.)
 
@@ -9630,16 +9630,16 @@ Building Block Core Data Types."
 <identifier> "{" "}"`"
 
 **Repo:** Composer-Erweiterung von `PROD_STRUCT_DEF` mit zwei
-zusaetzlichen Alternativen (Inheritance + Empty-Body).
+zusätzlichen Alternativen (Inheritance + Empty-Body).
 
 **Tests:** `parses_struct_inheritance` (suchen).
 
 **Status:** done — Recognizer-Tests
 `parses_struct_with_single_inheritance` und
-`parses_empty_struct_with_void_body` belegen die zwei zusaetzlichen
+`parses_empty_struct_with_void_body` belegen die zwei zusätzlichen
 Alternativen.
 
-### §7.4.13.3-r195 Tests fuer Struct-Inheritance + Empty-Body
+### §7.4.13.3-r195 Tests für Struct-Inheritance + Empty-Body
 
 **Spec:** Rule (195) — Struct mit Inheritance oder Empty-Body.
 
@@ -9656,7 +9656,7 @@ Alternativen.
 <wide_char_type> | <octet_type>`"
 
 **Repo:** `PROD_SWITCH_TYPE_SPEC` mit `wide_char` + `octet`-Alts
-(Phase 5: octet-Alt nachgezogen).
+(octet-Alt nachgezogen).
 
 **Tests:** `parses_union_with_wchar_discriminator`,
 `parses_union_with_octet_discriminator`.
@@ -9667,7 +9667,7 @@ Alternativen.
 
 **Spec:** Rule (196).
 
-**Repo:** Composer-Alts vorhanden (Phase 5).
+**Repo:** Composer-Alts vorhanden.
 
 **Tests:** `parses_union_with_wchar_discriminator`,
 `parses_union_with_octet_discriminator`.
@@ -9918,7 +9918,7 @@ Identifier-Liste.
 
 ### §7.4.13.4.1 — Structures with Single Inheritance + Void Content
 
-**Spec:** §7.4.13.4.1, S. 91 — Rule (195) wiederholt + Erklaerung.
+**Spec:** §7.4.13.4.1, S. 91 — Rule (195) wiederholt + Erklärung.
 "Single inheritance is denoted by a colon (:) followed by a scoped
 name that must correspond to the name of a previously defined
 structure."
@@ -9997,7 +9997,7 @@ following differences:
   addressed. An anonymous bit field is just a placeholder to skip
   unused bits within a bit set."
 (Rules (200)-(203) wiederholt + Decl-Bestandteile +
-Storage-Constraints fuer destination_type Mappings).
+Storage-Constraints für destination_type Mappings).
 
 **Repo:** Rules (200)-(203).
 
@@ -10015,8 +10015,8 @@ within a bit set."
 "Note – Purpose of bit sets is to minimize as much as possible their
 memory footprint." (Plus Spec-Beispiel mit Memory-Footprint = 30).
 Plus Storage-Limits per destination_type:
-- 1 fuer boolean, 8 fuer octet, 16 fuer short/ushort,
-- 32 fuer long/ulong, 64 fuer long long/ulonglong.
+- 1 für boolean, 8 für octet, 16 für short/ushort,
+- 32 für long/ulong, 64 für long long/ulonglong.
 
 **Repo:** Recognizer akzeptiert; Storage-Limit-Validation in
 `crates/idl/src/semantics/bitfield_validation.rs::validate_bitset`.
@@ -10024,7 +10024,7 @@ Plus Storage-Limits per destination_type:
 **Tests:** `bitfield_size_exceeds_octet_destination_is_error`,
 `bitfield_size_exceeds_short_destination_is_error`.
 
-**Status:** done — Storage-Limit-Validation prueft
+**Status:** done — Storage-Limit-Validation prüft
 `width > dest_type_cap(dt)` und liefert
 `BitfieldValidationError::BitfieldExceedsStorageCap`.
 
@@ -10078,7 +10078,7 @@ zugewiesen an Annotation-Builder, aber nicht voll getestet.
 `crates/idl/src/semantics/bitfield_validation.rs::validate_bitmask`
 voll abgedeckt: `@bit_bound > 64` →
 `BitfieldValidationError::BitBoundTooLarge`,
-`@position` ausserhalb `bit_bound` →
+`@position` außerhalb `bit_bound` →
 `PositionOutOfRange`, doppelte Positions → `DuplicatePosition`,
 non-annotated bit_value folgt Predecessor (impliziter Counter).
 
@@ -10098,7 +10098,7 @@ non-annotated bit_value folgt Predecessor (impliziter Counter).
 ### §7.4.13.4.4 — Integers restricted to 8-bits + 7.4.13.4.5 Explicitly-named + 7.4.13.4.6 Ranges-Tab
 
 **Spec:** §7.4.13.4.4-§7.4.13.4.6, S. 94-95 — Rules (206)-(215)
-wiederholt + Erklaerung "int8/uint8/int16/.../uint64-Aliase,
+wiederholt + Erklärung "int8/uint8/int16/.../uint64-Aliase,
 gleicher Range wie short/...";
 Plus Table 7-26 "Ranges for all Integer types" mit Spalten
 `Building Block Extended Data-Types Integer type` /
@@ -10112,13 +10112,13 @@ Plus Table 7-26 "Ranges for all Integer types" mit Spalten
 - uint32 / 0..2^32-1 / unsigned long
 - uint64 / 0..2^64-1 / unsigned long long
 
-**Repo:** Rules (206)-(215). Range-Werte ueber `ConstValue`-Variants
+**Repo:** Rules (206)-(215). Range-Werte über `ConstValue`-Variants
 (Short/Long/etc.) abgedeckt; `int8`/`uint8` erweitern Range.
 
 **Tests:** `parses_typedef_with_primitive_types`.
 
 **Status:** done — `ConstValue::Int8(i8)` + `ConstValue::UInt8(u8)`
-Variants ergänzt, plus `cast_int8`/`cast_uint8` (Phase 2.15). Tests
+Variants ergänzt, plus `cast_int8`/`cast_uint8`. Tests
 `crates/idl/src/semantics/const_eval.rs::tests::int8_range_check_ok`,
 `int8_range_overflow_errors`,
 `int8_range_negative_underflow_errors`,
@@ -10432,11 +10432,11 @@ Spec-Annotations (`@key`, `@nested`, `@id`, `@optional`,
 **Tests:** umfangreiche Annotation-Tests in idl42.rs +
 `crates/idl/src/semantics/annotations.rs::tests` (45+ Tests).
 
-**Status:** done — vollstaendige Annotation-Pipeline.
+**Status:** done — vollständige Annotation-Pipeline.
 
 ### §7.4.15.5 — Specific Keywords (keine; nur `@`-Token)
 
-**Spec:** §7.4.15.5 — keine zusaetzlichen Keywords; `@annotation`
+**Spec:** §7.4.15.5 — keine zusätzlichen Keywords; `@annotation`
 und `@<scoped_name>` sind keine Keywords sondern Punctuation +
 Identifier.
 
@@ -10457,7 +10457,7 @@ Annotation-Form.
 designed as independent as possible, they are linked by some
 dependencies. The following figure represents the graph of their
 relationships (actually a lattice)."
-Figure 7-2 zeigt 14 Building-Blocks mit Abhaengigkeits-Pfeilen:
+Figure 7-2 zeigt 14 Building-Blocks mit Abhängigkeits-Pfeilen:
 - Core Data Types (Wurzel)
 - Any (rely on Core)
 - Extended Data Types (rely on Core)
@@ -10485,9 +10485,9 @@ des Lattice.
 
 **Tests:** `crates/idl/src/features/gate.rs::tests` — 27 Gate-Tests
 belegen, dass:
-- Niedere Building-Blocks ohne Abhaengigkeiten standalone akzeptiert
+- Niedere Building-Blocks ohne Abhängigkeiten standalone akzeptiert
   werden (`dds_basic_*`),
-- Hoehere Building-Blocks ihre Dependencies implizit fordern
+- Höhere Building-Blocks ihre Dependencies implizit fordern
   (`corba_full_allows_*` setzt Lattice-Stamm voraus),
 - Cross-Block-Mismatches abgelehnt werden
   (`dds_extensible_rejects_value_def`).
@@ -10498,7 +10498,7 @@ belegen, dass:
 
 ## §7.5 Names and Scoping
 
-### §7.5 — Visibility-Regeln gelten ueber alle Building Blocks
+### §7.5 — Visibility-Regeln gelten über alle Building Blocks
 
 **Spec:** §7.5, S. 102 — "This clause defines the visibility rules
 that apply to names. Those rules are considering the whole IDL
@@ -10530,7 +10530,7 @@ qualified name by the rule described in the previous paragraph."
 
 **Repo:** `crates/idl/src/semantics/resolver.rs::Scope::lookup` —
 qualified-Lookup folgt Spec-konform: `<scoped_name>`-Resolve in S,
-dann `<identifier>` direkt in S. Absoluter Pfad mit `::`-Praefix
+dann `<identifier>` direkt in S. Absoluter Pfad mit `::`-Präfix
 beginnt am Root-Scope.
 
 **Tests:** `crates/idl/src/semantics/resolver.rs::tests::three_level_scoped_name_resolves`,
@@ -10605,13 +10605,13 @@ raises(E); }; interface B: A { void g () raises(E); };` In this
 example, the exception is known by the global names `::A::E` and
 `::B::E`."
 
-**Repo:** Resolver erkennt beide Pfade als gueltige Lookup-Ergebnisse
+**Repo:** Resolver erkennt beide Pfade als gültige Lookup-Ergebnisse
 auf das gleiche Symbol.
 
 **Tests:** `crates/idl/src/semantics/resolver.rs::tests::top_level_exception_resolves_via_absolute_path`.
 
 **Status:** done — Top-Level-Exception-Resolution belegt; volle
-Multi-Path-Identitaet ueber Interface-Inheritance ist S-Res-Cluster-
+Multi-Path-Identität über Interface-Inheritance ist S-Res-Cluster-
 7.4-Followup (§7.4.4.4).
 
 ### §7.5.1 Multi-Global-Name-Identity (Top-Level)
@@ -10619,7 +10619,7 @@ Multi-Path-Identitaet ueber Interface-Inheritance ist S-Res-Cluster-
 **Spec:** §7.5.1, S. 103 — `::A::E` und `::B::E` referenzieren
 dasselbe Symbol bei B inherits A.
 
-**Repo:** Resolver-Logik fuer Top-Level-Lookup vorhanden;
+**Repo:** Resolver-Logik für Top-Level-Lookup vorhanden;
 Interface-internal-Exports werden im Resolver-7.4-Cluster (Inheritance-
 Member-Aggregation) behandelt.
 
@@ -10729,7 +10729,7 @@ umgebenden Scope-Namen entspricht, ist Error.
 **Spec:** §7.5.2, S. 104 — siehe Spec-Beispiel oben.
 
 **Repo:** Resolver-Validation via `Scope::insert` Duplicate-Check
-(Module-Scope enthaelt M nicht; M ist Parent-Scope-Eintrag — keine
+(Module-Scope enthält M nicht; M ist Parent-Scope-Eintrag — keine
 Self-Redef im strengen Sinne, aber semantisches Spec-Verhalten
 wird durch den vorhandenen Duplicate-Pass beibehalten).
 
@@ -10752,7 +10752,7 @@ Plus Spec-Beispiel mit `typedef Inner1::S1 S2;`.
 (Spec-Beispiel `module Inner1 { struct S1 {}; }; typedef Inner1::S1 S2;`
 verifiziert dass `Inner1` als Module im Root-Scope sichtbar ist und
 `S2` als Typedef resolved); plus `type_used_then_redefined_in_outer_module_is_ok`
-fuer Redef-After-Use.
+für Redef-After-Use.
 
 **Status:** done — bottom-up-Lookup mit Identifier-Introduction
 durch Use ist im Resolver-`resolve`-Walk implementiert
@@ -10762,7 +10762,7 @@ Introduction + Subsequent-Redef-After-Use im S-Res-Cluster-7.3
 
 ### §7.5.2 Identifier-Introduction-Tracking
 
-**Spec:** §7.5.2, S. 104-105 — Identifier wird in Scope eingefuehrt
+**Spec:** §7.5.2, S. 104-105 — Identifier wird in Scope eingeführt
 durch Use; Subsequent-Redef ist Error.
 
 **Repo:** Resolver-`bottom_up_lookup_finds_outer_scope_type` belegt
@@ -10781,15 +10781,15 @@ into the scope of **Inner2** but does not introduce **S1**. A
 qualified name of the form **::X::Y::Z** does not cause **X** to be
 introduced, but a qualified name of the form **X::Y::Z** does."
 
-**Repo:** Resolver-Logik fuer Qualified-Name-Introduction.
+**Repo:** Resolver-Logik für Qualified-Name-Introduction.
 
 **Tests:** `crates/idl/src/semantics/resolver.rs::tests::absolute_qualified_name_does_not_introduce_outer`
 — Spec-Beispiel: `typedef ::Inner::S T; module Inner { ... };`
 zeigt, dass der absolute Pfad `::Inner::S` Inner NICHT introduziert,
-sodass die nachfolgende Module-Reopen ohne Konflikt klappt; Gegenstueck
+sodass die nachfolgende Module-Reopen ohne Konflikt klappt; Gegenstück
 zum `use_introduces_outer_identifier`-Test.
 
-**Status:** done — Resolver respektiert die `::`-Praefix-Semantik;
+**Status:** done — Resolver respektiert die `::`-Präfix-Semantik;
 Test belegt das `does not cause X to be introduced`-Pattern.
 
 ### §7.5.2 — Enum-Value-Names ins enclosing-Scope
@@ -10804,7 +10804,7 @@ already introduced }; ...`"
 
 **Tests:** `crates/idl/src/semantics/resolver.rs::tests::enum_value_name_conflict_with_existing_in_enclosing_scope_is_error`.
 
-**Status:** done — Test prueft Top-Level-Enum-Value-Conflict;
+**Status:** done — Test prüft Top-Level-Enum-Value-Conflict;
 Resolver-Pass inseriert Enumeratoren in den enclosing Scope
 (SymbolKind::Enumerator).
 
@@ -10882,7 +10882,7 @@ changing their meaning throughout a non-module scope definition,
 and ensures that reordering of definitions in the presence of
 introduced types does not affect the semantics of a specification."
 
-**Repo:** Resolver-Logik fuer Potential-Scope-Tracking; partiell
+**Repo:** Resolver-Logik für Potential-Scope-Tracking; partiell
 implementiert.
 
 **Tests:** `type_used_then_redefined_in_outer_module_is_ok`
@@ -10953,7 +10953,7 @@ that their application can be considered in various contexts."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Editorial-Header fuer die nachfolgenden normativen Sub-Clauses.
+**Status:** `n/a (informative)` — Editorial-Header für die nachfolgenden normativen Sub-Clauses.
 
 ### §8.2.2 — Rules for Using Standardized Annotations
 
@@ -10961,8 +10961,8 @@ that their application can be considered in various contexts."
 annotation is proposed in its largest possible scope doesn't mean
 that any specification deciding to make use of such an annotation …
 is forced to support its whole possible set of applications."
-4 Anforderungen: Syntax respektieren, Meaning praezisieren, valide
-Elements einschraenken, Default-Behavior dokumentieren.
+4 Anforderungen: Syntax respektieren, Meaning präzisieren, valide
+Elements einschränken, Default-Behavior dokumentieren.
 
 **Repo:** Annotation-Lowering folgt Spec-Syntax strikt.
 
@@ -11010,7 +11010,7 @@ default TRUE; };`"
 value; };`"
 
 **Repo:** `BuiltinAnnotation::Position(u32)` (l. 80) — Repo speichert
-intern als u32 zur Kompatibilitaet mit `const_to_u32`-Helper. Die
+intern als u32 zur Kompatibilität mit `const_to_u32`-Helper. Die
 Spec-Range 0..=65535 wird im Lowering-Pass enforced (siehe
 Folgeeintrag).
 
@@ -11026,7 +11026,7 @@ Branch via `LowerError::PositionOutOfShortRange`.
 impliziert Range 0..=65535.
 
 **Repo:** `crates/idl/src/semantics/annotations.rs::lower_single`
-"position"-Branch (l. 339+) prueft `value > u16::MAX` und liefert
+"position"-Branch (l. 339+) prüft `value > u16::MAX` und liefert
 `LowerError::PositionOutOfShortRange { value }`.
 
 **Tests:** `crates/idl/src/semantics/annotations.rs::tests::position_at_short_max_is_ok`,
@@ -11126,8 +11126,8 @@ Members des typedef'd Types vererbt. Spec-Beispiel `@range
 typedef long MyLong;`.
 
 **Repo:** `crates/idl/src/semantics/annotations.rs::effective_member_annotations`
-sammelt fuer einen Member die effektiven Annotations: Member-eigene +
-(transitiv aufgeloeste) Typedef-Annotations. Member-eigene Annotations
+sammelt für einen Member die effektiven Annotations: Member-eigene +
+(transitiv aufgelöste) Typedef-Annotations. Member-eigene Annotations
 gewinnen bei Namens-Konflikt.
 
 **Tests:** `crates/idl/src/semantics/annotations.rs::tests::range_annotation_on_typedef_inherited_by_member`,
@@ -11183,7 +11183,7 @@ als Strings.
 ### §8.3.3.5 — `@unit` Annotation
 
 **Spec:** §8.3.3.5, S. 114 — "`@annotation unit { string value; };`"
-Plus Footnote 15 (BIPM-Standard-Abkuerzungen empfohlen).
+Plus Footnote 15 (BIPM-Standard-Abkürzungen empfohlen).
 
 **Repo:** `BuiltinAnnotation::Unit(String)` (l. 301).
 
@@ -11248,7 +11248,7 @@ default \"*\"; };`"
 Platform-Werte: `"CORBA"`, `"DDS"`, `"*"`.
 
 **Repo:** `BuiltinAnnotation::Service(String)` (l. 96); Lowering in
-`lower_single::"service"` (l. 370+) unterstuetzt None/Empty (default
+`lower_single::"service"` (l. 370+) unterstützt None/Empty (default
 `"*"`), Single (positional), Named `platform`.
 
 **Tests:** `crates/idl/src/semantics/annotations.rs::tests::lowers_service_annotation_with_default_platform`,
@@ -11267,11 +11267,11 @@ parameters."
 
 **Repo:** `BuiltinAnnotation::OnewayAnno(bool)` (l. 101) —
 disambiguiert vom recognizer-side `oneway`-Keyword (Rule 120).
-Lowering in `lower_single::"oneway"` (l. 391+) unterstuetzt
+Lowering in `lower_single::"oneway"` (l. 391+) unterstützt
 None/Empty (default `true`), Bool-Literal `TRUE`/`FALSE`,
 Scoped-Name `TRUE`/`FALSE`. Die §8.3.6.2-Constraints (void-Return +
 keine out/inout-Parameter) werden im Resolver-Pass §7.4.6.3-r120
-geprueft.
+geprüft.
 
 **Tests:** `crates/idl/src/semantics/annotations.rs::tests::lowers_oneway_annotation_with_default_true`,
 `lowers_oneway_annotation_with_false`.
@@ -11325,7 +11325,7 @@ are related to CORBA."
 
 **Repo:** Profile-Konstrukturen `corba_full`,
 `opensplice_legacy/_modern`. CORBA-Subset-Profile (Plain/Minimum)
-sind nicht eigenstaendig vorgesehen, aber via
+sind nicht eigenständig vorgesehen, aber via
 `IdlFeatures::corba_full().with_..._off()`-Pattern komponierbar.
 
 **Tests:** `corba_full_profile`, `opensplice_legacy_profile`,
@@ -11457,15 +11457,15 @@ basically supported by DDS. It is made of:
 - Building Block Anonymous Types"
 
 **Repo:** `IdlFeatures::dds_basic()` (l. … in features/mod.rs).
-Hinweis: Repo-`dds_basic` koennte zusaetzlich Annotations und
-Extended-Data-Types aktivieren (Verifikation noetig).
+Hinweis: Repo-`dds_basic` könnte zusätzlich Annotations und
+Extended-Data-Types aktivieren (Verifikation nötig).
 
 **Tests:** `dds_basic_profile`,
 `dds_basic_rejects_native`,
 `dds_basic_allows_value_box` (anderer Variants).
 
 **Status:** done — Test `plain_dds_profile_matches_spec_exactly`
-prueft Spec-Match.
+prüft Spec-Match.
 
 ### §9.3.1 Plain-DDS-Profile-Match
 
@@ -11494,9 +11494,9 @@ for DDS. It is made of:
 **Tests:** `dds_extensible_profile`,
 `dds_extensible_rejects_value_def`.
 
-**Status:** done — Annotation-Group-Granularitaet ist Code-Gen-
+**Status:** done — Annotation-Group-Granularität ist Code-Gen-
 Stack-Material; alle Annotations sind syntaktisch durch das
-Annotation-BB verfuegbar. Test
+Annotation-BB verfügbar. Test
 `dds_extensible_excludes_corba_components` belegt CORBA-Trennung.
 
 ### §9.3.2 Extensible-DDS-Profile
@@ -11555,19 +11555,20 @@ aller Building-Block-Erweiterungen — Cross-Validation:
   `::+`-Erweiterungen.
 
 **Tests:**
+
 - `crates/idl/src/grammar/idl42.rs::tests` (~180 Recognizer-Tests)
 - `crates/idl/src/grammar/compose.rs::tests` (Composer-Tests)
 - `crates/idl/tests/coverage_report.rs::generate_grammar_coverage_report`
   (E2E-Pipeline gegen 15 Fixtures, Coverage-Report
   `crates/idl/tests/coverage_report.md`)
 
-**Status:** done — vollstaendige Cross-Validation durch §7.4-Items.
+**Status:** done — vollständige Cross-Validation durch §7.4-Items.
 
 ### Annex A — Spec-Beispiel-Cross-Verification
 
 **Spec:** Annex A, S. 123-142 — alle Rules wiederholt.
 
-**Repo:** Pro Building-Block-Section in §7.4 sind alle zugehoerigen
+**Repo:** Pro Building-Block-Section in §7.4 sind alle zugehörigen
 Rules Item-für-Item belegt; siehe einzelne Rule-Items in den
 §7.4.x-Sections oben.
 
@@ -11591,3 +11592,5 @@ Test-Lauf:
 Die 4 `partial`-Items betreffen Long-Double (`f128` ist im stable
 Rust-Compiler nicht verfügbar); Re-Audit-Trigger im Hauptfile
 unter Item `§7.4.1.4.3-r-longdouble-open`.
+
+Offene Items: `idl-4.2.open.md`.

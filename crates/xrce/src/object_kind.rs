@@ -3,23 +3,23 @@
 
 //! XRCE-Object-Kinds (Spec §7.2 Table 4).
 //!
-//! Jede Object-Variante hat einen 4-Bit-Code, den die niedrigeren 4 Bits
-//! der `ObjectId` tragen (siehe `crate::object_id`). Die hier gewaehlten
-//! Konstanten entsprechen den `OBJK_*`-Werten der DDS-XRCE-Spec
+//! Each object variant has a 4-bit code carried by the lower 4 bits
+//! of the `ObjectId` (see `crate::object_id`). The constants chosen here
+//! correspond to the `OBJK_*` values of the DDS-XRCE spec
 //! `formal/2020-11-01`.
 //!
-//! Wir vergeben fuer jeden Spec-Wert einen `pub const u8`, plus eine
-//! Convenience-Enum mit `from_u8` / `to_u8`. Die Enum bricht
-//! `match`-Exhaustiveness in eigenem Code, der Wire-Round-Trip nutzt
-//! aber den `u8`-Repraesentanten direkt.
+//! We assign a `pub const u8` for each spec value, plus a
+//! convenience enum with `from_u8` / `to_u8`. The enum gives
+//! `match` exhaustiveness in our own code, while the wire round-trip
+//! uses the `u8` representative directly.
 
 use crate::error::XrceError;
 
-/// Reservierte Object-Kind: kein gueltiges Objekt (Spec §7.2.1).
+/// Reserved object kind: no valid object (Spec §7.2.1).
 pub const OBJK_INVALID: u8 = 0x00;
 /// `OBJK_PARTICIPANT` — DomainParticipant.
 pub const OBJK_PARTICIPANT: u8 = 0x01;
-/// `OBJK_TOPIC` — Topic-Definition.
+/// `OBJK_TOPIC` — topic definition.
 pub const OBJK_TOPIC: u8 = 0x02;
 /// `OBJK_PUBLISHER` — Publisher.
 pub const OBJK_PUBLISHER: u8 = 0x03;
@@ -29,20 +29,20 @@ pub const OBJK_SUBSCRIBER: u8 = 0x04;
 pub const OBJK_DATAWRITER: u8 = 0x05;
 /// `OBJK_DATAREADER` — DataReader.
 pub const OBJK_DATAREADER: u8 = 0x06;
-/// `OBJK_TYPE` — Type-Description (Spec §7.5.2).
+/// `OBJK_TYPE` — type description (Spec §7.5.2).
 pub const OBJK_TYPE: u8 = 0x0A;
-/// `OBJK_QOSPROFILE` — QoS-Profile (Spec §7.5.2).
+/// `OBJK_QOSPROFILE` — QoS profile (Spec §7.5.2).
 pub const OBJK_QOSPROFILE: u8 = 0x0B;
-/// `OBJK_APPLICATION` — Application-Container (Spec §7.5.2).
+/// `OBJK_APPLICATION` — application container (Spec §7.5.2).
 pub const OBJK_APPLICATION: u8 = 0x0C;
-/// `OBJK_AGENT` — Agent-Singleton (Spec §7.5.2.1).
+/// `OBJK_AGENT` — agent singleton (Spec §7.5.2.1).
 pub const OBJK_AGENT: u8 = 0x0D;
-/// `OBJK_CLIENT` — Client-Object, repraesentiert den ProxyClient (§7.5.1).
+/// `OBJK_CLIENT` — client object, represents the ProxyClient (§7.5.1).
 pub const OBJK_CLIENT: u8 = 0x0E;
-/// `OBJK_DOMAIN` — Domain-Kind (Spec §7.5.2).
+/// `OBJK_DOMAIN` — domain kind (Spec §7.5.2).
 pub const OBJK_DOMAIN: u8 = 0x0F;
 
-/// Convenience-Enum aller in der Spec definierten Object-Kinds.
+/// Convenience enum of all object kinds defined in the spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 #[allow(missing_docs)]
@@ -63,18 +63,18 @@ pub enum ObjectKind {
 }
 
 impl ObjectKind {
-    /// Roher 4-Bit-Code als `u8`.
+    /// Raw 4-bit code as `u8`.
     #[must_use]
     pub fn to_u8(self) -> u8 {
         self as u8
     }
 
-    /// Konvertiert ein 4-Bit-Wert. Werte ausserhalb der Spec → Fehler.
+    /// Converts a 4-bit value. Values outside the spec → error.
     ///
     /// # Errors
-    /// `ValueOutOfRange`, wenn `byte` keinem `OBJK_*` entspricht. Werte
-    /// `> 0x0F` werden ebenfalls abgelehnt — die ObjectId-Bit-Layer
-    /// stellt das normalerweise sicher.
+    /// `ValueOutOfRange` if `byte` corresponds to no `OBJK_*`. Values
+    /// `> 0x0F` are rejected as well — the ObjectId bit layer
+    /// normally ensures this.
     pub fn from_u8(byte: u8) -> Result<Self, XrceError> {
         match byte {
             OBJK_INVALID => Ok(Self::Invalid),
@@ -96,14 +96,14 @@ impl ObjectKind {
         }
     }
 
-    /// `true`, wenn der Object-Kind ein DDS-Endpoint ist
-    /// (DataWriter oder DataReader).
+    /// `true` when the object kind is a DDS endpoint
+    /// (DataWriter or DataReader).
     #[must_use]
     pub fn is_endpoint(self) -> bool {
         matches!(self, Self::DataWriter | Self::DataReader)
     }
 
-    /// `true`, wenn der Object-Kind ein DDS-Container ist
+    /// `true` when the object kind is a DDS container
     /// (Publisher / Subscriber / Participant).
     #[must_use]
     pub fn is_container(self) -> bool {
@@ -139,7 +139,7 @@ mod tests {
 
     #[test]
     fn unknown_byte_rejected() {
-        // 0x07 ist im 4-bit-Bereich aber nicht in der Spec
+        // 0x07 is in the 4-bit range but not in the spec
         assert!(ObjectKind::from_u8(0x07).is_err());
         // > 0x0F → out of 4-bit-range
         assert!(ObjectKind::from_u8(0x10).is_err());
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn raw_const_values_match_spec() {
-        // Sanity-Check: Spec §7.2 Table 4
+        // Sanity check: Spec §7.2 Table 4
         assert_eq!(OBJK_PARTICIPANT, 0x01);
         assert_eq!(OBJK_TOPIC, 0x02);
         assert_eq!(OBJK_DATAWRITER, 0x05);

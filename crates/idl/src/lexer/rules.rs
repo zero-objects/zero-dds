@@ -1,64 +1,63 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Token-Regel-Extraktion aus einer Grammar.
+//! Token-rule extraction from a grammar.
 //!
-//! Statt dass jede Grammar ihre Lexer-Regeln per Hand pflegt, leiten wir sie
-//! aus den `Symbol::Terminal`-Vorkommen automatisch ab. Vorteil: keine
-//! Duplikation und kein Drift zwischen Grammar-Productions und Lexer-
-//! Konfiguration.
+//! Instead of each grammar maintaining its lexer rules by hand, we derive them
+//! automatically from the `Symbol::Terminal` occurrences. Advantage: no
+//! duplication and no drift between grammar productions and lexer
+//! configuration.
 //!
-//! Der erzeugte [`TokenRules`]-Container ist nach **Lexer-Priorität**
-//! sortiert. Der eigentliche Tokenizer (Task 2.3) iteriert ueber die Regeln
-//! in dieser Reihenfolge und probiert pro Source-Position einen
-//! Longest-Match.
+//! The produced [`TokenRules`] container is sorted by **lexer priority**.
+//! The actual tokenizer (Task 2.3) iterates over the rules
+//! in this order and tries a longest match per source position.
 //!
-//! ## Prioritaets-Ordnung
+//! ## Priority ordering
 //!
-//! Wir trennen Regeln in zwei Klassen:
+//! We split rules into two classes:
 //!
-//! - **Literale** ([`TokenKind::Keyword`], [`TokenKind::Punct`]) — exakt-
-//!   matchende Strings. Innerhalb dieser Klasse: laengere Strings vor
-//!   kuerzeren (`"::"` vor `":"`, `"=="` vor `"="`). So gewinnen
-//!   Multi-Char-Operatoren ueber ihre Bestandteile.
-//! - **Pattern-basiert** (Identifier, Literale wie `IntegerLiteral`,
-//!   `StringLiteral`, etc.) — handgeschriebene Match-Funktionen im Lexer.
-//!   Reihenfolge: Identifier nach Keywords (sonst wuerde `struct` als
-//!   Ident zerlegt), Literale nach Punctuation.
+//! - **Literals** ([`TokenKind::Keyword`], [`TokenKind::Punct`]) — exactly
+//!   matching strings. Within this class: longer strings before
+//!   shorter ones (`"::"` before `":"`, `"=="` before `"="`). This way
+//!   multi-char operators win over their components.
+//! - **Pattern-based** (identifiers, literals such as `IntegerLiteral`,
+//!   `StringLiteral`, etc.) — hand-written match functions in the lexer.
+//!   Order: identifiers after keywords (otherwise `struct` would be split
+//!   into an ident), literals after punctuation.
 //!
-//! Innerhalb gleicher Laenge ist die Sortierung stabil-alphabetisch fuer
-//! deterministische Outputs.
+//! Within the same length, the sort is stable-alphabetical for
+//! deterministic outputs.
 //!
-//! Siehe RFC 0001 §5.2 (Engine) und §4.1 (Pipeline).
+//! See RFC 0001 §5.2 (engine) and §4.1 (pipeline).
 
 use crate::grammar::{Grammar, Symbol, TokenKind, TokenRule, TokenRuleId};
 
-/// Container fuer extrahierte Token-Regeln, sortiert nach Lexer-Prioritaet.
+/// Container for extracted token rules, sorted by lexer priority.
 #[derive(Debug, Clone, Default)]
 pub struct TokenRules {
     rules: Vec<TokenRule>,
 }
 
 impl TokenRules {
-    /// Konstruiert einen leeren Container.
+    /// Constructs an empty container.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Extrahiert alle Token-Regeln aus den Terminals einer Grammar.
+    /// Extracts all token rules from the terminals of a grammar.
     ///
-    /// Iteriert ueber alle Productions und alle Symbol-Sequenzen
-    /// (rekursiv durch [`Symbol::Repeat`] und [`Symbol::Choice`]),
-    /// sammelt unique [`TokenKind`]s und sortiert sie.
+    /// Iterates over all productions and all symbol sequences
+    /// (recursively through [`Symbol::Repeat`] and [`Symbol::Choice`]),
+    /// collects unique [`TokenKind`]s and sorts them.
     #[must_use]
     pub fn from_grammar(grammar: &Grammar) -> Self {
         Self::from_productions(grammar.productions_iter())
     }
 
-    /// Variante von [`from_grammar`], die ueber jede beliebige
-    /// Production-Sequenz arbeitet (z.B. eine
+    /// Variant of [`from_grammar`] that works over any
+    /// production sequence (e.g. a
     /// [`CompiledGrammar`](crate::grammar::compile::CompiledGrammar)
-    /// nach Delta-Komposition; T6.5).
+    /// after delta composition; T6.5).
     #[must_use]
     pub fn from_productions<'a, I>(productions: I) -> Self
     where
@@ -70,8 +69,8 @@ impl TokenRules {
                 collect_terminal_kinds(alt.symbols, &mut kinds);
             }
         }
-        // Dedup unter Beibehaltung der Reihenfolge — kommt vor Sortierung,
-        // damit das Sort-Stabilitaets-Verhalten deterministisch wird.
+        // Dedup while preserving order — comes before sorting,
+        // so that the sort-stability behavior becomes deterministic.
         dedup_preserving_order(&mut kinds);
         sort_by_lexer_priority(&mut kinds);
         let rules = kinds
@@ -86,36 +85,36 @@ impl TokenRules {
         Self { rules }
     }
 
-    /// Alle Regeln in Lexer-Prioritaets-Reihenfolge.
+    /// All rules in lexer-priority order.
     #[must_use]
     pub fn rules(&self) -> &[TokenRule] {
         &self.rules
     }
 
-    /// Iteriert ueber alle Regeln in Lexer-Prioritaets-Reihenfolge.
+    /// Iterates over all rules in lexer-priority order.
     pub fn iter(&self) -> impl Iterator<Item = &TokenRule> {
         self.rules.iter()
     }
 
-    /// Anzahl Regeln.
+    /// Number of rules.
     #[must_use]
     pub fn len(&self) -> usize {
         self.rules.len()
     }
 
-    /// `true`, wenn der Container keine Regeln enthaelt.
+    /// `true` if the container contains no rules.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.rules.is_empty()
     }
 
-    /// Sucht eine Regel anhand ihres [`TokenKind`].
+    /// Looks up a rule by its [`TokenKind`].
     #[must_use]
     pub fn by_kind(&self, kind: &TokenKind) -> Option<&TokenRule> {
         self.rules.iter().find(|r| r.kind == *kind)
     }
 
-    /// Alle reservierten Schluesselwoerter (Keyword-Literale).
+    /// All reserved keywords (keyword literals).
     pub fn keywords(&self) -> impl Iterator<Item = &str> {
         self.rules.iter().filter_map(|r| match r.kind {
             TokenKind::Keyword(s) => Some(s),
@@ -123,7 +122,7 @@ impl TokenRules {
         })
     }
 
-    /// Alle Interpunktions-Literale.
+    /// All punctuation literals.
     pub fn punctuation(&self) -> impl Iterator<Item = &str> {
         self.rules.iter().filter_map(|r| match r.kind {
             TokenKind::Punct(s) => Some(s),
@@ -133,10 +132,10 @@ impl TokenRules {
 }
 
 // ---------------------------------------------------------------------------
-// Hilfs-Funktionen (privat, aber test-zugaenglich ueber super::)
+// Helper functions (private, but test-accessible via super::)
 // ---------------------------------------------------------------------------
 
-/// zerodds-lint: recursion-depth 64 (Parser/AST-Walk; bounded by IDL nesting)
+/// zerodds-lint: recursion-depth 64 (parser/AST walk; bounded by IDL nesting)
 fn collect_terminal_kinds(symbols: &[Symbol], out: &mut Vec<TokenKind>) {
     for sym in symbols {
         match sym {
@@ -157,16 +156,15 @@ fn dedup_preserving_order(kinds: &mut Vec<TokenKind>) {
     kinds.retain(|k| seen.insert(*k));
 }
 
-/// Lexer-Prioritaets-Klasse. Niedrigere Werte haben hoehere Prioritaet
-/// (werden vom Tokenizer zuerst probiert).
+/// Lexer-priority class. Lower values have higher priority
+/// (tried first by the tokenizer).
 fn priority_class(kind: &TokenKind) -> u8 {
     match kind {
-        // Literale: laengere Strings vor kuerzeren — wird durch die
-        // Sekundaer-Sortierung nach -len() innerhalb derselben Klasse
-        // erreicht.
+        // Literals: longer strings before shorter ones — achieved via the
+        // secondary sort by -len() within the same class.
         TokenKind::Punct(_) => 0,
         TokenKind::Keyword(_) => 1,
-        // Pattern-basiert: nach Literalen.
+        // Pattern-based: after literals.
         TokenKind::BoolLiteral => 2,
         TokenKind::WideCharLiteral => 3,
         TokenKind::CharLiteral => 4,
@@ -176,14 +174,13 @@ fn priority_class(kind: &TokenKind) -> u8 {
         TokenKind::FloatLiteral => 8,
         TokenKind::IntegerLiteral => 9,
         TokenKind::Ident => 10,
-        // Synthetic — nicht vom Lexer produziert, ans Ende.
+        // Synthetic — not produced by the lexer, to the end.
         TokenKind::EndOfInput => 255,
     }
 }
 
-/// Laenge eines Literals (fuer die Punct/Keyword-Innen-Sortierung).
-/// Pattern-basierte Tokens haben Laenge 0, weil sie nicht literal-basiert
-/// sind.
+/// Length of a literal (for the inner sort of Punct/Keyword).
+/// Pattern-based tokens have length 0, because they are not literal-based.
 fn literal_len(kind: &TokenKind) -> usize {
     match kind {
         TokenKind::Punct(s) | TokenKind::Keyword(s) => s.len(),
@@ -191,24 +188,24 @@ fn literal_len(kind: &TokenKind) -> usize {
     }
 }
 
-/// Sortier-Schluessel: (priority_class, -literal_len, kind-tie-break).
-/// `kind` als Tie-Break sorgt fuer alphabetische Stabilitaet bei gleicher
-/// Laenge (z.B. "+" vs "-").
+/// Sort key: (priority_class, -literal_len, kind tie-break).
+/// `kind` as a tie-break ensures alphabetical stability at equal
+/// length (e.g. "+" vs "-").
 fn sort_by_lexer_priority(kinds: &mut [TokenKind]) {
     kinds.sort_by(|a, b| {
         let cls_a = priority_class(a);
         let cls_b = priority_class(b);
         cls_a
             .cmp(&cls_b)
-            .then_with(|| literal_len(b).cmp(&literal_len(a))) // -len: laenger zuerst
+            .then_with(|| literal_len(b).cmp(&literal_len(a))) // -len: longer first
             .then_with(|| a.cmp(b))
     });
 }
 
-/// Liefert das Pattern-Label fuer eine Token-Regel. Bei Literal-Tokens
-/// (Keyword/Punct) der Literal-String selbst; bei pattern-basierten Tokens
-/// ein symbolischer Name, den der Tokenizer (Task 2.3) auf eine
-/// handgeschriebene Match-Funktion mappt.
+/// Returns the pattern label for a token rule. For literal tokens
+/// (Keyword/Punct) the literal string itself; for pattern-based tokens
+/// a symbolic name that the tokenizer (Task 2.3) maps to a
+/// hand-written match function.
 fn pattern_for(kind: &TokenKind) -> &'static str {
     match kind {
         TokenKind::Keyword(s) | TokenKind::Punct(s) => s,
@@ -365,11 +362,11 @@ mod tests {
         )];
         let rules = TokenRules::from_grammar(&grammar(PRODS));
         let punct: Vec<&str> = rules.punctuation().collect();
-        // Longer first: "::" und "==" vor ":" und "="
+        // Longer first: "::" and "==" before ":" and "="
         assert_eq!(
             punct[0].len(),
             2,
-            "Erstes Punct muss 2 Zeichen lang sein, war: {punct:?}"
+            "first Punct must be 2 characters long, was: {punct:?}"
         );
         assert_eq!(punct[1].len(), 2);
         assert_eq!(punct[2].len(), 1);
@@ -404,7 +401,7 @@ mod tests {
         )];
         let rules = TokenRules::from_grammar(&grammar(PRODS));
         let kinds: Vec<TokenKind> = rules.iter().map(|r| r.kind).collect();
-        // Keyword (literal) vor IntegerLiteral und Ident (pattern-based).
+        // Keyword (literal) before IntegerLiteral and Ident (pattern-based).
         assert_eq!(kinds[0], TokenKind::Keyword("true"));
         assert!(kinds.contains(&TokenKind::IntegerLiteral));
         assert!(kinds.contains(&TokenKind::Ident));
@@ -446,8 +443,8 @@ mod tests {
 
     #[test]
     fn pattern_for_known_kinds_is_stable() {
-        // Pattern-Strings sind Teil der Lexer-Tokenizer-Schnittstelle (Task
-        // 2.3); bei aenderung Tokenizer-Mapping anpassen.
+        // Pattern strings are part of the lexer-tokenizer interface (Task
+        // 2.3); on change, adjust the tokenizer mapping.
         assert_eq!(pattern_for(&TokenKind::Ident), "ident");
         assert_eq!(pattern_for(&TokenKind::IntegerLiteral), "int_literal");
         assert_eq!(pattern_for(&TokenKind::FloatLiteral), "float_literal");
@@ -478,9 +475,9 @@ mod tests {
 
     #[test]
     fn priority_class_distinguishes_all_pattern_kinds() {
-        // Grammar mit allen Literal-Klassen — pattern_class und literal_len
-        // werden fuer jede Variante durchlaufen, damit die Sortier-Logik
-        // alle Match-Arme abdeckt.
+        // Grammar with all literal classes — pattern_class and literal_len
+        // are run for every variant, so that the sort logic
+        // covers all match arms.
         const PRODS: &[Production] = &[prod(
             0,
             "a",
@@ -500,7 +497,7 @@ mod tests {
         let rules = TokenRules::from_grammar(&grammar(PRODS));
         assert_eq!(rules.len(), 10);
         let kinds: Vec<TokenKind> = rules.iter().map(|r| r.kind).collect();
-        // Reihenfolge gemaess priority_class:
+        // Order per priority_class:
         assert_eq!(kinds[0], TokenKind::BoolLiteral);
         assert_eq!(kinds[1], TokenKind::WideCharLiteral);
         assert_eq!(kinds[2], TokenKind::CharLiteral);
@@ -514,7 +511,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // E2E mit Toy-Grammar
+    // E2E with the toy grammar
     // -----------------------------------------------------------------
 
     #[test]
@@ -527,7 +524,7 @@ mod tests {
         let kws: Vec<&str> = rules.keywords().collect();
         assert_eq!(punct.len(), 4);
         assert_eq!(kws, vec!["n"]);
-        // Punct kommt vor Keyword (Prioritaet).
+        // Punct comes before Keyword (priority).
         let kinds: Vec<TokenKind> = rules.iter().map(|r| r.kind).collect();
         let first_keyword_pos = kinds
             .iter()

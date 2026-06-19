@@ -20,12 +20,12 @@ zwischen:
 ZeroDDS wählt **Pfad 2 (Pure-Java)** als einzigen Implementationspfad:
 
 - **`zerodds-java-omgdds`** — Pure-Java-Implementation der
-  `org.omg.dds.*`-Interfaces für Single-Process + (Phase-2)
+  `org.omg.dds.*`-Interfaces für Single-Process + (v1.1)
   gRPC-Bridge-Multi-Process-Szenarien. **Kein JNI-Dependency, kein
   `libzerodds`-Native-Lib im Java-Pfad.**
 
-Eine frühere JNI-Bridge (`crates/zerodds-java-jni/`) wurde am
-2026-05-07 entfernt (Commit `49b9b4c6`); siehe
+Eine frühere JNI-Bridge (`crates/zerodds-java-jni/`) wird nicht mehr
+verwendet; siehe
 `crates/idl-java/` für IDL→Java-Codegen und
 `crates/java-omgdds/` für die Runtime.
 
@@ -40,16 +40,16 @@ Diese Vendor-Spec definiert die Pure-Java-Implementation normativ.
   notwendig. Reines `.jar`-Artefakt.
 - **In-Process-Bus:** Lokaler-only Pub-Sub via `InProcessBus`-Class
   für Tests, Tools und Single-Process-Anwendungen.
-- **gRPC-Bridge (Phase-2):** Multi-Process-Pfad via gRPC-Service
+- **gRPC-Bridge (v1.1):** Multi-Process-Pfad via gRPC-Service
   zu einem `libzerodds`-Server. Damit kommunizieren mehrere Pure-Java-
   JVMs mit C++/C#/Native-Peers.
 - **NativeAOT-friendly:** Java-22-`MemorySegment`/`Foreign-Memory-API`
-  Phase-2 für Zero-Copy ohne JNI.
+  (v1.1) für Zero-Copy ohne JNI.
 
 ## Nicht-Ziele
 
 - Direkter RTPS-Wire-Stack in Pure-Java. Cross-Vendor-Wire-Tests laufen
-  in Phase-2 über die gRPC-Bridge.
+  über die gRPC-Bridge (v1.1).
 - `org.omg.dds`-Modifikationen. Diese Spec implementiert das PSM wie
   vorgegeben — keine Vendor-Annotations am Interface.
 
@@ -153,21 +153,21 @@ Tests in `crates/java-omgdds/java/src/test/java/org/omg/dds/`:
 
 ## §4 Multi-Process / Cross-Vendor
 
-Pure-Java hat im RC1 keinen RTPS-Wire-Stack — `org.omg.dds.*`-Anwender
+Der Pure-Java-Pfad hat keinen RTPS-Wire-Stack — `org.omg.dds.*`-Anwender
 laufen Single-JVM via `InProcessBus`. Cross-Vendor-Wire (RTPS) und
-Multi-JVM kommen Phase-2 via gRPC-Bridge: das Java-Frontend ruft einen
+Multi-JVM laufen über die gRPC-Bridge (v1.1): das Java-Frontend ruft einen
 zerodds-grpc-bridged-Server, der gegen `crates/dcps` linked und dort
 RTPS spricht. Damit kommunizieren Java-Anwender mit C++/Rust/C#-Peers
 über die gRPC-Bridge ohne Native-Toolchain auf der Java-Seite.
 
-| Szenario | RC1-Status | Phase-2-Plan |
+| Szenario | v1.0-Status | v1.1-Plan |
 |---|---|---|
 | Single-JVM Tools/Tests/Tutorials | ✅ done (InProcessBus) | unverändert |
-| Multi-JVM lokal | ⏳ Phase-2 | gRPC-Bridge zu libzerodds-Server |
-| Cross-Vendor RTPS-Wire | ⏳ Phase-2 | gRPC-Bridge zu libzerodds-Server |
+| Multi-JVM lokal | ⏳ v1.1 | gRPC-Bridge zu libzerodds-Server |
+| Cross-Vendor RTPS-Wire | ⏳ v1.1 | gRPC-Bridge zu libzerodds-Server |
 | ROS-2-Rmw-Pfad | n/a | rclcpp-Adapter via `rmw_zerodds`, kein Java |
 
-## §5 Phase-2-Plan
+## §5 gRPC-Bridge-Plan (v1.1)
 
 - **gRPC-Service-Proto**: `crates/grpc-bridge/proto/dds-bridge.proto`
   definiert das DCPS-RPC-Schema (CreateParticipant, CreateTopic,
@@ -183,9 +183,9 @@ RTPS spricht. Damit kommunizieren Java-Anwender mit C++/Rust/C#-Peers
 
 Vendor-Spec, semver:
 
-- v1.0 = aktuelle Surface (Pure-Java mit InProcessBus, RC1 abgeschlossen).
+- v1.0 = aktuelle Surface (Pure-Java mit InProcessBus).
 - v1.1 = + gRPC-Bridge zu libzerodds-Server.
-- v2.0 = + Pure-Java RTPS (Stretch-Goal).
+- v2.0 = + Pure-Java RTPS (optional).
 
 ## §7 Lizenz
 

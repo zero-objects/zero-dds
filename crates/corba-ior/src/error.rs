@@ -1,35 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! IOR-Codec-Fehler.
+//! IOR codec errors.
 
 use alloc::string::String;
 
 use zerodds_corba_iiop::profile_body::CdrError;
 
-/// Result-Alias.
+/// Result alias.
 pub type IorResult<T> = Result<T, IorError>;
 
-/// IOR-Codec-Fehler.
+/// IOR codec error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IorError {
-    /// CDR-Marshalling-Fehler.
+    /// CDR marshalling error.
     Cdr(CdrError),
-    /// `zerodds-cdr`-Decode-Fehler.
+    /// `zerodds-cdr` decode error.
     CdrDecode(zerodds_cdr::DecodeError),
-    /// `zerodds-cdr`-Encode-Fehler.
+    /// `zerodds-cdr` encode error.
     CdrEncode(zerodds_cdr::EncodeError),
-    /// stringified-IOR hat das `IOR:`-Prefix nicht.
+    /// Stringified IOR is missing the `IOR:` prefix.
     MissingIorPrefix,
-    /// stringified-IOR hat ungerade Hex-Anzahl.
+    /// Stringified IOR has an odd hex count.
     OddHexLength,
-    /// stringified-IOR enthaelt nicht-Hex-Zeichen.
+    /// Stringified IOR contains non-hex characters.
     InvalidHexChar(char),
-    /// `corbaloc:` URL hat falsches Schema.
+    /// `corbaloc:` URL has the wrong scheme.
     InvalidUrlScheme(String),
-    /// `corbaloc:`-Address hat ungueltiges Host:Port.
+    /// `corbaloc:` address has an invalid host:port.
     InvalidCorbalocAddress(String),
-    /// Generischer Wire-Fehler.
+    /// Generic wire error.
     Malformed(String),
 }
 

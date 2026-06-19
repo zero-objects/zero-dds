@@ -3,7 +3,7 @@
 
 //! POAManager — Spec §11.3.2.
 //!
-//! Vier States + Transitions:
+//! Four states + transitions:
 //!
 //! ```text
 //!         create -> HOLDING
@@ -17,25 +17,25 @@
 //!    *      -> INACTIVE  (terminal)
 //! ```
 //!
-//! INACTIVE ist terminal — alle weiteren Operations werfen
-//! `BadInvocationOrder` (Spec §11.3.2.1.5 normativ).
+//! INACTIVE is terminal — all further operations raise
+//! `BadInvocationOrder` (Spec §11.3.2.1.5, normative).
 
 use core::sync::atomic::{AtomicU8, Ordering};
 
 use crate::error::{PoaError, PoaResult};
 
-/// POAManager-States.
+/// POAManager states.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum PoaManagerState {
-    /// `HOLDING` — Requests werden gequeued, kein Dispatch.
+    /// `HOLDING` — requests are queued, no dispatch.
     Holding = 0,
-    /// `ACTIVE` — Requests werden dispatched.
+    /// `ACTIVE` — requests are dispatched.
     Active = 1,
-    /// `DISCARDING` — Requests werden mit `TRANSIENT` System-Exception
-    /// abgelehnt (z.B. fuer Load-Shedding).
+    /// `DISCARDING` — requests are rejected with a `TRANSIENT` system
+    /// exception (e.g. for load shedding).
     Discarding = 2,
-    /// `INACTIVE` — Manager + alle assoziierten POAs sind tot. Spec
+    /// `INACTIVE` — the manager and all associated POAs are dead. Spec
     /// §11.3.2.1.5: "this is the final state of the POAManager".
     Inactive = 3,
 }
@@ -53,17 +53,17 @@ impl PoaManagerState {
 
 /// POAManager.
 ///
-/// `Send + Sync` per `AtomicU8`. Spec §11.3.2: ein POAManager wird
-/// von mehreren POAs geteilt, also muss er thread-safe sein ohne
-/// Mutex auf dem Hot-Path.
+/// `Send + Sync` via `AtomicU8`. Spec §11.3.2: a POAManager is
+/// shared by multiple POAs, so it must be thread-safe without a
+/// mutex on the hot path.
 #[derive(Debug)]
 pub struct PoaManager {
     state: AtomicU8,
 }
 
 impl PoaManager {
-    /// Konstruiert einen neuen Manager im HOLDING-State (Spec
-    /// §11.3.2.1 normativ: "the POAManager is in the holding state
+    /// Constructs a new manager in the HOLDING state (Spec
+    /// §11.3.2.1, normative: "the POAManager is in the holding state
     /// when it is created").
     #[must_use]
     pub const fn new() -> Self {
@@ -72,7 +72,7 @@ impl PoaManager {
         }
     }
 
-    /// Liefert den aktuellen State.
+    /// Returns the current state.
     #[must_use]
     pub fn state(&self) -> PoaManagerState {
         PoaManagerState::from_u8(self.state.load(Ordering::Acquire))
@@ -81,7 +81,7 @@ impl PoaManager {
     /// `activate` — Spec §11.3.2.1.1.
     ///
     /// # Errors
-    /// `BadInvocationOrder` wenn der Manager bereits INACTIVE ist.
+    /// `BadInvocationOrder` if the manager is already INACTIVE.
     pub fn activate(&self) -> PoaResult<()> {
         self.transition(PoaManagerState::Active)
     }
@@ -89,7 +89,7 @@ impl PoaManager {
     /// `hold_requests` — Spec §11.3.2.1.2.
     ///
     /// # Errors
-    /// `BadInvocationOrder` wenn INACTIVE.
+    /// `BadInvocationOrder` if INACTIVE.
     pub fn hold_requests(&self) -> PoaResult<()> {
         self.transition(PoaManagerState::Holding)
     }
@@ -97,7 +97,7 @@ impl PoaManager {
     /// `discard_requests` — Spec §11.3.2.1.3.
     ///
     /// # Errors
-    /// `BadInvocationOrder` wenn INACTIVE.
+    /// `BadInvocationOrder` if INACTIVE.
     pub fn discard_requests(&self) -> PoaResult<()> {
         self.transition(PoaManagerState::Discarding)
     }
@@ -109,8 +109,8 @@ impl PoaManager {
     }
 
     fn transition(&self, target: PoaManagerState) -> PoaResult<()> {
-        // Compare-and-swap-Schleife: aus jedem nicht-Inactive-State
-        // ist die Transition erlaubt; Inactive ist terminal.
+        // Compare-and-swap loop: the transition is allowed from any
+        // non-Inactive state; Inactive is terminal.
         loop {
             let current = self.state.load(Ordering::Acquire);
             if current == PoaManagerState::Inactive as u8 {

@@ -9,16 +9,16 @@ use crate::integer::{IntegerError, decode_integer};
 use crate::string::{StringError, decode_string};
 use crate::table::{HeaderField, Table};
 
-/// Decoder-Fehler.
+/// Decoder error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecoderError {
-    /// Index ist 0 oder ueber Table-Range.
+    /// Index is 0 or beyond the table range.
     InvalidIndex(u64),
-    /// Integer-Decode-Fehler.
+    /// Integer decode error.
     Integer(IntegerError),
-    /// String-Decode-Fehler.
+    /// String decode error.
     String(StringError),
-    /// Buffer ist truncated.
+    /// Buffer is truncated.
     Truncated,
 }
 
@@ -48,20 +48,20 @@ impl From<StringError> for DecoderError {
     }
 }
 
-/// HPACK-Decoder.
+/// HPACK decoder.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Decoder {
     table: Table,
 }
 
 impl Decoder {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Konstruktor mit Max-Size.
+    /// Constructor with a max size.
     #[must_use]
     pub fn with_max_size(max: usize) -> Self {
         Self {
@@ -69,18 +69,18 @@ impl Decoder {
         }
     }
 
-    /// Reference auf die Dynamic-Table.
+    /// Reference to the dynamic table.
     #[must_use]
     pub fn table(&self) -> &Table {
         &self.table
     }
 
-    /// Mut-Reference auf die Dynamic-Table (z.B. fuer Max-Size-Update).
+    /// Mutable reference to the dynamic table (e.g. for a max-size update).
     pub fn table_mut(&mut self) -> &mut Table {
         &mut self.table
     }
 
-    /// Decode einen kompletten Header-Block.
+    /// Decode a complete header block.
     ///
     /// # Errors
     /// Siehe [`DecoderError`].

@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Builtin Pre-Shared-Key Access-Control-Plugin (Spec §10.8).
+//! Built-in pre-shared-key access-control plugin (spec §10.8).
 //!
-//! Spec-Class-Id `"DDS:Access:PSK:Permissions:1.2"`. Variante des
-//! [`crate::PermissionsAccessControl`] OHNE S/MIME-Wrapper:
+//! Spec class ID `"DDS:Access:PSK:Permissions:1.2"`. A variant of
+//! [`crate::PermissionsAccessControl`] WITHOUT an S/MIME wrapper:
 //!
-//! * Permissions-XML wird **direkt** als String gelesen (kein
-//!   PKCS#7-SignedData-Outer-Wrap, weil der PSK-Pfad gar keine
-//!   Permissions-CA hat).
-//! * Governance-XML (optional) ebenfalls plain.
-//! * Authentizitaet stammt aus dem Pre-Shared-Key — wer den PSK kennt,
-//!   gilt als der konfigurierte Subject.
+//! * The permissions XML is read **directly** as a string (no
+//!   PKCS#7 SignedData outer wrap, because the PSK path has no
+//!   permissions CA at all).
+//! * The governance XML (optional) is also plain.
+//! * Authenticity stems from the pre-shared key — whoever knows the PSK
+//!   counts as the configured subject.
 //!
-//! Die Topic-Filter-/Allow/Deny-Auswertung geht 1:1 ueber die
-//! bestehende [`crate::xml`]-/[`crate::governance`]-Pipeline; kein Code
-//! darin wird dupliziert.
+//! The topic-filter/allow/deny evaluation goes 1:1 through the
+//! existing [`crate::xml`]/[`crate::governance`] pipeline; no code
+//! in it is duplicated.
 
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
@@ -37,18 +37,18 @@ use crate::xml::{Grant, Permissions, parse_permissions_xml};
 /// Plugin-Class-Id (Spec §10.8).
 pub const CLASS_ID_PSK_PERMISSIONS: &str = "DDS:Access:PSK:Permissions:1.2";
 
-/// Property-Key fuer das Permissions-XML (lokal, nicht propagiert).
+/// Property key for the permissions XML (local, not propagated).
 pub const PROP_PSK_PERMISSIONS_XML: &str = "dds.sec.access.psk_permissions";
-/// Property-Key fuer das Governance-XML (optional).
+/// Property key for the governance XML (optional).
 pub const PROP_PSK_GOVERNANCE_XML: &str = "dds.sec.access.psk_governance";
-/// Property-Key fuer den Subject-Namen.
+/// Property key for the subject name.
 pub const PROP_PSK_SUBJECT_NAME: &str = "dds.sec.access.subject_name";
-/// Property-Key fuer die Permissions-Identitaet (in der Wire-Token).
+/// Property key for the permissions identity (in the wire token).
 pub const PROP_PSK_PERMISSIONS_ID: &str = "dds.psk.permissions_id";
 
-/// PSK-AccessControl-Plugin. Halt-Container ist das gleiche
-/// `Permissions`-Struct wie der X.509-Pfad — nur der Loader unterscheidet
-/// sich (kein S/MIME-Decode).
+/// PSK access-control plugin. The holding container is the same
+/// `Permissions` struct as the X.509 path — only the loader differs
+/// (no S/MIME decode).
 pub struct PskPermissionsAccessControl {
     next_handle: AtomicU64,
     slots: BTreeMap<PermissionsHandle, Slot>,
@@ -57,9 +57,9 @@ pub struct PskPermissionsAccessControl {
 struct Slot {
     subject_name: String,
     permissions: Permissions,
-    /// Optional: Domain-Level Governance. Wird hier nur fuer
-    /// Spec-Compliance abgespeichert; aktive Filter (Discovery-Protect,
-    /// rtps_protection) liegen im PSK-Crypto-Plugin auf dem Wire-Pfad.
+    /// Optional: domain-level governance. Stored here only for
+    /// spec compliance; active filters (discovery-protect,
+    /// rtps_protection) live in the PSK crypto plugin on the wire path.
     #[allow(dead_code)]
     governance: Option<Governance>,
 }
@@ -71,7 +71,7 @@ impl Default for PskPermissionsAccessControl {
 }
 
 impl PskPermissionsAccessControl {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -84,8 +84,8 @@ impl PskPermissionsAccessControl {
         self.next_handle.fetch_add(1, Ordering::Relaxed) + 1
     }
 
-    /// Programmatischer Constructor — registriert eine vor-geparste
-    /// Permissions-Struktur fuer einen Subject.
+    /// Programmatic constructor — registers a pre-parsed
+    /// permissions structure for a subject.
     pub fn register(
         &mut self,
         subject_name: String,
@@ -104,10 +104,10 @@ impl PskPermissionsAccessControl {
         handle
     }
 
-    /// Erzeugt ein Wire-PermissionsToken im PSK-Variant
-    /// (`DDS:Access:PSK:Permissions:1.2`). Der Token-Body propagiert
-    /// nur die `permissions_id` — die XML selbst wird nicht ueber die
-    /// Wire geschickt (S/MIME-Wrap fehlt im PSK-Pfad).
+    /// Creates a wire PermissionsToken in the PSK variant
+    /// (`DDS:Access:PSK:Permissions:1.2`). The token body propagates
+    /// only the `permissions_id` — the XML itself is not sent over the
+    /// wire (the S/MIME wrap is missing on the PSK path).
     #[must_use]
     pub fn build_permissions_token(permissions_id: &str) -> alloc::vec::Vec<u8> {
         DataHolder::new(CLASS_ID_PSK_PERMISSIONS)
@@ -156,13 +156,13 @@ impl AccessControlPlugin for PskPermissionsAccessControl {
         let xml = props.get(PROP_PSK_PERMISSIONS_XML).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::InvalidConfiguration,
-                "psk-access: fehlt dds.sec.access.psk_permissions",
+                "psk-access: missing dds.sec.access.psk_permissions",
             )
         })?;
         let subject = props.get(PROP_PSK_SUBJECT_NAME).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::InvalidConfiguration,
-                "psk-access: fehlt dds.sec.access.subject_name",
+                "psk-access: missing dds.sec.access.subject_name",
             )
         })?;
         let perms = parse_permissions_xml(xml).map_err(|e| {
@@ -191,22 +191,22 @@ impl AccessControlPlugin for PskPermissionsAccessControl {
         remote_permissions_token: &[u8],
         remote_credential: &[u8],
     ) -> SecurityResult<PermissionsHandle> {
-        // Spec §10.8 — Remote-Token enthaelt nur die Permissions-ID
-        // (kein S/MIME-Doc); das tatsaechliche Permissions-XML kommt
-        // im `remote_credential` (UTF-8). Im PSK-Pfad vertrauen wir
-        // der Bindung weil die Authentication-Schicht den Peer ueber
-        // den Pre-Shared-Key bereits validiert hat.
+        // Spec §10.8 — the remote token contains only the permissions ID
+        // (no S/MIME doc); the actual permissions XML comes
+        // in the `remote_credential` (UTF-8). On the PSK path we trust
+        // the binding because the authentication layer has already
+        // validated the peer via the pre-shared key.
         let dh = DataHolder::from_cdr_le(remote_permissions_token).map_err(|_| {
             SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "psk-access: remote-PermissionsToken nicht parsbar",
+                "psk-access: remote PermissionsToken not parseable",
             )
         })?;
         if dh.class_id != CLASS_ID_PSK_PERMISSIONS {
             return Err(SecurityError::new(
                 SecurityErrorKind::AccessDenied,
                 alloc::format!(
-                    "psk-access: remote-PermissionsToken hat falsche class_id '{}'",
+                    "psk-access: remote PermissionsToken has wrong class_id '{}'",
                     dh.class_id
                 ),
             ));
@@ -214,7 +214,7 @@ impl AccessControlPlugin for PskPermissionsAccessControl {
         let xml = core::str::from_utf8(remote_credential).map_err(|_| {
             SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "psk-access: remote_credential ist kein UTF-8",
+                "psk-access: remote_credential is not UTF-8",
             )
         })?;
         let perms = parse_permissions_xml(xml).map_err(|e| {
@@ -239,7 +239,7 @@ impl AccessControlPlugin for PskPermissionsAccessControl {
         let (_, g) = self.grant(perms).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "psk-access: unbekannter PermissionsHandle",
+                "psk-access: unknown PermissionsHandle",
             )
         })?;
         Ok(decide(g, topic_name, true))
@@ -253,7 +253,7 @@ impl AccessControlPlugin for PskPermissionsAccessControl {
         let (_, g) = self.grant(perms).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "psk-access: unbekannter PermissionsHandle",
+                "psk-access: unknown PermissionsHandle",
             )
         })?;
         Ok(decide(g, topic_name, false))
@@ -286,28 +286,28 @@ impl AccessControlPlugin for PskPermissionsAccessControl {
 // PSK-Profile-Bundle (Spec §10.7-§10.9)
 // ---------------------------------------------------------------------
 
-/// Bundle der drei PSK-Plugins fuer einen einfachen Caller-Pfad.
-/// Spec-Ref: §10.7 Auth, §10.8 Access, §10.9 Crypto.
+/// Bundle of the three PSK plugins for a simple caller path.
+/// Spec ref: §10.7 auth, §10.8 access, §10.9 crypto.
 pub struct PskProfile {
-    /// Authentication-Plugin (`DDS:Auth:PSK:1.2`).
+    /// Authentication plugin (`DDS:Auth:PSK:1.2`).
     pub auth: PskAuthenticationPlugin,
-    /// Access-Control-Plugin (`DDS:Access:PSK:Permissions:1.2`).
+    /// Access-control plugin (`DDS:Access:PSK:Permissions:1.2`).
     pub access_control: PskPermissionsAccessControl,
-    /// Crypto-Plugin (`DDS:Crypto:PSK:AES-GCM-GMAC:1.2`).
+    /// Crypto plugin (`DDS:Crypto:PSK:AES-GCM-GMAC:1.2`).
     pub crypto: PskCryptoPlugin,
 }
 
 impl PskProfile {
-    /// Erzeugt ein PSK-Profile-Bundle. Konfiguriert:
+    /// Creates a PSK profile bundle. Configures:
     ///
-    /// 1. Authentication mit `(identity_id, pre_shared_key)`.
-    /// 2. Access-Control mit `governance_xml` (optional) +
-    ///    `permissions_xml` (plain, ohne S/MIME-Wrap).
-    /// 3. Crypto mit `Aes128Gcm` (Default-Suite) und `psk_id=1`.
+    /// 1. Authentication with `(identity_id, pre_shared_key)`.
+    /// 2. Access control with `governance_xml` (optional) +
+    ///    `permissions_xml` (plain, without an S/MIME wrap).
+    /// 3. Crypto with `Aes128Gcm` (default suite) and `psk_id=1`.
     ///
     /// # Errors
-    /// Konfigurations-/XML-Fehler werden als
-    /// [`zerodds_security::SecurityError`] durchgereicht.
+    /// Configuration/XML errors are passed through as
+    /// [`zerodds_security::SecurityError`].
     pub fn with_pre_shared_key(
         identity_id: &str,
         key: alloc::vec::Vec<u8>,

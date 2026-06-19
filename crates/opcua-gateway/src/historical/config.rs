@@ -1,69 +1,69 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Historical-Variable-Configuration — Spec §9.3.4.4 Variable-
-//! Attribute-Setzungen.
+//! Historical variable configuration — Spec §9.3.4.4 variable
+//! attribute settings.
 //!
-//! Spec normativ:
-//! * `Historizing` Attribut = `true`.
-//! * `AccessLevel` muss das `HistoryRead`-Bit enthalten.
-//! * Optional: `HasHistoricalConfiguration`-Reference auf eine
-//!   HA-Configuration-Node, die fuer alle Variables des selben
-//!   Topics konsistent sein muss.
+//! Spec-normative:
+//! * `Historizing` attribute = `true`.
+//! * `AccessLevel` must contain the `HistoryRead` bit.
+//! * Optional: `HasHistoricalConfiguration` reference to an
+//!   HA configuration node that must be consistent for all variables
+//!   of the same topic.
 
 use alloc::string::String;
 
-/// `HistoryRead`-Bit aus dem AccessLevel-Bitfield (OPCUA-03 §5.6.1
+/// `HistoryRead` bit from the AccessLevel bitfield (OPCUA-03 §5.6.1
 /// Tab 8 — `HistoryRead = 0x04`).
 pub const HISTORY_READ_BIT: u8 = 0x04;
 
-/// `CurrentRead`-Bit (`0x01`) — wird parallel mit HistoryRead gesetzt,
-/// damit Standard-Read und HistoryRead beide funktionieren.
+/// `CurrentRead` bit (`0x01`) — set in parallel with HistoryRead,
+/// so that standard read and HistoryRead both work.
 pub const CURRENT_READ_BIT: u8 = 0x01;
 
-/// AccessLevel-Wrapper fuer das OPC-UA `AccessLevel`-Attribut.
+/// AccessLevel wrapper for the OPC-UA `AccessLevel` attribute.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct AccessLevel(pub u8);
 
 impl AccessLevel {
-    /// Default-AccessLevel fuer ein Historical-Variable: CurrentRead +
-    /// HistoryRead. Spec §9.3.4.4 zwingend.
+    /// Default AccessLevel for a historical variable: CurrentRead +
+    /// HistoryRead. Mandatory per Spec §9.3.4.4.
     #[must_use]
     pub const fn historical_default() -> Self {
         Self(CURRENT_READ_BIT | HISTORY_READ_BIT)
     }
 
-    /// `true` wenn das HistoryRead-Bit gesetzt ist (Spec §9.3.4.4).
+    /// `true` if the HistoryRead bit is set (Spec §9.3.4.4).
     #[must_use]
     pub const fn allows_history_read(self) -> bool {
         (self.0 & HISTORY_READ_BIT) != 0
     }
 
-    /// `true` wenn das CurrentRead-Bit gesetzt ist.
+    /// `true` if the CurrentRead bit is set.
     #[must_use]
     pub const fn allows_current_read(self) -> bool {
         (self.0 & CURRENT_READ_BIT) != 0
     }
 }
 
-/// Symbolische Reference zu einer HA-Configuration-Node (Spec
+/// Symbolic reference to an HA configuration node (Spec
 /// §9.3.4.4 optional).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct HistoricalConfigRef {
-    /// BrowseName der HA-Configuration-Node (z.B. "HA Configuration").
+    /// BrowseName of the HA configuration node (e.g. "HA Configuration").
     pub browse_name: String,
 }
 
-/// Pro-Variable-Konfiguration fuer Historical Data Reading. Wird vom
-/// Caller aus dem Walker-NodeSpec (Spec §9.2) angereichert: das
-/// Walker-Modul liefert die Variable; dieses Modul liefert die
-/// `Historizing`/`AccessLevel`/`HasHistoricalConfiguration`-
-/// Decorations.
+/// Per-variable configuration for historical data reading. Enriched by
+/// the caller from the walker NodeSpec (Spec §9.2): the
+/// walker module provides the variable; this module provides the
+/// `Historizing`/`AccessLevel`/`HasHistoricalConfiguration`
+/// decorations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistoricalNodeConfig {
     /// Spec §9.3.4.4: `Historizing = true`.
     pub historizing: bool,
-    /// Spec §9.3.4.4: AccessLevel mit HistoryRead-Bit.
+    /// Spec §9.3.4.4: AccessLevel with HistoryRead bit.
     pub access_level: AccessLevel,
     /// Spec §9.3.4.4 optional: HasHistoricalConfiguration-Reference.
     pub historical_config: Option<HistoricalConfigRef>,
@@ -80,11 +80,11 @@ impl Default for HistoricalNodeConfig {
 }
 
 impl HistoricalNodeConfig {
-    /// Spec-Konformitaet: liefert `Ok(())` wenn `Historizing == true`
-    /// UND HistoryRead im AccessLevel gesetzt ist.
+    /// Spec conformance: returns `Ok(())` if `Historizing == true`
+    /// AND HistoryRead is set in the AccessLevel.
     ///
     /// # Errors
-    /// `HistoricalConfigError` mit dem fehlenden Spec-Aspekt.
+    /// `HistoricalConfigError` with the missing spec aspect.
     pub fn validate(&self) -> Result<(), HistoricalConfigError> {
         if !self.historizing {
             return Err(HistoricalConfigError::HistorizingNotSet);
@@ -96,12 +96,12 @@ impl HistoricalNodeConfig {
     }
 }
 
-/// Spec-Konformitaets-Fehler.
+/// Spec conformance error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistoricalConfigError {
-    /// `Historizing == false` — Spec §9.3.4.4 verlangt `true`.
+    /// `Historizing == false` — Spec §9.3.4.4 requires `true`.
     HistorizingNotSet,
-    /// `AccessLevel` enthaelt das `HistoryRead`-Bit nicht.
+    /// `AccessLevel` does not contain the `HistoryRead` bit.
     HistoryReadBitMissing,
 }
 

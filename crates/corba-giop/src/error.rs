@@ -1,57 +1,57 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! GIOP Wire-Codec-Fehler.
+//! GIOP wire codec errors.
 
 use alloc::string::String;
 
 use zerodds_cdr::{DecodeError, EncodeError};
 
-/// Result-Alias.
+/// Result alias.
 pub type GiopResult<T> = Result<T, GiopError>;
 
-/// Fehler im GIOP-Wire-Codec.
+/// Error in the GIOP wire codec.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GiopError {
-    /// Header-Magic ist nicht `"GIOP"`. Spec §15.4.1.
+    /// Header magic is not `"GIOP"`. Spec §15.4.1.
     InvalidMagic([u8; 4]),
-    /// GIOP-Major/Minor wird vom Codec nicht unterstuetzt.
+    /// GIOP major/minor is not supported by the codec.
     UnsupportedVersion {
         /// Major.
         major: u8,
         /// Minor.
         minor: u8,
     },
-    /// `message_type`-Octet ausserhalb 0..=7 (Spec §15.4.1 Tab 15-1).
+    /// `message_type` octet outside 0..=7 (spec §15.4.1 Tab 15-1).
     UnknownMessageType(u8),
-    /// `reply_status`-Wert ausserhalb der 6 Spec-Werte
-    /// (Spec §15.4.3.1).
+    /// `reply_status` value outside the 6 spec values
+    /// (spec §15.4.3.1).
     UnknownReplyStatus(u32),
-    /// `locate_status`-Wert ausserhalb der 5 Spec-Werte
-    /// (Spec §15.4.6.1).
+    /// `locate_status` value outside the 5 spec values
+    /// (spec §15.4.6.1).
     UnknownLocateStatus(u32),
-    /// `addressing_disposition`-Wert ausserhalb 0..=2 (Spec §15.4.2.2).
+    /// `addressing_disposition` value outside 0..=2 (spec §15.4.2.2).
     UnknownAddressingDisposition(u16),
-    /// Fragment-Bit gesetzt aber GIOP-Version unterstuetzt keine
-    /// Fragments (Spec §15.4.9: GIOP 1.0 hat kein Fragment-Support).
+    /// Fragment bit set but the GIOP version does not support
+    /// fragments (spec §15.4.9: GIOP 1.0 has no fragment support).
     FragmentNotSupported {
         /// Major.
         major: u8,
         /// Minor.
         minor: u8,
     },
-    /// Body-Groesse ueberschreitet das `message_size`-Feld.
+    /// Body size exceeds the `message_size` field.
     BodyTooLarge {
-        /// Body-Groesse.
+        /// Body size.
         body_size: usize,
-        /// Header-Limit.
+        /// Header limit.
         message_size_field: u32,
     },
-    /// CDR-Decode-Fehler.
+    /// CDR decode error.
     Decode(DecodeError),
-    /// CDR-Encode-Fehler.
+    /// CDR encode error.
     Encode(EncodeError),
-    /// Allgemeiner Wire-Format-Fehler mit Diagnose-String.
+    /// General wire-format error with a diagnostic string.
     Malformed(String),
 }
 

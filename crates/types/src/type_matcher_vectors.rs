@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Cross-Impl-Testvektoren fuer TypeMatcher (WP 1.6 T5).
+//! Cross-impl test vectors for TypeMatcher (WP 1.6 T5).
 //!
-//! Gepraegt durch Cyclone DDS + eProsima Fast-DDS als Referenz:
-//! welche Publication↔Subscription-Kombinationen matchen in deren
-//! Implementierung, und welche nicht? Wir pruefen jeden Case in beide
-//! Richtungen (Writer-Struct/Reader-Struct getauscht), um Asymmetrien
-//! zu finden.
+//! Shaped by Cyclone DDS + eProsima Fast-DDS as a reference:
+//! which publication↔subscription combinations match in their
+//! implementation, and which do not? We check each case in both
+//! directions (writer struct/reader struct swapped) to find
+//! asymmetries.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -28,7 +28,7 @@ fn default_tce() -> TypeConsistencyEnforcement {
 // Primitives
 // ---------------------------------------------------------------------
 
-/// Identische Primitives matchen immer.
+/// Identical primitives always match.
 #[test]
 fn identical_int32_matches() {
     let tce = default_tce();
@@ -37,8 +37,8 @@ fn identical_int32_matches() {
     assert!(m.match_types(&w, &w, &reg()).is_match());
 }
 
-/// int16 → int32 mit default TCE (AllowTypeCoercion, kein
-/// PreventWidening): Cyclone/Fast-DDS matchen hier, wir auch.
+/// int16 → int32 with default TCE (AllowTypeCoercion, no
+/// PreventWidening): Cyclone/Fast-DDS match here, so do we.
 #[test]
 fn widening_int16_to_int32_matches_default_tce() {
     let tce = default_tce();
@@ -48,7 +48,7 @@ fn widening_int16_to_int32_matches_default_tce() {
     assert!(m.match_types(&w, &r, &reg()).is_match());
 }
 
-/// Narrowing int32 → int16: alle Impls lehnen ab.
+/// Narrowing int32 → int16: all impls reject.
 #[test]
 fn narrowing_int32_to_int16_mismatch() {
     let tce = default_tce();
@@ -58,7 +58,7 @@ fn narrowing_int32_to_int16_mismatch() {
     assert!(!m.match_types(&w, &r, &reg()).is_match());
 }
 
-/// Float32 → Float64 Widening, akzeptiert mit default TCE.
+/// Float32 → Float64 widening, accepted with default TCE.
 #[test]
 fn widening_float_matches() {
     let tce = default_tce();
@@ -68,7 +68,7 @@ fn widening_float_matches() {
     assert!(m.match_types(&w, &r, &reg()).is_match());
 }
 
-/// Cross-Type float ↔ int wird nicht gecoerct.
+/// Cross-type float ↔ int is not coerced.
 #[test]
 fn float_int_cross_type_mismatch() {
     let tce = default_tce();
@@ -79,11 +79,11 @@ fn float_int_cross_type_mismatch() {
 }
 
 // ---------------------------------------------------------------------
-// Strings mit Bounds
+// Strings with bounds
 // ---------------------------------------------------------------------
 
-/// String8-Bounds werden per default IGNORIERT (TCE-default).
-/// Writer-bound 256 > Reader-bound 64 → trotzdem Match.
+/// String8 bounds are IGNORED by default (TCE default).
+/// Writer-bound 256 > reader-bound 64 → match anyway.
 #[test]
 fn string_bounds_ignored_by_default_tce() {
     let tce = default_tce();
@@ -93,7 +93,7 @@ fn string_bounds_ignored_by_default_tce() {
     assert!(m.match_types(&w, &r, &reg()).is_match());
 }
 
-/// Wenn `ignore_string_bounds=false`, muss Writer-bound ≤ Reader-bound.
+/// If `ignore_string_bounds=false`, writer bound must be ≤ reader bound.
 #[test]
 fn string_bound_overflow_rejected_when_strict() {
     let mut tce = default_tce();
@@ -104,7 +104,7 @@ fn string_bound_overflow_rejected_when_strict() {
     assert!(!m.match_types(&w, &r, &reg()).is_match());
 }
 
-/// String8 ↔ String16 (UTF-8 vs UTF-16) sind spec-fremd, kein Match.
+/// String8 ↔ String16 (UTF-8 vs UTF-16) are spec-foreign, no match.
 #[test]
 fn string8_vs_string16_mismatch() {
     let tce = default_tce();
@@ -118,8 +118,8 @@ fn string8_vs_string16_mismatch() {
 // Collections
 // ---------------------------------------------------------------------
 
-/// sequence<int32, 100> ↔ sequence<int32, 10>: bounds ignoriert per
-/// default, akzeptiert.
+/// sequence<int32, 100> ↔ sequence<int32, 10>: bounds ignored by
+/// default, accepted.
 #[test]
 fn sequence_bounds_ignored_by_default_tce() {
     use crate::type_identifier::PlainCollectionHeader;
@@ -139,7 +139,7 @@ fn sequence_bounds_ignored_by_default_tce() {
     assert!(m.match_types(&w, &r, &reg()).is_match());
 }
 
-/// Array-Bounds sind strukturell, nicht policy-gefiltert.
+/// Array bounds are structural, not policy-filtered.
 #[test]
 fn array_different_bounds_mismatch() {
     use crate::type_identifier::PlainCollectionHeader;
@@ -163,7 +163,7 @@ fn array_different_bounds_mismatch() {
 // TCE-Kombinationen
 // ---------------------------------------------------------------------
 
-/// DisallowTypeCoercion + Default-Flags: Widening blockiert.
+/// DisallowTypeCoercion + default flags: widening blocked.
 #[test]
 fn disallow_coercion_blocks_widening() {
     let mut tce = default_tce();
@@ -201,8 +201,8 @@ fn force_validation_beats_allow_coercion() {
 // Cross-Encoding Small ↔ Large (Round-2 Review #2)
 // ---------------------------------------------------------------------
 
-/// SequenceSmall mit bound=50 ↔ SequenceLarge mit bound=50 sind semantisch
-/// gleich — nur das Wire-Encoding unterscheidet sich.
+/// SequenceSmall with bound=50 ↔ SequenceLarge with bound=50 are semantically
+/// equal — only the wire encoding differs.
 #[test]
 fn sequence_small_large_cross_encoding_matches() {
     use crate::type_identifier::PlainCollectionHeader;
@@ -223,7 +223,7 @@ fn sequence_small_large_cross_encoding_matches() {
     assert!(m.match_types(&r, &w, &reg()).is_match());
 }
 
-/// ArraySmall[3] ↔ ArrayLarge[3] matchen ueber die normalisierten Bounds.
+/// ArraySmall[3] ↔ ArrayLarge[3] match over the normalized bounds.
 #[test]
 fn array_small_large_cross_encoding_matches() {
     use crate::type_identifier::PlainCollectionHeader;
@@ -243,7 +243,7 @@ fn array_small_large_cross_encoding_matches() {
     assert!(m.match_types(&w, &r, &reg()).is_match());
 }
 
-/// MapSmall(bound=8) ↔ MapLarge(bound=8) mit gleichem Key/Value.
+/// MapSmall(bound=8) ↔ MapLarge(bound=8) with the same key/value.
 #[test]
 fn map_small_large_cross_encoding_matches() {
     use crate::type_identifier::{CollectionElementFlag, PlainCollectionHeader};
@@ -269,10 +269,10 @@ fn map_small_large_cross_encoding_matches() {
 }
 
 // ---------------------------------------------------------------------
-// Unsigned Widening (Round-2 Review #4)
+// Unsigned widening (Round-2 Review #4)
 // ---------------------------------------------------------------------
 
-/// UInt8 → UInt32 mit default TCE akzeptiert (lossless).
+/// UInt8 → UInt32 accepted with default TCE (lossless).
 #[test]
 fn uint8_to_uint32_widening_matches() {
     let tce = default_tce();
@@ -282,7 +282,7 @@ fn uint8_to_uint32_widening_matches() {
     assert!(m.match_types(&w, &r, &reg()).is_match());
 }
 
-/// UInt16 → UInt64 Widening.
+/// UInt16 → UInt64 widening.
 #[test]
 fn uint16_to_uint64_widening_matches() {
     let tce = default_tce();

@@ -12,48 +12,48 @@
 //! - **OMG Time Service 1.1** §1.3.4 (UTO — Universal Time Object)
 //! - **OMG Time Service 1.1** §1.3.5 (TIO — Time Interval Object)
 //! - **OMG Time Service 1.1** §2.1 (TimeService Interface)
-//! - **OMG Time Service 1.1** §2.2 + §2.4 — TimerEventService: aus
-//!   ZeroDDS-Scope ausgenommen (verlangt CORBA-Event-Channel-ORB);
-//!   `corba-ccm` adressiert das im CCM-Container-PSM.
+//! - **OMG Time Service 1.1** §2.2 + §2.4 — TimerEventService: excluded
+//!   from the ZeroDDS scope (requires a CORBA event-channel ORB);
+//!   `corba-ccm` addresses it in the CCM container PSM.
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 1 — Primitives. Standalone-Library; ZeroDDS verbraucht
-//! die Crate intern nicht (DDS-DCPS hat sein eigenes `Time_t` mit
-//! 8-Byte-Wire-Format gemaess DDS-DCPS §2.3.3, byte-distinkt zu OMG-
-//! Time-Service `UtcT` mit 16-Byte-Wire-Format und 1582-Epoch).
-//! Konsumenten sind End-User-Applikationen die OMG-Time-Service-1.1-
-//! Konformitaet brauchen (z.B. Tutorial `dds-warehouse/02-time-sync`).
+//! Layer 1 — primitives. Standalone library; ZeroDDS does not
+//! consume the crate internally (DDS-DCPS has its own `Time_t` with
+//! an 8-byte wire format per DDS-DCPS §2.3.3, byte-distinct from the OMG
+//! Time Service `UtcT` with a 16-byte wire format and a 1582 epoch).
+//! Consumers are end-user applications that need OMG-Time-Service-1.1
+//! conformance (e.g. the tutorial `dds-warehouse/02-time-sync`).
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
 //! **TimeBase** ([`time_base`]):
-//! - [`TimeT`] — 64-bit 100ns-Tick-Counter (Spec §1.3.2.1).
-//! - [`time_base::InaccuracyT`] / [`TdfT`] — 48-bit Inaccuracy + 16-bit
-//!   Time-Displacement-Factor.
-//! - [`UtcT`] — 16-Byte-Wire-Struct mit `to_wire`/`from_wire` Roundtrip.
-//! - [`IntervalT`] — Lower/Upper-bound mit Validation.
-//! - [`time_base::current_time`] — Wall-Clock in TimeT-Format
-//!   (no_std-Stub liefert `0`).
+//! - [`TimeT`] — 64-bit 100ns tick counter (spec §1.3.2.1).
+//! - [`time_base::InaccuracyT`] / [`TdfT`] — 48-bit inaccuracy + 16-bit
+//!   time-displacement factor.
+//! - [`UtcT`] — 16-byte wire struct with `to_wire`/`from_wire` roundtrip.
+//! - [`IntervalT`] — lower/upper bound with validation.
+//! - [`time_base::current_time`] — wall clock in TimeT format
+//!   (the no_std stub returns `0`).
 //! - [`time_base::UTC_EPOCH_TO_UNIX_TICKS`] / [`time_base::TICKS_PER_SECOND`].
 //!
 //! **UTO** ([`uto`]):
-//! - [`Uto`] — Universal Time Object mit Operations (`absolute_time`,
+//! - [`Uto`] — Universal Time Object with operations (`absolute_time`,
 //!   `compare_time`, `time_to_interval`, `interval`).
-//! - [`ComparisonType::{IntervalC, MidC}`] — Vergleichs-Modus.
+//! - [`ComparisonType::{IntervalC, MidC}`] — comparison mode.
 //! - [`TimeComparison::{EqualTo, LessThan, GreaterThan, Indeterminate}`].
 //!
 //! **TIO** ([`tio`]):
-//! - [`Tio`] — Time Interval Object mit Operations (`time_interval`,
+//! - [`Tio`] — Time Interval Object with operations (`time_interval`,
 //!   `overlaps`, `contains`, `spans`).
-//! - [`OverlapType`] — Overlap-Klassifizierung.
+//! - [`OverlapType`] — overlap classification.
 //!
 //! **Service** ([`service`]):
 //! - [`TimeService`] — `universal_time` / `secure_universal_time` /
 //!   `new_universal_time` / `uto_from_utc` / `new_interval`.
-//! - [`TimeUnavailable`] — Exception-Type.
+//! - [`TimeUnavailable`] — exception type.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust
 //! use zerodds_time_service::{TimeService, ComparisonType, TimeComparison};

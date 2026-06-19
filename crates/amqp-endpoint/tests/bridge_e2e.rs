@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// E2E-Tests fuer `zerodds-amqp-bridged`. Wir spawnen einen
-// Mock-AMQP-Broker (TCP-Listener), starten den Daemon im --once-Mode,
-// und verifizieren dass der Bridge-Pump den Wire-Spec ausgibt:
-// AMQP-Protocol-Header → OPEN → BEGIN → ATTACH → TRANSFER/FLOW.
+// E2E tests for `zerodds-amqp-bridged`. We spawn a
+// mock AMQP broker (TCP listener), start the daemon in --once mode,
+// and verify that the bridge pump emits the wire spec:
+// AMQP protocol header → OPEN → BEGIN → ATTACH → TRANSFER/FLOW.
 //
 // Spec: `docs/specs/zerodds-amqp-bridge-daemon-1.0.md` §12.2.
 
@@ -49,22 +49,22 @@ impl Drop for DaemonGuard {
     }
 }
 
-/// Terminiert den Daemon-Subprocess so dass er noch seine atexit-Handler
-/// laufen lassen kann — insb. den LLVM-Coverage-`__llvm_profile_write_file`,
-/// damit das `.profraw` vollständig geschrieben wird. Ein hartes
-/// `child.kill()` (SIGKILL) hinterlässt unter `cargo llvm-cov` korrupte
-/// Profil-Header und lässt den späteren `llvm-profdata merge` fehlschlagen
+/// Terminates the daemon subprocess so it can still run its atexit
+/// handlers — in particular the LLVM coverage `__llvm_profile_write_file`,
+/// so that the `.profraw` is written completely. A hard
+/// `child.kill()` (SIGKILL) leaves corrupt profile headers under
+/// `cargo llvm-cov` and makes the subsequent `llvm-profdata merge` fail
 /// ("invalid instrumentation profile data (file header is corrupt)").
 ///
-/// Auf Unix: SIGTERM + Wait mit 3-s-Budget; bei Timeout fällt auf SIGKILL
-/// zurück. Auf Windows gibt es nur `child.kill()` (TerminateProcess).
+/// On Unix: SIGTERM + wait with a 3-second budget; on timeout it falls
+/// back to SIGKILL. On Windows there is only `child.kill()` (TerminateProcess).
 fn terminate_child_gracefully(child: &mut Child) {
     #[cfg(unix)]
     {
         let pid = child.id() as i32;
-        // SAFETY: `child.id()` ist ein gültiger PID solange der Child
-        // nicht schon gewaitet wurde; Drop ist exklusiv. `libc::kill`
-        // mit SIGTERM ist immer call-safe.
+        // SAFETY: `child.id()` is a valid PID as long as the child
+        // has not already been waited on; Drop is exclusive. `libc::kill`
+        // with SIGTERM is always call-safe.
         unsafe {
             libc::kill(pid, libc::SIGTERM);
         }
@@ -81,7 +81,7 @@ fn terminate_child_gracefully(child: &mut Child) {
                 Err(_) => break,
             }
         }
-        // Fallback wenn der Daemon nicht innerhalb 3 s sauber endet.
+        // Fallback if the daemon does not exit cleanly within 3 s.
         let _ = child.kill();
         let _ = child.wait();
     }
@@ -112,12 +112,12 @@ fn spawn_daemon_with_topic(broker_addr: &str, topic_arg: &str) -> DaemonGuard {
     DaemonGuard { child }
 }
 
-/// Mock-AMQP-Broker: akzeptiert eine Verbindung und sammelt alle
-/// empfangenen Wire-Bytes bis EOF; spielt zurueck:
-/// 1) Protocol-Header
+/// Mock AMQP broker: accepts a connection and collects all
+/// received wire bytes until EOF; plays back:
+/// 1) protocol header
 /// 2) OPEN (echo descriptor)
 /// 3) BEGIN
-/// 4) ATTACH per geschickter ATTACH
+/// 4) ATTACH in response to the sent ATTACH
 fn run_mock_broker(listener: TcpListener) -> Vec<u8> {
     let (mut stream, _peer) = listener.accept().expect("accept");
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));

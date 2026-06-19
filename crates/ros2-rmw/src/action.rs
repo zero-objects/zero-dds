@@ -5,19 +5,19 @@
 //!
 //! Spec: `zerodds-ros2-bridge-1.0.md` §4.3 (= REP-2003 §3.5).
 //!
-//! Eine ROS-2-Action `/foo/bar` mit `Foo.action` wird auf **fuenf**
-//! DDS-Topics abgebildet:
+//! A ROS-2 action `/foo/bar` with `Foo.action` is mapped to **five**
+//! DDS topics:
 //! * **goal**:      `rq/<base>/_action/send_goalRequest` (Reliable+KeepLast)
 //! * **cancel**:    `rq/<base>/_action/cancel_goalRequest` (Reliable+KeepLast)
 //! * **result**:    `rr/<base>/_action/get_resultReply` (Reliable+KeepLast)
 //! * **feedback**:  `rt/<base>/_action/feedback` (Reliable+KeepLast)
 //! * **status**:    `rt/<base>/_action/status` (Reliable+TransientLocal)
 //!
-//! Plus: `goal_id` (16-Byte UUID) korreliert die fuenf Topics.
+//! Plus: `goal_id` (16-byte UUID) correlates the five topics.
 
 use alloc::string::String;
 
-/// Topic-Name-Set fuer eine ROS-2-Action.
+/// Topic-name set for a ROS-2 action.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionTopics {
     /// `rq/<base>/_action/send_goalRequest`-Topic.
@@ -33,7 +33,7 @@ pub struct ActionTopics {
 }
 
 impl ActionTopics {
-    /// Generiere alle fuenf Topic-Namen aus dem ROS-2-Action-Path.
+    /// Generates all five topic names from the ROS-2 action path.
     /// Spec §4.3.
     #[must_use]
     pub fn from_action(ros_action_name: &str) -> Self {
@@ -47,13 +47,13 @@ impl ActionTopics {
         }
     }
 
-    /// Anzahl Topics — exakt 5 per Spec §4.3.
+    /// Number of topics — exactly 5 per Spec §4.3.
     #[must_use]
     pub const fn count(&self) -> usize {
         5
     }
 
-    /// Iteriere alle 5 Topic-Namen in fester Reihenfolge.
+    /// Iterates all 5 topic names in a fixed order.
     #[must_use]
     pub fn all_topics(&self) -> [&str; 5] {
         [

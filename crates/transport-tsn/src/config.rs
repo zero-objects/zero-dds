@@ -2,22 +2,22 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DDS-TSN PIM Configuration + PSM (XML/JSON) Loader.
 //!
-//! Spec-Quelle: OMG DDS-TSN 1.0 §7.2.1-§7.2.2 (DDS Application +
-//! Deployment Configuration Tables 7.1-7.14: QoS-Library,
+//! Spec source: OMG DDS-TSN 1.0 §7.2.1-§7.2.2 (DDS Application +
+//! Deployment Configuration Tables 7.1-7.14: QoS library,
 //! DomainLibrary, ApplicationLibrary, DeploymentLibrary) + §7.3
-//! (Wire-Representation in XML/JSON).
+//! (wire representation in XML/JSON).
 //!
-//! # Schicht-Disziplin
+//! # Layer discipline
 //!
-//! Das PIM-Modell ([`TsnConfiguration`]) ist die Wahrheit. XML
-//! ([`parse_xml_config`]) und JSON ([`render_json_config`]) sind
-//! reine Repraesentations-Konvertierungen — sie definieren keine
-//! eigenen Felder. YANG-PSM ist Caller-Layer (separate `yang`-Crate).
+//! The PIM model ([`TsnConfiguration`]) is the truth. XML
+//! ([`parse_xml_config`]) and JSON ([`render_json_config`]) are
+//! pure representation conversions — they do not define their
+//! own fields. The YANG PSM is the caller layer (separate `yang` crate).
 //!
-//! Cross-Ref:
-//! * `crates/xml/src/qos.rs` — DDS-XML 1.0 §7.3.2 QoS-Profile-Loader
-//!   (gleiche `roxmltree`-Backend-Wahl).
-//! * `crates/opcua-gateway/src/xml.rs` — Schwester-Loader fuer
+//! Cross-ref:
+//! * `crates/xml/src/qos.rs` — DDS-XML 1.0 §7.3.2 QoS profile loader
+//!   (same `roxmltree` backend choice).
+//! * `crates/opcua-gateway/src/xml.rs` — sister loader for
 //!   DDS-OPCUA 1.0 §10.
 
 use alloc::string::{String, ToString};
@@ -26,18 +26,18 @@ use core::fmt;
 
 use roxmltree::{Document, Node};
 
-/// Konfigurations-Loader-Fehler.
+/// Configuration loader error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigError {
-    /// XML-Parser-Fehler (mal-formed XML).
+    /// XML parser error (malformed XML).
     Parse(String),
-    /// Unerwartetes Wurzel-Element.
+    /// Unexpected root element.
     UnexpectedRoot(String),
-    /// Pflicht-Attribut fehlt.
+    /// Required attribute missing.
     MissingAttribute {
-        /// Element-Name.
+        /// Element name.
         element: String,
-        /// Attribut-Name.
+        /// Attribute name.
         attr: String,
     },
 }
@@ -57,33 +57,33 @@ impl fmt::Display for ConfigError {
 #[cfg(feature = "std")]
 impl std::error::Error for ConfigError {}
 
-/// Wurzel-Container fuer DDS-TSN-Configuration.
+/// Root container for the DDS-TSN configuration.
 ///
 /// Spec §7.2.1 Tab 7.1 + §7.2.2 Tab 7.2 (DDS Application + Deployment
 /// Configuration Tables).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TsnConfiguration {
-    /// QoS-Library — Spec Tab 7.3 (TSN-spezifische QoS-Profiles).
+    /// QoS library — Spec Tab 7.3 (TSN-specific QoS profiles).
     pub qos_library: TsnQosLibrary,
-    /// Domain-Library — Spec Tab 7.4.
+    /// Domain library — Spec Tab 7.4.
     pub domain_library: DomainLibrary,
-    /// Deployment-Library — Spec Tab 7.5 (Talker/Listener-Bindings).
+    /// Deployment library — Spec Tab 7.5 (talker/listener bindings).
     pub deployment_library: DeploymentLibrary,
 }
 
-/// Spec Tab 7.3 — TSN QoS-Library.
+/// Spec Tab 7.3 — TSN QoS library.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TsnQosLibrary {
-    /// Library-Name.
+    /// Library name.
     pub name: String,
-    /// Liste der TSN-QoS-Profiles.
+    /// List of the TSN QoS profiles.
     pub profiles: Vec<QosProfileEntry>,
 }
 
-/// Ein TSN QoS-Profile-Eintrag mit Verweis auf VLAN/PCP/DSCP.
+/// A TSN QoS profile entry referencing VLAN/PCP/DSCP.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QosProfileEntry {
-    /// Profile-Name.
+    /// Profile name.
     pub name: String,
     /// Spec Tab 7.21 — VLAN-ID (12-bit).
     pub vlan_id: Option<u16>,
@@ -95,60 +95,60 @@ pub struct QosProfileEntry {
     pub dscp: Option<u8>,
 }
 
-/// Spec Tab 7.4 — Domain-Library.
+/// Spec Tab 7.4 — domain library.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DomainLibrary {
-    /// Liste der Domain-Definitionen.
+    /// List of the domain definitions.
     pub domains: Vec<DomainEntry>,
 }
 
-/// Eine Domain-Library-Zeile.
+/// A domain library row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainEntry {
-    /// Domain-Id.
+    /// Domain ID.
     pub domain_id: u32,
-    /// Default-QoS-Profile-Name.
+    /// Default QoS profile name.
     pub default_profile: String,
 }
 
-/// Spec Tab 7.5 — Deployment-Library mit Talker/Listener-Bindings.
+/// Spec Tab 7.5 — deployment library with talker/listener bindings.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DeploymentLibrary {
-    /// Liste der Talker-Definitionen (siehe Spec Tab 7.15).
+    /// List of the talker definitions (see Spec Tab 7.15).
     pub talkers: Vec<TalkerEntry>,
-    /// Liste der Listener-Definitionen (siehe Spec Tab 7.24).
+    /// List of the listener definitions (see Spec Tab 7.24).
     pub listeners: Vec<ListenerEntry>,
 }
 
-/// Talker-Eintrag (Spec Tab 7.15).
+/// Talker entry (Spec Tab 7.15).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TalkerEntry {
-    /// Stream-Identifier (mac + unique_id).
+    /// Stream identifier (mac + unique_id).
     pub stream_id: String,
-    /// QoS-Profile-Reference.
+    /// QoS profile reference.
     pub qos_profile: String,
-    /// Topic-Name.
+    /// Topic name.
     pub topic: String,
 }
 
-/// Listener-Eintrag (Spec Tab 7.24).
+/// Listener entry (Spec Tab 7.24).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListenerEntry {
-    /// Stream-Identifier (mac + unique_id).
+    /// Stream identifier (mac + unique_id).
     pub stream_id: String,
-    /// Topic-Name.
+    /// Topic name.
     pub topic: String,
 }
 
-/// Spec §7.3 XML-Wire-Format-Loader.
+/// Spec §7.3 XML wire-format loader.
 ///
-/// Akzeptiert ein leichtgewichtiges Subset des Spec-XML-Schemas:
-/// `<dds_tsn>` als Root, darin `<qos_library>` mit `<qos_profile>`-
-/// Eintraegen, `<domain_library>` mit `<domain>`-Eintraegen,
-/// `<deployment_library>` mit `<talker>` / `<listener>`-Eintraegen.
+/// Accepts a lightweight subset of the spec XML schema:
+/// `<dds_tsn>` as root, with `<qos_library>` containing `<qos_profile>`
+/// entries, `<domain_library>` with `<domain>` entries,
+/// `<deployment_library>` with `<talker>` / `<listener>` entries.
 ///
 /// # Errors
-/// Liefert [`ConfigError`] bei mal-formed XML.
+/// Returns [`ConfigError`] on malformed XML.
 pub fn parse_xml_config(src: &str) -> Result<TsnConfiguration, ConfigError> {
     let doc = Document::parse(src).map_err(|e| ConfigError::Parse(e.to_string()))?;
     let root = doc.root_element();
@@ -258,17 +258,17 @@ fn child_text(node: Node<'_, '_>, name: &str) -> Option<String> {
         .and_then(|c| c.text().map(str::trim).map(str::to_string))
 }
 
-/// Spec §7.3 JSON-Wire-Format-Renderer.
+/// Spec §7.3 JSON wire-format renderer.
 ///
-/// Wir verwenden ein hand-gerolltes JSON-Format (ohne `serde-json`-
-/// Dep), das alle Felder von [`TsnConfiguration`] strukturiert
-/// ausgibt. Das Format ist deterministisch (Schluessel-Reihenfolge)
-/// und bytewise-konsistent — der Roundtrip
-/// `parse_xml_config -> render_json_config -> external-tooling` ist
-/// zaehlbar.
+/// We use a hand-rolled JSON format (without a `serde-json`
+/// dependency) that outputs all fields of [`TsnConfiguration`] in a
+/// structured way. The format is deterministic (key order)
+/// and byte-wise consistent — the roundtrip
+/// `parse_xml_config -> render_json_config -> external tooling` is
+/// countable.
 ///
 /// # Returns
-/// JSON-String (UTF-8) konform zu RFC 8259.
+/// JSON string (UTF-8) conforming to RFC 8259.
 #[must_use]
 pub fn render_json_config(cfg: &TsnConfiguration) -> String {
     let mut out = String::new();

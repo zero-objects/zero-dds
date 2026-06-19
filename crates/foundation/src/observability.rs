@@ -1,31 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Observability — strukturierte DDS-Events fuer Tracing und Metriken.
+//! Observability — structured DDS events for tracing and metrics.
 //!
-//! Liefert eine ZeroDDS-spezifische Event-Sprache plus einen
-//! schlanken `Sink`-Trait, ueber den Konsumenten Events abgreifen
-//! koennen.
+//! Provides a ZeroDDS-specific event vocabulary plus a lean `Sink`
+//! trait through which consumers can tap events.
 //!
-//! ## Design-Ziele
+//! ## Design goals
 //!
-//! 1. **Zero-Overhead by Default**: ohne Sink wird gar kein Event-Objekt
-//!    konstruiert (`with_sink(...)` ist die Opt-In-Stelle).
-//! 2. **Sync, allocation-light**: `Sink::record(&Event)` nimmt Events per
-//!    `&`, jeder Sink entscheidet selber ob er klont/serialisiert.
-//! 3. **Production-tauglich**: der mitgelieferte [`StderrJsonSink`]
-//!    schreibt JSON-Lines auf stderr — direkt verarbeitbar von
+//! 1. **Zero-Overhead by Default**: without a sink, no event object is
+//!    constructed at all (`with_sink(...)` is the opt-in point).
+//! 2. **Sync, allocation-light**: `Sink::record(&Event)` takes events by
+//!    `&`; each sink decides for itself whether to clone/serialize.
+//! 3. **Production-ready**: the bundled [`StderrJsonSink`] writes
+//!    JSON lines to stderr — directly consumable by
 //!    Vector/fluentd/Datadog/Loki/journald.
-//! 4. **OTel-Bruecke spaeter**: ein eigener Crate `dds-otel` (oder ein
-//!    `tracing-opentelemetry`-Adapter im Konsumenten) kann diesen
-//!    Sink-Trait implementieren und Events als OTLP-Spans schicken.
+//! 4. **OTel bridge later**: a separate `dds-otel` crate (or a
+//!    `tracing-opentelemetry` adapter in the consumer) can implement
+//!    this sink trait and ship events as OTLP spans.
 //!
-//! ## Event-Modell
+//! ## Event model
 //!
-//! Events sind grobgranular: ein Event pro Endpoint-Lifecycle-Aktion
-//! oder pro Sample-Pfad-Phase. Im Hot-Path (z.B. pro-Sample-Latency)
-//! benutzen wir **keine** Events — stattdessen die atomaren Stats
-//! aus D.4 Phase A. Events sind fuer Coarse-Grained-Telemetry, nicht
-//! fuer p99-Latenz-Sampling.
+//! Events are coarse-grained: one event per endpoint lifecycle action
+//! or per sample-path phase. In the hot path (e.g. per-sample latency)
+//! we use **no** events — instead the atomic stats from D.4 Phase A.
+//! Events are for coarse-grained telemetry, not for p99 latency
+//! sampling.
 
 #[cfg(feature = "alloc")]
 use alloc::string::String;
@@ -39,20 +38,20 @@ use std::io::{self, Write};
 #[cfg(feature = "std")]
 use std::sync::Mutex;
 
-/// Schweregrad eines Events. An OTel/Syslog-Levels angelehnt.
+/// Severity of an event. Modeled on OTel/Syslog levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Level {
-    /// Normaler Lifecycle-Event (Endpoint create/destroy, match).
+    /// Normal lifecycle event (endpoint create/destroy, match).
     Info,
-    /// Hinweis auf abnormale aber nicht-fatale Situation
-    /// (Discovery-Timeout, einzelner Drop).
+    /// Indication of an abnormal but non-fatal situation
+    /// (discovery timeout, single drop).
     Warn,
-    /// Funktional fehlgeschlagene Operation.
+    /// Functionally failed operation.
     Error,
 }
 
 impl Level {
-    /// JSON-/Logfile-konforme Klein-Schreibweise.
+    /// Lowercase spelling conforming to JSON/logfile conventions.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -63,25 +62,25 @@ impl Level {
     }
 }
 
-/// Event-Quelle. Identifiziert die Schicht.
+/// Event source. Identifies the layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Component {
-    /// DCPS / Domain-Participant-Pfad.
+    /// DCPS / domain-participant path.
     Dcps,
-    /// SPDP/SEDP Discovery.
+    /// SPDP/SEDP discovery.
     Discovery,
-    /// RTPS-Wire / Reader / Writer.
+    /// RTPS wire / reader / writer.
     Rtps,
-    /// Security-Plugins.
+    /// Security plugins.
     Security,
-    /// Transport-Layer (UDP/TCP/SHM).
+    /// Transport layer (UDP/TCP/SHM).
     Transport,
     /// User-defined sub-system (Bridges, Tools).
     User,
 }
 
 impl Component {
-    /// Maschinenlesbares Label.
+    /// Machine-readable label.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -95,35 +94,35 @@ impl Component {
     }
 }
 
-/// Strukturiertes Key-Value-Attribut. `value` ist als String gehalten
-/// — der Sink entscheidet, ob/wie er typisiert serialisiert.
+/// Structured key-value attribute. `value` is held as a String
+/// — the sink decides whether/how it serializes typed.
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone)]
 pub struct Attribute {
-    /// Stable-Schluessel (kebab-case empfohlen).
+    /// Stable key (kebab-case recommended).
     pub key: &'static str,
-    /// String-Value.
+    /// String value.
     pub value: String,
 }
 
-/// Event-Datensatz. Wird von der DCPS-Runtime und Plugins erzeugt.
+/// Event record. Produced by the DCPS runtime and plugins.
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone)]
 pub struct Event {
-    /// Schweregrad.
+    /// Severity.
     pub level: Level,
-    /// Verursacher-Komponente.
+    /// Originating component.
     pub component: Component,
-    /// Stable-Event-Name in `domain.event`-Form (z.B.
+    /// Stable event name in `domain.event` form (e.g.
     /// `dcps.user_writer.created`, `discovery.peer.matched`).
     pub name: &'static str,
-    /// Optionale strukturierte Attribute.
+    /// Optional structured attributes.
     pub attrs: Vec<Attribute>,
 }
 
 #[cfg(feature = "alloc")]
 impl Event {
-    /// Konstruiert ein neues Event ohne Attribute.
+    /// Constructs a new event without attributes.
     #[must_use]
     pub fn new(level: Level, component: Component, name: &'static str) -> Self {
         Self {
@@ -134,7 +133,7 @@ impl Event {
         }
     }
 
-    /// Builder-Form: ein Attribut anhaengen.
+    /// Builder form: append an attribute.
     #[must_use]
     pub fn with_attr(mut self, key: &'static str, value: impl Into<String>) -> Self {
         self.attrs.push(Attribute {
@@ -145,18 +144,18 @@ impl Event {
     }
 }
 
-/// Sink-Trait: Konsumenten implementieren `record` und entscheiden,
-/// wohin das Event geht (stderr, OTLP, prometheus, /dev/null).
+/// Sink trait: consumers implement `record` and decide where the
+/// event goes (stderr, OTLP, prometheus, /dev/null).
 #[cfg(feature = "alloc")]
 pub trait Sink: Send + Sync {
-    /// Verarbeitet ein Event. **Synchron.** Sinks duerfen schreiben,
-    /// puffern oder droppen — der Aufrufer wartet, also bitte nicht
-    /// blockieren (z.B. nicht synchrones HTTP-POST aus dem Hot-Path).
+    /// Processes an event. **Synchronous.** Sinks may write,
+    /// buffer or drop — the caller waits, so please don't block
+    /// (e.g. no synchronous HTTP POST from the hot path).
     fn record(&self, event: &Event);
 }
 
-/// No-op-Sink. Default-Wahl wenn keine Telemetry konfiguriert ist —
-/// jeder `record`-Call ist ein direkter Return.
+/// No-op sink. The default choice when no telemetry is configured —
+/// every `record` call is an immediate return.
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone, Copy)]
 pub struct NullSink;
@@ -166,18 +165,18 @@ impl Sink for NullSink {
     fn record(&self, _event: &Event) {}
 }
 
-/// Stderr-Sink: schreibt jedes Event als JSON-Line auf stderr.
-/// Geeignet fuer Docker/k8s/journald-Pipelines mit nachgelagerten
-/// Loglinks (Vector/fluentd/Datadog-Agent/Loki).
+/// Stderr sink: writes each event as a JSON line to stderr.
+/// Suited for Docker/k8s/journald pipelines with downstream
+/// log sinks (Vector/fluentd/Datadog agent/Loki).
 ///
-/// Format pro Zeile:
+/// Format per line:
 ///
 /// ```json
 /// {"level":"info","component":"dcps","name":"user_writer.created","attrs":{"topic":"Foo","reliable":"true"}}
 /// ```
 ///
-/// Synchron ueber `std::io::stderr()`. Mutex schuetzt vor
-/// interleaved-Output zwischen Threads.
+/// Synchronous via `std::io::stderr()`. The mutex guards against
+/// interleaved output between threads.
 #[cfg(feature = "std")]
 #[derive(Debug)]
 pub struct StderrJsonSink {
@@ -195,7 +194,7 @@ impl Default for StderrJsonSink {
 
 #[cfg(feature = "std")]
 impl StderrJsonSink {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -207,8 +206,8 @@ impl Sink for StderrJsonSink {
     fn record(&self, event: &Event) {
         let line = serialize_json_line(event);
         if let Ok(mut out) = self.out.lock() {
-            // Errors auf stderr ignorieren — Sink darf den App-Pfad
-            // nicht torpedieren wenn jemand stderr schliesst.
+            // Ignore errors on stderr — the sink must not torpedo
+            // the app path if someone closes stderr.
             let _ = out.write_all(line.as_bytes());
             let _ = out.write_all(b"\n");
             let _ = out.flush();
@@ -216,7 +215,7 @@ impl Sink for StderrJsonSink {
     }
 }
 
-/// In-Memory-Sink fuer Tests. Sammelt Events in einem `Mutex<Vec>`.
+/// In-memory sink for tests. Collects events in a `Mutex<Vec>`.
 #[cfg(feature = "std")]
 #[derive(Debug, Default)]
 pub struct VecSink {
@@ -225,25 +224,25 @@ pub struct VecSink {
 
 #[cfg(feature = "std")]
 impl VecSink {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Snapshot der bisher gesammelten Events.
+    /// Snapshot of the events collected so far.
     #[must_use]
     pub fn snapshot(&self) -> Vec<Event> {
         self.events.lock().map(|e| e.clone()).unwrap_or_default()
     }
 
-    /// Anzahl Events bisher.
+    /// Number of events so far.
     #[must_use]
     pub fn len(&self) -> usize {
         self.events.lock().map(|e| e.len()).unwrap_or(0)
     }
 
-    /// True wenn keine Events.
+    /// True if there are no events.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
@@ -260,16 +259,16 @@ impl Sink for VecSink {
 }
 
 // zerodds-lint: allow no_dyn_in_safe
-// SharedSink benoetigt `Arc<dyn Sink>` damit Konsumenten beliebige
-// Sink-Implementations injizieren koennen (StderrJsonSink, OTLP-Bridge,
-// custom Forwarder). Die Sinks selbst sind Send+Sync; trait-objects
-// hier sind ein Architektur-Vertrag, keine Speicher-Sicherheits-Frage.
+// SharedSink needs `Arc<dyn Sink>` so consumers can inject arbitrary
+// Sink implementations (StderrJsonSink, OTLP bridge, custom forwarder).
+// The sinks themselves are Send+Sync; trait objects here are an
+// architectural contract, not a memory-safety question.
 
-/// Type-erased shared Sink-Handle.
+/// Type-erased shared sink handle.
 #[cfg(feature = "alloc")]
 pub type SharedSink = Arc<dyn Sink>;
 
-/// Liefert einen `SharedSink`, der nichts macht. Default-Wahl.
+/// Returns a `SharedSink` that does nothing. The default choice.
 #[cfg(feature = "alloc")]
 #[must_use]
 pub fn null_sink() -> SharedSink {
@@ -277,13 +276,13 @@ pub fn null_sink() -> SharedSink {
 }
 
 // ============================================================================
-// JSON-Serialisierung — minimal, ohne serde (foundation soll dep-frei
-// bleiben). RFC 8259 Subset: Strings mit \"-Escape, keine Unicode-
-// Eskapaden ausser \\ \" \n \r \t.
+// JSON serialization — minimal, without serde (foundation should stay
+// dependency-free). RFC 8259 subset: strings with \"-escape, no Unicode
+// escapes except \\ \" \n \r \t.
 // ============================================================================
 
-// Wird nur vom StderrJsonSink (feature=std) genutzt; alloc-only-
-// Build erkennt sie als dead. Allow ist sauberer als pro-Aufrufer-cfg.
+// Only used by StderrJsonSink (feature=std); the alloc-only build
+// sees it as dead. Allow is cleaner than per-caller cfg.
 #[cfg(feature = "alloc")]
 #[allow(dead_code)]
 fn serialize_json_line(event: &Event) -> String {
@@ -368,7 +367,7 @@ mod tests {
     fn null_sink_is_no_op() {
         let s = NullSink;
         let e = Event::new(Level::Info, Component::Dcps, "x");
-        s.record(&e); // kein Panic, keine Mutation.
+        s.record(&e); // no panic, no mutation.
     }
 
     #[test]
@@ -450,7 +449,7 @@ mod tests {
 
     #[test]
     fn stderr_json_sink_does_not_panic() {
-        // Smoke: schreiben auf stderr soll niemals panicen.
+        // Smoke: writing to stderr should never panic.
         let s = StderrJsonSink::new();
         s.record(&Event::new(Level::Info, Component::Dcps, "stderr.smoke"));
     }

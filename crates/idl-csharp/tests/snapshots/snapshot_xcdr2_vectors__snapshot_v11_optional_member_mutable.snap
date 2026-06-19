@@ -31,6 +31,12 @@ public sealed class OTypeSupport : IDdsTopicType<O>
     public byte[] Encode(O sample, EndianMode endian)
     {
         var w = new Xcdr2Writer(endian);
+        EncodeInto(w, sample);
+        return w.ToArray();
+    }
+
+    public void EncodeInto(Xcdr2Writer w, O sample)
+    {
         using (var __scope = w.BeginMutable())
         {
             if (sample.Maybe is not null)
@@ -39,18 +45,22 @@ public sealed class OTypeSupport : IDdsTopicType<O>
                 w.WriteInt32(sample.Maybe.Value);
             }
         }
-        return w.ToArray();
     }
 
     public O Decode(ReadOnlySpan<byte> bytes)
     {
         var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
+        return DecodeFrom(r);
+    }
+
+    public O DecodeFrom(Xcdr2Reader r)
+    {
         int? __m0 = default;
         var __scope = r.BeginDHeader();
         while (!r.DHeaderDone(__scope))
         {
             var (__id, __lc, __mu) = r.ReadEmHeader();
-            if (__lc >= 3) { var __nx = r.ReadUInt32(); _ = __nx; }
+            if (__lc >= 4) { var __nx = r.ReadUInt32(); _ = __nx; }
             switch (__id)
             {
                 case 1u:

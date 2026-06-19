@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Smoke-Test fuer `serde-bridge` Feature.
+//! Smoke test for the `serde-bridge` feature.
 
 #![cfg(feature = "serde-bridge")]
 #![allow(

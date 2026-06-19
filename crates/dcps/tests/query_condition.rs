@@ -1,8 +1,8 @@
-//! T7 — QueryCondition SQL-Per-Sample-Eval (Spec §2.2.2.5.9.6).
+//! T7 — QueryCondition SQL per-sample eval (Spec §2.2.2.5.9.6).
 //!
-//! Verifiziert, dass `read_w_condition` / `take_w_condition` den
-//! gespeicherten SQL-Filter pro Sample auswerten und nur Samples
-//! liefern, die `true` zurueckgeben.
+//! Verifies that `read_w_condition` / `take_w_condition` evaluate the
+//! stored SQL filter per sample and only return samples that
+//! return `true`.
 
 #![allow(
     clippy::expect_used,
@@ -29,7 +29,7 @@ use zerodds_dcps::{
 use zerodds_dcps::{DecodeError, EncodeError};
 use zerodds_sql_filter::Value;
 
-/// Test-Fixture: keyed Topic mit Feldern `id: u32` und `score: i32`.
+/// Test fixture: keyed topic with fields `id: u32` and `score: i32`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Sample {
     id: u32,
@@ -138,9 +138,9 @@ fn take_w_condition_consumes_only_matching_samples() {
     let out = reader.take_w_condition(&qc).expect("take_w_condition");
     assert_eq!(out.len(), 2);
 
-    // Verbleibend: das score=5-Sample (matchte nicht) muss noch im
-    // Cache stehen — gegen take_with_info pruefen, das aus dem Cache
-    // (nicht aus der Inbox) konsumiert.
+    // Remaining: the score=5 sample (did not match) must still be in
+    // the cache — check against take_with_info, which consumes from the
+    // cache (not from the inbox).
     let remaining = reader.take_with_info().unwrap();
     assert_eq!(remaining.len(), 1);
     assert_eq!(remaining[0].data.score, 5);
@@ -165,17 +165,17 @@ fn read_w_condition_with_string_parameter() {
         .__push_raw(encode(&Sample { id: 2, score: 42 }))
         .unwrap();
 
-    // String-Param "42" wird in Value::String gewrappt; gegen Int(42)
-    // ist der Vergleich Type-Mismatch -> evaluate liefert Err, Sample
-    // wird abgelehnt.
+    // The string param "42" is wrapped in Value::String; against Int(42)
+    // the comparison is a type mismatch -> evaluate returns Err, the sample
+    // is rejected.
     let qc = make_qc("score = %0", vec!["42".into()]);
     let out = reader.read_w_condition(&qc).expect("read");
-    assert!(out.is_empty(), "string-param != int → keine Matches");
+    assert!(out.is_empty(), "string param != int → no matches");
 }
 
 #[test]
 fn read_w_condition_preserves_cache_state() {
-    // read_w_condition darf Samples nicht entfernen.
+    // read_w_condition must not remove samples.
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(193, DomainParticipantQos::default());
     let topic = p
@@ -197,7 +197,7 @@ fn read_w_condition_preserves_cache_state() {
     let r1 = reader.read_w_condition(&qc).unwrap();
     let r2 = reader.read_w_condition(&qc).unwrap();
     assert_eq!(r1.len(), 2);
-    assert_eq!(r2.len(), 2, "second read sollte denselben Cache sehen");
+    assert_eq!(r2.len(), 2, "second read should see the same cache");
 }
 
 #[test]
@@ -220,16 +220,16 @@ fn take_w_condition_empty_when_no_match() {
     let out = reader.take_w_condition(&qc).expect("take");
     assert!(out.is_empty());
 
-    // Das Sample muss noch im Cache sein:
+    // The sample must still be in the cache:
     let remaining = reader.take_with_info().unwrap();
     assert_eq!(remaining.len(), 1);
 }
 
 #[test]
 fn read_w_condition_unknown_field_drops_sample() {
-    // Wird ein Field referenziert, das DdsType::field_value nicht
-    // kennt, evaluiert der Filter zu Err(UnknownField) -> Sample
-    // wird abgelehnt (kein hard error nach oben).
+    // If a field is referenced that DdsType::field_value does not
+    // know, the filter evaluates to Err(UnknownField) -> the sample
+    // is rejected (no hard error propagated up).
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(195, DomainParticipantQos::default());
     let topic = p

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! DDS-XML 1.0 §7.3.7 Building Block "Data Samples" — XML-Codec.
+//! DDS-XML 1.0 §7.3.7 building block "Data Samples" — XML codec.
 //!
-//! Repraesentiert konkrete Sample-Werte einzelner registrierter Types als
-//! XML. Ein Sample ist Member-Wert-Map: Element-Namen entsprechen
-//! Member-Namen, Children rekursiv kodierte Werte. Sequenzen/Arrays
-//! verwenden `<item>` als Element-Name (Spec §7.3.7.4.4).
+//! Represents concrete sample values of individual registered types as
+//! XML. A sample is a member-value map: element names correspond to
+//! member names, children are recursively encoded values. Sequences/arrays
+//! use `<item>` as the element name (Spec §7.3.7.4.4).
 //!
-//! # XML → Rust-Type Mapping
+//! # XML → Rust type mapping
 //!
 //! ```text
 //! <sample type_ref="Mod::Type"> … </sample>  | SampleValue::Struct
@@ -30,34 +30,34 @@ use crate::xtypes_def::{
     PrimitiveType, StructMember, StructType, TypeDef, TypeLibrary, TypeRef, UnionDiscriminator,
 };
 
-/// Wert eines konkreten Sample-Members (rekursiv).
+/// Value of a concrete sample member (recursive).
 #[derive(Debug, Clone, PartialEq)]
 pub enum SampleValue {
-    /// Primitiv-Wert.
+    /// Primitive value.
     Primitive(PrimitiveValue),
-    /// Struct-Member-Map (Member-Name -> Wert).
+    /// Struct member map (member name -> value).
     Struct(BTreeMap<String, SampleValue>),
-    /// Sequence-Werte.
+    /// Sequence values.
     Sequence(Vec<SampleValue>),
-    /// Array-Werte.
+    /// Array values.
     Array(Vec<SampleValue>),
-    /// Union mit aktivem Discriminator und ausgewaehltem Case-Wert.
+    /// Union with an active discriminator and the selected case value.
     Union {
-        /// String-Form des Discriminator-Wertes.
+        /// String form of the discriminator value.
         discriminator: String,
-        /// Aktiver Case-Wert.
+        /// Active case value.
         value: alloc::boxed::Box<SampleValue>,
     },
-    /// Enum-Literal als Symbol.
+    /// Enum literal as a symbol.
     EnumLiteral(String),
 }
 
-/// Konkreter Primitiv-Wert (typed, mit Range-Check beim Parse).
+/// Concrete primitive value (typed, with a range check on parse).
 #[derive(Debug, Clone, PartialEq)]
 pub enum PrimitiveValue {
     /// `boolean`.
     Bool(bool),
-    /// `char` als 8-bit signed (IDL-konform).
+    /// `char` as 8-bit signed (IDL-conformant).
     I8(i8),
     /// `octet`.
     U8(u8),
@@ -75,26 +75,26 @@ pub enum PrimitiveValue {
     U64(u64),
     /// `float`.
     F32(f32),
-    /// `double` / `longdouble` (longdouble fallt auf f64 zurueck).
+    /// `double` / `longdouble` (longdouble falls back to f64).
     F64(f64),
     /// `string` / `wstring`.
     Str(String),
-    /// 8-bit `char` als Unicode-Codepoint.
+    /// 8-bit `char` as a Unicode code point.
     Char(char),
 }
 
-/// Parst ein konkretes `<sample>`-Element gegen eine Type-Definition.
+/// Parses a concrete `<sample>` element against a type definition.
 ///
-/// `xml` darf entweder ein `<sample>`-Wurzel-Element oder das Wurzel-
-/// Element des Datentyps direkt sein (Spec §7.3.7.4 erlaubt beide
-/// Repraesentationen).
+/// `xml` may be either a `<sample>` root element or the root
+/// element of the data type directly (Spec §7.3.7.4 allows both
+/// representations).
 ///
 /// # Errors
-/// * [`XmlError::InvalidXml`] — XML nicht wohlgeformt.
-/// * [`XmlError::UnresolvedReference`] — referenzierter Type nicht im
-///   `type_lib` auffindbar.
-/// * [`XmlError::ValueOutOfRange`] — Primitiv-Wert ausserhalb Range.
-/// * [`XmlError::MissingRequiredElement`] — Pflicht-Member fehlt.
+/// * [`XmlError::InvalidXml`] — XML not well-formed.
+/// * [`XmlError::UnresolvedReference`] — referenced type not found in
+///   `type_lib`.
+/// * [`XmlError::ValueOutOfRange`] — primitive value out of range.
+/// * [`XmlError::MissingRequiredElement`] — a required member is missing.
 pub fn parse_sample(
     xml: &str,
     type_def: &TypeDef,
@@ -104,11 +104,11 @@ pub fn parse_sample(
     parse_sample_element(&doc.root, type_def, type_lib)
 }
 
-/// Variante von [`parse_sample`], die bereits ein geparstes
-/// [`XmlElement`] entgegen nimmt.
+/// Variant of [`parse_sample`] that takes an already-parsed
+/// [`XmlElement`].
 ///
 /// # Errors
-/// Wie [`parse_sample`].
+/// As [`parse_sample`].
 pub fn parse_sample_element(
     el: &XmlElement,
     type_def: &TypeDef,
@@ -226,10 +226,10 @@ fn parse_member_value(
         }
         return Ok(SampleValue::Array(items));
     }
-    // Sequence — wenn Member als sequence deklariert ist (max-length
-    // gesetzt) ODER der Wrapper-Knoten ausschliesslich `<item>`-Children
-    // enthaelt. Spec §7.3.7.3.2: leere Sequence (`<seq></seq>`) ist
-    // valide → bei `sequence_max_length.is_some()` auch empty zulassen.
+    // Sequence — when the member is declared as a sequence (max-length
+    // set) OR the wrapper node contains exclusively `<item>` children.
+    // Spec §7.3.7.3.2: an empty sequence (`<seq></seq>`) is
+    // valid → with `sequence_max_length.is_some()` also allow empty.
     let is_seq = member.sequence_max_length.is_some() || has_only_item_children(el);
     if is_seq
         && (has_item_children(el)
@@ -279,8 +279,8 @@ fn resolve_named_type(name: &str, type_lib: &[TypeLibrary]) -> Option<TypeDef> {
     None
 }
 
-/// zerodds-lint: recursion-depth = anzahl `::`-Segmente + Modul-Schachtelungstiefe.
-/// Effektiv ≤ 16 durch DoS-Cap der XML-Foundation.
+/// zerodds-lint: recursion-depth = number of `::` segments + module nesting depth.
+/// Effectively ≤ 16 due to the XML foundation's DoS cap.
 fn walk(types: &[TypeDef], parts: &[&str]) -> Option<TypeDef> {
     if parts.is_empty() {
         return None;
@@ -378,10 +378,10 @@ where
         .map_err(|e| XmlError::ValueOutOfRange(format!("uint `{s}`: {e}")))
 }
 
-/// Serialisiert einen Sample-Wert als XML.
+/// Serializes a sample value as XML.
 ///
-/// Wrapped das Ergebnis in `<sample type_ref="…">`. Member-Namen
-/// entsprechen den Schluesseln in `value`, Sequenzen/Arrays nutzen
+/// Wraps the result in `<sample type_ref="…">`. Member names
+/// correspond to the keys in `value`, sequences/arrays use
 /// `<item>`.
 #[must_use]
 pub fn serialize_sample(
@@ -399,7 +399,7 @@ pub fn serialize_sample(
 }
 
 /// zerodds-lint: recursion-depth = sample-tree-depth (struct/sequence/array
-/// nesting). DoS-Cap der XML-Foundation begrenzt Tiefe ≤ 16.
+/// nesting). The XML foundation's DoS cap limits the depth to ≤ 16.
 fn serialize_value_body(value: &SampleValue, out: &mut String) {
     match value {
         SampleValue::Primitive(p) => out.push_str(&serialize_primitive(p)),
@@ -518,12 +518,12 @@ mod tests {
         assert!(matches!(err, XmlError::MissingRequiredElement(_)));
     }
 
-    // ---- §7.3.7.3.2 Sequence/Array mit <item>-Tag ---------------------
+    // ---- §7.3.7.3.2 Sequence/Array with <item> tag --------------------
 
     #[test]
     fn parse_sample_with_sequence_using_item_tag() {
         // Spec §7.3.7.3.2: "complexType contains zero or more elements
-        // named **item**". Hier explizit Sequence<long> mit max=10.
+        // named **item**". Here explicitly a Sequence<long> with max=10.
         let td = TypeDef::Struct(StructType {
             name: "WithSeq".into(),
             members: alloc::vec![StructMember {
@@ -554,8 +554,8 @@ mod tests {
 
     #[test]
     fn parse_sample_with_array_using_item_tag() {
-        // Spec §7.3.7.3.2: Arrays nutzen denselben <item>-Tag.
-        // array_dimensions[3] mit element_type long.
+        // Spec §7.3.7.3.2: arrays use the same <item> tag.
+        // array_dimensions[3] with element_type long.
         let td = TypeDef::Struct(StructType {
             name: "WithArr".into(),
             members: alloc::vec![StructMember {
@@ -600,9 +600,9 @@ mod tests {
 
     #[test]
     fn serialize_sample_uses_item_tag_for_sequence() {
-        // serialize_sample emittiert <item> fuer Sequence — Spec §7.3.7.3.2.
-        // Wir kapseln die Sequence in einen Top-Level-Struct, damit
-        // serialize_sample einen Type-Wrapper bekommt.
+        // serialize_sample emits <item> for a sequence — Spec §7.3.7.3.2.
+        // We wrap the sequence in a top-level struct so that
+        // serialize_sample gets a type wrapper.
         let value = SampleValue::Struct(BTreeMap::from([(
             "ids".to_string(),
             SampleValue::Sequence(alloc::vec![
@@ -627,7 +627,7 @@ mod tests {
 
     #[test]
     fn parse_sample_with_union() {
-        // §7.3.7.1 Sample-Format fuer Union — discriminator + active case.
+        // §7.3.7.1 sample format for a union — discriminator + active case.
         use crate::xtypes_def::{UnionCase, UnionType};
         let td = TypeDef::Union(UnionType {
             name: "U".into(),

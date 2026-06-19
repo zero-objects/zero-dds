@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// `zerodds-ros2-shim` — Diagnose-CLI fuer den `rmw_zerodds_cpp`-Shim.
+// `zerodds-ros2-shim` — diagnostics CLI for the `rmw_zerodds_cpp` shim.
 //
-// Spec: `docs/specs/zerodds-ros2-bridge-1.0.md` §2 (CLI), §3 (Config),
-// §5 (Topic-Mangling, REP-2007), §6 (QoS-Translation, REP-2009).
+// Spec: `docs/specs/zerodds-ros2-bridge-1.0.md` §2 (CLI), §3 (config),
+// §5 (topic mangling, REP-2007), §6 (QoS translation, REP-2009).
 //
-// Im Gegensatz zu den anderen Bridges der Familie ist hier KEIN
-// Daemon noetig — der Shim ist eine `librmw_zerodds_cpp.so` die
-// rclcpp/rclpy direkt laedt. Dieses Binary ist ein reines Diagnose-
-// Tool: Topic-Mangling-Vorschau, QoS-Profile-Lookup, Validate.
+// Unlike the other bridges of the family, NO daemon is needed here
+// — the shim is a `librmw_zerodds_cpp.so` that rclcpp/rclpy
+// load directly. This binary is a pure diagnostics
+// tool: topic-mangling preview, QoS-profile lookup, validate.
 
-//! Diagnose-CLI fuer den ROS-2 RMW-Shim: Topic-Mangling-Vorschau,
-//! QoS-Profile-Lookup, Validate. Nicht der eigentliche RMW; produktiv
-//! laden rclcpp/rclpy `librmw_zerodds_cpp.so` direkt.
+//! Diagnostics CLI for the ROS-2 RMW shim: topic-mangling preview,
+//! QoS-profile lookup, validate. Not the actual RMW; in production
+//! rclcpp/rclpy load `librmw_zerodds_cpp.so` directly.
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
 use std::env;
@@ -107,6 +107,8 @@ fn main() -> ExitCode {
         "selftest" => cmd_selftest(),
         "catalog" => cmd_catalog(&cfg),
         "metrics" => cmd_metrics(),
+        "doctor" => cmd_doctor(&cfg, domain),
+        "graph" => cmd_graph(&cfg, domain),
         other => {
             eprintln!("unknown subcommand: {other}");
             print_usage();
@@ -133,6 +135,8 @@ fn print_usage() {
     eprintln!("  selftest              Round-trip test (mangle + qos lookup)");
     eprintln!("  catalog               Print JSON catalog (Spec §5.2)");
     eprintln!("  metrics               Print Prometheus metric-name catalog (§8.2)");
+    eprintln!("  doctor                Diagnose RMW/env/discovery/security setup (C8)");
+    eprintln!("  graph                 Show local participant + topic graph (C8)");
     eprintln!();
     eprintln!("OPTIONS:");
     eprintln!("  --config <FILE>       Path to YAML config (default $ZERODDS_CONFIG");
@@ -251,7 +255,7 @@ fn cmd_qos(_cfg: &ShimConfig, args: &[String]) -> ExitCode {
 }
 
 fn cmd_enclaves(cfg: &ShimConfig) -> ExitCode {
-    // FUTURE (L5): tatsaechliche SROS2-Enclave-Discovery via
+    // FUTURE (L5): actual SROS2 enclave discovery via
     // `$ROS_SECURITY_KEYSTORE` Walkthrough. Stub.
     if cfg.enclave.is_empty() {
         println!("(no enclave configured; ROS_SECURITY_ENABLE=false)");
@@ -324,11 +328,10 @@ fn push_json_str(out: &mut String, s: &str) {
 }
 
 fn cmd_metrics() -> ExitCode {
-    // Generate the Prometheus metric-name catalog. Da der Shim eine
-    // Library im rclcpp-Prozess ist (kein Daemon), liefern wir nur
-    // das Schema; der echte rclcpp-Prozess sollte die Counter aus
-    // `zerodds_monitor::default_registry()` holen + via OTLP/Prometheus
-    // exportieren.
+    // Generate the Prometheus metric-name catalog. Since the shim is a
+    // library in the rclcpp process (not a daemon), we provide only
+    // the schema; the real rclcpp process should fetch the counters from
+    // `zerodds_monitor::default_registry()` + export them via OTLP/Prometheus.
     let registry = Registry::new();
     let names = [
         (
@@ -378,25 +381,196 @@ fn cmd_selftest() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// C8 — `doctor`: diagnose the ROS/ZeroDDS setup from the **local**
+/// environment + config (no DDS-graph introspection needed). Reports each
+/// check as `ok` / `warn` / `fail`; exits non-zero if any hard check fails.
+fn cmd_doctor(cfg: &ShimConfig, domain_override: Option<i32>) -> ExitCode {
+    let mut warns = 0u32;
+    let mut fails = 0u32;
+    let mut line = |status: &str, label: &str, detail: String| {
+        match status {
+            "warn" => warns += 1,
+            "fail" => fails += 1,
+            _ => {}
+        }
+        println!("[{status:>4}] {label:<26} {detail}");
+    };
+
+    // 1. RMW_IMPLEMENTATION consistency — must select this shim when set.
+    match env::var("RMW_IMPLEMENTATION") {
+        Ok(v) if v == "rmw_zerodds_cpp" => {
+            line("ok", "RMW_IMPLEMENTATION", v);
+        }
+        Ok(v) => line(
+            "fail",
+            "RMW_IMPLEMENTATION",
+            format!("{v} (expected rmw_zerodds_cpp — this shim won't be loaded)"),
+        ),
+        Err(_) => line(
+            "warn",
+            "RMW_IMPLEMENTATION",
+            "unset (rcl picks the default rmw, not necessarily zerodds)".into(),
+        ),
+    }
+
+    // 2. ROS_DISTRO — REP-2007 compatible distros.
+    match env::var("ROS_DISTRO") {
+        Ok(d) if matches!(d.as_str(), "humble" | "iron" | "jazzy" | "rolling") => {
+            line("ok", "ROS_DISTRO", d)
+        }
+        Ok(d) => line(
+            "warn",
+            "ROS_DISTRO",
+            format!("{d} (untested REP-2007 distro)"),
+        ),
+        Err(_) => line("warn", "ROS_DISTRO", "unset".into()),
+    }
+
+    // 3. Domain id.
+    let domain = domain_override.unwrap_or(cfg.ros_domain_id);
+    let env_domain = env::var("ROS_DOMAIN_ID").ok();
+    match &env_domain {
+        Some(s) if s.trim().parse::<i32>() == Ok(domain) => {
+            line("ok", "ROS_DOMAIN_ID", domain.to_string())
+        }
+        Some(s) => line(
+            "warn",
+            "ROS_DOMAIN_ID",
+            format!("env={s} but effective={domain} (override/config mismatch)"),
+        ),
+        None => line("ok", "ROS_DOMAIN_ID", format!("{domain} (default)")),
+    }
+
+    // 4. Discovery: multicast vs unicast peers.
+    let no_mc = env::var_os("ZERODDS_NO_MULTICAST").is_some() || !cfg.discovery_multicast;
+    let peers_env = env::var("ZERODDS_PEERS").unwrap_or_default();
+    let n_peers = cfg.unicast_initial_peers.len()
+        + peers_env
+            .split(',')
+            .filter(|s| !s.trim().is_empty())
+            .count();
+    if no_mc {
+        if n_peers == 0 {
+            line(
+                "fail",
+                "discovery",
+                "multicast-free but NO unicast peers (ZERODDS_PEERS / config) — peers will not find each other".into(),
+            );
+        } else {
+            line(
+                "ok",
+                "discovery",
+                format!("multicast-free, {n_peers} unicast peer(s)"),
+            );
+        }
+    } else {
+        line("ok", "discovery", "multicast enabled".into());
+    }
+
+    // 5. Security: ZERODDS_SECURITY_DIR / SROS2 enclave.
+    match env::var("ZERODDS_SECURITY_DIR") {
+        Ok(d) if !d.is_empty() => {
+            let p = std::path::Path::new(&d);
+            if p.join("cert.pem").is_file() && p.join("governance.p7s").is_file() {
+                line("ok", "security", format!("enclave {d}"));
+            } else {
+                line(
+                    "fail",
+                    "security",
+                    format!("{d} missing cert.pem/governance.p7s (not an SROS2 enclave)"),
+                );
+            }
+        }
+        _ => {
+            let sros2 = env::var("ROS_SECURITY_ENABLE").ok().as_deref() == Some("true");
+            if sros2 {
+                line(
+                    "warn",
+                    "security",
+                    "ROS_SECURITY_ENABLE=true but ZERODDS_SECURITY_DIR unset".into(),
+                );
+            } else {
+                line("ok", "security", "disabled (no enclave)".into());
+            }
+        }
+    }
+
+    // 6. Self-test of the mangling path (reuses the selftest invariant).
+    match mangle_topic_name("/chatter", RosKind::Topic) {
+        Ok(m) if m == "rt/chatter" => line("ok", "mangling", "/chatter -> rt/chatter".into()),
+        Ok(m) => line(
+            "fail",
+            "mangling",
+            format!("/chatter -> {m} (expected rt/chatter)"),
+        ),
+        Err(e) => line("fail", "mangling", format!("error: {e}")),
+    }
+
+    println!();
+    println!("summary: {warns} warning(s), {fails} failure(s)");
+    if fails > 0 {
+        ExitCode::from(5)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// C8 — `graph`: print the **local** participant + topic graph derived from
+/// config (discovery-independent — works even with multicast off / no peers
+/// visible yet). Shows what this node WOULD publish/subscribe, with the
+/// DDS-mangled topic names.
+fn cmd_graph(cfg: &ShimConfig, domain_override: Option<i32>) -> ExitCode {
+    let domain = domain_override.unwrap_or(cfg.ros_domain_id);
+    println!("participant");
+    println!("  rmw_implementation    rmw_zerodds_cpp");
+    println!("  domain_id             {domain}");
+    println!("  namespace             {}", cfg.namespace);
+    let disc = if env::var_os("ZERODDS_NO_MULTICAST").is_some() || !cfg.discovery_multicast {
+        "unicast"
+    } else {
+        "multicast"
+    };
+    println!("  discovery             {disc}");
+    println!();
+    if cfg.topic_overrides.is_empty() {
+        println!("topics                  (none configured)");
+    } else {
+        println!("topics");
+        println!("  {:<28}  {:<28}  qos", "ros_topic", "dds_topic");
+        for o in &cfg.topic_overrides {
+            let dds = mangle_topic_name(&o.ros_topic, RosKind::Topic)
+                .unwrap_or_else(|_| o.ros_topic.clone());
+            println!("  {:<28}  {:<28}  {}", o.ros_topic, dds, o.qos_profile);
+        }
+    }
+    ExitCode::SUCCESS
+}
+
 fn print_qos(name: &str, p: &QosProfile) {
     println!("profile                 {name}");
     println!(
         "reliability             {}",
         match p.reliability {
+            Reliability::SystemDefault => "SYSTEM_DEFAULT",
             Reliability::Reliable => "RELIABLE",
             Reliability::BestEffort => "BEST_EFFORT",
+            Reliability::Unknown => "UNKNOWN",
         }
     );
     println!(
         "durability              {}",
         match p.durability {
+            Durability::SystemDefault => "SYSTEM_DEFAULT",
             Durability::Volatile => "VOLATILE",
             Durability::TransientLocal => "TRANSIENT_LOCAL",
+            Durability::Unknown => "UNKNOWN",
         }
     );
     match p.history {
+        History::SystemDefault => println!("history                 SYSTEM_DEFAULT"),
         History::KeepLast(n) => println!("history                 KEEP_LAST({n})"),
         History::KeepAll => println!("history                 KEEP_ALL"),
+        History::Unknown => println!("history                 UNKNOWN"),
     }
     println!(
         "deadline                {}",
@@ -456,9 +630,9 @@ fn load_config(path: &str) -> Result<ShimConfig, String> {
     parse_yaml_subset(&raw)
 }
 
-/// Minimaler YAML-Subset-Parser fuer das Shim-Config-Schema.
-/// Unterstuetzt nur die Felder aus Spec §3 — kein Anchor/Alias,
-/// kein Multi-Doc, keine Tags. Indent = 2 Spaces.
+/// Minimal YAML-subset parser for the shim config schema.
+/// Supports only the fields from Spec §3 — no anchor/alias,
+/// no multi-doc, no tags. Indent = 2 spaces.
 fn parse_yaml_subset(s: &str) -> Result<ShimConfig, String> {
     let mut cfg = ShimConfig::default();
     let mut section: Vec<String> = Vec::new();

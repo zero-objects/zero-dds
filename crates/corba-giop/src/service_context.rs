@@ -12,9 +12,9 @@
 //! typedef sequence<ServiceContext> ServiceContextList;
 //! ```
 //!
-//! Wird in jedem Request/Reply-Header transportiert und ist der
-//! Standard-Slot fuer Codeset-Negotiation, Transactional-Context,
-//! Security-Tokens (CSIv2), Bidirectional-GIOP-Listening-Points etc.
+//! Transported in every request/reply header and is the
+//! standard slot for codeset negotiation, transactional context,
+//! security tokens (CSIv2), bidirectional-GIOP listening points, etc.
 
 use alloc::vec::Vec;
 
@@ -63,14 +63,14 @@ pub enum ServiceContextTag {
 }
 
 impl ServiceContextTag {
-    /// Tag-Wert (`unsigned long`).
+    /// Tag value (`unsigned long`).
     #[must_use]
     pub const fn as_u32(self) -> u32 {
         self as u32
     }
 }
 
-/// ServiceContext — Tag + opaque Octet-Sequenz.
+/// ServiceContext — tag + opaque octet sequence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceContext {
     /// `context_id` (`ServiceId` = `unsigned long`).
@@ -80,7 +80,7 @@ pub struct ServiceContext {
 }
 
 impl ServiceContext {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(context_id: u32, context_data: Vec<u8>) -> Self {
         Self {
@@ -95,19 +95,19 @@ impl ServiceContext {
 pub struct ServiceContextList(pub Vec<ServiceContext>);
 
 impl ServiceContextList {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new() -> Self {
         Self(Vec::new())
     }
 
-    /// Anzahl Eintraege.
+    /// Number of entries.
     #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    /// `true` wenn leer.
+    /// `true` if empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
@@ -137,7 +137,7 @@ impl ServiceContextList {
     /// CDR-Decode.
     ///
     /// # Errors
-    /// Buffer-Lesefehler oder Length-Overflow.
+    /// Buffer read error or length overflow.
     pub fn decode(r: &mut BufferReader<'_>) -> GiopResult<Self> {
         let count = r.read_u32()? as usize;
         let mut out = Vec::with_capacity(count.min(64));

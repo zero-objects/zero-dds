@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "OMG CORBA 3.3 Part 1 §11 POA (Portable Object Adapter) — alle 7 Policies in allen Modi, POAManager-State-Machine, Active-Object-Map, ServantManager. no_std + alloc."
+description = "OMG CORBA 3.3 Part 1 §11 POA (Portable Object Adapter) — all 7 policies in all modes, POAManager state machine, active object map, ServantManager. no_std + alloc."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-corba-poa"
 readme = "README.md"
@@ -26,4 +26,4 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-corba-ir = { version = "1.0.0-rc.1", path = "../corba-ir" }
+zerodds-corba-ir = { version = "1.0.0-rc.3", path = "../corba-ir" }

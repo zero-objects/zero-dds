@@ -1,9 +1,9 @@
-//! T9 — Liveliness-driven OWNERSHIP-Failover (Spec §2.2.3.23).
+//! T9 — liveliness-driven OWNERSHIP failover (Spec §2.2.3.23).
 //!
-//! Verifiziert die DataReader-Hooks `notify_writer_liveliness_lost`
-//! und `notify_participant_liveliness_lost`, die im WLP-Pfad gerufen
-//! werden, sobald ein Writer-/Participant-Lease abgelaufen ist und
-//! die Failover-Selection neu greifen muss.
+//! Verifies the DataReader hooks `notify_writer_liveliness_lost`
+//! and `notify_participant_liveliness_lost`, which are called on the
+//! WLP path as soon as a writer/participant lease has expired and
+//! the failover selection must take effect again.
 
 #![allow(
     clippy::expect_used,
@@ -47,7 +47,7 @@ fn notify_writer_liveliness_lost_clears_owner() {
     assert!(it.should_accept_sample_under_exclusive_ownership(&key, strong, 100));
     // Weak writer rejected while strong holds ownership.
     assert!(!it.should_accept_sample_under_exclusive_ownership(&key, weak, 10));
-    // Liveliness-Lost hook on strong writer → owner cleared.
+    // Liveliness-lost hook on strong writer → owner cleared.
     assert_eq!(reader.notify_writer_liveliness_lost(strong), 1);
     // Now weak can win.
     assert!(it.should_accept_sample_under_exclusive_ownership(&key, weak, 10));
@@ -82,11 +82,11 @@ fn notify_participant_liveliness_lost_clears_all_writers_with_prefix() {
     assert!(it.should_accept_sample_under_exclusive_ownership(&k1, g1, 50));
     assert!(it.should_accept_sample_under_exclusive_ownership(&k2, g2, 50));
 
-    // SPDP-Lease-Expiry → clear-by-prefix loescht beide Owner.
+    // SPDP lease expiry → clear-by-prefix removes both owners.
     let cleared = reader.notify_participant_liveliness_lost([7u8; 12]);
     assert_eq!(cleared, 2);
 
-    // Schwaecherer Writer kann jetzt gewinnen.
+    // The weaker writer can now win.
     let weak = [1u8; 16];
     assert!(it.should_accept_sample_under_exclusive_ownership(&k1, weak, 1));
     assert!(it.should_accept_sample_under_exclusive_ownership(&k2, weak, 1));
@@ -110,10 +110,10 @@ fn notify_writer_liveliness_lost_for_unknown_writer_is_noop() {
     let strong = [9u8; 16];
     assert!(it.should_accept_sample_under_exclusive_ownership(&key, strong, 100));
 
-    // Unknown writer → kein Owner clear.
+    // Unknown writer → no owner clear.
     let unknown = [42u8; 16];
     assert_eq!(reader.notify_writer_liveliness_lost(unknown), 0);
-    // Original Owner immer noch aktiv.
+    // Original owner still active.
     assert!(it.should_accept_sample_under_exclusive_ownership(&key, strong, 100));
     let weak = [1u8; 16];
     assert!(!it.should_accept_sample_under_exclusive_ownership(&key, weak, 10));

@@ -1,10 +1,10 @@
-// RTI Connext DDS Vendor-Profile.
+// RTI Connext DDS vendor profile.
 //
-// RTI nutzt:
-// - keylist Top-Level (RTI-Delta, Production rti_keylist)
-// - @RTI_*-Annotations (durchgereicht als custom-annotations)
-// - Comment-style legacy: //@key, //@ID(n) — separate Lexer-Erweiterung
-//   (nicht Teil dieser Fixture).
+// RTI uses:
+// - keylist top level (RTI delta, production rti_keylist)
+// - @RTI_* annotations (passed through as custom annotations)
+// - comment-style legacy: //@key, //@ID(n) — a separate lexer extension
+//   (not part of this fixture).
 // - @allowed_data_representation, @verbatim heavy use
 
 @verbatim(language="cpp", placement=BEFORE_DECLARATION,
@@ -16,7 +16,7 @@ struct ShapeType {
     long shapesize;
 };
 
-// RTI-spezifische Vendor-Annotations (durchgereicht).
+// RTI-specific vendor annotations (passed through).
 @RTI_resource_limits(initial_count=10, max_count=100)
 @RTI_data_representation(XCDR2)
 struct LargeBag {

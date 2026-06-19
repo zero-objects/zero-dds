@@ -2,13 +2,13 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Best-Effort Stateless RTPS-Writer (W4).
 //!
-//! ein einziges 1:1-Modell mit einem Reader. Reliable-
-//! AckNack-Loop, Heartbeat-Timer, History-Cache mit Resend-Logik
-//! folgen mit Phase 1.
+//! a single 1:1 model with one reader. Reliable-
+//! The AckNack loop, heartbeat timer, history cache with resend logic
+//! follow with phase 1.
 //!
-//! Der Writer ist eine reine Datenstruktur ohne I/O — er produziert
-//! Datagramme als `Vec<u8>`, der Caller leitet sie an seinen Transport
-//! weiter. Diese Trennung erleichtert Testing (no fakes needed).
+//! The writer is a pure data structure without I/O — it produces
+//! datagrams as `Vec<u8>`, the caller forwards them to its transport
+//! on. This separation eases testing (no fakes needed).
 
 extern crate alloc;
 use alloc::sync::Arc;
@@ -23,21 +23,21 @@ use crate::wire_types::{EntityId, Guid, GuidPrefix, SequenceNumber, VendorId};
 /// Stateless Best-Effort Writer.
 ///
 /// Pflegt nur den naechsten zu vergebenden `SequenceNumber`. Jeder
-/// `write()`-Call inkrementiert die SN, baut eine DATA-Submessage und
-/// liefert das fertige Datagram. Der Caller sendet das via Transport.
+/// `write()` call increments the SN, builds a DATA submessage and
+/// returns the finished datagram. The caller sends it via the transport.
 #[derive(Debug, Clone)]
 pub struct BestEffortWriter {
     guid: Guid,
     vendor_id: VendorId,
     next_sn: i64,
-    /// EntityId des einen erlaubten Reader-Endpoints.
+    /// EntityId of the single allowed reader endpoint.
     target_reader: EntityId,
 }
 
 impl BestEffortWriter {
-    /// Konstruiert einen Writer.
+    /// Constructs a writer.
     ///
-    /// `next_sn` startet bei 1 (Spec-Konvention: erste valid SN).
+    /// `next_sn` starts at 1 (spec convention: first valid SN).
     #[must_use]
     pub fn new(
         participant_prefix: GuidPrefix,
@@ -52,7 +52,7 @@ impl BestEffortWriter {
         }
     }
 
-    /// Setzt die VendorId (Default `VendorId::ZERODDS`).
+    /// Sets the VendorId (default `VendorId::ZERODDS`).
     pub fn set_vendor_id(&mut self, vendor: VendorId) {
         self.vendor_id = vendor;
     }
@@ -63,19 +63,19 @@ impl BestEffortWriter {
         self.guid
     }
 
-    /// SequenceNumber, die beim naechsten `write()` vergeben wird.
+    /// SequenceNumber assigned on the next `write()`.
     #[must_use]
     pub fn next_sequence_number(&self) -> SequenceNumber {
         SequenceNumber(self.next_sn)
     }
 
-    /// Encoded eine DATA-Submessage mit `payload` und liefert das
-    /// fertige RTPS-Datagram. SequenceNumber wird vor Return
-    /// inkrementiert.
+    /// Encodes a DATA submessage with `payload` and returns the
+    /// finished RTPS datagram. The SequenceNumber is incremented before
+    /// return.
     ///
     /// # Errors
-    /// `WireError::ValueOutOfRange`, wenn der Body groesser als
-    /// `u16::MAX` Bytes wird.
+    /// `WireError::ValueOutOfRange` if the body becomes larger than
+    /// `u16::MAX` bytes.
     pub fn write(&mut self, payload: &[u8]) -> Result<Vec<u8>, WireError> {
         let sn = SequenceNumber(self.next_sn);
         self.next_sn = self

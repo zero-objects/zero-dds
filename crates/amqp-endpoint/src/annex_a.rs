@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Annex-A IDL Configuration Schema (normativ).
+//! Annex-A IDL configuration schema (normative).
 //!
-//! Spec-Quelle: DDS-AMQP-1.0 Annex A — `module zerodds::amqp`.
-//! Diese Modul-Datei spiegelt die IDL-Strukturen 1-zu-1 nach Rust;
-//! die Felder und Enum-Werte uebernehmen die Spec-Schreibweise
-//! exakt (vgl. `MODE_PASSTHROUGH` etc.) damit Spec-Audit byte-
-//! genau abprueft.
+//! Spec source: DDS-AMQP-1.0 Annex A — `module zerodds::amqp`.
+//! This module file mirrors the IDL structures one-to-one into Rust;
+//! the fields and enum values adopt the spec spelling exactly
+//! (cf. `MODE_PASSTHROUGH` etc.) so that the spec audit can verify
+//! byte-for-byte.
 //!
-//! Die Struktur wird per `crate::config_xml`-Loader (Feature `std`)
-//! aus XML deserialisiert; eine Codegen-Pipeline aus dem Annex-A-IDL
-//! ist als spaetere Optimierung der Build-Pipeline vorgesehen.
+//! The structure is deserialized from XML via the `crate::config_xml`
+//! loader (feature `std`); a codegen pipeline from the Annex-A IDL is
+//! planned as a later optimization of the build pipeline.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -45,8 +45,8 @@ impl SaslMechanism {
         }
     }
 
-    /// Inverse Decode aus IDL-Symbol-String. Akzeptiert auch die
-    /// AMQP-Wire-Form ohne `SASL_`-Praefix (`PLAIN`/`ANONYMOUS`/...).
+    /// Inverse decode from the IDL symbol string. Also accepts the
+    /// AMQP wire form without the `SASL_` prefix (`PLAIN`/`ANONYMOUS`/...).
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "SASL_PLAIN" | "PLAIN" => Some(Self::SaslPlain),
@@ -81,7 +81,7 @@ impl BodyEncodingMode {
         }
     }
 
-    /// Inverse Decode.
+    /// Inverse decode.
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "MODE_PASSTHROUGH" | "PASSTHROUGH" | "PASS_THROUGH" => Some(Self::ModePassthrough),
@@ -112,7 +112,7 @@ impl TimeMapping {
         }
     }
 
-    /// Inverse Decode.
+    /// Inverse decode.
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "MAPPING_STANDARD" | "STANDARD" => Some(Self::MappingStandard),
@@ -142,7 +142,7 @@ impl DescriptorForm {
         }
     }
 
-    /// Inverse Decode.
+    /// Inverse decode.
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "DESC_TRUNCATED" | "TRUNCATED" => Some(Self::DescTruncated),
@@ -175,7 +175,7 @@ impl LinkDirection {
         }
     }
 
-    /// Inverse Decode.
+    /// Inverse decode.
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "DIR_PRODUCER_TO_DDS" | "PRODUCER_TO_DDS" | "producer-to-dds" => {
@@ -213,9 +213,9 @@ pub struct TopicMapping {
     pub time_mapping: TimeMapping,
     /// `DescriptorForm descriptor_form` (default `DESC_TRUNCATED`).
     pub descriptor_form: DescriptorForm,
-    /// `boolean rpc_aware` (default false; siehe Annex D).
+    /// `boolean rpc_aware` (default false; see Annex D).
     pub rpc_aware: bool,
-    /// `uint32 rpc_timeout_ms` (default 30000; nur bei rpc_aware=true).
+    /// `uint32 rpc_timeout_ms` (default 30000; only when rpc_aware=true).
     pub rpc_timeout_ms: u32,
     /// `LinkDirection direction` (default `DIR_BOTH`).
     pub direction: LinkDirection,
@@ -280,7 +280,7 @@ pub struct ResourceLimits {
 
 impl Default for ResourceLimits {
     fn default() -> Self {
-        // Spec §7.10 + DoS-Caps aus `crate::limits::ResourceLimits`.
+        // Spec §7.10 + DoS caps from `crate::limits::ResourceLimits`.
         Self {
             max_connections: 1024,
             max_sessions_per_connection: 8,
@@ -319,7 +319,7 @@ pub struct AmqpEndpointConfig {
     pub dynamic: DynamicTopicConfig,
     /// `ResourceLimits limits`.
     pub limits: ResourceLimits,
-    /// `string<36> bridge_id` (RFC-4122 UUID, leer => generate at startup).
+    /// `string<36> bridge_id` (RFC-4122 UUID, empty => generate at startup).
     pub bridge_id: String,
     /// `uint8 bridge_hop_cap` (default 8).
     pub bridge_hop_cap: u8,

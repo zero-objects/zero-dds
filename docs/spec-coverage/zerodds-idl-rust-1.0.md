@@ -2,6 +2,10 @@
 
 **Quelle:** `docs/specs/zerodds-idl-rust-1.0.md` (ZeroDDS Vendor-Spec)
 
+Implementation:
+
+- `crates/idl-rust/` — OMG-IDL→Rust-Codegen + DdsType-Trait.
+
 ## §1 Scope
 
 ### §1.1 Codegen baut DdsType, CdrEncode/Decode, field_value
@@ -20,7 +24,7 @@
 
 **Repo:** `crates/idl-rust/src/emitter.rs::emit_definition` (Catch-all-arm); `crates/idl-rust/src/type_map.rs::rust_type_for` (Unsupported für Fixed/Map/Any).
 
-**Tests:** indirekt via `compile_check_*` — alle in-scope Konstrukte sind emittierbar; out-of-scope-Konstrukte testen wir Phase 2 mit Negativ-Tests.
+**Tests:** indirekt via `compile_check_*` — alle in-scope-Konstrukte sind emittierbar; dedizierte Negativ-Tests für out-of-scope-Konstrukte stehen aus.
 
 **Status:** done
 
@@ -260,7 +264,7 @@
 
 **Spec:** §7 — IDL §7.4.4.6 Map: assoziative Container.
 
-**Repo:** `crates/cdr/src/composite.rs::impl CdrEncode for BTreeMap<K, V>` + `CdrDecode for BTreeMap<K, V>`; `crates/idl-rust/src/type_map.rs::rust_map` mappt `map<K, V>` → `::std::collections::BTreeMap<K, V>`. Default-Wahl BTreeMap (deterministische Iter-Order); HashMap-Variante via `@map_impl(HashMap)`-Annotation in Phase 2.
+**Repo:** `crates/cdr/src/composite.rs::impl CdrEncode for BTreeMap<K, V>` + `CdrDecode for BTreeMap<K, V>`; `crates/idl-rust/src/type_map.rs::rust_map` mappt `map<K, V>` → `::std::collections::BTreeMap<K, V>`. Default-Wahl BTreeMap (deterministische Iter-Order); eine HashMap-Variante via `@map_impl(HashMap)`-Annotation ist optional und nicht implementiert.
 
 **Tests:** `snapshot_struct_with_map_field`.
 
@@ -280,11 +284,11 @@
 
 **Spec:** §7 — IDL §7.4.5.4/§7.4.6.4/§7.4.8/§7.4.9: CORBA-Service-Konstrukte. Werden im **separaten Service-Codegen** `zerodds-corba-rust` emittiert (Layer 8), nicht im DataType-Codegen `zerodds-idl-rust` (Layer 3).
 
-**Repo:** `crates/corba-rust/src/{interface_emit,valuetype_emit}.rs` — emittiert `pub trait`/Stub/Skeleton fuer Interfaces und `pub trait V: ValueBase` fuer Valuetypes. Component/Home sind Phase-2 in `corba-rust`.
+**Repo:** `crates/corba-rust/src/{interface_emit,valuetype_emit}.rs` — emittiert `pub trait`/Stub/Skeleton für Interfaces und `pub trait V: ValueBase` für Valuetypes; Component/Home via `component_emit.rs` (`emit_component`/`emit_home`).
 
 **Tests:** `crates/corba-rust/tests/snapshot_codegen.rs`.
 
-**Status:** done — Architektur-Trennung via `corba-rust`-Crate. Coverage der CORBA-spezifischen Mappings: `docs/spec-coverage/zerodds-corba-rust-1.0.md`.
+**Status:** done — Architektur-Trennung via `corba-rust`-Crate. Coverage der CORBA-spezifischen Mappings: `docs/spec-coverage/zerodds-corba-rust-1.1.md`.
 
 ## §8 Konformitäts-Tests
 
@@ -345,5 +349,3 @@
 27 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
 Test-Lauf: `cargo test -p zerodds-idl-rust --tests && cargo test -p zerodds-idl-rust --test compile_check -- --include-ignored && cargo test -p zerodds-idl-rust --test wire_roundtrip -- --include-ignored` — 14 + 8 + 6 = 28 Tests grün, 0 failed.
-
-Offene Punkte und Decision-Records: `zerodds-idl-rust-1.0.open.md`.

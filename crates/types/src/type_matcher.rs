@@ -2,11 +2,11 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Writer↔Reader Type-Matching (XTypes §7.2.4 + §7.6.3.7).
 //!
-//! Verbindet [`assignability::is_assignable`] mit der QoS-Policy
-//! [`TypeConsistencyEnforcement`]: je nach TCE-Flags werden einzelne
-//! Assignability-Rules abgeschwaecht oder verschaerft.
+//! Connects [`assignability::is_assignable`] with the QoS policy
+//! [`TypeConsistencyEnforcement`]: depending on the TCE flags, individual
+//! assignability rules are relaxed or tightened.
 //!
-//! Beispiel:
+//! Example:
 //!
 //! ```
 //! use zerodds_types::qos::TypeConsistencyEnforcement;
@@ -27,22 +27,22 @@ use crate::qos::{TypeConsistencyEnforcement, TypeConsistencyKind};
 use crate::resolve::TypeRegistry;
 use crate::type_identifier::TypeIdentifier;
 
-/// Ergebnis eines Type-Matches. Identisch in Semantik zu [`Assignable`],
-/// aber ein eigenstaendiger Typ fuer die Matcher-API (so wird der
-/// Call-Site nicht an das interne `Assignable` gekoppelt).
+/// Result of a type match. Identical in semantics to [`Assignable`],
+/// but a standalone type for the matcher API (so the
+/// call site is not coupled to the internal `Assignable`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeMatchResult {
-    /// Writer-Type und Reader-Type sind fuer ein Match kompatibel.
+    /// Writer type and reader type are compatible for a match.
     Matches,
-    /// Inkompatibel — statische Begruendung.
+    /// Incompatible — static reason.
     Incompatible {
-        /// Kurze, statische Begruendung.
+        /// Short, static reason.
         reason: &'static str,
     },
 }
 
 impl TypeMatchResult {
-    /// `true` wenn kompatibel.
+    /// `true` if compatible.
     #[must_use]
     pub const fn is_match(&self) -> bool {
         matches!(self, Self::Matches)
@@ -56,26 +56,26 @@ impl TypeMatchResult {
     }
 }
 
-/// Facade um [`is_assignable`], die eine [`TypeConsistencyEnforcement`]-
-/// Policy in die interne [`AssignabilityConfig`] uebersetzt.
+/// Facade over [`is_assignable`] that translates a [`TypeConsistencyEnforcement`]
+/// policy into the internal [`AssignabilityConfig`].
 ///
-/// Keine eigene State — hallt die TCE-Werte zum Call-Time durch.
+/// No own state — passes the TCE values through at call time.
 #[derive(Debug, Clone, Copy)]
 pub struct TypeMatcher<'a> {
     tce: &'a TypeConsistencyEnforcement,
 }
 
 impl<'a> TypeMatcher<'a> {
-    /// Konstruktor mit einer TCE-Policy.
+    /// Constructor with a TCE policy.
     #[must_use]
     pub const fn new(tce: &'a TypeConsistencyEnforcement) -> Self {
         Self { tce }
     }
 
-    /// Prueft Writer↔Reader Type-Compatibility.
+    /// Checks writer↔reader type compatibility.
     ///
-    /// `registry` stellt TypeObjects fuer `EquivalenceHash`-Referenzen
-    /// bereit; ein leerer Registry passt fuer primitive/plain Typen.
+    /// `registry` provides TypeObjects for `EquivalenceHash` references;
+    /// an empty registry fits primitive/plain types.
     #[must_use]
     pub fn match_types(
         &self,
@@ -87,15 +87,15 @@ impl<'a> TypeMatcher<'a> {
         TypeMatchResult::from_assignable(is_assignable(writer, reader, registry, &cfg))
     }
 
-    /// Uebersetzt [`TypeConsistencyEnforcement`] nach
+    /// Translates [`TypeConsistencyEnforcement`] into
     /// [`AssignabilityConfig`].
     ///
     /// Mapping:
     /// - `kind == AllowTypeCoercion` ∧ ¬`prevent_type_widening`
     ///   → `allow_type_coercion = true`.
     /// - `force_type_validation` → `allow_type_coercion = false`
-    ///   (uebertrumpft die vorige Regel, §7.6.3.7.1).
-    /// - `max_depth` bleibt Default (kommt aus Resolver-Config).
+    ///   (overrides the previous rule, §7.6.3.7.1).
+    /// - `max_depth` stays at the default (comes from the resolver config).
     fn build_config(&self) -> AssignabilityConfig {
         let coerce = matches!(self.tce.kind, TypeConsistencyKind::AllowTypeCoercion)
             && !self.tce.prevent_type_widening;

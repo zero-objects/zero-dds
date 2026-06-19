@@ -1,32 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Builtin-Topic-Datentypen — DCPS-API-Sicht (DDS 1.4 §2.2.5).
+//! Built-in-topic data types — DCPS API view (DDS 1.4 §2.2.5).
 //!
-//! Die Spec definiert vier "Builtin-Topics":
+//! The spec defines four "built-in topics":
 //!
-//! | Topic-Name        | Sample-Typ                       | Quelle |
+//! | Topic name        | Sample type                      | Source |
 //! |-------------------|----------------------------------|--------|
 //! | `DCPSParticipant` | [`ParticipantBuiltinTopicData`]  | SPDP   |
-//! | `DCPSTopic`       | [`TopicBuiltinTopicData`]        | SEDP-Topic-Announce (RTPS 2.5 §9.6.2.2.4) |
-//! | `DCPSPublication` | [`PublicationBuiltinTopicData`]  | SEDP-Pub-Announce |
-//! | `DCPSSubscription`| [`SubscriptionBuiltinTopicData`] | SEDP-Sub-Announce |
+//! | `DCPSTopic`       | [`TopicBuiltinTopicData`]        | SEDP topic announce (RTPS 2.5 §9.6.2.2.4) |
+//! | `DCPSPublication` | [`PublicationBuiltinTopicData`]  | SEDP pub announce |
+//! | `DCPSSubscription`| [`SubscriptionBuiltinTopicData`] | SEDP sub announce |
 //!
-//! Diese DCPS-Strukturen sind **anwendungsfreundlich**: feste Felder,
-//! kein PL_CDR-Wire-Format. Die wire-Decoder fuer
-//! Pub/Sub/Participant aus dem Crate `zerodds-rtps` werden vom Runtime
-//! aufgerufen und das Ergebnis in die hier definierten DCPS-Typen
-//! konvertiert (siehe `From`-Impls weiter unten), bevor sie ueber den
-//! Builtin-Subscriber an User-Code ausgeliefert werden.
+//! These DCPS structs are **application-friendly**: fixed fields, no
+//! PL_CDR wire format. The wire decoders for pub/sub/participant from
+//! the `zerodds-rtps` crate are called by the runtime and the result is
+//! converted into the DCPS types defined here (see the `From` impls
+//! further below) before they are delivered to user code via the
+//! built-in subscriber.
 //!
-//! # `DdsType`-Implementation
+//! # `DdsType` implementation
 //!
-//! Da die Builtin-Topics auch ueber `DataReader::take()` ausgegeben
-//! werden, brauchen sie eine `DdsType`-Impl. Wir verwenden ein
-//! minimales internes Encoding (ZeroDDS-internal-PL_CDR_LE), das
-//! Roundtrip-fest ist — die Builtin-Daten werden niemals "wire" auf
-//! ein anderes Vendor uebertragen, daher reicht das.
+//! Since the built-in topics are also emitted via `DataReader::take()`,
+//! they need a `DdsType` impl. We use a minimal internal encoding
+//! (ZeroDDS-internal PL_CDR_LE) that is roundtrip-safe — the built-in
+//! data is never transmitted "on the wire" to another vendor, so this
+//! suffices.
 //!
-//! Spec-Referenzen:
+//! Spec references:
 //! - DDS-DCPS 1.4 §2.2.5 (Built-in Topics)
 //! - DDSI-RTPS 2.5 §8.5.4 (SEDP Built-in Endpoints)
 
@@ -42,39 +42,39 @@ use zerodds_rtps::subscription_data as wire_sub;
 use zerodds_rtps::wire_types::Guid;
 
 // ---------------------------------------------------------------------
-// Topic-Namen (Spec §2.2.5).
+// Topic names (spec §2.2.5).
 // ---------------------------------------------------------------------
 
-/// Topic-Name `"DCPSParticipant"` (Spec §2.2.5.1).
+/// Topic name `"DCPSParticipant"` (spec §2.2.5.1).
 pub const TOPIC_NAME_DCPS_PARTICIPANT: &str = "DCPSParticipant";
-/// Topic-Name `"DCPSTopic"` (Spec §2.2.5.2).
+/// Topic name `"DCPSTopic"` (spec §2.2.5.2).
 pub const TOPIC_NAME_DCPS_TOPIC: &str = "DCPSTopic";
-/// Topic-Name `"DCPSPublication"` (Spec §2.2.5.3).
+/// Topic name `"DCPSPublication"` (spec §2.2.5.3).
 pub const TOPIC_NAME_DCPS_PUBLICATION: &str = "DCPSPublication";
-/// Topic-Name `"DCPSSubscription"` (Spec §2.2.5.4).
+/// Topic name `"DCPSSubscription"` (spec §2.2.5.4).
 pub const TOPIC_NAME_DCPS_SUBSCRIPTION: &str = "DCPSSubscription";
 
 // ---------------------------------------------------------------------
 // 1) DCPSParticipant
 // ---------------------------------------------------------------------
 
-/// Sample-Typ des `DCPSParticipant`-Builtin-Topics (DDS 1.4 §2.2.5.1).
+/// Sample type of the `DCPSParticipant` built-in topic (DDS 1.4 §2.2.5.1).
 ///
-/// Repraesentiert einen entdeckten remote `DomainParticipant`.
+/// Represents a discovered remote `DomainParticipant`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParticipantBuiltinTopicData {
-    /// Stabiler Identifier des Participants (16-Byte GUID; entspricht
-    /// `BuiltinTopicKey_t` der Spec — bei uns sind das die letzten
-    /// 16 Bytes der RTPS-GUID).
+    /// Stable identifier of the participant (16-byte GUID; corresponds
+    /// to the spec's `BuiltinTopicKey_t` — for us these are the last
+    /// 16 bytes of the RTPS GUID).
     pub key: Guid,
-    /// USER_DATA-QoS-Bytes (Spec §2.2.5.1: `user_data`). Optional im
-    /// SPDP-Beacon — gefuellt aus `DomainParticipantQos::user_data`,
-    /// wire-encoded als PID_USER_DATA (DDSI-RTPS §9.6.3.2).
+    /// USER_DATA QoS bytes (spec §2.2.5.1: `user_data`). Optional in the
+    /// SPDP beacon — filled from `DomainParticipantQos::user_data`,
+    /// wire-encoded as PID_USER_DATA (DDSI-RTPS §9.6.3.2).
     pub user_data: Vec<u8>,
 }
 
 impl ParticipantBuiltinTopicData {
-    /// Konstruiert aus dem Wire-Datentyp (`zerodds-rtps`).
+    /// Constructs from the wire data type (`zerodds-rtps`).
     #[must_use]
     pub fn from_wire(w: &wire_part::ParticipantBuiltinTopicData) -> Self {
         Self {
@@ -110,36 +110,36 @@ impl DdsType for ParticipantBuiltinTopicData {
 // 2) DCPSTopic
 // ---------------------------------------------------------------------
 
-/// Sample-Typ des `DCPSTopic`-Builtin-Topics (DDS 1.4 §2.2.5.2).
+/// Sample type of the `DCPSTopic` built-in topic (DDS 1.4 §2.2.5.2).
 ///
-/// Minimaler Subset (Topic-Name + Type-Name + Durability +
-/// Reliability), aus dem End-User-Tooling die discovered Topics
-/// rendern kann. Volle Topic-QoS-Tabelle (DDS 1.4 §2.2.5.2) bleibt
-/// optionale Erweiterung.
+/// Minimal subset (topic name + type name + durability + reliability)
+/// from which end-user tooling can render the discovered topics. The
+/// full topic-QoS table (DDS 1.4 §2.2.5.2) remains an optional
+/// extension.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopicBuiltinTopicData {
-    /// Stabile Identitaet des Topic-Eintrags (synthetisch aus Hash
-    /// von Topic-Name + Type-Name; siehe [`Self::synthesize_key`]).
+    /// Stable identity of the topic entry (synthetic, from a hash of
+    /// topic name + type name; see [`Self::synthesize_key`]).
     pub key: Guid,
-    /// Topic-Name (z.B. `"ChatterTopic"`).
+    /// Topic name (e.g. `"ChatterTopic"`).
     pub name: String,
-    /// IDL-Type-Name.
+    /// IDL type name.
     pub type_name: String,
-    /// Durability-QoS-Kind.
+    /// Durability QoS kind.
     pub durability: zerodds_qos::DurabilityKind,
-    /// Reliability-QoS-Kind.
+    /// Reliability QoS kind.
     pub reliability: zerodds_qos::ReliabilityKind,
 }
 
 impl TopicBuiltinTopicData {
-    /// Erzeugt einen synthetischen GUID-Key aus Topic + Type-Name.
-    /// Stabil: derselbe Topic+Type ergibt denselben Key. Damit das
-    /// `DCPSTopic`-Builtin-Topic Idempotent-Updates statt Insert-pro-
-    /// Endpoint liefert (Spec §2.2.5.2).
+    /// Produces a synthetic GUID key from topic + type name. Stable:
+    /// the same topic+type yields the same key. This makes the
+    /// `DCPSTopic` built-in topic deliver idempotent updates instead of
+    /// insert-per-endpoint (spec §2.2.5.2).
     #[must_use]
     pub fn synthesize_key(topic: &str, type_name: &str) -> Guid {
-        // FNV-1a 64-bit, doppelt — deterministisch, no_std,
-        // ausreichend kollisionssicher fuer einige tausend Topics.
+        // FNV-1a 64-bit, twice — deterministic, no_std, sufficiently
+        // collision-safe for a few thousand topics.
         let h1 = fnv1a64(topic.as_bytes(), 0xcbf2_9ce4_8422_2325);
         let h2 = fnv1a64(type_name.as_bytes(), h1);
         let mut bytes = [0u8; 16];
@@ -148,7 +148,7 @@ impl TopicBuiltinTopicData {
         Guid::from_bytes(bytes)
     }
 
-    /// Konstruiert aus einem entdeckten Publication-Wire-Datentyp.
+    /// Constructs from a discovered publication wire data type.
     #[must_use]
     pub fn from_publication(w: &wire_pub::PublicationBuiltinTopicData) -> Self {
         Self {
@@ -160,7 +160,7 @@ impl TopicBuiltinTopicData {
         }
     }
 
-    /// Konstruiert aus einem entdeckten Subscription-Wire-Datentyp.
+    /// Constructs from a discovered subscription wire data type.
     #[must_use]
     pub fn from_subscription(w: &wire_sub::SubscriptionBuiltinTopicData) -> Self {
         Self {
@@ -212,39 +212,39 @@ impl DdsType for TopicBuiltinTopicData {
 // 3) DCPSPublication
 // ---------------------------------------------------------------------
 
-/// Sample-Typ des `DCPSPublication`-Builtin-Topics (DDS 1.4 §2.2.5.3).
+/// Sample type of the `DCPSPublication` built-in topic (DDS 1.4 §2.2.5.3).
 ///
-/// Repraesentiert einen entdeckten remote `DataWriter`.
+/// Represents a discovered remote `DataWriter`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublicationBuiltinTopicData {
-    /// Identitaet des Endpoints (= Writer-GUID).
+    /// Identity of the endpoint (= writer GUID).
     pub key: Guid,
-    /// GUID des Participants, dem der Writer gehoert.
+    /// GUID of the participant that owns the writer.
     pub participant_key: Guid,
-    /// Topic-Name.
+    /// Topic name.
     pub topic_name: String,
-    /// IDL-Type-Name.
+    /// IDL type name.
     pub type_name: String,
-    /// Durability-QoS-Kind.
+    /// Durability QoS kind.
     pub durability: zerodds_qos::DurabilityKind,
-    /// Reliability-QoS-Kind.
+    /// Reliability QoS kind.
     pub reliability: zerodds_qos::ReliabilityKind,
-    /// Ownership-QoS-Kind.
+    /// Ownership QoS kind.
     pub ownership: zerodds_qos::OwnershipKind,
-    /// Ownership-Strength.
+    /// Ownership strength.
     pub ownership_strength: i32,
-    /// Liveliness-Lease (Sekunden, gerundet).
+    /// Liveliness lease (seconds, rounded).
     pub liveliness_lease_seconds: i32,
-    /// Deadline-Period (Sekunden, gerundet).
+    /// Deadline period (seconds, rounded).
     pub deadline_seconds: i32,
-    /// Lifespan-Duration (Sekunden, gerundet).
+    /// Lifespan duration (seconds, rounded).
     pub lifespan_seconds: i32,
-    /// Partition-Liste.
+    /// Partition list.
     pub partition: Vec<String>,
 }
 
 impl PublicationBuiltinTopicData {
-    /// Konstruiert aus dem Wire-Datentyp.
+    /// Constructs from the wire data type.
     #[must_use]
     pub fn from_wire(w: &wire_pub::PublicationBuiltinTopicData) -> Self {
         Self {
@@ -324,35 +324,35 @@ impl DdsType for PublicationBuiltinTopicData {
 // 4) DCPSSubscription
 // ---------------------------------------------------------------------
 
-/// Sample-Typ des `DCPSSubscription`-Builtin-Topics (DDS 1.4 §2.2.5.4).
+/// Sample type of the `DCPSSubscription` built-in topic (DDS 1.4 §2.2.5.4).
 ///
-/// Repraesentiert einen entdeckten remote `DataReader`.
+/// Represents a discovered remote `DataReader`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubscriptionBuiltinTopicData {
-    /// Identitaet des Endpoints (= Reader-GUID).
+    /// Identity of the endpoint (= reader GUID).
     pub key: Guid,
-    /// GUID des Participants, dem der Reader gehoert.
+    /// GUID of the participant that owns the reader.
     pub participant_key: Guid,
-    /// Topic-Name.
+    /// Topic name.
     pub topic_name: String,
-    /// IDL-Type-Name.
+    /// IDL type name.
     pub type_name: String,
-    /// Durability-QoS-Kind.
+    /// Durability QoS kind.
     pub durability: zerodds_qos::DurabilityKind,
-    /// Reliability-QoS-Kind.
+    /// Reliability QoS kind.
     pub reliability: zerodds_qos::ReliabilityKind,
-    /// Ownership-QoS-Kind.
+    /// Ownership QoS kind.
     pub ownership: zerodds_qos::OwnershipKind,
-    /// Liveliness-Lease (Sekunden).
+    /// Liveliness lease (seconds).
     pub liveliness_lease_seconds: i32,
-    /// Deadline-Period (Sekunden).
+    /// Deadline period (seconds).
     pub deadline_seconds: i32,
-    /// Partition-Liste.
+    /// Partition list.
     pub partition: Vec<String>,
 }
 
 impl SubscriptionBuiltinTopicData {
-    /// Konstruiert aus dem Wire-Datentyp.
+    /// Constructs from the wire data type.
     #[must_use]
     pub fn from_wire(w: &wire_sub::SubscriptionBuiltinTopicData) -> Self {
         Self {
@@ -421,7 +421,7 @@ impl DdsType for SubscriptionBuiltinTopicData {
 }
 
 // ---------------------------------------------------------------------
-// Internes ZeroDDS-Encoding (kein Wire — bleibt prozess-intern).
+// Internal ZeroDDS encoding (not wire — stays process-internal).
 // ---------------------------------------------------------------------
 
 fn encode_string_le(s: &str, out: &mut Vec<u8>) -> core::result::Result<(), EncodeError> {
@@ -743,6 +743,7 @@ mod tests {
             sig_algo_info: None,
             kx_algo_info: None,
             sym_cipher_algo_info: None,
+            participant_security_info: None,
         };
         let dcps = ParticipantBuiltinTopicData::from_wire(&w);
         assert_eq!(dcps.key, g);
@@ -779,6 +780,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: Vec::new(),
+            multicast_locators: Vec::new(),
         };
         let d = PublicationBuiltinTopicData::from_wire(&w);
         assert_eq!(d.key, g_w);
@@ -815,6 +818,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: Vec::new(),
+            multicast_locators: Vec::new(),
         };
         let d = SubscriptionBuiltinTopicData::from_wire(&w);
         assert_eq!(d.key, g_r);
@@ -849,6 +854,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: Vec::new(),
+            multicast_locators: Vec::new(),
         };
         let t = TopicBuiltinTopicData::from_publication(&w);
         let expected_key = TopicBuiltinTopicData::synthesize_key("Same", "T");

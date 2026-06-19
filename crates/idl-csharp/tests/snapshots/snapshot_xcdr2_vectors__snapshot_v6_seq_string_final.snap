@@ -30,23 +30,37 @@ public sealed class TagsTypeSupport : IDdsTopicType<Tags>
     public byte[] Encode(Tags sample, EndianMode endian)
     {
         var w = new Xcdr2Writer(endian);
+        EncodeInto(w, sample);
+        return w.ToArray();
+    }
+
+    public void EncodeInto(Xcdr2Writer w, Tags sample)
+    {
         {
             var __seq = (sample.Tags) as System.Collections.Generic.IEnumerable<string>;
             var __mat = __seq is null ? new System.Collections.Generic.List<string>() : new System.Collections.Generic.List<string>(__seq);
-            w.WriteSequenceLength(__mat.Count);
-            foreach (var __item in __mat)
+            using (var __seqdh = w.BeginAppendable())
             {
-                w.WriteString(__item);
+                w.WriteSequenceLength(__mat.Count);
+                foreach (var __item in __mat)
+                {
+                    w.WriteString(__item);
+                }
             }
         }
-        return w.ToArray();
     }
 
     public Tags Decode(ReadOnlySpan<byte> bytes)
     {
         var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
+        return DecodeFrom(r);
+    }
+
+    public Tags DecodeFrom(Xcdr2Reader r)
+    {
         Omg.Types.ISequence<string> __m0 = default;
         {
+            var __seqdh = r.BeginDHeader();
             int __cnt = r.ReadSequenceLength();
             var __list = new Omg.Types.SequenceList<string>();
             for (int __i = 0; __i < __cnt; __i++)
@@ -55,6 +69,7 @@ public sealed class TagsTypeSupport : IDdsTopicType<Tags>
                 __e = r.ReadString();
                 __list.Add(__e);
             }
+            r.EndDHeader(__seqdh);
             __m0 = __list;
         }
         return new Tags

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// dds/core/policy/CorePolicy.hpp — DDS-PSM-Cxx 1.0 §7.5.6 alle 22 QoS-Policies.
+// dds/core/policy/CorePolicy.hpp — DDS-PSM-Cxx 1.0 §7.5.6 all 22 QoS policies.
 
 #ifndef ZERODDS_DDS_CORE_POLICY_COREPOLICY_HPP
 #define ZERODDS_DDS_CORE_POLICY_COREPOLICY_HPP
@@ -56,7 +56,7 @@ enum class PresentationAccessScopeKind : uint32_t {
     Group = 2,
 };
 
-// ---- Policy Klassen --------------------------------------------------
+// ---- Policy classes --------------------------------------------------
 
 /// UserData (Spec §7.5.6.16).
 class UserData {
@@ -246,7 +246,7 @@ private:
     bool ordered_{false};
 };
 
-/// Partition (Spec §7.5.6.0 — DDS-PSM-Cxx ohne Nummer; entspricht DCPS §2.2.3.13).
+/// Partition (spec §7.5.6.0 — DDS-PSM-Cxx without a number; corresponds to DCPS §2.2.3.13).
 class Partition {
 public:
     Partition() = default;

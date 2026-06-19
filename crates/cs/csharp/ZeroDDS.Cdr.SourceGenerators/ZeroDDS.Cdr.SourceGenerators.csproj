@@ -7,15 +7,15 @@
     <AssemblyName>ZeroDDS.Cdr.SourceGenerators</AssemblyName>
     <PackageId>ZeroDDS.Cdr.SourceGenerators</PackageId>
     <Version>0.0.0</Version>
-    <Description>Roslyn Source-Generator fuer #[DdsType]-Attribut. Implementiert zerodds-xcdr2-csharp-1.0 §11.4.</Description>
+    <Description>Roslyn source generator for the #[DdsType] attribute. Implements zerodds-xcdr2-csharp-1.0 §11.4.</Description>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <IsRoslynComponent>true</IsRoslynComponent>
     <IncludeBuildOutput>false</IncludeBuildOutput>
-    <!-- Source-Generator-Pakete haben kein lib/<tfm>/ Verzeichnis (die
-         Generator-DLL liegt unter analyzers/dotnet/cs/). NU5128 + NU5017
-         fired beim NuGet-Analyzer-Pass obwohl die nupkg sauber erstellt
-         wird. SDK 9.0.106 lokal: Warning. SDK 9.0.314 + 10.x CI: Error.
-         Bewusst suppressen — die nupkg ist korrekt fuer Roslyn-Consume. -->
+    <!-- Source generator packages have no lib/<tfm>/ directory (the
+         generator DLL lives under analyzers/dotnet/cs/). NU5128 + NU5017
+         fire during the NuGet analyzer pass even though the nupkg is built
+         cleanly. SDK 9.0.106 local: warning. SDK 9.0.314 + 10.x CI: error.
+         Deliberately suppressed — the nupkg is correct for Roslyn consumption. -->
     <NoWarn>$(NoWarn);NU5128;NU5017</NoWarn>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
   </PropertyGroup>
@@ -24,9 +24,9 @@
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Generator-Source-Files leben unter src/. tests/ und bin/ und obj/
-         werden ausgeschlossen damit der Generator nicht versucht test-
-         Dependencies (xunit, ZeroDDS.Cdr) zu kompilieren. -->
+    <!-- Generator source files live under src/. tests/ and bin/ and obj/
+         are excluded so the generator does not try to compile
+         test dependencies (xunit, ZeroDDS.Cdr). -->
     <Compile Remove="tests/**" />
     <Compile Remove="bin/**" />
     <Compile Remove="obj/**" />

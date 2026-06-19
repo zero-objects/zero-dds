@@ -56,9 +56,9 @@ fn md5_empty_string_first_14_bytes_golden_vector() {
 }
 
 // ============================================================================
-// §7.3.4.6 — Indirect Hash TypeIdentifiers (PlainCollectionHeader mit
-// EK_MINIMAL/EK_COMPLETE als Element). Fixed-Wire-Bytes-Vektoren gegen
-// das XCDR2-LE Encoding (XTypes 1.3 §7.3.4.7.1).
+// §7.3.4.6 — indirect hash TypeIdentifiers (PlainCollectionHeader with
+// EK_MINIMAL/EK_COMPLETE as the element). Fixed wire-byte vectors against
+// the XCDR2-LE encoding (XTypes 1.3 §7.3.4.7.1).
 // ============================================================================
 
 use zerodds_types::type_identifier::{
@@ -303,9 +303,9 @@ fn indirect_hash_plain_map_large_complete_keys_minimal_values_wire_vector() {
 
 #[test]
 fn indirect_hash_nested_sequence_of_sequence_minimal_wire_roundtrip() {
-    // sequence<sequence<X,3>,5> mit X = EK_MINIMAL — geschachtelte
-    // PlainCollections. Test verifiziert dass Box-rekursiver Encoder/
-    // Decoder fuer indirekte Hash-Element-Typen byte-genau ist.
+    // sequence<sequence<X,3>,5> with X = EK_MINIMAL — nested
+    // PlainCollections. The test verifies that the Box-recursive encoder/
+    // decoder is byte-exact for indirect hash element types.
     let inner = TypeIdentifier::PlainSequenceSmall {
         header: PlainCollectionHeader {
             equiv_kind: EK_MINIMAL,
@@ -329,9 +329,9 @@ fn indirect_hash_nested_sequence_of_sequence_minimal_wire_roundtrip() {
 
 #[test]
 fn indirect_hash_invalid_equiv_kind_in_header_decodes_as_unknown_ek_byte() {
-    // Wenn equiv_kind weder EK_MINIMAL/EK_COMPLETE/EK_BOTH ist, soll der
-    // Decoder das nicht stillschweigend als EK_MINIMAL fehl-deuten —
-    // header.equiv_kind speichert das Wire-Byte 1:1.
+    // If equiv_kind is none of EK_MINIMAL/EK_COMPLETE/EK_BOTH, the decoder
+    // must not silently misinterpret it as EK_MINIMAL —
+    // header.equiv_kind stores the wire byte 1:1.
     let mut bytes = vec![
         TI_PLAIN_SEQUENCE_SMALL,
         0xAB, // garbage equiv_kind

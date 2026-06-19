@@ -3,13 +3,13 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-sql-filter/badge.svg)](https://docs.rs/zerodds-sql-filter)
 
-OMG DDS 1.4 §B.2.1 ContentFilteredTopic-Filter-Expression Parser +
-Evaluator fuer den [ZeroDDS](https://zerodds.org)-Stack. Pure-Rust +
+OMG DDS 1.4 §B.2.1 ContentFilteredTopic filter-expression parser +
+evaluator for the [ZeroDDS](https://zerodds.org) stack. Pure-Rust +
 `alloc`. Safety classification: **SAFE**.
 
 ## Spec-Mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
 | OMG DDS 1.4 | §B.2.1 (Filter-Expression-Syntax) |
 
@@ -19,7 +19,7 @@ Evaluator fuer den [ZeroDDS](https://zerodds.org)-Stack. Pure-Rust +
 - `RowAccess`-Trait + `Expr::evaluate(row, params)`.
 - `ParseError`, `EvalError`.
 
-## Spec-Coverage (§B.2.1 voll)
+## Spec coverage (§B.2.1 full)
 
 - Literale: String/Int/Float/Bool.
 - Identifier: dotted (`a.b.c`).
@@ -32,7 +32,7 @@ Evaluator fuer den [ZeroDDS](https://zerodds.org)-Stack. Pure-Rust +
 
 ## Schichten-Position
 
-Layer 4. Pure-Rust + `alloc`, **keine** ZeroDDS-Crate-Deps.
+Layer 4. Pure-Rust + `alloc`, **no** ZeroDDS crate deps.
 
 ## Quickstart
 
@@ -63,8 +63,8 @@ assert_eq!(expr.evaluate(&row, &[Value::String("RED".into())]), Ok(true));
 cargo test -p zerodds-sql-filter
 ```
 
-27 + 1 Doc-Test grün.
+27 + 1 doc test green.
 
-## Lizenz
+## License
 
 Apache-2.0.

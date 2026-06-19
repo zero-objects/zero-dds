@@ -1,61 +1,61 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! UDS `SOCK_DGRAM` **mit Abstract-Namespace** — Linux-only,
+//! UDS `SOCK_DGRAM` **with abstract namespace** — Linux-only,
 //! containerized-IPC-optimized (WP 2.0b T5).
 //!
 //! # Scope vs T1
 //!
-//! T1 (`UdsTransport` im Crate-Root) ist `SOCK_DGRAM` + Filesystem-
-//! Path — portable Linux + macOS. **T5 hier** ist `SOCK_DGRAM` +
-//! Linux-Abstract-Namespace (`\0`-prefixed name). Socket-Typ ist
-//! derselbe; was sich aendert, ist die Addressierung:
+//! T1 (`UdsTransport` in the crate root) is `SOCK_DGRAM` + filesystem
+//! path — portable Linux + macOS. **T5 here** is `SOCK_DGRAM` +
+//! Linux abstract namespace (`\0`-prefixed name). The socket type is
+//! the same; what changes is the addressing:
 //!
-//! - Kein Filesystem-Lookup pro `send` (Abstract = in-kernel
+//! - No filesystem lookup per `send` (abstract = in-kernel
 //!   hash-table).
-//! - Kein Volume-Mount noetig fuer Cross-Container-IPC (Container
-//!   muessen nur dieselbe net-namespace / `--ipc host` teilen —
-//!   **nicht** den Filesystem-Pfad).
-//! - Kein Stale-Socket-File beim Crash-Recovery (Kernel raeumt das
-//!   Abstract-Tag automatisch beim Close).
+//! - No volume mount needed for cross-container IPC (containers only
+//!   need to share the same net namespace / `--ipc host` —
+//!   **not** the filesystem path).
+//! - No stale socket file on crash recovery (the kernel reclaims the
+//!   abstract tag automatically on close).
 //!
-//! Zusatz: der Transport unterstuetzt auch Filesystem-Addressierung
-//! (als direkter Vergleich zu T1 in Benches) — der Unterschied ist
-//! eine Config-Zeile, der Socket-Code identisch.
+//! In addition the transport also supports filesystem addressing
+//! (as a direct comparison to T1 in benches) — the difference is a
+//! single config line, the socket code identical.
 //!
-//! # Warum nicht `SOCK_SEQPACKET`
+//! # Why not `SOCK_SEQPACKET`
 //!
-//! Urspruenglich fuer T5 geplant, verworfen: SEQPACKET auf Unix-
-//! Domain ist **connection-oriented** (`listen`/`accept` auf Server,
-//! `connect` auf Client, kein `sendto` moeglich → `ENOTCONN`). Das
-//! ist TCP-über-UDS-Shape, nicht Datagram.
+//! Originally planned for T5, rejected: SEQPACKET on Unix domain is
+//! **connection-oriented** (`listen`/`accept` on the server,
+//! `connect` on the client, no `sendto` possible → `ENOTCONN`). That
+//! is a TCP-over-UDS shape, not a datagram.
 //!
-//! DDS-RTPS ist per Spec (§8.3) Datagram-basiert. 64 KiB-DGRAM-Cap
-//! (Linux `wmem_max` hebt auf 212 KB) reicht fuer alle RTPS-
-//! Submessages nach Fragmentation (WP 1.2 DATA_FRAG schneidet grosse
-//! Samples in MTU-Chunks). Der SEQPACKET-Connection-State-Overhead
-//! zahlt sich hier nicht aus.
+//! DDS-RTPS is datagram-based per spec (§8.3). The 64 KiB DGRAM cap
+//! (Linux `wmem_max` raises it to 212 KB) is enough for all RTPS
+//! submessages after fragmentation (WP 1.2 DATA_FRAG splits large
+//! samples into MTU chunks). The SEQPACKET connection-state overhead
+//! does not pay off here.
 //!
-//! Wenn spaeter echte Messages > 200 KiB gebraucht werden (z.B.
-//! zero-copy-camera-images ohne Fragmentation), kommt ein eigener
-//! `UdsSeqpacketTransport` mit Accept/Connect als v1.3-Spike nach.
+//! If real messages > 200 KiB are needed later (e.g.
+//! zero-copy camera images without fragmentation), a dedicated
+//! `UdsSeqpacketTransport` with accept/connect follows as a v1.3 spike.
 //!
-//! # Warum Linux-only
+//! # Why Linux-only
 //!
-//! Abstract-Namespace ist **ausschliesslich** Linux. macOS + Windows
-//! fallen auf T1 (`UdsTransport`, DGRAM + Filesystem) zurueck. Der
-//! Caller waehlt den Transport per Config; die Transport-Trait-Impl
-//! ist identisch.
+//! The abstract namespace is **exclusively** Linux. macOS + Windows
+//! fall back to T1 (`UdsTransport`, DGRAM + filesystem). The caller
+//! chooses the transport via config; the `Transport` trait impl is
+//! identical.
 //!
-//! # Performance-Claim
+//! # Performance claim
 //!
-//! `SOCK_DGRAM` + Abstract ist der schnellste UDS-Modus fuer
-//! dockerized Local-Machine-Distribution:
+//! `SOCK_DGRAM` + abstract is the fastest UDS mode for dockerized
+//! local-machine distribution:
 //!
-//! - Kein FS-Lookup pro send.
-//! - Kein Round-trip zum Filesystem bei Bind (kein `fsync`, keine
-//!   dir-permission-checks).
-//! - Fuer Cross-Container: kein mounted Volume, kein SELinux-
-//!   Labeling am Pfad.
+//! - No FS lookup per send.
+//! - No round-trip to the filesystem on bind (no `fsync`, no
+//!   dir-permission checks).
+//! - For cross-container: no mounted volume, no SELinux labeling on
+//!   the path.
 
 use std::io;
 use std::mem;
@@ -69,33 +69,33 @@ use socket2::{Domain, SockAddr, Socket, Type};
 use zerodds_rtps::wire_types::{Locator, LocatorKind};
 use zerodds_transport::{ReceivedDatagram, RecvError, SendError, Transport};
 
-/// Default-Buffersize fuer Recv (Linux wmem_max-Fallback 212992).
+/// Default buffer size for recv (Linux wmem_max fallback 212992).
 pub const DEFAULT_RECV_BUF: usize = 212_992;
 
-/// Maximale Groesse des abstract-Namespace-Namens in Bytes
-/// (`sun_path` ist 108 Byte, Byte 0 ist der `\0`-Prefix).
+/// Maximum size of the abstract-namespace name in bytes
+/// (`sun_path` is 108 bytes, byte 0 is the `\0` prefix).
 pub const MAX_ABSTRACT_NAME: usize = 107;
 
-/// Adressierungs-Modus.
+/// Addressing mode.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum UdsAddress {
-    /// Filesystem-Pfad-basiert (wie T1 — dieser Modus existiert im
-    /// T5-Modul als direkter A/B-Vergleich zu Abstract).
+    /// Filesystem-path based (like T1 — this mode exists in the T5
+    /// module as a direct A/B comparison to abstract).
     Filesystem {
-        /// Base-Directory, unter dem die Socket-Dateien liegen.
+        /// Base directory under which the socket files live.
         base_dir: PathBuf,
     },
-    /// Linux-Abstract-Namespace. Namen werden als `\0<prefix>-<hex>`
-    /// kodiert — kein Filesystem-Zugriff.
+    /// Linux abstract namespace. Names are encoded as `\0<prefix>-<hex>`
+    /// — no filesystem access.
     Abstract {
-        /// Prefix, der allen Namen vorangestellt wird (z.B. `"zerodds"`).
+        /// Prefix prepended to every name (e.g. `"zerodds"`).
         prefix: String,
     },
 }
 
 impl UdsAddress {
-    /// Default: Abstract-Namespace mit Prefix `"zerodds"`.
+    /// Default: abstract namespace with prefix `"zerodds"`.
     #[must_use]
     pub fn abstract_default() -> Self {
         Self::Abstract {
@@ -103,7 +103,7 @@ impl UdsAddress {
         }
     }
 
-    /// Default: Filesystem-Pfad `/tmp/zerodds/uds-dgram`.
+    /// Default: filesystem path `/tmp/zerodds/uds-dgram`.
     #[must_use]
     pub fn filesystem_default() -> Self {
         Self::Filesystem {
@@ -112,16 +112,16 @@ impl UdsAddress {
     }
 }
 
-/// Config fuer [`UdsAbstractDgramTransport`].
+/// Config for [`UdsAbstractDgramTransport`].
 #[derive(Debug, Clone)]
 pub struct AbstractDgramConfig {
-    /// Adressierung (Filesystem vs. Abstract).
+    /// Addressing (filesystem vs. abstract).
     pub address: UdsAddress,
-    /// Max Recv-Buffer; begrenzt die groesste akzeptierte Message.
-    /// Linux kapt intern auf `net.core.rmem_max` — wir cappen noch
-    /// einmal im User-Space.
+    /// Max recv buffer; bounds the largest accepted message. Linux
+    /// internally caps at `net.core.rmem_max` — we cap once more in
+    /// user space.
     pub recv_buf: usize,
-    /// Optionaler Recv-Timeout.
+    /// Optional recv timeout.
     pub recv_timeout: Option<Duration>,
 }
 
@@ -143,20 +143,20 @@ pub struct UdsAbstractDgramTransport {
 }
 
 impl UdsAbstractDgramTransport {
-    /// Bindet einen neuen Transport. Fuer Abstract-Addressen ist die
-    /// Name-Zuordnung rein in-kernel — keine Filesystem-Datei. Fuer
-    /// Filesystem-Addressen wird ein Socket-File unter
-    /// `base_dir/<hex>.sock` angelegt.
+    /// Binds a new transport. For abstract addresses the name mapping
+    /// is purely in-kernel — no filesystem file. For filesystem
+    /// addresses a socket file is created under
+    /// `base_dir/<hex>.sock`.
     ///
     /// # Errors
-    /// `io::Error` bei Socket-, Bind- oder Permissions-Fehlern.
+    /// `io::Error` on socket, bind or permission failures.
     pub fn bind(local_id: [u8; 16], config: AbstractDgramConfig) -> io::Result<Self> {
         let socket = Socket::new(Domain::UNIX, Type::DGRAM, None)?;
         if let Some(t) = config.recv_timeout {
             socket.set_read_timeout(Some(t))?;
         }
         let addr = build_sockaddr(&config.address, local_id, /*is_bind=*/ true)?;
-        // Fuer Filesystem-Adressen: stale socket file entfernen.
+        // For filesystem addresses: remove a stale socket file.
         if let UdsAddress::Filesystem { base_dir } = &config.address {
             std::fs::create_dir_all(base_dir)?;
             let path = fs_path(base_dir, local_id);
@@ -172,7 +172,7 @@ impl UdsAbstractDgramTransport {
         })
     }
 
-    /// Lokaler Locator.
+    /// Local locator.
     #[must_use]
     pub fn local_locator(&self) -> Locator {
         Locator::uds(self.local_id)
@@ -184,7 +184,7 @@ impl Drop for UdsAbstractDgramTransport {
         if let UdsAddress::Filesystem { base_dir } = &self.config.address {
             let _ = std::fs::remove_file(fs_path(base_dir, self.local_id));
         }
-        // Abstract sockets raeumen sich beim Close selbst auf (in-kernel).
+        // Abstract sockets clean themselves up on close (in-kernel).
     }
 }
 
@@ -207,8 +207,8 @@ impl Transport for UdsAbstractDgramTransport {
                 });
             }
         };
-        // data-Buffer + socket2-SockAddr sind aligned und konsistent.
-        // SAFETY: libc::sendto mit gueltigem fd, Puffer und sockaddr.
+        // data buffer + socket2 SockAddr are aligned and consistent.
+        // SAFETY: libc::sendto with a valid fd, buffer and sockaddr.
         let rc = unsafe {
             libc::sendto(
                 self.socket.as_raw_fd(),
@@ -234,14 +234,14 @@ impl Transport for UdsAbstractDgramTransport {
     }
 
     fn recv(&self) -> Result<ReceivedDatagram, RecvError> {
-        // DGRAM: ein recv() liefert genau eine Message. Message-
-        // boundaries werden durch den Kernel preserved, kein
-        // User-Space-Framing noetig.
+        // DGRAM: one recv() delivers exactly one message. Message
+        // boundaries are preserved by the kernel, no user-space
+        // framing needed.
         let mut buf = vec![0u8; self.config.recv_buf];
-        // SAFETY: sockaddr_un ist POD; zeroed-init ist zulaessig.
+        // SAFETY: sockaddr_un is POD; zeroed init is permitted.
         let mut addr_storage: libc::sockaddr_un = unsafe { mem::zeroed() };
         let mut addr_len = mem::size_of::<libc::sockaddr_un>() as libc::socklen_t;
-        // SAFETY: libc::recvfrom mit gueltigem fd, Puffer und sockaddr-Out-Param.
+        // SAFETY: libc::recvfrom with a valid fd, buffer and sockaddr out-param.
         let rc = unsafe {
             libc::recvfrom(
                 self.socket.as_raw_fd(),
@@ -276,14 +276,14 @@ impl Transport for UdsAbstractDgramTransport {
 // sockaddr_un construction
 // ---------------------------------------------------------------------
 
-/// `SockAddr` aus (Modus, 16-byte-id) bauen. `is_bind` ist ein
-/// hint — aktuell nur dokumentarisch genutzt, die Konstruktion ist
-/// identisch fuer bind und sendto.
+/// Build a `SockAddr` from (mode, 16-byte id). `is_bind` is a hint —
+/// currently only used for documentation; construction is identical
+/// for bind and sendto.
 fn build_sockaddr(addr: &UdsAddress, id: [u8; 16], _is_bind: bool) -> io::Result<SockAddr> {
     match addr {
         UdsAddress::Filesystem { base_dir } => {
             let path = fs_path(base_dir, id);
-            // socket2::SockAddr::unix liefert den Filesystem-Socket.
+            // socket2::SockAddr::unix yields the filesystem socket.
             SockAddr::unix(path)
         }
         UdsAddress::Abstract { prefix } => build_abstract_sockaddr(prefix, id),
@@ -302,7 +302,7 @@ fn fs_path(base_dir: &Path, id: [u8; 16]) -> PathBuf {
 }
 
 fn build_abstract_sockaddr(prefix: &str, id: [u8; 16]) -> io::Result<SockAddr> {
-    // Abstract-Namen: 1. Byte `\0`, dann bis zu 107 Byte Name.
+    // Abstract names: first byte `\0`, then up to 107 bytes of name.
     let mut name = format!("{prefix}-");
     for b in id {
         use std::fmt::Write;
@@ -314,16 +314,16 @@ fn build_abstract_sockaddr(prefix: &str, id: [u8; 16]) -> io::Result<SockAddr> {
             "abstract name exceeds 107 bytes",
         ));
     }
-    // try_init: wir bekommen ein uninit sockaddr_storage + len-Out-Param
-    // und muessen die Struktur fuellen. socket2 kopiert das Ergebnis
-    // intern in einen passend groesseren Alloc.
-    // SAFETY: Closure fuellt sun_family + sun_path + setzt len = offsetof(sun_path)+1+name.len().
+    // try_init: we get an uninit sockaddr_storage + len out-param and
+    // must fill the struct. socket2 copies the result internally into
+    // a suitably larger allocation.
+    // SAFETY: closure fills sun_family + sun_path + sets len = offsetof(sun_path)+1+name.len().
     let ((), addr) = unsafe {
         SockAddr::try_init(|storage, len| {
             let sa = storage.cast::<libc::sockaddr_un>();
             (*sa).sun_family = libc::AF_UNIX as libc::sa_family_t;
             let path = (*sa).sun_path.as_mut_ptr().cast::<u8>();
-            // sun_path[0] = 0 (Abstract-Marker), danach der Name.
+            // sun_path[0] = 0 (abstract marker), then the name.
             ptr::write(path, 0u8);
             ptr::copy_nonoverlapping(name.as_ptr(), path.add(1), name.len());
             // addr_len = offsetof(sun_path) + 1 (\0) + name bytes.
@@ -344,18 +344,18 @@ fn decode_source(
     if family != libc::AF_UNIX {
         return Locator::INVALID;
     }
-    // sun_path nach addr_len - offsetof(sun_path). Wenn addr_len <= offset
-    // ist das ein unnamed peer (sendmsg vom unbound sender) — INVALID.
-    // `core::mem::offset_of!` ist stable seit Rust 1.77 und macht die
-    // Berechnung ohne unsafe ptr-sub.
+    // sun_path by addr_len - offsetof(sun_path). If addr_len <= offset
+    // it is an unnamed peer (sendmsg from an unbound sender) — INVALID.
+    // `core::mem::offset_of!` is stable since Rust 1.77 and does the
+    // computation without an unsafe ptr-sub.
     let sun_path_offset = core::mem::offset_of!(libc::sockaddr_un, sun_path) as libc::socklen_t;
     if addr_len <= sun_path_offset {
         return Locator::INVALID;
     }
     let name_len = (addr_len - sun_path_offset) as usize;
     let sun_path_ptr = addr.sun_path.as_ptr().cast::<u8>();
-    // sun_path ist c_char-Array; wir interpretieren die addr_len publizierten Bytes als u8.
-    // SAFETY: addr_len garantiert name_len Bytes ab sun_path; kein aliased write.
+    // sun_path is a c_char array; we interpret the addr_len published bytes as u8.
+    // SAFETY: addr_len guarantees name_len bytes from sun_path; no aliased write.
     let bytes: &[u8] = unsafe { core::slice::from_raw_parts(sun_path_ptr, name_len) };
     match mode {
         UdsAddress::Filesystem { base_dir } => decode_fs_path(bytes, base_dir),
@@ -364,7 +364,7 @@ fn decode_source(
 }
 
 fn decode_fs_path(bytes: &[u8], base_dir: &Path) -> Locator {
-    // Null-terminator abschneiden, dann Path parsen.
+    // Cut off the null terminator, then parse the path.
     let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
     let Ok(s) = core::str::from_utf8(&bytes[..end]) else {
         return Locator::INVALID;
@@ -383,7 +383,7 @@ fn decode_fs_path(bytes: &[u8], base_dir: &Path) -> Locator {
 }
 
 fn decode_abstract_name(bytes: &[u8], prefix: &str) -> Locator {
-    // Abstract-Name: bytes[0] == 0, Rest = "<prefix>-<hex>".
+    // Abstract name: bytes[0] == 0, rest = "<prefix>-<hex>".
     if bytes.is_empty() || bytes[0] != 0 {
         return Locator::INVALID;
     }
@@ -449,16 +449,16 @@ mod tests {
         }
     }
 
-    /// Linux abstract-namespace ist hostweit shared — feste Prefixes
-    /// kollidieren zwischen parallelen CI-Jobs auf demselben Runner
-    /// (EADDRINUSE schlaegt durch). Pro Tag wird daher ein einmaliges
-    /// Suffix aus PID + Zeit (ns) + Counter generiert.
+    /// The Linux abstract namespace is shared host-wide — fixed prefixes
+    /// collide between parallel CI jobs on the same runner (EADDRINUSE
+    /// bleeds through). A unique suffix from PID + time (ns) + counter is
+    /// therefore generated per tag.
     ///
-    /// **Wichtig**: Innerhalb desselben Prozesses muss `tx` und `rx`
-    /// mit demselben Tag denselben Prefix bekommen — sonst trifft
-    /// `tx`'s Send-Adresse nie den `rx`-Bind. Daher Tag-Cache via
-    /// `OnceLock<Mutex<HashMap>>`, statt jedem Call einen frischen
-    /// Suffix zu liefern.
+    /// **Important**: within the same process `tx` and `rx` with the same
+    /// tag must get the same prefix — otherwise `tx`'s send address never
+    /// hits the `rx` bind. Hence a tag cache via
+    /// `OnceLock<Mutex<HashMap>>`, instead of handing each call a fresh
+    /// suffix.
     fn unique_prefix(tag: &str) -> String {
         use std::collections::HashMap;
         use std::sync::{Mutex, OnceLock};
@@ -491,9 +491,9 @@ mod tests {
 
     #[test]
     fn abstract_bind_does_not_create_file() {
-        // Abstract-namespace sollte keine Filesystem-Dateien erzeugen.
+        // The abstract namespace should create no filesystem files.
         let _t = UdsAbstractDgramTransport::bind(id(2), abs_cfg("test-abs-nofs")).unwrap();
-        // Kein FS-Check noetig — wir sind per Definition abstract.
+        // No FS check needed — we are abstract by definition.
     }
 
     #[test]
@@ -508,18 +508,18 @@ mod tests {
         assert_eq!(got.source, Locator::uds(id(11)));
     }
 
-    /// Variante von [`abs_cfg`], die einen bereits berechneten
-    /// `unique_prefix`-String wiederverwendet. Beide Transports im
-    /// selben Test muessen denselben Prefix-String teilen, damit ihre
-    /// abstract-namespace-Socket-Pfade in dieselbe Sub-Tabelle
-    /// faellt — sonst sieht der Sender den Empfaenger nicht.
+    /// Variant of [`abs_cfg`] that reuses an already-computed
+    /// `unique_prefix` string. Both transports in the same test must
+    /// share the same prefix string so that their abstract-namespace
+    /// socket paths fall into the same sub-table — otherwise the sender
+    /// does not see the receiver.
     ///
-    /// Vor dem Fix produzierte `abs_cfg(prefix)` pro Call ein
-    /// **eigenes** unique-Suffix, sodass `rx` und `tx` in disjunkte
-    /// Namespaces banden — `send` schlug mit "peer not reachable"
-    /// fehl. Linux-CI war flaky weil unique_prefix eine Time/Counter-
-    /// Komponente hat und nur _selten_ kollidiert wenn beide Calls in
-    /// sub-microsecond-Reihenfolge passieren.
+    /// Before the fix `abs_cfg(prefix)` produced its **own** unique
+    /// suffix per call, so `rx` and `tx` bound into disjoint
+    /// namespaces — `send` failed with "peer not reachable". Linux CI
+    /// was flaky because unique_prefix has a time/counter component and
+    /// only _rarely_ collides when both calls happen in sub-microsecond
+    /// order.
     fn abs_cfg_shared(unique: &str) -> AbstractDgramConfig {
         AbstractDgramConfig {
             address: UdsAddress::Abstract {
@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn abstract_preserves_message_boundaries() {
-        // Zwei sends → zwei recvs, kein Framing-Zusammenschneiden.
+        // Two sends → two recvs, no framing coalescing.
         let prefix = unique_prefix("zerodds-test-boundaries");
         let rx = UdsAbstractDgramTransport::bind(id(30), abs_cfg_shared(&prefix)).unwrap();
         let tx = UdsAbstractDgramTransport::bind(id(31), abs_cfg_shared(&prefix)).unwrap();

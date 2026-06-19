@@ -5,42 +5,42 @@
 
 use crate::error::{GiopError, GiopResult};
 
-/// GIOP Message-Type — `octet`-Wert im 11. Byte des Headers.
+/// GIOP message type — `octet` value in the 11th byte of the header.
 ///
-/// Spec §15.4.1 Table 15-1: 8 standardisierte Werte (0..7).
+/// Spec §15.4.1 Table 15-1: 8 standardized values (0..7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum MessageType {
-    /// `Request` — Client-Method-Invocation (Spec §15.4.2).
+    /// `Request` — client method invocation (spec §15.4.2).
     Request = 0,
-    /// `Reply` — Server-Response (Spec §15.4.3).
+    /// `Reply` — server response (spec §15.4.3).
     Reply = 1,
-    /// `CancelRequest` — Client cancelt Pending-Request (Spec §15.4.4).
+    /// `CancelRequest` — client cancels a pending request (spec §15.4.4).
     CancelRequest = 2,
-    /// `LocateRequest` — Object-Location-Probe (Spec §15.4.5).
+    /// `LocateRequest` — object location probe (spec §15.4.5).
     LocateRequest = 3,
-    /// `LocateReply` — Antwort auf LocateRequest (Spec §15.4.6).
+    /// `LocateReply` — reply to a LocateRequest (spec §15.4.6).
     LocateReply = 4,
-    /// `CloseConnection` — Server schliesst Connection (Spec §15.4.7).
+    /// `CloseConnection` — server closes the connection (spec §15.4.7).
     CloseConnection = 5,
-    /// `MessageError` — Wire-Fehler (Spec §15.4.8).
+    /// `MessageError` — wire error (spec §15.4.8).
     MessageError = 6,
-    /// `Fragment` — Multi-Frame-Message-Body (Spec §15.4.9, ab GIOP 1.1).
+    /// `Fragment` — multi-frame message body (spec §15.4.9, as of GIOP 1.1).
     Fragment = 7,
 }
 
 impl MessageType {
-    /// Diskriminanten-Wert (Octet-Repraesentation).
+    /// Discriminant value (octet representation).
     #[must_use]
     pub const fn as_u8(self) -> u8 {
         self as u8
     }
 
-    /// Parsing aus Octet (Spec §15.4.1 Table 15-1).
+    /// Parsing from an octet (spec §15.4.1 Table 15-1).
     ///
     /// # Errors
-    /// `GiopError::UnknownMessageType` wenn der Octet keinem der
-    /// 8 Standard-Werte entspricht.
+    /// `GiopError::UnknownMessageType` if the octet matches none of the
+    /// 8 standard values.
     pub const fn from_u8(value: u8) -> GiopResult<Self> {
         match value {
             0 => Ok(Self::Request),

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Lifecycle-Modell — Spec §5.2.2.3 / §5.2.2.4 / §5.2.2.7.
+//! Lifecycle model — spec §5.2.2.3 / §5.2.2.4 / §5.2.2.7.
 
 use crate::return_code::ReturnCode;
 
-/// `LifeCycleState` (Spec §5.2.2.3, S. 19) — Lifecycle-States eines
-/// RTC innerhalb eines `ExecutionContext`.
+/// `LifeCycleState` (spec §5.2.2.3, p. 19) — lifecycle states of an
+/// RTC within an `ExecutionContext`.
 ///
 /// Spec-Zitat (§5.2.2.3.1-§5.2.2.3.4): "CREATED — instantiated but not
 /// yet initialized; INACTIVE — Alive but not invoked; ACTIVE — Alive
@@ -24,16 +24,16 @@ pub enum LifeCycleState {
     Error,
 }
 
-/// `ExecutionKind` (Spec §5.2.2.7, S. 30-31) — definiert wann der
-/// Execution-Context die Component-Callbacks invoked.
+/// `ExecutionKind` (spec §5.2.2.7, p. 30-31) — defines when the
+/// execution context invokes the component callbacks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ExecutionKind {
-    /// `PERIODIC` (§5.2.2.7.1) — `on_execute` + `on_state_update` an
-    /// jedem Tick.
+    /// `PERIODIC` (§5.2.2.7.1) — `on_execute` + `on_state_update` on
+    /// every tick.
     Periodic,
-    /// `EVENT_DRIVEN` (§5.2.2.7.2) — `on_action` bei diskretem Event.
+    /// `EVENT_DRIVEN` (§5.2.2.7.2) — `on_action` on a discrete event.
     EventDriven,
-    /// `OTHER` (§5.2.2.7.3) — Implementor-spezifisch.
+    /// `OTHER` (§5.2.2.7.3) — implementor-specific.
     Other,
 }
 
@@ -43,9 +43,9 @@ pub enum ExecutionKind {
 /// corresponding to the execution of the lifecycle operations of
 /// LightweightRTObject and ExecutionContext."
 ///
-/// Default-Implementations geben `ReturnCode::Ok` zurueck — Anwender
-/// implementieren nur die Callbacks, die fuer ihre Domaene relevant
-/// sind (Spec §5.2.2.4: "An RTC developer may implement these callback
+/// The default implementations return `ReturnCode::Ok` — users
+/// implement only the callbacks relevant to their domain
+/// (spec §5.2.2.4: "An RTC developer may implement these callback
 /// operations in order to execute application-specific logic").
 pub trait ComponentAction {
     /// Spec §5.2.2.4.1 — RTC has been initialized and entered Alive
@@ -81,29 +81,29 @@ pub trait ComponentAction {
         ReturnCode::Ok
     }
     /// Spec §5.2.2.4.8 — RTC remains in Error state (repeated per
-    /// tick wenn `ExecutionKind::Periodic`).
+    /// tick when `ExecutionKind::Periodic`).
     fn on_error(&mut self, _exec_handle: u32) -> ReturnCode {
         ReturnCode::Ok
     }
-    /// Spec §5.2.2.4.9 — Reset-Versuch aus Error-State zurueck zu
-    /// Inactive.
+    /// Spec §5.2.2.4.9 — reset attempt from the error state back to
+    /// inactive.
     fn on_reset(&mut self, _exec_handle: u32) -> ReturnCode {
         ReturnCode::Ok
     }
 }
 
-/// Spec §5.2.2.3 (Figure 5.4 + 5.5) — gueltige State-Transitions im
-/// Lifecycle. Liefert `true` wenn die Transition nach Spec erlaubt
-/// ist, sonst `false`.
+/// Spec §5.2.2.3 (Figure 5.4 + 5.5) — valid state transitions in the
+/// lifecycle. Returns `true` if the transition is allowed per spec,
+/// otherwise `false`.
 ///
 /// Transitions:
 /// * `Created → Inactive` via `initialize`/`attach_context`.
 /// * `Inactive → Active` via `activate_component`.
 /// * `Active → Inactive` via `deactivate_component`.
-/// * `Active → Error` automatisch bei `on_*`-Return != Ok.
-/// * `Error → Inactive` via `reset_component` (wenn `on_reset`
-///   `ReturnCode::Ok` liefert).
-/// * Keine Transition aus `Created` ausser via `initialize`.
+/// * `Active → Error` automatically on `on_*` return != Ok.
+/// * `Error → Inactive` via `reset_component` (when `on_reset`
+///   returns `ReturnCode::Ok`).
+/// * No transition out of `Created` except via `initialize`.
 #[must_use]
 pub const fn is_valid_transition(from: LifeCycleState, to: LifeCycleState) -> bool {
     use LifeCycleState::{Active, Created, Error, Inactive};
@@ -173,7 +173,7 @@ mod tests {
             ExecutionKind::EventDriven,
             ExecutionKind::Other,
         ];
-        // Sicher unterschiedlich.
+        // Definitely distinct.
         assert_ne!(kinds[0], kinds[1]);
         assert_ne!(kinds[1], kinds[2]);
         assert_ne!(kinds[0], kinds[2]);
@@ -181,8 +181,8 @@ mod tests {
 
     #[test]
     fn error_self_loop_allowed() {
-        // Spec §5.2.2.4.8: on_error wird repeatedly fuer Error-State
-        // invoked.
+        // Spec §5.2.2.4.8: on_error is invoked repeatedly for the error
+        // state.
         assert!(is_valid_transition(
             LifeCycleState::Error,
             LifeCycleState::Error

@@ -3,15 +3,15 @@
 
 //! ROS 2 → DDS Topic-Name-Mangling.
 //!
-//! Konvention aus `rmw_dds_common`: ROS-2-logische-Namen werden mit
-//! Prefix-Code auf DDS-Topic-Namen gemapped:
-//! * `rt/<name>` — ROS-Topic.
-//! * `rq/<name>Request` — Service-Request.
-//! * `rr/<name>Reply` — Service-Reply.
-//! * `rs/<name>` — Service-Server-Discovery (legacy).
+//! Convention from `rmw_dds_common`: ROS-2 logical names are mapped to
+//! DDS topic names with a prefix code:
+//! * `rt/<name>` — ROS topic.
+//! * `rq/<name>Request` — service request.
+//! * `rr/<name>Reply` — service reply.
+//! * `rs/<name>` — service-server discovery (legacy).
 //!
-//! Beispiel: `/chatter` → `rt/chatter`. Leading slash wird entfernt;
-//! interne `/` werden 1:1 uebernommen.
+//! Example: `/chatter` → `rt/chatter`. The leading slash is removed;
+//! internal `/` are kept 1:1.
 
 use alloc::string::String;
 use core::fmt;
@@ -42,14 +42,14 @@ impl RosKind {
     }
 }
 
-/// Mangling-Fehler.
+/// Mangling error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NameMangleError {
-    /// ROS-Name ist leer.
+    /// ROS name is empty.
     EmptyName,
-    /// ROS-Name beginnt mit ungueltigem Zeichen.
+    /// ROS name starts with an invalid character.
     InvalidLeadingChar(char),
-    /// DDS-Name passt zu keinem bekannten Prefix beim Demangling.
+    /// DDS name matches no known prefix during demangling.
     UnknownPrefix(String),
 }
 
@@ -66,16 +66,16 @@ impl fmt::Display for NameMangleError {
 #[cfg(feature = "std")]
 impl std::error::Error for NameMangleError {}
 
-/// Mappt einen ROS-2-Topic-Namen zu einem DDS-Topic-Namen.
+/// Maps a ROS-2 topic name to a DDS topic name.
 ///
-/// Leading `/` wird entfernt (ROS-Topics sind absolut), interne `/`
-/// bleiben erhalten. Suffixe (`Request`/`Reply`) sind die Aufgabe des
-/// Callers — diese Funktion fuegt nur den Prefix.
+/// The leading `/` is removed (ROS topics are absolute), internal `/`
+/// are kept. Suffixes (`Request`/`Reply`) are the caller's
+/// responsibility — this function only adds the prefix.
 ///
 /// # Errors
-/// * `EmptyName` wenn `ros_name` leer.
-/// * `InvalidLeadingChar` wenn `ros_name` mit weder `/` noch
-///   alphanumerisch beginnt.
+/// * `EmptyName` if `ros_name` is empty.
+/// * `InvalidLeadingChar` if `ros_name` starts with neither `/` nor an
+///   alphanumeric character.
 pub fn mangle_topic_name(ros_name: &str, kind: RosKind) -> Result<String, NameMangleError> {
     if ros_name.is_empty() {
         return Err(NameMangleError::EmptyName);
@@ -94,10 +94,10 @@ pub fn mangle_topic_name(ros_name: &str, kind: RosKind) -> Result<String, NameMa
     Ok(out)
 }
 
-/// Mappt einen DDS-Topic-Namen zurueck zu `(kind, ros_name_with_slash)`.
+/// Maps a DDS topic name back to `(kind, ros_name_with_slash)`.
 ///
 /// # Errors
-/// `UnknownPrefix` wenn keine der vier Prefixe matcht.
+/// `UnknownPrefix` if none of the four prefixes match.
 pub fn demangle_topic_name(dds_name: &str) -> Result<(RosKind, String), NameMangleError> {
     for kind in [
         RosKind::Topic,
@@ -115,7 +115,7 @@ pub fn demangle_topic_name(dds_name: &str) -> Result<(RosKind, String), NameMang
     Err(NameMangleError::UnknownPrefix(String::from(dds_name)))
 }
 
-/// `true` wenn der DDS-Topic-Name einen ROS-2-Prefix traegt.
+/// `true` if the DDS topic name carries a ROS-2 prefix.
 #[must_use]
 pub fn is_ros_topic(dds_name: &str) -> bool {
     dds_name.starts_with("rt/")
@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn mangle_handles_already_unprefixed_name() {
-        // `chatter` (kein leading slash) → `rt/chatter`.
+        // `chatter` (no leading slash) → `rt/chatter`.
         assert_eq!(
             mangle_topic_name("chatter", RosKind::Topic).expect("ok"),
             "rt/chatter"
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn mangle_rejects_invalid_leading_character() {
-        // ROS 2 Topic-Names duerfen nicht mit Ziffer beginnen.
+        // ROS 2 topic names must not start with a digit.
         assert_eq!(
             mangle_topic_name("/1foo", RosKind::Topic),
             Err(NameMangleError::InvalidLeadingChar('1'))

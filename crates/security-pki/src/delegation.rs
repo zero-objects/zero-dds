@@ -1,42 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Delegation-Link / Delegation-Chain.
+//! Delegation link / delegation chain.
 //!
-//! Datenmodell + Sign/Verify fuer kryptographische Delegations-Ketten.
-//! Architektur-Referenz: `docs/architecture/09_delegation.md` §5.
+//! Data model + sign/verify for cryptographic delegation chains.
+//! Architecture reference: `docs/architecture/09_delegation.md` §5.
 //!
-//! Ein [`DelegationLink`] traegt eine signierte Aussage:
-//! "Delegator (mit X.509-Cert) erlaubt Delegatee (identifiziert via
-//! `delegatee_guid`), in einem definierten Zeit- und Scope-Fenster
-//! Samples zu schreiben/lesen."
+//! A [`DelegationLink`] carries a signed statement:
+//! "the delegator (with an X.509 cert) allows the delegatee (identified via
+//! `delegatee_guid`) to write/read samples within a defined time and scope
+//! window."
 //!
-//! Eine [`DelegationChain`] verkettet 1..N solcher Links zu einer
-//! Beweisreihe Origin → Edge. Jeder Link wird vom **vorigen
-//! Delegatee** signiert (Initial-Link vom Trust-Anchor selbst).
+//! A [`DelegationChain`] chains 1..N such links into a
+//! proof series origin → edge. Each link is signed by the **previous
+//! delegatee** (the initial link by the trust anchor itself).
 //!
-//! # Layout (deterministisch fuer Signing-Input)
+//! # Layout (deterministic for the signing input)
 //!
 //! ```text
-//! magic        = b"ZERODDSD" (8 byte)
+//! magic        = b"ZERODDSD" (8 bytes)
 //! version      = 1 (u8)
 //! delegator    = 16 byte GUID
 //! delegatee    = 16 byte GUID
-//! not_before   = i64 big-endian (Unix-Sekunden)
+//! not_before   = i64 big-endian (Unix seconds)
 //! not_after    = i64 big-endian
-//! algorithm    = u8 (siehe SignatureAlgorithm::wire_id)
+//! algorithm    = u8 (see SignatureAlgorithm::wire_id)
 //! n_topics     = u32 big-endian
 //! [u32_be len + utf8_bytes] * n_topics
 //! n_partitions = u32 big-endian
 //! [u32_be len + utf8_bytes] * n_partitions
 //! ```
 //!
-//! Signature-Layout: derselbe Input wie oben (ohne `signature`-Suffix),
-//! Hash impliziert durch `SignatureAlgorithm` (SHA-256 fuer P-256 +
-//! Ed25519, SHA-384 fuer P-384, SHA-256 fuer RSA-PSS-2048).
+//! Signature layout: the same input as above (without the `signature` suffix),
+//! the hash implied by `SignatureAlgorithm` (SHA-256 for P-256 +
+//! Ed25519, SHA-384 for P-384, SHA-256 for RSA-PSS-2048).
 //!
 //! zerodds-lint: allow no_dyn_in_safe
-//! (Cert-Validation via `rustls-webpki` benoetigt object-safe Trait-Refs.)
+//! (Cert validation via `rustls-webpki` needs object-safe trait refs.)
 
 extern crate alloc;
 
@@ -49,25 +49,25 @@ use ring::signature::{
     UnparsedPublicKey,
 };
 
-/// Signatur-Algorithmus fuer Delegation-Links.
+/// Signature algorithm for delegation links.
 ///
-/// Default-Empfehlung: [`SignatureAlgorithm::EcdsaP256`] — kompakte
-/// Signatur (~64 byte), schnelle Verify auf Edge-Hardware.
+/// Default recommendation: [`SignatureAlgorithm::EcdsaP256`] — compact
+/// signature (~64 bytes), fast verify on edge hardware.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum SignatureAlgorithm {
-    /// ECDSA mit P-256 + SHA-256, fixed-length encoding (64 byte sig).
+    /// ECDSA with P-256 + SHA-256, fixed-length encoding (64-byte sig).
     EcdsaP256,
-    /// ECDSA mit P-384 + SHA-384, fixed-length encoding (96 byte sig).
+    /// ECDSA with P-384 + SHA-384, fixed-length encoding (96-byte sig).
     EcdsaP384,
-    /// RSA-PSS mit 2048-bit Key + SHA-256 (256 byte sig).
+    /// RSA-PSS with a 2048-bit key + SHA-256 (256-byte sig).
     RsaPss2048,
-    /// Ed25519 (64 byte sig).
+    /// Ed25519 (64-byte sig).
     Ed25519,
 }
 
 impl SignatureAlgorithm {
-    /// Wire-Id fuer das deterministische Sign-Input-Layout.
+    /// Wire ID for the deterministic sign-input layout.
     #[must_use]
     pub const fn wire_id(self) -> u8 {
         match self {
@@ -78,7 +78,7 @@ impl SignatureAlgorithm {
         }
     }
 
-    /// Decode aus Wire-Id; `None` bei unknown-Algorithm.
+    /// Decode from the wire ID; `None` for an unknown algorithm.
     #[must_use]
     pub const fn from_wire_id(id: u8) -> Option<Self> {
         match id {
@@ -90,9 +90,9 @@ impl SignatureAlgorithm {
         }
     }
 
-    /// Erwartete Signatur-Laenge in Bytes (fixed) oder `None` fuer
-    /// variabel (RSA-PSS abhaengig von Key-Size — wir fixieren auf 2048
-    /// und damit 256 byte).
+    /// Expected signature length in bytes (fixed) or `None` for
+    /// variable (RSA-PSS depending on key size — we fix it at 2048
+    /// and thus 256 bytes).
     #[must_use]
     pub const fn expected_signature_len(self) -> Option<usize> {
         match self {
@@ -103,52 +103,52 @@ impl SignatureAlgorithm {
     }
 }
 
-/// Magic-Bytes fuer das Sign-Input-Layout (8 byte).
+/// Magic bytes for the sign-input layout (8 bytes).
 pub const DELEGATION_MAGIC: &[u8; 8] = b"ZERODDSD";
 
-/// Wire-Layout-Version.
+/// Wire-layout version.
 pub const DELEGATION_VERSION: u8 = 1;
 
-/// Maximale Anzahl Topic-Patterns pro Link (DoS-Cap).
+/// Maximum number of topic patterns per link (DoS cap).
 pub const MAX_TOPIC_PATTERNS: usize = 64;
-/// Maximale Anzahl Partition-Patterns pro Link (DoS-Cap).
+/// Maximum number of partition patterns per link (DoS cap).
 pub const MAX_PARTITION_PATTERNS: usize = 64;
-/// Maximale Pattern-String-Laenge in Bytes.
+/// Maximum pattern string length in bytes.
 pub const MAX_PATTERN_LEN: usize = 256;
 
-/// Errors aus dem Delegation-Modul.
+/// Errors from the delegation module.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DelegationError {
-    /// Pattern-Liste ist groesser als der DoS-Cap.
+    /// The pattern list is larger than the DoS cap.
     TooManyPatterns {
-        /// Welche Liste — `"topic"` oder `"partition"`.
+        /// Which list — `"topic"` or `"partition"`.
         kind: &'static str,
-        /// Tatsaechliche Anzahl.
+        /// Actual count.
         count: usize,
-        /// Erlaubtes Maximum.
+        /// Allowed maximum.
         max: usize,
     },
-    /// Pattern ist laenger als der String-Cap.
+    /// The pattern is longer than the string cap.
     PatternTooLong {
-        /// Tatsaechliche Laenge.
+        /// Actual length.
         len: usize,
-        /// Erlaubtes Maximum.
+        /// Allowed maximum.
         max: usize,
     },
-    /// Sign-Operation fehlgeschlagen (z.B. ungueltiger Key).
+    /// Sign operation failed (e.g. invalid key).
     SignFailed(String),
-    /// Verify-Operation fehlgeschlagen.
+    /// Verify operation failed.
     VerifyFailed(String),
-    /// Wire-Bytes konnten nicht decodiert werden.
+    /// The wire bytes could not be decoded.
     Malformed(String),
-    /// Unsupported Wire-Algorithm-Id.
+    /// Unsupported wire algorithm ID.
     UnknownAlgorithm(u8),
     /// `not_before > not_after`.
     InvalidTimeWindow,
-    /// Magic-Bytes stimmen nicht.
+    /// The magic bytes do not match.
     BadMagic,
-    /// Wire-Layout-Version unbekannt.
+    /// Unknown wire-layout version.
     UnsupportedVersion(u8),
 }
 
@@ -175,46 +175,46 @@ impl core::fmt::Display for DelegationError {
 #[cfg(feature = "std")]
 impl std::error::Error for DelegationError {}
 
-/// Result-Alias fuer Delegation-Operationen.
+/// Result alias for delegation operations.
 pub type DelegationResult<T> = Result<T, DelegationError>;
 
-/// Eine einzelne Delegation-Aussage (signiert vom Delegator).
+/// A single delegation statement (signed by the delegator).
 ///
-/// Architektur-Referenz: `09_delegation.md` §5.1.
+/// Architecture reference: `09_delegation.md` §5.1.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DelegationLink {
-    /// 16-byte Participant-GUID des Delegators (= Eigentuemer des
-    /// Signing-Keys, gleichzeitig Subject des X.509-Certs, das den
-    /// Verify-Key liefert).
+    /// 16-byte participant GUID of the delegator (= owner of the
+    /// signing key, at the same time the subject of the X.509 cert that
+    /// provides the verify key).
     pub delegator_guid: [u8; 16],
-    /// 16-byte Participant-GUID des Delegatees (= Edge-Peer, der ueber
-    /// diesen Link Berechtigung erbt).
+    /// 16-byte participant GUID of the delegatee (= edge peer that
+    /// inherits permission via this link).
     pub delegatee_guid: [u8; 16],
-    /// Erlaubte Topic-Glob-Patterns. Leere Liste = "alle" (nur in
-    /// Initial-Link, sonst Validation-Fail).
+    /// Allowed topic glob patterns. Empty list = "all" (only in the
+    /// initial link, otherwise a validation fail).
     pub allowed_topic_patterns: Vec<String>,
-    /// Erlaubte Partition-Patterns. Leere Liste = Default-Partition.
+    /// Allowed partition patterns. Empty list = default partition.
     pub allowed_partition_patterns: Vec<String>,
-    /// Unix-Sekunden ab wann der Link gilt.
+    /// Unix seconds from when the link is valid.
     pub not_before: i64,
-    /// Unix-Sekunden bis wann der Link gilt.
+    /// Unix seconds until when the link is valid.
     pub not_after: i64,
-    /// Signatur-Algorithmus, mit dem der Link signiert ist.
+    /// Signature algorithm the link is signed with.
     pub algorithm: SignatureAlgorithm,
-    /// Signatur-Bytes (Layout abhaengig von `algorithm`).
+    /// Signature bytes (layout depending on `algorithm`).
     pub signature: Vec<u8>,
 }
 
 impl DelegationLink {
-    /// Erzeugt einen unsigned Link (signature leer). Nutze
-    /// [`Self::sign`] zum Signieren.
+    /// Creates an unsigned link (signature empty). Use
+    /// [`Self::sign`] to sign.
     ///
     /// # Errors
-    /// * [`DelegationError::TooManyPatterns`] wenn `topic_patterns` oder
-    ///   `partition_patterns` den DoS-Cap ueberschreiten.
-    /// * [`DelegationError::PatternTooLong`] wenn ein Einzel-Pattern den
-    ///   String-Cap ueberschreitet.
-    /// * [`DelegationError::InvalidTimeWindow`] wenn
+    /// * [`DelegationError::TooManyPatterns`] if `topic_patterns` or
+    ///   `partition_patterns` exceed the DoS cap.
+    /// * [`DelegationError::PatternTooLong`] if a single pattern exceeds the
+    ///   string cap.
+    /// * [`DelegationError::InvalidTimeWindow`] if
     ///   `not_before > not_after`.
     pub fn new(
         delegator_guid: [u8; 16],
@@ -265,7 +265,7 @@ impl DelegationLink {
         })
     }
 
-    /// Sign-Input (deterministisch). Identisch fuer Sign + Verify.
+    /// Sign input (deterministic). Identical for sign + verify.
     #[must_use]
     pub fn signing_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(64 + 32 * self.allowed_topic_patterns.len());
@@ -277,7 +277,7 @@ impl DelegationLink {
         buf.extend_from_slice(&self.not_after.to_be_bytes());
         buf.push(self.algorithm.wire_id());
 
-        // Topic-Patterns.
+        // Topic patterns.
         let n_topic = u32::try_from(self.allowed_topic_patterns.len()).unwrap_or(u32::MAX);
         buf.extend_from_slice(&n_topic.to_be_bytes());
         for p in &self.allowed_topic_patterns {
@@ -286,7 +286,7 @@ impl DelegationLink {
             buf.extend_from_slice(p.as_bytes());
         }
 
-        // Partition-Patterns.
+        // Partition patterns.
         let n_part = u32::try_from(self.allowed_partition_patterns.len()).unwrap_or(u32::MAX);
         buf.extend_from_slice(&n_part.to_be_bytes());
         for p in &self.allowed_partition_patterns {
@@ -298,16 +298,16 @@ impl DelegationLink {
         buf
     }
 
-    /// Signiert den Link mit `signing_key`. `signing_key`-Format:
-    /// * `EcdsaP256` / `EcdsaP384` — PKCS#8-DER ECDSA-Privatekey.
-    /// * `RsaPss2048` — PKCS#8-DER RSA-Privatekey.
-    /// * `Ed25519` — PKCS#8-DER Ed25519-Privatekey (rfc8410-Format).
+    /// Signs the link with `signing_key`. `signing_key` format:
+    /// * `EcdsaP256` / `EcdsaP384` — PKCS#8-DER ECDSA private key.
+    /// * `RsaPss2048` — PKCS#8-DER RSA private key.
+    /// * `Ed25519` — PKCS#8-DER Ed25519 private key (rfc8410 format).
     ///
-    /// Setzt `self.signature` auf den Sign-Output.
+    /// Sets `self.signature` to the sign output.
     ///
     /// # Errors
-    /// [`DelegationError::SignFailed`] bei Key-Parsing-Fehler oder
-    /// `ring`-internem Fehlschlag.
+    /// [`DelegationError::SignFailed`] on a key-parsing error or
+    /// a `ring`-internal failure.
     pub fn sign(&mut self, signing_key_pkcs8: &[u8]) -> DelegationResult<()> {
         let input = self.signing_bytes();
         let sig = match self.algorithm {
@@ -328,20 +328,20 @@ impl DelegationLink {
         Ok(())
     }
 
-    /// Verifiziert den Link gegen einen **Public-Key-DER**, dessen
-    /// Format pro Algorithmus unterschiedlich ist:
-    /// * `EcdsaP256`/`EcdsaP384` — `SubjectPublicKeyInfo`-Bytes
-    ///   (Uncompressed-Point-Encoding nach SEC1 §2.3.3).
-    /// * `RsaPss2048` — `SubjectPublicKeyInfo`-Bytes (RFC 8017).
-    /// * `Ed25519` — 32 byte raw-Public-Key.
+    /// Verifies the link against a **public-key DER** whose
+    /// format differs per algorithm:
+    /// * `EcdsaP256`/`EcdsaP384` — `SubjectPublicKeyInfo` bytes
+    ///   (uncompressed point encoding per SEC1 §2.3.3).
+    /// * `RsaPss2048` — `SubjectPublicKeyInfo` bytes (RFC 8017).
+    /// * `Ed25519` — 32-byte raw public key.
     ///
-    /// In der Praxis wird der Verify-Key aus dem **Delegator-X.509-Cert**
-    /// extrahiert (siehe `delegation_check.rs` in delegation_check (security-permissions)).
+    /// In practice the verify key is extracted from the **delegator X.509 cert**
+    /// (see `delegation_check.rs` in delegation_check (security-permissions)).
     ///
     /// # Errors
-    /// * [`DelegationError::VerifyFailed`] bei Signatur-Mismatch oder
-    ///   Public-Key-Parse-Fehler.
-    /// * [`DelegationError::SignFailed`] wenn `signature` leer ist.
+    /// * [`DelegationError::VerifyFailed`] on a signature mismatch or
+    ///   public-key parse error.
+    /// * [`DelegationError::SignFailed`] if `signature` is empty.
     pub fn verify(&self, verify_public_key: &[u8]) -> DelegationResult<()> {
         if self.signature.is_empty() {
             return Err(DelegationError::SignFailed("empty signature".to_string()));
@@ -367,7 +367,7 @@ impl DelegationLink {
             .map_err(|_| DelegationError::VerifyFailed("ring::verify".to_string()))
     }
 
-    /// Wire-Encoding eines kompletten Links (Sign-Input + Signatur-Suffix).
+    /// Wire encoding of a complete link (sign input + signature suffix).
     ///
     /// Layout = `signing_bytes()` || `u16_be(sig_len)` || `signature`.
     #[must_use]
@@ -379,14 +379,14 @@ impl DelegationLink {
         buf
     }
 
-    /// Decode eines kompletten Links.
+    /// Decode of a complete link.
     ///
-    /// Konsumiert exakt soviele Bytes wie der Link gross ist; gibt den
-    /// Rest des Slices als `tail` zurueck (Chain-Decoder reicht das
-    /// weiter an den naechsten Link).
+    /// Consumes exactly as many bytes as the link is large; returns the
+    /// rest of the slice as `tail` (the chain decoder passes that
+    /// on to the next link).
     ///
     /// # Errors
-    /// [`DelegationError::Malformed`] wenn das Layout nicht stimmt.
+    /// [`DelegationError::Malformed`] if the layout is wrong.
     pub fn decode(buf: &[u8]) -> DelegationResult<(Self, &[u8])> {
         let mut p = 0usize;
         let need = |needed: usize, p: usize, buf: &[u8]| -> DelegationResult<()> {
@@ -435,7 +435,7 @@ impl DelegationLink {
         let algorithm = SignatureAlgorithm::from_wire_id(algo_id)
             .ok_or(DelegationError::UnknownAlgorithm(algo_id))?;
 
-        // Topic-Patterns.
+        // Topic patterns.
         need(4, p, buf)?;
         let n_topic = u32::from_be_bytes(buf[p..p + 4].try_into().unwrap_or([0u8; 4])) as usize;
         p += 4;
@@ -464,7 +464,7 @@ impl DelegationLink {
             p += len;
         }
 
-        // Partition-Patterns.
+        // Partition patterns.
         need(4, p, buf)?;
         let n_part = u32::from_be_bytes(buf[p..p + 4].try_into().unwrap_or([0u8; 4])) as usize;
         p += 4;
@@ -493,7 +493,7 @@ impl DelegationLink {
             p += len;
         }
 
-        // Signatur.
+        // Signature.
         need(2, p, buf)?;
         let sig_len = u16::from_be_bytes(buf[p..p + 2].try_into().unwrap_or([0u8; 2])) as usize;
         p += 2;
@@ -515,28 +515,28 @@ impl DelegationLink {
     }
 }
 
-/// Verkettete Delegation: Origin (Trust-Anchor) → ... → Edge.
+/// Chained delegation: origin (trust anchor) → ... → edge.
 ///
-/// Architektur-Referenz: `09_delegation.md` §5.2.
+/// Architecture reference: `09_delegation.md` §5.2.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DelegationChain {
-    /// 16-byte GUID des Origin-Participants. Bei 1-Hop = Delegator des
-    /// einzigen Links; bei N-Hop = Delegator des **ersten** Links.
+    /// 16-byte GUID of the origin participant. For 1-hop = delegator of
+    /// the only link; for N-hop = delegator of the **first** link.
     pub origin_guid: [u8; 16],
-    /// Links in Order: links[0] = Origin → erste Zwischenstufe,
-    /// links[N-1] = letzte Zwischenstufe → Edge.
+    /// Links in order: links[0] = origin → first intermediate stage,
+    /// links[N-1] = last intermediate stage → edge.
     pub links: Vec<DelegationLink>,
 }
 
-/// Maximale Chain-Tiefe (DoS-Cap, hart). Profile-Override siehe
+/// Maximum chain depth (DoS cap, hard). For a profile override see
 /// `DelegationProfile::max_chain_depth`.
 pub const MAX_CHAIN_DEPTH_HARD_CAP: usize = 8;
 
 impl DelegationChain {
-    /// Konstruktor, prueft Hop-Cap.
+    /// Constructor, checks the hop cap.
     ///
     /// # Errors
-    /// [`DelegationError::TooManyPatterns`] mit `kind = "chain"` wenn
+    /// [`DelegationError::TooManyPatterns`] with `kind = "chain"` if
     /// `links.len() > MAX_CHAIN_DEPTH_HARD_CAP`.
     pub fn new(origin_guid: [u8; 16], links: Vec<DelegationLink>) -> DelegationResult<Self> {
         if links.len() > MAX_CHAIN_DEPTH_HARD_CAP {
@@ -549,25 +549,25 @@ impl DelegationChain {
         Ok(Self { origin_guid, links })
     }
 
-    /// Anzahl Links (Chain-Tiefe).
+    /// Number of links (chain depth).
     #[must_use]
     pub fn depth(&self) -> usize {
         self.links.len()
     }
 
-    /// GUID des Edge-Peers (letzter Delegatee).
+    /// GUID of the edge peer (last delegatee).
     #[must_use]
     pub fn edge_guid(&self) -> Option<[u8; 16]> {
         self.links.last().map(|l| l.delegatee_guid)
     }
 
-    /// Wire-Encoding der Chain.
+    /// Wire encoding of the chain.
     ///
     /// Layout:
     /// ```text
     /// version       = 1 (u8)
-    /// origin_guid   = 16 byte
-    /// n_links       = u8 (max 255 — durch HARD_CAP=8 ohnehin <)
+    /// origin_guid   = 16 bytes
+    /// n_links       = u8 (max 255 — < anyway because of HARD_CAP=8)
     /// [encoded link]*
     /// ```
     #[must_use]
@@ -583,10 +583,10 @@ impl DelegationChain {
         buf
     }
 
-    /// Decode aus Wire-Bytes.
+    /// Decode from wire bytes.
     ///
     /// # Errors
-    /// [`DelegationError::Malformed`] bei Layout-Verletzung.
+    /// [`DelegationError::Malformed`] on a layout violation.
     pub fn decode(buf: &[u8]) -> DelegationResult<Self> {
         if buf.len() < 1 + 16 + 1 {
             return Err(DelegationError::Malformed(
@@ -706,7 +706,7 @@ mod tests {
         let a = l.signing_bytes();
         let b = l.signing_bytes();
         assert_eq!(a, b);
-        // Magic + version sind die ersten 9 byte.
+        // Magic + version are the first 9 bytes.
         assert_eq!(&a[..8], DELEGATION_MAGIC);
         assert_eq!(a[8], DELEGATION_VERSION);
     }
@@ -741,22 +741,22 @@ mod tests {
         assert_eq!(l.signature.len(), 64);
     }
 
-    /// PKCS#8-DER eines mit `openssl genpkey -algorithm RSA
-    /// -pkeyopt rsa_keygen_bits:2048` erzeugten Test-Schluessels (1192 byte,
-    /// committet in `tests/fixtures/`).
-    /// Nicht-sensitiv: Test-Vector, niemals fuer echte Signaturen.
+    /// PKCS#8-DER of a test key generated with `openssl genpkey -algorithm RSA
+    /// -pkeyopt rsa_keygen_bits:2048` (1192 bytes,
+    /// committed in `tests/fixtures/`).
+    /// Non-sensitive: a test vector, never for real signatures.
     const TEST_RSA_2048_PKCS8: &[u8] = include_bytes!("../tests/fixtures/rsa_2048_test_pkcs8.der");
 
-    /// RSA-PSS-2048-Sign-Test mit hardcoded PKCS#8-DER Test-Vector.
-    /// Faengt die `modulus_len != 256` -> `==` Mutation in
-    /// `sign_rsa_pss` (Zeile 637): mit `==` wuerde JEDER 2048-bit
-    /// RSA-Key zur SignFailed fuehren.
+    /// RSA-PSS-2048 sign test with a hardcoded PKCS#8-DER test vector.
+    /// Catches the `modulus_len != 256` -> `==` mutation in
+    /// `sign_rsa_pss` (line 637): with `==` EVERY 2048-bit
+    /// RSA key would lead to SignFailed.
     #[test]
     fn rsa_pss_2048_sign_succeeds_with_2048_bit_key() {
         let mut l = link_skeleton();
         l.algorithm = SignatureAlgorithm::RsaPss2048;
         l.sign(TEST_RSA_2048_PKCS8).expect("RSA-PSS-2048 sign");
-        // 2048-bit Modulus = 256 byte Signatur (RFC 8017).
+        // 2048-bit modulus = 256-byte signature (RFC 8017).
         assert_eq!(l.signature.len(), 256);
     }
 
@@ -765,8 +765,8 @@ mod tests {
         let (pkcs8, pub_key) = ecdsa_key(&ECDSA_P256_SHA256_FIXED_SIGNING);
         let mut l = link_skeleton();
         l.sign(&pkcs8).expect("sign");
-        // Veraendere ein Topic-Pattern — Sign-Input aendert sich, alte
-        // Sig wird invalid.
+        // Change a topic pattern — the sign input changes, the old
+        // sig becomes invalid.
         l.allowed_topic_patterns[0] = "/different/*".to_string();
         let err = l.verify(&pub_key).expect_err("must fail");
         assert!(matches!(err, DelegationError::VerifyFailed(_)));
@@ -822,7 +822,7 @@ mod tests {
         let mut l = link_skeleton();
         l.signature = alloc::vec![0u8; 64];
         let mut wire = l.encode();
-        // Algorithm-Byte sitzt nach magic(8) + version(1) + delegator(16)
+        // The algorithm byte sits after magic(8) + version(1) + delegator(16)
         // + delegatee(16) + not_before(8) + not_after(8) = offset 57.
         wire[57] = 99;
         let err = DelegationLink::decode(&wire).expect_err("must fail");
@@ -921,8 +921,8 @@ mod tests {
     // Mutation-Killer (2026-05-01)
     // -------------------------------------------------------------
 
-    /// expected_signature_len pro Algorithmus liefert spezifischen Wert.
-    /// Faengt `expected_signature_len -> None`-Mutation.
+    /// expected_signature_len per algorithm returns a specific value.
+    /// Catches the `expected_signature_len -> None` mutation.
     #[test]
     fn expected_signature_len_per_algorithm() {
         assert_eq!(
@@ -943,8 +943,8 @@ mod tests {
         );
     }
 
-    /// Display-Format aller DelegationError-Variants.
-    /// Faengt `Display::fmt -> Ok(Default)` Mutation.
+    /// Display format of all DelegationError variants.
+    /// Catches the `Display::fmt -> Ok(Default)` mutation.
     #[test]
     fn delegation_error_display_messages_specific() {
         assert_eq!(
@@ -992,10 +992,10 @@ mod tests {
         );
     }
 
-    // ---- Cap-Boundary-Tests fuer DelegationLink::decode ----
+    // ---- Cap boundary tests for DelegationLink::decode ----
 
-    /// Baut einen minimal-validen Link-Wire mit n_topic Topic-Patterns
-    /// und n_part Partition-Patterns; jedes Pattern leerer string.
+    /// Builds a minimally valid link wire with n_topic topic patterns
+    /// and n_part partition patterns; each pattern an empty string.
     fn build_link_wire(
         n_topic: u32,
         n_part: u32,
@@ -1027,8 +1027,8 @@ mod tests {
         buf
     }
 
-    /// n_topic == MAX_TOPIC_PATTERNS muss durchgehen.
-    /// n_topic > MAX muss erroren.
+    /// n_topic == MAX_TOPIC_PATTERNS must pass.
+    /// n_topic > MAX must error.
     #[test]
     fn link_decode_n_topic_at_and_over_cap() {
         let topic_lens = vec![1u32; MAX_TOPIC_PATTERNS];
@@ -1042,7 +1042,7 @@ mod tests {
         assert!(matches!(err, DelegationError::TooManyPatterns { .. }));
     }
 
-    /// Topic-pattern-len == MAX_PATTERN_LEN durchgehen, > MAX erroren.
+    /// Topic pattern len == MAX_PATTERN_LEN passes, > MAX errors.
     #[test]
     fn link_decode_topic_pattern_len_at_and_over_cap() {
         let wire = build_link_wire(1, 0, &[MAX_PATTERN_LEN as u32], &[]);
@@ -1080,11 +1080,11 @@ mod tests {
 
     // ---- DelegationChain::decode header-len boundary ----
 
-    /// Faengt Mutationen `<` -> `==`/`<=` und `+` -> `-`/`*` auf
-    /// `if buf.len() < 1 + 16 + 1` Header-Check.
+    /// Catches mutations `<` -> `==`/`<=` and `+` -> `-`/`*` on the
+    /// `if buf.len() < 1 + 16 + 1` header check.
     /// Layout: 1 byte version + 16 byte origin_guid + 1 byte n_links = 18.
-    /// Buffer EXAKT 18 byte (mit n_links=0): muss durchgehen.
-    /// Buffer 17 byte: muss erroren (Truncated).
+    /// Buffer EXACTLY 18 bytes (with n_links=0): must pass.
+    /// Buffer 17 bytes: must error (Truncated).
     #[test]
     fn chain_decode_header_at_minimum_size() {
         let mut buf = Vec::new();
@@ -1107,9 +1107,9 @@ mod tests {
         assert!(matches!(err, DelegationError::Malformed(_)));
     }
 
-    /// n_links == MAX_CHAIN_DEPTH_HARD_CAP muss durchgehen (mit korrekt
-    /// vielen Links danach), n_links > MAX muss erroren.
-    /// Kein Versuch alle Links zu encoden — nur header check.
+    /// n_links == MAX_CHAIN_DEPTH_HARD_CAP must pass (with the correct
+    /// number of links after it), n_links > MAX must error.
+    /// No attempt to encode all links — only the header check.
     #[test]
     fn chain_decode_n_links_over_hard_cap_rejected() {
         let mut buf = Vec::new();
@@ -1123,12 +1123,12 @@ mod tests {
         ));
     }
 
-    /// n_links == MAX_CHAIN_DEPTH_HARD_CAP MUSS den Cap-Check passieren
-    /// (Original `>` ist false). Faengt `>` -> `>=` (an MAX wuerde
-    /// Mutation TooManyPatterns liefern statt Malformed-aus-Loop).
-    /// Wir liefern bewusst KEINE Link-Bodies — Original geht in Loop und
-    /// liefert dort einen anderen Error (Malformed); Mutation feuert die
-    /// Cap-Branch.
+    /// n_links == MAX_CHAIN_DEPTH_HARD_CAP MUST pass the cap check
+    /// (original `>` is false). Catches `>` -> `>=` (at MAX the
+    /// mutation would return TooManyPatterns instead of Malformed-from-loop).
+    /// We deliberately supply NO link bodies — the original goes into the loop and
+    /// returns a different error there (Malformed); the mutation fires the
+    /// cap branch.
     #[test]
     fn chain_decode_n_links_at_hard_cap_passes_cap_check() {
         let mut buf = Vec::new();
@@ -1136,9 +1136,9 @@ mod tests {
         buf.extend_from_slice(&[0u8; 16]);
         buf.push(MAX_CHAIN_DEPTH_HARD_CAP as u8);
         let err = DelegationChain::decode(&buf).unwrap_err();
-        // Original `>`: cap check geht durch, dann Loop scheitert auf
-        // fehlenden Link-Bytes -> Malformed.
-        // Mutation `>=`: cap check wuerde TooManyPatterns liefern.
+        // Original `>`: the cap check passes, then the loop fails on
+        // missing link bytes -> Malformed.
+        // Mutation `>=`: the cap check would return TooManyPatterns.
         assert!(
             matches!(err, DelegationError::Malformed(_)),
             "expected Malformed (loop failure), got {err:?}"

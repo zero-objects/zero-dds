@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! MQTT-Bridge §7.x Security-Wireup: TLS (mqtts:// auf Port 8883) +
-//! Auth (Username/Password aus CONNECT-Packet → `bearer` oder `sasl`)
-//! + Topic-ACL pro Subscribe/Publish.
+//! MQTT bridge §7.x security wireup: TLS (mqtts:// on port 8883) +
+//! auth (username/password from the CONNECT packet → `bearer` or `sasl`)
+//! + topic ACL per subscribe/publish.
 //!
-//! Spec: `zerodds-mqtt-bridge-1.0.md` §7. Logik kommt aus
-//! [`zerodds_bridge_security`]; dieses Modul bietet den MQTT-spezifischen
-//! Auth-Hook (CONNECT-Packet `username` + `password`).
+//! Spec: `zerodds-mqtt-bridge-1.0.md` §7. The logic comes from
+//! [`zerodds_bridge_security`]; this module provides the MQTT-specific
+//! auth hook (CONNECT packet `username` + `password`).
 
 pub use zerodds_bridge_security::{
     Acl, AclEntry, AclOp, AuthError, AuthMode, AuthSubject, RotatingTlsConfig, SecurityConfig,
@@ -19,24 +19,24 @@ use rustls::ClientConfig;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// MQTT-spezifischer Auth-Hook: prüft Username/Password aus dem
-/// CONNECT-Packet (MQTT v5 §3.1.3.5/3.1.3.6) gegen [`AuthMode`].
+/// MQTT-specific auth hook: checks username/password from the
+/// CONNECT packet (MQTT v5 §3.1.3.5/3.1.3.6) against [`AuthMode`].
 ///
-/// `username` und `password` kommen aus `zerodds_mqtt_bridge::
+/// `username` and `password` come from `zerodds_mqtt_bridge::
 /// control_packets::ConnectPacket::user_name` /`password`.
 ///
 /// Mapping:
-/// * `AuthMode::None` → ignoriert die Credentials, gibt anonymous.
-/// * `AuthMode::Bearer` → erwartet `password` als Bearer-Token; das
-///   `username` wird ignoriert (es überschreibt aber den Subject-Namen
-///   nicht, der kommt aus dem Token-Map-Lookup).
-/// * `AuthMode::SaslPlain` → bei MQTT die natürliche Form: User/Pass
-///   direkt aus den CONNECT-Feldern.
-/// * `AuthMode::Mtls` → `mtls_subject` muss aus dem TLS-Layer kommen.
-/// * `AuthMode::Jwt` → `password` enthält das JWT.
+/// * `AuthMode::None` → ignores the credentials, returns anonymous.
+/// * `AuthMode::Bearer` → expects `password` as a bearer token; the
+///   `username` is ignored (it does not override the subject name,
+///   which comes from the token-map lookup).
+/// * `AuthMode::SaslPlain` → the natural form for MQTT: user/pass
+///   directly from the CONNECT fields.
+/// * `AuthMode::Mtls` → `mtls_subject` must come from the TLS layer.
+/// * `AuthMode::Jwt` → `password` contains the JWT.
 ///
 /// # Errors
-/// [`AuthError`] bei jeder Form von Reject/Missing/Malformed.
+/// [`AuthError`] on any form of reject/missing/malformed.
 pub fn authenticate_mqtt(
     auth: &AuthMode,
     username: Option<&str>,
@@ -46,8 +46,8 @@ pub fn authenticate_mqtt(
     match auth {
         AuthMode::None => Ok(AuthSubject::anonymous()),
         AuthMode::Bearer { .. } | AuthMode::Jwt { .. } => {
-            // Password = "<token>" → in einen `Authorization: Bearer …`
-            // Header umverpacken, damit der Standard-Pfad greift.
+            // Password = "<token>" → repackage into an `Authorization: Bearer …`
+            // header so the standard path applies.
             let pw = password.ok_or(AuthError::MissingCredentials)?;
             let token = core::str::from_utf8(pw)
                 .map_err(|_| AuthError::MalformedCredentials("password not utf8".into()))?;
@@ -69,16 +69,16 @@ pub fn authenticate_mqtt(
     }
 }
 
-/// Übersetzt die Daemon-`DaemonConfig` in einen [`SecurityCtx`] und —
-/// für `mqtts://`-Pfade — eine rustls-`ClientConfig` zum Broker.
+/// Translates the daemon `DaemonConfig` into a [`SecurityCtx`] and —
+/// for `mqtts://` paths — a rustls `ClientConfig` to the broker.
 ///
-/// MQTT-Bridge ist ein Bridge-Client, also brauchen wir keinen
-/// Server-Side-TLS-Acceptor (kein [`RotatingTlsConfig`]); stattdessen
-/// liefern wir den Out-Bound-`Arc<ClientConfig>` für den TCP→TLS-Wrap
-/// im [`super::client::MqttClient`].
+/// The MQTT bridge is a bridge client, so we need no
+/// server-side TLS acceptor (no [`RotatingTlsConfig`]); instead
+/// we provide the outbound `Arc<ClientConfig>` for the TCP→TLS wrap
+/// in [`super::client::MqttClient`].
 ///
 /// # Errors
-/// [`SecurityError`] bei TLS-Lade- oder Auth-Mode-Konfig-Fehler.
+/// [`SecurityError`] on a TLS-load or auth-mode config error.
 pub fn ctx_from_daemon_config(
     cfg: &super::config::DaemonConfig,
 ) -> Result<(SecurityCtx, Option<Arc<ClientConfig>>), SecurityError> {
@@ -133,12 +133,12 @@ pub fn ctx_from_daemon_config(
     Ok((ctx, client_tls))
 }
 
-/// Mappt die [`AuthMode`]+optional User-/Pass auf das, was im
-/// MQTT-CONNECT-Packet als `username`/`password` rausgehen muss.
+/// Maps the [`AuthMode`] + optional user/pass to what must go out in the
+/// MQTT CONNECT packet as `username`/`password`.
 ///
 /// * `AuthMode::None` → no creds.
 /// * `AuthMode::Bearer` → `password = <token>`, `username = ""`.
-/// * `AuthMode::SaslPlain` → `username/password` aus Config.
+/// * `AuthMode::SaslPlain` → `username/password` from config.
 #[must_use]
 pub fn outbound_credentials(
     cfg: &super::config::DaemonConfig,

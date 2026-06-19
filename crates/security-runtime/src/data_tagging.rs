@@ -1,37 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Builtin DataTagging-Plugin (OMG DDS-Security 1.2 §12).
+//! Builtin DataTagging plugin (OMG DDS-Security 1.2 §12).
 //!
-//! Implementiert das [`zerodds_security::DataTaggingPlugin`]-SPI als
-//! produktiven Builtin. Tags sind Application-Level-Labels
-//! (Classification-Marker, Sensitivity, etc.), die per Endpoint-GUID
-//! verwaltet, ueber SEDP via `PID_PROPERTY_LIST` propagiert und
-//! Subscriber-seitig auf Match geprueft werden.
+//! Implements the [`zerodds_security::DataTaggingPlugin`] SPI as a
+//! production builtin. Tags are application-level labels
+//! (classification markers, sensitivity, etc.) that are managed per
+//! endpoint GUID, propagated over SEDP via `PID_PROPERTY_LIST`, and
+//! checked for a match on the subscriber side.
 //!
-//! # Wire-Pfad
+//! # Wire path
 //!
-//! Tags werden als `WireProperty`-Eintraege mit Namespace-Prefix
-//! `dds.sec.data_tags.` in die existierende [`WirePropertyList`]
-//! eingebettet — d.h. wir reuten den bereits in SPDP/SEDP propagierten
-//! `PID_PROPERTY_LIST`-Parameter, anstatt einen neuen PID einzufuehren.
-//! Das passt zu Cyclones/RTI-Verhalten, das Tags ebenfalls via
-//! `PID_PROPERTY_LIST` traegt (Cyclone DDS Security §8 doc).
+//! Tags are embedded as `WireProperty` entries with the namespace prefix
+//! `dds.sec.data_tags.` into the existing [`WirePropertyList`]
+//! — i.e. we reuse the `PID_PROPERTY_LIST` parameter already propagated in
+//! SPDP/SEDP, instead of introducing a new PID.
+//! This matches the Cyclone/RTI behavior, which also carries tags via
+//! `PID_PROPERTY_LIST` (Cyclone DDS Security §8 doc).
 //!
-//! # Match-Predicate
+//! # Match predicate
 //!
-//! Default-Predicate ist Subset-Match:
-//! * Subscriber ohne Tags → akzeptiert jeden Publisher (Wildcard).
-//! * Subscriber mit Tags → jeder Tag (name+value) muss exakt im
-//!   Publisher-Tag-Set vorkommen.
-//! * Unknown Tag-Name auf Subscriber-Seite, der nicht beim Publisher
-//!   existiert → Reject.
+//! The default predicate is a subset match:
+//! * subscriber without tags → accepts any publisher (wildcard).
+//! * subscriber with tags → every tag (name+value) must appear exactly in
+//!   the publisher tag set.
+//! * an unknown tag name on the subscriber side that does not exist at the
+//!   publisher → reject.
 //!
-//! Spec-konform und einfach genug fuer NGVA/FACE-Pilot-Setups; komplexe
-//! Predicates (range/regex) werden via Custom-`DataTaggingPlugin`
-//! abgedeckt.
+//! Spec-conform and simple enough for NGVA/FACE pilot setups; complex
+//! predicates (range/regex) are covered via a custom `DataTaggingPlugin`.
 //!
-//! # Beispiel
+//! # Example
 //!
 //! ```no_run
 //! use zerodds_security::data_tagging::{DataTag, DataTaggingPlugin};
@@ -49,7 +48,7 @@
 //! ```
 //!
 //! zerodds-lint: allow no_dyn_in_safe
-//! (Plugin-Trait-Object via `Box<dyn DataTaggingPlugin>`.)
+//! (plugin trait object via `Box<dyn DataTaggingPlugin>`.)
 
 extern crate alloc;
 
@@ -60,26 +59,26 @@ use alloc::vec::Vec;
 use zerodds_rtps::property_list::{WireProperty, WirePropertyList};
 use zerodds_security::data_tagging::{DataTag, DataTaggingPlugin};
 
-/// Property-Namespace fuer Tag-Wire-Encoding. Jeder Tag erscheint als
-/// ein `WireProperty` mit `name = TAG_PROPERTY_PREFIX + tag.name`,
-/// `value = tag.value`. Andere Properties (auth-class, suite-list, …)
-/// bleiben unangetastet.
+/// Property namespace for tag wire encoding. Each tag appears as
+/// a `WireProperty` with `name = TAG_PROPERTY_PREFIX + tag.name`,
+/// `value = tag.value`. Other properties (auth-class, suite-list, …)
+/// stay untouched.
 pub const TAG_PROPERTY_PREFIX: &str = "dds.sec.data_tags.";
 
-/// Builtin DataTagging-Plugin fuer Spec §12.
+/// Builtin DataTagging plugin for spec §12.
 #[derive(Debug, Default)]
 pub struct BuiltinDataTaggingPlugin {
     tags: BTreeMap<[u8; 16], Vec<DataTag>>,
 }
 
 impl BuiltinDataTaggingPlugin {
-    /// Konstruktor — Plugin startet ohne registrierte Endpoints.
+    /// Constructor — the plugin starts with no registered endpoints.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Default Subset-Match-Predicate (siehe Modul-Doku).
+    /// Default subset-match predicate (see module docs).
     #[must_use]
     pub fn tags_match(publisher: &[DataTag], subscriber: &[DataTag]) -> bool {
         if subscriber.is_empty() {
@@ -88,10 +87,10 @@ impl BuiltinDataTaggingPlugin {
         subscriber.iter().all(|s| publisher.iter().any(|p| p == s))
     }
 
-    /// Encodiert eine Tag-Liste als `WireProperty`-Sequenz zur Aufnahme
-    /// in eine [`WirePropertyList`]. Tags mit doppeltem Namen werden
-    /// stabil in Eingabe-Reihenfolge geschrieben — die `last value
-    /// wins`-Semantik der PropertyList wird damit konsistent.
+    /// Encodes a tag list as a `WireProperty` sequence for inclusion
+    /// in a [`WirePropertyList`]. Tags with a duplicate name are
+    /// written stably in input order — making the `last value
+    /// wins` semantics of the PropertyList consistent.
     #[must_use]
     pub fn encode_tags(tags: &[DataTag]) -> Vec<WireProperty> {
         tags.iter()
@@ -104,9 +103,9 @@ impl BuiltinDataTaggingPlugin {
             .collect()
     }
 
-    /// Filtert eine [`WirePropertyList`] nach Tag-Properties (Prefix-
-    /// Match) und liefert die de-prefixed Tag-Liste. Andere Properties
-    /// werden ignoriert.
+    /// Filters a [`WirePropertyList`] for tag properties (prefix
+    /// match) and returns the de-prefixed tag list. Other properties
+    /// are ignored.
     #[must_use]
     pub fn decode_tags(list: &WirePropertyList) -> Vec<DataTag> {
         list.entries
@@ -180,7 +179,7 @@ mod tests {
 
     #[test]
     fn match_empty_subscriber_is_wildcard() {
-        // Subscriber ohne Tags akzeptiert jeden Publisher — auch ohne Tags.
+        // A subscriber without tags accepts any publisher — even without tags.
         assert!(BuiltinDataTaggingPlugin::tags_match(&[], &[]));
         assert!(BuiltinDataTaggingPlugin::tags_match(
             &[tag("classification", "secret")],
@@ -237,7 +236,7 @@ mod tests {
 
     #[test]
     fn match_unknown_subscriber_tag_rejects() {
-        // Subscriber fordert Tag-Name den Publisher gar nicht setzt.
+        // Subscriber requires a tag name the publisher does not set at all.
         let publisher = vec![tag("classification", "secret")];
         let subscriber = vec![tag("project", "alpha")];
         assert!(!BuiltinDataTaggingPlugin::tags_match(
@@ -248,7 +247,7 @@ mod tests {
 
     #[test]
     fn empty_publisher_with_required_subscriber_rejects() {
-        // Publisher ohne Tags + Subscriber mit Anforderung → Reject.
+        // Publisher without tags + subscriber with a requirement → reject.
         let subscriber = vec![tag("classification", "secret")];
         assert!(!BuiltinDataTaggingPlugin::tags_match(&[], &subscriber));
     }
@@ -291,7 +290,7 @@ mod tests {
     #[test]
     fn wire_roundtrip_via_property_list() {
         // encode_tags → WirePropertyList → CDR-bytes → WirePropertyList
-        // → decode_tags muss die Tag-Liste byte-genau reproduzieren.
+        // → decode_tags must reproduce the tag list byte-exactly.
         let tags = vec![
             tag("classification", "secret"),
             tag("releasability", "nato"),
@@ -319,7 +318,7 @@ mod tests {
     #[test]
     fn plugin_class_id_matches_spec_format() {
         let p = BuiltinDataTaggingPlugin::new();
-        // Spec §12.0: Class-Id-Konvention "DDS:<Service>:<Variant>".
+        // Spec §12.0: class-id convention "DDS:<Service>:<Variant>".
         assert_eq!(p.plugin_class_id(), "DDS:Tagging:Builtin");
     }
 }

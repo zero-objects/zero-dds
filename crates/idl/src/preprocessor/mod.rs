@@ -1,41 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! C-Style Preprocessor fuer OMG IDL 4.2.
+//! C-style preprocessor for OMG IDL 4.2.
 //!
-//! IDL erbt vom C-Preprocessor — und Vendor-IDL-Files (RTI, OpenSplice)
-//! nutzen `#include`, `#define`, `#ifdef`, `#pragma` regelmaessig.
-//! Damit der Parser solche Files konsumieren kann, sitzt der
-//! Preprocessor VOR dem Lexer und expandiert die Directives zu reinem
-//! IDL-Source.
+//! IDL inherits from the C preprocessor — and vendor IDL files (RTI, OpenSplice)
+//! use `#include`, `#define`, `#ifdef`, `#pragma` regularly.
+//! So that the parser can consume such files, the
+//! preprocessor sits BEFORE the lexer and expands the directives into pure
+//! IDL source.
 //!
 //! # Scope
 //!
-//! - **`#include "rel/path.idl"`** und **`#include <abs/path.idl>`**:
-//!   text-basierte Inklusion via [`Resolver`]-Trait
-//! - **`#define MACRO value`** (object-like) und
-//!   **`#define NAME(p1, p2) body`** (function-like) inkl.
-//!   `#`-Stringize und `##`-Token-Paste (Spec §7.2.5 + ISO 14882
+//! - **`#include "rel/path.idl"`** and **`#include <abs/path.idl>`**:
+//!   text-based inclusion via the [`Resolver`] trait
+//! - **`#define MACRO value`** (object-like) and
+//!   **`#define NAME(p1, p2) body`** (function-like) incl.
+//!   `#` stringize and `##` token-paste (Spec §7.2.5 + ISO 14882
 //!   §16.3.2/§16.3.3)
 //! - **`#ifdef`** / **`#ifndef`** / **`#if`** / **`#elif`** /
-//!   **`#else`** / **`#endif`**: konditionelle Kompilation mit
-//!   Expression-Eval (`defined`, `&&`, `||`, `!`, numerische Literale)
-//! - **`#pragma <args>`**: stripped (nicht im Output) — Vendor-Pragmas
-//!   wie RTI's `#pragma keylist` werden als spezielle AST-Nodes erfasst
-//! - **`#undef`**: Macro entfernen
+//!   **`#else`** / **`#endif`**: conditional compilation with
+//!   expression eval (`defined`, `&&`, `||`, `!`, numeric literals)
+//! - **`#pragma <args>`**: stripped (not in the output) — vendor pragmas
+//!   like RTI's `#pragma keylist` are captured as special AST nodes
+//! - **`#undef`**: remove a macro
 //!
-//! Nicht supported:
-//! - Recursive Macro-Expansion (eine Pass)
-//! - Variadic-Macros (`__VA_ARGS__`)
-//! - `#error`, `#warning`, `#line` (geparst, aber nicht funktional)
-//! - Volle C-PP-Arithmetik in `#if` (Vergleiche, Bitops, Ternary)
+//! Not supported:
+//! - Recursive macro expansion (one pass)
+//! - Variadic macros (`__VA_ARGS__`)
+//! - `#error`, `#warning`, `#line` (parsed, but not functional)
+//! - Full C-PP arithmetic in `#if` (comparisons, bitops, ternary)
 //!
-//! # Source-Map
+//! # Source map
 //!
-//! [`SourceMap`] mappt jede Position im expandierten Output auf
-//! `(file_id, byte_offset_im_original)`. Damit Diagnostiken nach
-//! Parsing auf die richtige Original-Datei und -Zeile zeigen.
+//! [`SourceMap`] maps every position in the expanded output to
+//! `(file_id, byte_offset_in_original)`. So that diagnostics after
+//! parsing point to the correct original file and line.
 //!
-//! # Beispiel
+//! # Example
 //!
 //! ```
 //! use zerodds_idl::preprocessor::{Preprocessor, MemoryResolver};
@@ -55,7 +55,7 @@
 //! assert!(!result.expanded.contains("#define"));
 //! ```
 
-#![allow(missing_docs)] // Field-Level-Doc-Kommentare nicht überall vollständig
+#![allow(missing_docs)] // field-level doc-comments not complete everywhere
 
 mod source_map;
 
@@ -63,31 +63,31 @@ pub use source_map::{FileId, SourceLocation, SourceMap};
 
 use std::collections::HashMap;
 
-/// Trait fuer Include-File-Resolution.
+/// Trait for include-file resolution.
 ///
-/// Erlaubt File-IO (`FsResolver`), In-Memory-Tests (`MemoryResolver`)
-/// oder benutzerdefinierte Strategien.
+/// Allows file IO (`FsResolver`), in-memory tests (`MemoryResolver`)
+/// or custom strategies.
 pub trait Resolver {
-    /// Loest einen `#include "path"` (relativ) oder `#include <path>`
-    /// (system) zu Source-Text auf.
+    /// Resolves a `#include "path"` (relative) or `#include <path>`
+    /// (system) to source text.
     ///
     /// # Errors
-    /// Implementierungs-spezifisch. Sollte einen sprechenden Fehler
-    /// liefern, der den gesuchten Pfad enthaelt.
+    /// Implementation-specific. Should return a meaningful error
+    /// that contains the requested path.
     fn resolve(&self, requesting_file: &str, include: &Include) -> Result<String, ResolveError>;
 }
 
-/// Beschreibt einen Include-Request.
+/// Describes an include request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Include {
-    /// `#include "name"` — relative/lokale Suche.
+    /// `#include "name"` — relative/local search.
     Quoted(String),
-    /// `#include <name>` — System-Pfad-Suche.
+    /// `#include <name>` — system-path search.
     System(String),
 }
 
 impl Include {
-    /// Pfad-Komponente unabhaengig vom Style.
+    /// Path component independent of the style.
     #[must_use]
     pub fn path(&self) -> &str {
         match self {
@@ -96,17 +96,17 @@ impl Include {
     }
 }
 
-/// Resolver-Fehler. Fehlende Datei, IO-Fehler, etc.
+/// Resolver error. Missing file, IO error, etc.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolveError {
-    /// Gesuchter Pfad (so wie er im `#include` stand).
+    /// Requested path (as it appeared in the `#include`).
     pub requested: String,
-    /// Sprechende Beschreibung.
+    /// Meaningful description.
     pub message: String,
 }
 
-/// In-Memory-Resolver fuer Tests und CLI-Tools, die Source ohne
-/// Filesystem-Zugriff verwalten.
+/// In-memory resolver for tests and CLI tools that manage source without
+/// filesystem access.
 #[derive(Debug, Clone, Default)]
 pub struct MemoryResolver {
     files: HashMap<String, String>,
@@ -120,7 +120,7 @@ impl MemoryResolver {
         }
     }
 
-    /// Registriert eine Datei.
+    /// Registers a file.
     pub fn add(&mut self, name: impl Into<String>, content: impl Into<String>) {
         self.files.insert(name.into(), content.into());
     }
@@ -138,149 +138,151 @@ impl Resolver for MemoryResolver {
 
 /// `#pragma prefix "<prefix>"` — CORBA Part 1 §14.7.5.
 ///
-/// Gesammelt vom Preprocessor; vom Konsumenten (Spec-Validator) gegen
-/// `typeprefix`-Decls auf Repository-ID-Konflikt geprueft (IDL 4.2
+/// Collected by the preprocessor; checked by the consumer (spec validator) against
+/// `typeprefix` decls for a repository-ID conflict (IDL 4.2
 /// §7.4.6.4.1.3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PragmaPrefix {
-    /// Prefix-String (ohne umgebende Anfuehrungszeichen).
+    /// Prefix string (without surrounding quotes).
     pub prefix: String,
-    /// Quelldatei.
+    /// Source file.
     pub file: String,
-    /// Zeile (1-basiert).
+    /// Line (1-based).
     pub line: usize,
 }
 
-/// `#pragma keylist Foo a b c` — Cyclone/OpenSplice-Konvention.
+/// `#pragma keylist Foo a b c` — Cyclone/OpenSplice convention.
 ///
-/// Gesammelt vom Preprocessor; vom Konsumenten (idlc, AST-Builder)
-/// kann ueber [`ProcessedSource::pragma_keylists`] gelesen werden.
+/// Collected by the preprocessor; can be read by the consumer (idlc, AST builder)
+/// via [`ProcessedSource::pragma_keylists`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PragmaKeylist {
-    /// Topic-Type-Name.
+    /// Topic-type name.
     pub type_name: String,
-    /// Key-Member-Namen.
+    /// Key member names.
     pub keys: Vec<String>,
-    /// Quelldatei.
+    /// Source file.
     pub file: String,
-    /// Zeile (1-basiert).
+    /// Line (1-based).
     pub line: usize,
 }
 
-/// OpenSplice-Legacy-spezifische Pragmas (`#pragma DCPS_DATA_TYPE`,
+/// OpenSplice-legacy-specific pragmas (`#pragma DCPS_DATA_TYPE`,
 /// `#pragma DCPS_DATA_KEY`, `#pragma cats`, `#pragma genequality`).
 ///
-/// In OpenSplice-Versionen 5.x/6.x waren diese Pragmas die primaere
-/// Methode, IDL-Types als DDS-Topics zu markieren — vor der OMG-IDL-4.2-
-/// Annotation `@key`. Migration-Use-Cases muessen sie auf moderne
-/// `@key`/`@topic`-Annotations mappen.
+/// In OpenSplice versions 5.x/6.x these pragmas were the primary
+/// method of marking IDL types as DDS topics — before the OMG-IDL-4.2
+/// annotation `@key`. Migration use cases must map them to modern
+/// `@key`/`@topic` annotations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpenSplicePragma {
-    /// `#pragma DCPS_DATA_TYPE "<TypeName>"` — markiert Type als
-    /// DDS-Topic-Type.
+    /// `#pragma DCPS_DATA_TYPE "<TypeName>"` — marks the type as a
+    /// DDS-topic type.
     DataType {
         type_name: String,
         file: String,
         line: usize,
     },
-    /// `#pragma DCPS_DATA_KEY "<TypeName>.<field>"` — markiert
-    /// Member als Key.
+    /// `#pragma DCPS_DATA_KEY "<TypeName>.<field>"` (dot form) or
+    /// `#pragma DCPS_DATA_KEY <TypeName> <field>...` (OpenDDS space
+    /// form, one or more fields) — marks members as keys.
     DataKey {
         type_name: String,
-        field: String,
+        /// One or more key fields.
+        fields: Vec<String>,
         file: String,
         line: usize,
     },
     /// `#pragma cats <TypeName> <field>` — catenated keys
-    /// (alternative key-Markierung).
+    /// (alternative key marking).
     Cats {
         type_name: String,
         keys: Vec<String>,
         file: String,
         line: usize,
     },
-    /// `#pragma genequality` — codegen-Flag fuer Gleichheits-Operator
-    /// in C++/Java-Bindings.
+    /// `#pragma genequality` — codegen flag for the equality operator
+    /// in C++/Java bindings.
     GenEquality { file: String, line: usize },
 }
 
 /// `#pragma dds_xtopics version="1.3"` (XTypes 1.3 §7.3.1.1.1) —
-/// erlaubt einer IDL-Datei zu markieren, gegen welche XTypes-Spec-
-/// Version sie geschrieben wurde. Der Compiler-Frontend kann dann
-/// vendor-Erweiterungen mit/ohne Version-Match validieren.
+/// allows an IDL file to mark which XTypes spec
+/// version it was written against. The compiler frontend can then
+/// validate vendor extensions with/without a version match.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PragmaDdsXtopics {
-    /// Version-String (z.B. `"1.3"`). Leer wenn nicht angegeben.
+    /// Version string (e.g. `"1.3"`). Empty if not specified.
     pub version: String,
-    /// Quelldatei.
+    /// Source file.
     pub file: String,
-    /// Zeile.
+    /// Line.
     pub line: usize,
 }
 
-/// Resultat eines Preprocessor-Laufs.
+/// Result of a preprocessor run.
 #[derive(Debug, Clone, Default)]
 pub struct ProcessedSource {
-    /// Expandierter IDL-Source, fertig fuer den Lexer.
+    /// Expanded IDL source, ready for the lexer.
     pub expanded: String,
-    /// Mapping von Output-Position zu Original-(Datei,Position).
+    /// Mapping from output position to original (file, position).
     pub source_map: SourceMap,
-    /// Gesammelte `#pragma keylist`-Direktiven.
+    /// Collected `#pragma keylist` directives.
     pub pragma_keylists: Vec<PragmaKeylist>,
-    /// Gesammelte OpenSplice-Legacy-Pragmas (`DCPS_DATA_TYPE`,
+    /// Collected OpenSplice legacy pragmas (`DCPS_DATA_TYPE`,
     /// `DCPS_DATA_KEY`, `cats`, `genequality`).
     pub opensplice_pragmas: Vec<OpenSplicePragma>,
-    /// Gesammelte `#pragma prefix "<prefix>"`-Direktiven (CORBA Part 1
-    /// §14.7.5). Vom Spec-Validator fuer §7.4.6.4.1.3 Repository-ID-
-    /// Konflikt-Detection genutzt.
+    /// Collected `#pragma prefix "<prefix>"` directives (CORBA Part 1
+    /// §14.7.5). Used by the spec validator for §7.4.6.4.1.3 repository-ID
+    /// conflict detection.
     pub pragma_prefixes: Vec<PragmaPrefix>,
-    /// Gesammelte `#pragma dds_xtopics version="..."`-Direktiven
-    /// (XTypes 1.3 §7.3.1.1.1). Mehrfach-Pragmas pro File sind erlaubt;
-    /// der Validator prueft Versions-Konsistenz.
+    /// Collected `#pragma dds_xtopics version="..."` directives
+    /// (XTypes 1.3 §7.3.1.1.1). Multiple pragmas per file are allowed;
+    /// the validator checks version consistency.
     pub pragma_dds_xtopics: Vec<PragmaDdsXtopics>,
 }
 
-/// Top-Level-Preprocessor-Fehler.
+/// Top-level preprocessor error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PreprocessError {
-    /// `#include` konnte nicht aufgeloest werden.
+    /// `#include` could not be resolved.
     IncludeNotFound(ResolveError),
-    /// `#include` schon im Expansion-Stack — Zyklus erkannt.
+    /// `#include` already in the expansion stack — cycle detected.
     IncludeCycle {
-        /// Datei, die zyklisch eingebunden werden sollte.
+        /// File that was to be included cyclically.
         file: String,
     },
-    /// `#endif` ohne passendes `#ifdef`/`#ifndef`.
+    /// `#endif` without a matching `#ifdef`/`#ifndef`.
     UnmatchedEndif {
-        /// Quell-Datei der unmatched-Direktive.
+        /// Source file of the unmatched directive.
         file: String,
-        /// 1-indexierte Zeile.
+        /// 1-indexed line.
         line: usize,
     },
-    /// `#else` ohne passendes `#ifdef`/`#ifndef`.
+    /// `#else` without a matching `#ifdef`/`#ifndef`.
     UnmatchedElse { file: String, line: usize },
-    /// `#ifdef`/`#ifndef` ohne abschliessendes `#endif`.
+    /// `#ifdef`/`#ifndef` without a closing `#endif`.
     UnclosedConditional { file: String, line: usize },
-    /// Direktive mit fehlerhafter Syntax (z.B. `#define` ohne Name).
+    /// Directive with faulty syntax (e.g. `#define` without a name).
     SyntaxError {
         file: String,
         line: usize,
         message: String,
     },
-    /// `#error <message>` — explizit angefragter Build-Stopp.
+    /// `#error <message>` — explicitly requested build stop.
     ErrorDirective {
-        /// Quelldatei.
+        /// Source file.
         file: String,
-        /// Zeile.
+        /// Line.
         line: usize,
-        /// Inhalt der Direktive.
+        /// Content of the directive.
         message: String,
     },
-    /// Backslash als letztes Zeichen im Source-File — Spec §7.3:
+    /// Backslash as the last character in the source file — Spec §7.3:
     /// "A backslash character may not be the last character in a source
     /// file."
     TrailingBackslash {
-        /// Quelldatei.
+        /// Source file.
         file: String,
     },
 }
@@ -322,10 +324,10 @@ impl core::fmt::Display for PreprocessError {
 
 impl std::error::Error for PreprocessError {}
 
-/// Top-Level-Preprocessor.
+/// Top-level preprocessor.
 ///
-/// Konstruktion via [`Preprocessor::new`] mit einem [`Resolver`].
-/// Anschliessend `process(file_name, source)` aufrufen.
+/// Construction via [`Preprocessor::new`] with a [`Resolver`].
+/// Then call `process(file_name, source)`.
 pub struct Preprocessor<R: Resolver> {
     resolver: R,
 }
@@ -335,13 +337,13 @@ impl<R: Resolver> Preprocessor<R> {
         Self { resolver }
     }
 
-    /// Verarbeitet einen Source-String und expandiert alle Direktiven.
+    /// Processes a source string and expands all directives.
     ///
-    /// `file_name` wird in Diagnostiken angezeigt und ist die "current
-    /// file" fuer relative `#include`-Aufloesung.
+    /// `file_name` is shown in diagnostics and is the "current
+    /// file" for relative `#include` resolution.
     ///
     /// # Errors
-    /// Siehe [`PreprocessError`].
+    /// See [`PreprocessError`].
     pub fn process(
         &self,
         file_name: &str,
@@ -351,14 +353,14 @@ impl<R: Resolver> Preprocessor<R> {
         let root_id = state.source_map.add_file(file_name);
         let mut output = String::new();
         // Backslash-Newline-Continuation (Spec §7.3, ISO 14882 5.2):
-        // Ein `\` direkt vor `\n` wird durch Token-Splice ersetzt — d.h.
-        // beide Zeichen werden entfernt, die nachfolgende Zeile setzt
-        // syntaktisch fort. Wir tun das vor der Zeilen-Iteration, damit
-        // multi-line `#define X foo \\\n bar` korrekt erkannt werden.
+        // A `\` directly before `\n` is replaced by a token splice — i.e.
+        // both characters are removed, the following line continues
+        // syntactically. We do this before the line iteration, so that
+        // multi-line `#define X foo \\\n bar` is recognized correctly.
         let spliced = splice_backslash_newlines(source);
         // Spec §7.3: "A backslash character may not be the last character
-        // in a source file." Wenn nach dem Splicing noch ein Backslash am
-        // File-Ende uebrig ist, war er nicht von einem `\n` gefolgt.
+        // in a source file." If a backslash remains at the file end
+        // after splicing, it was not followed by a `\n`.
         if spliced.ends_with('\\') {
             return Err(PreprocessError::TrailingBackslash {
                 file: file_name.to_string(),
@@ -398,8 +400,8 @@ impl<R: Resolver> Preprocessor<R> {
             let line_no = line_idx + 1;
             let trimmed = line.trim_start();
 
-            // Conditional-Skipping: wenn aktuell in einem inactive
-            // Frame, alles ausser #else/#endif/#ifdef/#ifndef ueberspringen.
+            // Conditional skipping: if currently in an inactive
+            // frame, skip everything except #else/#endif/#ifdef/#ifndef.
             let active = conditional_stack.iter().all(|f| f.active);
 
             if let Some(directive) = parse_directive(trimmed) {
@@ -439,8 +441,8 @@ impl<R: Resolver> Preprocessor<R> {
                             });
                         }
                         frame.else_seen = true;
-                        // Else aktiviert sich nur wenn parent aktiv UND
-                        // bisher KEINE Branch genommen wurde.
+                        // Else activates only if the parent is active AND
+                        // NO branch has been taken so far.
                         frame.active = frame.parent_active && !frame.taken;
                         if frame.active {
                             frame.taken = true;
@@ -478,8 +480,8 @@ impl<R: Resolver> Preprocessor<R> {
                                 message: "#elif after #else".to_string(),
                             });
                         }
-                        // Erst aktiv wenn parent aktiv UND noch keine
-                        // taken Branch UND expr=true.
+                        // Active only if the parent is active AND no
+                        // branch has been taken yet AND expr=true.
                         let cond = frame.parent_active
                             && !frame.taken
                             && eval_if_expr(expr, &state.macros);
@@ -489,8 +491,8 @@ impl<R: Resolver> Preprocessor<R> {
                         }
                     }
                     _ if !active => {
-                        // In inaktivem Block — andere Direktiven nicht
-                        // ausfuehren.
+                        // In an inactive block — do not execute other
+                        // directives.
                     }
                     Directive::Define(name, def) => {
                         state.macros.insert(name.to_string(), def);
@@ -507,8 +509,8 @@ impl<R: Resolver> Preprocessor<R> {
                             });
                         }
                         let inc_path = inc.path().to_string();
-                        // Cycle-Detection vor Resolve, damit Zyklen
-                        // unabhaengig vom Resolver erkannt werden.
+                        // Cycle detection before resolve, so that cycles
+                        // are detected independently of the resolver.
                         if state.include_stack.iter().any(|f| f == &inc_path) {
                             return Err(PreprocessError::IncludeCycle { file: inc_path });
                         }
@@ -531,7 +533,7 @@ impl<R: Resolver> Preprocessor<R> {
                         {
                             state.pragma_dds_xtopics.push(xt);
                         }
-                        // Andere Pragmas: gestrippt.
+                        // Other pragmas: stripped.
                     }
                     Directive::Error(msg) => {
                         return Err(PreprocessError::ErrorDirective {
@@ -541,18 +543,18 @@ impl<R: Resolver> Preprocessor<R> {
                         });
                     }
                     Directive::Warning(_msg) => {
-                        // `#warning` ist Diagnose ohne Abort.
-                        // gestripped; UI-Layer kann Warnungen via Hook
-                        // rendern (kommt mit Diagnostic-Reporter).
+                        // `#warning` is a diagnostic without abort.
+                        // stripped; the UI layer can render warnings via a hook
+                        // (comes with the diagnostic reporter).
                     }
                     Directive::Line(_args) => {
-                        // `#line N "file"` — Position-Override.
-                        // SourceMap-Integration steht aus.
+                        // `#line N "file"` — position override.
+                        // SourceMap integration is still pending.
                     }
                 }
             } else if active {
-                // Normale Source-Zeile: Macros expandieren und ans
-                // Output anhaengen.
+                // Normal source line: expand macros and append to the
+                // output.
                 let expanded = expand_macros(line, &state.macros);
                 state
                     .source_map
@@ -602,12 +604,12 @@ impl State {
     }
 }
 
-/// Definition eines `#define`-Macros — entweder object-like oder
-/// function-like (mit Parameter-Liste).
+/// Definition of a `#define` macro — either object-like or
+/// function-like (with a parameter list).
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MacroDef {
-    /// `Some(params)` fuer function-like Macros (`#define NAME(p1, p2) body`),
-    /// `None` fuer object-like (`#define NAME body`).
+    /// `Some(params)` for function-like macros (`#define NAME(p1, p2) body`),
+    /// `None` for object-like (`#define NAME body`).
     params: Option<Vec<String>>,
     /// Macro-Body (unexpandiert).
     body: String,
@@ -629,9 +631,9 @@ impl MacroDef {
     }
 }
 
-/// Splice backslash-newline pairs (Token-Splicing) gemaess §7.3 / ISO 14882.
+/// Splice backslash-newline pairs (token splicing) per §7.3 / ISO 14882.
 fn splice_backslash_newlines(src: &str) -> String {
-    // Wir arbeiten Byte-orientiert; UTF-8 kompatibel weil `\` und `\n` ASCII sind.
+    // We work byte-oriented; UTF-8 compatible because `\` and `\n` are ASCII.
     let bytes = src.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -652,20 +654,20 @@ fn splice_backslash_newlines(src: &str) -> String {
         out.push(bytes[i]);
         i += 1;
     }
-    // Sicher: nur ASCII-Bytes wurden entfernt → bleibt valides UTF-8.
+    // Safe: only ASCII bytes were removed → stays valid UTF-8.
     String::from_utf8(out).unwrap_or_default()
 }
 
 struct ConditionalFrame {
-    /// `true`, wenn die aktuelle Branch aktiv ist (Tokens werden emittiert).
+    /// `true` if the current branch is active (tokens are emitted).
     active: bool,
-    /// `true`, wenn `#else` schon gesehen wurde (zweiter `#else` Fehler).
+    /// `true` if `#else` has already been seen (a second `#else` is an error).
     else_seen: bool,
-    /// War der Parent-Frame aktiv? Wenn nein, ist diese Branch ohnehin
-    /// nicht aktiv — wichtig fuer korrektes #else-Toggling in nested.
+    /// Was the parent frame active? If not, this branch is inactive
+    /// anyway — important for correct #else toggling in nested cases.
     parent_active: bool,
-    /// `true` sobald irgendeine Branch (`#if`/`#elif`) als aktiv gewaehlt
-    /// wurde. Folgende `#elif`/`#else` werden ignoriert. (#if/#elif-Eval)
+    /// `true` as soon as any branch (`#if`/`#elif`) was chosen as active.
+    /// Subsequent `#elif`/`#else` are ignored. (#if/#elif eval)
     taken: bool,
 }
 
@@ -677,22 +679,22 @@ enum Directive<'a> {
     Undef(&'a str),
     Ifdef(&'a str),
     Ifndef(&'a str),
-    /// `#if <const-expr>` — vereinfachte Expression-Eval:
-    /// `defined(MACRO)`, `0`/`1`, sowie `&&`/`||`/`!`.
-    /// (Spec-Stufe-2; gated via `preprocessor_full` Feature.)
+    /// `#if <const-expr>` — simplified expression eval:
+    /// `defined(MACRO)`, `0`/`1`, as well as `&&`/`||`/`!`.
+    /// (spec stage 2; gated via the `preprocessor_full` feature.)
     If(&'a str),
-    /// `#elif <const-expr>` — Variante von `#if`.
+    /// `#elif <const-expr>` — variant of `#if`.
     Elif(&'a str),
     Else,
     Endif,
     Pragma(&'a str),
-    /// `#error <message>` — bricht den Build ab.
+    /// `#error <message>` — aborts the build.
     Error(&'a str),
-    /// `#warning <message>` — Diagnose ohne Abort
-    /// (gated via `preprocessor_warning_line` Feature).
+    /// `#warning <message>` — diagnostic without abort
+    /// (gated via the `preprocessor_warning_line` feature).
     Warning(&'a str),
-    /// `#line <linenum> ["filename"]` — Source-Position-Override
-    /// (gated via `preprocessor_warning_line` Feature; /// gestripped, SourceMap-Update folgt bei Bedarf).
+    /// `#line <linenum> ["filename"]` — source position override
+    /// (gated via the `preprocessor_warning_line` feature; /// stripped, SourceMap update follows when needed).
     Line(&'a str),
 }
 
@@ -720,18 +722,18 @@ fn parse_directive(line: &str) -> Option<Directive<'_>> {
     }
 }
 
-/// Vereinfachte `#if`-Expression-Evaluation (Spec §7.3.2 + ISO 14882
-/// constant-expression Subset).
+/// Simplified `#if`-expression evaluation (Spec §7.3.2 + ISO 14882
+/// constant-expression subset).
 ///
-/// Unterstuetzt:
-/// - Numerische Literale: `0` (false), alles andere (true).
-/// - `defined(MACRO)` und `defined MACRO` — true wenn Macro definiert.
-/// - Boolean-Operatoren `&&`/`||`/`!` (links-nach-rechts, kein Precedence).
-/// - Macro-Identifiers werden als nicht-definiert (false) interpretiert,
-///   ausser sie sind explizit als `defined(...)` gewrapped.
+/// Supports:
+/// - Numeric literals: `0` (false), everything else (true).
+/// - `defined(MACRO)` and `defined MACRO` — true if the macro is defined.
+/// - Boolean operators `&&`/`||`/`!` (left-to-right, no precedence).
+/// - Macro identifiers are interpreted as undefined (false),
+///   unless they are explicitly wrapped as `defined(...)`.
 ///
-/// Volle C-Preprocessor-Expression-Eval (Arithmetik, Vergleiche,
-/// Bitops, Ternary) ist nicht implementiert.
+/// Full C-preprocessor expression eval (arithmetic, comparisons,
+/// bitops, ternary) is not implemented.
 fn eval_if_expr(expr: &str, macros: &HashMap<String, MacroDef>) -> bool {
     let trimmed = expr.trim();
     if trimmed.is_empty() {
@@ -781,7 +783,7 @@ fn normalize_if_tokens(expr: &str) -> Vec<String> {
                 }
                 out.push(buf);
             }
-            _ => {} // unbekannte Zeichen ignorieren (defensive)
+            _ => {} // ignore unknown characters (defensive)
         }
     }
     out
@@ -836,7 +838,7 @@ fn eval_atom(tokens: &[String], idx: usize, macros: &HashMap<String, MacroDef>) 
         return (v, after);
     }
     if tok == "defined" {
-        // `defined(MACRO)` oder `defined MACRO`.
+        // `defined(MACRO)` or `defined MACRO`.
         let (next_idx, ident) = if tokens.get(idx + 1).map(String::as_str) == Some("(") {
             (
                 idx + 3,
@@ -861,21 +863,21 @@ fn eval_atom(tokens: &[String], idx: usize, macros: &HashMap<String, MacroDef>) 
         };
         return (v, after);
     }
-    // Numerisches Literal: `0` = false, sonst true.
+    // Numeric literal: `0` = false, otherwise true.
     if let Ok(n) = tok.parse::<i64>() {
         return (n != 0, idx + 1);
     }
-    // Identifier ohne `defined()` — als macro-value-Lookup behandeln;
-    // wenn macro-body parsbar als int → entsprechend; sonst true (Macro
-    // existiert). Function-like Macros werden hier als true behandelt
-    // (Aufruf-Parameter im `#if`-Kontext sind unueblich).
+    // Identifier without `defined()` — treat as a macro-value lookup;
+    // if the macro body parses as an int → accordingly; otherwise true (macro
+    // exists). Function-like macros are treated as true here
+    // (call parameters in the `#if` context are unusual).
     if let Some(def) = macros.get(tok) {
         if let Ok(n) = def.body.trim().parse::<i64>() {
             return (n != 0, idx + 1);
         }
         return (true, idx + 1);
     }
-    // Unbekannter Identifier → false (Spec C-PP-Konvention).
+    // Unknown identifier → false (spec C-PP convention).
     (false, idx + 1)
 }
 
@@ -894,9 +896,9 @@ fn parse_define(rest: &str) -> Option<Directive<'_>> {
     if rest.is_empty() {
         return None;
     }
-    // Identifier-Teil bis zum ersten Whitespace ODER `(`. Ein direkt
-    // anschliessendes `(` ohne Whitespace markiert ein function-like
-    // Macro (Spec §7.2.5 + ISO 14882 §16.3).
+    // Identifier part up to the first whitespace OR `(`. A directly
+    // following `(` without whitespace marks a function-like
+    // macro (spec §7.2.5 + ISO 14882 §16.3).
     let name_end = rest
         .find(|c: char| c.is_whitespace() || c == '(')
         .unwrap_or(rest.len());
@@ -929,8 +931,8 @@ fn parse_define(rest: &str) -> Option<Directive<'_>> {
 
 /// `#pragma prefix "<prefix>"` — CORBA Part 1 §14.7.5.
 ///
-/// Liefert `None`, wenn die Pragma kein prefix-Pragma ist oder das
-/// String-Argument fehlt/leer ist.
+/// Returns `None` if the pragma is not a prefix pragma or the
+/// string argument is missing/empty.
 fn parse_pragma_prefix(args: &str, file: &str, line: usize) -> Option<PragmaPrefix> {
     let trimmed = args.trim();
     let rest = trimmed.strip_prefix("prefix")?.trim_start();
@@ -947,11 +949,11 @@ fn parse_pragma_prefix(args: &str, file: &str, line: usize) -> Option<PragmaPref
 
 /// `#pragma dds_xtopics version="1.3"` — XTypes 1.3 §7.3.1.1.1.
 ///
-/// Liefert `None`, wenn die Pragma keine dds_xtopics-Pragma ist.
+/// Returns `None` if the pragma is not a dds_xtopics pragma.
 fn parse_pragma_dds_xtopics(args: &str, file: &str, line: usize) -> Option<PragmaDdsXtopics> {
     let trimmed = args.trim();
     let rest = trimmed.strip_prefix("dds_xtopics")?.trim_start();
-    // Akzeptiert sowohl `version="1.3"` als auch `version=1.3`.
+    // Accepts both `version="1.3"` and `version=1.3`.
     let version = if rest.is_empty() {
         String::new()
     } else if let Some(v) = rest.strip_prefix("version") {
@@ -971,9 +973,9 @@ fn parse_pragma_dds_xtopics(args: &str, file: &str, line: usize) -> Option<Pragm
     })
 }
 
-/// `#pragma keylist <Type> <field>*` — Cyclone-DDS-Konvention.
+/// `#pragma keylist <Type> <field>*` — Cyclone DDS convention.
 ///
-/// Liefert `None`, wenn die Pragma kein keylist-Pragma ist.
+/// Returns `None` if the pragma is not a keylist pragma.
 fn parse_pragma_keylist(args: &str, file: &str, line: usize) -> Option<PragmaKeylist> {
     let trimmed = args.trim();
     let rest = trimmed.strip_prefix("keylist")?.trim_start();
@@ -988,13 +990,13 @@ fn parse_pragma_keylist(args: &str, file: &str, line: usize) -> Option<PragmaKey
     })
 }
 
-/// Parst OpenSplice-Legacy-Pragmas (`DCPS_DATA_TYPE`, `DCPS_DATA_KEY`,
+/// Parses OpenSplice legacy pragmas (`DCPS_DATA_TYPE`, `DCPS_DATA_KEY`,
 /// `cats`, `genequality`).
 fn parse_opensplice_pragma(args: &str, file: &str, line: usize) -> Option<OpenSplicePragma> {
     let trimmed = args.trim();
     if let Some(rest) = trimmed.strip_prefix("DCPS_DATA_TYPE") {
         let payload = rest.trim();
-        // Akzeptiert sowohl quoted ("Type") als auch unquoted (Type).
+        // Accepts both quoted ("Type") and unquoted (Type).
         let type_name = strip_optional_quotes(payload).to_string();
         if type_name.is_empty() {
             return None;
@@ -1007,15 +1009,24 @@ fn parse_opensplice_pragma(args: &str, file: &str, line: usize) -> Option<OpenSp
     }
     if let Some(rest) = trimmed.strip_prefix("DCPS_DATA_KEY") {
         let payload = strip_optional_quotes(rest.trim());
-        let dot = payload.find('.')?;
-        let type_name = payload[..dot].trim().to_string();
-        let field = payload[dot + 1..].trim().to_string();
-        if type_name.is_empty() || field.is_empty() {
+        // Zwei akzeptierte Formen:
+        //   "Type.field"            — Punkt-Trenner (Legacy)
+        //   "Type field1 field2..."  — OpenDDS-Space-Form (1..n Felder)
+        let (type_name, fields): (String, Vec<String>) = if let Some(dot) = payload.find('.') {
+            let ty = payload[..dot].trim().to_string();
+            let f = payload[dot + 1..].trim().to_string();
+            (ty, vec![f])
+        } else {
+            let mut parts = payload.split_whitespace();
+            let ty = parts.next()?.to_string();
+            (ty, parts.map(str::to_string).collect())
+        };
+        if type_name.is_empty() || fields.iter().any(String::is_empty) || fields.is_empty() {
             return None;
         }
         return Some(OpenSplicePragma::DataKey {
             type_name,
-            field,
+            fields,
             file: file.to_string(),
             line,
         });
@@ -1050,17 +1061,17 @@ fn strip_optional_quotes(s: &str) -> &str {
         .unwrap_or(s)
 }
 
-/// Object-like Macro-Substitution. Iteriert ueber Identifier-Tokens und
-/// ersetzt Macro-Namen durch ihre Werte. Vereinfachte Variante — keine
-/// Re-Expansion (keine Macro-in-Macro), keine function-like Macros.
+/// Object-like macro substitution. Iterates over identifier tokens and
+/// replaces macro names with their values. Simplified variant — no
+/// re-expansion (no macro-in-macro), no function-like macros.
 fn expand_macros(line: &str, macros: &HashMap<String, MacroDef>) -> String {
     expand_macros_rec(line, macros, 0)
 }
 
-/// Maximal-Tiefe fuer rekursive `#define`-Expansion. Schuetzt vor
-/// pathologischen `#define A B` / `#define B A`-Cycles und vor
-/// indirekten Zyklen ueber 2+-Hops. Wert deckt typische
-/// IDL-Const-Pfade (≤ 8 Hops) mit reichlich Reserve ab.
+/// Maximum depth for recursive `#define` expansion. Protects against
+/// pathological `#define A B` / `#define B A` cycles and against
+/// indirect cycles over 2+ hops. The value covers typical
+/// IDL const paths (≤ 8 hops) with ample reserve.
 const MAX_MACRO_EXPANSION_DEPTH: usize = 32;
 
 /// zerodds-lint: recursion-depth 32
@@ -1089,8 +1100,8 @@ fn expand_macros_rec(line: &str, macros: &HashMap<String, MacroDef>, depth: usiz
             match &def.params {
                 None => out.push_str(&def.body),
                 Some(params) => {
-                    // function-like: `(` direkt (oder nach Whitespace)
-                    // erwartet, sonst Identifier durchreichen.
+                    // function-like: `(` expected directly (or after whitespace),
+                    // otherwise pass the identifier through.
                     let after = skip_ascii_ws(bytes, i);
                     if after >= bytes.len() || bytes[after] != b'(' {
                         out.push_str(ident);
@@ -1110,10 +1121,10 @@ fn expand_macros_rec(line: &str, macros: &HashMap<String, MacroDef>, depth: usiz
             i += 1;
         }
     }
-    // Wenn etwas expandiert wurde, kann die Expansion selbst weitere
-    // Macro-Refs enthalten — rekursiv nach-expandieren bis Fixed-Point
-    // erreicht ist. `MAX_MACRO_EXPANSION_DEPTH` schuetzt vor
-    // selbst-rekursiven `#define A A`-Pathologien.
+    // If something was expanded, the expansion itself may contain further
+    // macro refs — re-expand recursively until the fixed point
+    // is reached. `MAX_MACRO_EXPANSION_DEPTH` protects against
+    // self-recursive `#define A A` pathologies.
     if expanded_any && out != line {
         return expand_macros_rec(&out, macros, depth + 1);
     }
@@ -1127,9 +1138,9 @@ fn skip_ascii_ws(bytes: &[u8], mut i: usize) -> usize {
     i
 }
 
-/// Parst `( arg1 , arg2 , ... )` ab Position `start` (zeigt auf `(`).
-/// Liefert die Argumente und den Index direkt nach `)`. Kommas innerhalb
-/// von Klammer-Paaren werden ignoriert (verschachtelte Calls).
+/// Parses `( arg1 , arg2 , ... )` from position `start` (points at `(`).
+/// Returns the arguments and the index directly after `)`. Commas inside
+/// parenthesis pairs are ignored (nested calls).
 fn parse_call_args(line: &str, start: usize) -> Option<(Vec<String>, usize)> {
     let bytes = line.as_bytes();
     debug_assert_eq!(bytes.get(start), Some(&b'('));
@@ -1169,7 +1180,7 @@ fn parse_call_args(line: &str, start: usize) -> Option<(Vec<String>, usize)> {
 }
 
 /// Substituiert Parameter im function-like-Macro-Body. Erkennt
-/// `#param` (Stringize, ISO 14882 §16.3.2) und `a##b` (Token-Paste,
+/// `#param` (stringize, ISO 14882 §16.3.2) and `a##b` (token paste,
 /// §16.3.3).
 fn expand_function_like(params: &[String], args: &[String], body: &str) -> String {
     let arg_for = |name: &str| -> Option<&str> {
@@ -1201,17 +1212,17 @@ fn expand_function_like(params: &[String], args: &[String], body: &str) -> Strin
             i += 1;
         }
     }
-    // Token-Paste-Pass: bindet `<a> ## <b>` zu `<a><b>`. Whitespace
-    // direkt um `##` wird verworfen. Bei Treffer wird der vorhergehende
-    // Eintrag aus `after_paste` gepoppt und mit dem rechten Operanden
-    // (param-substituiert) konkateniert.
+    // Token-paste pass: binds `<a> ## <b>` into `<a><b>`. Whitespace
+    // directly around `##` is discarded. On a match the preceding
+    // entry is popped from `after_paste` and concatenated with the right operand
+    // (param-substituted).
     let mut after_paste: Vec<BodyTok> = Vec::with_capacity(tokens.len());
     let mut k = 0;
     while k < tokens.len() {
         if matches!(tokens[k], BodyTok::Paste) {
-            // Whitespace-Tokens links/rechts vom `##` ueberspringen:
-            // Whitespace links liegt schon in `after_paste` — darum wird
-            // der letzte Non-Whitespace-Eintrag gesucht.
+            // Skip whitespace tokens left/right of the `##`:
+            // whitespace on the left is already in `after_paste` — so we
+            // search for the last non-whitespace entry.
             let mut lhs: Option<BodyTok> = None;
             while let Some(last) = after_paste.last() {
                 if let BodyTok::Other(s) = last {
@@ -1232,7 +1243,7 @@ fn expand_function_like(params: &[String], args: &[String], body: &str) -> Strin
                     k = rhs_idx + 1;
                 }
                 _ => {
-                    // Stand-alone `##` ohne Operanden — als Literal behalten.
+                    // Stand-alone `##` without operands — keep it as a literal.
                     after_paste.push(BodyTok::Paste);
                     k += 1;
                 }
@@ -1242,7 +1253,7 @@ fn expand_function_like(params: &[String], args: &[String], body: &str) -> Strin
             k += 1;
         }
     }
-    // Render-Pass: Stringize und Param-Substitution.
+    // Render pass: stringize and param substitution.
     let mut out = String::new();
     let mut j = 0;
     while j < after_paste.len() {
@@ -1276,8 +1287,8 @@ fn expand_function_like(params: &[String], args: &[String], body: &str) -> Strin
                 j += 1;
             }
             BodyTok::Paste => {
-                // Stand-alone `##` ohne LHS — als Literal ausgeben
-                // (sollte nach dem Paste-Pass nicht mehr vorkommen).
+                // Stand-alone `##` without an LHS — emit as a literal
+                // (should no longer occur after the paste pass).
                 out.push_str("##");
                 j += 1;
             }
@@ -1461,7 +1472,7 @@ mod tests {
         let result = Preprocessor::new(MemoryResolver::new())
             .process("main.idl", "struct A {};\nstruct B {};\n")
             .expect("ok");
-        // Mind. zwei Segments fuer zwei Zeilen.
+        // At least two segments for two lines.
         assert!(
             result.source_map.segment_count() >= 2,
             "got {} segments",
@@ -1480,13 +1491,13 @@ mod tests {
     fn expand_macros_substitutes_only_full_idents() {
         let mut m = HashMap::new();
         m.insert("X".to_string(), MacroDef::object_like("100"));
-        // `XY` enthaelt `X` als Substring, darf aber nicht ersetzt werden.
+        // `XY` contains `X` as a substring, but must not be replaced.
         let out = expand_macros("X XY", &m);
         assert_eq!(out, "100 XY");
     }
 
     // -----------------------------------------------------------------
-    // §7.3 Stufe 2 — #if/#elif/#warning/#line (B7)
+    // §7.3 stage 2 — #if/#elif/#warning/#line (B7)
     // -----------------------------------------------------------------
 
     #[test]
@@ -1565,7 +1576,7 @@ struct Both {};
 
     #[test]
     fn if_eval_logical_and_one_undefined_drops_block() {
-        // §7.2.5: `&&` mit einem undefined Operand → false.
+        // §7.2.5: `&&` with one undefined operand → false.
         let src = "\
 #define A 1
 #if defined(A) && defined(NOT_DEFINED)
@@ -1578,7 +1589,7 @@ struct OnlyA {};
 
     #[test]
     fn if_eval_logical_and_both_undefined_drops_block() {
-        // §7.2.5: `&&` mit beiden undefined → false.
+        // §7.2.5: `&&` with both undefined → false.
         let src = "\
 #if defined(NOT_A) && defined(NOT_B)
 struct Neither {};
@@ -1599,7 +1610,7 @@ struct WithMode {};
 struct Default {};
 #endif
 ";
-        // MODE nicht definiert → Default-Branch.
+        // MODE not defined → default branch.
         let out = run(src);
         assert!(out.contains("struct Default"), "got: {out}");
         assert!(!out.contains("struct One"));
@@ -1642,8 +1653,8 @@ struct D {};
     }
 
     // -----------------------------------------------------------------
-    // C1 — OpenSplice-Legacy Pragmas (DCPS_DATA_TYPE/DATA_KEY/cats/
-    // genequality). Migration-Use-Case fuer Referenz-Kunden.
+    // C1 — OpenSplice legacy pragmas (DCPS_DATA_TYPE/DATA_KEY/cats/
+    // genequality). Migration use case for reference customers.
     // -----------------------------------------------------------------
 
     #[test]
@@ -1687,10 +1698,29 @@ struct Sensor { long id; };
             .expect("ok");
         match &res.opensplice_pragmas[0] {
             OpenSplicePragma::DataKey {
-                type_name, field, ..
+                type_name, fields, ..
             } => {
                 assert_eq!(type_name, "Sensor");
-                assert_eq!(field, "id");
+                assert_eq!(fields, &["id"]);
+            }
+            other => panic!("expected DataKey, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn opensplice_pragma_data_key_space_form() {
+        // OpenDDS space form with multiple fields.
+        let src = "#pragma DCPS_DATA_KEY \"Sensor id region\"\n\
+                   struct Sensor { long id; long region; };\n";
+        let res = Preprocessor::new(MemoryResolver::new())
+            .process("main.idl", src)
+            .expect("ok");
+        match &res.opensplice_pragmas[0] {
+            OpenSplicePragma::DataKey {
+                type_name, fields, ..
+            } => {
+                assert_eq!(type_name, "Sensor");
+                assert_eq!(fields, &["id", "region"]);
             }
             other => panic!("expected DataKey, got {other:?}"),
         }
@@ -1727,8 +1757,8 @@ struct Sensor { long id; };
 
     #[test]
     fn opensplice_legacy_full_topic_decl() {
-        // Realistisches OpenSplice-Legacy-Pattern: Topic + Key via
-        // DCPS-Pragmas plus genequality fuer Codegen-Hint.
+        // Realistic OpenSplice legacy pattern: topic + key via
+        // DCPS pragmas plus genequality for a codegen hint.
         let src = r#"#pragma DCPS_DATA_TYPE "Sensor"
 #pragma DCPS_DATA_KEY "Sensor.id"
 #pragma genequality
@@ -1762,7 +1792,7 @@ struct InnerElse {};
     }
 
     // -----------------------------------------------------------------
-    // §7.3 — Whitespace vor `#` (Phase 1.7)
+    // §7.3 — whitespace before `#` (Phase 1.7)
     // -----------------------------------------------------------------
 
     #[test]
@@ -1778,34 +1808,33 @@ struct InnerElse {};
 
     #[test]
     fn line_continuation_in_define() {
-        // Spec §7.3: backslash-newline wird durch Splicing entfernt.
+        // Spec §7.3: backslash-newline is removed by splicing.
         let out = run("#define LONG_MACRO foo \\\nbar\nLONG_MACRO\n");
-        // Macro-Body ist `foo bar`, nach Substitution erscheint das im
-        // Output.
+        // The macro body is `foo bar`; after substitution that appears in
+        // the output.
         assert!(out.contains("foo bar"), "got: {out}");
     }
 
     #[test]
     fn line_continuation_in_idl_line() {
-        // Backslash-Newline auch außerhalb Direktiven entfernt.
+        // Backslash-newline removed outside directives too.
         let out = run("const long\\\nX = 1;\n");
-        // Nach Splicing: `const longX = 1;`. Nicht semantisch sinnvoll
-        // aber Hauptsache: keine zwei Zeilen mehr — kein `\n` zwischen
-        // `long` und `X`.
+        // After splicing: `const longX = 1;`. Not semantically meaningful,
+        // but the main point: no two lines anymore — no `\n` between
+        // `long` and `X`.
         assert!(!out.contains("long\nX"), "got: {out}");
     }
 
     #[test]
     fn line_continuation_with_crlf() {
-        // Windows-Style: `\\\r\n` muss ebenfalls als Continuation erkannt
-        // werden.
+        // Windows style: `\\\r\n` must also be recognized as a continuation.
         let out = run("#define M foo \\\r\nbar\nM\n");
         assert!(out.contains("foo bar"), "got: {out}");
     }
 
     #[test]
     fn multi_line_continuation() {
-        // Drei Zeilen mit Continuation verkettet.
+        // Three lines joined with continuations.
         let out = run("#define M a \\\nb \\\nc\nM\n");
         assert!(out.contains("a b c"), "got: {out}");
     }
@@ -1831,8 +1860,8 @@ struct InnerElse {};
 
     #[test]
     fn function_like_macro_substitutes_args() {
-        // Voraussetzung fuer Stringize/Token-Paste: function-like
-        // Macros werden ueberhaupt expandiert.
+        // Precondition for stringize/token-paste: function-like
+        // macros are expanded at all.
         let src = "#define ADD(a, b) a + b\nconst long L = ADD(1, 2);\n";
         let out = run(src);
         assert!(out.contains("1 + 2"), "got: {out}");
@@ -1841,7 +1870,7 @@ struct InnerElse {};
     #[test]
     fn stringize_param_in_function_macro() {
         // Spec §7.2.5 + ISO 14882 §16.3.2: `#param` im function-like-
-        // Macro-Body wandelt das Argument in einen String-Literal um.
+        // The macro body turns the argument into a string literal.
         let src = "#define STR(x) #x\nconst string S = STR(hello);\n";
         let out = run(src);
         assert!(out.contains("\"hello\""), "got: {out}");
@@ -1849,8 +1878,8 @@ struct InnerElse {};
 
     #[test]
     fn stringize_escapes_quotes_and_backslashes() {
-        // ISO 14882 §16.3.2: `\` und `"` im Argument werden im
-        // resultierenden String-Literal escaped.
+        // ISO 14882 §16.3.2: `\` and `"` in the argument are escaped in the
+        // resulting string literal.
         let src = "#define STR(x) #x\nconst string S = STR(a\"b\\c);\n";
         let out = run(src);
         assert!(out.contains("\"a\\\"b\\\\c\""), "got: {out}");
@@ -1866,7 +1895,7 @@ struct InnerElse {};
 
     #[test]
     fn token_paste_with_macro_args_produces_single_ident() {
-        // Token-Paste muss Whitespace zwischen den Operanden tilgen.
+        // Token-paste must erase whitespace between the operands.
         let src = "#define CAT(a, b) a ## b\nconst long CAT(x, y) = 0;\n";
         let out = run(src);
         assert!(out.contains("xy"), "got: {out}");
@@ -1889,9 +1918,9 @@ struct InnerElse {};
 
     #[test]
     fn pragma_dds_xtopics_version_mismatch_warns() {
-        // Zwei dds_xtopics-Pragmas mit verschiedenen Versionen — beide werden
-        // gesammelt; der Spec-Validator (separater Pass) erkennt
-        // Mismatches.
+        // Two dds_xtopics pragmas with different versions — both are
+        // collected; the spec validator (separate pass) detects
+        // mismatches.
         let out = process(
             "#pragma dds_xtopics version=\"1.0\"\n\
              #pragma dds_xtopics version=\"1.3\"\n\
@@ -1909,8 +1938,8 @@ struct InnerElse {};
 
     #[test]
     fn pragma_dds_xtopics_nested_pragmas_handled() {
-        // dds_xtopics + keylist + prefix in derselben Datei — alle drei
-        // Pragmas werden separat gesammelt, ohne Konflikt.
+        // dds_xtopics + keylist + prefix in the same file — all three
+        // pragmas are collected separately, without conflict.
         let out = process(
             "#pragma prefix \"acme.com\"\n\
              #pragma dds_xtopics version=\"1.3\"\n\
@@ -1925,8 +1954,8 @@ struct InnerElse {};
 
     #[test]
     fn pragma_dds_xtopics_without_version_value_is_empty() {
-        // `#pragma dds_xtopics` ohne version= — zulaessig (Marker-only),
-        // version-Feld ist leer.
+        // `#pragma dds_xtopics` without version= — permitted (marker-only),
+        // the version field is empty.
         let out = process("#pragma dds_xtopics\nstruct S { long x; };\n");
         assert_eq!(out.pragma_dds_xtopics.len(), 1);
         assert_eq!(out.pragma_dds_xtopics[0].version, "");
@@ -1937,7 +1966,7 @@ struct InnerElse {};
     #[test]
     fn nested_define_two_hops() {
         // #define A 100; #define B A; const long x = B;
-        // Erwartet: B → A → 100.
+        // Expected: B → A → 100.
         let out = run("#define A 100\n#define B A\nconst long x = B;\n");
         assert!(out.contains("const long x = 100;"), "{out}");
     }
@@ -1956,24 +1985,24 @@ struct InnerElse {};
         let out = run("#define UNIT 8\n\
              #define BUF (UNIT * 4)\n\
              const long x = BUF;\n");
-        // BUF wird zu (UNIT * 4) → (8 * 4); Caller-Eval macht das Ausrechnen.
+        // BUF becomes (UNIT * 4) → (8 * 4); caller eval does the computation.
         assert!(out.contains("(8 * 4)"), "{out}");
     }
 
     #[test]
     fn nested_define_self_recursive_terminates() {
-        // #define A A — pathologisch; expand_macros darf NICHT in
-        // Endlosschleife laufen. Output muss "A" enthalten (Selbst-
-        // Reference loest sich nicht auf).
+        // #define A A — pathological; expand_macros must NOT run in an
+        // infinite loop. The output must contain "A" (the self-
+        // reference does not resolve).
         let out = run("#define A A\nconst long x = A;\n");
         assert!(out.contains("const long x = A;"), "{out}");
     }
 
     #[test]
     fn nested_define_mutually_recursive_terminates() {
-        // #define A B; #define B A; expand-Cap MUSS terminieren.
+        // #define A B; #define B A; the expand cap MUST terminate.
         let out = run("#define A B\n#define B A\nconst long x = A;\n");
-        // Konkretes Resultat ist implementation-defined; wichtig: kein Hang.
+        // The concrete result is implementation-defined; important: no hang.
         assert!(out.contains("const long x ="));
     }
 

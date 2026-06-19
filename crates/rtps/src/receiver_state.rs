@@ -1,41 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Receiver-State (DDSI-RTPS 2.5 §8.3.4 + §8.3.7.4).
+//! Receiver state (DDSI-RTPS 2.5 §8.3.4 + §8.3.7.4).
 //!
-//! Beim Empfang einer RTPS-Message haelt der Receiver einen Zustand
-//! mit:
+//! On receipt of an RTPS message the receiver keeps a state
+//! with:
 //!
 //! ```text
 //!   sourceVersion        — ProtocolVersion aus RTPS-Header
 //!   sourceVendorId       — VendorId aus RTPS-Header
-//!   sourceGuidPrefix     — GuidPrefix des Senders
-//!   destGuidPrefix       — GuidPrefix des Receivers selbst
+//!   sourceGuidPrefix     — GuidPrefix of the sender
+//!   destGuidPrefix       — GuidPrefix of the receiver itself
 //!   unicastReplyLocators
 //!   multicastReplyLocators
-//!   haveTimestamp        — true wenn InfoTimestamp/HE.W gesehen
-//!   timestamp            — letzte gesehene Sender-Wallclock
-//!   messageLength        — falls vom HE-L-Flag deklariert
-//!   messageChecksum      — falls vom HE-C-Feld deklariert
-//!   parameters           — falls vom HE-P-Feld deklariert
-//!   clockSkewDetected    — Heuristik: |timestamp - now| ueber Schwelle
+//!   haveTimestamp        — true if InfoTimestamp/HE.W was seen
+//!   timestamp            — last seen sender wallclock
+//!   messageLength        — if declared by the HE L flag
+//!   messageChecksum      — if declared by the HE C field
+//!   parameters           — if declared by the HE P field
+//!   clockSkewDetected    — heuristic: |timestamp - now| over threshold
 //! ```
 //!
-//! Update-Trigger:
+//! Update triggers:
 //!
-//! - **InfoSource** (§8.3.8.9.4): setzt
-//!   `sourceVersion`, `sourceVendorId`, `sourceGuidPrefix` auf die in
-//!   der InfoSource-Submessage gegebenen Werte; `haveTimestamp = false`
-//!   und Reply-Locator-Listen werden auf `LOCATOR_INVALID` resettet.
-//! - **InfoTimestamp** (§8.3.8.5.4): setzt `haveTimestamp = true`
-//!   bzw. = false bei `I-Flag = 1`, plus `timestamp = …`.
-//! - **HeaderExtension** (§8.3.7.4): kombiniert mehrere Wirkungen — L-
-//!   Flag aktualisiert `messageLength`; W-Flag setzt
-//!   `haveTimestamp = true` + `timestamp`; C-Flag aktualisiert
-//!   `messageChecksum`; P-Flag aktualisiert `parameters`.
+//! - **InfoSource** (§8.3.8.9.4): sets
+//!   `sourceVersion`, `sourceVendorId`, `sourceGuidPrefix` to the values
+//!   given in the InfoSource submessage; `haveTimestamp = false`
+//!   and the reply-locator lists are reset to `LOCATOR_INVALID`.
+//! - **InfoTimestamp** (§8.3.8.5.4): sets `haveTimestamp = true`
+//!   or = false for `I-Flag = 1`, plus `timestamp = …`.
+//! - **HeaderExtension** (§8.3.7.4): combines several effects — the L
+//!   flag updates `messageLength`; the W flag sets
+//!   `haveTimestamp = true` + `timestamp`; the C flag updates
+//!   `messageChecksum`; the P flag updates `parameters`.
 //!
-//! Der Receiver-State ist pro RTPS-Message kurzlebig: Vor jedem
-//! `decode_datagram` wird er auf den Defaultwert plus `destGuidPrefix`
-//! initialisiert.
+//! The receiver state is short-lived per RTPS message: before each
+//! `decode_datagram` it is initialized to the default value plus `destGuidPrefix`.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -45,44 +44,43 @@ use crate::header_extension::{ChecksumValue, HeTimestamp, HeaderExtension};
 use crate::parameter_list::ParameterList;
 use crate::wire_types::{GuidPrefix, Locator, ProtocolVersion, VendorId};
 
-/// Receiver-State entsprechend Spec-Tabelle §8.3.4 und Update-Regeln
+/// Receiver state per spec table §8.3.4 and update rules
 /// in §8.3.7.4.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceiverState {
-    /// ProtocolVersion aus RTPS-Header (oder von InfoSource ueberschrieben).
+    /// ProtocolVersion from the RTPS header (or overwritten by InfoSource).
     pub source_version: ProtocolVersion,
-    /// VendorId aus RTPS-Header (oder von InfoSource ueberschrieben).
+    /// VendorId from the RTPS header (or overwritten by InfoSource).
     pub source_vendor_id: VendorId,
-    /// GuidPrefix des Senders (RTPS-Header oder InfoSource).
+    /// GuidPrefix of the sender (RTPS header or InfoSource).
     pub source_guid_prefix: GuidPrefix,
-    /// GuidPrefix des Receivers (Konfigurations-Wert, fix).
+    /// GuidPrefix of the receiver (configuration value, fixed).
     pub dest_guid_prefix: GuidPrefix,
-    /// `true` wenn der Receiver einen Sender-Timestamp hat.
+    /// `true` if the receiver has a sender timestamp.
     pub have_timestamp: bool,
-    /// Letzter Sender-Timestamp (gueltig wenn `have_timestamp`).
+    /// Last sender timestamp (valid if `have_timestamp`).
     pub timestamp: HeTimestamp,
-    /// Gesetzt durch HE.L — Soll-Restlaenge der RTPS-Message.
+    /// Set by HE.L — expected remaining length of the RTPS message.
     pub message_length: Option<u32>,
-    /// Gesetzt durch HE.C — Soll-Checksum der RTPS-Message.
+    /// Set by HE.C — expected checksum of the RTPS message.
     pub message_checksum: ChecksumValue,
-    /// Gesetzt durch HE.P — ParameterList aus dem HE.
+    /// Set by HE.P — ParameterList from the HE.
     pub parameters: Option<ParameterList>,
-    /// Reply-Locator-Listen (Default `LOCATOR_INVALID`-Listen, von
-    /// InfoReply ueberschreibbar).
+    /// Reply locator lists (default `LOCATOR_INVALID` lists, overridable
+    /// by InfoReply).
     pub unicast_reply_locator_list: Vec<Locator>,
-    /// Reply-Locator-Listen (Default `LOCATOR_INVALID`-Listen, von
-    /// InfoReply ueberschreibbar).
+    /// Reply locator lists (default `LOCATOR_INVALID` lists, overridable
+    /// by InfoReply).
     pub multicast_reply_locator_list: Vec<Locator>,
-    /// Heuristik-Flag: `|timestamp - now| > Schwelle`. Wird von
-    /// `note_clock_skew` gesetzt; das Decode-Modul liefert nur die
-    /// Eingangsdaten.
+    /// Heuristic flag: `|timestamp - now| > threshold`. Set by
+    /// `note_clock_skew`; the decode module provides only the
+    /// input data.
     pub clock_skew_detected: bool,
 }
 
 impl ReceiverState {
-    /// Initial-Zustand vor Empfang einer Message: alle Felder auf
-    /// Spec-Defaults, `dest_guid_prefix` aus dem Receiver-Konfig
-    /// uebernommen.
+    /// Initial state before receiving a message: all fields at
+    /// spec defaults, `dest_guid_prefix` taken from the receiver config.
     #[must_use]
     pub fn new(dest_guid_prefix: GuidPrefix) -> Self {
         Self {
@@ -101,18 +99,18 @@ impl ReceiverState {
         }
     }
 
-    /// Initialisiert aus einem `RtpsHeader` (Spec §8.3.4.1).
+    /// Initializes from an `RtpsHeader` (Spec §8.3.4.1).
     pub fn init_from_header(&mut self, header: &RtpsHeader) {
         self.source_version = header.protocol_version;
         self.source_vendor_id = header.vendor_id;
         self.source_guid_prefix = header.guid_prefix;
-        // Reply-Locator-Listen + haveTimestamp resetten:
+        // Reset reply locator lists + haveTimestamp:
         self.unicast_reply_locator_list.clear();
         self.multicast_reply_locator_list.clear();
         self.have_timestamp = false;
     }
 
-    /// Update aus einer InfoSource-Submessage (§8.3.8.9.4).
+    /// Update from an InfoSource submessage (§8.3.8.9.4).
     ///
     /// > "An InfoSource Submessage MUST set the receiver's source
     /// >  GuidPrefix, source ProtocolVersion, source VendorId, and MUST
@@ -132,8 +130,8 @@ impl ReceiverState {
         self.multicast_reply_locator_list.clear();
     }
 
-    /// Update aus InfoTimestamp (§8.3.8.5.4). `invalidate = true` (also
-    /// das I-Flag in der Submessage) loescht den Timestamp.
+    /// Update from InfoTimestamp (§8.3.8.5.4). `invalidate = true` (i.e.
+    /// the I flag in the submessage) clears the timestamp.
     pub fn apply_info_timestamp(&mut self, ts: HeTimestamp, invalidate: bool) {
         if invalidate {
             self.have_timestamp = false;
@@ -143,8 +141,8 @@ impl ReceiverState {
         }
     }
 
-    /// Update aus InfoReply (§8.3.8.10.4): setzt die beiden Reply-
-    /// Locator-Listen.
+    /// Update from InfoReply (§8.3.8.10.4): sets the two reply
+    /// locator lists.
     pub fn apply_info_reply(&mut self, unicast: Vec<Locator>, multicast: Option<Vec<Locator>>) {
         self.unicast_reply_locator_list = unicast;
         if let Some(m) = multicast {
@@ -152,9 +150,9 @@ impl ReceiverState {
         }
     }
 
-    /// Update aus HeaderExtension (§8.3.7.4). Aktualisiert je nach
-    /// gesetzten Flags `messageLength`, `timestamp`, `messageChecksum`
-    /// und `parameters`.
+    /// Update from HeaderExtension (§8.3.7.4). Updates `messageLength`,
+    /// `timestamp`, `messageChecksum` and `parameters` depending on the
+    /// set flags.
     pub fn apply_header_extension(&mut self, he: &HeaderExtension) {
         if let Some(len) = he.message_length {
             self.message_length = Some(len);
@@ -171,9 +169,9 @@ impl ReceiverState {
         }
     }
 
-    /// Setzt das `clock_skew_detected`-Flag, wenn der gegebene
-    /// `now`-Sekunden-Wert mehr als `threshold_seconds` vom Sender-
-    /// Timestamp abweicht. No-op wenn `!have_timestamp`.
+    /// Sets the `clock_skew_detected` flag if the given
+    /// `now` seconds value deviates from the sender timestamp by more than
+    /// `threshold_seconds`. No-op if `!have_timestamp`.
     pub fn note_clock_skew(&mut self, now_seconds: i32, threshold_seconds: u32) {
         if !self.have_timestamp {
             return;

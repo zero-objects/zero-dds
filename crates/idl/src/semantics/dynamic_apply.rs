@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! C4.3 — Builtin-Annotations Apply-Bridge: lowert IDL-Annotations
-//! (siehe [`super::annotations::BuiltinAnnotation`]) auf XTypes-1.3-
-//! `MemberDescriptor`-/`TypeDescriptor`-Felder
+//! C4.3 — builtin-annotations apply bridge: lowers IDL annotations
+//! (see [`super::annotations::BuiltinAnnotation`]) onto XTypes 1.3
+//! `MemberDescriptor`/`TypeDescriptor` fields
 //! (`zerodds_types::dynamic::*`).
 //!
-//! Spec-Bezug: XTypes 1.3 §7.2.2.4.4.4 (Builtin Annotations) +
-//! §7.5.4.1.2 (Member-Descriptor-Felder). Die IDL-4.2-Spec §1.10
-//! erlaubt das gleiche Annotation-Set; wir mappen 1:1.
+//! Spec reference: XTypes 1.3 §7.2.2.4.4.4 (builtin annotations) +
+//! §7.5.4.1.2 (member-descriptor fields). The IDL-4.2 spec §1.10
+//! allows the same annotation set; we map 1:1.
 //!
-//! # Was passiert hier
+//! # What happens here
 //!
-//! Diese Bridge nimmt eine `Lowered`-Sammlung (aus dem
-//! Annotation-Lowering in [`super::annotations`]) und appliziert sie
-//! auf einen frischen `MemberDescriptor` oder `TypeDescriptor` aus
-//! `zerodds_types::dynamic::descriptor`. Die Bridge ist **lese-only auf
-//! beiden Seiten** — sie konstruiert NEUE Descriptor-Werte mit den
-//! Annotation-Effekten, ohne den bestehenden Code zu mutieren.
+//! This bridge takes a `Lowered` collection (from the
+//! annotation lowering in [`super::annotations`]) and applies it
+//! to a fresh `MemberDescriptor` or `TypeDescriptor` from
+//! `zerodds_types::dynamic::descriptor`. The bridge is **read-only on
+//! both sides** — it constructs NEW descriptor values with the
+//! annotation effects, without mutating the existing code.
 //!
-//! # Mapping-Tabelle
+//! # Mapping table
 //!
 //! | IDL-Annotation         | Effekt im DynamicType-Descriptor          |
 //! |------------------------|-------------------------------------------|
@@ -30,17 +30,17 @@
 //! | `@default(value)`      | `MemberDescriptor.default_value = Some(value)` |
 //! | `@extensibility(...)` / `@final` / `@appendable` / `@mutable` | `TypeDescriptor.extensibility_kind` |
 //! | `@nested`              | `TypeDescriptor.is_nested = true`         |
-//! | `@autoid(...)`         | (nicht im Descriptor — Builder-Side)      |
-//! | `@unit("...")`         | nur Doku (XTypes-Annotation noch nicht im Spec-Descriptor) |
-//! | `@hashid(hint)`        | (Hash-Override — XTypes §7.3.1.2.1.4)     |
-//! | `@bit_bound(N)`        | (Bitmask-Spezifisch — separate Bridge)    |
-//! | `@position(N)`         | (Bitmask-Spezifisch)                      |
+//! | `@autoid(...)`         | (not in the descriptor — builder side)    |
+//! | `@unit("...")`         | TypeObject `AppliedBuiltinMemberAnnotations.unit` (complete codegen) — NOT in the runtime `MemberDescriptor` (spec §7.5.2.7) |
+//! | `@hashid(hint)`        | (hash override — XTypes §7.3.1.2.1.4)     |
+//! | `@bit_bound(N)`        | (bitmask-specific — separate bridge)      |
+//! | `@position(N)`         | (bitmask-specific)                        |
 //!
-//! Annotations die nicht ins XTypes-Descriptor-Set fallen
+//! Annotations that do not fall into the XTypes descriptor set
 //! (`@verbatim`, `@unit`, `@range`, `@min`, `@max`, `@value`,
-//! `@default_literal`, `@topic`, `@autoid`) werden in `MemberApplyReport`
-//! / `TypeApplyReport`-Listen mitgefuehrt, damit Code-Generatoren oder
-//! Folgeschichten sie konsumieren koennen.
+//! `@default_literal`, `@topic`, `@autoid`) are carried along in the `MemberApplyReport`
+//! / `TypeApplyReport` lists, so that code generators or
+//! downstream layers can consume them.
 
 extern crate alloc;
 
@@ -53,38 +53,37 @@ use zerodds_types::dynamic::descriptor::{
 
 use super::annotations::{AutoidKind, BuiltinAnnotation, ExtensibilityKind as IdlExtKind, Lowered};
 
-/// Bericht ueber den Apply einer Annotation-Sammlung auf einen Member.
+/// Report on the apply of an annotation collection to a member.
 ///
-/// Enthaelt die Liste der **nicht** vom Apply behandelten Annotations
-/// (z.B. `@unit`, `@hashid`, `@verbatim`), die der Caller weiterleiten
-/// kann (z.B. Codegen, XML-Annotation-Sektion).
+/// Contains the list of annotations **not** handled by the apply
+/// (e.g. `@unit`, `@hashid`, `@verbatim`), which the caller can forward
+/// (e.g. codegen, XML annotation section).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MemberApplyReport {
-    /// Annotation-Namen, die nicht direkt auf MemberDescriptor-Felder
-    /// gemappt wurden. Reihenfolge wie im Lowered.
+    /// Annotation names not directly mapped onto MemberDescriptor fields.
+    /// Order as in the Lowered.
     pub passthrough: Vec<String>,
-    /// Wenn `@autoid(SEQUENTIAL|HASH)` an einem Member-Container
-    /// gesetzt war, hier durchgereicht (Builder-Side).
+    /// If `@autoid(SEQUENTIAL|HASH)` was set on a member container,
+    /// passed through here (builder side).
     pub autoid: Option<AutoidKind>,
 }
 
-/// Bericht ueber den Apply auf einen Type.
+/// Report on the apply to a type.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TypeApplyReport {
-    /// Annotation-Namen, die nicht direkt auf TypeDescriptor-Felder
-    /// gemappt wurden.
+    /// Annotation names not directly mapped onto TypeDescriptor fields.
     pub passthrough: Vec<String>,
-    /// `@autoid` auf Type-Ebene (vererbt sich auf die Members).
+    /// `@autoid` at the type level (inherited by the members).
     pub autoid: Option<AutoidKind>,
 }
 
-/// Appliziert die Lowered-Annotations auf einen MemberDescriptor.
-/// Liefert den neuen Descriptor + den Apply-Report mit Passthrough-
-/// Annotations.
+/// Applies the lowered annotations to a MemberDescriptor.
+/// Returns the new descriptor + the apply report with passthrough
+/// annotations.
 ///
-/// Member-spezifische Annotations werden 1:1 auf Felder gemappt;
-/// Type-spezifische Annotations (`@nested`, `@extensibility`,
-/// `@autoid`) werden ignoriert (gehoeren auf den Container-Type).
+/// Member-specific annotations are mapped 1:1 onto fields;
+/// type-specific annotations (`@nested`, `@extensibility`,
+/// `@autoid`) are ignored (they belong to the container type).
 #[must_use]
 pub fn apply_to_member(
     base: MemberDescriptor,
@@ -101,29 +100,28 @@ pub fn apply_to_member(
             BuiltinAnnotation::MustUnderstand => out.is_must_understand = true,
             BuiltinAnnotation::External | BuiltinAnnotation::Shared => out.is_shared = true,
             BuiltinAnnotation::NonSerialized => {
-                // §7.2.4.4.2 — bei der TypeObject-Lowering werden
-                // @non_serialized Member gedropped. Falls Aufruf hier
-                // (z.B. ueber DynamicType-Bridge) trotzdem geschieht,
-                // markieren wir den Member als non-relevant fuer Wire +
-                // Assignability via passthrough.
+                // §7.2.4.4.2 — during TypeObject lowering, @non_serialized
+                // members are dropped. If the call still happens here
+                // (e.g. via the DynamicType bridge), we
+                // mark the member as non-relevant for wire +
+                // assignability via passthrough.
                 report.passthrough.push("non_serialized".into());
             }
             BuiltinAnnotation::IgnoreLiteralNames => {
-                // Enum-Type-Level Annotation; Member-Bridge reicht sie
-                // nur durch.
+                // Enum-type-level annotation; the member bridge only passes
+                // it through.
                 report.passthrough.push("ignore_literal_names".into());
             }
             BuiltinAnnotation::Default(value) => out.default_value = Some(value.clone()),
             BuiltinAnnotation::DefaultLiteral => {
-                // Spec §7.3.1.2.1.16 — Member ist der Default-Branch
-                // einer Union. Wird via MemberDescriptor.is_default_label
-                // gespiegelt.
+                // Spec §7.3.1.2.1.16 — the member is the default branch
+                // of a union. Mirrored via MemberDescriptor.is_default_label.
                 out.is_default_label = true;
             }
             BuiltinAnnotation::Position(n) => {
-                // Bitmask-Bit-Position: Member-Id = Position (Spec
-                // §7.3.1.2.1.18). Nur wenn keine explizite `@id(...)`
-                // gesetzt wurde — diese gewinnt.
+                // Bitmask bit position: member ID = position (spec
+                // §7.3.1.2.1.18). Only if no explicit `@id(...)`
+                // was set — that one wins.
                 if !lowered
                     .builtins
                     .iter()
@@ -132,16 +130,15 @@ pub fn apply_to_member(
                     out.id = *n;
                 }
             }
-            // Type-Container-Level — werden bei der Type-Bridge
-            // appliziert.
+            // Type-container level — applied by the type bridge.
             BuiltinAnnotation::Nested
             | BuiltinAnnotation::Extensibility(_)
             | BuiltinAnnotation::Final
             | BuiltinAnnotation::Appendable
             | BuiltinAnnotation::Mutable => {}
             BuiltinAnnotation::Autoid(kind) => report.autoid = Some(*kind),
-            // Pass-Through: Codegen-/Tooling-relevant aber nicht im
-            // Spec-MemberDescriptor abgebildet.
+            // Pass-through: codegen-/tooling-relevant but not mapped in the
+            // spec MemberDescriptor.
             BuiltinAnnotation::Topic
             | BuiltinAnnotation::Unit(_)
             | BuiltinAnnotation::HashId(_)
@@ -159,7 +156,7 @@ pub fn apply_to_member(
         }
     }
 
-    // Auch `custom`-Annotations (vendor-extension etc.) reicht weiter.
+    // Also forwards `custom` annotations (vendor extension etc.).
     for c in &lowered.custom {
         if let Some(tail) = c.name.parts.last() {
             report.passthrough.push(tail.text.clone());
@@ -169,7 +166,7 @@ pub fn apply_to_member(
     (out, report)
 }
 
-/// Appliziert die Lowered-Annotations auf einen TypeDescriptor.
+/// Applies the lowered annotations to a TypeDescriptor.
 #[must_use]
 pub fn apply_to_type(base: TypeDescriptor, lowered: &Lowered) -> (TypeDescriptor, TypeApplyReport) {
     let mut out = base;
@@ -185,7 +182,7 @@ pub fn apply_to_type(base: TypeDescriptor, lowered: &Lowered) -> (TypeDescriptor
             BuiltinAnnotation::Appendable => out.extensibility_kind = DynExtKind::Appendable,
             BuiltinAnnotation::Mutable => out.extensibility_kind = DynExtKind::Mutable,
             BuiltinAnnotation::Autoid(kind) => report.autoid = Some(*kind),
-            // Member-Level — werden bei der Member-Bridge appliziert.
+            // Member level — applied by the member bridge.
             BuiltinAnnotation::Key
             | BuiltinAnnotation::Id(_)
             | BuiltinAnnotation::Optional
@@ -407,8 +404,8 @@ mod tests {
 
     #[test]
     fn member_apply_ignores_type_level_annotations() {
-        // `@nested` auf einem Member hat keine Auswirkung auf den
-        // Member selbst.
+        // `@nested` on a member has no effect on the
+        // member itself.
         let l = lowered_with(vec![BuiltinAnnotation::Nested]);
         let (m, report) = apply_to_member(member("x"), &l);
         assert!(!m.is_key);

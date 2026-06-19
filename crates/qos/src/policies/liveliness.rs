@@ -12,14 +12,14 @@ use crate::duration::Duration;
 ///
 /// Ordering per §2.2.3 Table "QoS compatibility":
 /// `AUTOMATIC < MANUAL_BY_PARTICIPANT < MANUAL_BY_TOPIC`.
-/// `offered.kind >= requested.kind` fuer Compatibility.
+/// `offered.kind >= requested.kind` for compatibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[repr(u32)]
 pub enum LivelinessKind {
-    /// DDS-Stack asserts Liveliness automatisch (default).
+    /// DDS stack asserts liveliness automatically (default).
     #[default]
     Automatic = 0,
-    /// Participant assertion propagiert auf alle Writer.
+    /// Participant assertion propagates to all writers.
     ManualByParticipant = 1,
     /// Writer-granulare manuelle Assertion.
     ManualByTopic = 2,
@@ -37,7 +37,7 @@ impl LivelinessKind {
         }
     }
 
-    /// Forward-kompatibler Mapper (unbekannt → Automatic).
+    /// Forward-compatible mapper (unknown → Automatic).
     #[must_use]
     pub const fn from_u32(v: u32) -> Self {
         match v {
@@ -79,7 +79,7 @@ impl LivelinessQosPolicy {
     /// Wire-Decoding (strict).
     ///
     /// # Errors
-    /// Buffer-Underflow oder unbekannter Kind-Wert.
+    /// Buffer underflow or unknown kind value.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let v = r.read_u32()?;
         let kind = LivelinessKind::try_from_u32(v).ok_or(DecodeError::InvalidEnum {
@@ -143,7 +143,7 @@ mod tests {
         }
     }
 
-    /// Forward-kompatibler Mapper: unbekannt -> `Automatic`.
+    /// Forward-compatible mapper: unknown -> `Automatic`.
     #[test]
     fn from_u32_forward_compatible() {
         assert_eq!(LivelinessKind::from_u32(0), LivelinessKind::Automatic);
@@ -159,7 +159,7 @@ mod tests {
         );
     }
 
-    /// Decode mit unbekanntem kind-Discriminator → `InvalidEnum`-Fehler.
+    /// Decode with an unknown kind discriminator → `InvalidEnum` error.
     #[test]
     fn decode_unknown_kind_errors() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -178,7 +178,7 @@ mod tests {
         ));
     }
 
-    /// Decode bei kurzem Buffer (kind ok, lease fehlt) → short-read.
+    /// Decode with a short buffer (kind ok, lease missing) → short read.
     #[test]
     fn decode_short_buffer_no_lease_errors() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -188,7 +188,7 @@ mod tests {
         assert!(LivelinessQosPolicy::decode_from(&mut r).is_err());
     }
 
-    /// Default ist `Automatic` mit `INFINITE`-Lease (§2.2.3.11.4).
+    /// Default is `Automatic` with an `INFINITE` lease (§2.2.3.11.4).
     #[test]
     fn default_debug_contains_infinite() {
         let d = LivelinessQosPolicy::default();
@@ -197,7 +197,7 @@ mod tests {
         assert!(dbg.contains("Automatic"), "debug: {dbg}");
     }
 
-    /// Copy-Semantik fuer Policy und Kind.
+    /// Copy semantics for policy and kind.
     #[test]
     fn policy_is_copy() {
         let p = LivelinessQosPolicy::default();

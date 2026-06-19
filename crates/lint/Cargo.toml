@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Custom Lints und Projekt-Regeln fuer ZeroDDS (dds_no_panic_in_safe, dds_require_safety_comment, dds_no_dyn_in_safe, ...)"
+description = "Custom lints and project rules for ZeroDDS (dds_no_panic_in_safe, dds_require_safety_comment, dds_no_dyn_in_safe, ...)"
 publish = false
 
 [lints]

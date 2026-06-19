@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Wire-Integrity-Primitive: CRC-32C, CRC-64-XZ, MD5.
+//! Wire-integrity primitives: CRC-32C, CRC-64-XZ, MD5.
 //!
-//! Spec-Referenzen:
-//! - **CRC-32C** (Castagnoli, Polynom `0x1EDC6F41` reflektiert):
+//! Spec references:
+//! - **CRC-32C** (Castagnoli, polynomial `0x1EDC6F41` reflected):
 //!   RFC 4960 Appendix B; DDSI-RTPS 2.5 §3 [Ref 5] / §9.4.2.15.2
 //!   `messageChecksum = CRC32C`.
-//! - **CRC-64-XZ** (ECMA-182, Polynom `0x42F0E1EBA9EA3693` reflektiert,
-//!   Init `0xFFFFFFFFFFFFFFFF`, XorOut `0xFFFFFFFFFFFFFFFF`):
+//! - **CRC-64-XZ** (ECMA-182, polynomial `0x42F0E1EBA9EA3693` reflected,
+//!   init `0xFFFFFFFFFFFFFFFF`, XorOut `0xFFFFFFFFFFFFFFFF`):
 //!   ECMA-182; DDSI-RTPS 2.5 §3 [Ref 6] / §9.4.2.15.2
 //!   `messageChecksum = CRC64`.
 //! - **MD5-128**: RFC 1321; DDSI-RTPS 2.5 §3 [Ref 7] / §9.4.2.15.2
 //!   `messageChecksum = MD5`.
 //!
-//! Alle Implementierungen sind pure-Rust, ohne externe Crates, damit
-//! die `foundation`-Crate ihren `forbid(unsafe_code)` + `no_std`-Ansatz
-//! behaelt. Algorithmische Treue gegen die Test-Vektoren der jeweiligen
-//! RFCs/ECMA-Spezifikationen ist via Unit-Tests in den `mod tests`-
-//! Bloecken belegt.
+//! All implementations are pure Rust, without external crates, so that
+//! the `foundation` crate retains its `forbid(unsafe_code)` + `no_std`
+//! approach. Algorithmic fidelity against the test vectors of the
+//! respective RFC/ECMA specifications is shown via unit tests in the
+//! `mod tests` blocks.
 //!
-//! # Performance-Anmerkung
+//! # Performance note
 //!
-//! Die CRC-Implementierung nutzt klassische Lookup-Tables (1 KiB fuer
-//! CRC-32C, 2 KiB fuer CRC-64). Das ist genug fuer typische RTPS-
-//! Datagramme (≤64 KiB). Hochfrequente Hashing-Pfade (z.B. KeyHash,
-//! Stream-Auth-Tag) liegen architekturell ausserhalb dieses Moduls.
+//! The CRC implementation uses classic lookup tables (1 KiB for
+//! CRC-32C, 2 KiB for CRC-64). This is enough for typical RTPS
+//! datagrams (≤64 KiB). High-frequency hashing paths (e.g. KeyHash,
+//! stream auth tag) are architecturally outside this module.
 
 #![allow(clippy::cast_possible_truncation)]
 
@@ -32,10 +32,10 @@
 // CRC-32C — Castagnoli (RFC 4960 App. B / SCTP)
 // =====================================================================
 
-/// Polynom `0x1EDC6F41`, reflektiert -> `0x82F63B78`.
+/// Polynomial `0x1EDC6F41`, reflected -> `0x82F63B78`.
 const CRC32C_POLY_REFLECTED: u32 = 0x82F6_3B78;
 
-/// Lookup-Table fuer CRC-32C (256 * 4 Byte = 1 KiB).
+/// Lookup table for CRC-32C (256 * 4 bytes = 1 KiB).
 const CRC32C_TABLE: [u32; 256] = build_crc32c_table();
 
 const fn build_crc32c_table() -> [u32; 256] {
@@ -58,9 +58,9 @@ const fn build_crc32c_table() -> [u32; 256] {
     table
 }
 
-/// CRC-32C Castagnoli ueber `data`.
+/// CRC-32C Castagnoli over `data`.
 ///
-/// Initial-Wert `0xFFFFFFFF`, finaler XorOut `0xFFFFFFFF` — entsprechend
+/// Initial value `0xFFFFFFFF`, final XorOut `0xFFFFFFFF` — per
 /// RFC 4960 Appendix B.
 #[must_use]
 pub fn crc32c(data: &[u8]) -> u32 {
@@ -76,10 +76,10 @@ pub fn crc32c(data: &[u8]) -> u32 {
 // CRC-64-XZ — ECMA-182 (XZ utils variant)
 // =====================================================================
 
-/// Polynom `0x42F0E1EBA9EA3693`, reflektiert -> `0xC96C5795D7870F42`.
+/// Polynomial `0x42F0E1EBA9EA3693`, reflected -> `0xC96C5795D7870F42`.
 const CRC64_XZ_POLY_REFLECTED: u64 = 0xC96C_5795_D787_0F42;
 
-/// Lookup-Table fuer CRC-64-XZ (256 * 8 Byte = 2 KiB).
+/// Lookup table for CRC-64-XZ (256 * 8 bytes = 2 KiB).
 const CRC64_XZ_TABLE: [u64; 256] = build_crc64_xz_table();
 
 const fn build_crc64_xz_table() -> [u64; 256] {
@@ -102,11 +102,11 @@ const fn build_crc64_xz_table() -> [u64; 256] {
     table
 }
 
-/// CRC-64-XZ ueber `data` (ECMA-182 Polynom, XZ utils Variante).
+/// CRC-64-XZ over `data` (ECMA-182 polynomial, XZ utils variant).
 ///
-/// Initial-Wert `0xFFFFFFFFFFFFFFFF`, finaler XorOut
-/// `0xFFFFFFFFFFFFFFFF` — entspricht der `xz`/`liblzma`-Variante, die
-/// auch DDSI-RTPS §9.4.2.15.2 referenziert.
+/// Initial value `0xFFFFFFFFFFFFFFFF`, final XorOut
+/// `0xFFFFFFFFFFFFFFFF` — matches the `xz`/`liblzma` variant that
+/// DDSI-RTPS §9.4.2.15.2 also references.
 #[must_use]
 pub fn crc64_xz(data: &[u8]) -> u64 {
     let mut crc: u64 = 0xFFFF_FFFF_FFFF_FFFF;
@@ -121,12 +121,12 @@ pub fn crc64_xz(data: &[u8]) -> u64 {
 // MD5-128 — RFC 1321
 // =====================================================================
 //
-// Pure-rust Implementierung der MD5-Message-Digest-Function. Ist fuer
-// Crypto-Sicherheit nicht mehr empfohlen (Kollisionen!), wird in
-// DDSI-RTPS aber als Wire-Integritaetsprimitiv definiert. Die Spec
-// erlaubt MD5-128 als `messageChecksum`-Variante (§9.4.2.15.2).
+// Pure-Rust implementation of the MD5 message-digest function. It is
+// no longer recommended for cryptographic security (collisions!), but
+// is defined in DDSI-RTPS as a wire-integrity primitive. The spec
+// allows MD5-128 as a `messageChecksum` variant (§9.4.2.15.2).
 //
-// Algorithmus folgt RFC 1321 §3 + Anhang A. Test-Vektoren aus §A.5.
+// The algorithm follows RFC 1321 §3 + Appendix A. Test vectors from §A.5.
 
 const MD5_S: [u32; 64] = [
     7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, // round 1
@@ -202,18 +202,18 @@ const MD5_K: [u32; 64] = [
     0xeb86_d391,
 ];
 
-/// MD5-Hash ueber `data` (RFC 1321). Liefert 16 Byte (Little-Endian
-/// Repraesentation der vier Zustands-u32-Worte).
+/// MD5 hash over `data` (RFC 1321). Returns 16 bytes (little-endian
+/// representation of the four state u32 words).
 #[must_use]
 pub fn md5(data: &[u8]) -> [u8; 16] {
-    // Initial-State (RFC 1321 §3.3).
+    // Initial state (RFC 1321 §3.3).
     let mut a0: u32 = 0x6745_2301;
     let mut b0: u32 = 0xefcd_ab89;
     let mut c0: u32 = 0x98ba_dcfe;
     let mut d0: u32 = 0x1032_5476;
 
-    // Padding (§3.1): Append 1 bit, dann Null-Bits bis Laenge ≡ 448 (mod 512),
-    // dann 64 bit Original-Laenge LE. Gesamt-Laenge ist Vielfaches von 64 Byte.
+    // Padding (§3.1): append 1 bit, then zero bits until length ≡ 448 (mod 512),
+    // then the 64-bit original length LE. The total length is a multiple of 64 bytes.
     let bit_len: u64 = (data.len() as u64).wrapping_mul(8);
 
     #[cfg(feature = "alloc")]
@@ -231,10 +231,10 @@ pub fn md5(data: &[u8]) -> [u8; 16] {
 
     #[cfg(not(feature = "alloc"))]
     let padded = {
-        // no_std-Pfad: wir limitieren auf 56 Byte Eingabe (passt in einen
-        // einzigen 64-Byte-Block). Ist fuer interne Kurz-Hashes gedacht.
-        // Da `foundation` per default `alloc` aktiviert hat, ist das hier
-        // nur ein no_std-Fallback; produktive Pfade nutzen `alloc`.
+        // no_std path: we limit to 56 bytes of input (fits in a
+        // single 64-byte block). Intended for internal short hashes.
+        // Since `foundation` enables `alloc` by default, this is
+        // only a no_std fallback; production paths use `alloc`.
         let mut buf = [0u8; 64];
         let n = data.len().min(56);
         buf[..n].copy_from_slice(&data[..n]);
@@ -243,7 +243,7 @@ pub fn md5(data: &[u8]) -> [u8; 16] {
         buf
     };
 
-    // Block-Wise Compression.
+    // Block-wise compression.
     #[cfg(feature = "alloc")]
     let blocks = padded.chunks_exact(64);
     #[cfg(not(feature = "alloc"))]
@@ -280,7 +280,7 @@ pub fn md5(data: &[u8]) -> [u8; 16] {
         d0 = d0.wrapping_add(d);
     }
 
-    // Output: a0|b0|c0|d0 LE-konkateniert.
+    // Output: a0|b0|c0|d0 concatenated LE.
     let mut out = [0u8; 16];
     out[0..4].copy_from_slice(&a0.to_le_bytes());
     out[4..8].copy_from_slice(&b0.to_le_bytes());
@@ -297,7 +297,7 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
     use super::*;
 
-    // ----- CRC-32C — RFC 4960 Appendix B + bekannte Standard-Vektoren -----
+    // ----- CRC-32C — RFC 4960 Appendix B + known standard vectors -----
 
     #[test]
     fn crc32c_empty_is_zero() {
@@ -307,7 +307,7 @@ mod tests {
 
     #[test]
     fn crc32c_a_is_known_vector() {
-        // "a" -> 0xC1D04330 (verifiziert gegen mehrere SCTP-Test-Suites).
+        // "a" -> 0xC1D04330 (verified against several SCTP test suites).
         assert_eq!(crc32c(b"a"), 0xC1D0_4330);
     }
 
@@ -332,9 +332,9 @@ mod tests {
     #[test]
     fn crc32c_zeros_32_byte_vector() {
         // RFC 3720 Appendix B.4 (iSCSI / SCTP CRC-32C):
-        // 32 Null-Byte -> 0xAA36918A (Wire-LE) = 0x8A9136AA als
-        // Host-Order u32 mit der hier implementierten ueblichen
-        // Convention. Diese Convention liefert konkret `crc32c(&[0;32])`
+        // 32 null bytes -> 0xAA36918A (wire LE) = 0x8A9136AA as a
+        // host-order u32 with the usual convention implemented here.
+        // This convention concretely yields `crc32c(&[0;32])`
         // = 0x8A9136AA.
         let zeros = [0u8; 32];
         assert_eq!(crc32c(&zeros), 0x8A91_36AA);
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn crc32c_iso_iec_31_byte_pattern() {
-        // 32 inkrementierende Bytes 00..1F -> 0x46DD_794E.
+        // 32 incrementing bytes 00..1F -> 0x46DD_794E.
         let mut data = [0u8; 32];
         for (i, b) in data.iter_mut().enumerate() {
             *b = i as u8;
@@ -350,7 +350,7 @@ mod tests {
         assert_eq!(crc32c(&data), 0x46DD_794E);
     }
 
-    // ----- CRC-64-XZ — bekannte ECMA-182/XZ-Vektoren -----
+    // ----- CRC-64-XZ — known ECMA-182/XZ vectors -----
 
     #[test]
     fn crc64_xz_empty_is_zero() {
@@ -359,7 +359,7 @@ mod tests {
 
     #[test]
     fn crc64_xz_known_vector_123456789() {
-        // Standard "check"-Wert fuer CRC-64/XZ -> 0x995DC9BBDF1939FA.
+        // Standard "check" value for CRC-64/XZ -> 0x995DC9BBDF1939FA.
         assert_eq!(crc64_xz(b"123456789"), 0x995D_C9BB_DF19_39FA);
     }
 
@@ -449,11 +449,11 @@ mod tests {
 
     #[test]
     fn md5_block_boundary_55_bytes() {
-        // 55-Byte-Eingabe: liegt 1 Byte unter der Block-Grenze (56), das
-        // Padding belegt genau 9 Byte und passt in genau einen Block.
+        // 55-byte input: lies 1 byte below the block boundary (56); the
+        // padding occupies exactly 9 bytes and fits into exactly one block.
         let s = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY12";
         assert_eq!(s.len(), 53);
-        // Beliebige Pruefung: Hash bleibt deterministisch.
+        // Arbitrary check: the hash stays deterministic.
         let h1 = md5(s.as_bytes());
         let h2 = md5(s.as_bytes());
         assert_eq!(h1, h2);
@@ -461,14 +461,14 @@ mod tests {
 
     #[test]
     fn md5_block_boundary_64_bytes() {
-        // 64-Byte-Eingabe: erfordert genau zwei 64-Byte-Bloecke fuers
-        // Padding (1 voller Block + Padding-Block).
+        // 64-byte input: requires exactly two 64-byte blocks for the
+        // padding (1 full block + padding block).
         let data = [b'A'; 64];
         let h = md5(&data);
-        // Stabilitaet: Wert ist deterministisch.
+        // Stability: the value is deterministic.
         let h2 = md5(&data);
         assert_eq!(h, h2);
-        // Sanity: nicht alle Bytes Null.
+        // Sanity: not all bytes are zero.
         assert!(h.iter().any(|&b| b != 0));
     }
 }

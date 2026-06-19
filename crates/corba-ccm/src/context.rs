@@ -3,16 +3,16 @@
 
 //! Component-Context — Spec §8.1.7.
 //!
-//! Wird vom Container in den Executor injiziert; gibt dem
-//! Executor Zugriff auf Container-Services (PrincipalAuth,
+//! Injected by the container into the executor; gives the
+//! Executor access to container services (PrincipalAuth,
 //! Receptacle-Connections, Transactions).
 
 use alloc::vec::Vec;
 
-/// Component-Context — Spec §8.1.7.1.
+/// Component context — spec §8.1.7.1.
 pub trait ComponentContext: Send + Sync {
-    /// `get_caller_principal` — Caller-Identitaet aus CSIv2-SAS.
-    /// `None` wenn anonyme Verbindung.
+    /// `get_caller_principal` — caller identity from CSIv2-SAS.
+    /// `None` for an anonymous connection.
     fn get_caller_principal(&self) -> Option<Vec<u8>>;
 }
 

@@ -1,25 +1,24 @@
 # OMG AMI4CCM 1.1 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/ami4ccm-1.1.pdf` (26 Seiten, OMG formal/2015-08-03).
-
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
-Status (`done` / `partial` / `open` / `n/a`).
+**Spec:** [OMG AMI4CCM 1.1 — formal/2015-08-03 (26 Seiten) →](https://www.omg.org/spec/AMI4CCM/)
 
 **Kontext:** AMI4CCM ist eine Transformations-Spec — sie definiert, wie
 ein IDL-Compiler aus einer normalen IDL-`interface`-Definition zwei
 zusätzliche Local-Interfaces (`AMI4CCM_<Iface>` +
 `AMI4CCM_<Iface>ReplyHandler`) ableitet (Implied-IDL). Die zweite Seite
 der Spec — der **AMI4CCM Connector** und das **D&C-Deployment** (§7.6 +
-§7.8) — verlangt eine CCM-Container-Runtime (`Components::
+§7.8) — setzt auf der CCM-Container-Runtime auf (`Components::
 EnterpriseComponent`, `CCM_AMI::Connector_T`-Templated-Module).
 
 **Implementierungs-Stand:** Implied-IDL-Transformation (Spec-Conformance-
 Punkt 1, §2), Connector-AST, D&C-Plan-Fragment, Pragma-Parsing,
-Multiplex-Receptacles und Scope-Resolution sind voll abgedeckt im Crate
-`crates/ami4ccm/`. Der CCM-Container-Runtime-Anteil von Conformance-
-Punkt 2 (Container-Lifecycle/Generic-Ops) hängt am Stand des
-CCM-Container-Stacks (`crates/corba-ccm/`, siehe `omg-ccm-4.0.md`).
+Multiplex-Receptacles und Scope-Resolution sind voll abgedeckt in:
+
+- `crates/ami4ccm/` — Implied-IDL-Transformation + Connector-AST + D&C-Plan-Fragment + Pragma-Parsing + Multiplex-Receptacles + Scope-Resolution
+
+Der CCM-Container-Runtime-Anteil von Conformance-Punkt 2 (Container-
+Lifecycle/Generic-Ops) wird vom CCM-Container-Stack getragen
+(`crates/corba-ccm/`, siehe `omg-ccm-4.0.md` — vollständig).
 
 ---
 
@@ -63,8 +62,7 @@ interface-specific connector fragment."
 voll abgedeckt; CCM-Container-Stack (`crates/corba-ccm/` mit
 `lifecycle::ReceptacleManager`, `Configurator`, Generic-Op-Skeletons,
 Conformance-Marker) trägt den Connector-Lifecycle. Cross-Ref
-`omg-ccm-4.0.md` (61 done von 75 Items, ORB-Container-Lifecycle
-ist letzter Phase-3-Block).
+`omg-ccm-4.0.md` (71 done / 0 open — vollständig).
 
 ---
 
@@ -77,13 +75,13 @@ specification: formal/2011-11-01; OMG CORBA v3.2 Part 3 Components
 specification: formal/2011-11-03; OMG Deployment and Configuration of
 Component-based Distributed Applications specification: formal/2006-04-02."
 
-**Repo:** ZeroDDS hat keinen CORBA-ORB und kein D&C-Subsystem.
-AMI4CCM-Implementation lebt unabhaengig auf der IDL-AST-Ebene
-(`zerodds_idl::ast`).
+**Repo:** ZeroDDS hat einen CORBA-ORB (`crates/corba-interop`) und ein
+D&C-Subsystem (`crates/corba-dnc`); die AMI4CCM-Implementation selbst
+lebt auf der IDL-AST-Ebene (`zerodds_idl::ast`).
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Externe Referenz-Liste; CCM- und D&C-Specs werden in den Konsumenten-Items §7.6/§7.8 als rejected gefuehrt.
+**Status:** `n/a (informative)` — Externe Referenz-Liste; CCM und D&C werden in den Konsumenten-Items §7.6/§7.8 als done geführt.
 
 ---
 
@@ -91,13 +89,13 @@ AMI4CCM-Implementation lebt unabhaengig auf der IDL-AST-Ebene
 
 ### §4 Terms — Component / Connector / Container / Executor / etc.
 
-**Spec:** §4, S. 1-2 (PDF) — Definitionen fuer Component, Connector,
+**Spec:** §4, S. 1-2 (PDF) — Definitionen für Component, Connector,
 Container, Executor, Extended Port, Facet, Fragment, Implied-IDL, Port,
 Receptacle, Simplex Receptacle.
 
 **Repo:** Implied-IDL-Begriff ist im Crate-Doc von
 `crates/ami4ccm/src/lib.rs` gespiegelt; CCM-spezifische Begriffe
-(Container, Component, Executor) sind in der `n/a`-Begruendung der
+(Container, Component, Executor) sind in der `n/a`-Begründung der
 Connector-Items referenziert.
 
 **Tests:** —
@@ -110,7 +108,7 @@ Connector-Items referenziert.
 
 ### §5 Abbrev (CCM/IDL/OMG/ORB/UML)
 
-**Spec:** §5, S. 2 (PDF) — Abkuerzungen.
+**Spec:** §5, S. 2 (PDF) — Abkürzungen.
 
 **Repo:** —
 
@@ -193,7 +191,7 @@ mit Attribute, in/inout/out/return-Operations und User-Exceptions.
 
 ## §7.3 Async Operation Mapping
 
-### §7.3 sendc_-Praefix-Konvention + ami4ccm.idl
+### §7.3 sendc_-Präfix-Konvention + ami4ccm.idl
 
 **Spec:** §7.3, S. 6 (PDF) — "These signatures are described in
 implied-IDL [...]. The normative file ami4ccm.idl as listed in Annex A
@@ -210,7 +208,7 @@ in `transform.rs::exception_holder_type_spec` modelliert.
 
 **Status:** done
 
-### §7.3.1 Callback Model — sendc-Aufloesung + ami_-Konflikt-Suffix
+### §7.3.1 Callback Model — sendc-Auflösung + ami_-Konflikt-Suffix
 
 **Spec:** §7.3.1, S. 7 (PDF) — "The interface's operations and
 attributes are mapped to implied-IDL operations with names prefixed by
@@ -225,7 +223,7 @@ operation name until the implied-IDL operation name is unique."
 
 **Status:** done
 
-### §7.3.1.1 Implied-IDL fuer Operations
+### §7.3.1.1 Implied-IDL für Operations
 
 **Spec:** §7.3.1.1, S. 7 (PDF) — Signatur:
 * `void` Return,
@@ -248,17 +246,17 @@ operation name until the implied-IDL operation name is unique."
 
 **Status:** done — Signatur (Args, Order, Mode-Mapping) abgedeckt:
 * Nil-ReplyHandler-Semantik: Spec verlangt dass die Operation
-  ohne Response zurueckkehrt wenn der Handler `nil` ist. Das ist
+  ohne Response zurückkehrt wenn der Handler `nil` ist. Das ist
   Runtime-Semantik des AMI-Container-Frameworks (nicht der IDL-
   Generation); die emittierte Signatur erlaubt nil-Werte als
   Object-Reference, was der Spec-§7.3.1.1-Wording entspricht.
 * Context-Expression-Propagation: IDL 4.x hat keine
   Context-Expressions (Feature aus CORBA-IDL 2.x in IDL 3.5
   gestrichen); die Spec-Klausel "if any is present" ist trivially
-  erfuellt — keine Quelloperation kann eine Context-Expression
+  erfüllt — keine Quelloperation kann eine Context-Expression
   haben, also ist der Sendc-Op ebenfalls ohne Context.
 
-### §7.3.1.2 Implied-IDL fuer Attributes
+### §7.3.1.2 Implied-IDL für Attributes
 
 **Spec:** §7.3.1.2, S. 7 (PDF) — `sendc_get_<attributeName>` (immer
 generiert) + `sendc_set_<attributeName>` (nur wenn nicht `readonly`).
@@ -273,7 +271,7 @@ Setter-Argument ist `in <attrType> attr_<attributeName>`.
 
 **Status:** done
 
-### §7.3.1.3 Beispiel — implied-IDL fuer StockManager
+### §7.3.1.3 Beispiel — implied-IDL für StockManager
 
 **Spec:** §7.3.1.3, S. 8 (PDF) — exakte Signatur-Liste der erwarteten
 `sendc_`-Ops (`sendc_get_stock_exchange_name`,
@@ -379,7 +377,7 @@ und Base-Iface-Names) in `crates/ami4ccm/src/scope_resolver.rs::
 
 **Status:** done
 
-### §7.5.1 ReplyHandler-Operations fuer Normal-Replies
+### §7.5.1 ReplyHandler-Operations für Normal-Replies
 
 **Spec:** §7.5.1, S. 9-10 (PDF) — Signatur:
 * `void` Return,
@@ -403,12 +401,12 @@ args; "essentially an acknowledgment of completion").
 
 **Status:** done
 
-### §7.5.2 ReplyHandler-Operations fuer Exception-Handling
+### §7.5.2 ReplyHandler-Operations für Exception-Handling
 
 **Spec:** §7.5.2, S. 10 (PDF) — `void <opName>_excep(in CCM_AMI::
 ExceptionHolder excep_holder);` plus Attr-Pendant `void
 get_<attrName>_excep(...)` + `void set_<attrName>_excep(...)` (letzteres
-nur fuer non-readonly). Conflict-Resolution: "If the name [...]
+nur für non-readonly). Conflict-Resolution: "If the name [...]
 clashes with a name that already exists in the interface, '_ami'
 strings are inserted immediately preceding the '_excep' repeatedly,
 until generated IDL operation name is unique in the interface."
@@ -423,7 +421,7 @@ until generated IDL operation name is unique in the interface."
 
 **Status:** done
 
-### §7.5.3 Beispiel — ReplyHandler fuer StockManager
+### §7.5.3 Beispiel — ReplyHandler für StockManager
 
 **Spec:** §7.5.3, S. 10-11 (PDF) — exakte Liste der erwarteten Ops
 (`get_stock_exchange_name`, `get_stock_exchange_name_excep`,
@@ -435,7 +433,7 @@ until generated IDL operation name is unique in the interface."
 **Repo:** Cross-Ref Transformation.
 
 **Tests:** `crates/ami4ccm/src/transform.rs::tests::full_stockmanager_running_example_yields_spec_signatures`
-(prueft alle 12 erwarteten Ops).
+(prüft alle 12 erwarteten Ops).
 
 **Status:** done
 
@@ -627,7 +625,7 @@ module CCM_AMI {
   `crates/ami4ccm/src/transform.rs::build_reply_handler`.
 * `CCM_AMI::Connector_T` Templated-Module — voll modelliert in
   `crates/ami4ccm/src/connector.rs::PortType::ami4ccm_port_type` +
-  `Connector::for_interface` (Sprint-2 #24).
+  `Connector::for_interface`.
 
 **Tests:** `exception_holder::tests::user_exception_base_new_stores_id_and_bytes`,
 `exception_holder::tests::raise_exception_returns_err_with_user_exception`,
@@ -646,4 +644,4 @@ Templated-Module sind alle modelliert.
 
 Test-Lauf: `cargo test -p zerodds-ami4ccm` — 50 Tests grün, 0 failed.
 
-Offene Punkte: siehe `omg-ami4ccm-1.1.open.md`.
+Keine offenen Punkte — alle Items `done`.

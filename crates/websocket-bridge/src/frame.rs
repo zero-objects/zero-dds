@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! WebSocket Frame Modell — RFC 6455 §5.2.
+//! WebSocket frame model — RFC 6455 §5.2.
 
 use alloc::vec::Vec;
 
-/// `Opcode` (RFC 6455 §5.2, S. 28-29) — 4-bit, definiert Interpretation
-/// der Payload.
+/// `Opcode` (RFC 6455 §5.2, pp. 28-29) — 4-bit, defines the interpretation
+/// of the payload.
 ///
-/// Spec-Werte:
+/// Spec values:
 /// * 0x0 — Continuation
 /// * 0x1 — Text Frame (UTF-8)
 /// * 0x2 — Binary Frame
@@ -36,7 +36,7 @@ pub enum Opcode {
 }
 
 impl Opcode {
-    /// Konvertiert vom Wire-Wert (4-bit).
+    /// Converts from the wire value (4-bit).
     #[must_use]
     pub const fn from_bits(v: u8) -> Self {
         match v & 0x0F {
@@ -50,7 +50,7 @@ impl Opcode {
         }
     }
 
-    /// Wire-Wert (4-bit).
+    /// Wire value (4-bit).
     #[must_use]
     pub const fn to_bits(self) -> u8 {
         match self {
@@ -64,9 +64,9 @@ impl Opcode {
         }
     }
 
-    /// Spec §5.5 — Control Frames sind opcodes 0x8-0xF. Sie haben
-    /// folgende Eigenschaften: payload <= 125 bytes (Spec §5.5),
-    /// duerfen nicht fragmentiert werden (FIN=1).
+    /// Spec §5.5 — control frames are opcodes 0x8-0xF. They have
+    /// the following properties: payload <= 125 bytes (Spec §5.5),
+    /// must not be fragmented (FIN=1).
     #[must_use]
     pub const fn is_control(self) -> bool {
         match self {
@@ -77,7 +77,7 @@ impl Opcode {
     }
 }
 
-/// WebSocket-Frame — RFC 6455 §5.2.
+/// WebSocket frame — RFC 6455 §5.2.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     /// Spec §5.2 — `FIN` bit. Final fragment indicator.
@@ -90,16 +90,16 @@ pub struct Frame {
     pub rsv3: bool,
     /// Spec §5.2 — Opcode.
     pub opcode: Opcode,
-    /// Spec §5.2 — Masking-Key (`Some` wenn MASK=1; immer `Some` von
+    /// Spec §5.2 — masking key (`Some` if MASK=1; always `Some` from
     /// client→server).
     pub masking_key: Option<[u8; 4]>,
-    /// Spec §5.2 — Payload (already unmasked beim Decode; wird beim
-    /// Encode automatisch maskiert wenn `masking_key` gesetzt).
+    /// Spec §5.2 — payload (already unmasked on decode; automatically
+    /// masked on encode when `masking_key` is set).
     pub payload: Vec<u8>,
 }
 
 impl Frame {
-    /// Konstruiert einen unmaskierten Text-Frame mit FIN=1.
+    /// Constructs an unmasked text frame with FIN=1.
     #[must_use]
     pub fn text(s: impl Into<alloc::string::String>) -> Self {
         Self {
@@ -113,7 +113,7 @@ impl Frame {
         }
     }
 
-    /// Konstruiert einen unmaskierten Binary-Frame mit FIN=1.
+    /// Constructs an unmasked binary frame with FIN=1.
     #[must_use]
     pub const fn binary(payload: Vec<u8>) -> Self {
         Self {
@@ -127,7 +127,7 @@ impl Frame {
         }
     }
 
-    /// Konstruiert einen Ping-Frame (FIN=1, max. 125 Bytes Payload —
+    /// Constructs a ping frame (FIN=1, max. 125 bytes payload —
     /// Spec §5.5).
     #[must_use]
     pub const fn ping(payload: Vec<u8>) -> Self {
@@ -142,8 +142,8 @@ impl Frame {
         }
     }
 
-    /// Konstruiert einen Pong-Frame (Spec §5.5.3 — als Reply-zu-Ping
-    /// MUST denselben Payload haben).
+    /// Constructs a pong frame (Spec §5.5.3 — as a reply to a ping it
+    /// MUST carry the same payload).
     #[must_use]
     pub const fn pong(payload: Vec<u8>) -> Self {
         Self {
@@ -157,8 +157,8 @@ impl Frame {
         }
     }
 
-    /// Konstruiert einen Close-Frame mit Status-Code + optionaler
-    /// Reason. Spec §5.5.1 + §7.4.
+    /// Constructs a close frame with a status code + optional
+    /// reason. Spec §5.5.1 + §7.4.
     #[must_use]
     pub fn close(status: u16, reason: &str) -> Self {
         let mut payload = Vec::with_capacity(2 + reason.len());
@@ -175,7 +175,7 @@ impl Frame {
         }
     }
 
-    /// Aktiviert Client→Server-Masking. Spec §5.3 — "All frames sent
+    /// Enables client→server masking. Spec §5.3 — "All frames sent
     /// from client to server have this bit set to 1".
     #[must_use]
     pub const fn with_mask(mut self, key: [u8; 4]) -> Self {
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn close_frame_includes_status_code_in_be_payload() {
-        // Spec §7.4 — Status-Code als 16-bit BE.
+        // Spec §7.4 — status code as 16-bit BE.
         let f = Frame::close(1000, "");
         assert_eq!(&f.payload[..2], &1000u16.to_be_bytes());
     }

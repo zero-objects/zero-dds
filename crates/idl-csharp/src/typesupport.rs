@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! XCDR2 TypeSupport-Emission fuer C#-Codegen.
+//! XCDR2 TypeSupport emission for the C# codegen.
 //!
 //! Spec: `zerodds-xcdr2-csharp-1.0` §3 / §4 / §5 / §6 / §7
 //! + `zerodds-xcdr2-bindings-conformance-1.0` §6 (V-1..V-12).
 //!
-//! Pro IDL-`struct` emittiert dieses Modul eine `*TypeSupport`-Klasse,
-//! die `IDdsTopicType<T>` aus `ZeroDDS.Cdr` implementiert. Encode/Decode
-//! delegieren an `Xcdr2Writer` / `Xcdr2Reader`; Extensibility steuert
-//! das DHEADER/EMHEADER-Layout, `@key` triggert MD5-KeyHash via
+//! For each IDL `struct`, this module emits a `*TypeSupport` class that
+//! implements `IDdsTopicType<T>` from `ZeroDDS.Cdr`. Encode/Decode
+//! delegate to `Xcdr2Writer` / `Xcdr2Reader`; extensibility drives the
+//! DHEADER/EMHEADER layout, and `@key` triggers an MD5 KeyHash via
 //! `PlainCdr2BeKeyHolder`.
 
 use std::fmt::Write;
 
-use zerodds_idl::ast::{IntegerType, PrimitiveType, StructDef, TypeSpec};
+use zerodds_idl::ast::{
+    ConstExpr, Definition, IntegerType, PrimitiveType, ScopedName, Specification, StructDef,
+    TypeSpec,
+};
 use zerodds_idl::semantics::annotations::{
     BuiltinAnnotation, ExtensibilityKind, lower_annotations, lower_type_annotations,
 };
@@ -21,8 +24,8 @@ use zerodds_idl::semantics::annotations::{
 use crate::error::CsGenError;
 use crate::keywords::escape_identifier;
 
-/// Kontext-Info: aktueller Modul-Pfad fuer Type-Name-Emission und der
-/// IDL-Struct-Name (ohne Module).
+/// Context info: the current module path for type-name emission and the
+/// IDL struct name (without modules).
 pub(crate) struct TsEmitContext<'a> {
     pub module_path: &'a [String],
     pub indent: &'a str,
@@ -30,7 +33,7 @@ pub(crate) struct TsEmitContext<'a> {
     pub deeper_indent: &'a str,
 }
 
-/// Liefert `<Module1>::<Module2>::<Struct>` per Spec §5 (Type-Name-Konvention).
+/// Returns `<Module1>::<Module2>::<Struct>` per spec §5 (type-name convention).
 pub(crate) fn make_dds_type_name(module_path: &[String], struct_name: &str) -> String {
     if module_path.is_empty() {
         struct_name.to_string()
@@ -39,19 +42,19 @@ pub(crate) fn make_dds_type_name(module_path: &[String], struct_name: &str) -> S
     }
 }
 
-/// Member-Info: berechnete Wire-Charakteristiken eines Struct-Members.
+/// Member info: computed wire characteristics of a struct member.
 struct MemberInfo {
-    /// Property-Name in PascalCase (matches dem in `emit_struct_member_property`).
+    /// Property name in PascalCase (matches the one in `emit_struct_member_property`).
     cs_prop: String,
-    /// IDL-Source-Type (fuer Encode/Decode-Method-Wahl).
+    /// IDL source type (for Encode/Decode method selection).
     type_spec: TypeSpec,
-    /// True wenn `@key`.
+    /// True if `@key`.
     is_key: bool,
-    /// True wenn `@optional`.
+    /// True if `@optional`.
     is_optional: bool,
-    /// True wenn `@must_understand`.
+    /// True if `@must_understand`.
     must_understand: bool,
-    /// `@id(N)` falls explizit gesetzt; sonst None (Auto-Index in Mutable).
+    /// `@id(N)` if explicitly set; otherwise None (auto-index in mutable).
     explicit_id: Option<u32>,
 }
 
@@ -117,7 +120,7 @@ fn collect_member_info(s: &StructDef) -> Vec<MemberInfo> {
     out
 }
 
-/// Liefert das IDL-Extensibility-Kind, default Appendable.
+/// Returns the IDL extensibility kind, default Appendable.
 fn type_extensibility(s: &StructDef) -> ExtensibilityKind {
     if let Ok(lowered) = lower_type_annotations(&s.annotations) {
         for b in &lowered.builtins {
@@ -147,10 +150,110 @@ fn fmt_err(_: core::fmt::Error) -> CsGenError {
     CsGenError::Internal("string formatting failed".into())
 }
 
-/// Haupt-Entry: emittiert eine `*TypeSupport`-Klasse fuer `s`.
+/// Main entry: emits a `*TypeSupport` class for `s`.
 ///
-/// `module_path` ist die Liste der umschliessenden Module (z.B.
-/// `["Outer", "Inner"]` fuer `module Outer { module Inner { struct S }}`).
+/// `module_path` is the list of enclosing modules (e.g.
+/// `["Outer", "Inner"]` for `module Outer { module Inner { struct S }}`).
+/// `true` if the XCDR2 codec can be generated for this type. `map`/`fixed`/`any`
+/// have no wire codec in idl-csharp yet (cf. idl-java `typespec_supported`), so a
+/// struct with such a member gets its data type but **no** TypeSupport — instead
+/// of a codec that throws `XcdrException` at runtime.
+/// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
+fn typespec_xcdr2_codecable(t: &zerodds_idl::ast::TypeSpec) -> bool {
+    use zerodds_idl::ast::TypeSpec;
+    match t {
+        TypeSpec::Map(_) | TypeSpec::Fixed(_) | TypeSpec::Any => false,
+        TypeSpec::Sequence(s) => typespec_xcdr2_codecable(&s.elem),
+        TypeSpec::Scoped(s) => match lookup_scoped_kind(s) {
+            // Unions have no XCDR2 codec yet → a containing struct is gated.
+            Some(ScopedKind::Union) => false,
+            Some(ScopedKind::Typedef(inner)) => typespec_xcdr2_codecable(&inner),
+            _ => true,
+        },
+        _ => true,
+    }
+}
+
+/// Codec kind of a scoped type reference (for the nested XCDR2 dispatch).
+#[derive(Clone)]
+enum ScopedKind {
+    /// struct — encoded via `<Name>TypeSupport.Instance.EncodeInto`/`DecodeFrom`.
+    Struct,
+    /// union — no XCDR2 codec yet; a struct containing one is gated.
+    Union,
+    /// enum — int32 representation.
+    Enum,
+    /// typedef — resolves to the aliased type.
+    Typedef(TypeSpec),
+}
+
+std::thread_local! {
+    /// Type-name → kind, built once per `generate_csharp` call (keyed by simple
+    /// name). Lets the codec tell a nested struct from an enum/union and resolve
+    /// typedefs. Without it every scoped member was encoded as empty bytes and
+    /// decoded as `default!` (silent corruption).
+    static TYPE_REG: core::cell::RefCell<std::collections::BTreeMap<String, ScopedKind>> =
+        const { core::cell::RefCell::new(std::collections::BTreeMap::new()) };
+}
+
+/// Populates [`TYPE_REG`] from the spec (recursing modules).
+pub(crate) fn build_type_registry(spec: &Specification) {
+    use zerodds_idl::ast::{ConstrTypeDecl, StructDcl, TypeDecl, UnionDcl};
+    /// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
+    fn walk(defs: &[Definition], reg: &mut std::collections::BTreeMap<String, ScopedKind>) {
+        for def in defs {
+            match def {
+                Definition::Module(m) => walk(&m.definitions, reg),
+                Definition::Type(TypeDecl::Constr(c)) => match c {
+                    ConstrTypeDecl::Struct(StructDcl::Def(s)) => {
+                        reg.insert(s.name.text.clone(), ScopedKind::Struct);
+                    }
+                    ConstrTypeDecl::Union(UnionDcl::Def(u)) => {
+                        reg.insert(u.name.text.clone(), ScopedKind::Union);
+                    }
+                    ConstrTypeDecl::Enum(e) => {
+                        reg.insert(e.name.text.clone(), ScopedKind::Enum);
+                    }
+                    _ => {}
+                },
+                Definition::Type(TypeDecl::Typedef(t)) => {
+                    for d in &t.declarators {
+                        reg.insert(
+                            d.name().text.clone(),
+                            ScopedKind::Typedef(t.type_spec.clone()),
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut reg = std::collections::BTreeMap::new();
+    walk(&spec.definitions, &mut reg);
+    TYPE_REG.with(|r| *r.borrow_mut() = reg);
+}
+
+fn lookup_scoped_kind(s: &ScopedName) -> Option<ScopedKind> {
+    let key = &s.parts.last()?.text;
+    TYPE_REG.with(|r| r.borrow().get(key).cloned())
+}
+
+/// Dotted C# reference for a scoped name (`Module.Sub.Name`), each part escaped.
+fn scoped_dotted_cs(s: &ScopedName) -> String {
+    s.parts
+        .iter()
+        .map(|p| escape_identifier(&p.text).unwrap_or_else(|_| p.text.clone()))
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+/// Whether a struct's XCDR2 TypeSupport can be generated (all members codecable).
+pub(crate) fn struct_xcdr2_codecable(s: &StructDef) -> bool {
+    s.members
+        .iter()
+        .all(|m| typespec_xcdr2_codecable(&m.type_spec))
+}
+
 pub(crate) fn emit_typesupport_class(
     out: &mut String,
     ctx: &TsEmitContext<'_>,
@@ -201,7 +304,7 @@ pub(crate) fn emit_typesupport_class(
     )
     .map_err(fmt_err)?;
 
-    // Encode(sample, endian).
+    // Encode(sample, endian) — delegates to EncodeInto on a fresh writer.
     writeln!(out).map_err(fmt_err)?;
     writeln!(
         out,
@@ -210,12 +313,25 @@ pub(crate) fn emit_typesupport_class(
     .map_err(fmt_err)?;
     writeln!(out, "{inner}{{").map_err(fmt_err)?;
     writeln!(out, "{deeper}var w = new Xcdr2Writer(endian);").map_err(fmt_err)?;
-    emit_encode_body(out, deeper, &members, ext)?;
+    writeln!(out, "{deeper}EncodeInto(w, sample);").map_err(fmt_err)?;
     writeln!(out, "{deeper}return w.ToArray();").map_err(fmt_err)?;
     writeln!(out, "{inner}}}").map_err(fmt_err)?;
     writeln!(out).map_err(fmt_err)?;
 
-    // Decode(bytes).
+    // EncodeInto(w, sample) — writes the body into a shared writer so this type
+    // can be embedded as a nested member (alignment stays relative to the outer
+    // CDR stream).
+    writeln!(
+        out,
+        "{inner}public void EncodeInto(Xcdr2Writer w, {struct_name} sample)"
+    )
+    .map_err(fmt_err)?;
+    writeln!(out, "{inner}{{").map_err(fmt_err)?;
+    emit_encode_body(out, deeper, &members, ext)?;
+    writeln!(out, "{inner}}}").map_err(fmt_err)?;
+    writeln!(out).map_err(fmt_err)?;
+
+    // Decode(bytes) — delegates to DecodeFrom on a fresh reader.
     writeln!(
         out,
         "{inner}public {struct_name} Decode(ReadOnlySpan<byte> bytes)"
@@ -227,6 +343,13 @@ pub(crate) fn emit_typesupport_class(
         "{deeper}var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);"
     )
     .map_err(fmt_err)?;
+    writeln!(out, "{deeper}return DecodeFrom(r);").map_err(fmt_err)?;
+    writeln!(out, "{inner}}}").map_err(fmt_err)?;
+    writeln!(out).map_err(fmt_err)?;
+
+    // DecodeFrom(r) — reads the body from a shared reader (nested-member entry).
+    writeln!(out, "{inner}public {struct_name} DecodeFrom(Xcdr2Reader r)").map_err(fmt_err)?;
+    writeln!(out, "{inner}{{").map_err(fmt_err)?;
     emit_decode_body(out, deeper, &struct_name, &members, ext)?;
     writeln!(out, "{inner}}}").map_err(fmt_err)?;
     writeln!(out).map_err(fmt_err)?;
@@ -246,7 +369,7 @@ pub(crate) fn emit_typesupport_class(
     Ok(())
 }
 
-/// Schreibt die Encode-Sequenz fuer alle Member entsprechend der Extensibility.
+/// Writes the encode sequence for all members according to the extensibility.
 fn emit_encode_body(
     out: &mut String,
     indent: &str,
@@ -255,7 +378,7 @@ fn emit_encode_body(
 ) -> Result<(), CsGenError> {
     match ext {
         ExtensibilityKind::Final => {
-            // Plain-Body, kein DHEADER.
+            // Plain body, no DHEADER.
             for m in members {
                 emit_encode_member_plain(out, indent, m)?;
             }
@@ -288,7 +411,7 @@ fn emit_encode_member_plain(
     m: &MemberInfo,
 ) -> Result<(), CsGenError> {
     if m.is_optional {
-        // Final/Appendable: 1-Byte present-flag + value-on-true.
+        // Final/Appendable: 1-byte present-flag + value-on-true.
         writeln!(
             out,
             "{indent}if (sample.{prop} is null) {{ w.WriteOctet(0); }}",
@@ -347,18 +470,19 @@ fn emit_encode_member_mutable(
     };
 
     if lc <= 2 {
-        // Fixed-size 1/2/4 Byte: 4-Byte EMHEADER, dann Wert.
+        // Fixed-size 1/2/4 bytes: 4-byte EMHEADER, then value.
         writeln!(out, "{body_indent}w.WriteEmHeader({id}u, {lc}, {mu});").map_err(fmt_err)?;
         emit_encode_value(out, &body_indent, &m.type_spec, &val_expr)?;
     } else {
-        // LC=3 → NEXTINT-prefixed (Vendor-Spec §6 V-10): encode in Sub-Writer,
-        // dann EMHEADER (LC=3) + NEXTINT(byte-len) + Body-Bytes.
+        // LC=4 (variable / 8-byte): encode the body in a sub-writer, then
+        // EMHEADER(LC=4) + NEXTINT(byte-len) + body bytes. (LC=3 would mean a
+        // fixed 8-byte body with no NEXTINT and desyncs spec-compliant readers.)
         writeln!(out, "{body_indent}{{").map_err(fmt_err)?;
         let d = format!("{body_indent}    ");
         writeln!(out, "{d}var __sub = new Xcdr2Writer(endian);").map_err(fmt_err)?;
         emit_encode_value_into(out, &d, &m.type_spec, &val_expr, "__sub")?;
         writeln!(out, "{d}var __subBytes = __sub.ToArray();").map_err(fmt_err)?;
-        writeln!(out, "{d}w.WriteEmHeader({id}u, 3, {mu});").map_err(fmt_err)?;
+        writeln!(out, "{d}w.WriteEmHeader({id}u, {lc}, {mu});").map_err(fmt_err)?;
         writeln!(out, "{d}w.WriteUInt32((uint)__subBytes.Length);").map_err(fmt_err)?;
         writeln!(out, "{d}w.WriteBytes(__subBytes);").map_err(fmt_err)?;
         writeln!(out, "{body_indent}}}").map_err(fmt_err)?;
@@ -370,8 +494,8 @@ fn emit_encode_member_mutable(
     Ok(())
 }
 
-/// Wie `emit_encode_value`, aber schreibt in einen Sub-Writer mit benutzer-
-/// gewaehltem Variablen-Namen statt `w`.
+/// Like `emit_encode_value`, but writes into a sub-writer with a
+/// user-chosen variable name instead of `w`.
 fn emit_encode_value_into(
     out: &mut String,
     indent: &str,
@@ -379,8 +503,8 @@ fn emit_encode_value_into(
     expr: &str,
     writer_var: &str,
 ) -> Result<(), CsGenError> {
-    // Wir nutzen einen einfachen String-Replace-Trick: in einen temporaeren
-    // Buffer emittieren, dann `w.` durch `<writer_var>.` ersetzen.
+    // We use a simple string-replace trick: emit into a temporary
+    // buffer, then replace `w.` with `<writer_var>.`.
     let mut tmp = String::new();
     emit_encode_value(&mut tmp, indent, ts, expr)?;
     let patched = tmp.replace("w.", &format!("{writer_var}."));
@@ -388,16 +512,19 @@ fn emit_encode_value_into(
     Ok(())
 }
 
-/// Liefert das LC-Length-Code fuer einen Member-Type entsprechend
-/// `zerodds-xcdr2-bindings-conformance-1.0` §6 V-10/V-11.  Zwischen
-/// XTypes 1.3 Tabelle 36 und der ZeroDDS-Vendor-Spec gibt es eine
-/// Differenz beim variabel-langen Member: die Spec nutzt **LC=3 mit
-/// NEXTINT** (anstatt XTypes' LC=4 mit NEXTINT). Wir folgen der Vendor-
-/// Spec, damit V-10 byte-exact passt.
+/// Returns the EMHEADER LengthCode for a member type per OMG XTypes 1.3
+/// §7.4.3.4.2 (= the `zerodds-cdr` `LengthCode` enum + `org.zerodds.cdr`
+/// Java constants):
+///   0 = 1-byte body (no NEXTINT), 1 = 2-byte, 2 = 4-byte, 3 = 8-byte,
+///   4 = variable body with NEXTINT (= byte length), 5/6/7 = NEXTINT variants.
 ///
-/// Mapping:
-/// 0 = 1 Byte fix, 1 = 2 Byte fix, 2 = 4 Byte fix, 3 = NEXTINT-prefixed
-/// (byte length).
+/// IMPORTANT: variable-length members (string, sequence, map, nested struct)
+/// MUST use LC=4 — NOT LC=3. LC=3 tells a spec-compliant reader "read exactly
+/// 8 bytes, no NEXTINT"; emitting LC=3+NEXTINT for a string desyncs Rust/
+/// Cyclone/FastDDS. 8-byte primitives also take LC=4 here (NEXTINT=8) to match
+/// the Rust reference encoder's universal-LC4-NEXTINT style and avoid a raw
+/// unaligned 8-byte write path; an LC=4 8-byte member is fully spec-valid.
+/// (Prior bug: variable AND 8-byte members were emitted as LC=3 with NEXTINT.)
 fn lc_for_type(ts: &TypeSpec) -> i32 {
     match ts {
         TypeSpec::Primitive(p) => match p {
@@ -412,28 +539,28 @@ fn lc_for_type(ts: &TypeSpec) -> i32 {
                 | IntegerType::ULong
                 | IntegerType::Int32
                 | IntegerType::UInt32 => 2,
-                // long long / unsigned long long: 8-Byte fix; im Vendor-LC-Schema
-                // wird das ueber NEXTINT-LC=3 mit explizitem size=8 abgebildet.
+                // long long / unsigned long long: 8-byte body via LC=4 NEXTINT(=8).
                 IntegerType::LongLong
                 | IntegerType::ULongLong
                 | IntegerType::Int64
-                | IntegerType::UInt64 => 3,
+                | IntegerType::UInt64 => 4,
                 IntegerType::Int8 | IntegerType::UInt8 => 0,
             },
             PrimitiveType::Floating(f) => match f {
                 zerodds_idl::ast::FloatingType::Float => 2,
-                zerodds_idl::ast::FloatingType::Double => 3,
-                zerodds_idl::ast::FloatingType::LongDouble => 3,
+                // double / long double: 8-byte body via LC=4 NEXTINT(=8).
+                zerodds_idl::ast::FloatingType::Double => 4,
+                zerodds_idl::ast::FloatingType::LongDouble => 4,
             },
         },
-        // Variabel: NEXTINT-Layout LC=3 (next-int = body-size in bytes).
-        TypeSpec::String(_) | TypeSpec::Sequence(_) | TypeSpec::Map(_) | TypeSpec::Any => 3,
-        TypeSpec::Fixed(_) => 3,
-        TypeSpec::Scoped(_) => 3,
+        // Variable-length: LC=4, NEXTINT = body byte length.
+        TypeSpec::String(_) | TypeSpec::Sequence(_) | TypeSpec::Map(_) | TypeSpec::Any => 4,
+        TypeSpec::Fixed(_) => 4,
+        TypeSpec::Scoped(_) => 4,
     }
 }
 /// zerodds-lint: recursion-depth 64 (emit_encode_value bounded by AST depth)
-/// Encode-Helper fuer Sample-Field gegebenen TypeSpec.
+/// Encode helper for a sample field of the given TypeSpec.
 fn emit_encode_value(
     out: &mut String,
     indent: &str,
@@ -442,38 +569,65 @@ fn emit_encode_value(
 ) -> Result<(), CsGenError> {
     match ts {
         TypeSpec::Primitive(p) => emit_encode_primitive(out, indent, *p, expr),
-        TypeSpec::String(_) => {
+        TypeSpec::String(s) => {
+            // Bounded `string<N>` (DDS-XTypes §7.4.3): reject over-bound on
+            // encode. Narrow → UTF-8 byte length (matches the CDR wire); wide
+            // `wstring<N>` → UTF-16 unit count (C# string.Length).
+            if let Some(b) = &s.bound {
+                let bv = crate::emitter::const_expr_to_cs(b);
+                if s.wide {
+                    writeln!(
+                        out,
+                        "{indent}if (({expr}) != null && ({expr}).Length > {bv}) throw new System.ArgumentException(\"bounded wstring length exceeds its IDL bound ({bv})\");"
+                    )
+                    .map_err(fmt_err)?;
+                } else {
+                    writeln!(
+                        out,
+                        "{indent}if (({expr}) != null && System.Text.Encoding.UTF8.GetByteCount({expr}) > {bv}) throw new System.ArgumentException(\"bounded string length exceeds its IDL bound ({bv})\");"
+                    )
+                    .map_err(fmt_err)?;
+                }
+            }
             writeln!(out, "{indent}w.WriteString({expr});").map_err(fmt_err)?;
             Ok(())
         }
-        TypeSpec::Sequence(s) => emit_encode_sequence(out, indent, &s.elem, expr),
-        TypeSpec::Scoped(_) => {
-            // Nested struct -> delegate to its TypeSupport.Instance.
-            // Spec §5: "rekursiv UTypeSupport.Instance.Encode(...)" — wir
-            // emittieren einen Aufruf der die Sub-Bytes direkt in den
-            // aktuellen Writer schreibt. Da Encode() eine neue Byte-Liste
-            // liefert, kopieren wir sie via WriteBytes (kein Alignment-
-            // Reset, da der Sub-Encode am gleichen Origin haengt — bei
-            // Final-Sub Wire-identisch; bei Appendable-Sub bringt es seinen
-            // eigenen DHEADER mit).
-            writeln!(
-                out,
-                "{indent}// Nested struct: bytes contain own DHEADER if appendable/mutable"
-            )
-            .map_err(fmt_err)?;
-            writeln!(
-                out,
-                "{indent}w.WriteBytes((({expr}) as object) is byte[] __ts ? __ts : System.Array.Empty<byte>());"
-            )
-            .map_err(fmt_err)?;
-            // ^ Foundation-Approximation. Der saubere Weg ist ein spezialisierter
-            // Codegen pro Nested-Struct-Type; das setzen wir via Spec-Hint
-            // (§5) auf rec-Aufruf um, wenn wir den Type-Namen aufloesen koennen.
-            Ok(())
-        }
+        TypeSpec::Sequence(s) => emit_encode_sequence(out, indent, &s.elem, s.bound.as_ref(), expr),
+        TypeSpec::Scoped(sc) => match lookup_scoped_kind(sc) {
+            // Nested struct → encode its body into the shared writer (alignment
+            // stays relative to the outer CDR stream).
+            Some(ScopedKind::Struct) => {
+                writeln!(
+                    out,
+                    "{indent}{}TypeSupport.Instance.EncodeInto(w, {expr});",
+                    scoped_dotted_cs(sc)
+                )
+                .map_err(fmt_err)?;
+                Ok(())
+            }
+            // Enum → int32 representation.
+            Some(ScopedKind::Enum) => {
+                writeln!(out, "{indent}w.WriteInt32((int){expr});").map_err(fmt_err)?;
+                Ok(())
+            }
+            // Typedef → encode the aliased type.
+            Some(ScopedKind::Typedef(inner)) => emit_encode_value(out, indent, &inner, expr),
+            // Union has no codec; the containing struct is gated, so this is
+            // unreachable — guard it rather than emit a broken reference.
+            Some(ScopedKind::Union) => Err(CsGenError::UnsupportedConstruct {
+                construct: "XCDR2 codec for union member".into(),
+                context: None,
+            }),
+            // Unresolved scoped ref: treat as an enum-like int32 (best effort).
+            None => {
+                writeln!(out, "{indent}w.WriteInt32((int){expr});").map_err(fmt_err)?;
+                Ok(())
+            }
+        },
         TypeSpec::Map(_) | TypeSpec::Fixed(_) | TypeSpec::Any => {
-            // Codegen-Foundation: nicht alle XTypes-Konstrukte sind in
-            // V-1..V-12 verlangt; wir emittieren einen runtime-Stub.
+            // Unreachable: a struct with a map/fixed/any member is gated in
+            // `emitter.rs` (no TypeSupport emitted), so this codec is never
+            // generated. Defensive safety-net only.
             writeln!(
                 out,
                 "{indent}throw new XcdrException(\"unsupported codegen TypeSpec for member {expr}\");"
@@ -552,9 +706,14 @@ fn emit_encode_sequence(
     out: &mut String,
     indent: &str,
     elem: &TypeSpec,
+    bound: Option<&ConstExpr>,
     expr: &str,
 ) -> Result<(), CsGenError> {
     let elem_ty = cs_storage_type(elem);
+    // XCDR2 §7.4.3.5: non-primitive elements (string, struct, …) →
+    // DHEADER (uint32 = byte length of [count + elements]) prepended;
+    // primitives not. Verified against Cyclone DDS (V-5 without, V-6 with).
+    let non_primitive = !matches!(elem, TypeSpec::Primitive(_));
     writeln!(out, "{indent}{{").map_err(fmt_err)?;
     let d = format!("{indent}    ");
     writeln!(
@@ -563,17 +722,38 @@ fn emit_encode_sequence(
     )
     .map_err(fmt_err)?;
     writeln!(out, "{d}var __mat = __seq is null ? new System.Collections.Generic.List<{elem_ty}>() : new System.Collections.Generic.List<{elem_ty}>(__seq);").map_err(fmt_err)?;
-    writeln!(out, "{d}w.WriteSequenceLength(__mat.Count);").map_err(fmt_err)?;
-    writeln!(out, "{d}foreach (var __item in __mat)").map_err(fmt_err)?;
-    writeln!(out, "{d}{{").map_err(fmt_err)?;
-    let dd = format!("{d}    ");
+    if non_primitive {
+        writeln!(out, "{d}using (var __seqdh = w.BeginAppendable())").map_err(fmt_err)?;
+        writeln!(out, "{d}{{").map_err(fmt_err)?;
+    }
+    let seqd = if non_primitive {
+        format!("{d}    ")
+    } else {
+        d.clone()
+    };
+    // Bounded `sequence<T, N>` (DDS-XTypes §7.4.3): over-bound = encode error.
+    if let Some(b) = bound {
+        let bv = crate::emitter::const_expr_to_cs(b);
+        writeln!(
+            out,
+            "{seqd}if (__mat.Count > {bv}) throw new System.ArgumentException(\"bounded sequence length exceeds its IDL bound ({bv})\");"
+        )
+        .map_err(fmt_err)?;
+    }
+    writeln!(out, "{seqd}w.WriteSequenceLength(__mat.Count);").map_err(fmt_err)?;
+    writeln!(out, "{seqd}foreach (var __item in __mat)").map_err(fmt_err)?;
+    writeln!(out, "{seqd}{{").map_err(fmt_err)?;
+    let dd = format!("{seqd}    ");
     emit_encode_value(out, &dd, elem, "__item")?;
-    writeln!(out, "{d}}}").map_err(fmt_err)?;
+    writeln!(out, "{seqd}}}").map_err(fmt_err)?;
+    if non_primitive {
+        writeln!(out, "{d}}}").map_err(fmt_err)?;
+    }
     writeln!(out, "{indent}}}").map_err(fmt_err)?;
     Ok(())
 }
 
-/// Decode-Body: nutzt Object-Initializer-Syntax.
+/// Decode body: uses object-initializer syntax.
 fn emit_decode_body(
     out: &mut String,
     indent: &str,
@@ -583,7 +763,7 @@ fn emit_decode_body(
 ) -> Result<(), CsGenError> {
     match ext {
         ExtensibilityKind::Final => {
-            // Sequenziell decodieren, dann Object-Initializer.
+            // Decode sequentially, then object initializer.
             for (i, m) in members.iter().enumerate() {
                 emit_decode_member_to_var(out, indent, m, i)?;
             }
@@ -598,8 +778,8 @@ fn emit_decode_body(
             emit_decode_return(out, indent, struct_name, members)?;
         }
         ExtensibilityKind::Mutable => {
-            // Variable Reihenfolge / Optionalitaet -> nullable locals,
-            // dann while bis DHEADER-Ende.
+            // Variable order / optionality -> nullable locals,
+            // then while loop until the DHEADER end.
             for (i, m) in members.iter().enumerate() {
                 let ty = decode_local_type(&m.type_spec, m.is_optional);
                 writeln!(out, "{indent}{ty} __m{i} = default;").map_err(fmt_err)?;
@@ -609,10 +789,12 @@ fn emit_decode_body(
             writeln!(out, "{indent}{{").map_err(fmt_err)?;
             let d = format!("{indent}    ");
             writeln!(out, "{d}var (__id, __lc, __mu) = r.ReadEmHeader();").map_err(fmt_err)?;
-            // NEXTINT consumption: LC=3 (Vendor-Spec) ist NEXTINT-prefixed.
+            // NEXTINT consumption: only LC>=4 carries a NEXTINT (XTypes
+            // §7.4.3.4.2). LC0..3 are fixed 1/2/4/8-byte bodies with no NEXTINT
+            // — including a cross-vendor LC=3 8-byte primitive.
             writeln!(
                 out,
-                "{d}if (__lc >= 3) {{ var __nx = r.ReadUInt32(); _ = __nx; }}"
+                "{d}if (__lc >= 4) {{ var __nx = r.ReadUInt32(); _ = __nx; }}"
             )
             .map_err(fmt_err)?;
             writeln!(out, "{d}switch (__id)").map_err(fmt_err)?;
@@ -655,8 +837,8 @@ fn cs_storage_type(ts: &TypeSpec) -> String {
         TypeSpec::String(_) => "string".into(),
         TypeSpec::Sequence(s) => {
             let inner = cs_storage_type(&s.elem);
-            // Property-Type aus dem Codegen ist `Omg.Types.ISequence<T>`;
-            // beim Decode brauchen wir den konkreten Container.
+            // The property type from the codegen is `Omg.Types.ISequence<T>`;
+            // for decode we need the concrete container.
             format!("Omg.Types.ISequence<{inner}>")
         }
         TypeSpec::Scoped(s) => s
@@ -733,12 +915,12 @@ fn emit_decode_member_assign(
     m: &MemberInfo,
     idx: usize,
 ) -> Result<(), CsGenError> {
-    // Mutable: Wert direkt in Local zuweisen.
+    // Mutable: assign the value directly into the local.
     emit_decode_assign(out, indent, &m.type_spec, &format!("__m{idx}"))?;
     Ok(())
 }
 /// zerodds-lint: recursion-depth 64 (emit_decode_assign bounded by AST depth)
-/// Emittiert C#-Statements, die `target` mit dem decodeten Wert von `ts` belegen.
+/// Emits C# statements that assign `target` the decoded value of `ts`.
 fn emit_decode_assign(
     out: &mut String,
     indent: &str,
@@ -763,11 +945,16 @@ fn emit_decode_assign(
         }
         TypeSpec::Sequence(s) => {
             let elem_ty = cs_storage_type(&s.elem);
+            // XCDR2 §7.4.3.5: for non-primitive elements, skip over the DHEADER.
+            let non_primitive = !matches!(&*s.elem, TypeSpec::Primitive(_));
             writeln!(out, "{indent}{{").map_err(fmt_err)?;
             let d = format!("{indent}    ");
+            if non_primitive {
+                writeln!(out, "{d}var __seqdh = r.BeginDHeader();").map_err(fmt_err)?;
+            }
             writeln!(out, "{d}int __cnt = r.ReadSequenceLength();").map_err(fmt_err)?;
-            // Property-Type ist ISequence<T> (Omg.Types) — wir nutzen den
-            // konkreten Container `SequenceList<T>` aus der Runtime.
+            // The property type is ISequence<T> (Omg.Types) — we use the
+            // concrete container `SequenceList<T>` from the runtime.
             writeln!(
                 out,
                 "{d}var __list = new Omg.Types.SequenceList<{elem_ty}>();"
@@ -776,11 +963,14 @@ fn emit_decode_assign(
             writeln!(out, "{d}for (int __i = 0; __i < __cnt; __i++)").map_err(fmt_err)?;
             writeln!(out, "{d}{{").map_err(fmt_err)?;
             let dd = format!("{d}    ");
-            // Element-decode kann selbst rekursiv sein.
+            // Element decode can itself be recursive.
             writeln!(out, "{dd}{elem_ty} __e;").map_err(fmt_err)?;
             emit_decode_assign(out, &dd, &s.elem, "__e")?;
             writeln!(out, "{dd}__list.Add(__e);").map_err(fmt_err)?;
             writeln!(out, "{d}}}").map_err(fmt_err)?;
+            if non_primitive {
+                writeln!(out, "{d}r.EndDHeader(__seqdh);").map_err(fmt_err)?;
+            }
             writeln!(out, "{d}{target} = __list;").map_err(fmt_err)?;
             writeln!(out, "{indent}}}").map_err(fmt_err)?;
             Ok(())
@@ -788,12 +978,25 @@ fn emit_decode_assign(
     }
 }
 
+/// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
 fn decode_simple_expr(ts: &TypeSpec) -> String {
     match ts {
         TypeSpec::Primitive(p) => decode_primitive_expr(*p).to_string(),
         TypeSpec::String(_) => "r.ReadString()".into(),
-        TypeSpec::Scoped(_) => "default!".into(),
+        TypeSpec::Scoped(sc) => match lookup_scoped_kind(sc) {
+            // Nested struct → decode its body from the shared reader.
+            Some(ScopedKind::Struct) => {
+                format!("{}TypeSupport.Instance.DecodeFrom(r)", scoped_dotted_cs(sc))
+            }
+            // Enum → cast from the int32 representation.
+            Some(ScopedKind::Enum) => format!("({})r.ReadInt32()", scoped_dotted_cs(sc)),
+            // Typedef → decode the aliased type.
+            Some(ScopedKind::Typedef(inner)) => decode_simple_expr(&inner),
+            // Union: unreachable (containing struct gated); unresolved: best effort.
+            _ => "default!".into(),
+        },
         TypeSpec::Map(_) | TypeSpec::Fixed(_) | TypeSpec::Any => {
+            // Unreachable: the containing struct is gated (no TypeSupport).
             "throw new XcdrException(\"decode unsupported type\")".into()
         }
         TypeSpec::Sequence(_) => "default!".into(),
@@ -856,7 +1059,7 @@ fn emit_decode_return_mutable(
     Ok(())
 }
 
-/// KeyHash: PlainCdr2BeKeyHolder -> MD5 wenn > 16 Bytes, sonst zero-pad.
+/// KeyHash: PlainCdr2BeKeyHolder -> MD5 if > 16 bytes, otherwise zero-pad.
 /// XTypes 1.3 §7.6.8.
 fn emit_key_hash_body(
     out: &mut String,

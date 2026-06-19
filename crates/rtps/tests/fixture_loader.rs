@@ -1,4 +1,4 @@
-//! Fixture-Loader fuer Compliance-Vectors (WP 1.10 T1).
+//! Fixture loader for compliance vectors (WP 1.10 T1).
 //!
 //! Hex-Files im Format:
 //! ```text
@@ -37,7 +37,7 @@ pub fn compliance_root() -> PathBuf {
         .join("compliance")
 }
 
-/// Parst ein Hex-Fixture-File. Whitespace + `#...`-Kommentare werden
+/// Parses a hex fixture file. Whitespace + `#...` comments are
 /// ignoriert; `0x`-Prefix optional; 16 MiB Sanity-Cap.
 pub fn load_hex(path: impl AsRef<Path>) -> std::io::Result<Vec<u8>> {
     let text = std::fs::read_to_string(path)?;
@@ -80,8 +80,5 @@ fn loader_smoke_test() {
 
 #[test]
 fn compliance_root_exists() {
-    assert!(
-        compliance_root().is_dir(),
-        "tests/compliance/ muss existieren"
-    );
+    assert!(compliance_root().is_dir(), "tests/compliance/ must exist");
 }

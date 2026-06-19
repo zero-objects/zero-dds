@@ -1,38 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Output-Modell — symbolische OPC-UA Node-Specs.
+//! Output model — symbolic OPC-UA node specs.
 //!
-//! Der Walker emittiert pro DDS-Type eine Liste von [`NodeSpec`]-
-//! Eintraegen, die der Caller in einen OPC-UA-AddressSpace materialisiert.
-//! NodeIds werden symbolisch ueber Browse-Namen referenziert — der
-//! Caller (Server-Stack-Implementer) allokiert die echten NodeIds.
+//! The walker emits, per DDS type, a list of [`NodeSpec`]
+//! entries that the caller materializes into an OPC-UA AddressSpace.
+//! NodeIds are referenced symbolically by browse names — the
+//! caller (server-stack implementer) allocates the real NodeIds.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// OPC-UA NodeClass — Subset, das §9.2 erzeugt.
+/// OPC-UA NodeClass — the subset that §9.2 produces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NodeClass {
-    /// `DataType`-Node (Spec §8.3.1 Tab 8.3 NodeClass=64).
+    /// `DataType` node (Spec §8.3.1 Tab 8.3 NodeClass=64).
     DataType,
-    /// `VariableType`-Node (16).
+    /// `VariableType` node (16).
     VariableType,
-    /// `Variable`-Node (2).
+    /// `Variable` node (2).
     Variable,
-    /// `Object`-Node (1) — fuer Map-Typen (Spec Tab 9.40).
+    /// `Object` node (1) — for map types (Spec Tab 9.40).
     Object,
-    /// `ObjectType`-Node (8) — fuer Map-Wrapper (Tab 9.40).
+    /// `ObjectType` node (8) — for map wrappers (Tab 9.40).
     ObjectType,
 }
 
-/// Symbolische Type-Reference (BrowseName). Der Caller mappt das auf
-/// einen NodeId.
+/// Symbolic type reference (BrowseName). The caller maps this to
+/// a NodeId.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeRef(pub String);
 
 impl TypeRef {
-    /// Bequemer Konstruktor.
+    /// Convenient constructor.
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
         Self(name.into())
@@ -42,25 +42,25 @@ impl TypeRef {
 /// OPC-UA Reference-Kind aus §9.2 (Subset).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ReferenceKind {
-    /// `HasSubtype` — Vererbung der DataTypes (Tab 9.15 etc.).
+    /// `HasSubtype` — inheritance of DataTypes (Tab 9.15 etc.).
     HasSubtype,
-    /// `HasComponent` — Member von Struct/VariableType (Tab 9.16).
+    /// `HasComponent` — member of struct/VariableType (Tab 9.16).
     HasComponent,
-    /// `HasOrderedComponent` — Element-Slot von Array-of-Struct
+    /// `HasOrderedComponent` — element slot of array-of-struct
     /// (Tab 9.27).
     HasOrderedComponent,
-    /// `HasProperty` — z.B. EnumValues, OptionSetValues.
+    /// `HasProperty` — e.g. EnumValues, OptionSetValues.
     HasProperty,
     /// `HasTypeDefinition` — Variable → VariableType (Tab 9.18).
     HasTypeDefinition,
-    /// `HasEncoding` — DataType → Encoding-Object (selten in §9.2,
-    /// aber in Tab 9.45 fuer Structures).
+    /// `HasEncoding` — DataType → encoding object (rare in §9.2,
+    /// but in Tab 9.45 for structures).
     HasEncoding,
 }
 
-/// Spec Tab 8.4-8.18 typische ValueRank-Werte.
+/// Spec Tab 8.4-8.18 typical ValueRank values.
 ///
-/// Spec: `ValueRank = -1` fuer Scalar, `>= 1` fuer N-Dim-Array.
+/// Spec: `ValueRank = -1` for a scalar, `>= 1` for an N-dim array.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ValueRank(pub i32);
 
@@ -69,16 +69,16 @@ impl ValueRank {
     pub const SCALAR: Self = Self(-1);
 }
 
-/// Variable-spezifischer Inhalt (Spec Tab 9.3/9.18/9.24/etc.).
+/// Variable-specific content (Spec Tab 9.3/9.18/9.24/etc.).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariableSpec {
     /// `DataType` — Type-Reference.
     pub data_type: TypeRef,
     /// `ValueRank`.
     pub value_rank: ValueRank,
-    /// `ArrayDimensions` (fuer ValueRank >= 1).
+    /// `ArrayDimensions` (for ValueRank >= 1).
     pub array_dimensions: Vec<u32>,
-    /// `HasTypeDefinition` Ziel (typisch `BaseDataVariableType`).
+    /// `HasTypeDefinition` target (typically `BaseDataVariableType`).
     pub type_definition: TypeRef,
 }
 
@@ -93,36 +93,36 @@ impl Default for VariableSpec {
     }
 }
 
-/// Eine einzelne OPC-UA-Node-Spec, die der Walker emittiert. Eine
-/// `NodeSpec` beschreibt **eine** Node + ausgehende References.
+/// A single OPC-UA node spec emitted by the walker. A
+/// `NodeSpec` describes **one** node + its outgoing references.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeSpec {
-    /// `BrowseName` — symbolisch.
+    /// `BrowseName` — symbolic.
     pub browse_name: String,
     /// NodeClass.
     pub node_class: NodeClass,
-    /// `IsAbstract` (relevant fuer DataType/VariableType).
+    /// `IsAbstract` (relevant for DataType/VariableType).
     pub is_abstract: bool,
-    /// Subtype-Of-Verweis (Tab 9.15/9.20: DataType erbt von einer
-    /// Standard-Wurzel wie `Structure`/`Union`/`Enumeration`).
+    /// Subtype-of reference (Tab 9.15/9.20: a DataType inherits from a
+    /// standard root such as `Structure`/`Union`/`Enumeration`).
     pub subtype_of: Option<TypeRef>,
-    /// `Variable`-Daten — nur bei `NodeClass == Variable`.
+    /// `Variable` data — only for `NodeClass == Variable`.
     pub variable: Option<VariableSpec>,
-    /// Ausgehende References (Browse-Name-basiert).
+    /// Outgoing references (browse-name-based).
     pub references: Vec<OutgoingRef>,
 }
 
-/// Eine ausgehende Reference von einer Node — Spec Tab 9.27 etc.
+/// An outgoing reference from a node — Spec Tab 9.27 etc.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutgoingRef {
-    /// Reference-Kind (`HasComponent`, `HasOrderedComponent`, ...).
+    /// Reference kind (`HasComponent`, `HasOrderedComponent`, ...).
     pub kind: ReferenceKind,
-    /// Ziel-BrowseName.
+    /// Target BrowseName.
     pub target: TypeRef,
 }
 
 impl NodeSpec {
-    /// Konstruktor fuer eine DataType-Node (Spec Tab 9.15-Stil).
+    /// Constructor for a DataType node (Spec Tab 9.15 style).
     #[must_use]
     pub fn data_type(browse_name: impl Into<String>, subtype_of: TypeRef) -> Self {
         Self {
@@ -135,7 +135,7 @@ impl NodeSpec {
         }
     }
 
-    /// Konstruktor fuer eine VariableType-Node (Spec Tab 9.16).
+    /// Constructor for a VariableType node (Spec Tab 9.16).
     #[must_use]
     pub fn variable_type(browse_name: impl Into<String>, data_type: TypeRef) -> Self {
         Self {
@@ -151,7 +151,7 @@ impl NodeSpec {
         }
     }
 
-    /// Konstruktor fuer eine Variable-Node (Spec Tab 9.19/9.27).
+    /// Constructor for a Variable node (Spec Tab 9.19/9.27).
     #[must_use]
     pub fn variable(browse_name: impl Into<String>, var: VariableSpec) -> Self {
         Self {
@@ -164,7 +164,7 @@ impl NodeSpec {
         }
     }
 
-    /// Fuegt eine ausgehende Reference hinzu.
+    /// Adds an outgoing reference.
     pub fn with_ref(mut self, kind: ReferenceKind, target: TypeRef) -> Self {
         self.references.push(OutgoingRef { kind, target });
         self

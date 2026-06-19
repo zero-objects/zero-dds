@@ -3,14 +3,14 @@
 
 //! PersistenceStorageComponent — Persistent State Service §10.
 //!
-//! Spec PSS 1.0 (`formal/2002-09-08`): definiert ein Storage-System
-//! fuer CCM-Entity-Components, mit `storagetype` + `storagehome`
-//! Datenmodell. Diese Component liefert eine produktionsreife
-//! In-Memory-Implementation; Production-Caller plugt eine
-//! persistente Backend-DB ein (PostgreSQL, RocksDB).
+//! Spec PSS 1.0 (`formal/2002-09-08`): defines a storage system
+//! for CCM entity components, with a `storagetype` + `storagehome`
+//! data model. This component provides a production-ready
+//! in-memory implementation; a production caller plugs in a
+//! persistent backend DB (PostgreSQL, RocksDB).
 //!
-//! Spec §10.2 — `StorageObject`: Lifecycle-State Active/Passive +
-//! Identity (oid).
+//! Spec §10.2 — `StorageObject`: lifecycle state Active/Passive +
+//! identity (oid).
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -19,25 +19,25 @@ use alloc::vec::Vec;
 use zerodds_corba_ccm::cif::{CifError, ComponentExecutor};
 use zerodds_corba_ccm::context::ComponentContext;
 
-/// Storage-Eintrag — Spec PSS §10.2.
+/// Storage entry — Spec PSS §10.2.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageEntry {
-    /// Storage-Object-Id (oid). Spec §10.2.1 — Primary-Key.
+    /// Storage object id (oid). Spec §10.2.1 — primary key.
     pub oid: Vec<u8>,
-    /// State-Bytes (CDR-encoded oder von Caller serialisiert).
+    /// State bytes (CDR-encoded or serialized by the caller).
     pub state: Vec<u8>,
-    /// `dirty` — wurde modifiziert seit letztem `flush`.
+    /// `dirty` — modified since the last `flush`.
     pub dirty: bool,
 }
 
-/// Persistence-Component-Fehler.
+/// Persistence component error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PersistenceError {
-    /// Object existiert nicht.
+    /// Object does not exist.
     NotFound(Vec<u8>),
-    /// Object existiert bereits.
+    /// Object already exists.
     DuplicateOid(Vec<u8>),
-    /// CIF-Error.
+    /// CIF error.
     Cif(CifError),
 }
 
@@ -54,7 +54,7 @@ impl core::fmt::Display for PersistenceError {
 #[cfg(feature = "std")]
 impl std::error::Error for PersistenceError {}
 
-/// PersistenceStorageComponent — production-ready CCM-Component.
+/// PersistenceStorageComponent — production-ready CCM component.
 #[derive(Default)]
 pub struct PersistenceStorageComponent {
     storage: BTreeMap<Vec<u8>, StorageEntry>,
@@ -74,7 +74,7 @@ impl core::fmt::Debug for PersistenceStorageComponent {
 }
 
 impl PersistenceStorageComponent {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -83,7 +83,7 @@ impl PersistenceStorageComponent {
     /// `create` — Spec PSS §10.3.2 (StorageHomeBase::create).
     ///
     /// # Errors
-    /// `DuplicateOid` wenn die oid schon existiert.
+    /// `DuplicateOid` if the oid already exists.
     pub fn create(&mut self, oid: Vec<u8>, state: Vec<u8>) -> Result<(), PersistenceError> {
         if self.storage.contains_key(&oid) {
             return Err(PersistenceError::DuplicateOid(oid));
@@ -105,10 +105,10 @@ impl PersistenceStorageComponent {
         self.storage.get(oid)
     }
 
-    /// `update` — modifiziert State, markiert `dirty`.
+    /// `update` — modifies the state, marks it `dirty`.
     ///
     /// # Errors
-    /// `NotFound` wenn die oid unbekannt ist.
+    /// `NotFound` if the oid is unknown.
     pub fn update(&mut self, oid: &[u8], new_state: Vec<u8>) -> Result<(), PersistenceError> {
         let entry = self
             .storage
@@ -122,7 +122,7 @@ impl PersistenceStorageComponent {
     /// `destroy` — Spec PSS §10.3.5 (StorageObjectBase::destroy).
     ///
     /// # Errors
-    /// `NotFound` wenn die oid unbekannt ist.
+    /// `NotFound` if the oid is unknown.
     pub fn destroy(&mut self, oid: &[u8]) -> Result<(), PersistenceError> {
         if self.storage.remove(oid).is_none() {
             return Err(PersistenceError::NotFound(oid.to_vec()));
@@ -130,8 +130,8 @@ impl PersistenceStorageComponent {
         Ok(())
     }
 
-    /// `flush` — Spec PSS §10.4.1 (Catalog::flush). Resettet alle
-    /// `dirty`-Flags und inkrementiert den Flush-Counter.
+    /// `flush` — Spec PSS §10.4.1 (Catalog::flush). Resets all
+    /// `dirty` flags and increments the flush counter.
     pub fn flush(&mut self) -> u64 {
         for entry in self.storage.values_mut() {
             entry.dirty = false;
@@ -140,31 +140,31 @@ impl PersistenceStorageComponent {
         self.flush_count
     }
 
-    /// Anzahl der Storage-Entries.
+    /// Number of storage entries.
     #[must_use]
     pub fn len(&self) -> usize {
         self.storage.len()
     }
 
-    /// Liefert `true` wenn keine Eintraege vorhanden sind.
+    /// Returns `true` if there are no entries.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.storage.is_empty()
     }
 
-    /// Liefert die aktuelle Flush-Anzahl.
+    /// Returns the current flush count.
     #[must_use]
     pub fn flush_count(&self) -> u64 {
         self.flush_count
     }
 
-    /// Liefert die Anzahl `dirty` Eintraege.
+    /// Returns the number of `dirty` entries.
     #[must_use]
     pub fn dirty_count(&self) -> usize {
         self.storage.values().filter(|e| e.dirty).count()
     }
 
-    /// Liefert `true` wenn aktiviert.
+    /// Returns `true` if activated.
     #[must_use]
     pub fn is_active(&self) -> bool {
         self.activated
@@ -182,8 +182,8 @@ impl ComponentExecutor for PersistenceStorageComponent {
     }
 
     fn ccm_passivate(&mut self) -> Result<(), CifError> {
-        // Spec PSS §10.4.1: vor Passivierung muessen dirty-Eintraege
-        // geflusht werden, sonst geht State verloren.
+        // Spec PSS §10.4.1: before passivation, dirty entries must be
+        // flushed, otherwise state is lost.
         let _ = self.flush();
         self.activated = false;
         Ok(())

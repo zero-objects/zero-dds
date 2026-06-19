@@ -33,9 +33,13 @@ members = [
     "crates/flatdata-derive",
     "crates/amqp-bridge",
     "crates/amqp-endpoint",
+    "crates/amqp-0-9-1",
     "crates/ros2-rmw",
     "crates/grpc-bridge",
     "crates/opcua-gateway",
+    "crates/opcua-pubsub",
+    "crates/opcua-uacp",
+    "crates/opcua-server",
     "crates/transport-tsn",
     "crates/web",
     "crates/sql-filter",
@@ -53,10 +57,15 @@ members = [
 
     # CCM-Container Stack (Phase-3 Sprint 2).
     "crates/corba-cos-event",
+    "crates/corba-cos-notify",
+    "crates/corba-cos-transactions",
+    "crates/corba-cos-trading",
+    "crates/corba-rt",
     "crates/corba-ccm",
     "crates/corba-ccm-ejb",
     "crates/corba-dnc",
     "crates/corba-ccm-lib",
+    "crates/corba-interop",
 
     # DLRL — Data-Local-Reconstruction-Layer (Phase-3 Sprint 3).
     "crates/dlrl",
@@ -66,13 +75,13 @@ members = [
     "crates/zerodds-xml-wire",
     "crates/zerodds-soap",
 
-    # Cross-Language-Hub (Welle 1: C-FFI ueber DCPS-Runtime).
+    # Cross-language hub (wave 1: C-FFI over the DCPS runtime).
     "crates/zerodds-c-api",
-    # Cross-Language Welle 4b: WASM-CDR-Codec fuer Browser/JS.
+    # Cross-language wave 4b: WASM CDR codec for browser/JS.
     "crates/ts-wasm",
-    # Phase-5 E.1 — ROS-2 RMW Shim ueber zerodds-c-api.
+    # Phase-5 E.1 — ROS-2 RMW shim over zerodds-c-api.
     "crates/rmw-zerodds-shim",
-    # Phase-5 F.3 — OTLP-HTTP-JSON-Exporter.
+    # Phase-5 F.3 — OTLP-HTTP-JSON exporter.
     "crates/observability-otlp",
 
     # HTTP/2 + HPACK Stacks (Phase-3 Sprint 5).
@@ -92,13 +101,21 @@ members = [
     "crates/transport-shm",
     "crates/transport-uds",
 
-    # Inspect-Endpoint (PDE God-Mode Debug-Pfad).
-    # Default OFF (R-034). Aktivieren mit
+    # Inspect endpoint (PDE God-mode debug path).
+    # Off by default (R-034). Enable with
     # `cargo build --features zerodds-inspect-endpoint/inspect`.
     "crates/inspect-endpoint",
 
     # Core Services Layer
     "crates/dcps",
+    # Durability-Service (ADR 0009): storage abstraction + adapters + daemon.
+    "crates/durability-store",
+    "crates/durability-store-file",
+    "crates/durability-store-sqlite",
+    "crates/durability-store-lakehouse",
+    "crates/durability-service",
+    "crates/durability-service-bin",
+    "crates/routing-service",
     "crates/rpc",
     "crates/security",
     "crates/security-pki",
@@ -118,16 +135,18 @@ members = [
     # Public API / Bindings
     "crates/rs",
     "crates/sys",
+    "crates/safe-crates-only",
     "crates/cpp",
     "crates/cs",
     "crates/py",
 
-    # Tooling-Crates (Meta-Tools, nicht Runtime)
+    # Tooling crates (meta-tools, not runtime)
     "crates/lint",
 
     # Binary Tools
     "tools/idlc",
     "tools/admin",
+    "tools/secure-permissions",
     "tools/cli-common",
     "tools/record",
     "tools/bench",
@@ -144,31 +163,31 @@ members = [
     "tools/bench-suite",
     "tools/qos-matrix",
     "tools/amqp-dds-endpoint",
-    # Phase-5 F.2 — Chaos-Engineering CLI.
+    # Phase-5 F.2 — chaos-engineering CLI.
     "tools/chaos",
-    # Phase-5 F.2 Phase-B — LD_PRELOAD-Shim fuer Clock-Skew.
+    # Phase-5 F.2 Phase-B — LD_PRELOAD shim for clock skew.
     "crates/chaos-clock-skew",
-    # Phase-5 F.1 — .zddsrec Replay-Tool.
+    # Phase-5 F.1 — .zddsrec replay tool.
     "tools/replay",
-    # Phase-5 F.5 — Cross-Vendor-Interop-Matrix-Renderer.
+    # Phase-5 F.5 — cross-vendor interop-matrix renderer.
     "tools/interop-matrix",
-    # Phase-5 E.3 — Workspace-DAG-Sort fuer cargo publish.
+    # Phase-5 E.3 — workspace-DAG sort for cargo publish.
     "tools/cargo-dag",
-    # Phase-5 F.1 Phase-C — Live-Recorder-Bridge.
+    # Phase-5 F.1 Phase-C — live recorder bridge.
     "tools/recorder-bridge",
-    # RC1 Cluster-B §7.x — gemeinsamer Security-Layer fuer die sechs
-    # Bridge-Daemons (ws/mqtt/coap/amqp/grpc/corba): TLS + Auth-Modes
-    # + Topic-ACL.
+    # RC1 Cluster-B §7.x — shared security layer for the six
+    # bridge daemons (ws/mqtt/coap/amqp/grpc/corba): TLS + auth modes
+    # + topic ACL.
     "crates/bridge-security",
 ]
-# Tauri-Shell ist ein Sub-Projekt mit eigener Toolchain (tauri-cli +
-# Plattform-Deps). Wird nicht via cargo workspace gebaut.
+# The Tauri shell is a sub-project with its own toolchain (tauri-cli +
+# platform deps). It is not built via the cargo workspace.
 exclude = [
     "tools/dashboard-tauri/src-tauri",
 ]
 
 [workspace.package]
-version = "1.0.0-rc.2"
+version = "1.0.0-rc.3"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
@@ -177,21 +196,21 @@ homepage = "https://zerodds.org"
 authors = ["ZeroDDS Contributors"]
 
 # ---------------------------------------------------------------------------
-# cargo-dist Konfiguration (Phase-10 §6 zerodds-deployment-1.0).
-# Baut beim Tag-Push auf GitHub-Actions Plattform-Artefakte und Installer.
-# Single-Source-of-Truth fuer Targets, Installer-Set und Bin-Aliase. Die
-# konkreten .deb-/.rpm-/Homebrew-/MSI-/Scoop-/Choco-Manifeste leben unter
-# `packaging/<plattform>/...` und werden von den `publish-jobs` ausgewertet.
-# Spec: docs/specs/zerodds-deployment-1.0.md §6 (cargo-dist) und §1 (Bin-Set).
+# cargo-dist configuration (Phase-10 §6 zerodds-deployment-1.0).
+# Builds platform artifacts and installers on tag-push via GitHub Actions.
+# Single source of truth for targets, installer set and bin aliases. The
+# concrete .deb/.rpm/Homebrew/MSI/Scoop/Choco manifests live under
+# `packaging/<platform>/...` and are evaluated by the `publish-jobs`.
+# Spec: docs/specs/zerodds-deployment-1.0.md §6 (cargo-dist) and §1 (bin set).
 # ---------------------------------------------------------------------------
 [workspace.metadata.dist]
 cargo-dist-version = "0.22.1"
 ci = ["github"]
-# `msi` ist hier raus weil cargo-dist 0.22 pro Binary ein
-# `[package.metadata.wix.upgrade-guid]` + `path-guid` erwartet, was
-# wir auf 80+ Crates nicht pflegen wollen. MSI wird stattdessen im
-# `package-msi`-Job (release.yml) ueber unser eigenes WiX-Schema
-# (`packaging/windows/msi/zerodds.wxs`) gebaut.
+# `msi` is excluded here because cargo-dist 0.22 expects a
+# `[package.metadata.wix.upgrade-guid]` + `path-guid` per binary, which
+# we don't want to maintain across 80+ crates. MSI is built instead in
+# the `package-msi` job (release.yml) via our own WiX schema
+# (`packaging/windows/msi/zerodds.wxs`).
 installers = ["shell", "powershell", "homebrew"]
 targets = [
     "x86_64-unknown-linux-gnu",
@@ -207,20 +226,20 @@ pr-run-mode = "plan"
 allow-dirty = ["ci"]
 github-release-body = "auto"
 homebrew-tap = "zero-objects/homebrew-zerodds"
-# cargo-dist 0.22 kennt nur 'homebrew' und 'npm' als built-in
-# publish-jobs. Scoop + AUR + .deb + .rpm laufen als unabhaengige
-# Jobs in .github/workflows/release.yml und sind nicht hier verlinkt.
+# cargo-dist 0.22 only knows 'homebrew' and 'npm' as built-in
+# publish-jobs. Scoop + AUR + .deb + .rpm run as independent
+# jobs in .github/workflows/release.yml and are not linked here.
 publish-jobs = [
     "homebrew",
 ]
 checksum = "sha512"
-# cargo-dist 0.22 signing: 'cosign' braucht OIDC + Sigstore;
-# 'minisign' wird von uns extern via packaging/github-actions/
-# sign-artifacts.sh gemacht, daher hier nicht.
+# cargo-dist 0.22 signing: 'cosign' needs OIDC + Sigstore;
+# 'minisign' is done by us externally via packaging/github-actions/
+# sign-artifacts.sh, so it is not configured here.
 sign-artifacts = []
 
-# Bin-Aliase fuer kuerzere Aufrufpfade. Cross-Ref:
-# zerodds-deployment-1.0.md §1.1 (Daemons) + §1.3 (CLIs).
+# Bin aliases for shorter invocation paths. Cross-ref:
+# zerodds-deployment-1.0.md §1.1 (daemons) + §1.3 (CLIs).
 [workspace.metadata.dist.bin-aliases]
 zerodds-ws-bridged    = ["zddsws"]
 zerodds-mqtt-bridged  = ["zddsmqtt"]
@@ -241,8 +260,8 @@ zerodds-mq            = ["zddsmq"]
 zerodds-pcap          = ["zddspcap"]
 zerodds-perf          = ["zddsperf"]
 
-# Pro-Target Feature-Auswahl. Linux-musl baut die statischen
-# AppImage-Builds (§2.2.4); Windows-MSVC enthaelt den ETW-Provider.
+# Per-target feature selection. Linux-musl builds the static
+# AppImage builds (§2.2.4); Windows-MSVC includes the ETW provider.
 [workspace.metadata.dist.dependencies.apt]
 libssl-dev = "*"
 pkg-config = "*"
@@ -253,63 +272,86 @@ openssl = "*"
 [workspace.metadata.dist.dependencies.chocolatey]
 visualstudio2022buildtools = "*"
 
-# Workspace-weite Lints gemäß 02_architecture.md §2 (No-Panic-Kontrakt)
-# und 04_safety_by_architecture.md §2.1 (Sprach-Einschränkungen).
-# Comfort-Crates (recorder, monitor, tools/*) duerfen einzelne Regeln per
-# `#![allow(...)]` lockern; Safe-Crates nicht.
+# Workspace-wide lints per 02_architecture.md §2 (no-panic contract)
+# and 04_safety_by_architecture.md §2.1 (language restrictions).
+# Comfort crates (recorder, monitor, tools/*) may relax individual rules
+# via `#![allow(...)]`; safe crates may not.
 [workspace.dependencies]
-# SHA-256 fuer XTypes TypeObject-Hashing (§7.3.1.2). Pure-Rust,
+# SHA-256 for XTypes TypeObject hashing (§7.3.1.2). Pure-Rust,
 # no_std+alloc, 0 transitive deps. Widely used (rust-crypto family).
 sha2 = { version = "0.10", default-features = false }
-# Criterion fuer Micro-Benchmarks. Nur dev-dependency.
+# HMAC-SHA-256 for OSCORE HKDF key derivation (RFC 8613 §3.2.1 / RFC 5869) and
+# AMQP SASL SCRAM-SHA-256 (RFC 7677). Pure-Rust no_std, RustCrypto (pairs sha2).
+hmac = { version = "0.12", default-features = false }
+# Base64 for the SASL SCRAM wire messages (salt/proof/signature; RFC 7677).
+# no_std + alloc.
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+# AES-CCM AEAD for OSCORE (RFC 8613 §5; AES-CCM-16-64-128, COSE alg 10).
+# RustCrypto, no_std, pairs with the `aes` block cipher already in the tree.
+ccm = { version = "0.5", default-features = false, features = ["alloc"] }
+aes = { version = "0.8", default-features = false }
+# sqlite (WAL) cold adapter for the Durability-Service (ADR 0009). `bundled`
+# compiles sqlite3 from source — no system libsqlite dependency on any target.
+rusqlite = { version = "0.32", features = ["bundled"] }
+# DuckDB lakehouse cold adapter (ADR 0009): in-process SQL (House) + Parquet
+# export (Lake). Links the *system* libduckdb (v1.5.3 — must match the duckdb
+# crate's expected ABI; installed in ci/Dockerfile.rust and on dev hosts) via
+# DUCKDB_LIB_DIR/DUCKDB_INCLUDE_DIR. The `bundled` feature (compiling the full
+# DuckDB C++ amalgamation from source) was dropped: it OOM-killed the 16 GB CI
+# runner and added ~1h to every build.
+duckdb = { version = "1.1" }
+# Ctrl-C/SIGTERM handler for the durability-service daemon binary (graceful
+# shutdown). `termination` also catches SIGTERM/SIGHUP (systemd/docker stop).
+ctrlc = { version = "3", features = ["termination"] }
+# Criterion for micro-benchmarks. Dev-dependency only.
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
-# proptest fuer Property-Tests auf State-Machines (TS-1 Foundation
-# Hardening). Nur dev-dependency. Pure-Rust + minimal deps.
+# proptest for property tests on state machines (TS-1 foundation
+# hardening). Dev-dependency only. Pure-Rust + minimal deps.
 proptest = { version = "1.4", default-features = false, features = ["std"] }
-# insta fuer Snapshot-Tests von Codegen-Output (TS-1).
+# insta for snapshot tests of codegen output (TS-1).
 insta = { version = "1.40", default-features = false }
-# flate2 fuer CORBA 3.3 §18 Compression-Codec (Zlib/Gzip/Deflate).
-# Pure-Rust-Backend, kein C-Build, std-only. Wird in
-# `crates/corba-ccm/src/orb_extensions.rs::CompressionAlgorithm` als
-# echter Wire-Codec genutzt; ersetzt den frueheren Stub.
+# flate2 for the CORBA 3.3 §18 compression codec (Zlib/Gzip/Deflate).
+# Pure-Rust backend, no C build, std-only. Used in
+# `crates/corba-ccm/src/orb_extensions.rs::CompressionAlgorithm` as a
+# real wire codec; replaces the former stub.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
-# === Dep-Hygiene Sprint 1 (2026-05-18) ===
-# Zentralisierte Common-Deps mit identischer Spec ueber mehrere Crates.
-# Verhindert Versions-Drift bei zukuenftigen Updates, vereinfacht
-# Security-Audits (eine Stelle, alle User folgen).
+# === Dep-hygiene sprint 1 (2026-05-18) ===
+# Centralized common deps with an identical spec across multiple crates.
+# Prevents version drift on future updates, simplifies
+# security audits (one place, all users follow).
 #
-# rustls 0.23 — TLS-Stack fuer alle Bridge-Crates (7 User: bridge-
+# rustls 0.23 — TLS stack for all bridge crates (7 users: bridge-
 # security, amqp-endpoint, corba-dds-bridge, grpc-bridge, mqtt-bridge,
-# websocket-bridge, amqp-dds-endpoint). default-features off + ring-
-# backend pinned; tls12 fuer Legacy-Interop.
+# websocket-bridge, amqp-dds-endpoint). default-features off + ring
+# backend pinned; tls12 for legacy interop.
 rustls = { version = "0.23", default-features = false, features = ["std", "ring", "logging", "tls12"] }
-# ring 0.17 — Standard-Crypto-Primitive fuer alle Security-Crates
-# (7 User: bridge-security, security-crypto, security-keyexchange,
+# ring 0.17 — standard crypto primitives for all security crates
+# (7 users: bridge-security, security-crypto, security-keyexchange,
 # security-permissions, security-pki, security-runtime, tools/perf).
 ring = "0.17"
-# libc — POSIX-API-Bindings. no-default-features fuer no_std-Crates
-# (rt-linux, transport-shm), Caller darf "std"-Feature aktivieren.
-# 8 User: amqp-endpoint, corba-dds-bridge, dcps, grpc-bridge, rt-linux,
+# libc — POSIX API bindings. no-default-features for no_std crates
+# (rt-linux, transport-shm), the caller may enable the "std" feature.
+# 8 users: amqp-endpoint, corba-dds-bridge, dcps, grpc-bridge, rt-linux,
 # transport-shm, transport-uds, tools/cli-common.
 libc = { version = "0.2", default-features = false }
-# signal-hook — Graceful-Shutdown-Handler fuer Bridge-Tools (6 User:
+# signal-hook — graceful-shutdown handler for bridge tools (6 users:
 # amqp-endpoint, coap-bridge, corba-dds-bridge, grpc-bridge, mqtt-
-# bridge, websocket-bridge). default-features off + iterator-API.
+# bridge, websocket-bridge). default-features off + iterator API.
 signal-hook = { version = "0.3", default-features = false, features = ["iterator"] }
-# rustls-pemfile — PEM-Loader fuer Bridge-Cert-Pfade (6 User wie rustls).
+# rustls-pemfile — PEM loader for bridge cert paths (6 users, like rustls).
 rustls-pemfile = "2"
-# rustls-pki-types — Cert/Key-Wire-Types (3 User: bridge-security,
+# rustls-pki-types — cert/key wire types (3 users: bridge-security,
 # security-permissions, security-pki).
 rustls-pki-types = { version = "1.11", default-features = false, features = ["std", "alloc"] }
-# rustls-webpki — X.509-Chain-Validation (2 User: security-permissions,
-# security-pki). ring-Backend kompatibel mit rustls oben.
+# rustls-webpki — X.509 chain validation (2 users: security-permissions,
+# security-pki). ring backend compatible with rustls above.
 rustls-webpki = { version = "0.103", default-features = false, features = ["std", "ring"] }
-# roxmltree — XML-Parser fuer DDS-XML-Config/Permissions/OPC-UA-NodeSet
-# (5 User: amqp-endpoint, opcua-gateway, security-permissions, xml,
-# transport-tsn). Pure-Rust, kein xml-rs (heavy).
+# roxmltree — XML parser for DDS-XML config/permissions/OPC-UA NodeSet
+# (5 users: amqp-endpoint, opcua-gateway, security-permissions, xml,
+# transport-tsn). Pure-Rust, no xml-rs (heavy).
 roxmltree = "0.20"
-# socket2 — Erweiterte Socket-Options (SO_REUSEPORT, IP_MULTICAST_*).
-# 2 User: transport-udp, transport-uds.
+# socket2 — extended socket options (SO_REUSEPORT, IP_MULTICAST_*).
+# 2 users: transport-udp, transport-uds.
 socket2 = { version = "0.5", features = ["all"] }
 
 [workspace.lints.rust]
@@ -327,21 +369,21 @@ unreachable = "deny"
 dbg_macro = "deny"
 print_stdout = "warn"
 print_stderr = "warn"
-# clippy 1.88 hat doc_overindented_list_items neu im Default-Set;
-# wir nutzen tabular-aligned doc-comments fuer Annotationen-Mappings
-# (idl-csharp/idl-java) und Listener-Doku, das Auto-Reformatting
-# zerstoert die optische Lesbarkeit. Lokal allow ist sauberer als
-# fragmentiert per-Datei.
+# clippy 1.88 newly added doc_overindented_list_items to the default set;
+# we use tabular-aligned doc comments for annotation mappings
+# (idl-csharp/idl-java) and listener docs, where auto-reformatting
+# destroys the visual readability. A local allow is cleaner than
+# fragmenting it per-file.
 doc_overindented_list_items = "allow"
 
 [profile.release]
 lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
-debug = 1          # Line-Tabellen fuer Flamegraphs
+debug = 1          # line tables for flamegraphs
 
-# `dist` profile fuer cargo-dist Release-Pipeline (.github/workflows/release.yml).
-# Erbt von release plus `lto = "fat"` fuer kleinere static binaries.
+# `dist` profile for the cargo-dist release pipeline (.github/workflows/release.yml).
+# Inherits from release plus `lto = "fat"` for smaller static binaries.
 # Spec: zerodds-deployment-1.0.md §6.
 [profile.dist]
 inherits = "release"

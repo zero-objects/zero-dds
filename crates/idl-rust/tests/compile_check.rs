@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Compile-Check: emittiert Rust-Code aus IDL und ruft `rustc --emit=metadata`
-//! gegen den generierten Code mit zerodds_cdr + zerodds_dcps als deps auf.
+//! Compile check: emits Rust code from IDL and runs `rustc --emit=metadata`
+//! against the generated code with zerodds_cdr + zerodds_dcps as deps.
 //!
-//! Belegt Phase-H: der Codegen-Output ist nicht nur snapshotbar sondern
-//! auch tatsaechlich kompilierbar.
+//! Proves phase H: the codegen output is not only snapshottable but
+//! also actually compilable.
 
 #![allow(
     clippy::expect_used,
@@ -28,10 +28,10 @@ use std::process::Command;
 use zerodds_idl::config::ParserConfig;
 use zerodds_idl_rust::{RustGenOptions, generate_rust_module};
 
-/// Emittiert Rust-Code, schreibt ihn in eine temp-Datei und ruft
-/// `cargo check` gegen ein Test-Crate auf, das den Code als Modul
-/// inkludiert. Schlaegt mit Pretty-Diagnostics fehl, wenn der
-/// generierte Code nicht kompiliert.
+/// Emits Rust code, writes it to a temp file and runs
+/// `cargo check` against a test crate that includes the code as a
+/// module. Fails with pretty diagnostics if the
+/// generated code does not compile.
 fn compile_generated(name: &str, idl: &str) {
     let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
     let rust_src = generate_rust_module(&ast, &RustGenOptions::default()).expect("gen");
@@ -40,7 +40,7 @@ fn compile_generated(name: &str, idl: &str) {
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(tmp.join("src")).expect("mkdir");
 
-    // Test-Crate-Cargo.toml mit Pfad-Deps auf zerodds-cdr + zerodds-dcps.
+    // Test-crate Cargo.toml with path deps on zerodds-cdr + zerodds-dcps.
     let workspace_root = workspace_root();
     let cargo_toml = format!(
         r#"[package]

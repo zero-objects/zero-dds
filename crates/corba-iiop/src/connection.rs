@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! IIOP-Connection — TCP-Stream-Wrapper mit GIOP-Message-IO.
+//! IIOP connection — TCP stream wrapper with GIOP message I/O.
 
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,162 +15,316 @@ use zerodds_corba_ccm::orb_extensions::{
 use zerodds_corba_giop::{Message, Version};
 
 use crate::error::IiopError;
-use crate::framing::{read_giop_message, write_giop_message};
+use crate::framing::{read_giop_message_full, write_giop_message, write_giop_message_fragmented};
 
-/// IIOP-Connection — wraps eine `TcpStream` + Buffered-Reader/Writer.
+/// Read+Write+Send stream for the TLS transport (rustls `StreamOwned` over a
+/// client or server connection). Unlike TCP, a TLS stream cannot be split into
+/// independent reader/writer halves via `try_clone` (the rustls session is
+/// shared state), hence a single object for both.
+#[cfg(feature = "tls")]
+pub trait TlsStream: Read + Write + Send {}
+#[cfg(feature = "tls")]
+impl<T: Read + Write + Send> TlsStream for T {}
+
+/// Transport substrate of a [`Connection`]: buffered TCP halves (standard
+/// IIOP), a single TLS stream (SSLIOP, §15.x / OMG Security) or buffered
+/// Unix-domain-socket halves (UIOP — a ZeroDDS vendor transport for same-host IPC).
+enum Transport {
+    /// Plain TCP with independently buffered reader/writer halves (try_clone).
+    Tcp {
+        reader: BufReader<TcpStream>,
+        writer: BufWriter<TcpStream>,
+    },
+    /// TLS stream (rustls) + cloned raw socket for timeouts/shutdown.
+    #[cfg(feature = "tls")]
+    Tls {
+        stream: Box<dyn TlsStream>,
+        sock: TcpStream,
+    },
+    /// Unix-domain socket (UIOP), buffered halves via `try_clone` like TCP.
+    #[cfg(unix)]
+    Uds {
+        reader: BufReader<std::os::unix::net::UnixStream>,
+        writer: BufWriter<std::os::unix::net::UnixStream>,
+    },
+}
+
+impl Transport {
+    /// `&mut dyn Read` for the receive path.
+    fn reader(&mut self) -> &mut dyn Read {
+        match self {
+            Self::Tcp { reader, .. } => reader,
+            #[cfg(feature = "tls")]
+            Self::Tls { stream, .. } => stream.as_mut(),
+            #[cfg(unix)]
+            Self::Uds { reader, .. } => reader,
+        }
+    }
+    /// `&mut dyn Write` for the send path.
+    fn writer(&mut self) -> &mut dyn Write {
+        match self {
+            Self::Tcp { writer, .. } => writer,
+            #[cfg(feature = "tls")]
+            Self::Tls { stream, .. } => stream.as_mut(),
+            #[cfg(unix)]
+            Self::Uds { writer, .. } => writer,
+        }
+    }
+    fn set_read_timeout(&self, t: Option<Duration>) -> std::io::Result<()> {
+        match self {
+            Self::Tcp { writer, .. } => writer.get_ref().set_read_timeout(t),
+            #[cfg(feature = "tls")]
+            Self::Tls { sock, .. } => sock.set_read_timeout(t),
+            #[cfg(unix)]
+            Self::Uds { writer, .. } => writer.get_ref().set_read_timeout(t),
+        }
+    }
+    fn set_write_timeout(&self, t: Option<Duration>) -> std::io::Result<()> {
+        match self {
+            Self::Tcp { writer, .. } => writer.get_ref().set_write_timeout(t),
+            #[cfg(feature = "tls")]
+            Self::Tls { sock, .. } => sock.set_write_timeout(t),
+            #[cfg(unix)]
+            Self::Uds { writer, .. } => writer.get_ref().set_write_timeout(t),
+        }
+    }
+    fn set_nodelay(&self, nodelay: bool) -> std::io::Result<()> {
+        match self {
+            Self::Tcp { writer, .. } => writer.get_ref().set_nodelay(nodelay),
+            #[cfg(feature = "tls")]
+            Self::Tls { sock, .. } => sock.set_nodelay(nodelay),
+            // AF_UNIX has no Nagle/TCP_NODELAY → no-op.
+            #[cfg(unix)]
+            Self::Uds { .. } => Ok(()),
+        }
+    }
+    fn shutdown(&self) -> std::io::Result<()> {
+        match self {
+            Self::Tcp { writer, .. } => writer.get_ref().shutdown(Shutdown::Both),
+            #[cfg(feature = "tls")]
+            Self::Tls { sock, .. } => sock.shutdown(Shutdown::Both),
+            #[cfg(unix)]
+            Self::Uds { writer, .. } => writer.get_ref().shutdown(Shutdown::Both),
+        }
+    }
+}
+
+/// IIOP connection — wraps a transport (buffered TCP or TLS) + GIOP I/O.
 ///
-/// `Connection` ist nicht `Clone` — fuer Sharing-Szenarien (z.B.
-/// pro-Connection-Worker-Thread mit getrennten Reader/Writer-Halves)
-/// nutzt der Caller [`std::net::TcpStream::try_clone`] auf dem inneren
-/// Stream via `peer_addr()`/`local_addr()` und konstruiert eine
-/// neue `Connection`.
+/// `Connection` is not `Clone`. For plain TCP, [`Self::from_stream`] splits
+/// reader/writer halves via `try_clone`; TLS connections ([`Self::from_tls_stream`])
+/// use a single stream.
 pub struct Connection {
-    reader: BufReader<TcpStream>,
-    writer: BufWriter<TcpStream>,
+    transport: Transport,
     peer: SocketAddr,
     local: SocketAddr,
-    /// Spec §16 Portable Interceptors — wenn gesetzt, walked
-    /// `write_message`/`read_message` die Pipeline an den
-    /// passenden Points (`SendRequest`/`ReceiveReply` Client-Side
-    /// bzw. `ReceiveRequest`/`SendReply` Server-Side).
+    /// Spec §16 Portable Interceptors — when set,
+    /// `write_message`/`read_message` walk the pipeline at the
+    /// matching points (`SendRequest`/`ReceiveReply` client-side,
+    /// or `ReceiveRequest`/`SendReply` server-side).
     interceptors: Option<Arc<InterceptorRegistry>>,
 }
 
 impl Connection {
-    /// Wraps eine bestehende `TcpStream`.
+    /// Wraps an existing `TcpStream`.
     ///
     /// # Errors
-    /// IO-Fehler beim Auslesen der Peer/Local-Addresses oder beim
-    /// `try_clone` fuer Reader+Writer-Half.
+    /// I/O error while reading the peer/local addresses or during
+    /// the `try_clone` for the reader+writer half.
     pub fn from_stream(stream: TcpStream) -> Result<Self, IiopError> {
         let peer = stream.peer_addr()?;
         let local = stream.local_addr()?;
-        // Wir splitten via try_clone, sodass Reader und Writer
-        // unabhaengige BufReader/BufWriter haben koennen. TCP-Stream-
-        // Halves teilen denselben Socket; das ist Standard-Pattern.
+        // We split via try_clone so that reader and writer can have
+        // independent BufReader/BufWriter. TCP stream halves share the
+        // same socket; this is the standard pattern.
         let reader_stream = stream.try_clone()?;
         let writer_stream = stream;
         Ok(Self {
-            reader: BufReader::new(reader_stream),
-            writer: BufWriter::new(writer_stream),
+            transport: Transport::Tcp {
+                reader: BufReader::new(reader_stream),
+                writer: BufWriter::new(writer_stream),
+            },
             peer,
             local,
             interceptors: None,
         })
     }
 
-    /// Spec §16.4.x — installiert eine [`InterceptorRegistry`] fuer
-    /// diese Connection. Subsequent `write_message`/`read_message`
-    /// walken die Pipeline an den passenden Points.
+    /// Wraps an already-handshaked TLS stream (rustls `StreamOwned`) +
+    /// its associated raw `TcpStream` (for timeouts/shutdown) as an SSLIOP
+    /// connection. `sock` should be a `try_clone` of the socket used by the
+    /// stream.
+    ///
+    /// # Errors
+    /// I/O error while reading the peer/local addresses.
+    #[cfg(feature = "tls")]
+    pub fn from_tls_stream(stream: Box<dyn TlsStream>, sock: TcpStream) -> Result<Self, IiopError> {
+        let peer = sock.peer_addr()?;
+        let local = sock.local_addr()?;
+        Ok(Self {
+            transport: Transport::Tls { stream, sock },
+            peer,
+            local,
+            interceptors: None,
+        })
+    }
+
+    /// Wraps an existing `UnixStream` as a UIOP connection. Reader/writer
+    /// are split into buffered halves via `try_clone`, as with TCP. UDS have
+    /// no IP endpoints — [`Self::peer_addr`]/[`Self::local_addr`] return a
+    /// `127.0.0.1:0` placeholder (the UDS identity is the socket path, which
+    /// lives in the connector pool key).
+    ///
+    /// # Errors
+    /// I/O error during the `try_clone` for the reader+writer half.
+    #[cfg(unix)]
+    pub fn from_unix_stream(stream: std::os::unix::net::UnixStream) -> Result<Self, IiopError> {
+        let reader_stream = stream.try_clone()?;
+        let writer_stream = stream;
+        let placeholder = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);
+        Ok(Self {
+            transport: Transport::Uds {
+                reader: BufReader::new(reader_stream),
+                writer: BufWriter::new(writer_stream),
+            },
+            peer: placeholder,
+            local: placeholder,
+            interceptors: None,
+        })
+    }
+
+    /// Spec §16.4.x — installs an [`InterceptorRegistry`] for
+    /// this connection. Subsequent `write_message`/`read_message`
+    /// walk the pipeline at the matching points.
     #[must_use]
     pub fn with_interceptors(mut self, registry: Arc<InterceptorRegistry>) -> Self {
         self.interceptors = Some(registry);
         self
     }
 
-    /// Liefert die aktive Interceptor-Registry, falls eine installiert
-    /// ist.
+    /// Returns the active interceptor registry, if one is installed.
     #[must_use]
     pub fn interceptors(&self) -> Option<&Arc<InterceptorRegistry>> {
         self.interceptors.as_ref()
     }
 
-    /// Spec §16.4.2 — walked Client-Pipeline am Point `point` mit
-    /// Operation-Namen `op`. Wenn keine Registry installiert ist,
-    /// no-op.
+    /// Spec §16.4.2 — walks the client pipeline at point `point` with
+    /// operation name `op`. No-op if no registry is installed.
     pub fn run_client_pipeline(&self, point: ClientInterceptionPoint, op: &str) {
         if let Some(r) = &self.interceptors {
             r.walk_client(point, op);
         }
     }
 
-    /// Spec §16.4.3 — walked Server-Pipeline.
+    /// Spec §16.4.3 — walks the server pipeline.
     pub fn run_server_pipeline(&self, point: ServerInterceptionPoint, op: &str) {
         if let Some(r) = &self.interceptors {
             r.walk_server(point, op);
         }
     }
 
-    /// Setzt den Read-Timeout.
+    /// Sets the read timeout.
     ///
     /// # Errors
-    /// IO-Fehler.
+    /// I/O error.
     pub fn set_read_timeout(&self, timeout: Option<Duration>) -> Result<(), IiopError> {
-        self.reader.get_ref().set_read_timeout(timeout)?;
+        self.transport.set_read_timeout(timeout)?;
         Ok(())
     }
 
-    /// Setzt den Write-Timeout.
+    /// Sets the write timeout.
     ///
     /// # Errors
-    /// IO-Fehler.
+    /// I/O error.
     pub fn set_write_timeout(&self, timeout: Option<Duration>) -> Result<(), IiopError> {
-        self.writer.get_ref().set_write_timeout(timeout)?;
+        self.transport.set_write_timeout(timeout)?;
         Ok(())
     }
 
-    /// Aktiviert/deaktiviert TCP-Nodelay (Nagle-Algorithmus).
+    /// Enables/disables TCP nodelay (Nagle algorithm).
     ///
-    /// Default in CORBA-Deployments ist `true` (kein Nagle), weil
-    /// GIOP-Roundtrip-Latency dominanter Faktor ist.
+    /// The default in CORBA deployments is `true` (no Nagle), because
+    /// GIOP round-trip latency is the dominant factor.
     ///
     /// # Errors
-    /// IO-Fehler.
+    /// I/O error.
     pub fn set_nodelay(&self, nodelay: bool) -> Result<(), IiopError> {
-        self.writer.get_ref().set_nodelay(nodelay)?;
+        self.transport.set_nodelay(nodelay)?;
         Ok(())
     }
 
-    /// Liefert die Peer-Address.
+    /// Returns the peer address.
     #[must_use]
     pub fn peer_addr(&self) -> SocketAddr {
         self.peer
     }
 
-    /// Liefert die Local-Address.
+    /// Returns the local address.
     #[must_use]
     pub fn local_addr(&self) -> SocketAddr {
         self.local
     }
 
-    /// Liest eine GIOP-Message vom Stream.
+    /// Reads a GIOP message from the stream.
     ///
-    /// Walkt die Server-Pipeline an `ReceiveRequest` (fuer eingehende
-    /// `Request`-Messages) bzw. die Client-Pipeline an `ReceiveReply`
-    /// (fuer eingehende `Reply`-Messages), wenn eine
-    /// `InterceptorRegistry` installiert ist (Spec §16.4.2/§16.4.3).
+    /// Walks the server pipeline at `ReceiveRequest` (for incoming
+    /// `Request` messages) or the client pipeline at `ReceiveReply`
+    /// (for incoming `Reply` messages) when an `InterceptorRegistry`
+    /// is installed (Spec §16.4.2/§16.4.3).
     ///
     /// # Errors
-    /// `IiopError::Closed` bei sauberem EOF; sonst `Io`/`Giop`.
+    /// `IiopError::Closed` on clean EOF; otherwise `Io`/`Giop`.
     pub fn read_message(&mut self) -> Result<Message, IiopError> {
-        let msg = read_giop_message(&mut self.reader)?;
+        Ok(self.read_message_with_endianness()?.0)
+    }
+
+    /// Like [`Self::read_message`], but additionally returns the on-wire byte
+    /// order of the received message — needed to decode the opaque
+    /// Request/Reply `body` (CDR-encoded operation args) in the correct order
+    /// (CDR is "receiver makes it right", Spec §15.4.1 / §15.3.1).
+    ///
+    /// # Errors
+    /// `IiopError::Closed` on clean EOF; otherwise `Io`/`Giop`.
+    pub fn read_message_with_endianness(&mut self) -> Result<(Message, Endianness), IiopError> {
+        let (msg, endianness, _version) = self.read_message_full()?;
+        Ok((msg, endianness))
+    }
+
+    /// Like [`Self::read_message_with_endianness`], but additionally returns the
+    /// **GIOP version** of the received message — so the server replies in the
+    /// request's version (§15.4.1) rather than always 1.2.
+    ///
+    /// # Errors
+    /// `IiopError::Closed` on clean EOF; otherwise `Io`/`Giop`.
+    pub fn read_message_full(&mut self) -> Result<(Message, Endianness, Version), IiopError> {
+        let (msg, endianness, version) = read_giop_message_full(self.transport.reader())?;
         if let Some(r) = &self.interceptors {
             match &msg {
                 Message::Request(req) => {
                     r.walk_server(ServerInterceptionPoint::ReceiveRequest, &req.operation);
                 }
                 Message::Reply(_) => {
-                    // Op-Name ist im Reply nicht enthalten; wir nutzen
-                    // den Spec-konformen leeren Marker. Caller mit
-                    // Op-Tracking kann `run_client_pipeline` direkt
-                    // mit dem Op-Namen aufrufen.
+                    // The op name is not present in the reply; we use
+                    // the spec-conformant empty marker. A caller with
+                    // op tracking can call `run_client_pipeline`
+                    // directly with the op name.
                     r.walk_client(ClientInterceptionPoint::ReceiveReply, "");
                 }
                 _ => {}
             }
         }
-        Ok(msg)
+        Ok((msg, endianness, version))
     }
 
-    /// Schreibt eine GIOP-Message auf den Stream.
+    /// Writes a GIOP message to the stream.
     ///
-    /// Walkt die Client-Pipeline an `SendRequest` (fuer ausgehende
-    /// `Request`-Messages) bzw. die Server-Pipeline an `SendReply`
-    /// (fuer ausgehende `Reply`-Messages), wenn eine
-    /// `InterceptorRegistry` installiert ist (Spec §16.4.2/§16.4.3).
+    /// Walks the client pipeline at `SendRequest` (for outgoing
+    /// `Request` messages) or the server pipeline at `SendReply`
+    /// (for outgoing `Reply` messages) when an `InterceptorRegistry`
+    /// is installed (Spec §16.4.2/§16.4.3).
     ///
     /// # Errors
-    /// IO- oder GIOP-Fehler.
+    /// I/O or GIOP error.
     pub fn write_message(
         &mut self,
         version: Version,
@@ -189,17 +343,57 @@ impl Connection {
                 _ => {}
             }
         }
-        write_giop_message(&mut self.writer, version, endianness, more_fragments, msg)
+        write_giop_message(
+            self.transport.writer(),
+            version,
+            endianness,
+            more_fragments,
+            msg,
+        )
     }
 
-    /// Schliesst die Connection ordentlich (TCP-FIN).
+    /// Like [`write_message`](Self::write_message), but fragments the message
+    /// (§15.4.9) if its body exceeds `max_fragment_payload` — for very large
+    /// payloads or peers with a `giopMaxMsgSize` limit. Bodies ≤ the threshold,
+    /// non-fragmentable types and GIOP < 1.2 go out unfragmented.
     ///
     /// # Errors
-    /// IO-Fehler.
+    /// Encode/I/O error.
+    pub fn write_message_fragmented(
+        &mut self,
+        version: Version,
+        endianness: Endianness,
+        msg: &Message,
+        max_fragment_payload: usize,
+    ) -> Result<(), IiopError> {
+        if let Some(r) = &self.interceptors {
+            match msg {
+                Message::Request(req) => {
+                    r.walk_client(ClientInterceptionPoint::SendRequest, &req.operation);
+                }
+                Message::Reply(_) => {
+                    r.walk_server(ServerInterceptionPoint::SendReply, "");
+                }
+                _ => {}
+            }
+        }
+        write_giop_message_fragmented(
+            self.transport.writer(),
+            version,
+            endianness,
+            msg,
+            max_fragment_payload,
+        )
+    }
+
+    /// Closes the connection cleanly (TCP FIN).
+    ///
+    /// # Errors
+    /// I/O error.
     pub fn shutdown(&mut self) -> Result<(), IiopError> {
-        // Writer flushen, dann beide Halves shut.
-        let _ = std::io::Write::flush(&mut self.writer);
-        self.writer.get_ref().shutdown(Shutdown::Both)?;
+        // Flush the writer, then shut down both halves.
+        let _ = std::io::Write::flush(self.transport.writer());
+        self.transport.shutdown()?;
         Ok(())
     }
 }
@@ -233,7 +427,7 @@ mod tests {
         client.set_nodelay(true).unwrap();
         server.set_nodelay(true).unwrap();
 
-        // Client sendet Request.
+        // Client sends a request.
         let request = Message::Request(zerodds_corba_giop::Request {
             request_id: 1,
             response_flags: zerodds_corba_giop::ResponseFlags::SYNC_WITH_TARGET,
@@ -246,11 +440,11 @@ mod tests {
         client
             .write_message(Version::V1_2, Endianness::Big, false, &request)
             .unwrap();
-        // Server liest.
+        // Server reads.
         let received = server.read_message().unwrap();
         assert_eq!(received, request);
 
-        // Server antwortet.
+        // Server replies.
         let reply = Message::Reply(zerodds_corba_giop::Reply {
             request_id: 1,
             reply_status: ReplyStatusType::NoException,
@@ -267,14 +461,14 @@ mod tests {
     #[test]
     fn shutdown_propagates_eof_to_peer() {
         let (mut client, mut server) = make_test_pair();
-        // Client schliesst.
+        // Client closes.
         client.shutdown().unwrap();
-        // Server liest -> Closed.
+        // Server reads -> Closed.
         let err = server.read_message().unwrap_err();
         assert!(matches!(err, IiopError::Closed));
     }
 
-    // §16 Portable Interceptors Wire-up
+    // §16 Portable Interceptors wire-up
 
     use std::sync::Mutex;
     use zerodds_corba_ccm::orb_extensions::{
@@ -315,7 +509,7 @@ mod tests {
             "tagger"
         }
         fn establish_components(&self) -> Vec<u32> {
-            // Spec §13.6 — TAG_ORB_TYPE als Marker-Tag.
+            // Spec §13.6 — TAG_ORB_TYPE as a marker tag.
             alloc::vec![0x4F4D_4730]
         }
     }

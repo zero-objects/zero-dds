@@ -1,15 +1,15 @@
-//! Boundary-Tests fuer AMQP-Wire-Decoder.
+//! Boundary tests for the AMQP wire decoders.
 //!
-//! Mutation-Testing zeigte dass Boundary-Checks der Form
-//! `bytes.len() < N || bytes[0] != CODE` von random-byte-Fuzz-Tests
-//! nicht zuverlaessig getriggert wurden:
+//! Mutation testing showed that boundary checks of the form
+//! `bytes.len() < N || bytes[0] != CODE` were not reliably triggered
+//! by random-byte fuzz tests:
 //!
-//! * `< with >`-Mutation greift nicht wenn keine Tests mit
-//!   `len == N-1` existieren (truncated).
-//! * `|| with &&`-Mutation greift nicht wenn keine Tests mit
-//!   `len < N AND code == CODE` existieren (false-on-AND-true).
+//! * The `< with >` mutation is not caught if there are no tests with
+//!   `len == N-1` (truncated).
+//! * The `|| with &&` mutation is not caught if there are no tests with
+//!   `len < N AND code == CODE` (false-on-AND-true).
 //!
-//! Pro Decoder-Funktion testen wir explizit:
+//! For each decoder function we test explicitly:
 //! 1. Empty input — must Err.
 //! 2. Format-code only (truncated) — must Err.
 //! 3. Full minimum length — must Ok.
@@ -349,9 +349,9 @@ fn uuid_full_length_decodes_value() {
 }
 
 // ---------------------------------------------------------------------------
-// Compound-Types (list, map, array)
+// Compound types (list, map, array)
 //
-// Adressiert verbleibende Mutations in encode_list/decode_list,
+// Addresses remaining mutations in encode_list/decode_list,
 // encode_map/decode_map, encode_array/decode_array.
 // ---------------------------------------------------------------------------
 
@@ -546,11 +546,11 @@ fn deeply_nested_list_beyond_max_depth_is_err() {
 }
 
 // ---------------------------------------------------------------------------
-// Wire-Format-Exact-Bytes (catches encode mutations)
+// Exact wire-format bytes (catches encode mutations)
 //
-// Mutations wie `+ with -` in `total_size = body.len() + 4` werden
-// nur erkannt wenn wir die genauen Bytes der Encoding pruefen — der
-// Roundtrip allein wuerde durchgehen.
+// Mutations like `+ with -` in `total_size = body.len() + 4` are only
+// caught when we check the exact bytes of the encoding — the roundtrip
+// alone would pass.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -723,10 +723,10 @@ fn encode_array_empty_is_err() {
 }
 
 // ---------------------------------------------------------------------------
-// Decode-Boundary für Length-Checks
+// Decode boundary for length checks
 //
-// Mutationen wie `< with ==` greifen nur bei Tests an exakten
-// Boundaries: bytes.len() == 9 für LIST32, == 3 für LIST8.
+// Mutations like `< with ==` are only caught by tests at exact
+// boundaries: bytes.len() == 9 for LIST32, == 3 for LIST8.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -761,9 +761,9 @@ fn map8_with_truncated_total_is_err() {
 }
 
 // ---------------------------------------------------------------------------
-// Compound-Depth-Cap Boundary
+// Compound depth-cap boundary
 //
-// Tests bei exact MAX_COMPOUND_DEPTH und MAX_COMPOUND_DEPTH+1.
+// Tests at exactly MAX_COMPOUND_DEPTH and MAX_COMPOUND_DEPTH+1.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -807,13 +807,13 @@ fn compound_at_depth_50_encode_errs() {
 
 #[test]
 fn compound_at_depth_32_exactly_works() {
-    // MAX_COMPOUND_DEPTH = 32. Depth-Counter beginnt bei 0 und wird
-    // pro nesting +1 inkrementiert. Test: encode bei genau 32 Wraps.
+    // MAX_COMPOUND_DEPTH = 32. The depth counter starts at 0 and is
+    // incremented by 1 per nesting. Test: encode at exactly 32 wraps.
     let mut v = AmqpExtValue::Null;
     for _ in 0..32 {
         v = AmqpExtValue::List(vec![v]);
     }
-    // depth-Counter erreicht 32 in encode_at, Check `> 32` ist false → ok.
+    // depth counter reaches 32 in encode_at, check `> 32` is false → ok.
     assert!(
         v.encode().is_ok(),
         "depth 32 must work (cap is `> MAX_COMPOUND_DEPTH`, not `>=`)"
@@ -822,7 +822,7 @@ fn compound_at_depth_32_exactly_works() {
 
 #[test]
 fn compound_at_depth_33_errs() {
-    // 33 wraps: innerstes Element wird mit depth=33 dekodiert → > 32 → Err.
+    // 33 wraps: innermost element is decoded with depth=33 → > 32 → Err.
     let mut v = AmqpExtValue::Null;
     for _ in 0..33 {
         v = AmqpExtValue::List(vec![v]);
@@ -831,17 +831,17 @@ fn compound_at_depth_33_errs() {
 }
 
 // ---------------------------------------------------------------------------
-// decode_list/decode_map mit mehreren Elementen
+// decode_list/decode_map with multiple elements
 //
-// Mutationen `+ with *` in `cur += n` werden nur erkannt wenn der
-// Loop mehr als einmal iteriert mit nicht-trivialen `n`-Werten
+// The `+ with *` mutation in `cur += n` is only caught when the loop
+// iterates more than once with non-trivial `n` values
 // (cur != 0, n != 0).
 // ---------------------------------------------------------------------------
 
 #[test]
 fn decode_list_with_three_distinct_elements_accumulates_cur_correctly() {
-    // List of [Ubyte(1), Ubyte(2), Ubyte(3)] — cur muss durch alle drei
-    // korrekt laufen, jedes mit n=2 bytes.
+    // List of [Ubyte(1), Ubyte(2), Ubyte(3)] — cur must advance through
+    // all three correctly, each with n=2 bytes.
     let v = AmqpExtValue::List(vec![
         AmqpExtValue::Ubyte(1),
         AmqpExtValue::Ubyte(2),

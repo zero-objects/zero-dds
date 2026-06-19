@@ -3,18 +3,18 @@
 
 //! NamingContext + NamingContextExt — Spec §2.5.4 + §3.5.1.
 //!
-//! In-Memory-Implementation der Spec-Operations:
+//! In-memory implementation of the spec operations:
 //!
-//! * `bind` / `rebind` (Object-Bindings)
-//! * `bind_context` / `rebind_context` (Sub-Context-Bindings)
-//! * `resolve` (rekursiver Lookup)
+//! * `bind` / `rebind` (object bindings)
+//! * `bind_context` / `rebind_context` (sub-context bindings)
+//! * `resolve` (recursive lookup)
 //! * `unbind` / `destroy` / `new_context` / `bind_new_context`
-//! * `list` (Aufzaehlung)
+//! * `list` (enumeration)
 //! * NamingContextExt: `to_string` / `to_name` / `resolve_str` /
 //!   `to_url`.
 //!
-//! Object-References sind opaque `ObjectRef`-Bytes (typisch eine
-//! stringified-IOR). Der Caller macht das Marshalling.
+//! Object references are opaque `ObjectRef` bytes (typically a
+//! stringified IOR). The caller handles the marshalling.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -28,20 +28,20 @@ use crate::error::{NamingError, NotFoundReason};
 use crate::name::{Name, NameComponent};
 use crate::stringified::{name_to_string, string_to_name};
 
-/// Object-Reference fuer das Naming-Service.
+/// Object reference for the naming service.
 ///
-/// Wir tragen ein voll-qualifiziertes IOR + den aufbereiteten String —
-/// der Caller waehlt, was er fuer das Wire benutzt.
+/// We carry a fully qualified IOR plus the prepared string — the
+/// caller chooses which one to put on the wire.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectRef {
-    /// Stringified-IOR oder corbaname-URL.
+    /// Stringified IOR or corbaname URL.
     pub stringified: String,
-    /// Optional decodiertes IOR (caller-cached).
+    /// Optional decoded IOR (caller-cached).
     pub ior: Option<Ior>,
 }
 
 impl ObjectRef {
-    /// Konstruktor aus stringified-IOR.
+    /// Constructor from a stringified IOR.
     #[must_use]
     pub fn from_stringified(s: impl Into<String>) -> Self {
         Self {
@@ -50,10 +50,10 @@ impl ObjectRef {
         }
     }
 
-    /// Konstruktor aus IOR (encoded zu stringified).
+    /// Constructor from an IOR (encoded to stringified).
     ///
     /// # Errors
-    /// IOR-Encoding-Fehler.
+    /// IOR encoding error.
     pub fn from_ior(ior: Ior) -> Result<Self, zerodds_corba_ior::IorError> {
         let stringified = zerodds_corba_ior::to_stringified(&ior, zerodds_cdr::Endianness::Big)?;
         Ok(Self {
@@ -63,19 +63,19 @@ impl ObjectRef {
     }
 }
 
-/// Binding-Type — Spec §2.5.4 `BindingType` enum.
+/// Binding type — Spec §2.5.4 `BindingType` enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BindingType {
-    /// `nobject` — Standard-Object-Binding.
+    /// `nobject` — standard object binding.
     Object,
-    /// `ncontext` — Sub-Context-Binding.
+    /// `ncontext` — sub-context binding.
     Context,
 }
 
-/// Binding-Eintrag (sichtbar aus `list`).
+/// Binding entry (visible from `list`).
 #[derive(Debug, Clone)]
 pub struct Binding {
-    /// Komponentenname (single-component Name).
+    /// Component name (single-component name).
     pub binding_name: NameComponent,
     /// Type.
     pub binding_type: BindingType,
@@ -108,7 +108,7 @@ impl core::fmt::Debug for NamingContext {
 }
 
 impl NamingContext {
-    /// Konstruktor — leerer Root-Context.
+    /// Constructor — empty root context.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -116,7 +116,7 @@ impl NamingContext {
         }
     }
 
-    /// Spec §2.5.4.1 `bind`. Bindet ein Object unter dem Namen.
+    /// Spec §2.5.4.1 `bind`. Binds an object under the name.
     ///
     /// # Errors
     /// `AlreadyBound`, `NotFound`, `InvalidName`, `CannotProceed`.
@@ -124,7 +124,7 @@ impl NamingContext {
         self.bind_internal(name, Entry::Object(obj), /*allow_replace=*/ false)
     }
 
-    /// Spec §2.5.4.3 `rebind` — wie `bind`, ueberschreibt aber.
+    /// Spec §2.5.4.3 `rebind` — like `bind`, but overwrites.
     ///
     /// # Errors
     /// `NotFound`, `InvalidName`, `CannotProceed`.
@@ -148,14 +148,14 @@ impl NamingContext {
         self.bind_internal(name, Entry::Context(ctx), /*allow_replace=*/ true)
     }
 
-    /// Spec §2.5.4.5 `resolve`. Liefert das gebundene Object oder
-    /// einen Sub-Context-Verweis als ObjectRef-Form (Caller muss
-    /// passend interpretieren).
+    /// Spec §2.5.4.5 `resolve`. Returns the bound object or a
+    /// sub-context reference in ObjectRef form (the caller must
+    /// interpret it accordingly).
     ///
     /// # Errors
-    /// `NotFound { why: NotObject }` wenn der Pfad zu einem Context
-    /// fuehrt; `NotFound { why: NotContext }` bei Pfad-Bruch;
-    /// `NotFound { why: MissingNode }` bei unbekanntem Namen.
+    /// `NotFound { why: NotObject }` when the path leads to a context;
+    /// `NotFound { why: NotContext }` on a path break;
+    /// `NotFound { why: MissingNode }` on an unknown name.
     pub fn resolve(&self, name: &Name) -> Result<ResolveResult, NamingError> {
         if name.is_empty() {
             return Err(NamingError::InvalidName);
@@ -208,7 +208,7 @@ impl NamingContext {
                     rest_of_name: name.clone(),
                 });
         }
-        // Recurse in Sub-Context.
+        // Recurse into the sub-context.
         let (head, tail) = (&name[0], &name[1..]);
         let bindings = self.lock_bindings()?;
         match bindings.get(head) {
@@ -228,15 +228,15 @@ impl NamingContext {
         }
     }
 
-    /// Spec §2.5.4.7 `new_context` — leeres Sub-Context erzeugen
-    /// (nicht in self bound).
+    /// Spec §2.5.4.7 `new_context` — create an empty sub-context
+    /// (not bound into self).
     #[must_use]
     pub fn new_context(&self) -> Arc<NamingContext> {
         Arc::new(NamingContext::new())
     }
 
-    /// Spec §2.5.4.8 `bind_new_context` — leeres Sub-Context erzeugen
-    /// und sofort binden.
+    /// Spec §2.5.4.8 `bind_new_context` — create an empty sub-context
+    /// and bind it immediately.
     ///
     /// # Errors
     /// `AlreadyBound`, `InvalidName`, `NotFound`, `CannotProceed`.
@@ -258,7 +258,7 @@ impl NamingContext {
         Ok(())
     }
 
-    /// Spec §2.5.4.10 `list` — liefert alle Bindings als Vec.
+    /// Spec §2.5.4.10 `list` — returns all bindings as a Vec.
     #[must_use]
     pub fn list(&self) -> Vec<Binding> {
         let g = match self.bindings.lock() {
@@ -276,11 +276,11 @@ impl NamingContext {
             .collect()
     }
 
-    /// NamingContextExt §3.5.1 `resolve_str` — wie `resolve`, aber
-    /// nimmt eine stringified-Name.
+    /// NamingContextExt §3.5.1 `resolve_str` — like `resolve`, but
+    /// takes a stringified name.
     ///
     /// # Errors
-    /// Wie `resolve` plus `InvalidName` bei Parser-Fehlern.
+    /// Like `resolve` plus `InvalidName` on parser errors.
     pub fn resolve_str(&self, s: &str) -> Result<ResolveResult, NamingError> {
         let name = string_to_name(s)?;
         self.resolve(&name)
@@ -289,7 +289,7 @@ impl NamingContext {
     /// NamingContextExt §3.5.1 `to_string` (`Name -> string`).
     ///
     /// # Errors
-    /// `InvalidName` wenn `name` leer ist.
+    /// `InvalidName` when `name` is empty.
     pub fn to_string(&self, name: &Name) -> Result<String, NamingError> {
         name_to_string(name)
     }
@@ -302,13 +302,13 @@ impl NamingContext {
         string_to_name(s)
     }
 
-    /// NamingContextExt §3.5.1 `to_url` — baut eine `corbaname:`-URL.
+    /// NamingContextExt §3.5.1 `to_url` — builds a `corbaname:` URL.
     ///
-    /// `address` ist die `iiop:host:port/object_key`-Form (Caller
-    /// liefert die addr ihres NameService-Endpoints).
+    /// `address` is the `iiop:host:port/object_key` form (the caller
+    /// supplies the address of its NameService endpoint).
     ///
     /// # Errors
-    /// `InvalidName` wenn `name_part` leer ist.
+    /// `InvalidName` when `name_part` is empty.
     pub fn to_url(&self, address: &str, name_part: &str) -> Result<String, NamingError> {
         if name_part.is_empty() {
             return Err(NamingError::InvalidName);
@@ -333,7 +333,7 @@ impl NamingContext {
             bindings.insert(name[0].clone(), entry);
             return Ok(());
         }
-        // Recurse — head muss ein bestehender Sub-Context sein.
+        // Recurse — head must be an existing sub-context.
         let (head, tail) = (&name[0], &name[1..]);
         let bindings = self.lock_bindings()?;
         match bindings.get(head) {
@@ -364,12 +364,12 @@ impl NamingContext {
     }
 }
 
-/// Resolve-Ergebnis — entweder ein Object oder ein Sub-Context.
+/// Resolve result — either an object or a sub-context.
 #[derive(Debug, Clone)]
 pub enum ResolveResult {
-    /// Object-Reference.
+    /// Object reference.
     Object(ObjectRef),
-    /// Sub-Context.
+    /// Sub-context.
     Context(Arc<NamingContext>),
 }
 

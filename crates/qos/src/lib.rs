@@ -7,30 +7,30 @@
 //!
 //! ## Spec
 //!
-//! - **DDS 1.4** §2.2.3 — alle 22 Standard-Policies (Durability, Reliability,
-//!   Liveliness, Ownership, Partition, …) inkl. §2.2.3.23
-//!   Exclusive-Ownership-Resolver-Logik (§2.2.2.5.5).
-//! - **DDS 1.4** §2.2.3 Table "QoS compatibility" — Request/Offered-Matrix
+//! - **DDS 1.4** §2.2.3 — all 22 standard policies (Durability, Reliability,
+//!   Liveliness, Ownership, Partition, …) incl. §2.2.3.23
+//!   exclusive-ownership resolver logic (§2.2.2.5.5).
+//! - **DDS 1.4** §2.2.3 Table "QoS compatibility" — request/offered matrix
 //!   ([`check_compatibility`]).
-//! - **DDSI-RTPS 2.5** §9.6.3.2 — Wire-PIDs fuer ParameterList-Encoding
+//! - **DDSI-RTPS 2.5** §9.6.3.2 — wire PIDs for ParameterList encoding
 //!   ([`Pid`]).
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 1 — Primitives. Direkte Abhaengige: `zerodds-rtps`, `zerodds-discovery`,
+//! Layer 1 — primitives. Direct dependents: `zerodds-rtps`, `zerodds-discovery`,
 //! `zerodds-dcps`, `zerodds-dcps-async`, `zerodds-c-api`, `zerodds-rpc`, `zerodds-security-runtime`,
 //! `zerodds-xml`, `zerodds-zenoh-bridge`.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! **Top-Level:**
-//! - [`Duration`] — DDS-Duration (sec + nanosec) fuer alle zeitbasierten Policies.
-//! - [`Pid`] — DDSI-RTPS §9.6.3.2 PID-Konstanten fuer QoS-Policy-Wire-Encoding.
+//! **Top level:**
+//! - [`Duration`] — DDS duration (sec + nanosec) for all time-based policies.
+//! - [`Pid`] — DDSI-RTPS §9.6.3.2 PID constants for QoS-policy wire encoding.
 //! - [`CompatibilityResult`] / [`IncompatibleReason`] / [`check_compatibility`]
-//!   — Request/Offered-Matrix.
+//!   — request/offered matrix.
 //!
-//! **Policies-Modul** ([`policies`]):
-//! - 22 Standard-Policies: [`DurabilityQosPolicy`], [`DurabilityServiceQosPolicy`],
+//! **Policies module** ([`policies`]):
+//! - 22 standard policies: [`DurabilityQosPolicy`], [`DurabilityServiceQosPolicy`],
 //!   [`DeadlineQosPolicy`], [`LatencyBudgetQosPolicy`], [`LivelinessQosPolicy`],
 //!   [`ReliabilityQosPolicy`], [`DestinationOrderQosPolicy`], [`HistoryQosPolicy`],
 //!   [`ResourceLimitsQosPolicy`], [`TransportPriorityQosPolicy`], [`LifespanQosPolicy`],
@@ -39,8 +39,8 @@
 //!   [`GroupDataQosPolicy`], [`TimeBasedFilterQosPolicy`],
 //!   [`ReaderDataLifecycleQosPolicy`], [`WriterDataLifecycleQosPolicy`],
 //!   [`EntityFactoryQosPolicy`].
-//! - QoS-Aggregate: [`ReaderQos`], [`WriterQos`].
-//! - Kind-Enums: [`DurabilityKind`], [`ReliabilityKind`], [`LivelinessKind`],
+//! - QoS aggregates: [`ReaderQos`], [`WriterQos`].
+//! - Kind enums: [`DurabilityKind`], [`ReliabilityKind`], [`LivelinessKind`],
 //!   [`OwnershipKind`], [`HistoryKind`], [`DestinationOrderKind`],
 //!   [`PresentationAccessScope`].
 //!
@@ -48,10 +48,10 @@
 //! - [`exclusive_ownership::OwnershipResolver`] /
 //!   [`exclusive_ownership::OwnershipCandidate`] /
 //!   [`exclusive_ownership::resolve_strongest`] —
-//!   DDS 1.4 §2.2.3.23 Strongest-Writer-Selection fuer DataReader.take()
-//!   bei Topics mit `Exclusive`-Ownership-QoS.
+//!   DDS 1.4 §2.2.3.23 strongest-writer selection for DataReader.take()
+//!   on topics with `Exclusive` ownership QoS.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust
 //! use zerodds_qos::{
@@ -62,7 +62,7 @@
 //! let mut writer_qos = WriterQos::default();
 //! writer_qos.reliability = ReliabilityQosPolicy { kind: ReliabilityKind::Reliable, ..Default::default() };
 //! let reader_qos = ReaderQos::default();
-//! // Reliable writer + BestEffort reader (default) sind kompatibel.
+//! // Reliable writer + BestEffort reader (default) are compatible.
 //! assert!(matches!(check_compatibility(&writer_qos, &reader_qos), CompatibilityResult::Compatible));
 //! ```
 
@@ -70,10 +70,10 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-// `zerodds-qos` setzt `alloc` zwingend voraus (Partition-Strings,
-// GenericData-Buffers, ResourceLimits-Vec, …). `zerodds-cdr` mit
-// `alloc`-Feature ist mandatory dep, also ist `extern crate alloc`
-// immer verfuegbar.
+// `zerodds-qos` strictly requires `alloc` (partition strings,
+// GenericData buffers, ResourceLimits vec, …). `zerodds-cdr` with
+// the `alloc` feature is a mandatory dep, so `extern crate alloc`
+// is always available.
 extern crate alloc;
 
 pub mod compatibility;

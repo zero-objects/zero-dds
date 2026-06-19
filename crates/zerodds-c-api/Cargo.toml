@@ -22,27 +22,53 @@ name = "zerodds"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [features]
-default = ["std"]
+default = ["std", "same-host-shm", "flatdata-loan"]
 std = []
+# Enables the ShmUserTransport (POSIX-SHM multi-peer adapter) as
+# the choice for user_unicast via env var ZERODDS_USER_TRANSPORT=SHM.
+same-host-shm = ["zerodds-dcps/same-host-shm"]
+# Zero-copy same-host loan FFI: zerodds_dw_enable_shm_loan +
+# zerodds_dr_enable_shm/take_shm/release_shm. The DataWriter loan
+# (loan_message/commit_loan/discard_loan) then hands out a real POSIX-SHM
+# slot pointer instead of a heap box; a same-host reader maps the same
+# segment and takes the slot zero-copy. Cross-host readers transparently
+# keep the RTPS path (commit also publishes via write_user_sample).
+flatdata-loan = ["dep:zerodds-flatdata"]
+# Delivery-mode `Iceoryx` (zerodds-delivery-modes-1.0 §3.3): routes a writer's
+# samples over the Eclipse iceoryx2 shared-memory system so iceoryx-based peers
+# on the same host can read them. Pulls in the flatdata iceoryx2 bridge. Off by
+# default (heavy external dependency); Portable + RawSameHost need only
+# flatdata-loan.
+delivery-iceoryx = ["flatdata-loan", "zerodds-flatdata/iceoryx2-bridge"]
+# DDS-Security-1.2 FFI: 6 setters for identity CA/cert/key + permissions CA + governance/permissions.p7s
+# plus zerodds_runtime_create_secure(domain, config). Pulls security-runtime into the build.
+security = [
+    "zerodds-dcps/security",
+    "dep:zerodds-security-runtime",
+]
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr", features = ["alloc", "std"] }
-zerodds-dcps = { version = "1.0.0-rc.1", path = "../dcps" }
-zerodds-qos = { version = "1.0.0-rc.1", path = "../qos" }
-zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps" }
-zerodds-sql-filter = { version = "1.0.0-rc.1", path = "../sql-filter" }
-zerodds-types = { version = "1.0.0-rc.1", path = "../types" }
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr", features = ["alloc", "std"] }
+zerodds-dcps = { version = "1.0.0-rc.3", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos" }
+zerodds-rtps = { version = "1.0.0-rc.3", path = "../rtps" }
+zerodds-sql-filter = { version = "1.0.0-rc.3", path = "../sql-filter" }
+zerodds-types = { version = "1.0.0-rc.3", path = "../types" }
+# Active only under the `security` feature — otherwise NOT compiled.
+zerodds-security-runtime = { version = "1.0.0-rc.3", path = "../security-runtime", optional = true }
+# Active only under the `flatdata-loan` feature — zero-copy SHM slot loan.
+zerodds-flatdata = { version = "1.0.0-rc.3", path = "../flatdata", optional = true, default-features = false, features = ["std", "posix-mmap"] }
 
 [build-dependencies]
-# 0.29+ versteht `#[unsafe(no_mangle)]` (Rust 2024 Syntax).
+# 0.29+ understands `#[unsafe(no_mangle)]` (Rust 2024 syntax).
 cbindgen = "0.29"
 
 [dev-dependencies]
-# Smoke-Test ueber dcps direkt (nicht ueber FFI — separate C-Programm fuer FFI-Tests).
+# Smoke test via dcps directly (not via FFI — separate C program for FFI tests).
 zerodds-dcps = { path = "../dcps" }
-# XCDR2-Conformance-Tests brauchen das C-Codegen via idl-cpp.
+# XCDR2 conformance tests need the C codegen via idl-cpp.
 zerodds-idl = { path = "../idl" }
 zerodds-idl-cpp = { path = "../idl-cpp" }
-# ABI-Compat-Snapshot-Test (§8.2): JSON-Array der exportierten Symbole.
+# ABI compat snapshot test (§8.2): JSON array of the exported symbols.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

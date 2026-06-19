@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "DDSI-RTPS 2.5 Wire-Stack für ZeroDDS — Submessages, Writer/Reader State-Machines, Reliable + Fragmentation, Inline-QoS, ParameterList, BuiltinTopicData. Pure-Rust no_std + alloc."
+description = "DDSI-RTPS 2.5 wire stack for ZeroDDS — submessages, writer/reader state machines, reliable + fragmentation, inline QoS, ParameterList, BuiltinTopicData. Pure-Rust no_std + alloc."
 repository = "https://github.com/zero-objects/zero-dds"
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-rtps"
@@ -21,32 +21,33 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std", "metrics"]
 std = ["alloc", "zerodds-foundation/std"]
 alloc = []
 # PDE Reality Inspector Hook-Up — Tap-Dispatch im RTPS-HistoryCache.
 # Default OFF (R-034): Production-Builds enthalten keinen Tap-Code.
 inspect = ["dep:zerodds-inspect-endpoint", "zerodds-inspect-endpoint/inspect"]
-# zerodds-monitor Hook-Points (zerodds-monitor-1.0 §2.2). Default an;
-# no_std-Builds (`default-features = false, features = ["alloc"]`)
-# deaktivieren das Feature und fallen auf no-op Counter-Stubs zurueck.
+# zerodds-monitor hook points (zerodds-monitor-1.1 §2.2). Default on;
+# no_std builds (`default-features = false, features = ["alloc"]`)
+# disable the feature and fall back to no-op counter stubs.
 metrics = ["std", "dep:zerodds-monitor"]
 
 [dependencies]
-zerodds-qos = { version = "1.0.0-rc.1", path = "../qos", default-features = false, features = ["alloc"] }
-zerodds-foundation = { version = "1.0.0-rc.1", path = "../foundation", default-features = false, features = ["alloc"] }
-# F-TYPES-3 Wire-up: PublicationBuiltinTopicData / SubscriptionBuiltinTopicData
-# tragen einen optionalen `TypeIdentifier` (XTypes §7.3.4.2) damit
-# Reader-Writer-Matching XTypes-aware werden kann.
-zerodds-types = { version = "1.0.0-rc.1", path = "../types", default-features = false, features = ["alloc"] }
-zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr", default-features = false, features = ["alloc"] }
-# Inspect-Endpoint Tap-Hooks (Reality Inspector). Optional.
-zerodds-inspect-endpoint = { version = "1.0.0-rc.1", path = "../inspect-endpoint", optional = true }
-# Hook-Points fuer zerodds-monitor-1.0 §2.2. Optional.
-zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std"] }
-# portable-atomic: polyfill fuer 64-bit atomics auf Cortex-M (thumbv7em
-# hat keine native AtomicI64/AtomicU64). Auf x86_64/aarch64 Pass-Through
-# zur native core::sync::atomic via dem `fallback`-Mechanismus.
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos", default-features = false, features = ["alloc"] }
+zerodds-foundation = { version = "1.0.0-rc.3", path = "../foundation", default-features = false, features = ["alloc"] }
+# F-TYPES-3 wire-up: PublicationBuiltinTopicData / SubscriptionBuiltinTopicData
+# carry an optional `TypeIdentifier` (XTypes §7.3.4.2) so that
+# reader-writer matching can become XTypes-aware.
+zerodds-types = { version = "1.0.0-rc.3", path = "../types", default-features = false, features = ["alloc"] }
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr", default-features = false, features = ["alloc"] }
+# Inspect-endpoint tap hooks (Reality Inspector). Optional.
+zerodds-inspect-endpoint = { version = "1.0.0-rc.3", path = "../inspect-endpoint", optional = true }
+# Hook points for zerodds-monitor-1.1 §2.2. Optional.
+zerodds-monitor = { version = "1.0.0-rc.3", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+# portable-atomic: polyfill for 64-bit atomics on Cortex-M (thumbv7em
+# has no native AtomicI64/AtomicU64). On x86_64/aarch64 pass-through
+# to native core::sync::atomic via the `fallback` mechanism.
 portable-atomic = { version = "1.7", default-features = false, features = ["fallback"] }
 
 [dev-dependencies]

@@ -1,51 +1,51 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [1.0.0-rc.1] — 2026-05-07
 
-Initiale Release-Materialisierung der `zerodds-corba-cosnaming`-Crate.
+Initial release materialization of the `zerodds-corba-cosnaming` crate.
 
-### Spec-Referenzen
+### Spec references
 
 - **OMG CosNaming 1.3** (`formal/2004-10-03`): NamingContext (§2.2),
-  NamingContextExt (§2.3), Stringified-Name (§2.4),
-  corbaname-URL-Scheme (§2.5).
-- **CORBA 3.3 Part 2 §13.6.10** — corbaname-URL als IOR-Resolver-Ersatz.
+  NamingContextExt (§2.3), stringified name (§2.4),
+  corbaname URL scheme (§2.5).
+- **CORBA 3.3 Part 2 §13.6.10** — corbaname URL as an IOR resolver substitute.
 
-### Public-API
+### Public API
 
-- `name::{Name, NameComponent}` — Name-Sequenz mit `id`/`kind`-Paaren.
+- `name::{Name, NameComponent}` — name sequence with `id`/`kind` pairs.
 - `context::{Binding, BindingType, NamingContext, ObjectRef}` —
-  NamingContext-In-Memory-Impl mit Bind/Rebind/Resolve/Unbind/
+  in-memory NamingContext impl with Bind/Rebind/Resolve/Unbind/
   BindContext/NewContext/Destroy + ListBindings.
-- `error::{NamingError, NotFoundReason}` — alle 5 Exception-Klassen
+- `error::{NamingError, NotFoundReason}` — all 5 exception classes
   (`NotFound`, `CannotProceed`, `InvalidName`, `AlreadyBound`,
   `NotEmpty`).
-- `stringified::{name_to_string, string_to_name}` — Spec §2.4
-  Stringified-Name-Format.
+- `stringified::{name_to_string, string_to_name}` — spec §2.4
+  stringified-name format.
 
-### Implementierung
+### Implementation
 
-`#![cfg_attr(not(feature = "std"), no_std)]` mit `extern crate alloc`;
+`#![cfg_attr(not(feature = "std"), no_std)]` with `extern crate alloc`;
 `#![forbid(unsafe_code)]`.
 
-`NamingContext` ist ein In-Memory-`BTreeMap`-basiertes Objekt mit
-parent-Tracking fuer iterative Resolves.
+`NamingContext` is an in-memory `BTreeMap`-based object with
+parent tracking for iterative resolves.
 
-`name_to_string` escaped `/`, `.` und `\` gemaess §2.4.
+`name_to_string` escapes `/`, `.` and `\` per §2.4.
 
-`ObjectRef`-Variante traegt einen `Ior`-Inhalt aus
-`zerodds-corba-ior` (Cross-Crate-Wire-up).
+The `ObjectRef` variant carries an `Ior` payload from
+`zerodds-corba-ior` (cross-crate wire-up).
 
-### Architektur
+### Architecture
 
-- **Layer:** 8 (CORBA-Stack, Tier-C).
+- **Layer:** 8 (CORBA stack, Tier C).
 - **Dependencies (in):** `zerodds-cdr`, `zerodds-corba-ior`.
-- **Dependents (out):** Hosting-Anwendungen + Naming-Service-Server.
-- **Feature-Flags:** `std` (default), `alloc` (via std).
+- **Dependents (out):** hosting applications + naming service servers.
+- **Feature flags:** `std` (default), `alloc` (via std).
 
-### Stabilitaet
+### Stability
 
-- Public-API: RC1-stabil.
-- Wire-Format und Stringified-Name-Format durch OMG fixiert.
+- Public API: RC1-stable.
+- Wire format and stringified-name format fixed by OMG.

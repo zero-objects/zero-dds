@@ -1,15 +1,15 @@
-//! zerodds-async-1.0 §8: proptest ueber Channel-Backpressure.
+//! zerodds-async-1.0 §8: proptest over channel backpressure.
 //!
-//! Property: gegen einen offline-Participant mit Reliable + KeepAll +
-//! `max_samples = N` darf eine zufaellige Folge aus `write` und `take`
-//! niemals
-//! - die Queue ueber N hinaus wachsen lassen,
-//! - bei voller Queue eine andere Fehlerklasse als `Timeout` liefern,
-//! - bei freier Queue write fehlschlagen lassen.
+//! Property: against an offline participant with Reliable + KeepAll +
+//! `max_samples = N`, a random sequence of `write` and `take` must
+//! never
+//! - let the queue grow beyond N,
+//! - return an error class other than `Timeout` when the queue is full,
+//! - let a write fail when the queue has free space.
 //!
-//! Das absichert §5.1 (`write`-Future suspendiert bei OutOfResources)
-//! und §6.1 (data_available_stream / take liefern den deterministischen
-//! Drain).
+//! This safeguards §5.1 (the `write` future suspends on OutOfResources)
+//! and §6.1 (data_available_stream / take provide the deterministic
+//! drain).
 
 #![allow(
     clippy::expect_used,
@@ -42,8 +42,8 @@ enum Op {
     Take,
 }
 
-/// Erzeugt eine Sequenz aus Writes und Takes mit klar begrenzten
-/// Anteilen — proptest verkleinert auf der Sequenz selbst.
+/// Generates a sequence of writes and takes with clearly bounded
+/// proportions — proptest shrinks on the sequence itself.
 fn op_strategy() -> impl Strategy<Value = Op> {
     prop_oneof![Just(Op::Write), Just(Op::Take)]
 }
@@ -52,14 +52,14 @@ fn ops_strategy() -> impl Strategy<Value = Vec<Op>> {
     prop::collection::vec(op_strategy(), 0..32)
 }
 
-/// Erzeugt zufaellige Queue-Kapazitaet [1, 8] — klein genug, dass die
-/// proptest-Sequenz die Grenze regelmaessig trifft.
+/// Generates a random queue capacity [1, 8] — small enough that the
+/// proptest sequence hits the limit regularly.
 fn capacity_strategy() -> impl Strategy<Value = usize> {
     1usize..=8
 }
 
-/// Pro Property-Iteration: frisch initialisierter Async-Participant +
-/// Topic + Reliable-Writer + Reader, gemeinsam.
+/// Per property iteration: a freshly initialized async participant +
+/// topic + reliable writer + reader, together.
 async fn run_sequence(capacity: usize, ops: Vec<Op>, topic_name: &str) {
     use zerodds_qos::HistoryKind;
     use zerodds_qos::HistoryQosPolicy;
@@ -98,10 +98,10 @@ async fn run_sequence(capacity: usize, ops: Vec<Op>, topic_name: &str) {
         .create_datareader::<RawBytes>(&topic, DataReaderQos::default())
         .expect("reader");
 
-    // Modell: Anzahl Samples in der Writer-Queue.
-    // Da wir offline sind, zaehlt der Writer den Sender, der Reader
-    // konsumiert nichts. Wir testen nur das Backpressure-Verhalten von
-    // write_async — die Garantie ist: bei voller Queue → Timeout.
+    // Model: number of samples in the writer queue.
+    // Since we are offline, the writer counts the sender and the reader
+    // consumes nothing. We only test the backpressure behavior of
+    // write_async — the guarantee is: full queue → Timeout.
     let mut model_in_queue: usize = 0;
     let mut next_payload: u8 = 0;
 
@@ -112,7 +112,7 @@ async fn run_sequence(capacity: usize, ops: Vec<Op>, topic_name: &str) {
                 let payload = RawBytes::new(vec![next_payload]);
                 let res = writer.write(&payload).await;
                 if model_in_queue < capacity {
-                    // Queue hat Platz → write MUSS gelingen.
+                    // Queue has room → write MUST succeed.
                     assert!(
                         res.is_ok(),
                         "write at queue {model_in_queue}/{capacity} \
@@ -120,8 +120,8 @@ async fn run_sequence(capacity: usize, ops: Vec<Op>, topic_name: &str) {
                     );
                     model_in_queue += 1;
                 } else {
-                    // Queue voll → write MUSS Timeout liefern (kein
-                    // anderer Fehler erlaubt).
+                    // Queue full → write MUST return Timeout (no
+                    // other error allowed).
                     assert!(
                         matches!(res, Err(DdsError::Timeout)),
                         "write at full queue ({capacity}) expected \
@@ -130,14 +130,14 @@ async fn run_sequence(capacity: usize, ops: Vec<Op>, topic_name: &str) {
                 }
             }
             Op::Take => {
-                // Wir nutzen take mit kurzem Timeout — drain-Funktion.
-                // Phase-1-async take liefert immer Ok(Vec) (offline =
-                // leer). Wir reduzieren das Modell konservativ um 1.
+                // We use take with a short timeout — drain function.
+                // Phase-1 async take always returns Ok(Vec) (offline =
+                // empty). We conservatively reduce the model by 1.
                 let _ = reader.take(Duration::from_millis(5)).await;
-                // Im offline-Pfad wird die Writer-Queue durch den
-                // internen take-Tick nicht wirklich gedrained; das
-                // Modell muss konservativ sein und die Queue fuellen
-                // lassen bis zum Cap. Genau das ist das Test-Ziel.
+                // On the offline path the writer queue is not actually
+                // drained by the internal take tick; the model must be
+                // conservative and let the queue fill up to the cap.
+                // That is exactly the test goal.
             }
         }
     }
@@ -146,9 +146,9 @@ async fn run_sequence(capacity: usize, ops: Vec<Op>, topic_name: &str) {
 proptest! {
     #![proptest_config(ProptestConfig {
         cases: 16,
-        // Backpressure-Sequenzen mit echten Tokio-Timeouts kosten
-        // Realzeit (jedes write nach Cap = 20 ms). 16 Cases sind ein
-        // sinnvoller Kompromiss zwischen Coverage und Wall-Clock.
+        // Backpressure sequences with real Tokio timeouts cost
+        // real time (each write past the cap = 20 ms). 16 cases are a
+        // sensible compromise between coverage and wall-clock time.
         .. ProptestConfig::default()
     })]
 
@@ -157,7 +157,7 @@ proptest! {
         capacity in capacity_strategy(),
         ops in ops_strategy(),
     ) {
-        // proptest ist sync, Tokio-Runtime per Iteration.
+        // proptest is sync, a Tokio runtime per iteration.
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()

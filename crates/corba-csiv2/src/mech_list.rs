@@ -3,11 +3,10 @@
 
 //! CompoundSecMechList — Spec §24.2.6.5.
 //!
-//! Wird im IOR als `TAG_CSI_SEC_MECH_LIST`-TaggedComponent
-//! transportiert. Beschreibt die zur Verfuegung stehenden Security-
-//! Layers und ihre Mechanismen.
+//! Transported in the IOR as a `TAG_CSI_SEC_MECH_LIST` TaggedComponent.
+//! Describes the available security layers and their mechanisms.
 //!
-//! Vereinfacht modelliert (Caller-Layer-Wire-Codec):
+//! Modeled in a simplified form (caller-layer wire codec):
 //!
 //! ```text
 //! struct CompoundSecMechList {
@@ -29,32 +28,32 @@ use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 
 use crate::association_options::AssociationOptions;
 
-/// CSI::AS-Layer-Mechanism-Beschreibung (Spec §24.2.6.5.4).
+/// CSI AS-layer mechanism description (Spec §24.2.6.5.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AsContextSec {
     /// `target_supports`.
     pub target_supports: AssociationOptions,
     /// `target_requires`.
     pub target_requires: AssociationOptions,
-    /// `client_authentication_mech` — DER-encoded GSS-Mechanism-OID
-    /// (typisch GSSUP).
+    /// `client_authentication_mech` — DER-encoded GSS mechanism OID
+    /// (typically GSSUP).
     pub client_authentication_mech: Vec<u8>,
-    /// `target_name` — Zielname (z.B. Realm-Bytes).
+    /// `target_name` — target name (e.g. realm bytes).
     pub target_name: Vec<u8>,
 }
 
-/// CSI::SAS-Layer-Mechanism-Beschreibung (Spec §24.2.6.5.5).
+/// CSI SAS-layer mechanism description (Spec §24.2.6.5.5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SasContextSec {
     /// `target_supports`.
     pub target_supports: AssociationOptions,
     /// `target_requires`.
     pub target_requires: AssociationOptions,
-    /// `privilege_authorities` — Liste DER-encoded Authorities.
+    /// `privilege_authorities` — list of DER-encoded authorities.
     pub privilege_authorities: Vec<Vec<u8>>,
-    /// `supported_naming_mechanisms` — DER-encoded GSS-Naming-Mechs.
+    /// `supported_naming_mechanisms` — DER-encoded GSS naming mechs.
     pub supported_naming_mechanisms: Vec<Vec<u8>>,
-    /// `supported_identity_types` — Bitfield (Spec §24.2.5).
+    /// `supported_identity_types` — bitfield (Spec §24.2.5).
     pub supported_identity_types: u32,
 }
 
@@ -63,24 +62,24 @@ pub struct SasContextSec {
 pub struct CompoundSecMech {
     /// `target_requires`.
     pub target_requires: AssociationOptions,
-    /// `transport_mech` — opaque TaggedComponent-Bytes (typisch
-    /// TAG_TLS_SEC_TRANS = 36 oder TAG_SECIOP_SEC_TRANS = 35).
+    /// `transport_mech` — opaque TaggedComponent bytes (typically
+    /// TAG_TLS_SEC_TRANS = 36 or TAG_SECIOP_SEC_TRANS = 35).
     pub transport_mech_tag: u32,
-    /// Encapsulation des transport-mech-Bodies (z.B. `TLS_SEC_TRANS`).
+    /// Encapsulation of the transport-mech body (e.g. `TLS_SEC_TRANS`).
     pub transport_mech_data: Vec<u8>,
-    /// AS-Layer-Beschreibung.
+    /// AS-layer description.
     pub as_context: AsContextSec,
-    /// SAS-Layer-Beschreibung.
+    /// SAS-layer description.
     pub sas_context: SasContextSec,
 }
 
 /// CompoundSecMechList.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CompoundSecMechList {
-    /// `stateful` — `true` bedeutet, dass mehrere Requests denselben
-    /// Security-Context wiederverwenden (Performance-Optimierung).
+    /// `stateful` — `true` means multiple requests reuse the same
+    /// security context (performance optimization).
     pub stateful: bool,
-    /// Liste der angebotenen Mechanismen (in Praeferenz-Reihenfolge).
+    /// List of offered mechanisms (in preference order).
     pub mechanism_list: Vec<CompoundSecMech>,
 }
 
@@ -126,8 +125,8 @@ impl AsContextSec {
     /// CDR-Encode (Spec §24.2.6.5.4).
     ///
     /// # Errors
-    /// `EncodeError::ValueOutOfRange { message: "csiv2 octet/seq length exceeds u32::MAX" }` wenn ein octet-seq groesser als
-    /// `u32::MAX` waere.
+    /// `EncodeError::ValueOutOfRange { message: "csiv2 octet/seq length exceeds u32::MAX" }` if an octet-seq would be larger than
+    /// `u32::MAX`.
     pub fn encode(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u16(self.target_supports.0)?;
         w.write_u16(self.target_requires.0)?;
@@ -138,7 +137,7 @@ impl AsContextSec {
     /// CDR-Decode.
     ///
     /// # Errors
-    /// `DecodeError::*` wenn der Reader truncated ist.
+    /// `DecodeError::*` if the reader is truncated.
     pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let target_supports = AssociationOptions(r.read_u16()?);
         let target_requires = AssociationOptions(r.read_u16()?);
@@ -157,8 +156,8 @@ impl SasContextSec {
     /// CDR-Encode (Spec §24.2.6.5.5).
     ///
     /// # Errors
-    /// `EncodeError::ValueOutOfRange { message: "csiv2 octet/seq length exceeds u32::MAX" }` wenn ein seq groesser als
-    /// `u32::MAX` waere.
+    /// `EncodeError::ValueOutOfRange { message: "csiv2 octet/seq length exceeds u32::MAX" }` if a seq would be larger than
+    /// `u32::MAX`.
     pub fn encode(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u16(self.target_supports.0)?;
         w.write_u16(self.target_requires.0)?;
@@ -170,7 +169,7 @@ impl SasContextSec {
     /// CDR-Decode.
     ///
     /// # Errors
-    /// `DecodeError::*` wenn der Reader truncated ist.
+    /// `DecodeError::*` if the reader is truncated.
     pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let target_supports = AssociationOptions(r.read_u16()?);
         let target_requires = AssociationOptions(r.read_u16()?);
@@ -194,7 +193,7 @@ impl CompoundSecMech {
     /// `EncodeError::ValueOutOfRange { message: "csiv2 octet/seq length exceeds u32::MAX" }`.
     pub fn encode(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u16(self.target_requires.0)?;
-        // IOP::TaggedComponent fuer transport_mech: tag (u32) + sequence<octet> data.
+        // IOP::TaggedComponent for transport_mech: tag (u32) + sequence<octet> data.
         w.write_u32(self.transport_mech_tag)?;
         write_octet_seq(w, &self.transport_mech_data)?;
         self.as_context.encode(w)?;
@@ -222,12 +221,12 @@ impl CompoundSecMech {
 }
 
 impl CompoundSecMechList {
-    /// CDR-Encode (Spec §24.2.6.5). Wird im IOR als `TAG_CSI_SEC_MECH_LIST=33`-
-    /// Component-Body verwendet (CDR-Encapsulation: 1-Byte-Endianness +
-    /// 1-Byte-Padding-Reserved + dieser Body).
+    /// CDR-Encode (Spec §24.2.6.5). Used in the IOR as the
+    /// `TAG_CSI_SEC_MECH_LIST=33` component body (CDR encapsulation:
+    /// 1-byte endianness + 1-byte padding/reserved + this body).
     ///
     /// # Errors
-    /// `EncodeError::ValueOutOfRange { message: "csiv2 octet/seq length exceeds u32::MAX" }` wenn `mechanism_list.len()` > `u32::MAX`.
+    /// `EncodeError::ValueOutOfRange { message: "csiv2 octet/seq length exceeds u32::MAX" }` if `mechanism_list.len()` > `u32::MAX`.
     pub fn encode(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u8(u8::from(self.stateful))?;
         let n =
@@ -308,10 +307,10 @@ mod tests {
         assert!(!list.stateful);
     }
 
-    /// Spec §24.2.6.5 — CompoundSecMechList CDR-Roundtrip. Wire-up
-    /// fuer F-CORBA-CSIV2-NOT-WIRED: csiv2 verbraucht jetzt zerodds-cdr
-    /// produktiv (war pre-Review als Cargo-Dep ohne tatsaechliche
-    /// Verwendung).
+    /// Spec §24.2.6.5 — CompoundSecMechList CDR roundtrip. Wire-up
+    /// for F-CORBA-CSIV2-NOT-WIRED: csiv2 now uses zerodds-cdr in
+    /// production (it was a Cargo dep without actual use before the
+    /// review).
     #[test]
     fn cdr_roundtrip_compound_sec_mech_list() {
         use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
@@ -360,7 +359,7 @@ mod tests {
         let mut w = BufferWriter::new(Endianness::Little);
         original.encode(&mut w).expect("encode");
         let bytes = w.into_bytes();
-        // 1-byte stateful + 3-byte CDR-Padding zu u32-Alignment + 4-byte length=0
+        // 1-byte stateful + 3-byte CDR padding to u32 alignment + 4-byte length=0
         assert_eq!(bytes.len(), 8);
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let decoded = CompoundSecMechList::decode(&mut r).expect("decode");

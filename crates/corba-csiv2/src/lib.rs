@@ -4,46 +4,46 @@
 //! Crate `zerodds-corba-csiv2`. Safety classification: **STANDARD**.
 //!
 //! OMG CORBA 3.3 Part 3 — Common Secure Interoperability v2 (CSIv2).
-//! Voller CSIv2-Stack als pure-Rust `no_std + alloc`,
+//! Full CSIv2 stack as pure-Rust `no_std + alloc`,
 //! `forbid(unsafe_code)`:
 //!
-//! - **Association-Options** (Spec §24.2.4) — Bitmasken
+//! - **Association options** (Spec §24.2.4) — bitmasks
 //!   `Integrity` / `Confidentiality` / `EstablishTrustInTarget` /
 //!   `EstablishTrustInClient` / `IdentityAssertion` /
 //!   `DelegationByClient` / `NoProtection`.
-//! - **Compound-Sec-Mech-List** (Spec §24.2.6.5) als
-//!   `TAG_CSI_SEC_MECH_LIST`-Component-Body (AS-Layer + SAS-Layer).
-//! - **GSSUP** Username-Password-Token (Spec §24.7) mit
-//!   `INITIAL_CONTEXT_TOKEN`-Wrapping.
-//! - **SAS-Protocol** (Spec §24.2): EstablishContext /
+//! - **Compound sec-mech list** (Spec §24.2.6.5) as the
+//!   `TAG_CSI_SEC_MECH_LIST` component body (AS layer + SAS layer).
+//! - **GSSUP** username/password token (Spec §24.7) with
+//!   `INITIAL_CONTEXT_TOKEN` wrapping.
+//! - **SAS protocol** (Spec §24.2): EstablishContext /
 //!   CompleteEstablishContext / MessageInContext / ContextError.
-//! - **TLS-Mechanism-OID** (Spec §24.2.6.5): `1.3.6.1.5.5.13` fuer
+//! - **TLS mechanism OID** (Spec §24.2.6.5): `1.3.6.1.5.5.13` for
 //!   `TLS_SEC_TRANS`.
 //!
 //! Spec: OMG CORBA 3.3 Part 3 §24.
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 8 — CORBA-Stack (Tier-A). Sitzt auf `zerodds-cdr` (Wire-
-//! Codec). Konsumenten sind GIOP-/IIOP-Server (Layer-8-Tier-B/C) mit
-//! Security-Stack-Konfiguration.
+//! Layer 8 — CORBA stack (Tier A). Sits on `zerodds-cdr` (wire
+//! codec). Consumers are GIOP/IIOP servers (Layer 8, Tier B/C) with
+//! security-stack configuration.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! - [`AssociationOptions`] — §24.2.4 Bitmask.
+//! - [`AssociationOptions`] — §24.2.4 bitmask.
 //! - [`CompoundSecMech`] / [`CompoundSecMechList`] / [`AsContextSec`]
 //!   / [`SasContextSec`] — §24.2.6.5.
 //! - [`GssupCredentialToken`] / [`INITIAL_CONTEXT_TOKEN_TAG`] — §24.7.
 //! - [`SasMessage`] / [`EstablishContext`] /
 //!   [`CompleteEstablishContext`] / [`MessageInContext`] /
-//!   [`ContextError`] / [`IdentityToken`] — §24.2 SAS-Protocol.
+//!   [`ContextError`] / [`IdentityToken`] — §24.2 SAS protocol.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust
 //! use zerodds_corba_csiv2::AssociationOptions;
 //!
-//! // Spec §24.2.4 — Association-Options-Bitmask: Integrity + Confidentiality.
+//! // Spec §24.2.4 — association-options bitmask: Integrity + Confidentiality.
 //! let opts = AssociationOptions(AssociationOptions::INTEGRITY | AssociationOptions::CONFIDENTIALITY);
 //! assert!(opts.0 & AssociationOptions::INTEGRITY != 0);
 //! assert!(opts.0 & AssociationOptions::CONFIDENTIALITY != 0);

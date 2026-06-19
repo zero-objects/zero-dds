@@ -1,6 +1,6 @@
 # 0008 — ROS-2 SROS2-Enclaves + Permissions-XML — RC1 als rejected, n/a
 
-- **Status:** rejected
+- **Status:** superseded by [0012](0012-ros2-sros2-accepted-spec-completeness.md)
 - **Datum:** 2026-05-06
 - **Autoren:** RC1-Closeout-Cluster-C
 - **Kontext:** `crates/ros2-rmw`, Spec `zerodds-ros2-bridge-1.0` §7.1 + §7.2,

@@ -2,17 +2,17 @@
 // Copyright 2026 ZeroDDS Contributors
 //! XTypes 1.3 TypeIdentifier (Spec §7.3.4.2).
 //!
-//! TypeIdentifier ist eine CDR-Union mit `octet`-Discriminator. Er
-//! identifiziert einen Typ entweder **direkt** (Primitives, plain
-//! Collections) oder **indirekt** ueber einen 14-byte SHA-256-Hash auf
-//! das serialisierte TypeObject (EK_MINIMAL / EK_COMPLETE).
+//! TypeIdentifier is a CDR union with an `octet` discriminator. It
+//! identifies a type either **directly** (primitives, plain
+//! collections) or **indirectly** via a 14-byte SHA-256 hash of the
+//! serialized TypeObject (EK_MINIMAL / EK_COMPLETE).
 //!
 //! # Wire-Encoding (XCDR2 LE)
 //!
 //! ```text
 //! TypeIdentifier {
 //!     octet _d;            // 1 byte discriminator
-//!     // body abhaengig von _d:
+//!     // body depending on _d:
 //!     // TK_NONE..TK_CHAR16:          no body
 //!     // TI_STRING8_SMALL/LE_SMALL:   { octet bound; }
 //!     // TI_STRING8_LARGE/LE_LARGE:   { uint32 bound; }  // 4-byte aligned
@@ -46,42 +46,42 @@ use self::kinds::{
     TK_UINT32, TK_UINT64,
 };
 
-/// 14-byte SHA256-Hash ueber ein serialisiertes TypeObject.
+/// 14-byte SHA256 hash of a serialized TypeObject.
 ///
-/// Spec §7.3.1.2: der Hash wird aus der **ersten 14 Bytes** der SHA-256
-/// ueber das XCDR2-serialisierte TypeObject gebildet.
+/// Spec §7.3.1.2: the hash is formed from the **first 14 bytes** of the
+/// SHA-256 over the XCDR2-serialized TypeObject.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct EquivalenceHash(pub [u8; EQUIVALENCE_HASH_LEN]);
 
 impl EquivalenceHash {
-    /// Null-Hash (Platzhalter).
+    /// Null hash (placeholder).
     pub const ZERO: Self = Self([0; EQUIVALENCE_HASH_LEN]);
 }
 
-/// Collection-Element-Flags (§7.3.4.7.1). 16-bit Bitmaske mit nur einem
-/// relevanten Bit (TRY_CONSTRUCT) fuer TypeIdentifier.
+/// Collection element flags (§7.3.4.7.1). A 16-bit bitmask with only one
+/// relevant bit (TRY_CONSTRUCT) for TypeIdentifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CollectionElementFlag(pub u16);
 
-/// Equivalence-Kind des Elements einer PlainCollection (§7.3.4.7.1).
+/// Equivalence kind of the element of a PlainCollection (§7.3.4.7.1).
 ///
-/// EK_MINIMAL = TI ist strongly-hashed Minimal, EK_COMPLETE = Complete,
-/// EK_BOTH = identisch fuer beide, `None` = element ist selbst primitive
-/// oder plain (kein strong-hash).
+/// EK_MINIMAL = the TI is strongly-hashed minimal, EK_COMPLETE =
+/// complete, EK_BOTH = identical for both, `None` = the element is
+/// itself primitive or plain (no strong hash).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EquivalenceKind {
-    /// Element ist ein Primitive oder anderes plain — kein Hash.
+    /// The element is a primitive or otherwise plain — no hash.
     None,
-    /// Element-TypeIdentifier ist EK_MINIMAL.
+    /// The element TypeIdentifier is EK_MINIMAL.
     Minimal,
-    /// Element-TypeIdentifier ist EK_COMPLETE.
+    /// The element TypeIdentifier is EK_COMPLETE.
     Complete,
-    /// Minimal + Complete sind gleich (z.B. bei vollstaendig primitiven Types).
+    /// Minimal + complete are the same (e.g. for fully primitive types).
     Both,
 }
 
 impl EquivalenceKind {
-    /// Kodiert als `octet` (§7.3.4.7.1 EquivalenceKind).
+    /// Encoded as `octet` (§7.3.4.7.1 EquivalenceKind).
     #[must_use]
     pub const fn to_u8(self) -> u8 {
         match self {
@@ -104,133 +104,133 @@ impl EquivalenceKind {
     }
 }
 
-/// Header fuer plain collections (§7.3.4.7.1).
+/// Header for plain collections (§7.3.4.7.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PlainCollectionHeader {
-    /// Equivalence-Kind des Element-TypeIdentifiers.
+    /// Equivalence kind of the element TypeIdentifier.
     pub equiv_kind: u8,
-    /// Try-Construct-Flags.
+    /// Try-construct flags.
     pub element_flags: CollectionElementFlag,
 }
 
-/// Identifiziert eine starkconnected-Component-ID fuer rekursive Typen.
+/// Identifies a strongly-connected-component ID for recursive types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StronglyConnectedComponentId {
-    /// 14-byte SHA256 der SCC.
+    /// 14-byte SHA256 of the SCC.
     pub hash: EquivalenceHash,
-    /// Komponenten-Index innerhalb der SCC.
+    /// Component index within the SCC.
     pub scc_length: i32,
-    /// Index des Typs in der SCC.
+    /// Index of the type in the SCC.
     pub scc_index: i32,
 }
 
 /// TypeIdentifier — XTypes §7.3.4.2.
 ///
-/// Direkt identifiziert primitive und plain-Typen, indirekt (ueber
-/// 14-byte Hash) composite Types (struct, union, etc.). Plain
-/// collections koennen rekursiv TypeIdentifier enthalten, deshalb
-/// `Box` fuer die nested Varianten.
+/// Identifies primitive and plain types directly, composite types
+/// (struct, union, etc.) indirectly (via a 14-byte hash). Plain
+/// collections can recursively contain a TypeIdentifier, hence `Box`
+/// for the nested variants.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum TypeIdentifier {
-    /// TK_NONE — Spec-Sentinel für "kein TypeIdentifier bekannt".
+    /// TK_NONE — spec sentinel for "no TypeIdentifier known".
     #[default]
     None,
-    /// Primitive ohne Body — discriminator trägt alle Infos.
+    /// Primitive without a body — the discriminator carries all info.
     Primitive(PrimitiveKind),
-    /// `string<Bound>` mit 8-bit Zeichen, Bound <= 255 bytes.
+    /// `string<Bound>` with 8-bit characters, Bound <= 255 bytes.
     String8Small {
-        /// Max-Laenge (0 = unbounded).
+        /// Max length (0 = unbounded).
         bound: u8,
     },
-    /// `string<Bound>` mit Bound > 255.
+    /// `string<Bound>` with Bound > 255.
     String8Large {
-        /// Max-Laenge.
+        /// Max length.
         bound: u32,
     },
-    /// `wstring<Bound>` mit Bound <= 255 chars.
+    /// `wstring<Bound>` with Bound <= 255 chars.
     String16Small {
-        /// Max-Laenge.
+        /// Max length.
         bound: u8,
     },
     /// `wstring<Bound>`.
     String16Large {
-        /// Max-Laenge.
+        /// Max length.
         bound: u32,
     },
-    /// `sequence<T, N>` mit N <= 255.
+    /// `sequence<T, N>` with N <= 255.
     PlainSequenceSmall {
-        /// Header (EquivKind des Elements + Flags).
+        /// Header (EquivKind of the element + flags).
         header: PlainCollectionHeader,
-        /// Maximum-Bound (0 = unbounded).
+        /// Maximum bound (0 = unbounded).
         bound: u8,
-        /// Element-TypeIdentifier.
+        /// Element TypeIdentifier.
         element: Box<TypeIdentifier>,
     },
-    /// `sequence<T, N>` mit N > 255.
+    /// `sequence<T, N>` with N > 255.
     PlainSequenceLarge {
         /// Header.
         header: PlainCollectionHeader,
-        /// Max-Bound.
+        /// Max bound.
         bound: u32,
-        /// Element-TypeIdentifier.
+        /// Element TypeIdentifier.
         element: Box<TypeIdentifier>,
     },
-    /// `T[D1, D2, ...]` mit allen Dimensionen <= 255.
+    /// `T[D1, D2, ...]` with all dimensions <= 255.
     PlainArraySmall {
         /// Header.
         header: PlainCollectionHeader,
-        /// Array-Dimensionen (max 2^20 Gesamt laut §7.3.4.7).
+        /// Array dimensions (max 2^20 total per §7.3.4.7).
         array_bounds: Vec<u8>,
-        /// Element-TypeIdentifier.
+        /// Element TypeIdentifier.
         element: Box<TypeIdentifier>,
     },
-    /// `T[D1, D2, ...]` mit mindestens einer Dimension > 255.
+    /// `T[D1, D2, ...]` with at least one dimension > 255.
     PlainArrayLarge {
         /// Header.
         header: PlainCollectionHeader,
-        /// Array-Dimensionen.
+        /// Array dimensions.
         array_bounds: Vec<u32>,
-        /// Element-TypeIdentifier.
+        /// Element TypeIdentifier.
         element: Box<TypeIdentifier>,
     },
-    /// `map<K, V, N>` mit N <= 255.
+    /// `map<K, V, N>` with N <= 255.
     PlainMapSmall {
         /// Header.
         header: PlainCollectionHeader,
-        /// Max-Groesse.
+        /// Max size.
         bound: u8,
-        /// Value-TypeIdentifier.
+        /// Value TypeIdentifier.
         element: Box<TypeIdentifier>,
-        /// Key-Flags.
+        /// Key flags.
         key_flags: CollectionElementFlag,
-        /// Key-TypeIdentifier.
+        /// Key TypeIdentifier.
         key: Box<TypeIdentifier>,
     },
-    /// `map<K, V, N>` mit N > 255.
+    /// `map<K, V, N>` with N > 255.
     PlainMapLarge {
         /// Header.
         header: PlainCollectionHeader,
-        /// Max-Groesse.
+        /// Max size.
         bound: u32,
-        /// Value-TypeIdentifier.
+        /// Value TypeIdentifier.
         element: Box<TypeIdentifier>,
-        /// Key-Flags.
+        /// Key flags.
         key_flags: CollectionElementFlag,
-        /// Key-TypeIdentifier.
+        /// Key TypeIdentifier.
         key: Box<TypeIdentifier>,
     },
-    /// Stark-zusammenhaengende Komponente (rekursive Typen) — §7.3.4.9.
+    /// Strongly connected component (recursive types) — §7.3.4.9.
     StronglyConnectedComponent(StronglyConnectedComponentId),
-    /// 14-byte Hash des MinimalTypeObject.
+    /// 14-byte hash of the MinimalTypeObject.
     EquivalenceHashMinimal(EquivalenceHash),
-    /// 14-byte Hash des CompleteTypeObject.
+    /// 14-byte hash of the CompleteTypeObject.
     EquivalenceHashComplete(EquivalenceHash),
-    /// Unbekannter/unsupportierter Discriminator (Forward-Compat).
+    /// Unknown/unsupported discriminator (forward-compat).
     Unknown(u8),
 }
 
-/// Primitive Kind (kein Body im TypeIdentifier, nur der Discriminator).
+/// Primitive kind (no body in the TypeIdentifier, only the discriminator).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimitiveKind {
     /// `bool`.
@@ -288,7 +288,7 @@ impl PrimitiveKind {
         }
     }
 
-    /// Versucht, aus einem Discriminator-Byte eine primitive Kind zu lesen.
+    /// Attempts to read a primitive kind from a discriminator byte.
     #[must_use]
     pub const fn from_u8(v: u8) -> Option<Self> {
         Some(match v {
@@ -317,13 +317,13 @@ impl PrimitiveKind {
 // ============================================================================
 
 impl TypeIdentifier {
-    /// Encoded als XCDR2-little-endian Bytes (TypeIdentifier ohne
-    /// Encapsulation-Header — der wird vom Caller (z.B. TYPE_INFORMATION
-    /// PID oder TypeLookup-RPC) geliefert).
+    /// Encoded as XCDR2 little-endian bytes (TypeIdentifier without an
+    /// encapsulation header — that is provided by the caller, e.g. the
+    /// TYPE_INFORMATION PID or the TypeLookup RPC).
     ///
     /// # Errors
-    /// `EncodeError` bei Buffer-Overflow (sehr unwahrscheinlich fuer
-    /// normale Typen; 2^32-Grenze bei large-Kinds).
+    /// `EncodeError` on buffer overflow (very unlikely for normal types;
+    /// the 2^32 limit for large kinds).
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         let d = self.discriminator();
         w.write_u8(d)?;
@@ -410,8 +410,8 @@ impl TypeIdentifier {
             }
             Self::StronglyConnectedComponent(scc) => {
                 // Spec §7.3.4.9: scc_length >= 0, 0 <= scc_index < scc_length.
-                // Negative Werte + Index-OoB verhindern (wuerde sonst als
-                // riesige u32 durchs Two's-Complement entweichen).
+                // Prevent negative values + index OoB (would otherwise
+                // leak as a huge u32 through two's complement).
                 if scc.scc_length < 0 || scc.scc_index < 0 || scc.scc_index >= scc.scc_length {
                     return Err(EncodeError::ValueOutOfRange {
                         message: "SCC scc_length/scc_index invalid",
@@ -427,18 +427,18 @@ impl TypeIdentifier {
         }
     }
 
-    /// Maximum-Rekursionstiefe beim Wire-Decode eines verschachtelten
-    /// `TypeIdentifier` (Plain-Collections koennen rekursiv referenzieren).
-    /// Schuetzt vor Stack-Overflow bei pathologischen Datagrammen.
+    /// Maximum recursion depth when wire-decoding a nested
+    /// `TypeIdentifier` (plain collections can reference recursively).
+    /// Protects against stack overflow on pathological datagrams.
     pub const MAX_DECODE_DEPTH: usize = 16;
 
-    /// Decode aus XCDR2-little-endian Bytes. Der Reader muss auf den
-    /// Discriminator positioniert sein. Interne Rekursion ist gecapt
-    /// (siehe [`Self::MAX_DECODE_DEPTH`]).
+    /// Decode from XCDR2 little-endian bytes. The reader must be
+    /// positioned at the discriminator. Internal recursion is capped
+    /// (see [`Self::MAX_DECODE_DEPTH`]).
     ///
     /// # Errors
-    /// `DecodeError` bei Buffer-Underflow, inkonsistentem Length-Feld
-    /// oder wenn die maximale Rekursionstiefe ueberschritten wird.
+    /// `DecodeError` on buffer underflow, an inconsistent length field
+    /// or when the maximum recursion depth is exceeded.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         Self::decode_with_depth(r, 0)
     }
@@ -457,10 +457,10 @@ impl TypeIdentifier {
             TK_BOOLEAN | TK_BYTE | TK_INT8 | TK_INT16 | TK_INT32 | TK_INT64 | TK_UINT8
             | TK_UINT16 | TK_UINT32 | TK_UINT64 | TK_FLOAT32 | TK_FLOAT64 | TK_FLOAT128
             | TK_CHAR8 | TK_CHAR16 => {
-                // Primitiver Discriminator → kein Body. Der outer match-Arm
-                // stellt sicher, dass from_u8 Some(...) liefert — falls
-                // jemand die Liste erweitert und from_u8 vergisst, faellt
-                // d in den `other =>`-Pfad als Unknown(d).
+                // Primitive discriminator → no body. The outer match arm
+                // ensures from_u8 returns Some(...) — if someone extends
+                // the list and forgets from_u8, d falls into the
+                // `other =>` path as Unknown(d).
                 match PrimitiveKind::from_u8(d) {
                     Some(p) => Self::Primitive(p),
                     None => Self::Unknown(d),
@@ -586,7 +586,7 @@ impl TypeIdentifier {
         })
     }
 
-    /// Der Discriminator-Byte fuer diesen TypeIdentifier.
+    /// The discriminator byte for this TypeIdentifier.
     #[must_use]
     pub const fn discriminator(&self) -> u8 {
         match self {
@@ -612,14 +612,14 @@ impl TypeIdentifier {
     /// Kurzform: encode in neuen BufferWriter, LE.
     ///
     /// # Errors
-    /// `EncodeError` bei Overflow.
+    /// `EncodeError` on overflow.
     pub fn to_bytes_le(&self) -> Result<Vec<u8>, EncodeError> {
         let mut w = BufferWriter::new(Endianness::Little);
         self.encode_into(&mut w)?;
         Ok(w.into_bytes())
     }
 
-    /// Kurzform: decode aus LE-Bytes.
+    /// Short form: decode from LE bytes.
     ///
     /// # Errors
     /// `DecodeError`.
@@ -833,23 +833,23 @@ mod tests {
         let scc = TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
             hash: EquivalenceHash::ZERO,
             scc_length: 3,
-            scc_index: 3, // muss < 3 sein
+            scc_index: 3, // must be < 3
         });
         assert!(scc.to_bytes_le().is_err());
     }
 
     #[test]
     fn max_decode_depth_constant_is_reasonable() {
-        // DoS-Guard: Rekursion beim Wire-Decode eines nested
-        // `TypeIdentifier` ist begrenzt. Cap muss > 4 (fuer realistische
-        // nested Sequences) und < 64 (DoS-Schutz) sein.
+        // DoS guard: recursion when wire-decoding a nested
+        // `TypeIdentifier` is bounded. The cap must be > 4 (for
+        // realistic nested sequences) and < 64 (DoS protection).
         const _ASSERT_MIN: usize = TypeIdentifier::MAX_DECODE_DEPTH - 4;
         const _ASSERT_MAX: usize = 64 - TypeIdentifier::MAX_DECODE_DEPTH;
     }
 
     #[test]
     fn deeply_nested_but_bounded_sequence_decodes_ok() {
-        // 3-deep sequence<sequence<sequence<int32>>> — innerhalb Cap.
+        // 3-deep sequence<sequence<sequence<int32>>> — within the cap.
         let l1 = TypeIdentifier::PlainSequenceSmall {
             header: PlainCollectionHeader::default(),
             bound: 5,
@@ -941,9 +941,9 @@ mod tests {
 
     #[test]
     fn unknown_discriminators_cover_multiple_bytes() {
-        // Bewusst Discriminator-Bytes, die keinem TK_/TI_/EK_ zugeordnet
-        // sind. 0x01 (TK_BOOLEAN), 0x70ff (TI_STRING8_*) usw. werden
-        // vermieden. 0x12-0x1F, 0x40, 0x50, 0xC7, 0xFE, 0xFF sind frei.
+        // Deliberately discriminator bytes not assigned to any
+        // TK_/TI_/EK_. 0x01 (TK_BOOLEAN), 0x70ff (TI_STRING8_*) etc. are
+        // avoided. 0x12-0x1F, 0x40, 0x50, 0xC7, 0xFE, 0xFF are free.
         for d in [0x12_u8, 0x1F, 0x40, 0x50, 0xC7, 0xFE, 0xFF] {
             let decoded = TypeIdentifier::from_bytes_le(&[d]).unwrap();
             assert_eq!(decoded, TypeIdentifier::Unknown(d));

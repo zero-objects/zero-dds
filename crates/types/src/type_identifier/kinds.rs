@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! XTypes 1.3 TypeIdentifier-Discriminator-Konstanten.
+//! XTypes 1.3 TypeIdentifier discriminator constants.
 //!
 //! Spec: OMG DDS-XTypes 1.3, §7.3.4.2 Table "TypeIdentifier discriminator".
 //!
-//! **Abgrenzung**: Dies sind die Konstanten fuer den TypeIdentifier-
-//! Union-Discriminator (`_d`-Feld, 1 byte). Die TypeObject-Discriminator-
-//! Konstanten (TK_STRUCTURE = 0xA0 etc.) leben in einem eigenen Modul
-//! (T2), weil die Namensraeume fuer Primitives zwar ueberlappen, fuer
-//! composite Types aber getrennt sind.
+//! **Scope note**: These are the constants for the TypeIdentifier
+//! union discriminator (`_d` field, 1 byte). The TypeObject discriminator
+//! constants (TK_STRUCTURE = 0xA0 etc.) live in their own module
+//! (T2), because the namespaces overlap for primitives but are
+//! separate for composite types.
 
 // ============================================================================
-// Primitive TypeKind (0x00..0x11) — im TypeIdentifier als reine
-// Discriminators OHNE Body verwendbar.
+// Primitive TypeKind (0x00..0x11) — usable in the TypeIdentifier as pure
+// discriminators WITHOUT a body.
 // ============================================================================
 
-/// Kein Typ / Platzhalter.
+/// No type / placeholder.
 pub const TK_NONE: u8 = 0x00;
 /// `bool`.
 pub const TK_BOOLEAN: u8 = 0x01;
@@ -49,34 +49,34 @@ pub const TK_CHAR8: u8 = 0x10;
 pub const TK_CHAR16: u8 = 0x11;
 
 // ============================================================================
-// TypeIdentifier-spezifische Discriminators (TI_*, EK_*)
+// TypeIdentifier-specific discriminators (TI_*, EK_*)
 // ============================================================================
 
-/// `string<Bound>` mit Bound <= 255 — body: `octet bound`.
+/// `string<Bound>` with Bound <= 255 — body: `octet bound`.
 pub const TI_STRING8_SMALL: u8 = 0x70;
-/// `string<Bound>` mit Bound > 255 — body: `uint32 bound`.
+/// `string<Bound>` with Bound > 255 — body: `uint32 bound`.
 pub const TI_STRING8_LARGE: u8 = 0x71;
-/// `wstring<Bound>` mit Bound <= 255.
+/// `wstring<Bound>` with Bound <= 255.
 pub const TI_STRING16_SMALL: u8 = 0x72;
-/// `wstring<Bound>` mit Bound > 255.
+/// `wstring<Bound>` with Bound > 255.
 pub const TI_STRING16_LARGE: u8 = 0x73;
 
-/// `sequence<T, N>` mit N <= 255 — plain (T ist primitive oder auch plain).
+/// `sequence<T, N>` with N <= 255 — plain (T is primitive or also plain).
 pub const TI_PLAIN_SEQUENCE_SMALL: u8 = 0x80;
-/// `sequence<T, N>` mit N > 255.
+/// `sequence<T, N>` with N > 255.
 pub const TI_PLAIN_SEQUENCE_LARGE: u8 = 0x81;
 
-/// `T[N]` mit Dimensionen-Max <= 255.
+/// `T[N]` with a max dimension <= 255.
 pub const TI_PLAIN_ARRAY_SMALL: u8 = 0x90;
-/// `T[N]` mit Dimensionen-Max > 255.
+/// `T[N]` with a max dimension > 255.
 pub const TI_PLAIN_ARRAY_LARGE: u8 = 0x91;
 
-/// `map<K, V, N>` mit N <= 255.
+/// `map<K, V, N>` with N <= 255.
 pub const TI_PLAIN_MAP_SMALL: u8 = 0xA0;
-/// `map<K, V, N>` mit N > 255.
+/// `map<K, V, N>` with N > 255.
 pub const TI_PLAIN_MAP_LARGE: u8 = 0xA1;
 
-/// Stark-zusammenhaengende Komponente (rekursive Typen) — XTypes §7.3.4.9.
+/// Strongly connected component (recursive types) — XTypes §7.3.4.9.
 pub const TI_STRONGLY_CONNECTED_COMPONENT: u8 = 0xB0;
 
 /// 14-byte SHA256-Hash des Minimal-TypeObject.
@@ -84,5 +84,5 @@ pub const EK_MINIMAL: u8 = 0xF1;
 /// 14-byte SHA256-Hash des Complete-TypeObject.
 pub const EK_COMPLETE: u8 = 0xF2;
 
-/// 14-byte Hash (im Wire-Format bei EK_MINIMAL/EK_COMPLETE).
+/// 14-byte hash (in wire format for EK_MINIMAL/EK_COMPLETE).
 pub const EQUIVALENCE_HASH_LEN: usize = 14;

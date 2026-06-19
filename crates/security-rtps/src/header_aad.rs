@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! RTPS-Header-AAD fuer SRTPS-Wrapping — DDS-Security 1.2 §7.4.6.6 + §8.1.
+//! RTPS header AAD for SRTPS wrapping — DDS-Security 1.2 §7.4.6.6 + §8.1.
 //!
-//! Wenn `rtps_protection_kind != NONE`, MUSS der vollstaendige
-//! RTPS-Header (20 Bytes) zur AAD (Authenticated-Additional-Data)
-//! hinzugefuegt werden. Damit ist der Header gegen Tampering
-//! geschuetzt — ein Angreifer kann nicht den Sender-GuidPrefix
-//! aendern, ohne dass der GCM-Tag invalid wird.
+//! When `rtps_protection_kind != NONE`, the full
+//! RTPS header (20 bytes) MUST be added to the AAD (authenticated
+//! additional data). This protects the header against tampering
+//! — an attacker cannot change the sender GuidPrefix
+//! without making the GCM tag invalid.
 
 use alloc::vec::Vec;
 
-/// Wire-Size eines RTPS-Headers (Spec §8.3.5.1: 4 magic + 2 vendor +
+/// Wire size of an RTPS header (Spec §8.3.5.1: 4 magic + 2 vendor +
 /// 2 version + 12 GuidPrefix = 20 Bytes).
 pub const RTPS_HEADER_LEN: usize = 20;
 
-/// Baut den AAD-Slot fuer einen `SRTPS_PREFIX`-gewrapten Datagram-
-/// Schutz. Spec §7.4.6.6:
+/// Builds the AAD slot for an `SRTPS_PREFIX`-wrapped datagram
+/// protection. Spec §7.4.6.6:
 ///
 /// ```text
 ///   AAD = transformation_kind ||
@@ -26,12 +26,12 @@ pub const RTPS_HEADER_LEN: usize = 20;
 ///         RTPS-Header[0..20]
 /// ```
 ///
-/// `transformation_*` und `session_id` kommen aus dem `CryptoHeader`
-/// der SRTPS_PREFIX-Submessage; den RTPS-Header liefert der Caller
-/// als 20-Byte-Slice.
+/// `transformation_*` and `session_id` come from the `CryptoHeader`
+/// of the SRTPS_PREFIX submessage; the caller provides the RTPS header
+/// as a 20-byte slice.
 ///
 /// # Errors
-/// Static-String wenn `rtps_header_bytes.len() < 20`.
+/// A static string if `rtps_header_bytes.len() < 20`.
 pub fn build_rtps_header_aad(
     transformation_kind: [u8; 4],
     transformation_key_id: [u8; 4],
@@ -50,9 +50,9 @@ pub fn build_rtps_header_aad(
     Ok(out)
 }
 
-/// Spec §7.4.7.8/9: AAD fuer SubmessageProtection ist der
-/// `SEC_PREFIX`-Submessage-Header (vor dem CryptoHeader) plus die
-/// Crypto-Header-Bytes selbst.
+/// Spec §7.4.7.8/9: the AAD for SubmessageProtection is the
+/// `SEC_PREFIX` submessage header (before the CryptoHeader) plus the
+/// crypto-header bytes themselves.
 #[must_use]
 pub fn build_submessage_aad(
     transformation_kind: [u8; 4],

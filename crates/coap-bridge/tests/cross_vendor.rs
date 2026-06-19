@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Cross-Vendor-Interop-Tests gegen libcoap.
+//! Cross-vendor interop tests against libcoap.
 //!
 //! Spec: `zerodds-coap-bridge-1.0.md` §10 + §12.3.
 //!
-//! Diese Tests fahren einen `libcoap`-Container (oder lokales
-//! `coap-client`-Binary) hoch und verifizieren, dass:
-//! * `coap-client -m post coap://127.0.0.1:<port>/trade` einen 2.04
-//!   Changed empfaengt (Wire-Compliance gegen RFC 7252).
+//! These tests bring up a `libcoap` container (or local
+//! `coap-client` binary) and verify that:
+//! * `coap-client -m post coap://127.0.0.1:<port>/trade` receives a
+//!   2.04 Changed (wire compliance against RFC 7252).
 //! * `coap-client -s 5 -o coap://127.0.0.1:<port>/trade` (Observe)
-//!   bei Sample-Publish ein Notify empfaengt.
+//!   receives a notify on sample publish.
 //!
-//! Da Docker im CI nicht garantiert ist, sind die Tests `#[ignore]`-
-//! markiert. Run via:
+//! Since Docker is not guaranteed in CI, the tests are marked
+//! `#[ignore]`. Run via:
 //! ```bash
 //! cargo test -p zerodds-coap-bridge --features cross-vendor-tests \
 //!     --test cross_vendor -- --ignored

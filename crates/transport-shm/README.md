@@ -3,50 +3,51 @@
 [![docs.rs](https://img.shields.io/docsrs/zerodds-transport-shm)](https://docs.rs/zerodds-transport-shm)
 [![crates.io](https://img.shields.io/crates/v/zerodds-transport-shm)](https://crates.io/crates/zerodds-transport-shm)
 
-ZeroDDS-SHM-Transport: Cross-Process Shared-Memory-Transport.
-Layer 2 (Wire-Implementation).
+ZeroDDS SHM transport: cross-process shared-memory transport.
+Layer 2 (wire implementation).
 
-`std`-only, Safety-Klasse **STANDARD** (Unsafe-Island im `posix`-Modul
-für mmap-Zugriff + libc-flock-FFI; Rest der Crate ist Atomics-only).
+`std`-only, safety class **STANDARD** (unsafe island in the `posix`
+module for mmap access + libc flock FFI; the rest of the crate is
+atomics-only).
 
-## Spec-Status
+## Spec status
 
-OMG normiert keinen SHM-Transport für DDS. Vendoren haben jeweils
-eigene Implementationen (Cyclone+iceoryx, FastDDS-SHM, RTI-DDS-SHM).
-ZeroDDS definiert seine eigene Variante explizit als
-**ZeroDDS-SHM-Transport 1.0**, dokumentiert in
+OMG standardizes no SHM transport for DDS. Vendors each have their own
+implementations (Cyclone+iceoryx, FastDDS SHM, RTI DDS SHM).
+ZeroDDS defines its own variant explicitly as
+**ZeroDDS SHM Transport 1.0**, documented in
 [`docs/spec-coverage/zerodds-shm-transport-1.0.md`](../../docs/spec-coverage/zerodds-shm-transport-1.0.md).
 
-DDSI-RTPS-Konformität: Locator-Kind ist DDSI-RTPS 2.5 §9.4-vendor-
-reservierter Wert (in `crates/rtps/src/wire_types.rs`).
+DDSI-RTPS conformance: the locator kind is the DDSI-RTPS 2.5 §9.4
+vendor-reserved value (in `crates/rtps/src/wire_types.rs`).
 
-## Was liefert dieses Crate
+## What this crate provides
 
-- `PosixShmTransport` — `Transport`-Trait-Impl via POSIX `shm_open` + `mmap`
-- `ShmConfig` — Segment-Konfiguration (capacity, flink_dir, …)
-- `ShmRole` — Owner / Consumer
-- `PosixShmError` — typisierte Fehler
+- `PosixShmTransport` — `Transport` trait impl via POSIX `shm_open` + `mmap`
+- `ShmConfig` — segment configuration (capacity, flink_dir, …)
+- `ShmRole` — owner / consumer
+- `PosixShmError` — typed errors
 
-## Architektur-Überblick
+## Architecture overview
 
-| Aspekt | Wahl | Rationale |
+| Aspect | Choice | Rationale |
 |---|---|---|
-| Sync-Modell | SpSc pro (Owner, Consumer)-Paar | Lock-free, lineare Skalierung mit Reader-Count |
-| Atomics | `AcqRel` auf `head`/`tail` | Cross-Process-wohldefiniert |
-| Crash-Recovery | predictable `os_id` + `shm_unlink` vor Owner-Create | Idempotent, verhindert Zombie-Segments |
-| Race-Protection | advisory `flock(LOCK_EX)` (Linux/macOS) | Serialisiert parallele Owner-Creates |
-| Owner-Termination | `shutdown`-Flag im Header (Release-Store in Drop) | Klares Owner-Gone-Signal an Consumer |
+| Sync model | SpSc per (owner, consumer) pair | Lock-free, linear scaling with reader count |
+| Atomics | `AcqRel` on `head`/`tail` | Cross-process well-defined |
+| Crash recovery | predictable `os_id` + `shm_unlink` before owner-create | Idempotent, prevents zombie segments |
+| Race protection | advisory `flock(LOCK_EX)` (Linux/macOS) | Serializes parallel owner-creates |
+| Owner termination | `shutdown` flag in the header (release store in Drop) | Clear owner-gone signal to the consumer |
 
-Volle Details: [Spec §2-§5](../../docs/spec-coverage/zerodds-shm-transport-1.0.md).
+Full details: [spec §2-§5](../../docs/spec-coverage/zerodds-shm-transport-1.0.md).
 
-## Plattform-Support
+## Platform support
 
-| Plattform | Status |
+| Platform | Status |
 |---|---|
-| Linux | ✅ primary (Test-Coverage) |
-| macOS | ✅ supported (PSHMNAMLEN-Limit) |
-| Windows | ⚠️ best-effort (kompiliert via `shared_memory`-Crate; `flock`/`shm_unlink` no-op auf Non-Unix) |
-| no_std | nicht supported (mmap braucht OS) |
+| Linux | ✅ primary (test coverage) |
+| macOS | ✅ supported (PSHMNAMLEN limit) |
+| Windows | ⚠️ best-effort (compiles via the `shared_memory` crate; `flock`/`shm_unlink` no-op on non-Unix) |
+| no_std | not supported (mmap needs an OS) |
 
 ## Tests
 
@@ -54,8 +55,8 @@ Volle Details: [Spec §2-§5](../../docs/spec-coverage/zerodds-shm-transport-1.0
 cargo test -p zerodds-transport-shm
 ```
 
-18 Tests grün (17 lib + 1 cross-process integration).
+18 tests green (17 lib + 1 cross-process integration).
 
-## Lizenz
+## License
 
-Apache-2.0 OR MIT — siehe Workspace-Root.
+Apache-2.0 OR MIT — see the workspace root.

@@ -2,35 +2,35 @@
 // Copyright 2026 ZeroDDS Contributors
 
 //! Crate `zerodds-flatdata-derive`. Safety classification: **STANDARD**
-//! (proc-macro generiert `unsafe impl FlatStruct` — Layout-Garantien
-//! werden vom Macro selbst geprueft, nicht vom Caller-Kommentar).
+//! (the proc-macro generates `unsafe impl FlatStruct` — layout
+//! guarantees are checked by the macro itself, not by a caller comment).
 //!
-//! `#[derive(FlatStruct)]` fuer
+//! `#[derive(FlatStruct)]` for
 //! [`zerodds_flatdata::FlatStruct`](https://docs.rs/zerodds-flatdata).
 //!
-//! Spec: `docs/specs/zerodds-flatdata-1.0.md` §1.2 (Derive-Macro).
+//! Spec: `docs/specs/zerodds-flatdata-1.0.md` §1.2 (derive macro).
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 4 — Core Services (proc-macro fuer `zerodds-flatdata`).
+//! Layer 4 — Core Services (proc-macro for `zerodds-flatdata`).
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! - `#[derive(FlatStruct)]` — generiert `unsafe impl FlatStruct for T`
-//!   mit `TYPE_HASH = sha256(type_name + field_layout)[..16]`.
+//! - `#[derive(FlatStruct)]` — generates `unsafe impl FlatStruct for T`
+//!   with `TYPE_HASH = sha256(type_name + field_layout)[..16]`.
 //!
-//! ## Compile-Time-Checks
+//! ## Compile-time checks
 //!
-//! Der Macro lehnt mit `compile_error!` ab, wenn:
-//! - `T` ist `enum` oder `union` (Layout nicht stable).
-//! - `T` traegt weder `#[repr(C)]` noch `#[repr(transparent)]`
-//!   (Default-Repr ist undefiniert).
+//! The macro rejects with `compile_error!` when:
+//! - `T` is an `enum` or `union` (layout not stable).
+//! - `T` carries neither `#[repr(C)]` nor `#[repr(transparent)]`
+//!   (the default repr is undefined).
 //!
-//! Die `Copy + 'static + Send + Sync`-Bounds werden vom Trait selbst
-//! erzwungen — der Compiler emittiert verstaendliche Fehler beim
-//! Versuch, ein Non-`Copy`-Type zu deriven.
+//! The `Copy + 'static + Send + Sync` bounds are enforced by the trait
+//! itself — the compiler emits understandable errors when attempting to
+//! derive on a non-`Copy` type.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```ignore
 //! use zerodds_flatdata_derive::FlatStruct;
@@ -64,13 +64,13 @@ fn expand(input: DeriveInput) -> Result<TokenStream, syn::Error> {
         Data::Enum(_) => {
             return Err(syn::Error::new_spanned(
                 &input,
-                "FlatStruct kann nicht auf enum derive werden — repr(C)-Enum-Layout ist nicht stable",
+                "FlatStruct cannot be derived on an enum — repr(C) enum layout is not stable",
             ));
         }
         Data::Union(_) => {
             return Err(syn::Error::new_spanned(
                 &input,
-                "FlatStruct kann nicht auf union derive werden",
+                "FlatStruct cannot be derived on a union",
             ));
         }
     };
@@ -78,8 +78,8 @@ fn expand(input: DeriveInput) -> Result<TokenStream, syn::Error> {
     if !has_repr_c_or_transparent(&input.attrs) {
         return Err(syn::Error::new_spanned(
             &input,
-            "FlatStruct verlangt #[repr(C)] oder #[repr(transparent)] — \
-             Default-repr-Rust hat undefiniertes Field-Layout, daher \
+            "FlatStruct requires #[repr(C)] or #[repr(transparent)] — \
+             Default repr Rust has undefined field layout, hence \
              waere `as_bytes()`/`from_bytes_unchecked()` UB",
         ));
     }
@@ -99,12 +99,12 @@ fn expand(input: DeriveInput) -> Result<TokenStream, syn::Error> {
     let hash_tokens = hash_bytes.iter().map(|b| quote! { #b });
 
     let expanded: TokenStream2 = quote! {
-        // SAFETY: derive(FlatStruct) prueft `repr(C)`/`repr(transparent)`
-        // und lehnt enum/union ab. Trait-Bounds `Copy + 'static + Send +
-        // Sync` werden vom Compiler ueber die Trait-Definition erzwungen.
-        // TYPE_HASH ist SHA-256 ueber `<TypeName>{<field>:<ty>,...}`,
-        // erkennt Type-Rename / Field-add/remove / Field-reorder /
-        // Field-Type-Change.
+        // SAFETY: derive(FlatStruct) checks `repr(C)`/`repr(transparent)`
+        // and rejects enum/union. The trait bounds `Copy + 'static + Send +
+        // Sync` are enforced by the compiler via the trait definition.
+        // TYPE_HASH is SHA-256 over `<TypeName>{<field>:<ty>,...}`,
+        // detecting type rename / field add/remove / field reorder /
+        // field type change.
         #[automatically_derived]
         unsafe impl #impl_generics ::zerodds_flatdata::FlatStruct for #name #ty_generics #where_clause {
             const TYPE_HASH: [u8; 16] = [#( #hash_tokens ),*];
@@ -132,14 +132,14 @@ fn has_repr_c_or_transparent(attrs: &[Attribute]) -> bool {
     false
 }
 
-/// Erzeugt einen Layout-String fuer SHA-256.
+/// Builds a layout string for SHA-256.
 ///
-/// Format: `<TypeName>{<field-name>:<field-ty-string>,...}`. Damit
-/// erkennt der Hash:
-/// - Type-Rename → neuer Hash.
-/// - Field-add/remove → neuer Hash.
-/// - Field-reorder → neuer Hash.
-/// - Field-Type-Change → neuer Hash.
+/// Format: `<TypeName>{<field-name>:<field-ty-string>,...}`. With this,
+/// the hash detects:
+/// - Type rename → new hash.
+/// - Field add/remove → new hash.
+/// - Field reorder → new hash.
+/// - Field type change → new hash.
 fn layout_signature(name: &syn::Ident, fields: &Fields) -> String {
     let mut s = name.to_string();
     s.push('{');

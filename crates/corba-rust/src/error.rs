@@ -1,26 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Fehler-Familie des CORBA-Rust-Codegens.
+//! Error family of the CORBA Rust codegen.
 
 use core::fmt;
 
-/// Fehler beim Erzeugen von CORBA-Rust-Service-Code.
+/// Error while generating CORBA Rust service code.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CorbaRustError {
-    /// IDL-Konstrukt wird vom Rust-Service-Codegen aktuell nicht
-    /// unterstuetzt.
+    /// IDL construct currently not supported by the Rust service codegen.
     Unsupported {
-        /// Konstrukt-Name (z.B. `"abstract interface"`).
+        /// Construct name (e.g. `"abstract interface"`).
         what: &'static str,
-        /// Position im IDL-Source (Byte-Offset).
+        /// Position in the IDL source (byte offset).
         at: usize,
     },
-    /// Type-Reference konnte nicht aufgeloest werden.
+    /// Type reference could not be resolved.
     UnresolvedType {
-        /// Voll-qualifizierter Name.
+        /// Fully qualified name.
         scoped: String,
     },
-    /// Fehler im DataType-Codegen (idl-rust) durchgereicht.
+    /// Error from the DataType codegen (idl-rust) passed through.
     DataType(zerodds_idl_rust::RustGenError),
 }
 
@@ -49,5 +48,5 @@ impl From<zerodds_idl_rust::RustGenError> for CorbaRustError {
     }
 }
 
-/// Result-Alias.
+/// Result alias.
 pub type Result<T> = core::result::Result<T, CorbaRustError>;

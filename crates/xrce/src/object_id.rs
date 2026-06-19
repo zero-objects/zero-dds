@@ -3,7 +3,7 @@
 
 //! `ObjectId` (Spec §7.2.1).
 //!
-//! Wire-Layout: `octet[2]`, also 16 Bit.
+//! Wire layout: `octet[2]`, i.e. 16 bits.
 //!
 //! ```text
 //!  bit:  15                          4   3       0
@@ -12,18 +12,18 @@
 //!       +---------------------------+-------------+
 //! ```
 //!
-//! Die Spec definiert:
-//! - Lower 4 Bits = `ObjectKind` (siehe `crate::object_kind`).
-//! - Upper 12 Bits = anwendungs-/agent-vergebene `raw_id`.
+//! The spec defines:
+//! - Lower 4 bits = `ObjectKind` (see `crate::object_kind`).
+//! - Upper 12 bits = application-/agent-assigned `raw_id`.
 //!
-//! Zusaetzlich tracken wir eine **Kind-Mask** (Bit 15), die zwischen
-//! "well-known builtin Object" (Bit 15 = 0) und "client-vergeben" (Bit
-//! 15 = 1) unterscheidet — das ist die in C6.2.B-Aufgabe geforderte
-//! 15-Bit-raw / 1-Bit-mask-Sicht. Auf Wire ist das einfach das
-//! oberste Bit im 12-Bit-raw-Feld, semantisch aber wichtig fuer
-//! Object-Lookup-Routing.
+//! Additionally we track a **kind mask** (bit 15) that distinguishes
+//! between a "well-known builtin object" (bit 15 = 0) and "client-assigned"
+//! (bit 15 = 1) — this is the 15-bit-raw / 1-bit-mask view required
+//! in the C6.2.B task. On the wire this is simply the
+//! top bit in the 12-bit raw field, but semantically important for
+//! object lookup routing.
 //!
-//! Reservierte Werte:
+//! Reserved values:
 //! - `OBJECTID_INVALID = 0xFFFF` (Spec §7.2.1).
 //! - `OBJECTID_AGENT   = 0xFFFD` (kind=0xD `OBJK_AGENT`, raw=0xFFF).
 //! - `OBJECTID_CLIENT  = 0xFFFE` (kind=0xE `OBJK_CLIENT`, raw=0xFFF).
@@ -37,29 +37,29 @@ pub struct ObjectId(pub u16);
 
 /// `OBJECTID_INVALID` (Spec §7.2.1).
 pub const OBJECTID_INVALID: ObjectId = ObjectId(0xFFFF);
-/// `OBJECTID_AGENT` (Spec §7.5.2.1) — Singleton auf der Agent-Seite.
+/// `OBJECTID_AGENT` (Spec §7.5.2.1) — singleton on the agent side.
 pub const OBJECTID_AGENT: ObjectId = ObjectId(0xFFFD);
-/// `OBJECTID_CLIENT` (Spec §7.5.2.1) — Singleton auf der Client-Seite.
+/// `OBJECTID_CLIENT` (Spec §7.5.2.1) — singleton on the client side.
 pub const OBJECTID_CLIENT: ObjectId = ObjectId(0xFFFE);
 
-/// Bit-Position der Kind-Mask im 16-Bit-Wort. Setzt sich auf das
-/// hoechste Bit des 12-Bit-`raw_id`-Felds.
+/// Bit position of the kind mask in the 16-bit word. Maps to the
+/// highest bit of the 12-bit `raw_id` field.
 pub const KIND_MASK_BIT: u16 = 15;
 
-/// Maximale `raw_id` ohne Kind-Mask (12 Bit, also `0..=0xFFF`).
+/// Maximum `raw_id` without the kind mask (12 bits, i.e. `0..=0xFFF`).
 pub const RAW_ID_MAX: u16 = 0x0FFF;
 
 impl ObjectId {
-    /// Konstruiere aus rohem 16-Bit-Wort.
+    /// Constructs from a raw 16-bit word.
     #[must_use]
     pub const fn from_raw(value: u16) -> Self {
         Self(value)
     }
 
-    /// Konstruiere aus 12-Bit-`raw_id` und 4-Bit-`kind`.
+    /// Constructs from a 12-bit `raw_id` and a 4-bit `kind`.
     ///
     /// # Errors
-    /// `ValueOutOfRange`, wenn `raw_id > 0xFFF`.
+    /// `ValueOutOfRange` if `raw_id > 0xFFF`.
     pub fn new(raw_id: u16, kind: ObjectKind) -> Result<Self, XrceError> {
         if raw_id > RAW_ID_MAX {
             return Err(XrceError::ValueOutOfRange {
@@ -69,13 +69,13 @@ impl ObjectId {
         Ok(Self((raw_id << 4) | u16::from(kind.to_u8())))
     }
 
-    /// Konstruiere mit explizit gesetzter Kind-Mask (Bit 15).
+    /// Constructs with the kind mask (bit 15) explicitly set.
     ///
-    /// `raw_id` darf nur 11 Bit nutzen (`0..=0x7FF`), weil Bit 11 (=Bit
-    /// 15 im Wort) fuer die Kind-Mask reserviert ist.
+    /// `raw_id` may use only 11 bits (`0..=0x7FF`), because bit 11 (=bit
+    /// 15 in the word) is reserved for the kind mask.
     ///
     /// # Errors
-    /// `ValueOutOfRange`, wenn `raw_id > 0x7FF`.
+    /// `ValueOutOfRange` if `raw_id > 0x7FF`.
     pub fn new_with_mask(
         raw_id: u16,
         kind: ObjectKind,
@@ -93,58 +93,58 @@ impl ObjectId {
         Ok(Self(word))
     }
 
-    /// Roher 16-Bit-Wert.
+    /// Raw 16-bit value.
     #[must_use]
     pub const fn raw(self) -> u16 {
         self.0
     }
 
-    /// `true`, falls dies `OBJECTID_INVALID` ist.
+    /// `true` if this is `OBJECTID_INVALID`.
     #[must_use]
     pub fn is_invalid(self) -> bool {
         self == OBJECTID_INVALID
     }
 
-    /// 4-Bit-Kind aus den unteren 4 Bits.
+    /// 4-bit kind from the lower 4 bits.
     ///
     /// # Errors
-    /// `ValueOutOfRange`, wenn der Kind-Code nicht in der Spec ist.
+    /// `ValueOutOfRange` if the kind code is not in the spec.
     pub fn kind(self) -> Result<ObjectKind, XrceError> {
         ObjectKind::from_u8((self.0 & 0x000F) as u8)
     }
 
-    /// 12-Bit-`raw_id` aus den oberen 12 Bits.
+    /// 12-bit `raw_id` from the upper 12 bits.
     #[must_use]
     pub fn raw_id_12(self) -> u16 {
         (self.0 >> 4) & 0x0FFF
     }
 
-    /// 11-Bit-`raw_id` (oberes Bit ist `kind_mask`).
+    /// 11-bit `raw_id` (the top bit is `kind_mask`).
     #[must_use]
     pub fn raw_id_11(self) -> u16 {
         (self.0 >> 4) & 0x07FF
     }
 
-    /// `true`, wenn die Kind-Mask (Bit 15) gesetzt ist — das markiert das
-    /// Object als "client-owned" (vom Client zugeteilte ID, im Gegensatz
-    /// zu builtin/agent-zugewiesenen IDs).
+    /// `true` when the kind mask (bit 15) is set — this marks the
+    /// object as "client-owned" (an ID assigned by the client, as opposed
+    /// to builtin/agent-assigned IDs).
     #[must_use]
     pub fn kind_mask(self) -> bool {
         (self.0 & (1u16 << KIND_MASK_BIT)) != 0
     }
 
-    /// Wire-Encoding: `octet[2]`, Big-Endian (entspricht dem normalen
-    /// XCDR2-Layout fuer `octet[N]` als opake Byte-Sequenz, kein
-    /// Endianness-Swap; das obere Byte zuerst).
+    /// Wire encoding: `octet[2]`, big-endian (corresponds to the normal
+    /// XCDR2 layout for `octet[N]` as an opaque byte sequence, no
+    /// endianness swap; the upper byte first).
     #[must_use]
     pub fn to_bytes(self) -> [u8; 2] {
         self.0.to_be_bytes()
     }
 
-    /// Wire-Decoding aus 2-Byte-Slice (Big-Endian).
+    /// Wire decoding from a 2-byte slice (big-endian).
     ///
     /// # Errors
-    /// `UnexpectedEof`, wenn `bytes.len() < 2`.
+    /// `UnexpectedEof` if `bytes.len() < 2`.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, XrceError> {
         if bytes.len() < 2 {
             return Err(XrceError::UnexpectedEof {
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn invalid_kind_lookup_fails() {
-        // 0x07 ist nicht in der Spec
+        // 0x07 is not in the spec
         let id = ObjectId::from_raw(0xABC7);
         assert!(id.kind().is_err());
     }
@@ -225,7 +225,7 @@ mod tests {
         let client = ObjectId::new_with_mask(0x100, ObjectKind::DataWriter, true).unwrap();
         assert!(!builtin.kind_mask());
         assert!(client.kind_mask());
-        // raw_id_11 ist gleich, kind_mask unterscheidet
+        // raw_id_11 is equal, kind_mask differs
         assert_eq!(builtin.raw_id_11(), 0x100);
         assert_eq!(client.raw_id_11(), 0x100);
     }

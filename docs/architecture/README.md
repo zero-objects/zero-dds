@@ -1,86 +1,86 @@
-# ZeroDDS — Architektur-Dokumentation
+# ZeroDDS — architecture documentation
 
-Diese Dokument-Suite bildet das architektonische Fundament für die Entwicklung von **ZeroDDS** — einer souveränen, vollständigen DDS-Implementierung in Rust mit Bindings für C, C++, C#, Java, Python und Rust.
+This document suite forms the architectural foundation for the development of **ZeroDDS** — a sovereign, complete DDS implementation in Rust with bindings for C, C++, C#, Java, Python and Rust.
 
-Der Name ZeroDDS reflektiert das Kernversprechen: _zero dependencies_ (Safe-Core), _zero panic_ (Vertrag), _zero unsafe_ (wo strukturell möglich), _zero copy_ (SHM-Pfad), _zero vendor lock-in_.
+The name ZeroDDS reflects the core promise: _zero dependencies_ (safe core), _zero panic_ (contract), _zero unsafe_ (where structurally possible), _zero copy_ (SHM path), _zero vendor lock-in_.
 
-## Ausführungs-Modell
+## Execution model
 
-ZeroDDS wird als **internes Core-Projekt** entwickelt (Apache 2.0-lizenziert, Optionalität für spätere Öffnung gewahrt). Wir sind unser erster Kunde: der Stack wird gegen eine konkrete interne Anwendung validiert, bevor externe Partnerschaften, OMG-Membership, Patent-Clearance oder Safety-Zertifizierung aktiviert werden.
+ZeroDDS is developed as an **internal core project** (Apache 2.0-licensed, optionality for later opening preserved). We are our own first customer: the stack is validated against a concrete internal application before external partnerships, OMG membership, patent clearance or safety certification are activated.
 
-**Bootstrap-Era** (Phasen 0–2, ~10–14 Monate): Internes MVP.
-**Proof-Era** (Phasen 3–4, ~6–10 Monate): Benchmark-Parität mit eProsima, External-Readiness.
-**Expansion-Era** (Phase 5+, konditional): OMG, Ferrous Systems, Safety-Audit, Community.
+**Bootstrap era** (Phases 0–2, ~10–14 months): internal MVP.
+**Proof era** (Phases 3–4, ~6–10 months): benchmark parity with eProsima, external readiness.
+**Expansion era** (Phase 5+, conditional): OMG, Ferrous Systems, safety audit, community.
 
-## Lese-Reihenfolge nach Rolle
+## Reading order by role
 
-### Für Leadership und Stakeholder
-1. `00_overview.md` — Executive Summary, Mission, Erfolgskriterien
+### For leadership and stakeholders
+1. `00_overview.md` — executive summary, mission, success criteria
 
-### Für Tech-Leads und Architekten
+### For tech leads and architects
 1. `00_overview.md`
-2. `01_scope_and_specs.md` — OMG-Spec-Coverage
-3. `02_architecture.md` — System- und Crate-Architektur
-4. `03_profiles_and_platforms.md` — Deployment-Profile
-5. `07_risks_and_strategy.md` — Strategische Risiken
+2. `01_scope_and_specs.md` — OMG spec coverage
+3. `02_architecture.md` — system and crate architecture
+4. `03_profiles_and_platforms.md` — deployment profiles
+5. `07_risks_and_strategy.md` — strategic risks
 
-### Für Safety-Engineers
+### For safety engineers
 1. `00_overview.md`
 2. `02_architecture.md`
-3. `04_safety_by_architecture.md` — Safe-Subset-Vertrag (primäres Dokument)
-4. `03_profiles_and_platforms.md` — Safe-Profile-Details
-5. `06_roadmap.md` §8 — Phase-5 Audit-Pfad
+3. `04_safety_by_architecture.md` — safe-subset contract (primary document)
+4. `03_profiles_and_platforms.md` — safe-profile details
+5. `06_roadmap.md` §8 — Phase-5 audit path
 
-### Für Product-Engineers (pro Sub-System)
-1. `02_architecture.md` — eigene Crate-Verantwortung identifizieren
-2. `01_scope_and_specs.md` — welche OMG-Specs betreffen dich
-3. `04_safety_by_architecture.md` — Coding-Regeln (wenn Safe-Crate)
-4. `05_observability_and_tooling.md` — Instrumentierungs-Erwartungen
+### For product engineers (per sub-system)
+1. `02_architecture.md` — identify your own crate responsibility
+2. `01_scope_and_specs.md` — which OMG specs concern you
+3. `04_safety_by_architecture.md` — coding rules (if a safe crate)
+4. `05_observability_and_tooling.md` — instrumentation expectations
 
-### Für Platform/DevOps
-1. `03_profiles_and_platforms.md` — Build-Matrix
-2. `05_observability_and_tooling.md` — Monitoring-Design
-3. `06_roadmap.md` — Release-Plan
+### For platform/DevOps
+1. `03_profiles_and_platforms.md` — build matrix
+2. `05_observability_and_tooling.md` — monitoring design
+3. `06_roadmap.md` — release plan
 
-## Dokument-Übersicht
+## Document overview
 
-| Datei | Umfang | Review-Intervall |
+| File | Scope | Review interval |
 |---|---|---|
-| `00_overview.md` | Mission und Vision | Quartalsweise |
-| `01_scope_and_specs.md` | OMG-Spec-Coverage und Conformance | Pro Release |
-| `02_architecture.md` | System- und Crate-Architektur | Quartalsweise |
-| `03_profiles_and_platforms.md` | Profile und Plattform-Matrix | Pro Release |
-| `04_safety_by_architecture.md` | Safety-Vertrag | Phasenweise oder bei Regel-Änderungen |
-| `05_observability_and_tooling.md` | Observability und Tooling | Quartalsweise |
-| `06_roadmap.md` | Phasen und Meilensteine | Monatlich |
-| `07_risks_and_strategy.md` | Risiken und strategische Optionen | Monatlich |
-| `08_heterogeneous_security.md` | Per-Peer/Per-Interface-Security für System-of-Systems (WP 4.9) | Pro Release |
-| `09_delegation.md` | Gateway/Bridge-Delegation für Vehicle-Mesh + Edge-Peers ohne eigenen Cert (WP 4H-j) | Pro Release |
+| `00_overview.md` | Mission and vision | Quarterly |
+| `01_scope_and_specs.md` | OMG spec coverage and conformance | Per release |
+| `02_architecture.md` | System and crate architecture | Quarterly |
+| `03_profiles_and_platforms.md` | Profiles and platform matrix | Per release |
+| `04_safety_by_architecture.md` | Safety contract | Per phase or on rule changes |
+| `05_observability_and_tooling.md` | Observability and tooling | Quarterly |
+| `06_roadmap.md` | Phases and milestones | Monthly |
+| `07_risks_and_strategy.md` | Risks and strategic options | Monthly |
+| `08_heterogeneous_security.md` | Per-peer/per-interface security for systems-of-systems (WP 4.9) | Per release |
+| `09_delegation.md` | Gateway/bridge delegation for vehicle mesh + edge peers without their own cert (WP 4H-j) | Per release |
 
-## Änderungs-Prozess
+## Change process
 
-Alle Architektur-Dokumente liegen im Haupt-Repository unter `docs/architecture/`. Änderungen erfolgen via Pull Request und erfordern:
-- Mindestens ein Review durch Tech-Lead oder Safety-Engineer (bei `04_safety_by_architecture.md`)
-- Begründung im PR-Beschreibung
-- Update des betreffenden `Status:`-Feldes und ggf. Versions-Inkrement
+All architecture documents live in the main repository under `docs/architecture/`. Changes are made via pull request and require:
+- At least one review by a tech lead or safety engineer (for `04_safety_by_architecture.md`)
+- A rationale in the PR description
+- An update of the relevant `Status:` field and, if applicable, a version increment
 
-## Verbundene Ressourcen (außerhalb dieser Suite)
+## Related resources (outside this suite)
 
-- Standards-Registry unter `docs/standards/` für alle externen Specs (OMG, W3C, IETF, CNCF, OASIS, ISO/IEC), auf denen ZeroDDS aufbaut
-- Requirements-Tracker (Polarion, DOORS, oder GitHub Issues mit `REQ-...`-Labels)
-- ADR-Verzeichnis unter `docs/adr/` für Architecture Decision Records
-- Safety-Waiver-Register unter `docs/safety-waivers/`
-- Design-RFCs unter `docs/rfcs/` für größere technische Vorschläge
-- Security-Advisories unter `docs/security/advisories/`
+- Standards registry under `docs/standards/` for all external specs (OMG, W3C, IETF, CNCF, OASIS, ISO/IEC) on which ZeroDDS builds
+- Requirements tracker (Polarion, DOORS, or GitHub Issues with `REQ-...` labels)
+- ADR directory under `docs/adr/` for Architecture Decision Records
+- Safety-waiver register under `docs/safety-waivers/`
+- Design RFCs under `docs/rfcs/` for larger technical proposals
+- Security advisories under `docs/security/advisories/`
 
-## Konventionen
+## Conventions
 
-- **Sprache:** Deutsch für interne Dokumente, Englisch für Public-Facing (GitHub README, Spec-Files, Public API Docs).
-- **Format:** Markdown, Commonmark + GitHub-Flavored Markdown Features.
-- **Cross-Referenzen:** relativ (`02_architecture.md §3.1`) nicht absolut.
-- **Terminologie:** englische technische Fachbegriffe werden nicht eingedeutscht (Crate, Workspace, Feature Flag, Discovery).
-- **Code-Beispiele:** Rust als Hauptsprache, mit Syntax-Highlighting.
+- **Language:** English for the architecture suite and all public-facing material (GitHub README, spec files, public API docs).
+- **Format:** Markdown, CommonMark + GitHub-Flavored Markdown features.
+- **Cross-references:** relative (`02_architecture.md §3.1`) not absolute.
+- **Terminology:** established English technical terms are kept as-is (crate, workspace, feature flag, discovery).
+- **Code examples:** Rust as the main language, with syntax highlighting.
 
 ## Status
 
-Dieses Dokument-Set befindet sich im **Draft v0.2**-Zustand (aktualisiert für ZeroDDS-Namen und Bootstrap-vor-Expansion-Strategie). Es wird in Phase 0 des Projekts formell reviewt, angepasst und freigegeben.
+This document set is in the **Draft v0.2** state (updated for the ZeroDDS name and the bootstrap-before-expansion strategy). It is formally reviewed, adjusted and released in Phase 0 of the project.

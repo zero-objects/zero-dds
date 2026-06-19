@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Live valuetype cross-ORB fixture (#13): a real operation with a
+// valuetype parameter that ZeroDDS invokes against a JacORB server.
+valuetype Point {
+  public long x;
+  public long y;
+};
+interface ValueEcho {
+  Point echo(in Point p);
+};

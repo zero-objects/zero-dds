@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! MinimalTypeObject (XTypes 1.3 §7.3.4.4) — hash-effiziente, namenlose
-//! Repraesentation fuer Wire-Transport ueber TypeLookup.
+//! MinimalTypeObject (XTypes 1.3 §7.3.4.4) — hash-efficient, nameless
+//! representation for wire transport over TypeLookup.
 
 pub mod alias_type;
 pub mod annotation_type;
@@ -40,8 +40,8 @@ pub use union_type::{
     CommonDiscriminatorMember, MinimalDiscriminatorMember, MinimalUnionMember, MinimalUnionType,
 };
 
-/// MinimalTypeObject (§7.3.4.4). Discriminated Union mit 1-byte
-/// TypeKind-Discriminator ueber allen Variants.
+/// MinimalTypeObject (§7.3.4.4). Discriminated union with a 1-byte
+/// TypeKind discriminator over all variants.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MinimalTypeObject {
@@ -85,10 +85,10 @@ impl MinimalTypeObject {
         }
     }
 
-    /// Encode als `{ octet _d; body }`.
+    /// Encode as `{ octet _d; body }`.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u8(self.discriminator())?;
         match self {
@@ -108,8 +108,8 @@ impl MinimalTypeObject {
     /// Decode.
     ///
     /// # Errors
-    /// `TypeCodecError::UnknownTypeKind` bei unbekanntem Discriminator,
-    /// sonst CDR-Decoder-Fehler.
+    /// `TypeCodecError::UnknownTypeKind` on an unknown discriminator,
+    /// otherwise a CDR decoder error.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
         let d = r.read_u8()?;
         Ok(match d {
@@ -127,20 +127,20 @@ impl MinimalTypeObject {
         })
     }
 
-    /// Convenience: in LE-Bytes serialisieren.
+    /// Convenience: serialize into LE bytes.
     ///
     /// # Errors
-    /// Encode-Fehler.
+    /// Encode error.
     pub fn to_bytes_le(&self) -> Result<alloc::vec::Vec<u8>, EncodeError> {
         let mut w = BufferWriter::new(zerodds_cdr::Endianness::Little);
         self.encode_into(&mut w)?;
         Ok(w.into_bytes())
     }
 
-    /// Convenience: aus LE-Bytes deserialisieren.
+    /// Convenience: deserialize from LE bytes.
     ///
     /// # Errors
-    /// Decode-Fehler.
+    /// Decode error.
     pub fn from_bytes_le(bytes: &[u8]) -> Result<Self, TypeCodecError> {
         let mut r = BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
         Self::decode_from(&mut r)

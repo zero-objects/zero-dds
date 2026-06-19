@@ -11,7 +11,7 @@ use zerodds_mqtt_bridge::{
 };
 
 // ============================================================================
-// Section 1 — §4.7 Topic-Filter-Matching mit Wildcards
+// Section 1 — §4.7 topic-filter matching with wildcards
 // ============================================================================
 
 fn case_1_1_exact_match() -> CaseResult {

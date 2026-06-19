@@ -11,10 +11,10 @@ using ZeroDDS.Domain;
 namespace ZeroDDS.Topic;
 
 /// <summary>
-/// Trait der pro Sample-Type T spezialisiert wird.
-/// Generierte IDL-Bindings emittieren eine konkrete Klasse die dieses
-/// Interface implementiert; Anwendungen ohne IDL benutzen
-/// <see cref="ByteSeqTraits"/> fuer rohe Bytes.
+/// Trait specialized per sample type T.
+/// Generated IDL bindings emit a concrete class that implements this
+/// interface; applications without IDL use
+/// <see cref="ByteSeqTraits"/> for raw bytes.
 /// </summary>
 public interface ITopicTraits<T>
 {
@@ -23,7 +23,7 @@ public interface ITopicTraits<T>
     T Decode(ReadOnlySpan<byte> bytes);
 }
 
-/// <summary>Default-Traits fuer raw bytes.</summary>
+/// <summary>Default traits for raw bytes.</summary>
 public sealed class ByteSeqTraits : ITopicTraits<byte[]>
 {
     public string TypeName => "DDS::Bytes";
@@ -31,7 +31,7 @@ public sealed class ByteSeqTraits : ITopicTraits<byte[]>
     public byte[] Decode(ReadOnlySpan<byte> bytes) => bytes.ToArray();
 }
 
-/// <summary>Default-Traits fuer UTF-8 strings.</summary>
+/// <summary>Default traits for UTF-8 strings.</summary>
 public sealed class StringTraits : ITopicTraits<string>
 {
     public string TypeName => "DDS::String";
@@ -49,7 +49,7 @@ public class TopicDescription
 
     internal TopicDescription(IntPtr handle) { Handle = handle; }
 
-    /// <summary>Topic-Name (Spec §7.5.13.1).</summary>
+    /// <summary>Topic name (Spec §7.5.13.1).</summary>
     public string Name
     {
         get
@@ -95,7 +95,7 @@ public sealed class Topic<T> : TopicDescription, IDisposable
     private readonly ITopicTraits<T> _traits;
     private bool _disposed;
 
-    /// <summary>Konstruiert via Participant + Name + Traits (Default-QoS).</summary>
+    /// <summary>Constructs via Participant + name + traits (default QoS).</summary>
     public Topic(DomainParticipant dp, string name, ITopicTraits<T> traits)
         : base(Native.DpCreateTopic(dp.Handle, name, traits.TypeName, IntPtr.Zero))
     {
@@ -105,7 +105,7 @@ public sealed class Topic<T> : TopicDescription, IDisposable
         _traits = traits;
     }
 
-    /// <summary>Konstruiert mit expliziter QoS (Spec §2.2.2.2.1.5).</summary>
+    /// <summary>Constructs with explicit QoS (Spec §2.2.2.2.1.5).</summary>
     public Topic(DomainParticipant dp, string name, ITopicTraits<T> traits,
         ZeroDDS.Qos.TopicQos qos)
         : base(IntPtr.Zero)
@@ -122,7 +122,7 @@ public sealed class Topic<T> : TopicDescription, IDisposable
         _traits = traits;
     }
 
-    /// <summary>Type-Support trait.</summary>
+    /// <summary>Type-support trait.</summary>
     public ITopicTraits<T> Traits => _traits;
 
     public void Dispose()

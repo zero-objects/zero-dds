@@ -68,20 +68,26 @@ export const SensorTypeSupport: DdsTopicType<Sensor> = {
     typeName: "Sensor",
     isKeyed: true,
     extensibility: "final",
-    encode(s: Sensor, endian: EndianMode = "le"): Uint8Array {
-        const w = new Xcdr2Writer(endian);
+    encodeInto(w: Xcdr2Writer, s: Sensor): void {
         w.writeInt32(s.id);
         w.writeFloat64(s.value);
+    },
+    encode(s: Sensor, endian: EndianMode = "le"): Uint8Array {
+        const w = new Xcdr2Writer(endian);
+        this.encodeInto(w, s);
         return w.toBytes();
     },
-    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): Sensor {
-        const r = new Xcdr2Reader(bytes, offset, length, "le");
+    decodeFrom(r: Xcdr2Reader): Sensor {
         const _f_id: number = r.readInt32();
         const _f_value: number = r.readFloat64();
         return {
             id: _f_id,
             value: _f_value,
         };
+    },
+    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): Sensor {
+        const r = new Xcdr2Reader(bytes, offset, length, "le");
+        return this.decodeFrom(r);
     },
     keyHash(s: Sensor): Uint8Array {
         const w = new Xcdr2Writer("be");

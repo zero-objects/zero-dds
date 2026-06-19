@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "OMG CCM 4.0 — Component Container, CIF, CIDL-Modell, TimerEventService. Migrationspfad fuer CORBA-Bestandscode auf den ZeroDDS-Bus."
+description = "OMG CCM 4.0 — Component Container, CIF, CIDL model, TimerEventService. Migration path for legacy CORBA code onto the ZeroDDS bus."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-corba-ccm"
 readme = "README.md"
@@ -24,21 +24,30 @@ path = "src/lib.rs"
 default = ["std"]
 std = ["alloc", "dep:flate2"]
 alloc = []
-# `cos-event` zieht `zerodds-corba-cos-event` als optionale Dep dazu
-# und aktiviert den `EventChannelTimerCallback`-Adapter (Spec OMG
-# Time-Service 1.1 §2.2 — TimerEventHandler ist ein
+# `cos-event` pulls in `zerodds-corba-cos-event` as an optional
+# dependency and activates the `EventChannelTimerCallback` adapter
+# (spec OMG Time Service 1.1 §2.2 — a TimerEventHandler is a
 # `CosEventComm::PushConsumer`).
 cos-event = ["std", "dep:zerodds-corba-cos-event"]
 
 [dependencies]
-zerodds-corba-cos-event = { version = "1.0.0-rc.1", path = "../corba-cos-event", optional = true }
-zerodds-corba-ir = { version = "1.0.0-rc.1", path = "../corba-ir" }
-# Spec §11 DII Wire-up — encode_giop_request liefert echte
-# `corba_giop::Request`-Wire-Frames aus DII-NVList. no_std + alloc.
-zerodds-corba-giop = { version = "1.0.0-rc.1", path = "../corba-giop" }
-# Spec §13 DynAny — TypeCode-getriebene Iteration ueber CDR-`any`-
-# Bytes. Nutzt `BufferReader`/`Endianness` fuer primitive walks.
-zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr" }
-# Spec §18 Compression — produktiver Codec via flate2 (Zlib/Gzip/
-# Deflate). std-only; im Code per `#[cfg(feature = "std")]` gegated.
+zerodds-corba-cos-event = { version = "1.0.0-rc.3", path = "../corba-cos-event", optional = true }
+zerodds-corba-ir = { version = "1.0.0-rc.3", path = "../corba-ir" }
+# Spec §11 DII wire-up — encode_giop_request produces real
+# `corba_giop::Request` wire frames from a DII NVList. no_std + alloc.
+zerodds-corba-giop = { version = "1.0.0-rc.3", path = "../corba-giop" }
+# Spec §7 DII live-invoke / §12 DSI server bind — CorbaConnection abstraction +
+# ObjectReference + SkeletonResult. No dependency cycle: corba-rust depends only on
+# corba-codegen, not on corba-ccm/corba-iiop.
+zerodds-corba-rust = { version = "1.0.0-rc.3", path = "../corba-rust" }
+# Spec §13 DynAny — TypeCode-driven iteration over CDR `any`
+# bytes. Uses `BufferReader`/`Endianness` for primitive walks.
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr" }
+# Spec §18 Compression — production codec via flate2 (Zlib/Gzip/
+# Deflate). std-only; gated in code via `#[cfg(feature = "std")]`.
 flate2 = { workspace = true, optional = true }
+
+[dev-dependencies]
+# PI-routing evidence: real OTS + CSIv2 ServiceContexts through the interceptor pipeline.
+zerodds-corba-cos-transactions = { version = "1.0.0-rc.3", path = "../corba-cos-transactions" }
+zerodds-corba-csiv2 = { version = "1.0.0-rc.3", path = "../corba-csiv2" }

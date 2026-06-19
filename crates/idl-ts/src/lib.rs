@@ -44,11 +44,14 @@ extern crate alloc;
 
 mod amqp;
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::cell::RefCell;
 
 use zerodds_idl::ast::{
-    Definition, FloatingType, IntegerType, PrimitiveType, Specification, StringType, TypeSpec,
+    Definition, FloatingType, IntegerType, PrimitiveType, ScopedName, Specification, StringType,
+    TypeSpec,
 };
 
 /// Codegen entry point. Produces a TypeScript source string for
@@ -68,14 +71,13 @@ pub fn generate_ts_source(spec: &Specification) -> Result<String, IdlTsError> {
     Ok(out)
 }
 
-/// Spec §7.2.3 / §8.1.2 / §8.1.3 — Codegen mit angehängten
-/// AMQP-Bindings.
+/// Spec §7.2.3 / §8.1.2 / §8.1.3 — codegen with appended AMQP bindings.
 ///
-/// Identisch zu [`generate_ts_source`], hängt aber am Ende einen
-/// AMQP-Codec-Block an: pro Top-Level-Struct/Union eine Funktion
-/// `toAmqpValue_<TypeName>(v)` und `toJsonString_<TypeName>(v)`.
-/// Die Funktionen rufen in das Runtime-Modul `@zerodds/amqp/codec`,
-/// das als separate Library-Crate kommt.
+/// Identical to [`generate_ts_source`], but appends an AMQP codec block
+/// at the end: per top-level struct/union a function
+/// `toAmqpValue_<TypeName>(v)` and `toJsonString_<TypeName>(v)`.
+/// The functions call into the runtime module `@zerodds/amqp/codec`,
+/// which ships as a separate library crate.
 ///
 /// # Errors
 /// Wie [`generate_ts_source`].
@@ -119,6 +121,12 @@ pub fn generate_ts_source_with_config(
     config: &CodegenConfig,
 ) -> Result<(String, Vec<Diagnostic>), IdlTsError> {
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
+
+    // Build the type-kind resolver so the XCDR2 codec can tell a nested
+    // struct/union (→ nested TypeSupport codec) from an enum (→ int32) and
+    // resolve typedefs. Without it, every scoped ref was encoded as a single
+    // int32 (silent corruption of nested composites).
+    build_type_registry(&spec.definitions);
 
     // §9 — collect file-level verbatim blocks across all top-level
     // definitions and modules (recursively) before emission.
@@ -1370,8 +1378,17 @@ fn emit_struct(
     // (5) registry call.
     out.push_str(&alloc::format!("registerType({name}Type);\n\n"));
 
-    // (6) zerodds-xcdr2-ts-1.0 §3 + §4 — TypeSupport-Const fuer XCDR2.
-    emit_struct_typesupport(out, s, module_path)?;
+    // (6) zerodds-xcdr2-ts-1.0 §3 + §4 — TypeSupport const for XCDR2.
+    // A struct with a `fixed`/`any` member has no wire codec yet (see
+    // `typespec_xcdr2_codecable`); emit the data type but skip the TypeSupport
+    // rather than a codec that throws at runtime.
+    if struct_xcdr2_codecable(s) {
+        emit_struct_typesupport(out, s, module_path)?;
+    } else {
+        out.push_str(&alloc::format!(
+            "// {name}: no XCDR2 TypeSupport — contains a fixed/any member (no wire codec yet).\n\n"
+        ));
+    }
     Ok(())
 }
 
@@ -1612,9 +1629,9 @@ fn emit_struct_descriptor(
 // XCDR2 TypeSupport emission (zerodds-xcdr2-ts-1.0 §3 + §4)
 // ============================================================
 
-/// Emits `<Name>TypeSupport: DdsTopicType<<Name>>` const fuer einen
-/// IDL-`struct`. Implementiert encode/decode/keyHash gegen
-/// `Xcdr2Writer`/`Xcdr2Reader` aus `@zerodds/cdr`.
+/// Emits `<Name>TypeSupport: DdsTopicType<<Name>>` const for an
+/// IDL `struct`. Implements encode/decode/keyHash against
+/// `Xcdr2Writer`/`Xcdr2Reader` from `@zerodds/cdr`.
 fn emit_struct_typesupport(
     out: &mut String,
     s: &zerodds_idl::ast::StructDef,
@@ -1635,30 +1652,44 @@ fn emit_struct_typesupport(
     out.push_str(&alloc::format!("    isKeyed: {has_key},\n"));
     out.push_str(&alloc::format!("    extensibility: \"{extensibility}\",\n"));
 
-    // === encode ===
+    // === encodeInto (shared writer; nested-member entry point) ===
+    out.push_str(&alloc::format!(
+        "    encodeInto(w: Xcdr2Writer, s: {name}): void {{\n"
+    ));
+    emit_struct_encode_body(out, s, "        ")?;
+    out.push_str("    },\n");
+
+    // === encode (fresh writer) ===
     out.push_str(&alloc::format!(
         "    encode(s: {name}, endian: EndianMode = \"le\"): Uint8Array {{\n"
     ));
     out.push_str("        const w = new Xcdr2Writer(endian);\n");
-    emit_struct_encode_body(out, s, "        ")?;
+    out.push_str("        this.encodeInto(w, s);\n");
     out.push_str("        return w.toBytes();\n");
     out.push_str("    },\n");
 
-    // === decode ===
+    // === decodeFrom (shared reader; nested-member entry point) ===
+    out.push_str(&alloc::format!(
+        "    decodeFrom(r: Xcdr2Reader): {name} {{\n"
+    ));
+    emit_struct_decode_body(out, s, "        ")?;
+    out.push_str("    },\n");
+
+    // === decode (fresh reader) ===
     out.push_str(&alloc::format!(
         "    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): {name} {{\n"
     ));
     out.push_str("        const r = new Xcdr2Reader(bytes, offset, length, \"le\");\n");
-    emit_struct_decode_body(out, s, "        ")?;
+    out.push_str("        return this.decodeFrom(r);\n");
     out.push_str("    },\n");
 
     // === keyHash ===
     out.push_str(&alloc::format!("    keyHash(s: {name}): Uint8Array {{\n"));
     if has_key {
-        // PlainCdr2BeKeyHolder: Big-Endian-Encode der @key-Felder (XTypes §7.6.8).
+        // PlainCdr2BeKeyHolder: big-endian encode of the @key fields (XTypes §7.6.8).
         out.push_str("        const w = new Xcdr2Writer(\"be\");\n");
         emit_struct_keyhash_body(out, s, "        ")?;
-        // XTypes 1.3 §7.6.8.4: Holder ≤ 16 octets -> zero-pad; sonst MD5.
+        // XTypes 1.3 §7.6.8.4: holder ≤ 16 octets -> zero-pad; otherwise MD5.
         out.push_str("        const __holder = w.toBytes();\n");
         out.push_str("        if (__holder.length <= 16) {\n");
         out.push_str("            const __h = new Uint8Array(16);\n");
@@ -1682,7 +1713,7 @@ fn struct_has_any_key(s: &zerodds_idl::ast::StructDef) -> bool {
         .any(|m| has_annotation(&m.annotations, "key"))
 }
 
-/// Erzeugt den encode-Body. Behandelt Final/Appendable/Mutable.
+/// Generates the encode body. Handles final/appendable/mutable.
 fn emit_struct_encode_body(
     out: &mut String,
     s: &zerodds_idl::ast::StructDef,
@@ -1748,7 +1779,7 @@ fn emit_struct_encode_body(
     Ok(())
 }
 
-/// Erzeugt einen einzelnen Member-Encode-Aufruf (Final / Appendable).
+/// Produces a single member-encode call (final / appendable).
 fn emit_member_encode(
     out: &mut String,
     m: &zerodds_idl::ast::Member,
@@ -1760,7 +1791,7 @@ fn emit_member_encode(
         let field = d.name().text.clone();
         let target = alloc::format!("{prefix}{field}");
         if optional {
-            // present-byte fuer Final/Appendable per §4.
+            // present-byte for final/appendable per §4.
             out.push_str(&alloc::format!(
                 "{indent}if ({target} !== undefined && {target} !== null) {{\n"
             ));
@@ -1776,17 +1807,17 @@ fn emit_member_encode(
     Ok(())
 }
 
-/// Erzeugt einen Mutable-Member-Encode mit EMHEADER1.
+/// Produces a mutable-member encode with EMHEADER1.
 ///
-/// Konvention zerodds-xcdr2-bindings-conformance-1.0 §6 V-10:
-/// - Primitive Member: LC=0..3 inline (1/2/4/8 Byte).
-/// - Variable-size Member (string, sequence, map, nested struct):
-///   LC=3 mit folgendem NEXTINT = body-size (Bytes), Body in
-///   normaler XCDR2-Form danach.
+/// Convention zerodds-xcdr2-bindings-conformance-1.0 §6 V-10:
+/// - Primitive member: LC=0..3 inline (1/2/4/8 byte).
+/// - Variable-size member (string, sequence, map, nested struct):
+///   LC=3 with a following NEXTINT = body size (bytes), body in
+///   normal XCDR2 form afterwards.
 ///
-/// `patchUint32` schreibt den Body-Size-Wert in Stream-Endian
-/// (LE in der Default-Konfiguration), passend zur NEXTINT-Lese-
-/// reihenfolge im Reader.
+/// `patchUint32` writes the body-size value in stream endian
+/// (LE in the default configuration), matching the NEXTINT read
+/// order in the reader.
 fn emit_mutable_member_encode(
     out: &mut String,
     t: &TypeSpec,
@@ -1802,10 +1833,10 @@ fn emit_mutable_member_encode(
         ));
         emit_typespec_encode(out, t, &alloc::format!("s.{field}"), indent)?;
     } else {
-        // LC=3 NEXTINT-Form: EMHEADER + Placeholder fuer body-size,
-        // dann Body, dann body-size zurueckpatchen.
-        // Per §6 V-10 ist LC=3 fuer non-primitive Member overloaded
-        // mit nextInt = body-byte-count.
+        // LC=3 NEXTINT form: EMHEADER + placeholder for body size,
+        // then the body, then patch the body size back.
+        // Per §6 V-10, LC=3 for a non-primitive member is overloaded
+        // with nextInt = body byte count.
         out.push_str(&alloc::format!("{indent}{{\n"));
         out.push_str(&alloc::format!(
             "{indent}    w.writeEmHeader({id}, 3, {mu_str}, 0);\n"
@@ -1825,8 +1856,8 @@ fn emit_mutable_member_encode(
     Ok(())
 }
 
-/// Liefert den LC-Wert fuer Primitives mit fester Inline-Groesse.
-/// LC=0 -> 1B, LC=1 -> 2B, LC=2 -> 4B, LC=3 -> 8B. None sonst.
+/// Returns the LC value for primitives with a fixed inline size.
+/// LC=0 -> 1B, LC=1 -> 2B, LC=2 -> 4B, LC=3 -> 8B. None otherwise.
 fn primitive_lc_inline(t: &TypeSpec) -> Option<u32> {
     match t {
         TypeSpec::Primitive(p) => match p {
@@ -1857,8 +1888,115 @@ fn primitive_lc_inline(t: &TypeSpec) -> Option<u32> {
     }
 }
 /// zerodds-lint: recursion-depth 64 (emit_typespec_encode bounded by AST depth)
-/// Erzeugt einen Encode-Aufruf fuer einen `TypeSpec` mit gegebener
-/// Source-Expression (TypeScript-Side).
+/// Produces an encode call for a `TypeSpec` with the given source
+/// expression (TypeScript side).
+/// Codec kind of a scoped type reference, for the XCDR2 encode/decode dispatch.
+#[derive(Clone)]
+enum ScopedKind {
+    /// struct — encoded via its nested `TypeSupport.encodeInto`/`decodeFrom`.
+    Struct,
+    /// union — has no XCDR2 codec in idl-ts yet, so it is not codecable; a
+    /// struct that contains a union member is gated (no TypeSupport emitted).
+    Union,
+    /// enum/bitmask/bitset — int-like (int32 representation).
+    IntLike,
+    /// typedef — resolves to the aliased type.
+    Typedef(TypeSpec),
+}
+
+thread_local! {
+    /// Type-name → kind, built once per `generate_ts_source_with_config` call.
+    /// Keyed by simple (last) name. Lets the codec tell a nested composite from
+    /// an enum and resolve typedefs (see `build_type_registry`).
+    static TYPE_REG: RefCell<BTreeMap<String, ScopedKind>> = const { RefCell::new(BTreeMap::new()) };
+}
+
+/// Populates [`TYPE_REG`] from the spec definitions (recursing modules).
+fn build_type_registry(defs: &[Definition]) {
+    use zerodds_idl::ast::{ConstrTypeDecl, StructDcl, TypeDecl, UnionDcl};
+    /// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
+    fn walk(defs: &[Definition], reg: &mut BTreeMap<String, ScopedKind>) {
+        for def in defs {
+            match def {
+                Definition::Module(m) => walk(&m.definitions, reg),
+                Definition::Type(TypeDecl::Constr(c)) => match c {
+                    ConstrTypeDecl::Struct(StructDcl::Def(s)) => {
+                        reg.insert(s.name.text.clone(), ScopedKind::Struct);
+                    }
+                    ConstrTypeDecl::Union(UnionDcl::Def(u)) => {
+                        reg.insert(u.name.text.clone(), ScopedKind::Union);
+                    }
+                    ConstrTypeDecl::Enum(e) => {
+                        reg.insert(e.name.text.clone(), ScopedKind::IntLike);
+                    }
+                    ConstrTypeDecl::Bitmask(b) => {
+                        reg.insert(b.name.text.clone(), ScopedKind::IntLike);
+                    }
+                    ConstrTypeDecl::Bitset(b) => {
+                        reg.insert(b.name.text.clone(), ScopedKind::IntLike);
+                    }
+                    _ => {}
+                },
+                Definition::Type(TypeDecl::Typedef(t)) => {
+                    for d in &t.declarators {
+                        reg.insert(
+                            d.name().text.clone(),
+                            ScopedKind::Typedef(t.type_spec.clone()),
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut reg = BTreeMap::new();
+    walk(defs, &mut reg);
+    TYPE_REG.with(|r| *r.borrow_mut() = reg);
+}
+
+/// Looks up the codec kind of a scoped reference by its simple (last) name.
+fn lookup_scoped_kind(s: &ScopedName) -> Option<ScopedKind> {
+    let key = &s.parts.last()?.text;
+    TYPE_REG.with(|r| r.borrow().get(key).cloned())
+}
+
+/// Dotted TS path for a scoped reference (`Module.Sub.Name`).
+fn scoped_dotted(s: &ScopedName) -> String {
+    s.parts
+        .iter()
+        .map(|p| p.text.clone())
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+/// `true` if the XCDR2 codec can be generated for this type. `fixed` and `any`
+/// have no wire codec in any binding yet (cf. idl-java `typespec_supported`), so
+/// a struct/union with such a member gets its data type but **no** TypeSupport —
+/// rather than a codec that throws at runtime. (`map` is fully supported here.)
+/// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
+fn typespec_xcdr2_codecable(t: &TypeSpec) -> bool {
+    match t {
+        TypeSpec::Fixed(_) | TypeSpec::Any => false,
+        TypeSpec::Sequence(s) => typespec_xcdr2_codecable(&s.elem),
+        TypeSpec::Map(m) => typespec_xcdr2_codecable(&m.key) && typespec_xcdr2_codecable(&m.value),
+        TypeSpec::Scoped(s) => match lookup_scoped_kind(s) {
+            // Unions have no XCDR2 codec yet → a containing type is gated.
+            Some(ScopedKind::Union) => false,
+            Some(ScopedKind::Typedef(inner)) => typespec_xcdr2_codecable(&inner),
+            _ => true,
+        },
+        _ => true,
+    }
+}
+
+/// Whether a struct's XCDR2 TypeSupport can be generated (all members codecable).
+fn struct_xcdr2_codecable(s: &zerodds_idl::ast::StructDef) -> bool {
+    s.members
+        .iter()
+        .all(|m| typespec_xcdr2_codecable(&m.type_spec))
+}
+
+/// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
 fn emit_typespec_encode(
     out: &mut String,
     t: &TypeSpec,
@@ -1901,8 +2039,8 @@ fn emit_typespec_encode(
                         out.push_str(&alloc::format!("{indent}w.writeFloat64({expr});\n"));
                     }
                     FloatingType::LongDouble => {
-                        // 16-Byte opaker Carrier — wir schreiben einfach
-                        // den `bytes` Member raw (LongDouble.bytes : Uint8Array).
+                        // 16-byte opaque carrier — we simply write the
+                        // `bytes` member raw (LongDouble.bytes : Uint8Array).
                         out.push_str(&alloc::format!("{indent}w.writeBytes(({expr}).bytes);\n"));
                     }
                 };
@@ -1916,13 +2054,25 @@ fn emit_typespec_encode(
             }
         }
         TypeSpec::Sequence(seq) => {
+            // XCDR2 §7.4.3.5: non-primitive elements (string, struct, …)
+            // → DHEADER (uint32 = byte length of [count + elements]) in front;
+            // primitives not. Cyclone-DDS-verified (V-5 without, V-6 with).
+            let non_primitive = !matches!(&*seq.elem, TypeSpec::Primitive(_));
+            if non_primitive {
+                out.push_str(&alloc::format!(
+                    "{indent}const _seqtok = w.beginAppendable();\n"
+                ));
+            }
             out.push_str(&alloc::format!("{indent}w.writeUint32({expr}.length);\n"));
             out.push_str(&alloc::format!("{indent}for (const _e of {expr}) {{\n"));
             emit_typespec_encode(out, &seq.elem, "_e", &format!("{indent}    "))?;
             out.push_str(&alloc::format!("{indent}}}\n"));
+            if non_primitive {
+                out.push_str(&alloc::format!("{indent}w.endAppendable(_seqtok);\n"));
+            }
         }
         TypeSpec::Map(map) => {
-            // Map -> sequence of (key, value) Paare (count + entries).
+            // Map -> sequence of (key, value) pairs (count + entries).
             out.push_str(&alloc::format!("{indent}w.writeUint32({expr}.size);\n"));
             out.push_str(&alloc::format!(
                 "{indent}for (const [_k, _v] of {expr}) {{\n"
@@ -1931,37 +2081,53 @@ fn emit_typespec_encode(
             emit_typespec_encode(out, &map.value, "_v", &format!("{indent}    "))?;
             out.push_str(&alloc::format!("{indent}}}\n"));
         }
-        TypeSpec::Scoped(_) => {
-            // Nested struct/enum/typedef ref: by convention rufen wir
-            // <Name>TypeSupport.encode auf wenn vorhanden, fallback ist
-            // direkt das Sample-Object dumpen via JSON (unknown semantics).
-            // Fuer jetzt: einfache Form — caller MUSS sicherstellen dass
-            // ein TypeSupport-Const fuer den Type existiert. Wir emittieren
-            // einen aufruf-stub ueber generische Form.
-            // Hinweis: das ist die Anwendungs-Schicht — Codegen hat keinen
-            // globalen Resolver fuer Type-Refs in dieser Implementierung.
-            // Workaround: wir schreiben rekursiv fuer Enum-Werte als int32.
-            out.push_str(&alloc::format!(
-                "{indent}w.writeInt32({expr} as unknown as number);\n"
-            ));
-        }
+        TypeSpec::Scoped(s) => match lookup_scoped_kind(s) {
+            // Nested struct → encode its body into the shared writer
+            // (alignment stays relative to the outer CDR stream).
+            Some(ScopedKind::Struct) => {
+                out.push_str(&alloc::format!(
+                    "{indent}{}TypeSupport.encodeInto(w, {expr});\n",
+                    scoped_dotted(s)
+                ));
+            }
+            // Union has no XCDR2 codec; a struct containing one is gated, so
+            // this arm is unreachable — guard it as a codegen error rather than
+            // emitting a broken reference.
+            Some(ScopedKind::Union) => {
+                return Err(IdlTsError::Unsupported(alloc::format!(
+                    "XCDR2 codec for union member '{}' is not supported",
+                    scoped_dotted(s)
+                )));
+            }
+            // Typedef → encode the aliased type.
+            Some(ScopedKind::Typedef(inner)) => {
+                emit_typespec_encode(out, &inner, expr, indent)?;
+            }
+            // enum/bitmask/bitset (int32 representation) or unresolved ref.
+            _ => {
+                out.push_str(&alloc::format!(
+                    "{indent}w.writeInt32({expr} as unknown as number);\n"
+                ));
+            }
+        },
+        // `any`/`fixed` have no XCDR2 wire codec yet; a struct containing one is
+        // gated (no TypeSupport emitted), so these arms are unreachable — guard
+        // them as a codegen error rather than emitting code that throws at runtime.
         TypeSpec::Any => {
-            // DDS-Any wird in XCDR2 als TypeIdentifier+Wert kodiert; nicht
-            // im Codegen-Scope — emittieren wir einen runtime-Throw.
-            out.push_str(&alloc::format!(
-                "{indent}throw new Error(\"DDS-Any XCDR2 encode not implemented in codegen\");\n"
+            return Err(IdlTsError::Unsupported(
+                "XCDR2 encode for `any` member is not supported".into(),
             ));
         }
         TypeSpec::Fixed(_) => {
-            out.push_str(&alloc::format!(
-                "{indent}throw new Error(\"fixed-point XCDR2 encode not implemented in codegen\");\n"
+            return Err(IdlTsError::Unsupported(
+                "XCDR2 encode for `fixed` member is not supported".into(),
             ));
         }
     }
     Ok(())
 }
 
-/// Erzeugt den decode-Body. Liefert ein Type-Object zurueck.
+/// Generates the decode body. Returns a type object.
 fn emit_struct_decode_body(
     out: &mut String,
     s: &zerodds_idl::ast::StructDef,
@@ -1989,7 +2155,7 @@ fn emit_struct_decode_body(
             emit_decode_return(out, s, indent, name)?;
         }
         "mutable" => {
-            // Default-Initialisierung; Felder werden via EMHEADER-Loop gesetzt.
+            // Default initialization; fields are set via the EMHEADER loop.
             for m in &s.members {
                 let optional = has_annotation(&m.annotations, "optional");
                 for d in &m.declarators {
@@ -2020,12 +2186,12 @@ fn emit_struct_decode_body(
                     let field = d.name().text.clone();
                     out.push_str(&alloc::format!("{indent}        case {id}: {{\n"));
                     // EMHEADER+NEXTINT-Skip:
-                    // - Primitives (LC=0..3 inline) brauchen nichts.
-                    // - LC=3 fuer non-primitive Member traegt NEXTINT
-                    //   nach dem EMHEADER (zerodds-xcdr2-bindings-
-                    //   conformance-1.0 §6 V-10) — wir verwerfen ihn
-                    //   weil read_typespec_expr direkt den Body liest.
-                    // - LC>=4 wird bereits in readEmHeader konsumiert.
+                    // - Primitives (LC=0..3 inline) need nothing.
+                    // - LC=3 for a non-primitive member carries NEXTINT
+                    //   after the EMHEADER (zerodds-xcdr2-bindings-
+                    //   conformance-1.0 §6 V-10) — we discard it because
+                    //   read_typespec_expr reads the body directly.
+                    // - LC>=4 is already consumed in readEmHeader.
                     if primitive_lc_inline(&m.type_spec).is_none() {
                         out.push_str(&alloc::format!(
                             "{indent}            if (_emh.lc === 3) {{ r.readUint32(); }}\n"
@@ -2055,7 +2221,7 @@ fn emit_struct_decode_body(
             out.push_str(&alloc::format!("{indent}    }}\n"));
             out.push_str(&alloc::format!("{indent}}}\n"));
             out.push_str(&alloc::format!("{indent}r.endMutable(_tok);\n"));
-            // Rueckgabe-Object aus _f_*-Variablen bauen.
+            // Build the return object from _f_* variables.
             out.push_str(&alloc::format!("{indent}return {{\n"));
             for m in &s.members {
                 let optional = has_annotation(&m.annotations, "optional");
@@ -2080,7 +2246,7 @@ fn emit_struct_decode_body(
     Ok(())
 }
 
-/// Liefert den TS-Default-Initial-Wert fuer einen TypeSpec.
+/// Returns the TS default initial value for a TypeSpec.
 fn default_init_for(t: &TypeSpec) -> String {
     match t {
         TypeSpec::Primitive(p) => match p {
@@ -2103,7 +2269,7 @@ fn default_init_for(t: &TypeSpec) -> String {
     }
 }
 
-/// Erzeugt eine `const _f_<name>: T = <readExpr>;`-Zeile fuer Final/Appendable.
+/// Produces a `const _f_<name>: T = <readExpr>;` line for final/appendable.
 fn emit_member_decode_decl(
     out: &mut String,
     m: &zerodds_idl::ast::Member,
@@ -2131,16 +2297,16 @@ fn emit_member_decode_decl(
     Ok(())
 }
 
-/// Erzeugt das `return { ... }`-Statement aus den `_f_*`-Variablen.
+/// Generates the `return { ... }` statement from the `_f_*` variables.
 fn emit_decode_return(
     out: &mut String,
     s: &zerodds_idl::ast::StructDef,
     indent: &str,
     name: &str,
 ) -> Result<(), IdlTsError> {
-    // Bei `extends Base` koennen Inherited-Fields nicht aus dem Decode-
-    // Body gewonnen werden; wir casten das Object via `as <Name>` damit
-    // tsc das akzeptiert. Down-Stream-Use kennt die fehlenden Felder.
+    // With `extends Base`, inherited fields cannot be obtained from the
+    // decode body; we cast the object via `as <Name>` so tsc accepts it.
+    // Downstream use knows the missing fields.
     let needs_cast = s.base.is_some();
     if needs_cast {
         out.push_str(&alloc::format!("{indent}return ({{\n"));
@@ -2161,7 +2327,7 @@ fn emit_decode_return(
     Ok(())
 }
 /// zerodds-lint: recursion-depth 64 (read_typespec_expr bounded by AST depth)
-/// Liefert den TS-Read-Expression-String fuer einen TypeSpec.
+/// Returns the TS read-expression string for a TypeSpec.
 fn read_typespec_expr(t: &TypeSpec) -> Result<String, IdlTsError> {
     Ok(match t {
         TypeSpec::Primitive(p) => match p {
@@ -2200,9 +2366,16 @@ fn read_typespec_expr(t: &TypeSpec) -> Result<String, IdlTsError> {
         TypeSpec::Sequence(seq) => {
             let elem_ts = typespec_to_ts(&seq.elem)?;
             let elem_read = read_typespec_expr(&seq.elem)?;
-            alloc::format!(
-                "((): Array<{elem_ts}> => {{ const _n = r.readUint32(); const _o: Array<{elem_ts}> = []; for (let _i = 0; _i < _n; _i++) {{ _o.push({elem_read}); }} return _o; }})()"
-            )
+            // XCDR2 §7.4.3.5: for non-primitive elements skip the DHEADER.
+            if !matches!(&*seq.elem, TypeSpec::Primitive(_)) {
+                alloc::format!(
+                    "((): Array<{elem_ts}> => {{ const _t = r.beginAppendable(); const _n = r.readUint32(); const _o: Array<{elem_ts}> = []; for (let _i = 0; _i < _n; _i++) {{ _o.push({elem_read}); }} r.endAppendable(_t); return _o; }})()"
+                )
+            } else {
+                alloc::format!(
+                    "((): Array<{elem_ts}> => {{ const _n = r.readUint32(); const _o: Array<{elem_ts}> = []; for (let _i = 0; _i < _n; _i++) {{ _o.push({elem_read}); }} return _o; }})()"
+                )
+            }
         }
         TypeSpec::Map(map) => {
             let k_ts = typespec_to_ts(&map.key)?;
@@ -2213,22 +2386,40 @@ fn read_typespec_expr(t: &TypeSpec) -> Result<String, IdlTsError> {
                 "((): ReadonlyMap<{k_ts}, {v_ts}> => {{ const _n = r.readUint32(); const _o = new Map<{k_ts}, {v_ts}>(); for (let _i = 0; _i < _n; _i++) {{ const _k = {k_read}; const _v = {v_read}; _o.set(_k, _v); }} return _o; }})()"
             )
         }
-        TypeSpec::Scoped(_) => {
-            // Scoped-Refs werden im Codegen-Layer derzeit nicht aufgeloest;
-            // fuer Enum-Werte (int32-Repr) liefern wir int32-read.
-            "r.readInt32() as unknown as never".into()
-        }
+        TypeSpec::Scoped(s) => match lookup_scoped_kind(s) {
+            // Nested struct → decode its body from the shared reader.
+            Some(ScopedKind::Struct) => {
+                alloc::format!("{}TypeSupport.decodeFrom(r)", scoped_dotted(s))
+            }
+            // Union has no XCDR2 codec; the containing struct is gated, so this
+            // is unreachable — guard it rather than emit a broken reference.
+            Some(ScopedKind::Union) => {
+                return Err(IdlTsError::Unsupported(alloc::format!(
+                    "XCDR2 codec for union member '{}' is not supported",
+                    scoped_dotted(s)
+                )));
+            }
+            // Typedef → decode the aliased type.
+            Some(ScopedKind::Typedef(inner)) => read_typespec_expr(&inner)?,
+            // enum/bitmask/bitset (int32 representation) or unresolved ref.
+            _ => "r.readInt32() as unknown as never".into(),
+        },
+        // `any`/`fixed`: unreachable (a containing struct is gated); guard as a
+        // codegen error rather than emitting runtime-throwing decode code.
         TypeSpec::Any => {
-            "((): never => { throw new Error(\"DDS-Any XCDR2 decode not implemented\"); })()".into()
+            return Err(IdlTsError::Unsupported(
+                "XCDR2 decode for `any` member is not supported".into(),
+            ));
         }
         TypeSpec::Fixed(_) => {
-            "((): never => { throw new Error(\"fixed-point XCDR2 decode not implemented\"); })()"
-                .into()
+            return Err(IdlTsError::Unsupported(
+                "XCDR2 decode for `fixed` member is not supported".into(),
+            ));
         }
     })
 }
 
-/// Schreibt nur die `@key`-Felder im Big-Endian-Modus
+/// Writes only the `@key` fields in big-endian mode
 /// (PlainCdr2BeKeyHolder per XTypes §7.6.8).
 fn emit_struct_keyhash_body(
     out: &mut String,
@@ -2250,7 +2441,7 @@ fn emit_struct_keyhash_body(
 /// Renders a `DdsTypeRef` literal as a TypeScript object expression
 /// for a given IDL `TypeSpec`. Used inside descriptor emission.
 ///
-/// zerodds-lint: recursion-depth 16 (Type-Composition-Tiefe)
+/// zerodds-lint: recursion-depth 16 (type composition depth)
 fn typespec_to_typeref_literal(t: &TypeSpec) -> String {
     match t {
         TypeSpec::Primitive(p) => {
@@ -2329,7 +2520,7 @@ fn primitive_to_typeref_name(p: &PrimitiveType) -> &'static str {
 
 /// IDL §7.4.5 Union → TypeScript discriminated-union (algebraic data type).
 ///
-/// Beispiel:
+/// Example:
 /// ```idl
 /// union MyUnion switch (long) {
 ///     case 1: long a;
@@ -2337,7 +2528,7 @@ fn primitive_to_typeref_name(p: &PrimitiveType) -> &'static str {
 ///     default: octet other;
 /// };
 /// ```
-/// erzeugt:
+/// produces:
 /// ```ts
 /// export type MyUnion =
 ///     | { discriminator: 1; a: number }
@@ -3453,20 +3644,20 @@ fn emit_struct_default_constants(
     Ok(())
 }
 
-/// Const-Eval auf einer ConstExpr fuer Bitfield-Widths in `idl4-ts-1.0`
-/// §7.4.13.4 (Bitset-Width-Const-Eval).
+/// Const-eval on a ConstExpr for bitfield widths in `idl4-ts-1.0`
+/// §7.4.13.4 (bitset width const-eval).
 ///
-/// Reicht fuer den Bitset-Width-Use-Case: alle binaeren/unaeren
-/// Operationen ueber Integer-Literalen. Fliesskomma-Sub-Expressions
-/// fallen auf den Placeholder zurueck (das ist im Bitset-Kontext nicht
-/// vorgesehen — die Spec verlangt `<positive-int-const>`-Width).
+/// Enough for the bitset-width use case: all binary/unary operations
+/// over integer literals. Floating-point sub-expressions fall back to
+/// the placeholder (that is not foreseen in the bitset context — the
+/// spec requires a `<positive-int-const>` width).
 fn const_expr_to_ts(e: &zerodds_idl::ast::ConstExpr) -> String {
     eval_const_int(e)
         .map(|n| alloc::format!("{n}"))
         .unwrap_or_else(|| String::from("0"))
 }
 
-/// zerodds-lint: recursion-depth 16 (Const-Expression-Tiefe)
+/// zerodds-lint: recursion-depth 16 (const expression depth)
 pub(crate) fn eval_const_int(e: &zerodds_idl::ast::ConstExpr) -> Option<i64> {
     use zerodds_idl::ast::{BinaryOp, ConstExpr, LiteralKind, UnaryOp};
     match e {
@@ -3577,7 +3768,7 @@ pub(crate) fn typespec_to_ts(t: &TypeSpec) -> Result<String, IdlTsError> {
     })
 }
 
-/// Pure-TypeScript Runtime-Library, die der Codegen-Output importiert.
+/// Pure-TypeScript runtime library that the codegen output imports.
 ///
 /// DDS-TS 1.0 Descriptor-Runtime-Profile (Chapter 8 + Annex B §B.2
 /// of `documentation/specs/dds-ts-1.0/`). Published as the
@@ -3623,10 +3814,10 @@ pub mod runtime {
     ];
 }
 
-/// Fehler-Type fuer den TS-Codegen.
+/// Error type for the TS codegen.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdlTsError {
-    /// Unsupported IDL-Konstrukt.
+    /// Unsupported IDL construct.
     Unsupported(String),
 }
 
@@ -3858,13 +4049,13 @@ mod tests {
         assert!(ts.contains("registerType(ColorType);"));
     }
 
-    // §7.11 @default-Mapping: emit_struct_default_constants + descriptor
-    // .default-Field sind im Codegen implementiert. Eine direkte IDL-
-    // basierte Conformance-Prüfung ist erst möglich wenn der zerodds-idl-
-    // Parser @default als Builtin-Annotation akzeptiert (default ist
-    // aktuell als case-Label-Keyword reserviert). Die Codegen-Logik
-    // wird bis dahin durch die descriptor-min/max/unit-Tests indirekt
-    // abgedeckt (gleicher annotation_const_text/-string_value-Pfad).
+    // §7.11 @default mapping: emit_struct_default_constants + the
+    // descriptor .default field are implemented in the codegen. A direct
+    // IDL-based conformance check is only possible once the zerodds-idl
+    // parser accepts @default as a builtin annotation (default is
+    // currently reserved as a case-label keyword). Until then the codegen
+    // logic is covered indirectly by the descriptor min/max/unit tests
+    // (same annotation_const_text/-string_value path).
 
     #[test]
     fn struct_min_max_unit_emit_descriptor_fields_and_tsdoc() {
@@ -4968,9 +5159,9 @@ mod tests {
 
     #[test]
     fn bitset_width_const_eval_emits_concrete_widths() {
-        // Phase-B-Cluster-1 (idl4-ts-1.0 §7.4.13.4 Bitset-Width-Const-
-        // Eval): emittierte BITS-Konstanten muessen die konkrete Width
-        // tragen, kein Placeholder.
+        // Phase-B cluster 1 (idl4-ts-1.0 §7.4.13.4 bitset-width
+        // const-eval): emitted BITS constants must carry the concrete
+        // width, no placeholder.
         let ts = gen_ts(r"bitset Flags { bitfield<3> low; bitfield<5> high; };");
         assert!(
             ts.contains("Flags_low_BITS = 3"),
@@ -4988,7 +5179,7 @@ mod tests {
 
     #[test]
     fn bitset_width_const_eval_handles_hex_literal() {
-        // Const-Eval-Pipeline akzeptiert Hex-Literale fuer Width.
+        // The const-eval pipeline accepts hex literals for the width.
         let ts = gen_ts(r"bitset Flags { bitfield<0x10> wide; };");
         assert!(
             ts.contains("Flags_wide_BITS = 16"),
@@ -4998,7 +5189,7 @@ mod tests {
 
     #[test]
     fn parse_int_literal_handles_decimal_hex_octal() {
-        // Direkter Test der Parser-Hilfsfunktion (BinaryOp + Hex/Octal).
+        // Direct test of the parser helper function (BinaryOp + hex/octal).
         assert_eq!(parse_int_literal("42"), Some(42));
         assert_eq!(parse_int_literal("0x2A"), Some(42));
         assert_eq!(parse_int_literal("0X2a"), Some(42));
@@ -5123,7 +5314,7 @@ mod tests {
 
     #[test]
     fn full_module_compiles_all_constructs() {
-        // End-to-End: Module mit allen IDL-Konstrukten.
+        // End-to-end: a module with all IDL constructs.
         let ts = gen_ts(
             r"module M {
                 typedef long MyInt;

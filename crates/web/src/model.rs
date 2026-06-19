@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use crate::session::SessionId;
 use crate::status::ReturnStatus;
 
-/// Spec §7.3.1 — `WebDDS::Root` Singleton. Verwaltet alle Objects.
+/// Spec §7.3.1 — `WebDDS::Root` singleton. Manages all objects.
 #[derive(Debug, Default)]
 pub struct WebDdsRoot {
     /// Alle registrierten Applications.
@@ -19,12 +19,12 @@ pub struct WebDdsRoot {
 }
 
 impl WebDdsRoot {
-    /// Spec §7.3.1.1 — `create_application`. Liefert
-    /// `OBJECT_ALREADY_EXISTS` wenn Application mit gleichem Namen
-    /// existiert.
+    /// Spec §7.3.1.1 — `create_application`. Returns
+    /// `OBJECT_ALREADY_EXISTS` if an application with the same name
+    /// exists.
     ///
     /// # Errors
-    /// Siehe [`ReturnStatus`].
+    /// See [`ReturnStatus`].
     pub fn create_application(&mut self, app: Application) -> Result<SessionId, ReturnStatus> {
         if self.applications.iter().any(|a| a.name == app.name) {
             return Err(ReturnStatus::ObjectAlreadyExists);
@@ -37,7 +37,7 @@ impl WebDdsRoot {
     /// Spec §7.3.1.2 — `delete_application`.
     ///
     /// # Errors
-    /// `INVALID_OBJECT` wenn Name nicht existiert.
+    /// `INVALID_OBJECT` if the name does not exist.
     pub fn delete_application(&mut self, name: &str) -> Result<(), ReturnStatus> {
         let idx = self
             .applications
@@ -48,11 +48,11 @@ impl WebDdsRoot {
         Ok(())
     }
 
-    /// Spec §7.3.1.3 — `get_applications` mit fnmatch-Pattern.
+    /// Spec §7.3.1.3 — `get_applications` with an fnmatch pattern.
     ///
-    /// `expression` ist ein POSIX-fnmatch-Pattern (`*` = beliebig,
-    /// `?` = ein Zeichen). Wir implementieren ein vereinfachtes Subset
-    /// mit `*`-Wildcard.
+    /// `expression` is a POSIX fnmatch pattern (`*` = anything,
+    /// `?` = one character). We implement a simplified subset
+    /// with the `*` wildcard.
     #[must_use]
     pub fn get_applications(&self, expression: &str) -> Vec<&Application> {
         self.applications
@@ -65,9 +65,9 @@ impl WebDdsRoot {
 /// Spec §7.3 — `WebDDS::Application` Entity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Application {
-    /// Name (eindeutig im Root-Scope).
+    /// Name (unique in the root scope).
     pub name: String,
-    /// DomainParticipants der Application.
+    /// DomainParticipants of the application.
     pub participants: Vec<DomainParticipant>,
 }
 
@@ -81,18 +81,18 @@ pub struct Client {
 /// Spec §7.3 — `WebDDS::DomainParticipant`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainParticipant {
-    /// Name (eindeutig pro Application).
+    /// Name (unique per application).
     pub name: String,
     /// `domain_id` (Spec §7.3 Tab).
     pub domain_id: i32,
 }
 
-/// POSIX-fnmatch-Subset (nur `*`-Wildcard, keine `?`/`[...]`-Klassen).
+/// POSIX fnmatch subset (only the `*` wildcard, no `?`/`[...]` classes).
 fn fnmatch_simple(pattern: &str, name: &str) -> bool {
     if pattern == "*" {
         return true;
     }
-    // Einfacher Prefix*-Suffix-Matcher.
+    // Simple prefix*-suffix matcher.
     if let Some(idx) = pattern.find('*') {
         let (prefix, suffix) = pattern.split_at(idx);
         let suffix = &suffix[1..]; // skip '*'.

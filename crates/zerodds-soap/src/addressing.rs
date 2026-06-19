@@ -19,21 +19,21 @@ pub struct AddressingHeaders {
     pub to: Option<String>,
     /// `wsa:Action` — Operation-IRI.
     pub action: Option<String>,
-    /// `wsa:MessageID` — eindeutige Message-Id.
+    /// `wsa:MessageID` — unique message ID.
     pub message_id: Option<String>,
-    /// `wsa:RelatesTo` — bezieht sich auf eine vorherige Message-Id
-    /// (typisch fuer Reply).
+    /// `wsa:RelatesTo` — refers to a previous message ID
+    /// (typical for a reply).
     pub relates_to: Option<String>,
-    /// `wsa:From` — Source-Endpoint.
+    /// `wsa:From` — source endpoint.
     pub from: Option<String>,
-    /// `wsa:ReplyTo` — Endpoint, an den die Reply geschickt werden
-    /// soll.
+    /// `wsa:ReplyTo` — endpoint to which the reply should be
+    /// sent.
     pub reply_to: Option<String>,
-    /// `wsa:FaultTo` — Endpoint fuer Faults.
+    /// `wsa:FaultTo` — endpoint for faults.
     pub fault_to: Option<String>,
 }
 
-/// Erzeugt einen `<wsa:...>`-Header-Block fuer den SOAP-Envelope.
+/// Creates a `<wsa:...>` header block for the SOAP envelope.
 /// Spec §3.2.
 #[must_use]
 pub fn build_addressing_header(h: &AddressingHeaders) -> String {

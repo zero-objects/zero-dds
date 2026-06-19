@@ -4,9 +4,10 @@ Audit der Vendor-Spec `docs/specs/zerodds-java-omgdds-1.0.md` gegen
 `crates/java-omgdds/` Code-Realität.
 
 **Source:** `docs/specs/zerodds-java-omgdds-1.0.md` (Vendor-Spec, 2026-05-06).
-**Repo:** `crates/java-omgdds/` (Rust-Codegen-Bridge) +
-`crates/java-omgdds/java/` (Maven-Java-Modul).
-**Stand:** 2026-05-07.
+
+**Kontext:** Die Implementation lebt in einer Crate (mit eingebettetem Maven-Java-Modul):
+
+- `crates/java-omgdds/` — Rust-Codegen-Bridge + Pure-Java-Modul unter `java/` (Maven)
 
 ---
 
@@ -71,7 +72,7 @@ QosProfile.
 
 **Repo:** 5+ Java-Files in `org/omg/dds/core/`.
 
-**Tests:** `CoreTypesTest` — 10 Tests fuer Time/Duration/InstanceHandle
+**Tests:** `CoreTypesTest` — 10 Tests für Time/Duration/InstanceHandle
 Roundtrips.
 
 **Status:** done
@@ -124,8 +125,8 @@ Roundtrips.
 
 **Tests:** indirekt.
 
-**Status:** done — Default-QoS-Pfad live; XML-QoS-Loader ist Phase-2
-in `zerodds-xml-1.0`-Audit-File getrackt (separate Spec).
+**Status:** done — Default-QoS-Pfad live; der XML-QoS-Loader ist im
+`zerodds-xml-1.0`-Audit-File getrackt (separate Spec).
 
 ---
 
@@ -148,33 +149,37 @@ liefert "Tests run: 18, Failures: 0, Errors: 0, Skipped: 0".
 
 ### §4.1 Pure-Java + gRPC-Bridge Decision
 
-**Spec:** §4 — Pure-Java hat im RC1 keinen RTPS-Wire-Stack.
+**Spec:** §4 — Der Pure-Java-Pfad hat keinen RTPS-Wire-Stack.
 Single-JVM-Pfad via `InProcessBus`; Multi-JVM und Cross-Vendor
-kommen Phase-2 via gRPC-Bridge zu `libzerodds`-Server.
+laufen über die gRPC-Bridge zum `zerodds-grpc-bridged`-Daemon (§5, implementiert).
 
 **Repo:** `crates/java-omgdds/java/` (Pure-Java mit `InProcessBus`).
-Eine fruehere JNI-Bridge (`crates/zerodds-java-jni/`) wurde am
-2026-05-07 (Commit `49b9b4c6`) entfernt.
+Eine frühere JNI-Bridge (`crates/zerodds-java-jni/`) wurde am entfernt.
 
 **Status:** done — Decision-Matrix in Vendor-Spec §4 Tabelle.
 
-### §4.2 gRPC-Bridge fuer Multi-Process
+### §4.2 gRPC-Bridge für Multi-Process
 
-**Spec:** §5 Phase-2 — gRPC-Service in `crates/grpc-bridge/`
-exponiert DCPS-Methods, Pure-Java-Client kann sich verbinden.
+**Spec:** §5 — gRPC-Service exponiert DDS Publish/Subscribe
+(`zerodds.bridge.v1.<Topic>/Publish|Subscribe`), Pure-Java-Client verbindet sich.
 
-**Repo:** `crates/grpc-bridge/` existiert. `proto/dds-bridge.proto`
-ist nicht implementiert.
+**Repo:** Daemon `zerodds-grpc-bridged` (Service-Routing `service_gen.rs`,
+`/zerodds.bridge.v1.<Topic>/Publish|Subscribe`) + Pure-Java-h2c-Client
+`org/zerodds/bridge/GrpcBridgeClient.java` (raw HTTP/2 + HPACK + protobuf
+`Sample`/`PublishAck` — kein grpc-java, kein TLS, Java-8-kompatibel).
 
-**Status:** `n/a (Phase-2 Stretch)` — Vendor-Spec markiert das
-explizit als Phase-2/v1.1-Stretch. RC1 lebt ohne. Decision-
-Record im `.open.md`.
+**Tests:** `GrpcBridgeClientTest` — Protobuf-Codec-Self-Checks (immer grün) +
+`publishThenSubscribeRoundtripThroughDds` (echtes Java→gRPC→DDS-DataWriter→
+DataReader→gRPC→Java-Roundtrip, via `run_grpc_bridge_e2e.sh`, env-gated über
+`ZERODDS_BRIDGE_PORT`).
+
+**Status:** done — Multi-JVM-Pfad implementiert + e2e-belegt.
 
 ---
 
-## §5 Stabilitaet
+## §5 Stabilität
 
-**Spec:** §6 — semver: v1.0 = aktuelle Surface (RC1).
+**Spec:** §6 — semver: v1.0 = aktuelle Surface.
 
 **Repo:** Maven-Pom-Version, Cargo.toml-Version.
 
@@ -189,21 +194,18 @@ Record im `.open.md`.
 | §1 Architektur | done (3/3) |
 | §2 OMG-API-Coverage | done (6/6) |
 | §3 Test-Pflicht | done |
-| §4 Cross-Pfad | done (1/2) + n/a (1/2) |
-| §5 Stabilitaet | done |
+| §4 Cross-Pfad | done (2/2) |
+| §5 Stabilität | done |
 
 **Total Items:** 12
-**done:** 11
+**done:** 12
 **partial:** 0
 **open:** 0
-**n/a (Stretch):** 1
+**n/a (Stretch):** 0
 
-Siehe `zerodds-java-omgdds-1.0.open.md`.
+## Zusammenfassung
 
-## Abschluss-Bemerkung
-
-Pure-Java-Pfad ist voll spec-konform fuer den dokumentierten Scope
-(Single-JVM in-process Pub-Sub via InProcessBus + Cross-JVM via gRPC-
-Bridge in v1.1). Der einzige `n/a`-Item (gRPC-Bridge) ist als
-explizites Phase-2-Stretch im Vendor-Spec §5 markiert; RC1 ohne ist
-korrekt.
+Der Pure-Java-Pfad ist voll spec-konform: Single-JVM in-process Pub-Sub via
+`InProcessBus` **und** Multi-JVM/Cross-Process über die gRPC-Bridge
+(`zerodds-grpc-bridged` ↔ Pure-Java-h2c-`GrpcBridgeClient`, e2e-belegt). Kein
+JNI im Pure-Java-Pfad. Keine offenen oder zurückgestellten Items mehr.

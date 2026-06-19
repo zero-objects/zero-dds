@@ -2,6 +2,10 @@
 
 **Quelle:** `docs/specs/zerodds-ffi-loader-1.0.md`
 
+Implementation:
+
+- `crates/zerodds-c-api/` — FFI-Library-Loader (Bootstrap der C-API).
+
 ## §1 Conformance-Levels
 
 ### §1 L1-L3 Conformance-Matrix
@@ -109,14 +113,14 @@ listener` mit user_data.
 
 **Spec:** §3.2 — Pure-Java DDS-Java-PSM ohne Native-Library auf der
 Java-Seite (kein `System.loadLibrary`, kein JNI-Adapter). Eine
-fruehere JNI-Bridge wurde am 2026-05-07 entfernt.
+frühere JNI-Bridge wurde entfernt.
 
 **Repo:** `crates/java-omgdds/java/src/main/java/`,
 `examples/tutorials/dds-chat/ports/java-cli/src/main/java/io/zerodds/chat/Main.java`,
 `examples/tutorials/dds-chat/ports/java-cli/pom.xml`.
 
 **Tests:** `crates/java-omgdds/java/src/test/java/.../*Test.java`
-(`mvn test`, 18 gruen);
+(`mvn test`, 18 grün);
 `examples/tutorials/dds-chat/ports/java-cli/` (Maven Test-Folder).
 
 **Status:** done
@@ -336,4 +340,4 @@ Sprach-Loader, Major=Breaking-ABI.
 
 Test-Lauf: `cargo test -p zerodds-c-api` — Tests grün, 0 failed.
 
-Offene Punkte und Decision-Records: siehe `zerodds-ffi-loader-1.0.open.md`.
+Keine offenen Punkte oder Decision-Records — alle Items `done` / `n/a (informative)`.

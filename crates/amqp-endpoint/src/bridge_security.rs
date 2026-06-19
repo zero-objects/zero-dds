@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! AMQP-Endpoint §7.x Bridge-Security-Wireup (separat von dem
-//! DDS-Security-Mapper in [`crate::security`]).
+//! AMQP endpoint §7.x bridge-security wireup (separate from the
+//! DDS-Security mapper in [`crate::security`]).
 //!
-//! * §7.1 TLS — `amqps://` auf Port 5671 via rustls.
-//! * §7.2 Auth — natürlicher Match auf SASL-PLAIN aus dem AMQP-
-//!   SASL-Mech-Negotiation; alternativ Bearer-Token in einer
-//!   `application-properties`-Map.
-//! * §7.3 Topic-ACL — pro AMQP-Address (= DDS-Topic-Name).
+//! * §7.1 TLS — `amqps://` on port 5671 via rustls.
+//! * §7.2 Auth — natural match on SASL-PLAIN from the AMQP
+//!   SASL mechanism negotiation; alternatively a bearer token in an
+//!   `application-properties` map.
+//! * §7.3 Topic ACL — per AMQP address (= DDS topic name).
 //!
 //! Spec: `zerodds-amqp-bridge-1.0.md` §7.
 
@@ -21,40 +21,40 @@ pub use zerodds_bridge_security::{
 use std::path::Path;
 use std::sync::Arc;
 
-/// Konfiguration fuer den AMQP-Bridge-Client (out-bound zu Broker).
-/// Mappt von Daemon-Config-Strings auf den [`build_client_tls_connector`]
-/// + [`SecurityCtx`] in einem Aufruf.
+/// Configuration for the AMQP bridge client (outbound to broker).
+/// Maps from daemon config strings to [`build_client_tls_connector`]
+/// + [`SecurityCtx`] in a single call.
 #[derive(Debug, Clone, Default)]
 pub struct AmqpSecurityConfig {
-    /// `true` ⇒ wraps die Broker-Connection mit rustls-Client.
+    /// `true` ⇒ wraps the broker connection with a rustls client.
     pub tls_enabled: bool,
-    /// PEM-CA-Bundle (Broker-Cert-Validation).
+    /// PEM CA bundle (broker cert validation).
     pub tls_ca_file: String,
-    /// Client-Cert (mTLS).
+    /// Client cert (mTLS).
     pub tls_cert_file: String,
-    /// Client-Key (mTLS).
+    /// Client key (mTLS).
     pub tls_key_file: String,
-    /// Hostname-Override fuer SNI/Validation.
+    /// Hostname override for SNI/validation.
     pub tls_server_name: String,
-    /// Auth-Mode: `none|bearer|sasl|sasl_plain|mtls`.
+    /// Auth mode: `none|bearer|sasl|sasl_plain|mtls`.
     pub auth_mode: String,
-    /// Bearer-Token (XOAUTH2-Anlehnung).
+    /// Bearer token (XOAUTH2-style).
     pub bearer_token: Option<String>,
-    /// Bearer-Subject — lokaler ACL-Subject fuer den Bridge-Identity.
+    /// Bearer subject — local ACL subject for the bridge identity.
     pub bearer_subject: Option<String>,
-    /// SASL-PLAIN Out-Bound User.
+    /// SASL-PLAIN outbound user.
     pub sasl_username: Option<String>,
-    /// SASL-PLAIN Out-Bound Password.
+    /// SASL-PLAIN outbound password.
     pub sasl_password: Option<String>,
-    /// Topic-ACL.
+    /// Topic ACL.
     pub topic_acl: std::collections::HashMap<String, (Vec<String>, Vec<String>)>,
 }
 
-/// Baut [`SecurityCtx`] + optional rustls-`ClientConfig` fuer die
-/// AMQP-Out-Bound-Verbindung.
+/// Builds [`SecurityCtx`] + an optional rustls `ClientConfig` for the
+/// AMQP outbound connection.
 ///
 /// # Errors
-/// [`SecurityError`] bei Lade-/Auth-Mode-Fehler.
+/// [`SecurityError`] on load / auth-mode failure.
 pub fn ctx_from_amqp_config(
     cfg: &AmqpSecurityConfig,
 ) -> Result<(SecurityCtx, Option<Arc<rustls::ClientConfig>>), SecurityError> {
@@ -104,10 +104,10 @@ pub fn ctx_from_amqp_config(
     Ok((ctx, client_tls))
 }
 
-/// Baut einen SASL-PLAIN-Init-Response-Blob (`\0user\0pass`) aus dem
-/// AmqpSecurityConfig. Wird vom Daemon in den SASL-Handshake-Frame
-/// gerendert. Returned `None` wenn `auth_mode` nicht SASL ist oder
-/// keine Credentials gesetzt sind.
+/// Builds a SASL-PLAIN init-response blob (`\0user\0pass`) from the
+/// AmqpSecurityConfig. Rendered by the daemon into the SASL handshake
+/// frame. Returns `None` when `auth_mode` is not SASL or no
+/// credentials are set.
 #[must_use]
 pub fn sasl_plain_init_response(cfg: &AmqpSecurityConfig) -> Option<Vec<u8>> {
     if !matches!(cfg.auth_mode.as_str(), "sasl" | "sasl_plain") {
@@ -123,15 +123,15 @@ pub fn sasl_plain_init_response(cfg: &AmqpSecurityConfig) -> Option<Vec<u8>> {
     Some(buf)
 }
 
-/// AMQP-spezifischer Auth-Hook: SASL-PLAIN-Frame aus dem
-/// SASL-Init-Performative, mit Fallback auf TLS-Client-Cert für mTLS.
+/// AMQP-specific auth hook: SASL-PLAIN frame from the
+/// SASL-Init performative, with fallback to a TLS client cert for mTLS.
 ///
-/// `sasl_init_response` ist der Roh-Bytes-Block aus
+/// `sasl_init_response` is the raw byte block from
 /// `SaslInit::initial-response` (RFC 4422 / OASIS AMQP §5.3.3.5);
-/// für PLAIN ist das `\0user\0pass` (RFC 4616).
+/// for PLAIN that is `\0user\0pass` (RFC 4616).
 ///
 /// # Errors
-/// [`AuthError`] bei missing/malformed/rejected.
+/// [`AuthError`] on missing/malformed/rejected.
 pub fn authenticate_amqp_sasl(
     auth: &AuthMode,
     sasl_init_response: Option<&[u8]>,
@@ -140,12 +140,12 @@ pub fn authenticate_amqp_sasl(
     zerodds_bridge_security::authenticate(auth, None, sasl_init_response, mtls_subject)
 }
 
-/// AMQP-spezifischer Auth-Hook für Bearer-Tokens, die als
-/// `application-properties[zerodds:auth-token]` mitgegeben werden
-/// (für Clients ohne SASL-PLAIN-Support).
+/// AMQP-specific auth hook for bearer tokens passed as
+/// `application-properties[zerodds:auth-token]`
+/// (for clients without SASL-PLAIN support).
 ///
 /// # Errors
-/// [`AuthError`] bei missing/malformed/rejected.
+/// [`AuthError`] on missing/malformed/rejected.
 pub fn authenticate_amqp_bearer(
     auth: &AuthMode,
     bearer_value: Option<&str>,

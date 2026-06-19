@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Parser fuer DDS-XML 1.0 §7.3.2 QoS-Profile-Library.
+//! Parser for the DDS-XML 1.0 §7.3.2 QoS profile library.
 //!
-//! Konsumiert Roh-XML, baut den Foundation-Tree (siehe
-//! [`crate::parser::parse_xml_tree`]) auf und mappt ihn auf das typed
-//! Datenmodell aus [`crate::qos`].
+//! Consumes raw XML, builds the foundation tree (see
+//! [`crate::parser::parse_xml_tree`]) and maps it onto the typed
+//! data model from [`crate::qos`].
 //!
-//! # Spec-konforme Boolean-Semantik
+//! # Spec-conformant boolean semantics
 //!
-//! Der Foundation-`parse_bool` aus [`crate::types`] akzeptiert bewusst
-//! `TRUE`/`FALSE`-Schreibweisen aus Cyclone/FastDDS-Kompatibilitaet.
-//! DDS-XML 1.0 §7.1.4 verlangt dagegen **strict** `true`/`false`. Wir
-//! verwenden hier den lokalen [`parse_bool_strict`] Helper, der nur die
-//! Spec-Werte zulaesst.
+//! The foundation `parse_bool` from [`crate::types`] deliberately accepts
+//! `TRUE`/`FALSE` spellings for Cyclone/FastDDS compatibility.
+//! DDS-XML 1.0 §7.1.4, by contrast, requires **strict** `true`/`false`. Here
+//! we use the local [`parse_bool_strict`] helper, which only allows the
+//! spec values.
 //!
-//! # Single-QoS-Shortcut (§7.3.2.4.1)
+//! # Single-QoS shortcut (§7.3.2.4.1)
 //!
-//! Ein `<qos_profile>` mit nur einem `<datawriter_qos>` (oder einem
-//! anderen 6 Entity-Containern) wird wie eine voll-spezifizierte Profile
-//! behandelt — der direkte Container-Tag ersetzt den Container-fuer-
-//! mehrere-Policies-Stil. Andere Entity-Container in derselben Profile
-//! werden zusaetzlich akzeptiert; das ist ein Superset des Spec-
-//! Examples in §7.3.2.4.1.
+//! A `<qos_profile>` with only one `<datawriter_qos>` (or one of the
+//! other 6 entity containers) is treated like a fully specified profile —
+//! the direct container tag replaces the container-for-multiple-policies
+//! style. Other entity containers in the same profile
+//! are additionally accepted; that is a superset of the spec
+//! example in §7.3.2.4.1.
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -46,14 +46,14 @@ use crate::types::{
     parse_duration_sec, parse_long,
 };
 
-/// Parsed das oberste `<dds>`-Dokument und gibt **alle** enthaltenen
-/// QoS-Libraries zurueck (Spec §7.3.2.3 erlaubt mehrere Libraries pro
-/// Dokument).
+/// Parses the top-level `<dds>` document and returns **all** contained
+/// QoS libraries (Spec §7.3.2.3 allows multiple libraries per
+/// document).
 ///
 /// # Errors
-/// * [`XmlError::InvalidXml`] — XML nicht wohlgeformt oder keine
-///   `<dds>`-Wurzel.
-/// * Weitere Fehler aus `parse_qos_library_element` durchgereicht.
+/// * [`XmlError::InvalidXml`] — XML not well-formed or no
+///   `<dds>` root.
+/// * Further errors from `parse_qos_library_element`, passed through.
 pub fn parse_qos_libraries(xml: &str) -> Result<Vec<QosLibrary>, XmlError> {
     let doc = parse_xml_tree(xml)?;
     if doc.root.name != "dds" {
@@ -69,13 +69,13 @@ pub fn parse_qos_libraries(xml: &str) -> Result<Vec<QosLibrary>, XmlError> {
     Ok(libs)
 }
 
-/// Convenience: parsed das Dokument und gibt die **erste** QoS-Library
-/// zurueck. Liefert `MissingRequiredElement("qos_library")` wenn keine
-/// vorhanden.
+/// Convenience: parses the document and returns the **first** QoS library.
+/// Returns `MissingRequiredElement("qos_library")` if none is
+/// present.
 ///
 /// # Errors
-/// Wie [`parse_qos_libraries`], plus `MissingRequiredElement` wenn das
-/// Dokument keine Library enthaelt.
+/// As [`parse_qos_libraries`], plus `MissingRequiredElement` if the
+/// document contains no library.
 pub fn parse_qos_library(xml: &str) -> Result<QosLibrary, XmlError> {
     parse_qos_libraries(xml)?
         .into_iter()
@@ -83,13 +83,13 @@ pub fn parse_qos_library(xml: &str) -> Result<QosLibrary, XmlError> {
         .ok_or_else(|| XmlError::MissingRequiredElement("qos_library".into()))
 }
 
-/// Crate-internal `pub`-Wrapper fuer [`parse_qos_library_element`], damit
-/// der Top-Level-Loader (`crate::zerodds_xml::parse_dds_xml`) eine
-/// `<qos_library>`-Element-Sub-Tree direkt dekodieren kann ohne den
-/// Parser zu duplizieren.
+/// Crate-internal `pub` wrapper for [`parse_qos_library_element`], so that
+/// the top-level loader (`crate::zerodds_xml::parse_dds_xml`) can decode a
+/// `<qos_library>` element sub-tree directly without duplicating the
+/// parser.
 ///
 /// # Errors
-/// Siehe `parse_qos_library_element`.
+/// See `parse_qos_library_element`.
 pub fn parse_qos_library_element_public(el: &XmlElement) -> Result<QosLibrary, XmlError> {
     parse_qos_library_element(el)
 }
@@ -104,10 +104,10 @@ fn parse_qos_library_element(el: &XmlElement) -> Result<QosLibrary, XmlError> {
         profiles.push(parse_qos_profile_element(prof_node)?);
     }
     // Spec §7.3.2.4.4: "The definition of an individual QoS is a
-    // shortcut for defining a QoS profile with a single QoS." Wir
-    // erkennen `<datawriter_qos name="…">` etc. direkt unter
-    // `<qos_library>` und wickeln sie in einen impliziten
-    // qos_profile-Wrapper.
+    // shortcut for defining a QoS profile with a single QoS." We
+    // recognize `<datawriter_qos name="…">` etc. directly under
+    // `<qos_library>` and wrap them in an implicit
+    // qos_profile wrapper.
     for child in &el.children {
         if let Some(profile) = parse_single_qos_shortcut(child)? {
             profiles.push(profile);
@@ -116,14 +116,14 @@ fn parse_qos_library_element(el: &XmlElement) -> Result<QosLibrary, XmlError> {
     Ok(QosLibrary { name, profiles })
 }
 
-/// Spec §7.3.2.4.4 Single-QoS-Shortcut — wenn ein `<datawriter_qos>`
-/// (oder `_reader`/`_topic`/`_publisher`/`_subscriber`/
-/// `_participant`) direkt unter `<qos_library>` steht UND ein
-/// `name`-Attribut traegt, ist das Aequivalent zu einem
-/// `<qos_profile name="…">` mit genau einer QoS.
+/// Spec §7.3.2.4.4 single-QoS shortcut — when a `<datawriter_qos>`
+/// (or `_reader`/`_topic`/`_publisher`/`_subscriber`/
+/// `_participant`) is directly under `<qos_library>` AND carries a
+/// `name` attribute, it is equivalent to a
+/// `<qos_profile name="…">` with exactly one QoS.
 ///
-/// Liefert `None` wenn das Element kein Shortcut ist (z.B. ein
-/// regulaeres `<qos_profile>`-Child oder ein qos-Element ohne `name`).
+/// Returns `None` if the element is not a shortcut (e.g. a
+/// regular `<qos_profile>` child or a qos element without `name`).
 fn parse_single_qos_shortcut(el: &XmlElement) -> Result<Option<QosProfile>, XmlError> {
     let name = match el.attribute("name") {
         Some(n) => n.to_string(),
@@ -186,22 +186,22 @@ fn parse_qos_profile_element(el: &XmlElement) -> Result<QosProfile, XmlError> {
             "domainparticipant_qos" => {
                 profile.domainparticipant_qos = Some(parse_entity_qos(child)?);
             }
-            // Unbekannte Elements werden im "lax"-Modus ignoriert
-            // (Spec §7.1.4 erlaubt "lax" als Lese-Strategie); strenge
-            // Validation kann auf Aufrufer-Seite via dedizierter
-            // Whitelist nachgezogen werden.
+            // Unknown elements are ignored in "lax" mode
+            // (Spec §7.1.4 allows "lax" as a read strategy); strict
+            // validation can be added on the caller side via a dedicated
+            // whitelist.
             _ => {}
         }
     }
     Ok(profile)
 }
 
-/// Crate-internal `pub`-Wrapper fuer [`parse_entity_qos`], damit andere
-/// Building-Block-Module (Domain, Participant) inline-QoS-Container
-/// dekodieren koennen ohne den Parser zu duplizieren.
+/// Crate-internal `pub` wrapper for [`parse_entity_qos`], so that other
+/// building-block modules (domain, participant) can decode inline QoS
+/// containers without duplicating the parser.
 ///
 /// # Errors
-/// Siehe `parse_entity_qos`.
+/// See `parse_entity_qos`.
 pub fn parse_entity_qos_public(el: &XmlElement) -> Result<EntityQos, XmlError> {
     parse_entity_qos(el)
 }
@@ -236,7 +236,7 @@ fn parse_entity_qos(el: &XmlElement) -> Result<EntityQos, XmlError> {
             "user_data" => q.user_data = Some(parse_user_data(child)?),
             "topic_data" => q.topic_data = Some(parse_topic_data(child)?),
             "group_data" => q.group_data = Some(parse_group_data(child)?),
-            // Unbekannte Children: lax (siehe `parse_qos_profile_element`).
+            // Unknown children: lax (see `parse_qos_profile_element`).
             _ => {}
         }
     }
@@ -244,13 +244,13 @@ fn parse_entity_qos(el: &XmlElement) -> Result<EntityQos, XmlError> {
 }
 
 // ============================================================================
-// Spec-strikter Boolean-Parser
+// Spec-strict boolean parser
 // ============================================================================
 
-/// DDS-XML 1.0 §7.1.4 verlangt strict `true`/`false` (case-sensitive).
+/// DDS-XML 1.0 §7.1.4 requires strict `true`/`false` (case-sensitive).
 ///
 /// # Errors
-/// [`XmlError::ValueOutOfRange`] bei jeder anderen Schreibweise (auch
+/// [`XmlError::ValueOutOfRange`] on any other spelling (incl.
 /// `True`, `1`, `yes`).
 pub fn parse_bool_strict(s: &str) -> Result<bool, XmlError> {
     let t = s.trim();
@@ -267,17 +267,17 @@ pub fn parse_bool_strict(s: &str) -> Result<bool, XmlError> {
 // Duration-Helper: XML-`<sec>/<nanosec>` ↔ `zerodds_qos::Duration`
 // ============================================================================
 
-/// Konvertiert eine XML-`Duration_t`-Repraesentation
-/// (`<sec>` + optional `<nanosec>`, oder Inline-Text `DURATION_INFINITY`)
-/// zu einem `zerodds_qos::Duration` (i32 seconds + u32 fraction).
+/// Converts an XML `Duration_t` representation
+/// (`<sec>` + optional `<nanosec>`, or inline text `DURATION_INFINITY`)
+/// into a `zerodds_qos::Duration` (i32 seconds + u32 fraction).
 ///
-/// Akzeptierte XML-Formate:
-/// 1. `<duration><sec>1</sec><nanosec>0</nanosec></duration>` — voll.
-/// 2. `<duration><sec>DURATION_INFINITY</sec></duration>` — Sentinel
-///    (mappt auf [`QosDuration::INFINITE`]).
-/// 3. `<duration>DURATION_INFINITY</duration>` — Inline-Text-Sentinel.
+/// Accepted XML formats:
+/// 1. `<duration><sec>1</sec><nanosec>0</nanosec></duration>` — full.
+/// 2. `<duration><sec>DURATION_INFINITY</sec></duration>` — sentinel
+///    (maps to [`QosDuration::INFINITE`]).
+/// 3. `<duration>DURATION_INFINITY</duration>` — inline text sentinel.
 fn parse_duration_element(el: &XmlElement) -> Result<QosDuration, XmlError> {
-    // Inline-Sentinel-Text (Form 3).
+    // Inline sentinel text (form 3).
     let trimmed = el.text.trim();
     if !trimmed.is_empty() && el.children.is_empty() {
         return parse_duration_text_sentinel(trimmed);
@@ -296,20 +296,20 @@ fn parse_duration_element(el: &XmlElement) -> Result<QosDuration, XmlError> {
         0
     };
 
-    // Spec-Sentinel-Mapping: wenn der `<sec>`-Wert die Spec-Sentinel
-    // `DURATION_INFINITE_SEC` (= 0x7FFFFFFF) traegt, mappen wir auf
-    // `QosDuration::INFINITE` (`{i32::MAX, u32::MAX}`). Das ist die
-    // Wire-Konvention aus DDSI-RTPS §9.3.2 und behandelt sowohl
-    // `<sec>DURATION_INFINITY</sec>` (mit oder ohne `<nanosec>`) als
-    // auch `<sec>2147483647</sec><nanosec>2147483647</nanosec>` korrekt.
+    // Spec sentinel mapping: when the `<sec>` value carries the spec sentinel
+    // `DURATION_INFINITE_SEC` (= 0x7FFFFFFF), we map to
+    // `QosDuration::INFINITE` (`{i32::MAX, u32::MAX}`). That is the
+    // wire convention from DDSI-RTPS §9.3.2 and handles both
+    // `<sec>DURATION_INFINITY</sec>` (with or without `<nanosec>`) and
+    // `<sec>2147483647</sec><nanosec>2147483647</nanosec>` correctly.
     if sec == DURATION_INFINITE_SEC
         && (nsec == DURATION_INFINITE_NSEC || el.child("nanosec").is_none())
     {
         return Ok(QosDuration::INFINITE);
     }
 
-    // Regulaere Conversion: nanosec → fraction = nsec * 2^32 / 1e9.
-    // Wir berechnen in u64 um Overflow zu vermeiden.
+    // Regular conversion: nanosec → fraction = nsec * 2^32 / 1e9.
+    // We compute in u64 to avoid overflow.
     let fraction = (u64::from(nsec) * (1u64 << 32) / 1_000_000_000) as u32;
     Ok(QosDuration {
         seconds: sec,
@@ -341,8 +341,8 @@ fn parse_kind_text(el: &XmlElement) -> Result<&str, XmlError> {
 fn parse_durability(el: &XmlElement) -> Result<DurabilityQosPolicy, XmlError> {
     let kind_str = parse_kind_text(el)?;
     let kind = match kind_str {
-        // DDS-XML 1.0 §7.3.2 erlaubt sowohl die kurze IDL-Form als auch
-        // die lange `_DURABILITY_QOS`-Suffix-Form aus DCPS-Spec.
+        // DDS-XML 1.0 §7.3.2 allows both the short IDL form and
+        // the long `_DURABILITY_QOS` suffix form from the DCPS spec.
         "VOLATILE" | "VOLATILE_DURABILITY_QOS" => DurabilityKind::Volatile,
         "TRANSIENT_LOCAL" | "TRANSIENT_LOCAL_DURABILITY_QOS" => DurabilityKind::TransientLocal,
         "TRANSIENT" | "TRANSIENT_DURABILITY_QOS" => DurabilityKind::Transient,
@@ -518,8 +518,8 @@ fn parse_presentation(el: &XmlElement) -> Result<PresentationQosPolicy, XmlError
 
 fn parse_partition(el: &XmlElement) -> Result<PartitionQosPolicy, XmlError> {
     // §7.3.2: <partition><name>g1</name><name>g2</name></partition>.
-    // Ein optionales `<name_list>` mit Komma-separierten Eintraegen wird
-    // zusaetzlich akzeptiert (Cyclone-/FastDDS-Konvention).
+    // An optional `<name_list>` with comma-separated entries is
+    // additionally accepted (Cyclone/FastDDS convention).
     let mut names: Vec<String> = Vec::new();
     for child in &el.children {
         match child.name.as_str() {
@@ -629,8 +629,8 @@ fn parse_durability_service(el: &XmlElement) -> Result<DurabilityServiceQosPolic
 
 // ----- Octet-Sequence Helpers (UserData / TopicData / GroupData) -----------
 
-/// Parsed `<value>…</value>` als Octet-Sequence (Base64). Spec §7.2.4
-/// erlaubt Base64 als kanonische Form fuer `sequence<octet>`.
+/// Parses `<value>…</value>` as an octet sequence (Base64). Spec §7.2.4
+/// allows Base64 as the canonical form for `sequence<octet>`.
 fn parse_octet_value(el: &XmlElement) -> Result<Vec<u8>, XmlError> {
     let v = el
         .child("value")
@@ -659,9 +659,9 @@ fn parse_group_data(el: &XmlElement) -> Result<GroupDataQosPolicy, XmlError> {
     })
 }
 
-/// Pure-Rust Base64-Decoder mit `=`-Padding-Toleranz. Dupliziert aus
+/// Pure-Rust Base64 decoder with `=` padding tolerance. Duplicated from
 /// `crates/security-permissions/src/governance.rs::base64_decode_anchor`
-/// um die Crate-Dep zu vermeiden (siehe Modul-Doc).
+/// to avoid the crate dependency (see the module doc).
 fn base64_decode(input: &str) -> Option<Vec<u8>> {
     let cleaned: String = input.chars().filter(|c| !c.is_whitespace()).collect();
     let bytes = cleaned.as_bytes();
@@ -753,7 +753,7 @@ mod tests {
         assert_eq!(lib.name, "L1");
         assert_eq!(lib.profiles.len(), 1);
         assert_eq!(lib.profiles[0].name, "P1");
-        // Spec: alle Container None.
+        // Spec: all containers None.
         let p = &lib.profiles[0];
         assert!(p.datawriter_qos.is_none());
         assert!(p.datareader_qos.is_none());
@@ -811,8 +811,8 @@ mod tests {
 
     #[test]
     fn single_qos_shortcut_datawriter_creates_implicit_profile() {
-        // Spec §7.3.2.4.4: <datawriter_qos name="..."> direkt unter
-        // <qos_library> ist Aequivalent zu <qos_profile><datawriter_qos/>
+        // Spec §7.3.2.4.4: <datawriter_qos name="..."> directly under
+        // <qos_library> is equivalent to <qos_profile><datawriter_qos/>
         // </qos_profile>.
         let xml = r#"<dds>
           <qos_library name="L">
@@ -850,8 +850,8 @@ mod tests {
 
     #[test]
     fn single_qos_shortcut_without_name_is_ignored() {
-        // Spec verlangt name-Attribut. Ohne `name` waere das kein
-        // Shortcut → wird verworfen (kein Crash).
+        // The spec requires a name attribute. Without `name` it would not be a
+        // shortcut → discarded (no crash).
         let xml = r#"<dds>
           <qos_library name="L">
             <qos_profile name="Real"/>
@@ -859,14 +859,14 @@ mod tests {
           </qos_library>
         </dds>"#;
         let libs = parse_qos_libraries(xml).expect("parse");
-        // Nur das echte qos_profile zaehlt — kein impliziter Wrapper.
+        // Only the real qos_profile counts — no implicit wrapper.
         assert_eq!(libs[0].profiles.len(), 1);
         assert_eq!(libs[0].profiles[0].name, "Real");
     }
 
     #[test]
     fn single_qos_shortcut_multiple_kinds_in_same_library() {
-        // Mehrere Shortcut-Kinds koennen ko-existieren.
+        // Multiple shortcut kinds can co-exist.
         let xml = r#"<dds>
           <qos_library name="L">
             <datawriter_qos name="DW"/>

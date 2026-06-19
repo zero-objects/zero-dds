@@ -2,15 +2,15 @@
 // Copyright 2026 ZeroDDS Contributors
 //
 // md5.ts — RFC 1321 MD5 in pure TypeScript.
-// Synchron, ohne Web-Crypto-Async-API. Nur fuer DDS-Key-Hash
-// (XTypes §7.6.8) — NICHT als kryptographische Hash-Funktion.
+// Synchronous, without the Web Crypto async API. Only for DDS key hash
+// (XTypes §7.6.8) — NOT as a cryptographic hash function.
 
 /// 32-bit-Modular-Add.
 function add32(a: number, b: number): number {
     return (a + b) | 0;
 }
 
-/// Left-rotate fuer 32-bit-Werte.
+/// Left-rotate for 32-bit values.
 function rotl(x: number, n: number): number {
     return ((x << n) | (x >>> (32 - n))) | 0;
 }
@@ -41,11 +41,11 @@ function ii(a: number, b: number, c: number, d: number, x: number, s: number, t:
     return step(c ^ (b | ~d), a, b, x, s, t);
 }
 
-/// Volle MD5-Berechnung gemaess RFC 1321.
-/// Eingabe: beliebiges Uint8Array. Ausgabe: 16-Byte Uint8Array.
+/// Full MD5 computation per RFC 1321.
+/// Input: any Uint8Array. Output: 16-byte Uint8Array.
 export function md5(input: Uint8Array): Uint8Array {
     const len = input.length;
-    // Padding: Original + 0x80 + zero-bytes bis (len % 64) === 56
+    // Padding: original + 0x80 + zero bytes until (len % 64) === 56
     // + 8-byte little-endian bit-length.
     const bitLen = BigInt(len) * 8n;
     const padLen = (56 - ((len + 1) % 64) + 64) % 64;

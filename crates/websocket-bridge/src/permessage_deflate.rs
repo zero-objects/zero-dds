@@ -1,30 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! permessage-deflate Extension — RFC 7692 §7.
+//! permessage-deflate extension — RFC 7692 §7.
 //!
-//! Spec §7: Extension-Negotiation via `Sec-WebSocket-Extensions`-Header.
-//! Vier Parameter:
+//! Spec §7: extension negotiation via the `Sec-WebSocket-Extensions` header.
+//! Four parameters:
 //! * `server_no_context_takeover` (boolean)
 //! * `client_no_context_takeover` (boolean)
 //! * `server_max_window_bits` (8..15)
 //! * `client_max_window_bits` (8..15)
 //!
-//! Wire-Format: RSV1-Bit im Frame-Header zeigt komprimierte Messages an
-//! (Spec §6.1). Der Wire-Body ist DEFLATE-kompressed mit dem Tail
-//! `00 00 FF FF` abgeschnitten (Spec §7.2.1).
+//! Wire format: the RSV1 bit in the frame header indicates compressed
+//! messages (Spec §6.1). The wire body is DEFLATE-compressed with the tail
+//! `00 00 FF FF` stripped (Spec §7.2.1).
 //!
-//! Wir liefern Negotiation + Frame-Wrapping; die DEFLATE-Compression
-//! selbst plugt der Caller via Trait `DeflateCodec` ein.
+//! We provide negotiation + frame wrapping; the DEFLATE compression
+//! itself is plugged in by the caller via the `DeflateCodec` trait.
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// Spec §7 Tail-Marker — wird beim Senden abgeschnitten, beim Empfangen
-/// angefuegt.
+/// Spec §7 tail marker — stripped on send, appended on receive.
 pub const DEFLATE_TAIL: [u8; 4] = [0x00, 0x00, 0xff, 0xff];
 
-/// Negotiation-Parameter.
+/// Negotiation parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PermessageDeflateParams {
     /// `server_no_context_takeover`.
@@ -48,14 +47,14 @@ impl Default for PermessageDeflateParams {
     }
 }
 
-/// Negotiation-Fehler.
+/// Negotiation error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NegotiationError {
-    /// Unbekannter Parameter.
+    /// Unknown parameter.
     UnknownParam(String),
-    /// Window-Bits ausserhalb 8..=15.
+    /// Window bits outside 8..=15.
     InvalidWindowBits(u8),
-    /// Boolean-Parameter hat einen Wert (sollte parameterless sein).
+    /// A boolean parameter has a value (should be parameterless).
     BooleanWithValue(String),
 }
 
@@ -72,12 +71,12 @@ impl core::fmt::Display for NegotiationError {
 #[cfg(feature = "std")]
 impl std::error::Error for NegotiationError {}
 
-/// Parst einen `Sec-WebSocket-Extensions`-Wert. Spec §7.1.
+/// Parses a `Sec-WebSocket-Extensions` value. Spec §7.1.
 ///
 /// Format: `permessage-deflate; param1; param2=value; ...`
 ///
 /// # Errors
-/// Siehe [`NegotiationError`].
+/// See [`NegotiationError`].
 pub fn parse_offer(offer: &str) -> Result<PermessageDeflateParams, NegotiationError> {
     let mut params = PermessageDeflateParams::default();
     for part in offer.split(';').skip(1) {
@@ -127,7 +126,7 @@ pub fn parse_offer(offer: &str) -> Result<PermessageDeflateParams, NegotiationEr
     Ok(params)
 }
 
-/// Render Server-Accept-Header-Wert.
+/// Render the server accept header value.
 #[must_use]
 pub fn render_accept(params: &PermessageDeflateParams) -> String {
     let mut s = String::from("permessage-deflate");
@@ -152,7 +151,7 @@ pub fn render_accept(params: &PermessageDeflateParams) -> String {
     s
 }
 
-/// Append Tail nach DEFLATE-Decompression. Spec §7.2.2.
+/// Append the tail after DEFLATE decompression. Spec §7.2.2.
 #[must_use]
 pub fn append_tail(payload: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(payload.len() + 4);
@@ -161,7 +160,7 @@ pub fn append_tail(payload: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Strip Tail vor dem Senden komprimierter Frames. Spec §7.2.1.
+/// Strip the tail before sending compressed frames. Spec §7.2.1.
 #[must_use]
 pub fn strip_tail(payload: &[u8]) -> &[u8] {
     if payload.ends_with(&DEFLATE_TAIL) {

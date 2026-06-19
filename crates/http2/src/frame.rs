@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Frame-Layer — RFC 9113 §4 + §6.
+//! Frame layer — RFC 9113 §4 + §6.
 //!
-//! Frame-Header (9 Bytes):
+//! Frame header (9 bytes):
 //! ```text
 //!  +-----------------------------------------------+
 //!  |                 Length (24)                   |
@@ -18,14 +18,14 @@
 
 use crate::error::Http2Error;
 
-/// Frame-Header-Laenge (Bytes).
+/// Frame header length (bytes).
 pub const FRAME_HEADER_LEN: usize = 9;
 
 /// Default Max-Frame-Size (RFC 9113 §6.5.2: SETTINGS_MAX_FRAME_SIZE
 /// initial value).
 pub const DEFAULT_MAX_FRAME_SIZE: u32 = 16_384;
 
-/// Frame-Type — RFC 9113 §6.
+/// Frame type — RFC 9113 §6.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum FrameType {
@@ -55,7 +55,7 @@ impl FrameType {
     /// Mapping `u8 -> FrameType`.
     ///
     /// # Errors
-    /// `UnknownFrameType` wenn der Code nicht in 0x0..=0x9 liegt.
+    /// `UnknownFrameType` if the code is not in 0x0..=0x9.
     pub fn from_u8(v: u8) -> Result<Self, Http2Error> {
         match v {
             0x0 => Ok(Self::Data),
@@ -73,7 +73,7 @@ impl FrameType {
     }
 }
 
-/// Frame-Flags (8 Bits, Bedeutung pro Frame-Type).
+/// Frame flags (8 bits, meaning depends on frame type).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Flags(pub u8);
 
@@ -89,45 +89,45 @@ impl Flags {
     /// `ACK` (SETTINGS/PING, Bit 0).
     pub const ACK: u8 = 0x1;
 
-    /// Prueft ob ein Bit gesetzt ist.
+    /// Checks whether a bit is set.
     #[must_use]
     pub fn has(self, bit: u8) -> bool {
         (self.0 & bit) == bit
     }
 }
 
-/// Frame-Header (9 Bytes).
+/// Frame header (9 bytes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameHeader {
-    /// Payload-Length (24-bit unsigned).
+    /// Payload length (24-bit unsigned).
     pub length: u32,
-    /// Frame-Type.
+    /// Frame type.
     pub frame_type: FrameType,
     /// Flags.
     pub flags: Flags,
-    /// Stream-Id (R-Bit + 31 Bit Stream-ID).
+    /// Stream id (R-bit + 31-bit stream ID).
     pub stream_id: u32,
 }
 
-/// Frame mit Header + Borrow-Slice auf das Payload (zero-copy).
+/// Frame with header + borrowed slice over the payload (zero-copy).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame<'a> {
     /// Header.
     pub header: FrameHeader,
-    /// Payload-Slice.
+    /// Payload slice.
     pub payload: &'a [u8],
 }
 
-/// Decodiert einen Frame aus einem Byte-Slice. Spec §4.1.
+/// Decodes a frame from a byte slice. Spec §4.1.
 ///
-/// Liefert den Frame und die Anzahl konsumierter Bytes (Header + Payload).
+/// Returns the frame and the number of bytes consumed (header + payload).
 ///
 /// # Errors
-/// * `ShortFrameHeader` wenn weniger als 9 Bytes verfuegbar.
-/// * `ShortPayload` wenn die Length groesser als der verfuegbare
-///   Buffer ist.
-/// * `FrameTooLarge` wenn die Length `max_frame_size` ueberschreitet.
-/// * `UnknownFrameType` wenn das Type-Byte nicht bekannt ist.
+/// * `ShortFrameHeader` if fewer than 9 bytes are available.
+/// * `ShortPayload` if the length is larger than the available
+///   buffer.
+/// * `FrameTooLarge` if the length exceeds `max_frame_size`.
+/// * `UnknownFrameType` if the type byte is not recognized.
 pub fn decode_frame(input: &[u8], max_frame_size: u32) -> Result<(Frame<'_>, usize), Http2Error> {
     if input.len() < FRAME_HEADER_LEN {
         return Err(Http2Error::ShortFrameHeader);
@@ -141,7 +141,7 @@ pub fn decode_frame(input: &[u8], max_frame_size: u32) -> Result<(Frame<'_>, usi
     }
     let frame_type = FrameType::from_u8(input[3])?;
     let flags = Flags(input[4]);
-    // R-Bit (MSB) abschneiden — Spec §4.1.
+    // Strip the R-bit (MSB) — Spec §4.1.
     let stream_id = ((u32::from(input[5]) & 0x7f) << 24)
         | (u32::from(input[6]) << 16)
         | (u32::from(input[7]) << 8)
@@ -165,11 +165,11 @@ pub fn decode_frame(input: &[u8], max_frame_size: u32) -> Result<(Frame<'_>, usi
     ))
 }
 
-/// Encodiert einen Frame in einen Output-Buffer. Spec §4.1.
+/// Encodes a frame into an output buffer. Spec §4.1.
 ///
 /// # Errors
-/// * `FrameTooLarge` wenn `payload.len() > max_frame_size`.
-/// * `ShortPayload` wenn der Output-Buffer zu klein ist.
+/// * `FrameTooLarge` if `payload.len() > max_frame_size`.
+/// * `ShortPayload` if the output buffer is too small.
 pub fn encode_frame(
     header: &FrameHeader,
     payload: &[u8],

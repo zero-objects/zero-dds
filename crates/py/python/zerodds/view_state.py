@@ -1,4 +1,4 @@
-"""ViewStateMask-Konstanten (DDS 1.4 §2.2.2.5.1.4)."""
+"""ViewStateMask constants (DDS 1.4 §2.2.2.5.1.4)."""
 from __future__ import annotations
 
 from . import _core

@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CoAP-Server fuer `zerodds-coap-bridged`.
+//! CoAP server for `zerodds-coap-bridged`.
 //!
 //! Spec: `zerodds-coap-bridge-1.0.md` §4 + §9.
 //!
-//! UDP-only Sync-Server. Pro empfangenem CoAP-Datagramm:
-//! * `POST` / `PUT` mit passendem `Uri-Path` → DDS-Write.
-//! * `GET` mit `Observe: 0` → Observer-Registry, jeder neue DDS-
-//!   Sample wird als CoAP-Notify (NON) an den Peer gesendet.
-//! * `GET` mit `Observe: 1` → Deregister.
-//! * `DELETE` → DDS-Dispose-Marker (L1-L3-Stub: nur ack zurueck).
+//! UDP-only sync server. For each received CoAP datagram:
+//! * `POST` / `PUT` with a matching `Uri-Path` → DDS write.
+//! * `GET` with `Observe: 0` → observer registry; every new DDS
+//!   sample is sent to the peer as a CoAP notify (NON).
+//! * `GET` with `Observe: 1` → deregister.
+//! * `DELETE` → DDS dispose marker (L1-L3 stub: only acks back).
 //!
-//! Block-Wise (RFC 7959), DTLS (Spec §7.1) und OSCORE (§7.2) sind
-//! als L5-Stub markiert.
+//! Block-wise (RFC 7959), DTLS (Spec §7.1) and OSCORE (§7.2) are
+//! marked as L5 stubs.
 
 use std::collections::BTreeMap;
 use std::net::{SocketAddr, UdpSocket};
@@ -52,14 +52,14 @@ use zerodds_monitor::Registry;
 #[cfg(feature = "daemon")]
 use zerodds_observability_otlp::OtlpExporter;
 
-/// Daemon-Top-Level-Fehler.
+/// Daemon top-level error.
 #[derive(Debug)]
 pub enum ServerError {
-    /// UDP-Bind (Exit 2).
+    /// UDP bind (exit 2).
     Bind(String),
-    /// DDS-Init (Exit 3).
+    /// DDS init (exit 3).
     Dds(String),
-    /// DTLS (Exit 4).
+    /// DTLS (exit 4).
     Dtls(String),
     /// IO.
     Io(String),
@@ -78,33 +78,33 @@ impl core::fmt::Display for ServerError {
 
 impl std::error::Error for ServerError {}
 
-/// Daemon-Handle. Drop initiiert Shutdown.
+/// Daemon handle. Drop initiates shutdown.
 pub struct DaemonHandle {
     stop: Arc<AtomicBool>,
     accept_thread: Option<JoinHandle<()>>,
     pump_threads: Vec<JoinHandle<()>>,
-    /// Bound-Address (kann von Config-bind abweichen wenn Port=0).
+    /// Bound address (may differ from the config bind when port=0).
     pub local_addr: String,
     #[cfg(feature = "daemon")]
     admin_thread: Option<JoinHandle<()>>,
     #[cfg(feature = "daemon")]
     otlp_thread: Option<JoinHandle<()>>,
-    /// Bound Admin-Address.
+    /// Bound admin address.
     #[cfg(feature = "daemon")]
     pub admin_addr: Option<String>,
-    /// SIGHUP-Reload-Flag.
+    /// SIGHUP reload flag.
     #[cfg(feature = "daemon")]
     pub reload_flag: Arc<AtomicBool>,
     /// Healthz.
     #[cfg(feature = "daemon")]
     pub healthy: Arc<AtomicBool>,
-    /// Metric-Set fuer Tests.
+    /// Metric set for tests.
     #[cfg(feature = "daemon")]
     pub metrics: Option<BridgeMetrics>,
 }
 
 impl DaemonHandle {
-    /// Setzt das Stop-Flag und joint Worker.
+    /// Sets the stop flag and joins workers.
     pub fn shutdown(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
         #[cfg(feature = "daemon")]
@@ -146,21 +146,21 @@ impl Drop for DaemonHandle {
     }
 }
 
-/// Observer-Registry-Entry.
+/// Observer registry entry.
 #[derive(Debug, Clone)]
 struct Observer {
     addr: SocketAddr,
     token: Vec<u8>,
 }
 
-/// Topic-State.
+/// Topic state.
 #[derive(Debug, Default)]
 struct TopicState {
     observers: Vec<Observer>,
     next_seq: u32,
 }
 
-/// Block1-Reassembly-Key (peer + token + path).
+/// Block1 reassembly key (peer + token + path).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct BlockKey {
     peer: SocketAddr,
@@ -168,10 +168,10 @@ struct BlockKey {
     path: String,
 }
 /// zerodds-lint: recursion-depth 64 (start bounded by AST depth)
-/// Aufruft den Daemon mit gegebener Config.
+/// Starts the daemon with the given config.
 ///
 /// # Errors
-/// `Bind` (Exit 2), `Dds` (Exit 3), `Dtls` (Exit 4).
+/// `Bind` (exit 2), `Dds` (exit 3), `Dtls` (exit 4).
 #[cfg(feature = "daemon")]
 #[allow(clippy::too_many_lines)]
 pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
@@ -182,13 +182,13 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         cfg.topics.len()
     );
 
-    // 0. Metrics-Registry + Standard-Counter (§8.2 Prometheus).
+    // 0. Metrics registry + standard counters (§8.2 Prometheus).
     let registry = Arc::new(Registry::new());
     let metrics = BridgeMetrics::register(&registry);
     let healthy = Arc::new(AtomicBool::new(true));
     let reload_flag = Arc::new(AtomicBool::new(false));
 
-    // 0b. Bridge-Security: Auth + ACL (§7.2/§7.3; DTLS via separates ADR).
+    // 0b. Bridge security: auth + ACL (§7.2/§7.3; DTLS via separate ADR).
     let security_ctx =
         ctx_from_daemon_config(&cfg).map_err(|e| ServerError::Dtls(format!("security: {e}")))?;
     let security_ctx = Arc::new(security_ctx);
@@ -198,7 +198,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         cfg.topic_acl.len(),
     );
 
-    // 1. UDP-Socket binden.
+    // 1. Bind the UDP socket.
     let socket = UdpSocket::bind(&cfg.bind).map_err(|e| ServerError::Bind(format!("{e}")))?;
     let local_addr = socket
         .local_addr()
@@ -211,16 +211,16 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     eprintln!("[zerodds-coap-bridged] bound on {local_addr}");
 
     if cfg.dtls_enabled {
-        // FUTURE: DTLS-Handshake-Layer (RFC 7252 §9). L5-Stub.
+        // FUTURE: DTLS handshake layer (RFC 7252 §9). L5 stub.
         eprintln!("[zerodds-coap-bridged] DTLS L5-stub: not implemented");
     }
 
-    // 2. DCPS-Runtime.
+    // 2. DCPS runtime.
     let prefix = stable_prefix_for(&local_addr);
     let runtime = DcpsRuntime::start(cfg.domain, prefix, RuntimeConfig::default())
         .map_err(|e| ServerError::Dds(format!("{e:?}")))?;
 
-    // 3. Pro Topic Reader+Writer + Path-Map.
+    // 3. Reader+writer per topic + path map.
     let mut writers: BTreeMap<String, EntityId> = BTreeMap::new();
     let mut path_to_dds: BTreeMap<String, String> = BTreeMap::new();
     let mut readers: Vec<(String, String, std::sync::mpsc::Receiver<UserSample>)> = Vec::new();
@@ -242,7 +242,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     let block1_state: Arc<Mutex<BTreeMap<BlockKey, BlockReassembler>>> =
         Arc::new(Mutex::new(BTreeMap::new()));
 
-    // 4. Pump-Threads pro Reader-Topic.
+    // 4. Pump threads per reader topic.
     let mut pump_threads = Vec::new();
     for (dds_topic_name, coap_path, rx) in readers {
         let stop_c = Arc::clone(&stop);
@@ -270,7 +270,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         pump_threads.push(h);
     }
 
-    // 5. Accept-Thread (recv-loop).
+    // 5. Accept thread (recv loop).
     let stop_acc = Arc::clone(&stop);
     let socket_acc = socket
         .try_clone()
@@ -365,7 +365,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         }
     }
 
-    // 7. Signal-Watcher.
+    // 7. Signal watcher.
     if let Err(e) = install_signal_watcher(Arc::clone(&stop), Arc::clone(&reload_flag)) {
         eprintln!("[{SERVICE_NAME}] signal watcher init failed: {e}");
     }
@@ -417,7 +417,7 @@ fn handle_request(
     let req = decode(bytes).map_err(|e| format!("decode: {e}"))?;
     let path = extract_uri_path(&req);
 
-    // `/.well-known/core` → resource catalog (open ohne Auth).
+    // `/.well-known/core` → resource catalog (open, no auth).
     if path == ".well-known/core" {
         let body = render_well_known_core(path_to_dds);
         let mut resp = make_response(&req, CoapCode::CONTENT, body.into_bytes());
@@ -441,11 +441,11 @@ fn handle_request(
     };
 
     if req.code == CoapCode::POST || req.code == CoapCode::PUT {
-        // POST/PUT → DDS-Write. Optional Block1 (RFC 7959 §2.5).
+        // POST/PUT → DDS write. Optional Block1 (RFC 7959 §2.5).
         let dds_topic = path_to_dds
             .get(&path)
             .ok_or_else(|| format!("unknown path: {path}"))?;
-        // §7.3 — ACL-Write-Check.
+        // §7.3 — ACL write check.
         if !authorize(&security.acl, &subject, AclOp::Write, dds_topic) {
             metrics.errors_total.inc();
             // 4.03 Forbidden.
@@ -456,7 +456,7 @@ fn handle_request(
         }
         let eid = writers.get(dds_topic).ok_or("no writer")?;
 
-        // Block1-Pfad: Sammle Chunks bis !more, dann DDS-write.
+        // Block1 path: collect chunks until !more, then DDS write.
         if let Some(b1) = extract_block(&req, numbers::BLOCK1) {
             let key = BlockKey {
                 peer,
@@ -485,13 +485,13 @@ fn handle_request(
                     .write_user_sample(*eid, payload)
                     .map_err(|e| format!("dds-write: {e:?}"))?;
                 metrics.dds_samples_in_total.inc();
-                // 2.04 Changed mit Block1-Echo (more=false).
+                // 2.04 Changed with Block1 echo (more=false).
                 let mut resp = make_response(&req, CoapCode::CHANGED, Vec::new());
                 resp.options.push(CoapOption::block1(b1.num, false, b1.szx));
                 send_msg(socket, &resp, peer);
                 metrics.frames_out_total.inc();
             } else {
-                // 2.31 Continue mit Block1-Echo (more=true).
+                // 2.31 Continue with Block1 echo (more=true).
                 let mut resp = make_response(&req, CoapCode::new(2, 31), Vec::new());
                 resp.options.push(CoapOption::block1(b1.num, true, b1.szx));
                 send_msg(socket, &resp, peer);
@@ -515,7 +515,7 @@ fn handle_request(
         let dds_topic = path_to_dds
             .get(&path)
             .ok_or_else(|| format!("unknown path: {path}"))?;
-        // §7.3 — ACL-Read-Check fuer Observe-Register und Plain-GET.
+        // §7.3 — ACL read check for observe-register and plain GET.
         if !authorize(&security.acl, &subject, AclOp::Read, dds_topic) {
             metrics.errors_total.inc();
             let resp = make_response(&req, CoapCode::new(4, 3), b"forbidden".to_vec());
@@ -535,7 +535,7 @@ fn handle_request(
                 }
                 metrics.connections_total.inc();
                 metrics.connections_active.inc();
-                // Initial-Response 2.05 mit Observe-Seq 0 (Spec §4.3).
+                // Initial response 2.05 with observe seq 0 (Spec §4.3).
                 let mut resp = make_response(&req, CoapCode::CONTENT, Vec::new());
                 resp.options.push(CoapOption::observe(0));
                 resp.options.push(CoapOption::content_format(65000));
@@ -564,8 +564,8 @@ fn handle_request(
                 return Ok(());
             }
             _ => {
-                // Plain GET — empty content (spec sagt 2.05 mit aktuellem Sample;
-                // wir haben keine Cache-Schicht in L1-L4).
+                // Plain GET — empty content (spec says 2.05 with the current sample;
+                // we have no cache layer in L1-L4).
                 let resp = make_response(&req, CoapCode::CONTENT, Vec::new());
                 send_msg(socket, &resp, peer);
                 metrics.frames_out_total.inc();
@@ -575,13 +575,13 @@ fn handle_request(
     }
 
     if req.code == CoapCode::DELETE {
-        // DELETE → Dispose-Marker (L1-L3-Stub: nur 2.02 zurueck).
+        // DELETE → dispose marker (L1-L3 stub: only 2.02 back).
         let resp = make_response(&req, CoapCode::DELETED, Vec::new());
         send_msg(socket, &resp, peer);
         return Ok(());
     }
 
-    // Unbekannter Code — 4.00 Bad Request.
+    // Unknown code — 4.00 Bad Request.
     let resp = make_response(&req, CoapCode::BAD_REQUEST, Vec::new());
     send_msg(socket, &resp, peer);
     Ok(())
@@ -602,9 +602,9 @@ fn extract_auth_token(msg: &CoapMessage) -> Option<Vec<u8>> {
 }
 
 fn extract_uri_path(msg: &CoapMessage) -> String {
-    // Spec §3.2 Uri-Path-Optionen werden als String gefuehrt; im Wire
-    // koennen sie aber als Opaque ankommen (decoder normalisiert nicht).
-    // Wir akzeptieren beide Varianten.
+    // Spec §3.2 Uri-Path options are carried as strings; on the wire,
+    // though, they may arrive as opaque (the decoder does not normalize).
+    // We accept both variants.
     let mut buf = String::new();
     let mut first = true;
     for opt in &msg.options {
@@ -625,7 +625,7 @@ fn extract_uri_path(msg: &CoapMessage) -> String {
     buf
 }
 
-/// Extrahiere Block1- oder Block2-Option aus einer CoapMessage.
+/// Extracts the Block1 or Block2 option from a CoapMessage.
 /// Spec RFC 7959 §2.1.
 fn extract_block(msg: &CoapMessage, option_number: u16) -> Option<BlockValue> {
     for opt in &msg.options {
@@ -695,7 +695,7 @@ fn render_well_known_core(path_to_dds: &BTreeMap<String, String>) -> String {
 }
 
 fn make_response(req: &CoapMessage, code: CoapCode, payload: Vec<u8>) -> CoapMessage {
-    // ACK fuer CON-Request, sonst NON.
+    // ACK for a CON request, otherwise NON.
     let mtype = if matches!(req.message_type, MessageType::Confirmable) {
         MessageType::Acknowledgement
     } else {

@@ -1,44 +1,44 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-rt-linux`-Crate.
+Initial release materialization of the `zerodds-rt-linux` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **Linux-Kernel-API** (keine OMG-Spec):
+- **Linux kernel API** (no OMG spec):
   - `sched(7)` — SCHED_OTHER/SCHED_FIFO/SCHED_RR/SCHED_DEADLINE.
-  - `sched_setattr(2)` + `sched_getattr(2)` — `sched_attr`-Struktur.
+  - `sched_setattr(2)` + `sched_getattr(2)` — `sched_attr` struct.
   - `sched_setaffinity(2)` + `sched_getaffinity(2)` — `cpu_set_t`.
 
-### Public-API
+### Public API
 
-- `SchedulerProfile::{other, fifo, rr, deadline}` mit Validation.
+- `SchedulerProfile::{other, fifo, rr, deadline}` with validation.
 - `SchedulerProfile::apply_to_current_thread`.
 - `SchedulerKind::{Other, Fifo, Rr, Deadline, Batch, Idle}`.
 - `RunningSchedulerInfo` + `current_scheduler()`.
 - `pin_current_thread_to_cpus(&[u32]) -> io::Result<()>`.
 
-### Implementierung
+### Implementation
 
-Drei Module:
-- `affinity.rs` — `pin_current_thread_to_cpus` mit `cpu_set_t`-Builder.
-- `scheduler.rs` — `SchedulerProfile`-Builder mit Priority-/Deadline-Validation.
-- `syscalls.rs` — alle `unsafe { libc::syscall(...) }`-Calls liegen hier; jede Funktion ist eine duenne Wrapper-Schicht mit `// SAFETY:`-Kommentar pro Block.
+Three modules:
+- `affinity.rs` — `pin_current_thread_to_cpus` with a `cpu_set_t` builder.
+- `scheduler.rs` — `SchedulerProfile` builder with priority/deadline validation.
+- `syscalls.rs` — all `unsafe { libc::syscall(...) }` calls live here; each function is a thin wrapper layer with a `// SAFETY:` comment per block.
 
-`SCHED_DEADLINE` wird via `sched_setattr(SYS_sched_setattr, ...)` gesetzt — `nix` liefert das nicht, daher die direkte libc-syscall-Schicht. `SCHED_FIFO`/`SCHED_RR` koennten ueber `pthread_setschedparam` laufen, aber wir halten alle Pfade auf dem `sched_attr`-Codepath fuer Symmetrie.
+`SCHED_DEADLINE` is set via `sched_setattr(SYS_sched_setattr, ...)` — `nix` does not provide it, hence the direct libc syscall layer. `SCHED_FIFO`/`SCHED_RR` could run via `pthread_setschedparam`, but we keep all paths on the `sched_attr` code path for symmetry.
 
-Auf Nicht-Linux-Targets liefern alle Public-APIs `io::ErrorKind::Unsupported`. Der Workspace baut weiter auf macOS und Windows. `forbid(unsafe_code)` ist nicht gesetzt — diese Crate ist die explizite Ausnahme der COMFORT-Klassifikation (`docs/architecture/04_safety_by_architecture.md` §2.3).
+On non-Linux targets all public APIs return `io::ErrorKind::Unsupported`. The workspace still builds on macOS and Windows. `forbid(unsafe_code)` is not set — this crate is the explicit exception of the COMFORT classification (`docs/architecture/04_safety_by_architecture.md` §2.3).
 
-### Architektur
+### Architecture
 
-- **Layer:** 4 (Core Services).
-- **Dependencies (in):** `libc` (target-gegated `cfg(target_os = "linux")`). Keine ZeroDDS-Crate-Deps.
-- **Dependents (out):** End-User-Builds + DCPS-Hot-Path-Threads die RT-Profile brauchen.
-- **Feature-Flags:** `std` (default).
+- **Layer:** 4 (core services).
+- **Dependencies (in):** `libc` (target-gated `cfg(target_os = "linux")`). No ZeroDDS crate deps.
+- **Dependents (out):** end-user builds + DCPS hot-path threads that need RT profiles.
+- **Feature flags:** `std` (default).
 
-### Stabilitaet
+### Stability
 
-Public-API + Errno-Mapping sind RC1-stabil. `sched_setattr(2)` ist Linux-Kernel-stabile-API seit 3.14 (Maerz 2014).
+The public API + errno mapping are RC1-stable. `sched_setattr(2)` is a stable Linux kernel API since 3.14 (March 2014).

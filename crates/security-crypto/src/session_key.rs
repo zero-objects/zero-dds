@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DDS-Security 1.2 §10.5.2 — Session-Key-Derivation + AAD-Format (C3.7).
+//! DDS-Security 1.2 §10.5.2 — session-key derivation + AAD format (C3.7).
 //!
-//! Spec §10.5.2 Tab.74 definiert die Session-Key-Derivation per HMAC-
-//! SHA256 ueber ein Tupel (master_salt || tag-string || session_id):
+//! Spec §10.5.2 Tab.74 defines the session-key derivation via HMAC-
+//! SHA256 over a tuple (master_salt || tag-string || session_id):
 //!
 //! ```text
 //! session_key                    = HMAC-SHA256(masterSenderKey,
@@ -14,7 +14,7 @@
 //!                                              || session_id)
 //! ```
 //!
-//! Spec §8.1 Tab.78 definiert AAD im AES-GCM-Crypto-Header:
+//! Spec §8.1 Tab.78 defines the AAD in the AES-GCM crypto header:
 //!
 //! ```text
 //! AAD = octet array =
@@ -24,18 +24,18 @@
 //!   ...                                      # optional payload (extensions, body-only)
 //! ```
 //!
-//! Konkret bauen wir den 16-byte Header (transformation_kind +
-//! transformation_key_id + session_id + 4 reserved padding bytes) wie
-//! in Cyclone/FastDDS. Erweiterungen (z.B. RTPS-Header beim
-//! `rtps_protection_kind`) werden als zusaetzlicher Trailer angehaengt.
+//! Concretely we build the 16-byte header (transformation_kind +
+//! transformation_key_id + session_id + 4 reserved padding bytes) as
+//! in Cyclone/FastDDS. Extensions (e.g. the RTPS header for
+//! `rtps_protection_kind`) are appended as an additional trailer.
 //!
 //! # Scope C3.7
 //!
-//! Nur Helper-Funktionen + Tests — der Hot-Path
-//! `AesGcmCryptoPlugin::encrypt_submessage` wird in C3.7-Followup auf
-//! diese Funktionen umgestellt, sobald die Wire-Migration koordiniert
-//! ist (zZt nutzt der Hot-Path noch die ZeroDDS-spezifische HKDF-
-//! Pipeline).
+//! Only helper functions + tests — the hot path
+//! `AesGcmCryptoPlugin::encrypt_submessage` is switched to
+//! these functions in a C3.7 follow-up, once the wire migration is coordinated
+//! (currently the hot path still uses the ZeroDDS-specific HKDF
+//! pipeline).
 
 extern crate alloc;
 
@@ -43,33 +43,33 @@ use alloc::vec::Vec;
 
 use ring::hmac;
 
-/// Spec-Tag-String fuer Session-Key (§10.5.2 Tab.74).
+/// Spec tag string for the session key (§10.5.2 Tab.74).
 pub const SESSION_KEY_TAG: &[u8] = b"SessionKey";
 
-/// Spec-Tag-String fuer Session-Receiver-Specific-Key (§10.5.2 Tab.74).
+/// Spec tag string for the session receiver-specific key (§10.5.2 Tab.74).
 pub const SESSION_RECEIVER_KEY_TAG: &[u8] = b"SessionReceiverKey";
 
-/// Laenge des AES-GCM-AAD-Headers (Spec §8.1 Tab.78): 16 byte.
+/// Length of the AES-GCM AAD header (spec §8.1 Tab.78): 16 bytes.
 pub const AAD_HEADER_LEN: usize = 16;
 
-/// Spec §10.5.2 Tab.74 — Session-Key-Derivation.
+/// Spec §10.5.2 Tab.74 — session-key derivation.
 ///
-/// `master_key` ist der `master_sender_key` aus dem KeyMaterial-Token
-/// (16 byte fuer AES-128, 32 byte fuer AES-256). `master_salt` ist
-/// der 32-byte salt aus dem gleichen Token. `session_id` wechselt pro
-/// Session (4 byte).
+/// `master_key` is the `master_sender_key` from the KeyMaterial token
+/// (16 bytes for AES-128, 32 bytes for AES-256). `master_salt` is
+/// the 32-byte salt from the same token. `session_id` changes per
+/// session (4 bytes).
 ///
-/// Liefert immer 32 byte (HMAC-SHA256 output); der Caller schneidet
-/// auf die suite-spezifische Key-Laenge ab.
+/// Always returns 32 bytes (HMAC-SHA256 output); the caller truncates
+/// to the suite-specific key length.
 #[must_use]
 pub fn derive_session_key(master_key: &[u8], master_salt: &[u8], session_id: &[u8; 4]) -> [u8; 32] {
     derive_with_tag(master_key, master_salt, SESSION_KEY_TAG, session_id)
 }
 
-/// Spec §10.5.2 Tab.74 — Session-Receiver-Specific-Key-Derivation.
+/// Spec §10.5.2 Tab.74 — session receiver-specific key derivation.
 ///
-/// Wird fuer per-Receiver-spezifische MACs in DataReader-spezifischen
-/// Slots berechnet (statt eines globalen Sender-Keys).
+/// Computed for per-receiver-specific MACs in DataReader-specific
+/// slots (instead of a global sender key).
 #[must_use]
 pub fn derive_session_hmac_key(
     master_receiver_specific_key: &[u8],
@@ -84,6 +84,31 @@ pub fn derive_session_hmac_key(
     )
 }
 
+/// Session key **byte-identical to cyclone** (`crypto_calculate_key_impl`,
+/// crypto_utils.c): `HMAC-SHA256(master_key, "SessionKey" || master_salt[..key_bytes]
+/// || session_id_BE)`. The tag prefix comes **first** (unlike
+/// [`derive_session_key`], which internally had `master_salt` first in ZeroDDS) and
+/// `master_salt` is shortened to the suite key length — both needed for
+/// cross-vendor submessage protection (§9.5.3.3). `session_id` is already the
+/// 4-byte BE array from the CryptoHeader.
+#[must_use]
+pub fn derive_session_key_cyclone(
+    master_key: &[u8],
+    master_salt: &[u8],
+    session_id: &[u8; 4],
+    key_bytes: usize,
+) -> [u8; 32] {
+    let hmac_key = hmac::Key::new(hmac::HMAC_SHA256, master_key);
+    let mut ctx = hmac::Context::with_key(&hmac_key);
+    ctx.update(SESSION_KEY_TAG);
+    let salt_len = key_bytes.min(master_salt.len());
+    ctx.update(&master_salt[..salt_len]);
+    ctx.update(session_id);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(ctx.sign().as_ref());
+    out
+}
+
 fn derive_with_tag(key: &[u8], master_salt: &[u8], tag: &[u8], session_id: &[u8; 4]) -> [u8; 32] {
     let hmac_key = hmac::Key::new(hmac::HMAC_SHA256, key);
     let mut ctx = hmac::Context::with_key(&hmac_key);
@@ -96,20 +121,20 @@ fn derive_with_tag(key: &[u8], master_salt: &[u8], tag: &[u8], session_id: &[u8;
     out
 }
 
-/// Spec §8.1 Tab.78 — AAD-Header fuer AES-GCM-Submessage-Verschluesselung.
+/// Spec §8.1 Tab.78 — AAD header for AES-GCM submessage encryption.
 ///
-/// Layout (16 byte BE):
+/// Layout (16 bytes BE):
 ///
 /// ```text
-/// 0..4   transformation_kind  (z.B. [0,0,0,0x02] fuer AES128_GCM)
+/// 0..4   transformation_kind  (e.g. [0,0,0,0x02] for AES128_GCM)
 /// 4..8   transformation_key_id (sender_key_id)
 /// 8..12  session_id
-/// 12..16 reserved (Spec: 4 byte fuer plug-spezifische Erweiterungen,
-///        wir setzen 0)
+/// 12..16 reserved (spec: 4 bytes for plugin-specific extensions,
+///        we set 0)
 /// ```
 ///
-/// `extension` wird hinten angehaengt — z.B. der RTPS-Header beim
-/// `rtps_protection_kind != NONE` (Spec §7.4.6.6).
+/// `extension` is appended at the end — e.g. the RTPS header for
+/// `rtps_protection_kind != NONE` (spec §7.4.6.6).
 #[must_use]
 pub fn compute_aad(
     transformation_kind: [u8; 4],
@@ -170,10 +195,10 @@ mod tests {
 
     #[test]
     fn sender_key_and_receiver_key_use_different_tags() {
-        // Spec §10.5.2 Tab.74: Sender und Receiver-Specific haben
-        // verschiedene Tag-Strings ("SessionKey" vs "SessionReceiverKey")
-        // → mit selbem master_key + salt + sid muessen die Outputs
-        // unterschiedlich sein.
+        // Spec §10.5.2 Tab.74: sender and receiver-specific have
+        // different tag strings ("SessionKey" vs "SessionReceiverKey")
+        // → with the same master_key + salt + sid the outputs must
+        // differ.
         let mk = [0xAA; 32];
         let salt = [0xBB; 32];
         let sid = [0x01, 0x02, 0x03, 0x04];
@@ -184,15 +209,15 @@ mod tests {
 
     #[test]
     fn session_key_aes128_gcm_truncated_to_16_byte() {
-        // Suite::Aes128Gcm hat key_len=16 — der Caller schneidet das
-        // 32-byte HMAC-Output auf die ersten 16 byte ab.
+        // Suite::Aes128Gcm has key_len=16 — the caller truncates the
+        // 32-byte HMAC output to the first 16 bytes.
         let mk = [0xAA; 16];
         let salt = [0xBB; 32];
         let sid = [0; 4];
         let full = derive_session_key(&mk, &salt, &sid);
         let aes128_key = &full[..16];
         assert_eq!(aes128_key.len(), 16);
-        // Konsistenzcheck: zweiter Aufruf liefert identische ersten 16.
+        // Consistency check: a second call returns identical first 16.
         let full2 = derive_session_key(&mk, &salt, &sid);
         assert_eq!(&full2[..16], aes128_key);
     }
@@ -224,9 +249,9 @@ mod tests {
 
     #[test]
     fn aad_distinct_for_different_kinds() {
-        // AES128_GCM vs AES256_GCM — verschiedene transformation_kind
-        // muessen verschiedene AAD-Bytes ergeben (sonst kann ein Replier
-        // ein AES-128-Token als AES-256-Token dekoden).
+        // AES128_GCM vs AES256_GCM — different transformation_kind
+        // must yield different AAD bytes (otherwise a replier could
+        // decode an AES-128 token as an AES-256 token).
         let a = compute_aad([0, 0, 0, 0x02], [0; 4], [0; 4], &[]);
         let b = compute_aad([0, 0, 0, 0x04], [0; 4], [0; 4], &[]);
         assert_ne!(a, b);
@@ -238,9 +263,9 @@ mod tests {
         //   key = 0x0b * 20
         //   data = "Hi There"
         //   HMAC-SHA-256 = b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7
-        // Wir testen indirekt ueber derive_with_tag, indem wir master_salt =
-        // "Hi T" + b"" (tag) + "here" (4 byte session_id-Pfeil) konstruieren —
-        // d.h. master_salt || tag || session_id == "Hi There".
+        // We test indirectly via derive_with_tag by constructing master_salt =
+        // "Hi T" + b"" (tag) + "here" (4-byte session_id slice) —
+        // i.e. master_salt || tag || session_id == "Hi There".
         let key = [0x0b; 20];
         let master_salt = b"Hi T";
         let tag: &[u8] = b"";

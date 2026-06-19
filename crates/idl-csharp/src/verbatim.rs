@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `@verbatim`-Codegen-Hook (XTypes 1.3 §7.2.2.4.8 + IDL 4.2 §8.3.5.1).
+//! `@verbatim` codegen hook (XTypes 1.3 §7.2.2.4.8 + IDL 4.2 §8.3.5.1).
 //!
 //! `@verbatim(language="csharp", text="...", placement=BEFORE_DECLARATION)`
-//! laesst Anwender literal-Text in den C#-Output einbetten.
+//! lets the user embed literal text into the C# output.
 //!
 //! Akzeptierte Sprach-Tags: `c#`, `csharp`, `cs`, plus `*` (Wildcard).
 
@@ -14,15 +14,15 @@ use zerodds_idl::semantics::annotations::{PlacementKind, lower_annotations};
 
 use crate::error::CsGenError;
 
-/// C#-Codegen-Sprach-Aliase fuer `@verbatim(language="...")`.
+/// C# codegen language aliases for `@verbatim(language="...")`.
 pub(crate) const CSHARP_LANG_ALIASES: &[&str] = &["c#", "csharp", "cs"];
 
 fn fmt_err(_e: std::fmt::Error) -> CsGenError {
     CsGenError::Internal("string formatting failed".into())
 }
 
-/// Emittiert alle `@verbatim(language="c#"|"*", placement=<placement>)`-
-/// Bloecke aus `anns` mit dem `indent`-Praefix.
+/// Emits all `@verbatim(language="c#"|"*", placement=<placement>)`
+/// blocks from `anns` with the `indent` prefix.
 pub(crate) fn emit_verbatim_at(
     out: &mut String,
     indent: &str,

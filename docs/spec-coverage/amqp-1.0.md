@@ -1,23 +1,26 @@
 # OASIS AMQP 1.0 — Spec-Coverage
 
-**Spec:** `docs/standards/cache/oasis/amqp-1.0-{overview,types,
-transport,messaging,security}.html` (OASIS Standard).
-
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`.
+**Spec:** [OASIS AMQP Version 1.0 — OASIS Standard →](https://docs.oasis-open.org/amqp/core/v1.0/os/amqp-core-overview-v1.0-os.html) (overview/types/transport/messaging/security).
 
 **Kontext:** AMQP 1.0 ist die OASIS-Enterprise-Messaging-Spec
 (RabbitMQ/ActiveMQ/Solace). ZeroDDS implementiert den **Type System**
-(Spec `amqp-1.0-types`) und das **Frame-Format** (Spec
-`amqp-1.0-transport` §2.3) als pure-Rust no_std+alloc Library im Crate
-`crates/amqp-bridge/`. Performatives, Message-Sektionen, SASL-
-Handshake sind Caller-Layer.
+(`amqp-1.0-types`), das **Frame-Format** (`amqp-1.0-transport` §2.3),
+die **Performatives** (§2.7) und die **Message-Sektionen**
+(`amqp-1.0-messaging` §3) als pure-Rust no_std+alloc Library
+(`crates/amqp-bridge`); der **SASL-Handshake** (`amqp-1.0-security` §5)
+liegt in `crates/amqp-endpoint`.
 
-Implementation: `crates/amqp-bridge/` (7 Module: `types`, `extended_types`,
-`frame`, `performatives`, `sections`, `codec_profile`, `lib`).
+Implementation:
 
-Test-Lauf: `cargo test -p zerodds-amqp-bridge` — 188 Tests grün, davon
-82 lib-Inline-Tests (codec_profile 5, extended_types 29, frame 9,
-performatives 11, sections 10, types 18), 90 Integration in
+- `crates/amqp-bridge/` — Type System + Frame-Format + Performatives +
+  Message-Sektionen, 7 Module (`types`, `extended_types`, `frame`,
+  `performatives`, `sections`, `codec_profile`, `lib`).
+- `crates/amqp-endpoint/src/sasl.rs` — SASL-Mechanismen
+  (PLAIN/ANONYMOUS/EXTERNAL) + Outcome-Codes (§5), 25 Tests.
+
+Test-Lauf: `cargo test -p zerodds-amqp-bridge` — 193 Tests grün, davon
+87 lib-Inline-Tests (codec_profile 5, extended_types 29, frame 9,
+performatives 16, sections 10, types 18), 90 Integration in
 `tests/boundary_decoders.rs` (TS-1-Finding-7-Reaktion: Boundary-
 Checks gegen Mutation-Testing), 8 in `tests/fuzz_smoke.rs`, 8 in
 `tests/proptest_roundtrip.rs`. Hinweis: `codec_profile.rs`-Tests
@@ -48,11 +51,11 @@ gehören zum dds-amqp-Vendor-Profile (Spec-Coverage in
 **Spec:** `amqp-1.0-types` §1.1 — vier Type-Kategorien.
 
 **Repo:** Alle vier Kategorien spec-konform abgedeckt:
-- **Primitive** (§1.6): vollstaendig in `types.rs::FormatCode` mit
+- **Primitive** (§1.6): vollständig in `types.rs::FormatCode` mit
   allen 30+ Wire-Codes.
 - **Described** (§1.3): per-Performative-Encoder in
   `performatives.rs` (`0x00`-Descriptor-Marker + Descriptor-Value);
-  generic Described-Composite ist nicht eigenstaendig exponiert,
+  generic Described-Composite ist nicht eigenständig exponiert,
   weil DDS-AMQP-Bridge nur fixed Performatives + Type-Liste nutzt.
 - **Composite** (§1.4): per-Performative-List-Body in
   `performatives.rs` + Composite-Type-Mapping in
@@ -67,7 +70,7 @@ gehören zum dds-amqp-Vendor-Profile (Spec-Coverage in
 
 **Status:** done — alle vier Type-Kategorien spec-konform; generic
 Described-/Composite-Layer ist per-Performative-eingebaut, nicht
-generisch (legitime Architektur-Wahl fuer fixed-Profile-Bridge).
+generisch (legitime Architektur-Wahl für fixed-Profile-Bridge).
 
 ### §1.2 Type Encodings (Fixed/Variable/Compound/Array)
 
@@ -349,8 +352,8 @@ decode_uuid}`.
 **Spec:** `binary` = vbin8 (`0xA0` + 1-byte len + bytes) oder vbin32
 (`0xB0` + 4-byte BE len + bytes).
 
-**Repo:** `crates/amqp-bridge/src/types.rs::encode_binary` (waehlt
-Compact-Form basierend auf Length); Decoder fuer beide Formate.
+**Repo:** `crates/amqp-bridge/src/types.rs::encode_binary` (wählt
+Compact-Form basierend auf Length); Decoder für beide Formate.
 
 **Tests:** `types::tests::binary_short_uses_vbin8_format`,
 `binary_long_uses_vbin32_format`,
@@ -503,7 +506,7 @@ Sektionen.
 allen 7 Section-Variants (Header/DeliveryAnnotations/
 MessageAnnotations/Properties/ApplicationProperties/Data/
 AmqpSequence/AmqpValue/Footer) inkl. Roundtrip-Codec und
-`validate_section_sequence` fuer Spec-§3.2-Sequencing-Constraint.
+`validate_section_sequence` für Spec-§3.2-Sequencing-Constraint.
 
 **Tests:** `sections::tests::header_section_round_trips`,
 `properties_section_round_trips_with_subject`,
@@ -525,14 +528,50 @@ AmqpSequence/AmqpValue/Footer) inkl. Roundtrip-Codec und
 **Spec:** `amqp-1.0-security` §5 — SASL-Mechanism-List, init,
 challenge, response, outcome.
 
-**Repo:** `crates/amqp-endpoint/src/sasl.rs::{SaslMechanism,
+**Repo:** Server-Seite `crates/amqp-endpoint/src/sasl.rs::{SaslMechanism,
 SaslState, SaslOutcome, SaslCode}` mit PLAIN/ANONYMOUS/EXTERNAL-
-Mechanismen + Outcome-Codes (ok/auth/sys/sys-perm/sys-temp gemaess
+Mechanismen + Outcome-Codes (ok/auth/sys/sys-perm/sys-temp gemäß
 §5.3.3.6) + State-Machine (`authenticate_plain`/`authenticate_anonymous`/
-`authenticate_external`/`select_outbound`).
+`authenticate_external`/`select_outbound`). **Wire-Codec der SASL-
+Performatives** (§5.3) in `crates/amqp-bridge/src/performatives.rs`:
+`sasl_init`/`sasl_response` (Descriptors 0x41/0x43) + `sasl_plain_response`
+(RFC 4616) + `sasl_mechanisms_from_body`/`sasl_outcome_code` (Decode der
+0x40/0x44-Frames). **Client-Handshake** `crates/amqp-endpoint/src/client.rs::
+AmqpClient::sasl_plain` (SASL-Header → mechanisms → init(PLAIN) → outcome).
 
-**Tests:** Inline-Tests im `sasl`-Modul (Mechanism-Round-Trip,
-SASL-Code-Wire-Values, Outcome-Helper).
+**Tests:** Inline-Tests im `sasl`-Modul + `performatives::tests::{
+sasl_init_descriptor_and_roundtrip, sasl_mechanisms_extracts_symbols,
+sasl_outcome_code_extracted}`; Live `crates/amqp-endpoint/tests/
+rabbitmq_amqp10_e2e.rs` (SASL-PLAIN gegen RabbitMQ 4.0).
+
+**Status:** done
+
+---
+
+## RabbitMQ-Interop (AMQP-1.0-Broker-Client)
+
+### Client-Initiator + RabbitMQ-v2-Addressing
+
+**Spec:** `amqp-1.0-transport` §2.4 (connection) + §2.6 (link) +
+`amqp-1.0-messaging` §3.2.6 (Data). RabbitMQ 4.0 fährt AMQP 1.0 nativ auf
+Port 5672 mit Pflicht-SASL + v2-Adressformat (`/queues/<name>`,
+`/exchanges/<name>/<key>`).
+
+**Repo:** `crates/amqp-bridge/src/performatives.rs::{attach_to,
+transfer_message, flow_link_credit, disposition_accept,
+data_payload_from_transfer}` (attach mit described `source`/`target`-Node
+0x28/0x29 + Adresse; transfer mit delivery-tag + Data-Section) +
+`crates/amqp-bridge/src/extended_types.rs::AmqpExtValue::Described` (§1.3.4
+described type, encode+decode). `crates/amqp-endpoint/src/client.rs::
+AmqpClient::{connect_plain, send_to, recv_from}` — voller Client
+(SASL → open/begin → attach(sender/receiver) → transfer/flow/disposition →
+detach/close).
+
+**Tests:** `crates/amqp-bridge` Unit (`attach_to_carries_target_address`,
+`transfer_message_has_tag_and_data`); Live e2e `crates/amqp-endpoint/tests/
+rabbitmq_amqp10_e2e.rs` (ZeroDDS-1.0 ⇄ RabbitMQ ⇄ pika-0.9.1, beide
+Richtungen) + `rabbitmq_cross_stack_e2e.rs` (ZeroDDS-1.0 ⇄ ZeroDDS-0.9.1).
+Harness `crates/amqp-endpoint/competitors/rabbitmq/`.
 
 **Status:** done
 
@@ -540,11 +579,11 @@ SASL-Code-Wire-Values, Outcome-Helper).
 
 ## Audit-Status
 
-33 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+34 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: siehe Header — 188 Tests grün insgesamt (82 lib + 106
-integration), davon 77 OASIS-AMQP-1.0-relevant
-(`extended_types`/`frame`/`performatives`/`sections`/`types`).
-
-Offene Punkte und Decision-Records: siehe `amqp-1.0.open.md`
-(insbesondere SASL-`n/a (rejected)`-Decision-Record).
+Test-Lauf: `cargo test -p zerodds-amqp-bridge` — 87 lib-Tests grün,
+0 failed; davon 82 OASIS-AMQP-1.0-relevant
+(`extended_types`/`frame`/`performatives`/`sections`/`types`, inkl. der
+SASL-Performative- + attach/transfer-Codec-Tests). RabbitMQ-Interop
+zusätzlich live: `cargo test -p zerodds-amqp-endpoint --test
+rabbitmq_amqp10_e2e -- --ignored` (codepit, `AMQP_RABBITMQ=1`).

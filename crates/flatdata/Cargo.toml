@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "FlatStruct-Trait fuer Zero-Copy Same-Host-Pub/Sub (zerodds-flatdata-1.0): SlotBackend-Trait, In-Memory-Allocator, POSIX shm/mmap, Iceoryx2-Bridge."
+description = "FlatStruct trait for zero-copy same-host pub/sub (zerodds-flatdata-1.0): SlotBackend trait, in-memory allocator, POSIX shm/mmap, Iceoryx2 bridge."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-flatdata"
 readme = "README.md"
@@ -21,26 +21,32 @@ workspace = true
 default = ["std", "posix-mmap"]
 std = ["alloc"]
 alloc = []
-# Aktiviert PosixSlotAllocator (POSIX shm_open + mmap). Default an.
-posix-mmap = ["dep:shared_memory", "std"]
-# Aktiviert Iceoryx2-Bridge (ADR-0004) als parallele Pub/Sub-API
-# fuer Anwender, die ihre Cross-Process-SHM ueber Eclipse iceoryx2
-# (`Bosch / Apex.AI`) routen wollen statt ueber den built-in
-# `PosixSlotAllocator`. Die Bridge ist NICHT SlotBackend-basiert,
-# weil iceoryx2's FIFO-Pub/Sub-Modell sich nicht auf die Random-
-# Access-Slot-Pool-Trait abbilden laesst; stattdessen exponieren
-# `Iceoryx2Publisher<T>` und `Iceoryx2Subscriber<T>` eine zur
-# zerodds-flatdata-1.0 §8/§9 spec-konforme API direkt auf
+# Enables PosixSlotAllocator (POSIX shm_open + mmap). On by default.
+posix-mmap = ["dep:shared_memory", "dep:libc", "std"]
+# Enables the Iceoryx2 bridge (ADR-0004) as a parallel pub/sub API
+# for users who want to route their cross-process SHM over Eclipse iceoryx2
+# (`Bosch / Apex.AI`) instead of the built-in
+# `PosixSlotAllocator`. The bridge is NOT SlotBackend-based,
+# because iceoryx2's FIFO pub/sub model cannot be mapped onto the
+# random-access slot-pool trait; instead,
+# `Iceoryx2Publisher<T>` and `Iceoryx2Subscriber<T>` expose an API
+# conforming to zerodds-flatdata-1.0 §8/§9, directly on top of
 # iceoryx2's `loan_slice_uninit` / `subscriber.receive`.
 iceoryx2-bridge = ["std", "dep:iceoryx2"]
 
 [dependencies]
 shared_memory = { version = "0.12", optional = true }
 iceoryx2 = { version = "0.8", optional = true }
+# Cross-process futex notify for PosixSlotAllocator (Spec §4.2, Linux). Only
+# pulled with the posix-mmap feature; the futex syscall is gated to Linux.
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
 zerodds-flatdata-derive = { path = "../flatdata-derive" }
+# §11.3 — heap-allocation profiling test (0 allocs in the write hot path).
+dhat = "0.3"
 
 [[bench]]
 name = "loopback"

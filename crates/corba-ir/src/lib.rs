@@ -6,26 +6,26 @@
 //! Crate `zerodds-corba-ir`. Safety classification: **STANDARD**.
 //! `no_std + alloc`, `forbid(unsafe_code)`.
 //!
-//! Voller IR-Stack: TypeCode (alle 32 TCKinds — `tk_null` … `tk_local_interface`),
-//! Repository mit Containment-Hierarchie (`Container`/`Definition`/`Module`),
-//! `DefinitionKind` (`dk_*`-Konstanten), strukturierte `RepositoryId`
-//! mit Spec-§10.7.3.1-Format-Parser/Builder.
+//! Full IR stack: TypeCode (all 32 TCKinds — `tk_null` … `tk_local_interface`),
+//! Repository with a containment hierarchy (`Container`/`Definition`/`Module`),
+//! `DefinitionKind` (`dk_*` constants), structured `RepositoryId`
+//! with a spec §10.7.3.1 format parser/builder.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! - [`RepositoryId`] — `IDL:<scoped>:<major>.<minor>` Parser/Builder.
-//! - [`TypeCode`] / [`TcKind`] / [`UnionMember`] — TypeCode-Modell.
-//! - [`Repository`] / [`Container`] / [`Definition`] / [`Module`] — IR-Hierarchie.
+//! - [`RepositoryId`] — `IDL:<scoped>:<major>.<minor>` parser/builder.
+//! - [`TypeCode`] / [`TcKind`] / [`UnionMember`] — TypeCode model.
+//! - [`Repository`] / [`Container`] / [`Definition`] / [`Module`] — IR hierarchy.
 //! - [`DefinitionKind`] — `dk_None` … `dk_LocalInterface`.
-//! - [`IrError`] / [`IrResult`] — Repository-Fehler.
+//! - [`IrError`] / [`IrResult`] — repository error.
 //!
-//! ## Konsumenten
+//! ## Consumers
 //!
-//! - [`zerodds_corba_poa`] verwendet `RepositoryId::parse` zur typisierten
-//!   Validierung von Servant-Interfaces (Spec §11.3.5.20.4 `_is_a`).
-//! - Externe CORBA-Anwendungen konsumieren den IR via IIOP/IOR.
+//! - [`zerodds_corba_poa`] uses `RepositoryId::parse` for typed
+//!   validation of servant interfaces (spec §11.3.5.20.4 `_is_a`).
+//! - External CORBA applications consume the IR via IIOP/IOR.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```
 //! use zerodds_corba_ir::RepositoryId;
@@ -50,6 +50,9 @@ pub mod type_code;
 
 pub use definition_kind::DefinitionKind;
 pub use error::{IrError, IrResult};
-pub use repository::{Container, Definition, Module, Repository};
+pub use repository::{
+    AttributeMode, Container, DefDetails, Definition, Module, OperationMode, ParameterDef,
+    ParameterMode, Repository,
+};
 pub use repository_id::RepositoryId;
 pub use type_code::{TcKind, TypeCode, UnionMember};

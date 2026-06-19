@@ -39,7 +39,7 @@ pub enum ControlPacketType {
 }
 
 impl ControlPacketType {
-    /// Wire-Wert (4 bits, in den high-Nibble des byte 0 platziert).
+    /// Wire value (4 bits, placed in the high nibble of byte 0).
     #[must_use]
     pub const fn to_bits(self) -> u8 {
         match self {
@@ -61,7 +61,7 @@ impl ControlPacketType {
         }
     }
 
-    /// Konvertiert vom Wire-Nibble.
+    /// Converts from the wire nibble.
     #[must_use]
     pub const fn from_bits(v: u8) -> Option<Self> {
         match v & 0x0F {
@@ -91,29 +91,29 @@ impl ControlPacketType {
 pub struct FixedHeader {
     /// Spec §2.1.2.
     pub packet_type: ControlPacketType,
-    /// Spec §2.1.3 — flags low-nibble. Fuer PUBLISH = `DUP|QoS(2)|
-    /// RETAIN`. Fuer andere meist 0 (PUBREL/SUBSCRIBE/UNSUBSCRIBE
-    /// haben fixed `0010`).
+    /// Spec §2.1.3 — flags low nibble. For PUBLISH = `DUP|QoS(2)|
+    /// RETAIN`. For others usually 0 (PUBREL/SUBSCRIBE/UNSUBSCRIBE
+    /// have a fixed `0010`).
     pub flags: u8,
-    /// Spec §2.1.4 — Remaining-Length (VBI).
+    /// Spec §2.1.4 — remaining length (VBI).
     pub remaining_length: u32,
 }
 
 impl FixedHeader {
-    /// Spec §2.1.3 — fuer PUBLISH: extrahiert DUP-Flag aus den
-    /// flag-bits.
+    /// Spec §2.1.3 — for PUBLISH: extracts the DUP flag from the
+    /// flag bits.
     #[must_use]
     pub const fn dup_flag(self) -> bool {
         self.flags & 0b1000 != 0
     }
 
-    /// Spec §2.1.3 — fuer PUBLISH: extrahiert QoS-Wert (0..=2).
+    /// Spec §2.1.3 — for PUBLISH: extracts the QoS value (0..=2).
     #[must_use]
     pub const fn qos(self) -> u8 {
         (self.flags >> 1) & 0b11
     }
 
-    /// Spec §2.1.3 — fuer PUBLISH: extrahiert RETAIN-Flag.
+    /// Spec §2.1.3 — for PUBLISH: extracts the RETAIN flag.
     #[must_use]
     pub const fn retain_flag(self) -> bool {
         self.flags & 0b1 != 0

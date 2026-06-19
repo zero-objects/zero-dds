@@ -25,8 +25,8 @@ publish = true
 workspace = true
 
 [dependencies]
-zerodds-dcps = { version = "1.0.0-rc.1", path = "../../crates/dcps" }
-zerodds-qos  = { version = "1.0.0-rc.1", path = "../../crates/qos" }
-zerodds-rtps = { version = "1.0.0-rc.1", path = "../../crates/rtps" }
-zerodds-types = { version = "1.0.0-rc.1", path = "../../crates/types", default-features = false, features = ["std"] }
+zerodds-dcps = { version = "1.0.0-rc.3", path = "../../crates/dcps" }
+zerodds-qos  = { version = "1.0.0-rc.3", path = "../../crates/qos" }
+zerodds-rtps = { version = "1.0.0-rc.3", path = "../../crates/rtps" }
+zerodds-types = { version = "1.0.0-rc.3", path = "../../crates/types", default-features = false, features = ["std"] }
 libc          = { workspace = true }

@@ -1,13 +1,10 @@
 # DDS-Security 1.2 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/zerodds-security-1.2.pdf` (351 Seiten, OMG formal/2025-03-06)
-
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
-Status (`done` / `partial` / `open` / `n/a`).
+**Spec:** [OMG DDS-Security 1.2 — formal/2025-03-06 (351 Seiten) →](https://www.omg.org/spec/DDS-SECURITY/)
 
 **Kontext:** ZeroDDS-Security ist über 8 Crates verteilt mit
 zusammen 655 Tests grün:
+
 - `crates/security/` — SPI-Traits (Plugin-Definitionen)
 - `crates/security-pki/` — Builtin Authentication (DDS:Auth:PKI-DH, 182 Tests)
 - `crates/security-permissions/` — Builtin Access Control (116 Tests)
@@ -37,7 +34,7 @@ pro SPI accepts_builtin + rejects_misimplemented +
 conformance_points_full_matrix).
 
 **Status:** done — alle 5 SPIs produktiv mit Builtin; Compliance-
-Profile vollstaendig erfuellt.
+Profile vollständig erfüllt.
 
 ### 1.2 5 SPIs: Authentication, AccessControl, Cryptographic, Logging, DataTagging
 
@@ -50,12 +47,12 @@ access_control,crypto,logging,data_tagging}.rs`; alle 5 Builtins:
 `JsonLinesLoggingPlugin`, `BuiltinDataTaggingPlugin`.
 
 **Tests:** Mock-Plugin-Tests in `crates/security/src/mock.rs`
-(5 Mocks fuer alle 5 SPIs) +
+(5 Mocks für alle 5 SPIs) +
 `security-runtime/tests/conformance_matrix.rs::auth_*` /
 `access_control_*` / `crypto_*` / `logging_*` / `data_tagging_*` (10
 SPI-Tests + 1 Matrix-Test).
 
-**Status:** done — alle 5 SPI-Traits sind erfuellt durch je einen
+**Status:** done — alle 5 SPI-Traits sind erfüllt durch je einen
 produktiven Builtin und einen Mock.
 
 ---
@@ -67,7 +64,7 @@ produktiven Builtin und einen Mock.
 **Spec:** §2.1.
 
 **Repo:** Builtin-Interop laufend (alle 5 Builtins);
-Plugin-Framework via `Box<dyn>` ueber das `zerodds-security`-SPI;
+Plugin-Framework via `Box<dyn>` über das `zerodds-security`-SPI;
 Logging-Profil via `security-logging`; Tagging-Profil via
 `BuiltinDataTaggingPlugin`. Language-APIs n/a (Rust-only Crate-
 Boundary, statt FFI bedienbar als `Box<dyn TraitName>`).
@@ -154,7 +151,7 @@ korrespondierenden Test in der Matrix.
 
 **Status:** done
 
-### 7.2 SPI-Trennung (5 SPIs als unabhaengige Plugins)
+### 7.2 SPI-Trennung (5 SPIs als unabhängige Plugins)
 
 **Spec:** §7.2.
 
@@ -242,7 +239,7 @@ begin/process_handshake_request/reply.
 
 **Status:** done
 
-### 8.7 PSK-Authentication (Phase 2)
+### 8.7 PSK-Authentication
 
 **Spec:** §8.7.
 
@@ -259,7 +256,7 @@ begin/process_handshake_request/reply.
 **Repo:** OCSP-Stapling in `security-pki/src/ocsp.rs`
 (`parse_ocsp_status` + `require_good_status`); CRL-Validation in
 `security-pki/src/crl.rs` (`parse_crl_serials` + `validate_crl` mit
-DER-Walker fuer RFC-5280-`CertificateList`).
+DER-Walker für RFC-5280-`CertificateList`).
 
 **Tests:** OCSP (`ocsp::tests::*`, 12 Tests):
 `empty_input_is_malformed`, `good_status_parses_to_good`,
@@ -366,7 +363,7 @@ ProtectionKind-Enum (NONE/SIGN/ENCRYPT/SIGN_WITH_ORIGIN_AUTH/etc.).
 
 **Status:** done
 
-### 9.7 PSK-Access (Phase 2)
+### 9.7 PSK-Access
 
 **Spec:** §9.7.
 
@@ -411,7 +408,7 @@ KeyMaterial-Wire.
 
 **Status:** done
 
-### 10.4 Receiver-Specific MAC (pro Reader-MAC zusaetzlich zum Common-MAC)
+### 10.4 Receiver-Specific MAC (pro Reader-MAC zusätzlich zum Common-MAC)
 
 **Spec:** §10.4.
 
@@ -422,7 +419,7 @@ Pfad.
 
 **Status:** done
 
-### 10.5 PSK-Crypto-Plugin (Phase 2)
+### 10.5 PSK-Crypto-Plugin
 
 **Spec:** §10.5.
 
@@ -554,7 +551,7 @@ ReceiverSpecificMacs-Vec.
 
 ---
 
-## §14 Discovery — Builtin Endpoints fuer Auth-Handshake
+## §14 Discovery — Builtin Endpoints für Auth-Handshake
 
 ### 14.1 ParticipantSecurityInfoBuiltinTopicData
 

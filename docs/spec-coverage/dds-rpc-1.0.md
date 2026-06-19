@@ -1,17 +1,19 @@
 # DDS-RPC 1.0 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/zerodds-rpc-1.0.pdf` (68 Seiten, OMG formal/2017-04-01)
+**Spec:** [OMG DDS-RPC 1.0](https://www.omg.org/spec/DDS-RPC/1.0/PDF) (68 Seiten, OMG formal/2017-04-01)
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
+Audit Item-für-Item
+gegen die Spec; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
 Status (`done` / `partial` / `open` / `n/a`).
 
-**Kontext:** `crates/rpc/` ist live mit 4810 LOC + 138 Tests
-(annotations/codegen/common_types/endpoint/error/qos_profile/replier/
-requester/service_mapping/topic_naming/wire_codec). Basic-Conformance-
-Block ueberwiegend live; Enhanced-Mapping (X-Types-Discovery-Extensions,
-Topic-Aliases) + Function-Call-Style + C++-/Java-Language-Bindings
-sind offen oder partial.
+**Kontext:** Basic- und Enhanced-
+Conformance voll abgedeckt: Basic-Mapping + Enhanced-Mapping (X-Types-
+Discovery-Extensions, Topic-Aliases) + Function-Call-Style +
+C++-/Java-Language-Bindings alle live.
+
+Implementation:
+
+- `crates/rpc/` — DDS-RPC-Service-Mapping (annotations/codegen/common_types/endpoint/error/qos_profile/replier/requester/service_mapping/topic_naming/wire_codec), 4810 LOC + 138 Tests.
 
 ---
 
@@ -72,7 +74,7 @@ Style live via `crates/rpc/src/function_call.rs` mit
 
 **Status:** done
 
-### 2.2 Enhanced Conformance (optional): Enhanced-Service-Mapping zusaetzlich
+### 2.2 Enhanced Conformance (optional): Enhanced-Service-Mapping zusätzlich
 
 **Spec:** §2, S. 9 — "The enhanced conformance point includes the
 basic conformance and adds support for the Enhanced Service mapping."
@@ -145,7 +147,7 @@ Spec selbst entfernt CORBA-Spezifika in §7.3.1.1 (z.B. `oneway` →
 ### 3.5 [IDL35] IDL 3.5 (formal/2014-03-01)
 
 **Spec:** §3, S. 10 — "[IDL35] IDL 3.5." Service-Definition basiert
-auf IDL 3.5 (in §7.3.1.1 ueberlagert mit RPC-Modifikationen).
+auf IDL 3.5 (in §7.3.1.1 überlagert mit RPC-Modifikationen).
 
 **Repo:** `crates/idl/` (IDL 4.2, Superset).
 
@@ -157,7 +159,7 @@ auf IDL 3.5 (in §7.3.1.1 ueberlagert mit RPC-Modifikationen).
 
 **Spec:** §3, S. 10 — "[EBNF] ISO/IEC 14977 EBNF."
 
-**Repo:** `crates/idl/src/grammar/` (EBNF-aequivalente Notation).
+**Repo:** `crates/idl/src/grammar/` (EBNF-äquivalente Notation).
 
 **Tests:** siehe `idl-4.2.md`.
 
@@ -202,7 +204,7 @@ liegt in `zerodds-java-psm-1.0.md`.
 **Spec:** §3, S. 10 — "[DDS4CCM] DDS for lightweight CCM 1.1."
 
 **Repo:** `crates/xml/src/qos.rs` + 14 normative XSD-Files in
-`crates/xml/schemas/` (siehe K7-Audit DDS-XML 1.0 voll erfuellt).
+`crates/xml/schemas/` (siehe K7-Audit DDS-XML 1.0 voll erfüllt).
 DDS-RPC nutzt das XML-Modell direkt.
 
 **Tests:** siehe `zerodds-xml-1.0.md` (K7 = 100% done).
@@ -295,7 +297,7 @@ or procedure to execute in another address space."
 
 ## §7.1 Overview
 
-### 7.1 Higher-Level Abstractions for first-class Request/Reply ueber DDS
+### 7.1 Higher-Level Abstractions for first-class Request/Reply über DDS
 
 **Spec:** §7.1, S. 13 — "The intent of this specification is to
 specify higher-level abstractions built on top of DDS to achieve
@@ -320,7 +322,7 @@ writer for sending requests and a data reader for receiving replies.
 Symmetrically, every service uses a data reader for receiving the
 requests and a data writer for sending the replies."
 
-**Repo:** `requester.rs::Requester` haelt request-DataWriter +
+**Repo:** `requester.rs::Requester` hält request-DataWriter +
 reply-DataReader; `replier.rs::Replier` symmetrisch.
 
 **Tests:** `requester_new_creates_topics_and_writer`,
@@ -337,7 +339,7 @@ for remote invocations of other clients are filtered."
 
 **Repo:** App-Code-Korrelation in `requester::tick` via
 `ReplyHeader.related_request_id`-Check gegen pending-Map. Spec-
-Anforderung "filter pro Request" ist erfuellt; ContentFilteredTopic
+Anforderung "filter pro Request" ist erfüllt; ContentFilteredTopic
 ist Optimization-Variante (Spec sagt "is used by the reader" als
 Implementation-Hint, nicht als verbindliche DDS-CFT-Forderung).
 
@@ -355,7 +357,7 @@ invocations are used. In such cases, it is critical to correlate
 requests with responses. As a consequence, each individual request
 must be correlated with the corresponding reply."
 
-**Repo:** `requester.rs` haelt pending-Map (sample_identity ->
+**Repo:** `requester.rs` hält pending-Map (sample_identity ->
 oneshot-Sender).
 
 **Tests:** `e2e_multi_pending_requests_all_get_their_reply`,
@@ -431,7 +433,7 @@ invocation. A code generator generates stub and skeleton classes
 from an interface specification."
 
 **Repo:** `codegen.rs::build_basic_pair`/`build_enhanced_*` macht
-Type-Codegen; `function_call.rs::ServiceDescriptor` haelt das
+Type-Codegen; `function_call.rs::ServiceDescriptor` hält das
 Service-Modell + monoton vergebene Opcodes; FunctionStub/
 FunctionSkeleton-Traits geben das Codegen-Target.
 
@@ -495,9 +497,9 @@ pending-Map.
 sample data)."
 
 **Repo:** Explizite Variante via Header (RequestHeader/ReplyHeader)
-ist primary, Spec-konform fuer Basic-Profile. Implizite Variante
+ist primary, Spec-konform für Basic-Profile. Implizite Variante
 via inline-QoS (`PID_RELATED_SAMPLE_IDENTITY`) ist Optional-
-Optimization fuer Enhanced-Profile (siehe K9-C §7.8.2.3).
+Optimization für Enhanced-Profile (siehe K9-C §7.8.2.3).
 
 **Tests:** `request_header_roundtrip_le/be`,
 `reply_header_roundtrip_all_codes` +
@@ -509,7 +511,7 @@ Optimization fuer Enhanced-Profile (siehe K9-C §7.8.2.3).
 
 ## §7.2.4 Basic + Enhanced Service Mapping
 
-### 7.2.4.1 Basic Mapping: kompatibel zu DDS 1.3-Implementierungen, explicit request-id, 2*N Topics fuer N-Inheritance
+### 7.2.4.1 Basic Mapping: kompatibel zu DDS 1.3-Implementierungen, explicit request-id, 2*N Topics für N-Inheritance
 
 **Spec:** §7.2.4, S. 16 — "Basic Service Mapping is compatible with
 DDS 1.3 implementations. It uses an explicit request-id field in
@@ -545,7 +547,7 @@ PublicationBuiltinTopicDataExt — siehe K9-C §7.6.2.x.
 
 ## §7.2.5 Interoperability
 
-### 7.2.5 Client und Service muessen dasselbe Service-Mapping nutzen; Mappings unabhaengig vom Binding-Style
+### 7.2.5 Client und Service müssen dasselbe Service-Mapping nutzen; Mappings unabhängig vom Binding-Style
 
 **Spec:** §7.2.5, S. 16 — "Client and Service must use the same
 Service Mapping to interoperate. The two service mappings are
@@ -569,8 +571,8 @@ independent of the binding style used at the client/service side."
 CORBA-specific oneway modifier and the context expression. [...]
 The oneway modifier is replaced by the @oneway annotation."
 
-**Repo:** `crates/rpc/src/annotations.rs::lower_single` unterstuetzt
-`@oneway`-Annotation (Spec-konformer Ersatz fuer CORBA-Keyword);
+**Repo:** `crates/rpc/src/annotations.rs::lower_single` unterstützt
+`@oneway`-Annotation (Spec-konformer Ersatz für CORBA-Keyword);
 IDL-Parser-Keyword `oneway` ist Legacy-CORBA-Reservation (siehe
 idl-4.2.md Annex B) — der RPC-Layer hat aber den Annotation-Pfad
 als primary.
@@ -628,7 +630,7 @@ mit Java-Generics.
 
 **Repo:** `crates/idl-java/` mit IDL→Java-PSM-Codegen; RPC-PSM
 Erweiterung in K9-E (§7.11.2.x) als Java-Codegen-Template.
-RPC-Annotation-Pfad ist sprachenunabhaengig in `annotations.rs`.
+RPC-Annotation-Pfad ist sprachenunabhängig in `annotations.rs`.
 
 **Tests:** Cross-Ref `idl4-java-1.0.md` + `zerodds-java-psm-1.0.md` +
 RPC-Bindings in K9-E.
@@ -648,9 +650,9 @@ non-normativ.
 
 ### 7.3.2.2 Service-Def in Java via Pair of Types
 
-**Spec:** §7.3.2.2, S. 22 — analog §7.3.1.4 fuer Java.
+**Spec:** §7.3.2.2, S. 22 — analog §7.3.1.4 für Java.
 
-**Repo:** RPC-Annotation-Pfad ist sprachenunabhaengig in
+**Repo:** RPC-Annotation-Pfad ist sprachenunabhängig in
 `annotations.rs::RpcAnnotation::{RpcRequestType, RpcReplyType}`;
 Java-Codegen-Template ist Subject von K9-E.
 
@@ -711,7 +713,7 @@ regex [[:alnum:]_]+."
 
 **Status:** done
 
-### 7.4.1.4 Request/Reply-Style-Binding: `<interface_name>` und Underscore werden NICHT automatisch angefuegt
+### 7.4.1.4 Request/Reply-Style-Binding: `<interface_name>` und Underscore werden NICHT automatisch angefügt
 
 **Spec:** §7.4.1, S. 22 — "When using the request-reply style
 binding (as opposed to the function-call style), the topic name is
@@ -753,14 +755,14 @@ DdsRequestTopic, DdsReplyTopic}` + `LoweredRpc::dds_request_topic()
 
 **Status:** done
 
-### 7.4.2.3 Topic-Names zur Laufzeit via `ServiceParams`/`ClientParams`/`RequesterParams`/`ReplierParams`-Klassen; Praezedenz: Runtime > Annotation > Default
+### 7.4.2.3 Topic-Names zur Laufzeit via `ServiceParams`/`ClientParams`/`RequesterParams`/`ReplierParams`-Klassen; Präzedenz: Runtime > Annotation > Default
 
 **Spec:** §7.4.2.3, S. 24 — "the topic names can also be specified
 at runtime [...] Precedence: Runtime > Annotation > Default."
 
 **Repo:** `Requester::with_instance(service, instance, ...)` +
 `Replier::with_instance` erlauben Topic-Override zur Laufzeit
-(Praezedenz: Runtime > Annotation > Default — Caller waehlt,
+(Präzedenz: Runtime > Annotation > Default — Caller wählt,
 Annotation-Helper `dds_request_topic()`/`dds_reply_topic()` liefert
 das Annotation-Default als Fallback).
 
@@ -793,14 +795,14 @@ durch `ServiceTopicNames::new` belegt.
 **Spec:** §7.4.3.2, S. 25 — analog Basic.
 
 **Repo:** Identisch zu §7.4.2.2 — `@DDSRequestTopic`/`@DDSReplyTopic`-
-Annotationen sind sprachenunabhaengig in `annotations.rs` exponiert.
+Annotationen sind sprachenunabhängig in `annotations.rs` exponiert.
 
 **Tests:** wie §7.4.2.2 (`dds_request_topic_lowers_and_resolves`,
 `dds_reply_topic_lowers_and_resolves`).
 
 **Status:** done
 
-### 7.4.3.3 Enhanced Runtime-Spezifikation, identisches Praezedenz-Schema
+### 7.4.3.3 Enhanced Runtime-Spezifikation, identisches Präzedenz-Schema
 
 **Spec:** §7.4.3.3, S. 25 — analog §7.4.2.3.
 
@@ -914,7 +916,7 @@ operations have no Reply mapping."
 
 **Status:** done
 
-### 7.5.1.1.6 Mapping Interfaces -> Request Topic Types (Container fuer Operations-Calls)
+### 7.5.1.1.6 Mapping Interfaces -> Request Topic Types (Container für Operations-Calls)
 
 **Spec:** §7.5.1.1.6, S. 31 — "Each Interface is mapped to a
 Request topic type that contains the operation Call union and
@@ -943,9 +945,9 @@ topic type."
 2*N topics for N-level hierarchy."
 
 **Repo:** `service_mapping.rs::ServiceTopicNames` liefert pro
-Interface ein 1+1-Topic-Paar. Die Spec-Anforderung "2*N Topics fuer
+Interface ein 1+1-Topic-Paar. Die Spec-Anforderung "2*N Topics für
 N-Level-Inheritance" wird durch wiederholten Aufruf pro Interface-
-Hierarchy-Level erfuellt — Codegen iteriert die Inheritance-Chain.
+Hierarchy-Level erfüllt — Codegen iteriert die Inheritance-Chain.
 
 **Tests:** `service_topic_names_pair`, `basic_pair_topic_names` +
 `profile_conformance::basic_mapping_uses_two_topics_per_service`.
@@ -992,12 +994,12 @@ single discriminated union member."
 
 **Status:** done
 
-### 7.5.1.2.4 Enhanced Interface Mapping fuer Request Topic Types
+### 7.5.1.2.4 Enhanced Interface Mapping für Request Topic Types
 
 **Spec:** §7.5.1.2.4, S. 41.
 
 **Repo:** `codegen.rs::build_enhanced_pair` + `build_enhanced_all` —
-voller Enhanced-Interface-Mapping fuer Request-Type.
+voller Enhanced-Interface-Mapping für Request-Type.
 
 **Tests:** `enhanced_pair_topic_names`,
 `enhanced_pair_request_in_params`,
@@ -1005,7 +1007,7 @@ voller Enhanced-Interface-Mapping fuer Request-Type.
 
 **Status:** done
 
-### 7.5.1.2.5 Enhanced Interface Mapping fuer Reply Type
+### 7.5.1.2.5 Enhanced Interface Mapping für Reply Type
 
 **Spec:** §7.5.1.2.5, S. 42.
 
@@ -1062,7 +1064,7 @@ discovery; client and service match via topic names and types."
 
 **Status:** done
 
-### 7.6.2.1.1 Extended PublicationBuiltinTopicData (mit RPC-Service-Identitaet)
+### 7.6.2.1.1 Extended PublicationBuiltinTopicData (mit RPC-Service-Identität)
 
 **Spec:** §7.6.2.1.1, S. 47 — "PublicationBuiltinTopicDataExt
 extends standard PublicationBuiltinTopicData with RPC-specific
@@ -1225,7 +1227,7 @@ ReorderParameters)` -> `true`.
 **Spec:** §7.7.2.5.3, S. 53.
 
 **Repo:** `evolution_rules::is_compatible(Enhanced,
-ChangeParameterType)` -> `false` (Wire-Inkompatibilitaet).
+ChangeParameterType)` -> `false` (Wire-Inkompatibilität).
 
 **Tests:** `enhanced_mapping_change_param_type_is_breaking`.
 
@@ -1247,7 +1249,7 @@ AddRemoveReturnType)` -> `true`.
 **Spec:** §7.7.2.5.5, S. 54.
 
 **Repo:** `evolution_rules::is_compatible(Enhanced,
-ChangeReturnType)` -> `false` (Wire-Inkompatibilitaet).
+ChangeReturnType)` -> `false` (Wire-Inkompatibilität).
 
 **Tests:** `enhanced_mapping_change_return_type_is_breaking`.
 
@@ -1258,7 +1260,7 @@ ChangeReturnType)` -> `false` (Wire-Inkompatibilitaet).
 **Spec:** §7.7.2.5.6, S. 54.
 
 **Repo:** `evolution_rules`-Tabelle deckt Add/Remove via
-`AddRemoveParameter` (analog fuer Exception). Compatible-Pfad ist
+`AddRemoveParameter` (analog für Exception). Compatible-Pfad ist
 gleich wie §7.7.2.5.1.
 
 **Tests:** `enhanced_mapping_add_remove_param_is_compatible` +
@@ -1300,7 +1302,7 @@ operation to retrieve incoming request identity."
 
 **Spec:** §7.8.2.2, S. 54.
 
-**Repo:** `RequestIdentity` ist sprachenunabhaengig sowohl auf
+**Repo:** `RequestIdentity` ist sprachenunabhängig sowohl auf
 Service- als auch Client-Side nutzbar. RequesterEndpoint kann
 seine Last-Sent-Identity tracken.
 
@@ -1344,7 +1346,7 @@ Reader/Writer-Erstellung.
 requests via generated dispatcher code."
 
 **Repo:** `crates/rpc/src/function_call.rs::dispatch_request`-Helper
-loest Opcode auf und ruft den passenden Handler-Closure (Spec-
+löst Opcode auf und ruft den passenden Handler-Closure (Spec-
 konformer Generated-Dispatcher).
 
 **Tests:** `function_call::tests::dispatch_request_routes_by_opcode`,
@@ -1434,7 +1436,7 @@ Enhanced Mappings are defined."
 Requester<TReq, TRep> and Replier<TReq, TRep> templates."
 
 **Repo:** `crates/idl-cpp/src/rpc.rs::emit_requester_class` +
-`emit_replier_class` — typisierte Per-Service-Wrappers ueber das
+`emit_replier_class` — typisierte Per-Service-Wrappers über das
 Generic `dds::rpc::Requester/Replier`-Template.
 
 **Tests:** `crates/idl-cpp/src/rpc.rs::tests::*` (Codegen-
@@ -1472,7 +1474,7 @@ mit `ServiceTraits<<Service>>`-Spezialisierung + `Future<T>`/
 **Spec:** §7.11.1.3, S. 58.
 
 **Repo:** `crates/rpc/src/common_types.rs::RemoteExceptionCode`
-(Wire-Pfad fuer Exception-Codes) + `idl-cpp`-Codegen mappt diese
+(Wire-Pfad für Exception-Codes) + `idl-cpp`-Codegen mappt diese
 auf C++-Exception-Klassen (siehe `rpc.rs`).
 
 **Tests:** `remote_exception_code_*`-Tests im rpc-Crate +
@@ -1489,7 +1491,7 @@ C++-Klassen im `dds::rpc`-Namespace.
 Replier/ServiceProxy/Handler-Klassen im `dds::rpc`-Namespace.
 Generic-Templates leben in `dds::rpc::Requester<TIn,TOut>` etc.
 
-**Tests:** Codegen-Snapshots fuer Calculator-Service.
+**Tests:** Codegen-Snapshots für Calculator-Service.
 
 **Status:** done
 
@@ -1549,7 +1551,7 @@ Interface (Server-Side-Skeleton).
 
 Die `wire_codec.rs`-Layer (`encode_request_frame`/
 `decode_request_frame`/`encode_reply_frame`/`decode_reply_frame`)
-implementiert das Sample-Layout ueber CDR. Tests:
+implementiert das Sample-Layout über CDR. Tests:
 `request_frame_roundtrip_empty_payload`,
 `request_frame_roundtrip_with_payload`,
 `reply_frame_roundtrip`, `reply_frame_carries_exception_code`,

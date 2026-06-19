@@ -1,24 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! FlatStruct-Trait + Slot-Header fuer Zero-Copy Same-Host-Pub/Sub.
+//! FlatStruct trait + slot header for zero-copy same-host pub/sub.
 //!
 //! Crate `zerodds-flatdata`. Safety classification: **STANDARD**.
 //!
 //! Spec: `docs/specs/zerodds-flatdata-1.0.md`.
 //!
-//! # Sicherheits-Begruendung
+//! # Safety rationale
 //!
-//! Dieser Crate implementiert eine `unsafe trait FlatStruct`, dessen
-//! Garantien (Copy + repr(C) + 'static + keine Pointer/Vec/String) der
-//! Implementer per `unsafe impl` zusichert. Die `as_bytes` /
-//! `from_bytes_unchecked`-Helpers sind dann sicher per Layout — wir
-//! lokalisieren das `unsafe`-Island hier statt es in den DataWriter-
-//! Pfad zu streuen.
+//! This crate implements an `unsafe trait FlatStruct` whose
+//! guarantees (Copy + repr(C) + 'static + no pointers/Vec/String) the
+//! implementer assures via `unsafe impl`. The `as_bytes` /
+//! `from_bytes_unchecked` helpers are then safe by layout — we
+//! localize the `unsafe` island here instead of scattering it into
+//! the DataWriter path.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
-// Begruendet: FlatStruct-Trait ist by-design unsafe (Layout-Garantien
-// liegen beim Caller). Per-Block-SAFETY-Kommentare sind unten.
+// Rationale: the FlatStruct trait is unsafe by design (layout
+// guarantees are the caller's responsibility). Per-block SAFETY
+// comments are below.
 #![allow(unsafe_code)]
 
 #[cfg(feature = "alloc")]
@@ -43,7 +44,10 @@ pub use allocator::{InMemorySlotAllocator, SlotError, SlotHandle};
 #[cfg(feature = "std")]
 pub use backend::SlotBackend;
 #[cfg(feature = "iceoryx2-bridge")]
-pub use iceoryx::{Iceoryx2Error, Iceoryx2Publisher, Iceoryx2Subscriber};
+pub use iceoryx::{
+    Iceoryx2Error, Iceoryx2Publisher, Iceoryx2Subscriber, RawIceoryx2Publisher,
+    RawIceoryx2Subscriber,
+};
 #[cfg(feature = "alloc")]
 pub use locator::{LocatorError, ShmLocator, fnv1a_32, is_same_host};
 #[cfg(feature = "posix-mmap")]
@@ -52,60 +56,60 @@ pub use posix::{PosixSlotAllocator, PosixSlotError};
 pub use pubsub::{FlatReader, FlatSampleRef, FlatSlot, FlatWriter};
 pub use slot::{ReaderMask, SLOT_HEADER_SIZE, SlotHeader};
 
-/// Marker-Trait fuer FlatData-faehige Types.
+/// Marker trait for FlatData-capable types.
 ///
-/// Spec-Zitat (zerodds-flatdata-1.0 §1.1):
+/// Spec quote (zerodds-flatdata-1.0 §1.1):
 ///
-/// > Garantiert:
-/// > - `Self: Copy` (kein Drop-Glue, plain bytes)
-/// > - `Self: 'static` (kein Lifetime-Reference)
-/// > - `#[repr(C)]` mit fest definiertem Alignment
-/// > - `as_bytes()` und `from_bytes_unchecked()` sind safe-by-Layout
+/// > Guarantees:
+/// > - `Self: Copy` (no Drop glue, plain bytes)
+/// > - `Self: 'static` (no lifetime reference)
+/// > - `#[repr(C)]` with a fixed, defined alignment
+/// > - `as_bytes()` and `from_bytes_unchecked()` are safe by layout
 ///
 /// # Safety
 ///
-/// Implementer MUSS sicherstellen:
-/// - `Self` ist `#[repr(C)]` (oder `#[repr(transparent)]` ueber einen
-///   einzigen `repr(C)`-Type).
-/// - Alle Felder sind `FlatStruct` oder Primitiv-Types ohne padding-
-///   sensitive UB (kein `#[repr(packed)]` mit Pointer-aligned Fields).
-/// - `Self: Copy` (Trait-Bound erzwingt das).
-/// - `TYPE_HASH` ist eindeutig fuer die exakte Wire-Layout-Variante;
-///   bei jeder Schema-Aenderung MUSS der Hash regeneriert werden.
+/// The implementer MUST ensure:
+/// - `Self` is `#[repr(C)]` (or `#[repr(transparent)]` over a
+///   single `repr(C)` type).
+/// - All fields are `FlatStruct` or primitive types without
+///   padding-sensitive UB (no `#[repr(packed)]` with pointer-aligned fields).
+/// - `Self: Copy` (the trait bound enforces this).
+/// - `TYPE_HASH` is unique for the exact wire-layout variant;
+///   on every schema change the hash MUST be regenerated.
 pub unsafe trait FlatStruct: Copy + 'static + Send + Sync {
-    /// Wire-Size der `repr(C)`-Struktur (= `core::mem::size_of::<Self>()`).
+    /// Wire size of the `repr(C)` struct (= `core::mem::size_of::<Self>()`).
     const WIRE_SIZE: usize = core::mem::size_of::<Self>();
 
-    /// Eindeutiger Type-Hash (16 byte). Caller-Code generiert via
-    /// SHA-256(`type_name + field_layout_string`) und nimmt die
-    /// ersten 16 byte. Reader prueft diesen Hash gegen den
-    /// Discovery-Hash; Mismatch → Slot-Drop.
+    /// Unique type-hash (16 byte). Caller code generates it via
+    /// SHA-256(`type_name + field_layout_string`) and takes the
+    /// first 16 byte. The reader checks this hash against the
+    /// discovery hash; on mismatch → slot drop.
     const TYPE_HASH: [u8; 16];
 
-    /// Liefert das Slot-Layout als Slice. Safe-by-Layout — `Self: Copy`
-    /// + `repr(C)` garantieren dass der byte-cast defined ist.
+    /// Returns the slot layout as a slice. Safe by layout — `Self: Copy`
+    /// + `repr(C)` guarantee that the byte cast is defined.
     #[must_use]
     fn as_bytes(&self) -> &[u8] {
-        // SAFETY: FlatStruct-Trait verlangt repr(C) + Copy. Damit ist
-        // `*const Self` ↔ `*const u8` ein wohldefinierter Reinterpret-
-        // Cast (keine Tail-Padding-Lecks weil Caller sich verpflichtet
-        // hat).
+        // SAFETY: the FlatStruct trait requires repr(C) + Copy. This makes
+        // `*const Self` ↔ `*const u8` a well-defined reinterpret
+        // cast (no tail-padding leaks because the caller has
+        // committed to that).
         unsafe {
             core::slice::from_raw_parts(core::ptr::from_ref(self).cast::<u8>(), Self::WIRE_SIZE)
         }
     }
 
-    /// Rekonstruiert aus rohem Slice. Caller MUSS:
+    /// Reconstructs from a raw slice. The caller MUST:
     /// - bytes.len() >= WIRE_SIZE
-    /// - bytes-Provenance valide fuer WIRE_SIZE
-    /// - Type-Hash zuvor verifiziert (sonst UB bei alignement-Mismatch)
+    /// - bytes provenance valid for WIRE_SIZE
+    /// - type-hash verified beforehand (otherwise UB on alignment mismatch)
     ///
     /// # Safety
-    /// Siehe oben.
+    /// See above.
     #[must_use]
     unsafe fn from_bytes_unchecked(bytes: &[u8]) -> Self {
         debug_assert!(bytes.len() >= Self::WIRE_SIZE);
-        // SAFETY: Caller-Kontrakt + WIRE_SIZE-Check.
+        // SAFETY: caller contract + WIRE_SIZE check.
         unsafe { core::ptr::read_unaligned(bytes.as_ptr().cast::<Self>()) }
     }
 }
@@ -123,8 +127,8 @@ mod tests {
         z: i64,
     }
 
-    // SAFETY: Pose ist repr(C), Copy, 'static. Felder sind alle
-    // Primitiv-i64 ohne padding-Issues.
+    // SAFETY: Pose is repr(C), Copy, 'static. All fields are
+    // primitive i64 without padding issues.
     unsafe impl FlatStruct for Pose {
         const TYPE_HASH: [u8; 16] = [0x42; 16];
     }
@@ -140,8 +144,8 @@ mod tests {
         let p = Pose { x: 1, y: 2, z: 3 };
         let bytes = p.as_bytes();
         assert_eq!(bytes.len(), 24);
-        // SAFETY: bytes stammt aus genau dieser Pose-Instanz, daher
-        // Type-Hash trivial konsistent.
+        // SAFETY: bytes come from exactly this Pose instance, so the
+        // type-hash is trivially consistent.
         let p2: Pose = unsafe { Pose::from_bytes_unchecked(bytes) };
         assert_eq!(p, p2);
     }

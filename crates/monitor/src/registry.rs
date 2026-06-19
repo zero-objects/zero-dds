@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Registry — Single-Source-of-Truth fuer Counter/Gauge/Histogram (Spec §1.6).
+//! Registry — single source of truth for Counter/Gauge/Histogram (Spec §1.6).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::{Counter, Gauge, LabeledHistogram, Labels, MetricKey};
 
-/// Zentrale Registry. Idempotente Lookup + spaeterer Render-Pass.
+/// Central registry. Idempotent lookup + later render pass.
 #[derive(Debug, Default)]
 pub struct Registry {
     counters: Mutex<HashMap<MetricKey, Arc<Counter>>>,
@@ -24,8 +24,8 @@ impl Registry {
         Self::default()
     }
 
-    /// Counter holen — bei Wiederholungs-Aufruf mit demselben
-    /// `(name, labels)` wird die selbe Instanz zurueckgegeben.
+    /// Get a counter — on a repeated call with the same
+    /// `(name, labels)` the same instance is returned.
     pub fn counter(&self, name: &'static str, labels: Labels) -> Arc<Counter> {
         let key = MetricKey::new(name, labels.clone());
         if let Ok(mut map) = self.counters.lock() {
@@ -36,14 +36,14 @@ impl Registry {
             map.insert(key, Arc::clone(&c));
             c
         } else {
-            // Mutex poisoned — silent recovery: liefere eine isolierte
-            // Instance, damit Hot-Path nicht panict. Sub-optimal weil
-            // nicht in der Registry gespeichert; dafuer panic-frei.
+            // Mutex poisoned — silent recovery: return an isolated
+            // instance so the hot path does not panic. Sub-optimal because
+            // not stored in the registry; but panic-free.
             Arc::new(Counter::new(name, labels))
         }
     }
 
-    /// Gauge holen.
+    /// Get a gauge.
     pub fn gauge(&self, name: &'static str, labels: Labels) -> Arc<Gauge> {
         let key = MetricKey::new(name, labels.clone());
         if let Ok(mut map) = self.gauges.lock() {
@@ -58,7 +58,7 @@ impl Registry {
         }
     }
 
-    /// Histogram holen.
+    /// Get a histogram.
     pub fn histogram(&self, name: &'static str, labels: Labels) -> Arc<LabeledHistogram> {
         let key = MetricKey::new(name, labels.clone());
         if let Ok(mut map) = self.histograms.lock() {
@@ -73,17 +73,17 @@ impl Registry {
         }
     }
 
-    /// HELP-Text fuer einen Metric-Namen registrieren (fuer Prometheus-
-    /// Exposition). Ein Set pro Metric-Name; Re-Registrierung
-    /// ueberschreibt den vorherigen Help-Text.
+    /// Register a HELP text for a metric name (for Prometheus
+    /// exposition). One set per metric name; re-registration
+    /// overwrites the previous help text.
     pub fn set_help(&self, name: &'static str, help: &'static str) {
         if let Ok(mut map) = self.helps.lock() {
             map.insert(name, help);
         }
     }
 
-    /// Snapshot — alle aktuellen Metric-Werte einfrieren fuer
-    /// Render/Export.
+    /// Snapshot — freeze all current metric values for
+    /// render/export.
     #[must_use]
     pub fn snapshot(&self) -> RegistrySnapshot {
         let counters = self
@@ -114,7 +114,7 @@ impl Registry {
         }
     }
 
-    /// Prometheus-Text-Format-Render — Convenience-Wrapper um
+    /// Prometheus text-format render — convenience wrapper around
     /// [`crate::render_prometheus`].
     #[must_use]
     pub fn render_prometheus(&self) -> String {
@@ -122,12 +122,12 @@ impl Registry {
     }
 }
 
-/// Eingefrorener Registry-State fuer Export.
+/// Frozen registry state for export.
 #[derive(Clone, Debug, Default)]
 pub struct RegistrySnapshot {
-    /// Counter-Werte.
+    /// Counter values.
     pub counters: Vec<(MetricKey, u64)>,
-    /// Gauge-Werte.
+    /// Gauge values.
     pub gauges: Vec<(MetricKey, i64)>,
     /// Histogram-Snapshots.
     pub histograms: Vec<(MetricKey, zerodds_foundation::tracing::Histogram)>,
@@ -137,7 +137,7 @@ pub struct RegistrySnapshot {
 
 static DEFAULT_REGISTRY: OnceLock<Arc<Registry>> = OnceLock::new();
 
-/// Globale Default-Registry (initialisiert beim ersten Aufruf).
+/// Global default registry (initialized on first call).
 #[must_use]
 pub fn default_registry() -> Arc<Registry> {
     Arc::clone(DEFAULT_REGISTRY.get_or_init(|| Arc::new(Registry::new())))

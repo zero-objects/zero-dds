@@ -1,31 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! XCDR2-TypeSupport-Codegen fuer IDL-Strukturen.
+//! XCDR2 TypeSupport code generation for IDL structs.
 //!
-//! Pro `struct` emittiert dieser Walker eine Singleton-Klasse
-//! `<Name>TypeSupport` die `org.zerodds.cdr.TopicTypeSupport<T>`
-//! implementiert. Die Klasse stellt die §3-Surface-API bereit
+//! For each `struct` this walker emits a singleton class
+//! `<Name>TypeSupport` that implements `org.zerodds.cdr.TopicTypeSupport<T>`.
+//! The class provides the §3 surface API
 //! (`getTypeName`, `isKeyed`, `getExtensibility`, `encode/decode`,
 //! `keyHash`).
 //!
-//! Spec-Anker: zerodds-xcdr2-java-1.0 §3 + §4 + §5 + §6 + §7.
+//! Spec anchor: zerodds-xcdr2-java-1.0 §3 + §4 + §5 + §6 + §7.
 //!
 //! Coverage:
-//! - Primitive-Member: boolean/octet/char/wchar/short/long/long long/
-//!   float/double + unsigned-Varianten.
-//! - String-Member (UTF-8 length+1+NUL).
-//! - Sequence<T>-Member (uint32 count + Element-Loop).
-//! - Nested struct (delegiert an `<Type>TypeSupport.INSTANCE`).
+//! - Primitive members: boolean/octet/char/wchar/short/long/long long/
+//!   float/double + unsigned variants.
+//! - String members (UTF-8 length+1+NUL).
+//! - Sequence<T> members (uint32 count + element loop).
+//! - Nested struct (delegates to `<Type>TypeSupport.INSTANCE`).
 //! - Extensibility: @final/@appendable/@mutable.
 //! - Annotations: @key, @id(N), @optional.
 //!
-//! Bewusst nicht im Scope (waehst in v1.x):
-//! - Map<K,V>-Member.
-//! - fixed/any/wstring (wstring im Writer/Reader unterstuetzt; Codegen
-//!   waext bei Bedarf).
+//! Intentionally out of scope (grows in v1.x):
+//! - Map<K,V> members.
+//! - fixed/any/wstring (wstring is supported in Writer/Reader; codegen
+//!   grows on demand).
 //! - Bitset/Bitmask.
-//! - Union-Member (Union liefert das Codegen separat als sealed
-//!   interface; TypeSupport-Pattern fuer Union ist v1.1).
+//! - Union members (unions are emitted separately as sealed interfaces
+//!   by the codegen; TypeSupport for unions is v1.1).
 
 use std::fmt::Write;
 
@@ -44,7 +44,7 @@ use crate::error::JavaGenError;
 use crate::keywords::sanitize_identifier;
 use crate::type_map::primitive_to_java;
 
-/// Emittiert pro Top-Level-Struct ein TypeSupport-File.
+/// Emits one TypeSupport file per top-level struct.
 pub(crate) fn emit_typesupport_files(
     spec: &Specification,
     opts: &JavaGenOptions,
@@ -89,12 +89,12 @@ fn walk_defs(
                     continue;
                 }
                 if !struct_is_typesupport_eligible(s) {
-                    // Member-Types ausserhalb des aktuellen TypeSupport-
-                    // Scopes (z.B. `any`, `map<K,V>`, `fixed`,
-                    // Inheritance-Base mit unsupported Members) — Codegen
-                    // skippt das File still und ueberlaesst die User-
-                    // Implementation. Das deckt die idl4-java Spec-
-                    // §7.7.4 Reflection-Stretch-Goal ab.
+                    // Member types outside the current TypeSupport scope
+                    // (e.g. `any`, `map<K,V>`, `fixed`,
+                    // inheritance base with unsupported members) — the codegen
+                    // silently skips the file and leaves the implementation
+                    // to the user. This covers the idl4-java spec
+                    // §7.7.4 reflection stretch goal.
                     continue;
                 }
                 let file = emit_typesupport_for_struct(s, pkg, module_chain, opts)?;
@@ -113,9 +113,9 @@ fn has_nested_marker(lowered: &Lowered) -> bool {
         .any(|b| matches!(b, BuiltinAnnotation::Nested))
 }
 
-/// Liefert `true` falls alle Member-TypeSpecs vom TypeSupport-Codegen
-/// abgedeckt werden. Member mit `any`, `Map<K,V>`, `fixed` oder Array
-/// sind in v1.0 ausgeklammert (Stretch-Goal).
+/// Returns `true` if all member type specs are covered by the TypeSupport codegen.
+/// Members with `any`, `Map<K,V>`, `fixed`, or arrays are excluded in v1.0
+/// (stretch goal).
 fn struct_is_typesupport_eligible(s: &StructDef) -> bool {
     s.members.iter().all(|m| {
         if !typespec_supported(&m.type_spec) {
@@ -127,7 +127,7 @@ fn struct_is_typesupport_eligible(s: &StructDef) -> bool {
     })
 }
 
-/// zerodds-lint: recursion-depth 32 (TypeSpec rekursiv via Sequence)
+/// zerodds-lint: recursion-depth 32 (TypeSpec recursive via Sequence)
 fn typespec_supported(ts: &TypeSpec) -> bool {
     match ts {
         TypeSpec::Primitive(_) | TypeSpec::String(_) | TypeSpec::Scoped(_) => true,
@@ -271,7 +271,7 @@ fn emit_typesupport_for_struct(
         )
         .map_err(fmt_err)?;
         emit_key_extraction(&mut body, s, &ind)?;
-        // XTypes 1.3 §7.6.8.4: Holder ≤ 16 octets -> zero-pad; sonst MD5.
+        // XTypes 1.3 §7.6.8.4: holder ≤ 16 octets -> zero-pad; otherwise MD5.
         writeln!(body, "{ind}{ind}byte[] holder = w.toByteArray();").map_err(fmt_err)?;
         writeln!(body, "{ind}{ind}if (holder.length <= 16) {{").map_err(fmt_err)?;
         writeln!(body, "{ind}{ind}{ind}byte[] h = new byte[16];").map_err(fmt_err)?;
@@ -522,32 +522,70 @@ fn emit_typespec_encode(
                 }
             },
         },
-        TypeSpec::String(_) => {
+        TypeSpec::String(s) => {
+            // Bounded `string<N>` (DDS-XTypes §7.4.3): reject over-bound on
+            // encode like strict vendors do. Narrow → UTF-8 byte length (matches
+            // the CDR wire); wide `wstring<N>` → UTF-16 unit count (String.length).
+            if let Some(b) = &s.bound {
+                let bv = crate::emitter::const_expr_to_java(b);
+                if s.wide {
+                    writeln!(
+                        out,
+                        "{ind}if ({expr} != null && {expr}.length() > {bv}) throw new IllegalArgumentException(\"bounded wstring length exceeds its IDL bound ({bv})\");"
+                    )
+                    .map_err(fmt_err)?;
+                } else {
+                    writeln!(
+                        out,
+                        "{ind}if ({expr} != null && {expr}.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > {bv}) throw new IllegalArgumentException(\"bounded string length exceeds its IDL bound ({bv})\");"
+                    )
+                    .map_err(fmt_err)?;
+                }
+            }
             writeln!(out, "{ind}w.writeString({expr});").map_err(fmt_err)?;
         }
         TypeSpec::Sequence(seq) => {
+            // XCDR2 §7.4.3.5: non-primitive elements (string, struct, …)
+            // → DHEADER (uint32 = byte length of [count + elements]) prepended;
+            // primitives do not get one. Verified against CycloneDDS (V-5 without, V-6 with).
+            let non_primitive = !matches!(&*seq.elem, TypeSpec::Primitive(_));
             writeln!(out, "{ind}{{").map_err(fmt_err)?;
             writeln!(
                 out,
                 "{ind}    java.util.List<?> __seq = ({expr} == null) ? java.util.Collections.emptyList() : ({expr});"
             )
             .map_err(fmt_err)?;
+            // Bounded `sequence<T, N>` (DDS-XTypes §7.4.3): over-bound = encode error.
+            if let Some(b) = &seq.bound {
+                let bv = crate::emitter::const_expr_to_java(b);
+                writeln!(
+                    out,
+                    "{ind}    if (__seq.size() > {bv}) throw new IllegalArgumentException(\"bounded sequence length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
+            if non_primitive {
+                writeln!(out, "{ind}    int __seqdh = w.beginAppendable();").map_err(fmt_err)?;
+            }
             writeln!(out, "{ind}    w.writeSequenceCount(__seq.size());").map_err(fmt_err)?;
             writeln!(out, "{ind}    for (Object __el : __seq) {{").map_err(fmt_err)?;
             let inner_indent = format!("{ind}        ");
-            // Element-Encode in zwei Schritten: cast nach Element-Type,
-            // dann encode.
+            // Element encode in two steps: cast to element type,
+            // then encode.
             let elem_expr = "__el";
             emit_seq_element_encode(out, &seq.elem, elem_expr, &inner_indent)?;
             writeln!(out, "{ind}    }}").map_err(fmt_err)?;
+            if non_primitive {
+                writeln!(out, "{ind}    w.endDelimited(__seqdh);").map_err(fmt_err)?;
+            }
             writeln!(out, "{ind}}}").map_err(fmt_err)?;
         }
         TypeSpec::Scoped(_) => {
             // Nested struct: delegate.
-            // Wir importieren TypeSupport via FQN. Der Java-Code ruft
-            // <Type>TypeSupport.INSTANCE.encode(expr) und schreibt die
-            // Bytes als raw payload.
-            // Vereinfachte Form: schreibe die Bytes direkt.
+            // We import TypeSupport via FQN. The Java code calls
+            // <Type>TypeSupport.INSTANCE.encode(expr) and writes the
+            // bytes as a raw payload.
+            // Simplified form: write the bytes directly.
             let scoped_str = match ts {
                 TypeSpec::Scoped(s) => scoped_to_short(s),
                 _ => {
@@ -771,7 +809,12 @@ fn emit_typespec_decode(
         }
         TypeSpec::Sequence(seq) => {
             let elem_ty = boxed_for_seq_elem(&seq.elem);
+            // XCDR2 §7.4.3.5: skip DHEADER for non-primitive elements.
+            let non_primitive = !matches!(&*seq.elem, TypeSpec::Primitive(_));
             writeln!(out, "{ind}{{").map_err(fmt_err)?;
+            if non_primitive {
+                writeln!(out, "{ind}    r.readDHeader();").map_err(fmt_err)?;
+            }
             writeln!(out, "{ind}    int __cnt = r.readSequenceCount();").map_err(fmt_err)?;
             writeln!(
                 out,

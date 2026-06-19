@@ -3,22 +3,22 @@
 
 //! Conditions + WaitSet C-FFI (Spec §2.2.2.1.2 + DDS-PSM-Cxx §7.5.10).
 //!
-//! Architektur:
-//! - `ZeroDdsGuardCondition`: User-toggelbares Trigger-Flag.
-//! - `ZeroDdsStatusCondition`: an eine Entity gebunden + Status-Mask.
-//! - `ZeroDdsReadCondition`: an DataReader gebunden + sample/view/instance-Filter.
-//! - `ZeroDdsQueryCondition`: ReadCondition + Filter-Expression (RC1: passthru).
-//! - `ZeroDdsWaitSet`: Container von Conditions, `wait()` polled jede 5ms.
+//! Architecture:
+//! - `ZeroDdsGuardCondition`: user-toggleable trigger flag.
+//! - `ZeroDdsStatusCondition`: bound to an entity + status mask.
+//! - `ZeroDdsReadCondition`: bound to a DataReader + sample/view/instance filter.
+//! - `ZeroDdsQueryCondition`: ReadCondition + filter expression (RC1: passthrough).
+//! - `ZeroDdsWaitSet`: container of conditions, `wait()` polls every 5ms.
 //!
-//! Triggern:
+//! Triggering:
 //! - GuardCondition: `set_trigger_value`.
-//! - StatusCondition: aktiviert wenn `enabled_statuses & current_status_mask != 0`.
-//!   RC1 sammelt grobe Triggert-Bits via Reader/Writer-Status-Polls (matched-count
-//!   nicht 0, sample_lost > 0, ...).
-//! - ReadCondition: aktiviert wenn DataReader Samples im Channel hat (rx.try_iter
-//!   peek-able -> aktuell: `len()`-aequivalent via `try_recv` ist nicht moeglich,
-//!   wir setzen Bit basierend auf `user_reader_matched_count`).
-//! - QueryCondition: wie ReadCondition.
+//! - StatusCondition: active if `enabled_statuses & current_status_mask != 0`.
+//!   RC1 collects coarse trigger bits via reader/writer status polls (matched count
+//!   not 0, sample_lost > 0, ...).
+//! - ReadCondition: active if the DataReader has samples in the channel (rx.try_iter
+//!   peek-able -> currently: a `len()`-equivalent via `try_recv` is not possible,
+//!   we set the bit based on `user_reader_matched_count`).
+//! - QueryCondition: like ReadCondition.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -35,10 +35,10 @@ use crate::ZeroDdsStatus;
 use crate::entities::{ZeroDdsDataReader, ZeroDdsDataWriter};
 
 // ---------------------------------------------------------------------------
-// Condition-Types
+// Condition types
 // ---------------------------------------------------------------------------
 
-/// Tag um zu wissen welche Condition-Variante hinter `*mut c_void` steht.
+/// Tag to know which condition variant is behind `*mut c_void`.
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConditionKind {
@@ -52,33 +52,50 @@ pub enum ConditionKind {
     Query = 4,
 }
 
-/// Header in jeder Condition-Boxed-Struct, damit der WaitSet den Typ
-/// runtime-erkennen kann.
+/// Header in every condition boxed struct, so that the WaitSet can
+/// recognize the type at runtime.
 #[repr(C)]
 struct ConditionHeader {
     kind: ConditionKind,
 }
 
 /// GuardCondition (Spec §2.2.2.1.2.1.6).
+///
+/// `#[repr(C)]` is MANDATORY: the generic `condition_kind()` dispatcher reads
+/// the `ConditionKind` discriminant via a `*const ConditionHeader` cast,
+/// i.e. the `header` field MUST be guaranteed to be at offset 0. Without `repr(C)`
+/// `repr(Rust)` may reorder the fields → `header` lands elsewhere → the
+/// dispatcher reads garbage as the kind, casts to the wrong type and
+/// dereferences a junk pointer (Linux SIGSEGV; macOS happened to be right by chance).
+///
+/// On the C ABI this stays an **opaque** `void*`/pointer handle: excluded in
+/// `cbindgen.toml` + forward-declared in the header preamble. `repr(C)`
+/// is ONLY for the internal Rust layout — cbindgen must NOT emit the fields into
+/// `zerodds.h` (otherwise the `String`/`Vec` follow-up fields of
+/// `QueryCondition` become incomplete C types).
+#[repr(C)]
 pub struct ZeroDdsGuardCondition {
-    /// Header. Layout-kompatibel mit `ConditionHeader` fuer
-    /// Condition-Kind-Discrimination via `condition_kind()`.
+    /// Header. Layout-compatible with `ConditionHeader` for
+    /// condition-kind discrimination via `condition_kind()`.
     #[allow(dead_code)]
     header: ConditionHeader,
-    /// User-Trigger-Flag.
+    /// User trigger flag.
     trigger: AtomicBool,
 }
 
-/// StatusCondition (Spec §2.2.2.1.2.1.4). Im RC1 an `Entity = void*`
-/// gebunden — kein Status-Polling-Plumb (folge-WP).
+/// StatusCondition (Spec §2.2.2.1.2.1.4). In RC1 bound to `Entity = void*`
+/// — no status-polling plumb (follow-up WP).
+///
+/// `#[repr(C)]` MANDATORY — `header` at offset 0 (see `ZeroDdsGuardCondition`); opaque on the C ABI (cbindgen.toml exclude + preamble forward decl).
+#[repr(C)]
 pub struct ZeroDdsStatusCondition {
-    /// Header. Layout-kompatibel fuer Condition-Kind-Discrimination.
+    /// Header. Layout-compatible for condition-kind discrimination.
     #[allow(dead_code)]
     header: ConditionHeader,
-    /// `entity` Pointer (DataReader / DataWriter / Topic / Participant).
+    /// `entity` pointer (DataReader / DataWriter / Topic / Participant).
     #[allow(dead_code)]
     entity: *mut core::ffi::c_void,
-    /// Aktivierte Status-Bits (Bitmask).
+    /// Enabled status bits (bitmask).
     enabled_statuses: AtomicU32,
 }
 
@@ -88,17 +105,22 @@ unsafe impl Send for ZeroDdsStatusCondition {}
 unsafe impl Sync for ZeroDdsStatusCondition {}
 
 /// ReadCondition (Spec §2.2.2.5.8).
+///
+/// `#[repr(C)]` MANDATORY — `header` at offset 0 (see `ZeroDdsGuardCondition`).
+/// Without this `zerodds_condition_get_trigger_value` read the `reader` pointer from the
+/// wrong offset → SIGSEGV (F-PSM-CXX-readcond-segv). C ABI: opaque (cbindgen.toml exclude + preamble forward decl).
+#[repr(C)]
 pub struct ZeroDdsReadCondition {
-    /// Header. Layout-kompatibel fuer Condition-Kind-Discrimination.
+    /// Header. Layout-compatible for condition-kind discrimination.
     #[allow(dead_code)]
     header: ConditionHeader,
-    /// Bound-DataReader.
+    /// Bound DataReader.
     reader: *mut ZeroDdsDataReader,
-    /// Sample-State-Mask.
+    /// Sample-state mask.
     sample_states: u32,
-    /// View-State-Mask.
+    /// View-state mask.
     view_states: u32,
-    /// Instance-State-Mask.
+    /// Instance-state mask.
     instance_states: u32,
 }
 
@@ -108,19 +130,24 @@ unsafe impl Send for ZeroDdsReadCondition {}
 unsafe impl Sync for ZeroDdsReadCondition {}
 
 /// QueryCondition (Spec §2.2.2.5.9).
+///
+/// `#[repr(C)]` MANDATORY — `header` at offset 0 (see `ZeroDdsGuardCondition`).
+/// (`String`/`Vec` as follow-up fields are ok: accessed only via a Rust cast, never
+/// by-value across the FFI boundary.) C ABI: opaque (cbindgen.toml exclude + preamble forward decl).
+#[repr(C)]
 pub struct ZeroDdsQueryCondition {
-    /// Header. Layout-kompatibel fuer Condition-Kind-Discrimination.
+    /// Header. Layout-compatible for condition-kind discrimination.
     #[allow(dead_code)]
     header: ConditionHeader,
-    /// Bound-DataReader.
+    /// Bound DataReader.
     reader: *mut ZeroDdsDataReader,
-    /// Sample/View/Instance-State.
+    /// Sample/view/instance state.
     sample_states: u32,
     view_states: u32,
     instance_states: u32,
-    /// Filter-Expression.
+    /// Filter expression.
     expression: alloc::string::String,
-    /// Filter-Parameters.
+    /// Filter parameters.
     parameters: Vec<alloc::string::String>,
 }
 
@@ -130,7 +157,7 @@ unsafe impl Send for ZeroDdsQueryCondition {}
 unsafe impl Sync for ZeroDdsQueryCondition {}
 
 // ---------------------------------------------------------------------------
-// Condition-Trigger-Helpers — drainen Channel in Cache, evaluieren Masks
+// Condition trigger helpers — drain the channel into the cache, evaluate masks
 // ---------------------------------------------------------------------------
 
 fn drain_channel_into_cache(drr: &ZeroDdsDataReader) {
@@ -168,7 +195,7 @@ fn cache_has_matching(
             crate::entities::ReadSampleState::NotRead => 2u32,
         };
         let s_ok = sample_states == 0 || (sample_states & s_bit) != 0;
-        let v_ok = view_states == 0 || (view_states & 1u32) != 0; // RC1: alle samples NEW
+        let v_ok = view_states == 0 || (view_states & 1u32) != 0; // RC1: all samples NEW
         let i_ok = instance_states == 0 || (instance_states & 1u32) != 0; // RC1: ALIVE
         s_ok && v_ok && i_ok
     })
@@ -186,7 +213,7 @@ fn cache_has_matching_query(
     if !cache_has_matching(drr, sample_states, view_states, instance_states) {
         return false;
     }
-    // Filter-Expression parsen.
+    // Parse the filter expression.
     let expr = match zerodds_sql_filter::parse(expression) {
         Ok(e) => e,
         Err(_) => return false,
@@ -215,14 +242,14 @@ fn cache_has_matching_query(
 // Condition-Helpers
 // ---------------------------------------------------------------------------
 
-/// Liefert die State-Masks (sample_states, view_states, instance_states)
-/// einer ReadCondition oder QueryCondition. Andere Kinds → None.
+/// Returns the state masks (sample_states, view_states, instance_states)
+/// of a ReadCondition or QueryCondition. Other kinds → None.
 ///
 /// # Safety
-/// `c` valide oder NULL.
+/// `c` valid or NULL.
 pub unsafe fn condition_state_masks(c: *const core::ffi::c_void) -> Option<(u32, u32, u32)> {
-    // SAFETY: see fn # Safety doc — c NULL-tolerant; condition_kind() pruft NULL
-    // und liefert die ConditionKind; danach Layout-Cast je nach kind.
+    // SAFETY: see fn # Safety doc — c NULL-tolerant; condition_kind() checks NULL
+    // and returns the ConditionKind; then a layout cast per kind.
     unsafe {
         let kind = condition_kind(c)?;
         match kind {
@@ -239,29 +266,29 @@ pub unsafe fn condition_state_masks(c: *const core::ffi::c_void) -> Option<(u32,
     }
 }
 
-/// Liest den `ConditionKind`-Header. NULL-tolerant.
+/// Reads the `ConditionKind` header. NULL-tolerant.
 ///
 /// # Safety
-/// `p` ist NULL oder zeigt auf eine Box-allokierte Condition deren
-/// erstes Feld ein `ConditionHeader` ist (Layout via `#[repr(C)]`).
+/// `p` is NULL or points to a box-allocated condition whose
+/// first field is a `ConditionHeader` (layout via `#[repr(C)]`).
 unsafe fn condition_kind(p: *const core::ffi::c_void) -> Option<ConditionKind> {
     if p.is_null() {
         return None;
     }
-    // SAFETY: NULL-Check oben; Caller-Pledge fuer Box-allokierte Condition.
+    // SAFETY: NULL check above; caller pledge for a box-allocated condition.
     let hdr = unsafe { &*(p as *const ConditionHeader) };
     Some(hdr.kind)
 }
 
-/// Liest den aktuellen Trigger-Status einer Condition (Spec §2.2.2.1.2.1.1).
+/// Reads the current trigger status of a condition (Spec §2.2.2.1.2.1.1).
 ///
 /// # Safety
-/// `c` valide oder NULL.
+/// `c` valid or NULL.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_condition_get_trigger_value(c: *const core::ffi::c_void) -> bool {
-    // SAFETY: see fn # Safety doc — c NULL-tolerant; condition_kind pruft NULL und
-    // liefert ConditionKind; danach Layout-Cast je nach kind. r.reader/q.reader
-    // stammen aus sub_create_datareader (Box::into_raw).
+    // SAFETY: see fn # Safety doc — c NULL-tolerant; condition_kind checks NULL and
+    // returns the ConditionKind; then a layout cast per kind. r.reader/q.reader
+    // come from sub_create_datareader (Box::into_raw).
     unsafe {
         let kind = match condition_kind(c) {
             Some(k) => k,
@@ -272,11 +299,11 @@ pub unsafe extern "C" fn zerodds_condition_get_trigger_value(c: *const core::ffi
                 .trigger
                 .load(Ordering::SeqCst),
             ConditionKind::Status => {
-                // RC1: jedes nicht-leere `enabled_statuses` triggert wenn mindestens
-                // ein Status-Counter > 0 ist. Da wir den Entity-Pointer haben aber
-                // kein Type-Tag fuer ihn, liefern wir `true` wenn enabled_statuses
-                // != 0 als spec-konformer Fallback — die Listener-FFI in der
-                // Folge-WP wired das pro Entity-Typ.
+                // RC1: any non-empty `enabled_statuses` triggers if at least
+                // one status counter is > 0. Since we have the entity pointer but
+                // no type tag for it, we return `true` if enabled_statuses
+                // != 0 as a spec-conformant fallback — the listener FFI in the
+                // follow-up WP wires this per entity type.
                 (*(c as *const ZeroDdsStatusCondition))
                     .enabled_statuses
                     .load(Ordering::SeqCst)
@@ -288,8 +315,8 @@ pub unsafe extern "C" fn zerodds_condition_get_trigger_value(c: *const core::ffi
                     return false;
                 }
                 let drr = &*r.reader;
-                // Spec §2.2.2.5.8: trigger_value true wenn Reader Samples hat die
-                // zur (sample_states, view_states, instance_states) Mask passen.
+                // Spec §2.2.2.5.8: trigger_value true if the reader has samples that
+                // match the (sample_states, view_states, instance_states) mask.
                 drain_channel_into_cache(drr);
                 cache_has_matching(drr, r.sample_states, r.view_states, r.instance_states)
             }
@@ -300,7 +327,7 @@ pub unsafe extern "C" fn zerodds_condition_get_trigger_value(c: *const core::ffi
                 }
                 let drr = &*q.reader;
                 drain_channel_into_cache(drr);
-                // Spec §2.2.2.5.9: zusaetzlich filter-expression evaluieren.
+                // Spec §2.2.2.5.9: additionally evaluate the filter expression.
                 cache_has_matching_query(
                     drr,
                     q.sample_states,
@@ -318,7 +345,7 @@ pub unsafe extern "C" fn zerodds_condition_get_trigger_value(c: *const core::ffi
 // GuardCondition
 // ---------------------------------------------------------------------------
 
-/// Erzeugt GuardCondition.
+/// Creates a GuardCondition.
 #[unsafe(no_mangle)]
 pub extern "C" fn zerodds_guardcondition_create() -> *mut ZeroDdsGuardCondition {
     Box::into_raw(Box::new(ZeroDdsGuardCondition {
@@ -329,22 +356,22 @@ pub extern "C" fn zerodds_guardcondition_create() -> *mut ZeroDdsGuardCondition 
     }))
 }
 
-/// Loescht GuardCondition.
+/// Deletes a GuardCondition.
 ///
 /// # Safety
-/// `g` muss aus `zerodds_guardcondition_create` stammen.
+/// `g` must come from `zerodds_guardcondition_create`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_guardcondition_destroy(g: *mut ZeroDdsGuardCondition) {
     if !g.is_null() {
-        // SAFETY: see fn # Safety doc — g aus zerodds_guardcondition_create.
+        // SAFETY: see fn # Safety doc — g from zerodds_guardcondition_create.
         let _ = unsafe { Box::from_raw(g) };
     }
 }
 
-/// Setzt den Trigger-Wert.
+/// Sets the trigger value.
 ///
 /// # Safety
-/// `g` valide.
+/// `g` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_guardcondition_set_trigger_value(
     g: *mut ZeroDdsGuardCondition,
@@ -362,12 +389,12 @@ pub unsafe extern "C" fn zerodds_guardcondition_set_trigger_value(
 // StatusCondition
 // ---------------------------------------------------------------------------
 
-/// Erzeugt eine StatusCondition fuer eine Entity. RC1: erlaubt jeden
-/// `*mut c_void` als Entity-Slot — Match-Logik liest den Status pro
-/// Entity-Type via Listener-FFI (folge-WP).
+/// Creates a StatusCondition for an entity. RC1: allows any
+/// `*mut c_void` as the entity slot — the match logic reads the status per
+/// entity type via the listener FFI (follow-up WP).
 ///
 /// # Safety
-/// `entity` valide oder NULL.
+/// `entity` valid or NULL.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_entity_get_statuscondition(
     entity: *mut core::ffi::c_void,
@@ -381,10 +408,10 @@ pub unsafe extern "C" fn zerodds_entity_get_statuscondition(
     }))
 }
 
-/// Aktiviert die in `mask` gesetzten Status-Bits.
+/// Enables the status bits set in `mask`.
 ///
 /// # Safety
-/// `c` valide.
+/// `c` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_statuscondition_set_enabled_statuses(
     c: *mut ZeroDdsStatusCondition,
@@ -398,10 +425,10 @@ pub unsafe extern "C" fn zerodds_statuscondition_set_enabled_statuses(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Liest die aktivierten Status-Bits.
+/// Reads the enabled status bits.
 ///
 /// # Safety
-/// `c` valide.
+/// `c` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_statuscondition_get_enabled_statuses(
     c: *mut ZeroDdsStatusCondition,
@@ -413,14 +440,14 @@ pub unsafe extern "C" fn zerodds_statuscondition_get_enabled_statuses(
     unsafe { (*c).enabled_statuses.load(Ordering::SeqCst) }
 }
 
-/// Loescht eine StatusCondition.
+/// Deletes a StatusCondition.
 ///
 /// # Safety
-/// `c` valide.
+/// `c` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_statuscondition_destroy(c: *mut ZeroDdsStatusCondition) {
     if !c.is_null() {
-        // SAFETY: see fn # Safety doc — c aus zerodds_entity_get_statuscondition.
+        // SAFETY: see fn # Safety doc — c from zerodds_entity_get_statuscondition.
         let _ = unsafe { Box::from_raw(c) };
     }
 }
@@ -429,10 +456,10 @@ pub unsafe extern "C" fn zerodds_statuscondition_destroy(c: *mut ZeroDdsStatusCo
 // ReadCondition / QueryCondition
 // ---------------------------------------------------------------------------
 
-/// Erzeugt eine ReadCondition (Spec §2.2.2.5.2.4).
+/// Creates a ReadCondition (Spec §2.2.2.5.2.4).
 ///
 /// # Safety
-/// `dr` valide.
+/// `dr` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_create_readcondition(
     dr: *mut ZeroDdsDataReader,
@@ -454,10 +481,10 @@ pub unsafe extern "C" fn zerodds_dr_create_readcondition(
     }))
 }
 
-/// Erzeugt eine QueryCondition (Spec §2.2.2.5.2.5).
+/// Creates a QueryCondition (Spec §2.2.2.5.2.5).
 ///
 /// # Safety
-/// `dr`, `expr` valide; `params[0..param_count]` valide.
+/// `dr`, `expr` valid; `params[0..param_count]` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_create_querycondition(
     dr: *mut ZeroDdsDataReader,
@@ -471,8 +498,8 @@ pub unsafe extern "C" fn zerodds_dr_create_querycondition(
     if dr.is_null() || expr.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: see fn # Safety doc — dr+expr NULL-checked above; expr NUL-terminiert
-    // (Caller-Pledge); params[0..param_count] valide wenn params != NULL.
+    // SAFETY: see fn # Safety doc — dr+expr NULL-checked above; expr NUL-terminated
+    // (caller pledge); params[0..param_count] valid if params != NULL.
     unsafe {
         let cs = std::ffi::CStr::from_ptr(expr);
         let expression = match cs.to_str() {
@@ -506,18 +533,18 @@ pub unsafe extern "C" fn zerodds_dr_create_querycondition(
     }
 }
 
-/// Loescht eine ReadCondition oder QueryCondition.
+/// Deletes a ReadCondition or QueryCondition.
 ///
 /// # Safety
-/// `c` valide; muss aus `dr_create_readcondition` oder
-/// `dr_create_querycondition` stammen.
+/// `c` valid; must come from `dr_create_readcondition` or
+/// `dr_create_querycondition`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dr_delete_readcondition(
     _dr: *mut ZeroDdsDataReader,
     c: *mut core::ffi::c_void,
 ) -> c_int {
-    // SAFETY: see fn # Safety doc — c aus dr_create_readcondition oder
-    // dr_create_querycondition; kind-Discrimination via ConditionHeader.
+    // SAFETY: see fn # Safety doc — c from dr_create_readcondition or
+    // dr_create_querycondition; kind discrimination via ConditionHeader.
     unsafe {
         let kind = match condition_kind(c) {
             Some(k) => k,
@@ -542,8 +569,8 @@ pub unsafe extern "C" fn zerodds_dr_delete_readcondition(
 
 /// WaitSet (Spec §2.2.2.1.2.1.5).
 pub struct ZeroDdsWaitSet {
-    /// Liste der attached Conditions (Pointer auf Box-allokierte
-    /// Condition-Strukturen).
+    /// List of attached conditions (pointers to box-allocated
+    /// condition structs).
     conditions: Mutex<Vec<*mut core::ffi::c_void>>,
 }
 
@@ -552,7 +579,7 @@ unsafe impl Send for ZeroDdsWaitSet {}
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
 unsafe impl Sync for ZeroDdsWaitSet {}
 
-/// Erzeugt WaitSet.
+/// Creates a WaitSet.
 #[unsafe(no_mangle)]
 pub extern "C" fn zerodds_waitset_create() -> *mut ZeroDdsWaitSet {
     Box::into_raw(Box::new(ZeroDdsWaitSet {
@@ -560,14 +587,14 @@ pub extern "C" fn zerodds_waitset_create() -> *mut ZeroDdsWaitSet {
     }))
 }
 
-/// Loescht WaitSet.
+/// Deletes a WaitSet.
 ///
 /// # Safety
-/// `w` valide.
+/// `w` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_waitset_destroy(w: *mut ZeroDdsWaitSet) {
     if !w.is_null() {
-        // SAFETY: see fn # Safety doc — w aus zerodds_waitset_create.
+        // SAFETY: see fn # Safety doc — w from zerodds_waitset_create.
         let _ = unsafe { Box::from_raw(w) };
     }
 }
@@ -575,7 +602,7 @@ pub unsafe extern "C" fn zerodds_waitset_destroy(w: *mut ZeroDdsWaitSet) {
 /// Attach Condition.
 ///
 /// # Safety
-/// `w`, `cond` valide.
+/// `w`, `cond` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_waitset_attach_condition(
     w: *mut ZeroDdsWaitSet,
@@ -598,7 +625,7 @@ pub unsafe extern "C" fn zerodds_waitset_attach_condition(
 /// Detach Condition.
 ///
 /// # Safety
-/// `w`, `cond` valide.
+/// `w`, `cond` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_waitset_detach_condition(
     w: *mut ZeroDdsWaitSet,
@@ -607,7 +634,7 @@ pub unsafe extern "C" fn zerodds_waitset_detach_condition(
     if w.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — w NULL-checked above; cond toleriert NULL.
+    // SAFETY: see fn # Safety doc — w NULL-checked above; cond tolerates NULL.
     unsafe {
         if let Ok(mut g) = (*w).conditions.lock() {
             let n = g.len();
@@ -620,11 +647,11 @@ pub unsafe extern "C" fn zerodds_waitset_detach_condition(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Wartet bis mindestens eine Condition triggert oder Timeout.
-/// Schreibt aktive Conditions in `out_active[0..*out_count]`.
+/// Waits until at least one condition triggers or a timeout.
+/// Writes active conditions into `out_active[0..*out_count]`.
 ///
 /// # Safety
-/// `w`, `out_active`, `out_count`, `timeout` valide.
+/// `w`, `out_active`, `out_count`, `timeout` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_waitset_wait(
     w: *mut ZeroDdsWaitSet,
@@ -638,13 +665,13 @@ pub unsafe extern "C" fn zerodds_waitset_wait(
         return ZeroDdsStatus::BadParameter as c_int;
     }
     let timeout = if timeout_sec == i32::MAX && timeout_nanosec == u32::MAX {
-        Duration::from_secs(60 * 60 * 24 * 365 * 100) // ~100 Jahre = INFINITE
+        Duration::from_secs(60 * 60 * 24 * 365 * 100) // ~100 years = INFINITE
     } else {
         Duration::new(timeout_sec.max(0) as u64, timeout_nanosec)
     };
     let deadline = Instant::now() + timeout;
-    // SAFETY: see fn # Safety doc — w+out_active+out_count NULL-checked above; conds-Items
-    // stammen aus attach_condition (Caller hat valide Condition-Pointer geliefert).
+    // SAFETY: see fn # Safety doc — w+out_active+out_count NULL-checked above; the conds items
+    // come from attach_condition (the caller provided valid condition pointers).
     unsafe {
         let ws = &*w;
         loop {
@@ -672,10 +699,10 @@ pub unsafe extern "C" fn zerodds_waitset_wait(
     }
 }
 
-/// Liefert alle attached Conditions.
+/// Returns all attached conditions.
 ///
 /// # Safety
-/// `w`, `out`, `out_count` valide.
+/// `w`, `out`, `out_count` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_waitset_get_conditions(
     w: *mut ZeroDdsWaitSet,
@@ -687,7 +714,7 @@ pub unsafe extern "C" fn zerodds_waitset_get_conditions(
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — w+out+out_count NULL-checked above; out[0..cap]
-    // muss writeable sein (Caller-Pledge).
+    // must be writeable (caller pledge).
     unsafe {
         let conds: Vec<*mut core::ffi::c_void> = (*w)
             .conditions
@@ -711,11 +738,25 @@ fn _suppress(_: *mut ZeroDdsDataWriter) {}
 mod tests {
     use super::*;
 
+    /// Regression guard for F-PSM-CXX-readcond-segv: the generic
+    /// `condition_kind()` dispatcher reads the kind discriminant via a
+    /// `*const ConditionHeader` cast, i.e. the `header` field MUST be at
+    /// offset 0 in all condition structs. `repr(Rust)` could reorder —
+    /// `#[repr(C)]` pins it. If this test breaks, a `#[repr(C)]` has
+    /// been lost and the C++ path would segfault again.
+    #[test]
+    fn condition_header_at_offset_zero() {
+        assert_eq!(core::mem::offset_of!(ZeroDdsGuardCondition, header), 0);
+        assert_eq!(core::mem::offset_of!(ZeroDdsStatusCondition, header), 0);
+        assert_eq!(core::mem::offset_of!(ZeroDdsReadCondition, header), 0);
+        assert_eq!(core::mem::offset_of!(ZeroDdsQueryCondition, header), 0);
+    }
+
     #[test]
     fn guardcondition_lifecycle_and_trigger() {
         let g = zerodds_guardcondition_create();
         assert!(!g.is_null());
-        // SAFETY: g aus guardcondition_create.
+        // SAFETY: g from guardcondition_create.
         unsafe {
             assert!(!zerodds_condition_get_trigger_value(g as *const _));
             let _ = zerodds_guardcondition_set_trigger_value(g, true);
@@ -726,7 +767,7 @@ mod tests {
 
     #[test]
     fn statuscondition_lifecycle_and_mask() {
-        // SAFETY: NULL ist erlaubter Entity-Slot fuer StatusCondition.
+        // SAFETY: NULL is an allowed entity slot for StatusCondition.
         unsafe {
             let sc = zerodds_entity_get_statuscondition(ptr::null_mut());
             assert!(!sc.is_null());
@@ -742,7 +783,7 @@ mod tests {
         let g = zerodds_guardcondition_create();
         let mut buf: [*mut core::ffi::c_void; 4] = [ptr::null_mut(); 4];
         let mut count: usize = 0;
-        // SAFETY: ws + g aus create-fns; buf Stack-lokal.
+        // SAFETY: ws + g from create fns; buf stack-local.
         unsafe {
             let rc = zerodds_waitset_attach_condition(ws, g as *mut core::ffi::c_void);
             assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
@@ -762,7 +803,7 @@ mod tests {
         let g = zerodds_guardcondition_create();
         let mut buf: [*mut core::ffi::c_void; 4] = [ptr::null_mut(); 4];
         let mut count: usize = 0;
-        // SAFETY: ws + g aus create-fns; buf Stack-lokal.
+        // SAFETY: ws + g from create fns; buf stack-local.
         unsafe {
             zerodds_guardcondition_set_trigger_value(g, true);
             zerodds_waitset_attach_condition(ws, g as *mut core::ffi::c_void);
@@ -781,7 +822,7 @@ mod tests {
         let g = zerodds_guardcondition_create();
         let mut buf: [*mut core::ffi::c_void; 4] = [ptr::null_mut(); 4];
         let mut count: usize = 0;
-        // SAFETY: ws + g aus create-fns; buf Stack-lokal.
+        // SAFETY: ws + g from create fns; buf stack-local.
         unsafe {
             zerodds_waitset_attach_condition(ws, g as *mut core::ffi::c_void);
             let rc = zerodds_waitset_wait(ws, buf.as_mut_ptr(), 4, &mut count, 0, 50_000_000);

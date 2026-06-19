@@ -1,5 +1,5 @@
-//! Stable-Rust Fuzz-Smoke-Tests fuer den WebSocket-Wire-Decoder.
-//! Spec: RFC 6455 §5.2 (Frame Format).
+//! Stable-Rust fuzz smoke tests for the WebSocket wire decoder.
+//! Spec: RFC 6455 §5.2 (frame format).
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
@@ -60,9 +60,9 @@ fn single_byte_inputs_no_panic() {
     }
 }
 
-/// 64-bit Length-Prefix-Overflow: WS-Frame mit `len_kind=0x7F`
-/// und max u64-Length-Field — Decoder muss `Err` liefern, nicht
-/// `Vec::with_capacity(u64::MAX)` aufrufen.
+/// 64-bit length-prefix overflow: WS frame with `len_kind=0x7F`
+/// and a max u64 length field — the decoder must return `Err`, not
+/// call `Vec::with_capacity(u64::MAX)`.
 #[test]
 fn extended_length_overflow_no_oom() {
     let buf = [

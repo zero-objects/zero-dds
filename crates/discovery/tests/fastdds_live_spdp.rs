@@ -1,42 +1,43 @@
-//! C5.5 — Live-Interop-Test: FastDDS-Discovery-Server vs. ZeroDDS-SPDP.
+//! C5.5 — live-interop test: FastDDS discovery server vs. ZeroDDS SPDP.
 //!
-//! **Opt-in only** — `#[ignore]` markiert. Aufruf:
+//! **Opt-in only** — marked `#[ignore]`. Invocation:
 //!
 //! ```bash
 //! cargo test -p zerodds-discovery --features live-interop \
 //!     --test fastdds_live_spdp -- --ignored --nocapture
 //! ```
 //!
-//! # Spec-Bezug
+//! # Spec reference
 //!
-//! - DDSI-RTPS 2.5 §8.5 — Discovery Module (SPDP-Beacons im Wire-Format)
-//! - FastDDS Server-Client-Discovery (FastDDS UM §16) — alternativer
-//!   Discovery-Modus mit zentralem Discovery-Server, nutzt aber
-//!   identische SPDP-Beacons im Wire.
+//! - DDSI-RTPS 2.5 §8.5 — Discovery Module (SPDP beacons in wire format)
+//! - FastDDS server-client discovery (FastDDS UM §16) — an alternative
+//!   discovery mode with a central discovery server, but uses identical
+//!   SPDP beacons on the wire.
 //!
-//! # Test-Ablauf
+//! # Test flow
 //!
-//! 1. FastDDS-Discovery-Server startet auf llvm via `fastdds discovery`
-//!    (Domain 42, Port 11811).
-//! 2. ZeroDDS-SPDP-Multicast-Reader bindet auf `239.255.0.1:17900`
-//!    und sendet eigenen Beacon.
-//! 3. Wir verifizieren, dass FastDDS-Server-Beacons byte-genau geparst
-//!    werden (Vendor=eProsima, Builtin-Endpoint-Set ungleich Null).
+//! 1. The FastDDS discovery server starts on the bench host via
+//!    `fastdds discovery` (domain 42, port 11811).
+//! 2. The ZeroDDS SPDP multicast reader binds to `239.255.0.1:17900`
+//!    and sends its own beacon.
+//! 3. We verify that FastDDS server beacons are parsed byte-exact
+//!    (vendor=eProsima, builtin-endpoint set non-zero).
 //!
-//! # Voraussetzungen
+//! # Prerequisites
 //!
-//! - FastDDS 2.9+ mit `fastdds`-CLI auf llvm
-//! - `sshpass` lokal
-//! - PVE-Multicast-Setup aktiv (`reference_pve_multicast_setup`)
+//! - FastDDS 2.9+ with the `fastdds` CLI on the bench host
+//! - `sshpass` locally
+//! - virtualization-host multicast setup active
+//!   (`reference_pve_multicast_setup`)
 //!
-//! # Bekannte Edge-Case
+//! # Known edge case
 //!
-//! `fastdds discovery` ohne `-c` (Client-Mode) hoert auf TCP, nicht
-//! auf SPDP-Multicast — dann sehen wir keinen Beacon. In diesem Fall
-//! setzt der Test trotzdem ein Hard-Fail, weil das genau das ist, was
-//! Cross-Vendor-Validierung beweisen soll: FastDDS-Server-Discovery
-//! interoperiert nicht via Standard-SPDP. Fix-Pfad: zusaetzlicher
-//! `fastdds shape publisher` als regulaerer Participant (siehe
+//! `fastdds discovery` without `-c` (client mode) listens on TCP, not
+//! on SPDP multicast — then we see no beacon. In that case the test
+//! still asserts a hard fail, because that is exactly what cross-vendor
+//! validation is meant to prove: FastDDS server discovery does not
+//! interoperate via standard SPDP. Fix path: an additional
+//! `fastdds shape publisher` as a regular participant (see
 //! `fastdds_live_pub.rs`).
 
 #![allow(
@@ -73,7 +74,7 @@ use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix, Locator, ProtocolVers
 use cross_vendor::{detect_local_interface, live_host_available, start_fastdds_discovery_server};
 
 const FASTDDS_DOMAIN: u32 = 142;
-/// SPDP-Multicast-Port: 7400 + 250 * domain.
+/// SPDP multicast port: 7400 + 250 * domain.
 const SPDP_MULTICAST_PORT: u16 = 7400 + 250 * 142;
 const SPDP_MULTICAST_GROUP: Ipv4Addr = Ipv4Addr::new(239, 255, 0, 1);
 const TEST_TIMEOUT: Duration = Duration::from_secs(20);
@@ -111,6 +112,7 @@ fn build_local_participant(local_ip: Ipv4Addr, unicast_port: u16) -> Participant
         properties: Default::default(),
         identity_token: None,
         permissions_token: None,
+        participant_security_info: None,
         identity_status_token: None,
         sig_algo_info: None,
         kx_algo_info: None,
@@ -129,7 +131,7 @@ fn fastdds_discovery_server_spdp_handshake() {
     let interface = detect_local_interface().expect("could not detect local LAN IP");
     eprintln!("local interface: {interface}");
 
-    // Multicast-Recv fuer SPDP.
+    // Multicast recv for SPDP.
     let spdp_sock = UdpSocket::bind(SocketAddrV4::new(
         Ipv4Addr::UNSPECIFIED,
         SPDP_MULTICAST_PORT,
@@ -142,7 +144,7 @@ fn fastdds_discovery_server_spdp_handshake() {
         .join_multicast_v4(&SPDP_MULTICAST_GROUP, &interface)
         .expect("join multicast");
 
-    // Unicast-Antwort-Socket.
+    // Unicast reply socket.
     let unicast_sock =
         UdpSocket::bind(SocketAddrV4::new(interface, 0)).expect("bind unicast socket");
     unicast_sock
@@ -150,7 +152,7 @@ fn fastdds_discovery_server_spdp_handshake() {
         .unwrap();
     let unicast_port = unicast_sock.local_addr().unwrap().port();
 
-    // Sender-Socket + Beacon.
+    // Sender socket + beacon.
     let sender_sock = UdpSocket::bind(SocketAddrV4::new(interface, 0)).expect("bind sender");
     sender_sock.set_multicast_ttl_v4(32).unwrap();
 
@@ -170,10 +172,10 @@ fn fastdds_discovery_server_spdp_handshake() {
         }
     });
 
-    // FastDDS-Discovery-Server starten. Port 11811 ist FastDDS-Default
-    // fuer Discovery-Server-TCP-Listen — die Server-Variante schickt
-    // dennoch Builtin-SPDP-Beacons auf dem Domain-Multicast-Port,
-    // sobald sie als Domain-Member auftritt.
+    // Start the FastDDS discovery server. Port 11811 is the FastDDS
+    // default for the discovery-server TCP listen — the server variant
+    // still sends builtin SPDP beacons on the domain multicast port as
+    // soon as it appears as a domain member.
     let _server = start_fastdds_discovery_server(FASTDDS_DOMAIN, 11811)
         .expect("start fastdds discovery server");
     eprintln!("started remote fastdds discovery server");
@@ -213,16 +215,16 @@ fn fastdds_discovery_server_spdp_handshake() {
         "no FastDDS SPDP beacon received within {TEST_TIMEOUT:?}"
     );
     let v = fastdds_vendor.expect("vendor set");
-    // FastDDS Vendor-ID per OMG-Spec: 0x01 0x0F (eProsima).
+    // FastDDS vendor ID per OMG spec: 0x01 0x0F (eProsima).
     eprintln!("FastDDS vendor-id: {v:?}");
 }
 
 #[test]
 #[ignore = "live FastDDS interop — opt-in via --ignored + --features live-interop"]
 fn fastdds_default_discovery_via_shape_pub_visible() {
-    // Komplementaer-Pfad: Standard-SPDP via regulaerem Participant
-    // (ohne Discovery-Server-Modus). `fastdds shape publisher` startet
-    // einen vollwertigen DomainParticipant, der SPDP-Beacons sendet.
+    // Complementary path: standard SPDP via a regular participant
+    // (without discovery-server mode). `fastdds shape publisher` starts
+    // a full DomainParticipant that sends SPDP beacons.
     if !live_host_available() {
         eprintln!("LLVM_HOST_AVAILABLE not set + sshpass missing — skipping");
         return;
@@ -256,7 +258,7 @@ fn fastdds_default_discovery_via_shape_pub_visible() {
             Err(_) => continue,
         };
         if let Ok(p) = spdp.parse_datagram(&buf[..n]) {
-            // Eigene Beacons gibt es hier nicht (wir senden nichts).
+            // There are no own beacons here (we send nothing).
             eprintln!("foreign SPDP from {:?}", p.sender_vendor);
             found = true;
         }

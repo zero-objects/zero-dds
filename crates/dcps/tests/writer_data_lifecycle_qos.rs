@@ -1,7 +1,7 @@
-//! WP QoS-Wiring T2 — WriterDataLifecycle.autodispose_unregistered_instances.
+//! WP QoS wiring T2 — WriterDataLifecycle.autodispose_unregistered_instances.
 //!
-//! Spec DDS 1.4 §2.2.3.21: wenn `autodispose_unregistered_instances=true`
-//! (Default), fuehrt `unregister_instance` zusaetzlich ein `dispose` durch.
+//! Spec DDS 1.4 §2.2.3.21: when `autodispose_unregistered_instances=true`
+//! (default), `unregister_instance` additionally performs a `dispose`.
 
 #![allow(
     clippy::expect_used,
@@ -87,7 +87,7 @@ fn autodispose_default_true_unregister_disposes() {
     assert_eq!(
         state.kind,
         InstanceStateKind::NotAliveDisposed,
-        "autodispose=true → unregister soll Instanz disposen"
+        "autodispose=true → unregister should dispose the instance"
     );
 }
 
@@ -111,7 +111,7 @@ fn autodispose_false_unregister_only_decrements_writer_count() {
     assert_eq!(
         state.kind,
         InstanceStateKind::NotAliveNoWriters,
-        "autodispose=false → unregister setzt nur NOT_ALIVE_NO_WRITERS"
+        "autodispose=false → unregister only sets NOT_ALIVE_NO_WRITERS"
     );
 }
 
@@ -122,10 +122,7 @@ fn autodispose_unknown_handle_returns_bad_parameter() {
     let writer = writer_with_qos(DataWriterQos::default());
 
     let s = KeyedRecord { id: 13, value: 0 };
-    // Kein register vor unregister → soll mit BadParameter scheitern.
+    // No register before unregister → should fail with BadParameter.
     let res = writer.unregister_instance(&s, HANDLE_NIL);
-    assert!(
-        res.is_err(),
-        "unregister auf unbekannter Instanz muss scheitern"
-    );
+    assert!(res.is_err(), "unregister on an unknown instance must fail");
 }

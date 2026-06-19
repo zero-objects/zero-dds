@@ -34,8 +34,8 @@ aktuelle Version des Ziel-Vendors verifizieren.
 | **Durability QoS** | | | | | | | |
 | Volatile | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Transient-Local | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ◐ |
-| Transient (Service) | ✗ | ✗ | ✗ | ◐ | ✓ | ✓ ¹ | ✗ |
-| Persistent (Service) | ✗ | ✗ | ✗ | ◐ | ✓ | ✓ ¹ | ✗ |
+| Transient (Service) | ✓ ¹⁰ | ✗ | ✗ | ◐ | ✓ | ✓ ¹ | ✗ |
+| Persistent (Service) | ✓ ¹⁰ | ✗ | ✗ | ◐ | ✓ | ✓ ¹ | ✗ |
 | **Kern-QoS (22 Standard-Policies)** | | | | | | | |
 | History (KeepLast/All) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Deadline | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
@@ -111,6 +111,14 @@ CoreTypesTest + Xcdr2CodecTest + PubSubLoopbackTest, 18 grün).
 Eine fruehere JNI-Bridge (`crates/zerodds-java-jni/`) wurde am
 2026-05-07 entfernt — kein Native-Lib auf der Java-Seite mehr.
 
+¹⁰ ZeroDDS Transient/Persistent via standalone Durability-Service-Daemon
+`zerodds-durability-svc` (ADR 0009), ein Prozess pro Domain, pluggable
+Cold-Store (sqlite/file/lakehouse). Ueberlebt Writer-Prozess-Tod (TRANSIENT)
+und vollen Service-/System-Neustart (PERSISTENT, per `kill -9`+Restart-Test
+belegt). Aus RTPS-Sicht ein `TRANSIENT_LOCAL(KEEP_ALL)`-Writer, daher cross-
+vendor replay-bar (im Gegensatz zu OpenDDS ¹, das diese Stufen nur ueber den
+proprietaeren Transport kann). Setup: `docs/deployment/durability-service.md`.
+
 ## Regional / Defense-Vendors
 
 Zusaetzlich zur Mainstream-Liste gibt es regional oder vertikal
@@ -129,8 +137,8 @@ Middleware.
 | DDSI-RTPS 2.5 wire       | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Reliable / BE / Frag     | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Volatile / Transient-Local | ✓ | ✓ | ✓ | ✓ | ◐ | ✓ |
-| Transient (Service)      | ? | ? | ? | ✓ ⁸ | ✗ | ✗ |
-| Persistent (Service)     | ? | ? | ? | ✓ ⁸ | ✗ | ✗ |
+| Transient (Service)      | ✓ ¹⁰ | ? | ? | ✓ ⁸ | ✗ | ✗ |
+| Persistent (Service)     | ✓ ¹⁰ | ? | ? | ✓ ⁸ | ✗ | ✗ |
 | Deadline / Lifespan / Liveliness | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ |
 | Ownership Exclusive      | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Partition / Content-Filter | ✓ | ✓ | ✓ | ✓ | ✗ | ◐ |
@@ -260,9 +268,12 @@ Hebel fuer Bestand):
 
 **Verbleibende Defizite**:
 
-- Transient + Persistent Service — nur RTI/Fast-DDS-Pro/OpenDDS;
-  Backend ist im DataWriter angeschlossen (`crates/dcps/src/durability_service.rs`),
-  Cross-Vendor-Wire-Replay-Pfad fehlt noch.
+- ~~Transient + Persistent Service~~ — **erledigt**: standalone
+  `zerodds-durability-svc`-Daemon (ADR 0009), sqlite/file/lakehouse-Adapter,
+  Writer-Tod- + Restart-überlebend (kill-9-Test). Aus RTPS-Sicht ein
+  `TRANSIENT_LOCAL(KEEP_ALL)`-Writer → cross-vendor replay-bar. Offen bleibt nur
+  die Gegenrichtung (Fremd-Vendor-Writer → ZeroDDS-Service als eigene
+  Validierungs-Achse).
 - Python-Binding — Riesen-Reichweite-Hebel (ros2-python).
 - Voller C-Binding (FFI-Wrapper auf DCPS-Public-API).
 - Voller C++/Java-Runtime-Wrapper auf DCPS-Public-API (heute nur

@@ -1,31 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! MessageBuilder — Submessage-Aggregation in ein UDP-Datagramm.
+//! MessageBuilder — submessage aggregation into a UDP datagram.
 //!
-//! Analog zu Fast-DDS `RTPSMessageGroup` (Recherche WP 1.4). Der Writer
-//! oeffnet einen Builder pro Ziel-Locator-Set, haengt mehrere Submessages
-//! an, und finalisiert zu einem [`OutboundDatagram`]. Aggregation spart
-//! RTPS-Header + UDP-Overhead bei SEDP-Announce-all-Runden und kleinen
-//! Samples.
+//! Analogous to Fast-DDS `RTPSMessageGroup` (research WP 1.4). The writer
+//! opens a builder per target locator set, appends several submessages,
+//! and finalizes into an [`OutboundDatagram`]. Aggregation saves the
+//! RTPS header + UDP overhead on SEDP announce-all rounds and small
+//! samples.
 //!
-//! # Flush-Regeln
+//! # Flush rules
 //!
-//! 1. **Size-Trigger**: `try_add_submessage` lehnt ab, wenn der Body
-//!    nicht mehr ins MTU passt. Caller muss `finish()` + neuen Builder.
-//! 2. **DATA_FRAG geht alleine**: Aufrufer soll DATA_FRAG-Submessages
-//!    nicht mit anderen bundlen (Fragment ist typisch MTU-nah).
-//! 3. **Piggyback-HEARTBEAT am Ende**: Aufrufer haengt HB nach allen
-//!    DATAs an, vor `finish()`.
-//! 4. **Kein INFO_DST**: Phase 1 baut ein Datagramm pro Proxy — GuidPrefix
-//!    ist statisch. INFO_DST wird fuer Multicast-Fan-out mit gemischten
-//!    Zielen in Phase 2 ergaenzt.
-//! 5. **Kein INFO_TS**: Writer hat heute keine Source-Timestamps.
+//! 1. **Size trigger**: `try_add_submessage` rejects if the body
+//!    no longer fits the MTU. The caller must `finish()` + open a new builder.
+//! 2. **DATA_FRAG goes alone**: the caller should not bundle DATA_FRAG
+//!    submessages with others (a fragment is typically near the MTU).
+//! 3. **Piggyback HEARTBEAT at the end**: the caller appends the HB after all
+//!    DATAs, before `finish()`.
+//! 4. **No INFO_DST**: phase 1 builds one datagram per proxy — the GuidPrefix
+//!    is static. INFO_DST is added for multicast fan-out with mixed
+//!    targets in phase 2.
+//! 5. **No INFO_TS**: the writer has no source timestamps today.
 //!
-//! # Ziel-Locators
+//! # Target locators
 //!
-//! Ein Datagramm geht an **alle** `targets`. Typisch: die Unicast-Locators
-//! des Remote-Readers, oder ein Multicast-Locator. Transport-Layer kippt
-//! es einmal pro Locator auf die Leitung.
+//! A datagram goes to **all** `targets`. Typically: the unicast locators
+//! of the remote reader, or a multicast locator. The transport layer puts
+//! it on the wire once per locator.
 
 extern crate alloc;
 use alloc::rc::Rc;
@@ -35,57 +35,57 @@ use crate::header::RtpsHeader;
 use crate::submessage_header::{FLAG_E_LITTLE_ENDIAN, SubmessageHeader, SubmessageId};
 use crate::wire_types::Locator;
 
-/// Default-MTU fuer Aggregation (Ethernet 1500 − 20 IP − 8 UDP).
+/// Default MTU for aggregation (Ethernet 1500 − 20 IP − 8 UDP).
 pub const DEFAULT_MTU: usize = 1472;
 
-/// Ein fertig aggregiertes Datagramm mit Zielen.
+/// A fully aggregated datagram with targets.
 ///
-/// `targets` ist als `Rc<Vec<Locator>>` geteilt, um Allocation-Overhead
-/// bei Multi-Reader-tick-Loops zu vermeiden — der gleiche Proxy-
-/// Locator-Set wird ueber alle Submessages eines Proxies wiederverwendet.
+/// `targets` is shared as `Rc<Vec<Locator>>` to avoid allocation overhead
+/// in multi-reader tick loops — the same proxy
+/// locator set is reused across all submessages of a proxy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutboundDatagram {
-    /// Wire-Bytes (RTPS-Header + N Submessages).
+    /// Wire bytes (RTPS header + N submessages).
     pub bytes: Vec<u8>,
-    /// Ziel-Locators. Transport-Layer sendet an alle.
+    /// Target locators. The transport layer sends to all.
     pub targets: Rc<Vec<Locator>>,
 }
 
 impl OutboundDatagram {
-    /// Opt-6 (Spec `zerodds-zero-copy-1.0` §9): konvertiert den
-    /// internen Vec in eine geteilte `Arc<[u8]>`-Repraesentation
-    /// **ohne Copy** (boxed-slice-Konvertierung ist O(1) wenn `bytes`
-    /// keine excess capacity hat; sonst eine einzelne realloc).
+    /// Opt-6 (Spec `zerodds-zero-copy-1.0` §9): converts the
+    /// internal Vec into a shared `Arc<[u8]>` representation
+    /// **without a copy** (boxed-slice conversion is O(1) if `bytes`
+    /// has no excess capacity; otherwise a single realloc).
     ///
-    /// Sinnvoll fuer Multi-Reader-Hot-Pfade: statt `&dg.bytes` an
-    /// jeden Reader-Send zu uebergeben und implizit `Vec::clone`-en
-    /// zu lassen, holt der Caller einmal das `Arc<[u8]>` raus und
-    /// klont nur den Refcount. Eliminiert den per-Reader Vec-clone.
+    /// Useful for multi-reader hot paths: instead of passing `&dg.bytes` to
+    /// each reader send and implicitly letting it `Vec::clone`,
+    /// the caller takes the `Arc<[u8]>` out once and
+    /// clones only the refcount. Eliminates the per-reader Vec clone.
     #[must_use]
     pub fn into_shared_bytes(self) -> alloc::sync::Arc<[u8]> {
         alloc::sync::Arc::from(self.bytes.into_boxed_slice())
     }
 }
 
-/// Grund, warum [`MessageBuilder::try_add_submessage`] ablehnt.
+/// Reason why [`MessageBuilder::try_add_submessage`] rejects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddError {
-    /// Submessage passt nicht mehr ins MTU-Budget.
+    /// The submessage no longer fits the MTU budget.
     WouldExceedMtu {
-        /// Byte-Anzahl, die nicht mehr passt (inkl. Submessage-Header).
+        /// Number of bytes that no longer fit (incl. submessage header).
         needed: usize,
-        /// Verbleibendes Budget.
+        /// Remaining budget.
         remaining: usize,
     },
-    /// Submessage-Body > u16::MAX (Wire-Feld `octetsToNextHeader`).
+    /// Submessage body > u16::MAX (wire field `octetsToNextHeader`).
     BodyTooLarge,
 }
 
-/// Submessage-Aggregator.
+/// Submessage aggregator.
 ///
-/// Wird bei `open` mit einer vor-allokierten Byte-Liste beginnend beim
-/// RTPS-Header initialisiert. Submessages werden per `try_add_submessage`
-/// angehaengt; bei Full muss Caller `finish()` + neuen Builder.
+/// Initialized on `open` with a pre-allocated byte list starting at the
+/// RTPS header. Submessages are appended via `try_add_submessage`;
+/// when full the caller must `finish()` + open a new builder.
 #[derive(Debug)]
 pub struct MessageBuilder {
     bytes: Vec<u8>,
@@ -95,10 +95,10 @@ pub struct MessageBuilder {
 }
 
 impl MessageBuilder {
-    /// Oeffnet einen neuen Builder mit gegebenem RTPS-Header,
-    /// Zielen und MTU-Budget.
+    /// Opens a new builder with the given RTPS header,
+    /// targets and MTU budget.
     ///
-    /// Panics: wenn `mtu` kleiner als der RTPS-Header (20 Byte).
+    /// Panics: if `mtu` is smaller than the RTPS header (20 bytes).
     #[must_use]
     pub fn open(header: RtpsHeader, targets: Rc<Vec<Locator>>, mtu: usize) -> Self {
         assert!(
@@ -115,48 +115,59 @@ impl MessageBuilder {
         }
     }
 
-    /// Anzahl bisher eingefuegter Submessages.
+    /// Number of submessages inserted so far.
     #[must_use]
     pub fn submsg_count(&self) -> usize {
         self.submsg_count
     }
 
-    /// True wenn der Builder nur den RTPS-Header enthaelt.
+    /// True if the builder contains only the RTPS header.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.submsg_count == 0
     }
 
-    /// Aktuelle Gesamt-Byte-Zahl (Header + bereits angehaengte
-    /// Submessages).
+    /// Current total byte count (header + already appended
+    /// submessages).
     #[must_use]
     pub fn len(&self) -> usize {
         self.bytes.len()
     }
 
-    /// Verbleibendes Budget in Bytes.
+    /// Remaining budget in bytes.
     #[must_use]
     pub fn remaining(&self) -> usize {
         self.mtu.saturating_sub(self.bytes.len())
     }
 
-    /// Versucht, eine Submessage anzuhaengen. Liefert
-    /// [`AddError::WouldExceedMtu`], wenn sie nicht mehr reinpasst —
-    /// dann ist `finish()` + neuer Builder faellig.
+    /// Tries to append a submessage. Returns
+    /// [`AddError::WouldExceedMtu`] if it no longer fits —
+    /// then `finish()` + a new builder is due.
     ///
-    /// `flags` enthaelt nur die **submessage-spezifischen** Flags
-    /// (F, L, Q, H, K, N etc.). Das E-Bit (Little-Endian) setzt der
-    /// Builder selbst, konsistent fuer das ganze Datagramm.
+    /// `flags` contains only the **submessage-specific** flags
+    /// (F, L, Q, H, K, N etc.). The E bit (little-endian) is set by the
+    /// builder itself, consistently for the whole datagram.
     ///
     /// # Errors
-    /// - [`AddError::WouldExceedMtu`] bei Size-Overflow.
-    /// - [`AddError::BodyTooLarge`] wenn `body.len() > u16::MAX`.
+    /// - [`AddError::WouldExceedMtu`] on size overflow.
+    /// - [`AddError::BodyTooLarge`] if `body.len() > u16::MAX`.
     pub fn try_add_submessage(
         &mut self,
         id: SubmessageId,
         flags: u8,
         body: &[u8],
     ) -> Result<(), AddError> {
+        // RTPS 2.5 §8.3.4.1: every submessage starts on a 32-bit
+        // boundary. Since the submessage header measures 4 bytes, `body`
+        // itself must be a multiple of 4 bytes so that a *following*
+        // submessage starts aligned. The builder deliberately does NOT pad:
+        // a pad counted in `octetsToNextHeader` would bleed through as
+        // serializedData slack into the user payload (the receiver
+        // derives the payload length from `octetsToNextHeader`). Whoever
+        // co-frames multiple submessages checks the alignment themselves —
+        // see `ReliableWriter::write_with_heartbeat`: it appends a
+        // piggyback HEARTBEAT only to a DATA that already ends 4-aligned
+        // and otherwise puts it into its own datagram.
         let body_len = u16::try_from(body.len()).map_err(|_| AddError::BodyTooLarge)?;
         let needed = SubmessageHeader::WIRE_SIZE + body.len();
         if self.bytes.len() + needed > self.mtu {
@@ -176,12 +187,52 @@ impl MessageBuilder {
         Ok(())
     }
 
-    /// Wandelt in ein fertiges [`OutboundDatagram`] um.
+    /// Like [`Self::try_add_submessage`], but the body in two slices —
+    /// avoids an intermediate Vec when the caller already has `header_body`
+    /// and `payload_tail` separately. Exactly the hot-
+    /// path case for the DATA submessage: 20-byte fixed header (the caller
+    /// writes into a stack buffer) + N byte serializedData (borrowed from
+    /// the cache `Arc<[u8]>`). Without this variant the caller needs
+    /// `Vec::with_capacity(20+N) + extend(header) + extend(payload)` —
+    /// a heap alloc + copy of N bytes, which is fully eliminated here.
+    /// `octets_to_next_header = header_body.len() + payload_tail.len()`.
     ///
-    /// Liefert `None` bei leerem Builder (nur RTPS-Header ohne
-    /// Submessages) — das erlaubt Aufrufern, unbenutzte Builder
-    /// einfach zu verwerfen, ohne vorher `is_empty()` pruefen zu
-    /// muessen.
+    /// # Errors
+    /// Same as [`Self::try_add_submessage`].
+    pub fn try_add_submessage_split(
+        &mut self,
+        id: SubmessageId,
+        flags: u8,
+        header_body: &[u8],
+        payload_tail: &[u8],
+    ) -> Result<(), AddError> {
+        let total_body = header_body.len() + payload_tail.len();
+        let body_len = u16::try_from(total_body).map_err(|_| AddError::BodyTooLarge)?;
+        let needed = SubmessageHeader::WIRE_SIZE + total_body;
+        if self.bytes.len() + needed > self.mtu {
+            return Err(AddError::WouldExceedMtu {
+                needed,
+                remaining: self.remaining(),
+            });
+        }
+        let sh = SubmessageHeader {
+            submessage_id: id,
+            flags: flags | FLAG_E_LITTLE_ENDIAN,
+            octets_to_next_header: body_len,
+        };
+        self.bytes.extend_from_slice(&sh.to_bytes());
+        self.bytes.extend_from_slice(header_body);
+        self.bytes.extend_from_slice(payload_tail);
+        self.submsg_count += 1;
+        Ok(())
+    }
+
+    /// Converts into a finished [`OutboundDatagram`].
+    ///
+    /// Returns `None` for an empty builder (only the RTPS header without
+    /// submessages) — this lets callers simply discard unused builders
+    /// without having to check `is_empty()`
+    /// first.
     #[must_use]
     pub fn finish(self) -> Option<OutboundDatagram> {
         if self.submsg_count == 0 {
@@ -232,9 +283,9 @@ mod tests {
         assert_eq!(b.remaining(), DEFAULT_MTU - 20);
     }
 
-    /// Opt-6 — into_shared_bytes liefert Arc<[u8]> mit identischem
-    /// Wire-Inhalt; ein Arc::clone ueber mehrere Reader-Sends teilt
-    /// den Buffer ohne Vec-Clone.
+    /// Opt-6 — into_shared_bytes returns Arc<[u8]> with identical
+    /// wire content; an Arc::clone across multiple reader sends shares
+    /// the buffer without a Vec clone.
     #[test]
     fn into_shared_bytes_preserves_wire_content_and_shares_via_arc() {
         let mut b = MessageBuilder::open(sample_header(), targets(), DEFAULT_MTU);
@@ -244,9 +295,9 @@ mod tests {
         let dg = b.finish().unwrap();
         let bytes_copy = dg.bytes.clone();
         let shared = dg.into_shared_bytes();
-        // Inhalt identisch.
+        // Content identical.
         assert_eq!(&shared[..], &bytes_copy[..]);
-        // Arc::clone teilt den Buffer (ein Refcount, kein Realloc).
+        // Arc::clone shares the buffer (one refcount, no realloc).
         let c1 = alloc::sync::Arc::clone(&shared);
         let c2 = alloc::sync::Arc::clone(&shared);
         assert_eq!(alloc::sync::Arc::strong_count(&shared), 3);
@@ -276,7 +327,7 @@ mod tests {
         }
         let dg = b.finish().unwrap();
         let parsed = decode_datagram(&dg.bytes).unwrap();
-        // 4 DATA-Submessages in einem Datagramm
+        // 4 DATA submessages in one datagram
         let data_count = parsed
             .submessages
             .iter()
@@ -287,13 +338,13 @@ mod tests {
 
     #[test]
     fn overflow_rejects_with_would_exceed_mtu() {
-        let mtu = 100; // sehr klein
+        let mtu = 100; // very small
         let mut b = MessageBuilder::open(sample_header(), targets(), mtu);
-        // 1 DATA mit 50-Byte-Payload passt (20 hdr + 4 sub_hdr + 20 body + 50 payload = 94)
+        // 1 DATA with a 50-byte payload fits (20 hdr + 4 sub_hdr + 20 body + 50 payload = 94)
         let (body, flags) = sample_data(1, 50).write_body(true);
         b.try_add_submessage(SubmessageId::Data, flags, &body)
             .unwrap();
-        // 2. DATA wuerde sprengen
+        // 2nd DATA would overflow
         let (body2, flags2) = sample_data(2, 50).write_body(true);
         let res = b.try_add_submessage(SubmessageId::Data, flags2, &body2);
         assert!(matches!(res, Err(AddError::WouldExceedMtu { .. })));
@@ -323,7 +374,7 @@ mod tests {
         }
         let _ = flags;
         let _ = body;
-        // 3 DATAs, je 1 pro Datagramm (weil MTU 100 nur 1 passt)
+        // 3 DATAs, 1 per datagram each (because MTU 100 fits only 1)
         assert_eq!(out.len(), 3);
     }
 
@@ -364,14 +415,14 @@ mod tests {
 
     #[test]
     fn builder_propagates_little_endian_flag_e() {
-        // Wir schreiben eine DATA mit Body-LE. Der Builder soll
-        // automatisch das E-Bit im Submessage-Header setzen.
+        // We write a DATA with body LE. The builder should
+        // automatically set the E bit in the submessage header.
         let mut b = MessageBuilder::open(sample_header(), targets(), DEFAULT_MTU);
         let (body, _flags_from_write) = sample_data(1, 10).write_body(true);
-        // Caller uebergibt flags ohne E-Bit; Builder muss es setzen.
+        // The caller passes flags without the E bit; the builder must set it.
         b.try_add_submessage(SubmessageId::Data, 0, &body).unwrap();
         let dg = b.finish().unwrap();
-        // Submessage-Header-Byte 1 (Flags) muss E-Bit gesetzt haben
+        // Submessage header byte 1 (flags) must have the E bit set
         let sub_header_flags = dg.bytes[21]; // 20 bytes RTPS header + 1 byte id
         assert_eq!(
             sub_header_flags & FLAG_E_LITTLE_ENDIAN,

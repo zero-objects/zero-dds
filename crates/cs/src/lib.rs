@@ -3,20 +3,20 @@
 
 //! Crate `zerodds-cs`. Safety classification: **STANDARD**.
 //!
-//! C# P/Invoke + NativeAOT-Bindings ueber `zerodds-c-api`. Die
-//! eigentliche C#-Source lebt unter `csharp/ZeroDDS/src/` (Maven-
-//! style Modul); der Rust-Lib-Kern ist nur Cargo-Container.
+//! C# P/Invoke + NativeAOT bindings over `zerodds-c-api`. The
+//! actual C# source lives under `csharp/ZeroDDS/src/` (Maven-
+//! style module); the Rust lib core is only a Cargo container.
 //!
-//! Spec: OMG DDS-PSM-Cxx 1.0 (formal/2013-11-01) — adaptiert auf
-//! C#-Idiome (IDisposable, record struct).
+//! Spec: OMG DDS-PSM-Cxx 1.0 (formal/2013-11-01) — adapted to
+//! C# idioms (IDisposable, record struct).
 //!
 //! ## Schichten-Position
 //!
 //! Layer 6 — PSMs / Bindings.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! Keine Rust-Public-API. Caller-API ist `ZeroDDS.Domain.*`,
+//! No Rust public API. The caller API is `ZeroDDS.Domain.*`,
 //! `ZeroDDS.Pub.*`, `ZeroDDS.Sub.*`, `ZeroDDS.Topic.*`,
 //! `ZeroDDS.Cond.*`, `ZeroDDS.Listener.*`, `ZeroDDS.Qos.*`.
 
@@ -27,6 +27,6 @@
 mod tests {
     #[test]
     fn crate_compiles() {
-        // Smoke-Test: Crate kompiliert und Testharness laeuft.
+        // Smoke test: the crate compiles and the test harness runs.
     }
 }

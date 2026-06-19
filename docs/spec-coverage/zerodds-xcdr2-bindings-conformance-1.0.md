@@ -1,12 +1,16 @@
 # `zerodds-xcdr2-bindings-conformance` 1.0 -- Spec-Coverage
 
-**Quelle:** `docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md` (462 Zeilen) -- ZeroDDS Cross-Language-Master-Spec, Single-Source-of-Truth fuer V-1..V-12-Wire-Vektoren und L1-L4-Konformanz-Levels.
+**Quelle:** `docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md` (462 Zeilen) -- ZeroDDS Cross-Language-Master-Spec, Single-Source-of-Truth für V-1..V-12-Wire-Vektoren und L1-L4-Konformanz-Levels.
+
+Implementation:
+
+- `crates/cdr/` — XCDR2 Cross-Language-Wire-Vektoren (V-1..V-12) + L1-L4-Konformanz.
 
 ## §1 Conformance-Levels
 
 ### §1 L1 -- Wire byte-genau
 
-**Spec:** §1, Tabelle Level/Anforderung -- "Encoder/Decoder produziert/konsumiert XCDR2 §7.4 byte-genau. Pflicht-Pruefung gegen die §6-Wire-Test-Vektoren."
+**Spec:** §1, Tabelle Level/Anforderung -- "Encoder/Decoder produziert/konsumiert XCDR2 §7.4 byte-genau. Pflicht-Prüfung gegen die §6-Wire-Test-Vektoren."
 
 **Repo:** Pro Sprache eigener L1-Pfad. `crates/cdr/src/struct_enc.rs` (`encode_appendable`, `encode_mutable_member`), `crates/cdr/src/key_hash.rs` (`PlainCdr2BeKeyHolder`), `crates/idl-cpp/src/emitter.rs` (`emit_topic_type_support_for`), `crates/zerodds-c-api/src/xcdr2.rs`, `crates/idl-csharp/src/typesupport.rs`, `crates/idl-java/src/typesupport.rs`, `crates/idl-ts/src/lib.rs` (`emit_struct_typesupport`), `crates/idl-rust/src/struct_emit.rs`.
 
@@ -26,9 +30,9 @@
 
 ### §1 L3 -- Cross-Language Roundtrip
 
-**Spec:** §1 -- "Bytes von Sprache A werden von Sprache B byte-identisch round-trippt fuer alle §6-Test-Types." §7 verlangt `crates/conformance/tests/xcdr2_cross_language/` mit pro-Sprache-Runners.
+**Spec:** §1 -- "Bytes von Sprache A werden von Sprache B byte-identisch round-trippt für alle §6-Test-Types." §7 verlangt `crates/conformance/tests/xcdr2_cross_language/` mit pro-Sprache-Runners.
 
-**Repo:** `crates/conformance/tests/cross_language_xcdr2.rs` haelt den Multi-Sprach-Driver. Sprach-Bindings dispatcht ueber Subprocess-Aufrufe der jeweiligen Test-Suiten (`cargo`, `dotnet`, `mvn`, `npx tsx`) gegen die V-1..V-12-Hex-Fixtures aus §6.
+**Repo:** `crates/conformance/tests/cross_language_xcdr2.rs` hält den Multi-Sprach-Driver. Sprach-Bindings dispatcht über Subprocess-Aufrufe der jeweiligen Test-Suiten (`cargo`, `dotnet`, `mvn`, `npx tsx`) gegen die V-1..V-12-Hex-Fixtures aus §6.
 
 **Tests:** `crates/conformance/tests/cross_language_xcdr2.rs::l3_0_cross_language_equivalence_documented`, `l3_1_rust_reference_encoder`, `l3_2_cpp_binding`, `l3_3_c_ffi_binding`, `l3_4_csharp_binding`, `l3_5_java_binding`, `l3_6_typescript_binding`.
 
@@ -36,13 +40,13 @@
 
 ### §1 L4 -- Cross-Vendor Cyclone DDS
 
-**Spec:** §1 -- "Bytes von ZeroDDS werden von Cyclone DDS akzeptiert und vice versa. Pflicht fuer L3-zertifizierte Bindings." §8 referenziert `tests/interop/xcdr2_cross_vendor.sh` und `crates/discovery/tests/fixtures/cyclone-xcdr2/*.bin`.
+**Spec:** §1 -- "Bytes von ZeroDDS werden von Cyclone DDS akzeptiert und vice versa. Pflicht für L3-zertifizierte Bindings." §8 referenziert `tests/interop/xcdr2_cross_vendor.sh` und `crates/discovery/tests/fixtures/cyclone-xcdr2/*.bin`.
 
-**Repo:** Skript `tests/interop/xcdr2_cross_vendor.sh` + Fixture-Tree `crates/discovery/tests/fixtures/cyclone-xcdr2/*.bin` (14 Fixtures + `v2_cyclone_recorded.bin` aus tcpdump-Capture gegen Cyclone DDS 0.10.2 auf llvm-Testbed). V-2 ist gegen real recorded Cyclone-Bytes verifiziert; V-3..V-12 sind spec-derived (XCDR2 §7.4 / §7.6.8) ohne live Cyclone-Vergleich.
+**Repo:** Skript `tests/interop/xcdr2_cross_vendor.sh` + Fixture-Tree `crates/discovery/tests/fixtures/cyclone-xcdr2/*.bin`. **Alle 12 Vektoren** wurden live gegen Cyclone DDS 0.11 (erzwungenes XCDR2-DataRepresentation, tcpdump-Capture + RTPS-Payload-Extraktion) auf dem Linux-Bench-Host aufgenommen und byte-genau verglichen. Der Live-Vergleich deckte zwei Conformance-Gaps auf, beide gefixt: (1) 64-Bit-Primitive richteten auf 8 statt XCDR2-4 aus (§7.4.1.1.1; V-3/V-8), (2) Sequenzen/Arrays mit nicht-primitiven Elementen fehlte der DHEADER (§7.4.3.5; V-6 `sequence<string>`). V-2..V-9 + V-11b byte-genau gegen Cyclone; V-10/V-11a konforme LC-Divergenz (Spec §6 erlaubt, Decoder liest alle LCs). Fix + Byte-Verifikation über alle 6 Bindings.
 
-**Tests:** `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests, davon `v2_cyclone_recorded_matches_spec_derived` gegen recorded Cyclone-Bytes; V-3..V-12 spec-derived).
+**Tests:** `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests); Encoder/Wire-Vektoren je Binding ausgeführt + byte-verifiziert: cdr/C/C++ (compile+run, Cyclone-Bytes), C# `Xcdr2WireVectorsTests` (dotnet 13/13), Java `Xcdr2WireVectorsTest` (mvn 16/16), TS `xcdr2-wire-vectors.test.ts` (node 19/19).
 
-**Status:** partial -- V-2 Cyclone-recorded; V-3..V-12 spec-derived ohne Cyclone-Live-Capture.
+**Status:** done -- alle 12 Vektoren live gegen Cyclone DDS 0.11 verglichen; deterministische V-1..V-9/V-11b byte-genau, mutable V-10/V-11a konforme LC-Divergenz (Roundtrip-Interop). Capture-Verfahren auf dem Linux-Bench-Host reproduzierbar.
 
 ## §2 Gemeinsames TypeSupport-Schema
 
@@ -68,7 +72,7 @@
 
 ### §2 decode(bytes) -> v
 
-**Spec:** §2 -- "Inverse zu encode. Gibt strukturiertes Sample-Object zurueck."
+**Spec:** §2 -- "Inverse zu encode. Gibt strukturiertes Sample-Object zurück."
 
 **Repo:** Rust `DdsType::decode`. C++ `topic_type_support<T>::decode`. C `zerodds_xcdr2_decode`. C# `Xcdr2Reader` (`crates/cs/csharp/ZeroDDS.Cdr/Xcdr2Reader.cs`). Java `Xcdr2Reader` (`crates/java-omgdds/java/src/main/java/org/zerodds/cdr/Xcdr2Reader.java`). TS `Xcdr2Reader` (`crates/ts-node/src/cdr/reader.ts`).
 
@@ -78,9 +82,9 @@
 
 ### §2 key_hash(v) -> [u8; 16]
 
-**Spec:** §2 -- "MD5 ueber `PlainCdr2BeKeyHolder` der `@key`-Felder; voll auf Null wenn kein Key (XTypes §7.6.8). MD5 ist NICHT unconditional -- konditional pro Holder-Groesse, siehe §3 / §7.6.8.4."
+**Spec:** §2 -- "MD5 über `PlainCdr2BeKeyHolder` der `@key`-Felder; voll auf Null wenn kein Key (XTypes §7.6.8). MD5 ist NICHT unconditional -- konditional pro Holder-Größe, siehe §3 / §7.6.8.4."
 
-**Repo:** Rust `PlainCdr2BeKeyHolder::finalize_md5` (`crates/cdr/src/key_hash.rs`). C++ `xcdr2::md5` (`crates/cpp/include/dds/topic/xcdr2_md5.hpp`). C# `Md5` (`crates/cs/csharp/ZeroDDS.Cdr/Md5.cs`). Java `Md5` (`crates/java-omgdds/java/src/main/java/org/zerodds/cdr/Md5.java`). TS `md5` (`crates/ts-node/src/cdr/md5.ts`). C-FFI ueber Rust-Layer.
+**Repo:** Rust `PlainCdr2BeKeyHolder::finalize_md5` (`crates/cdr/src/key_hash.rs`). C++ `xcdr2::md5` (`crates/cpp/include/dds/topic/xcdr2_md5.hpp`). C# `Md5` (`crates/cs/csharp/ZeroDDS.Cdr/Md5.cs`). Java `Md5` (`crates/java-omgdds/java/src/main/java/org/zerodds/cdr/Md5.java`). TS `md5` (`crates/ts-node/src/cdr/md5.ts`). C-FFI über Rust-Layer.
 
 **Tests:** V-8 Keyed Struct in jedem Sprach-Test, MD5-self-checks (`Md5Tests.cs`, ts-md5-tests).
 
@@ -88,11 +92,11 @@
 
 ### §2 is_keyed()
 
-**Spec:** §2 -- "true falls mindestens ein Member `@key` traegt."
+**Spec:** §2 -- "true falls mindestens ein Member `@key` trägt."
 
 **Repo:** Rust `IS_KEYED` const. C++ `static constexpr bool is_keyed()`. C `zerodds_typesupport_t.is_keyed`. C# `IsKeyed`. Java `isKeyed()`. TS `isKeyed`.
 
-**Tests:** V-8-Asserts ueber alle Sprachen.
+**Tests:** V-8-Asserts über alle Sprachen.
 
 **Status:** done
 
@@ -110,7 +114,7 @@
 
 ### §3.1 XCDR2 §7.4 Encoding-Algorithmus
 
-**Spec:** §3 -- "Alle Sprach-Encoder produzieren XCDR2 gemaess OMG XTypes 1.3 §7.4 (formal/2025-04-04)."
+**Spec:** §3 -- "Alle Sprach-Encoder produzieren XCDR2 gemäß OMG XTypes 1.3 §7.4 (formal/2025-04-04)."
 
 **Repo:** `crates/cdr/src/encode.rs`, `crates/cdr/src/struct_enc.rs` -- zentrale Reference-Implementation. Sprach-Bindings dispatchen auf identische Algorithmen.
 
@@ -130,17 +134,17 @@
 
 ### §3.3 §7.4.2 PL_CDR2 EMHEADER
 
-**Spec:** §3 -- "§7.4.2 PL_CDR2 fuer Mutable-Types (EMHEADER)."
+**Spec:** §3 -- "§7.4.2 PL_CDR2 für Mutable-Types (EMHEADER)."
 
 **Repo:** `crates/cdr/src/struct_enc.rs::encode_mutable_member_lc`, Sprach-Writer `WriteEmHeader/writeEmHeader`.
 
-**Tests:** V-10 Mutable Struct ueber alle Sprachen.
+**Tests:** V-10 Mutable Struct über alle Sprachen.
 
 **Status:** done
 
-### §3.4 §7.4.4.4 DHEADER fuer Appendable
+### §3.4 §7.4.4.4 DHEADER für Appendable
 
-**Spec:** §3 -- "§7.4.4.4 DHEADER fuer Appendable-Types."
+**Spec:** §3 -- "§7.4.4.4 DHEADER für Appendable-Types."
 
 **Repo:** `crates/cdr/src/struct_enc.rs::encode_appendable`, Sprach-Helpers `BeginAppendable/beginAppendable`.
 
@@ -150,9 +154,9 @@
 
 ### §3.5 §7.6.8 Key-Hash mit PlainCdr2BeKeyHolder
 
-**Spec:** §3 -- "§7.6.8.4 Pflicht: Wenn der Holder ≤ 16 octets gross ist, ist Key_Hash der Holder-Inhalt mit zero-padding auf 16 octets. Sonst ist Key_Hash der MD5 des Holder-Inhalts. MD5 ist NICHT unconditional -- konditional pro Holder-Groesse."
+**Spec:** §3 -- "§7.6.8.4 Pflicht: Wenn der Holder ≤ 16 octets groß ist, ist Key_Hash der Holder-Inhalt mit zero-padding auf 16 octets. Sonst ist Key_Hash der MD5 des Holder-Inhalts. MD5 ist NICHT unconditional -- konditional pro Holder-Größe."
 
-**Repo:** `crates/cdr/src/key_hash.rs::PlainCdr2BeKeyHolder::finalize_md5` enthaelt die Holder-Size-Pruefung. Sprach-Bindings rufen identische Logik (C++ `xcdr2_md5.hpp`, C# `Md5`, Java `Md5`, TS `md5`).
+**Repo:** `crates/cdr/src/key_hash.rs::PlainCdr2BeKeyHolder::finalize_md5` enthält die Holder-Size-Prüfung. Sprach-Bindings rufen identische Logik (C++ `xcdr2_md5.hpp`, C# `Md5`, Java `Md5`, TS `md5`).
 
 **Tests:** V-8 Keyed Struct (Holder=4 Byte → zero-padded, kein MD5).
 
@@ -160,11 +164,11 @@
 
 ### §3.6 §7.4.3 Encoding-Header (4-Byte)
 
-**Spec:** §3 -- "§7.4.3 Encoding-Header (4-Byte) fuer Wire-Frames mit Encapsulation. Default-Encoding: PLAIN_CDR2 LE (0x00 0x01 0x00 0x00)."
+**Spec:** §3 -- "§7.4.3 Encoding-Header (4-Byte) für Wire-Frames mit Encapsulation. Default-Encoding: PLAIN_CDR2 LE (0x00 0x01 0x00 0x00)."
 
 **Repo:** RTPS-Layer prepended Header in `crates/rtps/`; xcdr2-Bindings emittieren payload-only. Encoder-Bytes folgen ohne Header per Spec-Konvention §6.
 
-**Tests:** V-Test-Vektoren sind explizit "ohne 4-Byte-Encoding-Header"; RTPS-Header-Komposition ist ausserhalb dieser Spec.
+**Tests:** V-Test-Vektoren sind explizit "ohne 4-Byte-Encoding-Header"; RTPS-Header-Komposition ist außerhalb dieser Spec.
 
 **Status:** done
 
@@ -172,7 +176,7 @@
 
 ### §4 @final / @appendable / @mutable / @key / @id / @optional / @bit_bound / @external / @must_understand
 
-**Spec:** §4, Tabelle Annotation/Wire-Effekt/Konformanz-Pflicht -- 9 Eintraege.
+**Spec:** §4, Tabelle Annotation/Wire-Effekt/Konformanz-Pflicht -- 9 Einträge.
 
 **Repo:** Rust `crates/idl-rust/src/annotations.rs` + `struct_emit.rs`. C++ `crates/idl-cpp/src/emitter.rs::struct_extensibility`. C# `crates/idl-csharp/src/annotations.rs`. Java `crates/idl-java/src/annotations.rs`. TS `crates/idl-ts/src/lib.rs::struct_extensibility`. Pro-Sprache-Spec §4 listet die volle Sprach-Tabelle.
 
@@ -246,7 +250,7 @@
 
 ### §6 V-6 Sequence<string> Final
 
-**Spec:** §6, V-6 -- `["a","bc"]` mit 2-Byte-Pad zwischen den Elementen fuer Align(4).
+**Spec:** §6, V-6 -- `["a","bc"]` mit 2-Byte-Pad zwischen den Elementen für Align(4).
 
 **Repo:** Sequence-Writer + String-Writer mit element-pad.
 
@@ -266,7 +270,7 @@
 
 ### §6 V-8 Keyed Struct (Final)
 
-**Spec:** §6, V-8 -- `Sensor{id=42,value=3.14}` mit 16-Byte-Wire + Key-Hash zero-padded auf 16 Bytes (Holder-Groesse=4 ≤ 16, daher kein MD5).
+**Spec:** §6, V-8 -- `Sensor{id=42,value=3.14}` mit 16-Byte-Wire + Key-Hash zero-padded auf 16 Bytes (Holder-Größe=4 ≤ 16, daher kein MD5).
 
 **Repo:** `key_hash` in jedem Sprach-Binding mit Holder-Size-Check.
 
@@ -306,11 +310,11 @@
 
 ### §6 V-12 Mutable Sentinel End-Marker
 
-**Spec:** §6, V-12 -- "XCDR2-Bindings DUERFEN keinen expliziten Sentinel emittieren -- die DHEADER-Groesse begrenzt das Lesen."
+**Spec:** §6, V-12 -- "XCDR2-Bindings DUERFEN keinen expliziten Sentinel emittieren -- die DHEADER-Größe begrenzt das Lesen."
 
 **Repo:** Encoder schreiben kein PID_LIST_END; nur DHEADER-Bound.
 
-**Tests:** alle Sprach-V12-Tests pruefen Abwesenheit des Sentinels.
+**Tests:** alle Sprach-V12-Tests prüfen Abwesenheit des Sentinels.
 
 **Status:** done
 
@@ -318,7 +322,7 @@
 
 ### §7 Test-Matrix `crates/conformance/tests/xcdr2_cross_language/`
 
-**Spec:** §7 -- "tests/xcdr2_cross_language/ haelt eine deklarative Test-Matrix mit `vectors.json` + `runner_*`-Skripten pro Sprache."
+**Spec:** §7 -- "tests/xcdr2_cross_language/ hält eine deklarative Test-Matrix mit `vectors.json` + `runner_*`-Skripten pro Sprache."
 
 **Repo:** `crates/conformance/tests/cross_language_xcdr2.rs` (Single-File-Driver, ruft pro-Sprache-Test-Suite per Subprocess; Hex-Fixtures aus §6). V-1..V-12-Bytes als Inline-Konstanten im Driver, kein separater `vectors.json`-File.
 
@@ -332,11 +336,11 @@
 
 **Spec:** §8 -- "Pflicht ab L4. Test-Skript `tests/interop/xcdr2_cross_vendor.sh`. Cyclone-Test-Vektoren liegen in `crates/discovery/tests/fixtures/cyclone-xcdr2/*.bin`."
 
-**Repo:** `tests/interop/xcdr2_cross_vendor.sh` als Orchestrator-Skript. `crates/discovery/tests/fixtures/cyclone-xcdr2/` haelt 14 spec-derived Fixtures (`v1.bin`..`v12.bin`) + 1 recorded Capture (`v2_cyclone_recorded.bin` aus tcpdump gegen Cyclone DDS 0.10.2). V-2 ist live verifiziert; V-3..V-12 sind spec-derived (XCDR2 §7.4) ohne Cyclone-Capture.
+**Repo:** `tests/interop/xcdr2_cross_vendor.sh` als Orchestrator-Skript. `crates/discovery/tests/fixtures/cyclone-xcdr2/` hält die Fixtures (`v1.bin`..`v12.bin`). Alle 12 Vektoren wurden live gegen Cyclone DDS 0.11 (erzwungenes XCDR2) auf dem Linux-Bench-Host aufgenommen und byte-genau verglichen; der Vergleich deckte den 64-Bit-Alignment-Cap (§7.4.1.1.1) und den Sequence-DHEADER für nicht-primitive Elemente (§7.4.3.5) auf — beide gefixt, `v6.bin` korrigiert. V-2..V-9/V-11b byte-genau; V-10/V-11a konforme LC-Divergenz.
 
-**Tests:** `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests).
+**Tests:** `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests). Capture-Verfahren auf dem Linux-Bench-Host reproduzierbar.
 
-**Status:** partial -- 1 von 12 V-Vektoren mit recorded Cyclone-Bytes; V-3..V-12 noch ohne Cyclone-Capture.
+**Status:** done -- alle 12 Vektoren live gegen Cyclone DDS 0.11 verglichen (V-1..V-9/V-11b byte-genau, V-10/V-11a konforme LC-Divergenz).
 
 ## §9 Errata + Edge-Cases
 
@@ -356,15 +360,15 @@
 
 **Repo:** `encode_mutable` mit empty body schreibt DHEADER=0.
 
-**Tests:** V-11B (Sample-B None) deckt DHEADER=0 fuer Mutable explizit ab.
+**Tests:** V-11B (Sample-B None) deckt DHEADER=0 für Mutable explizit ab.
 
 **Status:** done
 
 ### §9.3 Sequence-Bound-Overflow
 
-**Spec:** §9.3 -- "Decoder MUSS `bound`-Annotation pruefen und bei Verletzung Fehler werfen (XTypes §7.2.2.4.4.4.10)."
+**Spec:** §9.3 -- "Decoder MUSS `bound`-Annotation prüfen und bei Verletzung Fehler werfen (XTypes §7.2.2.4.4.4.10)."
 
-**Repo:** `crates/cdr/src/encode.rs` decode_sequence pruefen Bound; `crates/idl-cpp/src/emitter.rs` emittiert Bound-Check; analog C/C#/Java/TS Codegen.
+**Repo:** `crates/cdr/src/encode.rs` decode_sequence prüfen Bound; `crates/idl-cpp/src/emitter.rs` emittiert Bound-Check; analog C/C#/Java/TS Codegen.
 
 **Tests:** Bound-Overflow-Asserts in `crates/cdr/tests/proptest_roundtrip.rs` und Codegen-Edge-Case-Files (`crates/idl-cpp/tests/edge_cases.rs`, `crates/idl-csharp/tests/edge_cases.rs`, `crates/idl-java/tests/edge_cases.rs`).
 
@@ -376,7 +380,7 @@
 
 **Repo:** Rust `Box<T>`, C++ `std::shared_ptr<T>`, C# / Java reference-types nativ. Codegen-Mapping in jedem Sprach-Emitter.
 
-**Tests:** `@external`-Smoke in Codegen-Edge-Case-Tests; Wire-Identitaet implizit aus Plain-Member-Pfad.
+**Tests:** `@external`-Smoke in Codegen-Edge-Case-Tests; Wire-Identität implizit aus Plain-Member-Pfad.
 
 **Status:** done
 
@@ -396,7 +400,7 @@
 
 ### §11 Sprach-Spec-Dateien
 
-**Spec:** §11, Tabelle Sprach-Spec/Datei -- 6 Eintraege (cpp, c, csharp, java, ts, rust).
+**Spec:** §11, Tabelle Sprach-Spec/Datei -- 6 Einträge (cpp, c, csharp, java, ts, rust).
 
 **Repo:** `docs/specs/zerodds-xcdr2-cpp-1.0.md`, `-c-1.0.md`, `-csharp-1.0.md`, `-java-1.0.md`, `-ts-1.0.md`, `-rust-1.0.md`.
 
@@ -408,8 +412,6 @@
 
 ## Audit-Status
 
-34 done / 2 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+36 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-cdr -p zerodds-idl-rust -p zerodds-idl-cpp -p zerodds-c-api -p zerodds-idl-csharp -p zerodds-idl-java -p zerodds-idl-ts -p zerodds-conformance --test cross_language_xcdr2` -- 41 Test-Binaries gruen, 0 failed; `dotnet test` ZeroDDS.Cdr.Tests -- 28 Tests gruen; `npm run test:wire` -- 15 Tests gruen; `mvn test` java-omgdds -- 34 Tests gruen.
-
-Offene Items + Decision-Records: `zerodds-xcdr2-bindings-conformance-1.0.open.md`.
+Test-Lauf: `cargo test -p zerodds-cdr -p zerodds-idl-rust -p zerodds-idl-cpp -p zerodds-c-api -p zerodds-idl-csharp -p zerodds-idl-java -p zerodds-idl-ts -p zerodds-conformance --test cross_language_xcdr2` -- 41 Test-Binaries grün, 0 failed; `dotnet test` ZeroDDS.Cdr.Tests -- 28 Tests grün; `npm run test:wire` -- 15 Tests grün; `mvn test` java-omgdds -- 34 Tests grün.

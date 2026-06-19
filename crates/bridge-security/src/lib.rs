@@ -3,32 +3,32 @@
 
 //! Crate `zerodds-bridge-security`. Safety classification: **STANDARD**.
 //!
-//! Gemeinsamer Security-Layer für ZeroDDS Bridge-Daemons (ws / mqtt /
-//! coap / amqp / grpc / corba).
+//! Shared security layer for ZeroDDS bridge daemons (ws / mqtt / coap /
+//! amqp / grpc / corba).
 //!
-//! Spec: ZeroDDS Bridge-Spec 1.0 §7.1 (TLS), §7.2 (Auth-Modes), §7.3
-//! (Topic-ACL).
+//! Spec: ZeroDDS Bridge Spec 1.0 §7.1 (TLS), §7.2 (auth modes), §7.3
+//! (topic ACL).
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 5 (Bridges) — Substrat-Crate fuer alle sechs Bridge-Daemons.
+//! Layer 5 (Bridges) — substrate crate for all six bridge daemons.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! - [`Acl`], [`AclEntry`], [`AclOp`] — Topic-ACL mit Wildcard- und
-//!   Group-Matching (§7.3).
-//! - [`AuthMode`], [`AuthSubject`], [`AuthError`] — Auth-Modes
+//! - [`Acl`], [`AclEntry`], [`AclOp`] — topic ACL with wildcard and
+//!   group matching (§7.3).
+//! - [`AuthMode`], [`AuthSubject`], [`AuthError`] — auth modes
 //!   `none|bearer|jwt|mtls|sasl` (§7.2).
 //! - [`RotatingTlsConfig`], [`build_client_tls_connector`],
-//!   [`parse_server_name`], [`serve_tls_handshake`] — pro-Connection-
-//!   TLS-Helpers (§7.1).
+//!   [`parse_server_name`], [`serve_tls_handshake`] — per-connection
+//!   TLS helpers (§7.1).
 //! - [`SecurityConfig`], [`SecurityCtx`], [`SecurityError`],
 //!   [`authenticate`], [`authorize`], [`build_ctx`],
-//!   [`extract_mtls_subject`] — Aggregat-Ctx aus Auth + ACL + TLS.
-//! - [`TlsConfigError`], [`load_server_config`] — `rustls`-
-//!   ServerConfig-Builder mit PEM-Cert/Key-Loader (§7.1).
+//!   [`extract_mtls_subject`] — aggregate ctx of auth + ACL + TLS.
+//! - [`TlsConfigError`], [`load_server_config`] — `rustls`
+//!   ServerConfig builder with PEM cert/key loader (§7.1).
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust,no_run
 //! use zerodds_bridge_security::{Acl, AclOp, AuthSubject};
@@ -58,28 +58,28 @@ pub use ctx::{
 };
 pub use tls::{TlsConfigError, load_server_config};
 
-// Dep-2 (Spec `zerodds-zero-copy-1.0` §Dep-Audit): Re-Exports der
-// kanonischen rustls-Types, damit Bridge-Crates ihre eigenen
-// `use rustls::*`-Imports auf `use zerodds_bridge_security::rustls::*`
-// umstellen koennen und die direkte `rustls`-Dep aus ihrer Cargo.toml
-// streichen koennen. Verhindert Versions-Drift zwischen rustls-
-// Versionen die einzelne Bridges spaeter manuell upgraden koennten.
+// Dep-2 (Spec `zerodds-zero-copy-1.0` §Dep-Audit): re-exports of the
+// canonical rustls types, so that bridge crates can switch their own
+// `use rustls::*` imports to `use zerodds_bridge_security::rustls::*`
+// and drop the direct `rustls` dep from their Cargo.toml. Prevents
+// version drift between rustls versions that individual bridges might
+// later upgrade manually.
 //
-// Bridges die nur ServerConfig/ClientConfig/cert/key-Wire-Types
-// brauchen, koennen statt direkten rustls-Deps:
+// Bridges that only need ServerConfig/ClientConfig/cert/key wire types
+// can, instead of direct rustls deps:
 //
 // ```rust,ignore
 // use zerodds_bridge_security::{rustls, rustls_pki_types, rustls_pemfile};
 // let cfg: rustls::ServerConfig = ...;
 // ```
 //
-// Re-Exports gelten als stabile API der bridge-security-Crate; sie
-// folgen dem gleichen Versions-Pinning wie rustls in
+// Re-exports are considered stable API of the bridge-security crate;
+// they follow the same version pinning as rustls in
 // [`workspace.dependencies`].
 
-/// Re-Export der `rustls`-Crate fuer Bridges.
+/// Re-export of the `rustls` crate for bridges.
 pub use rustls;
-/// Re-Export der `rustls_pemfile`-Crate fuer PEM-Loader.
+/// Re-export of the `rustls_pemfile` crate for the PEM loader.
 pub use rustls_pemfile;
-/// Re-Export der `rustls_pki_types`-Crate fuer Cert/Key-Wire-Types.
+/// Re-export of the `rustls_pki_types` crate for cert/key wire types.
 pub use rustls_pki_types;

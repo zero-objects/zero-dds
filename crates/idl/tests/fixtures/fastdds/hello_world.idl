@@ -1,6 +1,6 @@
-// hello_world.idl — Fast-DDS-Style Hello-World-Topic, hand-kuratiert.
-// Inhaltlich aequivalent zum klassischen FastDDS HelloWorld-Beispiel.
-// Fast-DDS verwendet OMG-Standard-Annotations.
+// hello_world.idl — Fast-DDS-style Hello-World topic, hand-curated.
+// Content-equivalent to the classic FastDDS HelloWorld example.
+// Fast-DDS uses OMG standard annotations.
 
 module HelloWorldNamespace {
 

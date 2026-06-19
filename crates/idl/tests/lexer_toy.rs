@@ -1,9 +1,9 @@
-//! Integration-Tests fuer den Tokenizer gegen die Toy-Grammar.
+//! Integration tests for the tokenizer against the toy grammar.
 //!
-//! Validiert die Public-API der Lexer-Schicht (`zerodds_idl::lexer`) mit echten
-//! Source-Strings statt synthetischen Tokens. Komplementaer zu den Inline-
-//! Unit-Tests in `lexer/tokenizer.rs`, die mit Test-internem Grammar-
-//! Setup arbeiten — diese Datei zeigt den Endkonsumenten-Pfad.
+//! Validates the public API of the lexer layer (`zerodds_idl::lexer`) with real
+//! source strings instead of synthetic tokens. Complementary to the inline
+//! unit tests in `lexer/tokenizer.rs`, which work with a test-internal grammar
+//! setup — this file shows the end-consumer path.
 
 #![allow(
     clippy::expect_used,
@@ -63,7 +63,7 @@ fn tokenize_complex_expression_keeps_correct_spans() {
     let stream = tokenizer.tokenize(src).expect("must succeed");
     // 9 Tokens: n + n * ( n + n )
     assert_eq!(stream.len(), 9);
-    // Erstes Token bei 0..1, letztes ")" bei 14..15.
+    // First token at 0..1, last ")" at 14..15.
     assert_eq!(stream.tokens()[0].span, Span::new(0, 1));
     assert_eq!(stream.tokens()[stream.len() - 1].span, Span::new(14, 15));
     // Konkrete Token-Sequenz pruefen.
@@ -124,20 +124,20 @@ fn tokenize_unknown_character_returns_lexer_error_with_span() {
     let result = tokenizer.tokenize("n @ n");
     assert!(result.is_err());
     if let Err(err) = result {
-        // Position 2 = das @-Zeichen
+        // Position 2 = the @ character
         assert_eq!(err.span(), Span::point(2));
     }
 }
 
 #[test]
 fn tokenize_identifier_not_in_keywords_fails_for_toy() {
-    // Toy-Grammar hat nur "n" als Identifier-Klassifikation. "foo" ist kein
-    // Keyword, und Toy hat kein Ident in der Grammar — der Tokenizer
-    // erzeugt einen Ident-Token, aber der waere fuer den Recognizer
-    // nicht akzeptabel. Hier nur Lexer-Pfad: Tokenizer produziert ihn,
-    // Recognizer wuerde ihn ablehnen.
+    // The toy grammar only has "n" as identifier classification. "foo" is not a
+    // keyword, and Toy has no Ident in the grammar — the tokenizer
+    // produces an Ident token, but it would not be acceptable for the
+    // recognizer. Here only the lexer path: the tokenizer produces it,
+    // the recognizer would reject it.
     let tokenizer = Tokenizer::for_grammar(&TOY);
-    let stream = tokenizer.tokenize("foo").expect("Lexer akzeptiert Ident");
+    let stream = tokenizer.tokenize("foo").expect("lexer accepts Ident");
     assert_eq!(stream.len(), 1);
     assert_eq!(stream.tokens()[0].kind, TokenKind::Ident);
     assert_eq!(stream.tokens()[0].text, "foo");
@@ -181,7 +181,7 @@ fn token_text_slice_points_into_source() {
     let tokenizer = Tokenizer::for_grammar(&TOY);
     let src = String::from("n + n");
     let stream = tokenizer.tokenize(&src).expect("must succeed");
-    // Pointer-Identitaet: Token::text muss in src liegen, nicht eine Kopie sein.
+    // Pointer identity: Token::text must lie within src, not be a copy.
     let first_token = stream.tokens()[0];
     assert!(std::ptr::eq(first_token.text.as_ptr(), src.as_ptr()));
 }

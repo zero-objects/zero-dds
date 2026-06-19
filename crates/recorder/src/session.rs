@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Live-Recording-Session — high-level API fuer laufende Capture.
+//! Live recording session — high-level API for a running capture.
 //!
-//! Kapselt einen [`RecordWriter`] hinter einer Topic-Indexing-Schicht:
-//! Konsument ruft `record_sample(topic, type, payload)` und der
-//! Indexer kuemmert sich um:
+//! Wraps a [`RecordWriter`] behind a topic-indexing layer:
+//! the consumer calls `record_sample(topic, type, payload)` and the
+//! indexer takes care of:
 //!
-//! * Initialer Header beim ersten Sample geschrieben (lazy).
-//! * Topic-/Participant-Eintraege werden bei Bedarf nachgetragen.
-//!   Da das Format Header-Once ist, wird ein neuer Header geschrieben
-//!   wenn die ersten Topics noch unbekannt sind — d.h. der Caller
-//!   sollte die Set vorab via [`SessionOptions`] anmelden.
-//! * Atomare Counter (Frames, Bytes) fuer das Dashboard.
+//! * Initial header written on the first sample (lazy).
+//! * Topic/participant entries are added on demand.
+//!   Since the format is header-once, a new header is written
+//!   when the first topics are still unknown — i.e. the caller
+//!   should register the set up front via [`SessionOptions`].
+//! * Atomic counters (frames, bytes) for the dashboard.
 //!
-//! Die Anbindung an die DcpsRuntime (Hook auf Built-in-Topics
-//! `DCPSPublication`/`DCPSSubscription`) ist Aufgabe des dcps-Crate
-//! und des `tools/recorder-bridge` — `RecordingSession` bietet dem
-//! hier den thread-safen Schreib-Ingress.
+//! Wiring to the DcpsRuntime (a hook on the built-in topics
+//! `DCPSPublication`/`DCPSSubscription`) is the job of the dcps crate
+//! and of `tools/recorder-bridge` — `RecordingSession` provides the
+//! thread-safe write ingress here.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -28,31 +28,31 @@ use std::sync::Mutex;
 use crate::format::{Frame, Header, ParticipantEntry, SampleKind, TopicEntry};
 use crate::writer::{RecordWriter, WriteError};
 
-/// Bequemer Topic-Schluessel: Tuple aus Topic-Name und Type-Name.
+/// Convenient topic key: tuple of topic name and type name.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct TopicKey {
-    /// DDS-Topic-Name (z.B. mit `rt/`-Prefix).
+    /// DDS topic name (e.g. with an `rt/` prefix).
     pub topic: String,
-    /// Type-Name (z.B. `"std_msgs::msg::String"`).
+    /// Type name (e.g. `"std_msgs::msg::String"`).
     pub type_name: String,
 }
 
-/// Setup-Optionen fuer eine Session.
+/// Setup options for a session.
 #[derive(Clone, Debug)]
 pub struct SessionOptions {
-    /// UNIX-Epoch-Anchor in Nanosekunden — Frame-Timestamps sind
-    /// Deltas dazu.
+    /// UNIX epoch anchor in nanoseconds — frame timestamps are
+    /// deltas relative to it.
     pub time_base_unix_ns: i64,
-    /// Vorab-bekannte Participants (GUID + Name).
+    /// Pre-known participants (GUID + name).
     pub participants: Vec<ParticipantEntry>,
-    /// Vorab-bekannte Topics. Falls ein Topic kommt das hier nicht
-    /// drin ist, ignoriert die Session den Sample (Counter
-    /// `samples_dropped_unknown_topic` wird inkrementiert).
+    /// Pre-known topics. If a topic arrives that is not
+    /// in here, the session ignores the sample (the counter
+    /// `samples_dropped_unknown_topic` is incremented).
     pub topics: Vec<TopicKey>,
 }
 
 impl SessionOptions {
-    /// Konstruktor mit time_base_unix_ns und leeren Listen.
+    /// Constructor with time_base_unix_ns and empty lists.
     #[must_use]
     pub fn new(time_base_unix_ns: i64) -> Self {
         Self {
@@ -62,14 +62,14 @@ impl SessionOptions {
         }
     }
 
-    /// Fuegt einen Participant hinzu (Builder-Form).
+    /// Adds a participant (builder form).
     #[must_use]
     pub fn with_participant(mut self, p: ParticipantEntry) -> Self {
         self.participants.push(p);
         self
     }
 
-    /// Fuegt ein Topic hinzu (Builder-Form).
+    /// Adds a topic (builder form).
     #[must_use]
     pub fn with_topic(mut self, t: TopicKey) -> Self {
         self.topics.push(t);
@@ -77,12 +77,12 @@ impl SessionOptions {
     }
 }
 
-/// Session-Fehler.
+/// Session error.
 #[derive(Debug)]
 pub enum SessionError {
     /// Underlying writer error.
     Writer(WriteError),
-    /// Session-Mutex vergiftet.
+    /// Session mutex poisoned.
     Poisoned,
 }
 
@@ -103,10 +103,10 @@ impl From<WriteError> for SessionError {
     }
 }
 
-/// Live-Recording-Session.
+/// Live recording session.
 ///
-/// Thread-safe: mehrere Threads koennen gleichzeitig
-/// `record_sample` callen.
+/// Thread-safe: multiple threads can call
+/// `record_sample` concurrently.
 pub struct RecordingSession<W: std::io::Write + Send> {
     inner: Mutex<Inner<W>>,
     samples_total: AtomicU64,
@@ -116,19 +116,18 @@ pub struct RecordingSession<W: std::io::Write + Send> {
 
 struct Inner<W: std::io::Write> {
     writer: RecordWriter<W>,
-    /// (topic, type) → topic_idx im Header.
+    /// (topic, type) → topic_idx in the header.
     topic_index: Vec<(TopicKey, u32)>,
     participant_index: Vec<([u8; 16], u32)>,
     time_base_unix_ns: i64,
     header_written: bool,
-    /// Vor-Allokierte Header-Daten — werden beim ersten Sample
-    /// geflushed.
+    /// Pre-allocated header data — flushed on the first sample.
     pending_header: Header,
 }
 
 impl<W: std::io::Write + Send> RecordingSession<W> {
-    /// Erzeugt eine neue Session ueber `sink`. Der Header wird beim
-    /// ersten `record_sample` geschrieben.
+    /// Creates a new session over `sink`. The header is written on
+    /// the first `record_sample`.
     pub fn new(sink: W, opts: SessionOptions) -> Self {
         let mut topic_index = Vec::with_capacity(opts.topics.len());
         for (i, t) in opts.topics.iter().enumerate() {
@@ -167,11 +166,11 @@ impl<W: std::io::Write + Send> RecordingSession<W> {
         }
     }
 
-    /// Schreibt einen Sample. `now_unix_ns` muss die aktuelle
-    /// Wallclock-Zeit in Nanosekunden seit Epoch sein.
+    /// Writes a sample. `now_unix_ns` must be the current
+    /// wall-clock time in nanoseconds since the epoch.
     ///
     /// # Errors
-    /// Siehe [`SessionError`].
+    /// See [`SessionError`].
     pub fn record_sample(
         &self,
         now_unix_ns: i64,
@@ -215,7 +214,7 @@ impl<W: std::io::Write + Send> RecordingSession<W> {
         Ok(())
     }
 
-    /// Liefert die aktuellen Counter (Snapshot).
+    /// Returns the current counters (snapshot).
     #[must_use]
     pub fn stats(&self) -> SessionStats {
         SessionStats {
@@ -226,19 +225,19 @@ impl<W: std::io::Write + Send> RecordingSession<W> {
     }
 }
 
-/// Counter-Snapshot.
+/// Counter snapshot.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SessionStats {
-    /// Anzahl erfolgreich geschriebener Samples.
+    /// Number of successfully written samples.
     pub samples_total: u64,
-    /// Anzahl droppter Samples (Topic nicht im Header).
+    /// Number of dropped samples (topic not in the header).
     pub samples_dropped: u64,
-    /// Gesamte File-Bytes (inkl. Header).
+    /// Total file bytes (incl. header).
     pub bytes_total: u64,
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
 
@@ -330,7 +329,7 @@ mod tests {
             .with_participant(p("p", 1))
             .with_topic(t("/a", "T"));
         let s: RecordingSession<Vec<u8>> = RecordingSession::new(Vec::new(), opts);
-        // GUID nicht in der Liste → fallback idx=0.
+        // GUID not in the list → fallback idx=0.
         s.record_sample(
             1,
             [99u8; 16], // unknown

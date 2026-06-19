@@ -2,10 +2,10 @@
 // Copyright 2026 ZeroDDS Contributors
 //! RTPS-Header (DDSI-RTPS 2.5 §8.3.3).
 //!
-//! Der RTPS-Header bildet das Outer-Envelope eines RTPS-Datagrams. Er
-//! ist 20 Byte lang (4 magic + 2 version + 2 vendor + 12 prefix), fest
-//! layoutiert, und nicht endianness-getagged (alle Felder sind Byte-
-//! Arrays).
+//! The RTPS header forms the outer envelope of an RTPS datagram. It
+//! is 20 bytes long (4 magic + 2 version + 2 vendor + 12 prefix), fixed
+//! layout, and not endianness-tagged (all fields are byte
+//! arrays).
 //!
 //! ```text
 //!   0                   1                   2                   3
@@ -44,7 +44,7 @@ impl RtpsHeader {
     /// Wire-Size: 20 Bytes (4 magic + 2 version + 2 vendor + 12 prefix).
     pub const WIRE_SIZE: usize = 20;
 
-    /// Konstruktor mit Defaults fuer Version (2.5).
+    /// Constructor with defaults for the version (2.5).
     #[must_use]
     pub fn new(vendor_id: VendorId, guid_prefix: GuidPrefix) -> Self {
         Self {
@@ -54,7 +54,7 @@ impl RtpsHeader {
         }
     }
 
-    /// Encoded den Header in einen 20-byte-Array.
+    /// Encodes the header into a 20-byte array.
     #[must_use]
     pub fn to_bytes(self) -> [u8; 20] {
         let mut out = [0u8; 20];
@@ -65,11 +65,11 @@ impl RtpsHeader {
         out
     }
 
-    /// Decoded einen 20-Byte-Slice. Pruefte Magic-Bytes.
+    /// Decodes a 20-byte slice. Checks the magic bytes.
     ///
     /// # Errors
-    /// `InvalidMagic` bei falschem Prefix; `UnexpectedEof` bei zu kurzer
-    /// Eingabe.
+    /// `InvalidMagic` on a wrong prefix; `UnexpectedEof` on too-short
+    /// Input.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, WireError> {
         if bytes.len() < Self::WIRE_SIZE {
             return Err(WireError::UnexpectedEof {
@@ -169,8 +169,8 @@ mod tests {
 
     #[test]
     fn header_decode_accepts_extra_trailing_bytes() {
-        // Decoder konsumiert nur 20 Byte; trailing-Bytes (z.B. erste
-        // Submessage) ueberlebt die Eingabe.
+        // The decoder consumes only 20 bytes; trailing bytes (e.g. the first
+        // submessage) survive the input.
         let h = RtpsHeader::new(VendorId::ZERODDS, GuidPrefix::UNKNOWN);
         let mut bytes = [0u8; 36];
         bytes[..20].copy_from_slice(&h.to_bytes());

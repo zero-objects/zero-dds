@@ -2,15 +2,15 @@
 // Copyright 2026 ZeroDDS Contributors
 //! SEDP Builtin Reliable Writers — Publications + Subscriptions.
 //!
-//! Wrapper um [`zerodds_rtps::reliable_writer::ReliableWriter`] mit festen
-//! SEDP-EntityIds. Der Wrapper serialisiert
-//! [`PublicationBuiltinTopicData`] bzw. [`SubscriptionBuiltinTopicData`]
-//! via PL_CDR_LE in den Payload und legt ihn via
-//! `ReliableWriter::write()` ab.
+//! Wrapper around [`zerodds_rtps::reliable_writer::ReliableWriter`] with
+//! fixed SEDP EntityIds. The wrapper serializes
+//! [`PublicationBuiltinTopicData`] or [`SubscriptionBuiltinTopicData`]
+//! into the payload via PL_CDR_LE and stores it via
+//! `ReliableWriter::write()`.
 //!
-//! **Multi-Reader-Proxies kommen extern rein** (via
-//! [`Self::add_reader_proxy`]). T5 verdrahtet das automatisch mit SPDP-
-//! Discovery.
+//! **Multi-reader proxies come in externally** (via
+//! [`Self::add_reader_proxy`]). T5 wires this up automatically with SPDP
+//! discovery.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -26,36 +26,36 @@ use zerodds_rtps::submessages::NackFragSubmessage;
 use zerodds_rtps::subscription_data::SubscriptionBuiltinTopicData;
 use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix, SequenceNumber, VendorId};
 
-/// Default-History-Depth fuer SEDP-Builtin-Writer. Spec §8.5.4.2 sagt
-/// keep-last depth=1 fuer Discovery (jedes Topic wird einzeln announced);
-/// wir nehmen konservativer 256, um Multi-Topic-Szenarien zu tragen.
+/// Default history depth for SEDP builtin writers. Spec §8.5.4.2 says
+/// keep-last depth=1 for discovery (each topic is announced individually);
+/// we use a more conservative 256 to handle multi-topic scenarios.
 pub const SEDP_DEFAULT_DEPTH: usize = 256;
 
-/// Default-Heartbeat-Periode fuer SEDP.
+/// Default heartbeat period for SEDP.
 ///
-/// Warum 100 ms statt 500 ms (alter Wert): SEDP nutzt RTPS-Reliability
-/// (HEARTBEAT/ACKNACK/Resend) als einzigen Recovery-Pfad — wenn das
-/// initiale DATA-Frame des `announce_subscription` auf Multicast
-/// verloren geht, muss der Heartbeat-Cycle das nachholen. Bei 500 ms
-/// Heartbeat + Roundtrip = ~700 ms Worst-Case zwischen DATA-Verlust
-/// und Resend, plus den fixen Reader-Heartbeat-Response-Delay
-/// (200 ms). Auf loaded Linux-CI-Runnern reisst das die 5-s-Match-
-/// Timeouts der Late-Joiner-Tests (TS-1-Finding 9).
+/// Why 100 ms instead of 500 ms (the old value): SEDP uses RTPS
+/// reliability (HEARTBEAT/ACKNACK/resend) as its only recovery path — if
+/// the initial DATA frame of `announce_subscription` is lost on
+/// multicast, the heartbeat cycle must make up for it. At a 500 ms
+/// heartbeat + roundtrip = ~700 ms worst case between DATA loss
+/// and resend, plus the fixed reader heartbeat response delay
+/// (200 ms). On loaded Linux CI runners this blows past the 5 s match
+/// timeouts of the late-joiner tests (TS-1 finding 9).
 ///
-/// 100 ms gibt einen Worst-Case unter ~300 ms — sicher unter
-/// Test-Timeout, vernachlaessigbarer Bandbreiten-Aufwand bei
-/// Discovery (paar Hundred Byte pro Hops alle 100 ms). Production-
-/// SEDP-Traffic ist selten der Bottleneck.
+/// 100 ms gives a worst case under ~300 ms — safely under the
+/// test timeout, with negligible bandwidth overhead for
+/// discovery (a few hundred bytes per hop every 100 ms). Production
+/// SEDP traffic is rarely the bottleneck.
 pub const SEDP_HEARTBEAT_PERIOD: Duration = Duration::from_millis(100);
 
-/// Writer fuer SEDP-Publications (feste EntityId
+/// Writer for SEDP publications (fixed EntityId
 /// [`EntityId::SEDP_BUILTIN_PUBLICATIONS_WRITER`]).
 #[derive(Debug)]
 pub struct SedpPublicationsWriter {
     inner: ReliableWriter,
 }
 
-/// Writer fuer SEDP-Subscriptions (feste EntityId
+/// Writer for SEDP subscriptions (fixed EntityId
 /// [`EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_WRITER`]).
 #[derive(Debug)]
 pub struct SedpSubscriptionsWriter {
@@ -63,43 +63,60 @@ pub struct SedpSubscriptionsWriter {
 }
 
 impl SedpPublicationsWriter {
-    /// Erzeugt einen SEDP-Publications-Writer fuer den gegebenen
-    /// lokalen Participant. Reader-Proxies kommen separat via
+    /// Creates a SEDP publications writer for the given
+    /// local participant. Reader proxies are added separately via
     /// [`add_reader_proxy`](Self::add_reader_proxy).
     #[must_use]
     pub fn new(participant_prefix: GuidPrefix, vendor_id: VendorId) -> Self {
+        Self::with_entity(
+            participant_prefix,
+            vendor_id,
+            EntityId::SEDP_BUILTIN_PUBLICATIONS_WRITER,
+        )
+    }
+
+    /// Secure variant (DDS-Security §8.4.2.4 `is_discovery_protected`):
+    /// EntityId [`EntityId::SEDP_BUILTIN_PUBLICATIONS_SECURE_WRITER`]. The
+    /// DATA/HEARTBEAT/GAP submessages produced by the writer are additionally
+    /// protected via `encode_datawriter_submessage` in the runtime send path
+    /// (participant crypto) before they go to the peers' secure SEDP readers.
+    #[must_use]
+    pub fn new_secure(participant_prefix: GuidPrefix, vendor_id: VendorId) -> Self {
+        Self::with_entity(
+            participant_prefix,
+            vendor_id,
+            EntityId::SEDP_BUILTIN_PUBLICATIONS_SECURE_WRITER,
+        )
+    }
+
+    #[must_use]
+    fn with_entity(participant_prefix: GuidPrefix, vendor_id: VendorId, entity: EntityId) -> Self {
         Self {
-            inner: make_sedp_writer(
-                Guid::new(
-                    participant_prefix,
-                    EntityId::SEDP_BUILTIN_PUBLICATIONS_WRITER,
-                ),
-                vendor_id,
-            ),
+            inner: make_sedp_writer(Guid::new(participant_prefix, entity), vendor_id),
         }
     }
 
-    /// GUID dieses Writers.
+    /// GUID of this writer.
     #[must_use]
     pub fn guid(&self) -> Guid {
         self.inner.guid()
     }
 
-    /// Registriert einen Remote-SEDP-Publications-Reader als Empfaenger.
+    /// Registers a remote SEDP publications reader as a recipient.
     pub fn add_reader_proxy(&mut self, proxy: ReaderProxy) {
         self.inner.add_reader_proxy(proxy);
     }
 
-    /// Entfernt einen Remote-Reader.
+    /// Removes a remote reader.
     pub fn remove_reader_proxy(&mut self, guid: Guid) -> Option<ReaderProxy> {
         self.inner.remove_reader_proxy(guid)
     }
 
-    /// Kuendigt eine lokale Publication via SEDP an. Liefert die
-    /// Datagrammliste, die der Transport an alle Reader-Proxies kippt.
+    /// Announces a local publication via SEDP. Returns the
+    /// datagram list that the transport dumps to all reader proxies.
     ///
     /// # Errors
-    /// Encoder-Fehler (String zu lang, Cache-Fehler bei `KeepAll`-Overflow).
+    /// Encoder error (string too long, cache error on `KeepAll` overflow).
     pub fn announce(
         &mut self,
         p: &PublicationBuiltinTopicData,
@@ -108,14 +125,14 @@ impl SedpPublicationsWriter {
         self.inner.write(&payload)
     }
 
-    /// ADR-0006: kuendigt eine Publication an UND injiziert
-    /// PID_SHM_LOCATOR (Vendor-PID 0x8001) ans Ende der ParameterList.
-    /// Wird vom DcpsRuntime aufgerufen, wenn die Side-Map fuer den
-    /// User-Writer einen Locator-Eintrag fuehrt (= Same-Host-Backend
-    /// angeschlossen).
+    /// ADR-0006: announces a publication AND injects
+    /// PID_SHM_LOCATOR (vendor PID 0x8001) at the end of the ParameterList.
+    /// Called by the DcpsRuntime when the side map carries a locator
+    /// entry for the user writer (= same-host backend
+    /// attached).
     ///
     /// # Errors
-    /// Encoder-Fehler oder Inject-Fehler.
+    /// Encoder error or inject error.
     pub fn announce_with_shm_locator(
         &mut self,
         p: &PublicationBuiltinTopicData,
@@ -126,15 +143,15 @@ impl SedpPublicationsWriter {
         self.inner.write(&payload)
     }
 
-    /// Tick (HEARTBEAT + Resends). Siehe [`ReliableWriter::tick`].
+    /// Tick (HEARTBEAT + resends). See [`ReliableWriter::tick`].
     ///
     /// # Errors
-    /// Wire-Encode-Fehler.
+    /// Wire encode error.
     pub fn tick(&mut self, now: Duration) -> Result<Vec<OutboundDatagram>, WireError> {
         self.inner.tick(now)
     }
 
-    /// Dispatch eines ACKNACK vom Remote-Reader.
+    /// Dispatch of an ACKNACK from the remote reader.
     pub fn handle_acknack(
         &mut self,
         src_guid: Guid,
@@ -144,13 +161,13 @@ impl SedpPublicationsWriter {
         self.inner.handle_acknack(src_guid, base, requested);
     }
 
-    /// Dispatch eines NACK_FRAG vom Remote-Reader.
+    /// Dispatch of a NACK_FRAG from the remote reader.
     pub fn handle_nackfrag(&mut self, src_guid: Guid, nf: &NackFragSubmessage) {
         self.inner.handle_nackfrag(src_guid, nf);
     }
 
-    /// Read-only-Zugriff auf den zugrundeliegenden `ReliableWriter`
-    /// (Tests/Diagnose).
+    /// Read-only access to the underlying `ReliableWriter`
+    /// (tests/diagnostics).
     #[must_use]
     pub fn inner(&self) -> &ReliableWriter {
         &self.inner
@@ -158,17 +175,31 @@ impl SedpPublicationsWriter {
 }
 
 impl SedpSubscriptionsWriter {
-    /// Erzeugt einen SEDP-Subscriptions-Writer.
+    /// Creates a SEDP subscriptions writer.
     #[must_use]
     pub fn new(participant_prefix: GuidPrefix, vendor_id: VendorId) -> Self {
+        Self::with_entity(
+            participant_prefix,
+            vendor_id,
+            EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_WRITER,
+        )
+    }
+
+    /// Secure variant (DDS-Security §8.4.2.4): EntityId
+    /// [`EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_SECURE_WRITER`].
+    #[must_use]
+    pub fn new_secure(participant_prefix: GuidPrefix, vendor_id: VendorId) -> Self {
+        Self::with_entity(
+            participant_prefix,
+            vendor_id,
+            EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_SECURE_WRITER,
+        )
+    }
+
+    #[must_use]
+    fn with_entity(participant_prefix: GuidPrefix, vendor_id: VendorId, entity: EntityId) -> Self {
         Self {
-            inner: make_sedp_writer(
-                Guid::new(
-                    participant_prefix,
-                    EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_WRITER,
-                ),
-                vendor_id,
-            ),
+            inner: make_sedp_writer(Guid::new(participant_prefix, entity), vendor_id),
         }
     }
 
@@ -178,20 +209,20 @@ impl SedpSubscriptionsWriter {
         self.inner.guid()
     }
 
-    /// Remote-Reader hinzufuegen.
+    /// Add a remote reader.
     pub fn add_reader_proxy(&mut self, proxy: ReaderProxy) {
         self.inner.add_reader_proxy(proxy);
     }
 
-    /// Remote-Reader entfernen.
+    /// Remove a remote reader.
     pub fn remove_reader_proxy(&mut self, guid: Guid) -> Option<ReaderProxy> {
         self.inner.remove_reader_proxy(guid)
     }
 
-    /// Kuendigt eine lokale Subscription via SEDP an.
+    /// Announces a local subscription via SEDP.
     ///
     /// # Errors
-    /// Encoder-Fehler.
+    /// Encoder error.
     pub fn announce(
         &mut self,
         s: &SubscriptionBuiltinTopicData,
@@ -203,7 +234,7 @@ impl SedpSubscriptionsWriter {
     /// Tick.
     ///
     /// # Errors
-    /// Wire-Encode-Fehler.
+    /// Wire encode error.
     pub fn tick(&mut self, now: Duration) -> Result<Vec<OutboundDatagram>, WireError> {
         self.inner.tick(now)
     }
@@ -223,7 +254,7 @@ impl SedpSubscriptionsWriter {
         self.inner.handle_nackfrag(src_guid, nf);
     }
 
-    /// Read-only-Zugriff.
+    /// Read-only access.
     #[must_use]
     pub fn inner(&self) -> &ReliableWriter {
         &self.inner
@@ -231,7 +262,7 @@ impl SedpSubscriptionsWriter {
 }
 
 // ============================================================================
-// Shared SEDP-Writer-Config
+// Shared SEDP writer config
 // ============================================================================
 
 fn make_sedp_writer(guid: Guid, vendor_id: VendorId) -> ReliableWriter {
@@ -240,8 +271,8 @@ fn make_sedp_writer(guid: Guid, vendor_id: VendorId) -> ReliableWriter {
         vendor_id,
         reader_proxies: Vec::new(),
         max_samples: SEDP_DEFAULT_DEPTH,
-        // KeepLast statt KeepAll: stalled Remote-SEDP-Reader darf die
-        // Pipeline nicht blockieren.
+        // KeepLast instead of KeepAll: a stalled remote SEDP reader must
+        // not block the pipeline.
         history_kind: HistoryKind::KeepLast {
             depth: SEDP_DEFAULT_DEPTH,
         },
@@ -290,6 +321,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         }
     }
 
@@ -336,8 +369,8 @@ mod tests {
                 }
             })
             .expect("DATA submessage");
-        // Der Payload ist die PL_CDR_LE-enkodierte PublicationBuiltinTopicData.
-        // Wir dekodieren ihn zurueck und pruefen Topic-Name.
+        // The payload is the PL_CDR_LE-encoded PublicationBuiltinTopicData.
+        // We decode it back and check the topic name.
         let decoded =
             PublicationBuiltinTopicData::from_pl_cdr_le(&data.serialized_payload).unwrap();
         assert_eq!(decoded.topic_name, "ChatterTopic");

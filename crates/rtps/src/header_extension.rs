@@ -3,65 +3,65 @@
 //! HeaderExtension Submessage (DDSI-RTPS 2.5 §8.3.3.2 / §9.4.5.2 /
 //! §9.4.2.15).
 //!
-//! Die HeaderExtension (HE) ist eine in DDSI-RTPS 2.5 neu eingefuehrte
-//! Submessage-Klasse, die einer RTPS-Nachricht optionale Header-
-//! Felder anhaengt:
+//! The HeaderExtension (HE) is a submessage class newly introduced in
+//! DDSI-RTPS 2.5, which appends optional header
+//! fields to an RTPS message:
 //!
-//! - **`messageLength`**: u32 — Gesamtlaenge der RTPS-Message ab dem
-//!   ersten Submessage-Header. Erlaubt Reader-Pre-Allocation und ist
-//!   Pflicht-Hint fuer non-UDP-Transporte ohne implizite Datagram-
-//!   Grenze.
-//! - **`rtpsSendTimestamp`**: 8 Byte (Time_t) — Sender-Wallclock zum
-//!   Zeitpunkt des `send()`-Calls. Speist `clockSkewDetected` im
-//!   Receiver-State (§8.3.7.4).
-//! - **`uextension4`**: 4 Byte vendor-spezifisch.
-//! - **`wextension8`**: 8 Byte vendor-spezifisch (Spec §8.3.3.2).
-//! - **`messageChecksum`**: CRC-32C (4 Byte), CRC-64-XZ (8 Byte) oder
-//!   MD5-128 (16 Byte) ueber den Bereich `[RtpsHeader || alle
-//!   Submessages || HE-Submessage-Header || HE-Body bis vor dem
-//!   Checksum-Feld]`. C-Flag (2 Bit) selektiert die Variante.
-//! - **`parameters`**: ParameterList (TLV) — bisher nur fuer
-//!   Vendor-Erweiterungen reserviert; `must_understand` darin loest
-//!   ganzheitlichen Message-Reject aus (§9.4.2.11.2).
+//! - **`messageLength`**: u32 — total length of the RTPS message from the
+//!   first submessage header. Allows reader pre-allocation and is a
+//!   mandatory hint for non-UDP transports without an implicit datagram
+//!   boundary.
+//! - **`rtpsSendTimestamp`**: 8 bytes (Time_t) — sender wallclock at the
+//!   time of the `send()` call. Feeds `clockSkewDetected` in the
+//!   receiver state (§8.3.7.4).
+//! - **`uextension4`**: 4 bytes vendor-specific.
+//! - **`wextension8`**: 8 bytes vendor-specific (Spec §8.3.3.2).
+//! - **`messageChecksum`**: CRC-32C (4 bytes), CRC-64-XZ (8 bytes) or
+//!   MD5-128 (16 bytes) over the range `[RtpsHeader || all
+//!   submessages || HE submessage header || HE body up to before the
+//!   checksum field]`. The C flag (2 bits) selects the variant.
+//! - **`parameters`**: ParameterList (TLV) — so far reserved only for
+//!   vendor extensions; a `must_understand` within it triggers a
+//!   whole-message reject (§9.4.2.11.2).
 //!
-//! # SubmessageId und Flag-Layout (Auftrags-Spezifikation)
+//! # SubmessageId and flag layout (commissioned specification)
 //!
-//! - `SubmessageId = 0x80` — HE-Marker. Ausserhalb der "klassischen"
-//!   Submessage-Range (≤ 0x7F) und damit forwards-kompatibel zu Pre-2.5-
-//!   Implementierungen, die `octets_to_next_header` zum Skippen nutzen.
+//! - `SubmessageId = 0x80` — HE marker. Outside the "classic"
+//!   submessage range (≤ 0x7F) and thus forwards-compatible with pre-2.5
+//!   implementations that use `octets_to_next_header` to skip.
 //!
 //! Flag-Bits im Submessage-Header:
 //!
-//! | Bit | Symbol | Bedeutung |
+//! | Bit | Symbol | Meaning |
 //! |-----|--------|-----------|
 //! | 0 | E | Endianness (1 = LE) |
-//! | 1 | L | `messageLength` vorhanden |
-//! | 2 | W | `rtpsSendTimestamp` vorhanden |
-//! | 3 | U | `uextension4` vorhanden |
-//! | 4 | V | `wextension8` vorhanden |
-//! | 5+6 | C | Checksum-Variante (0=keine, 1=CRC-32C, 2=CRC-64, 3=MD5) |
-//! | 7 | P | `parameters` (ParameterList) vorhanden |
+//! | 1 | L | `messageLength` present |
+//! | 2 | W | `rtpsSendTimestamp` present |
+//! | 3 | U | `uextension4` present |
+//! | 4 | V | `wextension8` present |
+//! | 5+6 | C | checksum variant (0=none, 1=CRC-32C, 2=CRC-64, 3=MD5) |
+//! | 7 | P | `parameters` (ParameterList) present |
 //!
-//! # Receiver-State-Update (§8.3.7.4)
+//! # Receiver state update (§8.3.7.4)
 //!
-//! Bei Empfang einer HE aktualisiert der Receiver:
+//! On receipt of an HE the receiver updates:
 //!
-//! - `Receiver.messageLength` aus dem L-Feld (falls vorhanden) →
-//!   Cross-Check gegen tatsaechliche Datagram-Restlaenge. Mismatch =
+//! - `Receiver.messageLength` from the L field (if present) →
+//!   cross-check against the actual remaining datagram length. Mismatch =
 //!   `WireError::ValueOutOfRange`.
-//! - `Receiver.haveTimestamp = true`, `Receiver.timestamp = …` aus dem
-//!   T-Feld (falls vorhanden).
-//! - `Receiver.messageChecksum = …` aus dem C-Feld (falls Variante ≠ 0).
-//! - `Receiver.parameters = …` aus dem P-Feld (falls vorhanden).
-//! - `clockSkewDetected` Heuristik: wenn `|Receiver.timestamp - now|` >
-//!   Grenzwert. (Diese Heuristik verbleibt im Receiver-Code; das
-//!   Decode-Modul liefert nur die Eingabe.)
+//! - `Receiver.haveTimestamp = true`, `Receiver.timestamp = …` from the
+//!   T field (if present).
+//! - `Receiver.messageChecksum = …` from the C field (if variant ≠ 0).
+//! - `Receiver.parameters = …` from the P field (if present).
+//! - `clockSkewDetected` heuristic: if `|Receiver.timestamp - now|` >
+//!   threshold. (This heuristic stays in the receiver code; the
+//!   decode module only provides the input.)
 //!
 //! # DoS-Cap
 //!
-//! `MAX_HE_LENGTH = 16 KiB`: HE-Body darf nicht laenger als 16 KiB
-//! sein (deckt typische ParameterList + alle Optional-Felder).
-//! Verhindert Amplification ueber boesartig grosse `parameters`.
+//! `MAX_HE_LENGTH = 16 KiB`: the HE body must not be longer than 16 KiB
+//! (covers a typical ParameterList + all optional fields).
+//! Prevents amplification via maliciously large `parameters`.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -69,42 +69,42 @@ use alloc::vec::Vec;
 use crate::error::WireError;
 use crate::parameter_list::ParameterList;
 
-/// SubmessageId fuer HeaderExtension (DDSI-RTPS 2.5).
+/// SubmessageId for HeaderExtension (DDSI-RTPS 2.5).
 pub const SUBMESSAGE_ID_HEADER_EXTENSION: u8 = 0x80;
 
-/// Hard-Cap fuer HE-Body-Laenge (DoS-Schutz).
+/// Hard cap for the HE body length (DoS protection).
 pub const MAX_HE_LENGTH: usize = 16 * 1024;
 
 // ----- Flag-Bits -----
 
-/// E-Flag (Bit 0) — Endianness des Bodies (1 = LE).
+/// E flag (bit 0) — endianness of the body (1 = LE).
 pub const HE_FLAG_E: u8 = 1 << 0;
-/// L-Flag (Bit 1) — `messageLength` vorhanden.
+/// L flag (bit 1) — `messageLength` present.
 pub const HE_FLAG_L: u8 = 1 << 1;
-/// W-Flag (Bit 2) — `rtpsSendTimestamp` vorhanden.
+/// W flag (bit 2) — `rtpsSendTimestamp` present.
 pub const HE_FLAG_W: u8 = 1 << 2;
-/// U-Flag (Bit 3) — `uextension4` vorhanden.
+/// U flag (bit 3) — `uextension4` present.
 pub const HE_FLAG_U: u8 = 1 << 3;
-/// V-Flag (Bit 4) — `wextension8` vorhanden.
+/// V flag (bit 4) — `wextension8` present.
 pub const HE_FLAG_V: u8 = 1 << 4;
-/// Lower-Bit der C-Maske (Bit 5).
+/// Lower bit of the C mask (bit 5).
 pub const HE_FLAG_C0: u8 = 1 << 5;
-/// Higher-Bit der C-Maske (Bit 6).
+/// Higher bit of the C mask (bit 6).
 pub const HE_FLAG_C1: u8 = 1 << 6;
-/// Maske der beiden Checksum-Selector-Bits (Bits 5+6).
+/// Mask of the two checksum selector bits (bits 5+6).
 pub const HE_FLAG_C_MASK: u8 = HE_FLAG_C0 | HE_FLAG_C1;
-/// P-Flag (Bit 7) — `parameters` (ParameterList) vorhanden.
+/// P flag (bit 7) — `parameters` (ParameterList) present.
 pub const HE_FLAG_P: u8 = 1 << 7;
 
 // =====================================================================
-// Wire-Typen
+// Wire types
 // =====================================================================
 
-/// Spec §9.4.2.15.2 — Auswahl der `messageChecksum`-Variante. Wert
-/// liegt in den C-Bits (5+6) des Flag-Bytes.
+/// Spec §9.4.2.15.2 — selection of the `messageChecksum` variant. The value
+/// is in the C bits (5+6) of the flag byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChecksumKind {
-    /// `C = 00` — keine Checksum.
+    /// `C = 00` — no checksum.
     None,
     /// `C = 01` — CRC-32C (RFC 4960 App. B), 4 Byte.
     Crc32c,
@@ -115,7 +115,7 @@ pub enum ChecksumKind {
 }
 
 impl ChecksumKind {
-    /// Wire-Size in Bytes (0/4/8/16).
+    /// Wire size in bytes (0/4/8/16).
     #[must_use]
     pub fn wire_size(self) -> usize {
         match self {
@@ -126,20 +126,20 @@ impl ChecksumKind {
         }
     }
 
-    /// Aus den C-Bits eines Flag-Bytes extrahieren.
+    /// Extract from the C bits of a flag byte.
     #[must_use]
     pub fn from_flags(flags: u8) -> Self {
-        // Maskierung garantiert Werte 0..=3.
+        // Masking guarantees values 0..=3.
         match (flags & HE_FLAG_C_MASK) >> 5 {
             1 => Self::Crc32c,
             2 => Self::Crc64,
             3 => Self::Md5,
-            // 0 oder unmoegliche oberen Bits: keine Checksum.
+            // 0 or impossible upper bits: no checksum.
             _ => Self::None,
         }
     }
 
-    /// In die C-Bits eines Flag-Bytes encodieren.
+    /// Encode into the C bits of a flag byte.
     #[must_use]
     pub fn to_flag_bits(self) -> u8 {
         let raw = match self {
@@ -152,22 +152,22 @@ impl ChecksumKind {
     }
 }
 
-/// Inhalt der `messageChecksum` (variabel nach [`ChecksumKind`]).
+/// Content of the `messageChecksum` (variable per [`ChecksumKind`]).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ChecksumValue {
-    /// Kein Checksum-Feld geschrieben.
+    /// No checksum field written.
     #[default]
     None,
     /// CRC-32C u32.
     Crc32c(u32),
     /// CRC-64-XZ u64.
     Crc64(u64),
-    /// MD5-128 16-Byte-Hash.
+    /// MD5-128 16-byte hash.
     Md5([u8; 16]),
 }
 
 impl ChecksumValue {
-    /// Zugehoeriger [`ChecksumKind`].
+    /// Associated [`ChecksumKind`].
     #[must_use]
     pub fn kind(&self) -> ChecksumKind {
         match self {
@@ -178,18 +178,18 @@ impl ChecksumValue {
         }
     }
 
-    /// Berechnet die `messageChecksum` ueber `payload` mit dem
-    /// gewuenschten Algorithmus (DDSI-RTPS 2.5 §9.4.2.15.2).
+    /// Computes the `messageChecksum` over `payload` with the
+    /// desired algorithm (DDSI-RTPS 2.5 §9.4.2.15.2).
     ///
-    /// `payload` ist der Bereich, ueber den die Checksum berechnet
-    /// wird. Spec-konform sind das die Submessages **nach** der
-    /// HeaderExtension-Submessage; der Caller stellt das durch
-    /// passenden Slice-Cut sicher.
+    /// `payload` is the range over which the checksum is computed.
+    /// Per spec these are the submessages **after** the
+    /// HeaderExtension submessage; the caller ensures this via
+    /// an appropriate slice cut.
     ///
-    /// Implementiert via [`zerodds_foundation::crc32c`],
-    /// [`zerodds_foundation::crc64_xz`] und [`zerodds_foundation::md5`] —
-    /// pure-Rust no_std-Hashes ohne externe Crypto-Crate-
-    /// Abhaengigkeit (Pillar 9 Zero-Dependency).
+    /// Implemented via [`zerodds_foundation::crc32c`],
+    /// [`zerodds_foundation::crc64_xz`] and [`zerodds_foundation::md5`] —
+    /// pure-Rust no_std hashes without an external crypto-crate
+    /// dependency (Pillar 9 zero-dependency).
     #[must_use]
     pub fn compute(kind: ChecksumKind, payload: &[u8]) -> Self {
         match kind {
@@ -200,14 +200,14 @@ impl ChecksumValue {
         }
     }
 
-    /// Verifiziert dass die in diesem Wert gehaltene Checksum mit der
-    /// ueber `payload` berechneten uebereinstimmt.
+    /// Verifies that the checksum held in this value matches the one
+    /// computed over `payload`.
     ///
-    /// Liefert `true` wenn der Algorithmus aktiv ist UND der Wert
-    /// passt; `true` auch wenn `kind() == None` (keine Checksum
-    /// deklariert, nichts zu verifizieren); `false` bei Mismatch.
+    /// Returns `true` if the algorithm is active AND the value
+    /// matches; `true` also if `kind() == None` (no checksum
+    /// declared, nothing to verify); `false` on mismatch.
     ///
-    /// Spec §9.4.2.15.2: Receiver verwirft die Message bei Mismatch.
+    /// Spec §9.4.2.15.2: the receiver discards the message on mismatch.
     #[must_use]
     pub fn verify(&self, payload: &[u8]) -> bool {
         let computed = Self::compute(self.kind(), payload);
@@ -215,45 +215,45 @@ impl ChecksumValue {
     }
 }
 
-/// 8-Byte Sender-Timestamp (Time_t = i32 sec + u32 nanosec, Big-Endian
-/// im RTPS-Wire-Sinn — wird im HE-Body in Submessage-Endianness
-/// geschrieben).
+/// 8-byte sender timestamp (Time_t = i32 sec + u32 nanosec, big-endian
+/// in the RTPS wire sense — written in the HE body in submessage
+/// endianness).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct HeTimestamp {
-    /// Sekunden seit Unix-Epoch.
+    /// Seconds since the Unix epoch.
     pub seconds: i32,
-    /// Nanosekunden im laufenden Sekunden-Tick.
+    /// Nanoseconds within the current second tick.
     pub fraction: u32,
 }
 
-/// Geparste HeaderExtension-Submessage.
+/// Parsed HeaderExtension submessage.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct HeaderExtension {
-    /// Endianness des Bodies (`true` = Little-Endian).
+    /// Endianness of the body (`true` = little-endian).
     pub little_endian: bool,
-    /// Falls L-Flag gesetzt: Restlaenge der Message.
+    /// If the L flag is set: remaining length of the message.
     pub message_length: Option<u32>,
-    /// Falls W-Flag gesetzt: Sender-Timestamp.
+    /// If the W flag is set: sender timestamp.
     pub timestamp: Option<HeTimestamp>,
-    /// Falls U-Flag gesetzt: 4-Byte vendor-spezifischer Wert.
+    /// If the U flag is set: 4-byte vendor-specific value.
     pub uextension4: Option<[u8; 4]>,
-    /// Falls V-Flag gesetzt: 16-Byte vendor-spezifischer Wert.
+    /// If the V flag is set: 16-byte vendor-specific value.
     pub wextension8: Option<[u8; 8]>,
-    /// Falls C-Flag != 0: Checksum-Wert.
+    /// If the C flag != 0: checksum value.
     pub checksum: ChecksumValue,
-    /// Falls P-Flag gesetzt: ParameterList.
+    /// If the P flag is set: ParameterList.
     pub parameters: Option<ParameterList>,
 }
 
 impl HeaderExtension {
-    /// Leerer HE (alle optionalen Felder absent). Ueber den Builder-
-    /// Stil der Felder direkt manipulieren.
+    /// Empty HE (all optional fields absent). Manipulate the fields
+    /// directly in builder style.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Berechnet das Flag-Byte (inkl. E-Bit) aus den gesetzten Feldern.
+    /// Computes the flag byte (incl. E bit) from the set fields.
     #[must_use]
     pub fn flag_byte(&self) -> u8 {
         let mut f = 0u8;
@@ -279,14 +279,14 @@ impl HeaderExtension {
         f
     }
 
-    /// Encoded den Body **ohne** Submessage-Header. Body-Laenge ist
-    /// per Konstruktion ≤ [`MAX_HE_LENGTH`].
+    /// Encodes the body **without** the submessage header. The body length is
+    /// by construction ≤ [`MAX_HE_LENGTH`].
     ///
-    /// Reihenfolge: L → W → U → V → C → P, gem. Spec §9.4.5.2.
+    /// Order: L → W → U → V → C → P, per Spec §9.4.5.2.
     ///
     /// # Errors
-    /// `ValueOutOfRange` wenn der Body > `u16::MAX` oder
-    /// > `MAX_HE_LENGTH` waere.
+    /// `ValueOutOfRange` if the body would be > `u16::MAX` or
+    /// > `MAX_HE_LENGTH`.
     pub fn encode_body(&self) -> Result<Vec<u8>, WireError> {
         let le = self.little_endian;
         let mut body = Vec::with_capacity(64);
@@ -311,7 +311,7 @@ impl HeaderExtension {
             ChecksumValue::Md5(m) => body.extend_from_slice(&m),
         }
         if let Some(pl) = &self.parameters {
-            // ParameterList in Submessage-Endianness anfuegen.
+            // Append ParameterList in submessage endianness.
             body.extend_from_slice(&pl.to_bytes(le));
         }
         if body.len() > MAX_HE_LENGTH {
@@ -322,11 +322,11 @@ impl HeaderExtension {
         Ok(body)
     }
 
-    /// Encoded HE als komplettes Submessage = 4-Byte SubmessageHeader
-    /// + Body. `octets_to_next_header` wird auf Body-Laenge gesetzt.
+    /// Encodes the HE as a complete submessage = 4-byte SubmessageHeader
+    /// + body. `octets_to_next_header` is set to the body length.
     ///
     /// # Errors
-    /// `ValueOutOfRange` wenn Body-Laenge > `u16::MAX`.
+    /// `ValueOutOfRange` if the body length > `u16::MAX`.
     pub fn encode(&self) -> Result<Vec<u8>, WireError> {
         let body = self.encode_body()?;
         let body_len = u16::try_from(body.len()).map_err(|_| WireError::ValueOutOfRange {
@@ -345,12 +345,12 @@ impl HeaderExtension {
         Ok(out)
     }
 
-    /// Decoded den HE-Body aus einem Slice der Laenge
-    /// `octets_to_next_header`, gegeben das Flag-Byte aus dem
-    /// Submessage-Header.
+    /// Decodes the HE body from a slice of length
+    /// `octets_to_next_header`, given the flag byte from the
+    /// submessage header.
     ///
     /// # Errors
-    /// `UnexpectedEof`, `ValueOutOfRange` (Body groesser
+    /// `UnexpectedEof`, `ValueOutOfRange` (body larger than
     /// `MAX_HE_LENGTH`).
     pub fn decode_body(body: &[u8], flags: u8) -> Result<Self, WireError> {
         if body.len() > MAX_HE_LENGTH {
@@ -435,22 +435,22 @@ impl HeaderExtension {
         };
 
         let parameters = if (flags & HE_FLAG_P) != 0 {
-            // ParameterList belegt den verbleibenden Body.
+            // The ParameterList occupies the remaining body.
             let pl = ParameterList::from_bytes(&body[pos..], le)?;
-            // pos auf Ende setzen — die ParameterList endet am Sentinel
-            // und kann von trailing-Bytes gefolgt sein, die wir hier als
-            // Fehler-Indikator werten (Spec verbietet trailing-Garbage
-            // im HE-Body).
+            // Set pos to the end — the ParameterList ends at the sentinel
+            // and may be followed by trailing bytes, which we treat here as
+            // an error indicator (the spec forbids trailing garbage
+            // in the HE body).
             //
-            // Konkret: Encoder schreibt am Ende den Sentinel + 0; ein
-            // sauberer Body endet damit. Wenn `from_bytes` schon
-            // erfolgreich zurueckkehrt, hat es alles bis zum Sentinel
-            // gelesen — wir validieren keine Trailing-Bytes (RFC sagt
-            // ParameterList nimmt den Rest; defensives Verwerfen wuerde
-            // legale Vendor-Padding brechen).
+            // Concretely: the encoder writes the sentinel + 0 at the end; a
+            // clean body ends with it. If `from_bytes` already
+            // returns successfully, it read everything up to the sentinel
+            // — we do not validate trailing bytes (the RFC says
+            // the ParameterList takes the rest; defensive rejection would
+            // break legal vendor padding).
             Some(pl)
         } else {
-            // Kein P-Flag: trailing bytes sind unerwartet.
+            // No P flag: trailing bytes are unexpected.
             if pos != body.len() {
                 return Err(WireError::ValueOutOfRange {
                     message: "HE trailing bytes without P-flag",
@@ -470,8 +470,8 @@ impl HeaderExtension {
         })
     }
 
-    /// Decoded eine komplette HE-Submessage (Header + Body) aus
-    /// `bytes`. Ueberprueft die SubmessageId.
+    /// Decodes a complete HE submessage (header + body) from
+    /// `bytes`. Checks the SubmessageId.
     ///
     /// # Errors
     /// `UnexpectedEof`, `UnknownSubmessageId`, `ValueOutOfRange`.
@@ -503,16 +503,16 @@ impl HeaderExtension {
         Self::decode_body(&bytes[4..4 + octets], flags)
     }
 
-    /// Cross-Check: wenn `message_length` gesetzt ist, MUSS sie der
-    /// tatsaechlichen Restlaenge der RTPS-Message ab dem ersten
-    /// Submessage-Header (also ab Byte 20 = nach RtpsHeader) bis zum
-    /// Datagram-Ende entsprechen (Spec §8.3.7.4).
+    /// Cross-check: if `message_length` is set, it MUST equal the
+    /// actual remaining length of the RTPS message from the first
+    /// submessage header (i.e. from byte 20 = after the RtpsHeader) up to the
+    /// end of the datagram (Spec §8.3.7.4).
     ///
-    /// `actual_message_length` ist die vom Receiver gemessene
-    /// Restlaenge.
+    /// `actual_message_length` is the remaining length measured by the
+    /// receiver.
     ///
     /// # Errors
-    /// `ValueOutOfRange` bei Mismatch.
+    /// `ValueOutOfRange` on mismatch.
     pub fn validate_message_length(&self, actual_message_length: u32) -> Result<(), WireError> {
         if let Some(declared) = self.message_length {
             if declared != actual_message_length {
@@ -526,33 +526,33 @@ impl HeaderExtension {
 }
 
 // =====================================================================
-// PID-Helpers — Must-Understand-Bit (Spec §9.4.2.11.2)
+// PID helpers — must-understand bit (Spec §9.4.2.11.2)
 // =====================================================================
 
-/// Bit-Maske: gesetzt -> Reader MUSS diesen PID verstehen, sonst die
-/// gesamte Message (HE-Carrier) verwerfen.
+/// Bit mask: set -> the reader MUST understand this PID, otherwise discard
+/// the whole message (HE carrier).
 pub const PID_MUST_UNDERSTAND: u16 = 0x4000;
 
-/// Bit-Maske: gesetzt -> Vendor-spezifischer PID (Spec-Reservation 2.5
-/// Tab 9.13). Reader die diesen PID nicht kennen, duerfen ihn skippen
-/// **wenn** das `must_understand`-Bit nicht gesetzt ist.
+/// Bit mask: set -> vendor-specific PID (spec reservation 2.5
+/// Tab 9.13). Readers that do not know this PID may skip it
+/// **if** the `must_understand` bit is not set.
 pub const PID_VENDOR_SPECIFIC: u16 = 0x8000;
 
-/// Liefert `true`, wenn der gegebene PID das Must-Understand-Bit
-/// gesetzt hat.
+/// Returns `true` if the given PID has the must-understand bit
+/// set.
 #[must_use]
 pub fn pid_must_understand(pid: u16) -> bool {
     (pid & PID_MUST_UNDERSTAND) != 0
 }
 
-/// Roher PID ohne Must-Understand- und Vendor-Bits.
+/// Raw PID without the must-understand and vendor bits.
 #[must_use]
 pub fn pid_strip(pid: u16) -> u16 {
     pid & !(PID_MUST_UNDERSTAND | PID_VENDOR_SPECIFIC)
 }
 
 // =====================================================================
-// Bit-Helpers (private)
+// Bit helpers (private)
 // =====================================================================
 
 fn write_u32(out: &mut Vec<u8>, v: u32, le: bool) {
@@ -788,17 +788,17 @@ mod tests {
 
     #[test]
     fn decode_rejects_malformed_parameter_list_when_p_flag_set() {
-        // Spec §8.3.7.3: Bei P-Flag muss der Rest des Bodies eine
-        // valide ParameterList sein. Ein Body, der einen halben
-        // Parameter-Header enthaelt (4 Byte Header + 4 Byte fehlt),
-        // muss mit Error abgelehnt werden.
+        // Spec §8.3.7.3: with the P flag the rest of the body must be a
+        // valid ParameterList. A body containing half a
+        // parameter header (4-byte header + 4 bytes missing)
+        // must be rejected with an error.
         let mut pl_bytes = Vec::<u8>::new();
-        // PID=0x0002, length=0x0010 (16 byte angekuendigt), aber nur 2
-        // Byte body geliefert. (PID=0x0001 ist Sentinel — vermeide.)
+        // PID=0x0002, length=0x0010 (16 bytes announced), but only 2
+        // bytes of body delivered. (PID=0x0001 is the sentinel — avoid.)
         pl_bytes.extend_from_slice(&0x0002u16.to_le_bytes());
         pl_bytes.extend_from_slice(&0x0010u16.to_le_bytes());
         pl_bytes.extend_from_slice(&[0xAA, 0xBB]); // truncated body
-        // Body = E-flag in flags + P-flag → kein L/W/U/V/C, danach PL.
+        // Body = E flag in flags + P flag → no L/W/U/V/C, then PL.
         let flags = HE_FLAG_E | HE_FLAG_P;
         let r = HeaderExtension::decode_body(&pl_bytes, flags);
         assert!(r.is_err(), "malformed PL must be rejected");
@@ -806,8 +806,8 @@ mod tests {
 
     #[test]
     fn decode_rejects_truncated_uextension4_body() {
-        // Spec §8.3.7.3 Length-Mismatch: U-Flag angekuendigt, aber
-        // Body enthaelt nur 2 Byte statt 4.
+        // Spec §8.3.7.3 length mismatch: U flag announced, but the
+        // body contains only 2 bytes instead of 4.
         let body: [u8; 2] = [0xAA, 0xBB];
         let flags = HE_FLAG_E | HE_FLAG_U;
         let r = HeaderExtension::decode_body(&body, flags);
@@ -816,7 +816,7 @@ mod tests {
 
     #[test]
     fn decode_rejects_truncated_wextension8_body() {
-        // Spec §8.3.7.3: V-Flag angekuendigt, Body kuerzer als 8 Byte.
+        // Spec §8.3.7.3: V flag announced, body shorter than 8 bytes.
         let body: [u8; 4] = [0; 4];
         let flags = HE_FLAG_E | HE_FLAG_V;
         let r = HeaderExtension::decode_body(&body, flags);
@@ -825,7 +825,7 @@ mod tests {
 
     #[test]
     fn decode_rejects_truncated_md5_checksum_body() {
-        // C-Flag = MD5 (=3), Body < 16 Byte → reject.
+        // C flag = MD5 (=3), body < 16 bytes → reject.
         let body: [u8; 4] = [0; 4];
         let flags = HE_FLAG_E | HE_FLAG_C0 | HE_FLAG_C1;
         let r = HeaderExtension::decode_body(&body, flags);
@@ -834,7 +834,7 @@ mod tests {
 
     #[test]
     fn flag_byte_includes_all_seven_logical_flags() {
-        // Spec §8.3.3.2: 7 Flags E/L/W/U/V/C/P.
+        // Spec §8.3.3.2: 7 flags E/L/W/U/V/C/P.
         let mut pl = ParameterList::new();
         pl.push(Parameter::new(0x0001, vec![1, 2, 3, 4]));
         let he = HeaderExtension {
@@ -896,7 +896,7 @@ mod tests {
 
     #[test]
     fn decode_rejects_wrong_submessage_id() {
-        // Falscher SubmessageId (0x15 = DATA).
+        // Wrong SubmessageId (0x15 = DATA).
         let bytes = [0x15u8, HE_FLAG_E, 0, 0];
         let res = HeaderExtension::decode(&bytes);
         assert!(matches!(
@@ -914,7 +914,7 @@ mod tests {
 
     #[test]
     fn decode_rejects_truncated_body_before_message_length() {
-        // L-Flag aber nur 2 Byte Body.
+        // L flag but only 2 bytes of body.
         let bytes = [
             SUBMESSAGE_ID_HEADER_EXTENSION,
             HE_FLAG_E | HE_FLAG_L,
@@ -929,9 +929,9 @@ mod tests {
 
     #[test]
     fn decode_rejects_oversized_body() {
-        // Konstruieren eines Headers mit grossem Body — wir koennen
-        // nur bis u16::MAX adressieren, aber wir koennen
-        // `decode_body` direkt mit > MAX_HE_LENGTH Body fuettern.
+        // Construct a header with a large body — we can
+        // only address up to u16::MAX, but we can
+        // feed `decode_body` directly with a > MAX_HE_LENGTH body.
         let big = vec![0u8; MAX_HE_LENGTH + 1];
         let res = HeaderExtension::decode_body(&big, HE_FLAG_E);
         assert!(matches!(res, Err(WireError::ValueOutOfRange { .. })));
@@ -939,7 +939,7 @@ mod tests {
 
     #[test]
     fn decode_rejects_trailing_bytes_without_p_flag() {
-        // Body hat 4 Byte trailing aber kein P-Flag.
+        // Body has 4 trailing bytes but no P flag.
         let body = vec![0xAA, 0xBB, 0xCC, 0xDD];
         let res = HeaderExtension::decode_body(&body, HE_FLAG_E);
         assert!(matches!(res, Err(WireError::ValueOutOfRange { .. })));
@@ -993,7 +993,7 @@ mod tests {
 
     #[test]
     fn wire_layout_le_message_length_correct() {
-        // L-Flag, 4 Byte Body = 0xDEADBEEF LE.
+        // L flag, 4 bytes of body = 0xDEADBEEF LE.
         let he = HeaderExtension {
             little_endian: true,
             message_length: Some(0xDEAD_BEEF),
@@ -1016,7 +1016,7 @@ mod tests {
             ..HeaderExtension::default()
         };
         let bytes = he.encode().unwrap();
-        assert_eq!(bytes[1], HE_FLAG_L); // E-Flag NICHT gesetzt
+        assert_eq!(bytes[1], HE_FLAG_L); // E flag NOT set
         // octets_to_next_header BE = 4
         assert_eq!(&bytes[2..4], &[0x00, 0x04]);
         assert_eq!(&bytes[4..8], &[0xDE, 0xAD, 0xBE, 0xEF]);
@@ -1086,9 +1086,9 @@ mod tests {
 
     #[test]
     fn checksum_verify_none_kind_always_succeeds() {
-        // Kind=None bedeutet "keine Checksum deklariert" — Verify ist
-        // dann no-op und MUSS true zurueckgeben (sonst wuerden alle
-        // Messages ohne deklarierte Checksum verworfen).
+        // Kind=None means "no checksum declared" — verify is
+        // then a no-op and MUST return true (otherwise all
+        // messages without a declared checksum would be discarded).
         let cs = ChecksumValue::None;
         assert!(cs.verify(b"any payload"));
         assert!(cs.verify(b""));

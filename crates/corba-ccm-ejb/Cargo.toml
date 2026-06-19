@@ -26,7 +26,7 @@ std = ["alloc", "dep:zerodds-corba-ccm"]
 alloc = []
 
 [dependencies]
-# Spec CCM 4.0 §2 CP6 Wire-up — PSS-Session-Bind-Helper an
-# `ConnectorBean`. Optional (std-only), damit der no_std-Pfad
-# keinen std-Zwang bekommt.
-zerodds-corba-ccm = { version = "1.0.0-rc.1", path = "../corba-ccm", optional = true }
+# Spec CCM 4.0 §2 CP6 wire-up — PSS-session bind helper for
+# `ConnectorBean`. Optional (std-only), so that the no_std path
+# does not force std.
+zerodds-corba-ccm = { version = "1.0.0-rc.3", path = "../corba-ccm", optional = true }

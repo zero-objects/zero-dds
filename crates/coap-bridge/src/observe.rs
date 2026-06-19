@@ -1,47 +1,47 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Observe-Pattern — RFC 7641.
+//! Observe pattern — RFC 7641.
 //!
-//! Spec §2: ein Client signalisiert Observe-Interesse mit Option
-//! `Observe = 0` (register) bzw. `Observe = 1` (deregister). Server
-//! liefert Notifications mit monoton steigender `Observe`-Sequenz-
-//! Nummer.
+//! Spec §2: a client signals observe interest with option
+//! `Observe = 0` (register) or `Observe = 1` (deregister). The server
+//! delivers notifications with a monotonically increasing `Observe`
+//! sequence number.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-/// Observe-Option-Number (RFC 7641 §2 — registriert in IANA-Tabelle
-/// als 6).
+/// Observe option number (RFC 7641 §2 — registered in the IANA table
+/// as 6).
 pub const OBSERVE_OPTION_NUMBER: u16 = 6;
 
-/// Observer-Eintrag pro (Resource-Path, Token).
+/// Observer entry per (resource path, token).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObserverEntry {
-    /// Resource-Path (z.B. `dds/Trade/AAPL`).
+    /// Resource path (e.g. `dds/Trade/AAPL`).
     pub path: alloc::string::String,
-    /// Token-Bytes des registrierenden Clients.
+    /// Token bytes of the registering client.
     pub token: Vec<u8>,
-    /// Aktueller `Observe`-Sequenz-Counter (Spec §3.4).
+    /// Current `Observe` sequence counter (spec §3.4).
     pub seq: u32,
-    /// Optional Caller-Reference (z.B. UDP-Endpoint-Encoded-Bytes).
+    /// Optional caller reference (e.g. UDP endpoint encoded bytes).
     pub endpoint: Vec<u8>,
 }
 
-/// Observe-Registry — Server-Side.
+/// Observe registry — server side.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ObserveRegistry {
     by_path: BTreeMap<alloc::string::String, Vec<ObserverEntry>>,
 }
 
 impl ObserveRegistry {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Spec §3.1: Register-Request mit `Observe = 0`.
+    /// Spec §3.1: register request with `Observe = 0`.
     pub fn register(&mut self, path: alloc::string::String, token: Vec<u8>, endpoint: Vec<u8>) {
         let list = self.by_path.entry(path.clone()).or_default();
         if let Some(existing) = list.iter_mut().find(|e| e.token == token) {
@@ -56,7 +56,7 @@ impl ObserveRegistry {
         });
     }
 
-    /// Spec §3.6: Deregister via `Observe = 1` oder Reset auf NON.
+    /// Spec §3.6: deregister via `Observe = 1` or Reset on NON.
     pub fn deregister(&mut self, path: &str, token: &[u8]) -> bool {
         let Some(list) = self.by_path.get_mut(path) else {
             return false;
@@ -66,8 +66,8 @@ impl ObserveRegistry {
         before != list.len()
     }
 
-    /// Liste aller Observer fuer einen Pfad. Caller iteriert um
-    /// Notifications zu emittieren.
+    /// List of all observers for a path. The caller iterates to
+    /// emit notifications.
     #[must_use]
     pub fn observers_of(&self, path: &str) -> Vec<&ObserverEntry> {
         self.by_path
@@ -76,9 +76,9 @@ impl ObserveRegistry {
             .unwrap_or_default()
     }
 
-    /// Inkrementiert die `Observe`-Sequenz fuer alle Observer eines
-    /// Pfads. Spec §3.4: Notifications muessen monoton steigend
-    /// nummeriert sein (modulo 2^24).
+    /// Increments the `Observe` sequence for all observers of a
+    /// path. Spec §3.4: notifications must be numbered monotonically
+    /// increasing (modulo 2^24).
     pub fn next_seq(&mut self, path: &str) -> Vec<(Vec<u8>, u32, Vec<u8>)> {
         let Some(list) = self.by_path.get_mut(path) else {
             return Vec::new();
@@ -91,7 +91,7 @@ impl ObserveRegistry {
             .collect()
     }
 
-    /// Anzahl Observer ueber alle Pfade.
+    /// Number of observers across all paths.
     #[must_use]
     pub fn observer_count(&self) -> usize {
         self.by_path.values().map(Vec::len).sum()

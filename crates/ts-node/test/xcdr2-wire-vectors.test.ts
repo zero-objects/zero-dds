@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// xcdr2-wire-vectors.test.ts — Pflicht-Konformanz-Tests fuer
-// `@zerodds/cdr` gegen `zerodds-xcdr2-bindings-conformance-1.0` §6
-// (Wire-Test-Vektoren V-1..V-12).
+// xcdr2-wire-vectors.test.ts — mandatory conformance tests for
+// `@zerodds/cdr` against `zerodds-xcdr2-bindings-conformance-1.0` §6
+// (wire test vectors V-1..V-12).
 //
-// Pro Vektor:
+// Per vector:
 //   1. Build sample
-//   2. encode(sample) → Bytes byte-exact gegen Spec
-//   3. decode(bytes) → roundtrip-Sample (deep-equal)
+//   2. encode(sample) → bytes byte-exact against spec
+//   3. decode(bytes) → roundtrip sample (deep-equal)
 //
-// Tests benutzen die Helper-Library direkt (Xcdr2Writer/Xcdr2Reader/
-// md5) und replizieren das Pattern, das `idl-ts` pro Sample emittiert.
-// Das deckt L1 (Wire) ab; L2 (Codegen) wird separat in
-// `crates/idl-ts/tests/compile_check.rs` geprueft.
+// The tests use the helper library directly (Xcdr2Writer/Xcdr2Reader/
+// md5) and replicate the pattern that `idl-ts` emits per sample.
+// This covers L1 (wire); L2 (codegen) is checked separately in
+// `crates/idl-ts/tests/compile_check.rs`.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -28,8 +28,8 @@ function hex(bytes: Uint8Array): string {
 }
 
 function fromHex(s: string): Uint8Array {
-    // Strip line-comments (everything after `#` on a line) und alle
-    // Whitespace-Chars. Was uebrig bleibt MUSS hex-paarig sein.
+    // Strip line comments (everything after `#` on a line) and all
+    // whitespace chars. What remains MUST be hex-paired.
     const noComments = s.replace(/#[^\n]*/g, "");
     const cleaned = noComments.replace(/\s+/g, "");
     if (cleaned.length % 2 !== 0) {
@@ -224,26 +224,33 @@ interface VTags {
     tags: string[];
 }
 
-test("V-6 Sequence<string> Final: 4-byte alignment between strings", () => {
+test("V-6 Sequence<string> Final: DHEADER (XTypes 7.4.3.5 non-primitive elems)", () => {
     const sample: VTags = { tags: ["a", "bc"] };
+    // XCDR2 7.4.3.5: seq<string> has non-primitive elements -> DHEADER
+    // (uint32 = byte length of [count + elements]) prepended. Cyclone-verified.
     const expected = fromHex(
-        "02 00 00 00" +
+        "13 00 00 00" + // DHEADER = 19
+            "02 00 00 00" +
             "02 00 00 00 61 00" +
             "00 00" +
             "03 00 00 00 62 63 00",
     );
     const w = new Xcdr2Writer("le");
+    const tok = w.beginAppendable();
     w.writeUint32(sample.tags.length);
     for (const e of sample.tags) {
         w.writeString(e);
     }
+    w.endAppendable(tok);
     assertBytesEq(w.toBytes(), expected, "V-6 encode");
     const r = new Xcdr2Reader(expected, 0, expected.length, "le");
+    const dtok = r.beginAppendable();
     const n = r.readUint32();
     const tags: string[] = [];
     for (let i = 0; i < n; i++) {
         tags.push(r.readString());
     }
+    r.endAppendable(dtok);
     assert.deepEqual({ tags }, sample);
 });
 
@@ -279,7 +286,7 @@ function encodeSensor(s: VSensor): Uint8Array {
 }
 
 function keyHashSensor(s: VSensor): Uint8Array {
-    // XTypes 1.3 §7.6.8.4: Holder ≤ 16 octets -> zero-pad; sonst MD5.
+    // XTypes 1.3 §7.6.8.4: holder ≤ 16 octets -> zero-pad; otherwise MD5.
     const w = new Xcdr2Writer("be");
     w.writeInt32(s.id);
     const holder = w.toBytes();
@@ -473,14 +480,14 @@ test("V-11B Optional Mutable None: DHEADER=0", () => {
 });
 
 // === V-12 Mutable Sentinel End-Marker =======================================
-// XCDR2-Bindings DUERFEN keinen expliziten Sentinel emittieren — die
-// DHEADER-Groesse begrenzt das Lesen. Wir verifizieren das anhand der
-// V-10/V-11-Vektoren: das Ende ist genau bei DHEADER + body-size,
-// keine zusaetzlichen Bytes.
+// XCDR2 bindings MUST NOT emit an explicit sentinel — the
+// DHEADER size bounds the reading. We verify this using the
+// V-10/V-11 vectors: the end is exactly at DHEADER + body-size,
+// with no additional bytes.
 
-test("V-12 Mutable Sentinel: kein PID_LIST_END nach Mutable-Body", () => {
-    // V-10 + ein Trailing-Byte simuliert: Decoder MUSS exakt nur die
-    // ersten `4 + DHEADER`-Bytes konsumieren.
+test("V-12 Mutable Sentinel: no PID_LIST_END after the mutable body", () => {
+    // V-10 + a simulated trailing byte: the decoder MUST consume exactly
+    // only the first `4 + DHEADER` bytes.
     const v10 = encodeM({ a: 42, b: "hi" });
     const withTrailing = new Uint8Array(v10.length + 4);
     withTrailing.set(v10, 0);

@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! TypeLookup-Service — XTypes 1.3 §7.6.3.3.4.
+//! TypeLookup service — XTypes 1.3 §7.6.3.3.4.
 //!
-//! ## Module
+//! ## Modules
 //!
-//! - [`TypeLookupStack`]: Single-Object-Helper (Request-Builder +
-//!   Reply-Parser + Registry-Auflösung).
-//! - [`server::TypeLookupServer`]: server-side Handler mit Pagination.
-//! - [`client::TypeLookupClient`]: client-side Correlation-Table mit
-//!   pending-Request-Cap.
-//! - [`endpoints::TypeLookupEndpoints`]: 4 Builtin-Endpoint-GUIDs
+//! - [`TypeLookupStack`]: single-object helper (request builder +
+//!   reply parser + registry resolution).
+//! - [`server::TypeLookupServer`]: server-side handler with pagination.
+//! - [`client::TypeLookupClient`]: client-side correlation table with
+//!   pending-request cap.
+//! - [`endpoints::TypeLookupEndpoints`]: 4 builtin endpoint GUIDs
 //!   (TL_SVC_REQ/REPLY × WRITER/READER) + service-instance-name
-//!   Formatter.
+//!   formatter.
 //!
-//! ## Layer-Boundary an DCPS
+//! ## Layer boundary with DCPS
 //!
-//! Dieses Modul liefert die **wire-format-vollständigen** Primitives:
-//! Request-/Reply-Bytes, Server-Pagination, Client-Correlation. Die
-//! Instantiierung der vier Reliable-Writer/Reader-Pairs auf den
-//! `TL_SVC_*`-GUIDs liegt im DCPS-Layer
-//! (`crates/dcps/src/runtime.rs` Builtin-Endpoint-Spawn-Pfad), analog
-//! zu SEDP-Builtin-Endpoints.
+//! This module provides the **wire-format-complete** primitives:
+//! request/reply bytes, server pagination, client correlation. The
+//! instantiation of the four reliable writer/reader pairs on the
+//! `TL_SVC_*` GUIDs lives in the DCPS layer
+//! (`crates/dcps/src/runtime.rs` builtin-endpoint spawn path), analogous
+//! to SEDP builtin endpoints.
 
 pub mod client;
 pub mod endpoints;
@@ -49,19 +49,19 @@ use zerodds_types::type_lookup::{
 use zerodds_types::type_object::TypeObject;
 use zerodds_types::{EquivalenceHash, TypeIdentifier};
 
-/// TypeLookup-Stack fuer einen lokalen Participant.
+/// TypeLookup stack for a local participant.
 #[derive(Debug)]
 pub struct TypeLookupStack {
-    /// Eigener Prefix (fuer Request-/Reply-GUIDs).
+    /// Own prefix (for request/reply GUIDs).
     pub local_prefix: GuidPrefix,
-    /// Registry von bereits empfangenen TypeObjects.
+    /// Registry of already-received TypeObjects.
     pub registry: TypeRegistry,
-    /// Zaehler fuer Request-Sequenzen (fuer Sample-Identity).
+    /// Counter for request sequences (for sample identity).
     next_request_seq: u64,
 }
 
 impl TypeLookupStack {
-    /// Konstruiert einen leeren Stack.
+    /// Constructs an empty stack.
     #[must_use]
     pub fn new(local_prefix: GuidPrefix) -> Self {
         Self {
@@ -71,23 +71,23 @@ impl TypeLookupStack {
         }
     }
 
-    /// GUID des Request-Writers (von dem wir senden).
+    /// GUID of the request writer (the one we send from).
     #[must_use]
     pub fn request_writer_guid(&self) -> Guid {
         Guid::new(self.local_prefix, EntityId::TL_SVC_REQ_WRITER)
     }
 
-    /// GUID des Reply-Readers (auf dem wir empfangen).
+    /// GUID of the reply reader (the one we receive on).
     #[must_use]
     pub fn reply_reader_guid(&self) -> Guid {
         Guid::new(self.local_prefix, EntityId::TL_SVC_REPLY_READER)
     }
 
-    /// Baut einen `getTypes`-Request fuer die angegebenen Hashes.
-    /// Return: request-Payload-Bytes + neue Sequence-ID.
+    /// Builds a `getTypes` request for the given hashes.
+    /// Returns: request payload bytes + new sequence ID.
     ///
     /// # Errors
-    /// `EncodeError` bei zu grossen Listen.
+    /// `EncodeError` on lists that are too large.
     pub fn make_get_types_request(
         &mut self,
         hashes: &[EquivalenceHash],
@@ -112,11 +112,11 @@ impl TypeLookupStack {
         Ok((w.into_bytes(), seq))
     }
 
-    /// Verarbeitet ein empfangenes `getTypes`-Reply und tragt alle
-    /// enthaltenen TypeObjects in die Registry ein.
+    /// Processes a received `getTypes` reply and enters all
+    /// contained TypeObjects into the registry.
     ///
     /// # Errors
-    /// Decode-Fehler oder Hash-Berechnung scheitert.
+    /// Decode error or hash computation fails.
     pub fn handle_get_types_reply(&mut self, bytes: &[u8]) -> Result<usize, TypeCodecError> {
         let mut r = BufferReader::new(bytes, Endianness::Little);
         let reply = GetTypesReply::decode_from(&mut r)?;
@@ -138,7 +138,7 @@ impl TypeLookupStack {
         Ok(count)
     }
 
-    /// Baut einen `getTypeDependencies`-Request.
+    /// Builds a `getTypeDependencies` request.
     ///
     /// # Errors
     /// Encode.
@@ -159,7 +159,7 @@ impl TypeLookupStack {
         Ok(w.into_bytes())
     }
 
-    /// Decoded ein getTypeDependencies-Reply (fuer Tests / Caller).
+    /// Decodes a getTypeDependencies reply (for tests / caller).
     ///
     /// # Errors
     /// Decode.
@@ -171,8 +171,8 @@ impl TypeLookupStack {
         GetTypeDependenciesReply::decode_from(&mut r)
     }
 
-    /// Responder-Helper: baut einen `getTypes`-Reply aus der Registry.
-    /// Unbekannte Hashes werden ausgelassen.
+    /// Responder helper: builds a `getTypes` reply from the registry.
+    /// Unknown hashes are omitted.
     ///
     /// # Errors
     /// Encode.

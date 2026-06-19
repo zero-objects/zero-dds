@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "OMG CORBA 3.3 Part 2 §15 GIOP (General Inter-ORB Protocol) wire codec — alle 8 Message-Types fuer GIOP 1.0/1.1/1.2 inkl. Bidirectional-GIOP. no_std + alloc."
+description = "OMG CORBA 3.3 Part 2 §15 GIOP (General Inter-ORB Protocol) wire codec — all 8 message types for GIOP 1.0/1.1/1.2 incl. bidirectional GIOP. no_std + alloc."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-corba-giop"
 readme = "README.md"
@@ -26,5 +26,5 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-# CDR-1-Marshalling (GIOP nutzt CDR fuer Header- + Body-Encoding).
-zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr" }
+# CDR-1 marshalling (GIOP uses CDR for header + body encoding).
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr" }

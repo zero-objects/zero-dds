@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DLRL-Pragma-Parser — DDS 1.4 §B.4.1.
+//! DLRL pragma parser — DDS 1.4 §B.4.1.
 //!
-//! Spec §B.4.1 (S. 211): drei Pragmas markieren IDL-Konstrukte fuer
-//! den DLRL-Codegen:
+//! Spec §B.4.1 (p. 211): three pragmas mark IDL constructs for the
+//! DLRL codegen:
 //!
 //! ```text
 //! #pragma DCPS_DATA_TYPE  "<scoped-name>"
@@ -14,51 +14,51 @@
 
 use alloc::string::String;
 
-/// Geparste DLRL-Pragma-Variante.
+/// Parsed DLRL pragma variant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DlrlPragma {
-    /// `#pragma DCPS_DATA_TYPE "<scoped-name>"` — markiert ein
-    /// `struct` als DLRL-Object-Type.
+    /// `#pragma DCPS_DATA_TYPE "<scoped-name>"` — marks a `struct`
+    /// as a DLRL object type.
     DataType {
-        /// Vollqualifizierter Type-Name.
+        /// Fully qualified type name.
         name: String,
     },
-    /// `#pragma DCPS_DATA_KEY "<scoped-name> <field>"` — markiert
-    /// ein Feld als DLRL-Object-Key.
+    /// `#pragma DCPS_DATA_KEY "<scoped-name> <field>"` — marks a
+    /// field as a DLRL object key.
     DataKey {
-        /// Type-Name.
+        /// Type name.
         type_name: String,
-        /// Feld-Name.
+        /// Field name.
         field: String,
     },
     /// `#pragma DCPS_DLRL_RELATION "<scoped-name> <relation> <target>"` —
-    /// definiert eine Relationship.
+    /// defines a relationship.
     DlrlRelation {
-        /// Source-Type-Name.
+        /// Source type name.
         type_name: String,
-        /// Relation-Name.
+        /// Relation name.
         relation: String,
-        /// Target-Type-Name.
+        /// Target type name.
         target: String,
     },
 }
 
-/// Parser-Fehler.
+/// Parser error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParsePragmaError {
-    /// Line ist kein DLRL-Pragma.
+    /// Line is not a DLRL pragma.
     NotDlrlPragma,
-    /// Tag ist unbekannt.
+    /// Tag is unknown.
     UnknownTag(String),
-    /// Quoted-String fehlt oder ist nicht abgeschlossen.
+    /// Quoted string is missing or unterminated.
     MalformedQuotedString,
-    /// Quote-Inhalt hat falsche Token-Anzahl (z.B. `DCPS_DATA_KEY` braucht 2 Tokens).
+    /// Quote content has the wrong token count (e.g. `DCPS_DATA_KEY` needs 2 tokens).
     WrongArity {
         /// Tag.
         tag: String,
-        /// Erwartete Anzahl Tokens im Quote-String.
+        /// Expected number of tokens in the quoted string.
         expected: usize,
-        /// Tatsaechliche Anzahl.
+        /// Actual number.
         actual: usize,
     },
 }
@@ -81,10 +81,10 @@ impl core::fmt::Display for ParsePragmaError {
 #[cfg(feature = "std")]
 impl std::error::Error for ParsePragmaError {}
 
-/// Parst eine Source-Line in einen [`DlrlPragma`].
+/// Parses a source line into a [`DlrlPragma`].
 ///
 /// # Errors
-/// Siehe [`ParsePragmaError`].
+/// See [`ParsePragmaError`].
 pub fn parse_pragma(line: &str) -> Result<DlrlPragma, ParsePragmaError> {
     let trimmed = line.trim();
     let after_hash = trimmed
@@ -95,7 +95,7 @@ pub fn parse_pragma(line: &str) -> Result<DlrlPragma, ParsePragmaError> {
         .strip_prefix("pragma")
         .ok_or(ParsePragmaError::NotDlrlPragma)?
         .trim_start();
-    // Tag — bis Whitespace.
+    // Tag — up to whitespace.
     let tag_end = after_pragma
         .find(char::is_whitespace)
         .unwrap_or(after_pragma.len());

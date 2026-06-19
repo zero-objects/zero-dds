@@ -3,8 +3,8 @@
 
 //! `HEARTBEAT` Submessage (id=11, Spec §8.3.5.12).
 //!
-//! Direction: bidirektional. Header.streamId = `STREAMID_NONE`; das
-//! Stream-Tag ist im Body.
+//! Direction: bidirectional. Header.streamId = `STREAMID_NONE`; the
+//! stream tag is in the body.
 //!
 //! Body-Layout (5 Bytes):
 //! ```text
@@ -24,25 +24,25 @@ use crate::encoding::{Endianness, read_i16, write_i16};
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// Body-Wire-Size: 5 Bytes.
+/// Body wire size: 5 bytes.
 pub const HEARTBEAT_BODY_SIZE: usize = 5;
 
-/// `HEARTBEAT_Payload` strukturiert.
+/// `HEARTBEAT_Payload`, structured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct HeartbeatPayload {
-    /// Erste Sequenznummer im Sender-Window.
+    /// First sequence number in the sender window.
     pub first_unacked_seq_nr: i16,
-    /// Letzte Sequenznummer im Sender-Window.
+    /// Last sequence number in the sender window.
     pub last_unacked_seq_nr: i16,
-    /// Stream-Tag.
+    /// Stream tag.
     pub stream_id: u8,
 }
 
 impl HeartbeatPayload {
-    /// Encodiert den Body.
+    /// Encodes the body.
     ///
     /// # Errors
-    /// keine erwartet.
+    /// None expected.
     pub fn encode_body(self, e: Endianness) -> Result<Vec<u8>, XrceError> {
         let mut out = alloc::vec![0u8; HEARTBEAT_BODY_SIZE];
         write_i16(&mut out[0..2], self.first_unacked_seq_nr, e)?;
@@ -51,7 +51,7 @@ impl HeartbeatPayload {
         Ok(out)
     }
 
-    /// Decodiert den Body.
+    /// Decodes the body.
     ///
     /// # Errors
     /// `UnexpectedEof`.
@@ -71,7 +71,7 @@ impl HeartbeatPayload {
         })
     }
 
-    /// Verpackt in `Submessage` (LE).
+    /// Packs into a `Submessage` (LE).
     ///
     /// # Errors
     /// `PayloadTooLarge`.
@@ -80,7 +80,7 @@ impl HeartbeatPayload {
         Submessage::new(SubmessageId::Heartbeat, FLAG_E_LITTLE_ENDIAN, body)
     }
 
-    /// Extrahiert aus `Submessage`.
+    /// Extracts from a `Submessage`.
     ///
     /// # Errors
     /// `ValueOutOfRange`, `UnexpectedEof`.

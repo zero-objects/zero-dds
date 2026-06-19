@@ -1,5 +1,5 @@
 // dds-psm-cxx-1.0 — listener.hpp
-// Listener mit allen 13 Status-Callbacks. Spec §8.3.5.
+// Listener with all 13 status callbacks. Spec §8.3.5.
 namespace dds { namespace core {
 
 template <typename T> class DataReader; // fwd
@@ -48,7 +48,7 @@ public:
     ~DataWriterListener() override = default;
 };
 
-/// SubscriberListener (Spec §8.3.5.3) — alle DataReader-Callbacks plus
+/// SubscriberListener (Spec §8.3.5.3) — all DataReader callbacks plus
 /// on_data_on_readers.
 class SubscriberListener : public AnyDataReaderListener {
 public:
@@ -62,7 +62,7 @@ public:
     ~PublisherListener() override = default;
 };
 
-/// DomainParticipantListener (Spec §8.3.5.7) — Vereinigt alle Listener.
+/// DomainParticipantListener (Spec §8.3.5.7) — unifies all listeners.
 class DomainParticipantListener
     : public AnyTopicListener,
       public PublisherListener,

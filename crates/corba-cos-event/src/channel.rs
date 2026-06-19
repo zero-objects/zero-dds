@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CosEventChannelAdmin — Spec §1.6.
+//! CosEventChannelAdmin — spec §1.6.
 //!
-//! `EventChannel` ist die Top-Level-Komponente. Suppliers verbinden
-//! sich via `for_suppliers().obtain_push_consumer()` (oder
-//! `obtain_pull_supplier()`); Consumers ueber `for_consumers().
-//! obtain_push_supplier()` (bzw. `obtain_pull_consumer()`).
+//! `EventChannel` is the top-level component. Suppliers connect via
+//! `for_suppliers().obtain_push_consumer()` (or
+//! `obtain_pull_supplier()`); consumers via `for_consumers().
+//! obtain_push_supplier()` (or `obtain_pull_consumer()`).
 //!
-//! In-Memory-Implementation mit fan-out: jeder gepushte Event wird
-//! an alle registrierten Consumers verteilt.
+//! In-memory implementation with fan-out: every pushed event is
+//! distributed to all registered consumers.
 
 use alloc::collections::VecDeque;
 use alloc::string::String;
@@ -21,7 +21,7 @@ use std::sync::Mutex;
 
 use crate::comm::{AnyEvent, ConnectError, Disconnected, PullSupplier, PushConsumer};
 
-/// EventChannel — Spec §1.6.1.
+/// EventChannel — spec §1.6.1.
 pub struct EventChannel {
     consumer_admin: Arc<ConsumerAdmin>,
     supplier_admin: Arc<SupplierAdmin>,
@@ -40,7 +40,7 @@ impl core::fmt::Debug for EventChannel {
 }
 
 impl EventChannel {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         let inner = Arc::new(ChannelInner::default());
@@ -54,19 +54,19 @@ impl EventChannel {
         }
     }
 
-    /// `for_consumers` — Spec §1.6.1.1.
+    /// `for_consumers` — spec §1.6.1.1.
     #[must_use]
     pub fn for_consumers(&self) -> Arc<ConsumerAdmin> {
         Arc::clone(&self.consumer_admin)
     }
 
-    /// `for_suppliers` — Spec §1.6.1.2.
+    /// `for_suppliers` — spec §1.6.1.2.
     #[must_use]
     pub fn for_suppliers(&self) -> Arc<SupplierAdmin> {
         Arc::clone(&self.supplier_admin)
     }
 
-    /// `destroy` — Spec §1.6.1.3.
+    /// `destroy` — spec §1.6.1.3.
     pub fn destroy(&self) {
         if let Ok(mut state) = self.consumer_admin.inner.state.lock() {
             state.destroyed = true;
@@ -87,7 +87,7 @@ struct ChannelState {
     pending: VecDeque<AnyEvent>,
 }
 
-/// ConsumerAdmin — Spec §1.6.2.
+/// ConsumerAdmin — spec §1.6.2.
 pub struct ConsumerAdmin {
     inner: Arc<ChannelInner>,
 }
@@ -99,7 +99,7 @@ impl core::fmt::Debug for ConsumerAdmin {
 }
 
 impl ConsumerAdmin {
-    /// `obtain_push_supplier` — Spec §1.6.2.1.
+    /// `obtain_push_supplier` — spec §1.6.2.1.
     #[must_use]
     pub fn obtain_push_supplier(&self) -> Arc<ProxyPushSupplier> {
         Arc::new(ProxyPushSupplier {
@@ -108,7 +108,7 @@ impl ConsumerAdmin {
         })
     }
 
-    /// `obtain_pull_supplier` — Spec §1.6.2.2.
+    /// `obtain_pull_supplier` — spec §1.6.2.2.
     #[must_use]
     pub fn obtain_pull_supplier(&self) -> Arc<ProxyPullSupplier> {
         Arc::new(ProxyPullSupplier {
@@ -118,7 +118,7 @@ impl ConsumerAdmin {
     }
 }
 
-/// SupplierAdmin — Spec §1.6.3.
+/// SupplierAdmin — spec §1.6.3.
 pub struct SupplierAdmin {
     inner: Arc<ChannelInner>,
 }
@@ -130,7 +130,7 @@ impl core::fmt::Debug for SupplierAdmin {
 }
 
 impl SupplierAdmin {
-    /// `obtain_push_consumer` — Spec §1.6.3.1.
+    /// `obtain_push_consumer` — spec §1.6.3.1.
     #[must_use]
     pub fn obtain_push_consumer(&self) -> Arc<ProxyPushConsumer> {
         Arc::new(ProxyPushConsumer {
@@ -139,7 +139,7 @@ impl SupplierAdmin {
         })
     }
 
-    /// `obtain_pull_consumer` — Spec §1.6.3.2.
+    /// `obtain_pull_consumer` — spec §1.6.3.2.
     #[must_use]
     pub fn obtain_pull_consumer(&self) -> Arc<ProxyPullConsumer> {
         Arc::new(ProxyPullConsumer {
@@ -149,17 +149,17 @@ impl SupplierAdmin {
     }
 }
 
-/// ProxyPushConsumer — Spec §1.6.4.
+/// ProxyPushConsumer — spec §1.6.4.
 pub struct ProxyPushConsumer {
     inner: Arc<ChannelInner>,
     connected: AtomicBool,
 }
 
 impl ProxyPushConsumer {
-    /// `connect_push_supplier` — Spec §1.6.4.1.
+    /// `connect_push_supplier` — spec §1.6.4.1.
     ///
     /// # Errors
-    /// `AlreadyConnected` wenn bereits verbunden.
+    /// `AlreadyConnected` if already connected.
     pub fn connect_push_supplier(&self) -> Result<(), ConnectError> {
         if self.connected.swap(true, Ordering::AcqRel) {
             return Err(ConnectError::AlreadyConnected);
@@ -177,9 +177,9 @@ impl PushConsumer for ProxyPushConsumer {
         if state.destroyed {
             return Err(Disconnected);
         }
-        // Push direkt an alle registrierten Konsumer.
+        // Push directly to all registered consumers.
         let consumers = state.consumers.clone();
-        // Wir queuen auch fuer Pull-Modus.
+        // We also queue for pull mode.
         state.pending.push_back(event.clone());
         drop(state);
         for c in &consumers {
@@ -193,17 +193,17 @@ impl PushConsumer for ProxyPushConsumer {
     }
 }
 
-/// ProxyPushSupplier — Spec §1.6.5.
+/// ProxyPushSupplier — spec §1.6.5.
 pub struct ProxyPushSupplier {
     inner: Arc<ChannelInner>,
     connected_consumer: Mutex<Option<Arc<dyn PushConsumer>>>,
 }
 
 impl ProxyPushSupplier {
-    /// `connect_push_consumer` — Spec §1.6.5.1.
+    /// `connect_push_consumer` — spec §1.6.5.1.
     ///
     /// # Errors
-    /// `AlreadyConnected` wenn bereits verbunden.
+    /// `AlreadyConnected` if already connected.
     pub fn connect_push_consumer(
         &self,
         consumer: Arc<dyn PushConsumer>,
@@ -217,14 +217,14 @@ impl ProxyPushSupplier {
         }
         *g = Some(Arc::clone(&consumer));
         drop(g);
-        // Im Channel registrieren, sodass Push-Calls ankommen.
+        // Register in the channel so push calls arrive.
         if let Ok(mut state) = self.inner.state.lock() {
             state.consumers.push(consumer);
         }
         Ok(())
     }
 
-    /// `disconnect_push_supplier` — Spec §1.6.5.2.
+    /// `disconnect_push_supplier` — spec §1.6.5.2.
     pub fn disconnect(&self) {
         if let Ok(mut g) = self.connected_consumer.lock() {
             *g = None;
@@ -232,14 +232,14 @@ impl ProxyPushSupplier {
     }
 }
 
-/// ProxyPullSupplier — Spec §1.6.7.
+/// ProxyPullSupplier — spec §1.6.7.
 pub struct ProxyPullSupplier {
     inner: Arc<ChannelInner>,
     connected: AtomicBool,
 }
 
 impl ProxyPullSupplier {
-    /// `connect_pull_consumer` — Spec §1.6.7.1.
+    /// `connect_pull_consumer` — spec §1.6.7.1.
     ///
     /// # Errors
     /// `AlreadyConnected`.
@@ -253,8 +253,8 @@ impl ProxyPullSupplier {
 
 impl PullSupplier for ProxyPullSupplier {
     fn pull(&self) -> Result<AnyEvent, Disconnected> {
-        // Spec §1.6.7.2: blockiert bis ein Event verfuegbar ist.
-        // In dieser in-Memory-Implementation poolen wir aktiv.
+        // Spec §1.6.7.2: blocks until an event is available.
+        // In this in-memory implementation we poll actively.
         loop {
             if !self.connected.load(Ordering::Acquire) {
                 return Err(Disconnected);
@@ -262,8 +262,8 @@ impl PullSupplier for ProxyPullSupplier {
             if let Some(e) = self.try_dequeue()? {
                 return Ok(e);
             }
-            // Yield briefly — production-Implementation wuerde
-            // condition-variable nutzen, aber wir bleiben einfach.
+            // Yield briefly — a production implementation would use a
+            // condition variable, but we keep it simple.
             std::thread::yield_now();
         }
     }
@@ -297,16 +297,16 @@ fn empty_event() -> AnyEvent {
     AnyEvent::new(String::new(), Vec::new())
 }
 
-/// ProxyPullConsumer — Spec §1.6.6. Caller (Channel-Worker) ruft
-/// `pull` am verbundenen `PullSupplier` und leitet Events ueber
-/// `forward_event` an den `ChannelInner` weiter.
+/// ProxyPullConsumer — spec §1.6.6. The caller (channel worker) calls
+/// `pull` on the connected `PullSupplier` and forwards events to the
+/// `ChannelInner` via `forward_event`.
 pub struct ProxyPullConsumer {
     inner: Arc<ChannelInner>,
     connected: AtomicBool,
 }
 
 impl ProxyPullConsumer {
-    /// `connect_pull_supplier` — Spec §1.6.6.1.
+    /// `connect_pull_supplier` — spec §1.6.6.1.
     ///
     /// # Errors
     /// `AlreadyConnected`.
@@ -320,8 +320,8 @@ impl ProxyPullConsumer {
         Ok(())
     }
 
-    /// Caller (Channel-Worker) leitet einen vom Supplier gepullten
-    /// Event ein. Pendant zur `push`-Methode auf der Push-Seite.
+    /// The caller (channel worker) feeds in an event pulled from the
+    /// supplier. Counterpart to the `push` method on the push side.
     pub fn forward_event(&self, event: AnyEvent) -> Result<(), Disconnected> {
         if !self.connected.load(Ordering::Acquire) {
             return Err(Disconnected);

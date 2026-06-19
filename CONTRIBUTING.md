@@ -75,6 +75,50 @@ Cross-layer dependencies must follow the layering rules:
 - Reverse or peer dependencies require an ADR documenting the rationale.
 - The dependency DAG is enforced by `cargo run -p dds-lint -- check`.
 
+## Build Prerequisites
+
+A workspace build links the **system** `libduckdb` (the `zerodds-durability-store-lakehouse`
+cold adapter, ADR 0009). The `bundled` feature — which compiles the full DuckDB C++
+amalgamation from source — was dropped because it OOM-killed CI and added ~1h per build,
+so `cargo build --workspace` now requires `libduckdb` to be installed locally.
+
+Use the version that matches the `duckdb` crate's ABI (currently **v1.5.3**); a mismatch
+fails to link. Releases: <https://github.com/duckdb/duckdb/releases>.
+
+**Linux (x86_64):**
+
+```bash
+curl -fsSL -o /tmp/libduckdb.zip \
+  https://github.com/duckdb/duckdb/releases/download/v1.5.3/libduckdb-linux-amd64.zip
+unzip -o /tmp/libduckdb.zip -d /tmp/duckdb
+sudo install -m644 /tmp/duckdb/libduckdb.so /usr/local/lib/
+sudo install -m644 /tmp/duckdb/duckdb.h /usr/local/include/
+sudo ldconfig
+```
+
+**macOS (Apple Silicon):**
+
+```bash
+curl -fsSL -o /tmp/libduckdb.zip \
+  https://github.com/duckdb/duckdb/releases/download/v1.5.3/libduckdb-osx-universal.zip
+unzip -o /tmp/libduckdb.zip -d /tmp/duckdb
+install -m644 /tmp/duckdb/libduckdb.dylib /opt/homebrew/lib/
+install -m644 /tmp/duckdb/duckdb.h /opt/homebrew/include/
+```
+
+Then point the `duckdb` crate at the install via Cargo's global `~/.cargo/config.toml`
+(shell-independent — applies to every `cargo` invocation):
+
+```toml
+[env]
+# Linux:
+DUCKDB_LIB_DIR = "/usr/local/lib"
+DUCKDB_INCLUDE_DIR = "/usr/local/include"
+# macOS (Apple Silicon): "/opt/homebrew/lib" and "/opt/homebrew/include"
+```
+
+CI installs `libduckdb` the same way in `ci/Dockerfile.rust`.
+
 ## Pre-Push Checks
 
 Run locally before opening a PR:

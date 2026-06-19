@@ -1,33 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Notification-Assignment-Behavior — Spec §8.4.3.
+//! Notification assignment behavior — Spec §8.4.3.
 //!
-//! Implementiert die drei Assignment-Wege aus §8.4.3:
+//! Implements the three assignment paths from §8.4.3:
 //!
-//! * **Constant Assignment** (§8.4.3.1) — einmalig bei DDS-Output-
-//!   Instanziierung; ein `Variant`-Konstantenwert wird in das
-//!   benannte Topic-Type-Feld geschrieben (Type-Cast-Validation gemaess
-//!   Spec).
-//! * **DataChange Notification Assignment** (§8.4.3.2.1) — pro
-//!   `MonitoredItemNotification` wird per `client_handle` der
-//!   zugehoerige `DataItem` aufgeloest, dann via
-//!   `InputOutputMapping` der Ziel-DDS-Output identifiziert, und der
-//!   `DataValue.value` (= `Variant`) in das Feld geschrieben.
-//! * **EventField Assignment** (§8.4.3.2.2) — pro `EventFieldList` wird
-//!   per `client_handle` der `EventItem` aufgeloest, dann je `event_name`
-//!   plus `event_field_index` der entsprechende `EventField` aus dem
-//!   `EventFieldList` ausgewaehlt und in das DDS-Feld assigned.
+//! * **Constant Assignment** (§8.4.3.1) — once on DDS output
+//!   instantiation; a `Variant` constant value is written into the
+//!   named topic-type field (type-cast validation per the
+//!   spec).
+//! * **DataChange Notification Assignment** (§8.4.3.2.1) — per
+//!   `MonitoredItemNotification`, the corresponding `DataItem` is resolved
+//!   via `client_handle`, then the target DDS output is identified via
+//!   `InputOutputMapping`, and the
+//!   `DataValue.value` (= `Variant`) is written into the field.
+//! * **EventField Assignment** (§8.4.3.2.2) — per `EventFieldList`, the
+//!   `EventItem` is resolved via `client_handle`, then per `event_name`
+//!   plus `event_field_index` the corresponding `EventField` from the
+//!   `EventFieldList` is selected and assigned to the DDS field.
 //!
-//! StatusChangeNotifications (§8.4.3.2.3) sind explizit
+//! StatusChangeNotifications (§8.4.3.2.3) are explicitly
 //! "out of scope of this specification".
 //!
-//! # Was hier passiert vs. nicht passiert
+//! # What happens here vs. not
 //!
-//! Diese Helpers liefern die **Mapping-Logik** (welches Feld bekommt
-//! welchen Wert, mit welcher Discriminant, gegebenenfalls mit
-//! Type-Cast-Pruefung). Die eigentliche Topic-Sample-Construction
-//! (CDR-Encoding, DataWriter::write) bleibt im Daemon-Crate.
+//! These helpers provide the **mapping logic** (which field gets
+//! which value, with which discriminant, optionally with a
+//! type-cast check). The actual topic-sample construction
+//! (CDR encoding, DataWriter::write) stays in the daemon crate.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -41,75 +41,75 @@ use super::config::{
 };
 use super::variant_dds::{ArrayShape, map_variant_to_dds};
 
-/// Fehler im Notification-Assignment-Pfad.
+/// Error in the notification assignment path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssignmentError {
-    /// `client_handle` aus der Notification konnte keinem
-    /// `MonitoredItem` zugeordnet werden (Spec §8.4.3.2.1 Schritt 1
-    /// scheitert).
+    /// The `client_handle` from the notification could not be associated
+    /// with any `MonitoredItem` (Spec §8.4.3.2.1 step 1
+    /// fails).
     UnknownClientHandle(u32),
-    /// Kein `Assignment` fuer den aufgeloesten `OpcUaInput` gefunden
-    /// (Spec §8.4.3.2.1 Schritt 2 scheitert).
+    /// No `Assignment` found for the resolved `OpcUaInput`
+    /// (Spec §8.4.3.2.1 step 2 fails).
     NoAssignmentForInput(String),
-    /// Cast vom Variant zum DDS-Output-Feld-Typ ist nicht moeglich
-    /// (Spec §8.4.3.1 + §8.4.3.2.1 Schritt 4 normativ: "If the value
+    /// A cast from the variant to the DDS-output field type is not possible
+    /// (Spec §8.4.3.1 + §8.4.3.2.1 step 4 normative: "If the value
     /// cannot be cast, the Gateway shall report an error.").
     IncompatibleCast {
-        /// Variant-Builtin-Type-Kind (oder `None` falls leer).
+        /// Variant builtin type kind (or `None` if empty).
         variant_kind: Option<BuiltinTypeKind>,
-        /// Erwarteter IDL-Type-String aus dem DDS-Output-Feld.
+        /// Expected IDL type string from the DDS output field.
         target_idl: String,
     },
-    /// `event_field_index` liegt ausserhalb des `event_fields`-
-    /// Sequenz-Bereichs.
+    /// `event_field_index` lies outside the `event_fields`
+    /// sequence range.
     EventFieldIndexOutOfRange {
-        /// Index, der angefragt wurde.
+        /// The requested index.
         index: u32,
-        /// Tatsaechliche Laenge der `event_fields`-Sequenz.
+        /// Actual length of the `event_fields` sequence.
         len: u32,
     },
-    /// Kein `EventFieldRef` mit passender `event_name` /
-    /// `event_field_index`-Kombination im `field_assignments`.
+    /// No `EventFieldRef` with a matching `event_name` /
+    /// `event_field_index` combination in `field_assignments`.
     NoEventFieldRefMatch {
-        /// `event_name` aus der Notification.
+        /// `event_name` from the notification.
         event_name: String,
-        /// `event_field_index` aus der Notification.
+        /// `event_field_index` from the notification.
         event_field_index: u32,
     },
 }
 
-/// Einzelnes Mapping-Ergebnis: `dds_output_field_ref` ⇒ `Variant`-
-/// Wert, der in das Feld zu schreiben ist.
+/// A single mapping result: `dds_output_field_ref` ⇒ the `Variant`
+/// value to be written into the field.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldUpdate {
-    /// `dds_output_field_ref` aus dem `FieldAssignment`.
+    /// `dds_output_field_ref` from the `FieldAssignment`.
     pub field: String,
-    /// Quell-Variant (bereits typgeprueft).
+    /// Source variant (already type-checked).
     pub value: Variant,
-    /// Ziel-IDL-Type aus Tab 8.16 — hilfreich fuer Caller, die das
-    /// CDR-Encoding waehlen muessen.
+    /// Target IDL type from Tab 8.16 — helpful for callers that must
+    /// choose the CDR encoding.
     pub target_idl: String,
 }
 
-/// Aufloesungs-Kontext fuer Notification-Assignments — Caller erstellt
-/// das einmalig pro Subscription/Input.
+/// Resolution context for notification assignments — the caller creates
+/// it once per subscription/input.
 pub struct NotificationContext<'a> {
-    /// Aktiver `OpcUaInput` (durch den die Notifications fliessen).
+    /// Active `OpcUaInput` (through which the notifications flow).
     pub input: &'a OpcUaInput,
-    /// Aktive `InputOutputMapping`-Section.
+    /// Active `InputOutputMapping` section.
     pub mapping: &'a InputOutputMapping,
-    /// Index `client_handle` → `MonitoredItem` (vom Caller per
-    /// `CreateMonitoredItems`-Ergebnis aufgebaut).
+    /// Index `client_handle` → `MonitoredItem` (built by the caller from
+    /// the `CreateMonitoredItems` result).
     pub client_handles: &'a BTreeMap<u32, ClientHandleEntry<'a>>,
 }
 
-/// Ein `client_handle`-Eintrag, der entweder auf einen `DataItem` oder
-/// einen `EventItem` zeigt — Spec §8.4.3.2 Schritt 1.
+/// A `client_handle` entry that points either to a `DataItem` or
+/// an `EventItem` — Spec §8.4.3.2 step 1.
 #[derive(Debug, Clone, Copy)]
 pub enum ClientHandleEntry<'a> {
-    /// Zeigt auf einen `DataItem` aus `OpcUaInput.monitored_items`.
+    /// Points to a `DataItem` from `OpcUaInput.monitored_items`.
     Data(&'a DataItem),
-    /// Zeigt auf einen `EventItem` aus `OpcUaInput.monitored_items`.
+    /// Points to an `EventItem` from `OpcUaInput.monitored_items`.
     Event(&'a EventItem),
 }
 
@@ -117,13 +117,13 @@ pub enum ClientHandleEntry<'a> {
 // §8.4.3.1 — Constant Assignment.
 // -------------------------------------------------------------------
 
-/// Spec §8.4.3.1 — Constant-Assignment: bei Output-Instanziierung.
-/// Liefert pro `FieldAssignment.assignment_input == ConstantValue` den
-/// `FieldUpdate`. Iteration durch alle Assignments im Mapping.
+/// Spec §8.4.3.1 — constant assignment: on output instantiation.
+/// Returns the `FieldUpdate` per `FieldAssignment.assignment_input == ConstantValue`.
+/// Iterates over all assignments in the mapping.
 ///
 /// # Errors
-/// `AssignmentError::IncompatibleCast` wenn der Constant-Variant nicht
-/// in den IDL-Type des Ziel-Felds gegossen werden kann.
+/// `AssignmentError::IncompatibleCast` if the constant variant cannot
+/// be cast into the IDL type of the target field.
 pub fn apply_constant_assignment(
     mapping: &InputOutputMapping,
     output_name: &str,
@@ -152,10 +152,10 @@ pub fn apply_constant_assignment(
 // §8.4.3.2.1 — DataChange Notification Assignment.
 // -------------------------------------------------------------------
 
-/// Eine empfangene `MonitoredItemNotification` — `client_handle` plus
-/// neuer Variant-Wert (Spec Tab 8.3 `MonitoredItemNotification`).
-/// `DataValue` ist hier auf den `value`-Anteil reduziert, weil §8.4.3
-/// die Timestamps + Status explizit ignoriert.
+/// A received `MonitoredItemNotification` — `client_handle` plus
+/// the new variant value (Spec Tab 8.3 `MonitoredItemNotification`).
+/// `DataValue` is reduced here to the `value` part, because §8.4.3
+/// explicitly ignores the timestamps + status.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DataChangeNotification {
     /// `IntegerId client_handle`.
@@ -164,48 +164,48 @@ pub struct DataChangeNotification {
     pub value: Variant,
 }
 
-/// Spec §8.4.3.2.1 — DataChange-Loop. Pro Notification:
-/// 1. `client_handle` → `DataItem` aufloesen (Schritt 1).
-/// 2. `DataItem` → relevante Assignments aus dem Mapping (Schritt 2).
-/// 3. Variant zum Ziel-Feld-Typ casten (Schritt 4).
+/// Spec §8.4.3.2.1 — DataChange loop. Per notification:
+/// 1. Resolve `client_handle` → `DataItem` (step 1).
+/// 2. `DataItem` → relevant assignments from the mapping (step 2).
+/// 3. Cast the variant to the target field type (step 4).
 ///
-/// Liefert die Liste der `FieldUpdate`-Operationen, die der Caller in
-/// die DDS-Outputs schreiben muss.
+/// Returns the list of `FieldUpdate` operations that the caller must
+/// write into the DDS outputs.
 ///
 /// # Errors
-/// * `UnknownClientHandle` wenn `client_handle` keinen Match liefert.
-/// * `IncompatibleCast` wenn Variant→Ziel-Feld-Typ scheitert.
+/// * `UnknownClientHandle` if `client_handle` yields no match.
+/// * `IncompatibleCast` if the variant→target field type fails.
 pub fn apply_data_change_notification(
     ctx: &NotificationContext<'_>,
     output_name: &str,
     notif: &DataChangeNotification,
 ) -> Result<Vec<FieldUpdate>, AssignmentError> {
-    // Schritt 1: client_handle → MonitoredItem.
+    // Step 1: client_handle → MonitoredItem.
     let entry = ctx
         .client_handles
         .get(&notif.client_handle)
         .ok_or(AssignmentError::UnknownClientHandle(notif.client_handle))?;
-    // DataChange ist nur fuer DataItems definiert.
+    // DataChange is only defined for DataItems.
     if !matches!(entry, ClientHandleEntry::Data(_)) {
-        // Spec §8.4.3.2.1: DataChange-Pfad ignoriert EventItems
-        // (sie kommen via EventField-Pfad). Wir liefern leere Liste.
+        // Spec §8.4.3.2.1: the DataChange path ignores EventItems
+        // (they come via the EventField path). We return an empty list.
         return Ok(Vec::new());
     }
 
     let mut out = Vec::new();
     let mut found_any_assignment = false;
     for asg in &ctx.mapping.assignments {
-        // Schritt 2: Assignment muss zum aktiven Input + Output passen.
+        // Step 2: the assignment must match the active input + output.
         if asg.dds_output_ref != output_name || asg.opcua_input_ref != ctx.input.name {
             continue;
         }
         found_any_assignment = true;
         for fa in &asg.field_assignments {
-            // Schritt 2 Forts.: nur DataItem-Assignments anwenden.
+            // Step 2 cont.: apply only DataItem assignments.
             if !matches!(fa.assignment_input, AssignmentInput::DataItem(_)) {
                 continue;
             }
-            // Schritt 3+4: Variant casten + assignen.
+            // Steps 3+4: cast the variant + assign.
             let target_idl = field_target_idl(&notif.value);
             check_castable(&notif.value, &target_idl)?;
             out.push(FieldUpdate {
@@ -227,8 +227,8 @@ pub fn apply_data_change_notification(
 // §8.4.3.2.2 — EventField Assignment.
 // -------------------------------------------------------------------
 
-/// Spec Tab 8.3 `EventFieldList`-Aequivalent — `client_handle` + die
-/// `event_fields`-Variant-Sequenz.
+/// Spec Tab 8.3 `EventFieldList` equivalent — `client_handle` + the
+/// `event_fields` variant sequence.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventFieldList {
     /// `IntegerId client_handle`.
@@ -237,24 +237,24 @@ pub struct EventFieldList {
     pub event_fields: Vec<Variant>,
 }
 
-/// Spec §8.4.3.2.2 — EventField-Loop. Pro `EventFieldList`:
-/// 1. `client_handle` → `EventItem` (Schritt 1).
-/// 2. Pro `FieldAssignment` mit `EventFieldRef` (event_name +
-///    event_field_index) den passenden Eintrag aus `event_fields`
-///    auswaehlen (Schritt 2-3).
-/// 3. Variant casten + assignen (Schritt 4).
+/// Spec §8.4.3.2.2 — EventField loop. Per `EventFieldList`:
+/// 1. `client_handle` → `EventItem` (step 1).
+/// 2. Per `FieldAssignment` with `EventFieldRef` (event_name +
+///    event_field_index), select the matching entry from `event_fields`
+///    (steps 2-3).
+/// 3. Cast the variant + assign (step 4).
 ///
-/// `event_name` muss vom Caller in den `client_handles`-Lookup
-/// eingebracht werden — Spec laesst die Mapping-Tabelle dem Konfig-
-/// Loader; hier bekommen wir sie ueber den `event_name_lookup`-
-/// Closure-Parameter.
+/// `event_name` must be provided by the caller into the `client_handles`
+/// lookup — the spec leaves the mapping table to the config
+/// loader; here we receive it via the `event_name_lookup`
+/// closure parameter.
 ///
 /// # Errors
-/// * `UnknownClientHandle` bei unbekanntem Handle.
-/// * `EventFieldIndexOutOfRange` wenn Index >= `event_fields.len()`.
-/// * `NoEventFieldRefMatch` wenn keine Field-Assignment-Match-
-///   Kombination passt.
-/// * `IncompatibleCast` bei Variant-Cast-Fehler.
+/// * `UnknownClientHandle` on an unknown handle.
+/// * `EventFieldIndexOutOfRange` if the index >= `event_fields.len()`.
+/// * `NoEventFieldRefMatch` if no field-assignment match
+///   combination fits.
+/// * `IncompatibleCast` on a variant cast error.
 pub fn apply_event_notification(
     ctx: &NotificationContext<'_>,
     output_name: &str,
@@ -322,13 +322,13 @@ fn field_target_idl(v: &Variant) -> String {
 }
 
 fn check_castable(v: &Variant, target_idl: &str) -> Result<(), AssignmentError> {
-    // Spec §8.4.3.1/§8.4.3.2.1 Schritt 4: cast safety.
-    // Vereinfachung: wir akzeptieren Casts, wenn Variant-Type-Kind +
-    // Shape via Tab 8.16 exakt den `target_idl` produziert. Caller
-    // mit bekannten weiterfuehrenden Cast-Regeln (z.B. int32→int64)
-    // koennen `target_idl` selbst vorberechnen und den eingebauten
-    // Cast-Check durch ihren eigenen ersetzen — die Mapping-Logik
-    // bleibt davon unberuehrt.
+    // Spec §8.4.3.1/§8.4.3.2.1 step 4: cast safety.
+    // Simplification: we accept casts if the variant type kind +
+    // shape via Tab 8.16 produces exactly `target_idl`. Callers
+    // with known additional cast rules (e.g. int32→int64)
+    // can precompute `target_idl` themselves and replace the built-in
+    // cast check with their own — the mapping logic
+    // is unaffected by that.
     let computed = field_target_idl(v);
     if computed != target_idl {
         return Err(AssignmentError::IncompatibleCast {
@@ -339,10 +339,10 @@ fn check_castable(v: &Variant, target_idl: &str) -> Result<(), AssignmentError> 
     Ok(())
 }
 
-/// Hilfs-Konstruktor: baut einen `client_handles`-Index aus einem
-/// `OpcUaInput`. Caller geben pro `MonitoredItem` aus `monitored_items`
-/// einen `client_handle` an (i.d.R. Index oder vom Server returnter
-/// `monitored_item_id` re-genutzt).
+/// Helper constructor: builds a `client_handles` index from an
+/// `OpcUaInput`. Callers supply a `client_handle` per `MonitoredItem`
+/// from `monitored_items` (usually the index or the server-returned
+/// `monitored_item_id` reused).
 #[must_use]
 pub fn build_client_handles<'a, I>(items: I) -> BTreeMap<u32, ClientHandleEntry<'a>>
 where
@@ -458,7 +458,7 @@ mod tests {
             }],
         };
         let mut handles = BTreeMap::new();
-        // Wir nutzen ein dauerhaftes DataItem aus `input`.
+        // We use a persistent DataItem from `input`.
         let item_ref = match &input.monitored_items[0] {
             MonitoredItem::Data(d) => d,
             MonitoredItem::Event(_) => panic!("test fixture invariant: expected Data"),

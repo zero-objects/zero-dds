@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! TypeIdentifier-Hash-Computation (XTypes 1.3 §7.3.1.2).
+//! TypeIdentifier hash computation (XTypes 1.3 §7.3.1.2).
 //!
-//! Der `EquivalenceHash` (14 byte) wird aus den **ersten 14 Bytes** des
-//! **MD5**-Digests ueber die XCDR2-serialisierte TypeObject-Darstellung
-//! gebildet (XTypes 1.3 §7.3.1.2.1):
+//! The `EquivalenceHash` (14 bytes) is formed from the **first 14 bytes** of the
+//! **MD5** digest over the XCDR2-serialized TypeObject representation
+//! (XTypes 1.3 §7.3.1.2.1):
 //!
 //! ```text
 //! EquivalenceHash(T) := MD5(xcdr2_le_bytes(T))[0..14]
 //! ```
 //!
-//! Cyclone DDS und Fast-DDS verwenden MD5 — daher pflicht fuer Live-Interop.
+//! Cyclone DDS and Fast-DDS use MD5 — hence mandatory for live interop.
 //!
-//! - Fuer `MinimalTypeObject T`: `EK_MINIMAL`-Hash
-//! - Fuer `CompleteTypeObject T`: `EK_COMPLETE`-Hash
+//! - For `MinimalTypeObject T`: `EK_MINIMAL` hash
+//! - For `CompleteTypeObject T`: `EK_COMPLETE` hash
 //!
-//! Aus dem Hash wird ein TypeIdentifier der Kind `EK_MINIMAL` bzw.
-//! `EK_COMPLETE` gebaut — dieser ist die "strongly-hashed" Form des
-//! TypeObjects, wie sie ueber SEDP (`PID_TYPE_INFORMATION`) und
-//! TypeLookup-Service zwischen Peers ausgetauscht wird.
+//! From the hash a TypeIdentifier of kind `EK_MINIMAL` resp.
+//! `EK_COMPLETE` is built — this is the "strongly-hashed" form of the
+//! TypeObject, as exchanged between peers via SEDP (`PID_TYPE_INFORMATION`) and
+//! the TypeLookup service.
 
 use zerodds_cdr::{BufferWriter, EncodeError, Endianness};
 use zerodds_foundation::md5;
@@ -27,21 +27,21 @@ use crate::type_identifier::kinds::{EK_COMPLETE, EK_MINIMAL, EQUIVALENCE_HASH_LE
 use crate::type_identifier::{EquivalenceHash, TypeIdentifier};
 use crate::type_object::{CompleteTypeObject, MinimalTypeObject, TypeObject};
 
-/// Berechnet den 14-byte-EquivalenceHash eines TypeObjects.
+/// Computes the 14-byte EquivalenceHash of a TypeObject.
 ///
-/// Serialisiert das TypeObject nach XCDR2-LE-Bytes (inkl. Equivalence-
-/// Kind-Discriminator), hasht mit SHA-256 und schneidet auf 14 byte.
+/// Serializes the TypeObject to XCDR2-LE bytes (incl. the equivalence-
+/// kind discriminator), hashes with MD5 and truncates to 14 bytes.
 ///
 /// # Errors
-/// `EncodeError` wenn Serialisierung ueberlaeuft.
+/// `EncodeError` if serialization overflows.
 pub fn compute_hash(to: &TypeObject) -> Result<EquivalenceHash, EncodeError> {
     let bytes = to.to_bytes_le()?;
     Ok(hash_bytes(&bytes))
 }
 
-/// Wie [`compute_hash`], aber direkt ueber `MinimalTypeObject` (ohne
-/// EquivalenceKind-Discriminator-Wrapper-Clone). Schreibt selbst den
-/// EK_MINIMAL-Discriminator vor den Body.
+/// Like [`compute_hash`], but directly over `MinimalTypeObject` (without
+/// the EquivalenceKind discriminator wrapper clone). Writes the
+/// EK_MINIMAL discriminator before the body itself.
 ///
 /// # Errors
 /// `EncodeError`.
@@ -52,7 +52,7 @@ pub fn compute_minimal_hash(t: &MinimalTypeObject) -> Result<EquivalenceHash, En
     Ok(hash_bytes(&w.into_bytes()))
 }
 
-/// Wie [`compute_minimal_hash`], nur fuer `CompleteTypeObject`.
+/// Like [`compute_minimal_hash`], only for `CompleteTypeObject`.
 ///
 /// # Errors
 /// `EncodeError`.
@@ -63,11 +63,11 @@ pub fn compute_complete_hash(t: &CompleteTypeObject) -> Result<EquivalenceHash, 
     Ok(hash_bytes(&w.into_bytes()))
 }
 
-/// Rohe Hash-Funktion: MD5 + Truncate auf 14 byte.
+/// Raw hash function: MD5 + truncate to 14 bytes.
 ///
-/// MD5 ist hier **spec-konform**, nicht kryptographisch. XTypes 1.3
-/// §7.3.1.2.1 verlangt MD5 fuer Wire-Kompatibilitaet mit anderen DDS-
-/// Implementierungen (Cyclone, Fast-DDS, RTI Connext).
+/// MD5 is **spec-conformant** here, not cryptographic. XTypes 1.3
+/// §7.3.1.2.1 requires MD5 for wire compatibility with other DDS
+/// implementations (Cyclone, Fast-DDS, RTI Connext).
 #[must_use]
 pub fn hash_bytes(data: &[u8]) -> EquivalenceHash {
     let digest = md5(data);
@@ -76,9 +76,9 @@ pub fn hash_bytes(data: &[u8]) -> EquivalenceHash {
     EquivalenceHash(out)
 }
 
-/// Shortcut: baut einen strongly-hashed TypeIdentifier aus einem
-/// TypeObject. Wraps [`compute_hash`] in den passenden `EquivalenceHash*`-
-/// TypeIdentifier-Variant abhaengig von Minimal/Complete.
+/// Shortcut: builds a strongly-hashed TypeIdentifier from a
+/// TypeObject. Wraps [`compute_hash`] in the matching `EquivalenceHash*`
+/// TypeIdentifier variant depending on Minimal/Complete.
 ///
 /// # Errors
 /// `EncodeError`.
@@ -145,9 +145,9 @@ mod tests {
 
     #[test]
     fn minimal_and_complete_same_semantic_differ_in_hash() {
-        // Selbst wenn Minimal und Complete denselben "Typ" darstellen,
-        // unterscheidet sie der Equivalence-Kind-Discriminator am Anfang
-        // der serialisierten Bytes → unterschiedliche Hashes.
+        // Even if Minimal and Complete represent the same "type",
+        // the equivalence-kind discriminator at the start of the
+        // serialized bytes distinguishes them → different hashes.
         use crate::type_object::common::{
             AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations, CompleteMemberDetail,
             CompleteTypeDetail, OptionalAppliedAnnotationSeq,
@@ -193,9 +193,9 @@ mod tests {
         let ti = to_hashed_type_identifier(&TypeObject::Minimal(minimal.clone())).unwrap();
         assert!(matches!(ti, TypeIdentifier::EquivalenceHashMinimal(_)));
 
-        // Complete-Variant mit Minimal-Shape (wir simulieren nur den
-        // Dispatch) — hier nutzen wir eine Array-Fixture, damit kein
-        // Name verifiziert werden muss.
+        // Complete variant with a minimal shape (we only simulate the
+        // dispatch) — here we use an array fixture so that no
+        // name needs to be verified.
         use crate::type_object::common::{
             AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations, CompleteTypeDetail,
             OptionalAppliedAnnotationSeq,

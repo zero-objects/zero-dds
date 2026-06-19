@@ -163,7 +163,9 @@ struct All {
 
 Sample: `b=true o=0xAB s=-12345 us=54321 l=-1234567 ul=2345678 ll=-987654321 ull=123456789 f=2.5 d=3.14159`.
 
-Wire (48 Bytes, Padding gemaess §7.4.1.5 origin-relativ; b@0 o@1 s@2 us@4 pad@6 l@8 ul@12 ll@16 ull@24 f@32 pad@36 d@40):
+Wire (44 Bytes, Padding gemaess §7.4.1.5 origin-relativ; XCDR2 cappt
+Alignment bei 4 (§7.4.1.1.1) — 64-Bit-Primitive richten auf 4 aus, NICHT 8:
+b@0 o@1 s@2 us@4 pad@6 l@8 ul@12 ll@16 ull@24 f@32 d@36):
 ```
 01 AB                             # b@0, o@1
 C7 CF                             # s@2 = -12345
@@ -174,8 +176,7 @@ CE CA 23 00                       # ul@12 = 2345678
 4F 97 21 C5 FF FF FF FF           # ll@16 = -987654321
 15 CD 5B 07 00 00 00 00           # ull@24 = 123456789
 00 00 20 40                       # f@32 = 2.5
-00 00 00 00                       # pad@36 (4 Byte) zu Align(8) fuer d@40
-6E 86 1B F0 F9 21 09 40           # d@40 = 3.14159
+6E 86 1B F0 F9 21 09 40           # d@36 = 3.14159 (Align(4), kein 8-Byte-Pad)
 ```
 
 Type-Name: `"All"`.
@@ -230,8 +231,11 @@ struct Tags {
 
 Sample: `tags = ["a", "bc"]`.
 
-Wire:
+Wire (XTypes §7.4.3.5: `sequence<string>` hat NICHT-primitive Elemente →
+DHEADER (uint32 = Byte-Laenge von [count + elements]) voran; primitive
+Element-Sequenzen wie V-5 `sequence<long>` haben KEINEN DHEADER):
 ```
+13 00 00 00          # DHEADER = 19 (count + elements)
 02 00 00 00          # 2 Strings
 02 00 00 00 61 00    # "a\0"
 00 00                # 2-Byte-Pad zu Align(4) fuer naechsten string-length
@@ -274,11 +278,11 @@ struct Sensor {
 
 Sample: `Sensor{ id = 42, value = 3.14 }`.
 
-Wire (16 Bytes, Padding fuer double-Alignment):
+Wire (12 Bytes; XCDR2 cappt Alignment bei 4 (§7.4.1.1.1) — double @ offset 4,
+KEIN 8-Byte-Pad):
 ```
 2A 00 00 00          # id = 42
-00 00 00 00          # 4-Byte-Pad zu Align(8)
-1F 85 EB 51 B8 1E 09 40  # value = 3.14
+1F 85 EB 51 B8 1E 09 40  # value = 3.14 @4 (Align(4))
 ```
 
 Key-Hash-Eingabe (`PlainCdr2BeKeyHolder`, BE):
@@ -349,10 +353,14 @@ zerodds_cdr nutzt **LC=4** universell mit NEXTINT-Prefix):
 
 Body-Laenge: 12(member1: EMHEADER+NEXTINT+a) + 15(member2: EMHEADER+NEXTINT+string) = 27.
 
-**Encoder-Wahl:** LC=2 (fuer 4-Byte primitive ohne NEXTINT) und LC=3
-(NEXTINT-prefixed fuer variable-size) sind ebenfalls XTypes-conform.
-Decoder MUSS alle LCs (0-7) akzeptieren. Cross-Vendor-Wire-Bytes
-folgen dem Reference-Encoder zerodds_cdr (LC=4 universell).
+**Encoder-Wahl:** Fuer fixe Groessen sind die kompakten LCs ebenfalls
+XTypes-conform: LC=0/1/2/3 = 1/2/4/8-Byte-Body OHNE NEXTINT. Fuer
+**variable-size** Member (string, sequence, nested struct) ist hingegen
+**LC=4** (oder LC=5/6/7) zwingend — LC=3 bedeutet „Body = genau 8 Byte,
+kein NEXTINT", ein LC=3 mit NEXTINT desynchronisiert jeden spec-konformen
+Reader (Rust/Cyclone/FastDDS). Das idl-cpp-Codegen nutzt LC=2 fuer 4-Byte-
+Primitive und LC=4 fuer variable Member; der Reference-Encoder zerodds_cdr
+nutzt LC=4 universell. Decoder MUSS alle LCs (0-7) akzeptieren.
 
 Type-Name: `"M"`.
 

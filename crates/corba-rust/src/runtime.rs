@@ -1,49 +1,105 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Runtime-Types die der generierte Code referenziert.
+//! Runtime types that the generated code references.
 //!
-//! Phase-1-Skelett. Volle Wire-Implementation (GIOP-Marshalling +
-//! IIOP-Connection) folgt in Phase-2 ueber `corba-iiop` und
-//! `corba-giop`. Hier liegen nur die Public-API-Strukturen die der
-//! emittierte Stub/Skeleton/Valuetype referenziert.
+//! Phase 1 skeleton. The full wire implementation (GIOP marshalling +
+//! IIOP connection) follows in phase 2 via `corba-iiop` and
+//! `corba-giop`. Here live only the public API structures that the
+//! emitted stub/skeleton/valuetype references.
 
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// CORBA-Object-Reference (IOR-encoded). Generierte Stubs halten eine
-/// Instanz dieser Struct als Connection-Handle.
+/// CORBA object reference (IOR-encoded). Generated stubs hold an
+/// instance of this struct as a connection handle.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ObjectReference {
-    /// Type-Identifier (Repository-ID, z.B.
+    /// Type identifier (Repository ID, e.g.
     /// `IDL:omg.org/MyInterface:1.0`).
     pub type_id: String,
-    /// IIOP-Profile-Bytes (CDR-encoded). Phase-1 ist das opaque;
-    /// Phase-2 nutzt corba-iiop fuer die echte Connection.
+    /// IIOP profile encapsulation (CDR, one `TAG_INTERNET_IOP` profile body).
     pub iiop_profile: Vec<u8>,
 }
 
-/// CORBA-System-/User-Exception. Generierte Stubs/Skeletons mappen
-/// alle Fehlerpfade auf diese Variant.
+/// `TAG_INTERNET_IOP` — the only profile tag that ZeroDDS ObjectReferences
+/// carry (CORBA §13.6.3).
+const TAG_INTERNET_IOP: u32 = 0;
+
+/// Wire marshalling of an object reference as an **IOR** (CORBA §15.3.3):
+/// `struct IOR { string type_id; sequence<TaggedProfile> profiles; }` with
+/// `TaggedProfile { ProfileId tag; sequence<octet> profile_data; }`.
+/// `iiop_profile` is already the finished profile encapsulation, so it is
+/// inserted as `sequence<octet>` (length + bytes). This is the format
+/// in which omniORB/TAO/JacORB expect an `Object` reference on the wire.
+impl zerodds_cdr::CdrEncode for ObjectReference {
+    fn encode(
+        &self,
+        writer: &mut zerodds_cdr::BufferWriter,
+    ) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+        writer.write_string(&self.type_id)?;
+        writer.write_u32(1)?; // exactly one profile
+        writer.write_u32(TAG_INTERNET_IOP)?;
+        writer.write_u32(self.iiop_profile.len() as u32)?;
+        writer.write_bytes(&self.iiop_profile)?;
+        ::core::result::Result::Ok(())
+    }
+}
+
+impl zerodds_cdr::CdrDecode for ObjectReference {
+    fn decode(
+        reader: &mut zerodds_cdr::BufferReader<'_>,
+    ) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
+        let type_id = reader.read_string()?;
+        let profile_count = reader.read_u32()?;
+        // Take the first TAG_INTERNET_IOP profile, skip the rest
+        // (multi-profile IORs are rare; the first IIOP profile suffices).
+        let mut iiop_profile = Vec::new();
+        for _ in 0..profile_count {
+            let tag = reader.read_u32()?;
+            let len = reader.read_u32()? as usize;
+            let data = reader.read_bytes(len)?;
+            if tag == TAG_INTERNET_IOP && iiop_profile.is_empty() {
+                iiop_profile = data.to_vec();
+            }
+        }
+        ::core::result::Result::Ok(Self {
+            type_id,
+            iiop_profile,
+        })
+    }
+}
+
+/// CORBA system/user exception. Generated stubs/skeletons map
+/// all error paths onto this variant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CorbaException {
-    /// CORBA-System-Exception (Spec §3.17.1). Minor-Code laut OMG.
+    /// CORBA system exception (Spec §3.17.1). Minor code per OMG.
     SystemException {
-        /// Minor-Code aus dem Spec-Standard (z.B. `0x4F4D000B` =
+        /// Minor code from the spec standard (e.g. `0x4F4D000B` =
         /// `BAD_OPERATION`).
         minor: u32,
-        /// Statische Fehler-Beschreibung.
+        /// Static error description.
         message: &'static str,
     },
-    /// User-Exception aus IDL `exception E { ... };`. Wir tragen den
-    /// Repository-ID + Payload-Bytes (Phase-1-MVP).
+    /// User exception from IDL `exception E { ... };` (§15.4.3 / §15.3.5.1).
+    ///
+    /// `body` is the **complete** UserException reply body as a
+    /// contiguous CDR stream: `string repository_id` **followed** by the
+    /// exception members. Members are NOT extracted separately — their
+    /// CDR alignment is relative to the body start (which is 8-aligned in
+    /// the GIOP reply); a typed decoder first reads the repo-id (positioning
+    /// the reader), then the members. `endianness` is the byte order of `body`
+    /// (= reply byte order), required for correct member decoding.
     UserException {
-        /// Repository-ID des Exception-Types (z.B.
-        /// `IDL:omg.org/MyError:1.0`).
+        /// Repository ID of the exception type (for type selection + display);
+        /// also appears at the start of `body`.
         repository_id: String,
-        /// Payload-Bytes (XCDR-encoded).
-        payload: Vec<u8>,
+        /// Complete exception body: `string repo_id` + members (CDR).
+        body: Vec<u8>,
+        /// On-wire byte order of `body`.
+        endianness: zerodds_cdr::Endianness,
     },
 }
 
@@ -62,53 +118,53 @@ impl ::core::fmt::Display for CorbaException {
 
 impl ::std::error::Error for CorbaException {}
 
-/// ValueBase-Trait. Alle IDL-Valuetypes erweitern diesen.
+/// ValueBase trait. All IDL valuetypes extend this.
 pub trait ValueBase {
-    /// Repository-ID des Valuetypes (z.B. `IDL:omg.org/MyValue:1.0`).
+    /// Repository ID of the valuetype (e.g. `IDL:omg.org/MyValue:1.0`).
     fn repository_id(&self) -> &str;
 }
 
-/// Result eines Skeleton-Dispatches.
+/// Result of a skeleton dispatch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SkeletonResult {
-    /// Operation erfolgreich, Reply-Bytes liegen vor.
+    /// Operation succeeded, reply bytes are available.
     Reply(Vec<u8>),
-    /// Operation hat eine User- oder System-Exception geworfen.
+    /// Operation threw a user or system exception.
     Exception(CorbaException),
-    /// Unbekannter Operation-Name fuer das Interface — der POA
-    /// muss BAD_OPERATION zurueckgeben.
+    /// Unknown operation name for the interface — the POA
+    /// must return BAD_OPERATION.
     BadOperation,
-    /// Operation ist deklariert aber Wire-Marshalling ist Phase-2 —
-    /// vorerst Platzhalter.
+    /// Operation is declared but wire marshalling is phase 2 —
+    /// placeholder for now.
     NotYetWired,
 }
 
-/// POA-Servant-Marker. Concrete Server-Implementierungen impl-en das
-/// plus den jeweiligen IDL-Interface-Trait.
+/// POA servant marker. Concrete server implementations implement this
+/// plus the respective IDL interface trait.
 pub trait Servant {
-    /// Repository-ID des Interface, das der Servant implementiert.
+    /// Repository ID of the interface that the servant implements.
     fn target_repository_id(&self) -> &str;
 }
 
 // ============================================================================
-// §2.4 TypeCode (CORBA 3.3 §10.7) — minimal-funktionaler Wrapper.
+// §2.4 TypeCode (CORBA 3.3 §10.7) — minimally functional wrapper.
 // ============================================================================
 
-/// CORBA `TypeCode` — Type-Reflection-Wrapper.
+/// CORBA `TypeCode` — type-reflection wrapper.
 ///
-/// Vollstaendige TypeCode-Operationen (kind, member_count, member_name,
-/// content_type, ...) werden ueber `corba-iiop`-IIOP-Connection
-/// ausgewertet — Phase-1 ist hier ein Wrapper um den Repository-ID,
-/// Phase-2 erweitert mit Lookup-API.
+/// Full TypeCode operations (kind, member_count, member_name,
+/// content_type, ...) are evaluated via the `corba-iiop` IIOP connection —
+/// phase 1 here is a wrapper around the Repository ID,
+/// phase 2 extends it with a lookup API.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TypeCode {
-    /// Repository-ID des referenzierten Types.
+    /// Repository ID of the referenced type.
     pub repository_id: String,
 }
 
 impl TypeCode {
-    /// Konstruiert einen TypeCode aus einem Repository-ID.
+    /// Constructs a TypeCode from a Repository ID.
     #[must_use]
     pub fn new(repository_id: impl Into<String>) -> Self {
         Self {
@@ -118,30 +174,30 @@ impl TypeCode {
 }
 
 // ============================================================================
-// §7.2 POA-Configuration-Builder (Spec §11.3 — 7 Policies)
+// §7.2 POA configuration builder (Spec §11.3 — 7 policies)
 // ============================================================================
 
-/// CORBA-POA-Builder fuer Server-Side-Object-Aktivierung.
+/// CORBA POA builder for server-side object activation.
 ///
-/// Spec §11.3 definiert 7 Policies; alle haben sinnvolle Defaults
-/// fuer typische Embedded-/Server-Use-Cases. End-User
-/// ueberschreibt selektiv via `with_*`-Methoden und ruft `build()`
-/// fuer den finalen `PoaConfiguration`.
+/// Spec §11.3 defines 7 policies; all have sensible defaults
+/// for typical embedded/server use cases. The end user
+/// overrides selectively via `with_*` methods and calls `build()`
+/// for the final `PoaConfiguration`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PoaBuilder {
-    /// Threading-Policy (Spec §11.3.4).
+    /// Threading policy (Spec §11.3.4).
     pub thread_policy: ThreadPolicy,
-    /// Lifespan-Policy (§11.3.5).
+    /// Lifespan policy (§11.3.5).
     pub lifespan_policy: LifespanPolicy,
-    /// IdAssignment-Policy (§11.3.6).
+    /// IdAssignment policy (§11.3.6).
     pub id_assignment_policy: IdAssignmentPolicy,
-    /// IdUniqueness-Policy (§11.3.7).
+    /// IdUniqueness policy (§11.3.7).
     pub id_uniqueness_policy: IdUniquenessPolicy,
-    /// ImplicitActivation-Policy (§11.3.8).
+    /// ImplicitActivation policy (§11.3.8).
     pub implicit_activation_policy: ImplicitActivationPolicy,
-    /// ServantRetention-Policy (§11.3.9).
+    /// ServantRetention policy (§11.3.9).
     pub servant_retention_policy: ServantRetentionPolicy,
-    /// RequestProcessing-Policy (§11.3.10).
+    /// RequestProcessing policy (§11.3.10).
     pub request_processing_policy: RequestProcessingPolicy,
 }
 
@@ -152,7 +208,7 @@ impl Default for PoaBuilder {
 }
 
 impl PoaBuilder {
-    /// Erzeugt einen neuen POA-Builder mit Spec-Default-Policies.
+    /// Creates a new POA builder with spec default policies.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -167,113 +223,113 @@ impl PoaBuilder {
     }
 }
 
-/// POA-Threading-Policy (Spec §11.3.4).
+/// POA threading policy (Spec §11.3.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThreadPolicy {
-    /// Default: ORB waehlt Threading.
+    /// Default: ORB chooses threading.
     OrbCtrlModel,
-    /// Single-Threaded.
+    /// Single-threaded.
     SingleThreadModel,
-    /// Main-Thread-Only.
+    /// Main-thread-only.
     MainThreadModel,
 }
 
-/// POA-Lifespan-Policy (Spec §11.3.5).
+/// POA lifespan policy (Spec §11.3.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LifespanPolicy {
-    /// Default: Object-Refs gelten nur fuer ORB-Lifetime.
+    /// Default: object refs are valid only for the ORB lifetime.
     Transient,
-    /// Object-Refs ueberleben ORB-Restart.
+    /// Object refs survive an ORB restart.
     Persistent,
 }
 
-/// POA-IdAssignment-Policy (§11.3.6).
+/// POA IdAssignment policy (§11.3.6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdAssignmentPolicy {
-    /// Default: ORB vergibt Object-IDs.
+    /// Default: ORB assigns object IDs.
     SystemId,
-    /// Anwendung vergibt Object-IDs.
+    /// Application assigns object IDs.
     UserId,
 }
 
-/// POA-IdUniqueness-Policy (§11.3.7).
+/// POA IdUniqueness policy (§11.3.7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdUniquenessPolicy {
-    /// Default: jeder Servant hat genau eine Object-ID.
+    /// Default: each servant has exactly one object ID.
     Unique,
-    /// Servant kann mehrere Object-IDs haben.
+    /// A servant may have multiple object IDs.
     Multiple,
 }
 
-/// POA-ImplicitActivation-Policy (§11.3.8).
+/// POA ImplicitActivation policy (§11.3.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImplicitActivationPolicy {
-    /// Default: explicit `activate_object` Pflicht.
+    /// Default: explicit `activate_object` required.
     NoImplicitActivation,
-    /// Auto-activation bei ersten Method-Call.
+    /// Auto-activation on the first method call.
     ImplicitActivation,
 }
 
-/// POA-ServantRetention-Policy (§11.3.9).
+/// POA ServantRetention policy (§11.3.9).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServantRetentionPolicy {
-    /// Default: ActiveObjectMap haelt Servants.
+    /// Default: ActiveObjectMap holds servants.
     Retain,
-    /// Stateless — pro Request frischer Servant.
+    /// Stateless — a fresh servant per request.
     NonRetain,
 }
 
-/// POA-RequestProcessing-Policy (§11.3.10).
+/// POA RequestProcessing policy (§11.3.10).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestProcessingPolicy {
-    /// Default: ActiveObjectMap-Lookup, sonst BAD_OPERATION.
+    /// Default: ActiveObjectMap lookup, otherwise BAD_OPERATION.
     UseActiveObjectMapOnly,
-    /// Lookup, dann ServantManager-Fallback.
+    /// Lookup, then ServantManager fallback.
     UseDefaultServant,
-    /// Lookup, dann ServantActivator/-Locator.
+    /// Lookup, then ServantActivator/Locator.
     UseServantManager,
 }
 
 // ============================================================================
-// §4.4 Valuetype Wire-Marshalling — minimaler Stream-API
+// §4.4 Valuetype wire marshalling — minimal stream API
 // ============================================================================
 
-/// Stream-API fuer ValueBase-Wire-Marshalling (CDR §15.3.4).
+/// Stream API for ValueBase wire marshalling (CDR §15.3.4).
 ///
-/// Phase-1: API-Skelett, das `zerodds_cdr::BufferReader/Writer` wraped und
-/// die value-tag-Logic anwendet (chunked encoding, repository-id-list).
-/// Phase-2 wired die volle Spec-Konformitaet (truncatable, custom
+/// Phase 1: API skeleton that wraps `zerodds_cdr::BufferReader/Writer` and
+/// applies the value-tag logic (chunked encoding, repository-id list).
+/// Phase 2 wires the full spec conformance (truncatable, custom
 /// marshaling, codeset).
 pub struct ValueStreamWriter<'a> {
-    /// Inner-Writer.
+    /// Inner writer.
     pub inner: &'a mut zerodds_cdr::BufferWriter,
 }
 
 impl<'a> ValueStreamWriter<'a> {
-    /// Konstruktor.
+    /// Constructor.
     pub fn new(inner: &'a mut zerodds_cdr::BufferWriter) -> Self {
         Self { inner }
     }
 
-    /// Schreibt einen value-tag (CDR §15.3.4.2). Format: 0x7FFFFF02
-    /// fuer single-repository-id, 0x7FFFFF06 fuer list-of-repository-
-    /// ids, 0x00000000 fuer null-value.
+    /// Writes a value-tag (CDR §15.3.4.2). Format: 0x7FFFFF02
+    /// for single-repository-id, 0x7FFFFF06 for list-of-repository-
+    /// ids, 0x00000000 for null-value.
     ///
     /// # Errors
-    /// Encode-Fehler.
+    /// Encode error.
     pub fn write_value_tag(
         &mut self,
         repository_id: &str,
     ) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
-        // Single-Repository-ID-Tag (chunked = false, codeset = false).
+        // Single-repository-id tag (chunked = false, codeset = false).
         self.inner.write_u32(0x7FFF_FF02)?;
         self.inner.write_string(repository_id)?;
         Ok(())
     }
 
-    /// Schreibt einen value-tag mit multi-repository-id-Liste (CDR
-    /// §15.3.4.2). Wire-Tag = 0x7FFF_FF06 (`list-of-repository-ids` +
-    /// kein Chunked-Bit). Layout:
+    /// Writes a value-tag with a multi-repository-id list (CDR
+    /// §15.3.4.2). Wire tag = 0x7FFF_FF06 (`list-of-repository-ids` +
+    /// no chunked bit). Layout:
     ///
     /// ```text
     /// u32 tag = 0x7FFFFF06
@@ -282,7 +338,7 @@ impl<'a> ValueStreamWriter<'a> {
     /// ```
     ///
     /// # Errors
-    /// Encode-Fehler oder leere `repository_ids` (Spec verlangt N >= 1).
+    /// Encode error or empty `repository_ids` (spec requires N >= 1).
     pub fn write_value_tag_multi(
         &mut self,
         repository_ids: &[&str],
@@ -292,7 +348,7 @@ impl<'a> ValueStreamWriter<'a> {
             "Spec §15.3.4.2: list-of-repository-ids must contain >=1 entry"
         );
         self.inner.write_u32(0x7FFF_FF06)?;
-        // count als signed long.
+        // count as signed long.
         let count: i32 = repository_ids.len() as i32;
         self.inner.write_u32(count as u32)?;
         for id in repository_ids {
@@ -301,22 +357,22 @@ impl<'a> ValueStreamWriter<'a> {
         Ok(())
     }
 
-    /// Schreibt einen Chunked-Value-Tag (CDR §15.3.4.2 + §15.3.4.3 —
-    /// "chunked encoding"). Wire-Tag = 0x7FFF_FF0A
-    /// (chunked-flag + multi-repo-id-flag, beide gesetzt).
+    /// Writes a chunked value-tag (CDR §15.3.4.2 + §15.3.4.3 —
+    /// "chunked encoding"). Wire tag = 0x7FFF_FF0A
+    /// (chunked flag + multi-repo-id flag, both set).
     ///
-    /// Nach dem Tag folgen:
+    /// After the tag come:
     /// 1. `i32 count` + `string id[N]` (multi-repo-id-list).
-    /// 2. Pro Chunk: `i32 chunk_size_bytes` + `octet chunk_data[..]`.
-    /// 3. Zum Schluss: `i32 end_tag = -<nesting_level>` (Spec
-    ///    §15.3.4.3 negative-Level-Marker).
+    /// 2. Per chunk: `i32 chunk_size_bytes` + `octet chunk_data[..]`.
+    /// 3. Finally: `i32 end_tag = -<nesting_level>` (Spec
+    ///    §15.3.4.3 negative-level marker).
     ///
-    /// Diese Funktion schreibt den Tag-Header + Repo-IDs; die
-    /// Caller-Layer schreibt jeden Chunk via [`Self::write_chunk`] und
-    /// schliesst den ValueType mit [`Self::write_chunked_end`].
+    /// This function writes the tag header + repo IDs; the
+    /// caller layer writes each chunk via [`Self::write_chunk`] and
+    /// closes the ValueType with [`Self::write_chunked_end`].
     ///
     /// # Errors
-    /// Encode-Fehler oder leere Repo-IDs.
+    /// Encode error or empty repo IDs.
     pub fn write_chunked_value_tag(
         &mut self,
         repository_ids: &[&str],
@@ -334,11 +390,11 @@ impl<'a> ValueStreamWriter<'a> {
         Ok(())
     }
 
-    /// Schreibt einen einzelnen Chunk innerhalb eines chunked-encoded
-    /// Value (CDR §15.3.4.3): `i32 chunk_size` + raw bytes.
+    /// Writes a single chunk within a chunked-encoded
+    /// value (CDR §15.3.4.3): `i32 chunk_size` + raw bytes.
     ///
     /// # Errors
-    /// Encode-Fehler.
+    /// Encode error.
     pub fn write_chunk(
         &mut self,
         chunk_data: &[u8],
@@ -351,12 +407,12 @@ impl<'a> ValueStreamWriter<'a> {
         Ok(())
     }
 
-    /// Schreibt den End-Tag eines chunked-encoded Value (Spec
-    /// §15.3.4.3 — `i32 end_tag = -<nesting_level>` mit
-    /// `nesting_level >= 1` fuer den outermost Value).
+    /// Writes the end-tag of a chunked-encoded value (Spec
+    /// §15.3.4.3 — `i32 end_tag = -<nesting_level>` with
+    /// `nesting_level >= 1` for the outermost value).
     ///
     /// # Errors
-    /// Encode-Fehler oder `nesting_level == 0`.
+    /// Encode error or `nesting_level == 0`.
     pub fn write_chunked_end(
         &mut self,
         nesting_level: u32,
@@ -371,27 +427,27 @@ impl<'a> ValueStreamWriter<'a> {
     }
 }
 
-/// Stream-API zum Lesen von Valuetype-Wire-Bytes (CDR §15.3.4).
+/// Stream API for reading valuetype wire bytes (CDR §15.3.4).
 pub struct ValueStreamReader<'a, 'b> {
-    /// Inner-Reader.
+    /// Inner reader.
     pub inner: &'a mut zerodds_cdr::BufferReader<'b>,
 }
 
 impl<'a, 'b> ValueStreamReader<'a, 'b> {
-    /// Konstruktor.
+    /// Constructor.
     pub fn new(inner: &'a mut zerodds_cdr::BufferReader<'b>) -> Self {
         Self { inner }
     }
 
-    /// Liest einen value-tag und gibt die Repository-ID zurueck.
-    /// `Ok(None)` bei null-value (`0x00000000`-Tag).
+    /// Reads a value-tag and returns the Repository ID.
+    /// `Ok(None)` for null-value (`0x00000000` tag).
     ///
-    /// Rueckgabe ist `Some(first_repo_id)` — bei multi-repo-id-Listen
-    /// wird die erste ID geliefert; fuer den vollstaendigen Listen-
-    /// Roundtrip siehe [`Self::read_value_tag_full`].
+    /// The return is `Some(first_repo_id)` — for multi-repo-id lists
+    /// the first ID is delivered; for the full list
+    /// roundtrip see [`Self::read_value_tag_full`].
     ///
     /// # Errors
-    /// Decode-Fehler (truncated, unbekannter Tag-Typ).
+    /// Decode error (truncated, unknown tag type).
     pub fn read_value_tag(
         &mut self,
     ) -> ::core::result::Result<Option<String>, zerodds_cdr::DecodeError> {
@@ -404,11 +460,11 @@ impl<'a, 'b> ValueStreamReader<'a, 'b> {
         })
     }
 
-    /// Liest einen value-tag mit voller Header-Information — single,
-    /// multi-repo-id-Liste oder chunked-Variante.
+    /// Reads a value-tag with full header information — single,
+    /// multi-repo-id list, or chunked variant.
     ///
     /// # Errors
-    /// Decode-Fehler oder unbekannter Wire-Tag.
+    /// Decode error or unknown wire tag.
     pub fn read_value_tag_full(
         &mut self,
     ) -> ::core::result::Result<ValueTagHeader, zerodds_cdr::DecodeError> {
@@ -442,85 +498,193 @@ impl<'a, 'b> ValueStreamReader<'a, 'b> {
         }
     }
 
-    /// Liest einen Chunk innerhalb eines chunked-encoded Values.
-    /// Rueckgabe ist die Chunk-Groesse in Bytes (positiv) bzw. ein
-    /// negativer End-Tag (Spec §15.3.4.3 — `-nesting_level` markiert
-    /// das Ende des chunked-Values).
+    /// Reads a chunk within a chunked-encoded value.
+    /// The return is the chunk size in bytes (positive) or a
+    /// negative end-tag (Spec §15.3.4.3 — `-nesting_level` marks
+    /// the end of the chunked value).
     ///
     /// # Errors
-    /// Decode-Fehler.
+    /// Decode error.
     pub fn read_chunk_size(&mut self) -> ::core::result::Result<i32, zerodds_cdr::DecodeError> {
         let raw = self.inner.read_u32()?;
         Ok(raw as i32)
     }
 }
 
-/// Spec §15.3.4.2 — Header-Variante eines value-tag.
+/// Spec §15.3.4.2 — header variant of a value-tag.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValueTagHeader {
-    /// Null-Value-Tag (`0x00000000`).
+    /// Null-value tag (`0x00000000`).
     Null,
-    /// Single-Repository-ID (`0x7FFFFF02`).
+    /// Single Repository ID (`0x7FFFFF02`).
     Single(String),
-    /// Liste von Repository-IDs (`0x7FFFFF06`) — Spec §15.3.4.2,
-    /// dient der Truncation-Kandidaten-Auflistung.
+    /// List of Repository IDs (`0x7FFFFF06`) — Spec §15.3.4.2,
+    /// used to enumerate truncation candidates.
     List(Vec<String>),
-    /// Chunked-Encoding mit Repository-ID-Liste (`0x7FFFFF0A`) —
+    /// Chunked encoding with a Repository ID list (`0x7FFFFF0A`) —
     /// Spec §15.3.4.3.
     ChunkedList(Vec<String>),
 }
 
 // ============================================================================
-// §7.1 Component / Home — minimale CCM-Servant-Bindings (Phase-1).
+// §7.1 Component / Home — minimal CCM servant bindings (phase 1).
 // ============================================================================
 
-/// CCM-Container-Servant-Marker. Concrete Component-Implementations
-/// impl-en das plus den `ComponentHome`-Trait.
+/// CCM container servant marker. Concrete component implementations
+/// implement this plus the `ComponentHome` trait.
 ///
-/// Phase-2 erweitert mit Receptacle-/Facet-/Event-Bindings (CCM 4.0 §6).
+/// Phase 2 extends it with receptacle/facet/event bindings (CCM 4.0 §6).
 pub trait ComponentServant: Servant {
-    /// Liefert die Repository-ID der Component-Definition.
+    /// Returns the Repository ID of the component definition.
     fn component_repository_id(&self) -> &str;
 }
 
-/// CCM-Home-Trait. End-User-Homes impl-en das plus die spezifische
-/// `create()`-Operation.
+/// CCM home trait. End-user homes implement this plus the specific
+/// `create()` operation.
 pub trait ComponentHome {
-    /// Liefert die Repository-ID des Home.
+    /// Returns the Repository ID of the home.
     fn home_repository_id(&self) -> &str;
 }
 
 // ============================================================================
-// §7.3 GIOP-Wire-Wiring — Connection-Stub.
+// §7.3 GIOP wire wiring — connection stub.
 // ============================================================================
 
-/// Connection-Handle, das von Stubs zur GIOP-Request-Versendung
-/// verwendet wird. Phase-1 ist das ein Adapter-Trait, dessen volle
-/// Implementation in `corba-iiop` lebt.
+/// Connection handle used by stubs to send GIOP requests.
+/// Phase 1 is an adapter trait whose full implementation lives in
+/// `corba-iiop`.
 pub trait CorbaConnection {
-    /// Sendet einen GIOP-Request und blockiert bis Reply oder
-    /// System-Exception kommt.
+    /// Sends a GIOP request and blocks until a reply or
+    /// system exception arrives.
     ///
-    /// `target_ior` = Object-Reference, `operation` = Method-Name,
-    /// `request_payload` = bereits encoder Body (DataType-CDR).
+    /// `target_ior` = object reference, `operation` = method name,
+    /// `request_endianness` = on-wire byte order in which `request_payload`
+    /// is CDR-encoded (set into the GIOP flag), `request_payload` =
+    /// already-encoded body (classic CDR of the in-params).
+    ///
+    /// Returns the reply body **plus its** on-wire byte order — the
+    /// server may reply in its native order (CDR "receiver makes it
+    /// right"), so the stub must read the reply in the returned order.
     ///
     /// # Errors
-    /// Wire-Fehler oder Server-Side-Exception.
+    /// Wire error or server-side exception.
     fn invoke(
         &self,
         target_ior: &ObjectReference,
         operation: &str,
+        request_endianness: zerodds_cdr::Endianness,
         request_payload: &[u8],
-    ) -> Result<Vec<u8>, CorbaException>;
+    ) -> Result<(Vec<u8>, zerodds_cdr::Endianness), CorbaException>;
 
-    /// Sendet einen oneway-Request (kein Reply erwartet).
+    /// Sends a oneway request (no reply expected).
     ///
     /// # Errors
-    /// Wire-Fehler waehrend des Send.
+    /// Wire error during the send.
     fn invoke_oneway(
         &self,
         target_ior: &ObjectReference,
         operation: &str,
+        request_endianness: zerodds_cdr::Endianness,
         request_payload: &[u8],
     ) -> Result<(), CorbaException>;
+}
+
+/// Reply outcome of an asynchronous invocation (CORBA Messaging §22): the raw
+/// reply body + its on-wire byte order on success, otherwise the CORBA exception.
+pub type AsyncReply = Result<(Vec<u8>, zerodds_cdr::Endianness), CorbaException>;
+
+/// Callback for the AMI callback model (§22.5) — invoked exactly once.
+pub type AsyncReplyCallback = alloc::boxed::Box<dyn FnOnce(AsyncReply) + Send>;
+
+/// Abstract **asynchronous** GIOP channel to ONE target object (CORBA Messaging
+/// §22) used by the generated AMI stubs (`sendc_`/`sendp_`). Implemented
+/// by the transport layer (`zerodds-corba-interop::AmiClient`) — same
+/// layering pattern as [`CorbaConnection`] for the synchronous side.
+///
+/// The stubs marshal the in-args into `payload` (big-endian) and decode the
+/// reply in a typed way; this channel carries only opaque bytes + the
+/// `request_id` demux.
+pub trait AsyncCorbaChannel {
+    /// **Callback model** (§22.5): fires `operation(payload)` and registers
+    /// `cb` for the reply; returns the `request_id`.
+    ///
+    /// # Errors
+    /// Transport error during sending.
+    fn send(
+        &mut self,
+        operation: &str,
+        payload: &[u8],
+        cb: AsyncReplyCallback,
+    ) -> Result<u32, CorbaException>;
+
+    /// **Polling model** (§22.6): fires `operation(payload)`, returns the
+    /// `request_id`; the reply is fetched via [`get_reply`](Self::get_reply).
+    ///
+    /// # Errors
+    /// Transport error during sending.
+    fn send_poll(&mut self, operation: &str, payload: &[u8]) -> Result<u32, CorbaException>;
+
+    /// Drives the channel until the reply for `request_id` (from
+    /// [`send_poll`](Self::send_poll)) is available, and returns it.
+    ///
+    /// # Errors
+    /// Transport error, or `request_id` is not open.
+    fn get_reply(&mut self, request_id: u32) -> Result<AsyncReply, CorbaException>;
+
+    /// Reads EXACTLY one arrived reply (blocking) and dispatches it
+    /// (callback invocation or storage); returns the handled `request_id`.
+    ///
+    /// # Errors
+    /// Transport error, or nothing is open.
+    fn perform_work(&mut self) -> Result<u32, CorbaException>;
+
+    /// Drives [`perform_work`](Self::perform_work) until all callback requests
+    /// are processed.
+    ///
+    /// # Errors
+    /// Transport error.
+    fn perform_all(&mut self) -> Result<(), CorbaException>;
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod object_reference_tests {
+    use super::*;
+    use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, Endianness};
+
+    #[test]
+    fn object_reference_roundtrips_as_ior() {
+        let obj = ObjectReference {
+            type_id: "IDL:demo/Bench:1.0".into(),
+            iiop_profile: alloc::vec![0x01, 0x00, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef],
+        };
+        let mut w = BufferWriter::new(Endianness::Big);
+        obj.encode(&mut w).unwrap();
+        let bytes = w.into_bytes();
+
+        // Wire structure (CORBA §15.3.3 IOR): string type_id + seq<TaggedProfile>.
+        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        assert_eq!(r.read_string().unwrap(), "IDL:demo/Bench:1.0");
+        assert_eq!(r.read_u32().unwrap(), 1, "exactly one profile");
+        assert_eq!(r.read_u32().unwrap(), 0, "TAG_INTERNET_IOP");
+        assert_eq!(r.read_u32().unwrap(), 8, "profile_data length");
+
+        // Full roundtrip.
+        let mut r2 = BufferReader::new(&bytes, Endianness::Big);
+        let decoded = ObjectReference::decode(&mut r2).unwrap();
+        assert_eq!(decoded, obj);
+    }
+
+    #[test]
+    fn object_reference_little_endian_roundtrips() {
+        let obj = ObjectReference {
+            type_id: "IDL:X:1.0".into(),
+            iiop_profile: alloc::vec![1, 2, 3],
+        };
+        let mut w = BufferWriter::new(Endianness::Little);
+        obj.encode(&mut w).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        assert_eq!(ObjectReference::decode(&mut r).unwrap(), obj);
+    }
 }

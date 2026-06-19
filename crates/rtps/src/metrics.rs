@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Hot-Path-Hook-Points fuer `zerodds-monitor` (zerodds-monitor-1.0 §2.2).
+//! Hot-path hook points for `zerodds-monitor` (zerodds-monitor-1.1 §2.2).
 //!
-//! Dieses Modul existiert **ausschliesslich** wenn das `metrics`-Feature
-//! aktiv ist (`cfg(feature = "metrics")` auf der `pub mod metrics`-
-//! Deklaration in `lib.rs`). Damit gibt es keine Phantom-API: jede in
-//! diesem Modul exportierte Funktion ist eine echte Counter-Operation
-//! gegen [`zerodds_monitor::default_registry`].
+//! This module exists **only** when the `metrics` feature
+//! is active (`cfg(feature = "metrics")` on the `pub mod metrics`
+//! declaration in `lib.rs`). This way there is no phantom API: every
+//! function exported from this module is a real counter operation
+//! against [`zerodds_monitor::default_registry`].
 //!
-//! Call-Sites in `reliable_writer.rs` u. a. tragen jeweils ein eigenes
-//! `#[cfg(feature = "metrics")]`-Attribut, sodass der Hot-Path im
-//! `no_std + alloc`-Build *ohne* Counter-Funktionsaufruf compiliert.
+//! Call sites in `reliable_writer.rs` and others each carry their own
+//! `#[cfg(feature = "metrics")]` attribute, so that the hot path in the
+//! `no_std + alloc` build compiles *without* a counter function call.
 
 use std::sync::{Arc, OnceLock};
 
@@ -32,27 +32,27 @@ fn counters() -> &'static RtpsCounters {
         let r = default_registry();
         r.set_help(
             metric_names::DDS_RTPS_HEARTBEATS_SENT_TOTAL,
-            "Heartbeats gesendet (zerodds-monitor-1.0 §2.2)",
+            "Heartbeats sent (zerodds-monitor-1.1 §2.2)",
         );
         r.set_help(
             metric_names::DDS_RTPS_ACKNACKS_RECEIVED_TOTAL,
-            "Acknacks empfangen (zerodds-monitor-1.0 §2.2)",
+            "Acknacks received (zerodds-monitor-1.1 §2.2)",
         );
         r.set_help(
             metric_names::DDS_RTPS_RETRANSMITS_TOTAL,
-            "Retransmissions (zerodds-monitor-1.0 §2.2)",
+            "Retransmissions (zerodds-monitor-1.1 §2.2)",
         );
         r.set_help(
             metric_names::DDS_RTPS_FRAGMENTED_SAMPLES_TOTAL,
-            "Fragmentierte Samples (zerodds-monitor-1.0 §2.2)",
+            "Fragmentierte Samples (zerodds-monitor-1.1 §2.2)",
         );
         r.set_help(
             metric_names::DDS_RTPS_SAMPLES_DROPPED_TOTAL,
-            "Samples gedropped (zerodds-monitor-1.0 §2.2)",
+            "Samples gedropped (zerodds-monitor-1.1 §2.2)",
         );
         r.set_help(
             metric_names::DDS_RTPS_UNKNOWN_SUBMESSAGES_TOTAL,
-            "Unbekannte Submessage-Kinds (zerodds-monitor-1.0 §2.2)",
+            "Unbekannte Submessage-Kinds (zerodds-monitor-1.1 §2.2)",
         );
         let writer = || Labels::new().with("writer_kind", "reliable");
         RtpsCounters {

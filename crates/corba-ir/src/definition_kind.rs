@@ -5,7 +5,7 @@
 //!
 //! Alle 26 IR-Definition-Kinds.
 
-/// Alle Spec-§10.5.2 DefinitionKind-Werte.
+/// All Spec §10.5.2 DefinitionKind values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
 pub enum DefinitionKind {
@@ -64,7 +64,7 @@ pub enum DefinitionKind {
 }
 
 impl DefinitionKind {
-    /// Roher Diskriminanten-Wert.
+    /// Raw discriminant value.
     #[must_use]
     pub const fn as_u32(self) -> u32 {
         self as u32

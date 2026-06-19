@@ -11,7 +11,7 @@ use core::time::Duration;
 use futures_core::Stream;
 use zerodds_dcps::{DataReader, DataReaderQos, DdsType, Result};
 
-/// Async-Wrapper um `DataReader<T>`.
+/// Async wrapper around `DataReader<T>`.
 pub struct AsyncDataReader<T: DdsType + Send + Sync + 'static> {
     inner: Arc<DataReader<T>>,
 }
@@ -33,11 +33,11 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataReader<T> {
 
     /// Spec §2.2.1 `take_stream` — `Stream<Item = T>`.
     ///
-    /// Live-Mode (Reader hat `runtime_handle()`): der Stream
-    /// registriert sich mit `register_user_reader_waker` an der
-    /// Runtime; `cx.waker()` wird beim naechsten Sample-Zufluss
-    /// gefeuert (kein Polling). Offline-Mode: detached-Thread-Sleep
-    /// als Polling-Fallback (Spec §3.3).
+    /// Live mode (the reader has a `runtime_handle()`): the stream
+    /// registers itself with `register_user_reader_waker` on the
+    /// runtime; `cx.waker()` is fired on the next sample arrival
+    /// (no polling). Offline mode: detached-thread sleep as a
+    /// polling fallback (Spec §3.3).
     #[must_use]
     pub fn take_stream(&self) -> SampleStream<T> {
         SampleStream {
@@ -48,12 +48,12 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataReader<T> {
         }
     }
 
-    /// Spec §2.2.2 take(timeout). Resolves Ok mit `Vec<T>` wenn Samples
-    /// verfuegbar sind oder Timeout abgelaufen ist (dann leerer Vec
-    /// statt Err — analog `take()` sync).
+    /// Spec §2.2.2 take(timeout). Resolves to Ok with a `Vec<T>` when
+    /// samples are available or the timeout has elapsed (in which case
+    /// an empty Vec rather than Err — same as sync `take()`).
     ///
     /// # Errors
-    /// Wire-/Decode-Fehler wie sync.
+    /// Wire/decode errors, same as sync.
     pub async fn take(&self, timeout: Duration) -> Result<Vec<T>> {
         let deadline = std::time::Instant::now() + timeout;
         loop {
@@ -71,7 +71,7 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataReader<T> {
     /// Spec §2.2.3 wait_for_matched_publication.
     ///
     /// # Errors
-    /// `Timeout` wenn `min_count` nicht erreicht.
+    /// `Timeout` if `min_count` is not reached.
     pub async fn wait_for_matched_publication(
         &self,
         min_count: usize,
@@ -89,34 +89,34 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataReader<T> {
         }
     }
 
-    /// Spec §2.2.4 matched_publication_count (synchron).
+    /// Spec §2.2.4 matched_publication_count (synchronous).
     #[must_use]
     pub fn matched_publication_count(&self) -> usize {
         self.inner.matched_publication_count()
     }
 
-    /// Liefert die zugrundeliegende sync-Variante.
+    /// Returns the underlying sync variant.
     #[must_use]
     pub fn as_sync(&self) -> &DataReader<T> {
         &self.inner
     }
 
-    /// Liefert die DataReaderQos.
+    /// Returns the DataReaderQos.
     #[must_use]
     pub fn qos(&self) -> DataReaderQos {
         self.inner.qos()
     }
 
     /// Spec §6.1 `data_available_stream` — `Stream<Item = ()>`.
-    /// Emittiert pro Sample-Zufluss ein `()`-Event; Caller ruft danach
-    /// `take()` / iteriert ueber `take_stream()` um die Samples zu
-    /// holen. Konsumiert keine Samples (im Gegensatz zu
+    /// Emits a `()` event per sample arrival; the caller then calls
+    /// `take()` / iterates over `take_stream()` to fetch the samples.
+    /// Does not consume samples (in contrast to
     /// [`Self::take_stream`]).
     ///
-    /// Live-Mode: registriert sich am Reader-Slot der Runtime
-    /// (`register_user_reader_waker`) — Wake erfolgt beim
-    /// `sample_tx.send` durch die Runtime, kein Polling. Offline-
-    /// Mode: detached-Thread-Sleep als Polling-Fallback.
+    /// Live mode: registers itself on the runtime's reader slot
+    /// (`register_user_reader_waker`) — the wake happens on
+    /// `sample_tx.send` by the runtime, no polling. Offline
+    /// mode: detached-thread sleep as a polling fallback.
     #[must_use]
     pub fn data_available_stream(&self) -> DataAvailableStream<T> {
         DataAvailableStream {
@@ -128,10 +128,10 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataReader<T> {
     }
 
     /// Spec §6.2 `publication_matched_stream` —
-    /// `Stream<Item = SubscriptionMatchedStatus>`. Emittiert den
-    /// vollen Reader-side Match-Status (DDS 1.4 §2.2.4.1
-    /// SUBSCRIPTION_MATCHED) jedes Mal wenn sich der Count an
-    /// matched Publications (Writers) aendert. Felder:
+    /// `Stream<Item = SubscriptionMatchedStatus>`. Emits the
+    /// full reader-side match status (DDS 1.4 §2.2.4.1
+    /// SUBSCRIPTION_MATCHED) every time the count of
+    /// matched publications (writers) changes. Fields:
     /// `total_count` (cumulative), `total_count_change` (delta),
     /// `current_count` (currently matched), `current_count_change`
     /// (signed delta), `last_publication_handle`.
@@ -146,7 +146,7 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataReader<T> {
     }
 }
 
-/// Stream uber Reader-Samples. Endet wenn der Reader gedroppt wird.
+/// Stream over reader samples. Ends when the reader is dropped.
 pub struct SampleStream<T: DdsType + Send + Sync + 'static> {
     reader: Arc<DataReader<T>>,
     buffered: Vec<T>,
@@ -156,16 +156,16 @@ pub struct SampleStream<T: DdsType + Send + Sync + 'static> {
 
 impl<T: DdsType + Send + Sync + 'static> Unpin for SampleStream<T> {}
 
-/// Stream der "data available"-Events. Yieldet `()` jedes Mal wenn
-/// neue Samples im Reader sind. Konsumiert keine Samples — Caller
-/// muss `take()` oder `take_stream` separat aufrufen.
+/// Stream of "data available" events. Yields `()` every time there
+/// are new samples in the reader. Does not consume samples — the
+/// caller must call `take()` or `take_stream` separately.
 pub struct DataAvailableStream<T: DdsType + Send + Sync + 'static> {
     reader: Arc<DataReader<T>>,
     poll_interval: Duration,
     sleep_until: Option<std::time::Instant>,
-    /// Sample-Anzahl bei der letzten Emission. Steigender Wert =
-    /// neue Samples → emit `()`. Lese-Quelle ist der nicht-
-    /// konsumierende `read()`-Pfad.
+    /// Sample count at the last emission. A rising value =
+    /// new samples → emit `()`. The read source is the non-
+    /// consuming `read()` path.
     last_seen_count: usize,
 }
 
@@ -177,14 +177,14 @@ impl<T: DdsType + Send + Sync + 'static> Stream for DataAvailableStream<T> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<()>> {
         let this = self.get_mut();
 
-        // Pruefen ob neue Samples eingetroffen sind — `read()` ist
-        // non-consuming (DDS 1.4 §2.2.2.5.3.5), die Samples bleiben
-        // im Reader-Cache und koennen vom Caller danach via `take()`
-        // konsumiert werden.
+        // Check whether new samples have arrived — `read()` is
+        // non-consuming (DDS 1.4 §2.2.2.5.3.5); the samples stay
+        // in the reader cache and can subsequently be consumed by
+        // the caller via `take()`.
         let cur_count = match this.reader.read() {
             Ok(samples) => samples.len(),
             Err(_) => {
-                // Reader-State korrupt → Stream-Ende.
+                // Reader state corrupt → end of stream.
                 return Poll::Ready(None);
             }
         };
@@ -193,14 +193,14 @@ impl<T: DdsType + Send + Sync + 'static> Stream for DataAvailableStream<T> {
             return Poll::Ready(Some(()));
         }
 
-        // Kein neuer Sample. Live-Mode: nativer Reader-Slot-Waker;
-        // bei jedem `sample_tx.send` weckt die Runtime uns auf.
+        // No new sample. Live mode: native reader-slot waker;
+        // on every `sample_tx.send` the runtime wakes us up.
         if let Some((rt, eid)) = this.reader.runtime_handle() {
             rt.register_user_reader_waker(eid, Some(cx.waker().clone()));
             return Poll::Pending;
         }
 
-        // Offline-Mode: Polling-Fallback ueber detached-Thread-Sleep.
+        // Offline mode: polling fallback via detached-thread sleep.
         if let Some(deadline) = this.sleep_until {
             if std::time::Instant::now() < deadline {
                 schedule_wake(cx, deadline);
@@ -214,7 +214,7 @@ impl<T: DdsType + Send + Sync + 'static> Stream for DataAvailableStream<T> {
     }
 }
 
-/// Stream der publication-matched-Counts. Yieldet jeden neuen Count.
+/// Stream of publication-matched counts. Yields every new count.
 pub struct PublicationMatchedStream<T: DdsType + Send + Sync + 'static> {
     reader: Arc<DataReader<T>>,
     poll_interval: Duration,
@@ -240,8 +240,8 @@ impl<T: DdsType + Send + Sync + 'static> Stream for PublicationMatchedStream<T> 
 
         let now_count = this.reader.matched_publication_count();
         if now_count != this.last_count {
-            // Delta-Berechnung: bei initialem Aufruf
-            // (last_count == usize::MAX) ist der Delta == now_count.
+            // Delta computation: on the initial call
+            // (last_count == usize::MAX) the delta == now_count.
             let prev_known = if this.last_count == usize::MAX {
                 0
             } else {
@@ -292,15 +292,15 @@ impl<T: DdsType + Send + Sync + 'static> Stream for SampleStream<T> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<T>> {
         let this = self.get_mut();
 
-        // Pufferierte Samples zuerst.
+        // Buffered samples first.
         if !this.buffered.is_empty() {
             return Poll::Ready(Some(this.buffered.remove(0)));
         }
 
-        // Sleep-Pfad: wenn wir mid-pause sind, warten.
+        // Sleep path: if we are mid-pause, wait.
         if let Some(deadline) = this.sleep_until {
             if std::time::Instant::now() < deadline {
-                // Re-schedule — Caller-Runtime weckt den Future.
+                // Re-schedule — the caller runtime wakes the future.
                 let waker = cx.waker().clone();
                 let remaining = deadline.saturating_duration_since(std::time::Instant::now());
                 std::thread::spawn(move || {
@@ -312,7 +312,7 @@ impl<T: DdsType + Send + Sync + 'static> Stream for SampleStream<T> {
             this.sleep_until = None;
         }
 
-        // Take aus dem Reader.
+        // Take from the reader.
         match this.reader.take() {
             Ok(mut samples) if !samples.is_empty() => {
                 let first = samples.remove(0);
@@ -320,15 +320,15 @@ impl<T: DdsType + Send + Sync + 'static> Stream for SampleStream<T> {
                 Poll::Ready(Some(first))
             }
             Ok(_) => {
-                // Kein Sample — Spec §3.3: Waker beim Reader-Slot
-                // registrieren. Bei `sample_tx.send` weckt die
-                // Runtime uns nativ. Live-Mode-Pfad.
+                // No sample — Spec §3.3: register the waker on the
+                // reader slot. On `sample_tx.send` the runtime wakes
+                // us natively. Live-mode path.
                 if let Some((rt, eid)) = this.reader.runtime_handle() {
                     rt.register_user_reader_waker(eid, Some(cx.waker().clone()));
                     return Poll::Pending;
                 }
-                // Offline-Mode: detached-thread-Sleep als Polling-
-                // Fallback (kein Reader-Slot, kein Sample-Zufluss).
+                // Offline mode: detached-thread sleep as a polling
+                // fallback (no reader slot, no sample arrival).
                 this.sleep_until = Some(std::time::Instant::now() + this.poll_interval);
                 let waker = cx.waker().clone();
                 let interval = this.poll_interval;

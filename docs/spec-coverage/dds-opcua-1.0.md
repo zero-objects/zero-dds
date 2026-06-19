@@ -1,17 +1,16 @@
 # DDS-OPC UA Gateway 1.0 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/dds-opcua-1.0.pdf` (OMG formal/2020-01-01).
-
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`.
+**Spec:** [OMG DDS-OPC UA Gateway 1.0 — formal/2020-01-01 →](https://www.omg.org/spec/DDS-OPCUA/)
 
 **Kontext:** DDS-OPC-UA-Gateway bridge zwischen DDS-Topics und
 OPC-UA-AddressSpace (IEC 62541). ZeroDDS implementiert die
 **Type-System-Mapping**-Layer (§8.2 + §9.2) sowie das
-**AddressSpace-Mapping** (§9.3) als pure-Rust no_std+alloc Library
-in `crates/opcua-gateway/`. Subscription-Behavior + OPC-UA-Binary-
+**AddressSpace-Mapping** (§9.3) als pure-Rust no_std+alloc Library. Subscription-Behavior + OPC-UA-Binary-
 Wire-Encoding sind Caller-Layer (typisch externer OPC-UA-Stack).
 
-Implementation: `crates/opcua-gateway/` (4 Module, 33 Tests gruen).
+Implementation:
+
+- `crates/opcua-gateway/` — Type-System- + AddressSpace-Mapping, 10 Module, 133 Tests grün.
 
 ---
 
@@ -87,6 +86,24 @@ mit DDS-DurabilityService → UA-HistoryRead-Mapping.
 
 **Status:** done
 
+### §2 Multi-Point Conformance Marker
+
+**Spec:** §2 — eine Implementierung kann mehrere Conformance-Points
+gleichzeitig erfüllen ("multi-point").
+
+**Repo:** `crates/opcua-gateway/src/conformance.rs` — expliziter,
+maschinen-abfragbarer Marker: `ConformancePoint`-Enum (alle vier Punkte
+mit Titel + Nummer + `subsumes_basic`), `DECLARED_CONFORMANCE` (= alle
+vier) + `is_multi_point_conformant()` / `declares()`. Damit kann ein
+Server-Stack-Integrator den Conformance-Stand programmatisch abfragen
+statt Prosa zu lesen.
+
+**Tests:** `conformance::tests::{declares_all_four_conformance_points,
+is_multi_point, points_are_numbered_one_to_four_uniquely,
+complete_points_subsume_their_basic, every_point_has_a_distinct_title}`.
+
+**Status:** done
+
 ---
 
 ## §3 Normative References
@@ -103,7 +120,7 @@ OPCUA-01..-12.
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Externe normative Referenz-Liste; OPCUA-/DDS-Specs werden in den Konsumenten-Items §8/§9 operativ erfuellt.
+**Status:** `n/a (informative)` — Externe normative Referenz-Liste; OPCUA-/DDS-Specs werden in den Konsumenten-Items §8/§9 operativ erfüllt.
 
 ---
 
@@ -218,8 +235,8 @@ mit den exakten IDL-Equivalent-Strukturen.
 Cases + scalar/1d_array/multi-dim Detection).
 
 **Status:** done — `DiagnosticInfo` ist als ScopedName-Bezugspunkt
-exposed; das mutable @optional-Felder-Modell waere analog zu
-`LocalizedText` ergaenzbar.
+exposed; das mutable @optional-Felder-Modell wäre analog zu
+`LocalizedText` ergänzbar.
 
 ### §8.3 OPC UA Service Sets Mapping
 
@@ -264,19 +281,24 @@ config,variant_dds}.rs`.
 **Spec:** §9.2, S. 49-93 — DDS-Primitive/String/Enum/Aggregated/
 Collection/Nested/Alias/Keyed-Types → OPC-UA-Variables.
 
-**Repo:** Vollstaendiges DDS→UA-Type-Walking in
+**Repo:** Vollständiges DDS→UA-Type-Walking in
 `crates/opcua-gateway/src/dds_to_ua/walker.rs::{Walker, NodeKind,
 NodeSpec}` mit rekursiver Aggregated- (Struct/Union) und Collection-
 Behandlung (Sequence-of-Struct, Map<String, Sequence<Struct>>);
-inverses Mapping symmetrisch via `BuiltinTypeKind`.
-AddressSpace-Builder in `address_space.rs::SampleVariable::scalar`
-fuer den Wert-Pfad.
+inverses Mapping symmetrisch via `BuiltinTypeKind`. **Instance-Seite:**
+`address_space.rs::build_sample_instance` zerlegt ein strukturiertes
+Sample rekursiv in eine `InstanceNode`-Variablen-Hierarchie
+(HasComponent-Komponenten pro Member, verschachtelt; Collections als
+Array-/Object-Variablen) — spiegelt die §9.2-Typ-Rekursion auf der
+§9.3-Instance-Seite. `SampleVariable::scalar` bleibt für den einfachen
+Skalar-Wert-Pfad.
 
 **Tests:** Cross-Ref `dds_to_ua::walker::tests::*` +
-`address_space::tests::*`.
+`address_space::tests::*` (inkl. `struct_sample_decomposes_*`,
+`nested_struct_sample_recurses_*`, `union_sample_has_switchfield_*`).
 
-**Status:** done — Datenmodell + Scalar-Mapping + Aggregated/
-Collection-Recursion via Walker abgedeckt.
+**Status:** done — Datenmodell + Scalar-Mapping + Aggregated/Collection/
+Nested-Recursion im **Typ-Walker UND im Instance-Builder** abgedeckt.
 
 ### §9.3 DDS Global Data Space Mapping
 
@@ -324,14 +346,14 @@ qos}.rs`.
 
 ### §10.2 XML Configuration
 
-**Spec:** §10, S. 109-127 — XML-Configuration-Schema fuer
+**Spec:** §10, S. 109-127 — XML-Configuration-Schema für
 Gateway-Bridge-Defs (UAtoDDS / DDStoUA Connections).
 
 **Repo:** `crates/opcua-gateway/src/xml.rs::parse_gateway_config`
 (`roxmltree`-basiert, gleiche Backend-Wahl wie `crates/xml/src/qos.rs`
 + `crates/security-permissions/`). Datenmodell: `GatewayConfig` mit
 `Vec<BridgeDef>`, jede Bridge mit Domain-Id + n
-`UaConnection`-Eintraegen, beide Richtungen
+`UaConnection`-Einträgen, beide Richtungen
 (`ConnectionDirection::UaToDds` / `DdsToUa`), optionalem
 `browse_path` + `XmlNodeId` (numeric oder string).
 
@@ -351,18 +373,12 @@ Gateway-Bridge-Defs (UAtoDDS / DDStoUA Connections).
 
 ## Audit-Status
 
-13 done / 0 partial / 0 open / 8 n/a (informative) / 0 n/a (rejected).
+15 done / 0 partial / 0 open / 8 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-opcua-gateway` — 119 lib-Tests grün,
-0 failed. Module mit Tests: `address_space`, `data_value`,
-`dds_to_ua::naming`, `dds_to_ua::node_spec`, `dds_to_ua::walker`,
-`historical::adapter`, `historical::config`, `historical::qos`,
-`node_id`, `service_sets` (+ `attribute`/`method`/`query`/`view`),
-`subscription_mapping` (+ `behavior`/`config`/`variant_dds`),
-`types`, `xml`.
-
-Offene/partielle Punkte: siehe `dds-opcua-1.0.open.md`. §8.3 Service-
-Sets, §8.4 Subscription, §9.3.4 Historical sind alle in den
-opcua-gateway-Submodulen implementiert; verbleiben §2 Conformance-
-Multi-Punkt-Marker und §9.2 Aggregated/Collection-Recursion (Caller-
-Layer).
+Test-Lauf: `cargo test -p zerodds-opcua-gateway` — 133 lib-Tests grün,
+0 failed. Module mit Tests: `address_space`, `conformance`,
+`data_value`, `dds_to_ua::naming`, `dds_to_ua::node_spec`,
+`dds_to_ua::walker`, `historical::adapter`, `historical::config`,
+`historical::qos`, `node_id`, `service_sets`
+(+ `attribute`/`method`/`query`/`view`), `subscription_mapping`
+(+ `behavior`/`config`/`variant_dds`), `types`, `xml`.

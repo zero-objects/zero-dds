@@ -1,24 +1,24 @@
-//! E2E: Vehicle-Mesh Doppelstern + C4I-Backend.
+//! E2E: vehicle-mesh double-star + C4I backend.
 //!
-//! Architektur-Referenz: `docs/architecture/09_delegation.md` §3
-//! (Use-Cases) + §6 (Chain-Validation).
+//! Architecture reference: `docs/architecture/09_delegation.md` §3
+//! (use cases) + §6 (chain validation).
 //!
-//! Testet die volle Datenmodell-Toolchain ueber alle Stufen j-a..j-h:
+//! Tests the full data-model toolchain across all stages j-a..j-h:
 //!
-//! 1. Wanne-Gateway (Trust-Anchor) erzeugt Upstream-Link zum Turm-GW.
-//! 2. Turm-GW (Sub-Bridge mit Upstream) delegiert an `turm-imu` und
+//! 1. The hull gateway (trust anchor) creates an upstream link to the turret GW.
+//! 2. The turret GW (sub-bridge with upstream) delegates to `turm-imu` and
 //!    `turm-cam`.
-//! 3. Wanne-GW delegiert an `wanne-ecu` (1-Hop, gleiche Anchor).
-//! 4. Caps mit DelegationChain werden via SPDP-Beacon beim C4I-Node
-//!    sichtbar.
-//! 5. C4I validiert die Chains gegen sein Profile
+//! 3. The hull GW delegates to `wanne-ecu` (1-hop, same anchor).
+//! 4. Caps with a DelegationChain become visible at the C4I node
+//!    via the SPDP beacon.
+//! 5. C4I validates the chains against its profile
 //!    (`strict-delegated`, max_chain_depth=3).
-//! 6. Rogue-Peer mit gefakter Chain wird abgelehnt.
+//! 6. A rogue peer with a faked chain is rejected.
 //!
-//! Der Test ist DCPS-Runtime-frei — er deckt das **Datenmodell** und
-//! das **Discovery-Wire-Format** ab, also exakt die Schichten, die
-//! liefert das Delegation-Vehicle-Subsystem. DCPS-Integration (Sample-Routing mit
-//! Re-Sealing am Bridge) ist Phase-2-Folgearbeit.
+//! The test is DCPS-runtime-free — it covers the **data model** and
+//! the **discovery wire format**, i.e. exactly the layers that the
+//! delegation-vehicle subsystem delivers. DCPS integration (sample routing with
+//! re-sealing at the bridge) is phase-2 follow-up work.
 
 #![allow(
     clippy::expect_used,
@@ -76,6 +76,7 @@ fn baseline_participant(prefix: u8) -> ParticipantBuiltinTopicData {
         properties: Default::default(),
         identity_token: None,
         permissions_token: None,
+        participant_security_info: None,
         identity_status_token: None,
         sig_algo_info: None,
         kx_algo_info: None,
@@ -106,16 +107,16 @@ impl Topology {
     }
 }
 
-/// Test-Setup mit Bridges, Profiles, alle Schluessel.
+/// Test setup with bridges, profiles, all keys.
 struct VehicleMesh {
     topo: Topology,
-    /// Wanne-GW Bridge (Trust-Root fuer C4I).
+    /// Hull-GW bridge (trust root for C4I).
     wanne_bridge: GatewayBridge,
-    /// Turm-GW Bridge (Sub-Bridge mit Upstream-Link von Wanne).
+    /// Turret-GW bridge (sub-bridge with an upstream link from the hull).
     turm_bridge: GatewayBridge,
-    /// PubKey des Wanne-GW (= Trust-Anchor fuer C4I).
+    /// Pubkey of the hull GW (= trust anchor for C4I).
     wanne_pubkey: Vec<u8>,
-    /// PubKey des Turm-GW (= Resolver-Output fuer 2-Hop-Verify).
+    /// Pubkey of the turret GW (= resolver output for the 2-hop verify).
     turm_pubkey: Vec<u8>,
 }
 
@@ -125,7 +126,7 @@ impl VehicleMesh {
         let (sk_wanne, pk_wanne) = ecdsa_keypair();
         let (sk_turm, pk_turm) = ecdsa_keypair();
 
-        // Wanne-Bridge.
+        // Hull bridge.
         let wanne_cfg = GatewayBridgeConfig {
             gateway_guid: topo.wanne_gw,
             signing_key: sk_wanne.clone(),
@@ -133,8 +134,8 @@ impl VehicleMesh {
         };
         let wanne_bridge = GatewayBridge::new(wanne_cfg);
 
-        // Wanne signiert Upstream-Link an Turm-GW (gibt Turm Recht
-        // weiter zu delegieren).
+        // The hull signs an upstream link to the turret GW (passes on the right
+        // to delegate to the turret).
         let mut upstream = DelegationLink::new(
             topo.wanne_gw,
             topo.turm_gw,
@@ -148,7 +149,7 @@ impl VehicleMesh {
         upstream.sign(&sk_wanne).unwrap();
         let upstream_chain = DelegationChain::new(topo.wanne_gw, vec![upstream]).unwrap();
 
-        // Turm-Bridge mit Upstream.
+        // Turret bridge with upstream.
         let turm_cfg = GatewayBridgeConfig {
             gateway_guid: topo.turm_gw,
             signing_key: sk_turm,
@@ -167,7 +168,7 @@ impl VehicleMesh {
     }
 
     fn issue_all_delegations(&mut self) {
-        // 1-Hop: Wanne-ECU direkt unter Wanne-GW.
+        // 1-hop: hull ECU directly under the hull GW.
         self.wanne_bridge
             .delegate_for(
                 self.topo.wanne_ecu,
@@ -178,7 +179,7 @@ impl VehicleMesh {
             )
             .unwrap();
 
-        // 2-Hop: Turm-IMU + Turm-Cam unter Turm-GW (mit Upstream).
+        // 2-hop: turret IMU + turret cam under the turret GW (with upstream).
         self.turm_bridge
             .delegate_for(
                 self.topo.turm_imu,
@@ -199,7 +200,7 @@ impl VehicleMesh {
             .unwrap();
     }
 
-    /// C4I-Profile: strict-delegated + Trust-Anchor=Wanne-GW.
+    /// C4I profile: strict-delegated + trust anchor = hull GW.
     fn c4i_profile(&self) -> DelegationProfile {
         use std::collections::BTreeSet;
         let mut algos = BTreeSet::new();
@@ -218,8 +219,8 @@ impl VehicleMesh {
         }
     }
 
-    /// Resolver fuer Sub-Hop-PubKeys. Fuer Turm-Sensoren liefert er
-    /// pk_turm wenn nach turm_gw gefragt wird.
+    /// Resolver for sub-hop pubkeys. For turret sensors it returns
+    /// pk_turm when asked for turm_gw.
     fn pubkey_resolver(&self) -> impl Fn(&[u8; 16]) -> Option<(Vec<u8>, SignatureAlgorithm)> + '_ {
         move |g: &[u8; 16]| {
             if g == &self.topo.turm_gw {
@@ -257,7 +258,7 @@ fn two_hop_turm_imu_passes_c4i_validation() {
         .expect("c4i must accept turm-imu via 2-hop");
     assert_eq!(validated.edge_guid, mesh.topo.turm_imu);
     assert_eq!(validated.origin_guid, mesh.topo.wanne_gw);
-    // Scope-Intersection: "*" ∩ "sensor/imu" → "sensor/imu".
+    // Scope intersection: "*" ∩ "sensor/imu" → "sensor/imu".
     assert!(
         validated
             .effective_topic_patterns
@@ -272,15 +273,15 @@ fn two_hop_turm_cam_passes_c4i_validation_with_distinct_scope() {
     let chain = mesh.turm_bridge.chain_for(&mesh.topo.turm_cam).unwrap();
     let validated = validate_chain(&chain, &mesh.c4i_profile(), 5_000, mesh.pubkey_resolver())
         .expect("c4i must accept turm-cam");
-    // Cam darf nur "sensor/cam", nicht "sensor/imu" (Scope-Per-Edge).
+    // The cam may only "sensor/cam", not "sensor/imu" (scope per edge).
     assert!(validated.allows_topic("sensor/cam"));
     assert!(!validated.allows_topic("sensor/imu"));
 }
 
 #[test]
 fn rogue_peer_with_self_signed_chain_rejected_by_c4i() {
-    // Rogue: kennt nicht den Wanne-GW-Schluessel, signiert eine
-    // Chain mit eigenem Key und behauptet zur wanne_gw zu gehoeren.
+    // Rogue: does not know the hull-GW key, signs a
+    // chain with its own key and claims to belong to wanne_gw.
     let mesh = VehicleMesh::build();
     let (sk_rogue, _pk_rogue) = ecdsa_keypair();
     let rogue_edge = [0xFF; 16];
@@ -304,7 +305,7 @@ fn rogue_peer_with_self_signed_chain_rejected_by_c4i() {
         mesh.pubkey_resolver(),
     )
     .expect_err("c4i must reject rogue");
-    // SignatureInvalid weil rogue-key ≠ trust-anchor pk.
+    // SignatureInvalid because rogue key ≠ trust-anchor pk.
     assert!(matches!(
         err,
         zerodds_security_permissions::DelegationCheckError::SignatureInvalid { .. }
@@ -313,7 +314,7 @@ fn rogue_peer_with_self_signed_chain_rejected_by_c4i() {
 
 #[test]
 fn rogue_peer_with_unknown_origin_rejected() {
-    // Rogue mit Origin = unbekannte GUID → UntrustedDelegator.
+    // Rogue with origin = unknown GUID → UntrustedDelegator.
     let mesh = VehicleMesh::build();
     let (sk_rogue, _pk_rogue) = ecdsa_keypair();
     let rogue_origin = [0xEE; 16];
@@ -345,18 +346,18 @@ fn rogue_peer_with_unknown_origin_rejected() {
 
 #[test]
 fn full_pipeline_through_spdp_beacon() {
-    // Volle Schichten-Kette:
+    // Full layer chain:
     //   Bridge.chain_for → caps.delegation_chain → advertise_security_caps
     //   → SpdpBeacon.serialize → Datagram → SpdpReader.parse_datagram
     //   → parse_peer_caps → validate_chain.
     let mut mesh = VehicleMesh::build();
     mesh.issue_all_delegations();
 
-    // Wanne-ECU annonciert sein Beacon.
+    // The hull ECU announces its beacon.
     let mut data = baseline_participant(0x33);
     let chain = mesh.wanne_bridge.chain_for(&mesh.topo.wanne_ecu).unwrap();
     let mut caps = PeerCapabilities {
-        auth_plugin_class: None, // edge ohne eigenen plugin
+        auth_plugin_class: None, // edge without its own plugin
         crypto_plugin_class: None,
         access_plugin_class: None,
         supported_suites: vec![],
@@ -373,7 +374,7 @@ fn full_pipeline_through_spdp_beacon() {
     let mut beacon = SpdpBeacon::new(data);
     let datagram = beacon.serialize().unwrap();
 
-    // C4I empfaengt + parsed.
+    // C4I receives + parses.
     let disc = SpdpReader::new().parse_datagram(&datagram).unwrap();
     let parsed_caps = parse_peer_caps(&disc.data.properties);
     let parsed_chain = parsed_caps
@@ -383,7 +384,7 @@ fn full_pipeline_through_spdp_beacon() {
         .clone();
     assert_eq!(parsed_chain, chain);
 
-    // C4I validiert.
+    // C4I validates.
     let validated = validate_chain(
         &parsed_chain,
         &mesh.c4i_profile(),
@@ -393,10 +394,10 @@ fn full_pipeline_through_spdp_beacon() {
     .expect("c4i validates chain");
     assert_eq!(validated.edge_guid, mesh.topo.wanne_ecu);
 
-    // mesh.topo.c4i ist nur fuer Bookkeeping, nicht fuer Wire-Adresse.
+    // mesh.topo.c4i is only for bookkeeping, not for the wire address.
     assert_eq!(mesh.topo.c4i, [0x66; 16]);
 
-    // PeerCache-Eintrag wuerde dieselbe Chain enthalten.
+    // The PeerCache entry would contain the same chain.
     let mut cache = PeerCache::new();
     cache.insert(disc.data.guid.prefix.0, parsed_caps.clone());
     let cached = cache.get(&disc.data.guid.prefix.0).unwrap();
@@ -411,7 +412,7 @@ fn doppelstern_full_topology_three_chains_independent() {
     let mut mesh = VehicleMesh::build();
     mesh.issue_all_delegations();
 
-    // Alle drei Edges produzieren ihre Chain.
+    // All three edges produce their chain.
     let ch_ecu = mesh.wanne_bridge.chain_for(&mesh.topo.wanne_ecu).unwrap();
     let ch_imu = mesh.turm_bridge.chain_for(&mesh.topo.turm_imu).unwrap();
     let ch_cam = mesh.turm_bridge.chain_for(&mesh.topo.turm_cam).unwrap();
@@ -419,7 +420,7 @@ fn doppelstern_full_topology_three_chains_independent() {
     assert_eq!(ch_ecu.depth(), 1);
     assert_eq!(ch_imu.depth(), 2);
     assert_eq!(ch_cam.depth(), 2);
-    // Origin ist immer Wanne-GW (Trust-Root).
+    // The origin is always the hull GW (trust root).
     assert_eq!(ch_ecu.origin_guid, mesh.topo.wanne_gw);
     assert_eq!(ch_imu.origin_guid, mesh.topo.wanne_gw);
     assert_eq!(ch_cam.origin_guid, mesh.topo.wanne_gw);
@@ -427,18 +428,18 @@ fn doppelstern_full_topology_three_chains_independent() {
     let profile = mesh.c4i_profile();
     let resolver = mesh.pubkey_resolver();
 
-    // Per Edge ein eigener resolver-Aufruf — alle drei muessen
-    // unabhaengig validieren.
+    // A separate resolver call per edge — all three must
+    // validate independently.
     let v1 = validate_chain(&ch_ecu, &profile, 5_000, &resolver).unwrap();
     let v2 = validate_chain(&ch_imu, &profile, 5_000, &resolver).unwrap();
     let v3 = validate_chain(&ch_cam, &profile, 5_000, &resolver).unwrap();
 
-    // Edges sind unterschiedlich, Origins identisch.
+    // Edges differ, origins identical.
     assert_ne!(v1.edge_guid, v2.edge_guid);
     assert_ne!(v2.edge_guid, v3.edge_guid);
     assert_eq!(v1.origin_guid, v3.origin_guid);
 
-    // Scope-Per-Edge: keine Vermischung der Patterns.
+    // Scope per edge: no mixing of the patterns.
     assert!(v2.allows_topic("sensor/imu"));
     assert!(!v2.allows_topic("sensor/cam"));
     assert!(v3.allows_topic("sensor/cam"));
@@ -449,17 +450,17 @@ fn doppelstern_full_topology_three_chains_independent() {
 fn revoked_delegation_no_longer_chains() {
     let mut mesh = VehicleMesh::build();
     mesh.issue_all_delegations();
-    // Turm-IMU wird widerrufen.
+    // Turret IMU is revoked.
     mesh.turm_bridge
         .revoke_delegation(mesh.topo.turm_imu)
         .unwrap();
-    // chain_for liefert None nach Revoke.
+    // chain_for returns None after revoke.
     assert!(mesh.turm_bridge.chain_for(&mesh.topo.turm_imu).is_none());
-    // Aber Cam und Wanne-ECU bleiben.
+    // But cam and hull ECU remain.
     assert!(mesh.turm_bridge.chain_for(&mesh.topo.turm_cam).is_some());
     assert!(mesh.wanne_bridge.chain_for(&mesh.topo.wanne_ecu).is_some());
-    // Revocation-Liste enthaelt den IMU-Eintrag fuer den naechsten
-    // SPDP-Beacon.
+    // The revocation list contains the IMU entry for the next
+    // SPDP beacon.
     let revs = mesh.turm_bridge.take_revocations();
     assert_eq!(revs, vec![mesh.topo.turm_imu]);
 }

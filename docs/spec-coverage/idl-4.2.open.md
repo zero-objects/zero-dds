@@ -5,11 +5,11 @@ Vor jedem Audit-Lauf neu generieren (PROCESS.md).
 
 ## Open-Items
 
-### §7.4.1.4.3-r-longdouble-open — Long-Double Voll-Praezisions-Arithmetik
+### §7.4.1.4.3-r-longdouble-open — Long-Double Voll-Präzisions-Arithmetik
 
 **Status:** **MISSING — BLOCKED** (Iron-Rule-Eskalations-Klausel).
 
-**Spec:** §7.4.1.4.3 — Long-Double-Sub-Expression-Praezision +
+**Spec:** §7.4.1.4.3 — Long-Double-Sub-Expression-Präzision +
 IEEE-754 double-extended (≥80-bit Mantisse).
 
 **Blocker:** Rust-stable hat keinen `f128`-Type
@@ -45,14 +45,3 @@ BLOCKED-Tracker. Float- und Double-Range sind Spec-konform.
 
 `ConstValue::LongDouble([u8; 16])` als Stub. `f32`/`f64`
 (Float/Double) sind IEEE-754-konform.
-
-## Sub-spec Followups — alle geschlossen
-
-Die früher hier dokumentierten 3 Sub-spec-Followups (Items 10/11/18)
-sind in Commit-Reihe `a75d2af` + nachfolgend voll auf Spec-Niveau
-geschlossen — siehe Tracker-Tabelle in `idl-4.2.md`.
-
----
-
-*Stand 2026-04-28, Spec-Check 4.0 verify (Post-K1-Vollendung mit
-voller Sub-spec-Followup-Schließung).*

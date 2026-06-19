@@ -1,37 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Fehler-Typen fuer den IDL→C++-Codegen.
+//! Error types for the IDL→C++ codegen.
 
 use core::fmt;
 
-/// Top-Level-Fehler des C++-Code-Generators.
+/// Top-level error of the C++ code generator.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CppGenError {
-    /// IDL-Konstrukt ist im aktuellen Foundation-Scope (C5.1-a) nicht
-    /// unterstuetzt. `construct` ist eine kurze Bezeichnung (z.B.
+    /// The IDL construct is not supported in the current foundation
+    /// scope (C5.1-a). `construct` is a short label (e.g.
     /// `"interface"`, `"valuetype"`, `"fixed"`, `"any"`, `"map"`).
     UnsupportedConstruct {
-        /// Name des nicht-unterstuetzten Konstrukts.
+        /// Name of the unsupported construct.
         construct: String,
-        /// Optional: Identifier-Name (Type-Name oder Member-Name).
+        /// Optional: identifier name (type name or member name).
         context: Option<String>,
     },
-    /// Identifier kollidiert mit einem reservierten C++-Keyword
-    /// (§7.4.5 Implementation-Mapping verlangt Kollisionsvermeidung).
+    /// Identifier collides with a reserved C++ keyword
+    /// (§7.4.5 implementation mapping requires collision avoidance).
     InvalidName {
-        /// Der unzulaessige Identifier.
+        /// The invalid identifier.
         name: String,
-        /// Grund der Ablehnung (z.B. `"reserved C++ keyword"`).
+        /// Reason for the rejection (e.g. `"reserved C++ keyword"`).
         reason: String,
     },
-    /// Inheritance-Cycle im Struct-Graphen (Self-Reference oder
-    /// indirekte Schleife). Wird vor der Emission erkannt.
+    /// Inheritance cycle in the struct graph (self-reference or
+    /// indirect loop). Detected before emission.
     InheritanceCycle {
-        /// Beteiligter Type-Name am Cycle.
+        /// Type name involved in the cycle.
         type_name: String,
     },
-    /// Generierter Output ist intern inkonsistent (sollte nicht
-    /// auftreten — Bug-Indikator).
+    /// The generated output is internally inconsistent (should not
+    /// happen — bug indicator).
     Internal(String),
 }
 

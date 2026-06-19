@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! IOR-Struct — Spec §13.6.2.
+//! IOR struct — spec §13.6.2.
 //!
 //! ```text
 //! struct IOR {
@@ -21,31 +21,31 @@ use crate::tagged_profile::TaggedProfile;
 /// Interoperable Object Reference.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Ior {
-    /// Repository-ID des Object-Types (z.B. `IDL:omg.org/CosNaming/
-    /// NamingContext:1.0`). Leerstring fuer "nil"-Object-Reference.
+    /// Repository ID of the object type (e.g. `IDL:omg.org/CosNaming/
+    /// NamingContext:1.0`). Empty string for the "nil" object reference.
     pub type_id: String,
-    /// Profile-Liste (mind. ein Eintrag fuer non-nil Refs).
+    /// Profile list (at least one entry for non-nil refs).
     pub profiles: Vec<TaggedProfile>,
 }
 
 impl Ior {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new(type_id: String, profiles: Vec<TaggedProfile>) -> Self {
         Self { type_id, profiles }
     }
 
-    /// `true` wenn IOR die nil-Object-Reference repraesentiert (Spec
-    /// §13.6.2: leerer `type_id` + leere Profile-Liste).
+    /// `true` if the IOR represents the nil object reference (spec
+    /// §13.6.2: empty `type_id` + empty profile list).
     #[must_use]
     pub fn is_nil(&self) -> bool {
         self.type_id.is_empty() && self.profiles.is_empty()
     }
 
-    /// CDR-Encode (ohne Encapsulation-Wrapper).
+    /// CDR encode (without encapsulation wrapper).
     ///
     /// # Errors
-    /// Buffer-Schreibfehler oder Length-Overflow.
+    /// Buffer write error or length overflow.
     pub fn encode(&self, w: &mut BufferWriter) -> Result<(), CdrError> {
         w.write_string(&self.type_id)?;
         let n = u32::try_from(self.profiles.len()).map_err(|_| CdrError::Overflow)?;
@@ -56,10 +56,10 @@ impl Ior {
         Ok(())
     }
 
-    /// CDR-Decode (ohne Encapsulation-Wrapper).
+    /// CDR decode (without encapsulation wrapper).
     ///
     /// # Errors
-    /// Buffer-Lesefehler.
+    /// Buffer read error.
     pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, CdrError> {
         let type_id = r.read_string()?;
         let n = r.read_u32()? as usize;
@@ -70,29 +70,31 @@ impl Ior {
         Ok(Self { type_id, profiles })
     }
 
-    /// Encodiert eine CDR-Encapsulation `endianness-byte + body`.
+    /// Encodes a CDR encapsulation `endianness-byte + body`.
     ///
-    /// Diese Form wird von `to_stringified` und vom IOR-Container in
-    /// vielen Vendor-Codes (TAO, omniORB) genutzt.
+    /// This form is used by `to_stringified` and by the IOR container in
+    /// many vendor code bases (TAO, omniORB).
     ///
     /// # Errors
-    /// Buffer-Schreibfehler.
+    /// Buffer write error.
     pub fn encode_encapsulation(&self, endianness: Endianness) -> Result<Vec<u8>, CdrError> {
         let mut out = Vec::with_capacity(64);
         out.push(match endianness {
             Endianness::Big => 0,
             Endianness::Little => 1,
         });
-        let mut w = BufferWriter::new(endianness);
+        // `align_origin = 1`: the endianness octet counts toward the alignment
+        // origin of the encapsulation (CORBA §15.3.3), see IiopProfileBody.
+        let mut w = BufferWriter::new(endianness).with_align_origin(1);
         self.encode(&mut w)?;
         out.extend_from_slice(w.as_bytes());
         Ok(out)
     }
 
-    /// Decodiert aus einer CDR-Encapsulation.
+    /// Decodes from a CDR encapsulation.
     ///
     /// # Errors
-    /// Buffer-Lesefehler oder Endianness-Octet ungueltig.
+    /// Buffer read error or invalid endianness octet.
     pub fn decode_encapsulation(bytes: &[u8]) -> Result<Self, CdrError> {
         if bytes.is_empty() {
             return Err(CdrError::Truncated);
@@ -102,7 +104,7 @@ impl Ior {
             1 => Endianness::Little,
             _ => return Err(CdrError::InvalidEndianness),
         };
-        let mut r = BufferReader::new(&bytes[1..], endianness);
+        let mut r = BufferReader::new(&bytes[1..], endianness).with_align_origin(1);
         Self::decode(&mut r)
     }
 }

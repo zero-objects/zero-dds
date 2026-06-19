@@ -1,12 +1,12 @@
-//! WP QoS-Wiring T4 — DestinationOrder QoS Tests.
+//! WP QoS-Wiring T4 — DestinationOrder QoS tests.
 //!
-//! Spec DDS 1.4 §2.2.3.18: bei BY_SOURCE_TIMESTAMP liefert der Reader
-//! nur Samples mit strikt groesserem source_ts; aeltere Samples werden
-//! verworfen (Out-of-Order-Resolution). Bei BY_RECEPTION_TIMESTAMP
-//! (Default) keine Filterung — alles wird angenommen.
+//! Spec DDS 1.4 §2.2.3.18: with BY_SOURCE_TIMESTAMP the reader delivers
+//! only samples with a strictly greater source_ts; older samples are
+//! discarded (out-of-order resolution). With BY_RECEPTION_TIMESTAMP
+//! (default) there is no filtering — everything is accepted.
 //!
-//! Diese Tests pruefen den Tracker-Hook direkt; das Reader-Pipeline-
-//! Wiring auf den Hook ist im Subscriber-Code (siehe
+//! These tests exercise the tracker hook directly; the reader-pipeline
+//! wiring onto the hook lives in the subscriber code (see
 //! `ingest_into_cache::should_deliver_under_destination_order`).
 
 #![allow(
@@ -30,7 +30,7 @@ fn by_reception_timestamp_always_delivers() {
     t.observe_sample(key, vec![1, 2, 3, 4], Some(Time::new(10, 0)));
     t.record_delivery(&key, Time::new(10, 0));
 
-    // Auch ein "veralteter" source_ts darf bei BY_RECEPTION durch.
+    // Even a "stale" source_ts is allowed through under BY_RECEPTION.
     assert!(t.should_deliver_under_destination_order(&key, Time::new(5, 0), false));
     assert!(t.should_deliver_under_destination_order(&key, Time::new(15, 0), false));
 }
@@ -42,11 +42,11 @@ fn by_source_timestamp_drops_older_samples() {
     t.observe_sample(key, vec![1, 2, 3, 4], Some(Time::new(10, 500_000_000)));
     t.record_delivery(&key, Time::new(10, 500_000_000));
 
-    // Aelteres Sample → drop.
+    // Older sample → drop.
     assert!(!t.should_deliver_under_destination_order(&key, Time::new(10, 0), true));
     assert!(!t.should_deliver_under_destination_order(&key, Time::new(5, 999_999_999), true));
-    // Gleicher Timestamp → drop (strict-greater Spec §2.2.3.18 simplified
-    // ohne GUID-Tie-Breaker).
+    // Same timestamp → drop (strict-greater Spec §2.2.3.18 simplified
+    // without GUID tie-breaker).
     assert!(!t.should_deliver_under_destination_order(&key, Time::new(10, 500_000_000), true));
 }
 
@@ -65,7 +65,7 @@ fn by_source_timestamp_passes_newer_samples() {
 fn unknown_instance_passes_first_sample() {
     let t = InstanceTracker::new();
     let key = kh(4);
-    // Tracker kennt die Instanz noch nicht → erstes Sample muss durch.
+    // Tracker does not know the instance yet → first sample must pass.
     assert!(t.should_deliver_under_destination_order(&key, Time::new(0, 0), true));
     assert!(t.should_deliver_under_destination_order(&key, Time::new(0, 0), false));
 }
@@ -74,8 +74,8 @@ fn unknown_instance_passes_first_sample() {
 fn known_instance_no_prior_delivery_passes() {
     let t = InstanceTracker::new();
     let key = kh(5);
-    // Instance registriert via observe_sample, aber kein record_delivery
-    // → kein last_delivered_ts → erstes Delivery muss durch.
+    // Instance registered via observe_sample, but no record_delivery
+    // → no last_delivered_ts → first delivery must pass.
     t.observe_sample(key, vec![1, 2, 3, 4], Some(Time::new(10, 0)));
     assert!(t.should_deliver_under_destination_order(&key, Time::new(5, 0), true));
 }
@@ -87,6 +87,6 @@ fn destination_order_is_per_instance() {
     let b = kh(11);
     t.observe_sample(a, vec![1, 2, 3, 4], Some(Time::new(100, 0)));
     t.record_delivery(&a, Time::new(100, 0));
-    // Andere Instanz → unbeeinflusst, alter Timestamp passt durch.
+    // Different instance → unaffected, old timestamp passes through.
     assert!(t.should_deliver_under_destination_order(&b, Time::new(50, 0), true));
 }

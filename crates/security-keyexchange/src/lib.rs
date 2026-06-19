@@ -1,55 +1,55 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Crate `zerodds-security-keyexchange`. Safety classification: **SAFE** (duenner Wrapper um `ring::agreement` + `ring::hkdf`).
+//! Crate `zerodds-security-keyexchange`. Safety classification: **SAFE** (a thin wrapper around `ring::agreement` + `ring::hkdf`).
 //!
-//! X25519 / P-256 Ephemeral-Diffie-Hellman fuer den
-//! DDS-Security 1.1 Authentication-Handshake (Spec §8.3.2).
+//! X25519 / P-256 ephemeral Diffie-Hellman for the
+//! DDS-Security 1.1 authentication handshake (spec §8.3.2).
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 4 — Core Services. Konsumiert von `zerodds-security-pki`.
+//! Layer 4 — Core Services. Consumed by `zerodds-security-pki`.
 //!
-//! ## Zweck
+//! ## Purpose
 //!
-//! Der `Authentication`-Handshake (Spec §8.3.2) braucht am Ende einen
-//! `SharedSecret`. Der uebliche Weg ist ephemeral-DH: jede Seite
-//! erzeugt ein temporaeres Schluesselpaar, tauscht die Public-Keys
-//! aus, und leitet das Shared-Secret aus `x25519(priv, remote_pub)`
-//! ab. HKDF-SHA256 zieht daraus einen 32-byte Key.
+//! The `Authentication` handshake (spec §8.3.2) needs a
+//! `SharedSecret` at the end. The usual way is ephemeral DH: each side
+//! generates a temporary key pair, exchanges the public keys,
+//! and derives the shared secret from `x25519(priv, remote_pub)`.
+//! HKDF-SHA256 pulls a 32-byte key from it.
 //!
 //! # API
 //!
 //! ```
 //! use zerodds_security_keyexchange::KeyExchange;
 //!
-//! // Beide Seiten erzeugen ephemerals.
+//! // Both sides generate ephemerals.
 //! let alice = KeyExchange::new().expect("alice");
 //! let bob = KeyExchange::new().expect("bob");
 //!
-//! // Public-Keys tauschen (ueber den SPDP-Handshake-Token).
+//! // Exchange public keys (via the SPDP handshake token).
 //! let a_pub = alice.public_key().to_vec();
 //! let b_pub = bob.public_key().to_vec();
 //!
-//! // Jede Seite leitet den gleichen 32-byte SharedSecret ab.
+//! // Each side derives the same 32-byte SharedSecret.
 //! let s1 = alice.derive_shared_secret(&b_pub).expect("alice derive");
 //! let s2 = bob.derive_shared_secret(&a_pub).expect("bob derive");
 //! assert_eq!(s1, s2);
 //! ```
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
 //! - [`KeyExchange`] + [`KxSuite::X25519`] / [`KxSuite::EcdhP256`] —
-//!   Ephemeral-DH-Roundtrip mit deterministischer SharedSecret-Ableitung.
+//!   ephemeral-DH roundtrip with deterministic SharedSecret derivation.
 //!
-//! ## Nicht-Ziele
+//! ## Non-goals
 //!
-//! RSA-OAEP-Key-Transport (Spec §8.3.2.11 als optionale Alternative fuer
-//! Legacy-Vendors ohne ECDH/X25519) ist explizit nicht in RC1: alle
-//! relevanten Vendoren (Cyclone DDS, FastDDS, RTI Connext) sprechen
-//! ECDH oder X25519, und `ring 0.17` exponiert keine RSA-Encrypt-API.
-//! Falls ein konkreter Legacy-Use-Case auftaucht, wird der Pfad ueber
-//! die `rsa`-Crate als Major-2.0-additive-Erweiterung wieder eingefuehrt.
+//! RSA-OAEP key transport (spec §8.3.2.11 as an optional alternative for
+//! legacy vendors without ECDH/X25519) is explicitly not in RC1: all
+//! relevant vendors (Cyclone DDS, FastDDS, RTI Connext) speak
+//! ECDH or X25519, and `ring 0.17` exposes no RSA encrypt API.
+//! If a concrete legacy use case appears, the path via
+//! the `rsa` crate is reintroduced as a major-2.0 additive extension.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
@@ -60,31 +60,33 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use ring::agreement::{self, ECDH_P256, EphemeralPrivateKey, PublicKey, X25519};
-use ring::hkdf;
 use ring::rand::SystemRandom;
 use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};
 
-/// DH-Suite-Auswahl.
+/// DH suite selection.
 ///
-/// Default ist `X25519` — moderner Standard, 32-byte Public-Key.
-/// `EcdhP256` fuer Interop mit Vendors die **kein** X25519 kennen
-/// (RTI-Connext-Legacy, Fast-DDS < 2.7).
+/// The default is `EcdhP256` (NIST P-256, `ECDH+prime256v1-CEUM`) — the
+/// cross-vendor-interoperable key agreement mandated by the
+/// DDS-Security-1.2 spec (§9.3.2.3.1) (cyclone/FastDDS/OpenDDS). `X25519` is **not** a spec algorithm,
+/// but a ZeroDDS vendor extension — only opt-in between pure ZeroDDS peers
+/// (via `with_suite`), NEVER as a cross-vendor default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KxSuite {
-    /// X25519 (Curve25519). 32-byte Public-Key.
+    /// X25519 (Curve25519). 32-byte public key. **Non-spec** — opt-in only.
     X25519,
-    /// NIST P-256 ECDH. 65-byte unkomprimierter Public-Key (0x04 || X || Y).
+    /// NIST P-256 ECDH. 65-byte uncompressed public key (0x04 || X || Y).
+    /// Spec default (§9.3.2.3.1), cross-vendor.
     EcdhP256,
 }
 
 impl Default for KxSuite {
     fn default() -> Self {
-        Self::X25519
+        Self::EcdhP256
     }
 }
 
 impl KxSuite {
-    /// Erwartete Laenge des Public-Key-Bytes.
+    /// Expected length of the public-key bytes.
     #[must_use]
     pub const fn public_key_len(self) -> usize {
         match self {
@@ -101,11 +103,11 @@ impl KxSuite {
     }
 }
 
-/// Ephemerales DH-Schluesselpaar fuer einen einzelnen Handshake.
+/// Ephemeral DH key pair for a single handshake.
 ///
-/// Nach `derive_shared_secret` ist die Instance verbraucht — das
-/// `EphemeralPrivateKey` erlaubt nach API-Design von `ring` nur einen
-/// `agree_ephemeral`-Call, was PFS (Perfect Forward Secrecy) erzwingt.
+/// After `derive_shared_secret` the instance is consumed — by `ring`'s
+/// API design the `EphemeralPrivateKey` allows only one
+/// `agree_ephemeral` call, which enforces PFS (perfect forward secrecy).
 pub struct KeyExchange {
     suite: KxSuite,
     private: EphemeralPrivateKey,
@@ -113,19 +115,20 @@ pub struct KeyExchange {
 }
 
 impl KeyExchange {
-    /// Erzeugt ein frisches X25519-Schluesselpaar (Default).
+    /// Generates a fresh key pair with the default suite
+    /// ([`KxSuite::EcdhP256`], the spec/cross-vendor choice).
     ///
     /// # Errors
-    /// `CryptoFailed` wenn die System-RNG nicht verfuegbar ist (z.B.
-    /// kein `/dev/urandom` in einem broken-Sandbox-Szenario).
+    /// `CryptoFailed` if the system RNG is not available (e.g.
+    /// no `/dev/urandom` in a broken-sandbox scenario).
     pub fn new() -> SecurityResult<Self> {
-        Self::with_suite(KxSuite::X25519)
+        Self::with_suite(KxSuite::default())
     }
 
-    /// Erzeugt ein Schluesselpaar fuer die gewaehlte DH-Suite.
+    /// Generates a key pair for the chosen DH suite.
     ///
     /// # Errors
-    /// siehe [`Self::new`].
+    /// see [`Self::new`].
     pub fn with_suite(suite: KxSuite) -> SecurityResult<Self> {
         let rng = SystemRandom::new();
         let private = EphemeralPrivateKey::generate(suite.algorithm(), &rng).map_err(|_| {
@@ -147,32 +150,32 @@ impl KeyExchange {
         })
     }
 
-    /// Liefert die aktive DH-Suite.
+    /// Returns the active DH suite.
     #[must_use]
     pub fn suite(&self) -> KxSuite {
         self.suite
     }
 
-    /// Liefert den lokalen Public-Key als Byte-Slice. Laenge ist
-    /// suite-abhaengig (siehe [`KxSuite::public_key_len`]).
+    /// Returns the local public key as a byte slice. The length is
+    /// suite-dependent (see [`KxSuite::public_key_len`]).
     #[must_use]
     pub fn public_key(&self) -> &[u8] {
         self.public.as_ref()
     }
 
-    /// Leitet das SharedSecret aus dem Remote-Public-Key ab. Verbraucht
-    /// das lokale ephemerale Key.
+    /// Derives the SharedSecret from the remote public key. Consumes
+    /// the local ephemeral key.
     ///
     /// # Errors
-    /// * `BadArgument` wenn `remote_public_key.len() != suite.public_key_len()`.
-    /// * `CryptoFailed` wenn `ring` das Agreement ablehnt (z.B.
-    ///   kleiner-Untergruppen-Angriff, Identity-Punkt, Off-Curve-Point).
+    /// * `BadArgument` if `remote_public_key.len() != suite.public_key_len()`.
+    /// * `CryptoFailed` if `ring` rejects the agreement (e.g.
+    ///   small-subgroup attack, identity point, off-curve point).
     pub fn derive_shared_secret(self, remote_public_key: &[u8]) -> SecurityResult<Vec<u8>> {
         if remote_public_key.len() != self.suite.public_key_len() {
             return Err(SecurityError::new(
                 SecurityErrorKind::BadArgument,
                 alloc::format!(
-                    "keyexchange: {:?} public-key muss {} byte sein",
+                    "keyexchange: {:?} public key must be {} bytes",
                     self.suite,
                     self.suite.public_key_len()
                 ),
@@ -180,25 +183,13 @@ impl KeyExchange {
         }
         let peer = agreement::UnparsedPublicKey::new(self.suite.algorithm(), remote_public_key);
         agreement::agree_ephemeral(self.private, &peer, |raw_dh| {
-            // HKDF-SHA256 über den rohen DH-Output erzwingt eine
-            // uniforme Verteilung + erlaubt domain-separation.
-            let salt = hkdf::Salt::new(hkdf::HKDF_SHA256, b"zerodds-security-v1/shared-secret");
-            let prk = salt.extract(raw_dh);
-            let info_parts = [b"DDS:Auth:PKI-DH:secret".as_slice()];
-            let okm = prk.expand(&info_parts, hkdf::HKDF_SHA256).map_err(|_| {
-                SecurityError::new(
-                    SecurityErrorKind::CryptoFailed,
-                    "keyexchange: HKDF expand failed",
-                )
-            })?;
-            let mut out = [0u8; 32];
-            okm.fill(&mut out).map_err(|_| {
-                SecurityError::new(
-                    SecurityErrorKind::CryptoFailed,
-                    "keyexchange: HKDF fill failed",
-                )
-            })?;
-            Ok(out.to_vec())
+            // Return the **raw** DH output (P-256: 32-byte X coordinate; X25519: 32-byte
+            // shared secret) — NO additional HKDF. DDS-Security
+            // §9.3.2.5 / cyclone `generate_shared_secret`: the SharedSecret is
+            // `SHA256(raw_dh)` (in security-pki). An extra HKDF here would
+            // corrupt the SharedSecret cross-vendor → VolatileSecure Kx key
+            // mismatch → neither side can decode the other's SEC_* DATA.
+            raw_dh.to_vec()
         })
         .map_err(|_| {
             SecurityError::new(
@@ -206,7 +197,6 @@ impl KeyExchange {
                 "keyexchange: DH agreement rejected (invalid peer key?)",
             )
         })
-        .and_then(|r| r)
     }
 }
 
@@ -216,8 +206,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn public_key_is_32_bytes() {
+    fn default_public_key_is_p256_65_bytes() {
+        // The default suite is ECDH-P256 (spec, cross-vendor) → 65-byte
+        // uncompressed public key (0x04 || X || Y).
         let kx = KeyExchange::new().unwrap();
+        assert_eq!(kx.public_key().len(), 65);
+        assert_eq!(kx.public_key()[0], 0x04);
+    }
+
+    #[test]
+    fn x25519_opt_in_public_key_is_32_bytes() {
+        let kx = KeyExchange::with_suite(KxSuite::X25519).unwrap();
         assert_eq!(kx.public_key().len(), 32);
     }
 
@@ -233,7 +232,7 @@ mod tests {
         let s2 = bob.derive_shared_secret(&a_pub).unwrap();
 
         assert_eq!(s1.len(), 32);
-        assert_eq!(s1, s2, "alice + bob muessen identisches secret ableiten");
+        assert_eq!(s1, s2, "alice + bob must derive an identical secret");
     }
 
     #[test]
@@ -248,7 +247,7 @@ mod tests {
         let b2_pub = bob2.public_key().to_vec();
         let s2 = alice2.derive_shared_secret(&b2_pub).unwrap();
 
-        assert_ne!(s1, s2, "andere ephemerals → anderes secret (PFS)");
+        assert_ne!(s1, s2, "different ephemerals → different secret (PFS)");
     }
 
     #[test]
@@ -260,9 +259,9 @@ mod tests {
 
     #[test]
     fn zero_public_key_rejected_by_ring() {
-        // All-zero X25519 public key → agreement muss failen
-        // (Identity-Punkt / kleines-Untergruppen-Angriff).
-        let alice = KeyExchange::new().unwrap();
+        // All-zero X25519 public key → the agreement must fail
+        // (identity point / small-subgroup attack).
+        let alice = KeyExchange::with_suite(KxSuite::X25519).unwrap();
         let err = alice.derive_shared_secret(&[0u8; 32]).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::CryptoFailed);
     }
@@ -272,10 +271,10 @@ mod tests {
     // -------------------------------------------------------------
 
     #[test]
-    fn default_suite_is_x25519() {
+    fn default_suite_is_ecdh_p256() {
+        // Spec default (§9.3.2.3.1), cross-vendor. X25519 is opt-in only.
         let kx = KeyExchange::new().unwrap();
-        assert_eq!(kx.suite(), KxSuite::X25519);
-        assert_eq!(kx.public_key().len(), 32);
+        assert_eq!(kx.suite(), KxSuite::EcdhP256);
     }
 
     #[test]
@@ -283,7 +282,7 @@ mod tests {
         let kx = KeyExchange::with_suite(KxSuite::EcdhP256).unwrap();
         assert_eq!(kx.suite(), KxSuite::EcdhP256);
         assert_eq!(kx.public_key().len(), 65);
-        // Unkomprimiertes Format startet mit 0x04.
+        // The uncompressed format starts with 0x04.
         assert_eq!(kx.public_key()[0], 0x04);
     }
 
@@ -308,8 +307,8 @@ mod tests {
 
     #[test]
     fn p256_rejects_off_curve_point() {
-        // 65-byte, beginnt mit 0x04, aber der Rest ist Nullbytes →
-        // keine gueltige P-256-Punkt.
+        // 65 bytes, starts with 0x04, but the rest is null bytes →
+        // not a valid P-256 point.
         let alice = KeyExchange::with_suite(KxSuite::EcdhP256).unwrap();
         let mut bogus = [0u8; 65];
         bogus[0] = 0x04;
@@ -319,7 +318,7 @@ mod tests {
 
     #[test]
     fn x25519_and_p256_produce_different_public_key_lengths() {
-        let a = KeyExchange::new().unwrap();
+        let a = KeyExchange::with_suite(KxSuite::X25519).unwrap();
         let b = KeyExchange::with_suite(KxSuite::EcdhP256).unwrap();
         assert_ne!(a.public_key().len(), b.public_key().len());
     }

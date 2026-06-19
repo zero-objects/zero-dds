@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Listener-Callback-Pfad fuer alle Entity-Typen (DDS 1.4 §2.2.4 +
-//! Vendor-Extension `docs/specs/zerodds-listener-callbacks-1.0.md`).
+//! Listener callback path for all entity types (DDS 1.4 §2.2.4 +
+//! vendor extension `docs/specs/zerodds-listener-callbacks-1.1.md`).
 //!
-//! ## Architektur (Vendor-Spec)
+//! ## Architecture (vendor spec)
 //!
-//! Die OMG-DDS-Spec definiert Listener als **Klassen** in C++/Java/C#
-//! (`DataWriterListener`, `DataReaderListener`, etc.) — fuer C-FFI gibt
-//! es keinen normativen Pfad. Diese Vendor-Extension definiert
-//! Listener als **C-Funktions-Pointer-Tabellen** (`vtable`-style) mit
-//! `void* user_data`-Slot fuer Caller-State.
+//! The OMG DDS spec defines listeners as **classes** in C++/Java/C#
+//! (`DataWriterListener`, `DataReaderListener`, etc.) — for C-FFI there
+//! is no normative path. This vendor extension defines listeners as
+//! **C function-pointer tables** (`vtable`-style) with a
+//! `void* user_data` slot for caller state.
 //!
 //! ### Pattern
 //!
@@ -237,15 +237,12 @@ unsafe impl Send for ZeroDdsDataReaderListener {}
 unsafe impl Sync for ZeroDdsDataReaderListener {}
 
 // ============================================================================
-// Listener-Storage pro Entity (per ZeroDds-Wrapper)
+// Listener storage per entity (per ZeroDds wrapper)
 //
-// RC1-Implementierung: Listener werden in einem statischen
-// `OnceLock<Mutex<HashMap<*mut Entity, ListenerInfo>>>` registriert,
-// und der Runtime-Worker-Thread fuert sie via Polling-Hook ab.
-// Die Polling-Hook-Wireup an die Runtime ist eine separate Arbeit
-// — bis dahin sind die Listener gespeichert aber noch nicht
-// aktiviert. Active-Wireup wurde in Folge-Welle ergaenzt via
-// `zerodds_poll_listeners()` — siehe weiter unten in dieser Datei.
+// Listeners are registered in a static
+// `OnceLock<Mutex<HashMap<*mut Entity, ListenerInfo>>>`, and the caller
+// drives them via the polling hook `zerodds_poll_listeners()` — see
+// further down in this file.
 // ============================================================================
 
 use std::collections::HashMap;
@@ -267,6 +264,32 @@ struct ReaderCounters {
     sample_lost: u64,
     requested_deadline_missed: u64,
     requested_incompatible_qos_total: i32,
+    /// `alive_count + not_alive_count` — a delta means liveliness changed.
+    liveliness_change: u64,
+    sample_rejected_total: i32,
+    /// Monotonic delivered-sample count — a delta means data available.
+    samples_delivered: u64,
+}
+
+/// Per-poll delta set computed for one DataWriter target.
+#[derive(Debug, Default, Clone, Copy)]
+struct WriterDelta {
+    matched: bool,
+    liveliness_lost: bool,
+    deadline: bool,
+    qos: bool,
+}
+
+/// Per-poll delta set computed for one DataReader target.
+#[derive(Debug, Default, Clone, Copy)]
+struct ReaderDelta {
+    matched: bool,
+    sample_lost: bool,
+    deadline: bool,
+    qos: bool,
+    liveliness: bool,
+    rejected: bool,
+    data: bool,
 }
 
 struct ListenerRegistry {
@@ -276,10 +299,13 @@ struct ListenerRegistry {
     topic: Mutex<HashMap<usize, (*const ZeroDdsTopicListener, u32)>>,
     dw: Mutex<HashMap<usize, (*const ZeroDdsDataWriterListener, u32)>>,
     dr: Mutex<HashMap<usize, (*const ZeroDdsDataReaderListener, u32)>>,
-    /// Pro DW-Pointer: letzte gesehene Counter (fuer Delta-Detect).
+    /// Per DW pointer: last-seen counters (for delta detection).
     dw_counters: Mutex<BTreeMap<usize, WriterCounters>>,
-    /// Pro DR-Pointer: letzte gesehene Counter.
+    /// Per DR pointer: last-seen counters.
     dr_counters: Mutex<BTreeMap<usize, ReaderCounters>>,
+    /// Per topic/DP observer pointer: last-seen `inconsistent_topic_count`
+    /// of the associated runtime (a delta is an inconsistent-topic event).
+    ic_counters: Mutex<HashMap<usize, u64>>,
 }
 
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
@@ -298,6 +324,7 @@ fn registry() -> &'static ListenerRegistry {
         dr: Mutex::new(HashMap::new()),
         dw_counters: Mutex::new(BTreeMap::new()),
         dr_counters: Mutex::new(BTreeMap::new()),
+        ic_counters: Mutex::new(HashMap::new()),
     })
 }
 
@@ -522,192 +549,607 @@ pub unsafe extern "C" fn zerodds_dr_get_listener(
 // Active-Wireup via expliziter Poll-API
 // ============================================================================
 //
-// Der Caller ruft `zerodds_poll_listeners()` periodisch (typisch im Main-
-// Loop, alle 50-200ms). Die Funktion durchlaeuft alle registrierten
-// DataWriter/DataReader-Listener, vergleicht die aktuellen Status-Counter
-// gegen den letzten gesehenen Wert (cached pro Entity-Pointer), und feuert
-// die Callbacks bei Delta. Status-Mask-Filter wird angewendet.
+// The caller invokes `zerodds_poll_listeners()` periodically (typically in
+// the main loop, every 50-200ms). The function walks all registered
+// listeners, compares the current status counters against the last-seen
+// value (cached per entity pointer), and fires the callbacks on a delta.
+// The status-mask filter is applied.
 //
-// Threading-Vertrag: Callbacks feuern auf dem Caller-Thread des poll-
-// Aufrufs. Cross-Language-Bindings koennen das in ihrem eigenen Event-
-// Loop integrieren (Tokio-Tick, .NET-Timer, Python-asyncio, JS-setInterval).
+// Threading contract: callbacks fire on the caller thread of the poll call.
+// Cross-language bindings can integrate this into their own event loop
+// (Tokio tick, .NET timer, Python asyncio, JS setInterval).
 
-/// Status-Bits gemaess `dds::core::status::StatusKind`.
+/// Status bits per `dds::core::status::StatusKind` (DDS 1.4 §2.3.2).
+const STATUS_INCONSISTENT_TOPIC: u32 = 1 << 0;
 const STATUS_OFFERED_DEADLINE_MISSED: u32 = 1 << 1;
-const STATUS_OFFERED_INCOMPATIBLE_QOS: u32 = 1 << 5;
 const STATUS_REQUESTED_DEADLINE_MISSED: u32 = 1 << 2;
+const STATUS_OFFERED_INCOMPATIBLE_QOS: u32 = 1 << 5;
 const STATUS_REQUESTED_INCOMPATIBLE_QOS: u32 = 1 << 6;
 const STATUS_SAMPLE_LOST: u32 = 1 << 7;
+const STATUS_SAMPLE_REJECTED: u32 = 1 << 8;
+const STATUS_DATA_ON_READERS: u32 = 1 << 9;
+const STATUS_DATA_AVAILABLE: u32 = 1 << 10;
 const STATUS_LIVELINESS_LOST: u32 = 1 << 11;
+const STATUS_LIVELINESS_CHANGED: u32 = 1 << 12;
 const STATUS_PUBLICATION_MATCHED: u32 = 1 << 13;
 const STATUS_SUBSCRIPTION_MATCHED: u32 = 1 << 14;
 
-/// Pollt alle registrierten Listener und feuert Callbacks bei Status-
-/// Counter-Delta. Return-Wert: Anzahl gefeuerter Callbacks.
+/// Reads the current writer status counters.
 ///
 /// # Safety
-/// Caller muss garantieren dass alle in der Registry registrierten Entity-
-/// Pointer und Listener-Pointer noch valide sind (nicht ueber `*_destroy`
-/// freigegeben, ohne `set_listener(NULL)` davor).
+/// `dw_ptr` must point to a valid, registered DataWriter.
+unsafe fn read_writer_counters(dw_ptr: *mut ZeroDdsDataWriter) -> WriterCounters {
+    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    let dwr = unsafe { &*dw_ptr };
+    WriterCounters {
+        matched_count: dwr.rt.user_writer_matched_count(dwr.eid),
+        liveliness_lost: dwr.rt.user_writer_liveliness_lost(dwr.eid),
+        offered_deadline_missed: dwr.rt.user_writer_offered_deadline_missed(dwr.eid),
+        offered_incompatible_qos_total: dwr
+            .rt
+            .user_writer_offered_incompatible_qos(dwr.eid)
+            .total_count,
+    }
+}
+
+/// Reads the current reader status counters.
+///
+/// # Safety
+/// `dr_ptr` must point to a valid, registered DataReader.
+unsafe fn read_reader_counters(dr_ptr: *mut ZeroDdsDataReader) -> ReaderCounters {
+    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    let drr = unsafe { &*dr_ptr };
+    let (_, alive, not_alive) = drr.rt.user_reader_liveliness_status(drr.eid);
+    ReaderCounters {
+        matched_count: drr.rt.user_reader_matched_count(drr.eid),
+        sample_lost: drr.rt.user_reader_sample_lost(drr.eid),
+        requested_deadline_missed: drr.rt.user_reader_requested_deadline_missed(drr.eid),
+        requested_incompatible_qos_total: drr
+            .rt
+            .user_reader_requested_incompatible_qos(drr.eid)
+            .total_count,
+        liveliness_change: alive.saturating_add(not_alive),
+        sample_rejected_total: drr.rt.user_reader_sample_rejected(drr.eid).total_count,
+        samples_delivered: drr.rt.user_reader_samples_delivered(drr.eid),
+    }
+}
+
+fn writer_delta(now: &WriterCounters, prev: &WriterCounters) -> WriterDelta {
+    WriterDelta {
+        matched: now.matched_count != prev.matched_count,
+        liveliness_lost: now.liveliness_lost > prev.liveliness_lost,
+        deadline: now.offered_deadline_missed > prev.offered_deadline_missed,
+        qos: now.offered_incompatible_qos_total > prev.offered_incompatible_qos_total,
+    }
+}
+
+fn reader_delta(now: &ReaderCounters, prev: &ReaderCounters) -> ReaderDelta {
+    ReaderDelta {
+        matched: now.matched_count != prev.matched_count,
+        sample_lost: now.sample_lost > prev.sample_lost,
+        deadline: now.requested_deadline_missed > prev.requested_deadline_missed,
+        qos: now.requested_incompatible_qos_total > prev.requested_incompatible_qos_total,
+        liveliness: now.liveliness_change > prev.liveliness_change,
+        rejected: now.sample_rejected_total > prev.sample_rejected_total,
+        data: now.samples_delivered > prev.samples_delivered,
+    }
+}
+
+/// Fires the four writer callbacks of a writer vtable for a delta. Shared
+/// by the DataWriter level (own delta) and the Publisher aggregator (child
+/// delta) — both structs have field-identical writer callback slots.
+#[allow(clippy::too_many_arguments)]
+fn fire_writer_vtable(
+    on_publication_matched: Option<extern "C" fn(*mut core::ffi::c_void, *mut ZeroDdsDataWriter)>,
+    on_liveliness_lost: Option<extern "C" fn(*mut core::ffi::c_void, *mut ZeroDdsDataWriter)>,
+    on_offered_deadline_missed: Option<
+        extern "C" fn(*mut core::ffi::c_void, *mut ZeroDdsDataWriter),
+    >,
+    on_offered_incompatible_qos: Option<
+        extern "C" fn(*mut core::ffi::c_void, *mut ZeroDdsDataWriter),
+    >,
+    user_data: *mut core::ffi::c_void,
+    mask: u32,
+    d: WriterDelta,
+    dw_ptr: *mut ZeroDdsDataWriter,
+) -> usize {
+    let mut n = 0;
+    if d.matched && (mask & STATUS_PUBLICATION_MATCHED) != 0 {
+        if let Some(cb) = on_publication_matched {
+            cb(user_data, dw_ptr);
+            n += 1;
+        }
+    }
+    if d.liveliness_lost && (mask & STATUS_LIVELINESS_LOST) != 0 {
+        if let Some(cb) = on_liveliness_lost {
+            cb(user_data, dw_ptr);
+            n += 1;
+        }
+    }
+    if d.deadline && (mask & STATUS_OFFERED_DEADLINE_MISSED) != 0 {
+        if let Some(cb) = on_offered_deadline_missed {
+            cb(user_data, dw_ptr);
+            n += 1;
+        }
+    }
+    if d.qos && (mask & STATUS_OFFERED_INCOMPATIBLE_QOS) != 0 {
+        if let Some(cb) = on_offered_incompatible_qos {
+            cb(user_data, dw_ptr);
+            n += 1;
+        }
+    }
+    n
+}
+
+/// Fires the seven reader callbacks of a reader vtable for a delta. Shared
+/// by the DataReader level and the Subscriber aggregator (field-identical
+/// reader callback slots). `on_data_on_readers` is NOT part of this vtable
+/// and is handled separately (set semantics).
+#[allow(clippy::too_many_arguments)]
+fn fire_reader_vtable(
+    on_subscription_matched: Option<extern "C" fn(*mut core::ffi::c_void, *mut ZeroDdsDataReader)>,
+    on_sample_lost: Option<extern "C" fn(*mut core::ffi::c_void, *mut ZeroDdsDataReader)>,
+    on_requested_deadline_missed: Option<
+        extern "C" fn(*mut core::ffi::c_void, *mut ZeroDdsDataReader),
+    >,
+    on_requested_incompatible_qos: Option<
+        extern "C" fn(*mut core::ffi::c_void, *mut ZeroDdsDataReader),
+    >,
+    on_liveliness_changed: Option<extern "C" fn(*mut core::ffi::c_void, *mut ZeroDdsDataReader)>,
+    on_sample_rejected: Option<extern "C" fn(*mut core::ffi::c_void, *mut ZeroDdsDataReader)>,
+    on_data_available: Option<extern "C" fn(*mut core::ffi::c_void, *mut ZeroDdsDataReader)>,
+    user_data: *mut core::ffi::c_void,
+    mask: u32,
+    d: ReaderDelta,
+    dr_ptr: *mut ZeroDdsDataReader,
+) -> usize {
+    let mut n = 0;
+    if d.matched && (mask & STATUS_SUBSCRIPTION_MATCHED) != 0 {
+        if let Some(cb) = on_subscription_matched {
+            cb(user_data, dr_ptr);
+            n += 1;
+        }
+    }
+    if d.sample_lost && (mask & STATUS_SAMPLE_LOST) != 0 {
+        if let Some(cb) = on_sample_lost {
+            cb(user_data, dr_ptr);
+            n += 1;
+        }
+    }
+    if d.deadline && (mask & STATUS_REQUESTED_DEADLINE_MISSED) != 0 {
+        if let Some(cb) = on_requested_deadline_missed {
+            cb(user_data, dr_ptr);
+            n += 1;
+        }
+    }
+    if d.qos && (mask & STATUS_REQUESTED_INCOMPATIBLE_QOS) != 0 {
+        if let Some(cb) = on_requested_incompatible_qos {
+            cb(user_data, dr_ptr);
+            n += 1;
+        }
+    }
+    if d.liveliness && (mask & STATUS_LIVELINESS_CHANGED) != 0 {
+        if let Some(cb) = on_liveliness_changed {
+            cb(user_data, dr_ptr);
+            n += 1;
+        }
+    }
+    if d.rejected && (mask & STATUS_SAMPLE_REJECTED) != 0 {
+        if let Some(cb) = on_sample_rejected {
+            cb(user_data, dr_ptr);
+            n += 1;
+        }
+    }
+    if d.data && (mask & STATUS_DATA_AVAILABLE) != 0 {
+        if let Some(cb) = on_data_available {
+            cb(user_data, dr_ptr);
+            n += 1;
+        }
+    }
+    n
+}
+
+/// Snapshots the child DataWriter pointers of a publisher (lock released
+/// before the callback dispatch).
+///
+/// # Safety
+/// `pub_key` must point to a valid, registered Publisher.
+unsafe fn collect_publisher_writers(pub_key: usize) -> Vec<usize> {
+    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    let pubr = unsafe { &*(pub_key as *mut ZeroDdsPublisher) };
+    pubr.datawriters
+        .lock()
+        .map(|g| {
+            g.iter()
+                .filter(|p| !p.is_null())
+                .map(|p| *p as usize)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Snapshots the child DataReader pointers of a subscriber.
+///
+/// # Safety
+/// `sub_key` must point to a valid, registered Subscriber.
+unsafe fn collect_subscriber_readers(sub_key: usize) -> Vec<usize> {
+    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    let subr = unsafe { &*(sub_key as *mut ZeroDdsSubscriber) };
+    subr.datareaders
+        .lock()
+        .map(|g| {
+            g.iter()
+                .filter(|p| !p.is_null())
+                .map(|p| *p as usize)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Snapshots `(subscriber pointer, [DataReader pointers])` for every
+/// subscriber of a participant — for the DP aggregator (`on_data_on_readers`).
+///
+/// # Safety
+/// `dp_key` must point to a valid, registered DomainParticipant.
+unsafe fn collect_participant_subscriber_readers(dp_key: usize) -> Vec<(usize, Vec<usize>)> {
+    // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+    let dp = unsafe { &*(dp_key as *mut ZeroDdsDomainParticipant) };
+    let subs: Vec<usize> = dp
+        .subscribers
+        .lock()
+        .map(|g| {
+            g.iter()
+                .filter(|p| !p.is_null())
+                .map(|p| *p as usize)
+                .collect()
+        })
+        .unwrap_or_default();
+    subs.into_iter()
+        // SAFETY: subscriber pointers come from the participant list and are
+        // valid under the same caller contract.
+        .map(|sk| (sk, unsafe { collect_subscriber_readers(sk) }))
+        .collect()
+}
+
+/// Reads the `inconsistent_topic_count` of the runtime behind a participant
+/// pointer (0 when offline/NULL).
+///
+/// # Safety
+/// `participant` may be NULL or must point to a valid participant.
+unsafe fn participant_inconsistent_count(participant: *mut ZeroDdsDomainParticipant) -> u64 {
+    if participant.is_null() {
+        return 0;
+    }
+    // SAFETY: NULL-checked above + caller contract.
+    let dp = unsafe { &*participant };
+    dp.rt
+        .as_ref()
+        .map(|rt| rt.inconsistent_topic_count())
+        .unwrap_or(0)
+}
+
+/// Polls all registered listeners and fires callbacks on status counter
+/// deltas. Each entity level (DataWriter/DataReader) and each aggregator
+/// level (Publisher/Subscriber/DomainParticipant/Topic) fires independently
+/// — multi-bind semantics, no first-match suppression. Returns the number
+/// of callbacks fired.
+///
+/// # Safety
+/// The caller must guarantee that every entity pointer registered in the
+/// registry (including the contained child entities) and every listener
+/// pointer is still valid (not freed via `*_destroy` without a preceding
+/// `set_listener(NULL)`).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_poll_listeners() -> usize {
     let mut fired: usize = 0;
+    let reg = registry();
 
-    // ---- DataWriter-Listener ----
-    let dw_snapshot: Vec<(usize, *const ZeroDdsDataWriterListener, u32)> = registry()
+    // ---- Registry snapshots (locks released before any callback) ----
+    let dw_listeners: Vec<(usize, *const ZeroDdsDataWriterListener, u32)> = reg
         .dw
         .lock()
         .map(|g| g.iter().map(|(k, (l, m))| (*k, *l, *m)).collect())
         .unwrap_or_default();
-
-    for (key, listener, mask) in dw_snapshot {
-        if listener.is_null() {
-            continue;
-        }
-        let dw_ptr = key as *mut ZeroDdsDataWriter;
-        if dw_ptr.is_null() {
-            continue;
-        }
-        // SAFETY: dw_ptr ist in der Registry; Caller hat den Lifetime-
-        // Vertrag erfuellt (siehe doc).
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let dwr = unsafe { &*dw_ptr };
-
-        // Counter-Snapshot.
-        let now_matched = dwr.rt.user_writer_matched_count(dwr.eid);
-        let now_lost = dwr.rt.user_writer_liveliness_lost(dwr.eid);
-        let now_deadline = dwr.rt.user_writer_offered_deadline_missed(dwr.eid);
-        let now_qos = dwr
-            .rt
-            .user_writer_offered_incompatible_qos(dwr.eid)
-            .total_count;
-
-        let prev = registry()
-            .dw_counters
-            .lock()
-            .map(|g| g.get(&key).copied().unwrap_or_default())
-            .unwrap_or_default();
-
-        // SAFETY: listener non-null geprueft.
-        let l = unsafe { &*listener };
-
-        if now_matched != prev.matched_count
-            && (mask & STATUS_PUBLICATION_MATCHED) != 0
-            && l.on_publication_matched.is_some()
-        {
-            (l.on_publication_matched.unwrap())(l.user_data, dw_ptr);
-            fired += 1;
-        }
-        if now_lost > prev.liveliness_lost
-            && (mask & STATUS_LIVELINESS_LOST) != 0
-            && l.on_liveliness_lost.is_some()
-        {
-            (l.on_liveliness_lost.unwrap())(l.user_data, dw_ptr);
-            fired += 1;
-        }
-        if now_deadline > prev.offered_deadline_missed
-            && (mask & STATUS_OFFERED_DEADLINE_MISSED) != 0
-            && l.on_offered_deadline_missed.is_some()
-        {
-            (l.on_offered_deadline_missed.unwrap())(l.user_data, dw_ptr);
-            fired += 1;
-        }
-        if now_qos > prev.offered_incompatible_qos_total
-            && (mask & STATUS_OFFERED_INCOMPATIBLE_QOS) != 0
-            && l.on_offered_incompatible_qos.is_some()
-        {
-            (l.on_offered_incompatible_qos.unwrap())(l.user_data, dw_ptr);
-            fired += 1;
-        }
-
-        // Counter-Cache update.
-        if let Ok(mut g) = registry().dw_counters.lock() {
-            g.insert(
-                key,
-                WriterCounters {
-                    matched_count: now_matched,
-                    liveliness_lost: now_lost,
-                    offered_deadline_missed: now_deadline,
-                    offered_incompatible_qos_total: now_qos,
-                },
-            );
-        }
-    }
-
-    // ---- DataReader-Listener ----
-    let dr_snapshot: Vec<(usize, *const ZeroDdsDataReaderListener, u32)> = registry()
+    let dr_listeners: Vec<(usize, *const ZeroDdsDataReaderListener, u32)> = reg
         .dr
         .lock()
         .map(|g| g.iter().map(|(k, (l, m))| (*k, *l, *m)).collect())
         .unwrap_or_default();
+    let pub_listeners: Vec<(usize, *const ZeroDdsPublisherListener, u32)> = reg
+        .pub_
+        .lock()
+        .map(|g| g.iter().map(|(k, (l, m))| (*k, *l, *m)).collect())
+        .unwrap_or_default();
+    let sub_listeners: Vec<(usize, *const ZeroDdsSubscriberListener, u32)> = reg
+        .sub
+        .lock()
+        .map(|g| g.iter().map(|(k, (l, m))| (*k, *l, *m)).collect())
+        .unwrap_or_default();
+    let dp_listeners: Vec<(usize, *const ZeroDdsDomainParticipantListener, u32)> = reg
+        .dp
+        .lock()
+        .map(|g| g.iter().map(|(k, (l, m))| (*k, *l, *m)).collect())
+        .unwrap_or_default();
+    let topic_listeners: Vec<(usize, *const ZeroDdsTopicListener, u32)> = reg
+        .topic
+        .lock()
+        .map(|g| g.iter().map(|(k, (l, m))| (*k, *l, *m)).collect())
+        .unwrap_or_default();
 
-    for (key, listener, mask) in dr_snapshot {
+    // ---- Child pointer snapshots for the aggregator levels ----
+    // SAFETY: pointers come from the registry; caller contract (see doc).
+    let pub_children: Vec<Vec<usize>> = pub_listeners
+        .iter()
+        // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
+        .map(|(pk, _, _)| unsafe { collect_publisher_writers(*pk) })
+        .collect();
+    let sub_children: Vec<Vec<usize>> = sub_listeners
+        .iter()
+        // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
+        .map(|(sk, _, _)| unsafe { collect_subscriber_readers(*sk) })
+        .collect();
+    let dp_children: Vec<Vec<(usize, Vec<usize>)>> = dp_listeners
+        .iter()
+        // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
+        .map(|(dk, _, _)| unsafe { collect_participant_subscriber_readers(*dk) })
+        .collect();
+
+    // ---- Compute writer deltas for every observed DataWriter ----
+    let mut w_keys: BTreeMap<usize, ()> = BTreeMap::new();
+    for (k, _, _) in &dw_listeners {
+        w_keys.insert(*k, ());
+    }
+    for ch in &pub_children {
+        for k in ch {
+            w_keys.insert(*k, ());
+        }
+    }
+    let mut wnow: BTreeMap<usize, WriterCounters> = BTreeMap::new();
+    let mut wdelta: BTreeMap<usize, WriterDelta> = BTreeMap::new();
+    {
+        let prev = reg.dw_counters.lock();
+        for k in w_keys.keys() {
+            let ptr = *k as *mut ZeroDdsDataWriter;
+            if ptr.is_null() {
+                continue;
+            }
+            // SAFETY: pointer from the registry; caller contract.
+            let now = unsafe { read_writer_counters(ptr) };
+            let p = prev
+                .as_ref()
+                .ok()
+                .and_then(|m| m.get(k).copied())
+                .unwrap_or_default();
+            wdelta.insert(*k, writer_delta(&now, &p));
+            wnow.insert(*k, now);
+        }
+    }
+
+    // ---- Compute reader deltas for every observed DataReader ----
+    let mut r_keys: BTreeMap<usize, ()> = BTreeMap::new();
+    for (k, _, _) in &dr_listeners {
+        r_keys.insert(*k, ());
+    }
+    for ch in &sub_children {
+        for k in ch {
+            r_keys.insert(*k, ());
+        }
+    }
+    for subs in &dp_children {
+        for (_, drs) in subs {
+            for k in drs {
+                r_keys.insert(*k, ());
+            }
+        }
+    }
+    let mut rnow: BTreeMap<usize, ReaderCounters> = BTreeMap::new();
+    let mut rdelta: BTreeMap<usize, ReaderDelta> = BTreeMap::new();
+    {
+        let prev = reg.dr_counters.lock();
+        for k in r_keys.keys() {
+            let ptr = *k as *mut ZeroDdsDataReader;
+            if ptr.is_null() {
+                continue;
+            }
+            // SAFETY: pointer from the registry; caller contract.
+            let now = unsafe { read_reader_counters(ptr) };
+            let p = prev
+                .as_ref()
+                .ok()
+                .and_then(|m| m.get(k).copied())
+                .unwrap_or_default();
+            rdelta.insert(*k, reader_delta(&now, &p));
+            rnow.insert(*k, now);
+        }
+    }
+
+    // ---- DataWriter level ----
+    for (key, listener, mask) in &dw_listeners {
         if listener.is_null() {
             continue;
         }
-        let dr_ptr = key as *mut ZeroDdsDataReader;
-        if dr_ptr.is_null() {
+        let Some(d) = wdelta.get(key) else { continue };
+        // SAFETY: listener checked non-null; caller contract.
+        let l = unsafe { &**listener };
+        fired += fire_writer_vtable(
+            l.on_publication_matched,
+            l.on_liveliness_lost,
+            l.on_offered_deadline_missed,
+            l.on_offered_incompatible_qos,
+            l.user_data,
+            *mask,
+            *d,
+            *key as *mut ZeroDdsDataWriter,
+        );
+    }
+
+    // ---- Publisher aggregator ----
+    for (i, (_, listener, mask)) in pub_listeners.iter().enumerate() {
+        if listener.is_null() {
             continue;
         }
-        // SAFETY: siehe DW-Block.
-        let drr = unsafe { &*dr_ptr };
-
-        let now_matched = drr.rt.user_reader_matched_count(drr.eid);
-        let now_sample_lost = drr.rt.user_reader_sample_lost(drr.eid);
-        let now_deadline = drr.rt.user_reader_requested_deadline_missed(drr.eid);
-        let now_qos = drr
-            .rt
-            .user_reader_requested_incompatible_qos(drr.eid)
-            .total_count;
-
-        let prev = registry()
-            .dr_counters
-            .lock()
-            .map(|g| g.get(&key).copied().unwrap_or_default())
-            .unwrap_or_default();
-
-        // SAFETY: listener non-null.
-        let l = unsafe { &*listener };
-
-        if now_matched != prev.matched_count
-            && (mask & STATUS_SUBSCRIPTION_MATCHED) != 0
-            && l.on_subscription_matched.is_some()
-        {
-            (l.on_subscription_matched.unwrap())(l.user_data, dr_ptr);
-            fired += 1;
-        }
-        if now_sample_lost > prev.sample_lost
-            && (mask & STATUS_SAMPLE_LOST) != 0
-            && l.on_sample_lost.is_some()
-        {
-            (l.on_sample_lost.unwrap())(l.user_data, dr_ptr);
-            fired += 1;
-        }
-        if now_deadline > prev.requested_deadline_missed
-            && (mask & STATUS_REQUESTED_DEADLINE_MISSED) != 0
-            && l.on_requested_deadline_missed.is_some()
-        {
-            (l.on_requested_deadline_missed.unwrap())(l.user_data, dr_ptr);
-            fired += 1;
-        }
-        if now_qos > prev.requested_incompatible_qos_total
-            && (mask & STATUS_REQUESTED_INCOMPATIBLE_QOS) != 0
-            && l.on_requested_incompatible_qos.is_some()
-        {
-            (l.on_requested_incompatible_qos.unwrap())(l.user_data, dr_ptr);
-            fired += 1;
-        }
-
-        if let Ok(mut g) = registry().dr_counters.lock() {
-            g.insert(
-                key,
-                ReaderCounters {
-                    matched_count: now_matched,
-                    sample_lost: now_sample_lost,
-                    requested_deadline_missed: now_deadline,
-                    requested_incompatible_qos_total: now_qos,
-                },
+        // SAFETY: caller contract.
+        let l = unsafe { &**listener };
+        for dwk in &pub_children[i] {
+            let Some(d) = wdelta.get(dwk) else { continue };
+            fired += fire_writer_vtable(
+                l.on_publication_matched,
+                l.on_liveliness_lost,
+                l.on_offered_deadline_missed,
+                l.on_offered_incompatible_qos,
+                l.user_data,
+                *mask,
+                *d,
+                *dwk as *mut ZeroDdsDataWriter,
             );
+        }
+    }
+
+    // ---- DataReader level ----
+    for (key, listener, mask) in &dr_listeners {
+        if listener.is_null() {
+            continue;
+        }
+        let Some(d) = rdelta.get(key) else { continue };
+        // SAFETY: caller contract.
+        let l = unsafe { &**listener };
+        fired += fire_reader_vtable(
+            l.on_subscription_matched,
+            l.on_sample_lost,
+            l.on_requested_deadline_missed,
+            l.on_requested_incompatible_qos,
+            l.on_liveliness_changed,
+            l.on_sample_rejected,
+            l.on_data_available,
+            l.user_data,
+            *mask,
+            *d,
+            *key as *mut ZeroDdsDataReader,
+        );
+    }
+
+    // ---- Subscriber aggregator (reader callbacks + data_on_readers) ----
+    for (i, (sk, listener, mask)) in sub_listeners.iter().enumerate() {
+        if listener.is_null() {
+            continue;
+        }
+        // SAFETY: caller contract.
+        let l = unsafe { &**listener };
+        let mut any_data = false;
+        for drk in &sub_children[i] {
+            let Some(d) = rdelta.get(drk) else { continue };
+            fired += fire_reader_vtable(
+                l.on_subscription_matched,
+                l.on_sample_lost,
+                l.on_requested_deadline_missed,
+                l.on_requested_incompatible_qos,
+                l.on_liveliness_changed,
+                l.on_sample_rejected,
+                l.on_data_available,
+                l.user_data,
+                *mask,
+                *d,
+                *drk as *mut ZeroDdsDataReader,
+            );
+            if d.data {
+                any_data = true;
+            }
+        }
+        if any_data && (*mask & STATUS_DATA_ON_READERS) != 0 {
+            if let Some(cb) = l.on_data_on_readers {
+                cb(l.user_data, *sk as *mut ZeroDdsSubscriber);
+                fired += 1;
+            }
+        }
+    }
+
+    // ---- DomainParticipant aggregator (data_on_readers + inconsistent_topic) ----
+    for (i, (dk, listener, mask)) in dp_listeners.iter().enumerate() {
+        if listener.is_null() {
+            continue;
+        }
+        // SAFETY: caller contract.
+        let l = unsafe { &**listener };
+        // data_on_readers: fire once per subscriber with a fresh data delta.
+        for (subk, drs) in &dp_children[i] {
+            let any = drs
+                .iter()
+                .any(|drk| rdelta.get(drk).map(|d| d.data).unwrap_or(false));
+            if any && (*mask & STATUS_DATA_ON_READERS) != 0 {
+                if let Some(cb) = l.on_data_on_readers {
+                    cb(l.user_data, *subk as *mut ZeroDdsSubscriber);
+                    fired += 1;
+                }
+            }
+        }
+        // inconsistent_topic: participant runtime counter delta.
+        let now_ic =
+            // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
+            unsafe { participant_inconsistent_count(*dk as *mut ZeroDdsDomainParticipant) };
+        let prev_ic = reg
+            .ic_counters
+            .lock()
+            .ok()
+            .and_then(|m| m.get(dk).copied())
+            .unwrap_or(0);
+        if now_ic > prev_ic && (*mask & STATUS_INCONSISTENT_TOPIC) != 0 {
+            if let Some(cb) = l.on_inconsistent_topic {
+                // SAFETY: first topic of the participant (or NULL).
+                let tptr = unsafe {
+                    let dp = &*(*dk as *mut ZeroDdsDomainParticipant);
+                    dp.topics
+                        .lock()
+                        .ok()
+                        .and_then(|g| g.first().copied())
+                        .unwrap_or(core::ptr::null_mut())
+                };
+                cb(l.user_data, tptr);
+                fired += 1;
+            }
+        }
+        if let Ok(mut m) = reg.ic_counters.lock() {
+            m.insert(*dk, now_ic);
+        }
+    }
+
+    // ---- Topic level (inconsistent_topic) ----
+    for (tk, listener, mask) in &topic_listeners {
+        if listener.is_null() {
+            continue;
+        }
+        // SAFETY: caller contract.
+        let l = unsafe { &**listener };
+        // SAFETY: topic pointer from registry; its participant pointer is valid.
+        let now_ic = unsafe {
+            let t = &*(*tk as *mut ZeroDdsTopic);
+            participant_inconsistent_count(t.participant)
+        };
+        let prev_ic = reg
+            .ic_counters
+            .lock()
+            .ok()
+            .and_then(|m| m.get(tk).copied())
+            .unwrap_or(0);
+        if now_ic > prev_ic && (*mask & STATUS_INCONSISTENT_TOPIC) != 0 {
+            if let Some(cb) = l.on_inconsistent_topic {
+                cb(l.user_data, *tk as *mut ZeroDdsTopic);
+                fired += 1;
+            }
+        }
+        if let Ok(mut m) = reg.ic_counters.lock() {
+            m.insert(*tk, now_ic);
+        }
+    }
+
+    // ---- Update counter caches once ----
+    if let Ok(mut g) = reg.dw_counters.lock() {
+        for (k, now) in wnow {
+            g.insert(k, now);
+        }
+    }
+    if let Ok(mut g) = reg.dr_counters.lock() {
+        for (k, now) in rnow {
+            g.insert(k, now);
         }
     }
 
@@ -722,10 +1164,43 @@ mod tests {
         zerodds_dpf_create_participant, zerodds_dpf_delete_participant, zerodds_dpf_get_instance,
     };
     use crate::participant_ffi::{
-        zerodds_dp_create_publisher, zerodds_dp_create_topic, zerodds_dp_delete_contained_entities,
+        zerodds_dp_create_publisher, zerodds_dp_create_subscriber, zerodds_dp_create_topic,
+        zerodds_dp_delete_contained_entities,
     };
     use crate::publisher_ffi::zerodds_pub_create_datawriter;
+    use crate::subscriber_ffi::zerodds_sub_create_datareader;
     use core::ptr;
+    use core::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+
+    // Poll-based tests share the process-global listener registry, so they
+    // serialize on this lock to avoid one poll consuming another's counter
+    // delta. The lock is poison-tolerant (a panicking test must not wedge
+    // the rest).
+    static POLL_LOCK: Mutex<()> = Mutex::new(());
+
+    fn poll_guard() -> std::sync::MutexGuard<'static, ()> {
+        POLL_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    static DATA_AVAILABLE_FIRED: AtomicUsize = AtomicUsize::new(0);
+    static DATA_ON_READERS_FIRED: AtomicUsize = AtomicUsize::new(0);
+    static TOPIC_INCONSISTENT_FIRED: AtomicUsize = AtomicUsize::new(0);
+    static DP_INCONSISTENT_FIRED: AtomicUsize = AtomicUsize::new(0);
+
+    extern "C" fn cb_data_available(_u: *mut core::ffi::c_void, _dr: *mut ZeroDdsDataReader) {
+        DATA_AVAILABLE_FIRED.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+    extern "C" fn cb_data_on_readers(_u: *mut core::ffi::c_void, _s: *mut ZeroDdsSubscriber) {
+        DATA_ON_READERS_FIRED.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+    extern "C" fn cb_topic_inconsistent(_u: *mut core::ffi::c_void, _t: *mut ZeroDdsTopic) {
+        TOPIC_INCONSISTENT_FIRED.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+    extern "C" fn cb_dp_inconsistent(_u: *mut core::ffi::c_void, _t: *mut ZeroDdsTopic) {
+        DP_INCONSISTENT_FIRED.fetch_add(1, AtomicOrdering::Relaxed);
+    }
 
     #[test]
     fn dp_set_get_listener_roundtrip() {
@@ -758,6 +1233,7 @@ mod tests {
 
     #[test]
     fn poll_listeners_returns_count_and_clears_state() {
+        let _guard = poll_guard();
         let f = zerodds_dpf_get_instance();
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
         let p = unsafe { zerodds_dpf_create_participant(f, 91, ptr::null()) };
@@ -772,15 +1248,150 @@ mod tests {
         let l = ZeroDdsDataWriterListener::default();
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
         let _ = unsafe { zerodds_dw_set_listener(dw, &l, 0xFFFFFFFF) };
-        // Erste Poll-Runde: kein Delta, keine Callbacks (alle Counter
-        // erstmals geseht — oder evtl. matched-count > 0 wegen builtin
-        // matching). Test: poll soll nicht panicen, return >= 0.
+        // First poll round: establishes the baseline (every counter seen for
+        // the first time — possibly a builtin-matching delta). Just must not
+        // panic.
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
         let _fired = unsafe { zerodds_poll_listeners() };
-        // Zweite Poll-Runde: kein Delta zur ersten → 0 fired.
+        // Second poll round: no delta versus the first → 0 fired.
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
         let fired2 = unsafe { zerodds_poll_listeners() };
         assert_eq!(fired2, 0, "no delta = no callbacks");
+        // Clear the listener before tearing down the entity so the registry
+        // never holds a dangling pointer for a later poll.
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let _ = unsafe { zerodds_dw_set_listener(dw, ptr::null(), 0) };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        unsafe { zerodds_dp_delete_contained_entities(p) };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        unsafe { zerodds_dpf_delete_participant(f, p) };
+    }
+
+    #[test]
+    fn poll_fires_data_available_and_data_on_readers() {
+        let _guard = poll_guard();
+        let f = zerodds_dpf_get_instance();
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let p = unsafe { zerodds_dpf_create_participant(f, 93, ptr::null()) };
+        let tn = c"DAtopic";
+        let ty = c"DAtype";
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let t = unsafe { zerodds_dp_create_topic(p, tn.as_ptr(), ty.as_ptr(), ptr::null()) };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let sub = unsafe { zerodds_dp_create_subscriber(p, ptr::null()) };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let dr = unsafe { zerodds_sub_create_datareader(sub, t, ptr::null()) };
+
+        // DataReader-level on_data_available + Subscriber-level
+        // on_data_on_readers — multi-bind: both must fire for the same data.
+        let dr_listener = ZeroDdsDataReaderListener {
+            on_data_available: Some(cb_data_available),
+            ..Default::default()
+        };
+        let sub_listener = ZeroDdsSubscriberListener {
+            on_data_on_readers: Some(cb_data_on_readers),
+            ..Default::default()
+        };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let _ = unsafe { zerodds_dr_set_listener(dr, &dr_listener, 0xFFFFFFFF) };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let _ = unsafe { zerodds_sub_set_listener(sub, &sub_listener, 0xFFFFFFFF) };
+
+        // Baseline poll (no data yet).
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let _ = unsafe { zerodds_poll_listeners() };
+
+        let da_before = DATA_AVAILABLE_FIRED.load(AtomicOrdering::Relaxed);
+        let dor_before = DATA_ON_READERS_FIRED.load(AtomicOrdering::Relaxed);
+
+        // Inject one alive sample directly into the reader slot.
+        // SAFETY: dr is a live handle from create_datareader.
+        let injected = unsafe {
+            let drr = &*dr;
+            drr.rt
+                .test_inject_user_alive(drr.eid, alloc::vec::Vec::from([1u8, 2, 3]))
+        };
+        assert!(injected, "sample injection must hit the reader slot");
+
+        // Next poll: data delta → both callbacks fire.
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let _ = unsafe { zerodds_poll_listeners() };
+        assert!(
+            DATA_AVAILABLE_FIRED.load(AtomicOrdering::Relaxed) > da_before,
+            "on_data_available must fire on a fresh sample"
+        );
+        assert!(
+            DATA_ON_READERS_FIRED.load(AtomicOrdering::Relaxed) > dor_before,
+            "on_data_on_readers must fire (set semantics) on a fresh sample"
+        );
+
+        // Clear listeners before teardown (no dangling registry entries).
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let _ = unsafe { zerodds_dr_set_listener(dr, ptr::null(), 0) };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let _ = unsafe { zerodds_sub_set_listener(sub, ptr::null(), 0) };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        unsafe { zerodds_dp_delete_contained_entities(p) };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        unsafe { zerodds_dpf_delete_participant(f, p) };
+    }
+
+    #[test]
+    fn poll_fires_inconsistent_topic_for_topic_and_participant() {
+        let _guard = poll_guard();
+        let f = zerodds_dpf_get_instance();
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let p = unsafe { zerodds_dpf_create_participant(f, 94, ptr::null()) };
+        let tn = c"ITtopic";
+        let ty = c"ITtype";
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let t = unsafe { zerodds_dp_create_topic(p, tn.as_ptr(), ty.as_ptr(), ptr::null()) };
+
+        let topic_listener = ZeroDdsTopicListener {
+            on_inconsistent_topic: Some(cb_topic_inconsistent),
+            ..Default::default()
+        };
+        let dp_listener = ZeroDdsDomainParticipantListener {
+            on_inconsistent_topic: Some(cb_dp_inconsistent),
+            ..Default::default()
+        };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let _ = unsafe { zerodds_topic_set_listener(t, &topic_listener, 0xFFFFFFFF) };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let _ = unsafe { zerodds_dp_set_listener(p, &dp_listener, 0xFFFFFFFF) };
+
+        // Baseline poll.
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let _ = unsafe { zerodds_poll_listeners() };
+
+        let topic_before = TOPIC_INCONSISTENT_FIRED.load(AtomicOrdering::Relaxed);
+        let dp_before = DP_INCONSISTENT_FIRED.load(AtomicOrdering::Relaxed);
+
+        // Simulate the matching path discovering a remote type mismatch.
+        // SAFETY: p is a live participant handle; rt is Some while online.
+        unsafe {
+            if let Some(rt) = (*p).rt.as_ref() {
+                rt.test_bump_inconsistent_topic();
+            }
+        }
+
+        // Next poll: inconsistent-topic delta → both callbacks fire.
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let _ = unsafe { zerodds_poll_listeners() };
+        assert!(
+            TOPIC_INCONSISTENT_FIRED.load(AtomicOrdering::Relaxed) > topic_before,
+            "TopicListener::on_inconsistent_topic must fire"
+        );
+        assert!(
+            DP_INCONSISTENT_FIRED.load(AtomicOrdering::Relaxed) > dp_before,
+            "DomainParticipantListener::on_inconsistent_topic must fire"
+        );
+
+        // Clear listeners before teardown.
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let _ = unsafe { zerodds_topic_set_listener(t, ptr::null(), 0) };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let _ = unsafe { zerodds_dp_set_listener(p, ptr::null(), 0) };
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
         unsafe { zerodds_dp_delete_contained_entities(p) };
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.

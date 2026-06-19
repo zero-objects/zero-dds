@@ -1,61 +1,61 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Lexer-Output-Datentypen: [`Token`] und [`TokenStream`].
+//! Lexer-output data types: [`Token`] and [`TokenStream`].
 //!
-//! Ein **Token** ist die kleinste lexikalische Einheit, die der Lexer aus
-//! dem Source-Text produziert. Er besteht aus drei Komponenten:
+//! A **token** is the smallest lexical unit the lexer produces from
+//! the source text. It consists of three components:
 //!
-//! - [`crate::grammar::TokenKind`] — Klassifikation, wiederverwendet aus dem
-//!   Grammar-Modul (siehe `grammar/mod.rs`). Das stellt sicher, dass die
-//!   Lexer-Output-Klassen exakt die Terminal-Symbole sind, gegen die der
-//!   Recognizer matcht.
-//! - [`crate::errors::Span`] — Position im Source-Text (Byte-Offsets).
-//!   Wird durchgereicht in spaetere AST-Nodes und Diagnostiken.
-//! - `text: &'src str` — Slice in den Original-Source. Keine Allokation
-//!   pro Token; Lifetime `'src` an die Source-String-Bindung gekoppelt.
+//! - [`crate::grammar::TokenKind`] — classification, reused from the
+//!   grammar module (see `grammar/mod.rs`). This ensures that the
+//!   lexer-output classes are exactly the terminal symbols the
+//!   recognizer matches against.
+//! - [`crate::errors::Span`] — position in the source text (byte offsets).
+//!   Passed through into later AST nodes and diagnostics.
+//! - `text: &'src str` — slice into the original source. No allocation
+//!   per token; lifetime `'src` coupled to the source-string binding.
 //!
-//! Ein **TokenStream** ist die Sequenz aller Tokens einer Source-Datei,
-//! plus Helper fuer Iteration und Cursor-Operationen. Whitespace und
-//! Kommentare werden ueblicherweise vom Lexer als Trivia gedroppt — der
-//! Stream enthaelt nur signifikante Tokens.
+//! A **TokenStream** is the sequence of all tokens of a source file,
+//! plus helpers for iteration and cursor operations. Whitespace and
+//! comments are usually dropped by the lexer as trivia — the
+//! stream contains only significant tokens.
 //!
-//! Siehe RFC 0001 §4.1 (Pipeline) und §5.x (Lexer-Konzept).
+//! See RFC 0001 §4.1 (pipeline) and §5.x (lexer concept).
 
 use core::fmt;
 
 use crate::errors::Span;
 use crate::grammar::TokenKind;
 
-/// Ein einzelner Lexer-Token.
+/// A single lexer token.
 ///
-/// `'src` ist die Lifetime des zugrundeliegenden Source-Strings. `text` ist
-/// ein Slice in genau diesen String — gueltig fuer die Dauer des Lexer-
-/// Outputs und aller nachgelagerten Verarbeitungs-Schritte (Recognition,
-/// CST-Bau, AST-Bau), solange der Source-String lebt.
+/// `'src` is the lifetime of the underlying source string. `text` is
+/// a slice into exactly that string — valid for the duration of the lexer
+/// output and all downstream processing steps (recognition,
+/// CST build, AST build), as long as the source string lives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Token<'src> {
-    /// Klassifikation des Tokens (Keyword, Identifier, Literal, etc.).
+    /// Classification of the token (keyword, identifier, literal, etc.).
     pub kind: TokenKind,
-    /// Position im Source-Text.
+    /// Position in the source text.
     pub span: Span,
-    /// Text-Slice im Original-Source. Bei Keywords/Punctuation deckungs-
-    /// gleich mit `kind`-Inhalt; bei Identifiern und Literalen der echte
-    /// gelesene Wert.
+    /// Text slice in the original source. For keywords/punctuation
+    /// congruent with the `kind` content; for identifiers and literals the
+    /// actual value read.
     pub text: &'src str,
 }
 
 impl<'src> Token<'src> {
-    /// Konstruiert einen neuen Token.
+    /// Constructs a new token.
     #[must_use]
     pub const fn new(kind: TokenKind, span: Span, text: &'src str) -> Self {
         Self { kind, span, text }
     }
 
-    /// Konstruiert einen Token ohne Quellort — `span = SYNTHETIC`, `text = ""`.
+    /// Constructs a token without a source location — `span = SYNTHETIC`, `text = ""`.
     ///
-    /// Nuetzlich fuer programmatische Recognition-Aufrufe (Tests, Snippets,
-    /// Fixture-Builder), wo nur die Token-Klassifikation interessiert und
-    /// keine reale Source vorliegt.
+    /// Useful for programmatic recognition calls (tests, snippets,
+    /// fixture builders) where only the token classification matters and
+    /// no real source is present.
     #[must_use]
     pub const fn synthetic(kind: TokenKind) -> Token<'static> {
         Token {
@@ -65,13 +65,13 @@ impl<'src> Token<'src> {
         }
     }
 
-    /// Laenge des Token-Texts in Bytes (entspricht Span-Laenge).
+    /// Length of the token text in bytes (equals the span length).
     #[must_use]
     pub const fn len(&self) -> usize {
         self.span.len()
     }
 
-    /// `true`, wenn der Token-Text leer ist (Span hat Laenge 0).
+    /// `true` if the token text is empty (the span has length 0).
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.span.is_empty()
@@ -84,66 +84,66 @@ impl fmt::Display for Token<'_> {
     }
 }
 
-/// Sequenz von [`Token`]s, die der Lexer aus einer Source-Datei erzeugt.
+/// Sequence of [`Token`]s the lexer produces from a source file.
 ///
-/// Trivia (Whitespace, Kommentare) ist nicht enthalten — der Lexer dropt
-/// sie. Wenn Source-Preserving Rewrites benoetigt werden (Formatter, CST
-/// mit Trivia-Anker), wird das in einer Erweiterung des Lexer-Outputs
-/// modelliert (Task 2.x oder Phase 1).
+/// Trivia (whitespace, comments) is not included — the lexer drops
+/// it. If source-preserving rewrites are needed (formatter, CST
+/// with trivia anchors), that is modeled in an extension of the lexer
+/// output (Task 2.x or phase 1).
 #[derive(Debug, Clone, Default)]
 pub struct TokenStream<'src> {
     tokens: Vec<Token<'src>>,
 }
 
 impl<'src> TokenStream<'src> {
-    /// Neuer leerer Stream.
+    /// New empty stream.
     #[must_use]
     pub fn new() -> Self {
         Self { tokens: Vec::new() }
     }
 
-    /// Konstruiert einen Stream aus einer existierenden Token-Sequenz.
+    /// Constructs a stream from an existing token sequence.
     #[must_use]
     pub fn from_vec(tokens: Vec<Token<'src>>) -> Self {
         Self { tokens }
     }
 
-    /// Haengt einen Token an das Ende.
+    /// Appends a token to the end.
     pub fn push(&mut self, token: Token<'src>) {
         self.tokens.push(token);
     }
 
-    /// Alle Tokens als Slice.
+    /// All tokens as a slice.
     #[must_use]
     pub fn tokens(&self) -> &[Token<'src>] {
         &self.tokens
     }
 
-    /// Iteriert ueber alle Tokens in Reihenfolge.
+    /// Iterates over all tokens in order.
     pub fn iter(&self) -> impl Iterator<Item = &Token<'src>> {
         self.tokens.iter()
     }
 
-    /// Anzahl der Tokens.
+    /// Number of tokens.
     #[must_use]
     pub fn len(&self) -> usize {
         self.tokens.len()
     }
 
-    /// `true`, wenn der Stream keine Tokens enthaelt.
+    /// `true` if the stream contains no tokens.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.tokens.is_empty()
     }
 
-    /// Greift auf den Token an Position `index` zu.
+    /// Accesses the token at position `index`.
     #[must_use]
     pub fn get(&self, index: usize) -> Option<&Token<'src>> {
         self.tokens.get(index)
     }
 
-    /// Sammelt nur die [`TokenKind`]s — Convenience fuer Recognizer-Aufrufe,
-    /// die noch auf `&[TokenKind]` arbeiten (Task 2.4 stellt sie um).
+    /// Collects only the [`TokenKind`]s — convenience for recognizer calls
+    /// that still work on `&[TokenKind]` (Task 2.4 switches them over).
     #[must_use]
     pub fn kinds(&self) -> Vec<TokenKind> {
         self.tokens.iter().map(|t| t.kind).collect()
@@ -261,11 +261,11 @@ mod tests {
 
     #[test]
     fn tokens_borrow_source_string() {
-        // Lifetime-Regression: Token::text muss in `src` zeigen.
+        // Lifetime regression: Token::text must point into `src`.
         let src = String::from("hello world");
         let t = Token::new(TokenKind::Ident, Span::new(0, 5), &src[0..5]);
         assert_eq!(t.text, "hello");
-        // Pointer-Identitaet: Token::text muss in src liegen.
+        // Pointer identity: Token::text must lie within src.
         assert!(std::ptr::eq(t.text.as_ptr(), src.as_ptr()));
     }
 }

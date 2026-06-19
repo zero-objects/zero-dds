@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Name-Resolver / Scoping (C4.6 §1.4).
+//! Name resolver / scoping (C4.6 §1.4).
 //!
-//! Implementiert Identifier-Case-Insensitivity (Spec §7.2.3),
-//! Module-Hierarchie-Lookup, Forward-Decl-Tracking sowie scoped-name-
-//! Resolution.
+//! Implements identifier case-insensitivity (spec §7.2.3),
+//! module-hierarchy lookup, forward-decl tracking and scoped-name
+//! resolution.
 //!
 //! # Design
 //!
-//! - [`CaseInsensitiveIdent`] hashed/eq case-insensitive, behaelt aber
-//!   die Original-Schreibweise. Damit kann der Resolver "Mixed-Case-Def
-//!   + Mixed-Case-Use mit anderem Casing" als Fehler melden.
-//! - [`Scope`] ist ein nestbarer Container: Map von case-insensitive
-//!   Idents auf [`SymbolKind`]. Modul-Reopen merge'd in den selben
-//!   Scope.
-//! - [`Resolver`] baut das Scope-Tree aus einer [`Specification`] und
-//!   bietet `resolve`/`forward_decl_errors`/Diagnose.
+//! - [`CaseInsensitiveIdent`] hashes/eq case-insensitively, but keeps
+//!   the original spelling. This lets the resolver report "mixed-case def
+//!   + mixed-case use with different casing" as an error.
+//! - [`Scope`] is a nestable container: map of case-insensitive
+//!   idents to [`SymbolKind`]. A module reopen merges into the same
+//!   scope.
+//! - [`Resolver`] builds the scope tree from a [`Specification`] and
+//!   provides `resolve`/`forward_decl_errors`/diagnostics.
 
 use std::collections::HashMap;
 
@@ -25,25 +25,24 @@ use crate::ast::{
 };
 use crate::errors::Span;
 
-/// Case-insensitive Identifier-Schluessel.
+/// Case-insensitive identifier key.
 ///
-/// Spec §7.2.3: zwei Identifier kollidieren, wenn sie sich nur in
-/// Case unterscheiden. Aber: Verwendungen muessen das *gleiche* Casing
-/// wie die Definition haben — d.h. `Foo` definiert + `FOO` referenziert
-/// ist ein Fehler.
+/// Spec §7.2.3: two identifiers collide if they differ only in
+/// case. But: uses must have the *same* casing as the definition —
+/// i.e. `Foo` defined + `FOO` referenced is an error.
 ///
-/// Spec §7.2.3.2 Escape-Identifier: `_AnIdentifier` is treated as if it
-/// were `AnIdentifier`. Hash/Eq strippen daher einen fuehrenden `_`,
-/// wenn der Rest mit ASCII-Letter beginnt (gueltiger Escape). Damit
-/// kollidieren `_foo` und `foo` als gleicher Identifier.
+/// Spec §7.2.3.2 escape identifier: `_AnIdentifier` is treated as if it
+/// were `AnIdentifier`. Hash/Eq therefore strip a leading `_`
+/// if the rest begins with an ASCII letter (valid escape). This makes
+/// `_foo` and `foo` collide as the same identifier.
 #[derive(Debug, Clone, Eq)]
 pub struct CaseInsensitiveIdent {
-    /// Original-Casing (inkl. evtl. Underscore-Prefix bei Escape).
+    /// Original casing (incl. possible underscore prefix on escape).
     pub original: String,
 }
 
 impl CaseInsensitiveIdent {
-    /// Erzeugt aus [`Identifier`].
+    /// Creates from an [`Identifier`].
     #[must_use]
     pub fn new(text: impl Into<String>) -> Self {
         Self {
@@ -51,7 +50,7 @@ impl CaseInsensitiveIdent {
         }
     }
 
-    /// Lower-Case-Form, fuer Hash/Eq-Schluessel.
+    /// Lower-case form, for hash/eq key.
     #[must_use]
     pub fn lower(&self) -> String {
         strip_escape(&self.original).to_ascii_lowercase()
@@ -72,9 +71,9 @@ impl std::hash::Hash for CaseInsensitiveIdent {
     }
 }
 
-/// Strippt einen fuehrenden `_` von einem Identifier-Text, wenn der Rest
-/// mit einem ASCII-Buchstaben beginnt (gueltiger §7.2.3.2-Escape). Sonst
-/// wird der Text unveraendert zurueckgegeben.
+/// Strips a leading `_` from an identifier text if the rest
+/// begins with an ASCII letter (valid §7.2.3.2 escape). Otherwise
+/// the text is returned unchanged.
 fn strip_escape(text: &str) -> &str {
     if let Some(rest) = text.strip_prefix('_') {
         if rest.starts_with(|c: char| c.is_ascii_alphabetic()) {
@@ -84,8 +83,8 @@ fn strip_escape(text: &str) -> &str {
     text
 }
 
-/// Liefert das passende IDL-Keyword (canonical Casing aus Spec §7.2.4
-/// Table 7-6), wenn `text` case-insensitiv damit kollidiert. Sonst
+/// Returns the matching IDL keyword (canonical casing from spec §7.2.4
+/// Table 7-6) if `text` collides with it case-insensitively. Otherwise
 /// `None`.
 fn matching_keyword(text: &str) -> Option<&'static str> {
     IDL_KEYWORDS_TABLE_7_6
@@ -94,9 +93,9 @@ fn matching_keyword(text: &str) -> Option<&'static str> {
         .find(|kw| kw.eq_ignore_ascii_case(text))
 }
 
-/// Vollstaendige Liste der 73 IDL-Keywords aus Spec §7.2.4 Table 7-6
-/// (canonical Casing). Verwendet von [`Scope::insert`] zur §7.2.4-
-/// Identifier-vs-Keyword-Collision-Diagnostik.
+/// Complete list of the 73 IDL keywords from spec §7.2.4 Table 7-6
+/// (canonical casing). Used by [`Scope::insert`] for §7.2.4
+/// identifier-vs-keyword collision diagnostics.
 const IDL_KEYWORDS_TABLE_7_6: &[&str] = &[
     "abstract",
     "any",
@@ -183,14 +182,14 @@ const IDL_KEYWORDS_TABLE_7_6: &[&str] = &[
     "uint64",
 ];
 
-/// Symbol-Kind im Scope.
+/// Symbol kind in the scope.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SymbolKind {
     /// `module`.
     Module,
-    /// `struct ... { ... };` (vollstaendige Definition).
+    /// `struct ... { ... };` (complete definition).
     StructDef,
-    /// `struct ...;` (Forward-Decl ohne Body).
+    /// `struct ...;` (forward-decl without body).
     StructForward,
     /// `union ... switch (...) { ... };`.
     UnionDef,
@@ -212,60 +211,60 @@ pub enum SymbolKind {
     InterfaceForward,
     /// `exception`.
     Exception,
-    /// `valuetype` (volle Definition oder ValueBox).
+    /// `valuetype` (full definition or ValueBox).
     ValueType,
-    /// `valuetype <name>;` (Forward-Decl).
+    /// `valuetype <name>;` (forward-decl).
     ValueForward,
-    /// Enumerator innerhalb eines Enum (Top-Level-Sichtbarkeit gemaess §7.4.13.4.2).
+    /// Enumerator within an enum (top-level visibility per §7.4.13.4.2).
     Enumerator,
     /// `@annotation Foo { ... };` User-Defined Annotation Declaration (§7.4.15).
     AnnotationDef,
 }
 
-/// Vom Resolver erkanntes Symbol.
+/// Symbol recognized by the resolver.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedSymbol {
-    /// Voller Name `A::B::C`.
+    /// Full name `A::B::C`.
     pub full_name: String,
     /// Kind.
     pub kind: SymbolKind,
-    /// Original-Casing aus der Definition.
+    /// Original casing from the definition.
     pub original_casing: String,
-    /// Quellort der Definition.
+    /// Source location of the definition.
     pub span: Span,
 }
 
-/// Scope-Tree-Knoten.
+/// Scope-tree node.
 #[derive(Debug, Clone, Default)]
 pub struct Scope {
-    /// Vollqualifizierter Pfad.
+    /// Fully-qualified path.
     pub path: Vec<String>,
-    /// Symbole direkt in diesem Scope.
+    /// Symbols directly in this scope.
     pub symbols: HashMap<CaseInsensitiveIdent, ResolvedSymbol>,
-    /// Sub-Scopes (Module).
+    /// Sub-scopes (modules).
     pub children: HashMap<CaseInsensitiveIdent, Scope>,
 }
 
 impl Scope {
-    /// Erzeugt einen leeren Root-Scope.
+    /// Creates an empty root scope.
     #[must_use]
     pub fn root() -> Self {
         Self::default()
     }
 
-    /// Symbol einfuegen. Bei Mixed-Case-Konflikt liefert
-    /// `Err(ResolverError::CaseConflict)`. Bei Identifier-vs-Keyword-
-    /// Kollision (§7.2.4) liefert
-    /// `Err(ResolverError::IdentifierCollidesWithKeyword)`. Eine
-    /// Definition mit `_`-Praefix (§7.2.3.2 Escape) deaktiviert den
-    /// Keyword-Check fuer diese Definition.
+    /// Insert a symbol. On a mixed-case conflict returns
+    /// `Err(ResolverError::CaseConflict)`. On an identifier-vs-keyword
+    /// collision (§7.2.4) returns
+    /// `Err(ResolverError::IdentifierCollidesWithKeyword)`. A
+    /// definition with a `_` prefix (§7.2.3.2 escape) disables the
+    /// keyword check for that definition.
     ///
     /// # Errors
-    /// Siehe [`ResolverError`].
+    /// See [`ResolverError`].
     pub fn insert(&mut self, ident: &Identifier, sym: ResolvedSymbol) -> Result<(), ResolverError> {
-        // §7.2.4: Identifier, die case-insensitiv mit einem Keyword
-        // kollidieren, sind illegal. §7.2.3.2 erlaubt den Escape via
-        // fuehrendem `_` — in diesem Fall ueberspringen wir den Check.
+        // §7.2.4: identifiers that collide case-insensitively with a
+        // keyword are illegal. §7.2.3.2 allows the escape via a
+        // leading `_` — in that case we skip the check.
         if !ident.text.starts_with('_') {
             if let Some(kw) = matching_keyword(&ident.text) {
                 return Err(ResolverError::IdentifierCollidesWithKeyword {
@@ -277,9 +276,9 @@ impl Scope {
         }
         let key = CaseInsensitiveIdent::new(&ident.text);
         if let Some(existing) = self.symbols.get(&key) {
-            // Spec §7.2.3: Definition + Re-Definition mit anderem Casing → Error.
-            // §7.2.3.2: `_foo` und `foo` sind kanonisch derselbe Identifier;
-            // der Vergleich strippt darum den Escape-Praefix.
+            // Spec §7.2.3: definition + re-definition with different casing → error.
+            // §7.2.3.2: `_foo` and `foo` are canonically the same identifier;
+            // the comparison therefore strips the escape prefix.
             if strip_escape(&existing.original_casing) != strip_escape(&ident.text) {
                 return Err(ResolverError::CaseConflict {
                     name: ident.text.clone(),
@@ -287,10 +286,10 @@ impl Scope {
                     span: ident.span,
                 });
             }
-            // Forward-Decl + Vollform mit gleichem Casing → ok (merge).
-            // §7.5.3: Re-Definition desselben Identifiers im selben Scope
-            // ist Error, *unabhaengig* vom Symbol-Kind (typedef vs.
-            // struct mit gleichem Namen kollidiert).
+            // Forward-decl + full form with the same casing → ok (merge).
+            // §7.5.3: re-definition of the same identifier in the same scope
+            // is an error, *regardless* of symbol kind (typedef vs.
+            // struct with the same name collide).
             // §7.4.1.4.4.4.4: "Multiple forward declarations of the same
             // structure or union are legal."
             let forward_then_full = is_forward(&existing.kind)
@@ -310,8 +309,8 @@ impl Scope {
                 });
             }
             if forward_then_forward {
-                // Existing-Forward bleibt; ein neuer Forward fuegt nichts
-                // hinzu.
+                // The existing forward stays; a new forward adds
+                // nothing.
                 return Ok(());
             }
         }
@@ -319,7 +318,7 @@ impl Scope {
         Ok(())
     }
 
-    /// Lookup eines einfachen Identifiers im aktuellen Scope.
+    /// Lookup of a simple identifier in the current scope.
     #[must_use]
     pub fn lookup(&self, name: &str) -> Option<&ResolvedSymbol> {
         self.symbols.get(&CaseInsensitiveIdent::new(name))
@@ -336,70 +335,70 @@ fn is_forward(k: &SymbolKind) -> bool {
     )
 }
 
-/// Resolver-Fehler.
+/// Resolver error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolverError {
-    /// Mixed-Case-Konflikt: dieselbe Identifier-Schreibweise variiert.
+    /// Mixed-case conflict: the same identifier spelling varies.
     CaseConflict {
-        /// Verwendete Schreibweise.
+        /// Used spelling.
         name: String,
-        /// Bereits registrierte Schreibweise.
+        /// Already registered spelling.
         existing: String,
-        /// Quellort der Verletzung.
+        /// Source location of the violation.
         span: Span,
     },
-    /// Re-Definition desselben Symbols.
+    /// Re-definition of the same symbol.
     DuplicateDefinition {
         /// Name.
         name: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// Forward-Decl wurde nicht durch Vollform ergaenzt.
+    /// A forward-decl was not completed by a full form.
     ForwardDeclNotCompleted {
-        /// Voller Name.
+        /// Full name.
         name: String,
-        /// Quellort der Forward-Decl.
+        /// Source location of the forward-decl.
         span: Span,
     },
-    /// §7.2.4 — Identifier kollidiert (case-insensitiv) mit einem
-    /// IDL-Keyword aus Table 7-6.
+    /// §7.2.4 — identifier collides (case-insensitively) with an
+    /// IDL keyword from Table 7-6.
     IdentifierCollidesWithKeyword {
-        /// Verwendete Schreibweise (z. B. `BOOLEAN`).
+        /// Used spelling (e.g. `BOOLEAN`).
         name: String,
-        /// Kollidierendes Keyword (canonical Casing, z. B. `boolean`).
+        /// Colliding keyword (canonical casing, e.g. `boolean`).
         keyword: &'static str,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.2.3 — Use-Site-Reference verwendet abweichende Schreibweise
-    /// gegenueber der Definition (z. B. `Foo` definiert, `FOO`
-    /// referenziert). Spec verlangt identische Schreibweise.
+    /// §7.2.3 — a use-site reference uses a different spelling
+    /// from the definition (e.g. `Foo` defined, `FOO`
+    /// referenced). The spec requires identical spelling.
     CaseMismatch {
-        /// Verwendete Schreibweise an der Use-Site.
+        /// Spelling used at the use-site.
         used: String,
-        /// Schreibweise der Definition.
+        /// Spelling of the definition.
         defined: String,
-        /// Quellort der Use-Site.
+        /// Source location of the use-site.
         span: Span,
     },
-    /// §7.4.6.3 Rule (120) + §8.3.6.2 — `oneway`-Operationen muessen
-    /// `void`-Return haben und nur `in`-Parameter; jede Verletzung
-    /// landet hier.
+    /// §7.4.6.3 Rule (120) + §8.3.6.2 — `oneway` operations must
+    /// have a `void` return and only `in` parameters; every violation
+    /// lands here.
     OnewayConstraintViolation {
-        /// Op-Name.
+        /// Op name.
         op_name: String,
-        /// Konkrete Verletzung (`"oneway op must have void return type"`
-        /// oder `"oneway op must not have out/inout parameters"`).
+        /// Concrete violation (`"oneway op must have void return type"`
+        /// or `"oneway op must not have out/inout parameters"`).
         violation: &'static str,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// Scoped-Name konnte nicht aufgeloest werden.
+    /// A scoped name could not be resolved.
     UnresolvedName {
-        /// Voller (unaufgeloester) Pfad.
+        /// Full (unresolved) path.
         name: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
 }
@@ -438,16 +437,16 @@ impl core::fmt::Display for ResolverError {
 
 impl std::error::Error for ResolverError {}
 
-/// Top-Level-Resolver.
+/// Top-level resolver.
 #[derive(Debug, Clone)]
 pub struct Resolver {
-    /// Wurzel-Scope.
+    /// Root scope.
     pub root: Scope,
-    /// Akkumulierte Errors waehrend des Aufbaus.
+    /// Errors accumulated during construction.
     pub errors: Vec<ResolverError>,
-    /// Bereits gesehene User-Annotation-Definitionen, indexiert nach
-    /// vollstaendigem Pfad. Wird zur §7.4.15.4.1-Konsistenz-Pruefung bei
-    /// `#include`-bedingten Mehrfach-Defs verwendet.
+    /// User-annotation definitions already seen, indexed by
+    /// full path. Used for the §7.4.15.4.1 consistency check on
+    /// `#include`-induced multiple defs.
     annotation_defs: std::collections::BTreeMap<String, AnnotationDcl>,
 }
 
@@ -458,7 +457,7 @@ impl Default for Resolver {
 }
 
 impl Resolver {
-    /// Erzeugt einen leeren Resolver.
+    /// Creates an empty resolver.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -468,7 +467,7 @@ impl Resolver {
         }
     }
 
-    /// Baut das Scope-Tree aus einer [`Specification`].
+    /// Builds the scope tree from a [`Specification`].
     pub fn build(&mut self, spec: &Specification) {
         let path: Vec<String> = Vec::new();
         let mut root = std::mem::take(&mut self.root);
@@ -476,8 +475,8 @@ impl Resolver {
             self.add_definition(&mut root, &path, d);
         }
         self.root = root;
-        // §7.4.3.4.3.2.1 + §7.5.1 Diamond-/Cycle-Detection nach dem
-        // Scope-Aufbau (braucht alle Interfaces gesammelt).
+        // §7.4.3.4.3.2.1 + §7.5.1 diamond-/cycle-detection after the
+        // scope build (needs all interfaces collected).
         self.check_interface_inheritance(spec);
     }
 
@@ -494,8 +493,8 @@ impl Resolver {
                     span: m.name.span,
                 };
                 if let Err(e) = scope.insert(&m.name, mod_sym) {
-                    // Module-Reopen mit identischem Casing ist erlaubt;
-                    // DuplicateDefinition fuer Modules schluck' wir.
+                    // Module reopen with identical casing is allowed;
+                    // we swallow DuplicateDefinition for modules.
                     if !matches!(e, ResolverError::DuplicateDefinition { .. }) {
                         self.errors.push(e);
                     }
@@ -544,13 +543,13 @@ impl Resolver {
                     if let Err(err) = scope.insert(&d.name, sym) {
                         self.errors.push(err);
                     }
-                    // §7.5.2 Op-Param-Scope: Params jeder Op leben in einem
-                    // eigenen anonymen Scope. Duplicate-Param-Names
-                    // *innerhalb* derselben Op sind Error.
+                    // §7.5.2 op-param scope: the params of each op live in
+                    // their own anonymous scope. Duplicate param names
+                    // *within* the same op are an error.
                     self.check_op_param_scopes(&d.exports);
-                    // §7.4.6.3 Rule (120) + §8.3.6.2 — `oneway`-Ops
-                    // muessen void-Return haben und duerfen keine
-                    // `out`/`inout`-Parameter haben.
+                    // §7.4.6.3 Rule (120) + §8.3.6.2 — `oneway` ops
+                    // must have a void return and must not have
+                    // `out`/`inout` parameters.
                     self.check_oneway_constraints(&d.exports);
                 }
                 crate::ast::InterfaceDcl::Forward(f) => {
@@ -589,9 +588,9 @@ impl Resolver {
             }
             Definition::Annotation(a) => {
                 let full_name = full_path(path, &a.name.text);
-                // §7.4.15.4.1 Note: Mehrfach-Defs durch `#include`-
-                // Inklusionen sind erlaubt, *wenn* sie strukturell
-                // identisch sind. Sonst Error.
+                // §7.4.15.4.1 Note: multiple defs via `#include`
+                // inclusions are allowed *if* they are structurally
+                // identical. Otherwise an error.
                 if let Some(existing) = self.annotation_defs.get(&full_name) {
                     if !annotation_equiv(existing, a) {
                         self.errors.push(ResolverError::DuplicateDefinition {
@@ -599,9 +598,9 @@ impl Resolver {
                             span: a.name.span,
                         });
                     }
-                    // Konsistente Mehrfach-Def: kein scope.insert (haette
-                    // sonst CaseConflict-Error gemeldet) — Erstdefinition
-                    // bleibt aktiv.
+                    // Consistent multiple def: no scope.insert (which would
+                    // otherwise report a CaseConflict error) — the first
+                    // definition stays active.
                 } else {
                     self.annotation_defs.insert(full_name.clone(), a.clone());
                     let sym = ResolvedSymbol {
@@ -627,8 +626,8 @@ impl Resolver {
                 }
             }
             Definition::TypeId(_) | Definition::TypePrefix(_) | Definition::Import(_) => {
-                // CORBA-Specific Top-Level-Decls — keine Symbol-Insert
-                // (sie referenzieren existierende Symbole).
+                // CORBA-specific top-level decls — no symbol insert
+                // (they reference existing symbols).
             }
             Definition::Component(c) => match c {
                 crate::ast::ComponentDcl::Def(def) => {
@@ -746,30 +745,30 @@ impl Resolver {
                 }
             }
             Definition::VendorExtension(_) => {
-                // Vendor-spezifische Konstrukte ignorieren.
+                // Ignore vendor-specific constructs.
             }
         }
     }
 
     /// §7.4.3.4.3.2.1 + §7.5.1 — Interface-Diamond-Pattern.
     ///
-    /// Sammelt alle transitiv geerbten Bases eines Interfaces und
-    /// detektiert:
-    /// 1. Cycle im Inheritance-Graph (`A : B; B : A;`).
-    /// 2. Name-Konflikt: dieselbe Op-/Attr-Signatur in zwei nicht-
-    ///    verwandten Bases (echtes Diamond-Konflikt).
+    /// Collects all transitively inherited bases of an interface and
+    /// detects:
+    /// 1. A cycle in the inheritance graph (`A : B; B : A;`).
+    /// 2. A name conflict: the same op/attr signature in two unrelated
+    ///    bases (a true diamond conflict).
     ///
-    /// Rein-formales Diamond mit gemeinsamer Großmutter-Base ohne
-    /// Op-Konflikt ist OK (das ist *kein* Fehler nach Spec).
+    /// A purely formal diamond with a shared grandparent base without
+    /// an op conflict is OK (that is *not* an error per spec).
     pub fn check_interface_inheritance(&mut self, spec: &Specification) {
         use std::collections::{HashMap as Map, HashSet};
 
-        // Index aller Interface-Defs nach (in-scope) Name.
+        // Index of all interface defs by (in-scope) name.
         let mut defs: Map<String, &InterfaceDef> = Map::new();
         collect_interface_defs(&spec.definitions, &[], &mut defs);
 
         for (name, def) in &defs {
-            // Cycle-Detection via DFS.
+            // Cycle detection via DFS.
             let mut visiting: HashSet<String> = HashSet::new();
             let mut visited: HashSet<String> = HashSet::new();
             if has_inheritance_cycle(name, &defs, &mut visiting, &mut visited) {
@@ -779,9 +778,9 @@ impl Resolver {
                 });
                 continue;
             }
-            // Op-Name-Konflikt zwischen unverwandten Bases (Diamond ohne
-            // gemeinsame Wurzel). Direkte Bases werden geprueft; jedes Op
-            // darf nicht in zwei nicht-verwandten Pfaden auftreten.
+            // Op-name conflict between unrelated bases (diamond without
+            // a common root). Direct bases are checked; an op must not
+            // appear in two unrelated paths.
             self.check_diamond_op_conflict(def, &defs);
         }
     }
@@ -795,11 +794,11 @@ impl Resolver {
         if def.bases.len() < 2 {
             return;
         }
-        // Spec §7.4.3.4.3.2.1: Konflikt nur wenn dieselbe Op aus *zwei
-        // unterschiedlichen Definitionen* kommt. Wenn beide Bases das Op
-        // aus einer gemeinsamen Vorfahren-Definition erben, kein Konflikt.
-        // Wir tracken pro Op-Name das definierende Interface (nicht den
-        // Base-Pfad).
+        // Spec §7.4.3.4.3.2.1: conflict only when the same op comes from
+        // *two different definitions*. If both bases inherit the op
+        // from a common ancestor definition, there is no conflict.
+        // We track the defining interface per op name (not the
+        // base path).
         let mut op_origin: Map<String, String> = Map::new();
         for base in &def.bases {
             let base_name = scoped_to_name(base);
@@ -819,9 +818,9 @@ impl Resolver {
         }
     }
 
-    /// §7.4.6.3 Rule (120) + §8.3.6.2 — `oneway`-Operationen muessen
-    /// `void`-Return haben und duerfen keine `out`/`inout`-Parameter
-    /// haben. Verstoesse landen als
+    /// §7.4.6.3 Rule (120) + §8.3.6.2 — `oneway` operations must
+    /// have a `void` return and must not have `out`/`inout` parameters.
+    /// Violations land as
     /// [`ResolverError::OnewayConstraintViolation`] in `self.errors`.
     fn check_oneway_constraints(&mut self, exports: &[Export]) {
         use crate::ast::ParamAttribute;
@@ -850,10 +849,10 @@ impl Resolver {
         }
     }
 
-    /// §7.5.2 — Operation-Param-Scope. Pro Op ein eigener anonymer Scope:
-    /// Param-Namen muessen *innerhalb* derselben Op eindeutig sein, sind
-    /// aber isoliert vom umgebenden Interface-Scope (Type mit gleichem
-    /// Namen kollidiert nicht).
+    /// §7.5.2 — operation param scope. Each op gets its own anonymous scope:
+    /// param names must be unique *within* the same op, but are
+    /// isolated from the surrounding interface scope (a type with the same
+    /// name does not collide).
     fn check_op_param_scopes(&mut self, exports: &[Export]) {
         for ex in exports {
             if let Export::Op(op) = ex {
@@ -861,8 +860,8 @@ impl Resolver {
                 for p in &op.params {
                     let key = CaseInsensitiveIdent::new(&p.name.text);
                     if let Some(prev) = seen.get(&key) {
-                        // Spec §7.2.3 + §7.5.2: Case-Konflikt ODER
-                        // identische Schreibweise → Duplicate.
+                        // Spec §7.2.3 + §7.5.2: case conflict OR
+                        // identical spelling → duplicate.
                         if prev.text == p.name.text {
                             self.errors.push(ResolverError::DuplicateDefinition {
                                 name: p.name.text.clone(),
@@ -900,7 +899,7 @@ impl Resolver {
                 }
                 ConstrTypeDecl::Enum(e) => {
                     self.insert_typed(scope, path, &e.name, SymbolKind::Enum);
-                    // Enumerator-Sichtbarkeit: enclosing scope (§7.4.13.4.2).
+                    // Enumerator visibility: enclosing scope (§7.4.13.4.2).
                     for v in &e.enumerators {
                         let sym = ResolvedSymbol {
                             full_name: full_path(path, &v.name.text),
@@ -908,9 +907,9 @@ impl Resolver {
                             original_casing: v.name.text.clone(),
                             span: v.name.span,
                         };
-                        // Enum-Enumerator-Konflikte: still tolerieren —
-                        // Spec eigentlich Error, aber Real-World-IDLs
-                        // (DDS-XTypes) haben Konflikte ueber Module.
+                        // Enum-enumerator conflicts: silently tolerate —
+                        // the spec actually treats this as an error, but
+                        // real-world IDLs (DDS-XTypes) have conflicts across modules.
                         let _ = scope.insert(&v.name, sym);
                     }
                 }
@@ -935,6 +934,12 @@ impl Resolver {
                     }
                 }
             }
+            // `native X;` declares an opaque named type — register it as
+            // a type symbol so references resolve (kind
+            // Typedef: resolves identically to a typedef'd type name).
+            TypeDecl::Native(n) => {
+                self.insert_typed(scope, path, &n.name, SymbolKind::Typedef);
+            }
         }
     }
 
@@ -956,14 +961,14 @@ impl Resolver {
         }
     }
 
-    /// Aufloesung eines [`ScopedName`].
+    /// Resolution of a [`ScopedName`].
     ///
-    /// Suchstrategie (§7.5.4):
-    /// 1. Wenn absolut (`::A::B`): direkt vom Root.
-    /// 2. Sonst: bottom-up vom `current_scope_path` zur Wurzel.
+    /// Search strategy (§7.5.4):
+    /// 1. If absolute (`::A::B`): directly from the root.
+    /// 2. Otherwise: bottom-up from `current_scope_path` to the root.
     ///
     /// # Errors
-    /// `ResolverError::UnresolvedName` falls Pfad nicht gefunden.
+    /// `ResolverError::UnresolvedName` if the path is not found.
     pub fn resolve(
         &self,
         name: &ScopedName,
@@ -976,7 +981,7 @@ impl Resolver {
                     span: name.span,
                 })?
         } else {
-            // Suche bottom-up.
+            // Search bottom-up.
             let mut path: Vec<String> = current_scope.to_vec();
             let mut found: Option<&ResolvedSymbol> = None;
             loop {
@@ -994,8 +999,8 @@ impl Resolver {
                 span: name.span,
             })?
         };
-        // §7.2.3: Use-Site-Casing muss zur Definition passen. Beim
-        // Vergleich wird der §7.2.3.2-Escape-Praefix gestrippt.
+        // §7.2.3: use-site casing must match the definition. The
+        // §7.2.3.2 escape prefix is stripped for the comparison.
         if let Some(last) = name.parts.last() {
             let used = strip_escape(&last.text);
             let defined = strip_escape(&sym.original_casing);
@@ -1028,8 +1033,8 @@ impl Resolver {
         None
     }
 
-    /// Fuer C4.6 §1.5: alle Forward-Decls finden, die nicht
-    /// komplettiert wurden.
+    /// For C4.6 §1.5: find all forward-decls that were not
+    /// completed.
     #[must_use]
     pub fn forward_decl_errors(&self) -> Vec<ResolverError> {
         let mut out = Vec::new();
@@ -1040,11 +1045,11 @@ impl Resolver {
 
 /// zerodds-lint: recursion-depth 32
 fn collect_forward_errors(scope: &Scope, out: &mut Vec<ResolverError>) {
-    // Pro Scope: gruppiere case-insensitive Symbole; wenn der einzige
-    // Eintrag eine Forward-Decl ist, ist sie nicht komplettiert.
-    // Da scope.symbols pro Casing-Key nur einen Eintrag haelt und
-    // `Scope::insert` bei Forward+Def den Forward-Eintrag ueberschreibt,
-    // ist eine ueberbleibende Forward-Decl erkannt durch den Symbol-Kind.
+    // Per scope: group case-insensitive symbols; if the only
+    // entry is a forward-decl, it was not completed.
+    // Since scope.symbols holds only one entry per casing key and
+    // `Scope::insert` overwrites the forward entry on forward+def,
+    // a remaining forward-decl is detected by the symbol kind.
     for sym in scope.symbols.values() {
         if matches!(
             sym.kind,
@@ -1077,10 +1082,10 @@ fn scoped_to_name(s: &ScopedName) -> String {
         .join("::")
 }
 
-/// Sammelt Interface-Defs aus dem AST in eine flache Map nach
-/// vollstaendigem Pfadnamen.
+/// Collects interface defs from the AST into a flat map by
+/// full path name.
 ///
-/// zerodds-lint: recursion-depth 64 (Module-Hierarchy; bounded by IDL nesting)
+/// zerodds-lint: recursion-depth 64 (module hierarchy; bounded by IDL nesting)
 fn collect_interface_defs<'a>(
     defs: &'a [Definition],
     path: &[String],
@@ -1101,7 +1106,7 @@ fn collect_interface_defs<'a>(
     }
 }
 
-/// zerodds-lint: recursion-depth 64 (Inheritance-DAG; bounded by IDL nesting)
+/// zerodds-lint: recursion-depth 64 (inheritance DAG; bounded by IDL nesting)
 fn has_inheritance_cycle(
     name: &str,
     defs: &std::collections::HashMap<String, &InterfaceDef>,
@@ -1128,11 +1133,11 @@ fn has_inheritance_cycle(
     false
 }
 
-/// Sammelt alle (transitiv geerbten) Op-Namen mit dem **definierenden
-/// Interface** (Origin). Mehrere Vererbungspfade durch dieselbe Op-
-/// Definition ergeben den gleichen `defining_iface`-String.
+/// Collects all (transitively inherited) op names with the **defining
+/// interface** (origin). Multiple inheritance paths through the same op
+/// definition yield the same `defining_iface` string.
 ///
-/// zerodds-lint: recursion-depth 64 (Inheritance-DAG; bounded by IDL nesting)
+/// zerodds-lint: recursion-depth 64 (inheritance DAG; bounded by IDL nesting)
 fn collect_op_origins(
     name: &str,
     defs: &std::collections::HashMap<String, &InterfaceDef>,
@@ -1156,9 +1161,9 @@ fn collect_op_origins(
     out
 }
 
-/// §7.4.15.4.1 — Strukturelle Aequivalenz zweier User-Defined
-/// Annotation-Decls. Spans und Source-Positionen werden ignoriert; nur
-/// Namen, Typ-Spec, Default-Werte und Member-Reihenfolge zaehlen.
+/// §7.4.15.4.1 — structural equivalence of two user-defined
+/// annotation decls. Spans and source positions are ignored; only
+/// names, type-spec, default values and member order count.
 fn annotation_equiv(a: &AnnotationDcl, b: &AnnotationDcl) -> bool {
     if a.name.text != b.name.text {
         return false;
@@ -1184,8 +1189,8 @@ fn annotation_equiv(a: &AnnotationDcl, b: &AnnotationDcl) -> bool {
         if ca.name.text != cb.name.text || ca.type_ != cb.type_ {
             return false;
         }
-        // ConstExpr-Equivalenz vergleicht ueber Default-Werte hinaus die
-        // gesamten Const-Expressions.
+        // ConstExpr equivalence compares the entire const expressions,
+        // beyond just the default values.
         if !const_expr_equiv_value(&ca.value, &cb.value) {
             return false;
         }
@@ -1193,8 +1198,8 @@ fn annotation_equiv(a: &AnnotationDcl, b: &AnnotationDcl) -> bool {
     if a.embedded_types.len() != b.embedded_types.len() {
         return false;
     }
-    // Embedded-Types-Vergleich pragmatisch nur ueber Anzahl + Namen,
-    // tiefer struktureller Vergleich folgt bei Bedarf.
+    // Embedded-types comparison pragmatically only by count + names;
+    // a deeper structural comparison follows if needed.
     for (ta, tb) in a.embedded_types.iter().zip(b.embedded_types.iter()) {
         if !type_decl_name_equiv(ta, tb) {
             return false;
@@ -1211,7 +1216,7 @@ fn const_expr_equiv(a: &Option<ConstExpr>, b: &Option<ConstExpr>) -> bool {
     }
 }
 
-/// zerodds-lint: recursion-depth 64 (Const-Expr-Tree; bounded by IDL nesting)
+/// zerodds-lint: recursion-depth 64 (const-expr tree; bounded by IDL nesting)
 fn const_expr_equiv_value(a: &ConstExpr, b: &ConstExpr) -> bool {
     match (a, b) {
         (ConstExpr::Literal(la), ConstExpr::Literal(lb)) => la.kind == lb.kind && la.raw == lb.raw,
@@ -1268,6 +1273,7 @@ fn type_decl_name_equiv(a: &TypeDecl, b: &TypeDecl) -> bool {
                 Declarator::Simple(s) => s.text.as_str(),
                 Declarator::Array(a) => a.name.text.as_str(),
             }),
+            TypeDecl::Native(n) => Some(&n.name.text),
         }
     }
     name_of(a) == name_of(b)
@@ -1391,8 +1397,8 @@ mod tests {
 
     #[test]
     fn duplicate_definition_logs_error() {
-        // Module-Reopen darf nicht duplicate sein; aber doppelte Struct-Def
-        // in derselben Scope-Ebene ist Error.
+        // A module reopen must not be a duplicate; but a double struct def
+        // at the same scope level is an error.
         let ast = parse_to_ast("struct Foo { long x; }; struct Foo { long y; };");
         let mut r = Resolver::new();
         r.build(&ast);
@@ -1441,7 +1447,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // §7.4.15.4.1 Note — Multi-Definition-Konsistenz fuer Annotations
+    // §7.4.15.4.1 Note — multi-definition consistency for annotations
     // -----------------------------------------------------------------
 
     #[test]
@@ -1544,13 +1550,13 @@ mod tests {
 
     #[test]
     fn accepts_param_name_that_shadows_outer_type() {
-        // Op-Param-Scope ist isoliert vom Interface-Scope: Param `Bar`
-        // kollidiert nicht mit Typedef `Bar` im Interface.
+        // The op-param scope is isolated from the interface scope: param `Bar`
+        // does not collide with typedef `Bar` in the interface.
         let ast = parse_to_ast("interface I { typedef long Bar; void op(in long Bar); };");
         let mut r = Resolver::new();
         r.build(&ast);
-        // Nur Typedef-Forward-Errors koennten auftreten; keine
-        // Param-Kollision.
+        // Only typedef-forward errors could occur; no
+        // param collision.
         assert!(
             !r.errors.iter().any(|e| matches!(
                 e,
@@ -1563,8 +1569,8 @@ mod tests {
 
     #[test]
     fn accepts_same_param_name_in_different_ops() {
-        // Op-Param-Scopes sind je-Op anonym → `x` in op1 und op2
-        // kollidieren nicht.
+        // Op-param scopes are anonymous per op → `x` in op1 and op2
+        // do not collide.
         let ast = parse_to_ast("interface I { void op1(in long x); void op2(in long x); };");
         let mut r = Resolver::new();
         r.build(&ast);
@@ -1581,8 +1587,8 @@ mod tests {
 
     #[test]
     fn rejects_typedef_redef_in_same_scope() {
-        // §7.5.3: ein Name darf in seinem Potential-Scope nicht
-        // redefiniert werden. Same-scope duplicate ist der Trivial-Fall.
+        // §7.5.3: a name must not be redefined in its potential scope.
+        // A same-scope duplicate is the trivial case.
         let ast = parse_to_ast("typedef long X; struct X { long y; };");
         let mut r = Resolver::new();
         r.build(&ast);
@@ -1597,7 +1603,7 @@ mod tests {
 
     #[test]
     fn accepts_same_name_in_nested_scopes() {
-        // Verschiedene Module-Scopes — kein Konflikt mit §7.5.3.
+        // Different module scopes — no conflict with §7.5.3.
         let ast = parse_to_ast("struct Foo { long x; }; module M { struct Foo { long y; }; };");
         let mut r = Resolver::new();
         r.build(&ast);
@@ -1644,8 +1650,8 @@ mod tests {
 
     #[test]
     fn accepts_diamond_with_common_root() {
-        // Diamond mit gemeinsamer Root-Base ist OK (Spec sagt nur Op-
-        // Konflikt zaehlt). Base muss vor Children definiert sein.
+        // A diamond with a common root base is OK (the spec says only an op
+        // conflict counts). The base must be defined before its children.
         let ast = parse_to_ast(
             "interface Base {}; interface A : Base {}; interface B : Base {}; \
              interface C : A, B {};",
@@ -1657,8 +1663,8 @@ mod tests {
 
     #[test]
     fn rejects_diamond_op_conflict_unrelated_bases() {
-        // A und B sind unverwandt aber haben gleichen Op-Namen → Konflikt
-        // bei C : A, B.
+        // A and B are unrelated but have the same op name → conflict
+        // at C : A, B.
         let ast = parse_to_ast(
             "interface A { void op(); }; interface B { void op(); }; \
              interface C : A, B {};",
@@ -1677,8 +1683,8 @@ mod tests {
 
     #[test]
     fn accepts_diamond_op_from_common_ancestor() {
-        // Op `ping` kommt von gemeinsamer Base → kein Konflikt bei
-        // Multi-Inheritance.
+        // Op `ping` comes from a common base → no conflict on
+        // multiple inheritance.
         let ast = parse_to_ast(
             "interface Base { void ping(); }; interface A : Base {}; \
              interface B : Base {}; interface C : A, B {};",
@@ -1718,14 +1724,14 @@ mod tests {
             parts: vec![Identifier::new("Outer", Span::SYNTHETIC)],
             span: Span::SYNTHETIC,
         };
-        // Aus Modul M heraus muss Outer aufgeloest werden.
+        // From within module M, Outer must be resolved.
         let sym = r.resolve(&scoped, &["M".to_string()]).unwrap();
         assert_eq!(sym.full_name, "Outer");
     }
 
     // -----------------------------------------------------------------
-    // §7.2.4-open Identifier-vs-Keyword-Collision-Diagnostik
-    // §7.2.3.2-open Strip Underscore-Praefix bei Escaped-Identifier
+    // §7.2.4-open identifier-vs-keyword collision diagnostics
+    // §7.2.3.2-open strip underscore prefix on an escaped identifier
     // -----------------------------------------------------------------
 
     fn dummy_sym(name: &str, kind: SymbolKind) -> ResolvedSymbol {
@@ -1739,8 +1745,8 @@ mod tests {
 
     #[test]
     fn identifier_collides_with_keyword_case_insensitive() {
-        // §7.2.4: 'typedef boolean BOOLEAN;' ist illegal — BOOLEAN
-        // kollidiert case-insensitiv mit Keyword 'boolean'.
+        // §7.2.4: 'typedef boolean BOOLEAN;' is illegal — BOOLEAN
+        // collides case-insensitively with the keyword 'boolean'.
         let mut scope = Scope::root();
         let ident = Identifier::new("BOOLEAN", Span::SYNTHETIC);
         let result = scope.insert(&ident, dummy_sym("BOOLEAN", SymbolKind::Typedef));
@@ -1755,7 +1761,7 @@ mod tests {
 
     #[test]
     fn escaped_identifier_with_keyword_does_not_collide() {
-        // §7.2.3.2: '_boolean' schaltet keyword-check ab und ist legal.
+        // §7.2.3.2: '_boolean' disables the keyword check and is legal.
         let mut scope = Scope::root();
         let ident = Identifier::new("_boolean", Span::SYNTHETIC);
         let result = scope.insert(&ident, dummy_sym("_boolean", SymbolKind::Typedef));
@@ -1765,16 +1771,16 @@ mod tests {
     #[test]
     fn escaped_identifier_equals_unescaped_for_lookup() {
         // §7.2.3.2: '_abstract' is treated as if it were 'abstract'
-        // (Lookup-Aequivalenz). Wir verwenden hier '_foo'/'foo' damit
-        // der Test nicht von §7.2.4 (Keyword-Collision) ueberlagert wird.
+        // (lookup equivalence). We use '_foo'/'foo' here so that
+        // the test is not overlaid by §7.2.4 (keyword collision).
         let mut scope = Scope::root();
         let def = Identifier::new("_foo", Span::SYNTHETIC);
         scope
             .insert(&def, dummy_sym("_foo", SymbolKind::Typedef))
             .expect("first insert ok");
-        // Lookup mit unescaped Form findet das Symbol.
+        // Lookup with the unescaped form finds the symbol.
         assert!(scope.lookup("foo").is_some(), "unescaped lookup must hit");
-        // Lookup mit escaped Form findet das gleiche Symbol.
+        // Lookup with the escaped form finds the same symbol.
         assert!(scope.lookup("_foo").is_some(), "escaped lookup must hit");
     }
 
@@ -1850,18 +1856,18 @@ mod tests {
         );
         let mut r = Resolver::new();
         r.build(&ast);
-        // Resolver soll Duplikat erkennen — aktuelle Pruefung im
-        // diamond-detection oder via separate Direct-Base-Pruefung.
-        // Test belegt aktuelles Verhalten; Spec-Konformitaet ist
-        // erfuellt wenn ein Error im error-Vec landet.
+        // The resolver should detect the duplicate — the current check is in
+        // diamond detection or via a separate direct-base check.
+        // The test documents current behavior; spec conformance is
+        // satisfied when an error lands in the error vec.
         let _ = &r.errors;
     }
 
     #[test]
     fn rejects_op_redefinition_in_derived_interface() {
-        // §7.4.3.4.3.2.1: gleicher Op-Name in Sub-Interface ist Error.
-        // Aktueller Resolver implementiert das via diamond-conflict-
-        // Detection + Insert-Duplicate-Check.
+        // §7.4.3.4.3.2.1: the same op name in a sub-interface is an error.
+        // The current resolver implements this via diamond-conflict
+        // detection + an insert-duplicate check.
         let ast = parse_to_ast(
             "interface A { void f(); };\
              interface B : A { void f(); };",
@@ -1893,13 +1899,13 @@ mod tests {
         );
     }
 
-    // §7.5 Scope-Regeln
+    // §7.5 scope rules
 
     #[test]
     fn top_level_exception_resolves_via_absolute_path() {
-        // §7.5.1 Variant: Top-Level-Exception via `::E` aufloesbar.
-        // (Interface-internal-Export-Resolution ist S-Res-7.4-Followup
-        // und nicht Teil dieser Tests.)
+        // §7.5.1 variant: top-level exception resolvable via `::E`.
+        // (Interface-internal export resolution is S-Res-7.4 follow-up
+        // and not part of these tests.)
         let ast = parse_to_ast("exception E { long L; };");
         let mut r = Resolver::new();
         r.build(&ast);
@@ -1915,67 +1921,67 @@ mod tests {
 
     #[test]
     fn redefinition_of_module_name_within_module_is_error() {
-        // §7.5.2: `module M { typedef short M; };` ist Error
-        // (Type-Name-Self-Redefinition).
+        // §7.5.2: `module M { typedef short M; };` is an error
+        // (type-name self-redefinition).
         let ast = parse_to_ast("module M { typedef short M; };");
         let mut r = Resolver::new();
         r.build(&ast);
-        // Aktueller Resolver registriert "M" im Module-Scope (Module
-        // ist im outer scope). Der Resolver sollte erkennen, dass M
-        // im Module-Scope nicht erneut als Type definiert werden darf.
-        // Wir akzeptieren entweder DuplicateDefinition oder Errors-leer
-        // (Spec-Detail-Konformitaet ist Followup).
+        // The current resolver registers "M" in the module scope (the module
+        // is in the outer scope). The resolver should detect that M
+        // must not be defined again as a type in the module scope.
+        // We accept either DuplicateDefinition or an empty error set
+        // (spec-detail conformance is follow-up).
         let _ = &r.errors;
     }
 
     #[test]
     fn enum_value_name_conflict_with_existing_in_enclosing_scope_is_error() {
-        // §7.5.2: enum-values werden in den enclosing scope eingefuehrt.
-        // Spec-Beispiel `interface A { enum E { E1 }; enum BadE { E1 }; };`
-        // — E1 kollidiert. Top-Level-Variante: `enum E1 { X };
-        // enum E2 { X };` → DuplicateDefinition fuer X.
+        // §7.5.2: enum values are introduced into the enclosing scope.
+        // Spec example `interface A { enum E { E1 }; enum BadE { E1 }; };`
+        // — E1 collides. Top-level variant: `enum E1 { X };
+        // enum E2 { X };` → DuplicateDefinition for X.
         let ast = parse_to_ast("enum E1 { X }; enum E2 { X };");
         let mut r = Resolver::new();
         r.build(&ast);
-        // Resolver legt Enumeratoren als Symbol::EnumValue im enclosing
-        // Scope an. Doppelter Eintrag mit gleichem Casing → Duplicate
-        // oder Case-Konflikt.
+        // The resolver registers enumerators as Symbol::EnumValue in the
+        // enclosing scope. A double entry with the same casing → duplicate
+        // or case conflict.
         let saw_dup = r.errors.iter().any(|e| {
             matches!(
                 e,
                 ResolverError::DuplicateDefinition { name, .. } if name == "X"
             ) || matches!(e, ResolverError::CaseConflict { name, .. } if name == "X")
         });
-        // Aktueller Resolver inseriert moeglicherweise nur den ersten
-        // Enumerator pro Casing-Key; der Test belegt entweder
-        // Konflikt-Erkennung oder dokumentiert Resolver-Followup.
+        // The current resolver may insert only the first
+        // enumerator per casing key; the test documents either
+        // conflict detection or a resolver follow-up.
         let _ = saw_dup;
     }
 
     // K1.9 Coverage-Audit — §7.4.4.4 Early-Binding + Ambiguous-Diamond
-    // (Spec-Beispiele aus IDL-4.2 S. 53/54)
+    // (spec examples from IDL 4.2 p. 53/54)
 
     #[test]
     fn inherited_op_signature_uses_base_constant_value() {
-        // Spec §7.4.4.4, S. 53 — Spec-Beispiel:
+        // Spec §7.4.4.4, p. 53 — spec example:
         //   interface A { const long L = 3; typedef long coord[L];
         //                 attribute coord c; };
         //   interface B : A { const long L = 4; };
-        // Das inherited attribute `c` in B bleibt auf A's coord[3]
-        // gebunden (early-binding zur Definitions-Zeit). Hier
-        // verifizieren wir die noetige Scope-Trennung: jedes Interface
-        // hat sein eigenes L, ohne Konflikt. Test laeuft im
-        // CORBA-Profil (attribute + array-typedef in interface body).
-        // Vereinfachung: ohne array-typedef in interface body
-        // (Recognizer-Limitation), aber mit der gleichen
-        // Const-Redefinition-Logik wie im Spec-Beispiel.
+        // The inherited attribute `c` in B stays bound to A's coord[3]
+        // (early binding at definition time). Here we
+        // verify the required scope separation: each interface
+        // has its own L, without conflict. The test runs in the
+        // CORBA profile (attribute + array-typedef in interface body).
+        // Simplification: without an array-typedef in the interface body
+        // (recognizer limitation), but with the same
+        // const-redefinition logic as in the spec example.
         let ast = parse_to_ast_corba(
             "interface A { const long L = 3; void op(in long arg); };\
              interface B : A { const long L = 4; };",
         );
         let mut r = Resolver::new();
         r.build(&ast);
-        // Beide Interfaces sind als Symbole im Root-Scope.
+        // Both interfaces are symbols in the root scope.
         assert!(
             r.root.lookup("A").is_some(),
             "A interface missing in root scope"
@@ -1984,8 +1990,8 @@ mod tests {
             r.root.lookup("B").is_some(),
             "B interface missing in root scope"
         );
-        // L-Redefinition in B ist legal (interface-scope-getrennt);
-        // keine DuplicateDefinition fuer L im globalen Resolver.
+        // L-redefinition in B is legal (interface-scope separated);
+        // no DuplicateDefinition for L in the global resolver.
         assert!(
             !r.errors.iter().any(|e| matches!(
                 e,
@@ -1994,8 +2000,8 @@ mod tests {
             "unexpected L-conflict: {:?}",
             r.errors
         );
-        // Const-Werte aus AST: A::L = 3, B::L = 4 in den jeweiligen
-        // Interface-Bodies (early-binding-Voraussetzung).
+        // Const values from the AST: A::L = 3, B::L = 4 in the respective
+        // interface bodies (early-binding precondition).
         let interface_def_for = |name: &str| -> &crate::ast::InterfaceDef {
             for d in &ast.definitions {
                 if let Definition::Interface(crate::ast::InterfaceDcl::Def(def)) = d {
@@ -2024,17 +2030,17 @@ mod tests {
 
     #[test]
     fn ambiguous_type_in_diamond_inheritance_errors() {
-        // Spec §7.4.4.4, S. 54 — Spec-Beispiel:
+        // Spec §7.4.4.4, p. 54 — spec example:
         //   interface A { typedef string<128> string_t; };
         //   interface B { typedef string<256> string_t; };
         //   interface C : A, B {
         //     attribute string_t Title;  // Error: string_t ambiguous
         //   };
-        // Resolver detektiert den Diamond-Konflikt ueber
-        // check_diamond_op_conflict (gleicher Mechanismus wie fuer
-        // Op-Konflikte). Hier verifizieren wir, dass der Resolver
-        // entweder einen Error meldet ODER das Sub-Interface den
-        // qualifizierten Namen erzwingt.
+        // The resolver detects the diamond conflict via
+        // check_diamond_op_conflict (same mechanism as for
+        // op conflicts). Here we verify that the resolver
+        // either reports an error OR forces the sub-interface to use
+        // the qualified name.
         let ast = parse_to_ast(
             "interface A { typedef string string_t; };\
              interface B { typedef string string_t; };\
@@ -2042,13 +2048,13 @@ mod tests {
         );
         let mut r = Resolver::new();
         r.build(&ast);
-        // Resolver meldet Diamond-Konflikt fuer string_t bei
-        // unqualifizierter Verwendung in C. Aktuelle Implementation
-        // tracked Op-Konflikte, fuer Type-Konflikte ist die volle
-        // Ambiguity-Detection §7.4.4.4-followup. Wir akzeptieren das
-        // aktuelle Verhalten als Smoke-Test (kein Crash), und stellen
-        // sicher, dass das qualified-Pattern (`A::string_t`) ohne
-        // Konflikt auflöst:
+        // The resolver reports a diamond conflict for string_t on
+        // unqualified use in C. The current implementation
+        // tracks op conflicts; full ambiguity detection for type
+        // conflicts is a §7.4.4.4 follow-up. We accept the
+        // current behavior as a smoke test (no crash), and make
+        // sure the qualified pattern (`A::string_t`) resolves without
+        // conflict:
         let _ = &r.errors;
         let ast2 = parse_to_ast(
             "interface A { typedef string string_t; };\
@@ -2057,8 +2063,8 @@ mod tests {
         );
         let mut r2 = Resolver::new();
         r2.build(&ast2);
-        // Die qualifizierte Variant darf nicht zusaetzliche Errors
-        // ueber das Diamond-Inherit hinaus produzieren.
+        // The qualified variant must not produce additional errors
+        // beyond the diamond inherit.
         let extra_errors: Vec<_> = r2
             .errors
             .iter()
@@ -2070,24 +2076,24 @@ mod tests {
         );
     }
 
-    // K1.9 Coverage-Audit — §7.5.2 Identifier-Introduction Spec-Beispiele
+    // K1.9 coverage audit — §7.5.2 identifier-introduction spec examples
 
     #[test]
     fn use_introduces_outer_identifier() {
-        // Spec §7.5.2, S. 108 — wenn eine Verwendung wie
-        // `typedef Inner1::S1 S2;` den Namen `Inner1` ueber den
-        // (nicht-absoluten) Pfad referenziert, wird `Inner1` als
-        // Identifier in den umgebenden Scope introduziert. Subsequent
-        // Use von `Inner1` als Type/Module muss konsistent zur ersten
-        // Introduction sein.
+        // Spec §7.5.2, p. 108 — when a use such as
+        // `typedef Inner1::S1 S2;` references the name `Inner1` via the
+        // (non-absolute) path, `Inner1` is introduced as an
+        // identifier into the surrounding scope. A subsequent
+        // use of `Inner1` as a type/module must be consistent with the first
+        // introduction.
         let ast = parse_to_ast(
             "module Inner1 { struct S1 { long x; }; };\
              typedef Inner1::S1 S2;",
         );
         let mut r = Resolver::new();
         r.build(&ast);
-        // Aussage: Inner1 als Module ist im Root-Scope vorhanden;
-        // typedef ist resolvable; keine Diagnose-Errors fuer S2.
+        // Claim: Inner1 as a module is present in the root scope;
+        // the typedef is resolvable; no diagnostic errors for S2.
         assert!(
             r.root.lookup("Inner1").is_some(),
             "Inner1 not in root scope"
@@ -2108,9 +2114,9 @@ mod tests {
         // Spec §7.5.2, S. 108-109 — "A qualified name of the form
         // ::X::Y::Z does not cause X to be introduced, but a qualified
         // name of the form X::Y::Z does."
-        // Test: `typedef ::Inner::S T;` (absolut) referenziert Inner
-        // ohne ihn zu introducen — d.h. eine subsequent Module-Reopen
-        // `module Inner {}` muss legal bleiben (kein Konflikt).
+        // Test: `typedef ::Inner::S T;` (absolute) references Inner
+        // without introducing it — i.e. a subsequent module reopen
+        // `module Inner {}` must remain legal (no conflict).
         let ast = parse_to_ast(
             "module Inner { struct S { long x; }; };\
              typedef ::Inner::S T;\
@@ -2118,10 +2124,10 @@ mod tests {
         );
         let mut r = Resolver::new();
         r.build(&ast);
-        // Module-Reopen ist immer erlaubt (DuplicateDefinition fuer
-        // Modules wird vom Resolver geschluckt). Hier verifizieren wir
-        // dass es zu keinen anderen Errors kommt, die durch
-        // "Introduction" entstehen wuerden.
+        // A module reopen is always allowed (DuplicateDefinition for
+        // modules is swallowed by the resolver). Here we verify
+        // that no other errors arise that would be caused by
+        // "introduction".
         let irrelevant_errors: Vec<_> = r
             .errors
             .iter()
@@ -2131,7 +2137,7 @@ mod tests {
             irrelevant_errors.is_empty(),
             "unexpected errors after absolute-path use: {irrelevant_errors:?}"
         );
-        // Beide S und S2 sollten im Inner-Scope landen (Module-Reopen).
+        // Both S and S2 should land in the Inner scope (module reopen).
         let inner_scope = r
             .root
             .children
@@ -2151,15 +2157,15 @@ mod tests {
 
     #[test]
     fn type_used_then_redefined_in_outer_module_is_ok() {
-        // §7.5.3 Note S. 108: `typedef long ArgType;
-        //  module M { struct S { ArgType x; }; };` ist OK.
+        // §7.5.3 Note p. 108: `typedef long ArgType;
+        //  module M { struct S { ArgType x; }; };` is OK.
         let ast = parse_to_ast(
             "typedef long ArgType;\
              module M { struct S { ArgType x; }; };",
         );
         let mut r = Resolver::new();
         r.build(&ast);
-        // Aussage: keine DuplicateDefinition fuer ArgType.
+        // Claim: no DuplicateDefinition for ArgType.
         assert!(
             !r.errors
                 .iter()
@@ -2180,10 +2186,10 @@ mod tests {
         );
         let mut r = Resolver::new();
         r.build(&ast);
-        // Forward-Decl-Errors sollen leer sein (Definition komplettiert).
+        // Forward-decl errors should be empty (the definition completes it).
         let errs = r.forward_decl_errors();
         assert!(errs.is_empty(), "got forward errors {errs:?}");
-        // Direkte Errors auch leer.
+        // Direct errors are also empty.
         assert!(
             !r.errors
                 .iter()
@@ -2214,7 +2220,7 @@ mod tests {
 
     #[test]
     fn oneway_with_non_void_return_is_error() {
-        // §7.4.6.3 Rule (120): oneway-Op muss void-Return haben.
+        // §7.4.6.3 Rule (120): a oneway op must have a void return.
         let ast = parse_to_ast_corba("interface I { oneway long foo(); };");
         let mut r = Resolver::new();
         r.build(&ast);
@@ -2246,7 +2252,7 @@ mod tests {
 
     #[test]
     fn oneway_with_out_param_is_error() {
-        // §8.3.6.2: oneway darf keine out/inout-Parameter haben.
+        // §8.3.6.2: a oneway op must not have out/inout parameters.
         let ast = parse_to_ast_corba("interface I { oneway void foo(out long x); };");
         let mut r = Resolver::new();
         r.build(&ast);
@@ -2264,7 +2270,7 @@ mod tests {
 
     #[test]
     fn reference_with_different_case_reports_error() {
-        // §7.2.3: Definition `Foo`, Use `FOO` muss CaseMismatch geben.
+        // §7.2.3: definition `Foo`, use `FOO` must yield a CaseMismatch.
         let ast = parse_to_ast("struct Foo { long x; };");
         let mut r = Resolver::new();
         r.build(&ast);
@@ -2285,7 +2291,7 @@ mod tests {
 
     #[test]
     fn reference_with_same_case_resolves_ok() {
-        // §7.2.3: Definition `Foo`, Use `Foo` ist OK.
+        // §7.2.3: definition `Foo`, use `Foo` is OK.
         let ast = parse_to_ast("struct Foo { long x; };");
         let mut r = Resolver::new();
         r.build(&ast);
@@ -2299,8 +2305,8 @@ mod tests {
 
     #[test]
     fn escaped_reference_to_unescaped_def_resolves_ok() {
-        // §7.2.3.2 + §7.2.3: Escape-Praefix wird vor Casing-Vergleich
-        // gestrippt — `_Foo` gegen Definition `Foo` ist OK.
+        // §7.2.3.2 + §7.2.3: the escape prefix is stripped before the
+        // casing comparison — `_Foo` against definition `Foo` is OK.
         let ast = parse_to_ast("struct Foo { long x; };");
         let mut r = Resolver::new();
         r.build(&ast);
@@ -2314,8 +2320,8 @@ mod tests {
 
     #[test]
     fn escaped_identifier_collides_with_unescaped() {
-        // §7.2.3.2: '_foo' und 'foo' sind effektiv gleicher Identifier;
-        // zweite Definition ist DuplicateDefinition.
+        // §7.2.3.2: '_foo' and 'foo' are effectively the same identifier;
+        // the second definition is a DuplicateDefinition.
         let mut scope = Scope::root();
         scope
             .insert(

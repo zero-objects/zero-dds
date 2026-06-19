@@ -22,5 +22,6 @@ name = "zerodds-xmlc"
 path = "src/main.rs"
 
 [dependencies]
+zerodds-xml = { version = "1.0.0-rc.3", path = "../../crates/xml" }
 
 [dev-dependencies]

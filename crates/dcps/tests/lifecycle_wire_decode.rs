@@ -1,10 +1,10 @@
-//! WP QoS-Wiring T8b — Reader-Side Wire-Lifecycle-Decode.
+//! WP QoS-Wiring T8b — reader-side wire-lifecycle decode.
 //!
-//! Spec DDS 1.4 §8.2.1.2 + §9.6.3.9: ReliableReader klassifiziert
-//! eingehende DATA-Submessages mit `key_flag=true` und PID_STATUS_INFO
-//! als Lifecycle-Marker. delivered_to_user_sample konvertiert das in
-//! eine `UserSample::Lifecycle`-Variante, die der DCPS-DataReader-Layer
-//! per __push_lifecycle in den Tracker fuettert.
+//! Spec DDS 1.4 §8.2.1.2 + §9.6.3.9: ReliableReader classifies
+//! incoming DATA submessages with `key_flag=true` and PID_STATUS_INFO
+//! as lifecycle markers. delivered_to_user_sample converts that into
+//! a `UserSample::Lifecycle` variant, which the DCPS DataReader layer
+//! feeds into the tracker via __push_lifecycle.
 
 #![allow(
     clippy::expect_used,
@@ -87,8 +87,8 @@ fn mk_pair() -> (
 
 #[test]
 fn reader_push_lifecycle_disposed_sets_instance_state() {
-    // Direkt-Test des __push_lifecycle-Pfades, der vom Live-Channel
-    // bei Wire-Lifecycle-Sample gerufen wird.
+    // Direct test of the __push_lifecycle path, called by the live
+    // channel on a wire-lifecycle sample.
     let (w, r) = mk_pair();
     let s = KeyedRecord { id: 7, value: 42 };
     w.write(&s).expect("write");
@@ -97,7 +97,7 @@ fn reader_push_lifecycle_disposed_sets_instance_state() {
     }
     let _ = r.take_with_info().expect("take initial");
 
-    // Lifecycle-Marker mit Disposed-Bit pushen.
+    // Push a lifecycle marker with the disposed bit.
     let mut holder = PlainCdr2BeKeyHolder::new();
     s.encode_key_holder_be(&mut holder);
     let key_bytes = holder.as_bytes().to_vec();
@@ -111,7 +111,7 @@ fn reader_push_lifecycle_disposed_sets_instance_state() {
         samples.iter().any(|s| {
             !s.info.valid_data && s.info.instance_state == InstanceStateKind::NotAliveDisposed
         }),
-        "Reader muss disposed-marker mit valid_data=false sehen, got {samples:?}"
+        "Reader must see disposed marker with valid_data=false, got {samples:?}"
     );
 }
 
@@ -138,6 +138,6 @@ fn reader_push_lifecycle_unregistered_sets_instance_state() {
         samples
             .iter()
             .any(|s| s.info.instance_state == InstanceStateKind::NotAliveNoWriters),
-        "Reader muss unregister-marker als NoWriters sehen, got {samples:?}"
+        "Reader must see unregister marker as NoWriters, got {samples:?}"
     );
 }

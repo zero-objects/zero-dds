@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! XML-Loader fuer D&C-Plan-Files — Spec D&C §10 (XML-Encoding).
+//! XML loader for D&C plan files — spec D&C §10 (XML encoding).
 //!
-//! Spec §10 spezifiziert das XML-Schema (`Deployment.xsd`). Wir
-//! implementieren einen minimalen, robusten Parser fuer die
-//! Plan-Strukturen, die Caller typischerweise schreiben:
+//! Spec §10 specifies the XML schema (`Deployment.xsd`). We implement
+//! a minimal, robust parser for the plan structures that callers
+//! typically write:
 //!
 //! ```xml
 //! <deploymentPlan>
@@ -34,14 +34,14 @@ use crate::plan::{
     DeploymentPlan, ImplementationDescription, InstanceDeploymentDescription, PlanConnection,
 };
 
-/// XML-Parser-Fehler.
+/// XML parser error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// Erwartetes Tag nicht gefunden.
+    /// Expected tag not found.
     ExpectedTag(String),
-    /// Tag ist nicht abgeschlossen.
+    /// Tag is not closed.
     UnterminatedTag,
-    /// Plan-Validation fehlgeschlagen.
+    /// Plan validation failed.
     ValidationFailed(String),
 }
 
@@ -58,11 +58,11 @@ impl core::fmt::Display for ParseError {
 #[cfg(feature = "std")]
 impl std::error::Error for ParseError {}
 
-/// Parst ein D&C `<deploymentPlan>`-XML in einen [`DeploymentPlan`].
+/// Parses a D&C `<deploymentPlan>` XML into a [`DeploymentPlan`].
 ///
-/// Der Parser ist strikt sequenziell und erwartet die Spec-Reihenfolge
+/// The parser is strictly sequential and expects the spec order
 /// `<label>` → `<UUID>` → `<realizes>?` → `<implementation>*` →
-/// `<instance>*` → `<connection>*`. Whitespace wird ignoriert.
+/// `<instance>*` → `<connection>*`. Whitespace is ignored.
 ///
 /// # Errors
 /// Siehe [`ParseError`].
@@ -79,12 +79,12 @@ pub fn parse_plan_xml(input: &str) -> Result<DeploymentPlan, ParseError> {
         ..DeploymentPlan::default()
     };
 
-    // Spec §10 — Plan-Body hat `<implementation>`, `<instance>`,
-    // `<connection>` als Top-Level-Children. Da `<instance>` selbst
-    // ein `<implementation>`-Leaf-Element traegt (Reference auf eine
-    // ImplementationDescription per label), parsen wir Instances
-    // zuerst und entfernen ihre Bloecke aus dem Body, bevor wir nach
-    // weiteren Top-Level-Implementations suchen.
+    // Spec §10 — the plan body has `<implementation>`, `<instance>`,
+    // and `<connection>` as top-level children. Since `<instance>`
+    // itself carries an `<implementation>` leaf element (a reference to
+    // an ImplementationDescription by label), we parse instances first
+    // and strip their blocks from the body before looking for further
+    // top-level implementations.
     let instance_blocks = iter_blocks(&body, "instance");
     let connection_blocks = iter_blocks(&body, "connection");
     let body_without_instances = strip_blocks(&body, "instance");

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// TypeSupport-Interface fuer XCDR2-codierbare DDS-Topic-Types.
+// TypeSupport interface for XCDR2-encodable DDS topic types.
 // Spec: zerodds-xcdr2-csharp-1.0 §2 / §3.
 
 using System;
@@ -9,45 +9,45 @@ using System;
 namespace ZeroDDS.Cdr;
 
 /// <summary>
-/// Generisches TypeSupport-Interface laut zerodds-xcdr2-csharp-1.0 §2.
-/// Pro IDL-`struct` emittiert `idl-csharp` einen `*TypeSupport`-Singleton
-/// der dieses Interface implementiert.
+/// Generic TypeSupport interface per zerodds-xcdr2-csharp-1.0 §2.
+/// For each IDL `struct`, `idl-csharp` emits a `*TypeSupport` singleton
+/// that implements this interface.
 /// </summary>
-/// <typeparam name="T">Konkreter DDS-Sample-Type (Reference- oder Value-Type, MUSS not-null sein).</typeparam>
+/// <typeparam name="T">Concrete DDS sample type (reference or value type, MUST be non-null).</typeparam>
 public interface IDdsTopicType<T> where T : notnull
 {
     /// <summary>
-    /// DDS-Type-Name laut Spec-Konvention `Module1::Module2::Struct` (ASCII, max 256 Bytes).
-    /// Landet in PID_TYPE_NAME (Discovery) und TypeIdentifier-Lookup.
+    /// DDS type name per the spec convention `Module1::Module2::Struct` (ASCII, max 256 bytes).
+    /// Ends up in PID_TYPE_NAME (discovery) and TypeIdentifier lookup.
     /// </summary>
     string TypeName { get; }
 
-    /// <summary>`true` falls mindestens ein Member `@key` traegt.</summary>
+    /// <summary>`true` if at least one member carries `@key`.</summary>
     bool IsKeyed { get; }
 
-    /// <summary>Type-Extensibility laut XTypes §7.2.2.4.4.</summary>
+    /// <summary>Type extensibility per XTypes §7.2.2.4.4.</summary>
     ExtensibilityKind Extensibility { get; }
 
     /// <summary>
-    /// Encodes `sample` als XCDR2 Little-Endian Byte-Array (Default-Encoding).
+    /// Encodes `sample` as an XCDR2 little-endian byte array (default encoding).
     /// </summary>
     byte[] Encode(T sample);
 
     /// <summary>
-    /// Encodes `sample` mit explizitem Endianness-Mode.
+    /// Encodes `sample` with an explicit endianness mode.
     /// </summary>
     byte[] Encode(T sample, EndianMode endian);
 
     /// <summary>
-    /// Decodes `bytes` und liefert ein neu konstruiertes Sample.
+    /// Decodes `bytes` and returns a newly constructed sample.
     /// </summary>
-    /// <exception cref="XcdrException">Bei Wire-Format-Fehlern.</exception>
+    /// <exception cref="XcdrException">On wire-format errors.</exception>
     T Decode(ReadOnlySpan<byte> bytes);
 
     /// <summary>
-    /// Berechnet den 16-Byte Key-Hash gemaess XTypes §7.6.8 (MD5 ueber
-    /// `PlainCdr2BeKeyHolder` der `@key`-Felder).
-    /// Liefert 16 Null-Bytes wenn `IsKeyed == false`.
+    /// Computes the 16-byte key hash per XTypes §7.6.8 (MD5 over the
+    /// `PlainCdr2BeKeyHolder` of the `@key` fields).
+    /// Returns 16 zero bytes when `IsKeyed == false`.
     /// </summary>
     byte[] KeyHash(T sample);
 }

@@ -1,60 +1,59 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! KeyHash-Berechnung fuer DDS-Topics (XTypes 1.3 §7.6.8 + DDSI-RTPS
+//! KeyHash computation for DDS topics (XTypes 1.3 §7.6.8 + DDSI-RTPS
 //! 2.5 §9.6.4.8).
 //!
-//! Der **PID_KEY_HASH** (0x0070, 16 Byte) im Inline-QoS einer DATA/
-//! DATA_FRAG-Submessage adressiert die **Instanz** eines Sample.
-//! Ein Reader/Persistence-Service kann anhand dieses Hashes
-//! Samples derselben Instanz korrelieren, ohne den Payload deserialisieren
-//! zu muessen.
+//! The **PID_KEY_HASH** (0x0070, 16 bytes) in the inline QoS of a DATA/
+//! DATA_FRAG submessage addresses the **instance** of a sample.
+//! Using this hash, a reader/persistence service can correlate samples
+//! of the same instance without deserializing the payload.
 //!
-//! # Algorithmus (XTypes 1.3 §7.6.8 Steps 1-5)
+//! # Algorithm (XTypes 1.3 §7.6.8 Steps 1-5)
 //!
-//! 1. **Step 1** — Konstruktion eines `FooKeyHolder`-Aequivalents: nur
-//!    die `@key`-Member von `Foo`, sortiert nach `member_id` aufsteigend.
-//! 2. **Step 2** — Werte mit den `@key`-Werten der Instanz fuellen.
-//! 3. **Step 3** — Nested aggregate Members rekursiv expandieren (jeder
-//!    Sub-`@key`-Member ebenfalls in den KeyHolder).
-//! 4. **Step 4** — Serialisierung mit **PLAIN_CDR2 / Big-Endian**,
-//!    alignment 4, **ohne** Encapsulation-Header und **ohne** Member-
-//!    Header.
-//! 5. **Step 5** — Hash:
-//!    * Wenn die **maximale** serialisierte Groesse des KeyHolders
-//!      <= 16 Byte: KeyHash = Bytes von Step 4, mit Null-Bytes
-//!      auf 16 Byte gepadded.
-//!    * Sonst: KeyHash = MD5(Bytes von Step 4)[0..16].
+//! 1. **Step 1** — construct a `FooKeyHolder` equivalent: only the
+//!    `@key` members of `Foo`, sorted by `member_id` ascending.
+//! 2. **Step 2** — fill the values with the instance's `@key` values.
+//! 3. **Step 3** — expand nested aggregate members recursively (each
+//!    sub-`@key` member also goes into the KeyHolder).
+//! 4. **Step 4** — serialize with **PLAIN_CDR2 / big-endian**,
+//!    alignment 4, **without** an encapsulation header and **without** a
+//!    member header.
+//! 5. **Step 5** — hash:
+//!    * If the **maximum** serialized size of the KeyHolder
+//!      <= 16 bytes: KeyHash = bytes from Step 4, padded with null
+//!      bytes to 16 bytes.
+//!    * Otherwise: KeyHash = MD5(bytes from Step 4)[0..16].
 //!
-//! Die Entscheidung ist **statisch pro Topic-Type** — sie haengt von der
-//! Maximal-Groesse aller @key-Member ab, NICHT von der konkreten
-//! Instanz-Groesse. Ein Topic mit `@key string<8>` hat max=12 (4 byte
-//! length + 8 byte content) → zero-pad. Ein Topic mit `@key string`
-//! (ohne max-bound) hat keine fixe max-Groesse → MD5.
+//! The decision is **static per topic type** — it depends on the
+//! maximum size of all @key members, NOT on the concrete instance size.
+//! A topic with `@key string<8>` has max=12 (4-byte length + 8-byte
+//! content) -> zero-pad. A topic with `@key string` (without a max
+//! bound) has no fixed max size -> MD5.
 //!
 //! # WP 1.B Scope
 //!
-//! Dieses Modul liefert die low-level [`compute_key_hash`]-Funktion.
-//! Der DCPS-Sample-Encode-Pfad wiring (PID_KEY_HASH in Inline-QoS)
-//! folgt in der gleichen WP, im DcpsRuntime-Encoder.
+//! This module provides the low-level [`compute_key_hash`] function.
+//! Wiring it into the DCPS sample-encode path (PID_KEY_HASH in inline
+//! QoS) follows in the same WP, in the DcpsRuntime encoder.
 
 extern crate alloc;
 
 use alloc::vec::Vec;
 use zerodds_foundation::md5;
 
-/// Wire-Laenge eines KeyHash (Spec: 16 Byte).
+/// Wire length of a KeyHash (spec: 16 bytes).
 pub const KEY_HASH_LEN: usize = 16;
 
-/// Berechnet den 16-Byte KeyHash einer Instanz aus dem **PLAIN_CDR2-BE**
-/// serialisierten KeyHolder-Byte-Stream.
+/// Computes the 16-byte KeyHash of an instance from the **PLAIN_CDR2-BE**
+/// serialized KeyHolder byte stream.
 ///
-/// `plain_cdr2_be_bytes` MUSS bereits in PLAIN_CDR2-BE-Form vorliegen
-/// (Caller stellt das sicher — typisch via `DdsType::encode_key_holder`).
-/// `key_holder_max_size` ist die **statisch bekannte** maximale Groesse
-/// des KeyHolder-Streams in Bytes; entscheidet zwischen Zero-Pad und
-/// MD5-Pfad.
+/// `plain_cdr2_be_bytes` MUST already be in PLAIN_CDR2-BE form (the
+/// caller ensures this — typically via `DdsType::encode_key_holder`).
+/// `key_holder_max_size` is the **statically known** maximum size of the
+/// KeyHolder stream in bytes; it decides between the zero-pad and MD5
+/// paths.
 ///
-/// # Spec-Referenz
+/// # Spec reference
 /// XTypes 1.3 §7.6.8.4 (Steps 5.1, 5.2).
 #[must_use]
 pub fn compute_key_hash(
@@ -62,63 +61,63 @@ pub fn compute_key_hash(
     key_holder_max_size: usize,
 ) -> [u8; KEY_HASH_LEN] {
     if key_holder_max_size <= KEY_HASH_LEN {
-        // Step 5.1: zero-pad auf 16 byte.
+        // Step 5.1: zero-pad to 16 bytes.
         let mut out = [0u8; KEY_HASH_LEN];
         let n = core::cmp::min(plain_cdr2_be_bytes.len(), KEY_HASH_LEN);
         out[..n].copy_from_slice(&plain_cdr2_be_bytes[..n]);
         out
     } else {
-        // Step 5.2: MD5 erste 16 byte.
+        // Step 5.2: MD5, first 16 bytes.
         md5(plain_cdr2_be_bytes)
     }
 }
 
-/// Convenience-Builder fuer einen PLAIN_CDR2-BE-KeyHolder-Stream.
+/// Convenience builder for a PLAIN_CDR2-BE KeyHolder stream.
 ///
-/// PLAIN_CDR2 unterscheidet sich von XCDR1 in Alignment-Regel: maximales
-/// Alignment ist **4 Byte** (XTypes 1.3 §7.4.2.5.4) — `i64`/`f64` wird
-/// nicht 8-aligned. Dieser Builder kapselt die Alignment-Logik und
-/// vermeidet Drift mit dem zerodds-cdr-Buffer-Writer (der XCDR2-LE-default ist).
+/// PLAIN_CDR2 differs from XCDR1 in the alignment rule: maximum
+/// alignment is **4 bytes** (XTypes 1.3 §7.4.2.5.4) — `i64`/`f64` is
+/// not 8-aligned. This builder encapsulates the alignment logic and
+/// avoids drift with the zerodds-cdr buffer writer (which is XCDR2-LE by default).
 ///
-/// Member werden in der **Reihenfolge der `member_id` aufsteigend**
-/// hinzugefuegt (Spec-Pflicht §7.6.8.3.1.b).
+/// Members are added in **ascending `member_id` order** (spec
+/// requirement §7.6.8.3.1.b).
 #[derive(Debug, Default)]
 pub struct PlainCdr2BeKeyHolder {
     bytes: Vec<u8>,
 }
 
 impl PlainCdr2BeKeyHolder {
-    /// Leerer Builder.
+    /// Empty builder.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Aktuelle Stream-Laenge (typisch == max_size, wenn alle Member fest).
+    /// Current stream length (typically == max_size when all members are fixed).
     #[must_use]
     pub fn len(&self) -> usize {
         self.bytes.len()
     }
 
-    /// `true` wenn keine Bytes geschrieben.
+    /// `true` when no bytes have been written.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.bytes.is_empty()
     }
 
-    /// Gibt die fertigen Bytes zurueck.
+    /// Returns the finished bytes.
     #[must_use]
     pub fn into_bytes(self) -> Vec<u8> {
         self.bytes
     }
 
-    /// Zugriff auf die internen Bytes ohne Konsumieren.
+    /// Access to the internal bytes without consuming.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
     }
 
-    /// Padded auf `align`-Byte-Grenze (1, 2, 4 — max 4 nach §7.4.2.5.4).
+    /// Pads to an `align`-byte boundary (1, 2, 4 — max 4 per §7.4.2.5.4).
     fn pad_to(&mut self, align: usize) {
         let pad = (align - (self.bytes.len() % align)) % align;
         for _ in 0..pad {
@@ -126,96 +125,95 @@ impl PlainCdr2BeKeyHolder {
         }
     }
 
-    /// Schreibt einen u8.
+    /// Writes a u8.
     pub fn write_u8(&mut self, v: u8) {
         self.bytes.push(v);
     }
 
-    /// Schreibt einen i8.
+    /// Writes an i8.
     pub fn write_i8(&mut self, v: i8) {
         self.bytes.push(v as u8);
     }
 
-    /// Schreibt einen u16 in BE.
+    /// Writes a u16 in BE.
     pub fn write_u16(&mut self, v: u16) {
         self.pad_to(2);
         self.bytes.extend_from_slice(&v.to_be_bytes());
     }
 
-    /// Schreibt einen i16 in BE.
+    /// Writes an i16 in BE.
     pub fn write_i16(&mut self, v: i16) {
         self.pad_to(2);
         self.bytes.extend_from_slice(&v.to_be_bytes());
     }
 
-    /// Schreibt einen u32 in BE.
+    /// Writes a u32 in BE.
     pub fn write_u32(&mut self, v: u32) {
         self.pad_to(4);
         self.bytes.extend_from_slice(&v.to_be_bytes());
     }
 
-    /// Schreibt einen i32 in BE.
+    /// Writes an i32 in BE.
     pub fn write_i32(&mut self, v: i32) {
         self.pad_to(4);
         self.bytes.extend_from_slice(&v.to_be_bytes());
     }
 
-    /// Schreibt einen u64 in BE — alignment **4**, NICHT 8 (PLAIN_CDR2).
+    /// Writes a u64 in BE — alignment **4**, NOT 8 (PLAIN_CDR2).
     pub fn write_u64(&mut self, v: u64) {
         self.pad_to(4);
         self.bytes.extend_from_slice(&v.to_be_bytes());
     }
 
-    /// Schreibt einen i64 in BE — alignment 4.
+    /// Writes an i64 in BE — alignment 4.
     pub fn write_i64(&mut self, v: i64) {
         self.pad_to(4);
         self.bytes.extend_from_slice(&v.to_be_bytes());
     }
 
-    /// Schreibt einen f32 in BE.
+    /// Writes an f32 in BE.
     pub fn write_f32(&mut self, v: f32) {
         self.pad_to(4);
         self.bytes.extend_from_slice(&v.to_be_bytes());
     }
 
-    /// Schreibt einen f64 in BE — alignment 4.
+    /// Writes an f64 in BE — alignment 4.
     pub fn write_f64(&mut self, v: f64) {
         self.pad_to(4);
         self.bytes.extend_from_slice(&v.to_be_bytes());
     }
 
-    /// Schreibt eine bounded String in CDR-Form (4-byte length BE +
-    /// utf8-Bytes inkl. terminating NUL). Caller stellt sicher, dass
-    /// die Laenge die statische Bound nicht ueberschreitet (sonst
-    /// kollidiert das mit `key_holder_max_size`).
+    /// Writes a bounded string in CDR form (4-byte length BE +
+    /// UTF-8 bytes incl. terminating NUL). The caller ensures that the
+    /// length does not exceed the static bound (otherwise it collides
+    /// with `key_holder_max_size`).
     pub fn write_string(&mut self, s: &str) {
         self.pad_to(4);
         let len = u32::try_from(s.len() + 1).unwrap_or(u32::MAX);
         self.bytes.extend_from_slice(&len.to_be_bytes());
         self.bytes.extend_from_slice(s.as_bytes());
-        self.bytes.push(0); // NUL-Terminator
+        self.bytes.push(0); // NUL terminator
     }
 
-    /// Schreibt einen rohen byte-Slice (z.B. fuer Octet-Arrays).
+    /// Writes a raw byte slice (e.g. for octet arrays).
     pub fn write_bytes(&mut self, b: &[u8]) {
         self.bytes.extend_from_slice(b);
     }
 }
 
-/// Berechnet den KeyHash aus einer **unsortierten** Liste von
-/// `(member_id, key_value_bytes)`-Paaren. Die Funktion sortiert die
-/// Eintraege nach `member_id` aufsteigend (Spec-Pflicht §7.6.8.3.1.b)
-/// und konkateniert die `key_value_bytes` in dieser Reihenfolge — der
-/// Caller liefert pro Member bereits die PLAIN_CDR2-BE-Bytes des
-/// Werts, dieser Helper kapselt nur die Sortier-Pflicht.
+/// Computes the KeyHash from an **unsorted** list of
+/// `(member_id, key_value_bytes)` pairs. The function sorts the entries
+/// by `member_id` ascending (spec requirement §7.6.8.3.1.b) and
+/// concatenates the `key_value_bytes` in that order — the caller
+/// already provides the PLAIN_CDR2-BE bytes of the value per member,
+/// this helper only encapsulates the sorting requirement.
 ///
-/// Das ist die Lecke, gegen die §7.4.5 normativ ist: zwei Encoder-
-/// Implementierungen, die ihre @key-Member in unterschiedlicher
-/// Reihenfolge aufzaehlen, MUESSEN trotzdem denselben KeyHash
-/// produzieren. Der Helper erzwingt das, sodass das nicht der
-/// Disziplin des Caller-Codes ueberlassen bleibt.
+/// This is the gap that §7.4.5 is normative against: two encoder
+/// implementations that enumerate their @key members in different
+/// order MUST nonetheless produce the same KeyHash. The helper enforces
+/// this so it is not left to the discipline of the caller code.
 ///
-/// `key_holder_max_size` wie in [`compute_key_hash`].
+/// `key_holder_max_size` as in [`compute_key_hash`].
 #[must_use]
 pub fn keyhash_cdr2_be(
     members: &[(u32, alloc::vec::Vec<u8>)],
@@ -240,7 +238,7 @@ mod tests {
 
     #[test]
     fn small_keyholder_zero_padded_to_16() {
-        // Single u32 = 4 byte → max 4 ≤ 16 → zero-pad.
+        // Single u32 = 4 bytes -> max 4 <= 16 -> zero-pad.
         let bytes = 0x1234_5678u32.to_be_bytes();
         let h = compute_key_hash(&bytes, 4);
         assert_eq!(h[0..4], [0x12, 0x34, 0x56, 0x78]);
@@ -259,7 +257,7 @@ mod tests {
 
     #[test]
     fn input_shorter_than_max_zero_padded() {
-        // max=16 statisch, aber nur 5 byte tatsaechlich
+        // max=16 statically, but only 5 bytes actually
         let h = compute_key_hash(&[1, 2, 3, 4, 5], 16);
         assert_eq!(&h[..5], &[1, 2, 3, 4, 5]);
         assert_eq!(&h[5..], &[0u8; 11]);
@@ -269,10 +267,10 @@ mod tests {
 
     #[test]
     fn large_keyholder_md5_hashed() {
-        // max=20 → MD5-Pfad
+        // max=20 -> MD5 path
         let bytes = [0u8; 20];
         let h = compute_key_hash(&bytes, 20);
-        // MD5(20 zero bytes) bekannt: 0x441018525208457705bf09a8ee3c1093
+        // MD5(20 zero bytes) known: 0x441018525208457705bf09a8ee3c1093
         assert_eq!(
             h,
             [
@@ -322,7 +320,7 @@ mod tests {
         let mut h = PlainCdr2BeKeyHolder::new();
         h.write_u8(0xAA);
         h.write_u32(0x1234_5678);
-        // u8 (1) + 3 pad + u32 (4) = 8 byte
+        // u8 (1) + 3 pad + u32 (4) = 8 bytes
         assert_eq!(h.into_bytes(), vec![0xAA, 0, 0, 0, 0x12, 0x34, 0x56, 0x78]);
     }
 
@@ -331,8 +329,8 @@ mod tests {
         let mut h = PlainCdr2BeKeyHolder::new();
         h.write_u8(1);
         h.write_u64(0x1122_3344_5566_7788);
-        // PLAIN_CDR2: u64 ist 4-aligned, nicht 8 → 1 pad nach u8 = 3
-        // bytes pad, dann 8 byte u64
+        // PLAIN_CDR2: u64 is 4-aligned, not 8 -> 1 pad after u8 = 3
+        // bytes pad, then 8-byte u64
         assert_eq!(h.len(), 1 + 3 + 8);
     }
 
@@ -346,12 +344,12 @@ mod tests {
 
     #[test]
     fn keyholder_struct_member_order() {
-        // Beispiel-KeyHolder mit @key id:u32 + @key topic:string<8>
+        // Example KeyHolder with @key id:u32 + @key topic:string<8>
         let mut h = PlainCdr2BeKeyHolder::new();
         h.write_u32(42); // id (member_id 0)
         h.write_string("foo"); // topic (member_id 1)
         let bytes = h.into_bytes();
-        // u32 4 + length-be(4) + "foo\0" (4) = 12 byte
+        // u32 4 + length-be(4) + "foo\0" (4) = 12 bytes
         assert_eq!(bytes.len(), 12);
         assert_eq!(&bytes[0..4], &[0, 0, 0, 42]);
         assert_eq!(&bytes[4..8], &[0, 0, 0, 4]);
@@ -360,7 +358,7 @@ mod tests {
 
     #[test]
     fn keyholder_full_keyhash_pipeline_zero_pad() {
-        // Topic mit @key u32 → max 4 byte → zero-pad
+        // Topic with @key u32 -> max 4 bytes -> zero-pad
         let mut h = PlainCdr2BeKeyHolder::new();
         h.write_u32(0x1122_3344);
         let h_bytes = h.into_bytes();
@@ -371,23 +369,23 @@ mod tests {
 
     #[test]
     fn keyholder_full_keyhash_pipeline_md5() {
-        // Topic mit @key string (unbounded) → MD5
+        // Topic with @key string (unbounded) -> MD5
         let mut h = PlainCdr2BeKeyHolder::new();
         h.write_string("hello-world-this-is-a-long-key-name-exceeding-16");
         let h_bytes = h.into_bytes();
-        // max_size > 16 → MD5
+        // max_size > 16 -> MD5
         let key = compute_key_hash(&h_bytes, usize::MAX);
-        // 16 byte deterministischer Hash, ungleich allen-null
+        // 16-byte deterministic hash, not all-zero
         assert_ne!(key, [0u8; 16]);
     }
 
-    // ---- §7.4.5 / §7.6.8.3.1.b — KeyHash CDR2-BE Member-Sort by memberId ----
+    // ---- §7.4.5 / §7.6.8.3.1.b — KeyHash CDR2-BE member sort by memberId ----
 
     #[test]
     fn keyhash_cdr2_be_member_order_independent() {
-        // Drei @key Member mit IDs 7, 3, 5. Encoder-Caller A liefert in
-        // [3, 5, 7]; Encoder-Caller B liefert in [7, 3, 5]. Spec-Sort
-        // erzwingt KeyHash-Identitaet.
+        // Three @key members with IDs 7, 3, 5. Encoder caller A provides
+        // them as [3, 5, 7]; encoder caller B as [7, 3, 5]. The spec sort
+        // enforces KeyHash identity.
         let m_3 = (3u32, vec![0xAAu8, 0xBB, 0xCC, 0xDD]);
         let m_5 = (5u32, vec![0x11u8, 0x22, 0x33, 0x44]);
         let m_7 = (7u32, vec![0xDEu8, 0xAD, 0xBE, 0xEF]);
@@ -401,7 +399,7 @@ mod tests {
         let h_c = keyhash_cdr2_be(&order_c, 12);
         assert_eq!(h_a, h_b);
         assert_eq!(h_a, h_c);
-        // sortierte Bytes: 3.value || 5.value || 7.value, dann zero-pad bis 16.
+        // sorted bytes: 3.value || 5.value || 7.value, then zero-pad to 16.
         let expected = {
             let mut v = Vec::new();
             v.extend_from_slice(&m_3.1);
@@ -415,7 +413,7 @@ mod tests {
 
     #[test]
     fn keyhash_cdr2_be_md5_path_also_order_independent() {
-        // 4 Member mit Strings → max_size > 16 → MD5-Pfad.
+        // 4 members with strings -> max_size > 16 -> MD5 path.
         let m_1 = (1u32, b"alpha-content-1".to_vec());
         let m_2 = (2u32, b"beta-content-22".to_vec());
         let m_3 = (3u32, b"gamma-content-333".to_vec());
@@ -445,23 +443,23 @@ mod tests {
 
     #[test]
     fn keyhash_cdr2_be_member_id_zero_sorts_first() {
-        // member_id=0 ist gueltig (Spec §7.2.2.4.1.4) und muss vor
-        // hoeheren IDs serialisiert werden.
+        // member_id=0 is valid (spec §7.2.2.4.1.4) and must be
+        // serialized before higher IDs.
         let m_0 = (0u32, vec![0xFFu8, 0xEE, 0xDD, 0xCC]);
         let m_99 = (99u32, vec![0x00u8, 0x11, 0x22, 0x33]);
 
         let h_natural = keyhash_cdr2_be(&[m_0.clone(), m_99.clone()], 8);
         let h_swapped = keyhash_cdr2_be(&[m_99.clone(), m_0.clone()], 8);
         assert_eq!(h_natural, h_swapped);
-        // Sortiert: m_0 zuerst → Bytes [0xFF, 0xEE, 0xDD, 0xCC, 0x00, 0x11, 0x22, 0x33].
+        // Sorted: m_0 first -> bytes [0xFF, 0xEE, 0xDD, 0xCC, 0x00, 0x11, 0x22, 0x33].
         let mut expected = [0u8; 16];
         expected[..4].copy_from_slice(&m_0.1);
         expected[4..8].copy_from_slice(&m_99.1);
         assert_eq!(h_natural, expected);
     }
 
-    // ---- Mutation-Killer fuer alle PlainCdr2BeKeyHolder-Methoden ----
-    // Direkter Roundtrip jeder write_*-Methode + as_bytes/is_empty/len.
+    // ---- Mutation killers for all PlainCdr2BeKeyHolder methods ----
+    // Direct roundtrip of each write_* method + as_bytes/is_empty/len.
 
     #[test]
     fn keyholder_is_empty_initially_and_after_write_not_empty() {
@@ -481,7 +479,7 @@ mod tests {
         h.write_u8(0xBE);
         h.write_u8(0xEF);
         assert_eq!(h.as_bytes(), &[0xDE, 0xAD, 0xBE, 0xEF]);
-        // as_bytes ist nicht-konsumierend
+        // as_bytes is non-consuming
         assert_eq!(h.as_bytes(), &[0xDE, 0xAD, 0xBE, 0xEF]);
     }
 
@@ -498,7 +496,7 @@ mod tests {
     fn keyholder_write_u16_be_with_alignment() {
         let mut h = PlainCdr2BeKeyHolder::new();
         h.write_u8(0xAA); // 1 byte
-        h.write_u16(0x1234); // pad to 2: 1 pad-byte, then BE
+        h.write_u16(0x1234); // pad to 2: 1 pad byte, then BE
         assert_eq!(h.into_bytes(), vec![0xAA, 0x00, 0x12, 0x34]);
     }
 
@@ -516,13 +514,13 @@ mod tests {
         let mut h = PlainCdr2BeKeyHolder::new();
         h.write_u8(0xAA);
         h.write_i32(-1);
-        // pad to 4 from 1 = 3 pad-bytes; i32 -1 BE = FFFFFFFF
+        // pad to 4 from 1 = 3 pad bytes; i32 -1 BE = FFFFFFFF
         assert_eq!(h.into_bytes(), vec![0xAA, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF]);
     }
 
     #[test]
     fn keyholder_write_i64_be_with_4byte_alignment() {
-        // PLAIN_CDR2 alignment fuer 64-bit ist 4, nicht 8 (§7.4.2)
+        // PLAIN_CDR2 alignment for 64-bit is 4, not 8 (§7.4.2)
         let mut h = PlainCdr2BeKeyHolder::new();
         h.write_u8(0xAA);
         h.write_i64(-1);

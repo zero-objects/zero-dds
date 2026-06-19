@@ -1,11 +1,11 @@
-"""AsyncIO-Wrapper fuer das ZeroDDS-Python-Binding (§6.3 Vendor-Spec).
+"""AsyncIO wrapper for the ZeroDDS Python binding (§6.3 vendor spec).
 
-Der `zerodds._core`-PyO3-Layer ist sync-only und gibt den GIL fuer
-Blocking-Calls frei. Dieser Wrapper bindet die blockierenden Calls auf
-``asyncio.to_thread``, sodass sie in einem asyncio-Event-Loop wartbar
-sind, ohne den Event-Loop zu blockieren.
+The `zerodds._core` PyO3 layer is sync-only and releases the GIL for
+blocking calls. This wrapper binds the blocking calls onto
+``asyncio.to_thread`` so that they are awaitable in an asyncio event loop
+without blocking the event loop.
 
-Beispiel::
+Example::
 
     import asyncio
     import zerodds
@@ -26,10 +26,10 @@ Beispiel::
 
     asyncio.run(main())
 
-Die Klassen sind dünne Wrapper: alle Methoden, die nichts blockieren
-(z.B. ``take``, Status-Getter), werden direkt durchgereicht. Nur die
-``wait_*``/``write``-Methoden werden ueber ``asyncio.to_thread`` auf
-einen Worker-Thread gehoben.
+The classes are thin wrappers: all methods that do not block
+(e.g. ``take``, status getters) are passed through directly. Only the
+``wait_*``/``write`` methods are lifted onto a worker thread via
+``asyncio.to_thread``.
 """
 
 from __future__ import annotations
@@ -39,16 +39,16 @@ from typing import Any
 
 
 # ---------------------------------------------------------------------------
-# Mixin: gemeinsame "to_thread"-Brueke
+# Mixin: shared "to_thread" bridge
 # ---------------------------------------------------------------------------
 
 
 async def _to_thread(func: Any, /, *args: Any, **kwargs: Any) -> Any:
-    """Backport-freundliche ``asyncio.to_thread``-Variante.
+    """Backport-friendly ``asyncio.to_thread`` variant.
 
-    ``asyncio.to_thread`` existiert ab Python 3.9. Da ``zerodds-py``
-    abi3-py38 ist und das aeussere Python potenziell Py3.8 ist, fallen
-    wir hier auf eine Executor-basierte Variante zurueck.
+    ``asyncio.to_thread`` exists from Python 3.9. Since ``zerodds-py``
+    is abi3-py38 and the outer Python is potentially Py3.8, we fall
+    back here to an executor-based variant.
     """
     if hasattr(asyncio, "to_thread"):
         return await asyncio.to_thread(func, *args, **kwargs)
@@ -66,7 +66,7 @@ async def _to_thread(func: Any, /, *args: Any, **kwargs: Any) -> Any:
 
 
 class AsyncBytesWriter:
-    """Async-Wrapper um ``zerodds.BytesWriter`` (§2.4 Vendor-Spec)."""
+    """Async wrapper around ``zerodds.BytesWriter`` (§2.4 vendor spec)."""
 
     def __init__(self, inner: Any) -> None:
         self._inner = inner
@@ -81,7 +81,7 @@ class AsyncBytesWriter:
             self._inner.wait_for_matched_subscription, count, timeout_secs,
         )
 
-    # --- Pass-through fuer non-blocking calls ---
+    # --- Pass-through for non-blocking calls ---
     def matched_subscription_count(self) -> int:
         return self._inner.matched_subscription_count()
 
@@ -96,7 +96,7 @@ class AsyncBytesWriter:
 
 
 class AsyncBytesReader:
-    """Async-Wrapper um ``zerodds.BytesReader`` (§2.5 Vendor-Spec)."""
+    """Async wrapper around ``zerodds.BytesReader`` (§2.5 vendor spec)."""
 
     def __init__(self, inner: Any) -> None:
         self._inner = inner
@@ -134,7 +134,7 @@ class AsyncBytesReader:
 
 
 class AsyncShapeWriter:
-    """Async-Wrapper um ``zerodds.ShapeWriter`` (§2.4 + §2.7)."""
+    """Async wrapper around ``zerodds.ShapeWriter`` (§2.4 + §2.7)."""
 
     def __init__(self, inner: Any) -> None:
         self._inner = inner
@@ -160,7 +160,7 @@ class AsyncShapeWriter:
 
 
 class AsyncShapeReader:
-    """Async-Wrapper um ``zerodds.ShapeReader`` (§2.5 + §2.7)."""
+    """Async wrapper around ``zerodds.ShapeReader`` (§2.5 + §2.7)."""
 
     def __init__(self, inner: Any) -> None:
         self._inner = inner
@@ -185,7 +185,7 @@ class AsyncShapeReader:
 
 
 class AsyncWaitSet:
-    """Async-Wrapper um ``zerodds.WaitSet`` (§2.6 + §1.2.13)."""
+    """Async wrapper around ``zerodds.WaitSet`` (§2.6 + §1.2.13)."""
 
     def __init__(self, inner: Any) -> None:
         self._inner = inner

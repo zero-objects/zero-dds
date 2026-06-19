@@ -16,18 +16,18 @@ use crate::type_object::flags::StructTypeFlag;
 /// CompleteStructHeader = base_type + CompleteTypeDetail.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompleteStructHeader {
-    /// Base-Type (Inheritance).
+    /// Base type (inheritance).
     pub base_type: TypeIdentifier,
-    /// Typ-Name + Annotationen.
+    /// Type name + annotations.
     pub detail: CompleteTypeDetail,
 }
 
 /// CompleteStructMember = common + CompleteMemberDetail.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompleteStructMember {
-    /// Typ/Id/Flags.
+    /// Type/id/flags.
     pub common: CommonStructMember,
-    /// Name + Annotationen.
+    /// Name + annotations.
     pub detail: CompleteMemberDetail,
 }
 

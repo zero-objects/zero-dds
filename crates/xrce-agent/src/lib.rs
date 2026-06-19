@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! XRCE Agent — DDS-Participant-Wrapper mit Pull-Modell (Spec §7.3).
+//! XRCE Agent — DDS participant wrapper with a pull model (spec §7.3).
 //!
 //! Crate `zerodds-xrce-agent`.
 //!
-//! # Spec-Mapping
+//! # Spec mapping
 //!
-//! OMG DDS-XRCE 1.0 §7.3: "XRCE Agent stellt XRCE Client im DDS Data-
-//! Space dar; Client-Pull-Modell fuer disconnected Devices."
+//! OMG DDS-XRCE 1.0 §7.3: "the XRCE Agent represents the XRCE client in the DDS data
+//! space; client-pull model for disconnected devices."
 //!
-//! Wir liefern eine in-process Agent-State-Machine [`XrceAgent`] mit:
+//! We provide an in-process agent state machine [`XrceAgent`] with:
 //!
-//! - `register_client(client_key)` — Client wird per ClientKey
-//!   registriert; Agent legt einen Object-Slot pro Client an.
-//! - `create_object(...)` — Spec §7.8.3 CREATE-Pfad.
-//! - `delete_object(...)` — Spec §7.8.3 DELETE-Pfad.
-//! - `submit_sample(reader, payload)` — DDS-Side-Push: legt ein
-//!   Sample in die Pull-Queue eines DataReaders.
-//! - `pull_sample(client_key, reader)` — Spec §7.3 Client-Pull-Modell.
+//! - `register_client(client_key)` — a client is registered by ClientKey;
+//!   the agent creates one object slot per client.
+//! - `create_object(...)` — spec §7.8.3 CREATE path.
+//! - `delete_object(...)` — spec §7.8.3 DELETE path.
+//! - `submit_sample(reader, payload)` — DDS-side push: places a
+//!   sample into the pull queue of a DataReader.
+//! - `pull_sample(client_key, reader)` — spec §7.3 client-pull model.
 //!
-//! Der Agent selbst kapselt keinen DDS-Stack — das ist Aufgabe der
-//! integrierenden Anwendung. Wir liefern nur die Object-Verwaltung +
-//! Pull-Queue.
+//! The agent itself encapsulates no DDS stack — that is the job of the
+//! integrating application. We only provide the object management +
+//! pull queue.
 //!
 //! Safety classification: **STANDARD**.
 
@@ -42,60 +42,60 @@ use zerodds_xrce::object_id::ObjectId;
 use zerodds_xrce::object_repr::ObjectVariant;
 use zerodds_xrce::object_store::{CreateOutcome, CreationMode, ObjectStore};
 
-/// BTreeMap-faehiger Key aus ClientKey (ClientKey selbst hat kein
-/// `Ord`-Derive, weil ein Hash-Container im Original-Crate vorgesehen
-/// war; wir mappen auf das underlying `[u8; CLIENT_KEY_LEN]`).
+/// BTreeMap-capable key from ClientKey (ClientKey itself has no
+/// `Ord` derive, because a hash container was envisaged in the original
+/// crate; we map to the underlying `[u8; CLIENT_KEY_LEN]`).
 type ClientKeyOrd = [u8; CLIENT_KEY_LEN];
 
 fn ord_of(key: ClientKey) -> ClientKeyOrd {
     key.0
 }
 
-/// Agent-spezifische Error-Klassen.
+/// Agent-specific error classes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentError {
-    /// Client unbekannt — Caller muss vorher `register_client` rufen.
+    /// Client unknown — the caller must call `register_client` first.
     UnknownClient,
-    /// DataReader-Object existiert nicht.
+    /// The DataReader object does not exist.
     UnknownReader,
-    /// Pull-Queue ist voll (DoS-Schutz).
+    /// The pull queue is full (DoS protection).
     QueueFull,
-    /// Wire-Layer hat die Operation abgelehnt (z.B. ObjectId.kind
-    /// passt nicht zur Operation).
+    /// The wire layer rejected the operation (e.g. ObjectId.kind
+    /// does not match the operation).
     WireRejected,
 }
 
-/// Trace-Event fuer Operation-Tracing (Spec §8.5).
+/// Trace event for operation tracing (spec §8.5).
 ///
-/// Wird pro CREATE/DELETE/PULL-Operation generiert und kann via
-/// [`XrceAgent::set_trace_sink`] an einen externen Logger geleitet
-/// werden (`tracing`-Crate, structured logger, Test-Sink).
+/// Generated per CREATE/DELETE/PULL operation and can be routed via
+/// [`XrceAgent::set_trace_sink`] to an external logger
+/// (`tracing` crate, structured logger, test sink).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraceEvent {
-    /// Operation-Name ("CREATE", "DELETE", "SUBMIT", "PULL").
+    /// Operation name ("CREATE", "DELETE", "SUBMIT", "PULL").
     pub operation: String,
-    /// Client-Key (8 bytes).
+    /// Client key (8 bytes).
     pub client_key: ClientKeyOrd,
-    /// Object-Id (2 bytes wire form).
+    /// Object id (2 bytes wire form).
     pub object_id: [u8; 2],
 }
 
-/// Trace-Sink-Trait. Eine Implementation logged jedes Event in ein
-/// externes System (e.g. `tracing::info!`).
+/// Trace-sink trait. An implementation logs each event to an
+/// external system (e.g. `tracing::info!`).
 pub trait TraceSink {
-    /// Loggt ein Trace-Event.
+    /// Logs a trace event.
     fn record(&mut self, event: TraceEvent);
 }
 
-/// In-Memory XRCE-Agent.
+/// In-memory XRCE agent.
 pub struct XrceAgent {
-    /// Object-Stores pro Client.
+    /// Object stores per client.
     clients: BTreeMap<ClientKeyOrd, ObjectStore>,
-    /// Pull-Queue pro (Client, Reader). Spec §7.3 Pull-Modell.
+    /// Pull queue per (client, reader). Spec §7.3 pull model.
     samples: BTreeMap<(ClientKeyOrd, [u8; 2]), VecDeque<Vec<u8>>>,
-    /// DoS-Cap: maximal gepufferte Samples pro Reader.
+    /// DoS cap: maximum buffered samples per reader.
     max_pending_samples: usize,
-    /// Optionaler Trace-Sink (Spec §8.5 Operation-Tracing).
+    /// Optional trace sink (spec §8.5 operation tracing).
     trace_sink: Option<alloc::boxed::Box<dyn TraceSink + Send>>,
 }
 
@@ -104,13 +104,13 @@ fn oid_key(oid: ObjectId) -> [u8; 2] {
 }
 
 impl XrceAgent {
-    /// Konstruktor mit Default-DoS-Caps (256 Samples pro Reader).
+    /// Constructor with default DoS caps (256 samples per reader).
     #[must_use]
     pub fn new() -> Self {
         Self::with_max_pending_samples(256)
     }
 
-    /// Konstruktor mit Custom-DoS-Cap.
+    /// Constructor with a custom DoS cap.
     #[must_use]
     pub fn with_max_pending_samples(max: usize) -> Self {
         Self {
@@ -121,9 +121,9 @@ impl XrceAgent {
         }
     }
 
-    /// Spec §8.5 — registriert einen Operation-Trace-Sink. Pro
-    /// CREATE/DELETE/SUBMIT/PULL-Operation wird ein
-    /// [`TraceEvent`] erzeugt und an den Sink delegiert.
+    /// Spec §8.5 — registers an operation trace sink. Per
+    /// CREATE/DELETE/SUBMIT/PULL operation a
+    /// [`TraceEvent`] is created and delegated to the sink.
     pub fn set_trace_sink(&mut self, sink: alloc::boxed::Box<dyn TraceSink + Send>) {
         self.trace_sink = Some(sink);
     }
@@ -138,26 +138,26 @@ impl XrceAgent {
         }
     }
 
-    /// Registriert einen neuen Client. Idempotent — mehrfaches
-    /// Registrieren mit derselben ClientKey ueberschreibt den
-    /// existierenden Slot **nicht**.
+    /// Registers a new client. Idempotent — registering multiple
+    /// times with the same ClientKey does **not** overwrite the
+    /// existing slot.
     pub fn register_client(&mut self, client_key: ClientKey) {
         self.clients.entry(ord_of(client_key)).or_default();
     }
 
-    /// `true` wenn Client registriert ist.
+    /// `true` if the client is registered.
     #[must_use]
     pub fn has_client(&self, client_key: ClientKey) -> bool {
         self.clients.contains_key(&ord_of(client_key))
     }
 
-    /// Anzahl registrierter Clients.
+    /// Number of registered clients.
     #[must_use]
     pub fn client_count(&self) -> usize {
         self.clients.len()
     }
 
-    /// Spec §7.8.3 CREATE — registriert ein Objekt im Slot des Clients.
+    /// Spec §7.8.3 CREATE — registers an object in the client's slot.
     ///
     /// # Errors
     /// `UnknownClient`.
@@ -181,8 +181,8 @@ impl XrceAgent {
         Ok(outcome)
     }
 
-    /// Spec §7.8.3 DELETE — entfernt ein Objekt + zugehoerige
-    /// Pull-Queue.
+    /// Spec §7.8.3 DELETE — removes an object + its associated
+    /// pull queue.
     ///
     /// # Errors
     /// `UnknownClient`.
@@ -197,14 +197,14 @@ impl XrceAgent {
             .get_mut(&ord)
             .ok_or(AgentError::UnknownClient)?;
         let removed = store.delete(object_id);
-        // Pull-Queue mit aufraeumen.
+        // Clean up the pull queue too.
         self.samples.remove(&(ord, oid_key(object_id)));
         self.trace("DELETE", ord, oid_key(object_id));
         Ok(removed)
     }
 
-    /// DDS-Side-Push: ein neues Sample wird einer Reader-Queue
-    /// hinzugefuegt. Der Client holt es spaeter via [`pull_sample`].
+    /// DDS-side push: a new sample is added to a reader queue.
+    /// The client fetches it later via [`pull_sample`].
     ///
     /// # Errors
     /// `UnknownClient`, `UnknownReader`, `QueueFull`.
@@ -228,9 +228,9 @@ impl XrceAgent {
         Ok(())
     }
 
-    /// Spec §7.3 Client-Pull-Modell: liefert das aelteste gepufferte
-    /// Sample fuer den (Client, Reader) ab. Liefert `Ok(None)` wenn
-    /// keine Daten anliegen.
+    /// Spec §7.3 client-pull model: delivers the oldest buffered
+    /// sample for the (client, reader). Returns `Ok(None)` if
+    /// no data is pending.
     ///
     /// # Errors
     /// `UnknownClient`.
@@ -253,7 +253,7 @@ impl XrceAgent {
         Ok(sample)
     }
 
-    /// Anzahl gepufferter Samples fuer (Client, Reader).
+    /// Number of buffered samples for (client, reader).
     #[must_use]
     pub fn pending_samples(&self, client_key: ClientKey, reader_id: ObjectId) -> usize {
         self.samples
@@ -448,7 +448,7 @@ mod tests {
         }
     }
 
-    /// Spec §8.4.6 — CREATE(OBJK_APPLICATION) als Top-Level-Container.
+    /// Spec §8.4.6 — CREATE(OBJK_APPLICATION) as a top-level container.
     #[test]
     fn create_application_object_via_objk_application() {
         use zerodds_xrce::object_kind::{OBJK_APPLICATION, ObjectKind};
@@ -468,9 +468,9 @@ mod tests {
     }
 
     /// Spec §8.4.1 — Logical Actions Performance.
-    /// Doc-Test der die durchschnittliche Operation-Latenz misst.
-    /// 1000 CREATE+DELETE-Operations in < 100 ms (Spec-Performance-
-    /// Floor; auf Standard-Hardware liegt der Wert weit darunter).
+    /// Doc test that measures the average operation latency.
+    /// 1000 CREATE+DELETE operations in < 100 ms (spec performance
+    /// floor; on standard hardware the value is well below that).
     #[test]
     fn agent_create_delete_latency_under_spec_floor() {
         use std::time::Instant;
@@ -523,7 +523,7 @@ mod tests {
         )
         .expect("c2");
         a.submit_sample(k1, reader, alloc::vec![100]).expect("s1");
-        // Client 2 sieht das Sample von Client 1 NICHT.
+        // Client 2 does NOT see client 1's sample.
         assert_eq!(a.pending_samples(k2, reader), 0);
         assert_eq!(a.pending_samples(k1, reader), 1);
     }

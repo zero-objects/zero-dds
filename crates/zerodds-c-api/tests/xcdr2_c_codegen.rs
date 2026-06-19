@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! L2 Codegen-Conformance — prueft dass `idl-cpp::generate_c_header` fuer
-//! die V-1..V-12 IDL-Snippets aus `zerodds-xcdr2-bindings-conformance-1.0`
-//! die erwarteten C99-Strukturen + TypeSupport-Tabellen emittiert.
+//! L2 codegen conformance — checks that `idl-cpp::generate_c_header` for
+//! the V-1..V-12 IDL snippets from `zerodds-xcdr2-bindings-conformance-1.0`
+//! emits the expected C99 structs + TypeSupport tables.
 //!
-//! Inhaltliche L1-Wire-Pruefung passiert in
-//! `xcdr2_wire_vectors.rs`. Hier wird nur die Codegen-Surface
-//! verifiziert: Type-Name, Extensibility-Flag, Member-Mapping, KeyHash-
-//! Emission.
+//! The content-level L1 wire check happens in
+//! `xcdr2_wire_vectors.rs`. Here only the codegen surface
+//! is verified: type name, extensibility flag, member mapping, key-hash
+//! emission.
 
 #![allow(
     clippy::expect_used,
@@ -110,17 +110,17 @@ fn v9_codegen_appendable() {
 fn v10_codegen_mutable_with_id() {
     let h = gen_c("@mutable struct M { @id(1) long a; @id(2) string b; };");
     assert!(h.contains(".extensibility = 2"));
-    // EMHEADER mit LC=4, id=1 → 0x40000001; id=2 → 0x40000002.
+    // EMHEADER with LC=4, id=1 → 0x40000001; id=2 → 0x40000002.
     assert!(h.contains("0x40000001"));
     assert!(h.contains("0x40000002"));
 }
 
 #[test]
 fn v11_codegen_optional_field_present_via_mutable_emheader() {
-    // Optional in @mutable wird via EMHEADER-Anwesenheit signalisiert;
-    // unsere c_mode-Implementation emittiert die EMHEADER unconditionally
-    // (rc1-scope: kein @optional-Flag-Handling). Test prueft zumindest
-    // die Mutable-Surface.
+    // Optional in @mutable is signaled via EMHEADER presence;
+    // our c_mode implementation emits the EMHEADER unconditionally
+    // (rc1 scope: no @optional flag handling). The test at least checks
+    // the mutable surface.
     let h = gen_c("@mutable struct O { @id(1) long maybe; };");
     assert!(h.contains(".extensibility = 2"));
     assert!(h.contains("0x40000001"));

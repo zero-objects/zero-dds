@@ -1,36 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Conformance-Marker fuer DDS-XML 1.0 §2.4 + §7.2.0.
+//! Conformance markers for DDS-XML 1.0 §2.4 + §7.2.0.
 //!
-//! § 2.4 — *Atomic Building-Block-Selection.* Spec verlangt, dass die
-//! Implementierung pro Building-Block atomisch sagen kann: "selected"
-//! oder "not selected". Wir markieren das via
-//! [`SUPPORTED_BUILDING_BLOCKS`] — die Liste der vom Crate
-//! produktiv unterstuetzten Building-Blocks. Eine `assert!`-basierte
-//! Test-Tabelle (`tests::supported_blocks_match_repo`) verifiziert,
-//! dass die Liste mit den tatsaechlich exponierten Modulen
-//! uebereinstimmt.
+//! § 2.4 — *Atomic building-block selection.* The spec requires that the
+//! implementation can atomically state per building block: "selected"
+//! or "not selected". We mark that via
+//! [`SUPPORTED_BUILDING_BLOCKS`] — the list of the building blocks
+//! productively supported by the crate. An `assert!`-based
+//! test table (`tests::supported_blocks_match_repo`) verifies
+//! that the list matches the actually exposed modules.
 //!
-//! § 7.2.0 — *1-zu-1-Mapping IDL-Datentypen.* Die Spec sagt: "The XML
+//! § 7.2.0 — *1-to-1 mapping of IDL data types.* The spec says: "The XML
 //! representation of resources that correspond to data-types defined
 //! in the DDS IDL PSM is obtained by performing a 1-to-1 mapping of
-//! the corresponding IDL data type." Wir kodieren diese Mapping-
-//! Tabelle als [`IDL_TO_XML_MAPPING`] — pro IDL-Datentyp-Kategorie
-//! ein Verweis auf die produzierende Funktion bzw. das Modul, sodass
-//! Reviewer/Tester die Vollstaendigkeit der Abdeckung an einem Ort
-//! sehen koennen.
+//! the corresponding IDL data type." We encode this mapping
+//! table as [`IDL_TO_XML_MAPPING`] — per IDL data type category
+//! a reference to the producing function or module, so that
+//! reviewers/testers can see the completeness of the coverage in one
+//! place.
 
 extern crate alloc;
 
-/// Liste der Building Blocks aus DDS-XML 1.0 §7.3.1.1, die in diesem
-/// Crate produktiv unterstuetzt sind.
+/// List of the building blocks from DDS-XML 1.0 §7.3.1.1 that are
+/// productively supported in this crate.
 ///
 /// Spec §7.3.1.1: "This specification breaks the syntax used to
 /// represent DDS resources in XML into the six different building
 /// blocks: Building Block QoS, Types, Domains, DomainParticipants,
 /// Applications, Data Samples."
 ///
-/// Pro Eintrag: `(spec_name, modul_name, top_level_element)`.
+/// Per entry: `(spec_name, module_name, top_level_element)`.
 pub const SUPPORTED_BUILDING_BLOCKS: &[(&str, &str, &str)] = &[
     ("QoS", "qos", "qos_library"),
     ("Types", "xtypes_def", "types"),
@@ -44,10 +43,10 @@ pub const SUPPORTED_BUILDING_BLOCKS: &[(&str, &str, &str)] = &[
     ("DataSamples", "sample", "data"),
 ];
 
-/// 1-zu-1-Mapping IDL-Datentyp -> XML-Konstruktor + produzierende
-/// API-Funktion. Spec §7.2.0.
+/// 1-to-1 mapping IDL data type -> XML constructor + producing
+/// API function. Spec §7.2.0.
 ///
-/// Pro Eintrag: `(idl_kategorie, spec_section, repo_pfad)`.
+/// Per entry: `(idl_category, spec_section, repo_path)`.
 pub const IDL_TO_XML_MAPPING: &[(&str, &str, &str)] = &[
     (
         "boolean",
@@ -97,7 +96,7 @@ pub const IDL_TO_XML_MAPPING: &[(&str, &str, &str)] = &[
         "§7.2.2.11",
         "types::parse_duration_nsec",
     ),
-    ("struct (IDL)", "§7.2.3", "qos_parser::* (rekursiv)"),
+    ("struct (IDL)", "§7.2.3", "qos_parser::* (recursive)"),
     (
         "sequence<T> (IDL)",
         "§7.2.4.1",
@@ -124,8 +123,8 @@ mod tests {
 
     #[test]
     fn supported_blocks_match_spec_count() {
-        // Spec §7.3.1.1 nennt **6** Building-Blocks — exakt das ist
-        // unsere Liste.
+        // Spec §7.3.1.1 names **6** building blocks — that is exactly
+        // our list.
         assert_eq!(SUPPORTED_BUILDING_BLOCKS.len(), 6);
     }
 
@@ -135,7 +134,7 @@ mod tests {
         for (name, module, _root) in SUPPORTED_BUILDING_BLOCKS {
             assert!(
                 seen.insert(*module),
-                "Modul `{module}` doppelt fuer Block `{name}` registriert"
+                "module `{module}` registered twice for block `{name}`"
             );
         }
     }
@@ -146,16 +145,16 @@ mod tests {
         for (name, _module, root) in SUPPORTED_BUILDING_BLOCKS {
             assert!(
                 seen.insert(*root),
-                "Top-Level-Element `{root}` doppelt fuer Block `{name}`"
+                "top-level element `{root}` duplicated for block `{name}`"
             );
         }
     }
 
     #[test]
     fn idl_mapping_covers_required_categories() {
-        // Sanity: Mapping-Tabelle enthaelt mindestens alle Kategorien
-        // aus §7.1.4 Tab.7.1 (boolean, enum, long, ulong, string) +
-        // §7.2.x (Sequenzen, Arrays, Duration).
+        // Sanity: the mapping table contains at least all categories
+        // from §7.1.4 Tab.7.1 (boolean, enum, long, ulong, string) +
+        // §7.2.x (sequences, arrays, Duration).
         let names: BTreeSet<&str> = IDL_TO_XML_MAPPING
             .iter()
             .map(|(name, _, _)| *name)
@@ -170,7 +169,7 @@ mod tests {
         ] {
             assert!(
                 names.contains(required),
-                "Mapping-Tabelle fehlt Eintrag fuer `{required}`"
+                "mapping table missing entry for `{required}`"
             );
         }
     }
@@ -179,19 +178,19 @@ mod tests {
     fn idl_mapping_entries_unique() {
         let mut seen = BTreeSet::new();
         for (name, _, _) in IDL_TO_XML_MAPPING {
-            assert!(seen.insert(*name), "Mapping-Eintrag `{name}` doppelt");
+            assert!(seen.insert(*name), "mapping entry `{name}` duplicated");
         }
     }
 
     #[test]
     fn idl_mapping_includes_section_7_2_x_items() {
-        // §7.2.x-Items, die nach K7-A vollstaendig live sind, muessen
-        // in der Tabelle stehen — sonst kann §7.2.0 nicht "done" sein.
+        // §7.2.x items that are fully live after K7-A must appear
+        // in the table — otherwise §7.2.0 cannot be "done".
         let sections: BTreeSet<&str> = IDL_TO_XML_MAPPING.iter().map(|(_, sec, _)| *sec).collect();
         for required in ["§7.2.2.9", "§7.2.4.1", "§7.2.4.2", "§7.2.5", "§7.2.6"] {
             assert!(
                 sections.contains(required),
-                "Mapping-Tabelle fehlt §-Sektion `{required}`"
+                "mapping table missing § section `{required}`"
             );
         }
     }

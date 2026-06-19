@@ -1,9 +1,9 @@
-//! L1 Isolation-Test: POSIX-SHM-Transport ueber Prozess-Grenzen.
+//! L1 isolation test: POSIX-SHM transport across process boundaries.
 //!
-//! Wie bei transport-uds spawnt der Parent sich selbst via
-//! `Command::new(current_exe())` als Child. Der Child joined das
-//! vom Parent erstellte Segment, schreibt ein Datagram, der Parent
-//! liest es.
+//! As with transport-uds, the parent spawns itself via
+//! `Command::new(current_exe())` as a child. The child joins the
+//! segment created by the parent, writes a datagram, the parent
+//! reads it.
 
 #![allow(
     clippy::expect_used,

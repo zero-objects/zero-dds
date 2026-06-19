@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Variable-Length-Integer-Coding — RFC 7541 §5.1.
+//! Variable-length integer coding — RFC 7541 §5.1.
 //!
-//! Encoded auf einer N-Bit-Praefix-Position mit Continuation-Marker
-//! im MSB der Folge-Bytes.
+//! Encoded at an N-bit prefix position with a continuation marker
+//! in the MSB of the following bytes.
 
 use alloc::vec::Vec;
 
-/// Integer-Coding-Fehler.
+/// Integer coding error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntegerError {
-    /// Eingabe-Buffer zu kurz.
+    /// Input buffer too short.
     Truncated,
-    /// Ueber 7 Continuation-Bytes — RFC 7541 erlaubt das nicht
+    /// More than 7 continuation bytes — RFC 7541 disallows this
     /// (Spec §5.1, Implementations MAY enforce a limit).
     TooLarge,
 }
@@ -30,11 +30,11 @@ impl core::fmt::Display for IntegerError {
 #[cfg(feature = "std")]
 impl std::error::Error for IntegerError {}
 
-/// Encode `value` mit `prefix_bits` Bits Praefix-Slot. Spec §5.1.
+/// Encode `value` with a `prefix_bits`-bit prefix slot. Spec §5.1.
 ///
-/// `prefix_bits` muss in 1..=8 liegen. Das erste Output-Byte enthaelt
-/// die `(8 - prefix_bits)` Most-Significant-Bits aus
-/// `out_byte_prefix_bits` (Caller liefert die in Bits 7..prefix_bits).
+/// `prefix_bits` must be in 1..=8. The first output byte contains
+/// the `(8 - prefix_bits)` most-significant bits from
+/// `out_byte_prefix_bits` (the caller supplies them in bits 7..prefix_bits).
 #[must_use]
 pub fn encode_integer(value: u64, prefix_bits: u8, out_byte_prefix_bits: u8) -> Vec<u8> {
     let mask = (1u64 << prefix_bits) - 1;
@@ -53,9 +53,9 @@ pub fn encode_integer(value: u64, prefix_bits: u8, out_byte_prefix_bits: u8) -> 
     out
 }
 
-/// Decode einen Integer aus einem Byte-Slice. Spec §5.1.
+/// Decode an integer from a byte slice. Spec §5.1.
 ///
-/// Liefert (decoded value, bytes consumed).
+/// Returns (decoded value, bytes consumed).
 ///
 /// # Errors
 /// `Truncated` / `TooLarge`.

@@ -1,17 +1,17 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-security-crypto`-Crate (`CryptographicPlugin`-Impl).
+Initial release materialization of the `zerodds-security-crypto` crate (`CryptographicPlugin` impl).
 
-### Spec-Referenzen
+### Spec references
 
-- **OMG DDS-Security 1.1** (formal/2018-04-01) §8.5 (CryptographicPlugin-Trait), §9.5 (Builtin-Crypto-Plugin), §10.5 (Wire-Format Tab.73/74/79).
-- **OMG DDS-Security 1.2** Delta — KeyMaterial-AES-GCM-GMAC.
+- **OMG DDS-Security 1.1** (formal/2018-04-01) §8.5 (CryptographicPlugin trait), §9.5 (built-in crypto plugin), §10.5 (wire format Tab.73/74/79).
+- **OMG DDS-Security 1.2** delta — KeyMaterial AES-GCM-GMAC.
 
-### Public-API
+### Public API
 
 - `AesGcmCryptoPlugin::{new, with_suite, with_shared_secret_provider}`.
 - `PskCryptoPlugin::{new, with_class_id}`, `CLASS_ID_PSK_CRYPTO`, `HKDF_INFO_PSK_MASTER_KEY`.
@@ -19,27 +19,27 @@ Initiale Release-Materialisierung der `zerodds-security-crypto`-Crate (`Cryptogr
 - `crypto_transform::{CryptoHeader, CryptoFooter, CryptoTransformIdentifier, CryptoTransformKind, BUILTIN_CRYPTO_PLUGIN, negotiate_transform}`.
 - `session_key::{derive_session_key, derive_session_hmac_key, compute_aad, SESSION_KEY_TAG, SESSION_RECEIVER_KEY_TAG, AAD_HEADER_LEN}`.
 - `aes_gcm_hw::{Arch, HwCapabilities, report}`.
-- `metrics::CryptoOp` (Feature `metrics`).
+- `metrics::CryptoOp` (feature `metrics`).
 
-### Implementierung
+### Implementation
 
-`AesGcmCryptoPlugin` haelt einen `RwLock<BTreeMap<CryptoHandle, KeyMaterial>>`. Jeder `KeyMaterial`-Slot traegt Suite + 4-byte transformation_key_id + master_key (16/32 byte) + 32-byte master_salt + 4-byte session_id + AtomicU64-Counter. Encrypt/Decrypt nutzen `derive_session_key(master_key, master_salt, session_id)` als Per-Submessage-AES-Key + `compute_aad(transform_kind, key_id, session_id, extension)` als AES-GCM AAD — Hot-Path ist spec-byte-kompatibel zu Cyclone DDS und FastDDS.
+`AesGcmCryptoPlugin` holds an `RwLock<BTreeMap<CryptoHandle, KeyMaterial>>`. Each `KeyMaterial` slot carries suite + 4-byte transformation_key_id + master_key (16/32 bytes) + 32-byte master_salt + 4-byte session_id + AtomicU64 counter. Encrypt/decrypt use `derive_session_key(master_key, master_salt, session_id)` as the per-submessage AES key + `compute_aad(transform_kind, key_id, session_id, extension)` as the AES-GCM AAD — the hot path is spec-byte-compatible with Cyclone DDS and FastDDS.
 
-`SharedSecretProvider`-Integration (PKI ↔ Crypto): wenn ein Provider ueber `with_shared_secret_provider` registriert ist, wird `register_matched_remote_*` deterministisch via HKDF-SHA256 aus dem SharedSecret abgeleitet — beide Partner berechnen denselben Master-Key ohne Token-Exchange.
+`SharedSecretProvider` integration (PKI ↔ crypto): if a provider is registered via `with_shared_secret_provider`, `register_matched_remote_*` is derived deterministically via HKDF-SHA256 from the SharedSecret — both partners compute the same master key without a token exchange.
 
-`PskCryptoPlugin` ist ein deterministischer Shared-Secret-Plugin fuer Out-of-Band-Setups (z.B. unattended Embedded). Setup-Token = HKDF(class_id `"DDS:Auth:PSK:1.0"` + setup_salt + identity_hash). Beide Partner derivieren denselben Master-Key.
+`PskCryptoPlugin` is a deterministic shared-secret plugin for out-of-band setups (e.g. unattended embedded). Setup token = HKDF(class_id `"DDS:Auth:PSK:1.0"` + setup_salt + identity_hash). Both partners derive the same master key.
 
-`CryptoOp` (Feature `metrics`) ist ein RAII-Span — bei `Drop` werden `dds_security_crypto_operations_total{operation=encrypt|decrypt}` und `dds_security_crypto_latency_seconds` aktualisiert.
+`CryptoOp` (feature `metrics`) is a RAII span — on `Drop` it updates `dds_security_crypto_operations_total{operation=encrypt|decrypt}` and `dds_security_crypto_latency_seconds`.
 
-`forbid(unsafe_code)` ist gesetzt; HW-Detection in `aes_gcm_hw.rs` nutzt `is_x86_feature_detected!` / `is_aarch64_feature_detected!` (kein eigener `unsafe`-Block).
+`forbid(unsafe_code)` is set; HW detection in `aes_gcm_hw.rs` uses `is_x86_feature_detected!` / `is_aarch64_feature_detected!` (no own `unsafe` block).
 
-### Architektur
+### Architecture
 
 - **Layer:** 4 (Core Services).
-- **Dependencies (in):** `zerodds-security` (Plugin-Trait), `ring` (AEAD/HMAC/HKDF/HMAC-Primitives), optional `zerodds-monitor` (Feature `metrics`).
-- **Dependents (out):** `zerodds-security-runtime` (Plugin-Lifecycle), `zerodds-security-rtps` (RTPS-Wrap), `zerodds-dcps` (Feature `security`), end-user-Builds.
-- **Feature-Flags:** `std` (default), `metrics` (default).
+- **Dependencies (in):** `zerodds-security` (plugin trait), `ring` (AEAD/HMAC/HKDF primitives), optional `zerodds-monitor` (feature `metrics`).
+- **Dependents (out):** `zerodds-security-runtime` (plugin lifecycle), `zerodds-security-rtps` (RTPS wrap), `zerodds-dcps` (feature `security`), end-user builds.
+- **Feature flags:** `std` (default), `metrics` (default).
 
-### Stabilitaet
+### Stability
 
-Public-API + Wire-Format RC1-stabil. Cross-Vendor-Wire-Compat zu Cyclone/FastDDS gilt auf §10.5-Wire-Bytes-Ebene. Major-Bump bei Breaking-Changes.
+Public API + wire format RC1-stable. Cross-vendor wire compat with Cyclone/FastDDS applies at the §10.5 wire-bytes level. Major bump on breaking changes.

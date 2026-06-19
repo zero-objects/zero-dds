@@ -3,50 +3,50 @@
 
 //! Crate `zerodds-http2`. Safety classification: **STANDARD**.
 //!
-//! HTTP/2 (RFC 9113) Wire-Codec — no_std Framing + Stream-State-
-//! Machine + Flow-Control + Connection-Preface + Settings.
-//! `forbid(unsafe_code)`. Implementiert die Wire-Schicht von HTTP/2
-//! ohne Heap-Buffering oder Async-Runtime: Frames werden in/aus
-//! byte-Slices kodiert/dekodiert, die State-Machine ist callback-
-//! basiert.
+//! HTTP/2 (RFC 9113) wire codec — no_std framing + stream state
+//! machine + flow control + connection preface + settings.
+//! `forbid(unsafe_code)`. Implements the HTTP/2 wire layer
+//! without heap buffering or an async runtime: frames are
+//! encoded to / decoded from byte slices, and the state machine is
+//! callback-based.
 //!
-//! Hinweis: RFC 9113 (HTTP/2) hat RFC 7540 abgeloest, behaelt das
-//! Wire-Format und die meisten §-Nummern bei und entfernt einige
-//! ungenutzte Features (Priority, Hint-Direktiven). Diese Crate
-//! folgt RFC 9113.
+//! Note: RFC 9113 (HTTP/2) superseded RFC 7540, keeping the
+//! wire format and most § numbers while removing a few
+//! unused features (priority, hint directives). This crate
+//! follows RFC 9113.
 //!
-//! Spec: RFC 9113 §3 (Connection-Preface) + §4 (Frame-Layer) + §5
-//! (Streams + Multiplexing) + §6 (Frame-Definitions) + §7 (Error-
-//! Codes).
+//! Spec: RFC 9113 §3 (connection preface) + §4 (frame layer) + §5
+//! (streams + multiplexing) + §6 (frame definitions) + §7 (error
+//! codes).
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 5 — Bridges. Substrat fuer:
+//! Layer 5 — bridges. Substrate for:
 //!
 //! - [`zerodds-grpc-bridge`](../zerodds_grpc_bridge/index.html) —
-//!   gRPC-over-HTTP/2 + gRPC-Web Length-Prefixed-Message-Codec
-//!   (Header-Block via [`zerodds-hpack`](../zerodds_hpack/index.html)).
+//!   gRPC-over-HTTP/2 + gRPC-Web length-prefixed message codec
+//!   (header block via [`zerodds-hpack`](../zerodds_hpack/index.html)).
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
 //! - [`Frame`] / [`FrameHeader`] / [`FrameType`] / [`Flags`] /
-//!   [`encode_frame`] / [`decode_frame`] — Frame-Layer-Codec (§4 +
+//!   [`encode_frame`] / [`decode_frame`] — frame-layer codec (§4 +
 //!   §6).
-//! - [`CLIENT_PREFACE`] / [`check_preface`] — Connection-Preface
+//! - [`CLIENT_PREFACE`] / [`check_preface`] — connection preface
 //!   (§3.4).
-//! - [`Settings`] / [`Setting`] / [`SettingId`] — Settings-Frame-
-//!   Codec + Defaults (§6.5).
-//! - [`StreamId`] / [`StreamState`] — Stream-State-Machine (§5.1).
-//! - [`FlowControl`] — Connection + Stream Flow-Control (§5.2).
-//! - [`ErrorCode`] / [`Http2Error`] — Error-Codes (§7).
+//! - [`Settings`] / [`Setting`] / [`SettingId`] — settings-frame
+//!   codec + defaults (§6.5).
+//! - [`StreamId`] / [`StreamState`] — stream state machine (§5.1).
+//! - [`FlowControl`] — connection + stream flow control (§5.2).
+//! - [`ErrorCode`] / [`Http2Error`] — error codes (§7).
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust
 //! use zerodds_http2::{FrameHeader, FrameType, Flags, encode_frame, decode_frame};
 //! use zerodds_http2::frame::DEFAULT_MAX_FRAME_SIZE;
 //!
-//! // PING-Frame (8-Byte-Opaque-Payload, Stream-ID 0).
+//! // PING frame (8-byte opaque payload, stream ID 0).
 //! let payload = [0u8; 8];
 //! let header = FrameHeader {
 //!     length: 8,
@@ -55,7 +55,7 @@
 //!     stream_id: 0,
 //! };
 //!
-//! let mut buf = [0u8; 17]; // 9-Byte-Header + 8-Byte-Payload
+//! let mut buf = [0u8; 17]; // 9-byte header + 8-byte payload
 //! let written = encode_frame(&header, &payload, &mut buf, DEFAULT_MAX_FRAME_SIZE)
 //!     .expect("encode");
 //! assert_eq!(written, 17);

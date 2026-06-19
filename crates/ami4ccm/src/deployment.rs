@@ -1,56 +1,56 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Deployment-Support — Spec §7.8.
+//! Deployment support — spec §7.8.
 //!
-//! Spec §7.8 (S. 14-15): "At runtime for the AMI4CCM connector an
+//! Spec §7.8 (p. 14-15): "At runtime for the AMI4CCM connector an
 //! AMI4CCM Connector fragment has to be deployed by the D&C
 //! infrastructure. [...] The client component and fragment are
 //! required to be deployed within the same process."
 //!
-//! Wir produzieren D&C-Deployment-Fragmente fuer den AMI4CCM-Connector
-//! gemaess OMG D&C 4.0 (`formal/2006-04-02`):
+//! We produce D&C deployment fragments for the AMI4CCM connector
+//! per OMG D&C 4.0 (`formal/2006-04-02`):
 //!
-//! * **IDD** (Implementation Description Descriptor) — beschreibt das
-//!   Connector-Artifact (.so/.dll) und die Component-Implementation.
-//! * **CDP** (Component Deployment Plan) — Plan-Fragment fuer den
-//!   Connector als zusaetzliche Instance neben der Client-Component.
-//! * **Co-Location-Constraint** — Spec §7.8: Client und Connector
-//!   muessen im selben Process laufen.
+//! * **IDD** (Implementation Description Descriptor) — describes the
+//!   connector artifact (.so/.dll) and the component implementation.
+//! * **CDP** (Component Deployment Plan) — plan fragment for the
+//!   connector as an additional instance alongside the client component.
+//! * **Co-location constraint** — spec §7.8: client and connector
+//!   must run in the same process.
 
 use alloc::format;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-/// Connector-Implementation-Beschreibung — Eingabe fuer die Plan-
-/// Generierung.
+/// Connector implementation description — input for plan
+/// generation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectorImplementation {
-    /// Name des Original-Interfaces (z.B. `StockManager`).
+    /// Name of the original interface (e.g. `StockManager`).
     pub original_interface: String,
-    /// Name der Client-Component-Instance (Spec §7.8: muss
-    /// co-located sein).
+    /// Name of the client component instance (spec §7.8: must
+    /// be co-located).
     pub client_instance: String,
-    /// Implementation-Artifact-Path (Spec D&C §7.6 ImplementationArtifact).
+    /// Implementation artifact path (spec D&C §7.6 ImplementationArtifact).
     pub artifact_path: String,
 }
 
 /// IDD — Implementation Description Descriptor (D&C §6.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImplementationDescriptor {
-    /// `label` — eindeutige Identifizierung.
+    /// `label` — unique identification.
     pub label: String,
-    /// `UUID` der Implementation.
+    /// `UUID` of the implementation.
     pub uuid: String,
-    /// Liste von Artifact-Paths.
+    /// List of artifact paths.
     pub artifacts: Vec<String>,
-    /// Component-Repository-ID, die diese Implementation realisiert.
+    /// Component repository ID that this implementation realizes.
     pub realizes: String,
 }
 
 impl ImplementationDescriptor {
-    /// Erzeugt eine IDD fuer einen AMI4CCM-Connector. Spec §7.8 +
+    /// Creates an IDD for an AMI4CCM connector. Spec §7.8 +
     /// D&C §6.4.
     #[must_use]
     pub fn for_connector(impl_: &ConnectorImplementation) -> Self {
@@ -67,29 +67,29 @@ impl ImplementationDescriptor {
     }
 }
 
-/// CDP-Fragment — eine Plan-Component-Instance (D&C §7.4).
+/// CDP fragment — a plan component instance (D&C §7.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanInstance {
-    /// `name` — Instance-Name innerhalb des Plans.
+    /// `name` — instance name within the plan.
     pub name: String,
-    /// Reference auf eine ImplementationDescription.
+    /// Reference to an ImplementationDescription.
     pub implementation: String,
-    /// Co-Location-Constraint (Spec §7.8: dasselbe ProcessId).
+    /// Co-location constraint (spec §7.8: the same ProcessId).
     pub co_locate_with: Option<String>,
 }
 
-/// Deployment-Plan-Fragment fuer den AMI4CCM-Connector neben einer
-/// existierenden Client-Component.
+/// Deployment plan fragment for the AMI4CCM connector alongside an
+/// existing client component.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectorPlanFragment {
-    /// IDD fuer das Connector-Artifact.
+    /// IDD for the connector artifact.
     pub implementation: ImplementationDescriptor,
-    /// PlanInstance fuer den Connector — co-located mit dem Client.
+    /// PlanInstance for the connector — co-located with the client.
     pub instance: PlanInstance,
 }
 
 impl ConnectorPlanFragment {
-    /// Erzeugt das komplette Plan-Fragment (Spec §7.8 + D&C §7.4).
+    /// Creates the complete plan fragment (spec §7.8 + D&C §7.4).
     #[must_use]
     pub fn build(impl_: &ConnectorImplementation) -> Self {
         let implementation = ImplementationDescriptor::for_connector(impl_);
@@ -104,14 +104,14 @@ impl ConnectorPlanFragment {
         }
     }
 
-    /// Spec §7.8 — Client und Fragment muessen im selben Process sein.
+    /// Spec §7.8 — client and fragment must be in the same process.
     #[must_use]
     pub fn is_co_located(&self) -> bool {
         self.instance.co_locate_with.is_some()
     }
 
-    /// Serialisiert das Plan-Fragment zu D&C-XML (D&C §10).
-    /// Minimal-Form mit `<implementation>` und `<instance>`.
+    /// Serializes the plan fragment to D&C XML (D&C §10).
+    /// Minimal form with `<implementation>` and `<instance>`.
     #[must_use]
     pub fn to_dnc_xml(&self) -> String {
         let mut xml = String::new();

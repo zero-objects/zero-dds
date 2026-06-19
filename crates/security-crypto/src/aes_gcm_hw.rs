@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! HW-Crypto-Capability-Detection — CPU-Features + AES-GCM-Backend-Label.
+//! HW crypto capability detection — CPU features + AES-GCM backend label.
 //!
-//! Diese Datei detektiert zur **Runtime**, welche AES-/SHA-/Polynomial-
-//! Multiplikations-Beschleuniger die aktuelle CPU bietet. Der eigentliche
-//! AEAD-Pfad geht weiter durch `ring::aead`, das die HW-Ausnutzung
-//! intern uebernimmt — diese Datei macht das *sichtbar*, damit
-//! Operations-Teams pruefen koennen, was deployt ist.
+//! This file detects at **runtime** which AES/SHA/polynomial
+//! multiplication accelerators the current CPU offers. The actual
+//! AEAD path still goes through `ring::aead`, which handles the HW
+//! exploitation internally — this file makes it *visible*, so that
+//! operations teams can check what is deployed.
 //!
-//! Der Mehrwert ggue. einer reinen ring-Nutzung:
+//! The added value over pure ring usage:
 //!
-//! 1. **Deployment-Audit**: ein `zerodds-perf aes-gcm`-Run druckt das Label
-//!    (`aes-ni`, `armv8-aes`, `none`), so dass Container-Images mit
-//!    fehlenden CPU-Features auffallen.
-//! 2. **Trade-off-Doku**: wenn `none` raus kommt, ist das ein klarer
-//!    Hinweis darauf, dass Latenz-SLOs auf dem Host nicht zu halten
-//!    sind, ohne dass jemand mit `lscpu` rumprobieren muss.
-//! 3. **Bench-Bezug**: die `tools/perf::aes-gcm`-Throughput-Zahlen sind
-//!    nur sinnvoll, wenn das HW-Label dabei steht.
+//! 1. **Deployment audit**: a `zerodds-perf aes-gcm` run prints the label
+//!    (`aes-ni`, `armv8-aes`, `none`), so that container images with
+//!    missing CPU features stand out.
+//! 2. **Trade-off docs**: if `none` comes out, that is a clear
+//!    hint that latency SLOs cannot be held on the host,
+//!    without someone having to fiddle with `lscpu`.
+//! 3. **Bench reference**: the `tools/perf::aes-gcm` throughput numbers are
+//!    only meaningful when the HW label is alongside.
 //!
-//! Spec-Bezug: keiner — die OMG-DDS-Security-Spec macht keine Vorgaben
-//! zu HW-Crypto. Dieses Modul ist Operations-Tooling.
+//! Spec reference: none — the OMG-DDS-Security spec makes no requirements
+//! about HW crypto. This module is operations tooling.
 
 #[cfg(feature = "std")]
 use std::sync::OnceLock;
@@ -33,7 +33,7 @@ pub enum Arch {
     X86_64,
     /// `aarch64` (ARMv8 64-bit).
     Aarch64,
-    /// Andere Architektur — Detektion gibt nur Software-Fallback zurueck.
+    /// Other architecture — detection returns only the software fallback.
     Other,
 }
 
@@ -61,20 +61,20 @@ impl Arch {
     }
 }
 
-/// Detected HW-Capabilities einer CPU.
+/// Detected HW capabilities of a CPU.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct HwCapabilities {
     /// Architektur.
     pub arch: Arch,
-    /// AES-Block-Beschleuniger (AES-NI auf x86_64, FEAT_AES auf
+    /// AES block accelerator (AES-NI on x86_64, FEAT_AES on
     /// aarch64).
     pub aes: bool,
-    /// Polynomial-Multiply-Unit fuer GHASH (PCLMULQDQ auf x86_64,
-    /// FEAT_PMULL auf aarch64).
+    /// Polynomial-multiply unit for GHASH (PCLMULQDQ on x86_64,
+    /// FEAT_PMULL on aarch64).
     pub pclmul: bool,
-    /// SHA-2-Beschleuniger (SHA-NI auf x86_64, FEAT_SHA2 auf aarch64).
+    /// SHA-2 accelerator (SHA-NI on x86_64, FEAT_SHA2 on aarch64).
     pub sha2: bool,
-    /// Erweiterte SIMD (AVX2 auf x86_64, NEON auf aarch64).
+    /// Extended SIMD (AVX2 on x86_64, NEON on aarch64).
     pub simd: bool,
 }
 
@@ -85,8 +85,8 @@ impl Default for Arch {
 }
 
 impl HwCapabilities {
-    /// Detektiert die HW-Caps der **laufenden** CPU. Auf Architekturen
-    /// ohne expliziten Detect-Pfad gibt es Default (alle `false`).
+    /// Detects the HW caps of the **running** CPU. On architectures
+    /// without an explicit detect path it returns the default (all `false`).
     #[must_use]
     pub fn detect() -> Self {
         #[cfg(target_arch = "x86_64")]
@@ -121,14 +121,14 @@ impl HwCapabilities {
         }
     }
 
-    /// `true`, wenn AES-GCM auf dieser CPU mit voller HW-Beschleunigung
-    /// laufen kann (sowohl AES-Block als auch GHASH per HW).
+    /// `true` if AES-GCM can run on this CPU with full HW acceleration
+    /// (both the AES block and GHASH in HW).
     #[must_use]
     pub const fn aes_gcm_fully_accelerated(&self) -> bool {
         self.aes && self.pclmul
     }
 
-    /// Backend-Label fuer Reports und Logs.
+    /// Backend label for reports and logs.
     #[must_use]
     pub const fn backend_label(&self) -> &'static str {
         match (self.arch, self.aes, self.pclmul) {
@@ -143,8 +143,8 @@ impl HwCapabilities {
     }
 }
 
-/// Cached, prozessweite HW-Detection. Erste Aufrufer triggert die
-/// Detektion; weitere Aufrufer lesen den OnceLock-Wert.
+/// Cached, process-wide HW detection. The first caller triggers the
+/// detection; further callers read the OnceLock value.
 #[cfg(feature = "std")]
 #[must_use]
 pub fn cached() -> HwCapabilities {
@@ -152,7 +152,7 @@ pub fn cached() -> HwCapabilities {
     *CACHE.get_or_init(HwCapabilities::detect)
 }
 
-/// Mehrzeiliger Report. Geeignet fuer `zerodds-perf aes-gcm --info`.
+/// Multi-line report. Suitable for `zerodds-perf aes-gcm --info`.
 #[cfg(feature = "std")]
 #[must_use]
 pub fn report() -> alloc::string::String {
@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn host_arch_is_one_of_supported_or_other() {
-        // Smoke-test: detect() darf nicht panicen, egal welche Arch.
+        // Smoke test: detect() must not panic, regardless of the arch.
         let caps = HwCapabilities::detect();
         assert!(matches!(
             caps.arch,

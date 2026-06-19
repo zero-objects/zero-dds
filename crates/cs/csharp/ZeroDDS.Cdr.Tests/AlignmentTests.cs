@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// Tests fuer Padding/Alignment-Verhalten von Xcdr2Writer/Xcdr2Reader
+// Tests for the padding/alignment behavior of Xcdr2Writer/Xcdr2Reader
 // per XTypes 1.3 §7.4.1.5.
 
 using System;
@@ -55,8 +55,8 @@ public class AlignmentTests
     [Fact]
     public void DHeader_ResetsAlignmentOrigin()
     {
-        // Schreibe 1 Byte, dann DHEADER, dann long. Long muss am Origin
-        // direkt hinter dem DHEADER liegen, nicht relativ zum buffer-start.
+        // Write 1 byte, then DHEADER, then long. The long must sit at the origin
+        // right after the DHEADER, not relative to the buffer start.
         var w = new Xcdr2Writer();
         w.WriteOctet(0xAB);
         using (var s = w.BeginDHeader())

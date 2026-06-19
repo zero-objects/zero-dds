@@ -1,22 +1,27 @@
 # DDS C++ PSM 1.0 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/dds-psm-cxx-1.0.pdf` (34 Seiten, OMG formal/2013-11-01)
+**Spec:** [OMG DDS-PSM-Cxx 1.0](https://www.omg.org/spec/DDS-PSM-Cxx/1.0/PDF) (34 Seiten, OMG formal/2013-11-01)
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
+Audit Item-für-Item
+gegen die Spec; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
 Status (`done` / `partial` / `open` / `n/a`).
 
-**Kontext:** ZeroDDS-Crate `crates/cpp/` ist `#![deny(unsafe_code)]`-Skelett
-ohne Implementation. Templates fuer das C++-Header-Layout liegen in
-`crates/idl-cpp/templates/dds-psm-cxx/` + `crates/idl-cpp/src/psm_cxx.rs`
-(Code-Generator). Daher: meiste Items sind `open` (kein Runtime-Code),
-einige Header-Layout-Items sind `partial` (Templates vorhanden).
+**Kontext:** Der PSM-Cxx folgt dem Header-by-Codegen-Pfad (Spec §1.1
+lizenziert "PSM API is defined by means of a set of C++ header files"):
+die normativen Header werden aus IDL generiert. Der PSM-Cxx ist über
+drei Crates verteilt:
+
+- `crates/idl-cpp/` — Code-Generator + Templates für das C++-Header-Layout (`templates/dds-psm-cxx/`, `src/psm_cxx.rs`)
+- `crates/dcps/` — Runtime-Semantik (DCPS-1.4 voll, K3a)
+- `crates/types/` — Runtime-Typsystem (XTypes 1.3)
+
+Alle Mapping- und Header-Layout-Items sind `done`.
 
 ---
 
 ## §1 Scope
 
-### 1.1 ISO/IEC C++ PSM fuer DDS — clear, simple, expressive, safe, efficient, extensible, portable
+### 1.1 ISO/IEC C++ PSM für DDS — clear, simple, expressive, safe, efficient, extensible, portable
 
 **Spec:** §1, S. 1 — "The purpose of this document is to specify the
 ISO/IEC C++ PSM for DDS. This new PSM provides a new C++ API for
@@ -52,7 +57,7 @@ Cross-Ref `dds-xtypes-1.3.md` + `zerodds-xml-1.0.md`.
 
 **Status:** done
 
-### 1.3 DLRL ausserhalb Scope; Extensible+Dynamic Topic Types separat
+### 1.3 DLRL außerhalb Scope; Extensible+Dynamic Topic Types separat
 
 **Spec:** §1, S. 1 — "This specification only addresses the DCPS layer
 of the DDS specification. The optional DLRL layer may be addressed
@@ -98,7 +103,7 @@ defines the Data Local Reconstruction Layer (DLRL); DLRL is outside
 of the scope of this PSM."
 
 **Repo:** Conformance-Profile parallel zur DCPS-Spec — DCPS-1.4
-ist voll erfuellt (siehe K3a). DLRL ist out-of-scope.
+ist voll erfüllt (siehe K3a). DLRL ist out-of-scope.
 
 **Tests:** Cross-Ref `zerodds-dcps-1.4.md`-K3a-Audit (90 done).
 
@@ -147,7 +152,7 @@ modernen idl4-cpp-Pfad (siehe K10-Audit) statt Legacy-XTypes-PSM.
 
 **Tests:** Cross-Ref `idl4-cpp-1.0.md`-K10-Audit (56 done).
 
-**Status:** done — Optional-Profile, alternative Variante gewaehlt.
+**Status:** done — Optional-Profile, alternative Variante gewählt.
 
 ### 2.2.1 File-Names + relative Locations innerhalb `dds`-Dir normativ
 
@@ -193,23 +198,23 @@ the corresponding header from a different DDS implementation."
 **Repo:** Symbol-Distribution folgt den 5 Header-Templates
 (condition.hpp, core.hpp, exceptions.hpp, listener.hpp,
 reference.hpp); Cross-Vendor-File-Replace ist via konsistente
-Header-Naming-Convention erfuellt.
+Header-Naming-Convention erfüllt.
 
 **Tests:** `psm_cxx_conformance::*` (7 Tests verifizieren die
 Header-Layout-Konvention).
 
 **Status:** done
 
-### 2.2.4 Conforming Implementations duerfen keine Extensions in normativen Namespaces einfuehren
+### 2.2.4 Conforming Implementations dürfen keine Extensions in normativen Namespaces einführen
 
 **Spec:** §2.2, S. 2 — "Conforming implementations shall not define
 implementation-specific extension programming interfaces within
 normative namespaces. They may, however, specialize normative
 templates defined by this specification."
 
-**Repo:** ZeroDDS-Codegen emittiert ausschliesslich in `dds::`-
-Namespace fuer Spec-konforme Symbole; Vendor-Specific-Symbole
-gehoeren in separaten `zerodds::`-Namespace (Codegen-Convention).
+**Repo:** ZeroDDS-Codegen emittiert ausschließlich in `dds::`-
+Namespace für Spec-konforme Symbole; Vendor-Specific-Symbole
+gehören in separaten `zerodds::`-Namespace (Codegen-Convention).
 
 **Tests:** Cross-Ref `psm_cxx::tests::full_skeleton_namespaces_are_dds_core`.
 
@@ -222,7 +227,7 @@ gehoeren in separaten `zerodds::`-Namespace (Codegen-Convention).
 ### 3.1 [C99] C Programming Language ISO/IEC 9899:1999
 
 **Spec:** §3, S. 2 — "[C99] C Programming Language (ISO/IEC
-9899:1999)" — fuer stdint.h-Typen.
+9899:1999)" — für stdint.h-Typen.
 
 **Repo:** —
 
@@ -250,7 +255,7 @@ Systems Specification, version 1.2."
 
 **Tests:** siehe `zerodds-dcps-1.4.md`-Coverage.
 
-**Status:** done — DDS-Vorgaenger-Version ist Subset.
+**Status:** done — DDS-Vorgänger-Version ist Subset.
 
 ### 3.4 [DDS-XTypes] XTypes Beta 1 (ptc/2010-05-12)
 
@@ -269,7 +274,7 @@ Types, version 1.0 Beta 1."
 1.0 Beta 1."
 
 **Repo:** `crates/xml/src/qos.rs` — XML-QoS-Profile-Loader. K7-Audit
-(zerodds-xml-1.0) ist voll erfuellt; DDS-CCM-Subset ist Teil davon.
+(zerodds-xml-1.0) ist voll erfüllt; DDS-CCM-Subset ist Teil davon.
 
 **Tests:** siehe `zerodds-xml-1.0.md`-K7-Audit.
 
@@ -290,7 +295,7 @@ to the values of data objects."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Glossar-Eintrag ohne eigenes Verhalten; das implementierte DCPS-Crate erfuellt die Definition.
+**Status:** `n/a (informative)` — Glossar-Eintrag ohne eigenes Verhalten; das implementierte DCPS-Crate erfüllt die Definition.
 
 ### 4.2 DDS — Data Distribution Service
 
@@ -303,7 +308,7 @@ and reliability."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Glossar-Definition; die DDS-Funktionalitaet ist Aggregat aus DCPS+QoS+RTPS-Crates.
+**Status:** `n/a (informative)` — Glossar-Definition; die DDS-Funktionalität ist Aggregat aus DCPS+QoS+RTPS-Crates.
 
 ### 4.3 DLRL — Data Local Reconstruction Layer (out-of-scope)
 
@@ -314,7 +319,7 @@ portion of the DDS specification."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Glossar-Eintrag fuer Spec-eigene optionale Schicht; PSM-Cxx selbst (§1.3) klammert DLRL aus dem Scope aus.
+**Status:** `n/a (informative)` — Glossar-Eintrag für Spec-eigene optionale Schicht; PSM-Cxx selbst (§1.3) klammert DLRL aus dem Scope aus.
 
 ### 4.4 PIM — Platform-Independent Model
 
@@ -334,7 +339,7 @@ portion of the DDS specification."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Glossar-Definition; konkrete PSM-Auspraegungen sind Cxx (Codegen) und Rust (`crates/dds-psm-rust`).
+**Status:** `n/a (informative)` — Glossar-Definition; konkrete PSM-Ausprägungen sind Cxx (Codegen) und Rust (`crates/dds-psm-rust`).
 
 ---
 
@@ -350,7 +355,7 @@ can say that Q <: T if any occurrence of T can be replaced by Q."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Notations-Konvention der Spec; Subtyping-Symbol ist erklaerend und wird in normativen Tabellen referenziert.
+**Status:** `n/a (informative)` — Notations-Konvention der Spec; Subtyping-Symbol ist erklärend und wird in normativen Tabellen referenziert.
 
 ### 5.2 Notation `Foo<+T>` — Covariance
 
@@ -450,7 +455,7 @@ provided delegates." Beispiel `template <typename DELEGATE> class
 TInstanceHandle`.
 
 **Repo:** `crates/idl-cpp/templates/dds-psm-cxx/reference.hpp.tmpl`
-(Template fuer Reference-Pattern mit DELEGATE-Parameter).
+(Template für Reference-Pattern mit DELEGATE-Parameter).
 DELEGATE-Stack wird vom Vendor (Caller des Codegens) bereitgestellt
 — das ist Spec-konformer Implementations-Hook.
 
@@ -534,7 +539,7 @@ normative classes that inherit from Value<D> and the Value<D>
 template itself shall preferably be exception safe."
 
 **Repo:** Rust-RAII via `Drop` + bewegungssemantische `Clone`: alle
-Value<D>-aequivalenten Records (`QosPolicy`, `SampleInfo`, ...) sind
+Value<D>-äquivalenten Records (`QosPolicy`, `SampleInfo`, ...) sind
 plain `#[derive(Clone)]`-Structs ohne FFI-Side-Effects.
 
 **Tests:** `crates/dcps/tests/builtin_types_auto_register_c44b.rs`,
@@ -542,7 +547,7 @@ plain `#[derive(Clone)]`-Structs ohne FFI-Side-Effects.
 
 **Status:** done — Rust-Clone-by-default ist exception-frei.
 
-### 7.3.4 Topic/Pub/Sub/DP reentrant ausser close
+### 7.3.4 Topic/Pub/Sub/DP reentrant außer close
 
 **Spec:** §7.3, S. 7 — "All Topic (and other TopicDescription
 extension interfaces), Publisher, Subscriber, and DomainParticipant
@@ -552,14 +557,14 @@ method on that object or on any contained object."
 
 **Repo:** `crates/dcps/src/{topic,publisher,subscriber,participant}.rs`
 implementieren `Send + Sync`; close-Methoden nehmen `&mut self`
-(Borrow-Checker erzwingt Exklusivitaet).
+(Borrow-Checker erzwingt Exklusivität).
 
 **Tests:** `crates/dcps/tests/e2e_dcps_api.rs` (Multi-Thread-Pfad);
 Send+Sync-Bounds verifiziert in `crates/dcps/src/{participant,publisher,subscriber}.rs`.
 
 **Status:** done — Reentrancy via Rust-Type-System.
 
-### 7.3.5 DomainParticipantFactory reentrant ausser close
+### 7.3.5 DomainParticipantFactory reentrant außer close
 
 **Spec:** §7.3, S. 7 — "All DomainParticipantFactory operations
 shall be reentrant with the exception that DomainParticipantFactory.
@@ -574,7 +579,7 @@ other call of any method on that object."
 
 **Status:** done — Reentrancy via Rust-Type-System.
 
-### 7.3.6 WaitSet+Condition reentrant ausser close()
+### 7.3.6 WaitSet+Condition reentrant außer close()
 
 **Spec:** §7.3, S. 7 — "All WaitSet and Condition (including Condition
 extension interfaces) operations shall be reentrant with the exception
@@ -589,7 +594,7 @@ any other method on the same object."
 
 **Status:** done — Reentrancy via Rust-Type-System.
 
-### 7.3.7 Listener-Callback darf nur Methoden auf der ausloesenden Entity aufrufen
+### 7.3.7 Listener-Callback darf nur Methoden auf der auslösenden Entity aufrufen
 
 **Spec:** §7.3, S. 7 — "Code within a DDS listener callback may not
 safely call any method on any DDS Entity but the one on which the
@@ -601,9 +606,9 @@ durch; andere Entities sind nicht im Scope.
 **Tests:** `crates/dcps/tests/listener_integration.rs`,
 `crates/dcps/tests/listener_trigger_c22c.rs`.
 
-**Status:** done — Listener-API beschraenkt Scope by-design.
+**Status:** done — Listener-API beschränkt Scope by-design.
 
-### 7.3.8 Value-Type Methoden duerfen non-reentrant sein
+### 7.3.8 Value-Type Methoden dürfen non-reentrant sein
 
 **Spec:** §7.3, S. 7 — "Any method of any value type may be
 non-reentrant."
@@ -615,7 +620,7 @@ Structs; mutierende Methoden nehmen `&mut self`.
 
 **Status:** done — Permission-Statement, Rust-Borrow ist konservativer.
 
-### 7.3.9 Implementations duerfen staerkere Garantien geben
+### 7.3.9 Implementations dürfen stärkere Garantien geben
 
 **Spec:** §7.3, S. 7 — "A Service implementation may choose to
 provide unspecified stronger guarantees than the rules above."
@@ -624,7 +629,7 @@ provide unspecified stronger guarantees than the rules above."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Permission-Statement (darf staerker sein als Spec verlangt); kein Implementierungs-Soll.
+**Status:** `n/a (informative)` — Permission-Statement (darf stärker sein als Spec verlangt); kein Implementierungs-Soll.
 
 ---
 
@@ -639,7 +644,7 @@ or value semantics. Note – An implication of this mapping is that
 no DDS PIM class ever maps to a C++ struct."
 
 **Repo:** `crates/idl-cpp/src/blocks.rs::emit_class_decl` emittiert
-durchgaengig `class { public: ... };`-Header, nie `struct`.
+durchgängig `class { public: ... };`-Header, nie `struct`.
 
 **Tests:** `crates/idl-cpp/tests/blocks_fgh.rs::block_h_emits_seven_dcps_class_decls`.
 
@@ -654,7 +659,7 @@ durchgaengig `class { public: ... };`-Header, nie `struct`.
 **Spec:** §7.4.2 Tab.7.1, S. 7 — "Boolean: bool."
 
 **Repo:** Cross-Ref `idl4-cpp-1.0.md` §6.3 — `idl-cpp` emittiert
-`bool` fuer `boolean`.
+`bool` für `boolean`.
 
 **Tests:** `crates/idl-cpp/tests/psm_cxx_mappings.rs::{boolean_maps_to_bool, octet_maps_to_uint8_t, integer_types_map_to_stdint, float_types_map_to_cxx_floats, char_maps_to_char_or_char_t}`.
 
@@ -674,7 +679,7 @@ durchgaengig `class { public: ... };`-Header, nie `struct`.
 
 **Spec:** §7.4.2 Tab.7.1, S. 7 — "Char32: wchar_t."
 
-**Repo:** Cross-Ref `idl4-cpp-1.0.md` §6.3 (wchar_t fuer wchar/char32).
+**Repo:** Cross-Ref `idl4-cpp-1.0.md` §6.3 (wchar_t für wchar/char32).
 
 **Tests:** `crates/idl-cpp/tests/psm_cxx_mappings.rs::{boolean_maps_to_bool, octet_maps_to_uint8_t, integer_types_map_to_stdint, float_types_map_to_cxx_floats, char_maps_to_char_or_char_t}`.
 
@@ -735,6 +740,23 @@ string<Char32>: std::wstring."
 
 **Status:** done
 
+### 7.4.2.8 `sequence<T,N>` / `string<N>` — Bound-Enforcement beim Encode
+
+**Spec:** §7.4.2 + XTypes 1.3 §7.2.2.4.3/§7.4.3 — eine bounded `sequence<T,N>` /
+`string<N>` mit mehr als `N` Elementen ist beim Serialisieren eine
+Bound-Verletzung; strikte Vendoren lehnen sie am Draht ab.
+
+**Repo:** `crates/idl-cpp/src/emitter.rs` (beide Value-Emitter) — `throw
+std::length_error` + konditionales `<stdexcept>` (Header ohne bounded Typen
+byte-identisch).
+
+**Tests:** `crates/idl-cpp/tests/bounded_collections.rs` (3).
+
+**Status:** done für die C++-PSM-Encode-Typen seq + narrow string. `wstring` und
+verschachtelte Collections sind kein C++-PSM-Encode-Feature; die zentrale
+Cross-Codegen-Übersicht + der wstring/nested-Ausblick stehen in
+`dds-xtypes-1.3.md` §7.2.2.4.3.
+
 ### 7.4.2.9 `map<K,V>` -> `std::map<K,V>`
 
 **Spec:** §7.4.2 Tab.7.1, S. 8 — "map<K, V>: std::map<K, V>."
@@ -769,7 +791,7 @@ platforms. Implementations for non-[C99]-compliant platforms shall
 provide their own conformant integer type definitions."
 
 **Repo:** `crates/idl-cpp/src/psm_cxx.rs::emit_psm_cxx_includes`
-fuegt `<cstdint>` auf C99/C++11-Plattformen ein; non-C99-Fallback
+fügt `<cstdint>` auf C99/C++11-Plattformen ein; non-C99-Fallback
 ist Plattform-Detail.
 
 **Tests:** `crates/idl-cpp/tests/psm_cxx_conformance.rs::psm_cxx_includes_emit_per_participant_name`.
@@ -782,10 +804,10 @@ ist Plattform-Detail.
 global namespace, not in the std namespace."
 
 **Repo:** Codegen verwendet `int32_t`/`uint64_t`/... (global) statt
-`std::int32_t` — durchgaengig in idl-cpp Block B.
+`std::int32_t` — durchgängig in idl-cpp Block B.
 
 **Tests:** `crates/idl-cpp/tests/spec_conformance.rs::primitive_type_mappings`
-prueft Strings ohne `std::`-Praefix.
+prüft Strings ohne `std::`-Präfix.
 
 **Status:** done
 
@@ -801,7 +823,7 @@ defined as follows: `template<typename def, typename inner = typename
 def::type> class safe_enum : public def`."
 
 **Repo:** Cross-Ref `idl4-cpp-1.0.md` §6.10 — C++03-Backend rendert
-`safe_enum<...>`; ZeroDDS default ist C++11 (siehe naechstes Item).
+`safe_enum<...>`; ZeroDDS default ist C++11 (siehe nächstes Item).
 
 **Tests:** `crates/idl-cpp/tests/psm_cxx_mappings.rs::enum_emits_typed_enumeration_class`.
 
@@ -832,7 +854,7 @@ C++03 and aligns the mapping of DDS types to that of IDL."
 
 **Repo:** Cross-Ref `idl4-cpp-1.0.md` §6.13 — Union-Codegen
 implementiert exakt das IDL2C++11-Schema (C++17-`std::variant` als
-Implementation-Wahl, Spec-aequivalente Form).
+Implementation-Wahl, Spec-äquivalente Form).
 
 **Tests:** `crates/idl-cpp/tests/spec_conformance.rs::union_with_octet_discriminator_emits_variant`.
 
@@ -872,7 +894,7 @@ T. PIM Type Return Type: One of T or const T&, depending on whether
 the return parameter is an attribute or not."
 
 **Repo:** Cross-Ref `idl4-cpp-1.0.md` §3.3 + §6.4 (Return-Type-
-Mapping ueber Operation- und Attribute-Templates).
+Mapping über Operation- und Attribute-Templates).
 
 **Tests:** `crates/idl-cpp/tests/psm_cxx_mappings.rs::service_operation_emits_method_signature`.
 
@@ -916,7 +938,7 @@ array): `ST& attribute()`, `const ST& attribute() const`,
 `void attribute(const ST& attrib)`."
 
 **Repo:** Cross-Ref `idl4-cpp-1.0.md` §6.8 — gleicher Accessor-
-Triple-Pfad fuer Sequence/String/Map/Array.
+Triple-Pfad für Sequence/String/Map/Array.
 
 **Tests:** `crates/idl-cpp/tests/psm_cxx_mappings.rs::struct_field_emits_accessor_methods`,
 `crates/idl-cpp/tests/spec_conformance.rs::struct_with_default_mapping_emits_class_with_accessors`.
@@ -985,7 +1007,7 @@ can either refer to the null object or to a valid object."
 
 **Repo:** `emit_reference_value_pattern` rendert das `Reference<D>`-
 Template mit shallow-Copy-Semantik; Rust-Runtime nutzt `Arc<...>`
-fuer Reference-Records (Safety via Borrow-Checker).
+für Reference-Records (Safety via Borrow-Checker).
 
 **Tests:** `crates/idl-cpp/tests/psm_cxx_conformance.rs::reference_value_pattern_emits_template`.
 
@@ -1000,7 +1022,7 @@ the DELEGATE."
 
 **Repo:** `emit_reference_value_pattern` emittiert
 `template <typename DELEGATE> class Reference {...}` und alle
-abgeleiteten Reference-Typen erben darueber.
+abgeleiteten Reference-Typen erben darüber.
 
 **Tests:** `psm_cxx.rs::tests::reference_pattern_emits_reference_template`.
 
@@ -1009,7 +1031,7 @@ abgeleiteten Reference-Typen erben darueber.
 ### 7.5.1.1 Tab.7.2 Reference-Type Klassenliste (Entity, Condition, GuardCondition, ReadCondition, QueryCondition, Waitset, DomainParticipant, AnyDataWriter, Publisher, DataWriter, AnyDataReader, Subscriber, DataReader, SharedSamples, AnyTopic, Topic)
 
 **Spec:** §7.5.1.1 Tab.7.2, S. 12 — Liste von 16 Reference-Type-
-Klassen ueber 4 Namespaces (`core`, `pomain` (sic), `pub`, `sub`,
+Klassen über 4 Namespaces (`core`, `pomain` (sic), `pub`, `sub`,
 `topic`).
 
 **Repo:** `crates/idl-cpp/src/dcps.rs` Block H emittiert die 7
@@ -1036,11 +1058,11 @@ explicit retained; creator still in use."
 
 **Repo:** Rust-Runtime nutzt `Drop`-Trait + `Arc`-Refcounting:
 Auto-Close, sobald Refcount 0 erreicht; explizites `close(&mut self)`
-fuer deterministisches Teardown verfuegbar in `crates/dcps/src/entity.rs`.
+für deterministisches Teardown verfügbar in `crates/dcps/src/entity.rs`.
 
 **Tests:** `crates/dcps/tests/entity_lifecycle.rs`.
 
-**Status:** done — Auto-Close via Drop deckt Spec-Regeln natuerlich ab.
+**Status:** done — Auto-Close via Drop deckt Spec-Regeln natürlich ab.
 
 ---
 
@@ -1057,7 +1079,7 @@ other terms, QoS, Policy, Statuses, and Topic samples are all
 modeled as value-types."
 
 **Repo:** `emit_reference_value_pattern` rendert `Value<DELEGATE>`-
-Template mit deep-copy-Operatoren; alle Rust-Records fuer QoS/
+Template mit deep-copy-Operatoren; alle Rust-Records für QoS/
 Status/Sample sind `#[derive(Clone)]` (deep-copy by default,
 mutable by `&mut self`).
 
@@ -1071,7 +1093,7 @@ mutable by `&mut self`).
 
 ## §7.5.3 Any Types
 
-### 7.5.3 Any-Type fuer generic Container
+### 7.5.3 Any-Type für generic Container
 
 **Spec:** §7.5.3, S. 13 — "The DDS-PSM-Cxx provides a selection of
 'Any' types. These Any types safely store references in generic
@@ -1080,7 +1102,7 @@ time exposing some type-independent operations."
 
 **Repo:** `crates/idl-cpp/src/dcps.rs` Block H emittiert
 `AnyDataWriter`/`AnyDataReader`/`AnyTopic`-Klassen; Rust-Aequivalent
-ueber Trait-Objekte (`Box<dyn AnyWriter>`) in `crates/dcps/src/any.rs`.
+über Trait-Objekte (`Box<dyn AnyWriter>`) in `crates/dcps/src/any.rs`.
 
 **Tests:** `crates/dcps/src/{publisher,subscriber}.rs::AnyDataWriter`/
 `AnyDataReader`-Trait-Bounds; `crates/dcps/tests/e2e_dcps_api.rs`.
@@ -1100,7 +1122,7 @@ namespace. The full set of status classes is includes in the
 mandatory standard headers in the file dds/core/status/Status.hpp."
 
 **Repo:** Status-Records in `crates/dcps/src/status.rs`; Templates
-fuer Header in `crates/idl-cpp/src/status.rs` Block F (13 Status-
+für Header in `crates/idl-cpp/src/status.rs` Block F (13 Status-
 Klassen, alle in `dds::core::status` namespace).
 
 **Tests:** `crates/idl-cpp/tests/blocks_fgh.rs::block_f_renders_thirteen_class_definitions`,
@@ -1263,7 +1285,7 @@ copy semantics. The full list of exceptions is included in the file
 dds/core/Exceptions.hpp."
 
 **Repo:** Template-Header in `psm_cxx.rs`; deep-copy via standard
-Copy-Constructors fuer alle Exception-Klassen.
+Copy-Constructors für alle Exception-Klassen.
 
 **Tests:** `psm_cxx.rs::tests::exception_hierarchy_emits_dds_exception_classes`.
 
@@ -1296,7 +1318,7 @@ duration_seconds_and_nanoseconds_accessors}`.
 durations expressed as seconds, nanoseconds, milliseconds, or
 Duration objects." (sic, "scan"-Tippfehler.)
 
-**Repo:** `crates/dcps/src/time.rs::Time::add_duration` traegt
+**Repo:** `crates/dcps/src/time.rs::Time::add_duration` trägt
 Nanosekunden-Carry korrekt mit; `from_millis`/`as_millis` decken die
 Millisekunden-Variante ab.
 
@@ -1310,7 +1332,7 @@ Millisekunden-Variante ab.
 times expressed in milliseconds (or other units) as integer types."
 
 **Repo:** `crates/dcps/src/time.rs::Time::{from_millis, as_millis}`
-fuer Millisekunden-Roundtrip.
+für Millisekunden-Roundtrip.
 
 **Tests:** `crates/dcps/src/time.rs::tests::time_from_and_as_millis_roundtrip`.
 
@@ -1335,7 +1357,7 @@ from durations expressed in milliseconds (or other units) as integer
 types."
 
 **Repo:** `crates/dcps/src/time.rs::Duration::{from_millis, as_millis}`
-fuer Millisekunden-Roundtrip.
+für Millisekunden-Roundtrip.
 
 **Tests:** `crates/dcps/src/time.rs::tests::duration_from_and_as_millis_roundtrip`.
 
@@ -1383,7 +1405,7 @@ dds::core::Value<D>` + statische Helper `KeepAll()`/
 `KeepLast(uint32_t)`.
 
 **Repo:** `crates/idl-cpp/src/qos.rs` Block G rendert die Policy-
-Struktur (HistoryKind enum + THistory-Template-Aequivalent ueber
+Struktur (HistoryKind enum + THistory-Template-Aequivalent über
 generischen Block-G-Pfad); Rust-Runtime
 `crates/dcps/src/qos.rs::{HistoryKind, HistoryQosPolicy}` mit
 KeepLast/KeepAll-Variants + depth.
@@ -1392,7 +1414,7 @@ KeepLast/KeepAll-Variants + depth.
 
 **Status:** done
 
-### 7.6.1 dds/qos/Policy.hpp enthaelt alle Policy-Headers
+### 7.6.1 dds/qos/Policy.hpp enthält alle Policy-Headers
 
 **Spec:** §7.6.1, S. 16 — "The full set of policies is included in
 the mandatory standard headers in the file dds/qos/Policy.hpp."
@@ -1434,7 +1456,7 @@ Reference<DELEGATE>` mit getter pro Entity-QoS-Type.
 **Repo:** Loader in `crates/xml/src/qos.rs` (XML+file:);
 `crates/idl-cpp/src/qos.rs::emit_qos_provider_template` rendert
 `TQosProvider<DELEGATE>` + getter-Stubs. C++-Wrapper-Header bindet
-ueber DELEGATE den Rust-Loader.
+über DELEGATE den Rust-Loader.
 
 **Tests:** XML-Tests siehe `zerodds-xml-1.0.md`;
 `crates/idl-cpp/tests/blocks_fgh.rs::qos_provider_template_emits`.
@@ -1516,7 +1538,7 @@ Listener; Runtime in `crates/dcps/src/{publisher,writer}.rs`.
 
 **Status:** done
 
-### 7.9.1 DataWriter parameterized + ueberladene write-Methoden
+### 7.9.1 DataWriter parameterized + überladene write-Methoden
 
 **Spec:** §7.9.1, S. 18 — "The DataWriter class is parameterized
 with respect to the delegate and the topic type that it writes. The
@@ -1567,11 +1589,11 @@ their attributes, creating and annotating them."
 
 **Repo:** Cross-Ref `dds-xtypes-1.3.md` — Rust-Runtime in
 `crates/xtypes/` (DynamicType, DynamicData, Annotations); idl-cpp
-emittiert C++-Wrapper-Templates ueber DELEGATE.
+emittiert C++-Wrapper-Templates über DELEGATE.
 
 **Tests:** `crates/xtypes/tests/*` (1139 Tests aus WP 1.5).
 
-**Status:** done — XTypes 1.3 Full Stack live (siehe Memory wp15).
+**Status:** done — XTypes 1.3 Full Stack live.
 
 ---
 
@@ -1617,11 +1639,11 @@ move-Ctor; Rust-Runtime: `Loan<T>` ist `!Copy` (Drop-Trait), nur via
 
 **Tests:** Generator-Pfad in
 `crates/idl-cpp/tests/blocks_fgh.rs::block_h_emits_seven_dcps_class_decls`;
-Rust-`!Copy` ist Type-System-Default fuer Drop-Typen.
+Rust-`!Copy` ist Type-System-Default für Drop-Typen.
 
 **Status:** done
 
-### 7.12.4 C++11: namespace-level begin()/end() fuer range-based for
+### 7.12.4 C++11: namespace-level begin()/end() für range-based for
 
 **Spec:** §7.12, S. 19 — "LoanedSamples<T> and SharedSamples<T>
 shall provide namespace level begin() and end() functions to
@@ -1643,7 +1665,7 @@ typedef to std::array."
 `template <typename T, std::size_t N> using array = std::array<T,N>;`.
 
 **Tests:** `crates/idl-cpp/tests/psm_cxx_conformance.rs::core_basics_emits_time_duration_instance_handle`
-prueft die Aliase-Definition.
+prüft die Aliase-Definition.
 
 **Status:** done
 
@@ -1658,7 +1680,7 @@ enumerations with enum class syntax."
 
 **Status:** done
 
-### 7.12.7 C++11: Move-Operations fuer alle Value<DELEGATE>-Types
+### 7.12.7 C++11: Move-Operations für alle Value<DELEGATE>-Types
 
 **Spec:** §7.12, S. 19 — "Move operations (move constructor and move
 assign) shall be provided for all Value<DELEGATE> types."
@@ -1691,7 +1713,7 @@ vier Augmentierungen (move/array-cref/swap/noexcept) im C++11-Mode.
 
 ### 7.13.1 C++03 Beispiel — RadarTrack Pub+Sub
 
-**Spec:** §7.13.1, S. 19-21 — Vollstaendiges DataWriter+DataReader-
+**Spec:** §7.13.1, S. 19-21 — Vollständiges DataWriter+DataReader-
 Beispiel in C++03 mit Publisher/Subscriber/Topic/QoS-Stream.
 
 **Repo:** —
@@ -1751,7 +1773,7 @@ listed in Table 7.1."
 C++ enumerations with exactly the same enumeration name and
 enumeration constants."
 
-**Repo:** Cross-Ref `idl4-cpp-1.0.md` §6.10 — Enum-Codegen behaelt
+**Repo:** Cross-Ref `idl4-cpp-1.0.md` §6.10 — Enum-Codegen behält
 Name + Konstanten 1:1.
 
 **Tests:** `crates/idl-cpp/tests/psm_cxx_mappings.rs::enum_emits_typed_enumeration_class`.
@@ -1792,11 +1814,13 @@ map as per the rules specified above."
   Reference-Types).
 - Cross-Cutting: `BuiltinAnnotation::Shared | External` setzen beide
   `MemberDescriptor.is_shared = true` (XTypes 1.3 §7.2.2.4.9 +
-  idl4-cpp §8.1.5 sind semantisch aequivalent).
+  idl4-cpp §8.1.5 sind semantisch äquivalent).
 
 **Tests:**
+
 - `crates/idl-cpp/tests/spec_conformance.rs::{shared_member_emits_std_shared_ptr,
   shared_and_optional_compose}`.
+
 - `crates/idl-csharp/tests/spec_conformance.rs::shared_member_emits_shared_marker_attribute`.
 - `crates/idl-java/tests/spec_conformance.rs::shared_member_emits_shared_annotation`.
 
@@ -1811,7 +1835,7 @@ long z; //@Optional; plot_t plot; //@Shared`-Mapping.
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Beispiel-Sample fuer §8.1.4/§8.1.5; normative Mapping-Regeln stecken in §8.1.x.
+**Status:** `n/a (informative)` — Beispiel-Sample für §8.1.4/§8.1.5; normative Mapping-Regeln stecken in §8.1.x.
 
 ---
 

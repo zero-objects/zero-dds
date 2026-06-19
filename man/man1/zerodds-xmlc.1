@@ -1,0 +1,62 @@
+.TH ZERODDS-XMLC 1 "June 2026" "ZeroDDS 1.0.0-rc.3" "User Commands"
+.SH NAME
+zerodds-xmlc \- DDS-XML validator, deployment renderer, type lister
+.SH SYNOPSIS
+.B zerodds-xmlc
+.I command
+.I file.xml
+.SH DESCRIPTION
+.B zerodds-xmlc
+is a command-line front-end over the ZeroDDS DDS-XML parsers (OMG
+DDS-XML 1.0). It parses a deployment file and reports; it never touches
+the network.
+.SH COMMANDS
+.TP
+.B validate \fIFILE.xml\fR
+Check well-formedness and parse every DDS-XML library (types, qos,
+domain, participant, application). Print a one-line tally. Exit 1 on a
+parse or validation error.
+.TP
+.B render \fIFILE.xml\fR
+Print a structured deployment summary: domains and their topics,
+participants and their publishers/subscribers with the data
+writers/readers underneath.
+.TP
+.B types \fIFILE.xml\fR
+List the
+.B <types>
+(XTypes) definitions, recursing into modules.
+.TP
+.B help
+Show usage.
+.SH EXIT STATUS
+.TP
+.B 0
+Success / valid.
+.TP
+.B 1
+Parse or validation error.
+.TP
+.B 2
+CLI parse error / bad invocation.
+.SH EXAMPLES
+Validate a deployment file:
+.PP
+.RS
+.nf
+zerodds-xmlc validate deployment.xml
+.fi
+.RE
+.PP
+Render the deployment tree:
+.PP
+.RS
+.nf
+zerodds-xmlc render deployment.xml
+.fi
+.RE
+.SH SEE ALSO
+.BR zerodds-admin (1),
+.BR zerodds-idlc (1)
+.SH AUTHORS
+ZeroDDS Contributors <release@zerodds.org>

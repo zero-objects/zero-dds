@@ -57,21 +57,27 @@ export const STypeSupport: DdsTopicType<S> = {
     typeName: "Outer::Inner::S",
     isKeyed: false,
     extensibility: "appendable",
-    encode(s: S, endian: EndianMode = "le"): Uint8Array {
-        const w = new Xcdr2Writer(endian);
+    encodeInto(w: Xcdr2Writer, s: S): void {
         const _tok = w.beginAppendable();
         w.writeInt32(s.x);
         w.endAppendable(_tok);
+    },
+    encode(s: S, endian: EndianMode = "le"): Uint8Array {
+        const w = new Xcdr2Writer(endian);
+        this.encodeInto(w, s);
         return w.toBytes();
     },
-    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): S {
-        const r = new Xcdr2Reader(bytes, offset, length, "le");
+    decodeFrom(r: Xcdr2Reader): S {
         const _tok = r.beginAppendable();
         const _f_x: number = r.readInt32();
         r.endAppendable(_tok);
         return {
             x: _f_x,
         };
+    },
+    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): S {
+        const r = new Xcdr2Reader(bytes, offset, length, "le");
+        return this.decodeFrom(r);
     },
     keyHash(s: S): Uint8Array {
         return new Uint8Array(16);

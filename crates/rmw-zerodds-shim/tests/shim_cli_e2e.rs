@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// E2E-Tests fuer `zerodds-ros2-shim` CLI.
+// E2E tests for the `zerodds-ros2-shim` CLI.
 //
 // Spec: `docs/specs/zerodds-ros2-bridge-1.0.md` §12.2.
 
@@ -111,4 +111,87 @@ fn info_includes_rmw_compat_marker() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("rmw_zerodds_cpp"));
     assert!(stdout.contains("REP-2007"));
+}
+
+// ---------------------------------------------------------------------------
+// C8 — `doctor` / `graph` diagnostic CLI
+// ---------------------------------------------------------------------------
+
+#[test]
+fn doctor_clean_ros_env_passes() {
+    let out = Command::new(shim_binary())
+        .arg("doctor")
+        .env_clear()
+        .env("RMW_IMPLEMENTATION", "rmw_zerodds_cpp")
+        .env("ROS_DISTRO", "jazzy")
+        .env("ROS_DOMAIN_ID", "0")
+        .output()
+        .expect("spawn doctor");
+    assert!(out.status.success(), "doctor exit: {:?}", out.status);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("[  ok] RMW_IMPLEMENTATION"));
+    assert!(stdout.contains("0 failure(s)"));
+}
+
+#[test]
+fn doctor_multicast_free_without_peers_fails() {
+    // Multicast off + no unicast peers = unreachable discovery → hard fail
+    // (exit 5). The classic ROS-on-WiFi misconfiguration `doctor` exists for.
+    let out = Command::new(shim_binary())
+        .arg("doctor")
+        .env_clear()
+        .env("RMW_IMPLEMENTATION", "rmw_zerodds_cpp")
+        .env("ZERODDS_NO_MULTICAST", "1")
+        .output()
+        .expect("spawn doctor");
+    assert_eq!(out.status.code(), Some(5), "expected hard-fail exit 5");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("[fail] discovery"));
+}
+
+#[test]
+fn doctor_multicast_free_with_peers_ok() {
+    let out = Command::new(shim_binary())
+        .arg("doctor")
+        .env_clear()
+        .env("RMW_IMPLEMENTATION", "rmw_zerodds_cpp")
+        .env("ROS_DISTRO", "humble")
+        .env("ZERODDS_NO_MULTICAST", "1")
+        .env("ZERODDS_PEERS", "10.0.0.2,10.0.0.3")
+        .output()
+        .expect("spawn doctor");
+    assert!(out.status.success(), "doctor exit: {:?}", out.status);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("multicast-free, 2 unicast peer(s)"));
+}
+
+#[test]
+fn doctor_bad_security_dir_fails() {
+    let out = Command::new(shim_binary())
+        .arg("doctor")
+        .env_clear()
+        .env("RMW_IMPLEMENTATION", "rmw_zerodds_cpp")
+        .env("ZERODDS_SECURITY_DIR", "/tmp/_zerodds_not_an_enclave_xyz")
+        .output()
+        .expect("spawn doctor");
+    assert_eq!(out.status.code(), Some(5));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("[fail] security"));
+}
+
+#[test]
+fn graph_shows_participant_and_discovery_mode() {
+    let out = Command::new(shim_binary())
+        .arg("graph")
+        .arg("--domain")
+        .arg("7")
+        .env_clear()
+        .env("ZERODDS_NO_MULTICAST", "1")
+        .output()
+        .expect("spawn graph");
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("rmw_zerodds_cpp"));
+    assert!(stdout.contains("domain_id             7"));
+    assert!(stdout.contains("discovery             unicast"));
 }

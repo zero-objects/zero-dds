@@ -1,8 +1,8 @@
-//! W4-Integration: realistische DDS-Topic-Encoder/-Decoder ohne Macros.
+//! W4 integration: realistic DDS topic encoders/decoders without macros.
 //!
-//! Diese Tests simulieren, wie ein zukuenftiger Code-Gen-Backend die
-//! `zerodds-cdr`-Helpers nutzen wuerde. Sie validieren die End-to-End-
-//! Pipeline aus W1-W3 fuer realistische DDS-Topic-Strukturen.
+//! These tests simulate how a future code-gen backend would use the
+//! `zerodds-cdr` helpers. They validate the end-to-end pipeline from
+//! W1-W3 for realistic DDS topic structures.
 
 #![allow(
     clippy::expect_used,
@@ -29,7 +29,7 @@ use zerodds_cdr::struct_enc::{
 };
 
 // ============================================================================
-// @final SensorReading — typisches DDS-Topic ohne Extensibility
+// @final SensorReading — a typical DDS topic without extensibility
 // ============================================================================
 
 #[derive(Debug, PartialEq)]
@@ -93,7 +93,7 @@ fn sensor_reading_be_le_independent() {
 }
 
 // ============================================================================
-// @appendable AlarmEvent — forward-kompatibel
+// @appendable AlarmEvent — forward-compatible
 // ============================================================================
 
 #[derive(Debug, PartialEq)]
@@ -106,7 +106,7 @@ struct AlarmEventV1 {
 struct AlarmEventV2 {
     event_id: u32,
     severity: u8,
-    // Erweiterung: timestamp neu in V2
+    // Extension: timestamp new in V2
     timestamp_ns: u64,
 }
 
@@ -121,8 +121,8 @@ fn encode_alarm_v2(s: &AlarmEventV2, w: &mut BufferWriter) -> Result<(), EncodeE
 
 #[test]
 fn alarm_event_v2_can_be_decoded_as_v1() {
-    // Forward-Compat: V2-Writer + V1-Reader. Reader ueberspringt
-    // die zusaetzlichen Bytes via DHEADER-Sub-Reader.
+    // Forward compat: V2 writer + V1 reader. The reader skips the extra
+    // bytes via the DHEADER sub-reader.
     let v2 = AlarmEventV2 {
         event_id: 7,
         severity: 3,
@@ -142,20 +142,20 @@ fn alarm_event_v2_can_be_decoded_as_v1() {
     .unwrap();
     assert_eq!(v1.event_id, 7);
     assert_eq!(v1.severity, 3);
-    // V1-Reader hat trotz nicht gelesenem timestamp den Frame komplett
-    // konsumiert.
+    // The V1 reader consumed the entire frame even though it did not read
+    // the timestamp.
     assert_eq!(r.remaining(), 0);
 }
 
 // ============================================================================
-// @mutable Configuration — Member-ID-basiert, reorderbar
+// @mutable Configuration — member-ID-based, reorderable
 // ============================================================================
 
 #[derive(Debug, PartialEq)]
 struct Configuration {
     max_payload_size: u32,
     enable: bool,
-    label: u32, // ID 10 — nicht-konsekutive ID
+    label: u32, // ID 10 — non-consecutive ID
 }
 
 const ID_MAX_PAYLOAD_SIZE: u32 = 1;
@@ -182,7 +182,7 @@ fn decode_config_mutable(r: &mut BufferReader<'_>) -> Result<Configuration, Deco
             ID_MAX_PAYLOAD_SIZE => max_payload_size = Some(u32::decode(&mut sub)?),
             ID_ENABLE => enable = Some(bool::decode(&mut sub)?),
             ID_LABEL => label = Some(u32::decode(&mut sub)?),
-            _ => {} // unbekannte Members ignorieren (forward-compat)
+            _ => {} // ignore unknown members (forward compat)
         }
     }
     Ok(Configuration {
@@ -210,7 +210,7 @@ fn configuration_mutable_roundtrip() {
 
 #[test]
 fn configuration_decoder_ignores_unknown_member_ids() {
-    // Schreibe 4 Members; Decoder kennt nur 3.
+    // Write 4 members; the decoder knows only 3.
     let mut w = BufferWriter::new(Endianness::Little);
     encode_mutable_member(&mut w, ID_MAX_PAYLOAD_SIZE, false, |w| 999u32.encode(w)).unwrap();
     encode_mutable_member(&mut w, 9999, false, |w| 0xCAFEu32.encode(w)).unwrap();
@@ -241,7 +241,7 @@ extern crate alloc;
 fn encode_device(s: &DeviceSnapshot, w: &mut BufferWriter) -> Result<(), EncodeError> {
     encode_final(w, |w| {
         s.device_name.encode(w)?;
-        // Sequence-Length + Items
+        // Sequence length + items
         let len = u32::try_from(s.readings.len()).map_err(|_| EncodeError::ValueOutOfRange {
             message: "readings length overflow",
         })?;

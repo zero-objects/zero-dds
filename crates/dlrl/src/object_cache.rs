@@ -1,97 +1,96 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Object-Cache mit Identity-Tracking — DDS 1.4 §B.2 + §B.6.
+//! Object cache with identity tracking — DDS 1.4 §B.2 + §B.6.
 //!
-//! Spec §B.2 — `Cache`: zentrales Repository fuer DLRL-Objekte einer
-//! `DomainParticipant`-Instanz. Eindeutige Identity ueber `ObjectId`
-//! (Topic-DCPS-Key + Type-Discriminator).
+//! Spec §B.2 — `Cache`: central repository for the DLRL objects of a
+//! `DomainParticipant` instance. Unique identity via `ObjectId`
+//! (topic DCPS key + type discriminator).
 //!
-//! Spec §B.6 — `ObjectRoot`: Lifecycle-State (`NEW`/`MODIFIED`/
-//! `DELETED`/`COMMITTED`) + Version-Counter fuer Optimistic-
-//! Concurrency.
+//! Spec §B.6 — `ObjectRoot`: lifecycle state (`NEW`/`MODIFIED`/
+//! `DELETED`/`COMMITTED`) + version counter for optimistic
+//! concurrency.
 //!
-//! `WeakObjectRef` (Spec §B.6.4) — schwache Referenz auf ein Objekt;
-//! wird `None`, wenn das Objekt aus dem Cache entfernt wird.
+//! `WeakObjectRef` (Spec §B.6.4) — weak reference to an object;
+//! becomes `None` when the object is removed from the cache.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-/// Eindeutige Object-Identity — Topic + DCPS-Key.
+/// Unique object identity — topic + DCPS key.
 ///
-/// Spec §B.6.1: jede DLRL-Object-Instanz hat einen Topic-Namen plus
-/// einen Key (CDR-encoded BLOB).
+/// Spec §B.6.1: every DLRL object instance has a topic name plus
+/// a key (CDR-encoded BLOB).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ObjectId {
-    /// Topic-Name (`dds_topic`).
+    /// Topic name (`dds_topic`).
     pub topic: String,
-    /// CDR-encoded DCPS-Key.
+    /// CDR-encoded DCPS key.
     pub key: Vec<u8>,
 }
 
 impl ObjectId {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(topic: String, key: Vec<u8>) -> Self {
         Self { topic, key }
     }
 }
 
-/// Lifecycle-State eines DLRL-Objekts. Spec §B.6.2.
+/// Lifecycle state of a DLRL object. Spec §B.6.2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ObjectState {
-    /// `NEW` — Objekt wurde im Cache erzeugt, aber noch nicht
-    /// committed.
+    /// `NEW` — object created in the cache but not yet committed.
     New,
-    /// `MODIFIED` — committed, dann lokal modifiziert.
+    /// `MODIFIED` — committed, then modified locally.
     Modified,
-    /// `DELETED` — Markiert zur Loeschung (cascade-pending).
+    /// `DELETED` — marked for deletion (cascade pending).
     Deleted,
-    /// `COMMITTED` — letzter Commit erfolgreich.
+    /// `COMMITTED` — last commit succeeded.
     Committed,
 }
 
-/// Object-Eintrag im Cache. Spec §B.6.
+/// Object entry in the cache. Spec §B.6.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectRef {
     /// Identity.
     pub id: ObjectId,
-    /// CDR-encoded State-Bytes (Caller serialisiert via XCDR2).
+    /// CDR-encoded state bytes (caller serializes via XCDR2).
     pub state: Vec<u8>,
-    /// Lifecycle-State.
+    /// Lifecycle state.
     pub lifecycle: ObjectState,
-    /// Version-Counter — wird bei jedem Modify inkrementiert.
-    /// Optimistic-Concurrency-Check (Spec §B.7.4).
+    /// Version counter — incremented on every modify.
+    /// Optimistic-concurrency check (Spec §B.7.4).
     pub version: u64,
 }
 
-/// Schwache Referenz auf ein Objekt im Cache. Spec §B.6.4.
+/// Weak reference to an object in the cache. Spec §B.6.4.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WeakObjectRef {
-    /// Object-Identity.
+    /// Object identity.
     pub id: ObjectId,
-    /// Erwartete Version (Caller kann pruefen, ob das Objekt
-    /// inzwischen geaendert wurde).
+    /// Expected version (caller can check whether the object has
+    /// been changed in the meantime).
     pub expected_version: u64,
 }
 
 impl WeakObjectRef {
-    /// Liefert die ID.
+    /// Returns the ID.
     #[must_use]
     pub fn id(&self) -> &ObjectId {
         &self.id
     }
 
-    /// Liefert die erwartete Version.
+    /// Returns the expected version.
     #[must_use]
     pub fn expected_version(&self) -> u64 {
         self.expected_version
     }
 }
 
-/// Object-Cache — zentraler Identity-tracking Container. Spec §B.2.
+/// Object cache — central identity-tracking container. Spec §B.2.
 #[derive(Debug, Default)]
 pub struct ObjectCache {
     objects: BTreeMap<ObjectId, ObjectRef>,
@@ -99,27 +98,27 @@ pub struct ObjectCache {
 }
 
 impl ObjectCache {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Anzahl gehaltener Objekte.
+    /// Number of held objects.
     #[must_use]
     pub fn len(&self) -> usize {
         self.objects.len()
     }
 
-    /// `true` wenn Cache leer.
+    /// `true` if the cache is empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.objects.is_empty()
     }
 
-    /// Spec §B.6.3 `register_object` — fuegt ein neues Object in den
-    /// Cache. Wenn die ID bereits existiert, wird das State ueberschrieben
-    /// und die Version inkrementiert (`MODIFIED`).
+    /// Spec §B.6.3 `register_object` — inserts a new object into the
+    /// cache. If the ID already exists, the state is overwritten and
+    /// the version is incremented (`MODIFIED`).
     pub fn register(&mut self, id: ObjectId, state: Vec<u8>) -> ObjectRef {
         if let Some(existing) = self.objects.get_mut(&id) {
             existing.state = state;
@@ -139,13 +138,13 @@ impl ObjectCache {
         }
     }
 
-    /// Lookup ueber ID.
+    /// Lookup by ID.
     #[must_use]
     pub fn get(&self, id: &ObjectId) -> Option<&ObjectRef> {
         self.objects.get(id)
     }
 
-    /// Liefert eine schwache Referenz, falls das Objekt existiert.
+    /// Returns a weak reference if the object exists.
     /// Spec §B.6.4.
     #[must_use]
     pub fn weak_ref(&self, id: &ObjectId) -> Option<WeakObjectRef> {
@@ -155,9 +154,9 @@ impl ObjectCache {
         })
     }
 
-    /// Resolve einer schwachen Referenz. Liefert `None`, wenn das
-    /// Objekt entfernt wurde oder die Version nicht mehr stimmt
-    /// (Spec §B.7.4 Optimistic-Concurrency-Check).
+    /// Resolves a weak reference. Returns `None` if the object was
+    /// removed or the version no longer matches
+    /// (Spec §B.7.4 optimistic-concurrency check).
     #[must_use]
     pub fn resolve(&self, weak: &WeakObjectRef) -> Option<&ObjectRef> {
         self.objects
@@ -165,8 +164,8 @@ impl ObjectCache {
             .filter(|o| o.version == weak.expected_version)
     }
 
-    /// Spec §B.6.5 `mark_deleted` — Markiert ein Object zur Loeschung.
-    /// Tatsaechliche Entfernung erfolgt beim naechsten `commit_all`.
+    /// Spec §B.6.5 `mark_deleted` — marks an object for deletion.
+    /// Actual removal happens on the next `commit_all`.
     pub fn mark_deleted(&mut self, id: &ObjectId) -> bool {
         if let Some(o) = self.objects.get_mut(id) {
             o.lifecycle = ObjectState::Deleted;
@@ -177,8 +176,8 @@ impl ObjectCache {
         }
     }
 
-    /// Spec §B.7.4 `commit_all` — markiert alle `New`/`Modified`-
-    /// Objekte als `Committed` und entfernt `Deleted`-Objekte.
+    /// Spec §B.7.4 `commit_all` — marks all `New`/`Modified` objects
+    /// as `Committed` and removes `Deleted` objects.
     pub fn commit_all(&mut self) -> usize {
         let mut deleted = 0;
         let to_remove: Vec<ObjectId> = self
@@ -197,10 +196,9 @@ impl ObjectCache {
         deleted
     }
 
-    /// Spec §B.7.4 `rollback_all` — entfernt `New`-Objekte, restored
-    /// `Modified`/`Deleted` zurueck zu `Committed` (allerdings nicht
-    /// State-Bytes — der Caller muss vor `register` einen Snapshot
-    /// halten).
+    /// Spec §B.7.4 `rollback_all` — removes `New` objects, restores
+    /// `Modified`/`Deleted` back to `Committed` (but not the state
+    /// bytes — the caller must hold a snapshot before `register`).
     pub fn rollback_all(&mut self) -> usize {
         let mut affected = 0;
         let to_remove: Vec<ObjectId> = self
@@ -222,13 +220,13 @@ impl ObjectCache {
         affected
     }
 
-    /// Liste aller Object-IDs in stabiler Reihenfolge.
+    /// List of all object IDs in stable order.
     #[must_use]
     pub fn ids(&self) -> Vec<ObjectId> {
         self.objects.keys().cloned().collect()
     }
 
-    /// Iteriere ueber alle Objekte.
+    /// Iterates over all objects.
     pub fn iter(&self) -> impl Iterator<Item = &ObjectRef> {
         self.objects.values()
     }

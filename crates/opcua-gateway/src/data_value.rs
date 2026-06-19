@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use crate::node_id::NodeId;
 use crate::types::{BuiltinTypeKind, ByteString, Guid, LocalizedText, QualifiedName, StatusCode};
 
-/// Spec §8.2.2 — `BodyEncoding` Enum (NONE/BYTESTRING/XMLELEMENT).
+/// Spec §8.2.2 — `BodyEncoding` enum (NONE/BYTESTRING/XMLELEMENT).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BodyEncoding {
     /// `NONE_BODY_ENCODING` (Spec @value(0)).
@@ -20,12 +20,12 @@ pub enum BodyEncoding {
     XmlElement,
 }
 
-/// Spec §8.2.2 — `ExtensionObject` mit type_id + body.
+/// Spec §8.2.2 — `ExtensionObject` with type_id + body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtensionObject {
     /// Spec — `NodeId type_id`.
     pub type_id: NodeId,
-    /// Body-Encoding-Variant + Bytes.
+    /// Body encoding variant + bytes.
     pub body: ExtensionObjectBody,
 }
 
@@ -40,7 +40,7 @@ pub enum ExtensionObjectBody {
     XmlElement(String),
 }
 
-/// Spec §8.2.2 — `Variant` mit array_dimensions + value-Sequence.
+/// Spec §8.2.2 — `Variant` with array_dimensions + value sequence.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Variant {
     /// Spec — `sequence<uint32> array_dimensions`. Empty = scalar,
@@ -51,8 +51,8 @@ pub struct Variant {
 }
 
 impl Variant {
-    /// Konstruktor fuer Scalar-Variant (Spec: array_dimensions empty
-    /// → value mit length 1).
+    /// Constructor for a scalar variant (Spec: array_dimensions empty
+    /// → value with length 1).
     #[must_use]
     pub fn scalar(v: VariantValue) -> Self {
         Self {
@@ -61,20 +61,20 @@ impl Variant {
         }
     }
 
-    /// `true` wenn Variant ein Scalar ist (array_dimensions empty).
+    /// `true` if the variant is a scalar (array_dimensions empty).
     #[must_use]
     pub fn is_scalar(&self) -> bool {
         self.array_dimensions.is_empty()
     }
 
-    /// `true` wenn 1D-Array (array_dimensions length 1).
+    /// `true` if a 1D array (array_dimensions length 1).
     #[must_use]
     pub fn is_1d_array(&self) -> bool {
         self.array_dimensions.len() == 1
     }
 
-    /// Liefert die `BuiltinTypeKind` aller Werte. Liefert `None` wenn
-    /// Variant leer ist oder gemischt-typisierte Werte enthaelt.
+    /// Returns the `BuiltinTypeKind` of all values. Returns `None` if the
+    /// variant is empty or contains mixed-typed values.
     #[must_use]
     pub fn type_kind(&self) -> Option<BuiltinTypeKind> {
         let first = self.value.first()?.kind();
@@ -88,7 +88,7 @@ impl Variant {
 
 /// Spec §8.2.2 — `VariantValue` Union switch (BuiltinTypeKind).
 ///
-/// Wir geben benannte Varianten fuer alle 25 Spec-Cases.
+/// We provide named variants for all 25 spec cases.
 #[derive(Debug, Clone, PartialEq)]
 pub enum VariantValue {
     /// `BOOLEAN_TYPE` Case.
@@ -136,7 +136,7 @@ pub enum VariantValue {
 }
 
 impl VariantValue {
-    /// Liefert den entsprechenden `BuiltinTypeKind`.
+    /// Returns the corresponding `BuiltinTypeKind`.
     #[must_use]
     pub const fn kind(&self) -> BuiltinTypeKind {
         match self {
@@ -165,7 +165,7 @@ impl VariantValue {
     }
 }
 
-/// Spec §8.2.2 — `DataValue` mit value + status + timestamps.
+/// Spec §8.2.2 — `DataValue` with value + status + timestamps.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DataValue {
     /// `@id(1) @optional Variant value`.
@@ -183,8 +183,8 @@ pub struct DataValue {
 }
 
 impl DataValue {
-    /// Konstruktor mit Wert + Status + Source-Timestamp; Server-
-    /// Timestamps + Picos auf `None`.
+    /// Constructor with value + status + source timestamp; server
+    /// timestamps + picos set to `None`.
     #[must_use]
     pub const fn new_value(value: Variant, status: StatusCode, source_timestamp: i64) -> Self {
         Self {
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn variant_value_kind_round_trips_for_all_cases() {
-        // Spec — VariantValue Cases sind 1:1 zu BuiltinTypeKind.
+        // Spec — VariantValue cases are 1:1 with BuiltinTypeKind.
         let cases: alloc::vec::Vec<(VariantValue, BuiltinTypeKind)> = alloc::vec![
             (VariantValue::Boolean(true), BuiltinTypeKind::Boolean),
             (VariantValue::SByte(-1), BuiltinTypeKind::SByte),

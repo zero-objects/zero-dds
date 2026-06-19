@@ -3,14 +3,14 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-security/badge.svg)](https://docs.rs/zerodds-security)
 
-DDS-Security 1.1 (formal/2018-04-01) Plugin-SPI fuer den
-[ZeroDDS](https://zerodds.org)-Stack: Trait-Definitionen, Token-
-Datenmodell, Generic-Message-Topics. Pure-Rust + `alloc`. Safety
-classification: **SAFE** (trust-neutraler SPI-Layer).
+DDS-Security 1.1 (formal/2018-04-01) plugin SPI for the
+[ZeroDDS](https://zerodds.org) stack: trait definitions, token
+data model, generic-message topics. Pure Rust + `alloc`. Safety
+classification: **SAFE** (trust-neutral SPI layer).
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Trait / Modul | Konkrete Impl |
+| Spec | Trait / module | Concrete impl |
 |------|---------------|---------------|
 | §8.3 Authentication | `AuthenticationPlugin` | `zerodds-security-pki` |
 | §8.4 Access Control | `AccessControlPlugin` | `zerodds-security-permissions` |
@@ -18,34 +18,34 @@ classification: **SAFE** (trust-neutraler SPI-Layer).
 | §8.6 Logging | `LoggingPlugin` | `zerodds-security-logging` |
 | §8.7 Data Tagging | `DataTaggingPlugin` | `zerodds-security-runtime` |
 
-Coverage-Doc: `docs/spec-coverage/dds-security-1.2.md` (50 done / 0 partial / 0 open / 1 n/a, K6-Audit).
+Coverage doc: `docs/spec-coverage/dds-security-1.2.md` (50 done / 0 partial / 0 open / 1 n/a, K6 audit).
 
-## Was ist drin
+## What's inside
 
-**Plugin-Traits** (object-safe, `Box<dyn Plugin>`-erasable):
-- `AuthenticationPlugin` — Identity-Validation + Handshake.
-- `AccessControlPlugin` — Permissions-Check, Topic-Allow-/Deny.
-- `CryptographicPlugin` — Encrypt/Decrypt-Submessage + Key-Material + Receiver-Specific-MACs.
-- `LoggingPlugin` — Audit-Events.
-- `DataTaggingPlugin` — Built-in DataTagging (DDS-Security 1.2 §8.7).
+**Plugin traits** (object-safe, `Box<dyn Plugin>`-erasable):
+- `AuthenticationPlugin` — identity validation + handshake.
+- `AccessControlPlugin` — permissions check, topic allow/deny.
+- `CryptographicPlugin` — encrypt/decrypt submessage + key material + receiver-specific MACs.
+- `LoggingPlugin` — audit events.
+- `DataTaggingPlugin` — built-in DataTagging (DDS-Security 1.2 §8.7).
 
-**Token-Datenmodell:**
+**Token data model:**
 - `IdentityToken`, `PermissionsToken`, `CryptoToken`, `IdentityStatusToken`.
 - `DataHolder`, `BinaryProperty`, `WireProperty`.
 
-**Generic Messages** (DCPSParticipantStatelessMessage + DCPSParticipantVolatileMessageSecure):
+**Generic messages** (DCPSParticipantStatelessMessage + DCPSParticipantVolatileMessageSecure):
 - `ParticipantGenericMessage`, `MessageIdentity`.
-- Topic-Konstanten: `TOPIC_STATELESS_MESSAGE`, `TOPIC_VOLATILE_MESSAGE_SECURE`, `TYPE_NAME_GENERIC_MESSAGE`.
+- Topic constants: `TOPIC_STATELESS_MESSAGE`, `TOPIC_VOLATILE_MESSAGE_SECURE`, `TYPE_NAME_GENERIC_MESSAGE`.
 
-**Querschnitt:**
-- `Property`, `PropertyList` — Plugin-Konfiguration via `<participant_qos><property>`.
-- `security_topic_qos` — Built-in-Security-Topic-QoS-Profile (§7.4.5).
-- `SecurityError` — alle Plugin-Fehler.
-- `mock` (Feature `std`) — Test-Mock-Plugins.
+**Cross-cutting:**
+- `Property`, `PropertyList` — plugin configuration via `<participant_qos><property>`.
+- `security_topic_qos` — built-in security-topic QoS profiles (§7.4.5).
+- `SecurityError` — all plugin errors.
+- `mock` (feature `std`) — test mock plugins.
 
-## Schichten-Position
+## Layer position
 
-Layer 4 — Core Services (SPI-Crate). Pure-Rust + `alloc`, **keine** ZeroDDS-Crate-Deps. Wird von 7 weiteren Security-Crates konsumiert (`security-pki`, `-crypto`, `-keyexchange`, `-permissions`, `-logging`, `-rtps`, `-runtime`) plus von `zerodds-discovery` (Built-in-Endpoint-Slots) und `zerodds-dcps` (Feature `security`).
+Layer 4 — Core Services (SPI crate). Pure Rust + `alloc`, **no** ZeroDDS crate deps. Consumed by 7 further security crates (`security-pki`, `-crypto`, `-keyexchange`, `-permissions`, `-logging`, `-rtps`, `-runtime`) plus by `zerodds-discovery` (built-in endpoint slots) and `zerodds-dcps` (feature `security`).
 
 ## Quickstart
 
@@ -57,19 +57,19 @@ let auth: Box<dyn AuthenticationPlugin> = Box::new(MockAuthenticationPlugin::new
 // Use auth.validate_local_identity(...), auth.begin_handshake_request(...) etc.
 ```
 
-Produktive Use-Cases bauen die echten Plugins (`security-pki`, etc.) und stecken sie via `Box<dyn Plugin>` in den DCPS-Participant.
+Production use cases build the real plugins (`security-pki`, etc.) and plug them into the DCPS participant via `Box<dyn Plugin>`.
 
-## Feature-Flags
+## Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std` | ✅ | Mutex + Thread-Safe Mock |
+| `std` | ✅ | Mutex + thread-safe mock |
 | `alloc` | ✅ via std | `Vec`/`String` |
-| `safety` | ❌ | Reserve-Hook |
+| `safety` | ❌ | reserved hook |
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1` ist **API-frozen** — Breaking Changes erfordern v2.0-Major-Bump. Semver-Patch + Minor duerfen nur neue Methoden mit Default-Body oder non-breaking Enum-Varianten hinzufuegen. Diese Frozen-Pledge ist verbindlich, weil 7 Schwester-Crates + dcps + discovery von dem SPI abhaengen.
+`1.0.0-rc.1` is **API-frozen** — breaking changes require a v2.0 major bump. Semver patch + minor may only add new methods with a default body or non-breaking enum variants. This frozen pledge is binding, because 7 sister crates + dcps + discovery depend on this SPI.
 
 ## Tests
 
@@ -77,17 +77,17 @@ Produktive Use-Cases bauen die echten Plugins (`security-pki`, etc.) und stecken
 cargo test -p zerodds-security
 ```
 
-39 Unit-Tests + 1 Doc-Test grün.
+39 unit tests + 1 doc test green.
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../../LICENSE).
+Apache-2.0. See [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
-- `docs/spec-coverage/dds-security-1.2.md` — Spec-Coverage-Doc.
-- [`zerodds-security-pki`](../security-pki) — X.509 + RSA-PSS + ECDSA + OCSP/CRL Authentication.
-- [`zerodds-security-crypto`](../security-crypto) — AES-GCM/HMAC Cryptographic Plugin.
-- [`zerodds-security-permissions`](../security-permissions) — Governance + Permissions-XML.
-- [`zerodds-security-rtps`](../security-rtps) — RTPS-Header-AAD-Wrapper.
-- [`zerodds-security-runtime`](../security-runtime) — Plugin-Runtime + Built-in DataTagging.
+- `docs/spec-coverage/dds-security-1.2.md` — spec coverage doc.
+- [`zerodds-security-pki`](../security-pki) — X.509 + RSA-PSS + ECDSA + OCSP/CRL authentication.
+- [`zerodds-security-crypto`](../security-crypto) — AES-GCM/HMAC cryptographic plugin.
+- [`zerodds-security-permissions`](../security-permissions) — Governance + Permissions XML.
+- [`zerodds-security-rtps`](../security-rtps) — RTPS header AAD wrapper.
+- [`zerodds-security-runtime`](../security-runtime) — plugin runtime + built-in DataTagging.

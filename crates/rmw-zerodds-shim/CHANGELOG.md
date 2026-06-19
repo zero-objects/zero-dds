@@ -5,7 +5,7 @@ Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [1.0.0-rc.1] — 2026-05-07
 
-Initiale Release-Materialisierung des Crates **`rmw-zerodds-shim`** als Layer-7-Profile.
+Initial release materialization of the **`rmw-zerodds-shim`** crate as a Layer-7 profile.
 
 ### Spec-Referenzen
 Siehe `README.md` + `docs/spec-coverage/<spec>.md`.
@@ -13,19 +13,19 @@ Siehe `README.md` + `docs/spec-coverage/<spec>.md`.
 ### Public-API
 Siehe `README.md` + `src/lib.rs` Doc-Comments.
 
-### Implementierung
+### Implementation
 ROS 2 rmw_zerodds shim — C-FFI wrapper around zerodds-ros2-rmw + zerodds-c-api
 
 ### Architektur
 - Layer: 7 (Profiles)
 
 ### Stabilitaet
-Alle `pub`-Items sind RC1-stabil; Breaking-Changes erfordern Major-Bump.
+All `pub` items are RC1-stable; breaking changes require a major bump.
 
-### Added — CLI-Subcommands
+### Added — CLI subcommands
 
-- `zerodds-ros2-shim` CLI mit `catalog` (Topic-Inventur), `metrics`
-  (Prometheus-Snapshot) und `selftest`-Subcommands.
-- `zerodds-monitor` + `zerodds-observability-otlp`-Integration fuer
-  Diagnose-Output (JSON-Lines + OTLP-Spans) — CLI ist exempt vom
-  SIGTERM-Watcher (§9.2 gilt nur fuer Daemons).
+- `zerodds-ros2-shim` CLI with `catalog` (topic inventory), `metrics`
+  (Prometheus snapshot) and `selftest` subcommands.
+- `zerodds-monitor` + `zerodds-observability-otlp` integration for
+  diagnostics output (JSON lines + OTLP spans) — the CLI is exempt from
+  the SIGTERM watcher (§9.2 applies only to daemons).

@@ -1,50 +1,50 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Crate `zerodds-security-logging`. Safety classification: **SAFE** (reiner I/O-Wrapper; keine Secrets werden gepuffert ausserhalb der Log-Zeile selbst).
+//! Crate `zerodds-security-logging`. Safety classification: **SAFE** (a pure I/O wrapper; no secrets are buffered outside the log line itself).
 //!
-//! Produktions-taugliche Logging-Backends fuer DDS-Security 1.1/1.2 §8.6
-//! (`LoggingPlugin`-SPI aus `zerodds-security`).
+//! Production-grade logging backends for DDS-Security 1.1/1.2 §8.6
+//! (the `LoggingPlugin` SPI from `zerodds-security`).
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 4 — Core Services. Konsumiert von end-user-Builds + DCPS-Runtime
-//! (Feature `security`).
+//! Layer 4 — Core Services. Consumed by end-user builds + the DCPS runtime
+//! (feature `security`).
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! - [`StderrLoggingPlugin`] — structured log lines an `stderr`.
-//! - [`JsonLinesLoggingPlugin`] — `application/x-ndjson` in eine Datei.
-//! - [`SyslogLoggingPlugin`] — RFC-5424-UDP-Backend (Facility `LOCAL0`).
-//! - [`FanOutLoggingPlugin`] — fan-out an mehrere Backends.
+//! - [`StderrLoggingPlugin`] — structured log lines to `stderr`.
+//! - [`JsonLinesLoggingPlugin`] — `application/x-ndjson` to a file.
+//! - [`SyslogLoggingPlugin`] — RFC-5424 UDP backend (facility `LOCAL0`).
+//! - [`FanOutLoggingPlugin`] — fan-out to multiple backends.
 //!
-//! # Was dieser Crate liefert
+//! # What this crate provides
 //!
-//! 1. [`StderrLoggingPlugin`] — schreibt structured log lines an
-//!    `stderr`. Default fuer Development + Container-Deployments mit
-//!    stdout/stderr-Collector (Loki, Vector, Fluentd).
-//! 2. [`JsonLinesLoggingPlugin`] — schreibt JSON-Lines
-//!    (`application/x-ndjson`) in eine Datei. Jede Zeile = ein Event.
-//!    Ein zweiter Prozess (z.B. auditd, filebeat) rotiert die Datei.
-//! 3. [`FanOutLoggingPlugin`] — routet jedes Event an **mehrere**
-//!    Backends (z.B. stderr + JSON-File gleichzeitig).
+//! 1. [`StderrLoggingPlugin`] — writes structured log lines to
+//!    `stderr`. Default for development + container deployments with a
+//!    stdout/stderr collector (Loki, Vector, Fluentd).
+//! 2. [`JsonLinesLoggingPlugin`] — writes JSON lines
+//!    (`application/x-ndjson`) to a file. Each line = one event.
+//!    A second process (e.g. auditd, filebeat) rotates the file.
+//! 3. [`FanOutLoggingPlugin`] — routes each event to **multiple**
+//!    backends (e.g. stderr + JSON file simultaneously).
 //!
-//! Alle Backends filtern Events nach `LogLevel`; das Default-Level ist
-//! `Warning` — niedriger (Informational, Debug) wird still verworfen.
+//! All backends filter events by `LogLevel`; the default level is
+//! `Warning` — lower (Informational, Debug) is silently discarded.
 //!
-//! ## Nicht-Ziele
+//! ## Non-goals
 //!
-//! - Syslog-TCP (RFC 5425) und Syslog-TLS — die meisten Syslog-
-//!   Deployments laufen im vertrauten Segment; Re-Add bei Bedarf.
-//! - Structured Telemetry (OpenTelemetry / OTLP) — abgedeckt von
-//!   `zerodds-observability-otlp` (Layer 4.6).
-//! - Log-Rotation im Plugin selbst — Aufgabe des Betriebssystems /
+//! - Syslog TCP (RFC 5425) and syslog TLS — most syslog
+//!   deployments run in a trusted segment; re-add on demand.
+//! - Structured telemetry (OpenTelemetry / OTLP) — covered by
+//!   `zerodds-observability-otlp` (layer 4.6).
+//! - Log rotation in the plugin itself — the job of the operating system /
 //!   `logrotate`.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
-// Drei Plugin-Impls fuer Box-Polymorphie — SPI-bedingt.
+// Three plugin impls for box polymorphism — SPI-driven.
 // zerodds-lint: allow no_dyn_in_safe
 
 extern crate alloc;

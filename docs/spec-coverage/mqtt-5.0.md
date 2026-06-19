@@ -1,18 +1,16 @@
 # OASIS MQTT v5.0 — Spec-Coverage
 
-**Spec:** `docs/standards/cache/oasis/mqtt-5.0.html` (OASIS Standard
-07 March 2019).
+**Spec:** [OASIS MQTT Version 5.0 — Standard, 07 March 2019 →](https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html)
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`.
-
-**Kontext:** MQTT 5.0 ist die OASIS-Pub-Sub-Spec fuer IoT/M2M.
+**Kontext:** MQTT 5.0 ist die OASIS-Pub-Sub-Spec für IoT/M2M.
 ZeroDDS implementiert den **Wire-Codec** (Spec §1.5 Data Types,
 §2.1 Fixed Header, §2.2 Variable Header + Properties, §3.3 PUBLISH)
-als pure-Rust no_std+alloc Library im Crate `crates/mqtt-bridge/`.
-Broker-Logic (Session-State, Topic-Filter-Matching, QoS-Retransmission)
-ist Caller-Layer.
+als pure-Rust no_std+alloc Library. Broker-Logic (Session-State,
+Topic-Filter-Matching, QoS-Retransmission) ist Caller-Layer.
 
-Implementation: `crates/mqtt-bridge/` (5 Module, 36 Tests gruen).
+Implementation:
+
+- `crates/mqtt-bridge/` — Wire-Codec, 5 Module, 36 Tests grün.
 
 ---
 
@@ -100,8 +98,8 @@ allen 15 Werten.
 
 **Tests:** Cross-Ref `publish_qos*_round_trip`.
 
-**Status:** done — fuer PUBLISH; weitere Packet-Types analog
-implementierbar (siehe `.open.md`).
+**Status:** done — für PUBLISH; weitere Packet-Types analog
+implementierbar.
 
 ### §2.2.2 Properties
 
@@ -151,7 +149,7 @@ Authentication.
 
 ### §3.3 PUBLISH — Voll abgedeckt
 
-**Spec:** §3.3, S. 48-58 — Vollstaendige PUBLISH-Packet-Spec mit
+**Spec:** §3.3, S. 48-58 — Vollständige PUBLISH-Packet-Spec mit
 DUP/QoS/RETAIN-Flags, Topic-Name, Packet-Identifier (bei QoS>0),
 Properties, Payload.
 
@@ -329,6 +327,30 @@ Keep-Alive-Timer als Wall-Clock-Tick in
 Messages, Will-Handling, QoS-Levels (0/1/2) + Keep-Alive-Timer
 spec-konform implementiert.
 
+### §4 Standalone Broker-Server (Netz-Exposition der Broker-Logik)
+
+**Spec:** §4 + §7 (Conformance-Target *MQTT-Server*) — ein lauschender
+Broker akzeptiert Client-Verbindungen, handelt CONNECT/CONNACK, verteilt
+PUBLISH an Subscriber, fährt den QoS-0/1/2-Protokoll-Flow.
+
+**Repo:** `crates/mqtt-bridge/src/server.rs::{MqttBrokerServer,
+ServerHandle}` — `TcpListener` + accept-Loop, pro Verbindung Reader-/
+Writer-Thread (event-driven via mpsc-Channel), verdrahtet die
+`broker.rs`-Engine: CONNECT/CONNACK, SUBSCRIBE/SUBACK (+ Retained-Replay
+§3.3.1.3), PUBLISH-Fanout, QoS 0/1/2 (Exactly-Once liefert auf PUBREL,
+§4.3.3), UNSUBSCRIBE/UNSUBACK, PINGREQ/PINGRESP, Will auf abnormalem
+Disconnect (§3.1.2.5). Protokoll-Version pro Client aus dem CONNECT-
+Protocol-Level ausgehandelt — 5.0 und 3.1.1 am selben Broker.
+`crates/mqtt-bridge/src/net.rs::{MqttClient, read_packet}` — TCP-Framing
++ schlanker version-aware Client.
+
+**Tests:** `crates/mqtt-bridge/tests/broker_server_e2e.rs` (6, in-process:
+pub/sub, retained, Wildcards, QoS 2, Cross-Version 3.1.1⇄5.0); Live
+`crates/mqtt-bridge/tests/mosquitto_interop_e2e.rs` (echte
+`mosquitto_pub`/`mosquitto_sub` 5.0 + 3.1.1 gegen den ZeroDDS-Broker).
+
+**Status:** done
+
 ---
 
 ## §5 Security
@@ -368,28 +390,29 @@ informativ; konkrete TLS-Bindings sind Caller-Layer.
 **Spec:** §7 — Drei Conformance-Targets: MQTT-Client, MQTT-Server,
 MQTT-Server-with-MQTT-Bridge-Functionality.
 
-**Repo:** Subset-Implementation: Wire-Codec + Broker-Logik im
-`mqtt-bridge`-Crate. Volle Conformance-Marker am Crate-Niveau
-nicht ausgewiesen.
+**Repo:** Wire-Codec + Broker-Logik + Netz-Server im `mqtt-bridge`-Crate.
+Die Targets *MQTT-Client* (`net.rs::MqttClient`) und *MQTT-Server*
+(`server.rs::MqttBrokerServer`) sind realisiert und gegen die Eclipse-
+Mosquitto-Referenz interop-getestet (`tests/mosquitto_interop_e2e.rs`).
 
-**Tests:** —
+**Tests:** `crates/mqtt-bridge/tests/mosquitto_interop_e2e.rs`.
 
-**Status:** `n/a (informative)` — Conformance-Statement ist
-deklarativ; eine konkrete Implementation kann Conformance gegen
-einen oder mehrere Targets claimen; aktuell wird kein expliziter
-Conformance-Claim am Crate ausgewiesen.
+**Status:** `n/a (informative)` — Conformance-Statement ist deklarativ;
+ZeroDDS realisiert die Client- und Server-Targets, weist aber keinen
+formalen Conformance-Marker am Crate aus.
 
 ---
 
 ## Audit-Status
 
-22 done / 0 partial / 0 open / 4 n/a (informative) / 0 n/a (rejected).
+23 done / 0 partial / 0 open / 4 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-mqtt-bridge` — 94 lib-Inline-Tests +
-7 Integration-Tests = 101 Tests grün, 0 failed. Module mit Tests:
-`broker`, `codec`, `control_packets`, `data_types`, `dds_bridge`,
-`packet`, `properties`, `reason_codes`, `topic_filter`, `vbi`.
+Test-Lauf: `cargo test -p zerodds-mqtt-bridge` — 165 lib-Inline-Tests +
+24 Integration-Tests grün, 0 failed (Module: `broker`, `codec`,
+`control_packets`, `data_types`, `dds_bridge`, `net`, `packet`,
+`properties`, `reason_codes`, `server`, `topic_filter`, `vbi`, `version`).
+Live-Interop zusätzlich (codepit): `cargo test -p zerodds-mqtt-bridge
+--test mosquitto_interop_e2e -- --ignored` — 5 Tests grün gegen Eclipse
+Mosquitto 2.0.
 
-Offene Punkte: siehe `mqtt-5.0.open.md`. Restaufwand für die
-Partials zusammen ca. 1 PW (§2.2.2 Property-Decode-Helper +
-§4 Keep-Alive-Timer-Tick).
+Keine offenen Punkte.

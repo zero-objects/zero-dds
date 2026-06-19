@@ -1,41 +1,40 @@
 # `zerodds-java-omgdds`
 
-Native Java DDS-PSM (`org.omg.dds.*`) — implementiert das
-[OMG DDS Java PSM 1.0][java-psm], die spec-definierte Java-API-Form.
-Teil von [**ZeroDDS**](../../README.md). Safety-Klasse **STANDARD**.
+Native Java DDS PSM (`org.omg.dds.*`) — implements the
+[OMG DDS Java PSM 1.0][java-psm], the spec-defined Java API form.
+Part of [**ZeroDDS**](../../README.md). Safety class **STANDARD**.
 
-OMG-DDS-Java-PSM 1.0 Spec-Audit (K15) abgeschlossen 2026-04-28:
-**156 done / 0 partial / 0 open / 15 n/a**. Voll spec-konform.
+OMG DDS Java PSM 1.0 spec audit (K15) completed 2026-04-28:
+**156 done / 0 partial / 0 open / 15 n/a**. Fully spec-conform.
 
 ---
 
-## Beziehung zur JNI-Bridge
+## Relationship to the JNI bridge
 
-Zwei orthogonale Java-Pfade:
+Two orthogonal Java paths:
 
-* `zerodds-java-jni` — JNI-Bridge ueber die Rust-Runtime. Nutzt
-  `zerodds-dcps` direkt, idiomatischer Java-Wrapper ohne strikte
-  Spec-Treue.
-* `zerodds-java-omgdds` — diese Crate. Native Java-Klassen die exakt
-  dem `org.omg.dds.*`-PSM folgen. Drop-in fuer Anwendungen, die
-  heute auf RTI Connext, OpenSplice oder Cyclone DDS Java-API
-  laufen.
+* `zerodds-java-jni` — JNI bridge over the Rust runtime. Uses
+  `zerodds-dcps` directly, an idiomatic Java wrapper without strict
+  spec fidelity.
+* `zerodds-java-omgdds` — this crate. Native Java classes that follow
+  the `org.omg.dds.*` PSM exactly. Drop-in for applications that
+  run today on the RTI Connext, OpenSplice or Cyclone DDS Java API.
 
-Beide Pfade nutzen unter der Haube den gleichen Wire-Stack
-(`crates/rtps` via JNI). Der Unterschied liegt nur in der
-Java-API-Form.
+Both paths use the same wire stack under the hood
+(`crates/rtps` via JNI). The difference is only in the
+Java API form.
 
 ## Build
 
 ```bash
-# Maven-Build (Standard-Java):
+# Maven build (standard Java):
 mvn -f crates/java-omgdds/pom.xml package
 
-# JAR landet in:
+# The JAR lands in:
 ls crates/java-omgdds/target/zerodds-java-omgdds-0.0.0.jar
 ```
 
-## Quickstart (OMG-PSM-Form)
+## Quickstart (OMG PSM form)
 
 ```java
 import org.omg.dds.core.*;
@@ -53,38 +52,38 @@ DataWriter<Pose> writer = pub.createDataWriter(topic);
 writer.write(new Pose("r1", 1.0, 2.0, 3.0));
 ```
 
-`Pose` ist generiert via `zerodds-idlc Robot.idl --java`.
+`Pose` is generated via `zerodds-idlc Robot.idl --java`.
 
-## Struktur
+## Structure
 
 ```
 crates/java-omgdds/
-├── Cargo.toml          Workspace-Member, Build-Glue zur JNI-Schicht
-├── src/lib.rs          Architektur-Doc + JNI-Hooks
-├── src/main/java/      Java-Sources (Maven-Layout)
+├── Cargo.toml          workspace member, build glue to the JNI layer
+├── src/lib.rs          architecture doc + JNI hooks
+├── src/main/java/      Java sources (Maven layout)
 │   └── org/omg/dds/
 │       ├── core/        Time, Duration, Status, Exception, Listener
-│       ├── core/policy/ alle 21 QoS-Policies, immutable Builder
+│       ├── core/policy/ all 21 QoS policies, immutable builder
 │       ├── domain/      DomainParticipantFactory, DomainParticipant
 │       ├── topic/       Topic, ContentFilteredTopic, MultiTopic
 │       ├── pub/         Publisher, DataWriter, PublisherListener
 │       ├── sub/         Subscriber, DataReader, Sample, SampleSelector
 │       ├── type/        TypeSupport, dynamic, builtin
-│       └── rtps/        Konvertierungs-Helper (delegiert an Rust-Stack)
-└── pom.xml             Maven Build
+│       └── rtps/        conversion helpers (delegate to the Rust stack)
+└── pom.xml             Maven build
 ```
 
 ## Documentation Trail
 
-Fuer den User-Guide siehe
+For the user guide see
 [Documentation Trail Station 05 → Java](../../documentation/05-integration/java.md).
 
-## Spec-Referenzen
+## Spec references
 
 * [OMG DDS Java PSM 1.0][java-psm]
 * [OMG DDS 1.4][dds] §2.2 — DCPS
-* `docs/spec-coverage/zerodds-java-psm-1.0.md` — Per-Section-Audit
-* `docs/architecture/05_java_jni_bridge.md` — interne Bridge-Architektur
+* `docs/spec-coverage/zerodds-java-psm-1.0.md` — per-section audit
+* `docs/architecture/05_java_jni_bridge.md` — internal bridge architecture
 
 [java-psm]: https://www.omg.org/spec/DDS-Java/1.0/
 [dds]: https://www.omg.org/spec/DDS/1.4/

@@ -1,69 +1,69 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `XmlError` — Fehler-Enum fuer den DDS-XML-Loader.
+//! `XmlError` — error enum for the DDS-XML loader.
 //!
-//! Spec-Referenzen siehe Doc-Comment pro Variante.
+//! Spec references see the doc comment per variant.
 
 use alloc::string::String;
 use core::fmt;
 
-/// Fehler beim Parsen oder Aufloesen eines DDS-XML-Dokuments.
+/// Error while parsing or resolving a DDS-XML document.
 ///
-/// Spec-Quelle: OMG DDS-XML 1.0 §7.1 (XML Representation Syntax) und
+/// Spec source: OMG DDS-XML 1.0 §7.1 (XML Representation Syntax) and
 /// §7.2 (XML Representation of DDS IDL PSM).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum XmlError {
-    /// XML ist nicht wohlgeformt gemaess [XML] §2.1.
+    /// XML is not well-formed per [XML] §2.1.
     ///
-    /// Spec-Ref: DDS-XML 1.0 §7.1.1 ("XML shall be well-formed").
+    /// Spec ref: DDS-XML 1.0 §7.1.1 ("XML shall be well-formed").
     InvalidXml(String),
 
-    /// Ein gemaess Spec-Tabelle 7.2 / 7.3.x verpflichtendes Element fehlt.
+    /// An element mandatory per spec table 7.2 / 7.3.x is missing.
     ///
-    /// Spec-Ref: DDS-XML 1.0 §7.1.4 Tab.7.1, §7.2.x.
+    /// Spec ref: DDS-XML 1.0 §7.1.4 Tab.7.1, §7.2.x.
     MissingRequiredElement(String),
 
-    /// Ein Element, das nicht in der Element-Tabelle 7.1/7.2/7.3 steht,
-    /// wurde gefunden. Strict-Modus rejected; Lax-Modus ignoriert.
+    /// An element not present in the element table 7.1/7.2/7.3
+    /// was found. Strict mode rejects; lax mode ignores.
     ///
-    /// Spec-Ref: DDS-XML 1.0 §7.1.4 (Element-Werte-Tabelle).
+    /// Spec ref: DDS-XML 1.0 §7.1.4 (element value table).
     UnknownElement(String),
 
-    /// Enum-String passt nicht in die DCPS-IDL-Whitelist
-    /// (Spec §7.1.4 Tab.7.1 — `enum`-Werte sind String-Literale, *nicht*
-    /// numerisch).
+    /// Enum string does not fit the DCPS-IDL whitelist
+    /// (Spec §7.1.4 Tab.7.1 — `enum` values are string literals, *not*
+    /// numeric).
     ///
-    /// Spec-Ref: DDS-XML 1.0 §7.1.4 Tab.7.1 (enum), §7.2.1.
+    /// Spec ref: DDS-XML 1.0 §7.1.4 Tab.7.1 (enum), §7.2.1.
     BadEnum(String),
 
-    /// `base_name`-Inheritance bildet einen Zyklus (A erbt von B erbt von A).
+    /// `base_name` inheritance forms a cycle (A inherits from B inherits from A).
     ///
-    /// Spec-Ref: DDS-XML 1.0 §7.3.2.4.2 (QoS Profile Inheritance —
+    /// Spec ref: DDS-XML 1.0 §7.3.2.4.2 (QoS Profile Inheritance —
     /// "shall only inherit from previously defined profiles"). Naive
-    /// Implementierungen koennen Zyklen ueber Bibliotheks-Grenzen
-    /// erzeugen; der Loader fuehrt darum DAG-Pruefung durch.
+    /// implementations can create cycles across library boundaries;
+    /// the loader therefore performs DAG checking.
     CircularInheritance(String),
 
-    /// Element-Wert ausserhalb des Spec-Wertebereichs (z.B. `long` >
-    /// `0x7fffffff` ohne Symbol-Aliasing).
+    /// Element value outside the spec value range (e.g. `long` >
+    /// `0x7fffffff` without symbol aliasing).
     ///
-    /// Spec-Ref: DDS-XML 1.0 §7.1.4 Tab.7.1 (Wertebereiche), §7.2.2
+    /// Spec ref: DDS-XML 1.0 §7.1.4 Tab.7.1 (value ranges), §7.2.2
     /// (`LENGTH_UNLIMITED`, `DURATION_INFINITE_*`).
     ValueOutOfRange(String),
 
-    /// DoS-Cap getroffen — Liste/String ueberschreitet die im Loader
-    /// konfigurierte Obergrenze (Default: 1024 Listen-Elemente, 64 KiB
-    /// Strings).
+    /// DoS cap hit — list/string exceeds the upper bound
+    /// configured in the loader (default: 1024 list elements, 64 KiB
+    /// strings).
     ///
-    /// Kein direkter Spec-Bezug; folgt der ZeroDDS-Security-Posture
-    /// (`docs/spec-coverage/zerodds-xml-1.0.open.md` Risiken-Abschnitt).
+    /// No direct spec reference; follows the ZeroDDS security posture
+    /// (`docs/spec-coverage/zerodds-xml-1.0.open.md` risks section).
     LimitExceeded(String),
 
-    /// Eine Cross-Reference (z.B. `base_name` einer QoS-Profile-
-    /// Inheritance) konnte nicht aufgeloest werden, weil das referenzierte
-    /// Item nicht existiert.
+    /// A cross-reference (e.g. `base_name` of a QoS profile
+    /// inheritance) could not be resolved because the referenced
+    /// item does not exist.
     ///
-    /// Spec-Ref: DDS-XML 1.0 §7.3.2.4.2 (QoS-Profile-Inheritance).
+    /// Spec ref: DDS-XML 1.0 §7.3.2.4.2 (QoS profile inheritance).
     UnresolvedReference(String),
 }
 

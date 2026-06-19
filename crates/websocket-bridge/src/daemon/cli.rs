@@ -1,60 +1,60 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CLI-Argument-Parser fuer `zerodds-ws-bridged`.
+//! CLI argument parser for `zerodds-ws-bridged`.
 //!
 //! Spec: `zerodds-ws-bridge-1.0.md` §2.
 //!
-//! Bewusst handgeschrieben — keine `clap`-Dep im Workspace, keine
-//! `getopts`-Heritage. Akzeptierte Forms:
+//! Deliberately hand-written — no `clap` dep in the workspace, no
+//! `getopts` heritage. Accepted forms:
 //!
 //! * `--flag value`
 //! * `--flag=value`
-//! * `--bool-flag`            (no-arg, fuer `--help` / `--version`)
-//! * Wiederholungen fuer `--topic` (Multi-Value)
+//! * `--bool-flag`            (no-arg, for `--help` / `--version`)
+//! * repetitions for `--topic` (multi-value)
 
 use std::string::String;
 use std::vec::Vec;
 
-/// Geparste CLI-Args.
+/// Parsed CLI args.
 #[derive(Debug, Clone, Default)]
 pub struct CliArgs {
-    /// `--config <FILE>` — Path zur YAML-Config.
+    /// `--config <FILE>` — path to the YAML config.
     pub config: Option<String>,
-    /// `--listen <ADDR>` — Override fuer Bind-Address.
+    /// `--listen <ADDR>` — override for the bind address.
     pub listen: Option<String>,
-    /// `--domain <ID>` — DDS-Domain-ID-Override.
+    /// `--domain <ID>` — DDS domain id override.
     pub domain: Option<i32>,
-    /// `--topic <NAME[:KEY]>` — Single-Topic-Overrides (mehrfach).
+    /// `--topic <NAME[:KEY]>` — single-topic overrides (multiple).
     pub topics: Vec<String>,
-    /// `--tls-cert <FILE>` — TLS-Cert-File. L5-Stub.
+    /// `--tls-cert <FILE>` — TLS cert file. L5 stub.
     pub tls_cert: Option<String>,
-    /// `--tls-key <FILE>` — TLS-Key-File. L5-Stub.
+    /// `--tls-key <FILE>` — TLS key file. L5 stub.
     pub tls_key: Option<String>,
-    /// `--auth-token <SECRET>` — Bearer-Token-Auth. L5-Stub.
+    /// `--auth-token <SECRET>` — bearer token auth. L5 stub.
     pub auth_token: Option<String>,
     /// `--log-level <LEVEL>` — `trace|debug|info|warn|error`.
     pub log_level: Option<String>,
-    /// `--metrics <ADDR>` — Prometheus-Listen-Address. L5-Stub.
+    /// `--metrics <ADDR>` — Prometheus listen address. L5 stub.
     pub metrics: Option<String>,
-    /// `--version` — Versions-Info ausgeben + exit.
+    /// `--version` — print version info + exit.
     pub version: bool,
-    /// `--help` — Help-Text + exit.
+    /// `--help` — help text + exit.
     pub help: bool,
 }
 
-/// Fehler beim CLI-Parse.
+/// Error during CLI parse.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CliError {
-    /// Unbekannter Flag.
+    /// Unknown flag.
     UnknownFlag(String),
-    /// Flag braucht ein Value, hat aber keinen.
+    /// The flag needs a value but has none.
     MissingValue(String),
-    /// Wert nicht parsbar (z.B. `--domain abc`).
+    /// Value not parseable (e.g. `--domain abc`).
     InvalidValue {
-        /// Flag-Name.
+        /// Flag name.
         flag: String,
-        /// Roher Wert.
+        /// Raw value.
         value: String,
     },
 }
@@ -73,49 +73,49 @@ impl core::fmt::Display for CliError {
 
 impl std::error::Error for CliError {}
 
-/// Help-Text gemaess Spec §2.
+/// Help text per Spec §2.
 pub const HELP_TEXT: &str = "\
-zerodds-ws-bridged 1.0 — DDS↔WebSocket-Bridge-Daemon
+zerodds-ws-bridged 1.0 — DDS↔WebSocket bridge daemon
 
 USAGE:
     zerodds-ws-bridged [OPTIONS]
 
 OPTIONS:
-    --config <FILE>         Path zur Config-File (YAML)
-    --listen <ADDR>         Bind-Address (Default 0.0.0.0:8080)
-    --domain <ID>           DDS-Domain-ID (Default 0)
-    --topic <NAME>          Single-Topic-Override (mehrfach)
-    --tls-cert <FILE>       TLS-Cert (PEM); aktiviert wss:// — L5-stub
-    --tls-key <FILE>        TLS-Key (PEM) — L5-stub
-    --auth-token <SECRET>   Bearer-Token-Auth — L5-stub
-    --log-level <LEVEL>     trace/debug/info/warn/error (Default info)
-    --metrics <ADDR>        Prometheus-Scrape-Endpoint — L5-stub
-    --version               Versions-Info
-    --help                  Hilfe
+    --config <FILE>         Path to the config file (YAML)
+    --listen <ADDR>         Bind address (default 0.0.0.0:8080)
+    --domain <ID>           DDS domain id (default 0)
+    --topic <NAME>          Single-topic override (multiple)
+    --tls-cert <FILE>       TLS cert (PEM); enables wss:// — L5 stub
+    --tls-key <FILE>        TLS key (PEM) — L5 stub
+    --auth-token <SECRET>   Bearer token auth — L5 stub
+    --log-level <LEVEL>     trace/debug/info/warn/error (default info)
+    --metrics <ADDR>        Prometheus scrape endpoint — L5 stub
+    --version               Version info
+    --help                  Help
 
-EXIT-CODES:
-    0   normaler Shutdown (SIGTERM/SIGINT)
-    1   Config-Fehler
-    2   Bind-Fehler (Port belegt)
-    3   DDS-Discovery-Fehler
-    4   TLS-Fehler
+EXIT CODES:
+    0   normal shutdown (SIGTERM/SIGINT)
+    1   config error
+    2   bind error (port in use)
+    3   DDS discovery error
+    4   TLS error
 
 Spec: docs/specs/zerodds-ws-bridge-1.0.md
 ";
 
-/// Versions-String.
+/// Version string.
 pub const VERSION_TEXT: &str = "zerodds-ws-bridged 1.0";
 
-/// Parst die CLI-Args (typisch aus `std::env::args().skip(1).collect()`).
+/// Parses the CLI args (typically from `std::env::args().skip(1).collect()`).
 ///
 /// # Errors
-/// Siehe [`CliError`].
+/// See [`CliError`].
 pub fn parse(args: &[String]) -> Result<CliArgs, CliError> {
     let mut out = CliArgs::default();
     let mut i = 0;
     while i < args.len() {
         let raw = &args[i];
-        // Spalte `--flag=value`.
+        // Split `--flag=value`.
         let (flag, inline) = match raw.split_once('=') {
             Some((k, v)) => (k.to_string(), Some(v.to_string())),
             None => (raw.clone(), None),

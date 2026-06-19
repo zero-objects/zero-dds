@@ -2,18 +2,18 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DDS Application Configuration — Spec §7.2.1 Tab 7.1-7.9.
 //!
-//! Repraesentiert die fuenf Library-Konzepte aus Figur 7.1:
+//! Represents the five library concepts from Figure 7.1:
 //!
 //! 1. `QosLibrary` (Tab 7.1) - QosProfile (Tab 7.2)
 //! 2. `DomainLibrary` (Tab 7.3) - Domain (Tab 7.4) - RegisteredType (Tab 7.5)
 //! 3. `DomainParticipantLibrary` (Tab 7.6) - DomainParticipant (Tab 7.7)
 //! 4. `ApplicationLibrary` (Tab 7.8) - Application (Tab 7.9)
 //!
-//! QoS-Inhalte werden hier nicht inline gemodelliert — wir referenzieren
-//! per `*QosRef`-Strukturen mit Profil-Name. Der Caller (z.B. ein
-//! XML-Loader) materialisiert die DDS-Standard-QoS-Strukturen aus
-//! `crates/qos/`. Dieser Aspekt ist Spec §7.2.1 Tab 7.2 explizit als
-//! "0..*-Multiplicity mit Name-Identifier" hinterlegt.
+//! QoS contents are not modeled inline here — we reference them
+//! via `*QosRef` structs with a profile name. The caller (e.g. an
+//! XML loader) materializes the DDS standard QoS structs from
+//! `crates/qos/`. This aspect is explicitly recorded in Spec §7.2.1 Tab 7.2
+//! as "0..* multiplicity with a name identifier".
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -31,13 +31,13 @@ pub struct QosLibrary {
     pub qos_profiles: Vec<QosProfile>,
 }
 
-/// Spec Tab 7.2 — `QosProfile`. Pro QoS-Kategorie 0..*-Verweise mit
-/// Name-Identifier (Spec: "shall provide a name to identify the
+/// Spec Tab 7.2 — `QosProfile`. Per QoS category, 0..* references with
+/// a name identifier (Spec: "shall provide a name to identify the
 /// specific configuration").
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct QosProfile {
-    /// `name` (Caller-Identifier, Spec impliziert Eindeutigkeit
-    /// innerhalb der Library).
+    /// `name` (caller identifier, the spec implies uniqueness
+    /// within the library).
     pub name: String,
     /// `domain_participant_qos` (Mult 0..*).
     pub domain_participant_qos: Vec<DomainParticipantQosRef>,
@@ -53,58 +53,58 @@ pub struct QosProfile {
     pub datareader_qos: Vec<DataReaderQosRef>,
 }
 
-/// QoS-Referenz mit benamtem Identifier (Caller-Layer materialisiert
-/// die DDS-PSM-Inhalte).
+/// QoS reference with a named identifier (the caller layer materializes
+/// the DDS PSM contents).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DomainParticipantQosRef {
-    /// Name dieses spezifischen `DomainParticipantQos`.
+    /// Name of this specific `DomainParticipantQos`.
     pub name: String,
-    /// Optional: XML-Snippet/JSON-Inhalt fuer den Caller (leer = Default-QoS).
+    /// Optional: XML snippet/JSON content for the caller (empty = default QoS).
     pub raw_qos: String,
 }
 
-/// QoS-Referenz mit benamtem Identifier.
+/// QoS reference with a named identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PublisherQosRef {
     /// Identifier.
     pub name: String,
-    /// Inhalt (Caller-Form).
+    /// Content (caller form).
     pub raw_qos: String,
 }
 
-/// QoS-Referenz mit benamtem Identifier.
+/// QoS reference with a named identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SubscriberQosRef {
     /// Identifier.
     pub name: String,
-    /// Inhalt.
+    /// Content.
     pub raw_qos: String,
 }
 
-/// QoS-Referenz mit benamtem Identifier.
+/// QoS reference with a named identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicQosRef {
     /// Identifier.
     pub name: String,
-    /// Inhalt.
+    /// Content.
     pub raw_qos: String,
 }
 
-/// QoS-Referenz mit benamtem Identifier.
+/// QoS reference with a named identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DataWriterQosRef {
     /// Identifier.
     pub name: String,
-    /// Inhalt.
+    /// Content.
     pub raw_qos: String,
 }
 
-/// QoS-Referenz mit benamtem Identifier.
+/// QoS reference with a named identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DataReaderQosRef {
     /// Identifier.
     pub name: String,
-    /// Inhalt.
+    /// Content.
     pub raw_qos: String,
 }
 
@@ -128,28 +128,28 @@ pub struct Domain {
     pub name: String,
     /// `registered_type` (Mult 0..*).
     pub registered_types: Vec<RegisteredType>,
-    /// `Topic` (Mult 0..*) — Spec Tab 7.4: nur die Subset-Attribute
-    /// `topic_name` + `type_name` aus DDS.
+    /// `Topic` (Mult 0..*) — Spec Tab 7.4: only the subset attributes
+    /// `topic_name` + `type_name` from DDS.
     pub topics: Vec<TopicLibraryEntry>,
 }
 
 /// Spec Tab 7.5 — `RegisteredType`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RegisteredType {
-    /// `name` — Name unter dem der Typ in der Domain registriert wird.
+    /// `name` — name under which the type is registered in the domain.
     pub name: String,
-    /// `type_ref` — Vollqualifizierter Name innerhalb des TypeLibrary.
+    /// `type_ref` — fully qualified name within the TypeLibrary.
     pub type_ref: String,
 }
 
-/// Spec Tab 7.4 sub — Topic-Eintrag in einer Domain. Spec: "shall
+/// Spec Tab 7.4 sub — topic entry in a domain. Spec: "shall
 /// represent only the attributes of the Topic type that apply (i.e.,
 /// `topic_name` and `type_name`)".
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicLibraryEntry {
     /// `topic_name`.
     pub topic_name: String,
-    /// `type_name` — verweist auf einen `RegisteredType.name`.
+    /// `type_name` — references a `RegisteredType.name`.
     pub type_name: String,
 }
 
@@ -171,11 +171,11 @@ pub struct DomainParticipantLibrary {
 pub struct DomainParticipant {
     /// `name` (Mult 1).
     pub name: String,
-    /// `base_name` (Mult 0..1) — vollqualifizierter Name eines anderen
-    /// DomainParticipant fuer Inheritance.
+    /// `base_name` (Mult 0..1) — fully qualified name of another
+    /// DomainParticipant for inheritance.
     pub base_name: Option<String>,
-    /// `domain_ref` (Mult 0..1) — vollqualifizierter Name der Domain
-    /// fuer Inheritance.
+    /// `domain_ref` (Mult 0..1) — fully qualified name of the domain
+    /// for inheritance.
     pub domain_ref: Option<String>,
 }
 
@@ -197,8 +197,8 @@ pub struct ApplicationLibrary {
 pub struct Application {
     /// `name`.
     pub name: String,
-    /// `domain_participant` (Mult 0..*) — vollqualifizierte Verweise
-    /// auf `DomainParticipant.name`.
+    /// `domain_participant` (Mult 0..*) — fully qualified references
+    /// to `DomainParticipant.name`.
     pub domain_participant_refs: Vec<String>,
 }
 
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn domain_participant_inheritance_chain_is_optional() {
-        // Spec Tab 7.7: base_name + domain_ref sind optional (Mult 0..1).
+        // Spec Tab 7.7: base_name + domain_ref are optional (Mult 0..1).
         let dp = DomainParticipant {
             name: "MainDP".into(),
             base_name: None,
@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn application_holds_multiple_dp_refs() {
-        // Spec Tab 7.9: domain_participant ist Mult 0..* (kein 1..*).
+        // Spec Tab 7.9: domain_participant is Mult 0..* (not 1..*).
         let a = Application {
             name: "PerimeterApp".into(),
             domain_participant_refs: alloc::vec!["DP1".into(), "DP2".into()],

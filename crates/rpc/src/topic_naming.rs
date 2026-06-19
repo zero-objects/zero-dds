@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DDS-RPC Topic-Naming-Konvention — Spec §7.8.2.
+//! DDS-RPC topic naming convention — Spec §7.8.2.
 //!
-//! Aus einem Service-Namen `S` werden zwei Topic-Namen abgeleitet:
+//! From a service name `S`, two topic names are derived:
 //!
-//! * Request-Topic: `<S>_Request`
-//! * Reply-Topic:   `<S>_Reply`
+//! * Request topic: `<S>_Request`
+//! * Reply topic:   `<S>_Reply`
 //!
-//! Service-Namen muessen nicht-leer sein und duerfen nur ASCII-
-//! Buchstaben (`A-Z`, `a-z`), Ziffern (`0-9`) sowie `_` enthalten. Das
-//! erste Zeichen muss ein Buchstabe oder `_` sein (analog C-Identifier-
-//! Regel — die Spec referenziert IDL-Identifier).
+//! Service names must be non-empty and may only contain ASCII
+//! letters (`A-Z`, `a-z`), digits (`0-9`) and `_`. The
+//! first character must be a letter or `_` (analogous to the C identifier
+//! rule — the spec references IDL identifiers).
 
 extern crate alloc;
 
@@ -20,17 +20,17 @@ use alloc::string::String;
 
 use crate::error::{RpcError, RpcResult};
 
-/// Topic-Suffix fuer Request-Topics (Spec §7.8.2).
+/// Topic suffix for request topics (Spec §7.8.2).
 pub const REQUEST_SUFFIX: &str = "_Request";
 
-/// Topic-Suffix fuer Reply-Topics (Spec §7.8.2).
+/// Topic suffix for reply topics (Spec §7.8.2).
 pub const REPLY_SUFFIX: &str = "_Reply";
 
-/// Validiert einen Service-Namen.
+/// Validates a service name.
 ///
 /// # Errors
-/// `RpcError::InvalidServiceName` wenn der Name leer ist oder Zeichen
-/// ausserhalb von `[A-Za-z0-9_]` enthaelt, oder mit einer Ziffer beginnt.
+/// `RpcError::InvalidServiceName` if the name is empty or contains
+/// characters outside `[A-Za-z0-9_]`, or begins with a digit.
 pub fn validate_service_name(service: &str) -> RpcResult<()> {
     if service.is_empty() {
         return Err(RpcError::InvalidServiceName(String::new()));
@@ -47,28 +47,28 @@ pub fn validate_service_name(service: &str) -> RpcResult<()> {
     Ok(())
 }
 
-/// Liefert den Request-Topic-Namen fuer einen Service.
+/// Returns the request topic name for a service.
 ///
 /// # Errors
-/// Siehe [`validate_service_name`].
+/// See [`validate_service_name`].
 pub fn request_topic_name(service: &str) -> RpcResult<String> {
     validate_service_name(service)?;
     Ok(format!("{service}{REQUEST_SUFFIX}"))
 }
 
-/// Liefert den Reply-Topic-Namen fuer einen Service.
+/// Returns the reply topic name for a service.
 ///
 /// # Errors
-/// Siehe [`validate_service_name`].
+/// See [`validate_service_name`].
 pub fn reply_topic_name(service: &str) -> RpcResult<String> {
     validate_service_name(service)?;
     Ok(format!("{service}{REPLY_SUFFIX}"))
 }
 
-/// Bequemer Container fuer das Pair an Topic-Namen.
+/// Convenient container for the pair of topic names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceTopicNames {
-    /// Service-Name (validiert).
+    /// Service name (validated).
     pub service: String,
     /// `<service>_Request`.
     pub request: String,
@@ -77,11 +77,11 @@ pub struct ServiceTopicNames {
 }
 
 impl ServiceTopicNames {
-    /// Konstruktor mit Validation.
+    /// Constructor with validation.
     ///
     /// # Errors
-    /// `RpcError::InvalidServiceName` bei leerem oder ungueltigem
-    /// Service-Namen.
+    /// `RpcError::InvalidServiceName` on an empty or invalid
+    /// service name.
     pub fn new(service: &str) -> RpcResult<Self> {
         let request = request_topic_name(service)?;
         let reply = reply_topic_name(service)?;
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn underscore_prefix_is_valid() {
-        // Spec referenziert IDL-Identifier; `_foo` ist legitim.
+        // Spec references IDL identifiers; `_foo` is legitimate.
         assert!(validate_service_name("_foo").is_ok());
     }
 

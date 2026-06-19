@@ -38,8 +38,8 @@
 | `unsigned long long`, `uint64` | `u64` | 8 byte |
 | `float` | `f32` | 4 byte |
 | `double`, `long double` | `f64` | 8 byte |
-| `char` | `char` | 1 byte (XCDR2 §7.4.7) |
-| `wchar` | `char` | 4 byte (UTF-32-Repräsentation) |
+| `char` | `u8` | 1 byte (8-bit, CDR §9.3.1.5 / XCDR2 §7.4.7) |
+| `wchar` | `u16` | 2 byte LE (UTF-16 code-unit) |
 
 `long double` mappt auf `f64` (kein `f128` in stable Rust); LongDouble-IDL-Wire ist 16 byte, dieser Mapping verliert Präzision aber bleibt wire-decodier-bar.
 
@@ -59,7 +59,7 @@
 | `sequence<T, N>` | `Vec<T>` (Bound nicht statisch geprüft) |
 | `T[N]` | `[T; N]` |
 | `T[N1][N2]` | `[[T; N2]; N1]` |
-| `@optional T` | `Option<T>` (RC1: nur Wire-Format-Tag, Field-Type bleibt `T`) |
+| `@optional T` | `Option<T>` (Wire-Format-Tag; Field-Type bleibt `T`) |
 
 ### §2.4 Constructed Types
 
@@ -126,7 +126,7 @@ Markiert Struct als „nicht topic-fähig" (kann nicht direkt für DDS-Topics re
 
 ### §3.6 @optional
 
-Markiert Member als optional. Im Wire: führender bool für present-Flag (XTypes §7.4.5.1.4). RC1 emittiert `Option<T>` Field-Type.
+Markiert Member als optional. Im Wire: führender bool für present-Flag (XTypes §7.4.5.1.4). Der Codegen emittiert `Option<T>` als Field-Type.
 
 ## §4 DdsType-Trait-Impl
 
@@ -154,7 +154,7 @@ Der Codegen delegiert die Wire-Encoding-Logik an `zerodds-cdr`:
 - Primitives + Composite: `zerodds_cdr::CdrEncode`/`CdrDecode` Trait.
 - Final-Struct: direkter encode/decode in deklarations-Reihenfolge.
 - Appendable-Struct: `zerodds_cdr::struct_enc::encode_appendable` / `decode_appendable` (DHEADER-Wrap).
-- Mutable-Struct: `zerodds_cdr::struct_enc::MutableStructEncoder` (Encode mit member-id + LengthCode); Decode in RC1 nutzt `decode_appendable`-Wrap als Phase-1-Vereinfachung — Phase 2 erweitert auf `read_mutable_member`-Loop mit beliebiger Member-Reihenfolge.
+- Mutable-Struct: `zerodds_cdr::struct_enc::MutableStructEncoder` (Encode mit member-id + LengthCode); der Decode nutzt aktuell einen `decode_appendable`-Wrap als Vereinfachung — eine Erweiterung auf einen `read_mutable_member`-Loop mit beliebiger Member-Reihenfolge ist möglich.
 - Enum: `zerodds_cdr::CdrEncode for i32` mit Discriminator-Wert (XTypes §7.4.5.1).
 
 ## §6 Naming-Konventionen
@@ -163,16 +163,16 @@ Da OMG IDL Identifier nicht 1:1 auf Rust-Identifier abbilden:
 
 - IDL-`Type`-Identifier ($\to$ Rust-Type) bleiben unverändert (z.B. `Pose` $\to$ `Pose`).
 - IDL-`field`/`enumerator`-Identifier bleiben unverändert (z.B. `sensor_id` $\to$ `sensor_id`).
-- Rust-Reserved-Words als IDL-Identifier (`type`, `match`, `mod`, `fn`, …) werden RC1 nicht escaped — Caller muss IDL anpassen oder Codegen erweitern (Phase 2: raw-identifier `r#…`).
+- Rust-Reserved-Words als IDL-Identifier (`type`, `match`, `mod`, `fn`, …) werden aktuell nicht escaped — Caller muss IDL anpassen oder den Codegen erweitern (künftig: raw-identifier `r#…`).
 - Module-Identifier bleiben unverändert (z.B. `module geom` $\to$ `pub mod geom`).
 
 ## §7 Out-of-Scope
 
 | IDL-Konstrukt | Out-of-Scope-Begründung |
 |---|---|
-| `bitset` / `bitmask` (§7.4.7) | Nicht typisch für DDS-Topics; Phase 2 wenn Bedarf |
+| `bitset` / `bitmask` (§7.4.7) | Nicht typisch für DDS-Topics; bei Bedarf, nicht in v1.0 |
 | `fixed` (§7.4.4.5) | Financial-Domain; CORBA-Pfad reicht |
-| `map<K, V>` (§7.4.4.6) | Kein eindeutiges Rust-Standard-Mapping (BTreeMap vs HashMap); Phase 2 mit Annotation |
+| `map<K, V>` (§7.4.4.6) | BTreeMap-Default; HashMap-Variante optional via Annotation |
 | `any` (§7.4.4.7) | Type-Erasure passt nicht zu Rust-Generics; CORBA-Pfad |
 | `valuetype` (§7.4.5.4) | CORBA-Konstrukt |
 | `interface` (§7.4.6.4) | CORBA-Konstrukt; DDS-RPC-Service-Codegen läuft über `zerodds-rpc` |

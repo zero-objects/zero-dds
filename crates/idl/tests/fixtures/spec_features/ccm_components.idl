@@ -1,7 +1,7 @@
 // IDL 4.2 §7.4.9 Components / Homes / Eventtypes / Ports / Connectors.
 //
-// Synthetisch konstruierte Fixture fuer Grammar-Coverage:
-// alle CCM-Top-Level-Konstrukte plus Sub-Productions.
+// Synthetically constructed fixture for grammar coverage:
+// all CCM top-level constructs plus sub-productions.
 
 interface IService {
     void op();

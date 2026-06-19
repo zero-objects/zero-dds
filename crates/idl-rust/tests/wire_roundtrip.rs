@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Wire-Conformance-Tests: emittiert Code, kompiliert ihn als externes
-//! Crate, ruft `encode`/`decode` aus und prueft Roundtrip + Golden-Bytes.
+//! Wire conformance tests: emits code, compiles it as an external
+//! crate, calls `encode`/`decode` and checks roundtrip + golden bytes.
 //!
-//! Belegt End-to-End: der Codegen-Output produziert XCDR2-konforme
-//! Wire-Bytes — nicht nur „kompiliert" sondern „verhaelt sich
-//! Spec-konform".
+//! Proves end-to-end: the codegen output produces XCDR2-conformant
+//! wire bytes — not only "compiles" but "behaves
+//! spec-conformantly".
 
 #![allow(
     clippy::expect_used,
@@ -30,11 +30,11 @@ use std::process::Command;
 use zerodds_idl::config::ParserConfig;
 use zerodds_idl_rust::{RustGenOptions, generate_rust_module};
 
-/// Schreibt den emittierten Code + ein Test-File mit Roundtrip-
-/// Assertions in eine temp-Crate und ruft `cargo test` auf.
+/// Writes the emitted code + a test file with roundtrip
+/// assertions into a temp crate and runs `cargo test`.
 ///
-/// Schlaegt fehl wenn die Roundtrip-Assertions im emittierten Code
-/// fehlschlagen — das beweist Wire-Conformance auf Verhalten-Ebene.
+/// Fails if the roundtrip assertions in the emitted code
+/// fail — this proves wire conformance at the behavior level.
 fn run_wire_test(name: &str, idl: &str, test_body: &str) {
     let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
     let rust_src = generate_rust_module(&ast, &RustGenOptions::default()).expect("gen");
@@ -152,7 +152,7 @@ fn wire_keyed_struct_keyhash_roundtrip() {
             let hash = r.compute_key_hash().expect("keyed type yields hash");
             assert_eq!(hash.len(), 16);
 
-            // Zwei Readings mit gleichem sensor_id muessen gleichen hash liefern
+            // Two readings with the same sensor_id must yield the same hash
             let r2 = Reading { sensor_id: 1234, value: 99.0 };
             assert_eq!(r.compute_key_hash(), r2.compute_key_hash(),
                 "same key → same hash");
@@ -161,6 +161,48 @@ fn wire_keyed_struct_keyhash_roundtrip() {
             let r3 = Reading { sensor_id: 5555, value: 3.14 };
             assert_ne!(r.compute_key_hash(), r3.compute_key_hash(),
                 "different key → different hash");
+        "#,
+    );
+}
+
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn wire_union_classic_cdr_roundtrip() {
+    run_wire_test(
+        "union",
+        r#"union Event switch (long) {
+            case 1: long counter;
+            case 2: double value;
+            default: string message;
+        };"#,
+        r#"
+            use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, Endianness};
+
+            // Classic CORBA CDR: BufferWriter WITHOUT .xcdr2().
+            fn rt(v: &Event) -> Event {
+                let mut w = BufferWriter::new(Endianness::Big);
+                v.encode(&mut w).expect("encode");
+                let bytes = w.into_bytes();
+                let mut r = BufferReader::new(&bytes, Endianness::Big);
+                Event::decode(&mut r).expect("decode")
+            }
+
+            // Explizite Cases + Default-Case roundtrippen.
+            assert_eq!(rt(&Event::Counter(42)), Event::Counter(42));
+            assert_eq!(rt(&Event::Value(3.5)), Event::Value(3.5));
+            assert_eq!(rt(&Event::Message("hi".to_string())), Event::Message("hi".to_string()));
+
+            // Wire: Counter = disc 1 (i32 BE) + 42 (i32 BE).
+            let mut w = BufferWriter::new(Endianness::Big);
+            Event::Counter(42).encode(&mut w).unwrap();
+            let b = w.into_bytes();
+            assert_eq!(&b[..4], &1i32.to_be_bytes(), "discriminator = case label 1");
+            assert_eq!(&b[4..8], &42i32.to_be_bytes(), "member value");
+
+            // Default-Discriminator = 0 (Labels 1,2 belegt → 0 frei).
+            let mut w2 = BufferWriter::new(Endianness::Big);
+            Event::Message("x".to_string()).encode(&mut w2).unwrap();
+            assert_eq!(&w2.into_bytes()[..4], &0i32.to_be_bytes(), "default disc = 0");
         "#,
     );
 }
@@ -210,7 +252,7 @@ fn wire_appendable_dheader_present() {
             // total = 4 (DHEADER) + 16 (body) = 20 byte
             assert!(buf.len() >= 16, "appendable encoding has DHEADER + body, got {} bytes", buf.len());
 
-            // Decoding muss den DHEADER konsumieren und die Member zurueckgeben
+            // Decoding must consume the DHEADER and return the members
             let back = Telemetry::decode(&buf).expect("decode");
             assert_eq!(back.ts, 100);
             assert_eq!(back.v, 1.5);

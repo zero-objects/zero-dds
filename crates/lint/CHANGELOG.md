@@ -4,11 +4,11 @@ Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionie
 
 ## [1.0.0-rc.1]
 
-Initiale Release-Materialisierung der `zerodds-lint`-Crate (internal tooling).
+Initial release materialization der `zerodds-lint`-Crate (internal tooling).
 
 ### Spec-Referenzen
 
-- `docs/architecture/04_safety_by_architecture.md §3.4` — Spezifikation aller 7 Projekt-Lints.
+- `docs/architecture/04_safety_by_architecture.md §3.4` — specification of all 7 project lints.
 
 ### Lint-Inventar
 
@@ -16,20 +16,20 @@ Initiale Release-Materialisierung der `zerodds-lint`-Crate (internal tooling).
 
 **File-Lints (6):**
 
-- `RequireSafetyComment` — erzwingt Safety-Kommentar bei jeder `unsafe`-Verwendung.
-- `NoDynInSafe` — verbietet `dyn Trait` in Safe-Class-Crates.
-- `NoPanicInSafe` — verbietet `panic!`/`unreachable!`/`todo!`/`unimplemented!` in Safe-Class.
-- `NoAllocInHotPath` — verbietet Heap-Alloc in `// zerodds-lint: hot-path`-Funktionen.
-- `NoReallocInHotPath` — verbietet `Vec`-Reallocs in Hot-Path.
-- `BoundedRecursion` — erzwingt `// zerodds-lint: recursion-depth N`-Annotation an rekursiven Funktionen.
+- `RequireSafetyComment` — enforces a safety comment on every `unsafe` use.
+- `NoDynInSafe` — forbids `dyn Trait` in safe-class crates.
+- `NoPanicInSafe` — forbids `panic!`/`unreachable!`/`todo!`/`unimplemented!` in safe-class.
+- `NoAllocInHotPath` — forbids heap alloc in `// zerodds-lint: hot-path` functions.
+- `NoReallocInHotPath` — forbids `Vec` reallocs in the hot path.
+- `BoundedRecursion` — enforces a `// zerodds-lint: recursion-depth N` annotation on recursive functions.
 
 **Crate-Lint (1):**
 
-- `SafetyClassificationPresent` — erzwingt `Safety classification:`-Block im `lib.rs`-Crate-Doc.
+- `SafetyClassificationPresent` — enforces a `Safety classification:` block in the `lib.rs` crate doc.
 
 ### Public-API
 
-**Aufruf-Pfad** (`runner`-Modul):
+**Invocation path** (`runner` module):
 
 - `RunConfig` / `RunReport` — Config/Report-Container.
 - `run(&RunConfig) -> Result<RunReport>` — Hauptentry.
@@ -49,20 +49,20 @@ Initiale Release-Materialisierung der `zerodds-lint`-Crate (internal tooling).
 
 - `Severity::{Error, Warning}`.
 - `Diagnostic { file, line, column, lint, severity, message }` mit `Display`-Impl.
-- `Diagnostic::error(...)` / `Diagnostic::warning(...)` Constructor-Methoden.
+- `Diagnostic::error(...)` / `Diagnostic::warning(...)` constructor methods.
 
-**Lint-Trait-Familie** (`lints`-Modul):
+**Lint trait family** (`lints` module):
 
-- `FileLint`-Trait + `FileLintContext<'a>` (file-scoped Lints).
-- `CrateLint`-Trait (Crate-scoped Lints).
-- `default_file_lints()` / `default_crate_lints()` — Default-Listen.
+- `FileLint` trait + `FileLintContext<'a>` (file-scoped lints).
+- `CrateLint` trait (crate-scoped lints).
+- `default_file_lints()` / `default_crate_lints()` — default lists.
 
-### Implementierung
+### Implementation
 
 - `forbid(unsafe_code)`.
-- AST-Parsing via `syn` (stable Rust, kein Nightly).
+- AST parsing via `syn` (stable Rust, no Nightly).
 - Workspace-Walk via `cargo_metadata` + `walkdir`.
-- 67 Unit-Tests grün.
+- 67 unit tests green.
 
 ### CI-Integration
 
@@ -71,4 +71,4 @@ Initiale Release-Materialisierung der `zerodds-lint`-Crate (internal tooling).
 
 ### Public-Strategy
 
-🏠 **internal-only** — wird nicht nach crates.io gepusht. `publish = false` in `Cargo.toml`.
+🏠 **internal-only** — not pushed to crates.io. `publish = false` in `Cargo.toml`.

@@ -1,50 +1,50 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Sender-/Receiver-Link-Acceptance + Settlement-Tracking.
+//! Sender/receiver link acceptance + settlement tracking.
 //!
-//! Spec-Quelle: DDS-AMQP-1.0 §7.4 Settlement-Mode-Mapping +
-//! `amqp-1.0-transport` §2.6 Link-Lifecycle.
+//! Spec source: DDS-AMQP-1.0 §7.4 settlement-mode mapping +
+//! `amqp-1.0-transport` §2.6 link lifecycle.
 
 use alloc::string::String;
 
 use crate::dds_bridge::{DispositionMapper, DispositionState};
 
-/// Spec §2.6 — Link-Role aus Sicht des AMQP-Endpoints.
+/// Spec §2.6 — link role from the AMQP endpoint's perspective.
 ///
-/// Bei einem Sender-Link sendet der Endpoint Transfers an den Peer
-/// (DDS->AMQP-Konsumer). Bei einem Receiver-Link empfaengt er sie
-/// (AMQP-Producer->DDS).
+/// On a sender link the endpoint sends transfers to the peer
+/// (DDS->AMQP consumer). On a receiver link it receives them
+/// (AMQP producer->DDS).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkRole {
-    /// Endpoint sendet Transfers (DDS-Sample -> AMQP-Consumer).
+    /// Endpoint sends transfers (DDS sample -> AMQP consumer).
     Sender,
-    /// Endpoint empfaengt Transfers (AMQP-Producer -> DDS-Sample).
+    /// Endpoint receives transfers (AMQP producer -> DDS sample).
     Receiver,
 }
 
-/// Spec §2.6.4 / dds-amqp-1.0-beta1 §7.4 — Settlement-Mode des Links.
+/// Spec §2.6.4 / dds-amqp-1.0-beta1 §7.4 — settlement mode of the link.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettlementMode {
     /// `BEST_EFFORT` (DDS) ↔ pre-settled (AMQP).
     Settled,
-    /// `RELIABLE` (DDS) ↔ unsettled mit Disposition-Acknowledgment.
+    /// `RELIABLE` (DDS) ↔ unsettled with disposition acknowledgment.
     Unsettled,
 }
 
-/// AMQP `terminus.durable`-Wert (Spec §3.5.3).
+/// AMQP `terminus.durable` value (Spec §3.5.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminusDurability {
-    /// `none` (0) — keine durability-state-retention.
+    /// `none` (0) — no durability-state retention.
     None,
-    /// `configuration` (1) — durability nur fuer terminus-config.
+    /// `configuration` (1) — durability only for terminus config.
     Configuration,
-    /// `unsettled-state` (2) — broker-level message-durability.
+    /// `unsettled-state` (2) — broker-level message durability.
     UnsettledState,
 }
 
 impl TerminusDurability {
-    /// AMQP wire-value parsen (Spec §3.5.3).
+    /// Parse the AMQP wire value (Spec §3.5.3).
     #[must_use]
     pub const fn from_wire(v: u32) -> Option<Self> {
         match v {
@@ -56,26 +56,25 @@ impl TerminusDurability {
     }
 }
 
-/// Spec §7.4.2 — Resultat einer DURABILITY-Pre-Attach-Pruefung.
+/// Spec §7.4.2 — result of a DURABILITY pre-attach check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttachDurabilityCheck {
-    /// `terminus.durable` ist akzeptabel — Attach kann fortgesetzt
-    /// werden.
+    /// `terminus.durable` is acceptable — the attach may proceed.
     Accept,
-    /// `terminus.durable = unsettled-state` (2) verlangt Broker-
-    /// Funktionalitaet, die diese Spec out-of-scope laesst → Attach
-    /// SHALL mit `amqp:not-implemented` rejected werden
+    /// `terminus.durable = unsettled-state` (2) requires broker
+    /// functionality that this spec leaves out of scope → the attach
+    /// SHALL be rejected with `amqp:not-implemented`
     /// (Spec §7.4.2 + Annex C C.1.x).
     RejectNotImplemented,
 }
 
-/// Spec §7.4.2 + §11.2 — pruefen, ob ein Attach mit gegebenem
-/// `terminus.durable`-Wert akzeptiert werden darf.
+/// Spec §7.4.2 + §11.2 — check whether an attach with the given
+/// `terminus.durable` value may be accepted.
 ///
-/// `None`/`Configuration` → akzeptiert.
-/// `UnsettledState` → SHALL rejected mit
-/// `amqp:not-implemented` (broker-level message durability ist
-/// out-of-scope fuer diese Spec).
+/// `None`/`Configuration` → accepted.
+/// `UnsettledState` → SHALL be rejected with
+/// `amqp:not-implemented` (broker-level message durability is
+/// out of scope for this spec).
 #[must_use]
 pub const fn check_attach_durability(durable: TerminusDurability) -> AttachDurabilityCheck {
     match durable {
@@ -86,36 +85,36 @@ pub const fn check_attach_durability(durable: TerminusDurability) -> AttachDurab
     }
 }
 
-/// Aktiver Link-Sub-State des Endpoints.
+/// Active link sub-state of the endpoint.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkSession {
-    /// Eindeutiger Link-Name (Spec §2.6.1).
+    /// Unique link name (Spec §2.6.1).
     pub name: String,
-    /// Handle (Spec §2.6.5) — innerhalb der Session eindeutig.
+    /// Handle (Spec §2.6.5) — unique within the session.
     pub handle: u32,
-    /// Rolle des Endpoints.
+    /// Role of the endpoint.
     pub role: LinkRole,
-    /// Settlement-Modus.
+    /// Settlement mode.
     pub settlement: SettlementMode,
-    /// Anzahl noch ausstehender Disposition-Acknowledgments
-    /// (Settlement-Tracking, nur fuer `Unsettled`).
+    /// Number of disposition acknowledgments still outstanding
+    /// (settlement tracking, only for `Unsettled`).
     pub pending_settlements: u32,
-    /// Anzahl bisher gesendeter Transfers (fuer Flow-Credit-
-    /// Authority).
+    /// Number of transfers sent so far (for flow-credit
+    /// authority).
     pub delivered: u64,
-    /// Aktuelles Flow-Credit (Spec §2.6.7).
+    /// Current flow credit (Spec §2.6.7).
     pub credit: u32,
 }
 
-/// Fehler beim Senden eines Transfers.
+/// Error when sending a transfer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeliverError {
-    /// Kein Flow-Credit verfuegbar.
+    /// No flow credit available.
     NoCredit,
 }
 
 impl LinkSession {
-    /// Erzeugt einen neuen Link-Sub-State.
+    /// Creates a new link sub-state.
     #[must_use]
     pub fn new(name: String, handle: u32, role: LinkRole, settlement: SettlementMode) -> Self {
         Self {
@@ -129,19 +128,18 @@ impl LinkSession {
         }
     }
 
-    /// Server-Side erhoeht das Flow-Credit (Receiver-Link bekommt
-    /// einen `flow`-Performative auf den Wire). Bei Sender-Links ist
-    /// das Credit clientseitig kontrolliert; wir speichern es nur
-    /// fuer Telemetrie.
+    /// Server side raises the flow credit (a receiver link gets a
+    /// `flow` performative on the wire). For sender links the credit
+    /// is client-controlled; we only store it for telemetry.
     pub fn grant_credit(&mut self, additional: u32) {
         self.credit = self.credit.saturating_add(additional);
     }
 
-    /// Beim Senden eines Transfers: Credit konsumieren, delivered
-    /// inkrementieren, ggf. pending_settlements anlegen.
+    /// When sending a transfer: consume credit, increment delivered,
+    /// and create a pending_settlements entry if applicable.
     ///
     /// # Errors
-    /// `NoCredit` wenn kein Credit verfuegbar.
+    /// `NoCredit` if no credit is available.
     pub fn deliver(&mut self) -> Result<(), DeliverError> {
         if self.credit == 0 {
             return Err(DeliverError::NoCredit);
@@ -154,28 +152,28 @@ impl LinkSession {
         Ok(())
     }
 
-    /// Beim Empfangen einer Disposition-Acknowledgment: pending zaehlen
-    /// herunter.
+    /// When receiving a disposition acknowledgment: decrement the
+    /// pending count.
     ///
-    /// Diese Variante macht **kein** DDS-Side-Sample-State-Update;
-    /// sie eignet sich fuer AMQP-only-Workflows ohne DDS-Bridge. Mit
-    /// DDS-Bridge: [`Self::settle_with_mapper`] verwenden, das
-    /// zusaetzlich [`DispositionMapper::apply`] (Spec §7.7.3) aufruft.
+    /// This variant performs **no** DDS-side sample-state update;
+    /// it suits AMQP-only workflows without a DDS bridge. With a
+    /// DDS bridge: use [`Self::settle_with_mapper`], which
+    /// additionally calls [`DispositionMapper::apply`] (Spec §7.7.3).
     pub fn settle(&mut self) {
         if self.pending_settlements > 0 {
             self.pending_settlements -= 1;
         }
     }
 
-    /// Spec §7.7.3 — Beim Empfangen einer Disposition-Acknowledgment:
-    /// pending-Counter dekrementieren UND `mapper.apply(...)` mit dem
-    /// dekodierten `sample_handle` und [`DispositionState`] aufrufen.
+    /// Spec §7.7.3 — when receiving a disposition acknowledgment:
+    /// decrement the pending counter AND call `mapper.apply(...)` with
+    /// the decoded `sample_handle` and [`DispositionState`].
     ///
-    /// Dies ist der spec-konforme Wire-up-Pfad fuer DDS-AMQP-Endpoints
-    /// mit DDS-Bridge: der Caller liefert seinen
-    /// [`DispositionMapper`]-Implementor (typisch eine DCPS-Bruecke,
-    /// die `acknowledged()`/`unacknowledged()` auf den DDS-side
-    /// DataWriter ruft).
+    /// This is the spec-compliant wire-up path for DDS-AMQP endpoints
+    /// with a DDS bridge: the caller supplies its
+    /// [`DispositionMapper`] implementor (typically a DCPS bridge
+    /// that calls `acknowledged()`/`unacknowledged()` on the DDS-side
+    /// DataWriter).
     pub fn settle_with_mapper<M: DispositionMapper>(
         &mut self,
         mapper: &M,
@@ -257,10 +255,9 @@ mod tests {
         assert_eq!(l.pending_settlements, 0);
     }
 
-    /// Spec §7.7.3 — Disposition-Mapper-Wire-up: `settle_with_mapper`
-    /// MUSS den Caller-Mapper mit dem korrekten Sample-Handle und
-    /// Disposition-State aufrufen, UND den pending-Counter
-    /// dekrementieren.
+    /// Spec §7.7.3 — disposition-mapper wire-up: `settle_with_mapper`
+    /// MUST call the caller's mapper with the correct sample handle and
+    /// disposition state, AND decrement the pending counter.
     #[test]
     fn settle_with_mapper_calls_apply_and_decrements_pending() {
         use core::cell::RefCell;
@@ -290,9 +287,9 @@ mod tests {
         l.settle_with_mapper(&mapper, h1, DispositionState::Accepted);
         l.settle_with_mapper(&mapper, h2, DispositionState::Rejected);
 
-        // Counter dekrementiert beide Male.
+        // Counter decremented both times.
         assert_eq!(l.pending_settlements, 0);
-        // Mapper hat genau die zwei Calls in Reihenfolge gesehen.
+        // Mapper saw exactly the two calls in order.
         let calls = mapper.calls.borrow();
         assert_eq!(calls.len(), 2);
         assert_eq!(calls[0], (h1, DispositionState::Accepted));
@@ -301,10 +298,10 @@ mod tests {
 
     #[test]
     fn settle_with_mapper_underflow_safe_at_zero() {
-        // Wenn pending_settlements bereits 0 ist (z.B. doppeltes
-        // Disposition-Frame oder Settled-Mode), darf der Counter
-        // nicht underflowen — der Mapper wird trotzdem aufgerufen,
-        // weil das Caller-Update Spec-§7.7.3 mandatorisch ist.
+        // If pending_settlements is already 0 (e.g. a duplicate
+        // disposition frame or settled mode), the counter must not
+        // underflow — the mapper is still called, because the caller
+        // update is mandated by Spec §7.7.3.
         use core::cell::Cell;
 
         struct CountingMapper {
@@ -362,8 +359,8 @@ mod tests {
     #[test]
     fn attach_durability_unsettled_state_rejected_not_implemented() {
         // Spec §7.4.2: durability=unsettled-state (broker-level)
-        // ist out-of-scope und SHALL mit amqp:not-implemented
-        // rejected werden.
+        // is out of scope and SHALL be rejected with
+        // amqp:not-implemented.
         assert_eq!(
             check_attach_durability(TerminusDurability::UnsettledState),
             AttachDurabilityCheck::RejectNotImplemented

@@ -5,7 +5,7 @@
 //!
 //! Modul: `OMG::DDSOPCUA::OPCUA2DDS::ATTRIBUTE`. Interface: `Attribute`.
 //!
-//! Methoden: `read`, `history_read`, `write`, `history_update`.
+//! Methods: `read`, `history_read`, `write`, `history_update`.
 
 use alloc::vec::Vec;
 
@@ -23,9 +23,9 @@ use super::{
 // Tab 8.6 — Attribute Service Set Types.
 // -------------------------------------------------------------------
 
-/// Spec Tab 8.6 — `EventFilter` (`@nested`). Wird auch von Tab 8.3
-/// (Subscription) referenziert; hier zentral, weil Attribute der erste
-/// Konsument ist.
+/// Spec Tab 8.6 — `EventFilter` (`@nested`). Also referenced by Tab 8.3
+/// (subscription); central here, because attribute is the first
+/// consumer.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventFilter {
     /// `sequence<SimpleAttributeOperand> select_clauses`.
@@ -37,12 +37,12 @@ pub struct EventFilter {
 /// Spec Tab 8.6 — `HistoryEventFieldList` (`@nested`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct HistoryEventFieldList {
-    /// `sequence<BaseDataType> event_fields` (= Variant-Sequenz).
+    /// `sequence<BaseDataType> event_fields` (= variant sequence).
     pub event_fields: Vec<crate::data_value::Variant>,
 }
 
-/// Spec Tab 8.6 — `HistoryEvent` (Top-Level-Struct, kein `@nested`
-/// laut Spec).
+/// Spec Tab 8.6 — `HistoryEvent` (top-level struct, no `@nested`
+/// per the spec).
 #[derive(Debug, Clone, PartialEq)]
 pub struct HistoryEvent {
     /// `sequence<HistoryEventFieldList> events`.
@@ -56,7 +56,7 @@ pub struct HistoryData {
     pub data_values: Vec<DataValue>,
 }
 
-/// Spec Tab 8.6 — `ExtensibleParameterHistoryData` (Vererbung von
+/// Spec Tab 8.6 — `ExtensibleParameterHistoryData` (inheritance from
 /// `ExtensibleParameter`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtensibleParameterHistoryData {
@@ -390,17 +390,17 @@ pub struct ExtensibleParameterHistoryUpdateDetails {
     pub parameter_data: HistoryUpdateDetails,
 }
 
-/// Methoden-Namen-Konstanten (Spec §8.3.4.2 IDL).
+/// Method-name constants (Spec §8.3.4.2 IDL).
 pub struct AttributeServiceMethods;
 
 impl AttributeServiceMethods {
-    /// Methode `read`.
+    /// Method `read`.
     pub const READ: &'static str = "read";
-    /// Methode `history_read`.
+    /// Method `history_read`.
     pub const HISTORY_READ: &'static str = "history_read";
-    /// Methode `write`.
+    /// Method `write`.
     pub const WRITE: &'static str = "write";
-    /// Methode `history_update`.
+    /// Method `history_update`.
     pub const HISTORY_UPDATE: &'static str = "history_update";
 }
 
@@ -544,7 +544,7 @@ const METHODS: &[ServiceMethod] = &[
     },
 ];
 
-/// Attribute-Service-Set-Beschreibung (Spec §8.3.4.2).
+/// Attribute service set description (Spec §8.3.4.2).
 pub const SERVICE_SET: ServiceSet = ServiceSet {
     module_path: IDL_MODULE_ATTRIBUTE,
     interface_name: "Attribute",

@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Java-17-Keywords (inkl. Restricted Identifiers wie `record`, `sealed`,
+//! Java-17 keywords (incl. restricted identifiers like `record`, `sealed`,
 //! `var`, `yield`).
 //!
-//! Quelle: JLS 17 §3.9 + §3.8 (restricted identifiers).
+//! Source: JLS 17 §3.9 + §3.8 (restricted identifiers).
 //!
-//! Wenn ein IDL-Identifier einen Java-Keyword trifft, kann der Generator
-//! ihn nicht ueber `@`-Escape ausweichen (Java hat keine solche Syntax).
-//! Stattdessen wird der Name mit Unterstrich-Suffix versehen
+//! When an IDL identifier hits a Java keyword, the generator cannot
+//! avoid it via `@`-escape (Java has no such syntax).
+//! Instead the name is given an underscore suffix
 //! (`class` → `class_`).
 
 use crate::error::JavaGenError;
 
-/// Reservierte Java-17-Schluesselwoerter (inkl. Restricted Identifiers).
+/// Reserved Java 17 keywords (incl. restricted identifiers).
 ///
-/// Quelle: JLS 17 §3.9 ("Keywords"), §3.8 ("Identifiers"; restricted)
-/// und §3.10.3 (Boolean / null Literals).
+/// Source: JLS 17 §3.9 ("Keywords"), §3.8 ("Identifiers"; restricted)
+/// and §3.10.3 (Boolean / null literals).
 pub(crate) const JAVA_RESERVED: &[&str] = &[
     // 50 echte Keywords (JLS §3.9)
     "abstract",
@@ -68,13 +68,13 @@ pub(crate) const JAVA_RESERVED: &[&str] = &[
     "void",
     "volatile",
     "while",
-    // Boolean / null-Literale (§3.10.3) — koennen nicht als Identifier
-    // verwendet werden.
+    // Boolean / null literals (§3.10.3) — cannot be used as
+    // identifiers.
     "true",
     "false",
     "null",
-    // Restricted Identifiers (§3.8) — innerhalb gewisser Kontexte
-    // reserviert; wir behandeln sie konservativ als reserviert.
+    // Restricted identifiers (§3.8) — reserved within certain
+    // contexts; we conservatively treat them as reserved.
     "record",
     "sealed",
     "var",
@@ -93,19 +93,19 @@ pub(crate) const JAVA_RESERVED: &[&str] = &[
     "with",
 ];
 
-/// Prueft, ob ein Identifier ein Java-Keyword ist.
+/// Checks whether an identifier is a Java keyword.
 #[must_use]
 pub fn is_reserved(name: &str) -> bool {
     JAVA_RESERVED.contains(&name)
 }
 
-/// Bereinigt einen IDL-Identifier fuer Java.
+/// Sanitizes an IDL identifier for Java.
 ///
-/// Wenn der Name reserviert ist, wird ein `_`-Suffix angehaengt
-/// (`class` → `class_`). Andernfalls bleibt er unveraendert.
+/// If the name is reserved, a `_` suffix is appended
+/// (`class` → `class_`). Otherwise it stays unchanged.
 ///
 /// # Errors
-/// Liefert [`JavaGenError::InvalidName`], wenn der Name leer ist.
+/// Returns [`JavaGenError::InvalidName`] if the name is empty.
 pub fn sanitize_identifier(name: &str) -> Result<String, JavaGenError> {
     if name.is_empty() {
         return Err(JavaGenError::InvalidName {
@@ -172,8 +172,8 @@ mod tests {
 
     #[test]
     fn list_contains_at_least_50_keywords() {
-        // JLS-§3.9 hat 50 echte Keywords; insgesamt mit Restricted-IDs
-        // erwarten wir > 60.
+        // JLS §3.9 has 50 real keywords; in total with restricted IDs
+        // we expect > 60.
         assert!(JAVA_RESERVED.len() >= 50);
     }
 }

@@ -1,38 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Format-Konstanten + Wire-Strukturen fuer `.zddsrec`.
+//! Format constants + wire structures for `.zddsrec`.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// File-Magic "ZDDS".
+/// File magic "ZDDS".
 pub const ZDDSREC_MAGIC: [u8; 4] = *b"ZDDS";
-/// Frame-Marker innerhalb des Streams.
+/// Frame marker within the stream.
 pub const FRAME_MAGIC: u8 = b'F';
-/// Format-Version. Inkompatible Aenderungen heben den Wert.
+/// Format version. Incompatible changes bump the value.
 pub const ZDDSREC_VERSION: u32 = 1;
 
-/// Sample-Kind nach DDS-Spec §2.2.4.4.5.
+/// Sample kind per DDS spec §2.2.4.4.5.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SampleKind {
-    /// `ALIVE` — Reader sieht ein lebendes Sample.
+    /// `ALIVE` — the reader sees a live sample.
     Alive = 0,
-    /// `NOT_ALIVE_DISPOSED` — Writer hat dispose()'d.
+    /// `NOT_ALIVE_DISPOSED` — the writer called dispose().
     NotAliveDisposed = 1,
-    /// `NOT_ALIVE_UNREGISTERED` — Writer hat unregister()'d.
+    /// `NOT_ALIVE_UNREGISTERED` — the writer called unregister().
     NotAliveUnregistered = 2,
 }
 
 impl SampleKind {
-    /// Wire-Wert.
+    /// Wire value.
     #[must_use]
     pub fn to_u8(self) -> u8 {
         self as u8
     }
 
-    /// Parsed das u8-Wire-Byte. Returns None bei Unknown.
+    /// Parses the u8 wire byte. Returns None on unknown.
     #[must_use]
     pub fn from_u8(v: u8) -> Option<Self> {
         match v {
@@ -44,38 +44,38 @@ impl SampleKind {
     }
 }
 
-/// Participant-Entry im Header.
+/// Participant entry in the header.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParticipantEntry {
-    /// 16-Byte RTPS-GUID-Prefix + EntityId (full GUID).
+    /// 16-byte RTPS GUID prefix + EntityId (full GUID).
     pub guid: [u8; 16],
-    /// Logischer Name (z.B. ROS-2 Node-Name).
+    /// Logical name (e.g. ROS 2 node name).
     pub name: String,
 }
 
-/// Topic-Entry im Header.
+/// Topic entry in the header.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TopicEntry {
-    /// DDS-Topic-Name.
+    /// DDS topic name.
     pub name: String,
-    /// Type-Name (z.B. "std_msgs::msg::String").
+    /// Type name (e.g. "std_msgs::msg::String").
     pub type_name: String,
 }
 
-/// Header eines `.zddsrec`-Files.
+/// Header of a `.zddsrec` file.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Header {
-    /// UNIX-Epoch-Timestamp in Nanosekunden — Frame-Timestamps sind
-    /// Deltas relativ dazu.
+    /// UNIX epoch timestamp in nanoseconds — frame timestamps are
+    /// deltas relative to it.
     pub time_base_unix_ns: i64,
-    /// Bekannte Participants (Reihenfolge ist Frame-Index).
+    /// Known participants (order is the frame index).
     pub participants: Vec<ParticipantEntry>,
-    /// Bekannte Topics (Reihenfolge ist Frame-Index).
+    /// Known topics (order is the frame index).
     pub topics: Vec<TopicEntry>,
 }
 
 impl Header {
-    /// Serialisiert den Header inkl. Magic + Version.
+    /// Serializes the header incl. magic + version.
     pub fn write(&self, out: &mut Vec<u8>) {
         out.extend_from_slice(&ZDDSREC_MAGIC);
         out.extend_from_slice(&ZDDSREC_VERSION.to_le_bytes());
@@ -107,23 +107,23 @@ fn write_string(out: &mut Vec<u8>, s: &str) {
     out.extend_from_slice(bytes);
 }
 
-/// Frame im Sample-Stream.
+/// Frame in the sample stream.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Frame {
-    /// Nanosekunden-Delta zum Header-`time_base_unix_ns`.
+    /// Nanosecond delta to the header `time_base_unix_ns`.
     pub timestamp_delta_ns: i64,
     /// Index in [`Header::participants`].
     pub participant_idx: u32,
     /// Index in [`Header::topics`].
     pub topic_idx: u32,
-    /// DDS-Sample-Kind (Alive/Disposed/Unregistered).
+    /// DDS sample kind (Alive/Disposed/Unregistered).
     pub sample_kind: SampleKind,
-    /// CDR-encoded Payload-Bytes.
+    /// CDR-encoded payload bytes.
     pub payload: Vec<u8>,
 }
 
 impl Frame {
-    /// Serialisiert den Frame.
+    /// Serializes the frame.
     pub fn write(&self, out: &mut Vec<u8>) {
         out.push(FRAME_MAGIC);
         out.extend_from_slice(&self.timestamp_delta_ns.to_le_bytes());
@@ -136,23 +136,23 @@ impl Frame {
     }
 }
 
-/// Borrowed-Variante des Frames — nuetzlich fuer Replay ohne Copy.
+/// Borrowed variant of the frame — useful for replay without a copy.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FrameView<'a> {
-    /// Nanosekunden-Delta zum Header-`time_base_unix_ns`.
+    /// Nanosecond delta to the header `time_base_unix_ns`.
     pub timestamp_delta_ns: i64,
     /// Index in [`Header::participants`].
     pub participant_idx: u32,
     /// Index in [`Header::topics`].
     pub topic_idx: u32,
-    /// DDS-Sample-Kind.
+    /// DDS sample kind.
     pub sample_kind: SampleKind,
-    /// Borrowed Payload.
+    /// Borrowed payload.
     pub payload: &'a [u8],
 }
 
 impl FrameView<'_> {
-    /// Konvertiert in eine owned [`Frame`].
+    /// Converts into an owned [`Frame`].
     #[must_use]
     pub fn to_owned(&self) -> Frame {
         Frame {
@@ -166,7 +166,7 @@ impl FrameView<'_> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
 

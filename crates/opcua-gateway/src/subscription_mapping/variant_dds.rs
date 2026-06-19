@@ -3,22 +3,21 @@
 
 //! Variant → DDS-Type Mapping — Spec Tab 8.16 + §8.4.3.3.
 //!
-//! Liefert pro `(BuiltinTypeKind, ArrayShape)` die DDS-IDL-Type-
-//! Repraesentation, die das Gateway in einen `DdsOutput`-Field
-//! schreiben muss. Die drei Dimensions-Faelle aus §8.4.3.3:
+//! Returns, per `(BuiltinTypeKind, ArrayShape)`, the DDS-IDL type
+//! representation that the gateway must write into a `DdsOutput` field.
+//! The three dimension cases from §8.4.3.3:
 //!
-//! 1. **Scalar** (`array_dimensions` empty) → DDS-Primitive-Typ
-//!    (`int32`, `boolean`, ...) bzw. die Built-in-Type-Aliasses
+//! 1. **Scalar** (`array_dimensions` empty) → DDS primitive type
+//!    (`int32`, `boolean`, ...) or the built-in type aliases
 //!    (`NodeId`, `LocalizedText`, ...).
 //! 2. **1D-Array** (`array_dimensions.len() == 1`) → `sequence<T>`.
-//! 3. **Multi-Dim-Matrix** (`array_dimensions.len() > 1`) → Wrapper-
-//!    Struct mit `array: sequence<T>` + `array_dimensions:
-//!    sequence<uint32>` (z.B. `Int32Matrix`).
+//! 3. **Multi-dim matrix** (`array_dimensions.len() > 1`) → a wrapper
+//!    struct with `array: sequence<T>` + `array_dimensions:
+//!    sequence<uint32>` (e.g. `Int32Matrix`).
 //!
-//! Spec Tab 8.16 listet die Mapping pro BuiltinType in jeder
-//! Dimension. Wir geben alle drei Formen pro Type-Kind als IDL-
-//! Type-String zurueck — Codegen-Konsumenten emittieren daraus
-//! Wire-Bindings.
+//! Spec Tab 8.16 lists the mapping per BuiltinType in each
+//! dimension. We return all three forms per type kind as an IDL
+//! type string — codegen consumers emit wire bindings from it.
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -38,7 +37,7 @@ pub enum ArrayShape {
 }
 
 impl ArrayShape {
-    /// Klassifiziert eine Variant gemaess §8.4.3.3.
+    /// Classifies a variant per §8.4.3.3.
     #[must_use]
     pub fn classify(v: &Variant) -> Self {
         match v.array_dimensions.len() {
@@ -49,10 +48,10 @@ impl ArrayShape {
     }
 }
 
-/// IDL-Type-Reference, die das Gateway in den DDS-Output schreibt.
+/// IDL type reference that the gateway writes into the DDS output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DdsTypeRef {
-    /// IDL-Type-Spec (z.B. `int32`, `sequence<int32>`, `Int32Matrix`).
+    /// IDL type spec (e.g. `int32`, `sequence<int32>`, `Int32Matrix`).
     pub idl_type: String,
 }
 
@@ -64,26 +63,26 @@ impl DdsTypeRef {
     }
 }
 
-/// Spec Tab 8.16 Variant→DDS-Mapping — gibt den IDL-Type fuer
-/// `(builtin, shape)` zurueck.
+/// Spec Tab 8.16 Variant→DDS mapping — returns the IDL type for
+/// `(builtin, shape)`.
 #[must_use]
 pub fn map_variant_to_dds(builtin: BuiltinTypeKind, shape: ArrayShape) -> DdsTypeRef {
     let scalar = scalar_idl(builtin);
     match shape {
         ArrayShape::Scalar => DdsTypeRef::from_str(scalar),
         ArrayShape::Array1D => {
-            // Spec: 1D-Arrays bekommen Alias `<Type>Array` als
-            // Shortcut fuer `sequence<T>`. Wir liefern beides — die
-            // Alias-Form ist in Spec Tab 8.16 explizit gelistet.
+            // Spec: 1D arrays get the alias `<Type>Array` as a
+            // shortcut for `sequence<T>`. We provide both — the
+            // alias form is explicitly listed in Spec Tab 8.16.
             DdsTypeRef {
                 idl_type: format!("sequence<{scalar}>"),
             }
         }
         ArrayShape::Matrix => {
-            // Spec: Multi-Dim-Matrix ist ein Wrapper-Struct
+            // Spec: a multi-dim matrix is a wrapper struct
             // `<Type>Matrix { <Type>Array array; sequence<uint32>
-            // array_dimensions; }`. Wir geben den Type-Namen, der
-            // als IDL-Struct zu generieren ist.
+            // array_dimensions; }`. We return the type name that
+            // is to be generated as an IDL struct.
             DdsTypeRef::from_str(matrix_name(builtin))
         }
     }
@@ -208,8 +207,8 @@ mod tests {
 
     #[test]
     fn builtin_scalar_mappings_match_spec() {
-        // Spec Tab 8.16 — die nicht-primitiven Built-in-Types werden
-        // auf ihre Spec-Aliasses gemapped (kein Decay zu primitiven).
+        // Spec Tab 8.16 — the non-primitive built-in types are
+        // mapped to their spec aliases (no decay to primitives).
         for (b, expected) in [
             (BuiltinTypeKind::DateTime, "DateTime"),
             (BuiltinTypeKind::Guid, "Guid"),
@@ -234,8 +233,8 @@ mod tests {
 
     #[test]
     fn array_1d_wraps_in_sequence() {
-        // Spec Tab 8.16 — 1D-Arrays = sequence<T> (Aliasses
-        // `Int32Array` etc. sind aequivalent).
+        // Spec Tab 8.16 — 1D arrays = sequence<T> (aliases
+        // `Int32Array` etc. are equivalent).
         assert_eq!(
             map_variant_to_dds(BuiltinTypeKind::Int32, ArrayShape::Array1D).idl_type,
             "sequence<int32>"
@@ -269,8 +268,8 @@ mod tests {
 
     #[test]
     fn all_25_builtins_have_matrix_alias() {
-        // Sanity: jede der 25 Built-in-Type-Kinds liefert in jeder
-        // Form einen nicht-leeren IDL-Type-String.
+        // Sanity: each of the 25 built-in type kinds returns a
+        // non-empty IDL type string in every form.
         let all = [
             BuiltinTypeKind::Boolean,
             BuiltinTypeKind::SByte,

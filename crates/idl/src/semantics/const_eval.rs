@@ -1,30 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Konstanten-Evaluator fuer OMG IDL 4.2 (C4.6 §1.1).
+//! Constant evaluator for OMG IDL 4.2 (C4.6 §1.1).
 //!
-//! Wandelt einen geparsten [`ConstExpr`] zu einem typisierten
-//! [`ConstValue`] um. Implementiert die Type-Promotion-Regeln aus
-//! Spec §7.4.1.4.3 + §7.4.4 (integer + float + mixed) sowie
-//! Range-Checks (Octet 0..255, Short i16, etc.), Char/Wide-Char-Literale
-//! mit Escape-Sequenzen, String-Concatenation, Boolean (`TRUE`/`FALSE`),
-//! Enum-Resolution und Const-Expression-Auswertung mit korrekter
-//! Operator-Precedence (die ist bereits durch das AST-Binary-Tree
-//! abgebildet).
+//! Converts a parsed [`ConstExpr`] into a typed
+//! [`ConstValue`]. Implements the type-promotion rules from
+//! spec §7.4.1.4.3 + §7.4.4 (integer + float + mixed) as well as
+//! range checks (octet 0..255, short i16, etc.), char/wide-char literals
+//! with escape sequences, string concatenation, boolean (`TRUE`/`FALSE`),
+//! enum resolution and const-expression evaluation with correct
+//! operator precedence (which is already represented by the AST binary tree).
 //!
-//! # Phase-1-Scope
+//! # Phase-1 scope
 //!
-//! - Integer-Promotion (signed + unsigned, 8/16/32/64).
-//! - Float-Promotion (Float, Double).
-//! - LongDouble: minimaler Stub (16-byte-Roh-Repraesentation).
-//! - Fixed-Point: Decimal-String-basiert; Praezisions-Tracking minimal.
-//! - String-/WString-Concatenation (Caller-Pflicht: adjacent literals
-//!   werden ueber [`concat_strings`] zusammengefuehrt).
-//! - Char + Wide-Char mit Escape-Decoder (`\n`, `\t`, `\\`, `\'`, `\"`,
+//! - Integer promotion (signed + unsigned, 8/16/32/64).
+//! - Float promotion (float, double).
+//! - LongDouble: minimal stub (16-byte raw representation).
+//! - Fixed-point: decimal-string-based; precision tracking minimal.
+//! - String-/WString concatenation (caller obligation: adjacent literals
+//!   are merged via [`concat_strings`]).
+//! - Char + wide-char with an escape decoder (`\n`, `\t`, `\\`, `\'`, `\"`,
 //!   `\xHH`, `\uHHHH`, `\ooo`).
-//! - Boolean: erkennt `TRUE`/`FALSE`-Identifier sowie LiteralKind::Boolean.
-//! - Enum-Resolution: `MyEnum::RED` ueber [`SymbolTable`] aufgeloest.
-//! - Bitwise (`|`, `^`, `&`) + Shift (`<<`, `>>`) auf Integer.
-//! - Operator-Precedence ist durch AST gegeben.
+//! - Boolean: recognizes `TRUE`/`FALSE` identifiers as well as LiteralKind::Boolean.
+//! - Enum resolution: `MyEnum::RED` resolved via [`SymbolTable`].
+//! - Bitwise (`|`, `^`, `&`) + shift (`<<`, `>>`) on integers.
+//! - Operator precedence is given by the AST.
 //!
 //! # Out of scope
 //! - LongDouble Arithmetic — blockiert auf Rust-Stable f128
@@ -35,7 +34,7 @@ use crate::errors::Span;
 use num_bigint::BigInt;
 use num_traits::Zero;
 
-/// Typisierter Wert eines const-Expression-Ergebnisses.
+/// Typed value of a const-expression result.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConstValue {
     /// `boolean`.
@@ -62,13 +61,13 @@ pub enum ConstValue {
     Float(f32),
     /// `double`.
     Double(f64),
-    /// `long double` — Roh-Bytes (Spec §7.4.1 Tab.7-3).
+    /// `long double` — raw bytes (Spec §7.4.1 Tab.7-3).
     LongDouble([u8; 16]),
-    /// `fixed` — als Decimal-String mit `digits`/`scale`.
+    /// `fixed` — as a decimal string with `digits`/`scale`.
     Fixed {
-        /// Decimal-Repraesentation.
+        /// Decimal representation.
         digits: String,
-        /// Anzahl der Nachkommastellen.
+        /// Number of decimal places.
         scale: u32,
     },
     /// `char` (single byte / ASCII codepoint).
@@ -79,18 +78,18 @@ pub enum ConstValue {
     WChar(u32),
     /// `wstring` (Sequenz aus UCS-Codepoints).
     WString(Vec<u32>),
-    /// Enum-Wert, aufgeloest. `value` ist der numerische Index.
+    /// Enum value, resolved. `value` is the numeric index.
     Enum {
         /// Vollqualifizierter Enum-Type-Name.
         type_name: String,
-        /// Numerischer Wert (Discriminant).
+        /// Numeric value (discriminant).
         value: i32,
     },
 }
 
 impl ConstValue {
-    /// Truncated `i64`-View, falls integer-artig. Floats und Strings
-    /// liefern `None`.
+    /// Truncated `i64` view, if integer-like. Floats and strings
+    /// return `None`.
     #[must_use]
     pub fn as_i64(&self) -> Option<i64> {
         Some(match self {
@@ -116,7 +115,7 @@ impl ConstValue {
         })
     }
 
-    /// `true`, wenn der Wert eine `f64`-Konvertierung hat.
+    /// `true` if the value has an `f64` conversion.
     #[must_use]
     pub fn as_f64(&self) -> Option<f64> {
         Some(match self {
@@ -127,129 +126,129 @@ impl ConstValue {
     }
 }
 
-/// Fehler bei Const-Evaluation.
+/// Error during const evaluation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EvalError {
-    /// Integer-Literal liegt ausserhalb des erwarteten Range
-    /// (z.B. `octet = 256`).
+    /// Integer literal lies outside the expected range
+    /// (e.g. `octet = 256`).
     OutOfRange {
-        /// Zielsemantik, etwa `"octet"`, `"short"`, etc.
+        /// Target semantics, e.g. `"octet"`, `"short"`, etc.
         kind: &'static str,
-        /// Roh-Repraesentation aus dem Source.
+        /// Raw representation from the source.
         raw: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// Division durch Null.
+    /// Division by zero.
     DivisionByZero {
-        /// Quellort des Division-Operators.
+        /// Source location of the division operator.
         span: Span,
     },
-    /// Modulo durch Null.
+    /// Modulo by zero.
     ModuloByZero {
-        /// Quellort des Modulo-Operators.
+        /// Source location of the modulo operator.
         span: Span,
     },
-    /// Shift mit unsinnigem Argument (negativ, zu gross).
+    /// Shift with a nonsensical argument (negative, too large).
     InvalidShift {
-        /// Beschreibung der Verletzung.
+        /// Description of the violation.
         message: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// Operator-Anwendung passt nicht zu den Operanden-Typen.
+    /// The operator application does not match the operand types.
     TypeMismatch {
-        /// Operator-Bezeichner.
+        /// Operator designator.
         operator: String,
-        /// Beschreibung des Mismatches.
+        /// Description of the mismatch.
         message: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// Literal konnte nicht zerlegt werden (z.B. fehlerhafte Char-Escape).
+    /// The literal could not be parsed (e.g. a faulty char escape).
     InvalidLiteral {
-        /// Beschreibung.
+        /// Description.
         message: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// Scoped-Name nicht im Symbol-Table.
+    /// Scoped name not in the symbol table.
     UnresolvedName {
-        /// Voller Pfad.
+        /// Full path.
         name: String,
-        /// Quellort.
+        /// Source location.
         span: Span,
     },
-    /// §7.2.6.2.1 / §7.2.6.3 — Cross-Assign zwischen Wide- und
-    /// Narrow-Char/String. Beispiel: `const char X = L'X';` ist
-    /// Spec-Verletzung.
+    /// §7.2.6.2.1 / §7.2.6.3 — cross-assign between wide and
+    /// narrow char/string. Example: `const char X = L'X';` is a
+    /// spec violation.
     CrossAssignWideNarrow {
-        /// Deklarierter Const-Type (`"char"`/`"wchar"`/`"string"`/`"wstring"`).
+        /// Declared const type (`"char"`/`"wchar"`/`"string"`/`"wstring"`).
         declared: &'static str,
-        /// Tatsaechliche Literal-Klasse.
+        /// Actual literal class.
         actual: &'static str,
-        /// Quellort des Const-Decls.
+        /// Source location of the const decl.
         span: Span,
     },
 }
 
-/// Symbol-Table-Eintrag fuer Enum/Const-Auflösung.
+/// Symbol-table entry for enum/const resolution.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Symbol {
-    /// Enum-Member: `(EnumName, Index)`.
+    /// Enum member: `(EnumName, Index)`.
     EnumValue {
-        /// Vollqualifizierter Enum-Type-Name.
+        /// Fully-qualified enum type name.
         type_name: String,
-        /// Index in der Enumerator-Liste.
+        /// Index in the enumerator list.
         value: i32,
     },
     /// `const T NAME = expr;`.
     Const(ConstValue),
 }
 
-/// Sehr einfache Symbol-Table fuer Const-Eval (Map auf Voll-Pfad). Der
-/// volle Resolver liegt in [`crate::semantics::resolver`].
+/// Very simple symbol table for const-eval (map onto full path). The
+/// full resolver lives in [`crate::semantics::resolver`].
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
     entries: std::collections::HashMap<String, Symbol>,
 }
 
 impl SymbolTable {
-    /// Leere Table.
+    /// Empty table.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Symbol mit Vollpfad einfuegen (`Module::Sub::ENUM_VALUE`).
+    /// Insert a symbol with full path (`Module::Sub::ENUM_VALUE`).
     pub fn insert(&mut self, full_name: impl Into<String>, sym: Symbol) {
         self.entries.insert(full_name.into(), sym);
     }
 
-    /// Lookup einer Voll-Pfad-Bezeichnung.
+    /// Lookup of a full-path designation.
     #[must_use]
     pub fn get(&self, full_name: &str) -> Option<&Symbol> {
         self.entries.get(full_name)
     }
 }
 
-/// Eval einen [`ConstExpr`] zu einem [`ConstValue`].
+/// Eval a [`ConstExpr`] to a [`ConstValue`].
 ///
 /// # Errors
-/// Siehe [`EvalError`].
+/// See [`EvalError`].
 ///
-/// §7.2.6.2.1 / §7.2.6.3 — Prueft, ob ein evaluierter Const-Value
-/// type-kompatibel mit dem deklarierten Const-Type ist. Insbesondere
-/// werden Wide-↔-Narrow-Cross-Assigns (`char`/`wchar`, `string`/
-/// `wstring`) als Compile-Time-Errors gemeldet.
+/// §7.2.6.2.1 / §7.2.6.3 — checks whether an evaluated const value
+/// is type-compatible with the declared const type. In particular,
+/// wide-↔-narrow cross-assigns (`char`/`wchar`, `string`/
+/// `wstring`) are reported as compile-time errors.
 ///
-/// Andere Type-Matches (Integer-Promotion, Float-Mix etc.) werden hier
-/// NICHT abgedeckt — der Eval-Pass produziert ohnehin nur den
-/// passenden ConstValue, und Cross-Assign-Spec-Pflicht gilt nur fuer
-/// Char-/String-Typen.
+/// Other type matches (integer promotion, float mix etc.) are NOT
+/// covered here — the eval pass only produces the
+/// matching ConstValue anyway, and the cross-assign spec obligation applies only to
+/// char/string types.
 ///
 /// # Errors
-/// `EvalError::CrossAssignWideNarrow` bei Mismatch.
+/// `EvalError::CrossAssignWideNarrow` on mismatch.
 pub fn check_const_decl_type_match(
     declared: &crate::ast::ConstType,
     value: &ConstValue,
@@ -317,8 +316,8 @@ fn eval_literal(l: &Literal) -> Result<ConstValue, EvalError> {
 
 fn eval_scoped(s: &ScopedName, syms: &SymbolTable) -> Result<ConstValue, EvalError> {
     let name = scoped_full_name(s);
-    // Sonderfall: `TRUE`/`FALSE` als unqualified scoped name (nicht als
-    // Boolean-Literal getokenized).
+    // Special case: `TRUE`/`FALSE` as an unqualified scoped name (not
+    // tokenized as a boolean literal).
     if !s.absolute && s.parts.len() == 1 {
         match s.parts[0].text.as_str() {
             "TRUE" | "true" => return Ok(ConstValue::Bool(true)),
@@ -352,7 +351,7 @@ fn scoped_full_name(s: &ScopedName) -> String {
 }
 
 // --------------------------------------------------------------------
-// Integer-Parsing mit Promotion
+// Integer parsing with promotion
 // --------------------------------------------------------------------
 
 fn parse_integer(raw: &str, span: Span) -> Result<ConstValue, EvalError> {
@@ -372,7 +371,7 @@ fn parse_integer(raw: &str, span: Span) -> Result<ConstValue, EvalError> {
         (10u32, digits)
     };
     let body = body.replace('_', "");
-    // Nutze i128 fuer Range-Decisions.
+    // Use i128 for range decisions.
     let val = i128::from_str_radix(&body, radix).map_err(|_| EvalError::InvalidLiteral {
         message: format!("integer parse failed: {raw}"),
         span,
@@ -418,8 +417,8 @@ fn promote_int(v: i128, span: Span) -> Result<ConstValue, EvalError> {
 // --------------------------------------------------------------------
 
 fn parse_floating(raw: &str, span: Span) -> Result<ConstValue, EvalError> {
-    // Suffixe: f / F (Float), d / D (Double), l / L (LongDouble — wird auf
-    // Double zurueckgefallen mit Stub-Bytes).
+    // Suffixes: f / F (float), d / D (double), l / L (long double — falls
+    // back to double with stub bytes).
     let trimmed = raw.trim_end_matches(['f', 'F', 'd', 'D', 'l', 'L']);
     let val: f64 = trimmed.parse().map_err(|_| EvalError::InvalidLiteral {
         message: format!("float parse failed: {raw}"),
@@ -451,15 +450,15 @@ fn parse_fixed(raw: &str) -> ConstValue {
     }
 }
 
-/// §7.2.6.5 Tab 7-11 — Fixed-Point-Arithmetik mit BigInt-Backing.
+/// §7.2.6.5 Tab 7-11 — fixed-point arithmetic with BigInt backing.
 ///
-/// Skalierungs-Regeln (Spec Tab 7-11):
-/// - `+`/`-`: scale_result = max(scale_l, scale_r); beide Operanden auf
-///   diese Skala normalisiert.
+/// Scaling rules (Spec Tab 7-11):
+/// - `+`/`-`: scale_result = max(scale_l, scale_r); both operands
+///   normalized to this scale.
 /// - `*`: scale_result = scale_l + scale_r.
-/// - `/`: scale_result = max(0, scale_l - scale_r) — vereinfacht
-///   gegenueber Spec-`sinf` (arbitrary precision quotient); volle
-///   sinf-Semantik ist Phase-3-Item.
+/// - `/`: scale_result = max(0, scale_l - scale_r) — simplified
+///   compared to the spec's `sinf` (arbitrary precision quotient); the full
+///   sinf semantics is a phase-3 item.
 ///
 /// 31-Digit-Cap (Spec §7.4.1.4.3, S. 31): "If an individual computation
 /// between a pair of fixed-point literals actually generates more than
@@ -468,11 +467,11 @@ fn parse_fixed(raw: &str) -> ConstValue {
 /// shall not be considered significant. The omitted digits shall be
 /// discarded; rounding shall not be performed."
 ///
-/// 62-Digit-Praezision (Spec §7.4.1.4.3, S. 31): "All intermediate
+/// 62-digit precision (Spec §7.4.1.4.3, p. 31): "All intermediate
 /// computations shall be performed using double precision (i.e., 62
-/// digits) arithmetic." Mit `num_bigint::BigInt`-Backing erreichen wir
-/// arbitrary precision; die 31-Digit-Cap-Logik kuerzt das Ergebnis am
-/// Ende. Damit ist der Spec-Constraint erfuellt — kein i128-Overflow.
+/// digits) arithmetic." With `num_bigint::BigInt` backing we reach
+/// arbitrary precision; the 31-digit-cap logic truncates the result at the
+/// end. This satisfies the spec constraint — no i128 overflow.
 fn apply_binary_fixed(
     op: BinaryOp,
     l: &ConstValue,
@@ -505,15 +504,15 @@ fn apply_binary_fixed(
             if rhs_int.is_zero() {
                 return Err(EvalError::DivisionByZero { span });
             }
-            // Spec §7.4.1.4.3 + Tab. 7-11: Quotient-Result-Type ist
+            // Spec §7.4.1.4.3 + Tab. 7-11: the quotient result type is
             // `fixed<(d1-s1+s2)+sinf, sinf>` — arbitrary precision.
-            // Wir approximieren `sinf` durch zusaetzliche Stellen, sodass
-            // die 31-Digit-Cap am Ende voll ausnutzbar ist: lhs_scale +
-            // 31 zusaetzliche Decimal-Places minus rhs_scale.
+            // We approximate `sinf` with additional places, so that
+            // the 31-digit cap is fully usable at the end: lhs_scale +
+            // 31 additional decimal places minus rhs_scale.
             let extra_scale: u32 = 31;
             let lhs_scaled = scale_up_big(&lhs_int, extra_scale);
             let v = &lhs_scaled / &rhs_int;
-            // Resultierende Skala: lhs_scale + extra_scale - rhs_scale.
+            // Resulting scale: lhs_scale + extra_scale - rhs_scale.
             let combined_scale = lhs_scale
                 .saturating_add(extra_scale)
                 .saturating_sub(rhs_scale);
@@ -528,12 +527,12 @@ fn apply_binary_fixed(
     }
 }
 
-/// Spec §7.4.1.4.3, S. 31 — 31-Digit-Cap mit Truncation (kein
-/// Rounding). Liefert `(digit_string, adjusted_scale)`.
+/// Spec §7.4.1.4.3, p. 31 — 31-digit cap with truncation (no
+/// rounding). Returns `(digit_string, adjusted_scale)`.
 ///
-/// Wenn die signifikanten Digits von `v` <= 31 sind: unveraendert.
-/// Sonst werden die niederwertigen `(actual_digits - 31)` Stellen
-/// gestrippt und die Skala entsprechend reduziert: `scale_new =
+/// If the significant digits of `v` are <= 31: unchanged.
+/// Otherwise the low-order `(actual_digits - 31)` places are
+/// stripped and the scale reduced accordingly: `scale_new =
 /// scale_old - (actual_digits - 31)`. Spec: "The omitted digits shall
 /// be discarded; rounding shall not be performed."
 fn cap_to_31_digits(v: &BigInt, scale: u32) -> (String, u32) {
@@ -553,7 +552,7 @@ fn cap_to_31_digits(v: &BigInt, scale: u32) -> (String, u32) {
 fn fixed_components(v: &ConstValue, span: Span) -> Result<(String, u32), EvalError> {
     match v {
         ConstValue::Fixed { digits, scale } => Ok((digits.clone(), *scale)),
-        // Integer wird als fixed mit scale=0 promotet.
+        // Integer is promoted to fixed with scale=0.
         ConstValue::Long(n) => Ok((n.to_string(), 0)),
         ConstValue::ULong(n) => Ok((n.to_string(), 0)),
         ConstValue::LongLong(n) => Ok((n.to_string(), 0)),
@@ -655,9 +654,9 @@ fn decode_string(raw: &str, span: Span) -> Result<String, EvalError> {
         span,
     })?;
     let bytes = decode_escapes(inner, span, false)?;
-    // §7.2.6.3: NUL ist im String-Body verboten (String wird vom Reader
-    // null-terminiert, NUL im Body wuerde zu vorzeitiger Termination
-    // fuehren).
+    // §7.2.6.3: NUL is forbidden in the string body (the string is
+    // null-terminated by the reader, a NUL in the body would lead to
+    // premature termination).
     if bytes.contains(&0) {
         return Err(EvalError::InvalidLiteral {
             message: "string literal must not contain '\\0' (NUL)".to_string(),
@@ -687,7 +686,7 @@ fn decode_wide_string(raw: &str, span: Span) -> Result<Vec<u32>, EvalError> {
         span,
     })?;
     let codepoints = decode_escapes(inner, span, true)?;
-    // §7.2.6.3 (analog): NUL im wstring-Body ebenfalls verboten.
+    // §7.2.6.3 (analogous): NUL in the wstring body is forbidden too.
     if codepoints.contains(&0) {
         return Err(EvalError::InvalidLiteral {
             message: "wstring literal must not contain '\\0' (NUL)".to_string(),
@@ -801,13 +800,13 @@ fn decode_escapes(input: &str, span: Span, allow_wide: bool) -> Result<Vec<u32>,
     Ok(out)
 }
 
-/// Spec §7.2.6.3: adjacent string literals werden konkateniert.
+/// Spec §7.2.6.3: adjacent string literals are concatenated.
 ///
-/// Hilfs-API fuer den AST-Builder: nimmt eine Liste roher Literale
-/// (wie sie aus dem Lexer kommen) und liefert die konkatenierte Form.
+/// Helper API for the AST builder: takes a list of raw literals
+/// (as they come from the lexer) and returns the concatenated form.
 ///
 /// # Errors
-/// Wie [`decode_string`].
+/// As [`decode_string`].
 pub fn concat_strings(literals: &[Literal]) -> Result<String, EvalError> {
     let mut out = String::new();
     for l in literals {
@@ -823,10 +822,10 @@ pub fn concat_strings(literals: &[Literal]) -> Result<String, EvalError> {
     Ok(out)
 }
 
-/// Wie [`concat_strings`], aber fuer wide strings.
+/// Like [`concat_strings`], but for wide strings.
 ///
 /// # Errors
-/// Wie [`decode_wide_string`].
+/// As [`decode_wide_string`].
 pub fn concat_wstrings(literals: &[Literal]) -> Result<Vec<u32>, EvalError> {
     let mut out = Vec::new();
     for l in literals {
@@ -908,18 +907,18 @@ fn apply_binary(
     r: &ConstValue,
     span: Span,
 ) -> Result<ConstValue, EvalError> {
-    // §7.2.6.5 Tab 7-11 — Fixed-Point-Pfad: wenn einer von beiden Fixed
-    // ist. Skalierungs-Regeln folgen Spec; Zwischenergebnis i128
-    // (~38 Decimal-Digits Praezision; volle 62-Digit-Praezision der Spec
-    // erfordert BigDecimal und ist Phase-2-Material).
+    // §7.2.6.5 Tab 7-11 — fixed-point path: if either of the two is fixed.
+    // The scaling rules follow the spec; intermediate result i128
+    // (~38 decimal digits precision; the full 62-digit precision of the spec
+    // requires BigDecimal and is phase-2 material).
     if matches!(l, ConstValue::Fixed { .. }) || matches!(r, ConstValue::Fixed { .. }) {
         return apply_binary_fixed(op, l, r, span);
     }
-    // Float-Pfad: nur wenn BEIDE Operanden Float sind.
+    // Float path: only if BOTH operands are float.
     // Spec §7.4.1.4.3: "An infix operator may combine two integer
     // types, floating point types or fixed point types, but not
-    // mixtures of these." Damit ist `int + float` ein TypeMismatch,
-    // kein implizites Promote.
+    // mixtures of these." So `int + float` is a TypeMismatch,
+    // not an implicit promote.
     let l_is_float = matches!(
         l,
         ConstValue::Float(_) | ConstValue::Double(_) | ConstValue::LongDouble(_)
@@ -969,7 +968,7 @@ fn apply_binary(
         return Ok(promote_float(l, r, v));
     }
 
-    // Integer-Pfad.
+    // Integer path.
     let lhs = l.as_i64().ok_or_else(|| EvalError::TypeMismatch {
         operator: format!("{op:?}"),
         message: format!("non-integer lhs {l:?}"),
@@ -1030,13 +1029,13 @@ fn promote_float(l: &ConstValue, r: &ConstValue, val: f64) -> ConstValue {
 }
 
 // --------------------------------------------------------------------
-// Range-Checks fuer typed Targets
+// Range checks for typed targets
 // --------------------------------------------------------------------
 
-/// Castet `v` zu `octet`, prueft Range 0..=255.
+/// Casts `v` to `octet`, checks range 0..=255.
 ///
 /// # Errors
-/// `EvalError::OutOfRange` falls Wert nicht passt.
+/// `EvalError::OutOfRange` if the value does not fit.
 pub fn cast_octet(v: &ConstValue, span: Span) -> Result<u8, EvalError> {
     let i = v.as_i64().ok_or_else(|| EvalError::TypeMismatch {
         operator: "cast(octet)".to_string(),
@@ -1050,10 +1049,10 @@ pub fn cast_octet(v: &ConstValue, span: Span) -> Result<u8, EvalError> {
     })
 }
 
-/// Castet `v` zu `short`, prueft Range -32768..=32767.
+/// Casts `v` to `short`, checks range -32768..=32767.
 ///
 /// # Errors
-/// `EvalError::OutOfRange` falls Wert nicht passt.
+/// `EvalError::OutOfRange` if the value does not fit.
 pub fn cast_short(v: &ConstValue, span: Span) -> Result<i16, EvalError> {
     let i = v.as_i64().ok_or_else(|| EvalError::TypeMismatch {
         operator: "cast(short)".to_string(),
@@ -1067,10 +1066,10 @@ pub fn cast_short(v: &ConstValue, span: Span) -> Result<i16, EvalError> {
     })
 }
 
-/// Castet `v` zu `unsigned short`, prueft Range 0..=65535.
+/// Casts `v` to `unsigned short`, checks range 0..=65535.
 ///
 /// # Errors
-/// `EvalError::OutOfRange` falls Wert nicht passt.
+/// `EvalError::OutOfRange` if the value does not fit.
 pub fn cast_ushort(v: &ConstValue, span: Span) -> Result<u16, EvalError> {
     let i = v.as_i64().ok_or_else(|| EvalError::TypeMismatch {
         operator: "cast(ushort)".to_string(),
@@ -1091,10 +1090,10 @@ pub fn cast_ushort(v: &ConstValue, span: Span) -> Result<u16, EvalError> {
 /// integer constants. It is an error if any sub-expression values
 /// exceed the precision of the assigned type."
 ///
-/// `TargetIntType` legt den Ziel-Range fest, gegen den jedes Sub-
-/// Expression-Resultat geprueft wird. Damit deckt `evaluate_int_with_target`
-/// die Spec-Anforderung ab, dass nicht nur das Final-Ergebnis sondern
-/// jeder Zwischenschritt im Ziel-Type-Range bleiben muss.
+/// `TargetIntType` fixes the target range against which each
+/// sub-expression result is checked. Thus `evaluate_int_with_target`
+/// covers the spec requirement that not only the final result but
+/// every intermediate step must stay within the target type range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetIntType {
     /// `octet` / `uint8` — 0..=255.
@@ -1116,7 +1115,7 @@ pub enum TargetIntType {
 }
 
 impl TargetIntType {
-    /// `(min, max)` als i128 fuer den Ziel-Type-Range.
+    /// `(min, max)` as i128 for the target type range.
     #[must_use]
     pub const fn min_max(&self) -> (i128, i128) {
         match self {
@@ -1145,12 +1144,12 @@ impl TargetIntType {
     }
 }
 
-/// Spec §7.4.1.4.3 Long-Subexpr-Promotion: evaluiert eine Integer-
-/// Const-Expression mit Range-Check pro Sub-Step gegen den Ziel-Type.
+/// Spec §7.4.1.4.3 long-subexpr promotion: evaluates an integer-
+/// Const expression with a range check per sub-step against the target type.
 ///
 /// # Errors
-/// `EvalError::OutOfRange` falls irgendein Zwischenergebnis (oder das
-/// Final-Result) den Ziel-Range verletzt.
+/// `EvalError::OutOfRange` if any intermediate result (or the
+/// final result) violates the target range.
 pub fn evaluate_int_with_target(
     expr: &ConstExpr,
     syms: &SymbolTable,
@@ -1177,10 +1176,10 @@ fn const_expr_span(e: &ConstExpr) -> Span {
 }
 
 /// zerodds-lint: recursion-depth 64
-/// Const-Expression-Tiefe ist durch §7.2.5-Preprocessor-Limits + die
-/// Production `<const_expr>` (Rule 13-19) auf eine flache, vom Parser
-/// erzwungene Tiefe begrenzt; 64 ist eine grosszuegige Obergrenze fuer
-/// realistische IDL-Const-Ausdruecke.
+/// The const-expression depth is bounded by §7.2.5 preprocessor limits + the
+/// production `<const_expr>` (Rule 13-19) to a flat, parser-enforced
+/// depth; 64 is a generous upper bound for
+/// realistic IDL const expressions.
 fn eval_int_recursive(
     expr: &ConstExpr,
     syms: &SymbolTable,
@@ -1287,19 +1286,19 @@ fn apply_int_binop(
     }
 }
 
-/// Validiert, dass ein `ConstValue::Enum`-Wert zum erwarteten Enum-
-/// Type-Namen passt. Spec §7.4.1.4.3, S. 33: "The constant name for
+/// Validates that a `ConstValue::Enum` value matches the expected enum
+/// type name. Spec §7.4.1.4.3, p. 33: "The constant name for
 /// the value of an enumerated constant definition shall denote one of
 /// the enumerators defined for the enumerated type of the constant."
 ///
-/// `expected_type` ist der vollqualifizierte Type-Name des Const-
-/// Decl-Slots (z.B. `"::M::Color"`). `v` muss eine
-/// `ConstValue::Enum`-Variant sein, deren `type_name` mit
-/// `expected_type` uebereinstimmt.
+/// `expected_type` is the fully-qualified type name of the const
+/// decl slot (e.g. `"::M::Color"`). `v` must be a
+/// `ConstValue::Enum` variant whose `type_name` matches
+/// `expected_type`.
 ///
 /// # Errors
-/// `EvalError::TypeMismatch` falls Cross-Type-Assignment versucht
-/// wird oder `v` kein Enum ist.
+/// `EvalError::TypeMismatch` if a cross-type assignment is attempted
+/// or `v` is not an enum.
 pub fn validate_enum_const_type(
     v: &ConstValue,
     expected_type: &str,
@@ -1322,10 +1321,10 @@ pub fn validate_enum_const_type(
     }
 }
 
-/// Castet `v` zu `unsigned long`, prueft Range 0..=2^32-1.
+/// Casts `v` to `unsigned long`, checks range 0..=2^32-1.
 ///
 /// # Errors
-/// `EvalError::OutOfRange` falls Wert nicht passt.
+/// `EvalError::OutOfRange` if the value does not fit.
 pub fn cast_ulong(v: &ConstValue, span: Span) -> Result<u32, EvalError> {
     let i = v.as_i64().ok_or_else(|| EvalError::TypeMismatch {
         operator: "cast(ulong)".to_string(),
@@ -1339,10 +1338,10 @@ pub fn cast_ulong(v: &ConstValue, span: Span) -> Result<u32, EvalError> {
     })
 }
 
-/// Castet `v` zu `int8`, prueft Range -128..=127. Spec §7.4.13.4.4.
+/// Casts `v` to `int8`, checks range -128..=127. Spec §7.4.13.4.4.
 ///
 /// # Errors
-/// `EvalError::OutOfRange` falls Wert nicht passt.
+/// `EvalError::OutOfRange` if the value does not fit.
 pub fn cast_int8(v: &ConstValue, span: Span) -> Result<i8, EvalError> {
     let i = v.as_i64().ok_or_else(|| EvalError::TypeMismatch {
         operator: "cast(int8)".to_string(),
@@ -1356,10 +1355,10 @@ pub fn cast_int8(v: &ConstValue, span: Span) -> Result<i8, EvalError> {
     })
 }
 
-/// Castet `v` zu `uint8`, prueft Range 0..=255. Spec §7.4.13.4.4.
+/// Casts `v` to `uint8`, checks range 0..=255. Spec §7.4.13.4.4.
 ///
 /// # Errors
-/// `EvalError::OutOfRange` falls Wert nicht passt.
+/// `EvalError::OutOfRange` if the value does not fit.
 pub fn cast_uint8(v: &ConstValue, span: Span) -> Result<u8, EvalError> {
     let i = v.as_i64().ok_or_else(|| EvalError::TypeMismatch {
         operator: "cast(uint8)".to_string(),
@@ -1373,12 +1372,12 @@ pub fn cast_uint8(v: &ConstValue, span: Span) -> Result<u8, EvalError> {
     })
 }
 
-/// Spec §7.4.1.4.3, S. 32: "`<positive_int_const>` shall evaluate to
-/// a positive integer constant." Liefert den positiven Wert oder
-/// einen `OutOfRange`-Fehler bei `<= 0`.
+/// Spec §7.4.1.4.3, p. 32: "`<positive_int_const>` shall evaluate to
+/// a positive integer constant." Returns the positive value or
+/// an `OutOfRange` error on `<= 0`.
 ///
 /// # Errors
-/// `EvalError::OutOfRange` falls Wert <= 0 oder kein Integer.
+/// `EvalError::OutOfRange` if the value is <= 0 or not an integer.
 pub fn evaluate_positive_int(
     expr: &ConstExpr,
     syms: &SymbolTable,
@@ -1491,12 +1490,12 @@ mod tests {
         let r8 = evaluate(&int_lit("018"), &syms());
         assert!(
             matches!(r8, Err(EvalError::InvalidLiteral { .. })),
-            "018 darf nicht als Octal akzeptiert werden, war: {r8:?}"
+            "018 must not be accepted as octal, was: {r8:?}"
         );
         let r9 = evaluate(&int_lit("079"), &syms());
         assert!(
             matches!(r9, Err(EvalError::InvalidLiteral { .. })),
-            "079 darf nicht als Octal akzeptiert werden, war: {r9:?}"
+            "079 must not be accepted as octal, was: {r9:?}"
         );
     }
 
@@ -1591,7 +1590,7 @@ mod tests {
 
     #[test]
     fn char_literal_unicode_in_narrow_is_error() {
-        // \u nur in wchar/wstring erlaubt.
+        // \u only allowed in wchar/wstring.
         let r = evaluate(&char_lit("'\\u0041'"), &syms());
         assert!(matches!(r, Err(EvalError::InvalidLiteral { .. })));
     }
@@ -1646,7 +1645,7 @@ mod tests {
 
     #[test]
     fn wchar_literal_unicode_zero_digits_is_error() {
-        // \u ohne irgendwelche Hex-Digits muss Error sein.
+        // \u without any hex digits must be an error.
         let wlit = Literal {
             kind: LiteralKind::WideChar,
             raw: "L'\\u'".into(),
@@ -1677,14 +1676,14 @@ mod tests {
 
     #[test]
     fn char_literal_octal_overflow_is_range_error() {
-        // \400 = 0o400 = 256 — overflow fuer narrow char (u8).
+        // \400 = 0o400 = 256 — overflow for a narrow char (u8).
         let r = evaluate(&char_lit("'\\400'"), &syms());
         assert!(matches!(r, Err(EvalError::OutOfRange { .. })));
     }
 
     #[test]
     fn char_literal_question_mark_escape() {
-        // Spec Tab 7-9: \? ist Trigraph-Escape fuer `?`.
+        // Spec Tab 7-9: \? is the trigraph escape for `?`.
         let v = evaluate(&char_lit("'\\?'"), &syms()).unwrap();
         assert_eq!(v, ConstValue::Char(b'?'));
     }
@@ -1709,7 +1708,7 @@ mod tests {
 
     #[test]
     fn string_literal_with_unicode_escape_is_error() {
-        // Narrow string darf keine \u-Escapes haben.
+        // A narrow string must not have \u escapes.
         let lits = [str_lit("\"\\u0041\"")];
         let r = concat_strings(&lits);
         assert!(matches!(r, Err(EvalError::InvalidLiteral { .. })));
@@ -1721,7 +1720,7 @@ mod tests {
 
     #[test]
     fn string_literal_with_octal_nul_is_error() {
-        // \0 als octal escape im narrow string → Error (§7.2.6.3).
+        // \0 as an octal escape in a narrow string → Error (§7.2.6.3).
         let lits = [str_lit("\"abc\\0def\"")];
         let r = concat_strings(&lits);
         assert!(
@@ -1732,7 +1731,7 @@ mod tests {
 
     #[test]
     fn string_literal_with_hex_nul_is_error() {
-        // \x00 ebenfalls verboten.
+        // \x00 forbidden too.
         let lits = [str_lit("\"abc\\x00def\"")];
         let r = concat_strings(&lits);
         assert!(matches!(r, Err(EvalError::InvalidLiteral { .. })));
@@ -1779,7 +1778,7 @@ mod tests {
 
     #[test]
     fn integer_literal_decimal_zero_is_zero() {
-        // `0` allein ist legal (decimal 0, oder octal 0 — beide ergeben 0).
+        // `0` alone is legal (decimal 0, or octal 0 — both yield 0).
         let v = evaluate(&int_lit("0"), &syms()).unwrap();
         assert_eq!(v.as_i64(), Some(0));
     }
@@ -1924,7 +1923,7 @@ mod tests {
 
     #[test]
     fn char_literal_nul_is_allowed() {
-        // §7.2.6.2: char-Literal '\0' ist legal (anders als String-Body).
+        // §7.2.6.2: char literal '\0' is legal (unlike in a string body).
         let v = evaluate(&char_lit("'\\0'"), &syms()).unwrap();
         assert_eq!(v, ConstValue::Char(0x00));
     }
@@ -2079,8 +2078,8 @@ mod tests {
 
     #[test]
     fn modulo_identity_holds_for_positive_operands() {
-        // §7.4.1.4.3: "(a/b)*b + a%b == a" — Spec-Identity fuer
-        // non-negative Operanden.
+        // §7.4.1.4.3: "(a/b)*b + a%b == a" — spec identity for
+        // non-negative operands.
         let a = 17i32;
         let b = 5i32;
         let div = ConstExpr::Binary {
@@ -2143,12 +2142,12 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Phase 2.1 — §7.2.6.2.2 Vollständigkeitstests fuer alphabetische
-    // Escapes (Tab. 7-9). Vorher nur \n und \? getestet.
+    // Phase 2.1 — §7.2.6.2.2 completeness tests for alphabetic
+    // escapes (Tab. 7-9). Previously only \n and \? tested.
     // -----------------------------------------------------------------
 
     fn decode_char_via_eval(raw: &str) -> u8 {
-        // Hilfs-Helfer: liefert decodiertes Byte aus einem Char-Literal.
+        // Helper: returns the decoded byte from a char literal.
         let lit = Literal {
             kind: LiteralKind::Char,
             raw: format!("'{raw}'"),
@@ -2162,8 +2161,8 @@ mod tests {
 
     #[test]
     fn escape_sequences_table_7_9_alphabetic() {
-        // Spec §7.2.6.2.2 Tab. 7-9: 11 alphabetische Escapes mit
-        // expected Bytes laut Tab. 7-5 (ISO 646).
+        // Spec §7.2.6.2.2 Tab. 7-9: 11 alphabetic escapes with
+        // expected bytes per Tab. 7-5 (ISO 646).
         let cases = [
             ("\\n", 0x0A_u8), // newline
             ("\\t", 0x09),    // horizontal tab
@@ -2181,7 +2180,7 @@ mod tests {
             assert_eq!(
                 decode_char_via_eval(esc),
                 expected,
-                "escape {esc} muss Byte 0x{expected:02X} liefern"
+                "escape {esc} must yield byte 0x{expected:02X}"
             );
         }
     }
@@ -2194,7 +2193,7 @@ mod tests {
     fn unknown_escape_is_invalid_literal() {
         // Spec §7.2.6.2.2: "If the character following a backslash is
         // not one of those specified, the behavior is undefined." Repo
-        // ist strikter: definierter Fehler.
+        // is stricter: a defined error.
         let lit = Literal {
             kind: LiteralKind::Char,
             raw: "'\\q'".into(),
@@ -2229,7 +2228,7 @@ mod tests {
         assert_eq!(
             bytes,
             vec![0x0A, 0x42],
-            "adjacent literals muessen distinct chars bewahren"
+            "adjacent literals must preserve distinct chars"
         );
     }
 
@@ -2255,7 +2254,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Phase 2.5 — §7.4.1.4.3 Tab. 7-12 Bitnot fuer ULong/LL/ULL
+    // Phase 2.5 — §7.4.1.4.3 Tab. 7-12 bitnot for ULong/LL/ULL
     // -----------------------------------------------------------------
 
     #[test]
@@ -2347,7 +2346,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Phase 2.12 — §7.4.1.4.3 Mixed-Type-Infix-Verbot
+    // Phase 2.12 — §7.4.1.4.3 mixed-type infix prohibition
     // -----------------------------------------------------------------
 
     #[test]
@@ -2374,7 +2373,7 @@ mod tests {
 
     #[test]
     fn unsigned_short_range_overflow_errors() {
-        // Wert 65536 passt nicht in ushort (max 2^16-1 = 65535).
+        // The value 65536 does not fit in ushort (max 2^16-1 = 65535).
         let v = ConstValue::Long(65536);
         let r = cast_ushort(&v, sp());
         assert!(matches!(r, Err(EvalError::OutOfRange { .. })));
@@ -2389,7 +2388,7 @@ mod tests {
 
     #[test]
     fn unsigned_long_range_overflow_errors() {
-        // 2^32 ist out-of-range fuer ulong.
+        // 2^32 is out of range for ulong.
         let v = ConstValue::LongLong(1_i64 << 32);
         let r = cast_ulong(&v, sp());
         assert!(matches!(r, Err(EvalError::OutOfRange { .. })));
@@ -2408,8 +2407,8 @@ mod tests {
 
     #[test]
     fn enum_const_with_wrong_type_errors() {
-        // Spec §7.4.1.4.3: `const Color another = M::medium;` ist Error
-        // wenn `M::medium` aus enum Size, nicht Color stammt.
+        // Spec §7.4.1.4.3: `const Color another = M::medium;` is an error
+        // if `M::medium` comes from enum Size, not Color.
         let v = ConstValue::Enum {
             type_name: "::M::Size".into(),
             value: 1,
@@ -2498,17 +2497,17 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Phase 2.8 — §7.4.1.4.3 31-Digit-Cap mit Truncation (kein Rounding)
+    // Phase 2.8 — §7.4.1.4.3 31-digit cap with truncation (no rounding)
     // -----------------------------------------------------------------
 
     #[test]
     fn fixed_31_digit_cap_truncates_not_rounds() {
-        // 12345678901234567 (17 Digits) * 12345678901234567 (17 Digits)
-        // = 152415787532388345526596755677489 (33 Digits — siehe Python:
+        // 12345678901234567 (17 digits) * 12345678901234567 (17 digits)
+        // = 152415787532388345526596755677489 (33 digits — see Python:
         // 12345678901234567**2).
-        // 31-Digit-Cap kuerzt die letzten 2 Stellen ohne Rounding:
-        // → "1524157875323883455265967556774" (31 Digits).
-        // (Truncation, kein Rounding — Spec §7.4.1.4.3 "rounding shall
+        // The 31-digit cap truncates the last 2 places without rounding:
+        // → "1524157875323883455265967556774" (31 digits).
+        // (truncation, no rounding — Spec §7.4.1.4.3 "rounding shall
         // not be performed".)
         let big = ConstValue::Fixed {
             digits: "12345678901234567".into(),
@@ -2520,11 +2519,11 @@ mod tests {
                 assert_eq!(
                     digits.len(),
                     31,
-                    "31-Digit-Cap muss greifen, got {} digits: {digits}",
+                    "31-digit cap must apply, got {} digits: {digits}",
                     digits.len()
                 );
                 assert_eq!(digits, "1524157875323883455265967556774");
-                // scale_old=0+0=0; saturating_sub bei drop=2 → 0.
+                // scale_old=0+0=0; saturating_sub at drop=2 → 0.
                 assert_eq!(scale, 0);
             }
             other => panic!("expected Fixed, got {other:?}"),
@@ -2538,9 +2537,9 @@ mod tests {
 
     #[test]
     fn fixed_intermediate_62_digits_does_not_overflow() {
-        // 36 + 36 = 72 Digit-Multiplikat — bei i128 wuerde das overflowen
-        // (38 Digits Limit). Mit BigInt-Backing kein Problem; 31-Digit-Cap
-        // greift am Ende.
+        // 36 + 36 = 72 digit multiply — with i128 this would overflow
+        // (38-digit limit). With BigInt backing no problem; the 31-digit cap
+        // kicks in at the end.
         let big = ConstValue::Fixed {
             digits: "123456789012345678901234567890123456".into(),
             scale: 0,
@@ -2549,7 +2548,7 @@ mod tests {
         match v {
             ConstValue::Fixed { digits, scale } => {
                 assert_eq!(digits.len(), 31);
-                // scale = 0 nach Cap (Drop > old scale).
+                // scale = 0 after cap (drop > old scale).
                 assert_eq!(scale, 0);
             }
             other => panic!("expected Fixed, got {other:?}"),
@@ -2576,8 +2575,8 @@ mod tests {
     #[test]
     fn long_const_intermediate_overflow_is_error() {
         // (2^31) * 2 overflowed unsigned long (2^32-1 = 4_294_967_295,
-        // 2^32 = 4_294_967_296 ist out-of-range). Spec verlangt, dass
-        // jedes Sub-Expr-Resultat im Ziel-Range bleibt.
+        // 2^32 = 4_294_967_296 is out of range). Spec requires that
+        // each sub-expr result stays within the target range.
         let e = ConstExpr::Binary {
             op: BinaryOp::Mul,
             lhs: Box::new(int_lit("0x80000000")), // 2^31
@@ -2590,8 +2589,8 @@ mod tests {
 
     #[test]
     fn long_const_final_value_in_range_after_intermediate_calc() {
-        // (3 * 100_000) - 200_000 = 100_000 — passt in long, kein
-        // Sub-Step overflowed.
+        // (3 * 100_000) - 200_000 = 100_000 — fits in long, no
+        // sub-step overflowed.
         let inner = ConstExpr::Binary {
             op: BinaryOp::Mul,
             lhs: Box::new(int_lit("3")),
@@ -2623,8 +2622,8 @@ mod tests {
 
     #[test]
     fn fixed_div_yields_high_precision_quotient() {
-        // 1.0d / 3.0d — `1/3 = 0.333…`. Mit sinf-Approximation muss der
-        // Quotient eine hohe Anzahl Decimal-Places haben (Cap auf 31).
+        // 1.0d / 3.0d — `1/3 = 0.333…`. With the sinf approximation the
+        // quotient must have a high number of decimal places (cap at 31).
         let one = ConstValue::Fixed {
             digits: "1".into(),
             scale: 0,

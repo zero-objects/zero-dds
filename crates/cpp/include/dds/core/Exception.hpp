@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// dds/core/Exception.hpp — DDS-PSM-Cxx 1.0 §7.5.1 Exception-Hierarchie.
+// dds/core/Exception.hpp — DDS-PSM-Cxx 1.0 §7.5.1 exception hierarchy.
 
 #ifndef ZERODDS_DDS_CORE_EXCEPTION_HPP
 #define ZERODDS_DDS_CORE_EXCEPTION_HPP

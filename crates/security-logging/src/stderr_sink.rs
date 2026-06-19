@@ -9,17 +9,17 @@ use std::sync::Mutex;
 
 use zerodds_security::logging::{LogLevel, LoggingPlugin};
 
-/// Loggt Security-Events nach `stderr` als Human-Readable-Text.
+/// Logs security events to `stderr` as human-readable text.
 ///
 /// Format:
 /// ```text
 /// [SEC][<LEVEL>] participant=<hex16> category=<...> msg=<...>
 /// ```
 ///
-/// Mutex um `io::Stderr` serialisiert Writes — sonst koennten parallele
-/// Writer die Zeilen ineinander mischen (stderr ist line-buffered
-/// **nur** wenn es ans Terminal geht; in der Pipeline ist es
-/// fully-buffered bzw. per write(2) atomisch nur bis PIPE_BUF Bytes).
+/// A mutex around `io::Stderr` serializes writes — otherwise parallel
+/// writers could interleave the lines (stderr is line-buffered
+/// **only** when it goes to the terminal; in a pipeline it is
+/// fully buffered, or atomic per write(2) only up to PIPE_BUF bytes).
 pub struct StderrLoggingPlugin {
     min_level: LogLevel,
     serializer: Mutex<()>,
@@ -32,7 +32,7 @@ impl Default for StderrLoggingPlugin {
 }
 
 impl StderrLoggingPlugin {
-    /// Konstruktor mit Default-Level `Warning`.
+    /// Constructor with default level `Warning`.
     #[must_use]
     pub fn new() -> Self {
         Self::with_level(LogLevel::Warning)
@@ -71,7 +71,7 @@ fn hex16(bytes: [u8; 16]) -> String {
 
 impl LoggingPlugin for StderrLoggingPlugin {
     fn log(&self, level: LogLevel, participant: [u8; 16], category: &str, message: &str) {
-        // `level <= min_level` weil LogLevel 0=Emergency und 7=Debug.
+        // `level <= min_level` because LogLevel 0=Emergency and 7=Debug.
         if level > self.min_level {
             return;
         }

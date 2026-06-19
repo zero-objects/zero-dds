@@ -4,7 +4,7 @@ Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionie
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-rtc`-Crate.
+Initial release materialization of the `zerodds-rtc` crate.
 
 ### Spec-Referenzen
 
@@ -18,68 +18,68 @@ Initiale Release-Materialisierung der `zerodds-rtc`-Crate.
 
 ### Public-API
 
-**`return_code`-Modul (Spec §5.2.1):**
+**`return_code` module (spec §5.2.1):**
 - `ReturnCode::{Ok, Error, BadParameter, Unsupported, OutOfResources,
-  PreconditionNotMet}` — alle 6 Status-Codes.
-- `ReturnCode::is_ok()` und `ReturnCode::into_result()` — Ergonomie-
-  Helper fuer `?`-Operator.
+  PreconditionNotMet}` — all 6 status codes.
+- `ReturnCode::is_ok()` and `ReturnCode::into_result()` — ergonomic
+  helper for the `?` operator.
 
-**`lifecycle`-Modul (Spec §5.2.2.3 + §5.2.2.4 + §5.2.2.7):**
+**`lifecycle` module (spec §5.2.2.3 + §5.2.2.4 + §5.2.2.7):**
 - `LifeCycleState::{Created, Inactive, Active, Error}`.
 - `ExecutionKind::{Periodic, EventDriven, Other}`.
-- `ComponentAction`-Trait — die 7 Lifecycle-Operations
+- `ComponentAction` trait — the 7 lifecycle operations
   (`on_initialize`, `on_finalize`, `on_startup`, `on_shutdown`,
   `on_activated`, `on_deactivated`, `on_aborting`, `on_error`,
-  `on_reset`) plus State-Machine-Enforcement.
+  `on_reset`) plus state-machine enforcement.
 
-**`object`-Modul (Spec §5.2.2.2 + §5.2.2.8):**
-- `LightweightRtObject` — Komponenten-Modell mit Lifecycle-State und
-  ExecutionContext-Liste.
+**`object` module (spec §5.2.2.2 + §5.2.2.8):**
+- `LightweightRtObject` — component model with lifecycle state and
+  ExecutionContext list.
 - `ExecutionContextHandle` — Spec §5.2.2.8.
 
-**`execution`-Modul (Spec §5.2.2.5 + §5.2.2.6):**
+**`execution` module (spec §5.2.2.5 + §5.2.2.6):**
 - `ExecutionContext` + `ExecutionContextOperations`-Trait —
   `start`/`stop`/`reset_component`/`tick` etc.
 
-**`semantics`-Modul (Spec §5.3):**
+**`semantics` module (spec §5.3):**
 - `DataFlowComponentAction` — Periodic-Profile.
 - `FsmComponentAction` — Stimulus-Response-Profile.
 - `MultiModeComponentAction` + `ModeOfOperation` — Modes-Profile.
 
-**`resource`-Modul (Spec §5.4):**
+**`resource` module (spec §5.4):**
 - `Introspection` + `ComponentProfile` + `PortProfile` +
-  `ConnectorProfile` + `PortDirection` + `ProfileId` — Resource-Data-
-  Model fuer Discovery/Introspection.
+  `ConnectorProfile` + `PortDirection` + `ProfileId` — resource data
+  model for discovery/introspection.
 
-### Implementierung
+### Implementation
 
-`#![cfg_attr(not(feature = "std"), no_std)]` (default-feature `std`
-zieht `alloc` rein); `#![forbid(unsafe_code)]`.
+`#![cfg_attr(not(feature = "std"), no_std)]` (the default feature `std`
+pulls in `alloc`); `#![forbid(unsafe_code)]`.
 
-Substrat-Crate: keine Workspace-Deps. Implementiert Local PSM
-(Spec §6.3) + Spec §5.2 + §5.3 + §5.4 als reine Datentypen + Traits;
-RTC-Container-Hosting ist Caller-Layer.
+Substrate crate: no workspace deps. Implements the Local PSM
+(spec §6.3) + spec §5.2 + §5.3 + §5.4 as pure data types + traits;
+RTC container hosting is the caller layer.
 
-### Architektur
+### Architecture
 
-- **Layer:** 8 (CORBA-Stack, Tier-A).
-- **Dependencies (in):** keine.
-- **Dependents (out):** keine produktiven extern (RTC ist Plugin-API
-  fuer RTC-Frameworks wie OpenRTM-aist; siehe Audit-File
+- **Layer:** 8 (CORBA stack, tier A).
+- **Dependencies (in):** none.
+- **Dependents (out):** no external production ones (RTC is a plugin API
+  for RTC frameworks like OpenRTM-aist; see the audit file
   `docs/spec-coverage/omg-rtc-1.0.md`).
-- **Feature-Flags:** `std` (default), `alloc` (via std).
+- **Feature flags:** `std` (default), `alloc` (via std).
 
-### Stabilitaet
+### Stability
 
-- Public-API: RC1-stabil.
-- ReturnCode-Werte: durch OMG-Spec §5.2.1 fixiert.
-- LifeCycle-State-Machine: durch OMG-Spec §5.2.2.3 fixiert.
-- ExecutionKind-Profile: durch OMG-Spec §5.3 fixiert.
+- Public API: RC1-stable.
+- ReturnCode values: fixed by OMG spec §5.2.1.
+- LifeCycle state machine: fixed by OMG spec §5.2.2.3.
+- ExecutionKind profiles: fixed by OMG spec §5.3.
 
-### Spec-Coverage-Begrenzungen
+### Spec coverage limitations
 
-Spec §6.4 Lightweight CCM PSM und §6.5 CORBA PSM sind explizit `n/a`
-in dieser Crate — sie verlangen eine LwCCM-Container- bzw. CORBA-ORB-
-Runtime, die ZeroDDS bewusst nicht selbst hostet. §5.4 Discovery-/
-Wire-Aspekt ist partial (Datenmodell vorhanden, Wire-Format nicht).
-Begruendung im Audit-File `docs/spec-coverage/omg-rtc-1.0.md`.
+Spec §6.4 Lightweight CCM PSM and §6.5 CORBA PSM are explicitly `n/a`
+in this crate — they require an LwCCM container resp. CORBA ORB
+runtime, which ZeroDDS deliberately does not host itself. The §5.4
+discovery/wire aspect is partial (data model present, wire format not).
+Rationale in the audit file `docs/spec-coverage/omg-rtc-1.0.md`.

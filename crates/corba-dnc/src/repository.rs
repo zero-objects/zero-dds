@@ -3,9 +3,9 @@
 
 //! RepositoryManager — D&C §8.
 //!
-//! Spec §8.1.1: `RepositoryManager` haelt die `PackageConfiguration`-
-//! Bindings im System. Deployers laden Packages hinein, Executors
-//! konsumieren sie.
+//! Spec §8.1.1: the `RepositoryManager` holds the `PackageConfiguration`
+//! bindings in the system. Deployers load packages into it, executors
+//! consume them.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -13,39 +13,39 @@ use alloc::vec::Vec;
 
 use crate::plan::PackageConfiguration;
 
-/// In-Memory-RepositoryManager — D&C §8.
+/// In-memory RepositoryManager — D&C §8.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RepositoryManager {
     packages: BTreeMap<String, PackageConfiguration>,
 }
 
 impl RepositoryManager {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Spec §8.1.2 `installPackage` — registriert ein Package unter
-    /// seinem `package.label`. Ueberschreibt bei Duplikat.
+    /// Spec §8.1.2 `installPackage` — registers a package under its
+    /// `package.label`. Overwrites on duplicate.
     pub fn install_package(&mut self, pkg: PackageConfiguration) {
         let key = pkg.label.clone();
         self.packages.insert(key, pkg);
     }
 
-    /// Spec §8.1.3 `findPackageByName` — sucht ein Package per Label.
+    /// Spec §8.1.3 `findPackageByName` — looks up a package by label.
     #[must_use]
     pub fn find_package(&self, label: &str) -> Option<&PackageConfiguration> {
         self.packages.get(label)
     }
 
-    /// Spec §8.1.4 `deletePackage` — entfernt ein Package; gibt
-    /// `false` wenn nicht gefunden.
+    /// Spec §8.1.4 `deletePackage` — removes a package; returns
+    /// `false` if not found.
     pub fn delete_package(&mut self, label: &str) -> bool {
         self.packages.remove(label).is_some()
     }
 
-    /// Spec §8.1.5 `getAllPackageNames` — Liste aller Package-Labels.
+    /// Spec §8.1.5 `getAllPackageNames` — list of all package labels.
     #[must_use]
     pub fn list_packages(&self) -> Vec<String> {
         self.packages.keys().cloned().collect()

@@ -6,6 +6,7 @@ expression: cpp
 #pragma once
 
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -46,19 +47,29 @@ struct topic_type_support<::Bag> {
     static constexpr bool is_keyed() { return false; }
     static constexpr ::dds::topic::core::policy::DataRepresentationKind extensibility() { return ::dds::topic::core::policy::DataRepresentationKind::APPENDABLE; }
     static std::vector<uint8_t> encode(const ::Bag& __v) {
+        return encode(__v, ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    }
+    static std::vector<uint8_t> encode(const ::Bag& __v, ::dds::topic::xcdr2::XcdrVersion __repr) {
         std::vector<uint8_t> __out;
         (void)__v;
+        const size_t __max_align = ::dds::topic::xcdr2::xcdr_max_align(__repr);
+        (void)__max_align;
         const auto __dh = ::dds::topic::xcdr2::dheader_begin(__out);
         const size_t __origin = __out.size();
         (void)__origin;
-        ::dds::topic::xcdr2::write_string_origin(__out, __origin, __v.name());
-        ::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, __origin, static_cast<uint32_t>(__v.ids().size()));
+        ::dds::topic::xcdr2::write_string_origin(__out, __origin, __v.name(), __max_align);
+        ::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, __origin, static_cast<uint32_t>(__v.ids().size()), __max_align);
         for (const auto& __e : __v.ids()) {
-            ::dds::topic::xcdr2::write_le_origin<int32_t>(__out, __origin, __e);
+            ::dds::topic::xcdr2::write_le_origin<int32_t>(__out, __origin, __e, __max_align);
         }
-        ::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, __origin, static_cast<uint32_t>(__v.tags().size()));
+        if (__v.tags().size() > 16) throw std::length_error("bounded sequence length exceeds its IDL bound (16)");
+        {
+        const auto __seq_dh = ::dds::topic::xcdr2::dheader_begin(__out);
+        ::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, __origin, static_cast<uint32_t>(__v.tags().size()), __max_align);
         for (const auto& __e : __v.tags()) {
-            ::dds::topic::xcdr2::write_string_origin(__out, __origin, __e);
+            ::dds::topic::xcdr2::write_string_origin(__out, __origin, __e, __max_align);
+        }
+        ::dds::topic::xcdr2::dheader_end(__out, __seq_dh);
         }
         ::dds::topic::xcdr2::dheader_end(__out, __dh);
         return __out;
@@ -74,37 +85,44 @@ struct topic_type_support<::Bag> {
         for (const auto& __e : __v.ids()) {
             ::dds::topic::xcdr2::write_be<int32_t>(__out, __e);
         }
+        if (__v.tags().size() > 16) throw std::length_error("bounded sequence length exceeds its IDL bound (16)");
+        {
+        const auto __seq_dh = ::dds::topic::xcdr2::dheader_begin(__out);
         ::dds::topic::xcdr2::write_be<uint32_t>(__out, static_cast<uint32_t>(__v.tags().size()));
         for (const auto& __e : __v.tags()) {
             ::dds::topic::xcdr2::write_string_be(__out, __e);
         }
+        ::dds::topic::xcdr2::dheader_end(__out, __seq_dh);
+        }
         ::dds::topic::xcdr2::dheader_end(__out, __dh);
         return __out;
     }
-    static ::Bag decode(const uint8_t* __buf, size_t __len) {
+    static ::Bag decode(const uint8_t* __buf, size_t __len, ::dds::topic::xcdr2::XcdrVersion __repr) {
         size_t __pos = 0;
         ::Bag __v;
-        (void)__buf; (void)__len; (void)__pos;
+        const size_t __max_align = ::dds::topic::xcdr2::xcdr_max_align(__repr);
+        (void)__buf; (void)__len; (void)__pos; (void)__max_align;
         const auto __dh = ::dds::topic::xcdr2::dheader_read(__buf, __pos, __len);
         const size_t __origin = __pos;
         const size_t __end = __origin + __dh;
         (void)__end;
-        __v.name(::dds::topic::xcdr2::read_string_origin(__buf, __pos, __len, __origin));
+        __v.name(::dds::topic::xcdr2::read_string_origin(__buf, __pos, __len, __origin, __max_align));
         {
-            auto __cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, __origin);
+            auto __cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, __origin, __max_align);
             std::vector<int32_t> __seq;
             __seq.reserve(__cnt);
             for (uint32_t __i = 0; __i < __cnt; ++__i) {
-                __seq.push_back(::dds::topic::xcdr2::read_le_origin<int32_t>(__buf, __pos, __len, __origin));
+                __seq.push_back(::dds::topic::xcdr2::read_le_origin<int32_t>(__buf, __pos, __len, __origin, __max_align));
             }
             __v.ids(std::move(__seq));
         }
         {
-            auto __cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, __origin);
+            const auto __seq_dh = ::dds::topic::xcdr2::dheader_read(__buf, __pos, __len); (void)__seq_dh;
+            auto __cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, __origin, __max_align);
             std::vector<std::string> __seq;
             __seq.reserve(__cnt);
             for (uint32_t __i = 0; __i < __cnt; ++__i) {
-                __seq.push_back(::dds::topic::xcdr2::read_string_origin(__buf, __pos, __len, __origin));
+                __seq.push_back(::dds::topic::xcdr2::read_string_origin(__buf, __pos, __len, __origin, __max_align));
             }
             __v.tags(std::move(__seq));
         }

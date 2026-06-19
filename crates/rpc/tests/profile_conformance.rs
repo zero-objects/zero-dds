@@ -1,18 +1,18 @@
-//! Profile-Conformance-Matrix fuer DDS-RPC 1.0 §2 + §7.2 + §7.9 + §7.10.
+//! Profile conformance matrix for DDS-RPC 1.0 §2 + §7.2 + §7.9 + §7.10.
 //!
-//! Verifiziert produktiv, dass:
+//! Verifies productively that:
 //!
-//! 1. **§2.1 + §2.2** Basic + Enhanced-Conformance-Profile sind als
-//!    Codegen-Layer + Function-Call-Foundation exponiert.
-//! 2. **§7.2.1.2** Reply-Filter pro Request via App-Code-Korrelation
-//!    (Spec-konform — Spec sagt "content-based filter" als
-//!    Implementation-Hint, nicht als verbindliche DDS-CFT-Forderung).
-//! 3. **§7.2.2.0 + §7.2.2.1** Function-Call-Style live via
-//!    `function_call::ServiceDescriptor` + Stub/Skeleton-Traits.
-//! 4. **§7.2.3.2** Header-basierte Propagation (explizit) ist die
-//!    primary Spec-Variante; Inline-QoS ist Optional-Optimization.
-//! 5. **§7.2.4.1 + §7.2.4.2** Basic 1+1-Topic + Enhanced-Codegen.
-//! 6. **§7.9.2.1** Function-Call-Processing via `dispatch_request`.
+//! 1. **§2.1 + §2.2** the basic + enhanced conformance profiles are
+//!    exposed as a codegen layer + function-call foundation.
+//! 2. **§7.2.1.2** reply filtering per request via app-code correlation
+//!    (spec-conformant — the spec says "content-based filter" as an
+//!    implementation hint, not as a binding DDS-CFT requirement).
+//! 3. **§7.2.2.0 + §7.2.2.1** function-call style live via
+//!    `function_call::ServiceDescriptor` + stub/skeleton traits.
+//! 4. **§7.2.3.2** header-based propagation (explicit) is the
+//!    primary spec variant; inline QoS is an optional optimization.
+//! 5. **§7.2.4.1 + §7.2.4.2** basic 1+1 topic + enhanced codegen.
+//! 6. **§7.9.2.1** function-call processing via `dispatch_request`.
 //! 7. **§7.10.1** `@RPCInterfaceQos`-Annotation parsbar.
 
 #![allow(
@@ -42,7 +42,7 @@ use zerodds_rpc::{LoweredRpc, RpcError};
 
 #[test]
 fn basic_conformance_has_request_reply_topic_pair() {
-    // Spec §2.1: Basic-Mapping verlangt 1+1-Topic-Paar pro Service.
+    // Spec §2.1: Basic mapping requires a 1+1 topic pair per service.
     let names = ServiceTopicNames::new("Calculator").expect("topic-names");
     assert_eq!(names.request.as_str(), "Calculator_Request");
     assert_eq!(names.reply.as_str(), "Calculator_Reply");
@@ -52,7 +52,7 @@ fn basic_conformance_has_request_reply_topic_pair() {
 
 #[test]
 fn basic_conformance_supports_function_call_style() {
-    // Spec §2.1: Basic-Conformance verlangt Function-Call-Style.
+    // Spec §2.1: Basic conformance requires function-call style.
     let mut s = ServiceDescriptor::new("Svc");
     s.add_operation("op1", false, alloc::vec![], alloc::vec!["result".into()])
         .expect("op1");
@@ -66,36 +66,36 @@ fn basic_conformance_supports_function_call_style() {
 
 #[test]
 fn enhanced_conformance_uses_same_topic_pair_via_codegen() {
-    // Spec §2.2: Enhanced-Mapping nutzt 1+1 Topic via X-Types-
-    // Discovery-Aliases. Codegen-Layer (`build_enhanced_pair`) ist
-    // live; Discovery-Extensions kommen mit K9-C.
+    // Spec §2.2: the enhanced mapping uses a 1+1 topic via X-Types
+    // discovery aliases. The codegen layer (`build_enhanced_pair`) is
+    // live; the discovery extensions come with K9-C.
     let names = ServiceTopicNames::new("Calculator").expect("topic-names");
-    // Enhanced-Mapping nutzt dasselbe Topic-Pair-Schema; Aliasing
-    // passiert auf Discovery-Layer.
+    // The enhanced mapping uses the same topic-pair scheme; aliasing
+    // happens on the discovery layer.
     assert_eq!(names.request.as_str(), "Calculator_Request");
     assert_eq!(names.reply.as_str(), "Calculator_Reply");
 }
 
 // ============================================================================
-// §7.2.1.2 Content-based Filter — App-Code-Korrelation
+// §7.2.1.2 content-based filter — app-code correlation
 // ============================================================================
 
 #[test]
 fn reply_filter_uses_related_request_id_correlation() {
     // Spec §7.2.1.2: "a content-based filter is used by the reader at
-    // the client-side". ZeroDDS implementiert das via App-Code-
-    // Korrelation in `requester::tick`. ContentFilteredTopic-Variante
-    // ist Stretch-Goal (siehe §7.2.1.2 Audit-Item).
+    // the client-side". ZeroDDS implements this via app-code
+    // correlation in `requester::tick`. The ContentFilteredTopic variant
+    // is a stretch goal (see the §7.2.1.2 audit item).
     //
-    // Hier verifizieren wir dass die Spec-Anforderung (filter pro
-    // Request) erfuellt ist via `RequestHeader.request_id` als
-    // Korrelations-Schluessel.
+    // Here we verify that the spec requirement (filter per
+    // request) is fulfilled via `RequestHeader.request_id` as the
+    // correlation key.
     use zerodds_rpc::common_types::RequestHeader;
     let h1 = RequestHeader::default();
     let h2 = RequestHeader::default();
-    // request_id muss eindeutig pro Request sein — zwei Default-
-    // Headers sind gleich (fresh-Default), aber im real-Lauf
-    // increment-iert Requester::send_request_async monoton.
+    // request_id must be unique per request — two default
+    // headers are equal (fresh default), but in a real run
+    // Requester::send_request_async increments monotonically.
     assert_eq!(h1.request_id, h2.request_id);
 }
 
@@ -105,7 +105,7 @@ fn reply_filter_uses_related_request_id_correlation() {
 
 #[test]
 fn function_call_style_supports_stub_and_skeleton_traits() {
-    // Spec §7.2.2.0: zwei Styles. Function-Call via Stub/Skeleton.
+    // Spec §7.2.2.0: two styles. Function-call via stub/skeleton.
     struct DummyStub;
     impl FunctionStub for DummyStub {
         fn service_name(&self) -> &str {
@@ -132,8 +132,8 @@ fn function_call_style_supports_stub_and_skeleton_traits() {
 
 #[test]
 fn explicit_request_id_propagation_via_request_header() {
-    // Spec §7.2.3.2: explizite Propagation via Header. Implizite
-    // Variante via inline-QoS ist Optional-Optimization.
+    // Spec §7.2.3.2: explicit propagation via header. The implicit
+    // variant via inline QoS is an optional optimization.
     use zerodds_rpc::common_types::{ReplyHeader, RequestHeader, SampleIdentity};
     let req_id = SampleIdentity::default();
     let req_header = RequestHeader {
@@ -154,8 +154,8 @@ fn explicit_request_id_propagation_via_request_header() {
 
 #[test]
 fn basic_mapping_uses_two_topics_per_service() {
-    // Spec §7.2.4.1: Basic-Mapping = 2 Topics pro Service.
-    // (N-Inheritance-Skalierung kommt mit K9-C §7.5.1.2.6.)
+    // Spec §7.2.4.1: basic mapping = 2 topics per service.
+    // (N-inheritance scaling comes with K9-C §7.5.1.2.6.)
     let s1 = ServiceTopicNames::new("S1").expect("S1");
     let s2 = ServiceTopicNames::new("S2").expect("S2");
     assert_ne!(s1.request.as_str(), s2.request.as_str());
@@ -168,9 +168,9 @@ fn basic_mapping_uses_two_topics_per_service() {
 
 #[test]
 fn enhanced_mapping_uses_two_topics_with_xtypes_aliasing() {
-    // Spec §7.2.4.2: Enhanced-Mapping = 1+1 Topics + Discovery-Alias
-    // pro Hierarchy-Level. Codegen-Layer (build_enhanced_pair) ist
-    // live; Aliasing-Discovery kommt mit K9-C.
+    // Spec §7.2.4.2: enhanced mapping = 1+1 topics + discovery alias
+    // per hierarchy level. The codegen layer (build_enhanced_pair) is
+    // live; aliasing discovery comes with K9-C.
     let s = ServiceTopicNames::new("S").expect("S");
     assert_eq!(s.request.as_str(), "S_Request");
     assert_eq!(s.reply.as_str(), "S_Reply");
@@ -182,9 +182,9 @@ fn enhanced_mapping_uses_two_topics_with_xtypes_aliasing() {
 
 #[test]
 fn function_call_processing_dispatches_to_correct_operation() {
-    // Spec §7.9.2.1: Function-Call-Style processing via generated
-    // dispatcher. Wir verifizieren dass `dispatch_request` den
-    // Opcode aufloest und die richtige Operation ruft.
+    // Spec §7.9.2.1: function-call-style processing via the generated
+    // dispatcher. We verify that `dispatch_request` resolves the
+    // opcode and calls the correct operation.
     let mut s = ServiceDescriptor::new("Calc");
     s.add_operation(
         "add",
@@ -218,7 +218,7 @@ fn function_call_processing_unknown_opcode_returns_error() {
 
 #[test]
 fn interface_qos_helper_returns_none_for_empty_lowered_rpc() {
-    // Sanity: leeres LoweredRpc (keine Annotationen) hat kein
+    // Sanity: an empty LoweredRpc (no annotations) has no
     // interface_qos_profile.
     let lowered = LoweredRpc::default();
     assert_eq!(lowered.interface_qos_profile(), None);

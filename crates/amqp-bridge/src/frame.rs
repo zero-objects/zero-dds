@@ -5,19 +5,19 @@
 
 use core::fmt;
 
-/// Spec §2.3.1.1 — AMQP-Frame-Type (0x00) oder SASL-Frame-Type (0x01).
+/// Spec §2.3.1.1 — AMQP frame type (0x00) or SASL frame type (0x01).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FrameType {
     /// `0x00` — AMQP frame.
     Amqp,
     /// `0x01` — SASL frame.
     Sasl,
-    /// Andere reserved Werte (forwards-compat).
+    /// Other reserved values (forwards-compat).
     Reserved(u8),
 }
 
 impl FrameType {
-    /// Wire-Wert.
+    /// Wire value.
     #[must_use]
     pub const fn to_u8(self) -> u8 {
         match self {
@@ -27,7 +27,7 @@ impl FrameType {
         }
     }
 
-    /// Decodiert vom Wire-Wert.
+    /// Decodes from the wire value.
     #[must_use]
     pub const fn from_u8(v: u8) -> Self {
         match v {
@@ -38,7 +38,7 @@ impl FrameType {
     }
 }
 
-/// Spec §2.3.1 — Frame-Header (8 Bytes).
+/// Spec §2.3.1 — frame header (8 bytes).
 ///
 /// Wire-Layout:
 /// ```text
@@ -50,11 +50,11 @@ impl FrameType {
 ///
 /// * `SIZE` — Total frame size in bytes (header + extended-header +
 ///   body). Spec: 32-bit unsigned BE.
-/// * `DOFF` — Data offset in 4-byte words. MUST >= 2 (Header ist
-///   selbst 8 Bytes / 4-Byte-Word = 2). Spec §2.3.1.3.
+/// * `DOFF` — Data offset in 4-byte words. MUST >= 2 (the header is
+///   itself 8 bytes / 4-byte word = 2). Spec §2.3.1.3.
 /// * `TYPE` — `0x00` AMQP / `0x01` SASL.
-/// * `CHANNEL` — 16-bit unsigned BE Channel-Number (oder Reserved=0
-///   bei SASL-Frames).
+/// * `CHANNEL` — 16-bit unsigned BE channel number (or Reserved=0
+///   for SASL frames).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameHeader {
     /// Spec §2.3.1.2 — total frame size.
@@ -68,13 +68,13 @@ pub struct FrameHeader {
 }
 
 impl FrameHeader {
-    /// Konstruiert einen AMQP-Frame-Header. `size_total` ist die
-    /// **gesamte** Frame-Groesse inkl. Header (Spec §2.3.1.2:
+    /// Constructs an AMQP frame header. `size_total` is the
+    /// **total** frame size incl. header (Spec §2.3.1.2:
     /// "computed by adding 8 byte fixed frame header [...] + extended
     /// header + body").
     ///
-    /// `doff_words` ist die `DOFF` in 4-Byte-Words (MUST >= 2).
-    /// Default-Wert 2 = "no extended header".
+    /// `doff_words` is the `DOFF` in 4-byte words (MUST >= 2).
+    /// Default value 2 = "no extended header".
     #[must_use]
     pub const fn new_amqp(size_total: u32, doff_words: u8, channel: u16) -> Self {
         Self {
@@ -85,21 +85,21 @@ impl FrameHeader {
         }
     }
 
-    /// Spec §2.3.1.3 — Position des Frame-Body in Bytes ab Anfang.
+    /// Spec §2.3.1.3 — position of the frame body in bytes from the start.
     #[must_use]
     pub const fn body_offset(self) -> usize {
         (self.doff as usize) * 4
     }
 }
 
-/// Frame-Header-Codec-Fehler.
+/// Frame-header codec error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameError {
-    /// Header < 8 Bytes.
+    /// Header < 8 bytes.
     HeaderTooShort,
     /// Spec §2.3.1.3 — `DOFF < 2`.
     InvalidDataOffset(u8),
-    /// Spec §2.3.1.2 — `SIZE < 8` (Header alleine ist 8 Bytes).
+    /// Spec §2.3.1.2 — `SIZE < 8` (the header alone is 8 bytes).
     SizeBelowMinimum(u32),
     /// `body_offset > size`.
     BodyOffsetExceedsSize,
@@ -119,7 +119,7 @@ impl fmt::Display for FrameError {
 #[cfg(feature = "std")]
 impl std::error::Error for FrameError {}
 
-/// Encodiert einen Frame-Header zu 8 Bytes.
+/// Encodes a frame header into 8 bytes.
 #[must_use]
 pub fn encode_frame_header(h: FrameHeader) -> [u8; 8] {
     let mut out = [0u8; 8];
@@ -130,10 +130,10 @@ pub fn encode_frame_header(h: FrameHeader) -> [u8; 8] {
     out
 }
 
-/// Decodiert einen Frame-Header aus 8+ Bytes.
+/// Decodes a frame header from 8+ bytes.
 ///
 /// # Errors
-/// Siehe [`FrameError`].
+/// See [`FrameError`].
 pub fn decode_frame_header(bytes: &[u8]) -> Result<FrameHeader, FrameError> {
     if bytes.len() < 8 {
         return Err(FrameError::HeaderTooShort);
@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn doff_below_2_rejected() {
-        // Spec §2.3.1.3 — DOFF MUST >= 2.
+        // Spec §2.3.1.3 — DOFF MUST be >= 2.
         let bytes = [0u8, 0, 0, 8, 1, 0, 0, 0];
         assert_eq!(
             decode_frame_header(&bytes),
@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn size_below_8_rejected() {
-        // Spec §2.3.1.2 — SIZE inkl. Header (8 bytes minimum).
+        // Spec §2.3.1.2 — SIZE incl. header (8 bytes minimum).
         let bytes = [0u8, 0, 0, 4, 2, 0, 0, 0];
         assert_eq!(
             decode_frame_header(&bytes),
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn body_offset_exceeding_size_rejected() {
-        // Doff*4 > SIZE → ungueltig.
+        // Doff*4 > SIZE → invalid.
         let bytes = [0u8, 0, 0, 8, 4, 0, 0, 0];
         assert_eq!(
             decode_frame_header(&bytes),

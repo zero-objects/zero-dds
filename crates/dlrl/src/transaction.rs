@@ -1,36 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Transaktions-Semantik — DDS 1.4 §B.7.4.
+//! Transaction semantics — DDS 1.4 §B.7.4.
 //!
-//! Spec §B.7.4: DLRL unterstuetzt transaktionale Updates ueber den
-//! Object-Cache:
+//! Spec §B.7.4: DLRL supports transactional updates over the object
+//! cache:
 //!
-//! * `begin()` startet eine Transaction, schnappschotsiert die
-//!   Versions aller Objekte.
-//! * `commit()` schreibt alle Aenderungen committed; bei Konflikt
-//!   (anderes Object hat sich seit Begin geaendert) liefert
-//!   `OptimisticConflict`.
-//! * `rollback()` verwirft alle Aenderungen.
+//! * `begin()` starts a transaction, snapshotting the versions of all
+//!   objects.
+//! * `commit()` writes all changes as committed; on conflict (another
+//!   object has changed since begin) it returns `OptimisticConflict`.
+//! * `rollback()` discards all changes.
 
 use alloc::collections::BTreeMap;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use crate::object_cache::{ObjectCache, ObjectId};
 
-/// Eindeutige Transaction-Id.
+/// Unique transaction ID.
 pub type TransactionId = u64;
 
-/// Consistency-Level (Spec §B.7.4.2).
+/// Consistency level (Spec §B.7.4.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsistencyLevel {
-    /// `OPTIMISTIC` — Konflikt-Check beim Commit.
+    /// `OPTIMISTIC` — conflict check at commit time.
     Optimistic,
-    /// `READ_COMMITTED` — wie OPTIMISTIC, aber Reads sehen nur
-    /// `Committed`-Objekte.
+    /// `READ_COMMITTED` — like OPTIMISTIC, but reads only see
+    /// `Committed` objects.
     ReadCommitted,
-    /// `SERIALIZABLE` — strikt serialisiert (Caller serialisiert
-    /// Transactions, nicht der Cache).
+    /// `SERIALIZABLE` — strictly serialized (the caller serializes
+    /// transactions, not the cache).
     Serializable,
 }
 
@@ -40,29 +39,29 @@ impl Default for ConsistencyLevel {
     }
 }
 
-/// Transaction-State.
+/// Transaction state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransactionState {
-    /// Aktiv.
+    /// Active.
     Active,
-    /// `commit()` erfolgreich.
+    /// `commit()` succeeded.
     Committed,
-    /// `rollback()` aufgerufen.
+    /// `rollback()` was called.
     RolledBack,
-    /// `commit()` mit Konflikt fehlgeschlagen.
+    /// `commit()` failed with a conflict.
     Aborted,
 }
 
-/// Transaction-Fehler.
+/// Transaction error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransactionError {
-    /// Optimistic-Conflict: ein gelesenes Objekt wurde von einer
-    /// anderen Transaction modifiziert.
+    /// Optimistic conflict: a read object was modified by another
+    /// transaction.
     OptimisticConflict {
-        /// Object-ID, das den Konflikt ausgeloest hat.
+        /// Object ID that triggered the conflict.
         id: ObjectId,
     },
-    /// Operation auf einer nicht-aktiven Transaction.
+    /// Operation on a non-active transaction.
     NotActive(TransactionState),
 }
 
@@ -82,14 +81,14 @@ impl std::error::Error for TransactionError {}
 
 static NEXT_TX: AtomicU64 = AtomicU64::new(1);
 
-/// Transaction — schnappschotsiert die Versions, fuehrt Modify-
-/// Operationen durch und committed/rollbackt am Ende.
+/// Transaction — snapshots the versions, performs modify operations,
+/// and commits/rolls back at the end.
 #[derive(Debug)]
 pub struct Transaction {
     id: TransactionId,
     level: ConsistencyLevel,
     state: TransactionState,
-    /// Snapshot Object-ID → erwartete Version beim Begin.
+    /// Snapshot object ID → expected version at begin.
     snapshot: BTreeMap<ObjectId, u64>,
 }
 
@@ -106,39 +105,39 @@ impl Transaction {
         }
     }
 
-    /// Transaction-ID.
+    /// Transaction ID.
     #[must_use]
     pub fn id(&self) -> TransactionId {
         self.id
     }
 
-    /// Consistency-Level.
+    /// Consistency level.
     #[must_use]
     pub fn level(&self) -> ConsistencyLevel {
         self.level
     }
 
-    /// Aktueller State.
+    /// Current state.
     #[must_use]
     pub fn state(&self) -> TransactionState {
         self.state
     }
 
-    /// Anzahl Objekte im Snapshot.
+    /// Number of objects in the snapshot.
     #[must_use]
     pub fn snapshot_size(&self) -> usize {
         self.snapshot.len()
     }
 
-    /// Erwartete Version eines Objekts im Snapshot.
+    /// Expected version of an object in the snapshot.
     #[must_use]
     pub fn expected_version(&self, id: &ObjectId) -> Option<u64> {
         self.snapshot.get(id).copied()
     }
 
-    /// `commit` — Spec §B.7.4.4. Prueft fuer alle gesnapshotteten
-    /// Objekte, ob die Version noch stimmt; bei Konflikt
-    /// `OptimisticConflict` und State→`Aborted`.
+    /// `commit` — Spec §B.7.4.4. Checks for all snapshotted objects
+    /// whether the version still matches; on conflict returns
+    /// `OptimisticConflict` and sets state → `Aborted`.
     ///
     /// # Errors
     /// Siehe [`TransactionError`].
@@ -167,7 +166,7 @@ impl Transaction {
     /// `rollback` — Spec §B.7.4.5.
     ///
     /// # Errors
-    /// `NotActive` wenn die Transaction schon abgeschlossen ist.
+    /// `NotActive` if the transaction is already finished.
     pub fn rollback(&mut self, cache: &mut ObjectCache) -> Result<(), TransactionError> {
         if self.state != TransactionState::Active {
             return Err(TransactionError::NotActive(self.state));

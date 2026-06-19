@@ -1,65 +1,65 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Public Scheduler-API. Plattform-Routing nach `target_os`.
+//! Public scheduler API. Platform routing by `target_os`.
 //!
-//! Auf Linux delegiert dieses Modul an das interne `syscalls`-Modul, wo die
-//! `unsafe { libc::syscall(...) }`-Bloecke jeweils einzeln dokumentiert
-//! sind. Auf anderen Targets gibt jede Funktion `Unsupported` zurueck,
-//! aber die API kompiliert — der Workspace baut auf macOS/Windows.
+//! On Linux this module delegates to the internal `syscalls` module, where the
+//! `unsafe { libc::syscall(...) }` blocks are each documented individually.
+//! On other targets every function returns `Unsupported`,
+//! but the API compiles — the workspace builds on macOS/Windows.
 
 use std::io;
 
-/// Scheduler-Policy. Linux-spezifisch (siehe `sched(7)`).
+/// Scheduler policy. Linux-specific (see `sched(7)`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedulerProfile {
-    /// Linux `SCHED_OTHER` (CFS) — der Default fuer alle Threads.
+    /// Linux `SCHED_OTHER` (CFS) — the default for all threads.
     Default,
-    /// Linux `SCHED_FIFO` — strikt prioritaets-basiert, kein Quantum.
-    /// `priority` ist der Wert von `sched_priority` (1..=99, hoeher
-    /// schlaegt niedriger; 0 ist nicht erlaubt fuer FIFO/RR mit
-    /// nicht-leeren Queues, wird vom Kernel akzeptiert aber als
-    /// SCHED_OTHER-Fallback behandelt).
+    /// Linux `SCHED_FIFO` — strictly priority-based, no quantum.
+    /// `priority` is the value of `sched_priority` (1..=99, higher
+    /// beats lower; 0 is not allowed for FIFO/RR with
+    /// non-empty queues, is accepted by the kernel but treated as
+    /// a SCHED_OTHER fallback).
     ///
-    /// Privilegien: `CAP_SYS_NICE` ab Priority > 0; je nach
-    /// `RLIMIT_RTPRIO` auch fuer Priority 0.
+    /// Privileges: `CAP_SYS_NICE` from priority > 0 on; depending on
+    /// `RLIMIT_RTPRIO` also for priority 0.
     RealtimeFifo {
-        /// Wert von `sched_priority` (1..=99).
+        /// Value of `sched_priority` (1..=99).
         priority: u8,
     },
-    /// Linux `SCHED_RR` — wie FIFO, aber mit Round-Robin-Quantum
-    /// pro Priority-Level.
+    /// Linux `SCHED_RR` — like FIFO, but with a round-robin quantum
+    /// per priority level.
     RealtimeRoundRobin {
-        /// Wert von `sched_priority` (1..=99).
+        /// Value of `sched_priority` (1..=99).
         priority: u8,
     },
-    /// Linux `SCHED_DEADLINE` (CBS+EDF) — harte Garantien per
-    /// (`runtime`, `deadline`, `period`)-Triple in Nanosekunden.
-    /// Spec siehe `sched_setattr(2)`. Bedingungen:
+    /// Linux `SCHED_DEADLINE` (CBS+EDF) — hard guarantees via a
+    /// (`runtime`, `deadline`, `period`) triple in nanoseconds.
+    /// See `sched_setattr(2)` for the spec. Conditions:
     ///
     /// * `runtime <= deadline <= period`
-    /// * Kernel berechnet eine Bandbreitenreservierung. EBUSY wenn
-    ///   die globale Reservierung das Limit (default 95%) sprengt.
+    /// * The kernel computes a bandwidth reservation. EBUSY if
+    ///   the global reservation blows the limit (default 95%).
     ///
-    /// Privilegien: immer `CAP_SYS_NICE`. Forks duerfen nicht
-    /// vererben (sonst `EBUSY`).
+    /// Privileges: always `CAP_SYS_NICE`. Forks must not
+    /// inherit (otherwise `EBUSY`).
     Deadline {
-        /// Worst-Case-Execution-Time pro Periode (ns).
+        /// Worst-case execution time per period (ns).
         runtime_ns: u64,
-        /// Soft-Deadline ab Periodenstart (ns).
+        /// Soft deadline from the start of the period (ns).
         deadline_ns: u64,
-        /// Wiederholungsperiode (ns).
+        /// Repetition period (ns).
         period_ns: u64,
     },
 }
 
 impl SchedulerProfile {
-    /// Wendet das Profil auf den **aufrufenden Thread** an.
+    /// Applies the profile to the **calling thread**.
     ///
     /// # Errors
-    /// * `EPERM` (PermissionDenied) wenn die Privilegien fehlen.
-    /// * `EINVAL` (InvalidInput) bei inkonsistenten Deadline-Werten.
-    /// * `Unsupported` auf Nicht-Linux-Targets.
+    /// * `EPERM` (PermissionDenied) if the privileges are missing.
+    /// * `EINVAL` (InvalidInput) on inconsistent deadline values.
+    /// * `Unsupported` on non-Linux targets.
     pub fn apply_to_current_thread(&self) -> io::Result<()> {
         #[cfg(target_os = "linux")]
         {
@@ -76,22 +76,22 @@ impl SchedulerProfile {
     }
 }
 
-/// Beschreibung einer aktiven Scheduling-Konfiguration.
+/// Description of an active scheduling configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RunningSchedulerInfo {
-    /// Ausgewaehlte Policy.
+    /// Selected policy.
     pub kind: SchedulerKind,
-    /// `sched_priority`. Nur bei FIFO/RR relevant.
+    /// `sched_priority`. Only relevant for FIFO/RR.
     pub priority: u8,
-    /// `sched_runtime` (ns). Nur bei Deadline relevant.
+    /// `sched_runtime` (ns). Only relevant for Deadline.
     pub runtime_ns: u64,
-    /// `sched_deadline` (ns). Nur bei Deadline relevant.
+    /// `sched_deadline` (ns). Only relevant for Deadline.
     pub deadline_ns: u64,
-    /// `sched_period` (ns). Nur bei Deadline relevant.
+    /// `sched_period` (ns). Only relevant for Deadline.
     pub period_ns: u64,
 }
 
-/// Klassifikation der Linux-Scheduler-Policy.
+/// Classification of the Linux scheduler policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedulerKind {
     /// CFS (`SCHED_OTHER`/`SCHED_BATCH`/`SCHED_IDLE`).
@@ -104,13 +104,13 @@ pub enum SchedulerKind {
     Deadline,
 }
 
-/// Liest die aktuelle Scheduler-Konfiguration des aufrufenden Threads.
+/// Reads the current scheduler configuration of the calling thread.
 ///
-/// Privilegienfrei.
+/// Privilege-free.
 ///
 /// # Errors
-/// Kernel-Fehler aus `sched_getattr(2)`.
-/// `Unsupported` auf Nicht-Linux-Targets.
+/// Kernel error from `sched_getattr(2)`.
+/// `Unsupported` on non-Linux targets.
 pub fn current_scheduler() -> io::Result<RunningSchedulerInfo> {
     #[cfg(target_os = "linux")]
     {
@@ -175,8 +175,8 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn linux_eperm_for_deadline_without_caps() {
-        // Ohne CAP_SYS_NICE muss DEADLINE EPERM oder EINVAL/EBUSY
-        // liefern; auf gar keinen Fall ein Panic.
+        // Without CAP_SYS_NICE, DEADLINE must return EPERM or EINVAL/EBUSY;
+        // under no circumstances a panic.
         let res = SchedulerProfile::Deadline {
             runtime_ns: 1_000_000,
             deadline_ns: 5_000_000,

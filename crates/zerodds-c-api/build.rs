@@ -1,8 +1,8 @@
-//! Build-Script: ruft cbindgen, generiert `include/zerodds.h`.
+//! Build script: calls cbindgen, generates `include/zerodds.h`.
 //!
-//! Build-Scripts sind Tooling-Code (laufen nur zur Compile-Zeit, nicht im
-//! Runtime-Pfad) — `unwrap`/`panic` sind hier akzeptabel, weil ein Fehler
-//! in build.rs ohnehin den Build abbricht.
+//! Build scripts are tooling code (they run only at compile time, not in the
+//! runtime path) — `unwrap`/`panic` are acceptable here, because an error
+//! in build.rs aborts the build anyway.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -31,18 +31,18 @@ fn main() {
             println!("cargo:rerun-if-changed=cbindgen.toml");
         }
         Err(e) => {
-            // Bei Fehler nur warnen, nicht den Build brechen — cbindgen
-            // ist nur fuer Header-Gen, nicht fuer den eigentlichen Bibliotheks-Build.
+            // On error only warn, do not break the build — cbindgen
+            // is only for header gen, not for the actual library build.
             println!("cargo:warning=cbindgen failed: {e:?}");
         }
     }
 }
 
-/// Cbindgen 0.29 rendert `Option<unsafe extern "C" fn(...)>` als opaque
-/// struct-typedef ohne Body, weshalb C++-Compiler die Felder als
-/// `incomplete type` ablehnen. Workaround: ersetze die Forward-Decls
-/// durch echte function-pointer-typedefs (Rust hat eh die Null-Pointer-
-/// Optimierung, ABI-mässig identisch).
+/// Cbindgen 0.29 renders `Option<unsafe extern "C" fn(...)>` as an opaque
+/// struct typedef without a body, which makes C++ compilers reject the fields
+/// as an `incomplete type`. Workaround: replace the forward decls
+/// with real function-pointer typedefs (Rust has the null-pointer
+/// optimization anyway, ABI-identical).
 fn patch_option_fn_typedefs(header_path: &std::path::Path) {
     let content = std::fs::read_to_string(header_path).unwrap_or_default();
     if content.is_empty() {
@@ -67,14 +67,14 @@ fn patch_option_fn_typedefs(header_path: &std::path::Path) {
         ),
         (
             "typedef struct zerodds_Option_ZeroDdsDataCallback zerodds_Option_ZeroDdsDataCallback;",
-            "typedef void (*zerodds_Option_ZeroDdsDataCallback)(void *user_data, const uint8_t *payload, size_t payload_len);",
+            "typedef void (*zerodds_Option_ZeroDdsDataCallback)(void *user_data, const uint8_t *payload, size_t payload_len, uint8_t representation);",
         ),
     ];
     let mut out = content;
     for (from, to) in replacements {
         out = out.replace(from, to);
     }
-    // Strukt-Felder + Funktions-Args: "struct zerodds_Option_X" → "zerodds_Option_X".
+    // Struct fields + function args: "struct zerodds_Option_X" → "zerodds_Option_X".
     for fname in [
         "ZeroDdsEncodeFn",
         "ZeroDdsDecodeFn",

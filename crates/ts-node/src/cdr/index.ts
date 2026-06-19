@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// index.ts — Re-Exports fuer @zerodds/cdr.
+// index.ts — re-exports for @zerodds/cdr.
 // Konformanz: zerodds-xcdr2-ts-1.0 §8.
 
 export { Xcdr2Writer } from './writer.js';

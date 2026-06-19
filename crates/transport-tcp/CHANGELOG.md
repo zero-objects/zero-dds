@@ -7,26 +7,26 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [1.0.0-rc.1] — 2026-05-05
 
-### RC1-Audit
-- License-Header (SPDX-Apache-2.0) auf alle 4 src-Files.
-- Cargo.toml RC1-Metadaten (homepage, documentation, keywords, categories).
+### RC1 audit
+- License header (SPDX-Apache-2.0) on all 4 src files.
+- Cargo.toml RC1 metadata (homepage, documentation, keywords, categories).
 - `publish = false` → `publish = true`.
-- Crate-Header rewrite: ehrliche Spec-Story (DDSI-RTPS §9.4+§9.5
-  OMG-normativ, Handshake ZeroDDS-eigen) statt nicht-existenter
-  "DDS-TCP-PSM §5.2.1"-Referenz.
-- `handshake.rs`-Header rewrite: Phase-2b-TODO-Marker entfernt;
-  Cross-Vendor-Interop-Status klar dokumentiert.
-- ZeroDDS-TCP-Transport-1.0-Spec materialisiert in
-  `docs/spec-coverage/zerodds-tcp-transport-1.0.md` (§1-§8 mit
-  Wire-Format, Reject-Codes, Cyclone-Compat, Test-Mapping).
+- Crate header rewrite: honest spec story (DDSI-RTPS §9.4+§9.5
+  OMG-normative, handshake ZeroDDS-own) instead of the non-existent
+  "DDS-TCP-PSM §5.2.1" reference.
+- `handshake.rs` header rewrite: phase-2b TODO markers removed;
+  cross-vendor interop status clearly documented.
+- ZeroDDS TCP Transport 1.0 spec materialized in
+  `docs/spec-coverage/zerodds-tcp-transport-1.0.md` (§1-§8 with
+  wire format, reject codes, Cyclone compat, test mapping).
 - README + CHANGELOG.
 
-### Eigenschaften
+### Features
 - `std`-only, `forbid(unsafe_code)`.
-- Safety-Klasse **STANDARD**.
-- 55 Tests grün (50 lib + 5 integration); clippy clean.
-- Length-Prefix-Frame (DDSI-RTPS §9.5-konform) + ZeroDDS-Handshake
-  + Cyclone-Compat-Mode + Connection-Pool.
+- Safety class **STANDARD**.
+- 55 tests green (50 lib + 5 integration); clippy clean.
+- Length-prefix frame (DDSI-RTPS §9.5 conformant) + ZeroDDS handshake
+  + Cyclone compat mode + connection pool.
 
 [Unreleased]: https://github.com/zero-objects/zero-dds/compare/v1.0.0-rc.1...HEAD
 [1.0.0-rc.1]: https://github.com/zero-objects/zero-dds/releases/tag/v1.0.0-rc.1

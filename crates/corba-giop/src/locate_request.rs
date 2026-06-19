@@ -19,8 +19,8 @@
 //! };
 //! ```
 //!
-//! Client probt, ob ein Server eine Object-Reference akzeptiert
-//! (oder LOCATION_FORWARD braucht).
+//! The client probes whether a server accepts an object reference
+//! (or requires LOCATION_FORWARD).
 
 use zerodds_cdr::{BufferReader, BufferWriter};
 
@@ -33,7 +33,7 @@ use crate::version::Version;
 pub struct LocateRequest {
     /// `request_id`.
     pub request_id: u32,
-    /// `target` — in GIOP 1.0/1.1 immer `Key`-Variant.
+    /// `target` — always the `Key` variant in GIOP 1.0/1.1.
     pub target: TargetAddress,
 }
 
@@ -41,7 +41,7 @@ impl LocateRequest {
     /// CDR-Encode.
     ///
     /// # Errors
-    /// Buffer-Schreibfehler oder Profile/Reference-Variant in
+    /// Buffer write error, or a Profile/Reference variant under
     /// GIOP 1.0/1.1.
     pub fn encode(&self, version: Version, w: &mut BufferWriter) -> GiopResult<()> {
         w.write_u32(self.request_id)?;
@@ -67,7 +67,7 @@ impl LocateRequest {
     /// CDR-Decode.
     ///
     /// # Errors
-    /// Buffer-Lesefehler.
+    /// Buffer read error.
     pub fn decode(version: Version, r: &mut BufferReader<'_>) -> GiopResult<Self> {
         let request_id = r.read_u32()?;
         let target = if version.uses_v1_2_request_layout() {

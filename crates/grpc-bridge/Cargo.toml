@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "gRPC-over-HTTP/2 + gRPC-Web Wire-Codec — Length-Prefixed-Message + Path + Timeout + Status + Custom-Metadata + Server-Skeleton. Sitzt auf zerodds-http2 + zerodds-hpack."
+description = "gRPC-over-HTTP/2 + gRPC-Web wire codec — length-prefixed message + path + timeout + status + custom metadata + server skeleton. Sits on zerodds-http2 + zerodds-hpack."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-grpc-bridge"
 readme = "README.md"
@@ -20,7 +20,7 @@ workspace = true
 [lib]
 path = "src/lib.rs"
 
-# Spec `zerodds-grpc-bridge-1.0` §2 — Daemon-Binary.
+# Spec `zerodds-grpc-bridge-1.0` §2 — daemon binary.
 [[bin]]
 name = "zerodds-grpc-bridged"
 path = "src/bin/zerodds-grpc-bridged.rs"
@@ -39,30 +39,39 @@ std = [
     "dep:signal-hook",
 ]
 alloc = []
-# Cross-Vendor-Interop-Tests gegen grpcurl (Spec §10 + §12.3).
+# Cross-vendor interop tests against grpcurl (spec §10 + §12.3).
 cross-vendor-tests = ["std"]
+# Bridge spec §4.2 "FUTURE (L2)" — real DDS ingress/egress wiring in the
+# daemon. Pulls the DCPS runtime so `Publish` writes to a DataWriter and
+# `Subscribe` drains a DataReader. Additive over `std`; the `no_std` lib
+# codec is untouched. Enabled by the java-omgdds multi-process e2e (F2b).
+dds-runtime = ["std", "dep:zerodds-dcps", "dep:zerodds-rtps", "dep:zerodds-qos"]
 
 [dependencies]
-zerodds-http2 = { version = "1.0.0-rc.1", path = "../http2" }
-zerodds-hpack = { version = "1.0.0-rc.1", path = "../hpack" }
-# Bridge-Security-Substrat (Bridge-Spec §7.1 TLS via rustls = HTTP/2 ALPN,
-# §7.2 Auth-Modes, §7.3 Topic-ACL).
-zerodds-bridge-security = { version = "1.0.0-rc.1", path = "../bridge-security", optional = true }
+zerodds-http2 = { version = "1.0.0-rc.3", path = "../http2" }
+zerodds-hpack = { version = "1.0.0-rc.3", path = "../hpack" }
+# Bridge security substrate (bridge spec §7.1 TLS via rustls = HTTP/2 ALPN,
+# §7.2 auth modes, §7.3 topic ACL).
+zerodds-bridge-security = { version = "1.0.0-rc.3", path = "../bridge-security", optional = true }
 rustls = { workspace = true, optional = true }
-# §7.1 PEM-Loader fuer ALPN-`h2`-Builder (foundation-Loader exposes
-# nur high-level Builder; ALPN-Patching erfordert Roh-PEM-Lesen).
+# §7.1 PEM loader for the ALPN-`h2` builder (the foundation loader exposes
+# only a high-level builder; ALPN patching requires raw PEM reading).
 rustls-pemfile = { workspace = true, optional = true }
-# Cross-Cutting Daemon-Observability: Prometheus + OTLP + Shutdown + QoS-Mapper.
-zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
-zerodds-observability-otlp = { version = "1.0.0-rc.1", path = "../observability-otlp", optional = true }
-zerodds-qos = { version = "1.0.0-rc.1", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+# Cross-cutting daemon observability: Prometheus + OTLP + shutdown + QoS mapper.
+zerodds-monitor = { version = "1.0.0-rc.3", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "1.0.0-rc.3", path = "../observability-otlp", optional = true }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
 signal-hook = { workspace = true, optional = true }
+# §4.2 L2 — real DDS side (feature `dds-runtime`). DCPS runtime for the
+# opaque-bytes ingress writer + egress reader; RTPS for GuidPrefix/EntityId.
+zerodds-dcps = { version = "1.0.0-rc.3", path = "../dcps", optional = true, default-features = false, features = ["std"] }
+zerodds-rtps = { version = "1.0.0-rc.3", path = "../rtps", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
-# Self-signed Certs fuer §7.1 TLS-Tests in `tests/security_e2e.rs`.
+# Self-signed certs for §7.1 TLS tests in `tests/security_e2e.rs`.
 rcgen = "0.13"
 
-# SIGTERM-graceful Shutdown im DaemonGuard (sonst SIGKILL → korrupte
-# `.profraw` unter cargo-llvm-cov). Unix-only via cfg-Gate.
+# SIGTERM-graceful shutdown in the DaemonGuard (otherwise SIGKILL → corrupt
+# `.profraw` under cargo-llvm-cov). Unix-only via cfg gate.
 [target.'cfg(unix)'.dev-dependencies]
 libc = { workspace = true, features = ["std"] }

@@ -1,15 +1,15 @@
 # `zerodds-rtps`
 
-Writer/Reader State-Machines, RTPS-Submessages, Wire-Format-Encoding.
-Teil von [**ZeroDDS**](../../README.md). Safety-Klasse **SAFE** —
+Writer/reader state machines, RTPS submessages, wire-format encoding.
+Part of [**ZeroDDS**](../../README.md). Safety class **SAFE** —
 `forbid(unsafe_code)`, no_std + alloc.
 
-DDSI-RTPS 2.5 — voll spec-konform (K3b-Audit abgeschlossen 2026-04-28:
+DDSI-RTPS 2.5 — fully spec-conformant (K3b audit completed 2026-04-28:
 121 done / 0 partial / 0 open / 3 n/a).
 
 ---
 
-## Quick Start (E2E mit UDP)
+## Quick start (E2E with UDP)
 
 ```rust,no_run
 use std::net::Ipv4Addr;
@@ -41,25 +41,25 @@ assert_eq!(samples[0].payload, b"hello rtps");
 
 ---
 
-## Module
+## Modules
 
-| Modul | Zweck |
+| Module | Purpose |
 |---|---|
-| `error` | `WireError`-Varianten |
+| `error` | `WireError` variants |
 | `wire_types` | `Guid`, `EntityId`, `SequenceNumber`, `Locator`, `ProtocolVersion`, `VendorId` |
 | `header` | `RtpsHeader` (20B) + `RTPS_MAGIC` |
-| `submessage_header` | `SubmessageHeader` (4B) + `SubmessageId`-Enum |
+| `submessage_header` | `SubmessageHeader` (4B) + `SubmessageId` enum |
 | `submessages` | DATA, DATA_FRAG, HEARTBEAT, HEARTBEAT_FRAG, ACKNACK, NACK_FRAG, GAP, INFO_TS, INFO_SRC, INFO_DST, INFO_REPLY + SequenceNumberSet |
-| `datagram` | encode/decode RTPS-Messages, ParsedSubmessage-Iteration |
+| `datagram` | encode/decode RTPS messages, ParsedSubmessage iteration |
 | `writer` | BestEffortWriter (1:1, stateless) |
-| `reader` | BestEffortReader (1:1, mit Wildcard-Match) |
-| `history_cache` | Geordnete `CacheChange`-Ablage (BTreeMap) + atomare Stats + LockFreeReadHistoryCache |
-| `reader_proxy` / `writer_proxy` | Per-Endpoint State |
-| `reliable_writer` / `reliable_reader` | Reliable State-Machines, tick-getrieben |
-| `reliable_stateless_writer` | Stateless-Writer-Variante fuer SPDP |
-| `fragment_assembler` | Reader-seitige Reassembly mit DoS-Caps |
+| `reader` | BestEffortReader (1:1, with wildcard match) |
+| `history_cache` | Ordered `CacheChange` store (BTreeMap) + atomic stats + LockFreeReadHistoryCache |
+| `reader_proxy` / `writer_proxy` | Per-endpoint state |
+| `reliable_writer` / `reliable_reader` | Reliable state machines, tick-driven |
+| `reliable_stateless_writer` | Stateless writer variant for SPDP |
+| `fragment_assembler` | Reader-side reassembly with DoS caps |
 | `participant_security_info` | PID `0x1005` (DDS-Security 1.2 §7.4.1.6) |
-| `message_builder` | OutboundDatagram-Aggregation pro Send-Tick |
+| `message_builder` | OutboundDatagram aggregation per send tick |
 
 ## Reliable-Quickstart
 
@@ -90,54 +90,53 @@ loop {
 
 ## Lock-Free Read-Path & Per-Slot Mutex
 
-Das History-Cache-Modul ist in drei Schichten lock-free aufgebaut:
+The history-cache module is built lock-free in three layers:
 
-* **Atomic Stats** — `HistoryCacheStats` mit
-  `AtomicUsize`/`AtomicI64` für `len`/`evicted`/`max_sn`/`min_sn`.
-  Monitoring-Threads pollen via `cache.stats() -> Arc<HistoryCacheStats>`
-  ohne den Writer-Lock zu nehmen.
-* **Per-Endpoint-Mutex** — `dcps::user_writers`/`user_readers`
-  nutzen `RwLock<BTreeMap<EntityId, Arc<Mutex<Slot>>>>`: pro
-  Writer/Reader ein eigener Mutex statt globalem Lock.
-* **RCU-Snapshot** — `LockFreeReadHistoryCache` mit `&self`-
-  Mutationen via `zerodds_foundation::rcu::RcuCell` (Copy-on-Write
-  Arc-swap). Reader-Snapshots leben unabhängig vom Cache-Lock.
+* **Atomic stats** — `HistoryCacheStats` with
+  `AtomicUsize`/`AtomicI64` for `len`/`evicted`/`max_sn`/`min_sn`.
+  Monitoring threads poll via `cache.stats() -> Arc<HistoryCacheStats>`
+  without taking the writer lock.
+* **Per-endpoint mutex** — `dcps::user_writers`/`user_readers`
+  use `RwLock<BTreeMap<EntityId, Arc<Mutex<Slot>>>>`: a separate mutex
+  per writer/reader instead of a global lock.
+* **RCU snapshot** — `LockFreeReadHistoryCache` with `&self`
+  mutations via `zerodds_foundation::rcu::RcuCell` (copy-on-write
+  Arc swap). Reader snapshots live independently of the cache lock.
 
-## Wire-Format-Konformitaet
+## Wire-format conformance
 
-DDSI-RTPS 2.5 §8.3 — voll umgesetzt:
+DDSI-RTPS 2.5 §8.3 — fully implemented:
 
-* RTPS-Header (§8.3.3): 20 Byte, Magic + Version + VendorId + GuidPrefix
-* Submessage-Header (§8.3.4): 4 Byte, ID + Flags + OctetsToNextHeader
+* RTPS header (§8.3.3): 20 byte, magic + version + VendorId + GuidPrefix
+* Submessage header (§8.3.4): 4 byte, ID + flags + OctetsToNextHeader
 * DATA / DATA_FRAG / GAP / HEARTBEAT / HEARTBEAT_FRAG / ACKNACK /
   NACK_FRAG / INFO_TS / INFO_SRC / INFO_DST / INFO_REPLY
-* Cross-Vendor-Wire-Compat byte-identisch gegen Cyclone DDS,
-  FastDDS, RTI Connext, OpenSplice (siehe `docs/interop/`).
+* Cross-vendor wire compat byte-identical against Cyclone DDS,
+  FastDDS, RTI Connext, OpenSplice (see `docs/interop/`).
 
-## Cross-Vendor-Compatibility
+## Cross-vendor compatibility
 
-* **RTPS 2.1 mit 0x80-Submessage** (Cyclone/FastDDS-Legacy) —
-  HeaderExtension wird nur ab Version 2.5 geparst, davor als
-  Vendor-Specific behandelt. Regression-Test
+* **RTPS 2.1 with a 0x80 submessage** (Cyclone/FastDDS legacy) —
+  HeaderExtension is parsed only from version 2.5 on, before that
+  treated as vendor-specific. Regression test
   `rtps_2_1_treats_0x80_as_vendor_specific_not_header_extension`.
-* **`fragments_in_submessage > 1`** (RTI-Bundling) — Decoder
-  akzeptiert; Encoder emittiert 1 Fragment pro Submessage.
-* **HEARTBEAT_FRAG** — Decoder bereit, Encoder nicht aktiv (regulaere
-  HEARTBEATs reichen dem Reader).
+* **`fragments_in_submessage > 1`** (RTI bundling) — the decoder
+  accepts it; the encoder emits 1 fragment per submessage.
+* **HEARTBEAT_FRAG** — decoder ready, encoder not active (regular
+  HEARTBEATs are enough for the reader).
 
 ## Tests
 
 ```bash
-cargo test -p zerodds-rtps                     # 647 Tests
-cargo test -p zerodds-rtps --test reliable_e2e # In-Order-Delivery + Loss-Recovery
+cargo test -p zerodds-rtps                     # 647 tests
+cargo test -p zerodds-rtps --test reliable_e2e # in-order delivery + loss recovery
 cargo test -p zerodds-rtps history_cache       # incl. lock-free + atomic stats
 ```
 
-E2E-Tests in `tests/reliable_e2e.rs` decken In-Order-Delivery
-mit 0%/10%/30% simuliertem Packet-Loss + 10-kB-Fragmentation
-ab.
+E2E tests in `tests/reliable_e2e.rs` cover in-order delivery with
+0%/10%/30% simulated packet loss + 10-kB fragmentation.
 
 ## Documentation
 
-Fuer einen Hot-Path-Trace siehe
+For a hot-path trace see
 [Documentation Trail Station 02 → data-flow](../../documentation/02-architecture/data-flow.md).

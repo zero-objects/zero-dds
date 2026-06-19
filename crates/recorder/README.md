@@ -3,33 +3,33 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-recorder/badge.svg)](https://docs.rs/zerodds-recorder)
 
-Deterministic Record/Replay-Format fuer den
-[ZeroDDS](https://zerodds.org)-Stack: pure-Rust `.zddsrec`-Wire-Format
-mit Reader, Writer und thread-safer Live-Session-API. Safety
+Deterministic record/replay format for the
+[ZeroDDS](https://zerodds.org) stack: pure-Rust `.zddsrec` wire format
+with reader, writer and a thread-safe live-session API. Safety
 classification: **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| ZDDSREC 1.0 | §1-§5 (Magic + Version + Header-Layout + Frame-Layout + Sample-Kind + Index-Disziplin) |
+| ZDDSREC 1.0 | §1-§5 (magic + version + header layout + frame layout + sample kind + index discipline) |
 
-Spec-Doc: [`docs/specs/zddsrec-1.0.md`](../../docs/specs/zddsrec-1.0.md).
+Spec doc: [`docs/specs/zddsrec-1.0.md`](../../docs/specs/zddsrec-1.0.md).
 
-## Was ist drin
+## What's inside
 
-- **Format-Wire-Strukturen:** `Header`, `Frame`, `FrameView`, `SampleKind`, `ParticipantEntry`, `TopicEntry`, `ZDDSREC_MAGIC`, `ZDDSREC_VERSION`.
-- **`RecordWriter`** — schreibt einen `.zddsrec`-Stream inkrementell in einen `std::io::Write`-Sink. `WriteError` deckt IO + Format-Verstoesse ab.
-- **`RecordReader`** — parsed einen `&[u8]`-Buffer in `Header` + Frame-Sequenz. `ReadError` mit konkreten Truncation-Pfaden.
-- **`RecordingSession`** — high-level Live-API mit `record_sample(topic, type, payload)`, atomare Counter, lazy-Header und Topic-Indexing.
+- **Format wire structures:** `Header`, `Frame`, `FrameView`, `SampleKind`, `ParticipantEntry`, `TopicEntry`, `ZDDSREC_MAGIC`, `ZDDSREC_VERSION`.
+- **`RecordWriter`** — writes a `.zddsrec` stream incrementally into a `std::io::Write` sink. `WriteError` covers IO + format violations.
+- **`RecordReader`** — parses a `&[u8]` buffer into `Header` + frame sequence. `ReadError` with concrete truncation paths.
+- **`RecordingSession`** — high-level live API with `record_sample(topic, type, payload)`, atomic counters, lazy header and topic indexing.
 
-## Schichten-Position
+## Layer position
 
-Layer 4 — Core Services. Pure-Rust + `alloc`, **keine** ZeroDDS-Crate-Deps. Wird von `tools/replay` (Inspect/Dump/Replay-CLI) und `tools/recorder-bridge` (Live-Recording aus DcpsRuntime) konsumiert.
+Layer 4 — core services. Pure Rust + `alloc`, **no** ZeroDDS crate deps. Consumed by `tools/replay` (inspect/dump/replay CLI) and `tools/recorder-bridge` (live recording from the DcpsRuntime).
 
 ## Quickstart
 
-Schreiben:
+Writing:
 
 ```rust,no_run
 use zerodds_recorder::{RecordWriter, Header, ParticipantEntry, TopicEntry, Frame, SampleKind};
@@ -50,7 +50,7 @@ writer.write_frame(&Frame {
 }).unwrap();
 ```
 
-Lesen:
+Reading:
 
 ```rust,no_run
 use zerodds_recorder::RecordReader;
@@ -63,21 +63,21 @@ for frame in reader.frames() {
 }
 ```
 
-## Feature-Flags
+## Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std` | ✅ | Standard-Library + `std::io::Write`. |
+| `std` | ✅ | Standard library + `std::io::Write`. |
 | `alloc` | ✅ via std | `Vec`/`String`. |
-| `safety` | ❌ | Reserve-Hook fuer extra Defensive-Checks. |
+| `safety` | ❌ | Reserve hook for extra defensive checks. |
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1`. Wire-Format `ZDDSREC_VERSION = 1` ist RC1-stabil; eine
-inkompatible Aenderung wuerde die Version-Konstante heben (`Reader`
-lehnt unbekannte Versionen ab). Additive Erweiterungen (Streaming-
-Reader, IndexAddFrame, optionale Compression) sind als Major-2.0-Hooks
-designt — siehe Spec §"Stabilitaet und Roadmap".
+`1.0.0-rc.1`. Wire format `ZDDSREC_VERSION = 1` is RC1-stable; an
+incompatible change would bump the version constant (the `Reader`
+rejects unknown versions). Additive extensions (streaming
+reader, IndexAddFrame, optional compression) are designed as
+major-2.0 hooks — see spec §"Stability and roadmap".
 
 ## Tests
 
@@ -85,15 +85,15 @@ designt — siehe Spec §"Stabilitaet und Roadmap".
 cargo test -p zerodds-recorder
 ```
 
-17 Unit-Tests: Format-Roundtrips, Reader-Truncation-Pfade, Writer-
-Header-Once-Disziplin, Session-Thread-Safety.
+17 unit tests: format roundtrips, reader truncation paths, writer
+header-once discipline, session thread safety.
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../../LICENSE).
+Apache-2.0. See [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
-- [`docs/specs/zddsrec-1.0.md`](../../docs/specs/zddsrec-1.0.md) — Wire-Format-Spec.
+- [`docs/specs/zddsrec-1.0.md`](../../docs/specs/zddsrec-1.0.md) — wire-format spec.
 - [`tools/replay`](../../tools/replay) — `zerodds-replay inspect|dump|replay` CLI.
-- [`tools/recorder-bridge`](../../tools/recorder-bridge) — Live-Recording aus DcpsRuntime.
+- [`tools/recorder-bridge`](../../tools/recorder-bridge) — live recording from the DcpsRuntime.

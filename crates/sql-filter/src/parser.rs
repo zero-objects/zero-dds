@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Recursive-Descent-Parser mit Precedence-Klettern.
+//! Recursive-descent parser with precedence climbing.
 //!
-//! Grammar (EBNF, nicht alle konkreten Literale):
+//! Grammar (EBNF, not all concrete literals):
 //!
 //! ```text
 //! expr    = or_expr
@@ -22,7 +22,7 @@ use alloc::vec::Vec;
 use crate::ast::{CmpOp, Expr, Operand, Value};
 use crate::lexer::{LexError, Token, tokenize};
 
-/// Parse-Fehler mit menschlich lesbarer Message.
+/// Parse error with a human-readable message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError(pub String);
 
@@ -41,15 +41,15 @@ impl From<LexError> for ParseError {
     }
 }
 
-/// Parse-Einstieg. Das gesamte Input muss Teil genau eines Ausdrucks
-/// sein — Reststrings werden als Fehler gewertet.
+/// Parse entry point. The entire input must be part of exactly one
+/// expression — leftover strings are treated as errors.
 pub fn parse(input: &str) -> Result<Expr, ParseError> {
     let tokens = tokenize(input)?;
     let mut p = Parser { tokens, pos: 0 };
     let expr = p.parse_or()?;
     if p.pos != p.tokens.len() {
         return Err(ParseError(alloc::format!(
-            "unerwartetes Trailing-Token an Position {}",
+            "unexpected trailing token at position {}",
             p.pos
         )));
     }
@@ -112,7 +112,7 @@ impl Parser {
             self.pos += 1;
             let inner = self.parse_or()?;
             if !matches!(self.peek(), Some(Token::RParen)) {
-                return Err(ParseError("erwarte ')'".into()));
+                return Err(ParseError("expected ')'".into()));
             }
             self.pos += 1;
             return Ok(inner);
@@ -134,7 +134,7 @@ impl Parser {
             self.pos += 1;
             let low = self.parse_operand()?;
             if !matches!(self.consume(), Some(Token::And)) {
-                return Err(ParseError("erwarte AND nach BETWEEN-Untergrenze".into()));
+                return Err(ParseError("expected AND after BETWEEN lower bound".into()));
             }
             let high = self.parse_operand()?;
             return Ok(Expr::Between {
@@ -145,7 +145,7 @@ impl Parser {
             });
         }
         if negated {
-            return Err(ParseError("NOT muss von BETWEEN gefolgt sein".into()));
+            return Err(ParseError("NOT must be followed by BETWEEN".into()));
         }
         let op = match self.consume() {
             Some(Token::Eq) => CmpOp::Eq,
@@ -157,7 +157,7 @@ impl Parser {
             Some(Token::Like) => CmpOp::Like,
             other => {
                 return Err(ParseError(alloc::format!(
-                    "erwarte Vergleichs-Op, got {other:?}"
+                    "expected comparison op, got {other:?}"
                 )));
             }
         };
@@ -168,7 +168,7 @@ impl Parser {
     fn parse_operand(&mut self) -> Result<Operand, ParseError> {
         let tok = self
             .consume()
-            .ok_or_else(|| ParseError("unerwartetes Ende".into()))?;
+            .ok_or_else(|| ParseError("unexpected end".into()))?;
         match tok {
             Token::StrLit(s) => Ok(Operand::Literal(Value::String(s))),
             Token::IntLit(n) => Ok(Operand::Literal(Value::Int(n))),
@@ -176,7 +176,9 @@ impl Parser {
             Token::BoolLit(b) => Ok(Operand::Literal(Value::Bool(b))),
             Token::Ident(name) => Ok(Operand::Field(name)),
             Token::Param(i) => Ok(Operand::Param(i)),
-            other => Err(ParseError(alloc::format!("erwarte Operand, got {other:?}"))),
+            other => Err(ParseError(alloc::format!(
+                "expected operand, got {other:?}"
+            ))),
         }
     }
 }
@@ -195,19 +197,19 @@ mod tests {
                 assert_eq!(op, CmpOp::Eq);
                 assert_eq!(rhs, Operand::Literal(Value::String("RED".into())));
             }
-            _ => panic!("erwarte Cmp"),
+            _ => panic!("expected Cmp"),
         }
     }
 
     #[test]
     fn parse_and_or_precedence() {
-        // AND bindet staerker als OR.
+        // AND binds more tightly than OR.
         let e = parse("a = 1 OR b = 2 AND c = 3").expect("parse");
         match e {
             Expr::Or(_, rhs) => {
                 assert!(matches!(*rhs, Expr::And(_, _)));
             }
-            _ => panic!("erwarte Or auf top-level"),
+            _ => panic!("expected Or at top level"),
         }
     }
 
@@ -218,7 +220,7 @@ mod tests {
             Expr::And(lhs, _) => {
                 assert!(matches!(*lhs, Expr::Or(_, _)));
             }
-            _ => panic!("erwarte And auf top-level"),
+            _ => panic!("expected And at top level"),
         }
     }
 
@@ -236,7 +238,7 @@ mod tests {
                 rhs: Operand::Param(3),
                 ..
             } => {}
-            _ => panic!("erwarte Param-Operand"),
+            _ => panic!("expected param operand"),
         }
     }
 
@@ -260,7 +262,7 @@ mod tests {
                 assert_eq!(high, Operand::Literal(Value::Int(10)));
                 assert!(!negated);
             }
-            _ => panic!("erwarte Between"),
+            _ => panic!("expected Between"),
         }
     }
 
@@ -269,7 +271,7 @@ mod tests {
         let e = parse("x NOT BETWEEN 1 AND 10").expect("parse");
         match e {
             Expr::Between { negated, .. } => assert!(negated),
-            _ => panic!("erwarte negiertes Between"),
+            _ => panic!("expected negated Between"),
         }
     }
 
@@ -288,7 +290,7 @@ mod tests {
     #[test]
     fn parse_node_count() {
         let e = parse("a = 1 AND b = 2 OR c = 3").expect("parse");
-        // 3 Vergleiche + 1 AND + 1 OR = 5.
+        // 3 comparisons + 1 AND + 1 OR = 5.
         assert_eq!(e.node_count(), 5);
     }
 

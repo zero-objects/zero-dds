@@ -15,13 +15,13 @@ namespace pub {
 
 /// `DataWriterListener<T>` (Spec §7.5.9.5).
 ///
-/// User-Code abgeleitet, ueberschreibt die On-XXX-Methoden. Wird per
-/// `dds::pub::DataWriter<T>::set_listener(...)` registriert.
+/// Derived by user code, overrides the on-XXX methods. Registered via
+/// `dds::pub::DataWriter<T>::set_listener(...)`.
 ///
-/// Active-Wireup an die Runtime erfolgt ueber den C-FFI-Pfad
-/// `zerodds_poll_listeners()` — Caller im Main-Loop pollen, dann
-/// feuern die `on_*`-Methoden auf dem Caller-Thread (siehe
-/// Vendor-Spec `docs/specs/zerodds-listener-callbacks-1.0.md` §6.2).
+/// Active wireup to the runtime happens via the C FFI path
+/// `zerodds_poll_listeners()` — the caller polls in the main loop, then
+/// the `on_*` methods fire on the caller thread (see the
+/// vendor spec `docs/specs/zerodds-listener-callbacks-1.0.md` §6.2).
 template <typename T>
 class DataWriterListener {
 public:
@@ -43,10 +43,10 @@ public:
         const ::dds::core::status::PublicationMatchedStatus& /*s*/) {}
 };
 
-/// Internal: ein Adapter der Spec-Listener auf die C-FFI-vtable mappt.
+/// Internal: an adapter that maps spec listeners onto the C FFI vtable.
 ///
-/// Caller-Code instantiiert eine konkrete `DataWriterListener<T>`-
-/// Subclass und registriert sie via:
+/// Caller code instantiates a concrete `DataWriterListener<T>`
+/// subclass and registers it via:
 ///
 /// ```cpp
 /// MyListener<MsgT> mine;
@@ -55,16 +55,16 @@ public:
 template <typename T>
 class _DataWriterListenerBridge {
 public:
-    /// Bindet eine Listener-Subclass an einen DataWriter.
+    /// Binds a listener subclass to a DataWriter.
     static void attach(DataWriter<T>& dw, DataWriterListener<T>* listener,
                        uint32_t status_mask) {
         if (listener == nullptr) {
             zerodds_dw_set_listener(dw.native_handle(), nullptr, 0);
             return;
         }
-        // Statisches Singleton fuer den vtable-Adapter — eine Instanz
-        // pro Sprach-Binding-Typ. user_data zeigt auf die Listener-
-        // Subclass; die C-FFI feuert die untenstehenden static-Funktionen.
+        // Static singleton for the vtable adapter — one instance
+        // per language-binding type. user_data points to the listener
+        // subclass; the C FFI fires the static functions below.
         thread_local zerodds_ZeroDdsDataWriterListener vt;
         vt.user_data = static_cast<void*>(listener);
         vt.on_liveliness_lost = &cb_liveliness_lost;

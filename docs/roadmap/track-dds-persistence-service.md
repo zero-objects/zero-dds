@@ -1,11 +1,19 @@
 # Track RC3-C — OMG DDS Persistence-Service (spec-conformant Wrapper)
 
+> **⚠️ SUPERSEDED durch [ADR 0009](../adr/0009-durability-service.md) (2026-06-10).**
+> Dieser Track ging von einem „RC2-A-Datalake-Engine"-Stack aus, der nie gebaut
+> wurde (keine Crate existiert). ADR 0009 ersetzt den „Engine-wrappen"-Ansatz
+> durch einen **adapter-getriebenen** Schnitt: das Lakehouse (Parquet+DuckDB)
+> ist *ein Adapter* unter dem `DurabilityStore`-Trait, kein vorzubauender
+> Engine-Stack. Die Persistence-Service-Conformance entsteht dort als Daemon
+> (`crates/durability-service`). Inhalt unten = historisch.
+
 **Goal:** der in RC2-A gebaute Datalake-Engine-Stack bekommt einen
 spec-conformanten Wrapper, der das OMG-DDS-Persistence-Service-Pattern
 erfüllt, sodass externe Vendoren das als Standard-Conformance-Item
 ansprechen können.
 
-**Status:** 📋 todo (gated auf RC2-A Datalake-Engine)
+**Status:** ⛔ superseded by ADR 0009 (war: 📋 todo, gated auf RC2-A Datalake-Engine)
 
 **Estimate:** 2-3 Personenwochen (gering, weil Engine schon existiert).
 

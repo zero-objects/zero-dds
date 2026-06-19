@@ -1,7 +1,7 @@
-//! Stable-Rust Fuzz-Smoke-Tests fuer XTypes-Wire-Decoder.
+//! Stable-Rust fuzz smoke tests for the XTypes wire decoder.
 //!
 //! Spec: DDS-XTypes 1.3 §7.3 (TypeIdentifier), §7.4 (TypeObject),
-//! §7.5 (TypeInformation), §7.7 (TypeLookup-Service).
+//! §7.5 (TypeInformation), §7.7 (TypeLookup service).
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 

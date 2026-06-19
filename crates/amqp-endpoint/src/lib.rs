@@ -3,60 +3,60 @@
 
 //! Crate `zerodds-amqp-endpoint`. Safety classification: **STANDARD**.
 //!
-//! DDS-AMQP 1.0 bidirektionaler Endpoint-Stack — pure-Rust
-//! `no_std + alloc` (mit optionaler `std`-Loader-Schicht),
-//! `forbid(unsafe_code)`. Implementiert die Protokoll-Schichten
-//! oberhalb des Wire-Codecs (`zerodds-amqp-bridge`):
+//! DDS-AMQP 1.0 bidirectional endpoint stack — pure-Rust
+//! `no_std + alloc` (with an optional `std` loader layer),
+//! `forbid(unsafe_code)`. Implements the protocol layers
+//! above the wire codec (`zerodds-amqp-bridge`):
 //!
-//! Spec: OMG DDS-AMQP-1.0 (formal/2024-08-01) §2.1 (Endpoint-Profile),
-//! §6.1 (Direct-Embed-Topology), §7 (Mapping), §11 (Errors), Annex A
-//! (Configuration-Schema). OASIS AMQP-1.0 §2.4 (Connection-State),
-//! §2.5 (Session-State), §2.6 (Link-Lifecycle).
+//! Spec: OMG DDS-AMQP-1.0 (formal/2024-08-01) §2.1 (endpoint profile),
+//! §6.1 (direct-embed topology), §7 (mapping), §11 (errors), Annex A
+//! (configuration schema). OASIS AMQP-1.0 §2.4 (connection state),
+//! §2.5 (session state), §2.6 (link lifecycle).
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 5 — Bridges. Sitzt auf
-//! [`zerodds-amqp-bridge`](../zerodds_amqp_bridge/index.html) (Wire-
-//! Codec). Der TCP/TLS-Listener selbst lebt im Daemon-Crate
-//! `tools/amqp-dds-endpoint/`; diese Crate liefert die wire-
-//! unabhaengigen Protokoll-Schichten.
+//! Layer 5 — bridges. Sits on
+//! [`zerodds-amqp-bridge`](../zerodds_amqp_bridge/index.html) (wire
+//! codec). The TCP/TLS listener itself lives in the daemon crate
+//! `tools/amqp-dds-endpoint/`; this crate provides the
+//! wire-independent protocol layers.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! - [`sasl`] — SASL-Frame-Layer (PLAIN / ANONYMOUS / EXTERNAL)
-//!   gemaess Spec §10.2.
-//! - [`session`] — Connection/Session-State-Machine + Idle-Timeout +
-//!   DoS-Caps gemaess Spec §6.1.
-//! - [`link`] — Sender-/Receiver-Link-Acceptance + Settlement-
-//!   Tracking + Disposition-Mapper-Wire-up (§7.4 + §7.7.3).
-//! - [`routing`] — Address-Resolution + Wildcard-Mapping gemaess
-//!   Spec §7.3.
-//! - [`mapping`] — Body-Encoding-Mode-Mapping (Pass-Through / JSON /
-//!   AMQP-Native) gemaess Spec §8.1.
-//! - [`properties`] — Application-Properties-Codec mit
+//! - [`sasl`] — SASL frame layer (PLAIN / ANONYMOUS / EXTERNAL)
+//!   per spec §10.2.
+//! - [`session`] — connection/session state machine + idle timeout +
+//!   DoS caps per spec §6.1.
+//! - [`link`] — sender/receiver link acceptance + settlement
+//!   tracking + disposition-mapper wireup (§7.4 + §7.7.3).
+//! - [`routing`] — address resolution + wildcard mapping per
+//!   spec §7.3.
+//! - [`mapping`] — body-encoding-mode mapping (pass-through / JSON /
+//!   AMQP-native) per spec §8.1.
+//! - [`properties`] — application-properties codec with
 //!   `dds:operation` / `dds:instance-handle` / `dds:type-id`.
-//! - [`dds_bridge`] — Trait-Surfaces ([`DdsOperationDispatcher`] +
-//!   [`DispositionMapper`]) fuer Caller-DCPS-Bruecken.
-//! - [`management`] — Catalog + Audit-Producers + Metrics-Snapshots.
-//! - [`metrics`] — Mandatory-Metric-Hub.
-//! - [`security`] — Access-Control-Plugin-Surface + Governance.
-//! - [`coexistence`] — Multi-Bridge-Hop-Cap + Inbound-Decision.
-//! - [`rpc_correlation`] — Outstanding-Calls + Reply-Routing.
-//! - [`errors`] — Spec-§11 Error-Conditions als typisierte Errors.
-//! - [`limits`] — `ResourceLimits`-Datenmodell aus Annex A.
-//! - [`keyhash`] — SHA-256 group-id-Hashing fuer §7.6.1.
-//! - [`annex_a`] — IDL-Spiegelung des Annex-A-Configuration-Schemas.
-//! - [`codegen_helpers`] — Helpers fuer den Annex-A-IDL-Codegen.
-//! - [`config_xml`] (Feature `std`) — XML-Configuration-Loader (§9.2).
+//! - [`dds_bridge`] — trait surfaces ([`DdsOperationDispatcher`] +
+//!   [`DispositionMapper`]) for caller DCPS bridges.
+//! - [`management`] — catalog + audit producers + metrics snapshots.
+//! - [`metrics`] — mandatory metric hub.
+//! - [`security`] — access-control plugin surface + governance.
+//! - [`coexistence`] — multi-bridge hop cap + inbound decision.
+//! - [`rpc_correlation`] — outstanding calls + reply routing.
+//! - [`errors`] — §11 spec error conditions as typed errors.
+//! - [`limits`] — `ResourceLimits` data model from Annex A.
+//! - [`keyhash`] — SHA-256 group-id hashing for §7.6.1.
+//! - [`annex_a`] — IDL mirror of the Annex-A configuration schema.
+//! - [`codegen_helpers`] — helpers for the Annex-A IDL codegen.
+//! - [`config_xml`] (feature `std`) — XML configuration loader (§9.2).
 //!
-//! ## Was Caller-Layer ist
+//! ## What is caller-layer
 //!
-//! - **TCP-Listener-Operations** und **TLS-Termination** —
-//!   Daemon-Crate (`tools/amqp-dds-endpoint/`) mit `tokio` + `rustls`.
-//! - **Discovery-Wire** — DDS-SPDP/SEDP-Bridge zur DDS-Side lebt in
-//!   `crates/discovery/`.
-//! - **Live-Interop-Smoke** gegen pika/qpid-proton/Azure-SB —
-//!   Test-Harness im Daemon-Crate.
+//! - **TCP listener operations** and **TLS termination** —
+//!   the daemon crate (`tools/amqp-dds-endpoint/`) with `tokio` + `rustls`.
+//! - **Discovery wire** — the DDS-SPDP/SEDP bridge to the DDS side
+//!   lives in `crates/discovery/`.
+//! - **Live-interop smoke** against pika/qpid-proton/Azure-SB —
+//!   the test harness in the daemon crate.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -65,15 +65,17 @@ extern crate alloc;
 
 pub mod annex_a;
 pub mod backoff;
-// Bridge-Security-Adapter (Bridge-Spec §7.1 TLS via rustls, §7.2 Auth-Modes,
-// §7.3 Topic-ACL). std-only (rustls braucht std).
+// Bridge-security adapter (bridge spec §7.1 TLS via rustls, §7.2 auth modes,
+// §7.3 topic ACL). std-only (rustls requires std).
 #[cfg(feature = "std")]
 pub mod bridge_security;
-// Daemon-Runtime-Wireup (§5.2 Catalog, §8.2 Prometheus, §8.3 OTLP,
-// §9.2 Graceful Shutdown). std-only.
+// Daemon-runtime wireup (§5.2 catalog, §8.2 Prometheus, §8.3 OTLP,
+// §9.2 graceful shutdown). std-only.
 #[cfg(feature = "std")]
 pub mod daemon_runtime;
-// DDS-QoS → AMQP-Behavior-Translation (Spec §6).
+// DDS-QoS → AMQP-behavior translation (spec §6).
+#[cfg(feature = "std")]
+pub mod client;
 pub mod codegen_helpers;
 pub mod coexistence;
 #[cfg(feature = "std")]
@@ -92,6 +94,7 @@ pub mod qos_translation;
 pub mod routing;
 pub mod rpc_correlation;
 pub mod sasl;
+pub mod scram;
 pub mod security;
 pub mod session;
 

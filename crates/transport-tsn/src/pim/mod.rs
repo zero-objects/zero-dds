@@ -2,7 +2,7 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DDS-TSN Configuration Model PIM — Spec §7.2 + §7.3.
 //!
-//! Voll spec-konforme Repraesentation der Tab 7.1-7.14:
+//! Fully spec-conformant representation of Tab 7.1-7.14:
 //!
 //! * **§7.2.1 Application Configuration** (`application`) — Tab 7.1-7.9:
 //!   QosLibrary / QosProfile / DomainLibrary / Domain / RegisteredType
@@ -11,15 +11,16 @@
 //! * **§7.2.2 Deployment Configuration** (`deployment`) — Tab 7.10-7.14:
 //!   NodeLibrary / Node / DeploymentLibrary / Deployment /
 //!   DeploymentConfiguration.
-//! * **§7.3 Configuration PSM** (`xml`, `json`) — XML- und JSON-
-//!   Loader/Renderer fuer das normative XSD-Schema.
+//! * **§7.3 Configuration PSM** (`xml`, `json`) — XML and JSON
+//!   loaders/renderers for the normative XSD schema.
 //!
-//! Das alte simplifizierte Modell in `crate::config` bleibt fuer
-//! Backwards-Compat-Loader bestehen; neue Caller sollten `pim`
-//! benutzen, weil es Tab 7.1-7.14 1:1 abdeckt.
+//! The old simplified model in `crate::config` remains for
+//! backwards-compat loaders; new callers should use `pim`,
+//! because it covers Tab 7.1-7.14 one-to-one.
 
 pub mod application;
 pub mod deployment;
+pub mod yang;
 
 #[cfg(feature = "std")]
 pub mod json;
@@ -34,6 +35,11 @@ pub use application::{
 pub use deployment::{
     Deployment, DeploymentConfiguration, DeploymentLibrary, IpV4, IpV6, MacAddr, Node, NodeLibrary,
 };
+pub use yang::{
+    EndStationInterface, GroupDataFrameSpecification, GroupListener, GroupTalker,
+    InterfaceCapabilities, StreamId, TalkerListenerGroups, UserToNetworkRequirements,
+    talker_listener_groups,
+};
 
 #[cfg(feature = "std")]
 pub use json::{RenderJsonError, render_dds_tsn_json};
@@ -41,8 +47,8 @@ pub use json::{RenderJsonError, render_dds_tsn_json};
 #[cfg(feature = "std")]
 pub use xml::{ParseXmlError, parse_dds_tsn_xml};
 
-/// Top-Level — eine vollstaendige DDS-TSN-Konfiguration mit allen
-/// fuenf Library-Sections. Spec §7.2 Figur 7.1 + 7.2.
+/// Top level — a complete DDS-TSN configuration with all
+/// five library sections. Spec §7.2 Figure 7.1 + 7.2.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DdsTsnConfig {
     /// `qos_library` — Spec Tab 7.1.

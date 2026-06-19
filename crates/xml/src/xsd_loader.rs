@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! XTypes 1.3 Annex A — XSD-Schema-Loader fuer `<types>` XML (C4.5).
+//! XTypes 1.3 Annex A — XSD schema loader for `<types>` XML (C4.5).
 //!
-//! Spec OMG XTypes 1.3 §7.3.2 + §7.3.3 + Annex A: ein XML-Type-Document
-//! (Annex-A-Schema) MUSS zur Laufzeit von einem URI-fähigen Loader
-//! aufnehmbar sein. Das ist Voraussetzung für `create_type_w_uri` und
-//! `create_type_w_document` (DynamicType-API, kommt mit C4.1).
+//! Spec OMG XTypes 1.3 §7.3.2 + §7.3.3 + Annex A: an XML type document
+//! (Annex-A schema) MUST be ingestible at runtime by a URI-capable loader.
+//! This is a precondition for `create_type_w_uri` and
+//! `create_type_w_document` (DynamicType API, comes with C4.1).
 //!
-//! # Scope C4.5 (diese Stufe)
+//! # Scope C4.5 (this stage)
 //!
-//! - **URI-Loader**: `file://`, `data:` (RFC 2397), inline-Bytes via
+//! - **URI loader**: `file://`, `data:` (RFC 2397), inline bytes via
 //!   `load_type_libraries_from_string`.
-//! - **Strukturelle XSD-Annex-A-Validierung**: prueft die Element-/
-//!   Attribut-Namen + Pflicht-Attribute pro Type-Konstrukt. Voll XSD-
-//!   1.1-Engine (XPath, Schematron) nicht implementiert.
-//! - **Spec-Namespace-Check**: `http://www.omg.org/spec/DDS-XML` als
-//!   `targetNamespace`. Strict-Modus rejected fehlende Namespace.
-//! - **Re-Use C7.D**: liefert `Vec<TypeLibrary>` (XML-Datenmodell aus
-//!   `xtypes_def`); TypeObject-Bridge ist künftige Erweiterung (C4.5-b nach C4.1).
+//! - **Structural XSD-Annex-A validation**: checks the element/
+//!   attribute names + required attributes per type construct. A full XSD
+//!   1.1 engine (XPath, Schematron) is not implemented.
+//! - **Spec namespace check**: `http://www.omg.org/spec/DDS-XML` as the
+//!   `targetNamespace`. Strict mode rejects a missing namespace.
+//! - **Reuse C7.D**: returns `Vec<TypeLibrary>` (XML data model from
+//!   `xtypes_def`); the TypeObject bridge is a future extension (C4.5-b after C4.1).
 //!
-//! # Bewusst nicht im Crate
+//! # Deliberately not in the crate
 //!
-//! - Voller XSD-1.1-Validator (XPath, key/keyref, assertions).
-//! - HTTP/HTTPS-URI-Schemas — nur `file://` + `data:`.
-//! - XML-Catalog-Resolution.
+//! - A full XSD-1.1 validator (XPath, key/keyref, assertions).
+//! - HTTP/HTTPS URI schemes — only `file://` + `data:`.
+//! - XML catalog resolution.
 
 extern crate alloc;
 use alloc::string::String;
@@ -33,23 +33,23 @@ use crate::errors::XmlError;
 use crate::xtypes_def::TypeLibrary;
 use crate::xtypes_parser::parse_type_libraries;
 
-/// Spec-Namespace fuer DDS-XML (XTypes Annex A + DDS-XML 1.0 §7.1.5).
+/// Spec namespace for DDS-XML (XTypes Annex A + DDS-XML 1.0 §7.1.5).
 pub const DDS_XML_NAMESPACE: &str = "http://www.omg.org/spec/DDS-XML";
 
-/// Maximaler `data:`-Body (DoS-Cap, 1 MiB).
+/// Maximum `data:` body (DoS cap, 1 MiB).
 pub const MAX_DATA_URI_BODY: usize = 1024 * 1024;
 
-/// Maximale `file://`-Datei-Groesse (DoS-Cap, 16 MiB).
+/// Maximum `file://` file size (DoS cap, 16 MiB).
 pub const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 
-/// Strict vs Lax-Validierungsmodus.
+/// Strict vs lax validation mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValidationMode {
-    /// Strikte Validierung: Namespace-Pflicht + unbekannte Elemente
+    /// Strict validation: namespace mandatory + unknown elements
     /// rejected.
     Strict,
-    /// Lax: Namespace optional, unbekannte Elemente ignoriert (matcht
-    /// das Cyclone-/FastDDS-Verhalten).
+    /// Lax: namespace optional, unknown elements ignored (matches
+    /// the Cyclone/FastDDS behavior).
     Lax,
 }
 
@@ -59,18 +59,18 @@ impl Default for ValidationMode {
     }
 }
 
-/// Lade XML-Type-Libraries aus einer URI.
+/// Loads XML type libraries from a URI.
 ///
-/// Unterstuetzte Schemes:
-/// - `file:///pfad/zur/datei.xml` (oder `file:relative/path.xml`)
-/// - `data:application/xml,<inline-XML>` (RFC 2397, Base64 oder
-///   Plain-Text)
+/// Supported schemes:
+/// - `file:///path/to/file.xml` (or `file:relative/path.xml`)
+/// - `data:application/xml,<inline-XML>` (RFC 2397, Base64 or
+///   plain text)
 /// - `data:application/xml;base64,<base64>`
 ///
 /// # Errors
-/// `XmlError::UnsupportedReference` bei unbekanntem Scheme;
-/// `XmlError::ParseError` bei XML-Decode-Fehler;
-/// `XmlError::DocumentTooLarge` bei DoS-Cap-Verletzung.
+/// `XmlError::UnsupportedReference` on an unknown scheme;
+/// `XmlError::ParseError` on an XML decode error;
+/// `XmlError::DocumentTooLarge` on a DoS cap violation.
 #[cfg(feature = "std")]
 pub fn load_type_libraries_from_uri(
     uri: &str,
@@ -82,11 +82,11 @@ pub fn load_type_libraries_from_uri(
     load_type_libraries_from_string(xml_str, mode)
 }
 
-/// Lade XML-Type-Libraries direkt aus einem inline-String.
+/// Loads XML type libraries directly from an inline string.
 ///
 /// # Errors
-/// `XmlError::ParseError` bei XML-Decode-Fehler;
-/// `XmlError::Malformed` bei Strict-Mode + fehlendem Namespace.
+/// `XmlError::ParseError` on an XML decode error;
+/// `XmlError::Malformed` on strict mode + missing namespace.
 pub fn load_type_libraries_from_string(
     xml: &str,
     mode: ValidationMode,
@@ -97,15 +97,15 @@ pub fn load_type_libraries_from_string(
     parse_type_libraries(xml)
 }
 
-/// Strikt-Modus-Check: das Root-Element MUSS einen
-/// `xmlns="http://www.omg.org/spec/DDS-XML"` oder einen Prefix-bound
-/// Spec-Namespace tragen.
+/// Strict-mode check: the root element MUST carry an
+/// `xmlns="http://www.omg.org/spec/DDS-XML"` or a prefix-bound
+/// spec namespace.
 fn validate_namespace_strict(xml: &str) -> Result<(), XmlError> {
-    // Heuristischer Such-String. Ein voller XML-Parser-Pass kennt der
-    // Foundation-Layer schon — hier reicht eine Substring-Pruefung.
+    // Heuristic search string. A full XML parser pass is already
+    // known to the foundation layer — here a substring check suffices.
     if !xml.contains(DDS_XML_NAMESPACE) {
         return Err(XmlError::InvalidXml(alloc::format!(
-            "xsd_loader: strict mode verlangt xmlns=\"{DDS_XML_NAMESPACE}\""
+            "xsd_loader: strict mode requires xmlns=\"{DDS_XML_NAMESPACE}\""
         )));
     }
     Ok(())
@@ -116,13 +116,13 @@ fn fetch_uri(uri: &str) -> Result<Vec<u8>, XmlError> {
     if let Some(rest) = uri.strip_prefix("file://") {
         fetch_file(rest)
     } else if let Some(rest) = uri.strip_prefix("file:") {
-        // RFC 8089 erlaubt auch `file:relative/path` (ohne `//`).
+        // RFC 8089 also allows `file:relative/path` (without `//`).
         fetch_file(rest)
     } else if let Some(rest) = uri.strip_prefix("data:") {
         fetch_data_uri(rest)
     } else {
         Err(XmlError::InvalidXml(alloc::format!(
-            "xsd_loader: nicht unterstuetztes URI-Schema: {uri}"
+            "xsd_loader: unsupported URI scheme: {uri}"
         )))
     }
 }
@@ -143,9 +143,9 @@ fn fetch_file(path: &str) -> Result<Vec<u8>, XmlError> {
 #[cfg(feature = "std")]
 fn fetch_data_uri(rest: &str) -> Result<Vec<u8>, XmlError> {
     // RFC 2397: data:[<media>][;base64],<data>
-    let comma = rest
-        .find(',')
-        .ok_or_else(|| XmlError::InvalidXml("xsd_loader: data: URI ohne Komma-Separator".into()))?;
+    let comma = rest.find(',').ok_or_else(|| {
+        XmlError::InvalidXml("xsd_loader: data: URI without comma separator".into())
+    })?;
     let metadata = &rest[..comma];
     let payload = &rest[comma + 1..];
     if payload.len() > MAX_DATA_URI_BODY {
@@ -156,16 +156,16 @@ fn fetch_data_uri(rest: &str) -> Result<Vec<u8>, XmlError> {
     if metadata.split(';').any(|s| s == "base64") {
         decode_base64(payload)
     } else {
-        // Plain-Text (URL-Decoded waere RFC-konform; wir tolerieren
-        // unkodierten Inhalt fuer Test-Convenience).
+        // Plain text (URL-decoded would be RFC-conformant; we tolerate
+        // unencoded content for test convenience).
         Ok(percent_decode(payload).into_bytes())
     }
 }
 
 #[cfg(feature = "std")]
 fn decode_base64(s: &str) -> Result<Vec<u8>, XmlError> {
-    // Manueller Base64-Decoder — wir wollen keine neue Crate-Dep.
-    // Standard-Alphabet RFC 4648.
+    // Manual Base64 decoder — we want no new crate dependency.
+    // Standard alphabet RFC 4648.
     let s = s.trim();
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
@@ -181,7 +181,7 @@ fn decode_base64(s: &str) -> Result<Vec<u8>, XmlError> {
             b'=' | b' ' | b'\n' | b'\r' | b'\t' => continue,
             _ => {
                 return Err(XmlError::InvalidXml(
-                    "xsd_loader: ungueltiges Base64-Zeichen".into(),
+                    "xsd_loader: invalid Base64 character".into(),
                 ));
             }
         };
@@ -197,7 +197,7 @@ fn decode_base64(s: &str) -> Result<Vec<u8>, XmlError> {
 
 #[cfg(feature = "std")]
 fn percent_decode(s: &str) -> String {
-    // Minimaler %-Decoder fuer data:-URIs.
+    // Minimal %-decoder for data: URIs.
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;

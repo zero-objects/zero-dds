@@ -28,14 +28,14 @@ pub mod Outer {
             const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x9f, 0xa5, 0xdf, 0x82, 0x24, 0x30, 0x7d, 0x33, 0x46, 0x8c, 0x79, 0x2f, 0x73, 0x07]));
 
             fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
-                let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+                let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
                 <_ as zerodds_cdr::CdrEncode>::encode(&self.x, &mut writer)?;
                 out.extend_from_slice(&writer.into_bytes());
                 Ok(())
             }
 
             fn decode(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
-                let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+                let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little).xcdr2();
                 let x = <i32 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
                 Ok(Self {
                     x,
@@ -47,6 +47,22 @@ pub mod Outer {
                     "x" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.x as i64)),
                     _ => ::core::option::Option::None,
                 }
+            }
+        }
+
+        impl zerodds_cdr::CdrEncode for S {
+            fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.x, writer)?;
+                ::core::result::Result::Ok(())
+            }
+        }
+
+        impl zerodds_cdr::CdrDecode for S {
+            fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
+                let x = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+                ::core::result::Result::Ok(Self {
+                    x,
+                })
             }
         }
 

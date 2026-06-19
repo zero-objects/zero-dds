@@ -3,16 +3,15 @@
 
 //! POA — Spec §11.3.5.
 //!
-//! Top-Level-Klasse, die alle Policies + Manager + AOM zu einem
-//! lauffaehigen Adapter kombiniert. Implementiert die wichtigsten
-//! Spec-Operations:
+//! Top-level class that combines all policies + manager + AOM into a
+//! working adapter. Implements the main spec operations:
 //!
 //! * `activate_object` (SYSTEM_ID) — Spec §11.3.5.20.
 //! * `activate_object_with_id` (USER_ID) — Spec §11.3.5.20.
 //! * `deactivate_object` — Spec §11.3.5.20.
 //! * `id_to_servant` / `servant_to_id` — Spec §11.3.5.20.
-//! * `dispatch` — Request-Dispatch fuer alle 6 Modi-Kombinationen
-//!   aus ServantRetention × RequestProcessing.
+//! * `dispatch` — request dispatch for all 6 mode combinations
+//!   of ServantRetention × RequestProcessing.
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -32,24 +31,26 @@ use crate::policies::{
 use crate::servant::Servant;
 use crate::servant_manager::ServantManager;
 
-/// POA-Konfiguration — kombiniert Policies + Manager + Adapter-Name.
+/// POA configuration — combines policies + manager + adapter name.
 #[derive(Debug, Clone)]
 pub struct PoaConfig {
-    /// Adapter-Name (z.B. `"RootPOA/MyChild"`).
+    /// Adapter name (e.g. `"RootPOA/MyChild"`).
     pub adapter_name: String,
-    /// Policy-Set.
+    /// Policy set.
     pub policies: PolicySet,
-    /// POAManager-Reference.
+    /// POAManager reference.
     pub manager: Arc<PoaManager>,
 }
 
-/// POA-Hauptklasse.
+/// Main POA class.
 pub struct Poa {
     config: PoaConfig,
     aom: Mutex<ActiveObjectMap>,
     next_system_id: AtomicU64,
     default_servant: Mutex<Option<Box<dyn Servant>>>,
     servant_manager: Mutex<Option<ServantManager>>,
+    /// Child POAs (Spec §11.3.8 POA hierarchy), indexed by adapter name.
+    children: Mutex<alloc::collections::BTreeMap<String, Arc<Poa>>>,
 }
 
 impl core::fmt::Debug for Poa {
@@ -62,11 +63,11 @@ impl core::fmt::Debug for Poa {
 }
 
 impl Poa {
-    /// Erstellt einen neuen POA. Spec §11.3.6.6 Policy-Validierung
-    /// laeuft hier automatisch.
+    /// Creates a new POA. Spec §11.3.6.6 policy validation runs
+    /// here automatically.
     ///
     /// # Errors
-    /// `InvalidPolicy` bei inkompatibler Kombination.
+    /// `InvalidPolicy` on an incompatible combination.
     pub fn new(config: PoaConfig) -> PoaResult<Self> {
         config.policies.validate()?;
         let mut aom = ActiveObjectMap::default();
@@ -77,16 +78,77 @@ impl Poa {
             next_system_id: AtomicU64::new(1),
             default_servant: Mutex::new(None),
             servant_manager: Mutex::new(None),
+            children: Mutex::new(alloc::collections::BTreeMap::new()),
         })
     }
 
-    /// Adapter-Name.
+    /// `the_name` — adapter name of this POA (Spec §11.3.8.1).
+    #[must_use]
+    pub fn the_name(&self) -> &str {
+        &self.config.adapter_name
+    }
+
+    /// `create_POA` — creates a child POA with its own policy set under this
+    /// POA (Spec §11.3.8.2). The POAManager is inherited from the parent when
+    /// the caller does not supply one (here: identical manager reference).
+    ///
+    /// # Errors
+    /// `AdapterAlreadyExists` if a child with that name exists;
+    /// `InvalidPolicy` on an incompatible policy set.
+    pub fn create_poa(&self, name: &str, policies: PolicySet) -> PoaResult<Arc<Poa>> {
+        let mut children = self
+            .children
+            .lock()
+            .map_err(|_| PoaError::ObjAdapter("children mutex poisoned".into()))?;
+        if children.contains_key(name) {
+            return Err(PoaError::AdapterAlreadyExists(name.into()));
+        }
+        let child = Arc::new(Poa::new(PoaConfig {
+            adapter_name: name.into(),
+            policies,
+            manager: Arc::clone(&self.config.manager),
+        })?);
+        children.insert(name.into(), Arc::clone(&child));
+        Ok(child)
+    }
+
+    /// `find_POA` — looks up a child POA by name (Spec §11.3.8.3).
+    #[must_use]
+    pub fn find_poa(&self, name: &str) -> Option<Arc<Poa>> {
+        self.children.lock().ok()?.get(name).cloned()
+    }
+
+    /// Names of all child POAs (Spec §11.3.8 the_children).
+    #[must_use]
+    pub fn child_names(&self) -> Vec<String> {
+        self.children
+            .lock()
+            .map(|c| c.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// `destroy` a child POA by name (Spec §11.3.8.5).
+    ///
+    /// # Errors
+    /// `AdapterNonExistent` if no child with that name exists.
+    pub fn destroy_child(&self, name: &str) -> PoaResult<()> {
+        let mut children = self
+            .children
+            .lock()
+            .map_err(|_| PoaError::ObjAdapter("children mutex poisoned".into()))?;
+        if children.remove(name).is_none() {
+            return Err(PoaError::AdapterNonExistent(name.into()));
+        }
+        Ok(())
+    }
+
+    /// Adapter name.
     #[must_use]
     pub fn adapter_name(&self) -> &str {
         &self.config.adapter_name
     }
 
-    /// Policy-Set.
+    /// Policy set.
     #[must_use]
     pub fn policies(&self) -> &PolicySet {
         &self.config.policies
@@ -98,24 +160,24 @@ impl Poa {
         &self.config.manager
     }
 
-    /// Setzt den Default-Servant (USE_DEFAULT_SERVANT).
+    /// Sets the default servant (USE_DEFAULT_SERVANT).
     pub fn set_default_servant(&self, s: Box<dyn Servant>) {
         if let Ok(mut g) = self.default_servant.lock() {
             *g = Some(s);
         }
     }
 
-    /// Setzt den ServantManager (USE_SERVANT_MANAGER).
+    /// Sets the ServantManager (USE_SERVANT_MANAGER).
     pub fn set_servant_manager(&self, m: ServantManager) {
         if let Ok(mut g) = self.servant_manager.lock() {
             *g = Some(m);
         }
     }
 
-    /// `activate_object` — Spec §11.3.5.20. Verlangt SYSTEM_ID + RETAIN.
+    /// `activate_object` — Spec §11.3.5.20. Requires SYSTEM_ID + RETAIN.
     ///
     /// # Errors
-    /// `WrongPolicy` bei USER_ID oder NON_RETAIN.
+    /// `WrongPolicy` on USER_ID or NON_RETAIN.
     pub fn activate_object(&self, servant: Box<dyn Servant>) -> PoaResult<ObjectId> {
         if self.config.policies.id_assignment != IdAssignmentPolicy::System {
             return Err(PoaError::WrongPolicy(
@@ -135,7 +197,7 @@ impl Poa {
     /// `activate_object_with_id` — Spec §11.3.5.20.
     ///
     /// # Errors
-    /// `WrongPolicy` bei NON_RETAIN.
+    /// `WrongPolicy` on NON_RETAIN.
     pub fn activate_object_with_id(
         &self,
         oid: ObjectId,
@@ -152,8 +214,8 @@ impl Poa {
     /// `deactivate_object` — Spec §11.3.5.20.
     ///
     /// # Errors
-    /// `WrongPolicy` bei NON_RETAIN; `ObjectNotActive` bei
-    /// unbekannter ID.
+    /// `WrongPolicy` on NON_RETAIN; `ObjectNotActive` on an
+    /// unknown ID.
     pub fn deactivate_object(&self, oid: &ObjectId) -> PoaResult<Box<dyn Servant>> {
         if self.config.policies.servant_retention != ServantRetentionPolicy::Retain {
             return Err(PoaError::WrongPolicy(
@@ -164,30 +226,30 @@ impl Poa {
         Ok(s)
     }
 
-    /// `dispatch` — verarbeitet einen Request gemaess der aktuellen
-    /// Policy-Kombination und liefert die Reply-Bytes.
+    /// `dispatch` — processes a request according to the current
+    /// policy combination and returns the reply bytes.
     ///
-    /// Modus-Matrix:
+    /// Mode matrix:
     ///
-    /// | Retention | RequestProcessing | Verhalten |
+    /// | Retention | RequestProcessing | Behavior |
     /// |---|---|---|
-    /// | RETAIN    | USE_AOM_ONLY     | AOM-Lookup; Miss → ObjectNotActive |
-    /// | RETAIN    | USE_DEFAULT_SERVANT | AOM, Miss → DefaultServant |
-    /// | RETAIN    | USE_SERVANT_MANAGER | AOM, Miss → Activator → AOM-Insert |
-    /// | NON_RETAIN | USE_DEFAULT_SERVANT | direkt DefaultServant |
+    /// | RETAIN    | USE_AOM_ONLY     | AOM lookup; miss → ObjectNotActive |
+    /// | RETAIN    | USE_DEFAULT_SERVANT | AOM, miss → DefaultServant |
+    /// | RETAIN    | USE_SERVANT_MANAGER | AOM, miss → Activator → AOM insert |
+    /// | NON_RETAIN | USE_DEFAULT_SERVANT | DefaultServant directly |
     /// | NON_RETAIN | USE_SERVANT_MANAGER | Locator.preinvoke / postinvoke |
     ///
     /// # Errors
-    /// `AdapterInactive` wenn der POAManager INACTIVE ist; sonstige
-    /// Spec-Errors je nach Pfad.
+    /// `AdapterInactive` if the POAManager is INACTIVE; other
+    /// spec errors depending on the path.
     pub fn dispatch(
         &self,
         oid: &ObjectId,
         operation: &str,
         request_body: &[u8],
     ) -> PoaResult<Vec<u8>> {
-        // Spec §11.3.5: bei INACTIVE-Manager wird der Request mit
-        // OBJ_ADAPTER abgelehnt.
+        // Spec §11.3.5: with an INACTIVE manager the request is
+        // rejected with OBJ_ADAPTER.
         match self.config.manager.state() {
             PoaManagerState::Inactive => {
                 return Err(PoaError::AdapterInactive);
@@ -198,9 +260,9 @@ impl Poa {
                 ));
             }
             PoaManagerState::Holding => {
-                // Spec §11.3.2.1.2: Caller waere zu queuen — wir
-                // signalisieren dem Caller via WrongPolicy/Bad-
-                // InvocationOrder, dass er warten muss.
+                // Spec §11.3.2.1.2: the caller would be queued — we
+                // signal to the caller via WrongPolicy/Bad-
+                // InvocationOrder that it must wait.
                 return Err(PoaError::BadInvocationOrder(
                     "POAManager is HOLDING; request must be queued by caller".into(),
                 ));
@@ -227,8 +289,8 @@ impl Poa {
             (ServantRetentionPolicy::NonRetain, RequestProcessingPolicy::UseServantManager) => {
                 self.dispatch_via_locator(oid, operation, request_body)
             }
-            // NonRetain + UseAomOnly ist per validate() schon
-            // ausgeschlossen, aber wir sind hier defensiv.
+            // NonRetain + UseAomOnly is already excluded by
+            // validate(), but we are defensive here.
             (
                 ServantRetentionPolicy::NonRetain,
                 RequestProcessingPolicy::UseActiveObjectMapOnly,
@@ -275,14 +337,14 @@ impl Poa {
         operation: &str,
         request_body: &[u8],
     ) -> PoaResult<Vec<u8>> {
-        // 1. AOM-Lookup.
+        // 1. AOM lookup.
         {
             let aom = self.aom_lock()?;
             if let Some(s) = aom.get(oid) {
                 return Ok(s.invoke(operation, request_body));
             }
         }
-        // 2. Servant-Activator.
+        // 2. Servant activator.
         let act = {
             let g = self.servant_manager.lock().map_err(|_| {
                 PoaError::BadInvocationOrder("servant_manager mutex poisoned".into())
@@ -298,7 +360,7 @@ impl Poa {
             }
         };
         let servant = act.incarnate(oid, &self.config.adapter_name)?;
-        // Servant in AOM ablegen.
+        // Store the servant in the AOM.
         let body = servant.invoke(operation, request_body);
         self.aom_lock()?.activate(oid.clone(), servant)?;
         Ok(body)
@@ -379,6 +441,45 @@ mod tests {
     }
 
     #[test]
+    fn poa_hierarchy_create_find_destroy() {
+        let root = Poa::new(root_config(PolicySet::default())).unwrap();
+        assert_eq!(root.the_name(), "RootPOA");
+        assert!(root.child_names().is_empty());
+
+        // create_POA → child with its own policy set, findable in the parent.
+        let child = root.create_poa("Banking", PolicySet::default()).unwrap();
+        assert_eq!(child.the_name(), "Banking");
+        assert_eq!(root.child_names(), alloc::vec!["Banking".to_string()]);
+        assert!(root.find_poa("Banking").is_some());
+        assert!(root.find_poa("Nope").is_none());
+
+        // Duplicate name → AdapterAlreadyExists.
+        assert!(matches!(
+            root.create_poa("Banking", PolicySet::default()),
+            Err(PoaError::AdapterAlreadyExists(_))
+        ));
+
+        // The child is a fully functional POA (own AOM + dispatch).
+        let oid = child.activate_object(echo_servant()).unwrap();
+        assert_eq!(
+            child.dispatch(&oid, "ping", &[7, 8]).unwrap(),
+            alloc::vec![7, 8]
+        );
+
+        // Nested hierarchy: child-of-child.
+        let grandchild = child.create_poa("Accounts", PolicySet::default()).unwrap();
+        assert_eq!(grandchild.the_name(), "Accounts");
+
+        // destroy.
+        root.destroy_child("Banking").unwrap();
+        assert!(root.find_poa("Banking").is_none());
+        assert!(matches!(
+            root.destroy_child("Banking"),
+            Err(PoaError::AdapterNonExistent(_))
+        ));
+    }
+
+    #[test]
     fn default_root_dispatch_via_aom() {
         let poa = Poa::new(root_config(PolicySet::default())).unwrap();
         let oid = poa.activate_object(echo_servant()).unwrap();
@@ -448,7 +549,7 @@ mod tests {
         let oid: ObjectId = b"x".as_slice().into();
         let reply = poa.dispatch(&oid, "ping", &[1]).unwrap();
         assert_eq!(reply, alloc::vec![1]);
-        // Zweiter Dispatch sollte aus AOM kommen.
+        // The second dispatch should come from the AOM.
         let reply2 = poa.dispatch(&oid, "ping", &[2]).unwrap();
         assert_eq!(reply2, alloc::vec![2]);
     }
@@ -520,8 +621,8 @@ mod tests {
         };
         let poa = Poa::new(cfg).unwrap();
         let oid = ObjectId::system_id(1);
-        // Wir koennen nicht aktivieren, weil dispatch HOLDING checkt;
-        // aber activate_object selbst geht ohne State-Pruefung.
+        // We cannot dispatch because dispatch checks HOLDING;
+        // but activate_object itself works without a state check.
         poa.activate_object_with_id(oid.clone(), echo_servant())
             .unwrap();
         let err = poa.dispatch(&oid, "ping", &[]).unwrap_err();

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CoAP-Wire-Codec — RFC 7252 §3 + §3.1.
+//! CoAP wire codec — RFC 7252 §3 + §3.1.
 //!
-//! Implementiert encode/decode der vollstaendigen Message inkl.:
-//! * 4-Byte-Fixed-Header (Ver/T/TKL/Code/MID).
-//! * Token (0..=8 Bytes).
-//! * Options mit Delta-Encoding + Extended-Length-Mechanik (13/14).
-//! * 0xFF Payload-Marker.
-//! * Payload bis Ende des Datagramms.
+//! Implements encode/decode of the complete message including:
+//! * 4-byte fixed header (Ver/T/TKL/Code/MID).
+//! * Token (0..=8 bytes).
+//! * Options with delta encoding + extended-length mechanism (13/14).
+//! * 0xFF payload marker.
+//! * Payload up to the end of the datagram.
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -16,36 +16,36 @@ use core::fmt;
 use crate::message::{CoapCode, CoapMessage, MessageType};
 use crate::option::{CoapOption, OptionValue};
 
-/// Codec-Fehler — Spec-konform "MUST be processed as a message format
-/// error" Faelle.
+/// Codec error — spec-conformant "MUST be processed as a message format
+/// error" cases.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CodecError {
-    /// Header zu kurz (< 4 Bytes).
+    /// Header too short (< 4 bytes).
     HeaderTooShort,
     /// Spec §3 — "Implementations MUST set this field to 1 (01 binary).
     /// Other values are reserved [...]. Messages with unknown version
-    /// numbers MUST be silently ignored." Wir liefern dem Caller einen
-    /// expliziten Fehler.
+    /// numbers MUST be silently ignored." We return an explicit error
+    /// to the caller.
     UnsupportedVersion(u8),
     /// Spec §3 — "Lengths 9-15 are reserved, MUST NOT be sent, and
     /// MUST be processed as a message format error."
     ReservedTokenLength(u8),
-    /// Token reicht nicht in den verfuegbaren Bytes.
+    /// Token does not fit in the available bytes.
     TokenTruncated,
-    /// Option-Header reicht nicht in die verfuegbaren Bytes.
+    /// Option header does not fit in the available bytes.
     OptionHeaderTruncated,
     /// Spec §3.1 — "15: Reserved for the Payload Marker. If the field
     /// is set to this value but the entire byte is not the payload
     /// marker, this MUST be processed as a message format error."
     OptionDeltaIs15,
-    /// Spec §3.1 — Option-Length 15 reserved.
+    /// Spec §3.1 — Option length 15 reserved.
     OptionLengthIs15,
-    /// Option-Value reicht nicht in den verfuegbaren Bytes.
+    /// Option value does not fit in the available bytes.
     OptionValueTruncated,
     /// Spec §3 — "The presence of a marker followed by a zero-length
     /// payload MUST be processed as a message format error."
     PayloadMarkerWithoutPayload,
-    /// Token-Length ist > 8 beim Encode (Caller-Fehler).
+    /// Token length is > 8 on encode (caller error).
     EncodeTokenTooLong,
 }
 
@@ -71,10 +71,10 @@ impl fmt::Display for CodecError {
 #[cfg(feature = "std")]
 impl std::error::Error for CodecError {}
 
-/// Encodiert eine [`CoapMessage`] zum Wire-Format-Byte-Slice.
+/// Encodes a [`CoapMessage`] to a wire-format byte slice.
 ///
 /// # Errors
-/// Liefert [`CodecError::EncodeTokenTooLong`] wenn `token.len() > 8`.
+/// Returns [`CodecError::EncodeTokenTooLong`] if `token.len() > 8`.
 pub fn encode(msg: &CoapMessage) -> Result<Vec<u8>, CodecError> {
     if msg.token.len() > 8 {
         return Err(CodecError::EncodeTokenTooLong);
@@ -123,29 +123,29 @@ pub fn encode(msg: &CoapMessage) -> Result<Vec<u8>, CodecError> {
     Ok(out)
 }
 
-/// Berechnet `(nibble, extended_bytes)` fuer Delta- oder Length-
-/// Encoding (RFC 7252 §3.1).
+/// Computes `(nibble, extended_bytes)` for delta or length
+/// encoding (RFC 7252 §3.1).
 fn encode_extended(value: u32) -> (u8, Vec<u8>) {
     if value < 13 {
         #[allow(clippy::cast_possible_truncation)]
         (value as u8, Vec::new())
     } else if value < 269 {
-        // 13: 1 byte Extended = value - 13.
+        // 13: 1-byte extended = value - 13.
         #[allow(clippy::cast_possible_truncation)]
         let ext = (value - 13) as u8;
         (13, alloc::vec![ext])
     } else {
-        // 14: 2 byte Extended = value - 269 (network byte order).
+        // 14: 2-byte extended = value - 269 (network byte order).
         #[allow(clippy::cast_possible_truncation)]
         let ext = (value - 269) as u16;
         (14, ext.to_be_bytes().to_vec())
     }
 }
 
-/// Decodiert eine [`CoapMessage`] aus dem Wire-Format-Byte-Slice.
+/// Decodes a [`CoapMessage`] from the wire-format byte slice.
 ///
 /// # Errors
-/// Siehe [`CodecError`].
+/// See [`CodecError`].
 pub fn decode(bytes: &[u8]) -> Result<CoapMessage, CodecError> {
     if bytes.len() < 4 {
         return Err(CodecError::HeaderTooShort);
@@ -156,7 +156,7 @@ pub fn decode(bytes: &[u8]) -> Result<CoapMessage, CodecError> {
         return Err(CodecError::UnsupportedVersion(version));
     }
     let t_bits = (h0 >> 4) & 0b11;
-    // 2-Bit-Wert ist immer 0..=3 ⇒ from_bits liefert immer Some.
+    // 2-bit value is always 0..=3 ⇒ from_bits always returns Some.
     let message_type = MessageType::from_bits(t_bits).ok_or(CodecError::HeaderTooShort)?;
     let tkl = h0 & 0x0F;
     if tkl > 8 {
@@ -173,13 +173,13 @@ pub fn decode(bytes: &[u8]) -> Result<CoapMessage, CodecError> {
     let token = bytes[cursor..token_end].to_vec();
     cursor = token_end;
 
-    // Options bis 0xFF oder Ende.
+    // Options up to 0xFF or end.
     let mut options: Vec<CoapOption> = Vec::new();
     let mut current_number: u16 = 0;
     while cursor < bytes.len() {
         let b = bytes[cursor];
         if b == 0xFF {
-            // Payload-Marker.
+            // Payload marker.
             cursor += 1;
             if cursor >= bytes.len() {
                 return Err(CodecError::PayloadMarkerWithoutPayload);
@@ -212,7 +212,7 @@ pub fn decode(bytes: &[u8]) -> Result<CoapMessage, CodecError> {
         });
     }
 
-    // Payload (falls Marker konsumiert wurde).
+    // Payload (if the marker was consumed).
     let payload = if cursor < bytes.len() {
         bytes[cursor..].to_vec()
     } else {
@@ -230,7 +230,7 @@ pub fn decode(bytes: &[u8]) -> Result<CoapMessage, CodecError> {
     })
 }
 
-/// Liest Extended-Bytes nach Spec §3.1 (Delta/Length Nibble 13/14).
+/// Reads extended bytes per Spec §3.1 (delta/length nibble 13/14).
 fn decode_extended(nibble: u8, bytes: &[u8], cursor: &mut usize) -> Result<u32, CodecError> {
     match nibble {
         v if v < 13 => Ok(u32::from(v)),
@@ -250,7 +250,7 @@ fn decode_extended(nibble: u8, bytes: &[u8], cursor: &mut usize) -> Result<u32, 
             *cursor += 2;
             Ok(v)
         }
-        // 15 wurde vom Caller bereits abgefangen.
+        // 15 was already caught by the caller.
         _ => Err(CodecError::OptionHeaderTruncated),
     }
 }
@@ -268,8 +268,8 @@ mod tests {
 
     #[test]
     fn encodes_minimum_get_request_to_4_byte_header() {
-        // RFC 7252 §3 — kleinste Message: GET ohne Token / Options /
-        // Payload.
+        // RFC 7252 §3 — smallest message: GET without token / options /
+        // payload.
         let m = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 0x1234);
         let bytes = encode(&m).expect("encode");
         assert_eq!(bytes.len(), 4);
@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn encode_decode_round_trip_preserves_header_fields() {
-        // Header-Round-Trip.
+        // Header round-trip.
         for t in [
             MessageType::Confirmable,
             MessageType::NonConfirmable,
@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn unsupported_version_decode_fails() {
-        // Spec §3 — Version != 1.
+        // Spec §3 — version != 1.
         let bytes = [0b1000_0000_u8, 0, 0, 0]; // Ver=2.
         assert_eq!(decode(&bytes), Err(CodecError::UnsupportedVersion(2)));
     }
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn token_truncated_decode_fails() {
-        // TKL=4 aber nur 2 Token-Bytes vorhanden.
+        // TKL=4 but only 2 token bytes present.
         let bytes = [0b0100_0100_u8, 1, 0, 0, 0xAA, 0xBB];
         assert_eq!(decode(&bytes), Err(CodecError::TokenTruncated));
     }
@@ -364,7 +364,7 @@ mod tests {
         // [hdr 4][nibble (13<<4|0)=0xD0][delta-ext = 7]
         assert_eq!(bytes[4], 0xD0);
         assert_eq!(bytes[5], 7);
-        // Round-Trip.
+        // Round-trip.
         let parsed = decode(&bytes).expect("decode");
         assert_eq!(parsed.options.len(), 1);
         assert_eq!(parsed.options[0].number, 20);
@@ -407,7 +407,7 @@ mod tests {
 
     #[test]
     fn delta_encoding_sums_across_multiple_options() {
-        // Spec §3.1 — Delta-Encoding-Basis.
+        // Spec §3.1 — delta-encoding basis.
         let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 1);
         m.options = alloc::vec![
             CoapOption {
@@ -433,11 +433,11 @@ mod tests {
 
     #[test]
     fn payload_marker_separates_options_from_payload() {
-        // Spec §3 — 0xFF Payload-Marker.
+        // Spec §3 — 0xFF payload marker.
         let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::CONTENT, 1);
         m.payload = alloc::vec![1, 2, 3, 4];
         let bytes = encode(&m).expect("encode");
-        // Letzte 5 Bytes = 0xFF + payload.
+        // Last 5 bytes = 0xFF + payload.
         let n = bytes.len();
         assert_eq!(bytes[n - 5], 0xFF);
         assert_eq!(&bytes[n - 4..], &[1, 2, 3, 4]);
@@ -454,7 +454,7 @@ mod tests {
 
     #[test]
     fn full_observe_request_encode_decode_round_trip() {
-        // RFC 7641 §2 — Observe-Register-Request mit Uri-Path.
+        // RFC 7641 §2 — Observe-register request with Uri-Path.
         let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 0xBEEF);
         m.token = alloc::vec![0x42];
         m.options = alloc::vec![
@@ -466,12 +466,12 @@ mod tests {
         let parsed = decode(&bytes).expect("decode");
         assert_eq!(parsed.token, alloc::vec![0x42]);
         assert_eq!(parsed.options.len(), 3);
-        // Reihenfolge: Observe (6), Uri-Path (11), Uri-Path (11).
+        // Order: Observe (6), Uri-Path (11), Uri-Path (11).
         assert_eq!(parsed.options[0].number, numbers::OBSERVE);
         assert_eq!(parsed.options[1].number, numbers::URI_PATH);
         assert_eq!(parsed.options[2].number, numbers::URI_PATH);
-        // Decoded values are Opaque (Decoder kennt nicht die format-
-        // semantik); Caller konvertiert.
+        // Decoded values are Opaque (the decoder does not know the
+        // format semantics); the caller converts.
     }
 
     #[test]

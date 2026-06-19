@@ -1,8 +1,8 @@
-//! Integrationstests fuer C5.1-b Blocks F/G/H + C5.2 PSM-CXX-Skeleton.
+//! Integration tests for C5.1-b Blocks F/G/H + C5.2 PSM-CXX skeleton.
 //!
-//! Diese Tests sind bewusst getrennt von `fixtures.rs` (Block A-E) — sie
-//! testen die statisch emittierten DDS-Header (Status/QoS/DCPS/PSM-CXX)
-//! als Snapshots gegen Marker-Listen.
+//! These tests are intentionally separate from `fixtures.rs` (Block A-E) —
+//! they test the statically emitted DDS headers (Status/QoS/DCPS/PSM-CXX)
+//! as snapshots against marker lists.
 
 #![allow(
     clippy::expect_used,
@@ -51,7 +51,7 @@ fn render_dcps() -> String {
 fn block_f_renders_thirteen_class_definitions() {
     let s = render_status();
     let class_count = s.matches("class ").filter(|_| true).count();
-    // Mindestens 13 Klassen + 2 Forward-Decls (`enum class SampleRejectedState`,
+    // At least 13 classes + 2 forward decls (`enum class SampleRejectedState`,
     // `class QosPolicyCount;`):
     assert!(class_count >= 13, "got {class_count}");
     for name in status_class_names() {
@@ -83,7 +83,7 @@ fn block_g_renders_all_22_policies_with_equality() {
             with_eq += 1;
         }
     }
-    // Alle 22 Policies haben Felder, also alle bekommen ==.
+    // All 22 policies have fields, so all of them get ==.
     assert_eq!(with_eq, 22);
 }
 
@@ -151,9 +151,9 @@ fn psm_cxx_skeleton_has_pragma_once_and_all_blocks() {
 
 #[test]
 fn psm_cxx_reference_value_pattern_for_struct_enum_sequence() {
-    // Cross-Compile-Test: existing C5.1-a-Fixture (struct, enum, sequence)
-    // wird mit dem PSM-CXX-Skeleton-Header geprefixed. Ergebnis muss
-    // beide Bloecke unverletzt enthalten.
+    // Cross-compile test: existing C5.1-a fixture (struct, enum, sequence)
+    // is prefixed with the PSM-CXX skeleton header. The result must
+    // contain both blocks intact.
     let user_idl = "struct S { long x; }; enum E { A, B }; struct V { sequence<long> s; };";
     let ast =
         zerodds_idl::parse(user_idl, &zerodds_idl::config::ParserConfig::default()).expect("parse");
@@ -162,10 +162,10 @@ fn psm_cxx_reference_value_pattern_for_struct_enum_sequence() {
     let mut combined = emit_full_psm_cxx_skeleton().expect("psm");
     combined.push_str(&user_cpp);
 
-    // PSM-CXX-Block-Anker:
+    // PSM-CXX block anchors:
     assert!(combined.contains("class Reference"));
     assert!(combined.contains("class Value"));
-    // Userland-Block-Anker:
+    // Userland block anchors:
     assert!(combined.contains("class S "));
     assert!(combined.contains("enum class E : int32_t"));
     assert!(combined.contains("std::vector<int32_t> s_;"));
@@ -196,8 +196,8 @@ fn psm_cxx_listener_header_has_13_status_callbacks() {
 
 #[test]
 fn psm_cxx_skeleton_compiles_with_existing_fixtures() {
-    // Sanity: jedes existing C5.1-a-Fixture darf nach dem Skeleton-Append
-    // weiterhin alle Marker enthalten.
+    // Sanity: every existing C5.1-a fixture must still contain all markers
+    // after the skeleton append.
     const SOURCES: &[(&str, &str)] = &[
         ("prim_struct", include_str!("fixtures/prim_struct.idl")),
         (

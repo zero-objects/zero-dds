@@ -176,7 +176,7 @@ Anwender wählen pro Anwendung einen Pfad:
 
 Die zwei Pfade teilen sich nichts ausser dem Wire-Format (XCDR2-LE)
 und der Domain-ID. Sie können in der gleichen Process koexistieren,
-sind aber nicht durch Cross-Calls verbunden — das ist Phase-2.
+sind aber nicht durch Cross-Calls verbunden — das ist v1.1 (Multi-Process-Bridge).
 
 ### §1.5 Schichten-Position
 
@@ -269,10 +269,9 @@ Zusätzlich: `wait_for_data(timeout_secs)` und
 
 `GuardCondition` und `WaitSet` sind in v1.0 nur über
 `zerodds._core` direkt erreichbar; das aeussere `zerodds`-Namespace
-(`__init__.py`) re-exportiert sie absichtlich noch nicht, weil die
-WaitSet-Surface in v1.1 zusammen mit `ReadCondition`/`QueryCondition`
-fertig wird (siehe §6 Phase-2-Plan). `ReadCondition` und
-`QueryCondition` sind Phase-2.
+(`__init__.py`) re-exportiert sie absichtlich noch nicht im äußeren
+Namespace; `ReadCondition`/`QueryCondition` sind über §6.6 verfügbar
+(über `zerodds._core`), das äußere WaitSet-Namespace-Re-Export folgt in v1.1.
 
 ### §2.7 ShapeType — Cross-Vendor-Interop-Type
 
@@ -372,7 +371,7 @@ verifiziert.
 
 ## §5 Multi-Process / Cross-Vendor
 
-| Szenario | RC1-Status | Mechanismus |
+| Szenario | v1.0-Status | Mechanismus |
 |---|---|---|
 | Single-Process Python ↔ Python | ✅ done | über `zerodds._core` und `crates/dcps` |
 | Multi-Process Python ↔ Python (lokal, gleiches Domain) | ✅ done | `crates/dcps` spawnt SPDP/SEDP-Endpoints, RTPS über UDP |
@@ -385,11 +384,10 @@ verifiziert.
 | Status-Listener-Callbacks | ✅ done | siehe §6.5 |
 | IDL-Topic mit Codegen-Loop | ✅ done | `IdlTopic[T]` (siehe §6.1) |
 
-## §6 Erweiterte Surface (alle in v1.0 enthalten)
+## §6 Erweiterte Surface (in v1.0 enthalten)
 
-Diese Punkte waren ursprünglich als Phase-2 geplant und sind im
-Verlauf des Audits in v1.0 gezogen worden. Sie nutzen Code-Pfade, die
-parallel zur Default-QoS-Surface stehen, und sind opt-in.
+Diese opt-in-Punkte nutzen Code-Pfade, die parallel zur
+Default-QoS-Surface stehen.
 
 - **§6.1 `IdlTopic` mit Codegen-Loop**: `IdlTopic[T]` mit
   `IdlWriter`/`IdlReader` (pure-Python-Wrapper ueber
@@ -434,7 +432,7 @@ parallel zur Default-QoS-Surface stehen, und sind opt-in.
 Vendor-Spec, semver:
 
 - v1.0 = aktuelle Surface (PyO3-13-PyClasses + `@idl_struct` +
-  pure-`ctypes`-Loader). RC1-Surface.
+  pure-`ctypes`-Loader).
 - v1.1 = + AsyncIO + QoS-Surface + Listener-Callbacks.
 - v1.2 = + ReadCondition / QueryCondition + sphinx-Docs.
 - v2.0 = + `create_idl_topic` mit Codegen-Loop.

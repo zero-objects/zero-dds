@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Repository-ID-Builder — Spec §10.7.3.1.
+//! Repository ID builder — Spec §10.7.3.1.
 //!
-//! Default-Form: `IDL:<scoped-name>:<major>.<minor>` mit `/` als
-//! Modul-Separator. Vendor-Prefixes ueber `#pragma prefix "..."`
-//! sind hier nicht modelliert (Caller-Concern).
+//! Default form: `IDL:<scoped-name>:<major>.<minor>` with `/` as the
+//! module separator. Vendor prefixes via `#pragma prefix "..."` are
+//! not modeled here (a caller concern).
 
 use alloc::format;
 use alloc::string::String;
 
-/// Baut eine Repository-ID aus einem Modulpfad + Type-Name + Version.
+/// Builds a repository ID from a module path + type name + version.
 ///
-/// Beispiel:
+/// Example:
 /// `build_repository_id(&["MyApp", "Trading"], "Order", 1, 0)`
 /// → `"IDL:MyApp/Trading/Order:1.0"`.
 #[must_use]

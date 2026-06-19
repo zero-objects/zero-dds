@@ -3,48 +3,49 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-dcps/badge.svg)](https://docs.rs/zerodds-dcps)
 
-DCPS Public API (OMG DDS 1.4 §2.2.2) fuer den
-[ZeroDDS](https://zerodds.org)-Stack. Live-Runtime mit SPDP/SEDP/WLP,
-Built-in-Topics, TypeLookup-Service, Durability-Backend, Conditions
-und WaitSet. Safety classification: **STANDARD**.
+DCPS public API (OMG DDS 1.4 §2.2.2) for the
+[ZeroDDS](https://zerodds.org) stack. Live runtime with SPDP/SEDP/WLP,
+built-in topics, TypeLookup service, durability backend, conditions
+and WaitSet. Safety classification: **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| OMG DDS 1.4 | §2.2 (DCPS-Module) |
-| DDSI-RTPS 2.5 | §8.5 (Discovery), §8.4.13 (WLP), §9.6.4.8 (Inline-QoS) |
-| OMG XTypes 1.3 | §7.6.3.3 (TypeLookup-Service), §7.6.3.7 (TypeConsistency) |
+| OMG DDS 1.4 | §2.2 (DCPS module) |
+| DDSI-RTPS 2.5 | §8.5 (discovery), §8.4.13 (WLP), §9.6.4.8 (inline QoS) |
+| OMG XTypes 1.3 | §7.6.3.3 (TypeLookup service), §7.6.3.7 (type consistency) |
 
-## Was ist drin
+## What's inside
 
-- **Entity-Hierarchie** — `DomainParticipantFactory` als Singleton,
-  `DomainParticipant` als Wurzel, darunter `Publisher`/`DataWriter`
-  bzw. `Subscriber`/`DataReader`.
-- **Typed Writer/Reader** — `DataWriter<T>` / `DataReader<T>` mit
-  `DdsType`-Bound. End-User implementieren `DdsType` per Hand oder
-  via `zerodds-idl-rust`-Codegen.
-- **Topics** — `Topic<T>` plus `ContentFilteredTopic` (SQL92-Filter)
-  und `MultiTopic` (Hash-Join).
-- **Built-in-Topics** — `DCPSParticipant`, `DCPSTopic`,
+- **Entity hierarchy** — `DomainParticipantFactory` as a singleton,
+  `DomainParticipant` as the root, below it `Publisher`/`DataWriter`
+  and `Subscriber`/`DataReader`.
+- **Typed writer/reader** — `DataWriter<T>` / `DataReader<T>` with a
+  `DdsType` bound. End users implement `DdsType` by hand or via
+  `zerodds-idl-rust` codegen.
+- **Topics** — `Topic<T>` plus `ContentFilteredTopic` (SQL92 filter)
+  and `MultiTopic` (hash join).
+- **Built-in topics** — `DCPSParticipant`, `DCPSTopic`,
   `DCPSPublication`, `DCPSSubscription` (DDS 1.4 §2.2.5).
-- **QoS-Vollabdeckung** — alle 22 Spec-Policies, inkl. Exclusive-
-  Ownership-Filter im Sample-Lieferpfad und Time-Based-Filter.
-- **Discovery + TypeLookup** — Live-Runtime spawnt SPDP-/SEDP-/WLP-/
-  TypeLookup-Endpoints; Cross-Vendor-Interop gegen Cyclone-DDS und
-  Fast-DDS verifiziert.
-- **Durability** — Transient-In-Memory- und Persistent-On-Disk-
-  Backends mit Sequence-orderierter Replay-Liste.
+- **Full QoS coverage** — all 22 spec policies, including the
+  exclusive-ownership filter in the sample delivery path and the
+  time-based filter.
+- **Discovery + TypeLookup** — the live runtime spawns SPDP/SEDP/WLP/
+  TypeLookup endpoints; cross-vendor interop verified against Cyclone
+  DDS and Fast-DDS.
+- **Durability** — transient in-memory and persistent on-disk backends
+  with a sequence-ordered replay list.
 - **Conditions/WaitSet** — `ReadCondition`, `QueryCondition`,
-  `GuardCondition`, `StatusCondition` und `WaitSet`.
-- **Security-Hook** — opt-in `security`-Feature spannt das
-  `SharedSecurityGate` ueber den UDP-Hot-Path (DDS-Security 1.2).
+  `GuardCondition`, `StatusCondition` and `WaitSet`.
+- **Security hook** — the opt-in `security` feature stretches the
+  `SharedSecurityGate` over the UDP hot path (DDS-Security 1.2).
 
-## Schichten-Position
+## Layer position
 
-Layer 4 — Core Services. Bauend auf Layer 1
+Layer 4 — core services. Built on layer 1
 (`zerodds-foundation`, `-cdr`, `-qos`, `-types`, `-time-service`),
-Layer 2 (`-rtps`, `-discovery`, `-transport-*`) und Layer 3
+layer 2 (`-rtps`, `-discovery`, `-transport-*`) and layer 3
 (`-idl`, `-idl-rust`, `-xml`).
 
 ## Quickstart
@@ -53,8 +54,8 @@ Layer 2 (`-rtps`, `-discovery`, `-transport-*`) und Layer 3
 use zerodds_dcps::*;
 
 let factory = DomainParticipantFactory::instance();
-// Live-Mode: spawnt Runtime, bindet UDP-Sockets, faehrt SPDP/SEDP.
-// (Hier `_offline` fuer Doctest-Reproduzierbarkeit.)
+// Live mode: spawns the runtime, binds UDP sockets, runs SPDP/SEDP.
+// (Here `_offline` for doctest reproducibility.)
 let participant = factory.create_participant_offline(0, DomainParticipantQos::default());
 let topic = participant
     .create_topic::<RawBytes>("Chatter", TopicQos::default())
@@ -68,23 +69,23 @@ let writer = publisher
 writer.write(&RawBytes::new(vec![1, 2, 3])).expect("write");
 ```
 
-## Feature-Flags
+## Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std` | ✅ | Aktiviert die Live-Runtime, Threads, UDP-Sockets, Conditions/WaitSet, Durability-Backends. Implies `alloc`. |
-| `alloc` | ✅ (via `std`) | Pflichtig: `Vec`/`String`/`BTreeMap`. |
-| `safety` | ❌ | Reserviert fuer zukuenftige Safety-Build-Constraints. |
-| `security` | ❌ | Aktiviert das `SharedSecurityGate` im UDP-Hot-Path (DDS-Security 1.2). |
-| `live-interop` | ❌ | Aktiviert Cyclone-DDS-/Fast-DDS-Live-Tests gegen Lab-Hosts. |
-| `flatdata-integration` | ❌ | ADR-0005: opt-in Dual-Stack-Schreib-/Lesepfad ueber `FlatStruct`. |
-| `inspect` | ❌ | Embargo: PDE-Reality-Inspector-Tap-Hooks. Wird im Public-Mirror entfernt. |
+| `std` | ✅ | Enables the live runtime, threads, UDP sockets, conditions/WaitSet, durability backends. Implies `alloc`. |
+| `alloc` | ✅ (via `std`) | Mandatory: `Vec`/`String`/`BTreeMap`. |
+| `safety` | ❌ | Reserved for future safety build constraints. |
+| `security` | ❌ | Enables the `SharedSecurityGate` in the UDP hot path (DDS-Security 1.2). |
+| `live-interop` | ❌ | Enables Cyclone DDS / Fast-DDS live tests against lab hosts. |
+| `flatdata-integration` | ❌ | ADR-0005: opt-in dual-stack write/read path via `FlatStruct`. |
+| `inspect` | ❌ | Embargoed: PDE Reality-Inspector tap hooks. Removed in the public mirror. |
 
-## Stabilitaet
+## Stability
 
-Alle `pub`-Items sind ab `1.0.0` stabil; Breaking-Changes erfordern
-Major-Version-Bump. Doc-hidden `__push_raw`/`__drain_pending`-Hooks
-sind interne Test-API und nicht stabil.
+All `pub` items are stable from `1.0.0` onward; breaking changes
+require a major-version bump. The doc-hidden `__push_raw`/`__drain_pending`
+hooks are internal test API and not stable.
 
 ## Tests
 
@@ -92,12 +93,12 @@ sind interne Test-API und nicht stabil.
 cargo test -p zerodds-dcps
 ```
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../../LICENSE).
+Apache-2.0. See [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
-- [`docs/architecture/02_architecture.md`](../../docs/architecture/02_architecture.md) — Schichten-Architektur
-- [`docs/architecture/04_safety_by_architecture.md`](../../docs/architecture/04_safety_by_architecture.md) — Safety-Klassifikation
-- [`docs/spec-coverage/dds-1.4.md`](../../docs/spec-coverage/dds-1.4.md) — Spec-Coverage-Tabelle
+- [`docs/architecture/02_architecture.md`](../../docs/architecture/02_architecture.md) — layered architecture
+- [`docs/architecture/04_safety_by_architecture.md`](../../docs/architecture/04_safety_by_architecture.md) — safety classification
+- [`docs/spec-coverage/dds-1.4.md`](../../docs/spec-coverage/dds-1.4.md) — spec-coverage table

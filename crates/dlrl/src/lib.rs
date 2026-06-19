@@ -5,23 +5,23 @@
 //!
 //! Crate `zerodds-dlrl`. Safety classification: **STANDARD**.
 //!
-//! DLRL (Data Local Reconstruction Layer) ist ein optionales DDS-
-//! Profil, das oberhalb von DCPS einen objekt-zentrierten Cache mit
-//! Identity-Tracking, Relationship-Resolution und transaktionalen
-//! Updates liefert (Spec §2.1.3).
+//! DLRL (Data Local Reconstruction Layer) is an optional DDS profile
+//! that provides an object-centric cache on top of DCPS with identity
+//! tracking, relationship resolution, and transactional updates
+//! (Spec §2.1.3).
 //!
-//! # Module
+//! # Modules
 //!
-//! * [`object_cache`] — Object-Cache mit Identity-Tracking + WeakRef
+//! * [`object_cache`] — object cache with identity tracking + WeakRef
 //!   (Spec §B.2 + §B.6).
-//! * [`transaction`] — Transaktions-Semantik mit Optimistic-Concurrency
+//! * [`transaction`] — transaction semantics with optimistic concurrency
 //!   (Spec §B.7.4).
-//! * [`relationship`] — Relationship-Resolver (mono/bi-direktional,
-//!   compositional/referentiell, kaskadiertes Update/Delete) (Spec §B.5).
+//! * [`relationship`] — relationship resolver (mono/bidirectional,
+//!   compositional/referential, cascaded update/delete) (Spec §B.5).
 //! * [`subscription`] — HomeFactory/HomeListener/ObjectListener
 //!   (Spec §B.3 + §B.6).
-//! * [`query`] — Query-Engine mit Filter/Order/Limit (Spec §B.7).
-//! * [`pragma`] — DLRL-Pragma-Parser (`#pragma DCPS_DATA_TYPE` etc.).
+//! * [`query`] — query engine with filter/order/limit (Spec §B.7).
+//! * [`pragma`] — DLRL pragma parser (`#pragma DCPS_DATA_TYPE` etc.).
 
 #![no_std]
 #![forbid(unsafe_code)]

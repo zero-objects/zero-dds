@@ -1,7 +1,7 @@
-"""Tests fuer §6.6 — ReadCondition + QueryCondition + State-Bitmask-Konstanten.
+"""Tests for §6.6 — ReadCondition + QueryCondition + state bitmask constants.
 
-Verifiziert Konstruktion, Attach an WaitSet, und SQL-Filter-Validierung
-fuer QueryCondition.
+Verifies construction, attaching to a WaitSet, and SQL filter validation
+for QueryCondition.
 """
 
 from __future__ import annotations
@@ -12,12 +12,12 @@ import zerodds
 
 pytestmark = pytest.mark.skipif(
     not getattr(zerodds, "_CORE_AVAILABLE", False),
-    reason="zerodds._core nicht kompiliert — maturin develop noetig",
+    reason="zerodds._core not compiled — maturin develop needed",
 )
 
 
 # ---------------------------------------------------------------------------
-# State-Bitmask-Konstanten (§6.6, DDS 1.4 §2.2.2.5.1.4)
+# State bitmask constants (§6.6, DDS 1.4 §2.2.2.5.1.4)
 # ---------------------------------------------------------------------------
 
 
@@ -47,7 +47,7 @@ def test_instance_state_constants():
 
 
 def test_read_condition_constructible():
-    """§6.6 — ReadCondition mit drei Bitmasks."""
+    """§6.6 — ReadCondition with three bitmasks."""
     rc = zerodds.ReadCondition(
         zerodds.sample_state.ANY,
         zerodds.view_state.ANY,
@@ -59,7 +59,7 @@ def test_read_condition_constructible():
 
 
 def test_read_condition_modes():
-    """§6.6 — state_check_mode='any'|'always'|'never' beeinflusst Trigger."""
+    """§6.6 — state_check_mode='any'|'always'|'never' affects the trigger."""
     rc_any = zerodds.ReadCondition(3, 3, 7, "any")
     assert rc_any.get_trigger_value() is True
 
@@ -83,8 +83,8 @@ def test_read_condition_attaches_to_waitset():
     )
     ws = zerodds.WaitSet()
     ws.attach_read_condition(rc)
-    # WaitSet.wait wirft TimeoutError, weil rc.trigger == "any"-Mode
-    # in offline-Pfad nicht greift; wir testen nur, dass attach klappt.
+    # WaitSet.wait raises TimeoutError because the rc.trigger == "any" mode
+    # does not take effect on the offline path; we only test that attach works.
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ def test_read_condition_attaches_to_waitset():
 
 
 def test_query_condition_constructible_simple_filter():
-    """§6.6 — QueryCondition mit gueltigem SQL92-Filter."""
+    """§6.6 — QueryCondition with a valid SQL92 filter."""
     qc = zerodds.QueryCondition(
         zerodds.sample_state.ANY,
         zerodds.view_state.ANY,
@@ -105,7 +105,7 @@ def test_query_condition_constructible_simple_filter():
 
 
 def test_query_condition_with_parameters():
-    """§6.6 — QueryCondition akzeptiert positional Query-Parameter (%0, %1, ...)."""
+    """§6.6 — QueryCondition accepts positional query parameters (%0, %1, ...)."""
     qc = zerodds.QueryCondition(
         zerodds.sample_state.ANY,
         zerodds.view_state.ANY,
@@ -117,7 +117,7 @@ def test_query_condition_with_parameters():
 
 
 def test_query_condition_invalid_sql_raises():
-    """§6.6 — Ungueltige SQL-Expression → RuntimeError im Konstruktor."""
+    """§6.6 — invalid SQL expression → RuntimeError in the constructor."""
     with pytest.raises(RuntimeError, match="QueryCondition"):
         zerodds.QueryCondition(
             zerodds.sample_state.ANY,

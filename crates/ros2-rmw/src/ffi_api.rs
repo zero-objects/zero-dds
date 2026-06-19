@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! REP-2007 RMW C-API Skeleton — Rust-Schicht zur Implementierung
-//! eines `rmw_zerodds`-Library.
+//! REP-2007 RMW C-API skeleton — Rust layer for implementing
+//! an `rmw_zerodds` library.
 //!
-//! Spec REP-2007 + `rmw/rmw.h` (rmw 4.x). Dieses Modul liefert die
-//! Rust-Side-Conversions + Result-Codes; den eigentlichen
-//! `extern "C"`-Wrapper baut der Caller in einer dedizierten
-//! `rmw-zerodds-shim`-Crate, da das C-Build-Setup (cbindgen +
-//! ament-cmake-Hooks) ROS-2-Distribution-spezifisch ist.
+//! Spec REP-2007 + `rmw/rmw.h` (rmw 4.x). This module provides the
+//! Rust-side conversions + result codes; the actual
+//! `extern "C"` wrapper is built by the caller in a dedicated
+//! `rmw-zerodds-shim` crate, since the C build setup (cbindgen +
+//! ament-cmake hooks) is ROS-2-distribution-specific.
 
 use alloc::string::String;
 
@@ -33,13 +33,13 @@ pub enum RmwRet {
 }
 
 impl RmwRet {
-    /// `true` wenn Return-Code OK.
+    /// `true` if the return code is OK.
     #[must_use]
     pub const fn is_ok(self) -> bool {
         matches!(self, Self::Ok)
     }
 
-    /// Wire-Wert (i32).
+    /// Wire value (i32).
     #[must_use]
     pub const fn to_i32(self) -> i32 {
         self as i32
@@ -50,25 +50,25 @@ impl RmwRet {
 /// Value: `"rmw_zerodds_cpp"` per Convention (`rmw_<vendor>_<lang>`).
 pub const RMW_IMPLEMENTATION_IDENTIFIER: &str = "rmw_zerodds_cpp";
 
-/// `rmw_node_t` — Logical Handle eines Participants. Spec REP-2007 §5.1.
+/// `rmw_node_t` — logical handle of a participant. Spec REP-2007 §5.1.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RmwNode {
-    /// Implementation-Identifier (must match `RMW_IMPLEMENTATION_IDENTIFIER`).
+    /// Implementation identifier (must match `RMW_IMPLEMENTATION_IDENTIFIER`).
     pub implementation_identifier: String,
-    /// Node-Name (lokal eindeutig pro `rmw_init_options_t::context_handle`).
+    /// Node name (locally unique per `rmw_init_options_t::context_handle`).
     pub name: String,
-    /// Node-Namespace (typisch `/`).
+    /// Node namespace (typically `/`).
     pub namespace: String,
-    /// Domain-Id (DDS-Domain-ID).
+    /// Domain ID (DDS domain ID).
     pub domain_id: u32,
 }
 
-/// Validierung der RMW-Implementation-Identifier-Constraint
-/// (Spec REP-2007 §4.7: Cross-RMW-Handle-Mixing schlaegt fehl).
+/// Validation of the RMW implementation-identifier constraint
+/// (Spec REP-2007 §4.7: cross-RMW handle mixing fails).
 ///
 /// # Errors
-/// `RmwRet::IncorrectRmwImplementation` wenn der Identifier nicht
-/// `RMW_IMPLEMENTATION_IDENTIFIER` ist.
+/// `RmwRet::IncorrectRmwImplementation` if the identifier is not
+/// `RMW_IMPLEMENTATION_IDENTIFIER`.
 pub fn check_rmw_identifier(actual: &str) -> Result<(), RmwRet> {
     if actual == RMW_IMPLEMENTATION_IDENTIFIER {
         Ok(())
@@ -77,9 +77,8 @@ pub fn check_rmw_identifier(actual: &str) -> Result<(), RmwRet> {
     }
 }
 
-/// Mappt eine Rust-Result-Variante auf einen `rmw_ret_t`. Wird von
-/// dem `extern "C"`-Wrapper benutzt um interne Fehler an C-Caller
-/// zu propagieren.
+/// Maps a Rust result variant to an `rmw_ret_t`. Used by
+/// the `extern "C"` wrapper to propagate internal errors to C callers.
 #[must_use]
 pub fn map_to_rmw_ret<E>(r: Result<(), E>) -> RmwRet {
     match r {

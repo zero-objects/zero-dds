@@ -1,57 +1,67 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! IDL4 → Java-17-Source-Codegen (OMG IDL4-Java-Mapping v1.0).
+//! IDL4 → Java 17 source codegen (OMG IDL4-Java mapping v1.0).
 //!
-//! Crate `zerodds-idl-java` — Java-Sprach-Bindings, Cluster C5.4-a (Foundation)
-//! plus C5.4-b (Bitset/Bitmask, Multi-Inheritance, Annotation-Bridge,
-//! TopicType-Marker).
+//! Crate `zerodds-idl-java` — Java language bindings, cluster C5.4-a (foundation)
+//! plus C5.4-b (bitset/bitmask, multi-inheritance, annotation bridge,
+//! TopicType marker).
 //!
-//! Safety classification: **SAFE (std-only)**. Reines Build-Zeit-Tool —
-//! `forbid(unsafe_code)`, kein no_std-Use-Case.
+//! Safety classification: **SAFE (std-only)**. A pure build-time tool —
+//! `forbid(unsafe_code)`, no no_std use case.
 //!
 //! # Scope (C5.4-a)
-//! - Block A: Header-Layout (`package`, Class-Modifiers, FQN-Imports).
-//! - Block B: Primitive-Mapping (boolean → boolean, octet → byte, ...,
-//!   inkl. unsigned-Workaround per Spec §6).
-//! - Block C: struct → public class (Bean-Pattern), enum, union →
-//!   sealed interface + case-records, typedef → Wrapper-Class,
-//!   sequence → `java.util.List<T>`, array → Java-Array, single
+//! - Block A: header layout (`package`, class modifiers, FQN imports).
+//! - Block B: primitive mapping (boolean → boolean, octet → byte, ...,
+//!   incl. unsigned workaround per spec §6).
+//! - Block C: struct → public class (bean pattern), enum, union →
+//!   sealed interface + case records, typedef → wrapper class,
+//!   sequence → `java.util.List<T>`, array → Java array, single
 //!   inheritance → `extends`.
 //! - Block D: Exception → `class X extends RuntimeException`.
 //!
+//! # Java version targets
+//! The standard emit targets **Java 17**: unions use a `sealed
+//! interface` with `record` case types. Structs/enums/typedefs are bean
+//! classes and thus version-neutral.
+//!
+//! The opt-in **Java-8 compat mode** ([`JavaGenOptions::java8_compat`])
+//! avoids all Java-9+ constructs: unions are instead emitted as an
+//! `abstract class` with a private constructor (pseudo-sealing) +
+//! `static final` subclasses (final field + constructor + same-named
+//! accessor). Everything else is identical in both modes.
+//!
 //! # Scope (C5.4-b — Cluster E)
-//! - Bitmask → Wrapper-Class mit Inner-Enum `Flag` und
-//!   `EnumSet<Flag> bits` (Spec idl4-java-1.0 §6.3).
-//! - Bitset (≤ 64 Bit kumulativ) → Wrapper-Class mit `long bits` und
-//!   Mask/Shift-Accessors pro Bitfield. > 64 Bit → harter Fehler
+//! - Bitmask → wrapper class with an inner enum `Flag` and
+//!   `EnumSet<Flag> bits` (spec idl4-java-1.0 §6.3).
+//! - Bitset (≤ 64 bits cumulative) → wrapper class with `long bits` and
+//!   mask/shift accessors per bitfield. > 64 bits → hard error
 //!   [`error::JavaGenError::UnsupportedConstruct`].
-//! - Multi-Inheritance via Interface-Pattern: jeder Struct, der selbst
-//!   Basis eines anderen Structs ist, bekommt ein
-//!   `<Name>Interface.java`-Companion. Sub-Sub-Klassen verwenden
+//! - Multi-inheritance via an interface pattern: every struct that is itself
+//!   the base of another struct gets a
+//!   `<Name>Interface.java` companion. Sub-sub-classes use
 //!   `extends DirectBase implements GrandparentInterface, ...`.
-//! - `@value(N)` auf Enum-Members → expliziter `int`-Konstruktor-Wert
-//!   statt Auto-Ordinal.
-//! - Annotation-Bridge: `@key`, `@id(N)`, `@optional`,
+//! - `@value(N)` on enum members → an explicit `int` constructor value
+//!   instead of the auto ordinal.
+//! - Annotation bridge: `@key`, `@id(N)`, `@optional`,
 //!   `@must_understand`, `@external`, `@nested`, `@extensibility(...)`
-//!   → Java-Annotations unter `org.zerodds.types.*` (siehe
+//!   → Java annotations under `org.zerodds.types.*` (see
 //!   `runtime/`).
-//! - DDS-Java-PSM-Stub: jeder Top-Level-`struct` ohne `@nested`
-//!   implementiert `org.omg.dds.topic.TopicType<SelfType>`.
+//! - DDS Java PSM stub: every top-level `struct` without `@nested`
+//!   implements `org.omg.dds.topic.TopicType<SelfType>`.
 //!
-//! # Bewusst nicht im Crate
-//! - Cluster F-H: ServiceEnvironment-SPI, Time/Duration/Status/QoS/
-//!   Listener-Codegen (C5.5).
-//! - Reflection-basierte TypeRep (java-psm §8) — Stretch-Goal.
-//! - JNI-Bridge zu Rust-Core (C5.5).
-//! - `interface`, `valuetype`, `fixed`, `any`, `map<K,V>` → kommen
-//!   mit `zerodds-rpc-java`.
+//! # Deliberately not in the crate
+//! - Clusters F-H: ServiceEnvironment SPI, Time/Duration/Status/QoS/
+//!   listener codegen (C5.5).
+//! - Reflection-based TypeRep (java-psm §8) — a stretch goal.
+//! - `interface`, `valuetype`, `fixed`, `any`, `map<K,V>` → come with
+//!   `zerodds-rpc-java`.
 //!
-//! # Multi-File-Output
-//! Java erfordert eine `.java`-Datei pro top-level public class.
-//! Daher gibt [`generate_java_files`] eine [`Vec<JavaFile>`] zurueck;
-//! jede `JavaFile` hat package-path + class-name + source.
+//! # Multi-file output
+//! Java requires one `.java` file per top-level public class.
+//! Therefore [`generate_java_files`] returns a [`Vec<JavaFile>`]; each
+//! `JavaFile` has a package path + class name + source.
 //!
-//! # Beispiel
+//! # Example
 //!
 //! ```
 //! use zerodds_idl::config::ParserConfig;
@@ -91,35 +101,41 @@ pub use error::JavaGenError;
 
 use zerodds_idl::ast::Specification;
 
-/// Konfiguration des Java-Code-Generators.
+/// Configuration of the Java code generator.
 #[derive(Debug, Clone)]
 pub struct JavaGenOptions {
-    /// Java-Root-Package, in das alle generierten Klassen gehoeren
-    /// (z.B. `"org.example.types"`). Leer-String = Default-Package.
+    /// Java root package that all generated classes belong to
+    /// (e.g. `"org.example.types"`). Empty string = default package.
     pub root_package: String,
-    /// Indent-Breite in Leerzeichen. Default 4.
+    /// Indent width in spaces. Default 4.
     pub indent_width: usize,
-    /// Wenn `true`, werden flache Aggregat-Types als Java `record`
-    /// emittiert (Java 14+). Default `false` — Spec verlangt
-    /// Bean-Pattern.
+    /// If `true`, flat aggregate types are emitted as Java `record`
+    /// (Java 14+). Default `false` — the spec requires the bean pattern.
     pub use_records: bool,
-    /// Spec §7.2.3 / §8.1.2 / §8.1.3 — opt-in: emittiert pro
-    /// Top-Level-Struct/Union eine zusätzliche `<TypeName>AmqpCodec.java`-
-    /// Datei mit statischen `toAmqpValue` / `toJsonString`-Helpern.
-    /// Default `false`, weil die emittierten Calls eine
-    /// `org.zerodds.amqp`-Runtime-Library voraussetzen.
+    /// Spec §7.2.3 / §8.1.2 / §8.1.3 — opt-in: emits per top-level
+    /// struct/union an additional `<TypeName>AmqpCodec.java` file with
+    /// static `toAmqpValue` / `toJsonString` helpers. Default `false`,
+    /// because the emitted calls require an `org.zerodds.amqp` runtime
+    /// library.
     pub emit_amqp_helpers: bool,
-    /// Annex A.1 (idl4-java-1.0) — opt-in: emittiert pro
-    /// Top-Level-Type eine zusaetzliche `<TypeName>CorbaTraits.java`-
-    /// Datei mit per-Type-Konstanten (`FULL_NAME`, `IS_VARIABLE_SIZE`,
-    /// `IS_LOCAL`). Default `false`.
+    /// Annex A.1 (idl4-java-1.0) — opt-in: emits per top-level type an
+    /// additional `<TypeName>CorbaTraits.java` file with per-type
+    /// constants (`FULL_NAME`, `IS_VARIABLE_SIZE`, `IS_LOCAL`).
+    /// Default `false`.
     pub emit_corba_traits: bool,
-    /// Spec zerodds-xcdr2-java-1.0 §4 — opt-in: emittiert pro
-    /// Top-Level-Struct eine zusaetzliche `<TypeName>TypeSupport.java`-
-    /// Datei mit `org.zerodds.cdr.TopicTypeSupport<T>`-
-    /// Implementierung (encode/decode/keyHash + INSTANCE).
-    /// Default `true` ab v1.0 (Spec-Pflicht).
+    /// Spec zerodds-xcdr2-java-1.0 §4 — opt-in: emits per top-level
+    /// struct an additional `<TypeName>TypeSupport.java` file with an
+    /// `org.zerodds.cdr.TopicTypeSupport<T>` implementation
+    /// (encode/decode/keyHash + INSTANCE). Default `true` from v1.0
+    /// (spec-mandatory).
     pub emit_typesupport: bool,
+    /// Java-8 compat mode — opt-in. If `true`, the emitter avoids all
+    /// Java-9+ constructs: unions are emitted as an `abstract class` with
+    /// a private constructor (pseudo-sealing) + `static final` subclasses
+    /// instead of as a `sealed interface` + `record` (Java 17).
+    /// Structs are bean classes anyway (`use_records=false`) and thus
+    /// already Java-8-capable. Default `false` (standard = Java 17).
+    pub java8_compat: bool,
 }
 
 impl Default for JavaGenOptions {
@@ -131,21 +147,22 @@ impl Default for JavaGenOptions {
             emit_amqp_helpers: false,
             emit_corba_traits: false,
             emit_typesupport: true,
+            java8_compat: false,
         }
     }
 }
 
-/// Erzeugt eine Liste von Java-Source-Files aus einer IDL-Specification.
+/// Produces a list of Java source files from an IDL specification.
 ///
 /// # Errors
-/// - [`JavaGenError::UnsupportedConstruct`]: IDL-Konstrukt außerhalb des aktuellen Scopes
-///   (z.B. `interface`, `valuetype`, `fixed`, `any`) oder C5.4-b-
-///   Constraint verletzt (z.B. Bitset-Summe > 64 Bit, Bitmask-
+/// - [`JavaGenError::UnsupportedConstruct`]: IDL construct outside the current scope
+///   (e.g. `interface`, `valuetype`, `fixed`, `any`) or a C5.4-b
+///   constraint violated (e.g. bitset sum > 64 bit, bitmask
 ///   `bit_bound > 64`).
-/// - [`JavaGenError::InvalidName`]: Ein Identifier ist leer oder
-///   kollidiert nach Sanitisierung weiterhin mit einem Java-Keyword.
-/// - [`JavaGenError::InheritanceCycle`]: Direkte oder indirekte
-///   Self-Inheritance im Struct-Graphen.
+/// - [`JavaGenError::InvalidName`]: an identifier is empty or still
+///   collides with a Java keyword after sanitization.
+/// - [`JavaGenError::InheritanceCycle`]: direct or indirect
+///   self-inheritance in the struct graph.
 pub fn generate_java_files(
     ast: &Specification,
     opts: &JavaGenOptions,
@@ -163,7 +180,7 @@ pub fn generate_java_files(
     Ok(files)
 }
 
-/// Convenience-Variante mit aktiviertem `emit_corba_traits`-Flag.
+/// Convenience variant with the `emit_corba_traits` flag enabled.
 ///
 /// Cross-Ref: `idl4-java-1.0` Annex A.1.
 ///
@@ -180,9 +197,9 @@ pub fn generate_java_files_with_corba_traits(
     generate_java_files(ast, &opts)
 }
 
-/// Convenience-Variante mit aktiviertem `emit_amqp_helpers`-Flag.
+/// Convenience variant with the `emit_amqp_helpers` flag enabled.
 ///
-/// Identisch zu [`generate_java_files`], aber zwingt
+/// Identical to [`generate_java_files`], but forces
 /// `opts.emit_amqp_helpers = true`.
 ///
 /// # Errors
@@ -205,8 +222,8 @@ mod tests {
     use zerodds_idl::config::ParserConfig;
 
     fn gen_java(src: &str) -> Vec<JavaFile> {
-        // Inline-Tests pruefen das POJO-Emitter-Verhalten — TypeSupport
-        // hat eigene Tests in `typesupport`-Modul + Snapshots.
+        // Inline tests check the POJO emitter behavior — TypeSupport
+        // has its own tests in the `typesupport` module + snapshots.
         let opts = JavaGenOptions {
             emit_typesupport: false,
             ..Default::default()
@@ -227,8 +244,8 @@ mod tests {
 
     #[test]
     fn empty_module_emits_no_files() {
-        // Module ohne Type-Defs erzeugt keine Java-File (Java hat keinen
-        // package-marker-File).
+        // A module without type defs produces no Java file (Java has no
+        // package-marker file).
         assert!(gen_java("module M {};").is_empty());
     }
 
@@ -271,7 +288,7 @@ mod tests {
         assert!(src.contains("private short s;"));
         assert!(src.contains("private int l;"));
         assert!(src.contains("private long ll;"));
-        // Unsigned-Workaround:
+        // Unsigned workaround:
         assert!(src.contains("private int us;"));
         assert!(src.contains("private long ul;"));
         assert!(src.contains("private long ull;"));
@@ -389,14 +406,14 @@ mod tests {
 
     #[test]
     fn any_member_emits_object() {
-        // `any`-Member ist ausserhalb des TypeSupport-Scopes (v1.0);
-        // die POJO emittiert weiterhin `Object`, TypeSupport entfaellt.
+        // `any` members are outside the TypeSupport scope (v1.0);
+        // the POJO still emits `Object`, TypeSupport is omitted.
         let ast = zerodds_idl::parse("struct S { any value; };", &ParserConfig::default())
             .expect("parse");
         let files = generate_java_files(&ast, &JavaGenOptions::default()).expect("ok");
         let combined: String = files.iter().map(|f| f.source.clone()).collect();
         assert!(combined.contains("Object"));
-        // Keine TypeSupport-Generation fuer `any`.
+        // No TypeSupport generation for `any`.
         assert!(!combined.contains("STypeSupport"));
     }
 
@@ -451,6 +468,7 @@ mod tests {
             emit_amqp_helpers: false,
             emit_corba_traits: false,
             emit_typesupport: true,
+            java8_compat: false,
         };
         let cloned = o.clone();
         assert_eq!(cloned.indent_width, 2);

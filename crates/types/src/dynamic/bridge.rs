@@ -2,15 +2,18 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DynamicType ↔ TypeObject Bridge (XTypes 1.3 §7.6.3 + §7.6.4).
 //!
-//! Diese Bridge ist die Klammer zwischen der **Wire-Repraesentation**
-//! (`TypeObject`, mit `MinimalTypeObject` + `CompleteTypeObject` als
-//! Diskrimination) und der **Runtime-API** (`DynamicType`).
+//! This bridge is the bracket between the **wire representation**
+//! (`TypeObject`, with `MinimalTypeObject` + `CompleteTypeObject` as the
+//! discrimination) and the **runtime API** (`DynamicType`).
 //!
-//! Implementiert: Struct + Union + Enum + Alias + Sequence/Array/Map.
-//! Bitset/Bitmask/Annotation: Spec-konforme Reject-Errors, Implementation folgt mit MemberDescriptor-Erweiterung (siehe
-//! [`DynamicError::Unsupported`]). Forward-Mapping von Composite-Member-
-//! Types ueber den Namen — TypeRegistry-Lookup auf
-//! EquivalenceHash-TypeIdentifiers ist Aufgabe von C4.2.
+//! Implements all 10 TypeObject kinds: struct + union + enum + bitmask +
+//! bitset + annotation + alias plus the collection kinds sequence/array/map
+//! (XTypes §7.3.4.4: `CompleteSequenceType` / `CompleteArrayType` /
+//! `CompleteMapType`). Anonymous plain collections are additionally
+//! referenced inline via `TypeIdentifier` (PlainCollection); `to_type_object`
+//! returns the full collection `CompleteTypeObject` variant here. Forward
+//! mapping of composite member types via the name — TypeRegistry lookup on
+//! EquivalenceHash TypeIdentifiers is the task of C4.2.
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -19,17 +22,25 @@ use alloc::vec::Vec;
 use crate::type_identifier::{PrimitiveKind, TypeIdentifier};
 use crate::type_object::common::{CommonStructMember, CommonUnionMember};
 use crate::type_object::complete::{
-    CompleteAliasBody, CompleteAliasHeader, CompleteAliasType, CompleteBitflag,
-    CompleteBitmaskType, CompleteDiscriminatorMember, CompleteEnumeratedHeader,
-    CompleteEnumeratedLiteral, CompleteEnumeratedType, CompleteStructHeader, CompleteStructMember,
-    CompleteStructType, CompleteUnionHeader, CompleteUnionMember, CompleteUnionType,
+    CompleteAliasBody, CompleteAliasHeader, CompleteAliasType, CompleteAnnotationParameter,
+    CompleteAnnotationType, CompleteArrayType, CompleteBitfield, CompleteBitflag,
+    CompleteBitmaskType, CompleteBitsetType, CompleteCollectionElement,
+    CompleteDiscriminatorMember, CompleteEnumeratedHeader, CompleteEnumeratedLiteral,
+    CompleteEnumeratedType, CompleteMapType, CompleteSequenceType, CompleteStructHeader,
+    CompleteStructMember, CompleteStructType, CompleteUnionHeader, CompleteUnionMember,
+    CompleteUnionType,
 };
 use crate::type_object::flags::{
-    AliasMemberFlag, AliasTypeFlag, BitflagFlag, BitmaskTypeFlag, EnumLiteralFlag, EnumTypeFlag,
-    StructMemberFlag, StructTypeFlag, UnionDiscriminatorFlag, UnionMemberFlag, UnionTypeFlag,
+    AliasMemberFlag, AliasTypeFlag, AnnotationParameterFlag, AnnotationTypeFlag, BitfieldFlag,
+    BitflagFlag, BitmaskTypeFlag, BitsetTypeFlag, CollectionElementFlag, CollectionTypeFlag,
+    EnumLiteralFlag, EnumTypeFlag, StructMemberFlag, StructTypeFlag, UnionDiscriminatorFlag,
+    UnionMemberFlag, UnionTypeFlag,
 };
 use crate::type_object::minimal::CommonDiscriminatorMember;
-use crate::type_object::minimal::{CommonBitflag, CommonEnumeratedHeader, CommonEnumeratedLiteral};
+use crate::type_object::minimal::{
+    CommonBitfield, CommonBitflag, CommonCollectionElement, CommonEnumeratedHeader,
+    CommonEnumeratedLiteral,
+};
 use crate::type_object::{CompleteTypeObject, TypeObject};
 
 use super::builder::{DynamicTypeBuilder, DynamicTypeBuilderFactory};
@@ -38,21 +49,21 @@ use super::error::DynamicError;
 use super::type_::DynamicType;
 
 // ----------------------------------------------------------------------
-// DynamicType → TypeObject (Spec §7.6.3 — fuer Discovery + TypeLookup)
+// DynamicType → TypeObject (spec §7.6.3 — for discovery + TypeLookup)
 // ----------------------------------------------------------------------
 
 impl DynamicType {
-    /// Spec §7.6.3 — wandelt diese DynamicType in ein
-    /// `CompleteTypeObject`. Liefert immer Complete (nicht Minimal),
-    /// weil DynamicType die Namen + Annotations traegt.
+    /// Spec §7.6.3 — converts this DynamicType into a
+    /// `CompleteTypeObject`. Always returns complete (not minimal),
+    /// because DynamicType carries the names + annotations.
     ///
     /// Scope:
-    /// - Struct mit primitiven + String + Sequence/Array Members.
-    /// - Union, Enum, Alias als eigene Helper-Methoden (siehe Modul-Doc).
+    /// - Struct with primitive + string + sequence/array members.
+    /// - Union, enum, alias as their own helper methods (see module doc).
     ///
     /// # Errors
-    /// `Unsupported` fuer noch nicht implementierte Kinds,
-    /// `Inconsistent` wenn der Type fehlerhaft ist.
+    /// `Unsupported` for not-yet-implemented kinds,
+    /// `Inconsistent` if the type is malformed.
     pub fn to_type_object(&self) -> Result<TypeObject, DynamicError> {
         match self.kind() {
             TypeKind::Structure => Ok(TypeObject::Complete(CompleteTypeObject::Struct(
@@ -70,30 +81,107 @@ impl DynamicType {
             TypeKind::Alias => Ok(TypeObject::Complete(CompleteTypeObject::Alias(
                 self.to_complete_alias()?,
             ))),
-            TypeKind::Array | TypeKind::Sequence | TypeKind::Map => {
-                // Spec §7.3.4 — Collection-Types werden via TypeIdentifier
-                // exklusiv repraesentiert (PlainCollection / HashedCollection).
-                // Es gibt keinen CompleteTypeObject fuer plain Collections;
-                // nur ihre Element-Types haben TypeObjects.
-                Err(DynamicError::unsupported(format!(
-                    "to_type_object for {:?} — Collection-Types use TypeIdentifier exclusively (XTypes §7.3.4)",
-                    self.kind(),
-                )))
-            }
-            TypeKind::Bitset | TypeKind::Annotation => {
-                // Bitset benoetigt bit_position + bit_count pro Member;
-                // Annotation benoetigt default_value. Beide sind in
-                // MemberDescriptor nicht direkt strukturiert ablegbar
-                // ohne Zusatz-Konvention. MemberDescriptor-Erweiterung benötigt.
-                Err(DynamicError::unsupported(format!(
-                    "to_type_object for {:?} — needs MemberDescriptor extension (MemberDescriptor extension)",
-                    self.kind(),
-                )))
-            }
+            TypeKind::Sequence => Ok(TypeObject::Complete(CompleteTypeObject::Sequence(
+                self.to_complete_sequence()?,
+            ))),
+            TypeKind::Array => Ok(TypeObject::Complete(CompleteTypeObject::Array(
+                self.to_complete_array()?,
+            ))),
+            TypeKind::Map => Ok(TypeObject::Complete(CompleteTypeObject::Map(
+                self.to_complete_map()?,
+            ))),
+            TypeKind::Bitset => Ok(TypeObject::Complete(CompleteTypeObject::Bitset(
+                self.to_complete_bitset()?,
+            ))),
+            TypeKind::Annotation => Ok(TypeObject::Complete(CompleteTypeObject::Annotation(
+                self.to_complete_annotation()?,
+            ))),
             other => Err(DynamicError::unsupported(format!(
                 "to_type_object: {other:?} is a primitive/no-type kind without TypeObject",
             ))),
         }
+    }
+
+    /// XTypes §7.3.4.4 — `sequence<T>` → `CompleteSequenceType`.
+    /// `bound = 0` bedeutet unbounded.
+    fn to_complete_sequence(&self) -> Result<CompleteSequenceType, DynamicError> {
+        use crate::type_object::common::{
+            AppliedBuiltinTypeAnnotations, CompleteTypeDetail, OptionalAppliedAnnotationSeq,
+        };
+        let element = self
+            .descriptor()
+            .element_type
+            .as_ref()
+            .ok_or_else(|| DynamicError::inconsistent("sequence type missing element_type"))?;
+        let bound = self.descriptor().bound.first().copied().unwrap_or(0);
+        Ok(CompleteSequenceType {
+            collection_flag: CollectionTypeFlag(0),
+            bound,
+            detail: CompleteTypeDetail {
+                ann_builtin: AppliedBuiltinTypeAnnotations::default(),
+                ann_custom: OptionalAppliedAnnotationSeq::default(),
+                type_name: self.descriptor().name.clone(),
+            },
+            element: complete_collection_element(element)?,
+        })
+    }
+
+    /// XTypes §7.3.4.4 — `T[N]` → `CompleteArrayType`.
+    /// `bound_seq` traegt alle Array-Dimensionen.
+    fn to_complete_array(&self) -> Result<CompleteArrayType, DynamicError> {
+        use crate::type_object::common::{
+            AppliedBuiltinTypeAnnotations, CompleteTypeDetail, OptionalAppliedAnnotationSeq,
+        };
+        let element = self
+            .descriptor()
+            .element_type
+            .as_ref()
+            .ok_or_else(|| DynamicError::inconsistent("array type missing element_type"))?;
+        let bound_seq = self.descriptor().bound.clone();
+        if bound_seq.is_empty() {
+            return Err(DynamicError::inconsistent(
+                "array type missing dimensions (bound)",
+            ));
+        }
+        Ok(CompleteArrayType {
+            collection_flag: CollectionTypeFlag(0),
+            bound_seq,
+            detail: CompleteTypeDetail {
+                ann_builtin: AppliedBuiltinTypeAnnotations::default(),
+                ann_custom: OptionalAppliedAnnotationSeq::default(),
+                type_name: self.descriptor().name.clone(),
+            },
+            element: complete_collection_element(element)?,
+        })
+    }
+
+    /// XTypes §7.3.4.4 — `map<K, V>` → `CompleteMapType`.
+    /// `element_type` traegt den Value-, `key_element_type` den Key-Typ.
+    fn to_complete_map(&self) -> Result<CompleteMapType, DynamicError> {
+        use crate::type_object::common::{
+            AppliedBuiltinTypeAnnotations, CompleteTypeDetail, OptionalAppliedAnnotationSeq,
+        };
+        let value =
+            self.descriptor().element_type.as_ref().ok_or_else(|| {
+                DynamicError::inconsistent("map type missing element_type (value)")
+            })?;
+        let key = self
+            .descriptor()
+            .key_element_type
+            .as_ref()
+            .ok_or_else(|| DynamicError::inconsistent("map type missing key_element_type"))?;
+        let bound = self.descriptor().bound.first().copied().unwrap_or(0);
+        Ok(CompleteMapType {
+            collection_flag: CollectionTypeFlag(0),
+            bound,
+            detail: CompleteTypeDetail {
+                ann_builtin: AppliedBuiltinTypeAnnotations::default(),
+                ann_custom: OptionalAppliedAnnotationSeq::default(),
+                type_name: self.descriptor().name.clone(),
+            },
+            key: complete_collection_element(key)?,
+            element: complete_collection_element(value)?,
+        })
     }
 
     fn to_complete_alias(&self) -> Result<CompleteAliasType, DynamicError> {
@@ -212,6 +300,105 @@ impl DynamicType {
         })
     }
 
+    /// Spec §7.3.4.4 — Bitset: ein `CompleteBitfield` je Member, mit
+    /// Bit-Startposition (`MemberDescriptor.id`), Breite
+    /// (`MemberDescriptor.bit_bound`) und Holding-Type (TypeKind-Byte des
+    /// Member-Typs, der ein primitiver Integer-Typ sein muss).
+    fn to_complete_bitset(&self) -> Result<CompleteBitsetType, DynamicError> {
+        use crate::type_object::common::{
+            AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations, CompleteMemberDetail,
+            CompleteTypeDetail, OptionalAppliedAnnotationSeq,
+        };
+        let detail = CompleteTypeDetail {
+            ann_builtin: AppliedBuiltinTypeAnnotations::default(),
+            ann_custom: OptionalAppliedAnnotationSeq::default(),
+            type_name: self.descriptor().name.clone(),
+        };
+        let mut field_seq: Vec<CompleteBitfield> = Vec::with_capacity(self.member_count() as usize);
+        for m in self.members() {
+            let position = u16::try_from(m.id()).map_err(|_| {
+                DynamicError::inconsistent(format!(
+                    "bitset field position {} exceeds u16 range",
+                    m.id()
+                ))
+            })?;
+            let holder_type = match descriptor_to_type_identifier(
+                m.descriptor().member_type.as_ref(),
+            )? {
+                TypeIdentifier::Primitive(pk) => pk.to_u8(),
+                other => {
+                    return Err(DynamicError::inconsistent(format!(
+                        "bitset field {:?} holder must be a primitive integer type, got {other:?}",
+                        m.name()
+                    )));
+                }
+            };
+            let bitcount = m.descriptor().bit_bound.ok_or_else(|| {
+                DynamicError::inconsistent(format!(
+                    "bitset field {:?} missing bit_bound (bitfield width)",
+                    m.name()
+                ))
+            })?;
+            field_seq.push(CompleteBitfield {
+                common: CommonBitfield {
+                    position,
+                    flags: BitfieldFlag(0),
+                    bitcount,
+                    holder_type,
+                },
+                detail: CompleteMemberDetail {
+                    name: m.name().to_string(),
+                    ann_builtin: AppliedBuiltinMemberAnnotations::default(),
+                    ann_custom: OptionalAppliedAnnotationSeq::default(),
+                },
+            });
+        }
+        Ok(CompleteBitsetType {
+            bitset_flags: BitsetTypeFlag(0),
+            detail,
+            field_seq,
+        })
+    }
+
+    /// Spec §7.3.4.4 — Annotation: ein `CompleteAnnotationParameter` je
+    /// Member (Parameter), mit Member-Id, Parameter-Typ, Name und dem
+    /// (opaque als UTF-8-Bytes abgelegten) Default-Value aus
+    /// `MemberDescriptor.default_value`.
+    fn to_complete_annotation(&self) -> Result<CompleteAnnotationType, DynamicError> {
+        use crate::type_object::common::{
+            AppliedBuiltinTypeAnnotations, CompleteTypeDetail, OptionalAppliedAnnotationSeq,
+        };
+        let detail = CompleteTypeDetail {
+            ann_builtin: AppliedBuiltinTypeAnnotations::default(),
+            ann_custom: OptionalAppliedAnnotationSeq::default(),
+            type_name: self.descriptor().name.clone(),
+        };
+        let mut member_seq: Vec<CompleteAnnotationParameter> =
+            Vec::with_capacity(self.member_count() as usize);
+        for m in self.members() {
+            let member_type_id =
+                descriptor_to_type_identifier(m.descriptor().member_type.as_ref())?;
+            let default_value = m
+                .descriptor()
+                .default_value
+                .as_deref()
+                .map(|s| s.as_bytes().to_vec())
+                .unwrap_or_default();
+            member_seq.push(CompleteAnnotationParameter {
+                member_id: m.id(),
+                member_flags: AnnotationParameterFlag(0),
+                member_type_id,
+                name: m.name().to_string(),
+                default_value,
+            });
+        }
+        Ok(CompleteAnnotationType {
+            annotation_flag: AnnotationTypeFlag(0),
+            detail,
+            member_seq,
+        })
+    }
+
     fn to_complete_union(&self) -> Result<CompleteUnionType, DynamicError> {
         use crate::type_object::common::{
             AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations, CompleteMemberDetail,
@@ -248,7 +435,7 @@ impl DynamicType {
             if m.descriptor().is_default_label {
                 flags_bits |= UnionMemberFlag::IS_DEFAULT;
             }
-            // Spec §7.3.4.5.3.2 — case-labels sind `long` (i32).
+            // Spec §7.3.4.5.3.2 — case labels are `long` (i32).
             let label_seq: Vec<i32> = m
                 .descriptor()
                 .label
@@ -346,10 +533,28 @@ const fn flag_bits_to_extensibility(flags: u16) -> ExtensibilityKind {
     }
 }
 
-/// Mapping von einem Member-`TypeDescriptor` auf einen passenden
-/// `TypeIdentifier`. Nur primitive + String + Sequence + Array werden
-/// inline kodiert; Composite-Members verlangen eine TypeRegistry-
-/// Lookup-Strategie über `zerodds_types::resolve::TypeRegistry`.
+/// XTypes §7.3.4.4 — builds a `CompleteCollectionElement` (element or key
+/// description) from a `TypeDescriptor`.
+fn complete_collection_element(
+    desc: &TypeDescriptor,
+) -> Result<CompleteCollectionElement, DynamicError> {
+    use crate::type_object::common::{
+        AppliedBuiltinMemberAnnotations, OptionalAppliedAnnotationSeq,
+    };
+    Ok(CompleteCollectionElement {
+        common: CommonCollectionElement {
+            element_flags: CollectionElementFlag(0),
+            type_id: descriptor_to_type_identifier(desc)?,
+        },
+        ann_builtin: AppliedBuiltinMemberAnnotations::default(),
+        ann_custom: OptionalAppliedAnnotationSeq::default(),
+    })
+}
+
+/// Maps a member `TypeDescriptor` to a matching `TypeIdentifier`. Only
+/// primitive + string + sequence + array are encoded inline; composite
+/// members require a TypeRegistry lookup strategy via
+/// `zerodds_types::resolve::TypeRegistry`.
 fn descriptor_to_type_identifier(desc: &TypeDescriptor) -> Result<TypeIdentifier, DynamicError> {
     match desc.kind {
         TypeKind::Boolean => Ok(TypeIdentifier::Primitive(PrimitiveKind::Boolean)),
@@ -384,10 +589,10 @@ fn descriptor_to_type_identifier(desc: &TypeDescriptor) -> Result<TypeIdentifier
             }
         }
         TypeKind::Structure | TypeKind::Union | TypeKind::Enumeration | TypeKind::Alias => {
-            // Bridge-Phase 1: Composite-Members tragen `TypeIdentifier::None`
-            // — die TypeRegistry (C4.2) loest spaeter ueber den Namen
-            // gegen einen EquivalenceHash. Roundtrip-Tests setzen diese
-            // Information getrennt.
+            // Bridge phase 1: composite members carry `TypeIdentifier::None`
+            // — the TypeRegistry (C4.2) later resolves via the name
+            // against an EquivalenceHash. Roundtrip tests set this
+            // information separately.
             Ok(TypeIdentifier::None)
         }
         kind => Err(DynamicError::unsupported(format!(
@@ -404,12 +609,12 @@ impl DynamicTypeBuilderFactory {
     /// Spec §7.6.4 / §7.5.5.1.4 `create_type_w_type_object(type_object)`.
     ///
     /// Scope:
-    /// - `CompleteStructType` mit primitiven + String-Members.
-    /// - `MinimalStructType` als read-only mit Hash-Names.
-    /// - Andere Kinds: `Unsupported`.
+    /// - `CompleteStructType` with primitive + string members.
+    /// - `MinimalStructType` as read-only with hash names.
+    /// - Other kinds: `Unsupported`.
     ///
     /// # Errors
-    /// `Unsupported` fuer Kinds ausserhalb des aktuellen Implementations-Scopes.
+    /// `Unsupported` for kinds outside the current implementation scope.
     pub fn create_type_w_type_object(
         type_obj: &TypeObject,
     ) -> Result<DynamicTypeBuilder, DynamicError> {
@@ -485,8 +690,8 @@ fn type_id_to_kind(ti: &TypeIdentifier) -> Result<TypeKind, DynamicError> {
             TypeKind::Map
         }
         TypeIdentifier::EquivalenceHashMinimal(_) | TypeIdentifier::EquivalenceHashComplete(_) => {
-            // Composite via TypeRegistry-Lookup — markieren als Structure
-            // als Default; korrekt aufzuloesen ist C4.2.
+            // Composite via TypeRegistry lookup — mark as Structure
+            // by default; resolving it correctly is C4.2.
             TypeKind::Structure
         }
         other => {
@@ -519,10 +724,10 @@ const fn primitive_kind_to_type_kind(p: PrimitiveKind) -> TypeKind {
 
 /// zerodds-lint: recursion-depth 16
 ///
-/// Rekursive Aufrufe via PlainSequence/PlainArray-Element. Tiefe ist
-/// implizit durch [`TypeIdentifier::MAX_DECODE_DEPTH`] gecapt — der
-/// Type-Identifier kann beim Wire-Decode hoechstens 16 Schichten tief
-/// werden, danach scheitert das Decode mit `LengthExceeded`.
+/// Recursive calls via the PlainSequence/PlainArray element. Depth is
+/// implicitly capped by [`TypeIdentifier::MAX_DECODE_DEPTH`] — the
+/// TypeIdentifier can be at most 16 layers deep on wire-decode, after
+/// which decoding fails with `LengthExceeded`.
 fn type_id_to_descriptor(
     ti: &TypeIdentifier,
     kind: TypeKind,
@@ -550,8 +755,8 @@ fn type_id_to_descriptor(
             is_nested: false,
         },
         TypeIdentifier::EquivalenceHashMinimal(_) | TypeIdentifier::EquivalenceHashComplete(_) => {
-            // Wir kennen den Namen erst nach einem TypeRegistry-Lookup
-            // (C4.2). Bis dahin: Platzhalter-Descriptor mit Kind=Structure.
+            // We only know the name after a TypeRegistry lookup
+            // (C4.2). Until then: placeholder descriptor with Kind=Structure.
             TypeDescriptor {
                 kind: TypeKind::Structure,
                 name: String::from("<typeref>"),
@@ -671,7 +876,7 @@ mod tests {
         let to = t.to_type_object().unwrap();
         let b = DynamicTypeBuilderFactory::create_type_w_type_object(&to).unwrap();
         let t2 = b.build().unwrap();
-        // Deep-Equality auf den von der Bridge gebauten Type.
+        // Deep equality on the type built by the bridge.
         assert!(t.equals(&t2), "roundtrip failed: {t:?} vs {t2:?}");
     }
 
@@ -684,7 +889,7 @@ mod tests {
 
     #[test]
     fn dynamic_alias_to_typeobject_complete() {
-        // alias mit element_type = int32.
+        // alias with element_type = int32.
         let mut desc = TypeDescriptor::primitive(TypeKind::Int32, "int32");
         desc.kind = TypeKind::Alias;
         desc.name = "::SensorId".to_string();
@@ -759,6 +964,143 @@ mod tests {
     }
 
     #[test]
+    fn dynamic_bitset_to_typeobject_complete() {
+        let mut desc = TypeDescriptor::primitive(TypeKind::Bitset, "::Reg");
+        desc.kind = TypeKind::Bitset;
+        let mut b = DynamicTypeBuilderFactory::create_type(desc).unwrap();
+        for (pos, name, width) in [(0u32, "lo", 3u8), (3u32, "hi", 5u8)] {
+            let mut m = MemberDescriptor::new(
+                name,
+                pos,
+                TypeDescriptor::primitive(TypeKind::UInt8, "uint8"),
+            );
+            m.bit_bound = Some(width);
+            b.add_member(m).unwrap();
+        }
+        let t = b.build().unwrap();
+        let to = t.to_type_object().expect("bitset bridge ok");
+        match to {
+            TypeObject::Complete(CompleteTypeObject::Bitset(bs)) => {
+                assert_eq!(bs.field_seq.len(), 2);
+                assert_eq!(bs.field_seq[0].common.position, 0);
+                assert_eq!(bs.field_seq[0].common.bitcount, 3);
+                assert_eq!(bs.field_seq[0].detail.name, "lo");
+                assert_eq!(bs.field_seq[1].common.position, 3);
+                assert_eq!(bs.field_seq[1].common.bitcount, 5);
+                assert_eq!(
+                    bs.field_seq[1].common.holder_type,
+                    PrimitiveKind::UInt8.to_u8()
+                );
+            }
+            other => panic!("expected Bitset, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dynamic_annotation_to_typeobject_complete() {
+        let mut desc = TypeDescriptor::primitive(TypeKind::Annotation, "::Range");
+        desc.kind = TypeKind::Annotation;
+        let mut b = DynamicTypeBuilderFactory::create_type(desc).unwrap();
+        let mut m = MemberDescriptor::new(
+            "max",
+            1,
+            TypeDescriptor::primitive(TypeKind::Int32, "int32"),
+        );
+        m.default_value = Some("100".into());
+        b.add_member(m).unwrap();
+        let t = b.build().unwrap();
+        let to = t.to_type_object().expect("annotation bridge ok");
+        match to {
+            TypeObject::Complete(CompleteTypeObject::Annotation(a)) => {
+                assert_eq!(a.member_seq.len(), 1);
+                assert_eq!(a.member_seq[0].name, "max");
+                assert_eq!(a.member_seq[0].member_id, 1);
+                assert_eq!(a.member_seq[0].default_value, b"100".to_vec());
+                assert!(matches!(
+                    a.member_seq[0].member_type_id,
+                    TypeIdentifier::Primitive(PrimitiveKind::Int32)
+                ));
+            }
+            other => panic!("expected Annotation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dynamic_sequence_to_typeobject_complete() {
+        let desc = TypeDescriptor::sequence(
+            "::Seq",
+            TypeDescriptor::primitive(TypeKind::Int32, "int32"),
+            10,
+        );
+        let t = DynamicTypeBuilderFactory::create_type(desc)
+            .unwrap()
+            .build()
+            .unwrap();
+        match t.to_type_object().expect("sequence bridge ok") {
+            TypeObject::Complete(CompleteTypeObject::Sequence(s)) => {
+                assert_eq!(s.bound, 10);
+                assert_eq!(s.detail.type_name, "::Seq");
+                assert!(matches!(
+                    s.element.common.type_id,
+                    TypeIdentifier::Primitive(PrimitiveKind::Int32)
+                ));
+            }
+            other => panic!("expected Sequence, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dynamic_array_to_typeobject_complete() {
+        let desc = TypeDescriptor::array(
+            "::Arr",
+            TypeDescriptor::primitive(TypeKind::Float64, "double"),
+            alloc::vec![3, 4],
+        );
+        let t = DynamicTypeBuilderFactory::create_type(desc)
+            .unwrap()
+            .build()
+            .unwrap();
+        match t.to_type_object().expect("array bridge ok") {
+            TypeObject::Complete(CompleteTypeObject::Array(a)) => {
+                assert_eq!(a.bound_seq, alloc::vec![3, 4]);
+                assert!(matches!(
+                    a.element.common.type_id,
+                    TypeIdentifier::Primitive(PrimitiveKind::Float64)
+                ));
+            }
+            other => panic!("expected Array, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dynamic_map_to_typeobject_complete() {
+        let desc = TypeDescriptor::map(
+            "::Map",
+            TypeDescriptor::primitive(TypeKind::Int32, "int32"),
+            TypeDescriptor::primitive(TypeKind::Boolean, "boolean"),
+            7,
+        );
+        let t = DynamicTypeBuilderFactory::create_type(desc)
+            .unwrap()
+            .build()
+            .unwrap();
+        match t.to_type_object().expect("map bridge ok") {
+            TypeObject::Complete(CompleteTypeObject::Map(m)) => {
+                assert_eq!(m.bound, 7);
+                assert!(matches!(
+                    m.key.common.type_id,
+                    TypeIdentifier::Primitive(PrimitiveKind::Int32)
+                ));
+                assert!(matches!(
+                    m.element.common.type_id,
+                    TypeIdentifier::Primitive(PrimitiveKind::Boolean)
+                ));
+            }
+            other => panic!("expected Map, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn dynamic_union_to_typeobject_complete() {
         let disc = TypeDescriptor::primitive(TypeKind::Int32, "int32");
         let t = {
@@ -791,30 +1133,6 @@ mod tests {
                 ));
             }
             other => panic!("expected Union, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn collection_kinds_to_typeobject_yield_explicit_error() {
-        // Sequence ist TypeIdentifier-only — to_type_object muss einen
-        // klaren Spec-konformen Error zurueckgeben.
-        let mut seq_desc = TypeDescriptor::primitive(TypeKind::Sequence, "sequence");
-        seq_desc.kind = TypeKind::Sequence;
-        seq_desc.element_type = Some(alloc::boxed::Box::new(TypeDescriptor::primitive(
-            TypeKind::Int32,
-            "int32",
-        )));
-        seq_desc.bound = alloc::vec![16];
-        let seq = DynamicTypeBuilderFactory::create_type(seq_desc)
-            .unwrap()
-            .build()
-            .unwrap();
-        let err = seq.to_type_object().unwrap_err();
-        match err {
-            DynamicError::Unsupported(msg) => {
-                assert!(msg.contains("Collection-Types"), "msg: {msg}");
-            }
-            other => panic!("expected Unsupported, got {other:?}"),
         }
     }
 

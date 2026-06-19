@@ -1,11 +1,11 @@
-//! Spec-Conformance-Matrix fuer IDL4-Java 1.0 §7 + §8.
+//! Spec conformance matrix for IDL4-Java 1.0 §7 + §8.
 //!
-//! Verifiziert produktiv die in `docs/spec-coverage/idl4-java-1.0.md`
-//! gelisteten Generator-Pfade durch end-to-end-IDL→Java-Renderings.
+//! Productively verifies the generator paths listed in
+//! `docs/spec-coverage/idl4-java-1.0.md` via end-to-end IDL→Java renderings.
 //!
-//! Cross-Cutting:
-//! * `@verbatim` (§7.17.5) ist gemeinsam mit XTypes 1.3 §7.2.2.4.8;
-//!   siehe `dds-xtypes-1.3.open.md`.
+//! Cross-cutting:
+//! * `@verbatim` (§7.17.5) is shared with XTypes 1.3 §7.2.2.4.8;
+//!   see `dds-xtypes-1.3.open.md`.
 
 #![allow(
     clippy::expect_used,
@@ -26,8 +26,8 @@ use zerodds_idl::config::ParserConfig;
 use zerodds_idl_java::{JavaGenOptions, generate_java_files};
 
 fn gen_java_concat(src: &str) -> String {
-    // POJO-Only-Konkatenation — die Spec-Konformanz-Tests pruefen die
-    // Datenklassen-Form. TypeSupport hat eigene Snapshot-Tests.
+    // POJO-only concatenation — the spec conformance tests check the
+    // data-class form. TypeSupport has its own snapshot tests.
     let opts = JavaGenOptions {
         emit_typesupport: false,
         ..Default::default()
@@ -70,7 +70,7 @@ fn camel_case_for_member_accessors() {
 #[test]
 fn all_uppercase_for_constants_via_idl_default() {
     // Spec §7.1.1.2.3: constant identifier → ALL_UPPERCASE per
-    // IDL-Convention (default keine Transformation).
+    // IDL convention (no transformation by default).
     let java = gen_java_concat("const long MAX_SIZE = 100;");
     assert!(java.contains("MAX_SIZE"));
 }
@@ -81,7 +81,7 @@ fn all_uppercase_for_constants_via_idl_default() {
 
 #[test]
 fn out_param_uses_holder_pattern_in_service_interface() {
-    // §7.1.3: out/inout-Param → org.omg.type.Holder<E>.
+    // §7.1.3: out/inout param → org.omg.type.Holder<E>.
     let java = gen_java_concat(
         r#"
         @service
@@ -92,7 +92,7 @@ fn out_param_uses_holder_pattern_in_service_interface() {
     );
     assert!(
         java.contains("Holder") || java.contains("result"),
-        "Holder oder out-param fehlt:\n{java}"
+        "Holder or out-param missing:\n{java}"
     );
 }
 
@@ -113,8 +113,8 @@ fn standalone_constant_emits_holder_class() {
 
 #[test]
 fn unbounded_sequence_emits_list_or_typed_seq() {
-    // Spec §7.2.4.2.1: unbounded sequence → List<T> (oder typed
-    // Subinterface).
+    // Spec §7.2.4.2.1: unbounded sequence → List<T> (or typed
+    // subinterface).
     let java = gen_java_concat("struct S { sequence<long> values; };");
     assert!(java.contains("List") || java.contains("Seq"));
 }
@@ -124,7 +124,7 @@ fn bounded_sequence_keeps_bound_marker() {
     let java = gen_java_concat("struct S { sequence<long, 10> values; };");
     assert!(
         java.contains("List") || java.contains("Bounded") || java.contains("10"),
-        "bound-marker fehlt:\n{java}"
+        "bound marker missing:\n{java}"
     );
 }
 
@@ -164,9 +164,9 @@ fn union_emits_class_with_discriminator() {
         };
     "#,
     );
-    // Generator emittiert Java-Klasse `U` (mit oder ohne `class`/
-    // `record`-Praefix in einer einzelnen Zeile).
-    assert!(java.contains("U"), "union U fehlt:\n{java}");
+    // Generator emits Java class `U` (with or without `class`/
+    // `record` prefix on a single line).
+    assert!(java.contains("U"), "union U missing:\n{java}");
 }
 
 #[test]
@@ -196,7 +196,7 @@ fn typedef_emits_alias_class_or_inline() {
 }
 
 // ============================================================================
-// §7.14.2 Union-Discriminator-Erweiterungen
+// §7.14.2 Union-Discriminator Extensions
 // ============================================================================
 
 #[test]
@@ -227,7 +227,7 @@ fn idl_map_emits_java_map() {
             let out: String = files.iter().map(|f| f.source.as_str()).collect();
             assert!(
                 out.contains("Map") || out.contains("entries"),
-                "map-mapping fehlt:\n{out}"
+                "map mapping missing:\n{out}"
             );
         }
     }
@@ -240,8 +240,8 @@ fn idl_map_emits_java_map() {
 #[test]
 fn verbatim_annotation_with_java_language_inlines_text() {
     // Spec §7.17.5 + XTypes §7.2.2.4.8: @verbatim(language="java",
-    // placement=BEFORE_DECLARATION, text="...") wird vor die
-    // Class-Zeile eingebettet.
+    // placement=BEFORE_DECLARATION, text="...") is embedded before
+    // the class line.
     let java = gen_java_concat(
         r#"
         @verbatim(language="java", placement=BEFORE_DECLARATION, text="// pre-decl marker")
@@ -251,13 +251,13 @@ fn verbatim_annotation_with_java_language_inlines_text() {
     assert!(java.contains("PlainStruct"));
     assert!(
         java.contains("// pre-decl marker"),
-        "@verbatim BEFORE_DECLARATION fehlt:\n{java}"
+        "@verbatim BEFORE_DECLARATION missing:\n{java}"
     );
     let pos_marker = java.find("// pre-decl marker").unwrap_or(usize::MAX);
     let pos_class = java.find("public class PlainStruct").unwrap_or(usize::MAX);
     assert!(
         pos_marker < pos_class,
-        "Marker muss vor `public class` stehen:\n{java}"
+        "Marker must appear before `public class`:\n{java}"
     );
 }
 
@@ -273,7 +273,7 @@ fn verbatim_annotation_with_after_declaration_placement() {
     let pos_marker = java.find("// trailer").unwrap_or(usize::MAX);
     assert!(
         pos_marker != usize::MAX && pos_marker > pos_close,
-        "AFTER_DECLARATION verbatim muss nach Class-Block stehen:\n{java}"
+        "AFTER_DECLARATION verbatim must appear after class block:\n{java}"
     );
 }
 
@@ -290,7 +290,7 @@ fn non_service_interface_emits_java_interface() {
     );
     assert!(
         java.contains("public interface Calc"),
-        "Java interface fehlt:\n{java}"
+        "Java interface missing:\n{java}"
     );
     assert!(java.contains("get_version"));
 }
@@ -300,7 +300,7 @@ fn any_member_emits_java_object() {
     let java = gen_java_concat(r#"struct M { any value; };"#);
     assert!(
         java.contains("Object"),
-        "Object-Mapping fuer any fehlt:\n{java}"
+        "Object mapping for any missing:\n{java}"
     );
 }
 
@@ -316,7 +316,7 @@ fn valuetype_emits_two_classes_abstract_and_concrete() {
         let combined: String = files.iter().map(|f| f.source.clone()).collect();
         assert!(
             combined.contains("public abstract class VTAbstract"),
-            "VTAbstract fehlt:\n{combined}"
+            "VTAbstract missing:\n{combined}"
         );
         assert!(combined.contains("public class VT extends VTAbstract"));
         assert!(combined.contains("get_x"));
@@ -335,7 +335,7 @@ fn valuetype_private_state_emits_protected_accessor() {
         let combined: String = files.iter().map(|f| f.source.clone()).collect();
         assert!(
             combined.contains("protected abstract"),
-            "private->protected:\n{combined}"
+            "private -> protected:\n{combined}"
         );
     }
 }
@@ -352,7 +352,7 @@ fn valuetype_factory_emits_void_method() {
         let combined: String = files.iter().map(|f| f.source.clone()).collect();
         assert!(
             combined.contains("public abstract void create"),
-            "factory->void:\n{combined}"
+            "factory -> void:\n{combined}"
         );
     }
 }
@@ -364,14 +364,14 @@ fn fixed_member_emits_java_bigdecimal() {
     let java = gen_java_concat(r#"struct M { fixed<10,2> price; };"#);
     assert!(
         java.contains("java.math.BigDecimal"),
-        "BigDecimal-Mapping fehlt:\n{java}"
+        "BigDecimal mapping missing:\n{java}"
     );
 }
 
 #[test]
 fn shared_member_emits_shared_annotation() {
-    // Spec §8.1.5 (idl4-cpp / dds-psm-cxx): @shared → Pointer-Semantik.
-    // Java emittiert `@org.zerodds.types.Shared` Marker.
+    // Spec §8.1.5 (idl4-cpp / dds-psm-cxx): @shared → pointer semantics.
+    // Java emits `@org.zerodds.types.Shared` marker.
     let java = gen_java_concat(
         r#"
         struct WithShared {
@@ -381,7 +381,7 @@ fn shared_member_emits_shared_annotation() {
     );
     assert!(
         java.contains("@org.zerodds.types.Shared"),
-        "@Shared-Annotation fehlt:\n{java}"
+        "@Shared annotation missing:\n{java}"
     );
 }
 
@@ -395,7 +395,7 @@ fn verbatim_annotation_other_language_skipped_in_java() {
     );
     assert!(
         !java.contains("// cpp only"),
-        "C++-verbatim darf nicht in Java-Output:\n{java}"
+        "C++ verbatim must not appear in Java output:\n{java}"
     );
 }
 
@@ -408,9 +408,9 @@ fn fixed_returns_unsupported_or_parse_error() {
     let parse = zerodds_idl::parse("struct S { fixed<5,2> price; };", &ParserConfig::default());
     if let Ok(ast) = parse {
         let res = generate_java_files(&ast, &JavaGenOptions::default());
-        // Spec §7.2.4.2.4 verlangt BigDecimal-Mapping; ZeroDDS lehnt
-        // ab oder akzeptiert beides ist Spec-implementations-Wahl.
-        let _ = res; // Beide Faelle sind ok.
+        // Spec §7.2.4.2.4 requires BigDecimal mapping; ZeroDDS rejecting
+        // or accepting it is a spec-implementation choice.
+        let _ = res; // Both cases are ok.
     }
 }
 

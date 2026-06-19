@@ -1,16 +1,16 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-sql-filter`-Crate.
+Initial release materialization of the `zerodds-sql-filter` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **OMG DDS 1.4** §B.2.1 (Filter-Expression-Syntax).
+- **OMG DDS 1.4** §B.2.1 (filter-expression syntax).
 
-### Public-API
+### Public API
 
 - `parse(input) -> Result<Expr, ParseError>`.
 - `Expr::{And, Or, Not, Cmp, Between}`.
@@ -21,23 +21,23 @@ Initiale Release-Materialisierung der `zerodds-sql-filter`-Crate.
 - `EvalError::{UnknownField, MissingParam, TypeMismatch}`.
 - `ParseError`.
 
-### Implementierung
+### Implementation
 
-Recursive-Descent-Parser mit Precedence-Klettern: `or_expr` < `and_expr` < `not_expr` < `cmp` < `atom`. Tokenizer mit case-insensitive Keywords und SQL-92-`''`-Escape fuer String-Literale.
+Recursive-descent parser with precedence climbing: `or_expr` < `and_expr` < `not_expr` < `cmp` < `atom`. Tokenizer with case-insensitive keywords and SQL-92 `''` escaping for string literals.
 
-`BETWEEN low AND high` ist als `Expr::Between`-Variante implementiert (Spec §B.2.1 BetweenPredicate). `NOT BETWEEN` wird vor dem BETWEEN-Token erkannt und setzt `negated=true`. Evaluator delegiert an `cmp(field, Ge, low) && cmp(field, Le, high)` und negiert bei `negated=true`.
+`BETWEEN low AND high` is implemented as the `Expr::Between` variant (spec §B.2.1 BetweenPredicate). `NOT BETWEEN` is recognized before the BETWEEN token and sets `negated=true`. The evaluator delegates to `cmp(field, Ge, low) && cmp(field, Le, high)` and negates when `negated=true`.
 
-LIKE-Match via klassisches DP mit `%` (null-oder-mehr) und `_` (genau ein Zeichen). Backslash-Escape ist nicht implementiert — Spec §B.2.1 verlangt es nicht.
+LIKE match via classic DP with `%` (zero or more) and `_` (exactly one character). Backslash escaping is not implemented — spec §B.2.1 does not require it.
 
-`forbid(unsafe_code)`. no_std + alloc kompatibel.
+`forbid(unsafe_code)`. no_std + alloc compatible.
 
-### Architektur
+### Architecture
 
-- **Layer:** 4 (Core Services).
-- **Dependencies (in):** keine. Pure-Rust + `alloc`.
-- **Dependents (out):** `dcps` (`ContentFilteredTopic`-Filter).
-- **Feature-Flags:** `std` (default), `alloc`.
+- **Layer:** 4 (core services).
+- **Dependencies (in):** none. Pure Rust + `alloc`.
+- **Dependents (out):** `dcps` (`ContentFilteredTopic` filter).
+- **Feature flags:** `std` (default), `alloc`.
 
-### Stabilitaet
+### Stability
 
-Public-API + Filter-Expression-Grammar RC1-stabil. `IN (...)` und `IS NULL` sind nicht in §B.2.1 — falls Bedarf, additive Erweiterung als Major-2.0-Hook.
+Public API + filter-expression grammar RC1-stable. `IN (...)` and `IS NULL` are not in §B.2.1 — if needed, an additive extension as a major-2.0 hook.

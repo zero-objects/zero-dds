@@ -1,39 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Body-Encoding-Mode-Mapping (Pass-Through / JSON / AMQP-Native).
+//! Body-encoding-mode mapping (pass-through / JSON / AMQP-native).
 //!
-//! Spec-Quelle: dds-amqp-1.0-beta1.pdf §8.1 Body Encoding Modes.
+//! Spec source: dds-amqp-1.0-beta1.pdf §8.1 Body Encoding Modes.
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// Spec §8.1 — Body-Encoding-Mode pro Topic-Mapping.
+/// Spec §8.1 — body-encoding mode per topic mapping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BodyEncodingMode {
-    /// Spec §8.1.1 — Pass-Through (XCDR2-Bytes verbatim).
+    /// Spec §8.1.1 — pass-through (XCDR2 bytes verbatim).
     #[default]
     PassThrough,
-    /// Spec §8.1.2 — JSON-Mapping.
+    /// Spec §8.1.2 — JSON mapping.
     Json,
-    /// Spec §8.1.3 — AMQP-Native typed mapping.
+    /// Spec §8.1.3 — AMQP-native typed mapping.
     AmqpNative,
 }
 
-/// Mapping-Fehler.
+/// Mapping error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MappingError {
-    /// JSON-Body ist nicht UTF-8.
+    /// JSON body is not UTF-8.
     InvalidUtf8,
-    /// JSON-Body ist nicht gueltiges JSON.
+    /// JSON body is not valid JSON.
     InvalidJson(String),
-    /// Pass-Through-Body ist leer (typischerweise illegal).
+    /// Pass-through body is empty (typically illegal).
     EmptyBody,
 }
 
-/// Spec §8.1 — Encode eines DDS-Sample-Bodies in den AMQP-Body.
+/// Spec §8.1 — encode a DDS sample body into the AMQP body.
 ///
-/// Returns Tuple (content_type, body_bytes).
+/// Returns a tuple (content_type, body_bytes).
 ///
 /// # Errors
 /// `MappingError`.
@@ -47,11 +47,11 @@ pub fn encode_dds_to_amqp_body(
     match mode {
         BodyEncodingMode::PassThrough => Ok(("application/vnd.dds.xcdr2", sample_xcdr2.to_vec())),
         BodyEncodingMode::Json => {
-            // Wir koennen XCDR2 nicht ohne Type-Information in JSON
-            // umsetzen — Spec §8.1.2 verlangt Type-Reflektion. Hier
-            // liefern wir nur Pass-Through-Base64 als Fallback;
-            // der Caller mit echtem TypeObject kann eine richtige
-            // Konvertierung liefern.
+            // We cannot convert XCDR2 to JSON without type
+            // information — Spec §8.1.2 requires type reflection. Here
+            // we only provide pass-through base64 as a fallback;
+            // a caller with a real TypeObject can provide a proper
+            // conversion.
             let mut json = String::from("{\"_xcdr2\":\"");
             for b in sample_xcdr2 {
                 let _ = core::fmt::Write::write_fmt(&mut json, core::format_args!("{b:02x}"));
@@ -65,8 +65,8 @@ pub fn encode_dds_to_amqp_body(
     }
 }
 
-/// Spec §8.1 — Parse eines AMQP-Bodies in einen DDS-Sample-Body
-/// (XCDR2-Bytes).
+/// Spec §8.1 — parse an AMQP body into a DDS sample body
+/// (XCDR2 bytes).
 ///
 /// # Errors
 /// `MappingError`.
@@ -84,8 +84,8 @@ pub fn parse_amqp_body(body: &[u8], content_type: Option<&str>) -> Result<Vec<u8
         BodyEncodingMode::PassThrough | BodyEncodingMode::AmqpNative => Ok(body.to_vec()),
         BodyEncodingMode::Json => {
             let s = core::str::from_utf8(body).map_err(|_| MappingError::InvalidUtf8)?;
-            // Suchen wir das _xcdr2-Hex-Field aus unserem Reverse-
-            // Encoding (rudimentaerer Roundtrip ohne Type-Info).
+            // Look for the _xcdr2 hex field from our reverse
+            // encoding (rudimentary round-trip without type info).
             let key = "\"_xcdr2\":\"";
             let start = s
                 .find(key)

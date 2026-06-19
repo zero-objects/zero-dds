@@ -10,9 +10,9 @@
 //! };
 //! ```
 //!
-//! `profile_data` ist eine CDR-Encapsulation des Profile-spezifischen
-//! Bodies. Fuer `TAG_INTERNET_IOP` ist das ein `IIOP::ProfileBody`
-//! (Spec §15.7.2), siehe `crates/corba-iiop/src/profile_body.rs`.
+//! `profile_data` is a CDR encapsulation of the profile-specific
+//! body. For `TAG_INTERNET_IOP` this is an `IIOP::ProfileBody`
+//! (spec §15.7.2), see `crates/corba-iiop/src/profile_body.rs`.
 
 use alloc::vec::Vec;
 
@@ -22,21 +22,21 @@ use zerodds_corba_iiop::profile_body::CdrError;
 
 use crate::profile_tags::ProfileId;
 
-/// `TaggedProfile` — Tag + opaque Encapsulation.
+/// `TaggedProfile` — tag + opaque encapsulation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaggedProfile {
-    /// Profile-Tag.
+    /// Profile tag.
     pub tag: ProfileId,
-    /// Encapsulation-Bytes (Endianness-Octet + Body).
+    /// Encapsulation bytes (endianness octet + body).
     pub profile_data: Vec<u8>,
 }
 
 impl TaggedProfile {
-    /// Konstruiert ein `TAG_INTERNET_IOP`-Profile aus einem
-    /// [`IiopProfileBody`] mit gewaehlter Endianness.
+    /// Constructs a `TAG_INTERNET_IOP` profile from an
+    /// [`IiopProfileBody`] with the chosen endianness.
     ///
     /// # Errors
-    /// CDR-Encode-Fehler.
+    /// CDR encode error.
     pub fn iiop(body: &IiopProfileBody, endianness: Endianness) -> Result<Self, CdrError> {
         let profile_data = body.encode_encapsulation(endianness)?;
         Ok(Self {
@@ -45,11 +45,11 @@ impl TaggedProfile {
         })
     }
 
-    /// Versucht, das Profile als `IIOP::ProfileBody` zu decodieren.
-    /// Liefert `None`, wenn der Tag nicht `TAG_INTERNET_IOP` ist.
+    /// Tries to decode the profile as an `IIOP::ProfileBody`.
+    /// Returns `None` if the tag is not `TAG_INTERNET_IOP`.
     ///
     /// # Errors
-    /// CDR-Decode-Fehler bei korruptem Body.
+    /// CDR decode error on a corrupt body.
     pub fn as_iiop(&self) -> Option<Result<IiopProfileBody, CdrError>> {
         if self.tag != ProfileId::InternetIop {
             return None;
@@ -57,10 +57,10 @@ impl TaggedProfile {
         Some(IiopProfileBody::decode_encapsulation(&self.profile_data))
     }
 
-    /// CDR-Encode (length-prefixed Encapsulation).
+    /// CDR encode (length-prefixed encapsulation).
     ///
     /// # Errors
-    /// Buffer-Schreibfehler.
+    /// Buffer write error.
     pub fn encode(&self, w: &mut BufferWriter) -> Result<(), CdrError> {
         w.write_u32(self.tag.as_u32())?;
         let n = u32::try_from(self.profile_data.len()).map_err(|_| CdrError::Overflow)?;
@@ -69,10 +69,10 @@ impl TaggedProfile {
         Ok(())
     }
 
-    /// CDR-Decode.
+    /// CDR decode.
     ///
     /// # Errors
-    /// Buffer-Lesefehler.
+    /// Buffer read error.
     pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, CdrError> {
         let tag = ProfileId::from_u32(r.read_u32()?);
         let n = r.read_u32()? as usize;

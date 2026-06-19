@@ -1,16 +1,21 @@
 # IDL4 to Java Language Mapping 1.0 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/idl4-java-1.0.pdf` (51 Seiten, OMG formal/2021-08-01)
+**Spec:** [OMG IDL4-Java 1.0](https://www.omg.org/spec/IDL4-Java/1.0/PDF) (51 Seiten, OMG formal/2021-08-01)
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
+Audit Item-für-Item
+gegen die Spec; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
 Status (`done` / `partial` / `open` / `n/a`).
 
-**Kontext:** `crates/idl-java/` ist live mit 8 Files + 179 Tests
-(annotations/bitset/emitter/error/keywords/lib/rpc/type_map). Code-Gen
-deckt §6 Type-Mapping + §7 Aggregate-Types weitgehend ab; Runtime-JAR
-(`omgdds.jar`-Pendant fuer `org.omg.type.Holder<E>`/`BooleanSeq`/etc.)
-ist nicht im Repo.
+**Kontext:** Die generierten Klassen kompilieren gegen die im Repo
+mitgelieferte Java-Runtime — `crates/java-omgdds/java` (Maven-Projekt, das
+`omgdds.jar`-Pendant: `org.zerodds.cdr.*`-XCDR2-Codec + `org.omg.dds.*`-PSM)
+und `crates/idl-java/runtime` (`org.zerodds.types.*`-Annotationen +
+`org.zerodds.rpc.*` Holder/Requester/Replier). `tests/compile_check.rs`
+kompiliert den generierten Code per `javac` gegen genau diese Runtime.
+
+Implementation:
+
+- `crates/idl-java/` — live mit 12 Files + 272 Tests (amqp/annotations/bitset/corba_traits/emitter/error/keywords/lib/rpc/type_map/typesupport/verbatim).
 
 ---
 
@@ -37,7 +42,7 @@ addressed in separate specifications."
 language features as appropriate and natural."
 
 **Repo:** Generator emittiert Java SE 8+ Konstrukte (Generics,
-Annotations, sealed interfaces fuer Unions, Optional fuer @optional-
+Annotations, sealed interfaces für Unions, Optional für @optional-
 Member).
 
 **Tests:** `union_emits_sealed_interface`,
@@ -64,7 +69,7 @@ IDL input into Java source code output as specified in clause 7."
 
 **Status:** done
 
-### 2.2 User: Application Code laeuft cross-Implementation-portabel
+### 2.2 User: Application Code läuft cross-Implementation-portabel
 
 **Spec:** §2, S. 1 — "Application source code that conforms to this
 specification makes use of the Java data types and API's as defined
@@ -106,7 +111,7 @@ will be portable across implementations."
 **Spec:** §3, S. 1 — "[J2SE 8.0] Java SE 8."
 
 **Repo:** Generator emittiert Java-8-kompatibel (Annotations + Type-
-Use Annotations fuer @optional/@external).
+Use Annotations für @optional/@external).
 
 **Tests:** `optional_annotation_emits_marker_in_addition_to_optional_type`.
 
@@ -116,7 +121,7 @@ Use Annotations fuer @optional/@external).
 
 **Spec:** §3, S. 1 — "[JavaBeans] JavaBeans 1.01."
 
-**Repo:** Generator emittiert Bean-Style-Accessors (getX/setX) gemaess
+**Repo:** Generator emittiert Bean-Style-Accessors (getX/setX) gemäß
 JavaBeans 1.01 Konvention.
 
 **Tests:** `primitive_struct_uses_correct_java_types`,
@@ -238,13 +243,13 @@ schemes [...] IDL Naming Scheme [...] Java Naming Scheme. The
 to select the appropriate naming scheme."
 
 **Repo:** `crates/idl-java/src/lib.rs::JavaCodegenOptions` — Field
-fuer Naming-Scheme-Selection.
+für Naming-Scheme-Selection.
 
 **Tests:** `options_have_sensible_defaults`, `options_clone_works`.
 
 **Status:** done
 
-### 7.1.1.0 Name-Kollision mit Reserved-Names: Underscore-Praefix
+### 7.1.1.0 Name-Kollision mit Reserved-Names: Underscore-Präfix
 
 **Spec:** §7.1.1, S. 5 — "if a mapped name or identifier collides
 with one of the names reserved in Clause 7.1.2, the collision shall
@@ -313,7 +318,7 @@ each underscore capitalized, all underscores removed; first letter
 lower case."
 
 **Repo:** Camel-Case-Helper in `type_map.rs`. Bean-Accessor-Generator
-nutzt das fuer getter/setter (`getMyField`/`setMyField`).
+nutzt das für getter/setter (`getMyField`/`setMyField`).
 
 **Tests:** Bean-Accessor-Tests +
 `spec_conformance::camel_case_for_member_accessors`.
@@ -326,7 +331,7 @@ nutzt das fuer getter/setter (`getMyField`/`setMyField`).
 capitalized, underscores unchanged."
 
 **Repo:** Constants nutzen ALL_UPPERCASE per IDL-Default (Spec
-sagt: konstanten-Namen sind in der IDL ueblicherweise schon
+sagt: konstanten-Namen sind in der IDL üblicherweise schon
 ALL_UPPERCASE; Generator preserviert das).
 
 **Tests:** `spec_conformance::all_uppercase_for_constants_via_idl_default`.
@@ -348,15 +353,15 @@ lowercase, underscores unchanged."
 
 **Status:** done
 
-### 7.1.1.3 Suffixes (z.B. Abstract); Underscore-Praefix bei Kollision
+### 7.1.1.3 Suffixes (z.B. Abstract); Underscore-Präfix bei Kollision
 
 **Spec:** §7.1.1.3, S. 7 — "If an IDL name ends in a reserved suffix
 (for example, Abstract), then an underscore is prepended to the
 mapped name."
 
-**Repo:** `keywords.rs` enthaelt Reserved-Suffixe; Sanitizer wandelt
+**Repo:** `keywords.rs` enthält Reserved-Suffixe; Sanitizer wandelt
 Kollisionen mit `_`-Prefix. Reserved-Word-Tests decken die
-Kernfunktionalitaet ab.
+Kernfunktionalität ab.
 
 **Tests:** `class_is_reserved`, `record_is_reserved`,
 `sealed_is_reserved`, `var_yield_reserved` (alle mit Sanitization).
@@ -379,7 +384,7 @@ hashCode/notify/notifyAll/finalize/toString/wait)."
 
 **Status:** done
 
-### 7.1.3 Holder<E>-Klasse fuer inout/out-Parameter
+### 7.1.3 Holder<E>-Klasse für inout/out-Parameter
 
 **Spec:** §7.1.3, S. 8 — "Holder types are required in cases when
 an IDL defined data type is passed to an operation as an inout or
@@ -388,10 +393,11 @@ parameterized with the associated box type. Non-primitive types
 utilize the generic Holder<E> class. `package org.omg.type; public
 class Holder<E> { public E value; }`."
 
-**Repo:** Generator emittiert `org.omg.type.Holder<Integer>`-
-Reference in Method-Signaturen. Die `Holder<E>`-Runtime-Class ist
-externe Java-Lib (analog `omg::types::sequence` in C++ — nicht
-im Rust-Repo).
+**Repo:** `crates/idl-java/src/rpc.rs` emittiert die Holder-Referenz für
+`out`/`inout` (`org.zerodds.rpc.Holder<E>`); die Runtime-Klasse liegt im Repo
+unter `crates/idl-java/runtime/rpc/Holder.java`. Requester/Replier marshallen
+die Holder-Werte real (Request-/Reply-Tupel mit Write-back), compile-verifiziert
+gegen die echte Runtime.
 
 **Tests:** `inout_param_uses_holder_pattern`,
 `out_param_uses_holder_pattern` +
@@ -401,8 +407,8 @@ im Rust-Repo).
 
 ### 7.1.4 Tab.7.1: Java-Sprachversionen pro Feature (J2SE 5.0 Enumerations/Generics/Annotations Type-Decl, Java SE 8.0 Annotation Type-Use)
 
-**Spec:** §7.1.4, S. 8 — Tab.7.1 listet J2SE 5.0 fuer Enumerations,
-Generics, Annotation Type-Declaration; Java SE 8.0 fuer Annotation
+**Spec:** §7.1.4, S. 8 — Tab.7.1 listet J2SE 5.0 für Enumerations,
+Generics, Annotation Type-Declaration; Java SE 8.0 für Annotation
 Type-Use.
 
 **Repo:** Generator targetet Java SE 8+.
@@ -576,10 +582,10 @@ Sequence-Interfaces in `org.omg.type` mit `extends java.util.List<Boxed>`.
 Plus konkrete Method-Signatur-Liste pro Interface (`add(elem)`,
 `add(int, elem)`, `get(int)`, `set(int, elem)`, etc.).
 
-**Repo:** `crates/idl-java/src/emitter.rs` emittiert `List<Boxed>`-
-Refs (Spec-konformer Substitut). Die type-specific Sequence-
-Interfaces (`BooleanSeq` etc.) sind externe Java-Lib (analog
-omg::types::sequence in C++).
+**Repo:** `crates/idl-java/src/emitter.rs` emittiert `List<Boxed>`-Refs
+(`java.util.List`, JDK-nativ) als spec-konformen Substitut für die
+type-specific Sequence-Interfaces (`BooleanSeq` etc.) — keine externe Lib
+nötig.
 
 **Tests:** `sequence_uses_list`, `sequence_param_uses_list_in_signature`
 + `spec_conformance::unbounded_sequence_emits_list_or_typed_seq`.
@@ -593,7 +599,7 @@ sequences shall raise a java.lang.IndexOutOfBoundsException."
 
 **Repo:** Bounds-Check ist Runtime-Lib-Verhalten (externe `BoundedList`-
 Implementation); Java-`List<E>` selbst wirft IndexOutOfBoundsException
-nativ. Generator emittiert Type-Hints + Bound-Marker fuer den Caller.
+nativ. Generator emittiert Type-Hints + Bound-Marker für den Caller.
 
 **Tests:** Cross-Ref `bounded_sequence_keeps_bound_marker`.
 
@@ -636,7 +642,7 @@ System); Bound-Marker ist via Generator-Doc-Kommentar emittiert.
 **Repo:** `type_map.rs` mappt wstring → `String` (UTF-16, analog
 §7.2.4.2.2).
 
-**Tests:** `string_param_signature` (gilt sinngemaess fuer wstring) +
+**Tests:** `string_param_signature` (gilt sinngemäß für wstring) +
 `spec_conformance::wstring_member_uses_java_lang_string`.
 
 **Status:** done
@@ -649,7 +655,7 @@ a java.lang.ArithmeticException if necessary."
 
 **Repo:** `crates/idl-java/src/emitter.rs::typespec_to_java` mapped
 `fixed<digits, scale>` auf `java.math.BigDecimal` (Built-In, Range-
-check ueber `java.lang.ArithmeticException`).
+check über `java.lang.ArithmeticException`).
 
 **Tests:** `spec_conformance::{fixed_member_emits_java_bigdecimal,
 fixed_returns_unsupported_or_parse_error}`,
@@ -723,16 +729,27 @@ modifier with discriminator parameter; for default-label, modifier;
 __default()-Methoden falls keine explizite default-Label."
 
 **Repo:** `emitter.rs` — Union-Pfad emittiert sealed-Interface +
-case-records (Java 17+ Pattern). Semantisch aequivalent zur Spec-
+case-records (Java 17+ Pattern). Semantisch äquivalent zur Spec-
 final-class-with-_d() (Discriminator via case-record-Type, Member-
 Access via Pattern-Matching). Spec-Konvention final-class ist
 Pre-Java-17, sealed-pattern ist die idiomatische Java 17+-Form.
 
+**Java-8-Compat:** Mit `JavaGenOptions.java8_compat` (opt-in) emittiert der
+Union-Pfad stattdessen `abstract class` + privater Konstruktor
+(Pseudo-Sealing) + `static final`-Subklassen (final-Field + Konstruktor +
+gleichnamiger Accessor) — die Pre-Java-17-Form ohne Java-9+-Konstrukte,
+empirisch gegen `javac --release 8` verifiziert (Bytecode major version 52).
+Standard bleibt der sealed-Pattern (Java 17). Structs/Enums sind in beiden
+Modi identisch (Bean-Klassen).
+
 **Tests:** `union_emits_sealed_interface` +
 `spec_conformance::union_emits_class_with_discriminator`,
-`union_with_octet_discriminator_supported`.
+`union_with_octet_discriminator_supported`,
+`java8_compat::{standard_mode_uses_sealed_interface_and_records,
+java8_mode_uses_abstract_class_and_static_subclasses}`.
 
-**Status:** done — sealed-Pattern ist Spec-aequivalent fuer Java 17+.
+**Status:** done — sealed-Pattern (Java 17) + java8_compat-Pfad (Java 8),
+beide Spec-äquivalent.
 
 ### 7.2.4.3.3 IDL enum -> Java public enum mit private value-field + valueOf(int)-Helper
 
@@ -760,8 +777,8 @@ valueOf(int)."
 supported by mapping the involved types directly to Java as
 described elsewhere in clause 7."
 
-**Repo:** Java hat Reference-Semantik fuer alle Object-Types — daher
-sind rekursive Konstruktionen automatisch unterstuetzt.
+**Repo:** Java hat Reference-Semantik für alle Object-Types — daher
+sind rekursive Konstruktionen automatisch unterstützt.
 
 **Tests:** `typedef_emits_wrapper_class` +
 `spec_conformance::typedef_emits_alias_class_or_inline`.
@@ -776,7 +793,7 @@ java.lang.IndexOutOfBoundsException."
 
 **Repo:** `emitter.rs` + `type_map.rs`. Java-Arrays werfen
 IndexOutOfBoundsException nativ — Spec-Forderung ist durch
-Sprache erfuellt.
+Sprache erfüllt.
 
 **Tests:** `array_uses_java_array_syntax` +
 `spec_conformance::array_member_uses_java_array_or_list`.
@@ -803,9 +820,9 @@ recursively. Annotations on an IDL typedef shall be applied to
 uses of the typedef in other type declarations."
 
 **Repo:** `emitter.rs::typedef_emits_wrapper_class` — Wrapper-Class
-ist documentation-friendly Variante; semantisch aequivalent zu
+ist documentation-friendly Variante; semantisch äquivalent zu
 Inline-Replacement (Spec-Default), aber liefert eindeutige
-Type-Identitaet fuer DDS-Topics.
+Type-Identität für DDS-Topics.
 
 **Tests:** `typedef_emits_wrapper_class`,
 `typedef_with_two_aliases_emits_two_files` +
@@ -813,7 +830,7 @@ Type-Identitaet fuer DDS-Topics.
 
 **Status:** done — Wrapper-Class ist Spec-konforme Implementations-
 Wahl (Spec sagt Inline-Replacement als Default, Wrapper liefert
-identische Semantik plus DDS-Type-Identitaet).
+identische Semantik plus DDS-Type-Identität).
 
 ---
 
@@ -839,7 +856,7 @@ any_returns_object_or_parse_error}`,
 
 ## §7.4 Interfaces – Basic
 
-### 7.4 IDL interface -> Java public interface (gleiche Vererbung); Attribute -> get/set; Operation -> Method mit throws fuer Exceptions; out/inout -> Holder
+### 7.4 IDL interface -> Java public interface (gleiche Vererbung); Attribute -> get/set; Operation -> Method mit throws für Exceptions; out/inout -> Holder
 
 **Spec:** §7.4, S. 21 — "Each IDL interface shall be mapped to a
 Java public interface with the same name. The Java interface shall
@@ -853,7 +870,9 @@ in the Java interface."
 **Repo:** `@service`-IDL-Interfaces via RPC-Codegen (K9); non-
 service via `crates/idl-java/src/emitter.rs::emit_non_service_interface_file`
 (`public interface I extends Base1, Base2 { ReturnType method(...)
-throws ExceptionList; }`).
+throws ExceptionList; }`). Der RPC-Requester/Replier marshallt type-erased
+(Request-`Object[]` aus IN+INOUT, Reply-`Object[]{returnValue, INOUT+OUT…}`,
+Holder-Write-back).
 
 **Tests:** RPC-Pfad: `service_interface_carries_runtime_annotation`,
 `requester_*`. Non-Service-Pfad:
@@ -1064,12 +1083,12 @@ Java class."
 
 **Status:** done
 
-### 7.14.2 Union-Discriminator: int8/uint8/wchar/octet zusaetzlich erlaubt
+### 7.14.2 Union-Discriminator: int8/uint8/wchar/octet zusätzlich erlaubt
 
 **Spec:** §7.14.2, S. 26 — "This IDL4 block adds int8, uint8, wchar
 and octet to the set of valid types for a discriminator."
 
-**Repo:** Generator-Pfad (Union via sealed interface) unterstuetzt
+**Repo:** Generator-Pfad (Union via sealed interface) unterstützt
 alle integralen Discriminator-Types (8-Bit + wchar + octet).
 
 **Tests:** `union_emits_sealed_interface` +
@@ -1161,7 +1180,7 @@ exceeds @bit_bound, IndexOutOfBoundsException shall be raised."
 
 ## §7.16 Annotations
 
-### 7.16.1 IDL @annotation -> Java @interface + zusaetzliches @interface<Name>Group fuer multi-instance
+### 7.16.1 IDL @annotation -> Java @interface + zusätzliches @interface<Name>Group für multi-instance
 
 **Spec:** §7.16.1, S. 29-30 — "An IDL annotation type named
 <AnnotationName>, defining members <Member1> through <MemberN>,
@@ -1289,19 +1308,19 @@ to the indicated output position when the indicated language is
 **Repo:** `@verbatim` ist Cross-Cutting mit XTypes 1.3 §7.2.2.4.8
 voll implementiert via `crates/idl-java/src/verbatim.rs` (Aliase
 `java`, `*`). Hooks in `emit_struct_file`/`emit_enum_file`/
-`emit_union_files` fuer alle 6 Spec-PlacementKinds.
+`emit_union_files` für alle 6 Spec-PlacementKinds.
 
 **Tests:** `spec_conformance::{verbatim_annotation_with_java_language_inlines_text,
 verbatim_annotation_with_after_declaration_placement,
 verbatim_annotation_other_language_skipped_in_java}`.
 
 **Status:** done — Code-Gen-Templating-Pfad live; XTypes 1.3
-§7.2.2.4.8 mit dieser Aufloesung geschlossen.
+§7.2.2.4.8 mit dieser Auflösung geschlossen.
 
 ### 7.17.6 Interfaces Tab.7.11: @service (Options "CORBA"/"DDS"/"*"), @oneway (middleware-spec), @ami (middleware-spec)
 
 **Spec:** §7.17.6 Tab.7.11, S. 33 — Impact ist middleware-specific
-fuer Interface-Annotations.
+für Interface-Annotations.
 
 **Repo:**
 - `@service`: `service_name_annotation_overrides_iface_name` (DDS-RPC).
@@ -1326,7 +1345,7 @@ NamingConvention apply_naming_convention; string constants_container
 default 'Constants'; boolean promote_integer_width default FALSE;
 string string_type default 'java.lang.String'; }"
 
-**Repo:** `lib.rs::JavaCodegenOptions` traegt aequivalente Felder
+**Repo:** `lib.rs::JavaCodegenOptions` trägt äquivalente Felder
 als Generator-Optionen.
 
 **Tests:** `options_have_sensible_defaults`, `options_clone_works`.
@@ -1334,7 +1353,7 @@ als Generator-Optionen.
 **Status:** done — `JavaGenOptions` deckt die Spec-Annotation-
 Parameter (NamingConvention, constants_container,
 promote_integer_width, string_type) als Codegen-Options ab.
-Annotation-Recognition als IDL-Hint ist Subject zukuenftiger
+Annotation-Recognition als IDL-Hint ist Subject zukünftiger
 Erweiterung (Caller setzt Options direkt).
 
 ### 8.1.1 apply_naming_convention Tab.8.1: 17 IDL-Konstrukte (Module/Constants/Struct/Union/Enum/Interface/Exception/Bitset/Bitmask) mit Naming-Variants
@@ -1366,7 +1385,7 @@ the name of the Java class that holds the constants."
 
 **Repo:** Default-Holder-Class-Mapping (§7.2.3) ist aktiv;
 Container-Variante mit konfigurierbarem Class-Namen ist via
-`JavaGenOptions`-Field als Codegen-Option zugaenglich.
+`JavaGenOptions`-Field als Codegen-Option zugänglich.
 
 **Tests:** Cross-Ref §7.2.3.
 
@@ -1413,13 +1432,13 @@ Spec-konform.
 
 ### A.1 CORBA-Specific Mappings
 
-**Spec:** Annex A, S. 39+ — CORBA-spezifische Anpassungen fuer
+**Spec:** Annex A, S. 39+ — CORBA-spezifische Anpassungen für
 Annex A.1.
 
 **Repo:** `crates/idl-java/src/corba_traits.rs::emit_corba_traits_files`
 (opt-in via `JavaGenOptions::emit_corba_traits = true` oder
 `generate_java_files_with_corba_traits`); emittiert pro Top-Level-
-Type eine zusaetzliche Companion-Datei `<TypeName>CorbaTraits.java`
+Type eine zusätzliche Companion-Datei `<TypeName>CorbaTraits.java`
 im selben Package mit per-Type-Konstanten (`FULL_NAME`,
 `IS_VARIABLE_SIZE`, `IS_LOCAL`) als Java-Aequivalent zum
 C++-`CORBA::traits<T>`-Template (idl-cpp Annex A.1).
@@ -1446,9 +1465,9 @@ Cross-Ref WP CORBA-Coexistence (`corba-3.3.md`).
 
 72 done / 0 partial / 0 open / 15 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-idl-java` — 106 lib + 153 integration
-(7 Bins: cluster_e 35, compile_check 12, edge_cases 20, fixtures 14,
-rpc_codegen 35, snapshot_codegen 8, spec_conformance 29) + 1 doc =
-260 Tests grün, 0 failed.
+Test-Lauf: `cargo test -p zerodds-idl-java` — 106 lib + 165 integration
+(9 Bins: bounded_collections 3, cluster_e 35, compile_check 15, edge_cases 20,
+fixtures 14, java8_compat 2, rpc_codegen 35, snapshot_codegen 12,
+spec_conformance 29) + 1 doc = 272 Tests grün, 0 failed.
 
 Keine offenen Punkte.

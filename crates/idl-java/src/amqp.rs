@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! C5.4-c §7.2.3 / §8.1.2 / §8.1.3 — AMQP-Bindings für IDL-Types in Java.
+//! C5.4-c §7.2.3 / §8.1.2 / §8.1.3 — AMQP bindings for IDL types in Java.
 //!
-//! Emittiert pro Top-Level-Struct/Union eine separate
-//! `<TypeName>AmqpCodec.java`-Datei mit statischen Helpern:
+//! Emits one `<TypeName>AmqpCodec.java` file per top-level struct/union
+//! with static helpers:
 //!
 //! * `static org.zerodds.amqp.Value toAmqpValue(T v)`
-//!   (Spec §8.1.3 AMQP-Native Composite).
+//!   (Spec §8.1.3 AMQP-native composite).
 //! * `static String toJsonString(T v)`
-//!   (Spec §8.1.2 JSON Type-Reflection).
+//!   (Spec §8.1.2 JSON type-reflection).
 //!
-//! Für Unions ruft die emittierte Funktion zusätzlich
+//! For unions the emitted function additionally calls
 //! `org.zerodds.amqp.Codec.makeUnionBody(disc, branch)` (Spec §7.2.3).
 //!
-//! # Runtime-Surface
+//! # Runtime Surface
 //!
-//! Die emittierten Calls erwarten ein Java-Runtime-Package
-//! `org.zerodds.amqp` (separates Library-Crate). API-Skizze:
+//! The emitted calls expect a Java runtime package
+//! `org.zerodds.amqp` (separate library crate). API sketch:
 //!
 //! ```java
 //! package org.zerodds.amqp;
@@ -46,7 +46,7 @@
 //!     public static Value makeUnionBody(Value discriminator, Value branch);
 //!     public static Value boolValue(boolean v);
 //!     public static Value int32Value(int v);
-//!     /* ... weitere Faktories ... */
+//!     /* ... further factory methods ... */
 //!     public static String toJson(Value v);
 //! }
 //! ```
@@ -66,11 +66,10 @@ use crate::emitter::{
 use crate::error::JavaGenError;
 use crate::keywords::sanitize_identifier;
 
-/// Emittiert pro Top-Level-Struct/Union eine
-/// `<TypeName>AmqpCodec.java`-Datei.
+/// Emits one `<TypeName>AmqpCodec.java` file per top-level struct/union.
 ///
 /// # Errors
-/// `JavaGenError::*` aus den Type-Mapping-Helpern.
+/// `JavaGenError::*` from the type-mapping helpers.
 pub(crate) fn emit_amqp_codec_files(
     spec: &Specification,
     opts: &JavaGenOptions,
@@ -191,7 +190,7 @@ fn emit_field_call(
         writeln!(out, "        b_.fieldString(\"{field_name}\", {getter});",).map_err(fmt_err)?;
         return Ok(());
     }
-    // Fallback: rekursiv via <Type>AmqpCodec.toAmqpValue.
+    // Fallback: recurse via <Type>AmqpCodec.toAmqpValue.
     let inner_ty = match ts {
         TypeSpec::Scoped(s) => s
             .parts
@@ -256,11 +255,7 @@ fn emit_union_codec(u: &UnionDef, pkg: &str) -> Result<JavaFile, JavaGenError> {
     let _disc_ty = switch_type_to_java(&u.switch_type)?;
 
     let mut body = String::new();
-    writeln!(
-        body,
-        "// Spec §7.2.3 — Union als AMQP-list [disc, branch?]."
-    )
-    .map_err(fmt_err)?;
+    writeln!(body, "// Spec §7.2.3 — Union as AMQP list [disc, branch?].").map_err(fmt_err)?;
     writeln!(body, "public final class {codec_class} {{").map_err(fmt_err)?;
     writeln!(body, "    private {codec_class}() {{}}").map_err(fmt_err)?;
     writeln!(body).map_err(fmt_err)?;
@@ -270,7 +265,7 @@ fn emit_union_codec(u: &UnionDef, pkg: &str) -> Result<JavaFile, JavaGenError> {
     )
     .map_err(fmt_err)?;
 
-    // Per Case: instanceof-Check + makeUnionBody-Call mit IDL-Discriminator.
+    // Per case: instanceof check + makeUnionBody call with IDL discriminator.
     let mut default_arm: Option<&zerodds_idl::ast::Case> = None;
     for c in &u.cases {
         let mut numeric_labels: Vec<String> = Vec::new();
@@ -320,7 +315,7 @@ fn emit_union_codec(u: &UnionDef, pkg: &str) -> Result<JavaFile, JavaGenError> {
         writeln!(body, "        }}").map_err(fmt_err)?;
     }
 
-    // Sicherheits-Fallback: leerer disc-only body (sollte nie greifen).
+    // Safety fallback: empty disc-only body (should never be reached).
     writeln!(
         body,
         "        return org.zerodds.amqp.Codec.makeUnionBody(org.zerodds.amqp.Codec.int32Value(0));",

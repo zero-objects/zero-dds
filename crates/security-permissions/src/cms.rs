@@ -1,51 +1,51 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CMS-PKCS#7-Signature-Verifier fuer Permissions/Governance-XML (C3.2).
+//! CMS PKCS#7 signature verifier for permissions/governance XML (C3.2).
 //!
-//! # Spec-Bezug
+//! # Spec reference
 //!
-//! * **OMG DDS-Security 1.2 §10.4.1.1** — Permissions- und Governance-
-//!   XML MUESSEN von der Permissions-CA per S/MIME signiert sein.
-//! * **RFC 5751** — S/MIME-Container, sowohl `multipart/signed`
-//!   (detached) als auch `application/pkcs7-mime; smime-type=signed-data`
+//! * **OMG DDS-Security 1.2 §10.4.1.1** — permissions and governance
+//!   XML MUST be signed by the permissions CA via S/MIME.
+//! * **RFC 5751** — S/MIME container, both `multipart/signed`
+//!   (detached) and `application/pkcs7-mime; smime-type=signed-data`
 //!   (opaque).
-//! * **RFC 5652** — CMS SignedData-Struktur.
-//! * **RFC 5280** — X.509-Cert-Chain-Validation, hier delegiert an
-//!   `rustls-webpki` ueber dieselbe Pipeline wie `zerodds-security-pki`.
+//! * **RFC 5652** — CMS SignedData structure.
+//! * **RFC 5280** — X.509 cert-chain validation, delegated here to
+//!   `rustls-webpki` via the same pipeline as `zerodds-security-pki`.
 //!
-//! # Was hier gepruefte wird
+//! # What is checked here
 //!
-//! 1. **S/MIME-Format**: Header-Block geparst, `Content-Type` analysiert.
-//!    Beide Varianten akzeptiert:
+//! 1. **S/MIME format**: the header block is parsed, `Content-Type` analyzed.
+//!    Both variants accepted:
 //!    - `multipart/signed; protocol="application/pkcs7-signature"` →
-//!      Boundary-Split, Body-Part 1 = Klartext-XML, Body-Part 2 =
-//!      PKCS#7-Detached-Signature.
+//!      boundary split, body part 1 = plaintext XML, body part 2 =
+//!      PKCS#7 detached signature.
 //!    - `application/pkcs7-mime; smime-type=signed-data` → base64-
-//!      decode der Body, ContentInfo.content enthaelt den Klartext
+//!      decode the body, ContentInfo.content contains the plaintext
 //!      (eContent).
-//! 2. **PEM-Wrapper** (`-----BEGIN PKCS7-----`) als zusaetzlicher Pfad
-//!    fuer Detached-Signaturen mit separatem Klartext.
-//! 3. **PKCS#7/CMS SignedData** decodiert via `cms`-Crate, mindestens
-//!    ein `SignerInfo` extrahiert.
-//! 4. **Cert-Chain Signer → CA** via webpki — exakt dieselben Trust-
-//!    Anchors und Algorithmus-Familien wie der Identity-Plugin
+//! 2. **PEM wrapper** (`-----BEGIN PKCS7-----`) as an additional path
+//!    for detached signatures with a separate plaintext.
+//! 3. **PKCS#7/CMS SignedData** decoded via the `cms` crate, at least
+//!    one `SignerInfo` extracted.
+//! 4. **Cert chain signer → CA** via webpki — exactly the same trust
+//!    anchors and algorithm families as the identity plugin
 //!    (`zerodds-security-pki::PkiAuthenticationPlugin`).
-//! 5. **Signature-Verify** ueber `signedAttrs` (RFC 5652 §5.4): SHA-256
-//!    der eContent-Bytes muss mit dem `messageDigest`-Attribut
-//!    uebereinstimmen, dann Signatur-Verify auf der DER-Encoding der
-//!    Attribute.
+//! 5. **Signature verify** over `signedAttrs` (RFC 5652 §5.4): the SHA-256
+//!    of the eContent bytes must match the `messageDigest` attribute,
+//!    then signature verify on the DER encoding of the
+//!    attributes.
 //!
-//! # Was NICHT hier gemacht wird
+//! # What is NOT done here
 //!
-//! * Live-CRL/OCSP-Check — separat in `zerodds-security-pki::ocsp` als
-//!   nachgelagerter Schritt; C3.2-Scope ist nur Cert-Chain + Signatur.
-//! * S/MIME-encrypted Container — Permissions-XML wird nicht
-//!   verschluesselt (Spec verlangt nur Authentizitaet, nicht
-//!   Vertraulichkeit).
-//! * Cross-cert / Bridge-CA — nur direkter Trust-Anchor + Intermediate-
-//!   Chain, exakt wie `webpki::EndEntityCert::verify_for_usage`
-//!   unterstuetzt.
+//! * Live CRL/OCSP check — separately in `zerodds-security-pki::ocsp` as a
+//!   downstream step; the C3.2 scope is only cert chain + signature.
+//! * S/MIME-encrypted container — the permissions XML is not
+//!   encrypted (the spec requires only authenticity, not
+//!   confidentiality).
+//! * Cross-cert / bridge CA — only the direct trust anchor + intermediate
+//!   chain, exactly as `webpki::EndEntityCert::verify_for_usage`
+//!   supports.
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -68,11 +68,11 @@ use crate::signature::XmlSignatureVerifier;
 use crate::xml::PermissionsError;
 
 // ----------------------------------------------------------------------
-// OID-Konstanten fuer Algorithmus-Familien.
+// OID constants for algorithm families.
 // ----------------------------------------------------------------------
 
-/// Property-Key fuer das PEM-CA-Bundle der Permissions-CA. Spec-konform
-/// gemaess Tabelle 63 (DDS-Security 1.2).
+/// Property key for the PEM CA bundle of the permissions CA. Spec-conform
+/// per Table 63 (DDS-Security 1.2).
 pub const PROP_PERMISSIONS_CA: &str = "dds.sec.access.permissions_ca";
 
 /// `id-messageDigest` (RFC 5652).
@@ -105,32 +105,32 @@ const OID_RSA_SHA384: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.1
 const OID_RSA_PSS: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.10");
 
 // ----------------------------------------------------------------------
-// Verifier-Public-Type
+// Verifier public type
 // ----------------------------------------------------------------------
 
-/// Verifier fuer S/MIME-PKCS#7-signierte Permissions/Governance-XML.
+/// Verifier for S/MIME PKCS#7-signed permissions/governance XML.
 ///
-/// Konstruiert mit dem PEM-CA-Bundle der Permissions-CA. Bei jedem
-/// `verify_and_extract`-Aufruf wird die Cert-Chain und die Signatur
-/// against diese CA gepruefte und das innere Klartext-XML extrahiert.
+/// Constructed with the PEM CA bundle of the permissions CA. On every
+/// `verify_and_extract` call the cert chain and the signature are
+/// checked against this CA and the inner plaintext XML is extracted.
 #[derive(Debug, Clone)]
 pub struct CmsPkcs7Verifier {
-    /// CA-Cert-Bundle (DER-encoded). Ein oder mehrere Certs koennen als
-    /// Trust-Anchor dienen — Cyclone und FastDDS liefern typisch genau
-    /// einen, aber wir akzeptieren mehrere fuer Cross-CA-Setups.
+    /// CA cert bundle (DER-encoded). One or more certs can serve as a
+    /// trust anchor — Cyclone and FastDDS typically deliver exactly
+    /// one, but we accept multiple for cross-CA setups.
     ca_certs_der: Vec<Vec<u8>>,
-    /// Optionaler Klartext-XML, der fuer detached PEM-PKCS#7-Validation
-    /// als Vergleichs-Content geliefert wird. `None` = nur opaque /
-    /// multipart-mit-eingebettetem-Content akzeptieren.
+    /// Optional plaintext XML supplied as comparison content for
+    /// detached PEM PKCS#7 validation. `None` = only accept opaque /
+    /// multipart-with-embedded-content.
     detached_content: Option<Vec<u8>>,
 }
 
 impl CmsPkcs7Verifier {
-    /// Erzeugt einen Verifier aus dem PEM-CA-Bundle der Permissions-CA.
+    /// Creates a verifier from the PEM CA bundle of the permissions CA.
     ///
     /// # Errors
-    /// `PermissionsError::Malformed` wenn das CA-Bundle leer ist oder
-    /// kein parsbares Cert enthaelt.
+    /// `PermissionsError::Malformed` if the CA bundle is empty or
+    /// contains no parsable cert.
     pub fn new(ca_pem: &[u8]) -> Result<Self, PermissionsError> {
         let mut ca_certs_der: Vec<Vec<u8>> = Vec::new();
         for item in CertificateDer::pem_slice_iter(ca_pem) {
@@ -148,25 +148,25 @@ impl CmsPkcs7Verifier {
         })
     }
 
-    /// Erzeugt einen Verifier aus einer `PropertyList` — liest
-    /// `dds.sec.access.permissions_ca` als PEM-CA.
+    /// Creates a verifier from a `PropertyList` — reads
+    /// `dds.sec.access.permissions_ca` as the PEM CA.
     ///
     /// # Errors
-    /// `PermissionsError::Malformed` wenn die Property fehlt oder leer
-    /// ist.
+    /// `PermissionsError::Malformed` if the property is missing or
+    /// empty.
     pub fn from_property_list(props: &PropertyList) -> Result<Self, PermissionsError> {
         let pem = props.get(PROP_PERMISSIONS_CA).ok_or_else(|| {
-            PermissionsError::Malformed(format!("property {PROP_PERMISSIONS_CA} fehlt"))
+            PermissionsError::Malformed(format!("property {PROP_PERMISSIONS_CA} missing"))
         })?;
         Self::new(pem.as_bytes())
     }
 
-    /// Setzt einen Klartext-XML-Body fuer den Detached-PEM-PKCS#7-Pfad.
+    /// Sets a plaintext XML body for the detached PEM PKCS#7 path.
     ///
-    /// Wenn ein Caller nur das PEM-PKCS#7 hat (z.B. ueber separaten
-    /// File-Pfad `signed_xml_path`), kann er den dazugehoerigen
-    /// Klartext-XML hier setzen. Der Verifier ueberprueft dann die
-    /// Detached-Signatur gegen diesen Content.
+    /// When a caller only has the PEM PKCS#7 (e.g. via a separate
+    /// file path `signed_xml_path`), it can set the corresponding
+    /// plaintext XML here. The verifier then checks the
+    /// detached signature against this content.
     #[must_use]
     pub fn with_detached_content(mut self, xml: Vec<u8>) -> Self {
         self.detached_content = Some(xml);
@@ -176,14 +176,14 @@ impl CmsPkcs7Verifier {
 
 impl XmlSignatureVerifier for CmsPkcs7Verifier {
     fn verify_and_extract(&self, signed_doc: &[u8]) -> Result<Vec<u8>, PermissionsError> {
-        // Drei Eingangs-Pfade unterscheiden:
+        // Distinguish three input paths:
         //
-        //   1. PEM-Wrapper "-----BEGIN PKCS7-----" → detached, braucht
+        //   1. PEM wrapper "-----BEGIN PKCS7-----" → detached, needs
         //      `detached_content`.
-        //   2. S/MIME `multipart/signed` → Boundary-Split.
+        //   2. S/MIME `multipart/signed` → boundary split.
         //   3. S/MIME `application/pkcs7-mime; smime-type=signed-data`
-        //      (opaque) → base64-decode den Body, eContent ist im
-        //      SignedData embedded.
+        //      (opaque) → base64-decode the body, eContent is embedded
+        //      in the SignedData.
         let pkcs7_der: Vec<u8>;
         let detached_content_for_verify: Option<Vec<u8>>;
 
@@ -215,15 +215,15 @@ impl XmlSignatureVerifier for CmsPkcs7Verifier {
 }
 
 // ----------------------------------------------------------------------
-// PEM-PKCS7-Erkennung + Decoding
+// PEM PKCS7 detection + decoding
 // ----------------------------------------------------------------------
 
 fn looks_like_pem_pkcs7(bytes: &[u8]) -> bool {
     let head = &bytes[..core::cmp::min(64, bytes.len())];
     let s = core::str::from_utf8(head).unwrap_or("");
-    // OpenSSL >= 3.x schreibt `-----BEGIN CMS-----` wenn ContentInfo
-    // mit signedData enthaelt. AElterer Code (PKCS7-Output) und das
-    // RFC-7468 Label `PKCS7` muessen wir auch akzeptieren.
+    // OpenSSL >= 3.x writes `-----BEGIN CMS-----` when ContentInfo
+    // contains signedData. Older code (PKCS7 output) and the
+    // RFC 7468 label `PKCS7` must be accepted as well.
     s.starts_with("-----BEGIN CMS-----")
         || s.starts_with("-----BEGIN PKCS7-----")
         || s.starts_with("-----BEGIN PKCS #7-----")
@@ -231,8 +231,8 @@ fn looks_like_pem_pkcs7(bytes: &[u8]) -> bool {
 
 fn parse_pem_pkcs7(bytes: &[u8]) -> Result<Vec<u8>, PermissionsError> {
     let s = core::str::from_utf8(bytes)
-        .map_err(|_| PermissionsError::Malformed("pem pkcs7 ist kein UTF-8".to_string()))?;
-    // Akzeptiere "CMS", "PKCS7" oder "PKCS #7" als Label.
+        .map_err(|_| PermissionsError::Malformed("pem pkcs7 is not UTF-8".to_string()))?;
+    // Accept "CMS", "PKCS7" or "PKCS #7" as label.
     let labels = [
         "-----BEGIN CMS-----",
         "-----BEGIN PKCS7-----",
@@ -248,7 +248,7 @@ fn parse_pem_pkcs7(bytes: &[u8]) -> Result<Vec<u8>, PermissionsError> {
     for (i, l) in labels.iter().enumerate() {
         if let Some(p) = s.find(l) {
             start = Some(p + l.len());
-            // Match passendes End-Label.
+            // Match the corresponding END label.
             if let Some(q) = s.find(ends[i]) {
                 end = Some(q);
             }
@@ -258,7 +258,7 @@ fn parse_pem_pkcs7(bytes: &[u8]) -> Result<Vec<u8>, PermissionsError> {
         (Some(a), Some(b)) if b > a => (a, b),
         _ => {
             return Err(PermissionsError::Malformed(
-                "pem pkcs7: BEGIN/END fehlt".to_string(),
+                "pem pkcs7: BEGIN/END missing".to_string(),
             ));
         }
     };
@@ -270,7 +270,7 @@ fn parse_pem_pkcs7(bytes: &[u8]) -> Result<Vec<u8>, PermissionsError> {
 }
 
 // ----------------------------------------------------------------------
-// S/MIME-Header-Parser
+// S/MIME header parser
 // ----------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -284,17 +284,17 @@ enum SmimeKind {
     Pkcs7Mime { transfer_encoding: String },
 }
 
-/// Trennt die S/MIME-Header vom Body. Akzeptiert sowohl CRLF-Trenner
-/// als auch reine LF-Trenner (Cyclone + FastDDS Cross-Tools mischen).
+/// Splits the S/MIME headers from the body. Accepts both CRLF separators
+/// and plain LF separators (Cyclone + FastDDS cross-tools mix them).
 fn parse_smime_headers(bytes: &[u8]) -> Result<(SmimeContentType, &[u8]), PermissionsError> {
     let body_start = find_header_body_split(bytes).ok_or_else(|| {
-        PermissionsError::Malformed("s/mime: kein Header-Body-Trenner".to_string())
+        PermissionsError::Malformed("s/mime: no header/body separator".to_string())
     })?;
     let header_block = &bytes[..body_start];
     let body = &bytes[body_start + header_split_skip(bytes, body_start)..];
 
     let header_str = core::str::from_utf8(header_block)
-        .map_err(|_| PermissionsError::Malformed("s/mime header ist kein UTF-8".to_string()))?;
+        .map_err(|_| PermissionsError::Malformed("s/mime header is not UTF-8".to_string()))?;
     let headers = parse_header_lines(header_str);
 
     let ct = headers
@@ -302,7 +302,7 @@ fn parse_smime_headers(bytes: &[u8]) -> Result<(SmimeContentType, &[u8]), Permis
         .find(|(k, _)| k.eq_ignore_ascii_case("Content-Type"))
         .map(|(_, v)| v.clone())
         .ok_or_else(|| {
-            PermissionsError::Malformed("s/mime: Content-Type-Header fehlt".to_string())
+            PermissionsError::Malformed("s/mime: Content-Type header missing".to_string())
         })?;
     let cte = headers
         .iter()
@@ -313,17 +313,17 @@ fn parse_smime_headers(bytes: &[u8]) -> Result<(SmimeContentType, &[u8]), Permis
     let ct_lower = ct.to_lowercase();
     let kind = if ct_lower.starts_with("multipart/signed") {
         let boundary = parse_param(&ct, "boundary").ok_or_else(|| {
-            PermissionsError::Malformed("multipart/signed ohne boundary".to_string())
+            PermissionsError::Malformed("multipart/signed without boundary".to_string())
         })?;
         SmimeKind::MultipartSigned { boundary }
     } else if ct_lower.starts_with("application/pkcs7-mime")
         || ct_lower.starts_with("application/x-pkcs7-mime")
     {
-        // Nur signed-data ist hier zulaessig.
+        // Only signed-data is admissible here.
         let smime_type = parse_param(&ct, "smime-type").unwrap_or_default();
         if smime_type != "signed-data" && !smime_type.is_empty() {
             return Err(PermissionsError::Malformed(format!(
-                "smime-type={smime_type} nicht unterstuetzt"
+                "smime-type={smime_type} not supported"
             )));
         }
         SmimeKind::Pkcs7Mime {
@@ -339,8 +339,8 @@ fn parse_smime_headers(bytes: &[u8]) -> Result<(SmimeContentType, &[u8]), Permis
 }
 
 fn find_header_body_split(bytes: &[u8]) -> Option<usize> {
-    // Suche \r\n\r\n oder \n\n. Wenn beides existiert, das frueher
-    // auftretende.
+    // Search for \r\n\r\n or \n\n. If both exist, take the earlier
+    // occurrence.
     let crlf = find_subseq(bytes, b"\r\n\r\n");
     let lf = find_subseq(bytes, b"\n\n");
     match (crlf, lf) {
@@ -396,7 +396,7 @@ fn parse_header_lines(s: &str) -> Vec<(String, String)> {
 }
 
 fn parse_param(header_value: &str, key: &str) -> Option<String> {
-    // Suche `key=value` oder `key="value"` (case-insensitive).
+    // Search for `key=value` or `key="value"` (case-insensitive).
     let lower = header_value.to_lowercase();
     let needle = format!("{}=", key.to_lowercase());
     let idx = lower.find(&needle)?;
@@ -419,7 +419,7 @@ fn split_multipart_signed(
 ) -> Result<(Vec<u8>, Vec<u8>), PermissionsError> {
     let dash_boundary = format!("--{boundary}");
 
-    // Sammle Offsets aller Boundary-Marker (`--boundary`) im Body.
+    // Collect offsets of all boundary markers (`--boundary`) in the body.
     let mut indices: Vec<usize> = Vec::new();
     let mut from = 0usize;
     while let Some(p) = find_subseq(&body[from..], dash_boundary.as_bytes()) {
@@ -429,25 +429,25 @@ fn split_multipart_signed(
     }
     if indices.len() < 2 {
         return Err(PermissionsError::Malformed(
-            "multipart/signed: weniger als 2 Boundaries".to_string(),
+            "multipart/signed: fewer than 2 boundaries".to_string(),
         ));
     }
 
-    // Body-Parts sind die Bytes zwischen Boundary i und Boundary i+1.
+    // Body parts are the bytes between boundary i and boundary i+1.
     //
-    // RFC 2046 §5.1.1: nur das CRLF DIREKT vor `--boundary` gehoert zur
-    // Boundary-Syntax. Alle frueheren CRLF gehoeren zum Body. Wir
-    // strippen also exakt EIN trailing CRLF (oder eines `\n` ohne `\r`)
-    // — niemals mehr.
+    // RFC 2046 §5.1.1: only the CRLF DIRECTLY before `--boundary` belongs
+    // to the boundary syntax. All earlier CRLF belong to the body. So we
+    // strip exactly ONE trailing CRLF (or a single `\n` without `\r`)
+    // — never more.
     let mut bodies: Vec<&[u8]> = Vec::new();
     for w in indices.windows(2) {
         let start = w[0] + dash_boundary.len();
-        // Skip eventuell `--` (close) — in dem Fall ist dies kein Part.
+        // Possibly skip `--` (close) — in that case this is not a part.
         if body.get(start..start + 2) == Some(b"--") {
             continue;
         }
-        // Skip genau die CRLF/LF DIREKT nach der Boundary-Zeile (eine
-        // einzige Newline gehoert zur Boundary).
+        // Skip exactly the CRLF/LF DIRECTLY after the boundary line (a
+        // single newline belongs to the boundary).
         let mut i = start;
         if i < body.len() && body[i] == b'\r' {
             i += 1;
@@ -456,7 +456,7 @@ fn split_multipart_signed(
             i += 1;
         }
         let end = w[1];
-        // Trim genau das CRLF/LF unmittelbar vor der naechsten Boundary.
+        // Trim exactly the CRLF/LF immediately before the next boundary.
         let mut e = end;
         if e > i && body[e - 1] == b'\n' {
             e -= 1;
@@ -468,48 +468,50 @@ fn split_multipart_signed(
     }
     if bodies.len() < 2 {
         return Err(PermissionsError::Malformed(
-            "multipart/signed: nicht 2 Body-Parts".to_string(),
+            "multipart/signed: not 2 body parts".to_string(),
         ));
     }
 
-    // Body-Part 1 = Klartext (mit eigenen Headers); wir muessen Header
-    // vom XML trennen und das XML-Original-Byte-Range fuer den
-    // Signature-Verify zurueckgeben — RFC 1847 §2.4: signed content =
-    // exakt Body-Part-1 inklusive seiner Headers (Canonical-CRLF-Form).
-    // OpenSSL `cms -sign -text` fuegt `Content-Type: text/plain` als
-    // Body-Part-1-Header ein und der Signer signiert _diesen ganzen
-    // Block_.
+    // Body part 1 = plaintext (with its own headers); we must split the
+    // headers from the XML and return the original XML byte range for the
+    // signature verify — RFC 1847 §2.4: signed content =
+    // exactly body part 1 including its headers (canonical CRLF form).
+    // OpenSSL `cms -sign -text` inserts `Content-Type: text/plain` as a
+    // body-part-1 header and the signer signs _this whole
+    // block_.
     let body_part_1 = bodies[0];
 
-    // Body-Part 2 = der PKCS#7-Detached-Signatur-Block. Innen sind
-    // Headers + base64-encoded DER-Signatur.
+    // Body part 2 = the PKCS#7 detached signature block. Inside are
+    // headers + base64-encoded DER signature.
     let body_part_2 = bodies[1];
     let p2_split = find_header_body_split(body_part_2).ok_or_else(|| {
-        PermissionsError::Malformed("multipart: pkcs7-part ohne Header-Body-Trenner".to_string())
+        PermissionsError::Malformed(
+            "multipart: pkcs7-part without header/body separator".to_string(),
+        )
     })?;
     let p2_body = &body_part_2[p2_split + header_split_skip(body_part_2, p2_split)..];
     let p2_b64: String = core::str::from_utf8(p2_body)
-        .map_err(|_| PermissionsError::Malformed("pkcs7-part nicht UTF-8".to_string()))?
+        .map_err(|_| PermissionsError::Malformed("pkcs7-part not UTF-8".to_string()))?
         .chars()
         .filter(|c| !c.is_ascii_whitespace())
         .collect();
     let p2_der = base64_decode(p2_b64.as_bytes())?;
 
-    // Body-Part-1: extrahiere das innere XML aus dem text/plain-Block.
-    // Aber fuer den Signature-Check brauchen wir die rohen Bytes inkl.
-    // Headers — wir liefern hier zwei Varianten: das innere XML als
-    // Caller-Output, der Signature-Check unten arbeitet auf body_part_1
-    // direkt.
-    // RFC 1847: signed content ist die _kanonische_ Form (CRLF) von
-    // body-part-1 — wir liefern die rohen Bytes, normalisieren aber
-    // einsame LFs auf CRLF. Cyclone/FastDDS-Files sind ohnehin CRLF.
+    // Body part 1: extract the inner XML from the text/plain block.
+    // But for the signature check we need the raw bytes incl.
+    // headers — here we provide two variants: the inner XML as
+    // caller output, the signature check below works on body_part_1
+    // directly.
+    // RFC 1847: signed content is the _canonical_ form (CRLF) of
+    // body part 1 — we return the raw bytes but normalize
+    // lone LFs to CRLF. Cyclone/FastDDS files are CRLF anyway.
     Ok((normalize_to_canonical_crlf(body_part_1), p2_der))
 }
 
 fn normalize_to_canonical_crlf(body: &[u8]) -> Vec<u8> {
-    // Wandelt rohe LF in CRLF um (RFC 1847 Canonical-Form). Die
-    // Cyclone/FastDDS-S/MIME-Files sind ohnehin schon CRLF — wir machen
-    // hier eine defensive Roundtrip.
+    // Converts raw LF to CRLF (RFC 1847 canonical form). The
+    // Cyclone/FastDDS S/MIME files are already CRLF anyway — here we do
+    // a defensive roundtrip.
     let mut out = Vec::with_capacity(body.len() + 8);
     let mut i = 0;
     while i < body.len() {
@@ -528,7 +530,7 @@ fn decode_transfer_body(body: &[u8], encoding: &str) -> Result<Vec<u8>, Permissi
     match encoding {
         "base64" => {
             let stripped: String = core::str::from_utf8(body)
-                .map_err(|_| PermissionsError::Malformed("base64 body ist kein UTF-8".to_string()))?
+                .map_err(|_| PermissionsError::Malformed("base64 body is not UTF-8".to_string()))?
                 .chars()
                 .filter(|c| !c.is_ascii_whitespace())
                 .collect();
@@ -550,17 +552,17 @@ fn verify_cms_signed_xml(
     detached_content: Option<&[u8]>,
     ca_certs_der: &[Vec<u8>],
 ) -> Result<Vec<u8>, PermissionsError> {
-    // 1. ContentInfo decodieren.
+    // 1. Decode ContentInfo.
     let ci = ContentInfo::from_der(pkcs7_der)
         .map_err(|e| PermissionsError::Malformed(format!("ContentInfo: {e:?}")))?;
     if ci.content_type != ID_SIGNED_DATA {
         return Err(PermissionsError::Malformed(format!(
-            "ContentInfo: erwarte signedData, gefunden {}",
+            "ContentInfo: expected signedData, found {}",
             ci.content_type
         )));
     }
 
-    // 2. SignedData aus dem ANY auspacken.
+    // 2. Unwrap the SignedData from the ANY.
     let sd_der = ci
         .content
         .to_der()
@@ -568,17 +570,17 @@ fn verify_cms_signed_xml(
     let sd = SignedData::from_der(&sd_der)
         .map_err(|e| PermissionsError::Malformed(format!("SignedData parse: {e:?}")))?;
 
-    // 3. eContent extrahieren — entweder aus dem SignedData (opaque-
-    // signed mit eContent embedded) oder aus dem detached-Buffer. Im
-    // Detached-Fall wird der Content auf RFC-1847-Canonical-CRLF-Form
-    // normalisiert (OpenSSL `cms -sign` ohne `-text` macht das auch).
+    // 3. Extract the eContent — either from the SignedData (opaque-
+    // signed with eContent embedded) or from the detached buffer. In the
+    // detached case the content is normalized to RFC 1847 canonical CRLF
+    // form (OpenSSL `cms -sign` without `-text` does this too).
     let econtent_owned: Vec<u8>;
     let econtent: &[u8] = if let Some(ec_any) = sd.encap_content_info.econtent.as_ref() {
-        // econtent ist OCTET STRING explicit-tagged.
+        // econtent is an explicit-tagged OCTET STRING.
         let tag = ec_any.tag();
         if tag != Tag::OctetString {
             return Err(PermissionsError::Malformed(format!(
-                "eContent: erwarte OCTET STRING, gefunden {tag:?}"
+                "eContent: expected OCTET STRING, found {tag:?}"
             )));
         }
         econtent_owned = ec_any.value().to_vec();
@@ -586,14 +588,14 @@ fn verify_cms_signed_xml(
     } else {
         let raw = detached_content.ok_or_else(|| {
             PermissionsError::Malformed(
-                "SignedData ohne eContent und kein detached-content geliefert".to_string(),
+                "SignedData without eContent and no detached content supplied".to_string(),
             )
         })?;
         econtent_owned = normalize_to_canonical_crlf(raw);
         &econtent_owned
     };
 
-    // 4. Signer-Cert + ggf. Intermediates aus dem Bundle ziehen.
+    // 4. Pull the signer cert + any intermediates from the bundle.
     let mut bundle_certs: Vec<Vec<u8>> = Vec::new();
     if let Some(cset) = &sd.certificates {
         for choice in cset.0.iter() {
@@ -607,48 +609,63 @@ fn verify_cms_signed_xml(
     }
     if bundle_certs.is_empty() {
         return Err(PermissionsError::Malformed(
-            "SignedData enthaelt kein Signer-Cert".to_string(),
+            "SignedData contains no signer cert".to_string(),
         ));
     }
 
-    // 5. Mindestens ein SignerInfo wird verlangt — Spec §10.4.1.1.
-    let signer_info = sd
-        .signer_infos
-        .0
-        .iter()
-        .next()
-        .ok_or_else(|| PermissionsError::Malformed("SignedData ohne SignerInfo".to_string()))?;
+    // 5. At least one SignerInfo is required — spec §10.4.1.1.
+    let signer_info =
+        sd.signer_infos.0.iter().next().ok_or_else(|| {
+            PermissionsError::Malformed("SignedData without SignerInfo".to_string())
+        })?;
 
-    // 6. SignerCert finden, der zu signer_info.sid passt.
+    // 6. Find the signer cert that matches signer_info.sid.
     let signer_cert_der = match_signer_cert(&bundle_certs, signer_info)?;
     if signer_info.signature.as_bytes().is_empty() {
         return Err(PermissionsError::Malformed(
-            "SignerInfo: signature ist leer".to_string(),
+            "SignerInfo: signature is empty".to_string(),
         ));
     }
 
-    // 7. Cert-Chain Signer → CA via webpki (Intermediates werden aus
-    // dem Bundle automatisch ergaenzt).
-    let intermediates_der: Vec<&[u8]> = bundle_certs
+    // 7. Cert chain signer → CA via webpki (intermediates are pulled
+    // automatically from the bundle).
+    //
+    // Special case "CA directly as signer": DDS-Security 1.2 §9.4.1.4 says
+    // the permissions CA signs governance/permissions. The de-facto
+    // real-world pattern (OMG examples, Cyclone, FastDDS, OpenDDS) uses
+    // the permissions CA DIRECTLY as the SignerInfo cert (self-signed CA cert
+    // in the SignedData). `webpki::EndEntityCert` rejects a CA cert as an
+    // end entity with `CaUsedAsEndEntity`. But if the signer cert is
+    // byte-identical to one of the configured permissions CA certs,
+    // it is by definition a trust anchor — chain validation is
+    // skipped, because the signature verification in step 8 proves
+    // key possession of this trust anchor. Cross-vendor interop
+    // requires this acceptance (all other vendors do it this way).
+    let signer_is_trust_anchor = ca_certs_der
         .iter()
-        .map(Vec::as_slice)
-        .filter(|d| *d != signer_cert_der.as_slice())
-        .collect();
-    verify_chain_to_ca(&signer_cert_der, &intermediates_der, ca_certs_der)?;
+        .any(|ca| ca.as_slice() == signer_cert_der.as_slice());
+    if !signer_is_trust_anchor {
+        let intermediates_der: Vec<&[u8]> = bundle_certs
+            .iter()
+            .map(Vec::as_slice)
+            .filter(|d| *d != signer_cert_der.as_slice())
+            .collect();
+        verify_chain_to_ca(&signer_cert_der, &intermediates_der, ca_certs_der)?;
+    }
 
-    // 8. Signature-Verify.
+    // 8. Signature verify.
     verify_signer_info(signer_info, &signer_cert_der, econtent)?;
 
-    // 9. Klartext-XML aus dem text/plain-MIME-Block extrahieren (oder
-    // wenn kein text/plain-Header vorhanden ist, die rohen Bytes).
+    // 9. Extract the plaintext XML from the text/plain MIME block (or,
+    // if there is no text/plain header, the raw bytes).
     Ok(strip_text_plain_envelope(econtent))
 }
 
 fn strip_text_plain_envelope(content: &[u8]) -> Vec<u8> {
-    // OpenSSL `cms -sign -text` praefixt den Content mit
-    // `Content-Type: text/plain\r\n\r\n`. Das ist Spec-konform (RFC 5751
-    // §3.4) und muss vom Verifier abgezogen werden — sonst kommt das
-    // XML mit einem fuehrenden MIME-Header beim Caller an.
+    // OpenSSL `cms -sign -text` prefixes the content with
+    // `Content-Type: text/plain\r\n\r\n`. This is spec-conform (RFC 5751
+    // §3.4) and must be stripped by the verifier — otherwise the
+    // XML arrives at the caller with a leading MIME header.
     if let Some(idx) = find_subseq(content, b"\r\n\r\n") {
         let head = &content[..idx];
         if header_indicates_text_plain(head) {
@@ -676,10 +693,10 @@ fn match_signer_cert(
     bundle: &[Vec<u8>],
     signer_info: &cms::signed_data::SignerInfo,
 ) -> Result<Vec<u8>, PermissionsError> {
-    // Aktuell akzeptieren wir den ersten Cert im Bundle, der ein
-    // gueltiges Cert ist und dessen Subject sich aus dem SID-Hint
-    // ableiten laesst. OpenSSL packt typisch nur das EE-Cert als
-    // erstes; intermediates folgen.
+    // Currently we accept the first cert in the bundle that is a
+    // valid cert and whose subject can be derived from the SID hint.
+    // OpenSSL typically packs only the EE cert
+    // first; intermediates follow.
     use cms::signed_data::SignerIdentifier;
 
     for der in bundle {
@@ -691,10 +708,10 @@ fn match_signer_cert(
                     && cert.tbs_certificate.issuer == isn.issuer
             }
             SignerIdentifier::SubjectKeyIdentifier(_ski) => {
-                // SKID-Match braucht Extension-Lookup — wir matchen
-                // hier nicht darauf, sondern nutzen den
-                // first-cert-fallback unten (Spec-konform fuer
-                // single-signer-Pfade).
+                // An SKID match needs an extension lookup — we don't
+                // match on it here, but use the
+                // first-cert fallback below (spec-conform for
+                // single-signer paths).
                 false
             }
         };
@@ -702,7 +719,7 @@ fn match_signer_cert(
             return Ok(der.clone());
         }
     }
-    // Fallback: erstes Cert im Bundle (typisch EE bei OpenSSL-Output).
+    // Fallback: first cert in the bundle (typically EE with OpenSSL output).
     Ok(bundle[0].clone())
 }
 
@@ -720,7 +737,7 @@ fn verify_chain_to_ca(
         .map(|d| CertificateDer::from_slice(d))
         .collect();
 
-    // Trust-Anchors aus den CA-DER-Bytes ableiten.
+    // Derive trust anchors from the CA DER bytes.
     let ta_certs: Vec<CertificateDer<'_>> = ca_certs_der
         .iter()
         .map(|b| CertificateDer::from_slice(b))
@@ -735,12 +752,12 @@ fn verify_chain_to_ca(
     let now = rustls_pki_types::UnixTime::now();
     let algs = webpki::ALL_VERIFICATION_ALGS;
 
-    // Permissions-Signing ist kein Standard-EKU; wir verwenden
-    // `client_auth` als nahester EKU (Cyclone-Default; OpenSSL `cms
-    // -sign` setzt typischerweise gar keinen EKU). webpki erlaubt
-    // EKU-less Certs unter `KeyUsage::client_auth()`-Modus, wenn das
-    // Cert keinen EKU hat. Falls kuenftig ein dedicated EKU spec'd wird,
-    // hier anpassen.
+    // Permissions signing is not a standard EKU; we use
+    // `client_auth` as the closest EKU (Cyclone default; OpenSSL `cms
+    // -sign` typically sets no EKU at all). webpki allows
+    // EKU-less certs under `KeyUsage::client_auth()` mode if the
+    // cert has no EKU. If a dedicated EKU is spec'd in the future,
+    // adjust here.
     ee.verify_for_usage(
         algs,
         &anchors,
@@ -774,17 +791,17 @@ fn verify_signer_info(
         .subject_public_key
         .raw_bytes();
 
-    // SHA-256 erwartet — Spec-Default fuer S/MIME-Permissions.
+    // SHA-256 expected — spec default for S/MIME permissions.
     if signer_info.digest_alg.oid != OID_SHA_256 {
         return Err(PermissionsError::Malformed(format!(
-            "digest_alg {oid} nicht unterstuetzt (erwarte SHA-256)",
+            "digest_alg {oid} not supported (expected SHA-256)",
             oid = signer_info.digest_alg.oid
         )));
     }
 
-    // Wenn signedAttrs vorhanden sind, ist die Signatur ueber DER der
-    // signedAttrs (mit SET-Tag, nicht IMPLICIT [0]). messageDigest in
-    // den signedAttrs muss SHA-256(eContent) sein.
+    // If signedAttrs are present, the signature is over the DER of the
+    // signedAttrs (with SET tag, not IMPLICIT [0]). messageDigest in
+    // the signedAttrs must be SHA-256(eContent).
     let signed_data_for_verify: Vec<u8> = if let Some(sa) = &signer_info.signed_attrs {
         verify_message_digest_attr(sa, econtent)?;
         verify_content_type_attr(sa)?;
@@ -814,16 +831,16 @@ fn verify_message_digest_attr(
         .iter()
         .find(|a| a.oid == OID_MESSAGE_DIGEST)
         .ok_or_else(|| {
-            PermissionsError::Malformed("signedAttrs: messageDigest fehlt".to_string())
+            PermissionsError::Malformed("signedAttrs: messageDigest missing".to_string())
         })?;
     let any = attr
         .values
         .iter()
         .next()
-        .ok_or_else(|| PermissionsError::Malformed("messageDigest leer".to_string()))?;
+        .ok_or_else(|| PermissionsError::Malformed("messageDigest empty".to_string()))?;
     if any.tag() != Tag::OctetString {
         return Err(PermissionsError::Malformed(
-            "messageDigest: erwarte OCTET STRING".to_string(),
+            "messageDigest: expected OCTET STRING".to_string(),
         ));
     }
     let expected = any.value();
@@ -832,7 +849,7 @@ fn verify_message_digest_attr(
     let actual = h.finalize();
     if actual.as_slice() != expected {
         return Err(PermissionsError::Malformed(
-            "messageDigest: SHA-256-Hash mismatch".to_string(),
+            "messageDigest: SHA-256 hash mismatch".to_string(),
         ));
     }
     Ok(())
@@ -841,8 +858,8 @@ fn verify_message_digest_attr(
 fn verify_content_type_attr(
     sa: &SetOfVec<x509_cert::attr::Attribute>,
 ) -> Result<(), PermissionsError> {
-    // contentType-Attribut ist Spec-pflichtig, aber wir akzeptieren
-    // pragmatisch sowohl id-data als auch fehlende Praesenz.
+    // The contentType attribute is spec-mandatory, but we pragmatically
+    // accept both id-data and its absence.
     let attr = match sa.iter().find(|a| a.oid == OID_CONTENT_TYPE) {
         Some(a) => a,
         None => return Ok(()),
@@ -851,17 +868,17 @@ fn verify_content_type_attr(
         .values
         .iter()
         .next()
-        .ok_or_else(|| PermissionsError::Malformed("contentType-attr leer".to_string()))?;
+        .ok_or_else(|| PermissionsError::Malformed("contentType attr empty".to_string()))?;
     if any.tag() != Tag::ObjectIdentifier {
         return Err(PermissionsError::Malformed(
-            "contentType: erwarte OBJECT IDENTIFIER".to_string(),
+            "contentType: expected OBJECT IDENTIFIER".to_string(),
         ));
     }
     let oid = ObjectIdentifier::from_der(&any.to_der().unwrap_or_default())
         .map_err(|e| PermissionsError::Malformed(format!("contentType parse: {e:?}")))?;
     if oid != ID_DATA && oid != ID_SIGNED_DATA {
         return Err(PermissionsError::Malformed(format!(
-            "contentType {oid} nicht akzeptiert"
+            "contentType {oid} not accepted"
         )));
     }
     Ok(())
@@ -870,9 +887,9 @@ fn verify_content_type_attr(
 fn encode_signed_attrs_set(
     sa: &SetOfVec<x509_cert::attr::Attribute>,
 ) -> Result<Vec<u8>, PermissionsError> {
-    // SignedAttributes sind im SignerInfo IMPLICIT [0] getaggt; fuer
-    // den Signature-Verify muessen sie als SET (Tag 0x31) re-encoded
-    // werden — RFC 5652 §5.4.
+    // SignedAttributes are IMPLICIT [0] tagged in the SignerInfo; for
+    // the signature verify they must be re-encoded as a SET (tag 0x31)
+    // — RFC 5652 §5.4.
     let der = sa
         .to_der()
         .map_err(|e| PermissionsError::Malformed(format!("signedAttrs encode: {e:?}")))?;
@@ -887,8 +904,8 @@ fn verify_with_ring(
     pubkey_bytes: &[u8],
     spki_der: &[u8],
 ) -> Result<(), PermissionsError> {
-    // Hilfsfunktion: ring-Verify mit konkretem Algorithmus-Typ. Nutzt
-    // Generics statt `dyn Trait` (zerodds-lint: kein dyn in SAFE-Crates).
+    // Helper: ring verify with a concrete algorithm type. Uses
+    // generics instead of `dyn Trait` (zerodds-lint: no dyn in SAFE crates).
     fn verify_with<A>(alg: &'static A, key: &[u8], msg: &[u8], sig: &[u8]) -> bool
     where
         A: signature::VerificationAlgorithm + 'static,
@@ -899,7 +916,7 @@ fn verify_with_ring(
     }
 
     let ok = if spki_alg_oid == OID_EC_PUBLIC_KEY {
-        // ECDSA — Curve aus SPKI-Parameters bestimmen.
+        // ECDSA — determine the curve from the SPKI parameters.
         let curve = ec_curve_from_spki(spki_der)?;
         match (curve, sig_alg_oid) {
             (Curve::P256, oid) if oid == OID_ECDSA_SHA256 => {
@@ -908,8 +925,8 @@ fn verify_with_ring(
             (Curve::P384, oid) if oid == OID_ECDSA_SHA384 => {
                 verify_with(&signature::ECDSA_P384_SHA384_ASN1, pubkey_bytes, msg, sig)
             }
-            // Cross-Curve-Combos (P-256 mit SHA-384) bleiben absichtlich
-            // off-spec.
+            // Cross-curve combos (P-256 with SHA-384) intentionally
+            // stay off-spec.
             _ => {
                 return Err(PermissionsError::Malformed(format!(
                     "ecdsa: unsupported curve/sig combo (sig_alg={sig_alg_oid})"
@@ -917,11 +934,11 @@ fn verify_with_ring(
             }
         }
     } else if spki_alg_oid == OID_RSA_ENCRYPTION || spki_alg_oid == OID_RSA_PSS {
-        // RSA. RFC 5754 §3: SignerInfo.signatureAlgorithm darf entweder
-        // die explizite Kombi (sha256WithRSAEncryption) ODER nur die
-        // Schluessel-OID `rsaEncryption` sein — dann impliziert
-        // `digestAlgorithm` den Hash. OpenSSL `cms -sign` mit RSA-PKCS1
-        // produziert die zweite Variante, daher beide Pfade akzeptieren.
+        // RSA. RFC 5754 §3: SignerInfo.signatureAlgorithm may be either
+        // the explicit combo (sha256WithRSAEncryption) OR only the
+        // key OID `rsaEncryption` — then `digestAlgorithm` implies
+        // the hash. OpenSSL `cms -sign` with RSA-PKCS1
+        // produces the second variant, so accept both paths.
         match sig_alg_oid {
             oid if oid == OID_RSA_SHA256 => verify_with(
                 &signature::RSA_PKCS1_2048_8192_SHA256,
@@ -938,9 +955,9 @@ fn verify_with_ring(
             oid if oid == OID_RSA_PSS => {
                 verify_with(&signature::RSA_PSS_2048_8192_SHA256, pubkey_bytes, msg, sig)
             }
-            // Bare `rsaEncryption` → digest aus signed_info.digest_alg
-            // ableiten (vom Caller via OID_SHA_256-Pruefung schon
-            // verifiziert: digest_alg == SHA-256).
+            // Bare `rsaEncryption` → derive the digest from
+            // signed_info.digest_alg (already verified by the caller via
+            // the OID_SHA_256 check: digest_alg == SHA-256).
             oid if oid == OID_RSA_ENCRYPTION => verify_with(
                 &signature::RSA_PKCS1_2048_8192_SHA256,
                 pubkey_bytes,
@@ -976,14 +993,14 @@ enum Curve {
 
 fn ec_curve_from_spki(spki_der: &[u8]) -> Result<Curve, PermissionsError> {
     // SPKI = SEQUENCE { algorithm AlgorithmIdentifier, subjectPublicKey BIT STRING }
-    // algorithm.parameters fuer ecPublicKey ist eine Curve-OID.
+    // algorithm.parameters for ecPublicKey is a curve OID.
     let spki = x509_cert::spki::SubjectPublicKeyInfoOwned::from_der(spki_der)
         .map_err(|e| PermissionsError::Malformed(format!("spki parse: {e:?}")))?;
     let params = spki
         .algorithm
         .parameters
         .as_ref()
-        .ok_or_else(|| PermissionsError::Malformed("spki: ec params fehlen".to_string()))?;
+        .ok_or_else(|| PermissionsError::Malformed("spki: ec params missing".to_string()))?;
     let oid = ObjectIdentifier::from_der(
         &params
             .to_der()
@@ -1002,7 +1019,7 @@ fn ec_curve_from_spki(spki_der: &[u8]) -> Result<Curve, PermissionsError> {
 }
 
 // ----------------------------------------------------------------------
-// Base64-Decoder (kein extra crate; cms.rs ist nicht hot-path).
+// Base64 decoder (no extra crate; cms.rs is not a hot path).
 // ----------------------------------------------------------------------
 
 fn base64_decode(input: &[u8]) -> Result<Vec<u8>, PermissionsError> {
@@ -1018,7 +1035,7 @@ fn base64_decode(input: &[u8]) -> Result<Vec<u8>, PermissionsError> {
         }
     }
 
-    // Whitespace bereits entfernt, aber zur Sicherheit nochmal filtern.
+    // Whitespace already removed, but filter again to be safe.
     let mut clean: Vec<u8> = Vec::with_capacity(input.len());
     for &c in input {
         if c == b'=' || val(c).is_some() {
@@ -1027,13 +1044,13 @@ fn base64_decode(input: &[u8]) -> Result<Vec<u8>, PermissionsError> {
             // skip
         } else {
             return Err(PermissionsError::Malformed(format!(
-                "base64: ungueltiges Zeichen {c:#x}"
+                "base64: invalid character {c:#x}"
             )));
         }
     }
     if clean.len() % 4 != 0 {
         return Err(PermissionsError::Malformed(format!(
-            "base64: laenge {l} nicht durch 4 teilbar",
+            "base64: length {l} not divisible by 4",
             l = clean.len()
         )));
     }
@@ -1044,7 +1061,7 @@ fn base64_decode(input: &[u8]) -> Result<Vec<u8>, PermissionsError> {
         let pad = chunk.iter().filter(|&&b| b == b'=').count();
         let v = |c: u8| -> Result<u8, PermissionsError> {
             val(c).ok_or_else(|| {
-                PermissionsError::Malformed(format!("base64: ungueltiges Zeichen {c:#x}"))
+                PermissionsError::Malformed(format!("base64: invalid character {c:#x}"))
             })
         };
         let b0 = v(chunk[0])?;

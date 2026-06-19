@@ -2,11 +2,11 @@
 // Copyright 2026 ZeroDDS Contributors
 //! TypeObject (XTypes 1.3 §7.3.4.4).
 //!
-//! TypeObject ist eine Union `{ MinimalTypeObject | CompleteTypeObject }`.
-//! Im Wire-Format wird der Diskriminator als `EquivalenceKind` (1 byte)
-//! kodiert: `EK_MINIMAL=0xF1`, `EK_COMPLETE=0xF2`.
+//! TypeObject is a union `{ MinimalTypeObject | CompleteTypeObject }`.
+//! In the wire format the discriminator is encoded as `EquivalenceKind` (1 byte):
+//! `EK_MINIMAL=0xF1`, `EK_COMPLETE=0xF2`.
 //!
-//! Beide Varianten sind vollstaendig implementiert (T2 Minimal, T3 Complete).
+//! Both variants are fully implemented (T2 Minimal, T3 Complete).
 
 pub mod common;
 pub mod complete;
@@ -22,20 +22,20 @@ use crate::type_identifier::kinds::{EK_COMPLETE, EK_MINIMAL};
 pub use complete::CompleteTypeObject;
 pub use minimal::MinimalTypeObject;
 
-/// TypeObject-Wrapper (Minimal oder Complete).
+/// TypeObject wrapper (Minimal or Complete).
 ///
-/// `Complete` ist deutlich groesser als `Minimal` (Namen + Annotationen
-/// laut XTypes 1.3 §7.3.1). Wire-Layout ist Spec-normativ; Boxing der
-/// `Complete`-Variante wuerde ~20 Konstruktor-Callsites umbiegen ohne
-/// echten Memory-Gewinn (TypeObject lebt selten auf dem Hot-Path,
-/// sondern in TypeLookup-Caches).
+/// `Complete` is significantly larger than `Minimal` (names + annotations
+/// per XTypes 1.3 §7.3.1). The wire layout is spec-normative; boxing the
+/// `Complete` variant would reroute ~20 constructor call sites without
+/// real memory gain (TypeObject rarely lives on the hot path,
+/// but in TypeLookup caches).
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TypeObject {
-    /// Minimal-Repraesentation (hash-genau, namenlos).
+    /// Minimal representation (hash-exact, nameless).
     Minimal(MinimalTypeObject),
-    /// Complete-Repraesentation (mit Namen + Annotationen).
+    /// Complete representation (with names + annotations).
     Complete(CompleteTypeObject),
 }
 
@@ -49,10 +49,10 @@ impl TypeObject {
         }
     }
 
-    /// Encode als `{ octet _d; body }`.
+    /// Encode as `{ octet _d; body }`.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u8(self.discriminator())?;
         match self {
@@ -64,7 +64,7 @@ impl TypeObject {
     /// Decode.
     ///
     /// # Errors
-    /// `TypeCodecError::UnknownTypeKind` bei unbekanntem Equivalence-Kind.
+    /// `TypeCodecError::UnknownTypeKind` on an unknown equivalence kind.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
         let d = r.read_u8()?;
         match d {
@@ -77,17 +77,17 @@ impl TypeObject {
     /// Convenience: LE-Bytes.
     ///
     /// # Errors
-    /// Encode-Fehler.
+    /// Encode error.
     pub fn to_bytes_le(&self) -> Result<alloc::vec::Vec<u8>, EncodeError> {
         let mut w = BufferWriter::new(zerodds_cdr::Endianness::Little);
         self.encode_into(&mut w)?;
         Ok(w.into_bytes())
     }
 
-    /// Convenience: aus LE-Bytes.
+    /// Convenience: from LE bytes.
     ///
     /// # Errors
-    /// Decode-Fehler.
+    /// Decode error.
     pub fn from_bytes_le(bytes: &[u8]) -> Result<Self, TypeCodecError> {
         let mut r = BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
         Self::decode_from(&mut r)

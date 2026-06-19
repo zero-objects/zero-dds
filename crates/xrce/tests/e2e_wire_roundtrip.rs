@@ -1,10 +1,10 @@
-//! E2E-Wire-Roundtrip-Tests fuer DDS-XRCE.
+//! E2E wire roundtrip tests for DDS-XRCE.
 //!
-//! Voller Encode → Decode-Zyklus fuer Top-Level-Messages mit
-//! verschiedenen Submessage-Mixen. Verifiziert dass:
-//! 1. encode → decode roundtripped (byte-identisch)
-//! 2. Submessage-Liste in der gleichen Reihenfolge zurueckkommt
-//! 3. SequenceNumber-Tracking erhalten bleibt
+//! Full encode → decode cycle for top-level messages with
+//! various submessage mixes. Verifies that:
+//! 1. encode → decode round-trips (byte-identical)
+//! 2. the submessage list comes back in the same order
+//! 3. SequenceNumber tracking is preserved
 //!
 //! Spec: DDS-XRCE 1.0 §7-§8.
 

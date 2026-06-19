@@ -1,7 +1,7 @@
-//! Integration-Test: Forward-Decl-Completion (C4.6 §1.5).
+//! Integration test: forward-decl completion (C4.6 §1.5).
 //!
-//! Spec §7.5.4: jede Forward-Decl muss in derselben translation unit
-//! definiert werden, sonst Error.
+//! Spec §7.5.4: every forward-decl must be defined in the same translation
+//! unit, otherwise an error.
 
 #![allow(
     clippy::expect_used,
@@ -63,7 +63,7 @@ fn nested_module_forward_completion_works() {
 
 #[test]
 fn forward_in_outer_completed_in_inner_is_not_completion() {
-    // Spec §7.5.4: Forward-Decl + Vollform muessen im *gleichen* Scope sein.
+    // Spec §7.5.4: forward decl + full form must be in the *same* scope.
     // `struct Foo;` outer, `struct Foo {...};` in M counts as different.
     let r = build("struct Foo; module M { struct Foo { long x; }; };");
     let errs = r.forward_decl_errors();

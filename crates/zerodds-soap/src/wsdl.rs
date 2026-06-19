@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! WSDL 1.1 + 2.0 Generation aus IDL-Service-Defs.
+//! WSDL 1.1 + 2.0 generation from IDL service defs.
 //!
 //! WSDL 1.1: `http://schemas.xmlsoap.org/wsdl/`
 //! WSDL 2.0: `http://www.w3.org/ns/wsdl`
 //!
-//! Wir generieren Spec-konforme `<types>`/`<message>`/`<portType>`/
-//! `<binding>`/`<service>` (1.1) bzw. `<types>`/`<interface>`/
+//! We generate spec-conformant `<types>`/`<message>`/`<portType>`/
+//! `<binding>`/`<service>` (1.1) or `<types>`/`<interface>`/
 //! `<binding>`/`<service>` (2.0).
 
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// WSDL-Version-Selector.
+/// WSDL version selector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WsdlVersion {
     /// WSDL 1.1 (`http://schemas.xmlsoap.org/wsdl/`).
@@ -23,18 +23,18 @@ pub enum WsdlVersion {
     V20,
 }
 
-/// Operation einer WSDL-Schnittstelle.
+/// Operation of a WSDL interface.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Operation {
-    /// Operation-Name.
+    /// Operation name.
     pub name: String,
-    /// Input-Message-Element (XSD-Type-Name).
+    /// Input message element (XSD type name).
     pub input_type: String,
-    /// Output-Message-Element (XSD-Type-Name).
+    /// Output message element (XSD type name).
     pub output_type: String,
 }
 
-/// WSDL-Generator-Builder.
+/// WSDL generator builder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WsdlGenerator {
     service_name: String,
@@ -45,7 +45,7 @@ pub struct WsdlGenerator {
 }
 
 impl WsdlGenerator {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(service_name: &str, namespace: &str, endpoint: &str, version: WsdlVersion) -> Self {
         Self {
@@ -57,14 +57,14 @@ impl WsdlGenerator {
         }
     }
 
-    /// Operation hinzufuegen.
+    /// Add an operation.
     #[must_use]
     pub fn operation(mut self, op: Operation) -> Self {
         self.operations.push(op);
         self
     }
 
-    /// Render-Method (laut Version-Schalter).
+    /// Render method (per the version switch).
     #[must_use]
     pub fn render(&self) -> String {
         match self.version {
@@ -164,7 +164,7 @@ xmlns:wsoap=\"http://www.w3.org/ns/wsdl/soap\">\n",
         out
     }
 
-    /// Anzahl konfigurierter Operations.
+    /// Number of configured operations.
     #[must_use]
     pub fn operation_count(&self) -> usize {
         self.operations.len()

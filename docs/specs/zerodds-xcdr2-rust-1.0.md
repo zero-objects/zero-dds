@@ -9,7 +9,7 @@ Konformanz gegen
 
 Es existiert **keine OMG-DDS-Rust-PSM-Spec**. Rust-Bindings fuer
 DDS-Vendoren (RustDDS, dust-dds) haben jeweils proprietaere Patterns.
-ZeroDDS hat seit RC1 ein voll funktionsfaehiges `DdsType`-Trait;
+ZeroDDS hat ein voll funktionsfaehiges `DdsType`-Trait;
 diese Spec dokumentiert es **formal als normative Pflicht** fuer
 idl-rust-Codegen und Konformanz.
 
@@ -207,8 +207,7 @@ L1-L4 gegen [`zerodds-xcdr2-bindings-conformance-1.0`](zerodds-xcdr2-bindings-co
 - **§11.1 Derive-Macro**: `#[derive(DdsType)]` waere ergonomisch.
   Aktueller Code-Generator emittiert Hand-implementierten `impl
   DdsType` weil Derive-Macros const-fn-Hash-Berechnung erschweren.
-  Folge-Sprint moeglich; v1.0-Spec bleibt bei codegen-emittierten
-  expliziten Impls.
+  Optional; v1.0 bleibt bei codegen-emittierten expliziten Impls.
 - **§11.2 `bytes::Bytes`**: Encoder schreibt nach `Vec<u8>` (alloc-
   managed). Zero-Copy-Pfad via `&mut [u8]` ist optional (XTypes-
   konform aber Sprach-spezifisches Add-on).

@@ -1,12 +1,12 @@
-//! Integration-Tests fuer C5.3-b-Features:
+//! Integration tests for C5.3-b features:
 //!
-//! 1. **ISequence/IBoundedSequence** — Codegen verwendet `ISequence<T>` /
-//!    `IBoundedSequence<T>` aus `Omg.Types` statt nacktem `IList<T>`.
-//! 2. **Annotation-Bridge** — IDL-Annotationen
+//! 1. **ISequence/IBoundedSequence** — the codegen uses `ISequence<T>` /
+//!    `IBoundedSequence<T>` from `Omg.Types` instead of bare `IList<T>`.
+//! 2. **Annotation bridge** — IDL annotations
 //!    (`@key`, `@id(N)`, `@optional`, `@must_understand`, `@external`,
-//!    `@nested`, `@extensibility`) werden als C#-Attribute emittiert.
-//! 3. **ITopicType<T>-Marker** — Top-Level-Structs (nicht-`@nested`)
-//!    implementieren `ITopicType<Self>`.
+//!    `@nested`, `@extensibility`) are emitted as C# attributes.
+//! 3. **ITopicType<T> marker** — top-level structs (non-`@nested`)
+//!    implement `ITopicType<Self>`.
 
 #![allow(
     clippy::expect_used,
@@ -39,7 +39,7 @@ fn gen_cs(src: &str) -> String {
 fn unbounded_sequence_emits_isequence() {
     let cs = gen_cs("struct S { sequence<long> data; };");
     assert!(cs.contains("ISequence<int>"), "got:\n{cs}");
-    // Negativ: keine `IList<int>`-Direkt-Verwendung im Member.
+    // Negative: no direct `IList<int>` use in the member.
     assert!(
         !cs.contains("public IList<int>"),
         "should not emit raw IList: {cs}"
@@ -100,9 +100,9 @@ fn typedef_with_bounded_sequence_keeps_bound_marker() {
 #[test]
 fn at_key_emits_key_attribute_no_comment_suffix() {
     let cs = gen_cs("struct S { @key long id; long val; };");
-    // Bare `[Key]` als Attribute-Zeile, ohne Trailing-Comment-Stub.
+    // Bare `[Key]` as an attribute line, without a trailing comment stub.
     assert!(cs.contains("[Key]"), "got:\n{cs}");
-    // Negativ: alter `// @key annotation`-Comment soll weg sein.
+    // Negative: the old `// @key annotation` comment should be gone.
     assert!(!cs.contains("// @key annotation"), "got:\n{cs}");
 }
 
@@ -139,7 +139,7 @@ fn member_annotations_trigger_omg_types_import() {
 
 #[test]
 fn all_member_annotations_stack_on_one_member() {
-    // Stress: alle Member-Annotationen auf einem Member.
+    // Stress: all member annotations on a single member.
     let cs = gen_cs("struct S { @key @id(11) @must_understand @external long armed_id; };");
     assert!(cs.contains("[Key]"));
     assert!(cs.contains("[Id(11)]"));
@@ -156,14 +156,14 @@ fn multiple_members_get_independent_attribute_blocks() {
             long plain; \
          };",
     );
-    // [Key] muss vor "Id" stehen, [Optional] vor "Nick".
+    // [Key] must come before "Id", [Optional] before "Nick".
     let key_pos = cs.find("[Key]").expect("Key");
     let id_pos = cs.find("public int Id ").expect("Id prop");
     assert!(key_pos < id_pos);
     let opt_pos = cs.find("[Optional]").expect("Optional");
     let nick_pos = cs.find("public string? Nick ").expect("Nick prop");
     assert!(opt_pos < nick_pos);
-    // `plain` darf KEINE Attribute davor haben.
+    // `plain` must have NO attributes in front of it.
     let plain_pos = cs.find("public int Plain ").expect("Plain prop");
     let after_nick = &cs[nick_pos..plain_pos];
     assert!(!after_nick.contains("[Key]"));
@@ -280,7 +280,7 @@ fn struct_with_inheritance_keeps_base_and_adds_topic_marker() {
         "struct Parent { long x; }; \
          struct Child : Parent { long y; };",
     );
-    // Erst Parent, dann ITopicType.
+    // First Parent, then ITopicType.
     assert!(
         cs.contains("public partial record class Child : Parent, ITopicType<Child>"),
         "got:\n{cs}"
@@ -327,27 +327,27 @@ fn full_annotation_stack_on_struct_and_member() {
             @external sequence<double, 8> readings; \
          };",
     );
-    // Type-Level
+    // Type-level
     assert!(cs.contains("[Extensibility(ExtensibilityKind.Mutable)]"));
-    // Member-Level
+    // Member-level
     assert!(cs.contains("[Key]"));
     assert!(cs.contains("[Id(0)]"));
     assert!(cs.contains("[Optional]"));
     assert!(cs.contains("[MustUnderstand]"));
     assert!(cs.contains("[External]"));
-    // Nullable wegen @optional
+    // Nullable due to @optional
     assert!(cs.contains("string? Name"));
     // Bounded sequence
     assert!(cs.contains("IBoundedSequence<double>"));
-    // Topic-Marker
+    // Topic marker
     assert!(cs.contains("ITopicType<Sensor>"));
 }
 
 #[test]
 fn no_annotations_means_no_omg_types_import() {
-    // Reine Primitive ohne Sequence ohne Annotations: Topic-Marker
-    // existiert trotzdem (default: top-level = topic), also wird
-    // Omg.Types eingezogen.
+    // Pure primitives without sequence and without annotations: the
+    // topic marker still exists (default: top-level = topic), so
+    // Omg.Types is pulled in.
     let cs = gen_cs("struct S { long x; };");
     assert!(cs.contains("using Omg.Types;"));
     assert!(cs.contains("ITopicType<S>"));
@@ -355,24 +355,24 @@ fn no_annotations_means_no_omg_types_import() {
 
 #[test]
 fn only_nested_struct_does_not_pull_omg_types_via_topic_marker() {
-    // @nested-Struct ohne Annotations und ohne Sequenzen: kein Grund
-    // fuer Omg.Types — wir verifizieren das, weil das aufzeigt, dass
-    // der Marker und die Bridge sauber gating-en.
+    // @nested struct without annotations and without sequences: no
+    // reason for Omg.Types — we verify this because it shows that the
+    // marker and the bridge gate cleanly.
     let cs = gen_cs("@nested struct N { long x; };");
-    // [Nested]-Attribut zieht aber selbst Omg.Types.
+    // But the [Nested] attribute itself pulls in Omg.Types.
     assert!(cs.contains("using Omg.Types;"));
     assert!(cs.contains("[Nested]"));
 }
 
 #[test]
 fn annotation_attribute_appears_on_correct_member_only() {
-    // `@id` darf nur auf `tagged_id` sein, nicht auf `untagged_x`.
+    // `@id` may only be on `tagged_id`, not on `untagged_x`.
     let cs = gen_cs("struct S { @id(5) long tagged_id; long untagged_x; };");
     let tagged_pos = cs.find("public int TaggedId").expect("tagged");
     let untagged_pos = cs.find("public int UntaggedX").expect("untagged");
     let between = &cs[tagged_pos..untagged_pos];
     assert!(!between.contains("[Id("), "between:\n{between}");
-    // Aber [Id(5)] muss VOR tagged_id stehen.
+    // But [Id(5)] must come BEFORE tagged_id.
     let id_pos = cs.find("[Id(5)]").expect("Id5");
     assert!(id_pos < tagged_pos);
 }
@@ -382,6 +382,6 @@ fn nested_attribute_combined_with_extensibility() {
     let cs = gen_cs("@nested @final struct Embedded { long x; };");
     assert!(cs.contains("[Nested]"));
     assert!(cs.contains("[Extensibility(ExtensibilityKind.Final)]"));
-    // Trotz @nested + @final: kein ITopicType-Marker (nested!).
+    // Despite @nested + @final: no ITopicType marker (nested!).
     assert!(!cs.contains("ITopicType<Embedded>"));
 }

@@ -25,7 +25,7 @@ impl zerodds_dcps::DdsType for Sensor {
     const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xf9, 0x5c, 0x75, 0x9a, 0x81, 0x43, 0xca, 0xbe, 0x0d, 0x49, 0x7c, 0xb4, 0xe0, 0x11]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
-        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
         <_ as zerodds_cdr::CdrEncode>::encode(&self.id, &mut writer)?;
         <_ as zerodds_cdr::CdrEncode>::encode(&self.value, &mut writer)?;
         out.extend_from_slice(&writer.into_bytes());
@@ -33,7 +33,7 @@ impl zerodds_dcps::DdsType for Sensor {
     }
 
     fn decode(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
-        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little).xcdr2();
         let id = <i32 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         let value = <f64 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         Ok(Self {
@@ -52,5 +52,24 @@ impl zerodds_dcps::DdsType for Sensor {
             "value" => ::core::option::Option::Some(zerodds_sql_filter::Value::Float(self.value)),
             _ => ::core::option::Option::None,
         }
+    }
+}
+
+impl zerodds_cdr::CdrEncode for Sensor {
+    fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.id, writer)?;
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.value, writer)?;
+        ::core::result::Result::Ok(())
+    }
+}
+
+impl zerodds_cdr::CdrDecode for Sensor {
+    fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
+        let id = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        let value = <f64 as zerodds_cdr::CdrDecode>::decode(reader)?;
+        ::core::result::Result::Ok(Self {
+            id,
+            value,
+        })
     }
 }

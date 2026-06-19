@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `InstanceTracker` — die zentrale Buchhaltung fuer keyed Topic-
-//! Instanzen, sowohl auf der Writer- als auch auf der Reader-Seite.
+//! `InstanceTracker` — the central bookkeeping for keyed topic
+//! instances, on both the writer and the reader side.
 //!
-//! Spec-Referenz: OMG DDS-DCPS 1.4 §2.2.2.4.2.5 (`register_instance`),
+//! Spec reference: OMG DDS-DCPS 1.4 §2.2.2.4.2.5 (`register_instance`),
 //! §2.2.2.4.2.7 (`unregister_instance`), §2.2.2.4.2.10 (`dispose`),
 //! §2.2.2.4.2.13 (`get_key_value`), §2.2.2.4.2.14 (`lookup_instance`),
 //! §2.2.2.5.1 (`InstanceStateKind`).
 //!
-//! # Datenmodell
+//! # Data model
 //!
-//! Wir indizieren Instanzen ueber den **16-Byte-KeyHash** (XTypes 1.3
-//! §7.6.8). Pro Instanz tragen wir:
-//! * den vergebenen [`InstanceHandle`],
-//! * den Lifecycle-Zustand ([`InstanceStateKind`]),
-//! * die Generation-Counters (`disposed`, `no_writers`),
-//! * die Anzahl noch registrierter Writer (Reader-seitig),
-//! * den letzten beobachteten Sample-Timestamp.
+//! We index instances by the **16-byte KeyHash** (XTypes 1.3 §7.6.8).
+//! Per instance we keep:
+//! * the assigned [`InstanceHandle`],
+//! * the lifecycle state ([`InstanceStateKind`]),
+//! * the generation counters (`disposed`, `no_writers`),
+//! * the number of still-registered writers (reader side),
+//! * the last observed sample timestamp.
 //!
-//! KeyHash → Handle ist eine 1:1-Map fuer die Lebenszeit des Trackers
-//! (Handles werden nicht recycled, auch wenn die Instanz disposed +
-//! purged ist; Spec laesst Recycling explizit zu, wir vermeiden es zur
-//! Test-Stabilitaet).
+//! KeyHash → handle is a 1:1 map for the lifetime of the tracker
+//! (handles are not recycled, even once the instance is disposed +
+//! purged; the spec explicitly allows recycling, but we avoid it for
+//! test stability).
 
 extern crate alloc;
 
@@ -37,54 +37,54 @@ use crate::instance_handle::{InstanceHandle, InstanceHandleAllocator};
 use crate::sample_info::InstanceStateKind;
 use crate::time::Time;
 
-/// 16-Byte-KeyHash als Index.
+/// 16-byte KeyHash used as index.
 pub type KeyHash = [u8; KEY_HASH_LEN];
 
-/// Pro-Instanz-Buchhaltung.
+/// Per-instance bookkeeping.
 #[derive(Debug, Clone)]
 pub struct InstanceState {
-    /// Lokaler Handle (stabil ueber den Tracker-Lebenszyklus).
+    /// Local handle (stable across the tracker lifecycle).
     pub handle: InstanceHandle,
-    /// Aktueller Lifecycle-Zustand.
+    /// Current lifecycle state.
     pub kind: InstanceStateKind,
-    /// `NOT_ALIVE_DISPOSED → ALIVE`-Transitions seit erstem Sample.
+    /// `NOT_ALIVE_DISPOSED → ALIVE` transitions since the first sample.
     pub disposed_generation_count: i32,
-    /// `NOT_ALIVE_NO_WRITERS → ALIVE`-Transitions seit erstem Sample.
+    /// `NOT_ALIVE_NO_WRITERS → ALIVE` transitions since the first sample.
     pub no_writers_generation_count: i32,
-    /// Anzahl Writer, die diese Instanz aktuell als registriert
-    /// fuehren. Reader-seitig: jeder eingehende Sample erhoeht den
-    /// Counter (falls neuer Writer); jeder unregister-Marker
-    /// dekrementiert. Writer-seitig: 0 oder 1 (eine Writer-Sicht).
+    /// Number of writers that currently consider this instance
+    /// registered. Reader side: each incoming sample increments the
+    /// counter (if it is a new writer); each unregister marker
+    /// decrements it. Writer side: 0 or 1 (a single writer's view).
     pub writer_count: u32,
-    /// Wall-Clock-Zeit des zuletzt verarbeiteten Samples (oder None).
+    /// Wall-clock time of the last processed sample (or None).
     pub last_sample_timestamp: Option<Time>,
-    /// Reader-side: source_timestamp des letzten ans User-API
-    /// gelieferten Samples dieser Instanz. Spec §2.2.3.12
-    /// TIME_BASED_FILTER: ein neues Sample wird gefiltert wenn
+    /// Reader side: source_timestamp of this instance's last sample
+    /// delivered to the user API. Spec §2.2.3.12 TIME_BASED_FILTER: a
+    /// new sample is filtered out when
     /// `t - last_delivered_ts < minimum_separation`.
     pub last_delivered_ts: Option<Time>,
-    /// Reader-side: Wall-Clock-Zeit, zu der die Instanz in
-    /// `NOT_ALIVE_DISPOSED` uebergegangen ist. Spec §2.2.3.22
-    /// `autopurge_disposed_samples_delay`: Samples werden nach
-    /// Ablauf des Delays purged.
+    /// Reader side: wall-clock time at which the instance transitioned
+    /// into `NOT_ALIVE_DISPOSED`. Spec §2.2.3.22
+    /// `autopurge_disposed_samples_delay`: samples are purged after the
+    /// delay elapses.
     pub disposed_at: Option<Time>,
-    /// Reader-side: Wall-Clock-Zeit, zu der die Instanz in
-    /// `NOT_ALIVE_NO_WRITERS` uebergegangen ist. Spec §2.2.3.22
+    /// Reader side: wall-clock time at which the instance transitioned
+    /// into `NOT_ALIVE_NO_WRITERS`. Spec §2.2.3.22
     /// `autopurge_no_writer_samples_delay`.
     pub no_writers_at: Option<Time>,
-    /// Reader-side OWNERSHIP=EXCLUSIVE (Spec §2.2.3.10): aktueller
-    /// Eigentuemer-Writer als (GuidLike, Strength). Bei Tie-Breaker
-    /// gewinnt der lexikographisch hoehere `GuidLike`. Bei Liveliness-
-    /// Loss: explizit per `clear_owner` reset.
+    /// Reader side OWNERSHIP=EXCLUSIVE (Spec §2.2.3.10): current owner
+    /// writer as (GuidLike, Strength). On a tie, the lexicographically
+    /// higher `GuidLike` wins. On liveliness loss: reset explicitly via
+    /// `clear_owner`.
     pub current_owner: Option<([u8; 16], i32)>,
-    /// Gespeicherter Key-Holder (Bytes), so kann `get_key_value` ohne
-    /// erneutes Decoden den Key zurueckspielen. Das ist der **PLAIN_CDR2-
-    /// BE**-Stream, also exakt der Input von `compute_key_hash`.
+    /// Stored key holder (bytes), so `get_key_value` can replay the key
+    /// without re-decoding. This is the **PLAIN_CDR2-BE** stream, i.e.
+    /// exactly the input to `compute_key_hash`.
     pub key_holder: alloc::vec::Vec<u8>,
-    /// View-State auf Reader-Seite. Auf Writer-Seite unbenutzt.
+    /// View state on the reader side. Unused on the writer side.
     pub reader_view_new: bool,
-    /// Anzahl bisheriger Reader-Samples in dieser Instanz (sample_rank-
-    /// Hilfswert fuer den naechsten Read).
+    /// Number of reader samples so far in this instance (a sample_rank
+    /// helper value for the next read).
     pub samples_in_cache: u32,
 }
 
@@ -108,8 +108,8 @@ impl InstanceState {
     }
 }
 
-/// Thread-safer Tracker — wird sowohl im DataWriter als auch im
-/// DataReader instanziiert.
+/// Thread-safe tracker — instantiated in both the DataWriter and the
+/// DataReader.
 #[derive(Debug)]
 pub struct InstanceTracker {
     inner: Arc<Mutex<TrackerInner>>,
@@ -129,7 +129,7 @@ impl Default for InstanceTracker {
 }
 
 impl InstanceTracker {
-    /// Neuer Tracker mit eigenem [`InstanceHandleAllocator`].
+    /// New tracker with its own [`InstanceHandleAllocator`].
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -138,8 +138,8 @@ impl InstanceTracker {
         }
     }
 
-    /// Tracker mit shared Allocator (z.B. wenn Writer und Reader im
-    /// selben Participant ihre Handles aus demselben Pool ziehen).
+    /// Tracker with a shared allocator (e.g. when a writer and reader in
+    /// the same participant draw their handles from the same pool).
     #[must_use]
     pub fn with_allocator(allocator: Arc<InstanceHandleAllocator>) -> Self {
         Self {
@@ -148,10 +148,10 @@ impl InstanceTracker {
         }
     }
 
-    /// Registriert die Instanz, wenn sie noch nicht bekannt ist; sonst
-    /// reaktiviert sie nur (Spec §2.2.2.4.2.5).
+    /// Registers the instance if it is not yet known; otherwise just
+    /// reactivates it (Spec §2.2.2.4.2.5).
     ///
-    /// Liefert immer den (stabilen) [`InstanceHandle`] zurueck.
+    /// Always returns the (stable) [`InstanceHandle`].
     pub fn register(
         &self,
         keyhash: KeyHash,
@@ -163,8 +163,8 @@ impl InstanceTracker {
             let h = self.allocator.allocate();
             InstanceState::fresh(h, key_holder.clone())
         });
-        // Reaktivierung von NOT_ALIVE → ALIVE produziert einen
-        // Generation-Bump (Spec §2.2.2.5.1.7/8).
+        // Reactivation from NOT_ALIVE → ALIVE produces a generation
+        // bump (Spec §2.2.2.5.1.7/8).
         match entry.kind {
             InstanceStateKind::NotAliveDisposed => {
                 entry.disposed_generation_count = entry.disposed_generation_count.saturating_add(1);
@@ -186,13 +186,13 @@ impl InstanceTracker {
         handle
     }
 
-    /// Spec §2.2.3.12 TIME_BASED_FILTER — entscheidet, ob ein
-    /// Sample mit `sample_ts` ans User-API geliefert werden darf.
-    /// `false` wenn `t - last_delivered_ts < min_separation` (drop);
-    /// `true` sonst (deliver).
+    /// Spec §2.2.3.12 TIME_BASED_FILTER — decides whether a sample with
+    /// `sample_ts` may be delivered to the user API. `false` if
+    /// `t - last_delivered_ts < min_separation` (drop); `true` otherwise
+    /// (deliver).
     ///
-    /// Bei unbekannter Instanz oder erstem Sample (kein
-    /// `last_delivered_ts`) ist immer `true`.
+    /// For an unknown instance or the first sample (no
+    /// `last_delivered_ts`) it is always `true`.
     #[must_use]
     pub fn should_deliver_under_time_based_filter(
         &self,
@@ -210,9 +210,9 @@ impl InstanceTracker {
         let Some(last) = s.last_delivered_ts else {
             return true;
         };
-        // Nanos-Differenz; bei Sample-im-Vergangenheit (clock skew) —
-        // niemals filtern, der Caller hat ein Reorder-Problem aber
-        // nicht ein Filter-Problem.
+        // Nanosecond difference; for a sample in the past (clock skew),
+        // never filter — the caller has a reorder problem, not a filter
+        // problem.
         let last_nanos = u128::from(u64::try_from(last.sec).unwrap_or(0)) * 1_000_000_000
             + u128::from(last.nanosec);
         let sample_nanos = u128::from(u64::try_from(sample_ts.sec).unwrap_or(0)) * 1_000_000_000
@@ -223,12 +223,12 @@ impl InstanceTracker {
         sample_nanos - last_nanos >= min_separation_nanos
     }
 
-    /// Spec §2.2.3.18 DESTINATION_ORDER — entscheidet, ob ein Sample
-    /// mit `source_ts` ans User-API geliefert werden darf.
-    /// `BY_RECEPTION_TIMESTAMP`: immer `true`. `BY_SOURCE_TIMESTAMP`:
-    /// nur wenn `source_ts` strikt groesser als `last_delivered_ts`
-    /// dieser Instanz ist (Tie-Breaker bei gleichem Timestamp via
-    /// Writer-GUID kommt im typisierten Pfad).
+    /// Spec §2.2.3.18 DESTINATION_ORDER — decides whether a sample with
+    /// `source_ts` may be delivered to the user API.
+    /// `BY_RECEPTION_TIMESTAMP`: always `true`. `BY_SOURCE_TIMESTAMP`:
+    /// only if `source_ts` is strictly greater than this instance's
+    /// `last_delivered_ts` (the tie-break on equal timestamps via the
+    /// writer GUID happens in the typed path).
     #[must_use]
     pub fn should_deliver_under_destination_order(
         &self,
@@ -253,8 +253,8 @@ impl InstanceTracker {
         src_nanos > last_nanos
     }
 
-    /// Markiert dass ein Sample mit `sample_ts` ans User-API geliefert
-    /// wurde (Spec §2.2.3.12 — fuer naechste Filter-Entscheidung).
+    /// Marks that a sample with `sample_ts` was delivered to the user
+    /// API (Spec §2.2.3.12 — for the next filter decision).
     pub fn record_delivery(&self, keyhash: &KeyHash, sample_ts: Time) {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(s) = g.by_keyhash.get_mut(keyhash) {
@@ -262,14 +262,14 @@ impl InstanceTracker {
         }
     }
 
-    /// Lookup ohne Mutation (Spec §2.2.2.4.2.14 `lookup_instance`).
+    /// Lookup without mutation (Spec §2.2.2.4.2.14 `lookup_instance`).
     #[must_use]
     pub fn lookup(&self, keyhash: &KeyHash) -> Option<InstanceHandle> {
         let g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         g.by_keyhash.get(keyhash).map(|s| s.handle)
     }
 
-    /// Liefert eine Kopie des State-Snapshots fuer einen Handle.
+    /// Returns a copy of the state snapshot for a handle.
     #[must_use]
     pub fn get_by_handle(&self, handle: InstanceHandle) -> Option<InstanceState> {
         let g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -277,14 +277,14 @@ impl InstanceTracker {
         g.by_keyhash.get(kh).cloned()
     }
 
-    /// Liefert eine Kopie des State-Snapshots fuer einen KeyHash.
+    /// Returns a copy of the state snapshot for a KeyHash.
     #[must_use]
     pub fn get_by_keyhash(&self, keyhash: &KeyHash) -> Option<InstanceState> {
         let g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         g.by_keyhash.get(keyhash).cloned()
     }
 
-    /// Liefert den Key-Holder-Bytes-Stream fuer einen Handle (Spec
+    /// Returns the key-holder byte stream for a handle (Spec
     /// §2.2.2.4.2.13 `get_key_value`).
     #[must_use]
     pub fn get_key_holder(&self, handle: InstanceHandle) -> Option<alloc::vec::Vec<u8>> {
@@ -293,10 +293,10 @@ impl InstanceTracker {
         g.by_keyhash.get(kh).map(|s| s.key_holder.clone())
     }
 
-    /// Markiert die Instanz als `NOT_ALIVE_DISPOSED` (Spec
-    /// §2.2.2.4.2.10 `dispose`).
+    /// Marks the instance as `NOT_ALIVE_DISPOSED` (Spec §2.2.2.4.2.10
+    /// `dispose`).
     ///
-    /// Liefert `false` wenn die Instanz nicht bekannt ist.
+    /// Returns `false` if the instance is not known.
     pub fn dispose(&self, handle: InstanceHandle, timestamp: Option<Time>) -> bool {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let Some(kh) = g.handle_to_keyhash.get(&handle).copied() else {
@@ -313,8 +313,8 @@ impl InstanceTracker {
         false
     }
 
-    /// Dekrementiert den Writer-Counter; faellt er auf 0, geht die
-    /// Instanz nach `NOT_ALIVE_NO_WRITERS` (Spec §2.2.2.4.2.7).
+    /// Decrements the writer counter; if it drops to 0, the instance
+    /// transitions to `NOT_ALIVE_NO_WRITERS` (Spec §2.2.2.4.2.7).
     pub fn unregister(&self, handle: InstanceHandle, timestamp: Option<Time>) -> bool {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let Some(kh) = g.handle_to_keyhash.get(&handle).copied() else {
@@ -336,20 +336,20 @@ impl InstanceTracker {
         false
     }
 
-    /// Spec §2.2.3.10 OWNERSHIP=EXCLUSIVE Strength-Selection.
-    /// Liefert `true` wenn ein Sample vom Writer mit
-    /// `(writer_guid, writer_strength)` fuer die Instanz `keyhash`
-    /// akzeptiert werden soll.
+    /// Spec §2.2.3.10 OWNERSHIP=EXCLUSIVE strength selection.
+    /// Returns `true` if a sample from the writer with
+    /// `(writer_guid, writer_strength)` should be accepted for the
+    /// instance `keyhash`.
     ///
-    /// Algorithmus (Spec §2.2.3.10):
-    /// - Kein aktueller Owner → akzeptiere + setze als Owner.
-    /// - Strength > current → akzeptiere + ersetze Owner.
-    /// - Strength == current und guid > current_guid → akzeptiere
-    ///   (Spec-Tie-Breaker via lexikographisch hoehere Guid).
+    /// Algorithm (Spec §2.2.3.10):
+    /// - No current owner → accept + set as owner.
+    /// - Strength > current → accept + replace owner.
+    /// - Strength == current and guid > current_guid → accept
+    ///   (spec tie-break via the lexicographically higher guid).
     /// - Strength < current → reject.
-    /// - Strength == current und guid < current → reject.
-    /// - Strength == current und guid == current → akzeptiere
-    ///   (selber Writer).
+    /// - Strength == current and guid < current → reject.
+    /// - Strength == current and guid == current → accept
+    ///   (same writer).
     pub fn should_accept_sample_under_exclusive_ownership(
         &self,
         keyhash: &KeyHash,
@@ -358,7 +358,7 @@ impl InstanceTracker {
     ) -> bool {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let Some(s) = g.by_keyhash.get_mut(keyhash) else {
-            return true; // unbekannte Instance → akzeptiere
+            return true; // unknown instance → accept
         };
         match s.current_owner {
             None => {
@@ -378,9 +378,9 @@ impl InstanceTracker {
         }
     }
 
-    /// Spec §2.2.3.23 — bei Liveliness-Loss eines Writers: clear-Owner
-    /// fuer alle Instanzen, deren Owner dieser Writer war. Naechster
-    /// Sample triggert Failover-Selection.
+    /// Spec §2.2.3.23 — on liveliness loss of a writer: clear the owner
+    /// for all instances whose owner was this writer. The next sample
+    /// triggers failover selection.
     pub fn clear_owner_for_writer(&self, writer_guid: [u8; 16]) -> usize {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let mut cleared = 0;
@@ -395,9 +395,9 @@ impl InstanceTracker {
         cleared
     }
 
-    /// Wie [`Self::clear_owner_for_writer`], aber Match nach den ersten
-    /// 12 Bytes der GUID (GuidPrefix). Erlaubt Failover wenn nur die
-    /// Participant-Identitaet (z.B. via SPDP-Lease-Expiry) bekannt ist.
+    /// Like [`Self::clear_owner_for_writer`], but matches on the first
+    /// 12 bytes of the GUID (GuidPrefix). Allows failover when only the
+    /// participant identity (e.g. via SPDP lease expiry) is known.
     pub fn clear_owner_for_writer_prefix(&self, prefix: [u8; 12]) -> usize {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let mut cleared = 0;
@@ -412,15 +412,14 @@ impl InstanceTracker {
         cleared
     }
 
-    /// Spec §2.2.3.22 READER_DATA_LIFECYCLE — purgt Instanzen, deren
-    /// Disposed/NoWriter-Marker laenger als der jeweilige Delay her ist.
-    /// `now` ist die Caller-side Wall-Clock; die Delays sind in Nanoseconds.
-    /// Liefert die Anzahl entfernter Instanzen.
+    /// Spec §2.2.3.22 READER_DATA_LIFECYCLE — purges instances whose
+    /// disposed/no-writer marker is older than the respective delay.
+    /// `now` is the caller-side wall-clock; the delays are in
+    /// nanoseconds. Returns the number of removed instances.
     ///
-    /// Lazy-Purge: wird vom Read-Pfad (oder einem Background-Tick)
-    /// gerufen. Spec laesst die Strategie offen — wir loeschen die
-    /// betroffene Instanz vollstaendig, sodass nachfolgende read/take
-    /// sie nicht mehr sehen.
+    /// Lazy purge: called from the read path (or a background tick). The
+    /// spec leaves the strategy open — we delete the affected instance
+    /// entirely, so that subsequent read/take no longer see it.
     pub fn autopurge(
         &self,
         now: Time,
@@ -466,11 +465,10 @@ impl InstanceTracker {
         count
     }
 
-    /// Reader-seitiger Hook: Markiert, dass ein Sample fuer diese
-    /// Instanz angekommen ist. Liefert `(handle, war_neu)`, wo
-    /// `war_neu == true` heisst dass diese Instanz vorher unbekannt war
-    /// oder die Reader-View frisch zurueckgesetzt wurde (`view_state =
-    /// NEW`).
+    /// Reader-side hook: marks that a sample has arrived for this
+    /// instance. Returns `(handle, was_new)`, where `was_new == true`
+    /// means this instance was previously unknown or the reader view was
+    /// freshly reset (`view_state = NEW`).
     pub fn observe_sample(
         &self,
         keyhash: KeyHash,
@@ -484,13 +482,13 @@ impl InstanceTracker {
             let h = self.allocator.allocate();
             InstanceState::fresh(h, key_holder.clone())
         });
-        // Reaktivierung Reader-Sicht
+        // Reactivate the reader view
         if matches!(
             entry.kind,
             InstanceStateKind::NotAliveDisposed | InstanceStateKind::NotAliveNoWriters
         ) {
-            // Generation-Bumps wie auf Writer-Seite — das matched die
-            // Spec, weil Reader das aus dem Sample-Stream herleiten.
+            // Generation bumps as on the writer side — this matches the
+            // spec, because readers derive it from the sample stream.
             match entry.kind {
                 InstanceStateKind::NotAliveDisposed => {
                     entry.disposed_generation_count =
@@ -514,8 +512,8 @@ impl InstanceTracker {
         (handle, was_new)
     }
 
-    /// Reader-seitig: nach erstem `read`/`take` einer Instanz wird ihr
-    /// View-State auf `NOT_NEW` gesetzt.
+    /// Reader side: after the first `read`/`take` of an instance, its
+    /// view state is set to `NOT_NEW`.
     pub fn mark_view_seen(&self, handle: InstanceHandle) {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(kh) = g.handle_to_keyhash.get(&handle).copied() {
@@ -525,8 +523,7 @@ impl InstanceTracker {
         }
     }
 
-    /// Reader-seitig: nach `take` reduziert sich `samples_in_cache`
-    /// um `n`.
+    /// Reader side: after `take`, `samples_in_cache` is reduced by `n`.
     pub fn drain_samples(&self, handle: InstanceHandle, n: u32) {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(kh) = g.handle_to_keyhash.get(&handle).copied() {
@@ -536,16 +533,16 @@ impl InstanceTracker {
         }
     }
 
-    /// Listet alle Instanz-Handles in stabiler Reihenfolge (BTreeMap-
-    /// Order ueber KeyHash). Spec §2.2.2.5.3.28 `read_next_instance`.
+    /// Lists all instance handles in stable order (BTreeMap order by
+    /// KeyHash). Spec §2.2.2.5.3.28 `read_next_instance`.
     #[must_use]
     pub fn ordered_handles(&self) -> alloc::vec::Vec<InstanceHandle> {
         let g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         g.by_keyhash.values().map(|s| s.handle).collect()
     }
 
-    /// Liefert das **erste** Handle, dessen Sortier-Ordnung strikt
-    /// hinter `previous_handle` liegt (oder das erste ueberhaupt, wenn
+    /// Returns the **first** handle whose sort order lies strictly after
+    /// `previous_handle` (or the very first one if
     /// `previous == HANDLE_NIL`). Spec §2.2.2.5.3.28.
     #[must_use]
     pub fn next_handle_after(&self, previous: InstanceHandle) -> Option<InstanceHandle> {
@@ -561,14 +558,14 @@ impl InstanceTracker {
         g.by_keyhash.range(range).next().map(|(_, s)| s.handle)
     }
 
-    /// Anzahl getrackter Instanzen.
+    /// Number of tracked instances.
     #[must_use]
     pub fn len(&self) -> usize {
         let g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         g.by_keyhash.len()
     }
 
-    /// `true` wenn keine Instanzen getrackt sind.
+    /// `true` if no instances are tracked.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
@@ -628,13 +625,13 @@ mod tests {
     fn unregister_decrements_writer_count() {
         let t = InstanceTracker::new();
         let h = t.register(kh(4), alloc::vec![4], None);
-        // Zwei Writer haben sich registriert.
+        // Two writers have registered.
         let _ = t.register(kh(4), alloc::vec![4], None);
         assert_eq!(t.get_by_handle(h).unwrap().writer_count, 2);
         assert!(t.unregister(h, None));
         assert_eq!(t.get_by_handle(h).unwrap().kind, InstanceStateKind::Alive);
         assert!(t.unregister(h, None));
-        // jetzt 0 Writer → no_writers
+        // now 0 writers → no_writers
         assert_eq!(
             t.get_by_handle(h).unwrap().kind,
             InstanceStateKind::NotAliveNoWriters
@@ -724,7 +721,7 @@ mod tests {
     #[test]
     fn time_based_filter_first_sample_passes() {
         let t = InstanceTracker::new();
-        // Instance neu — keine last_delivered_ts, also liefern.
+        // New instance — no last_delivered_ts, so deliver.
         let _ = t.observe_sample(kh(20), alloc::vec![20], Some(Time::new(1, 0)));
         let pass = t.should_deliver_under_time_based_filter(
             &kh(20),
@@ -739,13 +736,13 @@ mod tests {
         let t = InstanceTracker::new();
         let _ = t.observe_sample(kh(20), alloc::vec![20], None);
         t.record_delivery(&kh(20), Time::new(1, 0));
-        // 50ms später — drop bei min_separation=100ms.
+        // 50ms later — drop at min_separation=100ms.
         let pass = t.should_deliver_under_time_based_filter(
             &kh(20),
             Time::new(1, 50_000_000),
             100_000_000,
         );
-        assert!(!pass, "50ms < 100ms separation → drop");
+        assert!(!pass, "50ms < 100ms separation -> drop");
     }
 
     #[test]
@@ -753,13 +750,13 @@ mod tests {
         let t = InstanceTracker::new();
         let _ = t.observe_sample(kh(20), alloc::vec![20], None);
         t.record_delivery(&kh(20), Time::new(1, 0));
-        // 150ms später — pass.
+        // 150ms later — pass.
         let pass = t.should_deliver_under_time_based_filter(
             &kh(20),
             Time::new(1, 150_000_000),
             100_000_000,
         );
-        assert!(pass, "150ms > 100ms separation → deliver");
+        assert!(pass, "150ms > 100ms separation -> deliver");
     }
 
     #[test]
@@ -768,18 +765,18 @@ mod tests {
         let _ = t.observe_sample(kh(20), alloc::vec![20], None);
         t.record_delivery(&kh(20), Time::new(1, 0));
         let pass = t.should_deliver_under_time_based_filter(&kh(20), Time::new(1, 0), 0);
-        assert!(pass, "min_separation=0 → kein Filter");
+        assert!(pass, "min_separation=0 -> no filter");
     }
 
     #[test]
     fn time_based_filter_per_instance_isolation() {
-        // Filter ist per-Instanz; Instance A's last_delivered beeinflusst
-        // Instance B nicht.
+        // The filter is per-instance; instance A's last_delivered does
+        // not affect instance B.
         let t = InstanceTracker::new();
         let _ = t.observe_sample(kh(1), alloc::vec![1], None);
         let _ = t.observe_sample(kh(2), alloc::vec![2], None);
         t.record_delivery(&kh(1), Time::new(5, 0));
-        // Instance 2 hat noch keine delivery → pass.
+        // Instance 2 has no delivery yet → pass.
         let pass =
             t.should_deliver_under_time_based_filter(&kh(2), Time::new(5, 10_000_000), 100_000_000);
         assert!(pass);
@@ -789,7 +786,7 @@ mod tests {
     fn time_based_filter_unknown_instance_passes() {
         let t = InstanceTracker::new();
         let pass = t.should_deliver_under_time_based_filter(&kh(99), Time::new(1, 0), 100_000_000);
-        assert!(pass, "unbekannte Instanz → pass");
+        assert!(pass, "unknown instance -> pass");
     }
 
     // ---- §2.2.3.22 READER_DATA_LIFECYCLE autopurge ----
@@ -798,12 +795,12 @@ mod tests {
     fn autopurge_disposed_after_delay() {
         let t = InstanceTracker::new();
         let h = t.register(kh(30), alloc::vec![30], None);
-        // Dispose mit ts=t1.
+        // Dispose with ts=t1.
         t.dispose(h, Some(Time::new(10, 0)));
         // Now=t1+5s, delay=3s → purge.
         let purged = t.autopurge(Time::new(15, 0), 3_000_000_000, u128::MAX);
         assert_eq!(purged, 1);
-        // Nach purge: lookup liefert None.
+        // After purge: lookup returns None.
         assert!(t.lookup(&kh(30)).is_none());
     }
 
@@ -822,7 +819,7 @@ mod tests {
     fn autopurge_no_writers_after_delay() {
         let t = InstanceTracker::new();
         let h = t.register(kh(32), alloc::vec![32], None);
-        // unregister setzt writer_count=0 → NotAliveNoWriters mit timestamp.
+        // unregister sets writer_count=0 → NotAliveNoWriters with timestamp.
         t.unregister(h, Some(Time::new(20, 0)));
         let purged = t.autopurge(Time::new(25, 0), u128::MAX, 3_000_000_000);
         assert_eq!(purged, 1);
@@ -833,7 +830,7 @@ mod tests {
     fn autopurge_alive_instance_never_purged() {
         let t = InstanceTracker::new();
         let _h = t.register(kh(33), alloc::vec![33], None);
-        // ALIVE → purge ignoriert.
+        // ALIVE → purge ignored.
         let purged = t.autopurge(Time::new(1000, 0), 0, 0);
         assert_eq!(purged, 0);
         assert!(t.lookup(&kh(33)).is_some());
@@ -841,7 +838,7 @@ mod tests {
 
     #[test]
     fn autopurge_infinity_delay_never_purges() {
-        // u128::MAX als Delay = INFINITE = nie purgen (Spec-Default).
+        // u128::MAX as delay = INFINITE = never purge (spec default).
         let t = InstanceTracker::new();
         let h = t.register(kh(34), alloc::vec![34], None);
         t.dispose(h, Some(Time::new(10, 0)));
@@ -940,7 +937,7 @@ mod tests {
         assert!(t.should_accept_sample_under_exclusive_ownership(&kh(52), guid(9), 100));
         // Weaker writer normally rejected.
         assert!(!t.should_accept_sample_under_exclusive_ownership(&kh(52), guid(1), 10));
-        // Clear (Liveliness-Loss) → weaker writer kann uebernehmen.
+        // Clear (liveliness loss) → weaker writer can take over.
         t.clear_owner_for_writer(guid(9));
         assert!(t.should_accept_sample_under_exclusive_ownership(&kh(52), guid(1), 10));
     }

@@ -19,11 +19,11 @@ pub struct CompleteAnnotationParameter {
     pub member_id: MemberId,
     /// Flags.
     pub member_flags: AnnotationParameterFlag,
-    /// Parameter-Typ.
+    /// Parameter type.
     pub member_type_id: TypeIdentifier,
-    /// Parameter-Name.
+    /// Parameter name.
     pub name: String,
-    /// Default-Value als opaque bytes.
+    /// Default value as opaque bytes.
     pub default_value: Vec<u8>,
 }
 

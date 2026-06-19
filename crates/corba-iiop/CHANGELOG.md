@@ -1,60 +1,60 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), and versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [1.0.0-rc.1] — 2026-05-07
 
-Initiale Release-Materialisierung der `zerodds-corba-iiop`-Crate.
+Initial release materialization of the `zerodds-corba-iiop` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **OMG CORBA 3.3 Part 2**: §14 (IIOP-Overview), §15.7 (IIOP-Profile +
-  ProfileBody), §15.9 (Bidirectional-GIOP).
+- **OMG CORBA 3.3 Part 2**: §14 (IIOP overview), §15.7 (IIOP profile +
+  ProfileBody), §15.9 (bidirectional GIOP).
 
-### Public-API
+### Public API
 
 - `bidir::{BiDirIiopListenPoint, BiDirIiopServiceContext,
-  IIOP_BI_DIR_TAG}` — Bidirectional-GIOP-Aushandlung (§15.9).
+  IIOP_BI_DIR_TAG}` — bidirectional-GIOP negotiation (§15.9).
 - `profile_body::{IiopProfileBody, IiopVersion, TaggedComponent}` —
-  ProfileBody fuer alle 4 IIOP-Versionen (1.0/1.1/1.2/1.3) inkl.
-  Components-Sequenz.
-- `acceptor::{Acceptor, AcceptorConfig}` (Feature `std`) — TCP-
-  Listener-Loop mit Per-Connection-Worker-Thread.
-- `connection::Connection` — TCP-Stream-Wrapper mit Frame-Reader
-  (12-Byte-GIOP-Header → `message_size` → Body-Read).
-- `connector::{Connector, ConnectorConfig}` — Client-Connect mit
-  Connection-Reuse + thread-safe Pool + Connect-Timeout +
-  Reconnect-Logik bei `CloseConnection`.
-- `error::IiopError` — Error-Surface.
-- `framing::{read_giop_message, write_giop_message}` — Frame-Codec
-  ueber `corba-giop::Message`.
+  ProfileBody for all 4 IIOP versions (1.0/1.1/1.2/1.3) including the
+  components sequence.
+- `acceptor::{Acceptor, AcceptorConfig}` (feature `std`) — TCP
+  listener loop with a per-connection worker thread.
+- `connection::Connection` — TCP stream wrapper with a frame reader
+  (12-byte GIOP header → `message_size` → body read).
+- `connector::{Connector, ConnectorConfig}` — client connect with
+  connection reuse + thread-safe pool + connect timeout +
+  reconnect logic on `CloseConnection`.
+- `error::IiopError` — error surface.
+- `framing::{read_giop_message, write_giop_message}` — frame codec
+  over `corba-giop::Message`.
 
-### Implementierung
+### Implementation
 
-`#![cfg_attr(not(feature = "std"), no_std)]` mit `extern crate alloc`;
+`#![cfg_attr(not(feature = "std"), no_std)]` with `extern crate alloc`;
 `#![forbid(unsafe_code)]`.
 
-`IiopVersion`-Konstanten `V1_0`/`V1_1`/`V1_2`/`V1_3`.
-`IiopProfileBody`-Encoder/Decoder respektiert die Versions-Quirks:
-1.0 ohne Components-Sequenz, ab 1.1 mit `sequence<TaggedComponent>`.
+`IiopVersion` constants `V1_0`/`V1_1`/`V1_2`/`V1_3`.
+The `IiopProfileBody` encoder/decoder respects the version quirks:
+1.0 without a components sequence, 1.1 and up with `sequence<TaggedComponent>`.
 
-`Connection` liest GIOP-Frames byte-genau ein und delegiert an
-`corba-giop::decode_message`. `Acceptor` und `Connector` arbeiten
-auf Standard-`std::net::TcpStream`.
+`Connection` reads GIOP frames byte-exactly and delegates to
+`corba-giop::decode_message`. `Acceptor` and `Connector` work on
+standard `std::net::TcpStream`.
 
-`BiDirIiopServiceContext` (§15.9) erlaubt einem Server Requests an
-einen Client-Endpoint zu schicken, nachdem dieser ein
-`ListenPoint`-Set per ServiceContext bekanntgegeben hat.
+`BiDirIiopServiceContext` (§15.9) lets a server send requests to a
+client endpoint after the client has announced a `ListenPoint` set via
+a ServiceContext.
 
-### Architektur
+### Architecture
 
-- **Layer:** 8 (CORBA-Stack, Tier-B).
+- **Layer:** 8 (CORBA stack, Tier-B).
 - **Dependencies (in):** `zerodds-cdr`, `zerodds-corba-giop`.
-- **Dependents (out):** `zerodds-corba-ior` (TaggedProfile-Inhalt),
-  `zerodds-corba-dds-bridge` (Forwarder).
-- **Feature-Flags:** `std` (default), `alloc` (via std).
+- **Dependents (out):** `zerodds-corba-ior` (TaggedProfile content),
+  `zerodds-corba-dds-bridge` (forwarder).
+- **Feature flags:** `std` (default), `alloc` (via std).
 
-### Stabilitaet
+### Stability
 
-- Public-API: RC1-stabil.
-- Wire-Format durch OMG fixiert.
+- Public API: RC1-stable.
+- Wire format fixed by OMG.

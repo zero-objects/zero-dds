@@ -1,0 +1,32 @@
+[package]
+name = "zerodds-corba-cos-transactions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG Object Transaction Service (OTS/CosTransactions) 1.4 — PropagationContext + 2-Phase-Commit + Current/Coordinator/Resource (no_std + alloc)."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-corba-cos-transactions"
+readme = "README.md"
+keywords = ["dds", "corba", "transactions", "two-phase-commit", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr" }
+
+[dev-dependencies]
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr" }

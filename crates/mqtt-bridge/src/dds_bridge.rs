@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! MQTT↔DDS-Topic-Bridge.
+//! MQTT↔DDS topic bridge.
 //!
-//! Bidirektionales Mapping:
-//! * MQTT-Topic-Name → DDS-Topic-Name (Slash-Separation bleibt
-//!   erhalten; DDS-Layer akzeptiert dass Topics auch Slashes
-//!   enthalten — das wird vom Caller QoS-Profile-validiert).
+//! Bidirectional mapping:
+//! * MQTT topic name → DDS topic name (slash separation is
+//!   preserved; the DDS layer accepts that topics may also contain
+//!   slashes — that is QoS-profile-validated by the caller).
 //! * MQTT-QoS → DDS-Reliability + Durability:
 //!   - QoS 0 → Best-Effort + Volatile
 //!   - QoS 1 → Reliable + Volatile
@@ -61,28 +61,27 @@ pub fn dds_qos_to_mqtt(rel: DdsReliability, dur: DdsDurability) -> QoS {
     }
 }
 
-/// MQTT-Topic-Name → DDS-Topic-Name (default: 1:1).
-/// Caller kann ein Mapping-Override fuer spezielle Topics
-/// registrieren.
+/// MQTT topic name → DDS topic name (default: 1:1).
+/// The caller can register a mapping override for special topics.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicMapper {
     overrides: BTreeMap<String, String>,
 }
 
 impl TopicMapper {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Fuegt ein 1:1-Override hinzu.
+    /// Adds a 1:1 override.
     pub fn map(&mut self, mqtt_topic: &str, dds_topic: &str) {
         self.overrides
             .insert(mqtt_topic.to_string(), dds_topic.to_string());
     }
 
-    /// MQTT-Topic → DDS-Topic.
+    /// MQTT topic → DDS topic.
     #[must_use]
     pub fn mqtt_to_dds(&self, mqtt_topic: &str) -> String {
         self.overrides
@@ -91,8 +90,8 @@ impl TopicMapper {
             .unwrap_or_else(|| mqtt_topic.to_string())
     }
 
-    /// DDS-Topic → MQTT-Topic (Reverse-Lookup; bei Mehrfach-Mappings
-    /// wird der erste Match geliefert, sonst Identity).
+    /// DDS topic → MQTT topic (reverse lookup; with multiple mappings
+    /// the first match is returned, otherwise identity).
     #[must_use]
     pub fn dds_to_mqtt(&self, dds_topic: &str) -> String {
         self.overrides
@@ -103,7 +102,7 @@ impl TopicMapper {
     }
 }
 
-/// User-Property-Forwarder — leitet (key, value) Strings durch.
+/// User-property forwarder — passes (key, value) strings through.
 #[must_use]
 pub fn forward_user_properties(props: &[(String, String)]) -> Vec<u8> {
     let mut out = Vec::new();
@@ -116,33 +115,33 @@ pub fn forward_user_properties(props: &[(String, String)]) -> Vec<u8> {
     out
 }
 
-/// Bridge-Statistik.
+/// Bridge statistics.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct BridgeStats {
-    /// MQTT→DDS Forwards.
+    /// MQTT→DDS forwards.
     pub mqtt_to_dds: u64,
-    /// DDS→MQTT Forwards.
+    /// DDS→MQTT forwards.
     pub dds_to_mqtt: u64,
 }
 
-/// MQTT-DDS-Bridge mit Topic-Mapper + Stats.
+/// MQTT-DDS bridge with topic mapper + stats.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct MqttDdsBridge {
-    /// Topic-Mapper.
+    /// Topic mapper.
     pub mapper: TopicMapper,
     /// Stats.
     pub stats: BridgeStats,
 }
 
 impl MqttDdsBridge {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Forwarded eine MQTT-Publish-Message zur DDS-Seite. Liefert
-    /// Tuple (dds_topic, dds_reliability, dds_durability).
+    /// Forwards an MQTT publish message to the DDS side. Returns the
+    /// tuple (dds_topic, dds_reliability, dds_durability).
     pub fn forward_to_dds(
         &mut self,
         mqtt_topic: &str,
@@ -154,7 +153,7 @@ impl MqttDdsBridge {
         (dds_topic, rel, dur)
     }
 
-    /// Forwarded ein DDS-Sample zur MQTT-Seite. Liefert (mqtt_topic, qos).
+    /// Forwards a DDS sample to the MQTT side. Returns (mqtt_topic, qos).
     pub fn forward_to_mqtt(
         &mut self,
         dds_topic: &str,

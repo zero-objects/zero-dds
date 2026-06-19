@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Smoke-Tests fuer den Python-Codegen — deckt struct mit primitives,
-//! enum, sequence, string, nested module ab.
+//! Smoke tests for the Python codegen — covers struct with primitives,
+//! enum, sequence, string, nested module.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
@@ -64,7 +64,7 @@ fn module_nesting_yields_underscored_class_name_and_qualified_typename() {
     let py = emit("module M { struct Inner { long x; }; };");
     // Python-PSM-Konvention: flacher Klassenname M_Inner.
     assert!(py.contains("class M_Inner:"), "{py}");
-    // Typename behaelt den vollen IDL-Scope mit ::.
+    // The typename keeps the full IDL scope with ::.
     assert!(py.contains("typename=\"M::Inner\""), "{py}");
 }
 
@@ -207,8 +207,8 @@ fn union_with_hex_label_supported() {
 
 #[test]
 fn union_with_scoped_label_returns_unsupported() {
-    // Scoped-Labels (z.B. enum-member-references) sind in einer Folge-
-    // Iteration geplant — heute Unsupported.
+    // Scoped labels (e.g. enum-member references) are planned for a follow-up
+    // iteration — Unsupported today.
     let src = "
         enum Tag { A, B };
         union U switch (Tag) {
@@ -239,7 +239,7 @@ fn empty_struct_with_base_still_has_pass() {
          struct Marker : Base {};",
     );
     assert!(py.contains("class Marker(Base):"), "{py}");
-    // Body braucht mindestens `pass` damit Python-Syntax valid bleibt.
+    // The body needs at least `pass` so the Python syntax stays valid.
     assert!(py.contains("    pass"), "{py}");
 }
 

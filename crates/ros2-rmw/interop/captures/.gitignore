@@ -1,0 +1,2 @@
+# Raw pcaps reproducible via run_capture.sh — not versioned.
+*.pcap

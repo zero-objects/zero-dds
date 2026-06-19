@@ -2,6 +2,10 @@
 
 **Quelle:** `docs/specs/zerodds-deployment-1.0.md`
 
+Implementation:
+
+- `crates/zerodds-c-api/` — cdylib + die 7 Bridge-Daemons (ws/mqtt/coap/amqp/grpc/corba/ros2-shim).
+
 ## §1 Targets
 
 ### §1.1 Daemons (7 Bridges)
@@ -334,4 +338,4 @@ Distros (NixOS/Alpine/SUSE-OBS), Major=Layout-Änderung
 
 Test-Lauf: `cargo test -p zerodds-websocket-bridge -p zerodds-mqtt-bridge -p zerodds-coap-bridge -p zerodds-amqp-endpoint -p zerodds-grpc-bridge -p zerodds-corba-dds-bridge -p rmw-zerodds-shim -p zerodds-c-api` — Tests grün, 0 failed.
 
-Offene Punkte und Decision-Records: siehe `zerodds-deployment-1.0.open.md`.
+Keine offenen Punkte oder Decision-Records — alle Items `done` / `n/a (informative)`.

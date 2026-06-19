@@ -3,33 +3,33 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-corba-ccm-lib/badge.svg)](https://docs.rs/zerodds-corba-ccm-lib)
 
-Production-ready CCM-Components fuer ZeroDDS-Hosting: bidirektionale
-CCM↔DDS-Bridge, Persistent-State-Storage (CCM 4.0 §10) und
-Component-Lifecycle-Telemetrie auf DCPS-Monitor-Topic. `no_std + alloc`,
+Production-ready CCM components for ZeroDDS hosting: bidirectional
+CCM↔DDS bridge, persistent state storage (CCM 4.0 §10), and
+component lifecycle telemetry on a DCPS monitor topic. `no_std + alloc`,
 `forbid(unsafe_code)`. Safety classification: **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| OMG CCM 4.0 | §6 (Component-Model), §10 (Persistent State), §6.10 (Events) |
-| OMG DDS 1.4 | §2.2 (DCPS Topic-Mapping) |
-| ZeroDDS Monitor | `__ZeroDDS_CcmTelemetry`-Topic |
+| OMG CCM 4.0 | §6 (Component Model), §10 (Persistent State), §6.10 (Events) |
+| OMG DDS 1.4 | §2.2 (DCPS topic mapping) |
+| ZeroDDS Monitor | `__ZeroDDS_CcmTelemetry` topic |
 
-## Was ist drin
+## What's included
 
-- **`DdsBridgeComponent`** — mappt CCM-EventSinks/Sources auf DDS-
-  DataReader/Writer per Topic-Liste.
-- **`PersistenceStorageComponent`** — In-Memory Storage-Home (§10).
-- **`TelemetryComponent`** — emittiert Lifecycle-Events
+- **`DdsBridgeComponent`** — maps CCM EventSinks/Sources onto DDS
+  DataReader/Writer via a topic list.
+- **`PersistenceStorageComponent`** — in-memory storage home (§10).
+- **`TelemetryComponent`** — emits lifecycle events
   (Activated/Passivated/Removed/ConfigurationCompleted).
 
-## Was nicht abgedeckt ist
+## What is not covered
 
-- Persistent-Storage mit Disk-Backend: Caller-Layer.
-- DDS-Reader/Writer-Instanziierung: ueber `dcps`-Handles in Hosting.
+- Persistent storage with a disk backend: caller layer.
+- DDS reader/writer instantiation: via `dcps` handles in the host.
 
-## Beispiel
+## Example
 
 ```rust
 use zerodds_corba_ccm_lib::{MappingDirection, TopicMapping};

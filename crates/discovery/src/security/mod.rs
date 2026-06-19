@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! DDS-Security Builtin-Endpoint-Slots — Wire-Layer.
+//! DDS-Security builtin-endpoint slots — wire layer.
 //!
-//! Liefert die zwei Endpoint-Slot-Paare aus DDS-Security 1.2 §7.4.4 +
+//! Provides the two endpoint-slot pairs from DDS-Security 1.2 §7.4.4 +
 //! §7.4.5:
 //!
-//! | Topic                                  | Reliability | Modul                |
+//! | Topic                                  | Reliability | Module               |
 //! |----------------------------------------|-------------|----------------------|
 //! | `DCPSParticipantStatelessMessage`      | BestEffort  | [`stateless`]        |
 //! | `DCPSParticipantVolatileMessageSecure` | Reliable    | [`volatile_secure`]  |
 //!
-//! Plus [`stack::SecurityBuiltinStack`] als Bundle der vier Endpoints
-//! mit automatischer Proxy-Verdrahtung anhand der vom Peer im SPDP
-//! annoncierten BuiltinEndpointSet-Bits 22..25.
+//! Plus [`stack::SecurityBuiltinStack`] as a bundle of the four endpoints
+//! with automatic proxy wiring based on the BuiltinEndpointSet bits 22..25
+//! announced by the peer in SPDP.
 //!
-//! ## Layer-Boundary
+//! ## Layer boundary
 //!
-//! Dieses Modul liefert die **Wire-Endpoint-Slots**. Die Plugin-
-//! Pipeline-Logik (Auth-Handshake-State-Machine, Crypto-Token-Routing)
-//! lebt im DCPS-Layer (`crates/dcps/src/security/`), wo die Hooks
-//! gemäss DDS-Security 1.2 §10.3.4 + §10.5.4 gesetzt werden — das ist
-//! eine Spec-konforme Layer-Trennung, kein Deferral.
+//! This module provides the **wire endpoint slots**. The plugin
+//! pipeline logic (auth handshake state machine, crypto token routing)
+//! lives in the DCPS layer (`crates/dcps/src/security/`), where the hooks
+//! are installed per DDS-Security 1.2 §10.3.4 + §10.5.4 — this is a
+//! spec-conformant layer separation, not a deferral.
 
 pub mod codec;
 pub mod stack;

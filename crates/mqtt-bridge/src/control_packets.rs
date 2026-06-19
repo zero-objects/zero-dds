@@ -3,18 +3,18 @@
 
 //! MQTT v5.0 Control Packet Body Codecs — Spec §3.1-§3.15.
 //!
-//! Pro Spec-Subsection ein Encoder + Decoder + Tests:
+//! Per spec subsection an encoder + decoder + tests:
 //! * §3.1 CONNECT
 //! * §3.2 CONNACK
 //! * §3.4 PUBACK, §3.5 PUBREC, §3.6 PUBREL, §3.7 PUBCOMP
-//!   (alle mit dem gleichen Body-Layout: PacketId + ReasonCode +
-//!   Properties — gemeinsamer [`AckBody`]-Helper)
+//!   (all with the same body layout: PacketId + ReasonCode +
+//!   Properties — shared [`AckBody`] helper)
 //! * §3.8 SUBSCRIBE, §3.9 SUBACK
 //! * §3.10 UNSUBSCRIBE, §3.11 UNSUBACK
 //! * §3.14 DISCONNECT, §3.15 AUTH
 //!
-//! Properties werden als opake VBI-praefixed-Bytes durchgereicht
-//! (Caller-Layer kann via [`crate::properties`] feiner parsen).
+//! Properties are passed through as opaque VBI-prefixed bytes
+//! (the caller layer can parse them more finely via [`crate::properties`]).
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -25,17 +25,41 @@ use crate::data_types::{
     decode_two_byte_int, decode_utf8_string, encode_two_byte_int, encode_utf8_string,
 };
 use crate::vbi::{decode_vbi, encode_vbi};
+use crate::version::ProtocolVersion;
+
+/// Writes a VBI-prefixed property block — but only for MQTT 5.0. MQTT 3.1.1
+/// packets carry no properties, so nothing is emitted.
+fn put_props(out: &mut Vec<u8>, props: &[u8], v: ProtocolVersion) -> Result<(), CodecError> {
+    if v.has_properties() {
+        out.extend_from_slice(
+            &encode_vbi(u32::try_from(props.len()).unwrap_or(u32::MAX))
+                .ok_or(CodecError::Vbi(crate::vbi::VbiError::Malformed))?,
+        );
+        out.extend_from_slice(props);
+    }
+    Ok(())
+}
+
+/// Reads a VBI-prefixed property block for MQTT 5.0; for 3.1.1 returns an empty
+/// block consuming nothing.
+fn get_props(bytes: &[u8], v: ProtocolVersion) -> Result<(Vec<u8>, usize), CodecError> {
+    if v.has_properties() {
+        consume_properties(bytes)
+    } else {
+        Ok((Vec::new(), 0))
+    }
+}
 
 // ============================================================================
-//  §3.4-§3.7 ACK-Body (gemeinsam fuer PUBACK/PUBREC/PUBREL/PUBCOMP).
+//  §3.4-§3.7 ACK body (shared for PUBACK/PUBREC/PUBREL/PUBCOMP).
 // ============================================================================
 
-/// Spec §3.4-§3.7 — ACK-Body fuer PUBACK/PUBREC/PUBREL/PUBCOMP.
+/// Spec §3.4-§3.7 — ACK body for PUBACK/PUBREC/PUBREL/PUBCOMP.
 ///
-/// Body-Layout (alle 4 identisch):
+/// Body layout (all 4 identical):
 /// 1. Packet Identifier (2-byte BE)
-/// 2. Reason Code (1 byte, optional ab Remaining-Length >= 4)
-/// 3. Properties (VBI-praefixed, optional ab Remaining-Length >= 5)
+/// 2. Reason Code (1 byte, optional from remaining length >= 4)
+/// 3. Properties (VBI-prefixed, optional from remaining length >= 5)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AckBody {
     /// Spec §3.4.2 / §3.5.2 / §3.6.2 / §3.7.2 — Packet Identifier.
@@ -43,34 +67,46 @@ pub struct AckBody {
     /// Spec §3.4.2.1 / §3.5.2.1 / §3.6.2.1 / §3.7.2.1 — Reason Code.
     /// `0x00` = Success.
     pub reason_code: u8,
-    /// Spec §3.4.2.2 — Properties (raw VBI-praefixed property block).
+    /// Spec §3.4.2.2 — Properties (raw VBI-prefixed property block).
     pub properties: Vec<u8>,
 }
 
-/// Encodiert einen [`AckBody`] zum Wire-Format-Body (ohne Fixed
-/// Header).
+/// Encodes an [`AckBody`] to the wire-format body (without the fixed
+/// header).
 ///
 /// # Errors
-/// VBI-Fehler bei Property-Length-Encoding.
+/// VBI error on property-length encoding.
 pub fn encode_ack_body(a: &AckBody) -> Result<Vec<u8>, CodecError> {
+    encode_ack_body_v(a, ProtocolVersion::V5)
+}
+
+/// Encodes an [`AckBody`] for a version. MQTT 3.1.1 PUBACK/PUBREC/
+/// PUBREL/PUBCOMP are exactly the 2-byte packet identifier (no reason code,
+/// no properties).
+///
+/// # Errors
+/// VBI error on property-length encoding.
+pub fn encode_ack_body_v(a: &AckBody, v: ProtocolVersion) -> Result<Vec<u8>, CodecError> {
     let mut out = Vec::with_capacity(4 + a.properties.len());
     out.extend_from_slice(&encode_two_byte_int(a.packet_id));
-    // Spec §3.4.2.1: "If the Remaining Length is less than 4 there is
-    // no Reason Code"; wir emittieren immer den Reason-Code (=Success
-    // wenn 0x00). Das ist Spec-konform und erleichtert Decoder-Symmetrie.
-    out.push(a.reason_code);
-    let prop_len = encode_vbi(u32::try_from(a.properties.len()).unwrap_or(u32::MAX))
-        .ok_or(CodecError::Vbi(crate::vbi::VbiError::Malformed))?;
-    out.extend_from_slice(&prop_len);
-    out.extend_from_slice(&a.properties);
+    if v.has_properties() {
+        // Spec §3.4.2.1: "If the Remaining Length is less than 4 there is
+        // no Reason Code"; we always emit the reason code (=Success
+        // if 0x00). This is spec-conformant and eases decoder symmetry.
+        out.push(a.reason_code);
+        let prop_len = encode_vbi(u32::try_from(a.properties.len()).unwrap_or(u32::MAX))
+            .ok_or(CodecError::Vbi(crate::vbi::VbiError::Malformed))?;
+        out.extend_from_slice(&prop_len);
+        out.extend_from_slice(&a.properties);
+    }
     Ok(out)
 }
 
-/// Decodiert einen ACK-Body aus dem Wire-Format-Body.
+/// Decodes an ACK body from the wire-format body.
 ///
 /// # Errors
-/// `HeaderTooShort` wenn weniger als 2 Bytes; VBI-Fehler bei
-/// Property-Length.
+/// `HeaderTooShort` if fewer than 2 bytes; VBI error on
+/// property length.
 pub fn decode_ack_body(bytes: &[u8]) -> Result<AckBody, CodecError> {
     if bytes.len() < 2 {
         return Err(CodecError::HeaderTooShort);
@@ -158,29 +194,30 @@ pub mod connect_flags {
     pub const USER_NAME: u8 = 0x80;
 }
 
-/// Encodiert einen [`ConnectBody`] zum Wire-Format-Body.
+/// Encodes a [`ConnectBody`] to the wire-format body (MQTT 5.0).
 ///
 /// # Errors
-/// VBI-/Data-Type-Fehler.
+/// VBI/data-type error.
 pub fn encode_connect_body(c: &ConnectBody) -> Result<Vec<u8>, CodecError> {
+    encode_connect_body_v(c, ProtocolVersion::V5)
+}
+
+/// Encodes a [`ConnectBody`] for a concrete protocol version. For
+/// 3.1.1 the property blocks (CONNECT + Will) are dropped.
+///
+/// # Errors
+/// VBI/data-type error.
+pub fn encode_connect_body_v(c: &ConnectBody, v: ProtocolVersion) -> Result<Vec<u8>, CodecError> {
     let mut out = Vec::with_capacity(64 + c.properties.len() + c.client_id.len());
     out.extend_from_slice(&encode_utf8_string(&c.protocol_name)?);
     out.push(c.protocol_version);
     out.push(c.connect_flags);
     out.extend_from_slice(&encode_two_byte_int(c.keep_alive));
-    out.extend_from_slice(
-        &encode_vbi(u32::try_from(c.properties.len()).unwrap_or(u32::MAX))
-            .ok_or(CodecError::Vbi(crate::vbi::VbiError::Malformed))?,
-    );
-    out.extend_from_slice(&c.properties);
+    put_props(&mut out, &c.properties, v)?;
     // Payload
     out.extend_from_slice(&encode_utf8_string(&c.client_id)?);
     if c.connect_flags & connect_flags::WILL != 0 {
-        out.extend_from_slice(
-            &encode_vbi(u32::try_from(c.will_properties.len()).unwrap_or(u32::MAX))
-                .ok_or(CodecError::Vbi(crate::vbi::VbiError::Malformed))?,
-        );
-        out.extend_from_slice(&c.will_properties);
+        put_props(&mut out, &c.will_properties, v)?;
         if let Some(t) = &c.will_topic {
             out.extend_from_slice(&encode_utf8_string(t)?);
         }
@@ -203,11 +240,21 @@ pub fn encode_connect_body(c: &ConnectBody) -> Result<Vec<u8>, CodecError> {
     Ok(out)
 }
 
-/// Decodiert einen CONNECT-Body.
+/// Decodes a CONNECT body (MQTT 5.0).
 ///
 /// # Errors
 /// HeaderTooShort/VBI/DataType.
 pub fn decode_connect_body(bytes: &[u8]) -> Result<ConnectBody, CodecError> {
+    decode_connect_body_v(bytes, ProtocolVersion::V5)
+}
+
+/// Decodes a CONNECT body for a concrete version. For 3.1.1 no
+/// property blocks are expected. (The version contained in the body is
+/// **not** validated — the caller determines it from the protocol level.)
+///
+/// # Errors
+/// HeaderTooShort/VBI/DataType.
+pub fn decode_connect_body_v(bytes: &[u8], v: ProtocolVersion) -> Result<ConnectBody, CodecError> {
     let mut cur = 0;
     let (protocol_name, off) = decode_utf8_string(&bytes[cur..])?;
     cur += off;
@@ -220,7 +267,7 @@ pub fn decode_connect_body(bytes: &[u8]) -> Result<ConnectBody, CodecError> {
     cur += 1;
     let (keep_alive, off) = decode_two_byte_int(&bytes[cur..])?;
     cur += off;
-    let (props, n) = consume_properties(&bytes[cur..])?;
+    let (props, n) = get_props(&bytes[cur..], v)?;
     cur += n;
 
     let (client_id, off) = decode_utf8_string(&bytes[cur..])?;
@@ -230,7 +277,7 @@ pub fn decode_connect_body(bytes: &[u8]) -> Result<ConnectBody, CodecError> {
     let mut will_topic = None;
     let mut will_payload = Vec::new();
     if connect_flags & connect_flags::WILL != 0 {
-        let (wp, n) = consume_properties(&bytes[cur..])?;
+        let (wp, n) = get_props(&bytes[cur..], v)?;
         will_properties = wp;
         cur += n;
         let (t, off) = decode_utf8_string(&bytes[cur..])?;
@@ -300,33 +347,46 @@ pub struct ConnackBody {
     pub properties: Vec<u8>,
 }
 
-/// Encode CONNACK body.
+/// Encode CONNACK body (MQTT 5.0).
 ///
 /// # Errors
 /// VBI errors.
 pub fn encode_connack_body(c: &ConnackBody) -> Result<Vec<u8>, CodecError> {
+    encode_connack_body_v(c, ProtocolVersion::V5)
+}
+
+/// Encode CONNACK body for a version. MQTT 3.1.1 CONNACK is exactly 2 bytes
+/// (Acknowledge Flags + Return Code), with no property block (§3.2 v3.1.1).
+///
+/// # Errors
+/// VBI errors.
+pub fn encode_connack_body_v(c: &ConnackBody, v: ProtocolVersion) -> Result<Vec<u8>, CodecError> {
     let mut out = Vec::with_capacity(4 + c.properties.len());
     out.push(if c.session_present { 0x01 } else { 0x00 });
     out.push(c.reason_code);
-    out.extend_from_slice(
-        &encode_vbi(u32::try_from(c.properties.len()).unwrap_or(u32::MAX))
-            .ok_or(CodecError::Vbi(crate::vbi::VbiError::Malformed))?,
-    );
-    out.extend_from_slice(&c.properties);
+    put_props(&mut out, &c.properties, v)?;
     Ok(out)
 }
 
-/// Decode CONNACK body.
+/// Decode CONNACK body (MQTT 5.0).
 ///
 /// # Errors
 /// HeaderTooShort / VBI / RemainingLengthMismatch.
 pub fn decode_connack_body(bytes: &[u8]) -> Result<ConnackBody, CodecError> {
+    decode_connack_body_v(bytes, ProtocolVersion::V5)
+}
+
+/// Decode CONNACK body for a version (3.1.1 has no property block).
+///
+/// # Errors
+/// HeaderTooShort / VBI / RemainingLengthMismatch.
+pub fn decode_connack_body_v(bytes: &[u8], v: ProtocolVersion) -> Result<ConnackBody, CodecError> {
     if bytes.len() < 2 {
         return Err(CodecError::HeaderTooShort);
     }
     let session_present = bytes[0] & 0x01 != 0;
     let reason_code = bytes[1];
-    let (properties, _) = consume_properties(&bytes[2..])?;
+    let (properties, _) = get_props(&bytes[2..], v)?;
     Ok(ConnackBody {
         session_present,
         reason_code,
@@ -338,24 +398,24 @@ pub fn decode_connack_body(bytes: &[u8]) -> Result<ConnackBody, CodecError> {
 //  §3.8-§3.11 SUBSCRIBE / SUBACK / UNSUBSCRIBE / UNSUBACK Bodies.
 // ============================================================================
 
-/// Spec §3.8 — Subscription mit Filter + Subscription-Options.
+/// Spec §3.8 — subscription with filter + subscription options.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Subscription {
     /// Spec §3.8.3.1 — Topic Filter.
     pub topic_filter: String,
-    /// Spec §3.8.3.1 — Subscription-Options-Byte (QoS + NL + RAP +
-    /// Retain Handling + Reserved-bits).
+    /// Spec §3.8.3.1 — subscription-options byte (QoS + NL + RAP +
+    /// Retain Handling + reserved bits).
     pub options: u8,
 }
 
-/// Spec §3.8 — SUBSCRIBE-Body.
+/// Spec §3.8 — SUBSCRIBE body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubscribeBody {
     /// Spec §3.8.2 — Packet Identifier.
     pub packet_id: u16,
     /// Spec §3.8.2.1 — Properties.
     pub properties: Vec<u8>,
-    /// Spec §3.8.3 — Liste der Subscriptions.
+    /// Spec §3.8.3 — list of subscriptions.
     pub subscriptions: Vec<Subscription>,
 }
 
@@ -364,13 +424,20 @@ pub struct SubscribeBody {
 /// # Errors
 /// VBI / DataType.
 pub fn encode_subscribe_body(s: &SubscribeBody) -> Result<Vec<u8>, CodecError> {
+    encode_subscribe_body_v(s, ProtocolVersion::V5)
+}
+
+/// Encode SUBSCRIBE body for a version (3.1.1 has no property block).
+///
+/// # Errors
+/// VBI / DataType.
+pub fn encode_subscribe_body_v(
+    s: &SubscribeBody,
+    v: ProtocolVersion,
+) -> Result<Vec<u8>, CodecError> {
     let mut out = Vec::with_capacity(8 + s.properties.len() + s.subscriptions.len() * 16);
     out.extend_from_slice(&encode_two_byte_int(s.packet_id));
-    out.extend_from_slice(
-        &encode_vbi(u32::try_from(s.properties.len()).unwrap_or(u32::MAX))
-            .ok_or(CodecError::Vbi(crate::vbi::VbiError::Malformed))?,
-    );
-    out.extend_from_slice(&s.properties);
+    put_props(&mut out, &s.properties, v)?;
     for sub in &s.subscriptions {
         out.extend_from_slice(&encode_utf8_string(&sub.topic_filter)?);
         out.push(sub.options);
@@ -378,17 +445,28 @@ pub fn encode_subscribe_body(s: &SubscribeBody) -> Result<Vec<u8>, CodecError> {
     Ok(out)
 }
 
-/// Decode SUBSCRIBE body.
+/// Decode SUBSCRIBE body (MQTT 5.0).
 ///
 /// # Errors
 /// HeaderTooShort / VBI / DataType.
 pub fn decode_subscribe_body(bytes: &[u8]) -> Result<SubscribeBody, CodecError> {
+    decode_subscribe_body_v(bytes, ProtocolVersion::V5)
+}
+
+/// Decode SUBSCRIBE body for a version (3.1.1 has no property block).
+///
+/// # Errors
+/// HeaderTooShort / VBI / DataType.
+pub fn decode_subscribe_body_v(
+    bytes: &[u8],
+    v: ProtocolVersion,
+) -> Result<SubscribeBody, CodecError> {
     if bytes.len() < 2 {
         return Err(CodecError::HeaderTooShort);
     }
     let (packet_id, off) = decode_two_byte_int(bytes)?;
     let mut cur = off;
-    let (properties, n) = consume_properties(&bytes[cur..])?;
+    let (properties, n) = get_props(&bytes[cur..], v)?;
     cur += n;
     let mut subscriptions = Vec::new();
     while cur < bytes.len() {
@@ -419,7 +497,7 @@ pub struct SubackBody {
     /// Spec §3.9.2.1 — Properties.
     pub properties: Vec<u8>,
     /// Spec §3.9.3 — Reason-Codes pro Subscription (1 Byte je
-    /// Filter, in derselben Reihenfolge wie SUBSCRIBE).
+    /// filters, in the same order as SUBSCRIBE).
     pub reason_codes: Vec<u8>,
 }
 
@@ -428,27 +506,41 @@ pub struct SubackBody {
 /// # Errors
 /// VBI.
 pub fn encode_suback_body(s: &SubackBody) -> Result<Vec<u8>, CodecError> {
+    encode_suback_body_v(s, ProtocolVersion::V5)
+}
+
+/// Encode SUBACK body for a version. MQTT 3.1.1 has no property block; the
+/// per-filter return codes (granted QoS 0/1/2 or 0x80 = failure) follow the
+/// Packet Identifier directly.
+///
+/// # Errors
+/// VBI.
+pub fn encode_suback_body_v(s: &SubackBody, v: ProtocolVersion) -> Result<Vec<u8>, CodecError> {
     let mut out = Vec::with_capacity(4 + s.properties.len() + s.reason_codes.len());
     out.extend_from_slice(&encode_two_byte_int(s.packet_id));
-    out.extend_from_slice(
-        &encode_vbi(u32::try_from(s.properties.len()).unwrap_or(u32::MAX))
-            .ok_or(CodecError::Vbi(crate::vbi::VbiError::Malformed))?,
-    );
-    out.extend_from_slice(&s.properties);
+    put_props(&mut out, &s.properties, v)?;
     out.extend_from_slice(&s.reason_codes);
     Ok(out)
 }
 
-/// Decode SUBACK body.
+/// Decode SUBACK body (MQTT 5.0).
 ///
 /// # Errors
 /// HeaderTooShort / VBI.
 pub fn decode_suback_body(bytes: &[u8]) -> Result<SubackBody, CodecError> {
+    decode_suback_body_v(bytes, ProtocolVersion::V5)
+}
+
+/// Decode SUBACK body for a version (3.1.1 has no property block).
+///
+/// # Errors
+/// HeaderTooShort / VBI.
+pub fn decode_suback_body_v(bytes: &[u8], v: ProtocolVersion) -> Result<SubackBody, CodecError> {
     if bytes.len() < 2 {
         return Err(CodecError::HeaderTooShort);
     }
     let (packet_id, off) = decode_two_byte_int(bytes)?;
-    let (properties, n) = consume_properties(&bytes[off..])?;
+    let (properties, n) = get_props(&bytes[off..], v)?;
     let cur = off + n;
     let reason_codes = bytes[cur..].to_vec();
     Ok(SubackBody {
@@ -465,7 +557,7 @@ pub struct UnsubscribeBody {
     pub packet_id: u16,
     /// Spec §3.10.2.1 — Properties.
     pub properties: Vec<u8>,
-    /// Spec §3.10.3 — Liste der Topic-Filter.
+    /// Spec §3.10.3 — list of topic filters.
     pub topic_filters: Vec<String>,
 }
 
@@ -474,30 +566,48 @@ pub struct UnsubscribeBody {
 /// # Errors
 /// VBI / DataType.
 pub fn encode_unsubscribe_body(u: &UnsubscribeBody) -> Result<Vec<u8>, CodecError> {
+    encode_unsubscribe_body_v(u, ProtocolVersion::V5)
+}
+
+/// Encode UNSUBSCRIBE body for a version (3.1.1 has no property block).
+///
+/// # Errors
+/// VBI / DataType.
+pub fn encode_unsubscribe_body_v(
+    u: &UnsubscribeBody,
+    v: ProtocolVersion,
+) -> Result<Vec<u8>, CodecError> {
     let mut out = Vec::with_capacity(4 + u.properties.len() + u.topic_filters.len() * 16);
     out.extend_from_slice(&encode_two_byte_int(u.packet_id));
-    out.extend_from_slice(
-        &encode_vbi(u32::try_from(u.properties.len()).unwrap_or(u32::MAX))
-            .ok_or(CodecError::Vbi(crate::vbi::VbiError::Malformed))?,
-    );
-    out.extend_from_slice(&u.properties);
+    put_props(&mut out, &u.properties, v)?;
     for f in &u.topic_filters {
         out.extend_from_slice(&encode_utf8_string(f)?);
     }
     Ok(out)
 }
 
-/// Decode UNSUBSCRIBE body.
+/// Decode UNSUBSCRIBE body (MQTT 5.0).
 ///
 /// # Errors
 /// HeaderTooShort / VBI / DataType.
 pub fn decode_unsubscribe_body(bytes: &[u8]) -> Result<UnsubscribeBody, CodecError> {
+    decode_unsubscribe_body_v(bytes, ProtocolVersion::V5)
+}
+
+/// Decode UNSUBSCRIBE body for a version (3.1.1 has no property block).
+///
+/// # Errors
+/// HeaderTooShort / VBI / DataType.
+pub fn decode_unsubscribe_body_v(
+    bytes: &[u8],
+    v: ProtocolVersion,
+) -> Result<UnsubscribeBody, CodecError> {
     if bytes.len() < 2 {
         return Err(CodecError::HeaderTooShort);
     }
     let (packet_id, off) = decode_two_byte_int(bytes)?;
     let mut cur = off;
-    let (properties, n) = consume_properties(&bytes[cur..])?;
+    let (properties, n) = get_props(&bytes[cur..], v)?;
     cur += n;
     let mut topic_filters = Vec::new();
     while cur < bytes.len() {
@@ -515,20 +625,58 @@ pub fn decode_unsubscribe_body(bytes: &[u8]) -> Result<UnsubscribeBody, CodecErr
 /// Spec §3.11 — UNSUBACK-Body. Layout identisch zu SUBACK.
 pub type UnsubackBody = SubackBody;
 
-/// Encode UNSUBACK body (identisch zu encode_suback_body).
+/// Encode UNSUBACK body (MQTT 5.0 — identisch zu SUBACK: Properties +
+/// Reason-Codes).
 ///
 /// # Errors
 /// VBI.
 pub fn encode_unsuback_body(u: &UnsubackBody) -> Result<Vec<u8>, CodecError> {
-    encode_suback_body(u)
+    encode_unsuback_body_v(u, ProtocolVersion::V5)
 }
 
-/// Decode UNSUBACK body (identisch zu decode_suback_body).
+/// Encode UNSUBACK body for a version. **Important version difference:** MQTT
+/// 3.1.1 UNSUBACK (§3.11 v3.1.1) carries **only** the Packet Identifier — no
+/// property block and no per-filter reason codes (those were added in 5.0).
+///
+/// # Errors
+/// VBI.
+pub fn encode_unsuback_body_v(u: &UnsubackBody, v: ProtocolVersion) -> Result<Vec<u8>, CodecError> {
+    match v {
+        ProtocolVersion::V5 => encode_suback_body_v(u, v),
+        ProtocolVersion::V311 => Ok(encode_two_byte_int(u.packet_id).to_vec()),
+    }
+}
+
+/// Decode UNSUBACK body (MQTT 5.0 — identisch zu SUBACK).
 ///
 /// # Errors
 /// HeaderTooShort / VBI.
 pub fn decode_unsuback_body(bytes: &[u8]) -> Result<UnsubackBody, CodecError> {
-    decode_suback_body(bytes)
+    decode_unsuback_body_v(bytes, ProtocolVersion::V5)
+}
+
+/// Decode UNSUBACK body for a version (3.1.1 = Packet Identifier only).
+///
+/// # Errors
+/// HeaderTooShort / VBI.
+pub fn decode_unsuback_body_v(
+    bytes: &[u8],
+    v: ProtocolVersion,
+) -> Result<UnsubackBody, CodecError> {
+    match v {
+        ProtocolVersion::V5 => decode_suback_body_v(bytes, v),
+        ProtocolVersion::V311 => {
+            if bytes.len() < 2 {
+                return Err(CodecError::HeaderTooShort);
+            }
+            let (packet_id, _) = decode_two_byte_int(bytes)?;
+            Ok(UnsubackBody {
+                packet_id,
+                properties: Vec::new(),
+                reason_codes: Vec::new(),
+            })
+        }
+    }
 }
 
 // ============================================================================
@@ -549,6 +697,22 @@ pub struct DisconnectBody {
 /// # Errors
 /// VBI.
 pub fn encode_disconnect_body(d: &DisconnectBody) -> Result<Vec<u8>, CodecError> {
+    encode_disconnect_body_v(d, ProtocolVersion::V5)
+}
+
+/// Encode DISCONNECT body for a version. MQTT 3.1.1 DISCONNECT (§3.14 v3.1.1)
+/// has an **empty** variable header/payload — no reason code, no properties
+/// (the fixed header `0xE0 0x00` is the whole packet).
+///
+/// # Errors
+/// VBI.
+pub fn encode_disconnect_body_v(
+    d: &DisconnectBody,
+    v: ProtocolVersion,
+) -> Result<Vec<u8>, CodecError> {
+    if !v.has_properties() {
+        return Ok(Vec::new());
+    }
     let mut out = Vec::with_capacity(2 + d.properties.len());
     out.push(d.reason_code);
     out.extend_from_slice(
@@ -580,7 +744,7 @@ pub fn decode_disconnect_body(bytes: &[u8]) -> Result<DisconnectBody, CodecError
     })
 }
 
-/// Spec §3.15 — AUTH-Body. Same layout als DISCONNECT.
+/// Spec §3.15 — AUTH body. Same layout as DISCONNECT.
 pub type AuthBody = DisconnectBody;
 
 /// Encode AUTH body (identisch zu encode_disconnect_body).
@@ -600,10 +764,10 @@ pub fn decode_auth_body(bytes: &[u8]) -> Result<AuthBody, CodecError> {
 }
 
 // ============================================================================
-//  §2.2.2 Property-Wert-Decoding — Per-Identifier-Wert-Schema-Map.
+//  §2.2.2 property-value decoding — per-identifier value-schema map.
 // ============================================================================
 
-/// Spec §2.2.2 Tab 2-4 — Property-Datentyp pro Identifier.
+/// Spec §2.2.2 Tab 2-4 — property data type per identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PropertyDataType {
     /// One byte.
@@ -622,10 +786,10 @@ pub enum PropertyDataType {
     Utf8StringPair,
 }
 
-/// Spec §2.2.2.2 + Tab 2-4 — Property-Wert-Datentyp pro Identifier-ID.
+/// Spec §2.2.2.2 + Tab 2-4 — property value data type per identifier ID.
 ///
 /// # Returns
-/// `Some` wenn die ID ein bekannter Spec-Property-Identifier ist.
+/// `Some` if the ID is a known spec property identifier.
 #[must_use]
 pub fn property_data_type(id: u8) -> Option<PropertyDataType> {
     Some(match id {
@@ -679,7 +843,7 @@ impl fmt::Display for PropertyDataType {
 //  Helper.
 // ============================================================================
 
-/// Liest einen VBI-praefixed Property-Block aus `bytes` und liefert
+/// Reads a VBI-prefixed property block from `bytes` and returns
 /// (raw_bytes, total_consumed_incl_vbi).
 fn consume_properties(bytes: &[u8]) -> Result<(Vec<u8>, usize), CodecError> {
     if bytes.is_empty() {
@@ -856,8 +1020,8 @@ mod tests {
 
     #[test]
     fn property_data_type_table_covers_all_spec_identifiers() {
-        // Spec §2.2.2 Tab 2-4 — alle 27 Property-Identifier muessen
-        // einen Datentyp liefern.
+        // Spec §2.2.2 Tab 2-4 — all 27 property identifiers must
+        // return a data type.
         for id in [
             0x01_u8, 0x02, 0x03, 0x08, 0x09, 0x0B, 0x11, 0x12, 0x13, 0x15, 0x16, 0x17, 0x18, 0x19,
             0x1A, 0x1C, 0x1F, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2A,
@@ -881,5 +1045,112 @@ mod tests {
             property_data_type(0x26),
             Some(PropertyDataType::Utf8StringPair)
         );
+    }
+
+    // ---- MQTT 3.1.1 version-aware codec --------------------------------
+
+    #[test]
+    fn v311_connect_omits_property_blocks() {
+        // A 3.1.1 CONNECT must not carry the CONNECT or Will property VBI.
+        let c = ConnectBody {
+            protocol_name: "MQTT".to_string(),
+            protocol_version: 4,
+            connect_flags: connect_flags::CLEAN_START | connect_flags::WILL,
+            keep_alive: 60,
+            properties: Vec::new(),
+            client_id: "c".to_string(),
+            will_properties: Vec::new(),
+            will_topic: Some("lwt".to_string()),
+            will_payload: alloc::vec![1, 2],
+            user_name: None,
+            password: Vec::new(),
+        };
+        let v5 = encode_connect_body_v(&c, ProtocolVersion::V5).expect("v5");
+        let v311 = encode_connect_body_v(&c, ProtocolVersion::V311).expect("v311");
+        // v5 carries two extra property-length VBI bytes (CONNECT + Will = 0x00).
+        assert_eq!(
+            v5.len(),
+            v311.len() + 2,
+            "v311 drops 2 property-length bytes"
+        );
+        // Round-trips under its own version.
+        let back = decode_connect_body_v(&v311, ProtocolVersion::V311).expect("decode v311");
+        assert_eq!(back.client_id, "c");
+        assert_eq!(back.will_topic.as_deref(), Some("lwt"));
+        assert!(back.properties.is_empty());
+    }
+
+    #[test]
+    fn v311_connack_is_exactly_two_bytes() {
+        let c = ConnackBody {
+            session_present: true,
+            reason_code: 0x00,
+            properties: Vec::new(),
+        };
+        let v311 = encode_connack_body_v(&c, ProtocolVersion::V311).expect("encode");
+        assert_eq!(v311, alloc::vec![0x01, 0x00], "3.1.1 CONNACK = 2 bytes");
+        let back = decode_connack_body_v(&v311, ProtocolVersion::V311).expect("decode");
+        assert_eq!(back, c);
+    }
+
+    #[test]
+    fn v311_ack_is_packet_id_only() {
+        let a = AckBody {
+            packet_id: 0x1234,
+            reason_code: 0x10, // ignored in 3.1.1
+            properties: alloc::vec![0xAA],
+        };
+        let v311 = encode_ack_body_v(&a, ProtocolVersion::V311).expect("encode");
+        assert_eq!(
+            v311,
+            alloc::vec![0x12, 0x34],
+            "3.1.1 PUBACK = packet id only"
+        );
+        // The shared decoder reads it back as the short form.
+        let back = decode_ack_body(&v311).expect("decode");
+        assert_eq!(back.packet_id, 0x1234);
+        assert_eq!(back.reason_code, 0);
+    }
+
+    #[test]
+    fn v311_suback_has_no_property_block() {
+        let s = SubackBody {
+            packet_id: 1,
+            properties: Vec::new(),
+            reason_codes: alloc::vec![0x00, 0x01, 0x80], // granted QoS / failure
+        };
+        let v311 = encode_suback_body_v(&s, ProtocolVersion::V311).expect("encode");
+        // packet_id(2) + 3 return codes, NO property VBI.
+        assert_eq!(v311.len(), 5);
+        let back = decode_suback_body_v(&v311, ProtocolVersion::V311).expect("decode");
+        assert_eq!(back, s);
+    }
+
+    #[test]
+    fn v311_unsuback_is_packet_id_only_no_reason_codes() {
+        let u = UnsubackBody {
+            packet_id: 7,
+            properties: Vec::new(),
+            reason_codes: alloc::vec![0x00, 0x11], // present in 5.0, absent in 3.1.1
+        };
+        let v311 = encode_unsuback_body_v(&u, ProtocolVersion::V311).expect("encode");
+        assert_eq!(
+            v311,
+            alloc::vec![0x00, 0x07],
+            "3.1.1 UNSUBACK = packet id only"
+        );
+        let back = decode_unsuback_body_v(&v311, ProtocolVersion::V311).expect("decode");
+        assert_eq!(back.packet_id, 7);
+        assert!(back.reason_codes.is_empty());
+    }
+
+    #[test]
+    fn v311_disconnect_body_is_empty() {
+        let d = DisconnectBody {
+            reason_code: 0x82,
+            properties: alloc::vec![0x1F, 0x00, 0x03, b'b', b'a', b'd'],
+        };
+        let v311 = encode_disconnect_body_v(&d, ProtocolVersion::V311).expect("encode");
+        assert!(v311.is_empty(), "3.1.1 DISCONNECT has an empty body");
     }
 }

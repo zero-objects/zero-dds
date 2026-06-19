@@ -29,13 +29,23 @@ public sealed class GreetingTypeSupport : IDdsTopicType<Greeting>
     public byte[] Encode(Greeting sample, EndianMode endian)
     {
         var w = new Xcdr2Writer(endian);
-        w.WriteString(sample.Text);
+        EncodeInto(w, sample);
         return w.ToArray();
+    }
+
+    public void EncodeInto(Xcdr2Writer w, Greeting sample)
+    {
+        w.WriteString(sample.Text);
     }
 
     public Greeting Decode(ReadOnlySpan<byte> bytes)
     {
         var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
+        return DecodeFrom(r);
+    }
+
+    public Greeting DecodeFrom(Xcdr2Reader r)
+    {
         string __m0 = default;
         __m0 = r.ReadString();
         return new Greeting

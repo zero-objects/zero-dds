@@ -8,7 +8,7 @@ use crate::error::{Result, RustGenError};
 use crate::type_map::escape_keyword;
 use crate::type_map::{const_expr_as_usize, rust_type_for};
 
-/// Emittiert ein oder mehrere `pub type Alias = ...;`-Statements.
+/// Emits one or more `pub type Alias = ...;` statements.
 pub fn emit_typedef(out: &mut String, td: &TypedefDecl) -> Result<()> {
     let base_type = rust_type_for(&td.type_spec)?;
     for declarator in &td.declarators {

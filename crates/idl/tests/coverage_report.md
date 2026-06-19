@@ -1,6 +1,6 @@
 # IDL_42 Grammar-Coverage-Report
 
-Auto-generiert durch `cargo test -p zerodds-idl --test coverage_report`. Walkt jeden Fixture-CST, sammelt aktive Production-IDs.
+Auto-generated via `cargo test -p zerodds-idl --test coverage_report`. Walks each fixture CST, collects active production IDs.
 
 **Total Productions**: 178
 

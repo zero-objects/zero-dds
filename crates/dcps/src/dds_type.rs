@@ -1,170 +1,170 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `DdsType` — der Trait, den User-Typen erfuellen muessen, um ueber
-//! DDS verschickt zu werden.
+//! `DdsType` — the trait that user types must implement to be sent
+//! over DDS.
 //!
 //! # Usage
 //!
-//! User-Typen erfuellen den Trait entweder per Hand oder ueber
-//! die Codegen-Pipeline `zerodds-idl-rust` (IDL → Rust mit
-//! abgeleitetem `DdsType`-Impl). Die Encoder-/Decoder-Paerchen
-//! folgen XCDR2-Konvention (siehe `zerodds-cdr`); der Trait bleibt
-//! transport- und qos-agnostisch.
+//! User types implement the trait either by hand or via the codegen
+//! pipeline `zerodds-idl-rust` (IDL → Rust with a derived `DdsType`
+//! impl). The encoder/decoder pairs follow the XCDR2 convention (see
+//! `zerodds-cdr`); the trait stays transport- and QoS-agnostic.
 //!
-//! # Interop-Hinweis
+//! # Interop note
 //!
-//! Fuer Interop mit Cyclone/Fast-DDS MUSS der `TYPE_NAME` exakt mit
-//! dem Remote-Topic-Typnamen uebereinstimmen (strict equality). Das
-//! IDL-Type-Namespacing (z.B. `std_msgs::msg::String`) muss
-//! beruecksichtigt werden.
+//! For interop with Cyclone/Fast-DDS, the `TYPE_NAME` MUST match the
+//! remote topic type name exactly (strict equality). IDL type
+//! namespacing (e.g. `std_msgs::msg::String`) must be taken into
+//! account.
 
 extern crate alloc;
 use alloc::vec::Vec;
 
 pub use zerodds_cdr::{KEY_HASH_LEN, PlainCdr2BeKeyHolder, compute_key_hash};
 
-/// XTypes 1.3 §7.4.5 Struct-Extensibility-Kind. Wire-relevante
-/// Information fuer den Sample-Encoder; gleicht den IDL-Annotationen
+/// XTypes 1.3 §7.4.5 struct extensibility kind. Wire-relevant
+/// information for the sample encoder; mirrors the IDL annotations
 /// `@final` / `@appendable` / `@mutable`.
 ///
-/// Spec: `zerodds-xcdr2-rust` §2 referenziert das als
-/// `ExtensibilityKind`; der Implementations-Name `Extensibility` und
-/// der spec-aligned Alias [`ExtensibilityKind`] sind identisch.
+/// Spec: `zerodds-xcdr2-rust` §2 references this as
+/// `ExtensibilityKind`; the implementation name `Extensibility` and
+/// the spec-aligned alias [`ExtensibilityKind`] are identical.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Extensibility {
-    /// `@final`: tight-packed body, kein Header.
+    /// `@final`: tight-packed body, no header.
     Final = 0,
     /// `@appendable`: 4-byte DHEADER + body, forward-compatible.
     Appendable = 1,
-    /// `@mutable`: pro Member ein EMHEADER + Body.
+    /// `@mutable`: one EMHEADER + body per member.
     Mutable = 2,
 }
 
-/// Spec-aligned Alias: `zerodds-xcdr2-rust` §2 referenziert die
-/// Extensibility-Enum unter dem Namen `ExtensibilityKind`. Wir
-/// behalten `Extensibility` als Implementations-Name; beide sind via
-/// Alias identisch.
+/// Spec-aligned alias: `zerodds-xcdr2-rust` §2 references the
+/// Extensibility enum under the name `ExtensibilityKind`. We keep
+/// `Extensibility` as the implementation name; both are identical via
+/// the alias.
 pub type ExtensibilityKind = Extensibility;
 
-/// Typ, der via DDS published/subscribed werden kann.
+/// A type that can be published/subscribed via DDS.
 pub trait DdsType: Sized {
-    /// Vollqualifizierter Topic-Type-Name (z.B. `"std_msgs::String"`).
-    /// Muss exakt zum Peer-Type-Namen passen (strict matching).
+    /// Fully-qualified topic type name (e.g. `"std_msgs::String"`).
+    /// Must match the peer type name exactly (strict matching).
     const TYPE_NAME: &'static str;
 
-    /// XTypes 1.3 §7.4.5 Struct-Extensibility-Kind. Default `Final`
-    /// fuer Backwards-Kompat zu pre-`EXTENSIBILITY`-Codegen-Outputs.
+    /// XTypes 1.3 §7.4.5 struct extensibility kind. Default `Final`
+    /// for backwards compat with pre-`EXTENSIBILITY` codegen outputs.
     /// Spec: zerodds-xcdr2-rust §2.3.
     const EXTENSIBILITY: Extensibility = Extensibility::Final;
 
-    /// `true` wenn der Topic-Type **keyed** ist (mindestens ein Member
-    /// mit `@key`-Annotation). Default `false` — Caller (proc-macro)
-    /// ueberschreibt fuer keyed Types und implementiert auch
+    /// `true` if the topic type is **keyed** (at least one member with
+    /// a `@key` annotation). Default `false` — the caller (proc-macro)
+    /// overrides this for keyed types and also implements
     /// [`Self::encode_key_holder_be`].
     ///
-    /// Spec: XTypes 1.3 §7.6.8 (KeyHash-Pflicht fuer keyed Topics).
+    /// Spec: XTypes 1.3 §7.6.8 (KeyHash requirement for keyed topics).
     ///
-    /// Hinweis (`zerodds-xcdr2-rust` §11 Errata): die Spec referenziert
-    /// dieses Feld als `IS_KEYED`. Wir behalten `HAS_KEY` fuer
-    /// Source-Kompat zu Pre-1.0 Code; der spec-aligned Alias
-    /// [`Self::IS_KEYED`] gibt jederzeit denselben Wert.
+    /// Note (`zerodds-xcdr2-rust` §11 errata): the spec references this
+    /// field as `IS_KEYED`. We keep `HAS_KEY` for source compat with
+    /// pre-1.0 code; the spec-aligned alias [`Self::IS_KEYED`] always
+    /// returns the same value.
     const HAS_KEY: bool = false;
 
-    /// Spec-aligned Alias fuer [`Self::HAS_KEY`].
-    /// `zerodds-xcdr2-rust` §2 referenziert das als `IS_KEYED`.
+    /// Spec-aligned alias for [`Self::HAS_KEY`].
+    /// `zerodds-xcdr2-rust` §2 references this as `IS_KEYED`.
     const IS_KEYED: bool = Self::HAS_KEY;
 
-    /// Maximale Groesse des PLAIN_CDR2-BE-KeyHolder-Streams in Bytes
-    /// (XTypes 1.3 §7.6.8.4 Step 5). `None` = nicht keyed oder
-    /// unbounded (MD5-Pfad). `Some(n)` mit `n <= 16` = zero-pad-Pfad.
+    /// Maximum size of the PLAIN_CDR2-BE KeyHolder stream in bytes
+    /// (XTypes 1.3 §7.6.8.4 step 5). `None` = not keyed or unbounded
+    /// (MD5 path). `Some(n)` with `n <= 16` = zero-pad path.
     const KEY_HOLDER_MAX_SIZE: Option<usize> = None;
 
-    /// `true` wenn der Type mit `@nested` annotiert ist (XTypes 1.3
-    /// §7.4.6.3.5). Nested-Types sind nur als Member anderer Types
-    /// gedacht und MUESSEN nicht als DDS-Topic-Type registriert
-    /// werden. `DomainParticipant::create_topic` lehnt registration
-    /// von nested-Types mit `PreconditionNotMet` ab.
+    /// `true` if the type is annotated with `@nested` (XTypes 1.3
+    /// §7.4.6.3.5). Nested types are only intended as members of other
+    /// types and MUST NOT be registered as a DDS topic type.
+    /// `DomainParticipant::create_topic` rejects registration of
+    /// nested types with `PreconditionNotMet`.
     const IS_NESTED: bool = false;
 
-    /// XTypes 1.3 §7.3.4.2 — TypeIdentifier des Types fuer XTypes-aware
-    /// Discovery + Compatibility-Matching. Default `TypeIdentifier::None`
-    /// signalisiert "type-id nicht bereitgestellt; Reader-Writer-Match
-    /// faellt zurueck auf reinen `type_name`-Vergleich (DDS 1.4 §2.2.3
-    /// Default-Path)".
+    /// XTypes 1.3 §7.3.4.2 — TypeIdentifier of the type for
+    /// XTypes-aware discovery + compatibility matching. Default
+    /// `TypeIdentifier::None` signals "type-id not provided;
+    /// reader-writer matching falls back to plain `type_name`
+    /// comparison (DDS 1.4 §2.2.3 default path)".
     ///
-    /// idl-rust Codegen emittiert hier den passenden TypeIdentifier:
+    /// idl-rust codegen emits the appropriate TypeIdentifier here:
     /// - Primitive `int32` → `TypeIdentifier::Primitive(PrimitiveKind::Int32)`,
     /// - String `string<N>` → `TypeIdentifier::String8Small{ bound }`,
-    /// - Composite struct → `TypeIdentifier::EquivalenceHash` (sobald
-    ///   die TypeRegistry-Lookup live ist).
+    /// - Composite struct → `TypeIdentifier::EquivalenceHash` (once the
+    ///   TypeRegistry lookup is live).
     ///
-    /// Sobald beide Seiten (Writer + Reader) einen TypeIdentifier
-    /// liefern, ruft der Subscriber-Match-Pfad
-    /// [`zerodds_types::type_matcher::TypeMatcher::match_types`] auf
+    /// Once both sides (writer + reader) provide a TypeIdentifier, the
+    /// subscriber match path calls
+    /// [`zerodds_types::type_matcher::TypeMatcher::match_types`]
     /// (XTypes §7.6.3.7 + DDS 1.4 §2.2.3 TypeConsistencyEnforcement).
     const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::None;
 
-    /// Serialisiert `self` in den XCDR2-Payload, der in einer
-    /// DATA-Submessage als `serialized_payload` gesendet wird.
-    /// Default-Endianness: Little-Endian (RTPS 2.5 §10.5
+    /// Serializes `self` into the XCDR2 payload sent as the
+    /// `serialized_payload` of a DATA submessage. Default endianness:
+    /// little-endian (RTPS 2.5 §10.5
     /// `RepresentationIdentifier = CDR2_LE = 0x0010`).
     ///
     /// # Errors
-    /// CDR-Encoder-Fehler (Buffer-Overflow etc.).
+    /// CDR encoder error (buffer overflow, etc.).
     fn encode(&self, out: &mut Vec<u8>) -> core::result::Result<(), EncodeError>;
 
-    /// Big-Endian-Variante von [`Self::encode`]. Default-Implementation
-    /// delegiert auf [`Self::encode`] (kein Byte-Swap), da generischer
-    /// BE-Re-Encode ohne Type-Reflection nicht moeglich ist. Codegen
-    /// ueberschreibt das fuer Strukturen, die echt BE auf die Wire
-    /// gehen sollen. Spec: zerodds-xcdr2-rust §2.4.
+    /// Big-endian variant of [`Self::encode`]. The default
+    /// implementation delegates to [`Self::encode`] (no byte swap),
+    /// since a generic BE re-encode is not possible without type
+    /// reflection. Codegen overrides this for structures that should
+    /// genuinely go on the wire as BE. Spec: zerodds-xcdr2-rust §2.4.
     ///
     /// # Errors
-    /// CDR-Encoder-Fehler.
+    /// CDR encoder error.
     fn encode_be(&self, out: &mut Vec<u8>) -> core::result::Result<(), EncodeError> {
         self.encode(out)
     }
 
-    /// Deserialisiert einen XCDR2-Payload. Der Caller stellt sicher,
-    /// dass `bytes` den vollen Sample-Payload enthaelt.
+    /// Deserializes an XCDR2 payload. The caller ensures that `bytes`
+    /// contains the full sample payload.
     ///
     /// # Errors
-    /// CDR-Decoder-Fehler (Truncation, unerwartete Bytes, etc.).
+    /// CDR decoder error (truncation, unexpected bytes, etc.).
     fn decode(bytes: &[u8]) -> core::result::Result<Self, DecodeError>;
 
-    /// Serialisiert die `@key`-Member-Werte im **PLAIN_CDR2-BE**-Format
-    /// in den uebergebenen [`PlainCdr2BeKeyHolder`]. Reihenfolge: nach
-    /// `member_id` aufsteigend (XTypes 1.3 §7.6.8.3.1.b).
+    /// Serializes the `@key` member values in **PLAIN_CDR2-BE** format
+    /// into the given [`PlainCdr2BeKeyHolder`]. Order: ascending by
+    /// `member_id` (XTypes 1.3 §7.6.8.3.1.b).
     ///
-    /// **Default-Implementation**: leerer Schreibvorgang. Keyed Types
-    /// MUESSEN das ueberschreiben.
+    /// **Default implementation**: empty write. Keyed types MUST
+    /// override this.
     ///
-    /// Wird vom DcpsRuntime im Sample-Encode-Pfad aufgerufen, um
-    /// PID_KEY_HASH in die Inline-QoS zu schreiben.
+    /// Called by the DcpsRuntime in the sample-encode path to write
+    /// PID_KEY_HASH into the inline QoS.
     fn encode_key_holder_be(&self, _holder: &mut PlainCdr2BeKeyHolder) {
-        // Default: kein Key. Keyed Types ueberschreiben.
+        // Default: no key. Keyed types override.
     }
 
-    /// Liefert den Wert eines Feldpfads (dotted, z.B. `"a.b"`) als
-    /// `zerodds_sql_filter::Value` fuer SQL-Filter-Evaluation in
-    /// QueryCondition / ContentFilteredTopic. Default: `None` (kein
-    /// Feld erreichbar — der Filter denied dann jedes Sample, sofern
-    /// es einen Feldzugriff enthaelt).
+    /// Returns the value of a field path (dotted, e.g. `"a.b"`) as a
+    /// `zerodds_sql_filter::Value` for SQL filter evaluation in
+    /// QueryCondition / ContentFilteredTopic. Default: `None` (no field
+    /// reachable — the filter then denies every sample that contains a
+    /// field access).
     ///
-    /// Spec: DDS 1.4 §B.2.1 (Filter Expressions) iVm. §2.2.2.5.9
-    /// (QueryCondition) und §2.2.2.3.5 (ContentFilteredTopic).
-    /// Generierte IDL-Stubs ueberschreiben das per Field.
+    /// Spec: DDS 1.4 §B.2.1 (Filter Expressions) together with
+    /// §2.2.2.5.9 (QueryCondition) and §2.2.2.3.5
+    /// (ContentFilteredTopic). Generated IDL stubs override this per
+    /// field.
     #[must_use]
     fn field_value(&self, _path: &str) -> Option<zerodds_sql_filter::Value> {
         None
     }
 
-    /// Berechnet den 16-Byte KeyHash dieser Instanz nach XTypes 1.3
-    /// §7.6.8.4. `None` wenn `HAS_KEY = false`.
+    /// Computes the 16-byte KeyHash of this instance per XTypes 1.3
+    /// §7.6.8.4. `None` if `HAS_KEY = false`.
     ///
-    /// Default-Implementation nutzt [`Self::encode_key_holder_be`] +
-    /// [`Self::KEY_HOLDER_MAX_SIZE`] und delegiert an
+    /// The default implementation uses [`Self::encode_key_holder_be`] +
+    /// [`Self::KEY_HOLDER_MAX_SIZE`] and delegates to
     /// [`compute_key_hash`].
     #[must_use]
     fn compute_key_hash(&self) -> Option<[u8; KEY_HASH_LEN]> {
@@ -177,27 +177,27 @@ pub trait DdsType: Sized {
         Some(compute_key_hash(holder.as_bytes(), max))
     }
 
-    /// Spec-aligned Alias fuer [`Self::compute_key_hash`].
-    /// `zerodds-xcdr2-rust` §2.5 nutzt den Namen `key_hash`; der
-    /// Implementations-Name behaelt `compute_key_hash` aus
-    /// historischer Kompat. Beide liefern denselben Wert.
+    /// Spec-aligned alias for [`Self::compute_key_hash`].
+    /// `zerodds-xcdr2-rust` §2.5 uses the name `key_hash`; the
+    /// implementation name keeps `compute_key_hash` for historical
+    /// compat. Both return the same value.
     #[must_use]
     fn key_hash(&self) -> Option<[u8; KEY_HASH_LEN]> {
         self.compute_key_hash()
     }
 }
 
-/// `RowAccess`-Adapter fuer einen `DdsType`-Sample-Wert. Wird vom
-/// DataReader in `read_w_condition`/`take_w_condition` und vom
-/// `ContentFilteredTopic`-Filter benutzt.
+/// `RowAccess` adapter for a `DdsType` sample value. Used by the
+/// DataReader in `read_w_condition`/`take_w_condition` and by the
+/// `ContentFilteredTopic` filter.
 pub struct DdsTypeRow<'a, T: DdsType> {
-    /// Inneres Sample, dessen Felder per [`DdsType::field_value`]
-    /// abgefragt werden.
+    /// Inner sample whose fields are queried via
+    /// [`DdsType::field_value`].
     pub sample: &'a T,
 }
 
 impl<'a, T: DdsType> DdsTypeRow<'a, T> {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(sample: &'a T) -> Self {
         Self { sample }
@@ -210,15 +210,15 @@ impl<T: DdsType> zerodds_sql_filter::RowAccess for DdsTypeRow<'_, T> {
     }
 }
 
-/// Platzhalter-Error fuer DdsType::encode. In v1.3 wird das auf
-/// `zerodds_cdr::EncodeError` re-exported, sobald wir den CDR-Layer
-/// in DCPS-Sicht stabilisiert haben.
+/// Placeholder error for DdsType::encode. In v1.3 this will be
+/// re-exported as `zerodds_cdr::EncodeError` once the CDR layer is
+/// stabilized from the DCPS perspective.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum EncodeError {
-    /// Buffer-Overflow oder feldspezifischer Wertebereichs-Fehler.
+    /// Buffer overflow or field-specific value-range error.
     Invalid {
-        /// Statische Beschreibung.
+        /// Static description.
         what: &'static str,
     },
 }
@@ -236,11 +236,11 @@ impl std::error::Error for EncodeError {}
 
 impl From<zerodds_cdr::EncodeError> for EncodeError {
     fn from(e: zerodds_cdr::EncodeError) -> Self {
-        // zerodds-cdr-Fehler werden als opaker `Invalid`-Wrap weitergegeben.
-        // Das ist ausreichend fuer DdsType-Caller, die nur „encoding hat
-        // nicht geklappt"-Information brauchen — die detaillierte
-        // Fehlerstruktur lebt im cdr-Layer und wird via Display
-        // serialisiert wenn ein Caller die Fehlermeldung loggt.
+        // zerodds-cdr errors are passed through as an opaque `Invalid`
+        // wrap. That is sufficient for DdsType callers, who only need
+        // the "encoding failed" information — the detailed error
+        // structure lives in the cdr layer and is serialized via
+        // Display when a caller logs the error message.
         let _ = e;
         Self::Invalid {
             what: "zerodds_cdr encode error",
@@ -248,13 +248,13 @@ impl From<zerodds_cdr::EncodeError> for EncodeError {
     }
 }
 
-/// Platzhalter-Error fuer DdsType::decode.
+/// Placeholder error for DdsType::decode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DecodeError {
-    /// Truncation oder Wertebereich out-of-range.
+    /// Truncation or value out-of-range.
     Invalid {
-        /// Statische Beschreibung.
+        /// Static description.
         what: &'static str,
     },
 }
@@ -280,29 +280,30 @@ impl From<zerodds_cdr::DecodeError> for DecodeError {
 }
 
 // ---------------------------------------------------------------------
-// DdsAny — IDL `any` Type-Erasure (XCDR2 §7.4.4.7)
+// DdsAny — IDL `any` type erasure (XCDR2 §7.4.4.7)
 //
-// Wire-Format: TypeIdentifier-Header (CDR-String) + Payload-Bytes.
-// Pure-Rust ohne externe Crate-Dep; Volle Type-Erasure via String-Tag.
+// Wire format: TypeIdentifier header (CDR string) + payload bytes.
+// Pure Rust with no external crate dep; full type erasure via a
+// string tag.
 
-/// IDL-`any` als Type-Erasure-Wrapper. Traegt einen Type-Identifier-
-/// String (z.B. `"std_msgs::Header"`) plus die Payload-Bytes.
+/// IDL `any` as a type-erasure wrapper. Carries a type-identifier
+/// string (e.g. `"std_msgs::Header"`) plus the payload bytes.
 ///
-/// Konsumenten-Pattern: man prueft `type_name`, deserialisiert die
-/// `payload` mit dem konkreten DdsType.
+/// Consumer pattern: check `type_name`, then deserialize the `payload`
+/// with the concrete DdsType.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DdsAny {
-    /// Voll-qualifizierter Type-Name (entspricht `DdsType::TYPE_NAME`).
+    /// Fully-qualified type name (matches `DdsType::TYPE_NAME`).
     pub type_name: alloc::string::String,
-    /// XCDR2-Payload-Bytes des wraped Werts.
+    /// XCDR2 payload bytes of the wrapped value.
     pub payload: Vec<u8>,
 }
 
 impl DdsAny {
-    /// Konstruiert ein `DdsAny` aus einem `DdsType`-Wert.
+    /// Constructs a `DdsAny` from a `DdsType` value.
     ///
     /// # Errors
-    /// `EncodeError` bei Encode-Fehler.
+    /// `EncodeError` on encode failure.
     pub fn pack<T: DdsType>(value: &T) -> Result<Self, EncodeError> {
         let mut payload = Vec::new();
         value.encode(&mut payload)?;
@@ -312,11 +313,11 @@ impl DdsAny {
         })
     }
 
-    /// Versucht das Wrapped als `T` zu entpacken.
+    /// Attempts to unpack the wrapped value as `T`.
     ///
     /// # Errors
-    /// `DecodeError::Invalid` wenn `T::TYPE_NAME != self.type_name`
-    /// oder Decode-Fehler.
+    /// `DecodeError::Invalid` if `T::TYPE_NAME != self.type_name` or on
+    /// a decode error.
     pub fn unpack<T: DdsType>(&self) -> Result<T, DecodeError> {
         if self.type_name != T::TYPE_NAME {
             return Err(DecodeError::Invalid {
@@ -332,7 +333,7 @@ impl zerodds_cdr::CdrEncode for DdsAny {
         &self,
         w: &mut zerodds_cdr::BufferWriter,
     ) -> core::result::Result<(), zerodds_cdr::EncodeError> {
-        // Type-name als CDR-String + payload-bytes mit u32-length-prefix.
+        // Type name as a CDR string + payload bytes with a u32 length prefix.
         w.write_string(&self.type_name)?;
         let payload_len = u32::try_from(self.payload.len()).map_err(|_| {
             zerodds_cdr::EncodeError::ValueOutOfRange {
@@ -357,22 +358,22 @@ impl zerodds_cdr::CdrDecode for DdsAny {
 }
 
 // ---------------------------------------------------------------------
-// Built-in `DdsType` fuer &[u8]/Vec<u8>-Payloads
+// Built-in `DdsType` for &[u8]/Vec<u8> payloads
 //
-// Viele ROS-Use-Cases und Interop-Tests brauchen "roh durchreichen".
-// Ein `BytesPayload`-Newtype mit festem Type-Name erlaubt das.
+// Many ROS use cases and interop tests need to "pass through raw". A
+// `BytesPayload` newtype with a fixed type name allows that.
 // ---------------------------------------------------------------------
 
-/// Ein opaker Raw-Byte-Payload mit konfigurierbarem Type-Name (per
-/// `impl` von `BytesPayload<T>` oder via newtype).
+/// An opaque raw byte payload with a configurable type name (via an
+/// `impl` of `BytesPayload<T>` or a newtype).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawBytes {
-    /// Payload-Bytes (werden 1:1 auf die Wire gelegt, kein CDR-Framing).
+    /// Payload bytes (placed on the wire as-is, no CDR framing).
     pub data: Vec<u8>,
 }
 
 impl RawBytes {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(data: Vec<u8>) -> Self {
         Self { data }
@@ -415,7 +416,7 @@ mod tests {
 
     // ---- .B: keyed types + KeyHash ----
 
-    /// Test-Fixture: keyed Topic mit @key u32 id (max 4 byte → zero-pad).
+    /// Test fixture: keyed topic with @key u32 id (max 4 byte → zero-pad).
     struct SmallKeyed {
         id: u32,
     }
@@ -464,7 +465,7 @@ mod tests {
         assert_ne!(a.compute_key_hash(), b.compute_key_hash());
     }
 
-    /// Test-Fixture: keyed Topic mit unbounded @key string (MD5-Pfad).
+    /// Test fixture: keyed topic with an unbounded @key string (MD5 path).
     struct LargeKeyed {
         topic: alloc::string::String,
     }
@@ -494,7 +495,7 @@ mod tests {
             topic: alloc::string::String::from("hello"),
         };
         let key = s.compute_key_hash().expect("keyed");
-        // 16 byte deterministic hash, ungleich zero
+        // 16-byte deterministic hash, non-zero
         assert_ne!(key, [0u8; 16]);
         // Idempotent
         let key2 = s.compute_key_hash().expect("keyed");
@@ -535,9 +536,9 @@ mod tests {
 
     #[test]
     fn keyed_member_order_matters() {
-        // Hypothetisch: zwei Members mit verschiedener Reihenfolge wuerden
-        // unterschiedliche Hashes ergeben. Wir verifizieren das mit einem
-        // Mock-Type, der zwei Felder in Reverse-Order schreibt.
+        // Hypothetically: two members in a different order would yield
+        // different hashes. We verify this with a mock type that writes
+        // two fields in reverse order.
         struct A {
             x: u32,
             y: u32,

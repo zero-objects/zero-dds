@@ -1,34 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! XCDR2 TypeSupport-FFI — Implementiert `zerodds-xcdr2-c-1.0`.
+//! XCDR2 TypeSupport FFI — implements `zerodds-xcdr2-c-1.0`.
 //!
-//! Diese Schicht ergaenzt die byte-orientierte FFI von `lib.rs` um eine
-//! **typisierte** TypeSupport-FFI mit function-table-basiertem Dispatch.
-//! Pro IDL-Type liefert ein Codegen (idl-cpp `--c-mode`-Flag) eine
-//! statische `zerodds_typesupport_t`-Tabelle mit Encoder/Decoder/Key-Hash-
-//! Funktionen. Die FFI hier nimmt diese Tabelle entgegen, ruft sie auf
-//! und reicht das Ergebnis an die bestehenden Writer/Reader-Pfade weiter.
+//! This layer complements the byte-oriented FFI of `lib.rs` with a
+//! **typed** TypeSupport FFI with function-table-based dispatch.
+//! Per IDL type a codegen (idl-cpp `--c-mode` flag) provides a
+//! static `zerodds_typesupport_t` table with encoder/decoder/key-hash
+//! functions. The FFI here takes this table, calls it
+//! and passes the result to the existing writer/reader paths.
 //!
-//! ## Wire-Format
+//! ## Wire format
 //!
-//! XCDR2 §7.4 PLAIN_CDR2 LE als Default. Codegen MUSS den XCDR2-Encoder
-//! aus `zerodds-cdr` verwenden — diese FFI dupliziert die Encoder-Logik
-//! nicht, sondern stellt nur den Dispatch + Helper bereit.
+//! XCDR2 §7.4 PLAIN_CDR2 LE as the default. The codegen MUST use the XCDR2 encoder
+//! from `zerodds-cdr` — this FFI does not duplicate the encoder logic,
+//! it only provides the dispatch + helpers.
 //!
-//! ## Memory-Ownership (§6 Vendor-Spec)
+//! ## Memory ownership (§6 vendor spec)
 //!
-//! - `zerodds_xcdr2_encode`: Caller bietet `out_buf`+`out_cap`; Callee
-//!   schreibt `out_len`. `out_buf=NULL` ist legal als Size-Probe — dann
-//!   gibt `out_len` die benoetigte Groesse zurueck und Return ist
+//! - `zerodds_xcdr2_encode`: the caller provides `out_buf`+`out_cap`; the callee
+//!   writes `out_len`. `out_buf=NULL` is legal as a size probe — then
+//!   `out_len` returns the needed size and the return is
 //!   `BUFFER_TOO_SMALL`.
-//! - `zerodds_xcdr2_decode`: Caller bietet `out_sample` zero-initialized;
-//!   Callee allokiert Strings/Sequences. Caller MUSS spaeter
-//!   `ts.sample_free(sample)` aufrufen.
-//! - `zerodds_writer_write_typed`: ruft `ts.encode` in einem internen
-//!   Buffer auf, leitet die Bytes an `zerodds_writer_write` weiter.
-//! - `zerodds_reader_take_typed`: ruft `zerodds_reader_take`, dann
-//!   `ts.decode` auf den Bytes; gibt den internen Buffer frei.
+//! - `zerodds_xcdr2_decode`: the caller provides `out_sample` zero-initialized;
+//!   the callee allocates strings/sequences. The caller MUST later call
+//!   `ts.sample_free(sample)`.
+//! - `zerodds_writer_write_typed`: calls `ts.encode` into an internal
+//!   buffer, passes the bytes to `zerodds_writer_write`.
+//! - `zerodds_reader_take_typed`: calls `zerodds_reader_take`, then
+//!   `ts.decode` on the bytes; frees the internal buffer.
 
 use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
@@ -37,15 +37,15 @@ use core::slice;
 use crate::{ZeroDdsReader, ZeroDdsRuntime, ZeroDdsStatus, ZeroDdsWriter};
 
 // ============================================================================
-// TypeSupport-Function-Pointer-Typen
+// TypeSupport function-pointer types
 // ============================================================================
 
-/// Encoder-Funktion. `sample` ist Pointer auf eine Sprach-spezifische
-/// Repraesentation des IDL-Types; `out_buf`/`out_cap` ist der Caller-
-/// gestellte Output-Buffer (kann NULL sein zum Size-Probing).
-/// `out_len` wird auf die benoetigte/geschriebene Laenge gesetzt.
+/// Encoder function. `sample` is a pointer to a language-specific
+/// representation of the IDL type; `out_buf`/`out_cap` is the caller-
+/// provided output buffer (may be NULL for size probing).
+/// `out_len` is set to the needed/written length.
 ///
-/// Return: 0=OK, -13=BUFFER_TOO_SMALL, !=0=anderer Fehler.
+/// Return: 0=OK, -13=BUFFER_TOO_SMALL, !=0=another error.
 pub type ZeroDdsEncodeFn = unsafe extern "C" fn(
     sample: *const c_void,
     out_buf: *mut u8,
@@ -53,91 +53,91 @@ pub type ZeroDdsEncodeFn = unsafe extern "C" fn(
     out_len: *mut usize,
 ) -> c_int;
 
-/// Decoder-Funktion. `buf`/`len` ist der Eingangs-Bytes-Stream;
-/// `out_sample` muss vom Caller zero-initialized vorbereitet sein.
-/// Strings/Sequences werden vom Decoder via malloc allokiert und
-/// muessen spaeter ueber `ZeroDdsSampleFreeFn` freigegeben werden.
+/// Decoder function. `buf`/`len` is the incoming byte stream;
+/// `out_sample` must be prepared zero-initialized by the caller.
+/// Strings/sequences are allocated by the decoder via malloc and
+/// must later be freed via `ZeroDdsSampleFreeFn`.
 pub type ZeroDdsDecodeFn =
     unsafe extern "C" fn(buf: *const u8, len: usize, out_sample: *mut c_void) -> c_int;
 
-/// Key-Hash-Funktion (XTypes 1.3 §7.6.8). Schreibt 16 Byte nach
+/// Key-hash function (XTypes 1.3 §7.6.8). Writes 16 bytes into
 /// `out_hash`. Return 0 = OK.
 pub type ZeroDdsKeyHashFn = unsafe extern "C" fn(sample: *const c_void, out_hash: *mut u8) -> c_int;
 
-/// Sample-Free-Funktion. Gibt heap-allokierte Felder (Strings,
-/// Sequences) im Sample frei. Das Sample-Struct selbst gehoert dem
-/// Caller und wird hier nicht freigegeben.
+/// Sample-free function. Frees heap-allocated fields (strings,
+/// sequences) in the sample. The sample struct itself belongs to the
+/// caller and is not freed here.
 pub type ZeroDdsSampleFreeFn = unsafe extern "C" fn(sample: *mut c_void);
 
 // ============================================================================
 // `zerodds_typesupport_t` (§2)
 // ============================================================================
 
-/// TypeSupport-Funktion-Tabelle (Vendor-Spec §2).
+/// TypeSupport function table (vendor spec §2).
 ///
-/// ABI-stabil; Felder sind versioniert via `zerodds_c_api_version()`.
-/// Pro IDL-Type emittiert der C-Codegen genau eine `static const`-
-/// Instanz dieser Struktur.
+/// ABI-stable; fields are versioned via `zerodds_c_api_version()`.
+/// Per IDL type the C codegen emits exactly one `static const`
+/// instance of this struct.
 ///
-/// Layout-Gruende:
-/// - 16-Byte `type_hash` zuerst (XTypes EquivalenceHash).
-/// - `type_name` als NUL-terminierter Pointer (kein owned String).
-/// - `is_keyed` + `extensibility` als `u8` fuer kompakte Packung.
-/// - 6 Byte Padding bis zu den function-pointer-aligned Feldern.
-/// - 5 Function-Pointers in fester Reihenfolge.
+/// Layout reasons:
+/// - 16-byte `type_hash` first (XTypes EquivalenceHash).
+/// - `type_name` as a NUL-terminated pointer (no owned String).
+/// - `is_keyed` + `extensibility` as `u8` for compact packing.
+/// - 6 bytes padding up to the function-pointer-aligned fields.
+/// - 5 function pointers in fixed order.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct ZeroDdsTypeSupport {
-    /// 16-Byte EquivalenceHash (XTypes §7.3.4).
+    /// 16-byte EquivalenceHash (XTypes §7.3.4).
     pub type_hash: [u8; 16],
-    /// NUL-terminierter Type-Name (Module::Sub::Struct, ASCII).
+    /// NUL-terminated type name (Module::Sub::Struct, ASCII).
     pub type_name: *const c_char,
-    /// 1 = mindestens ein @key-Member vorhanden.
+    /// 1 = at least one @key member present.
     pub is_keyed: u8,
     /// 0=Final, 1=Appendable, 2=Mutable.
     pub extensibility: u8,
-    /// Reserved fuer zukuenftige Felder. MUSS auf 0 stehen.
+    /// Reserved for future fields. MUST be 0.
     pub _reserved: [u8; 6],
-    /// Encoder-Pointer (siehe `ZeroDdsEncodeFn`).
+    /// Encoder pointer (see `ZeroDdsEncodeFn`).
     pub encode: Option<ZeroDdsEncodeFn>,
-    /// Decoder-Pointer (siehe `ZeroDdsDecodeFn`).
+    /// Decoder pointer (see `ZeroDdsDecodeFn`).
     pub decode: Option<ZeroDdsDecodeFn>,
-    /// Key-Hash-Pointer (siehe `ZeroDdsKeyHashFn`); NULL erlaubt wenn
+    /// Key-hash pointer (see `ZeroDdsKeyHashFn`); NULL allowed if
     /// `is_keyed = 0`.
     pub key_hash: Option<ZeroDdsKeyHashFn>,
-    /// Sample-Free-Pointer (siehe `ZeroDdsSampleFreeFn`); NULL erlaubt
-    /// wenn der Type keine heap-Felder hat.
+    /// Sample-free pointer (see `ZeroDdsSampleFreeFn`); NULL allowed
+    /// if the type has no heap fields.
     pub sample_free: Option<ZeroDdsSampleFreeFn>,
 }
 
-// SAFETY: Die FFI-Pointer in dieser Struktur werden nur an FFI-Boundary
-// gelesen und sind im Caller (statische const-Tabellen aus Codegen) als
-// `'static` gehalten. Die Rust-Seite leitet die Tabelle nur weiter.
+// SAFETY: The FFI pointers in this struct are read only at the FFI boundary
+// and are held in the caller (static const tables from codegen) as
+// `'static`. The Rust side only passes the table through.
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
 unsafe impl Send for ZeroDdsTypeSupport {}
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
 unsafe impl Sync for ZeroDdsTypeSupport {}
 
 // ============================================================================
-// Topic-Handle (typisiert)
+// Topic handle (typed)
 // ============================================================================
 
-/// Opaque Topic-Handle mit fester TypeSupport-Tabelle.
+/// Opaque topic handle with a fixed TypeSupport table.
 ///
-/// Aktuell ist die Topic-Schicht des C-FFI ein leichtgewichtiger
-/// Container ueber `topic_name`/`type_name` — beides wird hier mit dem
-/// TypeSupport ergaenzt, damit `writer_write_typed`/`reader_take_typed`
-/// die Tabelle ohne weiteren Caller-Argument-Passing finden kann.
+/// Currently the topic layer of the C-FFI is a lightweight
+/// container over `topic_name`/`type_name` — both are augmented here with the
+/// TypeSupport, so that `writer_write_typed`/`reader_take_typed`
+/// can find the table without further caller argument passing.
 pub struct ZeroDdsTopic {
-    /// Pointer auf die statische TypeSupport-Tabelle (Caller-owned).
+    /// Pointer to the static TypeSupport table (caller-owned).
     pub type_support: *const ZeroDdsTypeSupport,
-    /// Topic-Name (owned, fuer spaetere Writer/Reader-Erstellung).
+    /// Topic name (owned, for later writer/reader creation).
     pub topic_name: alloc::string::String,
-    /// Type-Name (owned, aus `type_support.type_name` extrahiert).
+    /// Type name (owned, extracted from `type_support.type_name`).
     pub type_name: alloc::string::String,
 }
 
-// SAFETY: `type_support` zeigt auf statische Codegen-Tabelle; Strings sind owned.
+// SAFETY: `type_support` points to a static codegen table; strings are owned.
 unsafe impl Send for ZeroDdsTopic {}
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
 unsafe impl Sync for ZeroDdsTopic {}
@@ -146,17 +146,17 @@ unsafe impl Sync for ZeroDdsTopic {}
 // FFI: Topic
 // ============================================================================
 
-/// Erzeugt ein typisiertes Topic-Handle. Speichert die TypeSupport-
-/// Tabelle so dass Writer/Reader-Operationen darauf zugreifen koennen.
+/// Creates a typed topic handle. Stores the TypeSupport
+/// table so that writer/reader operations can access it.
 ///
-/// `out_topic` muss non-NULL sein und wird auf den neu allokierten
-/// Topic-Handle gesetzt. Caller MUSS spaeter
-/// `zerodds_topic_destroy_typed` aufrufen.
+/// `out_topic` must be non-NULL and is set to the newly allocated
+/// topic handle. The caller MUST later call
+/// `zerodds_topic_destroy_typed`.
 ///
 /// # Safety
-/// `participant`/`topic_name`/`type_support`/`out_topic` muessen valide
-/// Pointer sein. `topic_name` muss NUL-terminiert sein. `type_support`
-/// MUSS auf eine statische Tabelle mit lebenden Function-Pointern zeigen.
+/// `participant`/`topic_name`/`type_support`/`out_topic` must be valid
+/// pointers. `topic_name` must be NUL-terminated. `type_support`
+/// MUST point to a static table with live function pointers.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_topic_create_typed(
     participant: *mut ZeroDdsRuntime,
@@ -171,17 +171,17 @@ pub unsafe extern "C" fn zerodds_topic_create_typed(
     {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: NULL-Check oben.
+    // SAFETY: NULL check above.
     let ts = unsafe { &*type_support };
     if ts.type_name.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: topic_name ist NUL-terminiert per Caller-Kontrakt.
+    // SAFETY: topic_name is NUL-terminated per the caller contract.
     let topic = match unsafe { core::ffi::CStr::from_ptr(topic_name) }.to_str() {
         Ok(s) => s.to_string(),
         Err(_) => return ZeroDdsStatus::InvalidUtf8 as c_int,
     };
-    // SAFETY: type_name ist NUL-terminiert per Vendor-Spec §2.
+    // SAFETY: type_name is NUL-terminated per vendor spec §2.
     let typ = match unsafe { core::ffi::CStr::from_ptr(ts.type_name) }.to_str() {
         Ok(s) => s.to_string(),
         Err(_) => return ZeroDdsStatus::InvalidUtf8 as c_int,
@@ -198,33 +198,33 @@ pub unsafe extern "C" fn zerodds_topic_create_typed(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Zerstoert ein Topic-Handle. NULL-safe.
+/// Destroys a topic handle. NULL-safe.
 ///
 /// # Safety
-/// `topic` muss aus `zerodds_topic_create_typed` stammen oder NULL sein.
+/// `topic` must come from `zerodds_topic_create_typed` or be NULL.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_topic_destroy_typed(topic: *mut ZeroDdsTopic) {
     if topic.is_null() {
         return;
     }
-    // SAFETY: Box-Pointer aus `Box::into_raw`.
+    // SAFETY: box pointer from `Box::into_raw`.
     let _ = unsafe { alloc::boxed::Box::from_raw(topic) };
 }
 
 // ============================================================================
-// FFI: Standalone-Encoding
+// FFI: standalone encoding
 // ============================================================================
 
-/// Standalone-Encoder. Ruft `ts.encode(sample, out_buf, out_cap, out_len)`
-/// und reicht den Return-Code durch.
+/// Standalone encoder. Calls `ts.encode(sample, out_buf, out_cap, out_len)`
+/// and passes the return code through.
 ///
-/// `out_buf=NULL` mit `out_cap=0` ist Size-Probe: der Codegen-Encoder
-/// MUSS `out_len` auf die benoetigte Groesse setzen und
-/// `BUFFER_TOO_SMALL` zurueckgeben.
+/// `out_buf=NULL` with `out_cap=0` is a size probe: the codegen encoder
+/// MUST set `out_len` to the needed size and
+/// return `BUFFER_TOO_SMALL`.
 ///
 /// # Safety
-/// `ts`, `sample`, `out_len` muessen valide Pointer sein. `out_buf` darf
-/// NULL sein wenn `out_cap = 0`.
+/// `ts`, `sample`, `out_len` must be valid pointers. `out_buf` may
+/// be NULL if `out_cap = 0`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_xcdr2_encode(
     ts: *const ZeroDdsTypeSupport,
@@ -239,22 +239,22 @@ pub unsafe extern "C" fn zerodds_xcdr2_encode(
     if out_buf.is_null() && out_cap != 0 {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: NULL-Check oben.
+    // SAFETY: NULL check above.
     let ts_ref = unsafe { &*ts };
     let Some(enc) = ts_ref.encode else {
         return ZeroDdsStatus::Unsupported as c_int;
     };
-    // SAFETY: Caller-Kontrakt verlangt valide Encoder-Function-Pointer-
-    // Provenance + `sample` zeigt auf gueltige Type-Repraesentation.
+    // SAFETY: the caller contract requires valid encoder function-pointer
+    // provenance + `sample` points to a valid type representation.
     // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
     unsafe { enc(sample, out_buf, out_cap, out_len) }
 }
 
-/// Standalone-Decoder. Ruft `ts.decode(buf, len, out_sample)`.
+/// Standalone decoder. Calls `ts.decode(buf, len, out_sample)`.
 ///
 /// # Safety
-/// `ts`/`buf`/`out_sample` valid; `buf` muss `len` Bytes lesbar sein;
-/// `out_sample` muss zero-initialized auf den Sprach-Type zeigen.
+/// `ts`/`buf`/`out_sample` valid; `buf` must be readable for `len` bytes;
+/// `out_sample` must point zero-initialized to the language type.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_xcdr2_decode(
     ts: *const ZeroDdsTypeSupport,
@@ -265,31 +265,31 @@ pub unsafe extern "C" fn zerodds_xcdr2_decode(
     if ts.is_null() || buf.is_null() || out_sample.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: NULL-Check oben.
+    // SAFETY: NULL check above.
     let ts_ref = unsafe { &*ts };
     let Some(dec) = ts_ref.decode else {
         return ZeroDdsStatus::Unsupported as c_int;
     };
-    // SAFETY: Caller-Kontrakt + NULL-Check.
+    // SAFETY: caller contract + NULL check.
     unsafe { dec(buf, len, out_sample) }
 }
 
 // ============================================================================
-// FFI: Writer/Reader (typisiert)
+// FFI: writer/reader (typed)
 // ============================================================================
 
-/// Schreibt einen typisierten Sample. Encodiert via
-/// `ts.encode` in einen internen Heap-Buffer und leitet die Bytes an
-/// `zerodds_writer_write` weiter.
+/// Writes a typed sample. Encodes via
+/// `ts.encode` into an internal heap buffer and passes the bytes to
+/// `zerodds_writer_write`.
 ///
-/// Strategie:
-/// 1. Size-Probe (`out_buf=NULL`).
-/// 2. Heap-Buffer der probed Groesse allokieren.
-/// 3. Echtes Encode rein.
+/// Strategy:
+/// 1. Size probe (`out_buf=NULL`).
+/// 2. Allocate a heap buffer of the probed size.
+/// 3. Real encode in.
 /// 4. `zerodds_writer_write(writer, bytes, len)`.
 ///
 /// # Safety
-/// `writer`/`ts`/`sample` valid; vgl. `zerodds_writer_write` und
+/// `writer`/`ts`/`sample` valid; cf. `zerodds_writer_write` and
 /// `zerodds_xcdr2_encode`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_writer_write_typed(
@@ -300,23 +300,23 @@ pub unsafe extern "C" fn zerodds_writer_write_typed(
     if writer.is_null() || ts.is_null() || sample.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: NULL-Check oben.
+    // SAFETY: NULL check above.
     let ts_ref = unsafe { &*ts };
     let Some(enc) = ts_ref.encode else {
         return ZeroDdsStatus::Unsupported as c_int;
     };
-    // Step 1: Size-Probe.
+    // Step 1: size probe.
     let mut needed: usize = 0;
-    // SAFETY: enc kommt aus Codegen, `sample` Caller-validiert.
+    // SAFETY: enc comes from codegen, `sample` caller-validated.
     let probe_rc = unsafe { enc(sample, ptr::null_mut(), 0, &mut needed as *mut usize) };
-    // Codegen-Encoder MUSS bei `out_buf=NULL` BUFFER_TOO_SMALL liefern
-    // ODER 0 wenn der Type 0 Bytes Payload hat (z.B. V-1 Empty Final).
+    // The codegen encoder MUST return BUFFER_TOO_SMALL on `out_buf=NULL`
+    // OR 0 if the type has a 0-byte payload (e.g. V-1 empty final).
     if probe_rc != ZeroDdsStatus::Ok as c_int && probe_rc != ZeroDdsStatus::Unsupported as c_int {
-        // BUFFER_TOO_SMALL wird in unserem Status-Mapping als Error/Unsupported
-        // signalisiert; wir akzeptieren jeden non-OK Probe-Code als "Groesse
-        // jetzt in `needed`".
+        // BUFFER_TOO_SMALL is signaled in our status mapping as Error/Unsupported;
+        // we accept any non-OK probe code as "size now
+        // in `needed`".
     }
-    // Step 2 + 3: Heap-Buffer + echtes Encode.
+    // Step 2 + 3: heap buffer + real encode.
     let mut buf = alloc::vec![0u8; needed];
     let mut written: usize = 0;
     let buf_ptr = if needed == 0 {
@@ -324,30 +324,30 @@ pub unsafe extern "C" fn zerodds_writer_write_typed(
     } else {
         buf.as_mut_ptr()
     };
-    // SAFETY: Buffer ist `needed` Bytes gross.
+    // SAFETY: the buffer is `needed` bytes large.
     let enc_rc = unsafe { enc(sample, buf_ptr, needed, &mut written as *mut usize) };
     if enc_rc != ZeroDdsStatus::Ok as c_int {
         return enc_rc;
     }
-    // Step 4: Pass-through zum Wire-Writer.
-    // SAFETY: writer NULL-checked; buf hat `written` initialisierte Bytes.
+    // Step 4: pass-through to the wire writer.
+    // SAFETY: writer NULL-checked; buf has `written` initialized bytes.
     unsafe { crate::zerodds_writer_write(writer, buf.as_ptr(), written) }
 }
 
-/// Liest einen typisierten Sample. Holt Bytes via `zerodds_reader_take`
-/// und decodiert sie via `ts.decode` in `out_sample`.
+/// Reads a typed sample. Fetches bytes via `zerodds_reader_take`
+/// and decodes them via `ts.decode` into `out_sample`.
 ///
-/// `out_info` ist aktuell unbenutzt (Reserved fuer Sample-Info-Spec-
-/// Rollout); MUSS NULL sein oder zeigt auf einen Caller-allokierten
-/// `zerodds_sample_info_t` der mit Default-Werten befuellt wird.
+/// `out_info` is currently unused (reserved for the sample-info spec
+/// rollout); MUST be NULL or point to a caller-allocated
+/// `zerodds_sample_info_t` that is filled with default values.
 ///
-/// Liefert:
-/// - 0 (Ok) wenn ein Sample erfolgreich decoded wurde.
-/// - `NoData` (-7) wenn der Reader leer ist.
-/// - andere negative Codes bei Decoder-Fehler.
+/// Returns:
+/// - 0 (Ok) if a sample was decoded successfully.
+/// - `NoData` (-7) if the reader is empty.
+/// - other negative codes on a decoder error.
 ///
 /// # Safety
-/// `reader`/`ts`/`out_sample` valide. `out_info` NULL oder valide.
+/// `reader`/`ts`/`out_sample` valid. `out_info` NULL or valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_reader_take_typed(
     reader: *mut ZeroDdsReader,
@@ -359,16 +359,23 @@ pub unsafe extern "C" fn zerodds_reader_take_typed(
     if reader.is_null() || ts.is_null() || out_sample.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    // SAFETY: NULL-Check oben.
+    // SAFETY: NULL check above.
     let ts_ref = unsafe { &*ts };
     let Some(dec) = ts_ref.decode else {
         return ZeroDdsStatus::Unsupported as c_int;
     };
     let mut buf: *mut u8 = ptr::null_mut();
     let mut len: usize = 0;
-    // SAFETY: buf/len lokale Stack-Pointer, Reader-NULL-checked.
+    // SAFETY: buf/len are local stack pointers, reader NULL-checked.
+    // out_repr=NULL: the C-mode decoder (ZeroDdsDecodeFn) is not yet
+    // representation-parametrized — a separate follow-up step.
     let rc = unsafe {
-        crate::zerodds_reader_take(reader, &mut buf as *mut *mut u8, &mut len as *mut usize)
+        crate::zerodds_reader_take(
+            reader,
+            &mut buf as *mut *mut u8,
+            &mut len as *mut usize,
+            core::ptr::null_mut(),
+        )
     };
     if rc != ZeroDdsStatus::Ok as c_int {
         return rc;
@@ -376,57 +383,57 @@ pub unsafe extern "C" fn zerodds_reader_take_typed(
     if buf.is_null() || len == 0 {
         return ZeroDdsStatus::NoData as c_int;
     }
-    // SAFETY: dec aus Codegen; buf gueltig fuer `len` Bytes.
+    // SAFETY: dec from codegen; buf valid for `len` bytes.
     let dec_rc = unsafe { dec(buf, len, out_sample) };
-    // Reader-Buffer immer freigeben, auch im Fehlerfall.
-    // SAFETY: buf/len kommen aus zerodds_reader_take.
+    // Always free the reader buffer, even on error.
+    // SAFETY: buf/len come from zerodds_reader_take.
     unsafe { crate::zerodds_buffer_free(buf, len) };
     dec_rc
 }
 
 // ============================================================================
-// Rust-side helper: XCDR2-Encoder/Decoder ueber `zerodds-cdr`
+// Rust-side helper: XCDR2 encoder/decoder via `zerodds-cdr`
 // ============================================================================
 
-/// Konvertiert einen `*mut usize` Output-Parameter sicher zurueck zur
-/// Rust-Welt. Wird von Codegen-Encodern intern genutzt.
+/// Safely converts a `*mut usize` output parameter back to the
+/// Rust world. Used internally by codegen encoders.
 ///
 /// # Safety
-/// `out_len` muss valider `*mut usize` sein.
+/// `out_len` must be a valid `*mut usize`.
 pub unsafe fn write_out_len(out_len: *mut usize, value: usize) {
     if !out_len.is_null() {
-        // SAFETY: Caller-Kontrakt garantiert valide Pointer.
+        // SAFETY: the caller contract guarantees a valid pointer.
         unsafe { *out_len = value };
     }
 }
 
-/// Schreibt `bytes` in `out_buf` falls Kapazitaet reicht. Setzt
-/// `out_len = bytes.len()`. Liefert FFI-Status:
-/// - 0 (Ok) wenn alle Bytes geschrieben.
-/// - -13 (Unsupported, hier als BUFFER_TOO_SMALL semantisch genutzt)
-///   wenn `out_buf=NULL` (Size-Probe) oder `out_cap < bytes.len()`.
+/// Writes `bytes` into `out_buf` if the capacity is enough. Sets
+/// `out_len = bytes.len()`. Returns the FFI status:
+/// - 0 (Ok) if all bytes were written.
+/// - -13 (Unsupported, used here semantically as BUFFER_TOO_SMALL)
+///   if `out_buf=NULL` (size probe) or `out_cap < bytes.len()`.
 ///
 /// # Safety
-/// `out_buf` muss NULL sein oder valid fuer `out_cap` Bytes Schreibzugriff.
-/// `out_len` muss valid sein.
+/// `out_buf` must be NULL or valid for `out_cap` bytes write access.
+/// `out_len` must be valid.
 pub unsafe fn copy_to_out_buf(
     bytes: &[u8],
     out_buf: *mut u8,
     out_cap: usize,
     out_len: *mut usize,
 ) -> c_int {
-    // SAFETY: Wrapper-Kontrakt, oben dokumentiert.
+    // SAFETY: wrapper contract, documented above.
     unsafe { write_out_len(out_len, bytes.len()) };
     if bytes.is_empty() {
-        // 0-Byte-Payload (z.B. V-1 Empty Final): nichts zu kopieren,
-        // Probe oder Real-Call beide OK.
+        // 0-byte payload (e.g. V-1 empty final): nothing to copy,
+        // probe or real call both OK.
         return ZeroDdsStatus::Ok as c_int;
     }
     if out_buf.is_null() || out_cap < bytes.len() {
         return ZeroDdsStatus::Unsupported as c_int;
     }
-    // SAFETY: out_buf hat >= bytes.len() Kapazitaet, beide non-overlap
-    // (Caller-Buffer + Rust-Stack-Buffer).
+    // SAFETY: out_buf has >= bytes.len() capacity, both non-overlapping
+    // (caller buffer + Rust stack buffer).
     // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
     unsafe {
         ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf, bytes.len());
@@ -434,16 +441,16 @@ pub unsafe fn copy_to_out_buf(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Liefert einen Slice ueber den FFI-Input-Buffer. Convenience fuer
-/// Codegen-Decoder.
+/// Returns a slice over the FFI input buffer. Convenience for
+/// codegen decoders.
 ///
 /// # Safety
-/// `buf` muss valide Lesezugriff fuer `len` Bytes haben.
+/// `buf` must have valid read access for `len` bytes.
 pub unsafe fn input_slice<'a>(buf: *const u8, len: usize) -> &'a [u8] {
     if buf.is_null() || len == 0 {
         return &[];
     }
-    // SAFETY: Caller-Kontrakt.
+    // SAFETY: caller contract.
     unsafe { slice::from_raw_parts(buf, len) }
 }
 
@@ -456,7 +463,7 @@ mod tests {
     use super::*;
     use core::ffi::c_void;
 
-    // V-2 Encoder + Decoder fuer Tests: Point{ x: i32, y: i32 } @final.
+    // V-2 encoder + decoder for tests: Point{ x: i32, y: i32 } @final.
 
     #[repr(C)]
     struct PointSample {
@@ -532,7 +539,7 @@ mod tests {
                 &mut needed,
             )
         };
-        // Probe gibt -13 (Unsupported = BUFFER_TOO_SMALL) zurueck.
+        // The probe returns -13 (Unsupported = BUFFER_TOO_SMALL).
         assert_eq!(rc, ZeroDdsStatus::Unsupported as c_int);
         assert_eq!(needed, 8);
     }

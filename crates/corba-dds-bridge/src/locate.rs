@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! GIOP LocateRequest/LocateReply Handler fuer den Bridge-Daemon.
+//! GIOP LocateRequest/LocateReply handler for the bridge daemon.
 //!
-//! Spec: `zerodds-corba-bridge-1.0.md` §4.7 (= CORBA Spec §15.4.5/6).
+//! Spec: `zerodds-corba-bridge-1.0.md` §4.7 (= CORBA spec §15.4.5/6).
 //!
-//! Der Daemon empfaengt einen LocateRequest mit `object_key` und
-//! antwortet mit `OBJECT_HERE`, `UNKNOWN_OBJECT` oder `OBJECT_FORWARD`,
-//! je nachdem ob die Bridge-Mapping-Tabelle das object_key kennt.
+//! The daemon receives a LocateRequest with an `object_key` and replies
+//! with `OBJECT_HERE`, `UNKNOWN_OBJECT`, or `OBJECT_FORWARD`, depending
+//! on whether the bridge mapping table knows the object_key.
 
 use alloc::vec::Vec;
 
@@ -15,22 +15,22 @@ use zerodds_corba_giop::{LocateReply, LocateRequest, LocateStatusType};
 
 use crate::mapping::BridgeMapping;
 
-/// Resultat eines LocateRequest-Lookups.
+/// Result of a LocateRequest lookup.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LocateOutcome {
-    /// Bridge bedient diese object_key — `OBJECT_HERE`.
+    /// Bridge serves this object_key — `OBJECT_HERE`.
     Here,
-    /// Bridge kennt diese object_key nicht — `UNKNOWN_OBJECT`.
+    /// Bridge does not know this object_key — `UNKNOWN_OBJECT`.
     Unknown,
-    /// Bridge bittet um Forward zu einer anderen IOR — `OBJECT_FORWARD`.
-    /// `body` ist das CDR-encapsulierte IOR-Bytes.
+    /// Bridge requests a forward to a different IOR — `OBJECT_FORWARD`.
+    /// `body` is the CDR-encapsulated IOR bytes.
     Forward(Vec<u8>),
     /// Persistent forward (GIOP 1.2+).
     ForwardPerm(Vec<u8>),
 }
 
 impl LocateOutcome {
-    /// Entsprechende `LocateStatusType`.
+    /// The corresponding `LocateStatusType`.
     #[must_use]
     pub const fn status(&self) -> LocateStatusType {
         match self {
@@ -41,7 +41,7 @@ impl LocateOutcome {
         }
     }
 
-    /// Body-Bytes (leer fuer `Here`/`Unknown`).
+    /// Body bytes (empty for `Here`/`Unknown`).
     #[must_use]
     pub fn into_body(self) -> Vec<u8> {
         match self {
@@ -51,13 +51,13 @@ impl LocateOutcome {
     }
 }
 
-/// Default-Handler: Mapping-Lookup nur ueber `object_key` (ohne
-/// repository_id, weil LocateRequest 1.0/1.1 keine Repository-ID
-/// kennt — Spec §15.4.5.1).
+/// Default handler: mapping lookup by `object_key` only (without
+/// repository_id, because LocateRequest 1.0/1.1 has no repository ID
+/// — spec §15.4.5.1).
 ///
-/// Spec §4.7: Bridge inspiziert `LocateRequest::object_key`, sucht alle
-/// Routes mit passendem object_key, gibt `OBJECT_HERE` zurueck wenn ≥1
-/// gefunden, `UNKNOWN_OBJECT` sonst.
+/// Spec §4.7: the bridge inspects `LocateRequest::object_key`, searches
+/// all routes with a matching object_key, returns `OBJECT_HERE` if ≥1
+/// is found, and `UNKNOWN_OBJECT` otherwise.
 #[must_use]
 pub fn locate_lookup(mapping: &BridgeMapping, object_key: &[u8]) -> LocateOutcome {
     let any = mapping
@@ -71,7 +71,7 @@ pub fn locate_lookup(mapping: &BridgeMapping, object_key: &[u8]) -> LocateOutcom
     }
 }
 
-/// Baut die LocateReply zur LocateRequest.
+/// Builds the LocateReply for the LocateRequest.
 #[must_use]
 pub fn make_reply(req: &LocateRequest, outcome: LocateOutcome) -> LocateReply {
     let status = outcome.status();

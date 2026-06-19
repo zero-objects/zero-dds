@@ -3,75 +3,75 @@
 
 //! DDS-WEB Access Control Decision Engine — Spec §7.3.
 //!
-//! Implementiert §7.3 von partial auf
+//! Implements §7.3 from partial to
 //! done.
 //!
-//! Spec-Quelle: OMG DDS-WEB 1.0 §7.3 (S. 11-13) — `AccessController`
-//! mit Permission-Rules-Engine, die fuer jede REST-Resource-Operation
-//! eine `Permit` / `Deny`-Entscheidung trifft.
+//! Spec source: OMG DDS-WEB 1.0 §7.3 (pp. 11-13) — `AccessController`
+//! with a permission rules engine that makes a `Permit` / `Deny`
+//! decision for every REST resource operation.
 //!
-//! Das Datenmodell folgt DDS-Security 1.2 §9.4.1.2 Permissions
-//! Document (subject_name + grants[] + rules[allow|deny] mit
-//! topic-Filter + Validity-Window).
+//! The data model follows DDS-Security 1.2 §9.4.1.2 Permissions
+//! Document (subject_name + grants[] + rules[allow|deny] with a
+//! topic filter + validity window).
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// Rules-Engine-Entscheidung.
+/// Rules-engine decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Decision {
-    /// Anfrage erlaubt.
+    /// Request allowed.
     Permit,
-    /// Anfrage abgelehnt — der Caller erhaelt HTTP 403.
+    /// Request denied — the caller receives HTTP 403.
     #[default]
     Deny,
 }
 
-/// Operations-Klasse (publish/subscribe/admin) auf einem Topic /
-/// einer Resource.
+/// Operation class (publish/subscribe/admin) on a topic /
+/// resource.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operation {
     /// `POST /domain_participant/.../publishers` etc.
     Publish,
     /// `POST /domain_participant/.../subscribers` etc.
     Subscribe,
-    /// `POST/PUT/DELETE` auf `qos_profile`/`type`/`application`.
+    /// `POST/PUT/DELETE` on `qos_profile`/`type`/`application`.
     Admin,
     /// `GET` (read-only).
     Read,
 }
 
-/// Eine einzelne Allow-/Deny-Rule (Spec §7.3 + DDS-Security §9.4.1.2.2).
+/// A single allow/deny rule (Spec §7.3 + DDS-Security §9.4.1.2.2).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rule {
     /// Allow vs Deny.
     pub effect: Decision,
-    /// Topic-Glob (`*` = alle, sonst exact-match oder
+    /// Topic glob (`*` = all, otherwise exact match or
     /// `prefix*`/`*suffix`).
     pub topic_glob: String,
-    /// Erlaubte Operationen.
+    /// Allowed operations.
     pub operations: Vec<Operation>,
 }
 
-/// Subject-spezifischer Permissions-Block (Spec §7.3).
+/// Subject-specific permissions block (Spec §7.3).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Permissions {
-    /// Subject-Name (entspricht DDS-Security Identity-Certificate-DN
-    /// oder REST-API-Key-Owner).
+    /// Subject name (corresponds to the DDS-Security identity-certificate DN
+    /// or the REST API key owner).
     pub subject_name: String,
-    /// Default-Decision wenn keine Rule matched.
+    /// Default decision when no rule matches.
     pub default: Decision,
-    /// Liste der Rules in Reihenfolge.
+    /// List of rules in order.
     pub rules: Vec<Rule>,
 }
 
 impl Permissions {
-    /// Liefert die Decision fuer eine konkrete Operation auf einem
-    /// Topic. Spec §7.3 Decision-Tree:
+    /// Returns the decision for a concrete operation on a
+    /// topic. Spec §7.3 decision tree:
     ///
-    /// 1. Erste matchende Rule mit `effect = Deny` -> `Deny`.
-    /// 2. Erste matchende Rule mit `effect = Permit` -> `Permit`.
-    /// 3. Sonst `default`.
+    /// 1. First matching rule with `effect = Deny` -> `Deny`.
+    /// 2. First matching rule with `effect = Permit` -> `Permit`.
+    /// 3. Otherwise `default`.
     #[must_use]
     pub fn evaluate(&self, op: Operation, topic: &str) -> Decision {
         let mut found_permit = false;
@@ -95,7 +95,7 @@ impl Permissions {
     }
 }
 
-/// Glob-Matcher fuer Topic-Patterns analog zu `fnmatch_simple` in
+/// Glob matcher for topic patterns, analogous to `fnmatch_simple` in
 /// `model.rs`.
 fn match_glob(pattern: &str, topic: &str) -> bool {
     if pattern == "*" {
@@ -111,7 +111,7 @@ fn match_glob(pattern: &str, topic: &str) -> bool {
 }
 
 impl Rule {
-    /// Convenience-Konstruktor.
+    /// Convenience constructor.
     #[must_use]
     pub fn allow(topic_glob: &str, operations: Vec<Operation>) -> Self {
         Self {
@@ -121,7 +121,7 @@ impl Rule {
         }
     }
 
-    /// Convenience-Konstruktor.
+    /// Convenience constructor.
     #[must_use]
     pub fn deny(topic_glob: &str, operations: Vec<Operation>) -> Self {
         Self {

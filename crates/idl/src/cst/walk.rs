@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Tree-Traversal-Helper fuer den CST.
+//! Tree-traversal helpers for the CST.
 //!
-//! Alle Helper kollektieren `Vec<&CstNode>`-Refs (eager). Lazy-Iteratoren
-//! waeren idiomatischer, verlangen aber Stack-State und kosten Klarheit.
-//! Fuer IDL-typische Tree-Groessen (einige hundert bis wenige tausend
-//! Knoten) ist die Eager-Sammlung in Praxis irrelevant.
+//! All helpers collect `Vec<&CstNode>` refs (eager). Lazy iterators
+//! would be more idiomatic, but require stack state and cost clarity.
+//! For IDL-typical tree sizes (a few hundred to a few thousand
+//! nodes) the eager collection is irrelevant in practice.
 //!
-//! API-Familien:
+//! API families:
 //!
-//! - **Reihenfolge-Traversal**: [`preorder`], [`postorder`]
-//! - **Typ-Filter**: [`tokens_only`], [`internals_only`]
-//! - **Such-Helper**: [`find_by_production`], [`find_first_by_production`],
+//! - **Order traversal**: [`preorder`], [`postorder`]
+//! - **Type filter**: [`tokens_only`], [`internals_only`]
+//! - **Search helpers**: [`find_by_production`], [`find_first_by_production`],
 //!   [`find_by_token_kind`], [`count_by_production`]
-//! - **Struktur-Metrik**: [`depth`]
+//! - **Structure metric**: [`depth`]
 //!
-//! Siehe RFC 0001 §5.4.
+//! See RFC 0001 §5.4.
 
 use crate::grammar::{ProductionId, TokenKind};
 
@@ -53,7 +53,7 @@ fn collect_postorder<'a, 'src>(node: &'a CstNode<'src>, out: &mut Vec<&'a CstNod
     out.push(node);
 }
 
-/// Pre-order, gefiltert auf Token-Leaves.
+/// Pre-order, filtered to token leaves.
 #[must_use]
 pub fn tokens_only<'a, 'src>(root: &'a CstNode<'src>) -> Vec<&'a CstNode<'src>> {
     preorder(root)
@@ -62,7 +62,7 @@ pub fn tokens_only<'a, 'src>(root: &'a CstNode<'src>) -> Vec<&'a CstNode<'src>> 
         .collect()
 }
 
-/// Pre-order, gefiltert auf Internal-Nodes.
+/// Pre-order, filtered to internal nodes.
 #[must_use]
 pub fn internals_only<'a, 'src>(root: &'a CstNode<'src>) -> Vec<&'a CstNode<'src>> {
     preorder(root)
@@ -71,7 +71,7 @@ pub fn internals_only<'a, 'src>(root: &'a CstNode<'src>) -> Vec<&'a CstNode<'src
         .collect()
 }
 
-/// Alle Internal-Nodes mit der gegebenen Production-ID, in Pre-order.
+/// All internal nodes with the given production ID, in pre-order.
 #[must_use]
 pub fn find_by_production<'a, 'src>(
     root: &'a CstNode<'src>,
@@ -83,7 +83,7 @@ pub fn find_by_production<'a, 'src>(
         .collect()
 }
 
-/// Erster Internal-Node mit gegebener Production-ID, in Pre-order.
+/// First internal node with the given production ID, in pre-order.
 #[must_use]
 pub fn find_first_by_production<'a, 'src>(
     root: &'a CstNode<'src>,
@@ -94,7 +94,7 @@ pub fn find_first_by_production<'a, 'src>(
         .find(|n| n.production() == Some(production))
 }
 
-/// Alle Token-Leaves mit gegebener TokenKind, in Pre-order.
+/// All token leaves with the given TokenKind, in pre-order.
 #[must_use]
 pub fn find_by_token_kind<'a, 'src>(
     root: &'a CstNode<'src>,
@@ -106,14 +106,14 @@ pub fn find_by_token_kind<'a, 'src>(
         .collect()
 }
 
-/// Anzahl Internal-Nodes mit gegebener Production-ID.
+/// Number of internal nodes with the given production ID.
 #[must_use]
 pub fn count_by_production(root: &CstNode<'_>, production: ProductionId) -> usize {
     find_by_production(root, production).len()
 }
 
-/// Maximale Tiefe des Teilbaums. Ein Single-Node hat Tiefe 0,
-/// Root + Single-Child hat Tiefe 1, etc.
+/// Maximum depth of the subtree. A single node has depth 0,
+/// root + single child has depth 1, etc.
 #[must_use]
 pub fn depth(node: &CstNode<'_>) -> usize {
     if node.children.is_empty() {
@@ -194,7 +194,7 @@ mod tests {
                 }
             })
             .collect();
-        // Erwartet: T(a), I(1), T(b), I(0)
+        // Expected: T(a), I(1), T(b), I(0)
         assert_eq!(
             order,
             vec![
@@ -226,7 +226,7 @@ mod tests {
     fn internals_only_returns_only_internals() {
         let cst = make_toy_cst(&[t(TokenKind::Keyword("n"))]);
         let internals = internals_only(&cst);
-        // E → T → F, alle drei sind Internal.
+        // E → T → F, all three are internal.
         assert_eq!(internals.len(), 3);
         assert!(internals.iter().all(|n| n.is_internal()));
     }
@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn find_by_production_collects_all_matches_in_preorder() {
-        // n + n + n  → 3 E-Knoten (Top, Sub, Sub-Sub) im Baum.
+        // n + n + n  → 3 E nodes (top, sub, sub-sub) in the tree.
         let cst = make_toy_cst(&[
             t(TokenKind::Keyword("n")),
             t(TokenKind::Punct("+")),
@@ -249,7 +249,7 @@ mod tests {
         assert_eq!(
             es.len(),
             3,
-            "Erwartet 3 E-Knoten in n+n+n, gefunden {}",
+            "Expected 3 E nodes in n+n+n, found {}",
             es.len()
         );
     }
@@ -258,14 +258,14 @@ mod tests {
     fn find_first_by_production_returns_root_if_match() {
         let cst = make_toy_cst(&[t(TokenKind::Keyword("n"))]);
         let first_e = find_first_by_production(&cst, ProductionId(0));
-        // Erstes E ist die Wurzel selbst.
+        // The first E is the root itself.
         assert!(first_e.map(|n| std::ptr::eq(n, &cst)).unwrap_or(false));
     }
 
     #[test]
     fn find_first_by_production_none_for_missing() {
         let cst = make_toy_cst(&[t(TokenKind::Keyword("n"))]);
-        // ProductionId(99) existiert nicht in TOY.
+        // ProductionId(99) does not exist in TOY.
         assert!(find_first_by_production(&cst, ProductionId(99)).is_none());
     }
 
@@ -320,24 +320,24 @@ mod tests {
 
     #[test]
     fn depth_of_toy_single_n_is_three() {
-        // E → T → F → "n"  ⇒ Tiefe 3
+        // E → T → F → "n"  ⇒ depth 3
         let cst = make_toy_cst(&[t(TokenKind::Keyword("n"))]);
         assert_eq!(depth(&cst), 3);
     }
 
     #[test]
     fn depth_takes_max_of_children() {
-        // Asymmetrischer Baum: ein langer und ein kurzer Zweig.
+        // Asymmetric tree: one long and one short branch.
         let mut root = CstNode::internal(ProductionId(0), 0, Span::SYNTHETIC);
-        // Kurzer Zweig: ein Token
+        // Short branch: one token
         root.push_child(CstNode::token(Token::synthetic(TokenKind::Keyword("a"))));
-        // Langer Zweig: drei Internal-Ebenen
+        // Long branch: three internal levels
         let mut deep = CstNode::internal(ProductionId(1), 0, Span::SYNTHETIC);
         let mut deeper = CstNode::internal(ProductionId(2), 0, Span::SYNTHETIC);
         deeper.push_child(CstNode::token(Token::synthetic(TokenKind::Keyword("b"))));
         deep.push_child(deeper);
         root.push_child(deep);
-        // Root + Internal + Internal + Token ⇒ Tiefe 3.
+        // Root + Internal + Internal + Token ⇒ depth 3.
         assert_eq!(depth(&root), 3);
     }
 }

@@ -1,35 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! IEEE 802 MAC Address Modell — Spec §7.2.3 Tab 7.20.
+//! IEEE 802 MAC address model — Spec §7.2.3 Tab 7.20.
 
-/// 48-bit IEEE 802 MAC Address.
+/// 48-bit IEEE 802 MAC address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MacAddress(pub [u8; 6]);
 
 impl MacAddress {
-    /// IEEE 802 Broadcast-MAC (`FF:FF:FF:FF:FF:FF`).
+    /// IEEE 802 broadcast MAC (`FF:FF:FF:FF:FF:FF`).
     pub const BROADCAST: Self = Self([0xFF; 6]);
 
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new(bytes: [u8; 6]) -> Self {
         Self(bytes)
     }
 
-    /// IEEE 802.3 — Multicast wenn LSB des ersten Octets gesetzt ist.
+    /// IEEE 802.3 — multicast if the LSB of the first octet is set.
     #[must_use]
     pub const fn is_multicast(self) -> bool {
         (self.0[0] & 0x01) != 0
     }
 
-    /// Spec IEEE 802 — Locally-administered wenn 2nd-LSB des ersten
-    /// Octets gesetzt.
+    /// Spec IEEE 802 — locally administered if the 2nd LSB of the first
+    /// octet is set.
     #[must_use]
     pub const fn is_locally_administered(self) -> bool {
         (self.0[0] & 0x02) != 0
     }
 
-    /// `true` fuer FF:FF:FF:FF:FF:FF.
+    /// `true` for FF:FF:FF:FF:FF:FF.
     #[must_use]
     pub const fn is_broadcast(self) -> bool {
         let b = self.0;

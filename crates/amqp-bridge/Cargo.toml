@@ -25,11 +25,11 @@ default = ["std"]
 std = ["alloc"]
 alloc = []
 
-# DDS-AMQP 1.0 §2.4 — Codec-Lite-Profile-Marker (strikte Untermenge des
-# Codec-Profile, nur Primitive + `data` Body-Section). Compound-Types
-# (list/map/array beyond data) sind im Lite-Profil out-of-scope. Das
-# Feature beeinflusst nicht den Code-Pfad, sondern nur den Conformance-
-# Claim ueber `codec_profile::active_profile`.
+# DDS-AMQP 1.0 §2.4 — Codec-Lite-Profile marker (strict subset of the
+# Codec profile, only primitives + `data` body section). Compound types
+# (list/map/array beyond data) are out of scope in the Lite profile. The
+# feature does not affect the code path, only the conformance claim via
+# `codec_profile::active_profile`.
 codec-lite = []
 
 [dev-dependencies]

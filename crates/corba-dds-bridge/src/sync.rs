@@ -1,57 +1,57 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Lifecycle-Sync — Spec-Verhalten-Mapping zwischen CORBA-POA-State
-//! und DDS-Discovery.
+//! Lifecycle sync — spec-behavior mapping between CORBA POA state and
+//! DDS discovery.
 //!
-//! Ein CORBA-Object wird mit `activate_object` aktiv und mit
-//! `deactivate_object` inaktiv. Auf der DDS-Seite entspricht das einem
-//! `register_instance` / `unregister_instance` (Spec OMG DDS 1.4
-//! §2.2.2.2.1). Der `LifecycleSync` propagiert diese Events
-//! bidirektional.
+//! A CORBA object becomes active with `activate_object` and inactive
+//! with `deactivate_object`. On the DDS side this corresponds to a
+//! `register_instance` / `unregister_instance` (spec OMG DDS 1.4
+//! §2.2.2.2.1). The `LifecycleSync` propagates these events
+//! bidirectionally.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use std::sync::Mutex;
 
-/// Lifecycle-Event.
+/// Lifecycle event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LifecycleEvent {
-    /// CORBA-Object wurde aktiviert; wir registrieren auf DDS-Seite
-    /// die zugehoerige Instance.
+    /// A CORBA object was activated; we register the corresponding
+    /// instance on the DDS side.
     CorbaActivated {
-        /// Repository-ID.
+        /// Repository ID.
         repository_id: alloc::string::String,
-        /// Object-Key.
+        /// Object key.
         object_key: Vec<u8>,
     },
-    /// CORBA-Object wurde deaktiviert; wir unregistern die Instance.
+    /// A CORBA object was deactivated; we unregister the instance.
     CorbaDeactivated {
-        /// Repository-ID.
+        /// Repository ID.
         repository_id: alloc::string::String,
-        /// Object-Key.
+        /// Object key.
         object_key: Vec<u8>,
     },
-    /// DDS-Reader hat eine Instance entdeckt; wir koennen einen
-    /// CORBA-Forwarder-Servant aktivieren.
+    /// A DDS reader discovered an instance; we can activate a
+    /// CORBA forwarder servant.
     DdsInstanceDiscovered {
         /// Topic.
         topic: alloc::string::String,
-        /// Instance-Handle (Caller-Layer-Type).
+        /// Instance handle (caller-layer type).
         instance_handle: u64,
     },
-    /// DDS-Reader meldet `NOT_ALIVE_DISPOSED` — entsprechender
-    /// Forwarder-Servant wird deaktiviert.
+    /// A DDS reader reports `NOT_ALIVE_DISPOSED` — the corresponding
+    /// forwarder servant is deactivated.
     DdsInstanceDisposed {
         /// Topic.
         topic: alloc::string::String,
-        /// Instance-Handle.
+        /// Instance handle.
         instance_handle: u64,
     },
 }
 
-/// Lifecycle-Sync — sammelt Events und liefert sie an Caller.
+/// Lifecycle sync — collects events and delivers them to the caller.
 #[derive(Debug, Default)]
 pub struct LifecycleSync {
     queue: Mutex<Vec<LifecycleEvent>>,
@@ -59,13 +59,13 @@ pub struct LifecycleSync {
 }
 
 impl LifecycleSync {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Notify-Hook fuer eingehende Events.
+    /// Notify hook for incoming events.
     pub fn notify(&self, event: LifecycleEvent) {
         if let LifecycleEvent::DdsInstanceDiscovered {
             topic,
@@ -90,7 +90,7 @@ impl LifecycleSync {
         }
     }
 
-    /// Drain alle pending Events.
+    /// Drains all pending events.
     #[must_use]
     pub fn drain(&self) -> Vec<LifecycleEvent> {
         self.queue
@@ -100,13 +100,13 @@ impl LifecycleSync {
             .unwrap_or_default()
     }
 
-    /// Anzahl pending Events.
+    /// Number of pending events.
     #[must_use]
     pub fn pending(&self) -> usize {
         self.queue.lock().map(|q| q.len()).unwrap_or(0)
     }
 
-    /// Pruefe ob eine DDS-Instance momentan alive ist.
+    /// Checks whether a DDS instance is currently alive.
     #[must_use]
     pub fn is_dds_instance_alive(&self, topic: &str, handle: u64) -> bool {
         self.instance_handles

@@ -1,19 +1,21 @@
 # DDS-XRCE 1.0 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/zerodds-xrce-1.0.pdf` (166 Seiten, OMG formal/2020-02-01)
+**Spec:** [OMG DDS-XRCE 1.0](https://www.omg.org/spec/DDS-XRCE/1.0/PDF) (166 Seiten, OMG formal/2020-02-01)
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
+Audit Item-für-Item
+gegen die Spec; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
 Status (`done` / `partial` / `open` / `n/a`).
 
-**Kontext:** `crates/xrce/` ist live mit 21 Files + 275 Tests
-(continuous_read/discovery/encoding/error/fragment/header/lib/object_id/
-object_kind/object_repr/object_store/reliable/serial_number/
-transport_dtls/transport_locator/transport_serial/transport_tcp/
-transport_tls/transport_udp/xml_config/submessages). Wire-Codec +
-Object-Model + Transports (UDP done, TCP partial, DTLS/TLS/Serial
-Skelett) + Reliable-Stream + XML-Config produktiv. xrce-client/agent
-bleiben Phase-0-Skelette.
+**Kontext:** Wire-Codec +
+Object-Model + Transports (UDP/TCP/Serial produktiv; DTLS/TLS mit echtem
+Crypto-Backend hinter Opt-in-Features für die non-normativen Profile, §11.4) +
+Reliable-Stream + XML-Config produktiv. xrce-client (synchroner
+Lifecycle-Client) + xrce-agent (Pull-Modell mit Per-Client-ObjectStore)
+sind simplified-Interface-Layer; das Wire-Encoding liegt im `xrce`-Core.
+
+Implementation:
+
+- `crates/xrce/` — Wire-Codec + Object-Model + Transports + Reliable-Stream + XML-Config (continuous_read/discovery/encoding/error/fragment/header/lib/object_id/object_kind/object_repr/object_store/reliable/serial_number/transport_dtls/transport_locator/transport_serial/transport_tcp/transport_tls/transport_udp/xml_config/submessages), 21 Files + 275 Tests.
 
 ---
 
@@ -58,14 +60,14 @@ Spec-Wert-Assertions in `tests/profile_conformance.rs`.
 
 ## §2 Conformance — 10 Profile
 
-### 2.1 Read Access Profile (alle Submessages ausser CREATE/INFO/WRITE_DATA/DELETE)
+### 2.1 Read Access Profile (alle Submessages außer CREATE/INFO/WRITE_DATA/DELETE)
 
 **Spec:** §2, S. 4 — "Provides the clients the ability to read data
 on pre-configured Topics with pre-configured QoS policies. Requires
 implementation of all submessage types except for CREATE, INFO,
 WRITE_DATA, and DELETE."
 
-**Repo:** Wire-Codec fuer alle Read-Profile-Submessages
+**Repo:** Wire-Codec für alle Read-Profile-Submessages
 (CREATE_CLIENT/GET_INFO/STATUS/STATUS_AGENT/READ_DATA/DATA/ACKNACK/
 HEARTBEAT/RESET/FRAGMENT/TIMESTAMP/TIMESTAMP_REPLY) implementiert +
 Continuous-Read in `continuous_read.rs`.
@@ -81,7 +83,7 @@ Continuous-Read in `continuous_read.rs`.
 
 **Status:** done
 
-### 2.2 Write Access Profile (alle Submessages ausser CREATE/INFO/READ_DATA/DATA/DELETE)
+### 2.2 Write Access Profile (alle Submessages außer CREATE/INFO/READ_DATA/DATA/DELETE)
 
 **Spec:** §2, S. 4 — "Provides the clients the ability to write
 data on pre-configured Topics with pre-configured QoS policies."
@@ -104,7 +106,7 @@ ACKNACK/HEARTBEAT/RESET/FRAGMENT/TIMESTAMP/TIMESTAMP_REPLY).
 DomainParticipant, Topic, Publisher, Subscriber, DataWriter, and
 DataReader entities using pre-configured QoS policies and data-types."
 
-**Repo:** Wire-Codec + Object-Store fuer CREATE_CLIENT/CREATE/DELETE.
+**Repo:** Wire-Codec + Object-Store für CREATE_CLIENT/CREATE/DELETE.
 
 **Tests:** `create_client_roundtrip_via_submessage`,
 `create_inserts_new_object`,
@@ -117,7 +119,7 @@ DataReader entities using pre-configured QoS policies and data-types."
 
 **Status:** done
 
-### 2.4 Configure QoS Profile (CREATE fuer OBJK_QOSPROFILE)
+### 2.4 Configure QoS Profile (CREATE für OBJK_QOSPROFILE)
 
 **Spec:** §2, S. 4 — "Provides client the ability to define QoS
 profiles to be used by DDS entities."
@@ -136,7 +138,7 @@ profiles to be used by DDS entities."
 
 **Status:** done
 
-### 2.5 Configure Types Profile (CREATE fuer OBJK_TYPE)
+### 2.5 Configure Types Profile (CREATE für OBJK_TYPE)
 
 **Spec:** §2, S. 4 — "Provides client the ability to explicitly
 define data types to be used for DDS Topics."
@@ -233,7 +235,7 @@ Profile §2.1-§2.9 alle done.
 
 **Tests:** `profile_conformance::profile_2_10_complete_covers_all_16_submessages`
 (verifiziert dass alle 16 SubmessageId-Werte 0..15 dekodierbar sind
-+ Liste vollstaendig) + `invalid_submessage_id_rejected` (Werte
++ Liste vollständig) + `invalid_submessage_id_rejected` (Werte
 > 15 abgelehnt).
 
 **Status:** done
@@ -354,32 +356,29 @@ UDP (§11.2) bzw. TCP (§11.3) — beide done.
 `dummy_dtls_handshake_then_send_then_recv`,
 `dummy_dtls_inject_makes_recv_yield_payload`,
 `dummy_dtls_recv_before_handshake_fails`,
-`dummy_dtls_send_before_handshake_fails` (9 Tests fuer DtlsLayer-
+`dummy_dtls_send_before_handshake_fails` (9 Tests für DtlsLayer-
 Trait-Vertrag).
 
-**Status:** done — DtlsLayer-Trait erfuellt §3.1.9-Reference;
-Crypto-Backend ist Plugin via Trait, das ist Spec-konform fuer
-non-normative Transport.
+**Status:** done — neben `DtlsLayer`-Trait + `DummyDtls` liefert
+`transport_dtls.rs` ein produktives Backend `WebrtcDtls`/`WebrtcDtlsServer`
+(Feature `dtls`, pure-Rust `webrtc-dtls` 0.12 über UDP, analog coap-bridge);
+e2e `tests/dtls_e2e.rs` (echter Handshake + verschlüsselter Round-Trip).
+Non-normatives Profil (§11.4).
 
 ### 3.1.10 [TLS] RFC 5246 (TLS 1.2)
 
 **Spec:** §3.1, S. 5.
 
-**Repo:** `crates/xrce/src/transport_tls.rs::XrceTlsClient` +
-`XrceTlsServer` als Skelett-Layer mit definierter API
-(`connect`/`bind`); Crypto-Layer ist Plugin (Caller liefert
-`rustls::ClientConfig` etc.). Spec §11.4 referenziert §3.1.10 nur
-als Reference, normative Conformance ist TCP (§11.3, done).
+**Repo:** `crates/xrce/src/transport_tls.rs` — produktives Backend
+`RustlsTlsClient`/`RustlsTlsServer`/`RustlsTlsStream` (Feature `tls`,
+`rustls` 0.23 über `std::net::TcpStream`, self-signed Cert via `rcgen`,
+u16-LE-Message-Framing). Spec §11.4 referenziert §3.1.10 nur als Reference,
+normative Conformance ist TCP (§11.3, done).
 
-**Tests:** `tls_client_connect_returns_skeleton_error`,
-`tls_client_new_stores_server_name`,
-`tls_server_bind_returns_skeleton_error`,
-`tls_server_default_constructible` (4 Tests fuer Skelett-API-
-Vertrag).
+**Tests:** `tests/tls_e2e.rs` (echter TLS-Handshake + XRCE-`Message`-Round-Trip).
 
-**Status:** done — TLS-Skelett-Layer + Plugin-Architektur erfuellt
-§3.1.10-Reference; echtes TLS-1.2/1.3-Crypto kommt via produktivem
-rustls-Backend (extern).
+**Status:** done — produktives `rustls`-Backend eingebunden (non-normatives
+Profil, §11.4).
 
 ### 3.1.11 [IETF RFC-1662] PPP in HDLC-like Framing
 
@@ -513,7 +512,7 @@ AGENT/CLIENT) + ObjectId-Reserved-Werte
 ### 7.2 XRCE Client als simplifiziertes Interface ohne Callbacks
 
 **Spec:** §7.2, S. 10 — "XRCE Client: simplified Interface, keine
-Callbacks, Text-Parameter; Session ueberbrueckt Sleep/Wakeup-
+Callbacks, Text-Parameter; Session überbrückt Sleep/Wakeup-
 Zyklen."
 
 **Repo:** `crates/xrce-client/src/lib.rs::XrceClient<T: ClientTransport>`
@@ -541,7 +540,7 @@ Request-IDs streng monoton.
 ### 7.3 XRCE Agent als DDS-Participant; Client-Pull-Modell
 
 **Spec:** §7.3, S. 11 — "XRCE Agent stellt XRCE Client im DDS Data-
-Space dar; Client-Pull-Modell fuer disconnected Devices."
+Space dar; Client-Pull-Modell für disconnected Devices."
 
 **Repo:** `crates/xrce-agent/src/lib.rs::XrceAgent` mit
 Per-Client-ObjectStore + Pull-Queue pro (Client, Reader). Operations:
@@ -581,7 +580,7 @@ ist Factory."
 * **Application** — `OBJK_APPLICATION` Container.
 * **AccessController** — Spec §7.4 dokumentiert die Klasse, exponiert
   sie aber nicht als CRUD-baren Wire-Object (`OBJK`-Wert nicht
-  reserviert); fuer den Server-Internal ist das ausreichend.
+  reserviert); für den Server-Internal ist das ausreichend.
 * **DomainParticipant** — `OBJK_PARTICIPANT`.
 
 **Tests:** `clear_drops_everything`,
@@ -601,12 +600,12 @@ ist Factory."
 ### 7.5 Proxy-Objekte: DomainParticipant/Publisher/Subscriber/DataWriter/DataReader/Topic; Qos/QosProfile als Value-Objekte
 
 **Spec:** §7.5, S. 14 — "Proxy-Objekte delegieren an gleichnamige
-DDS-Entitaeten."
+DDS-Entitäten."
 
 **Repo:** `object_kind.rs::OBJK_PARTICIPANT/TOPIC/PUBLISHER/SUBSCRIBER/
 DATAWRITER/DATAREADER` (Proxy-Objekte) + `OBJK_QOSPROFILE/TYPE`
 (Value-Objekte). Alle 8 Kind-Werte als pub const exponiert +
-ObjectRepr unterstuetzt jede Kind-Variante.
+ObjectRepr unterstützt jede Kind-Variante.
 
 **Tests:** `kind_mask_top_bit_distinguishes_client_vs_builtin`,
 `new_packs_kind_into_lower_4_bits`,
@@ -653,7 +652,7 @@ Agent. Reserved: OBJECTID_INVALID={0x00,0x00}, OBJECTID_CLIENT=
 
 **Spec:** §7.6, S. 14 — "resourceName als Alternative zu ObjectId."
 
-**Repo:** XML-Config `xml_config.rs` haelt String-Refs;
+**Repo:** XML-Config `xml_config.rs` hält String-Refs;
 `object_repr.rs` mappt von ResourceName -> ObjectId.
 
 **Tests:** `roundtrip_object_ids_preserved`,
@@ -673,7 +672,7 @@ SampleInfoFlags + sequence_number + session_time_offset (ms, bis
 53 Tage). SampleInfoFlags Bitmask: INSTANCE_STATE_UNREGISTERED/
 DISPOSED, VIEW_STATE_NEW, SAMPLE_STATE_READ. PackedSamples: kompakt
 mit info_base + sequence<SampleDelta>; max 256 Samples Abstand,
-100 min, 1/10s-Aufloesung."
+100 min, 1/10s-Auflösung."
 
 **Repo:** `crates/xrce/src/submessages/write_data.rs` +
 `submessages/data.rs` mit allen 5 Formaten.
@@ -696,7 +695,7 @@ mit info_base + sequence<SampleDelta>; max 256 Samples Abstand,
 
 **Status:** done
 
-### 7.7.2 DataRepresentation-Union diskriminiert ueber DataFormat
+### 7.7.2 DataRepresentation-Union diskriminiert über DataFormat
 
 **Spec:** §7.7.2, S. 16 — "DataRepresentation-Union [...]"
 
@@ -706,7 +705,7 @@ mit info_base + sequence<SampleDelta>; max 256 Samples Abstand,
 
 **Status:** done
 
-### 7.7.3 ObjectVariant — diskriminiert ueber ObjectKind, beschreibt 13 Object-Varianten
+### 7.7.3 ObjectVariant — diskriminiert über ObjectKind, beschreibt 13 Object-Varianten
 
 **Spec:** §7.7.3, S. 18 — "ObjectVariant: Discriminated Union nach
 ObjectKind. Vorgesehene Varianten: OBJK_AGENT, OBJK_CLIENT,
@@ -718,14 +717,14 @@ OBJK_DATAWRITER, OBJK_DATAREADER."
 Wire-Varianten (ByReference/ByXmlString/InBinary). 2-Tier-
 Architektur: Outer-Wire ist generisch (3 Discriminator-Bytes),
 Inner-XCDR2 ist OBJK-spezifisch und wird vom Caller (xml_config /
-agent) gefuellt.
+agent) gefüllt.
 
 **Tests:** `object_variant_decode_roundtrips_xml_string`,
 `by_xml_string_roundtrip_be`,
 `by_reference_roundtrip_le`,
 `in_binary_roundtrip` +
 `object_variant_carries_all_12_objk_kinds_through_outer_repr`
-(verifiziert Outer-Repr fuer alle 12 OBJK-Werte) +
+(verifiziert Outer-Repr für alle 12 OBJK-Werte) +
 `object_variant_xml_form_supports_topic_qosprofile_application`.
 
 **Status:** done — alle 12 OBJK-Kinds via 2-Tier ObjectVariant
@@ -861,7 +860,7 @@ OBJK_*-Konstanten.
 
 **Repo:** `crates/xrce/src/object_info.rs::ObjectInfo`
 { config: Option<Vec<u8>>, activity: Option<ActivityInfoVariant> }
-mit Presence-Byte fuer jedes Optional.
+mit Presence-Byte für jedes Optional.
 
 **Tests:** `object_info::tests::object_info_with_both_present_roundtrip`,
 `object_info_only_config_roundtrip`,
@@ -1253,7 +1252,7 @@ DoS-Caps + Pending-Tracking.
 (End-to-End-Szenario mit ACKNACK-Loss-Recovery).
 
 **Status:** done — Sender + Receiver State-Machine voll, Two-Side-
-Loss-Recovery-Test belegt vollstaendiges Reliable-Protokoll.
+Loss-Recovery-Test belegt vollständiges Reliable-Protokoll.
 
 ---
 
@@ -1295,11 +1294,11 @@ die zwei Konfigurations-Mechanismen (§9.2 Remote, §9.3 File) an.
 **Spec:** §9.2, S. 79 — "Remote-Konfiguration via CREATE/DELETE/UPDATE."
 
 **Repo:** Submessage-Pfad CREATE/DELETE + UPDATE via REPLACE-Flag,
-Reliable-Stream fuer in-order-Delivery der Config-Sequenz.
+Reliable-Stream für in-order-Delivery der Config-Sequenz.
 
 **Tests:** siehe §8.4.13 +
 `reliable::tests::config_submessages_delivered_in_order_via_reliable_stream`
-(simuliert 5 Config-Operations mit out-of-order-recv und prueft
+(simuliert 5 Config-Operations mit out-of-order-recv und prüft
 in-order-drain via reliable-Stream).
 
 **Status:** done
@@ -1522,15 +1521,15 @@ decision".
 **Spec:** §11.4, S. 94 — Spec hint zu DTLS/TLS/Serial-Mappings.
 
 **Repo:** `transport_dtls.rs`, `transport_tls.rs`,
-`transport_serial.rs`. Serial-Pfad voll produktiv; DTLS/TLS als
-Trait-/Skelett-Layer mit Plugin-Architektur.
+`transport_serial.rs`. Serial-Pfad voll produktiv; DTLS/TLS mit echtem
+Crypto-Backend hinter Opt-in-Features (`dtls`/`tls`).
 
-**Tests:** siehe §3.1.9-§3.1.11. Spec §11.4 ist explizit als
-"non-normative Profile" gekennzeichnet — die Trait-Schicht +
-Plugin-Architektur erfuellen das.
+**Tests:** siehe §3.1.9-§3.1.11 (`dtls_e2e.rs`/`tls_e2e.rs`). Spec §11.4 ist
+explizit als "non-normative Profile" gekennzeichnet.
 
-**Status:** done — Serial produktiv; DTLS/TLS als
-non-normativer Plugin-Layer mit definiertem Trait-Vertrag.
+**Status:** done — Serial-, DTLS- und TLS-Transport produktiv; DTLS/TLS mit
+echtem Crypto-Backend (`webrtc-dtls`/`rustls`) hinter Opt-in-Features (siehe
+§3.1.9, §3.1.10).
 
 ---
 
@@ -1545,3 +1544,6 @@ Test-Lauf:
 * `cargo test -p zerodds-xrce-agent` — 13 Tests grün.
 
 Cross-Crate Test-Volumen: 323 Tests gegen DDS-XRCE-1.0.
+
+Keine offenen Punkte (DTLS/TLS-Crypto-Backends + Serial produktiv; die
+non-normativen Profile sind voll abgedeckt).

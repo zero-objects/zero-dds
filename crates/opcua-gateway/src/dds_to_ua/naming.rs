@@ -1,42 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Naming Conventions — Spec §9.2 Tabellen 9.7/9.11/9.15/9.16/9.27.
+//! Naming conventions — Spec §9.2 tables 9.7/9.11/9.15/9.16/9.27.
 //!
-//! Spec-normative Naming-Regeln:
+//! Spec-normative naming rules:
 //!
-//! * Struct-DataType: `<StructTypeName>DataType` (Tab 9.15).
-//! * Struct-VariableType: `<StructTypeName>VariableType` (Tab 9.16).
-//! * Union-DataType: `<UnionTypeName>DataType` (Tab 9.20).
-//! * Enum-DataType: `<EnumName>DataType` (Tab 9.7).
-//! * Bitmask-DataType: `<BitmaskTypeName>DataType` (Tab 9.11).
-//! * Array-of-Struct-Element-Variable: `<StructTypeName>_<index>`
-//!   (Tab 9.27, mit `_`-Trennung pro Dimension fuer Multi-Dim).
-//! * Bitmask-Gap: `UndefinedPosition_<PositionNumber>` (Tab 9.11).
+//! * Struct DataType: `<StructTypeName>DataType` (Tab 9.15).
+//! * Struct VariableType: `<StructTypeName>VariableType` (Tab 9.16).
+//! * Union DataType: `<UnionTypeName>DataType` (Tab 9.20).
+//! * Enum DataType: `<EnumName>DataType` (Tab 9.7).
+//! * Bitmask DataType: `<BitmaskTypeName>DataType` (Tab 9.11).
+//! * Array-of-struct element variable: `<StructTypeName>_<index>`
+//!   (Tab 9.27, with `_` separation per dimension for multi-dim).
+//! * Bitmask gap: `UndefinedPosition_<PositionNumber>` (Tab 9.11).
 
 use alloc::format;
 use alloc::string::String;
 
-/// Spec Tab 9.15/9.7/9.11 — DataType-Name fuer einen Struct/Enum/
-/// Bitmask/Union-Type aus dem DDS-Type-Namen.
+/// Spec Tab 9.15/9.7/9.11 — DataType name for a struct/enum/
+/// bitmask/union type from the DDS type name.
 #[must_use]
 pub fn data_type_name(dds_type_name: &str) -> String {
     format!("{dds_type_name}DataType")
 }
 
-/// Spec Tab 9.16 — VariableType-Name fuer einen Struct/Union-Type
-/// (`<TypeName>VariableType`). Wird auch in §9.2.4.2 fuer Union-
-/// Variable-Types genutzt.
+/// Spec Tab 9.16 — VariableType name for a struct/union type
+/// (`<TypeName>VariableType`). Also used in §9.2.4.2 for union
+/// variable types.
 #[must_use]
 pub fn variable_type_name(dds_type_name: &str) -> String {
     format!("{dds_type_name}VariableType")
 }
 
-/// Spec Tab 9.27 — Element-BrowseName fuer das `<index>`-te Element
-/// eines Arrays/Sequence von Structures/Unions. Multi-Dim-Indizes
-/// werden mit `_` getrennt (z.B. Position [1][2][3] → `_1_2_3`).
+/// Spec Tab 9.27 — element BrowseName for the `<index>`-th element
+/// of an array/sequence of structures/unions. Multi-dim indices
+/// are separated with `_` (e.g. position [1][2][3] → `_1_2_3`).
 ///
-/// `indices` ist die Position pro Dimension (Outer-First).
+/// `indices` is the position per dimension (outer-first).
 #[must_use]
 pub fn array_element_browse_name(struct_type_name: &str, indices: &[u32]) -> String {
     let mut s = String::from(struct_type_name);
@@ -47,8 +47,8 @@ pub fn array_element_browse_name(struct_type_name: &str, indices: &[u32]) -> Str
     s
 }
 
-/// Spec Tab 9.11 — `UndefinedPosition_<N>` Eintrag fuer Bitmask-
-/// Position ohne explizit definiertes Bitflag.
+/// Spec Tab 9.11 — `UndefinedPosition_<N>` entry for a bitmask
+/// position without an explicitly defined bitflag.
 #[must_use]
 pub fn undefined_bitfield_position(position: u32) -> String {
     format!("UndefinedPosition_{position}")
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn array_element_zero_dim_returns_bare_name() {
-        // Edge-Case: keine Indizes -> nur Type-Name.
+        // Edge case: no indices -> just the type name.
         assert_eq!(array_element_browse_name("ShapeType", &[]), "ShapeType");
     }
 

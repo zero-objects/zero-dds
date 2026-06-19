@@ -3,10 +3,10 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-zenoh-bridge/badge.svg)](https://docs.rs/zerodds-zenoh-bridge)
 
-Bidirektionale Bridge zwischen ZeroDDS-DCPS und Eclipse-Zenoh.
-Pure-Rust-Mapping-Layer (Topic-Namen ↔ Zenoh-Key-Expressions, QoS-
-Translation) ohne externe Deps; optionaler voll-funktionaler Live-
-Bridge-Pfad ueber Feature `zenoh-runtime`. Safety classification:
+Bidirectional bridge between ZeroDDS-DCPS and Eclipse Zenoh.
+Pure-Rust mapping layer (topic names ↔ Zenoh key expressions, QoS
+translation) without external deps; optional fully functional live
+bridge path via feature `zenoh-runtime`. Safety classification:
 **STANDARD**.
 
 ## Architektur
@@ -37,15 +37,15 @@ Bridge-Pfad ueber Feature `zenoh-runtime`. Safety classification:
 | `Reliability::BestEffort` | `Reliability::BestEffort` |
 | `Durability::TransientLocal` | `CongestionControl::Block` + `Priority::DataHigh` |
 | `Durability::Volatile` (Default) | `CongestionControl::Drop` |
-| `History::KeepLast(n)` | (Zenoh hat kein History-Cache; n>1 ignoriert) |
-| `Partition` | KeyExpr-Praefix (`<partition>/<topic>`) |
+| `History::KeepLast(n)` | (Zenoh has no history cache; n>1 ignored) |
+| `Partition` | KeyExpr prefix (`<partition>/<topic>`) |
 
 ## Was ist drin
 
-**Pure-Rust-Layer (default, ohne `zenoh`-Dep):**
+**Pure-Rust layer (default, without `zenoh` dep):**
 - `TopicMap` — bidirektionale Topic↔KeyExpr-Mapping-Datenstruktur.
 - `key_expr_for_topic(name, partition)` — DDS-Topic → Zenoh-KeyExpr-
-  Mapping (mit optionalem Partition-Praefix).
+  mapping (with optional partition prefix).
 - `dds_qos_to_zenoh(dds_qos)` — QoS-Tabelle wie oben.
 
 **Live-Runtime (Feature `zenoh-runtime`):**
@@ -55,8 +55,8 @@ Bridge-Pfad ueber Feature `zenoh-runtime`. Safety classification:
 ## Schichten-Position
 
 Layer 5 — Bridges (Tier-C). Sitzt auf
-[`zerodds-dcps`](../dcps) (DCPS-API) und
-[`zerodds-qos`](../qos) (QoS-Policies). Live-Runtime nutzt `zenoh = 1`
+[`zerodds-dcps`](../dcps) (DCPS API) and
+[`zerodds-qos`](../qos) (QoS policies). The live runtime uses `zenoh = 1`
 + `tokio`.
 
 ## Quickstart
@@ -97,18 +97,18 @@ let bridge = ZenohBridgeBuilder::new()
 bridge.forward_topic("VehicleTracking.TrackUpdate").await?;
 ```
 
-## Feature-Flags
+## Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std` | ✅ | `std`-Aufruf. |
-| `zenoh-runtime` | ❌ | Live-Bridge-Pfad mit `zenoh = 1` + `tokio` (ggf. höhere MSRV als ZeroDDS-Default). |
+| `std` | ✅ | `std` invocation. |
+| `zenoh-runtime` | ❌ | live bridge path with `zenoh = 1` + `tokio` (possibly higher MSRV than the ZeroDDS default). |
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1`. Public-API + Mapping-Logik sind RC1-stabil. Live-
-Runtime-API folgt `zenoh = 1.x` und kann sich mit Zenoh-Major-Bumps
-aendern.
+`1.0.0-rc.1`. Public API + mapping logic are RC1-stable. The live
+runtime API follows `zenoh = 1.x` and may change with Zenoh major
+bumps.
 
 ## Tests
 
@@ -116,13 +116,13 @@ aendern.
 cargo test -p zerodds-zenoh-bridge
 ```
 
-6 Tests grün (5 unit + 1 doc).
+6 tests green (5 unit + 1 doc).
 
 ## Lizenz
 
 Apache-2.0. Siehe [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
 - [`docs/release/rc1-reviews/zenoh-bridge.md`](../../docs/release/rc1-reviews/zenoh-bridge.md) — RC1-Review.
 - [Eclipse Zenoh](https://zenoh.io/) — Upstream-Projekt.

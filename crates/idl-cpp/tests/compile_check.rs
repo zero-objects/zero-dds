@@ -1,11 +1,11 @@
-//! TS-3 — Codegen-Compile-Tests fuer C++.
+//! TS-3 — codegen compile tests for C++.
 //!
-//! Wir generieren einen C++17-Header aus einem IDL-Snippet und
-//! reichen ihn an `clang++ -fsyntax-only -std=c++17` weiter.
-//! Compile-Errors werden als Test-Fail propagiert.
+//! We generate a C++17 header from an IDL snippet and pass it to
+//! `clang++ -fsyntax-only -std=c++17`. Compile errors are propagated
+//! as test failures.
 //!
-//! **Voraussetzung:** `clang++` oder `g++` im `PATH`. Tests werden
-//! geskippt wenn weder noch verfuegbar ist (CI-Image-flexibel).
+//! **Prerequisite:** `clang++` or `g++` on the `PATH`. Tests are
+//! skipped if neither is available (CI-image-flexible).
 
 #![allow(
     clippy::expect_used,
@@ -42,9 +42,9 @@ fn cpp_compiler() -> Option<&'static str> {
     })
 }
 
-/// Schreibt den emittierten Header in eine temporaere `.hpp`-Datei
-/// und ruft `clang++ -fsyntax-only`. Liefert Compile-Output bei
-/// Fail; `Ok(())` bei Erfolg.
+/// Writes the emitted header to a temporary `.hpp` file and invokes
+/// `clang++ -fsyntax-only`. Returns the compile output on failure;
+/// `Ok(())` on success.
 fn check_compiles(cpp_source: &str) -> Result<(), String> {
     let Some(cc) = cpp_compiler() else {
         eprintln!("WARNING: skipping C++ compile-check, no compiler in PATH");
@@ -53,8 +53,8 @@ fn check_compiles(cpp_source: &str) -> Result<(), String> {
 
     use std::io::Write;
     let mut header = NamedTempFile::with_suffix(".hpp").map_err(|e| e.to_string())?;
-    // Vorab Standard-Header (cstdint etc) injizieren ist unnoetig —
-    // das Codegen-Output enthaelt bereits seine eigenen Includes.
+    // Injecting standard headers (cstdint etc) up front is unnecessary —
+    // the codegen output already contains its own includes.
     header
         .write_all(cpp_source.as_bytes())
         .map_err(|e| e.to_string())?;
@@ -62,9 +62,9 @@ fn check_compiles(cpp_source: &str) -> Result<(), String> {
     let mut tu = NamedTempFile::with_suffix(".cpp").map_err(|e| e.to_string())?;
     writeln!(tu, "#include \"{}\"", header.path().display()).map_err(|e| e.to_string())?;
 
-    // `dds/topic/TopicTraits.hpp` lebt im `crates/cpp/include`-Tree,
-    // sodass die emittierten `topic_type_support<T>`-Spezialisierungen
-    // gegen die `cdr_lite`-Helpers compile-checked werden koennen.
+    // `dds/topic/TopicTraits.hpp` lives in the `crates/cpp/include` tree,
+    // so the emitted `topic_type_support<T>` specializations can be
+    // compile-checked against the `cdr_lite` helpers.
     let cpp_include = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("cpp")
@@ -169,10 +169,10 @@ fn compiles_constants() {
     check_compiles(&cpp).expect("constants must compile");
 }
 
-/// Kompiliert + linkt + fuehrt einen kleinen C++-Roundtrip-Test aus, der
-/// `topic_type_support<T>::encode` ⇆ `decode` gegen den emittierten
-/// Header validiert. Damit ist die Lücke real geschlossen — nicht nur
-/// "syntaktisch valid", sondern "byte-identisch round-trippable".
+/// Compiles, links and runs a small C++ roundtrip test that validates
+/// `topic_type_support<T>::encode` ⇆ `decode` against the emitted
+/// header. This truly closes the gap — not just "syntactically valid",
+/// but "byte-identically round-trippable".
 fn run_roundtrip(cpp_source: &str, body: &str) -> Result<(), String> {
     let Some(cc) = cpp_compiler() else {
         eprintln!("WARNING: skipping C++ roundtrip-check, no compiler in PATH");
@@ -240,7 +240,7 @@ fn roundtrip_simple_struct() {
     let body = "    ::Point p;\n\
                 p.x(42); p.y(-7);\n\
                 auto buf = ::dds::topic::topic_type_support<::Point>::encode(p);\n\
-                auto q = ::dds::topic::topic_type_support<::Point>::decode(buf.data(), buf.size());\n\
+                auto q = ::dds::topic::topic_type_support<::Point>::decode(buf.data(), buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);\n\
                 assert(q.x() == 42);\n\
                 assert(q.y() == -7);\n";
     run_roundtrip(&cpp, body).expect("simple struct roundtrip");
@@ -256,7 +256,7 @@ fn roundtrip_struct_with_string_and_sequence() {
                 b.ids(std::vector<int32_t>{1, 2, 3});
                 b.tags(std::vector<std::string>{"a", "bc", "def"});
                 auto buf = ::dds::topic::topic_type_support<::Bag>::encode(b);
-                auto q = ::dds::topic::topic_type_support<::Bag>::decode(buf.data(), buf.size());
+                auto q = ::dds::topic::topic_type_support<::Bag>::decode(buf.data(), buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
                 assert(q.name() == "hello");
                 assert(q.ids().size() == 3);
                 assert(q.ids()[0] == 1 && q.ids()[1] == 2 && q.ids()[2] == 3);
@@ -271,7 +271,7 @@ fn roundtrip_module_nested() {
     let cpp = gen_default("module Outer { module Inner { struct S { long x; }; }; };");
     let body = "    ::Outer::Inner::S s; s.x(1234);\n\
                 auto buf = ::dds::topic::topic_type_support<::Outer::Inner::S>::encode(s);\n\
-                auto q = ::dds::topic::topic_type_support<::Outer::Inner::S>::decode(buf.data(), buf.size());\n\
+                auto q = ::dds::topic::topic_type_support<::Outer::Inner::S>::decode(buf.data(), buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);\n\
                 assert(q.x() == 1234);\n\
                 const char* tn = ::dds::topic::topic_type_support<::Outer::Inner::S>::type_name();\n\
                 assert(std::string(tn) == \"Outer::Inner::S\");\n";
@@ -287,23 +287,46 @@ fn roundtrip_primitives_and_bool() {
             float f; double d;\n\
         };",
     );
-    let body = r#"
+    // Dual-version: `All` carries long long/ull/double (64-bit) → exactly the
+    // types where XCDR1 (8-byte align) and XCDR2 (4-byte cap,
+    // XTypes §7.4.1.1.1) differ in the wire layout. BOTH must round-trip
+    // cleanly; the size assert proves the cap actually takes effect.
+    let asserts = |q: &str| {
+        format!(
+            "                assert({q}.b() == true);\n\
+             assert({q}.o() == 0xAB);\n\
+             assert({q}.s() == -12345);\n\
+             assert({q}.us() == 54321);\n\
+             assert({q}.l() == -1234567);\n\
+             assert({q}.ul() == 2345678);\n\
+             assert({q}.ll() == -987654321LL);\n\
+             assert({q}.ull() == 123456789ULL);\n\
+             assert({q}.f() == 2.5f);\n\
+             assert({q}.d() == 3.14159);\n"
+        )
+    };
+    let body = format!(
+        r#"
+                using TS = ::dds::topic::topic_type_support<::All>;
+                using ::dds::topic::xcdr2::XcdrVersion;
                 ::All a;
                 a.b(true); a.o(0xAB); a.s(-12345); a.us(54321);
                 a.l(-1234567); a.ul(2345678); a.ll(-987654321LL); a.ull(123456789ULL);
                 a.f(2.5f); a.d(3.14159);
-                auto buf = ::dds::topic::topic_type_support<::All>::encode(a);
-                auto q = ::dds::topic::topic_type_support<::All>::decode(buf.data(), buf.size());
-                assert(q.b() == true);
-                assert(q.o() == 0xAB);
-                assert(q.s() == -12345);
-                assert(q.us() == 54321);
-                assert(q.l() == -1234567);
-                assert(q.ul() == 2345678);
-                assert(q.ll() == -987654321LL);
-                assert(q.ull() == 123456789ULL);
-                assert(q.f() == 2.5f);
-                assert(q.d() == 3.14159);
-"#;
-    run_roundtrip(&cpp, body).expect("primitives roundtrip");
+
+                // XCDR2 (System-Default, no-arg encode): 64-Bit auf 4 gecappt.
+                auto buf2 = TS::encode(a);
+                auto q2 = TS::decode(buf2.data(), buf2.size(), XcdrVersion::Xcdr2);
+{}
+                // XCDR1 (legacy, explicit): 64-bit to 8 → more padding.
+                auto buf1 = TS::encode(a, XcdrVersion::Xcdr1);
+                auto q1 = TS::decode(buf1.data(), buf1.size(), XcdrVersion::Xcdr1);
+{}
+                // The alignment cap is real: XCDR1 pads more than XCDR2.
+                assert(buf1.size() > buf2.size());
+"#,
+        asserts("q2"),
+        asserts("q1"),
+    );
+    run_roundtrip(&cpp, &body).expect("primitives roundtrip (xcdr1+xcdr2)");
 }

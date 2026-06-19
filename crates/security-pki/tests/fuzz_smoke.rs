@@ -1,7 +1,7 @@
-//! Stable-Rust Fuzz-Smoke-Tests fuer DDS-Security PKI-Decoder.
+//! Stable-Rust fuzz smoke tests for the DDS-Security PKI decoder.
 //!
-//! Pseudo-random Bytes in `parse_crl_serials`, OCSP-Status-Decoder,
-//! Handshake-Token-Parser. DDS-Security 1.2 §9.3 (Auth-Plugin).
+//! Pseudo-random bytes into `parse_crl_serials`, the OCSP status decoder,
+//! the handshake-token parser. DDS-Security 1.2 §9.3 (auth plugin).
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
@@ -62,7 +62,7 @@ fn fuzz_parse_crl_serials_no_panic() {
 
 #[test]
 fn fuzz_parse_ocsp_status_no_panic() {
-    // parse_ocsp_status liefert kein Result, aber darf nicht panicen.
+    // parse_ocsp_status returns no Result, but must not panic.
     fuzz_decoder(0x4F43_5350, 2_000, |bytes| {
         let _ = parse_ocsp_status(bytes);
     });

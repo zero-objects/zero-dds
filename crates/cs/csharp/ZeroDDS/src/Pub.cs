@@ -18,7 +18,7 @@ public sealed class Publisher : IDisposable
     private readonly IntPtr _participant;
     private bool _disposed;
 
-    /// <summary>Konstruiert via Participant.</summary>
+    /// <summary>Constructs via a Participant.</summary>
     public Publisher(DomainParticipant dp)
     {
         _participant = dp.Handle;
@@ -26,7 +26,7 @@ public sealed class Publisher : IDisposable
         if (_handle == IntPtr.Zero) throw new DdsError("Publisher::create failed");
     }
 
-    /// <summary>Konstruiert mit expliziter QoS (Spec §2.2.2.2.1.6).</summary>
+    /// <summary>Constructs with explicit QoS (Spec §2.2.2.2.1.6).</summary>
     public Publisher(DomainParticipant dp, ZeroDDS.Qos.PublisherQos qos)
     {
         _participant = dp.Handle;
@@ -72,7 +72,7 @@ public sealed class DataWriter<T> : IDisposable
     private readonly ITopicTraits<T> _traits;
     private bool _disposed;
 
-    /// <summary>Konstruiert via Pub + Topic.</summary>
+    /// <summary>Constructs via Pub + Topic.</summary>
     public DataWriter(Publisher pub, Topic<T> topic)
     {
         _publisher = pub.Handle;
@@ -81,7 +81,7 @@ public sealed class DataWriter<T> : IDisposable
         _traits = topic.Traits;
     }
 
-    /// <summary>Konstruiert mit expliziter QoS (Spec §2.2.2.4.1.5).</summary>
+    /// <summary>Constructs with explicit QoS (Spec §2.2.2.4.1.5).</summary>
     public DataWriter(Publisher pub, Topic<T> topic, ZeroDDS.Qos.DataWriterQos qos)
     {
         _publisher = pub.Handle;
@@ -95,7 +95,7 @@ public sealed class DataWriter<T> : IDisposable
     /// <summary>Native handle.</summary>
     public IntPtr Handle => _handle;
 
-    /// <summary>Schreibt eine Sample-Instanz.</summary>
+    /// <summary>Writes a sample instance.</summary>
     public void Write(T sample)
     {
         var bytes = _traits.Encode(sample);
@@ -119,7 +119,7 @@ public sealed class DataWriter<T> : IDisposable
         StatusCheck.Check(Native.DwWaitForMatched(_handle, min, timeout.TotalMilliseconds),
             "DataWriter::WaitForMatched");
 
-    /// <summary>Liveliness asserten.</summary>
+    /// <summary>Assert liveliness.</summary>
     public void AssertLiveliness() =>
         StatusCheck.Check(Native.DwAssertLiveliness(_handle), "DataWriter::AssertLiveliness");
 

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! E2E-Test für `zerodds-ws-bridged` §7 Security-Wireup.
+//! E2E test for `zerodds-ws-bridged` §7 security wireup.
 //!
-//! Deckt:
-//! * §7.1 TLS-Handshake (Server-Side, optionalmit Client-Cert).
-//! * §7.2 Auth (Bearer-Token im `Authorization`-Header).
-//! * §7.3 Topic-ACL für Auto-Subscribe-Pfad und Inline-Subscribe-Op.
-//! * §9.2 SIGHUP-Cert-Reload (Live-Reload ohne Restart).
+//! Covers:
+//! * §7.1 TLS handshake (server-side, optionally with a client cert).
+//! * §7.2 auth (bearer token in the `Authorization` header).
+//! * §7.3 topic ACL for the auto-subscribe path and the inline subscribe op.
+//! * §9.2 SIGHUP cert reload (live reload without restart).
 
 #![cfg(feature = "daemon")]
 #![allow(
@@ -86,7 +86,7 @@ fn build_test_client_config(server_cert_pem: &str) -> Arc<ClientConfig> {
     Arc::new(cfg)
 }
 
-// ---------- TLS-Stream-Helper für den Test-Client ----------
+// ---------- TLS stream helper for the test client ----------
 
 struct TlsTestStream {
     conn: rustls::ClientConnection,
@@ -179,7 +179,7 @@ fn make_secure_cfg(cert: &str, key: &str, with_auth: bool) -> DaemonConfig {
         cfg.auth_mode = "bearer".into();
         cfg.auth_bearer_token = Some("secret-tk".into());
         cfg.auth_bearer_subject = Some("alice".into());
-        // Topic "Allowed" auf alice; Topic "Forbidden" für niemanden.
+        // Topic "Allowed" to alice; topic "Forbidden" to nobody.
         cfg.topic_acl.insert(
             "Allowed".into(),
             (vec!["alice".into()], vec!["alice".into()]),

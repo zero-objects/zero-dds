@@ -1,4 +1,4 @@
-// smoke.test.ts — TypeScript Pub-Sub-Roundtrip ueber das C-FFI.
+// smoke.test.ts — TypeScript pub/sub roundtrip over the C-FFI.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -10,7 +10,10 @@ import {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-test("ts pub-sub roundtrip", { skip: process.platform === "darwin" }, async () => {
+// NOTE: previously skipped on darwin — that skip masked the koffi `_Out_` bug in
+// Reader.take() (it never ran on the dev machine). The roundtrip MUST exercise
+// take() on every platform, otherwise the binding regresses silently.
+test("ts pub-sub roundtrip", async () => {
   console.log("zerodds version:", Runtime.version());
 
   const domain = 100 + (process.pid % 50);

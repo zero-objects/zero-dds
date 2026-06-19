@@ -2,9 +2,9 @@
 // Copyright 2026 ZeroDDS Contributors
 //! XML↔CDR-Codec — DDS-XML 1.0 §6.4.
 //!
-//! Spec §6.4: Topic-Sample-Mapping zu XML. Die Sample-Struktur wird
-//! als `<Sample><field-name>value</field-name>...</Sample>` codiert,
-//! mit einem Type-Discriminator als Root-Tag.
+//! Spec §6.4: topic-sample mapping to XML. The sample structure is
+//! encoded as `<Sample><field-name>value</field-name>...</Sample>`,
+//! with a type discriminator as the root tag.
 
 use alloc::collections::BTreeMap;
 use alloc::format;
@@ -17,22 +17,22 @@ use crate::parser::{Event, ParseError, XmlParser};
 /// Field-Kind (DDS-Builtin-Types Map zu DDS-XML §6.4 Tab.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldKind {
-    /// `int8`/`int16`/`int32`/`int64` — als XML-Integer.
+    /// `int8`/`int16`/`int32`/`int64` — as XML integers.
     Integer,
-    /// `float32`/`float64` — als XML-Double.
+    /// `float32`/`float64` — as XML doubles.
     Float,
-    /// `bool` — als `true`/`false`.
+    /// `bool` — as `true`/`false`.
     Bool,
-    /// `string`/`wstring` — als XML-Text mit Entity-Encoding.
+    /// `string`/`wstring` — as XML text with entity encoding.
     String,
-    /// `octet[]` — als Hex-encoded XML-Text.
+    /// `octet[]` — as hex-encoded XML text.
     Bytes,
 }
 
-/// Field-Value mit Kind-Info.
+/// Field value with kind info.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FieldValue {
-    /// 64-bit signed integer (deckt alle DDS-Integer-Builtins ab).
+    /// 64-bit signed integer (covers all DDS integer builtins).
     Integer(i64),
     /// 64-bit float.
     Float(f64),
@@ -40,7 +40,7 @@ pub enum FieldValue {
     Bool(bool),
     /// String.
     String(String),
-    /// Bytes (Hex-codiert beim Emit).
+    /// Bytes (hex-encoded on emit).
     Bytes(Vec<u8>),
 }
 
@@ -58,25 +58,25 @@ impl FieldValue {
     }
 }
 
-/// Codec-Fehler.
+/// Codec error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CodecError {
-    /// XML-Parse-Fehler.
+    /// XML parse error.
     Parse(ParseError),
-    /// XML-Emit-Fehler.
+    /// XML emit error.
     Emit(EmitError),
-    /// Field hat einen fuer den `FieldKind` ungueltigen Text-Inhalt.
+    /// The field has text content invalid for the `FieldKind`.
     InvalidValue {
         /// Field-Name.
         field: String,
-        /// Erwarteter Kind.
+        /// Expected kind.
         kind: FieldKind,
-        /// Gelesener Wert.
+        /// Read value.
         got: String,
     },
     /// Kein Sample-Root-Element.
     NoSampleRoot,
-    /// Hex-Decoding-Fehler.
+    /// Hex decoding error.
     InvalidHex,
 }
 
@@ -109,10 +109,10 @@ impl From<EmitError> for CodecError {
     }
 }
 
-/// Encode eine Sample-Map in XML. Spec §6.4.
+/// Encode a sample map into XML. Spec §6.4.
 ///
 /// # Errors
-/// `Emit` bei Tag-Namen-Validation.
+/// `Emit` on tag-name validation.
 pub fn encode_to_xml(
     type_name: &str,
     fields: &BTreeMap<String, FieldValue>,
@@ -134,7 +134,7 @@ pub fn encode_to_xml(
     Ok(e.finish())
 }
 
-/// Decode XML zurueck in eine Sample-Map. Spec §6.4.
+/// Decode XML back into a sample map. Spec §6.4.
 ///
 /// # Errors
 /// `Parse`/`InvalidValue`/`NoSampleRoot`/`InvalidHex`.

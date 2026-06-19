@@ -3,51 +3,51 @@
 
 //! XRCE Multicast-Discovery (Spec §11.2.4).
 //!
-//! Spec §11.2.4 reserviert die Multicast-Group `239.255.0.2` Port `7400`
-//! fuer Agent-Discovery via `GET_INFO`. Clients senden ein
-//! `GET_INFO`-Datagramm an die Gruppe; Agents binden den Port und
-//! antworten Unicast mit `INFO`.
+//! Spec §11.2.4 reserves the multicast group `239.255.0.2` port `7400`
+//! for agent discovery via `GET_INFO`. Clients send a
+//! `GET_INFO` datagram to the group; agents bind the port and
+//! reply unicast with `INFO`.
 //!
-//! In dieser Datei wird der Multicast-Bind plus Send/Recv-Helper
-//! gekapselt. Tests laufen auf UDP-Loopback (kein echter IGMP-Setup
-//! noetig — das ist DCPS-Builtin-Topic, siehe `reference_pve_multicast_setup`).
+//! This file encapsulates the multicast bind plus send/recv helpers.
+//! Tests run on UDP loopback (no real IGMP setup
+//! needed — that is the DCPS builtin topic, see `reference_pve_multicast_setup`).
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket};
 
 use crate::error::XrceError;
 use crate::submessages::Message;
 
-/// Multicast-Group fuer XRCE-Discovery (Spec §11.2.4).
+/// Multicast group for XRCE discovery (Spec §11.2.4).
 pub const XRCE_DISCOVERY_GROUP: Ipv4Addr = Ipv4Addr::new(239, 255, 0, 2);
-/// Default-Port der Discovery-Gruppe.
+/// Default port of the discovery group.
 pub const XRCE_DISCOVERY_PORT: u16 = 7400;
 
-/// Multicast-Discovery-Bindung. Haelt einen Socket, der an
-/// `0.0.0.0:7400` gebunden und der Discovery-Gruppe beigetreten ist.
+/// Multicast discovery binding. Holds a socket bound to
+/// `0.0.0.0:7400` and joined to the discovery group.
 #[derive(Debug)]
 pub struct MulticastDiscovery {
-    /// Empfangs-Socket (auf Port `XRCE_DISCOVERY_PORT` gebunden).
+    /// Receive socket (bound to port `XRCE_DISCOVERY_PORT`).
     pub socket: UdpSocket,
-    /// Adresse der Discovery-Gruppe (fuer Send).
+    /// Address of the discovery group (for send).
     pub group_addr: SocketAddrV4,
 }
 
 impl MulticastDiscovery {
-    /// Bindet einen neuen Discovery-Socket auf `0.0.0.0:port` und joint
-    /// `XRCE_DISCOVERY_GROUP`. `port = 0` bindet einen ephemeren Port
-    /// (nuetzlich fuer Tests).
+    /// Binds a new discovery socket on `0.0.0.0:port` and joins
+    /// `XRCE_DISCOVERY_GROUP`. `port = 0` binds an ephemeral port
+    /// (useful for tests).
     ///
-    /// `domain_id` ist nur fuer die Send-Adresse — die Multicast-Group
-    /// ist Domain-unabhaengig (Spec §11.2.4 nutzt einen festen Port pro
-    /// XRCE-Implementierung).
+    /// `domain_id` is only for the send address — the multicast group
+    /// is domain-independent (Spec §11.2.4 uses a fixed port per
+    /// XRCE implementation).
     ///
     /// # Errors
-    /// `std::io::Error` bei Bind-Fehlern.
+    /// `std::io::Error` on bind errors.
     pub fn start(port: u16) -> std::io::Result<Self> {
         let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port))?;
-        // Best-Effort Multicast-Join. Schlaegt der join fehl (weil das
-        // Test-Environment kein Multicast hat), tolerieren wir das —
-        // der Socket bleibt fuer Loopback nutzbar.
+        // Best-effort multicast join. If the join fails (because the
+        // test environment has no multicast), we tolerate that —
+        // the socket remains usable for loopback.
         let _ = socket.join_multicast_v4(&XRCE_DISCOVERY_GROUP, &Ipv4Addr::UNSPECIFIED);
         Ok(Self {
             socket,
@@ -55,8 +55,8 @@ impl MulticastDiscovery {
         })
     }
 
-    /// Bindet auf einem expliziten Local-Address (z.B. `127.0.0.1:0` fuer
-    /// reine Loopback-Tests).
+    /// Binds on an explicit local address (e.g. `127.0.0.1:0` for
+    /// pure loopback tests).
     ///
     /// # Errors
     /// `std::io::Error`.
@@ -69,11 +69,11 @@ impl MulticastDiscovery {
         })
     }
 
-    /// Sendet eine `GET_INFO`-Discovery-Message an die Multicast-Gruppe
-    /// (oder an `target` bei Loopback-Tests).
+    /// Sends a `GET_INFO` discovery message to the multicast group
+    /// (or to `target` in loopback tests).
     ///
     /// # Errors
-    /// `XrceError` aus dem Encoder oder `ValueOutOfRange` bei IO.
+    /// `XrceError` from the encoder or `ValueOutOfRange` on IO.
     pub fn send_to(&self, msg: &Message, target: SocketAddr) -> Result<(), XrceError> {
         let bytes = msg.encode()?;
         self.socket
@@ -84,7 +84,7 @@ impl MulticastDiscovery {
         Ok(())
     }
 
-    /// Sendet an die Multicast-Gruppe (`XRCE_DISCOVERY_GROUP:7400`).
+    /// Sends to the multicast group (`XRCE_DISCOVERY_GROUP:7400`).
     ///
     /// # Errors
     /// `XrceError`.
@@ -92,7 +92,7 @@ impl MulticastDiscovery {
         self.send_to(msg, SocketAddr::V4(self.group_addr))
     }
 
-    /// Empfaengt ein Datagramm von der Discovery-Gruppe.
+    /// Receives a datagram from the discovery group.
     ///
     /// # Errors
     /// `XrceError`.
@@ -143,8 +143,8 @@ mod tests {
 
     #[test]
     fn loopback_send_recv_roundtrip() {
-        // Beide Endpunkte loopback gebunden — kein echtes Multicast,
-        // nur die XRCE-Wire-Schicht testen.
+        // Both endpoints bound to loopback — no real multicast,
+        // only test the XRCE wire layer.
         let listener = MulticastDiscovery::start_on("127.0.0.1:0".parse().unwrap()).unwrap();
         let listener_addr = listener.socket.local_addr().unwrap();
         let sender = MulticastDiscovery::start_on("127.0.0.1:0".parse().unwrap()).unwrap();
@@ -170,32 +170,32 @@ mod tests {
         assert_ne!(addr.port(), 0);
     }
 
-    /// Spec §11.2.4 + §8.4.4 — Agent-Discovery-Multicast-Pfad.
-    /// Ein Client sendet GET_INFO an die `XRCE_DISCOVERY_GROUP` und
-    /// verifiziert, dass `send_multicast` nicht crasht. Echtes
-    /// Multicast-Empfang erfordert OS-Konfig (siehe
-    /// `reference_pve_multicast_setup`); hier prueft wir nur die
-    /// Wire-Send-Path-Integrity.
+    /// Spec §11.2.4 + §8.4.4 — agent discovery multicast path.
+    /// A client sends GET_INFO to the `XRCE_DISCOVERY_GROUP` and
+    /// verifies that `send_multicast` does not crash. Real
+    /// multicast reception requires OS config (see
+    /// `reference_pve_multicast_setup`); here we only check the
+    /// wire send path integrity.
     #[test]
     fn multicast_send_via_xrce_discovery_group_does_not_error() {
         let d = MulticastDiscovery::start(0).expect("bind");
         let msg = build_get_info_msg();
-        // Bei Loopback-Setup sendet der Multicast in die default-
-        // Schnittstelle; bei keiner verfuegbaren Multicast-Route
-        // wird der Send vom OS verworfen, aber kein Error generiert.
-        // Wir pruefen nur, dass der API-Pfad konsistent ist.
+        // In the loopback setup the multicast is sent to the default
+        // interface; with no available multicast route
+        // the send is discarded by the OS, but no error is generated.
+        // We only check that the API path is consistent.
         let res = d.send_multicast(&msg);
-        // OS kann Multicast bei fehlender Route mit OS-Error melden
-        // — wir akzeptieren beide Faelle, solange XrceError-Typ
-        // korrekt ist.
+        // The OS may report multicast with an OS error when a route is
+        // missing — we accept both cases as long as the XrceError type
+        // is correct.
         match res {
             Ok(()) => {}
             Err(XrceError::ValueOutOfRange { .. }) => {}
-            Err(other) => panic!("unerwarteter XrceError-Typ: {other:?}"),
+            Err(other) => panic!("unexpected XrceError type: {other:?}"),
         }
     }
 
-    /// Spec §11.2.4 — Discovery-Group-Adresse + Default-Port.
+    /// Spec §11.2.4 — discovery group address + default port.
     #[test]
     fn discovery_group_addr_constructed_correctly() {
         let d = MulticastDiscovery::start(0).expect("bind");
@@ -203,17 +203,17 @@ mod tests {
         assert_eq!(d.group_addr.port(), XRCE_DISCOVERY_PORT);
     }
 
-    /// Spec §11.3.4 — TCP-Agent-Discovery nutzt dieselbe Port-Schema
-    /// wie UDP (`agent_default_port` aus `transport_udp.rs`).
+    /// Spec §11.3.4 — TCP agent discovery uses the same port scheme
+    /// as UDP (`agent_default_port` from `transport_udp.rs`).
     #[test]
     fn tcp_discovery_uses_same_port_scheme_as_udp() {
-        // §11.3.4 sagt: "TCP Agent Discovery uses the same port-
-        // scheme as UDP". Wir verifizieren das via
-        // agent_default_port (aus transport_udp).
+        // §11.3.4 says: "TCP Agent Discovery uses the same port
+        // scheme as UDP". We verify that via
+        // agent_default_port (from transport_udp).
         use crate::transport_udp::agent_default_port;
         for domain in 0u16..=10 {
             let p = agent_default_port(domain);
-            // Port ist 7400 + 4*domain (Spec §11.2.4 / §11.3.4).
+            // Port is 7400 + 4*domain (Spec §11.2.4 / §11.3.4).
             assert_eq!(p, 7400 + 4 * domain);
         }
     }

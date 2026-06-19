@@ -1,89 +1,89 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-ami4ccm`-Crate.
+Initial release materialization of the `zerodds-ami4ccm` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **OMG AMI4CCM 1.1** (`formal/2015-08-03`): §7.3 (Implied-IDL fuer
-  AMI4CCM-Interface), §7.5 (Implied-IDL fuer ReplyHandler), §7.4
-  (ExceptionHolder-Datenmodell), §7.7 (Pragmas: `ami4ccm interface`
-  und `ami4ccm receptacle`).
+- **OMG AMI4CCM 1.1** (`formal/2015-08-03`): §7.3 (implied IDL for the
+  AMI4CCM interface), §7.5 (implied IDL for the ReplyHandler), §7.4
+  (ExceptionHolder data model), §7.7 (pragmas: `ami4ccm interface`
+  and `ami4ccm receptacle`).
 
-### Public-API
+### Public API
 
-**`pragma`-Modul:**
-- `Ami4CcmPragma::{Interface { name }, Receptacle { name }}` — geparste
-  Pragma-Variante (Spec §7.7).
+**`pragma` module:**
+- `Ami4CcmPragma::{Interface { name }, Receptacle { name }}` — the parsed
+  pragma variant (spec §7.7).
 - `parse_pragma(line) -> Result<Ami4CcmPragma, ParsePragmaError>` —
-  Source-Line-Parser inkl. Whitespace-Toleranz.
+  source-line parser including whitespace tolerance.
 - `ParsePragmaError::{NotAmi4ccmPragma, UnknownTag, MalformedQuotedName, EmptyName}`.
 
-**`transform`-Modul:**
-- `transform_interface(iface) -> Ami4CcmInterfaces` — erzeugt aus einem
-  `zerodds_idl::ast::InterfaceDef` die zwei abgeleiteten Local-
-  Interfaces `AMI4CCM_<Iface>` + `AMI4CCM_<Iface>ReplyHandler` (Spec
+**`transform` module:**
+- `transform_interface(iface) -> Ami4CcmInterfaces` — derives, from a
+  `zerodds_idl::ast::InterfaceDef`, the two derived local interfaces
+  `AMI4CCM_<Iface>` + `AMI4CCM_<Iface>ReplyHandler` (spec
   §7.3 + §7.5).
-- `transform_interface_in_context(iface, ctx)` — Variante mit
-  Scope-Resolver-Kontext fuer Cross-Module-Type-Resolution.
+- `transform_interface_in_context(iface, ctx)` — variant with
+  scope-resolver context for cross-module type resolution.
 - `Ami4CcmInterfaces { async_iface, reply_handler }`,
   `TransformContext`.
 
-**`exception_holder`-Modul:**
-- `ExceptionHolder` — Datenmodell fuer Spec §7.4.1 Exception-Lieferung.
-- `UserExceptionBase`-Trait fuer ExceptionHolder-Carry.
+**`exception_holder` module:**
+- `ExceptionHolder` — data model for spec §7.4.1 exception delivery.
+- `UserExceptionBase` trait for ExceptionHolder carry.
 
-**`pragma`/`scope_resolver`/`transform`-Synergie:**
-- `populate_from_specification(spec) -> ScopeContext` — sammelt alle
-  Pragma-Eintraege auf Specification-Level und liefert das
-  Scope-Resolver-Kontext.
-- `context_from_specification(spec)` — gleicher Pfad fuer Single-Spec-
-  Aufrufe.
+**`pragma`/`scope_resolver`/`transform` synergy:**
+- `populate_from_specification(spec) -> ScopeContext` — collects all
+  pragma entries at the specification level and returns the
+  scope-resolver context.
+- `context_from_specification(spec)` — the same path for single-spec
+  calls.
 
-**`connector`/`deployment`/`multiplex`-Module:**
-- `Connector`, `ConnectorPort`, `Facet`, `PortType` — Connector-Modell
-  (Spec §7.6).
+**`connector`/`deployment`/`multiplex` modules:**
+- `Connector`, `ConnectorPort`, `Facet`, `PortType` — connector model
+  (spec §7.6).
 - `ConnectorImplementation`, `ConnectorPlanFragment`,
-  `ImplementationDescriptor`, `PlanInstance` — D&C-Plan-Fragment-
-  Modelle.
-- `ReceptacleArity::{Simplex, Multiplex}` + Helpers
-  `context_method_for_receptacle` und `sequence_typedef_for_interface`
-  fuer Multi-Receptacle-Codegen.
+  `ImplementationDescriptor`, `PlanInstance` — D&C plan-fragment
+  models.
+- `ReceptacleArity::{Simplex, Multiplex}` + helpers
+  `context_method_for_receptacle` and `sequence_typedef_for_interface`
+  for multi-receptacle codegen.
 
-### Implementierung
+### Implementation
 
-`#![cfg_attr(not(feature = "std"), no_std)]` (default-feature `std`
-zieht `alloc` rein); `#![forbid(unsafe_code)]`. Eine Workspace-Dep:
-`zerodds-idl` (AST-Layer fuer Interface/Module-Definitionen).
+`#![cfg_attr(not(feature = "std"), no_std)]` (default feature `std`
+pulls in `alloc`); `#![forbid(unsafe_code)]`. One workspace dep:
+`zerodds-idl` (AST layer for interface/module definitions).
 
-Die Transformation arbeitet auf dem AST-Layer von `zerodds_idl::ast`:
-Eingabe ist `InterfaceDef`, Ausgabe sind zwei neu konstruierte
-`InterfaceDef`-Instanzen mit `InterfaceKind::Local`, die jedes Codegen-
-Backend (cpp/cs/java/rust/ts) wie normale Interfaces behandeln kann.
+The transformation operates on the AST layer of `zerodds_idl::ast`:
+the input is `InterfaceDef`, the output is two newly constructed
+`InterfaceDef` instances with `InterfaceKind::Local`, which every codegen
+backend (cpp/cs/java/rust/ts) can treat like normal interfaces.
 
-### Architektur
+### Architecture
 
-- **Layer:** 8 (CORBA-Stack, Tier-A).
+- **Layer:** 8 (CORBA stack, Tier-A).
 - **Dependencies (in):** `zerodds-idl`.
-- **Dependents (out):** keine produktiven extern (Connector-Fragment ist
-  CCM-Container-Konsumenten-Sache; siehe `corba-ccm` + `corba-ccm-lib`).
-- **Feature-Flags:** `std` (default), `alloc` (via std).
+- **Dependents (out):** none in production externally (the connector fragment is
+  a concern of CCM-container consumers; see `corba-ccm` + `corba-ccm-lib`).
+- **Feature flags:** `std` (default), `alloc` (via std).
 
-### Stabilitaet
+### Stability
 
-- Public-API: RC1-stabil.
-- AST-Eingabe-Form: gekoppelt an `zerodds-idl` AST-Stabilitaet.
-- Implied-IDL-Output-Form: durch OMG-Spec §7.3/§7.5 fixiert.
+- Public API: RC1-stable.
+- AST input form: coupled to `zerodds-idl` AST stability.
+- Implied-IDL output form: fixed by OMG spec §7.3/§7.5.
 
-### Conformance-Punkte
+### Conformance points
 
-- **Conformance-Punkt 1 (Implied-IDL-Transformation):** voll abgedeckt
-  (alle drei abgeleiteten Operations-Familien `sendc_*`, `*_excep`,
-  ReplyHandler-Callbacks).
-- **Conformance-Punkt 2 (Connector-Fragment):** Modell-Layer (`connector`,
-  `deployment`) ist abgedeckt; das Connector-Runtime-Hosting ist
-  CCM-Container-Konsumenten-Sache. Siehe Audit-File
+- **Conformance point 1 (implied-IDL transformation):** fully covered
+  (all three derived operation families `sendc_*`, `*_excep`,
+  ReplyHandler callbacks).
+- **Conformance point 2 (connector fragment):** the model layer (`connector`,
+  `deployment`) is covered; connector runtime hosting is a
+  concern of CCM-container consumers. See audit file
   `docs/spec-coverage/omg-ami4ccm-1.1.md`.

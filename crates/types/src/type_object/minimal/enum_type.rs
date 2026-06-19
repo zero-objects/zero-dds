@@ -9,10 +9,10 @@ use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 use crate::type_object::common::{NameHash, decode_seq, encode_seq};
 use crate::type_object::flags::{EnumLiteralFlag, EnumTypeFlag};
 
-/// Common-Header fuer Enum.
+/// Common header for enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CommonEnumeratedHeader {
-    /// Bit-Breite (8/16/32). Default 32.
+    /// Bit width (8/16/32). Default 32.
     pub bit_bound: u16,
 }
 
@@ -37,7 +37,7 @@ pub struct CommonEnumeratedLiteral {
 pub struct MinimalEnumeratedLiteral {
     /// Common.
     pub common: CommonEnumeratedLiteral,
-    /// Hash des Labels.
+    /// Hash of the label.
     pub detail: NameHash,
 }
 

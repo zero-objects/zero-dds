@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! E2E-Test fuer `zerodds-amqp-bridged` §7 Security-Wireup.
+//! E2E test for the `zerodds-amqp-bridged` §7 security wireup.
 //!
-//! Deckt:
-//! * §7.1 TLS — Out-Bound-Connector zu rustls-Mock-Broker (`amqps://`).
-//! * §7.2 SASL-PLAIN-Init-Response-Render aus Config.
-//! * §7.2 Bearer-Auth via `application-properties[zerodds:auth-token]`.
-//! * §7.3 Topic-ACL-Build aus Config-HashMap.
+//! Covers:
+//! * §7.1 TLS — outbound connector to a rustls mock broker (`amqps://`).
+//! * §7.2 SASL-PLAIN init-response render from config.
+//! * §7.2 bearer auth via `application-properties[zerodds:auth-token]`.
+//! * §7.3 topic-ACL build from the config HashMap.
 
 #![cfg(feature = "std")]
 #![allow(

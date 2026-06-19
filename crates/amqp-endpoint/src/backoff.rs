@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Exponential-Backoff fuer Reconnect-Loops.
+//! Exponential backoff for reconnect loops.
 //!
-//! Spec: `zerodds-amqp-bridge-daemon-1.0.md` §9.3 — Reconnect-Strategie
-//! mit Exponential-Backoff, gecappt bei `max_ms`.
+//! Spec: `zerodds-amqp-bridge-daemon-1.0.md` §9.3 — reconnect strategy
+//! with exponential backoff, capped at `max_ms`.
 //!
-//! Pure-Rust no_std. Der Caller kombiniert das mit einem AMQP-Connect-
-//! Versuch (TCP/TLS + AMQP-OPEN-Frame).
+//! Pure-Rust no_std. The caller combines this with an AMQP connect
+//! attempt (TCP/TLS + AMQP-OPEN frame).
 
 use core::time::Duration;
 
-/// Backoff-Konfiguration.
+/// Backoff configuration.
 ///
 /// Spec §9.3: initial=100ms, multiplier=2, max=30s; max_attempts
-/// `u32::MAX` ⇒ unendliche Retries (Daemon-Loop terminiert via Stop-
-/// Flag).
+/// `u32::MAX` ⇒ infinite retries (the daemon loop terminates via the
+/// stop flag).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BackoffConfig {
-    /// Initialer Backoff in ms.
+    /// Initial backoff in ms.
     pub initial_ms: u64,
-    /// Hard-Cap in ms.
+    /// Hard cap in ms.
     pub max_ms: u64,
-    /// Multiplier pro Fehlversuch.
+    /// Multiplier per failed attempt.
     pub multiplier: u64,
-    /// Max. Versuche (`u32::MAX` = unendlich).
+    /// Max. attempts (`u32::MAX` = infinite).
     pub max_attempts: u32,
 }
 
@@ -40,8 +40,8 @@ impl Default for BackoffConfig {
 }
 
 impl BackoffConfig {
-    /// Berechne den Delay fuer Versuch `attempt` (0-basiert).
-    /// Cap bei `max_ms`.
+    /// Compute the delay for attempt `attempt` (0-based).
+    /// Capped at `max_ms`.
     #[must_use]
     pub fn delay_for(&self, attempt: u32) -> Duration {
         let mut d = self.initial_ms;
@@ -55,7 +55,7 @@ impl BackoffConfig {
         Duration::from_millis(d)
     }
 
-    /// Pruefe, ob der `attempt`-te Versuch noch zulaessig ist.
+    /// Check whether the `attempt`-th attempt is still permitted.
     #[must_use]
     pub const fn allow(&self, attempt: u32) -> bool {
         attempt < self.max_attempts
@@ -95,7 +95,7 @@ mod tests {
             multiplier: 4,
             max_attempts: 100,
         };
-        // 100, 400, 1000 (gecapped), 1000, ...
+        // 100, 400, 1000 (capped), 1000, ...
         assert_eq!(b.delay_for(2), Duration::from_millis(1_000));
         assert_eq!(b.delay_for(20), Duration::from_millis(1_000));
     }

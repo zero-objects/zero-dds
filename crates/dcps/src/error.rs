@@ -1,100 +1,99 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! DCPS-Fehlertypen. An OMG DDS 1.4 §2.2.2.1 `ReturnCode_t` angelehnt,
-//! aber als Rust-Result<T, DdsError> — deutlich angenehmer als
-//! sprayed-error-codes.
+//! DCPS error types. Modeled on OMG DDS 1.4 §2.2.2.1 `ReturnCode_t`,
+//! but as a Rust `Result<T, DdsError>` — considerably nicer than
+//! sprayed error codes.
 
 extern crate alloc;
 use alloc::string::String;
 
-/// Fehler aus DCPS-Operationen. Halbwegs analog zum Spec-
-/// `ReturnCode_t`-Enum; wir lassen allerdings `RETCODE_OK` weg
-/// (stattdessen `Result::Ok`) und mergen `BAD_PARAMETER` +
-/// `PRECONDITION_NOT_MET` wo die Unterscheidung nichts hilft.
+/// Errors from DCPS operations. Roughly analogous to the spec
+/// `ReturnCode_t` enum; we omit `RETCODE_OK` (using `Result::Ok`
+/// instead) and merge `BAD_PARAMETER` + `PRECONDITION_NOT_MET` where
+/// the distinction doesn't help.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DdsError {
-    /// Ungueltiger Parameter (z.B. leerer Topic-Name).
+    /// Invalid parameter (e.g. an empty topic name).
     BadParameter {
-        /// Welcher Parameter, kurz.
+        /// Which parameter, briefly.
         what: &'static str,
     },
-    /// Operation paesst nicht zum Entity-Zustand (z.B. `write` auf
-    /// einen DataWriter, dessen Participant beendet wurde).
+    /// Operation does not fit the entity state (e.g. `write` on a
+    /// DataWriter whose participant has been shut down).
     PreconditionNotMet {
-        /// Kurze Beschreibung.
+        /// Short description.
         reason: &'static str,
     },
-    /// Unterliegende Wire/CDR-Operation ist gefehlschlagen.
+    /// Underlying wire/CDR operation failed.
     WireError {
-        /// Nachricht, statisch oder dynamisch.
+        /// Message, static or dynamic.
         message: String,
     },
-    /// QoS-Policy-Set nicht konsistent. Beispiel: Reliability=
-    /// Best-Effort + History=KeepAll ohne resource_limits — Spec
-    /// §2.2.3 nennt einige inkompatible Kombinationen.
+    /// QoS policy set is not consistent. Example: Reliability=
+    /// Best-Effort + History=KeepAll without resource_limits — Spec
+    /// §2.2.3 lists some incompatible combinations.
     InconsistentPolicy {
-        /// Welche Policy(s) kollidieren.
+        /// Which policy/policies collide.
         what: &'static str,
     },
-    /// Transport-Operation fehlgeschlagen.
+    /// Transport operation failed.
     TransportError {
-        /// Statisches Label des Fehlers.
+        /// Static label of the error.
         label: &'static str,
     },
-    /// Resource-Limit erreicht (max_samples, max_instances, etc.).
+    /// Resource limit reached (max_samples, max_instances, etc.).
     OutOfResources {
-        /// Welches Limit.
+        /// Which limit.
         what: &'static str,
     },
-    /// Timeout bei blockierender Operation (`take_w_timeout`, etc.).
+    /// Timeout on a blocking operation (`take_w_timeout`, etc.).
     Timeout,
-    /// Operation nicht implementiert in v1.2.
+    /// Operation not implemented in v1.2.
     Unsupported {
-        /// Kurz-Beschreibung.
+        /// Short description.
         feature: &'static str,
     },
-    /// Operation durch Security-Policy untersagt — DDS-Security 1.2
+    /// Operation forbidden by the security policy — DDS-Security 1.2
     /// §7.3.25, DCPS 1.4 §2.2.2.1.1 ReturnCode_t = NOT_ALLOWED_BY_SECURITY.
-    /// Der Permissions-/Access-Plugin hat das Lesen/Schreiben auf einem
-    /// geschuetzten Topic abgelehnt; der Caller darf nicht erfahren,
-    /// **welches** Permissions-Detail die Ursache war (Information-Leak).
+    /// The permissions/access plugin denied the read/write on a
+    /// protected topic; the caller must not learn **which** permissions
+    /// detail was the cause (information leak).
     NotAllowedBySecurity {
-        /// Kurze, sicherheits-unkritische Beschreibung.
+        /// Short, security-noncritical description.
         what: &'static str,
     },
-    /// `IllegalOperation` — die Operation passt strukturell nicht
-    /// (z.B. write() auf einen DataReader). DCPS 1.4 §2.2.2.1.1
+    /// `IllegalOperation` — the operation does not fit structurally
+    /// (e.g. write() on a DataReader). DCPS 1.4 §2.2.2.1.1
     /// ReturnCode_t = ILLEGAL_OPERATION.
     IllegalOperation {
-        /// Was nicht geht.
+        /// What does not work.
         what: &'static str,
     },
-    /// `ImmutablePolicy` — set_qos auf eine post-enable immutable QoS-
-    /// Policy. DCPS 1.4 §2.2.2.1.1 ReturnCode_t = IMMUTABLE_POLICY.
+    /// `ImmutablePolicy` — set_qos on a post-enable immutable QoS
+    /// policy. DCPS 1.4 §2.2.2.1.1 ReturnCode_t = IMMUTABLE_POLICY.
     ImmutablePolicy {
-        /// Welche Policy.
+        /// Which policy.
         policy: &'static str,
     },
-    /// `AlreadyDeleted` — Operation auf einer geloeschten Entity.
+    /// `AlreadyDeleted` — operation on a deleted entity.
     /// DCPS 1.4 §2.2.2.1.1 ReturnCode_t = ALREADY_DELETED.
     AlreadyDeleted,
-    /// `NoData` — read/take ohne neue Samples. DCPS 1.4 §2.2.2.1.1
-    /// ReturnCode_t = NO_DATA. Wird in der Praxis oft als leerer
-    /// Sample-Vec zurueckgegeben statt als Error.
+    /// `NoData` — read/take with no new samples. DCPS 1.4 §2.2.2.1.1
+    /// ReturnCode_t = NO_DATA. In practice often returned as an empty
+    /// sample Vec rather than as an error.
     NoData,
-    /// `Error` — generischer, nicht-spezifischer Fehler. DCPS 1.4
-    /// §2.2.2.1.1 ReturnCode_t = ERROR. Letzte Wahl wenn keine
-    /// spezifischere Variante passt; vermeidet Information-Leak
-    /// gegenueber dem Caller.
+    /// `Error` — generic, non-specific error. DCPS 1.4 §2.2.2.1.1
+    /// ReturnCode_t = ERROR. Last resort when no more specific variant
+    /// fits; avoids an information leak toward the caller.
     Other {
-        /// Kurze Beschreibung.
+        /// Short description.
         reason: &'static str,
     },
-    /// `NotEnabled` — Operation auf einer Entity, die noch nicht via
-    /// `enable()` aktiviert wurde. DCPS 1.4 §2.2.2.1.1 ReturnCode_t =
-    /// NOT_ENABLED. §2.1.2 — Entities sind nach `create_*` disabled
-    /// bis `enable()`; viele Ops MUESSEN dann NotEnabled liefern.
+    /// `NotEnabled` — operation on an entity that has not yet been
+    /// activated via `enable()`. DCPS 1.4 §2.2.2.1.1 ReturnCode_t =
+    /// NOT_ENABLED. §2.1.2 — entities are disabled after `create_*`
+    /// until `enable()`; many ops must then return NotEnabled.
     NotEnabled,
 }
 
@@ -124,11 +123,11 @@ impl core::fmt::Display for DdsError {
     }
 }
 
-/// OMG DDS 1.4 `ReturnCode_t`-Werte. Disjoint mit `Result::Ok` —
-/// `RETCODE_OK = 0` ist nicht in dieser Liste, weil Ok via
-/// `Result::Ok` repraesentiert wird.
+/// OMG DDS 1.4 `ReturnCode_t` values. Disjoint with `Result::Ok` —
+/// `RETCODE_OK = 0` is not in this list because Ok is represented via
+/// `Result::Ok`.
 pub mod return_code {
-    /// RETCODE_OK = 0 (nur fuer Wire-Mapping; Rust-API nutzt `Ok`).
+    /// RETCODE_OK = 0 (only for wire mapping; the Rust API uses `Ok`).
     pub const OK: i32 = 0;
     /// RETCODE_ERROR.
     pub const ERROR: i32 = 1;
@@ -159,10 +158,10 @@ pub mod return_code {
 }
 
 impl DdsError {
-    /// Mappt den Fehler auf den OMG `ReturnCode_t`-Integer-Wert
-    /// (DCPS 1.4 §2.2.2.1.1). `WireError` und `TransportError` werden
-    /// auf RETCODE_ERROR (1) abgebildet — das ist Spec-konform: beide
-    /// sind unspezifizierte Implementations-Fehler.
+    /// Maps the error to the OMG `ReturnCode_t` integer value
+    /// (DCPS 1.4 §2.2.2.1.1). `WireError` and `TransportError` are
+    /// mapped to RETCODE_ERROR (1) — this is spec-conformant: both are
+    /// unspecified implementation errors.
     #[must_use]
     pub fn as_return_code(&self) -> i32 {
         match self {
@@ -188,7 +187,7 @@ impl DdsError {
 #[cfg(feature = "std")]
 impl std::error::Error for DdsError {}
 
-/// Kurzform fuer DCPS-Ergebnisse.
+/// Shorthand for DCPS results.
 pub type Result<T> = core::result::Result<T, DdsError>;
 
 #[cfg(test)]
@@ -196,11 +195,11 @@ pub type Result<T> = core::result::Result<T, DdsError>;
 mod tests {
     use super::*;
 
-    // ---- §2.2.1.1.x ReturnCode_t Mapping ----
+    // ---- §2.2.1.1.x ReturnCode_t mapping ----
 
     #[test]
     fn rc_error_maps_for_wire_and_transport_and_other() {
-        // Spec §2.2.1.1.2 RC ERROR — generischer Fehler.
+        // Spec §2.2.1.1.2 RC ERROR — generic error.
         assert_eq!(
             DdsError::WireError {
                 message: "x".into()
@@ -316,8 +315,8 @@ mod tests {
 
     #[test]
     fn rc_constants_have_spec_values() {
-        // OMG DDS 1.4 §2.2.2.1.1 numerische Spec-Werte. Ein Drift hier
-        // bricht jeden Wire-Mapping-Test in C++/Java-Bridges.
+        // OMG DDS 1.4 §2.2.2.1.1 numeric spec values. A drift here
+        // breaks every wire-mapping test in the C++/Java bridges.
         assert_eq!(return_code::OK, 0);
         assert_eq!(return_code::ERROR, 1);
         assert_eq!(return_code::UNSUPPORTED, 2);
@@ -336,13 +335,13 @@ mod tests {
 
     #[test]
     fn rc_display_does_not_leak_security_details() {
-        // §2.2.2.1.1 NOT_ALLOWED_BY_SECURITY — Caller darf nicht den
-        // Permissions-Detail-Grund erfahren (Information-Leak).
+        // §2.2.2.1.1 NOT_ALLOWED_BY_SECURITY — the caller must not learn
+        // the permissions-detail reason (information leak).
         let e = DdsError::NotAllowedBySecurity { what: "Topic A" };
         let s = format!("{e}");
         assert!(s.contains("not allowed by security"));
         assert!(s.contains("Topic A"));
-        // Sollte NICHT konkrete Permissions-Internals erwaehnen.
+        // Should NOT mention concrete permissions internals.
         assert!(!s.to_lowercase().contains("permission file"));
         assert!(!s.to_lowercase().contains("ca cert"));
     }

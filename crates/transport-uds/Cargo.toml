@@ -26,13 +26,13 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps" }
-zerodds-transport = { version = "1.0.0-rc.1", path = "../transport" }
-# socket2 fuer SOCK_SEQPACKET + rohe sockaddr_un-Konstruktion
-# (abstract-namespace, macOS-Fallback auf DGRAM).
+zerodds-rtps = { version = "1.0.0-rc.3", path = "../rtps" }
+zerodds-transport = { version = "1.0.0-rc.3", path = "../transport" }
+# socket2 for SOCK_SEQPACKET + raw sockaddr_un construction
+# (abstract namespace, macOS fallback to DGRAM).
 socket2 = { workspace = true }
-# libc nur fuer sockaddr_un-Layout-Konstanten. shared_memory bringt
-# es transitiv, wir deklarieren es explizit.
+# libc only for sockaddr_un layout constants. shared_memory brings
+# it in transitively, we declare it explicitly.
 libc = { workspace = true, features = ["std"] }
 
 [dev-dependencies]

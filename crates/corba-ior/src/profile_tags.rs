@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! IOR Profile-Tags — Spec §13.6.7.1.
+//! IOR profile tags — spec §13.6.7.1.
 //!
-//! `ProfileId` ist ein `unsigned long`. OMG-registrierte Werte:
-//! * `TAG_INTERNET_IOP = 0` — IIOP-Profile (Spec §15.7.2 ProfileBody).
-//! * `TAG_MULTIPLE_COMPONENTS = 1` — Profile aus Components ohne
-//!   eigenes Transport-Mapping (Spec §13.6.4).
-//! * `TAG_SCCP_IOP = 2` — Telco-SCCP.
-//! * `TAG_UIPMC = 3` — Unreliable IP Multicast.
-//! * `TAG_MOB_INET_IOP = 4` — Mobile-IIOP.
+//! `ProfileId` is an `unsigned long`. OMG-registered values:
+//! * `TAG_INTERNET_IOP = 0` — IIOP profile (spec §15.7.2 ProfileBody).
+//! * `TAG_MULTIPLE_COMPONENTS = 1` — profile from components without its
+//!   own transport mapping (spec §13.6.4).
+//! * `TAG_SCCP_IOP = 2` — telco SCCP.
+//! * `TAG_UIPMC = 3` — unreliable IP multicast.
+//! * `TAG_MOB_INET_IOP = 4` — mobile IIOP.
 
-/// `ProfileId` — Spec §13.6.7.1. Wir modellieren als Enum, halten aber
-/// einen Sentinel `Other(u32)` fuer Vendor-/Unbekannt-Tags.
+/// `ProfileId` — spec §13.6.7.1. We model it as an enum but keep a
+/// sentinel `Other(u32)` for vendor/unknown tags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProfileId {
     /// `TAG_INTERNET_IOP = 0`.
@@ -25,12 +25,12 @@ pub enum ProfileId {
     Uipmc,
     /// `TAG_MOB_INET_IOP = 4`.
     MobInetIop,
-    /// Andere/Vendor-spezifische Tag-Wert.
+    /// Other/vendor-specific tag value.
     Other(u32),
 }
 
 impl ProfileId {
-    /// Roher `unsigned long`-Wert.
+    /// Raw `unsigned long` value.
     #[must_use]
     pub const fn as_u32(self) -> u32 {
         match self {
@@ -43,7 +43,7 @@ impl ProfileId {
         }
     }
 
-    /// Konstruiert aus einem `unsigned long` (alle Werte zulaessig).
+    /// Constructs from an `unsigned long` (all values are valid).
     #[must_use]
     pub const fn from_u32(value: u32) -> Self {
         match value {

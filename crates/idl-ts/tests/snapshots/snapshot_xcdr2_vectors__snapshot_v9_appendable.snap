@@ -65,16 +65,18 @@ export const VTypeSupport: DdsTopicType<V> = {
     typeName: "V",
     isKeyed: false,
     extensibility: "appendable",
-    encode(s: V, endian: EndianMode = "le"): Uint8Array {
-        const w = new Xcdr2Writer(endian);
+    encodeInto(w: Xcdr2Writer, s: V): void {
         const _tok = w.beginAppendable();
         w.writeInt32(s.a);
         w.writeInt32(s.b);
         w.endAppendable(_tok);
+    },
+    encode(s: V, endian: EndianMode = "le"): Uint8Array {
+        const w = new Xcdr2Writer(endian);
+        this.encodeInto(w, s);
         return w.toBytes();
     },
-    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): V {
-        const r = new Xcdr2Reader(bytes, offset, length, "le");
+    decodeFrom(r: Xcdr2Reader): V {
         const _tok = r.beginAppendable();
         const _f_a: number = r.readInt32();
         const _f_b: number = r.readInt32();
@@ -83,6 +85,10 @@ export const VTypeSupport: DdsTopicType<V> = {
             a: _f_a,
             b: _f_b,
         };
+    },
+    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): V {
+        const r = new Xcdr2Reader(bytes, offset, length, "le");
+        return this.decodeFrom(r);
     },
     keyHash(s: V): Uint8Array {
         return new Uint8Array(16);

@@ -1,32 +1,92 @@
-.TH ZERODDS-ADMIN 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.TH ZERODDS-ADMIN 1 "June 2026" "ZeroDDS 1.0.0-rc.3" "User Commands"
 .SH NAME
-zerodds-admin \- ZeroDDS administration CLI
+zerodds-admin \- ZeroDDS operator CLI for live domains and DDS-XML configs
 .SH SYNOPSIS
 .B zerodds-admin
-.I subcommand
-[options]
+.I group verb
+[\fIargs\fR]
+[\fB\-\-json\fR]
+[\fB\-\-timeout\-ms\fR \fIT\fR]
 .SH DESCRIPTION
-Inspect topics, set QoS, query stats and orchestrate bridge daemons.
-Talks to the inspect-endpoint of running daemons over UDS or TCP.
+.B zerodds-admin
+is the operator front-end for ZeroDDS. It has two families of
+sub-commands: the
+.B live
+groups join a running DDS domain over RTPS and report what is on the
+wire, and the
+.B offline
+groups load a DDS-XML deployment file and analyze it without touching
+the network.
+.PP
+Every data-bearing command accepts
+.B \-\-json
+for machine-readable output.
 .SH SUBCOMMANDS
+.SS Live (joins the domain over RTPS)
 .TP
-.B topics list
-List all known DDS topics, with type, partition, sample-count.
+.B domain inspect \fIID\fR
+Probe domain \fIID\fR and list the discovered participants, each with
+its writer and reader endpoints (topic name, IDL type, RELIABLE vs
+BEST_EFFORT, TRANSIENT_LOCAL vs VOLATILE), grouped by participant GUID.
 .TP
-.B topics show \fITOPIC\fR
-Pretty-print the live SampleInfo + last 16 samples.
+.B discovery snapshot \fIID\fR
+Probe domain \fIID\fR and print a raw SPDP/SEDP snapshot: the
+participant list plus discovered publication / subscription counts.
+.SS Offline (DDS-XML, no network)
 .TP
-.B qos set \fIENTITY\fR \fIQOS_FILE.xml\fR
-Override QoS at runtime (subject to ImmutableQoS rules).
+.B config inspect \fIFILE.xml\fR
+Load a DDS-XML deployment and render a domain-id-centric topology
+(participants and their writers/readers grouped by resolved domain id).
 .TP
-.B bridges status
-Report each registered bridge daemon, its uptime, route count, last error.
+.B qos validate \fIFILE.xml\fR
+Check DDS-XML well-formedness and parse every library (qos / domain /
+participant). Exit non-zero on a parse error.
 .TP
-.B reload \fIBRIDGE\fR
-Send SIGHUP to the named bridge.
+.B qos check \fIFILE.xml\fR
+Validate Request-vs-Offered (RxO) QoS compatibility of every
+writer\(timesreader pair that shares a topic (DDS 1.4 \(sc2.2.3
+compatibility matrix). Inline QoS and \fBqos_profile_ref\fR inheritance
+are both resolved. Exit 1 if any pair is incompatible.
+.SH OPTIONS
+.TP
+.B \-\-json
+Emit machine-readable JSON instead of text.
+.TP
+.BR \-\-timeout\-ms " " \fIT\fR
+Observation window in milliseconds for the live groups. Default: 2000.
+.TP
+.BR \-h ", " \-\-help
+Show usage.
+.SH EXIT STATUS
+.TP
+.B 0
+Success / all QoS pairs compatible.
+.TP
+.B 1
+Validation failure (incompatible QoS, parse error) or probe error.
+.TP
+.B 2
+CLI parse error / bad invocation.
+.SH EXAMPLES
+Inspect a running domain and grab a JSON topology:
+.PP
+.RS
+.nf
+zerodds-admin domain inspect 0 --json
+.fi
+.RE
+.PP
+Catch incompatible QoS in a deployment before rollout:
+.PP
+.RS
+.nf
+zerodds-admin qos check deployment.xml
+.fi
+.RE
 .SH SEE ALSO
+.BR zerodds-xmlc (1),
+.BR zerodds-snitch (1),
 .BR zerodds-spy (1),
-.BR zerodds-monitor (1),
-.BR zerodds-snitch (1).
+.BR zerodds-monitor (1)
 .SH AUTHORS
-ZeroDDS Contributors.
+ZeroDDS Contributors <release@zerodds.org>

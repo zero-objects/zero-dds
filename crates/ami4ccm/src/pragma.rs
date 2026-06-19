@@ -1,56 +1,56 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `#pragma ami4ccm`-Parser — Spec §7.7.
+//! `#pragma ami4ccm` parser — Spec §7.7.
 //!
-//! Spec §7.7 (S. 12) definiert zwei Pragma-Formen:
+//! Spec §7.7 (p. 12) defines two pragma forms:
 //! ```text
 //! #pragma ami4ccm interface "<fully qualified interface name>"
 //! #pragma ami4ccm receptacle "<fully qualified receptacle name>"
 //! ```
 //!
-//! Beide Pragmas sind Marker fuer den AMI4CCM-aware IDL-Compiler:
-//! * `interface` — markiert eine Interface-Definition als AMI4CCM-
-//!   enabled, d.h. fuer die werden die Implied-IDL-Interfaces
-//!   (`AMI4CCM_<Iface>` + `AMI4CCM_<Iface>ReplyHandler`) generiert.
-//! * `receptacle` — markiert ein Component-Receptacle als AMI4CCM-
-//!   enabled, d.h. der Component-Context bekommt eine zusaetzliche
-//!   Methode `get_connection_sendc_<recep>()` (Spec §7.7, S. 13).
+//! Both pragmas are markers for the AMI4CCM-aware IDL compiler:
+//! * `interface` — marks an interface definition as AMI4CCM-enabled,
+//!   i.e. the implied IDL interfaces (`AMI4CCM_<Iface>` +
+//!   `AMI4CCM_<Iface>ReplyHandler`) are generated for it.
+//! * `receptacle` — marks a component receptacle as AMI4CCM-enabled,
+//!   i.e. the component context gains an additional method
+//!   `get_connection_sendc_<recep>()` (Spec §7.7, p. 13).
 //!
-//! Diese Pragmas sind **textual** im IDL-File und kommen vor der
-//! eigentlichen `interface`-/`component`-Definition. Wir parsen sie
-//! aus einer Source-Line.
+//! These pragmas are **textual** in the IDL file and appear before the
+//! actual `interface`/`component` definition. We parse them from a
+//! source line.
 
 use alloc::string::String;
 use core::fmt;
 
-/// Geparste AMI4CCM-Pragma-Variante (Spec §7.7).
+/// Parsed AMI4CCM pragma variant (Spec §7.7).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ami4CcmPragma {
     /// `#pragma ami4ccm interface "<fully qualified interface name>"`.
     Interface {
-        /// Fully-qualified Name (z.B. `Stock::StockManager` oder
+        /// Fully-qualified name (e.g. `Stock::StockManager` or
         /// `StockManager`).
         name: String,
     },
     /// `#pragma ami4ccm receptacle "<fully qualified receptacle name>"`.
     Receptacle {
-        /// Fully-qualified Name `Component::receptacle` (z.B.
+        /// Fully-qualified name `Component::receptacle` (e.g.
         /// `Client::manager`).
         name: String,
     },
 }
 
-/// Parser-Fehler.
+/// Parser error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParsePragmaError {
-    /// Line ist kein `#pragma ami4ccm`.
+    /// Line is not a `#pragma ami4ccm`.
     NotAmi4ccmPragma,
-    /// Tag ist weder `interface` noch `receptacle`.
+    /// Tag is neither `interface` nor `receptacle`.
     UnknownTag(String),
-    /// Quoted-String fehlt oder ist nicht abgeschlossen.
+    /// Quoted string is missing or unterminated.
     MalformedQuotedName,
-    /// Empty Name innerhalb der Quotes.
+    /// Empty name inside the quotes.
     EmptyName,
 }
 
@@ -68,15 +68,15 @@ impl fmt::Display for ParsePragmaError {
 #[cfg(feature = "std")]
 impl std::error::Error for ParsePragmaError {}
 
-/// Parst eine Source-Line in einen [`Ami4CcmPragma`].
+/// Parses a source line into an [`Ami4CcmPragma`].
 ///
-/// Akzeptiert Whitespace-Variationen und ignoriert Trailing-Whitespace.
-/// Lines, die nicht mit `#pragma ami4ccm` beginnen, geben
-/// [`ParsePragmaError::NotAmi4ccmPragma`] zurueck (so kann der Caller
-/// non-AMI4CCM-Pragmas einfach skippen).
+/// Accepts whitespace variations and ignores trailing whitespace.
+/// Lines that do not start with `#pragma ami4ccm` return
+/// [`ParsePragmaError::NotAmi4ccmPragma`] (so the caller can simply
+/// skip non-AMI4CCM pragmas).
 ///
 /// # Errors
-/// Siehe [`ParsePragmaError`].
+/// See [`ParsePragmaError`].
 pub fn parse_pragma(line: &str) -> Result<Ami4CcmPragma, ParsePragmaError> {
     let trimmed = line.trim();
     let after_hash = trimmed
@@ -91,7 +91,7 @@ pub fn parse_pragma(line: &str) -> Result<Ami4CcmPragma, ParsePragmaError> {
         .strip_prefix("ami4ccm")
         .ok_or(ParsePragmaError::NotAmi4ccmPragma)?
         .trim_start();
-    // Tag (interface / receptacle) — alphabetisch, bis Whitespace.
+    // Tag (interface / receptacle) — alphabetic, up to whitespace.
     let tag_end = after_ami
         .find(char::is_whitespace)
         .unwrap_or(after_ami.len());
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn parses_interface_pragma() {
-        // Spec §7.7 Beispiel.
+        // Spec §7.7 example.
         let p = parse_pragma(r#"#pragma ami4ccm interface "StockManager""#).expect("valid pragma");
         assert_eq!(
             p,
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn parses_receptacle_pragma() {
-        // Spec §7.7 Beispiel — receptacle mit Component-Scope.
+        // Spec §7.7 example — receptacle with component scope.
         let p =
             parse_pragma(r#"#pragma ami4ccm receptacle "Client::manager""#).expect("valid pragma");
         assert_eq!(

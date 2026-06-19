@@ -2,6 +2,10 @@
 
 **Quelle:** `docs/specs/zerodds-async-1.0.md` (Vendor-Spec, draft 2026-05-04).
 
+Implementation:
+
+- `crates/dcps-async/` — Async-DCPS-API (Futures/Streams über DCPS).
+
 ## §1 Type-Mapping zur Sync-API
 
 ### §1.1 AsyncDomainParticipantFactory
@@ -40,7 +44,7 @@
 - **Anforderung:** `async fn write(&self, &T) -> Result<()>`; suspendiert bei OutOfResources statt zu blockieren.
 - **Repo:** `crates/dcps-async/src/writer.rs::write` (yield_for-Retry-Loop bis `reliability.max_blocking_time` abgelaufen ist; Spec §5.1).
 - **Tests:** `tests/smoke.rs::{writer_write_async_offline, write_returns_timeout_after_max_blocking_when_queue_full}`
-- **Status:** done — A9b (2026-05-04). Bei OutOfResources yield + retry; Timeout-Result-Pfad mit endlicher max_blocking_time getestet.
+- **Status:** done — bei OutOfResources yield + retry; Timeout-Result-Pfad mit endlicher max_blocking_time getestet.
 
 ### §2.1.2 AsyncDataWriter::register_instance
 - **Anforderung:** `async fn` analog sync.
@@ -49,7 +53,7 @@
 - **Status:** done
 
 ### §2.1.3 AsyncDataWriter::dispose
-- **Anforderung:** `async fn`; loest Wire-Lifecycle DISPOSED.
+- **Anforderung:** `async fn`; löst Wire-Lifecycle DISPOSED.
 - **Repo:** `crates/dcps-async/src/writer.rs::dispose`
 - **Tests:** `tests/smoke.rs::writer_register_dispose_unregister_async`
 - **Status:** done
@@ -69,14 +73,14 @@
 ### §2.1.6 AsyncDataWriter::matched_subscription_count
 - **Anforderung:** synchron — non-async-Eigenschaft.
 - **Repo:** `crates/dcps-async/src/writer.rs::matched_subscription_count`
-- **Tests:** indirekt ueber wait_for_matched_subscription
+- **Tests:** indirekt über wait_for_matched_subscription
 - **Status:** done
 
 ### §2.2.1 AsyncDataReader::take_stream
 - **Anforderung:** `fn take_stream() -> impl Stream<Item = Sample<T>> + Send`.
 - **Repo:** `crates/dcps-async/src/reader.rs::take_stream` + `SampleStream`
 - **Tests:** kompiliert + builder-Test (smoke)
-- **Status:** partial — Stream baut auf detached-thread-Sleep + Polling; nativer Reader-Slot-Waker (Spec §3) ist Phase-2.
+- **Status:** done — Stream nutzt den nativen Reader-Slot-Waker (`register_user_reader_waker`, Wake bei Sample-Arrival, kein Polling); im Offline-Mode dient detached-thread-Sleep als Fallback (Spec §3.3).
 
 ### §2.2.2 AsyncDataReader::take
 - **Anforderung:** `async fn take(timeout) -> Result<Vec<Sample<T>>>`.
@@ -87,7 +91,7 @@
 ### §2.2.3 AsyncDataReader::wait_for_matched_publication
 - **Anforderung:** dito wait_for_matched_subscription.
 - **Repo:** `crates/dcps-async/src/reader.rs::wait_for_matched_publication`
-- **Tests:** indirekt ueber publication_matched_stream-Test
+- **Tests:** indirekt über publication_matched_stream-Test
 - **Status:** done
 
 ### §2.2.4 AsyncDataReader::matched_publication_count
@@ -114,23 +118,23 @@
 - **Anforderung:** Pending-Branch speichert `cx.waker().clone()` im Slot.
 - **Repo:** `crates/dcps-async/src/reader.rs::SampleStream::poll_next` (Live-Mode via `runtime_handle` + `register_user_reader_waker`)
 - **Tests:** kompiliert
-- **Status:** done — Live-Mode nativ; Offline-Mode behaelt detached-thread-Fallback.
+- **Status:** done — Live-Mode nativ; Offline-Mode behält detached-thread-Fallback.
 
 ## §4 Tokio-Glue (Feature)
 
 ### §4.1 spawn_in_tokio
 - **Anforderung:** Mit `--features tokio-glue`: AsyncDomainParticipantFactory::spawn_in_tokio.
-- **Repo:** `crates/dcps-async/src/lib.rs::yield_for` (feature-Branch nutzt tokio::time::sleep)
-- **Tests:** —
-- **Status:** partial — yield_for ist tokio-aware; spawn_in_tokio fuer Tick-Loop ist offen.
+- **Repo:** `crates/dcps-async/src/factory.rs::AsyncDomainParticipantFactory::spawn_in_tokio` (+ `_with_qos`); treibt den DDS-Tick-Loop als tokio-Task statt dediziertem `std::thread` (via `RuntimeConfig::external_tick` + `DcpsRuntime::tick_driver()`).
+- **Tests:** `crates/dcps/tests/external_tick.rs` + `crates/dcps-async/tests/spawn_in_tokio.rs`.
+- **Status:** done — `spawn_in_tokio` treibt den Tick im tokio-Executor (spart einen Thread pro Participant).
 
 ## §5 Backpressure & Resource-Limits
 
 ### §5.1 write-Future suspendiert bei OutOfResources
-- **Anforderung:** Bei DdsError::OutOfResources awaitet drain_notify; bei OK kehrt zurueck.
-- **Repo:** `crates/dcps-async/src/writer.rs::AsyncDataWriter::write` — yield_for-Retry-Loop bis `reliability.max_blocking_time` ablaeuft (dann `DdsError::Timeout`); Caller-Future bleibt schlafend statt zu spinnen.
+- **Anforderung:** Bei DdsError::OutOfResources awaitet drain_notify; bei OK kehrt zurück.
+- **Repo:** `crates/dcps-async/src/writer.rs::AsyncDataWriter::write` — yield_for-Retry-Loop bis `reliability.max_blocking_time` abläuft (dann `DdsError::Timeout`); Caller-Future bleibt schlafend statt zu spinnen.
 - **Tests:** `tests/smoke.rs::write_returns_timeout_after_max_blocking_when_queue_full`
-- **Status:** done — A9b (2026-05-04). Pragmatischer Polling-Ansatz; nativer drain-Notify-Hook bleibt offen fuer Phase-3, sobald der Sync-Writer einen `notify_when_drained()`-Channel exposed.
+- **Status:** done — die write-Future bleibt schlafend (yield_for-Retry bis `max_blocking_time`, dann `Timeout`) statt zu spinnen; ein nativer drain-Notify-Hook statt Retry wäre eine mögliche Optimierung, sobald der Sync-Writer einen Drain-Channel exposed.
 
 ## §6 Listener-Bridge
 
@@ -138,7 +142,7 @@
 - **Anforderung:** `fn data_available_stream() -> impl Stream<Item = ()> + Send`.
 - **Repo:** `crates/dcps-async/src/reader.rs::DataAvailableStream` (Polling-Probe: `reader.is_ready()`-Loop, kein konsumieren).
 - **Tests:** kompiliert (lib + tests).
-- **Status:** done — Listener-Stream baut auf nicht-konsumierender Probe; nativer Wakeup haengt an §3 (Reader-Slot-Waker), der live ist.
+- **Status:** done — Listener-Stream baut auf nicht-konsumierender Probe; nativer Wakeup hängt an §3 (Reader-Slot-Waker), der live ist.
 
 ### §6.2 publication_matched_stream
 - **Anforderung:** `fn publication_matched_stream() -> impl Stream<Item = PublicationMatchedStatus> + Send`.
@@ -148,7 +152,7 @@
 
 ## §7 Error-Mapping
 
-### §7.1 DdsError unveraendert
+### §7.1 DdsError unverändert
 - **Anforderung:** Future::Output ist `Result<T, DdsError>` ohne Async-spezifische Error-Varianten.
 - **Repo:** alle Methoden in `crates/dcps-async/src/{writer,reader}.rs` returnen `Result<T, DdsError>`.
 - **Tests:** `tests/smoke.rs::wait_for_matched_subscription_times_out_when_no_reader` matcht `DdsError::Timeout`.
@@ -160,7 +164,7 @@
 - **Anforderung:** Pro Sync-Test in `crates/dcps/tests/` einen async-Pendant.
 - **Repo:** `crates/dcps-async/tests/{smoke,proptest_backpressure,cyclone_live_async_e2e}.rs`
 - **Tests:** smoke deckt happy-path; proptest deckt Random-Sequenzen.
-- **Status:** done — Phase-2 Coverage live.
+- **Status:** done — smoke + proptest + Cyclone-Live-E2E vorhanden.
 
 ### §8.2 Tokio-Test-Runner
 - **Anforderung:** `tokio::test` als default; smol-Variante als feature-Probe.
@@ -168,16 +172,16 @@
 - **Tests:** Cargo.toml dev-dep `tokio = { features = ["rt-multi-thread", "macros", ...] }`.
 - **Status:** done — tokio-Default; smol-Variante bleibt offen (kein Mehrwert solange tokio-glue der einzige Runtime-Hook ist).
 
-### §8.3 proptest ueber Channel-Backpressure
-- **Anforderung:** `proptest` ueber zufaellige write/take-Sequenzen — Backpressure-Invariante.
+### §8.3 proptest über Channel-Backpressure
+- **Anforderung:** `proptest` über zufällige write/take-Sequenzen — Backpressure-Invariante.
 - **Repo:** `crates/dcps-async/tests/proptest_backpressure.rs::write_take_sequence_holds_invariants`.
-- **Tests:** 16 Cases mit zufaelliger Capacity ∈ [1,8] + Op-Vec ∈ [0,32]; verifiziert: bei voller Queue MUSS write Timeout liefern, bei freier Queue MUSS Ok kommen.
-- **Status:** done — F12+A9b-Sprint (2026-05-04).
+- **Tests:** 16 Cases mit zufälliger Capacity ∈ [1,8] + Op-Vec ∈ [0,32]; verifiziert: bei voller Queue MUSS write Timeout liefern, bei freier Queue MUSS Ok kommen.
+- **Status:** done.
 
 ### §8.4 E2E gegen Cyclone-Live
 - **Anforderung:** E2E gegen Cyclone-Live wie Sync; Latenz-Vergleich Sync vs Async.
 - **Repo:** `crates/dcps-async/tests/cyclone_live_async_e2e.rs::async_reader_does_not_panic_against_live_cyclone_pub` (`#[ignore]`-gated, SSH-Lab-Setup); Latenz-Vergleich via `crates/dcps-async/benches/write_async_vs_sync.rs` + CI bench-main.
-- **Tests:** Live-E2E mit `LLVM_HOST_AVAILABLE=1` + `cargo test -- --ignored` opt-in.
+- **Tests:** Live-E2E mit `BENCH_HOST_AVAILABLE=1` + `cargo test -- --ignored` opt-in.
 - **Status:** done — Live-Test als #[ignore]-Opt-in eingerichtet, Quantitative Latenz-Antwort liefert §9.1.
 
 ## §9 Performance-Targets
@@ -185,14 +189,14 @@
 ### §9.1 write().await Latenz
 - **Anforderung:** ≤ 5 % Overhead gegen sync-write (criterion bench).
 - **Repo:** `crates/dcps-async/benches/write_async_vs_sync.rs` + `.gitlab-ci.yml::bench-main` (`cargo bench -p zerodds-dcps-async --bench write_async_vs_sync -- --save-baseline pre`) + `bench-compare` Regression-Check.
-- **Tests:** Bench laeuft auf jedem main-Push; Regression > 10% rot via `tests/perf/check_bench_regressions.py`.
-- **Status:** done — F12+A9b-Sprint (2026-05-04). Bench in CI-Pipeline aktiv.
+- **Tests:** Bench läuft auf jedem main-Push; Regression > 10% rot via `tests/perf/check_bench_regressions.py`.
+- **Status:** done — Bench in CI-Pipeline aktiv.
 
 ### §9.2 take_stream Throughput
 - **Anforderung:** Kein Sample-Verlust durch Polling-Latenz; 100 % Sample-Rate.
 - **Repo:** —
 - **Tests:** —
-- **Status:** open — Bench fuer take_stream-Throughput offen.
+- **Status:** open — Bench für take_stream-Throughput offen.
 
 ### §9.3 Allokation pro write()
 - **Anforderung:** 0 Heap-Allokationen extra gegen sync.
@@ -204,25 +208,25 @@
 
 ### D-1: Runtime-agnostische API als Default
 - **Wahl:** Public-API liefert `impl Future`/`impl Stream` ohne tokio-Pin.
-- **Begruendung:** zerodds soll nicht eine Runtime erzwingen; Caller waehlt.
-- **Konsequenz:** Wakeup-Pfad nutzt eigenen Waker (detached-thread-Sleep) statt tokio::sync::Notify (siehe §3); tokio-glue-Feature schaltet auf tokio-Wakeup um.
+- **Begründung:** zerodds soll nicht eine Runtime erzwingen; Caller wählt.
+- **Konsequenz:** Wakeup-Pfad nutzt einen eigenen Waker (nativen Reader-Slot-Waker; detached-thread-Sleep nur als Offline-Fallback) statt tokio::sync::Notify (siehe §3); das tokio-glue-Feature schaltet auf tokio-Wakeup um.
 
 ### D-2: Tokio-Glue als optional Feature
 - **Wahl:** `--features tokio-glue` aktiviert tokio-spezifische Convenience.
-- **Begruendung:** Tokio dominiert (~85 % Marktanteil); Glue bietet Komfort ohne Zwang.
+- **Begründung:** Tokio dominiert (~85 % Marktanteil); Glue bietet Komfort ohne Zwang.
 - **Konsequenz:** Default-Build hat keine `tokio`-Dep; Workspace-CI bleibt schlank.
 
 ### D-3: API-Symmetrie zur Sync-API
 - **Wahl:** Methodennamen identisch (write, take, dispose, ...) — kein `_async`-Suffix.
-- **Begruendung:** Newtype-Pattern macht den Switch sync↔async zu einem reinen Type-Wechsel; Caller-Code aendert sich nicht.
+- **Begründung:** Newtype-Pattern macht den Switch sync↔async zu einem reinen Type-Wechsel; Caller-Code ändert sich nicht.
 - **Konsequenz:** Caller MUSS importieren `AsyncDataWriter` statt `DataWriter` — kein name-collision-Risk weil different module/path.
 
 ### D-4: WaitSet bleibt sync
 - **Wahl:** WaitSet wird NICHT async-konvertiert in 1.0.
-- **Begruendung:** WaitSet ist Spec-DCPS-Konstrukt mit klaren Block-Semantik; `Stream<Item = ConditionEvent>` ist eine separate API-Schicht und braucht eigenes Design.
+- **Begründung:** WaitSet ist Spec-DCPS-Konstrukt mit klaren Block-Semantik; `Stream<Item = ConditionEvent>` ist eine separate API-Schicht und braucht eigenes Design.
 - **Konsequenz:** Caller, der WaitSet braucht, nutzt sync-API. Async-Pattern via take_stream + listener-streams.
 
 ### D-5: Listener-Bridge als Stream-Wrapper
 - **Wahl:** sync-Listeners bleiben; async-Bridge bietet Stream-Variante.
-- **Begruendung:** Spec §2.2.2.4.4-Listeners sind Callbacks — async-Caller will lieber `while let Some(ev) = stream.next().await`.
+- **Begründung:** Spec §2.2.2.4.4-Listeners sind Callbacks — async-Caller will lieber `while let Some(ev) = stream.next().await`.
 - **Konsequenz:** Listener-Streams sind separate Methoden; sync-Listener-Set bleibt Default.

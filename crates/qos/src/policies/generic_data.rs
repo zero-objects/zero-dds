@@ -2,20 +2,20 @@
 // Copyright 2026 ZeroDDS Contributors
 //! User/Group/Topic DataQosPolicy (DDS 1.4 §2.2.3.1–3).
 //!
-//! Alle drei teilen dieselbe Wire-Form: opaque `sequence<octet>` =
-//! u32 length + N × octet (plus CDR-Alignment-Padding auf 4 byte).
+//! All three share the same wire form: opaque `sequence<octet>` =
+//! u32 length + N × octet (plus CDR alignment padding to 4 bytes).
 
 use alloc::vec::Vec;
 
 use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 
-/// DoS-Cap pro opaque-Data-Block. 64 KiB deckt realistische
-/// UserData/TopicData/GroupData-Payloads ab (ueblich <1 KiB); groesseres
-/// wird als `LengthExceeded` abgelehnt. Spec legt keine harte Grenze
-/// fest, aber Cyclone DDS nutzt ~1 MiB als "vernuenftig".
+/// DoS cap per opaque data block. 64 KiB covers realistic
+/// UserData/TopicData/GroupData payloads (usually <1 KiB); larger
+/// is rejected as `LengthExceeded`. The spec sets no hard limit,
+/// but Cyclone DDS uses ~1 MiB as "reasonable".
 pub const MAX_OPAQUE_LEN: usize = 64 * 1024;
 
-/// Gemeinsame Wire-Form: opaque sequence<octet>.
+/// Shared wire form: opaque sequence<octet>.
 fn encode_opaque(w: &mut BufferWriter, bytes: &[u8]) -> Result<(), EncodeError> {
     let len = u32::try_from(bytes.len()).map_err(|_| EncodeError::ValueOutOfRange {
         message: "opaque data length exceeds u32::MAX",
@@ -26,7 +26,7 @@ fn encode_opaque(w: &mut BufferWriter, bytes: &[u8]) -> Result<(), EncodeError> 
 
 fn decode_opaque(r: &mut BufferReader<'_>) -> Result<Vec<u8>, DecodeError> {
     let len = r.read_u32()? as usize;
-    // Harter DoS-Cap: MAX_OPAQUE_LEN.
+    // Hard DoS cap: MAX_OPAQUE_LEN.
     if len > MAX_OPAQUE_LEN {
         return Err(DecodeError::LengthExceeded {
             announced: len,
@@ -34,9 +34,9 @@ fn decode_opaque(r: &mut BufferReader<'_>) -> Result<Vec<u8>, DecodeError> {
             offset: 0,
         });
     }
-    // read_bytes liefert einen Slice — direkt kopieren, keine Vec-
-    // with_capacity-Optimierung (die extend_from_slice re-allokiert
-    // sowieso wenn noetig).
+    // read_bytes returns a slice — copy directly, no Vec
+    // with_capacity optimization (extend_from_slice re-allocates
+    // anyway if needed).
     Ok(r.read_bytes(len)?.to_vec())
 }
 
@@ -51,7 +51,7 @@ impl UserDataQosPolicy {
     /// Wire-Encoding.
     ///
     /// # Errors
-    /// `ValueOutOfRange` bei u32-Ueberlauf.
+    /// `ValueOutOfRange` on u32 overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         encode_opaque(w, &self.value)
     }
@@ -78,7 +78,7 @@ impl TopicDataQosPolicy {
     /// Wire-Encoding.
     ///
     /// # Errors
-    /// `ValueOutOfRange` bei u32-Ueberlauf.
+    /// `ValueOutOfRange` on u32 overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         encode_opaque(w, &self.value)
     }
@@ -105,7 +105,7 @@ impl GroupDataQosPolicy {
     /// Wire-Encoding.
     ///
     /// # Errors
-    /// `ValueOutOfRange` bei u32-Ueberlauf.
+    /// `ValueOutOfRange` on u32 overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         encode_opaque(w, &self.value)
     }

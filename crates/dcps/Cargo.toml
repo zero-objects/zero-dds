@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "DCPS Public API (OMG DDS 1.4 §2.2.2): DomainParticipant, Publisher, Subscriber, Topic, DataWriter, DataReader. Live-Runtime mit SPDP/SEDP/WLP, Built-in-Topics, TypeLookup-Service, Durability-Backend."
+description = "DCPS public API (OMG DDS 1.4 §2.2.2): DomainParticipant, Publisher, Subscriber, Topic, DataWriter, DataReader. Live runtime with SPDP/SEDP/WLP, built-in topics, TypeLookup service, durability backend."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-dcps"
 readme = "README.md"
@@ -25,95 +25,117 @@ default = ["std", "metrics"]
 std = ["alloc"]
 alloc = []
 safety = []
-# Opt-in: Security-Gate in den UDP-Hot-Path einziehen
-# (DDS-Security 1.2). Ohne dieses Feature laeuft die Runtime mit
-# plaintext-RTPS.
-security = ["zerodds-security-runtime"]
-# Hook-Points fuer zerodds-monitor-1.0 §2.3 (DCPS-Domain). Default an.
+# Opt-in: pull the security gate into the UDP hot path
+# (DDS-Security 1.2). Without this feature the runtime runs with
+# plaintext RTPS.
+security = ["zerodds-security-runtime", "dep:zerodds-security"]
+# Hook points for zerodds-monitor-1.1 §2.3 (DCPS domain). On by default.
 metrics = ["std", "dep:zerodds-monitor"]
-# Cross-Vendor-Live-Interop. Aktiviert FastDDS- und Cyclone-Live-
-# Tests gegen den Lab-Host. Ohne dieses Feature bleiben die Tests
+# Cross-vendor live interop. Enables FastDDS and Cyclone live
+# tests against the lab host. Without this feature the tests stay
 # `#[ignore]`'d.
 live-interop = []
-# ADR-0005: opt-in Dual-Stack — DataWriter::write_flat / DataReader::read_flat.
-# Erfordert FlatStruct-Bound, derive(FlatStruct) ist ergonomisch noetig.
+# ADR-0005: opt-in dual stack — DataWriter::write_flat / DataReader::read_flat.
+# Requires the FlatStruct bound; derive(FlatStruct) is ergonomically necessary.
 flatdata-integration = ["dep:zerodds-flatdata"]
-# Welle 4b der Zero-Copy-Roadmap (docs/specs/zerodds-zero-copy-1.0.md
-# §6 Welle 3): Same-Host-SHM-Transport in den DCPS-Hot-Path verdrahten.
-# Bei aktiviertem Feature versucht der SEDP-Match-Hook fuer jedes
-# Same-Host-Paar einen PosixShmTransport zu etablieren (Owner = Reader-
-# Seite, Consumer = Writer-Seite) und routet bei erfolgreichem Bind
-# die User-Datagrams ueber SHM statt UDP. Default OFF — Cross-Vendor-
-# Interop bleibt UDP-only.
+# Wave 4b of the zero-copy roadmap (docs/specs/zerodds-zero-copy-1.0.md
+# §6 wave 3): wire the same-host SHM transport into the DCPS hot path.
+# When the feature is enabled, the SEDP match hook tries to establish
+# a PosixShmTransport for each same-host pair (owner = reader
+# side, consumer = writer side) and, on a successful bind, routes
+# the user datagrams over SHM instead of UDP. Default OFF — cross-vendor
+# interop stays UDP-only.
 same-host-shm = ["dep:zerodds-transport-shm"]
-# 4b.5 (Spec `zerodds-zero-copy-1.0` §6 Welle 3 Sub-Sprints):
-# alternativer Same-Host-Backend via UDS-Datagram statt POSIX-shm.
-# Sinnvoll auf Targets ohne /dev/shm (Sandboxed-Container) oder wenn
-# der 1:N-Charakter von UDS-Datagram bevorzugt wird (mehrere Writer
-# pro Reader-Endpoint). Eliminiert IP-Stack-Overhead, ist aber
-# **kein** echtes Zero-Copy (Kernel-Copy bleibt).
-# Mutually exclusive zu `same-host-shm`; bei beiden aktiv gewinnt SHM.
+# 4b.5 (Spec `zerodds-zero-copy-1.0` §6 wave 3 sub-sprints):
+# an alternative same-host backend via UDS datagram instead of POSIX shm.
+# Useful on targets without /dev/shm (sandboxed containers) or when
+# the 1:N nature of UDS datagram is preferred (multiple writers
+# per reader endpoint). Eliminates IP-stack overhead, but is
+# **not** true zero-copy (a kernel copy remains).
+# Mutually exclusive with `same-host-shm`; if both are active, SHM wins.
 same-host-uds = ["dep:zerodds-transport-uds"]
-# 4b.5 (alternativ): iceoryx2-Slot-Pool als Same-Host-Backend.
-# Liefert echtes Zero-Copy fuer `T: FlatStruct`-Samples; fuer
-# generische Bytes faellt es auf den POSIX-shm-Pfad zurueck.
-# Erfordert Userspace-iceoryx2-Daemon-Setup.
+# Live TSN transport (Linux-only): user_transport=Tsn over AF_PACKET
+# (RTPS direct on Ethernet, EtherType 0x88B5). Interface/VLAN/PCP via
+# the env vars ZERODDS_TSN_IFACE/_VLAN/_PCP.
+tsn-live = ["zerodds-transport-tsn/live"]
+# 4b.5 (alternative): iceoryx2 slot pool as a same-host backend.
+# Provides true zero-copy for `T: FlatStruct` samples; for
+# generic bytes it falls back to the POSIX-shm path.
+# Requires a userspace iceoryx2 daemon setup.
 same-host-iceoryx2 = ["zerodds-flatdata?/iceoryx2-bridge"]
-# Opt-2 (Spec `zerodds-zero-copy-1.0` §9): Linux-recvmmsg-Batch-Recv.
-# Reicht das Feature an zerodds-transport-udp durch; `recv_user_data_loop`
-# nutzt dann `recv_batch_linux` statt der single-recv-Schleife.
-# Default off (kein automatisches Linux-On, damit Cross-Platform-CI
-# nicht silently divergiert).
+# Opt-2 (Spec `zerodds-zero-copy-1.0` §9): Linux recvmmsg batch recv.
+# Forwards the feature to zerodds-transport-udp; `recv_user_data_loop`
+# then uses `recv_batch_linux` instead of the single-recv loop.
+# Default off (no automatic Linux-on, so cross-platform CI
+# does not silently diverge).
 recvmmsg-batch = ["zerodds-transport-udp/recvmmsg-batch"]
-# Embargo-Feature: PDE Reality Inspector Hook-Up — Tap-Dispatch im
-# Hot-Path. Default OFF: Production-Builds enthalten keinen Tap-Code.
-# Wird im Public-Mirror entfernt (Embargo-Trigger: PDE-Release).
+# Embargo feature: PDE Reality Inspector hook-up — tap dispatch in the
+# hot path. Default OFF: production builds contain no tap code.
+# Removed in the public mirror (embargo trigger: PDE release).
 inspect = ["dep:zerodds-inspect-endpoint", "zerodds-inspect-endpoint/inspect"]
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr" }
-zerodds-foundation = { version = "1.0.0-rc.1", path = "../foundation" }
-zerodds-qos = { version = "1.0.0-rc.1", path = "../qos" }
-zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps" }
-zerodds-types = { version = "1.0.0-rc.1", path = "../types" }
-zerodds-transport = { version = "1.0.0-rc.1", path = "../transport" }
-zerodds-transport-udp = { version = "1.0.0-rc.1", path = "../transport-udp" }
-# Same-Host-SHM-Transport (feature `same-host-shm`). Default off —
-# nur ZeroDDS-Peers auf demselben Host profitieren; Cross-Vendor-
-# Interop laeuft weiter ueber UDP.
-zerodds-transport-shm = { version = "1.0.0-rc.1", path = "../transport-shm", optional = true }
-# 4b.5 — Same-Host-UDS-Datagram-Transport (Feature `same-host-uds`).
-zerodds-transport-uds = { version = "1.0.0-rc.1", path = "../transport-uds", optional = true }
-zerodds-discovery = { version = "1.0.0-rc.1", path = "../discovery" }
-zerodds-sql-filter = { version = "1.0.0-rc.1", path = "../sql-filter" }
-zerodds-security-runtime = { version = "1.0.0-rc.1", path = "../security-runtime", optional = true }
-zerodds-flatdata = { version = "1.0.0-rc.1", path = "../flatdata", optional = true, default-features = false, features = ["std"] }
-# Inspect-Endpoint Tap-Hooks (PDE Reality Inspector).
-zerodds-inspect-endpoint = { version = "1.0.0-rc.1", path = "../inspect-endpoint", optional = true }
-# Hook-Points fuer zerodds-monitor-1.0 §2.3. Optional.
-zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr" }
+zerodds-foundation = { version = "1.0.0-rc.3", path = "../foundation" }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos" }
+zerodds-rtps = { version = "1.0.0-rc.3", path = "../rtps" }
+zerodds-types = { version = "1.0.0-rc.3", path = "../types" }
+zerodds-transport = { version = "1.0.0-rc.3", path = "../transport" }
+zerodds-transport-udp = { version = "1.0.0-rc.3", path = "../transport-udp" }
+# TCP transport (DDSI-RTPS §9.4 LocatorKind=TCPv4=4). Optionally
+# selected via the env var ZERODDS_USER_TRANSPORT=TCPv4.
+zerodds-transport-tcp = { version = "1.0.0-rc.3", path = "../transport-tcp" }
+# Same-host SHM transport (feature `same-host-shm`). Default off —
+# only ZeroDDS peers on the same host benefit; cross-vendor
+# interop keeps running over UDP.
+zerodds-transport-shm = { version = "1.0.0-rc.3", path = "../transport-shm", optional = true }
+# 4b.5 — same-host UDS datagram transport (feature `same-host-uds`).
+zerodds-transport-uds = { version = "1.0.0-rc.3", path = "../transport-uds", optional = true }
+# Live TSN transport (feature `tsn-live`, Linux-only).
+zerodds-transport-tsn = { version = "1.0.0-rc.3", path = "../transport-tsn", optional = true, default-features = false }
+zerodds-discovery = { version = "1.0.0-rc.3", path = "../discovery" }
+zerodds-sql-filter = { version = "1.0.0-rc.3", path = "../sql-filter" }
+zerodds-security-runtime = { version = "1.0.0-rc.3", path = "../security-runtime", optional = true }
+# Auth plugin SPI (AuthenticationPlugin/IdentityHandle) — only needed
+# for the handshake driver path (enable_security_builtins_with_auth).
+zerodds-security = { version = "1.0.0-rc.3", path = "../security", optional = true }
+zerodds-flatdata = { version = "1.0.0-rc.3", path = "../flatdata", optional = true, default-features = false, features = ["std"] }
+# Inspect endpoint tap hooks (PDE Reality Inspector).
+zerodds-inspect-endpoint = { version = "1.0.0-rc.3", path = "../inspect-endpoint", optional = true }
+# Hook points for zerodds-monitor-1.1 §2.3. Optional.
+zerodds-monitor = { version = "1.0.0-rc.3", path = "../monitor", optional = true, default-features = false, features = ["std"] }
 
-# Linux-only: libc fuer pthread_setschedparam + sched_setaffinity in
-# `apply_thread_tuning` (Sprint D.5d Hebel C — RT-Pinning + Priority).
-# Kein Effekt auf macOS/Windows; dort sind die Hooks no-op.
-[target.'cfg(target_os = "linux")'.dependencies]
+# Linux-only: libc for pthread_setschedparam + sched_setaffinity in
+# `apply_thread_tuning` (Sprint D.5d lever C — RT pinning + priority).
+# No effect on macOS/Windows; the hooks are no-ops there.
+[target.'cfg(unix)'.dependencies]
+# libc for gethostname(3) in the same-host detection path (all Unixes:
+# Linux, macOS, BSD). On Linux additionally for apply_thread_tuning
+# (Sprint D.5d lever C — RT pinning + priority). On macOS the
+# thread-tuning hooks are no-ops.
 libc = { workspace = true }
 
 [dev-dependencies]
-# DynamicType-Lookup + TypeInformation-Builder fuer
-# C4-Discovery-Tests (XTypes 1.3 §7.6.3).
+# DynamicType lookup + TypeInformation builder for
+# C4 discovery tests (XTypes 1.3 §7.6.3).
 zerodds-types = { path = "../types" }
-# Welle 4b.3: tempdir fuer same_host_shm::tests roundtrip.
+# Wave 4b.3: tempdir for the same_host_shm::tests roundtrip.
 tempfile = "3"
-# Security-Gate-Konstruktion fuer Security-E2E-Tests benoetigt
-# Plugin + Governance-Parser.
+# Security-gate construction for security E2E tests needs the
+# plugin + governance parser.
 zerodds-security-crypto = { path = "../security-crypto" }
 zerodds-security-permissions = { path = "../security-permissions" }
-# ParticipantGenericMessage-Builder fuer Stateless-/Volatile-
-# Wire-Demux-Tests (DDS-Security 1.2).
+# ParticipantGenericMessage builder for stateless/volatile
+# wire-demux tests (DDS-Security 1.2).
 zerodds-security = { path = "../security" }
-# Serialisierung paralleler Tests die UDP-Multicast-Ports teilen
-# (CI-Runner-Cores ≥ test-Threads → port-collision-Race). Per-named-
-# Lock-Granularitaet (z.B. "dcps_udp_match") damit nicht alle Tests
-# global serialisieren muessen.
+# Real PKI auth plugin + cert minting for the FU2 handshake e2e test
+# (the runtime replier + in-test initiator stack complete a real
+# 3-round handshake over the dispatch path).
+zerodds-security-pki = { path = "../security-pki" }
+rcgen = "0.13"
+rustls-pki-types = { workspace = true }
+# Serializes parallel tests that share UDP multicast ports
+# (CI runner cores ≥ test threads → port-collision race). Per-named
+# lock granularity (e.g. "dcps_udp_match") so that not all tests
+# have to serialize globally.
 serial_test = "3"

@@ -1,39 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CoAP URI-Scheme-Parser nach RFC 7252 §6.
+//! CoAP URI scheme parser per RFC 7252 §6.
 //!
 //! Spec: `coap-URI = "coap:" "//" host [ ":" port ] path-abempty [ "?" query ]`,
-//! `coaps-URI = "coaps:" ...`. Default-Ports: 5683 (coap) / 5684 (coaps).
+//! `coaps-URI = "coaps:" ...`. Default ports: 5683 (coap) / 5684 (coaps).
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Parsed CoAP URI nach RFC 7252 §6.
+/// Parsed CoAP URI per RFC 7252 §6.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoapUri {
-    /// `true` wenn `coaps://` (DTLS).
+    /// `true` if `coaps://` (DTLS).
     pub secure: bool,
-    /// Host (DNS-Name oder IP-Literal).
+    /// Host (DNS name or IP literal).
     pub host: String,
     /// Port (default 5683 / 5684).
     pub port: u16,
-    /// Path-Segmente (RFC 7252 §6.4 — werden zu `Uri-Path`-Options).
+    /// Path segments (RFC 7252 §6.4 — become `Uri-Path` options).
     pub path_segments: Vec<String>,
-    /// Query-Parameter (RFC 7252 §6.4 — `Uri-Query`-Options).
+    /// Query parameters (RFC 7252 §6.4 — `Uri-Query` options).
     pub query_params: Vec<String>,
 }
 
-/// URI-Parser-Errors.
+/// URI parser errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UriError {
-    /// Scheme ist nicht `coap://` oder `coaps://`.
+    /// Scheme is neither `coap://` nor `coaps://`.
     InvalidScheme,
-    /// Host fehlt.
+    /// Host is missing.
     MissingHost,
-    /// Port nicht parseable als u16.
+    /// Port not parseable as u16.
     InvalidPort,
-    /// Spec §6.1: Fragment ist nicht erlaubt.
+    /// Spec §6.1: fragment is not allowed.
     FragmentNotAllowed,
 }
 
@@ -51,10 +51,10 @@ impl core::fmt::Display for UriError {
 #[cfg(feature = "std")]
 impl std::error::Error for UriError {}
 
-/// Parsed eine `coap://` oder `coaps://` URI nach RFC 7252 §6.
+/// Parses a `coap://` or `coaps://` URI per RFC 7252 §6.
 ///
 /// # Errors
-/// Siehe [`UriError`].
+/// See [`UriError`].
 pub fn parse_coap_uri(input: &str) -> Result<CoapUri, UriError> {
     let (secure, rest) = if let Some(r) = input.strip_prefix("coap://") {
         (false, r)
@@ -122,7 +122,7 @@ pub fn parse_coap_uri(input: &str) -> Result<CoapUri, UriError> {
     })
 }
 
-/// Default-Port nach Scheme.
+/// Default port per scheme.
 #[must_use]
 pub const fn default_port(secure: bool) -> u16 {
     if secure { 5684 } else { 5683 }

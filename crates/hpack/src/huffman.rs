@@ -3,15 +3,14 @@
 
 //! RFC 7541 Appendix B Static Huffman Code.
 //!
-//! Wir implementieren die Wire-Form-Compatible-Variante: das voll-
-//! staendige Code-Buch ist embedded als `(code, bit_length)`-Array
-//! ueber die 256 Octets + EOS (Index 256 — wird nur fuer Padding
-//! verwendet).
+//! We implement the wire-format-compatible variant: the complete
+//! code book is embedded as a `(code, bit_length)` array
+//! over the 256 octets + EOS (index 256 — used only for padding).
 
 use alloc::vec::Vec;
 
-/// Huffman-Code-Tabelle aus RFC 7541 Appendix B.
-/// Tupel `(code_bits, bit_length)`. Index 0..=255 = Octet, 256 = EOS.
+/// Huffman code table from RFC 7541 Appendix B.
+/// Tuple `(code_bits, bit_length)`. Index 0..=255 = octet, 256 = EOS.
 const TABLE: [(u32, u8); 257] = [
     (0x1ff8, 13),
     (0x7fffd8, 23),
@@ -272,11 +271,11 @@ const TABLE: [(u32, u8); 257] = [
     (0x3fffffff, 30),
 ];
 
-/// Huffman-Decode-Fehler.
+/// Huffman decode error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HuffmanError;
 
-/// Encode `bytes` per Huffman.
+/// Encode `bytes` with Huffman.
 #[must_use]
 pub fn encode(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len());
@@ -300,11 +299,11 @@ pub fn encode(bytes: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Decode Huffman-codiertes Input.
+/// Decode Huffman-encoded input.
 ///
 /// # Errors
-/// `HuffmanError` wenn der Code-Stream invalid ist (Spec §5.2: pad-
-/// bits mit Nullen oder Sequenz dekodiert nicht).
+/// `HuffmanError` when the code stream is invalid (spec §5.2: pad
+/// bits with zeros, or the sequence does not decode).
 pub fn decode(bytes: &[u8]) -> Result<Vec<u8>, HuffmanError> {
     let mut out = Vec::new();
     let mut acc: u64 = 0;

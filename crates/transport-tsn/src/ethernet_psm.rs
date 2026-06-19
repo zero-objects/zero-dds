@@ -2,52 +2,52 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DDSI-RTPS Ethernet PSM — Spec Annex A.
 //!
-//! Spec Annex A definiert ein PSM, in dem RTPS-Messages direkt im
-//! Ethernet-Frame-Payload gesendet werden — ohne IP/UDP-Stack. Das
-//! ist sinnvoll fuer hard-real-time Use-Cases, wo der IP-Stack zu
-//! viel Latenz oder Jitter hinzufuegt.
+//! Spec Annex A defines a PSM in which RTPS messages are sent directly
+//! in the Ethernet frame payload — without an IP/UDP stack. This
+//! makes sense for hard-real-time use cases where the IP stack adds
+//! too much latency or jitter.
 
 use crate::mac::MacAddress;
 use crate::vlan_tag::Ieee802VlanTag;
 
-/// Spec Annex A — RTPS-EtherType (vendor-spezifisch; Spec sagt
-/// implementer-defined, IANA-Reserved-Bereich).
+/// Spec Annex A — RTPS EtherType (vendor-specific; the spec says
+/// implementer-defined, IANA reserved range).
 ///
-/// Wir nutzen den durch RTI/Cyclone-DDS verbreiteten Wert `0x88B5`
+/// We use the value `0x88B5` widely used by RTI/Cyclone DDS
 /// (IEEE Std 802 Local Experimental EtherType).
 pub const ETHERTYPE_RTPS: u16 = 0x88B5;
 
-/// Spec Annex A — Ethernet-Frame-Header fuer RTPS-direct-on-Ethernet.
+/// Spec Annex A — Ethernet frame header for RTPS-direct-on-Ethernet.
 ///
-/// Wire-Layout:
+/// Wire layout:
 /// ```text
 ///  +---------+---------+--------+--------+---------+
 ///  | Dst MAC | Src MAC | VLAN?  | Type   | Payload |
 ///  | 6 byte  | 6 byte  | 4 byte | 2 byte | n bytes |
 ///  +---------+---------+--------+--------+---------+
 /// ```
-/// VLAN-Tag (4 bytes) ist optional — wenn vorhanden, dann mit
-/// EtherType=0x8100/0x88a8 als TPID, sonst direkt Type-Field.
+/// The VLAN tag (4 bytes) is optional — if present, then with
+/// EtherType=0x8100/0x88a8 as the TPID, otherwise a direct type field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EthernetFrameHeader {
     /// Destination MAC.
     pub destination: MacAddress,
     /// Source MAC.
     pub source: MacAddress,
-    /// Optionaler VLAN-Tag.
+    /// Optional VLAN tag.
     pub vlan_tag: Option<Ieee802VlanTag>,
-    /// EtherType (typisch `ETHERTYPE_RTPS` = 0x88B5 fuer DDS-TSN).
+    /// EtherType (typically `ETHERTYPE_RTPS` = 0x88B5 for DDS-TSN).
     pub ethertype: u16,
 }
 
 impl EthernetFrameHeader {
-    /// Header-Laenge in Bytes (14 ohne VLAN, 18 mit VLAN).
+    /// Header length in bytes (14 without VLAN, 18 with VLAN).
     #[must_use]
     pub fn header_len(self) -> usize {
         if self.vlan_tag.is_some() { 18 } else { 14 }
     }
 
-    /// Encodet den Header zu Wire-Bytes.
+    /// Encodes the header to wire bytes.
     #[must_use]
     pub fn to_wire(self) -> alloc::vec::Vec<u8> {
         let mut out = alloc::vec::Vec::with_capacity(self.header_len());
@@ -60,11 +60,11 @@ impl EthernetFrameHeader {
         out
     }
 
-    /// Decodet den Header von Wire-Bytes. Liefert `(header,
+    /// Decodes the header from wire bytes. Returns `(header,
     /// consumed_bytes)`.
     ///
     /// # Errors
-    /// `EthError::Truncated` wenn weniger als 14 Bytes vorhanden.
+    /// `EthError::Truncated` if fewer than 14 bytes are present.
     pub fn from_wire(bytes: &[u8]) -> Result<(Self, usize), EthError> {
         if bytes.len() < 14 {
             return Err(EthError::Truncated);
@@ -104,12 +104,12 @@ impl EthernetFrameHeader {
     }
 }
 
-/// Ethernet-PSM-Fehler.
+/// Ethernet PSM error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EthError {
-    /// Header < 14 Bytes (oder < 18 mit VLAN-Tag).
+    /// Header < 14 bytes (or < 18 with a VLAN tag).
     Truncated,
-    /// VLAN-Tag konnte nicht geparst werden.
+    /// VLAN tag could not be parsed.
     InvalidVlan,
 }
 
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn ipv4_ethertype_parsed_without_vlan_branch() {
-        // Wenn die Bytes 12..14 nicht 0x8100/0x88a8 sind, kein VLAN-Tag.
+        // If bytes 12..14 are not 0x8100/0x88a8, there is no VLAN tag.
         let mut bytes = [0u8; 14];
         // Type = 0x0800 (IPv4).
         bytes[12] = 0x08;

@@ -2,10 +2,10 @@
 // Copyright 2026 ZeroDDS Contributors
 //! XML PSM — Spec §7.3.1.
 //!
-//! Liest eine `<dds_tsn>`-Konfig per Spec-XSD und materialisiert sie
-//! in [`super::DdsTsnConfig`]. Schreibt im selben Format zurueck. Wir
-//! folgen dem Spec-XSD-Schema vereinfacht: Element-Namen + Mult-
-//! Constraints kommen aus Tab 7.1-7.14.
+//! Reads a `<dds_tsn>` config per the spec XSD and materializes it
+//! into [`super::DdsTsnConfig`]. Writes back in the same format. We
+//! follow the spec XSD schema in a simplified way: element names + mult
+//! constraints come from Tab 7.1-7.14.
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -23,35 +23,35 @@ use super::deployment::{
     NodeLibrary,
 };
 
-/// Fehler waehrend XML-Parse.
+/// Error during XML parsing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseXmlError {
-    /// Underlying-Roxmltree-Fehler (Wohlgeformtheits-Verletzung).
+    /// Underlying roxmltree error (well-formedness violation).
     Wellformedness(String),
-    /// Root-Element ist nicht `<dds_tsn>`.
+    /// Root element is not `<dds_tsn>`.
     UnexpectedRoot(String),
-    /// Pflicht-Attribut fehlt.
+    /// Required attribute missing.
     MissingAttribute {
-        /// Element, das das Attribut tragen sollte.
+        /// Element that should carry the attribute.
         element: String,
-        /// Attribut-Name.
+        /// Attribute name.
         attribute: String,
     },
-    /// Wert kann nicht in den erwarteten Type geparst werden.
+    /// Value cannot be parsed into the expected type.
     InvalidValue {
-        /// Element + Attribut/Text.
+        /// Element + attribute/text.
         element: String,
-        /// Aktueller Wert.
+        /// Actual value.
         value: String,
-        /// Erwarteter Type-Name.
+        /// Expected type name.
         expected: &'static str,
     },
 }
 
-/// Parsiert ein `<dds_tsn>`-XML-Dokument.
+/// Parses a `<dds_tsn>` XML document.
 ///
 /// # Errors
-/// Siehe [`ParseXmlError`].
+/// See [`ParseXmlError`].
 pub fn parse_dds_tsn_xml(src: &str) -> Result<DdsTsnConfig, ParseXmlError> {
     let doc = Document::parse(src).map_err(|e| ParseXmlError::Wellformedness(e.to_string()))?;
     let root = doc.root_element();
@@ -289,7 +289,7 @@ fn parse_deployment_library(n: Node<'_, '_>) -> Result<DeploymentLibrary, ParseX
 }
 
 // -------------------------------------------------------------------
-// Hilfs-Parser fuer Adressen.
+// Helper parsers for addresses.
 // -------------------------------------------------------------------
 
 fn parse_mac(s: &str) -> Option<MacAddr> {
@@ -328,7 +328,7 @@ fn parse_ipv4(s: &str) -> Result<Option<IpV4>, ParseXmlError> {
 }
 
 fn parse_ipv6(s: &str) -> Result<Option<IpV6>, ParseXmlError> {
-    // Vereinfacht: nur volle 8-Gruppen-Form (kein `::`-Compression).
+    // Simplified: only the full 8-group form (no `::` compression).
     let parts: Vec<&str> = s.split(':').collect();
     if parts.len() != 8 {
         return Err(ParseXmlError::InvalidValue {

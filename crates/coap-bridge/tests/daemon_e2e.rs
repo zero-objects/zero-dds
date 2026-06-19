@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! E2E-Test fuer `zerodds-coap-bridged`. Spec §12.2.
+//! E2E test for `zerodds-coap-bridged`. Spec §12.2.
 //!
-//! Verifiziert:
-//! * L1 — CoAP-Wire (POST/GET-Roundtrip via UDP-Socket im Test).
-//! * L3 — POST mit `Uri-Path` fuer ein konfiguriertes Topic loest
-//!   `2.04 Changed` aus.
-//! * L3 — GET `/.well-known/core` (RFC 6690) liefert das Topic-
-//!   Catalog.
-//! * L3 — Observe-Register mit `Observe: 0` bekommt initial-Notify.
+//! Verifies:
+//! * L1 — CoAP wire (POST/GET round-trip via UDP socket in the test).
+//! * L3 — POST with `Uri-Path` for a configured topic triggers
+//!   `2.04 Changed`.
+//! * L3 — GET `/.well-known/core` (RFC 6690) returns the topic
+//!   catalog.
+//! * L3 — Observe register with `Observe: 0` receives the initial
+//!   notify.
 
 #![cfg(feature = "daemon")]
 #![allow(
@@ -135,8 +136,8 @@ fn observe_register_returns_initial_content_with_observe_option() {
 
     let resp = recv_msg(&client);
     assert_eq!(resp.code, CoapCode::CONTENT);
-    // Decoder normalisiert Option-Values nicht, wir akzeptieren beide
-    // Repraesentationen (Uint und Opaque).
+    // The decoder does not normalize option values; we accept both
+    // representations (Uint and Opaque).
     let has_observe = resp.options.iter().any(|o| {
         o.number == numbers::OBSERVE
             && matches!(
@@ -165,10 +166,10 @@ fn unknown_path_returns_bad_request() {
         .send_to(&encode(&req).expect("encode"), &server_addr)
         .expect("send");
 
-    // Daemon ignoriert nicht-konfigurierte Pfade in handle_request mit
-    // einem internen logged-error — keine Response wird gesendet. Wir
-    // verifizieren nur, dass der Daemon weiterläuft (kein Crash).
-    // Setze ein kurzes Timeout damit der Test nicht 2s wartet.
+    // The daemon ignores unconfigured paths in handle_request with an
+    // internal logged error — no response is sent. We only verify that
+    // the daemon keeps running (no crash). Set a short timeout so the
+    // test does not wait 2s.
     client
         .set_read_timeout(Some(Duration::from_millis(300)))
         .expect("timeout");
@@ -179,9 +180,9 @@ fn unknown_path_returns_bad_request() {
 
 #[test]
 fn block1_chunked_post_completes_with_2_04_changed() {
-    // RFC 7959 §2.5 — Block1 fragmentiert Request-Body. Wir senden 3
-    // Chunks à 16 Bytes (szx=0). Erste zwei sollen 2.31 Continue
-    // erhalten, der dritte 2.04 Changed.
+    // RFC 7959 §2.5 — Block1 fragments the request body. We send 3
+    // chunks of 16 bytes each (szx=0). The first two should receive
+    // 2.31 Continue, the third 2.04 Changed.
     let cfg = make_test_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let server_addr = handle.local_addr.clone();
@@ -232,11 +233,11 @@ fn block1_chunked_post_completes_with_2_04_changed() {
 
 #[test]
 fn block1_out_of_order_returns_2_31_continue_only_in_order() {
-    // RFC 7959 §2.5 — Sequenz: chunk 0 (more=true), dann direkt chunk
-    // 2 (more=false) ohne chunk 1. Der zweite Send-Versuch löst bei
-    // unserem Reassembler "block out of order" aus → nicht-fataler
-    // Pfad: Daemon sendet keine Antwort. Wir testen daher nur, dass
-    // chunk 0 die 2.31 Continue bringt.
+    // RFC 7959 §2.5 — sequence: chunk 0 (more=true), then directly
+    // chunk 2 (more=false) without chunk 1. The second send attempt
+    // triggers "block out of order" in our reassembler → non-fatal
+    // path: the daemon sends no response. We therefore only test that
+    // chunk 0 yields the 2.31 Continue.
     let cfg = make_test_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let server_addr = handle.local_addr.clone();

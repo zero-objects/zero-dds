@@ -1,34 +1,34 @@
-//! WP 1.D — Live-Interop-Test fuer Writer-Liveliness-Protocol gegen
-//! echte Cyclone-DDS-Instanz.
+//! WP 1.D — live-interop test for the writer-liveliness protocol against
+//! a real Cyclone DDS instance.
 //!
-//! **Opt-in only** — `#[ignore]` markiert. Aufruf:
+//! **Opt-in only** — marked `#[ignore]`. Invocation:
 //!
 //! ```bash
 //! cargo test -p zerodds-dcps --test cyclone_live_wlp -- --ignored --nocapture
 //! ```
 //!
-//! # Test-Ablauf
+//! # Test flow
 //!
-//! 1. Eine ZeroDDS-Runtime startet auf Domain 42, sendet alle 200 ms
-//!    AUTOMATIC-WLP-Heartbeats.
-//! 2. Auf dem Cyclone-Host (Bench-VM `llvm`) startet `ddsperf -i 42 sub`,
-//!    der lokale `subscriber` mit aktiviertem Liveliness-Listener.
-//! 3. Cyclone schickt seinen eigenen WLP-Heartbeat zurueck (sobald
-//!    er uns via SPDP entdeckt hat).
-//! 4. Wir verifizieren, dass die ZeroDDS-Runtime Cyclone-Prefix als
-//!    Peer in `peer_liveliness_last_seen()` sieht — also dass die
-//!    Wire-Encoding bidirektional kompatibel ist.
+//! 1. A ZeroDDS runtime starts on domain 42, sending AUTOMATIC WLP
+//!    heartbeats every 200 ms.
+//! 2. On the Cyclone host (bench VM), `ddsperf -i 42 sub` starts the
+//!    local `subscriber` with the liveliness listener enabled.
+//! 3. Cyclone sends back its own WLP heartbeat (once it has
+//!    discovered us via SPDP).
+//! 4. We verify that the ZeroDDS runtime sees the Cyclone prefix as
+//!    a peer in `peer_liveliness_last_seen()` — i.e., that the
+//!    wire encoding is bidirectionally compatible.
 //!
-//! # Voraussetzungen
+//! # Prerequisites
 //!
-//! - SSH-Zugriff auf `llvm@llvm` mit Passwort `llvm` (Lab-Setup)
-//! - `sshpass` lokal installiert
-//! - Cyclone DDS 0.10.2 (`ddsperf` Binary) auf `llvm`
-//! - `/tmp/cyc.xml` auf `llvm` pinnt Cyclone auf `enp6s18`
-//! - Lokaler Host im selben LAN wie `llvm`, Multicast-Durchlass
+//! - SSH access to the Linux bench host with the lab password (lab setup)
+//! - `sshpass` installed locally
+//! - Cyclone DDS 0.10.2 (`ddsperf` binary) on the bench host
+//! - `/tmp/cyc.xml` on the bench host pins Cyclone to `enp6s18`
+//! - Local host on the same LAN as the bench host, with multicast pass-through
 //!
-//! Im CI bleibt der Test ignored — er laeuft nur manuell auf dem
-//! Lab-Host.
+//! In CI the test stays ignored — it only runs manually on the
+//! lab host.
 
 #![allow(
     clippy::expect_used,
@@ -54,8 +54,8 @@ use zerodds_rtps::wire_types::GuidPrefix;
 #[test]
 #[ignore = "live cyclone interop — opt-in via --ignored, requires lab setup"]
 fn cyclone_live_wlp_handshake() {
-    // Aggressive WLP-Period damit Cyclone uns innerhalb einiger
-    // Sekunden als alive sieht.
+    // Aggressive WLP period so that Cyclone sees us as alive within a
+    // few seconds.
     let cfg = RuntimeConfig {
         tick_period: Duration::from_millis(50),
         spdp_period: Duration::from_millis(500),
@@ -65,19 +65,18 @@ fn cyclone_live_wlp_handshake() {
     };
     let rt = DcpsRuntime::start(42, GuidPrefix::from_bytes([0xAA; 12]), cfg).expect("start");
 
-    // Cyclone-Subscriber starten (lab-spezifisch — tooling kommt
-    // ueber dasselbe ssh-pattern wie cyclone_live_sedp).
-    eprintln!("ZeroDDS WLP-Endpoint live; warte 5 s auf Cyclone-Beacons");
+    // Start the Cyclone subscriber (lab-specific — tooling comes
+    // over the same ssh pattern as cyclone_live_sedp).
+    eprintln!("ZeroDDS WLP endpoint live; waiting 5 s for Cyclone beacons");
     thread::sleep(Duration::from_secs(5));
 
-    // Wir kennen den Cyclone-Prefix nicht a priori — wir checken
-    // einfach, ob der WLP-Endpoint mindestens einen Peer
-    // registriert hat. Wenn ddsperf nicht laeuft, schlaegt der
-    // Test fehl — das ist die manuelle Verification, die mit
-    // `#[ignore]` markiert ist.
+    // We do not know the Cyclone prefix a priori — we simply check
+    // whether the WLP endpoint has registered at least one peer.
+    // If ddsperf is not running, the test fails — that is the
+    // manual verification marked with `#[ignore]`.
     let count = rt.wlp.lock().ok().map(|w| w.peer_count()).unwrap_or(0);
     assert!(
         count > 0,
-        "kein Cyclone-Peer im WLP-Cache — ddsperf -D 42 sub auf llvm laufen?"
+        "no Cyclone peer in the WLP cache — is ddsperf -D 42 sub running on the bench host?"
     );
 }

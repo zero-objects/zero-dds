@@ -3,9 +3,8 @@
 
 //! TimerEventService — Spec OMG Time 1.1 §2.2-§2.4.
 //!
-//! Liefert One-Shot- und Periodic-Timer, die in einen
-//! Container-Worker-Thread eingebettet sind. Bei Feuerung wird ein
-//! `TimerCallback` aufgerufen.
+//! Provides one-shot and periodic timers embedded in a container
+//! worker thread. When a timer fires, a `TimerCallback` is invoked.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -14,22 +13,22 @@ use std::sync::Mutex;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-/// Timer-Kind.
+/// Timer kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerKind {
-    /// One-Shot: feuert genau einmal.
+    /// One-shot: fires exactly once.
     OneShot,
-    /// Periodic: feuert wiederholt mit dem Periode-Intervall.
+    /// Periodic: fires repeatedly at the period interval.
     Periodic,
 }
 
-/// Timer-Handle (vom Service vergeben).
+/// Timer handle (assigned by the service).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TimerHandle(pub u64);
 
-/// Callback-Trait fuer Timer-Feuerung.
+/// Callback trait for timer firing.
 pub trait TimerCallback: Send + Sync {
-    /// Wird vom Service-Thread aufgerufen, wenn der Timer feuert.
+    /// Invoked by the service thread when the timer fires.
     fn fire(&self, handle: TimerHandle);
 }
 
@@ -46,7 +45,7 @@ struct ServiceInner {
     shutdown: AtomicBool,
 }
 
-/// TimerEventService — startet einen Worker-Thread.
+/// TimerEventService — starts a worker thread.
 pub struct TimerEventService {
     inner: Arc<ServiceInner>,
     worker: Option<JoinHandle<()>>,
@@ -68,7 +67,7 @@ impl Default for TimerEventService {
 }
 
 impl TimerEventService {
-    /// Konstruktor — startet Worker-Thread.
+    /// Constructor — starts the worker thread.
     #[must_use]
     pub fn new() -> Self {
         let inner = Arc::new(ServiceInner {
@@ -84,12 +83,12 @@ impl TimerEventService {
         Self { inner, worker }
     }
 
-    /// Erstellt einen One-Shot-Timer, der nach `delay` feuert.
+    /// Creates a one-shot timer that fires after `delay`.
     pub fn create_one_shot(&self, delay: Duration, cb: Arc<dyn TimerCallback>) -> TimerHandle {
         self.create_internal(TimerKind::OneShot, delay, delay, cb)
     }
 
-    /// Erstellt einen Periodic-Timer mit `period`-Intervall.
+    /// Creates a periodic timer with a `period` interval.
     pub fn create_periodic(&self, period: Duration, cb: Arc<dyn TimerCallback>) -> TimerHandle {
         self.create_internal(TimerKind::Periodic, period, period, cb)
     }
@@ -114,7 +113,7 @@ impl TimerEventService {
         handle
     }
 
-    /// Cancelt einen Timer.
+    /// Cancels a timer.
     pub fn cancel(&self, handle: TimerHandle) -> bool {
         self.inner
             .timers
@@ -123,13 +122,13 @@ impl TimerEventService {
             .unwrap_or(false)
     }
 
-    /// Anzahl aktiver Timer.
+    /// Number of active timers.
     #[must_use]
     pub fn active_count(&self) -> usize {
         self.inner.timers.lock().map(|g| g.len()).unwrap_or(0)
     }
 
-    /// Stoppt den Service.
+    /// Stops the service.
     pub fn shutdown(mut self) {
         self.inner.shutdown.store(true, Ordering::Release);
         if let Some(j) = self.worker.take() {
@@ -206,7 +205,7 @@ mod tests {
         let _ = svc.create_one_shot(Duration::from_millis(50), cb);
         waitfor(&counter, 1, Duration::from_secs(2));
         assert_eq!(counter.load(Ordering::Relaxed), 1);
-        // Nach Feuerung ist der One-Shot-Timer raus.
+        // After firing, the one-shot timer is gone.
         thread::sleep(Duration::from_millis(150));
         assert_eq!(svc.active_count(), 0);
     }

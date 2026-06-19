@@ -7,7 +7,7 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung als Layer-3-Schema-Crate.
+Initial release materialization as a Layer-3 schema crate.
 
 ### Spec-Referenzen
 - DDS-XML 1.0 Wire-PSM — XML↔CDR-Codec, XSD-Schema-Gen, Streaming-Parser.
@@ -16,11 +16,11 @@ Initiale Release-Materialisierung als Layer-3-Schema-Crate.
 - License-Header (SPDX-Apache-2.0) auf alle src-Files.
 - Cargo.toml RC1-Metadaten (homepage, documentation, keywords, categories).
 - `publish = false` → `publish = true`.
-- Phase-X-Marker bereinigt (§1.13).
+- Phase-X markers cleaned up (§1.13).
 
 ### Eigenschaften
-- 40 Tests grün; clippy clean.
-- Pure-Rust, std-only (Build-Zeit-Tool, kein embedded-Use-Case).
+- 40 tests green; clippy clean.
+- Pure-Rust, std-only (build-time tool, no embedded use case).
 
 [Unreleased]: https://github.com/zero-objects/zero-dds/compare/v1.0.0-rc.1...HEAD
 [1.0.0-rc.1]: https://github.com/zero-objects/zero-dds/releases/tag/v1.0.0-rc.1

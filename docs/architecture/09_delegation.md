@@ -1,171 +1,172 @@
-# Delegation — Gateway/Bridge-Identity für Vehicle-Mesh + Loose-Coupled Systems
+# Delegation — gateway/bridge identity for vehicle mesh + loosely coupled systems
 
 > **Status:** Draft v0.1 (2026-04-25)
-> **Abhängigkeiten:** `08_heterogeneous_security.md` (Peer-Classes, Interface-Routing),
->   `02_architecture.md §3` (Transport-Schichten), WP 4H-i (PKI↔Crypto-Integration)
+> **Dependencies:** `08_heterogeneous_security.md` (peer classes, interface routing),
+>   `02_architecture.md §3` (transport layers), WP 4H-i (PKI↔crypto integration)
 
 ## 1 Motivation
 
-Im Heterogeneous-Track (WP 4H) haben wir Peer-Klassen für einen flachen
-Participant-Raum gebaut. In realen Vehicle-Netzen ist der Raum aber
-**hierarchisch**: ein zentrales Gateway (manchmal zwei — Wanne+Turm)
-bündelt Dutzende von Sensoren, ECUs und Subsystemen, die selber
-keinen eigenen Security-Stack haben. Gegen die Außenwelt tritt das
-Fahrzeug als **ein Participant** auf, intern ist es ein Stern oder
-Doppelstern mit Security-Mix.
+In the heterogeneous track (WP 4H) we built peer classes for a flat
+participant space. In real vehicle networks the space is, however,
+**hierarchical**: a central gateway (sometimes two — hull+turret)
+bundles dozens of sensors, ECUs and subsystems that themselves
+have no own security stack. Toward the outside world the
+vehicle appears as **one participant**, internally it is a star or
+double star with a security mix.
 
 ```
-                    (Außenwelt)
+                    (outside world)
                        ▲
-            C4I ──────►│◄──── andere Fahrzeuge (V2V via C4I-Broker)
+            C4I ──────►│◄──── other vehicles (V2V via C4I broker)
                        │
-    ═══════════════════╪═══════════════════  Fahrzeug-Grenze
+    ═══════════════════╪═══════════════════  vehicle boundary
                        │
-                 Wanne-Gateway  ◄──► Turm-Gateway      ← 1 oder 2 Zentren
+                 hull gateway  ◄──► turret gateway      ← 1 or 2 hubs
                   ┌────┴────┐         ┌────┴────┐
                   │         │         │         │
-             Sensor-ECU  Fahrer-HMI   Waffenstation  Turm-Sensor
-             (legacy)    (secure)     (secure)       (mix)
+             sensor ECU  driver HMI   weapon station  turret sensor
+             (legacy)    (secure)     (secure)        (mix)
 ```
 
-Delegation ist der Mechanismus, mit dem Gateways die **Identity** von
-Edge-Peers nach außen vertreten, ohne dass diese Edge-Peers selbst
-PKI-Material besitzen müssen.
+Delegation is the mechanism with which gateways represent the **identity** of
+edge peers toward the outside, without those edge peers themselves
+having to own PKI material.
 
-## 2 Abgrenzung: Security-Layer vs. Bridge-Layer
+## 2 Distinction: security layer vs. bridge layer
 
-Delegation adressiert die **Security-Attribution** (wer hat's
-geschrieben, wer darf's lesen), nicht das Routing:
+Delegation addresses the **security attribution** (who wrote it,
+who may read it), not the routing:
 
-| Layer | Aufgabe | Kennt Delegation? |
+| Layer | Task | Knows about delegation? |
 |-------|---------|-------------------|
-| **Bridge-Layer** | Transportiert Samples zwischen Domains/Hosts/Fahrzeugen; reagiert auf QoS, Topic-Routen, Partitions | Nein — agnostisch, leitet alles weiter |
-| **Security-Layer** | Entscheidet ob ein Peer authentisch ist, ob sein Sample akzeptiert wird, mit welcher Protection-Klasse | Ja — prüft Delegation-Chain, Scope, Revocation |
+| **Bridge layer** | Transports samples between domains/hosts/vehicles; reacts to QoS, topic routes, partitions | No — agnostic, forwards everything |
+| **Security layer** | Decides whether a peer is authentic, whether its sample is accepted, with which protection class | Yes — checks the delegation chain, scope, revocation |
 
-**Regel:** Der Bridge-Layer muss jede Nachricht transportieren, die
-der Security-Layer durchgelassen hat — egal wie viele Delegation-Hops
-drin sind. **Ausnahme:** nur explizit Spec-verbotene Kombinationen
-(z.B. OMG verbietet Secure-Envelopes über unverschlüsselte
-Transport-Hops wenn die Domain `rtps_protection_kind=ENCRYPT` verlangt).
+**Rule:** The bridge layer must transport every message that
+the security layer let through — no matter how many delegation hops
+are in it. **Exception:** only explicitly spec-forbidden combinations
+(e.g. OMG forbids secure envelopes over unencrypted
+transport hops when the domain requires `rtps_protection_kind=ENCRYPT`).
 
-## 3 Use-Cases
+## 3 Use cases
 
-### 3.1 Fahrzeug-intern (Stern, 1 Hop)
-
-```
-Sensor-ECU  ──► Wanne-Gateway  ──►  andere Fahrzeug-Subsysteme
-  (legacy,       (delegiert für          (lesen "von lidar-A
-   no cert)      lidar-A, radar-B…)       via wanne-gateway")
-```
-
-### 3.2 Fahrzeug-intern (Doppelstern, 2 Hops)
+### 3.1 Vehicle-internal (star, 1 hop)
 
 ```
-Turm-Sensor ──► Turm-Gateway ──► Wanne-Gateway ──► Fahrer-HMI
-  (legacy)       (delegiert)      (re-delegiert      (liest mit
-                                   für Turm-Sensor    2-Hop-Chain)
-                                   über Turm-GW)
+sensor ECU  ──► hull gateway   ──►  other vehicle subsystems
+  (legacy,       (delegates for         (read "from lidar-A
+   no cert)      lidar-A, radar-B…)      via hull-gateway")
 ```
 
-Die Wanne-Gateway-Delegation ist eine **Re-Delegation**: sie
-bestätigt die Turm-Gateway-Delegation und fügt sich selbst als
-nächster Hop an.
-
-### 3.3 Fahrzeug → C4I (2–3 Hops)
+### 3.2 Vehicle-internal (double star, 2 hops)
 
 ```
-Turm-Sensor ──► Turm-GW ──► Wanne-GW ──► C4I-Node
-                                        (verifiziert 3-Hop-Chain
-                                         gegen Fleet-Trust-Anchor)
+turret sensor ──► turret gateway ──► hull gateway ──► driver HMI
+  (legacy)         (delegates)        (re-delegates    (reads with
+                                       for turret       a 2-hop chain)
+                                       sensor via
+                                       turret GW)
 ```
 
-### 3.4 V2V via C4I-Broker (Transport-Sonderfall)
+The hull-gateway delegation is a **re-delegation**: it
+confirms the turret-gateway delegation and appends itself as the
+next hop.
 
-Lateral-Kommunikation zwischen Fahrzeugen läuft im spezifischen
-Scope **nicht als DDS-Direkt-Peer-Link**, sondern als Store-&-Forward
-über C4I: Sample wird in SMTP-Datagrams verpackt, an C4I gesendet,
-C4I reicht an Ziel-Fahrzeug weiter, dort re-assembliert. Der
-Security-Layer sieht nur den lokalen C4I-Link, nicht das andere
-Fahrzeug direkt.
-
-Für **generelle lose-gekoppelte Systeme** außerhalb dieses SMTP-
-Szenarios (später): Cross-Anchor-Federation — ein Fahrzeug vertraut
-dem anderen, wenn dessen Gateway-Cert von einer gemeinsamen Fleet-CA
-signiert ist. Siehe §9 "Zukünftige Erweiterungen".
-
-## 4 Trust-Modell
-
-### 4.1 Vertikale Trust-Kette
+### 3.3 Vehicle → C4I (2–3 hops)
 
 ```
-Fleet-Root-CA
+turret sensor ──► turret GW ──► hull GW ──► C4I node
+                                        (verifies the 3-hop chain
+                                         against the fleet trust anchor)
+```
+
+### 3.4 V2V via a C4I broker (transport special case)
+
+Lateral communication between vehicles runs, in this specific
+scope, **not as a DDS direct peer link**, but as store-and-forward
+over C4I: the sample is packed into SMTP datagrams, sent to C4I,
+C4I forwards to the target vehicle, where it is re-assembled. The
+security layer sees only the local C4I link, not the other
+vehicle directly.
+
+For **general loosely coupled systems** outside this SMTP
+scenario (later): cross-anchor federation — a vehicle trusts
+the other when its gateway cert is signed by a common fleet CA.
+See §9 "Future extensions".
+
+## 4 Trust model
+
+### 4.1 Vertical trust chain
+
+```
+fleet root CA
     │
-    ├── Vehicle-CA-Chassis-42
+    ├── vehicle CA chassis-42
     │       │
-    │       ├── Wanne-Gateway-Cert   ← in Trust-Anchor jedes externen Peers
-    │       └── Turm-Gateway-Cert    ← ebenso
+    │       ├── hull gateway cert   ← in the trust anchor of every external peer
+    │       └── turret gateway cert ← likewise
     │
-    └── C4I-CA
-            └── C4I-Node-Cert         ← andere Trust-Anchor-Ebene
+    └── C4I CA
+            └── C4I node cert         ← a different trust-anchor level
 ```
 
-* **Externe Peers** (C4I, andere Fahrzeuge) haben nur die **Gateway-
-  Certs** im Trust-Store — nicht die Edge-Sensoren.
-* **Gateway** signiert Delegation-Tokens für seine Edge-Peers mit
-  seinem eigenen Gateway-Key. Jede Delegation ist kryptographisch
-  auf den Gateway-Cert zurückführbar.
-* **Edge-Peers** haben kein eigenes Key-Material — ihre Identity
-  existiert nur **abgeleitet** aus der Gateway-Delegation.
+* **External peers** (C4I, other vehicles) have only the **gateway
+  certs** in their trust store — not the edge sensors.
+* **The gateway** signs delegation tokens for its edge peers with
+  its own gateway key. Every delegation is cryptographically
+  traceable back to the gateway cert.
+* **Edge peers** have no own key material — their identity
+  exists only **derived** from the gateway delegation.
 
-### 4.2 Horizontale Peer-Class-Klassifikation
+### 4.2 Horizontal peer-class classification
 
-Edge-Peers sind zusätzlich in Peer-Classes (WP 4H-h) einsortiert:
+Edge peers are additionally sorted into peer classes (WP 4H-h):
 
-| Edge-Typ | Peer-Class | Delegation? |
+| Edge type | Peer class | Delegation? |
 |----------|-----------|-------------|
-| Legacy-ECU ohne Cert | `legacy` | Pflicht (nur als Gateway-Delegate erreichbar) |
-| Fast-Subsystem mit Cert | `fast` | Optional (Gateway kann trotzdem für sie vertreten) |
-| Hochsicheres C4I | `highassurance` | Kein Delegation — direkter Cert |
+| Legacy ECU without cert | `legacy` | Mandatory (reachable only as a gateway delegate) |
+| Fast subsystem with cert | `fast` | Optional (the gateway can represent them anyway) |
+| Highly secure C4I | `highassurance` | No delegation — a direct cert |
 
-Die `PeerClassMatch`-Kriterien werden in Stufe j-d erweitert um
+The `PeerClassMatch` criteria are extended in stage j-d by
 `delegated_by` / `max_delegation_depth`.
 
-### 4.3 Trust-Policy-Modi
+### 4.3 Trust-policy modes
 
-Die Trust-Anchor-Semantik ist **konfigurierbar pro Delegation-Profile**
-(siehe §7.1). Vier Modi stehen zur Verfügung:
+The trust-anchor semantics are **configurable per delegation profile**
+(see §7.1). Four modes are available:
 
-| Modus | Semantik |
+| Mode | Semantics |
 |-------|----------|
-| `gateway-only` | Nur Gateway-Certs im Trust-Anchor; Edge-Peers **nur** via Delegation akzeptiert. Standard für Fahrzeug → C4I. |
-| `direct-or-delegated` | Edge mit eigenem Cert wird **direkt** akzeptiert (wenn im Trust-Store vorhanden); sonst Delegation-Pfad. Mixed-Netze mit einigen strong-Edges. |
-| `federation` | **Cross-Anchor**: Trust-Store kennt mehrere Root-CAs, Peers aller bekannten Roots akzeptiert. Für V2V-generell / lose gekoppelte Systeme. |
-| `strict-delegated` | Auch Gateway-Certs werden **nur** als Delegators akzeptiert, nie als direkte User-Peers. Für Fälle wo das Gateway selber keine Samples schreiben darf. |
+| `gateway-only` | Only gateway certs in the trust anchor; edge peers accepted **only** via delegation. Default for vehicle → C4I. |
+| `direct-or-delegated` | An edge with its own cert is accepted **directly** (if present in the trust store); otherwise the delegation path. Mixed networks with some strong edges. |
+| `federation` | **Cross-anchor**: the trust store knows several root CAs, peers of all known roots accepted. For V2V-general / loosely coupled systems. |
+| `strict-delegated` | Even gateway certs are accepted **only** as delegators, never as direct user peers. For cases where the gateway itself must not write samples. |
 
-Kombinierbar: ein Profile `c4i-relay-only` kann `strict-delegated`
-sein während ein anderes Profile `internal-bridge` auf
-`direct-or-delegated` läuft — innerhalb derselben Governance.
+Combinable: a profile `c4i-relay-only` can be `strict-delegated`
+while another profile `internal-bridge` runs on
+`direct-or-delegated` — within the same governance.
 
-## 5 Datenmodell
+## 5 Data model
 
 ### 5.1 `DelegationLink`
 
 ```rust
 pub struct DelegationLink {
-    /// Wer delegiert (in Trust-Anchor des Empfängers bekannt, oder
-    /// selbst delegiert durch den nächsten Link).
+    /// Who delegates (known in the receiver's trust anchor, or
+    /// itself delegated by the next link).
     pub delegator_guid: [u8; 16],
-    /// Wem wird delegiert.
+    /// To whom it is delegated.
     pub delegatee_guid: [u8; 16],
-    /// Topic-Patterns die der Delegatee im Namen des Delegators
-    /// bespielen darf. Wildcard-Semantik wie `topic_match` (WP 4.2-c).
+    /// Topic patterns the delegatee may serve on behalf of the
+    /// delegator. Wildcard semantics like `topic_match` (WP 4.2-c).
     pub allowed_topic_patterns: Vec<String>,
-    /// Partition-Patterns (Wildcard).
+    /// Partition patterns (wildcard).
     pub allowed_partition_patterns: Vec<String>,
-    /// Gültigkeitsfenster (Unix-Sekunden).
+    /// Validity window (Unix seconds).
     pub not_before: i64,
     pub not_after: i64,
-    /// Signatur vom Delegator-Cert über alle obigen Felder.
+    /// Signature by the delegator cert over all of the above fields.
     pub signature: Vec<u8>,
 }
 ```
@@ -174,31 +175,31 @@ pub struct DelegationLink {
 
 ```rust
 pub struct DelegationChain {
-    /// Ursprünglicher Claim-Träger — der Peer, dessen Identity im
-    /// Sample-Header steht. Muss === links[0].delegatee_guid.
+    /// Original claim bearer — the peer whose identity is in the
+    /// sample header. Must === links[0].delegatee_guid.
     pub origin_guid: [u8; 16],
-    /// Chain in Delegations-Reihenfolge. Erster Eintrag: Gateway,
-    /// das die Identity des origin_guid bezeugt. Nachfolgende
-    /// Einträge sind Re-Delegations.
+    /// Chain in delegation order. First entry: the gateway
+    /// that attests the identity of origin_guid. Subsequent
+    /// entries are re-delegations.
     pub links: Vec<DelegationLink>,
 }
 ```
 
-### 5.3 Ephemeral vs. Static Edge-Identity
+### 5.3 Ephemeral vs. static edge identity
 
-Default: **statischer GuidPrefix** aus Gateway-Config.
+Default: **static GuidPrefix** from the gateway config.
 
 ```xml
-<!-- Gateway-Config (Beispiel) -->
+<!-- gateway config (example) -->
 <edge_identities>
   <edge name="lidar-A" guid_prefix="01020304050607080900000a" />
   <edge name="radar-B" guid_prefix="01020304050607080900000b" />
 </edge_identities>
 ```
 
-Optional: **Ephemeral-Identity** pro Boot-Zyklus oder Sample-Batch,
-wenn Replay-Robustheit gefordert ist. Das Gateway erzeugt dann eine
-Zufalls-GuidPrefix und signiert sie kurzlebig mit.
+Optional: **ephemeral identity** per boot cycle or sample batch,
+when replay robustness is required. The gateway then generates a
+random GuidPrefix and signs it short-lived.
 
 ```xml
 <edge_identities default_mode="static">
@@ -207,36 +208,36 @@ Zufalls-GuidPrefix und signiert sie kurzlebig mit.
 </edge_identities>
 ```
 
-* **Static** — einfache Konfiguration, stabile Identity über Boot
-  hinweg, anfällig für Replay wenn Message-Counter nicht mitgeschützt
-  werden.
-* **Ephemeral** — pro `lifetime_seconds` neue GuidPrefix + neue
-  Delegation. Replay-Windows sind damit extrem eng. Mehr
-  SPDP-Traffic als Preis.
+* **Static** — simple configuration, stable identity across boots,
+  susceptible to replay when message counters are not protected
+  along with it.
+* **Ephemeral** — a new GuidPrefix + new delegation per
+  `lifetime_seconds`. Replay windows are thus extremely narrow. More
+  SPDP traffic as the price.
 
-## 6 Chain-Validation
+## 6 Chain validation
 
-Der Empfänger validiert eine ankommende Sample-Delegation so:
+The receiver validates an incoming sample delegation as follows:
 
-1. **Chain-Kontinuität**: Für alle `i`: `links[i].delegatee_guid == links[i+1].delegator_guid`.
-2. **Origin-Match**: `chain.origin_guid == links[0].delegatee_guid`.
-3. **Trust-Anchor**: Der Cert, mit dem `links[0].signature` erzeugt wurde, muss im Empfänger-Trust-Anchor liegen (d.h. der erste Delegator ist bekannt vertraut).
-4. **Signatur-Kette**: Für alle `i > 0`: Signatur von `links[i]` muss vom Cert erzeugt sein, das zu `links[i-1].delegatee_guid` gehört (d.h. jeder nächste Delegator ist vom vorigen autorisiert).
-5. **Zeitfenster**: Jedes `links[i]` mit `now ∈ [not_before, not_after]`.
-6. **Chain-Tiefe**: `chain.links.len() <= max_delegation_depth` aus Governance (Default **3**, konfigurierbar).
-7. **Scope-Kaskadierung**: Das aktuelle Topic/die Partition muss in **jeder** `allowed_*_pattern`-Menge aller Links matchen — das entspricht dem Durchschnitt aller Scopes (der engste Hop gewinnt).
+1. **Chain continuity**: for all `i`: `links[i].delegatee_guid == links[i+1].delegator_guid`.
+2. **Origin match**: `chain.origin_guid == links[0].delegatee_guid`.
+3. **Trust anchor**: the cert with which `links[0].signature` was created must lie in the receiver trust anchor (i.e. the first delegator is known-trusted).
+4. **Signature chain**: for all `i > 0`: the signature of `links[i]` must be created by the cert that belongs to `links[i-1].delegatee_guid` (i.e. every next delegator is authorized by the previous one).
+5. **Time window**: each `links[i]` with `now ∈ [not_before, not_after]`.
+6. **Chain depth**: `chain.links.len() <= max_delegation_depth` from the governance (default **3**, configurable).
+7. **Scope cascading**: the current topic/partition must match in **every** `allowed_*_pattern` set of all links — this corresponds to the intersection of all scopes (the narrowest hop wins).
 
-## 7 Konfiguration
+## 7 Configuration
 
-### 7.1 Governance-XML — Hybrid mit Named Profiles
+### 7.1 Governance XML — hybrid with named profiles
 
-Delegation-Regeln werden als **benannte Profiles** auf Top-Level
-definiert. Peer-Classes referenzieren Profiles per `delegation_profile`-
-Attribut. Das ist DRY (ein Profile, mehrere Peer-Classes), erlaubt
-differenzierte Policy pro Class und bleibt audit-freundlich.
+Delegation rules are defined as **named profiles** at the top level.
+Peer classes reference profiles via a `delegation_profile`
+attribute. This is DRY (one profile, several peer classes), allows
+differentiated policy per class and stays audit-friendly.
 
 ```xml
-<!-- Top-Level: Named Delegation-Profiles (Named Types) -->
+<!-- top level: named delegation profiles (named types) -->
 <zerodds:delegation_profiles>
   <profile name="vehicle-internal-gateway">
     <max_chain_depth>2</max_chain_depth>
@@ -274,7 +275,7 @@ differenzierte Policy pro Class und bleibt audit-freundlich.
   </profile>
 </zerodds:delegation_profiles>
 
-<!-- Peer-Classes referenzieren Profiles -->
+<!-- peer classes reference profiles -->
 <zerodds:peer_classes>
   <peer_class name="legacy-edge" protection="NONE">
     <match auth_plugin_class="" delegation_profile="vehicle-internal-gateway" />
@@ -287,50 +288,50 @@ differenzierte Policy pro Class und bleibt audit-freundlich.
            delegation_profile="federated-v2v" />
   </peer_class>
   <peer_class name="direct-authed" protection="SIGN">
-    <!-- Kein delegation_profile → direkte Auth, keine Chain erwartet -->
+    <!-- No delegation_profile → direct auth, no chain expected -->
     <match auth_plugin_class="DDS:Auth:PKI-DH:1.2" />
   </peer_class>
 </zerodds:peer_classes>
 ```
 
-**Parser-Checks (Stufe j-h):**
-- `delegation_profile="..."` ohne existierenden `<profile name="...">` → Warning
+**Parser checks (stage j-h):**
+- `delegation_profile="..."` without an existing `<profile name="...">` → warning
   `unreferenced delegation profile "<name>"`.
-- `<profile>` ohne Referenz aus Peer-Class → Info
+- `<profile>` without a reference from a peer class → info
   `delegation profile "<name>" unused`.
 
-### 7.2 Signatur-Algorithmus
+### 7.2 Signature algorithm
 
-Konfiguriert per Profile. Unterstützte Werte (analog zu rustls-webpki):
+Configured per profile. Supported values (analogous to rustls-webpki):
 
-| Wert | Algorithmus | Token-Größe | Vor/Nach |
+| Value | Algorithm | Token size | Pros/cons |
 |------|-------------|-------------|----------|
-| `ecdsa-p256-sha256` (Default) | ECDSA P-256 + SHA-256 | ~72 byte | Hardware-beschleunigt auf ARM-Embedded, kleinste TLS-Standard-Signatur |
-| `ecdsa-p384-sha384` | ECDSA P-384 + SHA-384 | ~104 byte | Höhere Sicherheit, teurer |
-| `rsa-pss-sha256` | RSA-PSS 2048 + SHA-256 | ~256 byte | OMG-DDS-Security-Mandatory (Spec §9.3.2.1); für Fleet-Interop mit Legacy-Vendors |
-| `ed25519` | Ed25519 (pur) | ~64 byte | Schnellste, kleinste — nicht OMG-konform; für Hochperformance-Deployments |
+| `ecdsa-p256-sha256` (default) | ECDSA P-256 + SHA-256 | ~72 byte | Hardware-accelerated on ARM embedded, smallest TLS-standard signature |
+| `ecdsa-p384-sha384` | ECDSA P-384 + SHA-384 | ~104 byte | Higher security, more expensive |
+| `rsa-pss-sha256` | RSA-PSS 2048 + SHA-256 | ~256 byte | OMG-DDS-Security mandatory (spec §9.3.2.1); for fleet interop with legacy vendors |
+| `ed25519` | Ed25519 (pure) | ~64 byte | Fastest, smallest — not OMG-conformant; for high-performance deployments |
 
-**Rationale Default ECDSA-P-256:**
-- ARM-Cortex-M/A haben ECDSA-Hardware-Support (kein AES-NI-Äquivalent für RSA)
-- Token-Größe treibt SPDP-Overhead — klein = weniger Beacon-Fragmentation
-- OMG-Spec listet es als optional-but-widely-supported
+**Rationale for the ECDSA-P-256 default:**
+- ARM Cortex-M/A have ECDSA hardware support (no AES-NI equivalent for RSA)
+- Token size drives SPDP overhead — small = less beacon fragmentation
+- The OMG spec lists it as optional-but-widely-supported
 
-**Wechsel-Semantik:** bei Signatur-Algorithmus-Änderung in einem
-Profile müssen alle aktiven Delegations neu erzeugt werden. Das Gateway
-erkennt den Profile-Reload und regeneriert — Edge-Peers melden dabei
-ein Announce-Refresh-Event.
+**Switch semantics:** on a signature-algorithm change in a
+profile, all active delegations must be regenerated. The gateway
+detects the profile reload and regenerates — edge peers report an
+announce-refresh event in the process.
 
-### 7.3 Runtime-Config
+### 7.3 Runtime config
 
 ```rust
 pub struct DelegationConfig {
-    /// Named Profiles geparst aus Governance. In-Memory-Lookup per Name.
+    /// Named profiles parsed from governance. In-memory lookup by name.
     pub profiles: BTreeMap<String, DelegationProfile>,
-    /// Peer-Class → Profile-Name Mapping (aus Governance).
+    /// Peer class → profile name mapping (from governance).
     pub class_to_profile: BTreeMap<String, String>,
-    /// Pro Edge-Peer: static oder ephemeral Identity.
+    /// Per edge peer: static or ephemeral identity.
     pub edge_identities: Vec<EdgeIdentityConfig>,
-    /// Wenn true: Peers ohne gültige Delegation-Chain werden gedroppt
+    /// When true: peers without a valid delegation chain are dropped
     /// (strict mode). Default: true.
     pub require_chain_for_uncerted_peers: bool,
 }
@@ -347,57 +348,57 @@ pub struct DelegationProfile {
 
 ## 8 Revocation
 
-* **Implicit** via Gateway-Ausfall: Wenn das Gateway keine SPDP-Beacons
-  mehr sendet, laufen nach `lease_duration` alle seine Delegationen
-  aus (Empfänger verlassen sich nicht länger auf den `not_after`).
-* **Explicit** via Gateway-Command: Gateway kann eine Delegation-ID
-  aktiv zurückziehen. Das Gateway pusht beim nächsten SPDP-Beacon
-  einen `zerodds.sec.revoked_delegations`-Property (Liste von
-  `(delegatee_guid, issued_at)`-Hashes). Empfänger fügen sie zu einer
-  lokalen Revocation-List hinzu; Samples von diesen Delegatees werden
-  gedroppt.
-* **Short-lived-First**: Ephemeral-Identities haben inhärent kurze
-  Laufzeiten und erfordern keine explizite Revocation.
+* **Implicit** via gateway failure: when the gateway no longer sends
+  SPDP beacons, all its delegations expire after `lease_duration`
+  (receivers no longer rely on `not_after`).
+* **Explicit** via a gateway command: the gateway can actively withdraw
+  a delegation ID. On the next SPDP beacon the gateway pushes
+  a `zerodds.sec.revoked_delegations` property (a list of
+  `(delegatee_guid, issued_at)` hashes). Receivers add them to a
+  local revocation list; samples from these delegatees are
+  dropped.
+* **Short-lived-first**: ephemeral identities have inherently short
+  lifetimes and require no explicit revocation.
 
-## 9 Zukünftige Erweiterungen (nicht in WP 4H-j)
+## 9 Future extensions (not in WP 4H-j)
 
-* **Cross-Anchor-Federation** — direkte V2V ohne C4I-Broker.
-  Mehrere Trust-Anchors, die sich gegenseitig durch Cross-Signing
-  oder Federation-Metadata erkennen.
-* **Attribute-Based-Delegation** — Scope nicht über Topic-Pattern
-  sondern über Key-Value-Attribute (`classification=SECRET`,
-  `region=EU`) aus Permissions-XML.
-* **Group-Delegation** — eine Delegation gilt für eine ganze
-  Peer-Class auf einmal (statt pro Edge einzeln).
-* **Transparente Delegation** — der Empfänger sieht nur den Ursprungs-
-  GUID, die Chain-Details werden nicht propagiert (Privacy-Argument).
+* **Cross-anchor federation** — direct V2V without a C4I broker.
+  Several trust anchors that recognize each other through cross-signing
+  or federation metadata.
+* **Attribute-based delegation** — scope not via topic patterns
+  but via key-value attributes (`classification=SECRET`,
+  `region=EU`) from the permissions XML.
+* **Group delegation** — one delegation applies to a whole
+  peer class at once (instead of per edge individually).
+* **Transparent delegation** — the receiver sees only the origin
+  GUID, the chain details are not propagated (privacy argument).
 
-## 10 Interop-Konsequenzen
+## 10 Interop consequences
 
-Delegation ist **nicht in OMG DDS-Security 1.1 spezifiziert**. Der
-gesamte Mechanismus läuft im `zerodds:`-Namespace und wird von Fremd-
-Vendors ignoriert. Ein Cyclone-Peer würde:
+Delegation is **not specified in OMG DDS-Security 1.1**. The
+entire mechanism runs in the `zerodds:` namespace and is ignored by foreign
+vendors. A Cyclone peer would:
 
-* Die `zerodds.sec.delegation_chain`-SPDP-Property still ignorieren
-  und den Gateway-Peer nur mit seiner eigenen Identity wahrnehmen.
-* Samples die der Gateway im Namen von Edge-Peers sendet werden als
-  vom Gateway selbst geschrieben interpretiert (aus Cyclone-Sicht).
-* Das ist kein Sicherheits-Bruch: solange Cyclone die Gateway-
-  Identity gültig findet, sieht er eben die aggregierte Sicht —
-  gleiche Daten, nur ohne feinere Origin-Auflösung.
+* Silently ignore the `zerodds.sec.delegation_chain` SPDP property
+  and perceive the gateway peer only with its own identity.
+* Samples the gateway sends on behalf of edge peers are interpreted as
+  written by the gateway itself (from Cyclone's view).
+* That is not a security breach: as long as Cyclone finds the gateway
+  identity valid, it simply sees the aggregated view —
+  the same data, only without finer origin resolution.
 
-## 11 Scope-Matrix WP 4H-j
+## 11 Scope matrix WP 4H-j
 
-| Stufe | Thema | LOC (Schätzung) |
+| Stage | Topic | LOC (estimate) |
 |-------|-------|-----------------|
-| 4H-j-a | `DelegationLink`/`DelegationChain` + Sign/Verify in `security-pki` | ~350 |
-| 4H-j-b | Chain-Validation + Scope-Intersection in `security-permissions` | ~200 |
-| 4H-j-c | SPDP-Propagation (Wire-Format für Chain in WireProperty) | ~200 |
-| 4H-j-d | `PeerClassMatch`-Extensions (`delegated_by`, `max_chain_depth`) | ~200 |
-| 4H-j-e | `GatewayBridge`-Helper (delegate_for / revoke_for / sub-gateway-chaining) | ~300 |
-| 4H-j-f | Static + Ephemeral Edge-Identity-Config-Parser | ~200 |
-| 4H-j-g | E2E-Test Wanne+Turm-Doppelstern: 2 Gateways, 3 Edges, 1 C4I | ~400 |
-| 4H-j-h | Governance-XML `<zerodds:delegation>` Parser + Interop-Test | ~250 |
-| **Gesamt** | | **~2100 LOC** |
+| 4H-j-a | `DelegationLink`/`DelegationChain` + sign/verify in `security-pki` | ~350 |
+| 4H-j-b | Chain validation + scope intersection in `security-permissions` | ~200 |
+| 4H-j-c | SPDP propagation (wire format for the chain in WireProperty) | ~200 |
+| 4H-j-d | `PeerClassMatch` extensions (`delegated_by`, `max_chain_depth`) | ~200 |
+| 4H-j-e | `GatewayBridge` helper (delegate_for / revoke_for / sub-gateway chaining) | ~300 |
+| 4H-j-f | Static + ephemeral edge-identity config parser | ~200 |
+| 4H-j-g | E2E test hull+turret double star: 2 gateways, 3 edges, 1 C4I | ~400 |
+| 4H-j-h | Governance-XML `<zerodds:delegation>` parser + interop test | ~250 |
+| **Total** | | **~2100 LOC** |
 
-Erwarteter Zeitaufwand: 10 Arbeitstage.
+Expected time effort: 10 working days.

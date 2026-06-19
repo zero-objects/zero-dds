@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! MQTT-5.0 Broker-Logic — Spec §3 + §4.
+//! MQTT 5.0 broker logic — Spec §3 + §4.
 //!
-//! In-Memory-Broker mit:
-//! * Session-Persistence (Spec §4.1).
-//! * Subscription-Tabelle mit Wildcard-Matching (§4.7).
-//! * Retained-Messages (§3.3.1.3).
-//! * Will-Message-Delivery (§3.1.2.5, §3.1.3.2).
-//! * QoS 0/1/2 mit Packet-Identifier-Tracking (§4.6).
+//! In-memory broker with:
+//! * session persistence (Spec §4.1).
+//! * subscription table with wildcard matching (§4.7).
+//! * retained messages (§3.3.1.3).
+//! * will-message delivery (§3.1.2.5, §3.1.3.2).
+//! * QoS 0/1/2 with packet-identifier tracking (§4.6).
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -16,7 +16,7 @@ use alloc::vec::Vec;
 
 use crate::topic_filter::{matches, validate_filter};
 
-/// QoS-Level (Spec §4.3).
+/// QoS level (Spec §4.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum QoS {
@@ -29,7 +29,7 @@ pub enum QoS {
 }
 
 impl QoS {
-    /// Wire-Wert.
+    /// Wire value.
     #[must_use]
     pub const fn to_u8(self) -> u8 {
         self as u8
@@ -38,7 +38,7 @@ impl QoS {
     /// `u8 -> QoS`.
     ///
     /// # Errors
-    /// `()` wenn Wert nicht 0/1/2.
+    /// `()` if the value is not 0/1/2.
     #[allow(clippy::result_unit_err)]
     pub const fn from_u8(v: u8) -> Result<Self, ()> {
         match v {
@@ -50,51 +50,51 @@ impl QoS {
     }
 }
 
-/// Will-Message — vom Client beim CONNECT registriert. Spec §3.1.2.5.
+/// Will message — registered by the client on CONNECT. Spec §3.1.2.5.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Will {
-    /// Will-Topic.
+    /// Will topic.
     pub topic: String,
-    /// Will-Payload.
+    /// Will payload.
     pub payload: Vec<u8>,
-    /// Will-QoS.
+    /// Will QoS.
     pub qos: QoS,
-    /// Will-Retain-Flag.
+    /// Will retain flag.
     pub retain: bool,
 }
 
-/// Subscription-Eintrag.
+/// Subscription entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Subscription {
-    /// Filter (mit Wildcards).
+    /// Filter (with wildcards).
     pub filter: String,
-    /// Maximum-QoS fuer diese Subscription.
+    /// Maximum QoS for this subscription.
     pub max_qos: QoS,
-    /// `No-Local`-Flag (Spec §3.8.3.1).
+    /// `No-Local` flag (Spec §3.8.3.1).
     pub no_local: bool,
     /// `Retain-As-Published` (Spec §3.8.3.1).
     pub retain_as_published: bool,
 }
 
-/// Session-State pro Client. Spec §4.1.
+/// Session state per client. Spec §4.1.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Session {
-    /// Client-Id.
+    /// Client ID.
     pub client_id: String,
-    /// `Clean-Start`-Flag aus dem letzten CONNECT.
+    /// `Clean Start` flag from the last CONNECT.
     pub clean_start: bool,
     /// Subscriptions.
     pub subscriptions: Vec<Subscription>,
     /// Will (optional).
     pub will: Option<Will>,
-    /// Naechster Packet-Identifier fuer ausgehende QoS>=1-Messages.
+    /// Next packet identifier for outbound QoS>=1 messages.
     pub next_packet_id: u16,
-    /// Pending QoS-1/2 Acks (Spec §4.6) — Packet-Id → Topic.
+    /// Pending QoS-1/2 acks (Spec §4.6) — packet ID → topic.
     pub in_flight: BTreeMap<u16, String>,
 }
 
 impl Session {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(client_id: String, clean_start: bool) -> Self {
         Self {
@@ -107,7 +107,7 @@ impl Session {
         }
     }
 
-    /// Vergibt einen frischen Packet-Identifier.
+    /// Allocates a fresh packet identifier.
     pub fn allocate_packet_id(&mut self, topic: String) -> u16 {
         let id = self.next_packet_id;
         self.next_packet_id = self.next_packet_id.wrapping_add(1);
@@ -118,54 +118,54 @@ impl Session {
         id
     }
 
-    /// Markiert eine Packet-Id als acknowledged. Spec §4.6.
+    /// Marks a packet ID as acknowledged. Spec §4.6.
     pub fn ack_packet_id(&mut self, id: u16) -> bool {
         self.in_flight.remove(&id).is_some()
     }
 }
 
-/// Retained-Message — pro Topic ein Eintrag (Spec §3.3.1.3).
+/// Retained message — one entry per topic (Spec §3.3.1.3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetainedMessage {
-    /// Topic-Name (ohne Wildcards).
+    /// Topic name (without wildcards).
     pub topic: String,
     /// Payload.
     pub payload: Vec<u8>,
-    /// QoS bei dem die Message published wurde.
+    /// QoS at which the message was published.
     pub qos: QoS,
 }
 
-/// Broker-State.
+/// Broker state.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Broker {
     sessions: BTreeMap<String, Session>,
     retained: BTreeMap<String, RetainedMessage>,
 }
 
-/// Eine zu liefernde PUBLISH-Message zu einem Subscriber.
+/// A PUBLISH message to be delivered to a subscriber.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeliveryEnvelope {
-    /// Ziel-Client-Id.
+    /// Target client ID.
     pub client_id: String,
-    /// Topic-Name (so wie publisher es geschickt hat).
+    /// Topic name (as the publisher sent it).
     pub topic: String,
     /// Payload.
     pub payload: Vec<u8>,
     /// QoS = min(publish.qos, subscription.max_qos) per Spec §3.8.3.
     pub qos: QoS,
-    /// `Retain`-Flag fuer diesen Subscriber (siehe `retain_as_published`).
+    /// `Retain` flag for this subscriber (see `retain_as_published`).
     pub retain: bool,
 }
 
 impl Broker {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// CONNECT (Spec §3.1) — bringt eine Session online.
-    /// `clean_start=true` verwirft eine bestehende Session.
+    /// CONNECT (Spec §3.1) — brings a session online.
+    /// `clean_start=true` discards an existing session.
     pub fn connect(&mut self, client_id: String, clean_start: bool, will: Option<Will>) {
         let entry = self
             .sessions
@@ -181,8 +181,8 @@ impl Broker {
         entry.clean_start = clean_start;
     }
 
-    /// DISCONNECT — Spec §3.14. Will wird nur bei "abnormaler"
-    /// Disconnect (Caller liefert `with_will=true`) emittiert.
+    /// DISCONNECT — Spec §3.14. The will is only emitted on an "abnormal"
+    /// disconnect (the caller passes `with_will=true`).
     pub fn disconnect(&mut self, client_id: &str, with_will: bool) -> Vec<DeliveryEnvelope> {
         // Step 1: extract will + clean_start without holding mut-borrow.
         let (will, clean_start) = match self.sessions.get_mut(client_id) {
@@ -208,11 +208,11 @@ impl Broker {
         envelopes
     }
 
-    /// SUBSCRIBE (Spec §3.8) — fuegt Subscriptions in die Session.
-    /// Liefert eine Liste von Granted-QoS pro Filter.
+    /// SUBSCRIBE (Spec §3.8) — adds subscriptions to the session.
+    /// Returns a list of granted QoS per filter.
     ///
     /// # Errors
-    /// Static-String wenn Client unbekannt oder Filter invalid.
+    /// Static string if the client is unknown or the filter is invalid.
     pub fn subscribe(
         &mut self,
         client_id: &str,
@@ -230,8 +230,8 @@ impl Broker {
         Ok(granted)
     }
 
-    /// Liefert die Retained-Messages, die ein neuer Subscriber sehen
-    /// muss (Spec §3.3.1.3).
+    /// Returns the retained messages a new subscriber must see
+    /// (Spec §3.3.1.3).
     #[must_use]
     pub fn retained_for(&self, filter: &str) -> Vec<&RetainedMessage> {
         self.retained
@@ -240,8 +240,8 @@ impl Broker {
             .collect()
     }
 
-    /// PUBLISH (Spec §3.3) — verteilt die Message an alle Subscriber.
-    /// Setzt Retained-State falls retain=true.
+    /// PUBLISH (Spec §3.3) — distributes the message to all subscribers.
+    /// Sets retained state if retain=true.
     pub fn publish(
         &mut self,
         topic: &str,
@@ -303,7 +303,7 @@ impl Broker {
     /// UNSUBSCRIBE (Spec §3.10).
     ///
     /// # Errors
-    /// Static-String wenn Client unbekannt.
+    /// Static string if the client is unknown.
     pub fn unsubscribe(
         &mut self,
         client_id: &str,
@@ -317,19 +317,19 @@ impl Broker {
         Ok(before - session.subscriptions.len())
     }
 
-    /// Anzahl aktiver Sessions.
+    /// Number of active sessions.
     #[must_use]
     pub fn session_count(&self) -> usize {
         self.sessions.len()
     }
 
-    /// Anzahl Retained-Messages.
+    /// Number of retained messages.
     #[must_use]
     pub fn retained_count(&self) -> usize {
         self.retained.len()
     }
 
-    /// Lookup einer Session.
+    /// Lookup of a session.
     #[must_use]
     pub fn session(&self, client_id: &str) -> Option<&Session> {
         self.sessions.get(client_id)

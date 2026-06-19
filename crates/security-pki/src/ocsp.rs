@@ -1,98 +1,98 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! OCSP-Stapling-Validation.
+//! OCSP stapling validation.
 //!
-//! Online-Certificate-Status-Protocol (RFC 6960) pruefen:
-//! * Eine OCSP-Response wird vom Peer als "stapled" Token beim Handshake
-//!   mitgeliefert (selbe Wire wie TLS-OCSP-Stapling, Spec RFC 6961).
-//! * Dieses Modul parst den `CertStatus` aus der DER-encodeten
-//!   `OCSPResponse`-Struktur und meldet `Good`/`Revoked`/`Unknown`.
+//! Check the Online Certificate Status Protocol (RFC 6960):
+//! * An OCSP response is delivered by the peer as a "stapled" token in the handshake
+//!   (same wire as TLS OCSP stapling, spec RFC 6961).
+//! * This module parses the `CertStatus` from the DER-encoded
+//!   `OCSPResponse` structure and reports `Good`/`Revoked`/`Unknown`.
 //!
 //! # Scope
 //!
-//! * Shallow DER-Scan: wir suchen den ersten `[0] IMPLICIT good`,
-//!   `[1] revoked`, oder `[2] unknown` Tag im `SingleResponse`-
-//!   Bereich. Kein vollstaendiges ASN.1.
-//! * Keine Signatur-Validierung der OCSP-Response — der Peer hat sie
-//!   bereits signiert vom OCSP-Responder geholt. Ein echter PKI-Stack
-//!   wuerde hier zusaetzlich die Responder-Signatur pruefen — das
-//!   folgt in future-major+ mit `x509-parser`-Dep.
+//! * Shallow DER scan: we look for the first `[0] IMPLICIT good`,
+//!   `[1] revoked`, or `[2] unknown` tag in the `SingleResponse`
+//!   area. Not a complete ASN.1.
+//! * No signature validation of the OCSP response — the peer already
+//!   fetched it signed from the OCSP responder. A real PKI stack
+//!   would additionally check the responder signature here — that
+//!   follows in future-major+ with an `x509-parser` dep.
 //!
-//! # Nicht enthalten
+//! # Not included
 //!
-//! * OCSP-Request-Signing (wir konsumieren nur Responses).
-//! * CRL-Parsing (separater future-major).
+//! * OCSP request signing (we only consume responses).
+//! * CRL parsing (separate future-major).
 
 #[cfg(test)]
 use alloc::vec::Vec;
 
-/// Cert-Status aus einer OCSP-Response.
+/// Cert status from an OCSP response.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OcspStatus {
-    /// Cert ist gueltig zum Zeitpunkt der Response (`thisUpdate`).
+    /// The cert is valid as of the response time (`thisUpdate`).
     Good,
-    /// Cert wurde revoked. Zeitpunkt und Revocation-Reason werden
-    /// nicht durchgereicht — die DDS-Security-Spec verlangt nur das
-    /// Boolean-Flag (Spec §8.3.2.10.1).
+    /// The cert was revoked. The time and revocation reason are
+    /// not passed through — the DDS-Security spec requires only the
+    /// boolean flag (spec §8.3.2.10.1).
     Revoked,
-    /// OCSP-Responder kennt den Cert nicht.
+    /// The OCSP responder does not know the cert.
     Unknown,
-    /// Response konnte nicht geparst werden (nicht-spec-konform).
+    /// The response could not be parsed (non-spec-conformant).
     Malformed,
 }
 
-/// Scannt eine DER-OCSP-Response und liefert den Cert-Status fuer den
-/// (einzigen) enthaltenen `SingleResponse`.
+/// Scans a DER OCSP response and returns the cert status for the
+/// (single) contained `SingleResponse`.
 ///
-/// Der Parser ist bewusst flach: er sucht im DER-Stream nach den
-/// OCSP-Response-CertStatus-Tags `0x80` (good), `0xA1`/`0x81` (revoked)
-/// oder `0x82` (unknown) innerhalb des ersten `SingleResponse` —
-/// typischerweise ca. 40 byte in die Response hinein.
+/// The parser is deliberately shallow: it searches the DER stream for the
+/// OCSP-response CertStatus tags `0x80` (good), `0xA1`/`0x81` (revoked)
+/// or `0x82` (unknown) within the first `SingleResponse` —
+/// typically about 40 bytes into the response.
 ///
-/// Diese Heuristik reicht fuer die OCSP-Responses der gaengigen CA-
-/// Responder (Let's Encrypt, DigiCert, Sectigo). Fuer mehrere Certs
-/// in einer Response liefert diese Funktion den Status des **ersten**.
+/// This heuristic is enough for the OCSP responses of common CA
+/// responders (Let's Encrypt, DigiCert, Sectigo). For multiple certs
+/// in one response this function returns the status of the **first**.
 #[must_use]
 pub fn parse_ocsp_status(response_der: &[u8]) -> OcspStatus {
-    // OCSP-Response DER-Struktur (vereinfacht):
+    // OCSP-response DER structure (simplified):
     //   OCSPResponse ::= SEQUENCE {
     //     responseStatus [0] ENUMERATED,
     //     responseBytes  [0] EXPLICIT ResponseBytes OPTIONAL
     //   }
     //
-    // Wir scannen auf:
+    // We scan for:
     //   * [0] IMPLICIT NULL         → good  (tag 0x80, length 0x00)
     //   * [1] IMPLICIT RevokedInfo  → revoked (tag 0xA1)
     //   * [1] CHOICE revoked        → revoked (tag 0x81 in SingleResponse)
     //   * [2] IMPLICIT UnknownInfo  → unknown (tag 0x82)
     //
-    // Das SingleResponse liegt nach Header + responderID + producedAt.
-    // Wir iterieren einfach den gesamten Stream und nehmen den ersten
-    // passenden Tag — mehrfach-vorkommen ist spec-pathologisch.
+    // The SingleResponse comes after header + responderID + producedAt.
+    // We simply iterate the whole stream and take the first
+    // matching tag — multiple occurrences are spec-pathological.
 
     if response_der.is_empty() {
         return OcspStatus::Malformed;
     }
-    // Defensive Scan-Cap: realistische OCSP-Responses sind einige
-    // hundert Byte, niemals megabytes. Schuetzt vor adversarial-grossen
-    // Responses. 64 KiB.
+    // Defensive scan cap: realistic OCSP responses are a few
+    // hundred bytes, never megabytes. Protects against adversarially large
+    // responses. 64 KiB.
     const MAX_SCAN_BYTES: usize = 65_536;
     let scan_limit = response_der.len().min(MAX_SCAN_BYTES);
     let mut seen_header = false;
     for i in 0..scan_limit {
         let b = response_der[i];
         if !seen_header {
-            // Skip bis hinter das aeussere SEQUENCE (tag 0x30).
+            // Skip until past the outer SEQUENCE (tag 0x30).
             if b == 0x30 {
                 seen_header = true;
             }
             continue;
         }
         match b {
-            // [0] IMPLICIT NULL — `good`. Length-Byte muss 0 sein.
+            // [0] IMPLICIT NULL — `good`. The length byte must be 0.
             0x80 if response_der.get(i + 1) == Some(&0x00) => return OcspStatus::Good,
-            // [1] revoked — zwei moegliche Enkodierungen.
+            // [1] revoked — two possible encodings.
             0xA1 | 0x81 => return OcspStatus::Revoked,
             // [2] unknown.
             0x82 => return OcspStatus::Unknown,
@@ -102,11 +102,11 @@ pub fn parse_ocsp_status(response_der: &[u8]) -> OcspStatus {
     OcspStatus::Malformed
 }
 
-/// Hoher Level: liefert `Ok(())` nur wenn die Response `Good` ist.
-/// Jeder andere Status → `Err` mit `SecurityErrorKind::AuthenticationFailed`.
+/// High level: returns `Ok(())` only if the response is `Good`.
+/// Any other status → `Err` with `SecurityErrorKind::AuthenticationFailed`.
 ///
 /// # Errors
-/// Siehe oben.
+/// See above.
 pub fn require_good_status(
     response_der: &[u8],
 ) -> Result<(), zerodds_security::error::SecurityError> {
@@ -115,31 +115,31 @@ pub fn require_good_status(
         OcspStatus::Good => Ok(()),
         OcspStatus::Revoked => Err(SecurityError::new(
             SecurityErrorKind::AuthenticationFailed,
-            "ocsp: cert ist revoked",
+            "ocsp: cert is revoked",
         )),
         OcspStatus::Unknown => Err(SecurityError::new(
             SecurityErrorKind::AuthenticationFailed,
-            "ocsp: responder kennt cert nicht",
+            "ocsp: responder does not know the cert",
         )),
         OcspStatus::Malformed => Err(SecurityError::new(
             SecurityErrorKind::BadArgument,
-            "ocsp: response nicht parsbar",
+            "ocsp: response not parseable",
         )),
     }
 }
 
-/// Hilfs-Builder fuer Minimal-OCSP-Responses in Tests.
-/// Wickelt einen `CertStatus`-Tag in eine gueltige DER-SEQUENCE-Huelle.
+/// Helper builder for minimal OCSP responses in tests.
+/// Wraps a `CertStatus` tag in a valid DER SEQUENCE shell.
 #[cfg(test)]
 #[must_use]
 fn build_test_response(cert_status_tag: u8) -> Vec<u8> {
-    // Wir bauen ein minimales, syntaktisch akzeptables DER:
+    // We build a minimal, syntactically acceptable DER:
     //   SEQUENCE { <status_tag> 00 }
     //   = 0x30 0x02 <tag> 0x00
-    // Der Parser braucht nur das erste SEQUENCE und dann den Tag.
+    // The parser only needs the first SEQUENCE and then the tag.
     let payload_len = match cert_status_tag {
         0x80 => 2,        // tag + 0x00 length
-        0xA1 | 0x81 => 1, // nur der tag reicht
+        0xA1 | 0x81 => 1, // the tag alone is enough
         0x82 => 1,
         _ => 1,
     };
@@ -215,36 +215,36 @@ mod tests {
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
     }
 
-    /// Mutation-Killer: Praefix-Bytes vor dem aeusseren SEQUENCE
-    /// muessen ueberlesen werden — ein 0x80 vor dem 0x30 ist KEIN Status.
-    /// Faengt `delete !` Mutation auf `if !seen_header` (Zeile 77).
+    /// Mutation killer: prefix bytes before the outer SEQUENCE
+    /// must be skipped — a 0x80 before the 0x30 is NOT a status.
+    /// Catches the `delete !` mutation on `if !seen_header` (line 77).
     #[test]
     fn prefix_bytes_before_sequence_are_skipped() {
-        // 0x80 0x00 wuerde mit deletetem `!` als Good interpretiert.
-        // Original: skipt Praefix bis 0x30, findet dann 0x82 → Unknown.
+        // 0x80 0x00 would be interpreted as Good with a deleted `!`.
+        // Original: skips the prefix until 0x30, then finds 0x82 → Unknown.
         let r = [0x80, 0x00, 0x30, 0x02, 0x82, 0x00];
         assert_eq!(parse_ocsp_status(&r), OcspStatus::Unknown);
     }
 
-    /// Mutation-Killer: SEQUENCE-Tag-Erkennung vergleicht auf `==0x30`,
-    /// nicht `!=0x30`. Faengt `==` -> `!=` Mutation (Zeile 79).
+    /// Mutation killer: SEQUENCE-tag detection compares for `==0x30`,
+    /// not `!=0x30`. Catches the `==` -> `!=` mutation (line 79).
     ///
-    /// Eingabe ohne Length-Byte (3 statt 4 byte): nur original `==`
-    /// Variante registriert die SEQUENCE und liefert Good zurueck;
-    /// `!=` wuerde 0x30 als "nicht-Header" werten und zum Pre-Header-
-    /// Skip-Mode degradieren.
+    /// Input without a length byte (3 instead of 4 bytes): only the original `==`
+    /// variant registers the SEQUENCE and returns Good;
+    /// `!=` would treat 0x30 as "not a header" and degrade to the pre-header
+    /// skip mode.
     #[test]
     fn sequence_tag_recognized_via_equality() {
         let r = [0x30, 0x80, 0x00];
         assert_eq!(parse_ocsp_status(&r), OcspStatus::Good);
     }
 
-    /// Mutation-Killer: Good-Tag braucht Length-Byte 0x00 — andere
-    /// Length-Bytes duerfen NICHT als Good zaehlen.
-    /// Faengt "replace match guard with true" Mutation (Zeile 87).
+    /// Mutation killer: the Good tag needs length byte 0x00 — other
+    /// length bytes must NOT count as Good.
+    /// Catches the "replace match guard with true" mutation (line 87).
     #[test]
     fn good_tag_requires_zero_length() {
-        // 0x80 mit Length 0x42 ist kein gueltiger Good-Tag.
+        // 0x80 with length 0x42 is not a valid Good tag.
         let r = [0x30, 0x02, 0x80, 0x42];
         assert_ne!(parse_ocsp_status(&r), OcspStatus::Good);
     }

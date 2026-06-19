@@ -40,14 +40,14 @@ public final class InProcessBus {
     }
 
     public void unsubscribe(int domainId, String topicName, Consumer<byte[]> listener) {
-        var list = listeners.get(key(domainId, topicName));
+        CopyOnWriteArrayList<Consumer<byte[]>> list = listeners.get(key(domainId, topicName));
         if (list != null) {
             list.remove(listener);
         }
     }
 
     public void publish(int domainId, String topicName, byte[] sample) {
-        var list = listeners.get(key(domainId, topicName));
+        CopyOnWriteArrayList<Consumer<byte[]>> list = listeners.get(key(domainId, topicName));
         if (list == null) return;
         for (Consumer<byte[]> l : list) {
             l.accept(sample);

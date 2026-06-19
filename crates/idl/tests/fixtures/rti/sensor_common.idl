@@ -1,5 +1,5 @@
-// sensor_common.idl — gemeinsame Definitionen, eingebunden via #include.
-// Hand-kuratiert; siehe LICENSES.md.
+// sensor_common.idl — shared definitions, included via #include.
+// Hand-curated; see LICENSES.md.
 
 module rti_demo {
     typedef long ChannelId;

@@ -1,22 +1,21 @@
-//! Spec §9.1 + Annex A — IDL-Roundtrip-Verifikation.
+//! Spec §9.1 + Annex A — IDL roundtrip verification.
 //!
-//! Beweis, dass die Rust-Spiegelung in `annex_a.rs` deckungsgleich
-//! mit dem normativen IDL aus dem Spec-Anhang A ist:
+//! Proof that the Rust mirror in `annex_a.rs` matches the
+//! normative IDL from spec Annex A exactly:
 //!
-//! 1. Das vollständige `module zerodds::amqp` (Annex A) wird durch
-//!    den `zerodds-idl`-Parser geparst — beweist, dass das IDL syntaktisch
-//!    valide ist.
-//! 2. Alle 5 Enums + 7 Structs aus der Spec werden im AST gefunden —
-//!    beweist, dass die Rust-Spiegelung in Top-Level-Namen vollständig
-//!    ist.
-//! 3. Pro Top-Level-Item werden die Member-Namen + Top-Level-Felder
-//!    gegen die Rust-Spiegelung verglichen — beweist, dass die
-//!    Spiegelung 1:1 die Spec-Definition trägt.
+//! 1. The complete `module zerodds::amqp` (Annex A) is parsed by
+//!    the `zerodds-idl` parser — proving the IDL is syntactically
+//!    valid.
+//! 2. All 5 enums + 7 structs from the spec are found in the AST —
+//!    proving the Rust mirror is complete in its top-level names.
+//! 3. For each top-level item, the member names + top-level fields
+//!    are compared against the Rust mirror — proving the
+//!    mirror carries the spec definition 1:1.
 //!
-//! Damit schließt dieser Test §9.1 (`IDL-defined Mapping Schema`)
-//! und Annex A (`IDL Module zerodds::amqp`) als Audit-Done — der
-//! "voller IDL-Codegen-Roundtrip"-Folgepunkt aus der Open-Liste
-//! ist hier durch Parser-Verifikation gegen das spec-IDL belegt.
+//! This test thereby closes §9.1 (`IDL-defined Mapping Schema`)
+//! and Annex A (`IDL Module zerodds::amqp`) as audit-done — the
+//! "full IDL codegen roundtrip" follow-up from the open list
+//! is established here by parser verification against the spec IDL.
 
 #![allow(
     clippy::expect_used,
@@ -39,9 +38,9 @@ use zerodds_amqp_endpoint::annex_a::{
 use zerodds_idl::ast::{ConstrTypeDecl, Definition, ModuleDef, StructDcl, TypeDecl};
 use zerodds_idl::config::ParserConfig;
 
-/// Annex A IDL — wörtlich aus `documentation/specs/dds-amqp-1.0/main.tex`
-/// §A. Bei Spec-Updates muss diese Konstante gleich mit-pflegen,
-/// sonst schlägt der Roundtrip-Test fehl. Genau das ist der Sinn.
+/// Annex A IDL — verbatim from `documentation/specs/dds-amqp-1.0/main.tex`
+/// §A. On spec updates this constant must be maintained alongside,
+/// otherwise the roundtrip test fails. That is exactly the point.
 const ANNEX_A_IDL: &str = r#"
 module zerodds {
   module amqp {
@@ -159,8 +158,8 @@ fn parse_annex_a() -> zerodds_idl::ast::Specification {
         .expect("Annex-A IDL must parse without errors")
 }
 
-/// Geht in das `module zerodds { module amqp { ... } }` hinein und
-/// liefert die innere Definitionsliste.
+/// Descends into `module zerodds { module amqp { ... } }` and
+/// returns the inner definition list.
 fn inner_definitions(spec: &zerodds_idl::ast::Specification) -> &[Definition] {
     let zerodds = spec
         .definitions
@@ -282,7 +281,7 @@ fn all_seven_structs_present() {
 }
 
 // ---------------------------------------------------------------------------
-// Step 3 — Per-Type 1:1 Korrespondenz.
+// Step 3 — per-type 1:1 correspondence.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -363,7 +362,7 @@ fn topic_mapping_struct_member_order_matches_rust_mirror() {
     let spec = parse_annex_a();
     let defs = inner_definitions(&spec);
     let idl = struct_member_names(defs, "TopicMapping");
-    // Reihenfolge entspricht annex_a.rs::TopicMapping (Spec §A).
+    // Order matches annex_a.rs::TopicMapping (Spec §A).
     let expected = [
         "amqp_address",
         "dds_topic",
@@ -472,8 +471,8 @@ fn amqp_bridge_config_struct_member_order_matches_rust_mirror() {
 }
 
 // ---------------------------------------------------------------------------
-// Step 4 — Anti-Drift: verifizieren, dass kein Top-Level-Item
-// ungeprüft hinzukommt.
+// Step 4 — anti-drift: verify that no top-level item is added
+// unchecked.
 // ---------------------------------------------------------------------------
 
 #[test]

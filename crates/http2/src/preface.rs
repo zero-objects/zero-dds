@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Connection-Preface — RFC 9113 §3.4.
+//! Connection preface — RFC 9113 §3.4.
 //!
-//! Spec §3.5: Client-Preface ist 24 Bytes:
+//! Spec §3.5: the client preface is 24 bytes:
 //! `PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n`.
 
 use crate::error::Http2Error;
 
-/// HTTP/2-Client-Connection-Preface (RFC 9113 §3.4).
+/// HTTP/2 client connection preface (RFC 9113 §3.4).
 pub const CLIENT_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
-/// Prueft, ob die ersten 24 Bytes des Inputs der Spec-Preface
-/// entsprechen.
+/// Checks whether the first 24 bytes of the input match the
+/// spec preface.
 ///
 /// # Errors
-/// `BadPreface` wenn das Praefix nicht passt; `ShortFrameHeader` wenn
-/// weniger als 24 Bytes verfuegbar sind.
+/// `BadPreface` if the prefix does not match; `ShortFrameHeader` if
+/// fewer than 24 bytes are available.
 pub fn check_preface(input: &[u8]) -> Result<(), Http2Error> {
     if input.len() < CLIENT_PREFACE.len() {
         return Err(Http2Error::ShortFrameHeader);

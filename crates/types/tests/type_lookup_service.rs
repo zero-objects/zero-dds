@@ -1,9 +1,9 @@
 //! C4.2 — TypeLookup-Service Integration-Tests (XTypes 1.3 §7.6.3.3.4).
 //!
-//! Diese Tests decken das types-Layer ab: TypeRegistry-Helfer
-//! (`dependencies_of`, `transitive_dependencies`) und das Cross-
-//! Cycling von Server-Build → Client-Parse via [`GetTypesReply`]-
-//! Wire-Roundtrip.
+//! These tests cover the types layer: TypeRegistry helpers
+//! (`dependencies_of`, `transitive_dependencies`) and the cross-
+//! cycling from server build → client parse via the [`GetTypesReply`]
+//! wire roundtrip.
 
 #![allow(
     clippy::expect_used,
@@ -65,7 +65,7 @@ fn registry_dependencies_of_for_unknown_returns_empty() {
 
 #[test]
 fn registry_transitive_dependencies_follows_chain() {
-    // A → B → C, alle in Registry.
+    // A → B → C, all in the registry.
     let c = MinimalTypeObject::Struct(
         TypeObjectBuilder::struct_type("::C")
             .member("p", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
@@ -83,8 +83,8 @@ fn registry_transitive_dependencies_follows_chain() {
     reg.insert_minimal(h_c, c);
 
     let deps = reg.transitive_dependencies(&h_a, 1024);
-    // Sollte sowohl B als auch C enthalten (Reihenfolge ist nicht
-    // garantiert deterministisch, aber Set-Inhalt schon).
+    // Should contain both B and C (the order is not
+    // guaranteed deterministic, but the set content is).
     assert!(deps.contains(&h_b));
     assert!(deps.contains(&h_c));
     assert_eq!(deps.len(), 2);
@@ -114,7 +114,7 @@ fn registry_transitive_dependencies_caps_at_max_nodes() {
 
 #[test]
 fn reply_typeobject_minimal_decodes_back_into_registry() {
-    // Server-Side: build a Reply mit zwei TypeObjects.
+    // Server side: build a reply with two TypeObjects.
     let m1 = MinimalTypeObject::Struct(
         TypeObjectBuilder::struct_type("::X")
             .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int64), |m| m)
@@ -141,8 +141,8 @@ fn reply_typeobject_minimal_decodes_back_into_registry() {
     let decoded = GetTypesReply::decode_from(&mut r).unwrap();
     assert_eq!(decoded.types.len(), 2);
 
-    // Client-Side: insert into registry und checke dass die Hashes
-    // konsistent sind.
+    // Client side: insert into the registry and check that the hashes
+    // are consistent.
     let mut reg = TypeRegistry::new();
     for it in decoded.types {
         match it {

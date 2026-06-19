@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Conformance-Test-Vector-Runner.
+//! Conformance test-vector runner.
 //!
 //! Crate `zerodds-conformance`. Safety classification: **STANDARD**.
 //!
-//! Pro externer Conformance-Suite ein Modul, das die Spec-Test-
-//! Vektoren als Konstanten haelt und gegen die Production-
-//! Implementations laufen laesst. Damit ist die Konformitaet im
-//! Workspace nachweisbar ohne externe CI-Tool-Setup-Abhaengigkeit
-//! — externe Tools (Autobahn-Server, h2spec) bleiben optional in
-//! `live-interop`-Job.
+//! One module per external conformance suite, holding the spec test
+//! vectors as constants and running them against the production
+//! implementations. This makes conformance verifiable within the
+//! workspace without depending on an external CI tool setup — external
+//! tools (Autobahn server, h2spec) stay optional in the
+//! `live-interop` job.
 //!
 //! # Module
 //!
@@ -35,34 +35,34 @@ pub mod dds_xml_xvendor;
 pub mod h2spec_grpc;
 pub mod oasis_mqtt;
 
-/// Ergebnis eines einzelnen Conformance-Test-Cases.
+/// Result of a single conformance test case.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CaseResult {
-    /// Test bestanden.
+    /// Test passed.
     Pass,
-    /// Test fehlgeschlagen, mit Begruendung.
+    /// Test failed, with reason.
     Fail(alloc::string::String),
-    /// Test geskipped (z.B. Spec optional + Feature-Flag aus).
+    /// Test skipped (e.g. spec optional + feature flag off).
     Skip(&'static str),
 }
 
 impl CaseResult {
-    /// `true` wenn `Pass` oder `Skip`.
+    /// `true` if `Pass` or `Skip`.
     #[must_use]
     pub fn is_acceptable(&self) -> bool {
         !matches!(self, Self::Fail(_))
     }
 }
 
-/// Ein einzelner Test-Case (Name + Run-Funktion).
+/// A single test case (name + run function).
 pub struct TestCase {
-    /// Name (typisch Spec-§-Referenz).
+    /// Name (typically a spec § reference).
     pub name: &'static str,
-    /// Run-Funktion.
+    /// Run function.
     pub run: fn() -> CaseResult,
 }
 
-/// Liefert ein Reporting-Tupel `(passed, skipped, failed)`.
+/// Returns a reporting tuple `(passed, skipped, failed)`.
 #[must_use]
 pub fn run_suite(suite: &[TestCase]) -> (usize, usize, usize) {
     let mut pass = 0usize;

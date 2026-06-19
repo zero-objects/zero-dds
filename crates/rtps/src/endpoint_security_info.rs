@@ -1,83 +1,86 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Endpoint-Security-Info Wire-Format fuer `PID_ENDPOINT_SECURITY_INFO`
+//! Endpoint security info wire format for `PID_ENDPOINT_SECURITY_INFO`
 //! (0x1004, DDS-Security 1.1 §7.4.1.5).
 //!
-//! Zwei u32-Bitmasken:
+//! Two u32 bitmasks:
 //! ```text
 //!   u32  endpoint_security_attributes          (masks §7.4.1.5)
 //!   u32  plugin_endpoint_security_attributes   (masks §7.4.1.6)
 //! ```
 //!
-//! Beide Masken verwenden das MSB als `IS_VALID`-Flag: ein
-//! Receiver darf die Werte nur interpretieren, wenn das Bit gesetzt
-//! ist (sonst → als "no security info" behandeln).
+//! Both masks use the MSB as the `IS_VALID` flag: a
+//! receiver may interpret the values only if the bit is set
+//! (otherwise → treat as "no security info").
 //!
-//! Dieses Modul ist **Wire-only** — Policy-Entscheidungen (Match
-//! Writer ↔ Reader, Encryption-Level-Enforcement) gehoeren in den
-//! `security-runtime`-Crate.
+//! This module is **wire-only** — policy decisions (matching
+//! writer ↔ reader, encryption-level enforcement) belong in the
+//! `security-runtime` crate.
 
 use crate::error::WireError;
 
 // ============================================================================
-// EndpointSecurityAttributes (DDS-Security 1.1 §7.4.1.5 Tabelle 32)
+// EndpointSecurityAttributes (DDS-Security 1.1 §7.4.1.5 Table 32)
 // ============================================================================
 
-/// Bit-Masks fuer `endpoint_security_attributes`.
+/// Bit masks for `endpoint_security_attributes`.
 pub mod attrs {
-    /// Set wenn die Bits ueberhaupt interpretiert werden duerfen.
-    /// Receiver muss diesen Bit pruefen, sonst Werte ignorieren.
+    /// Set if the bits may be interpreted at all.
+    /// The receiver must check this bit, otherwise ignore the values.
     pub const IS_VALID: u32 = 0x8000_0000;
-    /// Read-Access-Control ist fuer dieses Endpoint aktiv.
+    /// Read access control is active for this endpoint.
     pub const IS_READ_PROTECTED: u32 = 0x0000_0001;
-    /// Write-Access-Control ist aktiv.
+    /// Write access control is active.
     pub const IS_WRITE_PROTECTED: u32 = 0x0000_0002;
-    /// SEDP-Discovery fuer dieses Endpoint wird geschuetzt.
+    /// SEDP discovery for this endpoint is protected.
     pub const IS_DISCOVERY_PROTECTED: u32 = 0x0000_0004;
-    /// Submessage-Level-Protection (SEC_PREFIX wrapping) aktiv.
+    /// Submessage-level protection (SEC_PREFIX wrapping) active.
     pub const IS_SUBMESSAGE_PROTECTED: u32 = 0x0000_0008;
-    /// Payload-Level-Protection (SEC_BODY-Encoding) aktiv.
+    /// Payload-level protection (SEC_BODY encoding) active.
     pub const IS_PAYLOAD_PROTECTED: u32 = 0x0000_0010;
-    /// Key-Attribute (z.B. Partition-Keys) werden geschuetzt.
+    /// Key attributes (e.g. partition keys) are protected.
     pub const IS_KEY_PROTECTED: u32 = 0x0000_0020;
-    /// Liveliness-Submessages werden authentifiziert.
+    /// Liveliness submessages are authenticated.
     pub const IS_LIVELINESS_PROTECTED: u32 = 0x0000_0040;
 }
 
 // ============================================================================
-// PluginEndpointSecurityAttributes (§7.4.1.6 Tabelle 33)
+// PluginEndpointSecurityAttributes (§7.4.1.6 Table 33)
 // ============================================================================
 
-/// Bit-Masks fuer `plugin_endpoint_security_attributes`.
+/// Bit masks for `plugin_endpoint_security_attributes`.
 ///
-/// Diese zweite Maske ist Plugin-spezifisch: sie sagt *was konkret*
-/// an Protection passiert, waehrend [`attrs`] sagt *welche Klasse* von
-/// Schutz aktiv ist.
+/// This second mask is plugin-specific: it says *what concretely*
+/// happens in terms of protection, while [`attrs`] says *which class* of
+/// protection is active.
 pub mod plugin_attrs {
-    /// Set wenn die Plugin-Bits gesetzt sind.
+    /// Set if the plugin bits are set.
     pub const IS_VALID: u32 = 0x8000_0000;
-    /// Submessage ist AEAD-verschluesselt (nicht nur signiert).
+    /// Submessage is AEAD-encrypted (not just signed). Bit 0.
     pub const IS_SUBMESSAGE_ENCRYPTED: u32 = 0x0000_0001;
-    /// Submessage traegt Origin-Authentication-Tag (receiver-spezifisch).
-    pub const IS_SUBMESSAGE_ORIGIN_AUTHENTICATED: u32 = 0x0000_0002;
-    /// Payload (SEC_BODY) ist verschluesselt (sonst nur authentifiziert).
-    pub const IS_PAYLOAD_ENCRYPTED: u32 = 0x0000_0004;
+    /// Payload (SEC_BODY) is encrypted (otherwise only authenticated).
+    /// Bit 1 — DDS-Security §9.4.2.5 (previously wrongly 0x4; cyclone/OpenDDS
+    /// read `payload_encrypted` at bit 1 → cross-vendor endpoint mismatch).
+    pub const IS_PAYLOAD_ENCRYPTED: u32 = 0x0000_0002;
+    /// Submessage carries an origin-authentication tag (receiver-specific).
+    /// Bit 2 — DDS-Security §9.4.2.5 (previously wrongly 0x2).
+    pub const IS_SUBMESSAGE_ORIGIN_AUTHENTICATED: u32 = 0x0000_0004;
 }
 
 // ============================================================================
 // EndpointSecurityInfo-Struct
 // ============================================================================
 
-/// Wire-Repraesentation von `PID_ENDPOINT_SECURITY_INFO`.
+/// Wire representation of `PID_ENDPOINT_SECURITY_INFO`.
 ///
-/// Die rohen Masken werden unmodifiziert durchgereicht — die
-/// Policy-Layer-Konversion (z.B. "is_submessage_protected bedeutet
-/// ProtectionLevel::Sign/Encrypt") sitzt im `security-runtime`.
+/// The raw masks are passed through unmodified — the
+/// policy-layer conversion (e.g. "is_submessage_protected means
+/// ProtectionLevel::Sign/Encrypt") lives in the `security-runtime`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct EndpointSecurityInfo {
-    /// Standard-Endpoint-Security-Attribute (siehe [`attrs`]).
+    /// Standard endpoint security attributes (see [`attrs`]).
     pub endpoint_security_attributes: u32,
-    /// Plugin-spezifische Endpoint-Security-Attribute (siehe
+    /// Plugin-specific endpoint security attributes (see
     /// [`plugin_attrs`]).
     pub plugin_endpoint_security_attributes: u32,
 }
@@ -86,18 +89,18 @@ impl EndpointSecurityInfo {
     /// Wire-Size (2 * u32).
     pub const WIRE_SIZE: usize = 8;
 
-    /// `true` wenn der Spec-konforme `IS_VALID`-Bit in beiden Masken
-    /// gesetzt ist. Andernfalls soll der Receiver die Werte ignorieren
-    /// (§7.4.1.5 Satz 2).
+    /// `true` if the spec-conformant `IS_VALID` bit is set in both masks.
+    /// Otherwise the receiver should ignore the values
+    /// (§7.4.1.5 sentence 2).
     #[must_use]
     pub const fn is_valid(&self) -> bool {
         (self.endpoint_security_attributes & attrs::IS_VALID) != 0
             && (self.plugin_endpoint_security_attributes & plugin_attrs::IS_VALID) != 0
     }
 
-    /// Builder fuer ein "plain-Legacy"-Endpoint (alle Bits 0 ausser
-    /// den IS_VALID-Flags) — entspricht: der Peer unterstuetzt die
-    /// Security-PID, will aber keinen Schutz fuer dieses Endpoint.
+    /// Builder for a "plain legacy" endpoint (all bits 0 except
+    /// the IS_VALID flags) — corresponds to: the peer supports the
+    /// security PID, but wants no protection for this endpoint.
     #[must_use]
     pub const fn plain() -> Self {
         Self {
@@ -106,26 +109,26 @@ impl EndpointSecurityInfo {
         }
     }
 
-    /// `true` wenn Submessage-Level-Protection gesetzt ist.
+    /// `true` if submessage-level protection is set.
     #[must_use]
     pub const fn is_submessage_protected(&self) -> bool {
         (self.endpoint_security_attributes & attrs::IS_SUBMESSAGE_PROTECTED) != 0
     }
 
-    /// `true` wenn Payload-Level-Protection gesetzt ist.
+    /// `true` if payload-level protection is set.
     #[must_use]
     pub const fn is_payload_protected(&self) -> bool {
         (self.endpoint_security_attributes & attrs::IS_PAYLOAD_PROTECTED) != 0
     }
 
-    /// `true` wenn Plugin AEAD-Encryption fuer Submessages anmeldet.
+    /// `true` if the plugin announces AEAD encryption for submessages.
     #[must_use]
     pub const fn is_submessage_encrypted(&self) -> bool {
         (self.plugin_endpoint_security_attributes & plugin_attrs::IS_SUBMESSAGE_ENCRYPTED) != 0
     }
 
-    /// `true` wenn Plugin Origin-Authentication-Tag meldet (Stufe 7
-    /// Receiver-Specific-MACs).
+    /// `true` if the plugin reports an origin-authentication tag (stage 7
+    /// receiver-specific MACs).
     #[must_use]
     pub const fn is_submessage_origin_authenticated(&self) -> bool {
         (self.plugin_endpoint_security_attributes
@@ -133,13 +136,13 @@ impl EndpointSecurityInfo {
             != 0
     }
 
-    /// `true` wenn Plugin Payload-Ciphertext meldet.
+    /// `true` if the plugin reports payload ciphertext.
     #[must_use]
     pub const fn is_payload_encrypted(&self) -> bool {
         (self.plugin_endpoint_security_attributes & plugin_attrs::IS_PAYLOAD_ENCRYPTED) != 0
     }
 
-    /// Encode zu 8 Byte (2 * u32 LE oder BE).
+    /// Encode to 8 bytes (2 * u32 LE or BE).
     #[must_use]
     pub fn to_bytes(&self, little_endian: bool) -> [u8; Self::WIRE_SIZE] {
         let mut out = [0u8; Self::WIRE_SIZE];
@@ -159,11 +162,11 @@ impl EndpointSecurityInfo {
         out
     }
 
-    /// Decode aus 8 Byte (Value eines `PID_ENDPOINT_SECURITY_INFO`-
-    /// Parameters).
+    /// Decode from 8 bytes (the value of a `PID_ENDPOINT_SECURITY_INFO`
+    /// parameter).
     ///
     /// # Errors
-    /// `UnexpectedEof` wenn Input < 8 Byte.
+    /// `UnexpectedEof` if the input is < 8 bytes.
     pub fn from_bytes(bytes: &[u8], little_endian: bool) -> Result<Self, WireError> {
         if bytes.len() < Self::WIRE_SIZE {
             return Err(WireError::UnexpectedEof {
@@ -212,7 +215,7 @@ mod tests {
         let d = EndpointSecurityInfo::default();
         assert!(
             !d.is_valid(),
-            "default == alle null == is_valid muss false sein"
+            "default == all zero == is_valid must be false"
         );
     }
 

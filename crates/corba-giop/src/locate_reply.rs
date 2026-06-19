@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! LocateReply-Message — Spec §15.4.6.
+//! LocateReply message — spec §15.4.6.
 //!
 //! ```text
 //! enum LocateStatusType_1_0 {
@@ -27,38 +27,38 @@ use zerodds_cdr::{BufferReader, BufferWriter};
 use crate::error::{GiopError, GiopResult};
 use crate::version::Version;
 
-/// LocateStatusType — alle 6 Werte (Spec §15.4.6.1).
+/// LocateStatusType — all 6 values (spec §15.4.6.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
 pub enum LocateStatusType {
-    /// `UNKNOWN_OBJECT` — Server kennt das Object nicht.
+    /// `UNKNOWN_OBJECT` — the server does not know the object.
     UnknownObject = 0,
-    /// `OBJECT_HERE` — Object ist hier verfuegbar.
+    /// `OBJECT_HERE` — the object is available here.
     ObjectHere = 1,
-    /// `OBJECT_FORWARD` — Server bittet um Forward (transient).
+    /// `OBJECT_FORWARD` — the server requests a forward (transient).
     ObjectForward = 2,
-    /// `OBJECT_FORWARD_PERM` — Forward-Hint persistent (GIOP 1.2+).
+    /// `OBJECT_FORWARD_PERM` — persistent forward hint (GIOP 1.2+).
     ObjectForwardPerm = 3,
-    /// `LOC_SYSTEM_EXCEPTION` — System-Exception statt Locate-Reply
+    /// `LOC_SYSTEM_EXCEPTION` — system exception instead of a locate reply
     /// (GIOP 1.2+).
     LocSystemException = 4,
-    /// `LOC_NEEDS_ADDRESSING_MODE` — Server braucht anderen
-    /// `TargetAddress`-Discriminator (GIOP 1.2+).
+    /// `LOC_NEEDS_ADDRESSING_MODE` — the server needs a different
+    /// `TargetAddress` discriminator (GIOP 1.2+).
     LocNeedsAddressingMode = 5,
 }
 
 impl LocateStatusType {
-    /// Diskriminanten-Wert.
+    /// Discriminant value.
     #[must_use]
     pub const fn as_u32(self) -> u32 {
         self as u32
     }
 
-    /// Parsing aus `unsigned long`.
+    /// Parses from `unsigned long`.
     ///
     /// # Errors
-    /// `UnknownLocateStatus` ausserhalb 0..=5; `Malformed` wenn Wert
-    /// nicht zur Version passt.
+    /// `UnknownLocateStatus` outside 0..=5; `Malformed` if the value
+    /// does not match the version.
     pub fn from_u32(value: u32, version: Version) -> GiopResult<Self> {
         match value {
             0 => Ok(Self::UnknownObject),
@@ -75,28 +75,28 @@ impl LocateStatusType {
     }
 }
 
-/// LocateReply-Body.
+/// LocateReply body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocateReply {
     /// `request_id`.
     pub request_id: u32,
     /// Status.
     pub locate_status: LocateStatusType,
-    /// Body (Status-abhaengig). Spec §15.4.6.2:
-    /// * `OBJECT_FORWARD[_PERM]` → IOR-Bytes (encapsuliert).
+    /// Body (status-dependent). Spec §15.4.6.2:
+    /// * `OBJECT_FORWARD[_PERM]` → IOR bytes (encapsulated).
     /// * `LOC_SYSTEM_EXCEPTION` → SystemExceptionReplyBody.
-    /// * `LOC_NEEDS_ADDRESSING_MODE` → `AddressingDisposition`-short.
-    /// * sonst → empty.
+    /// * `LOC_NEEDS_ADDRESSING_MODE` → `AddressingDisposition` short.
+    /// * otherwise → empty.
     pub body: Vec<u8>,
 }
 
 impl LocateReply {
-    /// CDR-Encode.
+    /// CDR encode.
     ///
     /// # Errors
-    /// Buffer-Schreibfehler.
+    /// Buffer write error.
     pub fn encode(&self, version: Version, w: &mut BufferWriter) -> GiopResult<()> {
-        // Status-Versions-Validierung.
+        // Status version validation.
         match self.locate_status {
             LocateStatusType::ObjectForwardPerm
             | LocateStatusType::LocSystemException
@@ -112,25 +112,37 @@ impl LocateReply {
         }
         w.write_u32(self.request_id)?;
         w.write_u32(self.locate_status.as_u32())?;
-        if version.uses_v1_2_request_layout() {
-            w.align(8);
+        // Body (IOR for OBJECT_FORWARD*) only if present. For ObjectHere/
+        // UnknownObject it is empty → do NOT emit 8-byte align padding,
+        // otherwise trailing padding hangs after the last field and foreign ORBs
+        // (omniORB giopImpl12.cc) report "Garbage left at end of input message".
+        if !self.body.is_empty() {
+            if version.uses_v1_2_request_layout() {
+                w.align(8);
+            }
+            w.write_bytes(&self.body)?;
         }
-        w.write_bytes(&self.body)?;
         Ok(())
     }
 
-    /// CDR-Decode.
+    /// CDR decode.
     ///
     /// # Errors
-    /// Buffer-Lesefehler.
+    /// Buffer read error.
     pub fn decode(version: Version, r: &mut BufferReader<'_>) -> GiopResult<Self> {
         let request_id = r.read_u32()?;
         let status_raw = r.read_u32()?;
         let locate_status = LocateStatusType::from_u32(status_raw, version)?;
-        if version.uses_v1_2_request_layout() {
-            r.align(8)?;
-        }
-        let body = r.read_bytes(r.remaining())?.to_vec();
+        // Body only if more bytes follow (see encode: ObjectHere/
+        // UnknownObject have no body and no trailing padding).
+        let body = if r.remaining() > 0 {
+            if version.uses_v1_2_request_layout() {
+                r.align(8)?;
+            }
+            r.read_bytes(r.remaining())?.to_vec()
+        } else {
+            Vec::new()
+        };
         Ok(Self {
             request_id,
             locate_status,

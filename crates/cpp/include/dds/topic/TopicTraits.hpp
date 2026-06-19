@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// dds/topic/TopicTraits.hpp — Trait-Pflicht fuer DDS-Sample-Types.
+// dds/topic/TopicTraits.hpp — trait requirement for DDS sample types.
 //
-// `dds::topic::Topic<T>` benoetigt fuer jeden T eine Spezialisierung
-// von `topic_type_support<T>` mit:
+// `dds::topic::Topic<T>` requires for every T a specialization
+// of `topic_type_support<T>` with:
 //   * `static const char* type_name();`
 //   * `static std::vector<uint8_t> encode(const T& v);`
 //   * `static T decode(const uint8_t* buf, size_t len);`
 //
-// IDL-Bindings (`crates/idl-cpp`) emittieren diese Spezialisierung
-// automatisch fuer jede `struct`-Definition. Anwendungen ohne IDL
-// koennen sie von Hand bereitstellen oder die `dds::core::ByteSeq`-
-// Default-Spezialisierung benutzen, die rohe Byte-Buffer ueber das
-// Wire schickt.
+// IDL bindings (`crates/idl-cpp`) emit this specialization
+// automatically for every `struct` definition. Applications without IDL
+// can provide it by hand or use the `dds::core::ByteSeq`
+// default specialization, which sends raw byte buffers over the
+// wire.
 //
-// Wire-Format der idl-cpp-emittierten Spezialisierungen
+// Wire format of the idl-cpp-emitted specializations
 // -----------------------------------------------------
-// Seit zerodds-xcdr2-cpp-1.0 emittiert idl-cpp voll-XCDR2 gemaess
-// XTypes 1.3 §7.4: PLAIN_CDR2 LE mit Alignment, DHEADER fuer
-// Appendable, EMHEADER + LC fuer Mutable. Die Wire-Helpers liegen
-// in `dds/topic/xcdr2.hpp` und `dds/topic/xcdr2_md5.hpp`. Das hier
-// definierte `cdr_lite`-Namespace bleibt fuer Bestandsbenutzer
-// (Hand-geschriebene `topic_type_support<T>`-Spezialisierungen ohne
-// IDL) erhalten, wird vom Codegen aber nicht mehr verwendet.
+// Since zerodds-xcdr2-cpp-1.0 idl-cpp emits full XCDR2 per
+// XTypes 1.3 §7.4: PLAIN_CDR2 LE with alignment, DHEADER for
+// Appendable, EMHEADER + LC for Mutable. The wire helpers live
+// in `dds/topic/xcdr2.hpp` and `dds/topic/xcdr2_md5.hpp`. The
+// `cdr_lite` namespace defined here is kept for existing users
+// (hand-written `topic_type_support<T>` specializations without
+// IDL), but is no longer used by the codegen.
 
 #ifndef ZERODDS_DDS_TOPIC_TOPICTRAITS_HPP
 #define ZERODDS_DDS_TOPIC_TOPICTRAITS_HPP
@@ -37,26 +37,26 @@
 namespace dds {
 namespace core {
 
-/// Raw-Bytes Sample-Type fuer Topics ohne IDL.
+/// Raw-bytes sample type for topics without IDL.
 using ByteSeq = std::vector<uint8_t>;
 
 } // namespace core
 
 namespace topic {
 
-/// Trait der pro `T` spezialisiert wird.
+/// Trait that is specialized per `T`.
 template <typename T>
 struct topic_type_support;
 
 // ---------------------------------------------------------------------------
-// cdr_lite — Plain-Wire-Helper fuer idl-cpp-emittierte Spezialisierungen.
+// cdr_lite — plain-wire helper for idl-cpp-emitted specializations.
 //
-// Format: Little-Endian, kein Padding, kein DHEADER/EMHEADER.
+// Format: little-endian, no padding, no DHEADER/EMHEADER.
 //   * Primitives: raw bytes in declared type-size (LE).
-//   * std::string: 4-Byte LE length + UTF-8 bytes (kein NUL-Terminator).
-//   * std::vector<T>: 4-Byte LE count + elements (rekursiv).
+//   * std::string: 4-byte LE length + UTF-8 bytes (no NUL terminator).
+//   * std::vector<T>: 4-byte LE count + elements (recursive).
 //
-// Read-Funktionen werfen std::out_of_range bei buffer-underrun.
+// Read functions throw std::out_of_range on buffer underrun.
 // ---------------------------------------------------------------------------
 namespace cdr_lite {
 
@@ -132,10 +132,10 @@ inline std::vector<Elem> read_seq(const uint8_t* buf, size_t& pos, size_t len, R
 
 } // namespace cdr_lite
 
-/// Default-Spezialisierung fuer `dds::core::ByteSeq` (raw bytes).
+/// Default specialization for `dds::core::ByteSeq` (raw bytes).
 template <>
 struct topic_type_support<::dds::core::ByteSeq> {
-    /// Type-Name fuer den built-in Bytes-Topic.
+    /// Type name for the built-in bytes topic.
     static const char* type_name() { return "DDS::Bytes"; }
     /// Encode = identity.
     static std::vector<uint8_t> encode(const ::dds::core::ByteSeq& v) { return v; }
@@ -145,16 +145,16 @@ struct topic_type_support<::dds::core::ByteSeq> {
     }
 };
 
-/// Default-Spezialisierung fuer `std::string` (UTF-8-Strings).
+/// Default specialization for `std::string` (UTF-8 strings).
 template <>
 struct topic_type_support<std::string> {
-    /// Type-Name.
+    /// Type name.
     static const char* type_name() { return "DDS::String"; }
-    /// Encode = string-bytes.
+    /// Encode = string bytes.
     static std::vector<uint8_t> encode(const std::string& v) {
         return std::vector<uint8_t>(v.begin(), v.end());
     }
-    /// Decode = string-bytes.
+    /// Decode = string bytes.
     static std::string decode(const uint8_t* buf, size_t len) {
         return std::string(reinterpret_cast<const char*>(buf), len);
     }

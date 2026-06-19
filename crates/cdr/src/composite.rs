@@ -1,27 +1,68 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Composite-Type-Encoder/-Decoder (W2).
+//! Composite-type encoder/decoder (W2).
 //!
-//! XCDR2-Wire-Format-Konventionen (OMG XTypes 1.3 §7.4):
+//! XCDR2 wire-format conventions (OMG XTypes 1.3 §7.4):
 //!
-//! - **String** (§7.4.4): `uint32`-Laenge in Bytes **inklusive Null-
-//!   Terminator** + UTF-8-Bytes + `\0`.
-//! - **Sequence** (§7.4.4.2): `uint32`-Element-Anzahl + Elemente
-//!   (jedes Element nach seinem eigenen Alignment).
-//! - **Array** (§7.4.4.3): `N` Elemente ohne Laengen-Prefix.
-//! - **Optional** (§7.4.5.1.4): `uint8`-Present-Flag (0/1) + Wert
-//!   falls present.
+//! - **String** (§7.4.4): `uint32` length in bytes **including the null
+//!   terminator** + UTF-8 bytes + `\0`.
+//! - **Sequence** (§7.4.4.2): `uint32` element count + elements
+//!   (each element after its own alignment).
+//! - **Array** (§7.4.4.3): `N` elements without a length prefix.
+//! - **Optional** (§7.4.5.1.4): `uint8` present flag (0/1) + value
+//!   if present.
 
-// Modul ist nur unter `alloc`-Feature kompiliert (Re-Export in lib.rs
-// hat das `cfg`); dieses File haengt von `Vec`/`String` ab.
+// Module is only compiled under the `alloc` feature (the re-export in
+// lib.rs has the `cfg`); this file depends on `Vec`/`String`.
 
 extern crate alloc;
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::buffer::{BufferReader, BufferWriter};
+use crate::type_code::TypeCode;
+
+use crate::buffer::{BufferReader, BufferWriter, XCDR2_MAX_ALIGNMENT};
 use crate::encode::{CdrDecode, CdrEncode};
 use crate::error::{DecodeError, EncodeError};
+
+// ============================================================================
+// XCDR2 DHEADER for collections with non-primitive elements
+// ============================================================================
+//
+// OMG XTypes 1.3 §7.4.3.5: a `sequence<T>` or an array `T[N]` gets a
+// DHEADER (uint32 = byte length of the following content) PREPENDED
+// under XCDR2 (PLAIN_CDR2) when `T` is NON-primitive (string, struct,
+// union, enum, sequence, array, map). Primitive elements
+// (int/float/bool/char/octet) get NO DHEADER. Verified against Cyclone
+// DDS (V-5 seq<long> without, V-6 seq<string>/seq<struct>/seq<enum>
+// with DHEADER). Under XCDR1 (max_alignment == 8) there is never a
+// DHEADER — hence the gate on `max_alignment == XCDR2_MAX_ALIGNMENT`.
+
+/// `true` when, under XCDR2, a collection DHEADER is needed for an
+/// element type with `elem_is_primitive`.
+#[inline]
+fn needs_collection_dheader(writer_max_alignment: usize, elem_is_primitive: bool) -> bool {
+    !elem_is_primitive && writer_max_alignment == XCDR2_MAX_ALIGNMENT
+}
+
+/// Serializes `body` into a sub-writer (same endianness + alignment
+/// cap), prepends a uint32 DHEADER (= body byte length) and writes both
+/// to `writer`. Alignment is equivalent because the DHEADER content
+/// always starts 4-aligned and XCDR2 caps at 4.
+fn write_with_dheader<F>(writer: &mut BufferWriter, body: F) -> Result<(), EncodeError>
+where
+    F: FnOnce(&mut BufferWriter) -> Result<(), EncodeError>,
+{
+    let mut sub = BufferWriter::new(writer.endianness()).with_max_alignment(writer.max_alignment());
+    body(&mut sub)?;
+    let bytes = sub.into_bytes();
+    let dheader = u32::try_from(bytes.len()).map_err(|_| EncodeError::ValueOutOfRange {
+        message: "collection DHEADER exceeds u32::MAX",
+    })?;
+    writer.write_u32(dheader)?;
+    writer.write_bytes(&bytes)
+}
 
 // ============================================================================
 // String / &str
@@ -30,7 +71,7 @@ use crate::error::{DecodeError, EncodeError};
 impl CdrEncode for str {
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
         let bytes = self.as_bytes();
-        // Laenge in Bytes inklusive Null-Terminator.
+        // Length in bytes including the null terminator.
         let len_with_nul = bytes
             .len()
             .checked_add(1)
@@ -68,18 +109,384 @@ impl CdrDecode for String {
                 offset: reader.position(),
             });
         }
-        // Letztes Byte muss Null-Terminator sein.
+        // Last byte must be the null terminator.
         let payload_len = len_with_nul - 1;
         let offset = reader.position();
         let bytes = reader.read_bytes(payload_len)?;
         let s = core::str::from_utf8(bytes).map_err(|_| DecodeError::InvalidUtf8 { offset })?;
         let owned = String::from(s);
-        // Null-Terminator konsumieren.
+        // Consume the null terminator.
         let nul = reader.read_u8()?;
         if nul != 0 {
             return Err(DecodeError::InvalidUtf8 { offset });
         }
         Ok(owned)
+    }
+}
+
+// ============================================================================
+// WString — IDL `wstring` (CORBA-GIOP-1.2-Wire, §9.3.2.7 / §15.3.2.7)
+// ============================================================================
+
+/// IDL `wstring` wrapper. Holds the text as a Rust `String` (Unicode), but the
+/// **wire format** differs from `string`: GIOP 1.2 encodes a `wstring` as a
+/// `uint32` length **in octets** (NOT characters, NOT incl. terminator)
+/// followed by the UTF-16 code units in the message byte order — **without** a
+/// null terminator. This makes `wstring` distinct from `string` (UTF-8) and
+/// interop-capable with ORBs whose transmission codeset is UTF-16 (the default
+/// for omniORB/TAO/JacORB).
+#[derive(Debug, Clone, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
+pub struct WString(pub String);
+
+impl WString {
+    /// Borrows the inner text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for WString {
+    fn from(s: &str) -> Self {
+        Self(String::from(s))
+    }
+}
+
+impl From<String> for WString {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+/// Byte-order mark for UTF-16 (§15.3.1.6): `0xFEFF`. A reader with the
+/// reverse byte order sees the mirrored `0xFFFE` and swaps.
+const UTF16_BOM: u16 = 0xFEFF;
+
+impl CdrEncode for WString {
+    fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
+        // GIOP 1.2 wstring (§15.3.2.7): uint32 length **in octets**, then the
+        // UTF-16 code units, no null terminator. Per §15.3.1.6 a byte-order
+        // mark (0xFEFF) in message byte order is prepended — exactly as
+        // omniORB/TAO send; the BOM makes the units endianness-unambiguous
+        // (a reader of the other order detects 0xFFFE and swaps). The length
+        // octets include the BOM. An empty wstring = length 0 (no BOM),
+        // as conventioned by all ORBs.
+        let units = self.0.encode_utf16().count();
+        if units == 0 {
+            writer.write_u32(0)?;
+            return Ok(());
+        }
+        let total_units = units.saturating_add(1); // + BOM
+        let octets = u32::try_from(total_units.saturating_mul(2)).map_err(|_| {
+            EncodeError::ValueOutOfRange {
+                message: "CDR wstring length exceeds u32::MAX",
+            }
+        })?;
+        writer.write_u32(octets)?;
+        // write_u16 respects endianness; align(2) is a no-op here, since the
+        // position after the uint32 is 4-aligned (and thus 2-aligned).
+        writer.write_u16(UTF16_BOM)?;
+        for unit in self.0.encode_utf16() {
+            writer.write_u16(unit)?;
+        }
+        Ok(())
+    }
+}
+
+impl CdrDecode for WString {
+    fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+        let octets = reader.read_u32()? as usize;
+        if octets % 2 != 0 || octets > reader.remaining() {
+            return Err(DecodeError::LengthExceeded {
+                announced: octets,
+                remaining: reader.remaining(),
+                offset: reader.position(),
+            });
+        }
+        if octets == 0 {
+            return Ok(Self(String::new()));
+        }
+        let offset = reader.position();
+        // Read the raw octets and interpret per §15.3.1.6: a leading BOM
+        // determines the byte order of the units; if absent (e.g. JacORB),
+        // big-endian applies. This way ZeroDDS reads both omniORB/TAO (BOM)
+        // and JacORB (BE without BOM), independent of the message byte order.
+        let bytes = reader.read_bytes(octets)?;
+        let (start, big_endian) = match (bytes[0], bytes[1]) {
+            (0xFE, 0xFF) => (2, true),  // BOM big-endian
+            (0xFF, 0xFE) => (2, false), // BOM little-endian
+            _ => (0, true),             // no BOM -> big-endian default
+        };
+        let mut units = Vec::with_capacity((octets - start) / 2);
+        let mut idx = start;
+        while idx + 1 < octets {
+            let pair = [bytes[idx], bytes[idx + 1]];
+            units.push(if big_endian {
+                u16::from_be_bytes(pair)
+            } else {
+                u16::from_le_bytes(pair)
+            });
+            idx += 2;
+        }
+        let s = String::from_utf16(&units).map_err(|_| DecodeError::InvalidUtf8 { offset })?;
+        Ok(Self(s))
+    }
+}
+
+// ============================================================================
+// CorbaAny — IDL `any` (CORBA-GIOP-Wire, §15.3.7: TypeCode + Value)
+// ============================================================================
+
+/// Value variants a [`CorbaAny`] can carry: all scalar IDL types +
+/// string/wstring **and** structured types (sequence/struct/enum + nested
+/// any). The structured variants carry enough type info that the full
+/// [`TypeCode`] (§15.3.5) can be derived from them (e.g. the element
+/// TypeCode even for an empty sequence).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum AnyValue {
+    /// `tk_null`.
+    #[default]
+    Null,
+    /// `tk_boolean`.
+    Boolean(bool),
+    /// `tk_octet`.
+    Octet(u8),
+    /// `tk_char`.
+    Char(u8),
+    /// `tk_short`.
+    Short(i16),
+    /// `tk_ushort`.
+    UShort(u16),
+    /// `tk_long`.
+    Long(i32),
+    /// `tk_ulong`.
+    ULong(u32),
+    /// `tk_longlong`.
+    LongLong(i64),
+    /// `tk_ulonglong`.
+    ULongLong(u64),
+    /// `tk_float`.
+    Float(f32),
+    /// `tk_double`.
+    Double(f64),
+    /// `tk_wchar`.
+    WChar(u16),
+    /// `tk_string`.
+    Str(String),
+    /// `tk_wstring`.
+    WStr(WString),
+    /// `tk_sequence`: element TypeCode (needed even for an empty sequence) + items.
+    Seq {
+        /// TypeCode of the elements.
+        element: TypeCode,
+        /// Element values.
+        items: Vec<AnyValue>,
+    },
+    /// `tk_struct`: RepositoryId + name + ordered `(member_name, value)`.
+    Struct {
+        /// `IDL:…:1.0`.
+        repo_id: String,
+        /// Struct name.
+        name: String,
+        /// Members in declaration order.
+        members: Vec<(String, AnyValue)>,
+    },
+    /// `tk_enum`: RepositoryId + name + ordinal value + enumerator names.
+    Enum {
+        /// `IDL:…:1.0`.
+        repo_id: String,
+        /// Enum name.
+        name: String,
+        /// Ordinal value (index into `members`).
+        value: u32,
+        /// Enumerator names.
+        members: Vec<String>,
+    },
+    /// `tk_any`: nested `any`.
+    Any(Box<CorbaAny>),
+}
+
+impl AnyValue {
+    /// Derives the full [`TypeCode`] (§15.3.5) of this value.
+    #[must_use]
+    pub fn type_code(&self) -> TypeCode {
+        match self {
+            Self::Null => TypeCode::Null,
+            Self::Boolean(_) => TypeCode::Boolean,
+            Self::Octet(_) => TypeCode::Octet,
+            Self::Char(_) => TypeCode::Char,
+            Self::Short(_) => TypeCode::Short,
+            Self::UShort(_) => TypeCode::UShort,
+            Self::Long(_) => TypeCode::Long,
+            Self::ULong(_) => TypeCode::ULong,
+            Self::LongLong(_) => TypeCode::LongLong,
+            Self::ULongLong(_) => TypeCode::ULongLong,
+            Self::Float(_) => TypeCode::Float,
+            Self::Double(_) => TypeCode::Double,
+            Self::WChar(_) => TypeCode::WChar,
+            Self::Str(_) => TypeCode::String(0),
+            Self::WStr(_) => TypeCode::WString(0),
+            Self::Seq { element, .. } => TypeCode::Sequence {
+                element: Box::new(element.clone()),
+                bound: 0,
+            },
+            Self::Struct {
+                repo_id,
+                name,
+                members,
+            } => TypeCode::Struct {
+                repo_id: repo_id.clone(),
+                name: name.clone(),
+                members: members
+                    .iter()
+                    .map(|(n, v)| (n.clone(), v.type_code()))
+                    .collect(),
+                is_except: false,
+            },
+            Self::Enum {
+                repo_id,
+                name,
+                members,
+                ..
+            } => TypeCode::Enum {
+                repo_id: repo_id.clone(),
+                name: name.clone(),
+                members: members.clone(),
+            },
+            Self::Any(_) => TypeCode::Any,
+        }
+    }
+
+    /// Writes **only the value** (without the TypeCode), in its CDR representation.
+    fn encode_value(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
+        match self {
+            Self::Null => Ok(()),
+            Self::Boolean(v) => v.encode(w),
+            Self::Octet(v) => v.encode(w),
+            Self::Char(v) => v.encode(w),
+            Self::Short(v) => v.encode(w),
+            Self::UShort(v) => v.encode(w),
+            Self::Long(v) => v.encode(w),
+            Self::ULong(v) => v.encode(w),
+            Self::LongLong(v) => v.encode(w),
+            Self::ULongLong(v) => v.encode(w),
+            Self::Float(v) => v.encode(w),
+            Self::Double(v) => v.encode(w),
+            Self::WChar(v) => v.encode(w),
+            Self::Str(s) => s.encode(w),
+            Self::WStr(s) => s.encode(w),
+            Self::Seq { items, .. } => {
+                let len = u32::try_from(items.len()).map_err(|_| EncodeError::ValueOutOfRange {
+                    message: "any sequence length exceeds u32",
+                })?;
+                w.write_u32(len)?;
+                for it in items {
+                    it.encode_value(w)?;
+                }
+                Ok(())
+            }
+            Self::Struct { members, .. } => {
+                for (_, v) in members {
+                    v.encode_value(w)?;
+                }
+                Ok(())
+            }
+            Self::Enum { value, .. } => w.write_u32(*value),
+            Self::Any(inner) => inner.encode(w),
+        }
+    }
+
+    /// Reads **only the value**, guided by the TypeCode `tc`.
+    fn decode_value(tc: &TypeCode, r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+        match tc {
+            TypeCode::Null | TypeCode::Void => Ok(Self::Null),
+            TypeCode::Boolean => Ok(Self::Boolean(bool::decode(r)?)),
+            TypeCode::Octet => Ok(Self::Octet(u8::decode(r)?)),
+            TypeCode::Char => Ok(Self::Char(u8::decode(r)?)),
+            TypeCode::Short => Ok(Self::Short(i16::decode(r)?)),
+            TypeCode::UShort => Ok(Self::UShort(u16::decode(r)?)),
+            TypeCode::Long => Ok(Self::Long(i32::decode(r)?)),
+            TypeCode::ULong => Ok(Self::ULong(u32::decode(r)?)),
+            TypeCode::LongLong => Ok(Self::LongLong(i64::decode(r)?)),
+            TypeCode::ULongLong => Ok(Self::ULongLong(u64::decode(r)?)),
+            TypeCode::Float => Ok(Self::Float(f32::decode(r)?)),
+            TypeCode::Double => Ok(Self::Double(f64::decode(r)?)),
+            TypeCode::WChar => Ok(Self::WChar(u16::decode(r)?)),
+            TypeCode::String(_) => Ok(Self::Str(String::decode(r)?)),
+            TypeCode::WString(_) => Ok(Self::WStr(WString::decode(r)?)),
+            TypeCode::Sequence { element, .. } => {
+                let count = r.read_u32()? as usize;
+                let mut items = Vec::with_capacity(count.min(4096));
+                for _ in 0..count {
+                    items.push(Self::decode_value(element, r)?);
+                }
+                Ok(Self::Seq {
+                    element: (**element).clone(),
+                    items,
+                })
+            }
+            TypeCode::Struct {
+                repo_id,
+                name,
+                members,
+                ..
+            } => {
+                let mut out = Vec::with_capacity(members.len());
+                for (mn, mt) in members {
+                    out.push((mn.clone(), Self::decode_value(mt, r)?));
+                }
+                Ok(Self::Struct {
+                    repo_id: repo_id.clone(),
+                    name: name.clone(),
+                    members: out,
+                })
+            }
+            TypeCode::Enum {
+                repo_id,
+                name,
+                members,
+            } => Ok(Self::Enum {
+                repo_id: repo_id.clone(),
+                name: name.clone(),
+                value: r.read_u32()?,
+                members: members.clone(),
+            }),
+            // typedef resolves transparently to the content.
+            TypeCode::Alias { content, .. } => Self::decode_value(content, r),
+            TypeCode::Any => Ok(Self::Any(Box::new(CorbaAny::decode(r)?))),
+            // ObjRef/TypeCode value inside an any: not yet supported.
+            TypeCode::ObjRef { .. } | TypeCode::TypeCodeTc => Err(DecodeError::InvalidEnum {
+                kind: "any value (objref/TypeCode value unsupported)",
+                value: tc.tckind(),
+            }),
+            // Recursive marker: a value can only be decoded against the
+            // RESOLVED type (a recursive any-value is a separate feature).
+            TypeCode::Recursive { .. } => Err(DecodeError::InvalidEnum {
+                kind: "any value against recursive TypeCode marker unsupported",
+                value: tc.tckind(),
+            }),
+        }
+    }
+}
+
+/// IDL `any` (§15.3.7): self-describing = `TypeCode` + `Value`. On the wire,
+/// the value in its representation follows the full [`TypeCode`] (§15.3.5) —
+/// wire-compatible with omniORB/TAO/JacORB, also for structured content
+/// (sequence/struct/enum/nested any).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CorbaAny(pub AnyValue);
+
+impl CdrEncode for CorbaAny {
+    fn encode(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
+        self.0.type_code().encode(w)?;
+        self.0.encode_value(w)
+    }
+}
+
+impl CdrDecode for CorbaAny {
+    fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+        let tc = TypeCode::decode(r)?;
+        Ok(Self(AnyValue::decode_value(&tc, r)?))
     }
 }
 
@@ -92,19 +499,34 @@ impl<T: CdrEncode> CdrEncode for Vec<T> {
         let len = u32::try_from(self.len()).map_err(|_| EncodeError::ValueOutOfRange {
             message: "sequence length exceeds u32::MAX",
         })?;
-        writer.write_u32(len)?;
-        for item in self {
-            item.encode(writer)?;
+        if needs_collection_dheader(writer.max_alignment(), T::IS_PRIMITIVE) {
+            // XCDR2 §7.4.3.5: DHEADER covers [count + elements].
+            write_with_dheader(writer, |sub| {
+                sub.write_u32(len)?;
+                for item in self {
+                    item.encode(sub)?;
+                }
+                Ok(())
+            })
+        } else {
+            writer.write_u32(len)?;
+            for item in self {
+                item.encode(writer)?;
+            }
+            Ok(())
         }
-        Ok(())
     }
 }
 
 impl<T: CdrDecode> CdrDecode for Vec<T> {
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+        if needs_collection_dheader(reader.max_alignment(), T::IS_PRIMITIVE) {
+            // XCDR2 §7.4.3.5: skip the DHEADER before [count + elements].
+            let _dheader = reader.read_u32()?;
+        }
         let len = reader.read_u32()? as usize;
-        // Defensive Sanity-Check: kann nicht mehr Elemente haben als
-        // Bytes verbleiben (zumindest 1 Byte pro Element).
+        // Defensive sanity check: cannot have more elements than
+        // remaining bytes (at least 1 byte per element).
         if len > reader.remaining() {
             return Err(DecodeError::LengthExceeded {
                 announced: len,
@@ -126,15 +548,29 @@ impl<T: CdrDecode> CdrDecode for Vec<T> {
 
 impl<T: CdrEncode, const N: usize> CdrEncode for [T; N] {
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
-        for item in self {
-            item.encode(writer)?;
+        if needs_collection_dheader(writer.max_alignment(), T::IS_PRIMITIVE) {
+            // XCDR2 §7.4.3.5: array without count, DHEADER covers only elements.
+            write_with_dheader(writer, |sub| {
+                for item in self {
+                    item.encode(sub)?;
+                }
+                Ok(())
+            })
+        } else {
+            for item in self {
+                item.encode(writer)?;
+            }
+            Ok(())
         }
-        Ok(())
     }
 }
 
 impl<T: CdrDecode + Default + Copy, const N: usize> CdrDecode for [T; N] {
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+        if needs_collection_dheader(reader.max_alignment(), T::IS_PRIMITIVE) {
+            // XCDR2 §7.4.3.5: DHEADER (uint32) before the array elements.
+            let _dheader = reader.read_u32()?;
+        }
         let mut out = [T::default(); N];
         for slot in &mut out {
             *slot = T::decode(reader)?;
@@ -166,8 +602,8 @@ impl<T: CdrDecode> CdrDecode for Option<T> {
         match flag {
             0 => Ok(None),
             1 => Ok(Some(T::decode(reader)?)),
-            // Andere Werte sind in XCDR-Spec verboten — wir nutzen
-            // InvalidBool als pragmatischen Match (Boolean-Semantik).
+            // Other values are forbidden by the XCDR spec — we use
+            // InvalidBool as a pragmatic match (boolean semantics).
             other => Err(DecodeError::InvalidBool {
                 value: other,
                 offset,
@@ -180,9 +616,9 @@ impl<T: CdrDecode> CdrDecode for Option<T> {
 // Map<K, V> — XCDR2 §7.4.4.6
 // ============================================================================
 //
-// Wire-Format: 4-byte u32 entry-count + N × (K, V) pairs. Wir
-// serialisieren entries in BTreeMap-iter-order (das ist key-sortiert,
-// damit reproduzierbar). Decode rebuildet einen BTreeMap.
+// Wire format: 4-byte u32 entry count + N × (K, V) pairs. We
+// serialize entries in BTreeMap iteration order (which is key-sorted,
+// hence reproducible). Decode rebuilds a BTreeMap.
 
 use alloc::collections::BTreeMap;
 
@@ -195,12 +631,25 @@ where
         let len = u32::try_from(self.len()).map_err(|_| EncodeError::ValueOutOfRange {
             message: "map: entry-count > u32::MAX",
         })?;
-        w.write_u32(len)?;
-        for (k, v) in self {
-            k.encode(w)?;
-            v.encode(w)?;
+        // A map is a non-primitive collection -> DHEADER under XCDR2
+        // (§7.4.3.5/§7.4.4.6). Rule-derived (not Cyclone-captured).
+        if w.max_alignment() == XCDR2_MAX_ALIGNMENT {
+            write_with_dheader(w, |sub| {
+                sub.write_u32(len)?;
+                for (k, v) in self {
+                    k.encode(sub)?;
+                    v.encode(sub)?;
+                }
+                Ok(())
+            })
+        } else {
+            w.write_u32(len)?;
+            for (k, v) in self {
+                k.encode(w)?;
+                v.encode(w)?;
+            }
+            Ok(())
         }
-        Ok(())
     }
 }
 
@@ -210,6 +659,9 @@ where
     V: CdrDecode,
 {
     fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+        if r.max_alignment() == XCDR2_MAX_ALIGNMENT {
+            let _dheader = r.read_u32()?;
+        }
         let len = r.read_u32()? as usize;
         let mut map = BTreeMap::new();
         for _ in 0..len {
@@ -228,6 +680,194 @@ mod tests {
     use crate::Endianness;
     use alloc::string::ToString;
     use alloc::vec;
+
+    #[test]
+    fn wstring_giop12_wire_format_and_roundtrip() {
+        // "Aü€" -> UTF-16: 0x0041, 0x00FC, 0x20AC -> 3 units + BOM = 4 units = 8 octets.
+        let ws = WString::from("Aü€");
+        let mut w = BufferWriter::new(Endianness::Big);
+        ws.encode(&mut w).unwrap();
+        let bytes = w.into_bytes();
+        // Wire: uint32 length-in-octets (8, BE) + BOM(0xFEFF) + 3×u16 (BE), NO terminator.
+        assert_eq!(
+            &bytes[0..4],
+            &[0, 0, 0, 8],
+            "length in octets incl. BOM, not characters"
+        );
+        assert_eq!(
+            &bytes[4..],
+            &[0xFE, 0xFF, 0x00, 0x41, 0x00, 0xFC, 0x20, 0xAC]
+        );
+        assert_eq!(bytes.len(), 12, "no null terminator");
+
+        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        assert_eq!(WString::decode(&mut r).unwrap(), ws);
+    }
+
+    #[test]
+    fn wstring_decodes_foreign_byte_order_via_bom() {
+        // BE message, but the UTF-16 units carry an LE BOM (0xFFFE) and
+        // are little-endian encoded (permitted per §15.3.1.6 — the BOM
+        // controls the unit order independent of the message order). The
+        // length prefix is message order (BE). "Aü€" = 0x0041,0x00FC,0x20AC + BOM = 8 octets.
+        let mut bytes = vec![0, 0, 0, 8]; // length BE, incl. BOM
+        bytes.extend_from_slice(&[0xFF, 0xFE]); // BOM little-endian
+        bytes.extend_from_slice(&[0x41, 0x00, 0xFC, 0x00, 0xAC, 0x20]); // units LE
+        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        assert_eq!(WString::decode(&mut r).unwrap(), WString::from("Aü€"));
+    }
+
+    #[test]
+    fn wstring_decodes_jacorb_style_no_bom_big_endian() {
+        // JacORB sends UTF-16 big-endian WITHOUT a BOM in a BE message. The
+        // default BE path must apply. "Aü€" = 6 octets (no BOM).
+        let mut bytes = vec![0, 0, 0, 6];
+        bytes.extend_from_slice(&[0x00, 0x41, 0x00, 0xFC, 0x20, 0xAC]); // "Aü€" BE
+        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        assert_eq!(WString::decode(&mut r).unwrap(), WString::from("Aü€"));
+    }
+
+    #[test]
+    fn wstring_little_endian_roundtrips() {
+        let ws = WString::from("hello wörld 🌍");
+        let mut w = BufferWriter::new(Endianness::Little);
+        ws.encode(&mut w).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        assert_eq!(WString::decode(&mut r).unwrap(), ws);
+    }
+
+    #[test]
+    fn corba_any_simple_types_roundtrip() {
+        for (label, v) in [
+            ("long", AnyValue::Long(-123456)),
+            ("ulong", AnyValue::ULong(4_000_000_000)),
+            ("double", AnyValue::Double(2.5)),
+            ("boolean", AnyValue::Boolean(true)),
+            ("octet", AnyValue::Octet(0xAB)),
+            ("longlong", AnyValue::LongLong(-1_000_000_000_000)),
+            ("short", AnyValue::Short(-7)),
+            ("char", AnyValue::Char(b'Q')),
+        ] {
+            for e in [Endianness::Big, Endianness::Little] {
+                let any = CorbaAny(v.clone());
+                let mut w = BufferWriter::new(e);
+                any.encode(&mut w).unwrap();
+                let bytes = w.into_bytes();
+                let mut r = BufferReader::new(&bytes, e);
+                assert_eq!(CorbaAny::decode(&mut r).unwrap(), any, "{label}/{e:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn corba_any_long_wire_format() {
+        // tk_long (3) + i32 value. BE: [0,0,0,3][0,0,0,42].
+        let any = CorbaAny(AnyValue::Long(42));
+        let mut w = BufferWriter::new(Endianness::Big);
+        any.encode(&mut w).unwrap();
+        assert_eq!(w.into_bytes(), vec![0, 0, 0, 3, 0, 0, 0, 42]);
+    }
+
+    #[test]
+    fn corba_any_string_roundtrip() {
+        let any = CorbaAny(AnyValue::Str("héllo".to_string()));
+        let mut w = BufferWriter::new(Endianness::Little);
+        any.encode(&mut w).unwrap();
+        let bytes = w.into_bytes();
+        // tk_string (18) + bound (0) + CDR string.
+        assert_eq!(&bytes[0..8], &[18, 0, 0, 0, 0, 0, 0, 0]);
+        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        assert_eq!(CorbaAny::decode(&mut r).unwrap(), any);
+    }
+
+    fn any_rt(v: AnyValue) {
+        for e in [Endianness::Big, Endianness::Little] {
+            let any = CorbaAny(v.clone());
+            let mut w = BufferWriter::new(e);
+            any.encode(&mut w).unwrap();
+            let bytes = w.into_bytes();
+            let mut r = BufferReader::new(&bytes, e);
+            assert_eq!(CorbaAny::decode(&mut r).unwrap(), any, "{v:?} / {e:?}");
+        }
+    }
+
+    #[test]
+    fn corba_any_sequence_of_long() {
+        any_rt(AnyValue::Seq {
+            element: TypeCode::Long,
+            items: vec![AnyValue::Long(1), AnyValue::Long(-2), AnyValue::Long(3)],
+        });
+        // Empty sequence — element TypeCode is preserved.
+        any_rt(AnyValue::Seq {
+            element: TypeCode::Double,
+            items: vec![],
+        });
+    }
+
+    #[test]
+    fn corba_any_struct_mixed_members() {
+        any_rt(AnyValue::Struct {
+            repo_id: "IDL:Point:1.0".to_string(),
+            name: "Point".to_string(),
+            members: vec![
+                ("x".to_string(), AnyValue::Long(10)),
+                ("y".to_string(), AnyValue::Long(-20)),
+                ("label".to_string(), AnyValue::Str("p1".to_string())),
+                ("active".to_string(), AnyValue::Boolean(true)),
+            ],
+        });
+    }
+
+    #[test]
+    fn corba_any_enum_and_nested_any_and_seq_of_struct() {
+        any_rt(AnyValue::Enum {
+            repo_id: "IDL:Color:1.0".to_string(),
+            name: "Color".to_string(),
+            value: 2,
+            members: vec!["RED".to_string(), "GREEN".to_string(), "BLUE".to_string()],
+        });
+        // any-in-any.
+        any_rt(AnyValue::Any(Box::new(CorbaAny(AnyValue::Double(2.5)))));
+        // sequence<struct> — complex element, nested encaps + values.
+        let mk = |x: i32| AnyValue::Struct {
+            repo_id: "IDL:Pair:1.0".to_string(),
+            name: "Pair".to_string(),
+            members: vec![
+                ("k".to_string(), AnyValue::Long(x)),
+                ("v".to_string(), AnyValue::Str(alloc::format!("v{x}"))),
+            ],
+        };
+        any_rt(AnyValue::Seq {
+            element: mk(0).type_code(),
+            items: vec![mk(1), mk(2)],
+        });
+    }
+
+    #[test]
+    fn corba_any_wstring_roundtrip() {
+        let any = CorbaAny(AnyValue::WStr(WString::from("wíde€")));
+        let mut w = BufferWriter::new(Endianness::Big);
+        any.encode(&mut w).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        assert_eq!(CorbaAny::decode(&mut r).unwrap(), any);
+    }
+
+    #[test]
+    fn wstring_empty() {
+        let ws = WString::from("");
+        let mut w = BufferWriter::new(Endianness::Big);
+        ws.encode(&mut w).unwrap();
+        let bytes = w.into_bytes();
+        assert_eq!(
+            bytes,
+            vec![0, 0, 0, 0],
+            "empty wstring = length 0, no bytes"
+        );
+        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        assert_eq!(WString::decode(&mut r).unwrap(), ws);
+    }
 
     fn rt_le<T>(value: T)
     where
@@ -270,7 +910,7 @@ mod tests {
 
     #[test]
     fn string_decode_rejects_zero_length() {
-        let bytes = [0u8, 0, 0, 0]; // u32 len = 0 — kein Null-Terminator vorhanden
+        let bytes = [0u8, 0, 0, 0]; // u32 len = 0 — no null terminator present
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let res = String::decode(&mut r);
         assert!(matches!(res, Err(DecodeError::LengthExceeded { .. })));
@@ -286,7 +926,7 @@ mod tests {
 
     #[test]
     fn string_decode_rejects_missing_null_terminator() {
-        // Length 3 (a, b, x) — letztes Byte ist 'x' statt 0.
+        // Length 3 (a, b, x) — last byte is 'x' instead of 0.
         let bytes = [3u8, 0, 0, 0, b'a', b'b', b'x'];
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let res = String::decode(&mut r);
@@ -353,7 +993,7 @@ mod tests {
     fn array_no_length_prefix() {
         let mut w = BufferWriter::new(Endianness::Little);
         [1u8, 2, 3].encode(&mut w).unwrap();
-        // Keine u32-Laenge — nur Elemente.
+        // No u32 length — only elements.
         assert_eq!(w.into_bytes(), vec![1, 2, 3]);
     }
 

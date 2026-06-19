@@ -37,7 +37,7 @@ fn case_1_1_frame_header_round_trip() -> CaseResult {
 }
 
 fn case_1_2_r_bit_stripped() -> CaseResult {
-    // R-Bit (MSB von Stream-Id) MUSS auf Decode ignoriert werden
+    // R-bit (MSB of stream ID) MUST be ignored on decode
     // (Spec §4.1).
     let mut buf = alloc::vec![0u8; 9];
     buf[3] = FrameType::Settings as u8;
@@ -181,7 +181,7 @@ fn case_3_2_path_parse() -> CaseResult {
     }
 }
 
-/// Komplette h2spec+gRPC Test-Suite.
+/// Complete h2spec+gRPC test suite.
 pub const SUITE: &[TestCase] = &[
     TestCase {
         name: "rfc7540-4.1-frame-roundtrip",

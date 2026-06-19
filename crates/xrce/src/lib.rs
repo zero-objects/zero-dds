@@ -4,64 +4,64 @@
 //! DDS-XRCE Wire-Codec (OMG `formal/2020-11-01`).
 //!
 //! Crate `zerodds-xrce`. Safety classification: **SAFE**.
-//! Siehe `docs/architecture/02_architecture.md §3` und
+//! See `docs/architecture/02_architecture.md §3` and
 //! `docs/architecture/04_safety_by_architecture.md §2`.
 //!
-//! ## Scope (C6.2.A — Wire-Lite + UDP-Mapping)
+//! ## Scope (C6.2.A — wire-lite + UDP mapping)
 //!
 //! - **`MessageHeader`** (§8.3.2): SessionId/StreamId/SequenceNr +
-//!   optionalem ClientKey.
-//! - **`SubmessageHeader`** (§8.3.4): SubmessageId, Flags, Length.
-//! - **16 Submessages** (§8.3.5): CREATE_CLIENT, CREATE, GET_INFO,
+//!   optional ClientKey.
+//! - **`SubmessageHeader`** (§8.3.4): SubmessageId, flags, length.
+//! - **16 submessages** (§8.3.5): CREATE_CLIENT, CREATE, GET_INFO,
 //!   DELETE, STATUS_AGENT, STATUS, INFO, WRITE_DATA, READ_DATA, DATA,
 //!   ACKNACK, HEARTBEAT, RESET, FRAGMENT, TIMESTAMP, TIMESTAMP_REPLY.
-//! - **`SerialNumber16`**: RFC-1982-Comparator (§8.3.2.3).
-//! - **`XrceUdpSender` / `recv_message`** (§11.2): UDP-Transport-
-//!   Mapping mit Default-Port-Schema `7400 + 4 * domainId + offset`.
+//! - **`SerialNumber16`**: RFC-1982 comparator (§8.3.2.3).
+//! - **`XrceUdpSender` / `recv_message`** (§11.2): UDP transport
+//!   mapping with the default port scheme `7400 + 4 * domainId + offset`.
 //!
-//! ## Scope (C6.2.B — Object-Model + Reliable-Stack)
+//! ## Scope (C6.2.B — object model + reliable stack)
 //!
 //! - **`ObjectId` / `ObjectKind` / `ObjectVariant`** (§7.2 + §7.7).
-//! - **`ObjectStore`** (§7.5): pro-Client `BTreeMap<ObjectId, Instance>`
-//!   mit CREATE-Reuse/Replace-Semantik.
-//! - **`ReliableStreamState`** (§8.4.10/§8.4.11): Sender + Receiver mit
-//!   HEARTBEAT-Tick und ACKNACK-Bitmap.
-//! - **`FragmentAssembler`** (§8.4.13) mit DoS-Caps + GC.
-//! - **`ReadStream`** (§8.4.14): Continuous-Read mit Rate-Limiter.
+//! - **`ObjectStore`** (§7.5): per-client `BTreeMap<ObjectId, Instance>`
+//!   with CREATE reuse/replace semantics.
+//! - **`ReliableStreamState`** (§8.4.10/§8.4.11): sender + receiver with
+//!   HEARTBEAT tick and ACKNACK bitmap.
+//! - **`FragmentAssembler`** (§8.4.13) with DoS caps + GC.
+//! - **`ReadStream`** (§8.4.14): continuous read with a rate limiter.
 //! - **`TransportLocator`** (§7.7.4): Small/Medium/Large/String.
-//! - **`MulticastDiscovery`** (§11.2.4) auf `239.255.0.2:7400`.
+//! - **`MulticastDiscovery`** (§11.2.4) on `239.255.0.2:7400`.
 //!
-//! ## Scope (C6.2.C — XML/File-Configuration)
+//! ## Scope (C6.2.C — XML/file configuration)
 //!
-//! - **`XrceConfig`** (§7.7.3 + §9.3): Object-Hierarchy-Loader fuer
-//!   `<dds><participant>...</participant></dds>` mit Type/QoS-Profile-
-//!   Reuse via `zerodds-xml` (DDS-XML-Loader).
-//! - **`to_create_messages`**: generiert die CREATE-Submessage-Sequence
-//!   in topologischer Reihenfolge (Type → Participant → Topic →
-//!   Pub/Sub → DataWriter/DataReader) mit
-//!   `RepresentationByXmlString`-Body.
+//! - **`XrceConfig`** (§7.7.3 + §9.3): object hierarchy loader for
+//!   `<dds><participant>...</participant></dds>` with type/QoS-profile
+//!   reuse via `zerodds-xml` (DDS-XML loader).
+//! - **`to_create_messages`**: generates the CREATE submessage sequence
+//!   in topological order (type → participant → topic →
+//!   pub/sub → DataWriter/DataReader) with a
+//!   `RepresentationByXmlString` body.
 //!
-//! ## Scope (C6.2.D — TCP/Serial-Transports + TLS/DTLS)
+//! ## Scope (C6.2.D — TCP/serial transports + TLS/DTLS)
 //!
-//! - **`transport_tcp`** (§11.3): `XrceTcpClient`/`XrceTcpServer` mit
-//!   2-Byte-Length-Prefix-Framing.
-//! - **`transport_serial`** (Annex C): HDLC-aehnlicher Frame-Codec mit
-//!   Byte-Stuffing + CRC-16-CCITT-FALSE; Streaming-Reassembly via
-//!   `SerialFramer`. Echte Serial-IO ist nicht im Scope (kein
-//!   `serialport`-Crate-Dep).
-//! - **`transport_tls`**: Trait + Skeleton fuer TLS-on-TCP (Plug-In
-//!   spaeter).
-//! - **`transport_dtls`**: `DtlsLayer`-Trait + `DummyDtls`-Pass-Through;
-//!   echte DTLS-Lib (z.B. `webrtc-dtls`) kommt deployment-spezifisch.
-//! - `TransportLocatorTcp` + `TransportLocatorSerial` als zusaetzliche
-//!   Locator-Varianten (Discriminator 0x04/0x05).
+//! - **`transport_tcp`** (§11.3): `XrceTcpClient`/`XrceTcpServer` with
+//!   2-byte length-prefix framing.
+//! - **`transport_serial`** (Annex C): HDLC-like frame codec with
+//!   byte stuffing + CRC-16-CCITT-FALSE; streaming reassembly via
+//!   `SerialFramer`. Real serial IO is out of scope (no
+//!   `serialport` crate dep).
+//! - **`transport_tls`**: trait + skeleton for TLS-on-TCP (plug-in
+//!   later).
+//! - **`transport_dtls`**: `DtlsLayer` trait + `DummyDtls` pass-through;
+//!   a real DTLS lib (e.g. `webrtc-dtls`) comes deployment-specific.
+//! - `TransportLocatorTcp` + `TransportLocatorSerial` as additional
+//!   locator variants (discriminator 0x04/0x05).
 //!
-//! ## Bewusst nicht implementiert
+//! ## Deliberately not implemented
 //!
-//! - Echte Serialport-IO (kein `serialport`-Crate-Dep).
-//! - Echte TLS-/DTLS-Engine (Plug-In spaeter).
-//! - ROS2-Bridge.
-//! - Live-Reload / Hot-Swap der XML-Config (Stretch).
+//! - Real serial port IO (no `serialport` crate dep).
+//! - A real TLS/DTLS engine (plug-in later).
+//! - ROS2 bridge.
+//! - Live reload / hot swap of the XML config (stretch).
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]

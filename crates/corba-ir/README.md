@@ -3,36 +3,36 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-corba-ir/badge.svg)](https://docs.rs/zerodds-corba-ir)
 
-OMG CORBA 3.3 Part 1 §14 — Interface Repository (IR). TypeCode (alle
-32 TCKinds), Repository mit Containment-Hierarchie, DefinitionKind,
-strukturierte RepositoryId. `no_std + alloc`,
+OMG CORBA 3.3 Part 1 §14 — Interface Repository (IR). TypeCode (all
+32 TCKinds), Repository with containment hierarchy, DefinitionKind,
+structured RepositoryId. `no_std + alloc`,
 `forbid(unsafe_code)`. Safety classification: **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| OMG CORBA 3.3 Part 1 | §10.7.3 (RepositoryId-Format), §14 (Interface Repository) |
-| OMG CORBA 3.3 Part 1 | §3.13.1 (TypeCode-Operations) |
+| OMG CORBA 3.3 Part 1 | §10.7.3 (RepositoryId format), §14 (Interface Repository) |
+| OMG CORBA 3.3 Part 1 | §3.13.1 (TypeCode operations) |
 
-## Was ist drin
+## What's included
 
-- **`RepositoryId`** — `IDL:<scoped>:<major>.<minor>`-Parser/Builder mit
-  Roundtrip-Garantie.
-- **`TypeCode`** — alle 32 OMG-TCKinds (`tk_null` … `tk_local_interface`)
-  mit strukturierten Bodies fuer komplexe Types (Struct/Union/Enum/Value/...).
-- **`Repository`** + `Container` + `Definition` + `Module` — IR-Containment-
-  Hierarchie pro §14.
-- **`DefinitionKind`** — `dk_*`-Konstanten gemaess §14.
+- **`RepositoryId`** — `IDL:<scoped>:<major>.<minor>` parser/builder with
+  roundtrip guarantee.
+- **`TypeCode`** — all 32 OMG TCKinds (`tk_null` … `tk_local_interface`)
+  with structured bodies for complex types (Struct/Union/Enum/Value/...).
+- **`Repository`** + `Container` + `Definition` + `Module` — IR containment
+  hierarchy per §14.
+- **`DefinitionKind`** — `dk_*` constants per §14.
 
-## Was nicht abgedeckt ist
+## What's not covered
 
-- IIOP-Wire-Encoding der IR-Operations: gehoert in `corba-iiop` /
+- IIOP wire encoding of the IR operations: belongs in `corba-iiop` /
   `corba-giop`.
-- TypeCode-CDR-Encapsulation: liegt in `zerodds-cdr` (OMG-CDR §15.3.5.1
-  TypeCode-Wire-Format).
+- TypeCode CDR encapsulation: lives in `zerodds-cdr` (OMG CDR §15.3.5.1
+  TypeCode wire format).
 
-## Beispiel
+## Example
 
 ```rust
 use zerodds_corba_ir::{RepositoryId, TcKind, TypeCode};

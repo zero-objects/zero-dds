@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CCM-Container — Spec §9.
+//! CCM container — spec §9.
 //!
-//! Der Container haeltet die Component-Lifecycle, ruft die CIF-
-//! Lifecycle-Methods (`set_*_context`/`ccm_activate`/`ccm_passivate`/
-//! `ccm_remove`) und liefert `ComponentContext` an den Executor.
+//! The container holds the component lifecycle, calls the CIF
+//! lifecycle methods (`set_*_context`/`ccm_activate`/`ccm_passivate`/
+//! `ccm_remove`), and provides a `ComponentContext` to the executor.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -16,7 +16,7 @@ use std::sync::Mutex;
 use crate::cif::{CifError, ComponentExecutor};
 use crate::port::PortRegistry;
 
-/// Container-Type — Spec §9.1.4.
+/// Container type — spec §9.1.4.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ContainerType {
     /// `Session` — non-persistent stateful.
@@ -29,34 +29,34 @@ pub enum ContainerType {
     Entity,
 }
 
-/// Lifecycle-State eines Component-Executor.
+/// Lifecycle state of a component executor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LifecycleState {
-    /// Erstellt, aber noch nicht initialisiert.
+    /// Created but not yet initialized.
     Created,
-    /// `set_*_context` aufgerufen, vor `ccm_activate`.
+    /// `set_*_context` called, before `ccm_activate`.
     Configured,
-    /// `ccm_activate` aufgerufen.
+    /// `ccm_activate` called.
     Active,
-    /// `ccm_passivate` aufgerufen.
+    /// `ccm_passivate` called.
     Passive,
-    /// `ccm_remove` aufgerufen — terminal.
+    /// `ccm_remove` called — terminal.
     Removed,
 }
 
-/// Container-Fehler.
+/// Container error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainerError {
-    /// Component-Instance unbekannt.
+    /// Component instance unknown.
     InstanceNotFound(String),
-    /// Operation passt nicht zum aktuellen Lifecycle-State.
+    /// The operation does not match the current lifecycle state.
     InvalidState {
-        /// Aktueller State.
+        /// Current state.
         current: LifecycleState,
-        /// Welche Operation versucht wurde.
+        /// Which operation was attempted.
         operation: String,
     },
-    /// Cif-Fehler aus dem Executor.
+    /// CIF error from the executor.
     Cif(CifError),
 }
 
@@ -71,11 +71,11 @@ struct InstanceEntry {
     executor: Box<dyn ComponentExecutor>,
 }
 
-/// CCM-Container.
+/// CCM container.
 pub struct Container {
     container_type: ContainerType,
     instances: Mutex<BTreeMap<String, InstanceEntry>>,
-    /// Port-Registry, geshared mit Caller.
+    /// Port registry, shared with the caller.
     pub ports: Arc<PortRegistry>,
 }
 
@@ -90,7 +90,7 @@ impl core::fmt::Debug for Container {
 }
 
 impl Container {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(container_type: ContainerType) -> Self {
         Self {
@@ -100,17 +100,17 @@ impl Container {
         }
     }
 
-    /// Container-Type.
+    /// Container type.
     #[must_use]
     pub fn container_type(&self) -> ContainerType {
         self.container_type
     }
 
-    /// Registriert einen neuen Component-Executor unter einer
-    /// Instance-Id und konfiguriert ihn.
+    /// Registers a new component executor under an
+    /// instance ID and configures it.
     ///
     /// # Errors
-    /// `Cif` wenn der Executor-Setup fehlschlaegt.
+    /// `Cif` if the executor setup fails.
     pub fn install_component(
         &self,
         instance_id: String,
@@ -131,7 +131,7 @@ impl Container {
         Ok(())
     }
 
-    /// `ccm_activate` — Spec §9.5.4.
+    /// `ccm_activate` — spec §9.5.4.
     ///
     /// # Errors
     /// `InstanceNotFound` / `InvalidState` / `Cif`.
@@ -141,20 +141,20 @@ impl Container {
         })
     }
 
-    /// `ccm_passivate` — Spec §9.5.5.
+    /// `ccm_passivate` — spec §9.5.5.
     ///
     /// # Errors
-    /// Wie oben.
+    /// As above.
     pub fn passivate(&self, instance_id: &str) -> Result<(), ContainerError> {
         self.transition(instance_id, "ccm_passivate", LifecycleState::Passive, |e| {
             e.ccm_passivate()
         })
     }
 
-    /// `ccm_remove` — Spec §9.5.6.
+    /// `ccm_remove` — spec §9.5.6.
     ///
     /// # Errors
-    /// Wie oben.
+    /// As above.
     pub fn remove(&self, instance_id: &str) -> Result<(), ContainerError> {
         self.transition(instance_id, "ccm_remove", LifecycleState::Removed, |e| {
             e.ccm_remove()
@@ -165,13 +165,13 @@ impl Container {
         Ok(())
     }
 
-    /// Anzahl Instances.
+    /// Number of instances.
     #[must_use]
     pub fn instance_count(&self) -> usize {
         self.instances.lock().map(|g| g.len()).unwrap_or(0)
     }
 
-    /// Lifecycle-State einer Instance.
+    /// Lifecycle state of an instance.
     #[must_use]
     pub fn state_of(&self, instance_id: &str) -> Option<LifecycleState> {
         self.instances
@@ -196,7 +196,7 @@ impl Container {
         let entry = g
             .get_mut(instance_id)
             .ok_or_else(|| ContainerError::InstanceNotFound(instance_id.to_string()))?;
-        // Spec §9.5: erlaubte Transitions:
+        // Spec §9.5: allowed transitions:
         // Configured -> Active (via activate)
         // Active     -> Passive (via passivate)
         // Active     -> Removed (via remove)

@@ -1,13 +1,12 @@
-//! End-to-End: PKI-Handshake → SharedSecret → AES-GCM-Encrypt.
+//! End-to-end: PKI handshake → SharedSecret → AES-GCM encrypt.
 //!
-//! Aktualisiert fuer C3.1: Spec-konformer 3-Round-Handshake mit
-//! cert-bind und signaturen. Identitaeten muessen vor dem Handshake
-//! ueber `validate_with_config` + `validate_remote_identity` registriert
-//! sein.
+//! Updated for C3.1: spec-conformant 3-round handshake with
+//! cert-bind and signatures. Identities must be registered before the handshake
+//! via `validate_with_config` + `validate_remote_identity`.
 //!
 //! zerodds-lint: allow no_dyn_in_safe
-//! (Integration-Test muss `Arc<dyn SharedSecretProvider>` nutzen —
-//! das ist genau der Zweck des Traits: Plugin-Substitution.)
+//! (The integration test must use `Arc<dyn SharedSecretProvider>` —
+//! that is exactly the purpose of the trait: plugin substitution.)
 
 #![allow(
     clippy::expect_used,
@@ -34,8 +33,8 @@ use zerodds_security::crypto::{CryptoHandle, CryptographicPlugin};
 use zerodds_security_crypto::{AesGcmCryptoPlugin, Suite};
 use zerodds_security_pki::{IdentityConfig, PkiAuthenticationPlugin};
 
-/// Test-Helper: erzeugt eine gemeinsame CA + zwei EE-Certs (Alice,
-/// Bob) inklusive Private-Keys.
+/// Test helper: creates a shared CA + two EE certs (Alice,
+/// Bob) including private keys.
 struct CertBundle {
     ca_pem: Vec<u8>,
     cert_pem: Vec<u8>,
@@ -100,10 +99,10 @@ fn register_pair(
     (me_h, peer_h)
 }
 
-/// Shared-Ownership-Wrapper — ermoeglicht dass derselbe
-/// `PkiAuthenticationPlugin` sowohl als `AuthenticationPlugin` fuer
-/// den Handshake als auch als `SharedSecretProvider` fuer den
-/// AesGcmCryptoPlugin genutzt wird.
+/// Shared-ownership wrapper — lets the same
+/// `PkiAuthenticationPlugin` be used both as the `AuthenticationPlugin` for
+/// the handshake and as the `SharedSecretProvider` for the
+/// AesGcmCryptoPlugin.
 #[derive(Clone)]
 struct SharedPki(Arc<Mutex<PkiAuthenticationPlugin>>);
 
@@ -113,8 +112,8 @@ impl SharedSecretProvider for SharedPki {
     }
 }
 
-/// Fuehrt den vollen 3-Round-Handshake durch. Liefert die
-/// SharedSecret-Handles beider Seiten.
+/// Runs the full 3-round handshake. Returns the
+/// SharedSecret handles of both sides.
 fn run_handshake(
     alice: &mut PkiAuthenticationPlugin,
     bob: &mut PkiAuthenticationPlugin,
@@ -144,11 +143,11 @@ fn run_handshake(
         HandshakeStepOutcome::SendMessage { token } => token,
         _ => panic!("expected SendMessage (final) from initiator"),
     };
-    // Alice ist nach SendMessage(final) bereit — ihr SharedSecret ist
-    // schon gespeichert (handshake_to_secret).
+    // Alice is ready after SendMessage(final) — her SharedSecret is
+    // already stored (handshake_to_secret).
     let alice_secret = alice.shared_secret(alice_hs).unwrap();
 
-    // Bob verarbeitet das Final → Complete.
+    // Bob processes the final → Complete.
     let out4 = bob.process_handshake(bob_hs, &final_token).unwrap();
     let bob_secret = match out4 {
         HandshakeStepOutcome::Complete { secret } => secret,
@@ -159,7 +158,7 @@ fn run_handshake(
 
 #[test]
 fn x25519_handshake_shared_secret_drives_aes_gcm_roundtrip() {
-    // --- Setup: Alice + Bob mit gemeinsamer CA + Identity-Keys ---
+    // --- Setup: Alice + Bob with a shared CA + identity keys ---
     let (_ca, alice_b, bob_b) = make_pair();
     let alice_pki = Arc::new(Mutex::new(PkiAuthenticationPlugin::new()));
     let bob_pki = Arc::new(Mutex::new(PkiAuthenticationPlugin::new()));
@@ -171,7 +170,7 @@ fn x25519_handshake_shared_secret_drives_aes_gcm_roundtrip() {
         (ah, abob, bh, balice)
     };
 
-    // --- 3-Round-Handshake ---
+    // --- 3-round handshake ---
     let (alice_secret, bob_secret) = {
         let mut a = alice_pki.lock().unwrap();
         let mut b = bob_pki.lock().unwrap();
@@ -185,7 +184,7 @@ fn x25519_handshake_shared_secret_drives_aes_gcm_roundtrip() {
         )
     };
 
-    // Sanity: beide haben denselben 32-byte-SharedSecret.
+    // Sanity: both have the same 32-byte SharedSecret.
     assert_eq!(
         alice_pki
             .lock()
@@ -193,10 +192,10 @@ fn x25519_handshake_shared_secret_drives_aes_gcm_roundtrip() {
             .secret_bytes(alice_secret)
             .unwrap(),
         bob_pki.lock().unwrap().secret_bytes(bob_secret).unwrap(),
-        "DH-shared-secret muss auf beiden Seiten identisch sein"
+        "DH shared secret must be identical on both sides"
     );
 
-    // --- Crypto-Plugin mit Provider ---
+    // --- Crypto plugin with provider ---
     let alice_provider: Arc<dyn SharedSecretProvider> = Arc::new(SharedPki(Arc::clone(&alice_pki)));
     let bob_provider: Arc<dyn SharedSecretProvider> = Arc::new(SharedPki(Arc::clone(&bob_pki)));
     let mut alice_crypto =
@@ -215,18 +214,28 @@ fn x25519_handshake_shared_secret_drives_aes_gcm_roundtrip() {
         .register_matched_remote_participant(bob_local, bob_remote_alice, bob_secret)
         .unwrap();
 
+    // FU2 dual key (spec §9.5.3.5): the data key is local+random and is transmitted
+    // via a crypto token, NOT derived from the DH secret. Alice
+    // exports her send key, Bob installs it for the decode.
+    let alice_data_token = alice_crypto
+        .create_local_participant_crypto_tokens(alice_for_bob, alice_for_bob)
+        .unwrap();
+    bob_crypto
+        .set_remote_participant_crypto_tokens(bob_for_alice, bob_for_alice, &alice_data_token)
+        .unwrap();
+
     let plain = b"per-peer-key roundtrip";
     let wire = alice_crypto
         .encrypt_submessage(alice_for_bob, &[], plain, &[])
         .unwrap();
     let back = bob_crypto
         .decrypt_submessage(bob_for_alice, bob_for_alice, &wire, &[])
-        .expect("bob decodes with hkdf-derived key");
+        .expect("bob decodes alice's token-exchanged data key");
     assert_eq!(back, plain);
 }
 
-/// Erzeugt Bundle fuer N+1 Identitaeten (1 Alice + N peers) mit
-/// gemeinsamer CA. Liefert Alice + Vec<peer-bundle>.
+/// Creates a bundle for N+1 identities (1 Alice + N peers) with a
+/// shared CA. Returns Alice + Vec<peer-bundle>.
 fn make_group(n_peers: usize) -> (CertBundle, Vec<CertBundle>) {
     use rcgen::{CertificateParams, KeyPair};
     let mut ca_params = CertificateParams::new(vec!["GroupCA".into()]).unwrap();
@@ -252,8 +261,11 @@ fn make_group(n_peers: usize) -> (CertBundle, Vec<CertBundle>) {
     (alice, peers)
 }
 
+/// Multi-receiver broadcast with per-receiver MAC (spec §9.5.3.3.4): the
+/// receiver-specific MAC keys are exchanged as the key material of the respective receiver
+/// (FU2 dual key), not derived from the DH secret.
 #[test]
-fn multi_mac_group_broadcast_with_real_dh_derived_mac_keys() {
+fn multi_mac_group_broadcast_with_exchanged_receiver_keys() {
     use zerodds_security::crypto::ReceiverMac;
     let (alice_b, peers) = make_group(3);
     let bob_b = &peers[0];
@@ -354,15 +366,75 @@ fn multi_mac_group_broadcast_with_real_dh_derived_mac_keys() {
         .register_matched_remote_participant(alice_local, alice_remote_dave, alice_dave)
         .unwrap();
 
-    let alice_broadcast_token = alice_crypto
-        .create_local_participant_crypto_tokens(alice_local, CryptoHandle(0))
-        .unwrap();
-
     let key_id_bob = h_bob.0 as u32;
     let key_id_charlie = h_charlie.0 as u32;
     let key_id_dave = h_dave.0 as u32;
 
-    let plain = b"group-broadcast-with-real-dh-mac-keys";
+    // FU2 / spec §9.5.3.3.4: the receiver-specific MAC keys are the key material
+    // OF THE RESPECTIVE RECEIVER and are exchanged — NOT (anymore) derived from the
+    // DH secret. Phase 1: each receiver creates its key material and
+    // exports it; alice installs it at her per-receiver handle, so that her
+    // receiver MAC is formed with exactly the key the receiver verifies with.
+    // (recv_crypto, recv_local, cipher_slot, mac_slot, key_id)
+    let mut recvs: Vec<(
+        AesGcmCryptoPlugin,
+        CryptoHandle,
+        CryptoHandle,
+        CryptoHandle,
+        u32,
+    )> = Vec::new();
+    for (pki, dh_secret, key_id, recv_h, remote_alice_h, alice_handle) in [
+        (
+            bob_pki,
+            bob_secret,
+            key_id_bob,
+            bob_h,
+            bob_remote_alice,
+            h_bob,
+        ),
+        (
+            charlie_pki,
+            charlie_secret,
+            key_id_charlie,
+            charlie_h,
+            charlie_remote_alice,
+            h_charlie,
+        ),
+        (
+            dave_pki,
+            dave_secret,
+            key_id_dave,
+            dave_h,
+            dave_remote_alice,
+            h_dave,
+        ),
+    ] {
+        let pki_arc = Arc::new(Mutex::new(pki));
+        let provider: Arc<dyn SharedSecretProvider> = Arc::new(SharedPki(Arc::clone(&pki_arc)));
+        let mut crypto = AesGcmCryptoPlugin::with_secret_provider(Suite::Aes128Gcm, provider);
+        let recv_local = crypto.register_local_participant(recv_h, &[]).unwrap();
+        let cipher_slot = crypto
+            .register_matched_remote_participant(recv_local, remote_alice_h, SharedSecretHandle(0))
+            .unwrap();
+        let mac_slot = crypto
+            .register_matched_remote_participant(recv_local, remote_alice_h, dh_secret)
+            .unwrap();
+        // The receiver exports its MAC key, alice installs it at alice_handle.
+        let recv_mac_token = crypto
+            .create_local_participant_crypto_tokens(mac_slot, CryptoHandle(0))
+            .unwrap();
+        alice_crypto
+            .set_remote_participant_crypto_tokens(alice_local, alice_handle, &recv_mac_token)
+            .expect("alice installs receiver's mac key");
+        recvs.push((crypto, recv_local, cipher_slot, mac_slot, key_id));
+    }
+
+    // Phase 2: alice broadcasts — cipher with her own key, one MAC per receiver
+    // with the (just-installed) receiver key.
+    let alice_broadcast_token = alice_crypto
+        .create_local_participant_crypto_tokens(alice_local, CryptoHandle(0))
+        .unwrap();
+    let plain = b"group-broadcast-with-exchanged-receiver-mac-keys";
     let (ciphertext, macs) = alice_crypto
         .encrypt_submessage_multi(
             alice_local,
@@ -375,47 +447,18 @@ fn multi_mac_group_broadcast_with_real_dh_derived_mac_keys() {
             &[],
         )
         .unwrap();
-    assert_eq!(macs.len(), 3, "drei receiver → drei MACs");
+    assert_eq!(macs.len(), 3, "three receivers → three MACs");
 
-    let expected = [
-        (bob_pki, bob_secret, key_id_bob, bob_h, bob_remote_alice),
-        (
-            charlie_pki,
-            charlie_secret,
-            key_id_charlie,
-            charlie_h,
-            charlie_remote_alice,
-        ),
-        (
-            dave_pki,
-            dave_secret,
-            key_id_dave,
-            dave_h,
-            dave_remote_alice,
-        ),
-    ];
-    for (pki, dh_secret, expected_key_id, recv_h, remote_alice_h) in expected {
-        let pki_arc = Arc::new(Mutex::new(pki));
-        let provider: Arc<dyn SharedSecretProvider> = Arc::new(SharedPki(Arc::clone(&pki_arc)));
-        let mut crypto = AesGcmCryptoPlugin::with_secret_provider(Suite::Aes128Gcm, provider);
-        let recv_local = crypto.register_local_participant(recv_h, &[]).unwrap();
-
-        let cipher_slot = crypto
-            .register_matched_remote_participant(recv_local, remote_alice_h, SharedSecretHandle(0))
-            .unwrap();
+    // Phase 3: each receiver installs alice's broadcast cipher key and decodes
+    // with its own (exchanged) MAC key.
+    for (mut crypto, recv_local, cipher_slot, mac_slot, key_id) in recvs {
         crypto
             .set_remote_participant_crypto_tokens(recv_local, cipher_slot, &alice_broadcast_token)
             .expect("receiver installs alice's broadcast key");
-
-        let mac_slot = crypto
-            .register_matched_remote_participant(recv_local, remote_alice_h, dh_secret)
-            .unwrap();
-
         let our_mac = macs
             .iter()
-            .find(|m: &&ReceiverMac| m.key_id == expected_key_id)
+            .find(|m: &&ReceiverMac| m.key_id == key_id)
             .expect("own mac exists in list");
-
         let back = crypto
             .decrypt_submessage_with_receiver_mac(
                 cipher_slot,

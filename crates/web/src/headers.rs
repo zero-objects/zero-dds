@@ -11,13 +11,13 @@ pub const REQUEST_API_KEY: &str = "OMG-DDS-API-Key";
 /// Spec §8.3.5 Tab 7 — Request-Header-Set.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RequestHeaders {
-    /// `Accept` header — Spec verlangt `application/zerodds-web+xml`.
+    /// `Accept` header — Spec requires `application/zerodds-web+xml`.
     pub accept: Option<String>,
     /// `Content-Type` header (only POST/PUT).
     pub content_type: Option<String>,
     /// `Content-Length` header (only POST/PUT/DELETE).
     pub content_length: Option<u64>,
-    /// `Cache-Control` header — Spec verlangt RFC 2616 §14.9.
+    /// `Cache-Control` header — Spec requires RFC 2616 §14.9.
     pub cache_control: Option<String>,
     /// `OMG-DDS-API-Key` — Spec §8.3.5 Required.
     pub api_key: Option<String>,
@@ -27,9 +27,9 @@ impl RequestHeaders {
     /// Spec §8.3.5 — Required-Felder pruefen.
     ///
     /// # Errors
-    /// `Err(MissingHeader::ApiKey)` wenn `api_key` fehlt.
-    /// `Err(MissingHeader::Accept)` wenn `accept` fehlt.
-    /// `Err(MissingHeader::CacheControl)` wenn `cache_control` fehlt.
+    /// `Err(MissingHeader::ApiKey)` if `api_key` is missing.
+    /// `Err(MissingHeader::Accept)` if `accept` is missing.
+    /// `Err(MissingHeader::CacheControl)` if `cache_control` is missing.
     pub fn validate_required(&self) -> Result<(), MissingHeader> {
         if self.api_key.is_none() {
             return Err(MissingHeader::ApiKey);
@@ -59,20 +59,20 @@ pub struct ResponseHeaders {
     pub date: Option<String>,
     /// `Expires` (Optional).
     pub expires: Option<String>,
-    /// `Location` (Required fuer 201-Response auf POST).
+    /// `Location` (required for a 201 response to POST).
     pub location: Option<String>,
-    /// `Last-Modified` (Required fuer 200-Response auf GET/HEAD).
+    /// `Last-Modified` (required for a 200 response to GET/HEAD).
     pub last_modified: Option<String>,
 }
 
-/// Header-Validation-Fehler.
+/// Header validation error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MissingHeader {
-    /// `OMG-DDS-API-Key` fehlt.
+    /// `OMG-DDS-API-Key` is missing.
     ApiKey,
-    /// `Accept` fehlt.
+    /// `Accept` is missing.
     Accept,
-    /// `Cache-Control` fehlt.
+    /// `Cache-Control` is missing.
     CacheControl,
 }
 

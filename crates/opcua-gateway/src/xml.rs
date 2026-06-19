@@ -3,21 +3,21 @@
 
 //! DDS-OPCUA Gateway XML Configuration Loader (Spec §10).
 //!
-//! Spec-Quelle: OMG DDS-OPCUA 1.0 §10 (S. 109-127) — XML-Configuration-
-//! Schema fuer Bridge-Defs (UAtoDDS / DDStoUA).
+//! Spec source: OMG DDS-OPCUA 1.0 §10 (pp. 109-127) — XML configuration
+//! schema for bridge defs (UAtoDDS / DDStoUA).
 //!
-//! Wir parsen ein leichtgewichtiges Subset, das fuer den
-//! Conformance-Punkt der Spec ausreicht:
+//! We parse a lightweight subset that is sufficient for the
+//! conformance point of the spec:
 //!
-//! * `<zerodds_opcua_gateway>` — Root.
-//! * `<bridge name="...">` — Connection-Definition mit Domain-Id +
-//!   beliebig vielen UA-Connections.
-//! * `<ua_to_dds_connection>` und `<dds_to_ua_connection>` —
-//!   beide tragen Topic-Name, Type-Name, optional Browse-Path und
-//!   Node-Id (numeric oder string).
+//! * `<zerodds_opcua_gateway>` — root.
+//! * `<bridge name="...">` — connection definition with a domain id +
+//!   an arbitrary number of UA connections.
+//! * `<ua_to_dds_connection>` and `<dds_to_ua_connection>` —
+//!   both carry a topic name, type name, optional browse path and
+//!   node id (numeric or string).
 //!
-//! Cross-Ref: `crates/xml/src/qos.rs` als Schwester-Loader fuer
-//! DDS-XML 1.0 §7.3.2 (gleiche `roxmltree`-Backend-Wahl).
+//! Cross-ref: `crates/xml/src/qos.rs` as a sister loader for
+//! DDS-XML 1.0 §7.3.2 (same `roxmltree` backend choice).
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -25,29 +25,29 @@ use core::fmt;
 
 use roxmltree::{Document, Node};
 
-/// XML-Loader-Fehler (Spec §10).
+/// XML loader error (Spec §10).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpcuaXmlError {
-    /// XML-Parser-Fehler (mal-formed XML).
+    /// XML parser error (malformed XML).
     Parse(String),
-    /// Wurzel-Element ist nicht `<zerodds_opcua_gateway>`.
+    /// The root element is not `<zerodds_opcua_gateway>`.
     UnexpectedRoot(String),
-    /// Pflicht-Attribut fehlt.
+    /// A required attribute is missing.
     MissingAttribute {
-        /// Element-Name.
+        /// Element name.
         element: String,
-        /// Attribut-Name.
+        /// Attribute name.
         attr: String,
     },
-    /// Pflicht-Element fehlt.
+    /// A required element is missing.
     MissingElement {
-        /// Element-Name.
+        /// Element name.
         element: String,
     },
-    /// Connection-Direction `<ua_to_dds_connection>` /
-    /// `<dds_to_ua_connection>` falsch.
+    /// Connection direction `<ua_to_dds_connection>` /
+    /// `<dds_to_ua_connection>` is wrong.
     InvalidDirection(String),
-    /// Numeric NodeId konnte nicht geparsed werden.
+    /// The numeric NodeId could not be parsed.
     InvalidNumericNodeId(String),
 }
 
@@ -71,40 +71,40 @@ impl fmt::Display for OpcuaXmlError {
 #[cfg(feature = "std")]
 impl std::error::Error for OpcuaXmlError {}
 
-/// Geparste Top-Level-Konfiguration.
+/// Parsed top-level configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GatewayConfig {
-    /// Liste aller `<bridge>`-Elemente.
+    /// List of all `<bridge>` elements.
     pub bridges: Vec<BridgeDef>,
 }
 
-/// Spec §10 — eine `<bridge>`-Definition.
+/// Spec §10 — a `<bridge>` definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeDef {
-    /// Bridge-Name (`<bridge name="...">`).
+    /// Bridge name (`<bridge name="...">`).
     pub name: String,
-    /// DDS Domain-Id (default 0).
+    /// DDS domain id (default 0).
     pub domain_id: u32,
-    /// Liste aller UA-Connections (beide Richtungen gemischt).
+    /// List of all UA connections (both directions mixed).
     pub connections: Vec<UaConnection>,
 }
 
-/// Eine `<ua_to_dds_connection>` oder `<dds_to_ua_connection>`.
+/// A `<ua_to_dds_connection>` or `<dds_to_ua_connection>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UaConnection {
-    /// Richtung der Bridge.
+    /// Direction of the bridge.
     pub direction: ConnectionDirection,
-    /// DDS-Topic-Name.
+    /// DDS topic name.
     pub dds_topic: String,
-    /// DDS-Type-Name.
+    /// DDS type name.
     pub dds_type: String,
-    /// Optionaler `<browse_path>` als 2-Segment-Pfad.
+    /// Optional `<browse_path>` as a 2-segment path.
     pub browse_path: Vec<String>,
-    /// Optionale `<node_id>`. Spec §8.2.2 — numeric oder string.
+    /// Optional `<node_id>`. Spec §8.2.2 — numeric or string.
     pub node_id: Option<XmlNodeId>,
 }
 
-/// Bridge-Direction (Spec §10).
+/// Bridge direction (Spec §10).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionDirection {
     /// `<ua_to_dds_connection>` — OPC UA Server -> DDS Topic.
@@ -113,7 +113,7 @@ pub enum ConnectionDirection {
     DdsToUa,
 }
 
-/// Spec §8.2.2 NodeId-Variante im XML-Schema.
+/// Spec §8.2.2 NodeId variant in the XML schema.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum XmlNodeId {
     /// `<numeric_node_id>` (`u32`).
@@ -122,13 +122,13 @@ pub enum XmlNodeId {
     StringId(String),
 }
 
-/// Parst einen XML-Source-String in eine [`GatewayConfig`].
+/// Parses an XML source string into a [`GatewayConfig`].
 ///
 /// Spec §10 / §10.2.
 ///
 /// # Errors
-/// Liefert [`OpcuaXmlError`] bei mal-formed XML oder fehlenden
-/// Pflicht-Feldern.
+/// Returns [`OpcuaXmlError`] on malformed XML or missing
+/// required fields.
 pub fn parse_gateway_config(src: &str) -> Result<GatewayConfig, OpcuaXmlError> {
     let doc = Document::parse(src).map_err(|e| OpcuaXmlError::Parse(e.to_string()))?;
     let root = doc.root_element();

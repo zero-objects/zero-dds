@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! E2E-Test fuer `zerodds-ws-bridged`.
+//! E2E test for `zerodds-ws-bridged`.
 //!
 //! Spec: `docs/specs/zerodds-ws-bridge-1.0.md` §12.2.
 //!
-//! Strategie: statt einen Subprocess zu spawnen (was MSRV/lock-step
-//! gegen die Build-Outputs der Workspace-Suite macht), starten wir
-//! den Daemon im selben Prozess via `daemon::server::start()` und
-//! benchen einen WS-Client mit dem Library-eigenen Handshake-/Codec-
-//! Pfad gegen ihn. Das deckt:
+//! Strategy: instead of spawning a subprocess (which creates MSRV/lock-step
+//! coupling against the build outputs of the workspace suite), we start
+//! the daemon in the same process via `daemon::server::start()` and
+//! exercise a WS client against it using the library's own handshake/codec
+//! path. This covers:
 //!
-//! * L1 — Handshake ueber TCP (`parse_client_request` Roundtrip).
-//! * L1 — Frame-Codec (Text-Frame-Round-Trip).
-//! * L3 — Bidir-Pump (Subscribe + DDS-Pump → Notify).
+//! * L1 — handshake over TCP (`parse_client_request` roundtrip).
+//! * L1 — frame codec (text-frame round-trip).
+//! * L3 — bidir pump (subscribe + DDS pump → notify).
 
 #![cfg(feature = "daemon")]
 #![allow(
@@ -166,26 +166,26 @@ fn rejects_non_upgrade_request() {
     handle.shutdown();
 }
 
-// Single-Daemon-Pump-Test mit synthetischer Reader-Injection — kein
-// Multicast nötig, daher auch auf macOS und in CI-Containern stabil.
+// Single-daemon pump test with synthetic reader injection — no
+// multicast needed, hence stable on macOS and in CI containers too.
 #[test]
 fn cross_daemon_publish_pump_delivers_to_subscriber() {
-    // L3-Outbound-Pump-Beweis (Daemon-Reader → WS-Notify):
-    // * Single-Daemon-Setup, ein WS-Client connected sich und sendet
-    //   `subscribe` für TradeE2E.
-    // * Statt einen zweiten DDS-Participant zu spawnen und auf
-    //   Multicast-SPDP-Discovery zu vertrauen (in CI-Containern und
-    //   auf macOS unzuverlässig — analog zu mqtt-bridge daemon_e2e),
-    //   injizieren wir einen synthetischen `UserSample::Alive` direkt
-    //   in den `mpsc::Receiver`-Channel des Daemon-Reader-Slots via
-    //   `DcpsRuntime::test_inject_user_alive`. Damit umgehen wir den
-    //   Wire+Discovery-Pfad und exerzieren den vollen Pump-Pfad in
-    //   Produktionsform: Reader-Channel → Router::dispatch →
-    //   WS-Notify-Frame an alle subscribed-Streams.
+    // L3 outbound pump proof (daemon reader → WS notify):
+    // * Single-daemon setup, one WS client connects and sends
+    //   `subscribe` for TradeE2E.
+    // * Instead of spawning a second DDS participant and relying on
+    //   multicast SPDP discovery (unreliable in CI containers and
+    //   on macOS — analogous to mqtt-bridge daemon_e2e),
+    //   we inject a synthetic `UserSample::Alive` directly
+    //   into the `mpsc::Receiver` channel of the daemon reader slot via
+    //   `DcpsRuntime::test_inject_user_alive`. This bypasses the
+    //   wire+discovery path and exercises the full pump path in
+    //   production form: reader channel → Router::dispatch →
+    //   WS notify frame to all subscribed streams.
     //
-    // Cross-Daemon-Discovery (zwei DcpsRuntimes, SPDP-Multicast) wird
-    // separat über die Cyclone-Interop-Harness verifiziert; in
-    // CI-Containern ist der Multicast-Loopback nicht verfügbar.
+    // Cross-daemon discovery (two DcpsRuntimes, SPDP multicast) is
+    // verified separately via the Cyclone interop harness; in
+    // CI containers the multicast loopback is not available.
 
     let mut cfg = make_test_config(0);
     cfg.domain = 199;
@@ -197,12 +197,11 @@ fn cross_daemon_publish_pump_delivers_to_subscriber() {
         .set_read_timeout(Some(Duration::from_millis(50)))
         .expect("set read-timeout");
 
-    // Daemon hat per `/topics/trade` Auto-Subscribe für TradeE2E
-    // (TopicConfig.ws_path), aber Subscribe + Connection-Registrierung
-    // läuft ASYNCHRON nach dem 101-Response — kurze Pause vor dem
-    // ersten Inject, damit der Connection-Handler-Thread durch
-    // `router.register_connection` + `router.subscribe(auto_topic)`
-    // gekommen ist.
+    // The daemon has auto-subscribe for TradeE2E via `/topics/trade`
+    // (TopicConfig.ws_path), but subscribe + connection registration
+    // runs ASYNCHRONOUSLY after the 101 response — a short pause before the
+    // first inject, so the connection handler thread has gotten through
+    // `router.register_connection` + `router.subscribe(auto_topic)`.
     std::thread::sleep(Duration::from_millis(150));
 
     let reader_eid = *handle
@@ -211,10 +210,10 @@ fn cross_daemon_publish_pump_delivers_to_subscriber() {
         .expect("daemon registered user_reader for TradeE2E");
     let payload = b"{\"sym\":\"AAPL\"}".to_vec();
 
-    // Inject-Loop: zwischen frame-decode (counter++) und der
-    // Router::subscribe-Mutation gibt es eine Lücke. Wir injizieren
-    // den Sample wiederholt mit kurzen Pausen, bis ein Notify-Frame
-    // auf der subscribed-Connection ankommt (3 s Budget).
+    // Inject loop: there is a gap between frame-decode (counter++) and the
+    // Router::subscribe mutation. We inject the sample repeatedly with
+    // short pauses, until a notify frame arrives on the subscribed
+    // connection (3 s budget).
     let frame = {
         let mut buf = [0u8; 4096];
         let mut acc = Vec::new();
@@ -262,8 +261,8 @@ fn cross_daemon_publish_pump_delivers_to_subscriber() {
 // Metrics-Counter).
 // ============================================================================
 
-/// Graceful shutdown via DaemonHandle::shutdown() laesst Drop-on-Exit
-/// alle Threads sauber join'en (§9.2).
+/// Graceful shutdown via DaemonHandle::shutdown() lets Drop-on-Exit
+/// join all threads cleanly (§9.2).
 #[test]
 fn graceful_shutdown_completes_within_5s() {
     let cfg = make_test_config(0);
@@ -280,8 +279,8 @@ fn graceful_shutdown_completes_within_5s() {
     );
 }
 
-/// Catalog/Healthz/Metrics-Endpoint liefert JSON-Body mit den
-/// konfigurierten Topics (§5.2 + §8.2).
+/// The catalog/healthz/metrics endpoint returns a JSON body with the
+/// configured topics (§5.2 + §8.2).
 #[test]
 fn admin_endpoint_serves_catalog_metrics_healthz() {
     let mut cfg = make_test_config(0);
@@ -334,7 +333,7 @@ fn admin_endpoint_serves_catalog_metrics_healthz() {
     handle.shutdown();
 }
 
-/// Frame-In/Out-Counter inkrementieren bei aktiver Connection (§8.2).
+/// Increment frame in/out counters on an active connection (§8.2).
 #[test]
 fn metrics_counters_track_frames_in_and_out() {
     let mut cfg = make_test_config(0);

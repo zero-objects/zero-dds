@@ -38,6 +38,12 @@ public sealed class AllTypeSupport : IDdsTopicType<All>
     public byte[] Encode(All sample, EndianMode endian)
     {
         var w = new Xcdr2Writer(endian);
+        EncodeInto(w, sample);
+        return w.ToArray();
+    }
+
+    public void EncodeInto(Xcdr2Writer w, All sample)
+    {
         w.WriteBool(sample.B);
         w.WriteOctet(sample.O);
         w.WriteInt16(sample.S);
@@ -48,12 +54,16 @@ public sealed class AllTypeSupport : IDdsTopicType<All>
         w.WriteUInt64(sample.Ull);
         w.WriteFloat32(sample.F);
         w.WriteFloat64(sample.D);
-        return w.ToArray();
     }
 
     public All Decode(ReadOnlySpan<byte> bytes)
     {
         var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
+        return DecodeFrom(r);
+    }
+
+    public All DecodeFrom(Xcdr2Reader r)
+    {
         bool __m0 = default;
         __m0 = r.ReadBool();
         byte __m1 = default;

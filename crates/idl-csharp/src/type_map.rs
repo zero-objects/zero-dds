@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Mapping IDL-Primitive → C#-Type-Strings.
+//! Mapping IDL primitives → C# type strings.
 //!
-//! Folgt OMG IDL4-CSharp-Mapping §6 (formal/2024-12-01) Tabelle 6-1.
-//! Foundation-Subset (Phase 3.2): primitive Skalare, Strings,
-//! sowie die Foundation-Container `IList<T>`, `T[]`, Discriminated-
-//! Union-Pattern, `T?` (Nullable).
+//! Follows OMG IDL4-CSharp mapping §6 (formal/2024-12-01) table 6-1.
+//! Foundation subset (phase 3.2): primitive scalars, strings, plus the
+//! foundation containers `IList<T>`, `T[]`, the discriminated-union
+//! pattern, and `T?` (nullable).
 //!
-//! Spec-Mapping (vollstaendig fuer Phase 3.2):
+//! Spec mapping (complete for phase 3.2):
 //!
 //! | IDL                  | C#       |
 //! |----------------------|----------|
@@ -25,13 +25,13 @@
 //! | `uint8`              | `byte`   |
 //! | `float`              | `float`  |
 //! | `double`             | `double` |
-//! | `long double`        | `decimal` (Approx; spec erlaubt `decimal` oder `double`) |
+//! | `long double`        | `decimal` (approx; spec allows `decimal` or `double`) |
 //! | `string`             | `string` |
 //! | `wstring`            | `string` |
 
 use zerodds_idl::ast::{FloatingType, IntegerType, PrimitiveType};
 
-/// Mappt eine [`PrimitiveType`] auf den C#-Typ-Ausdruck.
+/// Maps a [`PrimitiveType`] to the C# type expression.
 #[must_use]
 pub fn primitive_to_cs(p: PrimitiveType) -> &'static str {
     match p {
@@ -44,7 +44,7 @@ pub fn primitive_to_cs(p: PrimitiveType) -> &'static str {
     }
 }
 
-/// Mapping fuer Integer-Subtypen (§6 Tabelle 6-1).
+/// Mapping for integer subtypes (§6 table 6-1).
 #[must_use]
 pub fn integer_to_cs(i: IntegerType) -> &'static str {
     match i {
@@ -59,11 +59,11 @@ pub fn integer_to_cs(i: IntegerType) -> &'static str {
     }
 }
 
-/// Mapping fuer Floating-Subtypen.
+/// Mapping for floating subtypes.
 ///
-/// `long double` wird in C# als `decimal` gemappt (Spec erlaubt
-/// platform-naehesten 80-bit/128-bit Type; `decimal` ist die naechste
-/// .NET-Approximation).
+/// `long double` is mapped to `decimal` in C# (the spec allows the
+/// closest platform 80-bit/128-bit type; `decimal` is the nearest .NET
+/// approximation).
 #[must_use]
 pub fn floating_to_cs(f: FloatingType) -> &'static str {
     match f {
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn all_14_primitives_have_distinct_or_intentional_mapping() {
-        // 14 Primitives laut Roadmap-Auftrag.
+        // 14 primitives per the roadmap mandate.
         let mappings: Vec<(&str, &str)> = vec![
             ("boolean", primitive_to_cs(PrimitiveType::Boolean)),
             ("octet", primitive_to_cs(PrimitiveType::Octet)),
@@ -204,7 +204,7 @@ mod tests {
                 primitive_to_cs(PrimitiveType::Floating(FloatingType::LongDouble)),
             ),
         ];
-        // Mindestens 13 distinkte Strings (char/wchar kollabieren auf "char").
+        // At least 13 distinct strings (char/wchar collapse to "char").
         let unique: std::collections::BTreeSet<&str> = mappings.iter().map(|(_, cs)| *cs).collect();
         assert!(
             unique.len() >= 12,

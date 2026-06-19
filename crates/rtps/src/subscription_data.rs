@@ -2,11 +2,11 @@
 // Copyright 2026 ZeroDDS Contributors
 //! SubscriptionBuiltinTopicData (DDSI-RTPS 2.5 §8.5.4.3, §9.6.2.2.4).
 //!
-//! Inhalt der SEDP-Subscriptions-DATA-Submessage. Analog zur
-//! [`crate::publication_data::PublicationBuiltinTopicData`] —
-//! derselbe Wire-Aufbau, minus Writer-spezifische Felder wie
-//! Lifespan/Ownership-Strength, dafuer Reader-spezifische wie
-//! Time-Based-Filter .
+//! Content of the SEDP subscriptions DATA submessage. Analogous to
+//! [`crate::publication_data::PublicationBuiltinTopicData`] — the same
+//! wire layout, minus writer-specific fields like
+//! lifespan/ownership-strength, plus reader-specific ones like the
+//! time-based filter.
 //!
 //! GUIDs + topic/type
 //! + Durability + Reliability.
@@ -20,28 +20,28 @@ use crate::error::WireError;
 use crate::parameter_list::{Parameter, ParameterList, pid};
 use crate::participant_data::{Duration, ENCAPSULATION_PL_CDR_LE};
 use crate::publication_data::{
-    DurabilityKind, ReliabilityKind, ReliabilityQos, decode_cdr_string, decode_duration,
-    decode_i32, decode_liveliness, decode_partition, decode_u32, encode_cdr_string_le,
-    encode_duration_le, encode_liveliness_le, encode_partition_le, encode_u32_le, guid_from_param,
+    DurabilityKind, ReliabilityKind, ReliabilityQos, collect_locator_params, decode_cdr_string,
+    decode_duration, decode_i32, decode_liveliness, decode_partition, decode_u32,
+    encode_cdr_string_le, encode_duration_le, encode_liveliness_le, encode_locator_params,
+    encode_partition_le, encode_u32_le, guid_from_param,
 };
-use crate::wire_types::Guid;
+use crate::wire_types::{Guid, Locator};
 
 /// Discovered Subscription / lokaler DataReader — Subset.
 ///
-/// Wire-identisch zu [`PublicationBuiltinTopicData`] in Phase 1;
-/// getrennter Typ, damit SEDP-Publications- und Subscriptions-
-/// Caches klar unterschiedbar bleiben und Erweiterungen
-/// (z.B. `expects_inline_qos`, `time_based_filter`) nicht ueber
-/// den Publication-Typ gezogen werden.
+/// Wire-identical to [`PublicationBuiltinTopicData`] in phase 1; a
+/// separate type so the SEDP publications and subscriptions caches stay
+/// clearly distinguishable and extensions (e.g. `expects_inline_qos`,
+/// `time_based_filter`) are not pulled through the publication type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubscriptionBuiltinTopicData {
-    /// Endpoint-GUID (= Reader-GUID).
+    /// Endpoint GUID (= reader GUID).
     pub key: Guid,
-    /// GUID des Participants, dem der Reader gehoert.
+    /// GUID of the participant the reader belongs to.
     pub participant_key: Guid,
-    /// Topic-Name.
+    /// Topic name.
     pub topic_name: String,
-    /// IDL-Type-Name.
+    /// IDL type name.
     pub type_name: String,
     /// Durability-QoS.
     pub durability: DurabilityKind,
@@ -61,64 +61,72 @@ pub struct SubscriptionBuiltinTopicData {
     pub topic_data: Vec<u8>,
     /// GroupData-QoS (Spec §2.2.3.2) — opaque sequence<octet>.
     pub group_data: Vec<u8>,
-    /// Type-Information als opaque bytes (XTypes §7.6.3.2.2).
+    /// Type information as opaque bytes (XTypes §7.6.3.2.2).
     pub type_information: Option<alloc::vec::Vec<u8>>,
     /// Akzeptierte Data-Representations.
     pub data_representation: alloc::vec::Vec<i16>,
-    /// Content-Filter-Property (DDSI-RTPS §9.6.3.4 Table 9.14). Nur
-    /// gesetzt wenn der Reader als `ContentFilteredTopic` erstellt
-    /// wurde.
+    /// Content-filter property (DDSI-RTPS §9.6.3.4 Table 9.14). Only
+    /// set if the reader was created as a `ContentFilteredTopic`.
     pub content_filter: Option<ContentFilterProperty>,
-    /// Endpoint-Security-Info (PID 0x1004, DDS-Security 1.1 §7.4.1.5).
-    /// `None` bei Legacy-Peers. WP 4H-c-Matching prueft Writer/Reader-
-    /// Paare auf Protection-Kompatibilitaet.
+    /// Endpoint security info (PID 0x1004, DDS-Security 1.1 §7.4.1.5).
+    /// `None` for legacy peers. WP 4H-c matching checks writer/reader
+    /// pairs for protection compatibility.
     pub security_info: Option<EndpointSecurityInfo>,
-    /// PID_SERVICE_INSTANCE_NAME (DDS-RPC 1.0 §7.8.2) — logischer
-    /// Service-Instance-Name eines RPC-Endpoints.
+    /// PID_SERVICE_INSTANCE_NAME (DDS-RPC 1.0 §7.8.2) — logical
+    /// service-instance name of an RPC endpoint.
     pub service_instance_name: Option<String>,
-    /// PID_RELATED_ENTITY_GUID (DDS-RPC 1.0 §7.8.2) — GUID des
-    /// Pendant-Endpoints (z.B. Reply-Reader → Reply-Writer).
+    /// PID_RELATED_ENTITY_GUID (DDS-RPC 1.0 §7.8.2) — GUID of the
+    /// counterpart endpoint (e.g. reply reader → reply writer).
     pub related_entity_guid: Option<Guid>,
     /// PID_TOPIC_ALIASES (DDS-RPC 1.0 §7.8.2).
     pub topic_aliases: Option<Vec<String>>,
-    /// PID_ZERODDS_TYPE_ID (Vendor-PID 0x8002) — Reader-Type-Identifier
-    /// für XTypes-aware Match (siehe `PublicationBuiltinTopicData`).
+    /// PID_ZERODDS_TYPE_ID (vendor PID 0x8002) — reader type identifier
+    /// for XTypes-aware matching (see `PublicationBuiltinTopicData`).
     pub type_identifier: zerodds_types::TypeIdentifier,
+    /// Endpoint unicast locators (DDSI-RTPS 2.5 §8.5.3.2:
+    /// `DiscoveredReaderData.readerProxy.unicastLocatorList`). Where
+    /// peers send user data to *this* reader endpoint. Empty = the peer
+    /// falls back to the participant `DEFAULT_UNICAST_LOCATOR` from
+    /// SPDP (§8.5.5). OpenDDS stores the real user locator exclusively
+    /// here.
+    pub unicast_locators: Vec<Locator>,
+    /// Endpoint-Multicast-Locators (DDSI-RTPS 2.5 §8.5.3.2).
+    pub multicast_locators: Vec<Locator>,
 }
 
-/// Content-Filter-Property — projiziert eine Content-Filtered-Topic-
-/// Referenz ueber SEDP.
+/// Content-filter property — projects a content-filtered-topic
+/// reference over SEDP.
 ///
 /// Spec: OMG DDS 1.4 §9.6.3.4 Table 9.14 / DDSI-RTPS 2.5 §9.6.3.4.
-/// Fuenf Strings + eine String-Sequenz, alle CDR-serialized.
+/// Five strings + one string sequence, all CDR-serialized.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ContentFilterProperty {
-    /// Name des Content-Filtered-Topics (ableitbar aus dem Reader-
-    /// Identifier).
+    /// Name of the content-filtered topic (derivable from the reader
+    /// identifier).
     pub content_filtered_topic_name: String,
-    /// Name des zugrundeliegenden Topics (gleich wie
-    /// `topic_name` im SubscriptionBuiltinTopicData).
+    /// Name of the underlying topic (same as `topic_name` in the
+    /// SubscriptionBuiltinTopicData).
     pub related_topic_name: String,
-    /// Filter-Klasse, z.B. `"DDSSQL"`. Typkonstanten siehe
+    /// Filter class, e.g. `"DDSSQL"`. For type constants see
     /// [`filter_class`].
     pub filter_class_name: String,
-    /// Filter-Ausdruck (SQL-Subset).
+    /// Filter expression (SQL subset).
     pub filter_expression: String,
-    /// Positional Parameters (`%0`, `%1`, ...).
+    /// Positional parameters (`%0`, `%1`, ...).
     pub expression_parameters: Vec<String>,
 }
 
-/// Standard-Filter-Klassen-Namen.
+/// Standard filter-class names.
 pub mod filter_class {
-    /// OMG-SQL-Filter (DDSSQL) — das einzige standardisierte Kind.
+    /// OMG SQL filter (DDSSQL) — the only standardized kind.
     pub const DDSSQL: &str = "DDSSQL";
 }
 
-/// Encoded ContentFilterProperty als PL-Value (fuenf CDR-Strings +
-/// Sequence<String>).
+/// Encodes a ContentFilterProperty as a PL value (five CDR strings +
+/// sequence<string>).
 ///
 /// # Errors
-/// `ValueOutOfRange` wenn ein String ueberlange ist.
+/// `ValueOutOfRange` if a string is too long.
 pub fn encode_content_filter_property_le(
     cfp: &ContentFilterProperty,
 ) -> Result<Vec<u8>, WireError> {
@@ -131,7 +139,7 @@ pub fn encode_content_filter_property_le(
     Ok(out)
 }
 
-/// Decoded ContentFilterProperty aus PL-Value. `None` bei Wire-Fehler.
+/// Decodes a ContentFilterProperty from a PL value. `None` on a wire error.
 pub fn decode_content_filter_property(
     value: &[u8],
     little_endian: bool,
@@ -150,8 +158,8 @@ pub fn decode_content_filter_property(
     })
 }
 
-/// Hilfsfunktion: liest **einen** CDR-String aus einem Byte-Slice und
-/// liefert den Rest nach 4-Byte-Align-Padding zurueck.
+/// Helper: reads **one** CDR string from a byte slice and returns the
+/// rest after 4-byte align padding.
 fn take_cdr_string(bytes: &[u8], little_endian: bool) -> Option<(String, &[u8])> {
     if bytes.len() < 4 {
         return None;
@@ -168,22 +176,22 @@ fn take_cdr_string(bytes: &[u8], little_endian: bool) -> Option<(String, &[u8])>
         return None;
     }
     let s = decode_cdr_string(&bytes[..consumed_raw], little_endian).ok()?;
-    // 4-Byte-Align zum naechsten Element.
+    // 4-byte align to the next element.
     let padded = (consumed_raw + 3) & !3;
     let next = padded.min(bytes.len());
     Some((s, &bytes[next..]))
 }
 
 impl SubscriptionBuiltinTopicData {
-    /// Encoded zu PL_CDR_LE-Bytes (mit 4-byte Encapsulation-Header).
+    /// Encodes to PL_CDR_LE bytes (with a 4-byte encapsulation header).
     ///
-    /// Direkt implementiert (nicht ueber [`PublicationBuiltinTopicData`]
-    /// delegiert), damit Erweiterungs-PIDs, die writer-only sind (z.B.
-    /// `PID_LIFESPAN`, `PID_OWNERSHIP_STRENGTH`), nicht versehentlich
-    /// in den Subscription-Payload wandern.
+    /// Implemented directly (not delegated via
+    /// [`PublicationBuiltinTopicData`]) so that extension PIDs that are
+    /// writer-only (e.g. `PID_LIFESPAN`, `PID_OWNERSHIP_STRENGTH`) do
+    /// not accidentally end up in the subscription payload.
     ///
     /// # Errors
-    /// `ValueOutOfRange` wenn ein String laenger als u32::MAX ist.
+    /// `ValueOutOfRange` if a string is longer than u32::MAX.
     pub fn to_pl_cdr_le(&self) -> Result<Vec<u8>, WireError> {
         let mut params = ParameterList::new();
 
@@ -278,7 +286,7 @@ impl SubscriptionBuiltinTopicData {
         }
 
         // ----------------------------------------------------------------
-        // DDS-RPC 1.0 Discovery-PIDs (§7.8.2) — nur wenn gesetzt.
+        // DDS-RPC 1.0 discovery PIDs (§7.8.2) — only if set.
         // ----------------------------------------------------------------
         if let Some(name) = &self.service_instance_name {
             params.push(Parameter::new(
@@ -324,6 +332,14 @@ impl SubscriptionBuiltinTopicData {
             params.push(Parameter::new(pid::DATA_REPRESENTATION, dr));
         }
 
+        // Endpoint locators (§8.5.3.2) — one parameter per locator.
+        encode_locator_params(&mut params, pid::UNICAST_LOCATOR, &self.unicast_locators);
+        encode_locator_params(
+            &mut params,
+            pid::MULTICAST_LOCATOR,
+            &self.multicast_locators,
+        );
+
         let mut out = Vec::with_capacity(params.parameters.len() * 24 + 16);
         out.extend_from_slice(&ENCAPSULATION_PL_CDR_LE);
         out.extend_from_slice(&[0, 0]); // options
@@ -331,12 +347,12 @@ impl SubscriptionBuiltinTopicData {
         Ok(out)
     }
 
-    /// Decoded aus PL_CDR_LE-Bytes (mit Encapsulation-Header).
+    /// Decoded from PL_CDR_LE bytes (with encapsulation header).
     ///
     /// # Errors
-    /// `UnexpectedEof` bei zu kurzen Bytes,
-    /// `UnsupportedEncapsulation` bei unbekanntem Encoding,
-    /// `ValueOutOfRange` wenn Pflicht-PIDs fehlen.
+    /// `UnexpectedEof` on too-short bytes,
+    /// `UnsupportedEncapsulation` on an unknown encoding,
+    /// `ValueOutOfRange` if mandatory PIDs are missing.
     pub fn from_pl_cdr_le(bytes: &[u8]) -> Result<Self, WireError> {
         if bytes.len() < 4 {
             return Err(WireError::UnexpectedEof {
@@ -437,7 +453,7 @@ impl SubscriptionBuiltinTopicData {
             .and_then(|p| decode_u32(&p.value, little_endian))
             .map(zerodds_qos::OwnershipKind::from_u32)
             .unwrap_or_default();
-        // OWNERSHIP_STRENGTH ignoriert (writer-only).
+        // OWNERSHIP_STRENGTH ignored (writer-only).
         let _ = decode_i32;
 
         let liveliness = pl
@@ -553,6 +569,8 @@ impl SubscriptionBuiltinTopicData {
             related_entity_guid,
             topic_aliases,
             type_identifier,
+            unicast_locators: collect_locator_params(&pl, pid::UNICAST_LOCATOR, little_endian),
+            multicast_locators: collect_locator_params(&pl, pid::MULTICAST_LOCATOR, little_endian),
         })
     }
 }
@@ -595,6 +613,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         };
         let bytes = s.to_pl_cdr_le().unwrap();
         let decoded = SubscriptionBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
@@ -633,6 +653,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         };
         let bytes = s.to_pl_cdr_le().unwrap();
         let decoded = SubscriptionBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
@@ -687,6 +709,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         };
         let bytes = s.to_pl_cdr_le().unwrap();
         let decoded = SubscriptionBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
@@ -719,6 +743,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         }
     }
 

@@ -1,18 +1,17 @@
 # IETF WebSocket RFC 6455 — Spec-Coverage
 
-**RFC:** `docs/standards/cache/ietf/rfc6455.txt` ("The WebSocket
+**RFC:** [IETF RFC 6455](https://www.rfc-editor.org/rfc/rfc6455) ("The WebSocket
 Protocol", IETF December 2011).
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`.
-
 **Kontext:** WebSocket ist ein bidirektionales Frame-basiertes Protokoll
-ueber TCP — Begleitspec zu DDS-WEB. ZeroDDS implementiert das
+über TCP — Begleitspec zu DDS-WEB. ZeroDDS implementiert das
 **Base Framing Protocol** (RFC 6455 §5.2 + §5.3) als pure-Rust
-no_std+alloc Library im Crate `crates/websocket-bridge/`. Opening
-Handshake (HTTP-Upgrade, §4) ist Caller-Aufgabe, ebenso TLS (`wss://`)
-und Extension-Negotiation.
+no_std+alloc Library. Opening Handshake (HTTP-Upgrade, §4) ist
+Caller-Aufgabe, ebenso TLS (`wss://`) und Extension-Negotiation.
 
-Implementation: `crates/websocket-bridge/` (3 Module, 32 Tests gruen).
+Implementation:
+
+- `crates/websocket-bridge/` — Base Framing Protocol (§5.2 + §5.3) als pure-Rust no_std+alloc Library, 3 Module, 32 Tests grün.
 
 ---
 
@@ -41,7 +40,7 @@ Conformance-Requirements.
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Verweis auf RFC-2119-Schluesselwoerter; Sprach-Konvention.
+**Status:** `n/a (informative)` — Verweis auf RFC-2119-Schlüsselwörter; Sprach-Konvention.
 
 ---
 
@@ -167,7 +166,7 @@ octet at index i modulo 4 of the masking key". Spec §5.3 verlangt
 `closure_provider_calls_user_supplied_fn`,
 `codec::tests::round_trip_masked_payload_unmasked_on_decode`.
 
-**Status:** done — XOR-Logik + `MaskingKeyProvider`-Trait fuer
+**Status:** done — XOR-Logik + `MaskingKeyProvider`-Trait für
 caller-supplied secure RNGs (OsRng/getrandom/Hardware-RNG) live;
 `InsecureSplitmixProvider` als explizit `not for security`-Default;
 `ClosureMaskingKeyProvider` zur einfachen Anbindung externer
@@ -176,7 +175,7 @@ RNG-Quellen.
 ### §5.4 Fragmentation
 
 **Spec:** §5.4, S. 33-34 — FIN=0 markiert non-final Fragment;
-Continuation-Frames mit Opcode 0x0 + FIN=1 fuer letzten.
+Continuation-Frames mit Opcode 0x0 + FIN=1 für letzten.
 
 **Repo:** Codec liefert FIN-Bit + Opcode 1:1 durch; Re-Assembly ist
 Caller-Aufgabe.
@@ -281,7 +280,7 @@ bei Continuation-Frames Reassembly-Pflicht.
 Messages in Frame-Sequenzen (Text/Binary mit FIN=0, Continuation-
 Frames, letztes Frame mit FIN=1); UTF-8-Validation auf Text-Payload
 vor Splitting; Mask-Field wird gesetzt wenn Caller einen non-Null
-Mask-Key uebergibt (Client-Pfad).
+Mask-Key übergibt (Client-Pfad).
 
 **Tests:** `message::tests::{fragment_empty_message_yields_one_frame,
 fragment_message_within_limit_single_frame,
@@ -299,7 +298,7 @@ State-Tracking.
 
 **Repo:** `crates/websocket-bridge/src/message.rs::Reassembler` +
 `Message`-Struct + `ReceiveError`-Enum. Pflegt Continuation-State
-ueber `feed(&Frame) -> Option<Message>`-API; Streaming-UTF-8-
+über `feed(&Frame) -> Option<Message>`-API; Streaming-UTF-8-
 Validation pro Frame; DoS-Cap via `max_message_size`. Control-Frames
 (Close/Ping/Pong) werden direkt durchgereicht (Spec §5.5: nicht
 fragmentierbar). Reserved-Opcodes triggern Fail.
@@ -408,8 +407,8 @@ fail the WebSocket Connection."
 **Repo:** `crates/websocket-bridge/src/utf8.rs::{validate, Utf8Error,
 StreamingValidator}`. Strict RFC-3629-Validation: Surrogate-
 Codepoints (U+D800..=U+DFFF), Overlong-Encoding, Codepoints
-> U+10FFFF werden rejected. `StreamingValidator` haelt einen
-4-Byte-Puffer fuer fragmentierte Text-Frames (Spec §6.2 — FIN=0
+> U+10FFFF werden rejected. `StreamingValidator` hält einen
+4-Byte-Puffer für fragmentierte Text-Frames (Spec §6.2 — FIN=0
 Continuation-Frames).
 
 **Tests:** `utf8::tests::*` (16 Tests) inkl. valid_2/3/4_byte_codepoint,
@@ -478,5 +477,3 @@ Test-Lauf: `cargo test -p zerodds-websocket-bridge` — 74 lib-Inline +
 4 Integration = 78 Tests grün, 0 failed. Module mit Tests: `close`,
 `codec`, `dds_bridge`, `frame`, `handshake`, `masking`,
 `permessage_deflate`.
-
-Offene Punkte: siehe `websocket-rfc-6455.open.md`.

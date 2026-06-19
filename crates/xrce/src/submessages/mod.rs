@@ -3,11 +3,11 @@
 
 //! XRCE-Submessage-Wire-Format (Spec §8.3.4 + §8.3.5).
 //!
-//! Jede Submessage besteht aus einem 4-Byte-Header und einem opaken
-//! Body. Der Body wird in C6.2.A nur strukturell validiert (Laenge,
-//! Alignment, einige skalar-Felder bei den State-Machine-Submessages
-//! ACKNACK/HEARTBEAT/TIMESTAMP). Die innere Struktur (XCDR2-Encodings
-//! der Object-Variants etc.) ist Aufgabe von C6.2.B.
+//! Each submessage consists of a 4-byte header and an opaque
+//! body. The body is only structurally validated in C6.2.A (length,
+//! alignment, some scalar fields for the state-machine submessages
+//! ACKNACK/HEARTBEAT/TIMESTAMP). The inner structure (XCDR2 encodings
+//! of the object variants etc.) is the task of C6.2.B.
 //!
 //! ```text
 //! +---------------+---------------+---------------+---------------+
@@ -19,9 +19,9 @@
 //! +---------------+---------------+---------------+---------------+
 //! ```
 //!
-//! `submessage_length` ist nach §8.3.4 **immer Little-Endian**, auch
-//! wenn das E-Flag (Bit 0 von `flags`) angibt, dass der Body BE ist.
-//! Submessage-Offsets innerhalb einer Message sind 4-Byte-aligned
+//! `submessage_length` is, per §8.3.4, **always little-endian**, even
+//! when the E-flag (bit 0 of `flags`) indicates that the body is BE.
+//! Submessage offsets within a message are 4-byte aligned
 //! (§8.3.3).
 
 #[cfg(feature = "alloc")]
@@ -67,23 +67,23 @@ pub use timestamp::{TIME_T_WIRE_SIZE, TimePoint, TimestampPayload};
 pub use timestamp_reply::TimestampReplyPayload;
 pub use write_data::{DataFormat, WriteDataPayload};
 
-/// E-Flag-Bit (Endianness des Bodies; 0 = BE, 1 = LE).
+/// E-flag bit (endianness of the body; 0 = BE, 1 = LE).
 pub const FLAG_E_LITTLE_ENDIAN: u8 = 0x01;
 
-/// DoS-Cap: maximale Anzahl Submessages in einer Message. 64 reicht
-/// fuer alle realistischen Use-Cases (Annex B-Beispiele haben max ~6
-/// Submessages); schuetzt vor decoder-Bombs mit tausenden 4-Byte-
-/// Headern.
+/// DoS cap: maximum number of submessages in a message. 64 suffices
+/// for all realistic use cases (Annex B examples have max ~6
+/// submessages); protects against decoder bombs with thousands of 4-byte
+/// headers.
 pub const DOSC_MAX_SUBMESSAGES: usize = 64;
 
-/// DoS-Cap: maximale Payload-Groesse einer Message in Bytes. 64 KiB
-/// entspricht dem `submessage_length`-u16-Limit pro Submessage; wir
-/// nehmen das auch fuer die gesamte Message als Outer-Cap, da Spec
-/// §11.2.3 "UDP-Payload = exakt eine XRCE-Message" sagt und UDP-
-/// Datagrams nicht groesser als 65 507 Byte werden koennen.
+/// DoS cap: maximum payload size of a message in bytes. 64 KiB
+/// corresponds to the `submessage_length` u16 limit per submessage; we
+/// use this for the entire message as an outer cap too, since Spec
+/// §11.2.3 says "UDP payload = exactly one XRCE message" and UDP
+/// datagrams cannot become larger than 65,507 bytes.
 pub const DOSC_MAX_PAYLOAD_SIZE: usize = 65_535;
 
-/// Submessage-IDs nach §8.3.5 (Werte 0..15).
+/// Submessage IDs per §8.3.5 (values 0..15).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 #[allow(missing_docs)]
@@ -107,13 +107,13 @@ pub enum SubmessageId {
 }
 
 impl SubmessageId {
-    /// Roher Wire-Wert.
+    /// Raw wire value.
     #[must_use]
     pub fn as_u8(self) -> u8 {
         self as u8
     }
 
-    /// Konvertiert ein Byte. IDs > 15 sind nicht in der Spec.
+    /// Converts a byte. IDs > 15 are not in the spec.
     ///
     /// # Errors
     /// `UnknownSubmessageId`.
@@ -143,25 +143,25 @@ impl SubmessageId {
 /// SubmessageHeader (§8.3.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SubmessageHeader {
-    /// Submessage-Klasse.
+    /// Submessage class.
     pub submessage_id: SubmessageId,
-    /// Flag-Byte. Bit 0 = E-Flag (LE); weitere Bits submessage-spezifisch.
+    /// Flag byte. Bit 0 = E-flag (LE); further bits submessage-specific.
     pub flags: u8,
-    /// Body-Laenge in Bytes (immer LE auf Wire, §8.3.4).
+    /// Body length in bytes (always LE on the wire, §8.3.4).
     pub submessage_length: u16,
 }
 
 impl SubmessageHeader {
-    /// Wire-Size: 4 Bytes.
+    /// Wire size: 4 bytes.
     pub const WIRE_SIZE: usize = 4;
 
-    /// `true`, wenn E-Flag (LE-Body) gesetzt ist.
+    /// `true` when the E-flag (LE body) is set.
     #[must_use]
     pub fn is_little_endian(self) -> bool {
         (self.flags & FLAG_E_LITTLE_ENDIAN) != 0
     }
 
-    /// Endianness des Bodies.
+    /// Endianness of the body.
     #[must_use]
     pub fn body_endianness(self) -> Endianness {
         if self.is_little_endian() {
@@ -171,8 +171,8 @@ impl SubmessageHeader {
         }
     }
 
-    /// Encodiert in 4-Byte-Array. `submessage_length` ist immer LE
-    /// (Spec §8.3.4: "submessageLength little-endian unabhaengig").
+    /// Encodes into a 4-byte array. `submessage_length` is always LE
+    /// (Spec §8.3.4: "submessageLength little-endian regardless").
     #[must_use]
     pub fn to_bytes(self) -> [u8; 4] {
         let mut out = [0u8; 4];
@@ -183,7 +183,7 @@ impl SubmessageHeader {
         out
     }
 
-    /// Decodiert einen 4-Byte-Slice.
+    /// Decodes a 4-byte slice.
     ///
     /// # Errors
     /// `UnexpectedEof`, `UnknownSubmessageId`.
@@ -207,25 +207,25 @@ impl SubmessageHeader {
     }
 }
 
-/// Eine Submessage: Header + Body. Body ist `Vec<u8>`, weil die Innen-
-/// struktur in C6.2.A opak gehalten wird.
+/// A submessage: header + body. The body is `Vec<u8>` because the inner
+/// structure is kept opaque in C6.2.A.
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Submessage {
-    /// 4-Byte-Header.
+    /// 4-byte header.
     pub header: SubmessageHeader,
-    /// Body. Laenge muss zu `header.submessage_length` passen
-    /// (wird beim Encode verifiziert).
+    /// Body. Its length must match `header.submessage_length`
+    /// (verified during encode).
     pub body: Vec<u8>,
 }
 
 #[cfg(feature = "alloc")]
 impl Submessage {
-    /// Konstruiere eine Submessage mit festgelegter ID + Flags + Body.
-    /// Setzt `submessage_length` automatisch auf `body.len()`.
+    /// Constructs a submessage with the given ID + flags + body.
+    /// Sets `submessage_length` automatically to `body.len()`.
     ///
     /// # Errors
-    /// `PayloadTooLarge`, wenn `body.len() > u16::MAX`.
+    /// `PayloadTooLarge` if `body.len() > u16::MAX`.
     pub fn new(id: SubmessageId, flags: u8, body: Vec<u8>) -> Result<Self, XrceError> {
         if body.len() > usize::from(u16::MAX) {
             return Err(XrceError::PayloadTooLarge {
@@ -246,14 +246,14 @@ impl Submessage {
         })
     }
 
-    /// Wire-Size: Header + Body + Padding-zu-4-Byte-Alignment, ausser
-    /// fuer die letzte Submessage in einer Message.
+    /// Wire size: header + body + padding to 4-byte alignment, except
+    /// for the last submessage in a message.
     #[must_use]
     pub fn wire_size_unpadded(&self) -> usize {
         SubmessageHeader::WIRE_SIZE + self.body.len()
     }
 
-    /// Padding in Bytes auf das naechste 4-Byte-Vielfache.
+    /// Padding in bytes to the next 4-byte multiple.
     #[must_use]
     pub fn padding_bytes(&self) -> usize {
         let unpadded = self.wire_size_unpadded();
@@ -262,7 +262,7 @@ impl Submessage {
     }
 }
 
-/// XRCE-Message: Header + 1..n Submessages.
+/// XRCE message: header + 1..n submessages.
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
@@ -274,11 +274,11 @@ pub struct Message {
 
 #[cfg(feature = "alloc")]
 impl Message {
-    /// Konstruktor mit DoS-Cap-Check.
+    /// Constructor with a DoS cap check.
     ///
     /// # Errors
-    /// `TooManySubmessages`, wenn mehr als `DOSC_MAX_SUBMESSAGES`
-    /// gegeben.
+    /// `TooManySubmessages` if more than `DOSC_MAX_SUBMESSAGES`
+    /// are given.
     pub fn new(header: MessageHeader, submessages: Vec<Submessage>) -> Result<Self, XrceError> {
         if submessages.len() > DOSC_MAX_SUBMESSAGES {
             return Err(XrceError::TooManySubmessages {
@@ -291,17 +291,17 @@ impl Message {
         })
     }
 
-    /// Encodiert die gesamte Message in einen frisch allokierten
+    /// Encodes the entire message into a freshly allocated
     /// `Vec<u8>`.
     ///
-    /// Submessage-Bodies werden mit Padding auf 4-Byte-Vielfache
-    /// aligned (Spec §8.3.3), AUSSER der letzten Submessage —
-    /// die Spec laesst die letzte Submessage ohne abschliessenden
-    /// Padding-Tail enden, weil das naechste Datagram folgt.
+    /// Submessage bodies are padded to 4-byte multiples
+    /// (Spec §8.3.3), EXCEPT the last submessage —
+    /// the spec lets the last submessage end without a trailing
+    /// padding tail, because the next datagram follows.
     ///
     /// # Errors
-    /// `PayloadTooLarge`, wenn die finale Groesse `DOSC_MAX_PAYLOAD_SIZE`
-    /// uebersteigt.
+    /// `PayloadTooLarge` if the final size exceeds
+    /// `DOSC_MAX_PAYLOAD_SIZE`.
     pub fn encode(&self) -> Result<Vec<u8>, XrceError> {
         if self.submessages.len() > DOSC_MAX_SUBMESSAGES {
             return Err(XrceError::TooManySubmessages {
@@ -309,12 +309,12 @@ impl Message {
             });
         }
 
-        // Vorausberechnen der Groesse fuer eine einzelne Allokation.
+        // Precompute the size for a single allocation.
         let header_size = self.header.wire_size();
         let mut total = header_size;
         for (i, sm) in self.submessages.iter().enumerate() {
             total += sm.wire_size_unpadded();
-            // Padding nach jeder Submessage AUSSER der letzten.
+            // Padding after every submessage EXCEPT the last.
             if i + 1 < self.submessages.len() {
                 total += sm.padding_bytes();
             }
@@ -333,7 +333,7 @@ impl Message {
         out.extend_from_slice(&hdr_buf[..n]);
         // Submessages
         for (i, sm) in self.submessages.iter().enumerate() {
-            // Submessage-Body-Laenge muss konsistent sein.
+            // The submessage body length must be consistent.
             if usize::from(sm.header.submessage_length) != sm.body.len() {
                 return Err(XrceError::ValueOutOfRange {
                     message: "submessage_length mismatches body length",
@@ -351,10 +351,10 @@ impl Message {
         Ok(out)
     }
 
-    /// Decodiert eine komplette Message aus einem Datagram.
+    /// Decodes a complete message from a datagram.
     ///
-    /// Validiert Submessage-Alignment (4-Byte) und konsumiert Bytes
-    /// bis zum Ende des Buffers oder zu einem Truncation-Fehler.
+    /// Validates submessage alignment (4-byte) and consumes bytes
+    /// up to the end of the buffer or to a truncation error.
     ///
     /// # Errors
     /// `UnexpectedEof`, `UnknownSubmessageId`,
@@ -373,9 +373,9 @@ impl Message {
         let mut submessages: Vec<Submessage> = Vec::new();
 
         while offset < bytes.len() {
-            // §8.3.3: Offsets sind 4-Byte-aligned. Header startet
-            // bei Offset 0, Header-Size ist 4 oder 8 → bereits aligned.
-            // Wir pruefen vor jedem Submessage-Read.
+            // §8.3.3: offsets are 4-byte-aligned. Header starts
+            // at offset 0, header size is 4 or 8 → already aligned.
+            // We check before every submessage read.
             if offset % 4 != 0 {
                 return Err(XrceError::UnalignedSubmessage { offset });
             }
@@ -409,8 +409,8 @@ impl Message {
                 });
             }
 
-            // Padding zur 4-Byte-Boundary konsumieren — nur wenn nach
-            // diesem Submessage noch Bytes folgen.
+            // Consume padding to the 4-byte boundary — only if bytes
+            // still follow after this submessage.
             if offset < bytes.len() {
                 let pad = (4 - (offset % 4)) % 4;
                 let pad_take = pad.min(bytes.len() - offset);
@@ -471,7 +471,7 @@ mod tests {
 
     #[test]
     fn submessage_header_length_is_always_le_even_with_be_body() {
-        // E-flag = 0 (BE-Body), aber length ist trotzdem LE
+        // E-flag = 0 (BE body), but length is LE nonetheless
         let sh = SubmessageHeader {
             submessage_id: SubmessageId::Data,
             flags: 0,
@@ -528,7 +528,7 @@ mod tests {
         let header =
             MessageHeader::without_client_key(SessionId(0x80), StreamId(2), SerialNumber16::new(0))
                 .unwrap();
-        // Body von 5 Bytes → naechste Submessage muss bei +(5+3)=8 starten
+        // Body of 5 bytes → next submessage must start at +(5+3)=8
         let sm1 = Submessage::new(
             SubmessageId::WriteData,
             FLAG_E_LITTLE_ENDIAN,
@@ -551,7 +551,7 @@ mod tests {
 
     #[test]
     fn message_decode_rejects_too_many_submessages_via_too_many_concat() {
-        // Manuell zusammengebautes Datagram mit DOSC_MAX_SUBMESSAGES+1
+        // Manually assembled datagram with DOSC_MAX_SUBMESSAGES+1
         // Reset-Submessages (Body=0).
         let header = MessageHeader::without_client_key(
             SessionId(0xFF),
@@ -583,7 +583,7 @@ mod tests {
         let mut hdr_buf = [0u8; 4];
         header.write_to(&mut hdr_buf).unwrap();
         let mut bytes: Vec<u8> = hdr_buf.to_vec();
-        // Submessage mit length=10 aber 0 Bytes Body
+        // Submessage with length=10 but 0 bytes of body
         bytes.extend_from_slice(&[SubmessageId::WriteData.as_u8(), FLAG_E_LITTLE_ENDIAN, 10, 0]);
         let res = Message::decode(&bytes);
         assert!(matches!(

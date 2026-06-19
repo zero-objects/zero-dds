@@ -1,11 +1,6 @@
 # DDS for Lightweight CCM 1.1 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/dds4ccm-1.1.pdf` (~95 Seiten, OMG
-formal/2012-05-01).
-
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-
-Item gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad +
-Test-Pfad + Status.
+**Spec:** [OMG DDS for Lightweight CCM 1.1 — formal/2012-05-01 (~95 Seiten) →](https://www.omg.org/spec/DDS4CCM/)
 
 **Kontext:** DDS4CCM definiert wie CCM-Components mit DDS interagieren:
 DDS-DCPS Extended Ports + Connectors (§7) für die Pub/Sub-Nutzung,
@@ -14,23 +9,31 @@ Object-Layer-Nutzung. Die XML-QoS-Profile-Definition (§7.4.2 +
 Annex C XSD + Annex D Default-Profile) ist die zentrale
 QoS-Konfigurations-Spec.
 
+Die Implementation ist über mehrere Crates verteilt:
+
+- `crates/ccm/` — DDS4CCM-Kern: Connector-/Port-Datenmodell, Pattern-QoS-Profiles, IDL-Output-Formen (`src/dds4ccm.rs`)
+- `crates/xml/` — XML-QoS-Profile (§7.4.2 + Annex C XSD + Annex D Default-Profile)
+- `crates/dcps/` — DCPS-Entity-Erzeugung als Connector-Backend
+- `crates/idl/` — IDL3+-Codegen-Backend für den Annex-A-Source-Output
+- `crates/corba-ccm/` — CCM-Container-Stack (Host für §7/§8, siehe `omg-ccm-4.0.md`)
+
 **Crate-Mapping:**
 
 | Spec-Bereich | Crate / Modul |
 |---|---|
-| §7 DDS-DCPS Extended Ports + Connectors | — (CCM-Container-Pflicht) |
+| §7 DDS-DCPS Extended Ports + Connectors | `crates/ccm/src/dds4ccm.rs` (Host: `crates/corba-ccm/`) |
 | §7.4.2 DDS QoS Policies in XML | `crates/xml/src/qos.rs` (K7) |
-| §8 DDS-DLRL Extended Ports + Connectors | — (CCM-Container + DLRL-Pflicht) |
+| §8 DDS-DLRL Extended Ports + Connectors | `crates/ccm/src/dds4ccm.rs` (Host: `crates/corba-ccm/`) |
 | Annex C XML Schema for QoS Profiles | `crates/xml/src/qos.rs` |
 | Annex D Default QoS Profile | `crates/xml/src/qos.rs::DEFAULT_PROFILE` |
-| Annex E QoS Policies for DDS Patterns | — |
+| Annex E QoS Policies for DDS Patterns | `crates/ccm/src/dds4ccm.rs::qos_profiles` |
 
-ZeroDDS hat keinen CCM-Container-Stack im Sinne der §7/§8-Anforderungen
-direkt; der CCM-Container liegt in `crates/corba-ccm/` (siehe
-`omg-ccm-4.0.md`), aber DDS4CCM-spezifische Connector-Generierung
-nutzt eine eigene Codegen-Schicht die noch nicht ausgewiesen ist.
-Der **XML-QoS-Profile-Anteil** ist über `crates/xml/src/qos.rs`
-(K7-Audit, siehe `zerodds-xml-1.0.md`) voll abgedeckt.
+Die DDS4CCM-Connector-/Port-Definitionen liegen in
+`crates/ccm/src/dds4ccm.rs`; der CCM-Container als Host für §7/§8 in
+`crates/corba-ccm/` (siehe `omg-ccm-4.0.md`); der **XML-QoS-Profile-Anteil**
+in `crates/xml/src/qos.rs` (K7-Audit, siehe `zerodds-xml-1.0.md`). Der
+IDL3+-Source-Output (Annex A/B) wird über das `crates/idl/`-Codegen-Backend
+erzeugt.
 
 ---
 
@@ -186,10 +189,6 @@ Design, §7.2.1.4 Simplicity vs Richness Trade-off).
 `CCM_DDS::Reader<T>`, `CCM_DDS::Writer<T>`, `CCM_DDS::Updater<T>`
 etc., mit IDL-Definitionen pro Pattern.
 
-**Repo:** —
-
-**Tests:** —
-
 **Repo:** `crates/ccm/src/dds4ccm.rs::{BasicPort, BasicPortKind}`
 mit allen 6 Spec-Variants (Reader/Writer/Updater/Getter/Listener/
 StateListener).
@@ -312,10 +311,6 @@ Pattern, `base_name`-Inheritance, Topic-Sub-Profiles.
 
 **Spec:** §7.4.3, S. 27 (PDF) — Profile-Reference-Convention im
 CCM-Connector.
-
-**Repo:** XML-Profile-Loader vorhanden; Connector-Anbindung fehlt.
-
-**Tests:** —
 
 **Repo:** XML-Profile-Loader + `Connector::with_qos_profile(name)`
 als CCM-Component-Configuration-Anbindung.
@@ -515,7 +510,8 @@ QosProfile-Konfiguration via `xml::qos`).
 
 24 done / 0 partial / 0 open / 10 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-xml --lib` — 221 Tests grün, 0 failed
-(XML-QoS-Loader deckt §7.4.2 + Annex C + Annex D).
+Test-Lauf: `cargo test -p zerodds-ccm -p zerodds-xml --lib` — 53 + 221 Tests
+grün, 0 failed (DDS4CCM-Connector/Port-Modell + XML-QoS-Loader §7.4.2 +
+Annex C/D); CCM-Container-Host siehe `omg-ccm-4.0.md`.
 
-Offene Punkte: siehe `dds4ccm-1.1.open.md`.
+Keine offenen Punkte — alle Items `done`.

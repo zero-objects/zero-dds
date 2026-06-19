@@ -3,10 +3,10 @@
 
 //! Servant — Spec §11.3.3.
 //!
-//! Ein `Servant` ist die Implementation, die einem aktiven Object
-//! Requests verarbeitet. Spec laesst die konkrete Form der Sprache
-//! (C++-Trait, Java-Class, etc.) — wir modellieren als Rust-Trait
-//! mit minimaler Spec-Surface (`type_id` + Request-Dispatch).
+//! A `Servant` is the implementation that processes requests for an
+//! active object. The spec leaves the concrete language form open
+//! (C++ trait, Java class, etc.) — we model it as a Rust trait
+//! with a minimal spec surface (`type_id` + request dispatch).
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -15,51 +15,51 @@ use zerodds_corba_ir::{IrResult, RepositoryId};
 
 /// Servant — Spec §11.3.3.
 pub trait Servant: core::fmt::Debug + Send + Sync {
-    /// Liefert die Repository-ID des wichtigsten Interface-Types
+    /// Returns the repository ID of the primary interface type
     /// (Spec §11.3.5.20.4 `_primary_interface`).
     fn primary_interface(&self) -> String;
 
-    /// Liefert die strukturierte [`RepositoryId`] des Primary-Interface.
-    /// Default-Impl: parst `primary_interface()` per Spec §10.7.3.1.
+    /// Returns the structured [`RepositoryId`] of the primary interface.
+    /// Default impl: parses `primary_interface()` per Spec §10.7.3.1.
     ///
-    /// Implementer koennen das ueberschreiben, wenn sie die strukturierte
-    /// Form direkt vorhalten und den String-Roundtrip vermeiden moechten.
+    /// Implementers can override this if they hold the structured
+    /// form directly and want to avoid the string roundtrip.
     ///
     /// # Errors
-    /// `IrError::InvalidRepositoryId`, wenn `primary_interface()` kein
-    /// gueltiges `IDL:<scoped>:<m>.<n>`-Format liefert.
+    /// `IrError::InvalidRepositoryId` if `primary_interface()` does not
+    /// yield a valid `IDL:<scoped>:<m>.<n>` format.
     fn primary_repository_id(&self) -> IrResult<RepositoryId> {
         RepositoryId::parse(&self.primary_interface())
     }
 
-    /// Liefert die Liste aller von diesem Servant implementierten
-    /// Repository-IDs (Spec §11.3.5.20.5 `_all_interfaces`).
+    /// Returns the list of all repository IDs implemented by this
+    /// servant (Spec §11.3.5.20.5 `_all_interfaces`).
     fn all_interfaces(&self) -> Vec<String> {
         alloc::vec![self.primary_interface()]
     }
 
-    /// `true` wenn der Servant das angegebene Repository-ID
-    /// implementiert (Spec §11.3.5.20.4 `_is_a`).
+    /// `true` if the servant implements the given repository ID
+    /// (Spec §11.3.5.20.4 `_is_a`).
     fn is_a(&self, repository_id: &str) -> bool {
         self.all_interfaces().iter().any(|i| i == repository_id)
     }
 
-    /// Typisierte Variante von [`Servant::is_a`] — vergleicht gegen
-    /// die kanonische String-Form des [`RepositoryId`].
+    /// Typed variant of [`Servant::is_a`] — compares against
+    /// the canonical string form of the [`RepositoryId`].
     fn is_a_typed(&self, repository_id: &RepositoryId) -> bool {
         self.is_a(&repository_id.to_canonical())
     }
 
-    /// Verarbeitet einen Request — opaque Body-Bytes rein, Reply-
-    /// Body-Bytes raus. Die GIOP-Header-Schicht wird vom POA-
-    /// Caller verwaltet.
+    /// Processes a request — opaque body bytes in, reply
+    /// body bytes out. The GIOP header layer is managed by the
+    /// POA caller.
     ///
     /// # Errors
-    /// Implementer-spezifisch (User-Exception oder System-Exception).
+    /// Implementer-specific (user exception or system exception).
     fn invoke(&self, operation: &str, request_body: &[u8]) -> Vec<u8>;
 }
 
-/// Test-Hilfs-Servant fuer Unit-Tests.
+/// Test helper servant for unit tests.
 #[cfg(test)]
 #[derive(Debug)]
 pub(crate) struct EchoServant {

@@ -52,7 +52,7 @@ impl TimeoutUnit {
     }
 }
 
-/// Timeout-Parser-Fehler.
+/// Timeout parser error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TimeoutError {
     /// Empty Header.
@@ -60,7 +60,7 @@ pub enum TimeoutError {
     /// Spec — TimeoutValue MUST positive integer with at most 8
     /// digits.
     ValueTooLong,
-    /// Non-digit Character vor Unit.
+    /// Non-digit character before the unit.
     InvalidValue,
     /// Spec — Unit MUST be one of H/M/S/m/u/n.
     InvalidUnit(char),
@@ -80,14 +80,14 @@ impl fmt::Display for TimeoutError {
 #[cfg(feature = "std")]
 impl std::error::Error for TimeoutError {}
 
-/// Spec §"Timeout" — encodes timeout value+unit als
-/// `grpc-timeout`-Header-Wert.
+/// Spec §"Timeout" — encodes the timeout value+unit as the
+/// `grpc-timeout` header value.
 ///
-/// Liefert formatted String wie `"100m"` (100 Millisekunden) oder
-/// `"30S"` (30 Sekunden).
+/// Returns a formatted string like `"100m"` (100 milliseconds) or
+/// `"30S"` (30 seconds).
 ///
 /// # Errors
-/// `ValueTooLong` wenn `value > 99_999_999` (9+ digits).
+/// `ValueTooLong` if `value > 99_999_999` (9+ digits).
 pub fn encode_timeout(value: u32, unit: TimeoutUnit) -> Result<String, TimeoutError> {
     if value > 99_999_999 {
         return Err(TimeoutError::ValueTooLong);
@@ -97,7 +97,7 @@ pub fn encode_timeout(value: u32, unit: TimeoutUnit) -> Result<String, TimeoutEr
     Ok(s)
 }
 
-/// Spec §"Timeout" — decodes `grpc-timeout`-Header-Wert.
+/// Spec §"Timeout" — decodes the `grpc-timeout` header value.
 ///
 /// # Errors
 /// Siehe [`TimeoutError`].
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn encodes_30_seconds() {
-        // Spec §"Timeout" Beispiel.
+        // Spec §"Timeout" example.
         assert_eq!(encode_timeout(30, TimeoutUnit::Second).expect("ok"), "30S");
     }
 

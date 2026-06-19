@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Java-Codegen — DDS 1.4 §B.4 Annex Java-PSM.
+//! Java codegen — DDS 1.4 §B.4 Annex Java PSM.
 
 use alloc::format;
 use alloc::string::String;
 
 use crate::DlrlTypeInfo;
 
-/// Erzeugt einen Java-Class-Source fuer einen DLRL-Object-Type.
-/// Spec §B.6 Java-PSM: extends `ObjectRoot`.
+/// Generates Java class source for a DLRL object type.
+/// Spec §B.6 Java PSM: extends `ObjectRoot`.
 #[allow(clippy::format_collect)]
 #[must_use]
 pub fn generate_java_object(info: &DlrlTypeInfo) -> String {
@@ -41,7 +41,7 @@ pub fn generate_java_object(info: &DlrlTypeInfo) -> String {
     )
 }
 
-/// Erzeugt einen `ObjectListener<T>`-Interface-Stub. Spec §B.6.7.
+/// Generates an `ObjectListener<T>` interface stub. Spec §B.6.7.
 #[must_use]
 pub fn generate_java_object_listener(info: &DlrlTypeInfo) -> String {
     let cls = simple_name(&info.name);

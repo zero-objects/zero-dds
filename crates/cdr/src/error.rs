@@ -1,37 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Encoder- und Decoder-Fehler.
+//! Encoder and decoder errors.
 //!
-//! Bewusst getrennt: ein Wert kann nur enkodiert oder dekodiert werden,
-//! aber die Fehler-Kategorien sind unterschiedlich. Encoder-Fehler sind
-//! Buffer-/Format-bezogen; Decoder-Fehler sind zusaetzlich Validierungs-
-//! Fehler (UnexpectedEof, InvalidUtf8, etc.).
+//! Deliberately separated: a value can only be encoded or decoded, but
+//! the error categories differ. Encoder errors are buffer/format
+//! related; decoder errors are additionally validation errors
+//! (UnexpectedEof, InvalidUtf8, etc.).
 
 use core::fmt;
 
-/// Fehler beim Encoden eines Werts.
+/// Error while encoding a value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EncodeError {
-    /// Schreib-Buffer zu klein. Bei `Vec<u8>`-basiertem Writer kann das
-    /// nicht passieren; bei fixierten Buffern (no_std + statisches
-    /// Array) sehr wohl.
+    /// Write buffer too small. Cannot happen with a `Vec<u8>`-based
+    /// writer; can happen with fixed buffers (no_std + static array).
     BufferTooSmall {
-        /// Wieviele zusaetzliche Bytes gebraucht worden waeren.
+        /// How many additional bytes would have been needed.
         needed: usize,
-        /// Wieviele tatsaechlich verfuegbar waren.
+        /// How many were actually available.
         available: usize,
     },
-    /// Wert kann nicht encodiert werden — z.B. `String`-Laenge sprengt
-    /// `u32::MAX` (XCDR-Limit).
+    /// Value cannot be encoded — e.g. a `String` length exceeds
+    /// `u32::MAX` (XCDR limit).
     ValueOutOfRange {
-        /// Beschreibung der Verletzung.
+        /// Description of the violation.
         message: &'static str,
     },
-    /// Mutable-Encode hat einen non-optional Member ausgelassen
+    /// A mutable encode omitted a non-optional member
     /// (XTypes 1.3 §7.4.1.2.3 — "the serialized representation MUST
     /// contain at least the values of all the non-optional members").
     MissingNonOptionalMember {
-        /// Member-ID, die fehlte.
+        /// Member ID that was missing.
         member_id: u32,
     },
 }
@@ -55,71 +54,70 @@ impl fmt::Display for EncodeError {
 #[cfg(feature = "std")]
 impl std::error::Error for EncodeError {}
 
-/// Fehler beim Decoden eines Werts.
+/// Error while decoding a value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError {
-    /// Eingabe endete vor dem erwarteten Ende.
+    /// Input ended before the expected end.
     UnexpectedEof {
-        /// Wieviele Bytes noch erwartet wurden.
+        /// How many more bytes were expected.
         needed: usize,
-        /// Position im Stream, wo das EOF auftrat.
+        /// Position in the stream where the EOF occurred.
         offset: usize,
     },
-    /// UTF-8-Validierung fuer einen String-Wert ist fehlgeschlagen.
+    /// UTF-8 validation for a string value failed.
     InvalidUtf8 {
-        /// Position, an der der String begann.
+        /// Position where the string began.
         offset: usize,
     },
-    /// Boolean-Byte war weder 0 noch 1 — XCDR-Spec verbietet das.
+    /// Boolean byte was neither 0 nor 1 — forbidden by the XCDR spec.
     InvalidBool {
-        /// Tatsaechlich gelesenes Byte.
+        /// Byte actually read.
         value: u8,
-        /// Position des Bytes.
+        /// Position of the byte.
         offset: usize,
     },
-    /// Char-Wert ist kein gueltiger Unicode-Codepoint.
+    /// Char value is not a valid Unicode codepoint.
     InvalidChar {
-        /// Tatsaechlich gelesener u32-Wert.
+        /// u32 value actually read.
         value: u32,
         /// Position.
         offset: usize,
     },
-    /// Sequence-/Array-Laenge ueberschreitet Bound oder die noch
-    /// vorhandenen Bytes.
+    /// Sequence/array length exceeds the bound or the remaining bytes.
     LengthExceeded {
-        /// Wieviele Elemente die Laenge ankuendigt.
+        /// How many elements the length announces.
         announced: usize,
-        /// Wieviele tatsaechlich noch lesbar sind (best-effort).
+        /// How many are actually still readable (best-effort).
         remaining: usize,
         /// Position.
         offset: usize,
     },
-    /// String-Format-Verletzung (z.B. Null-Terminator fehlt, Laenge 0).
+    /// String-format violation (e.g. missing null terminator, length 0).
     InvalidString {
-        /// Position, an der der String begann.
+        /// Position where the string began.
         offset: usize,
-        /// Kurzbeschreibung (statisch).
+        /// Short description (static).
         reason: &'static str,
     },
-    /// Unbekannter/ungueltiger Enum-Discriminator — wird von Policy-
-    /// Decodern genutzt, die strict-mode operieren (z.B. QoS-Enums).
+    /// Unknown/invalid enum discriminator — used by policy decoders that
+    /// operate in strict mode (e.g. QoS enums).
     InvalidEnum {
-        /// Enum-Name fuer Debugging (z.B. "DurabilityKind").
+        /// Enum name for debugging (e.g. "DurabilityKind").
         kind: &'static str,
-        /// Gelesener Discriminator-Wert.
+        /// Discriminator value that was read.
         value: u32,
     },
-    /// Mutable-Decode hat einen `must_understand`-Member mit unbekannter
-    /// Member-ID gelesen (XTypes 1.3 §7.4.1.2.3 — Receiver MUSS in dem
-    /// Fall die Message verwerfen).
+    /// A mutable decode read a `must_understand` member with an unknown
+    /// member ID (XTypes 1.3 §7.4.1.2.3 — the receiver MUST discard the
+    /// message in that case).
     UnknownMustUnderstandMember {
-        /// Member-ID die nicht erkannt wurde.
+        /// Member ID that was not recognized.
         member_id: u32,
     },
-    /// Mutable-Decode hat einen non-optional Member nicht im Wire
-    /// gefunden (XTypes 1.3 §7.4.1.2.3).
+    /// A mutable decode did not find a non-optional member in the wire
+    /// data (XTypes 1.3 §7.4.1.2.3).
     MissingNonOptionalMember {
-        /// Member-ID die fehlt.
+        /// Member ID that is missing.
         member_id: u32,
     },
 }

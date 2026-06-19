@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Stub-Code-Generation-Helper — Spec Annex-A.1 Operation-Mapping.
+//! Stub code-generation helper — spec Annex-A.1 operation mapping.
 //!
-//! Ein **Stub** ist der Client-Side-Proxy, der eine IDL-Operation
-//! in einen GIOP-Request marshalt, ueber IIOP sendet und die Reply
-//! demarshalt. Wir liefern eine Sprache-agnostische Datenstruktur,
-//! die das Codegen pro Ziel-Sprache verarbeitet.
+//! A **stub** is the client-side proxy that marshals an IDL operation
+//! into a GIOP request, sends it over IIOP, and demarshals the reply.
+//! We provide a language-agnostic data structure that the codegen
+//! processes per target language.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::special_types::TargetLanguage;
 
-/// Parameter-Direction.
+/// Parameter direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParamDirection {
     /// `in`.
@@ -24,34 +24,34 @@ pub enum ParamDirection {
     InOut,
 }
 
-/// Operation-Parameter.
+/// Operation parameter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StubParam {
-    /// IDL-Name.
+    /// IDL name.
     pub name: String,
-    /// IDL-Type-Spec (Caller-Repraesentation).
+    /// IDL type spec (caller representation).
     pub type_spec: String,
     /// Direction.
     pub direction: ParamDirection,
 }
 
-/// Operation-Definition fuer Stub-Generation.
+/// Operation definition for stub generation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StubOp {
-    /// Operation-Name.
+    /// Operation name.
     pub name: String,
-    /// Return-Type-Spec (`void` wenn keine).
+    /// Return-type spec (`void` if none).
     pub return_type: String,
-    /// Parameter.
+    /// Parameters.
     pub params: Vec<StubParam>,
-    /// `oneway` (Spec §7.4.16) — keine Reply erwartet.
+    /// `oneway` (spec §7.4.16) — no reply expected.
     pub oneway: bool,
 }
 
-/// Rendert eine textuelle Stub-Skeleton-Praeambel mit den
-/// konkreten Sprach-Namen. Das ist ein **Helper** fuer Tests
-/// und Dokumentation; das richtige Codegen passiert in
-/// `crates/idl-cpp/`/etc., das diese Datenstruktur konsumiert.
+/// Renders a textual stub-skeleton preamble with the concrete
+/// language names. This is a **helper** for tests and documentation;
+/// the real codegen happens in `crates/idl-cpp/` etc., which consumes
+/// this data structure.
 #[must_use]
 pub fn render_stub_op(op: &StubOp, lang: TargetLanguage) -> String {
     let lang_label = match lang {

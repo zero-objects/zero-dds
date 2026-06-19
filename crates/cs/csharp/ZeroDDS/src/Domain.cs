@@ -11,10 +11,10 @@ namespace ZeroDDS.Domain;
 /// <summary>DomainParticipantFactory (Spec §7.5.11.4). Singleton.</summary>
 public static class DomainParticipantFactory
 {
-    /// <summary>Gibt die Singleton-Factory zurueck.</summary>
+    /// <summary>Returns the singleton factory.</summary>
     public static IntPtr GetInstance() => Native.DpfGetInstance();
 
-    /// <summary>Erzeugt einen Participant mit Default-QoS.</summary>
+    /// <summary>Creates a participant with default QoS.</summary>
     public static DomainParticipant CreateParticipant(uint domainId)
     {
         var f = Native.DpfGetInstance();
@@ -23,7 +23,7 @@ public static class DomainParticipantFactory
         return new DomainParticipant(h, f);
     }
 
-    /// <summary>Erzeugt einen Participant mit expliziter QoS (Spec §2.2.2.2.2.2).</summary>
+    /// <summary>Creates a participant with explicit QoS (Spec §2.2.2.2.2.2).</summary>
     public static DomainParticipant CreateParticipant(uint domainId,
         ZeroDDS.Qos.DomainParticipantQos qos)
     {
@@ -50,10 +50,10 @@ public sealed class DomainParticipant : IDisposable
         _factory = factory;
     }
 
-    /// <summary>Native handle (intern fuer Topic/Pub/Sub-Konstruktion).</summary>
+    /// <summary>Native handle (internal, for Topic/Pub/Sub construction).</summary>
     public IntPtr Handle => _handle;
 
-    /// <summary>Domain-Id (Spec §7.5.11.5).</summary>
+    /// <summary>Domain id (Spec §7.5.11.5).</summary>
     public uint DomainId
     {
         get
@@ -93,7 +93,7 @@ public sealed class DomainParticipant : IDisposable
             "DomainParticipant::DeleteContainedEntities");
     }
 
-    /// <summary>Disposable-Pfad: aufraeumen.</summary>
+    /// <summary>Disposable path: clean up.</summary>
     public void Dispose()
     {
         if (_disposed) return;

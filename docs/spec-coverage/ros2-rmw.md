@@ -21,9 +21,10 @@ Folgt dem Format aus `docs/spec-coverage/PROCESS.md`.
 **Kontext:** ROS 2 Robot-Middleware-Wrapper bauen auf DDS auf. Die
 RMW-API + RMW-QoS-Profile-Mapping + Topic-Mangling-Convention +
 ROS-IDL→DDS-XTypes-Wire-Convention sind die zentralen Wire-Mappings.
-ZeroDDS implementiert die Mapping-Layer (`crates/ros2-rmw/`) als
-pure-Rust no_std+alloc Library; der eigentliche
-`rmw_zerodds`-C-FFI-Wrapper liegt in `crates/rmw-zerodds-shim/`.
+Verteilt über:
+
+- `crates/ros2-rmw/` — Mapping-Layer als pure-Rust no_std+alloc Library (RMW-API, QoS-Profile-Mapping, Topic-Mangling, ROS-IDL→DDS-XTypes)
+- `crates/rmw-zerodds-shim/` — `rmw_zerodds`-C-FFI-Wrapper
 
 **Crate-Mapping:**
 
@@ -145,11 +146,12 @@ Konversion von User-Types zu ROS-Messages on-the-fly.
 
 **Tests:** —
 
-**Status:** n/a (rejected) — andere Architektur-Schicht: REP-2007 lebt
-in `rclcpp` (Sprach-Binding-Layer), nicht in RMW. ZeroDDS dockt via
-`rmw_zerodds`-C-FFI an die RMW-Schicht; das `rclcpp`-API stammt aus
-dem ROS-2-Projekt selbst und wird nicht durch DDS-Vendor reimplementiert.
-Siehe Decision-Record in `ros2-rmw.open.md`.
+**Status:** n/a (keine rmw-Fläche) — REP-2007 Type-Adaptation ist ein
+Compile-Time-`rclcpp`-Template: die Konversion passiert **über** rmw (der
+User-Type ist schon eine ROS-Message, bevor er den Draht erreicht), es gibt also
+nichts auf der rmw-Schicht umzusetzen. Die rmw-API, die REP-2007 selbst
+spezifiziert (Node/Identifier/QoS-Mapping), ist vollständig implementiert (alle
+done-Items oben). Kein Vendor-„Reject", sondern eine Schicht-Tatsache.
 
 ---
 
@@ -163,30 +165,58 @@ Siehe Decision-Record in `ros2-rmw.open.md`.
 
 **Tests:** —
 
-**Status:** n/a (rejected) — andere Architektur-Schicht: REP-2008 ist
-Driver-/Vendor-Konvention für Acceleration-Hardware, lebt in der
-GPU/FPGA-Vendor-Schicht und wird durch ROS-2-Anwender direkt
-orchestriert (CUDA/ROCm/Vitis-Stacks), nicht durch DDS-Vendor. Siehe
-Decision-Record in `ros2-rmw.open.md`.
+**Status:** n/a (out of rmw scope) — REP-2008 ist eine Driver-/Vendor-Konvention
+für Acceleration-Hardware (GPU/FPGA), lebt in der Hardware-Vendor-Schicht und wird
+durch ROS-2-Anwender direkt orchestriert (CUDA/ROCm/Vitis), nicht durch den
+DDS-Vendor. Hier gibt es — anders als bei REP-2009 — keine rmw-Fläche umzusetzen.
 
 ---
 
+### Endpoint info by topic — `rmw_get_publishers/subscriptions_info_by_topic`
+
+**Spec:** `rmw/get_topic_endpoint_info.h` — pro Topic die Endpoint-Liste mit
+Node-Name/-Namespace, Typ, Endpoint-Typ, 16-Byte-GUID und QoS (`ros2 topic
+info -v`). Teil der rmw-seitigen REP-2009-Verantwortung.
+
+**Repo:** `rmw_c/rmw_zerodds.c` (`rmw_get_publishers_info_by_topic`/
+`_subscriptions_info_by_topic` → `zerodds_get_endpoint_info_by_topic`): enumeriert
+pro-Endpoint via `rmw_zerodds_node_for_each_publication/subscription_endpoint`,
+filtert auf das demanglede Topic, löst pro Endpoint die Node-Identität über
+`rmw_zerodds_node_resolve_endpoint` (Endpoint-GUID → Node) auf und füllt
+`rmw_topic_endpoint_info_array_t`. Datenpfad: `crates/dcps/src/runtime.rs`
+(`discovered_publication/subscription_endpoints`, lokal + SEDP-remote) →
+c-api (`zerodds_runtime_for_each_*_endpoint` + `ZeroDdsEndpointInfo`) → Shim.
+Voraussetzung Endpoint→Node: die `ros_discovery_info`-Participant-gid ist die
+**echte** DDS-Participant-GUID, und `ParticipantEntitiesInfo` trägt pro Node die
+reader/writer-gid-Sequenzen (Endpoint-GUID-Prefix matcht den Participant).
+QoS ist best-effort aus der Discovery (History/Depth liegen nicht auf dem Draht →
+`UNKNOWN`).
+
+**Tests:** `crates/py/python/tests/ros2/test_rmw_zerodds_interop.py::test_rclpy_endpoint_info_by_topic`
+(rclpy `get_publishers_info_by_topic`: Typ + QoS + aus der Endpoint-GUID
+aufgelöster Node-Name/-Namespace) auf ROS 2 Humble; Shim-Roundtrip-Units
+`participant_info_roundtrips_endpoint_gids` / `_without_endpoints`.
+
+**Status:** done
+
 ## REP-2009 Type Negotiation Feature
 
-### Type Negotiation API
+### Type Negotiation — rmw-seitiger Teil (Type-Hash + Endpoint-Info)
 
-**Spec:** REP-2009 — Runtime-Feature in `rclcpp` zur Pub-Sub-
-Type-Negotiation.
+**Spec:** REP-2009 — Runtime-Pub/Sub-Type-Negotiation. Die rmw-seitigen
+Verantwortlichkeiten sind der RIHS-Type-Hash und die Endpoint-Typ-/QoS-Exposition,
+über die negotiating Endpoints gematcht werden.
 
-**Repo:** —
+**Repo:** `crates/rmw-zerodds-shim/src/lib.rs::rmw_zerodds_compute_type_hash`
+(RIHS SHA-256) + der Endpoint-Info-Pfad (`rmw_get_publishers/subscriptions_info_by_topic`,
+siehe „Endpoint info by topic" oben).
 
-**Tests:** —
+**Tests:** `type_hash_sha256_is_deterministic` + 2 weitere (3) +
+`test_rclpy_endpoint_info_by_topic` (Humble).
 
-**Status:** n/a (rejected) — andere Architektur-Schicht: REP-2009
-implementiert Type-Negotiation in `rclcpp` (Sprach-Binding-Layer),
-nutzt RMW nur als Pub/Sub-Wire. Negotiation-State-Machine +
-Type-Resolution gehören zum ROS-2-Stack selbst, nicht zum DDS-Vendor.
-Siehe Decision-Record in `ros2-rmw.open.md`.
+**Status:** done (rmw-seitig). Die Negotiation-**State-Machine** selbst ist ein
+Runtime-Feature in `rclcpp` (Sprach-Binding-Layer), keine rmw-API — verfügbar über
+jeden RMW; darüber hinaus gibt es keine rmw-Fläche umzusetzen.
 
 ---
 
@@ -240,28 +270,26 @@ mangle_topic_name, demangle_topic_name, is_ros_topic}`.
 **Repo:** `crates/ros2-rmw/src/qos_profiles.rs::profiles::*`
 (`DEFAULT`, `SENSOR_DATA`, `PARAMETERS`, `SERVICES_DEFAULT`,
 `PARAMETER_EVENTS`, `SYSTEM_DEFAULT`, `UNKNOWN`, `MAP`) +
-`is_unknown(profile)`-Predicate.
+`is_unknown`/`is_system_default`-Predicates. Die Policy-Enums
+(`Reliability`/`Durability`/`History`) tragen echte `SystemDefault`- und
+`Unknown`-Sentinel-Varianten (spec-treu zu `rmw_qos_*_policy_t`);
+`rmw_qos_mapping::rmw_to_dds` reicht sie durch (Auflösung erst bei
+DDS-Entity-Erzeugung).
 
 **Tests:** `qos_profiles::tests::default_profile_is_reliable_volatile_keep_last_10`,
-`qos_profiles::tests::parameters_profile_uses_keep_last_1000`,
-`qos_profiles::tests::services_default_matches_rmw_defaults`,
-`qos_profiles::tests::parameter_events_uses_keep_last_1000`,
-`qos_profiles::tests::system_default_aliases_default`,
-`qos_profiles::tests::history_keep_last_distinct_from_keep_all`,
-`qos_profiles::tests::liveliness_and_deadline_default_to_infinite`,
-`qos_profiles::tests::unknown_profile_is_distinct_from_default`,
-`qos_profiles::tests::unknown_profile_uses_keep_last_zero_marker`,
-`qos_profiles::tests::is_unknown_recognizes_unknown_profile`,
-`qos_profiles::tests::is_unknown_rejects_real_profiles`.
+`parameters_profile_uses_keep_last_1000`, `services_default_matches_rmw_defaults`,
+`parameter_events_uses_keep_last_1000`, `system_default_is_all_sentinels`,
+`unknown_profile_is_all_unknown`, `system_default_and_unknown_are_distinct`,
+`is_unknown_recognizes_unknown_profile`, `is_unknown_rejects_real_and_system_default_profiles`;
+`rmw_qos_mapping::tests::rmw_system_default_passes_through_as_sentinel`,
+`rmw_unknown_passes_through_as_sentinel`.
 
-**Status:** done — alle sieben rmw-Default-Profiles als Konstanten
-abgebildet:
-* Sechs 1:1 (DEFAULT, SENSOR_DATA, PARAMETERS, SERVICES_DEFAULT,
+**Status:** done — alle sieben rmw-Default-Profiles spec-treu:
+* Sechs konkret 1:1 (DEFAULT, SENSOR_DATA, PARAMETERS, SERVICES_DEFAULT,
   PARAMETER_EVENTS, MAP).
-* `SYSTEM_DEFAULT` als Alias zu DEFAULT (Spec erlaubt
-  Implementation-defined; ZeroDDS waehlt dieselben Werte wie
-  DEFAULT — dokumentierte Wahl).
-* `UNKNOWN` als KeepLast(0)-Marker mit `is_unknown`-Predicate.
+* `SYSTEM_DEFAULT` = **jedes Feld** als `*_SYSTEM_DEFAULT`-Sentinel (nicht mehr
+  Alias zu DEFAULT) → der DDS-Implementations-Default jedes Feldes greift.
+* `UNKNOWN` = **jedes Feld** als `*_UNKNOWN`-Sentinel + `is_unknown`-Predicate.
 
 ---
 
@@ -403,21 +431,196 @@ to_ros_form, from_ros_form}`.
 **Tests:** `type_mapping::tests::from_ros_token_round_trip`,
 `type_mapping::tests::from_ros_token_rejects_unknown`,
 `type_mapping::tests::cdr_size_matches_omg_cdr2`,
-`type_mapping::tests::builtin_idl_names_match_rep_2008`.
+`type_mapping::tests::builtin_idl_names_match_omg_idl`.
 
-**Status:** done — Test-Name `..._match_rep_2008` ist historisch und
-deutet auf den falschen REP; Mapping selbst gegen
-DDS-XTypes-1.3-Primitive korrekt.
+**Status:** done — rosidl-Builtin → OMG-IDL-4.2-/DDS-XTypes-1.3-Primitive-
+Mapping verifiziert.
+
+---
+
+## RMW C-ABI Plugin (`crates/rmw-zerodds-shim`)
+
+Die obigen 14 Items decken den Wire-**Mapping**-Crate (`crates/ros2-rmw`) ab.
+Die eigentliche `rmw_*`-C-ABI-Plugin-Schicht (`rmw_c/rmw_zerodds.c` brückt auf
+die Rust-Bridge `src/lib.rs`) ist hier separat geführt. Verifikation: rclpy-
+Interop-Pytest auf ROS 2 Humble (`crates/py/python/tests/ros2/`), 4/4 grün.
+
+### `rmw_wait` — event-driven
+
+**Spec:** `rmw/rmw.h` `rmw_wait` (de-facto) — blockiert bis eine Entity ready
+ist oder Timeout.
+
+**Repo:** `crates/rmw-zerodds-shim/rmw_c/rmw_zerodds.c` (`rmw_wait`) +
+`src/lib.rs` (`WaitNotify`, `subscription_on_data`, `rmw_zerodds_*_has_data`,
+`rmw_zerodds_context_wait_block`) — Reader-Daten-Listener → per-Subscription-
+Inbox → Context-Condvar; kein Spin, kein Fixed-Tick-Poll. Für die Raw-Delivery-Modi
+(RawSameHost/Iceoryx), die den RTPS-Listener nicht feuern, weckt zusätzlich ein
+Doorbell-Thread (`rmw_zerodds_subscription_start_doorbell` → `zerodds_reader_raw_wait`)
+dieselbe Condvar event-getrieben (siehe „Loaned Messages" unten).
+
+**Tests:** `rmw-zerodds-shim::tests::event_driven_wait_roundtrip_inprocess`,
+`wait_notify_blocks_then_wakes_on_notify`; rclpy
+`test_rclpy_publish_subscribe_string_roundtrip` (Executor fährt durch `rmw_wait`).
+
+**Status:** done
+
+### Services — Request/Reply
+
+**Spec:** `rmw/rmw.h` `rmw_create_client/service`, `rmw_send_request`,
+`rmw_take_request`, `rmw_send_response`, `rmw_take_response`,
+`rmw_service_server_is_available`.
+
+**Repo:** `rmw_zerodds.c` (Service-Typesupport-Introspection + 24-Byte-
+Korrelations-Header `[client_gid:16][seq:8]` + CDR) + `src/lib.rs`
+(`RmwZerodsClient/Service` mit Listener-Inbox, `rmw_zerodds_send_request` etc.).
+
+**Tests:** `rmw-zerodds-shim::tests::service_request_reply_roundtrip_inprocess`;
+rclpy `test_rclpy_service_call_roundtrip` (AddTwoInts 41+1=42).
+
+**Status:** done
+
+### `rmw_serialize` / `rmw_deserialize` + serialized publish/take
+
+**Spec:** `rmw/rmw.h` `rmw_serialize`, `rmw_deserialize`,
+`rmw_publish_serialized_message`, `rmw_take_serialized_message[_with_info]`.
+
+**Repo:** `rmw_zerodds.c` (Introspection-CDR `[encap 4][body]`,
+`cdr_ser_msg`/`cdr_de_msg`; serialized pub/take über den Bridge-Byte-Pfad).
+
+**Tests:** dieselbe Introspection-CDR wie der verifizierte pub/sub-Pfad
+(`test_rclpy_publish_subscribe_string_roundtrip`).
+
+**Status:** done
+
+### Topic-Graph — `rmw_get_topic_names_and_types` + `rmw_count_publishers/subscribers`
+
+**Spec:** `rmw/rmw.h` Graph-Introspektion.
+
+**Repo:** `crates/dcps/src/runtime.rs`
+(`discovered_publication_topics`/`discovered_subscription_topics` — lokale
+User-Endpoints + SEDP-remote), c-api `zerodds_runtime_for_each_publication/
+_subscription`, `rmw_zerodds.c` (Demangle `rt/<t>→/<t>`, `::`/`__`→`/`,
+dedup topic→types).
+
+**Tests:** rclpy `test_rclpy_topic_graph_introspection`.
+
+**Status:** done
+
+### Guard-Conditions + event-driven Wake
+
+**Repo:** `rmw_zerodds.c` (`rmw_create/trigger_guard_condition` → `context_notify`
+weckt die Wait-Condvar).
+
+**Tests:** über den `rmw_wait`-Pfad mitgetestet.
+
+**Status:** done
+
+### `rmw_get_node_names` + `_with_enclaves`
+
+**Spec:** `rmw/rmw.h` `rmw_get_node_names[_with_enclaves]`.
+
+**Repo:** `rmw_zerodds.c` (`rmw_get_node_names`, Accumulator) + `src/lib.rs`
+(`NodeGraph`, `encode/decode_participant_info`, `discovery_on_data`,
+`rmw_zerodds_for_each_node`) — jeder Context publiziert seine
+`ParticipantEntitiesInfo` auf `ros_discovery_info` (hand-encodiertes XCDR1) und
+aggregiert lokale + remote Nodes.
+
+**Tests:** rclpy `test_rclpy_node_names_graph`.
+
+**Status:** done — Hinweis: discovery-Writer ist volatile (c-api-Default);
+cross-Prozess-late-join wäre mit transient_local robuster (Verfeinerung).
+
+### `on_new_message/request/response`-Callbacks (Events-Executor)
+
+**Spec:** `rmw/rmw.h` `rmw_*_set_on_new_*_callback`.
+
+**Repo:** `rmw_zerodds.c` (3 Setter → Bridge) + `src/lib.rs`
+(`SubInbox.event`, `inbox_set_event`, Invoke in `subscription_on_data`).
+
+**Tests:** `rmw-zerodds-shim::tests::event_callback_fires_on_arrival`.
+
+**Status:** done
+
+### `rmw_get_serialized_message_size`
+
+**Spec:** `rmw/rmw.h` `rmw_get_serialized_message_size`.
+
+**Repo:** `rmw_zerodds.c` (`zerodds_cdr_max_msg` — Introspection-Size-Walk,
+konservative obere Schranke; Strings/Sequences gecappt).
+
+**Tests:** über den verifizierten serialize-Pfad (gleiche Member-Traversierung).
+
+**Status:** done
+
+### Typed-Message-Loaning (`rmw_borrow/publish/take_loaned_message`)
+
+**Spec:** `rmw/rmw.h` Loaned-Message-API + `can_loan_messages`. Delivery-Form:
+`docs/specs/zerodds-delivery-modes-1.0.md` (Modes `Portable`/`RawSameHost`/`Iceoryx`).
+
+**Repo:** `rmw_c/rmw_zerodds.c` (`rmw_borrow/publish/take_loaned_message`,
+`rmw_return_loaned_message_from_publisher/subscription`, `can_loan_messages`
+= fixed-POD aus rosidl-Introspection) + die SHM-Bridge in
+`src/lib.rs` (`rmw_zerodds_publisher_enable_raw_loan`/`_loan`/`_commit`/`_discard`,
+`rmw_zerodds_subscription_enable_shm`/`_take_shm`/`_has_shm_data`/`_release_shm`),
+Feature `flatdata-loan` (default).  **Tests:** `rmw_c/loaned_message_test.cpp` +
+`run_loaned_message_test.sh` (rclcpp e2e, **beide Modi** grün).
+
+**Status:** done — die Loaned-Message-ABI ist implementiert und e2e verifiziert,
+in zwei Delivery-Modi (Default per `ZERODDS_DELIVERY_MODE`):
+
+* **`Portable`** (default): rclcpp übergibt einen getypten Struct-Buffer, der
+  User schreibt die Struct, `publish_loaned` serialisiert Struct→CDR und
+  publiziert über RTPS — interop-sicher (cross-host/cross-vendor), echtes CDR
+  auf dem Draht. (`can_loan=1 got=42 PASS`.)
+* **`RawSameHost`** (echtes Zero-Copy/Zero-Serialize, same-host-only): der
+  Writer ist auf `set_delivery_mode(RawSameHost)` + `enable_shm_loan` gestellt;
+  `borrow` liefert einen Zeiger in den POSIX-SHM-Slot (der User schreibt die
+  Struct direkt in Shared-Memory), `commit` finalisiert in-place ohne
+  Serialisierung **und ohne RTPS** (c-api-`publishes_to_wire`-Gate → keine
+  Double-Delivery). Der Reader mappt dasselbe Segment per deterministischem
+  topic-abgeleitetem flink-Pfad (lazy attach) und liest den Slot zero-copy
+  (`take_loaned`) bzw. mit einem Struct-memcpy für normale Callbacks
+  (`rmw_take`). (`can_loan=1 got=42 PASS`, Beweis für SHM: Raw geht nie auf den
+  Draht.)
+* **`Iceoryx`** (same-host cross-stack, Shim-Feature `delivery-iceoryx`):
+  derselbe loan/commit/take-Pfad, aber Writer/Reader sind an einen iceoryx2-
+  Service (topic-abgeleitet) gebunden — `commit` sendet über iceoryx2, der Reader
+  empfängt davon. Ohne das Feature degradiert `ZERODDS_DELIVERY_MODE=iceoryx`
+  beidseitig auf `Portable`. (`can_loan=1 got=42 PASS` via `ZERODDS_TEST_ICEORYX=1`.)
+
+Readiness (Modi 1/2): **event-getrieben**. Pro Raw-Subscription parkt ein
+„Doorbell"-Thread auf `zerodds_reader_raw_wait(reader, timeout_ms)` (c-api), das
+auf der Raw-Quelle blockiert — SHM-Change-Generation-Futex
+(`notify_generation`/`wait_for_change`) bzw. iceoryx2-Listener — und bei einer
+**echten** Ankunft die Context-Condvar von `rmw_wait` weckt; der Sender notifiziert
+das iceoryx2-Event beim `commit`. Der Doorbell wird lazy gestartet, sobald die
+Raw-Quelle aktiv ist, und vor dem Reader-Destroy gestoppt + gejoint (er hält den
+Reader-Pointer). Da iceoryx2's `take` ein **destruktiver** FIFO-Receive ist,
+prefetcht die Readiness zusätzlich genau ein Sample in einen Pending-Buffer der
+Subscription (nicht-konsumierend, idempotent); `rmw_take`/`take_loaned`
+konsumieren das gehaltene Sample. Damit weckt ein blockierendes rclcpp-`spin()`
+auch bei reinen Raw-Daten ohne Executor-Timeout.
 
 ---
 
 ## Audit-Status
 
-14 done / 0 partial / 0 open / 1 n/a (informative) / 3 n/a (rejected).
+26 done / 0 partial / 0 open / 1 n/a (informative) / 2 n/a (out of rmw scope: REP-2007 Type-Adaptation, REP-2008 HW-Accel).
 
-Test-Lauf: `cargo test -p zerodds-ros2-rmw` — 52 Tests grün, 0 failed.
+Test-Lauf: `cargo test -p zerodds-ros2-rmw` (52 grün) +
+`cargo test -p rmw-zerodds-shim` (23 grün — Shim-Unit inkl. event-driven Wait,
+Service-Roundtrip, Event-Callback, Context-Lifecycle-Regression, Endpoint-gid-
+Roundtrip) +
+rclpy-Interop `crates/py/python/tests/ros2/` auf ROS 2 Humble (6 grün: init,
+pub/sub, service-call, topic-graph, node-names, endpoint-info) via
+`run_ros2_pytest.sh` +
+rclcpp-Loan-e2e via `run_loaned_message_test.sh` (Portable + RawSameHost +
+`ZERODDS_TEST_ICEORYX=1` Iceoryx, je `can_loan=1 got=42 PASS`).
 
-Decision-Records (REP-2007 Type Adaptation, REP-2008 HW-Accel,
-REP-2009 Type Negotiation — alle drei Features leben in `rclcpp`
-über RMW, ZeroDDS via `rmw_zerodds`-FFI integrabel): siehe
-`ros2-rmw.open.md`.
+Kein offener rmw-Punkt; alle drei Delivery-Modi (`Portable`/`RawSameHost`/
+`Iceoryx`) sind rmw-seitig verdrahtet + e2e-verifiziert, und die Raw-Readiness ist
+event-getrieben (Doorbell-Thread auf `zerodds_reader_raw_wait`, SHM-Futex bzw.
+iceoryx2-Listener) — die zuletzt offene Delivery-Modes-Verfeinerung
+(`docs/specs/zerodds-delivery-modes-1.0.md`) ist damit geschlossen. Decision-Records
+(REP-2007/2008/2009 — Features leben in `rclcpp` über RMW, via
+`rmw_zerodds`-FFI integrabel): siehe `ros2-rmw.open.md`.

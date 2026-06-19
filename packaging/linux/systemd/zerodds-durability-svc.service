@@ -1,0 +1,49 @@
+# /usr/lib/systemd/system/zerodds-durability-svc.service
+# ZeroDDS Durability-Service daemon (ADR 0009). One instance per DDS domain;
+# use a templated drop-in or copy per domain. Spec: docs/deployment/durability-service.md
+[Unit]
+Description=ZeroDDS Durability-Service (TRANSIENT/PERSISTENT)
+Documentation=file:///usr/share/doc/zerodds/durability-service.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Type=exec: the daemon is ready immediately after exec (it does not sd_notify);
+# systemd considers it started once execve succeeds. Graceful stop via SIGTERM
+# (the daemon installs a ctrlc/termination handler -> joins pumps -> exits 0).
+Type=exec
+Environment=ZERODDS_DURABILITY_DOMAIN=0
+Environment=ZERODDS_DURABILITY_STORE=sqlite
+Environment=ZERODDS_DURABILITY_PATH=/var/lib/zerodds/durability/dur.db
+Environment=ZERODDS_DURABILITY_EXTRA=--auto
+ExecStart=/usr/bin/zerodds-durability-svc \
+    --domain ${ZERODDS_DURABILITY_DOMAIN} \
+    --store ${ZERODDS_DURABILITY_STORE} \
+    --path ${ZERODDS_DURABILITY_PATH} \
+    ${ZERODDS_DURABILITY_EXTRA}
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+User=zerodds
+Group=zerodds
+StandardOutput=journal
+StandardError=journal
+# Hardening (matches the other ZeroDDS units). The store dir is the only
+# writable path; DDS needs UDP (AF_INET/INET6) for discovery + user traffic.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/zerodds/durability
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

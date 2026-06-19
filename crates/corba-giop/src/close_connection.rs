@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CloseConnection-Message — Spec §15.4.7.
+//! CloseConnection message — spec §15.4.7.
 //!
-//! Body-frei. Server sendet diese Message, bevor er die TCP-
-//! Connection schliesst, um dem Client zu signalisieren, dass
-//! Pending-Requests retried werden duerfen (Spec §15.4.7 normativ).
+//! Body-free. The server sends this message before closing the TCP
+//! connection, to signal to the client that pending requests may be
+//! retried (spec §15.4.7, normative).
 
-/// CloseConnection-Body — leer per Spec §15.4.7.
+/// CloseConnection body — empty per spec §15.4.7.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct CloseConnection;
 

@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Transport-Trait + Locator-Re-Export + abstrakte send/receive-Schnittstelle für RTPS-State-Machines. Pure-Rust no_std + alloc."
+description = "Transport trait + Locator re-export + abstract send/receive interface for RTPS state machines. Pure-Rust no_std + alloc."
 repository = "https://github.com/zero-objects/zero-dds"
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-transport"
@@ -21,10 +21,11 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std"]
 std = ["alloc"]
 alloc = []
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps", default-features = false }
+zerodds-rtps = { version = "1.0.0-rc.3", path = "../rtps", default-features = false }
 
 [dev-dependencies]

@@ -35,7 +35,7 @@ impl PresentationAccessScope {
         }
     }
 
-    /// Forward-kompatibler Mapper.
+    /// Forward-compatible mapper.
     #[must_use]
     pub const fn from_u32(v: u32) -> Self {
         match v {
@@ -74,7 +74,7 @@ impl PresentationQosPolicy {
     /// Wire-Decoding (strict).
     ///
     /// # Errors
-    /// Buffer-Underflow oder unbekannter AccessScope-Wert.
+    /// Buffer underflow or unknown AccessScope value.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let v = r.read_u32()?;
         let access_scope =

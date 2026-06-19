@@ -1,11 +1,11 @@
-//! Integrations-Tests fuer SampleInfo + Instance-Lifecycle.
+//! Integration tests for SampleInfo + instance lifecycle.
 //!
-//! Spec-Referenz: OMG DDS-DCPS 1.4 §2.2.2.5.1 (`SampleInfo`),
+//! Spec reference: OMG DDS-DCPS 1.4 §2.2.2.5.1 (`SampleInfo`),
 //! §2.2.2.4.2.{5,7,10,13,14}, §2.2.2.5.3.{27,28}.
 //!
-//! Wir verwenden eine kleine keyed Test-Fixture `KeyedRecord`, deren
-//! `encode`/`decode` aus dem **selben** PLAIN_CDR2-BE-Key-Holder lesen
-//! koennen. Damit funktioniert `get_key_value` exakt nach Spec.
+//! We use a small keyed test fixture `KeyedRecord` whose
+//! `encode`/`decode` can read from the **same** PLAIN_CDR2-BE key holder.
+//! This makes `get_key_value` work exactly per spec.
 
 #![allow(
     clippy::expect_used,
@@ -32,9 +32,9 @@ use zerodds_dcps::{
 extern crate alloc;
 use alloc::vec::Vec;
 
-/// Test-Fixture: keyed Topic mit u32-Key + u32-Value. Encode/decode
-/// nutzen **Big-Endian** (PLAIN_CDR2-BE), damit `get_key_value` aus dem
-/// gespeicherten Key-Holder unmittelbar dekodieren kann.
+/// Test fixture: keyed topic with u32 key + u32 value. Encode/decode
+/// use **big-endian** (PLAIN_CDR2-BE) so that `get_key_value` can decode
+/// directly from the stored key holder.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct KeyedRecord {
     id: u32,
@@ -53,8 +53,8 @@ impl DdsType for KeyedRecord {
     }
 
     fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
-        // Mindestens id muss da sein. value default = 0 fuer Lifecycle-
-        // Marker / get_key_value (key-only stream).
+        // At least id must be present. value defaults to 0 for lifecycle
+        // markers / get_key_value (key-only stream).
         if bytes.len() < 4 {
             return Err(DecodeError::Invalid {
                 what: "truncated KeyedRecord",
@@ -94,7 +94,7 @@ fn mk_pair() -> (
     (w, r)
 }
 
-/// Helper: alle pending bytes vom writer in den reader pumpen.
+/// Helper: pump all pending bytes from the writer into the reader.
 fn pump(w: &zerodds_dcps::DataWriter<KeyedRecord>, r: &zerodds_dcps::DataReader<KeyedRecord>) {
     for b in w.__drain_pending() {
         r.__push_raw(b).expect("push raw");
@@ -102,7 +102,7 @@ fn pump(w: &zerodds_dcps::DataWriter<KeyedRecord>, r: &zerodds_dcps::DataReader<
 }
 
 // =====================================================================
-// Stufe E: 20+ Tests
+// Stage E: 20+ tests
 // =====================================================================
 
 #[test]
@@ -141,7 +141,7 @@ fn writer_get_key_value_extracts_only_key() {
     let h = w.register_instance(&r).expect("register");
     let key_only = w.get_key_value(h).expect("get_key_value");
     assert_eq!(key_only.id, r.id);
-    // Value wurde **nicht** gespeichert → Default 0.
+    // Value was **not** stored → default 0.
     assert_eq!(key_only.value, 0);
 }
 
@@ -173,8 +173,8 @@ fn writer_dispose_transitions_instance_to_disposed() {
 
 #[test]
 fn writer_unregister_drops_to_no_writers_when_count_zero() {
-    // Spec §2.2.3.21: bei autodispose_unregistered_instances=false soll
-    // unregister NUR auf NotAliveNoWriters fallen (ohne Dispose).
+    // Spec §2.2.3.21: with autodispose_unregistered_instances=false,
+    // unregister should fall ONLY to NotAliveNoWriters (without dispose).
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(0, DomainParticipantQos::default());
     let topic = p
@@ -214,7 +214,7 @@ fn writer_dispose_handle_nil_resolves_via_lookup() {
     let (w, _) = mk_pair();
     let r = KeyedRecord { id: 4, value: 0 };
     let _ = w.register_instance(&r).expect("register");
-    // HANDLE_NIL → wird per lookup_instance aufgeloest.
+    // HANDLE_NIL → resolved via lookup_instance.
     w.dispose(&r, HANDLE_NIL).expect("dispose with nil");
 }
 
@@ -233,15 +233,15 @@ fn writer_dispose_handle_mismatch_errors() {
     let r2 = KeyedRecord { id: 20, value: 0 };
     let h1 = w.register_instance(&r1).expect("r1");
     let _h2 = w.register_instance(&r2).expect("r2");
-    // h1 gehoert zu r1 — dispose(r2, h1) muss fehlschlagen.
+    // h1 belongs to r1 — dispose(r2, h1) must fail.
     let err = w.dispose(&r2, h1).unwrap_err();
     assert!(matches!(err, DdsError::BadParameter { .. }));
 }
 
 #[test]
 fn writer_register_then_unregister_then_re_register_bumps_generation() {
-    // Spec §2.2.3.21: bei autodispose_unregistered_instances=false fuehrt
-    // unregister NUR zu NotAliveNoWriters; re-register bumpt
+    // Spec §2.2.3.21: with autodispose_unregistered_instances=false,
+    // unregister leads ONLY to NotAliveNoWriters; re-register bumps
     // no_writers_generation_count.
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(0, DomainParticipantQos::default());
@@ -278,7 +278,7 @@ fn reader_lookup_instance_after_take_with_info() {
     assert_eq!(samples.len(), 1);
     let h = samples[0].info.instance_handle;
     assert!(!h.is_nil());
-    // lookup nach Receipt findet die Instanz.
+    // lookup after receipt finds the instance.
     assert_eq!(r.lookup_instance(&s), h);
 }
 
@@ -291,8 +291,8 @@ fn reader_take_with_info_first_sample_is_new_and_not_read() {
     assert_eq!(samples.len(), 1);
     let info = &samples[0].info;
     assert_eq!(info.view_state, ViewStateKind::New);
-    // take() konsumiert → sample_state spielt fuer take keine Rolle,
-    // muss aber bei NOT_READ stehen (er wurde nie zuvor gelesen).
+    // take() consumes → sample_state does not matter for take,
+    // but must be NOT_READ (it was never read before).
     assert_eq!(info.sample_state, SampleStateKind::NotRead);
     assert_eq!(info.instance_state, InstanceStateKind::Alive);
     assert!(info.valid_data);
@@ -304,7 +304,7 @@ fn reader_view_state_transitions_to_not_new_on_second_sample() {
     w.write(&KeyedRecord { id: 2, value: 1 }).unwrap();
     pump(&w, &r);
     let _ = r.take_with_info().expect("first take");
-    // Zweiter Write derselben Instanz → view_state == NOT_NEW.
+    // Second write of the same instance → view_state == NOT_NEW.
     w.write(&KeyedRecord { id: 2, value: 2 }).unwrap();
     pump(&w, &r);
     let samples = r.take_with_info().expect("second take");
@@ -319,7 +319,7 @@ fn reader_read_marks_sample_state_read() {
     pump(&w, &r);
     let first = r.read_with_info().expect("first read");
     assert_eq!(first[0].info.sample_state, SampleStateKind::NotRead);
-    // Zweiter read auf das selbe Sample → sample_state = READ.
+    // Second read of the same sample → sample_state = READ.
     let second = r.read_with_info().expect("second read");
     assert_eq!(second.len(), 1);
     assert_eq!(second[0].info.sample_state, SampleStateKind::Read);
@@ -331,7 +331,7 @@ fn reader_read_instance_filters_to_one_handle() {
     w.write(&KeyedRecord { id: 1, value: 10 }).unwrap();
     w.write(&KeyedRecord { id: 2, value: 20 }).unwrap();
     pump(&w, &r);
-    // Erst alle decoden lassen.
+    // First let everything decode.
     let all = r.read_with_info().expect("read");
     assert_eq!(all.len(), 2);
     let h1 = all
@@ -373,9 +373,9 @@ fn reader_read_next_instance_iterates_all() {
     w.write(&KeyedRecord { id: 2, value: 2 }).unwrap();
     w.write(&KeyedRecord { id: 3, value: 3 }).unwrap();
     pump(&w, &r);
-    // Cache initialisieren.
+    // Initialize the cache.
     let _ = r.read_with_info().expect("ingest");
-    // Jetzt iterieren.
+    // Now iterate.
     let mut prev = HANDLE_NIL;
     let mut seen = Vec::<u32>::new();
     loop {
@@ -422,14 +422,14 @@ fn reader_get_key_value_returns_keyonly_sample() {
     let h = s[0].info.instance_handle;
     let key_only = r.get_key_value(h).expect("get_key_value");
     assert_eq!(key_only.id, 0xABCD);
-    assert_eq!(key_only.value, 0); // value nicht im Key-Holder
+    assert_eq!(key_only.value, 0); // value not in the key holder
 }
 
 #[test]
 fn reader_lifecycle_dispose_marker_yields_invalid_data_sample() {
     let (_w, r) = mk_pair();
-    // Direkt-Push eines Dispose-Markers (simuliert das, was in Phase B
-    // die Runtime macht, sobald ein Writer dispose schickt).
+    // Direct push of a dispose marker (simulates what the runtime does
+    // in phase B as soon as a writer sends a dispose).
     let mut holder = PlainCdr2BeKeyHolder::new();
     let key_record = KeyedRecord { id: 77, value: 0 };
     key_record.encode_key_holder_be(&mut holder);
@@ -454,7 +454,7 @@ fn reader_take_filtered_with_state_mask_filters() {
     let (w, r) = mk_pair();
     w.write(&KeyedRecord { id: 1, value: 1 }).unwrap();
     pump(&w, &r);
-    // Filter "nur READ" → nichts.
+    // Filter "READ only" → nothing.
     let none = r
         .take_filtered(
             zerodds_dcps::sample_state_mask::READ,
@@ -463,7 +463,7 @@ fn reader_take_filtered_with_state_mask_filters() {
         )
         .expect("take_filtered");
     assert!(none.is_empty());
-    // NOT_READ → das Sample.
+    // NOT_READ → the sample.
     let one = r
         .take_filtered(
             zerodds_dcps::sample_state_mask::NOT_READ,
@@ -480,7 +480,7 @@ fn reader_publication_handle_field_is_handle_nil_offline() {
     w.write(&KeyedRecord { id: 8, value: 0 }).unwrap();
     pump(&w, &r);
     let s = r.take_with_info().expect("take");
-    // Im offline-Mode wird kein publication_handle propagiert.
+    // In offline mode no publication_handle is propagated.
     assert_eq!(s[0].info.publication_handle, HANDLE_NIL);
 }
 

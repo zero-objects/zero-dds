@@ -23,10 +23,10 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-# pyo3 ist opt-in: ohne das Feature kompiliert das Crate als reines
-# Platzhalter-Lib (fuer Workspace-Checks ohne Python-Headers).
-# Mit `--features extension-module` (oder dem maturin-Default)
-# entsteht der Python-Extension-Module.
+# pyo3 is opt-in: without the feature the crate compiles as a pure
+# placeholder lib (for workspace checks without Python headers).
+# With `--features extension-module` (or the maturin default)
+# the Python extension module is produced.
 default = []
 std = ["alloc"]
 alloc = []
@@ -34,8 +34,8 @@ safety = []
 extension-module = ["dep:pyo3", "pyo3/extension-module"]
 
 [dependencies]
-zerodds-dcps = { version = "1.0.0-rc.1", path = "../dcps" }
-zerodds-qos = { version = "1.0.0-rc.1", path = "../qos" }
+zerodds-dcps = { version = "1.0.0-rc.3", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos" }
 pyo3 = { version = "0.24", features = ["abi3-py38"], optional = true }
 
 [dev-dependencies]

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Labels — Key/Value-Paare fuer Metric-Identitaet (Spec §1.5).
+//! Labels — key/value pairs for metric identity (spec §1.5).
 
 use std::cmp::Ordering;
 
-/// Sortierte Key/Value-Paare. Keys sind `&'static str`, Values
+/// Sorted key/value pairs. Keys are `&'static str`, values
 /// `String`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Labels {
@@ -13,21 +13,21 @@ pub struct Labels {
 }
 
 impl Labels {
-    /// Leere Labels.
+    /// Empty labels.
     #[must_use]
     pub fn new() -> Self {
         Self { pairs: Vec::new() }
     }
 
-    /// Builder: ein weiteres Label setzen. Bei Duplikat-Key wird der
-    /// vorherige Wert ersetzt — Idempotenz fuer Setter-Pattern.
+    /// Builder: set another label. On a duplicate key the
+    /// previous value is replaced — idempotency for the setter pattern.
     #[must_use]
     pub fn with(mut self, key: &'static str, value: impl Into<String>) -> Self {
         self.set(key, value);
         self
     }
 
-    /// Setzt ein Label (mutation).
+    /// Sets a label (mutation).
     pub fn set(&mut self, key: &'static str, value: impl Into<String>) {
         let value = value.into();
         match self.pairs.iter_mut().find(|(k, _)| *k == key) {
@@ -39,12 +39,12 @@ impl Labels {
         }
     }
 
-    /// Iterator ueber die sortierten Paare.
+    /// Iterator over the sorted pairs.
     pub fn iter(&self) -> impl Iterator<Item = (&'static str, &str)> + '_ {
         self.pairs.iter().map(|(k, v)| (*k, v.as_str()))
     }
 
-    /// Anzahl der Paare.
+    /// Number of pairs.
     #[must_use]
     pub fn len(&self) -> usize {
         self.pairs.len()
@@ -69,18 +69,18 @@ impl Ord for Labels {
     }
 }
 
-/// Identifier-Tupel fuer Registry-Lookup. `(name, labels)` definiert
-/// die Identitaet eines Metric-Items.
+/// Identifier tuple for registry lookup. `(name, labels)` defines
+/// the identity of a metric item.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MetricKey {
     /// Statischer Metric-Name.
     pub name: &'static str,
-    /// Labels (sortiert).
+    /// Labels (sorted).
     pub labels: Labels,
 }
 
 impl MetricKey {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(name: &'static str, labels: Labels) -> Self {
         Self { name, labels }

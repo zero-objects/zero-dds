@@ -23,7 +23,7 @@ namespace pub {
 /// Publisher (Spec §7.5.14.1).
 class Publisher {
 public:
-    /// Default-konstruiert via Participant + Default-QoS.
+    /// Default-constructed via Participant + default QoS.
     explicit Publisher(::dds::domain::DomainParticipant& dp)
         : participant_(dp.native_handle()) {
         handle_ = zerodds_dp_create_publisher(participant_, nullptr);
@@ -31,7 +31,7 @@ public:
             throw ::dds::core::Error("Publisher::create failed");
         }
     }
-    /// Mit QoS — konvertiert ueber `qos_bridge.hpp` in C-FFI-Form.
+    /// With QoS — converted into C-FFI form via `qos_bridge.hpp`.
     Publisher(::dds::domain::DomainParticipant& dp, const ::dds::core::PublisherQos& qos)
         : participant_(dp.native_handle()) {
         auto native = ::dds::core::detail::to_native(qos);
@@ -88,7 +88,7 @@ public:
         ::dds::core::check_status(rc, "Publisher::wait_for_acknowledgments");
     }
 
-    /// Native Handle (fuer DataWriter-Konstruktion).
+    /// Native handle (for DataWriter construction).
     zerodds_ZeroDdsPublisher* native_handle() const { return handle_; }
 
 private:
@@ -109,7 +109,7 @@ template <typename T>
 class DataWriter {
 public:
     DataWriter() = default;
-    /// Konstruiert via Pub + Topic mit Default-QoS.
+    /// Constructed via Pub + Topic with default QoS.
     DataWriter(Publisher& pub, ::dds::topic::Topic<T>& topic)
         : publisher_(pub.native_handle()) {
         handle_ = zerodds_pub_create_datawriter(publisher_, topic.native_handle(), nullptr);
@@ -117,7 +117,7 @@ public:
             throw ::dds::core::Error("DataWriter::create failed");
         }
     }
-    /// Mit QoS.
+    /// With QoS.
     DataWriter(Publisher& pub, ::dds::topic::Topic<T>& topic, const ::dds::core::DataWriterQos& qos)
         : publisher_(pub.native_handle()) {
         auto native = ::dds::core::detail::to_native(qos);
@@ -145,13 +145,13 @@ public:
     }
     ~DataWriter() { close(); }
 
-    /// Schreibt eine Sample-Instanz.
+    /// Writes a sample instance.
     void write(const T& sample) {
         std::vector<uint8_t> buf = ::dds::topic::topic_type_support<T>::encode(sample);
         int rc = zerodds_dw_write(handle_, buf.data(), buf.size(), 0);
         ::dds::core::check_status(rc, "DataWriter::write");
     }
-    /// Schreibt mit Source-Timestamp.
+    /// Writes with source timestamp.
     void write(const T& sample, const ::dds::core::Time& ts) {
         std::vector<uint8_t> buf = ::dds::topic::topic_type_support<T>::encode(sample);
         int rc = zerodds_dw_write_w_timestamp(handle_, buf.data(), buf.size(), 0,
@@ -226,7 +226,7 @@ public:
         return out;
     }
 
-    /// Native Handle.
+    /// Native handle.
     zerodds_ZeroDdsDataWriter* native_handle() const { return handle_; }
 
 private:

@@ -29,25 +29,25 @@ workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.1", path = "../../crates/rtps" }
-zerodds-transport = { version = "1.0.0-rc.1", path = "../../crates/transport" }
-zerodds-transport-udp = { version = "1.0.0-rc.1", path = "../../crates/transport-udp" }
-zerodds-transport-shm = { version = "1.0.0-rc.1", path = "../../crates/transport-shm" }
-zerodds-transport-tcp = { version = "1.0.0-rc.1", path = "../../crates/transport-tcp" }
+zerodds-rtps = { version = "1.0.0-rc.3", path = "../../crates/rtps" }
+zerodds-transport = { version = "1.0.0-rc.3", path = "../../crates/transport" }
+zerodds-transport-udp = { version = "1.0.0-rc.3", path = "../../crates/transport-udp" }
+zerodds-transport-shm = { version = "1.0.0-rc.3", path = "../../crates/transport-shm" }
+zerodds-transport-tcp = { version = "1.0.0-rc.3", path = "../../crates/transport-tcp" }
 # Latency histograms: pure-Rust HdrHistogram port, dev-+bin-only.
 hdrhistogram = { version = "7.5", default-features = false }
 # DCPS-stack roundtrip via the C-FFI hub.
-zerodds = { version = "1.0.0-rc.1", path = "../../crates/zerodds-c-api", package = "zerodds-c-api" }
+zerodds = { version = "1.0.0-rc.3", path = "../../crates/zerodds-c-api", package = "zerodds-c-api" }
 # Typed roundtrip: full XCDR2 encode/decode path, apples-to-apples
 # with Cyclone / RTI / FastDDS custom apps.
-zerodds-dcps = { version = "1.0.0-rc.1", path = "../../crates/dcps" }
-zerodds-cdr = { version = "1.0.0-rc.1", path = "../../crates/cdr" }
-zerodds-types = { version = "1.0.0-rc.1", path = "../../crates/types" }
+zerodds-dcps = { version = "1.0.0-rc.3", path = "../../crates/dcps" }
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../../crates/cdr" }
+zerodds-types = { version = "1.0.0-rc.3", path = "../../crates/types" }
 
 # UDS transport is Unix-only (`#![cfg(unix)]` crate-level). The bench file
 # `transports_e2e` cfg-gates its UDS sections accordingly.
 [target.'cfg(unix)'.dependencies]
-zerodds-transport-uds = { version = "1.0.0-rc.1", path = "../../crates/transport-uds" }
+zerodds-transport-uds = { version = "1.0.0-rc.3", path = "../../crates/transport-uds" }
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -60,6 +60,11 @@ path = "src/bin/roundtrip_1us.rs"
 name = "roundtrip-typed"
 path = "src/bin/roundtrip_typed.rs"
 
+# Internal regression gate (CI): Transport × Payload Floor-Latenz + min-Gate.
+[[bin]]
+name = "regression"
+path = "src/bin/regression.rs"
+
 [[bench]]
 name = "transports_e2e"
 harness = false
@@ -67,3 +72,29 @@ harness = false
 [[bench]]
 name = "rtps_fragmented"
 harness = false
+
+# Welle-4-Validierung — Headline-Bench (Bench-A1).
+[[bench]]
+name = "dcps_roundtrip_shm_vs_udp"
+harness = false
+
+# C-FFI Opt-1 Validierung (Bench-A2).
+[[bench]]
+name = "cffi_take_vs_loan"
+harness = false
+
+# Opt-2/Int-1 Linux-Only Validierung (Bench-A3).
+[[bench]]
+name = "recvmmsg_on_off"
+harness = false
+
+# Opt-3 Multi-Thread-Pool Skalierung (Bench-A4).
+[[bench]]
+name = "recv_threads_sweep"
+harness = false
+
+[features]
+default = []
+# Bench-A1 + A3 + A4 brauchen DCPS-Features.
+same-host-shm = ["zerodds-dcps/same-host-shm"]
+recvmmsg-batch = ["zerodds-dcps/recvmmsg-batch", "zerodds-transport-udp/recvmmsg-batch"]

@@ -3,46 +3,45 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-grpc-bridge/badge.svg)](https://docs.rs/zerodds-grpc-bridge)
 
-gRPC-over-HTTP/2 + gRPC-Web Wire-Codec: Length-Prefixed-Message
-(LPM), Path-Parsing (`/<service>/<method>`), `grpc-timeout`-Header,
-`grpc-status`-Codes, Custom-Metadata-Encoding mit `-bin`-Suffix-
-Konvention, gRPC-Web-Trailer-Frames, und ein Server-Skeleton fuer
-Caller-konfigurierte HTTP/2-Listener. Sitzt auf
+gRPC-over-HTTP/2 + gRPC-Web wire codec: length-prefixed message
+(LPM), path parsing (`/<service>/<method>`), `grpc-timeout` header,
+`grpc-status` codes, custom-metadata encoding with the `-bin`-suffix
+convention, gRPC-Web trailer frames, and a server skeleton for
+caller-configured HTTP/2 listeners. Sits on
 [`zerodds-http2`](../http2) (RFC 9113) +
 [`zerodds-hpack`](../hpack) (RFC 7541). `no_std + alloc`,
 `forbid(unsafe_code)`. Safety classification: **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| gRPC HTTP/2 Protocol | Length-Prefixed-Message + `:path` + `grpc-timeout` + `grpc-status` + Custom-Metadata + `-bin`-Suffix |
-| gRPC-Web Specification | Trailer-Frame (LPM mit Compressed-Flag-MSB=1) + Content-Types (`application/grpc-web` / `application/grpc-web+proto` / `application/grpc-web-text` / JSON) |
+| gRPC HTTP/2 Protocol | Length-prefixed message + `:path` + `grpc-timeout` + `grpc-status` + custom metadata + `-bin` suffix |
+| gRPC-Web Specification | Trailer frame (LPM with compressed-flag MSB=1) + content types (`application/grpc-web` / `application/grpc-web+proto` / `application/grpc-web-text` / JSON) |
 
-## Was ist drin
+## What's inside
 
-- **`encode_message` / `decode_message`** — gRPC LPM (Compressed-
-  Flag 1 byte + Message-Length 4-byte BE + Bytes).
-- **`parse_path`** — `/<service>/<method>` aus `:path`.
+- **`encode_message` / `decode_message`** — gRPC LPM (compressed
+  flag 1 byte + message length 4-byte BE + bytes).
+- **`parse_path`** — `/<service>/<method>` from `:path`.
 - **`encode_timeout` / `decode_timeout` / `TimeoutUnit`** —
-  `grpc-timeout` mit Units H/M/S/m/u/n.
-- **`Status`** — alle 17 gRPC Status-Codes (0 OK ... 16
+  `grpc-timeout` with units H/M/S/m/u/n.
+- **`Status`** — all 17 gRPC status codes (0 OK ... 16
   UNAUTHENTICATED).
 - **`encode_header_value` / `decode_header_value` / `is_binary_header`
-  / `BIN_SUFFIX` / `encode_base64` / `decode_base64`** — Custom-
-  Metadata mit `-bin`-Suffix → Base64.
+  / `BIN_SUFFIX` / `encode_base64` / `decode_base64`** — custom
+  metadata with `-bin` suffix → Base64.
 - **`request_headers` / `response_headers` / `content_types`** —
-  Standard-Header-Sets fuer Request/Response/gRPC-Web/JSON.
-- **`GrpcServer` / `GrpcRequest` / `GrpcResponse`** — Server-
-  Skeleton zum Wiren mit Caller-konfigurierten HTTP/2-Listenern.
+  standard header sets for request/response/gRPC-Web/JSON.
+- **`GrpcServer` / `GrpcRequest` / `GrpcResponse`** — server
+  skeleton to wire with caller-configured HTTP/2 listeners.
 
-## Schichten-Position
+## Layer position
 
-Layer 5 — Bridges. Sitzt auf `zerodds-http2` (RFC 9113 Framing +
-Stream-State + Flow-Control) und `zerodds-hpack` (RFC 7541 Header-
-Compression). Konsumenten konfigurieren ihren eigenen TCP/TLS-
-Listener und delegieren HTTP/2-Connection-Lifecycle an
-`zerodds-http2`.
+Layer 5 — Bridges. Sits on `zerodds-http2` (RFC 9113 framing +
+stream state + flow control) and `zerodds-hpack` (RFC 7541 header
+compression). Consumers configure their own TCP/TLS listener and
+delegate the HTTP/2 connection lifecycle to `zerodds-http2`.
 
 ## Quickstart
 
@@ -57,20 +56,20 @@ assert_eq!(payload, msg);
 assert_eq!(consumed, wire.len());
 ```
 
-## Feature-Flags
+## Feature flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
-| `std` | ✅ | `std::error::Error`-Impls. |
+| `std` | ✅ | `std::error::Error` impls. |
 | `alloc` | ✅ (via std) | `Vec` / `String`. |
 
-`no_std`-fahig: `default-features = false, features = ["alloc"]`.
+`no_std`-capable: `default-features = false, features = ["alloc"]`.
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1`. Public-API + Wire-Format (gRPC HTTP/2 + gRPC-Web) +
-Fehler-Diskriminanten sind RC1-stabil; Breaking-Changes erfordern
-Major-Bump.
+`1.0.0-rc.1`. Public API + wire format (gRPC HTTP/2 + gRPC-Web) +
+error discriminants are RC1-stable; breaking changes require a
+major bump.
 
 ## Tests
 
@@ -78,14 +77,14 @@ Major-Bump.
 cargo test -p zerodds-grpc-bridge
 ```
 
-60 Tests grün (54 unit + 5 fuzz-smoke + 1 doc).
+60 tests passing (54 unit + 5 fuzz-smoke + 1 doc).
 
-## Lizenz
+## License
 
-Apache-2.0. Siehe [LICENSE](../../LICENSE).
+Apache-2.0. See [LICENSE](../../LICENSE).
 
-## Siehe auch
+## See also
 
-- [`docs/release/rc1-reviews/grpc-bridge.md`](../../docs/release/rc1-reviews/grpc-bridge.md) — RC1-Review.
-- [`zerodds-http2`](../http2) — RFC 9113 HTTP/2-Framing-Substrat.
-- [`zerodds-hpack`](../hpack) — RFC 7541 HPACK-Substrat.
+- [`docs/release/rc1-reviews/grpc-bridge.md`](../../docs/release/rc1-reviews/grpc-bridge.md) — RC1 review.
+- [`zerodds-http2`](../http2) — RFC 9113 HTTP/2 framing substrate.
+- [`zerodds-hpack`](../hpack) — RFC 7541 HPACK substrate.

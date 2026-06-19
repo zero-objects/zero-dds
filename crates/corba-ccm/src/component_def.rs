@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Component-Definition-Modell — Spec §6.6.
+//! Component definition model — spec §6.6.
 //!
-//! Eine `ComponentDef` beschreibt einen Component-Type. Spec-konforme
-//! Felder:
+//! A `ComponentDef` describes a component type. Spec-compliant
+//! fields:
 //!
 //! * `name` + `repository_id`.
-//! * Erbschaft (single-inheritance, plus Component supports).
-//! * Facets (`provides`-Ports — implementiert ein Iface).
-//! * Receptacles (`uses`-Ports — verlangt ein Iface; simplex/multiplex).
-//! * Event-Sources (`publishes`/`emits`).
-//! * Event-Sinks (`consumes`).
-//! * Attributes mit optional `setraises`/`getraises`.
-//! * Optional: PrimaryKey (Spec §6.7.2 fuer Keyed-Components).
+//! * Inheritance (single inheritance, plus component supports).
+//! * Facets (`provides` ports — implement an interface).
+//! * Receptacles (`uses` ports — require an interface; simplex/multiplex).
+//! * Event sources (`publishes`/`emits`).
+//! * Event sinks (`consumes`).
+//! * Attributes with optional `setraises`/`getraises`.
+//! * Optional: primary key (spec §6.7.2 for keyed components).
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Receptacle-Multiplicity — Spec §6.6.5.
+/// Receptacle multiplicity — spec §6.6.5.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ReceptacleMultiplicity {
     /// `uses` — single connection.
@@ -27,95 +27,95 @@ pub enum ReceptacleMultiplicity {
     Multiplex,
 }
 
-/// Facet (provides-Port) — Spec §6.6.4.
+/// Facet (provides port) — spec §6.6.4.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FacetDef {
-    /// Port-Name.
+    /// Port name.
     pub name: String,
-    /// Implementiertes Interface (Repository-ID).
+    /// Implemented interface (repository ID).
     pub interface_id: String,
 }
 
-/// Receptacle (uses-Port) — Spec §6.6.5.
+/// Receptacle (uses port) — spec §6.6.5.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceptacleDef {
-    /// Port-Name.
+    /// Port name.
     pub name: String,
-    /// Verlangtes Interface (Repository-ID).
+    /// Required interface (repository ID).
     pub interface_id: String,
-    /// Single oder multiple connections.
+    /// Single or multiple connections.
     pub multiplicity: ReceptacleMultiplicity,
 }
 
-/// Event-Source (publishes/emits) — Spec §6.6.6.
+/// Event source (publishes/emits) — spec §6.6.6.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EventSourceDef {
-    /// Port-Name.
+    /// Port name.
     pub name: String,
-    /// Event-Type (EventType-Repository-ID).
+    /// Event type (EventType repository ID).
     pub event_type_id: String,
     /// `true` = `emits` (single subscriber); `false` = `publishes`
-    /// (multiple subscribers via Channel).
+    /// (multiple subscribers via channel).
     pub emit_only: bool,
 }
 
-/// Event-Sink (consumes) — Spec §6.6.7.
+/// Event sink (consumes) — spec §6.6.7.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EventSinkDef {
-    /// Port-Name.
+    /// Port name.
     pub name: String,
-    /// Event-Type (EventType-Repository-ID).
+    /// Event type (EventType repository ID).
     pub event_type_id: String,
 }
 
-/// Attribute — Spec §6.6.8.
+/// Attribute — spec §6.6.8.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttributeDef {
-    /// Attribut-Name.
+    /// Attribute name.
     pub name: String,
-    /// IDL-Type-Spec.
+    /// IDL type spec.
     pub type_spec: String,
     /// `true` = readonly.
     pub readonly: bool,
-    /// `setraises`-Exception-IDs (leer fuer readonly).
+    /// `setraises` exception IDs (empty for readonly).
     pub set_raises: Vec<String>,
-    /// `getraises`-Exception-IDs.
+    /// `getraises` exception IDs.
     pub get_raises: Vec<String>,
 }
 
-/// Component-Type-Definition.
+/// Component type definition.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ComponentDef {
-    /// Component-Name.
+    /// Component name.
     pub name: String,
-    /// Repository-ID.
+    /// Repository ID.
     pub repository_id: String,
-    /// Optionale Single-Inheritance auf einen Base-Component.
+    /// Optional single inheritance from a base component.
     pub base_component: Option<String>,
-    /// `supports`-Iface-IDs.
+    /// `supports` interface IDs.
     pub supported_interfaces: Vec<String>,
     /// Facets.
     pub facets: Vec<FacetDef>,
     /// Receptacles.
     pub receptacles: Vec<ReceptacleDef>,
-    /// Event-Sources.
+    /// Event sources.
     pub event_sources: Vec<EventSourceDef>,
-    /// Event-Sinks.
+    /// Event sinks.
     pub event_sinks: Vec<EventSinkDef>,
     /// Attributes.
     pub attributes: Vec<AttributeDef>,
-    /// PrimaryKey-Type-IDs (Spec §6.7.2 — Keyed-Component-Indikator).
+    /// Primary key type IDs (spec §6.7.2 — keyed-component indicator).
     pub primary_key: Vec<String>,
 }
 
 impl ComponentDef {
-    /// `true` wenn der Component Keyed ist (Primary-Key vorhanden).
+    /// `true` if the component is keyed (primary key present).
     #[must_use]
     pub fn is_keyed(&self) -> bool {
         !self.primary_key.is_empty()
     }
 
-    /// Anzahl Ports (Facets + Receptacles + Events).
+    /// Number of ports (facets + receptacles + events).
     #[must_use]
     pub fn port_count(&self) -> usize {
         self.facets.len()
@@ -129,17 +129,17 @@ impl ComponentDef {
     // ---------------------------------------------------------------
 
     /// Spec §6.1.4 — `is_equivalent_component_kind(repo_id)`.
-    /// Liefert `true` wenn der gegebene Repository-ID dem Component
-    /// (oder einer Base-Komponente in der Inheritance-Kette via
-    /// caller-supplied Resolver) entspricht.
+    /// Returns `true` if the given repository ID matches the component
+    /// (or a base component in the inheritance chain via a
+    /// caller-supplied resolver).
     #[must_use]
     pub fn is_equivalent_component_kind(&self, repo_id: &str) -> bool {
         self.repository_id == repo_id
     }
 
     /// Spec §6.1.4 — `get_component_def() -> ComponentIR::ComponentDef`.
-    /// Wir liefern hier die Repository-ID des ComponentDef-Eintrags
-    /// im IFR; Caller setzt darauf den IFR-Lookup auf.
+    /// Here we return the repository ID of the ComponentDef entry
+    /// in the IFR; the caller builds the IFR lookup on top of it.
     #[must_use]
     pub fn get_component_def_repo_id(&self) -> &str {
         &self.repository_id
@@ -150,24 +150,24 @@ impl ComponentDef {
     // ---------------------------------------------------------------
 
     /// Spec §6.4.3 — `provide_facet(name) -> CORBA::Object`.
-    /// Liefert den `FacetDef` mit dem gegebenen Namen oder `None`.
-    /// Caller bindet das `interface_id` an die ORB-konkrete
-    /// Object-Reference.
+    /// Returns the `FacetDef` with the given name, or `None`.
+    /// The caller binds the `interface_id` to the ORB-concrete
+    /// object reference.
     #[must_use]
     pub fn provide_facet(&self, name: &str) -> Option<&FacetDef> {
         self.facets.iter().find(|f| f.name == name)
     }
 
     /// Spec §6.4.3 — `get_all_facets() -> FacetDescriptions`.
-    /// Liefert alle Facets als unveraenderbarer Slice.
+    /// Returns all facets as an immutable slice.
     #[must_use]
     pub fn get_all_facets(&self) -> &[FacetDef] {
         &self.facets
     }
 
     /// Spec §6.4.3 — `get_named_facets(names) -> FacetDescriptions`.
-    /// Liefert die Facets, deren Namen in der gegebenen Liste stehen
-    /// (Reihenfolge wie in `names`); fehlende Namen werden uebersprungen.
+    /// Returns the facets whose names appear in the given list
+    /// (in `names` order); missing names are skipped.
     #[must_use]
     pub fn get_named_facets(&self, names: &[&str]) -> Vec<&FacetDef> {
         names.iter().filter_map(|n| self.provide_facet(n)).collect()
@@ -197,14 +197,14 @@ impl ComponentDef {
     // ---------------------------------------------------------------
 
     /// Spec §6.6.8 — `get_all_publishers() -> PublisherDescriptions`.
-    /// Publisher = `event_sources` mit `emit_only == false`.
+    /// Publisher = `event_sources` with `emit_only == false`.
     #[must_use]
     pub fn get_all_publishers(&self) -> Vec<&EventSourceDef> {
         self.event_sources.iter().filter(|s| !s.emit_only).collect()
     }
 
     /// Spec §6.6.8 — `get_all_emitters() -> EmitterDescriptions`.
-    /// Emitter = `event_sources` mit `emit_only == true`.
+    /// Emitter = `event_sources` with `emit_only == true`.
     #[must_use]
     pub fn get_all_emitters(&self) -> Vec<&EventSourceDef> {
         self.event_sources.iter().filter(|s| s.emit_only).collect()
@@ -240,10 +240,10 @@ impl ComponentDef {
     // §6.4.5 Supported Interfaces — Runtime Narrow-Helper
     // ---------------------------------------------------------------
 
-    /// Spec §6.4.5 — Type-Identity-Narrowing. Liefert `true` wenn die
-    /// Component das gegebene Interface unterstuetzt (`supports <I>`
-    /// in der Equivalent-IDL). Caller-Layer kombiniert dies mit dem
-    /// ORB-`is_a`-Predicate fuer die Object-Reference.
+    /// Spec §6.4.5 — type-identity narrowing. Returns `true` if the
+    /// component supports the given interface (`supports <I>`
+    /// in the equivalent IDL). The caller layer combines this with the
+    /// ORB `is_a` predicate for the object reference.
     #[must_use]
     pub fn supports_interface(&self, interface_repo_id: &str) -> bool {
         self.supported_interfaces
@@ -251,8 +251,8 @@ impl ComponentDef {
             .any(|i| i == interface_repo_id)
     }
 
-    /// Spec §6.4.5 — alle unterstuetzten Interfaces (Type-Identity-
-    /// Side; Object-Reference-Widening bleibt ORB).
+    /// Spec §6.4.5 — all supported interfaces (type-identity
+    /// side; object-reference widening stays with the ORB).
     #[must_use]
     pub fn supported_interface_repo_ids(&self) -> &[String] {
         &self.supported_interfaces

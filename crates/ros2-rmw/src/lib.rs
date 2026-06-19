@@ -9,29 +9,29 @@
 //!
 //! # Scope
 //!
-//! Wir implementieren die ROS-2-DDS-Mapping-Conventions als pure-Rust
-//! no_std+alloc Library:
+//! We implement the ROS-2 DDS mapping conventions as a pure-Rust
+//! no_std+alloc library:
 //!
-//! * **Topic-Name-Mangling** (de-facto-Standard aus `rmw_dds_common`):
-//!   ROS 2 logical names werden mit Prefix-Code (`rt/`, `rq/`, `rr/`,
-//!   `rs/`) auf DDS-Topic-Namen gemapped.
-//! * **REP-2003 QoS Settings** — Map-/Sensor-Data-QoS-Profiles
-//!   (Reliable+TransientLocal fuer Maps; BestEffort+Volatile fuer
-//!   Sensor-Data).
-//! * **REP-2004 Package Quality Categories** — Q1-Q5-Klassifikation.
-//! * **Standard RMW QoS Profiles** — DEFAULT/SENSOR_DATA/PARAMETERS/
+//! * **Topic name mangling** (de-facto standard from `rmw_dds_common`):
+//!   ROS 2 logical names are mapped to DDS topic names with a prefix code
+//!   (`rt/`, `rq/`, `rr/`, `rs/`).
+//! * **REP-2003 QoS settings** — map/sensor-data QoS profiles
+//!   (Reliable+TransientLocal for maps; BestEffort+Volatile for
+//!   sensor data).
+//! * **REP-2004 package quality categories** — Q1-Q5 classification.
+//! * **Standard RMW QoS profiles** — DEFAULT/SENSOR_DATA/PARAMETERS/
 //!   SERVICES_DEFAULT/PARAMETER_EVENTS/SYSTEM_DEFAULT.
 //!
-//! # Was nicht abgedeckt ist
+//! # What is not covered
 //!
-//! * **REP-2005 Common Packages** — Informational.
-//! * **REP-2007 Type Adaptation** — Compile-Time-Feature in C++/Python
-//!   `rclcpp`/`rclpy`; nicht Wire-Layer.
-//! * **REP-2008 Hardware Acceleration** — Driver-Layer.
-//! * **REP-2009 Type Negotiation** — Compile-Time-Feature.
-//! * **`rmw`-C-API** — die Rust-Crate liefert Mapping-Konstanten und
-//!   Profile; das eigentliche `rmw_zerodds`-C-FFI-Crate ist eigener
-//!   Sprint.
+//! * **REP-2005 Common Packages** — informational.
+//! * **REP-2007 Type Adaptation** — a compile-time feature in C++/Python
+//!   `rclcpp`/`rclpy`; not a wire layer.
+//! * **REP-2008 Hardware Acceleration** — driver layer.
+//! * **REP-2009 Type Negotiation** — compile-time feature.
+//! * **`rmw` C API** — the Rust crate provides mapping constants and
+//!   profiles; the actual `rmw_zerodds` C-FFI crate is its own
+//!   sprint.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

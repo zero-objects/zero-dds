@@ -9,30 +9,30 @@ use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 
 use crate::duration::Duration;
 
-/// Reliability-Kind (DDS 1.4 §2.2.3.14).
+/// Reliability kind (DDS 1.4 §2.2.3.14).
 ///
-/// Reihenfolge gem. §2.2.3 Table "QoS compatibility":
+/// Order per §2.2.3 Table "QoS compatibility":
 /// `BestEffort < Reliable`. `offered.kind >= requested.kind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum ReliabilityKind {
     /// BestEffort (DDSI-RTPS §8.4.2).
     BestEffort = 1,
-    /// Reliable (mit HB+ACKNACK-Flow).
+    /// Reliable (with HB+ACKNACK flow).
     Reliable = 2,
 }
 
 impl Default for ReliabilityKind {
-    /// DDS 1.4 §2.2.3.14.3: Default je nach Entity — Reader: BestEffort,
-    /// Writer: Reliable. Wir whalen hier den Reader-Default; Writer setzt
-    /// `ReliabilityKind::Reliable` explizit.
+    /// DDS 1.4 §2.2.3.14.3: default depends on the entity — reader: BestEffort,
+    /// writer: Reliable. We pick the reader default here; the writer sets
+    /// `ReliabilityKind::Reliable` explicitly.
     fn default() -> Self {
         Self::BestEffort
     }
 }
 
 impl ReliabilityKind {
-    /// Strikter Mapper.
+    /// Strict mapper.
     #[must_use]
     pub const fn try_from_u32(v: u32) -> Option<Self> {
         match v {
@@ -42,7 +42,7 @@ impl ReliabilityKind {
         }
     }
 
-    /// Forward-kompatibler Mapper (unbekannt → BestEffort).
+    /// Forward-compatible mapper (unknown → BestEffort).
     #[must_use]
     pub const fn from_u32(v: u32) -> Self {
         match v {
@@ -57,11 +57,11 @@ impl ReliabilityKind {
 pub struct ReliabilityQosPolicy {
     /// Kind.
     pub kind: ReliabilityKind,
-    /// Max-Blocking-Time — **Writer-only semantic**. Auf Reader-Seite
-    /// wird der Wert zwar serialisiert (Spec-Wire-Format), aber ignoriert;
-    /// DDS-Reader muessen Peer-Wert nicht interpretieren. Cyclone und
-    /// Fast-DDS verhalten sich gleich — byte-wise identisch, semantisch
-    /// Reader-no-op.
+    /// Max blocking time — **writer-only semantic**. On the reader side
+    /// the value is serialized (spec wire format) but ignored;
+    /// DDS readers need not interpret the peer value. Cyclone and
+    /// Fast-DDS behave the same — byte-wise identical, semantically
+    /// a reader no-op.
     pub max_blocking_time: Duration,
 }
 
@@ -69,26 +69,26 @@ impl Default for ReliabilityQosPolicy {
     fn default() -> Self {
         Self {
             kind: ReliabilityKind::BestEffort,
-            // Spec-default fuer Reliable-Writer: 100ms.
+            // Spec default for a Reliable writer: 100ms.
             max_blocking_time: Duration::from_millis(100),
         }
     }
 }
 
 impl ReliabilityQosPolicy {
-    /// Wire-Encoding: u32 kind + i32 seconds + u32 fraction = 12 byte.
+    /// Wire encoding: u32 kind + i32 seconds + u32 fraction = 12 bytes.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u32(self.kind as u32)?;
         self.max_blocking_time.encode_into(w)
     }
 
-    /// Wire-Decoding (strict). Unbekannter Discriminator → `InvalidEnum`.
+    /// Wire decoding (strict). Unknown discriminator → `InvalidEnum`.
     ///
     /// # Errors
-    /// Buffer-Underflow oder unbekannter Kind-Wert.
+    /// Buffer underflow or unknown kind value.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let v = r.read_u32()?;
         let kind = ReliabilityKind::try_from_u32(v).ok_or(DecodeError::InvalidEnum {
@@ -149,19 +149,19 @@ mod tests {
         assert_eq!(d.max_blocking_time, Duration::from_millis(100));
     }
 
-    /// Forward-kompatibler Mapper: unbekannt -> `BestEffort` (defensive).
+    /// Forward-compatible mapper: unknown -> `BestEffort` (defensive).
     #[test]
     fn from_u32_forward_compatible() {
         assert_eq!(ReliabilityKind::from_u32(1), ReliabilityKind::BestEffort);
         assert_eq!(ReliabilityKind::from_u32(2), ReliabilityKind::Reliable);
-        // 0 ist NICHT Best-Effort auf Wire-Ebene (DDSI-RTPS nutzt 1/2),
-        // forward-compat collapiert aber auf BestEffort.
+        // 0 is NOT Best-Effort at the wire level (DDSI-RTPS uses 1/2),
+        // but forward-compat collapses it to BestEffort.
         assert_eq!(ReliabilityKind::from_u32(0), ReliabilityKind::BestEffort);
         assert_eq!(ReliabilityKind::from_u32(99), ReliabilityKind::BestEffort);
     }
 
-    /// Roundtrip der BestEffort-Variante inkl. non-default
-    /// max_blocking_time (Report: Variante bisher ungetestet).
+    /// Roundtrip of the BestEffort variant incl. non-default
+    /// max_blocking_time (report: variant previously untested).
     #[test]
     fn best_effort_roundtrip_with_custom_blocking() {
         let p = ReliabilityQosPolicy {
@@ -172,13 +172,13 @@ mod tests {
         p.encode_into(&mut w).unwrap();
         let bytes = w.into_bytes();
         assert_eq!(bytes.len(), 12);
-        // Wire-Format-Spec-Check: erster u32 ist kind=1 (little-endian).
+        // Wire-format spec check: first u32 is kind=1 (little-endian).
         assert_eq!(&bytes[0..4], &[1u8, 0, 0, 0]);
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         assert_eq!(ReliabilityQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 
-    /// Debug-Format enthaelt beide Varianten und die Duration.
+    /// Debug format contains both variants and the duration.
     #[test]
     fn debug_and_clone_work() {
         let p = ReliabilityQosPolicy {
@@ -192,7 +192,7 @@ mod tests {
         assert!(dbg.contains("Reliable"), "debug: {dbg}");
     }
 
-    /// Decode mit unbekanntem kind-Discriminator → `InvalidEnum` Fehler.
+    /// Decode with an unknown kind discriminator → `InvalidEnum` error.
     #[test]
     fn decode_unknown_kind_errors() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -210,8 +210,8 @@ mod tests {
         ));
     }
 
-    /// Decode bei kurzem Buffer (kind=Reliable, keine blocking-time) →
-    /// short-read error auf Duration-Decode.
+    /// Decode with a short buffer (kind=Reliable, no blocking-time) →
+    /// short-read error on the duration decode.
     #[test]
     fn decode_short_buffer_no_duration_errors() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -221,8 +221,8 @@ mod tests {
         assert!(ReliabilityQosPolicy::decode_from(&mut r).is_err());
     }
 
-    /// Spec-Ordering: BestEffort < Reliable → `offered >= requested`
-    /// Compatibility-Logik baut darauf auf.
+    /// Spec ordering: BestEffort < Reliable → `offered >= requested`
+    /// compatibility logic builds on this.
     #[test]
     fn ordering_reliable_higher_than_besteffort() {
         assert!(ReliabilityKind::Reliable > ReliabilityKind::BestEffort);

@@ -8,35 +8,35 @@
 //!
 //! # Scope
 //!
-//! Wir implementieren die **Type-System-Mapping**-Layer aus Spec §8.2
-//! (OPC-UA → DDS) + §9.2 (DDS → OPC-UA) als pure-Rust no_std+alloc
-//! Library:
+//! We implement the **type-system-mapping** layer from Spec §8.2
+//! (OPC-UA → DDS) + §9.2 (DDS → OPC-UA) as a pure-Rust no_std+alloc
+//! library:
 //!
-//! * `BuiltinTypeKind` Enum mit allen 25 OPC-UA-Built-in-Type-IDs
+//! * `BuiltinTypeKind` enum with all 25 OPC-UA built-in type IDs
 //!   (Spec §8.2 Tab 8.1).
 //! * Primitive-Type-Mapping (Boolean, SByte/Byte, Int16/UInt16,
 //!   Int32/UInt32, Int64/UInt64, Float, Double, String) — Spec Tab 8.1.
-//! * `NodeId` mit allen 4 Identifier-Kinds (Numeric, String, Guid,
+//! * `NodeId` with all 4 identifier kinds (Numeric, String, Guid,
 //!   Opaque) — Spec §8.2.2 Tab 8.2.
-//! * `ExpandedNodeId` mit Namespace-URI + Server-Index — Spec §8.2.2.
-//! * `NodeClass` Enum (8 Werte) — Spec §8.3.1 Tab 8.3.
+//! * `ExpandedNodeId` with namespace URI + server index — Spec §8.2.2.
+//! * `NodeClass` enum (8 values) — Spec §8.3.1 Tab 8.3.
 //! * `StatusCode` + `Guid` + `ByteString` + `LocalizedText` +
-//!   `QualifiedName` Modelle — Spec Tab 8.2.
+//!   `QualifiedName` models — Spec Tab 8.2.
 //! * `BodyEncoding` + `ExtensionObject` + `Variant` + `DataValue` —
 //!   Spec Tab 8.2.
 //! * AddressSpace-Mapping: DDS Domain → OPC-UA ObjectNode + DDS Topic
 //!   → OPC-UA ObjectNode + DDS Sample → OPC-UA Variable — Spec §9.3.
 //!
-//! # Was nicht abgedeckt ist
+//! # What is not covered
 //!
 //! * **OPC-UA Binary Wire-Encoding** (Spec OPCUA-06 Mappings) —
-//!   Caller-Layer (typisch externer OPC-UA-Stack wie `opcua` oder
+//!   the caller layer (typically an external OPC-UA stack like `opcua` or
 //!   `open62541`).
-//! * **Subscription Service Set Behavior** (Spec §8.4.3) — Runtime-
-//!   Logic; das Mapping-Modell ist exposed, das eigentliche Polling/
-//!   Notification ist Caller.
-//! * **Historical Access** (Spec §8.3.4 + §9.3.4) — verlangt
-//!   Historical-Server-Backend.
+//! * **Subscription Service Set Behavior** (Spec §8.4.3) — runtime
+//!   logic; the mapping model is exposed, the actual polling/
+//!   notification is the caller's.
+//! * **Historical Access** (Spec §8.3.4 + §9.3.4) — requires a
+//!   historical-server backend.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -44,6 +44,7 @@
 extern crate alloc;
 
 pub mod address_space;
+pub mod conformance;
 pub mod data_value;
 pub mod dds_to_ua;
 pub mod historical;
@@ -55,7 +56,13 @@ pub mod types;
 #[cfg(feature = "std")]
 pub mod xml;
 
-pub use address_space::{DomainNode, SampleVariable, TopicNode, mangle_topic_node_browse_name};
+pub use address_space::{
+    DomainNode, InstanceNode, SampleVariable, TopicNode, build_sample_instance,
+    mangle_topic_node_browse_name,
+};
+pub use conformance::{
+    ConformancePoint, DECLARED_CONFORMANCE, declares, is_multi_point_conformant,
+};
 pub use data_value::{DataValue, ExtensionObject, Variant, VariantValue};
 pub use node_id::{ExpandedNodeId, NodeId, NodeIdentifier};
 pub use types::{

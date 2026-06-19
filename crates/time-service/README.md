@@ -10,27 +10,27 @@ Pure-Rust no_std + alloc, `forbid(unsafe_code)`. Part of [**ZeroDDS**](../../REA
 
 ## Scope
 
-Implementiert die normativen Datentypen und Operationen der OMG Time Service Spec 1.1 als Standalone-Library:
+Implements the normative data types and operations of the OMG Time Service spec 1.1 as a standalone library:
 
 - **TimeBase** (§1.3.2): `TimeT`, `InaccuracyT`, `TdfT`, `UtcT` (16-byte wire), `IntervalT`.
-- **UTO** (§1.3.4): Universal Time Object mit `absolute_time`, `compare_time`, `time_to_interval`, `interval`.
-- **TIO** (§1.3.5): Time Interval Object mit `overlaps`, `contains`, `spans`.
+- **UTO** (§1.3.4): Universal Time Object with `absolute_time`, `compare_time`, `time_to_interval`, `interval`.
+- **TIO** (§1.3.5): Time Interval Object with `overlaps`, `contains`, `spans`.
 - **TimeService** (§2.1): `universal_time`, `secure_universal_time`, `new_universal_time`, `uto_from_utc`, `new_interval`.
 
-**Out-of-Scope:** CORBA-`CosTimerEvent::TimerEventService` (§2.2/§2.4) — verlangt CORBA-Event-Channel-ORB; wird im `corba-ccm`-CCM-PSM adressiert.
+**Out of scope:** CORBA `CosTimerEvent::TimerEventService` (§2.2/§2.4) — requires a CORBA event-channel ORB; addressed in the `corba-ccm` CCM PSM.
 
-## Verhältnis zu DDS-DCPS Time_t
+## Relationship to DDS-DCPS Time_t
 
-OMG Time Service 1.1 und DDS-DCPS 1.4 §2.3.3 sind **spec-distinkt**:
+OMG Time Service 1.1 and DDS-DCPS 1.4 §2.3.3 are **spec-distinct**:
 
-| Aspekt | OMG Time Service 1.1 | DDS-DCPS 1.4 |
+| Aspect | OMG Time Service 1.1 | DDS-DCPS 1.4 |
 |---|---|---|
-| Wire-Format | `UtcT` 16 byte | `Time_t` 8 byte |
+| Wire format | `UtcT` 16 byte | `Time_t` 8 byte |
 | Epoch | 15 October 1582 | 1 January 1970 (UNIX) |
-| Auflösung | 100ns Ticks | 1ns (sec + nanosec) |
-| Inaccuracy / TDF | ja | nein |
+| Resolution | 100ns ticks | 1ns (sec + nanosec) |
+| Inaccuracy / TDF | yes | no |
 
-ZeroDDS-DDS-DCPS verwendet ausschließlich das spec-mandate `Time_t`-Format. `zerodds-time-service` ist dafür **NICHT** der Backing-Layer — es ist eine eigene Public-API für Anwendungen, die OMG-Time-Service-1.1-Konformität brauchen (z.B. Distributed-Time-Sync mit Inaccuracy-Tracking).
+ZeroDDS-DDS-DCPS uses exclusively the spec-mandated `Time_t` format. `zerodds-time-service` is **NOT** the backing layer for it — it is a separate public API for applications that need OMG Time Service 1.1 conformance (e.g. distributed time sync with inaccuracy tracking).
 
 ## Quick Start
 
@@ -40,7 +40,7 @@ use zerodds_time_service::{TimeService, Uto, ComparisonType};
 let service = TimeService::default();
 let now = service.universal_time().unwrap();
 
-// Vergleich mit Inaccuracy-Envelope
+// Comparison with inaccuracy envelope
 let later = Uto::new(now.time() + 1_000_000, 50, 0);
 let cmp = now.compare_time(ComparisonType::IntervalC, later);
 assert_ne!(cmp, zerodds_time_service::TimeComparison::GreaterThan);
@@ -48,12 +48,12 @@ assert_ne!(cmp, zerodds_time_service::TimeComparison::GreaterThan);
 
 ## Feature-Flags
 
-| Feature | Default | Zweck |
+| Feature | Default | Purpose |
 |---------|---------|-------|
 | `std`   | ✅       | std-Re-Exports + `current_time()` Wall-Clock; implies `alloc` |
 | `alloc` | ✅       | mandatory (Vec/wire-buffer) |
 
-`no_std`-Build ohne `std`: `current_time()` liefert `0`; eine echte Zeitquelle wird vom Embedding via `TimeService::with_source(...)` injiziert.
+`no_std` build without `std`: `current_time()` returns `0`; a real time source is injected by the embedding via `TimeService::with_source(...)`.
 
 ## Tests
 
@@ -61,7 +61,7 @@ assert_ne!(cmp, zerodds_time_service::TimeComparison::GreaterThan);
 
 ## Stability
 
-Alle Public-API-Items sind ab `1.0.0-rc.1` semver-stabil.
+All public-API items are semver-stable as of `1.0.0-rc.1`.
 
 ## Links
 

@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Syslog-RFC-5424-UDP-Backend.
+//! Syslog RFC-5424 UDP backend.
 //!
-//! Schreibt Security-Events als RFC-5424-formatierte Nachrichten an
-//! einen Syslog-Collector via UDP (Port 514 default). Beispiel-Wire:
+//! Writes security events as RFC-5424-formatted messages to
+//! a syslog collector via UDP (port 514 default). Example wire:
 //!
 //! ```text
 //! <14>1 2026-04-24T11:22:33Z zerodds - AUTH - - bad cert from peer
 //! ```
 //!
-//! `<14>` = Facility 1 (user) × 8 + Severity 6 (info) — wird aus dem
-//! `LogLevel` berechnet. Facility ist hart auf `LOCAL0` (16 × 8 = 128).
+//! `<14>` = facility 1 (user) × 8 + severity 6 (info) — computed from the
+//! `LogLevel`. The facility is hardwired to `LOCAL0` (16 × 8 = 128).
 //!
-//! # Nicht enthalten
+//! # Not included
 //!
-//! * TCP-Transport (RFC 5425) — folgt bei Bedarf.
-//! * Structured-Data-Blocks `[sd-id@...]` — wir nutzen `-` (nil).
-//! * TLS — die meisten Syslog-Deployments laufen im vertrauten Segment.
+//! * TCP transport (RFC 5425) — follows on demand.
+//! * Structured-data blocks `[sd-id@...]` — we use `-` (nil).
+//! * TLS — most syslog deployments run in a trusted segment.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -26,12 +26,12 @@ use std::sync::Mutex;
 
 use zerodds_security::logging::{LogLevel, LoggingPlugin};
 
-/// Facility-Code nach RFC 5424 §6.2.1. Wir fixen auf `LOCAL0` (16) —
-/// konventionell fuer Application-Security-Logs.
+/// Facility code per RFC 5424 §6.2.1. We fix it to `LOCAL0` (16) —
+/// conventional for application security logs.
 const FACILITY_LOCAL0: u8 = 16;
 
 fn severity_code(l: LogLevel) -> u8 {
-    // RFC 5424 §6.2.1: gleiche Zahlen 0..7 wie LogLevel.
+    // RFC 5424 §6.2.1: the same numbers 0..7 as LogLevel.
     l as u8
 }
 
@@ -39,7 +39,7 @@ fn priority(level: LogLevel) -> u8 {
     FACILITY_LOCAL0 * 8 + severity_code(level)
 }
 
-/// UDP-basierter Syslog-Client.
+/// UDP-based syslog client.
 pub struct SyslogLoggingPlugin {
     min_level: LogLevel,
     socket: Mutex<UdpSocket>,
@@ -49,19 +49,19 @@ pub struct SyslogLoggingPlugin {
 }
 
 impl SyslogLoggingPlugin {
-    /// Verbindet zu einem Syslog-Collector.
+    /// Connects to a syslog collector.
     ///
     /// # Errors
-    /// `io::Error` wenn das UDP-Socket nicht gebunden werden kann
-    /// (nicht das Connect — UDP ist connectionless; wir binden nur
-    /// lokal und senden dann per `send_to`).
+    /// `io::Error` if the UDP socket cannot be bound
+    /// (not the connect — UDP is connectionless; we only bind
+    /// locally and then send via `send_to`).
     pub fn connect(
         target: SocketAddr,
         app_name: impl Into<String>,
         hostname: impl Into<String>,
         min_level: LogLevel,
     ) -> std::io::Result<Self> {
-        // 0.0.0.0:0 = Kernel waehlt einen ephemeralen Port.
+        // 0.0.0.0:0 = the kernel picks an ephemeral port.
         let socket = UdpSocket::bind("0.0.0.0:0")?;
         Ok(Self {
             min_level,
@@ -81,8 +81,8 @@ fn hex16(bytes: [u8; 16]) -> String {
     s
 }
 
-/// Escapes fuer den MSG-Teil: RFC-5424 akzeptiert UTF-8, aber
-/// CR/LF muessen raus damit die Zeile im Collector nicht zerrissen wird.
+/// Escapes for the MSG part: RFC-5424 accepts UTF-8, but
+/// CR/LF must go so the line is not torn apart in the collector.
 fn escape_msg(s: &str) -> String {
     s.chars()
         .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
@@ -98,8 +98,8 @@ fn build_line(
     hostname: &str,
 ) -> Vec<u8> {
     // <PRI>VERSION TIMESTAMP HOSTNAME APP-NAME PROCID MSGID STRUCTURED-DATA MSG
-    // Wir lassen TIMESTAMP als "-" (nil), weil wir hier keinen
-    // globalen Time-Wrapper bauen wollen (Caller/Collector ergaenzt).
+    // We leave TIMESTAMP as "-" (nil), because we do not want to build a
+    // global time wrapper here (the caller/collector fills it in).
     let pri = priority(level);
     let line = alloc::format!(
         "<{pri}>1 - {host} {app} - {cat} - participant={pid} {msg}",
@@ -126,8 +126,8 @@ impl LoggingPlugin for SyslogLoggingPlugin {
             &self.hostname,
         );
         if let Ok(socket) = self.socket.lock() {
-            // send_to failt still wenn der Collector down ist —
-            // Security-Logs sollen App nicht crashen lassen.
+            // send_to fails silently if the collector is down —
+            // security logs must not crash the app.
             let _ = socket.send_to(&line, self.target);
         }
     }
@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn roundtrip_udp_receives_formatted_line() {
-        // Kernel-ephemeralen Port binden, Syslog-Plugin zeigt dorthin.
+        // Bind a kernel-ephemeral port, the syslog plugin points there.
         let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
         receiver
             .set_read_timeout(Some(Duration::from_secs(2)))
@@ -226,7 +226,7 @@ mod tests {
         let mut buf = [0u8; 1024];
         assert!(
             receiver.recv_from(&mut buf).is_err(),
-            "unter min_level muss nix gesendet werden"
+            "below min_level nothing must be sent"
         );
     }
 

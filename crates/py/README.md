@@ -1,11 +1,11 @@
 # zerodds (Python)
 
-Python-Bindings für ZeroDDS, die native Rust-DDS-Implementation.
+Python bindings for ZeroDDS, the native Rust DDS implementation.
 
 ## Installation (Dev-Setup)
 
 ```bash
-# Maturin in einem virtualenv
+# Maturin in a virtualenv
 python3 -m venv .venv
 source .venv/bin/activate
 pip install maturin pytest
@@ -45,33 +45,33 @@ for payload in reader.take():
 pytest crates/py/python/tests/
 ```
 
-## Scope (aktuelle Version)
+## Scope (current version)
 
-- `DomainParticipantFactory`, `DomainParticipant` mit `assert_liveliness`,
+- `DomainParticipantFactory`, `DomainParticipant` with `assert_liveliness`,
   `ignore_*`, `contains_entity`, `get_discovered_*`
-- `BytesTopic` / `BytesWriter` / `BytesReader` für opaken Payload
-- `ShapeTopic` / `ShapeWriter` / `ShapeReader` + `Shape`-Dataclass
-  für Cross-Vendor-Interop gegen Cyclone-/Fast-DDS-ShapesDemo
-- Status-Getter: `publication_matched_status`, `liveliness_lost_status`,
+- `BytesTopic` / `BytesWriter` / `BytesReader` for opaque payload
+- `ShapeTopic` / `ShapeWriter` / `ShapeReader` + `Shape` dataclass
+  for cross-vendor interop against Cyclone/Fast-DDS ShapesDemo
+- Status getters: `publication_matched_status`, `liveliness_lost_status`,
   `subscription_matched_status`, `sample_lost_status`, …
 - `GuardCondition` + `WaitSet`
-- Sync-Primitives: `wait_for_matched_*`, `wait_for_data`
-- GIL-Release während allen blocking Calls
+- Sync primitives: `wait_for_matched_*`, `wait_for_data`
+- GIL release during all blocking calls
 
 ## Roadmap
 
-- IDL→Python-Dataclass-Generator (`@dataclass` aus IDL); dann
-  funktionieren beliebige `DdsType` native aus Python.
-- ROS2-pytest-Integration + Multi-Process-Live-Tests + sphinx-Docs.
-- QoS-Profile aus XML/YAML laden (analog Fast-DDS QoS Profiles
+- IDL→Python dataclass generator (`@dataclass` from IDL); then
+  arbitrary `DdsType`s work natively from Python.
+- ROS2 pytest integration + multi-process live tests + sphinx docs.
+- Load QoS profiles from XML/YAML (analogous to the Fast-DDS QoS Profiles
   Manager).
 
-## Architektur
+## Architecture
 
-Das Rust-Crate `zerodds-py` baut als `cdylib` (`zerodds._core`). Der
-Python-Wrapper `python/zerodds/__init__.py` re-exportiert und fügt
-bei Bedarf pythonischen Zucker hinzu.
+The Rust crate `zerodds-py` builds as a `cdylib` (`zerodds._core`). The
+Python wrapper `python/zerodds/__init__.py` re-exports and adds
+pythonic sugar where needed.
 
-Der Rust-Kern ist **identisch** zum Rust-API — keine Python-
-spezifische Business-Logik, nur Type-Conversions + GIL-Release.
-Das hält das Binding dünn und hält die DDS-Semantik auf einer Stelle.
+The Rust core is **identical** to the Rust API — no Python-
+specific business logic, only type conversions + GIL release.
+This keeps the binding thin and keeps the DDS semantics in one place.

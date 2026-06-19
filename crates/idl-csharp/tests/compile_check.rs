@@ -1,10 +1,10 @@
-//! TS-3 — Codegen-Compile-Tests fuer C#.
+//! TS-3 — codegen compile tests for C#.
 //!
-//! Generiert C#-Source aus IDL und ruft `dotnet build` (mit
-//! Inline-csproj) auf. Faengt Code-Drift im idl-csharp-Codegen.
+//! Generates C# source from IDL and invokes `dotnet build` (with an
+//! inline csproj). Catches code drift in the idl-csharp codegen.
 //!
-//! **Voraussetzung:** `dotnet` CLI im `PATH` (mind. .NET 6.0+).
-//! Tests werden geskippt wenn nicht verfuegbar.
+//! **Prerequisite:** the `dotnet` CLI on `PATH` (at least .NET 6.0+).
+//! Tests are skipped if it is not available.
 
 #![allow(
     clippy::expect_used,
@@ -48,7 +48,7 @@ fn check_compiles(src: &str) -> Result<(), String> {
         generate_csharp(&ast, &CsGenOptions::default()).map_err(|e| format!("gen: {e:?}"))?;
 
     let tmp = tempfile::tempdir().map_err(|e| e.to_string())?;
-    // Inline-csproj: minimaler library-target, .NET 8.0.
+    // Inline csproj: minimal library target, .NET 8.0.
     let csproj = r#"<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -57,12 +57,13 @@ fn check_compiles(src: &str) -> Result<(), String> {
   </PropertyGroup>
 </Project>
 "#;
-    // Stub-Runtime fuer `Omg.Types.ITopicType<T>` — der Codegen
-    // emittiert `using Omg.Types;` und `: ITopicType<T>`-Implementierungen.
-    // Im echten Codepfad ist das die DDS-CSharp-PSM-Runtime.
+    // Stub runtime for `Omg.Types.ITopicType<T>` — the codegen emits
+    // `using Omg.Types;` and `: ITopicType<T>` implementations.
+    // In the real code path this is the DDS-CSharp PSM runtime.
     let stub = "namespace Omg.Types { \
                 using System.Collections; using System.Collections.Generic; \
                 public interface ITopicType<T> {} \
+                public sealed class Any { public string TypeId; public object Value; } \
                 public interface ISequence<T> : System.Collections.Generic.IList<T> {} \
                 public interface IBoundedSequence<T> : ISequence<T> { int Bound { get; } } \
                 public sealed class SequenceList<T> : ISequence<T> { \
@@ -82,10 +83,10 @@ fn check_compiles(src: &str) -> Result<(), String> {
                     IEnumerator IEnumerable.GetEnumerator() => _items.GetEnumerator(); \
                 } \
                 }\n";
-    // Stub-Runtime fuer `ZeroDDS.Cdr` — der Codegen emittiert
-    // `*TypeSupport`-Klassen die `IDdsTopicType<T>` aus dieser
-    // Library implementieren. Im echten Codepfad ist das
-    // `crates/cs/csharp/ZeroDDS.Cdr/` (separates DLL).
+    // Stub runtime for `ZeroDDS.Cdr` — the codegen emits `*TypeSupport`
+    // classes that implement `IDdsTopicType<T>` from this library.
+    // In the real code path this is `crates/cs/csharp/ZeroDDS.Cdr/`
+    // (a separate DLL).
     let cdr_stub = "namespace ZeroDDS.Cdr { \
                 using System; using System.Collections.Generic; \
                 public enum EndianMode { LittleEndian, BigEndian } \
@@ -215,4 +216,52 @@ fn compiles_typedef() {
 fn compiles_inheritance() {
     check_compiles("struct Base { long base_field; }; struct Child : Base { long child_field; };")
         .expect("inheritance must compile");
+}
+
+#[test]
+fn compiles_interface_with_embedded_types() {
+    // IDL allows type/const/exception declarations nested in an interface.
+    // They were previously dropped (`_ => {}`); now emitted nested. Verify
+    // C# (Roslyn) actually accepts nested types + constant inside an interface.
+    check_compiles(
+        "interface I { \
+             struct Inner { long x; }; \
+             enum E { A, B }; \
+             const long C = 5; \
+             exception Oops { string msg; }; \
+             long op(in long a); \
+         };",
+    )
+    .expect("interface with embedded type/const/exception must compile");
+}
+
+#[test]
+fn compiles_struct_with_map_member_gated() {
+    // map/fixed/any have no XCDR2 codec — the struct is gated (data type only,
+    // no runtime-throwing TypeSupport). Verify it still compiles under Roslyn.
+    check_compiles("struct S { map<long, string> kv; long n; };")
+        .expect("struct with map member must compile (gated)");
+}
+
+#[test]
+fn compiles_struct_with_fixed_member_gated() {
+    check_compiles("struct Money { fixed<10,2> amount; long n; };")
+        .expect("struct with fixed member must compile (gated)");
+}
+
+#[test]
+fn compiles_struct_with_any_member_gated() {
+    check_compiles("struct Bag { any value; long n; };")
+        .expect("struct with any member must compile (gated)");
+}
+
+#[test]
+fn compiles_nested_struct_codec() {
+    // Nested struct round-trips through the nested TypeSupport codec — verify
+    // the generated EncodeInto/DecodeFrom + Instance calls compile under Roslyn.
+    check_compiles(
+        "struct Inner { long x; long y; }; \
+         struct Outer { Inner inner; sequence<Inner> many; long z; };",
+    )
+    .expect("nested struct codec must compile");
 }

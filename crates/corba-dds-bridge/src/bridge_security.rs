@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CORBA-DDS-Bridge §7.x Bridge-Security-Wireup.
+//! CORBA-DDS-Bridge §7.x bridge-security wire-up.
 //!
-//! * §7.1 TLS — SSLIOP TaggedComponent 0x06 via rustls (CORBA-Profile-
-//!   Body trägt die TLS-Listen-Address).
-//! * §7.2 Auth — entweder über CSIv2-Token (siehe
-//!   [`crate::csiv2_wire`]) ODER mTLS-Client-Cert. Für RC1 nutzen wir
-//!   den `Authorization: Bearer …`-Pfad als Service-Context-Mapping
-//!   (CORBA Service-Context ID = 256, Vendor-extension).
-//! * §7.3 Topic-ACL — pro DDS-Topic-Bridge-Mapping.
+//! * §7.1 TLS — SSLIOP TaggedComponent 0x06 via rustls (the CORBA
+//!   profile body carries the TLS listen address).
+//! * §7.2 Auth — either via a CSIv2 token (see
+//!   [`crate::csiv2_wire`]) OR an mTLS client cert. For RC1 we use
+//!   the `Authorization: Bearer …` path as a service-context mapping
+//!   (CORBA service-context ID = 256, vendor extension).
+//! * §7.3 Topic ACL — per DDS-topic bridge mapping.
 //!
 //! Spec: `zerodds-corba-bridge-1.0.md` §7.
 
@@ -18,17 +18,17 @@ pub use zerodds_bridge_security::{
     SecurityError, authorize, build_ctx, extract_mtls_subject,
 };
 
-/// CORBA-spezifischer Auth-Hook: extrahiert das Bearer-Token aus
-/// einem GIOP-Service-Context (`context_id = 256`, Vendor-Extension)
-/// oder reicht das mTLS-Subject aus dem TLS-Layer durch.
+/// CORBA-specific auth hook: extracts the bearer token from a
+/// GIOP service context (`context_id = 256`, vendor extension)
+/// or passes through the mTLS subject from the TLS layer.
 ///
-/// `service_context_token` ist der byte-block aus
-/// `IOP::ServiceContext::context_data` (Vendor-Schema:
-/// `\0bearer\0<utf8 token>`). Bei `mTLS`-Mode wird stattdessen
-/// das `mtls_subject` aus dem rustls-Peer-Cert genommen.
+/// `service_context_token` is the byte block from
+/// `IOP::ServiceContext::context_data` (vendor schema:
+/// `\0bearer\0<utf8 token>`). In `mTLS` mode the `mtls_subject`
+/// from the rustls peer cert is used instead.
 ///
 /// # Errors
-/// [`AuthError`] bei missing/malformed/rejected.
+/// [`AuthError`] on missing/malformed/rejected.
 pub fn authenticate_corba(
     auth: &AuthMode,
     service_context_token: Option<&[u8]>,
@@ -36,7 +36,7 @@ pub fn authenticate_corba(
 ) -> Result<AuthSubject, AuthError> {
     let header = match service_context_token {
         Some(b) => {
-            // Erwartetes Format: `\0bearer\0<token>` (Vendor-Schema).
+            // Expected format: `\0bearer\0<token>` (vendor schema).
             let mut parts = b.splitn(3, |x| *x == 0);
             let _ = parts.next();
             let kind = parts

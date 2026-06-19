@@ -2,16 +2,16 @@
 // Copyright 2026 ZeroDDS Contributors
 //! SEDP Builtin Reliable Readers — Publications + Subscriptions.
 //!
-//! Wrapper um [`zerodds_rtps::reliable_reader::ReliableReader`] mit festen
-//! SEDP-EntityIds. Der Wrapper deserialisiert eingehende DATA-Payloads
-//! als PL_CDR_LE-encoded [`PublicationBuiltinTopicData`] bzw.
-//! [`SubscriptionBuiltinTopicData`] und liefert sie als typisierte
-//! Samples zurueck.
+//! Wrapper around [`zerodds_rtps::reliable_reader::ReliableReader`] with
+//! fixed SEDP EntityIds. The wrapper deserializes incoming DATA payloads
+//! as PL_CDR_LE-encoded [`PublicationBuiltinTopicData`] or
+//! [`SubscriptionBuiltinTopicData`] and returns them as typed
+//! samples.
 //!
-//! **Multi-Writer-Support** (ab WP 1.4 T4.5): der interne
-//! `ReliableReader` kann via `add_writer_proxy` mehrere Remote-
-//! Writer parallel tracken — Discovery von N Remote-Participants
-//! laeuft ueber denselben SEDP-Reader.
+//! **Multi-writer support** (since WP 1.4 T4.5): the internal
+//! `ReliableReader` can track multiple remote writers in parallel via
+//! `add_writer_proxy` — discovery of N remote participants runs over the
+//! same SEDP reader.
 
 extern crate alloc;
 use alloc::string::String;
@@ -31,20 +31,20 @@ use zerodds_rtps::subscription_data::SubscriptionBuiltinTopicData;
 use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix, VendorId};
 use zerodds_rtps::writer_proxy::WriterProxy;
 
-/// Default-Kapazitaet fuer den Reader-Empfangs-Cache.
+/// Default capacity for the reader receive cache.
 pub const SEDP_READER_MAX_SAMPLES: usize = 256;
 
-/// SEDP-Reader-Fehler.
+/// SEDP reader error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SedpReaderError {
-    /// PL_CDR-Decode der Payload ist fehlgeschlagen — ungueltige SEDP-
-    /// Ankuendigung. Enthalten ist eine statische Begruendung.
+    /// PL_CDR decode of the payload failed — invalid SEDP
+    /// announcement. Carries a static reason.
     InvalidPayload {
-        /// Begruendung (z.B. "TOPIC_NAME missing").
+        /// Reason (e.g. "TOPIC_NAME missing").
         reason: &'static str,
     },
-    /// Wire-Level-Fehler im ReliableReader (z.B. Encode-Overflow).
+    /// Wire-level error in the ReliableReader (e.g. encode overflow).
     Wire(WireError),
 }
 
@@ -57,14 +57,14 @@ impl From<WireError> for SedpReaderError {
     }
 }
 
-/// Reader fuer SEDP-Publications (feste EntityId
+/// Reader for SEDP publications (fixed EntityId
 /// [`EntityId::SEDP_BUILTIN_PUBLICATIONS_READER`]).
 #[derive(Debug)]
 pub struct SedpPublicationsReader {
     inner: ReliableReader,
 }
 
-/// Reader fuer SEDP-Subscriptions (feste EntityId
+/// Reader for SEDP subscriptions (fixed EntityId
 /// [`EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_READER`]).
 #[derive(Debug)]
 pub struct SedpSubscriptionsReader {
@@ -72,10 +72,10 @@ pub struct SedpSubscriptionsReader {
 }
 
 impl SedpPublicationsReader {
-    /// Erzeugt einen SEDP-Publications-Reader fuer den lokalen
-    /// Participant. Der `remote_writer_guid` muss bekannt sein — in
-    /// Phase 1 wird ein Platzhalter-Proxy mit `remote_prefix` +
-    /// [`EntityId::SEDP_BUILTIN_PUBLICATIONS_WRITER`] gebaut.
+    /// Creates a SEDP publications reader for the local
+    /// participant. The `remote_writer_guid` must be known — in
+    /// phase 1 a placeholder proxy is built with `remote_prefix` +
+    /// [`EntityId::SEDP_BUILTIN_PUBLICATIONS_WRITER`].
     #[must_use]
     pub fn new(
         participant_prefix: GuidPrefix,
@@ -83,14 +83,49 @@ impl SedpPublicationsReader {
         remote_writer_prefix: GuidPrefix,
         remote_metatraffic_unicast: Vec<zerodds_rtps::wire_types::Locator>,
     ) -> Self {
-        let reader_guid = Guid::new(
+        Self::with_entities(
             participant_prefix,
-            EntityId::SEDP_BUILTIN_PUBLICATIONS_READER,
-        );
-        let remote_writer_guid = Guid::new(
+            vendor_id,
             remote_writer_prefix,
+            remote_metatraffic_unicast,
+            EntityId::SEDP_BUILTIN_PUBLICATIONS_READER,
             EntityId::SEDP_BUILTIN_PUBLICATIONS_WRITER,
-        );
+        )
+    }
+
+    /// Secure variant (DDS-Security §8.4.2.4): local reader
+    /// [`EntityId::SEDP_BUILTIN_PUBLICATIONS_SECURE_READER`], remote writer
+    /// [`EntityId::SEDP_BUILTIN_PUBLICATIONS_SECURE_WRITER`]. Incoming
+    /// DATA are decrypted via `decode_datawriter_submessage` earlier in
+    /// the runtime receive path (participant crypto).
+    #[must_use]
+    pub fn new_secure(
+        participant_prefix: GuidPrefix,
+        vendor_id: VendorId,
+        remote_writer_prefix: GuidPrefix,
+        remote_metatraffic_unicast: Vec<zerodds_rtps::wire_types::Locator>,
+    ) -> Self {
+        Self::with_entities(
+            participant_prefix,
+            vendor_id,
+            remote_writer_prefix,
+            remote_metatraffic_unicast,
+            EntityId::SEDP_BUILTIN_PUBLICATIONS_SECURE_READER,
+            EntityId::SEDP_BUILTIN_PUBLICATIONS_SECURE_WRITER,
+        )
+    }
+
+    #[must_use]
+    fn with_entities(
+        participant_prefix: GuidPrefix,
+        vendor_id: VendorId,
+        remote_writer_prefix: GuidPrefix,
+        remote_metatraffic_unicast: Vec<zerodds_rtps::wire_types::Locator>,
+        reader_entity: EntityId,
+        remote_writer_entity: EntityId,
+    ) -> Self {
+        let reader_guid = Guid::new(participant_prefix, reader_entity);
+        let remote_writer_guid = Guid::new(remote_writer_prefix, remote_writer_entity);
         Self {
             inner: make_sedp_reader(
                 reader_guid,
@@ -101,81 +136,89 @@ impl SedpPublicationsReader {
         }
     }
 
-    /// GUID des Readers.
+    /// GUID of the reader.
     #[must_use]
     pub fn guid(&self) -> Guid {
         self.inner.guid()
     }
 
-    /// Fuegt einen weiteren Remote-SEDP-Writer als Proxy hinzu
-    /// (Multi-Participant-Discovery).
+    /// Adds another remote SEDP writer as a proxy
+    /// (multi-participant discovery).
     pub fn add_writer_proxy(&mut self, proxy: WriterProxy) {
         self.inner.add_writer_proxy(proxy);
     }
 
-    /// Entfernt einen Remote-Writer (z.B. nach SPDP-Lease-Timeout).
+    /// Removes a remote writer (e.g. after SPDP lease timeout).
     pub fn remove_writer_proxy(&mut self, guid: Guid) -> Option<WriterProxy> {
         self.inner.remove_writer_proxy(guid)
     }
 
-    /// Verarbeitet eine eingegangene DATA-Submessage und liefert
-    /// deserialisierte [`PublicationBuiltinTopicData`]-Samples zurueck
-    /// (in SN-Reihenfolge).
+    /// Processes an incoming DATA submessage and returns the
+    /// deserialized [`PublicationBuiltinTopicData`] samples
+    /// (in SN order).
     ///
     /// # Errors
-    /// [`SedpReaderError::InvalidPayload`] wenn der Payload kein
-    /// valides PL_CDR_LE ist.
+    /// [`SedpReaderError::InvalidPayload`] if the payload is not
+    /// valid PL_CDR_LE.
     pub fn handle_data(
         &mut self,
+        source_prefix: GuidPrefix,
         data: &DataSubmessage,
     ) -> Result<Vec<PublicationBuiltinTopicData>, SedpReaderError> {
-        let samples = self.inner.handle_data(data);
+        let samples = self.inner.handle_data(source_prefix, data);
         decode_publication_samples(samples.into_iter().map(|s| s.payload))
     }
 
-    /// Verarbeitet eine eingegangene DATA_FRAG-Submessage.
+    /// Processes an incoming DATA_FRAG submessage.
     ///
     /// # Errors
-    /// siehe [`handle_data`](Self::handle_data).
+    /// see [`handle_data`](Self::handle_data).
     pub fn handle_data_frag(
         &mut self,
+        source_prefix: GuidPrefix,
         df: &DataFragSubmessage,
         now: Duration,
     ) -> Result<Vec<PublicationBuiltinTopicData>, SedpReaderError> {
-        let samples = self.inner.handle_data_frag(df, now);
+        let samples = self.inner.handle_data_frag(source_prefix, df, now);
         decode_publication_samples(samples.into_iter().map(|s| s.payload))
     }
 
-    /// Verarbeitet eine eingegangene GAP-Submessage (liefert etwaige
-    /// Folge-Samples, die jetzt in-order delivered werden koennen).
+    /// Processes an incoming GAP submessage (returns any
+    /// follow-on samples that can now be delivered in order).
     ///
     /// # Errors
-    /// siehe [`handle_data`](Self::handle_data).
+    /// see [`handle_data`](Self::handle_data).
     pub fn handle_gap(
         &mut self,
+        source_prefix: GuidPrefix,
         gap: &GapSubmessage,
     ) -> Result<Vec<PublicationBuiltinTopicData>, SedpReaderError> {
-        let samples = self.inner.handle_gap(gap);
+        let samples = self.inner.handle_gap(source_prefix, gap);
         decode_publication_samples(samples.into_iter().map(|s| s.payload))
     }
 
-    /// Verarbeitet eine eingegangene HEARTBEAT.
-    pub fn handle_heartbeat(&mut self, hb: &HeartbeatSubmessage, now: Duration) {
-        self.inner.handle_heartbeat(hb, now);
+    /// Processes an incoming HEARTBEAT.
+    pub fn handle_heartbeat(
+        &mut self,
+        source_prefix: GuidPrefix,
+        hb: &HeartbeatSubmessage,
+        now: Duration,
+    ) {
+        self.inner.handle_heartbeat(source_prefix, hb, now);
     }
 
-    /// Tick — liefert ACKNACK/NACK_FRAG-Datagramme, wenn faellig.
+    /// Tick — returns ACKNACK/NACK_FRAG datagrams when due.
     ///
     /// # Errors
-    /// Wire-Encode-Fehler.
+    /// Wire encode error.
     pub fn tick(&mut self, now: Duration) -> Result<Vec<Vec<u8>>, WireError> {
         self.inner.tick(now)
     }
 
-    /// Tick mit Ziel-Locators pro Datagramm.
+    /// Tick with target locators per datagram.
     ///
     /// # Errors
-    /// Wire-Encode-Fehler.
+    /// Wire encode error.
     pub fn tick_outbound(
         &mut self,
         now: Duration,
@@ -183,7 +226,7 @@ impl SedpPublicationsReader {
         self.inner.tick_outbound(now)
     }
 
-    /// Read-only-Zugriff.
+    /// Read-only access.
     #[must_use]
     pub fn inner(&self) -> &ReliableReader {
         &self.inner
@@ -191,7 +234,7 @@ impl SedpPublicationsReader {
 }
 
 impl SedpSubscriptionsReader {
-    /// Erzeugt einen SEDP-Subscriptions-Reader.
+    /// Creates a SEDP subscriptions reader.
     #[must_use]
     pub fn new(
         participant_prefix: GuidPrefix,
@@ -199,14 +242,47 @@ impl SedpSubscriptionsReader {
         remote_writer_prefix: GuidPrefix,
         remote_metatraffic_unicast: Vec<zerodds_rtps::wire_types::Locator>,
     ) -> Self {
-        let reader_guid = Guid::new(
+        Self::with_entities(
             participant_prefix,
-            EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_READER,
-        );
-        let remote_writer_guid = Guid::new(
+            vendor_id,
             remote_writer_prefix,
+            remote_metatraffic_unicast,
+            EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_READER,
             EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_WRITER,
-        );
+        )
+    }
+
+    /// Secure variant (DDS-Security §8.4.2.4): local reader
+    /// [`EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_SECURE_READER`], remote writer
+    /// [`EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_SECURE_WRITER`].
+    #[must_use]
+    pub fn new_secure(
+        participant_prefix: GuidPrefix,
+        vendor_id: VendorId,
+        remote_writer_prefix: GuidPrefix,
+        remote_metatraffic_unicast: Vec<zerodds_rtps::wire_types::Locator>,
+    ) -> Self {
+        Self::with_entities(
+            participant_prefix,
+            vendor_id,
+            remote_writer_prefix,
+            remote_metatraffic_unicast,
+            EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_SECURE_READER,
+            EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_SECURE_WRITER,
+        )
+    }
+
+    #[must_use]
+    fn with_entities(
+        participant_prefix: GuidPrefix,
+        vendor_id: VendorId,
+        remote_writer_prefix: GuidPrefix,
+        remote_metatraffic_unicast: Vec<zerodds_rtps::wire_types::Locator>,
+        reader_entity: EntityId,
+        remote_writer_entity: EntityId,
+    ) -> Self {
+        let reader_guid = Guid::new(participant_prefix, reader_entity);
+        let remote_writer_guid = Guid::new(remote_writer_prefix, remote_writer_entity);
         Self {
             inner: make_sedp_reader(
                 reader_guid,
@@ -223,70 +299,78 @@ impl SedpSubscriptionsReader {
         self.inner.guid()
     }
 
-    /// Fuegt einen weiteren Remote-SEDP-Writer als Proxy hinzu.
+    /// Adds another remote SEDP writer as a proxy.
     pub fn add_writer_proxy(&mut self, proxy: WriterProxy) {
         self.inner.add_writer_proxy(proxy);
     }
 
-    /// Entfernt einen Remote-Writer.
+    /// Removes a remote writer.
     pub fn remove_writer_proxy(&mut self, guid: Guid) -> Option<WriterProxy> {
         self.inner.remove_writer_proxy(guid)
     }
 
-    /// Verarbeitet eine DATA-Submessage.
+    /// Processes a DATA submessage.
     ///
     /// # Errors
-    /// siehe [`SedpPublicationsReader::handle_data`].
+    /// see [`SedpPublicationsReader::handle_data`].
     pub fn handle_data(
         &mut self,
+        source_prefix: GuidPrefix,
         data: &DataSubmessage,
     ) -> Result<Vec<SubscriptionBuiltinTopicData>, SedpReaderError> {
-        let samples = self.inner.handle_data(data);
+        let samples = self.inner.handle_data(source_prefix, data);
         decode_subscription_samples(samples.into_iter().map(|s| s.payload))
     }
 
     /// DATA_FRAG.
     ///
     /// # Errors
-    /// siehe [`handle_data`](Self::handle_data).
+    /// see [`handle_data`](Self::handle_data).
     pub fn handle_data_frag(
         &mut self,
+        source_prefix: GuidPrefix,
         df: &DataFragSubmessage,
         now: Duration,
     ) -> Result<Vec<SubscriptionBuiltinTopicData>, SedpReaderError> {
-        let samples = self.inner.handle_data_frag(df, now);
+        let samples = self.inner.handle_data_frag(source_prefix, df, now);
         decode_subscription_samples(samples.into_iter().map(|s| s.payload))
     }
 
     /// GAP.
     ///
     /// # Errors
-    /// siehe [`handle_data`](Self::handle_data).
+    /// see [`handle_data`](Self::handle_data).
     pub fn handle_gap(
         &mut self,
+        source_prefix: GuidPrefix,
         gap: &GapSubmessage,
     ) -> Result<Vec<SubscriptionBuiltinTopicData>, SedpReaderError> {
-        let samples = self.inner.handle_gap(gap);
+        let samples = self.inner.handle_gap(source_prefix, gap);
         decode_subscription_samples(samples.into_iter().map(|s| s.payload))
     }
 
     /// HEARTBEAT.
-    pub fn handle_heartbeat(&mut self, hb: &HeartbeatSubmessage, now: Duration) {
-        self.inner.handle_heartbeat(hb, now);
+    pub fn handle_heartbeat(
+        &mut self,
+        source_prefix: GuidPrefix,
+        hb: &HeartbeatSubmessage,
+        now: Duration,
+    ) {
+        self.inner.handle_heartbeat(source_prefix, hb, now);
     }
 
     /// Tick.
     ///
     /// # Errors
-    /// Wire-Encode-Fehler.
+    /// Wire encode error.
     pub fn tick(&mut self, now: Duration) -> Result<Vec<Vec<u8>>, WireError> {
         self.inner.tick(now)
     }
 
-    /// Tick mit Ziel-Locators.
+    /// Tick with target locators.
     ///
     /// # Errors
-    /// Wire-Encode-Fehler.
+    /// Wire encode error.
     pub fn tick_outbound(
         &mut self,
         now: Duration,
@@ -294,7 +378,7 @@ impl SedpSubscriptionsReader {
         self.inner.tick_outbound(now)
     }
 
-    /// Read-only-Zugriff.
+    /// Read-only access.
     #[must_use]
     pub fn inner(&self) -> &ReliableReader {
         &self.inner
@@ -302,7 +386,7 @@ impl SedpSubscriptionsReader {
 }
 
 // ============================================================================
-// Shared SEDP-Reader-Helpers
+// Shared SEDP reader helpers
 // ============================================================================
 
 fn make_sedp_reader(
@@ -355,7 +439,7 @@ where
     Ok(out)
 }
 
-// Referenziere String um unused-import-warn zu vermeiden (fuer
+// Reference String to avoid an unused-import warning (for
 // SedpReaderError::InvalidPayload.reason = String-ish).
 #[allow(dead_code)]
 const _: Option<String> = None;
@@ -399,6 +483,8 @@ mod tests {
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
         }
     }
 
@@ -435,7 +521,9 @@ mod tests {
             non_standard_flag: false,
             serialized_payload: payload.into(),
         };
-        let out = r.handle_data(&data).unwrap();
+        let out = r
+            .handle_data(GuidPrefix::from_bytes([2; 12]), &data)
+            .unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].topic_name, "ChatterTopic");
         assert_eq!(out[0].type_name, "std_msgs::String");
@@ -455,7 +543,7 @@ mod tests {
             non_standard_flag: false,
             serialized_payload: alloc::vec![0x00, 0x03, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF].into(),
         };
-        let res = r.handle_data(&data);
+        let res = r.handle_data(GuidPrefix::from_bytes([2; 12]), &data);
         assert!(matches!(res, Err(SedpReaderError::InvalidPayload { .. })));
     }
 

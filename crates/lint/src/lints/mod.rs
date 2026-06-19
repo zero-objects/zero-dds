@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Lint-Definitionen.
+//! Lint definitions.
 //!
-//! Jeder Lint implementiert entweder [`FileLint`] (per Quelldatei) oder
-//! [`CrateLint`] (per Crate). Der [`runner`](crate::runner) sammelt die
-//! aktivierten Lints und fuehrt sie ueber die vom [`scanner`](crate::scanner)
-//! gelieferten `CrateInfo`s aus.
+//! Each lint implements either [`FileLint`] (per source file) or
+//! [`CrateLint`] (per crate). The [`runner`](crate::runner) collects the
+//! activated lints and runs them over the `CrateInfo`s provided by the
+//! [`scanner`](crate::scanner).
 
 use std::path::Path;
 
@@ -21,39 +21,39 @@ pub mod no_realloc_in_hot_path;
 pub mod require_safety_comment;
 pub mod safety_classification_present;
 
-/// Kontext fuer File-basierte Lints.
+/// Context for file-based lints.
 pub struct FileLintContext<'a> {
-    /// Pfad der zu pruefenden Datei.
+    /// Path of the file to check.
     pub file: &'a Path,
-    /// Roher Quelltext der Datei.
+    /// Raw source text of the file.
     pub source: &'a str,
     /// Geparster AST.
     pub ast: &'a syn::File,
-    /// Klassifikation der enthaltenden Crate, falls vorhanden.
+    /// Classification of the containing crate, if present.
     pub crate_class: Option<SafetyClass>,
-    /// Crate-Name (fuer Reports).
+    /// Crate name (for reports).
     pub crate_name: &'a str,
 }
 
-/// Lint, der pro Quelldatei laeuft.
+/// Lint that runs per source file.
 pub trait FileLint {
     /// Maschinenlesbarer Lint-Name (z.B. `dds_require_safety_comment`).
     fn name(&self) -> &'static str;
 
-    /// Fuehrt den Lint aus und liefert Diagnosen.
+    /// Runs the lint and returns diagnostics.
     fn check(&self, ctx: &FileLintContext<'_>) -> Vec<Diagnostic>;
 }
 
-/// Lint, der pro Crate laeuft.
+/// Lint that runs per crate.
 pub trait CrateLint {
     /// Maschinenlesbarer Lint-Name.
     fn name(&self) -> &'static str;
 
-    /// Fuehrt den Lint aus und liefert Diagnosen.
+    /// Runs the lint and returns diagnostics.
     fn check(&self, krate: &CrateInfo) -> Vec<Diagnostic>;
 }
 
-/// Liefert die aktiven File-Lints.
+/// Returns the active file lints.
 #[must_use]
 pub fn default_file_lints() -> Vec<Box<dyn FileLint>> {
     vec![
@@ -66,7 +66,7 @@ pub fn default_file_lints() -> Vec<Box<dyn FileLint>> {
     ]
 }
 
-/// Liefert die in Task 1 aktiven Crate-Lints.
+/// Returns the crate lints active in task 1.
 #[must_use]
 pub fn default_crate_lints() -> Vec<Box<dyn CrateLint>> {
     vec![Box::new(

@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! XML-Configuration-Loader fuer Annex-A-Strukturen.
+//! XML configuration loader for Annex-A structures.
 //!
 //! Spec §9.2 — Implementations MAY accept configuration in XML
-//! form. Der Namespace `http://www.zerodds.org/dds-amqp/v1.0`
-//! identifiziert das Top-Level-Element `<dds-amqp>`.
+//! form. The namespace `http://www.zerodds.org/dds-amqp/v1.0`
+//! identifies the top-level element `<dds-amqp>`.
 //!
-//! Erfordert Cargo-Feature `std` (default an), das `roxmltree`
-//! mitzieht.
+//! Requires the Cargo feature `std` (on by default), which pulls in
+//! `roxmltree`.
 //!
-//! # Beispiel-Eingabe
+//! # Example input
 //!
 //! ```xml
 //! <dds-amqp xmlns="http://www.zerodds.org/dds-amqp/v1.0">
@@ -52,30 +52,30 @@ use crate::annex_a::{
 };
 use crate::security::{DataProtectionKind, GovernanceDocument, GovernanceRule};
 
-/// Spec §9.2 — XML-Namespace fuer `<dds-amqp>`.
+/// Spec §9.2 — XML namespace for `<dds-amqp>`.
 pub const XML_NAMESPACE: &str = "http://www.zerodds.org/dds-amqp/v1.0";
 
-/// XML-Loader-Fehler.
+/// XML loader error.
 #[derive(Debug)]
 pub enum XmlConfigError {
-    /// XML-Parser-Fehler aus `roxmltree`.
+    /// XML parser error from `roxmltree`.
     Parse(String),
-    /// Top-Level-Element falsch.
+    /// Wrong top-level element.
     UnexpectedRoot {
-        /// Erwartetes Root-Element-Name.
+        /// Expected root element name.
         expected: &'static str,
-        /// Tatsaechliches Root-Element-Name.
+        /// Actual root element name.
         got: String,
     },
-    /// Pflicht-Element fehlt.
+    /// Required element missing.
     MissingElement(String),
-    /// Pflicht-Attribut fehlt.
+    /// Required attribute missing.
     MissingAttribute(String),
-    /// Wert konnte nicht geparsed werden.
+    /// Value could not be parsed.
     InvalidValue {
-        /// Element-/Attribut-Name.
+        /// Element/attribute name.
         field: String,
-        /// Tatsaechlicher Roh-Wert.
+        /// Actual raw value.
         value: String,
     },
 }
@@ -98,7 +98,7 @@ impl fmt::Display for XmlConfigError {
 
 impl std::error::Error for XmlConfigError {}
 
-/// Spec §9.2 — Top-Level Parse-Resultat.
+/// Spec §9.2 — top-level parse result.
 #[derive(Debug, Clone, Default)]
 pub struct DdsAmqpConfig {
     /// Endpoints (`<endpoint>`).
@@ -107,11 +107,10 @@ pub struct DdsAmqpConfig {
     pub bridges: Vec<AmqpBridgeConfig>,
 }
 
-/// Spec §9.2 — XML in `DdsAmqpConfig` parsen.
+/// Spec §9.2 — parse XML into `DdsAmqpConfig`.
 ///
 /// # Errors
-/// `XmlConfigError` bei Parser-Fehlern oder fehlenden Pflicht-
-/// Feldern.
+/// `XmlConfigError` on parser errors or missing required fields.
 pub fn parse_config(xml: &str) -> Result<DdsAmqpConfig, XmlConfigError> {
     let doc = roxmltree::Document::parse(xml).map_err(|e| XmlConfigError::Parse(e.to_string()))?;
     let root = doc.root_element();
@@ -126,7 +125,7 @@ pub fn parse_config(xml: &str) -> Result<DdsAmqpConfig, XmlConfigError> {
         match child.tag_name().name() {
             "endpoint" => cfg.endpoints.push(parse_endpoint(child)?),
             "bridge" => cfg.bridges.push(parse_bridge(child)?),
-            _ => {} // unbekannte Top-Level-Elemente werden ignoriert.
+            _ => {} // unknown top-level elements are ignored.
         }
     }
     Ok(cfg)
@@ -306,12 +305,12 @@ fn parse_limits(node: roxmltree::Node) -> Result<ResourceLimits, XmlConfigError>
 }
 
 // ============================================================
-// Governance Document XML (§10.4)
+// Governance document XML (§10.4)
 // ============================================================
 
-/// Spec §10.4 — Governance-Document aus XML laden.
+/// Spec §10.4 — load a governance document from XML.
 ///
-/// Erwartet `<governance>`-Root-Element mit `<rule>`-Kindern.
+/// Expects a `<governance>` root element with `<rule>` children.
 ///
 /// # Errors
 /// `XmlConfigError`.
@@ -454,7 +453,7 @@ mod tests {
         let ep = &cfg.endpoints[0];
         assert_eq!(ep.endpoint_name, "ep1");
         assert_eq!(ep.listen_uri, "amqp://0.0.0.0:5672");
-        assert_eq!(ep.bridge_hop_cap, 8); // Default.
+        assert_eq!(ep.bridge_hop_cap, 8); // default.
     }
 
     #[test]
@@ -632,8 +631,8 @@ mod tests {
 
     #[test]
     fn unknown_elements_are_ignored() {
-        // Forward-Compat: unbekannte Elemente (z.B. aus zukuenftigen
-        // Spec-Revisionen) werden nicht als Fehler behandelt.
+        // Forward compat: unknown elements (e.g. from future spec
+        // revisions) are not treated as errors.
         let xml = r#"<dds-amqp xmlns="http://www.zerodds.org/dds-amqp/v1.0">
           <endpoint name="ep">
             <listen-uri>amqp://x:1</listen-uri>

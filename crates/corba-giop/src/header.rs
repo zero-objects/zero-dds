@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! GIOP Message-Header — 12 Bytes, Spec §15.4.1.
+//! GIOP message header — 12 bytes, spec §15.4.1.
 //!
 //! ```text
 //! struct MessageHeader {
@@ -14,8 +14,8 @@
 //! };
 //! ```
 //!
-//! Total: 12 Bytes. `message_size` ist mit der Header-Endianness
-//! kodiert (Bit 0 von `flags`).
+//! Total: 12 bytes. `message_size` is encoded with the header
+//! endianness (bit 0 of `flags`).
 
 use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
 
@@ -24,30 +24,30 @@ use crate::flags::Flags;
 use crate::message_type::MessageType;
 use crate::version::Version;
 
-/// `MAGIC` — 4-Byte ASCII `"GIOP"` (Spec §15.4.1).
+/// `MAGIC` — 4-byte ASCII `"GIOP"` (spec §15.4.1).
 pub const MAGIC_BYTES: [u8; 4] = *b"GIOP";
 
-/// `MAGIC` als Konstante fuer Tests.
+/// `MAGIC` as a constant for tests.
 pub const MAGIC: u32 = u32::from_be_bytes(MAGIC_BYTES);
 
-/// GIOP-Header-Groesse in Bytes (immer 12).
+/// GIOP header size in bytes (always 12).
 pub const HEADER_SIZE: usize = 12;
 
-/// GIOP Message-Header (Spec §15.4.1).
+/// GIOP message header (spec §15.4.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MessageHeader {
-    /// GIOP-Version (Spec §15.4.1).
+    /// GIOP version (spec §15.4.1).
     pub version: Version,
-    /// Flags-Octet (in GIOP 1.0 nur `byte_order`).
+    /// Flags octet (in GIOP 1.0 only `byte_order`).
     pub flags: Flags,
-    /// Message-Type-Discriminant.
+    /// Message-type discriminant.
     pub message_type: MessageType,
-    /// `message_size` — Body-Groesse in Bytes (ohne Header).
+    /// `message_size` — body size in bytes (excluding the header).
     pub message_size: u32,
 }
 
 impl MessageHeader {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new(
         version: Version,
@@ -63,46 +63,46 @@ impl MessageHeader {
         }
     }
 
-    /// Liefert die Endianness aus dem `flags`-Octet (Bit 0).
+    /// Returns the endianness from the `flags` octet (bit 0).
     #[must_use]
     pub const fn endianness(&self) -> Endianness {
         self.flags.endianness()
     }
 
-    /// Encodiert den 12-Byte-Header.
+    /// Encodes the 12-byte header.
     ///
     /// # Errors
-    /// Buffer-Schreibfehler aus dem CDR-Layer.
+    /// Buffer write error from the CDR layer.
     pub fn encode(&self, w: &mut BufferWriter) -> GiopResult<()> {
-        // Spec §15.4.1: erste vier Bytes sind das `magic` als Sequence
-        // of `char` — also kein CDR-Length-Prefix, sondern Roh-Bytes.
-        // Wir schreiben hier ohne Alignment, weil der Header am
-        // Stream-Anfang liegt (pos=0, alignment irrelevant).
+        // Spec §15.4.1: the first four bytes are the `magic` as a sequence
+        // of `char` — so no CDR length prefix, just raw bytes.
+        // We write here without alignment, because the header sits at the
+        // start of the stream (pos=0, alignment irrelevant).
         w.write_bytes(&MAGIC_BYTES)?;
         w.write_u8(self.version.major)?;
         w.write_u8(self.version.minor)?;
         w.write_u8(self.flags.0)?;
         w.write_u8(self.message_type.as_u8())?;
-        // `message_size` ist `unsigned long` mit Header-Endianness.
-        // Der Buffer wurde mit dieser Endianness konstruiert.
+        // `message_size` is `unsigned long` with the header endianness.
+        // The buffer was constructed with this endianness.
         w.write_u32(self.message_size)?;
         Ok(())
     }
 
-    /// Decodiert den 12-Byte-Header.
+    /// Decodes the 12-byte header.
     ///
-    /// **Wichtig:** Caller muss den `BufferReader` mit
-    /// [`Endianness::Big`] erzeugen — die ersten 8 Bytes
-    /// (Magic+Version+Flags+MsgType) sind endian-frei, aber das
-    /// `message_size`-`u32` muss anhand des `flags`-Bytes
-    /// re-interpretiert werden. Dieser Helper liest das `flags`-Byte
-    /// und kehrt die Endianness um, falls noetig.
+    /// **Important:** the caller must create the `BufferReader` with
+    /// [`Endianness::Big`] — the first 8 bytes
+    /// (magic+version+flags+msg_type) are endian-free, but the
+    /// `message_size` `u32` must be re-interpreted based on the `flags`
+    /// byte. This helper reads the `flags` byte and flips the endianness
+    /// if necessary.
     ///
     /// # Errors
-    /// * `InvalidMagic` wenn Bytes 0..4 nicht `"GIOP"` sind.
-    /// * `UnsupportedVersion` wenn major/minor weder 1.0/1.1/1.2.
-    /// * `UnknownMessageType` wenn der Octet nicht in 0..=7 liegt.
-    /// * Buffer-Lesefehler.
+    /// * `InvalidMagic` if bytes 0..4 are not `"GIOP"`.
+    /// * `UnsupportedVersion` if major/minor is none of 1.0/1.1/1.2.
+    /// * `UnknownMessageType` if the octet is not in 0..=7.
+    /// * Buffer read error.
     pub fn decode(bytes: &[u8]) -> GiopResult<(Self, &[u8])> {
         if bytes.len() < HEADER_SIZE {
             return Err(GiopError::Malformed(alloc::format!(
@@ -110,8 +110,8 @@ impl MessageHeader {
                 bytes.len()
             )));
         }
-        // Magic + Version + Flags + MessageType sind endian-frei
-        // (Bytes 0..8). Wir starten mit BigEndian, justieren dann.
+        // Magic + version + flags + message_type are endian-free
+        // (bytes 0..8). We start with BigEndian, then adjust.
         let mut tmp = BufferReader::new(&bytes[..8], Endianness::Big);
         let magic = tmp.read_bytes(4)?;
         if magic != MAGIC_BYTES {
@@ -122,20 +122,20 @@ impl MessageHeader {
         let major = tmp.read_u8()?;
         let minor = tmp.read_u8()?;
         let version = Version::new(major, minor);
-        // Spec §15.4.1: nur 1.0, 1.1, 1.2 sind aktuell standardisiert.
+        // Spec §15.4.1: only 1.0, 1.1, 1.2 are currently standardized.
         if !matches!((major, minor), (1, 0) | (1, 1) | (1, 2)) {
             return Err(GiopError::UnsupportedVersion { major, minor });
         }
         let flags_byte = tmp.read_u8()?;
         let flags = Flags(flags_byte);
-        // Fragment-Bit-Constraint (Spec §15.4.9).
+        // Fragment-bit constraint (spec §15.4.9).
         if flags.has_more_fragments() && !version.supports_fragments() {
             return Err(GiopError::FragmentNotSupported { major, minor });
         }
         let mt_byte = tmp.read_u8()?;
         let message_type = MessageType::from_u8(mt_byte)?;
 
-        // Jetzt mit der ermittelten Endianness das `message_size`-u32 lesen.
+        // Now read the `message_size` u32 with the determined endianness.
         let mut size_reader = BufferReader::new(&bytes[8..12], flags.endianness());
         let message_size = size_reader.read_u32()?;
         Ok((
@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn header_size_is_12_bytes() {
-        // Spec §15.4.1: Header ist immer 12 Bytes.
+        // Spec §15.4.1: the header is always 12 bytes.
         assert_eq!(HEADER_SIZE, 12);
     }
 
@@ -179,7 +179,7 @@ mod tests {
         h.encode(&mut w).unwrap();
         let bytes = w.into_bytes();
         assert_eq!(bytes.len(), HEADER_SIZE);
-        // Pruefe Magic + Version + Flags + MsgType + Size (BE).
+        // Check magic + version + flags + msg_type + size (BE).
         assert_eq!(&bytes[0..4], b"GIOP");
         assert_eq!(bytes[4], 1); // major
         assert_eq!(bytes[5], 2); // minor
@@ -208,7 +208,7 @@ mod tests {
         assert_eq!(bytes[5], 1);
         assert_eq!(bytes[6], Flags::BYTE_ORDER_BIT);
         assert_eq!(bytes[7], MessageType::Reply.as_u8());
-        // LE-u32-Bytes von 0x12345678 = 78 56 34 12.
+        // LE u32 bytes of 0x12345678 = 78 56 34 12.
         assert_eq!(&bytes[8..12], &[0x78, 0x56, 0x34, 0x12]);
         let (decoded, _) = MessageHeader::decode(&bytes).unwrap();
         assert_eq!(decoded, h);
@@ -242,7 +242,7 @@ mod tests {
 
     #[test]
     fn fragment_bit_in_giop_1_0_is_rejected() {
-        // Spec §15.4.9: Fragment-Bit gibts erst ab GIOP 1.1.
+        // Spec §15.4.9: the fragment bit exists only from GIOP 1.1 onward.
         let bytes = [
             b'G',
             b'I',

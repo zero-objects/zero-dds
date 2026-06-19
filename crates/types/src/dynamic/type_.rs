@@ -2,9 +2,9 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DynamicType + DynamicTypeMember (XTypes 1.3 §7.5.3).
 //!
-//! `DynamicType` ist eine Read-Only-Sicht auf einen zur Laufzeit
-//! konstruierten Typ. Konstruktion erfolgt via
-//! [`crate::dynamic::DynamicTypeBuilder`], danach ist die Instanz
+//! `DynamicType` is a read-only view onto a type constructed at
+//! runtime. Construction happens via
+//! [`crate::dynamic::DynamicTypeBuilder`], after which the instance is
 //! immutable.
 
 use alloc::string::String;
@@ -14,10 +14,10 @@ use alloc::vec::Vec;
 use super::descriptor::{MemberDescriptor, MemberId, TypeDescriptor, TypeKind};
 use super::error::DynamicError;
 
-/// Member-Sicht auf einen DynamicType (Spec §7.5.3.4 GetMember).
+/// Member view onto a DynamicType (Spec §7.5.3.4 GetMember).
 ///
-/// Jeder Member kapselt seinen Descriptor + den ihm zugeordneten
-/// (rekursiven) DynamicType.
+/// Each member encapsulates its descriptor + its associated
+/// (recursive) DynamicType.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DynamicTypeMember {
     pub(super) descriptor: MemberDescriptor,
@@ -25,7 +25,7 @@ pub struct DynamicTypeMember {
 }
 
 impl DynamicTypeMember {
-    /// Lese-Sicht auf den Descriptor.
+    /// Read view of the descriptor.
     #[must_use]
     pub fn descriptor(&self) -> &MemberDescriptor {
         &self.descriptor
@@ -43,13 +43,13 @@ impl DynamicTypeMember {
         self.descriptor.id
     }
 
-    /// `index` im Composite (Reihenfolge).
+    /// `index` in the composite (order).
     #[must_use]
     pub fn index(&self) -> u32 {
         self.descriptor.index
     }
 
-    /// Vollstaendiger DynamicType dieses Members.
+    /// Complete DynamicType of this member.
     #[must_use]
     pub fn dynamic_type(&self) -> &DynamicType {
         &self.member_type
@@ -62,9 +62,9 @@ impl DynamicTypeMember {
     }
 }
 
-/// Innerer Zustand eines DynamicType — referenz-gezaehlt fuer billiges
-/// Cloning. Gleicher Inhalt → strukturell gleich (PartialEq), aber ggf.
-/// anderer Arc-Pointer (Equality wird strukturell verglichen).
+/// Inner state of a DynamicType — reference-counted for cheap
+/// cloning. Same content → structurally equal (PartialEq), but possibly
+/// a different Arc pointer (equality is compared structurally).
 #[derive(Debug)]
 pub(super) struct DynamicTypeInner {
     pub(super) descriptor: TypeDescriptor,
@@ -81,9 +81,9 @@ impl Eq for DynamicTypeInner {}
 
 /// XTypes 1.3 §7.5.3 DynamicType.
 ///
-/// Read-only-API auf einen zur Laufzeit konstruierten Type. Erzeugt
-/// werden DynamicTypes ausschliesslich via `DynamicTypeBuilder::build`
-/// oder `DynamicTypeBuilderFactory::get_primitive_type`.
+/// Read-only API onto a type constructed at runtime. DynamicTypes are
+/// created exclusively via `DynamicTypeBuilder::build`
+/// or `DynamicTypeBuilderFactory::get_primitive_type`.
 #[derive(Debug, Clone)]
 pub struct DynamicType {
     pub(super) inner: Arc<DynamicTypeInner>,
@@ -91,8 +91,8 @@ pub struct DynamicType {
 
 impl PartialEq for DynamicType {
     fn eq(&self, other: &Self) -> bool {
-        // Strukturelle Gleichheit (die `equals`-Spec-Methode); Arc-Identity
-        // ist nur eine Optimierung.
+        // Structural equality (the `equals` spec method); Arc identity
+        // is only an optimization.
         Arc::ptr_eq(&self.inner, &other.inner) || *self.inner == *other.inner
     }
 }
@@ -151,7 +151,7 @@ impl DynamicType {
             .find(|m| m.descriptor.name == name)
     }
 
-    /// Iterator ueber alle Members in Index-Reihenfolge.
+    /// Iterator over all members in index order.
     pub fn members(&self) -> impl Iterator<Item = &DynamicTypeMember> {
         self.inner.members.iter()
     }
@@ -174,17 +174,17 @@ impl DynamicType {
             .all(|(a, b)| a.equals(b))
     }
 
-    /// True wenn der Typ ein Composite-Type ist (Members traegt).
+    /// True if the type is a composite type (carries members).
     #[must_use]
     pub fn is_aggregable(&self) -> bool {
         self.kind().is_aggregable()
     }
 
-    /// Validiert, dass der Typ insgesamt konsistent ist (Spec §7.5.3.5
-    /// + Block-A-Constraints + Member-Konsistenz).
+    /// Validates that the type is overall consistent (Spec §7.5.3.5
+    /// + block-A constraints + member consistency).
     ///
     /// # Errors
-    /// `DynamicError::Inconsistent` mit Detail.
+    /// `DynamicError::Inconsistent` with detail.
     pub fn is_consistent(&self) -> Result<(), DynamicError> {
         self.inner
             .descriptor
@@ -198,11 +198,11 @@ impl DynamicType {
         Ok(())
     }
 
-    /// Convenience: erzeugt einen primitiven `DynamicType` fuer Type-Bridges.
+    /// Convenience: creates a primitive `DynamicType` for type bridges.
     ///
-    /// Fuer mehrfach-genutzte Primitive bevorzuge
+    /// For reused primitives, prefer
     /// [`crate::dynamic::DynamicTypeBuilderFactory::get_primitive_type`]
-    /// (Singleton-Cache).
+    /// (singleton cache).
     #[must_use]
     pub fn new_primitive(kind: TypeKind) -> Self {
         let name = primitive_name(kind);
@@ -253,7 +253,7 @@ mod tests {
         let a = DynamicType::new_primitive(TypeKind::Int32);
         let b = DynamicType::new_primitive(TypeKind::Int32);
         assert!(a.equals(&a));
-        // verschiedene Arcs, aber strukturell gleich:
+        // different Arcs, but structurally equal:
         assert!(a.equals(&b));
         assert_eq!(a, b);
     }

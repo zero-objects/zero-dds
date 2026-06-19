@@ -1,34 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! §6 — DDS-QoS → CORBA-Behavior-Translation.
+//! §6 — DDS QoS → CORBA behavior translation.
 //!
-//! Mapping per Spec `zerodds-corba-bridge-1.0.md` §6:
+//! Mapping per spec `zerodds-corba-bridge-1.0.md` §6:
 //!
-//! * `Reliability::Reliable`     → TwoWay-Operation (Reply expected).
-//! * `Reliability::BestEffort`   → OneWay-Operation (no reply).
-//! * `Durability`                → ignored (CORBA hat keine Persistence-
-//!   Translation; Persistenz-Layer waeren CORBA-Persistent-Service / OAS
-//!   Naming-Service Bindings, ausserhalb der Bridge-Surface).
-//! * `Deadline::period`          → IIOP `request-timeout` (Spec §4.7).
+//! * `Reliability::Reliable`     → TwoWay operation (reply expected).
+//! * `Reliability::BestEffort`   → OneWay operation (no reply).
+//! * `Durability`                → ignored (CORBA has no persistence
+//!   translation; persistence layers would be CORBA Persistent Service /
+//!   OAS Naming Service bindings, outside the bridge surface).
+//! * `Deadline::period`          → IIOP `request-timeout` (spec §4.7).
 
 use zerodds_qos::{ReaderQos, ReliabilityKind, WriterQos};
 
-/// CORBA-Operation-Type.
+/// CORBA operation type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CorbaOpKind {
-    /// TwoWay — Reply expected (Reliable).
+    /// TwoWay — reply expected (Reliable).
     TwoWay,
     /// OneWay — fire-and-forget (BestEffort).
     OneWay,
 }
 
-/// Behavior fuer ein BridgeMapping.
+/// Behavior for a BridgeMapping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CorbaBehavior {
-    /// Operation-Kind.
+    /// Operation kind.
     pub op_kind: CorbaOpKind,
-    /// Request-Timeout (ms, None = unset).
+    /// Request timeout (ms, None = unset).
     pub request_timeout_ms: Option<u32>,
 }
 
@@ -42,7 +42,7 @@ impl Default for CorbaBehavior {
 }
 
 impl CorbaBehavior {
-    /// Defaults aus `WriterQos::default()` (Reliable).
+    /// Defaults from `WriterQos::default()` (Reliable).
     #[must_use]
     pub fn default_for_topic() -> Self {
         let w = WriterQos::default();
@@ -51,7 +51,7 @@ impl CorbaBehavior {
     }
 }
 
-/// Mapping-Hauptfunktion.
+/// Main mapping function.
 #[must_use]
 pub fn dds_qos_to_corba_behavior(writer: &WriterQos, reader: &ReaderQos) -> CorbaBehavior {
     let op_kind = if matches!(writer.reliability.kind, ReliabilityKind::Reliable) {

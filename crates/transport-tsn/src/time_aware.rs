@@ -2,27 +2,27 @@
 // Copyright 2026 ZeroDDS Contributors
 //! TimeAware Stream — Spec §7.2.3 Tab 7.17 (IEEE 802.1Qbv).
 
-/// Spec §7.2.3 Tab 7.17 — `TimeAware`-Konfiguration eines TSN-Streams.
+/// Spec §7.2.3 Tab 7.17 — `TimeAware` configuration of a TSN stream.
 ///
-/// Garantiert, dass Frames nur in einem Zeitfenster
-/// `[earliest_transmit_offset, latest_transmit_offset]` (relativ zum
-/// Period-Start) gesendet werden. Jitter beschreibt die zulaessige
-/// Schwankung.
+/// Guarantees that frames are only sent within a time window
+/// `[earliest_transmit_offset, latest_transmit_offset]` (relative to the
+/// period start). Jitter describes the permissible
+/// variation.
 ///
-/// Voraussetzung: Talker + Listener muessen IEEE-802.1AS-time-
-/// synchronized sein (typisch ueber gPTP / `linuxptp`).
+/// Precondition: talker + listener must be IEEE 802.1AS time-
+/// synchronized (typically via gPTP / `linuxptp`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimeAware {
-    /// Spec — `earliest_transmit_offset` (ns) ab Period-Start.
+    /// Spec — `earliest_transmit_offset` (ns) from the period start.
     pub earliest_transmit_offset_ns: u64,
-    /// Spec — `latest_transmit_offset` (ns) ab Period-Start.
+    /// Spec — `latest_transmit_offset` (ns) from the period start.
     pub latest_transmit_offset_ns: u64,
     /// Spec — `jitter` (ns).
     pub jitter_ns: u64,
 }
 
 impl TimeAware {
-    /// Window-Length (latest - earliest), oder `None` wenn invalide.
+    /// Window length (latest - earliest), or `None` if invalid.
     #[must_use]
     pub fn window_ns(self) -> Option<u64> {
         if self.latest_transmit_offset_ns >= self.earliest_transmit_offset_ns {
@@ -32,8 +32,8 @@ impl TimeAware {
         }
     }
 
-    /// `true` wenn die Konfiguration konsistent ist:
-    /// `earliest <= latest` und `jitter <= window`.
+    /// `true` if the configuration is consistent:
+    /// `earliest <= latest` and `jitter <= window`.
     #[must_use]
     pub fn is_valid(self) -> bool {
         let Some(w) = self.window_ns() else {

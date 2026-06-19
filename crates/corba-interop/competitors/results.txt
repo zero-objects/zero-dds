@@ -1,0 +1,83 @@
+====================================================================
+ CORBA Perf Baseline — codepit, N=50000, Payloads='32 256 4096'
+====================================================================
+== Build ZeroDDS perf binaries ==
+
+################ 1. Cross-Vendor Echo-Roundtrip-Latenz ################
+
+---- payload = 32 B ----
+ZeroDDS CORBA Echo roundtrip (IIOP loopback, payload=32B, N=50000)
+  min=16.2us  p50=17.0us  p90=21.1us  p99=41.9us  p99.9=68.7us
+ZeroDDS CORBA Echo roundtrip via CODEGEN (IIOP loopback, payload=32B, N=50000)
+  min=14.6us  p50=17.8us  p90=25.6us  p99=45.2us  p99.9=58.4us
+omniORB Echo roundtrip (IIOP loopback, payload=32B, N=50000)
+  min=14.1us  p50=17.8us  p90=22.3us  p99=42.3us  p99.9=66.5us
+TAO Echo roundtrip (IIOP loopback, payload=32B, N=50000)
+  min=24.3us  p50=36.2us  p90=42.8us  p99=85.9us  p99.9=139.3us
+INFO Initialising ORB with ID: 
+INFO InterceptorManager started with 0 Server Interceptors, 0 Client Interceptors and 1 IOR Interceptors
+INFO ClientConnectionManager: created new ClientGIOPConnection to 192.168.178.115:38751 (707f7052)
+INFO Negotiated char codeset of ISO8859_1 and wchar of UTF16
+INFO Connected to 192.168.178.115:38751 from local port 37678
+JacORB Echo roundtrip (IIOP loopback, payload=32B, N=50000)
+  min=43.5us  p50=59.6us  p90=83.6us  p99=140.2us  p99.9=338.4us
+
+---- payload = 256 B ----
+ZeroDDS CORBA Echo roundtrip (IIOP loopback, payload=256B, N=50000)
+  min=15.7us  p50=17.3us  p90=21.4us  p99=42.3us  p99.9=56.6us
+ZeroDDS CORBA Echo roundtrip via CODEGEN (IIOP loopback, payload=256B, N=50000)
+  min=13.6us  p50=17.2us  p90=21.2us  p99=42.6us  p99.9=67.4us
+omniORB Echo roundtrip (IIOP loopback, payload=256B, N=50000)
+  min=13.2us  p50=18.1us  p90=20.4us  p99=36.4us  p99.9=52.2us
+TAO Echo roundtrip (IIOP loopback, payload=256B, N=50000)
+  min=26.6us  p50=37.9us  p90=46.9us  p99=88.4us  p99.9=135.4us
+INFO Initialising ORB with ID: 
+INFO InterceptorManager started with 0 Server Interceptors, 0 Client Interceptors and 1 IOR Interceptors
+INFO ClientConnectionManager: created new ClientGIOPConnection to 192.168.178.115:46257 (707f7052)
+INFO Negotiated char codeset of ISO8859_1 and wchar of UTF16
+INFO Connected to 192.168.178.115:46257 from local port 56374
+JacORB Echo roundtrip (IIOP loopback, payload=256B, N=50000)
+  min=44.8us  p50=59.2us  p90=81.6us  p99=136.5us  p99.9=263.9us
+
+---- payload = 4096 B ----
+ZeroDDS CORBA Echo roundtrip (IIOP loopback, payload=4096B, N=50000)
+  min=17.3us  p50=20.1us  p90=26.2us  p99=47.3us  p99.9=72.0us
+ZeroDDS CORBA Echo roundtrip via CODEGEN (IIOP loopback, payload=4096B, N=50000)
+  min=18.8us  p50=20.2us  p90=25.3us  p99=50.6us  p99.9=77.8us
+omniORB Echo roundtrip (IIOP loopback, payload=4096B, N=50000)
+  min=18.5us  p50=22.5us  p90=31.1us  p99=55.0us  p99.9=80.8us
+TAO Echo roundtrip (IIOP loopback, payload=4096B, N=50000)
+  min=36.5us  p50=50.6us  p90=61.5us  p99=108.9us  p99.9=147.9us
+INFO Initialising ORB with ID: 
+INFO InterceptorManager started with 0 Server Interceptors, 0 Client Interceptors and 1 IOR Interceptors
+INFO ClientConnectionManager: created new ClientGIOPConnection to 192.168.178.115:39623 (707f7052)
+INFO Negotiated char codeset of ISO8859_1 and wchar of UTF16
+INFO Connected to 192.168.178.115:39623 from local port 48520
+JacORB Echo roundtrip (IIOP loopback, payload=4096B, N=50000)
+  min=53.7us  p50=78.4us  p90=106.6us  p99=173.6us  p99.9=574.3us
+
+################ 2. ZeroDDS Feature-Matrix (Codegen) ################
+ZeroDDS CORBA Feature-Matrix per-Operation-Latenz (Codegen, IIOP loopback, N=50000)
+  add (long)                     p50= 16.73us  p90= 20.98us  p99=  42.97us
+  scale (double, 8-aligned)      p50= 16.78us  p90= 21.74us  p99=  41.68us
+  add64 (long long, 8-aligned)   p50= 16.82us  p90= 20.94us  p99=  42.92us
+  next_char (char, 1 byte)       p50= 16.69us  p90= 20.18us  p99=  43.62us
+  concat (string)                p50= 17.04us  p90= 23.71us  p99=  44.66us
+  wecho (wstring/UTF-16 BOM)     p50= 17.14us  p90= 22.43us  p99=  44.21us
+  aecho (any: struct TypeCode)   p50= 19.11us  p90= 24.48us  p99=  50.45us
+  aecho (any: sequence<long>)    p50= 17.86us  p90= 22.97us  p99=  47.12us
+  reverse (sequence<long> x3)    p50= 16.99us  p90= 20.05us  p99=  43.73us
+  divmod (2x out-param)          p50= 16.86us  p90= 19.65us  p99=  41.06us
+  checked ok (raises-capable)    p50= 16.80us  p90= 19.49us  p99=  40.80us
+  checked raises (UserException) p50= 17.01us  p90= 19.61us  p99=  43.23us
+  echo_ref (Object/IOR)          p50= 17.22us  p90= 22.83us  p99=  42.95us
+
+################ 3. SSLIOP/TLS-Overhead (56 B, established conn) ################
+ZeroDDS CORBA Echo roundtrip via CODEGEN (IIOP loopback, payload=56B, N=50000)
+  min=16.2us  p50=17.1us  p90=21.8us  p99=44.9us  p99.9=55.2us
+ZeroDDS CORBA Echo roundtrip via SSLIOP/TLS, established conn (loopback, payload=56B, N=50000)
+  min=17.3us  p50=18.6us  p90=21.6us  p99=48.5us  p99.9=56.3us
+
+====================================================================
+ Perf baseline run done.
+====================================================================

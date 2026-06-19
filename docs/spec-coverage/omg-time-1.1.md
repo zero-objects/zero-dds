@@ -1,19 +1,19 @@
 # OMG Time Service 1.1 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/time-1.1.pdf` (52 Seiten, OMG formal/2002-05-07).
-
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
-Status (`done` / `partial` / `open` / `n/a`).
+**Spec:** [OMG Time Service 1.1 — formal/2002-05-07 (52 Seiten) →](https://www.omg.org/spec/TIME/)
 
 **Kontext:** OMG Time Service ist ein klassischer CORBA-Object-Service.
 ZeroDDS hat keinen ORB; deshalb realisieren wir den **Daten-Modell- +
-Algorithmen-Anteil** der Spec als plain Rust-Library
-(`crates/time-service/`). CORBA-spezifische Aspekte (IIOP-Wire,
-Object-Server, CosEvent-Channel-basierter TimerEventService) sind als
-`n/a` markiert mit klarer Begruendung — der spec-konforme Daten-Algo
-bleibt aber komplett implementiert und kann von jedem Caller (DDS-
-Security, DCPS-Time, externer CORBA-Server) genutzt werden.
+Algorithmen-Anteil** der Spec als plain Rust-Library. CORBA-spezifische
+Aspekte (IIOP-Wire, Object-Server, CosEvent-Channel-basierter
+TimerEventService) sind als `n/a` markiert mit klarer Begründung — der
+spec-konforme Daten-Algo bleibt aber komplett implementiert und kann von
+jedem Caller (DDS-Security, DCPS-Time, externer CORBA-Server) genutzt
+werden.
+
+Implementation:
+
+- `crates/time-service/` — Daten-Modell- + Algorithmen-Anteil der OMG-Time-Service-Spec als plain Rust-Library.
 
 ---
 
@@ -26,7 +26,7 @@ error estimate associated with it. Additionally, [...] ascertain the
 order in which events occurred. Generate time-based events based on
 timers and alarms. Compute the interval between two events."
 
-**Repo:** Anforderungen 1+2+4 erfuellt durch `crates/time-service/`
+**Repo:** Anforderungen 1+2+4 erfüllt durch `crates/time-service/`
 (`current_time` / `compare_time` / `time_to_interval` / `interval`).
 Anforderung 3 (Timer-Events) ist in §2.2/§2.4 als `n/a` markiert
 (verlangt CORBA Event Service).
@@ -70,7 +70,7 @@ Time-Source (current time + error, monotonic, optional secure).
 ### §1.2 General Object Model — Service-Object pattern
 
 **Spec:** §1.2, S. 1-3 (PDF) — Service-Object verwaltet Instanz-Objekte
-(UTOs/TIOs) ueber Service-Interface. CORBA-Object-Service-Pattern.
+(UTOs/TIOs) über Service-Interface. CORBA-Object-Service-Pattern.
 
 **Repo:** ZeroDDS hat keinen CORBA-ORB. Wir implementieren das Service-
 Pattern als plain Rust-Struct `TimeService` mit Factory-Methods
@@ -78,7 +78,7 @@ Pattern als plain Rust-Struct `TimeService` mit Factory-Methods
 
 **Tests:** `service.rs::tests::new_universal_time_creates_uto_from_components`.
 
-**Status:** done — Spec-aequivalente Form ohne ORB.
+**Status:** done — Spec-äquivalente Form ohne ORB.
 
 ### §1.2.1 Conformance Points (Basic + Timer Event)
 
@@ -229,7 +229,7 @@ envelopes around the two times being compared overlap."
 
 ### §1.3.2.8 Enum OverlapType — Container/Contained/Overlap/NoOverlap
 
-**Spec:** §1.3.2.8, S. 1-8 (PDF) — Vier Faelle gemaess Figure 1-3
+**Spec:** §1.3.2.8, S. 1-8 (PDF) — Vier Fälle gemäß Figure 1-3
 (OTContainer, OTContained, OTOverlap, OTNoOverlap).
 
 **Repo:** `crates/time-service/src/tio.rs::OverlapType`.
@@ -511,7 +511,7 @@ Inline-Tests in `timer.rs`.
 ### §2.2.2 Usage — Push-Event-Channel + Timer-Events
 
 **Spec:** §2.2.2, S. 2-4 (PDF) — Workflow: Event-Channel erstellen,
-TimerEventHandler registrieren, Timer setzen, Events ueber Channel
+TimerEventHandler registrieren, Timer setzen, Events über Channel
 pushen.
 
 **Repo:** `crates/corba-ccm/src/time_psm.rs::PushConsumerLike` Trait
@@ -553,7 +553,7 @@ time_type_absolute_maps_to_one_shot, time_type_relative_maps_to_one_shot}`.
 
 ### §2.2.4 Exceptions
 
-**Spec:** §2.2.4, S. 2-5 (PDF) — Exception-Definitionen fuer
+**Spec:** §2.2.4, S. 2-5 (PDF) — Exception-Definitionen für
 TimerEventService.
 
 **Repo:** `crates/corba-ccm/src/time_psm.rs::TimerError` mit
@@ -599,14 +599,14 @@ CosEventComm::PushConsumer event_interface, in any data);`.
 
 **Repo:** `crates/corba-ccm/src/time_psm.rs::TimerEventServiceFacade::
 register` mit `PushConsumerLike`-Trait, das den Spec-konformen
-PushConsumer-Argument-Pfad anbindet (Adapter ueber den Callback-
+PushConsumer-Argument-Pfad anbindet (Adapter über den Callback-
 basierten Plattform-`TimerEventService`).
 
 **Tests:** `time_psm::tests::facade_register_then_fire`.
 
 **Status:** done — PushConsumer-Adapter live; Spec-Form
 (PushConsumer + data) und Plattform-Form (Callback) parallel
-verfuegbar.
+verfügbar.
 
 ### §2.4.2 Operation unregister
 
@@ -640,15 +640,16 @@ TimerEventT event);`.
 Service + Timer Event Service); Timer Event Service requires Basic
 Time Service.
 
-**Repo:** ZeroDDS deklariert Conformance zu **Basic Time Service**
-(§1.3 + §2.1) als Library-Form ohne CORBA-ORB. Timer Event Service
-ist explizit ausgeschlossen (siehe §2.2.x).
+**Repo:** ZeroDDS deklariert Conformance zu **beiden** Conformance-Points
+als Library-Form ohne CORBA-ORB: **Basic Time Service** (§1.3 + §2.1) im
+Crate `crates/time-service/`, und **Timer Event Service** (§2.2-§2.4) via
+`crates/corba-ccm/src/time_psm.rs` (PushConsumer-Adapter + TimerEventT +
+Spec-Exceptions + event_time).
 
-**Tests:** Cross-Ref §1.3.x + §2.1.x (35 Tests gruen).
+**Tests:** Cross-Ref §1.3.x + §2.1.x + §2.2.x (35 + 36 Tests grün).
 
-**Status:** done — Basic Time Service voll abgedeckt; Timer Event
-Service ist als optionaler Conformance-Point per Spec §1.2.1
-erlaubt nicht abzudecken.
+**Status:** done — Basic Time Service + Timer Event Service beide voll
+abgedeckt.
 
 ---
 
@@ -656,7 +657,7 @@ erlaubt nicht abzudecken.
 
 ### App. A — Secure Time Source Criteria
 
-**Spec:** Appendix A — Implementation-Hinweise fuer Secure-Time-Source.
+**Spec:** Appendix A — Implementation-Hinweise für Secure-Time-Source.
 
 **Repo:** —
 
@@ -734,7 +735,3 @@ Tests grün (Basic Time Service in `time-service`: Module `service`,
 `timer::tests::periodic_fires_multiple_times`,
 `timer::tests::cancel_stops_periodic`,
 `timer::tests::cancel_unknown_returns_false`).
-
-Offene Punkte und Partials: siehe `omg-time-1.1.open.md`. Restaufwand
-ca. 1.5-2 PW (Spec-konformer PushConsumer-Adapter +
-`CosTimerEvent::TimerEventT`-Struct + Spec-Exceptions + `event_time`).

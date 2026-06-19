@@ -1,56 +1,56 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [1.0.0-rc.1]
 
-Initiale Release-Materialisierung der `zerodds-corba-rust`-Crate.
+Initial release materialization of the `zerodds-corba-rust` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **OMG CORBA 3.3 Annex-A** — IDL-Mapping-Tabellen.
+- **OMG CORBA 3.3 Annex-A** — IDL mapping tables.
 - **OMG IDL4** §7.4.6 (interface), §7.4.5.4 (valuetype), §7.4.16 (oneway), §7.4.3.1 (attribute).
-- **`zerodds-corba-rust-1.0`** Vendor-Spec (`docs/specs/zerodds-corba-rust-1.0.md`).
+- **`zerodds-corba-rust-1.0`** vendor spec (`docs/specs/zerodds-corba-rust-1.0.md`).
 
-### Public-API
+### Public API
 
-**Codegen-Entry:**
-- `generate_corba_rust_module(spec, opts)` — AST → Rust-String.
+**Codegen entry:**
+- `generate_corba_rust_module(spec, opts)` — AST → Rust string.
 - `CorbaRustGenOptions { header_comment }`.
-- `error::CorbaRustError` — Fehler-Familie inkl. `From<zerodds_idl_rust::RustGenError>`.
+- `error::CorbaRustError` — error family incl. `From<zerodds_idl_rust::RustGenError>`.
 
-**Runtime-Types** (vom emittierten Code referenziert):
-- `ObjectReference` — IOR-Wrapper mit `type_id` + `iiop_profile`.
+**Runtime types** (referenced by the emitted code):
+- `ObjectReference` — IOR wrapper with `type_id` + `iiop_profile`.
 - `CorbaException` — `SystemException { minor, message }` + `UserException { repository_id, payload }`.
 - `SkeletonResult` — `Reply(Vec<u8>)` / `Exception(...)` / `BadOperation` / `NotYetWired`.
-- `ValueBase` — Trait für alle Valuetype-Implementierungen.
-- `Servant` — POA-Servant-Marker mit `target_repository_id`.
+- `ValueBase` — trait for all valuetype implementations.
+- `Servant` — POA servant marker with `target_repository_id`.
 
-### Implementierung
+### Implementation
 
-- **Interface-Trait:** pro IDL-Operation eine trait-method mit `Result<T, CorbaException>`-Return; `&self` für state-frei, `&mut self` wenn out/inout-Params; `attribute` → getter + setter.
-- **Client-Stub:** `pub struct IStub { object_ref: ObjectReference }` mit `impl I for IStub` — Phase-1 returnt `SystemException("not yet wired")`; Phase-2 wired GIOP via `corba-iiop`.
-- **Server-Skeleton:** `pub fn dispatch_<i>(servant: &dyn I, operation: &str, _payload: &[u8]) -> SkeletonResult` mit Operation-Name-Switch — Phase-1 returnt `NotYetWired`; Phase-2 decodet payload + ruft servant.
-- **Valuetype-Trait:** `pub trait V: ValueBase` mit state-member-getter (public-state als `fn x(&self) -> T`, private als `fn _priv_x(&self) -> T`).
+- **Interface trait:** one trait method per IDL operation with `Result<T, CorbaException>` return; `&self` for state-free, `&mut self` when out/inout params; `attribute` → getter + setter.
+- **Client stub:** `pub struct IStub { object_ref: ObjectReference }` with `impl I for IStub` — phase 1 returns `SystemException("not yet wired")`; phase 2 wires GIOP via `corba-iiop`.
+- **Server skeleton:** `pub fn dispatch_<i>(servant: &dyn I, operation: &str, _payload: &[u8]) -> SkeletonResult` with operation-name switch — phase 1 returns `NotYetWired`; phase 2 decodes the payload + calls the servant.
+- **Valuetype trait:** `pub trait V: ValueBase` with state-member getters (public state as `fn x(&self) -> T`, private as `fn _priv_x(&self) -> T`).
 
-### Architektur
+### Architecture
 
-- **Layer:** 8 (CORBA-Stack).
-- **Dependencies (in):** `zerodds-idl` (AST), `zerodds-idl-rust` (Type-Mapping), `zerodds-corba-codegen` (Special-Types + Stub/Skeleton-Templates).
-- **Dependents (out):** End-User-Build-Scripts oder CLI-Tool das CORBA-IDL-Files für Rust-Service-Implementierungen generiert.
+- **Layer:** 8 (CORBA stack).
+- **Dependencies (in):** `zerodds-idl` (AST), `zerodds-idl-rust` (type mapping), `zerodds-corba-codegen` (special types + stub/skeleton templates).
+- **Dependents (out):** end-user build scripts or a CLI tool that generates CORBA IDL files for Rust service implementations.
 
 ### Tests
 
-- 6 Snapshot-Tests in `tests/snapshot_codegen.rs` (simple interface, attribute, oneway, inout, valuetype, module-nested).
+- 6 snapshot tests in `tests/snapshot_codegen.rs` (simple interface, attribute, oneway, inout, valuetype, module-nested).
 
-### Out-of-Scope (Phase 2+)
+### Out of scope (phase 2+)
 
-- **Component / Home / D&C-Deployment** — CCM-Servant-Bindings, konsumiert dann `corba-ccm-lib`.
-- **POA-Configuration-Builder** — `pub struct PoaBuilder`-API für Activation, Lifespan, RequestProcessing-Policies.
-- **GIOP-Wire-Wiring im Stub/Skeleton** — Phase-1 emittiert Stubs/Skeletons mit `NotYetWired`-Return; Phase-2 ersetzt das durch echte GIOP-Marshalling über `corba-iiop`/`corba-giop`.
-- **User-Exception-Codegen** — IDL `exception E { ... };` mit eigenem Error-Type pro Interface.
-- **Repository-ID-Helper im generierten Code** — aktuell nicht emittiert; Phase-2 fügt `const REPOSITORY_ID: &str = "IDL:..."` zum trait hinzu.
+- **Component / Home / D&C deployment** — CCM servant bindings, then consuming `corba-ccm-lib`.
+- **POA configuration builder** — `pub struct PoaBuilder` API for Activation, Lifespan, RequestProcessing policies.
+- **GIOP wire wiring in the stub/skeleton** — phase 1 emits stubs/skeletons with a `NotYetWired` return; phase 2 replaces it with real GIOP marshalling over `corba-iiop`/`corba-giop`.
+- **User-exception codegen** — IDL `exception E { ... };` with a dedicated error type per interface.
+- **Repository-ID helper in the generated code** — currently not emitted; phase 2 adds `const REPOSITORY_ID: &str = "IDL:..."` to the trait.
 
-### Stabilität
+### Stability
 
-`1.0.0-rc.1` — RC-Phase. `pub`-Items der Codegen-Entry-API sind stabil; Runtime-Types (`ObjectReference` / `CorbaException` / etc.) können Phase-2-Erweiterungen erhalten (z.B. neue `CorbaException`-Varianten via `#[non_exhaustive]`).
+`1.0.0-rc.1` — RC phase. The `pub` items of the codegen entry API are stable; runtime types (`ObjectReference` / `CorbaException` / etc.) may receive phase-2 extensions (e.g. new `CorbaException` variants via `#[non_exhaustive]`).

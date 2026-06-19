@@ -1,4 +1,4 @@
-//! Snapshot-Tests fuer den C# Codegen-Output.
+//! Snapshot tests for the C# codegen output.
 
 #![allow(
     clippy::expect_used,

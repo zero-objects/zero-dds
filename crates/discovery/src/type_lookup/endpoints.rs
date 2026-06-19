@@ -1,35 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! TypeLookup Builtin-Endpoint-GUIDs — XTypes 1.3 §7.6.3.3.4.
+//! TypeLookup builtin endpoint GUIDs — XTypes 1.3 §7.6.3.3.4.
 //!
-//! ## Spec-Mapping
+//! ## Spec mapping
 //!
-//! - 4 Builtin-Endpoints pro Participant: TL_SVC_REQUEST_{WRITER,READER}
-//!   und TL_SVC_REPLY_{WRITER,READER}.
+//! - 4 builtin endpoints per participant: TL_SVC_REQUEST_{WRITER,READER}
+//!   and TL_SVC_REPLY_{WRITER,READER}.
 //! - QoS: Reliability=RELIABLE, Durability=VOLATILE, History=KEEP_LAST(1).
-//! - Topic-Names: `dds.builtin.TOS.<HEX-GUID>` (Service-Instance-Name).
+//! - Topic names: `dds.builtin.TOS.<HEX-GUID>` (service instance name).
 //!
-//! Dieses Modul liefert die GUIDs + Service-Instance-Name-Formatter.
-//! Die Instantiierung der Reliable-Writer/Reader-Pairs liegt im
-//! DCPS-Layer (siehe `crates/dcps/src/runtime.rs` Builtin-Endpoint-
-//! Spawn-Pfad).
+//! This module provides the GUIDs + service-instance-name formatter.
+//! The instantiation of the reliable writer/reader pairs lives in the
+//! DCPS layer (see `crates/dcps/src/runtime.rs` builtin-endpoint
+//! spawn path).
 
 use alloc::format;
 use alloc::string::String;
 
 use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix};
 
-/// Topic-Name-Praefix fuer TypeLookup-Service-Topics (§7.6.3.3.4).
+/// Topic-name prefix for TypeLookup service topics (§7.6.3.3.4).
 pub const TYPELOOKUP_TOPIC_PREFIX: &str = "dds.builtin.TOS";
 
-/// Bildet den Service-Instance-Namen `dds.builtin.TOS.<HEX>` aus
-/// einem `GuidPrefix` (§7.6.3.3.4 c).
+/// Builds the service instance name `dds.builtin.TOS.<HEX>` from
+/// a `GuidPrefix` (§7.6.3.3.4 c).
 ///
-/// Der Hex-Anteil ist **24 Hex-Chars** (12 Bytes GuidPrefix). Die
-/// Spec spricht von "16-hex" was sich auf den 8-byte-RPC-Service-
-/// Instance-Identifier-Anteil bezieht; in unserer Implementation
-/// nutzen wir den vollen 12-byte GuidPrefix als eindeutigen
-/// Participant-Identifier — kompatibel mit Cyclone DDS' Wahl.
+/// The hex part is **24 hex chars** (12 bytes GuidPrefix). The
+/// spec talks about "16-hex" which refers to the 8-byte RPC
+/// service-instance-identifier part; in our implementation
+/// we use the full 12-byte GuidPrefix as a unique
+/// participant identifier — compatible with Cyclone DDS' choice.
 #[must_use]
 pub fn format_service_instance_name(prefix: &GuidPrefix) -> String {
     let mut hex = String::with_capacity(24);
@@ -39,9 +39,9 @@ pub fn format_service_instance_name(prefix: &GuidPrefix) -> String {
     format!("{TYPELOOKUP_TOPIC_PREFIX}.{hex}")
 }
 
-/// Strikt-spec-treue Variante: nur die ersten 8 Bytes des Prefix
-/// werden als Hex codiert (16 Hex-Chars). Wird von einigen
-/// Implementierungen als "Service-Instance-Identifier" benutzt.
+/// Strictly spec-faithful variant: only the first 8 bytes of the prefix
+/// are encoded as hex (16 hex chars). Used by some
+/// implementations as the "service instance identifier".
 #[must_use]
 pub fn format_service_instance_name_short(prefix: &GuidPrefix) -> String {
     let mut hex = String::with_capacity(16);
@@ -51,56 +51,56 @@ pub fn format_service_instance_name_short(prefix: &GuidPrefix) -> String {
     format!("{TYPELOOKUP_TOPIC_PREFIX}.{hex}")
 }
 
-/// Vollstaendiges Wiring der vier Builtin-Endpoint-GUIDs eines
-/// Participants fuer den TypeLookup-Service.
+/// Complete wiring of a participant's four builtin endpoint GUIDs
+/// for the TypeLookup service.
 ///
 /// QoS (§7.6.3.3.4): Reliability=RELIABLE, Durability=VOLATILE,
-/// History=KEEP_LAST(1). Wird vom DCPS-Runtime gelesen.
+/// History=KEEP_LAST(1). Read by the DCPS runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TypeLookupEndpoints {
-    /// Eigener `GuidPrefix`.
+    /// Own `GuidPrefix`.
     pub prefix: GuidPrefix,
 }
 
 impl TypeLookupEndpoints {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(prefix: GuidPrefix) -> Self {
         Self { prefix }
     }
 
-    /// GUID des Request-Writers (Client-Outgoing → Server-Incoming).
+    /// GUID of the request writer (client outgoing → server incoming).
     #[must_use]
     pub fn request_writer(&self) -> Guid {
         Guid::new(self.prefix, EntityId::TL_SVC_REQ_WRITER)
     }
 
-    /// GUID des Request-Readers (Server-Incoming).
+    /// GUID of the request reader (server incoming).
     #[must_use]
     pub fn request_reader(&self) -> Guid {
         Guid::new(self.prefix, EntityId::TL_SVC_REQ_READER)
     }
 
-    /// GUID des Reply-Writers (Server-Outgoing).
+    /// GUID of the reply writer (server outgoing).
     #[must_use]
     pub fn reply_writer(&self) -> Guid {
         Guid::new(self.prefix, EntityId::TL_SVC_REPLY_WRITER)
     }
 
-    /// GUID des Reply-Readers (Client-Incoming).
+    /// GUID of the reply reader (client incoming).
     #[must_use]
     pub fn reply_reader(&self) -> Guid {
         Guid::new(self.prefix, EntityId::TL_SVC_REPLY_READER)
     }
 
-    /// Service-Instance-Name fuer beide Topics (§7.6.3.3.4 c).
+    /// Service instance name for both topics (§7.6.3.3.4 c).
     #[must_use]
     pub fn service_instance_name(&self) -> String {
         format_service_instance_name(&self.prefix)
     }
 
-    /// Alle vier GUIDs als Array — fuer Iterieren bei Endpoint-
-    /// Registrierung im RTPS-Stack.
+    /// All four GUIDs as an array — for iterating during endpoint
+    /// registration in the RTPS stack.
     #[must_use]
     pub fn all_guids(&self) -> [Guid; 4] {
         [

@@ -1,11 +1,11 @@
-//! C3.5 — Cross-Crate-Smoke: IdentityToken/PermissionsToken werden
-//! im SPDP-PL_CDR_LE-Stream byte-identisch durchgereicht und der
-//! Security-Layer (`zerodds_security::token::DataHolder`) parst die Bytes
-//! wieder zurueck zur Spec-konformen Token-Struktur.
+//! C3.5 — cross-crate smoke: IdentityToken/PermissionsToken are
+//! passed through byte-identically in the SPDP PL_CDR_LE stream and the
+//! security layer (`zerodds_security::token::DataHolder`) parses the bytes
+//! back to the spec-conform token structure.
 
 //!
-//! Das ist die integrative Validierung fuer die getrennte Schichtung
-//! "rtps reicht Bytes durch, security parst sie".
+//! This is the integrative validation for the separated layering
+//! "rtps passes bytes through, security parses them".
 //!
 //! Spec: DDS-Security 1.2 §7.4.1.4 (IdentityToken Tab.16),
 //! §7.4.1.5 (PermissionsToken Tab.17), §10.3.2.1 (PKI-DH-Properties).
@@ -45,6 +45,7 @@ fn make_baseline(prefix: u8) -> ParticipantBuiltinTopicData {
         properties: Default::default(),
         identity_token: None,
         permissions_token: None,
+        participant_security_info: None,
         identity_status_token: None,
         sig_algo_info: None,
         kx_algo_info: None,
@@ -136,10 +137,10 @@ fn legacy_peer_without_tokens_decodes_to_none() {
 
 #[test]
 fn token_with_binary_property_survives_spdp_padding() {
-    // Binary-Property-Werte koennen non-multiple-of-4 sein. Der RTPS
-    // ParameterList-Codec paddet auf 4 byte und der Security-Layer-
-    // Decoder muss die echte Property-Laenge aus dem CDR-Length-
-    // Prefix lesen — Padding-Bytes duerfen nicht in den Wert leaken.
+    // Binary property values can be a non-multiple of 4. The RTPS
+    // ParameterList codec pads to 4 bytes and the security-layer
+    // decoder must read the real property length from the CDR length
+    // prefix — padding bytes must not leak into the value.
     let cert_blob = vec![0xCAu8, 0xFE, 0xBA, 0xBE, 0xDE, 0xAD]; // 6 byte
     let token = DataHolder::new("DDS:Auth:PKI-DH:1.2")
         .with_property("dds.cert.sn", "01:02")

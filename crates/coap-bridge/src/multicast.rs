@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CoAP Multicast Operation nach RFC 7252 §8.
+//! CoAP multicast operation per RFC 7252 §8.
 //!
-//! Multicast adressiert Group-Communication: Ein NON-Request wird
-//! an eine Gruppen-Adresse geschickt, mehrere Server antworten. Die
-//! Spec verlangt:
-//! - Multicast-Requests SHOULD be Non-confirmable (§8.1).
-//! - Server warten Leisure-Time vor Antwort (§8.2).
-//! - DEFAULT_LEISURE = 5 Sekunden.
-//! - Token muss eindeutig pro Multicast-Group sein (§8 + §5.3).
+//! Multicast addresses group communication: a NON request is
+//! sent to a group address and multiple servers respond. The
+//! spec requires:
+//! - Multicast requests SHOULD be Non-confirmable (§8.1).
+//! - Servers wait a leisure time before responding (§8.2).
+//! - DEFAULT_LEISURE = 5 seconds.
+//! - The token must be unique per multicast group (§8 + §5.3).
 
 use core::time::Duration;
 
@@ -22,17 +22,17 @@ pub const ALL_NODES_LINK_LOCAL_V6: &str = "FF02::FD";
 /// Spec §8.1 — IPv6 site-local All-CoAP-Nodes (`FF05::FD`).
 pub const ALL_NODES_SITE_LOCAL_V6: &str = "FF05::FD";
 
-/// Spec §8.2 — DEFAULT_LEISURE (5 Sekunden).
+/// Spec §8.2 — DEFAULT_LEISURE (5 seconds).
 pub const DEFAULT_LEISURE: Duration = Duration::from_secs(5);
 
-/// Multicast-Validation-Errors.
+/// Multicast validation errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MulticastError {
-    /// Spec §8.1: Multicast-Request MUSS NON sein, nicht CON.
+    /// Spec §8.1: a multicast request MUST be NON, not CON.
     ConfirmableNotAllowed,
-    /// Spec §8.1: Multicast-Request MUSS einen Token haben.
+    /// Spec §8.1: a multicast request MUST have a token.
     EmptyToken,
-    /// Reserviertes IPv4-Multicast-Range (224.0.0.0/4).
+    /// Reserved IPv4 multicast range (224.0.0.0/4).
     InvalidMulticastAddress,
 }
 
@@ -49,27 +49,27 @@ impl core::fmt::Display for MulticastError {
 #[cfg(feature = "std")]
 impl std::error::Error for MulticastError {}
 
-/// Validiert eine IPv4-Adresse als Multicast-Range (224.0.0.0/4).
+/// Validates an IPv4 address as being in the multicast range (224.0.0.0/4).
 #[must_use]
 pub fn is_ipv4_multicast(addr: [u8; 4]) -> bool {
     addr[0] >= 224 && addr[0] <= 239
 }
 
-/// Validiert eine IPv6-Adresse als Multicast (`FFxx::*`).
+/// Validates an IPv6 address as multicast (`FFxx::*`).
 #[must_use]
 pub fn is_ipv6_multicast(addr: [u16; 8]) -> bool {
     (addr[0] & 0xFF00) == 0xFF00
 }
 
-/// Spec §8.1 — Validiert einen Multicast-Request.
+/// Spec §8.1 — validates a multicast request.
 ///
-/// Liefert `Err` wenn:
-/// - Message-Type ist Confirmable (CON) — Multicast verlangt NON.
-/// - Token ist leer — Multicast verlangt unique Token fuer Reply-
-///   Matching.
+/// Returns `Err` if:
+/// - Message type is Confirmable (CON) — multicast requires NON.
+/// - Token is empty — multicast requires a unique token for reply
+///   matching.
 ///
 /// # Errors
-/// Siehe [`MulticastError`].
+/// See [`MulticastError`].
 pub fn validate_multicast_request(
     is_confirmable: bool,
     token: &[u8],
@@ -83,13 +83,13 @@ pub fn validate_multicast_request(
     Ok(())
 }
 
-/// Spec §8.2 — Server-Leisure-Time. Caller addiert eine Random-Wahl
-/// zwischen `0..leisure` zu jedem Multicast-Reply, um Reply-Floods
-/// zu vermeiden.
+/// Spec §8.2 — server leisure time. The caller adds a random choice
+/// between `0..leisure` to each multicast reply to avoid reply
+/// floods.
 ///
-/// `leisure_seed` ist ein per-Server-pseudo-Zufallswert (z.B. aus
-/// dem Token-Hash); wir geben hier nur den deterministischen
-/// Schnitt-Helper.
+/// `leisure_seed` is a per-server pseudo-random value (e.g. from
+/// the token hash); here we only provide the deterministic
+/// interval helper.
 #[must_use]
 pub fn leisure_delay(leisure: Duration, leisure_seed: u32) -> Duration {
     let max_ns = leisure.as_nanos() as u64;

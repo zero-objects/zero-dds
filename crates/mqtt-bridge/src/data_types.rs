@@ -13,15 +13,15 @@ use alloc::vec::Vec;
 /// Spec §1.5.6 — `Binary Data` (u16 BE length + bytes).
 /// Spec §1.5.7 — `UTF-8 String Pair`.
 ///
-/// Diese Module bietet Encode-/Decode-Helper.
+/// This module provides encode/decode helpers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataTypeError {
     /// Input bytes truncated.
     Truncated,
-    /// String hat invalides UTF-8 (Spec §1.5.4 verlangt UTF-8 Net-
-    /// Unicode).
+    /// String has invalid UTF-8 (Spec §1.5.4 requires UTF-8 net
+    /// unicode).
     InvalidUtf8,
-    /// String/BinaryData ueber u16-Limit (>65535).
+    /// String/BinaryData over the u16 limit (>65535).
     LengthTooLarge,
 }
 
@@ -47,7 +47,7 @@ pub const fn encode_two_byte_int(v: u16) -> [u8; 2] {
 /// Spec §1.5.2 — Decode Two Byte Integer.
 ///
 /// # Errors
-/// `Truncated` wenn `bytes.len() < 2`.
+/// `Truncated` if `bytes.len() < 2`.
 pub fn decode_two_byte_int(bytes: &[u8]) -> Result<(u16, usize), DataTypeError> {
     if bytes.len() < 2 {
         return Err(DataTypeError::Truncated);
@@ -55,11 +55,11 @@ pub fn decode_two_byte_int(bytes: &[u8]) -> Result<(u16, usize), DataTypeError> 
     Ok((u16::from_be_bytes([bytes[0], bytes[1]]), 2))
 }
 
-/// Spec §1.5.4 — `UTF-8 Encoded String`. Liefert wire-form mit u16 BE
-/// Length-Prefix.
+/// Spec §1.5.4 — `UTF-8 Encoded String`. Returns the wire form with a u16 BE
+/// length prefix.
 ///
 /// # Errors
-/// `LengthTooLarge` wenn `s.len() > u16::MAX`.
+/// `LengthTooLarge` if `s.len() > u16::MAX`.
 pub fn encode_utf8_string(s: &str) -> Result<Vec<u8>, DataTypeError> {
     let len = s.len();
     if len > u16::MAX as usize {
@@ -75,9 +75,9 @@ pub fn encode_utf8_string(s: &str) -> Result<Vec<u8>, DataTypeError> {
 /// Spec §1.5.4 — Decode UTF-8 String.
 ///
 /// # Errors
-/// * `Truncated` wenn weniger als 2 Length-Bytes oder String-Length-
-///   Bytes fehlen.
-/// * `InvalidUtf8` wenn der String kein gueltiges UTF-8 ist.
+/// * `Truncated` if fewer than 2 length bytes or the string-length
+///   bytes are missing.
+/// * `InvalidUtf8` if the string is not valid UTF-8.
 pub fn decode_utf8_string(bytes: &[u8]) -> Result<(String, usize), DataTypeError> {
     let (len, hdr) = decode_two_byte_int(bytes)?;
     let end = hdr + usize::from(len);
@@ -90,10 +90,10 @@ pub fn decode_utf8_string(bytes: &[u8]) -> Result<(String, usize), DataTypeError
     Ok((s, end))
 }
 
-/// Spec §1.5.6 — `Binary Data` mit u16 BE Length-Prefix.
+/// Spec §1.5.6 — `Binary Data` with a u16 BE length prefix.
 ///
 /// # Errors
-/// `LengthTooLarge` wenn `data.len() > u16::MAX`.
+/// `LengthTooLarge` if `data.len() > u16::MAX`.
 pub fn encode_binary_data(data: &[u8]) -> Result<Vec<u8>, DataTypeError> {
     let len = data.len();
     if len > u16::MAX as usize {
@@ -109,7 +109,7 @@ pub fn encode_binary_data(data: &[u8]) -> Result<Vec<u8>, DataTypeError> {
 /// Spec §1.5.6 — Decode Binary Data.
 ///
 /// # Errors
-/// `Truncated` wenn weniger als 2 Length-Bytes oder Daten-Bytes fehlen.
+/// `Truncated` if fewer than 2 length bytes or the data bytes are missing.
 pub fn decode_binary_data(bytes: &[u8]) -> Result<(Vec<u8>, usize), DataTypeError> {
     let (len, hdr) = decode_two_byte_int(bytes)?;
     let end = hdr + usize::from(len);

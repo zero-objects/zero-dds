@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+// Alignment-sensitive cross-vendor durability REPLAY harness type.
+// `octet` then `long long`: XCDR1 pads the 8-byte member to offset 8, XCDR2
+// caps it to offset 4 (XTypes §7.4.3.4.2) — so the wire layouts DIFFER. A
+// CycloneDDS FINAL writer emits XCDR1; the durability service must replay with
+// an XCDR1 encap (not its XCDR2 default), else a CycloneDDS late-joiner decodes
+// `val` from the wrong offset. Proves the representation-faithful replay fix.
+module al {
+  struct AlignS {
+    octet tag;
+    long long val;
+  };
+};

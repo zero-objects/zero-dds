@@ -1,19 +1,19 @@
-//! E2E-Handshake-Test fuer DDS-Security PKI Auth-Plugin.
+//! E2E handshake test for the DDS-Security PKI auth plugin.
 //!
-//! Verifiziert den drei-Stufen-Handshake (Request → Reply → Final)
-//! durch reines Encode→Wire→Decode pro Stufe. Spec: DDS-Security
-//! 1.2 §9.3.2.5 (Handshake Request/Reply/Final Tokens).
+//! Verifies the three-stage handshake (request → reply → final)
+//! through pure encode→wire→decode per stage. Spec: DDS-Security
+//! 1.2 §9.3.2.5 (handshake request/reply/final tokens).
 //!
-//! 1. Initiator (Participant A) baut RequestToken mit eigenem Cert,
-//!    DH1, Challenge1.
-//! 2. Replier (Participant B) parst, baut ReplyToken mit eigenem
-//!    Cert, DH2, Challenge2, Echo von HashC1/DH1/Ch1, plus Signatur.
-//! 3. Initiator (A) parst Reply, baut FinalToken mit eigener Signatur.
-//! 4. Replier (B) parst Final.
+//! 1. The initiator (participant A) builds a RequestToken with its own cert,
+//!    DH1, challenge1.
+//! 2. The replier (participant B) parses, builds a ReplyToken with its own
+//!    cert, DH2, challenge2, echo of HashC1/DH1/Ch1, plus a signature.
+//! 3. The initiator (A) parses the reply, builds a FinalToken with its own signature.
+//! 4. The replier (B) parses the final.
 //!
-//! Hash-c1/c2 werden bei jedem parse_* validiert; Signatur-Bytes
-//! sind im Test placeholder (echte ECDSA-Sign braucht externes
-//! Crypto).
+//! hash-c1/c2 are validated on every parse_*; signature bytes
+//! are placeholders in the test (real ECDSA signing needs external
+//! crypto).
 
 #![allow(
     clippy::expect_used,
@@ -95,8 +95,8 @@ fn full_three_stage_handshake() {
     assert_eq!(reply_view.dh2, B_DH2);
     assert_eq!(reply_view.challenge2, B_CHALLENGE);
     // Echo verifizieren
-    assert_eq!(reply_view.hash_c1, req_view.hash_c1);
-    assert_eq!(reply_view.dh1, A_DH1);
+    assert_eq!(reply_view.hash_c1, Some(req_view.hash_c1));
+    assert_eq!(reply_view.dh1.as_deref(), Some(A_DH1));
     assert_eq!(reply_view.challenge1, A_CHALLENGE);
 
     // Stage 3: A -> B (Final, echoing all)
@@ -133,7 +133,7 @@ fn tampered_request_token_fails_hash_check() {
     })
     .unwrap();
 
-    // Flip one byte deep im Wire-Stream — hash_c1 sollte mismatchen.
+    // Flip one byte deep in the wire stream — hash_c1 should mismatch.
     let mid = req_bytes.len() / 2;
     req_bytes[mid] ^= 0xFF;
     let res = parse_request_token(&req_bytes);
@@ -142,12 +142,12 @@ fn tampered_request_token_fails_hash_check() {
 
 #[test]
 fn replay_attack_with_swapped_challenges_detected() {
-    // Simuliert MitM: Angreifer faengt valides Reply-Token ab und
-    // versucht es mit umgetauschtem Challenge2 weiterzugeben — der
-    // Hash-C2-Recompute wuerde zwar stimmen wenn auch der c.dsign_algo
-    // mitgeaendert wird, aber die Echo-Felder challenge1/dh1 muessen
-    // im downstream-Final-Token gegen eigene Werte gepruefen werden.
-    // In dieser Stufe: nur den Hash-Check verifizieren.
+    // Simulates a MitM: the attacker intercepts a valid reply token and
+    // tries to forward it with a swapped challenge2 — the
+    // hash-C2 recompute would indeed match if c.dsign_algo is also
+    // changed, but the echo fields challenge1/dh1 must be
+    // checked against own values in the downstream final token.
+    // At this stage: only verify the hash check.
     let req_bytes = build_request_token(&RequestBuildInput {
         cert_der: A_CERT,
         permissions: A_PERM,
@@ -177,21 +177,22 @@ fn replay_attack_with_swapped_challenges_detected() {
     })
     .unwrap();
 
-    // Initiator parst — soll Echo gegen eigene Erinnerung pruefen.
+    // The initiator parses — should check the echo against its own memory.
     let reply_view = parse_reply_token(&reply_bytes).unwrap();
     assert_eq!(
         reply_view.challenge1, A_CHALLENGE,
         "Echo challenge1 must match initiator's original"
     );
     assert_eq!(
-        reply_view.dh1, A_DH1,
+        reply_view.dh1.as_deref(),
+        Some(A_DH1),
         "Echo dh1 must match initiator's original"
     );
 }
 
 #[test]
 fn empty_certs_rejected_by_dos_cap() {
-    // Cert-DER groesser als MAX_CERT_DER (16 KiB) wird gerejected.
+    // A cert DER larger than MAX_CERT_DER (16 KiB) is rejected.
     let huge_cert = vec![0u8; 17 * 1024];
     let res = build_request_token(&RequestBuildInput {
         cert_der: &huge_cert,
@@ -208,8 +209,8 @@ fn empty_certs_rejected_by_dos_cap() {
 
 #[test]
 fn handshake_with_different_cert_dh_combos() {
-    // Sanity: 5 verschiedene cert/DH-Kombinationen produzieren alle
-    // valide Tokens und round-trippen.
+    // Sanity: 5 different cert/DH combinations all produce
+    // valid tokens and round-trip.
     for seed in 0u8..5 {
         let cert: Vec<u8> = format!("CERT-{seed}").into_bytes();
         let dh: Vec<u8> = format!("DH-PUBLIC-key-{seed}-32-bytes____").into_bytes();

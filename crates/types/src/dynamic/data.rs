@@ -2,15 +2,15 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DynamicData (XTypes 1.3 §7.5.6).
 //!
-//! `DynamicData` ist eine Daten-Instanz eines `DynamicType`. Die API
-//! ist Spec-frozen (Methoden-Namen + Signaturen). Gegenueber der Spec
-//! werden zwei Vereinfachungen gemacht:
+//! `DynamicData` is a data instance of a `DynamicType`. The API
+//! is spec-frozen (method names + signatures). Relative to the spec,
+//! two simplifications are made:
 //!
-//! 1. Alle 12 typed Getters/Setters kommen ueber ein `DynamicValue`-
-//!    Discriminator-Enum, ueber den die `set_<T>_value`/`get_<T>_value`
-//!    Methoden ihren Type-Check machen. Type-Mismatch → `BadParameter`.
-//! 2. Loans werden ueber einen Reference-counted `DataLoan` modelliert
-//!    (Spec §7.5.6.1 — vollstaendige Loan-API folgt mit C4.7).
+//! 1. All 12 typed getters/setters go through a `DynamicValue`
+//!    discriminator enum, by which the `set_<T>_value`/`get_<T>_value`
+//!    methods do their type check. Type mismatch → `BadParameter`.
+//! 2. Loans are modeled via a reference-counted `DataLoan`
+//!    (Spec §7.5.6.1 — the full loan API follows with C4.7).
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -22,12 +22,12 @@ use super::error::DynamicError;
 use super::type_::DynamicType;
 
 // ----------------------------------------------------------------------
-// DynamicValue — internes Storage-Enum
+// DynamicValue — internal storage enum
 // ----------------------------------------------------------------------
 
-/// Sum-Type fuer alle in DynamicData speicherbaren Werte. Spec §7.5.6
-/// spricht von 12 Primitive-Types + Composite + Sequence — diese Enum
-/// kapselt das Storage.
+/// Sum type for all values storable in DynamicData. Spec §7.5.6
+/// speaks of 12 primitive types + composite + sequence — this enum
+/// encapsulates the storage.
 #[derive(Debug, Clone)]
 pub enum DynamicValue {
     /// `bool`.
@@ -60,14 +60,14 @@ pub enum DynamicValue {
     Char16(u16),
     /// `string`.
     String(String),
-    /// `wstring` (UTF-16 als Vec<u16>).
+    /// `wstring` (UTF-16 as Vec<u16>).
     WString(Vec<u16>),
-    /// Composite oder Sequence — eingebettete `DynamicData`.
+    /// Composite or sequence — embedded `DynamicData`.
     Complex(Box<DynamicData>),
-    /// Sequence von DynamicData (Spec: Element-Type bekannt aus dem
+    /// Sequence of DynamicData (spec: the element type is known from the
     /// containerizing TypeDescriptor).
     Sequence(Vec<DynamicData>),
-    /// Discard / nicht gesetzt (Default-Wert wird zurueckgegeben).
+    /// Discard / not set (the default value is returned).
     None,
 }
 
@@ -127,22 +127,22 @@ impl DynamicValue {
 }
 
 // ----------------------------------------------------------------------
-// DataLoan — einfacher RAII-Wrapper
+// DataLoan — simple RAII wrapper
 // ----------------------------------------------------------------------
 
-/// Gibt eine geliehene `DynamicData`-Sicht auf einen Member zurueck.
+/// Returns a loaned `DynamicData` view onto a member.
 /// Lifecycle: `loan_value` → `return_loaned_value` (Spec §7.5.6.1).
 ///
-/// In Phase 4 minimal — voller Loan-Refcount kommt mit C4.7.
+/// Minimal in phase 4 — the full loan refcount comes with C4.7.
 #[derive(Debug)]
 pub struct DataLoan {
     member_id: MemberId,
-    /// Index im internen Loans-Array — wird auf `return` invalidiert.
+    /// Index into the internal loans array — invalidated on `return`.
     handle: u32,
 }
 
 impl DataLoan {
-    /// Member-Id, fuer den der Loan angelegt wurde.
+    /// Member id for which the loan was created.
     #[must_use]
     pub fn member_id(&self) -> MemberId {
         self.member_id
@@ -155,17 +155,17 @@ impl DataLoan {
 
 /// XTypes 1.3 §7.5.6 DynamicData.
 ///
-/// Daten-Instanz eines `DynamicType`. Der Typ muss bei Konstruktion
-/// uebergeben werden (`DynamicDataFactory::create_data`), danach
-/// koennen Members ueber `set_<T>_value(member_id, value)` / `get_<T>_value`
-/// gelesen/geschrieben werden.
+/// Data instance of a `DynamicType`. The type must be passed at
+/// construction (`DynamicDataFactory::create_data`); afterwards
+/// members can be read/written via `set_<T>_value(member_id, value)` /
+/// `get_<T>_value`.
 #[derive(Debug, Clone)]
 pub struct DynamicData {
     type_: DynamicType,
     values: BTreeMap<MemberId, DynamicValue>,
-    /// Aktive Loans — fuer Lifecycle-Validierung.
+    /// Active loans — for lifecycle validation.
     active_loans: Vec<u32>,
-    /// Monoton wachsender Loan-Counter.
+    /// Monotonically growing loan counter.
     next_loan_handle: u32,
 }
 
@@ -197,7 +197,7 @@ impl DynamicData {
         u32::try_from(self.values.len()).unwrap_or(u32::MAX)
     }
 
-    /// Prueft, ob `member_id` im Type definiert ist.
+    /// Checks whether `member_id` is defined in the type.
     fn validate_member(&self, member_id: MemberId) -> Result<(), DynamicError> {
         if self.type_.member_by_id(member_id).is_none() {
             return Err(DynamicError::bad_parameter(alloc::format!(
@@ -208,21 +208,21 @@ impl DynamicData {
         Ok(())
     }
 
-    /// Allgemeiner Setter — typgesichert via `DynamicValue` mit
-    /// Spec §7.5.4.1.2 TryConstruct-Apply-Semantik (C4.7): Wenn der
-    /// Member-Type ein `bound` definiert und der Wert die Bound
-    /// verletzt (zu langer String, zu lange Sequence, mismatched
-    /// Array-Length), entscheidet der `try_construct`-Strategy:
-    /// `Discard` laesst den Member unset, `UseDefault` setzt den
-    /// `default_value`, `Trim` truncated auf die Bound.
+    /// General setter — type-safe via `DynamicValue` with
+    /// Spec §7.5.4.1.2 TryConstruct apply semantics (C4.7): if the
+    /// member type defines a `bound` and the value violates the bound
+    /// (too long a string, too long a sequence, mismatched
+    /// array length), the `try_construct` strategy decides:
+    /// `Discard` leaves the member unset, `UseDefault` sets the
+    /// `default_value`, `Trim` truncates to the bound.
     fn set(&mut self, member_id: MemberId, value: DynamicValue) -> Result<(), DynamicError> {
         self.validate_member(member_id)?;
         let member = self.type_.member_by_id(member_id).cloned();
         if let Some(ref m) = member {
             check_value_kind_matches_type(&value, m.dynamic_type().kind())?;
         }
-        // TryConstruct-Apply (Spec §7.5.4.1.2). Member ohne Bounds:
-        // `apply_try_construct` liefert `Accept(value)` unveraendert.
+        // TryConstruct apply (Spec §7.5.4.1.2). Members without bounds:
+        // `apply_try_construct` returns `Accept(value)` unchanged.
         if let Some(m) = member {
             match crate::dynamic::try_construct::apply_try_construct(&m, value) {
                 crate::dynamic::TryConstructOutcome::Accept(v)
@@ -231,7 +231,7 @@ impl DynamicData {
                     self.values.insert(member_id, v);
                 }
                 crate::dynamic::TryConstructOutcome::Discard => {
-                    // Member bleibt unset (Spec §7.5.4.1.2 Discard).
+                    // Member stays unset (Spec §7.5.4.1.2 Discard).
                     self.values.remove(&member_id);
                 }
             }
@@ -262,8 +262,8 @@ macro_rules! primitive_accessor {
             #[doc = concat!("Spec §7.5.6.3 `get_", stringify!($variant), "_value`.")]
             ///
             /// # Errors
-            /// `BadParameter` bei unbekannter Id, `Inconsistent` bei
-            /// Type-Mismatch.
+            /// `BadParameter` on an unknown id, `Inconsistent` on a
+            /// type mismatch.
             pub fn $get_name(&self, member_id: MemberId) -> Result<$rust_ty, DynamicError> {
                 let v = self.get(member_id)?;
                 if let DynamicValue::$variant(x) = v {
@@ -280,7 +280,7 @@ macro_rules! primitive_accessor {
             #[doc = concat!("Spec §7.5.6.3 `set_", stringify!($variant), "_value`.")]
             ///
             /// # Errors
-            /// Type-Mismatch / unbekannte Id.
+            /// Type mismatch / unknown id.
             pub fn $set_name(
                 &mut self,
                 member_id: MemberId,
@@ -328,7 +328,7 @@ impl DynamicData {
     /// Spec §7.5.6.3 `set_string_value`.
     ///
     /// # Errors
-    /// Type-Mismatch / unbekannte Id.
+    /// Type mismatch / unknown id.
     pub fn set_string_value(
         &mut self,
         member_id: MemberId,
@@ -356,7 +356,7 @@ impl DynamicData {
     /// Spec §7.5.6.3 `set_wstring_value`.
     ///
     /// # Errors
-    /// Type-Mismatch / unbekannte Id.
+    /// Type mismatch / unknown id.
     pub fn set_wstring_value(
         &mut self,
         member_id: MemberId,
@@ -373,10 +373,10 @@ impl DynamicData {
 impl DynamicData {
     /// Spec §7.5.6.5.1 `get_complex_value(member_id)`.
     ///
-    /// Liefert eine Lese-Sicht auf den Composite-Member.
+    /// Returns a read view onto the composite member.
     ///
     /// # Errors
-    /// Type-Mismatch oder Member nicht gesetzt.
+    /// Type mismatch or member not set.
     pub fn get_complex_value(&self, member_id: MemberId) -> Result<&DynamicData, DynamicError> {
         let v = self.get(member_id)?;
         if let DynamicValue::Complex(d) = v {
@@ -392,7 +392,7 @@ impl DynamicData {
     /// Spec §7.5.6.5.2 `set_complex_value(member_id, data)`.
     ///
     /// # Errors
-    /// Type-Mismatch oder Member existiert nicht.
+    /// Type mismatch or member does not exist.
     pub fn set_complex_value(
         &mut self,
         member_id: MemberId,
@@ -401,10 +401,10 @@ impl DynamicData {
         self.set(member_id, DynamicValue::Complex(Box::new(value)))
     }
 
-    /// Liefert die Anzahl Elemente einer Sequence-Member.
+    /// Returns the number of elements of a sequence member.
     ///
     /// # Errors
-    /// Type-Mismatch oder Member nicht gesetzt.
+    /// Type mismatch or member not set.
     pub fn get_sequence_length(&self, member_id: MemberId) -> Result<u32, DynamicError> {
         let v = self.get(member_id)?;
         if let DynamicValue::Sequence(seq) = v {
@@ -417,10 +417,10 @@ impl DynamicData {
         }
     }
 
-    /// Setzt eine Sequence komplett.
+    /// Sets a sequence completely.
     ///
     /// # Errors
-    /// Type-Mismatch.
+    /// Type mismatch.
     pub fn set_sequence_value(
         &mut self,
         member_id: MemberId,
@@ -429,10 +429,10 @@ impl DynamicData {
         self.set(member_id, DynamicValue::Sequence(value))
     }
 
-    /// Liefert ein Element einer Sequence-Member.
+    /// Returns an element of a sequence member.
     ///
     /// # Errors
-    /// Index-OoB / Type-Mismatch.
+    /// Index out of bounds / type mismatch.
     pub fn get_sequence_element(
         &self,
         member_id: MemberId,
@@ -456,18 +456,18 @@ impl DynamicData {
 }
 
 // ----------------------------------------------------------------------
-// Loans (Spec §7.5.6.1) — minimal, voller Lifecycle in C4.7
+// Loans (Spec §7.5.6.1) — minimal, full lifecycle in C4.7
 // ----------------------------------------------------------------------
 
 impl DynamicData {
     /// Spec §7.5.6.1 `loan_value(member_id)`.
     ///
-    /// Erzeugt einen `DataLoan`-Handle. Bis zum Aufruf von
-    /// `return_loaned_value` ist eine erneute Loan-Operation auf demselben
-    /// Member nicht erlaubt.
+    /// Creates a `DataLoan` handle. Until `return_loaned_value` is
+    /// called, another loan operation on the same
+    /// member is not allowed.
     ///
     /// # Errors
-    /// Member nicht gefunden, oder Member bereits geliehen.
+    /// Member not found, or member already on loan.
     pub fn loan_value(&mut self, member_id: MemberId) -> Result<DataLoan, DynamicError> {
         self.validate_member(member_id)?;
         if self.active_loans.contains(&member_id) {
@@ -484,7 +484,7 @@ impl DynamicData {
     /// Spec §7.5.6.1 `return_loaned_value(loan)`.
     ///
     /// # Errors
-    /// `LoanError` wenn der Loan unbekannt oder bereits zurueckgegeben.
+    /// `LoanError` if the loan is unknown or already returned.
     pub fn return_loaned_value(&mut self, loan: DataLoan) -> Result<(), DynamicError> {
         let pos = self
             .active_loans
@@ -497,15 +497,14 @@ impl DynamicData {
                 ))
             })?;
         self.active_loans.swap_remove(pos);
-        // Handle-Wert wird nicht weiterverwendet — nur als Sanity-Indikator
-        // gehalten, dass `return_loaned_value` einen produktiven Loan
-        // erhaelt.
+        // The handle value is not used further — only kept as a sanity
+        // indicator that `return_loaned_value` receives a productive loan.
         let _ = loan.handle;
         Ok(())
     }
 }
 
-/// Validiert: passt der Wert-Discriminator zum Member-Type-Kind?
+/// Validates: does the value discriminator match the member type kind?
 fn check_value_kind_matches_type(value: &DynamicValue, kind: TypeKind) -> Result<(), DynamicError> {
     let ok = match (value, kind) {
         (DynamicValue::Bool(_), TypeKind::Boolean) => true,
@@ -639,7 +638,7 @@ mod tests {
 
     #[test]
     fn complex_value_set_get() {
-        // outer struct mit nested struct member.
+        // outer struct with a nested struct member.
         let mut inner = DynamicTypeBuilderFactory::create_struct("::Inner");
         inner
             .add_struct_member("v", 1, TypeDescriptor::primitive(TypeKind::Int32, "int32"))
@@ -695,7 +694,7 @@ mod tests {
 
     #[test]
     fn all_twelve_primitive_setters_work() {
-        // Diese Liste ist Spec-§7.5.6.3-Pflicht.
+        // This list is mandatory per Spec §7.5.6.3.
         let cases: alloc::vec::Vec<(&str, MemberId, TypeKind)> = alloc::vec![
             ("b", 1, TypeKind::Boolean),
             ("by", 2, TypeKind::Byte),
@@ -721,7 +720,7 @@ mod tests {
             )
             .unwrap();
         }
-        // Plus String und WString.
+        // Plus string and WString.
         b.add_struct_member("s", 100, TypeDescriptor::string8(64))
             .unwrap();
         b.add_struct_member("w", 101, TypeDescriptor::string16(64))

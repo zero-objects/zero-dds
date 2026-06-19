@@ -5,15 +5,14 @@
 //!
 //! `IOR:<hex-encoded-cdr-encapsulation>`
 //!
-//! Beispiel:
+//! Example:
 //! ```text
 //! IOR:000000000000002849444c3a6f6d672e6f72672f436f73...
 //! ```
 //!
-//! * Prefix `IOR:` ist case-sensitive (Spec normativ).
-//! * Hex-Bytes sind lowercase per Spec, aber Caller akzeptieren
-//!   typischerweise auch uppercase. Wir lesen beide, schreiben
-//!   lowercase.
+//! * The `IOR:` prefix is case-sensitive (normative per spec).
+//! * Hex bytes are lowercase per spec, but callers typically also
+//!   accept uppercase. We read both and write lowercase.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -23,16 +22,16 @@ use zerodds_cdr::Endianness;
 use crate::error::{IorError, IorResult};
 use crate::ior::Ior;
 
-/// `IOR:`-Prefix (case-sensitive).
+/// `IOR:` prefix (case-sensitive).
 pub const STRINGIFIED_IOR_PREFIX: &str = "IOR:";
 
-/// Encodiert ein IOR als stringified-Form.
+/// Encodes an IOR into its stringified form.
 ///
-/// `endianness` legt die Wire-Endianness in der CDR-Encapsulation fest;
-/// die meisten ORBs (TAO/omniORB) emittieren Big-Endian.
+/// `endianness` sets the wire endianness in the CDR encapsulation;
+/// most ORBs (TAO/omniORB) emit big-endian.
 ///
 /// # Errors
-/// CDR-Fehler waehrend Encapsulation.
+/// CDR error during encapsulation.
 pub fn to_stringified(ior: &Ior, endianness: Endianness) -> IorResult<String> {
     let bytes = ior.encode_encapsulation(endianness)?;
     let mut out = String::with_capacity(STRINGIFIED_IOR_PREFIX.len() + bytes.len() * 2);
@@ -44,11 +43,11 @@ pub fn to_stringified(ior: &Ior, endianness: Endianness) -> IorResult<String> {
     Ok(out)
 }
 
-/// Decodiert eine stringified-IOR.
+/// Decodes a stringified IOR.
 ///
 /// # Errors
-/// `MissingIorPrefix`, `OddHexLength`, `InvalidHexChar`, oder
-/// CDR-Fehler.
+/// `MissingIorPrefix`, `OddHexLength`, `InvalidHexChar`, or
+/// CDR error.
 pub fn from_stringified(s: &str) -> IorResult<Ior> {
     let s = s.trim();
     let payload = s
@@ -123,7 +122,7 @@ mod tests {
     fn upper_and_lower_hex_both_decoded() {
         let ior = sample_ior();
         let s = to_stringified(&ior, Endianness::Big).unwrap();
-        // Hex-Teil in upper-case umwandeln, Prefix bleibt
+        // Convert the hex part to upper-case; the prefix stays
         // case-sensitive `IOR:`.
         let mut canonical_prefix_then_upper = String::from("IOR:");
         canonical_prefix_then_upper.push_str(&s["IOR:".len()..].to_uppercase());

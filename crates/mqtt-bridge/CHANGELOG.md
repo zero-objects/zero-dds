@@ -1,83 +1,83 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-mqtt-bridge`-Crate.
+Initial release materialization of the `zerodds-mqtt-bridge` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **OASIS MQTT 5.0** (07 March 2019): §1.5 (Data Types), §2.1 (Fixed Header), §2.2.2 (Properties — alle 27 Identifiers), §2.4 (Reason Codes), §3 (Control Packets §3.1-§3.15: alle 14 Packet-Types), §4.1 (Session State), §4.7 (Topic Filter Matching).
+- **OASIS MQTT 5.0** (07 March 2019): §1.5 (Data Types), §2.1 (Fixed Header), §2.2.2 (Properties — all 27 identifiers), §2.4 (Reason Codes), §3 (Control Packets §3.1-§3.15: all 14 packet types), §4.1 (Session State), §4.7 (Topic Filter Matching).
 
-### Public-API
+### Public API
 
-**Wire-Codec (`codec` + `control_packets` + `data_types` + `vbi` + `packet`):**
+**Wire codec (`codec` + `control_packets` + `data_types` + `vbi` + `packet`):**
 - `encode_publish` / `decode_publish` / `CodecError`.
-- `FixedHeader`, `ControlPacketType` (alle 14 Werte).
-- Encoder/Decoder fuer alle 14 Control-Packet-Bodies: `connect` / `connack` / `ack` (PUBACK/PUBREC/PUBREL/PUBCOMP) / `subscribe` / `suback` / `unsubscribe` / `unsuback` / `disconnect` / `auth`.
+- `FixedHeader`, `ControlPacketType` (all 14 values).
+- Encoders/decoders for all 14 control-packet bodies: `connect` / `connack` / `ack` (PUBACK/PUBREC/PUBREL/PUBCOMP) / `subscribe` / `suback` / `unsubscribe` / `unsuback` / `disconnect` / `auth`.
 - `Subscription`, `AckBody`, `AuthBody`, etc.
 - `encode_vbi` / `decode_vbi` / `vbi_size` (§1.5.5 Variable Byte Integer).
 - `encode_utf8_string` / `decode_utf8_string` / `encode_binary_data` / `decode_binary_data` / `encode_two_byte_int` / `decode_two_byte_int` (§1.5).
 
-**Properties (`properties`-Modul + `control_packets::property_data_type`):**
+**Properties (`properties` module + `control_packets::property_data_type`):**
 - `Property`, `PropertyId`, `PropertyValueKind`.
 - `PropertyDataType` (Byte / Two-Byte-Int / Four-Byte-Int / VBI / UTF8-String / UTF8-String-Pair / Binary-Data).
-- `property_data_type(id) -> Option<PropertyDataType>` — Schema-Lookup ueber alle 27 Identifiers.
+- `property_data_type(id) -> Option<PropertyDataType>` — schema lookup over all 27 identifiers.
 
-**Broker (`broker`-Modul):**
+**Broker (`broker` module):**
 - `Broker::{new, handle_connect, handle_publish, handle_subscribe, handle_unsubscribe, handle_disconnect, deliver_pending}`.
 - `Session`, `BrokerSubscription`, `RetainedMessage`, `Will`, `DeliveryEnvelope`, `QoS::{AtMostOnce, AtLeastOnce, ExactlyOnce}`.
 
-**Keep-Alive (`keep_alive`-Modul):**
-- `KeepAliveTracker::{new, on_packet, is_expired}` mit 1.5x-Tolerance-Faktor (§3.1.2.10).
+**Keep-alive (`keep_alive` module):**
+- `KeepAliveTracker::{new, on_packet, is_expired}` with a 1.5x tolerance factor (§3.1.2.10).
 
-**Topic-Filter (`topic_filter`-Modul):**
-- `topic_matches(filter, topic) -> bool` — `+` (single-level) / `#` (multi-level) Wildcards.
+**Topic filter (`topic_filter` module):**
+- `topic_matches(filter, topic) -> bool` — `+` (single-level) / `#` (multi-level) wildcards.
 - `validate_filter` / `validate_topic_name` / `TopicFilterError`.
 
-**DDS-Bridge (`dds_bridge`-Modul):**
+**DDS bridge (`dds_bridge` module):**
 - `MqttDdsBridge::{new, on_mqtt_publish, on_dds_sample}`.
 - `TopicMapper::{add_mapping, lookup_mqtt, lookup_dds}`.
 - `BridgeStats { mqtt_to_dds_count, dds_to_mqtt_count }`.
 - `mqtt_qos_to_dds(qos) -> (DdsReliability, DdsDurability)`, `dds_qos_to_mqtt`.
 - `forward_user_properties(props) -> Vec<...>`.
 
-**Reason-Codes (`reason_codes`-Modul):**
-- `ReasonCode::{Success, ...}` mit `is_error` (>= 0x80).
+**Reason codes (`reason_codes` module):**
+- `ReasonCode::{Success, ...}` with `is_error` (>= 0x80).
 
-### Implementierung
+### Implementation
 
-`codec` haelt sich strikt an §2.1 + §3.3 PUBLISH-Layout: Fixed-Header (Type/Flags) + VBI Remaining-Length + Variable-Header (Topic-Name + Packet-ID falls QoS > 0 + Properties) + Payload. `control_packets` macht das pro §3.x exakt fuer die anderen 13 Packet-Types.
+`codec` adheres strictly to the §2.1 + §3.3 PUBLISH layout: fixed header (type/flags) + VBI remaining length + variable header (topic name + packet ID if QoS > 0 + properties) + payload. `control_packets` does this exactly per §3.x for the other 13 packet types.
 
-`broker` ist eine pure-Rust In-Memory-Implementation mit `BTreeMap`-State; eignet sich fuer Tests, embedded und Edge-Broker. Session-State haelt Subscriptions, ungefaedelte Pending-Acks, und das letzte Will pro Client. Retained-Messages werden auf SUBSCRIBE direkt zugestellt.
+`broker` is a pure-Rust in-memory implementation with `BTreeMap` state; suitable for tests, embedded and edge brokers. The session state holds subscriptions, unthreaded pending acks, and the last will per client. Retained messages are delivered directly on SUBSCRIBE.
 
-`topic_filter::topic_matches` implementiert die §4.7-Match-Regeln rekursiv: `+` matcht genau ein Level, `#` matcht 0+ Levels (nur am Ende des Filters erlaubt; `validate_filter` lehnt `#` an anderer Position ab).
+`topic_filter::topic_matches` implements the §4.7 match rules recursively: `+` matches exactly one level, `#` matches 0+ levels (only allowed at the end of the filter; `validate_filter` rejects `#` at another position).
 
-`#![forbid(unsafe_code)]` ist gesetzt. `extern crate alloc;`.
+`#![forbid(unsafe_code)]` is set. `extern crate alloc;`.
 
-### Architektur
+### Architecture
 
-- **Layer:** 5 (Bridges).
-- **Dependencies (in):** keine (Substrat-Crate).
-- **Dependents (out):** (vorgesehen) Caller-Layer fuer DDS↔MQTT-Workflows.
-- **Feature-Flags:** `std` (default), `alloc` (via std).
+- **Layer:** 5 (bridges).
+- **Dependencies (in):** none (substrate crate).
+- **Dependents (out):** (planned) caller layer for DDS↔MQTT workflows.
+- **Feature flags:** `std` (default), `alloc` (via std).
 
-### Stabilitaet
+### Stability
 
-- Public-API: RC1-stabil.
-- Wire-Format: durch OASIS MQTT 5.0 fixiert.
-- Fehler-Diskriminanten: stabil; neue Diskriminanten sind Major-additive.
+- Public API: RC1-stable.
+- Wire format: fixed by OASIS MQTT 5.0.
+- Error discriminants: stable; new discriminants are major-additive.
 
-### Added — Daemon-Wireup
+### Added — daemon wireup
 
-- Cross-Cutting Daemon-Runtime: `daemon`-Feature aktiviert
-  Prometheus-Metrics (§8.2), Catalog/Healthz/Metrics-Admin-Endpoint
-  (§5.2), Signal-Watcher fuer Graceful-Shutdown (§9.2), und
-  OTLP-Span-Exporter (§8.3).
-- Bridge-Security: TLS-Connector (rustls 0.23 ClientConnection) +
-  SASL-PLAIN + Bearer-Token + Topic-ACL via `zerodds-bridge-security`
-  (Bridge-Spec §7.1/§7.2/§7.3).
-- Backoff fuer Broker-Reconnect mit Exponential-Backoff +
-  Cross-Vendor-Interop-Modul.
-- DDS-QoS → MQTT-Behavior-Translation in `qos_translation`.
+- Cross-cutting daemon runtime: the `daemon` feature enables
+  Prometheus metrics (§8.2), a catalog/healthz/metrics admin endpoint
+  (§5.2), a signal watcher for graceful shutdown (§9.2), and an
+  OTLP span exporter (§8.3).
+- Bridge security: TLS connector (rustls 0.23 ClientConnection) +
+  SASL-PLAIN + bearer token + topic ACL via `zerodds-bridge-security`
+  (bridge spec §7.1/§7.2/§7.3).
+- Backoff for broker reconnect with exponential backoff +
+  a cross-vendor interop module.
+- DDS QoS → MQTT behavior translation in `qos_translation`.

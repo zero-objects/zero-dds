@@ -3,20 +3,20 @@
 //
 //! L3 Cross-Language XCDR2 Conformance — `zerodds-xcdr2-bindings-conformance-1.0` §7.
 //!
-//! Verifiziert dass alle 6 Sprach-Bindings (cpp, c-ffi, csharp, java,
-//! ts, rust) byte-identische XCDR2-Wire-Frames fuer V-1..V-12
-//! produzieren — modulo encoder-Wahl (LC=2/3 vs LC=4) bei Mutable.
+//! Verifies that all 6 language bindings (cpp, c-ffi, csharp, java,
+//! ts, rust) produce byte-identical XCDR2 wire frames for V-1..V-12 —
+//! modulo encoder choice (LC=2/3 vs LC=4) for Mutable.
 //!
-//! Strategie: dieser Test ruft pro Sprache deren native Test-Suite
-//! als Subprocess auf. Wenn das jeweilige Tool nicht im PATH ist,
-//! wird die Sprache geskippt mit `WARNING`. Cross-Vendor-L4 (gegen
-//! Cyclone DDS) lebt in `tests/interop/xcdr2_cross_vendor.sh`.
+//! Strategy: this test invokes each language's native test suite as a
+//! subprocess. If the respective tool is not in PATH, that language is
+//! skipped with `WARNING`. Cross-vendor L4 (against Cyclone DDS) lives
+//! in `tests/interop/xcdr2_cross_vendor.sh`.
 //!
-//! Die Master-Spec wire-bytes pro V-i liegen in
-//! `docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md` §6 und
-//! sind die Single-Source-of-Truth. Jede Sprach-Test-Suite assertiert
-//! gegen dieselben Bytes — wir verifizieren das hier durch Aufruf
-//! der Test-Suiten.
+//! The master-spec wire bytes per V-i live in
+//! `docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md` §6 and are
+//! the single source of truth. Each language test suite asserts
+//! against the same bytes — we verify that here by invoking those test
+//! suites.
 
 #![allow(
     clippy::expect_used,
@@ -113,7 +113,7 @@ fn l3_3_c_ffi_binding() {
     assert!(status.success(), "c-ffi V-1..V-12 must pass");
 }
 
-/// L3.4 — C# binding (`dotnet test` der ZeroDDS.Cdr.Tests).
+/// L3.4 — C# binding (`dotnet test` of ZeroDDS.Cdr.Tests).
 #[test]
 fn l3_4_csharp_binding() {
     if !tool_in_path("dotnet") {
@@ -129,7 +129,7 @@ fn l3_4_csharp_binding() {
     assert!(status.success(), "csharp V-1..V-12 must pass");
 }
 
-/// L3.5 — Java binding (`mvn test` der java-omgdds JUnit-Suite).
+/// L3.5 — Java binding (`mvn test` of the java-omgdds JUnit suite).
 #[test]
 fn l3_5_java_binding() {
     if !tool_in_path("mvn") {
@@ -159,12 +159,12 @@ fn l3_6_typescript_binding() {
     }
     let root = workspace_root();
     let ts_node_dir = root.join("crates/ts-node");
-    // Devdeps (tsx) muessen via npm install installiert sein. Auf CI ohne
-    // npm-install-Step wuerde sonst tsx fehlen und der Test failed mit
-    // unklarer Module-Resolution-Meldung. Skip statt fail.
+    // Dev deps (tsx) must be installed via npm install. On CI without an
+    // npm-install step, tsx would be missing and the test would fail with
+    // an unclear module-resolution message. Skip instead of fail.
     if !ts_node_dir.join("node_modules").join("tsx").exists() {
         eprintln!(
-            "WARNING: skipping L3.6 ts, crates/ts-node/node_modules/tsx fehlt — run `npm ci` in crates/ts-node"
+            "WARNING: skipping L3.6 ts, crates/ts-node/node_modules/tsx missing — run `npm ci` in crates/ts-node"
         );
         return;
     }
@@ -176,21 +176,20 @@ fn l3_6_typescript_binding() {
     assert!(status.success(), "ts V-1..V-12 must pass");
 }
 
-/// L3.0 — Cross-Language-Aequivalenz-Aussage. Wenn alle 6 Sprach-
-/// Suites gegen dieselbe Master-Spec hex assertieren und alle
-/// gruen sind (verifiziert durch L3.1..L3.6), dann ist Cross-Language-
-/// Byte-Equivalenz fuer V-1..V-12 bewiesen.
+/// L3.0 — Cross-language equivalence statement. If all 6 language
+/// suites assert against the same master-spec hex and are all green
+/// (verified by L3.1..L3.6), then cross-language byte equivalence for
+/// V-1..V-12 is proven.
 ///
-/// Die hex-Werte selbst stehen in
-/// `docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md` §6 und
-/// werden in jeder Sprach-Test-Suite woertlich verwendet. Eine
-/// Drift-Pruefung (Test-Files vs Master-Spec) ist als Folge-Sprint
-/// dokumentiert.
+/// The hex values themselves live in
+/// `docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md` §6 and are
+/// used verbatim in each language test suite. A drift check (test
+/// files vs master spec) is documented as a follow-up sprint.
 #[test]
 fn l3_0_cross_language_equivalence_documented() {
-    // Diese Test-Funktion ist eine semantische Markierung: wenn sie
-    // grun lauft (zusammen mit den anderen L3.X), gilt
-    // L3-Konformanz fuer alle 6 Sprachen.
+    // This test function is a semantic marker: if it runs green
+    // (together with the other L3.X), L3 conformance holds for all 6
+    // languages.
     let root = workspace_root();
     let spec = root.join("docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md");
     assert!(spec.exists(), "master conformance spec must exist");

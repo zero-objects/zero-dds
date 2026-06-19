@@ -4,18 +4,18 @@ package org.zerodds.cdr;
 import java.nio.ByteBuffer;
 
 /**
- * ZeroDDS-erweitertes TypeSupport-Interface fuer XCDR2-Bindings.
+ * ZeroDDS-extended TypeSupport interface for XCDR2 bindings.
  *
- * <p>Spec: zerodds-xcdr2-java-1.0 §2. Erweitert das DDS-Java-PSM
- * Marker-Interface {@link org.omg.dds.topic.TopicTypeSupport} um
- * konkrete encode/decode/keyHash-Methoden plus
- * Extensibility-Reflection.
+ * <p>Spec: zerodds-xcdr2-java-1.0 §2. Extends the DDS Java PSM
+ * marker interface {@link org.omg.dds.topic.TopicTypeSupport} with
+ * concrete encode/decode/keyHash methods plus
+ * extensibility reflection.
  *
- * <p>Generierter Code (idl-java) emittiert pro IDL-{@code struct} eine
- * Singleton-Klasse {@code <Name>TypeSupport} die dieses Interface
- * implementiert.
+ * <p>Generated code (idl-java) emits per IDL {@code struct} one
+ * singleton class {@code <Name>TypeSupport} that implements this
+ * interface.
  *
- * @param <T> Sample-Klasse (POJO mit Bean-Accessoren).
+ * @param <T> sample class (POJO with bean accessors).
  */
 public interface TopicTypeSupport<T> extends org.omg.dds.topic.TopicTypeSupport<T> {
 
@@ -23,27 +23,27 @@ public interface TopicTypeSupport<T> extends org.omg.dds.topic.TopicTypeSupport<
     @Override
     String getTypeName();
 
-    /** {@code true} falls mindestens ein Member {@code @key} traegt. */
+    /** {@code true} if at least one member carries {@code @key}. */
     boolean isKeyed();
 
     /** Extensibility (Final/Appendable/Mutable) per OMG XTypes 1.3 §7.2.2.4.4. */
     ExtensibilityKind getExtensibility();
 
-    /** Encode mit Default-Endianness (LE). */
+    /** Encode with default endianness (LE). */
     byte[] encode(T sample);
 
-    /** Encode mit gewaehlter Endianness. */
+    /** Encode with the chosen endianness. */
     byte[] encode(T sample, EndianMode endian);
 
-    /** Decode aus voller Buffer. */
+    /** Decode from the full buffer. */
     T decode(byte[] bytes);
 
     /** Decode aus Subrange. */
     T decode(byte[] bytes, int offset, int length);
 
     /**
-     * Key-Hash-Berechnung: 16 Bytes MD5 ueber {@code PlainCdr2BeKeyHolder}
-     * der {@code @key}-Felder (XTypes §7.6.8). Liefert all-zero falls
+     * Key hash computation: 16 bytes MD5 over {@code PlainCdr2BeKeyHolder}
+     * of the {@code @key} fields (XTypes §7.6.8). Returns all-zero if
      * {@link #isKeyed()} {@code false}.
      */
     byte[] keyHash(T sample);
@@ -53,8 +53,8 @@ public interface TopicTypeSupport<T> extends org.omg.dds.topic.TopicTypeSupport<
     // ------------------------------------------------------------------
 
     /**
-     * OMG-Bridge: serialize ueber den encode-Pfad und schreibt in
-     * {@code buf} (Position waechst entsprechend).
+     * OMG bridge: serialize via the encode path and writes into
+     * {@code buf} (position grows accordingly).
      */
     @Override
     default void serialize(T value, ByteBuffer buf) {
@@ -63,9 +63,9 @@ public interface TopicTypeSupport<T> extends org.omg.dds.topic.TopicTypeSupport<
     }
 
     /**
-     * OMG-Bridge: deserialize ueber den decode-Pfad. Liest alle
-     * verbleibenden Bytes des Buffers; wer Subranges braucht, ruft
-     * {@link #decode(byte[], int, int)} direkt auf.
+     * OMG bridge: deserialize via the decode path. Reads all
+     * remaining bytes of the buffer; callers that need subranges call
+     * {@link #decode(byte[], int, int)} directly.
      */
     @Override
     default T deserialize(ByteBuffer buf) {

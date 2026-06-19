@@ -1,66 +1,66 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Fehler-Typen fuer das DDS-RPC-Crate (C6.1.A).
+//! Error types for the DDS-RPC crate (C6.1.A).
 //!
-//! Wird von [`crate::common_types`], [`crate::topic_naming`],
-//! [`crate::annotations`] und [`crate::service_mapping`] geteilt.
+//! Shared by [`crate::common_types`], [`crate::topic_naming`],
+//! [`crate::annotations`] and [`crate::service_mapping`].
 
 extern crate alloc;
 
 use alloc::string::{String, ToString};
 use core::fmt;
 
-/// Sammelfehler fuer die Foundation-Stufe der DDS-RPC-Implementierung.
+/// Collective error for the foundation stage of the DDS-RPC implementation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RpcError {
-    /// XCDR2-Encoding/Decoding hat das Wire-Format verletzt.
+    /// XCDR2 encoding/decoding violated the wire format.
     Codec(String),
-    /// DoS-Cap fuer Wire-Payload ueberschritten.
+    /// DoS cap for the wire payload exceeded.
     PayloadTooLarge {
-        /// Beobachtete Bytes.
+        /// Observed bytes.
         got: usize,
-        /// Erlaubtes Maximum.
+        /// Allowed maximum.
         max: usize,
     },
-    /// Service-Name ist leer oder enthaelt ungueltige Zeichen.
+    /// The service name is empty or contains invalid characters.
     InvalidServiceName(String),
-    /// Methoden-Name ist leer oder ungueltig.
+    /// The method name is empty or invalid.
     InvalidMethodName(String),
-    /// Methode ist `oneway`, hat aber ein non-`void` Return.
+    /// The method is `oneway` but has a non-`void` return.
     OnewayWithReturn(String),
-    /// Methode ist `oneway`, hat aber `out`/`inout`-Parameter.
+    /// The method is `oneway` but has `out`/`inout` parameters.
     OnewayWithOutParam {
-        /// Methoden-Name.
+        /// Method name.
         method: String,
-        /// Parameter-Name.
+        /// Parameter name.
         param: String,
     },
-    /// Doppelte Methoden-Namen in einem `interface`.
+    /// Duplicate method names in an `interface`.
     DuplicateMethod(String),
-    /// Doppelte Parameter-Namen in einer Methode.
+    /// Duplicate parameter names in a method.
     DuplicateParam {
-        /// Methoden-Name.
+        /// Method name.
         method: String,
-        /// Parameter-Name.
+        /// Parameter name.
         param: String,
     },
-    /// Unbekannter `RemoteExceptionCode_t`-Diskriminator beim Decode.
+    /// Unknown `RemoteExceptionCode_t` discriminator on decode.
     UnknownExceptionCode(u32),
-    /// Service ohne Methoden — kein Endpoint kann gebaut werden.
+    /// Service without methods — no endpoint can be built.
     EmptyService(String),
-    /// Request-Reply-Wartezeit ueberschritten (Foundation-Stufe C6.1.C).
+    /// Request-reply wait time exceeded (foundation stage C6.1.C).
     Timeout,
-    /// Server-Side hat eine `RemoteExceptionCode` ungleich `Ok` zurueckgegeben.
-    /// Der Wert ist der raw Diskriminator — Caller kann
-    /// [`crate::common_types::RemoteExceptionCode::from_u32`] nutzen, um in
-    /// das Enum zu mappen.
+    /// The server side returned a `RemoteExceptionCode` other than `Ok`.
+    /// The value is the raw discriminator — the caller can use
+    /// [`crate::common_types::RemoteExceptionCode::from_u32`] to map it into
+    /// the enum.
     RemoteException(u32),
-    /// Doppelt vergebener `service_instance_name` auf demselben Participant.
+    /// A `service_instance_name` assigned twice on the same participant.
     DuplicateInstanceName(String),
-    /// Generischer DCPS-Aufruf-Fehler (Topic-Anlegen, Writer-Create etc.).
+    /// Generic DCPS call error (topic creation, writer create, etc.).
     Dcps(String),
-    /// QoS-Profile nicht in der `DdsXml`-Library gefunden.
+    /// QoS profile not found in the `DdsXml` library.
     QosProfileNotFound(String),
 }
 
@@ -107,7 +107,7 @@ impl fmt::Display for RpcError {
 impl std::error::Error for RpcError {}
 
 impl RpcError {
-    /// Convenience: Konstruktor fuer Codec-Fehler aus statischer Message.
+    /// Convenience: constructor for a codec error from a static message.
     #[must_use]
     pub fn codec(msg: &str) -> Self {
         Self::Codec(msg.to_string())

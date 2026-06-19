@@ -46,7 +46,7 @@ pub enum Status {
 }
 
 impl Status {
-    /// Numerischer Wert (0..=16).
+    /// Numeric value (0..=16).
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -70,8 +70,8 @@ impl Status {
         }
     }
 
-    /// Konstruiert aus numerischem Wert. Liefert `None` fuer
-    /// Unbekanntes.
+    /// Constructs from a numeric value. Returns `None` for
+    /// unknown values.
     #[must_use]
     pub const fn from_code(v: u8) -> Option<Self> {
         match v {
@@ -96,14 +96,14 @@ impl Status {
         }
     }
 
-    /// `true` fuer `Status::Ok`.
+    /// `true` for `Status::Ok`.
     #[must_use]
     pub const fn is_ok(self) -> bool {
         matches!(self, Self::Ok)
     }
 
-    /// Kanonischer Name (Caller verwendet typisch `grpc-message`-
-    /// Header zusaetzlich).
+    /// Canonical name (the caller typically additionally uses the
+    /// `grpc-message` header).
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn names_use_screaming_snake_case() {
-        // Konventional aus statuscodes.md.
+        // By convention from statuscodes.md.
         assert_eq!(Status::Ok.name(), "OK");
         assert_eq!(Status::DeadlineExceeded.name(), "DEADLINE_EXCEEDED");
         assert_eq!(Status::FailedPrecondition.name(), "FAILED_PRECONDITION");

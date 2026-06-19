@@ -1,14 +1,14 @@
-//! Fixture-Tests fuer den IDL→C++-Codegen.
+//! Fixture tests for the IDL→C++ codegen.
 //!
-//! Pro Fixture: parse IDL → generate C++ → asserte eine Liste von
-//! Marker-Substrings, die zwingend im Output erscheinen muessen.
+//! Per fixture: parse IDL → generate C++ → assert a list of marker
+//! substrings that must appear in the output.
 //!
-//! Marker-basierte Snapshots sind robuster als Byte-equal-Snapshots —
-//! Whitespace-Drift im Emitter (Block-A-Polishing) bricht die Tests
-//! nicht, solange die semantischen Anker (Type-Namen, Includes,
-//! Inheritance-Klauseln) erhalten bleiben.
+//! Marker-based snapshots are more robust than byte-equal snapshots —
+//! whitespace drift in the emitter (Block-A polishing) does not break
+//! the tests as long as the semantic anchors (type names, includes,
+//! inheritance clauses) are preserved.
 //!
-//! Die Fixture-Liste deckt alle Block-A-bis-E-Use-Cases ab.
+//! The fixture list covers all Block-A-through-E use cases.
 
 #![allow(
     clippy::expect_used,
@@ -47,7 +47,7 @@ const FIXTURES: &[(&str, &str, &[&str])] = &[
             "uint64_t a_ullong_;",
             "float a_float_;",
             "double a_double_;",
-            // Reference-Pattern Getter:
+            // Reference-pattern getter:
             "int32_t& a_long()",
             "const int32_t& a_long() const",
         ],
@@ -157,7 +157,7 @@ fn all_fixtures_generate_required_markers() {
     }
 }
 
-// Pro Fixture ein eigener `#[test]`, damit Failure-Lokalisierung praezise ist.
+// A separate `#[test]` per fixture, so failure localization is precise.
 
 macro_rules! fixture_test {
     ($name:ident) => {
@@ -166,8 +166,8 @@ macro_rules! fixture_test {
             let src = include_str!(concat!("fixtures/", stringify!($name), ".idl"));
             let ast = zerodds_idl::parse(src, &ParserConfig::default()).expect("parse");
             let cpp = generate_cpp_header(&ast, &CppGenOptions::default()).expect("gen");
-            // Mindest-Anker: jedes Fixture muss `#pragma once` und
-            // `#include <cstdint>` enthalten (Praeambel-Invariante).
+            // Minimum anchor: every fixture must contain `#pragma once`
+            // and `#include <cstdint>` (preamble invariant).
             assert!(
                 cpp.contains("#pragma once"),
                 "missing pragma in {}",

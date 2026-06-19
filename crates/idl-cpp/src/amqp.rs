@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! C5.1-c §7.2.3 / §8.1.2 / §8.1.3 — AMQP-Bindings für IDL-Types.
+//! C5.1-c §7.2.3 / §8.1.2 / §8.1.3 — AMQP bindings for IDL types.
 //!
-//! Emittiert pro Top-Level-Struct/Union eine inline Free-Function:
+//! Emits one inline free function per top-level struct/union:
 //!
 //! * `to_amqp_value(const T&) -> ::zerodds::amqp::Value`
-//!   (Spec §8.1.3 AMQP-Native Composite — `composite-from-described`).
+//!   (Spec §8.1.3 AMQP-native composite — `composite-from-described`).
 //! * `to_json_string(const T&) -> std::string`
-//!   (Spec §8.1.2 JSON Type-Reflection).
+//!   (Spec §8.1.2 JSON type reflection).
 //!
-//! Für Unions ruft die emittierte Funktion zusätzlich
-//! `make_union_body(disc, branch)` (Spec §7.2.3) — der zentrale
-//! Spec-Helper. Discriminator-Werte und Branch-Mapping kommen aus
-//! der IDL-Quelle, nicht hardcoded.
+//! For unions, the emitted function additionally calls
+//! `make_union_body(disc, branch)` (Spec §7.2.3) — the central
+//! spec helper. Discriminator values and branch mapping come from
+//! the IDL source, not hardcoded.
 //!
-//! # Runtime-Surface
+//! # Runtime surface
 //!
-//! Die emittierten Helper rufen in einen kleinen C++-Runtime-Header
-//! `<zerodds/amqp/codec.hpp>` (separates Library-Crate, nicht Teil
-//! dieses Codegens). API-Skizze:
+//! The emitted helpers call into a small C++ runtime header
+//! `<zerodds/amqp/codec.hpp>` (a separate library crate, not part of
+//! this codegen). API sketch:
 //!
 //! ```cpp
 //! namespace zerodds::amqp {
@@ -43,7 +43,7 @@
 //!     };
 //!     Value make_union_body(Value discriminator);
 //!     Value make_union_body(Value discriminator, Value branch);
-//!     Value int8_value(int8_t); /* ... weitere Faktories ... */
+//!     Value int8_value(int8_t); /* ... more factories ... */
 //!     std::string to_json(const Value&);
 //! }
 //! ```
@@ -58,12 +58,12 @@ use zerodds_idl::ast::{
 use crate::emitter::{const_expr_to_cpp, declarator_name, switch_type_to_cpp, type_for_declarator};
 use crate::error::CppGenError;
 
-/// Emittiert AMQP-Helper für alle Top-Level-Struct/Union-Definitionen
-/// der Spec.
+/// Emits AMQP helpers for all top-level struct/union definitions in
+/// the spec.
 ///
 /// # Errors
-/// `CppGenError::Internal` bei `std::fmt::Write`-Fehler;
-/// `CppGenError::*` aus den Type-Mapping-Helpern.
+/// `CppGenError::Internal` on a `std::fmt::Write` error;
+/// `CppGenError::*` from the type-mapping helpers.
 pub(crate) fn emit_amqp_helpers(out: &mut String, spec: &Specification) -> Result<(), CppGenError> {
     if !has_emittable_types(&spec.definitions) {
         return Ok(());
@@ -133,7 +133,7 @@ fn emit_module(
     Ok(())
 }
 
-/// Vollqualifizierter C++-Name eines Top-Level-Typs im aktuellen Scope.
+/// Fully qualified C++ name of a top-level type in the current scope.
 fn qualified(scope: &[String], name: &str) -> String {
     if scope.is_empty() {
         format!("::{name}")
@@ -142,7 +142,7 @@ fn qualified(scope: &[String], name: &str) -> String {
     }
 }
 
-/// Spec-Type-Name (für composite-symbol "dds:type:<scoped>").
+/// Spec type name (for the composite symbol "dds:type:<scoped>").
 fn spec_type_name(scope: &[String], name: &str) -> String {
     if scope.is_empty() {
         name.to_string()
@@ -200,7 +200,7 @@ fn emit_struct_helpers(
     Ok(())
 }
 
-/// Emittiert einen `b_.field_*` Call für ein Struct-Member.
+/// Emits a `b_.field_*` call for a struct member.
 fn emit_field_call(
     out: &mut String,
     ts: &TypeSpec,
@@ -208,7 +208,7 @@ fn emit_field_call(
     field_name: &str,
     getter: &str,
 ) -> Result<(), CppGenError> {
-    let _ = type_for_declarator(ts, decl)?; // Validierung des Felds.
+    let _ = type_for_declarator(ts, decl)?; // validate the field.
     if let Some(prim_setter) = primitive_field_setter(ts) {
         writeln!(out, "    b_.{prim_setter}(\"{field_name}\", {getter});",).map_err(fmt_err)?;
         return Ok(());
@@ -217,7 +217,7 @@ fn emit_field_call(
         writeln!(out, "    b_.field_string(\"{field_name}\", {getter});",).map_err(fmt_err)?;
         return Ok(());
     }
-    // Fallback: rekursiv via to_amqp_value.
+    // Fallback: recursively via to_amqp_value.
     writeln!(
         out,
         "    b_.field_value(\"{field_name}\", to_amqp_value({getter}));",
@@ -332,7 +332,7 @@ fn emit_union_helpers(out: &mut String, scope: &[String], u: &UnionDef) -> Resul
         )
         .map_err(fmt_err)?;
     } else {
-        // §7.2.3 — kein active branch → list mit nur disc.
+        // §7.2.3 — no active branch → list with only disc.
         writeln!(out, "        default:").map_err(fmt_err)?;
         writeln!(
             out,
@@ -345,7 +345,7 @@ fn emit_union_helpers(out: &mut String, scope: &[String], u: &UnionDef) -> Resul
     writeln!(out, "}}").map_err(fmt_err)?;
     writeln!(out).map_err(fmt_err)?;
 
-    // §8.1.2 JSON-Wrapper für Union.
+    // §8.1.2 JSON wrapper for union.
     writeln!(
         out,
         "inline std::string to_json_string(const {cpp_ty}& u_) {{",
@@ -368,7 +368,7 @@ fn switch_disc_factory(s: &SwitchTypeSpec) -> &'static str {
         SwitchTypeSpec::Char => "int8_value",
         SwitchTypeSpec::Octet => "uint8_value",
         SwitchTypeSpec::Integer(i) => integer_factory_name(*i),
-        // Scoped (z.B. enum oder typedef): konservativ als int32.
+        // Scoped (e.g. enum or typedef): conservatively treated as int32.
         SwitchTypeSpec::Scoped(_) => "int32_value",
     }
 }
@@ -406,7 +406,7 @@ fn branch_call(factory: Option<&'static str>, cpp_ty: &str) -> String {
     if let Some(f) = factory {
         format!("::zerodds::amqp::{f}(std::get<{cpp_ty}>(u_.value()))")
     } else {
-        // String/Sequence/Struct: rekursiv to_amqp_value.
+        // String/sequence/struct: recursively to_amqp_value.
         format!("to_amqp_value(std::get<{cpp_ty}>(u_.value()))")
     }
 }

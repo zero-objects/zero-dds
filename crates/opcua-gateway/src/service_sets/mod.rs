@@ -3,9 +3,9 @@
 
 //! OPC UA Service Sets Mapping — Spec §8.3.
 //!
-//! Definiert die DDS-Service-Interfaces, die die OPC-UA Service-Sets
-//! aus [OPCUA-04] auf DDS-RPC abbilden. Die Spec gruppiert die
-//! Mapping-Definitionen in vier Service-Sets:
+//! Defines the DDS service interfaces that map the OPC-UA service sets
+//! from [OPCUA-04] onto DDS-RPC. The spec groups the
+//! mapping definitions into four service sets:
 //!
 //! * **View** (§8.3.2) — Browse, BrowseNext, TranslateBrowsePathsToNodeIds,
 //!   RegisterNodes, UnregisterNodes.
@@ -13,20 +13,19 @@
 //! * **Attribute** (§8.3.4) — Read, HistoryRead, Write, HistoryUpdate.
 //! * **Method** (§8.3.5) — Call.
 //!
-//! Jedes Service-Set lebt im IDL-Modul `OMG::DDSOPCUA::OPCUA2DDS::<SET>`.
-//! In Rust ist jedes Set ein Sub-Modul (`view`, `query`, `attribute`,
-//! `method`), das die Set-spezifischen Typen + die Service-Interface-
-//! Beschreibung exportiert.
+//! Each service set lives in the IDL module `OMG::DDSOPCUA::OPCUA2DDS::<SET>`.
+//! In Rust each set is a sub-module (`view`, `query`, `attribute`,
+//! `method`) that exports the set-specific types + the service-interface
+//! description.
 //!
-//! Die hier definierten Types sind **pure Data-Structs**, die das IDL
-//! aus den Tabellen 8.3-8.7 mirrorn. Wire-Encoding (CDR) bleibt
-//! `crates/cdr/`, Service-Dispatch + Topic-Generierung bleibt
-//! `crates/rpc/`. Dieses Modul liefert die Schemainformation, die ein
-//! IDL-Codegen-Konsument braucht, um aus diesen Typen Wire-Bindings zu
-//! emittieren.
+//! The types defined here are **pure data structs** that mirror the IDL
+//! from tables 8.3-8.7. Wire encoding (CDR) stays in
+//! `crates/cdr/`, service dispatch + topic generation stays in
+//! `crates/rpc/`. This module provides the schema information that an
+//! IDL codegen consumer needs to emit wire bindings from these types.
 //!
-//! Cross-Ref: `docs/standards/cache/omg/dds-opcua-1.0.pdf` §8.3,
-//! Tabellen 8.3 (Standard DataTypes/NodeClasses), 8.4 (View), 8.5
+//! Cross-ref: `docs/standards/cache/omg/dds-opcua-1.0.pdf` §8.3,
+//! tables 8.3 (standard DataTypes/NodeClasses), 8.4 (View), 8.5
 //! (Query), 8.6 (Attribute), 8.7 (Method).
 
 use alloc::string::String;
@@ -41,52 +40,52 @@ pub mod method;
 pub mod query;
 pub mod view;
 
-/// IDL-Modulpfad fuer die gemeinsamen Typen aus Tab 8.3 — Spec §8.3
-/// einleitend: `OMG::DDSOPCUA::OPCUA2DDS`.
+/// IDL module path for the common types from Tab 8.3 — Spec §8.3
+/// introductory: `OMG::DDSOPCUA::OPCUA2DDS`.
 pub const IDL_MODULE_BASE: &str = "OMG::DDSOPCUA::OPCUA2DDS";
 
-/// IDL-Modulpfad fuer das View-Set (Tab 8.4) — Spec §8.3.2.
+/// IDL module path for the View set (Tab 8.4) — Spec §8.3.2.
 pub const IDL_MODULE_VIEW: &str = "OMG::DDSOPCUA::OPCUA2DDS::VIEW";
 
-/// IDL-Modulpfad fuer das Query-Set (Tab 8.5) — Spec §8.3.3.
+/// IDL module path for the Query set (Tab 8.5) — Spec §8.3.3.
 pub const IDL_MODULE_QUERY: &str = "OMG::DDSOPCUA::OPCUA2DDS::QUERY";
 
-/// IDL-Modulpfad fuer das Attribute-Set (Tab 8.6) — Spec §8.3.4.
+/// IDL module path for the Attribute set (Tab 8.6) — Spec §8.3.4.
 pub const IDL_MODULE_ATTRIBUTE: &str = "OMG::DDSOPCUA::OPCUA2DDS::ATTRIBUTE";
 
-/// IDL-Modulpfad fuer das Method-Set (Tab 8.7) — Spec §8.3.5.
+/// IDL module path for the Method set (Tab 8.7) — Spec §8.3.5.
 pub const IDL_MODULE_METHOD: &str = "OMG::DDSOPCUA::OPCUA2DDS::METHOD";
 
 // -------------------------------------------------------------------
-// Tab 8.3 — Standard DataTypes / NodeClasses Mapping (gemeinsam).
+// Tab 8.3 — standard DataTypes / NodeClasses mapping (shared).
 // -------------------------------------------------------------------
 
-/// Spec Tab 8.3 — `Duration` als `double` (ms).
+/// Spec Tab 8.3 — `Duration` as `double` (ms).
 pub type Duration = f64;
 
-/// Spec Tab 8.3 — `UtcTime` als `DateTime` (i64 Windows-FILETIME-Ticks).
+/// Spec Tab 8.3 — `UtcTime` as `DateTime` (i64 Windows FILETIME ticks).
 pub type UtcTime = i64;
 
-/// Spec Tab 8.3 — `ContinuationPoint` als `ByteString`.
+/// Spec Tab 8.3 — `ContinuationPoint` as `ByteString`.
 pub type ContinuationPoint = ByteString;
 
-/// Spec Tab 8.3 — `Index` als `uint32`.
+/// Spec Tab 8.3 — `Index` as `uint32`.
 pub type Index = u32;
 
-/// Spec Tab 8.3 — `IntegerId` als `uint32`.
+/// Spec Tab 8.3 — `IntegerId` as `uint32`.
 pub type IntegerId = u32;
 
-/// Spec Tab 8.3 — `Counter` als `uint32`.
+/// Spec Tab 8.3 — `Counter` as `uint32`.
 pub type Counter = u32;
 
-/// Spec Tab 8.3 — `NumericRange` als `string` (z.B. `"3:5"` fuer
-/// Array-Slice oder `"3:5,1:7"` fuer Multi-Dim-Slice).
+/// Spec Tab 8.3 — `NumericRange` as `string` (e.g. `"3:5"` for an
+/// array slice or `"3:5,1:7"` for a multi-dim slice).
 pub type NumericRange = String;
 
 /// Spec Tab 8.3 — `BaseNodeClass` (`@nested`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct BaseNodeClass {
-    /// `NodeId node_id` — eindeutige NodeId.
+    /// `NodeId node_id` — unique NodeId.
     pub node_id: NodeId,
     /// `NodeClass node_class` — Spec §8.3.1 Tab 8.3.
     pub node_class: NodeClass,
@@ -102,7 +101,7 @@ pub struct BaseNodeClass {
     pub user_write_mask: Option<u32>,
 }
 
-/// Spec Tab 8.3 — `EnumValueType` (Member eines DataType.enum_values).
+/// Spec Tab 8.3 — `EnumValueType` (member of a DataType.enum_values).
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumValueType {
     /// `int64 value`.
@@ -113,10 +112,10 @@ pub struct EnumValueType {
     pub description: LocalizedText,
 }
 
-/// Spec Tab 8.3 — `DataType` (`@nested`, erbt `BaseNodeClass`).
+/// Spec Tab 8.3 — `DataType` (`@nested`, inherits `BaseNodeClass`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct DataType {
-    /// Geerbte Basis-Felder.
+    /// Inherited base fields.
     pub base: BaseNodeClass,
     /// `boolean is_abstract`.
     pub is_abstract: bool,
@@ -228,12 +227,12 @@ pub struct DiagnosticInfo {
     /// `@id(32) @optional StatusCode inner_status_code`.
     pub inner_status_code: Option<StatusCode>,
     /// `@id(64) @optional DiagnosticInfo inner_diagnostic_info`.
-    /// Box damit der rekursive Type endliche Groesse hat.
+    /// Boxed so that the recursive type has a finite size.
     pub inner_diagnostic_info: Option<alloc::boxed::Box<DiagnosticInfo>>,
 }
 
-/// Spec Tab 8.3 — `ExtensibleParameter` (Basis-Struct fuer alle
-/// Extensions mit `: ExtensibleParameter`-Vererbung in der IDL).
+/// Spec Tab 8.3 — `ExtensibleParameter` (base struct for all
+/// extensions with `: ExtensibleParameter` inheritance in the IDL).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtensibleParameter {
     /// `NodeId parameter_type_id`.
@@ -241,10 +240,10 @@ pub struct ExtensibleParameter {
 }
 
 // -------------------------------------------------------------------
-// Tab 8.3 — ContentFilter (Filter-Subsystem fuer Query + EventFilter).
+// Tab 8.3 — ContentFilter (filter subsystem for Query + EventFilter).
 // -------------------------------------------------------------------
 
-/// Spec Tab 8.3 — `FilterOperator` (18 Werte).
+/// Spec Tab 8.3 — `FilterOperator` (18 values).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum FilterOperator {
@@ -302,7 +301,7 @@ pub enum FilterOperandKind {
 /// Spec Tab 8.3 — `ElementOperand` (`@nested`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ElementOperand {
-    /// `uint32 index` — Index in den Filter-Element-Array.
+    /// `uint32 index` — index into the filter element array.
     pub index: u32,
 }
 
@@ -356,7 +355,7 @@ pub enum FilterOperand {
 }
 
 impl FilterOperand {
-    /// Discriminant fuer das IDL-Switch-Case.
+    /// Discriminant for the IDL switch case.
     #[must_use]
     pub fn kind(&self) -> FilterOperandKind {
         match self {
@@ -371,7 +370,7 @@ impl FilterOperand {
 /// Spec Tab 8.3 — `ExtensibleParameterFilterOperand`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtensibleParameterFilterOperand {
-    /// Geerbtes `parameter_type_id`.
+    /// Inherited `parameter_type_id`.
     pub base: ExtensibleParameter,
     /// `FilterOperand parameter_data`.
     pub parameter_data: FilterOperand,
@@ -414,7 +413,7 @@ pub struct ContentFilterResult {
 }
 
 // -------------------------------------------------------------------
-// Tab 8.3 — Subscription/Monitoring (auch in Service-Sets referenziert).
+// Tab 8.3 — subscription/monitoring (also referenced in service sets).
 // -------------------------------------------------------------------
 
 /// Spec Tab 8.3 — `TimestampsToReturn`.
@@ -451,63 +450,63 @@ pub struct QueryDataSet {
     pub node_id: ExpandedNodeId,
     /// `ExpandedNodeId type_definition_node`.
     pub type_definition_node: ExpandedNodeId,
-    /// `sequence<BaseDataType> values` (= Variant-Sequenz).
+    /// `sequence<BaseDataType> values` (= variant sequence).
     pub values: Vec<Variant>,
 }
 
 // -------------------------------------------------------------------
-// Service-Interface-Beschreibung — kompakte Daten-Repraesentation pro
-// Service-Set, fuer Codegen-Konsumenten.
+// Service-interface description — compact data representation per
+// service set, for codegen consumers.
 // -------------------------------------------------------------------
 
-/// Parameter-Richtung in einer Service-Methode.
+/// Parameter direction in a service method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParamDir {
-    /// `in` — Request-only.
+    /// `in` — request-only.
     In,
-    /// `out` — Reply-only.
+    /// `out` — reply-only.
     Out,
 }
 
-/// Parameter-Beschreibung in einem Service-Set-Methoden-Signature.
+/// Parameter description in a service-set method signature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceParam {
-    /// IDL-Parameter-Name (z.B. `nodes_to_browse`).
+    /// IDL parameter name (e.g. `nodes_to_browse`).
     pub name: &'static str,
-    /// IDL-Type-Spec als Source-Snippet (z.B.
+    /// IDL type spec as a source snippet (e.g.
     /// `sequence<BrowseDescription>`).
     pub type_spec: &'static str,
-    /// Direction (`in`/`out`). Spec §8.3 nutzt nur diese zwei,
-    /// `inout` kommt nicht vor.
+    /// Direction (`in`/`out`). Spec §8.3 uses only these two,
+    /// `inout` does not occur.
     pub direction: ParamDir,
 }
 
-/// Service-Methoden-Beschreibung — entspricht einer Methode in der
-/// `@DDSService interface ...`-Definition aus Spec §8.3.x.2.
+/// Service method description — corresponds to a method in the
+/// `@DDSService interface ...` definition from Spec §8.3.x.2.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceMethod {
-    /// Methoden-Name (z.B. `browse`).
+    /// Method name (e.g. `browse`).
     pub name: &'static str,
-    /// Return-Type (immer `ResponseHeader` in §8.3, aber explizit
-    /// modelliert fuer Spec-Konformitaets-Tests).
+    /// Return type (always `ResponseHeader` in §8.3, but modeled
+    /// explicitly for spec-conformance tests).
     pub return_type: &'static str,
-    /// Parameter-Liste in Quellen-Reihenfolge.
+    /// Parameter list in source order.
     pub params: &'static [ServiceParam],
 }
 
-/// Vollstaendiges Service-Set — Modulpfad + Interface-Name + Methoden.
+/// Complete service set — module path + interface name + methods.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceSet {
-    /// IDL-Modulpfad, z.B. `OMG::DDSOPCUA::OPCUA2DDS::VIEW`.
+    /// IDL module path, e.g. `OMG::DDSOPCUA::OPCUA2DDS::VIEW`.
     pub module_path: &'static str,
-    /// Interface-Name (z.B. `View`).
+    /// Interface name (e.g. `View`).
     pub interface_name: &'static str,
-    /// Methoden gemaess Spec-Tabellen 8.3.x.2.
+    /// Methods per the spec tables 8.3.x.2.
     pub methods: &'static [ServiceMethod],
 }
 
-/// Liefert alle vier Service-Set-Beschreibungen aus §8.3 (View, Query,
-/// Attribute, Method) in Spec-Reihenfolge.
+/// Returns all four service-set descriptions from §8.3 (View, Query,
+/// Attribute, Method) in spec order.
 #[must_use]
 pub fn all_service_sets() -> [ServiceSet; 4] {
     [
@@ -518,7 +517,7 @@ pub fn all_service_sets() -> [ServiceSet; 4] {
     ]
 }
 
-// Re-Exports der Service-Set-spezifischen Top-Level-Types.
+// Re-exports of the service-set-specific top-level types.
 pub use attribute::{
     AttributeServiceMethods, DeleteAtTimeDetails, DeleteEventDetails, DeleteRawModifiedDetails,
     ExtensibleParameterHistoryData, ExtensibleParameterHistoryReadDetails,

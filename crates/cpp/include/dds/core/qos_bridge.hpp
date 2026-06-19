@@ -2,7 +2,7 @@
 // Copyright 2026 ZeroDDS Contributors
 //
 // dds/core/qos_bridge.hpp — Konvertierung dds::core::*Qos → C-FFI
-// ZeroDds*Qos. Intern fuer Topic<T>/Publisher/DataWriter<T>/etc.-
+// ZeroDds*Qos. Internal, for Topic<T>/Publisher/DataWriter<T>/etc.
 // Konstruktoren.
 
 #ifndef ZERODDS_DDS_CORE_QOS_BRIDGE_HPP
@@ -59,7 +59,7 @@ inline zerodds_ZeroDdsPublisherQos to_native(const PublisherQos& q) {
     out.entity_factory.autoenable_created_entities = q.entity_factory.autoenable_created_entities();
     out.group_data.value = q.group_data.value().empty() ? nullptr : q.group_data.value().data();
     out.group_data.value_len = q.group_data.value().size();
-    out.partition.names = nullptr; // Partition-Bridge in Folge-Patch
+    out.partition.names = nullptr; // partition bridge in a follow-up patch
     out.partition.names_len = 0;
     return out;
 }

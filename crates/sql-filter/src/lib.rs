@@ -1,39 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! OMG DDS Content-Filter-Expression-Parser + Evaluator.
+//! OMG DDS content-filter-expression parser + evaluator.
 //!
-//! Safety classification: **SAFE** (reiner Parser + Evaluator, keine
-//! Datenflüsse aus externen Netzen ohne Caller-Vermittlung).
+//! Safety classification: **SAFE** (a pure parser + evaluator, no data
+//! flows from external networks without caller mediation).
 //!
-//! Spec: OMG DDS 1.4 §B.2.1 "Filter expressions". Die Syntax ist eine
-//! SQL-92-Untermenge, erweitert um `%N`-Parameter-Placeholder.
+//! Spec: OMG DDS 1.4 §B.2.1 "Filter expressions". The syntax is a
+//! SQL-92 subset, extended with `%N` parameter placeholders.
 //!
-//! # Aktueller Scope
+//! # Current scope
 //!
-//! * Literale: String (`'...'`), Integer (`i64`), Float (`f64`),
-//!   Boolean (`TRUE`/`FALSE`).
-//! * Identifier: dotted (`a.b.c`) — für nested Field-Access.
-//! * Parameter-Placeholder: `%0`, `%1`, …
-//! * Vergleichs-Ops: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE`.
-//! * Boolean-Ops: `AND`, `OR`, `NOT`.
-//! * Klammern.
-//! * `LIKE`-Wildcards: `%` (mehrere Zeichen), `_` (ein Zeichen).
+//! * Literals: string (`'...'`), integer (`i64`), float (`f64`),
+//!   boolean (`TRUE`/`FALSE`).
+//! * Identifiers: dotted (`a.b.c`) — for nested field access.
+//! * Parameter placeholders: `%0`, `%1`, …
+//! * Comparison ops: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE`.
+//! * Boolean ops: `AND`, `OR`, `NOT`.
+//! * Parentheses.
+//! * `LIKE` wildcards: `%` (several characters), `_` (one character).
 //!
-//! Nicht im MVP: `BETWEEN ... AND`, `IN (...)`, `IS NULL`. Die folgen
-//! in 3.7c.
+//! Not in the MVP: `BETWEEN ... AND`, `IN (...)`, `IS NULL`. Those
+//! follow in 3.7c.
 //!
-//! # Architektur
+//! # Architecture
 //!
-//! 1. `lexer`: Tokenizer. Alle Keywords case-insensitive, String-
-//!    Literale `'...'` mit `''`-Escape.
-//! 2. `parser`: Recursive-Descent mit Precedence-Klettern —
-//!    `OR` < `AND` < `NOT` < vergleich < atom.
-//! 3. `ast`: Datentypen fuer Expressions + `Value`.
+//! 1. `lexer`: tokenizer. All keywords case-insensitive, string
+//!    literals `'...'` with `''` escape.
+//! 2. `parser`: recursive descent with precedence climbing —
+//!    `OR` < `AND` < `NOT` < comparison < atom.
+//! 3. `ast`: data types for expressions + `Value`.
 //! 4. `evaluator`: `Expr::evaluate(row, params)` → `bool`; `row`
-//!    implementiert `RowAccess` (Field-Lookup per Name).
+//!    implements `RowAccess` (field lookup by name).
 //!
-//! # Verwendung
+//! # Usage
 //!
 //! ```
 //! use zerodds_sql_filter::{parse, Value, RowAccess};

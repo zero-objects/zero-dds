@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  pkg/windows/zerodds.wxs — WiX 4 Source fuer den ZeroDDS-Windows-Installer (MSI).
+
+  Build:
+    candle -arch x64 zerodds.wxs
+    light  -ext WixUIExtension zerodds.wixobj -out zerodds.msi
+
+  oder via dotnet-wix:
+    dotnet wix build zerodds.wxs -arch x64 -out zerodds.msi
+
+  Zielverzeichnisse (Ueber Wahl der DefaultDir-Struktur):
+    %ProgramFiles%\ZeroDDS\
+        bin\           — CLI-Tools
+        lib\           — zerodds.dll, zerodds.lib
+        include\       — zerodds.h
+    %ProgramFiles%\ZeroDDS\bin wird zur PATH-Erweiterung (User-Scope)
+    hinzugefuegt, damit `dds-admin --version` ohne weiteres aufrufbar ist.
+
+  Code-Signing erfolgt nach light/build via:
+    signtool sign /fd SHA256 /a zerodds.msi
+  Das Cert + signtool laeuft im CI ausserhalb dieses File.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="ZeroDDS"
+      Manufacturer="ZeroDDS Maintainers"
+      Version="0.0.0.0"
+      UpgradeCode="2C3B5A7E-9D14-4F2A-B6C8-1234567890AB"
+      InstallerVersion="500"
+      Compressed="yes"
+      Scope="perMachine">
+
+    <SummaryInformation Description="ZeroDDS — Pure-Rust DDS Toolchain" />
+
+    <MajorUpgrade
+        DowngradeErrorMessage="Eine neuere Version von ZeroDDS ist bereits installiert." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="ZeroDDSIcon" SourceFile="zerodds.ico" />
+    <Property Id="ARPPRODUCTICON" Value="ZeroDDSIcon" />
+    <Property Id="ARPHELPLINK" Value="https://zerodds.io" />
+    <Property Id="ARPURLINFOABOUT" Value="https://zerodds.io" />
+    <Property Id="ARPNOREPAIR" Value="yes" Secure="yes" />
+    <Property Id="ARPNOMODIFY" Value="yes" Secure="yes" />
+
+    <!-- Feature-Tree: Tools (default), Library, Headers (optional). -->
+    <Feature Id="Tools" Title="ZeroDDS Tools" Level="1">
+      <ComponentGroupRef Id="ToolsGroup" />
+    </Feature>
+    <Feature Id="Library" Title="ZeroDDS Runtime Library" Level="1">
+      <ComponentGroupRef Id="LibraryGroup" />
+    </Feature>
+    <Feature Id="Headers" Title="C/C++ Development Headers" Level="2">
+      <ComponentGroupRef Id="HeadersGroup" />
+    </Feature>
+
+    <UIRef Id="WixUI_FeatureTree" />
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+  </Package>
+
+  <Fragment>
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="ZeroDDS">
+        <Directory Id="BinDir" Name="bin" />
+        <Directory Id="LibDir" Name="lib" />
+        <Directory Id="IncludeDir" Name="include" />
+      </Directory>
+    </StandardDirectory>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="ToolsGroup" Directory="BinDir">
+      <Component Id="DdsAdmin" Guid="*">
+        <File Id="DdsAdminExe"
+              Source="..\..\target\release\dds-admin.exe"
+              KeyPath="yes" />
+      </Component>
+      <Component Id="DdsPerf" Guid="*">
+        <File Id="DdsPerfExe"
+              Source="..\..\target\release\dds-perf.exe"
+              KeyPath="yes" />
+      </Component>
+      <Component Id="DdsIdlc" Guid="*">
+        <File Id="DdsIdlcExe"
+              Source="..\..\target\release\dds-idlc.exe"
+              KeyPath="yes" />
+      </Component>
+      <Component Id="DdsXmlc" Guid="*">
+        <File Id="DdsXmlcExe"
+              Source="..\..\target\release\dds-xmlc.exe"
+              KeyPath="yes" />
+      </Component>
+      <Component Id="DdsChaos" Guid="*">
+        <File Id="DdsChaosExe"
+              Source="..\..\target\release\dds-chaos.exe"
+              KeyPath="yes" />
+      </Component>
+      <Component Id="Roundtrip1us" Guid="*">
+        <File Id="Roundtrip1usExe"
+              Source="..\..\target\release\roundtrip-1us.exe"
+              KeyPath="yes" />
+      </Component>
+      <!-- PATH-Eintrag (HKCU) damit `dds-admin` direkt aufrufbar ist. -->
+      <Component Id="PathEntry" Guid="*">
+        <RegistryKey Root="HKCU"
+                     Key="Software\ZeroDDS\Install">
+          <RegistryValue Type="string" Name="BinDir" Value="[BinDir]"
+                         KeyPath="yes" />
+        </RegistryKey>
+        <Environment Id="ZerodsPath"
+                     Name="PATH"
+                     Value="[BinDir]"
+                     Permanent="no"
+                     Part="last"
+                     Action="set"
+                     System="no" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="LibraryGroup" Directory="LibDir">
+      <Component Id="ZeroDdsDll" Guid="*">
+        <File Id="ZeroDdsDllFile"
+              Source="..\..\target\release\zerodds.dll"
+              KeyPath="yes" />
+      </Component>
+      <Component Id="ZeroDdsLib" Guid="*">
+        <File Id="ZeroDdsLibFile"
+              Source="..\..\target\release\zerodds.dll.lib"
+              KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="HeadersGroup" Directory="IncludeDir">
+      <Component Id="ZeroDdsHeader" Guid="*">
+        <File Id="ZeroDdsHeaderFile"
+              Source="..\..\crates\dds-c-api\include\zerodds.h"
+              KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

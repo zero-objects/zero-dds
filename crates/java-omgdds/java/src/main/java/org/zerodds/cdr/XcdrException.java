@@ -2,23 +2,23 @@
 package org.zerodds.cdr;
 
 /**
- * Runtime-Fehler im XCDR2-Encoder/Decoder.
+ * Runtime error in the XCDR2 encoder/decoder.
  *
- * <p>Wird geworfen bei Bounds-Verletzungen, ungueltigen Wire-Daten,
- * Decoder-Stream-Underflow und Encoder-Range-Verstoessen. Erweitert
- * {@link RuntimeException} weil DDS-Java-PSM keine checked Exceptions
+ * <p>Thrown on bounds violations, invalid wire data,
+ * decoder stream underflow and encoder range violations. Extends
+ * {@link RuntimeException} because the DDS Java PSM does not use checked exceptions
  * an den Sample-API-Pfaden vorsieht.
  */
 public final class XcdrException extends RuntimeException {
 
     private static final long serialVersionUID = 1L;
 
-    /** Konstruiert mit Detail-Message. */
+    /** Constructs with a detail message. */
     public XcdrException(String message) {
         super(message);
     }
 
-    /** Konstruiert mit Detail-Message und Ursache. */
+    /** Constructs with a detail message and cause. */
     public XcdrException(String message, Throwable cause) {
         super(message, cause);
     }

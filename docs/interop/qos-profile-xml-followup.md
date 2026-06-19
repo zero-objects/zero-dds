@@ -1,7 +1,34 @@
-# QoS-Profile XML-Handling — Vendor-Interop (offen)
+# QoS-Profile XML-Handling — Vendor-Interop
 
-**Status**: deferred
+**Status**: completed (2026-06-13)
 **Datum**: 2026-05-07
+
+## Resolution (2026-06-13)
+
+Der fehlende **Profile-Resolver + Entity-Wireup** ist umgesetzt (die XML-Parser-
+Schicht in `crates/xml` stand bereits):
+
+1. **`zerodds_xml::QosProfileRegistry`** (`crates/xml/src/registry.rs`):
+   `from_xml(xml)` / `from_file(path)` lädt alle `<qos_library>`, und
+   `writer_qos("Lib::Profile")` / `reader_qos(...)` löst einen (qualifizierten
+   oder unqualifizierten) Profil-Verweis unter **voller `base_name`-Inheritance**
+   (§7.3.2.4.2, base→derived-Merge via `resolve_chain` + `EntityQos::merge`) zu
+   einer materialisierten `zerodds_qos::WriterQos`/`ReaderQos` auf. 5 Unit-Tests
+   (Base-Resolve, Inheritance-Override, unqualifiziert→erste Library, Reader,
+   UnresolvedReference).
+2. **Entity-Wireup**: `impl From<zerodds_qos::WriterQos> for DataWriterQos` +
+   `From<ReaderQos> for DataReaderQos` in `crates/dcps/src/qos.rs` (alle geteilten
+   Policies; DCPS-only `data_representation` bleibt Default). Damit:
+   ```rust
+   let reg = QosProfileRegistry::from_file("profiles.xml")?;
+   publisher.create_datawriter::<T>(&topic, reg.writer_qos("MyLib::HighPerf")?.into())?;
+   ```
+   Migration ohne Hardcoding der QoS in Rust — RTI/Cyclone/FastDDS-Profil-XML
+   wird direkt konsumiert.
+
+Layering respektiert: `xml` kennt `qos` (nicht `dcps`); die `From`-Brücke lebt in
+`dcps` (kennt `qos`). Phase D (Cross-Vendor-Live-Demo + Hot-Reload) bleibt als
+Test-Rig-Erweiterung optional; der normative Resolver-Pfad ist vollständig.
 **Sprint-Kontext**: bei der Cross-Vendor Live-Demo (D.5g) gegen RTI Connext Shapes Demo aufgekommen — RTI lädt QoS aus XML-Profilen, ZeroDDS hat keinen Loader/Resolver dafür
 **Verantwortlich**: open
 

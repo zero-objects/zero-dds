@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Bidirectional-GIOP — Spec §15.9.
+//! Bidirectional GIOP — Spec §15.9.
 //!
-//! Bidirectional-GIOP erlaubt einem Server, Requests an den Client
-//! ueber dieselbe TCP-Connection zurueckzuschicken. Aushandlung
-//! geschieht via `BiDirIIOPServiceContext` mit Tag `BI_DIR_IIOP = 5`,
-//! transportiert in der ersten Request-Message des Clients.
+//! Bidirectional GIOP allows a server to send requests back to the
+//! client over the same TCP connection. Negotiation happens via
+//! `BiDirIIOPServiceContext` with tag `BI_DIR_IIOP = 5`, carried in
+//! the client's first request message.
 //!
 //! ```text
 //! struct BiDirIIOPServiceContext {
@@ -19,8 +19,8 @@
 //! };
 //! ```
 //!
-//! Der Server speichert die Listen-Points und nutzt sie, wenn er
-//! spaeter selbst ein Object referenziert, das auf dem Client lebt.
+//! The server stores the listen points and uses them when it later
+//! references an object that lives on the client.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -29,31 +29,31 @@ use zerodds_cdr::{BufferReader, BufferWriter};
 
 use crate::profile_body::CdrError;
 
-/// IOP-Service-Context-Tag fuer Bidirectional-GIOP (Spec §15.9 +
+/// IOP service-context tag for bidirectional GIOP (Spec §15.9 +
 /// §13.7).
 pub const IIOP_BI_DIR_TAG: u32 = 5;
 
-/// Ein einzelner Listen-Point — Host + Port.
+/// A single listen point — host + port.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BiDirIiopListenPoint {
-    /// Host-Name oder IP-Adresse.
+    /// Host name or IP address.
     pub host: String,
-    /// TCP-Port.
+    /// TCP port.
     pub port: u16,
 }
 
-/// Gesamter `BiDirIIOPServiceContext`-Inhalt.
+/// The full `BiDirIIOPServiceContext` content.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BiDirIiopServiceContext {
-    /// Liste der Listen-Points.
+    /// List of listen points.
     pub listen_points: Vec<BiDirIiopListenPoint>,
 }
 
 impl BiDirIiopServiceContext {
-    /// CDR-Encode in einen `BufferWriter`.
+    /// CDR-encodes into a `BufferWriter`.
     ///
     /// # Errors
-    /// Buffer-Schreibfehler oder Length-Overflow.
+    /// Buffer write error or length overflow.
     pub fn encode(&self, w: &mut BufferWriter) -> Result<(), CdrError> {
         let n = u32::try_from(self.listen_points.len()).map_err(|_| CdrError::Overflow)?;
         w.write_u32(n)?;
@@ -64,10 +64,10 @@ impl BiDirIiopServiceContext {
         Ok(())
     }
 
-    /// CDR-Decode.
+    /// CDR-decodes.
     ///
     /// # Errors
-    /// Buffer-Lesefehler.
+    /// Buffer read error.
     pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, CdrError> {
         let n = r.read_u32()? as usize;
         let mut listen_points = Vec::with_capacity(n.min(32));
@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn bidir_tag_value_matches_spec() {
-        // Spec §15.9 + §13.7: Tag-Wert = 5.
+        // Spec §15.9 + §13.7: tag value = 5.
         assert_eq!(IIOP_BI_DIR_TAG, 5);
     }
 
@@ -122,5 +122,32 @@ mod tests {
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let decoded = BiDirIiopServiceContext::decode(&mut r).unwrap();
         assert_eq!(decoded, c);
+    }
+
+    #[test]
+    fn bidir_sc_byte_identical_to_omniorb() {
+        // Cross-ORB conformance (§15.8): byte-identical to omniORB 4.3.3, which
+        // marshals the same BiDirIIOPServiceContext struct via cdrEncapsulationStream
+        // (capture on the Linux test host, clearMemory=1, little-endian).
+        // listen_points = [{ "client.local", 5555 }].
+        let c = BiDirIiopServiceContext {
+            listen_points: alloc::vec![BiDirIiopListenPoint {
+                host: "client.local".into(),
+                port: 5555,
+            }],
+        };
+        // ServiceContext encapsulation = byte-order octet (1=LE) + struct body.
+        let mut w = BufferWriter::new(Endianness::Little);
+        w.write_u8(1).unwrap();
+        c.encode(&mut w).unwrap();
+        let hex: alloc::string::String = w
+            .into_bytes()
+            .iter()
+            .map(|b| alloc::format!("{b:02x}"))
+            .collect();
+        assert_eq!(
+            hex,
+            "01000000010000000d000000636c69656e742e6c6f63616c0000b315"
+        );
     }
 }

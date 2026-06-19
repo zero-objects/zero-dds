@@ -53,7 +53,7 @@ fn int32_le_golden_vector_decodes() {
     let v = r.read_u32().unwrap() as i32;
     assert_eq!(v, 0x1234_5678);
 
-    // Roundtrip: re-encode muss byte-identisch sein.
+    // Roundtrip: re-encode must be byte-identical.
     let mut w = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
     w.write_u32(0x1234_5678).unwrap();
     assert_eq!(w.into_bytes(), bytes);

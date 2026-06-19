@@ -30,6 +30,12 @@ public sealed class BagTypeSupport : IDdsTopicType<Bag>
     public byte[] Encode(Bag sample, EndianMode endian)
     {
         var w = new Xcdr2Writer(endian);
+        EncodeInto(w, sample);
+        return w.ToArray();
+    }
+
+    public void EncodeInto(Xcdr2Writer w, Bag sample)
+    {
         using (var __scope = w.BeginAppendable())
         {
             w.WriteString(sample.Name);
@@ -43,12 +49,16 @@ public sealed class BagTypeSupport : IDdsTopicType<Bag>
                 }
             }
         }
-        return w.ToArray();
     }
 
     public Bag Decode(ReadOnlySpan<byte> bytes)
     {
         var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
+        return DecodeFrom(r);
+    }
+
+    public Bag DecodeFrom(Xcdr2Reader r)
+    {
         var __scope = r.BeginDHeader();
         string __m0 = default;
         __m0 = r.ReadString();

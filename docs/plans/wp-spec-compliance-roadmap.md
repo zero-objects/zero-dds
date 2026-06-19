@@ -745,7 +745,7 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 (parallel) → Phase 6.
 
 ## 14. Was NICHT in v1.0 (explizit dokumentiert, nicht implementiert)
 
-- **DURABILITY=TRANSIENT/PERSISTENT** (dcps §2.2.3.4) — Persistence-Service, Phase 5+
+- **DURABILITY=TRANSIENT/PERSISTENT** (dcps §2.2.3.4) — war nicht v1.0; inzwischen ✅ geliefert (Persistence-Service auf main, ADR 0009, 2026-06-10)
 - **MultiTopic** (dcps §2.2.2.3.4) — Object-Model-Profile (DLRL-deprecated)
 - **DLRL** — komplett, ersetzt durch X-Types
 - **CORBA-Profile** in IDL4-Bindings (idl4-cpp Annex A.1, idl4-csharp 7.7-7.12 + A.1, idl4-java Annex A.1)

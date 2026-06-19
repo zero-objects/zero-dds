@@ -3,15 +3,15 @@
 
 //! Crate `zerodds-zenoh-bridge`. Safety classification: **STANDARD**.
 //!
-//! ZeroDDS ↔ Eclipse-Zenoh Bridge — `no_std + alloc` (pure-Rust
-//! Mapping-Layer ohne `zenoh`-Dep) plus Feature-gated `zenoh-runtime`
-//! fuer den voll-funktionalen Live-Bridge-Pfad.
+//! ZeroDDS ↔ Eclipse Zenoh bridge — `no_std + alloc` (pure-Rust
+//! mapping layer without a `zenoh` dep) plus the feature-gated `zenoh-runtime`
+//! for the fully functional live bridge path.
 //!
-//! Verbindet einen ZeroDDS-DomainParticipant mit einer Zenoh-Session,
-//! sodass DDS-Topics auf Zenoh-Key-Expressions gemappt werden und in
-//! beide Richtungen gepumpt werden.
+//! Connects a ZeroDDS DomainParticipant with a Zenoh session,
+//! so that DDS topics are mapped onto Zenoh key expressions and pumped
+//! in both directions.
 //!
-//! # Architektur
+//! # Architecture
 //!
 //! ```text
 //!  DDS-Topic  ────────►  ZeroDDS DataReader
@@ -31,31 +31,31 @@
 //!  DDS-Topic
 //! ```
 //!
-//! # Feature-Gating
+//! # Feature gating
 //!
-//! - **default** — Skeleton-Crate ohne `zenoh`-Dep. Topic-Mapping-
-//!   Logik + Tests laufen pure-Rust, sodass das Workspace-CI ohne
-//!   externe Dependencies bleibt.
-//! - **zenoh-runtime** — bringt `zenoh = "1"` + `tokio`. Damit ist
-//!   `ZenohBridge::start` voll funktional.
+//! - **default** — skeleton crate without a `zenoh` dep. The topic-mapping
+//!   logic + tests run pure-Rust, so the workspace CI stays without
+//!   external dependencies.
+//! - **zenoh-runtime** — brings `zenoh = "1"` + `tokio`. With it,
+//!   `ZenohBridge::start` is fully functional.
 //!
-//! # QoS-Mapping (DDS → Zenoh)
+//! # QoS mapping (DDS → Zenoh)
 //!
-//! | DDS-QoS | Zenoh-Aequivalent |
+//! | DDS QoS | Zenoh equivalent |
 //! |---------|-------------------|
 //! | `Reliability::Reliable` | `Reliability::Reliable` (Zenoh) |
 //! | `Reliability::BestEffort` | `Reliability::BestEffort` |
 //! | `Durability::TransientLocal` | `CongestionControl::Block` + `Priority::DataHigh` |
-//! | `Durability::Volatile` (Default) | `CongestionControl::Drop` |
-//! | `History::KeepLast(n)` | (Zenoh hat kein History-Cache; n>1 ignoriert) |
-//! | `Partition` | KeyExpr-Praefix (`<partition>/<topic>`) |
+//! | `Durability::Volatile` (default) | `CongestionControl::Drop` |
+//! | `History::KeepLast(n)` | (Zenoh has no history cache; n>1 ignored) |
+//! | `Partition` | KeyExpr prefix (`<partition>/<topic>`) |
 //!
-//! # Spec-Referenz
+//! # Spec reference
 //!
-//! Es gibt keine OMG-Spec fuer Zenoh-Bridges. Diese Crate folgt dem
-//! De-facto-Pattern von ZettaScale's `zenoh-bridge-dds` (siehe
-//! <https://github.com/eclipse-zenoh/zenoh-plugin-dds>), aber als
-//! eigenstaendige Rust-Library statt Plugin.
+//! There is no OMG spec for Zenoh bridges. This crate follows the
+//! de-facto pattern of ZettaScale's `zenoh-bridge-dds` (see
+//! <https://github.com/eclipse-zenoh/zenoh-plugin-dds>), but as a
+//! standalone Rust library instead of a plugin.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]

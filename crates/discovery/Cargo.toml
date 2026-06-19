@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "DDSI-RTPS-Discovery für ZeroDDS — SPDP (§8.5.3), SEDP (§8.5.4), TypeLookup-Service (XTypes 1.3 §7.6.3.3.4), DDS-Security Builtin-Endpoints. Pure-Rust no_std + alloc."
+description = "DDSI-RTPS discovery for ZeroDDS — SPDP (§8.5.3), SEDP (§8.5.4), TypeLookup service (XTypes 1.3 §7.6.3.3.4), DDS-Security builtin endpoints. Pure-Rust no_std + alloc."
 repository = "https://github.com/zero-objects/zero-dds"
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-discovery"
@@ -21,28 +21,35 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std", "metrics"]
 std = ["alloc"]
 alloc = []
-# Hook-Points fuer zerodds-monitor-1.0 §2.4 (Discovery-Domain). Default an.
+# Hook points for zerodds-monitor-1.1 §2.4 (discovery domain). On by default.
 metrics = ["std", "dep:zerodds-monitor"]
 
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps", default-features = false, features = ["alloc"] }
-zerodds-types = { version = "1.0.0-rc.1", path = "../types", default-features = false, features = ["alloc"] }
-zerodds-qos = { version = "1.0.0-rc.1", path = "../qos", default-features = false, features = ["alloc"] }
-zerodds-cdr = { version = "1.0.0-rc.1", path = "../cdr", default-features = false, features = ["alloc"] }
-# C3.4-c: Security-Builtin-Endpoint-Slots (DCPSParticipantStatelessMessage +
-# DCPSParticipantVolatileMessageSecure). Wir reimplementieren den
-# CDR-Encapsulation-Wrap inline (codec.rs), damit kein Cargo-Zyklus mit
-# `zerodds-security-runtime` (welches `zerodds-discovery` als dev-dep nutzt) entsteht.
-zerodds-security = { version = "1.0.0-rc.1", path = "../security", default-features = false, features = ["alloc"] }
-# Hook-Points fuer zerodds-monitor-1.0 §2.4. Optional.
-zerodds-monitor = { version = "1.0.0-rc.1", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+zerodds-rtps = { version = "1.0.0-rc.3", path = "../rtps", default-features = false, features = ["alloc"] }
+zerodds-types = { version = "1.0.0-rc.3", path = "../types", default-features = false, features = ["alloc"] }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos", default-features = false, features = ["alloc"] }
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr", default-features = false, features = ["alloc"] }
+# C3.4-c: security builtin-endpoint slots (DCPSParticipantStatelessMessage +
+# DCPSParticipantVolatileMessageSecure). We reimplement the CDR
+# encapsulation wrap inline (codec.rs) so that no Cargo cycle arises with
+# `zerodds-security-runtime` (which uses `zerodds-discovery` as a dev-dep).
+zerodds-security = { version = "1.0.0-rc.3", path = "../security", default-features = false, features = ["alloc"] }
+# Hook points for zerodds-monitor-1.1 §2.4. Optional.
+zerodds-monitor = { version = "1.0.0-rc.3", path = "../monitor", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
 zerodds-transport = { path = "../transport" }
 zerodds-transport-udp = { path = "../transport-udp" }
+# Real PKI auth plugin for the end-to-end handshake driver test
+# (two stacks drive a complete 3-round handshake over stateless
+# loopback). No Cargo cycle: security-pki does not depend on discovery.
+zerodds-security-pki = { path = "../security-pki" }
+rcgen = "0.13"
+rustls-pki-types = { workspace = true }
 
 [[example]]
 name = "spdp_demo"

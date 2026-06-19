@@ -1,7 +1,7 @@
-//! Integration-Tests fuer Entity-Trait + Lifecycle.
+//! Integration tests for the Entity trait + lifecycle.
 //!
-//! Spec-Refs: DDS-DCPS 1.4 §2.2.2.1 (Entity Base), §2.2.3 (QoS
-//! Changeability-Tabelle).
+//! Spec refs: DDS-DCPS 1.4 §2.2.2.1 (Entity base), §2.2.3 (QoS
+//! changeability table).
 
 #![allow(
     clippy::expect_used,
@@ -69,8 +69,8 @@ fn publisher_set_qos_pre_and_post_enable_works() {
     let pub_ = p.create_publisher(PublisherQos::default());
     pub_.set_qos(PublisherQos::default()).unwrap();
     pub_.enable().unwrap();
-    // PublisherQos hat keine immutable Felder per Spec → set_qos
-    // post-enable bleibt erfolgreich.
+    // PublisherQos has no immutable fields per spec → set_qos
+    // post-enable stays successful.
     pub_.set_qos(PublisherQos::default()).unwrap();
 }
 
@@ -96,7 +96,7 @@ fn topic_immutable_durability_post_enable() {
     };
     let topic = p.create_topic::<RawBytes>("Chatter", q.clone()).unwrap();
     topic.enable().unwrap();
-    // Durability darf post-enable nicht geaendert werden
+    // Durability must not be changed post-enable
     let mut q2 = q.clone();
     q2.durability = DurabilityQosPolicy {
         kind: DurabilityKind::TransientLocal,
@@ -117,7 +117,7 @@ fn topic_set_qos_pre_enable_allows_durability_change() {
     let topic = p
         .create_topic::<RawBytes>("Chatter", TopicQos::default())
         .unwrap();
-    // pre-enable: alle Felder erlaubt
+    // pre-enable: all fields allowed
     let q = TopicQos {
         durability: DurabilityQosPolicy {
             kind: DurabilityKind::TransientLocal,

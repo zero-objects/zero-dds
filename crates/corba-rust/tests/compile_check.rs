@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Compile-Check: emittiert CORBA-Rust-Code aus IDL und ruft `cargo check`
-//! gegen ein temp-Crate mit `zerodds-corba-rust`/`zerodds-cdr`/`zerodds-dcps`-Pfad-Deps
-//! auf. Belegt §8.2: der Codegen-Output ist nicht nur snapshotbar sondern
-//! auch tatsaechlich kompilierbar.
+//! Compile check: emits CORBA Rust code from IDL and runs `cargo check`
+//! against a temp crate with `zerodds-corba-rust`/`zerodds-cdr`/`zerodds-dcps` path deps.
+//! Demonstrates §8.2: the codegen output is not only snapshottable but
+//! also actually compilable.
 
 #![allow(
     clippy::expect_used,
@@ -35,15 +35,15 @@ fn compile_generated(name: &str, idl: &str) {
         ..ParserConfig::default()
     };
     let ast = zerodds_idl::parse(idl, &cfg).expect("parse");
-    // DataType-Module (struct/enum/exception) kommen aus idl-rust;
-    // Service-Module (interface/valuetype/component) aus corba-rust.
-    // Echter Workflow ruft beide Codegens — der compile_check muss
-    // dieses Setup spiegeln.
+    // DataType modules (struct/enum/exception) come from idl-rust;
+    // service modules (interface/valuetype/component) from corba-rust.
+    // The real workflow calls both codegens — the compile_check must
+    // mirror this setup.
     let data_src = generate_rust_module(&ast, &RustGenOptions::default()).expect("idl-rust gen");
     let corba_src =
         generate_corba_rust_module(&ast, &CorbaRustGenOptions::default()).expect("corba-rust gen");
-    // Strip inner-Attribute (`#![...]`) aus dem zweiten Output, damit
-    // beide concat-bar sind. Inner-Attrs sind nur am Crate-Anfang erlaubt.
+    // Strip inner attributes (`#![...]`) from the second output so that
+    // both are concatenable. Inner attrs are only allowed at the crate start.
     let corba_clean: String = corba_src
         .lines()
         .filter(|l| !l.trim_start().starts_with("#!["))
@@ -129,6 +129,37 @@ fn compile_check_valuetype_state() {
         r#"valuetype Point {
             public long x;
             public long y;
+        };"#,
+    );
+}
+
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn compile_check_ami() {
+    // CORBA Messaging §22: `@ami` interface → AmiHandler trait + sendc_/sendp_ +
+    // poller. Covers ret+in, void+no-out, and ret+in+out.
+    compile_generated(
+        "ami",
+        r#"interface Bank {
+            @ami long deposit(in long amount);
+            @ami void close();
+            @ami long transfer(in long amount, out long balance);
+        };"#,
+    );
+}
+
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn compile_check_valuetype_inheritance() {
+    // §15.3.4 state flattening: ExtendedValue must carry `version` (base) + `name`
+    // (derived) and marshal them in this order.
+    compile_generated(
+        "valuetype_inheritance",
+        r#"valuetype Base {
+            public long version;
+        };
+        valuetype Extended : Base {
+            public string name;
         };"#,
     );
 }

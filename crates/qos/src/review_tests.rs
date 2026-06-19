@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Zusatzliche Tests aus dem WP-1.7-Review (B6).
+//! Additional tests from the WP-1.7 review (B6).
 //!
-//! Die Tests leben hier gebuendelt statt in einzelnen Modulen, damit
-//! die Review-Findings (#19–#25) gut nachvollziehbar sind; sie wuerden
-//! in einem "normalen" Refactor-Durchgang in die jeweiligen Module
-//! wandern.
+//! The tests live bundled here instead of in individual modules, so
+//! the review findings (#19–#25) are easy to follow; in a "normal"
+//! refactoring pass they would move into the respective modules.
 
 #![allow(
     clippy::unwrap_used,
@@ -90,7 +89,7 @@ fn partition_mismatch_in_aggregate() {
             assert!(reasons.contains(&IncompatibleReason::Partition));
         }
         CompatibilityResult::Compatible => {
-            // Falls beide nicht-leer aber disjunkt matchen nicht.
+            // If both are non-empty but disjoint, they do not match.
             unreachable!("disjoint partitions must not be compatible");
         }
     }
@@ -109,7 +108,7 @@ fn reasons_are_deduplicated_and_stable() {
     match r {
         CompatibilityResult::Incompatible(reasons) => {
             assert_eq!(reasons.len(), 2);
-            // Kanonische Reihenfolge: Durability < Reliability (Decl-Order).
+            // Canonical order: Durability < Reliability (decl order).
             assert_eq!(reasons[0], IncompatibleReason::Durability);
             assert_eq!(reasons[1], IncompatibleReason::Reliability);
         }
@@ -218,7 +217,7 @@ fn strict_decoder_rejects_unknown_discriminator() {
 fn pid_values_match_spec() {
     use crate::pid::Pid;
 
-    // Werte aus RTPS 2.5 §9.6.3 Table 9.9 (oder aequivalent DDS 1.4).
+    // Values from RTPS 2.5 §9.6.3 Table 9.9 (or equivalent DDS 1.4).
     assert_eq!(Pid::USER_DATA, 0x002c);
     assert_eq!(Pid::TOPIC_DATA, 0x002e);
     assert_eq!(Pid::GROUP_DATA, 0x002d);
@@ -238,7 +237,7 @@ fn pid_values_match_spec() {
     assert_eq!(Pid::PARTITION, 0x0029);
     assert_eq!(Pid::TIME_BASED_FILTER, 0x0004);
     assert_eq!(Pid::TRANSPORT_PRIORITY, 0x0049);
-    // Vendor-Flag gesetzt (MSBit) fuer nicht-standardisierte PIDs.
+    // Vendor flag set (MSB) for non-standardized PIDs.
     assert_eq!(Pid::READER_DATA_LIFECYCLE & 0x8000, 0x8000);
     assert_eq!(Pid::WRITER_DATA_LIFECYCLE & 0x8000, 0x8000);
     assert_eq!(Pid::SENTINEL, 0x0001);

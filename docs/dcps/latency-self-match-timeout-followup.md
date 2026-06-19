@@ -1,7 +1,27 @@
 # F-DCPS-latency-self-match-timeout — wait_for_matched_subscription Timeout auf CI
 
-- **Status**: blocking (CI-Tests ignored)
+- **Status**: completed
+- **Closed-Datum**: 2026-06-13
+- **Closed-by-commit**: 346314bf
 - **Datum**: 2026-05-08
+
+## Resolution (2026-06-13)
+
+**Echter Bug, kein Timing.** Root-Cause: intra-runtime-Routes (Same-Participant
+Writer→Reader, `recompute_intra_runtime_routes`) liefern Samples via
+Direct-Dispatch, fügen aber KEINEN Wire-ReaderProxy hinzu (bewusst — vermeidet
+UDP-to-self-Doppel-Delivery). Da `user_writer_matched_count = reader_proxy_count()`,
+blieb der matched-Count bei einem einzelnen Participant mit Pub+Sub **0** →
+`wait_for_matched_subscription(1)` timeoutete. Self-Match hing faktisch am
+SEDP-Wire-Loopback (auf macOS-Dev vorhanden, auf Linux-CI nicht → Linux-only-Fail).
+
+Fix (`crates/dcps/src/runtime.rs`, 346314bf): matched-Count/-Handles für Writer
+UND Reader zählen jetzt die **distinct Union** aus Wire-Proxies + Same-Participant
+intra-runtime-Peers (dedup per GUID `Guid::new(self.guid_prefix, eid)`). Keine
+Doppel-Delivery (kein Wire-Proxy), keine Doppel-Zählung (Union).
+`recompute_intra_runtime_routes` weckt bei Änderung die `match_event`-Waiter →
+sofortiger Wakeup. `#[ignore]` aus beiden Tests entfernt; live auf codepit grün
+(instant Self-Match, 0.00s).
 - **Sprint-Kontext**: D.5e Phase-1+2 perf-Commit (6a179dd) hat
   `crates/dcps/tests/latency_assertions.rs` eingefuehrt.
 - **Reproduktion**: GitLab Pipeline 917 test-job 11737, Linux x86_64.

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Request/Reply-Codegen-Datenmodell — Spec §7.5.1.
+//! Request/reply codegen data model — Spec §7.5.1.
 //!
-//! Diese Stufe (C6.1.B) leitet aus einer [`ServiceDef`] die Wire-Datenmodelle
-//! der Request- und Reply-Topics ab. Die Spec unterscheidet zwei Layouts:
+//! This stage (C6.1.B) derives from a [`ServiceDef`] the wire data models
+//! of the request and reply topics. The spec distinguishes two layouts:
 //!
-//! * **Basic-Service** (Spec §7.5.1.1): _ein_ Request-Topic + _ein_ Reply-
-//!   Topic pro Service-Type, beide mit einer ungetypten Discriminated-Union
-//!   ueber alle Methoden. Wire-Form:
+//! * **Basic service** (Spec §7.5.1.1): _one_ request topic + _one_ reply
+//!   topic per service type, both with an untyped discriminated union
+//!   over all methods. Wire form:
 //!
 //!   ```text
 //!   struct <Service>_Request {
@@ -21,29 +21,29 @@
 //!   };
 //!   ```
 //!
-//!   `<Service>_Reply` analog mit `<Service>_<m>_Out` und `ReplyHeader`.
+//!   `<Service>_Reply` analogously with `<Service>_<m>_Out` and `ReplyHeader`.
 //!
-//! * **Enhanced-Service** (Spec §7.5.1.2): _pro Methode_ ein eigenes
-//!   Request- und Reply-Topic mit typisierten Pro-Methode-Strukturen.
-//!   Wire-Form (pro Methode):
+//! * **Enhanced service** (Spec §7.5.1.2): _per method_ a dedicated
+//!   request and reply topic with typed per-method structures.
+//!   Wire form (per method):
 //!
 //!   ```text
-//!   struct <Service>_<m>_In  { /* in/inout-Params */ };
+//!   struct <Service>_<m>_In  { /* in/inout params */ };
 //!   struct <Service>_<m>_Out { /* return + out/inout */ };
 //!   ```
 //!
-//! Wir erzeugen hier **Daten-Strukturen** ([`RequestType`], [`ReplyType`])
-//! mit Member-Listen — kein Sprach-Codegen. Die Sprach-Backends in
-//! `crates/idl-cpp`, `idl-csharp` und `idl-java` konsumieren das Modell
-//! und emittieren Bindings.
+//! We produce **data structures** here ([`RequestType`], [`ReplyType`])
+//! with member lists — no language codegen. The language backends in
+//! `crates/idl-cpp`, `idl-csharp` and `idl-java` consume the model
+//! and emit bindings.
 //!
-//! Oneway-Methoden:
+//! Oneway methods:
 //!
-//! * Im Basic-Layout taucht eine Oneway-Methode im Request-Union auf,
-//!   wird aber **nicht** ins Reply-Union aufgenommen — der Reply-Topic
-//!   wird trotzdem gemeinsam genutzt.
-//! * Im Enhanced-Layout liefert [`build_enhanced_pair`] fuer eine
-//!   Oneway-Methode `Some(RequestType)` und `None` als Reply (siehe
+//! * In the basic layout, a oneway method appears in the request union,
+//!   but is **not** included in the reply union — the reply topic
+//!   is nonetheless shared.
+//! * In the enhanced layout, [`build_enhanced_pair`] returns for a
+//!   oneway method `Some(RequestType)` and `None` as the reply (see
 //!   [`MethodPair`]).
 
 extern crate alloc;
@@ -55,26 +55,26 @@ use alloc::vec::Vec;
 use crate::error::{RpcError, RpcResult};
 use crate::service_mapping::{MethodDef, ParamDirection, ServiceDef, TypeRef};
 
-/// Layout-Variante des Service-Wire-Modells (Spec §7.5.1).
+/// Layout variant of the service wire model (Spec §7.5.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ServiceLayout {
-    /// Spec §7.5.1.1 — ein Request-/Reply-Topic-Paar pro Service.
+    /// Spec §7.5.1.1 — one request/reply topic pair per service.
     Basic,
-    /// Spec §7.5.1.2 — ein Topic-Paar pro Methode.
+    /// Spec §7.5.1.2 — one topic pair per method.
     Enhanced,
 }
 
-/// Member einer generierten Wire-Struktur.
+/// Member of a generated wire structure.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructMember {
-    /// Member-Name (z.B. `header`, `request_id`, `result`).
+    /// Member name (e.g. `header`, `request_id`, `result`).
     pub name: String,
-    /// Typ-Referenz oder synthetisches Token (z.B. `RequestHeader`).
+    /// Type reference or synthetic token (e.g. `RequestHeader`).
     pub type_ref: MemberType,
 }
 
 impl StructMember {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(name: impl Into<String>, type_ref: MemberType) -> Self {
         Self {
@@ -84,103 +84,103 @@ impl StructMember {
     }
 }
 
-/// Typ eines Struct-Members. Entweder ein bekannter RPC-Header-Typ
-/// (`RequestHeader`/`ReplyHeader`/`<Service>_Call`) oder ein IDL-Typ
-/// aus `zerodds_idl::ast::TypeSpec`.
+/// Type of a struct member. Either a known RPC header type
+/// (`RequestHeader`/`ReplyHeader`/`<Service>_Call`) or an IDL type
+/// from `zerodds_idl::ast::TypeSpec`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MemberType {
     /// `RequestHeader` aus `common_types.rs`.
     RequestHeader,
     /// `ReplyHeader` aus `common_types.rs`.
     ReplyHeader,
-    /// Synthetisches Union ueber alle Methoden eines Service. Trager
-    /// fuer den Basic-Layout-Switch.
+    /// Synthetic union over all methods of a service. Carrier
+    /// for the basic-layout switch.
     CallUnion(CallUnionDef),
-    /// Ein normaler IDL-Typ.
+    /// A normal IDL type.
     Idl(TypeRef),
 }
 
-/// Discriminator-Case einer Call-Union (Basic-Layout).
+/// Discriminator case of a call union (basic layout).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CallUnionCase {
-    /// Methoden-Name (= Discriminator-Label `OP_<name>`).
+    /// Method name (= discriminator label `OP_<name>`).
     pub method: String,
-    /// Diskriminator-Wert (1-basiert in Reihenfolge der `MethodDef`-Liste).
+    /// Discriminator value (1-based in the order of the `MethodDef` list).
     pub discriminator: u32,
-    /// `<Service>_<method>_<In|Out>`-Typname.
+    /// `<Service>_<method>_<In|Out>` type name.
     pub case_type_name: String,
-    /// Member-Liste der Case-Struktur (`In` bzw. `Out`).
+    /// Member list of the case struct (`In` or `Out`).
     pub members: Vec<StructMember>,
 }
 
-/// `<Service>_Call` (Request) bzw. `<Service>_Result` (Reply) Union.
+/// `<Service>_Call` (request) or `<Service>_Result` (reply) union.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CallUnionDef {
-    /// Vollstaendiger Union-Typname (z.B. `Calculator_Call`).
+    /// Complete union type name (e.g. `Calculator_Call`).
     pub name: String,
-    /// Cases. `Reply`-Union enthaelt nur Methoden, die nicht `oneway`
-    /// sind.
+    /// Cases. The `Reply` union contains only methods that are not
+    /// `oneway`.
     pub cases: Vec<CallUnionCase>,
 }
 
-/// Request-Wire-Datenmodell.
+/// Request wire data model.
 ///
-/// * Basic-Layout: ein RequestType pro Service, mit `header` +
-///   `union`-Member ueber alle Methoden.
-/// * Enhanced-Layout: ein RequestType pro Methode, mit `header` +
-///   typisierten Pro-Methode-Feldern.
+/// * Basic layout: one RequestType per service, with `header` +
+///   `union` member over all methods.
+/// * Enhanced layout: one RequestType per method, with `header` +
+///   typed per-method fields.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RequestType {
-    /// Vollstaendiger Strukturname (z.B. `Calculator_Request` oder
+    /// Complete struct name (e.g. `Calculator_Request` or
     /// `Calculator_add_Request`).
     pub name: String,
-    /// Topic-Name dieser Request-Wire-Struktur.
+    /// Topic name of this request wire structure.
     pub topic_name: String,
-    /// Layout-Variante, aus der die Struktur erzeugt wurde.
+    /// Layout variant from which the struct was produced.
     pub layout: ServiceLayout,
-    /// Methoden-Name fuer Enhanced; `None` bei Basic.
+    /// Method name for enhanced; `None` for basic.
     pub method: Option<String>,
-    /// Member-Liste (Header + Body).
+    /// Member list (header + body).
     pub members: Vec<StructMember>,
 }
 
-/// Reply-Wire-Datenmodell. Analog zu [`RequestType`].
+/// Reply wire data model. Analogous to [`RequestType`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReplyType {
-    /// Vollstaendiger Strukturname.
+    /// Complete struct name.
     pub name: String,
-    /// Topic-Name.
+    /// Topic name.
     pub topic_name: String,
-    /// Layout-Variante.
+    /// Layout variant.
     pub layout: ServiceLayout,
-    /// Methoden-Name fuer Enhanced; `None` bei Basic.
+    /// Method name for enhanced; `None` for basic.
     pub method: Option<String>,
-    /// Member-Liste.
+    /// Member list.
     pub members: Vec<StructMember>,
 }
 
-/// Pair fuer eine Enhanced-Methode. Reply ist `None` bei `oneway`.
+/// Pair for an enhanced method. Reply is `None` for `oneway`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MethodPair {
-    /// Request-Wire-Struktur dieser Methode.
+    /// Request wire structure of this method.
     pub request: RequestType,
-    /// Reply-Wire-Struktur (`None` bei `oneway`-Methoden).
+    /// Reply wire structure (`None` for `oneway` methods).
     pub reply: Option<ReplyType>,
 }
 
 // ---------------------------------------------------------------------
-// Basic-Service-Mapping (Spec §7.5.1.1)
+// Basic service mapping (Spec §7.5.1.1)
 // ---------------------------------------------------------------------
 
-/// Liefert die Datenmodelle der Basic-Layout-Topics
-/// (`<Service>_Request` plus `<Service>_Reply`). Ein leerer `ServiceDef`
-/// liefert ein Pair mit leeren Unions — der Caller muss selbst entscheiden,
-/// ob er das verwirft.
+/// Returns the data models of the basic-layout topics
+/// (`<Service>_Request` plus `<Service>_Reply`). An empty `ServiceDef`
+/// returns a pair with empty unions — the caller must decide for itself
+/// whether to discard it.
 ///
 /// # Errors
-/// `RpcError::InvalidServiceName` wenn der Service-Name leer ist (das
-/// passiert nur bei manuell konstruierten ServiceDefs — `lower_service`
-/// validiert bereits).
+/// `RpcError::InvalidServiceName` if the service name is empty (this
+/// happens only for manually constructed ServiceDefs — `lower_service`
+/// already validates).
 pub fn build_basic_pair(svc: &ServiceDef) -> RpcResult<(RequestType, ReplyType)> {
     if svc.name.is_empty() {
         return Err(RpcError::InvalidServiceName(String::new()));
@@ -256,13 +256,13 @@ fn build_call_union(
 // Enhanced-Service-Mapping (Spec §7.5.1.2)
 // ---------------------------------------------------------------------
 
-/// Liefert das Pro-Methode-Pair (Request + optional Reply).
+/// Returns the per-method pair (request + optional reply).
 ///
-/// Reply ist `None`, wenn die Methode `oneway` ist.
+/// Reply is `None` if the method is `oneway`.
 ///
 /// # Errors
-/// `RpcError::InvalidServiceName` bzw. `RpcError::InvalidMethodName`
-/// bei inkonsistenten ServiceDefs.
+/// `RpcError::InvalidServiceName` resp. `RpcError::InvalidMethodName`
+/// on inconsistent ServiceDefs.
 pub fn build_enhanced_pair(svc: &ServiceDef, method: &MethodDef) -> RpcResult<MethodPair> {
     if svc.name.is_empty() {
         return Err(RpcError::InvalidServiceName(String::new()));
@@ -271,8 +271,8 @@ pub fn build_enhanced_pair(svc: &ServiceDef, method: &MethodDef) -> RpcResult<Me
         return Err(RpcError::InvalidMethodName(String::new()));
     }
     // Enhanced-Topic-Naming: `<Service>_<Method>_Request` /
-    // `<Service>_<Method>_Reply` (Spec §7.5.1.2 + §7.8.2 erlaubt Vendor-
-    // Erweiterung; Cyclone/FastDDS verwenden diese Form).
+    // `<Service>_<Method>_Reply` (Spec §7.5.1.2 + §7.8.2 allows vendor-
+    // extension; Cyclone/FastDDS use this form).
     let request_topic = format!(
         "{}_{}{}",
         svc.name,
@@ -313,10 +313,10 @@ pub fn build_enhanced_pair(svc: &ServiceDef, method: &MethodDef) -> RpcResult<Me
     Ok(MethodPair { request, reply })
 }
 
-/// Liefert alle Enhanced-Layout-Pairs eines Service.
+/// Returns all enhanced-layout pairs of a service.
 ///
 /// # Errors
-/// Siehe [`build_enhanced_pair`].
+/// See [`build_enhanced_pair`].
 pub fn build_enhanced_all(svc: &ServiceDef) -> RpcResult<Vec<MethodPair>> {
     let mut out = Vec::with_capacity(svc.methods.len());
     for m in &svc.methods {
@@ -351,7 +351,7 @@ fn method_out_members(m: &MethodDef) -> Vec<StructMember> {
         out.push(StructMember::new("_return", MemberType::Idl(ret.clone())));
     }
     for p in m.params.iter().filter(|p| p.direction.is_out()) {
-        // `out` und `inout` landen beide im Reply.
+        // `out` and `inout` both land in the reply.
         let _ = ParamDirection::Out;
         out.push(StructMember::new(
             p.name.clone(),
@@ -405,6 +405,7 @@ mod tests {
             return_type: ret,
             params,
             raises: Vec::new(),
+            context: Vec::new(),
             annotations: Vec::new(),
             span: sp(),
         }
@@ -491,7 +492,7 @@ mod tests {
             _ => panic!("expected CallUnion"),
         };
         assert_eq!(call_union.name, "Calculator_Call");
-        // Beide Methoden auch oneway-`log` muessen im Request-Union sein.
+        // Both methods including oneway `log` must be in the request union.
         assert_eq!(call_union.cases.len(), 2);
         assert_eq!(call_union.cases[0].method, "add");
         assert_eq!(call_union.cases[0].discriminator, 1);
@@ -509,7 +510,7 @@ mod tests {
             _ => panic!("expected CallUnion"),
         };
         assert_eq!(result_union.name, "Calculator_Result");
-        // `log` ist oneway → nicht im Reply.
+        // `log` is oneway → not in the reply.
         assert_eq!(result_union.cases.len(), 1);
         assert_eq!(result_union.cases[0].method, "add");
         assert_eq!(result_union.cases[0].case_type_name, "Calculator_add_Out");
@@ -567,7 +568,7 @@ mod tests {
         let log = svc.methods.iter().find(|m| m.oneway).unwrap();
         let pair = build_enhanced_pair(&svc, log).unwrap();
         assert!(pair.reply.is_none());
-        // Request-Members: header + msg.
+        // Request members: header + msg.
         assert_eq!(pair.request.members.len(), 2);
         assert_eq!(pair.request.members[0].name, "header");
         assert_eq!(pair.request.members[1].name, "msg");
@@ -630,7 +631,7 @@ mod tests {
         assert_eq!(pairs.len(), 2);
         assert_eq!(pairs[0].request.method, Some("add".to_string()));
         assert_eq!(pairs[1].request.method, Some("log".to_string()));
-        assert!(pairs[1].reply.is_none()); // log ist oneway.
+        assert!(pairs[1].reply.is_none()); // log is oneway.
     }
 
     #[test]

@@ -16,6 +16,6 @@
         <xs:attribute name="name" type="xs:string" use="optional"/>
     </xs:complexType>
 
-    <!-- Forward-Declarations + Module Hierarchie sind in xtypes_def.rs
-         als Rust-Modell implementiert; XSD bleibt offen via xs:any. -->
+    <!-- Forward declarations + module hierarchy are implemented as a Rust
+         model in xtypes_def.rs; XSD stays open via xs:any. -->
 </xs:schema>

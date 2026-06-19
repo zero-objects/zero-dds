@@ -1,16 +1,15 @@
-// zerodds/dds.hpp — C++ RAII-Wrapper-Convenience-API ueber das C-FFI
-// (zerodds.h). Die spec-konforme DDS-PSM-Cxx 1.0 API lebt unter
-// `dds/dds.hpp` (siehe `include/dds/`); dieser Header hier ist der
-// schnelle Convenience-Pfad fuer Apex.AI-Plugins, ROS-2-RMW und
-// embedded-C++-Apps, die ein minimales `zerodds::Runtime/Writer/Reader`
-// bevorzugen.
+// zerodds/dds.hpp — C++ RAII-wrapper convenience API over the C-FFI
+// (zerodds.h). The spec-compliant DDS-PSM-Cxx 1.0 API lives under
+// `dds/dds.hpp` (see `include/dds/`); this header here is the
+// fast convenience path for Apex.AI plugins, ROS-2 RMW and
+// embedded C++ apps that prefer a minimal `zerodds::Runtime/Writer/Reader`.
 //
-//   * `zerodds::Runtime`     — Domain-Lifecycle (RAII).
-//   * `zerodds::Writer`      — Pub-Side, write(bytes).
-//   * `zerodds::Reader`      — Sub-Side, take() -> std::vector<uint8_t>.
+//   * `zerodds::Runtime`     — domain lifecycle (RAII).
+//   * `zerodds::Writer`      — pub side, write(bytes).
+//   * `zerodds::Reader`      — sub side, take() -> std::vector<uint8_t>.
 //
-// Memory: alle Klassen sind move-only, RAII destroys via zerodds_*_destroy.
-// Buffer-Ownership bei `take()`: vollautomatisch via Vector-Kopie.
+// Memory: all classes are move-only, RAII destroys via zerodds_*_destroy.
+// Buffer ownership on `take()`: fully automatic via vector copy.
 
 #ifndef ZERODDS_DDS_HPP
 #define ZERODDS_DDS_HPP
@@ -25,7 +24,7 @@
 
 namespace zerodds {
 
-/// Statuscode-Wrapper.
+/// Status-code wrapper.
 class StatusError : public std::runtime_error {
 public:
     explicit StatusError(int code, const char *what)
@@ -36,7 +35,7 @@ private:
     int code_;
 };
 
-/// Domain-Runtime — wrap des C-FFI Runtime-Handles.
+/// Domain runtime — wraps the C-FFI runtime handle.
 class Runtime {
 public:
     explicit Runtime(uint32_t domain_id)
@@ -61,7 +60,7 @@ public:
         return *this;
     }
 
-    /// Roher C-Handle — fuer direct-FFI-Aufrufe von Friend-Klassen.
+    /// Raw C handle — for direct FFI calls from friend classes.
     zerodds_ZeroDdsRuntime *raw() const noexcept { return handle_; }
 
 private:
@@ -94,8 +93,8 @@ public:
         return *this;
     }
 
-    /// Schreibt einen Sample. `data` zeigt auf bereits-CDR-encodete Bytes.
-    /// Wirft `StatusError` bei Fehler.
+    /// Writes a sample. `data` points to already-CDR-encoded bytes.
+    /// Throws `StatusError` on error.
     void write(const uint8_t *data, std::size_t len) {
         int rc = zerodds_writer_write(handle_, data, len);
         if (rc != 0) throw StatusError(rc, "zerodds_writer_write");
@@ -104,16 +103,16 @@ public:
         write(payload.data(), payload.size());
     }
 
-    /// Wartet bis `min_count` Subscribers gematcht haben oder Timeout.
+    /// Waits until `min_count` subscribers have matched or timeout.
     /// `true` = matched, `false` = timeout.
     bool wait_for_matched(int min_count, uint64_t timeout_ms) {
         int rc = zerodds_writer_wait_for_matched(handle_, min_count, timeout_ms);
         return rc == 0;
     }
 
-    /// Spec §2.2.2.4.2.10 `dispose`. Schickt einen Wire-Lifecycle-
-    /// Marker — Reader sehen die Instanz als `NotAliveDisposed`.
-    /// `key_hash` ist der 16-byte PLAIN_CDR2-BE-Schluesselhash.
+    /// Spec §2.2.2.4.2.10 `dispose`. Sends a wire lifecycle
+    /// marker — readers see the instance as `NotAliveDisposed`.
+    /// `key_hash` is the 16-byte PLAIN_CDR2-BE key hash.
     void dispose(const uint8_t key_hash[16]) {
         int rc = zerodds_writer_dispose(handle_, key_hash);
         if (rc != 0) throw StatusError(rc, "zerodds_writer_dispose");
@@ -125,7 +124,7 @@ public:
         if (rc != 0) throw StatusError(rc, "zerodds_writer_unregister");
     }
 
-    /// Spec §2.2.3.21 mit `autodispose=true` — kombinierter Marker.
+    /// Spec §2.2.3.21 with `autodispose=true` — combined marker.
     void unregister_with_dispose(const uint8_t key_hash[16]) {
         int rc = zerodds_writer_unregister_with_dispose(handle_, key_hash);
         if (rc != 0) throw StatusError(rc, "zerodds_writer_unregister_with_dispose");
@@ -161,10 +160,10 @@ public:
         return *this;
     }
 
-    /// Versucht einen Sample zu lesen. Returnt `std::vector<uint8_t>`
-    /// — leerer Vector wenn nichts da. Buffer-Ownership-Wechsel: das
-    /// FFI alloziert den raw buffer, wir kopieren ihn in den Vector und
-    /// freigeben den raw via `zerodds_buffer_free`.
+    /// Attempts to read a sample. Returns `std::vector<uint8_t>`
+    /// — empty vector if nothing is available. Buffer-ownership transfer: the
+    /// FFI allocates the raw buffer, we copy it into the vector and
+    /// free the raw one via `zerodds_buffer_free`.
     std::vector<uint8_t> take() {
         uint8_t *raw = nullptr;
         std::size_t len = 0;
@@ -176,7 +175,7 @@ public:
         return out;
     }
 
-    /// Wartet bis `min_count` Publishers gematcht haben.
+    /// Waits until `min_count` publishers have matched.
     bool wait_for_matched(int min_count, uint64_t timeout_ms) {
         int rc = zerodds_reader_wait_for_matched(handle_, min_count, timeout_ms);
         return rc == 0;
@@ -186,7 +185,7 @@ private:
     zerodds_ZeroDdsReader *handle_;
 };
 
-/// Version-String — liefert den C-FFI-PKG-Version.
+/// Version string — returns the C-FFI package version.
 inline const char *version() {
     return zerodds_version();
 }

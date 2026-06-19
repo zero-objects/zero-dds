@@ -8,32 +8,32 @@
 //!
 //! # Scope
 //!
-//! Wir implementieren das **WebDDS-Object-Model** (Spec §7) und das
-//! **REST-PSM** (Spec §8.3) als pure-Rust no_std+alloc Library:
+//! We implement the **WebDDS object model** (Spec §7) and the
+//! **REST PSM** (Spec §8.3) as a pure-Rust no_std+alloc library:
 //!
-//! * `WebDDS::Root` Singleton + `Application` + `Client` +
-//!   `AccessController` + `DomainParticipant` (§7.3 Object-Model).
-//! * `ReturnStatus` mit allen Spec-Codes (§7.3.1 + §8.3.2 Mapping zu
-//!   HTTP-Status).
-//! * `RestRoute` Parser fuer alle URI-Patterns aus Spec §8.3.1
-//!   Tab 4 + §8.3.3 Tab 5 (alle 30+ Routes mit Parameter-Extraktion).
-//! * `Representation` XML-Element-Name-Registry (Spec §8.3.4 Tab 6).
-//! * `Headers` HTTP-Request/Response-Header-Set (Spec §8.3.5 Tab 7+8).
-//! * `SessionId` Authenticated-Session-Tracking (§7.3.1.1).
+//! * `WebDDS::Root` singleton + `Application` + `Client` +
+//!   `AccessController` + `DomainParticipant` (§7.3 object model).
+//! * `ReturnStatus` with all spec codes (§7.3.1 + §8.3.2 mapping to
+//!   HTTP status).
+//! * `RestRoute` parser for all URI patterns from Spec §8.3.1
+//!   Tab 4 + §8.3.3 Tab 5 (all 30+ routes with parameter extraction).
+//! * `Representation` XML element-name registry (Spec §8.3.4 Tab 6).
+//! * `Headers` HTTP request/response header set (Spec §8.3.5 Tab 7+8).
+//! * `SessionId` authenticated-session tracking (§7.3.1.1).
 //!
-//! # Was nicht abgedeckt ist
+//! # What is not covered
 //!
-//! * **HTTP-Server-Implementation** — Caller-Layer (typisch
-//!   `axum`/`hyper`); diese Crate liefert Routing-Tabellen + Status-
-//!   Mapping, der Caller bindet an HTTP-Stack.
-//! * **XML-Body-Serialization** — Caller-Layer mit `crates/xml/`-
-//!   Loader + DDS-XTYPES-Type-Definition-Reader; das XML-Element-
-//!   Name-Registry hier liefert die Wire-Tags.
-//! * **WebSocket-Push fuer DataReader-Notifications** — siehe
-//!   `crates/websocket-bridge/`; Caller wired das via Listener-
-//!   Callback aus `crates/dcps/`.
+//! * **HTTP server implementation** — caller layer (typically
+//!   `axum`/`hyper`); this crate provides routing tables + status
+//!   mapping, the caller binds to the HTTP stack.
+//! * **XML body serialization** — caller layer with the `crates/xml/`
+//!   loader + DDS-XTYPES type-definition reader; the XML element-name
+//!   registry here provides the wire tags.
+//! * **WebSocket push for DataReader notifications** — see
+//!   `crates/websocket-bridge/`; the caller wires it via a listener
+//!   callback from `crates/dcps/`.
 //! * **SOAP/WSDL-Platform** (Spec §8.4) — `n/a` (REST ist mandatory,
-//!   SOAP ist optional + selten verwendet).
+//!   SOAP is optional + rarely used).
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

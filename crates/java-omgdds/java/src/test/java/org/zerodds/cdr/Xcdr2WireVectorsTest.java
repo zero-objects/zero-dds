@@ -10,23 +10,23 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Wire-Vector-Tests V-1..V-12 gemaess
+ * Wire-vector tests V-1..V-12 per
  * {@code zerodds-xcdr2-bindings-conformance-1.0} §6 (corrected spec
  * post 2026-05-07).
  *
  * <p>Status pro Vector:
  * <ul>
- *   <li>V-1, V-2, V-3, V-4..V-9, V-11 (None), V-12: byte-genau gegen
- *       Spec-§6.</li>
- *   <li>V-8 Key-Hash: byte-genau MD5(BE id=42) gegen Spec-§6.</li>
- *   <li>V-10, V-11 (Some): DHEADER + Byte-Count + Roundtrip gegen
+ *   <li>V-1, V-2, V-3, V-4..V-9, V-11 (None), V-12: byte-exact against
+ *       spec §6.</li>
+ *   <li>V-8 key hash: byte-exact MD5(BE id=42) against spec §6.</li>
+ *   <li>V-10, V-11 (Some): DHEADER + byte count + roundtrip against
  *       Spec-§6. EMHEADER-Bit-Layout folgt OMG XTypes 1.3 §7.4.3.4.5
  *       (LC bits 30-28, member-id bits 27-0, geschrieben in
- *       Body-Endianness LE) — die Spec-§6-Hex zeigt EMHEADER in einer
- *       konzeptuellen MSB-zuerst-Layout-Form (wird im Spec-Body als
- *       {@code 20 00 00 01} fuer {LC=2, id=1} dargestellt); unser
+ *       body endianness LE) — the spec §6 hex shows EMHEADER in a
+ *       conceptual MSB-first layout form (represented in the spec body as
+ *       {@code 20 00 00 01} for {LC=2, id=1}); our
  *       Wire-Output ist {@code 01 00 00 20} in LE. Diese Divergenz
- *       ist mit dem Rust-Encoder (crates/cdr) konsistent und im
+ *       is consistent with the Rust encoder (crates/cdr) and is
  *       CHANGELOG dokumentiert.</li>
  * </ul>
  */
@@ -82,8 +82,8 @@ final class Xcdr2WireVectorsTest {
     @Test
     @DisplayName("V-3 All mixed-primitives byte-exact + roundtrip (corrected spec)")
     void v3MixedPrimitives() {
-        // Corrected spec §6 V-3 (2026-05-07): 48 Bytes mit natuerlicher
-        // Alignment per XTypes 1.3 §7.4.1.5 (b@0 o@1 s@2 us@4 pad@6
+        // Corrected spec §6 V-3 (2026-05-07): 48 bytes with natural
+        // alignment per XTypes 1.3 §7.4.1.5 (b@0 o@1 s@2 us@4 pad@6
         // l@8 ul@12 ll@16 ull@24 f@32 pad@36 d@40).
         Xcdr2Writer w = new Xcdr2Writer();
         w.writeBoolean(true);
@@ -170,18 +170,23 @@ final class Xcdr2WireVectorsTest {
     @Test
     @DisplayName("V-6 Tags{tags=[\"a\",\"bc\"]}")
     void v6Tags() {
+        // XCDR2 7.4.3.5: seq<string> has non-primitive elements -> DHEADER
+        // (uint32 = byte length of [count + elements]) prepended. Cyclone-verified.
         Xcdr2Writer w = new Xcdr2Writer();
         String[] tags = {"a", "bc"};
+        int dh = w.beginAppendable();
         w.writeSequenceCount(tags.length);
         for (String s : tags) {
             w.writeString(s);
         }
+        w.endDelimited(dh);
         byte[] actual = w.toByteArray();
         byte[] expected =
-                hex("02 00 00 00 02 00 00 00 61 00 00 00 03 00 00 00 62 63 00");
+                hex("13 00 00 00 02 00 00 00 02 00 00 00 61 00 00 00 03 00 00 00 62 63 00");
         assertArrayEquals(expected, actual);
 
         Xcdr2Reader r = new Xcdr2Reader(actual);
+        r.readDHeader();
         int n = r.readSequenceCount();
         assertEquals(2, n);
         assertEquals("a", r.readString());
@@ -226,16 +231,16 @@ final class Xcdr2WireVectorsTest {
     }
 
     @Test
-    @DisplayName("V-8 Key-Hash zero-pad fuer 4-Byte holder per XTypes 7.6.8.4")
+    @DisplayName("V-8 Key-Hash zero-pad for 4-byte holder per XTypes 7.6.8.4")
     void v8KeyHash() {
-        // PlainCdr2BeKeyHolder: BE-Encoding der @key-Felder.
+        // PlainCdr2BeKeyHolder: BE encoding of the @key fields.
         Xcdr2Writer w = new Xcdr2Writer(EndianMode.BIG_ENDIAN);
         w.writeInt32(42);
         byte[] beKey = w.toByteArray();
         assertArrayEquals(hex("00 00 00 2A"), beKey);
 
-        // XTypes 1.3 §7.6.8.4: Holder ≤ 16 octets -> zero-pad auf 16 Bytes.
-        // MD5 nur fuer Holder > 16 octets. Hier: Holder = 4 Byte -> zero-pad.
+        // XTypes 1.3 §7.6.8.4: holder ≤ 16 octets -> zero-pad to 16 bytes.
+        // MD5 only for holders > 16 octets. Here: holder = 4 bytes -> zero-pad.
         byte[] hash = new byte[16];
         if (beKey.length <= 16) {
             System.arraycopy(beKey, 0, hash, 0, beKey.length);
@@ -245,7 +250,7 @@ final class Xcdr2WireVectorsTest {
         byte[] expected = hex("00 00 00 2A 00 00 00 00 00 00 00 00 00 00 00 00");
         assertArrayEquals(expected, hash);
 
-        // Self-Check der Md5-Implementation (separat von §7.6.8.4):
+        // Self-check of the Md5 implementation (separate from §7.6.8.4):
         // MD5(00 00 00 2A) = A5 15 85 57 99 DD BD A0 8B C9 9F C2 CE 87 FA 79.
         byte[] md5 = Md5.hash(beKey);
         assertArrayEquals(
@@ -284,12 +289,12 @@ final class Xcdr2WireVectorsTest {
     void v10Mutable() {
         // Corrected spec §6 V-10 (2026-05-07): DHEADER = 23, Body =
         // 4(EM1) + 4(a) + 4(EM2) + 4(NEXTINT) + 7(string) = 23, total
-        // 27 Bytes. Wir verwenden LC=2 fuer 4-byte-inline (a) und LC=4
-        // (NEXTINT-Form) fuer den String — XTypes 1.3 §7.4.3.4.5
-        // konform. EMHEADER-Wire-Layout (LE Body-Endianness) divergiert
-        // bewusst von der konzeptuellen MSB-Hex-Notation der Spec — der
-        // Reader bestaetigt bit-genau die EMHEADER-Semantik via
-        // Roundtrip.
+        // 27 bytes. We use LC=2 for 4-byte inline (a) and LC=4
+        // (NEXTINT form) for the string — XTypes 1.3 §7.4.3.4.5
+        // conform. The EMHEADER wire layout (LE body endianness) diverges
+        // deliberately from the spec's conceptual MSB hex notation — the
+        // reader confirms the EMHEADER semantics bit-exactly via
+        // roundtrip.
         Xcdr2Writer w = new Xcdr2Writer();
         int dh = w.beginMutable();
         w.writeEmHeader(1, Xcdr2Writer.LC_INT32, false);
@@ -376,8 +381,8 @@ final class Xcdr2WireVectorsTest {
     @Test
     @DisplayName("V-12 XCDR2 emits NO explicit PID_LIST_END sentinel")
     void v12NoSentinel() {
-        // Mutable mit zwei EMHEADERn — wir testen, dass kein
-        // explizites Sentinel-PID nach dem letzten EMHEADER auftaucht.
+        // Mutable with two EMHEADERs — we test that no
+        // explicit sentinel PID appears after the last EMHEADER.
         Xcdr2Writer w = new Xcdr2Writer();
         int dh = w.beginMutable();
         w.writeEmHeader(1, Xcdr2Writer.LC_INT32, false);
@@ -393,7 +398,7 @@ final class Xcdr2WireVectorsTest {
         // DHEADER LE = 16
         assertEquals((byte) 16, actual[0]);
 
-        // Reading respects DHEADER bound — kein Sentinel-Pseudo-PID.
+        // Reading respects DHEADER bound — no sentinel pseudo-PID.
         Xcdr2Reader r = new Xcdr2Reader(actual);
         int bodySize = r.readDHeader();
         assertEquals(16, bodySize);
@@ -408,7 +413,7 @@ final class Xcdr2WireVectorsTest {
     }
 
     // ==================================================================
-    // Sanity-Checks fuer Helpers
+    // Sanity checks for helpers
     // ==================================================================
 
     @Test

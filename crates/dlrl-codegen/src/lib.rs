@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DLRL Code-Generation-Helpers — DDS 1.4 §B.4.
+//! DLRL code-generation helpers — DDS 1.4 §B.4.
 //!
 //! Crate `zerodds-dlrl-codegen`. Safety classification: **STANDARD**.
 //!
-//! Erzeugt sprachspezifische Boilerplate fuer die DLRL-Pragmas
+//! Generates language-specific boilerplate for the DLRL pragmas
 //! (`DCPS_DATA_TYPE`, `DCPS_DATA_KEY`, `DCPS_DLRL_RELATION`).
 //!
-//! # Konsumiert
+//! # Consumes
 //!
-//! Eine Liste von [`zerodds_dlrl::pragma::DlrlPragma`]-Werten, die der
-//! Frontend-Parser bereits validiert hat. Aus diesen Pragmas wird
-//! pro `DCPS_DATA_TYPE` ein Home-Class + Object-Class generiert,
-//! pro `DCPS_DATA_KEY` ein Key-Field-Hint, pro `DCPS_DLRL_RELATION`
-//! eine Relationship-Accessor-Methode.
+//! A list of [`zerodds_dlrl::pragma::DlrlPragma`] values that the
+//! frontend parser has already validated. From these pragmas, a home
+//! class plus object class is generated per `DCPS_DATA_TYPE`, a key
+//! field hint per `DCPS_DATA_KEY`, and a relationship accessor method
+//! per `DCPS_DLRL_RELATION`.
 //!
 //! # Backends
 //!
-//! * `cpp`   — C++ Headers + Inline-Implementations.
-//! * `csharp`— C# Partial-Classes mit `[DlrlObject]`-Attributes.
-//! * `java`  — Java-Interfaces + Skeleton-Implementations.
-//! * `ts`    — TypeScript-Interfaces + Class-Skeletons.
+//! * `cpp`   — C++ headers + inline implementations.
+//! * `csharp`— C# partial classes with `[DlrlObject]` attributes.
+//! * `java`  — Java interfaces + skeleton implementations.
+//! * `ts`    — TypeScript interfaces + class skeletons.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
@@ -43,20 +43,19 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use zerodds_dlrl::pragma::DlrlPragma;
 
-/// Aggregierte Type-Info — alle Pragmas, die einen einzelnen Type
-/// betreffen.
+/// Aggregated type info — all pragmas that pertain to a single type.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DlrlTypeInfo {
-    /// Vollqualifizierter Type-Name (`demo::Trade`).
+    /// Fully qualified type name (`demo::Trade`).
     pub name: String,
-    /// Liste der Key-Felder (Reihenfolge wie im IDL).
+    /// List of key fields (order as in the IDL).
     pub keys: Vec<String>,
-    /// Liste der Relationships (relation_name, target_type).
+    /// List of relationships (relation_name, target_type).
     pub relations: Vec<(String, String)>,
 }
 
-/// Sammelt aus einer flachen Pragma-Liste eine `DlrlTypeInfo`-Map
-/// (key = Type-Name).
+/// Collects a `DlrlTypeInfo` map from a flat pragma list
+/// (key = type name).
 #[must_use]
 pub fn collect_type_infos(
     pragmas: &[DlrlPragma],

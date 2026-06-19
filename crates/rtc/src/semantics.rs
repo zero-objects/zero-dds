@@ -3,8 +3,8 @@
 
 //! Execution-Semantics-Profile — Spec §5.3.
 //!
-//! Erweiterungen ueber Lightweight RTC hinaus, die domain-spezifische
-//! Verhaltens-Pattern definieren:
+//! Extensions beyond Lightweight RTC that define domain-specific
+//! behavior patterns:
 //! * §5.3.1 Periodic Sampled Data Processing → `DataFlowComponentAction`.
 //! * §5.3.2 Stimulus Response Processing → `FsmComponentAction`.
 //! * §5.3.3 Modes of Operation → `ModeOfOperation` +
@@ -13,51 +13,51 @@
 use crate::lifecycle::ComponentAction;
 use crate::return_code::ReturnCode;
 
-/// Spec §5.3.1 — `DataFlowComponentAction`. Erweitert
-/// `ComponentAction` um Periodic-Sampled-Data-Processing-Callbacks.
+/// Spec §5.3.1 — `DataFlowComponentAction`. Extends
+/// `ComponentAction` with periodic-sampled-data-processing callbacks.
 ///
-/// Pro Tick (mit Frequenz `ExecutionContext::get_rate`) werden
-/// `on_execute` (Read-Only-Phase) gefolgt von `on_state_update`
-/// (State-Mutation-Phase) invoked.
+/// Per tick (at the frequency `ExecutionContext::get_rate`),
+/// `on_execute` (read-only phase) followed by `on_state_update`
+/// (state-mutation phase) is invoked.
 pub trait DataFlowComponentAction: ComponentAction {
-    /// Spec §5.3.1.x — Read-Only-Phase eines Periodic-Tick.
+    /// Spec §5.3.1.x — read-only phase of a periodic tick.
     fn on_execute(&mut self, _exec_handle: u32) -> ReturnCode {
         ReturnCode::Ok
     }
-    /// Spec §5.3.1.x — State-Mutation-Phase eines Periodic-Tick.
+    /// Spec §5.3.1.x — state-mutation phase of a periodic tick.
     fn on_state_update(&mut self, _exec_handle: u32) -> ReturnCode {
         ReturnCode::Ok
     }
-    /// Spec §5.3.1.x — `on_rate_changed` wenn `ExecutionContext::
-    /// set_rate` invoked.
+    /// Spec §5.3.1.x — `on_rate_changed` when `ExecutionContext::
+    /// set_rate` is invoked.
     fn on_rate_changed(&mut self, _exec_handle: u32) -> ReturnCode {
         ReturnCode::Ok
     }
 }
 
-/// Spec §5.3.2 — `FsmComponentAction`. Stimulus-Response-Processing
-/// als Finite-State-Machine.
+/// Spec §5.3.2 — `FsmComponentAction`. Stimulus-response processing
+/// as a finite state machine.
 pub trait FsmComponentAction: ComponentAction {
-    /// Spec §5.3.2 — wird invoked wenn Event eintrifft (Caller-defined
-    /// Event-Type).
+    /// Spec §5.3.2 — invoked when an event arrives (caller-defined
+    /// event type).
     fn on_action(&mut self, _exec_handle: u32) -> ReturnCode {
         ReturnCode::Ok
     }
 }
 
-/// `ModeOfOperation` (Spec §5.3.3) — abstrakte Mode-Identifikation.
-/// Implementor definiert konkretes Mode-Set (z.B. `enum AutonomousMode
+/// `ModeOfOperation` (spec §5.3.3) — abstract mode identification.
+/// The implementor defines the concrete mode set (e.g. `enum AutonomousMode
 /// { Idle, Driving, Charging }`).
 pub trait ModeOfOperation: core::fmt::Debug + Copy + PartialEq + Eq {
-    /// Mode-Name (Spec-konform stringbasiert in Introspection).
+    /// Mode name (spec-conformant, string-based in introspection).
     fn name(&self) -> &str;
 }
 
-/// Spec §5.3.3 — `MultiModeComponentAction`. Erweitert
-/// `ComponentAction` um Mode-Wechsel-Callbacks.
+/// Spec §5.3.3 — `MultiModeComponentAction`. Extends
+/// `ComponentAction` with mode-change callbacks.
 pub trait MultiModeComponentAction<M: ModeOfOperation>: ComponentAction {
-    /// Spec §5.3.3.x — `on_mode_changed`. Wird beim Wechsel von
-    /// `from_mode` nach `to_mode` invoked.
+    /// Spec §5.3.3.x — `on_mode_changed`. Invoked on the change from
+    /// `from_mode` to `to_mode`.
     fn on_mode_changed(&mut self, _from: M, _to: M, _exec_handle: u32) -> ReturnCode {
         ReturnCode::Ok
     }
@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn data_flow_callbacks_are_invoked_independently() {
-        // Spec §5.3.1 — getrennte execute / state_update Phasen.
+        // Spec §5.3.1 — separate execute / state_update phases.
         let mut s = DataFlowStub {
             executes: 0,
             state_updates: 0,

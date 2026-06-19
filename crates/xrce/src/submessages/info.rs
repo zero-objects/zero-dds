@@ -3,7 +3,7 @@
 
 //! `INFO` Submessage (id=6, Spec §8.3.5.7).
 //!
-//! Direction: Agent → Client. Antwort auf `GET_INFO`. Payload =
+//! Direction: Agent → Client. Reply to `GET_INFO`. Payload =
 //! `INFO_Payload : BaseObjectReply { ObjectInfo }`.
 
 extern crate alloc;
@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// Opaker Body fuer `INFO`.
+/// Opaque body for `INFO`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct InfoPayload {
     /// XCDR2 `BaseObjectReply { ObjectInfo }`.
@@ -20,7 +20,7 @@ pub struct InfoPayload {
 }
 
 impl InfoPayload {
-    /// Verpackt in `Submessage`.
+    /// Packs into a `Submessage`.
     ///
     /// # Errors
     /// `PayloadTooLarge`.
@@ -32,7 +32,7 @@ impl InfoPayload {
         )
     }
 
-    /// Extrahiert aus `Submessage`.
+    /// Extracts from a `Submessage`.
     ///
     /// # Errors
     /// `ValueOutOfRange`.

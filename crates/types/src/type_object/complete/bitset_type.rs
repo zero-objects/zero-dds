@@ -18,7 +18,7 @@ use crate::type_object::minimal::CommonBitfield;
 pub struct CompleteBitfield {
     /// Common.
     pub common: CommonBitfield,
-    /// Name + Annotationen.
+    /// Name + annotations.
     pub detail: CompleteMemberDetail,
 }
 

@@ -3,8 +3,8 @@
 
 //! `STATUS` Submessage (id=5, Spec §8.3.5.6).
 //!
-//! Direction: Agent → Client. Antwort auf CREATE/UPDATE/DELETE und
-//! auf `READ_DATA` bei Fehler. Payload = `STATUS_Payload` (extends
+//! Direction: Agent → Client. Reply to CREATE/UPDATE/DELETE and
+//! to `READ_DATA` on error. Payload = `STATUS_Payload` (extends
 //! `BaseObjectReply`).
 
 extern crate alloc;
@@ -13,7 +13,7 @@ use alloc::vec::Vec;
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// Opaker Body fuer `STATUS`.
+/// Opaque body for `STATUS`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StatusPayload {
     /// XCDR2 `BaseObjectReply`.
@@ -21,7 +21,7 @@ pub struct StatusPayload {
 }
 
 impl StatusPayload {
-    /// Verpackt in `Submessage`.
+    /// Packs into a `Submessage`.
     ///
     /// # Errors
     /// `PayloadTooLarge`.
@@ -33,7 +33,7 @@ impl StatusPayload {
         )
     }
 
-    /// Extrahiert aus `Submessage`.
+    /// Extracts from a `Submessage`.
     ///
     /// # Errors
     /// `ValueOutOfRange`.

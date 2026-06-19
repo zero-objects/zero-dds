@@ -1,9 +1,9 @@
 # DDS Java 5 Language PSM 1.0 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/zerodds-java-psm-1.0.pdf` (44 Seiten, OMG formal/2013-11-02)
+**Spec:** [OMG DDS-Java 1.0](https://www.omg.org/spec/DDS-Java/1.0/PDF) (44 Seiten, OMG formal/2013-11-02)
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
+Audit Item-für-Item
+gegen die Spec; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
 Status (`done` / `partial` / `open` / `n/a`).
 
 **Kontext:** ZeroDDS realisiert das Java-PSM als **Pure-Java-
@@ -11,21 +11,23 @@ Implementation** (kein JNI-Dependency, keine `libzerodds`-Native-Lib
 im Java-Pfad). Architektur:
 
 - `crates/java-omgdds/java/`: native Java-Implementation der
-  `org.omg.dds.*`-Interfaces (Single-Process-`InProcessBus`,
-  Phase-2 gRPC-Bridge fuer Multi-Process). Spec-Definition siehe
+  `org.omg.dds.*`-Interfaces (Single-Process-`InProcessBus`;
+  Multi-Process-Transport über eine separate Bridge). Spec-Definition siehe
   `docs/specs/zerodds-java-omgdds-1.0.md`.
+
 - `crates/idl-java/runtime/`: Java-Annotations (`@Extensibility`,
   `@Key`, `@MustUnderstand`, `@Optional`, `@External`, `@Service`,
   `@Oneway`, `@Id`, `@Nested`) + `org.omg.dds.topic.TopicType<T>`-
   Marker-Interface.
-- `crates/idl-java/`: IDL-zu-Java-Codegen erzeugt fuer jeden DDS-
+
+- `crates/idl-java/`: IDL-zu-Java-Codegen erzeugt für jeden DDS-
   Topic-Type die Java-Wrapper-Klassen + XCDR2-Serialisierung in
   reinem Java.
 
-**Historische Notiz:** Eine fruehere JNI-Bruecke
-(`crates/java-omgdds/java/`) wurde am 2026-05-07 entfernt
+**Historische Notiz:** Eine frühere JNI-Brücke
+(`crates/java-omgdds/java/`) wurde entfernt
 (Commit `49b9b4c6`). Alle Java-Anwender lassen `.jar`-only — kein
-Rust-Compiler oder Native-Toolchain mehr noetig.
+Rust-Compiler oder Native-Toolchain mehr nötig.
 
 **Implementations-Wahl (Spec-konforme alternative Form):** Spec §1.1
 und §2 fordern "platform-specific model... API for DCPS"; sie
@@ -33,7 +35,7 @@ schreiben kein bestimmtes JAR-Layout vor (§2 erlaubt explizit
 "a Java jar library file and the source files that generated it" —
 ZeroDDS generiert die Source-Files via Codegen aus IDL und stellt
 die JAR via Build-Pfad dar). Das `org.omg.dds.*`-Namespace-Layout
-ist conformance-relevant fuer File-Replacement-Cross-Vendor-Tests
+ist conformance-relevant für File-Replacement-Cross-Vendor-Tests
 (§7.2.6); ZeroDDS realisiert das via `org.omg.dds.topic.TopicType`-
 Marker und Codegen-Hooks pro Topic-Type. Das ist analog zu
 K14/dds-psm-cxx ("Header-by-Codegen statt Hand-Header").
@@ -42,7 +44,7 @@ K14/dds-psm-cxx ("Header-by-Codegen statt Hand-Header").
 
 ## §1 Scope
 
-### 1.1 Java-PSM fuer DDS DCPS + XTypes + DDS-CCM-QoS
+### 1.1 Java-PSM für DDS DCPS + XTypes + DDS-CCM-QoS
 
 **Spec:** §1, S. 1 — "This specification defines a platform-specific
 model (PSM) for the OMG Data Distribution Service for Real-Time
@@ -59,14 +61,13 @@ by [DDS-CCM]."
 **nicht** als Spec-Realisierung tauglich, durch eine Pure-Java-Implementation in `crates/java-omgdds/java/` realisiert (kein Native-Dependency). Native `org.omg.dds.*`-Java-Package (Pure-Java-
 DCPS-Implementation oder Java→XCDR→Sidecar) ist ausstehend.
 
-**Tests:** `crates/java-omgdds/java/src/test/java/.../*Test.java` (36 gruen,
-vollstaendig durch java-omgdds ersetzt); Native Java-PSM in
-`crates/java-omgdds/java/` mit `mvn test`: 18 gruen
+**Tests:** `crates/java-omgdds/java/src/test/java/.../*Test.java` (36 grün,
+vollständig durch java-omgdds ersetzt); Native Java-PSM in
+`crates/java-omgdds/java/` mit `mvn test`: 18 grün
 (CoreTypesTest 10, Xcdr2CodecTest 4, PubSubLoopbackTest 4).
 
 **Status:** done — Native Java-PSM Foundation in
-`crates/java-omgdds/java/` (Update 2026-04-28); Phase-F-Closing
-2026-04-29 (siehe Closing-Section unten).
+`crates/java-omgdds/java/`.
 
 ### 1.2 Java Type Representation (publish/subscribe Java-Objekte ohne XML/IDL)
 
@@ -75,19 +76,18 @@ publishing and subscribing Java objects with DDS-the Java Type
 Representation-without first describing the types of those objects
 in another language, such as XML or OMG IDL."
 
-**Repo:** Reflection-basiertes Marshalling fuer Plain-Java-Beans
-ohne IDL ist Spec-Pflicht (§8). Aktuell nur in Pure-Java-Implementation angedeutet
-(`crates/java-omgdds/java/src/main/java/org/zerodds/cdr/Xcdr2Codec.java`); volle native Java-PSM-
-Implementation ist Voraussetzung.
+**Repo:** Native Java-PSM mit `TopicTypeSupport<T>` (User-supplied
+serialize/deserialize) + `idl-java`-Codegen für den typisierten Pfad, **plus**
+`org.zerodds.cdr.ReflectionTypeSupport<T>` für das von §8 geforderte
+reflection-basierte Auto-Marshalling von Plain-Java-Beans (POJOs + Records)
+ohne IDL über `java.lang.reflect`-Feld-Iteration — Output byte-identisch zum
+typisierten `Xcdr2Writer`-Pfad (Mapping per XTypes §8.2 Tab.8.1).
 
-**Tests:** `crates/java-omgdds/java/.../PubSubLoopbackTest`
-(in-process Loopback ohne IDL/XML-Schema-Datei).
+**Tests:** `crates/java-omgdds/java/.../PubSubLoopbackTest` (in-process
+Loopback) + `ReflectionTypeSupportTest` (14, byte-exakt + nested/seq/map/mutable).
 
-**Status:** done — Native Java-PSM mit `TopicTypeSupport<T>`-
-Interface erlaubt jedes Java-Object via User-supplied
-serialize/deserialize. Reflection-basiertes Auto-Marshalling fuer
-Plain-Java-Beans bleibt Folge-Sprint (Codegen-Auto-Generation in
-`idl-java`).
+**Status:** done — typisierter Pfad **und** reflection-basiertes
+Auto-Marshalling (`ReflectionTypeSupport`) für Plain-Java-Beans ohne IDL.
 
 ---
 
@@ -147,7 +147,7 @@ profiles shall implement these operations fully; other implementations
 shall throw java.lang.UnsupportedOperationException."
 
 **Repo:** XML-QoS-Loader live in `crates/xml/src/qos.rs`; Pure-Java-Implementation
-kann ihn ueber `crates/java-omgdds/java/src/main/java/org/omg/dds/domain/` exposen.
+kann ihn über `crates/java-omgdds/java/src/main/java/org/omg/dds/domain/` exposen.
 Wenn Java-Code XML-QoS-Funktionen aufruft, propagiert Rust-Result
 als Java-`UnsupportedOperationException` via Java-Exception-Throw
 (§7.3.2.6 unten).
@@ -257,7 +257,7 @@ version 1.1."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Non-normative-Referenz; JMS dient als Vergleichshintergrund fuer Java-Idiome.
+**Status:** `n/a (informative)` — Non-normative-Referenz; JMS dient als Vergleichshintergrund für Java-Idiome.
 
 ---
 
@@ -272,7 +272,7 @@ mandatory portion of the DDS specification."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Glossar-Definition; DCPS-Funktionalitaet ist in `crates/dcps` implementiert.
+**Status:** `n/a (informative)` — Glossar-Definition; DCPS-Funktionalität ist in `crates/dcps` implementiert.
 
 ### 4.2 DDS
 
@@ -341,7 +341,7 @@ Specific Model."
 
 ## §5 Symbols
 
-### 5.0 Keine Symbole/Abkuerzungen
+### 5.0 Keine Symbole/Abkürzungen
 
 **Spec:** §5, S. 3 — "This specification does not define any symbols
 or abbreviations."
@@ -408,7 +408,7 @@ operations defined within them."
 
 ## §7.2 General Concerns and Conventions
 
-### 7.2.1.1 Packages mit Praefix `org.omg.dds`
+### 7.2.1.1 Packages mit Präfix `org.omg.dds`
 
 **Spec:** §7.2.1, S. 5 — "This PSM is defined in a set of Java
 packages, the names of each beginning with the prefix org.omg.dds.
@@ -417,7 +417,7 @@ type in the corresponding DDS module."
 
 **Repo:** `crates/idl-java/runtime/TopicType.java` ist im
 `org.omg.dds.topic`-Package; weitere Java-Wrapper werden vom Codegen
-in dasselbe Praefix-Schema emittiert (Cross-Ref §7.4.0/§7.5.0/§7.6.0/
+in dasselbe Präfix-Schema emittiert (Cross-Ref §7.4.0/§7.5.0/§7.6.0/
 §7.7.0).
 
 **Tests:** Cross-Ref `idl4-java-1.0.md`-Coverage; Pure-Java-Tests in
@@ -434,15 +434,14 @@ within them, are packaged into a single JAR file, omgdds.jar."
 Single-Maven-Modul; per `mvn package` entsteht `omgdds-1.0.jar`
 mit dem vollen DCPS-API. Topic-Type-agnostisch via
 `TopicTypeSupport<T>`-Interface (User-Implementor oder
-`idl-java`-Codegen-Output). Volle XTypes-Dynamic-Type-Reflection
-(Runtime-Type-Erzeugung aus TypeObject) bleibt Folge-Sprint —
-das ist der Reflection-Layer ueber `Xcdr2Codec`, nicht das
-JAR-Layout.
+`idl-java`-Codegen-Output). Die volle XTypes-Dynamic-Type-Reflection
+(Runtime-Type-Erzeugung aus TypeObject, der Reflection-Layer über
+`Xcdr2Codec`) ist ein separater offener Punkt (§1.2, §7.8.1.3), nicht Teil
+des JAR-Layouts.
 
-**Tests:** `mvn test` in `crates/java-omgdds/java/`: 18 gruen.
+**Tests:** `mvn test` in `crates/java-omgdds/java/`: 18 grün.
 
-**Status:** done — Single-Universal-JAR-Layout erfuellt;
-Dynamic-Type-Reflection als Folge-Sprint (siehe Closing-Section).
+**Status:** done — Single-Universal-JAR-Layout erfüllt.
 
 ### 7.2.2.1 Implementation-Coexistence: Value-Type-Pass zwischen Implementations
 
@@ -454,13 +453,13 @@ method implemented by another."
 liefert das stabile Spec-API. Class-Identity-binary-Compat ist
 durch Spec-konforme Type-Signaturen garantiert (alle Vendoren
 linken gegen `omgdds-1.0.jar`); fremde Vendoren konsumieren
-Java-Instances byte-identisch ueber XCDR2-Wire (`crates/cdr` +
+Java-Instances byte-identisch über XCDR2-Wire (`crates/cdr` +
 Cross-Vendor-Validation K13).
 
 **Tests:** Wire-Form via Cross-Vendor-Validation K13;
 Class-Identity per Spec-API-Disziplin (kein automatisierter
-Multi-Vendor-Class-Loader-Test bis Native-RTPS-Stack —
-Folge-Sprint).
+Multi-Vendor-Class-Loader-Test — dieser setzt einen Multi-Vendor-
+Live-Rig voraus und liegt im Workstream des RTPS-Stacks).
 
 **Status:** done
 
@@ -476,7 +475,7 @@ implementation."
 (`org.omg.dds.sub.Sample<T>`); diese sind direkt an
 `DataWriter<T>::write(T)` weiterreichbar (Wire-Form: XCDR2
 verbatim). Cross-Implementation-Pass-Through ist durch die
-gemeinsame Spec-API gewaehrleistet.
+gemeinsame Spec-API gewährleistet.
 
 **Tests:** `PubSubLoopbackTest::single_writer_reader_round_trip`
 verifiziert den Pass-Through-Pfad in-process.
@@ -526,17 +525,17 @@ use."
 
 **Repo:** Native Java-PSM-Entities implementieren
 `AutoCloseable`; try-with-resources liefert die spec-konforme
-Pflicht-Variante. Der Cleaner-basierte Backstop fuer
+Pflicht-Variante. Der Cleaner-basierte Backstop für
 unreferenced-Entities (Spec §7.2.3 erlaubt ihn als Implementation-
-Detail) bleibt Folge-Sprint, weil `AutoCloseable` allein bereits
+Detail) ist optional, weil `AutoCloseable` allein bereits
 spec-konform ist (Spec-Wortlaut: "implementations *may*
 automatically close objects" — kein Pflicht-MUST).
 
 **Tests:** `PubSubLoopbackTest::cleanup_removes_subscription`
 verifiziert dass `close()` die Subscription deregistriert.
 
-**Status:** done — `AutoCloseable`-Pfad spec-konform; Cleaner-
-Backstop optional fuer Folge-Sprint.
+**Status:** done — `AutoCloseable`-Pfad spec-konform; der Cleaner-
+Backstop ist ein optionales Implementation-Detail (Spec §7.2.3 "may").
 
 ### 7.2.4.1 DataReader/DataWriter reentrant
 
@@ -545,13 +544,13 @@ shall be reentrant."
 
 **Repo:** Rust-Core `crates/dcps/src/{publisher,subscriber}.rs`
 implementieren `Send + Sync`; Pure-Java-Implementation erbt diese Eigenschaft —
-Java-Threads koennen parallel auf den Handle zugreifen.
+Java-Threads können parallel auf den Handle zugreifen.
 
 **Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java`.
 
 **Status:** done
 
-### 7.2.4.2 Topic/Pub/Sub/DP reentrant ausser close
+### 7.2.4.2 Topic/Pub/Sub/DP reentrant außer close
 
 **Spec:** §7.2.4, S. 6 — analog zu C++-PSM §7.3.4.
 
@@ -559,11 +558,11 @@ Java-Threads koennen parallel auf den Handle zugreifen.
 participant}.rs` Send+Sync; Java-Side propagiert das. close ist via
 Box-Drop am Ende der Handle-Lifetime.
 
-**Tests:** Cross-Ref `dds-psm-cxx-1.0.md` §7.3.4 (gleiche Begruendung).
+**Tests:** Cross-Ref `dds-psm-cxx-1.0.md` §7.3.4 (gleiche Begründung).
 
 **Status:** done
 
-### 7.2.4.3 ServiceEnvironment + DPF reentrant ausser DPF.close
+### 7.2.4.3 ServiceEnvironment + DPF reentrant außer DPF.close
 
 **Spec:** §7.2.4, S. 6 — "All ServiceEnvironment and
 DomainParticipantFactory operations shall be reentrant with the
@@ -578,7 +577,7 @@ exposed das.
 
 **Status:** done
 
-### 7.2.4.4 WaitSet/Condition reentrant ausser close
+### 7.2.4.4 WaitSet/Condition reentrant außer close
 
 **Spec:** §7.2.4, S. 6 — analog C++-PSM §7.3.6.
 
@@ -589,21 +588,21 @@ Java-Side propagiert.
 
 **Status:** done
 
-### 7.2.4.5 Listener-Callback nur Methoden der ausloesenden Entity
+### 7.2.4.5 Listener-Callback nur Methoden der auslösenden Entity
 
 **Spec:** §7.2.4, S. 7 — "Code within a DDS listener callback may
 not safely call any method on any DDS Entity but the one on which
 the status change occurred."
 
 **Repo:** Rust `crates/dcps/src/listener.rs` reicht nur die
-ausloesende Entity in Callbacks; Java-Listener-Adapter (in
+auslösende Entity in Callbacks; Java-Listener-Adapter (in
 `crates/java-omgdds/java/`) propagiert das Scope-Constraint.
 
 **Tests:** Cross-Ref `dds-psm-cxx-1.0.md` §7.3.7.
 
 **Status:** done
 
-### 7.2.4.6 Value-Type-Methoden duerfen non-reentrant sein
+### 7.2.4.6 Value-Type-Methoden dürfen non-reentrant sein
 
 **Spec:** §7.2.4, S. 7 — "Any method of any value type may be
 non-reentrant."
@@ -643,20 +642,20 @@ Setter mit `return this;` (Cross-Ref `idl4-java-1.0.md` §6.x).
 
 **Status:** done
 
-### 7.2.5.3 Accessor get<PropertyName>() fuer immutable / pointer-to-state
+### 7.2.5.3 Accessor get<PropertyName>() für immutable / pointer-to-state
 
 **Spec:** §7.2.5, S. 7 — "Accessors for properties that are either
 of unmodifiable objects [...] are named get<PropertyName>. They take
 no arguments."
 
 **Repo:** `crates/idl-java/src/blocks.rs` emittiert `getX()`-Getter
-fuer alle Felder.
+für alle Felder.
 
 **Tests:** Cross-Ref `idl4-java-1.0.md`.
 
 **Status:** done
 
-### 7.2.5.4 Accessor get<PropertyName>(target) fuer mutable + async-changeable
+### 7.2.5.4 Accessor get<PropertyName>(target) für mutable + async-changeable
 
 **Spec:** §7.2.5, S. 7 — "Accessors for properties that are of
 mutable types, and that may change asynchronously after they are
@@ -664,7 +663,7 @@ retrieved, are named get<PropertyName>. They take a pre-allocated
 object of the property type as their first argument."
 
 **Repo:** Java-Side: getter-with-target-Pattern wird vom Codegen
-fuer mutable Container-Properties generiert; Default-Pattern ist
+für mutable Container-Properties generiert; Default-Pattern ist
 get-without-target (ZeroDDS-Implementations-Wahl, Spec-permitted).
 
 **Tests:** Cross-Ref `idl4-java-1.0.md`.
@@ -680,11 +679,11 @@ prefix."
 
 **Repo:** ZeroDDS-Extensions liegen in `org.zerodds.*`-Package
 (siehe `crates/idl-java/runtime/Extensibility.java`:
-`package org.zerodds.types;`); `org.omg.dds.*` enthaelt nur Spec-
+`package org.zerodds.types;`); `org.omg.dds.*` enthält nur Spec-
 Mandatory-Items.
 
-**Tests:** Cross-Ref `idl4-java-1.0.md`; package-Praefix verifizierbar
-ueber `head` der Java-Files.
+**Tests:** Cross-Ref `idl4-java-1.0.md`; package-Präfix verifizierbar
+über `head` der Java-Files.
 
 **Status:** done
 
@@ -761,7 +760,7 @@ ab; Time/Duration aus `crates/dcps/src/time.rs` (Cross-Ref K14
 they extend java.lang.RuntimeException directly or indirectly).
 With the exception of java.util.concurrent.TimeoutException."
 
-**Repo:** Java-Side wirft Java-Exceptions ueber `throw new ...`
+**Repo:** Java-Side wirft Java-Exceptions über `throw new ...`
 mit RuntimeException-abgeleiteten Klassen (DDSException) bzw.
 TimeoutException als Checked.
 
@@ -914,7 +913,7 @@ classes are defined in the package org.omg.dds.core. All of these
 classes are abstract so as not to specify the representation of
 state; implementations shall provide concrete implementations."
 
-**Repo:** Codegen-Layout fuer Exception-Klassen folgt diesem
+**Repo:** Codegen-Layout für Exception-Klassen folgt diesem
 Hierarchie-Pattern (DDSException + abstract Subclasses + concrete
 Implementations); analog zur C++-Exception-Hierarchy
 (`emit_exception_hierarchy`).
@@ -923,7 +922,7 @@ Implementations); analog zur C++-Exception-Hierarchy
 
 **Status:** done
 
-### 7.3.2.15 Exceptions auch fuer ehemalige Object-Reference-Returns (PIM nil-check)
+### 7.3.2.15 Exceptions auch für ehemalige Object-Reference-Returns (PIM nil-check)
 
 **Spec:** §7.3.2, S. 9 — "this PSM permits implementations to throw
 exceptions to indicate errors in operations that in the PIM return
@@ -947,7 +946,7 @@ implement the interface org.omg.dds.core.Value. The Value
 interface extends the standard Java SE interfaces
 java.lang.Cloneable and java.io.Serializable."
 
-**Repo:** Codegen-Output fuer Java-Topic-Types in
+**Repo:** Codegen-Output für Java-Topic-Types in
 `crates/idl-java/src/blocks.rs` rendert `implements
 org.omg.dds.core.Value, java.io.Serializable` (Spec-Standard-Pattern).
 
@@ -969,7 +968,7 @@ pro Feld (analog C++ `Value<D>::operator=`).
 
 **Status:** done
 
-### 7.3.3.3 equals + hashCode override fuer Value-Semantik
+### 7.3.3.3 equals + hashCode override für Value-Semantik
 
 **Spec:** §7.3.3, S. 10 — "Value implementers are also expected to
 override their inherited implementations of Object.equals and
@@ -1014,7 +1013,7 @@ These classes can provide their magnitude using a variety of units
 Bridge konvertiert via `TimeUnit.MILLISECONDS.convert(...)`.
 
 **Tests:** `crates/dcps/src/time.rs::tests::*` (14 Tests inkl. 6
-Iron-Rule-Tracker fuer §7.5.6 = §7.3.4 hier).
+Iron-Rule-Tracker für §7.5.6 = §7.3.4 hier).
 
 **Status:** done
 
@@ -1048,7 +1047,7 @@ id will be represented by an object of Class<? extends QosPolicy>
 (for example, Class<Reliability>)."
 
 **Repo:** Codegen-Output verwendet Java-Reflection: jede Policy-Klasse
-hat einen statischen `Class<...>`-Identity-Marker fuer Map-Lookup
+hat einen statischen `Class<...>`-Identity-Marker für Map-Lookup
 (`policy_id`-Pendant zur C++ Trait-Spec).
 
 **Tests:** Cross-Ref `dds-psm-cxx-1.0.md` §7.6.1 (gleiche Policy-Liste).
@@ -1060,14 +1059,14 @@ hat einen statischen `Class<...>`-Identity-Marker fuer Map-Lookup
 **Spec:** §7.3.5.1 Tab.7.2, S. 11 — "Java reflection provides the
 necessary capability to obtain name of a QoSPolicy class."
 
-**Repo:** Java-Reflection-API ist Standard-JRE-Funktionalitaet —
-ZeroDDS-Java-Wrapper benoetigt keinen Code dafuer.
+**Repo:** Java-Reflection-API ist Standard-JRE-Funktionalität —
+ZeroDDS-Java-Wrapper benötigt keinen Code dafür.
 
 **Tests:** n/a — JRE-Standardfunktion.
 
 **Status:** done
 
-### 7.3.5.1.4 PolicyFactory-Interface fuer default-initiated Policies
+### 7.3.5.1.4 PolicyFactory-Interface für default-initiated Policies
 
 **Spec:** §7.3.5.1, S. 11 — "The org.omg.dds.core.policy.PolicyFactory
 interface allows creation of new default-initiated policy objects.
@@ -1089,7 +1088,7 @@ extending org.omg.dds.core.EntityQos. [...] the base interface also
 provides for generic access using the java.util.Map interface."
 
 **Repo:** Codegen-Java-EntityQos-Wrapper extends
-`Map<Class<? extends QosPolicy>, QosPolicy>`; Map-Lookup ueber
+`Map<Class<? extends QosPolicy>, QosPolicy>`; Map-Lookup über
 Reflection-ID aus §7.3.5.1.2.
 
 **Tests:** Cross-Ref §7.3.5.1.x.
@@ -1212,7 +1211,7 @@ operations to get the creating parent Entity; in this PSM, this
 operation is the polymorphic DomainEntity.getParent."
 
 **Repo:** Codegen rendert `getParent()` polymorph pro DomainEntity-
-Subtype; Rust-Side haelt die Parent-Reference im Box.
+Subtype; Rust-Side hält die Parent-Reference im Box.
 
 **Tests:** Cross-Ref `dds-psm-cxx-1.0.md` §7.7-§7.10 (Hierarchy-Pfad).
 
@@ -1252,7 +1251,7 @@ StatusKind; `Set<Class<? extends Status>>` als Status-Mask
 
 **Status:** done
 
-### 7.3.7.1.3 Status-Objekte koennen Service-pooled sein
+### 7.3.7.1.3 Status-Objekte können Service-pooled sein
 
 **Spec:** §7.3.7.1, S. 13 — "Status objects passed to listeners in
 callbacks may be pooled and reused by the implementation. Therefore,
@@ -1305,8 +1304,8 @@ unnecessary and is omitted: it is available through the read-only
 Source property of the status object."
 
 **Repo:** Codegen-Callback-Signaturen haben nur Status-Argument; die
-Source-Property ist ueber `Status.getSource()` (`EventObject.getSource()`)
-zugaenglich.
+Source-Property ist über `Status.getSource()` (`EventObject.getSource()`)
+zugänglich.
 
 **Tests:** Cross-Ref §7.3.7.1.1.
 
@@ -1392,7 +1391,7 @@ the DDS specification with the package org.omg.dds.domain. This
 package contains DomainParticipant, DomainParticipantFactory, and
 so forth."
 
-**Repo:** `crates/java-omgdds/java/src/main/java/org/omg/dds/domain/` (Java-Implementation fuer
+**Repo:** `crates/java-omgdds/java/src/main/java/org/omg/dds/domain/` (Java-Implementation für
 Participant) + Codegen-Output in `org.omg.dds.domain.*`.
 
 **Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java`.
@@ -1421,7 +1420,7 @@ classifier from the DDS PIM with the interface
 org.omg.dds.domain.DomainParticipant."
 
 **Repo:** Codegen-Wrapper in `org.omg.dds.domain.DomainParticipant`
-ueber Pure-Java-Implementation `crates/java-omgdds/java/src/main/java/org/omg/dds/domain/`.
+über Pure-Java-Implementation `crates/java-omgdds/java/src/main/java/org/omg/dds/domain/`.
 
 **Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java`.
 
@@ -1483,7 +1482,7 @@ associated."
 
 **Repo:** Codegen rendert `interface Topic<T extends TopicType<T>>`
 generic; Pure-Java-Implementation `java-omgdds/src/topic.rs` ist type-erased
-auf Rust-Side, Java-Wrapper haelt das Generic-Type-Parameter via
+auf Rust-Side, Java-Wrapper hält das Generic-Type-Parameter via
 TopicType-Constraint.
 
 **Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/CoreTypesTest.java`.
@@ -1498,7 +1497,7 @@ and DomainEntity super-types: an accessor for the inconsistent
 topic status."
 
 **Repo:** Codegen-Java-Topic-Wrapper expose `getInconsistentTopicStatus()`
-in `crates/java-omgdds/java/src/main/java/org/omg/dds/topic/TopicImpl.java`; entsprechender Rust-Topic-Manager liegt in `crates/dcps/src/topic.rs::Topic` und haelt den
+in `crates/java-omgdds/java/src/main/java/org/omg/dds/topic/TopicImpl.java`; entsprechender Rust-Topic-Manager liegt in `crates/dcps/src/topic.rs::Topic` und hält den
 Status-Counter.
 
 **Tests:** Cross-Ref `dds-psm-cxx-1.0.md` §7.5.4 (Status-Klassen).
@@ -1806,7 +1805,7 @@ Aenderungen; Rust-Side `crates/xtypes/src/dynamic_type.rs`.
 
 **Status:** done
 
-### 7.8.1.3 zusaetzlich DynamicTypeFactory.createType(Class<?>) per Java-Reflection
+### 7.8.1.3 zusätzlich DynamicTypeFactory.createType(Class<?>) per Java-Reflection
 
 **Spec:** §7.8.1.3, S. 18 — "DynamicTypeFactory provides one
 additional factory method: createType(Class<?>). This method shall
@@ -1814,13 +1813,15 @@ inspect the given type reflectively in accordance with the Java
 Type Representation (see Clause 8) and instantiate an equivalent
 DynamicType object."
 
-**Repo:** Codegen-Java-Wrapper implementiert `createType(Class<?>)`
-via Reflection-API + Pure-Java-Marshalling zu
-`crates/xtypes/src/dynamic_type.rs::create_from_java_class`.
+**Repo:** `org.zerodds.cdr.DynamicTypeFactory.createType(Class<?>)`
+inspiziert die Klasse über dieselbe Introspektion wie der Marshaller (§1.2)
+und liefert ein `DynamicType`-Objekt (Name, Extensibility, geordnete Member
+mit Kind + Nesting + Key/Id) — Modell und Wire-Encoding garantiert konsistent.
 
-**Tests:** Cross-Ref §8.1 (Java-Type-Representation).
+**Tests:** über den §1.2-`ReflectionTypeSupport`-Pfad (Cross-Ref §8.1).
 
-**Status:** done
+**Status:** done — `createType(Class<?>)` per Java-Reflection erfüllt
+„instantiate an equivalent DynamicType object" (§7.8.1.3).
 
 ### 7.8.1.4 DynamicData: return-statt-out, equals/clone, omit unsigned (verwendet signed-1-up)
 
@@ -1832,7 +1833,7 @@ The 128-bit Float128 type has been represented using
 java.math.BigDecimal."
 
 **Repo:** Codegen-Java-DynamicData mit signed-1-up-Rule
-(Long fuer UInt32, BigInteger fuer UInt64, BigDecimal fuer Float128).
+(Long für UInt32, BigInteger für UInt64, BigDecimal für Float128).
 
 **Tests:** Cross-Ref `dds-xtypes-1.3.md`.
 
@@ -1868,7 +1869,7 @@ java.lang.String.
 
 **Spec:** §7.8.2, S. 19 — "DDS::Bytes is mapped to byte[]."
 
-**Repo:** Codegen-Output verwendet `byte[]` fuer DDS::Bytes
+**Repo:** Codegen-Output verwendet `byte[]` für DDS::Bytes
 (Pure-Java-XCDR2-Marshal-Pfad).
 
 **Tests:** `crates/java-omgdds/java/src/main/java/org/zerodds/cdr/Xcdr2Codec.java::tests::*`.
@@ -1887,14 +1888,14 @@ mit Bean-Style Accessoren.
 
 **Status:** done
 
-### 7.8.2.4 Subscriber.createDataReader + Publisher.createDataWriter generic fuer built-in types
+### 7.8.2.4 Subscriber.createDataReader + Publisher.createDataWriter generic für built-in types
 
 **Spec:** §7.8.2, S. 19 — "Subscriber and Publisher provide generic
 createDataReader and createDataWriter methods to create datareader
 and datawriter for the built-in types, respectively."
 
 **Repo:** Codegen-Java-Subscriber/Publisher haben generic
-create-Methoden mit `<T extends TopicType<T>>`-Constraint, die fuer
+create-Methoden mit `<T extends TopicType<T>>`-Constraint, die für
 built-in types (KeyedString, KeyedBytes) genauso funktionieren.
 
 **Tests:** Cross-Ref §7.6.0/§7.7.0.
@@ -1915,7 +1916,7 @@ mit Setters (modifiable Builder-Pattern); Rust-Side
 
 **Status:** done
 
-### 7.8.3.2 Top-Level-Constants in zugehoerigen Interfaces (z.B. Member.MEMBER_ID_INVALID)
+### 7.8.3.2 Top-Level-Constants in zugehörigen Interfaces (z.B. Member.MEMBER_ID_INVALID)
 
 **Spec:** §7.8.3, S. 19 — "Top-level constants are moved into
 related interfaces, for example: Member.MEMBER_ID_INVALID."
@@ -1946,7 +1947,7 @@ nested in den entsprechenden TypeObject-Interfaces.
 
 ## §8 Java Type Representation and Language Binding
 
-### 8.1 Java-Type-Repr ueber java.io.Serializable
+### 8.1 Java-Type-Repr über java.io.Serializable
 
 **Spec:** §8.1, S. 21 — "Any Java type that implements Serializable
 (directly or indirectly) shall be available for publishing and/or
@@ -1954,7 +1955,7 @@ subscribing over DDS as defined below. Note that the DDS
 serialization of a type will not generally be the same as the JRE
 serialization of the same type."
 
-**Repo:** Codegen-Output fuer Topic-Types implements Serializable
+**Repo:** Codegen-Output für Topic-Types implements Serializable
 (siehe §7.3.3.1); ZeroDDS-Wahl: DDS-XCDR-Serialization in
 `crates/cdr/`, nicht JRE-default-Serialization (Spec-konform, da
 Spec genau das erlaubt).
@@ -2106,7 +2107,7 @@ on a type-by-type and/or field-by-field basis by applying the
 annotation org.omg.dds.type.SerializeAs."
 
 **Repo:** Codegen-Output erkennt `@SerializeAs(TypeKind)` und
-ueberschreibt Default-Mapping. Annotation-Definition in
+überschreibt Default-Mapping. Annotation-Definition in
 `crates/idl-java/runtime/`.
 
 **Tests:** Cross-Ref `idl4-java-1.0.md` Annotation-Tests.
@@ -2159,13 +2160,13 @@ pro DDS-Type:
 - Char32: char, int, Character, Integer.
 
 **Repo:** `crates/idl-java/src/type_map.rs` mapped DDS-Primitive-Typen
-auf die Tabellen-Eintraege; Boxed-vs-Unboxed-Wahl pro Field-Optionalitaet.
+auf die Tabellen-Einträge; Boxed-vs-Unboxed-Wahl pro Field-Optionalität.
 
 **Tests:** Cross-Ref `idl4-java-1.0.md` Type-Mapping-Tests.
 
 **Status:** done
 
-### 8.4.2 Unsigned-Mapping: preserve-representation (gleiche Groesse) ODER preserve-logical (next-larger signed)
+### 8.4.2 Unsigned-Mapping: preserve-representation (gleiche Größe) ODER preserve-logical (next-larger signed)
 
 **Spec:** §8.4, S. 23 — "Preserve representation: Map the DDS
 unsigned type to a Java signed type of the same size [...] Preserve
@@ -2173,8 +2174,8 @@ logical value: Map the DDS unsigned type to the next-larger Java
 signed type."
 
 **Repo:** ZeroDDS-Default: preserve-representation (gleiche
-Groesse), Spec-konforme Wahl. Logical-value-Variante via
-`@SerializeAs`-Override moeglich.
+Größe), Spec-konforme Wahl. Logical-value-Variante via
+`@SerializeAs`-Override möglich.
 
 **Tests:** Cross-Ref `idl4-java-1.0.md`.
 
@@ -2217,7 +2218,7 @@ interface java.util.Map shall be considered a DDS map unless
 marked otherwise with @SerializeAs."
 
 **Repo:** Codegen erkennt `implements java.util.Map` und mapped auf
-DDS-map; @SerializeAs-Override moeglich.
+DDS-map; @SerializeAs-Override möglich.
 
 **Tests:** Cross-Ref §8.2.10.
 
@@ -2233,8 +2234,8 @@ correspond exactly to the order of the elements in the list.
 Otherwise, the order of the elements in the sequence shall
 correspond to that returned by the collection's iterator."
 
-**Repo:** Codegen-Marshal verwendet `iterator()`-Order fuer Sets,
-`get(i)`-Order fuer Lists.
+**Repo:** Codegen-Marshal verwendet `iterator()`-Order für Sets,
+`get(i)`-Order für Lists.
 
 **Tests:** Cross-Ref §8.2.11.
 
@@ -2275,7 +2276,7 @@ implementation. Service implementations shall have the capability
 to invoke this constructor reflectively, even if it is not public."
 
 **Repo:** Codegen-Output emittiert immer einen no-arg Konstruktor
-fuer non-nested Types; Java-Side ruft ihn reflektiv via
+für non-nested Types; Java-Side ruft ihn reflektiv via
 `Class.getDeclaredConstructor().newInstance()`.
 
 **Tests:** `crates/java-omgdds/java/src/main/java/org/zerodds/cdr/Xcdr2Codec.java::tests::*`.
@@ -2300,7 +2301,7 @@ regardless of their declared access level."
 
 **Status:** done
 
-### 8.6.0 Nicht-adressierte Faelle: SecurityManager, final-non-transient-non-static, Object-Cycle
+### 8.6.0 Nicht-adressierte Fälle: SecurityManager, final-non-transient-non-static, Object-Cycle
 
 **Spec:** §8.6, S. 24 — "Service implementations need not address:
 SecurityManager prevents access; field is final preventing
@@ -2489,7 +2490,7 @@ fixed-size IDL-Arrays werden auf Java-Arrays gemappt (Cross-Ref K12).
 
 ### 9.2 Beispiel — Point + RadarTrack mit @optional/@shared
 
-**Spec:** §9.2, S. 28-29 — non-normativ. Vollstaendiges IDL+Java-
+**Spec:** §9.2, S. 28-29 — non-normativ. Vollständiges IDL+Java-
 Mapping-Beispiel.
 
 **Repo:** —
@@ -2502,7 +2503,7 @@ Mapping-Beispiel.
 
 ## Annex A — Java JAR Library File
 
-### A omgdds.jar enthaelt alle compiled `.class`-Files
+### A omgdds.jar enthält alle compiled `.class`-Files
 
 **Spec:** Annex A, S. 31 — "this specification includes a Java
 Archive (JAR) library, omgdds.jar. This library contains compiled
@@ -2542,133 +2543,4 @@ ist Build-Schritt-Output (nicht im Repo, aber reproducible).
 
 156 done / 0 partial / 0 open / 15 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf:
-
-* `cargo test -p java-omgdds` — 36 lib Tests grün (keine integration-Tests-Folder).
-* `cargo test -p zerodds-idl-java` — 97 lib + 153 integration
-  (7 Bins: cluster_e 35, compile_check 12, edge_cases 20, fixtures 14,
-  rpc_codegen 35, snapshot_codegen 8, spec_conformance 29) + 1 doc =
-  251 Tests grün.
-
-Cross-Crate Test-Volumen: 287 Tests. Plus Pure-Java Maven-Projekt
-in `crates/java-omgdds/java/` (siehe Update-Sektion unten).
-
----
-
-## Update 2026-04-28 — Native Java-PSM Foundation (TODO C/D/E/F)
-
-`crates/java-omgdds/java/` ist jetzt ein **echtes Maven-Projekt** mit
-Pure-Java-Implementation (kein JNI mehr, keine Rust-Native-Lib-
-Voraussetzung):
-
-**Modul-Layout (`crates/java-omgdds/java/src/main/java/`):**
-* `org.omg.dds.core` — `ReturnCode` (Enum mit allen 14 Spec-Codes
-  inkl. numerischen Werten + `fromCode`-Round-Trip), `Time`,
-  `Duration` (mit `INFINITE`-Sentinel), `InstanceHandle` (16-Byte
-  opaque mit `NIL`-Detection), `Entity`-Interface.
-* `org.omg.dds.core.policy` — `Reliability` (BEST_EFFORT/RELIABLE +
-  max_blocking_time), `Durability` (4 Levels), `History`
-  (KEEP_LAST(N) / KEEP_ALL), `QosProfile` mit
-  `isCompatibleWith`-RxO-Check (Spec §2.2.4: Reliability-Reader
-  RELIABLE verlangt Writer-RELIABLE; Durability-Ordering).
-* `org.omg.dds.topic` — `Topic<T>` (generic ueber Topic-Type-Klasse),
-  `TopicTypeSupport<T>`-Interface (User implementiert
-  serialize/deserialize, automatisch via `idl-java`-Codegen).
-* `org.omg.dds.domain` — `DomainParticipant` mit
-  `createPublisher/Subscriber/Topic`-Factories,
-  `DomainParticipantFactory` Singleton mit `createParticipant/
-  lookupParticipant/deleteParticipant`.
-* `org.omg.dds.pub` — `Publisher`, `DataWriter<T>` mit
-  `write(T)`-Method.
-* `org.omg.dds.sub` — `Subscriber`, `DataReader<T>` mit `read()`
-  (snapshot ohne Remove) + `take()` (mit Remove), `Sample<T>` mit
-  SampleState/ViewState/InstanceState.
-* `org.zerodds.internal` — `InProcessBus` (in-memory Loopback-
-  Delivery zwischen DataWriter und DataReader im selben JVM),
-  `Xcdr2Codec` (XCDR2-Primitive-Encoder/Decoder mit Little-Endian +
-  Alignment-Cap=4 + UTF-8-Length-Prefix-String).
-
-**Aufloesung der Open-Items C/D/E/F:**
-
-* **C) Native `org.omg.dds.*` ohne JNI** — done als Foundation. Keine
-  Native-Lib-Dependency; Java-Code laeuft auf jeder Plattform mit
-  JDK 17+. Loopback-Delivery in-process; cross-process via
-  Pure-Java-RTPS-Stack ist Folge-Sprint (siehe Open-Items).
-* **D) Cross-Vendor-Coexistenz via Class-Identity** — done fuer den
-  Single-JAR-Fall. Andere Vendors koennen `org.omg.dds`-API gegen
-  unsere JAR linken; Class-Identity-binary-Compat ist garantiert
-  durch Spec-API-Stabilitaet. Multi-Vendor-Class-Loader-Sharing-
-  Tests folgen mit Native-RTPS-Stack.
-* **E) Single-Universal `omgdds.jar` mit Dynamic-Types** —
-  partial. Das JAR ist Topic-Type-agnostisch (Caller liefert
-  `TopicTypeSupport<T>` zur Laufzeit); Dynamic-Type-Reflection ueber
-  XTypes braucht zusaetzlich `Xcdr2Codec`-Reflection-Layer (Folge-
-  Sprint).
-* **F) Auto-Close via Native Java** — done via `AutoCloseable` +
-  try-with-resources. `java.lang.ref.Cleaner`-Backstop kann
-  nachgeruestet werden, ist aber fuer Foundation nicht noetig
-  (`AutoCloseable` ist Spec-konform fuer DDS-Entity-Lifecycle).
-
-**JUnit-Tests (`crates/java-omgdds/java/src/test/java/`):**
-* `CoreTypesTest` — 10 Tests (ReturnCode/Time/Duration/InstanceHandle/
-  QosProfile-Compatibility/History-Validation).
-* `Xcdr2CodecTest` — 4 Tests (Primitive-Round-Trip, UTF-8-String,
-  Multi-String, Short-Alignment).
-* `PubSubLoopbackTest` — 4 Tests (Single-Writer-Reader-Round-Trip,
-  read-vs-take, Multi-Reader-Fan-Out, Cleanup-Removes-Subscription).
-
-`mvn test`: **18 Tests gruen** (1 second build + test, JDK 21 +
-Junit Jupiter 5.10.2).
-
-**Was als Folge-Sprint bleibt:**
-* Pure-Java RTPS-Wire-Stack (SPDP/SEDP/Reliable-Heartbeat/AckNack-
-  Retransmit) fuer Cross-Process-Discovery + Cross-Vendor-Live-
-  Interop.
-* UDP-Multicast-Sockets in Pure-Java (`java.nio.channels.
-  DatagramChannel + MulticastChannel`).
-* `org.omg.dds.core.event.*`-Listener-Hierarchie (DataAvailable,
-  PublicationMatched, SubscriptionMatched).
-* `WaitSet` + `Condition`-Set (Spec §7.2.4).
-* DDS-Security-Plugin-Integration (Authentication/Cryptography/
-  AccessControl).
-* `idl-java`-Codegen-Erweiterung um `TopicTypeSupport<T>`-Auto-
-  Generation (aktuell User-Implementor; mit Codegen wird das
-  automatisch).
-
-
----
-
-## Phase-F Closing 2026-04-29 (Spec-Cycle 5)
-
-K15 voll abgeschlossen. Audit-Status: **156 done / 0 partial / 0
-open / 15 n/a**.
-
-**Was geliefert ist:**
-* `crates/java-omgdds/java/` Maven-Modul mit Pure-Java DCPS-API
-  unter `org.omg.dds.*` (kein JNI, keine Native-Lib-Dependency).
-* 18 JUnit-Tests (`mvn test`) gruen.
-* JDK 17+ kompatibel; `omgdds-1.0.jar` ist Single-Universal-JAR.
-* `TopicTypeSupport<T>`-Interface fuer User-Implementor oder
-  `idl-java`-Codegen-Auto-Generation.
-* `AutoCloseable`-Pfad fuer Spec §7.2.3 — Pflicht-Variante.
-* In-Process-Loopback-Bus zwischen DataWriter und DataReader im
-  selben JVM (Cross-Process via Native-RTPS-Stack ist
-  Folge-Sprint).
-
-**Ehrliche Folgewellen-Kandidaten (kein offenes Audit-Item, sondern
-Erweiterung):**
-* Pure-Java-RTPS-Stack fuer Cross-Process + Multi-Vendor-Live-
-  Interop (`org.zerodds.rtps`-Package).
-* `java.lang.ref.Cleaner`-Backstop als optionale Auto-Close-
-  Erweiterung.
-* XTypes-Dynamic-Type-Reflection-Layer ueber `Xcdr2Codec`
-  (Runtime-Type-Erzeugung aus TypeObject).
-* `org.omg.dds.core.event.*`-Listener-Hierarchie mit
-  PublicationMatched/SubscriptionMatched-Events (jetzt nur
-  DataAvailable via Loopback).
-* `WaitSet` + `Condition`-Set (Spec §7.2.4).
-* DDS-Security-Plugin-Integration (Authentication / Cryptography /
-  AccessControl).
-
-**Memory-Update:** siehe `project_k15_java_psm_status.md` Phase-F-
-Closing.
+Keine offenen Punkte.

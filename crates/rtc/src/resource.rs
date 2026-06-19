@@ -5,13 +5,13 @@
 //!
 //! Phase-B-Cluster-10 (Spec-Cycle 5).
 //!
-//! Spec-Quelle: OMG RTC 1.0 §5.4.1 (S. 61-70) Resource-Datenmodell +
+//! Spec source: OMG RTC 1.0 §5.4.1 (pp. 61-70) resource data model +
 //! §5.4.2 (S. 71-77) Stereotypes-and-Interfaces (Introspection-Iface-
 //! Operations).
 //!
-//! # Modell
+//! # Model
 //!
-//! Der Datenstrom ist:
+//! The data flow is:
 //!
 //! ```text
 //!   ComponentProfile
@@ -19,21 +19,21 @@
 //!     └── connectors: Vec<ConnectorProfile>
 //! ```
 //!
-//! Discovery-Wire (z.B. DDS-Topic-Push der Profiles) ist Caller-
-//! Layer und ausserhalb dieses Crates.
+//! The discovery wire (e.g. a DDS topic push of the profiles) is the caller
+//! layer and outside this crate.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Eindeutiger Identifier eines RTC-Modells (Component / Port /
-/// Connector). Als Spec-§5.4.1 vorgesehen ist eine UUID-Form;
-/// wir benutzen einen 16-Byte-Opaque-Vec.
+/// Unique identifier of an RTC model (component / port /
+/// connector). Spec §5.4.1 envisages a UUID form;
+/// we use a 16-byte opaque vec.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProfileId(pub [u8; 16]);
 
 impl ProfileId {
-    /// Erzeugt eine Null-ID (alle Bytes 0). Wird vom Discovery-Layer
-    /// vor Vergabe einer echten UUID genutzt.
+    /// Creates a null ID (all bytes 0). Used by the discovery layer
+    /// before a real UUID is assigned.
     #[must_use]
     pub const fn nil() -> Self {
         Self([0u8; 16])
@@ -58,67 +58,67 @@ pub enum PortDirection {
     InOut,
 }
 
-/// Spec §5.4.1 — Port-Profile (Beschreibung eines Ports einer
-/// Komponente).
+/// Spec §5.4.1 — port profile (description of a port of a
+/// component).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PortProfile {
-    /// UUID des Ports.
+    /// UUID of the port.
     pub id: ProfileId,
-    /// Lokaler Name (z.B. `"odom_in"`).
+    /// Local name (e.g. `"odom_in"`).
     pub name: String,
-    /// IDL-Type-Name des Port-Datenmodells (z.B. `"geometry::Pose"`).
+    /// IDL type name of the port data model (e.g. `"geometry::Pose"`).
     pub data_type: String,
     /// Direction.
     pub direction: PortDirection,
-    /// User-defined Properties (Key-Value).
+    /// User-defined properties (key-value).
     pub properties: Vec<(String, String)>,
 }
 
-/// Spec §5.4.1 — Connector-Profile (Bindung zwischen 2+ Port-Profiles).
+/// Spec §5.4.1 — connector profile (binding between 2+ port profiles).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ConnectorProfile {
-    /// UUID des Connectors.
+    /// UUID of the connector.
     pub id: ProfileId,
-    /// Connector-Name.
+    /// Connector name.
     pub name: String,
-    /// Liste der Port-IDs, die dieser Connector verbindet.
+    /// List of port IDs that this connector connects.
     pub port_ids: Vec<ProfileId>,
-    /// User-defined Properties.
+    /// User-defined properties.
     pub properties: Vec<(String, String)>,
 }
 
-/// Spec §5.4.1 — Component-Profile.
+/// Spec §5.4.1 — component profile.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ComponentProfile {
-    /// UUID der Komponente.
+    /// UUID of the component.
     pub id: ProfileId,
-    /// Component-Type (analog Spec §5.2 Component-Profile-Type).
+    /// Component type (analogous to spec §5.2 component-profile type).
     pub type_name: String,
-    /// Komponenten-Instanz-Name.
+    /// Component instance name.
     pub instance_name: String,
-    /// Vendor (z.B. `"ZeroDDS"`).
+    /// Vendor (e.g. `"ZeroDDS"`).
     pub vendor: String,
-    /// Version (Semver-String).
+    /// Version (semver string).
     pub version: String,
-    /// Liste der Ports.
+    /// List of ports.
     pub ports: Vec<PortProfile>,
-    /// Liste der Connectors.
+    /// List of connectors.
     pub connectors: Vec<ConnectorProfile>,
-    /// User-defined Properties.
+    /// User-defined properties.
     pub properties: Vec<(String, String)>,
 }
 
 /// Spec §5.4.2 — Introspection-Operations.
 ///
-/// Die Spec definiert ein abstraktes UML-Interface mit drei Methoden;
-/// wir realisieren es als Rust-Trait, sodass eine konkrete RTC-
-/// Implementation es per Compile-Time-Dispatch bedient.
+/// The spec defines an abstract UML interface with three methods;
+/// we realize it as a Rust trait, so that a concrete RTC
+/// implementation serves it via compile-time dispatch.
 pub trait Introspection {
     /// Spec §5.4.2 — `ComponentProfile get_component_profile()`.
     fn get_component_profile(&self) -> &ComponentProfile;
 
     /// Spec §5.4.2 — `PortProfile get_port_profile(in PortId id)`.
-    /// Returns `None` wenn der Port nicht zur Komponente gehoert.
+    /// Returns `None` if the port does not belong to the component.
     fn get_port_profile(&self, id: &ProfileId) -> Option<&PortProfile> {
         self.get_component_profile()
             .ports
@@ -251,8 +251,8 @@ mod tests {
 
     #[test]
     fn introspection_default_methods_compose_correctly() {
-        // Stelle sicher, dass die Trait-Default-Implementierungen das
-        // Component-Profile als Wahrheits-Quelle ehren.
+        // Make sure the trait default implementations honor the
+        // component profile as the source of truth.
         let s = build_stub();
         assert_eq!(s.get_ports().len(), s.get_component_profile().ports.len());
     }

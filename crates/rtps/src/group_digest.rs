@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //! `GroupDigest_t` — DDSI-RTPS 2.5 §8.3.5.10 (16-byte CDR-encoded
-//! 128-bit-Digest fuer Group-Membership). Wird in Heartbeats mit
-//! GroupInfo-Flag transportiert (`HeartbeatSubmessage.writer_set` /
-//! `secure_writer_set`), um Reader die Konsistenz der gemeinsamen
-//! Writer-/Reader-Gruppe pro Tick zu beweisen.
+//! 128-bit digest for group membership). Carried in heartbeats with the
+//! GroupInfo flag (`HeartbeatSubmessage.writer_set` /
+//! `secure_writer_set`), to prove to readers the consistency of the shared
+//! writer/reader group per tick.
 //!
 //! # Spec-Layout
 //!
 //! ```text
 //! struct GroupDigest_t {
-//!     octet[16] value;  // MD5 ueber {GuidPrefix*}
+//!     octet[16] value;  // MD5 over {GuidPrefix*}
 //! };
 //! ```
 //!
-//! Der Hash-Algorithmus ist MD5 (RFC 1321) ueber die konkatenierten
-//! 12-Byte-`GuidPrefix`-Werte aller Gruppenmitglieder, sortiert
-//! aufsteigend. Spec laesst die Sortierung offen, fixiert sie aber
-//! pro Vendor; ZeroDDS sortiert lexikographisch (Stable +
-//! deterministisch), damit der Hash byte-identisch zu Cyclone DDS
-//! ist (bis Cyclone-Vendor-Hashing dokumentiert wird, dann
-//! ggf. Vendor-Switch).
+//! The hash algorithm is MD5 (RFC 1321) over the concatenated
+//! 12-byte `GuidPrefix` values of all group members, sorted
+//! ascending. The spec leaves the sorting open but fixes it
+//! per vendor; ZeroDDS sorts lexicographically (stable +
+//! deterministic), so that the hash is byte-identical to Cyclone DDS
+//! (until Cyclone vendor hashing is documented, then
+//! possibly a vendor switch).
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -28,26 +28,26 @@ use alloc::vec::Vec;
 use crate::error::WireError;
 use crate::wire_types::GuidPrefix;
 
-/// `GroupDigest_t` (Spec §8.3.5.10). 16-Byte-Wert.
+/// `GroupDigest_t` (Spec §8.3.5.10). 16-byte value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct GroupDigest(pub [u8; 16]);
 
 impl GroupDigest {
-    /// Wire-Size: 16 Bytes.
+    /// Wire size: 16 bytes.
     pub const WIRE_SIZE: usize = 16;
 
-    /// `GROUPDIGEST_UNKNOWN` (Spec): 16 Null-Bytes.
+    /// `GROUPDIGEST_UNKNOWN` (Spec): 16 null bytes.
     pub const UNKNOWN: Self = Self([0; 16]);
 
-    /// `true` wenn der Wert dem `UNKNOWN`-Sentinel entspricht.
+    /// `true` if the value equals the `UNKNOWN` sentinel.
     #[must_use]
     pub fn is_unknown(self) -> bool {
         self.0 == [0u8; 16]
     }
 
-    /// Berechnet den Digest aus einer Liste von GuidPrefixes. Sortiert
-    /// die Eingabe vor dem Hashing — das Ergebnis ist also unabhaengig
-    /// von der Iter-Reihenfolge des Callers.
+    /// Computes the digest from a list of GuidPrefixes. Sorts
+    /// the input before hashing — the result is thus independent
+    /// of the caller's iteration order.
     #[must_use]
     pub fn from_prefixes(prefixes: &[GuidPrefix]) -> Self {
         let mut sorted: Vec<&GuidPrefix> = prefixes.iter().collect();
@@ -59,23 +59,23 @@ impl GroupDigest {
         Self(md5_128(&concat))
     }
 
-    /// LE-Bytes (Spec gibt keine Endianness vor — der Wert ist eine
-    /// reine Byte-Sequenz aus dem Hash).
+    /// LE bytes (the spec specifies no endianness — the value is a
+    /// pure byte sequence from the hash).
     #[must_use]
     pub fn to_bytes(self) -> [u8; 16] {
         self.0
     }
 
-    /// Roundtrip-Identitaet.
+    /// Roundtrip identity.
     #[must_use]
     pub fn from_bytes(bytes: [u8; 16]) -> Self {
         Self(bytes)
     }
 
-    /// Decoded aus einem Slice. Truncated → Error.
+    /// Decodes from a slice. Truncated → error.
     ///
     /// # Errors
-    /// `UnexpectedEof` wenn `bytes.len() < 16`.
+    /// `UnexpectedEof` if `bytes.len() < 16`.
     pub fn read_from(bytes: &[u8]) -> Result<Self, WireError> {
         if bytes.len() < 16 {
             return Err(WireError::UnexpectedEof {
@@ -89,9 +89,9 @@ impl GroupDigest {
     }
 }
 
-/// MD5 via `zerodds_foundation::md5` (Pure-Rust no_std). MD5 ist hier
-/// nicht-security-relevant — nur fuer Group-Digest-Konsistenz mit
-/// Cyclone DDS und anderen DDS-Stacks.
+/// MD5 via `zerodds_foundation::md5` (pure-Rust no_std). MD5 here is
+/// not security-relevant — only for group-digest consistency with
+/// Cyclone DDS and other DDS stacks.
 fn md5_128(input: &[u8]) -> [u8; 16] {
     zerodds_foundation::md5(input)
 }
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn md5_empty_input_matches_rfc1321_test_vector() {
-        // RFC 1321 Test-Vector: MD5("") = d41d8cd98f00b204e9800998ecf8427e
+        // RFC 1321 test vector: MD5("") = d41d8cd98f00b204e9800998ecf8427e
         let h = md5_128(b"");
         assert_eq!(
             h,
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn md5_message_digest_matches_rfc1321_test_vector() {
-        // RFC 1321 Test-Vector 5: MD5("message digest")
+        // RFC 1321 test vector 5: MD5("message digest")
         //   = f96b697d7cb7938d525a2f31aaf161d0
         let h = md5_128(b"message digest");
         assert_eq!(
@@ -143,8 +143,8 @@ mod tests {
 
     #[test]
     fn md5_long_input_matches_rfc1321_test_vector() {
-        // RFC 1321 Test-Vector 7 (62 byte, 2-block-Pfad). Input ist
-        // UPPER-cased zuerst, dann lowercase, dann digits:
+        // RFC 1321 test vector 7 (62 byte, 2-block path). Input is
+        // UPPER-cased first, then lowercase, then digits:
         //   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
         //   = d174ab98d277d9f5a5611c2c9f419d9f
         let h = md5_128(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789");
@@ -159,15 +159,14 @@ mod tests {
 
     #[test]
     fn group_digest_handles_more_than_5_prefixes_two_block_md5() {
-        // 6 GuidPrefixes = 72 bytes input → 2-Block-MD5-Pfad. Stellt
-        // sicher, dass GroupDigest auch fuer groessere Gruppen
-        // korrekt arbeitet.
+        // 6 GuidPrefixes = 72 bytes input → 2-block MD5 path. Ensures
+        // that GroupDigest also works correctly for larger groups.
         let prefixes: alloc::vec::Vec<GuidPrefix> =
             (1u8..=6).map(|b| GuidPrefix::from_bytes([b; 12])).collect();
         let d = GroupDigest::from_prefixes(&prefixes);
-        // Erwarteter Output deterministisch (fuer Regression).
+        // Expected output is deterministic (for regression).
         assert!(!d.is_unknown());
-        // Order-Independenz auch bei 6 Prefixes.
+        // Order independence also for 6 prefixes.
         let mut reversed = prefixes.clone();
         reversed.reverse();
         let d2 = GroupDigest::from_prefixes(&reversed);
@@ -183,7 +182,7 @@ mod tests {
     #[test]
     fn group_digest_from_empty_prefixes_is_md5_of_empty() {
         let d = GroupDigest::from_prefixes(&[]);
-        // MD5("") als 16 byte
+        // MD5("") as 16 bytes
         assert_eq!(
             d.0,
             [

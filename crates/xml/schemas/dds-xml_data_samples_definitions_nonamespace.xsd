@@ -11,8 +11,8 @@
     <!-- §7.3.7.1: Data-Sample-Format. <data> ist Top-Level. -->
     <xs:complexType name="dataSample">
         <xs:sequence>
-            <!-- Spec §7.2.4.1: <element>-Tag fuer Sequence/Array.
-                 §7.3.7.3.2: alternativ <item>-Tag erlaubt. -->
+            <!-- Spec §7.2.4.1: <element> tag for sequence/array.
+                 §7.3.7.3.2: alternatively <item> tag allowed. -->
             <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
         </xs:sequence>
         <xs:attribute name="type" type="xs:string" use="optional"/>

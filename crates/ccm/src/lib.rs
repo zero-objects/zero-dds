@@ -8,41 +8,40 @@
 //!
 //! # Scope
 //!
-//! Diese Crate implementiert den **Equivalent-IDL-Transformations-
-//! Anteil** der CCM-4.0-Spec aus §6 (Component Model). Eingabe ist ein
-//! `zerodds_idl::ast::ComponentDef` / `HomeDef` / `EventDef`; Ausgabe sind
-//! die Spec-konformen `interface`-/`valuetype`-Definitionen, die ein
-//! IDL-Compiler "implicitly defines" laut Spec §6.3.2 / §6.4.1 /
+//! This crate implements the **Equivalent-IDL transformation part** of
+//! the CCM 4.0 spec from §6 (Component Model). Input is a
+//! `zerodds_idl::ast::ComponentDef` / `HomeDef` / `EventDef`; output is
+//! the spec-conformant `interface` / `valuetype` definitions that an
+//! IDL compiler "implicitly defines" per Spec §6.3.2 / §6.4.1 /
 //! §6.5.1 / §6.6.x / §6.7.1.
 //!
-//! Plus Modelle der `Components::*`-Core-Types (CCMObject, Cookie,
-//! ConnectionDescription, Navigation/Receptacles/Events-Interfaces) als
-//! Rust-Structs / -Enums, damit Caller darauf direkt referenzieren
-//! koennen.
+//! Plus models of the `Components::*` core types (CCMObject, Cookie,
+//! ConnectionDescription, Navigation/Receptacles/Events interfaces) as
+//! Rust structs / enums, so callers can reference them directly.
 //!
-//! Plus Lightweight CCM Profile (§13) — Filter-Funktion, die den
-//! Equivalent-IDL-Output auf das LwCCM-Subset reduziert.
+//! Plus Lightweight CCM Profile (§13) — a filter function that reduces
+//! the Equivalent-IDL output to the LwCCM subset.
 //!
-//! # Was nicht abgedeckt ist
+//! # What's not covered
 //!
-//! Die folgenden Spec-Kapitel verlangen einen **CORBA-ORB** + **CCM-
-//! Container** und sind in ZeroDDS bewusst `n/a` (Begruendung im
-//! Audit-File `docs/spec-coverage/omg-ccm-4.0.md`):
+//! The following spec chapters require a **CORBA-ORB** + **CCM-
+//! container** and are deliberately `n/a` in ZeroDDS (rationale in the
+//! audit file `docs/spec-coverage/omg-ccm-4.0.md`):
 //! * §7 CIDL Syntax + Semantics — Component Implementation Definition
 //!   Language; targets §8 CIF.
-//! * §8 CCM Implementation Framework — Servant-/Skeleton-Generator,
-//!   verlangt POA + ORB.
-//! * §9 Container Programming Model — Server-Programming-Environment,
-//!   verlangt CORBA-ORB.
-//! * §10 Integrating with Enterprise JavaBeans — verlangt EJB-
-//!   Container.
-//! * §11 Interface Repository Metamodel — verlangt CORBA-IFR.
-//! * §12 CIF Metamodel — Implementation-Framework-MOF-Modell.
-//! * §14 Deployment PSM for CCM — D&C-Subsystem (formal/2006-04-02).
-//! * §15 Deployment IDL — Bestandteil von §14.
-//! * §16 XML Schema for CCM — XSD-Schema des Deployment-Subsystems.
+//! * §8 CCM Implementation Framework — servant/skeleton generator,
+//!   requires POA + ORB.
+//! * §9 Container Programming Model — server programming environment,
+//!   requires CORBA-ORB.
+//! * §10 Integrating with Enterprise JavaBeans — requires an EJB
+//!   container.
+//! * §11 Interface Repository Metamodel — requires CORBA-IFR.
+//! * §12 CIF Metamodel — Implementation-Framework MOF model.
+//! * §14 Deployment PSM for CCM — D&C subsystem (formal/2006-04-02).
+//! * §15 Deployment IDL — part of §14.
+//! * §16 XML Schema for CCM — XSD schema of the deployment subsystem.
 //!
-//! # Beispiel
+//! # Example
 //!
 //! ```
 //! use zerodds_ccm::Cookie;

@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Fehlertypen fuer zerodds-types.
+//! Error types for zerodds-types.
 
 use core::fmt;
 
 use zerodds_cdr::{DecodeError, EncodeError};
 
-/// Fehler beim Encoden/Decoden von TypeObject / TypeIdentifier.
+/// Error while encoding/decoding TypeObject / TypeIdentifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TypeCodecError {
-    /// Wire-Encode-Fehler aus dem CDR-Layer.
+    /// Wire encode error from the CDR layer.
     Encode(EncodeError),
-    /// Wire-Decode-Fehler.
+    /// Wire decode error.
     Decode(DecodeError),
-    /// Unbekannter TypeKind-Diskriminator beim Decoden.
+    /// Unknown TypeKind discriminator on decode.
     UnknownTypeKind {
-        /// Tatsaechlich gelesener Byte-Wert.
+        /// Actually read byte value.
         kind: u8,
     },
 }

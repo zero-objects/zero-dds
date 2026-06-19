@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! TelemetryComponent — Component-Lifecycle-Metrik-Emitter.
+//! TelemetryComponent — component lifecycle metric emitter.
 //!
-//! Production-CCM-Containers brauchen Beobachtbarkeit: jede
-//! Lifecycle-Transition (`set_context`, `ccm_activate`,
-//! `ccm_passivate`, `ccm_remove`) wird als Event in einen DCPS-Topic
-//! `__ZeroDDS_CcmTelemetry` publiziert. Diese Component liefert das
-//! In-Process-Sample-Modell und Lifecycle-Hooks; die Topic-Publikation
-//! ist Aufgabe der DDS-Runtime.
+//! Production CCM containers need observability: every
+//! lifecycle transition (`set_context`, `ccm_activate`,
+//! `ccm_passivate`, `ccm_remove`) is published as an event to a DCPS
+//! topic `__ZeroDDS_CcmTelemetry`. This component provides the
+//! in-process sample model and lifecycle hooks; the topic publication
+//! is the responsibility of the DDS runtime.
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -17,33 +17,33 @@ use alloc::vec::Vec;
 use zerodds_corba_ccm::cif::{CifError, ComponentExecutor};
 use zerodds_corba_ccm::context::ComponentContext;
 
-/// Kind eines Telemetry-Events.
+/// Kind of a telemetry event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TelemetryKind {
-    /// `set_context` aufgerufen.
+    /// `set_context` called.
     SetContext,
-    /// `ccm_activate` aufgerufen.
+    /// `ccm_activate` called.
     Activate,
-    /// `ccm_passivate` aufgerufen.
+    /// `ccm_passivate` called.
     Passivate,
-    /// `ccm_remove` aufgerufen.
+    /// `ccm_remove` called.
     Remove,
-    /// User-defined Event (Caller emittiert via `record_custom`).
+    /// User-defined event (caller emits via `record_custom`).
     Custom,
 }
 
-/// Telemetry-Event-Sample.
+/// Telemetry event sample.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TelemetryEvent {
-    /// Aufsteigende Sequenz-Nummer (start bei 1).
+    /// Ascending sequence number (starts at 1).
     pub sequence: u64,
     /// Kind.
     pub kind: TelemetryKind,
-    /// Frei-Format-Label (z.B. Component-Name oder Custom-Tag).
+    /// Free-form label (e.g. component name or custom tag).
     pub label: String,
 }
 
-/// TelemetryComponent — production-ready CCM-Component.
+/// TelemetryComponent — production-ready CCM component.
 pub struct TelemetryComponent {
     name: String,
     events: Vec<TelemetryEvent>,
@@ -69,8 +69,7 @@ impl core::fmt::Debug for TelemetryComponent {
 }
 
 impl TelemetryComponent {
-    /// Konstruktor mit Component-Name (wird als Label-Prefix
-    /// verwendet).
+    /// Constructor with component name (used as label prefix).
     #[must_use]
     pub fn new(name: &str) -> Self {
         Self {
@@ -91,44 +90,43 @@ impl TelemetryComponent {
         });
     }
 
-    /// Records einen Custom-Event. Caller-Layer (z.B.
-    /// Component-Logic) ruft das auf, um App-spezifische Telemetrie
-    /// zu emittieren.
+    /// Records a custom event. The caller layer (e.g.
+    /// component logic) calls this to emit app-specific telemetry.
     pub fn record_custom(&mut self, label: String) {
         self.record(TelemetryKind::Custom, label);
     }
 
-    /// Liste aller bisher emittierten Events (in Reihenfolge).
+    /// List of all events emitted so far (in order).
     #[must_use]
     pub fn events(&self) -> &[TelemetryEvent] {
         &self.events
     }
 
-    /// Anzahl Events einer bestimmten Kind.
+    /// Number of events of a given kind.
     #[must_use]
     pub fn count_of(&self, kind: TelemetryKind) -> usize {
         self.events.iter().filter(|e| e.kind == kind).count()
     }
 
-    /// Letzte Event (None wenn leer).
+    /// Last event (None if empty).
     #[must_use]
     pub fn last_event(&self) -> Option<&TelemetryEvent> {
         self.events.last()
     }
 
-    /// Drain — leere die Event-Queue und gib sie zurueck. Nuetzlich
-    /// wenn die DDS-Runtime den Buffer ausliest.
+    /// Drain — empties the event queue and returns it. Useful
+    /// when the DDS runtime reads out the buffer.
     pub fn drain(&mut self) -> Vec<TelemetryEvent> {
         core::mem::take(&mut self.events)
     }
 
-    /// Liefert `true` wenn aktiviert.
+    /// Returns `true` if activated.
     #[must_use]
     pub fn is_active(&self) -> bool {
         self.activated
     }
 
-    /// Component-Name.
+    /// Component name.
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name

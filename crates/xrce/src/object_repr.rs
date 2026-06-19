@@ -3,28 +3,28 @@
 
 //! `ObjectVariant`-Representations (Spec §7.7).
 //!
-//! Jede Object-CREATE-Operation (Spec §8.4.6) traegt eine
-//! `ObjectVariant`, die Object-spezifische Daten haelt. Diese werden
-//! ueber drei Wire-Repraesentationen gefuehrt:
+//! Each object CREATE operation (Spec §8.4.6) carries an
+//! `ObjectVariant` that holds object-specific data. These are
+//! carried via three wire representations:
 //!
-//! - `REPRESENTATION_BY_REFERENCE`  — Identifier-String, der auf eine
-//!   im Agent registrierte Vorlage zeigt.
-//! - `REPRESENTATION_AS_XML_STRING` — Inline-XML, das den Object-State
-//!   beschreibt (z.B. Topic-XML, QoS-Profile-XML).
-//! - `REPRESENTATION_IN_BINARY`     — Inline-Binary (XCDR2-Encoding der
-//!   strong-typed-Variante, z.B. fuer `OBJK_TYPE`).
+//! - `REPRESENTATION_BY_REFERENCE`  — identifier string pointing to a
+//!   template registered in the agent.
+//! - `REPRESENTATION_AS_XML_STRING` — inline XML describing the object
+//!   state (e.g. topic XML, QoS profile XML).
+//! - `REPRESENTATION_IN_BINARY`     — inline binary (XCDR2 encoding of
+//!   the strong-typed variant, e.g. for `OBJK_TYPE`).
 //!
-//! Wire-Discriminator (1 Byte, Spec §7.7.2):
+//! Wire discriminator (1 byte, Spec §7.7.2):
 //! - `0x01` = ByReference
 //! - `0x02` = ByXmlString
 //! - `0x03` = InBinary
 //!
-//! Strings sind XCDR2-`string<>` (4-Byte LE-Length + UTF-8 + null-terminator).
-//! Bytes sind XCDR2-`sequence<octet>` (4-Byte LE-Length + Bytes).
+//! Strings are XCDR2 `string<>` (4-byte LE length + UTF-8 + null terminator).
+//! Bytes are XCDR2 `sequence<octet>` (4-byte LE length + bytes).
 //!
-//! Hier wird das Outer-Wrap und der Discriminator strukturell validiert;
-//! die Inner-XML-/XCDR-Validierung ist out-of-scope (uebernimmt der
-//! Agent-Process spaeter).
+//! Here the outer wrap and the discriminator are structurally validated;
+//! the inner XML/XCDR validation is out of scope (handled by the
+//! agent process later).
 
 extern crate alloc;
 use alloc::string::String;
@@ -33,9 +33,9 @@ use alloc::vec::Vec;
 use crate::encoding::{Endianness, read_u32, write_u32};
 use crate::error::XrceError;
 
-/// Discriminator-Bytes (Spec §7.7.2).
+/// Discriminator bytes (Spec §7.7.2).
 pub mod repr_disc {
-    /// Reserved-Default; nicht spec-konform fuer Wire-Decode.
+    /// Reserved default; not spec-conformant for wire decode.
     pub const INVALID: u8 = 0x00;
     /// `REPRESENTATION_BY_REFERENCE`.
     pub const BY_REFERENCE: u8 = 0x01;
@@ -45,24 +45,24 @@ pub mod repr_disc {
     pub const IN_BINARY: u8 = 0x03;
 }
 
-/// XCDR2-Encoding-Cap fuer Inline-Strings/Bytes — schuetzt vor
-/// `length=u32::MAX`-Decoder-Bombs. 64 KiB reicht fuer alle
-/// realistischen Topic-XML-Beschreibungen.
+/// XCDR2 encoding cap for inline strings/bytes — protects against
+/// `length=u32::MAX` decoder bombs. 64 KiB suffices for all
+/// realistic topic XML descriptions.
 pub const REPR_MAX_INLINE_BYTES: usize = 65_536;
 
-/// `ObjectVariant`-Wire-Repraesentation.
+/// `ObjectVariant` wire representation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObjectVariant {
-    /// Reference-by-Name-String.
+    /// Reference-by-name string.
     ByReference(String),
-    /// Inline-XML-Repraesentation.
+    /// Inline XML representation.
     ByXmlString(String),
-    /// Inline-Binary (XCDR2-encoded strong-type).
+    /// Inline binary (XCDR2-encoded strong type).
     InBinary(Vec<u8>),
 }
 
 impl ObjectVariant {
-    /// Discriminator-Byte.
+    /// Discriminator byte.
     #[must_use]
     pub fn discriminator(&self) -> u8 {
         match self {
@@ -72,7 +72,7 @@ impl ObjectVariant {
         }
     }
 
-    /// Encodiert diese Variante in XCDR2-Form mit gegebener Endianness.
+    /// Encodes this variant into XCDR2 form with the given endianness.
     /// Layout:
     ///
     /// ```text
@@ -81,11 +81,11 @@ impl ObjectVariant {
     /// +----+----+----+----+----+ ... +----+
     /// ```
     ///
-    /// `disc` (1 Byte) + 3 Padding-Bytes (XCDR2-Alignment auf 4); danach
-    /// die Length (u32) + Bytes der Variante.
+    /// `disc` (1 byte) + 3 padding bytes (XCDR2 alignment to 4); then
+    /// the length (u32) + bytes of the variant.
     ///
     /// # Errors
-    /// `PayloadTooLarge`, wenn die Payload `> REPR_MAX_INLINE_BYTES`.
+    /// `PayloadTooLarge` if the payload is `> REPR_MAX_INLINE_BYTES`.
     pub fn encode(&self, e: Endianness) -> Result<Vec<u8>, XrceError> {
         let payload = match self {
             Self::ByReference(s) | Self::ByXmlString(s) => s.as_bytes(),
@@ -97,7 +97,7 @@ impl ObjectVariant {
                 actual: payload.len(),
             });
         }
-        // Strings haengen einen NUL-Terminator an (XCDR2 §7.4.4).
+        // Strings append a NUL terminator (XCDR2 §7.4.4).
         let extra_nul = matches!(self, Self::ByReference(_) | Self::ByXmlString(_));
         let payload_len = if extra_nul {
             payload.len() + 1
@@ -109,7 +109,7 @@ impl ObjectVariant {
         })?;
         let mut out = Vec::with_capacity(8 + payload_len);
         out.push(self.discriminator());
-        out.extend_from_slice(&[0u8, 0, 0]); // 3 Byte Padding zu 4-Align
+        out.extend_from_slice(&[0u8, 0, 0]); // 3 bytes padding to 4-align
         let mut len_buf = [0u8; 4];
         write_u32(&mut len_buf, len_u32, e)?;
         out.extend_from_slice(&len_buf);
@@ -120,7 +120,7 @@ impl ObjectVariant {
         Ok(out)
     }
 
-    /// Decodiert eine `ObjectVariant`. Liefert `(variant, bytes_consumed)`.
+    /// Decodes an `ObjectVariant`. Returns `(variant, bytes_consumed)`.
     ///
     /// # Errors
     /// `UnexpectedEof`, `ValueOutOfRange`, `PayloadTooLarge`.
@@ -132,7 +132,7 @@ impl ObjectVariant {
             });
         }
         let disc = bytes[0];
-        // bytes[1..4] sind Padding, ignoriert
+        // bytes[1..4] are padding, ignored
         let len = read_u32(&bytes[4..8], e)?;
         let len_us = usize::try_from(len).map_err(|_| XrceError::ValueOutOfRange {
             message: "object variant length exceeds usize",
@@ -171,8 +171,8 @@ impl ObjectVariant {
     }
 }
 
-/// XCDR2 `string<>` haengt einen NUL-Terminator an. Beim Decode trimmen
-/// wir trailing-NULs und verlangen valides UTF-8.
+/// XCDR2 `string<>` appends a NUL terminator. On decode we trim
+/// trailing NULs and require valid UTF-8.
 fn decode_xcdr_string(payload: &[u8]) -> Result<String, XrceError> {
     let trimmed = if let Some((&last, rest)) = payload.split_last() {
         if last == 0 { rest } else { payload }
@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn unknown_discriminator_rejected() {
-        // Discriminator 0x42 ist nicht in der Spec
+        // Discriminator 0x42 is not in the spec
         let mut bad = alloc::vec![0x42, 0, 0, 0];
         bad.extend_from_slice(&0u32.to_le_bytes());
         let res = ObjectVariant::decode(&bad, Endianness::Little);
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn truncated_payload_returns_eof() {
-        // disc=BY_REFERENCE, length=10 aber nur 3 Byte Payload
+        // disc=BY_REFERENCE, length=10 but only 3 bytes of payload
         let mut bad = alloc::vec![0x01, 0, 0, 0];
         bad.extend_from_slice(&10u32.to_le_bytes());
         bad.extend_from_slice(&[0xAA, 0xBB, 0xCC]);
@@ -281,18 +281,18 @@ mod tests {
         );
     }
 
-    /// Spec §7.7.3 verlangt eine Discriminated-Union mit 12 Object-
-    /// Kind-Varianten. ZeroDDS realisiert das via 2-Tier:
+    /// Spec §7.7.3 requires a discriminated union with 12 object
+    /// kind variants. ZeroDDS realizes that via 2 tiers:
     ///
-    /// 1. Outer-Wire: 3-Discriminator-`ObjectVariant`-Form
+    /// 1. Outer wire: 3-discriminator `ObjectVariant` form
     ///    (ByReference / ByXmlString / InBinary).
-    /// 2. Inner: pro Kind XCDR2-encoded Strong-Type (Topic/Type/QoS/
+    /// 2. Inner: per kind XCDR2-encoded strong type (Topic/Type/QoS/
     ///    Participant/Pub/Sub/DW/DR/Application/Agent/Client).
     ///
-    /// Dieser Test zeigt, dass die Outer-Form fuer alle 12 Spec-OBJK-
-    /// Werte transparent funktioniert — das Inner-XCDR2 wird vom
-    /// Caller (xml_config / agent) generiert und ist out-of-scope
-    /// fuer den Wire-Codec.
+    /// This test shows that the outer form works transparently for all 12
+    /// spec OBJK values — the inner XCDR2 is generated by the
+    /// caller (xml_config / agent) and is out of scope
+    /// for the wire codec.
     #[test]
     fn object_variant_carries_all_12_objk_kinds_through_outer_repr() {
         use crate::object_kind::{
@@ -314,8 +314,8 @@ mod tests {
             OBJK_CLIENT,
         ];
         for kind in kinds {
-            // Inner-Repr ist per Konvention 1 byte mit dem OBJK-Wert
-            // als Marker — das demonstriert die 2-Tier-Architektur.
+            // The inner repr is by convention 1 byte with the OBJK value
+            // as a marker — this demonstrates the 2-tier architecture.
             let inner = alloc::vec![*kind];
             let v = ObjectVariant::InBinary(inner.clone());
             let bytes = v.encode(Endianness::Little).expect("encode");
@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn object_variant_xml_form_supports_topic_qosprofile_application() {
-        // Spec-Beispiel: Topic-XML-Repr.
+        // Spec example: topic XML repr.
         for s in [
             "<topic name=\"T\"/>",
             "<qos_profile name=\"P\"/>",

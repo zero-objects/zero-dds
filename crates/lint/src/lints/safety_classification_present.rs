@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `dds_safety_classification_present` — jede Workspace-Crate mit einer
-//! `src/lib.rs` muss in den ersten Zeilen den Marker
-//! `Safety classification: **{SAFE|STANDARD|COMFORT|TOOLING}**` tragen.
+//! `dds_safety_classification_present` — every workspace crate with a
+//! `src/lib.rs` must carry the marker
+//! `Safety classification: **{SAFE|STANDARD|COMFORT|TOOLING}**` in its first lines.
 //!
-//! Damit ist die Klassifikation aus [`scanner`](crate::scanner) garantiert
-//! vorhanden — Voraussetzung fuer die anderen Klassen-abhaengigen Lints.
+//! This guarantees that the classification from [`scanner`](crate::scanner) is
+//! present — a precondition for the other class-dependent lints.
 
 use crate::diagnostic::Diagnostic;
 use crate::scanner::CrateInfo;
 
 use super::CrateLint;
 
-/// Lint-Implementierung.
+/// Lint implementation.
 pub struct SafetyClassificationPresent;
 
 const NAME: &str = "dds_safety_classification_present";
@@ -24,7 +24,7 @@ impl CrateLint for SafetyClassificationPresent {
 
     fn check(&self, krate: &CrateInfo) -> Vec<Diagnostic> {
         let Some(lib_rs) = krate.lib_rs.as_ref() else {
-            // Crates ohne lib.rs (z.B. reine Binary-Crates / tools) ueberspringen.
+            // Skip crates without lib.rs (e.g. pure binary crates / tools).
             return Vec::new();
         };
         if krate.classification.is_some() {
@@ -36,8 +36,8 @@ impl CrateLint for SafetyClassificationPresent {
             1,
             NAME,
             format!(
-                "Crate `{}` hat keine Klassifikation in lib.rs \
-                 (erwartet: `Safety classification: **<KLASSE>**`)",
+                "crate `{}` has no classification in lib.rs \
+                 (expected: `Safety classification: **<CLASS>**`)",
                 krate.name
             ),
         )]

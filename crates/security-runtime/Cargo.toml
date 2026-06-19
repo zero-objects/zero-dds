@@ -21,22 +21,23 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std"]
 std = []
 
 [dependencies]
-zerodds-qos = { version = "1.0.0-rc.1", path = "../qos" }
-zerodds-rtps = { version = "1.0.0-rc.1", path = "../rtps", default-features = false, features = ["alloc"] }
-zerodds-security = { version = "1.0.0-rc.1", path = "../security" }
-zerodds-security-crypto = { version = "1.0.0-rc.1", path = "../security-crypto" }
-zerodds-security-permissions = { version = "1.0.0-rc.1", path = "../security-permissions" }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos" }
+zerodds-rtps = { version = "1.0.0-rc.3", path = "../rtps", default-features = false, features = ["alloc"] }
+zerodds-security = { version = "1.0.0-rc.3", path = "../security" }
+zerodds-security-crypto = { version = "1.0.0-rc.3", path = "../security-crypto" }
+zerodds-security-permissions = { version = "1.0.0-rc.3", path = "../security-permissions" }
 # DelegationChain im PeerCapabilities-Cache + Wire-Codec.
-zerodds-security-pki = { version = "1.0.0-rc.1", path = "../security-pki" }
-zerodds-security-rtps = { version = "1.0.0-rc.1", path = "../security-rtps" }
+zerodds-security-pki = { version = "1.0.0-rc.3", path = "../security-pki" }
+zerodds-security-rtps = { version = "1.0.0-rc.3", path = "../security-rtps" }
 
 [dev-dependencies]
 zerodds-discovery = { path = "../discovery" }
 # Test-Keys + Delegation-Wire-Test.
 ring = { workspace = true }
-# Conformance-Matrix-Test braucht den produktiven Logging-Builtin.
+# Conformance matrix test needs the production logging builtin.
 zerodds-security-logging = { path = "../security-logging" }

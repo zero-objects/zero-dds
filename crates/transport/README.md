@@ -3,40 +3,40 @@
 [![docs.rs](https://img.shields.io/docsrs/zerodds-transport)](https://docs.rs/zerodds-transport)
 [![crates.io](https://img.shields.io/crates/v/zerodds-transport)](https://crates.io/crates/zerodds-transport)
 
-Transport-Trait + Locator-Re-Export für ZeroDDS. Layer 2 (Wire-Trait-Crate).
+Transport trait + Locator re-export for ZeroDDS. Layer 2 (wire trait crate).
 
-Pure-Rust `no_std + alloc`, `forbid(unsafe_code)`, Safety-Klasse **SAFE**.
+Pure-Rust `no_std + alloc`, `forbid(unsafe_code)`, safety class **SAFE**.
 
-## Was liefert dieses Crate
+## What this crate provides
 
-- `Transport` — Trait für send/receive-Operationen mit Locator-Adressierung
-- `SendError` / `RecvError` — typisierte Fehler
-- `ReceivedDatagram` — Empfangenes Datagramm + Source-Locator
-- `Locator` — re-exportiert aus `zerodds-rtps::wire_types` (DDSI-RTPS 2.5 §8.3.2)
+- `Transport` — trait for send/receive operations with Locator addressing
+- `SendError` / `RecvError` — typed errors
+- `ReceivedDatagram` — received datagram + source Locator
+- `Locator` — re-exported from `zerodds-rtps::wire_types` (DDSI-RTPS 2.5 §8.3.2)
 
 ## Spec
 
-- DDSI-RTPS 2.5 §8.3.2 — Locator-Definition
-- Transport-Trait ist ZeroDDS-eigene Abstraktion über RTPS-Wire-Protokollen
+- DDSI-RTPS 2.5 §8.3.2 — Locator definition
+- The transport trait is ZeroDDS's own abstraction over RTPS wire protocols
 
-## Konkrete Implementations
+## Concrete implementations
 
-- `zerodds-transport-udp` — UDPv4/UDPv6 Datagram-Sockets
-- `zerodds-transport-tcp` — TCP-Stream + Length-Prefix-Framing
-- `zerodds-transport-shm` — POSIX Shared-Memory-Ringbuffer
-- `zerodds-transport-uds` — Unix Domain Sockets
-- `zerodds-transport-tsn` — TSN/IEEE 802.1Qbv Time-Aware Shaper
+- `zerodds-transport-udp` — UDPv4/UDPv6 datagram sockets
+- `zerodds-transport-tcp` — TCP stream + length-prefix framing
+- `zerodds-transport-shm` — POSIX shared-memory ring buffer
+- `zerodds-transport-uds` — Unix domain sockets
+- `zerodds-transport-tsn` — TSN/IEEE 802.1Qbv time-aware shaper
 
-## Architektur-Hinweis: `transport → rtps` Crate-Dep
+## Architecture note: the `transport → rtps` crate dependency
 
-`Locator` lebt **bewusst** in `zerodds-rtps`, nicht in `zerodds-transport`:
+`Locator` lives **deliberately** in `zerodds-rtps`, not in `zerodds-transport`:
 
-- DDSI-RTPS-Spec definiert das Wire-Format des Locators in §8.3.2 — das ist
-  RTPS-Domäne, nicht Transport-Domäne.
-- `zerodds-transport` re-exportiert ihn nur, damit Konsumenten eine
-  Transport-zentrische Import-Pfad-Option haben.
-- Es gibt keinen Cycle: `zerodds-rtps` hängt **nicht** von
-  `zerodds-transport` ab.
+- The DDSI-RTPS spec defines the locator's wire format in §8.3.2 — that is
+  the RTPS domain, not the transport domain.
+- `zerodds-transport` only re-exports it so that consumers have a
+  transport-centric import-path option.
+- There is no cycle: `zerodds-rtps` does **not** depend on
+  `zerodds-transport`.
 
 ## Tests
 
@@ -46,6 +46,6 @@ cargo build -p zerodds-transport --no-default-features
 cargo build -p zerodds-transport --no-default-features --features alloc
 ```
 
-## Lizenz
+## License
 
-Apache-2.0 OR MIT — siehe Workspace-Root.
+Apache-2.0 OR MIT — see the workspace root.

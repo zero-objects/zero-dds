@@ -1,0 +1,37 @@
+[package]
+name = "zerodds-opcua-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "OPC-UA Client/Server (Part 4 Services over the SecureChannel): Session lifecycle, the Read/Browse/Call/GetEndpoints service set, an in-memory AddressSpace server, and a client. Builds on zerodds-opcua-uacp. Pure-Rust no_std + alloc; TCP endpoints behind the std feature."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-opcua-server"
+readme = "README.md"
+keywords = ["opcua", "server", "client", "iec62541", "no-std"]
+categories = ["network-programming", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc", "zerodds-opcua-uacp/std", "zerodds-opcua-pubsub/std", "zerodds-opcua-gateway/std"]
+alloc = ["zerodds-opcua-uacp/alloc", "zerodds-opcua-pubsub/alloc", "zerodds-opcua-gateway/alloc"]
+# Secured SecurityPolicies (RSA/AES) for the Client/Server handshake.
+crypto = ["zerodds-opcua-uacp/crypto"]
+
+[dependencies]
+zerodds-opcua-uacp = { version = "1.0.0-rc.3", path = "../opcua-uacp", default-features = false }
+zerodds-opcua-pubsub = { version = "1.0.0-rc.3", path = "../opcua-pubsub", default-features = false }
+zerodds-opcua-gateway = { version = "1.0.0-rc.3", path = "../opcua-gateway", default-features = false }
+
+[dev-dependencies]
+# A real OS CSPRNG for the secured-handshake end-to-end test (test only).
+rand = { version = "0.8", default-features = false, features = ["std", "std_rng", "getrandom"] }

@@ -1,6 +1,6 @@
-# `zerodds-cdr` Fuzz-Targets
+# `zerodds-cdr` fuzz targets
 
-Coverage-guided Fuzzing der XCDR1/PL_CDR1-Decoder via `cargo-fuzz`
+Coverage-guided fuzzing of the XCDR1/PL_CDR1 decoders via `cargo-fuzz`
 (libFuzzer, nightly-only opt-in).
 
 ```bash
@@ -9,5 +9,5 @@ cargo +nightly fuzz run read_pl_cdr1_member
 cargo +nightly fuzz run read_all_pl_cdr1_members
 ```
 
-Stable-Smoke-Variante: `crates/cdr/tests/fuzz_smoke.rs`
-(läuft in normalem `cargo test`).
+Stable smoke variant: `crates/cdr/tests/fuzz_smoke.rs`
+(runs under a normal `cargo test`).

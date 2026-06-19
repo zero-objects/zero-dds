@@ -3,37 +3,37 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-corba-dnc/badge.svg)](https://docs.rs/zerodds-corba-dnc)
 
-OMG Deployment & Configuration 4.0 (`formal/2006-04-02`) — voller
-D&C-Stack mit Plan-Datenmodell (DPD/CPD/IDD/PSD), XML-Plan-Loader (§10),
-RepositoryManager (§8), ExecutionManager + NodeManager (§9) und
-ContainerHost-Bridge zu `corba-ccm`. `no_std + alloc`,
+OMG Deployment & Configuration 4.0 (`formal/2006-04-02`) — full
+D&C stack with plan data model (DPD/CPD/IDD/PSD), XML plan loader (§10),
+RepositoryManager (§8), ExecutionManager + NodeManager (§9), and a
+ContainerHost bridge to `corba-ccm`. `no_std + alloc`,
 `forbid(unsafe_code)`. Safety classification: **STANDARD**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
 | OMG D&C 4.0 | §6 Domain Data, §7 Component Data |
-| OMG D&C 4.0 | §8 RepositoryManager, §9 Execution/Node-Manager |
-| OMG D&C 4.0 | §10 XML-Encoding |
+| OMG D&C 4.0 | §8 RepositoryManager, §9 Execution/Node Manager |
+| OMG D&C 4.0 | §10 XML Encoding |
 
-## Was ist drin
+## What's included
 
-- **`DeploymentPlan`** + 6 weitere Plan-Modell-Typen.
-- **`parse_plan_xml`** — §10-XML-Loader.
-- **`RepositoryManager`** — §8 Plan/Implementation-Repository.
+- **`DeploymentPlan`** + 6 more plan-model types.
+- **`parse_plan_xml`** — §10 XML loader.
+- **`RepositoryManager`** — §8 plan/implementation repository.
 - **`ExecutionManager`** + **`DomainApplicationManager`** — §9
-  Domain-Level-Application-Layer.
-- **`NodeManager`** + **`NodeApplicationManager`** — §9 Node-Level.
-- **`ContainerHost`** — bindet einen `corba-ccm::Container` an einen
-  Plan-Application-Run.
+  domain-level application layer.
+- **`NodeManager`** + **`NodeApplicationManager`** — §9 node level.
+- **`ContainerHost`** — binds a `corba-ccm::Container` to a
+  plan-application run.
 
-## Was nicht abgedeckt ist
+## What's not covered
 
-- ORB-Wire-Anbindung der Manager-Operationen: Caller-Layer.
-- Persistente Plan-Storage: Caller-Layer.
+- ORB wire wiring of the manager operations: caller layer.
+- Persistent plan storage: caller layer.
 
-## Beispiel
+## Example
 
 ```rust
 use zerodds_corba_dnc::DeploymentPlan;

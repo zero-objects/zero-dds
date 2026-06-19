@@ -1,6 +1,6 @@
-//! Integration-Tests fuer DDS-XML 1.0 §7.3.3 (Types) + §7.3.7 (Samples).
+//! Integration tests for DDS-XML 1.0 §7.3.3 (Types) + §7.3.7 (Samples).
 //!
-//! C7.D — Type-AST + Sample-Codec.
+//! C7.D — type AST + sample codec.
 
 #![allow(
     clippy::expect_used,

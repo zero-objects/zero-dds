@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Opaque Entity-Handle-Types fuer die spec-konforme C-FFI-Surface
-//! (DDS-Spec §2.2.2 + DDS-PSM-Cxx 1.0 §7.2.1).
+//! Opaque entity handle types for the spec-conformant C-FFI surface
+//! (DDS spec §2.2.2 + DDS-PSM-Cxx 1.0 §7.2.1).
 //!
-//! Die Handles sind `Box<...>`-allokierte Wrapper um die Rust-DCPS-
-//! Entities. Pro `*_create()` wird der Box in einen Pointer umgewandelt;
-//! `*_destroy()` ruft `Box::from_raw` und droppt damit auch den
-//! gehaltenen `Arc<DcpsRuntime>`-Klon, sodass die Runtime aufraeumt
-//! wenn der letzte Handle entfernt ist.
+//! The handles are `Box<...>`-allocated wrappers around the Rust DCPS
+//! entities. Per `*_create()` the box is converted into a pointer;
+//! `*_destroy()` calls `Box::from_raw` and thereby also drops the
+//! held `Arc<DcpsRuntime>` clone, so that the runtime cleans up
+//! when the last handle is removed.
 //!
-//! ## Architektur-Hinweis
+//! ## Architecture note
 //!
-//! Auf C-FFI-Ebene ist die Spec-Hierarchie (Factory → Participant →
-//! Publisher/Subscriber/Topic → DataWriter/DataReader) als opake
-//! Handle-Kette modelliert. Intern collapsen DataWriter und DataReader
-//! auf den `DcpsRuntime::create_user_writer/reader`-Pfad mit
-//! Caller-supplied `type_name`-String, weil `DataWriter<T>`-Generik
-//! kein Runtime-`type_name` erlaubt (`T::TYPE_NAME` ist `const`).
+//! At the C-FFI level the spec hierarchy (factory → participant →
+//! publisher/subscriber/topic → DataWriter/DataReader) is modeled as an opaque
+//! handle chain. Internally DataWriter and DataReader collapse
+//! onto the `DcpsRuntime::create_user_writer/reader` path with a
+//! caller-supplied `type_name` string, because `DataWriter<T>` generics
+//! do not allow a runtime `type_name` (`T::TYPE_NAME` is `const`).
 //!
-//! Publisher/Subscriber sind organisatorische Container die QoS-Defaults
-//! plus eine Liste der enthaltenen Writers/Readers tracken — sie bleiben
-//! voll spec-konform an der API-Oberflaeche (incl. presentation,
+//! Publisher/subscriber are organizational containers that track QoS defaults
+//! plus a list of the contained writers/readers — they remain
+//! fully spec-conformant at the API surface (incl. presentation,
 //! partition, group_data, suspend/resume).
 
 use alloc::string::String;
@@ -43,24 +43,24 @@ use zerodds_rtps::wire_types::EntityId;
 
 /// Singleton DomainParticipantFactory (Spec §2.2.2.2.1).
 pub struct ZeroDdsDomainParticipantFactory {
-    /// Default-QoS fuer neu zu erzeugende Participants.
+    /// Default QoS for participants to be created.
     pub default_participant_qos: Mutex<DomainParticipantQos>,
-    /// Factory-eigene QoS (entity_factory.autoenable_created_entities).
+    /// Factory-owned QoS (entity_factory.autoenable_created_entities).
     pub factory_qos: Mutex<DomainParticipantFactoryQos>,
-    /// Registry aller aktiven Participants (fuer lookup_participant).
+    /// Registry of all active participants (for lookup_participant).
     pub participants: Mutex<Vec<*mut ZeroDdsDomainParticipant>>,
 }
 
-// SAFETY: Pointer in `participants` werden nur unter `Mutex` zugegriffen
-// und referenzieren `Box`-allokierte ZeroDdsDomainParticipants, die
-// `Send + Sync` sind durch den enthaltenen `Arc<DcpsRuntime>`.
+// SAFETY: pointers in `participants` are accessed only under the `Mutex`
+// and reference `Box`-allocated ZeroDdsDomainParticipants, which are
+// `Send + Sync` via the contained `Arc<DcpsRuntime>`.
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
 unsafe impl Send for ZeroDdsDomainParticipantFactory {}
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
 unsafe impl Sync for ZeroDdsDomainParticipantFactory {}
 
 impl ZeroDdsDomainParticipantFactory {
-    /// Liefert die globale Singleton-Instance.
+    /// Returns the global singleton instance.
     pub fn instance() -> &'static Self {
         use std::sync::OnceLock;
         static FACTORY: OnceLock<ZeroDdsDomainParticipantFactory> = OnceLock::new();
@@ -78,19 +78,19 @@ impl ZeroDdsDomainParticipantFactory {
 
 /// DomainParticipant (Spec §2.2.2.2.1.1).
 pub struct ZeroDdsDomainParticipant {
-    /// Live-Wrapper auf die hochstufige `dcps::DomainParticipant`-Form.
-    /// Erlaubt direkten Zugriff auf `ignore_*`, `contains_entity`,
-    /// `assert_liveliness`, Discovery-Listings etc.
+    /// Live wrapper on the high-level `dcps::DomainParticipant` form.
+    /// Allows direct access to `ignore_*`, `contains_entity`,
+    /// `assert_liveliness`, discovery listings etc.
     pub dp: DomainParticipant,
-    /// Runtime-Klon (extrahiert via `dp.runtime()`) fuer den
-    /// User-Writer/Reader-Pfad. None wenn offline.
+    /// Runtime clone (extracted via `dp.runtime()`) for the
+    /// user-writer/reader path. None if offline.
     pub rt: Option<Arc<DcpsRuntime>>,
-    /// Domain-ID (cached, aus dp.domain_id()).
+    /// Domain ID (cached, from dp.domain_id()).
     pub domain_id: u32,
     pub default_topic_qos: Mutex<TopicQos>,
     pub default_publisher_qos: Mutex<PublisherQos>,
     pub default_subscriber_qos: Mutex<SubscriberQos>,
-    /// Topics die ueber diesen Participant erzeugt wurden.
+    /// Topics created via this participant.
     pub topics: Mutex<Vec<*mut ZeroDdsTopic>>,
     pub publishers: Mutex<Vec<*mut ZeroDdsPublisher>>,
     pub subscribers: Mutex<Vec<*mut ZeroDdsSubscriber>>,
@@ -201,30 +201,30 @@ pub struct ZeroDdsDataReader {
     pub eid: EntityId,
     pub qos: Mutex<DataReaderQos>,
     pub rx: Mutex<mpsc::Receiver<UserSample>>,
-    /// Lokaler Read-Cache fuer non-destructive `read()` (Spec §2.2.2.5.3).
-    /// Per Sample wird `(sample, sample_state)` gespeichert; `take` zieht
-    /// aus Cache+Channel und entfernt; `read` liest aus Cache+Channel
-    /// ohne zu entfernen, markiert aber Sample-State als READ.
+    /// Local read cache for non-destructive `read()` (Spec §2.2.2.5.3).
+    /// Per sample `(sample, sample_state)` is stored; `take` pulls
+    /// from cache+channel and removes; `read` reads from cache+channel
+    /// without removing, but marks the sample state as READ.
     pub read_cache: Mutex<Vec<(UserSample, ReadSampleState)>>,
-    /// Optional: ContentFilteredTopic-Filter aktiv. Wenn Some, evaluiert
-    /// `take`/`read` jedes Sample gegen den Filter (Spec §2.2.2.3.3).
-    /// Untyped Topics (RawBytes/String) liefern fuer alle Filter true,
-    /// weil keine Type-Info vorhanden ist (Vendor-Decision: pass-through
-    /// statt block-all).
+    /// Optional: ContentFilteredTopic filter active. If Some,
+    /// `take`/`read` evaluate every sample against the filter (Spec §2.2.2.3.3).
+    /// Untyped topics (RawBytes/String) return true for all filters,
+    /// because no type info is present (vendor decision: pass-through
+    /// instead of block-all).
     pub cft_filter: Option<CftFilter>,
 }
 
-/// ContentFilteredTopic-Filter im DataReader.
+/// ContentFilteredTopic filter in the DataReader.
 pub struct CftFilter {
-    /// Geparste Filter-Expression aus `crates/sql-filter`.
+    /// Parsed filter expression from `crates/sql-filter`.
     pub expr: zerodds_sql_filter::Expr,
-    /// Filter-Parameter %0..%N als `Value`-Vektor.
+    /// Filter parameters %0..%N as a `Value` vector.
     pub params: Vec<zerodds_sql_filter::Value>,
 }
 
 impl CftFilter {
-    /// Evaluiert den Filter gegen einen Sample-Payload.
-    /// Untyped/RawBytes: liefert immer `true` (Spec-konform pass-through).
+    /// Evaluates the filter against a sample payload.
+    /// Untyped/RawBytes: always returns `true` (spec-conformant pass-through).
     pub fn evaluate(&self, _payload: &[u8]) -> bool {
         struct EmptyRow;
         impl zerodds_sql_filter::RowAccess for EmptyRow {
@@ -232,17 +232,17 @@ impl CftFilter {
                 None
             }
         }
-        // Untyped pass-through: bei jedem field-lookup-Error → true.
+        // Untyped pass-through: on every field-lookup error → true.
         self.expr.evaluate(&EmptyRow, &self.params).unwrap_or(true)
     }
 }
 
-/// Lokaler Sample-State im Read-Cache (Spec §2.2.2.5.4).
+/// Local sample state in the read cache (Spec §2.2.2.5.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReadSampleState {
-    /// Frisch aus Channel — sample_state = NOT_READ (Bit 2).
+    /// Fresh from the channel — sample_state = NOT_READ (bit 2).
     NotRead,
-    /// Bereits via `read()` gelesen — sample_state = READ (Bit 1).
+    /// Already read via `read()` — sample_state = READ (bit 1).
     Read,
 }
 
@@ -252,19 +252,19 @@ unsafe impl Send for ZeroDdsDataReader {}
 unsafe impl Sync for ZeroDdsDataReader {}
 
 // ============================================================================
-// Helper-Funktionen fuer FFI-Pointer-Validierung
+// Helper functions for FFI pointer validation
 // ============================================================================
 
-/// Sicherer Cast `*mut T` → `&T` mit NULL-Check.
+/// Safe cast `*mut T` → `&T` with a NULL check.
 ///
 /// # Safety
-/// Caller muss garantieren dass `p` entweder NULL ist oder auf eine
-/// valide `Box<T>`-Allocation zeigt, die noch nicht freigegeben ist.
+/// The caller must guarantee that `p` is either NULL or points to a
+/// valid `Box<T>` allocation that has not yet been freed.
 pub unsafe fn handle_ref<T>(p: *mut T) -> Option<&'static T> {
     if p.is_null() {
         None
     } else {
-        // SAFETY: NULL-Check oben + Caller-Kontrakt.
+        // SAFETY: NULL check above + caller contract.
         Some(unsafe { &*p })
     }
 }

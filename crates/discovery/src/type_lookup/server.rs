@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! TypeLookup-Service Server-Side (XTypes 1.3 §7.6.3.3.4).
+//! TypeLookup service server side (XTypes 1.3 §7.6.3.3.4).
 //!
-//! Verarbeitet [`GetTypesRequest`] und [`GetTypeDependenciesRequest`]
-//! gegen eine lokale [`TypeRegistry`] und liefert Replies. Pagination
-//! der Dependency-Replies via [`ContinuationPoint`] (§7.6.3.3.3).
+//! Processes [`GetTypesRequest`] and [`GetTypeDependenciesRequest`]
+//! against a local [`TypeRegistry`] and produces replies. Pagination
+//! of dependency replies via [`ContinuationPoint`] (§7.6.3.3.3).
 //!
-//! Spec-Mapping (§7.6.3.3.4):
+//! Spec mapping (§7.6.3.3.4):
 //! - Operation `getTypes(type_ids)` → [`TypeLookupServer::handle_get_types`]
 //! - Operation `getTypeDependencies(type_ids, continuation_point)` →
 //!   [`TypeLookupServer::handle_get_type_dependencies`]
 //!
-//! Pagination-Konstanten:
+//! Pagination constants:
 //! - [`TypeLookupServer::DEFAULT_DEPENDENCY_PAGE_SIZE`] = 100 dependencies
-//!   pro Reply. Konfigurierbar via [`TypeLookupServer::with_page_size`].
+//!   per reply. Configurable via [`TypeLookupServer::with_page_size`].
 
 use alloc::vec::Vec;
 
@@ -26,26 +26,25 @@ use zerodds_types::type_lookup::{
 use zerodds_types::type_object::TypeObject;
 use zerodds_types::{EquivalenceHash, TypeIdentifier};
 
-/// Server-Side TypeLookup-Service (Responder).
+/// Server-side TypeLookup service (responder).
 ///
-/// Haelt eine Referenz auf eine [`TypeRegistry`] und beantwortet
-/// RPC-Requests aus deren Inhalt. Stateless ueber Requests hinweg
-/// (jeder Request bringt seinen eigenen `ContinuationPoint` mit).
+/// Holds a reference to a [`TypeRegistry`] and answers RPC requests
+/// from its content. Stateless across requests (each request carries
+/// its own `ContinuationPoint`).
 #[derive(Debug, Clone)]
 pub struct TypeLookupServer {
-    /// Registry mit lokal bekannten TypeObjects.
+    /// Registry of locally known TypeObjects.
     pub registry: TypeRegistry,
-    /// Maximale Anzahl Dependencies pro `GetTypeDependenciesReply`.
+    /// Maximum number of dependencies per `GetTypeDependenciesReply`.
     page_size: usize,
 }
 
 impl TypeLookupServer {
-    /// Standard-Pagegroesse fuer Dependency-Replies (§7.6.3.3.4 erlaubt
-    /// jede Wahl; 100 ist ein Kompromiss zwischen Roundtrips und
-    /// Reply-Groesse).
+    /// Default page size for dependency replies (§7.6.3.3.4 allows any
+    /// choice; 100 is a compromise between round trips and reply size).
     pub const DEFAULT_DEPENDENCY_PAGE_SIZE: usize = 100;
 
-    /// Konstruiert einen Server ueber einer leeren Registry.
+    /// Constructs a server over an empty registry.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -54,7 +53,7 @@ impl TypeLookupServer {
         }
     }
 
-    /// Konstruiert einen Server ueber einer existierenden Registry.
+    /// Constructs a server over an existing registry.
     #[must_use]
     pub fn with_registry(registry: TypeRegistry) -> Self {
         Self {
@@ -63,26 +62,26 @@ impl TypeLookupServer {
         }
     }
 
-    /// Setzt die Page-Size fuer Dependency-Pagination.
-    /// `page_size = 0` wird auf 1 gehoben (eine Iteration pro Reply).
+    /// Sets the page size for dependency pagination.
+    /// `page_size = 0` is raised to 1 (one iteration per reply).
     #[must_use]
     pub fn with_page_size(mut self, page_size: usize) -> Self {
         self.page_size = page_size.max(1);
         self
     }
 
-    /// Aktuell konfigurierte Page-Size.
+    /// Currently configured page size.
     #[must_use]
     pub fn page_size(&self) -> usize {
         self.page_size
     }
 
-    /// Beantwortet `getTypes(type_ids)`.
+    /// Answers `getTypes(type_ids)`.
     ///
-    /// Fuer jeden bekannten `EquivalenceHashMinimal/Complete` wird das
-    /// passende [`ReplyTypeObject`] eingefuegt. Unbekannte Hashes und
-    /// Nicht-Hash-Identifier (Primitives, Plain-Collections — die
-    /// brauchen kein TypeObject) werden uebersprungen.
+    /// For each known `EquivalenceHashMinimal/Complete`, the matching
+    /// [`ReplyTypeObject`] is inserted. Unknown hashes and non-hash
+    /// identifiers (primitives, plain collections — which need no
+    /// TypeObject) are skipped.
     #[must_use]
     pub fn handle_get_types(&self, req: &GetTypesRequest) -> GetTypesReply {
         let mut types: Vec<ReplyTypeObject> = Vec::with_capacity(req.type_ids.len());
@@ -99,39 +98,39 @@ impl TypeLookupServer {
                     }
                 }
                 _ => {
-                    // Primitives / Plain-Collections — kein TypeObject.
+                    // Primitives / plain collections — no TypeObject.
                 }
             }
         }
         GetTypesReply { types }
     }
 
-    /// Beantwortet `getTypeDependencies(type_ids, continuation_point)`.
+    /// Answers `getTypeDependencies(type_ids, continuation_point)`.
     ///
-    /// Sammelt fuer alle angefragten Hashes die transitiv-bekannten
-    /// Dependencies. Wenn die Gesamtliste mehr als `page_size`
-    /// Eintraege enthaelt, wird sie geteilt: das Reply liefert die
-    /// ersten `page_size` und einen Continuation-Point, der den
-    /// Offset in der nachsten Iteration markiert.
+    /// Collects the transitively known dependencies for all requested
+    /// hashes. If the overall list contains more than `page_size`
+    /// entries, it is split: the reply returns the first `page_size`
+    /// and a continuation point that marks the offset for the next
+    /// iteration.
     ///
-    /// Continuation-Point-Encoding (§7.6.3.3.3): wir kodieren den
-    /// Offset als 4-byte LE in den ersten 4 Bytes (Rest = 0). Das
-    /// ist Implementation-Choice — der Spec sagt nur "opaque, max 32
-    /// bytes". Externe Peers sehen den CP als Black-Box und schicken
-    /// ihn unveraendert zurueck.
+    /// Continuation-point encoding (§7.6.3.3.3): we encode the offset
+    /// as 4-byte LE in the first 4 bytes (rest = 0). This is an
+    /// implementation choice — the spec only says "opaque, max 32
+    /// bytes". External peers treat the CP as a black box and send it
+    /// back unchanged.
     #[must_use]
     pub fn handle_get_type_dependencies(
         &self,
         req: &GetTypeDependenciesRequest,
     ) -> GetTypeDependenciesReply {
-        // Aggregierte sortierte Dependencies-Liste — deterministisch
-        // ueber alle Iterationen (sonst koennte der Client zwischen
-        // zwei Calls dieselbe Dependency doppelt oder garnicht sehen).
+        // Aggregated sorted dependency list — deterministic across all
+        // iterations (otherwise the client could see the same
+        // dependency twice or not at all between two calls).
         let all = self.collect_dependencies_sorted(&req.type_ids);
 
         let offset = decode_continuation_offset(&req.continuation_point);
         if offset >= all.len() {
-            // Keine weiteren Dependencies — leerer Reply mit leerem CP.
+            // No further dependencies — empty reply with empty CP.
             return GetTypeDependenciesReply {
                 dependent_typeids: Vec::new(),
                 continuation_point: ContinuationPoint::default(),
@@ -152,7 +151,7 @@ impl TypeLookupServer {
         }
     }
 
-    /// Sortierte, deduplizierte Liste aller Dependencies.
+    /// Sorted, deduplicated list of all dependencies.
     fn collect_dependencies_sorted(
         &self,
         type_ids: &[TypeIdentifier],
@@ -183,8 +182,8 @@ impl TypeLookupServer {
             .collect()
     }
 
-    /// Bestimmt die serialized-Size eines registrierten Types.
-    /// Wenn nicht in der Registry: 0.
+    /// Determines the serialized size of a registered type.
+    /// If not in the registry: 0.
     fn estimate_size(&self, hash: &EquivalenceHash) -> u32 {
         if let Some(m) = self.registry.get_minimal(hash) {
             TypeObject::Minimal(m.clone())
@@ -208,23 +207,23 @@ impl Default for TypeLookupServer {
     }
 }
 
-/// DoS-Cap fuer transitive Dependency-Aufloesung (in einem einzelnen
-/// Server-Call). Verhindert dass ein boeser Peer mit einem grossen
-/// Type-Graph einen einzelnen Reply unbegrenzt aufblaeht.
+/// DoS cap for transitive dependency resolution (within a single
+/// server call). Prevents a malicious peer with a large type graph
+/// from inflating a single reply without bound.
 const MAX_TRANSITIVE_DEPS: usize = 4_096;
 
-/// Kodiert einen Pagination-Offset als 8-byte-Continuation-Point.
-/// Format: `[offset_le_u64; 8 bytes]`. Rest der MAX_LEN bleibt
-/// unbenutzt.
+/// Encodes a pagination offset as an 8-byte continuation point.
+/// Format: `[offset_le_u64; 8 bytes]`. The rest of MAX_LEN stays
+/// unused.
 fn encode_continuation_offset(offset: usize) -> ContinuationPoint {
     let off64 = u64::try_from(offset).unwrap_or(u64::MAX);
     let bytes = off64.to_le_bytes();
     ContinuationPoint(bytes.to_vec())
 }
 
-/// Dekodiert einen Pagination-Offset.
-/// Leere oder zu kurze CPs werden als Offset 0 interpretiert
-/// (= "erste Iteration").
+/// Decodes a pagination offset.
+/// Empty or too-short CPs are interpreted as offset 0
+/// (= "first iteration").
 fn decode_continuation_offset(cp: &ContinuationPoint) -> usize {
     if cp.0.len() < 8 {
         return 0;
@@ -282,7 +281,7 @@ mod tests {
     #[test]
     fn pagination_truncates_at_page_size() {
         let mut server = TypeLookupServer::new().with_page_size(3);
-        // Build a struct mit 5 Hash-Member-Refs (nicht in registry).
+        // Build a struct with 5 hash member refs (not in registry).
         let mut builder = TypeObjectBuilder::struct_type("::Root");
         let dep_hashes: alloc::vec::Vec<EquivalenceHash> = (0..5u8)
             .map(|i| {

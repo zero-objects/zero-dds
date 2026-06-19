@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `RecordWriter` — schreibt einen `.zddsrec`-Stream in einen
-//! `std::io::Write`-Sink.
+//! `RecordWriter` — writes a `.zddsrec` stream into a
+//! `std::io::Write` sink.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -10,22 +10,22 @@ use core::fmt;
 
 use crate::format::{Frame, Header, ParticipantEntry, TopicEntry};
 
-/// Fehler beim Schreiben.
+/// Error while writing.
 #[derive(Debug)]
 pub enum WriteError {
-    /// I/O-Fehler vom Sink.
+    /// I/O error from the sink.
     Io(std::io::Error),
-    /// Header bereits geschrieben — Frames duerfen folgen.
+    /// Header already written — frames may follow.
     HeaderAlreadyWritten,
-    /// Frame ohne vorhergehendem Header.
+    /// Frame without a preceding header.
     HeaderMissing,
-    /// Ungueltiger Index im Frame (uebersteigt Header-Range).
+    /// Invalid index in the frame (exceeds the header range).
     OutOfRangeIdx {
-        /// Was der Frame referenzierte.
+        /// What the frame referenced.
         idx: u32,
-        /// Wieviele Eintraege der Header bietet.
+        /// How many entries the header offers.
         len: u32,
-        /// Welches Feld ("participant" oder "topic").
+        /// Which field ("participant" or "topic").
         field: &'static str,
     },
 }
@@ -51,7 +51,7 @@ impl From<std::io::Error> for WriteError {
     }
 }
 
-/// Streamender Writer fuer `.zddsrec`-Files.
+/// Streaming writer for `.zddsrec` files.
 pub struct RecordWriter<W: std::io::Write> {
     sink: W,
     header_written: bool,
@@ -62,8 +62,8 @@ pub struct RecordWriter<W: std::io::Write> {
 }
 
 impl<W: std::io::Write> RecordWriter<W> {
-    /// Erzeugt einen Writer ueber `sink`. Caller muss `write_header`
-    /// vor dem ersten Frame aufrufen.
+    /// Creates a writer over `sink`. The caller must call `write_header`
+    /// before the first frame.
     pub fn new(sink: W) -> Self {
         Self {
             sink,
@@ -75,11 +75,11 @@ impl<W: std::io::Write> RecordWriter<W> {
         }
     }
 
-    /// Schreibt den Header. Kann nur einmal aufgerufen werden.
+    /// Writes the header. Can only be called once.
     ///
     /// # Errors
-    /// Returnt [`WriteError::HeaderAlreadyWritten`] wenn schon
-    /// gerufen, sonst beliebige IO-Fehler.
+    /// Returns [`WriteError::HeaderAlreadyWritten`] if already
+    /// called, otherwise any IO error.
     pub fn write_header(&mut self, header: &Header) -> Result<(), WriteError> {
         if self.header_written {
             return Err(WriteError::HeaderAlreadyWritten);
@@ -95,12 +95,12 @@ impl<W: std::io::Write> RecordWriter<W> {
         Ok(())
     }
 
-    /// Schreibt einen Frame. Header muss zuvor gesetzt sein.
+    /// Writes a frame. The header must be set beforehand.
     ///
     /// # Errors
-    /// Returnt [`WriteError::HeaderMissing`] wenn `write_header`
-    /// noch nicht aufgerufen, oder [`WriteError::OutOfRangeIdx`] wenn
-    /// `participant_idx`/`topic_idx` aus dem Header-Range fallen.
+    /// Returns [`WriteError::HeaderMissing`] if `write_header`
+    /// has not been called yet, or [`WriteError::OutOfRangeIdx`] if
+    /// `participant_idx`/`topic_idx` fall outside the header range.
     pub fn write_frame(&mut self, frame: &Frame) -> Result<(), WriteError> {
         if !self.header_written {
             return Err(WriteError::HeaderMissing);
@@ -127,29 +127,29 @@ impl<W: std::io::Write> RecordWriter<W> {
         Ok(())
     }
 
-    /// Anzahl bisher geschriebener Frames.
+    /// Number of frames written so far.
     #[must_use]
     pub fn frames_written(&self) -> u64 {
         self.frames_written
     }
 
-    /// Anzahl Bytes auf dem Sink.
+    /// Number of bytes on the sink.
     #[must_use]
     pub fn bytes_written(&self) -> u64 {
         self.bytes_written
     }
 
-    /// Konsumiert den Writer und gibt den darunter liegenden Sink
-    /// zurueck (relevant fuer Cursor-Tests etc.).
+    /// Consumes the writer and returns the underlying sink
+    /// (relevant for cursor tests etc.).
     pub fn into_inner(self) -> W {
         self.sink
     }
 }
 
-/// Convenience: schreibt Header + alle Frames in einem Schwung.
+/// Convenience: writes the header + all frames in one go.
 ///
 /// # Errors
-/// Wie [`RecordWriter::write_header`] / [`RecordWriter::write_frame`].
+/// As [`RecordWriter::write_header`] / [`RecordWriter::write_frame`].
 pub fn write_all<W: std::io::Write>(
     sink: W,
     header: &Header,
@@ -163,7 +163,7 @@ pub fn write_all<W: std::io::Write>(
     Ok(w)
 }
 
-/// Bequemer Header-Builder fuer Tests.
+/// Convenient header builder for tests.
 #[must_use]
 pub fn header_with(
     time_base_unix_ns: i64,
@@ -184,7 +184,7 @@ pub fn header_with(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
     use crate::format::SampleKind;

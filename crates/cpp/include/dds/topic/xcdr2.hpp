@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// dds/topic/xcdr2.hpp -- XCDR2 (XTypes 1.3 §7.4) Wire-Format-Helpers.
+// dds/topic/xcdr2.hpp -- XCDR2 (XTypes 1.3 §7.4) wire-format helpers.
 //
-// Header-only, C++17, kein external Dep. Implementiert:
+// Header-only, C++17, no external dependency. Implements:
 //
-//   * Plain-CDR2-Primitive-Encoding (LE und BE) mit Alignment §7.4.1.5.
-//   * DHEADER (§7.4.4.4) fuer DELIMITED_CDR2 (Appendable-Types).
-//   * EMHEADER + LC encoding (§7.4.2.2) fuer PL_CDR2 (Mutable-Types).
-//   * String-Encoding mit NUL-Terminator (§7.4.4.6).
-//   * Sequence-Length-Prefix (§7.4.4.7).
+//   * Plain-CDR2 primitive encoding (LE and BE) with alignment §7.4.1.5.
+//   * DHEADER (§7.4.4.4) for DELIMITED_CDR2 (Appendable types).
+//   * EMHEADER + LC encoding (§7.4.2.2) for PL_CDR2 (Mutable types).
+//   * String encoding with NUL terminator (§7.4.4.6).
+//   * Sequence length prefix (§7.4.4.7).
 //
-// Wird von `idl-cpp`-emittierten `topic_type_support<T>`-Spezialisierungen
-// verwendet. Konformanz: docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md.
+// Used by the `idl-cpp`-emitted `topic_type_support<T>` specializations.
+// Conformance: docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md.
 
 #ifndef ZERODDS_DDS_TOPIC_XCDR2_HPP
 #define ZERODDS_DDS_TOPIC_XCDR2_HPP
@@ -27,9 +27,9 @@
 namespace dds {
 namespace topic {
 
-// Minimal-Definition fuer Extensibility-Tag (XTypes §7.2.2.4.4).
-// Falls die volle DDS-PSM-Cxx-Policy-Hierarchie nicht praesent ist,
-// liefert diese Lokal-Definition den Compile-Time-Tag fuer
+// Minimal definition for the extensibility tag (XTypes §7.2.2.4.4).
+// If the full DDS-PSM-Cxx policy hierarchy is not present, this local
+// definition provides the compile-time tag for
 // `topic_type_support<T>::extensibility()`.
 namespace core {
 namespace policy {
@@ -46,8 +46,8 @@ enum class DataRepresentationKind {
 namespace xcdr2 {
 
 // ---------------------------------------------------------------------------
-// Endian-Detection -- alle Mainstream-Targets sind Little-Endian; wir
-// brauchen aber BE-Schreibvarianten fuer Key-Hash und encode_be().
+// Endian detection -- all mainstream targets are little-endian; but we
+// need BE write variants for key hashing and encode_be().
 // ---------------------------------------------------------------------------
 
 inline bool is_host_le() {
@@ -58,7 +58,7 @@ inline bool is_host_le() {
 }
 
 // ---------------------------------------------------------------------------
-// Buffer-Underrun-Check
+// Buffer-underrun check
 // ---------------------------------------------------------------------------
 
 inline void check_avail(size_t pos, size_t need, size_t len) {
@@ -68,11 +68,33 @@ inline void check_avail(size_t pos, size_t need, size_t len) {
 }
 
 // ---------------------------------------------------------------------------
-// Padding -- Alignment relativ zum Buffer-Start (§7.4.1.5).
+// Padding -- alignment relative to buffer start (§7.4.1.5).
 // ---------------------------------------------------------------------------
 
 inline size_t align_up(size_t pos, size_t a) {
     return (pos + (a - 1)) & ~(a - 1);
+}
+
+// ---------------------------------------------------------------------------
+// XCDR version -- determines the alignment rule on decode (XTypes 1.3
+// §7.4.3.4.2). XCDR1/PLAIN_CDR aligns primitives to their natural
+// size; XCDR2/PLAIN_CDR2 caps the alignment at 4 (8-byte types
+// land on 4-byte boundaries). The version is in the 4-byte
+// encapsulation header of every serialized payload (RTPS 2.5 §10.5):
+// CDR_LE = 0x0001 -> Xcdr1, CDR2_LE/PLAIN_CDR2_LE = 0x0007 -> Xcdr2.
+enum class XcdrVersion {
+    Xcdr1,
+    Xcdr2,
+};
+
+/// Maximum alignment for an XCDR version. XCDR2 caps at 4.
+inline size_t xcdr_max_align(XcdrVersion v) {
+    return v == XcdrVersion::Xcdr2 ? size_t{4} : size_t{8};
+}
+
+/// Effective alignment: natural size, capped at `max_align`.
+inline size_t capped_align(size_t natural, size_t max_align) {
+    return natural < max_align ? natural : max_align;
 }
 
 inline void pad_to(std::vector<uint8_t>& out, size_t a) {
@@ -157,6 +179,14 @@ inline void write_le_origin(std::vector<uint8_t>& out, size_t origin, T v) {
     write_le_raw<T>(out, v);
 }
 
+// Representation-aware writer: `max_align` caps the alignment
+// (XCDR2 -> 4, XCDR1 -> 8). Symmetric to `read_le_origin(.., max_align)`.
+template <typename T>
+inline void write_le_origin(std::vector<uint8_t>& out, size_t origin, T v, size_t max_align) {
+    pad_to_from_origin(out, origin, capped_align(sizeof(T), max_align));
+    write_le_raw<T>(out, v);
+}
+
 template <typename T>
 inline void write_be(std::vector<uint8_t>& out, T v) {
     pad_to(out, sizeof(T));
@@ -198,9 +228,12 @@ inline T read_le(const uint8_t* buf, size_t& pos, size_t len) {
     return read_le_raw<T>(buf, pos, len);
 }
 
+// Representation-aware: `max_align` caps the alignment (XCDR2 → 4,
+// XCDR1 → 8). See [`xcdr_max_align`].
 template <typename T>
-inline T read_le_origin(const uint8_t* buf, size_t& pos, size_t len, size_t origin) {
-    skip_pad_from_origin(pos, origin, sizeof(T));
+inline T read_le_origin(
+    const uint8_t* buf, size_t& pos, size_t len, size_t origin, size_t max_align) {
+    skip_pad_from_origin(pos, origin, capped_align(sizeof(T), max_align));
     return read_le_raw<T>(buf, pos, len);
 }
 
@@ -236,6 +269,15 @@ inline void write_string_origin(std::vector<uint8_t>& out, size_t origin, const 
     out.push_back(0);
 }
 
+// Representation-aware (XCDR2/XCDR1) string writer.
+inline void write_string_origin(
+    std::vector<uint8_t>& out, size_t origin, const std::string& s, size_t max_align) {
+    uint32_t n = static_cast<uint32_t>(s.size() + 1);
+    write_le_origin<uint32_t>(out, origin, n, max_align);
+    append_bytes(out, s.data(), s.size());
+    out.push_back(0);
+}
+
 inline void write_string_be(std::vector<uint8_t>& out, const std::string& s) {
     uint32_t n = static_cast<uint32_t>(s.size() + 1);
     write_be<uint32_t>(out, n);
@@ -255,8 +297,107 @@ inline std::string read_string(const uint8_t* buf, size_t& pos, size_t len) {
     return s;
 }
 
-inline std::string read_string_origin(const uint8_t* buf, size_t& pos, size_t len, size_t origin) {
-    auto n = read_le_origin<uint32_t>(buf, pos, len, origin);
+// ---------------------------------------------------------------------------
+// wstring -- conformance §9.1 + GIOP 1.2 §15.3.2.7: uint32 length **in octets**
+// (= (units + 1) * 2, the +1 is the leading BOM), then a byte-order-mark
+// (0xFEFF in message byte order: LE -> FF FE, BE -> FE FF) and the UTF-16 code
+// units, NO NUL terminator. Empty wstring = length 0, no BOM. Byte-identical to
+// the Rust `WString` encoder (`crates/cdr/src/composite.rs`) so cross-language
+// types interop. Bindings MUST emit UTF-16, not UTF-8 (conformance §9.1).
+// ---------------------------------------------------------------------------
+
+// Portable wchar_t -> UTF-16 code units. Where wchar_t is already 2 bytes
+// (Windows) the units are taken verbatim; where it is 4 bytes (Linux/macOS,
+// i.e. UTF-32 code points) each code point is re-encoded as UTF-16 (a surrogate
+// pair for the supplementary planes), matching Rust `str::encode_utf16`.
+inline std::vector<uint16_t> wstring_to_utf16(const std::wstring& s) {
+    std::vector<uint16_t> units;
+    units.reserve(s.size());
+    if (sizeof(wchar_t) == 2) {
+        for (wchar_t c : s) {
+            units.push_back(static_cast<uint16_t>(c));
+        }
+    } else {
+        for (wchar_t c : s) {
+            uint32_t cp = static_cast<uint32_t>(c);
+            if (cp <= 0xFFFFu) {
+                units.push_back(static_cast<uint16_t>(cp));
+            } else {
+                cp -= 0x10000u;
+                units.push_back(static_cast<uint16_t>(0xD800u + (cp >> 10)));
+                units.push_back(static_cast<uint16_t>(0xDC00u + (cp & 0x3FFu)));
+            }
+        }
+    }
+    return units;
+}
+
+inline void write_wstring_origin(
+    std::vector<uint8_t>& out, size_t origin, const std::wstring& s, size_t max_align) {
+    auto units = wstring_to_utf16(s);
+    if (units.empty()) {
+        write_le_origin<uint32_t>(out, origin, 0u, max_align);
+        return;
+    }
+    uint32_t octets = static_cast<uint32_t>((units.size() + 1) * 2);
+    write_le_origin<uint32_t>(out, origin, octets, max_align);
+    write_le<uint16_t>(out, 0xFEFFu); // BOM, LE -> FF FE
+    for (uint16_t u : units) {
+        write_le<uint16_t>(out, u);
+    }
+}
+
+inline void write_wstring_be(std::vector<uint8_t>& out, const std::wstring& s) {
+    auto units = wstring_to_utf16(s);
+    if (units.empty()) {
+        write_be<uint32_t>(out, 0u);
+        return;
+    }
+    uint32_t octets = static_cast<uint32_t>((units.size() + 1) * 2);
+    write_be<uint32_t>(out, octets);
+    write_be<uint16_t>(out, 0xFEFFu); // BOM, BE -> FE FF
+    for (uint16_t u : units) {
+        write_be<uint16_t>(out, u);
+    }
+}
+
+inline std::wstring read_wstring_origin(
+    const uint8_t* buf, size_t& pos, size_t len, size_t origin, size_t max_align) {
+    auto octets = read_le_origin<uint32_t>(buf, pos, len, origin, max_align);
+    if (octets == 0) {
+        return std::wstring();
+    }
+    if ((octets % 2) != 0) {
+        throw std::out_of_range("xcdr2: wstring octet length must be even");
+    }
+    check_avail(pos, octets, len);
+    // Detect BOM to fix unit byte order (BE 0xFEFF / LE 0xFFFE / none -> BE).
+    size_t start = 0;
+    bool big_endian = true;
+    if (octets >= 2) {
+        uint8_t b0 = buf[pos], b1 = buf[pos + 1];
+        if (b0 == 0xFE && b1 == 0xFF) {
+            start = 2;
+            big_endian = true;
+        } else if (b0 == 0xFF && b1 == 0xFE) {
+            start = 2;
+            big_endian = false;
+        }
+    }
+    std::wstring s;
+    for (size_t i = start; i + 1 < octets; i += 2) {
+        uint16_t hi = buf[pos + i], lo = buf[pos + i + 1];
+        uint16_t unit = big_endian ? static_cast<uint16_t>((hi << 8) | lo)
+                                   : static_cast<uint16_t>((lo << 8) | hi);
+        s.push_back(static_cast<wchar_t>(unit));
+    }
+    pos += octets;
+    return s;
+}
+
+inline std::string read_string_origin(
+    const uint8_t* buf, size_t& pos, size_t len, size_t origin, size_t max_align) {
+    auto n = read_le_origin<uint32_t>(buf, pos, len, origin, max_align);
     if (n == 0) {
         throw std::out_of_range("xcdr2: zero-length string (must include NUL)");
     }
@@ -308,18 +449,23 @@ inline uint32_t dheader_read(const uint8_t* buf, size_t& pos, size_t len) {
 // emit / read LE bytes; callers using BE streams must use the
 // `_be` variants.
 //
-// LC encoding (per conformance-spec annotations on V-10):
-//   * LC=0 -> 1-byte primitive, no extra length.
-//   * LC=1 -> 2-byte primitive.
-//   * LC=2 -> 4-byte primitive (long, float).
-//   * LC=3 -> NEXTINT uint32 follows = length of remaining body bytes.
+// LC encoding (OMG XTypes 1.3 §7.4.3.4.2 — these are the wire-normative
+// values, identical to the Rust `LengthCode` enum in `zerodds-cdr`):
+//   * LC=0 -> 1-byte body, no NEXTINT.
+//   * LC=1 -> 2-byte body, no NEXTINT.
+//   * LC=2 -> 4-byte body, no NEXTINT (long, float).
+//   * LC=3 -> 8-byte body, no NEXTINT (long long, double).
+//   * LC=4 -> NEXTINT uint32 = body length in bytes (string, sequence,
+//             nested struct — the variable-length case).
+//   * LC=5 -> NEXTINT = body length incl. the nested DHEADER.
+//   * LC=6 -> NEXTINT = element count; body = 4 + 4*count (4-byte-prim array).
+//   * LC=7 -> NEXTINT = element count; body = 4 + 8*count (8-byte-prim array).
 //
-// Note: OMG XTypes 1.3 §7.4.3.4.2 also defines LC=4..7 with NEXTINT
-// variants for large/element-counted bodies. The conformance-spec V-10
-// uses LC=3 with NEXTINT, which matches OMG-LC=4 semantics; we
-// follow the conformance-spec convention here (LC=3 = "8-byte primitive
-// OR NEXTINT-follows depending on member type"). For optional-`Some`
-// presence we just emit the EMHEADER; absent optionals are omitted.
+// IMPORTANT: a variable-length member MUST use LC=4 (NOT LC=3). LC=3 tells a
+// spec-compliant reader "read exactly 8 bytes, no NEXTINT"; emitting LC=3 for a
+// string/sequence desyncs Rust/Cyclone/FastDDS readers. (This was a prior bug;
+// `emheader_nextint_begin` now emits LC=4.) For optional-`Some` presence we just
+// emit the EMHEADER; absent optionals are omitted.
 // ---------------------------------------------------------------------------
 
 constexpr uint32_t EMHEADER_MU_FLAG_BIT = 1u << 31;
@@ -393,7 +539,7 @@ inline void emheader_4(std::vector<uint8_t>& out, size_t origin, uint32_t id, bo
     write_le_raw<T>(out, v);
 }
 
-/// Plain-8-byte member (LC=3 used as 8-byte-primitive in this flavour).
+/// Plain-8-byte member (LC=3 = 8-byte body, no NEXTINT; XTypes §7.4.3.4.2).
 template <typename T>
 inline void emheader_8(std::vector<uint8_t>& out, size_t origin, uint32_t id, bool must_understand, T v) {
     static_assert(sizeof(T) == 8, "emheader_8 needs 8-byte type");
@@ -402,8 +548,11 @@ inline void emheader_8(std::vector<uint8_t>& out, size_t origin, uint32_t id, bo
     write_le_raw<T>(out, v);
 }
 
-/// Variable-length member with NEXTINT (LC=3 with following uint32-NEXTINT).
-/// Caller writes the body between begin/end; helper patches NEXTINT.
+/// Variable-length member with NEXTINT (LC=4, uint32 NEXTINT = body length in
+/// bytes; XTypes 1.3 §7.4.3.4.2). LC=3 means "8-byte body, NO NEXTINT" — using
+/// it for a variable member would desync any spec-compliant (Rust/Cyclone)
+/// reader, which reads exactly 8 bytes and no NEXTINT. Caller writes the body
+/// between begin/end; helper patches NEXTINT.
 struct EmheaderNextintScope {
     size_t nextint_off;
     size_t body_start;
@@ -411,7 +560,7 @@ struct EmheaderNextintScope {
 
 inline EmheaderNextintScope emheader_nextint_begin(std::vector<uint8_t>& out, size_t origin, uint32_t id, bool must_understand) {
     pad_to_from_origin(out, origin, 4);
-    emheader_write(out, emheader_make(3, id, must_understand));
+    emheader_write(out, emheader_make(4, id, must_understand));
     EmheaderNextintScope s;
     s.nextint_off = out.size();
     write_le_raw<uint32_t>(out, 0u);

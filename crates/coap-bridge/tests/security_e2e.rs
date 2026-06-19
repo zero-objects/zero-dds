@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! E2E-Test fuer `zerodds-coap-bridged` §7 Security-Wireup.
+//! E2E test for `zerodds-coap-bridged` §7 security wireup.
 //!
-//! Spec-Status §7.1 (DTLS): rejected (next phase) — daher hier
-//! ausschliesslich Auth (§7.2) + Topic-ACL (§7.3) abgedeckt.
+//! Spec status §7.1 (DTLS): rejected (next phase) — so only Auth
+//! (§7.2) + topic ACL (§7.3) are covered here.
 //!
 //! Tests:
-//! * §7.2 Bearer-Token via CoAP-Option 65000.
-//! * §7.2 Reject ohne Token: 4.01 Unauthorized.
-//! * §7.3 ACL-Write-Deny: POST auf nicht-erlaubtes Topic → 4.03 Forbidden.
-//! * §7.3 ACL-Read-Deny: GET-Observe auf nicht-erlaubtes Topic → 4.03.
+//! * §7.2 Bearer token via CoAP option 65000.
+//! * §7.2 Reject without token: 4.01 Unauthorized.
+//! * §7.3 ACL write deny: POST on a disallowed topic → 4.03 Forbidden.
+//! * §7.3 ACL read deny: GET-Observe on a disallowed topic → 4.03.
 
 #![cfg(feature = "daemon")]
 #![allow(

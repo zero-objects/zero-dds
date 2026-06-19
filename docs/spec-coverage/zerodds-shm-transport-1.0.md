@@ -2,11 +2,17 @@
 
 ZeroDDS-vendor-spezifischer Shared-Memory-Transport. Analog zu Cyclone's
 iceoryx-Integration, FastDDS-SHM und RTI-DDS-SHM. **Nicht OMG-normativ.**
+Implementiert in:
+
+- `crates/transport-shm/` — Segment-Layout + SpSc-Ringbuffer + Crash-Recovery (`posix.rs`)
+
+Der vendor-reservierte Locator-Kind-Wert (§9.4) ist eine Konstante in
+`crates/rtps/src/wire_types.rs`.
 
 | Spec-Family | Status |
 |---|---|
 | **OMG-normativ** | DDSI-RTPS 2.5 §9.4 LocatorKind (vendor-reserved range) — Locator-Wert in `crates/rtps/src/wire_types.rs` |
-| **ZeroDDS-eigene Spec** | Segment-Layout + SpSc-Ringbuffer + Crash-Recovery — diese Datei |
+| **ZeroDDS-eigene Spec** | Segment-Layout + SpSc-Ringbuffer + Crash-Recovery — [`zerodds-shm-transport-1.0.md`](https://github.com/zero-objects/zero-dds/blob/main/docs/spec-coverage/zerodds-shm-transport-1.0.md) |
 
 ## §1 Scope und Spec-Status
 
@@ -138,10 +144,11 @@ Repo-Anker: `posix.rs::SegmentLayout::set_shutdown`,
 
 ### §5.4 Race-Protection beim Owner-Create
 
-Advisory `flock(LOCK_EX)` auf einer Sentinel-Datei serialisiert
-parallele Owner-Creates auf dieselbe `os_id`. Linux/macOS-only;
-auf Windows nicht implementiert (handle-counted-Cleanup der OS
-liefert ähnliche Semantik, wenn auch nicht identisch).
+Eine exklusive Whole-File-Lock auf einer Sentinel-Datei serialisiert
+parallele Owner-Creates auf dieselbe `os_id` — über Threads UND Prozesse.
+Linux/macOS via `flock(LOCK_EX)`, Windows via `LockFileEx`
+(`LOCKFILE_EXCLUSIVE_LOCK`, blockierend). Beide werden beim Schließen des
+Handles bzw. Prozess-Tod automatisch freigegeben (gleiche Crash-Resilienz).
 
 Repo-Anker: `posix.rs::acquire_flock_excl`,
 `posix.rs::FlockGuard`.
@@ -152,7 +159,7 @@ Repo-Anker: `posix.rs::acquire_flock_excl`,
 |---|---|---|
 | Linux | ✅ primary | Volle Test-Coverage |
 | macOS | ✅ supported | PSHMNAMLEN-Limit beachtet |
-| Windows | ⚠️ best-effort | Kompiliert über `shared_memory`-Crate; `flock` und `shm_unlink` sind no-op auf Non-Unix; Cleanup verlässt sich auf OS-Handle-Reference-Counting |
+| Windows | ✅ supported | Zero-Copy-SHM über `shared_memory` (`CreateFileMapping`); Owner-Create-Race via `LockFileEx`; Cleanup über OS-Handle-Reference-Counting. Test-Suite grün auf Windows (19/19, inkl. `open_concurrent_two_threads_both_bound`) |
 | no_std | nicht supported | std-only (mmap braucht OS-Calls) |
 
 ## §7 Test-Coverage
@@ -167,12 +174,12 @@ Repo-Anker: `posix.rs::acquire_flock_excl`,
 | §5.4 Race-Protection | `posix.rs::tests::flock_*` |
 | §6 Cross-Process | `tests/l1_cross_process.rs` |
 
-Total: 17 lib + 1 integration = 18 Tests. Alle grün.
+Total: 19 lib + 1 integration = 20 Tests. Alle grün auf Linux, macOS und
+Windows (`cargo test -p zerodds-transport-shm`).
 
 ## §8 Status
 
 **Voll abgedeckt**. ZeroDDS-SHM-Transport ist eine vollständige,
 in-sich-kohärente Spec; alle §-Sektionen sind implementiert und
-getestet. Plattform-Support ist explizit als Linux-primary +
-macOS-supported markiert; Windows-Support ist best-effort und nicht
-primärer Test-Ziel (kein versteckter TODO).
+getestet. Plattform-Support: Linux (primary), macOS und Windows — alle
+drei mit grüner Test-Suite.

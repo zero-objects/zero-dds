@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Snapshot-Tests fuer den Rust-Codegen.
+//! Snapshot tests for the Rust codegen.
 
 #![allow(
     clippy::expect_used,
@@ -253,8 +253,8 @@ fn snapshot_nested_struct_emits_is_nested_const() {
 
 #[test]
 fn snapshot_struct_with_rust_reserved_word_identifiers() {
-    // IDL-Identifier wie `type`, `match`, `mod`, `fn` sind Rust-Reserved.
-    // Codegen muss sie als raw-identifier `r#…` escapen.
+    // IDL identifiers like `type`, `match`, `mod`, `fn` are Rust-reserved.
+    // The codegen must escape them as raw identifiers `r#…`.
     let idl = r#"
         struct match {
             long type;

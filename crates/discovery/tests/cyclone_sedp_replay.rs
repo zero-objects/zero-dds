@@ -1,13 +1,13 @@
-//! WP 1.4 T6a — Cyclone-Fixture-Replay durch den SedpStack.
+//! WP 1.4 T6a — Cyclone fixture replay through the SedpStack.
 //!
-//! Wir nehmen die echte Cyclone-0.10.2-SEDP-Publication-Capture aus
-//! `crates/rtps/tests/fixtures/cyclone/sedp_publication.hex` und
-//! fuettern sie in einen `SedpStack`. Erwartung: der Stack decoded alle
-//! 4 Publications und legt sie byte-genau im Cache ab.
+//! We take the real Cyclone 0.10.2 SEDP publication capture from
+//! `crates/rtps/tests/fixtures/cyclone/sedp_publication.hex` and feed
+//! it into a `SedpStack`. Expectation: the stack decodes all 4
+//! publications and stores them byte-exact in the cache.
 //!
-//! Dieser Test ist **deterministisch** und CI-fähig — braucht keine
-//! Live-Cyclone-Instanz. Der echte Live-Interop-Test steht als
-//! `#[ignore]` in `tests/cyclone_live_sedp.rs`.
+//! This test is **deterministic** and CI-capable — needs no live
+//! Cyclone instance. The real live-interop test lives as `#[ignore]`
+//! in `tests/cyclone_live_sedp.rs`.
 
 #![allow(
     clippy::expect_used,
@@ -36,16 +36,16 @@ use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix, Locator, ProtocolVers
 const FRAME_SEDP_PUBLICATION: &str =
     include_str!("../../rtps/tests/fixtures/cyclone/sedp_publication.hex");
 
-/// Cyclone-Capture wurde mit GuidPrefix 0110_8fb9_be8f_4e1e_9ec2_b735
-/// aufgenommen — hart kodiert fuer den Replay-Test.
+/// The Cyclone capture was recorded with GuidPrefix
+/// 0110_8fb9_be8f_4e1e_9ec2_b735 — hard-coded for the replay test.
 const CYCLONE_PREFIX: [u8; 12] = [
     0x01, 0x10, 0x8f, 0xb9, 0xbe, 0x8f, 0x4e, 0x1e, 0x9e, 0xc2, 0xb7, 0x35,
 ];
 
-/// Local-Capture-Prefix — das ist der DESTINATION-Prefix (INFO_DST)
-/// im Fixture-Datagramm: Cyclone hat unsere lokale GuidPrefix gesetzt,
-/// damit wir sie matchen. Wir bauen unseren Stack mit diesem Prefix,
-/// damit die DATA-Submessages an uns adressiert sind.
+/// Local capture prefix — this is the DESTINATION prefix (INFO_DST) in
+/// the fixture datagram: Cyclone set our local GuidPrefix so that we
+/// match it. We build our stack with this prefix so the DATA
+/// submessages are addressed to us.
 const LOCAL_PREFIX_FROM_FIXTURE: [u8; 12] = [
     0x01, 0x10, 0xa0, 0x3a, 0xe0, 0x39, 0x90, 0xf0, 0xb4, 0xb1, 0x80, 0x10,
 ];
@@ -67,9 +67,9 @@ fn parse_hex(text: &str) -> Vec<u8> {
     bytes
 }
 
-/// Konstruiert eine synthetische `DiscoveredParticipant` fuer Cyclone
-/// mit allen SEDP-Builtin-Endpoint-Flags gesetzt. In Realitaet kaeme
-/// das aus SPDP.
+/// Constructs a synthetic `DiscoveredParticipant` for Cyclone with all
+/// SEDP builtin-endpoint flags set. In reality this would come from
+/// SPDP.
 fn cyclone_participant() -> DiscoveredParticipant {
     let flags = endpoint_flag::PUBLICATIONS_ANNOUNCER
         | endpoint_flag::PUBLICATIONS_DETECTOR
@@ -96,6 +96,7 @@ fn cyclone_participant() -> DiscoveredParticipant {
             properties: Default::default(),
             identity_token: None,
             permissions_token: None,
+            participant_security_info: None,
             identity_status_token: None,
             sig_algo_info: None,
             kx_algo_info: None,
@@ -106,21 +107,21 @@ fn cyclone_participant() -> DiscoveredParticipant {
 
 #[test]
 fn cyclone_sedp_publication_fixture_flows_through_stack() {
-    // Lokaler Stack mit dem Prefix, auf den Cyclone im Fixture zielt.
+    // Local stack with the prefix Cyclone targets in the fixture.
     let mut stack = SedpStack::new(
         GuidPrefix::from_bytes(LOCAL_PREFIX_FROM_FIXTURE),
         VendorId::ZERODDS,
     );
-    // Cyclone als Remote-Participant "entdecken" — damit unser
-    // SedpPublicationsReader einen WriterProxy fuer Cyclone haelt.
+    // "Discover" Cyclone as a remote participant — so our
+    // SedpPublicationsReader holds a WriterProxy for Cyclone.
     stack.on_participant_discovered(&cyclone_participant());
 
-    // Das echte Cyclone-Datagramm reinspielen.
+    // Replay the real Cyclone datagram.
     let bytes = parse_hex(FRAME_SEDP_PUBLICATION);
     let now = Duration::from_secs(1);
     let events = stack.handle_datagram(&bytes, now).expect("handle_datagram");
 
-    // Erwartet: 4 Publications (DDSPerfCPUStats/RPingKS/RDataKS/RPongKS)
+    // Expected: 4 publications (DDSPerfCPUStats/RPingKS/RDataKS/RPongKS)
     assert_eq!(events.new_publications.len(), 4);
     let topic_names: Vec<_> = events
         .new_publications
@@ -132,9 +133,9 @@ fn cyclone_sedp_publication_fixture_flows_through_stack() {
     assert!(topic_names.contains(&"DDSPerfRDataKS"));
     assert!(topic_names.contains(&"DDSPerfRPongKS"));
 
-    // T10: mindestens eine Publication muss ein nicht-leeres
-    // type_information-Feld haben (Cyclone schickt PID_TYPE_INFORMATION
-    // ab 0.10.x fuer jeden Publication-Typ, der als XTypes deklariert ist).
+    // T10: at least one publication must have a non-empty
+    // type_information field (Cyclone sends PID_TYPE_INFORMATION from
+    // 0.10.x for every publication type declared as XTypes).
     let with_ti = events
         .new_publications
         .iter()
@@ -145,9 +146,9 @@ fn cyclone_sedp_publication_fixture_flows_through_stack() {
         "expected at least one Cyclone publication with PID_TYPE_INFORMATION"
     );
 
-    // Cache muss alle 4 enthalten
+    // Cache must contain all 4
     assert_eq!(stack.cache().publications_len(), 4);
-    // Alle Publications gehoeren zum Cyclone-Prefix
+    // All publications belong to the Cyclone prefix
     let cyclone_prefix = GuidPrefix::from_bytes(CYCLONE_PREFIX);
     for pub_data in stack.cache().publications() {
         assert_eq!(pub_data.data.key.prefix, cyclone_prefix);
@@ -156,9 +157,9 @@ fn cyclone_sedp_publication_fixture_flows_through_stack() {
 
 #[test]
 fn cyclone_fixture_without_discovery_is_dropped_as_unknown_src() {
-    // Ohne vorherige on_participant_discovered kennt unser Reader den
-    // Cyclone-Writer nicht → Submessages werden als unknown_src
-    // verworfen, nichts landet im Cache.
+    // Without a prior on_participant_discovered, our reader doesn't know
+    // the Cyclone writer → submessages are discarded as unknown_src,
+    // nothing lands in the cache.
     let mut stack = SedpStack::new(
         GuidPrefix::from_bytes(LOCAL_PREFIX_FROM_FIXTURE),
         VendorId::ZERODDS,
@@ -167,8 +168,9 @@ fn cyclone_fixture_without_discovery_is_dropped_as_unknown_src() {
     let events = stack.handle_datagram(&bytes, Duration::ZERO).unwrap();
     assert_eq!(events.new_publications.len(), 0);
     assert_eq!(stack.cache().publications_len(), 0);
-    // Der pub_reader muss den unknown_src-Zaehler hochsetzen
-    // (4 DATAs mit writer_id aus Cyclone-Prefix, kein Proxy registriert).
+    // The pub_reader must increment the unknown_src counter
+    // (4 DATAs with writer_id from the Cyclone prefix, no proxy
+    // registered).
     assert!(stack.pub_reader().inner().unknown_src_count() >= 4);
 }
 
@@ -182,17 +184,17 @@ fn replay_after_participant_lost_stops_accepting_publications() {
     let bytes = parse_hex(FRAME_SEDP_PUBLICATION);
     let now = Duration::from_secs(1);
 
-    // Erster Replay: alle 4 kommen durch
+    // First replay: all 4 come through
     let events1 = stack.handle_datagram(&bytes, now).unwrap();
     assert_eq!(events1.new_publications.len(), 4);
 
-    // Participant lost — Cache cleared, Proxies entfernt
+    // Participant lost — cache cleared, proxies removed
     let cyclone_prefix = GuidPrefix::from_bytes(CYCLONE_PREFIX);
     let (pubs_removed, _) = stack.on_participant_lost(cyclone_prefix);
     assert_eq!(pubs_removed, 4);
     assert_eq!(stack.cache().publications_len(), 0);
 
-    // Zweiter Replay: kein Proxy mehr → nichts kommt durch
+    // Second replay: no proxy left → nothing comes through
     let events2 = stack.handle_datagram(&bytes, now).unwrap();
     assert_eq!(events2.new_publications.len(), 0);
 }

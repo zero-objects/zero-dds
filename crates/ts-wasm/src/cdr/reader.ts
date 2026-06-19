@@ -7,7 +7,7 @@
 import { XcdrError } from './errors.js';
 import type { EndianMode } from './types.js';
 
-/// XCDR2-Reader. Liest aus einem Uint8Array-Slice.
+/// XCDR2 reader. Reads from a Uint8Array slice.
 export class Xcdr2Reader {
     private readonly view: DataView;
     private readonly bytes: Uint8Array;
@@ -53,7 +53,7 @@ export class Xcdr2Reader {
         return this.originStack[this.originStack.length - 1] ?? this.start;
     }
 
-    /// Spult `pos` so vor dass `(pos - origin) % alignment == 0`.
+    /// Advances `pos` so that `(pos - origin) % alignment == 0`.
     align(alignment: number): void {
         if (alignment <= 1) {
             return;
@@ -183,24 +183,24 @@ export class Xcdr2Reader {
         return v;
     }
 
-    /// XTypes §7.4.4.6 — UTF-8-string mit length-incl-NUL Prefix.
+    /// XTypes §7.4.4.6 — UTF-8 string with a length-incl-NUL prefix.
     readString(): string {
         const len = this.readUint32();
         if (len === 0) {
-            // Per Spec sollte length immer >= 1 sein (NUL allein),
-            // aber wir akzeptieren 0 als Empty-Defensive-Behaviour.
+            // Per spec, length should always be >= 1 (NUL alone),
+            // but we accept 0 as an empty-defensive behaviour.
             return '';
         }
         this.requireBytes(len);
-        // length inkl. NUL, also -1 fuer den Inhalt.
+        // length incl. NUL, so -1 for the content.
         const contentLen = len - 1;
         const slice = this.bytes.subarray(this._pos, this._pos + contentLen);
         const s = new TextDecoder('utf-8').decode(slice);
-        this._pos += len; // inkl. NUL.
+        this._pos += len; // incl. NUL.
         return s;
     }
 
-    /// XTypes §7.4.4.6 — wstring als UTF-16-LE.
+    /// XTypes §7.4.4.6 — wstring as UTF-16-LE.
     readWString(): string {
         const byteLen = this.readUint32();
         this.align(2);
@@ -221,9 +221,9 @@ export class Xcdr2Reader {
         return slice;
     }
 
-    /// Beginnt einen Appendable-Block: liest DHEADER, pusht Origin
-    /// auf die Body-Start-Position, und gibt das `bodyEnd`-Offset
-    /// zurueck (absolute Position im Buffer).
+    /// Begins an appendable block: reads DHEADER, pushes origin
+    /// to the body start position, and returns the `bodyEnd` offset
+    /// back (absolute position in the buffer).
     beginAppendable(): { bodyEnd: number } {
         const size = this.readUint32();
         const bodyStart = this._pos;
@@ -232,7 +232,7 @@ export class Xcdr2Reader {
     }
 
     endAppendable(token: { bodyEnd: number }): void {
-        // Skip ueber unbekannte trailing-Bytes.
+        // Skip over unknown trailing bytes.
         if (this._pos < token.bodyEnd) {
             this._pos = token.bodyEnd;
         }
@@ -247,14 +247,14 @@ export class Xcdr2Reader {
         this.endAppendable(token);
     }
 
-    /// Liest EMHEADER1 (4 Bytes BE; siehe Writer-Doku) plus
-    /// optional NEXTINT (Stream-Endian).
+    /// Reads EMHEADER1 (4 bytes BE; see writer docs) plus
+    /// optional NEXTINT (stream endian).
     ///
-    /// Hinweis: bei LC=3 fuer variable-size Member liefert die
-    /// Standard-Pruefung kein NEXTINT (LC=3 = inline 8 Bytes per
-    /// XTypes 1.3 §7.4.3.4.2). Die zerodds-Konformanz-Konvention
-    /// (V-10) ueberschreibt das im Codegen-Decode-Pfad — er liest
-    /// das NEXTINT explizit nach dem EMHEADER fuer non-primitive
+    /// Note: for LC=3 with variable-size members, the
+    /// standard check yields no NEXTINT (LC=3 = inline 8 bytes per
+    /// XTypes 1.3 §7.4.3.4.2). The zerodds conformance convention
+    /// (V-10) overrides this in the codegen decode path — it reads
+    /// the NEXTINT explicitly after the EMHEADER for non-primitive
     /// Member.
     readEmHeader(): { memberId: number; lc: number; mustUnderstand: boolean; nextInt: number | null } {
         // EMHEADER ist immer Big-Endian.
@@ -272,7 +272,7 @@ export class Xcdr2Reader {
         return { memberId, lc, mustUnderstand, nextInt };
     }
 
-    /// Inline-Length-Code-Mapping fuer LC=0..3.
+    /// Inline length-code mapping for LC=0..3.
     static lcInlineSize(lc: number): number {
         switch (lc) {
             case 0:

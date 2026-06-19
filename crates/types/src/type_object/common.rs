@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Gemeinsam genutzte Wire-Types fuer TypeObject (Minimal + Complete).
+//! Shared wire types for TypeObject (Minimal + Complete).
 //!
 //! XTypes §7.3.4.5 (CommonStructMember, NameHash, MemberId).
 
@@ -13,20 +13,20 @@ use crate::type_identifier::TypeIdentifier;
 
 use super::flags::{StructMemberFlag, UnionMemberFlag};
 
-/// 32-bit Member-ID (§7.3.4.5). Wird entweder explizit via `@id(n)`
-/// vergeben oder aus dem Member-Namen gehasht (`@autoid(HASH)`).
+/// 32-bit member ID (§7.3.4.5). Either assigned explicitly via `@id(n)`
+/// or hashed from the member name (`@autoid(HASH)`).
 pub type MemberId = u32;
 
-/// 4-byte Name-Hash (§7.3.4.5 — "MD5(name)[0..4]").
+/// 4-byte name hash (§7.3.4.5 — "MD5(name)[0..4]").
 ///
-/// Wird im MinimalTypeObject statt des vollen Namens gespeichert, um
-/// die Payload klein zu halten. Im CompleteTypeObject liegt der volle
-/// Name zusaetzlich vor.
+/// Stored in the MinimalTypeObject instead of the full name, to
+/// keep the payload small. In the CompleteTypeObject the full
+/// name is additionally present.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct NameHash(pub [u8; 4]);
 
 impl NameHash {
-    /// Berechnet den 4-byte NameHash aus einem Member-/Literal-Namen.
+    /// Computes the 4-byte NameHash from a member/literal name.
     ///
     /// Spec §7.3.4.5: "the `name_hash` is computed as the first 4
     /// octets of the MD5 hash of the name, interpreted as ASCII/UTF-8".
@@ -37,10 +37,10 @@ impl NameHash {
         Self(out)
     }
 
-    /// Encoded als `octet[4]` (4 byte, keine Laenge, kein Padding).
+    /// Encoded as `octet[4]` (4 bytes, no length, no padding).
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_bytes(&self.0)
     }
@@ -48,11 +48,11 @@ impl NameHash {
     /// Decoder.
     ///
     /// # Errors
-    /// Buffer-Underflow.
+    /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let bytes = r.read_bytes(4)?;
-        // `read_bytes(n)` gibt garantiert genau n Bytes zurueck, sonst
-        // UnexpectedEof. Der try_into auf [u8; 4] ist daher infallibel.
+        // `read_bytes(n)` is guaranteed to return exactly n bytes, otherwise
+        // UnexpectedEof. The try_into to [u8; 4] is therefore infallible.
         let Ok(out): Result<[u8; 4], _> = bytes.try_into() else {
             return Err(DecodeError::UnexpectedEof {
                 needed: 4,
@@ -70,15 +70,15 @@ pub struct CommonStructMember {
     pub member_id: MemberId,
     /// Flags (IS_KEY, IS_OPTIONAL, etc.).
     pub member_flags: StructMemberFlag,
-    /// Typ des Members (kann rekursiv sein).
+    /// Type of the member (may be recursive).
     pub member_type_id: TypeIdentifier,
 }
 
 impl CommonStructMember {
-    /// Encoded als `{ u32 member_id; u16 member_flags; TypeIdentifier member_type_id; }`.
+    /// Encoded as `{ u32 member_id; u16 member_flags; TypeIdentifier member_type_id; }`.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u32(self.member_id)?;
         w.write_u16(self.member_flags.0)?;
@@ -101,16 +101,16 @@ impl CommonStructMember {
     }
 }
 
-/// CommonUnionMember (§7.3.4.5.3). Enthaelt zusaetzlich die Label-Liste.
+/// CommonUnionMember (§7.3.4.5.3). Additionally contains the label list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommonUnionMember {
-    /// Member-ID.
+    /// Member ID.
     pub member_id: MemberId,
-    /// Flags (IS_DEFAULT fuer default-case).
+    /// Flags (IS_DEFAULT for the default case).
     pub member_flags: UnionMemberFlag,
-    /// Typ des Members.
+    /// Type of the member.
     pub type_id: TypeIdentifier,
-    /// Case-Labels als `i32`-Sequence (Spec §7.3.4.5.3.2: `long[]`).
+    /// Case labels as an `i32` sequence (Spec §7.3.4.5.3.2: `long[]`).
     pub label_seq: alloc::vec::Vec<i32>,
 }
 
@@ -118,12 +118,12 @@ impl CommonUnionMember {
     /// Encode.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u32(self.member_id)?;
         w.write_u16(self.member_flags.0)?;
         self.type_id.encode_into(w)?;
-        // sequence<long>: u32 Laenge + N*i32
+        // sequence<long>: u32 length + N*i32
         let len =
             u32::try_from(self.label_seq.len()).map_err(|_| EncodeError::ValueOutOfRange {
                 message: "union label sequence length exceeds u32::MAX",
@@ -138,7 +138,7 @@ impl CommonUnionMember {
     /// Decoder.
     ///
     /// # Errors
-    /// Buffer-Underflow.
+    /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let member_id = r.read_u32()?;
         let member_flags = UnionMemberFlag(r.read_u16()?);
@@ -162,22 +162,22 @@ impl CommonUnionMember {
 // Complete-TypeObject-Annotations (§7.3.4.5.4)
 // ============================================================================
 
-/// Voller qualified Type-Name, z.B. "::sensors::Chatter". Alias fuer
-/// `String` — im Wire als CDR-String (u32 Laenge + UTF-8 + null-term).
+/// Full qualified type name, e.g. "::sensors::Chatter". Alias for
+/// `String` — on the wire as a CDR string (u32 length + UTF-8 + null-term).
 pub type QualifiedTypeName = String;
 
-/// Placement-Kind einer `@verbatim`-Annotation (§7.3.4.5.4 §PL_*).
+/// Placement kind of a `@verbatim` annotation (§7.3.4.5.4 §PL_*).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerbatimPlacement {
-    /// Vor der Typ-Deklaration.
+    /// Before the type declaration.
     Before,
-    /// Nach der Typ-Deklaration.
+    /// After the type declaration.
     After,
-    /// Innerhalb des Header-Blocks (z.B. `#include`).
+    /// Within the header block (e.g. `#include`).
     BeginFile,
-    /// Ende der Datei.
+    /// End of the file.
     EndFile,
-    /// Andere Platzierung (Forward-Compat).
+    /// Other placement (forward-compat).
     Other(String),
 }
 
@@ -225,22 +225,22 @@ impl AppliedVerbatimAnnotation {
     }
 }
 
-/// AppliedBuiltinTypeAnnotations (§7.3.4.5.4): `@verbatim` auf Typ-Level.
+/// AppliedBuiltinTypeAnnotations (§7.3.4.5.4): `@verbatim` at type level.
 ///
-/// Wire: `sequence<AppliedVerbatimAnnotation, 1>` (0 oder 1 Eintrag =
-/// "absent"/"present"). Weitere Builtin-Type-Annotations (`@unit`,
-/// `@min`, `@max`, `@hash_id`) gehoeren zum Member-Scope, nicht Typ.
+/// Wire: `sequence<AppliedVerbatimAnnotation, 1>` (0 or 1 entry =
+/// "absent"/"present"). Further builtin type annotations (`@unit`,
+/// `@min`, `@max`, `@hash_id`) belong to the member scope, not the type.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AppliedBuiltinTypeAnnotations {
-    /// Optionale `@verbatim`-Direktive.
+    /// Optional `@verbatim` directive.
     pub verbatim: Option<AppliedVerbatimAnnotation>,
 }
 
 impl AppliedBuiltinTypeAnnotations {
-    /// Encode als `sequence<T, 1>`.
+    /// Encode as `sequence<T, 1>`.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         match &self.verbatim {
             None => w.write_u32(0),
@@ -254,7 +254,7 @@ impl AppliedBuiltinTypeAnnotations {
     /// Decode.
     ///
     /// # Errors
-    /// Buffer-Underflow.
+    /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let len = r.read_u32()?;
         let verbatim = if len == 0 {
@@ -262,8 +262,8 @@ impl AppliedBuiltinTypeAnnotations {
         } else {
             Some(AppliedVerbatimAnnotation::decode_from(r)?)
         };
-        // Etwaige weitere Eintraege (forward-compat) einfach skippen: wir
-        // akzeptieren bis zu `len` Verbatims aber speichern nur den ersten.
+        // Any further entries (forward-compat) are simply skipped: we
+        // accept up to `len` verbatims but store only the first.
         for _ in 1..len {
             let _ = AppliedVerbatimAnnotation::decode_from(r)?;
         }
@@ -271,14 +271,14 @@ impl AppliedBuiltinTypeAnnotations {
     }
 }
 
-/// AppliedAnnotationParameter (§7.3.4.5.4): ein benannter Parameter
-/// einer Annotation-Instanz. Der Parameter-Name wird als 4-byte-Hash
-/// gespeichert (spart Payload).
+/// AppliedAnnotationParameter (§7.3.4.5.4): a named parameter
+/// of an annotation instance. The parameter name is stored as a 4-byte hash
+/// (saves payload).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppliedAnnotationParameter {
-    /// Hash des Parameter-Namens.
+    /// Hash of the parameter name.
     pub paramname_hash: NameHash,
-    /// Parameter-Wert als opaque bytes (Discriminator-gefuehrt).
+    /// Parameter value as opaque bytes (discriminator-driven).
     pub value: Vec<u8>,
 }
 
@@ -303,12 +303,12 @@ impl AppliedAnnotationParameter {
     }
 }
 
-/// AppliedAnnotation: Instanz einer Custom-Annotation auf Typ/Member.
+/// AppliedAnnotation: instance of a custom annotation on a type/member.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppliedAnnotation {
-    /// Typ der Annotation (TypeIdentifier auf die Annotation-Definition).
+    /// Type of the annotation (TypeIdentifier to the annotation definition).
     pub annotation_typeid: TypeIdentifier,
-    /// Gesetzte Parameter.
+    /// Set parameters.
     pub param_seq: Vec<AppliedAnnotationParameter>,
 }
 
@@ -316,7 +316,7 @@ impl AppliedAnnotation {
     /// Encode.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         self.annotation_typeid.encode_into(w)?;
         encode_seq(w, &self.param_seq, |w, p| p.encode_into(w))
@@ -344,7 +344,7 @@ impl OptionalAppliedAnnotationSeq {
     /// Encode.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         match &self.0 {
             None => w.write_u32(0),
@@ -378,9 +378,9 @@ impl OptionalAppliedAnnotationSeq {
 pub struct CompleteTypeDetail {
     /// Builtin-Annotations (z.B. `@verbatim`).
     pub ann_builtin: AppliedBuiltinTypeAnnotations,
-    /// Custom-Annotations (optional).
+    /// Custom annotations (optional).
     pub ann_custom: OptionalAppliedAnnotationSeq,
-    /// Vollqualifizierter Typ-Name (z.B. "::sensors::Chatter").
+    /// Fully qualified type name (e.g. "::sensors::Chatter").
     pub type_name: QualifiedTypeName,
 }
 
@@ -388,7 +388,7 @@ impl CompleteTypeDetail {
     /// Encode.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         self.ann_builtin.encode_into(w)?;
         self.ann_custom.encode_into(w)?;
@@ -417,18 +417,18 @@ impl CompleteTypeDetail {
 pub struct AppliedBuiltinMemberAnnotations {
     /// `@unit("...")`.
     pub unit: Option<String>,
-    /// `@min(val)` als opaque bytes (discriminator-led).
+    /// `@min(val)` as opaque bytes (discriminator-led).
     pub min: Option<Vec<u8>>,
     /// `@max(val)`.
     pub max: Option<Vec<u8>>,
     /// `@hashid("...")`.
     pub hash_id: Option<String>,
-    /// `@default(val)` (XTypes 1.3 §7.2.4.4.4.4.9). Wert ist als String
-    /// gespeichert (Caller konvertiert zum Member-Typ); Wire-Form
-    /// liegt am Ende des AppliedBuiltinMemberAnnotations-Records, sodass
-    /// Decoder ohne `default_value`-Wissen am vorletzten String-Feld
-    /// (`hash_id`) korrekt enden — neue Decoder lesen den Trailer; alte
-    /// Decoder lassen ihn liegen.
+    /// `@default(val)` (XTypes 1.3 §7.2.4.4.4.4.9). The value is stored as a
+    /// string (the caller converts to the member type); the wire form
+    /// is at the end of the AppliedBuiltinMemberAnnotations record, so that
+    /// decoders without `default_value` knowledge end correctly at the
+    /// second-to-last string field (`hash_id`) — new decoders read the
+    /// trailer; old decoders leave it.
     pub default_value: Option<String>,
 }
 
@@ -448,11 +448,11 @@ impl AppliedBuiltinMemberAnnotations {
         if len == 0 {
             return Ok(None);
         }
-        // XTypes-Spec §7.3.4.8: AppliedBuiltinMemberAnnotations-Felder
-        // (unit, min, max, hash_id) sind skalar-optional, nicht Sequenz.
-        // len > 1 ist protokollwidrig — strictly rejecten statt still
-        // Mehrfach-Eintraege zu verwerfen (verhinderte bisher die
-        // Diagnose von fehlerhaften Peer-Encodern).
+        // XTypes spec §7.3.4.8: AppliedBuiltinMemberAnnotations fields
+        // (unit, min, max, hash_id) are scalar-optional, not a sequence.
+        // len > 1 is protocol-violating — strictly reject instead of silently
+        // dropping multiple entries (which previously prevented the
+        // diagnosis of faulty peer encoders).
         if len != 1 {
             return Err(DecodeError::LengthExceeded {
                 announced: len as usize,
@@ -483,8 +483,8 @@ impl AppliedBuiltinMemberAnnotations {
         if len == 0 {
             return Ok(None);
         }
-        // Siehe read_opt_string: skalar-optional, len > 1 ist
-        // Protokoll-Fehler, nicht stiller Datenverlust.
+        // See read_opt_string: scalar-optional, len > 1 is a
+        // protocol error, not silent data loss.
         if len != 1 {
             return Err(DecodeError::LengthExceeded {
                 announced: len as usize,
@@ -500,7 +500,7 @@ impl AppliedBuiltinMemberAnnotations {
     /// Encode.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         Self::write_opt_string(w, &self.unit)?;
         Self::write_opt_bytes(w, &self.min)?;
@@ -518,9 +518,9 @@ impl AppliedBuiltinMemberAnnotations {
         let min = Self::read_opt_bytes(r)?;
         let max = Self::read_opt_bytes(r)?;
         let hash_id = Self::read_opt_string(r)?;
-        // `default_value` ist neuer Trailer (§7.2.4.4.4.4.9). Falls
-        // Reader-Buffer leer ist, ist es ein Legacy-Encoder ohne den
-        // Trailer — return None, keine Fehler.
+        // `default_value` is a new trailer (§7.2.4.4.4.4.9). If the
+        // reader buffer is empty, it is a legacy encoder without the
+        // trailer — return None, no error.
         let default_value = if r.remaining() >= 4 {
             Self::read_opt_string(r).ok().flatten()
         } else {
@@ -551,7 +551,7 @@ impl CompleteMemberDetail {
     /// Encode.
     ///
     /// # Errors
-    /// Buffer-Overflow.
+    /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_string(&self.name)?;
         self.ann_builtin.encode_into(w)?;
@@ -593,18 +593,18 @@ where
     Ok(())
 }
 
-/// DoS-Cap fuer Vec-Pre-Allocation beim Decode. Der Wert ist die
-/// Obergrenze in Elementen, die wir initial allozieren. Grosse Sequenzen
-/// werden inkrementell durch `push()` gewachsen.
+/// DoS cap for Vec pre-allocation during decode. The value is the
+/// upper bound in elements that we allocate initially. Large sequences
+/// are grown incrementally via `push()`.
 ///
-/// 16 MiB / min_elem_size ist eine grobzuegige Heuristik — niemand
-/// sendet legitim 16M TypeIdentifiers in einem getTypes-Reply, aber
-/// Vec::with_capacity(u32_wire as usize) wuerde bei u32::MAX ~16 GB
-/// reservieren = OOM-Vektor.
+/// 16 MiB / min_elem_size is a generous heuristic — no one
+/// legitimately sends 16M TypeIdentifiers in a getTypes reply, but
+/// Vec::with_capacity(u32_wire as usize) would reserve ~16 GB at u32::MAX
+/// = an OOM vector.
 pub const DECODE_PREALLOC_CAP: usize = 4096;
 
-/// Sichere Allokation: `Vec::with_capacity(len.min(remaining_bytes /
-/// min_elem_size).min(CAP))`. Verhindert "30-byte-PID erzwingt 4 GB RAM".
+/// Safe allocation: `Vec::with_capacity(len.min(remaining_bytes /
+/// min_elem_size).min(CAP))`. Prevents "30-byte PID forces 4 GB RAM".
 #[must_use]
 pub(crate) fn safe_capacity(len: usize, min_elem_size: usize, remaining_bytes: usize) -> usize {
     let by_bytes = if min_elem_size == 0 {
@@ -615,13 +615,13 @@ pub(crate) fn safe_capacity(len: usize, min_elem_size: usize, remaining_bytes: u
     len.min(by_bytes).min(DECODE_PREALLOC_CAP)
 }
 
-/// Hilfsroutine: sequence<T> decode via Callback.
+/// Helper routine: sequence<T> decode via a callback.
 ///
-/// Verwendet [`safe_capacity`] fuer DoS-Schutz: selbst wenn die
-/// wire-Laenge `u32::MAX` ist, allokieren wir initial hoechstens
-/// `DECODE_PREALLOC_CAP` Eintraege. Die echte Schleife baut trotzdem
-/// bis `len` hoch, bricht aber spaetestens ab wenn `read_*` ueber den
-/// verfuegbaren Puffer hinaus liest.
+/// Uses [`safe_capacity`] for DoS protection: even if the
+/// wire length is `u32::MAX`, we allocate at most
+/// `DECODE_PREALLOC_CAP` entries initially. The actual loop still builds
+/// up to `len`, but aborts at the latest when `read_*` reads beyond the
+/// available buffer.
 pub(crate) fn decode_seq<T, F>(
     r: &mut BufferReader<'_>,
     mut f: F,

@@ -4,9 +4,9 @@ package org.zerodds.cdr;
 import java.nio.charset.StandardCharsets;
 
 /**
- * XCDR2-Decoder fuer Sprach-Bindings.
+ * XCDR2 decoder for language bindings.
  *
- * <p>Inverse zu {@link Xcdr2Writer}. Bounds-Checks bei jedem Read;
+ * <p>Inverse of {@link Xcdr2Writer}. Bounds checks on every read;
  * Stream-Underflow wirft {@link XcdrException}.
  */
 public final class Xcdr2Reader {
@@ -17,17 +17,17 @@ public final class Xcdr2Reader {
     private int pos;
     private final EndianMode endian;
 
-    /** Liest aus {@code buf[0..buf.length]} mit Default-LE. */
+    /** Reads from {@code buf[0..buf.length]} with default LE. */
     public Xcdr2Reader(byte[] buf) {
         this(buf, 0, buf.length, EndianMode.LITTLE_ENDIAN);
     }
 
-    /** Liest mit gewaehlter Endianness. */
+    /** Reads with the chosen endianness. */
     public Xcdr2Reader(byte[] buf, EndianMode endian) {
         this(buf, 0, buf.length, endian);
     }
 
-    /** Liest aus Subrange. Alignment wird relativ zu {@code offset} gemessen. */
+    /** Reads from a subrange. Alignment is measured relative to {@code offset}. */
     public Xcdr2Reader(byte[] buf, int offset, int length, EndianMode endian) {
         if (buf == null) {
             throw new XcdrException("buffer is null");
@@ -43,7 +43,7 @@ public final class Xcdr2Reader {
         this.endian = endian;
     }
 
-    /** Aktuelle Read-Position relativ zu Origin. */
+    /** Current read position relative to origin. */
     public int position() {
         return pos - origin;
     }
@@ -124,7 +124,7 @@ public final class Xcdr2Reader {
         return Double.longBitsToDouble(readLongRaw());
     }
 
-    /** Liest String per XTypes §7.4.4.6. */
+    /** Reads a string per XTypes §7.4.4.6. */
     public String readString() {
         long total = readUInt32();
         if (total > Integer.MAX_VALUE) {
@@ -142,7 +142,7 @@ public final class Xcdr2Reader {
         return s;
     }
 
-    /** Liest WString (UTF-16-LE). */
+    /** Reads a WString (UTF-16-LE). */
     public String readWString() {
         long count = readUInt32();
         if (count > Integer.MAX_VALUE / 2) {
@@ -157,7 +157,7 @@ public final class Xcdr2Reader {
         return new String(chars);
     }
 
-    /** Liest sequence-count (uint32). */
+    /** Reads the sequence count (uint32). */
     public int readSequenceCount() {
         long count = readUInt32();
         if (count > Integer.MAX_VALUE) {
@@ -166,7 +166,7 @@ public final class Xcdr2Reader {
         return (int) count;
     }
 
-    /** Liest {@code len} rohe Bytes (kein Alignment). */
+    /** Reads {@code len} raw bytes (no alignment). */
     public byte[] readBytes(int len) {
         if (len < 0) {
             throw new XcdrException("readBytes negative len: " + len);
@@ -182,7 +182,7 @@ public final class Xcdr2Reader {
     // Extensibility-Frames
     // ------------------------------------------------------------------
 
-    /** Liest DHEADER und liefert die Body-Size; Caller setzt eigenen Limit. */
+    /** Reads the DHEADER and returns the body size; the caller sets its own limit. */
     public int readDHeader() {
         long size = readUInt32();
         if (size > (long) (limit - pos)) {
@@ -205,7 +205,7 @@ public final class Xcdr2Reader {
         }
     }
 
-    /** Liest EMHEADER (XTypes §7.4.3.4.5). */
+    /** Reads the EMHEADER (XTypes §7.4.3.4.5). */
     public EmHeader readEmHeader() {
         align(4);
         ensure(4);
@@ -239,7 +239,7 @@ public final class Xcdr2Reader {
         }
     }
 
-    /** Skip {@code n} Bytes (kein Alignment). */
+    /** Skip {@code n} bytes (no alignment). */
     public void skip(int n) {
         if (n < 0) {
             throw new XcdrException("skip negative: " + n);

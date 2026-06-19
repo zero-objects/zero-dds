@@ -1,35 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Codec-Profile-Conformance-Marker.
+//! Codec-profile conformance marker.
 //!
 //! Spec DDS-AMQP-1.0:
-//! * §2.3 Codec Profile — Type-System + Performatives + Sections
-//!   (voll).
-//! * §2.4 Codec-Lite Profile — strikte Untermenge: nur Primitive
-//!   + `data`-Body-Section.
+//! * §2.3 Codec Profile — type system + performatives + sections
+//!   (full).
+//! * §2.4 Codec-Lite Profile — strict subset: only primitives
+//!   + `data` body section.
 //!
-//! Cargo-Feature `codec-lite` aktiviert die Lite-Variante des
-//! Markers. Das beeinflusst nicht den ausgelieferten Code (der
-//! ist immer das volle Codec-Profile), sondern den
-//! Conformance-Claim: Code, der nur Lite-Subset benutzt, kann
-//! gegen `is_codec_lite_active()` testen, dass keine compound-
-//! types out-of-spec verwendet werden.
+//! The Cargo feature `codec-lite` activates the lite variant of the
+//! marker. This does not affect the shipped code (which is
+//! always the full codec profile), but rather the
+//! conformance claim: code that uses only the lite subset can
+//! test against `is_codec_lite_active()` to verify that no compound
+//! types are used out of spec.
 
 use crate::extended_types::AmqpExtValue;
 use crate::sections::MessageSection;
 
-/// Spec §2.3 / §2.4 — claimed Profile dieser Crate.
+/// Spec §2.3 / §2.4 — profile claimed by this crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodecProfile {
-    /// `Codec` — voller Codec-Profile (Default).
+    /// `Codec` — full codec profile (default).
     Full,
-    /// `Codec-Lite` — strikte Untermenge.
+    /// `Codec-Lite` — strict subset.
     Lite,
 }
 
-/// Welches Profile wird durch das Cargo-Feature `codec-lite`
-/// claimed?
+/// Which profile is claimed by the Cargo feature `codec-lite`?
 #[must_use]
 pub const fn active_profile() -> CodecProfile {
     if cfg!(feature = "codec-lite") {
@@ -39,14 +38,14 @@ pub const fn active_profile() -> CodecProfile {
     }
 }
 
-/// Spec §2.4 — pruefen, ob ein `AmqpExtValue` Codec-Lite-konform
-/// ist.
+/// Spec §2.4 — check whether an `AmqpExtValue` is codec-lite-
+/// conformant.
 ///
-/// Codec-Lite erlaubt:
-/// * alle Primitive (null, boolean, int-Typen, float, double,
+/// Codec-Lite allows:
+/// * all primitives (null, boolean, int types, float, double,
 ///   char, timestamp, uuid, binary, string, symbol).
 ///
-/// Codec-Lite verbietet:
+/// Codec-Lite forbids:
 /// * `List`, `Map`, `Array` (compound types).
 #[must_use]
 pub const fn is_codec_lite_value(v: &AmqpExtValue) -> bool {
@@ -73,8 +72,8 @@ pub const fn is_codec_lite_value(v: &AmqpExtValue) -> bool {
     )
 }
 
-/// Spec §2.4 — pruefen, ob eine `MessageSection` Codec-Lite-
-/// konform ist (nur `Data`-Body, alle anderen Sections out-of-
+/// Spec §2.4 — check whether a `MessageSection` is codec-lite-
+/// conformant (only `Data` body, all other sections out of
 /// scope).
 #[must_use]
 pub const fn is_codec_lite_section(s: &MessageSection) -> bool {
@@ -89,8 +88,8 @@ mod tests {
 
     #[test]
     fn active_profile_full_by_default() {
-        // Tests laufen ohne `codec-lite`-Feature → Full.
-        // Ist `codec-lite` aktiv waere `Lite`.
+        // Tests run without the `codec-lite` feature → Full.
+        // If `codec-lite` is active it would be `Lite`.
         let p = active_profile();
         let expected = if cfg!(feature = "codec-lite") {
             CodecProfile::Lite

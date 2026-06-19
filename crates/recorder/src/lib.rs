@@ -3,25 +3,25 @@
 
 //! Crate `zerodds-recorder`. Safety classification: **STANDARD**.
 //!
-//! `.zddsrec` Recording-/Replay-Format. Spec:
+//! `.zddsrec` recording/replay format. Spec:
 //! [`docs/specs/zddsrec-1.0.md`](../../docs/specs/zddsrec-1.0.md).
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 4 — Core Services. Pure-Rust + alloc, ohne ZeroDDS-Crate-Deps.
+//! Layer 4 — core services. Pure Rust + alloc, without ZeroDDS crate deps.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
 //! - [`Header`], [`Frame`], [`FrameView`], [`SampleKind`], `ParticipantEntry`, `TopicEntry`.
-//! - [`RecordWriter`] / [`WriteError`] — schreibt einen `.zddsrec`-Stream.
-//! - [`RecordReader`] / [`ReadError`] — parsed einen `.zddsrec`-Stream.
+//! - [`RecordWriter`] / [`WriteError`] — writes a `.zddsrec` stream.
+//! - [`RecordReader`] / [`ReadError`] — parses a `.zddsrec` stream.
 //! - [`RecordingSession`] / [`SessionError`] / [`SessionOptions`] / [`TopicKey`] — high-level API.
 //!
-//! # Format-Layout
+//! # Format layout
 //!
-//! Ein `.zddsrec`-File besteht aus einem [`Header`] gefolgt von einer
-//! Sequenz von [`Frame`]-Records. Endianness: little-endian fuer alle
-//! Multi-Byte-Felder.
+//! A `.zddsrec` file consists of a [`Header`] followed by a
+//! sequence of [`Frame`] records. Endianness: little-endian for all
+//! multi-byte fields.
 //!
 //! ```text
 //! +---------------------------------+
@@ -41,14 +41,14 @@
 //! | PayloadLen u32                  |
 //! | CdrPayload[PayloadLen]          |
 //! +---------------------------------+
-//! | ... weitere Frames ...          |
+//! | ... more frames ...             |
 //! +---------------------------------+
 //! ```
 //!
-//! # Versionierung
+//! # Versioning
 //!
-//! Version = 1 ([`ZDDSREC_VERSION`]). Backward-incompatible Aenderungen
-//! erhoehen die Version; der Reader lehnt unbekannte Versionen ab.
+//! Version = 1 ([`ZDDSREC_VERSION`]). Backward-incompatible changes
+//! bump the version; the reader rejects unknown versions.
 
 #![warn(unsafe_code)]
 #![warn(missing_docs)]

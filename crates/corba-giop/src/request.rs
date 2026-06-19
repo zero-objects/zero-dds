@@ -15,8 +15,8 @@
 //! };
 //! ```
 //!
-//! GIOP 1.1 — wie 1.0 plus 3-Byte-`reserved` zwischen
-//! `response_expected` und `object_key` (Spec §15.4.2.1).
+//! GIOP 1.1 — like 1.0 plus a 3-byte `reserved` field between
+//! `response_expected` and `object_key` (Spec §15.4.2.1).
 //!
 //! GIOP 1.2 (`§15.4.2.2`):
 //! ```text
@@ -41,15 +41,15 @@ use crate::service_context::ServiceContextList;
 use crate::target_address::TargetAddress;
 use crate::version::Version;
 
-/// `response_flags`-Octet (Spec §15.4.2.2).
+/// `response_flags` octet (Spec §15.4.2.2).
 ///
-/// Bits encodieren das `Messaging::SyncScope`-Modell aus CORBA-
+/// The bits encode the `Messaging::SyncScope` model from CORBA
 /// Messaging (Spec §22.2.5):
 /// * `SYNC_NONE = 0x00` — fire-and-forget.
-/// * `SYNC_WITH_TRANSPORT = 0x01` — Reply nach Transport-Buffer-Send.
-/// * `SYNC_WITH_SERVER = 0x02` — Reply nach Server-Receive.
-/// * `SYNC_WITH_TARGET = 0x03` — Reply nach Servant-Invocation
-///   (klassisches synchrones Verhalten).
+/// * `SYNC_WITH_TRANSPORT = 0x01` — reply after the transport buffer send.
+/// * `SYNC_WITH_SERVER = 0x02` — reply after the server receives.
+/// * `SYNC_WITH_TARGET = 0x03` — reply after the servant invocation
+///   (classic synchronous behavior).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ResponseFlags(pub u8);
 
@@ -60,18 +60,18 @@ impl ResponseFlags {
     pub const SYNC_WITH_TRANSPORT: Self = Self(0x01);
     /// `SYNC_WITH_SERVER`.
     pub const SYNC_WITH_SERVER: Self = Self(0x02);
-    /// `SYNC_WITH_TARGET` — Default fuer synchrone GIOP-1.0/1.1-
-    /// Requests (`response_expected = true`).
+    /// `SYNC_WITH_TARGET` — default for synchronous GIOP 1.0/1.1
+    /// requests (`response_expected = true`).
     pub const SYNC_WITH_TARGET: Self = Self(0x03);
 
-    /// `true` wenn der Caller einen Reply erwartet (`SyncScope >=
+    /// `true` when the caller expects a reply (`SyncScope >=
     /// SYNC_WITH_SERVER`, Spec §22.2.5).
     #[must_use]
     pub const fn response_expected(self) -> bool {
         self.0 >= Self::SYNC_WITH_SERVER.0
     }
 
-    /// Konvertiert von GIOP-1.0/1.1-Boolean zu Flags-Octet.
+    /// Converts a GIOP 1.0/1.1 boolean to the flags octet.
     #[must_use]
     pub const fn from_response_expected(response_expected: bool) -> Self {
         if response_expected {
@@ -82,34 +82,34 @@ impl ResponseFlags {
     }
 }
 
-/// Request-Message-Body (versions-uniform Repraesentation).
+/// Request message body (version-uniform representation).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
     /// `request_id`.
     pub request_id: u32,
-    /// `response_flags` (GIOP 1.2) bzw. `response_expected`-Aequivalent.
+    /// `response_flags` (GIOP 1.2), i.e. the `response_expected` equivalent.
     pub response_flags: ResponseFlags,
-    /// Object-Adressing — in GIOP 1.0/1.1 immer `Key`; in GIOP 1.2
-    /// kann jede `TargetAddress`-Variante vorkommen.
+    /// Object addressing — always `Key` in GIOP 1.0/1.1; in GIOP 1.2
+    /// any `TargetAddress` variant may appear.
     pub target: TargetAddress,
-    /// Operation-Name (`string`, NUL-terminiert ueber CDR).
+    /// Operation name (`string`, NUL-terminated via CDR).
     pub operation: String,
     /// `requesting_principal` (`CSI::AuthorizationToken` =
-    /// `sequence<octet>`). In GIOP 1.2 entfernt; wir halten das Feld
-    /// als Option fuer Versions-Inter-Op.
+    /// `sequence<octet>`). Removed in GIOP 1.2; we keep the field
+    /// as an Option for cross-version interop.
     pub requesting_principal: Option<Vec<u8>>,
     /// `service_context_list`.
     pub service_context: ServiceContextList,
-    /// Body-Bytes (CDR-encoded `in`/`inout`-Args). Caller liefert
-    /// die fertig-kodierten Bytes; dieser Codec haengt sie unaligned
-    /// an den Header — das `body`-Alignment-Anchor (8 Bytes ab
-    /// Header-Start) ist in GIOP 1.2 spec-relevant und wird vom
-    /// Encoder erzwungen (Spec §15.4.2.2 normativ).
+    /// Body bytes (CDR-encoded `in`/`inout` args). The caller supplies
+    /// the already-encoded bytes; this codec appends them unaligned
+    /// to the header — the `body` alignment anchor (8 bytes from the
+    /// header start) is spec-relevant in GIOP 1.2 and is enforced by
+    /// the encoder (Spec §15.4.2.2, normative).
     pub body: Vec<u8>,
 }
 
 impl Request {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(
         request_id: u32,
@@ -128,18 +128,18 @@ impl Request {
         }
     }
 
-    /// CDR-Encode in einen `BufferWriter`. Body-Alignment auf 8 Bytes
-    /// ab Header-Start (= 8 Bytes ab Buffer-Start in GIOP 1.2,
-    /// Spec §15.4 normativ).
+    /// CDR-encode into a `BufferWriter`. Body alignment to 8 bytes
+    /// from the header start (= 8 bytes from the buffer start in
+    /// GIOP 1.2, Spec §15.4, normative).
     ///
     /// # Errors
-    /// Buffer-Schreibfehler oder Length-Overflow.
+    /// Buffer write error or length overflow.
     pub fn encode(&self, version: Version, w: &mut BufferWriter) -> GiopResult<()> {
         if version.uses_v1_2_request_layout() {
-            // GIOP 1.2 — request_id zuerst.
+            // GIOP 1.2 — request_id first.
             w.write_u32(self.request_id)?;
             w.write_u8(self.response_flags.0)?;
-            // 3 Bytes reserved.
+            // 3 reserved bytes.
             w.write_u8(0)?;
             w.write_u8(0)?;
             w.write_u8(0)?;
@@ -147,22 +147,22 @@ impl Request {
             self.target.encode(w)?;
             write_string(w, &self.operation)?;
             self.service_context.encode(w)?;
-            // Body 8-Byte-aligned (Spec §15.4 normativ ab GIOP 1.2).
+            // Body 8-byte aligned (Spec §15.4, normative from GIOP 1.2).
             w.align(8);
         } else {
-            // GIOP 1.0 / 1.1 — service_context zuerst.
+            // GIOP 1.0 / 1.1 — service_context first.
             self.service_context.encode(w)?;
             w.write_u32(self.request_id)?;
             // boolean response_expected.
             w.write_u8(u8::from(self.response_flags.response_expected()))?;
             if version >= Version::V1_1 {
-                // GIOP 1.1: 3-Byte-reserved.
+                // GIOP 1.1: 3 reserved bytes.
                 w.write_u8(0)?;
                 w.write_u8(0)?;
                 w.write_u8(0)?;
             }
-            // object_key sequence<octet> — TargetAddress muss
-            // KeyAddr-Form sein.
+            // object_key sequence<octet> — TargetAddress must be in
+            // KeyAddr form.
             let key = match &self.target {
                 TargetAddress::Key(k) => k.as_slice(),
                 _ => {
@@ -188,10 +188,10 @@ impl Request {
         Ok(())
     }
 
-    /// CDR-Decode aus `BufferReader`.
+    /// CDR-decode from a `BufferReader`.
     ///
     /// # Errors
-    /// Buffer-Lesefehler.
+    /// Buffer read error.
     pub fn decode(version: Version, r: &mut BufferReader<'_>) -> GiopResult<Self> {
         if version.uses_v1_2_request_layout() {
             let request_id = r.read_u32()?;
@@ -203,7 +203,7 @@ impl Request {
             let target = TargetAddress::decode(r)?;
             let operation = read_string(r)?;
             let service_context = ServiceContextList::decode(r)?;
-            // Body-Alignment 8 ab Buffer-Start.
+            // Body alignment to 8 from the buffer start.
             r.align(8)?;
             let body = r.read_bytes(r.remaining())?.to_vec();
             Ok(Self {
@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn round_trip_giop_1_2_request_with_target_address() {
         let mut req = sample_request(TargetAddress::Key(alloc::vec![0x11, 0x22]));
-        // GIOP 1.2 — kein requesting_principal.
+        // GIOP 1.2 — no requesting_principal.
         req.requesting_principal = None;
         let mut w = BufferWriter::new(Endianness::Big);
         req.encode(Version::V1_2, &mut w).unwrap();
@@ -336,8 +336,9 @@ mod tests {
 
     #[test]
     fn giop_1_2_request_body_is_8_aligned() {
-        // Spec §15.4 normativ: in GIOP 1.2 ist Body 8-aligned ab
-        // Header-Start. Wir testen indirekt ueber Buffer-Position.
+        // Spec §15.4, normative: in GIOP 1.2 the body is 8-aligned
+        // from the header start. We test this indirectly via the
+        // buffer position.
         let req = Request {
             request_id: 1,
             response_flags: ResponseFlags::SYNC_WITH_TARGET,
@@ -350,7 +351,7 @@ mod tests {
         let mut w = BufferWriter::new(Endianness::Big);
         req.encode(Version::V1_2, &mut w).unwrap();
         let bytes = w.into_bytes();
-        // Letzten Body-Byte rueckwaerts suchen.
+        // Search backwards for the last body byte.
         let body_pos = bytes.iter().rposition(|b| *b == 0xff).unwrap();
         assert_eq!(
             body_pos % 8,

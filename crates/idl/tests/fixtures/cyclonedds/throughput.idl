@@ -1,7 +1,7 @@
-// throughput.idl — Cyclone-DDS-Style Topic, hand-kuratiert.
-// Inhaltlich aequivalent zu typischen Cyclone-DDS Throughput-Beispielen.
-// Cyclone DDS verwendet OMG-Standard-Annotations + Standard-IDL-4.2;
-// keine Vendor-Erweiterungen wie bei RTI noetig.
+// throughput.idl — Cyclone-DDS-style topic, hand-curated.
+// Content-equivalent to typical Cyclone-DDS throughput examples.
+// Cyclone DDS uses OMG standard annotations + standard IDL 4.2;
+// no vendor extensions like RTI needed.
 
 module ThroughputModule {
 

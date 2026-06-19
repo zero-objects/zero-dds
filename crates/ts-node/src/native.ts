@@ -1,21 +1,44 @@
-// native.ts — koffi-FFI declarations für libzerodds.
+// native.ts — koffi FFI declarations for libzerodds.
 //
-// Spiegelt `zerodds.h` (aus `crates/zerodds-c-api`) via koffi.
-// koffi wurde gegenüber node-ffi-napi gewählt, weil:
-//   * koffi ist aktiv gewartet (node-ffi-napi seit 2022 quasi-tot)
-//   * supports modern Node 18+ ohne weitere Build-Tools
-//   * keine native compile-Schritte zur Install-Zeit
+// Mirrors `zerodds.h` (from `crates/zerodds-c-api`) via koffi.
+// koffi was chosen over node-ffi-napi because:
+//   * koffi is actively maintained (node-ffi-napi practically dead since 2022)
+//   * supports modern Node 18+ without additional build tools
+//   * no native compile steps at install time
 
 import koffi from "koffi";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 
-// Library-Pfad: in $project/runtimes/<rid>/native/ oder ../target/release/
+// The Rust target triple for the current platform/arch — so we can also find a
+// library built with an explicit `cargo build --target <triple>` (the ZeroDDS
+// CI builds that way; its artifacts land in target/<triple>/release/, not the
+// host-default target/release/).
+function targetTriple(): string | null {
+  switch (process.platform) {
+    case "linux":
+      return process.arch === "arm64"
+        ? "aarch64-unknown-linux-gnu"
+        : "x86_64-unknown-linux-gnu";
+    case "darwin":
+      return process.arch === "arm64"
+        ? "aarch64-apple-darwin"
+        : "x86_64-apple-darwin";
+    case "win32":
+      return process.arch === "arm64"
+        ? "aarch64-pc-windows-msvc"
+        : "x86_64-pc-windows-msvc";
+    default:
+      return null;
+  }
+}
+
+// Library path resolution. Order: explicit ZERODDS_LIB override, then the
+// cargo target dirs (host-default and explicit-triple, release and debug), then
+// the packaged dist/runtimes/, then the OS default search.
 function findLibrary(): string {
   const here = dirname(fileURLToPath(import.meta.url));
-  const candidates: string[] = [];
-  // Plattform-spezifische Suffixe
   const ext =
     process.platform === "linux"
       ? ".so"
@@ -25,17 +48,30 @@ function findLibrary(): string {
   const prefix = process.platform === "win32" ? "" : "lib";
   const fname = `${prefix}zerodds${ext}`;
 
-  // Im Repo-Layout: src/native.ts -> crates/ts-node/src/ -> ../../../target/release/
-  candidates.push(resolve(here, "..", "..", "..", "target", "release", fname));
-  // Plus eingebaut in dist/runtimes/
+  // Explicit override (used by CI jobs and the cross-host verification harness).
+  const override = process.env.ZERODDS_LIB;
+  if (override && existsSync(override)) return override;
+
+  // src/native.ts -> crates/ts-node/src/ -> ../../../ = repo root.
+  const root = resolve(here, "..", "..", "..");
+  const candidates: string[] = [];
+  // Default-target builds: target/{release,debug}/
+  candidates.push(resolve(root, "target", "release", fname));
+  candidates.push(resolve(root, "target", "debug", fname));
+  // Explicit-target builds: target/<triple>/{release,debug}/
+  const triple = targetTriple();
+  if (triple) {
+    candidates.push(resolve(root, "target", triple, "release", fname));
+    candidates.push(resolve(root, "target", triple, "debug", fname));
+  }
+  // Packaged dist/runtimes/, then OS default search.
   candidates.push(resolve(here, "..", "runtimes", `${process.platform}-${process.arch}`, fname));
-  // Plus default OS-Lib-Search
   candidates.push(fname);
 
   for (const p of candidates) {
     if (existsSync(p)) return p;
   }
-  return fname; // letzter Versuch — koffi sucht in Standard-Paths
+  return fname; // last attempt — koffi searches in standard paths
 }
 
 const lib = koffi.load(findLibrary());
@@ -71,8 +107,11 @@ export const zerodds_reader_create = lib.func(
   "ZeroDdsReader* zerodds_reader_create(ZeroDdsRuntime* runtime, const char* topic, const char* type_name, int reliable)",
 );
 // reader_take: out_buf is pointer-to-pointer. koffi: use _Out_ marker.
+// NOTE: the Rust C-API takes FOUR params — the 4th, `out_repr` (the XCDR
+// representation byte), was missing here. Omitting it let the native fn read a
+// garbage 4th arg and write `*out_repr`, segfaulting nondeterministically.
 export const zerodds_reader_take = lib.func(
-  "int zerodds_reader_take(ZeroDdsReader* reader, _Out_ void** out_buf, _Out_ size_t* out_len)",
+  "int zerodds_reader_take(ZeroDdsReader* reader, _Out_ void** out_buf, _Out_ size_t* out_len, _Out_ uint8_t* out_repr)",
 );
 export const zerodds_reader_wait_for_matched = lib.func(
   "int zerodds_reader_wait_for_matched(ZeroDdsReader* reader, int min_count, uint64_t timeout_ms)",

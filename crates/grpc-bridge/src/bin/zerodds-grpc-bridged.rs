@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// `zerodds-grpc-bridged` — DDS↔gRPC-Bridge-Daemon.
+// `zerodds-grpc-bridged` — DDS↔gRPC bridge daemon.
 //
-// Spec: `docs/specs/zerodds-grpc-bridge-1.0.md`. Implementiert die
-// L1-L4-Pflichtschicht: HTTP/2-Server (Preface + SETTINGS-Handshake +
-// HEADERS/DATA-Frames), gRPC-Length-Prefixed-Messaging, Reflection-
-// Service-Stub, YAML-Config-File, CLI-Surface §2.
+// Spec: `docs/specs/zerodds-grpc-bridge-1.0.md`. Implements the
+// mandatory L1-L4 layer: HTTP/2 server (preface + SETTINGS handshake +
+// HEADERS/DATA frames), gRPC length-prefixed messaging, reflection
+// service stub, YAML config file, CLI surface §2.
 //
-// L5 (TLS+Auth) und L6 (Multi-Tenant) sind als FUTURE-Hooks markiert
-// (siehe `tls_active` und `auth_mode`-Felder in Config).
+// L5 (TLS+auth) and L6 (multi-tenant) are marked as FUTURE hooks
+// (see the `tls_active` and `auth_mode` fields in Config).
 
 #![allow(
     clippy::expect_used,
@@ -41,6 +41,7 @@ use zerodds_grpc_bridge::daemon_runtime::{
     BridgeMetrics, CatalogSnapshot, CatalogTopic, SERVICE_NAME, install_signal_watcher,
     otlp_config_from_env, serve_admin_endpoints, spawn_otlp_flush_loop,
 };
+use zerodds_grpc_bridge::decode_message;
 use zerodds_grpc_bridge::server::{GrpcRequest, GrpcResponse, GrpcServer};
 use zerodds_grpc_bridge::status::Status;
 use zerodds_http2::settings::encode_settings;
@@ -49,6 +50,279 @@ use zerodds_monitor::Registry;
 use zerodds_observability_otlp::OtlpExporter;
 
 const VERSION: &str = "1.0.0";
+
+// ============================================================================
+// L2 — DDS side (bridge spec §4.2). Feature `dds-runtime`.
+//
+// Closes the former `FUTURE (L2)` stub: `Publish` writes the gRPC `Sample`
+// payload to a real DDS DataWriter, `Subscribe` drains a DataReader. The
+// opaque-bytes path mirrors the C-FFI writer/reader (`zerodds_writer_write`
+// / `zerodds_reader_take`) — no typed Topic-Type, the gRPC `bytes payload`
+// is the on-wire DDS user data 1:1.
+// ============================================================================
+
+/// Minimal protobuf reader for `Sample { bytes payload = 1; }`. Returns the
+/// `payload` field (tag `0x0A`, wire-type 2 = LEN). Tolerant: unknown fields
+/// are skipped, a missing field yields an empty slice.
+fn proto_sample_payload(msg: &[u8]) -> Vec<u8> {
+    let mut i = 0usize;
+    while i < msg.len() {
+        let tag = msg[i];
+        i += 1;
+        let field = tag >> 3;
+        let wire = tag & 0x07;
+        match wire {
+            2 => {
+                // LEN: varint length + bytes.
+                let (len, adv) = proto_varint(&msg[i..]);
+                i += adv;
+                let end = (i + len as usize).min(msg.len());
+                if field == 1 {
+                    return msg[i..end].to_vec();
+                }
+                i = end;
+            }
+            0 => {
+                // VARINT: skip.
+                let (_, adv) = proto_varint(&msg[i..]);
+                i += adv;
+            }
+            5 => i += 4, // I32
+            1 => i += 8, // I64
+            _ => break,  // unknown wire-type → stop
+        }
+    }
+    Vec::new()
+}
+
+/// Encodes `PublishAck { uint64 accepted = 1; }` (tag `0x08`, wire-type 0).
+fn proto_publish_ack(accepted: u64) -> Vec<u8> {
+    let mut out = Vec::with_capacity(11);
+    out.push(0x08);
+    proto_put_varint(&mut out, accepted);
+    out
+}
+
+/// Encodes `Sample { bytes payload = 1; }` (tag `0x0A`, wire-type 2).
+fn proto_sample(payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(payload.len() + 6);
+    out.push(0x0A);
+    proto_put_varint(&mut out, payload.len() as u64);
+    out.extend_from_slice(payload);
+    out
+}
+
+/// Reads a base-128 varint; returns `(value, bytes_consumed)`.
+fn proto_varint(b: &[u8]) -> (u64, usize) {
+    let mut val = 0u64;
+    let mut shift = 0u32;
+    let mut i = 0usize;
+    while i < b.len() && shift < 64 {
+        let byte = b[i];
+        i += 1;
+        val |= u64::from(byte & 0x7F) << shift;
+        if byte & 0x80 == 0 {
+            break;
+        }
+        shift += 7;
+    }
+    (val, i)
+}
+
+/// Appends `v` as a base-128 varint.
+fn proto_put_varint(out: &mut Vec<u8>, mut v: u64) {
+    loop {
+        let mut byte = (v & 0x7F) as u8;
+        v >>= 7;
+        if v != 0 {
+            byte |= 0x80;
+        }
+        out.push(byte);
+        if v == 0 {
+            break;
+        }
+    }
+}
+
+#[cfg(feature = "dds-runtime")]
+mod bridge_dds {
+    //! Real DDS runtime for the bridge daemon (feature `dds-runtime`).
+
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use zerodds_dcps::runtime::{
+        DcpsRuntime, RuntimeConfig, UserReaderConfig, UserSample, UserWriterConfig,
+    };
+    use zerodds_qos::{
+        DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessKind, LivelinessQosPolicy,
+        OwnershipKind,
+    };
+    use zerodds_rtps::wire_types::{EntityId, GuidPrefix};
+
+    use super::TopicMapping;
+
+    /// Type name advertised by the bridge's opaque-bytes writer/reader. A
+    /// peer DataReader must register the same `(topic, type)` pair to match.
+    pub const BRIDGE_TYPE_NAME: &str = "ZeroDdsBridgeBytes";
+
+    /// Per-topic egress reader: entity + its delivery channel.
+    struct ReaderSlot {
+        _eid: EntityId,
+        rx: Mutex<std::sync::mpsc::Receiver<UserSample>>,
+    }
+
+    /// Holds the DDS participant + the per-topic writer/reader entities.
+    pub struct BridgeDds {
+        rt: Arc<DcpsRuntime>,
+        /// `dds_name → ingress DataWriter` (gRPC `Publish` → DDS).
+        writers: HashMap<String, EntityId>,
+        /// `dds_name → egress DataReader` (DDS → gRPC `Subscribe`).
+        readers: HashMap<String, ReaderSlot>,
+    }
+
+    impl BridgeDds {
+        /// Starts the DDS participant for `domain` and registers a writer +
+        /// reader on the same topic per mapping (loopback-capable: a peer or
+        /// the bridge's own reader observes what `Publish` writes).
+        pub fn start(domain: i32, topics: &[TopicMapping]) -> Result<Self, String> {
+            let rt = DcpsRuntime::start(domain, guid_prefix(), RuntimeConfig::default())
+                .map_err(|e| format!("DcpsRuntime::start: {e:?}"))?;
+            let mut writers = HashMap::new();
+            let mut readers = HashMap::new();
+            for t in topics {
+                if t.dds_name.is_empty() || writers.contains_key(&t.dds_name) {
+                    continue;
+                }
+                let weid = rt
+                    .register_user_writer(writer_cfg(&t.dds_name))
+                    .map_err(|e| format!("register_user_writer({}): {e:?}", t.dds_name))?;
+                writers.insert(t.dds_name.clone(), weid);
+                let (reid, rx) = rt
+                    .register_user_reader(reader_cfg(&t.dds_name))
+                    .map_err(|e| format!("register_user_reader({}): {e:?}", t.dds_name))?;
+                readers.insert(
+                    t.dds_name.clone(),
+                    ReaderSlot {
+                        _eid: reid,
+                        rx: Mutex::new(rx),
+                    },
+                );
+            }
+            Ok(Self {
+                rt,
+                writers,
+                readers,
+            })
+        }
+
+        /// Writes `payload` to the DDS DataWriter for `dds_name`. Returns
+        /// `true` on success (writer present + write ok).
+        pub fn publish_to(&self, dds_name: &str, payload: &[u8]) -> bool {
+            match self.writers.get(dds_name) {
+                Some(&eid) => self.rt.write_user_sample_borrowed(eid, payload).is_ok(),
+                None => false,
+            }
+        }
+
+        /// Takes the next available Alive sample from the DDS DataReader for
+        /// `dds_name` (single `try_recv`, skipping lifecycle markers — matches
+        /// the C-FFI `zerodds_reader_take`). Returns `None` when no reader or
+        /// no data. Repeated `Subscribe` calls drain the queue one sample at a
+        /// time (pull-based server-stream cardinality over the request/
+        /// response transport).
+        pub fn take_one(&self, dds_name: &str) -> Option<Vec<u8>> {
+            let slot = self.readers.get(dds_name)?;
+            let rx = slot.rx.lock().ok()?;
+            loop {
+                match rx.try_recv() {
+                    Ok(UserSample::Alive { payload, .. }) => return Some(payload.to_vec()),
+                    Ok(UserSample::Lifecycle { .. }) => continue,
+                    Err(_) => return None,
+                }
+            }
+        }
+    }
+
+    fn writer_cfg(topic: &str) -> UserWriterConfig {
+        UserWriterConfig {
+            topic_name: topic.to_string(),
+            type_name: BRIDGE_TYPE_NAME.to_string(),
+            reliable: true,
+            durability: DurabilityKind::Volatile,
+            deadline: DeadlineQosPolicy::default(),
+            lifespan: LifespanQosPolicy::default(),
+            liveliness: LivelinessQosPolicy {
+                kind: LivelinessKind::Automatic,
+                ..Default::default()
+            },
+            ownership: OwnershipKind::Shared,
+            ownership_strength: 0,
+            partition: Vec::new(),
+            user_data: Vec::new(),
+            topic_data: Vec::new(),
+            group_data: Vec::new(),
+            type_identifier: Default::default(),
+            data_representation_offer: None,
+        }
+    }
+
+    fn reader_cfg(topic: &str) -> UserReaderConfig {
+        UserReaderConfig {
+            topic_name: topic.to_string(),
+            type_name: BRIDGE_TYPE_NAME.to_string(),
+            reliable: true,
+            durability: DurabilityKind::Volatile,
+            deadline: DeadlineQosPolicy::default(),
+            liveliness: LivelinessQosPolicy {
+                kind: LivelinessKind::Automatic,
+                ..Default::default()
+            },
+            ownership: OwnershipKind::Shared,
+            partition: Vec::new(),
+            user_data: Vec::new(),
+            topic_data: Vec::new(),
+            group_data: Vec::new(),
+            type_identifier: Default::default(),
+            type_consistency: Default::default(),
+            data_representation_offer: None,
+        }
+    }
+
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    fn guid_prefix() -> GuidPrefix {
+        let pid = std::process::id();
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0);
+        let c = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let mut bytes = [0u8; 12];
+        bytes[0..4].copy_from_slice(&zerodds_dcps::participant::host_id_bytes());
+        bytes[4..8].copy_from_slice(&pid.to_le_bytes());
+        bytes[8..12].copy_from_slice(&(t as u32).wrapping_add(c).to_le_bytes());
+        GuidPrefix::from_bytes(bytes)
+    }
+}
+
+/// Bridge DDS handle. Under `dds-runtime` it is the real participant; without
+/// the feature it is an uninhabited placeholder so the daemon still builds as
+/// a pure gRPC codec (dispatch then runs with `dds: None`).
+#[cfg(feature = "dds-runtime")]
+use bridge_dds::BridgeDds;
+#[cfg(not(feature = "dds-runtime"))]
+enum BridgeDds {}
+#[cfg(not(feature = "dds-runtime"))]
+impl BridgeDds {
+    fn publish_to(&self, _dds_name: &str, _payload: &[u8]) -> bool {
+        match *self {}
+    }
+    fn take_one(&self, _dds_name: &str) -> Option<Vec<u8>> {
+        match *self {}
+    }
+}
 
 fn main() -> ExitCode {
     match run() {
@@ -194,9 +468,9 @@ fn run() -> Result<(), DaemonError> {
         cfg.tls_enabled = true;
     }
     for ov in topic_overrides {
-        // CLI-Format `<DDS-Name>=<gRPC-Service>` (Spec §2 single-topic
-        // override). Wir nehmen das letzte `=` damit DDS-Namen mit
-        // `::`-Scope (Chat::Message) intakt bleiben.
+        // CLI format `<DDS-Name>=<gRPC-Service>` (spec §2 single-topic
+        // override). We take the last `=` so that DDS names with
+        // `::` scope (Chat::Message) stay intact.
         if let Some(eq_pos) = ov.rfind('=') {
             cfg.topics.push(TopicMapping {
                 dds_name: ov[..eq_pos].into(),
@@ -226,16 +500,16 @@ fn run() -> Result<(), DaemonError> {
     let shutdown = Arc::new(AtomicBool::new(false));
     let reload = Arc::new(AtomicBool::new(false));
 
-    // Metrics-Registry + Standard-Counter (§8.2 Prometheus).
+    // Metrics registry + standard counters (§8.2 Prometheus).
     let registry = Arc::new(Registry::new());
     let bridge_metrics = BridgeMetrics::register(&registry);
 
-    // Signal-Watcher (§9.2 Graceful Shutdown).
+    // Signal watcher (§9.2 graceful shutdown).
     if let Err(e) = install_signal_watcher(Arc::clone(&shutdown), Arc::clone(&reload)) {
         eprintln!("{{\"event\":\"signal_watcher_init_failed\",\"err\":\"{e}\"}}");
     }
 
-    // Admin-Endpoint (§5.2 Catalog/Healthz + §8.2 Metrics).
+    // Admin endpoint (§5.2 catalog/healthz + §8.2 metrics).
     let healthy = Arc::new(AtomicBool::new(true));
     let _admin_h = if let Some(addr_s) = metrics.as_deref().filter(|s| !s.is_empty()) {
         match addr_s.parse::<std::net::SocketAddr>() {
@@ -273,7 +547,7 @@ fn run() -> Result<(), DaemonError> {
         None
     };
 
-    // OTLP-Exporter (§8.3).
+    // OTLP exporter (§8.3).
     let _otlp_h = if let Some(otlp_cfg) = otlp_config_from_env(SERVICE_NAME) {
         let exp = Arc::new(OtlpExporter::new(otlp_cfg));
         spawn_otlp_flush_loop(exp, Arc::clone(&shutdown), Duration::from_secs(5)).ok()
@@ -281,8 +555,29 @@ fn run() -> Result<(), DaemonError> {
         None
     };
 
-    // FUTURE (L2): DcpsRuntime::start(domain, …) — DDS-Side. Im
-    // L1-L4-Pflichtumfang reicht der HTTP/2-Server-Kern.
+    // L2 — DDS side (bridge spec §4.2). With feature `dds-runtime` the
+    // daemon starts a real DCPS participant and registers a writer+reader
+    // per topic, so `Publish` writes to DDS and `Subscribe` drains it.
+    // Without the feature the daemon runs as a pure gRPC codec (`dds: None`).
+    #[cfg(feature = "dds-runtime")]
+    let dds_handle = match BridgeDds::start(cfg.domain, &cfg.topics) {
+        Ok(d) => {
+            eprintln!(
+                "{{\"event\":\"dds_started\",\"domain\":{},\"topics\":{}}}",
+                cfg.domain,
+                cfg.topics.len()
+            );
+            Some(d)
+        }
+        Err(e) => {
+            eprintln!("{{\"event\":\"dds_start_failed\",\"err\":\"{e}\"}}");
+            return Err(DaemonError::new(3, format!("dds: {e}")));
+        }
+    };
+    #[cfg(feature = "dds-runtime")]
+    let dds_ref = dds_handle.as_ref();
+    #[cfg(not(feature = "dds-runtime"))]
+    let dds_ref: Option<&BridgeDds> = None;
 
     let res = serve(
         &cfg,
@@ -290,6 +585,7 @@ fn run() -> Result<(), DaemonError> {
         once_shot,
         idle_timeout_ms,
         &bridge_metrics,
+        dds_ref,
     );
     healthy.store(false, Ordering::SeqCst);
     res?;
@@ -325,6 +621,7 @@ fn serve(
     once: bool,
     idle_timeout_ms: u64,
     metrics: &BridgeMetrics,
+    dds: Option<&BridgeDds>,
 ) -> Result<(), DaemonError> {
     let listener = TcpListener::bind(&cfg.bind)
         .map_err(|e| DaemonError::new(2, format!("bind {}: {}", cfg.bind, e)))?;
@@ -359,7 +656,7 @@ fn serve(
                 let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
                 metrics.connections_total.inc();
                 metrics.connections_active.inc();
-                if let Err(e) = handle_connection(stream, cfg, metrics) {
+                if let Err(e) = handle_connection(stream, cfg, metrics, dds) {
                     metrics.errors_total.inc();
                     eprintln!("{{\"event\":\"conn_error\",\"msg\":\"{e}\"}}");
                 }
@@ -386,6 +683,7 @@ fn handle_connection(
     mut stream: TcpStream,
     cfg: &DaemonConfig,
     metrics: &BridgeMetrics,
+    dds: Option<&BridgeDds>,
 ) -> std::io::Result<()> {
     // Read client preface (24 bytes).
     let mut preface_buf = [0u8; 24];
@@ -432,6 +730,13 @@ fn handle_connection(
             if acc.len() < 9 {
                 break;
             }
+            // Only decode once the full frame is buffered. A frame can be
+            // split across TCP reads (large HPACK header blocks especially);
+            // `process_frame` would otherwise return a fatal ShortPayload.
+            let frame_len = ((acc[0] as usize) << 16) | ((acc[1] as usize) << 8) | acc[2] as usize;
+            if acc.len() < 9 + frame_len {
+                break;
+            }
             match grpc.process_frame(&acc) {
                 Ok((maybe_req, consumed)) => {
                     if consumed == 0 {
@@ -443,7 +748,7 @@ fn handle_connection(
                         if matches!(req.method.as_str(), "Publish" | "PublishOne") {
                             metrics.dds_samples_in_total.inc();
                         }
-                        let resp = dispatch(&req, cfg);
+                        let resp = dispatch(&req, cfg, dds);
                         match grpc.encode_response(&resp) {
                             Ok(out) => {
                                 metrics.bytes_out_total.add(out.len() as u64);
@@ -471,7 +776,7 @@ fn handle_connection(
     Ok(())
 }
 
-fn dispatch(req: &GrpcRequest, cfg: &DaemonConfig) -> GrpcResponse {
+fn dispatch(req: &GrpcRequest, cfg: &DaemonConfig, dds: Option<&BridgeDds>) -> GrpcResponse {
     eprintln!(
         "{{\"event\":\"rpc\",\"service\":\"{}\",\"method\":\"{}\",\"stream\":{}}}",
         req.service,
@@ -507,9 +812,9 @@ fn dispatch(req: &GrpcRequest, cfg: &DaemonConfig) -> GrpcResponse {
         };
     }
 
-    // Topic-Mapping-Lookup. Match auf Full-Service-Name oder
-    // Last-Component (Spec §5.1: `zerodds.chat.v1.ChatMessageStream`
-    // ist das voll-qualifizierte Service, `ChatMessageStream` der Slug).
+    // Topic-mapping lookup. Match on the full service name or the
+    // last component (spec §5.1: `zerodds.chat.v1.ChatMessageStream`
+    // is the fully-qualified service, `ChatMessageStream` the slug).
     if let Some(topic) = cfg.topics.iter().find(|t| {
         t.grpc_service == req.service
             || req
@@ -520,20 +825,39 @@ fn dispatch(req: &GrpcRequest, cfg: &DaemonConfig) -> GrpcResponse {
                 .unwrap_or(false)
     }) {
         match req.method.as_str() {
-            "Publish" | "PublishOne" => GrpcResponse {
-                stream_id: req.stream_id,
-                status: Status::Ok,
-                message: None,
-                // Echo back as PublishAck stub. FUTURE: write to DDS Writer.
-                body: req.body.clone(),
-            },
+            "Publish" | "PublishOne" => {
+                // `req.body` is the LPM-framed gRPC message; strip the 5-byte
+                // prefix, then read `Sample.payload` (field 1) and write it to
+                // the DDS DataWriter for this topic. PublishAck.accepted = 1
+                // on a successful write, 0 when the DDS side is absent.
+                let sample_msg = decode_message(&req.body)
+                    .map(|(_, msg, _)| msg)
+                    .unwrap_or_default();
+                let payload = proto_sample_payload(&sample_msg);
+                let accepted = match dds {
+                    Some(d) if d.publish_to(&topic.dds_name, &payload) => 1u64,
+                    _ => 0u64,
+                };
+                GrpcResponse {
+                    stream_id: req.stream_id,
+                    status: Status::Ok,
+                    message: None,
+                    body: proto_publish_ack(accepted),
+                }
+            }
             "Subscribe" => {
-                // FUTURE: stream from DDS Reader. Minimal: empty stream-end.
+                // Drain the next available sample from the DDS DataReader and
+                // return it as one `Sample` message (pull-based server-stream
+                // cardinality, §4.2). Empty body = stream-end when no data.
+                let body = match dds.and_then(|d| d.take_one(&topic.dds_name)) {
+                    Some(payload) => proto_sample(&payload),
+                    None => Vec::new(),
+                };
                 GrpcResponse {
                     stream_id: req.stream_id,
                     status: Status::Ok,
                     message: Some(format!("dds_topic={}", topic.dds_name)),
-                    body: Vec::new(),
+                    body,
                 }
             }
             _ => GrpcResponse {
@@ -718,6 +1042,7 @@ fn unquote(s: &str) -> &str {
 #[allow(clippy::expect_used)]
 mod tests {
     use super::*;
+    use zerodds_grpc_bridge::encode_message;
 
     #[test]
     fn config_default_has_default_bind() {
@@ -794,7 +1119,7 @@ topics:
             encoding: None,
             body: Vec::new(),
         };
-        let resp = dispatch(&req, &cfg);
+        let resp = dispatch(&req, &cfg, None);
         assert_eq!(resp.status, Status::NotFound);
     }
 
@@ -808,16 +1133,19 @@ topics:
             }],
             ..DaemonConfig::default()
         };
+        // A valid LPM-framed Sample{payload="hi"}.
+        let body = encode_message(&proto_sample(b"hi"), false).expect("lpm");
         let req = GrpcRequest {
             stream_id: 3u32,
             path: "/zerodds.t.v1.TMStream/Publish".into(),
             service: "TMStream".into(),
             method: "Publish".into(),
             encoding: None,
-            body: vec![1, 2, 3, 4],
+            body,
         };
-        let resp = dispatch(&req, &cfg);
+        // No DDS handle in the unit test → PublishAck.accepted = 0, status Ok.
+        let resp = dispatch(&req, &cfg, None);
         assert_eq!(resp.status, Status::Ok);
-        assert_eq!(resp.body, vec![1, 2, 3, 4]);
+        assert_eq!(resp.body, proto_publish_ack(0));
     }
 }

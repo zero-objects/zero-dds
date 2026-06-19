@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Security-Builtin-Topic QoS-Profile — DDS-Security 1.2 §7.5.3 + §7.5.4.
+//! Security builtin-topic QoS profile — DDS-Security 1.2 §7.5.3 + §7.5.4.
 //!
 //! Spec §7.5.3 (`DCPSParticipantStatelessMessage`):
 //! * Reliability: `BEST_EFFORT`
@@ -14,27 +14,27 @@
 //! * Durability: `VOLATILE`
 //! * History: `KEEP_ALL`
 //! * Lifespan: `INFINITE`
-//! * Crypto: Receiver-Specific-MACs MUST be enabled
-//!   (`participant_crypto_handle`-Encryption mit pro-Empfaenger
-//!   distinkter Macs).
+//! * Crypto: receiver-specific MACs MUST be enabled
+//!   (`participant_crypto_handle` encryption with per-receiver
+//!   distinct MACs).
 
 use core::fmt;
 
-/// `BuiltinSecurityTopicProfile` — beschreibt das Spec-konforme
-/// QoS-Profile fuer einen Security-Builtin-Topic.
+/// `BuiltinSecurityTopicProfile` — describes the spec-conform
+/// QoS profile for a security builtin topic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuiltinSecurityTopicProfile {
-    /// Reliability-Kind (Best-Effort vs Reliable).
+    /// Reliability kind (best-effort vs reliable).
     pub reliability: ReliabilityKind,
-    /// Durability-Kind (immer Volatile fuer Security-Builtins).
+    /// Durability kind (always Volatile for security builtins).
     pub durability: DurabilityKind,
-    /// History-Kind.
+    /// History kind.
     pub history: HistoryKind,
-    /// `true` wenn Receiver-Specific-MACs Pflicht sind.
+    /// `true` if receiver-specific MACs are mandatory.
     pub require_receiver_specific_macs: bool,
 }
 
-/// Reliability-Kind (Spec DDS 1.4 §2.2.3.14).
+/// Reliability kind (spec DDS 1.4 §2.2.3.14).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReliabilityKind {
     /// `BEST_EFFORT`.
@@ -43,16 +43,16 @@ pub enum ReliabilityKind {
     Reliable,
 }
 
-/// Durability-Kind (Spec DDS 1.4 §2.2.3.4).
+/// Durability kind (spec DDS 1.4 §2.2.3.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DurabilityKind {
-    /// `VOLATILE` (default fuer Security-Builtins).
+    /// `VOLATILE` (default for security builtins).
     Volatile,
     /// `TRANSIENT_LOCAL`.
     TransientLocal,
 }
 
-/// History-Kind (Spec DDS 1.4 §2.2.3.18).
+/// History kind (spec DDS 1.4 §2.2.3.18).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistoryKind {
     /// `KEEP_LAST(depth)`.
@@ -70,13 +70,13 @@ impl fmt::Display for ReliabilityKind {
     }
 }
 
-/// Spec §7.5.3 `DCPSParticipantStatelessMessage`-Topic-Profile.
+/// Spec §7.5.3 `DCPSParticipantStatelessMessage` topic profile.
 ///
-/// Wird vom Authentication-Plugin fuer Pre-Handshake-Token-Exchange
-/// (`AuthRequestMessageToken`) und Handshake-Sequenz (Request/Reply/
-/// Final) verwendet. BEST_EFFORT weil die Tokens self-contained sind
-/// (jeder Token traegt eine eigene Challenge — Replays sind via
-/// future_challenge-Echo verhindert).
+/// Used by the authentication plugin for the pre-handshake token exchange
+/// (`AuthRequestMessageToken`) and the handshake sequence (request/reply/
+/// final). BEST_EFFORT because the tokens are self-contained
+/// (each token carries its own challenge — replays are prevented via the
+/// future_challenge echo).
 #[must_use]
 pub fn stateless_message_profile() -> BuiltinSecurityTopicProfile {
     BuiltinSecurityTopicProfile {
@@ -87,16 +87,16 @@ pub fn stateless_message_profile() -> BuiltinSecurityTopicProfile {
     }
 }
 
-/// Spec §7.5.4 `DCPSParticipantVolatileMessageSecure`-Topic-Profile.
+/// Spec §7.5.4 `DCPSParticipantVolatileMessageSecure` topic profile.
 ///
-/// Wird vom Crypto-Plugin fuer Crypto-Token-Exchange verwendet
-/// (Participant/DataWriter/DataReader-Crypto-Tokens). RELIABLE weil
-/// fehlende Tokens zu permanenten Decryption-Fehlern fuehren — wir
-/// muessen Tokens bis zur Bestaetigung wiederholen koennen.
-/// `require_receiver_specific_macs = true` ist Spec §7.5.4-Pflicht:
-/// jeder Empfaenger MUSS einen distinkten MAC sehen, sonst koennte
-/// ein Empfaenger einen Token-Sample, den er empfaengt, an einen
-/// anderen Empfaenger relaiien.
+/// Used by the crypto plugin for the crypto-token exchange
+/// (participant/DataWriter/DataReader crypto tokens). RELIABLE because
+/// missing tokens lead to permanent decryption errors — we
+/// must be able to retransmit tokens until acknowledged.
+/// `require_receiver_specific_macs = true` is mandatory per spec §7.5.4:
+/// each receiver MUST see a distinct MAC, otherwise a
+/// receiver could relay a token sample it receives to
+/// another receiver.
 #[must_use]
 pub fn volatile_message_secure_profile() -> BuiltinSecurityTopicProfile {
     BuiltinSecurityTopicProfile {
@@ -107,11 +107,11 @@ pub fn volatile_message_secure_profile() -> BuiltinSecurityTopicProfile {
     }
 }
 
-/// Validiert dass ein vorgeschlagenes Profile mit dem Spec-konformen
-/// Profile fuer einen Security-Builtin-Topic uebereinstimmt.
+/// Validates that a proposed profile matches the spec-conform
+/// profile for a security builtin topic.
 ///
 /// # Errors
-/// `&'static str` mit Fehlerursache.
+/// `&'static str` with the error cause.
 pub fn validate_security_topic_profile(
     topic_name: &str,
     actual: BuiltinSecurityTopicProfile,

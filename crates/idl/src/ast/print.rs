@@ -2,16 +2,16 @@
 // Copyright 2026 ZeroDDS Contributors
 //! AST Pretty-Print (T5.3).
 //!
-//! Implementiert [`fmt::Display`] fuer alle AST-Wurzel-Typen. Output ist
-//! valides IDL — re-parsbar zu einem aequivalenten AST (Roundtrip via
-//! T5.6 abgesichert).
+//! Implements [`fmt::Display`] for all AST root types. The output is
+//! valid IDL — re-parsable to an equivalent AST (roundtrip secured via
+//! T5.6).
 //!
-//! # Format-Konvention
-//! - 4-Space Indent
-//! - Block-Bodies mit `{` auf gleicher Zeile, `}` allein-stehend
-//! - Annotations vor der annotierten Konstruktion, eine pro Zeile bei
-//!   Top-Level-Decls, inline bei Members/Params
-//! - Keine Leerzeilen zwischen Top-Level-Definitions (Roundtrip-Stabilitaet)
+//! # Format convention
+//! - 4-space indent
+//! - block bodies with `{` on the same line, `}` standalone
+//! - annotations before the annotated construct, one per line for
+//!   top-level decls, inline for members/params
+//! - no blank lines between top-level definitions (roundtrip stability)
 
 use core::fmt::{self, Write};
 
@@ -112,17 +112,17 @@ fn print_definition(f: &mut fmt::Formatter<'_>, def: &Definition, depth: usize) 
         | Definition::TemplateModule(_)
         | Definition::TemplateModuleInst(_) => {
             write_indent(f, depth)?;
-            // Pretty-Printing fuer CORBA-/CCM-/Template-Konstrukte ist
-            // Code-Gen-Material; hier nur Marker fuer Roundtrip-
-            // Diagnostik.
+            // Pretty-printing for CORBA/CCM/template constructs is
+            // code-gen material; here only a marker for roundtrip
+            // diagnostics.
             writeln!(f, "/* corba/ccm/template construct (round-trip stub) */")
         }
         Definition::VendorExtension(v) => {
             write_indent(f, depth)?;
-            // Vendor-Erweiterungen koennen nicht generisch zurueck-
-            // gedruckt werden — wir markieren sie als Kommentar fuer
-            // Roundtrip-Diagnostik. Echte Vendor-spezifische Pretty-
-            // Printer kommen mit dem jeweiligen Vendor-Adapter (T6+).
+            // Vendor extensions cannot be printed back generically
+            // — we mark them as a comment for
+            // roundtrip diagnostics. Real vendor-specific pretty-
+            // printers come with the respective vendor adapter (T6+).
             writeln!(
                 f,
                 "/* vendor-extension {} (raw not preserved) */",
@@ -164,6 +164,11 @@ fn print_type_decl(f: &mut fmt::Formatter<'_>, td: &TypeDecl, depth: usize) -> f
                 print_declarator(f, d)?;
             }
             Ok(())
+        }
+        TypeDecl::Native(n) => {
+            write_indent(f, depth)?;
+            f.write_str("native ")?;
+            f.write_str(&n.name.text)
         }
     }
 }
@@ -467,7 +472,7 @@ fn print_const_expr(f: &mut fmt::Formatter<'_>, e: &ConstExpr) -> fmt::Result {
             print_const_expr(f, operand)
         }
         ConstExpr::Binary { op, lhs, rhs, .. } => {
-            // Klammern fuer eindeutige Roundtrip-Lesung.
+            // Parentheses for an unambiguous roundtrip reading.
             f.write_str("(")?;
             print_const_expr(f, lhs)?;
             write!(f, " {} ", binary_op_str(*op))?;
@@ -623,6 +628,17 @@ fn print_op_decl(f: &mut fmt::Formatter<'_>, o: &OpDecl) -> fmt::Result {
                 f.write_str(", ")?;
             }
             write!(f, "{r}")?;
+        }
+        f.write_str(")")?;
+    }
+    // context (...)-Clause (§7.4.6.3 Rule 124).
+    if !o.context.is_empty() {
+        f.write_str(" context (")?;
+        for (i, c) in o.context.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "\"{c}\"")?;
         }
         f.write_str(")")?;
     }
@@ -793,8 +809,8 @@ mod tests {
         format!("{ast}")
     }
 
-    /// Helper fuer Tests die CORBA-Konstrukte nutzen (oneway-op,
-    /// abstract/local interface, etc.) — schaltet alle Features an.
+    /// Helper for tests that use CORBA constructs (oneway op,
+    /// abstract/local interface, etc.) — turns on all features.
     fn print_full(src: &str) -> String {
         let cfg = ParserConfig::full_4_2();
         let ast = parse(src, &cfg).expect("parse");
@@ -859,7 +875,7 @@ mod tests {
 
     #[test]
     fn prints_oneway_op_with_raises() {
-        // `oneway`-Op ist CORBA-Konstrukt, gated via corba_oneway_op.
+        // The `oneway` op is a CORBA construct, gated via corba_oneway_op.
         let out = print_full("interface S { oneway void log(in string m) raises (E); };");
         assert!(out.contains("oneway void log"), "got: {out}");
         assert!(out.contains("raises (E)"));

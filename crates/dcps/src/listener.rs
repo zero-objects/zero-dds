@@ -1,55 +1,54 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Listener-Hierarchie (DDS DCPS 1.4 §2.2.4.2 + §2.2.2.*.3 set_listener).
+//! Listener hierarchy (DDS DCPS 1.4 §2.2.4.2 + §2.2.2.*.3 set_listener).
 //!
-//! Listener sind asynchrone Notification-Hooks, die der Middleware-
-//! Layer aufruft, sobald sich ein Communication-Status ändert. Pro
-//! Entity-Typ gibt es einen Listener-Trait mit einem Callback je
-//! relevantem Status:
+//! Listeners are asynchronous notification hooks that the middleware
+//! layer calls as soon as a communication status changes. Per entity
+//! type there is one listener trait with one callback per relevant
+//! status:
 //!
 //! ```text
-//! DomainParticipantListener   (13 Callbacks — alle Bubble-Up-Targets)
-//! ├── PublisherListener       (4  Callbacks — Writer-bezogen)
-//! │   └── DataWriterListener  (4  Callbacks)
-//! ├── SubscriberListener      (8  Callbacks — Reader + on_data_on_readers)
-//! │   └── DataReaderListener  (7  Callbacks — Reader-spezifisch)
-//! └── TopicListener           (1  Callback — on_inconsistent_topic)
+//! DomainParticipantListener   (13 callbacks — all bubble-up targets)
+//! ├── PublisherListener       (4  callbacks — writer-related)
+//! │   └── DataWriterListener  (4  callbacks)
+//! ├── SubscriberListener      (8  callbacks — reader + on_data_on_readers)
+//! │   └── DataReaderListener  (7  callbacks — reader-specific)
+//! └── TopicListener           (1  callback — on_inconsistent_topic)
 //! ```
 //!
-//! ## Bubble-Up (Spec §2.2.4.2.3)
+//! ## Bubble-up (Spec §2.2.4.2.3)
 //!
-//! Wenn auf der "kleinsten" Entity (z.B. DataReader) **kein** Listener
-//! gesetzt ist (oder der Listener das Status-Bit nicht in seiner Mask
-//! hat), bubblet das Event nach oben zur nächst-grösseren Entity:
-//! `Reader → Subscriber → Participant`. Analog
-//! `Writer → Publisher → Participant`. Topic-Events bubbeln direkt zum
-//! Participant. Die `bubble_up_consumed`-Helfer in
-//! [`listener_dispatch`](crate::listener_dispatch) kapseln diese
-//! Resolution.
+//! When **no** listener is set on the "smallest" entity (e.g.
+//! DataReader) — or the listener does not have the status bit in its
+//! mask — the event bubbles up to the next larger entity:
+//! `Reader → Subscriber → Participant`. Likewise
+//! `Writer → Publisher → Participant`. Topic events bubble directly to
+//! the participant. The `bubble_up_consumed` helpers in
+//! [`listener_dispatch`](crate::listener_dispatch) encapsulate this
+//! resolution.
 //!
-//! ## Object-Safety
+//! ## Object safety
 //!
-//! Alle 6 Traits sind **object-safe** (keine `Self`-Returns, keine
-//! Generics, keine assoziierten Typen). Damit der jeweilige Trait
-//! generisch über `T: DdsType` einsetzbar ist (wir haben `Topic<T>`,
-//! `DataWriter<T>`, `DataReader<T>`), übergeben wir den Entity-Handle
-//! als opaken [`InstanceHandle`] — analog zum DDS-DCPS-IDL-PSM, das
-//! Listener-Callbacks ebenfalls nur den Entity-*Handle* gibt
-//! (DCPS 1.4 §2.3.3 IDL).
+//! All 6 traits are **object-safe** (no `Self` returns, no generics, no
+//! associated types). So that each trait is usable generically over
+//! `T: DdsType` (we have `Topic<T>`, `DataWriter<T>`, `DataReader<T>`),
+//! we pass the entity handle as an opaque [`InstanceHandle`] — analogous
+//! to the DDS-DCPS IDL-PSM, which also gives listener callbacks only the
+//! entity *handle* (DCPS 1.4 §2.3.3 IDL).
 //!
-//! Wir speichern den Listener als
-//! `Box<dyn ListenerTrait + Send + Sync>` im Entity-State, damit er
-//! Cross-Thread sichtbar ist (Spec sagt nicht, dass Listener-Callbacks
-//! aus dem Application-Thread laufen müssen).
+//! We store the listener as `Box<dyn ListenerTrait + Send + Sync>` in
+//! the entity state, so that it is visible cross-thread (the spec does
+//! not say that listener callbacks must run from the application
+//! thread).
 //!
-//! Alle Methoden haben `&self` (nicht `&mut self`), weil der Listener
-//! im hot path geteilt wird; der Callback-Body muss interior mutability
-//! verwenden, falls er State führt.
+//! All methods take `&self` (not `&mut self`), because the listener is
+//! shared in the hot path; the callback body must use interior
+//! mutability if it carries state.
 //!
-//! ## Default-Impls
+//! ## Default impls
 //!
-//! Jede Methode hat ein Empty-Body. Anwender überschreiben nur die
-//! Callbacks, die sie wirklich brauchen.
+//! Every method has an empty body. Users override only the callbacks
+//! they actually need.
 
 extern crate alloc;
 
@@ -71,12 +70,11 @@ use crate::status::{
 
 /// `TopicListener` — Spec §2.2.2.3.2 + §2.2.4.2.5.
 ///
-/// Genau ein Callback: `on_inconsistent_topic`. Der `topic`-Parameter
-/// wird als opaker [`InstanceHandle`] übergeben (Spec §2.3.3 IDL-PSM).
+/// Exactly one callback: `on_inconsistent_topic`. The `topic` parameter
+/// is passed as an opaque [`InstanceHandle`] (Spec §2.3.3 IDL-PSM).
 pub trait TopicListener: Send + Sync {
-    /// Spec §2.2.4.2.5 — wird gerufen, wenn ein anderes Topic mit
-    /// gleichem Namen, aber unterschiedlichem Type-Definition entdeckt
-    /// wird.
+    /// Spec §2.2.4.2.5 — called when another topic with the same name
+    /// but a different type definition is discovered.
     fn on_inconsistent_topic(&self, _topic: InstanceHandle, _status: InconsistentTopicStatus) {}
 }
 
@@ -86,11 +84,11 @@ pub trait TopicListener: Send + Sync {
 
 /// `DataWriterListener` — Spec §2.2.2.4.4 + §2.2.4.2.4.
 ///
-/// 4 Callbacks: `on_offered_deadline_missed`, `on_offered_incompatible_qos`,
+/// 4 callbacks: `on_offered_deadline_missed`, `on_offered_incompatible_qos`,
 /// `on_liveliness_lost`, `on_publication_matched`.
 pub trait DataWriterListener: Send + Sync {
-    /// Spec §2.2.4.2.4.1 — Writer hat das offered DEADLINE-Versprechen
-    /// nicht eingehalten.
+    /// Spec §2.2.4.2.4.1 — the writer did not honor the offered DEADLINE
+    /// promise.
     fn on_offered_deadline_missed(
         &self,
         _writer: InstanceHandle,
@@ -98,8 +96,8 @@ pub trait DataWriterListener: Send + Sync {
     ) {
     }
 
-    /// Spec §2.2.4.2.4.2 — ein matched Reader hat inkompatible
-    /// requested-QoS.
+    /// Spec §2.2.4.2.4.2 — a matched reader has incompatible requested
+    /// QoS.
     fn on_offered_incompatible_qos(
         &self,
         _writer: InstanceHandle,
@@ -107,12 +105,12 @@ pub trait DataWriterListener: Send + Sync {
     ) {
     }
 
-    /// Spec §2.2.4.2.4.3 — Writer wurde aus Sicht der Reader als
-    /// not_alive deklariert.
+    /// Spec §2.2.4.2.4.3 — the writer was declared not_alive from the
+    /// readers' point of view.
     fn on_liveliness_lost(&self, _writer: InstanceHandle, _status: LivelinessLostStatus) {}
 
-    /// Spec §2.2.4.2.4.4 — ein neuer kompatibler Reader matched (oder
-    /// einer ist verschwunden).
+    /// Spec §2.2.4.2.4.4 — a new compatible reader matched (or one
+    /// disappeared).
     fn on_publication_matched(&self, _writer: InstanceHandle, _status: PublicationMatchedStatus) {}
 }
 
@@ -122,11 +120,11 @@ pub trait DataWriterListener: Send + Sync {
 
 /// `PublisherListener` — Spec §2.2.2.4.3.
 ///
-/// Inheritance-Form (Spec): "is a listener of the writers contained
-/// within the publisher". Wir spiegeln die 4 DataWriterListener-Methoden
-/// 1:1, damit der Publisher als Bubble-Up-Target funktioniert.
+/// Inheritance form (Spec): "is a listener of the writers contained
+/// within the publisher". We mirror the 4 DataWriterListener methods
+/// 1:1, so that the publisher works as a bubble-up target.
 pub trait PublisherListener: Send + Sync {
-    /// Bubble-Up von [`DataWriterListener::on_offered_deadline_missed`].
+    /// Bubble-up from [`DataWriterListener::on_offered_deadline_missed`].
     fn on_offered_deadline_missed(
         &self,
         _writer: InstanceHandle,
@@ -134,7 +132,7 @@ pub trait PublisherListener: Send + Sync {
     ) {
     }
 
-    /// Bubble-Up von [`DataWriterListener::on_offered_incompatible_qos`].
+    /// Bubble-up from [`DataWriterListener::on_offered_incompatible_qos`].
     fn on_offered_incompatible_qos(
         &self,
         _writer: InstanceHandle,
@@ -142,10 +140,10 @@ pub trait PublisherListener: Send + Sync {
     ) {
     }
 
-    /// Bubble-Up von [`DataWriterListener::on_liveliness_lost`].
+    /// Bubble-up from [`DataWriterListener::on_liveliness_lost`].
     fn on_liveliness_lost(&self, _writer: InstanceHandle, _status: LivelinessLostStatus) {}
 
-    /// Bubble-Up von [`DataWriterListener::on_publication_matched`].
+    /// Bubble-up from [`DataWriterListener::on_publication_matched`].
     fn on_publication_matched(&self, _writer: InstanceHandle, _status: PublicationMatchedStatus) {}
 }
 
@@ -155,22 +153,21 @@ pub trait PublisherListener: Send + Sync {
 
 /// `DataReaderListener` — Spec §2.2.2.5.7 + §2.2.4.2.6.
 ///
-/// 7 Reader-spezifische Callbacks (das achte, `on_data_on_readers`,
-/// gehört zum [`SubscriberListener`]).
+/// 7 reader-specific callbacks (the eighth, `on_data_on_readers`,
+/// belongs to the [`SubscriberListener`]).
 pub trait DataReaderListener: Send + Sync {
-    /// Spec §2.2.4.2.6.1 — neue Daten sind zum Reader gekommen.
+    /// Spec §2.2.4.2.6.1 — new data has arrived at the reader.
     fn on_data_available(&self, _reader: InstanceHandle) {}
 
-    /// Spec §2.2.4.2.6.2 — ein Sample wurde nie empfangen
-    /// (z.B. überschrieben durch einen jüngeren).
+    /// Spec §2.2.4.2.6.2 — a sample was never received (e.g. overwritten
+    /// by a newer one).
     fn on_sample_lost(&self, _reader: InstanceHandle, _status: SampleLostStatus) {}
 
-    /// Spec §2.2.4.2.6.3 — ein Sample wurde abgewiesen
-    /// (RESOURCE_LIMITS).
+    /// Spec §2.2.4.2.6.3 — a sample was rejected (RESOURCE_LIMITS).
     fn on_sample_rejected(&self, _reader: InstanceHandle, _status: SampleRejectedStatus) {}
 
-    /// Spec §2.2.4.2.6.4 — der Reader hat keine Sample innerhalb des
-    /// requested DEADLINE bekommen.
+    /// Spec §2.2.4.2.6.4 — the reader did not receive a sample within
+    /// the requested DEADLINE.
     fn on_requested_deadline_missed(
         &self,
         _reader: InstanceHandle,
@@ -178,8 +175,8 @@ pub trait DataReaderListener: Send + Sync {
     ) {
     }
 
-    /// Spec §2.2.4.2.6.5 — ein matched Writer hat inkompatible
-    /// offered-QoS.
+    /// Spec §2.2.4.2.6.5 — a matched writer has incompatible offered
+    /// QoS.
     fn on_requested_incompatible_qos(
         &self,
         _reader: InstanceHandle,
@@ -187,11 +184,11 @@ pub trait DataReaderListener: Send + Sync {
     ) {
     }
 
-    /// Spec §2.2.4.2.6.6 — Liveliness-Status der matched Writer
-    /// hat sich geändert.
+    /// Spec §2.2.4.2.6.6 — the liveliness status of the matched writers
+    /// has changed.
     fn on_liveliness_changed(&self, _reader: InstanceHandle, _status: LivelinessChangedStatus) {}
 
-    /// Spec §2.2.4.2.6.7 — neuer kompatibler Writer matched (oder weg).
+    /// Spec §2.2.4.2.6.7 — a new compatible writer matched (or went away).
     fn on_subscription_matched(&self, _reader: InstanceHandle, _status: SubscriptionMatchedStatus) {
     }
 }
@@ -202,22 +199,22 @@ pub trait DataReaderListener: Send + Sync {
 
 /// `SubscriberListener` — Spec §2.2.2.5.6 + §2.2.4.2.7.
 ///
-/// Erbt alle 7 Reader-Callbacks + 1 zusätzlichen `on_data_on_readers`.
+/// Inherits all 7 reader callbacks + 1 additional `on_data_on_readers`.
 pub trait SubscriberListener: Send + Sync {
-    /// Spec §2.2.4.2.7.1 — irgendein Reader des Subscribers hat neue
-    /// Daten (Subscriber-Level-Notification).
+    /// Spec §2.2.4.2.7.1 — some reader of the subscriber has new data
+    /// (subscriber-level notification).
     fn on_data_on_readers(&self, _subscriber: InstanceHandle) {}
 
-    /// Bubble-Up von [`DataReaderListener::on_data_available`].
+    /// Bubble-up from [`DataReaderListener::on_data_available`].
     fn on_data_available(&self, _reader: InstanceHandle) {}
 
-    /// Bubble-Up von [`DataReaderListener::on_sample_lost`].
+    /// Bubble-up from [`DataReaderListener::on_sample_lost`].
     fn on_sample_lost(&self, _reader: InstanceHandle, _status: SampleLostStatus) {}
 
-    /// Bubble-Up von [`DataReaderListener::on_sample_rejected`].
+    /// Bubble-up from [`DataReaderListener::on_sample_rejected`].
     fn on_sample_rejected(&self, _reader: InstanceHandle, _status: SampleRejectedStatus) {}
 
-    /// Bubble-Up von [`DataReaderListener::on_requested_deadline_missed`].
+    /// Bubble-up from [`DataReaderListener::on_requested_deadline_missed`].
     fn on_requested_deadline_missed(
         &self,
         _reader: InstanceHandle,
@@ -225,7 +222,7 @@ pub trait SubscriberListener: Send + Sync {
     ) {
     }
 
-    /// Bubble-Up von [`DataReaderListener::on_requested_incompatible_qos`].
+    /// Bubble-up from [`DataReaderListener::on_requested_incompatible_qos`].
     fn on_requested_incompatible_qos(
         &self,
         _reader: InstanceHandle,
@@ -233,10 +230,10 @@ pub trait SubscriberListener: Send + Sync {
     ) {
     }
 
-    /// Bubble-Up von [`DataReaderListener::on_liveliness_changed`].
+    /// Bubble-up from [`DataReaderListener::on_liveliness_changed`].
     fn on_liveliness_changed(&self, _reader: InstanceHandle, _status: LivelinessChangedStatus) {}
 
-    /// Bubble-Up von [`DataReaderListener::on_subscription_matched`].
+    /// Bubble-up from [`DataReaderListener::on_subscription_matched`].
     fn on_subscription_matched(&self, _reader: InstanceHandle, _status: SubscriptionMatchedStatus) {
     }
 }
@@ -247,26 +244,26 @@ pub trait SubscriberListener: Send + Sync {
 
 /// `DomainParticipantListener` — Spec §2.2.2.2.3 + §2.2.4.2.8.
 ///
-/// Vereinigt alle Status-Callbacks aller untergeordneten Entities, weil
-/// jedes Event spec-treu nach ganz oben bubblen kann, wenn auf der
-/// engeren Entity kein Listener installiert ist.
+/// Unifies all status callbacks of all subordinate entities, because
+/// every event can — per spec — bubble all the way to the top if no
+/// listener is installed on the narrower entity.
 ///
-/// Die Spec listet **13 Callbacks** (Vereinigung aller Status-Hooks):
-/// - 1 Topic       (`on_inconsistent_topic`)
-/// - 4 Writer-     (`on_offered_*`, `on_liveliness_lost`, `on_publication_matched`)
-/// - 7 Reader-     (`on_data_available`, `on_sample_*`,
+/// The spec lists **13 callbacks** (the union of all status hooks):
+/// - 1 topic       (`on_inconsistent_topic`)
+/// - 4 writer      (`on_offered_*`, `on_liveliness_lost`, `on_publication_matched`)
+/// - 7 reader      (`on_data_available`, `on_sample_*`,
 ///                  `on_requested_*`, `on_liveliness_changed`,
 ///                  `on_subscription_matched`)
-/// - 1 Subscriber- (`on_data_on_readers`)
+/// - 1 subscriber  (`on_data_on_readers`)
 pub trait DomainParticipantListener: Send + Sync {
     // -------- Topic --------
 
-    /// Bubble-Up von [`TopicListener::on_inconsistent_topic`].
+    /// Bubble-up from [`TopicListener::on_inconsistent_topic`].
     fn on_inconsistent_topic(&self, _topic: InstanceHandle, _status: InconsistentTopicStatus) {}
 
-    // -------- Writer-Seite --------
+    // -------- Writer side --------
 
-    /// Bubble-Up von [`PublisherListener::on_offered_deadline_missed`].
+    /// Bubble-up from [`PublisherListener::on_offered_deadline_missed`].
     fn on_offered_deadline_missed(
         &self,
         _writer: InstanceHandle,
@@ -274,7 +271,7 @@ pub trait DomainParticipantListener: Send + Sync {
     ) {
     }
 
-    /// Bubble-Up von [`PublisherListener::on_offered_incompatible_qos`].
+    /// Bubble-up from [`PublisherListener::on_offered_incompatible_qos`].
     fn on_offered_incompatible_qos(
         &self,
         _writer: InstanceHandle,
@@ -282,27 +279,27 @@ pub trait DomainParticipantListener: Send + Sync {
     ) {
     }
 
-    /// Bubble-Up von [`PublisherListener::on_liveliness_lost`].
+    /// Bubble-up from [`PublisherListener::on_liveliness_lost`].
     fn on_liveliness_lost(&self, _writer: InstanceHandle, _status: LivelinessLostStatus) {}
 
-    /// Bubble-Up von [`PublisherListener::on_publication_matched`].
+    /// Bubble-up from [`PublisherListener::on_publication_matched`].
     fn on_publication_matched(&self, _writer: InstanceHandle, _status: PublicationMatchedStatus) {}
 
-    // -------- Reader-Seite --------
+    // -------- Reader side --------
 
-    /// Bubble-Up von [`SubscriberListener::on_data_on_readers`].
+    /// Bubble-up from [`SubscriberListener::on_data_on_readers`].
     fn on_data_on_readers(&self, _subscriber: InstanceHandle) {}
 
-    /// Bubble-Up von [`SubscriberListener::on_data_available`].
+    /// Bubble-up from [`SubscriberListener::on_data_available`].
     fn on_data_available(&self, _reader: InstanceHandle) {}
 
-    /// Bubble-Up von [`SubscriberListener::on_sample_lost`].
+    /// Bubble-up from [`SubscriberListener::on_sample_lost`].
     fn on_sample_lost(&self, _reader: InstanceHandle, _status: SampleLostStatus) {}
 
-    /// Bubble-Up von [`SubscriberListener::on_sample_rejected`].
+    /// Bubble-up from [`SubscriberListener::on_sample_rejected`].
     fn on_sample_rejected(&self, _reader: InstanceHandle, _status: SampleRejectedStatus) {}
 
-    /// Bubble-Up von [`SubscriberListener::on_requested_deadline_missed`].
+    /// Bubble-up from [`SubscriberListener::on_requested_deadline_missed`].
     fn on_requested_deadline_missed(
         &self,
         _reader: InstanceHandle,
@@ -310,7 +307,7 @@ pub trait DomainParticipantListener: Send + Sync {
     ) {
     }
 
-    /// Bubble-Up von [`SubscriberListener::on_requested_incompatible_qos`].
+    /// Bubble-up from [`SubscriberListener::on_requested_incompatible_qos`].
     fn on_requested_incompatible_qos(
         &self,
         _reader: InstanceHandle,
@@ -318,64 +315,64 @@ pub trait DomainParticipantListener: Send + Sync {
     ) {
     }
 
-    /// Bubble-Up von [`SubscriberListener::on_liveliness_changed`].
+    /// Bubble-up from [`SubscriberListener::on_liveliness_changed`].
     fn on_liveliness_changed(&self, _reader: InstanceHandle, _status: LivelinessChangedStatus) {}
 
-    /// Bubble-Up von [`SubscriberListener::on_subscription_matched`].
+    /// Bubble-up from [`SubscriberListener::on_subscription_matched`].
     fn on_subscription_matched(&self, _reader: InstanceHandle, _status: SubscriptionMatchedStatus) {
     }
 }
 
 // ============================================================================
-// Boxed-Listener-Aliases (für Speicherung im Entity-State)
+// Boxed listener aliases (for storage in the entity state)
 // ============================================================================
 
-/// Heap-allokierter, threadsicherer Box-Wrapper für die 6
-/// Listener-Traits. So speichert die jeweilige Entity ihren Listener.
+/// Heap-allocated, thread-safe box wrapper for the 6 listener traits.
+/// This is how each entity stores its listener.
 pub type BoxedTopicListener = Box<dyn TopicListener>;
-/// Vgl. [`BoxedTopicListener`].
+/// Cf. [`BoxedTopicListener`].
 pub type BoxedDataWriterListener = Box<dyn DataWriterListener>;
-/// Vgl. [`BoxedTopicListener`].
+/// Cf. [`BoxedTopicListener`].
 pub type BoxedPublisherListener = Box<dyn PublisherListener>;
-/// Vgl. [`BoxedTopicListener`].
+/// Cf. [`BoxedTopicListener`].
 pub type BoxedDataReaderListener = Box<dyn DataReaderListener>;
-/// Vgl. [`BoxedTopicListener`].
+/// Cf. [`BoxedTopicListener`].
 pub type BoxedSubscriberListener = Box<dyn SubscriberListener>;
-/// Vgl. [`BoxedTopicListener`].
+/// Cf. [`BoxedTopicListener`].
 pub type BoxedDomainParticipantListener = Box<dyn DomainParticipantListener>;
 
-/// Arc-Variante fuer per Slot speichern wir den Listener als
-/// `Arc<dyn ...>`, weil der Hot-Path den Listener kurz unter dem
-/// Slot-Mutex klont und dann ausserhalb des Locks ruft (Deadlock-
-/// Vermeidung). Box wuerde das nicht zulassen.
+/// Arc variant: per slot we store the listener as `Arc<dyn ...>`,
+/// because the hot path briefly clones the listener under the slot mutex
+/// and then calls it outside the lock (to avoid deadlocks). A Box would
+/// not allow that.
 pub type ArcTopicListener = alloc::sync::Arc<dyn TopicListener>;
-/// Vgl. [`ArcTopicListener`].
+/// Cf. [`ArcTopicListener`].
 pub type ArcDataWriterListener = alloc::sync::Arc<dyn DataWriterListener>;
-/// Vgl. [`ArcTopicListener`].
+/// Cf. [`ArcTopicListener`].
 pub type ArcPublisherListener = alloc::sync::Arc<dyn PublisherListener>;
-/// Vgl. [`ArcTopicListener`].
+/// Cf. [`ArcTopicListener`].
 pub type ArcDataReaderListener = alloc::sync::Arc<dyn DataReaderListener>;
-/// Vgl. [`ArcTopicListener`].
+/// Cf. [`ArcTopicListener`].
 pub type ArcSubscriberListener = alloc::sync::Arc<dyn SubscriberListener>;
-/// Vgl. [`ArcTopicListener`].
+/// Cf. [`ArcTopicListener`].
 pub type ArcDomainParticipantListener = alloc::sync::Arc<dyn DomainParticipantListener>;
 
 // ============================================================================
-// Bubble-Up-Helpers
+// Bubble-up helpers
 // ============================================================================
 
-/// True wenn `mask` das Bit für `status` setzt **und** der Listener
-/// nicht-`None` ist. Diese Kombi entscheidet, ob ein Event auf der
-/// aktuellen Stufe konsumiert wird (Spec §2.2.4.2.3).
+/// True if `mask` sets the bit for `status` **and** the listener is
+/// non-`None`. This combination decides whether an event is consumed at
+/// the current level (Spec §2.2.4.2.3).
 #[inline]
 #[must_use]
 pub fn listener_handles(listener_present: bool, mask: StatusMask, status_bit: u32) -> bool {
     listener_present && (mask & status_bit) != 0
 }
 
-/// Vorab-Hilfsfunktion: liefert den Status-Bit-Wert zu einem
-/// Status-Namen. Nur in Tests + Doku-Beispielen verwendet — Hot-Path
-/// nutzt direkt die Konstanten in [`crate::psm_constants::status`].
+/// Convenience helper: returns the status-bit value for a status name.
+/// Used only in tests + doc examples — the hot path uses the constants
+/// in [`crate::psm_constants::status`] directly.
 #[must_use]
 pub fn status_bit_for_inconsistent_topic() -> u32 {
     status_bits::INCONSISTENT_TOPIC
@@ -387,7 +384,7 @@ mod tests {
     use super::*;
     use core::sync::atomic::{AtomicU32, Ordering};
 
-    // -------- Object-Safety: alle 6 Traits müssen als `dyn` benutzbar sein --------
+    // -------- Object safety: all 6 traits must be usable as `dyn` --------
 
     #[test]
     fn topic_listener_is_object_safe() {
@@ -439,11 +436,11 @@ mod tests {
         let _: BoxedDomainParticipantListener = Box::new(L);
     }
 
-    // -------- Default-Impls dürfen leeren Body haben --------
+    // -------- Default impls may have an empty body --------
 
     #[test]
     fn default_callbacks_do_not_panic() {
-        // Empty-Impl auf allen 6 Traits.
+        // Empty impl on all 6 traits.
         struct Noop;
         impl TopicListener for Noop {}
         impl DataWriterListener for Noop {}
@@ -451,8 +448,8 @@ mod tests {
         impl DataReaderListener for Noop {}
         impl SubscriberListener for Noop {}
         impl DomainParticipantListener for Noop {}
-        // Wir können sie zumindest konstruieren + boxen — der
-        // Aufruf braucht eine Entity (s. Tests in entity.rs).
+        // We can at least construct + box them — the actual call needs
+        // an entity (see tests in entity.rs).
         let _: BoxedDomainParticipantListener = Box::new(Noop);
     }
 
@@ -462,7 +459,7 @@ mod tests {
         assert!(listener_handles(true, bit, bit));
         assert!(!listener_handles(false, bit, bit));
         assert!(!listener_handles(true, 0, bit));
-        // Bit nicht in Mask.
+        // Bit not in mask.
         assert!(!listener_handles(true, status_bits::SAMPLE_LOST, bit));
     }
 
@@ -476,9 +473,9 @@ mod tests {
 
     #[test]
     fn all_listener_traits_default_methods_invoke_safely() {
-        // Stresst die Default-Bodies aller 6 Listener-Traits.
-        // Da alle Default-Methoden Empty-Bodies haben, gehen wir
-        // einfach durch und rufen sie auf einer Noop-Instanz.
+        // Exercises the default bodies of all 6 listener traits.
+        // Since all default methods have empty bodies, we simply go
+        // through and call them on a Noop instance.
         struct Noop;
         impl TopicListener for Noop {}
         impl DataWriterListener for Noop {}
@@ -611,8 +608,7 @@ mod tests {
         c.on_data_available(h);
         c.on_data_available(h);
         c.on_sample_lost(h, SampleLostStatus::default());
-        // Methoden, die wir nicht ueberschrieben haben, sollten als
-        // Default-No-Op funktionieren.
+        // Methods we did not override should work as a default no-op.
         c.on_subscription_matched(h, SubscriptionMatchedStatus::default());
         assert_eq!(c.avail.load(Ordering::Relaxed), 2);
         assert_eq!(c.lost.load(Ordering::Relaxed), 1);

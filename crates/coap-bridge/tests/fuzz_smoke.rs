@@ -1,4 +1,4 @@
-//! Stable-Rust Fuzz-Smoke-Tests fuer den CoAP-Wire-Decoder.
+//! Stable-Rust fuzz smoke tests for the CoAP wire decoder.
 //! Spec: RFC 7252 §3 (Message Format).
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]

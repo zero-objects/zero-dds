@@ -1,7 +1,7 @@
 //! WP 1.10 T2 — RTPS Submessage Golden-Vector Tests.
 //!
-//! Liest Hex-Fixtures aus `tests/compliance/rtps/`, decodet via RTPS-
-//! Submessage-Parser, encodet zurueck und prueft Byte-Identitaet.
+//! Reads hex fixtures from `tests/compliance/rtps/`, decodes via the RTPS
+//! submessage parser, re-encodes and checks byte identity.
 
 #![allow(
     clippy::expect_used,
@@ -37,7 +37,7 @@ fn heartbeat_minimal_le_roundtrips() {
     assert_eq!(hb.count, 0x42);
 
     let (back, flags) = hb.write_body(true);
-    assert_eq!(back, bytes, "heartbeat byte-identisch nach roundtrip");
-    // E-Flag (little-endian) sollte gesetzt sein, F/L=false → 0x01.
+    assert_eq!(back, bytes, "heartbeat byte-identical after roundtrip");
+    // E flag (little-endian) should be set, F/L=false → 0x01.
     assert_eq!(flags & 0x01, 0x01);
 }

@@ -1,18 +1,18 @@
-//! Tap-Hook-Trait + Registry.
+//! TapHook trait + registry.
 //!
-//! Wenn das Cargo-Feature `inspect` an ist, koennen externe Konsumenten
-//! (Reality Inspector ueber Side-Channel oder lokale Tools) sich als
-//! `TapHook` registrieren. Der DDS-Stack ruft `dispatch_*` an
-//! definierten Insertion-Points — ohne Feature ist das alles weg.
+//! When the Cargo feature `inspect` is on, external consumers
+//! (the Reality Inspector over the side channel or local tools) can
+//! register as a `TapHook`. The DDS stack calls `dispatch_*` at
+//! defined insertion points — without the feature this is all gone.
 
 use crate::frame::Frame;
 
-/// Marker-Trait fuer einen Tap-Hook. Implementierungen muessen `Send +
-/// Sync` sein und nur **non-blocking** Operationen tun (Hot-Path).
+/// Marker trait for a tap hook. Implementations must be `Send +
+/// Sync` and do only **non-blocking** operations (hot path).
 pub trait TapHook: Send + Sync + 'static {
-    /// Wird vom Inspect-Endpoint aufgerufen, wenn ein Frame an diesem
-    /// Layer entsteht. Implementierungen sollen den Frame queueen oder
-    /// best-effort verarbeiten — **nicht blockieren**.
+    /// Called by the inspect endpoint when a frame is produced at this
+    /// layer. Implementations should queue the frame or
+    /// process it best-effort — **do not block**.
     fn on_frame(&self, frame: &Frame);
 }
 
@@ -23,7 +23,7 @@ mod registry {
     use super::TapHook;
     use crate::frame::{Frame, FrameKind};
 
-    /// Eine Layer-Registry haelt 0..N Hooks pro Layer.
+    /// A layer registry holds 0..N hooks per layer.
     struct LayerRegistry {
         hooks: Mutex<Vec<Box<dyn TapHook>>>,
     }
@@ -60,21 +60,21 @@ mod registry {
         }
     }
 
-    /// Registriert einen Hook am DCPS-Layer.
+    /// Registers a hook at the DCPS layer.
     pub fn register_dcps_tap(hook: Box<dyn TapHook>) {
         registry(FrameKind::Dcps).push(hook);
     }
-    /// Registriert einen Hook am RTPS-Layer.
+    /// Registers a hook at the RTPS layer.
     pub fn register_rtps_tap(hook: Box<dyn TapHook>) {
         registry(FrameKind::Rtps).push(hook);
     }
-    /// Registriert einen Hook am Transport-Layer.
+    /// Registers a hook at the transport layer.
     pub fn register_transport_tap(hook: Box<dyn TapHook>) {
         registry(FrameKind::Transport).push(hook);
     }
 
-    /// Verteilt einen Frame an alle Hooks am passenden Layer.
-    /// Wird von dcps/rtps/transport-Crates aufgerufen.
+    /// Distributes a frame to all hooks at the matching layer.
+    /// Called by the dcps/rtps/transport crates.
     pub fn dispatch(frame: &Frame) {
         registry(frame.kind).dispatch(frame);
     }
@@ -111,7 +111,7 @@ mod tests {
         register_rtps_tap(Box::new(CountingHook(Arc::clone(&counter))));
         let initial = counter.load(Ordering::SeqCst);
         dispatch(&Frame::dcps("t".into(), 0, 0, vec![]));
-        // RTPS-Counter ist nicht inkrementiert
+        // The RTPS counter is not incremented
         assert_eq!(counter.load(Ordering::SeqCst), initial);
     }
 

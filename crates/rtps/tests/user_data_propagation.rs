@@ -2,7 +2,7 @@
 //! Pub/Sub/Participant BuiltinTopicData.
 //!
 //! Spec DDS 1.4 §2.2.3.1-3: opaque sequence<octet> per
-//! User/Topic/Group-Data; Discovery propagiert das ueber PIDs
+//! User/Topic/Group data; discovery propagates it via PIDs
 //! 0x002c/0x002e/0x002d.
 
 #![allow(
@@ -63,6 +63,8 @@ fn publication_user_data_roundtrip() {
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
+        unicast_locators: vec![],
+        multicast_locators: vec![],
     };
 
     let bytes = orig.to_pl_cdr_le().expect("encode");
@@ -74,8 +76,8 @@ fn publication_user_data_roundtrip() {
 
 #[test]
 fn publication_empty_user_data_omits_pid() {
-    // Default (leerer Vec) wird NICHT als Parameter geschrieben — wenn
-    // wir alles leer lassen, soll der Decoder dieselben Defaults sehen.
+    // The default (empty Vec) is NOT written as a parameter — if
+    // we leave everything empty, the decoder should see the same defaults.
     let orig = PublicationBuiltinTopicData {
         key: Guid::new(
             GuidPrefix::from_bytes([2; 12]),
@@ -102,6 +104,8 @@ fn publication_empty_user_data_omits_pid() {
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
+        unicast_locators: vec![],
+        multicast_locators: vec![],
     };
 
     let bytes = orig.to_pl_cdr_le().expect("encode");
@@ -138,6 +142,8 @@ fn subscription_user_data_roundtrip() {
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
+        unicast_locators: vec![],
+        multicast_locators: vec![],
     };
 
     let bytes = orig.to_pl_cdr_le().expect("encode");
@@ -153,6 +159,7 @@ fn participant_user_data_roundtrip() {
         guid: Guid::new(GuidPrefix::from_bytes([4; 12]), EntityId::PARTICIPANT),
         protocol_version: ProtocolVersion::V2_5,
         vendor_id: VendorId::ZERODDS,
+        participant_security_info: None,
         default_unicast_locator: None,
         default_multicast_locator: None,
         metatraffic_unicast_locator: None,
@@ -177,13 +184,14 @@ fn participant_user_data_roundtrip() {
 
 #[test]
 fn user_data_large_payload_32kib() {
-    // 32 KiB Payload — bleibt unter der u16-PID-Length-Grenze (Wire
+    // 32 KiB payload — stays under the u16 PID-length limit (wire
     // Parameter-Length ist u16 = max 64 KiB inkl. Header).
     let payload: Vec<u8> = (0..32 * 1024).map(|i| (i & 0xFF) as u8).collect();
     let orig = ParticipantBuiltinTopicData {
         guid: Guid::new(GuidPrefix::from_bytes([5; 12]), EntityId::PARTICIPANT),
         protocol_version: ProtocolVersion::V2_5,
         vendor_id: VendorId::ZERODDS,
+        participant_security_info: None,
         default_unicast_locator: None,
         default_multicast_locator: None,
         metatraffic_unicast_locator: None,

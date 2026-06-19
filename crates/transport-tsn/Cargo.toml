@@ -24,7 +24,20 @@ path = "src/lib.rs"
 default = ["std"]
 std = ["alloc"]
 alloc = []
+# Live AF_PACKET transport (Linux-only): RTPS-direct-on-Ethernet with
+# EtherType 0x88B5 (Spec Annex A). Pulls in std + libc + the transport
+# trait crate. On non-Linux the module is empty (no build error).
+live = ["std", "dep:libc", "zerodds-transport/std", "zerodds-rtps/std"]
 
 [dependencies]
-# Read-only XML parser fuer §7.3 PSM Configuration Schema.
+# Read-only XML parser for the §7.3 PSM configuration schema.
 roxmltree = { workspace = true }
+# Only for feature `live` (AF_PACKET raw-socket syscalls).
+libc = { workspace = true, features = ["std"], optional = true }
+zerodds-transport = { version = "1.0.0-rc.3", path = "../transport", optional = true }
+zerodds-rtps = { version = "1.0.0-rc.3", path = "../rtps", optional = true }
+
+# AF_PACKET-Roundtrip-Latenz-Bench (TSN vs UDP-Baseline) — nur Linux+live.
+[[example]]
+name = "tsn_latency"
+required-features = ["live"]

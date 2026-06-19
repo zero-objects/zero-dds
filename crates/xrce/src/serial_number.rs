@@ -1,97 +1,97 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! RFC-1982 Serial Number Arithmetic fuer XRCE-Sequence-Numbers
+//! RFC-1982 serial number arithmetic for XRCE sequence numbers
 //! (Spec §8.3.2.3).
 //!
-//! XRCE nutzt 16-bit Serial Numbers mit `SERIAL_BITS = 16`. Vergleiche
-//! erfolgen modulo `2^16` mit Half-Window-Logik nach RFC 1982:
+//! XRCE uses 16-bit serial numbers with `SERIAL_BITS = 16`. Comparisons
+//! are done modulo `2^16` with half-window logic per RFC 1982:
 //!
-//! - `a < b` gilt, wenn die signed-Differenz `b - a` modulo `2^16` im
-//!   Bereich `(0, 2^15)` liegt.
-//! - `a > b` analog im Bereich `(-2^15, 0)`.
-//! - Bei exakt `2^15` Abstand ist die Ordnung undefiniert (RFC 1982
-//!   §3.2). Wir markieren das hier als `is_undefined_pair`.
+//! - `a < b` holds when the signed difference `b - a` modulo `2^16` is in
+//!   the range `(0, 2^15)`.
+//! - `a > b` analogously in the range `(-2^15, 0)`.
+//! - At exactly `2^15` distance the order is undefined (RFC 1982
+//!   §3.2). We mark that here as `is_undefined_pair`.
 //!
-//! Maximal 32768 outstanding Messages pro Stream (Spec §8.3.2.3).
+//! At most 32768 outstanding messages per stream (Spec §8.3.2.3).
 
 use core::cmp::Ordering;
 
-/// 16-bit Serial Number (Wrapping bei `2^16`).
+/// 16-bit serial number (wrapping at `2^16`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct SerialNumber16(pub u16);
 
 impl SerialNumber16 {
-    /// Halbe Wrap-Distanz; bei diesem Abstand ist Ordnung
-    /// laut RFC 1982 §3.2 undefiniert.
+    /// Half wrap distance; at this distance the order is
+    /// undefined per RFC 1982 §3.2.
     pub const HALF_WINDOW: u16 = 1u16 << 15; // 0x8000
 
-    /// Konstruiere aus rohem `u16`.
+    /// Constructs from a raw `u16`.
     #[must_use]
     pub const fn new(value: u16) -> Self {
         Self(value)
     }
 
-    /// Roher Wert.
+    /// Raw value.
     #[must_use]
     pub const fn raw(self) -> u16 {
         self.0
     }
 
-    /// Inkrement (wrappt bei `u16::MAX`).
+    /// Increment (wraps at `u16::MAX`).
     #[must_use]
     pub fn next(self) -> Self {
         Self(self.0.wrapping_add(1))
     }
 
-    /// Wrapping-Subtraktion: liefert `(rhs - self) mod 2^16`.
-    /// Achtung: diese Differenz ist immer `>= 0`. Fuer "Distanz mit
-    /// Vorzeichen" siehe `wrapping_diff`.
+    /// Wrapping subtraction: returns `(rhs - self) mod 2^16`.
+    /// Note: this difference is always `>= 0`. For a "signed
+    /// distance" see `wrapping_diff`.
     #[must_use]
     pub fn wrapping_sub(self, rhs: Self) -> u16 {
         self.0.wrapping_sub(rhs.0)
     }
 
-    /// Signierte Distanz `self - rhs` interpretiert als Half-Window-
-    /// Wert. Resultat-Bereich `[-2^15, +2^15)`. Bei exakt `+2^15` (also
-    /// `0x8000`) ist die Ordnung undefiniert; wir liefern dann
-    /// `i32::from(HALF_WINDOW)`, was am Rand liegt — Caller muss via
-    /// `is_undefined_pair` differenzieren.
+    /// Signed distance `self - rhs` interpreted as a half-window
+    /// value. Result range `[-2^15, +2^15)`. At exactly `+2^15` (i.e.
+    /// `0x8000`) the order is undefined; we then return
+    /// `i32::from(HALF_WINDOW)`, which lies at the edge — the caller must
+    /// distinguish via `is_undefined_pair`.
     #[must_use]
     pub fn wrapping_diff(self, rhs: Self) -> i32 {
         let raw_diff = self.0.wrapping_sub(rhs.0); // u16, in [0, 2^16)
         match raw_diff.cmp(&Self::HALF_WINDOW) {
-            // Undefiniert nach RFC 1982 §3.2; konservativ als HALF_WINDOW
-            // melden (Caller kann `is_undefined_pair` pruefen).
+            // Undefined per RFC 1982 §3.2; conservatively reported as
+            // HALF_WINDOW (the caller can check `is_undefined_pair`).
             core::cmp::Ordering::Less | core::cmp::Ordering::Equal => i32::from(raw_diff),
-            // raw_diff in (HALF_WINDOW, 2^16) → negativ.
+            // raw_diff in (HALF_WINDOW, 2^16) → negative.
             core::cmp::Ordering::Greater => i32::from(raw_diff) - (1i32 << 16),
         }
     }
 
-    /// `true`, wenn die Differenz zwischen `self` und `rhs` exakt
-    /// `2^15` betraegt — Ordnung dann undefiniert (RFC 1982 §3.2).
+    /// `true` when the difference between `self` and `rhs` is exactly
+    /// `2^15` — order then undefined (RFC 1982 §3.2).
     #[must_use]
     pub fn is_undefined_pair(self, rhs: Self) -> bool {
         self.0.wrapping_sub(rhs.0) == Self::HALF_WINDOW
     }
 
-    /// `self < rhs` nach RFC-1982. Ist die Ordnung undefiniert,
-    /// liefert die Methode `false`.
+    /// `self < rhs` per RFC-1982. If the order is undefined,
+    /// the method returns `false`.
     #[must_use]
     pub fn wrapping_lt(self, rhs: Self) -> bool {
         let d = rhs.0.wrapping_sub(self.0);
         d > 0 && d < Self::HALF_WINDOW
     }
 
-    /// `self > rhs` nach RFC-1982. Undefinierte Ordnung -> `false`.
+    /// `self > rhs` per RFC-1982. Undefined order -> `false`.
     #[must_use]
     pub fn wrapping_gt(self, rhs: Self) -> bool {
         rhs.wrapping_lt(self)
     }
 
-    /// Wrapping-Comparison als `Option<Ordering>`. `None` bei
-    /// undefiniertem Paar.
+    /// Wrapping comparison as `Option<Ordering>`. `None` for an
+    /// undefined pair.
     #[must_use]
     pub fn wrapping_cmp(self, rhs: Self) -> Option<Ordering> {
         if self.0 == rhs.0 {
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn lt_across_wrap_boundary() {
-        // u16::MAX - 5  <  3  weil Distanz <= HALF_WINDOW
+        // u16::MAX - 5  <  3  because distance <= HALF_WINDOW
         let a = SerialNumber16::new(u16::MAX - 5);
         let b = SerialNumber16::new(3);
         assert!(a.wrapping_lt(b), "wrap-around: u16::MAX-5 < 3");

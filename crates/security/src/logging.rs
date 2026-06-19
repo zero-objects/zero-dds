@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Logging-Plugin SPI (OMG DDS-Security 1.1 §8.6).
+//! Logging plugin SPI (OMG DDS-Security 1.1 §8.6).
 //!
-//! Separater Plugin-Slot fuer Security-Events — wichtig fuer Audits,
-//! Pen-Tests, Forensik. Getrennt vom allgemeinen Application-Logging
-//! damit sicherheitskritische Events nicht versehentlich im Debug-Flag
-//! untergehen.
+//! Separate plugin slot for security events — important for audits,
+//! pen tests, forensics. Separated from general application logging
+//! so that security-critical events do not accidentally get lost under
+//! the debug flag.
 //!
 //! zerodds-lint: allow no_dyn_in_safe
-//! (Plugin-SPI benötigt `Box<dyn LoggingPlugin>`.)
+//! (The plugin SPI needs `Box<dyn LoggingPlugin>`.)
 
 extern crate alloc;
 
 use alloc::boxed::Box;
 
-/// Severity eines Security-Events (Spec §8.6.3 Tabelle 36).
+/// Severity of a security event (spec §8.6.3 table 36).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum LogLevel {
-    /// Security-Emergency (Auth-Handshake failed, Key-Exchange-Bruch).
+    /// Security emergency (auth handshake failed, key-exchange break).
     Emergency = 0,
     /// Alert.
     Alert = 1,
@@ -37,21 +37,21 @@ pub enum LogLevel {
     Debug = 7,
 }
 
-/// Logging-Plugin (Spec §8.6.2.1).
+/// Logging plugin (spec §8.6.2.1).
 pub trait LoggingPlugin: Send + Sync {
-    /// Ein Security-Event loggen.
+    /// Log a security event.
     ///
-    /// Spec §8.6.2.1.1 `log`. `participant` identifiziert den betroffenen
-    /// Teilnehmer (GUID-bytes, 16 octets). `category` ist ein
-    /// plugin-spezifischer String ("auth.handshake.failed" etc.).
+    /// Spec §8.6.2.1.1 `log`. `participant` identifies the affected
+    /// participant (GUID bytes, 16 octets). `category` is a
+    /// plugin-specific string ("auth.handshake.failed" etc.).
     fn log(&self, level: LogLevel, participant: [u8; 16], category: &str, message: &str);
 
-    /// Plugin-Class-Id (z.B. "DDS:Logging:DDS_LogTopic" fuer den
-    /// Spec-vorgesehenen LogTopic-Dispatch).
+    /// Plugin class id (e.g. "DDS:Logging:DDS_LogTopic" for the
+    /// spec-intended LogTopic dispatch).
     fn plugin_class_id(&self) -> &str;
 }
 
-/// Factory-Alias.
+/// Factory alias.
 pub type LoggingPluginBox = Box<dyn LoggingPlugin>;
 
 #[cfg(test)]

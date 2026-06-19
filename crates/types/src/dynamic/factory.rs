@@ -8,16 +8,16 @@ use super::type_::DynamicType;
 
 /// XTypes 1.3 §7.5.7 DynamicDataFactory.
 ///
-/// Stateless. `delete_data` ist ein No-Op (Rust-RAII
-/// uebernimmt das Cleanup), wird aber als Spec-API exponiert fuer
-/// API-Treue.
+/// Stateless. `delete_data` is a no-op (Rust RAII
+/// handles the cleanup), but is exposed as a spec API for
+/// API fidelity.
 pub struct DynamicDataFactory;
 
 impl DynamicDataFactory {
     /// Spec §7.5.7.1.1 `create_data(type)`.
     ///
     /// # Errors
-    /// `Inconsistent` wenn der Type nicht konsistent ist.
+    /// `Inconsistent` if the type is not consistent.
     pub fn create_data(type_: &DynamicType) -> Result<DynamicData, DynamicError> {
         type_.is_consistent()?;
         Ok(DynamicData::new(type_.clone()))

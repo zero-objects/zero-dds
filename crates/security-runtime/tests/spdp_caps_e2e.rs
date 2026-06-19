@@ -1,13 +1,13 @@
-//! E2E: Security-Caps durch den SPDP-Beacon-Kanal.
+//! E2E: security caps through the SPDP beacon channel.
 //!
-//! Kette: PeerCapabilities → advertise_security_caps → WirePropertyList
+//! Chain: PeerCapabilities → advertise_security_caps → WirePropertyList
 //! → ParticipantBuiltinTopicData.properties → SpdpBeacon.serialize() →
-//! Datagram → SpdpReader.parse_datagram() → parse_peer_caps() →
-//! PeerCapabilities (beim Empfaenger).
+//! datagram → SpdpReader.parse_datagram() → parse_peer_caps() →
+//! PeerCapabilities (at the receiver).
 //!
-//! Damit ist der DoD-Punkt "Participant A annonciert, Participant B
-//! sieht die Caps im PeerCache" abgedeckt. Cyclone-Live-Interop
-//! folgt separat auf `ssh llvm@llvm`.
+//! This covers the DoD point "participant A announces, participant B
+//! sees the caps in the PeerCache". Cyclone live interop
+//! follows separately on `ssh llvm@llvm`.
 
 #![allow(
     clippy::expect_used,
@@ -49,6 +49,7 @@ fn baseline_participant(prefix: u8) -> ParticipantBuiltinTopicData {
         properties: Default::default(),
         identity_token: None,
         permissions_token: None,
+        participant_security_info: None,
         identity_status_token: None,
         sig_algo_info: None,
         kx_algo_info: None,
@@ -80,16 +81,16 @@ fn secure_caps_roundtrip_through_spdp_beacon() {
     let mut beacon = SpdpBeacon::new(data_a.clone());
     let datagram = beacon.serialize().expect("serialize beacon");
 
-    // --- Empfaenger-Seite ---
+    // --- Receiver side ---
     let discovered = SpdpReader::new()
         .parse_datagram(&datagram)
         .expect("parse beacon");
 
-    // ParticipantBuiltinTopicData kommt byte-konsistent zurueck
+    // ParticipantBuiltinTopicData comes back byte-consistent
     assert_eq!(discovered.data.guid, data_a.guid);
     assert_eq!(discovered.data.properties, data_a.properties);
 
-    // PeerCapabilities werden korrekt geparst
+    // PeerCapabilities are parsed correctly
     let caps = parse_peer_caps(&discovered.data.properties);
     assert_eq!(
         caps.auth_plugin_class.as_deref(),
@@ -105,10 +106,10 @@ fn secure_caps_roundtrip_through_spdp_beacon() {
 
 #[test]
 fn legacy_peer_without_caps_lands_as_none_in_cache() {
-    // Phase-0-Peer oder Cyclone ohne Security schickt ein SPDP ohne
-    // PropertyList — Architektur-Doc §2.1 (2): "ein Peer ohne
-    // auth_plugin_class in SPDP wird als Legacy klassifiziert,
-    // nicht gedroppt".
+    // A phase-0 peer or Cyclone without security sends an SPDP without
+    // a PropertyList — architecture doc §2.1 (2): "a peer without
+    // auth_plugin_class in SPDP is classified as legacy,
+    // not dropped".
     let data_legacy = baseline_participant(0x11);
     let mut beacon = SpdpBeacon::new(data_legacy.clone());
     let datagram = beacon.serialize().unwrap();
@@ -122,13 +123,13 @@ fn legacy_peer_without_caps_lands_as_none_in_cache() {
 
 #[test]
 fn two_participants_land_independently_in_peer_cache() {
-    // Zwei verschiedene Sender, ein gemeinsamer PeerCache beim
-    // Empfaenger — GuidPrefix unterscheidet die Eintraege.
+    // Two different senders, one shared PeerCache at the
+    // receiver — the GuidPrefix distinguishes the entries.
     let mut data_a = baseline_participant(0xAA);
     advertise_security_caps(&mut data_a.properties, &secure_caps());
 
-    let data_b = baseline_participant(0xBB); // Legacy
-    // (kein advertise fuer B)
+    let data_b = baseline_participant(0xBB); // legacy
+    // (no advertise for B)
 
     let mut beacon_a = SpdpBeacon::new(data_a.clone());
     let mut beacon_b = SpdpBeacon::new(data_b.clone());
@@ -159,13 +160,13 @@ fn two_participants_land_independently_in_peer_cache() {
 
 #[test]
 fn peer_cache_upgrade_path_via_update_partial() {
-    // Arch-Doc §4.3: Peer war initial als auth_plugin=None bekannt,
-    // schickt dann ein Extended-SPDP mit Security-Caps → Cache wird
-    // aktualisiert, nicht ueberschrieben.
+    // Arch doc §4.3: the peer was initially known as auth_plugin=None,
+    // then sends an extended SPDP with security caps → the cache is
+    // updated, not overwritten.
     let mut cache = PeerCache::new();
     let key = [0x55u8; 12];
 
-    // Initial: Legacy-Beacon (kein PropertyList)
+    // Initial: legacy beacon (no PropertyList)
     let data_legacy = baseline_participant(0x55);
     let mut beacon = SpdpBeacon::new(data_legacy.clone());
     let dg1 = beacon.serialize().unwrap();
@@ -173,7 +174,7 @@ fn peer_cache_upgrade_path_via_update_partial() {
     cache.insert(key, parse_peer_caps(&disc1.data.properties));
     assert!(cache.get(&key).unwrap().auth_plugin_class.is_none());
 
-    // Zweiter Beacon: mit Security-Caps (Peer hat Security nachgezogen)
+    // Second beacon: with security caps (the peer added security)
     let mut data_upgraded = baseline_participant(0x55);
     advertise_security_caps(&mut data_upgraded.properties, &secure_caps());
     let mut beacon2 = SpdpBeacon::new(data_upgraded.clone());
@@ -181,7 +182,7 @@ fn peer_cache_upgrade_path_via_update_partial() {
     let disc2 = SpdpReader::new().parse_datagram(&dg2).unwrap();
     cache.update_partial(key, &parse_peer_caps(&disc2.data.properties));
 
-    // Nach Upgrade sind die Caps im Cache.
+    // After the upgrade the caps are in the cache.
     let merged = cache.get(&key).unwrap();
     assert_eq!(merged.offered_protection, ProtectionLevel::Encrypt);
     assert_eq!(
@@ -192,9 +193,9 @@ fn peer_cache_upgrade_path_via_update_partial() {
 
 #[test]
 fn extra_zerodds_properties_are_ignored_by_vendor_agnostic_parse() {
-    // Wenn ein ZeroDDS-Peer uns unbekannte zerodds.sec.*-Properties
-    // schickt, darf parse_peer_caps nicht crashen/droppen —
-    // Forward-Compat fuer spaetere Protokoll-Erweiterungen.
+    // When a ZeroDDS peer sends us unknown zerodds.sec.* properties,
+    // parse_peer_caps must not crash/drop —
+    // forward compat for later protocol extensions.
     let mut data = baseline_participant(0x22);
     advertise_security_caps(&mut data.properties, &secure_caps());
     data.properties
@@ -211,13 +212,13 @@ fn extra_zerodds_properties_are_ignored_by_vendor_agnostic_parse() {
 }
 
 // ============================================================================
-// Delegation-Chain via SPDP
+// Delegation chain via SPDP
 // ============================================================================
 
 #[test]
 fn delegation_chain_zero_links_treated_as_none() {
-    // Empty Chain wird im Cap-Modell als None gehandhabt — der
-    // wire-Encode laesst delegation_chain=None weg, parse liefert None.
+    // An empty chain is handled as None in the cap model — the
+    // wire encode omits delegation_chain=None, parse returns None.
     let mut data = baseline_participant(0x33);
     advertise_security_caps(&mut data.properties, &secure_caps());
     let mut beacon = SpdpBeacon::new(data);
@@ -324,8 +325,8 @@ fn delegation_chain_two_hops_roundtrip_via_spdp() {
 
 #[test]
 fn malformed_delegation_chain_property_treated_as_none() {
-    // Property mit garbage-Wert darf parse_peer_caps nicht crashen
-    // und das chain-Feld muss None bleiben (DoS-Defense).
+    // A property with a garbage value must not crash parse_peer_caps
+    // and the chain field must stay None (DoS defense).
     let mut data = baseline_participant(0xDD);
     advertise_security_caps(&mut data.properties, &secure_caps());
     data.properties

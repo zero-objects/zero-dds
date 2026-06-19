@@ -1,0 +1,49 @@
+[package]
+name = "safe-crates-only"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "Meta-crate aggregating the ZeroDDS Safe-Subset (SAFE-classified, no_std) for the safe-profile build + lint gate. Not published."
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# Safe-profile marker. `cargo build -p safe-crates-only --no-default-features
+# --features safety` builds the **no_std** safe-profile build over exactly the
+# safe subset from docs/architecture/04_safety_by_architecture.md. The feature
+# passes `safety` + the minimal `alloc` (NO std) through to every safe dep.
+safety = [
+    "zerodds-foundation/safety", "zerodds-foundation/alloc",
+    "zerodds-cdr/safety", "zerodds-cdr/alloc",
+    "zerodds-types/safety", "zerodds-types/alloc",
+    "zerodds-qos/safety", "zerodds-qos/alloc",
+    "zerodds-rtps/safety", "zerodds-rtps/alloc",
+    "zerodds-discovery/safety", "zerodds-discovery/alloc",
+    "zerodds-transport/safety", "zerodds-transport/alloc",
+    "zerodds-transport-udp/safety", "zerodds-transport-udp/alloc",
+    "zerodds-security/safety", "zerodds-security/alloc",
+    "zerodds-xrce-client/safety", "zerodds-xrce-client/alloc",
+    "zerodds-sys/safety", "zerodds-sys/alloc",
+]
+
+[dependencies]
+zerodds-foundation = { version = "1.0.0-rc.3", path = "../foundation", default-features = false }
+zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr", default-features = false }
+zerodds-types = { version = "1.0.0-rc.3", path = "../types", default-features = false }
+zerodds-qos = { version = "1.0.0-rc.3", path = "../qos", default-features = false }
+zerodds-rtps = { version = "1.0.0-rc.3", path = "../rtps", default-features = false }
+zerodds-discovery = { version = "1.0.0-rc.3", path = "../discovery", default-features = false }
+zerodds-transport = { version = "1.0.0-rc.3", path = "../transport", default-features = false }
+zerodds-transport-udp = { version = "1.0.0-rc.3", path = "../transport-udp", default-features = false }
+zerodds-security = { version = "1.0.0-rc.3", path = "../security", default-features = false }
+zerodds-xrce-client = { version = "1.0.0-rc.3", path = "../xrce-client", default-features = false }
+zerodds-sys = { version = "1.0.0-rc.3", path = "../sys", default-features = false }

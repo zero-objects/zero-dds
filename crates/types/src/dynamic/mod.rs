@@ -2,11 +2,11 @@
 // Copyright 2026 ZeroDDS Contributors
 //! XTypes 1.3 §7.5 DynamicType-API.
 //!
-//! Foundation für die XTypes-1.3-Type-System-Vervollständigung. Ziel
-//! ist eine programmatische, Spec-treue Runtime-Sicht auf XTypes-
-//! Datenmodelle (Struct/Union/Enum/Sequence/...), die unabhaengig vom
-//! Wire-Format `TypeObject` lebt — und ueber das `bridge`-Submodul auf
-//! das Wire-Format gemappt werden kann (Spec §7.6).
+//! Foundation for the XTypes 1.3 type-system completion. The goal is a
+//! programmatic, spec-faithful runtime view of XTypes data models
+//! (struct/union/enum/sequence/...) that lives independently of the
+//! `TypeObject` wire format — and can be mapped to the wire format via
+//! the `bridge` submodule (spec §7.6).
 //!
 //! # Module
 //!
@@ -20,17 +20,17 @@
 //! - `bridge` — TypeObject ↔ DynamicType.
 //! - `error` — `DynamicError`.
 //!
-//! # Implementations-Scope
+//! # Implementation scope
 //!
-//! - Try-Construct-**Apply**-Logik (DISCARD/USE_DEFAULT/TRIM bei
-//!   Decoder-Fehlschlag) — kommt mit C4.7. Hier ist nur das Enum +
-//!   Member-Feld.
-//! - Voller Loan-Refcount mit Lifetime-Tracking — aktuelle
-//!   Implementation ist ein RAII-Wrapper mit Active-Set.
-//! - Annotations-Apply (Spec §7.4 builtin annotations) — kommt mit
+//! - Try-construct **apply** logic (DISCARD/USE_DEFAULT/TRIM on a
+//!   decoder failure) — comes with C4.7. Here only the enum +
+//!   member field.
+//! - Full loan refcount with lifetime tracking — the current
+//!   implementation is an RAII wrapper with an active set.
+//! - Annotations apply (spec §7.4 builtin annotations) — comes with
 //!   C4.3.
-//! - Bitset/Bitmask im Bridge-Pfad — TypeObject-Bridge fuer diese
-//!   Kinds folgt mit C4.5 XML-Schema-Loader.
+//! - Bitset/bitmask in the bridge path — the TypeObject bridge for these
+//!   kinds follows with the C4.5 XML schema loader.
 
 pub mod bridge;
 pub mod builder;

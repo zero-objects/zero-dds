@@ -3,8 +3,8 @@
 
 //! `DELETE` Submessage (id=3, Spec §8.3.5.4).
 //!
-//! Direction: Client → Agent. Bei `OBJK_CLIENT` → `Root::delete_client`,
-//! sonst `ProxyClient::delete`.
+//! Direction: Client → Agent. For `OBJK_CLIENT` → `Root::delete_client`,
+//! otherwise `ProxyClient::delete`.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// Opaker Body fuer `DELETE`.
+/// Opaque body for `DELETE`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DeletePayload {
     /// XCDR2 `BaseObjectRequest`.
@@ -20,7 +20,7 @@ pub struct DeletePayload {
 }
 
 impl DeletePayload {
-    /// Verpackt in `Submessage`.
+    /// Packs into a `Submessage`.
     ///
     /// # Errors
     /// `PayloadTooLarge`.
@@ -32,7 +32,7 @@ impl DeletePayload {
         )
     }
 
-    /// Extrahiert aus `Submessage`.
+    /// Extracts from a `Submessage`.
     ///
     /// # Errors
     /// `ValueOutOfRange`.

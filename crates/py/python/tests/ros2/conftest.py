@@ -1,9 +1,9 @@
-"""ROS-2-pytest-Fixture-Setup (§6.4 Vendor-Spec).
+"""ROS-2 pytest fixture setup (§6.4 vendor spec).
 
-Stellt fest, ob ein lauffaehiges ROS-2-Setup vorhanden ist (rclpy +
-rmw_cyclonedds_cpp). Falls nicht, werden alle Tests in diesem
-Verzeichnis geskipped. Damit kann der Test-Tree im monorepo liegen,
-ohne dass die normale `pytest crates/py/python/tests/`-Run scheitert.
+Determines whether a runnable ROS-2 setup is present (rclpy +
+rmw_cyclonedds_cpp). If not, all tests in this directory are
+skipped. That way the test tree can live in the monorepo without
+the normal `pytest crates/py/python/tests/` run failing.
 """
 
 from __future__ import annotations
@@ -27,19 +27,19 @@ def _ros2_available() -> bool:
 
 
 def _zerodds_rmw_available() -> bool:
-    """Pruefe, ob `rmw_zerodds_shim` als RMW-Implementation registriert ist."""
+    """Check whether `rmw_zerodds_cpp` is registered as the RMW implementation."""
     rmw = os.environ.get("RMW_IMPLEMENTATION", "")
-    return rmw == "rmw_zerodds_shim"
+    return rmw == "rmw_zerodds_cpp"
 
 
 def pytest_collection_modifyitems(config: object, items: list) -> None:
-    """Markiere nur die Tests in DIESEM Unterverzeichnis (`ros2/`) als
-    skip — nicht den gesamten Test-Tree. `pytest_collection_modifyitems`
-    ist ansonsten project-level und wuerde alle Tests treffen."""
+    """Mark only the tests in THIS subdirectory (`ros2/`) as
+    skipped — not the entire test tree. `pytest_collection_modifyitems`
+    is otherwise project-level and would hit all tests."""
     here = os.path.dirname(__file__)
-    skip_no_ros = pytest.mark.skip(reason="ROS-2 nicht installiert (ROS_DISTRO + rclpy noetig)")
+    skip_no_ros = pytest.mark.skip(reason="ROS-2 not installed (ROS_DISTRO + rclpy needed)")
     skip_no_rmw = pytest.mark.skip(
-        reason="RMW_IMPLEMENTATION != rmw_zerodds_shim — `export RMW_IMPLEMENTATION=rmw_zerodds_shim`",
+        reason="RMW_IMPLEMENTATION != rmw_zerodds_cpp — `export RMW_IMPLEMENTATION=rmw_zerodds_cpp`",
     )
     ros2_items = [it for it in items if str(it.fspath).startswith(here)]
     if not _ros2_available():

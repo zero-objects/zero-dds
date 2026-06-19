@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! gRPC-Bridge §7.x Bridge-Security-Wireup.
+//! gRPC bridge §7.x bridge-security wireup.
 //!
-//! * §7.1 TLS — HTTP/2 ALPN-`h2` via rustls (Standard für gRPC).
-//! * §7.2 Auth — `Authorization: Bearer <jwt>` Header (gRPC-Metadata),
-//!   alternativ `mtls`.
-//! * §7.3 Topic-ACL — gRPC-Path = `"/<package>.<service>/<method>"`;
-//!   wir mappen Method = DDS-Topic-Name, ACL-Check pro Call.
+//! * §7.1 TLS — HTTP/2 ALPN-`h2` via rustls (standard for gRPC).
+//! * §7.2 Auth — `Authorization: Bearer <jwt>` header (gRPC metadata),
+//!   alternatively `mtls`.
+//! * §7.3 Topic ACL — gRPC path = `"/<package>.<service>/<method>"`;
+//!   we map method = DDS topic name, ACL check per call.
 //!
 //! Spec: `zerodds-grpc-bridge-1.0.md` §7.
 
@@ -16,15 +16,15 @@ pub use zerodds_bridge_security::{
     SecurityError, authorize, build_ctx, extract_mtls_subject,
 };
 
-/// gRPC-spezifischer Auth-Hook: extrahiert `authorization`-Header
-/// aus den HTTP/2 Metadata (HEADERS-Frame der Stream-Initiation).
+/// gRPC-specific auth hook: extracts the `authorization` header
+/// from the HTTP/2 metadata (HEADERS frame of the stream initiation).
 ///
-/// `metadata` ist die Map aus `[(name, value)]`-Pairs wie sie aus
-/// dem dekodierten HPACK-Block kommen. Wir suchen
-/// (case-insensitive) nach `authorization`.
+/// `metadata` is the map of `[(name, value)]` pairs as they come from
+/// the decoded HPACK block. We search (case-insensitive) for
+/// `authorization`.
 ///
 /// # Errors
-/// [`AuthError`] bei missing/malformed/rejected.
+/// [`AuthError`] on missing/malformed/rejected.
 pub fn authenticate_grpc(
     auth: &AuthMode,
     metadata: &[(String, String)],
@@ -37,8 +37,8 @@ pub fn authenticate_grpc(
     zerodds_bridge_security::authenticate(auth, auth_header, None, mtls_subject)
 }
 
-/// gRPC-spezifischer ACL-Check: gRPC-Path "/svc.X/method" wird auf
-/// "method" gemapped (das ist die DDS-Topic-Identität nach Spec).
+/// gRPC-specific ACL check: the gRPC path "/svc.X/method" is mapped
+/// to "method" (which is the DDS topic identity per spec).
 #[must_use]
 pub fn authorize_grpc(acl: &Acl, subject: &AuthSubject, op: AclOp, grpc_path: &str) -> bool {
     let topic = grpc_path.rsplit('/').next().unwrap_or(grpc_path);

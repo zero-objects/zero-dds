@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `base_name`-Resolver mit Cycle-Detection.
+//! `base_name` resolver with cycle detection.
 //!
-//! DDS-XML 1.0 erlaubt mehreren Building-Blocks (QoS-Profile §7.3.2.4.2,
-//! Domain §7.3.4.4.2, DomainParticipant §7.3.5.4.3) eine `base_name`-Attribut-
-//! basierte Vererbung. Die Spec verlangt, dass die Basis-Definition vor der
-//! erbenden Definition steht — naive Implementierungen koennen ueber
-//! Bibliotheks-Grenzen hinweg dennoch Zyklen erzeugen.
+//! DDS-XML 1.0 allows several building blocks (QoS profiles §7.3.2.4.2,
+//! domain §7.3.4.4.2, domain participant §7.3.5.4.3) a `base_name`-attribute-
+//! based inheritance. The spec requires the base definition to come before the
+//! inheriting definition — naive implementations can nevertheless create
+//! cycles across library boundaries.
 //!
-//! Dieses Modul implementiert eine generische Inheritance-Aufloesung mit
-//! DAG-Pruefung. Die Aufloesungs-Routine ist parametrisiert ueber den
-//! Item-Typ (z.B. QoS-Profile, Domain, Participant) und die `base_name`-
-//! Lookup-Funktion.
+//! This module implements a generic inheritance resolution with
+//! DAG checking. The resolution routine is parameterized over the
+//! item type (e.g. QoS profile, domain, participant) and the `base_name`
+//! lookup function.
 
 use crate::errors::XmlError;
 use alloc::collections::BTreeSet;
@@ -19,27 +19,27 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// Maximale Inheritance-Tiefe (DoS-Cap).
+/// Maximum inheritance depth (DoS cap).
 pub const MAX_INHERITANCE_DEPTH: usize = 32;
 
 /// Resolves a `base_name`-chain starting at `name` and returns the
 /// chain in **base-first** order, i.e. `[grandparent, parent, name]`.
 ///
-/// Die Reihenfolge ermoeglicht es Aufrufern, Felder schrittweise zu
-/// "merge"en (Base-Defaults zuerst, dann ueberschreiben).
+/// The order enables callers to "merge" fields step by step
+/// (base defaults first, then override).
 ///
-/// # Parameter
-/// * `name` — Startpunkt der Aufloesung.
-/// * `lookup` — Closure, die fuer einen `name` den `base_name` (oder
-///   `None`, wenn keine Basis vorhanden) zurueckgibt. Wenn der `name`
-///   selbst nicht existiert, soll [`XmlError::MissingRequiredElement`]
-///   zurueckgegeben werden.
+/// # Parameters
+/// * `name` — start point of the resolution.
+/// * `lookup` — closure that, for a `name`, returns its `base_name` (or
+///   `None` if no base is present). If the `name`
+///   itself does not exist, [`XmlError::MissingRequiredElement`]
+///   should be returned.
 ///
 /// # Errors
-/// * [`XmlError::CircularInheritance`] — wenn ein Zyklus erkannt wird.
-/// * [`XmlError::LimitExceeded`] — wenn [`MAX_INHERITANCE_DEPTH`]
-///   ueberschritten wird.
-/// * Fehler aus der `lookup`-Closure werden durchgereicht.
+/// * [`XmlError::CircularInheritance`] — if a cycle is detected.
+/// * [`XmlError::LimitExceeded`] — if [`MAX_INHERITANCE_DEPTH`]
+///   is exceeded.
+/// * Errors from the `lookup` closure are passed through.
 ///
 /// zerodds-lint: recursion-depth = no recursion (iterative loop with
 /// MAX_INHERITANCE_DEPTH bound).
@@ -53,7 +53,7 @@ where
 
     for _ in 0..MAX_INHERITANCE_DEPTH {
         if !visited.insert(current.clone()) {
-            // Zyklus: `current` wurde bereits besucht.
+            // Cycle: `current` was already visited.
             chain.push(current.clone());
             let pretty = chain.join(" -> ");
             return Err(XmlError::CircularInheritance(pretty));
@@ -62,7 +62,7 @@ where
 
         match lookup(&current)? {
             None => {
-                // Kein Basis-Eintrag: Aufloesung beendet.
+                // No base entry: resolution finished.
                 chain.reverse();
                 return Ok(chain);
             }

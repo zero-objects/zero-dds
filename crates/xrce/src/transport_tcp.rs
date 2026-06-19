@@ -3,10 +3,10 @@
 
 //! XRCE TCP-Transport-Mapping (Spec §11.3).
 //!
-//! TCP unterscheidet sich von UDP (§11.2) dadurch, dass es keine
-//! Datagram-Boundaries hat — der Stream liefert nur einen kontinuierlichen
-//! Byte-Strom. Spec §11.3.3 verlangt deshalb pro XRCE-Message einen
-//! 2-Byte-Length-Prefix.
+//! TCP differs from UDP (§11.2) in that it has no
+//! datagram boundaries — the stream delivers only a continuous
+//! byte stream. Spec §11.3.3 therefore requires a 2-byte length prefix
+//! per XRCE message.
 //!
 //! ```text
 //!  +--------+--------+----------------------------+
@@ -14,17 +14,17 @@
 //!  +--------+--------+----------------------------+
 //! ```
 //!
-//! ## Anmerkung Endianness
+//! ## Note on endianness
 //!
-//! Der Spec-Text §11.3.3 spricht von "2-Byte-Length-Prefix". Die meisten
-//! existierenden XRCE-Implementierungen (Micro-XRCE-DDS) nutzen
-//! Little-Endian, weil das mit dem Submessage-Length-Feld (§8.3.4 — immer
-//! LE) konsistent ist. Wir folgen dieser de-facto-Konvention.
+//! The spec text §11.3.3 speaks of a "2-byte length prefix". Most
+//! existing XRCE implementations (Micro-XRCE-DDS) use
+//! little-endian, because it is consistent with the submessage length
+//! field (§8.3.4 — always LE). We follow this de-facto convention.
 //!
-//! ## DoS-Schutz
+//! ## DoS protection
 //!
-//! - max-message-size = `MAX_DATAGRAM_SIZE` (analog UDP)
-//! - bei Truncation/Connection-Close → `XrceError::ValueOutOfRange`
+//! - max-message-size = `MAX_DATAGRAM_SIZE` (analogous to UDP)
+//! - on truncation/connection close → `XrceError::ValueOutOfRange`
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -33,22 +33,22 @@ use crate::error::XrceError;
 use crate::submessages::{DOSC_MAX_PAYLOAD_SIZE, Message};
 use crate::transport_udp::MAX_DATAGRAM_SIZE;
 
-/// Wire-Size des Length-Prefix (§11.3.3).
+/// Wire size of the length prefix (§11.3.3).
 pub const TCP_LENGTH_PREFIX_SIZE: usize = 2;
 
-/// XRCE-TCP-Client. Verbindet sich zu einem XRCE-TCP-Agent und kapselt
-/// Length-Prefix-Framing.
+/// XRCE TCP client. Connects to an XRCE TCP agent and encapsulates
+/// length-prefix framing.
 #[derive(Debug)]
 pub struct XrceTcpClient {
-    /// Aktive TCP-Verbindung.
+    /// Active TCP connection.
     pub stream: TcpStream,
 }
 
 impl XrceTcpClient {
-    /// Verbindet sich zu `addr` (Agent-Adresse).
+    /// Connects to `addr` (agent address).
     ///
     /// # Errors
-    /// `XrceError::ValueOutOfRange`, wenn der Connect fehlschlaegt.
+    /// `XrceError::ValueOutOfRange` if the connect fails.
     pub fn connect(addr: SocketAddr) -> Result<Self, XrceError> {
         let stream = TcpStream::connect(addr).map_err(|_| XrceError::ValueOutOfRange {
             message: "tcp connect failed",
@@ -56,17 +56,17 @@ impl XrceTcpClient {
         Ok(Self { stream })
     }
 
-    /// Wrappt einen schon existierenden Stream (z.B. aus `accept`).
+    /// Wraps an already existing stream (e.g. from `accept`).
     #[must_use]
     pub fn from_stream(stream: TcpStream) -> Self {
         Self { stream }
     }
 
-    /// Sendet `msg` mit 2-Byte-Length-Prefix (LE).
+    /// Sends `msg` with a 2-byte length prefix (LE).
     ///
     /// # Errors
-    /// - `PayloadTooLarge`, wenn die Message > `MAX_DATAGRAM_SIZE` ist.
-    /// - `ValueOutOfRange`, wenn das Encode oder der TCP-Write fehlschlaegt.
+    /// - `PayloadTooLarge` if the message is > `MAX_DATAGRAM_SIZE`.
+    /// - `ValueOutOfRange` if the encode or the TCP write fails.
     pub fn send_message(&mut self, msg: &Message) -> Result<(), XrceError> {
         let bytes = msg.encode()?;
         if bytes.len() > MAX_DATAGRAM_SIZE {
@@ -92,14 +92,14 @@ impl XrceTcpClient {
         Ok(())
     }
 
-    /// Empfaengt eine Message — blockt bis komplettes Frame da ist.
+    /// Receives a message — blocks until the complete frame is present.
     ///
     /// # Errors
-    /// - `UnexpectedEof`, wenn die Verbindung geschlossen wird, bevor das
-    ///   Frame vollstaendig ist.
-    /// - `PayloadTooLarge`, wenn der Length-Prefix > `MAX_DATAGRAM_SIZE`
-    ///   ankuendigt (DoS-Cap).
-    /// - `XrceError` aus `Message::decode`.
+    /// - `UnexpectedEof` if the connection is closed before the
+    ///   frame is complete.
+    /// - `PayloadTooLarge` if the length prefix announces > `MAX_DATAGRAM_SIZE`
+    ///   (DoS cap).
+    /// - `XrceError` from `Message::decode`.
     pub fn recv_message(&mut self) -> Result<Message, XrceError> {
         let mut prefix = [0u8; TCP_LENGTH_PREFIX_SIZE];
         read_exact_eof(&mut self.stream, &mut prefix)?;
@@ -121,10 +121,10 @@ impl XrceTcpClient {
         Message::decode(&body)
     }
 
-    /// Schliesst die Verbindung explizit (Drop tut das auch automatisch).
+    /// Closes the connection explicitly (Drop does this automatically too).
     ///
     /// # Errors
-    /// `ValueOutOfRange` bei Shutdown-Fehler.
+    /// `ValueOutOfRange` on a shutdown error.
     pub fn close(&mut self) -> Result<(), XrceError> {
         self.stream
             .shutdown(std::net::Shutdown::Both)
@@ -134,18 +134,18 @@ impl XrceTcpClient {
     }
 }
 
-/// XRCE-TCP-Agent (Server-Side). Lauscht auf einem Bind-Port.
+/// XRCE TCP agent (server side). Listens on a bind port.
 #[derive(Debug)]
 pub struct XrceTcpServer {
-    /// Listener-Socket.
+    /// Listener socket.
     pub listener: TcpListener,
 }
 
 impl XrceTcpServer {
-    /// Bindet einen Listener-Port.
+    /// Binds a listener port.
     ///
     /// # Errors
-    /// `ValueOutOfRange`, wenn der Bind fehlschlaegt.
+    /// `ValueOutOfRange` if the bind fails.
     pub fn bind(addr: SocketAddr) -> Result<Self, XrceError> {
         let listener = TcpListener::bind(addr).map_err(|_| XrceError::ValueOutOfRange {
             message: "tcp bind failed",
@@ -153,10 +153,10 @@ impl XrceTcpServer {
         Ok(Self { listener })
     }
 
-    /// Akzeptiert die naechste Verbindung. Blockt.
+    /// Accepts the next connection. Blocks.
     ///
     /// # Errors
-    /// `ValueOutOfRange`, wenn `accept` fehlschlaegt.
+    /// `ValueOutOfRange` if `accept` fails.
     pub fn accept(&self) -> Result<(XrceTcpClient, SocketAddr), XrceError> {
         let (stream, peer) = self
             .listener
@@ -167,10 +167,10 @@ impl XrceTcpServer {
         Ok((XrceTcpClient::from_stream(stream), peer))
     }
 
-    /// Lokal gebundene Adresse.
+    /// Locally bound address.
     ///
     /// # Errors
-    /// `ValueOutOfRange`, wenn `local_addr` fehlschlaegt.
+    /// `ValueOutOfRange` if `local_addr` fails.
     pub fn local_addr(&self) -> Result<SocketAddr, XrceError> {
         self.listener
             .local_addr()
@@ -180,7 +180,7 @@ impl XrceTcpServer {
     }
 }
 
-/// Liest exakt `buf.len()` Bytes; bei vorzeitigem EOF → `UnexpectedEof`.
+/// Reads exactly `buf.len()` bytes; on premature EOF → `UnexpectedEof`.
 fn read_exact_eof<R: Read>(r: &mut R, buf: &mut [u8]) -> Result<(), XrceError> {
     let needed = buf.len();
     let mut read = 0usize;
@@ -324,7 +324,7 @@ mod tests {
         let (server, addr) = loopback_pair();
         let server_thread = thread::spawn(move || {
             let (client, _) = server.accept().unwrap();
-            // Sofort Drop → schliesst die Verbindung.
+            // Immediate drop → closes the connection.
             drop(client);
         });
         let mut client = XrceTcpClient::connect(addr).unwrap();
@@ -339,19 +339,19 @@ mod tests {
 
     #[test]
     fn tcp_recv_oversized_length_rejected() {
-        // Wir bauen einen Mock-Server, der einen Length-Prefix sendet, der
-        // groesser als MAX_DATAGRAM_SIZE ist (was nicht moeglich waere,
-        // weil len ein u16 ist) — also testen wir hier, dass auch die
-        // DOSC-Cap greift.
+        // We build a mock server that sends a length prefix larger
+        // than MAX_DATAGRAM_SIZE (which would not be possible
+        // because len is a u16) — so here we test that the
+        // DOSC cap also takes effect.
         let (server, addr) = loopback_pair();
         let server_thread = thread::spawn(move || {
             let (mut client, _) = server.accept().unwrap();
-            // Sende Length-Prefix > DOSC_MAX_PAYLOAD_SIZE (geht nur bis
-            // u16::MAX = 65535 = DOSC_MAX_PAYLOAD_SIZE; also testen wir
-            // den boundary direkt).
+            // Send length prefix > DOSC_MAX_PAYLOAD_SIZE (only goes up to
+            // u16::MAX = 65535 = DOSC_MAX_PAYLOAD_SIZE; so we test
+            // the boundary directly).
             let bad: u16 = u16::MAX;
             client.stream.write_all(&bad.to_le_bytes()).unwrap();
-            // dann viele bytes streamen, damit Read nicht haengt
+            // then stream many bytes so that Read does not hang
             client.stream.write_all(&[0u8; 100]).unwrap();
             client.stream.shutdown(std::net::Shutdown::Both).ok();
         });
@@ -361,8 +361,8 @@ mod tests {
             .set_read_timeout(Some(Duration::from_secs(2)))
             .unwrap();
         let res = client.recv_message();
-        // Endweder PayloadTooLarge (cap), oder UnexpectedEof, oder
-        // dekodier-Fehler — alles sind valide Reject-Pfade.
+        // Either PayloadTooLarge (cap), or UnexpectedEof, or a
+        // decode error — all are valid reject paths.
         assert!(res.is_err());
         server_thread.join().unwrap();
     }
@@ -376,13 +376,13 @@ mod tests {
         });
         let mut client = XrceTcpClient::connect(addr).unwrap();
         server_thread.join().unwrap();
-        // Erste Send schreibt evtl. noch in den Kernel-Buffer; der zweite
-        // sollte fehlen, da peer closed.
+        // The first send may still write into the kernel buffer; the second
+        // should fail, since the peer has closed.
         let msg = message_with(ResetPayload.into_submessage().unwrap());
         let _ = client.send_message(&msg);
         let _ = client.send_message(&msg);
-        // Wir machen hier keinen harten Assert — verschiedene OS liefern
-        // unterschiedlich. Test laeuft sauber durch, kein UB.
+        // We make no hard assert here — different OSes behave
+        // differently. The test runs cleanly through, no UB.
     }
 
     #[test]
@@ -402,7 +402,7 @@ mod tests {
         });
         let mut client = XrceTcpClient::connect(addr).unwrap();
         let _ = client.close();
-        // Doppel-Close darf nicht panicen (Variante 2 darf err sein).
+        // Double close must not panic (variant 2 may be an err).
         let _ = client.close();
         server_thread.join().unwrap();
     }

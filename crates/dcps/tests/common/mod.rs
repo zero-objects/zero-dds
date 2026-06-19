@@ -1,8 +1,8 @@
-//! Shared Test-Helper.
+//! Shared test helpers.
 //!
-//! Integration-Tests in diesem Verzeichnis binden via
-//! `#[path = "common/mod.rs"] mod common;` in der jeweiligen
-//! Test-Datei ein.
+//! Integration tests in this directory include this via
+//! `#[path = "common/mod.rs"] mod common;` in the respective
+//! test file.
 
 #![allow(dead_code)]
 
@@ -12,37 +12,37 @@ use std::time::Duration;
 
 use zerodds_dcps::runtime::RuntimeConfig;
 
-/// Liefert einen `RuntimeConfig` mit einer **pro Aufruf eindeutigen**
-/// SPDP-Multicast-Gruppe.
+/// Returns a `RuntimeConfig` with an SPDP multicast group that is
+/// **unique per call**.
 ///
-/// Hintergrund: alle DCPS-Integrationstests im selben Binary teilen sich
-/// per Default die Spec-Multicast-Group `239.255.0.1:7400`. Wenn N Tests
-/// parallel laufen, konkurrieren N Participants um SPDP-Multicast-Empfang
-/// — Pakete werden dem "falschen" Reader zugestellt, match-Timeouts.
+/// Background: by default all DCPS integration tests in the same binary
+/// share the spec multicast group `239.255.0.1:7400`. When N tests run
+/// in parallel, N participants compete for SPDP multicast reception —
+/// packets get delivered to the "wrong" reader, causing match timeouts.
 ///
-/// Diese Funktion erzeugt eine Admin-scoped Multicast-Gruppe (`239.X.Y.Z`,
-/// RFC 2365 organization-local) anhand PID + Aufruf-Counter. Zwei
-/// `isolated_cfg()`-Aufrufe liefern **verschiedene** Gruppen — wer den
-/// gleichen Bus für mehrere Participants will, **muss das Config cloned**.
+/// This function generates an admin-scoped multicast group (`239.X.Y.Z`,
+/// RFC 2365 organization-local) from PID + call counter. Two
+/// `isolated_cfg()` calls return **different** groups — anyone who wants
+/// the same bus for multiple participants **must clone the config**.
 ///
 /// ```ignore
 /// let cfg = isolated_cfg();
 /// let a = factory.create_participant_with_config(domain, qos, cfg.clone()).unwrap();
 /// let b = factory.create_participant_with_config(domain, qos, cfg).unwrap();
-/// // a und b finden sich gegenseitig via Multicast 239.X.Y.Z.
+/// // a and b find each other via multicast 239.X.Y.Z.
 /// ```
 ///
-/// Schnelle Discovery-Periode für Tests (100 ms statt 5 s Spec-Default).
+/// Fast discovery period for tests (100 ms instead of the 5 s spec default).
 pub fn isolated_cfg() -> RuntimeConfig {
     static SLOT: AtomicU32 = AtomicU32::new(0);
     let slot = SLOT.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
     let raw = pid.wrapping_mul(2654435761) ^ slot.wrapping_mul(0x9E3779B9);
-    // 239.255.X.Y — same-subnet-scope (RFC 2365 Local-scope, /16-suffix der
-    // Spec-Default 239.255.0.1). GitHub-Actions-runner haben eingeschränkte
-    // Multicast-Routing-Tabellen; nur Local-Scope-Adressen (239.255.0.0/16)
-    // sind verlässlich erreichbar. Vermeide 239.255.0.1 (Spec-Default) →
-    // y_lo startet bei 2.
+    // 239.255.X.Y — same-subnet scope (RFC 2365 local scope, /16 suffix of
+    // the spec default 239.255.0.1). GitHub Actions runners have restricted
+    // multicast routing tables; only local-scope addresses (239.255.0.0/16)
+    // are reliably reachable. Avoid 239.255.0.1 (spec default) →
+    // y_lo starts at 2.
     let x = 1 + ((raw >> 8) & 0x7F) as u8; // [1, 128]
     let y = 2 + (raw & 0x7F) as u8; // [2, 129]
     let group = Ipv4Addr::new(239, 255, x, y);
@@ -54,54 +54,54 @@ pub fn isolated_cfg() -> RuntimeConfig {
     }
 }
 
-/// Liefert eine **im Prozess eindeutige** Domain-ID.
+/// Returns a domain ID that is **unique within the process**.
 ///
-/// Hintergrund: Die CI hat mehrere Runner-Instanzen (host-network,
-/// Docker). Wenn zwei parallele Jobs dasselbe Test-Binary laufen
-/// und beide eine hart-codierte Domain-ID nutzen, kollidieren die
-/// UDP-/Multicast-Ports auf dem Host → SPDP-Pakete vom "falschen"
-/// Runner kommen an, match-Timeouts schlagen zu. Diese Funktion
-/// streut per PID + pro-Test-Slot, damit zwei parallele Runs mit
-/// hoher Wahrscheinlichkeit unterschiedliche Domains sehen.
+/// Background: the CI has multiple runner instances (host-network,
+/// Docker). When two parallel jobs run the same test binary
+/// and both use a hard-coded domain ID, the UDP/multicast ports
+/// on the host collide → SPDP packets from the "wrong" runner
+/// arrive, and match timeouts hit. This function spreads by
+/// PID + per-test slot so that two parallel runs see different
+/// domains with high probability.
 ///
-/// DDS-Domain-IDs liegen in `[0, 232]` (OMG DDS §2.2.1); wir bleiben
-/// im Bereich `[100, 229]`, damit wir weder Produktions-Defaults
-/// (0, 42) noch den ShapesDemo-Standard (0) treffen.
+/// DDS domain IDs lie in `[0, 232]` (OMG DDS §2.2.1); we stay
+/// in the range `[100, 229]` so that we hit neither production defaults
+/// (0, 42) nor the ShapesDemo standard (0).
 pub fn unique_domain(family: u8) -> i32 {
     static SLOT: AtomicU32 = AtomicU32::new(0);
     let slot = SLOT.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
     let raw = (pid.wrapping_mul(2654435761) ^ slot.wrapping_mul(0x9E3779B9)) as u64;
-    // `family` reserviert grobe Klassen (Lifespan=5, Deadline=6, ...)
-    // damit Test-Failures einfacher mit `strace` auf den korrekten
-    // Pfad gemappt werden koennen. Bereich [100, 229] (DDS-Spec §2.2.1:
+    // `family` reserves coarse classes (Lifespan=5, Deadline=6, ...)
+    // so that test failures can be mapped more easily to the correct
+    // path with `strace`. Range [100, 229] (DDS spec §2.2.1:
     // domain_id <= 232).
     let offset = i32::from(((raw >> 8) & 0x7F) as u8); // 0..127
     100 + (i32::from(family) % 13) * 10 + (offset % 10)
 }
 
-/// Discovery-Match-Timeout, adaptiv fuer CI vs lokalen Dev-Lauf.
+/// Discovery match timeout, adaptive for CI vs. a local dev run.
 ///
-/// Hintergrund: `wait_for_matched_*(1, 5s)` ist auf einem ungeladenen
-/// Laptop reichlich; auf GitHub-Actions-Runner (CI), unter
-/// `cargo llvm-cov` (Instrumentation), oder bei parallelen Test-
-/// Threads im selben Prozess sind 5s zu eng. Detection: env-vars
-/// LLVM_PROFILE_FILE (von llvm-cov gesetzt), CARGO_LLVM_COV
-/// (manchmal), CI (GitHub/GitLab/etc.).
-/// RAII-Wrapper um einen DomainParticipant der bei Drop sauber
-/// aus dem Factory-Singleton entfernt wird.
+/// Background: `wait_for_matched_*(1, 5s)` is plenty on an unloaded
+/// laptop; on a GitHub Actions runner (CI), under
+/// `cargo llvm-cov` (instrumentation), or with parallel test
+/// threads in the same process, 5s is too tight. Detection: env vars
+/// LLVM_PROFILE_FILE (set by llvm-cov), CARGO_LLVM_COV
+/// (sometimes), CI (GitHub/GitLab/etc.).
+/// RAII wrapper around a DomainParticipant that is cleanly removed
+/// from the factory singleton on drop.
 ///
-/// Hintergrund: `DomainParticipantFactory::instance()` ist per
-/// OMG DDS 1.4 §2.2.2.2 ein Singleton, der alle erzeugten
-/// Participants in einer Map haelt (`lookup_participant`-Spec).
-/// Tests die einen Participant erzeugen + droppen lassen den im
-/// Singleton akkumulieren — der Arc-Refcount bleibt > 0, Runtime-
-/// Threads laufen weiter, naechste Tests sehen 4+ Participants im
-/// selben Process.
+/// Background: `DomainParticipantFactory::instance()` is, per
+/// OMG DDS 1.4 §2.2.2.2, a singleton that holds all created
+/// participants in a map (`lookup_participant` spec).
+/// Tests that create + drop a participant let it accumulate in the
+/// singleton — the Arc refcount stays > 0, runtime threads keep
+/// running, and the next tests see 4+ participants in the
+/// same process.
 ///
-/// Dieser Guard ruft beim Out-of-Scope `factory.delete_participant`
-/// auf, was die Factory-Referenz freigibt → Arc-Count faellt → der
-/// echte DomainParticipant-Drop laeuft → Runtime.shutdown.
+/// On going out of scope, this guard calls `factory.delete_participant`,
+/// which releases the factory reference → Arc count drops → the
+/// actual DomainParticipant drop runs → Runtime.shutdown.
 pub struct ParticipantGuard {
     inner: Option<zerodds_dcps::DomainParticipant>,
 }
@@ -116,8 +116,8 @@ impl ParticipantGuard {
 impl core::ops::Deref for ParticipantGuard {
     type Target = zerodds_dcps::DomainParticipant;
     fn deref(&self) -> &Self::Target {
-        // Wir geben das innere `Some(...)` nur nach Drop frei, vorher
-        // immer sicher unwrappable.
+        // We only release the inner `Some(...)` after drop; before that
+        // it is always safe to unwrap.
         self.inner
             .as_ref()
             .expect("ParticipantGuard accessed after drop")
@@ -129,9 +129,9 @@ impl Drop for ParticipantGuard {
         if let Some(p) = self.inner.take() {
             let factory = zerodds_dcps::DomainParticipantFactory::instance();
             let _ = factory.delete_participant(&p);
-            // p (DomainParticipant Arc) wird hier gedroppt; wenn die
-            // Factory-Referenz die letzte war, fuehrt das jetzt zu
-            // ParticipantInner-Drop → Runtime::shutdown.
+            // p (DomainParticipant Arc) is dropped here; if the
+            // factory reference was the last one, this now leads to
+            // ParticipantInner drop → Runtime::shutdown.
         }
     }
 }
@@ -140,8 +140,8 @@ pub fn match_timeout() -> std::time::Duration {
     let cov = std::env::var_os("LLVM_PROFILE_FILE").is_some()
         || std::env::var_os("CARGO_LLVM_COV").is_some();
     let ci = std::env::var_os("CI").is_some();
-    // Coverage-Instrumentation ist ~3-5x langsamer; reine CI-Runner
-    // (cargo test ohne llvm-cov) sind 1.5-2x langsamer als Dev-Laptop.
+    // Coverage instrumentation is ~3-5x slower; plain CI runners
+    // (cargo test without llvm-cov) are 1.5-2x slower than a dev laptop.
     if cov {
         std::time::Duration::from_secs(60)
     } else if ci {

@@ -145,8 +145,7 @@ export const AllTypeSupport: DdsTopicType<All> = {
     typeName: "All",
     isKeyed: false,
     extensibility: "final",
-    encode(s: All, endian: EndianMode = "le"): Uint8Array {
-        const w = new Xcdr2Writer(endian);
+    encodeInto(w: Xcdr2Writer, s: All): void {
         w.writeBool(s.b);
         w.writeOctet(s.o);
         w.writeInt16(s.s);
@@ -157,10 +156,13 @@ export const AllTypeSupport: DdsTopicType<All> = {
         w.writeUint64(s.ull);
         w.writeFloat32(s.f);
         w.writeFloat64(s.d);
+    },
+    encode(s: All, endian: EndianMode = "le"): Uint8Array {
+        const w = new Xcdr2Writer(endian);
+        this.encodeInto(w, s);
         return w.toBytes();
     },
-    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): All {
-        const r = new Xcdr2Reader(bytes, offset, length, "le");
+    decodeFrom(r: Xcdr2Reader): All {
         const _f_b: boolean = r.readBool();
         const _f_o: number = r.readOctet();
         const _f_s: number = r.readInt16();
@@ -183,6 +185,10 @@ export const AllTypeSupport: DdsTopicType<All> = {
             f: _f_f,
             d: _f_d,
         };
+    },
+    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): All {
+        const r = new Xcdr2Reader(bytes, offset, length, "le");
+        return this.decodeFrom(r);
     },
     keyHash(s: All): Uint8Array {
         return new Uint8Array(16);

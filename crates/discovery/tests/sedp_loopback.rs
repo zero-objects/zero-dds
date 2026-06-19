@@ -1,10 +1,10 @@
 //! WP 1.4 T4 Akzeptanz: SEDP-Publications-Loopback
 //!
-//! `SedpPublicationsWriter::announce(p)` → Transport-Channel →
+//! `SedpPublicationsWriter::announce(p)` → transport channel →
 //! `SedpPublicationsReader::handle_data` → `DiscoveredEndpointsCache`.
-//! Erwartung: Cache enthaelt die angekuendigte Publication byte-genau.
+//! Expectation: the cache contains the announced publication byte-for-byte.
 //!
-//! Analog fuer Subscriptions.
+//! Likewise for subscriptions.
 
 #![allow(
     clippy::expect_used,
@@ -83,6 +83,8 @@ fn sample_pub() -> PublicationBuiltinTopicData {
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
+        unicast_locators: Vec::new(),
+        multicast_locators: Vec::new(),
     }
 }
 
@@ -112,16 +114,18 @@ fn sample_sub() -> SubscriptionBuiltinTopicData {
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
+        unicast_locators: Vec::new(),
+        multicast_locators: Vec::new(),
     }
 }
 
 #[test]
 fn publication_announce_then_reader_fills_cache() {
-    // Remote-Writer in Participant REMOTE_PREFIX, lokaler Reader.
+    // Remote writer in participant REMOTE_PREFIX, local reader.
     let mut writer =
         SedpPublicationsWriter::new(GuidPrefix::from_bytes(REMOTE_PREFIX), VendorId::ZERODDS);
-    // Der Writer muss den lokalen Reader als Proxy kennen, sonst kein
-    // Fan-out. Wir simulieren die T5-Verdrahtung manuell.
+    // The writer must know the local reader as a proxy, otherwise no
+    // fan-out. We simulate the T5 wiring manually.
     writer.add_reader_proxy(ReaderProxy::new(
         local_reader_guid(),
         vec![Locator::udp_v4([127, 0, 0, 1], 7411)],
@@ -138,17 +142,19 @@ fn publication_announce_then_reader_fills_cache() {
     let mut cache = DiscoveredEndpointsCache::default();
     let now = Duration::from_secs(1);
 
-    // Announce 1 Publication
+    // Announce 1 publication
     let original = sample_pub();
     let dgs = writer.announce(&original).expect("announce");
     assert_eq!(dgs.len(), 1);
 
-    // Loopback dispatch: unwrap Datagramm → DATA-Submessage → Reader
+    // Loopback dispatch: unwrap datagram → DATA submessage → reader
     for dg in dgs {
         let parsed = decode_datagram(&dg.bytes).expect("decode");
         for sub in parsed.submessages {
             if let ParsedSubmessage::Data(d) = sub {
-                let samples = reader.handle_data(&d).expect("handle_data");
+                let samples = reader
+                    .handle_data(parsed.header.guid_prefix, &d)
+                    .expect("handle_data");
                 for s in samples {
                     cache.insert_publication(s, now);
                 }
@@ -156,7 +162,7 @@ fn publication_announce_then_reader_fills_cache() {
         }
     }
 
-    // Cache muss die Publication byte-genau enthalten.
+    // The cache must contain the publication byte-for-byte.
     assert_eq!(cache.publications_len(), 1);
     let cached = cache.publication(original.key).expect("cached");
     assert_eq!(cached.data, original);
@@ -182,7 +188,7 @@ fn multiple_publications_accumulate_in_cache() {
     let mut cache = DiscoveredEndpointsCache::default();
     let now = Duration::from_secs(1);
 
-    // 3 unterschiedliche Publications
+    // 3 distinct publications
     let topics = ["ChatterA", "ChatterB", "ChatterC"];
     for (i, topic) in topics.iter().enumerate() {
         let mut p = sample_pub();
@@ -196,7 +202,7 @@ fn multiple_publications_accumulate_in_cache() {
             let parsed = decode_datagram(&dg.bytes).unwrap();
             for sub in parsed.submessages {
                 if let ParsedSubmessage::Data(d) = sub {
-                    for s in reader.handle_data(&d).unwrap() {
+                    for s in reader.handle_data(parsed.header.guid_prefix, &d).unwrap() {
                         cache.insert_publication(s, now);
                     }
                 }
@@ -238,7 +244,7 @@ fn subscription_announce_then_reader_fills_cache() {
         let parsed = decode_datagram(&dg.bytes).unwrap();
         for sub in parsed.submessages {
             if let ParsedSubmessage::Data(d) = sub {
-                for s in reader.handle_data(&d).unwrap() {
+                for s in reader.handle_data(parsed.header.guid_prefix, &d).unwrap() {
                     cache.insert_subscription(s, now);
                 }
             }
@@ -252,9 +258,9 @@ fn subscription_announce_then_reader_fills_cache() {
 
 #[test]
 fn matching_publications_and_subscriptions_by_topic() {
-    // End-to-End-Matching: Publication + Subscription mit gleichem
-    // (topic, type) landen im Cache, `match_publications/subscriptions`
-    // liefert sie ueber die Suche.
+    // End-to-end matching: publication + subscription with the same
+    // (topic, type) land in the cache; `match_publications/subscriptions`
+    // returns them via the lookup.
     let mut p_writer =
         SedpPublicationsWriter::new(GuidPrefix::from_bytes(REMOTE_PREFIX), VendorId::ZERODDS);
     p_writer.add_reader_proxy(ReaderProxy::new(
@@ -288,18 +294,20 @@ fn matching_publications_and_subscriptions_by_topic() {
     let now = Duration::from_secs(1);
 
     for dg in p_writer.announce(&sample_pub()).unwrap() {
-        for sub in decode_datagram(&dg.bytes).unwrap().submessages {
+        let parsed = decode_datagram(&dg.bytes).unwrap();
+        for sub in parsed.submessages {
             if let ParsedSubmessage::Data(d) = sub {
-                for s in p_reader.handle_data(&d).unwrap() {
+                for s in p_reader.handle_data(parsed.header.guid_prefix, &d).unwrap() {
                     cache.insert_publication(s, now);
                 }
             }
         }
     }
     for dg in s_writer.announce(&sample_sub()).unwrap() {
-        for sub in decode_datagram(&dg.bytes).unwrap().submessages {
+        let parsed = decode_datagram(&dg.bytes).unwrap();
+        for sub in parsed.submessages {
             if let ParsedSubmessage::Data(d) = sub {
-                for s in s_reader.handle_data(&d).unwrap() {
+                for s in s_reader.handle_data(parsed.header.guid_prefix, &d).unwrap() {
                     cache.insert_subscription(s, now);
                 }
             }
@@ -318,7 +326,7 @@ fn matching_publications_and_subscriptions_by_topic() {
 
 #[test]
 fn announce_without_reader_proxy_produces_no_datagrams() {
-    // Sanity: ohne registrierten Remote-Reader gibt es nichts zu senden.
+    // Sanity: without a registered remote reader there is nothing to send.
     let mut writer =
         SedpPublicationsWriter::new(GuidPrefix::from_bytes(REMOTE_PREFIX), VendorId::ZERODDS);
     let dgs = writer.announce(&sample_pub()).unwrap();

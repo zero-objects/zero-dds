@@ -50,7 +50,7 @@ ZeroDDS-Releases umfassen drei Klassen von Artefakten:
 ### §1.3 CLI-Tools (17)
 
 ```
-zerodds-admin                   # Admin-CLI (Topic-Inspect, QoS-Set, Stats)
+zerodds-admin                   # Admin-CLI (Domain-Inspect, QoS-Validate/Check, Discovery-Snapshot)
 zerodds-bench                   # Benchmark-Suite (latency/throughput/loss)
 zerodds-bench-suite             # Multi-Scenario-Bench-Runner
 zerodds-idlc                    # IDL-Compiler → Rust/C++/Java/C#/Python/TS Codegen
@@ -58,7 +58,7 @@ zerodds-spy                     # Topic-Spy (live-Sample-Dump)
 zerodds-record                  # Recorder (zddsrec-Format)
 zerodds-replay                  # Replay aus zddsrec
 zerodds-snitch                  # Discovery-Probe (SPDP/SEDP-Dumper)
-zerodds-monitor                 # Monitor-CLI (`zerodds-monitor-1.0`)
+zerodds-monitor                 # Monitor-CLI (`zerodds-monitor-1.1`)
 zerodds-mq                      # Multi-Domain-Bridge (DDS↔DDS)
 zerodds-pcap                    # PCAP-Dumper für RTPS-Wire
 zerodds-perf                    # Performance-Probe
@@ -66,7 +66,7 @@ zerodds-ros2-shim               # ROS-2-Diagnose
 zerodds-secure-keygen           # DDS-Security Cert/Key-Erzeugung
 zerodds-secure-permissions      # Permissions/Governance-XML-Tool
 zerodds-typeobject              # TypeObject-Inspect
-zerodds-xml-config              # DDS-XML-Config-Validator
+zerodds-xmlc                    # DDS-XML-Config-Validator/Renderer
 ```
 
 ## §2 Linux
@@ -495,7 +495,7 @@ Spec-`§11 Packaging`-Sektionen referenziert werden:
 - `zerodds-ffi-loader-1.0` §6 (Library-Packaging)
 
 Erweiterte Cross-Refs:
-- Observability: `zerodds-monitor-1.0`, `zerodds-observability-otlp-1.0`
+- Observability: `zerodds-monitor-1.1`, `zerodds-observability-otlp-1.0`
 - Recorder-Format: `zddsrec-1.0`
 - Wire-Format: `zerodds-xcdr2-bindings-conformance-1.0`
 

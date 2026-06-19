@@ -13,6 +13,14 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+typedef struct rmw_zerodds_Option_RmwEventCallback rmw_zerodds_Option_RmwEventCallback;
+
+typedef struct rmw_zerodds_Option_RmwNodeCallback rmw_zerodds_Option_RmwNodeCallback;
+
+typedef struct rmw_zerodds_Option_ZeroDdsEndpointCallback rmw_zerodds_Option_ZeroDdsEndpointCallback;
+
+typedef struct rmw_zerodds_Option_ZeroDdsTopicCallback rmw_zerodds_Option_ZeroDdsTopicCallback;
+
 /**
  * Opaque-Handle: rmw_zerodds Client (request-Pub + reply-Sub auf
  * `<service>_Request` / `<service>_Reply`).
@@ -20,18 +28,18 @@
 typedef struct rmw_zerodds_RmwZerodsClient rmw_zerodds_RmwZerodsClient;
 
 /**
- * Opaque-Handle: rmw_zerodds Context (1:1 zu einem Domain-Participant-
- * Init). Hardcoded Domain 0 in aktuelle Distros; spaeter aus init_options.
+ * Opaque handle: rmw_zerodds context (1:1 to a domain-participant
+ * init). Hardcoded domain 0 in current distros; later from init_options.
  */
 typedef struct rmw_zerodds_RmwZerodsContext rmw_zerodds_RmwZerodsContext;
 
 /**
- * Opaque Node-Handle.
+ * Opaque node handle.
  */
 typedef struct rmw_zerodds_RmwZerodsNode rmw_zerodds_RmwZerodsNode;
 
 /**
- * Opaque Publisher-Handle. Wrapt einen ZeroDDS-Writer.
+ * Opaque publisher handle. Wraps a ZeroDDS writer.
  */
 typedef struct rmw_zerodds_RmwZerodsPublisher rmw_zerodds_RmwZerodsPublisher;
 
@@ -41,14 +49,14 @@ typedef struct rmw_zerodds_RmwZerodsPublisher rmw_zerodds_RmwZerodsPublisher;
 typedef struct rmw_zerodds_RmwZerodsService rmw_zerodds_RmwZerodsService;
 
 /**
- * Opaque Subscription-Handle. Wrapt einen ZeroDDS-Reader.
+ * Opaque subscription handle. Wraps a ZeroDDS reader.
  */
 typedef struct rmw_zerodds_RmwZerodsSubscription rmw_zerodds_RmwZerodsSubscription;
 
 /**
- * Wait-Set-Handle. Phase-B implementiert: Poll-basiert, nicht
- * edge-triggered. Caller fuegt Subscriptions hinzu, ruft `wait`
- * und bekommt zurueck welche Indices Daten bereit haben.
+ * Wait-set handle. Phase-B implemented: poll-based, not
+ * edge-triggered. The caller adds subscriptions, calls `wait`
+ * and gets back which indices have data ready.
  */
 typedef struct rmw_zerodds_RmwZerodsWaitSet rmw_zerodds_RmwZerodsWaitSet;
 
@@ -58,10 +66,10 @@ extern "C" {
 
 /**
  * `rmw_get_implementation_identifier()` — REP-2007 §3.
- * Returnt einen statischen NUL-terminierten String "rmw_zerodds_cpp".
+ * Returns a static NUL-terminated string "rmw_zerodds_cpp".
  *
  * # Safety
- * Pointer ist `'static` und darf nicht freigegeben werden.
+ * The pointer is `'static` and must not be freed.
  */
  const char *rmw_zerodds_get_implementation_identifier(void);
 
@@ -69,33 +77,91 @@ extern "C" {
  * `rmw_get_serialization_format()` — fixed `"cdr"` (XCDR1).
  *
  * # Safety
- * Pointer ist `'static`.
+ * The pointer is `'static`.
  */
  const char *rmw_zerodds_get_serialization_format(void);
 
 /**
  * `rmw_init(domain_id) -> *mut RmwZerodsContext`.
- * In aktuelle Distros nimmt sie einen einzelnen Domain-Id-Parameter.
+ * In current distros it takes a single domain-id parameter.
  *
  * # Safety
- * Caller muss `rmw_zerodds_shutdown` mit dem zurueckgegebenen Handle
- * aufrufen, sonst Leak.
+ * The caller must call `rmw_zerodds_shutdown` with the returned handle,
+ * otherwise leak.
  */
  struct rmw_zerodds_RmwZerodsContext *rmw_zerodds_init(uint32_t domain_id);
 
 /**
- * `rmw_shutdown(*mut Context)` — gibt die Runtime frei. NULL-safe.
+ * `rmw_shutdown(*mut Context)` — logical shutdown only. NULL-safe.
+ *
+ * Per the rmw contract `rmw_shutdown` must NOT deallocate the context: it
+ * only signals that no new entities may be created. The runtime, discovery
+ * writer/reader and the context struct stay alive so that entities created
+ * from this context (nodes, publishers, …) can still be torn down afterwards
+ * — `rclcpp::shutdown()` is routinely called while nodes are still in scope,
+ * and their later destruction reaches back into the context (e.g.
+ * `destroy_node` → `graph_publish` over the discovery writer). The actual
+ * free happens in [`rmw_zerodds_context_fini`].
  *
  * # Safety
- * `ctx` muss aus `rmw_zerodds_init` stammen oder NULL.
+ * `ctx` must come from `rmw_zerodds_init` or be NULL.
  */
  int32_t rmw_zerodds_shutdown(struct rmw_zerodds_RmwZerodsContext *ctx);
+
+/**
+ * `rmw_context_fini(*mut Context)` — frees the runtime + context. NULL-safe.
+ *
+ * Only valid after `rmw_zerodds_shutdown` and after every entity created from
+ * the context has been destroyed (the rcl/rclcpp layer guarantees this
+ * ordering). Reclaiming the `Box` runs [`RmwZerodsContext`]'s `Drop`, which
+ * destroys the discovery reader/writer and the underlying runtime.
+ *
+ * # Safety
+ * `ctx` must come from `rmw_zerodds_init` or be NULL, and must not be used
+ * afterwards.
+ */
+ int32_t rmw_zerodds_context_fini(struct rmw_zerodds_RmwZerodsContext *ctx);
+
+/**
+ * Registers a local node `(namespace, name)` on `ctx` and re-announces this
+ * participant's `ParticipantEntitiesInfo` on `ros_discovery_info`.
+ *
+ * # Safety
+ * `ctx` from `rmw_zerodds_init`; `name`/`namespace_` NUL-terminated or NULL.
+ */
+
+int32_t rmw_zerodds_node_add(struct rmw_zerodds_RmwZerodsContext *ctx,
+                             const char *name,
+                             const char *namespace_);
+
+/**
+ * Removes a local node `(namespace, name)` and re-announces.
+ *
+ * # Safety
+ * As [`rmw_zerodds_node_add`].
+ */
+
+int32_t rmw_zerodds_node_remove(struct rmw_zerodds_RmwZerodsContext *ctx,
+                                const char *name,
+                                const char *namespace_);
+
+/**
+ * Invokes `callback(ud, name, namespace)` for every known node — this
+ * participant's local nodes plus every remote participant's nodes.
+ *
+ * # Safety
+ * `ctx` from `rmw_zerodds_init` or NULL.
+ */
+
+int32_t rmw_zerodds_for_each_node(struct rmw_zerodds_RmwZerodsContext *ctx,
+                                  struct rmw_zerodds_Option_RmwNodeCallback callback,
+                                  void *user_data);
 
 /**
  * `rmw_create_node(ctx, name, namespace_)` — REP-2007 §5.1.
  *
  * # Safety
- * `ctx` muss live; `name`/`namespace_` NUL-terminiert.
+ * `ctx` must be live; `name`/`namespace_` NUL-terminated.
  */
 
 struct rmw_zerodds_RmwZerodsNode *rmw_zerodds_create_node(struct rmw_zerodds_RmwZerodsContext *ctx,
@@ -106,7 +172,7 @@ struct rmw_zerodds_RmwZerodsNode *rmw_zerodds_create_node(struct rmw_zerodds_Rmw
  * `rmw_destroy_node(*mut Node)`. NULL-safe.
  *
  * # Safety
- * `node` muss aus `rmw_zerodds_create_node` stammen oder NULL.
+ * `node` must come from `rmw_zerodds_create_node` or be NULL.
  */
  int32_t rmw_zerodds_destroy_node(struct rmw_zerodds_RmwZerodsNode *node);
 
@@ -114,7 +180,7 @@ struct rmw_zerodds_RmwZerodsNode *rmw_zerodds_create_node(struct rmw_zerodds_Rmw
  * `rmw_create_publisher(node, type_name, topic_name, reliable)`.
  *
  * # Safety
- * Pointer-Validitaet wie immer; Strings NUL-terminiert.
+ * Pointer validity as always; strings NUL-terminated.
  */
 
 struct rmw_zerodds_RmwZerodsPublisher *rmw_zerodds_create_publisher(struct rmw_zerodds_RmwZerodsNode *node,
@@ -126,7 +192,7 @@ struct rmw_zerodds_RmwZerodsPublisher *rmw_zerodds_create_publisher(struct rmw_z
  * `rmw_destroy_publisher(*mut Publisher)`.
  *
  * # Safety
- * `pub_` muss aus `rmw_zerodds_create_publisher` oder NULL.
+ * `pub_` must come from `rmw_zerodds_create_publisher` or be NULL.
  */
  int32_t rmw_zerodds_destroy_publisher(struct rmw_zerodds_RmwZerodsPublisher *pub_);
 
@@ -134,7 +200,7 @@ struct rmw_zerodds_RmwZerodsPublisher *rmw_zerodds_create_publisher(struct rmw_z
  * `rmw_publish(pub, payload, len)` — schreibt CDR-encoded bytes.
  *
  * # Safety
- * `pub_` valid; `payload` mit `len` byte lebt waehrend des Calls.
+ * `pub_` valid; `payload` of `len` bytes lives during the call.
  */
 
 int32_t rmw_zerodds_publish(struct rmw_zerodds_RmwZerodsPublisher *pub_,
@@ -157,9 +223,142 @@ struct rmw_zerodds_RmwZerodsSubscription *rmw_zerodds_create_subscription(struct
  * `rmw_destroy_subscription(*mut Subscription)`.
  *
  * # Safety
- * `sub` muss aus `rmw_zerodds_create_subscription` oder NULL.
+ * `sub` must come from `rmw_zerodds_create_subscription` or be NULL.
  */
  int32_t rmw_zerodds_destroy_subscription(struct rmw_zerodds_RmwZerodsSubscription *sub);
+
+/**
+ * Switches a publisher to `RawSameHost` and creates its POSIX SHM loan segment
+ * (`slots` × `cap` bytes at flink path `name`). Afterwards the publisher's loan
+ * hands back a pointer into a shared slot and commit delivers same-host only
+ * (no RTPS, no serialization).
+ *
+ * # Safety
+ * `pub_` from `rmw_zerodds_create_publisher`; `name` a NUL-terminated C string.
+ */
+
+int32_t rmw_zerodds_publisher_enable_raw_loan(struct rmw_zerodds_RmwZerodsPublisher *pub_,
+                                              const char *name,
+                                              uintptr_t slots,
+                                              uintptr_t cap);
+
+/**
+ * Loans a `len`-byte slot from the publisher's SHM segment; the caller writes
+ * the message struct directly into `*out_ptr` (zero-copy, zero-serialize).
+ *
+ * # Safety
+ * `pub_` valid; `out_ptr` a valid out pointer.
+ */
+
+int32_t rmw_zerodds_publisher_loan(struct rmw_zerodds_RmwZerodsPublisher *pub_,
+                                   uintptr_t len,
+                                   uint8_t **out_ptr);
+
+/**
+ * Commits a loaned slot (`ptr`, `len`) — finalizes it in place and delivers
+ * same-host (no serialization, no RTPS in `RawSameHost`).
+ *
+ * # Safety
+ * `pub_` valid; `ptr`/`len` from a prior `rmw_zerodds_publisher_loan`.
+ */
+
+int32_t rmw_zerodds_publisher_commit(struct rmw_zerodds_RmwZerodsPublisher *pub_,
+                                     uint8_t *ptr,
+                                     uintptr_t len);
+
+/**
+ * Discards a loaned-but-unpublished slot.
+ *
+ * # Safety
+ * `pub_` valid; `ptr`/`len` from a prior `rmw_zerodds_publisher_loan`.
+ */
+
+int32_t rmw_zerodds_publisher_discard(struct rmw_zerodds_RmwZerodsPublisher *pub_,
+                                      uint8_t *ptr,
+                                      uintptr_t len);
+
+/**
+ * Maps the writer's SHM segment on a subscription's reader for zero-copy takes.
+ *
+ * # Safety
+ * `sub` valid; `name` a NUL-terminated C string.
+ */
+
+int32_t rmw_zerodds_subscription_enable_shm(struct rmw_zerodds_RmwZerodsSubscription *sub,
+                                            const char *name,
+                                            uint8_t reader_index);
+
+/**
+ * Zero-copy take: returns a read-only pointer into the writer's slot + the slot
+ * index (for release). `RMW_RET_OK` with data, `RMW_RET_TIMEOUT` when empty.
+ *
+ * # Safety
+ * `sub` valid; `out_ptr`/`out_len`/`out_slot` valid out pointers.
+ */
+
+int32_t rmw_zerodds_subscription_take_shm(struct rmw_zerodds_RmwZerodsSubscription *sub,
+                                          const uint8_t **out_ptr,
+                                          uintptr_t *out_len,
+                                          uint32_t *out_slot);
+
+/**
+ * Non-consuming readiness peek: `RMW_RET_OK` if a sample is available. Uses the
+ * idempotent `take_shm` (it does not advance the read cursor until
+ * `release_shm`), so this never consumes the sample. Used by `rmw_wait` to
+ * report a `RawSameHost` subscription ready.
+ *
+ * # Safety
+ * `sub` valid.
+ */
+ int32_t rmw_zerodds_subscription_has_shm_data(struct rmw_zerodds_RmwZerodsSubscription *sub);
+
+/**
+ * Releases a slot returned by `rmw_zerodds_subscription_take_shm`.
+ *
+ * # Safety
+ * `sub` valid; `slot_index` from a prior take.
+ */
+
+int32_t rmw_zerodds_subscription_release_shm(struct rmw_zerodds_RmwZerodsSubscription *sub,
+                                             uint32_t slot_index);
+
+/**
+ * Starts the raw-mode doorbell thread for this subscription (idempotent). The
+ * thread parks on `zerodds_reader_raw_wait` and bumps the context condvar on
+ * each raw-data arrival, so `rmw_wait` wakes event-driven. Call it once the raw
+ * source (SHM segment / iceoryx service) is enabled on the reader.
+ *
+ * # Safety
+ * `sub` from `rmw_zerodds_create_subscription`.
+ */
+ int32_t rmw_zerodds_subscription_start_doorbell(struct rmw_zerodds_RmwZerodsSubscription *sub);
+
+/**
+ * Switches a publisher to `Iceoryx` (delivery mode 2) and routes its loan over
+ * the iceoryx2 service `name` (max `max_len` bytes/sample). The same
+ * loan/commit/take_shm/release_shm surface then drives the iceoryx2 ports.
+ * Returns `RMW_RET_UNSUPPORTED` when the shim is built without
+ * `delivery-iceoryx` (the caller then keeps `Portable`).
+ *
+ * # Safety
+ * `pub_` from `rmw_zerodds_create_publisher`; `name` a NUL-terminated C string.
+ */
+
+int32_t rmw_zerodds_publisher_enable_iceoryx(struct rmw_zerodds_RmwZerodsPublisher *pub_,
+                                             const char *name,
+                                             uintptr_t max_len);
+
+/**
+ * Subscribes a subscription's reader to the iceoryx2 service `name`; samples are
+ * then taken via `rmw_zerodds_subscription_take_shm` / `_release_shm`. Returns
+ * `RMW_RET_UNSUPPORTED` without `delivery-iceoryx`.
+ *
+ * # Safety
+ * `sub` valid; `name` a NUL-terminated C string.
+ */
+
+int32_t rmw_zerodds_subscription_enable_iceoryx(struct rmw_zerodds_RmwZerodsSubscription *sub,
+                                                const char *name);
 
 /**
  * `rmw_take(sub, *mut buf, *mut len)` — versucht ein Sample zu lesen.
@@ -174,8 +373,57 @@ int32_t rmw_zerodds_take(struct rmw_zerodds_RmwZerodsSubscription *sub,
                          uintptr_t *out_len);
 
 /**
- * `rmw_zerodds_buffer_free` — dual zu zerodds_buffer_free, fuer
- * CDR-Bytes aus rmw_zerodds_take.
+ * Readiness query: `1` if the subscription has a sample ready to take, `0` if
+ * not, negative `RMW_RET_*` on a bad handle. Pure inbox inspection — no
+ * consumption, no allocation. Used by `rmw_wait` to report ready
+ * subscriptions.
+ *
+ * # Safety
+ * `sub` must come from `rmw_zerodds_create_subscription` or be NULL.
+ */
+ int32_t rmw_zerodds_subscription_has_data(struct rmw_zerodds_RmwZerodsSubscription *sub);
+
+/**
+ * Blocks until a subscription of `ctx` signals new data (its reader data
+ * callback fired) or `timeout_ms` elapses. Event-driven: parks on the
+ * context's shared condvar — no spin, no fixed-tick poll.
+ *
+ * Returns `1` when woken by a notify (a generation change — data arrived, a
+ * guard was triggered, or a cancel), `0` on a plain timeout. The caller
+ * re-checks readiness after a return (the wake is an edge, the per-entity peek
+ * is the truth); on a wake with nothing ready it must still let its own
+ * executor re-evaluate (e.g. a `cancel`), rather than block indefinitely.
+ *
+ * # Safety
+ * `ctx` must come from `rmw_zerodds_init` or be NULL.
+ */
+
+int32_t rmw_zerodds_context_wait_block(struct rmw_zerodds_RmwZerodsContext *ctx,
+                                       uint64_t since_gen,
+                                       uint64_t timeout_ms);
+
+/**
+ * Snapshots the context's wakeup generation. `rmw_wait` reads this *before*
+ * checking readiness, then passes it to `rmw_zerodds_context_wait_block`, so an
+ * event arriving between the check and the block is not lost.
+ *
+ * # Safety
+ * `ctx` must come from `rmw_zerodds_init` or be NULL.
+ */
+ uint64_t rmw_zerodds_context_wait_generation(struct rmw_zerodds_RmwZerodsContext *ctx);
+
+/**
+ * Wakes any `rmw_wait` blocked on `ctx` (e.g. after a guard condition is
+ * triggered so the executor re-evaluates immediately).
+ *
+ * # Safety
+ * `ctx` must come from `rmw_zerodds_init` or be NULL.
+ */
+ int32_t rmw_zerodds_context_notify(struct rmw_zerodds_RmwZerodsContext *ctx);
+
+/**
+ * `rmw_zerodds_buffer_free` — dual to zerodds_buffer_free, for
+ * CDR bytes from rmw_zerodds_take.
  *
  * # Safety
  * Wie zerodds_buffer_free.
@@ -197,7 +445,7 @@ struct rmw_zerodds_RmwZerodsClient *rmw_zerodds_create_client(struct rmw_zerodds
  * `rmw_destroy_client(*mut Client)`.
  *
  * # Safety
- * `client` aus `rmw_zerodds_create_client` oder NULL.
+ * `client` from `rmw_zerodds_create_client` or NULL.
  */
  int32_t rmw_zerodds_destroy_client(struct rmw_zerodds_RmwZerodsClient *client);
 
@@ -205,7 +453,7 @@ struct rmw_zerodds_RmwZerodsClient *rmw_zerodds_create_client(struct rmw_zerodds
  * `rmw_send_request(client, payload, len)`.
  *
  * # Safety
- * `client` valid; payload + len lebt waehrend des Calls.
+ * `client` valid; payload + len lives during the call.
  */
 
 int32_t rmw_zerodds_send_request(struct rmw_zerodds_RmwZerodsClient *client,
@@ -224,6 +472,24 @@ int32_t rmw_zerodds_take_response(struct rmw_zerodds_RmwZerodsClient *client,
                                   uintptr_t *out_len);
 
 /**
+ * `1` if a reply is queued for `client`, `0` if none, negative on a bad handle.
+ *
+ * # Safety
+ * `client` must come from `rmw_zerodds_create_client` or be NULL.
+ */
+ int32_t rmw_zerodds_client_has_data(struct rmw_zerodds_RmwZerodsClient *client);
+
+/**
+ * `1` if the matching service server is available (the client's request writer
+ * has a matched reader AND its reply reader has a matched writer), else `0`.
+ * Non-blocking (uses a zero-timeout matched check).
+ *
+ * # Safety
+ * `client` must come from `rmw_zerodds_create_client` or be NULL.
+ */
+ int32_t rmw_zerodds_client_server_available(struct rmw_zerodds_RmwZerodsClient *client);
+
+/**
  * `rmw_create_service(node, service, type_name)` — Server-side.
  *
  * # Safety
@@ -238,7 +504,7 @@ struct rmw_zerodds_RmwZerodsService *rmw_zerodds_create_service(struct rmw_zerod
  * `rmw_destroy_service(*mut Service)`.
  *
  * # Safety
- * `service` aus `rmw_zerodds_create_service` oder NULL.
+ * `service` from `rmw_zerodds_create_service` or NULL.
  */
  int32_t rmw_zerodds_destroy_service(struct rmw_zerodds_RmwZerodsService *service);
 
@@ -252,6 +518,14 @@ struct rmw_zerodds_RmwZerodsService *rmw_zerodds_create_service(struct rmw_zerod
 int32_t rmw_zerodds_take_request(struct rmw_zerodds_RmwZerodsService *service,
                                  uint8_t **out_buf,
                                  uintptr_t *out_len);
+
+/**
+ * `1` if a request is queued for `service`, `0` if none, negative on bad handle.
+ *
+ * # Safety
+ * `service` must come from `rmw_zerodds_create_service` or be NULL.
+ */
+ int32_t rmw_zerodds_service_has_data(struct rmw_zerodds_RmwZerodsService *service);
 
 /**
  * `rmw_send_response(service, payload, len)`.
@@ -268,8 +542,8 @@ int32_t rmw_zerodds_send_response(struct rmw_zerodds_RmwZerodsService *service,
  * `rmw_create_wait_set()`.
  *
  * # Safety
- * Result-Pointer ist heap-allokiert; Caller muss
- * `rmw_zerodds_destroy_wait_set` aufrufen.
+ * The result pointer is heap-allocated; the caller must call
+ * `rmw_zerodds_destroy_wait_set`.
  */
  struct rmw_zerodds_RmwZerodsWaitSet *rmw_zerodds_create_wait_set(void);
 
@@ -277,12 +551,12 @@ int32_t rmw_zerodds_send_response(struct rmw_zerodds_RmwZerodsService *service,
  * `rmw_destroy_wait_set(*mut WaitSet)`.
  *
  * # Safety
- * `ws` aus `rmw_zerodds_create_wait_set` oder NULL.
+ * `ws` from `rmw_zerodds_create_wait_set` or NULL.
  */
  int32_t rmw_zerodds_destroy_wait_set(struct rmw_zerodds_RmwZerodsWaitSet *ws);
 
 /**
- * Fuegt eine Subscription zum Wait-Set hinzu.
+ * Adds a subscription to the wait set.
  *
  * # Safety
  * `ws` + `sub` muessen valid sein.
@@ -292,30 +566,31 @@ int32_t rmw_zerodds_wait_set_add_subscription(struct rmw_zerodds_RmwZerodsWaitSe
                                               struct rmw_zerodds_RmwZerodsSubscription *sub);
 
 /**
- * Phase-C Wait: pollt alle Subscriptions im Wait-Set mit adaptivem
- * Backoff. Edge-Trigger-Emulation:
- * * Erste 100 µs spin_loop_hint (sub-µs Latenz)
- * * 100 µs..10 ms: 10 µs Sleep
- * * 10..100 ms: 100 µs Sleep
- * * Danach: 1 ms Sleep
+ * Event-driven wait over the wait set's subscriptions: blocks until any
+ * subscription has a sample ready (its reader data callback fired) or
+ * `timeout_ms` elapses. Returns `RMW_RET_OK` if at least one subscription is
+ * ready, `RMW_RET_TIMEOUT` otherwise.
  *
- * Echter Edge-Trigger ueber Condvar/Channel braucht eine Notify-
- * Bruecke aus dem Reader-Receive-Thread (Phase-D).
+ * Readiness is the non-destructive [`rmw_zerodds_subscription_has_data`] peek;
+ * the blocking is parked on the context's shared condvar via
+ * [`WaitNotify::wait_until`] — no spin loop, no fixed-tick poll. The generation
+ * is snapshotted before the readiness check so a sample arriving in between
+ * wakes the very next block instead of being missed.
  *
  * # Safety
- * `ws` muss valid sein.
+ * `ws` must be valid.
  */
  int32_t rmw_zerodds_wait(struct rmw_zerodds_RmwZerodsWaitSet *ws, uint64_t timeout_ms);
 
 /**
  * `rmw_borrow_loaned_message(publisher, len, *out_ptr, *out_len)` —
- * reserviert einen Buffer beim Writer fuer Zero-Copy-Publish.
- * Phase-C: malloc-backed (kein echter Zero-Copy, aber Code-Pfad
- * stabil). Phase-D wechselt auf SHM-Buffer-Pool wenn der
- * Writer auf einem SHM-Transport sitzt.
+ * reserves a buffer at the writer for zero-copy publish.
+ * Phase-C: malloc-backed (not real zero-copy, but the code path is
+ * stable). Phase-D switches to an SHM buffer pool when the
+ * writer sits on an SHM transport.
  *
  * # Safety
- * `pub_` muss aus rmw_zerodds_create_publisher stammen.
+ * `pub_` must come from rmw_zerodds_create_publisher.
  */
 
 int32_t rmw_zerodds_borrow_loaned_message(struct rmw_zerodds_RmwZerodsPublisher *pub_,
@@ -324,8 +599,8 @@ int32_t rmw_zerodds_borrow_loaned_message(struct rmw_zerodds_RmwZerodsPublisher 
                                           uintptr_t *out_len);
 
 /**
- * Commit-Pfad fuer einen Loan — schreibt den Buffer als Sample und
- * gibt ihn frei.
+ * Commit path for a loan — writes the buffer as a sample and
+ * frees it.
  *
  * # Safety
  * `pub_` valid; `ptr`/`len` aus rmw_zerodds_borrow_loaned_message.
@@ -336,7 +611,7 @@ int32_t rmw_zerodds_publish_loaned_message(struct rmw_zerodds_RmwZerodsPublisher
                                            uintptr_t len);
 
 /**
- * Verwirft einen Loan ohne ihn zu publishen.
+ * Discards a loan without publishing it.
  *
  * # Safety
  * Wie rmw_zerodds_publish_loaned_message.
@@ -347,14 +622,120 @@ int32_t rmw_zerodds_return_loaned_message(struct rmw_zerodds_RmwZerodsPublisher 
                                           uintptr_t len);
 
 /**
- * REP-2009 Type-Hash: SHA-256 ueber den IDL-Type-String.
- * Liefert exakt 32 byte in `out_hash` (muss 32-byte-Buffer sein).
+ * REP-2009 type hash: SHA-256 over the IDL type string.
+ * Returns exactly 32 bytes in `out_hash` (must be a 32-byte buffer).
  *
  * # Safety
- * `type_str` NUL-terminierter C-String; `out_hash` zeigt auf einen
- * 32-byte-Buffer.
+ * `type_str` NUL-terminated C string; `out_hash` points to a
+ * 32-byte buffer.
  */
  int32_t rmw_zerodds_compute_type_hash(const char *type_str, uint8_t *out_hash);
+
+/**
+ * Invokes `callback(user_data, topic, type)` once per discovered remote
+ * publication on `node`'s domain (raw DDS topic/type strings). Bridges to
+ * [`zerodds::zerodds_runtime_for_each_publication`] on the node's runtime — the
+ * C ABI cannot reach the runtime through the opaque context.
+ *
+ * # Safety
+ * `node` must come from `rmw_zerodds_create_node` or be NULL.
+ */
+
+int32_t rmw_zerodds_node_for_each_publication(struct rmw_zerodds_RmwZerodsNode *node,
+                                              struct rmw_zerodds_Option_ZeroDdsTopicCallback callback,
+                                              void *user_data);
+
+/**
+ * As [`rmw_zerodds_node_for_each_publication`] but for discovered remote
+ * subscriptions.
+ *
+ * # Safety
+ * `node` must come from `rmw_zerodds_create_node` or be NULL.
+ */
+
+int32_t rmw_zerodds_node_for_each_subscription(struct rmw_zerodds_RmwZerodsNode *node,
+                                               struct rmw_zerodds_Option_ZeroDdsTopicCallback callback,
+                                               void *user_data);
+
+/**
+ * Invokes `callback(user_data, &info)` once per **publication** endpoint on
+ * `node`'s domain, with full per-endpoint info (GUID + QoS). Backs
+ * `rmw_get_publishers_info_by_topic` (`ros2 topic info -v`). The C side
+ * filters by topic and resolves the node name from the GUID prefix.
+ *
+ * # Safety
+ * `node` must come from `rmw_zerodds_create_node` or be NULL.
+ */
+
+int32_t rmw_zerodds_node_for_each_publication_endpoint(struct rmw_zerodds_RmwZerodsNode *node,
+                                                       struct rmw_zerodds_Option_ZeroDdsEndpointCallback callback,
+                                                       void *user_data);
+
+/**
+ * As [`rmw_zerodds_node_for_each_publication_endpoint`] but for **subscription**
+ * endpoints. Backs `rmw_get_subscriptions_info_by_topic`.
+ *
+ * # Safety
+ * `node` must come from `rmw_zerodds_create_node` or be NULL.
+ */
+
+int32_t rmw_zerodds_node_for_each_subscription_endpoint(struct rmw_zerodds_RmwZerodsNode *node,
+                                                        struct rmw_zerodds_Option_ZeroDdsEndpointCallback callback,
+                                                        void *user_data);
+
+/**
+ * Resolves a 16-byte endpoint GUID to its owning node `(namespace, name)` via
+ * the node graph (local endpoints first, then remote endpoints learned from
+ * `ros_discovery_info`). Writes NUL-terminated strings into the caller buffers
+ * (truncated to fit). Returns `RMW_RET_OK` if found, `RMW_RET_ERROR` if the
+ * GUID is unknown (caller should leave node fields empty). Backs the node-name
+ * column of `rmw_get_publishers/subscriptions_info_by_topic`.
+ *
+ * # Safety
+ * `node` from `rmw_zerodds_create_node` or NULL; `gid16` points at 16 bytes;
+ * the out buffers hold at least their cap bytes.
+ */
+
+int32_t rmw_zerodds_node_resolve_endpoint(struct rmw_zerodds_RmwZerodsNode *node,
+                                          const uint8_t *gid16,
+                                          char *out_ns,
+                                          uintptr_t ns_cap,
+                                          char *out_name,
+                                          uintptr_t name_cap);
+
+/**
+ * Sets the rmw `on_new_message` callback on a subscription. `cb = None` clears
+ * it. Fired on each arrival (and once with the backlog count on set).
+ *
+ * # Safety
+ * `sub` must come from `rmw_zerodds_create_subscription` or be NULL.
+ */
+
+int32_t rmw_zerodds_subscription_set_event_callback(struct rmw_zerodds_RmwZerodsSubscription *sub,
+                                                    struct rmw_zerodds_Option_RmwEventCallback cb,
+                                                    const void *user_data);
+
+/**
+ * Sets the rmw `on_new_request` callback on a service (request inbox).
+ *
+ * # Safety
+ * `service` must come from `rmw_zerodds_create_service` or be NULL.
+ */
+
+int32_t rmw_zerodds_service_set_event_callback(struct rmw_zerodds_RmwZerodsService *service,
+                                               struct rmw_zerodds_Option_RmwEventCallback cb,
+                                               const void *user_data);
+
+/**
+ * Sets the rmw `on_new_response` callback on a client (reply inbox).
+ *
+ * # Safety
+ * `client` must come from `rmw_zerodds_create_client` or be NULL.
+ */
+
+int32_t rmw_zerodds_client_set_event_callback(struct rmw_zerodds_RmwZerodsClient *client,
+                                              struct rmw_zerodds_Option_RmwEventCallback cb,
+                                              const void *user_data);
 
 #ifdef __cplusplus
 }  // extern "C"

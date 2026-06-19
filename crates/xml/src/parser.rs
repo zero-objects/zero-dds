@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Generischer well-formed XML-Loader fuer DDS-XML 1.0 §7.1.
+//! Generic well-formed XML loader for DDS-XML 1.0 §7.1.
 //!
-//! Cluster-F-Foundation: liefert einen Roxmltree-basierten Parser, der
-//! sich an die Wohlgeformtheits-Regeln aus §7.1.1 haelt (UTF-8,
-//! Whitespace-tolerant, Comment-Stripping, Namespace-Aware) und das
-//! Ergebnis in einem generischen [`DdsXmlDocument`]-Container ablegt.
+//! Cluster-F foundation: provides a roxmltree-based parser that
+//! adheres to the well-formedness rules from §7.1.1 (UTF-8,
+//! whitespace-tolerant, comment-stripping, namespace-aware) and stores the
+//! result in a generic [`DdsXmlDocument`] container.
 //!
-//! Building-Block-spezifische Decoder (QoS-Library, Types, Domains,
-//! Participants, Applications, Samples) bauen auf diesem Container auf
+//! Building-block-specific decoders (QoS library, types, domains,
+//! participants, applications, samples) build on this container
 //! (Cluster G/H/I/J in `docs/spec-coverage/zerodds-xml-1.0.open.md`).
 
 use crate::errors::XmlError;
@@ -17,72 +17,72 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// DDS-XML 1.0 Spec-Namespace fuer Building-Block-Top-Level-Elemente.
+/// DDS-XML 1.0 spec namespace for building-block top-level elements.
 ///
-/// Spec-Ref: §7.3.x ("targetNamespace = http://www.omg.org/spec/DDS-XML").
+/// Spec ref: §7.3.x ("targetNamespace = http://www.omg.org/spec/DDS-XML").
 pub const DDS_XML_NS: &str = "http://www.omg.org/spec/DDS-XML";
 
-/// DoS-Cap fuer Listen-Elemente (Children pro Knoten).
+/// DoS cap for list elements (children per node).
 pub const MAX_LIST_ELEMENTS: usize = 1024;
 
-/// DoS-Cap fuer Gesamt-Knoten-Anzahl pro Dokument.
+/// DoS cap for the total node count per document.
 pub const MAX_TOTAL_ELEMENTS: usize = 64 * 1024;
 
-/// DoS-Cap fuer die rekursive Baum-Tiefe.
+/// DoS cap for the recursive tree depth.
 ///
-/// Schuetzt den rekursiven `build_element`-Aufruf vor Stack-Overflow
-/// bei adversarial deeply-nested XML-Inputs (TS-1-Finding 3,
-/// `docs/test-harness/plan.md`). Realistische DDS-XML-Profile gehen
-/// 4-8 tief; selbst komplexe `<application>`-/`<participant>`-
-/// Verschachtelungen bleiben unter 32.
+/// Protects the recursive `build_element` call from stack overflow
+/// on adversarial deeply-nested XML inputs (TS-1 finding 3,
+/// `docs/test-harness/plan.md`). Realistic DDS-XML profiles go
+/// 4-8 deep; even complex `<application>`/`<participant>`
+/// nestings stay below 32.
 pub const MAX_TREE_DEPTH: usize = 64;
 
-/// Generischer In-Memory-Container fuer ein DDS-XML-Dokument nach §7.1.
+/// Generic in-memory container for a DDS-XML document per §7.1.
 ///
-/// Ein Element wird als [`XmlElement`] (Tag, Attribute, Children, Text)
-/// abgebildet. Building-Block-Decoder navigieren ueber diesen Baum und
-/// erzeugen typed Strukturen (z.B. QoS-Profile in Cluster G).
+/// An element is mapped as an [`XmlElement`] (tag, attributes, children, text).
+/// Building-block decoders navigate over this tree and
+/// produce typed structures (e.g. QoS profiles in Cluster G).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DdsXmlDocument {
-    /// Wurzel-Element des Dokuments (z.B. `<dds>`, `<qos_library>`,
+    /// Root element of the document (e.g. `<dds>`, `<qos_library>`,
     /// `<domain_participant_library>`).
     pub root: XmlElement,
 }
 
 impl DdsXmlDocument {
-    /// Liefert den lokalen Tag-Namen der Wurzel (ohne Namespace-Prefix).
+    /// Returns the local tag name of the root (without the namespace prefix).
     #[must_use]
     pub fn root_name(&self) -> &str {
         &self.root.name
     }
 }
 
-/// Ein einzelnes XML-Element nach §7.1.4 / §7.1.5 (Element + Attribute).
+/// A single XML element per §7.1.4 / §7.1.5 (element + attributes).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct XmlElement {
-    /// Lokaler Tag-Name (ohne Namespace-Prefix).
+    /// Local tag name (without the namespace prefix).
     pub name: String,
-    /// Optionaler Namespace-URI gemaess §7.1.3.
+    /// Optional namespace URI per §7.1.3.
     pub namespace: Option<String>,
-    /// Attribute (Name -> Wert, alphabetisch sortiert via BTreeMap fuer
-    /// deterministische Iteration).
+    /// Attributes (name -> value, alphabetically sorted via BTreeMap for
+    /// deterministic iteration).
     pub attributes: BTreeMap<String, String>,
-    /// Kind-Elemente in Dokument-Reihenfolge.
+    /// Child elements in document order.
     pub children: Vec<XmlElement>,
-    /// Direkter Text-Inhalt (zusammenhaengender Text-Teil unmittelbar
-    /// vor dem ersten Kind-Element). Leer wenn kein Text vorhanden.
+    /// Direct text content (contiguous text part immediately
+    /// before the first child element). Empty if no text is present.
     pub text: String,
 }
 
 impl XmlElement {
-    /// Liefert den ersten Kind mit dem gegebenen lokalen Namen, falls
-    /// vorhanden.
+    /// Returns the first child with the given local name, if
+    /// present.
     #[must_use]
     pub fn child(&self, name: &str) -> Option<&XmlElement> {
         self.children.iter().find(|c| c.name == name)
     }
 
-    /// Liefert alle Kinder mit dem gegebenen lokalen Namen.
+    /// Returns all children with the given local name.
     pub fn children_named<'a>(
         &'a self,
         name: &'a str,
@@ -90,15 +90,15 @@ impl XmlElement {
         self.children.iter().filter(move |c| c.name == name)
     }
 
-    /// Liefert den Wert eines Attributs, falls vorhanden.
+    /// Returns the value of an attribute, if present.
     #[must_use]
     pub fn attribute(&self, name: &str) -> Option<&str> {
         self.attributes.get(name).map(String::as_str)
     }
 
-    /// Iteriert ueber `<element>`-Kinder gemaess Spec §7.2.4.1
-    /// (IDL-Sequence-Mapping) und §7.2.5 (IDL-Array-Mapping = Sequence-
-    /// Mapping mit gleichem Element-Tag).
+    /// Iterates over `<element>` children per Spec §7.2.4.1
+    /// (IDL sequence mapping) and §7.2.5 (IDL array mapping = sequence
+    /// mapping with the same element tag).
     ///
     /// Spec OMG DDS-XML 1.0 §7.2.4.1: "The complexType contains zero
     /// or more elements named element. Nested inside each element is
@@ -107,36 +107,36 @@ impl XmlElement {
     ///
     /// Spec §7.2.5: "The XML representation of IDL arrays is the same
     /// as it would be for IDL sequences of the same element type." —
-    /// d.h. `<element>`-Tag wird auch fuer Arrays genutzt.
+    /// i.e. the `<element>` tag is also used for arrays.
     ///
-    /// Wird vom IDL-PSM-Mapping (`qos_parser`, `sample`) genutzt, um
-    /// generische Sequenzen/Arrays zu iterieren.
+    /// Used by the IDL-PSM mapping (`qos_parser`, `sample`) to
+    /// iterate generic sequences/arrays.
     pub fn sequence_elements(&self) -> impl Iterator<Item = &XmlElement> + '_ {
         self.children_named("element")
     }
 }
 
-/// Parses a DDS-XML 1.0 document gemaess §7.1.
+/// Parses a DDS-XML 1.0 document per §7.1.
 ///
-/// Wohlgeformtheits-Garantien:
-/// * XML-Declaration optional (Spec §7.1.1).
-/// * Whitespace-tolerant (roxmltree normalisiert Text).
-/// * Kommentare werden gestrippt (`<!-- ... -->` werden von roxmltree
-///   nicht als Element-Knoten geliefert).
-/// * Namespace-Aware: Top-Level-Namespace wird im Root mitgefuehrt
+/// Well-formedness guarantees:
+/// * XML declaration optional (Spec §7.1.1).
+/// * Whitespace-tolerant (roxmltree normalizes text).
+/// * Comments are stripped (`<!-- ... -->` are not delivered by roxmltree
+///   as element nodes).
+/// * Namespace-aware: the top-level namespace is carried in the root
 ///   (Spec §7.3.x: `targetNamespace = http://www.omg.org/spec/DDS-XML`).
 ///
-/// DoS-Caps gemaess Cluster-F: maximal [`MAX_LIST_ELEMENTS`] Children pro
-/// Knoten, maximal [`MAX_TOTAL_ELEMENTS`] Knoten insgesamt.
+/// DoS caps per Cluster F: at most [`MAX_LIST_ELEMENTS`] children per
+/// node, at most [`MAX_TOTAL_ELEMENTS`] nodes total.
 ///
 /// # Errors
-/// * [`XmlError::InvalidXml`] — XML nicht wohlgeformt.
-/// * [`XmlError::LimitExceeded`] — DoS-Cap getroffen.
+/// * [`XmlError::InvalidXml`] — XML not well-formed.
+/// * [`XmlError::LimitExceeded`] — a DoS cap was hit.
 pub fn parse_xml_tree(xml: &str) -> Result<DdsXmlDocument, XmlError> {
-    // Pre-Validation: tiefe Verschachtelung wuerde im rekursiven
-    // `roxmltree`-Parser zu Stack-Overflow fuehren — wir lehnen
-    // Inputs ueber `MAX_TREE_DEPTH` *vor* dem Parser-Call ab.
-    // TS-1-Finding 3.
+    // Pre-validation: deep nesting would cause a stack overflow in the
+    // recursive `roxmltree` parser — we reject
+    // inputs over `MAX_TREE_DEPTH` *before* the parser call.
+    // TS-1 finding 3.
     precheck_depth(xml)?;
     let opts = roxmltree::ParsingOptions {
         allow_dtd: false,
@@ -149,17 +149,17 @@ pub fn parse_xml_tree(xml: &str) -> Result<DdsXmlDocument, XmlError> {
     Ok(DdsXmlDocument { root })
 }
 
-/// Byte-level Vor-Pruefung der Tag-Verschachtelungstiefe.
+/// Byte-level pre-check of the tag nesting depth.
 ///
-/// Geht Bytes durch und zaehlt:
-/// * `<` ohne `/`, `!`, `?` direkt danach: depth + 1
+/// Walks the bytes and counts:
+/// * `<` without `/`, `!`, `?` directly after it: depth + 1
 /// * `</`: depth - 1
-/// * `<!` oder `<?`: Kommentar / PI / DTD — uebersprungen
-/// * `/>`: self-closing — depth + 1 - 1 (netto 0)
+/// * `<!` or `<?`: comment / PI / DTD — skipped
+/// * `/>`: self-closing — depth + 1 - 1 (net 0)
 ///
-/// Heuristisch, aber ein **Upper Bound** auf die echte Tag-Tiefe —
-/// wenn dieser Bound bereits ueber `MAX_TREE_DEPTH` liegt, ist der
-/// nachgelagerte rekursive Parser unsicher.
+/// Heuristic, but an **upper bound** on the real tag depth —
+/// if this bound is already over `MAX_TREE_DEPTH`, the
+/// downstream recursive parser is unsafe.
 fn precheck_depth(xml: &str) -> Result<(), XmlError> {
     let bytes = xml.as_bytes();
     let mut depth: i64 = 0;
@@ -170,7 +170,7 @@ fn precheck_depth(xml: &str) -> Result<(), XmlError> {
             i += 1;
             continue;
         }
-        // Look-ahead nach dem ersten Zeichen.
+        // Look-ahead after the first character.
         let next = bytes.get(i + 1).copied();
         match next {
             Some(b'/') => {
@@ -178,15 +178,15 @@ fn precheck_depth(xml: &str) -> Result<(), XmlError> {
                 i += 2;
             }
             Some(b'!') | Some(b'?') => {
-                // Skip bis zum naechsten `>` (Kommentar oder PI).
+                // Skip to the next `>` (comment or PI).
                 i += 2;
                 while i < bytes.len() && bytes[i] != b'>' {
                     i += 1;
                 }
             }
             _ => {
-                // Opening-Tag — pruefe ob self-closing: skanne bis `>`
-                // und schau, ob das Byte davor `/` ist.
+                // Opening tag — check if self-closing: scan to `>`
+                // and see whether the byte before it is `/`.
                 let start = i;
                 i += 1;
                 while i < bytes.len() && bytes[i] != b'>' {
@@ -207,7 +207,7 @@ fn precheck_depth(xml: &str) -> Result<(), XmlError> {
                 }
             }
         }
-        // `>` ueberspringen (am Ende des match arms steht i auf `>`).
+        // Skip `>` (at the end of the match arm, i is on `>`).
         if i < bytes.len() && bytes[i] == b'>' {
             i += 1;
         }
@@ -215,14 +215,14 @@ fn precheck_depth(xml: &str) -> Result<(), XmlError> {
     Ok(())
 }
 
-/// Rekursiver Baum-Aufbau aus einem roxmltree-Knoten.
+/// Recursive tree build from a roxmltree node.
 ///
-/// `depth` zaehlt die aktuelle Verschachtelungstiefe (Wurzel = 0) und
-/// schuetzt vor Stack-Overflow ueber [`MAX_TREE_DEPTH`].
+/// `depth` counts the current nesting depth (root = 0) and
+/// protects against stack overflow via [`MAX_TREE_DEPTH`].
 ///
-/// zerodds-lint: recursion-depth = xml-tree-depth (durch `MAX_TREE_DEPTH`
-/// gecappt; durch `MAX_TOTAL_ELEMENTS` und `MAX_LIST_ELEMENTS`
-/// zusaetzlich gegen Wide-/Tall-DoS abgesichert).
+/// zerodds-lint: recursion-depth = xml-tree-depth (capped by `MAX_TREE_DEPTH`;
+/// additionally secured against wide/tall DoS by `MAX_TOTAL_ELEMENTS` and
+/// `MAX_LIST_ELEMENTS`).
 fn build_element(
     node: roxmltree::Node<'_, '_>,
     counter: &mut usize,
@@ -250,15 +250,15 @@ fn build_element(
         text: String::new(),
     };
 
-    // §7.1.5 Tab.7.2 — Attribute uebernehmen.
+    // §7.1.5 Tab.7.2 — take over the attributes.
     for attr in node.attributes() {
         element
             .attributes
             .insert(attr.name().to_string(), attr.value().to_string());
     }
 
-    // §7.1.4 Tab.7.1 — Erster Text-Inhalt (vor dem ersten Element-Kind).
-    // roxmltree liefert Text als eigene Knoten zwischen Elementen.
+    // §7.1.4 Tab.7.1 — first text content (before the first element child).
+    // roxmltree delivers text as its own nodes between elements.
     if let Some(text) = node.text() {
         let trimmed = text.trim();
         if !trimmed.is_empty() {
@@ -266,8 +266,8 @@ fn build_element(
         }
     }
 
-    // Children-Element-Knoten (Comments + Whitespace-Text werden
-    // automatisch gefiltert).
+    // Child element nodes (comments + whitespace text are
+    // filtered out automatically).
     let mut child_count: usize = 0;
     for child_node in node.children().filter(roxmltree::Node::is_element) {
         child_count += 1;
@@ -333,7 +333,7 @@ mod tests {
             </root>
         "#;
         let doc = parse_xml_tree(xml).expect("parse");
-        // text wird getrimmed
+        // text is trimmed
         assert_eq!(doc.root.children[0].text, "hello");
     }
 
@@ -355,8 +355,8 @@ mod tests {
 
     #[test]
     fn dtd_rejected() {
-        // §7.1.1 — XML 1.0 Fifth Edition; DTDs sind erlaubt, aber wir
-        // verbieten sie aus Security-Gruenden (XXE-Vermeidung).
+        // §7.1.1 — XML 1.0 Fifth Edition; DTDs are allowed, but we
+        // forbid them for security reasons (XXE avoidance).
         let xml = r#"<?xml version="1.0"?>
 <!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
 <root>&xxe;</root>"#;
@@ -410,8 +410,8 @@ mod tests {
 
     #[test]
     fn sequence_elements_iterates_element_tag_children() {
-        // Spec §7.2.4.1: IDL-Sequence wird als <complexType> mit
-        // 0..n <element>-Children dargestellt.
+        // Spec §7.2.4.1: an IDL sequence is represented as a <complexType> with
+        // 0..n <element> children.
         let xml = r#"<root>
             <ports>
                 <element>7400</element>
@@ -427,8 +427,8 @@ mod tests {
 
     #[test]
     fn sequence_elements_skips_non_element_tagged_children() {
-        // Andere Tags wie <kind>, <depth> werden ignoriert — nur
-        // <element>-Tag zaehlt als Sequenz-Eintrag.
+        // Other tags such as <kind>, <depth> are ignored — only the
+        // <element> tag counts as a sequence entry.
         let xml = r#"<root>
             <history>
                 <kind>KEEP_LAST_HISTORY_QOS</kind>
@@ -452,9 +452,9 @@ mod tests {
 
     #[test]
     fn array_uses_same_element_tag_as_sequence() {
-        // Spec §7.2.5: IDL-Array-Mapping ist identisch zu IDL-Sequence-
-        // Mapping. Der gleiche `sequence_elements`-Iterator muss also
-        // auch fuer fixed-size IDL-Arrays funktionieren.
+        // Spec §7.2.5: IDL array mapping is identical to IDL sequence
+        // mapping. So the same `sequence_elements` iterator must
+        // also work for fixed-size IDL arrays.
         let xml = r#"<root>
             <coords_3d>
                 <element>1.0</element>

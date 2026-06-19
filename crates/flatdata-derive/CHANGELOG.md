@@ -1,35 +1,35 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-flatdata-derive`-Crate.
+Initial release materialization of the `zerodds-flatdata-derive` crate.
 
-### Spec-Referenzen
+### Spec references
 
-- **`docs/specs/zerodds-flatdata-1.0.md`** §1.2 (Derive-Macro): `#[derive(FlatStruct)]` generiert `unsafe impl FlatStruct for T` mit `TYPE_HASH = sha256(layout_signature(T))[..16]`.
+- **`docs/specs/zerodds-flatdata-1.0.md`** §1.2 (derive macro): `#[derive(FlatStruct)]` generates `unsafe impl FlatStruct for T` with `TYPE_HASH = sha256(layout_signature(T))[..16]`.
 
-### Public-API
+### Public API
 
-- `#[derive(FlatStruct)]` — proc-macro-derive auf `zerodds_flatdata::FlatStruct`. Generiert eine `unsafe impl`-Block mit der `TYPE_HASH`-Konstanten.
+- `#[derive(FlatStruct)]` — proc-macro derive on `zerodds_flatdata::FlatStruct`. Generates an `unsafe impl` block with the `TYPE_HASH` constant.
 
-Es gibt keine weiteren oeffentlichen Items: die Crate ist eine reine `proc-macro = true`-Lib.
+There are no further public items: the crate is a pure `proc-macro = true` lib.
 
-### Implementierung
+### Implementation
 
-Die `expand`-Funktion akzeptiert nur `struct`-DeriveInputs (Named, Tuple, Unit). `enum` und `union` werden mit `compile_error!` abgelehnt, weil ihr Layout selbst unter `repr(C)` nicht in derselben Form wie struct-Layouts vorhersagbar ist (Discriminant-Position, untagged-Union-Aliasing).
+The `expand` function only accepts `struct` DeriveInputs (named, tuple, unit). `enum` and `union` are rejected with `compile_error!`, because their layout — even under `repr(C)` — is not predictable in the same form as struct layouts (discriminant position, untagged-union aliasing).
 
-Vor der Hash-Berechnung wird `has_repr_c_or_transparent(&input.attrs)` geprueft. Fehlt `#[repr(C)]` oder `#[repr(transparent)]`, lehnt der Macro mit `compile_error!` ab — die Doc-Promise "FlatStruct verlangt repr(C)" wird damit zur Compile-Time-Garantie statt zu einem Caller-Vertrauensdokument.
+Before computing the hash, `has_repr_c_or_transparent(&input.attrs)` is checked. If `#[repr(C)]` or `#[repr(transparent)]` is missing, the macro rejects with `compile_error!` — turning the doc promise "FlatStruct requires repr(C)" into a compile-time guarantee instead of a caller-trust document.
 
-Der `TYPE_HASH` ergibt sich aus `sha256(<TypeName>{<field-name>:<ty>,...})[..16]`. Der Layout-String enthaelt explizit:
-- Type-Name (Type-Rename → neuer Hash).
-- Field-Order (Field-Reorder → neuer Hash).
-- Field-Names (bei Named-Structs) und Field-Type-Strings (Field-add/remove + Field-Type-Change → neuer Hash).
+The `TYPE_HASH` is derived from `sha256(<TypeName>{<field-name>:<ty>,...})[..16]`. The layout string explicitly contains:
+- Type name (type rename → new hash).
+- Field order (field reorder → new hash).
+- Field names (for named structs) and field type strings (field add/remove + field type change → new hash).
 
-Die Bounds `Copy + 'static + Send + Sync` werden vom Trait selbst erzwungen — der Macro generiert keine eigenen Bound-Checks. Damit erscheinen Trait-Bound-Fehler als verstaendliche `T: Copy` /usw.-Compiler-Errors am Use-Site, nicht als kryptische Macro-Errors.
+The bounds `Copy + 'static + Send + Sync` are enforced by the trait itself — the macro generates no bound checks of its own. As a result, trait-bound errors appear as understandable `T: Copy`/etc. compiler errors at the use site, not as cryptic macro errors.
 
-Generierte Code-Form:
+Generated code form:
 ```rust
 #[automatically_derived]
 unsafe impl ::zerodds_flatdata::FlatStruct for #name {
@@ -37,15 +37,15 @@ unsafe impl ::zerodds_flatdata::FlatStruct for #name {
 }
 ```
 
-`WIRE_SIZE` und die `as_bytes`/`from_bytes_unchecked`-Methoden kommen als Trait-Default aus `zerodds-flatdata` und brauchen keinen Macro-Override.
+`WIRE_SIZE` and the `as_bytes`/`from_bytes_unchecked` methods come as a trait default from `zerodds-flatdata` and need no macro override.
 
-### Architektur
+### Architecture
 
 - **Layer:** 4 (Core Services).
-- **Dependencies (in):** `syn 2`, `quote 1`, `proc-macro2 1`, `sha2` (workspace, default-features=false). Keine ZeroDDS-Crate-Deps.
-- **Dependents (out):** `zerodds-flatdata` (`dev-dependencies`, fuer den `tests/derive.rs`-Smoketest); end-user-Crates die FlatStruct ableiten wollen.
-- **Feature-Flags:** keine.
+- **Dependencies (in):** `syn 2`, `quote 1`, `proc-macro2 1`, `sha2` (workspace, default-features=false). No ZeroDDS crate deps.
+- **Dependents (out):** `zerodds-flatdata` (`dev-dependencies`, for the `tests/derive.rs` smoke test); end-user crates that want to derive FlatStruct.
+- **Feature flags:** none.
 
-### Stabilitaet
+### Stability
 
-Alle oeffentlichen Macro-Pfade sind RC1-stabil. Das Layout-Signatur-Format ist Wire-stabil: eine Aenderung wuerde alle bisher generierten `TYPE_HASH`-Werte invalidieren und ist daher als Major-Breaking-Change klassifiziert.
+All public macro paths are RC1-stable. The layout signature format is wire-stable: a change would invalidate all previously generated `TYPE_HASH` values and is therefore classified as a major breaking change.

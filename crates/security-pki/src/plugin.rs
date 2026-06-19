@@ -1,21 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `AuthenticationPlugin`-Impl auf Basis von X.509 / rustls-webpki.
+//! `AuthenticationPlugin` impl based on X.509 / rustls-webpki.
 //!
-//! Spec: OMG DDS-Security 1.2 §10.3.2.6-8 + §10.3.4. Tokens werden ueber
-//! das `DataHolder`-Wire-Format aus [`crate::handshake_token`] kodiert.
+//! Spec: OMG DDS-Security 1.2 §10.3.2.6-8 + §10.3.4. Tokens are encoded via
+//! the `DataHolder` wire format from [`crate::handshake_token`].
 //!
 //! zerodds-lint: allow no_dyn_in_safe
-//! (`webpki::EndEntityCert::verify_signature` nimmt
-//! `&dyn SignatureVerificationAlgorithm` — das ist ein 3rd-party-API,
-//! nicht ZeroDDS-Eigenkonstruktion. Wir koennen das nicht zu konkreten
-//! Generics konvertieren ohne webpki-Fork.)
+//! (`webpki::EndEntityCert::verify_signature` takes
+//! `&dyn SignatureVerificationAlgorithm` — that is a 3rd-party API,
+//! not a ZeroDDS construction. We cannot convert it to concrete
+//! generics without forking webpki.)
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
+use ring::digest;
 use ring::rand::{SecureRandom, SystemRandom};
 use ring::signature;
 use rustls_pki_types::CertificateDer;
@@ -25,109 +26,132 @@ use zerodds_security::authentication::{
 };
 use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};
 use zerodds_security::properties::PropertyList;
-use zerodds_security_keyexchange::KeyExchange;
+use zerodds_security_keyexchange::{KeyExchange, KxSuite};
 
 use crate::handshake_token::{
-    self as ht, FinalBuildInput, ReplyBuildInput, RequestBuildInput, ct_eq, signing_bytes,
+    self as ht, FinalBuildInput, ReplyBuildInput, RequestBuildInput, ct_eq,
 };
 use crate::identity::{CertKeyAlgo, IdentityConfig, ParsedIdentity, PkiError};
 
-/// Property-Keys (Spec §8.3.2.7 / implementation-defined). Wir folgen
-/// der Fast-DDS-Konvention, damit Nutzer vorhandene XML-Configs
-/// uebernehmen koennen.
+/// Property keys (spec §8.3.2.7 / implementation-defined). We follow
+/// the FastDDS convention so that users can reuse existing XML
+/// configs.
 mod keys {
-    /// PEM-kodiertes Identity-Zertifikat (im Property-Value direkt,
-    /// **nicht** als Dateipfad — so kann der Plugin-Caller entscheiden,
-    /// ob er vom Filesystem laedt oder aus einem Secret-Manager).
+    /// PEM-encoded identity certificate (directly in the property value,
+    /// **not** as a file path — so the plugin caller can decide
+    /// whether to load from the filesystem or from a secret manager).
     pub const IDENTITY_CERT: &str = "dds.sec.auth.identity_certificate";
-    /// PEM-kodiertes CA-Bundle.
+    /// PEM-encoded CA bundle.
     pub const IDENTITY_CA: &str = "dds.sec.auth.identity_ca";
-    /// PEM-kodierter PKCS8-Private-Key (passend zum Identity-Cert).
+    /// PEM-encoded PKCS8 private key (matching the identity cert).
     pub const IDENTITY_KEY: &str = "dds.sec.auth.private_key";
 }
 
-/// Maximaler Speicher fuer "kuerzlich gesehene" Initiator-Challenges
-/// (Replay-Detection-Cache pro Replier). 1024 entries × 32 byte = 32 KiB.
+/// Maximum storage for "recently seen" initiator challenges
+/// (replay-detection cache per replier). 1024 entries × 32 bytes = 32 KiB.
 const REPLAY_CACHE_CAP: usize = 1024;
 
-/// PKI/X.509-basierter `AuthenticationPlugin`. Verifiziert Identity-
-/// Certs gegen einen vorgegebenen Trust-Anchor und fuehrt einen
-/// 3-Round PKI-DH-Handshake (Spec §10.3.2.6-8 Tab.56/57/58) zum Peer.
+/// PKI/X.509-based `AuthenticationPlugin`. Verifies identity
+/// certs against a given trust anchor and runs a
+/// 3-round PKI-DH handshake (spec §10.3.2.6-8 Tab.56/57/58) with the peer.
 ///
-/// Wire (C3.1): drei `DataHolder`-Tokens
-/// `DDS:Auth:PKI-DH:1.2+AuthReq` / `+AuthReply` / `+AuthFinal`. Beide
-/// Seiten echo'n `cert_der` + `dh*` + `challenge*` + Hash-Bindings.
-/// Replier signiert (kagree || ch1 || dh1 || ch2 || dh2) mit
-/// Identity-Private-Key; Initiator signiert (kagree || ch2 || dh2 ||
+/// Wire (C3.1): three `DataHolder` tokens
+/// `DDS:Auth:PKI-DH:1.2+AuthReq` / `+AuthReply` / `+AuthFinal`. Both
+/// sides echo `cert_der` + `dh*` + `challenge*` + hash bindings.
+/// The replier signs (kagree || ch1 || dh1 || ch2 || dh2) with the
+/// identity private key; the initiator signs (kagree || ch2 || dh2 ||
 /// ch1 || dh1).
 pub struct PkiAuthenticationPlugin {
     next_handle: AtomicU64,
     identities: BTreeMap<IdentityHandle, ParsedIdentity>,
-    /// Initiator-Side: noch nicht abgeschlossene Handshakes.
+    /// Initiator side: handshakes not yet completed.
     pending_initiator: BTreeMap<HandshakeHandle, InitiatorState>,
-    /// Replier-Side: zwischen Reply-Send und Final-Empfang.
+    /// Replier side: between reply-send and final-receive.
     pending_replier: BTreeMap<HandshakeHandle, ReplierState>,
-    /// Abgeschlossene Handshakes → SharedSecret-Handle.
+    /// Completed handshakes → SharedSecret handle.
     handshake_to_secret: BTreeMap<HandshakeHandle, SharedSecretHandle>,
-    /// Materialisierte SharedSecrets (32 byte HKDF-SHA256-Output).
+    /// Materialized SharedSecrets (32 bytes SHA256(raw_dh)).
     secrets: BTreeMap<SharedSecretHandle, Vec<u8>>,
-    /// Pro lokalem Identity-Handle: Set aller bereits gesehenen
-    /// Initiator-Challenges (Replay-Detection). Wird gecappt.
+    /// Per SharedSecret the `(challenge1, challenge2)` of the handshake
+    /// (initiator/replier), for the VolatileSecure key derivation §9.5.3.5.
+    secret_challenges: BTreeMap<SharedSecretHandle, ([u8; 32], [u8; 32])>,
+    /// Per local identity handle: the set of all initiator challenges
+    /// already seen (replay detection). Capped.
     replay_cache: BTreeMap<IdentityHandle, BTreeSet<[u8; 32]>>,
-    /// FIFO-Order der replay-cache Entries fuer Cap-Eviction.
+    /// FIFO order of the replay-cache entries for cap eviction.
     replay_order: BTreeMap<IdentityHandle, Vec<[u8; 32]>>,
+    /// Preferred key agreement as initiator. **Default = `EcdhP256`**
+    /// (OMG spec `ECDHE+P-256+SHA-256`, cross-vendor-readable). X25519 is only
+    /// allowed as an explicitly set vendor extension, NEVER the default. The replier
+    /// always follows the `c.kagree_algo` announced by the initiator.
+    preferred_kx_suite: KxSuite,
+    /// Cross-vendor quirk (transient, per-peer): if `true`, the
+    /// next `c.dsign_algo`/`c.kagree_algo` are emitted + hashed WITH a trailing `\0`.
+    /// OpenDDS compares them via `sizeof` (incl. NUL); FastDDS
+    /// (#3803) needs them WITHOUT. The discovery layer sets this via
+    /// [`AuthenticationPlugin::set_algo_nul_terminate`] based on the peer
+    /// VendorId BEFORE each `begin_handshake_request`/`begin_handshake_reply`.
+    algo_nul: bool,
+    /// Local CMS-signed permissions document (`.p7s` bytes) for the
+    /// `c.perm` property in the handshake (spec §9.3.2.5.1). Empty = no
+    /// AccessControl permissions; a foreign vendor with active AccessControl
+    /// (governance) then rejects the handshake. Set by the SecurityProfile.
+    local_permissions: Vec<u8>,
+    /// Local `ParticipantBuiltinTopicData` as PL_CDR bytes — sent along in the
+    /// handshake as `c.pdata` (spec §9.3.2.5.2). The replier
+    /// (e.g. cyclone) deserializes c.pdata as a ParameterList; empty leads
+    /// cross-vendor to "Deserialize parameter header failed".
+    local_pdata: Vec<u8>,
 }
 
 struct InitiatorState {
-    /// Lokaler Identity-Handle (fuer Cert/Key-Lookup).
+    /// Local identity handle (for cert/key lookup).
     local: IdentityHandle,
-    /// Ephemerales DH-Keypair (verbraucht beim REPLY).
+    /// Ephemeral DH keypair (consumed at the REPLY).
     kx: Option<KeyExchange>,
-    /// Bytes des lokalen DH-Public.
+    /// Bytes of the local DH public.
     dh1: Vec<u8>,
-    /// Lokal generierte Challenge.
+    /// Locally generated challenge.
     challenge1: [u8; 32],
-    /// Hash-Bindung des Initiator-Tupels.
+    /// Hash binding of the initiator tuple.
     hash_c1: [u8; 32],
-    /// Permissions-Document (echo). Wird vom AccessControl-Plugin im
-    /// Permissions-Bind-Schritt konsumiert; hier nur fuer Symmetrie
-    /// zum Replier-State gehalten.
+    /// Permissions document (echo). Consumed by the AccessControl plugin in the
+    /// permissions-bind step; held here only for symmetry
+    /// with the replier state.
     #[allow(dead_code)]
     permissions: Vec<u8>,
     /// Pdata (echo).
     #[allow(dead_code)]
     pdata: Vec<u8>,
-    /// Eigenes `c.kagree_algo` (was wir im REQUEST geschickt haben).
+    /// Our own `c.kagree_algo` (what we sent in the REQUEST).
     kagree_algo: alloc::string::String,
-    /// Eigenes `c.dsign_algo`. Wird vom Replier echoed und beim
-    /// Reply-Decode auf Plausibilitaet geprueft (kein Match-Vergleich
-    /// hier, weil der Initiator den Replier-Algo schickt).
+    /// Our own `c.dsign_algo`. Echoed by the replier and checked for
+    /// plausibility on reply decode (no match comparison
+    /// here, because the initiator sends the replier algo).
     #[allow(dead_code)]
     dsign_algo: alloc::string::String,
 }
 
 struct ReplierState {
-    /// Lokaler Identity-Handle.
+    /// Local identity handle.
     local: IdentityHandle,
-    /// Vom Replier akzeptierter `c.kagree_algo` (vom Initiator uebernommen).
-    kagree_algo: alloc::string::String,
-    /// Initiator-Challenge.
+    /// Initiator challenge.
     challenge1: [u8; 32],
-    /// Replier-Challenge.
+    /// Replier challenge.
     challenge2: [u8; 32],
-    /// Initiator-DH (echo).
+    /// Initiator DH (echo).
     dh1: Vec<u8>,
-    /// Replier-DH.
+    /// Replier DH.
     dh2: Vec<u8>,
     /// hash_c1 (echo).
     hash_c1: [u8; 32],
-    /// hash_c2 (replier-Tupel).
+    /// hash_c2 (replier tuple).
     hash_c2: [u8; 32],
-    /// Bereits abgeleitetes SharedSecret.
+    /// SharedSecret already derived.
     secret_handle: SharedSecretHandle,
-    /// Initiator-Cert-DER (zur Final-Signature-Pruefung).
+    /// Initiator cert DER (for the final-signature check).
     initiator_cert_der: Vec<u8>,
-    /// Detektierter Initiator-Cert-Algo.
+    /// Detected initiator cert algo.
     initiator_key_algo: CertKeyAlgo,
 }
 
@@ -138,7 +162,7 @@ impl Default for PkiAuthenticationPlugin {
 }
 
 impl PkiAuthenticationPlugin {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -148,8 +172,41 @@ impl PkiAuthenticationPlugin {
             pending_replier: BTreeMap::new(),
             handshake_to_secret: BTreeMap::new(),
             secrets: BTreeMap::new(),
+            secret_challenges: BTreeMap::new(),
             replay_cache: BTreeMap::new(),
             replay_order: BTreeMap::new(),
+            // Spec default: cross-vendor-readable ECDHE+P-256+SHA-256.
+            preferred_kx_suite: KxSuite::EcdhP256,
+            algo_nul: false,
+            local_permissions: Vec::new(),
+            local_pdata: Vec::new(),
+        }
+    }
+
+    /// Sets the local CMS-signed permissions document (`.p7s` bytes) that
+    /// is sent along as `c.perm` in the HandshakeRequest/Reply. Required for
+    /// cross-vendor interop with active AccessControl (FastDDS/Cyclone/RTI
+    /// validate the permissions signature against the permissions_ca).
+    pub fn set_local_permissions(&mut self, permissions_p7s: Vec<u8>) {
+        self.local_permissions = permissions_p7s;
+    }
+
+    /// Sets the preferred key agreement as initiator. Only for a deliberate
+    /// vendor-extension choice (e.g. `KxSuite::X25519` between pure ZeroDDS
+    /// peers) — the default `EcdhP256` is the spec/cross-vendor choice and
+    /// should NOT be changed for interop.
+    pub fn set_preferred_kx_suite(&mut self, suite: KxSuite) {
+        self.preferred_kx_suite = suite;
+    }
+
+    /// For OpenDDS peers (see [`Self::algo_nul`]) appends a `\0` to an
+    /// algorithm string — consistent for the wire AND the hash (both use
+    /// `.as_bytes()`). Otherwise unchanged.
+    fn algo_str(&self, s: &str) -> alloc::string::String {
+        if self.algo_nul {
+            alloc::format!("{s}\0")
+        } else {
+            s.into()
         }
     }
 
@@ -157,12 +214,35 @@ impl PkiAuthenticationPlugin {
         self.next_handle.fetch_add(1, Ordering::Relaxed) + 1
     }
 
-    /// Programmatische Variante: direkt `IdentityConfig` statt
-    /// `PropertyList` uebergeben. Nuetzlich fuer Tests + native
-    /// Rust-Caller.
+    /// Maps a `c.kagree_algo` string to the KX suite. `None` =
+    /// unsupported (the replier then rejects). Any trailing `\0`
+    /// (OpenDDS sends the algorithm strings NUL-terminated) is removed before
+    /// the comparison — the KX suite is independent of it.
+    fn kx_suite_for_algo(algo: &str) -> Option<KxSuite> {
+        let algo = algo.trim_end_matches('\0');
+        if algo == ht::algo::ECDHE_P256_SHA256 {
+            Some(KxSuite::EcdhP256)
+        } else if algo == ht::algo::X25519 {
+            Some(KxSuite::X25519)
+        } else {
+            None
+        }
+    }
+
+    /// `c.kagree_algo` string for a KX suite.
+    fn kagree_algo_str(suite: KxSuite) -> &'static str {
+        match suite {
+            KxSuite::EcdhP256 => ht::algo::ECDHE_P256_SHA256,
+            KxSuite::X25519 => ht::algo::X25519,
+        }
+    }
+
+    /// Programmatic variant: pass `IdentityConfig` directly instead of
+    /// a `PropertyList`. Useful for tests + native
+    /// Rust callers.
     ///
     /// # Errors
-    /// Siehe [`PkiError`].
+    /// See [`PkiError`].
     pub fn validate_with_config(
         &mut self,
         cfg: IdentityConfig,
@@ -174,18 +254,25 @@ impl PkiAuthenticationPlugin {
         Ok(handle)
     }
 
-    /// Liest die rohen 32-byte SharedSecret-Bytes. Primär fuer Tests;
-    /// im Produktions-Pfad wird der `SharedSecretHandle` an den
-    /// CryptoPlugin durchgereicht, ohne dass der Caller die Bytes
-    /// sieht.
+    /// Reads the raw 32-byte SharedSecret bytes. Primarily for tests;
+    /// in the production path the `SharedSecretHandle` is passed through to the
+    /// CryptoPlugin without the caller seeing the bytes.
     #[must_use]
     pub fn secret_bytes(&self, handle: SharedSecretHandle) -> Option<&[u8]> {
         self.secrets.get(&handle).map(Vec::as_slice)
     }
 
-    fn store_secret(&mut self, _h: HandshakeHandle, bytes: Vec<u8>) -> SharedSecretHandle {
+    fn store_secret(
+        &mut self,
+        _h: HandshakeHandle,
+        bytes: Vec<u8>,
+        challenge1: [u8; 32],
+        challenge2: [u8; 32],
+    ) -> SharedSecretHandle {
         let handle = SharedSecretHandle(self.next_id());
         self.secrets.insert(handle, bytes);
+        self.secret_challenges
+            .insert(handle, (challenge1, challenge2));
         handle
     }
 
@@ -211,6 +298,13 @@ impl PkiAuthenticationPlugin {
 impl SharedSecretProvider for PkiAuthenticationPlugin {
     fn get_shared_secret(&self, handle: SharedSecretHandle) -> Option<Vec<u8>> {
         self.secrets.get(&handle).cloned()
+    }
+
+    fn get_shared_secret_challenges(
+        &self,
+        handle: SharedSecretHandle,
+    ) -> Option<([u8; 32], [u8; 32])> {
+        self.secret_challenges.get(&handle).copied()
     }
 }
 
@@ -248,6 +342,9 @@ fn algo_for(key_algo: CertKeyAlgo) -> SecurityResult<&'static str> {
 
 fn check_dsign_matches(declared: &str, detected: CertKeyAlgo) -> SecurityResult<()> {
     let expected = algo_for(detected)?;
+    // OpenDDS sends c.dsign_algo NUL-terminated (sizeof convention) — the
+    // trailing `\0` is not part of the algorithm name.
+    let declared = declared.trim_end_matches('\0');
     if !declared.eq_ignore_ascii_case(expected) {
         return Err(SecurityError::new(
             SecurityErrorKind::InvalidConfiguration,
@@ -342,28 +439,57 @@ fn detect_peer_algo(cert_der: &[u8]) -> CertKeyAlgo {
     crate::identity::detect_cert_algo_pub(cert_der)
 }
 
-/// Leitet 32-byte SharedSecret aus DH + Challenges via HKDF-SHA256 ab.
-/// Salt = (challenge1 || challenge2). Info = ZeroDDS-Domain-Separator.
-fn derive_shared_secret(
-    raw_dh: &[u8],
-    challenge1: &[u8; 32],
-    challenge2: &[u8; 32],
-) -> SecurityResult<Vec<u8>> {
-    use ring::hkdf;
-    let mut salt = [0u8; 64];
-    salt[..32].copy_from_slice(challenge1);
-    salt[32..].copy_from_slice(challenge2);
-    let salt_obj = hkdf::Salt::new(hkdf::HKDF_SHA256, &salt);
-    let prk = salt_obj.extract(raw_dh);
-    let info = [b"DDS-Security-1.2-SharedSecret".as_slice()];
-    let okm = prk.expand(&info, hkdf::HKDF_SHA256).map_err(|_| {
-        SecurityError::new(SecurityErrorKind::CryptoFailed, "pki: HKDF expand failed")
-    })?;
-    let mut out = [0u8; 32];
-    okm.fill(&mut out).map_err(|_| {
-        SecurityError::new(SecurityErrorKind::CryptoFailed, "pki: HKDF fill failed")
-    })?;
-    Ok(out.to_vec())
+/// PEM-encode a DER certificate. The handshake `c.id` carries the cert as
+/// **PEM** (spec §9.3.2.5.2; cyclone/FastDDS/RTI parse c.id as PEM and
+/// fail on raw DER with "PEM routines: no start line").
+fn der_to_pem(der: &[u8]) -> Vec<u8> {
+    use x509_cert::Certificate;
+    use x509_cert::der::{Decode, EncodePem, pem::LineEnding};
+    match Certificate::from_der(der).and_then(|c| c.to_pem(LineEnding::LF)) {
+        Ok(pem) => pem.into_bytes(),
+        Err(_) => der.to_vec(),
+    }
+}
+
+/// Normalizes received `c.id` bytes to DER for the webpki cert crypto:
+/// cyclone/FastDDS send PEM, ZeroDDS legacy/internal possibly raw DER. The
+/// hash check (compute_hash_c) still runs over the RAW `c.id` bytes (as
+/// on the wire), only the cryptographic verification needs DER.
+fn cid_to_der(bytes: &[u8]) -> Vec<u8> {
+    use x509_cert::Certificate;
+    use x509_cert::der::{DecodePem, Encode};
+    // OpenDDS appends a NUL byte to c.id (cert `original_bytes`)
+    // (`Certificate::load_cert_bytes`: `length(i + 1)`). webpki rejects that
+    // on the DER side as `TrailingData(SignedData)` — strip trailing NULs.
+    // ONLY for parsing: hash_c1/hash_c2 still use the RAW c.id bytes
+    // (with NUL), so the hash matches OpenDDS byte for byte.
+    let bytes = match bytes.iter().rposition(|&b| b != 0) {
+        Some(i) => &bytes[..=i],
+        None => bytes,
+    };
+    if bytes.starts_with(b"-----") {
+        if let Ok(cert) = Certificate::from_pem(bytes) {
+            if let Ok(der) = cert.to_der() {
+                return der;
+            }
+        }
+    }
+    bytes.to_vec()
+}
+
+/// Derives the 32-byte `SharedSecret` from the raw DH output.
+///
+/// DDS-Security §9.3.2.5 + cyclone `generate_shared_secret` (authentication.c):
+/// `SharedSecret = SHA256(raw_dh)`. **No** HKDF, **no** challenge salt —
+/// the earlier ZeroDDS variant (`HKDF(raw_dh, salt=ch1||ch2)`) produced a
+/// different secret cross-vendor than cyclone/FastDDS and thereby broke the
+/// downstream crypto/VolatileSecure key exchange (the handshake itself
+/// verified, because the signature does not cover the SharedSecret). challenge1/
+/// challenge2 are carried separately (by the caller) for the VolatileSecure key derivation
+/// (§9.5.3.5), not mixed in here.
+fn derive_shared_secret(raw_dh: &[u8]) -> SecurityResult<Vec<u8>> {
+    let d = digest::digest(&digest::SHA256, raw_dh);
+    Ok(d.as_ref().to_vec())
 }
 
 impl AuthenticationPlugin for PkiAuthenticationPlugin {
@@ -375,13 +501,13 @@ impl AuthenticationPlugin for PkiAuthenticationPlugin {
         let cert = props.get(keys::IDENTITY_CERT).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::InvalidConfiguration,
-                "pki: fehlt dds.sec.auth.identity_certificate",
+                "pki: missing dds.sec.auth.identity_certificate",
             )
         })?;
         let ca = props.get(keys::IDENTITY_CA).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::InvalidConfiguration,
-                "pki: fehlt dds.sec.auth.identity_ca",
+                "pki: missing dds.sec.auth.identity_ca",
             )
         })?;
         let cfg = IdentityConfig {
@@ -401,14 +527,77 @@ impl AuthenticationPlugin for PkiAuthenticationPlugin {
         let parsed = self.identities.get(&local).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "pki: unbekannter lokaler IdentityHandle",
+                "pki: unknown local IdentityHandle",
             )
         })?;
-        parsed
-            .verify_remote_der(remote_auth_token)
-            .map_err(pki_to_security)?;
+        // Two accepted token forms:
+        // 1. Spec `IdentityToken` descriptor (PID_IDENTITY_TOKEN from SPDP,
+        //    cross-vendor): only cert SN/algo, no cert. Acceptance gate —
+        //    the cryptographic cert-chain validation happens in the
+        //    handshake (verify_remote_der on `c.id`, where the real cert
+        //    arrives). Both handshake sides already validate.
+        // 2. Raw cert DER (ZeroDDS-internal/legacy caller): check immediately against
+        //    the local trust anchors.
+        // A spec IdentityToken descriptor is recognized by its class_id
+        // (DataHolder), NOT by the optional cert properties: cyclone/
+        // FastDDS send a MINIMAL token in SPDP (only class_id
+        // "DDS:Auth:PKI-DH:x.y", empty properties). Only if it is NOT such a
+        // descriptor (= raw cert DER from ZeroDDS-internal/legacy
+        // callers) check immediately against the local trust anchors. The
+        // cryptographic cert-chain validation of the remote happens anyway
+        // only in the handshake (verify_remote_der on `c.id`, where the real cert
+        // arrives). Previously there was IdentityToken::decode here (requires ALL 4
+        // cert properties) — that threw cyclone's minimal token into the
+        // cert-DER path → AuthenticationFailed "TrailingData(SignedData)" →
+        // ZeroDDS sent no AUTH_REQUEST cross-vendor.
+        let is_spec_descriptor =
+            zerodds_security::token::DataHolder::from_cdr_le(remote_auth_token)
+                .map(|dh| dh.class_id.starts_with("DDS:Auth:PKI-DH"))
+                .unwrap_or(false);
+        if !is_spec_descriptor {
+            parsed
+                .verify_remote_der(remote_auth_token)
+                .map_err(pki_to_security)?;
+        }
         let handle = IdentityHandle(self.next_id());
         Ok(handle)
+    }
+
+    fn get_identity_token(&self, local: IdentityHandle) -> SecurityResult<Vec<u8>> {
+        let parsed = self.identities.get(&local).ok_or_else(|| {
+            SecurityError::new(
+                SecurityErrorKind::BadArgument,
+                "pki: unknown local IdentityHandle",
+            )
+        })?;
+        let ca_der = parsed.trust_anchors_der.first().ok_or_else(|| {
+            SecurityError::new(SecurityErrorKind::BadArgument, "pki: no trust anchor")
+        })?;
+        let token = crate::identity_token::build_identity_token_from_der(&parsed.cert_der, ca_der)
+            .map_err(pki_to_security)?;
+        Ok(token.encode())
+    }
+
+    fn get_permissions_token(&self) -> Vec<u8> {
+        // Without configured permissions AccessControl is inactive — then
+        // the token is omitted (no empty permissions-match trigger).
+        if self.local_permissions.is_empty() {
+            return Vec::new();
+        }
+        // class_id-only PermissionsToken (spec §7.2.4). Version string
+        // `1.0` + empty properties mirror what cyclone/FastDDS announce
+        // in SPDP (`permissions_token="DDS:Access:Permissions:1.0"
+        // :{}:{}`). The actual signed permissions content travels
+        // in the handshake as `c.perm`, not in the SPDP token.
+        ht::DataHolder::new("DDS:Access:Permissions:1.0").to_cdr_le()
+    }
+
+    fn set_local_participant_data(&mut self, pdata: Vec<u8>) {
+        self.local_pdata = pdata;
+    }
+
+    fn set_algo_nul_terminate(&mut self, nul: bool) {
+        self.algo_nul = nul;
     }
 
     fn begin_handshake_request(
@@ -419,19 +608,29 @@ impl AuthenticationPlugin for PkiAuthenticationPlugin {
         let parsed = self.identities.get(&initiator).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "pki: unbekannter Initiator-IdentityHandle",
+                "pki: unknown initiator IdentityHandle",
             )
         })?;
-        let cert_der = parsed.cert_der.clone();
+        // c.id carries the cert as PEM (spec §9.3.2.5.2 / cross-vendor);
+        // hash_c1 is computed in build_request_token consistently over the same
+        // PEM bytes.
+        let cert_der = der_to_pem(&parsed.cert_der);
         let key_algo = parsed.key_algo;
-        let dsign_algo = algo_for(key_algo)?.to_owned();
-        let kagree_algo = ht::algo::X25519.to_owned();
+        let dsign_algo = self.algo_str(algo_for(key_algo)?);
+        // Spec/cross-vendor default (EcdhP256) instead of the non-spec X25519
+        // extension. The announced `c.kagree_algo` must match the actually
+        // used suite.
+        let suite = self.preferred_kx_suite;
+        let kagree_algo = self.algo_str(Self::kagree_algo_str(suite));
 
-        let kx = KeyExchange::new()?;
+        let kx = KeyExchange::with_suite(suite)?;
         let dh1 = kx.public_key().to_vec();
         let challenge1 = random_challenge()?;
-        let permissions: Vec<u8> = Vec::new();
-        let pdata: Vec<u8> = Vec::new();
+        // c.perm: local CMS-signed permissions document (cross-vendor
+        // AccessControl requirement). c.pdata: own ParticipantBuiltinTopicData
+        // as PL_CDR (the replier deserializes it as a ParameterList).
+        let permissions: Vec<u8> = self.local_permissions.clone();
+        let pdata: Vec<u8> = self.local_pdata.clone();
 
         let bytes = ht::build_request_token(&RequestBuildInput {
             cert_der: &cert_der,
@@ -471,81 +670,97 @@ impl AuthenticationPlugin for PkiAuthenticationPlugin {
         _initiator: IdentityHandle,
         request_token: &[u8],
     ) -> SecurityResult<(HandshakeHandle, HandshakeStepOutcome)> {
-        // 1) Parse + Hash-Re-Validation (passiert in parse_request_token).
+        // 1) Parse + hash re-validation (happens in parse_request_token).
         let req = ht::parse_request_token(request_token)?;
+        // Echo kagree for the reply: `req.kagree_algo` is NUL-stripped on
+        // parsing; for OpenDDS peers (algo_nul) restore the NUL form
+        // so that the wire (DiffieHellman::factory sizeof comparison) AND
+        // hash_c2 are consistently NUL-terminated. For FastDDS/Cyclone NUL-free.
+        let reply_kagree = self.algo_str(&req.kagree_algo);
 
-        // 2) Initiator-Cert gegen unseren Trust-Store validieren.
+        // 2) Validate the initiator cert against our trust store.
         let parsed = self.identities.get(&replier).ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "pki: unbekannter Replier-IdentityHandle",
+                "pki: unknown replier IdentityHandle",
             )
         })?;
         parsed
-            .verify_remote_der(&req.cert_der)
+            .verify_remote_der(&cid_to_der(&req.cert_der))
             .map_err(pki_to_security)?;
 
-        // 3) Replay-Detection.
+        // 3) Replay detection.
         self.record_challenge(replier, req.challenge1)?;
 
-        // 4) Initiator-`c.dsign_algo` muss zu seinem Cert-Public-Key passen.
-        let initiator_key_algo = detect_peer_algo(&req.cert_der);
+        // 4) The initiator `c.dsign_algo` must match its cert public key.
+        let initiator_key_algo = detect_peer_algo(&cid_to_der(&req.cert_der));
         check_dsign_matches(&req.dsign_algo, initiator_key_algo)?;
 
-        // 5) Eigenes DH-Pair generieren + challenge2.
-        let kx = KeyExchange::new()?;
+        // 5) Generate our own DH pair + challenge2. The KX suite follows the
+        //    `c.kagree_algo` announced by the initiator (spec: the replier
+        //    uses the same mechanism) — unsupported = reject.
+        let suite = Self::kx_suite_for_algo(&req.kagree_algo).ok_or_else(|| {
+            SecurityError::new(
+                SecurityErrorKind::AuthenticationFailed,
+                "pki: unsupported c.kagree_algo in the request",
+            )
+        })?;
+        let kx = KeyExchange::with_suite(suite)?;
         let dh2 = kx.public_key().to_vec();
         let challenge2 = random_challenge()?;
 
-        // 6) DH-Agreement → SharedSecret.
+        // 6) DH agreement → SharedSecret.
         let parsed = self.identities.get(&replier).ok_or_else(|| {
             SecurityError::new(SecurityErrorKind::Internal, "pki: replier identity gone")
         })?;
-        // Sign with Replier-Key
+        // Sign with the replier key
         let priv_key = parsed.private_key_pkcs8_der.clone().ok_or_else(|| {
             SecurityError::new(
                 SecurityErrorKind::InvalidConfiguration,
-                "pki: replier hat keinen private-key konfiguriert (kann nicht signieren)",
+                "pki: replier has no private key configured (cannot sign)",
             )
         })?;
-        let replier_cert_der = parsed.cert_der.clone();
-        let replier_dsign = algo_for(parsed.key_algo)?.to_owned();
+        let replier_cert_der = der_to_pem(&parsed.cert_der);
+        let replier_dsign = self.algo_str(algo_for(parsed.key_algo)?);
         let replier_key_algo = parsed.key_algo;
 
         // raw DH output (KeyExchange consumes self).
         let secret_bytes = kx.derive_shared_secret(&req.dh1)?;
         // HKDF-Re-Derive with challenges as salt for spec-aligned key.
-        let final_secret = derive_shared_secret(&secret_bytes, &req.challenge1, &challenge2)?;
+        let final_secret = derive_shared_secret(&secret_bytes)?;
 
-        // 7) Signatur ueber (kagree || ch1 || dh1 || ch2 || dh2).
-        let to_sign = signing_bytes(
-            &req.kagree_algo,
-            &req.challenge1,
-            &req.dh1,
-            &challenge2,
-            &dh2,
-        );
-        let signature = sign_with(replier_key_algo, &priv_key, &to_sign)?;
-
-        // 8) Replier-hash_c2 = ueber Replier-Tupel (echo kagree, eigenes
-        //    cert/perm/pdata/dsign).
-        let permissions: Vec<u8> = Vec::new();
-        let pdata: Vec<u8> = Vec::new();
+        // 7) Replier hash_c2 = over the replier tuple (echo kagree, own
+        //    cert/perm/pdata/dsign). c.perm = local permissions document.
+        //    Needed both in the reply token and in the signature content.
+        let permissions: Vec<u8> = self.local_permissions.clone();
+        let pdata: Vec<u8> = self.local_pdata.clone();
         let hash_c2 = ht::compute_hash_c(
             &replier_cert_der,
             &permissions,
             &pdata,
             &replier_dsign,
-            &req.kagree_algo,
+            &reply_kagree,
         );
 
-        // 9) Reply-Token bauen.
+        // 8) Reply signature (DDS-Security §9.3.2.5.2.2): the replier signs over
+        //    BinaryPropertySeq{ hash_c2, ch2, dh2, ch1, dh1, hash_c1 }.
+        let to_sign = ht::reply_signing_bytes(
+            &hash_c2,
+            &challenge2,
+            &dh2,
+            &req.challenge1,
+            &req.dh1,
+            &req.hash_c1,
+        );
+        let signature = sign_with(replier_key_algo, &priv_key, &to_sign)?;
+
+        // 9) Build the reply token.
         let reply_bytes = ht::build_reply_token(&ReplyBuildInput {
             cert_der: &replier_cert_der,
             permissions: &permissions,
             pdata: &pdata,
             dsign_algo: &replier_dsign,
-            kagree_algo: &req.kagree_algo,
+            kagree_algo: &reply_kagree,
             dh2: &dh2,
             challenge2: &challenge2,
             hash_c1: &req.hash_c1,
@@ -555,15 +770,15 @@ impl AuthenticationPlugin for PkiAuthenticationPlugin {
             signature: &signature,
         })?;
 
-        // 10) State persistieren — Final-Empfang braucht das.
+        // 10) Persist state — the final-receive needs it.
+        // challenge1 = initiator (req), challenge2 = own replier value.
         let handle = HandshakeHandle(self.next_id());
-        let secret_handle = self.store_secret(handle, final_secret);
+        let secret_handle = self.store_secret(handle, final_secret, req.challenge1, challenge2);
         self.handshake_to_secret.insert(handle, secret_handle);
         self.pending_replier.insert(
             handle,
             ReplierState {
                 local: replier,
-                kagree_algo: req.kagree_algo,
                 challenge1: req.challenge1,
                 challenge2,
                 dh1: req.dh1,
@@ -587,17 +802,17 @@ impl AuthenticationPlugin for PkiAuthenticationPlugin {
         handshake: HandshakeHandle,
         token: &[u8],
     ) -> SecurityResult<HandshakeStepOutcome> {
-        // Initiator-Seite hat einen pending_initiator-Eintrag → Token = REPLY.
+        // The initiator side has a pending_initiator entry → token = REPLY.
         if self.pending_initiator.contains_key(&handshake) {
             return self.process_reply_on_initiator(handshake, token);
         }
-        // Replier-Seite hat einen pending_replier-Eintrag → Token = FINAL.
+        // The replier side has a pending_replier entry → token = FINAL.
         if self.pending_replier.contains_key(&handshake) {
             return self.process_final_on_replier(handshake, token);
         }
         Err(SecurityError::new(
             SecurityErrorKind::BadArgument,
-            "pki: unbekannter HandshakeHandle",
+            "pki: unknown HandshakeHandle",
         ))
     }
 
@@ -608,7 +823,7 @@ impl AuthenticationPlugin for PkiAuthenticationPlugin {
             .ok_or_else(|| {
                 SecurityError::new(
                     SecurityErrorKind::BadArgument,
-                    "pki: handshake-handle unbekannt oder noch nicht completed",
+                    "pki: handshake handle unknown or not yet completed",
                 )
             })
     }
@@ -630,18 +845,29 @@ impl PkiAuthenticationPlugin {
             SecurityError::new(SecurityErrorKind::BadArgument, "pki: initiator state gone")
         })?;
 
-        // a) Echo-Konsistenz: hash_c1, dh1, challenge1 muessen 1:1 stimmen.
-        if !ct_eq(&reply.hash_c1, &st.hash_c1) {
-            return Err(SecurityError::new(
-                SecurityErrorKind::AuthenticationFailed,
-                "reply: hash_c1 echo mismatch (cert-bind broken)",
-            ));
+        // a) Echo consistency: challenge1 must match 1:1. hash_c1/dh1 are
+        //    optional echo fields — cyclone/FastDDS omit them; if
+        //    present, check against our own state (cert-bind).
+        // hash_c1 echo (§9.3.2.3.2, cert-bind): cyclone omits hash_c1 in the reply;
+        // FastDDS mirrors its recompute of the request. Both compute
+        // hash_c1 over the `c.*` properties in WIRE order — since ZeroDDS
+        // emits the request in hash order (c.id, c.perm, c.pdata, c.dsign_algo,
+        // c.kagree_algo), the echo matches st.hash_c1 again.
+        if let Some(reply_hash_c1) = reply.hash_c1 {
+            if !ct_eq(&reply_hash_c1, &st.hash_c1) {
+                return Err(SecurityError::new(
+                    SecurityErrorKind::AuthenticationFailed,
+                    "reply: hash_c1 echo mismatch (cert-bind broken)",
+                ));
+            }
         }
-        if !ct_eq(&reply.dh1, &st.dh1) {
-            return Err(SecurityError::new(
-                SecurityErrorKind::AuthenticationFailed,
-                "reply: dh1 echo mismatch",
-            ));
+        if let Some(reply_dh1) = &reply.dh1 {
+            if !ct_eq(reply_dh1, &st.dh1) {
+                return Err(SecurityError::new(
+                    SecurityErrorKind::AuthenticationFailed,
+                    "reply: dh1 echo mismatch",
+                ));
+            }
         }
         if !ct_eq(&reply.challenge1, &st.challenge1) {
             return Err(SecurityError::new(
@@ -649,72 +875,88 @@ impl PkiAuthenticationPlugin {
                 "reply: challenge1 echo mismatch",
             ));
         }
-        if reply.kagree_algo != st.kagree_algo {
+        // Echo comparison NUL-tolerant: `st.kagree_algo` keeps the (OpenDDS)
+        // NUL for hash_c1 consistency, `reply.kagree_algo` is already
+        // NUL-stripped on parsing (take_bin_string). The algorithm name
+        // itself must match.
+        if reply.kagree_algo.trim_end_matches('\0') != st.kagree_algo.trim_end_matches('\0') {
             return Err(SecurityError::new(
                 SecurityErrorKind::AuthenticationFailed,
                 "reply: kagree_algo mismatch",
             ));
         }
 
-        // b) Replier-Cert validieren.
-        // Snapshot der lokalen Identity, damit wir spaeter mutable
-        // borrowen koennen (store_secret).
+        // b) Validate the replier cert.
+        // Snapshot of the local identity so that we can borrow it
+        // mutably later (store_secret).
         let (priv_key, initiator_key_algo) = {
             let parsed = self.identities.get(&st.local).ok_or_else(|| {
                 SecurityError::new(SecurityErrorKind::Internal, "pki: initiator identity gone")
             })?;
             parsed
-                .verify_remote_der(&reply.cert_der)
+                .verify_remote_der(&cid_to_der(&reply.cert_der))
                 .map_err(pki_to_security)?;
             let pk = parsed.private_key_pkcs8_der.clone().ok_or_else(|| {
                 SecurityError::new(
                     SecurityErrorKind::InvalidConfiguration,
-                    "pki: initiator hat keinen private-key (final-sign nicht moeglich)",
+                    "pki: initiator has no private key (final-sign not possible)",
                 )
             })?;
             (pk, parsed.key_algo)
         };
-        let replier_key_algo = detect_peer_algo(&reply.cert_der);
+        let replier_key_algo = detect_peer_algo(&cid_to_der(&reply.cert_der));
         check_dsign_matches(&reply.dsign_algo, replier_key_algo)?;
 
-        // c) Replier-Signature pruefen.
-        let to_verify = signing_bytes(
-            &reply.kagree_algo,
-            &reply.challenge1,
-            &reply.dh1,
+        // c) Verify the replier signature (§9.3.2.5.2.2): BinaryPropertySeq{
+        //    hash_c2, ch2, dh2, ch1, dh1, hash_c1 }. dh1/hash_c1 = the values
+        //    sent by the initiator (= st.dh1/st.hash_c1); the replier
+        //    signs over them, in the reply itself they are optionally omitted.
+        //    hash_c2 is the value recomputed from the reply credentials.
+        let to_verify = ht::reply_signing_bytes(
+            &reply.hash_c2,
             &reply.challenge2,
             &reply.dh2,
+            &reply.challenge1,
+            &st.dh1,
+            &st.hash_c1,
         );
         verify_signature_with_cert(
-            &reply.cert_der,
+            &cid_to_der(&reply.cert_der),
             replier_key_algo,
             &to_verify,
             &reply.signature,
         )?;
 
-        // d) DH-Agreement.
+        // d) DH agreement.
         let kx = st.kx.ok_or_else(|| {
             SecurityError::new(SecurityErrorKind::Internal, "pki: ephemeral kx gone")
         })?;
         let raw = kx.derive_shared_secret(&reply.dh2)?;
-        let final_secret = derive_shared_secret(&raw, &st.challenge1, &reply.challenge2)?;
+        let final_secret = derive_shared_secret(&raw)?;
 
-        let secret_handle = self.store_secret(handshake, final_secret);
+        // challenge1 = own initiator value (st), challenge2 = replier (reply).
+        let secret_handle =
+            self.store_secret(handshake, final_secret, st.challenge1, reply.challenge2);
         self.handshake_to_secret.insert(handshake, secret_handle);
 
-        // e) Final-Token bauen + signieren.
-        let to_sign = signing_bytes(
-            &reply.kagree_algo,
+        // e) Build + sign the final token (§9.3.2.5.2.3): the initiator signs
+        //    over BinaryPropertySeq{ hash_c1, ch1, dh1, ch2, dh2, hash_c2 }.
+        let to_sign = ht::final_signing_bytes(
+            &st.hash_c1,
+            &reply.challenge1,
+            &st.dh1,
             &reply.challenge2,
             &reply.dh2,
-            &reply.challenge1,
-            &reply.dh1,
+            &reply.hash_c2,
         );
         let signature = sign_with(initiator_key_algo, &priv_key, &to_sign)?;
+        // The final token echoes hash_c1/dh1 with the OWN initiator values
+        // (st), not the ones optionally omitted in the reply; hash_c2 is the
+        // value recomputed from the reply.
         let final_token = ht::build_final_token(&FinalBuildInput {
-            hash_c1: &reply.hash_c1,
+            hash_c1: &st.hash_c1,
             hash_c2: &reply.hash_c2,
-            dh1: &reply.dh1,
+            dh1: &st.dh1,
             dh2: &reply.dh2,
             challenge1: &reply.challenge1,
             challenge2: &reply.challenge2,
@@ -722,10 +964,10 @@ impl PkiAuthenticationPlugin {
             signature: &signature,
         })?;
 
-        // Spec §10.3.2.10: Initiator schickt `final_token` UND ist
-        // **complete**. Wir tunneln beides via `SendMessage` + Lookup
-        // ueber `shared_secret()`. Damit die Wire-Schicht den Token
-        // sieht, returnen wir SendMessage; die DCPS-Runtime ruft danach
+        // Spec §10.3.2.10: the initiator sends `final_token` AND is
+        // **complete**. We tunnel both via `SendMessage` + lookup
+        // via `shared_secret()`. So that the wire layer sees the token,
+        // we return SendMessage; the DCPS runtime then calls
         // `shared_secret()`.
         Ok(HandshakeStepOutcome::SendMessage { token: final_token })
     }
@@ -740,7 +982,7 @@ impl PkiAuthenticationPlugin {
             SecurityError::new(SecurityErrorKind::BadArgument, "pki: replier state gone")
         })?;
 
-        // Echo-Konsistenz.
+        // Echo consistency.
         if !ct_eq(&final_tok.hash_c1, &st.hash_c1)
             || !ct_eq(&final_tok.hash_c2, &st.hash_c2)
             || !ct_eq(&final_tok.dh1, &st.dh1)
@@ -754,24 +996,26 @@ impl PkiAuthenticationPlugin {
             ));
         }
 
-        // Initiator-Signature ueber (kagree || ch2 || dh2 || ch1 || dh1).
-        let to_verify = signing_bytes(
-            &st.kagree_algo,
-            &st.challenge2,
-            &st.dh2,
+        // Initiator signature (§9.3.2.5.2.3): BinaryPropertySeq{ hash_c1, ch1,
+        // dh1, ch2, dh2, hash_c2 }.
+        let to_verify = ht::final_signing_bytes(
+            &st.hash_c1,
             &st.challenge1,
             &st.dh1,
+            &st.challenge2,
+            &st.dh2,
+            &st.hash_c2,
         );
         verify_signature_with_cert(
-            &st.initiator_cert_der,
+            &cid_to_der(&st.initiator_cert_der),
             st.initiator_key_algo,
             &to_verify,
             &final_tok.signature,
         )?;
 
-        // Wir nehmen den Local-Handle nur wegen `local`-Field, damit der
-        // Lint nicht meckert; produktiv koennten wir es fuer
-        // Audit-Logging nutzen.
+        // We take the local handle only because of the `local` field, so the
+        // lint does not complain; in production we could use it for
+        // audit logging.
         let _ = st.local;
         Ok(HandshakeStepOutcome::Complete {
             secret: st.secret_handle,
@@ -785,8 +1029,8 @@ mod tests {
     use super::*;
     use zerodds_security::properties::Property;
 
-    /// Erzeugt ein CA + End-Entity-Cert + dazugehoerigen Private-Key
-    /// (PKCS8-PEM) — alles fuer rcgen-Default ECDSA-P256.
+    /// Creates a CA + end-entity cert + the matching private key
+    /// (PKCS8-PEM) — all for the rcgen default ECDSA-P256.
     fn make_signed_cert_ca_key() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
         use rcgen::{CertificateParams, KeyPair};
 
@@ -847,14 +1091,14 @@ mod tests {
     ) {
         let (a_cert, ca, a_key) = make_signed_cert_ca_key();
         let (b_cert, _ca2, b_key) = make_signed_cert_ca_key();
-        // Beide nutzen ihre eigenen CAs, aber wir muessen beide in das
-        // Trust-Bundle der Gegenseite reinpacken, damit die Cert-Chain
-        // valide ist. Stattdessen: beide nehmen die Alice-CA als
-        // Trust-Anchor und Bob's Cert wird unter dieser CA gefaked.
-        // Einfacher: beide regenerieren mit gemeinsamer CA.
+        // Both use their own CAs, but we would have to pack both into the
+        // peer's trust bundle for the cert chain to be
+        // valid. Instead: both take Alice's CA as the
+        // trust anchor and Bob's cert is faked under this CA.
+        // Simpler: regenerate both with a shared CA.
         let _ = (b_cert, b_key);
 
-        // Cleaner approach: gemeinsame CA.
+        // Cleaner approach: shared CA.
         use rcgen::{CertificateParams, KeyPair};
         let mut ca_params = CertificateParams::new(vec!["Common CA".into()]).unwrap();
         ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
@@ -1000,7 +1244,7 @@ mod tests {
     }
 
     // -------------------------------------------------------------
-    // C3.1 — Spec-konformer Handshake (Tab.56/57/58)
+    // C3.1 — spec-conformant handshake (Tab.56/57/58)
     // -------------------------------------------------------------
 
     #[test]
@@ -1015,7 +1259,7 @@ mod tests {
             HandshakeStepOutcome::SendMessage { token } => token,
             _ => panic!("expected SendMessage"),
         };
-        assert!(req_token.len() > 100, "request token enthaelt cert + DH");
+        assert!(req_token.len() > 100, "request token contains cert + DH");
 
         // 2) Bob → REPLY.
         let (bob_hs, out2) = bob
@@ -1046,7 +1290,7 @@ mod tests {
         assert_eq!(a_bytes.len(), 32);
         assert_eq!(
             a_bytes, b_bytes,
-            "alice + bob muessen identisches secret ableiten"
+            "alice + bob must derive an identical secret"
         );
     }
 
@@ -1061,18 +1305,13 @@ mod tests {
             _ => panic!(),
         };
         let parsed = ht::DataHolder::from_cdr_le(&token).unwrap();
-        assert_eq!(parsed.class_id, "DDS:Auth:PKI-DH:1.2+AuthReq");
-        assert!(parsed.property("c.dsign_algo").is_some());
-        assert!(parsed.property("c.kagree_algo").is_some());
-        for k in [
-            "c.id",
-            "c.perm",
-            "c.pdata",
-            "hash_c1",
-            "dh1",
-            "challenge1",
-            "ocsp_status",
-        ] {
+        assert_eq!(parsed.class_id, "DDS:Auth:PKI-DH:1.0+Req");
+        // c.dsign_algo / c.kagree_algo are BINARY properties (§9.3.2.5.2.1).
+        assert!(parsed.binary_property("c.dsign_algo").is_some());
+        assert!(parsed.binary_property("c.kagree_algo").is_some());
+        // ocsp_status is spec-optional and is NOT emitted cross-vendor
+        // (FastDDS does not send it; see build_request_token).
+        for k in ["c.id", "c.perm", "c.pdata", "hash_c1", "dh1", "challenge1"] {
             assert!(
                 parsed.binary_property(k).is_some(),
                 "missing binary prop: {k}"
@@ -1098,7 +1337,7 @@ mod tests {
             _ => panic!(),
         };
 
-        // Tamper: kippe ein bit in hash_c1 → Echo-Mismatch beim Initiator.
+        // Tamper: flip a bit in hash_c1 → echo mismatch at the initiator.
         let mut h = ht::DataHolder::from_cdr_le(&reply_token).unwrap();
         let mut hash_c1 = h.binary_property("hash_c1").unwrap().to_vec();
         hash_c1[0] ^= 0x01;
@@ -1155,9 +1394,9 @@ mod tests {
             _ => panic!(),
         };
 
-        // Kippt dh2 → Initiator-Sig-Verify schlaegt fehl (signature
-        // covers dh2). Wenn das durchrutschen wuerde, wuerde die Final-
-        // Sig divergieren.
+        // Flips dh2 → the initiator sig verify fails (the signature
+        // covers dh2). If this slipped through, the final
+        // sig would diverge.
         let mut h = ht::DataHolder::from_cdr_le(&reply).unwrap();
         let mut dh2 = h.binary_property("dh2").unwrap().to_vec();
         dh2[0] ^= 0x01;
@@ -1172,20 +1411,20 @@ mod tests {
     #[test]
     fn wrong_ca_initiator_rejected_by_replier() {
         let (rogue_cert, _trusted_ca, rogue_key) = make_cert_with_wrong_ca();
-        // Bob hat die Trusted-CA, aber Alice's cert ist von Rogue-CA.
-        // Wir mounten Bob mit der Trusted-CA, Alice mit ihrer Rogue-CA.
+        // Bob has the trusted CA, but Alice's cert is from a rogue CA.
+        // We mount Bob with the trusted CA, Alice with her rogue CA.
 
-        // Alice braucht eine CA die ihr Cert akzeptiert — also nehmen
-        // wir den Pfad: Alice valide-with-config laed mit der Rogue-CA
-        // (selbe rogue-ca aus der Helper). Aber make_cert_with_wrong_ca
-        // gibt nur das EE-Cert + die Trusted-CA zurück. Wir muessen die
-        // Rogue-CA selbst rebuilden — pragmatischer: Alice+Bob mit
-        // derselben gemeinsamen CA, aber Bob setzt seinen Trust-Anchor
-        // auf eine *andere* CA → Initiator-Cert wird beim Reply-Schritt
-        // rejected.
+        // Alice needs a CA that accepts her cert — so we take
+        // the path: Alice validate-with-config loads with the rogue CA
+        // (the same rogue ca from the helper). But make_cert_with_wrong_ca
+        // returns only the EE cert + the trusted CA. We would have to
+        // rebuild the rogue CA ourselves — more pragmatic: Alice+Bob with
+        // the same shared CA, but Bob sets his trust anchor
+        // to a *different* CA → the initiator cert is rejected at the reply
+        // step.
 
         use rcgen::{CertificateParams, KeyPair};
-        // Common CA fuer Alice's identity:
+        // Common CA for Alice's identity:
         let mut alice_ca_params = CertificateParams::new(vec!["AliceCA".into()]).unwrap();
         alice_ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
         let alice_ca_key = KeyPair::generate().unwrap();
@@ -1201,7 +1440,7 @@ mod tests {
         let alice_cert_pem = alice_cert.pem().into_bytes();
         let alice_key_pem = alice_key.serialize_pem().into_bytes();
 
-        // Bob mit completely different CA (and own cert):
+        // Bob with a completely different CA (and own cert):
         let mut bob_ca_params = CertificateParams::new(vec!["BobCA".into()]).unwrap();
         bob_ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
         let bob_ca_key = KeyPair::generate().unwrap();
@@ -1239,11 +1478,11 @@ mod tests {
             )
             .unwrap();
 
-        // Alice kennt Bob nicht (anderes CA), aber sie versucht trotzdem
-        // einen Handshake zu starten. Wir koennen alice_remote_bob nicht
-        // ueber validate_remote_identity holen — also faken wir mit
-        // einem gueltigen Stub-Handle. Der Test prueft nur den
-        // Replier-Path.
+        // Alice does not know Bob (different CA), but she still tries
+        // to start a handshake. We cannot get alice_remote_bob
+        // via validate_remote_identity — so we fake it with
+        // a valid stub handle. The test only checks the
+        // replier path.
         let (_alice_hs, out1) = alice
             .begin_handshake_request(alice_h, IdentityHandle(99))
             .unwrap();
@@ -1251,7 +1490,7 @@ mod tests {
             HandshakeStepOutcome::SendMessage { token } => token,
             _ => panic!(),
         };
-        // Bob versucht zu replyen → Cert von Alice ist nicht von BobCA → reject.
+        // Bob tries to reply → Alice's cert is not from BobCA → reject.
         let err = bob
             .begin_handshake_reply(bob_h, IdentityHandle(99), &req)
             .unwrap_err();
@@ -1269,11 +1508,11 @@ mod tests {
             HandshakeStepOutcome::SendMessage { token } => token,
             _ => panic!(),
         };
-        // Erstes Reply: ok.
+        // First reply: ok.
         let _ = bob
             .begin_handshake_reply(bob_h, bob_remote_alice, &req)
             .unwrap();
-        // Zweites Reply mit *gleichem* request → replay → reject.
+        // Second reply with the *same* request → replay → reject.
         let err = bob
             .begin_handshake_reply(bob_h, bob_remote_alice, &req)
             .unwrap_err();
@@ -1299,7 +1538,7 @@ mod tests {
             HandshakeStepOutcome::SendMessage { token } => token,
             _ => panic!(),
         };
-        // Manipuliere hash_c1 → parse_request_token rejected.
+        // Tamper with hash_c1 → parse_request_token rejected.
         let mut h = ht::DataHolder::from_cdr_le(&req).unwrap();
         let mut hc = h.binary_property("hash_c1").unwrap().to_vec();
         hc[5] ^= 0xFF;
@@ -1321,17 +1560,27 @@ mod tests {
             HandshakeStepOutcome::SendMessage { token } => token,
             _ => panic!(),
         };
-        // Der Token sagt "RSASSA-PSS-SHA256" obwohl das Cert ECDSA ist.
-        // Aber: hash_c1 enthaelt das ALTE algo → wenn wir nur dsign_algo
-        // tauschen, wird hash_c1 mismatchen. Wir muessen also auch
-        // hash_c1 neu berechnen und das `c.dsign_algo` aendern, dann
-        // sollte die Algo-Cross-Check beim Replier-Step greifen.
+        // The token says "RSASSA-PSS-SHA256" although the cert is ECDSA.
+        // But: hash_c1 contains the OLD algo → if we only swap dsign_algo,
+        // hash_c1 will mismatch. So we must also
+        // recompute hash_c1 and change the `c.dsign_algo`, then
+        // the algo cross-check should fire at the replier step.
         let mut h = ht::DataHolder::from_cdr_le(&req).unwrap();
-        h.set_property("c.dsign_algo", "RSASSA-PSS-SHA256");
+        // c.dsign_algo / c.kagree_algo are null-terminated BINARY properties
+        // (§9.3.2.5.2.1).
+        // NUL-free: c.dsign_algo + hash_c1 must be consistent (parse_request_token
+        // recomputes hash_c1 over the RAW wire bytes). With a NUL in the wire value, but
+        // without one in the hash, the hash check (AuthenticationFailed) would fire BEFORE the
+        // algo cross-check (InvalidConfiguration). Here we want to test the algo check.
+        h.set_binary_property("c.dsign_algo", b"RSASSA-PSS-SHA256".to_vec());
         let cert_der = h.binary_property("c.id").unwrap().to_vec();
         let perm = h.binary_property("c.perm").unwrap().to_vec();
         let pdata = h.binary_property("c.pdata").unwrap().to_vec();
-        let kagree = h.property("c.kagree_algo").unwrap().to_owned();
+        let mut kagree_bytes = h.binary_property("c.kagree_algo").unwrap().to_vec();
+        if kagree_bytes.last() == Some(&0) {
+            kagree_bytes.pop();
+        }
+        let kagree = String::from_utf8(kagree_bytes).unwrap();
         let new_hash = ht::compute_hash_c(&cert_der, &perm, &pdata, "RSASSA-PSS-SHA256", &kagree);
         h.set_binary_property("hash_c1", new_hash.to_vec());
         req = h.to_cdr_le();
@@ -1358,18 +1607,15 @@ mod tests {
             HandshakeStepOutcome::SendMessage { token } => token,
             _ => panic!(),
         };
-        // Fuegt ein unbekanntes Property hinzu.
+        // Adds an unknown property.
         let mut h = ht::DataHolder::from_cdr_le(&reply).unwrap();
         h.set_property("zerodds.future.feature", "yes");
         h.set_binary_property("zerodds.future.opaque", alloc::vec![0xFF; 8]);
-        // hash_c2 ist ueber die ORIGINAL-Properties. Da wir nur EXTRA-
-        // Felder hinzufuegen, bleiben die hash-Inputs gleich → ok.
+        // hash_c2 is over the ORIGINAL properties. Since we only add EXTRA
+        // fields, the hash inputs stay the same → ok.
         let new_reply = h.to_cdr_le();
         let res = alice.process_handshake(alice_hs, &new_reply);
-        assert!(
-            res.is_ok(),
-            "forward-compat extra props muessen akzeptiert werden"
-        );
+        assert!(res.is_ok(), "forward-compat extra props must be accepted");
     }
 
     #[test]
@@ -1382,8 +1628,8 @@ mod tests {
             HandshakeStepOutcome::SendMessage { token } => token,
             _ => panic!(),
         };
-        // alice setzt keine permissions in diesem Test (kein
-        // AccessControl-Bind im Authentication-only-Roundtrip).
+        // alice sets no permissions in this test (no
+        // AccessControl bind in the authentication-only roundtrip).
         let h = ht::DataHolder::from_cdr_le(&req).unwrap();
         assert_eq!(h.binary_property("c.perm").unwrap().len(), 0);
         let _ = bob
@@ -1397,6 +1643,33 @@ mod tests {
         let plugin = PkiAuthenticationPlugin::new();
         let err = plugin.shared_secret(HandshakeHandle(42)).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
+    }
+
+    #[test]
+    fn permissions_token_announces_spec_class_id_when_permissions_set() {
+        let mut p = PkiAuthenticationPlugin::new();
+        // Without configured permissions: no token (AccessControl
+        // inactive) — otherwise a secure remote would reject us with an empty
+        // permissions match.
+        assert!(
+            p.get_permissions_token().is_empty(),
+            "without permissions no PermissionsToken may be announced"
+        );
+        // With permissions: class_id-only PermissionsToken, spec-1.0 string
+        // (cyclone/FastDDS announce exactly `DDS:Access:Permissions:1.0`
+        // with empty properties — we mirror that byte-structurally).
+        p.set_local_permissions(vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        let token = p.get_permissions_token();
+        assert!(
+            !token.is_empty(),
+            "PermissionsToken missing despite set permissions"
+        );
+        let parsed = ht::DataHolder::from_cdr_le(&token).unwrap();
+        assert_eq!(parsed.class_id, "DDS:Access:Permissions:1.0");
+        assert!(
+            parsed.properties.is_empty(),
+            "PermissionsToken announce carries no properties (cyclone mirror)"
+        );
     }
 
     #[test]
@@ -1422,18 +1695,102 @@ mod tests {
     }
 
     // -------------------------------------------------------------
-    // Mutation-Killer (2026-05-01)
+    // FU2 Gap 7b — spec IdentityToken descriptor (SPDP announce)
     // -------------------------------------------------------------
 
-    /// Faengt Mutation `>` -> `>=` und `>` -> `==` auf der replay-cache-
-    /// Eviction-Boundary. Der Cache MUSS GENAU REPLAY_CACHE_CAP
-    /// Eintraege halten koennen — Eviction tritt erst beim CAP+1-ten ein.
+    #[test]
+    fn get_identity_token_returns_decodable_spec_descriptor() {
+        let (cert_pem, ca_pem, key_pem) = make_signed_cert_ca_key();
+        let mut plugin = PkiAuthenticationPlugin::new();
+        let local = plugin
+            .validate_with_config(
+                IdentityConfig {
+                    identity_cert_pem: cert_pem,
+                    identity_ca_pem: ca_pem,
+                    identity_key_pem: Some(key_pem),
+                },
+                [0xAA; 16],
+            )
+            .unwrap();
+        let token = plugin.get_identity_token(local).expect("identity token");
+        assert!(!token.is_empty(), "no empty default token anymore");
+        let decoded = crate::identity_token::IdentityToken::decode(&token)
+            .expect("must be decodable as a spec descriptor");
+        assert!(!decoded.cert_sn.is_empty(), "cert subject in the token");
+        assert!(!decoded.ca_sn.is_empty(), "ca subject in the token");
+    }
+
+    #[test]
+    fn validate_remote_identity_accepts_spec_descriptor_deferring_cert_check() {
+        let (cert_pem, ca_pem, key_pem) = make_signed_cert_ca_key();
+        let mut plugin = PkiAuthenticationPlugin::new();
+        let local = plugin
+            .validate_with_config(
+                IdentityConfig {
+                    identity_cert_pem: cert_pem.clone(),
+                    identity_ca_pem: ca_pem.clone(),
+                    identity_key_pem: Some(key_pem),
+                },
+                [0xAA; 16],
+            )
+            .unwrap();
+        // The peer announces a spec descriptor (no cert DER). The
+        // cert validation happens later in the handshake (verify_remote_der
+        // on c.id) — here the descriptor path accepts.
+        let descriptor = crate::identity_token::build_identity_token_from_pem(&cert_pem, &ca_pem)
+            .unwrap()
+            .encode();
+        let remote = plugin
+            .validate_remote_identity(local, [0xBB; 16], &descriptor)
+            .expect("descriptor must be accepted");
+        assert_ne!(remote, local);
+    }
+
+    #[test]
+    fn validate_remote_identity_accepts_minimal_token_without_cert_properties() {
+        // cyclone/FastDDS announce a MINIMAL IdentityToken in SPDP:
+        // only class_id "DDS:Auth:PKI-DH:1.0", EMPTY properties (the cert-SN/
+        // algo properties are optional per spec). validate_remote_identity
+        // MUST recognize that as a spec descriptor (by class_id) and defer the
+        // cert check to the handshake — NOT try to parse the 32 token bytes
+        // as cert DER (that gave AuthenticationFailed
+        // "TrailingData(SignedData)" → ZeroDDS sent no AUTH_REQUEST
+        // cross-vendor).
+        let (cert_pem, ca_pem, key_pem) = make_signed_cert_ca_key();
+        let mut plugin = PkiAuthenticationPlugin::new();
+        let local = plugin
+            .validate_with_config(
+                IdentityConfig {
+                    identity_cert_pem: cert_pem,
+                    identity_ca_pem: ca_pem,
+                    identity_key_pem: Some(key_pem),
+                },
+                [0xAA; 16],
+            )
+            .unwrap();
+        let minimal = zerodds_security::token::DataHolder::new(
+            crate::identity_token::IDENTITY_TOKEN_CLASS_ID,
+        )
+        .to_cdr_le();
+        let remote = plugin
+            .validate_remote_identity(local, [0xBB; 16], &minimal)
+            .expect("minimal cyclone token (only class_id) must be accepted");
+        assert_ne!(remote, local);
+    }
+
+    // -------------------------------------------------------------
+    // Mutation killers (2026-05-01)
+    // -------------------------------------------------------------
+
+    /// Catches mutation `>` -> `>=` and `>` -> `==` on the replay-cache
+    /// eviction boundary. The cache MUST be able to hold EXACTLY REPLAY_CACHE_CAP
+    /// entries — eviction only happens at the CAP+1-th.
     ///
-    /// Test-Strategie: nach EXAKT CAP unique Inserts pruefen, ob der
-    /// erste noch im Cache ist (= Replay-Reject).
-    /// * Original `>`: 1024 > 1024 false → keine Eviction → 0 noch drin → Reject.
-    /// * Mutation `==`: 1024 == 1024 true → 0 evicted → kein Reject.
-    /// * Mutation `>=`: gleichfalls evicted bei 1024 → kein Reject.
+    /// Test strategy: after EXACTLY CAP unique inserts check whether the
+    /// first is still in the cache (= replay reject).
+    /// * Original `>`: 1024 > 1024 false → no eviction → 0 still in → reject.
+    /// * Mutation `==`: 1024 == 1024 true → 0 evicted → no reject.
+    /// * Mutation `>=`: likewise evicted at 1024 → no reject.
     #[test]
     fn replay_cache_holds_exactly_cap_entries_before_eviction() {
         let (mut alice, _bob, alice_h, _, _, _) = alice_bob();
@@ -1442,15 +1799,15 @@ mod tests {
             c[0..8].copy_from_slice(&(i as u64).to_le_bytes());
             alice.record_challenge(alice_h, c).unwrap();
         }
-        // Genau CAP unique. Der erste (i=0) MUSS noch drin sein → Replay-Reject.
+        // Exactly CAP unique. The first (i=0) MUST still be in → replay reject.
         let mut c_first = [0u8; 32];
         c_first[0..8].copy_from_slice(&0u64.to_le_bytes());
         let err = alice.record_challenge(alice_h, c_first).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::AuthenticationFailed);
     }
 
-    /// Eviction tritt beim CAP+1-ten Eintrag ein — Test des
-    /// Eviction-Pfads selbst (FIFO: aelteste Eintragung wird evicted).
+    /// Eviction happens at the CAP+1-th entry — test of the
+    /// eviction path itself (FIFO: the oldest entry is evicted).
     #[test]
     fn replay_cache_evicts_oldest_at_cap_plus_one() {
         let (mut alice, _bob, alice_h, _, _, _) = alice_bob();
@@ -1459,31 +1816,31 @@ mod tests {
             c[0..8].copy_from_slice(&(i as u64).to_le_bytes());
             alice.record_challenge(alice_h, c).unwrap();
         }
-        // CAP+1: Eviction triggert auf dem aeltesten (i=0).
+        // CAP+1: eviction triggers on the oldest (i=0).
         let mut c_extra = [0u8; 32];
         c_extra[0..8].copy_from_slice(&(REPLAY_CACHE_CAP as u64).to_le_bytes());
         alice.record_challenge(alice_h, c_extra).unwrap();
 
-        // Der erste (i=0) sollte jetzt evicted sein → re-insert erfolgreich.
+        // The first (i=0) should now be evicted → re-insert succeeds.
         let mut c_first = [0u8; 32];
         c_first[0..8].copy_from_slice(&0u64.to_le_bytes());
         alice
             .record_challenge(alice_h, c_first)
             .expect("after CAP+1 inserts, oldest must be evicted");
 
-        // Ein junger Eintrag (z.B. der CAP-te) muss noch drin sein.
-        // Nach insert von 0 wurde 1 evicted (FIFO), also testen wir
-        // einen sicher noch-vorhandenen Eintrag — der CAP-te (=1024).
+        // A young entry (e.g. the CAP-th) must still be in.
+        // After inserting 0, 1 was evicted (FIFO), so we test
+        // an entry that is surely still present — the CAP-th (=1024).
         let mut c_recent = [0u8; 32];
         c_recent[0..8].copy_from_slice(&(REPLAY_CACHE_CAP as u64).to_le_bytes());
         let err = alice.record_challenge(alice_h, c_recent).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::AuthenticationFailed);
     }
 
-    /// Faengt Mutation `get_shared_secret -> None / Some(vec![]) / Some(vec![0]) / Some(vec![1])`.
-    /// Nach erfolgreichem Handshake muss `get_shared_secret` das
-    /// gespeicherte 32-Byte-Secret zurueckgeben, nicht None oder einen
-    /// pauschalen Wert.
+    /// Catches mutation `get_shared_secret -> None / Some(vec![]) / Some(vec![0]) / Some(vec![1])`.
+    /// After a successful handshake `get_shared_secret` must return the
+    /// stored 32-byte secret, not None or a
+    /// blanket value.
     #[test]
     fn get_shared_secret_returns_stored_value() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
@@ -1514,7 +1871,7 @@ mod tests {
         };
         let alice_handle = alice.shared_secret(alice_hs).unwrap();
 
-        // get_shared_secret muss konkrete 32 Byte zurueckgeben:
+        // get_shared_secret must return concrete 32 bytes:
         let alice_bytes = SharedSecretProvider::get_shared_secret(&alice, alice_handle).unwrap();
         let bob_bytes = SharedSecretProvider::get_shared_secret(&bob, bob_handle).unwrap();
         // Mutation `None`: unwrap panicked → test fails.
@@ -1524,20 +1881,20 @@ mod tests {
         assert_eq!(bob_bytes.len(), 32);
         assert_eq!(
             alice_bytes, bob_bytes,
-            "shared secrets muessen identisch + nicht trivial sein"
+            "shared secrets must be identical + non-trivial"
         );
         assert!(alice_bytes.iter().any(|&b| b != 0));
         assert!(alice_bytes.iter().any(|&b| b != 1));
 
-        // get_shared_secret mit unbekanntem Handle muss None liefern.
+        // get_shared_secret with an unknown handle must return None.
         let bogus_handle = zerodds_security::authentication::SharedSecretHandle(0xDEAD_BEEF);
         assert!(SharedSecretProvider::get_shared_secret(&alice, bogus_handle).is_none());
     }
 
-    /// Faengt Mutationen `||` -> `&&` auf jedem der 6 Echo-Checks in
-    /// `process_final_on_replier`. Pro Field je ein Test — wenn EIN
-    /// Field nicht stimmt, muss bob den Final-Token rejecten.
-    /// Mit `&&`: nur ALLE 6 Mismatches wuerden rejecten.
+    /// Catches mutations `||` -> `&&` on each of the 6 echo checks in
+    /// `process_final_on_replier`. One test per field — if ONE
+    /// field is wrong, bob must reject the final token.
+    /// With `&&`: only ALL 6 mismatches would reject.
     fn run_handshake_tampered_final<M>(mutate: M)
     where
         M: FnOnce(&mut ht::DataHolder),
@@ -1570,7 +1927,7 @@ mod tests {
         assert_eq!(
             err.kind,
             SecurityErrorKind::AuthenticationFailed,
-            "tampered final-token muss AuthFailed liefern"
+            "tampered final token must return AuthFailed"
         );
     }
 

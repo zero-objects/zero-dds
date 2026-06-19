@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Communication-Status-Strukturen (DDS DCPS 1.4 §2.2.4.1, Tab. 2.10).
+//! Communication status structures (DDS DCPS 1.4 §2.2.4.1, Table 2.10).
 //!
-//! Die Spec definiert **13 Standard-Communication-Statuses**, die als
-//! Bitmask in `StatusMask` zusammengeführt werden. Jeder Status hat eine
-//! zugeordnete Datenstruktur, die `get_<status>()` auf der jeweiligen
-//! Entity zurückliefert. Die Bitmask-Konstanten (zur Verbindung Status ↔
-//! Bit) leben in [`crate::psm_constants::status`].
+//! The spec defines **13 standard communication statuses**, which are
+//! combined into a bitmask in `StatusMask`. Each status has an
+//! associated data structure that `get_<status>()` returns on the
+//! respective entity. The bitmask constants (linking status ↔ bit) live
+//! in [`crate::psm_constants::status`].
 //!
-//! ## Klassifikation der 13 Statuses (Spec §2.2.4.1):
+//! ## Classification of the 13 statuses (spec §2.2.4.1):
 //!
-//! - **PLAIN**-Statuses (nur `total_count` + `total_count_change`):
+//! - **PLAIN** statuses (only `total_count` + `total_count_change`):
 //!   - `INCONSISTENT_TOPIC`         (Topic)
 //!   - `SAMPLE_LOST`                (DataReader)
 //!   - `LIVELINESS_LOST`            (DataWriter)
 //!   - `OFFERED_DEADLINE_MISSED`    (DataWriter)
 //!   - `REQUESTED_DEADLINE_MISSED`  (DataReader)
 //!
-//! - **STATEFUL**-Statuses (mit `last_*` + Detail-Feldern):
+//! - **STATEFUL** statuses (with `last_*` + detail fields):
 //!   - `SAMPLE_REJECTED`            (DataReader)
 //!   - `LIVELINESS_CHANGED`         (DataReader)
 //!   - `PUBLICATION_MATCHED`        (DataWriter)
@@ -25,17 +25,17 @@
 //!   - `OFFERED_INCOMPATIBLE_QOS`   (DataWriter)
 //!   - `REQUESTED_INCOMPATIBLE_QOS` (DataReader)
 //!
-//! - **SIGNAL**-Statuses (rein als Bit, ohne Datenstruktur — wir
-//!   spiegeln sie als Marker-Structs für die Vollständigkeit der
-//!   Tabelle und für eine einheitliche `get_*`-API):
+//! - **SIGNAL** statuses (pure bits, no data structure — we mirror them
+//!   as marker structs for completeness of the table and for a uniform
+//!   `get_*` API):
 //!   - `DATA_AVAILABLE`             (DataReader)
 //!   - `DATA_ON_READERS`            (Subscriber)
 //!
-//! `total_count_change` ist als `i32` getypt: die Spec sagt
-//! "incremental count since the last time the listener was called or
-//! the status was read", was negativ werden kann, wenn der Reader
-//! Liveliness wieder gewinnt (LIVELINESS_CHANGED). Wir bleiben bei
-//! `i32` für alle `*_count_change`-Felder, um spec-konform zu sein.
+//! `total_count_change` is typed as `i32`: the spec says "incremental
+//! count since the last time the listener was called or the status was
+//! read", which can go negative when the reader regains liveliness
+//! (LIVELINESS_CHANGED). We keep `i32` for all `*_count_change` fields to
+//! stay spec-compliant.
 
 extern crate alloc;
 
@@ -44,13 +44,13 @@ use alloc::vec::Vec;
 use crate::instance_handle::InstanceHandle;
 
 // ============================================================================
-// Plain-Counter-Statuses
+// Plain counter statuses
 // ============================================================================
 
 /// `INCONSISTENT_TOPIC_STATUS` — Spec §2.2.4.1 Tab. 2.10 + §2.2.2.3.2.
 ///
 /// "Another topic exists with the same name but different
-/// characteristics." Wird auf `Topic`-Ebene gepflegt.
+/// characteristics." Maintained at the `Topic` level.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InconsistentTopicStatus {
     /// Total cumulative count of inconsistencies detected.
@@ -73,8 +73,8 @@ pub struct SampleLostStatus {
 
 /// `LIVELINESS_LOST_STATUS` — Spec §2.2.4.1 + §2.2.2.4.2.
 ///
-/// Counter, wie oft der DataWriter aus Sicht des LIVELINESS-QoS-Vertrags
-/// als "not alive" deklariert worden ist (Writer-Seite).
+/// Counter of how often the DataWriter has been declared "not alive"
+/// under the LIVELINESS QoS contract (writer side).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LivelinessLostStatus {
     /// Total cumulative count of times the writer was declared
@@ -86,9 +86,9 @@ pub struct LivelinessLostStatus {
 
 /// `OFFERED_DEADLINE_MISSED_STATUS` — Spec §2.2.4.1 + §2.2.2.4.2.
 ///
-/// Counter, wie oft der Writer das offered DEADLINE-Versprechen nicht
-/// einhalten konnte. Pflegt zusätzlich den `last_instance_handle`,
-/// gegen den die Verletzung gezählt wurde.
+/// Counter of how often the writer failed to honor its offered DEADLINE
+/// promise. Also maintains the `last_instance_handle` against which the
+/// violation was counted.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct OfferedDeadlineMissedStatus {
     /// Total cumulative count of offered-deadline misses.
@@ -101,8 +101,8 @@ pub struct OfferedDeadlineMissedStatus {
 
 /// `REQUESTED_DEADLINE_MISSED_STATUS` — Spec §2.2.4.1 + §2.2.2.5.6.
 ///
-/// Reader-Seite. Counter, wie oft der Reader keine Sample innerhalb des
-/// requested DEADLINE bekommen hat.
+/// Reader side. Counter of how often the reader did not receive a sample
+/// within the requested DEADLINE.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RequestedDeadlineMissedStatus {
     /// Total cumulative count of requested-deadline misses.
@@ -114,28 +114,28 @@ pub struct RequestedDeadlineMissedStatus {
 }
 
 // ============================================================================
-// Stateful-Statuses (mit `last_*` + Detail-Feldern)
+// Stateful statuses (with `last_*` + detail fields)
 // ============================================================================
 
-/// `SampleRejectedStatusKind` — Reason warum der letzte Sample rejected
-/// wurde. Spec §2.2.4.1 Tab. 2.10 (kind enum unter `SAMPLE_REJECTED`).
+/// `SampleRejectedStatusKind` — reason why the last sample was rejected.
+/// Spec §2.2.4.1 Table 2.10 (kind enum under `SAMPLE_REJECTED`).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SampleRejectedStatusKind {
-    /// Kein Sample wurde rejected (Default).
+    /// No sample was rejected (default).
     #[default]
     NotRejected,
-    /// Reader-Resource-Limit `max_instances` überschritten.
+    /// Reader resource limit `max_instances` exceeded.
     RejectedByInstancesLimit,
-    /// Reader-Resource-Limit `max_samples` überschritten.
+    /// Reader resource limit `max_samples` exceeded.
     RejectedBySamplesLimit,
-    /// Reader-Resource-Limit `max_samples_per_instance` überschritten.
+    /// Reader resource limit `max_samples_per_instance` exceeded.
     RejectedBySamplesPerInstanceLimit,
 }
 
 /// `SAMPLE_REJECTED_STATUS` — Spec §2.2.4.1 + §2.2.2.5.6.
 ///
-/// Wird ausgelöst, wenn der Reader ein Sample wegen einer
-/// RESOURCE_LIMITS-Verletzung verworfen hat.
+/// Raised when the reader has dropped a sample due to a RESOURCE_LIMITS
+/// violation.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SampleRejectedStatus {
     /// Total cumulative count of rejected samples.
@@ -154,9 +154,9 @@ pub struct SampleRejectedStatus {
 /// Reader-Seite: "Reports the status of the liveliness of one or more
 /// `DataWriter` objects that are matched with the `DataReader`."
 ///
-/// Anders als die Plain-Counter-Statuses dürfen `*_count_change` hier
-/// **negativ** werden, wenn z.B. ein als "alive" deklarierter Writer
-/// jetzt als "not_alive" zählt (übersprungen von `alive_count` zu
+/// Unlike the plain counter statuses, `*_count_change` here may go
+/// **negative**, for example when a writer previously declared "alive"
+/// now counts as "not_alive" (moved from `alive_count` to
 /// `not_alive_count`).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LivelinessChangedStatus {
@@ -179,14 +179,13 @@ pub struct LivelinessChangedStatus {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PublicationMatchedStatus {
     /// Total cumulative count of compatible DataReaders that have been
-    /// discovered so far (monoton steigend).
+    /// discovered so far (monotonically increasing).
     pub total_count: i32,
     /// Change in `total_count` since the last read.
     pub total_count_change: i32,
-    /// Currently matched DataReaders (kann fallen, wenn Reader weggeht).
+    /// Currently matched DataReaders (can drop when a reader leaves).
     pub current_count: i32,
-    /// Change in `current_count` since the last read (darf negativ
-    /// werden).
+    /// Change in `current_count` since the last read (may go negative).
     pub current_count_change: i32,
     /// Handle of the last DataReader that matched the writer.
     pub last_subscription_handle: InstanceHandle,
@@ -194,7 +193,7 @@ pub struct PublicationMatchedStatus {
 
 /// `SUBSCRIPTION_MATCHED_STATUS` — Spec §2.2.4.1 + §2.2.2.5.6.
 ///
-/// Reader-Seite: spiegelt PublicationMatched. Felder gleichlaufend.
+/// Reader side: mirrors PublicationMatched. Fields run in parallel.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SubscriptionMatchedStatus {
     /// Total cumulative count of compatible DataWriters discovered.
@@ -209,20 +208,20 @@ pub struct SubscriptionMatchedStatus {
     pub last_publication_handle: InstanceHandle,
 }
 
-/// `QosPolicyCount` — Sub-Element von `*IncompatibleQosStatus`.
+/// `QosPolicyCount` — sub-element of `*IncompatibleQosStatus`.
 ///
-/// Pro QoS-Policy-Id ein Counter, wie oft genau diese Policy zur
-/// Inkompatibilität geführt hat. Spec §2.2.4.1 Tab. 2.10.
+/// Per QoS policy id, a counter of how often exactly that policy caused
+/// an incompatibility. Spec §2.2.4.1 Table 2.10.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct QosPolicyCount {
-    /// Policy-Id (siehe [`crate::psm_constants::qos_policy_id`]).
+    /// Policy id (see [`crate::psm_constants::qos_policy_id`]).
     pub policy_id: u32,
-    /// Wie oft diese Policy inkompatibel war.
+    /// How often this policy was incompatible.
     pub count: i32,
 }
 
 impl QosPolicyCount {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub const fn new(policy_id: u32, count: i32) -> Self {
         Self { policy_id, count }
@@ -231,8 +230,8 @@ impl QosPolicyCount {
 
 /// `OFFERED_INCOMPATIBLE_QOS_STATUS` — Spec §2.2.4.1 + §2.2.2.4.2.
 ///
-/// Writer-Seite: ein Reader wurde gefunden, dessen `requested QoS`
-/// nicht zum `offered QoS` des Writers passt.
+/// Writer side: a reader was found whose `requested QoS` does not match
+/// the writer's `offered QoS`.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct OfferedIncompatibleQosStatus {
     /// Total cumulative count of incompatible-QoS detections.
@@ -248,8 +247,8 @@ pub struct OfferedIncompatibleQosStatus {
 
 /// `REQUESTED_INCOMPATIBLE_QOS_STATUS` — Spec §2.2.4.1 + §2.2.2.5.6.
 ///
-/// Reader-Seite: ein Writer wurde gefunden, dessen `offered QoS` nicht
-/// zum `requested QoS` des Readers passt.
+/// Reader side: a writer was found whose `offered QoS` does not match
+/// the reader's `requested QoS`.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RequestedIncompatibleQosStatus {
     /// Total cumulative count of incompatible-QoS detections.
@@ -264,33 +263,31 @@ pub struct RequestedIncompatibleQosStatus {
 }
 
 // ============================================================================
-// Signal-Statuses (Marker-Structs)
+// Signal statuses (marker structs)
 // ============================================================================
 
 /// `DATA_AVAILABLE_STATUS` — Spec §2.2.4.1.
 ///
-/// Reines Signal: "new data has arrived in the DataReader". Es gibt
-/// keine Spec-Datenstruktur dafür — wir spiegeln den Status als
-/// leeres Marker-Struct, damit ein einheitlicher
-/// `get_data_available_status()`-Pfad existiert.
+/// Pure signal: "new data has arrived in the DataReader". There is no
+/// spec data structure for it — we mirror the status as an empty marker
+/// struct so that a uniform `get_data_available_status()` path exists.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DataAvailableStatus;
 
 /// `DATA_ON_READERS_STATUS` — Spec §2.2.4.1.
 ///
-/// Reines Signal: "new data has arrived in **any** DataReader of the
-/// Subscriber". Wie [`DataAvailableStatus`] ohne Datenstruktur.
+/// Pure signal: "new data has arrived in **any** DataReader of the
+/// Subscriber". Like [`DataAvailableStatus`], without a data structure.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DataOnReadersStatus;
 
 // ============================================================================
-// Helper-Funktionen
+// Helper functions
 // ============================================================================
 
-/// Hängt einen `policy_id`-Counter in einen `policies`-Vec ein. Wenn
-/// der Eintrag existiert, wird `count` inkrementiert; sonst neu
-/// angefügt. Genutzt vom Runtime-Layer beim Verteilen eines
-/// IncompatibleQos-Events.
+/// Adds a `policy_id` counter into a `policies` vec. If the entry
+/// exists, `count` is incremented; otherwise a new one is appended. Used
+/// by the runtime layer when distributing an IncompatibleQos event.
 pub fn bump_policy_count(policies: &mut Vec<QosPolicyCount>, policy_id: u32) {
     if let Some(slot) = policies.iter_mut().find(|p| p.policy_id == policy_id) {
         slot.count = slot.count.saturating_add(1);
@@ -331,7 +328,7 @@ mod tests {
 
     #[test]
     fn sample_rejected_kind_variants_are_distinct() {
-        // Vollständigkeit der Spec-Enum-Variants.
+        // Completeness of the spec enum variants.
         let kinds = [
             SampleRejectedStatusKind::NotRejected,
             SampleRejectedStatusKind::RejectedByInstancesLimit,
@@ -353,8 +350,8 @@ mod tests {
 
     #[test]
     fn liveliness_changed_negative_count_change_allowed() {
-        // Spec §2.2.4.1: alive_count_change kann negativ sein, wenn
-        // ein Writer von "alive" zu "not_alive" wechselt.
+        // Spec §2.2.4.1: alive_count_change can be negative when a writer
+        // transitions from "alive" to "not_alive".
         let s = LivelinessChangedStatus {
             alive_count: 0,
             not_alive_count: 1,
@@ -448,15 +445,15 @@ mod tests {
 
     #[test]
     fn data_available_and_data_on_readers_are_zero_sized_markers() {
-        // Spec §2.2.4.1: pure Signals — keine Felder.
-        // Wir checken die Marker-Semantik via Default+Eq.
+        // Spec §2.2.4.1: pure signals — no fields.
+        // We check the marker semantics via Default+Eq.
         let a1 = DataAvailableStatus;
         let a2 = DataAvailableStatus;
         assert_eq!(a1, a2);
         let r1 = DataOnReadersStatus;
         let r2 = DataOnReadersStatus;
         assert_eq!(r1, r2);
-        // Marker-Structs haben Größe 0 (kompakt).
+        // Marker structs have size 0 (compact).
         assert_eq!(core::mem::size_of::<DataAvailableStatus>(), 0);
         assert_eq!(core::mem::size_of::<DataOnReadersStatus>(), 0);
     }

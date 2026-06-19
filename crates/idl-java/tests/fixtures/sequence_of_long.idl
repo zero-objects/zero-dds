@@ -1,4 +1,4 @@
-// Fixture: sequence<long> wird zu java.util.List<Integer>.
+// Fixture: sequence<long> becomes java.util.List<Integer>.
 struct Bag {
     sequence<long> items;
 };

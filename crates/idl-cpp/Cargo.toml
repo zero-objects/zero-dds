@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["dds", "idl", "codegen", "cpp", "psm-cxx"]
 categories = ["development-tools", "network-programming"]
 authors.workspace = true
-description = "OMG IDL4 → C++17 Code-Generator (idl4-cpp-1.0 + DDS-PSM-Cxx + DDS-RPC C++ PSM) für ZeroDDS."
+description = "OMG IDL4 → C++17 code generator (idl4-cpp-1.0 + DDS-PSM-Cxx + DDS-RPC C++ PSM) for ZeroDDS."
 publish = true
 
 [lints]
@@ -21,12 +21,13 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
 default = ["std"]
 std = []
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.1", path = "../idl" }
-zerodds-rpc = { version = "1.0.0-rc.1", path = "../rpc", default-features = false, features = ["alloc"] }
+zerodds-idl = { version = "1.0.0-rc.3", path = "../idl" }
+zerodds-rpc = { version = "1.0.0-rc.3", path = "../rpc", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 tempfile = "3"

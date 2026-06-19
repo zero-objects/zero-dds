@@ -22,7 +22,7 @@ pub enum SettleMode {
     Unsettled,
 }
 
-/// AMQP-Behavior fuer ein Topic-Mapping.
+/// AMQP behavior for a topic mapping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AmqpBehavior {
     /// Settlement.
@@ -44,7 +44,7 @@ impl Default for AmqpBehavior {
 }
 
 impl AmqpBehavior {
-    /// Defaults aus `WriterQos::default()` (Reliable, Volatile).
+    /// Defaults from `WriterQos::default()` (Reliable, Volatile).
     #[must_use]
     pub fn default_for_topic() -> Self {
         let w = WriterQos::default();

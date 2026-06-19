@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Request/Response-Matching nach RFC 7252 §5.3.
+//! Request/response matching per RFC 7252 §5.3.
 //!
-//! CoAP nutzt Tokens, um asynchrone Antworten Anfragen zuzuordnen.
-//! Wir kapseln die Pending-Request-Map als wiederverwendbaren
-//! Helper.
+//! CoAP uses tokens to correlate asynchronous responses with requests.
+//! We encapsulate the pending-request map as a reusable helper.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -15,7 +14,7 @@ use std::time::Instant;
 
 use crate::message::CoapMessage;
 
-/// Pending-Request-Eintrag.
+/// Pending-request entry.
 struct Pending {
     request: CoapMessage,
     deadline: Instant,
@@ -29,15 +28,15 @@ impl core::fmt::Debug for Pending {
     }
 }
 
-/// Pending-Request-Map nach RFC 7252 §5.3.
+/// Pending-request map per RFC 7252 §5.3.
 ///
-/// Ermoeglicht den Lookup einer Request anhand des Tokens beim
-/// Eintreffen einer Response. Trackt einen Timeout pro Eintrag
-/// (Spec §4.8 EXCHANGE_LIFETIME = 247s default).
+/// Allows looking up a request by token when a response arrives.
+/// Tracks a timeout per entry
+/// (spec §4.8 EXCHANGE_LIFETIME = 247s default).
 #[derive(Default)]
 pub struct PendingRequests {
     by_token: Mutex<BTreeMap<Vec<u8>, Pending>>,
-    /// DoS-Cap fuer simultaneous pending requests.
+    /// DoS cap for simultaneous pending requests.
     pub max_pending: usize,
 }
 
@@ -51,19 +50,19 @@ impl core::fmt::Debug for PendingRequests {
     }
 }
 
-/// Errors beim Pending-Request-Tracking.
+/// Errors during pending-request tracking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatchError {
-    /// Token ist leer (Spec verlangt nicht-leeres Token fuer Async).
+    /// Token is empty (spec requires a non-empty token for async).
     EmptyToken,
-    /// Cap ueberschritten.
+    /// Cap exceeded.
     PendingCapReached,
-    /// Duplicate Token (gleicher Request bereits eingetragen).
+    /// Duplicate token (same request already registered).
     DuplicateToken,
 }
 
 impl PendingRequests {
-    /// Konstruktor mit DoS-Cap.
+    /// Constructor with DoS cap.
     #[must_use]
     pub fn new(max_pending: usize) -> Self {
         Self {
@@ -72,12 +71,12 @@ impl PendingRequests {
         }
     }
 
-    /// Spec §5.3.1 — registriert eine Pending Request.
+    /// Spec §5.3.1 — registers a pending request.
     ///
     /// # Errors
-    /// `EmptyToken` wenn `request.token` leer ist;
-    /// `PendingCapReached` wenn `max_pending` erreicht;
-    /// `DuplicateToken` wenn Token bereits eingetragen.
+    /// `EmptyToken` if `request.token` is empty;
+    /// `PendingCapReached` if `max_pending` is reached;
+    /// `DuplicateToken` if the token is already registered.
     pub fn submit(
         &self,
         request: CoapMessage,
@@ -107,20 +106,20 @@ impl PendingRequests {
         Ok(())
     }
 
-    /// Spec §5.3.2 — Match auf Response: liefert die zugehoerige
-    /// Request (und entfernt den Pending-Eintrag), oder `None`.
+    /// Spec §5.3.2 — match on response: returns the corresponding
+    /// request (and removes the pending entry), or `None`.
     pub fn complete(&self, response_token: &[u8]) -> Option<CoapMessage> {
         let mut g = self.by_token.lock().ok()?;
         g.remove(response_token).map(|p| p.request)
     }
 
-    /// Anzahl pending Requests.
+    /// Number of pending requests.
     pub fn pending_count(&self) -> usize {
         self.by_token.lock().map_or(0, |g| g.len())
     }
 
-    /// Spec §4.8.2 — entfernt abgelaufene Pendings (deadline < now).
-    /// Liefert die Anzahl evicted Eintraege.
+    /// Spec §4.8.2 — removes expired pendings (deadline < now).
+    /// Returns the number of evicted entries.
     pub fn evict_expired(&self) -> usize {
         let now = Instant::now();
         if let Ok(mut g) = self.by_token.lock() {

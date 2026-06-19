@@ -1,32 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! SPDP-Mapping fuer `PeerCapabilities`.
+//! SPDP mapping for `PeerCapabilities`.
 //!
-//! Bruecke zwischen der Policy-Schicht ([`PeerCapabilities`]) und dem
-//! SPDP-Wire-Format ([`WirePropertyList`]). Beim Senden werden die
-//! eigenen Caps in die SPDP-Properties geschrieben; beim Empfang
-//! werden die Properties zurueck zu `PeerCapabilities` geparst.
+//! Bridge between the policy layer ([`PeerCapabilities`]) and the
+//! SPDP wire format ([`WirePropertyList`]). On send, the
+//! own caps are written into the SPDP properties; on receive
+//! the properties are parsed back to `PeerCapabilities`.
 //!
-//! # Property-Keys
+//! # Property keys
 //!
-//! | Key                               | Semantik                                           |
+//! | Key                               | Semantics                                          |
 //! |-----------------------------------|----------------------------------------------------|
-//! | `dds.sec.auth.plugin_class`       | OMG-Standard, Authentication-Plugin-Class          |
-//! | `dds.sec.access.plugin_class`     | OMG-Standard, Access-Control-Plugin-Class          |
-//! | `dds.sec.crypto.plugin_class`     | OMG-Standard, Crypto-Plugin-Class                  |
+//! | `dds.sec.auth.plugin_class`       | OMG standard, authentication plugin class          |
+//! | `dds.sec.access.plugin_class`     | OMG standard, access-control plugin class          |
+//! | `dds.sec.crypto.plugin_class`     | OMG standard, crypto plugin class                  |
 //! | `zerodds.sec.supported_suites`    | CSV: `AES_128_GCM,AES_256_GCM,HMAC_SHA256`         |
 //! | `zerodds.sec.offered_protection`  | `NONE` / `SIGN` / `ENCRYPT`                        |
-//! | `zerodds.sec.vendor_hint`         | Frei-String, z.B. `"zerodds"`                      |
+//! | `zerodds.sec.vendor_hint`         | free string, e.g. `"zerodds"`                      |
 //!
-//! Der `zerodds.sec.*`-Namespace ist bewusst ZeroDDS-spezifisch. Andere
-//! Vendors (Cyclone, Fast-DDS) ignorieren unbekannte Properties
-//! still — dadurch bleibt SPDP-Interop erhalten (siehe Architektur-
-//! Doc §8.1).
+//! The `zerodds.sec.*` namespace is intentionally ZeroDDS-specific. Other
+//! vendors (Cyclone, Fast-DDS) silently ignore unknown properties
+//! — this preserves SPDP interop (see architecture
+//! doc §8.1).
 //!
-//! `has_valid_cert` und `validity_window` werden **nicht** via SPDP
-//! uebertragen; das sind post-Handshake-Werte, die das Authentication-
-//! Plugin setzt.
+//! `has_valid_cert` and `validity_window` are **not** transferred via SPDP;
+//! these are post-handshake values set by the authentication
+//! plugin.
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -38,27 +38,27 @@ use crate::caps::PeerCapabilities;
 use crate::policy::{ProtectionLevel, SuiteHint};
 
 // ============================================================================
-// Property-Keys (Konstanten fuer Test-Stabilitaet)
+// Property keys (constants for test stability)
 // ============================================================================
 
-/// OMG-Standard: Authentication-Plugin-Class.
+/// OMG standard: authentication plugin class.
 pub const KEY_AUTH_PLUGIN: &str = "dds.sec.auth.plugin_class";
-/// OMG-Standard: Access-Control-Plugin-Class.
+/// OMG standard: access-control plugin class.
 pub const KEY_ACCESS_PLUGIN: &str = "dds.sec.access.plugin_class";
-/// OMG-Standard: Crypto-Plugin-Class.
+/// OMG standard: crypto plugin class.
 pub const KEY_CRYPTO_PLUGIN: &str = "dds.sec.crypto.plugin_class";
-/// ZeroDDS-Extension: CSV der akzeptierten Suites.
+/// ZeroDDS extension: CSV of accepted suites.
 pub const KEY_SUPPORTED_SUITES: &str = "zerodds.sec.supported_suites";
-/// ZeroDDS-Extension: angebotenes Protection-Level.
+/// ZeroDDS extension: offered protection level.
 pub const KEY_OFFERED_PROTECTION: &str = "zerodds.sec.offered_protection";
-/// ZeroDDS-Extension: Vendor-Identifikation fuer Quirks.
+/// ZeroDDS extension: vendor identification for quirks.
 pub const KEY_VENDOR_HINT: &str = "zerodds.sec.vendor_hint";
-/// ZeroDDS-Extension: Delegation-Chain (Base64-encoded Wire-Bytes,
-/// RC1). Format: Base64 ueber das `DelegationChain::encode()`-
-/// Output. Reicht durch SPDP via PID_PROPERTY_LIST.
+/// ZeroDDS extension: delegation chain (base64-encoded wire bytes,
+/// RC1). Format: base64 over the `DelegationChain::encode()`
+/// output. Passes through SPDP via PID_PROPERTY_LIST.
 pub const KEY_DELEGATION_CHAIN: &str = "zerodds.sec.delegation_chain";
 
-/// DoS-Cap fuer den Wire-Blob (vor Base64-Decode). Architektur §11.
+/// DoS cap for the wire blob (before base64 decode). Architecture §11.
 pub const MAX_DELEGATION_CHAIN_BYTES: usize = 8 * 1024;
 
 // ============================================================================
@@ -122,12 +122,12 @@ fn protection_from_str(s: &str) -> Option<ProtectionLevel> {
 // Public API
 // ============================================================================
 
-/// Schreibt die Security-Caps in die gegebene PropertyList.
+/// Writes the security caps into the given PropertyList.
 ///
-/// Die Funktion mergt in die bestehende Liste: eigene Keys werden
-/// ersetzt, fremde Properties bleiben unberuehrt. Das erlaubt
-/// Integrations-Patterns, bei denen andere Subsysteme weitere
-/// Properties beigefuegt haben.
+/// The function merges into the existing list: own keys are
+/// replaced, foreign properties stay untouched. This enables
+/// integration patterns where other subsystems have added further
+/// properties.
 pub fn advertise_security_caps(list: &mut WirePropertyList, caps: &PeerCapabilities) {
     set_or_remove(list, KEY_AUTH_PLUGIN, caps.auth_plugin_class.as_deref());
     set_or_remove(list, KEY_ACCESS_PLUGIN, caps.access_plugin_class.as_deref());
@@ -147,15 +147,15 @@ pub fn advertise_security_caps(list: &mut WirePropertyList, caps: &PeerCapabilit
         protection_to_str(caps.offered_protection),
     );
     set_or_remove(list, KEY_VENDOR_HINT, caps.vendor_hint.as_deref());
-    // Delegation-Chain: encode() → Base64 → Property.
+    // Delegation chain: encode() → base64 → property.
     if let Some(chain) = &caps.delegation_chain {
         let raw = chain.encode();
         if raw.len() <= MAX_DELEGATION_CHAIN_BYTES {
             let b64 = base64_encode(&raw);
             set_value(list, KEY_DELEGATION_CHAIN, &b64);
         } else {
-            // Blob over cap → drop, sonst riskieren wir eine Kette
-            // die uns keiner mehr akzeptiert.
+            // Blob over cap → drop, otherwise we risk a chain
+            // that nobody accepts anymore.
             remove_by_key(list, KEY_DELEGATION_CHAIN);
         }
     } else {
@@ -163,10 +163,10 @@ pub fn advertise_security_caps(list: &mut WirePropertyList, caps: &PeerCapabilit
     }
 }
 
-/// Liest Security-Caps aus einer PropertyList. Unbekannte oder
-/// malformed Werte werden stillschweigend als "leer" behandelt — ein
-/// Peer darf uns nicht per zerlegter Property aus dem SPDP-Prozess
-/// werfen.
+/// Reads security caps from a PropertyList. Unknown or
+/// malformed values are silently treated as "empty" — a
+/// peer must not be able to throw us out of the SPDP process via a
+/// broken property.
 #[must_use]
 pub fn parse_peer_caps(list: &WirePropertyList) -> PeerCapabilities {
     let offered_protection = list
@@ -180,7 +180,7 @@ pub fn parse_peer_caps(list: &WirePropertyList) -> PeerCapabilities {
     let delegation_chain = list
         .get(KEY_DELEGATION_CHAIN)
         .and_then(|s| {
-            // DoS-Cap: Base64-input nicht groesser als 4/3 * raw_max.
+            // DoS cap: base64 input no larger than 4/3 * raw_max.
             if s.len() > MAX_DELEGATION_CHAIN_BYTES * 4 / 3 + 4 {
                 return None;
             }
@@ -197,9 +197,9 @@ pub fn parse_peer_caps(list: &WirePropertyList) -> PeerCapabilities {
         has_valid_cert: false,
         validity_window: None,
         vendor_hint: list.get(KEY_VENDOR_HINT).map(str::to_string),
-        // cert_cn wird vom Auth-Plugin nach Handshake gesetzt, nicht
-        // via SPDP propagiert (Sicherheits-Entscheidung: CN soll
-        // nicht unsigniert auf dem Wire landen).
+        // cert_cn is set by the auth plugin after the handshake, not
+        // propagated via SPDP (security decision: the CN should
+        // not land unsigned on the wire).
         cert_cn: None,
         delegation_chain,
     }
@@ -209,9 +209,9 @@ pub fn parse_peer_caps(list: &WirePropertyList) -> PeerCapabilities {
 // Base64 (RFC 4648 standard alphabet, no padding-strip)
 // ============================================================================
 //
-// Wir vermeiden eine externe base64-Crate, weil das eine bedeutende
-// Supply-Chain-Erweiterung waere fuer ~30 Zeilen Code. Implementation
-// ist konservativ und behandelt malformed Eingaben mit `Err`.
+// We avoid an external base64 crate, because that would be a significant
+// supply-chain extension for ~30 lines of code. The implementation
+// is conservative and handles malformed input with `Err`.
 
 const B64_ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -295,13 +295,13 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, ()> {
 // internals
 // ============================================================================
 
-/// Setzt Key auf `value` (ueberschreibt existierenden Eintrag).
+/// Sets the key to `value` (overwrites an existing entry).
 fn set_value(list: &mut WirePropertyList, key: &str, value: &str) {
     remove_by_key(list, key);
     list.push(WireProperty::new(key.to_string(), value.to_string()));
 }
 
-/// Setzt Key auf `value` wenn `Some`, sonst wird der Key entfernt.
+/// Sets the key to `value` if `Some`, otherwise the key is removed.
 fn set_or_remove(list: &mut WirePropertyList, key: &str, value: Option<&str>) {
     match value {
         Some(v) => set_value(list, key, v),
@@ -330,13 +330,13 @@ mod tests {
             crypto_plugin_class: Some("DDS:Crypto:AES-GCM-GMAC:1.2".to_string()),
             supported_suites: alloc::vec![SuiteHint::Aes128Gcm, SuiteHint::Aes256Gcm],
             offered_protection: ProtectionLevel::Encrypt,
-            has_valid_cert: true, // NICHT propagiert
+            has_valid_cert: true, // NOT propagated
             validity_window: Some(Validity {
                 not_before: 0,
                 not_after: 100,
-            }), // NICHT propagiert
+            }), // NOT propagated
             vendor_hint: Some("zerodds".to_string()),
-            cert_cn: None, // NICHT propagiert
+            cert_cn: None, // NOT propagated
             delegation_chain: None,
         }
     }
@@ -416,8 +416,8 @@ mod tests {
 
     #[test]
     fn roundtrip_drops_non_wire_fields() {
-        // has_valid_cert + validity_window landen NICHT im SPDP —
-        // das sind post-Handshake-Werte.
+        // has_valid_cert + validity_window do NOT land in SPDP —
+        // these are post-handshake values.
         let caps = secure_caps();
         let mut list = WirePropertyList::new();
         advertise_security_caps(&mut list, &caps);
@@ -468,8 +468,8 @@ mod tests {
 
     #[test]
     fn advertise_removes_keys_when_caps_field_is_none() {
-        // Wenn ein Cap-Feld auf None gesetzt wurde (z.B. Peer hat
-        // sein auth-plugin entfernt), muessen alte Properties verschwinden.
+        // If a cap field was set to None (e.g. the peer removed
+        // its auth plugin), old properties must disappear.
         let mut list = WirePropertyList::new();
         list.push(WireProperty::new(KEY_AUTH_PLUGIN, "DDS:Auth:PKI-DH:1.2"));
         advertise_security_caps(
@@ -520,7 +520,7 @@ mod tests {
         assert!(list.get(KEY_SUPPORTED_SUITES).is_none());
     }
 
-    // ---- Vendor-Interop-Smoke ----
+    // ---- vendor interop smoke ----
 
     #[test]
     fn unknown_foreign_properties_dont_affect_parse() {
@@ -583,7 +583,7 @@ mod base64_and_delegation_tests {
     #[test]
     fn parse_skips_oversize_base64_property() {
         let mut list = WirePropertyList::new();
-        // Base64-Eingabe groesser als (8KiB * 4/3) + 4 → muss als None geparst werden.
+        // Base64 input larger than (8KiB * 4/3) + 4 → must be parsed as None.
         let huge = "A".repeat(MAX_DELEGATION_CHAIN_BYTES * 4 / 3 + 100);
         list.push(WireProperty::new(KEY_DELEGATION_CHAIN, huge.as_str()));
         let parsed = parse_peer_caps(&list);

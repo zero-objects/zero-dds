@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! CoAP↔DDS-Topic-Bridge.
+//! CoAP↔DDS topic bridge.
 //!
-//! Mappt CoAP-Resources auf DDS-Topics:
+//! Maps CoAP resources onto DDS topics:
 //!
-//! * `GET /dds/<topic>` — liefert Discovery-Liste (Instances).
-//! * `GET /dds/<topic>/<instance-key>` — read-Sample.
-//! * `POST /dds/<topic>` — register-instance + write-Sample.
-//! * `PUT /dds/<topic>/<instance-key>` — update-Sample (write).
+//! * `GET /dds/<topic>` — returns the discovery list (instances).
+//! * `GET /dds/<topic>/<instance-key>` — read sample.
+//! * `POST /dds/<topic>` — register instance + write sample.
+//! * `PUT /dds/<topic>/<instance-key>` — update sample (write).
 //! * `DELETE /dds/<topic>/<instance-key>` — dispose.
-//! * `Observe = 0` auf `/dds/<topic>/<instance-key>` — Subscribe; jede
-//!   Notification entspricht einem DataReader-Sample.
+//! * `Observe = 0` on `/dds/<topic>/<instance-key>` — subscribe; each
+//!   notification corresponds to a DataReader sample.
 
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
@@ -20,54 +20,54 @@ use alloc::vec::Vec;
 use crate::message::CoapCode;
 use crate::observe::ObserveRegistry;
 
-/// Bridge-Operation.
+/// Bridge operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BridgeOp {
-    /// `GET /dds/<topic>` — Discovery.
+    /// `GET /dds/<topic>` — discovery.
     DiscoverInstances {
-        /// Topic-Name.
+        /// Topic name.
         topic: String,
     },
-    /// `GET /dds/<topic>/<key>` — Read.
+    /// `GET /dds/<topic>/<key>` — read.
     Read {
-        /// Topic-Name.
+        /// Topic name.
         topic: String,
-        /// Instance-Key (BLOB).
+        /// Instance key (BLOB).
         key: Vec<u8>,
     },
-    /// `POST /dds/<topic>` — Write (register-instance + write).
+    /// `POST /dds/<topic>` — write (register instance + write).
     Write {
-        /// Topic-Name.
+        /// Topic name.
         topic: String,
-        /// Sample-Payload (CDR-encoded).
+        /// Sample payload (CDR-encoded).
         payload: Vec<u8>,
     },
-    /// `PUT /dds/<topic>/<key>` — Update.
+    /// `PUT /dds/<topic>/<key>` — update.
     Update {
-        /// Topic-Name.
+        /// Topic name.
         topic: String,
-        /// Instance-Key.
+        /// Instance key.
         key: Vec<u8>,
-        /// Sample-Payload.
+        /// Sample payload.
         payload: Vec<u8>,
     },
-    /// `DELETE /dds/<topic>/<key>` — Dispose.
+    /// `DELETE /dds/<topic>/<key>` — dispose.
     Dispose {
-        /// Topic-Name.
+        /// Topic name.
         topic: String,
-        /// Instance-Key.
+        /// Instance key.
         key: Vec<u8>,
     },
-    /// Observe-Register (Spec RFC 7641 §3.1).
+    /// Observe register (Spec RFC 7641 §3.1).
     ObserveRegister {
         /// Topic.
         topic: String,
-        /// Instance-Key.
+        /// Instance key.
         key: Vec<u8>,
         /// Token.
         token: Vec<u8>,
     },
-    /// Observe-Deregister.
+    /// Observe deregister.
     ObserveDeregister {
         /// Topic.
         topic: String,
@@ -76,12 +76,12 @@ pub enum BridgeOp {
     },
 }
 
-/// Bridge-Fehler.
+/// Bridge error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BridgeError {
-    /// URI ist nicht im erwarteten Schema `/dds/<topic>[/<key>]`.
+    /// URI does not match the expected schema `/dds/<topic>[/<key>]`.
     BadPath(String),
-    /// Operation nicht erlaubt fuer den HTTP-aequivalenten Code.
+    /// Operation not allowed for the HTTP-equivalent code.
     UnsupportedMethod(CoapCode),
 }
 
@@ -97,20 +97,20 @@ impl core::fmt::Display for BridgeError {
 #[cfg(feature = "std")]
 impl std::error::Error for BridgeError {}
 
-/// Parst einen Resource-Path zu (topic, optional key).
+/// Parses a resource path into (topic, optional key).
 ///
 /// # Errors
-/// `BadPath` wenn der Pfad nicht mit `dds/` beginnt oder mehr als 2
-/// Komponenten hat.
+/// `BadPath` if the path does not start with `dds/` or has more than 2
+/// components.
 pub fn parse_dds_path(path: &str) -> Result<(String, Option<Vec<u8>>), BridgeError> {
     let stripped = path.trim_start_matches('/');
     let mut parts = stripped.splitn(3, '/');
     match (parts.next(), parts.next(), parts.next()) {
         (Some("dds"), Some(topic), None) if !topic.is_empty() => Ok((topic.to_string(), None)),
         (Some("dds"), Some(topic), Some(key)) if !topic.is_empty() => {
-            // Spec wir akzeptieren key als raw UTF-8-Bytes (Caller kann
-            // hex-prefix verwenden); fuer reine Hex-Keys liefern wir
-            // automatisches Decoding.
+            // We accept the key as raw UTF-8 bytes (the caller may use
+            // a hex prefix); for pure hex keys we provide automatic
+            // decoding.
             let bytes = if let Some(rest) = key.strip_prefix("0x") {
                 hex_decode(rest).unwrap_or_else(|_| key.as_bytes().to_vec())
             } else {
@@ -122,7 +122,7 @@ pub fn parse_dds_path(path: &str) -> Result<(String, Option<Vec<u8>>), BridgeErr
     }
 }
 
-/// Mappt einen CoAP-Method-Code + Path zu einer Bridge-Operation.
+/// Maps a CoAP method code + path to a bridge operation.
 ///
 /// # Errors
 /// `BadPath` / `UnsupportedMethod`.
@@ -135,7 +135,7 @@ pub fn map_method(
 ) -> Result<BridgeOp, BridgeError> {
     let (topic, key) = parse_dds_path(path)?;
 
-    // Observe-Action bei GET (Spec RFC 7641 §2): 0 = register, 1 = deregister.
+    // Observe action on GET (Spec RFC 7641 §2): 0 = register, 1 = deregister.
     if let (CoapCode::GET, Some(action)) = (code, observe_action) {
         let token = token.unwrap_or_default();
         if action == 0 {
@@ -163,8 +163,8 @@ pub fn map_method(
     }
 }
 
-/// Bridge-State — verkapselt Observe-Registry + In-Memory-Sample-Store
-/// (Production-Caller plugt einen echten DataWriter/Reader ein).
+/// Bridge state — encapsulates the observe registry + in-memory sample
+/// store (a production caller plugs in a real DataWriter/Reader).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CoapDdsBridge {
     samples: BTreeMap<(String, Vec<u8>), Vec<u8>>,
@@ -172,31 +172,31 @@ pub struct CoapDdsBridge {
 }
 
 impl CoapDdsBridge {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Aktueller Sample-Count.
+    /// Current sample count.
     #[must_use]
     pub fn sample_count(&self) -> usize {
         self.samples.len()
     }
 
-    /// Observer-Anzahl.
+    /// Observer count.
     #[must_use]
     pub fn observer_count(&self) -> usize {
         self.observers.observer_count()
     }
 
-    /// Observer-Registry-Reference (fuer Notification-Loop).
+    /// Observer registry reference (for the notification loop).
     #[must_use]
     pub fn observers(&self) -> &ObserveRegistry {
         &self.observers
     }
 
-    /// Wende eine Bridge-Op an.
+    /// Apply a bridge op.
     pub fn apply(&mut self, op: BridgeOp, endpoint: Vec<u8>) -> Vec<u8> {
         match op {
             BridgeOp::DiscoverInstances { topic } => {

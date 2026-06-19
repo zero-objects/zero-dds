@@ -14,11 +14,11 @@ using System.Text;
 namespace ZeroDDS.Cdr;
 
 /// <summary>
-/// XCDR2-Encoder fuer PLAIN_CDR2 / DELIMITED_CDR2 / PL_CDR2.
+/// XCDR2 encoder for PLAIN_CDR2 / DELIMITED_CDR2 / PL_CDR2.
 ///
-/// Alignment-Regel laut XTypes 1.3 §7.4.1.5: Member-Alignment ist
-/// relativ zum Start der jeweiligen Encapsulation. DHEADER bricht
-/// die Alignment-Origin (Inhalts-Body startet eine neue Origin).
+/// Per XTypes 1.3 §7.4.1.5 the alignment rule is: member alignment is
+/// relative to the start of the respective encapsulation. A DHEADER breaks
+/// the alignment origin (the content body starts a new origin).
 /// </summary>
 public sealed class Xcdr2Writer
 {
@@ -26,16 +26,16 @@ public sealed class Xcdr2Writer
     private readonly EndianMode _endian;
 
     /// <summary>
-    /// Aktuelle Alignment-Origin in Buffer-Position. Bei `BeginAppendable`
-    /// und `BeginMutable` wird sie auf `Position` nach DHEADER-Reservierung
-    /// gesetzt; alle nachfolgenden `Align(N)`-Aufrufe sind relativ dazu.
+    /// Current alignment origin as a buffer position. On `BeginAppendable`
+    /// and `BeginMutable` it is set to `Position` after the DHEADER reservation;
+    /// all subsequent `Align(N)` calls are relative to it.
     /// </summary>
     private long _alignOrigin;
 
-    /// <summary>Konstruktor mit Default-Endianness (Little-Endian).</summary>
+    /// <summary>Constructor with default endianness (little-endian).</summary>
     public Xcdr2Writer() : this(EndianMode.LittleEndian) { }
 
-    /// <summary>Konstruktor mit expliziter Endianness.</summary>
+    /// <summary>Constructor with explicit endianness.</summary>
     public Xcdr2Writer(EndianMode endian)
     {
         _buf = new MemoryStream();
@@ -43,10 +43,10 @@ public sealed class Xcdr2Writer
         _alignOrigin = 0;
     }
 
-    /// <summary>Aktive Endianness (read-only).</summary>
+    /// <summary>Active endianness (read-only).</summary>
     public EndianMode Endian => _endian;
 
-    /// <summary>Bisher geschriebene Byte-Anzahl.</summary>
+    /// <summary>Number of bytes written so far.</summary>
     public long Position => _buf.Position;
 
     // ---------------------------------------------------------------------
@@ -54,10 +54,10 @@ public sealed class Xcdr2Writer
     // ---------------------------------------------------------------------
 
     /// <summary>
-    /// Padding zu N-Byte-Alignment relativ zur aktuellen Origin.
+    /// Padding to N-byte alignment relative to the current origin.
     /// XTypes §7.4.1.5: `pad = (N - ((pos - origin) % N)) % N`.
     /// </summary>
-    /// <exception cref="ArgumentOutOfRangeException">N nicht in {1,2,4,8}.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">N not in {1,2,4,8}.</exception>
     public void Align(int alignment)
     {
         if (alignment != 1 && alignment != 2 && alignment != 4 && alignment != 8)
@@ -73,10 +73,10 @@ public sealed class Xcdr2Writer
         }
     }
 
-    /// <summary>Schreibt `value` als rohen Byte (kein Alignment).</summary>
+    /// <summary>Writes `value` as a raw byte (no alignment).</summary>
     public void WriteByte(byte value) => _buf.WriteByte(value);
 
-    /// <summary>Schreibt eine Byte-Sequenz (kein Alignment, kein Length-Prefix).</summary>
+    /// <summary>Writes a byte sequence (no alignment, no length prefix).</summary>
     public void WriteBytes(ReadOnlySpan<byte> data)
     {
 #if NETSTANDARD2_0
@@ -91,13 +91,13 @@ public sealed class Xcdr2Writer
     // Primitive writers
     // ---------------------------------------------------------------------
 
-    /// <summary>IDL `boolean` -> 1 Byte (0x00 / 0x01).</summary>
+    /// <summary>IDL `boolean` -> 1 byte (0x00 / 0x01).</summary>
     public void WriteBool(bool value) => _buf.WriteByte(value ? (byte)1 : (byte)0);
 
-    /// <summary>IDL `octet` / `char` -> 1 Byte.</summary>
+    /// <summary>IDL `octet` / `char` -> 1 byte.</summary>
     public void WriteOctet(byte value) => _buf.WriteByte(value);
 
-    /// <summary>IDL `short` -> 2 Byte LE/BE Align(2).</summary>
+    /// <summary>IDL `short` -> 2 bytes LE/BE, Align(2).</summary>
     public void WriteInt16(short value)
     {
         Align(2);
@@ -113,7 +113,7 @@ public sealed class Xcdr2Writer
         WriteBytes(tmp);
     }
 
-    /// <summary>IDL `unsigned short` -> 2 Byte LE/BE Align(2).</summary>
+    /// <summary>IDL `unsigned short` -> 2 bytes LE/BE, Align(2).</summary>
     public void WriteUInt16(ushort value)
     {
         Align(2);
@@ -129,7 +129,7 @@ public sealed class Xcdr2Writer
         WriteBytes(tmp);
     }
 
-    /// <summary>IDL `long` -> 4 Byte LE/BE Align(4).</summary>
+    /// <summary>IDL `long` -> 4 bytes LE/BE, Align(4).</summary>
     public void WriteInt32(int value)
     {
         Align(4);
@@ -145,7 +145,7 @@ public sealed class Xcdr2Writer
         WriteBytes(tmp);
     }
 
-    /// <summary>IDL `unsigned long` -> 4 Byte LE/BE Align(4).</summary>
+    /// <summary>IDL `unsigned long` -> 4 bytes LE/BE, Align(4).</summary>
     public void WriteUInt32(uint value)
     {
         Align(4);
@@ -161,7 +161,7 @@ public sealed class Xcdr2Writer
         WriteBytes(tmp);
     }
 
-    /// <summary>IDL `long long` -> 8 Byte LE/BE Align(8).</summary>
+    /// <summary>IDL `long long` -> 8 bytes LE/BE, Align(8).</summary>
     public void WriteInt64(long value)
     {
         Align(8);
@@ -177,7 +177,7 @@ public sealed class Xcdr2Writer
         WriteBytes(tmp);
     }
 
-    /// <summary>IDL `unsigned long long` -> 8 Byte LE/BE Align(8).</summary>
+    /// <summary>IDL `unsigned long long` -> 8 bytes LE/BE, Align(8).</summary>
     public void WriteUInt64(ulong value)
     {
         Align(8);
@@ -193,7 +193,7 @@ public sealed class Xcdr2Writer
         WriteBytes(tmp);
     }
 
-    /// <summary>IDL `float` -> 4 Byte IEEE-754 LE/BE Align(4).</summary>
+    /// <summary>IDL `float` -> 4 bytes IEEE-754 LE/BE, Align(4).</summary>
     public void WriteFloat32(float value)
     {
         Align(4);
@@ -209,7 +209,7 @@ public sealed class Xcdr2Writer
         WriteBytes(tmp);
     }
 
-    /// <summary>IDL `double` -> 8 Byte IEEE-754 LE/BE Align(8).</summary>
+    /// <summary>IDL `double` -> 8 bytes IEEE-754 LE/BE, Align(8).</summary>
     public void WriteFloat64(double value)
     {
         Align(8);
@@ -225,7 +225,7 @@ public sealed class Xcdr2Writer
         WriteBytes(tmp);
     }
 
-    /// <summary>IDL `wchar` -> 2 Byte UTF-16 LE Code-Unit, Align(2).</summary>
+    /// <summary>IDL `wchar` -> 2-byte UTF-16 LE code unit, Align(2).</summary>
     public void WriteWChar(char value) => WriteUInt16(value);
 
     // ---------------------------------------------------------------------
@@ -246,7 +246,7 @@ public sealed class Xcdr2Writer
     }
 
     /// <summary>
-    /// IDL `wstring` -> uint32 length (Code-Units, ohne NUL) + UTF-16-LE Code-Units.
+    /// IDL `wstring` -> uint32 length (code units, no NUL) + UTF-16-LE code units.
     /// XTypes §9.1 / Conformance §9.1.
     /// </summary>
     public void WriteWString(string value)
@@ -263,7 +263,7 @@ public sealed class Xcdr2Writer
     // Sequence / array length-prefix
     // ---------------------------------------------------------------------
 
-    /// <summary>Schreibt einen `uint32`-Sequenz-Counter (4 Byte, Align(4)).</summary>
+    /// <summary>Writes a `uint32` sequence counter (4 bytes, Align(4)).</summary>
     public void WriteSequenceLength(int count)
     {
         if (count < 0) throw new ArgumentOutOfRangeException(nameof(count));
@@ -275,9 +275,9 @@ public sealed class Xcdr2Writer
     // ---------------------------------------------------------------------
 
     /// <summary>
-    /// Reserviert 4 Byte fuer den DHEADER (object-size in Bytes, ohne den
-    /// 4-Byte-Header selbst), startet eine neue Alignment-Origin direkt
-    /// hinter dem Header und liefert ein Token fuer `EndDHeader`.
+    /// Reserves 4 bytes for the DHEADER (object-size in bytes, excluding the
+    /// 4-byte header itself), starts a new alignment origin right after the
+    /// header, and returns a token for `EndDHeader`.
     ///
     /// XTypes §7.4.4.4 (Appendable) / §7.4.2 (Mutable).
     /// </summary>
@@ -285,7 +285,7 @@ public sealed class Xcdr2Writer
     {
         Align(4);
         long headerPos = _buf.Position;
-        // Placeholder fuer die spaeter-eingetragene Groesse:
+        // Placeholder for the size written in later:
         Span<byte> placeholder = stackalloc byte[4];
         WriteBytes(placeholder);
         long previousOrigin = _alignOrigin;
@@ -294,8 +294,8 @@ public sealed class Xcdr2Writer
     }
 
     /// <summary>
-    /// Patcht die object-size im DHEADER-Slot und stellt die vorherige
-    /// Alignment-Origin wieder her.
+    /// Patches the object-size into the DHEADER slot and restores the
+    /// previous alignment origin.
     /// </summary>
     internal void EndDHeader(DHeaderScope scope)
     {
@@ -322,10 +322,10 @@ public sealed class Xcdr2Writer
         _alignOrigin = scope.PreviousOrigin;
     }
 
-    /// <summary>Convenience-Alias fuer `BeginDHeader` (semantisch: Appendable).</summary>
+    /// <summary>Convenience alias for `BeginDHeader` (semantically: Appendable).</summary>
     public DHeaderScope BeginAppendable() => BeginDHeader();
 
-    /// <summary>Convenience-Alias fuer `BeginDHeader` (semantisch: Mutable).</summary>
+    /// <summary>Convenience alias for `BeginDHeader` (semantically: Mutable).</summary>
     public DHeaderScope BeginMutable() => BeginDHeader();
 
     // ---------------------------------------------------------------------
@@ -333,11 +333,11 @@ public sealed class Xcdr2Writer
     // ---------------------------------------------------------------------
 
     /// <summary>
-    /// Schreibt einen 4-Byte-EMHEADER fuer einen Member.
+    /// Writes a 4-byte EMHEADER for a member.
     ///
-    /// XTypes 1.3 §7.4.3.4.5: EMHEADER1 folgt dem ambient Stream-Endian.
-    /// In LE-Stream → LE Bytes; in BE-Stream → BE Bytes. Das ist konsistent
-    /// mit dem zerodds_cdr Reference-Encoder und Cyclone-DDS.
+    /// XTypes 1.3 §7.4.3.4.5: EMHEADER1 follows the ambient stream-endian.
+    /// In an LE stream → LE bytes; in a BE stream → BE bytes. This is consistent
+    /// with the zerodds_cdr reference encoder and CycloneDDS.
     /// </summary>
     public void WriteEmHeader(uint memberId, int lc, bool mustUnderstand)
     {
@@ -351,9 +351,9 @@ public sealed class Xcdr2Writer
     }
 
     /// <summary>
-    /// Schreibt einen variabel-laengen-EMHEADER (LC=4..7) inkl. der nachfolgenden
-    /// 4-Byte NEXTINT length. LC=5 (next-int = size in bytes) ist die spec-
-    /// konforme Variante fuer `string` und nested DHEADER-Member.
+    /// Writes a variable-length EMHEADER (LC=4..7) including the following
+    /// 4-byte NEXTINT length. LC=5 (next-int = size in bytes) is the
+    /// spec-conformant variant for `string` and nested DHEADER members.
     /// </summary>
     public void WriteEmHeaderNextInt(uint memberId, int lc, bool mustUnderstand, uint nextInt)
     {
@@ -366,13 +366,13 @@ public sealed class Xcdr2Writer
     // Final assembly
     // ---------------------------------------------------------------------
 
-    /// <summary>Liefert den geschriebenen Buffer als Byte-Array (Copy).</summary>
+    /// <summary>Returns the written buffer as a byte array (copy).</summary>
     public byte[] ToArray() => _buf.ToArray();
 }
 
 /// <summary>
-/// RAII-Token fuer einen DHEADER-Scope. Bei `Dispose` wird die object-size
-/// im 4-Byte-Slot patched und die alte Alignment-Origin wiederhergestellt.
+/// RAII token for a DHEADER scope. On `Dispose` the object-size is patched
+/// into the 4-byte slot and the previous alignment origin is restored.
 /// </summary>
 public readonly struct DHeaderScope : IDisposable
 {
@@ -389,6 +389,6 @@ public readonly struct DHeaderScope : IDisposable
         BodyStart = bodyStart;
     }
 
-    /// <summary>Patcht den DHEADER und schliesst den Scope.</summary>
+    /// <summary>Patches the DHEADER and closes the scope.</summary>
     public void Dispose() => _writer.EndDHeader(this);
 }

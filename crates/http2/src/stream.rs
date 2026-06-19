@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Stream-State-Machine — RFC 9113 §5.1.
+//! Stream state machine — RFC 9113 §5.1.
 
 use crate::error::Http2Error;
 
-/// Stream-Identifier.
+/// Stream identifier.
 pub type StreamId = u32;
 
-/// Stream-State (RFC 9113 §5.1).
+/// Stream state (RFC 9113 §5.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StreamState {
     /// `idle`.
@@ -27,29 +27,29 @@ pub enum StreamState {
     Closed,
 }
 
-/// Eingehender Event aus Sicht der State-Machine.
+/// Incoming event from the state machine's perspective.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamEvent {
-    /// Empfangen `HEADERS` ohne `END_STREAM`.
+    /// Received `HEADERS` without `END_STREAM`.
     RecvHeaders,
-    /// Empfangen `HEADERS`/`DATA` mit `END_STREAM`.
+    /// Received `HEADERS`/`DATA` with `END_STREAM`.
     RecvEndStream,
-    /// Versendet `HEADERS` ohne `END_STREAM`.
+    /// Sent `HEADERS` without `END_STREAM`.
     SendHeaders,
-    /// Versendet `END_STREAM`.
+    /// Sent `END_STREAM`.
     SendEndStream,
-    /// Empfangen `PUSH_PROMISE`.
+    /// Received `PUSH_PROMISE`.
     RecvPushPromise,
-    /// Versendet `PUSH_PROMISE`.
+    /// Sent `PUSH_PROMISE`.
     SendPushPromise,
-    /// `RST_STREAM` — terminiert sofort.
+    /// `RST_STREAM` — terminates immediately.
     Reset,
 }
 
-/// Wendet einen Event auf den State an. Spec §5.1.
+/// Applies an event to the state. Spec §5.1.
 ///
 /// # Errors
-/// `InvalidState` wenn der Event im aktuellen State nicht erlaubt ist.
+/// `InvalidState` if the event is not allowed in the current state.
 pub fn transition(state: StreamState, event: StreamEvent) -> Result<StreamState, Http2Error> {
     use StreamEvent as E;
     use StreamState as S;
@@ -76,13 +76,13 @@ pub fn transition(state: StreamState, event: StreamEvent) -> Result<StreamState,
     Ok(next)
 }
 
-/// Spec §5.1.1: Client-initiierte Streams sind ungerade.
+/// Spec §5.1.1: client-initiated streams are odd.
 #[must_use]
 pub fn is_client_initiated(stream_id: StreamId) -> bool {
     stream_id != 0 && stream_id % 2 == 1
 }
 
-/// Spec §5.1.1: Server-initiierte Streams sind gerade.
+/// Spec §5.1.1: server-initiated streams are even.
 #[must_use]
 pub fn is_server_initiated(stream_id: StreamId) -> bool {
     stream_id != 0 && stream_id % 2 == 0

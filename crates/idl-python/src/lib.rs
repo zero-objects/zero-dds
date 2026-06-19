@@ -3,52 +3,52 @@
 
 //! Crate `zerodds-idl-python`. Safety classification: **STANDARD**.
 //!
-//! IDL4 → Python-Code-Generator fuer ZeroDDS-DataTypes. Liest den IDL-AST
-//! aus `zerodds-idl` und emittiert `@idl_struct(...)` + `@dataclass`-
-//! Klassen, die das Konvention der `zerodds-py`-Crate erfuellen.
+//! IDL4 → Python code generator for ZeroDDS data types. Reads the IDL AST
+//! from `zerodds-idl` and emits `@idl_struct(...)` + `@dataclass`
+//! classes that meet the convention of the `zerodds-py` crate.
 //!
-//! Build-Zeit-Tool — `forbid(unsafe_code)`, std-only.
+//! Build-time tool — `forbid(unsafe_code)`, std-only.
 //!
-//! # Schichten-Position
+//! # Layer position
 //!
-//! Layer 3 (Schema) — analog zu `zerodds-idl-cpp` / `-csharp` / `-java` /
-//! `-rust` / `-ts`, aber emittiert Python-Code, der zur Laufzeit gegen
-//! die `zerodds`-Python-Library laeuft.
+//! Layer 3 (schema) — analogous to `zerodds-idl-cpp` / `-csharp` / `-java` /
+//! `-rust` / `-ts`, but emits Python code that runs against the
+//! `zerodds` Python library at runtime.
 //!
 //! # Public API
 //!
-//! - [`generate_python_module`] — AST + Optionen → Python-Modul-Source.
-//! - [`PythonGenOptions`] — Codegen-Optionen.
-//! - [`error::IdlPythonError`] — Fehler-Familie.
+//! - [`generate_python_module`] — AST + options → Python module source.
+//! - [`PythonGenOptions`] — codegen options.
+//! - [`error::IdlPythonError`] — error family.
 //!
-//! # Was wird emittiert
+//! # What is emitted
 //!
-//! Pro IDL-Konstrukt:
+//! Per IDL construct:
 //!
 //! | IDL | Python |
 //! |-----|--------|
-//! | `struct` (jede Extensibility) | `@idl_struct(typename=...)` + `@dataclass class` |
+//! | `struct` (any extensibility) | `@idl_struct(typename=...)` + `@dataclass class` |
 //! | `enum` | `class X(IntEnum)` |
-//! | `module M { ... }` | flacher Klassenname `M_Inner` (Python-PSM-Konvention) |
+//! | `module M { ... }` | flat class name `M_Inner` (Python-PSM convention) |
 //! | `boolean` | `bool` |
-//! | `short`/`long`/`long long` | `Int16` / `Int32` / `Int64` (zerodds.idl-Brands) |
+//! | `short`/`long`/`long long` | `Int16` / `Int32` / `Int64` (zerodds.idl brands) |
 //! | `unsigned short`/... | `UInt16` / `UInt32` / `UInt64` |
 //! | `octet` | `Octet` |
 //! | `float` / `double` / `long double` | `Float32` / `Float64` / `LongDouble` |
 //! | `char` / `wchar` | `Char` / `WChar` |
 //! | `string` / `wstring` | `String` / `WString` |
 //! | `sequence<T>` | `List[T]` |
-//! | `T[N]` | `List[T]` (Multi-Dim → verschachtelt) |
+//! | `T[N]` | `List[T]` (multi-dim → nested) |
 //!
-//! # Phase-2 Material (heute `Unsupported`)
+//! # Phase-2 material (today `Unsupported`)
 //!
-//! - `union` mit Discriminator
+//! - `union` with a discriminator
 //! - `bitset` / `bitmask`
-//! - `typedef T name` (vorerst kommentarlos; Phase-2: `typing.TypeAlias`)
+//! - `typedef T name` (for now without a comment; phase 2: `typing.TypeAlias`)
 //! - `valuetype`, `interface`, `exception`
 //! - `fixed`, `map`, `any`
 //!
-//! # Beispiel
+//! # Example
 //!
 //! ```rust
 //! use zerodds_idl::config::ParserConfig;

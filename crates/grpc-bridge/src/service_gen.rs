@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Auto-Generation gRPC-Service-Definitions pro DDS-Topic.
+//! Auto-generation of gRPC service definitions per DDS topic.
 //!
 //! Spec: `zerodds-grpc-bridge-1.0.md` §4.2.
 //!
-//! Pro DDS-Topic generiert die Bridge **einen** gRPC-Service mit
-//! genau zwei Methoden:
+//! Per DDS topic, the bridge generates **one** gRPC service with
+//! exactly two methods:
 //!
 //! ```text
 //! service <TopicSlug>Stream {
@@ -15,31 +15,31 @@
 //! }
 //! ```
 //!
-//! Der Slug ist eine `PascalCase`-Sanitisierung des DDS-Topic-Namens
-//! (Punkte/Slashes/Bindestriche → Wortgrenzen). Methoden-Pfade folgen
-//! dem gRPC-Schema `/<package>.<TopicSlug>Stream/<Method>`.
+//! The slug is a `PascalCase` sanitization of the DDS topic name
+//! (dots/slashes/hyphens → word boundaries). Method paths follow the
+//! gRPC scheme `/<package>.<TopicSlug>Stream/<Method>`.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Default-Package fuer ZeroDDS-generierte Services.
+/// Default package for ZeroDDS-generated services.
 pub const DEFAULT_PACKAGE: &str = "zerodds.bridge.v1";
 
-/// Service-Definition fuer einen einzelnen DDS-Topic.
+/// Service definition for a single DDS topic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopicService {
-    /// gRPC-Package (z.B. `zerodds.bridge.v1`).
+    /// gRPC package (e.g. `zerodds.bridge.v1`).
     pub package: String,
-    /// Service-Name (z.B. `TradeStream`).
+    /// Service name (e.g. `TradeStream`).
     pub service: String,
-    /// Origineller DDS-Topic-Name.
+    /// Original DDS topic name.
     pub dds_topic: String,
-    /// DDS-Type-Name.
+    /// DDS type name.
     pub dds_type: String,
 }
 
 impl TopicService {
-    /// Generiert eine Service-Definition aus einem DDS-Topic-Namen.
+    /// Generates a service definition from a DDS topic name.
     #[must_use]
     pub fn from_topic(dds_topic: &str, dds_type: &str) -> Self {
         Self {
@@ -50,19 +50,19 @@ impl TopicService {
         }
     }
 
-    /// gRPC-Pfad fuer die `Publish`-Methode.
+    /// gRPC path for the `Publish` method.
     #[must_use]
     pub fn publish_path(&self) -> String {
         format!("/{}.{}/Publish", self.package, self.service)
     }
 
-    /// gRPC-Pfad fuer die `Subscribe`-Methode.
+    /// gRPC path for the `Subscribe` method.
     #[must_use]
     pub fn subscribe_path(&self) -> String {
         format!("/{}.{}/Subscribe", self.package, self.service)
     }
 
-    /// Ist `path` einer der beiden Methoden-Pfade?
+    /// Is `path` one of the two method paths?
     #[must_use]
     pub fn matches_path(&self, path: &str) -> Option<MethodKind> {
         if path == self.publish_path() {
@@ -75,7 +75,7 @@ impl TopicService {
     }
 }
 
-/// Welche Methode ein gRPC-Pfad anspricht.
+/// Which method a gRPC path addresses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MethodKind {
     /// Client → Server: stream Sample → PublishAck.
@@ -84,7 +84,7 @@ pub enum MethodKind {
     Subscribe,
 }
 
-/// Sanitisiere einen DDS-Topic-Namen zu PascalCase.
+/// Sanitize a DDS topic name to PascalCase.
 /// `Trade` ⇒ `Trade`, `dds.demo.Trade` ⇒ `DdsDemoTrade`,
 /// `chat-room/foo_bar` ⇒ `ChatRoomFooBar`.
 #[must_use]
@@ -111,8 +111,8 @@ pub fn topic_to_pascal(topic: &str) -> String {
     out
 }
 
-/// Renderer: gibt den Proto-Source des Services zurueck.
-/// Spec §4.2 — für den Reflection-Service-Pfad.
+/// Renderer: returns the proto source of the service.
+/// Spec §4.2 — for the reflection service path.
 #[must_use]
 pub fn render_proto(svc: &TopicService) -> String {
     let mut out = String::new();
@@ -128,51 +128,51 @@ pub fn render_proto(svc: &TopicService) -> String {
     out
 }
 
-/// Catalog aller registrierten Topic-Services. Spec §5.2 — Type-
-/// Discovery via Reflection wird hierauf abgebildet.
+/// Catalog of all registered topic services. Spec §5.2 — type
+/// discovery via reflection is mapped onto this.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ServiceCatalog {
     services: Vec<TopicService>,
 }
 
 impl ServiceCatalog {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Registriere einen Topic-Service.
+    /// Register a topic service.
     pub fn register(&mut self, svc: TopicService) {
         if !self.services.iter().any(|s| s.service == svc.service) {
             self.services.push(svc);
         }
     }
 
-    /// Iteriere alle Services.
+    /// Iterate over all services.
     pub fn iter(&self) -> impl Iterator<Item = &TopicService> {
         self.services.iter()
     }
 
-    /// Anzahl Services.
+    /// Number of services.
     #[must_use]
     pub fn len(&self) -> usize {
         self.services.len()
     }
 
-    /// Leer?
+    /// Empty?
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.services.is_empty()
     }
 
-    /// Suche per `service`-Name (z.B. `TradeStream`).
+    /// Look up by `service` name (e.g. `TradeStream`).
     #[must_use]
     pub fn find_by_service(&self, service: &str) -> Option<&TopicService> {
         self.services.iter().find(|s| s.service == service)
     }
 
-    /// Suche per gRPC-Pfad (z.B. `/zerodds.bridge.v1.TradeStream/Publish`).
+    /// Look up by gRPC path (e.g. `/zerodds.bridge.v1.TradeStream/Publish`).
     #[must_use]
     pub fn find_by_path(&self, path: &str) -> Option<(&TopicService, MethodKind)> {
         for s in &self.services {
@@ -183,8 +183,8 @@ impl ServiceCatalog {
         None
     }
 
-    /// Alle vollstaendigen Service-Namen (`<package>.<service>`).
-    /// Spec §4.6 — Reflection ListServices-Antwort.
+    /// All fully-qualified service names (`<package>.<service>`).
+    /// Spec §4.6 — reflection ListServices response.
     #[must_use]
     pub fn fully_qualified_service_names(&self) -> Vec<String> {
         self.services

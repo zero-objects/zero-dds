@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! §6 — DDS-QoS → CoAP-Behavior-Translation.
+//! §6 — DDS QoS → CoAP behavior translation.
 //!
 //! Mapping per Spec `zerodds-coap-bridge-1.0.md` §6:
 //!
-//! * `Reliability::Reliable`        → CON (Confirmable; ACK + Retransmit).
+//! * `Reliability::Reliable`        → CON (Confirmable; ACK + retransmit).
 //! * `Reliability::BestEffort`      → NON (Non-confirmable).
-//! * `Durability::Volatile`         → keine Observe-Replay-Cache.
-//! * `Durability::TransientLocal+`  → Observe-Replay-Cache aktiv.
-//! * `Deadline::period`             → CoAP-Option `Max-Age` (RFC 7252 §5.10.5).
+//! * `Durability::Volatile`         → no observe replay cache.
+//! * `Durability::TransientLocal+`  → observe replay cache active.
+//! * `Deadline::period`             → CoAP option `Max-Age` (RFC 7252 §5.10.5).
 
 use zerodds_qos::{DurabilityKind, HistoryKind, ReaderQos, ReliabilityKind, WriterQos};
 
-/// CoAP-Message-Type (RFC 7252 §3).
+/// CoAP message type (RFC 7252 §3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoapMessageType {
     /// Confirmable (CON) — peer acks each message.
@@ -22,14 +22,14 @@ pub enum CoapMessageType {
     NonConfirmable,
 }
 
-/// Behavior fuer ein Topic.
+/// Behavior for a topic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CoapBehavior {
-    /// Default-Type fuer outgoing Notify-Frames.
+    /// Default type for outgoing notify frames.
     pub message_type: CoapMessageType,
-    /// `Max-Age`-Option in Sekunden (None = default 60s).
+    /// `Max-Age` option in seconds (None = default 60s).
     pub max_age_secs: Option<u32>,
-    /// Replay-Cache-Tiefe fuer neu-subscribende Observer (0 = none).
+    /// Replay cache depth for newly subscribing observers (0 = none).
     pub replay_depth: u32,
 }
 
@@ -44,7 +44,7 @@ impl Default for CoapBehavior {
 }
 
 impl CoapBehavior {
-    /// Spec-konforme Defaults aus `WriterQos::default()` ableiten.
+    /// Derive spec-compliant defaults from `WriterQos::default()`.
     #[must_use]
     pub fn default_for_topic() -> Self {
         let w = WriterQos::default();
@@ -53,7 +53,7 @@ impl CoapBehavior {
     }
 }
 
-/// Hauptfunktion.
+/// Main function.
 #[must_use]
 pub fn dds_qos_to_coap_behavior(writer: &WriterQos, reader: &ReaderQos) -> CoapBehavior {
     let message_type = match (writer.reliability.kind, reader.reliability.kind) {

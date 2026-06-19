@@ -2,35 +2,35 @@
 // Copyright 2026 ZeroDDS Contributors
 //! IDL4 → C++17-Header-Codegen (OMG IDL4-CPP-Mapping, formal/2018-07-01).
 //!
-//! Crate `zerodds-idl-cpp` — Foundation des Sprach-Bindings (Cluster C5.1-a).
+//! Crate `zerodds-idl-cpp` — foundation of the language binding (cluster C5.1-a).
 //!
-//! Safety classification: **SAFE (std-only)**. Reines Build-Zeit-Tool —
-//! `forbid(unsafe_code)`, kein no_std-Use-Case.
+//! Safety classification: **SAFE (std-only)**. Pure build-time tool —
+//! `forbid(unsafe_code)`, no no_std use case.
 //!
 //! # Scope (C5.1-a)
-//! - Block A: Header-Layout (`#pragma once`, `namespace`, includes).
-//! - Block B: Primitive-Mapping (boolean → bool, octet → uint8_t, ...).
+//! - Block A: header layout (`#pragma once`, `namespace`, includes).
+//! - Block B: primitive mapping (boolean → bool, octet → uint8_t, ...).
 //! - Block C: struct/enum/union/typedef/sequence/array/inheritance.
-//! - Block D: Exception → `class X : public std::exception`.
+//! - Block D: exception → `class X : public std::exception`.
 //! - Block E: Time/Duration → DDS::Time_t / DDS::Duration_t.
 //!
-//! # C5.1-b Erweiterungen
-//! - Block F: Status-Mapping (13 Status-Klassen, [`status`]).
-//! - Block G: QoS-Policy + Type-Traits (22 Policies, [`qos`]).
-//! - Block H: DCPS-Entity-Header-Stubs ([`dcps`]).
+//! # C5.1-b extensions
+//! - Block F: status mapping (13 status classes, [`status`]).
+//! - Block G: QoS policy + type traits (22 policies, [`qos`]).
+//! - Block H: DCPS entity header stubs ([`dcps`]).
 //!
-//! # C5.2 Erweiterungen
-//! - DDS-PSM-CXX-Header-Skeleton-Layer ([`psm_cxx`]).
+//! # C5.2 extensions
+//! - DDS-PSM-CXX header skeleton layer ([`psm_cxx`]).
 //!
-//! # C6.1.D-cpp Erweiterungen
-//! - DDS-RPC C++ PSM-Codegen ([`rpc`]) — Service-Interface, Requester,
-//!   Replier, ServiceTraits + RemoteException-Hierarchie. Spec §10.
+//! # C6.1.D-cpp extensions
+//! - DDS-RPC C++ PSM codegen ([`rpc`]) — service interface, requester,
+//!   replier, ServiceTraits + RemoteException hierarchy. Spec §10.
 //!
-//! # Bewusst nicht im Crate
+//! # Intentionally not in the crate
 //! - Bitset/Bitmask, Map, Fixed, Any, Interface, Valuetype.
-//! - Linker-Tests (statische Header-Generation reicht).
+//! - Linker tests (static header generation is sufficient).
 //!
-//! # Beispiel
+//! # Example
 //!
 //! ```
 //! use zerodds_idl::config::ParserConfig;
@@ -80,29 +80,28 @@ pub use psm_cxx::{
 
 use zerodds_idl::ast::Specification;
 
-/// Konfiguration des Code-Generators.
+/// Configuration of the code generator.
 #[derive(Debug, Clone)]
 pub struct CppGenOptions {
-    /// Optionaler aeusserer Namespace, in den der gesamte Header gewickelt
-    /// wird. `None` oder leer = kein Wrapper.
+    /// Optional outer namespace that wraps the entire header.
+    /// `None` or empty = no wrapper.
     pub namespace_prefix: Option<String>,
-    /// Optionaler include-Guard-Prefix (Kommentar-Marker zusaetzlich zu
-    /// `#pragma once`). Foundation legt nur `#pragma once`; der Prefix
-    /// erscheint als Kommentar.
+    /// Optional include-guard prefix (comment marker in addition to
+    /// `#pragma once`). The foundation emits only `#pragma once`; the prefix
+    /// appears as a comment.
     pub include_guard_prefix: Option<String>,
-    /// Indent-Breite in Leerzeichen. Default 4.
+    /// Indent width in spaces. Default 4.
     pub indent_width: usize,
-    /// Spec §7.2.3 / §8.1.2 / §8.1.3 — opt-in: fügt am Ende des
-    /// generierten Headers per-Type AMQP-Codec-Helper an
-    /// (`to_amqp_value`, `to_json_string`). Default `false`, weil
-    /// die emittierten Calls einen kleinen C++-Runtime-Header
-    /// `<zerodds/amqp/codec.hpp>` voraussetzen, der als separate
-    /// Library-Crate kommt.
+    /// Spec §7.2.3 / §8.1.2 / §8.1.3 — opt-in: appends per-type AMQP codec
+    /// helpers (`to_amqp_value`, `to_json_string`) at the end of the
+    /// generated header. Default `false`, because the emitted calls
+    /// require a small C++ runtime header `<zerodds/amqp/codec.hpp>`
+    /// that ships as a separate library crate.
     pub emit_amqp_helpers: bool,
-    /// Annex A.1 (idl4-cpp-1.0) — opt-in: fügt am Ende
-    /// CORBA-spezifische Trait-Spezialisierungen
+    /// Annex A.1 (idl4-cpp-1.0) — opt-in: appends CORBA-specific trait
+    /// specializations
     /// (`CORBA::traits<T>::value_type/in_type/out_type/inout_type`)
-    /// pro Top-Level-Type an. Default `false`.
+    /// per top-level type at the end. Default `false`.
     pub emit_corba_traits: bool,
 }
 
@@ -118,10 +117,10 @@ impl Default for CppGenOptions {
     }
 }
 
-/// Block-E: Mapping von Time/Duration-Identifiern auf C++-Type-Strings.
+/// Block-E: mapping of Time/Duration identifiers to C++ type strings.
 ///
-/// Wenn ein IDL-Member `Time_t` referenziert (single-component scoped name),
-/// wird er auf `DDS::Time_t` gemappt. Spec-Quelle: dds-psm-cxx §6.4.
+/// When an IDL member references `Time_t` (single-component scoped name),
+/// it is mapped to `DDS::Time_t`. Spec source: dds-psm-cxx §6.4.
 pub(crate) const TIME_DURATION_TYPES: &[(&str, &str)] = &[
     ("Time_t", "DDS::Time_t"),
     ("Duration_t", "DDS::Duration_t"),
@@ -129,16 +128,16 @@ pub(crate) const TIME_DURATION_TYPES: &[(&str, &str)] = &[
     ("Duration", "DDS::Duration_t"),
 ];
 
-/// Erzeugt einen vollstaendigen C++17-Header aus einer IDL-Specification.
+/// Produces a complete C++17 header from an IDL specification.
 ///
 /// # Errors
-/// - [`CppGenError::UnsupportedConstruct`]: IDL-Konstrukt außerhalb des aktuellen Scopes
-///   (z.B. `interface`, `valuetype`, `fixed`, `any`, `map`, `bitset`,
+/// - [`CppGenError::UnsupportedConstruct`]: IDL construct outside the current scope
+///   (e.g. `interface`, `valuetype`, `fixed`, `any`, `map`, `bitset`,
 ///   `bitmask`).
-/// - [`CppGenError::InvalidName`]: Ein Identifier kollidiert mit einem
-///   reservierten C++-Keyword.
-/// - [`CppGenError::InheritanceCycle`]: Direkte oder indirekte
-///   Self-Inheritance im Struct-Graphen.
+/// - [`CppGenError::InvalidName`]: An identifier collides with a
+///   reserved C++ keyword.
+/// - [`CppGenError::InheritanceCycle`]: Direct or indirect
+///   self-inheritance in the struct graph.
 pub fn generate_cpp_header(
     ast: &Specification,
     opts: &CppGenOptions,
@@ -153,13 +152,13 @@ pub fn generate_cpp_header(
     Ok(out)
 }
 
-/// Convenience-Variante mit aktiviertem `emit_corba_traits`-Flag.
+/// Convenience variant with the `emit_corba_traits` flag enabled.
 ///
-/// Identisch zu [`generate_cpp_header`], aber zwingt
-/// `opts.emit_corba_traits = true`. Cross-Ref: `idl4-cpp-1.0` Annex A.1.
+/// Identical to [`generate_cpp_header`], but forces
+/// `opts.emit_corba_traits = true`. Cross-ref: `idl4-cpp-1.0` Annex A.1.
 ///
 /// # Errors
-/// Wie [`generate_cpp_header`].
+/// Same as [`generate_cpp_header`].
 pub fn generate_cpp_header_with_corba_traits(
     ast: &Specification,
     opts: &CppGenOptions,
@@ -171,14 +170,14 @@ pub fn generate_cpp_header_with_corba_traits(
     generate_cpp_header(ast, &opts)
 }
 
-/// Convenience-Variante mit aktiviertem `emit_amqp_helpers`-Flag.
+/// Convenience variant with the `emit_amqp_helpers` flag enabled.
 ///
-/// Identisch zu [`generate_cpp_header`], aber zwingt
-/// `opts.emit_amqp_helpers = true`. Nützlich für Tests und
-/// Tooling, die den AMQP-Bindings-Pfad explizit auswählen wollen.
+/// Identical to [`generate_cpp_header`], but forces
+/// `opts.emit_amqp_helpers = true`. Useful for tests and tooling
+/// that want to select the AMQP bindings path explicitly.
 ///
 /// # Errors
-/// Wie [`generate_cpp_header`].
+/// Same as [`generate_cpp_header`].
 pub fn generate_cpp_header_with_amqp(
     ast: &Specification,
     opts: &CppGenOptions,
@@ -206,7 +205,7 @@ mod tests {
         let cpp = gen_cpp("");
         assert!(cpp.contains("#pragma once"));
         assert!(cpp.contains("Generated by zerodds idl-cpp"));
-        // Kein Namespace-Open ohne Module.
+        // No namespace open without a module.
         assert!(!cpp.contains("namespace M {"));
     }
 
@@ -334,12 +333,12 @@ mod tests {
     fn reserved_field_name_is_rejected() {
         let ast = zerodds_idl::parse("struct S { long class_field; };", &ParserConfig::default())
             .expect("parse");
-        // "class_field" ist nicht reserviert; Test mit Annotation-Trick:
-        // wir erzwingen via Builder-API einen Reserved-Name.
-        // Stattdessen pruefen wir den Pfad direkt ueber check_identifier:
+        // "class_field" is not reserved; test with an annotation trick:
+        // we force a reserved name via the builder API.
+        // Instead, we check the path directly through check_identifier:
         let res = type_map::check_identifier("class");
         assert!(matches!(res, Err(CppGenError::InvalidName { .. })));
-        let _ = ast; // ungenutzt aber zeigt die Idee
+        let _ = ast; // unused but illustrates the idea
     }
 
     #[test]

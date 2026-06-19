@@ -1,39 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Address-Resolution + Wildcard-Routing.
+//! Address resolution + wildcard routing.
 //!
-//! Spec-Quelle: dds-amqp-1.0-beta1.pdf §7.3 Address-Resolution-Model.
+//! Spec source: dds-amqp-1.0-beta1.pdf §7.3 Address Resolution Model.
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// Spec §7.3 — eine aufgeloeste Address-Konfiguration.
+/// Spec §7.3 — a resolved address configuration.
 ///
-/// `partitions` ist eine Sequenz (Spec §7.4.8: DDS PARTITION ist
-/// `sequence<string>`). Mehrfach-`?partition=`-Query-Params in der
-/// URL werden in der Reihenfolge des Auftretens als Listen-Elemente
-/// uebernommen.
+/// `partitions` is a sequence (Spec §7.4.8: DDS PARTITION is
+/// `sequence<string>`). Repeated `?partition=` query params in the
+/// URL are taken as list elements in order of appearance.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AddressResolution {
-    /// DDS-Topic-Name.
+    /// DDS topic name.
     pub topic: String,
-    /// DDS-Domain-Id (default 0).
+    /// DDS domain id (default 0).
     pub domain_id: u32,
-    /// DDS-Partition-Sequenz (leer = Default-Partition).
+    /// DDS partition sequence (empty = default partition).
     pub partitions: Vec<String>,
 }
 
 impl AddressResolution {
-    /// Convenience: erste Partition oder leerer String (fuer
-    /// Single-Partition-Code-Pfade).
+    /// Convenience: first partition or an empty string (for
+    /// single-partition code paths).
     #[must_use]
     pub fn first_partition(&self) -> &str {
         self.partitions.first().map(String::as_str).unwrap_or("")
     }
 }
 
-/// Routing-Tabelle.
+/// Routing table.
 #[derive(Debug, Clone, Default)]
 pub struct AddressRouter {
     entries: Vec<RouteEntry>,
@@ -45,23 +44,23 @@ struct RouteEntry {
     target: AddressResolution,
 }
 
-/// Resolution-Fehler.
+/// Resolution error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolutionError {
-    /// Keine matchende Route.
+    /// No matching route.
     NoRoute(String),
-    /// Address-String konnte nicht geparsed werden.
+    /// The address string could not be parsed.
     Malformed(String),
 }
 
 impl AddressRouter {
-    /// Neuer leerer Router.
+    /// New empty router.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Statisches Mapping ergaenzen.
+    /// Add a static mapping.
     pub fn add_route(&mut self, pattern: &str, target: AddressResolution) {
         self.entries.push(RouteEntry {
             pattern: pattern.to_string(),
@@ -69,17 +68,17 @@ impl AddressRouter {
         });
     }
 
-    /// Spec §7.3 — eine eingehende Adresse aufloesen.
+    /// Spec §7.3 — resolve an incoming address.
     ///
-    /// Reihenfolge:
-    /// 1. Static Aliases (erste matchende Pattern wins).
-    /// 2. Bare Address (`tracking`) -> Topic gleichen Namens, Domain 0.
-    /// 3. `domain://N/topic[?partition=P]`-URL parsen.
+    /// Order:
+    /// 1. Static aliases (first matching pattern wins).
+    /// 2. Bare address (`tracking`) -> topic of the same name, domain 0.
+    /// 3. Parse a `domain://N/topic[?partition=P]` URL.
     ///
     /// # Errors
-    /// `Malformed` bei syntaktisch ungueltigem Address-String,
-    /// `NoRoute` wenn kein statisches Mapping matched und keine
-    /// implizite Form anwendbar ist.
+    /// `Malformed` for a syntactically invalid address string,
+    /// `NoRoute` when no static mapping matches and no implicit
+    /// form is applicable.
     pub fn resolve(&self, address: &str) -> Result<AddressResolution, ResolutionError> {
         // 1. Static aliases.
         for e in &self.entries {
@@ -108,12 +107,12 @@ impl AddressRouter {
     }
 }
 
-/// Spec §7.8 — Konflikt-Resolution zwischen URI-Form
-/// (`?partition=`) und Application-Property `dds:partition`.
+/// Spec §7.8 — conflict resolution between the URI form
+/// (`?partition=`) and the application property `dds:partition`.
 ///
-/// Wenn die URI eine nicht-leere Partition-Liste fuehrt, gewinnt
-/// die URI-Form ueber die Property; sonst greift die Property.
-/// Liefert die effektive Partition-Sequenz fuer das Routing.
+/// When the URI carries a non-empty partition list, the URI form
+/// wins over the property; otherwise the property applies.
+/// Returns the effective partition sequence for routing.
 #[must_use]
 pub fn effective_partitions(uri_form: &[String], property_form: &[String]) -> Vec<String> {
     if uri_form.is_empty() {
@@ -138,8 +137,8 @@ fn match_pattern(pattern: &str, addr: &str) -> bool {
 
 fn parse_domain_url(rest: &str) -> Result<AddressResolution, ResolutionError> {
     // Format: <id>/<topic>[?partition=<p>(&partition=<p>)*]
-    // Spec §7.4.8: PARTITION ist sequence<string>; mehrfach
-    // wiederholte ?partition=-Params sind erlaubt.
+    // Spec §7.4.8: PARTITION is sequence<string>; repeated
+    // ?partition= params are allowed.
     let (id_part, after_id) = rest
         .split_once('/')
         .ok_or_else(|| ResolutionError::Malformed(rest.to_string()))?;
@@ -165,7 +164,7 @@ fn parse_domain_url(rest: &str) -> Result<AddressResolution, ResolutionError> {
     })
 }
 
-/// RFC 3986 percent-decoding fuer Query-String-Values.
+/// RFC 3986 percent-decoding for query-string values.
 fn percent_decode(s: &str) -> Result<String, ResolutionError> {
     let mut out = Vec::with_capacity(s.len());
     let bytes = s.as_bytes();
@@ -301,7 +300,7 @@ mod tests {
 
     #[test]
     fn conflict_resolution_uri_wins_when_both_present() {
-        // Spec §7.8: URI-Form gewinnt gegen App-Property.
+        // Spec §7.8: the URI form wins over the app property.
         let uri = alloc::vec!["uri-a".to_string(), "uri-b".to_string()];
         let prop = alloc::vec!["prop-only".to_string()];
         assert_eq!(effective_partitions(&uri, &prop), uri);

@@ -3,10 +3,10 @@
 
 //! DDS-WEB Sample Selector BNF Parser — Spec §7.4.8.
 //!
-//! Implementiert §7.4.8 voll.
+//! Implements §7.4.8 fully.
 //!
-//! Spec-Quelle: OMG DDS-WEB 1.0 §7.4.8 (S. 51-53) — `DataReader::read`
-//! mit `SampleSelector`-BNF-Grammar:
+//! Spec source: OMG DDS-WEB 1.0 §7.4.8 (pp. 51-53) — `DataReader::read`
+//! with the `SampleSelector` BNF grammar:
 //!
 //! ```text
 //! SampleSelector  ::= FilterExpression ( ',' MetadataExpression )?
@@ -18,47 +18,47 @@
 //!                      | 'instance_state='InstanceState
 //! ```
 //!
-//! Der Parser liefert ein AST [`SampleSelector`], das vom Caller in
-//! eine DDS [`QueryCondition`] uebersetzt werden kann
+//! The parser returns an AST [`SampleSelector`] that the caller can
+//! translate into a DDS [`QueryCondition`]
 //! (`crates/dcps/src/query_condition.rs`).
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-/// Top-Level-AST der Sample-Selector-Expression.
+/// Top-level AST of the sample-selector expression.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SampleSelector {
-    /// Filter-Ausdruck (kann leer sein, wenn nur Metadata).
+    /// Filter expression (may be empty if metadata only).
     pub filter: Option<FilterExpression>,
-    /// Metadata-Ausdruecke (mehrere mit AND verknuepft moeglich).
+    /// Metadata expressions (several joined with AND possible).
     pub metadata: Vec<MetadataExpression>,
 }
 
-/// Filter-Expression — boolescher Ausdruck ueber Field-Referenzen.
+/// Filter expression — boolean expression over field references.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FilterExpression {
-    /// Einzelner Vergleich.
+    /// Single comparison.
     Comparison {
         /// Field-Pfad (z.B. `position.x`).
         field: String,
-        /// Vergleichs-Operator.
+        /// Comparison operator.
         op: CompareOp,
-        /// Literal-Wert (rechte Seite).
+        /// Literal value (right-hand side).
         value: Literal,
     },
-    /// Konjunktion / Disjunktion.
+    /// Conjunction / disjunction.
     Boolean {
-        /// Boolescher Operator.
+        /// Boolean operator.
         op: BoolOp,
-        /// Linke Sub-Expression.
+        /// Left sub-expression.
         lhs: alloc::boxed::Box<FilterExpression>,
-        /// Rechte Sub-Expression.
+        /// Right sub-expression.
         rhs: alloc::boxed::Box<FilterExpression>,
     },
 }
 
-/// Vergleichs-Operator (Spec §7.4.8).
+/// Comparison operator (Spec §7.4.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompareOp {
     /// `=`
@@ -75,7 +75,7 @@ pub enum CompareOp {
     Ge,
 }
 
-/// Boolescher Operator.
+/// Boolean operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoolOp {
     /// `AND`
@@ -84,18 +84,18 @@ pub enum BoolOp {
     Or,
 }
 
-/// Literal-Wert auf der rechten Seite eines Vergleichs.
+/// Literal value on the right-hand side of a comparison.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Literal {
     /// Integer.
     Integer(i64),
-    /// String (zwischen `'...'` oder `"..."`).
+    /// String (between `'...'` or `"..."`).
     Str(String),
     /// Boolean (`true` / `false`).
     Bool(bool),
 }
 
-/// Metadata-Expression aus Spec §7.4.8.
+/// Metadata expression from Spec §7.4.8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MetadataExpression {
     /// `sample_state=read|not_read|any`
@@ -106,42 +106,42 @@ pub enum MetadataExpression {
     InstanceState(InstanceStateMatch),
 }
 
-/// Spec §7.4.8 — Sample-State-Match (DDS DCPS §2.2.2.5).
+/// Spec §7.4.8 — sample-state match (DDS DCPS §2.2.2.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SampleStateMatch {
-    /// Nur READ-Samples.
+    /// READ samples only.
     Read,
-    /// Nur NOT_READ-Samples.
+    /// NOT_READ samples only.
     NotRead,
-    /// Beide.
+    /// Both.
     Any,
 }
 
-/// Spec §7.4.8 — View-State-Match.
+/// Spec §7.4.8 — view-state match.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewStateMatch {
-    /// Nur NEW.
+    /// NEW only.
     New,
-    /// Nur NOT_NEW.
+    /// NOT_NEW only.
     NotNew,
-    /// Beide.
+    /// Both.
     Any,
 }
 
-/// Spec §7.4.8 — Instance-State-Match.
+/// Spec §7.4.8 — instance-state match.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstanceStateMatch {
-    /// Nur ALIVE.
+    /// ALIVE only.
     Alive,
-    /// Nur NOT_ALIVE_DISPOSED.
+    /// NOT_ALIVE_DISPOSED only.
     NotAliveDisposed,
-    /// Nur NOT_ALIVE_NO_WRITERS.
+    /// NOT_ALIVE_NO_WRITERS only.
     NotAliveNoWriters,
-    /// Alle.
+    /// All.
     Any,
 }
 
-/// Parser-Fehler.
+/// Parser error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
     /// Unexpected token at position.
@@ -151,15 +151,15 @@ pub enum ParseError {
         /// Description what was found.
         found: String,
     },
-    /// Eof inmitten eines Ausdrucks.
+    /// EOF in the middle of an expression.
     UnexpectedEof,
     /// Unbalanced parenthesis.
     UnbalancedParen,
-    /// Numerisches Literal nicht parsbar.
+    /// Numeric literal not parsable.
     InvalidNumber(String),
-    /// Unbekannter Metadata-Key (z.B. `xyz_state`).
+    /// Unknown metadata key (e.g. `xyz_state`).
     UnknownMetadataKey(String),
-    /// Unbekannter Metadata-Wert.
+    /// Unknown metadata value.
     UnknownMetadataValue(String),
 }
 
@@ -181,16 +181,16 @@ impl fmt::Display for ParseError {
 #[cfg(feature = "std")]
 impl std::error::Error for ParseError {}
 
-/// Parst einen Sample-Selector-String laut Spec §7.4.8 BNF.
+/// Parses a sample-selector string per Spec §7.4.8 BNF.
 ///
 /// # Errors
-/// `ParseError` bei BNF-Verletzung.
+/// `ParseError` on BNF violation.
 pub fn parse_sample_selector(src: &str) -> Result<SampleSelector, ParseError> {
     let mut p = Parser::new(src);
     p.skip_whitespace();
 
-    // Spec §7.4.8: Selector kann starten mit FilterExpression oder mit
-    // einer (durch Komma optional separierten) Sequenz von
+    // Spec §7.4.8: a selector can start with a FilterExpression or with
+    // a (optionally comma-separated) sequence of
     // MetadataExpressions.
     let filter = if p.peek_metadata_key().is_some() {
         None
@@ -204,8 +204,8 @@ pub fn parse_sample_selector(src: &str) -> Result<SampleSelector, ParseError> {
         if p.is_eof() {
             break;
         }
-        // Optionales `,` zwischen Filter und Metadata bzw. zwischen
-        // mehreren Metadata-Expressions.
+        // Optional `,` between the filter and metadata, or between
+        // multiple metadata expressions.
         let _ = p.consume_char(',');
         p.skip_whitespace();
         if p.peek_metadata_key().is_none() {

@@ -14,44 +14,44 @@
 //!  +---------------+---------------+---------------+---------------+
 //! ```
 //!
-//! - `sequence_nr` ist Little-Endian (Spec §8.3.2.3).
-//! - `client_key` ist nur present, wenn `session_id <= 127`
+//! - `sequence_nr` is little-endian (Spec §8.3.2.3).
+//! - `client_key` is only present when `session_id <= 127`
 //!   (§8.3.2.1).
 //!
-//! Reservierte Werte:
+//! Reserved values:
 //! - `SESSION_ID_NONE_WITH_CLIENT_KEY = 0x00`
 //! - `SESSION_ID_NONE_WITHOUT_CLIENT_KEY = 0x80`
 
 use crate::error::XrceError;
 use crate::serial_number::SerialNumber16;
 
-/// Laenge des `ClientKey`-Feldes in Bytes.
+/// Length of the `ClientKey` field in bytes.
 pub const CLIENT_KEY_LEN: usize = 4;
 
-/// Reservierte session_id ohne ProxyClient-Bindung, mit ClientKey
-/// im Header (Spec §8.3.2.1).
+/// Reserved session_id with no ProxyClient binding, with a ClientKey
+/// in the header (Spec §8.3.2.1).
 pub const SESSION_ID_NONE_WITH_CLIENT_KEY: u8 = 0x00;
 
-/// Reservierte session_id ohne ProxyClient-Bindung, ohne ClientKey
-/// im Header — Authentifizierung via Source-Address (Spec §8.3.2.1).
+/// Reserved session_id with no ProxyClient binding, without a ClientKey
+/// in the header — authentication via source address (Spec §8.3.2.1).
 pub const SESSION_ID_NONE_WITHOUT_CLIENT_KEY: u8 = 0x80;
 
-/// `SessionId`. Werte 0..=127 → ClientKey im Header; 128..=255 →
-/// ohne ClientKey.
+/// `SessionId`. Values 0..=127 → ClientKey in the header; 128..=255 →
+/// without ClientKey.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct SessionId(pub u8);
 
 impl SessionId {
-    /// `true`, wenn der MessageHeader das `client_key`-Feld traegt.
+    /// `true` when the MessageHeader carries the `client_key` field.
     #[must_use]
     pub fn carries_client_key(self) -> bool {
         self.0 <= 127
     }
 }
 
-/// `StreamId`. Werte:
+/// `StreamId`. Values:
 /// - `0` = `STREAMID_NONE` (Spec §8.3.5.11/12: ACKNACK/HEARTBEAT/
-///   TIMESTAMP nutzen den NONE-Stream).
+///   TIMESTAMP use the NONE stream).
 /// - `1..=127` = best-effort.
 /// - `128..=255` = reliable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -65,19 +65,19 @@ impl StreamId {
     /// `STREAMID_BUILTIN_RELIABLE` (Spec §8.3.2.2).
     pub const BUILTIN_RELIABLE: Self = Self(0x80);
 
-    /// `true` fuer reliable Streams (id >= 128).
+    /// `true` for reliable streams (id >= 128).
     #[must_use]
     pub fn is_reliable(self) -> bool {
         self.0 >= 128
     }
 
-    /// `true` fuer best-effort Streams (1..=127).
+    /// `true` for best-effort streams (1..=127).
     #[must_use]
     pub fn is_best_effort(self) -> bool {
         self.0 >= 1 && self.0 <= 127
     }
 
-    /// `true` fuer `STREAMID_NONE`.
+    /// `true` for `STREAMID_NONE`.
     #[must_use]
     pub fn is_none(self) -> bool {
         self.0 == 0
@@ -89,10 +89,10 @@ impl StreamId {
 pub struct ClientKey(pub [u8; CLIENT_KEY_LEN]);
 
 impl ClientKey {
-    /// `CLIENTKEY_INVALID` per §7.8.2.2 — alle Bytes 0.
+    /// `CLIENTKEY_INVALID` per §7.8.2.2 — all bytes 0.
     pub const INVALID: Self = Self([0; CLIENT_KEY_LEN]);
 
-    /// Roher Slice.
+    /// Raw slice.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8; CLIENT_KEY_LEN] {
         &self.0
@@ -102,27 +102,27 @@ impl ClientKey {
 /// XRCE Message-Header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct MessageHeader {
-    /// Session-Identifier; entscheidet ob `client_key` present ist.
+    /// Session identifier; decides whether `client_key` is present.
     pub session_id: SessionId,
-    /// Stream-Identifier (best-effort/reliable/none).
+    /// Stream identifier (best-effort/reliable/none).
     pub stream_id: StreamId,
-    /// RFC-1982 16-bit Serial Number (Little-Endian on wire).
+    /// RFC-1982 16-bit serial number (little-endian on the wire).
     pub sequence_nr: SerialNumber16,
-    /// Optionaler ClientKey — nur bei `session_id <= 127`.
+    /// Optional ClientKey — only when `session_id <= 127`.
     pub client_key: Option<ClientKey>,
 }
 
 impl MessageHeader {
-    /// Wire-Size **ohne** ClientKey: 4 Bytes.
+    /// Wire size **without** ClientKey: 4 bytes.
     pub const WIRE_SIZE_NO_KEY: usize = 4;
-    /// Wire-Size **mit** ClientKey: 8 Bytes.
+    /// Wire size **with** ClientKey: 8 bytes.
     pub const WIRE_SIZE_WITH_KEY: usize = 4 + CLIENT_KEY_LEN;
 
-    /// Konstruktor ohne ClientKey (session_id muss >=128 sein).
+    /// Constructor without a ClientKey (session_id must be >=128).
     ///
     /// # Errors
-    /// `ValueOutOfRange`, wenn `session_id <= 127` waere — der Header
-    /// muesste dann einen ClientKey tragen.
+    /// `ValueOutOfRange` if `session_id <= 127` — the header
+    /// would then have to carry a ClientKey.
     pub fn without_client_key(
         session_id: SessionId,
         stream_id: StreamId,
@@ -141,10 +141,10 @@ impl MessageHeader {
         })
     }
 
-    /// Konstruktor mit ClientKey (session_id muss <=127 sein).
+    /// Constructor with a ClientKey (session_id must be <=127).
     ///
     /// # Errors
-    /// `ValueOutOfRange`, wenn `session_id >= 128` waere.
+    /// `ValueOutOfRange` if `session_id >= 128`.
     pub fn with_client_key(
         session_id: SessionId,
         stream_id: StreamId,
@@ -164,7 +164,7 @@ impl MessageHeader {
         })
     }
 
-    /// Wire-Size in Bytes (4 oder 8).
+    /// Wire size in bytes (4 or 8).
     #[must_use]
     pub fn wire_size(&self) -> usize {
         if self.client_key.is_some() {
@@ -174,11 +174,11 @@ impl MessageHeader {
         }
     }
 
-    /// Encodiert den Header in den gegebenen Buffer und liefert die
-    /// geschriebene Anzahl Bytes.
+    /// Encodes the header into the given buffer and returns the
+    /// number of bytes written.
     ///
     /// # Errors
-    /// `WriteOverflow`, wenn `out.len() < wire_size()`.
+    /// `WriteOverflow` if `out.len() < wire_size()`.
     pub fn write_to(&self, out: &mut [u8]) -> Result<usize, XrceError> {
         let needed = self.wire_size();
         if out.len() < needed {
@@ -198,12 +198,12 @@ impl MessageHeader {
         Ok(needed)
     }
 
-    /// Decodiert einen Header aus einem Slice. Liefert
+    /// Decodes a header from a slice. Returns
     /// `(header, bytes_consumed)`.
     ///
     /// # Errors
-    /// `UnexpectedEof`, wenn `bytes` zu kurz fuer die je nach
-    /// `session_id` gewaehlte Variante ist.
+    /// `UnexpectedEof` if `bytes` is too short for the variant
+    /// chosen based on `session_id`.
     pub fn read_from(bytes: &[u8]) -> Result<(Self, usize), XrceError> {
         if bytes.len() < Self::WIRE_SIZE_NO_KEY {
             return Err(XrceError::UnexpectedEof {
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn header_constructor_rejects_inconsistent_no_key() {
-        // session_id=10 (<=127) waere mit client_key — without_client_key muss fail
+        // session_id=10 (<=127) would carry a client_key — without_client_key must fail
         let res = MessageHeader::without_client_key(
             SessionId(10),
             StreamId::NONE,
@@ -308,7 +308,7 @@ mod tests {
 
     #[test]
     fn header_constructor_rejects_inconsistent_with_key() {
-        // session_id=200 (>=128) waere ohne client_key — with_client_key muss fail
+        // session_id=200 (>=128) would have no client_key — with_client_key must fail
         let res = MessageHeader::with_client_key(
             SessionId(200),
             StreamId::NONE,
@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn header_decode_truncated_no_key() {
-        let buf = [0x80u8, 0x01, 0x00]; // 3 Byte
+        let buf = [0x80u8, 0x01, 0x00]; // 3 bytes
         let res = MessageHeader::read_from(&buf);
         assert!(matches!(
             res,
@@ -397,8 +397,8 @@ mod tests {
 
     #[test]
     fn header_decode_truncated_with_key() {
-        // session_id=0 (<=127) → braucht 8 Byte
-        let buf = [0x00u8, 0x01, 0x00, 0x00, 0xAA]; // 5 Byte
+        // session_id=0 (<=127) → needs 8 bytes
+        let buf = [0x00u8, 0x01, 0x00, 0x00, 0xAA]; // 5 bytes
         let res = MessageHeader::read_from(&buf);
         assert!(matches!(
             res,
@@ -415,7 +415,7 @@ mod tests {
             ClientKey::INVALID,
         )
         .unwrap();
-        let mut buf = [0u8; 4]; // braucht 8
+        let mut buf = [0u8; 4]; // needs 8
         let res = h.write_to(&mut buf);
         assert!(matches!(
             res,

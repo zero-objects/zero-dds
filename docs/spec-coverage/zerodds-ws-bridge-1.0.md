@@ -2,6 +2,10 @@
 
 **Quelle:** `docs/specs/zerodds-ws-bridge-1.0.md`
 
+Implementation:
+
+- `crates/websocket-bridge/` — DDS↔WebSocket-Bridge.
+
 ## §1 Conformance-Levels
 
 ### §1 L1-L6 Conformance-Matrix
@@ -378,4 +382,4 @@ Protocol-Change.
 
 Test-Lauf: `cargo test -p zerodds-websocket-bridge` — Tests grün, 0 failed.
 
-Offene Punkte und Decision-Records: siehe `zerodds-ws-bridge-1.0.open.md`.
+Keine offenen Punkte oder Decision-Records — alle Items `done` / `n/a (informative)`.

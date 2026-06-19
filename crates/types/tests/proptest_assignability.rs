@@ -1,12 +1,12 @@
-//! Property-Tests fuer XTypes-Assignability-Invarianten.
+//! Property tests for XTypes assignability invariants.
 //!
-//! Spec OMG XTypes 1.3 §7.2.4 — semantische Invarianten:
-//! 1. **Reflexivität:** `is_assignable(T, T) == Yes` für alle T.
-//! 2. **Anti-Symmetrie für Primitive:** zwei verschiedene primitive
-//!    Types sind **nicht** wechselseitig assignable (außer
+//! Spec OMG XTypes 1.3 §7.2.4 — semantic invariants:
+//! 1. **Reflexivity:** `is_assignable(T, T) == Yes` for all T.
+//! 2. **Anti-symmetry for primitives:** two distinct primitive types
+//!    are **not** mutually assignable (except
 //!    `is_assignable(T, T)`).
-//! 3. **Konsistenz mit Roundtrip:** `T → bytes → T'` erhält
-//!    `is_assignable(T, T') == Yes` (encode/decode-Roundtrip).
+//! 3. **Consistency with roundtrip:** `T → bytes → T'` preserves
+//!    `is_assignable(T, T') == Yes` (encode/decode roundtrip).
 
 #![allow(
     clippy::expect_used,
@@ -64,8 +64,8 @@ fn arb_type_identifier() -> impl Strategy<Value = TypeIdentifier> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// Spec §7.2.4 — Reflexivität: `is_assignable(T, T)` MUSS `Yes`
-    /// für jede TypeIdentifier-Variante sein.
+    /// Spec §7.2.4 — reflexivity: `is_assignable(T, T)` MUST be `Yes`
+    /// for every TypeIdentifier variant.
     #[test]
     fn assignability_is_reflexive_for_primitives(p in primitive_kinds()) {
         let t = TypeIdentifier::Primitive(p);
@@ -77,7 +77,7 @@ proptest! {
         );
     }
 
-    /// Reflexivität für String-Types mit gleichem bound.
+    /// Reflexivity for string types with the same bound.
     #[test]
     fn assignability_is_reflexive_for_string8_small(bound in any::<u8>()) {
         let t = TypeIdentifier::String8Small { bound };
@@ -99,9 +99,9 @@ proptest! {
         );
     }
 
-    /// Spec §7.2.4 — distinct primitives sind paarweise nicht
-    /// assignable. (Boolean und Byte z.B. sind unterschiedliche
-    /// Wire-Formate und MUESSEN reject werden.)
+    /// Spec §7.2.4 — distinct primitives are pairwise not assignable.
+    /// (Boolean and Byte, for example, are different wire formats and
+    /// MUST be rejected.)
     #[test]
     fn distinct_primitives_not_assignable(
         a in primitive_kinds(),

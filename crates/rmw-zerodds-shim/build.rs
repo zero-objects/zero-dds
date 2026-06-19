@@ -1,8 +1,8 @@
-//! build.rs — Generiert include/rmw_zerodds.h via cbindgen.
+//! build.rs — generates include/rmw_zerodds.h via cbindgen.
 //!
-//! Build-Scripts sind Tooling-Code (laufen nur zur Compile-Zeit, nicht im
-//! Runtime-Pfad) — `expect`/`panic` sind hier akzeptabel, weil ein Fehler
-//! in build.rs ohnehin den Build abbricht.
+//! Build scripts are tooling code (run only at compile time, not on the
+//! runtime path) — `expect`/`panic` are acceptable here, because an error
+//! in build.rs aborts the build anyway.
 
 #![allow(clippy::expect_used, clippy::panic, missing_docs)]
 

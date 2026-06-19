@@ -26,7 +26,7 @@ pub enum ReturnStatus {
 
 /// Spec §8.3.2 + Tab in §8.3 — HTTP-Status-Code-Mapping.
 ///
-/// `Ok` haengt vom HTTP-Method ab:
+/// `Ok` depends on the HTTP method:
 /// * POST (create) → 201 Created.
 /// * DELETE → 204 No Content.
 /// * GET → 200 OK.

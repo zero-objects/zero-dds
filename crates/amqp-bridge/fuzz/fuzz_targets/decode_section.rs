@@ -1,11 +1,11 @@
 #![no_main]
-//! Fuzz-Target: Message-Section-Dekoder.
+//! Fuzz target: message-section decoder.
 //!
 //! Spec OASIS amqp-1.0-messaging §3.2 — Header / Delivery-
 //! Annotations / Message-Annotations / Properties /
 //! Application-Properties / Body / Footer. `MessageSection::decode`
-//! routet auf den passenden Composite-Pfad — wir fuzzen den Switch
-//! plus die einzelnen Body-Decoder.
+//! routes to the matching composite path — we fuzz the switch
+//! plus the individual body decoders.
 
 use libfuzzer_sys::fuzz_target;
 

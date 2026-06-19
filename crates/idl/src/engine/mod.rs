@@ -2,21 +2,21 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Earley-Parse-Engine.
 //!
-//! Die Engine liest Token-Streams und produziert Parse-Forests, basierend
-//! auf einer Grammar aus [`crate::grammar`]. Implementierung verteilt sich
-//! ueber mehrere Submodule:
+//! The engine reads token streams and produces parse forests, based
+//! on a grammar from [`crate::grammar`]. The implementation is split
+//! across several submodules:
 //!
-//! - [`state`] — Grunddatentypen [`EarleyItem`] und [`StateSet`] (Task 1.3).
-//! - [`recognize`] — Scan/Predict/Complete-Algorithmus (Task 1.4).
-//! - Parse-Forest-Konstruktion folgt in Task 2.4.
+//! - [`state`] — base data types [`EarleyItem`] and [`StateSet`] (Task 1.3).
+//! - [`recognize`] — scan/predict/complete algorithm (Task 1.4).
+//! - Parse-forest construction follows in Task 2.4.
 //!
-//! Dieses Modul liefert ausserdem die Top-Level-Facade [`Engine`] (Task 1.5):
-//! ein Wrapper um Grammar + [`Recognizer`], der beim Konstruieren die Grammar
-//! validiert ([`crate::grammar::validate`]) und bei der Recognition die
-//! Validation-Errors blockiert. Externe Konsumenten (z.B. `tools/idlc`)
-//! arbeiten gegen diese Facade, nicht direkt gegen den Recognizer.
+//! This module also provides the top-level facade [`Engine`] (Task 1.5):
+//! a wrapper around grammar + [`Recognizer`] that validates the grammar
+//! on construction ([`crate::grammar::validate`]) and blocks the
+//! validation errors during recognition. External consumers (e.g. `tools/idlc`)
+//! work against this facade, not directly against the recognizer.
 //!
-//! Siehe RFC 0001 §5.2.
+//! See RFC 0001 §5.2.
 
 pub mod recognize;
 pub mod state;
@@ -31,28 +31,28 @@ use crate::grammar::{
 };
 use crate::lexer::Token;
 
-/// High-Level-Fehler beim Engine-Einsatz.
+/// High-level error when using the engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EngineError {
-    /// Die Grammar enthaelt mindestens einen `Severity::Error`-Befund
-    /// (Invalid-Start oder Dangling-Reference). Recognition wird in diesem
-    /// Fall ohne Versuch gestoppt — die Resultate waeren sonst irrefuehrend.
+    /// The grammar contains at least one `Severity::Error` finding
+    /// (invalid-start or dangling-reference). Recognition is stopped in this
+    /// case without an attempt — the results would otherwise be misleading.
     InvalidGrammar(ValidationReport),
-    /// Recognition lief ohne Engine-Fehler durch, aber die Grammar hat die
-    /// Token-Sequenz nicht akzeptiert.
+    /// Recognition ran through without an engine error, but the grammar did
+    /// not accept the token sequence.
     NotAccepted {
-        /// Anzahl der konsumierten Tokens — letzte Position, an der noch
-        /// Items vorhanden waren (best-effort fuer Diagnostik).
+        /// Number of consumed tokens — the last position at which items
+        /// were still present (best-effort for diagnostics).
         last_consumed: usize,
     },
 }
 
-/// Engine-Facade.
+/// Engine facade.
 ///
-/// Konstruktion validiert die Grammar einmalig. Anschliessende
-/// `recognize`-Aufrufe nutzen den persistierten Validation-Report, um
-/// Aufrufe auf kaputte Grammatiken sofort abzulehnen, ohne den
-/// Recognizer-Pfad zu durchlaufen.
+/// Construction validates the grammar once. Subsequent
+/// `recognize` calls use the persisted validation report to
+/// immediately reject calls on broken grammars, without going through the
+/// recognizer path.
 #[derive(Debug, Clone)]
 pub struct Engine<'g> {
     grammar: &'g Grammar,
@@ -61,15 +61,15 @@ pub struct Engine<'g> {
 }
 
 impl<'g> Engine<'g> {
-    /// Konstruiert eine Engine fuer die gegebene Grammar.
+    /// Constructs an engine for the given grammar.
     ///
-    /// Validation und EBNF-Compile laufen einmal sofort. Bei
-    /// `Severity::Error`-Befunden bleibt die Engine trotzdem
-    /// konstruierbar; `recognize` lehnt dann jedoch jeden Aufruf
-    /// mit `EngineError::InvalidGrammar` ab.
+    /// Validation and EBNF compile run once immediately. On
+    /// `Severity::Error` findings the engine is still
+    /// constructible; `recognize` then rejects every call
+    /// with `EngineError::InvalidGrammar`.
     ///
-    /// Der Compile-Pass desugart `Symbol::Repeat`/`Symbol::Choice` zu
-    /// rekursiven Hilfs-Productions; siehe [`crate::grammar::compile`].
+    /// The compile pass desugars `Symbol::Repeat`/`Symbol::Choice` into
+    /// recursive helper productions; see [`crate::grammar::compile`].
     #[must_use]
     pub fn new(grammar: &'g Grammar) -> Self {
         let validation = validate(grammar);
@@ -81,33 +81,33 @@ impl<'g> Engine<'g> {
         }
     }
 
-    /// Zugriff auf die EBNF-desugarte Form der Grammar. Wird vom
-    /// Recognizer benutzt; externe CST-Bauer brauchen sie ebenfalls
-    /// (rufe [`build_cst`](crate::cst::build_cst) mit dieser Referenz).
+    /// Access to the EBNF-desugared form of the grammar. Used by the
+    /// recognizer; external CST builders need it too
+    /// (call [`build_cst`](crate::cst::build_cst) with this reference).
     #[must_use]
     pub fn compiled_grammar(&self) -> &CompiledGrammar {
         &self.compiled
     }
 
-    /// Zugriff auf den Validation-Report (Errors + Warnings).
+    /// Access to the validation report (errors + warnings).
     #[must_use]
     pub fn validation_report(&self) -> &ValidationReport {
         &self.validation
     }
 
-    /// Die zugrundeliegende Grammar.
+    /// The underlying grammar.
     #[must_use]
     pub fn grammar(&self) -> &'g Grammar {
         self.grammar
     }
 
-    /// Recognition fuer eine Token-Sequenz.
+    /// Recognition for a token sequence.
     ///
     /// # Errors
-    /// Liefert [`EngineError::InvalidGrammar`], wenn die Grammar bei der
-    /// Konstruktion `Severity::Error`-Befunde hatte; oder
-    /// [`EngineError::NotAccepted`], wenn die Recognition durchlief, aber
-    /// die Grammar die Token-Sequenz ablehnte.
+    /// Returns [`EngineError::InvalidGrammar`] if the grammar had
+    /// `Severity::Error` findings at construction; or
+    /// [`EngineError::NotAccepted`] if recognition ran through but
+    /// the grammar rejected the token sequence.
     pub fn recognize(&self, tokens: &[Token<'_>]) -> Result<RecognitionResult, EngineError> {
         if self.validation.has_errors() {
             return Err(EngineError::InvalidGrammar(self.validation.clone()));
@@ -123,12 +123,12 @@ impl<'g> Engine<'g> {
     }
 }
 
-/// Convenience-Funktion: Engine bauen + Recognition in einem Schritt.
+/// Convenience function: build engine + recognition in one step.
 ///
-/// Nutzbar fuer einmalige Aufrufe in Tests oder im `tools/idlc`-CLI. Fuer
-/// wiederholte Recognition auf derselben Grammar ist [`Engine::new`] +
-/// mehrfaches [`Engine::recognize`] effizienter (Validation laeuft nur
-/// einmal).
+/// Usable for one-off calls in tests or in the `tools/idlc` CLI. For
+/// repeated recognition on the same grammar, [`Engine::new`] +
+/// multiple [`Engine::recognize`] is more efficient (validation runs only
+/// once).
 ///
 /// # Errors
 /// Wie [`Engine::recognize`].
@@ -145,7 +145,7 @@ mod tests {
         Alternative, IdlVersion, Production, ProductionId, SpecRef, Symbol, TokenKind,
     };
 
-    /// Test-Helper: Token aus reinem TokenKind ohne Quellort.
+    /// Test helper: token from a pure TokenKind without a source location.
     fn t(kind: TokenKind) -> Token<'static> {
         Token::synthetic(kind)
     }
@@ -174,7 +174,7 @@ mod tests {
         token_rules: &[],
     };
 
-    /// Kaputte Grammar: Start zeigt auf nicht existierende Production.
+    /// Broken grammar: start points to a non-existent production.
     const G_INVALID_START: Grammar = Grammar {
         name: "invalid_start",
         version: IdlVersion::V4_2,
@@ -183,7 +183,7 @@ mod tests {
         token_rules: &[],
     };
 
-    /// Kaputte Grammar: Dangling-Nonterminal-Referenz.
+    /// Broken grammar: dangling nonterminal reference.
     const G_DANGLING: Grammar = Grammar {
         name: "dangling",
         version: IdlVersion::V4_2,
@@ -217,7 +217,7 @@ mod tests {
     #[test]
     fn engine_grammar_accessor_returns_same_reference() {
         let engine = Engine::new(&G_OK);
-        // Pointer-Vergleich ueber identitaet des Slices.
+        // Pointer comparison via slice identity.
         assert!(std::ptr::eq(engine.grammar(), &G_OK));
     }
 
@@ -279,7 +279,7 @@ mod tests {
         let engine = Engine::new(&G_OK);
         let _first = engine.recognize(&[t(TokenKind::Keyword("x"))]);
         let _second = engine.recognize(&[t(TokenKind::Keyword("x"))]);
-        // Report sollte nicht durch Recognize-Aufrufe modifiziert werden.
+        // The report should not be modified by recognize calls.
         assert!(engine.validation_report().is_empty());
     }
 }

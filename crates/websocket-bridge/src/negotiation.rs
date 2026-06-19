@@ -1,35 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Generic Extension- und Subprotocol-Negotiation nach RFC 6455 §9.
+//! Generic extension and subprotocol negotiation per RFC 6455 §9.
 //!
-//! Neben permessage-deflate (RFC 7692, siehe `permessage_deflate.rs`)
-//! braucht der Handshake-Layer Hilfen fuer:
+//! Besides permessage-deflate (RFC 7692, see `permessage_deflate.rs`)
+//! the handshake layer needs helpers for:
 //!
-//! - **Sec-WebSocket-Extensions** generisches Parsing einer
-//!   Extension-Liste mit Parametern (z.B. `foo; bar=baz, qux`).
-//! - **Sec-WebSocket-Protocol** Subprotocol-Negotiation (Server
-//!   waehlt eines der vom Client angebotenen Subprotokolle).
+//! - **Sec-WebSocket-Extensions** generic parsing of an
+//!   extension list with parameters (e.g. `foo; bar=baz, qux`).
+//! - **Sec-WebSocket-Protocol** subprotocol negotiation (the server
+//!   picks one of the subprotocols offered by the client).
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// Eine geparste Extension mit optionalen Parametern.
+/// A parsed extension with optional parameters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtensionOffer {
-    /// Extension-Name (token, case-insensitive).
+    /// Extension name (token, case-insensitive).
     pub name: String,
-    /// Liste der `name=value`-Parameter; `value=None` entspricht
-    /// einem Boolean-Parameter (nur Name).
+    /// List of `name=value` parameters; `value=None` corresponds to
+    /// a boolean parameter (name only).
     pub params: Vec<(String, Option<String>)>,
 }
 
-/// Parst den Wert eines `Sec-WebSocket-Extensions`-Headers in eine
-/// Liste von `ExtensionOffer`s.
+/// Parses the value of a `Sec-WebSocket-Extensions` header into a
+/// list of `ExtensionOffer`s.
 ///
-/// Beispiel: `permessage-deflate; client_max_window_bits, foo`
-/// → 2 Eintraege, der erste mit Parameter `client_max_window_bits`
-/// (kein Wert), der zweite ohne Parameter.
+/// Example: `permessage-deflate; client_max_window_bits, foo`
+/// → 2 entries, the first with parameter `client_max_window_bits`
+/// (no value), the second without parameters.
 #[must_use]
 pub fn parse_extensions(header: &str) -> Vec<ExtensionOffer> {
     let mut offers = Vec::new();
@@ -66,8 +66,8 @@ pub fn parse_extensions(header: &str) -> Vec<ExtensionOffer> {
     offers
 }
 
-/// Parst den Wert eines `Sec-WebSocket-Protocol`-Headers in eine
-/// Liste von Subprotocol-Tokens.
+/// Parses the value of a `Sec-WebSocket-Protocol` header into a
+/// list of subprotocol tokens.
 #[must_use]
 pub fn parse_subprotocols(header: &str) -> Vec<String> {
     header
@@ -77,9 +77,9 @@ pub fn parse_subprotocols(header: &str) -> Vec<String> {
         .collect()
 }
 
-/// Server-Pfad: waehlt das erste vom Client angebotene Subprotocol,
-/// das in der Server-Preferenzliste vorkommt. Liefert `None` wenn
-/// keine Schnittmenge.
+/// Server path: picks the first subprotocol offered by the client
+/// that appears in the server preference list. Returns `None` if
+/// there is no intersection.
 #[must_use]
 pub fn select_subprotocol(client_offered: &[String], server_preferred: &[&str]) -> Option<String> {
     for offer in client_offered {
@@ -92,10 +92,10 @@ pub fn select_subprotocol(client_offered: &[String], server_preferred: &[&str]) 
     None
 }
 
-/// Spec §4.2.2 — Spec-konformer Default-Header-Name fuer Subprotocol.
+/// Spec §4.2.2 — spec-conformant default header name for the subprotocol.
 pub const SUBPROTOCOL_HEADER: &str = "Sec-WebSocket-Protocol";
 
-/// Spec §4.2.1 — Spec-konformer Default-Header-Name fuer Extensions.
+/// Spec §4.2.1 — spec-conformant default header name for extensions.
 pub const EXTENSIONS_HEADER: &str = "Sec-WebSocket-Extensions";
 
 #[cfg(test)]

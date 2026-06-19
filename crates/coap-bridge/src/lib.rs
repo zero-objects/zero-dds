@@ -3,47 +3,47 @@
 
 //! Crate `zerodds-coap-bridge`. Safety classification: **STANDARD**.
 //!
-//! CoAP (RFC 7252) Wire-Codec + Reliability + Discovery + Bridge —
-//! pure-Rust `no_std + alloc`, `forbid(unsafe_code)`. Implementiert
-//! neben dem reinen Wire-Codec auch alle CoAP-Begleit-Schichten:
-//! Reliability/Congestion-Control (§4.2-§4.7), Request/Response-
-//! Matching (§5.3), Block-Wise-Transfer (RFC 7959), Resource-Discovery
-//! im CoRE-Link-Format (RFC 6690), Observe-Registry (RFC 7641),
-//! Multicast-Diskovery, Caching/Proxying (§5.6 + §5.7), DTLS-Mode-
-//! Marker (§9) und einen Bidirectional-CoAP↔DDS-Topic-Bridge.
+//! CoAP (RFC 7252) wire codec + reliability + discovery + bridge —
+//! pure Rust `no_std + alloc`, `forbid(unsafe_code)`. Beyond the bare
+//! wire codec it also implements all the accompanying CoAP layers:
+//! reliability/congestion control (§4.2-§4.7), request/response
+//! matching (§5.3), block-wise transfer (RFC 7959), resource discovery
+//! in CoRE-Link format (RFC 6690), observe registry (RFC 7641),
+//! multicast discovery, caching/proxying (§5.6 + §5.7), DTLS mode
+//! marker (§9), and a bidirectional CoAP↔DDS topic bridge.
 //!
-//! Spec-Referenzen:
+//! Spec references:
 //!
 //! - **RFC 7252** — CoAP (Constrained Application Protocol).
 //! - **RFC 7641** — Observing Resources in CoAP.
 //! - **RFC 7959** — Block-Wise Transfer.
 //! - **RFC 6690** — CoRE-Link-Format.
 //!
-//! ## Schichten-Position
+//! ## Layer position
 //!
-//! Layer 5 — Bridges. Substrat fuer DDS↔IoT-Endpoint-Mapping
-//! (Constrained-Devices, OPC-UA-PubSub-Mapping, ROS-2-on-Constrained-
-//! Bridges).
+//! Layer 5 — bridges. Substrate for DDS↔IoT endpoint mapping
+//! (constrained devices, OPC-UA-PubSub mapping, ROS-2-on-constrained
+//! bridges).
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API (as of 1.0.0-rc.1)
 //!
-//! - [`CoapMessage`] / [`CoapCode`] / [`MessageType`] — Message-Modell
+//! - [`CoapMessage`] / [`CoapCode`] / [`MessageType`] — message model
 //!   (§3 + §12.1).
-//! - [`encode`] / [`decode`] / [`CodecError`] — Wire-Codec.
-//! - [`CoapOption`] / [`OptionNumber`] / [`OptionValue`] — Options
-//!   mit Delta-Encoding + Extended-Length (§3.1, §5.10).
+//! - [`encode`] / [`decode`] / [`CodecError`] — wire codec.
+//! - [`CoapOption`] / [`OptionNumber`] / [`OptionValue`] — options
+//!   with delta encoding + extended length (§3.1, §5.10).
 //! - [`BlockOption`] / [`BlockValue`] / [`BlockReassembler`] /
-//!   [`BlockError`] — Block-Wise-Transfer (RFC 7959).
-//! - [`CoreLink`] / [`encode_links`] / [`decode_links`] — Resource-
-//!   Discovery (RFC 6690).
+//!   [`BlockError`] — block-wise transfer (RFC 7959).
+//! - [`CoreLink`] / [`encode_links`] / [`decode_links`] — resource
+//!   discovery (RFC 6690).
 //! - [`OBSERVE_OPTION_NUMBER`] / [`ObserveRegistry`] /
-//!   [`ObserverEntry`] — RFC 7641 Observer-State.
+//!   [`ObserverEntry`] — RFC 7641 observer state.
 //! - [`PendingConfirmable`] / [`ReliabilityTracker`] / [`TickOutput`] /
-//!   [`ACK_TIMEOUT_MS`] / [`MAX_RETRANSMIT`] — Reliability §4.
+//!   [`ACK_TIMEOUT_MS`] / [`MAX_RETRANSMIT`] — reliability §4.
 //! - [`CoapDdsBridge`] / [`BridgeOp`] / [`BridgeError`] /
-//!   [`map_method`] / [`parse_dds_path`] — CoAP↔DDS-Topic-Mapping.
+//!   [`map_method`] / [`parse_dds_path`] — CoAP↔DDS topic mapping.
 //!
-//! ## Beispiel
+//! ## Example
 //!
 //! ```rust
 //! use zerodds_coap_bridge::{decode, encode, CoapCode, CoapMessage, MessageType};
@@ -94,12 +94,16 @@ pub mod core_link;
 #[cfg(feature = "daemon")]
 pub mod daemon;
 pub mod dtls;
+#[cfg(feature = "dtls")]
+pub mod dtls_transport;
 pub mod matching;
 pub mod message;
 pub mod method_props;
 pub mod multicast;
 pub mod observe;
 pub mod option;
+#[cfg(feature = "oscore")]
+pub mod oscore;
 pub mod reliability;
 pub mod uri;
 

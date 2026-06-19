@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! WebSocket↔DDS-Topic-Bridge.
+//! WebSocket↔DDS topic bridge.
 //!
-//! Wire-Format JSON (Text-Frames):
+//! Wire format JSON (text frames):
 //!
 //! Subscribe (Client → Server):
 //! ```json
@@ -29,53 +29,53 @@ use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// Bridge-Operation aus dem JSON-Frame.
+/// Bridge operation from the JSON frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BridgeOp {
     /// Subscribe to topic.
     Subscribe {
-        /// Topic-Name.
+        /// Topic name.
         topic: String,
         /// Optional client-side subscription-id (echoed in notifications).
         id: Option<String>,
     },
     /// Unsubscribe.
     Unsubscribe {
-        /// Topic-Name.
+        /// Topic name.
         topic: String,
         /// Subscription-id.
         id: Option<String>,
     },
     /// Publish a sample.
     Publish {
-        /// Topic-Name.
+        /// Topic name.
         topic: String,
-        /// Raw JSON-encoded sample (Caller-Layer mappt zu IDL-Type).
+        /// Raw JSON-encoded sample (the caller layer maps it to an IDL type).
         data: String,
     },
 }
 
-/// Notification an Subscriber.
+/// Notification to a subscriber.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Notification {
-    /// Topic-Name.
+    /// Topic name.
     pub topic: String,
-    /// Sample-JSON.
+    /// Sample JSON.
     pub data: String,
-    /// Optional Subscription-Id (echo).
+    /// Optional subscription id (echo).
     pub subscription_id: Option<String>,
 }
 
-/// Bridge-Fehler.
+/// Bridge error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BridgeError {
-    /// JSON nicht parsbar.
+    /// JSON not parseable.
     BadJson(String),
-    /// `op`-Feld fehlt oder unbekannt.
+    /// The `op` field is missing or unknown.
     UnknownOp(String),
-    /// `topic`-Feld fehlt oder leer.
+    /// The `topic` field is missing or empty.
     MissingTopic,
-    /// Daten-Feld fehlt bei `publish`.
+    /// The data field is missing on `publish`.
     MissingData,
 }
 
@@ -93,9 +93,9 @@ impl core::fmt::Display for BridgeError {
 #[cfg(feature = "std")]
 impl std::error::Error for BridgeError {}
 
-/// Minimal-JSON-Parser fuer das Bridge-Wire-Format. Erkennt Top-Level-
-/// Objekt mit String/Object-Werten — keinen vollen JSON-Stack
-/// (Nested-Objekte landen als Roh-String im `data`-Feld).
+/// Minimal JSON parser for the bridge wire format. Recognizes a top-level
+/// object with string/object values — not a full JSON stack
+/// (nested objects end up as a raw string in the `data` field).
 fn parse_top_level_object(input: &str) -> Result<BTreeMap<String, String>, BridgeError> {
     let s = input.trim();
     let s = s
@@ -263,10 +263,10 @@ fn parse_json_scalar(
     Ok(src[start..end].to_string())
 }
 
-/// Parst ein WebSocket-Text-Frame in eine Bridge-Operation.
+/// Parses a WebSocket text frame into a bridge operation.
 ///
 /// # Errors
-/// Siehe [`BridgeError`].
+/// See [`BridgeError`].
 pub fn parse_op(text: &str) -> Result<BridgeOp, BridgeError> {
     let map = parse_top_level_object(text)?;
     let op = map
@@ -289,7 +289,7 @@ pub fn parse_op(text: &str) -> Result<BridgeOp, BridgeError> {
     }
 }
 
-/// Render eine Notification zu einem JSON-Text-Frame.
+/// Render a notification to a JSON text frame.
 #[must_use]
 pub fn render_notification(n: &Notification) -> String {
     let mut s = alloc::format!(
@@ -311,14 +311,14 @@ fn json_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// Subscription-Registry. Pro WebSocket-Connection ein Set von Topics.
+/// Subscription registry. One set of topics per WebSocket connection.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SubscriptionRegistry {
     by_connection: BTreeMap<u64, BTreeMap<String, Option<String>>>,
 }
 
 impl SubscriptionRegistry {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -340,13 +340,13 @@ impl SubscriptionRegistry {
             .unwrap_or(false)
     }
 
-    /// Connection schliessen — entfernt alle ihre Subscriptions.
+    /// Close a connection — removes all of its subscriptions.
     pub fn drop_connection(&mut self, conn_id: u64) {
         self.by_connection.remove(&conn_id);
     }
 
-    /// Liste aller Connections, die einen Topic abonniert haben.
-    /// Liefert `(conn_id, optional sub_id)`-Tupel.
+    /// List of all connections that have subscribed to a topic.
+    /// Returns `(conn_id, optional sub_id)` tuples.
     #[must_use]
     pub fn subscribers_of(&self, topic: &str) -> Vec<(u64, Option<String>)> {
         let mut out = Vec::new();
@@ -358,13 +358,13 @@ impl SubscriptionRegistry {
         out
     }
 
-    /// Anzahl Connections.
+    /// Number of connections.
     #[must_use]
     pub fn connection_count(&self) -> usize {
         self.by_connection.len()
     }
 
-    /// Anzahl Subscriptions ueber alle Connections.
+    /// Number of subscriptions across all connections.
     #[must_use]
     pub fn subscription_count(&self) -> usize {
         self.by_connection.values().map(BTreeMap::len).sum()

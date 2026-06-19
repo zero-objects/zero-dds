@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-amqp-0-9-1"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "AMQP 0.9.1 (class/method) Wire-Codec + broker client — frames, field tables, connection/channel/queue/basic lifecycle. For RabbitMQ interop (the >80%-deployed classic protocol)."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-amqp-0-9-1"
+readme = "README.md"
+keywords = ["amqp", "amqp-0-9-1", "rabbitmq", "messaging", "no-std"]
+categories = ["network-programming", "encoding"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

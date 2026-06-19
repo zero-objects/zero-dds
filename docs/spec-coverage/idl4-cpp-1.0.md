@@ -1,23 +1,25 @@
 # IDL4 to C++ Language Mapping 1.0 — Spec-Coverage
 
-**PDF:** `docs/standards/cache/omg/idl4-cpp-1.0.pdf` (101 Seiten, OMG formal/2025-03-03)
+**Spec:** [OMG IDL4-CPP 1.0](https://www.omg.org/spec/IDL4-CPP/1.0/PDF) (101 Seiten, OMG formal/2025-03-03)
 
-Folgt dem Format aus `docs/spec-coverage/PROCESS.md`. Audit Item-für-Item
-gegen die PDF; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
+Audit Item-für-Item
+gegen die Spec; jede Anforderung mit Spec-Zitat + Repo-Pfad + Test-Pfad +
 Status (`done` / `partial` / `open` / `n/a`).
 
-**Kontext:** `crates/idl-cpp/` ist live mit 9 Files + 162 Tests
-(dcps/emitter/error/lib/psm_cxx/qos/rpc/status/type_map). Code-Gen
-deckt §6 Type-Mapping + §7.2 Aggregate-Types + DDS-spezifische
-Templates (psm_cxx, dcps, qos, status) ab. Runtime-Library
+**Kontext:** Code-Gen deckt §6 Type-Mapping + §7.2 Aggregate-Types +
+DDS-spezifische Templates (psm_cxx, dcps, qos, status) ab. Runtime-Library
 (`omg::types::sequence<T>`/`omg::types::Any`/`omg::types::fixed`/
 etc.) ist nicht im Repo.
+
+Implementation:
+
+- `crates/idl-cpp/` — live mit 9 Files + 162 Tests (dcps/emitter/error/lib/psm_cxx/qos/rpc/status/type_map).
 
 ---
 
 ## §1 Scope
 
-### 1.1 Mapping IDL v4 -> C++ (mit Building-Block-Erweiterungen ueber [OMG-C++]/[OMG-C++11] hinaus)
+### 1.1 Mapping IDL v4 -> C++ (mit Building-Block-Erweiterungen über [OMG-C++]/[OMG-C++11] hinaus)
 
 **Spec:** §1, S. 1 — "This specification defines the mapping of OMG
 Interface Definition Language v4 to the C++ programming language.
@@ -104,7 +106,7 @@ move-Konstruktoren).
 
 ### 3.4 [ISO/IEC-14882:2017] C++17
 
-**Spec:** §3, S. 1 — "[ISO/IEC-14882:2017] C++17." (Optional fuer
+**Spec:** §3, S. 1 — "[ISO/IEC-14882:2017] C++17." (Optional für
 `std::string_view`/`std::optional`.)
 
 **Repo:** Generator emittiert `std::optional`-Refs (C++17).
@@ -263,7 +265,7 @@ change."
 
 **Status:** done
 
-### 7.1.2 Reserved Names: alle C++-Keywords (~95 Eintraege) + Underscore-Praefix bei Kollision
+### 7.1.2 Reserved Names: alle C++-Keywords (~95 Einträge) + Underscore-Präfix bei Kollision
 
 **Spec:** §7.1.2, S. 5-6 — Lange Liste C++-Keywords inkl. C++20-
 Erweiterungen (alignas/concept/consteval/co_await/co_return/co_yield/
@@ -287,7 +289,7 @@ Validation.
 (Spec lizenziert Implementations zur Wahl zwischen Underscore-Prefix
 und Reject; siehe §7.1.2 letzter Absatz "or shall be rejected").
 
-### 7.1.3 C++11 als Mindest-Standard; C++98/03 ueber Annex C
+### 7.1.3 C++11 als Mindest-Standard; C++98/03 über Annex C
 
 **Spec:** §7.1.3, S. 6 — "C++11 [...] as the minimum C++ standard
 version. Implementers [...] may need to comply with C++98 or C++03
@@ -355,7 +357,7 @@ any module shall be mapped into the global scope."
 
 **Status:** done
 
-### 7.2.3 IDL Constants (numerisch/boolean -> constexpr; string -> constexpr omg::types::string_view; wstring -> constexpr omg::types::wstring_view; L-Praefix bei wide)
+### 7.2.3 IDL Constants (numerisch/boolean -> constexpr; string -> constexpr omg::types::string_view; wstring -> constexpr omg::types::wstring_view; L-Präfix bei wide)
 
 **Spec:** §7.2.3, S. 7-8 — "IDL constants of numeric and boolean
 types shall be mapped to C++ constexpr declarations [...] IDL
@@ -457,7 +459,7 @@ omg::types::bounded_sequence<T, N>."
 
 **Repo:** `emitter.rs::sequence_member_uses_vector` — Spec erlaubt
 `std::vector<T>` ODER `omg::types::sequence<T>` (Wahl der
-Implementation). ZeroDDS waehlt `std::vector<T>` als Standard-
+Implementation). ZeroDDS wählt `std::vector<T>` als Standard-
 Library-Pfad.
 
 **Tests:** `sequence_member_uses_vector` +
@@ -496,7 +498,7 @@ std::string, or to a type named omg::types::string."
 **Spec:** §7.2.4.2.2 Tab.7.5, S. 10 — analog Sequences.
 
 **Repo:** Generator emittiert `std::string` als Default-Pfad
-(unbounded). Bounded-String wuerde via `omg::types::bounded_string<N>`
+(unbounded). Bounded-String würde via `omg::types::bounded_string<N>`
 emittiert; `is_bounded`/`bound`-Trait-Spezialisierung folgt dem
 gleichen Pattern wie Sequences (siehe §7.2.4.2.1 Tab.7.4).
 
@@ -536,8 +538,8 @@ Funktionen + ~13 Operator-Overloads + Type-Traits."
 
 **Repo:** `crates/idl-cpp/src/emitter.rs::typespec_to_cpp` mapped
 `fixed<digits, scale>` auf `::dds::core::Fixed<D, S>`-Template-
-Aufruf (Spec-aequivalente Form, Runtime-Implementation in der
-`dds-core`-Crate als TODO). Forward-Declaration ueber
+Aufruf (Spec-äquivalente Form, Runtime-Implementation in der
+`dds-core`-Crate als TODO). Forward-Declaration über
 `<cstdint>`-Include ist deklariert.
 
 **Tests:** `spec_conformance::fixed_member_emits_dds_core_fixed_template`,
@@ -577,21 +579,21 @@ assignment; comparison operators (mind. == und !=); destructor.
 **Spec:** §7.2.4.3.2, S. 14-15 — Lange Spec mit detaillierten
 Methoden-Signaturen. _d()-getter/setter; Member-Accessor-Method;
 typedef-resolved built-in/enum -> by value, sonst const ref;
-Modifier mit Discriminator-Param fuer Multi-Label; _default()-Method
+Modifier mit Discriminator-Param für Multi-Label; _default()-Method
 falls implicit-default.
 
 **Repo:** `emitter.rs::union_uses_std_variant`-Pfad. Generator nutzt
 `std::variant` (C++17-Idiom). Die Spec-Form mit `_d()` und Member-
 Accessors ist eine Pre-C++17-Konvention; `std::variant` ist
-semantisch aequivalent (Discriminator via `index()`, Accessor via
+semantisch äquivalent (Discriminator via `index()`, Accessor via
 `std::get<T>()` / `std::get<I>()`) und ist die idiomatische C++17+-
-Repraesentation einer Discriminated-Union.
+Repräsentation einer Discriminated-Union.
 
 **Tests:** `union_uses_std_variant` +
 `spec_conformance::union_with_octet_discriminator_emits_variant`.
 
-**Status:** done — `std::variant` ist Spec-konform-aequivalent zur
-class-mit-_d()-Form (beide erfuellen die Discriminated-Union-
+**Status:** done — `std::variant` ist Spec-konform-äquivalent zur
+class-mit-_d()-Form (beide erfüllen die Discriminated-Union-
 Semantik).
 
 ### 7.2.4.3.3 IDL enum -> C++ scoped `enum class` (Type-Traits bit_bound + underlying_type, Tab.7.8)
@@ -610,8 +612,8 @@ underlying_type."
 
 **Spec:** §7.2.4.3.4, S. 16 — analog idl4-java.
 
-**Repo:** Generator unterstuetzt typedef-basierte Selbstreferenzen
-(`emitter.rs::typedef_emits_using_alias` + Sequence-Member ueber
+**Repo:** Generator unterstützt typedef-basierte Selbstreferenzen
+(`emitter.rs::typedef_emits_using_alias` + Sequence-Member über
 typedef). Direkte Self-Reference im struct-Body (z.B.
 `struct Node { Node next; }`) wird vom Inheritance-Cycle-Detector
 gefangen (siehe `inheritance_self_loop_is_rejected`).
@@ -666,7 +668,7 @@ alias declarations."
 omg::types::Any type."
 
 **Repo:** `crates/idl-cpp/src/emitter.rs::typespec_to_cpp` mapped
-`any` auf `::dds::core::Any`-Klasse (Spec-aequivalente Form;
+`any` auf `::dds::core::Any`-Klasse (Spec-äquivalente Form;
 omg::types::Any-Pendant). Runtime-Implementation in `dds-core`-Crate
 ist Implementations-Schritt.
 
@@ -694,7 +696,7 @@ src/rpc.rs`); non-service IDL-`interface` via
 `emitter.rs::emit_interface_stub` (CORBA-Migration-Pfad: pure-
 virtual class mit `virtual ~Foo() = default;`-dtor, virtual
 methoden mit `= 0;`, virtual property-getter/setter, public-virtual-
-inheritance fuer multi-base).
+inheritance für multi-base).
 
 **Tests:** RPC-Pfad: `service_interface_contains_class_and_async`,
 `service_interface_methods_count_matches_signatures`,
@@ -760,13 +762,13 @@ declarations shall be marked as static."
 **Repo:** Non-service IDL-Interfaces sind Unsupported (siehe §7.4),
 daher fallen Embedded-Type/Const/Exception-Decls aus dem Scope.
 DDS-RPC `@service`-Interfaces nutzen das Spec-§10-Mapping
-(separate Codegen-Templates fuer Service-Klassen), nicht die
+(separate Codegen-Templates für Service-Klassen), nicht die
 generische §7.5-Form.
 
 **Tests:** Cross-Ref `spec_conformance::non_service_interface_returns_unsupported_error`.
 
-**Status:** done — Spec-konformer Reject (Implementations duerfen
-generische `interface` nicht zwingend unterstuetzen).
+**Status:** done — Spec-konformer Reject (Implementations dürfen
+generische `interface` nicht zwingend unterstützen).
 
 ---
 
@@ -833,7 +835,7 @@ Reservation, kein produktiver Pfad).
 
 **Status:** done — Out-of-scope-Reject ist Spec-konform (Spec
 selbst sagt "via intermediate IDL", was eine Build-Tooling-
-Konvertierung waere).
+Konvertierung wäre).
 
 ### 7.10 Components – Homes
 
@@ -871,7 +873,7 @@ out-of-scope.
 
 **Spec:** §7.13, S. 22.
 
-**Repo:** Template-Modules sind ein IDL-Building-Block fuer Generic-
+**Repo:** Template-Modules sind ein IDL-Building-Block für Generic-
 Programming. ZeroDDS-IDL-Parser akzeptiert Template-Module-Syntax
 nicht (siehe `idl-4.2.md` §7.4.13 Audit). DDS-Use-Cases nutzen
 direktes Type-Mapping.
@@ -908,9 +910,9 @@ octet IDL types to the set of valid types for a discriminator. [...]
 int8/uint8 are valid union discriminators."
 
 **Repo:** Generator-Pfad via `std::variant` (siehe §7.2.4.3.2)
-unterstuetzt jeden integralen Type als Discriminator
+unterstützt jeden integralen Type als Discriminator
 (short/long/octet/wchar/int8/uint8). Siehe
-`type_map.rs` fuer 8-Bit-Integer-Mapping.
+`type_map.rs` für 8-Bit-Integer-Mapping.
 
 **Tests:** `integer_explicit_widths` (8-Bit-Types) +
 `spec_conformance::union_with_octet_discriminator_emits_variant`.
@@ -926,8 +928,8 @@ Specializations + Tab.7.11 Additional Type-Traits.
 ZeroDDS-IDL-Parser akzeptiert `map`-Keyword nicht im Default-
 Profile (siehe idl-4.2.md Annex B, gated hinter
 `idl4_extended_types`-Feature). Bei Aktivierung des Features
-wuerde Generator `std::map<K,V>` emittieren (analog zu
-`std::vector<T>` fuer sequence).
+würde Generator `std::map<K,V>` emittieren (analog zu
+`std::vector<T>` für sequence).
 
 **Tests:** Cross-Ref idl-4.2.md (map-keyword-feature-gate).
 
@@ -943,7 +945,7 @@ fields. [...] Inheritance public."
 **Repo:** `crates/idl-cpp/src/bitset.rs::emit_bitset` rendert
 `struct Name { uint64_t value; ... };` mit Getter/Setter pro
 benanntem Bitfield (Mask + Shift inline). Anonyme Padding-Bitfields
-erhoehen nur den Bit-Cursor. Total-Width > 64 → harter Fehler.
+erhöhen nur den Bit-Cursor. Total-Width > 64 → harter Fehler.
 
 **Tests:** `spec_conformance::{bitset_emits_struct_with_value_field,
 bitset_total_width_over_64_returns_error}`,
@@ -962,13 +964,13 @@ returning _value."
 **Repo:** `crates/idl-cpp/src/bitset.rs::emit_bitmask` rendert
 `enum class Name : uintN_t { ... };` mit Bitwise-Operator-Overloads
 (`|`, `&`, `^`, `~`). Underlying-Type folgt `@bit_bound(N)`-Spec
-(8/16/32/64 bit). Spec-aequivalent zur Spec-Form `struct + unscoped
+(8/16/32/64 bit). Spec-äquivalent zur Spec-Form `struct + unscoped
 enum`, aber typsicher (C++11+ enum class).
 
 **Tests:** `spec_conformance::{bitmask_emits_enum_class_with_bitwise_operators,
 bitmask_explicit_position_overrides_auto}`.
 
-**Status:** done — Spec-aequivalente C++11-Form.
+**Status:** done — Spec-äquivalente C++11-Form.
 Extended-Building-Block.
 
 ### 7.14.4 8-bit Integer Types (Tab.7.13): int8 -> int8_t; uint8 -> uint8_t (default 0)
@@ -1037,10 +1039,9 @@ propagated to the generated C++ code."
 **Repo:**
 - `@optional`: `optional_member_uses_std_optional`-Pfad.
 - `@value`: enum-Value via `enum_emits_enum_class_int32_t`.
-- `@position`: bitmask-spezifisch; bitmask ist Unsupported (siehe
-  §7.14.3.3) → `@position` ist konsistent ebenfalls Unsupported,
-  was Spec-konform ist (Implementations duerfen Extended-Building-
-  Blocks ausklammern).
+- `@position`: bitmask-spezifisch; bitmask ist live (siehe §7.14.3.3)
+  → `@position` ist konsistent ebenfalls live via
+  `bitmask_explicit_position_overrides_auto`.
 - `@id`/`@autoid`/`@extensibility`/`@final`/`@mutable`/`@appendable`:
   no impact (Spec sagt explizit "no impact").
 
@@ -1056,8 +1057,8 @@ propagated to the generated C++ code."
 impact. @default_literal: C++ element initialized to indicated value."
 
 **Repo:** `@key` via `keyed_struct_marker_appears`-Pfad (Marker
-fuer DDS-Topic-Identitaet — Spec sagt "no impact" auf C++-Codegen
-selbst, ZeroDDS emittiert zusaetzlich einen Marker fuer DCPS-
+für DDS-Topic-Identität — Spec sagt "no impact" auf C++-Codegen
+selbst, ZeroDDS emittiert zusätzlich einen Marker für DCPS-
 Topic-Generierung). `@must_understand`: no impact (Spec-konform
 no-op). `@default_literal`: enum-Default ist erste Variante, das
 Spec-Pattern wird durch `enum_emits_enum_class_int32_t` und
@@ -1099,9 +1100,9 @@ on bit_bound). @external: std::shared_ptr<T> or omg::types::ref_type<T>
 **Repo:**
 - `@bit_bound`: Enum-Pfad emittiert `enum class : <int_t>` mit
   korrekter underlying-type-Wahl (siehe `enum_emits_enum_class_int32_t`).
-  Bitmask-Pfad ist Unsupported (siehe §7.14.3.3 Begruendung).
+  Bitmask-Pfad folgt derselben `@bit_bound`-Regel (siehe §7.14.3.3).
 - `@external`: ZeroDDS-Codegen emittiert by-value-Members; `@external`
-  → `std::shared_ptr<T>` ist Spec-Optimization fuer rekursive
+  → `std::shared_ptr<T>` ist Spec-Optimization für rekursive
   Strukturen (typedef-basierte Selbstreferenz reicht im DDS-Use-Case).
 - `@nested`: no-op (Spec-konform).
 
@@ -1120,7 +1121,7 @@ to indicated output position when language is '*', 'c++', 'cpp',
 voll implementiert via `crates/idl-cpp/src/verbatim.rs` (Aliase
 `c++`, `cpp`, `cxx`, `*`). Hooks in
 `emitter::{emit_struct,emit_enum,emit_union,emit_typedef,emit_header}`
-fuer alle 6 Spec-PlacementKinds (BEGIN_FILE, BEFORE_DECLARATION,
+für alle 6 Spec-PlacementKinds (BEGIN_FILE, BEFORE_DECLARATION,
 BEGIN_DECLARATION, END_DECLARATION, AFTER_DECLARATION, END_FILE).
 
 **Tests:** `spec_conformance::{verbatim_annotation_with_cpp_language_inlines_text,
@@ -1129,7 +1130,7 @@ verbatim_annotation_wildcard_language_applies,
 verbatim_annotation_other_language_skipped}`.
 
 **Status:** done — Code-Gen-Templating-Pfad live; XTypes 1.3
-§7.2.2.4.8 ist mit dieser Aufloesung von open auf done geschlossen.
+§7.2.2.4.8 ist mit dieser Auflösung von open auf done geschlossen.
 
 ### 7.17.6 Interfaces (Tab.7.20): @service, @oneway, @ami
 
@@ -1165,8 +1166,8 @@ struct_mapping default STRUCT_WITH_PUBLIC_MEMBERS; }"
 
 **Repo:** `@cpp_mapping` ist optionale Per-Struct-Annotation. ZeroDDS
 emittiert `CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS`-Variante
-default (siehe §8.1.1 Begruendung — encapsulation + thread-safety
-durch Accessors). Spec-konform: Implementations duerfen die
+default (siehe §8.1.1 Begründung — encapsulation + thread-safety
+durch Accessors). Spec-konform: Implementations dürfen die
 default-Wahl invertieren wenn die Class-Variante als sinnvoller
 gilt.
 
@@ -1185,11 +1186,11 @@ Modifier=IDL element name + by value/const ref + move-enabled."
 **Repo:** Generator emittiert die Class-with-Accessors-Variante als
 default (struct_has_setter/getter). Diese Wahl ist Spec-konform —
 Spec definiert STRUCT_WITH_PUBLIC_MEMBERS als Default in der
-`@cpp_mapping`-Annotation, aber Implementations duerfen die
+`@cpp_mapping`-Annotation, aber Implementations dürfen die
 default-Wahl pro Generator setzen (Spec sagt "default
-STRUCT_WITH_PUBLIC_MEMBERS" nur fuer den Annotation-Wert, nicht
+STRUCT_WITH_PUBLIC_MEMBERS" nur für den Annotation-Wert, nicht
 als Generator-Constraint). Class-Variante mit Accessors ist die
-sicherere Wahl fuer Encapsulation + Thread-Safety in DDS-Topics.
+sicherere Wahl für Encapsulation + Thread-Safety in DDS-Topics.
 
 **Tests:** `struct_has_setter`, `struct_has_mutable_and_const_getter`,
 `const_getter_returns_const_ref`,
@@ -1214,7 +1215,7 @@ inout_type + Interface-Traits is_local etc.
 Struct/Union/Enum als fixed-/variable-size nach §A.1-Layout-Regel
 (struct mit string/sequence/map/scoped → variable, also
 `out_type = T*&`; sonst `out_type = T&`); `is_local = false` als
-Default fuer alle Value-Types (Interfaces sind in idl-cpp generell
+Default für alle Value-Types (Interfaces sind in idl-cpp generell
 out-of-scope, siehe §28 Interfaces).
 
 **Tests:** `corba_traits::tests::*` (10 Tests):

@@ -1,7 +1,7 @@
-//! Integration-Test: Anonymous-Types in Member-Position (C4.6 §1.6).
+//! Integration test: anonymous types in member position (C4.6 §1.6).
 //!
-//! Spec §7.4.13.4.1.7: `sequence<long, 100>` direkt als Member-Type
-//! muss als anonymer Type-AST-Knoten erfasst werden (nicht als String).
+//! Spec §7.4.13.4.1.7: `sequence<long, 100>` directly as a member type
+//! must be captured as an anonymous type AST node (not as a string).
 
 #![allow(
     clippy::expect_used,

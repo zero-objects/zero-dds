@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-//! L4 Cross-Vendor XCDR2-Wire-Fixtures-Decoder-Test.
+//! L4 cross-vendor XCDR2 wire-fixtures decoder test.
 //!
-//! Liest die Fixtures unter
-//! `crates/discovery/tests/fixtures/cyclone-xcdr2/v*.bin` und prueft
-//! dass der zerodds-cdr-Decoder sie ohne Verlust decoden kann +
-//! der zerodds-cdr-Encoder dieselben Bytes produziert (Roundtrip).
+//! Reads the fixtures under
+//! `crates/discovery/tests/fixtures/cyclone-xcdr2/v*.bin` and checks that
+//! the zerodds-cdr decoder can decode them losslessly + that the
+//! zerodds-cdr encoder produces the same bytes (roundtrip).
 //!
-//! Die Fixtures sind heute Spec-derived (aus dem master-spec §6 hex
-//! generiert), nicht Cyclone-recorded. Sobald Cyclone-Wire-Capture
-//! aufgesetzt ist (siehe Fixtures-README), werden sie ueberschrieben.
-//! Wire-Format (XCDR2 §7.4) ist OMG-normativ — ein spec-konformer
-//! Cyclone-Encoder MUSS dieselben Bytes produzieren.
+//! The fixtures are currently spec-derived (generated from the master-spec
+//! §6 hex), not Cyclone-recorded. Once Cyclone wire capture is set up
+//! (see the fixtures README), they will be overwritten. The wire format
+//! (XCDR2 §7.4) is OMG-normative — a spec-conformant Cyclone encoder MUST
+//! produce the same bytes.
 
 #![allow(
     clippy::expect_used,
@@ -76,24 +76,27 @@ fn v2_plain_primitives() {
 
 #[test]
 fn v2_cyclone_recorded_matches_spec_derived() {
-    // Cyclone DDS 0.10.2 publisher Capture (tcpdump auf llvm) fuer
-    // `@final struct Point { long x; long y; }` mit Sample {x=1, y=-2}.
-    // Cyclone nutzt CDR_LE (0x0001) als Encapsulation-Header,
-    // serializedPayload = 01 00 00 00 fe ff ff ff (8 Byte LE).
-    // Plain-CDR-Payload ist byte-identisch zu unserem XCDR2-Final-Output
-    // (XTypes 1.3 §7.4 ist auf dieser Ebene mit XCDR1 backward-kompatibel).
+    // Cyclone DDS 0.10.2 publisher capture (tcpdump on the Linux bench host)
+    // for `@final struct Point { long x; long y; }` with sample {x=1, y=-2}.
+    // Cyclone uses CDR_LE (0x0001) as the encapsulation header,
+    // serializedPayload = 01 00 00 00 fe ff ff ff (8 bytes LE).
+    // The plain-CDR payload is byte-identical to our XCDR2 final output
+    // (XTypes 1.3 §7.4 is backward-compatible with XCDR1 at this level).
     let cyclone = read_fixture("v2_cyclone_recorded.bin");
     let spec = read_fixture("v2.bin");
     assert_eq!(
         cyclone, spec,
-        "Cyclone-recorded und spec-derived V-2 muessen byte-identisch sein"
+        "Cyclone-recorded and spec-derived V-2 must be byte-identical"
     );
 }
 
 #[test]
 fn v3_mixed_primitives_layout() {
     let bytes = read_fixture("v3.bin");
-    assert_eq!(bytes.len(), 48, "V-3 must be 48 bytes per master-spec");
+    // XCDR2 (§7.4.1.1.1): 64-bit alignment capped at 4 → the `double`
+    // lands at offset 36 (no pad after float@32), not 40. 44 bytes total
+    // — byte-identical to Cyclone's forced XCDR2 (capture V-3).
+    assert_eq!(bytes.len(), 44, "V-3 = 44 bytes (XCDR2 4-byte cap)");
     assert_eq!(bytes[0], 0x01, "b = true");
     assert_eq!(bytes[1], 0xAB, "o = 0xAB");
     let s = i16::from_le_bytes(bytes[2..4].try_into().unwrap());
@@ -111,8 +114,8 @@ fn v3_mixed_primitives_layout() {
     assert_eq!(ull, 123456789);
     let f = f32::from_le_bytes(bytes[32..36].try_into().unwrap());
     assert_eq!(f, 2.5);
-    // bytes[36..40] = pad
-    let d = f64::from_le_bytes(bytes[40..48].try_into().unwrap());
+    // XCDR2: NO pad between float@32 and double@36 (4-byte cap).
+    let d = f64::from_le_bytes(bytes[36..44].try_into().unwrap());
     assert!((d - 3.14159).abs() < 1e-9);
 }
 
@@ -148,11 +151,12 @@ fn v7_nested_modules() {
 #[test]
 fn v8_keyed_payload_layout() {
     let bytes = read_fixture("v8.bin");
-    assert_eq!(bytes.len(), 16);
+    // XCDR2 (§7.4.1.1.1): the `double` follows directly after id@0..4 (offset 4,
+    // 4-byte cap) — NO pad to 8. 12 bytes total = Cyclone wire (capture V-8).
+    assert_eq!(bytes.len(), 12);
     let id = i32::from_le_bytes(bytes[0..4].try_into().unwrap());
     assert_eq!(id, 42);
-    // bytes[4..8] = pad to align(8)
-    let value = f64::from_le_bytes(bytes[8..16].try_into().unwrap());
+    let value = f64::from_le_bytes(bytes[4..12].try_into().unwrap());
     assert!((value - 3.14).abs() < 1e-9);
 }
 
@@ -170,7 +174,7 @@ fn v9_appendable_dheader_8() {
     let bytes = read_fixture("v9.bin");
     assert_eq!(bytes.len(), 12);
     let dheader = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
-    assert_eq!(dheader, 8, "DHEADER zaehlt nur Body-Bytes");
+    assert_eq!(dheader, 8, "DHEADER counts only body bytes");
     let a = i32::from_le_bytes(bytes[4..8].try_into().unwrap());
     let b = i32::from_le_bytes(bytes[8..12].try_into().unwrap());
     assert_eq!((a, b), (1, 2));

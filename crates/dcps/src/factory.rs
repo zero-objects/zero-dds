@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `DomainParticipantFactory` — Singleton fuer das Anlegen von
-//! Participants (Spec OMG DDS 1.4 §2.2.2.2.1).
+//! `DomainParticipantFactory` — singleton for creating participants
+//! (Spec OMG DDS 1.4 §2.2.2.2.1).
 //!
-//! Die Spec verlangt: "The DomainParticipantFactory is a singleton.
+//! The spec requires: "The DomainParticipantFactory is a singleton.
 //! The get_instance() method returns a reference to the only
 //! instance of the factory."
 //!
 //! Singleton via `OnceLock`. `create_participant(domain_id, qos)`
-//! legt einen neuen `DomainParticipant` an, startet eine Live-
-//! Runtime und gibt einen clone-baren Handle zurueck. Daneben gibt
-//! es `create_participant_offline(domain_id, qos)` fuer Skeleton-
-//! Tests ohne Netzwerk und `create_participant_with_config` fuer
-//! Tests mit angepasster `RuntimeConfig`.
+//! creates a new `DomainParticipant`, starts a live runtime, and
+//! returns a cloneable handle. In addition there is
+//! `create_participant_offline(domain_id, qos)` for skeleton tests
+//! without a network, and `create_participant_with_config` for tests
+//! with a custom `RuntimeConfig`.
 
 extern crate alloc;
 
@@ -27,14 +27,14 @@ use crate::participant::{DomainId, DomainParticipant};
 use crate::qos::DomainParticipantQos;
 use crate::runtime::RuntimeConfig;
 
-/// QoS-Policy fuer den DomainParticipantFactory selbst (Spec
-/// §2.2.2.2.2.6 `DomainParticipantFactoryQos`). Aktuell ein einziges
-/// Feld `autoenable_created_entities` (Default `true`); spaetere
-/// Spec-Erweiterungen werden hier addiert.
+/// QoS policy for the DomainParticipantFactory itself (Spec
+/// §2.2.2.2.2.6 `DomainParticipantFactoryQos`). Currently a single
+/// field `autoenable_created_entities` (default `true`); later spec
+/// extensions are added here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DomainParticipantFactoryQos {
-    /// Wenn `true`, werden neu erzeugte Entities automatisch beim
-    /// Erzeugen `enable()`-d. Spec-Default: `true`.
+    /// If `true`, newly created entities are automatically `enable()`-d
+    /// on creation. Spec default: `true`.
     pub autoenable_created_entities: bool,
 }
 
@@ -46,19 +46,19 @@ impl Default for DomainParticipantFactoryQos {
     }
 }
 
-/// Factory-Singleton.
+/// Factory singleton.
 #[cfg(feature = "std")]
 #[derive(Debug)]
 pub struct DomainParticipantFactory {
-    /// Registry aller per `create_participant*` erzeugten Participants —
-    /// indexiert nach `DomainId`, mehrere Participants pro Domain
-    /// erlaubt (Spec §2.2.2.2.2.4 `lookup_participant` liefert "any"
-    /// Participant fuer die gegebene Domain).
+    /// Registry of all participants created via `create_participant*` —
+    /// indexed by `DomainId`, multiple participants per domain allowed
+    /// (Spec §2.2.2.2.2.4 `lookup_participant` returns "any"
+    /// participant for the given domain).
     participants: Mutex<BTreeMap<DomainId, Vec<DomainParticipant>>>,
-    /// Factory-Default-QoS fuer neu erzeugte Participants (Spec
+    /// Factory default QoS for newly created participants (Spec
     /// §2.2.2.2.2.5 `set_default_participant_qos`).
     default_participant_qos: Mutex<DomainParticipantQos>,
-    /// Factory-eigene QoS (Spec §2.2.2.2.2.6 `set_qos`/`get_qos`).
+    /// Factory's own QoS (Spec §2.2.2.2.2.6 `set_qos`/`get_qos`).
     factory_qos: Mutex<DomainParticipantFactoryQos>,
 }
 
@@ -68,7 +68,7 @@ pub struct DomainParticipantFactory {}
 
 #[cfg(feature = "std")]
 impl DomainParticipantFactory {
-    /// Liefert den Prozess-weiten Factory-Singleton (Spec §2.2.2.2.2.1
+    /// Returns the process-wide factory singleton (Spec §2.2.2.2.2.1
     /// `get_instance`).
     pub fn instance() -> &'static Self {
         static INSTANCE: OnceLock<DomainParticipantFactory> = OnceLock::new();
@@ -85,12 +85,12 @@ impl DomainParticipantFactory {
         }
     }
 
-    /// Erzeugt einen neuen `DomainParticipant` fuer die gegebene
-    /// Domain-Id. Startet die `DcpsRuntime` mit Default-Config —
-    /// UDP-Sockets + SPDP/SEDP-Threads.
+    /// Creates a new `DomainParticipant` for the given domain id.
+    /// Starts the `DcpsRuntime` with the default config — UDP sockets +
+    /// SPDP/SEDP threads.
     ///
     /// # Errors
-    /// `DdsError::TransportError` wenn die UDP-Sockets nicht binden.
+    /// `DdsError::TransportError` if the UDP sockets do not bind.
     pub fn create_participant(
         &self,
         domain_id: DomainId,
@@ -106,11 +106,11 @@ impl DomainParticipantFactory {
         Ok(p)
     }
 
-    /// Variante mit explizit uebergebener `RuntimeConfig` (z.B. fuer
-    /// Tests mit kurzen SPDP-Periods).
+    /// Variant with an explicitly passed `RuntimeConfig` (e.g. for
+    /// tests with short SPDP periods).
     ///
     /// # Errors
-    /// `DdsError::TransportError` wenn die UDP-Sockets nicht binden.
+    /// `DdsError::TransportError` if the UDP sockets do not bind.
     pub fn create_participant_with_config(
         &self,
         domain_id: DomainId,
@@ -122,9 +122,9 @@ impl DomainParticipantFactory {
         Ok(p)
     }
 
-    /// Offline-Variante ohne Runtime — nur fuer Unit-Tests die kein
-    /// Netzwerk wollen. Der zurueckgegebene Participant kann Topics
-    /// erzeugen, aber keine DataWriter/Reader.
+    /// Offline variant without a runtime — only for unit tests that
+    /// don't want a network. The returned participant can create
+    /// topics, but no DataWriters/Readers.
     #[must_use]
     pub fn create_participant_offline(
         &self,
@@ -136,24 +136,24 @@ impl DomainParticipantFactory {
         p
     }
 
-    /// Spec §2.2.2.2.2.4 `lookup_participant(domain_id)` — liefert
-    /// einen vorher erzeugten Participant zur gleichen Domain-Id, oder
-    /// `None` wenn keiner registriert ist. Bei mehreren Participants
-    /// derselben Domain liefert die Implementation den ersten.
+    /// Spec §2.2.2.2.2.4 `lookup_participant(domain_id)` — returns a
+    /// previously created participant for the same domain id, or `None`
+    /// if none is registered. With several participants for the same
+    /// domain, the implementation returns the first.
     #[must_use]
     pub fn lookup_participant(&self, domain_id: DomainId) -> Option<DomainParticipant> {
         let reg = self.participants.lock().ok()?;
         reg.get(&domain_id).and_then(|v| v.first().cloned())
     }
 
-    /// Spec §2.2.2.2.2.3 `delete_participant`. Entfernt den Participant
-    /// aus der Factory-Registry und ruft `delete_contained_entities`
-    /// auf. Liefert `PreconditionNotMet` wenn der Participant nicht
-    /// in der Registry ist.
+    /// Spec §2.2.2.2.2.3 `delete_participant`. Removes the participant
+    /// from the factory registry and calls `delete_contained_entities`.
+    /// Returns `PreconditionNotMet` if the participant is not in the
+    /// registry.
     ///
     /// # Errors
-    /// `DdsError::PreconditionNotMet` wenn der Participant nicht
-    /// registriert ist.
+    /// `DdsError::PreconditionNotMet` if the participant is not
+    /// registered.
     pub fn delete_participant(&self, p: &DomainParticipant) -> Result<()> {
         let mut reg = self
             .participants
@@ -180,11 +180,11 @@ impl DomainParticipantFactory {
         p.delete_contained_entities()
     }
 
-    /// Spec §2.2.2.2.2.5 `set_default_participant_qos` — Default-QoS
-    /// fuer ab jetzt erzeugte Participants.
+    /// Spec §2.2.2.2.2.5 `set_default_participant_qos` — default QoS
+    /// for participants created from now on.
     ///
     /// # Errors
-    /// `DdsError::PreconditionNotMet` bei Lock-Poisoning.
+    /// `DdsError::PreconditionNotMet` on lock poisoning.
     pub fn set_default_participant_qos(&self, qos: DomainParticipantQos) -> Result<()> {
         let mut current =
             self.default_participant_qos
@@ -205,10 +205,10 @@ impl DomainParticipantFactory {
             .unwrap_or_default()
     }
 
-    /// Spec §2.2.2.2.2.6 `set_qos` (Factory-Level QoS).
+    /// Spec §2.2.2.2.2.6 `set_qos` (factory-level QoS).
     ///
     /// # Errors
-    /// `DdsError::PreconditionNotMet` bei Lock-Poisoning.
+    /// `DdsError::PreconditionNotMet` on lock poisoning.
     pub fn set_qos(&self, qos: DomainParticipantFactoryQos) -> Result<()> {
         let mut current = self
             .factory_qos
@@ -220,7 +220,7 @@ impl DomainParticipantFactory {
         Ok(())
     }
 
-    /// Spec §2.2.2.2.2.6 `get_qos` (Factory-Level QoS).
+    /// Spec §2.2.2.2.2.6 `get_qos` (factory-level QoS).
     #[must_use]
     pub fn get_qos(&self) -> DomainParticipantFactoryQos {
         self.factory_qos.lock().map(|q| *q).unwrap_or_default()
@@ -241,8 +241,8 @@ mod tests {
 
     #[test]
     fn factory_creates_participant_with_correct_domain_id() {
-        // Offline-Variante — kein UDP-Bind im Unit-Test. Live-Variante
-        // wird in runtime.rs getestet.
+        // Offline variant — no UDP bind in the unit test. The live
+        // variant is tested in runtime.rs.
         let p = DomainParticipantFactory::instance()
             .create_participant_offline(7, DomainParticipantQos::default());
         assert_eq!(p.domain_id(), 7);
@@ -253,8 +253,8 @@ mod tests {
     #[test]
     fn lookup_participant_finds_registered_offline_participant() {
         let f = DomainParticipantFactory::instance();
-        // Eindeutige Domain-Id, damit kein anderer Test-Participant
-        // den Lookup beeinflusst.
+        // Unique domain id so that no other test participant affects
+        // the lookup.
         let domain = 91;
         let _p = f.create_participant_offline(domain, DomainParticipantQos::default());
         let found = f.lookup_participant(domain);
@@ -265,7 +265,7 @@ mod tests {
     #[test]
     fn lookup_participant_returns_none_for_unknown_domain() {
         let f = DomainParticipantFactory::instance();
-        // Sehr hoher domain_id-Wert, fuer den vermutlich nichts existiert.
+        // Very high domain_id value for which nothing likely exists.
         assert!(f.lookup_participant(60_001).is_none());
     }
 
@@ -284,8 +284,8 @@ mod tests {
     #[test]
     fn delete_participant_unknown_returns_precondition_not_met() {
         let f = DomainParticipantFactory::instance();
-        // Erzeuge einen Participant ohne ihn ueber die Factory zu
-        // tracken (DomainParticipant::new direkt).
+        // Create a participant without tracking it via the factory
+        // (DomainParticipant::new directly).
         let detached =
             crate::participant::DomainParticipant::new(93, DomainParticipantQos::default());
         let res = f.delete_participant(&detached);
@@ -301,21 +301,21 @@ mod tests {
     fn default_participant_qos_roundtrips() {
         let f = DomainParticipantFactory::instance();
         let mut new_qos = f.get_default_participant_qos();
-        // Wir mutieren irgendeinen erkennbaren Default. DomainParticipantQos
-        // ist Default-konstruierbar; um den Roundtrip zu verifizieren
-        // genuegt es, set/get zu durchlaufen.
+        // We mutate some recognizable default. DomainParticipantQos is
+        // default-constructible; to verify the roundtrip it is enough
+        // to run set/get.
         new_qos = new_qos.clone();
         f.set_default_participant_qos(new_qos.clone()).unwrap();
         let got = f.get_default_participant_qos();
-        // Gleichheit modulo Equality-Impl der DomainParticipantQos.
+        // Equality modulo the Equality impl of DomainParticipantQos.
         assert_eq!(format!("{got:?}"), format!("{new_qos:?}"));
     }
 
-    // ---- §2.2.2.2.2.6 Factory-eigene QoS ----
+    // ---- §2.2.2.2.2.6 factory's own QoS ----
 
     #[test]
     fn factory_qos_default_is_autoenable_true() {
-        // Spec-Default §2.2.2.2.2.6: autoenable_created_entities = TRUE.
+        // Spec default §2.2.2.2.2.6: autoenable_created_entities = TRUE.
         let q = DomainParticipantFactoryQos::default();
         assert!(q.autoenable_created_entities);
     }
@@ -329,7 +329,7 @@ mod tests {
         f.set_qos(q).unwrap();
         let got = f.get_qos();
         assert!(!got.autoenable_created_entities);
-        // Restore default fuer andere Tests.
+        // Restore default for other tests.
         f.set_qos(DomainParticipantFactoryQos::default()).unwrap();
     }
 }

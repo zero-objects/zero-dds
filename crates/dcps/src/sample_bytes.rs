@@ -1,49 +1,49 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `SampleBytes` — Zero-Copy Byte-Container fuer Reader-Path-Samples.
+//! `SampleBytes` — zero-copy byte container for reader-path samples.
 //!
-//! Spec: `docs/specs/zerodds-zero-copy-1.0.md` §6 Welle 2.
+//! Spec: `docs/specs/zerodds-zero-copy-1.0.md` §6 Wave 2.
 //!
-//! # Hintergrund
+//! # Background
 //!
-//! `UserSample::Alive::payload` war historisch `Vec<u8>`. Damit musste
-//! `strip_user_encap` den Encap-Header-Offset durch `payload[off..].to_vec()`
-//! abschneiden — ein Heap-Alloc + Copy pro Alive-Sample.
+//! `UserSample::Alive::payload` was historically a `Vec<u8>`. That forced
+//! `strip_user_encap` to cut off the encap-header offset via
+//! `payload[off..].to_vec()` — one heap alloc + copy per alive sample.
 //!
-//! `SampleBytes` ersetzt diesen Vec mit einer `Arc<[u8]>` + Range. Strip-
-//! Operationen werden zu reinen Index-Arithmetik (`Arc::clone` ist ein
-//! Refcount-Bump, kein Copy). Heap-Allocs entfallen am Hot-Path.
+//! `SampleBytes` replaces that Vec with an `Arc<[u8]>` + range. Strip
+//! operations become pure index arithmetic (`Arc::clone` is a refcount
+//! bump, not a copy). Heap allocs are eliminated on the hot path.
 //!
 //! # API
 //!
-//! - [`SampleBytes::from_vec`] — Heap-Vec-Input (Backward-Compat).
-//! - [`SampleBytes::from_arc_slice`] — Arc + Range (Zero-Copy-Pfad).
-//! - [`SampleBytes::as_slice`] — Slice-Read ohne Copy.
-//! - [`SampleBytes::to_vec`] — Materialization an FFI-Boundary.
-//! - [`SampleBytes::len`] / `is_empty` — Standard-Container-API.
-//! - `Clone` ist O(1) — nur Arc-Refcount-Bump.
+//! - [`SampleBytes::from_vec`] — heap-Vec input (backward compat).
+//! - [`SampleBytes::from_arc_slice`] — Arc + range (zero-copy path).
+//! - [`SampleBytes::as_slice`] — slice read without copy.
+//! - [`SampleBytes::to_vec`] — materialization at an FFI boundary.
+//! - [`SampleBytes::len`] / `is_empty` — standard container API.
+//! - `Clone` is O(1) — just an Arc refcount bump.
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ops::Range;
 
-/// Refcounted Byte-Container fuer Reader-Path-Samples.
+/// Refcounted byte container for reader-path samples.
 ///
-/// Erlaubt Zero-Copy-Slicing der Wire-Bytes durch Range-Tracking auf
-/// einem `Arc<[u8]>`. Clone ist O(1).
+/// Allows zero-copy slicing of the wire bytes by tracking a range over
+/// an `Arc<[u8]>`. Clone is O(1).
 #[derive(Debug, Clone)]
 pub struct SampleBytes {
-    /// Refcounted Daten — kommt typisch aus RTPS-`DeliveredSample::payload`.
+    /// Refcounted data — typically comes from RTPS `DeliveredSample::payload`.
     data: Arc<[u8]>,
-    /// Sicht-Range auf `data`. Strip-Operationen verschieben nur die Range.
+    /// View range over `data`. Strip operations only shift the range.
     range: Range<usize>,
 }
 
 impl SampleBytes {
-    /// Konstruiert aus einem owned `Vec<u8>`. Heap-Alloc fuer den Arc-Wrap.
-    /// Use bei Test-Sample-Injection oder wenn die Bytes ohnehin frisch
-    /// alloziert wurden.
+    /// Constructs from an owned `Vec<u8>`. Heap alloc for the Arc wrap.
+    /// Use for test sample injection or when the bytes were freshly
+    /// allocated anyway.
     #[must_use]
     pub fn from_vec(v: Vec<u8>) -> Self {
         let len = v.len();
@@ -53,8 +53,8 @@ impl SampleBytes {
         }
     }
 
-    /// Konstruiert aus einem `Arc<[u8]>` mit voller Range. **Zero-Copy** —
-    /// es wird nur der Refcount erhoeht.
+    /// Constructs from an `Arc<[u8]>` with the full range. **Zero-copy** —
+    /// only the refcount is incremented.
     #[must_use]
     pub fn from_arc(data: Arc<[u8]>) -> Self {
         let len = data.len();
@@ -64,10 +64,10 @@ impl SampleBytes {
         }
     }
 
-    /// Konstruiert mit explizitem Range auf einem `Arc<[u8]>`. **Zero-Copy**.
+    /// Constructs with an explicit range over an `Arc<[u8]>`. **Zero-copy**.
     ///
     /// # Panics
-    /// Wenn `range.end > data.len()` oder `range.start > range.end`.
+    /// If `range.end > data.len()` or `range.start > range.end`.
     #[must_use]
     pub fn from_arc_slice(data: Arc<[u8]>, range: Range<usize>) -> Self {
         assert!(
@@ -77,11 +77,11 @@ impl SampleBytes {
         Self { data, range }
     }
 
-    /// Erzeugt eine neue `SampleBytes` mit der gegebenen Sub-Range
-    /// relativ zur aktuellen Sicht. **Zero-Copy** — Refcount-Bump.
+    /// Creates a new `SampleBytes` with the given sub-range relative to
+    /// the current view. **Zero-copy** — refcount bump.
     ///
     /// # Panics
-    /// Wenn `sub.end > self.len()`.
+    /// If `sub.end > self.len()`.
     #[must_use]
     pub fn slice(&self, sub: Range<usize>) -> Self {
         assert!(sub.end <= self.len(), "SampleBytes::slice out of bounds");
@@ -93,27 +93,26 @@ impl SampleBytes {
         }
     }
 
-    /// Aktuelle Sicht als `&[u8]`. Kein Copy.
+    /// Current view as `&[u8]`. No copy.
     #[must_use]
     pub fn as_slice(&self) -> &[u8] {
         &self.data[self.range.clone()]
     }
 
-    /// Anzahl Bytes in der aktuellen Sicht.
+    /// Number of bytes in the current view.
     #[must_use]
     pub fn len(&self) -> usize {
         self.range.end - self.range.start
     }
 
-    /// `true` wenn die Sicht leer ist.
+    /// `true` if the view is empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.range.is_empty()
     }
 
-    /// Materialisiert die Sicht in ein `Vec<u8>`. **Kopiert** — nur an
-    /// FFI-Boundaries verwenden wo owned-Daten an C/Python/JS uebergeben
-    /// werden muessen.
+    /// Materializes the view into a `Vec<u8>`. **Copies** — use only at
+    /// FFI boundaries where owned data must be handed to C/Python/JS.
     #[must_use]
     pub fn to_vec(&self) -> Vec<u8> {
         self.as_slice().to_vec()
@@ -179,7 +178,7 @@ mod tests {
         let inner_ptr_before = s.as_slice().as_ptr() as usize;
         let sub = s.slice(2..5);
         let inner_ptr_after = sub.as_slice().as_ptr() as usize;
-        // Pointer 2 bytes weiter: gleicher Arc-Inhalt, nur Offset.
+        // Pointer 2 bytes further along: same Arc contents, just an offset.
         assert_eq!(inner_ptr_after - inner_ptr_before, 2);
         assert_eq!(sub.as_slice(), &[3, 4, 5]);
     }

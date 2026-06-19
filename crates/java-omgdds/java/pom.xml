@@ -69,11 +69,28 @@
     </build>
 
     <!--
-        release-Profil: nur beim `mvn -Prelease deploy` aktiv.
-        Maven-Central erfordert javadoc.jar, sources.jar und GPG-Signaturen.
-        central-publishing-maven-plugin nutzt das moderne Sonatype-Central-Portal.
+        release profile: active only on `mvn -Prelease deploy`.
+        Maven Central requires javadoc.jar, sources.jar and GPG signatures.
+        central-publishing-maven-plugin uses the modern Sonatype Central Portal.
     -->
     <profiles>
+        <!-- Java 8 compat mode: `mvn -Pjava8 install` builds the runtime against
+             Java 8 (source/target 8). The hand-written code is var-free (only
+             Lambdas/Consumer/default methods = Java 8). Generated code must
+             be produced with the `java8_compat` codegen (unions as abstract
+             class instead of sealed interface + record). Standard build stays 17. -->
+        <profile>
+            <id>java8</id>
+            <properties>
+                <!-- Only the shipped main artifact down to Java 8.
+                     Tests stay at 17 and run on the build JVM (one
+                     test helper uses a record). -->
+                <maven.compiler.source>8</maven.compiler.source>
+                <maven.compiler.target>8</maven.compiler.target>
+                <maven.compiler.testSource>17</maven.compiler.testSource>
+                <maven.compiler.testTarget>17</maven.compiler.testTarget>
+            </properties>
+        </profile>
         <profile>
             <id>release</id>
             <build>

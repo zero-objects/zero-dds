@@ -1,35 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! §6 — DDS-QoS → gRPC-Behavior-Translation.
+//! §6 — DDS QoS → gRPC behavior translation.
 //!
-//! gRPC laeuft auf HTTP/2 (TCP) — die Reliability-Schicht ist intrinsisch
+//! gRPC runs over HTTP/2 (TCP) — the reliability layer is intrinsically
 //! reliable. Mapping:
 //!
-//! * `Reliability::Reliable`     → reliable-only-Mode (HTTP/2 stream).
-//! * `Reliability::BestEffort`   → reliable-only + warning-log (gRPC
-//!   kennt keinen BestEffort).
-//! * `Durability::Volatile`      → no buffer-replay.
-//! * `Durability::TransientLocal+` → buffer-replay (server-side cache N).
-//! * `Deadline::period`          → gRPC `grpc-timeout` Header.
+//! * `Reliability::Reliable`     → reliable-only mode (HTTP/2 stream).
+//! * `Reliability::BestEffort`   → reliable-only + warning log (gRPC
+//!   has no notion of BestEffort).
+//! * `Durability::Volatile`      → no buffer replay.
+//! * `Durability::TransientLocal+` → buffer replay (server-side cache N).
+//! * `Deadline::period`          → gRPC `grpc-timeout` header.
 
 use zerodds_qos::{DurabilityKind, HistoryKind, ReaderQos, ReliabilityKind, WriterQos};
 
-/// gRPC-Mode.
+/// gRPC mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GrpcReliabilityMode {
     /// Reliable.
     ReliableOnly,
-    /// Reliable + warning log (BestEffort QoS auf reliable transport).
+    /// Reliable + warning log (BestEffort QoS on a reliable transport).
     ReliableWithBestEffortWarning,
 }
 
-/// Behavior fuer ein Topic.
+/// Behavior for a topic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GrpcBehavior {
-    /// Reliability-Mode.
+    /// Reliability mode.
     pub reliability: GrpcReliabilityMode,
-    /// Buffer-Replay-Tiefe fuer neue Subscriber.
+    /// Buffer replay depth for new subscribers.
     pub replay_depth: u32,
     /// `grpc-timeout` (ms).
     pub timeout_ms: Option<u32>,
@@ -46,7 +46,7 @@ impl Default for GrpcBehavior {
 }
 
 impl GrpcBehavior {
-    /// Defaults aus `WriterQos::default()`.
+    /// Defaults from `WriterQos::default()`.
     #[must_use]
     pub fn default_for_topic() -> Self {
         let w = WriterQos::default();
@@ -55,14 +55,14 @@ impl GrpcBehavior {
     }
 }
 
-/// Mapping-Hauptfunktion.
+/// Main mapping function.
 #[must_use]
 pub fn dds_qos_to_grpc_behavior(writer: &WriterQos, reader: &ReaderQos) -> GrpcBehavior {
-    // Note: HTTP/2 ist intrinsisch reliable; wir markieren nur den Mode.
-    // gRPC nutzt HTTP/2 = always reliable. Wir loggen nur dann eine
-    // Warning wenn der Writer explizit BestEffort ist; Reader-BestEffort
-    // gegen Reliable-Writer ist DDS-konform (Best-Effort Reader nimmt
-    // Reliable-Stream genauso entgegen).
+    // Note: HTTP/2 is intrinsically reliable; we only mark the mode.
+    // gRPC uses HTTP/2 = always reliable. We only log a warning when the
+    // writer is explicitly BestEffort; a BestEffort reader against a
+    // reliable writer is DDS-compliant (a best-effort reader accepts a
+    // reliable stream just as well).
     let reliability = if matches!(writer.reliability.kind, ReliabilityKind::Reliable) {
         GrpcReliabilityMode::ReliableOnly
     } else {

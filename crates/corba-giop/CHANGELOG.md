@@ -1,61 +1,61 @@
 # Changelog
 
-Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0-rc.1] — 2026-05-06
 
-Initiale Release-Materialisierung der `zerodds-corba-giop`-Crate.
+Initial release materialization of the `zerodds-corba-giop` crate.
 
-### Spec-Referenzen
+### Spec references
 
 - **OMG CORBA 3.3 Part 2** §15 (General Inter-ORB Protocol).
-- **OMG CORBA 3.3 Part 2** §15.4 (Message-Types) + §15.4.1-§15.4.9
-  (alle 8 Messages).
-- **OMG CORBA 3.3 Part 2** §15.5 (Service-Context-Tags).
+- **OMG CORBA 3.3 Part 2** §15.4 (message types) + §15.4.1-§15.4.9
+  (all 8 messages).
+- **OMG CORBA 3.3 Part 2** §15.5 (service context tags).
 
-### Public-API
+### Public API
 
-**Header + Codec:**
-- `MAGIC` / `MAGIC_BYTES` — `"GIOP"`-Magic.
+**Header + codec:**
+- `MAGIC` / `MAGIC_BYTES` — `"GIOP"` magic.
 - `MessageHeader { magic, giop_version, flags, message_type, message_size }`.
 - `Version`, `Flags`, `MessageType`.
-- `Message`-Enum + `encode_message` / `decode_message`.
+- `Message` enum + `encode_message` / `decode_message`.
 
-**Message-Types (alle 8):**
+**Message types (all 8):**
 - `Request` + `ResponseFlags`.
-- `Reply` + `ReplyStatusType` (alle 6 Statuses).
+- `Reply` + `ReplyStatusType` (all 6 statuses).
 - `CancelRequest`, `LocateRequest`, `LocateReply` + `LocateStatusType`.
 - `CloseConnection`, `MessageError`.
 - `Fragment` + `FragmentHeader`.
 
-**Service-Contexts:**
+**Service contexts:**
 - `ServiceContext`, `ServiceContextList`, `ServiceContextTag`.
 
-**Target-Address (GIOP 1.2):**
-- `TargetAddress`-Union, `ObjectKey`.
+**Target address (GIOP 1.2):**
+- `TargetAddress` union, `ObjectKey`.
 
 **Errors:**
 - `GiopError`, `GiopResult<T>`.
 
-### Implementierung
+### Implementation
 
-`#![cfg_attr(not(feature = "std"), no_std)]` mit `extern crate alloc`;
-`#![forbid(unsafe_code)]`. CDR-1-Marshalling via `zerodds-cdr`.
+`#![cfg_attr(not(feature = "std"), no_std)]` with `extern crate alloc`;
+`#![forbid(unsafe_code)]`. CDR-1 marshalling via `zerodds-cdr`.
 
-GIOP 1.0/1.1/1.2-Versions-Quirks korrekt abgebildet:
-- 1.0: Request-Header inkl. `requesting_principal`.
-- 1.1: Fragment-Flag fuer Request/Reply.
-- 1.2: Header neu organisiert, `TargetAddress`-Union, 8-Byte-aligned-Body, Fragment fuer alle Types, BiDir-GIOP.
+GIOP 1.0/1.1/1.2 version quirks correctly mapped:
+- 1.0: request header including `requesting_principal`.
+- 1.1: fragment flag for request/reply.
+- 1.2: header reorganized, `TargetAddress` union, 8-byte-aligned body, fragment for all types, bidirectional GIOP.
 
-### Architektur
+### Architecture
 
-- **Layer:** 8 (CORBA-Stack, Tier-A).
+- **Layer:** 8 (CORBA stack, Tier A).
 - **Dependencies (in):** `zerodds-cdr`.
-- **Dependents (out):** `zerodds-corba-iiop` (Transport-Schicht), `zerodds-corba-dds-bridge` (Pass-through-Decoding).
-- **Feature-Flags:** `std` (default), `alloc` (via std).
+- **Dependents (out):** `zerodds-corba-iiop` (transport layer), `zerodds-corba-dds-bridge` (pass-through decoding).
+- **Feature flags:** `std` (default), `alloc` (via std).
 
-### Stabilitaet
+### Stability
 
-- Public-API: RC1-stabil.
-- GIOP-Wire-Format ist durch OMG-Spec fixiert.
-- Service-Context-Tags-Liste: durch IANA-OMG-Registry fixiert; Erweiterungen sind Major-Bump-Kandidaten.
+- Public API: RC1 stable.
+- The GIOP wire format is fixed by the OMG spec.
+- Service context tag list: fixed by the IANA/OMG registry; extensions are major-bump candidates.

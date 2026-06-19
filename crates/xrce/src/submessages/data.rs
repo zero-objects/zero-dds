@@ -3,9 +3,9 @@
 
 //! `DATA` Submessage (id=9, Spec §8.3.5.10).
 //!
-//! Direction: Agent → Client. Antwort auf `READ_DATA` bei `STATUS_OK`.
-//! Flags-Bits 1..3 = `DataFormat` analog `WRITE_DATA`. Body extends
-//! `RelatedObjectRequest` + Datei-spezifische Variante.
+//! Direction: Agent → Client. Reply to `READ_DATA` on `STATUS_OK`.
+//! Flag bits 1..3 = `DataFormat`, analogous to `WRITE_DATA`. The body extends
+//! `RelatedObjectRequest` + a data-specific variant.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -14,23 +14,23 @@ use crate::error::XrceError;
 use crate::submessages::write_data::DataFormat;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// Opaker Body fuer `DATA`.
+/// Opaque body for `DATA`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DataPayload {
-    /// XCDR2-Body.
+    /// XCDR2 body.
     pub representation: Vec<u8>,
-    /// DataFormat-Tag.
+    /// DataFormat tag.
     pub data_format: DataFormat,
 }
 
 impl DataPayload {
-    /// Berechnet das Flag-Byte.
+    /// Computes the flag byte.
     #[must_use]
     pub fn flags(&self) -> u8 {
         FLAG_E_LITTLE_ENDIAN | self.data_format.to_flag_bits()
     }
 
-    /// Verpackt in `Submessage`.
+    /// Packs into a `Submessage`.
     ///
     /// # Errors
     /// `PayloadTooLarge`.
@@ -39,7 +39,7 @@ impl DataPayload {
         Submessage::new(SubmessageId::Data, flags, self.representation)
     }
 
-    /// Extrahiert aus `Submessage`.
+    /// Extracts from a `Submessage`.
     ///
     /// # Errors
     /// `ValueOutOfRange`.

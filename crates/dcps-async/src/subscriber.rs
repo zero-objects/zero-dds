@@ -8,7 +8,7 @@ use zerodds_dcps::{DataReaderQos, DdsType, Result, Subscriber, Topic};
 
 use crate::AsyncDataReader;
 
-/// Async-Wrapper um `Subscriber`.
+/// Async wrapper around `Subscriber`.
 #[derive(Clone)]
 pub struct AsyncSubscriber {
     inner: Arc<Subscriber>,
@@ -21,10 +21,10 @@ impl AsyncSubscriber {
         }
     }
 
-    /// Erstellt einen DataReader.
+    /// Creates a DataReader.
     ///
     /// # Errors
-    /// Wie `Subscriber::create_datareader`.
+    /// Same as `Subscriber::create_datareader`.
     pub fn create_datareader<T: DdsType + Send + Sync + 'static>(
         &self,
         topic: &Topic<T>,
@@ -34,7 +34,7 @@ impl AsyncSubscriber {
         Ok(AsyncDataReader::from_sync(reader))
     }
 
-    /// Liefert die zugrundeliegende sync-Variante.
+    /// Returns the underlying sync variant.
     #[must_use]
     pub fn as_sync(&self) -> &Subscriber {
         &self.inner

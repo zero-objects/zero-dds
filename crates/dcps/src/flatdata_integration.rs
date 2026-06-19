@@ -1,41 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Flatdata-Integration (ADR-0005, opt-in via Feature
-//! `flatdata-integration`).
+//! Flatdata integration (ADR-0005, opt-in via the
+//! `flatdata-integration` feature).
 //!
-//! Bietet `DataWriter::write_flat` und `DataReader::read_flat` als
-//! conditional Methoden mit `T: FlatStruct`-Bound. Default-Build
-//! sieht diese Methoden nicht — Caller muss explizit
-//! `--features flatdata-integration` aktivieren.
+//! Provides `DataWriter::write_flat` and `DataReader::read_flat` as
+//! conditional methods with a `T: FlatStruct` bound. The default build
+//! does not see these methods — the caller must explicitly enable
+//! `--features flatdata-integration`.
 //!
-//! # Architektur
+//! # Architecture
 //!
-//! Spec `zerodds-flatdata-1.0` §8/§9 verlangt die spec-konformen
-//! Methoden direkt am `DataWriter<T>` / `DataReader<T>`:
+//! Spec `zerodds-flatdata-1.0` §8/§9 requires the spec-conformant
+//! methods directly on `DataWriter<T>` / `DataReader<T>`:
 //!
-//! 1. `DataWriter::set_flat_backend(backend, mask)` und
-//!    `DataReader::set_flat_backend(backend, reader_index)` koppeln
-//!    den Slot-Backend an die Entity. Konfiguration einmalig nach
-//!    Discovery-Match.
-//! 2. `DataWriter::write_flat(sample)` schreibt in den SHM-Slot
-//!    (Spec §4.1) **und** sendet parallel UDP-DATA fuer Cross-Host-
-//!    Reader (§4.2 Cross-Host-Fallback). Ohne konfiguriertes Backend
-//!    faellt die Methode auf den klassischen UDP-Pfad zurueck.
-//! 3. `DataReader::read_flat()` liefert das neueste Sample aus dem
-//!    Slot-Pool (Spec §9.1) und faellt auf `take()` zurueck wenn kein
-//!    Slot vorhanden ist.
+//! 1. `DataWriter::set_flat_backend(backend, mask)` and
+//!    `DataReader::set_flat_backend(backend, reader_index)` couple the
+//!    slot backend to the entity. Configured once after a discovery
+//!    match.
+//! 2. `DataWriter::write_flat(sample)` writes into the SHM slot
+//!    (Spec §4.1) **and** sends UDP-DATA in parallel for cross-host
+//!    readers (§4.2 cross-host fallback). Without a configured backend
+//!    the method falls back to the classic UDP path.
+//! 3. `DataReader::read_flat()` returns the latest sample from the
+//!    slot pool (Spec §9.1) and falls back to `take()` if no slot is
+//!    present.
 //!
-//! Zusaetzlich existiert die Builder-Variante `FlatWriterExt` /
-//! `FlatReaderExt` (siehe weiter unten in diesem Modul) als
-//! alternative API, die ohne das Setzen am Entity-Objekt auskommt —
-//! nuetzlich, wenn ein Caller mehrere Slot-Backends parallel mit
-//! demselben DataWriter benutzen moechte.
+//! In addition there is the builder variant `FlatWriterExt` /
+//! `FlatReaderExt` (see further down in this module) as an alternative
+//! API that does not require setting state on the entity object —
+//! useful when a caller wants to use multiple slot backends in
+//! parallel with the same DataWriter.
 //!
-//! # Sicherheits-Begruendung
+//! # Safety rationale
 //!
-//! `from_bytes_unchecked` ist `unsafe fn`. Der Caller hier hat den
-//! Type-Hash + Sample-Size verifiziert (siehe `read_flat`).
-//! Lokales `#[allow(unsafe_code)]` mit per-Block-SAFETY-Kommentar.
+//! `from_bytes_unchecked` is an `unsafe fn`. The caller here has
+//! verified the type hash + sample size (see `read_flat`). Local
+//! `#[allow(unsafe_code)]` with a per-block SAFETY comment.
 //!
 //! Spec: `docs/specs/zerodds-flatdata-1.0.md` §4 + §8 + §9.
 
@@ -51,7 +51,7 @@ use crate::error::{DdsError, Result};
 use crate::publisher::DataWriter;
 use crate::subscriber::DataReader;
 
-/// Convertiert `SlotError` in `DdsError`.
+/// Converts `SlotError` into `DdsError`.
 fn slot_to_dds(e: SlotError) -> DdsError {
     match e {
         SlotError::NoFreeSlot => DdsError::OutOfResources {
@@ -66,23 +66,25 @@ fn slot_to_dds(e: SlotError) -> DdsError {
         SlotError::LockPoisoned => DdsError::PreconditionNotMet {
             reason: "flatdata: slot lock poisoned",
         },
+        SlotError::InPlaceUnsupported => DdsError::Unsupported {
+            feature: "flatdata: in-place loan (slot_data_ptr/commit_in_place)",
+        },
     }
 }
 
 // ============================================================================
-// Spec-konforme Methoden direkt am DataWriter/DataReader (§8.1, §9.1)
+// Spec-conformant methods directly on the DataWriter/DataReader (§8.1, §9.1)
 // ============================================================================
 
 impl<T: DdsType + FlatStruct + Send + Sync + 'static> DataWriter<T> {
-    /// Setzt den Flatdata-SlotBackend fuer den Same-Host-Zero-Copy-
-    /// Pfad. Bei `Some(backend)` schreibt [`Self::write_flat`] das
-    /// Sample direkt in einen SHM-Slot (Spec §4.1) und sendet parallel
-    /// UDP-DATA fuer Cross-Host-Reader. `active_readers_mask` listet
-    /// die Reader-Bits, die fuer die Slot-Wiederverwendung relevant
-    /// sind (Spec §5.1 Slot-Refcount).
+    /// Sets the flatdata SlotBackend for the same-host zero-copy path.
+    /// With `Some(backend)`, [`Self::write_flat`] writes the sample
+    /// directly into an SHM slot (Spec §4.1) and sends UDP-DATA in
+    /// parallel for cross-host readers. `active_readers_mask` lists the
+    /// reader bits relevant for slot reuse (Spec §5.1 slot refcount).
     ///
-    /// `None` deaktiviert den SHM-Pfad — nachfolgende `write_flat()`
-    /// fallen auf den klassischen UDP-Pfad zurueck.
+    /// `None` disables the SHM path — subsequent `write_flat()` calls
+    /// fall back to the classic UDP path.
     ///
     /// Spec: `zerodds-flatdata-1.0` §4.1 + §8.
     pub fn set_flat_backend(
@@ -95,17 +97,16 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> DataWriter<T> {
         }
     }
 
-    /// Spec §8.1 `write_flat` — schreibt einen `FlatStruct`-Sample
-    /// direkt in den SHM-Slot (kein CDR-Encode) und sendet parallel
-    /// UDP-DATA fuer Cross-Host-Reader (Spec §4.2). Ohne
-    /// konfiguriertes Backend (siehe [`Self::set_flat_backend`])
-    /// faellt der Aufruf auf den klassischen UDP-Pfad zurueck.
+    /// Spec §8.1 `write_flat` — writes a `FlatStruct` sample directly
+    /// into the SHM slot (no CDR encode) and sends UDP-DATA in parallel
+    /// for cross-host readers (Spec §4.2). Without a configured backend
+    /// (see [`Self::set_flat_backend`]) the call falls back to the
+    /// classic UDP path.
     ///
     /// # Errors
-    /// - `OutOfResources` bei vollem Slot-Pool oder
-    ///   `SampleTooLarge`.
-    /// - `WireError` bei CDR-Encode-Failure des UDP-Cross-Host-Pfades.
-    /// - `PreconditionNotMet` bei Slot-Lock-Poisoning.
+    /// - `OutOfResources` on a full slot pool or `SampleTooLarge`.
+    /// - `WireError` on a CDR encode failure of the UDP cross-host path.
+    /// - `PreconditionNotMet` on slot-lock poisoning.
     pub fn write_flat(&self, sample: &T) -> Result<()> {
         let backend_snapshot = self
             .flat_backend
@@ -116,31 +117,30 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> DataWriter<T> {
             .clone();
 
         if let Some((backend, mask)) = backend_snapshot {
-            // Same-Host (SHM): write ohne CDR-Encode.
+            // Same host (SHM): write without CDR encode.
             let bytes = sample.as_bytes();
             let handle = backend.reserve_slot(mask).map_err(slot_to_dds)?;
             if let Err(e) = backend.commit_slot(handle, bytes) {
                 let _ = backend.discard_slot(handle);
                 return Err(slot_to_dds(e));
             }
-            // Cross-Host (UDP): klassischer DCPS-Pfad parallel
-            // (Spec §4.2 Cross-Host-Fallback).
+            // Cross host (UDP): classic DCPS path in parallel
+            // (Spec §4.2 cross-host fallback).
             self.write(sample)
         } else {
-            // Kein Backend konfiguriert → reiner UDP-Pfad.
+            // No backend configured → pure UDP path.
             self.write(sample)
         }
     }
 }
 
 impl<T: DdsType + FlatStruct + Send + Sync + 'static> DataReader<T> {
-    /// Setzt den Flatdata-SlotBackend fuer den Same-Host-Zero-Copy-
-    /// Lese-Pfad. `reader_index` ist das Bit (0..31) im
-    /// `slot.reader_mask`, das dieser Reader nach erfolgreichem Read
-    /// setzt (Spec §5.1).
+    /// Sets the flatdata SlotBackend for the same-host zero-copy read
+    /// path. `reader_index` is the bit (0..31) in `slot.reader_mask`
+    /// that this reader sets after a successful read (Spec §5.1).
     ///
-    /// `None` deaktiviert den SHM-Pfad — nachfolgende `read_flat()`
-    /// fallen auf `take()` zurueck.
+    /// `None` disables the SHM path — subsequent `read_flat()` calls
+    /// fall back to `take()`.
     ///
     /// Spec: `zerodds-flatdata-1.0` §4.1 + §9.
     pub fn set_flat_backend(&self, backend: Option<Arc<dyn SlotBackend>>, reader_index: u8) {
@@ -150,17 +150,17 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> DataReader<T> {
         }
     }
 
-    /// Spec §9.1 `read_flat` — bevorzugt Same-Host-SHM, falls
-    /// Backend konfiguriert ist; faellt auf [`Self::take`] zurueck
-    /// wenn kein Slot vorhanden oder kein Backend gesetzt ist.
+    /// Spec §9.1 `read_flat` — prefers same-host SHM if a backend is
+    /// configured; falls back to [`Self::take`] if no slot is present
+    /// or no backend is set.
     ///
-    /// Spec §6.1: prueft `backend.type_hash()` gegen `T::TYPE_HASH`;
-    /// bei Mismatch liefert `Err(PreconditionNotMet)` ohne den Slot
-    /// zu dereferenzieren (Schutz gegen Schema-Drift).
+    /// Spec §6.1: checks `backend.type_hash()` against `T::TYPE_HASH`;
+    /// on mismatch returns `Err(PreconditionNotMet)` without
+    /// dereferencing the slot (protection against schema drift).
     ///
     /// # Errors
-    /// `PreconditionNotMet` bei Type-Hash-Mismatch oder Slot-Lock-
-    /// Poisoning.
+    /// `PreconditionNotMet` on type-hash mismatch or slot-lock
+    /// poisoning.
     pub fn read_flat(&self) -> Result<Option<T>> {
         let mut slot = self
             .flat_backend
@@ -171,7 +171,7 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> DataReader<T> {
         let Some((backend, reader_index, last_sn)) = slot.as_mut() else {
             return Ok(None);
         };
-        // Spec §6.1: Type-Hash Cross-Validation.
+        // Spec §6.1: type-hash cross-validation.
         if let Some(backend_hash) = backend.type_hash() {
             if backend_hash != T::TYPE_HASH {
                 return Err(DdsError::PreconditionNotMet {
@@ -181,11 +181,51 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> DataReader<T> {
         }
         scan_slots::<T>(backend.as_ref(), *reader_index, last_sn)
     }
+
+    /// Spec §4.2 event-driven `read_flat`. Like [`Self::read_flat`] but blocks
+    /// on the backend's notify (POSIX cross-process futex / in-memory condvar —
+    /// NO busy-poll, no UDP roundtrip) until a same-host SHM sample arrives or
+    /// `timeout` elapses (`Ok(None)`). Falls back to a single `read_flat` when
+    /// the backend has no notify support.
+    ///
+    /// # Errors
+    /// As [`Self::read_flat`].
+    pub fn read_flat_blocking(&self, timeout: core::time::Duration) -> Result<Option<T>> {
+        let deadline = std::time::Instant::now() + timeout;
+        // Clone the backend Arc so the wait does not hold the flat_backend lock.
+        let backend = {
+            let slot = self
+                .flat_backend
+                .lock()
+                .map_err(|_| DdsError::PreconditionNotMet {
+                    reason: "flatdata: backend mutex poisoned",
+                })?;
+            match slot.as_ref() {
+                Some((b, _, _)) => Arc::clone(b),
+                None => return Ok(None),
+            }
+        };
+        loop {
+            if let Some(sample) = self.read_flat()? {
+                return Ok(Some(sample));
+            }
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return Ok(None);
+            }
+            // Capture gen, re-check (lost-wakeup-free), then park on the notify.
+            let g = backend.notify_generation();
+            if let Some(sample) = self.read_flat()? {
+                return Ok(Some(sample));
+            }
+            backend.wait_for_change(g, deadline - now);
+        }
+    }
 }
 
-/// Scan-Helfer: liefert das neueste un-gelesene Sample aus dem
-/// Slot-Pool (Spec §9.1). Geteilt zwischen `DataReader::read_flat`
-/// und [`FlatReaderExt::read_flat`].
+/// Scan helper: returns the newest unread sample from the slot pool
+/// (Spec §9.1). Shared between `DataReader::read_flat` and
+/// [`FlatReaderExt::read_flat`].
 fn scan_slots<T: FlatStruct>(
     backend: &dyn SlotBackend,
     reader_index: u8,
@@ -209,8 +249,8 @@ fn scan_slots<T: FlatStruct>(
         if (bytes.len() as u32) < T::WIRE_SIZE as u32 {
             continue;
         }
-        // SAFETY: WIRE_SIZE gepruft; FlatStruct-Bound garantiert
-        // Layout-Consistency.
+        // SAFETY: WIRE_SIZE checked; the FlatStruct bound guarantees
+        // layout consistency.
         let sample = unsafe { T::from_bytes_unchecked(&bytes) };
         let unseen = last_seen == u32::MAX || header.sequence_number > last_seen;
         let beats_current = best
@@ -230,13 +270,13 @@ fn scan_slots<T: FlatStruct>(
 }
 
 // ============================================================================
-// Builder-API (alternative, fuer Caller die mehrere Backends parallel
-// mit derselben Entity nutzen wollen)
+// Builder API (alternative, for callers that want to use multiple
+// backends in parallel with the same entity)
 // ============================================================================
 
-/// Builder-API fuer Flatdata-Schreibpfade. Alternative zur
-/// [`DataWriter::set_flat_backend`]-Methode: kapselt einen Slot-Backend
-/// und exponiert `write_flat` ohne State an der Entity.
+/// Builder API for flatdata write paths. Alternative to the
+/// [`DataWriter::set_flat_backend`] method: encapsulates a slot backend
+/// and exposes `write_flat` without state on the entity.
 pub struct FlatWriterExt<T: DdsType + FlatStruct + Send + Sync + 'static> {
     writer: Arc<DataWriter<T>>,
     backend: Arc<dyn SlotBackend>,
@@ -245,7 +285,7 @@ pub struct FlatWriterExt<T: DdsType + FlatStruct + Send + Sync + 'static> {
 }
 
 impl<T: DdsType + FlatStruct + Send + Sync + 'static> FlatWriterExt<T> {
-    /// Wrappt einen DataWriter + Slot-Backend.
+    /// Wraps a DataWriter + slot backend.
     #[must_use]
     pub fn new(
         writer: Arc<DataWriter<T>>,
@@ -260,15 +300,15 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> FlatWriterExt<T> {
         }
     }
 
-    /// Spec §8.1 `write_flat` — Same-Host-Pfad. UDP-Cross-Host-Pfad
-    /// laeuft parallel ueber `writer.write(&sample)`, sodass beide
-    /// Reader-Klassen das Sample sehen.
+    /// Spec §8.1 `write_flat` — same-host path. The UDP cross-host path
+    /// runs in parallel via `writer.write(&sample)`, so that both
+    /// reader classes see the sample.
     ///
     /// # Errors
-    /// `OutOfResources` bei vollem Slot-Pool, `WireError` bei
-    /// CDR-Encode-Failure (Cross-Host-Pfad).
+    /// `OutOfResources` on a full slot pool, `WireError` on a CDR
+    /// encode failure (cross-host path).
     pub fn write_flat(&self, sample: &T) -> Result<()> {
-        // Same-Host (SHM): write ohne CDR-encode.
+        // Same host (SHM): write without CDR encode.
         let bytes = sample.as_bytes();
         let handle = self
             .backend
@@ -278,19 +318,19 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> FlatWriterExt<T> {
             let _ = self.backend.discard_slot(handle);
             return Err(slot_to_dds(e));
         }
-        // Cross-Host (UDP): klassischer DCPS-Pfad parallel.
+        // Cross host (UDP): classic DCPS path in parallel.
         self.writer.write(sample)
     }
 
-    /// Liefert Referenz auf den DataWriter (sync-API).
+    /// Returns a reference to the DataWriter (sync API).
     #[must_use]
     pub fn writer(&self) -> &DataWriter<T> {
         &self.writer
     }
 }
 
-/// Builder-API fuer Flatdata-Lesepfade. Alternative zur
-/// [`DataReader::set_flat_backend`]-Methode.
+/// Builder API for flatdata read paths. Alternative to the
+/// [`DataReader::set_flat_backend`] method.
 pub struct FlatReaderExt<T: DdsType + FlatStruct + Send + Sync + 'static> {
     reader: Arc<DataReader<T>>,
     backend: Arc<dyn SlotBackend>,
@@ -300,7 +340,7 @@ pub struct FlatReaderExt<T: DdsType + FlatStruct + Send + Sync + 'static> {
 }
 
 impl<T: DdsType + FlatStruct + Send + Sync + 'static> FlatReaderExt<T> {
-    /// Wrappt einen DataReader + Slot-Backend.
+    /// Wraps a DataReader + slot backend.
     #[must_use]
     pub fn new(
         reader: Arc<DataReader<T>>,
@@ -316,14 +356,14 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> FlatReaderExt<T> {
         }
     }
 
-    /// Spec §9.1 `read_flat` — bevorzugt Same-Host-SHM, falls
-    /// Slot vorhanden; Type-Hash-Validation gegen Backend-Hash.
+    /// Spec §9.1 `read_flat` — prefers same-host SHM if a slot is
+    /// present; type-hash validation against the backend hash.
     ///
     /// # Errors
-    /// `PreconditionNotMet` bei Type-Hash-Mismatch oder Slot-Lock-
-    /// Poisoning.
+    /// `PreconditionNotMet` on type-hash mismatch or slot-lock
+    /// poisoning.
     pub fn read_flat(&self) -> Result<Option<T>> {
-        // Spec §6.1: Type-Hash Cross-Validation.
+        // Spec §6.1: type-hash cross-validation.
         if let Some(backend_hash) = self.backend.type_hash() {
             if backend_hash != T::TYPE_HASH {
                 return Err(DdsError::PreconditionNotMet {
@@ -334,7 +374,7 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> FlatReaderExt<T> {
         scan_slots::<T>(self.backend.as_ref(), self.reader_index, &self.last_sn)
     }
 
-    /// Liefert Referenz auf den DataReader (sync-API).
+    /// Returns a reference to the DataReader (sync API).
     #[must_use]
     pub fn reader(&self) -> &DataReader<T> {
         &self.reader

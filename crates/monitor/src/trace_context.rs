@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! W3C-Trace-Context als RTPS-Vendor-PID 0x0D00 (Spec §4).
+//! W3C trace context as RTPS vendor PID 0x0D00 (Spec §4).
 
 use std::fmt;
 
 use zerodds_foundation::tracing::{SpanContext, SpanId, TraceId};
 
-/// Vendor-PID-Wert fuer ZeroDDS-Trace-Context-Inline-QoS.
+/// Vendor PID value for the ZeroDDS trace-context inline QoS.
 pub const PID_VENDOR_TRACE_CONTEXT: u16 = 0x0D00;
 
 /// W3C-traceparent-Header (Version 00).
@@ -15,14 +15,14 @@ pub const PID_VENDOR_TRACE_CONTEXT: u16 = 0x0D00;
 pub struct TraceParent {
     /// Trace-ID (16 byte).
     pub trace_id: TraceId,
-    /// Parent-Span-ID (8 byte).
+    /// Parent span ID (8 bytes).
     pub parent_id: SpanId,
     /// Trace-Flags (`0x01` = sampled).
     pub flags: u8,
 }
 
 impl TraceParent {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(trace_id: TraceId, parent_id: SpanId, flags: u8) -> Self {
         Self {
@@ -54,12 +54,12 @@ impl fmt::Display for TraceParent {
 /// W3C-tracestate-Header (Version 00, key=value;... pro Vendor).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TraceState {
-    /// Roh-State-String (z.B. `"dds=topic:Foo;version:1.0"`).
+    /// Raw state string (e.g. `"dds=topic:Foo;version:1.0"`).
     pub raw: String,
 }
 
 impl TraceState {
-    /// Konstruktor mit Roh-String.
+    /// Constructor with a raw string.
     #[must_use]
     pub fn new(raw: impl Into<String>) -> Self {
         Self { raw: raw.into() }
@@ -75,14 +75,14 @@ impl TraceState {
 /// PID 0x0D00 Payload.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TraceContextPid {
-    /// Pflicht-Feld: traceparent.
+    /// Mandatory field: traceparent.
     pub traceparent: TraceParent,
     /// Optional: tracestate.
     pub tracestate: Option<TraceState>,
 }
 
 impl TraceContextPid {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(traceparent: TraceParent, tracestate: Option<TraceState>) -> Self {
         Self {
@@ -91,7 +91,7 @@ impl TraceContextPid {
         }
     }
 
-    /// Encoding gemaess Spec §4.2: zwei CDR-Strings (length+bytes,
+    /// Encoding per spec §4.2: two CDR strings (length+bytes,
     /// NUL-terminated, 4-byte-aligned).
     pub fn encode_inline_qos(&self, out: &mut Vec<u8>) {
         let tp = self.traceparent.to_string();
@@ -103,7 +103,7 @@ impl TraceContextPid {
         encode_cdr_string(&ts, out);
     }
 
-    /// Decoding aus dem PID-Payload.
+    /// Decoding from the PID payload.
     pub fn decode_inline_qos(bytes: &[u8]) -> Result<Self, TraceContextError> {
         let (tp_str, rest) = decode_cdr_string(bytes)?;
         let traceparent = parse_traceparent(&tp_str)?;
@@ -120,7 +120,7 @@ impl TraceContextPid {
         Ok(Self::new(traceparent, tracestate))
     }
 
-    /// Convenience: Aus einem Span-Context erzeugen.
+    /// Convenience: create from a span context.
     #[must_use]
     pub fn from_span_context(ctx: &SpanContext, vendor_state: Option<&str>) -> Self {
         Self {
@@ -129,8 +129,8 @@ impl TraceContextPid {
         }
     }
 
-    /// Convenience: Zurueck zu einem Span-Context (parent_span_id =
-    /// die uebertragene Span-ID; Receiver erstellt einen Child).
+    /// Convenience: back to a span context (parent_span_id =
+    /// the transmitted span ID; the receiver creates a child).
     #[must_use]
     pub fn to_span_context(&self) -> SpanContext {
         SpanContext {
@@ -141,14 +141,14 @@ impl TraceContextPid {
     }
 }
 
-/// Fehler beim Trace-Context-Codec.
+/// Error in the trace-context codec.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TraceContextError {
-    /// CDR-String inkomplett oder Length-Praefix ungueltig.
+    /// CDR string incomplete or length prefix invalid.
     InvalidCdrString,
-    /// `traceparent` matcht nicht das W3C-Format.
+    /// `traceparent` does not match the W3C format.
     InvalidTraceParent,
-    /// Trace-ID oder Span-ID ist all-zero (W3C-Spec verbietet Invalid).
+    /// Trace ID or span ID is all-zero (the W3C spec forbids invalid).
     InvalidIdentifiers,
 }
 
@@ -166,7 +166,7 @@ impl std::error::Error for TraceContextError {}
 
 fn encode_cdr_string(s: &str, out: &mut Vec<u8>) {
     let bytes = s.as_bytes();
-    let len = bytes.len() as u32 + 1; // +1 fuer NUL-Terminator
+    let len = bytes.len() as u32 + 1; // +1 for the NUL terminator
     out.extend_from_slice(&len.to_le_bytes());
     out.extend_from_slice(bytes);
     out.push(0);
@@ -184,7 +184,7 @@ fn decode_cdr_string(bytes: &[u8]) -> Result<(String, &[u8]), TraceContextError>
     if len == 0 || bytes.len() < 4 + len {
         return Err(TraceContextError::InvalidCdrString);
     }
-    let payload = &bytes[4..4 + len - 1]; // ohne NUL-Terminator
+    let payload = &bytes[4..4 + len - 1]; // without NUL terminator
     let s = std::str::from_utf8(payload)
         .map_err(|_| TraceContextError::InvalidCdrString)?
         .to_string();

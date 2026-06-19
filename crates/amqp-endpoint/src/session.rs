@@ -1,108 +1,108 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Connection/Session-State-Machine fuer den DDS-AMQP-Endpoint.
+//! Connection/session state machine for the DDS-AMQP endpoint.
 //!
-//! Spec-Quelle: dds-amqp-1.0-beta1.pdf §6.1 Direct-Embed Topology +
-//! `amqp-1.0-transport` §2.4 Connection-State-Diagramm.
+//! Spec source: dds-amqp-1.0-beta1.pdf §6.1 Direct-Embed Topology +
+//! `amqp-1.0-transport` §2.4 connection state diagram.
 
 use alloc::string::String;
 
 use crate::limits::ResourceLimits;
 use crate::sasl::SaslState;
 
-/// Spec §2.4 Connection-State.
+/// Spec §2.4 connection state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConnectionState {
-    /// Initial state vor dem Header-Exchange.
+    /// Initial state before the header exchange.
     #[default]
     Start,
-    /// AMQP-Header empfangen.
+    /// AMQP header received.
     HdrRcvd,
-    /// AMQP-Header beidseitig ausgetauscht.
+    /// AMQP header exchanged in both directions.
     HdrExch,
-    /// Open-Performative empfangen.
+    /// Open performative received.
     OpenRcvd,
-    /// Open-Performative beidseitig — Connection ist offen.
+    /// Open performative in both directions — the connection is open.
     Opened,
-    /// Close-Performative empfangen — Cleanup-Phase.
+    /// Close performative received — cleanup phase.
     CloseRcvd,
-    /// Close-Performative gesendet — Cleanup-Phase.
+    /// Close performative sent — cleanup phase.
     CloseSent,
-    /// Connection abgeschlossen.
+    /// Connection finished.
     End,
 }
 
-/// Spec §2.5 Session-State.
+/// Spec §2.5 session state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SessionState {
-    /// Initial state vor Begin-Performative.
+    /// Initial state before the Begin performative.
     #[default]
     Unmapped,
-    /// Begin-Performative empfangen.
+    /// Begin performative received.
     BeginRcvd,
-    /// Begin-Performative beidseitig — Session offen.
+    /// Begin performative in both directions — the session is open.
     Mapped,
-    /// End-Performative empfangen.
+    /// End performative received.
     EndRcvd,
-    /// End-Performative gesendet.
+    /// End performative sent.
     EndSent,
-    /// Session geschlossen.
+    /// Session closed.
     Discarded,
 }
 
-/// Endpoint-Konfiguration.
+/// Endpoint configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EndpointConfig {
-    /// Container-Id (Spec §2.4.1) — uniquely identifies the endpoint.
+    /// Container id (Spec §2.4.1) — uniquely identifies the endpoint.
     pub container_id: String,
-    /// Resource-Limits + DoS-Caps.
+    /// Resource limits + DoS caps.
     pub limits: ResourceLimits,
-    /// Aktuelle SASL-Verhandlung (None vor SASL-Phase).
+    /// Current SASL negotiation (None before the SASL phase).
     pub sasl: Option<SaslState>,
 }
 
-/// Endpoint-Fehler aus der State-Machine.
+/// Endpoint error from the state machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EndpointError {
     /// Spec §2.4 — illegal state transition.
     IllegalStateTransition {
-        /// Vorher-Zustand.
+        /// Previous state.
         from: ConnectionState,
-        /// Was wir versucht haben (z.B. "open").
+        /// What was attempted (e.g. "open").
         attempted: &'static str,
     },
-    /// Resource-Limit ueberschritten.
+    /// Resource limit exceeded.
     ResourceLimitExceeded(&'static str),
-    /// Idle-Timeout ueberschritten.
+    /// Idle timeout exceeded.
     IdleTimeout,
-    /// Connection wurde vom Peer abrupt geschlossen.
+    /// Connection was abruptly closed by the peer.
     ConnectionAborted,
 }
 
-/// Eingehende Frame-Klasse — vereinfacht; ein konkreter Listener
-/// dispatched anhand von Performative-Descriptor.
+/// Inbound frame class — simplified; a concrete listener
+/// dispatches based on the performative descriptor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InboundFrameKind {
-    /// AMQP-Header (4-Byte Magic + 4-Byte Version).
+    /// AMQP header (4-byte magic + 4-byte version).
     Header,
-    /// Open-Performative.
+    /// Open performative.
     Open,
-    /// Begin-Performative.
+    /// Begin performative.
     Begin,
-    /// Attach-Performative.
+    /// Attach performative.
     Attach,
-    /// Flow-Performative.
+    /// Flow performative.
     Flow,
-    /// Transfer-Performative.
+    /// Transfer performative.
     Transfer,
-    /// Disposition-Performative.
+    /// Disposition performative.
     Disposition,
-    /// Detach-Performative.
+    /// Detach performative.
     Detach,
-    /// End-Performative.
+    /// End performative.
     End,
-    /// Close-Performative.
+    /// Close performative.
     Close,
 }
 
@@ -110,8 +110,8 @@ pub enum InboundFrameKind {
 /// frame.
 ///
 /// # Errors
-/// `IllegalStateTransition` wenn die State-Machine den Frame im
-/// aktuellen State nicht akzeptiert.
+/// `IllegalStateTransition` if the state machine does not accept
+/// the frame in the current state.
 pub fn advance_connection(
     state: ConnectionState,
     frame: InboundFrameKind,
@@ -121,11 +121,11 @@ pub fn advance_connection(
     let next = match (state, frame) {
         (C::Start, F::Header) => C::HdrRcvd,
         (C::HdrRcvd, F::Header) => C::HdrExch,
-        // Server may permit OPEN-RCVD direkt nach HdrExch.
+        // Server may permit OPEN-RCVD directly after HdrExch.
         (C::HdrExch, F::Open) => C::OpenRcvd,
         (C::OpenRcvd, F::Open) => C::Opened,
-        // Innerhalb von Opened sind Begin/Attach/etc erlaubt; State
-        // bleibt Opened bis Close eintrifft.
+        // Within Opened, Begin/Attach/etc are allowed; the state
+        // stays Opened until Close arrives.
         (
             C::Opened,
             F::Begin | F::Attach | F::Flow | F::Transfer | F::Disposition | F::Detach | F::End,

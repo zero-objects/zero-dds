@@ -1,30 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Block-H: DCPS-Entity-Header-Stubs (Spec idl4-cpp-1.0 §7.6 + dds-psm-cxx-1.0 §8.1).
+//! Block-H: DCPS entity header stubs (Spec idl4-cpp-1.0 §7.6 + dds-psm-cxx-1.0 §8.1).
 //!
-//! Emittiert Class-Declarations und Method-Signaturen fuer die DCPS-Kern-
-//! Entitaeten:
+//! Emits class declarations and method signatures for the core DCPS entities:
 //!
 //! - `dds::domain::DomainParticipant`
 //! - `dds::pub::Publisher` + `dds::pub::DataWriter<T>`
 //! - `dds::sub::Subscriber` + `dds::sub::DataReader<T>`
 //! - `dds::topic::Topic<T>`
-//! - `dds::core::Entity` (Basisklasse)
+//! - `dds::core::Entity` (base class)
 //!
-//! Die volle Implementation liegt nicht im Codegen — das ist Aufgabe der
-//! handgeschriebenen DDS-PSM-CXX-Runtime (Cluster C5.2 Templates).
-//! Der Codegen liefert hier nur das Header-Skeleton, gegen das Anwender-
-//! Code kompiliert.
+//! The full implementation is not part of the code generator — that is the
+//! responsibility of the hand-written DDS-PSM-CXX runtime (cluster C5.2 templates).
+//! The code generator only provides the header skeleton against which user
+//! code is compiled.
 
 use core::fmt::Write;
 
 use crate::error::CppGenError;
 
-/// Schreibt den vollstaendigen DCPS-Header.
+/// Writes the complete DCPS header.
 ///
 /// # Errors
-/// Liefert [`CppGenError::Internal`], wenn das Schreiben in den
-/// `String`-Buffer scheitert.
+/// Returns [`CppGenError::Internal`] if writing to the `String` buffer fails.
 pub fn emit_dcps_header(out: &mut String) -> Result<(), CppGenError> {
     writeln!(
         out,
@@ -44,7 +42,7 @@ pub fn emit_dcps_header(out: &mut String) -> Result<(), CppGenError> {
     Ok(())
 }
 
-/// Liefert die Liste der vom Block-H emittierten Klassen-FQN.
+/// Returns the list of fully-qualified class names emitted by Block-H.
 #[must_use]
 pub fn dcps_class_names() -> Vec<&'static str> {
     vec![

@@ -1,9 +1,9 @@
-//! WP 0.6 W1 — Cyclone-DDS Wire-Compliance-Tests.
+//! WP 0.6 W1 — Cyclone DDS wire compliance tests.
 //!
-//! Verifiziert dass unser Decoder hand-kuratierte Cyclone-DDS-typische
-//! RTPS-Frames akzeptiert und unser Encoder Bytes mit gleicher Struktur
-//! produziert. Siehe `tests/fixtures/cyclone/README.md` fuer
-//! Frame-Beschreibungen und Phase-1-Capture-Anleitung.
+//! Verifies that our decoder accepts hand-curated Cyclone-DDS-typical
+//! RTPS frames and our encoder produces bytes with the same structure.
+//! See `tests/fixtures/cyclone/README.md` for
+//! frame descriptions and the phase-1 capture guide.
 
 #![allow(
     clippy::expect_used,
@@ -30,8 +30,8 @@ const FRAME_DATA_CDR2: &str = include_str!("fixtures/cyclone/data_with_cdr2_payl
 const FRAME_HEARTBEAT: &str = include_str!("fixtures/cyclone/heartbeat.hex");
 const FRAME_SEDP_PUBLICATION: &str = include_str!("fixtures/cyclone/sedp_publication.hex");
 
-/// Parsed Hex-Text (mit Kommentar-Zeilen `#` und Whitespace) zu
-/// `Vec<u8>`. Ignoriert leere Zeilen und Kommentare.
+/// Parses hex text (with comment lines `#` and whitespace) into
+/// `Vec<u8>`. Ignores empty lines and comments.
 fn parse_hex(text: &str) -> Vec<u8> {
     let mut bytes = Vec::new();
     for line in text.lines() {
@@ -102,7 +102,7 @@ fn cyclone_heartbeat_decodes() {
             assert_eq!(h.first_sn, SequenceNumber(1));
             assert_eq!(h.last_sn, SequenceNumber(10));
             assert_eq!(h.count, 5);
-            // Fixture hat flags=0x03 = E+F: final_flag=true, liveliness=false.
+            // Fixture has flags=0x03 = E+F: final_flag=true, liveliness=false.
             assert!(h.final_flag, "Cyclone-HB must carry F-flag from header");
             assert!(!h.liveliness_flag);
         }
@@ -128,7 +128,7 @@ fn cyclone_frames_have_rtps_magic() {
 
 #[test]
 fn cyclone_frames_use_rtps_2_5_or_compatible() {
-    // Akzeptiere alles ab Version 2.x.
+    // Accept everything from version 2.x onward.
     for (name, frame) in [
         ("empty", FRAME_DATA_EMPTY),
         ("cdr2", FRAME_DATA_CDR2),
@@ -144,13 +144,13 @@ fn cyclone_frames_use_rtps_2_5_or_compatible() {
 }
 
 // ============================================================================
-// Encoder-Compliance: ZeroDDS-Output ist strukturell aequivalent
+// Encoder compliance: ZeroDDS output is structurally equivalent
 // ============================================================================
 
 #[test]
 fn zerodds_writer_produces_compatible_data_layout() {
-    // Wir bauen manuell ein DATA-Datagram mit den gleichen Feldern wie
-    // das empty-Payload-Fixture und vergleichen relevante Bytes.
+    // We manually build a DATA datagram with the same fields as
+    // the empty-payload fixture and compare relevant bytes.
     let header = RtpsHeader {
         protocol_version: zerodds_rtps::wire_types::ProtocolVersion::V2_5,
         vendor_id: VendorId([0x01, 0x10]),
@@ -171,19 +171,19 @@ fn zerodds_writer_produces_compatible_data_layout() {
     let our_bytes = encode_data_datagram(header, &[data]).unwrap();
     let cyclone_bytes = parse_hex(FRAME_DATA_EMPTY);
 
-    // Header (20 byte) muss byte-identisch sein.
+    // Header (20 byte) must be byte-identical.
     assert_eq!(
         &our_bytes[..20],
         &cyclone_bytes[..20],
         "RTPS-Header bytes must match Cyclone-Reference exactly"
     );
-    // Submessage-Header (4 byte) muss byte-identisch sein.
+    // Submessage header (4 byte) must be byte-identical.
     assert_eq!(
         &our_bytes[20..24],
         &cyclone_bytes[20..24],
         "Submessage-Header bytes must match"
     );
-    // DATA body (20 byte) muss byte-identisch sein.
+    // DATA body (20 bytes) must be byte-identical.
     assert_eq!(
         &our_bytes[24..44],
         &cyclone_bytes[24..44],
@@ -258,7 +258,7 @@ fn parse_hex_ignores_comments_and_whitespace() {
 
 #[test]
 fn parse_hex_handles_inline_comments() {
-    assert_eq!(parse_hex("12 34 # rest ignoriert"), vec![0x12, 0x34]);
+    assert_eq!(parse_hex("12 34 # rest ignored"), vec![0x12, 0x34]);
 }
 
 // ============================================================================
@@ -267,8 +267,8 @@ fn parse_hex_handles_inline_comments() {
 
 #[test]
 fn cyclone_sedp_publication_datagram_decodes() {
-    // Decoded alle Submessages im Cyclone-SEDP-Publication-Datagramm.
-    // Erwartet: 4 DATA-Submessages mit SEDP Publications writer_id.
+    // Decodes all submessages in the Cyclone SEDP publication datagram.
+    // Expected: 4 DATA submessages with SEDP Publications writer_id.
     let bytes = parse_hex(FRAME_SEDP_PUBLICATION);
     let parsed = decode_datagram(&bytes).expect("decode");
     let data_count = parsed
@@ -291,8 +291,8 @@ fn cyclone_sedp_publication_datagram_decodes() {
 
 #[test]
 fn cyclone_sedp_publication_parameter_list_parses() {
-    // Nimmt die erste DATA-Submessage aus dem Cyclone-Datagramm und
-    // parst ihre serialized_payload als PublicationBuiltinTopicData.
+    // Takes the first DATA submessage from the Cyclone datagram and
+    // parses its serialized_payload as PublicationBuiltinTopicData.
     // Erwartet: topic_name "DDSPerfCPUStats", type_name "CPUStats".
     use zerodds_rtps::publication_data::PublicationBuiltinTopicData;
 
@@ -315,11 +315,11 @@ fn cyclone_sedp_publication_parameter_list_parses() {
 
     assert_eq!(pub_data.topic_name, "DDSPerfCPUStats");
     assert_eq!(pub_data.type_name, "CPUStats");
-    // endpoint_guid muss den erwarteten writer-EntityId-Suffix tragen
-    // (Cyclone nutzt 0x02 = USER_WRITER_WITH_KEY fuer DataWriters,
-    // aber ddsperf baut interne EntityIds mit Kind 0x02).
-    // Wir pruefen hier nur strukturell: Prefix nicht all-zero + EntityId
-    // nicht PARTICIPANT.
+    // endpoint_guid must carry the expected writer-EntityId suffix
+    // (Cyclone uses 0x02 = USER_WRITER_WITH_KEY for DataWriters,
+    // but ddsperf builds internal EntityIds with kind 0x02).
+    // We only check structurally here: prefix not all-zero + EntityId
+    // not PARTICIPANT.
     use zerodds_rtps::wire_types::GuidPrefix;
     assert_ne!(pub_data.key.prefix, GuidPrefix::UNKNOWN);
     assert_ne!(pub_data.key.entity_id, EntityId::PARTICIPANT);

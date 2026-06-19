@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! CompleteTypeObject (XTypes 1.3 §7.3.4.4) — vollstaendige
-//! Repraesentation mit Namen + Annotationen.
+//! CompleteTypeObject (XTypes 1.3 §7.3.4.4) — full
+//! representation with names + annotations.
 //!
-//! Struktur strikt parallel zu [`super::minimal`]: fuer jeden
-//! Typ-Kind gibt es `Complete<Foo>Type` in einer eigenen Datei.
+//! The structure is strictly parallel to [`super::minimal`]: for each
+//! type kind there is a `Complete<Foo>Type` in its own file.
 
 pub mod alias_type;
 pub mod annotation_type;
@@ -103,7 +103,7 @@ impl CompleteTypeObject {
     /// Decode.
     ///
     /// # Errors
-    /// `TypeCodecError::UnknownTypeKind` bei unbekanntem Discriminator.
+    /// `TypeCodecError::UnknownTypeKind` on an unknown discriminator.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
         let d = r.read_u8()?;
         Ok(match d {

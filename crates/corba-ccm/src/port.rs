@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Port-Registry — Receptacle/Facet/Event-Connections zur Laufzeit.
+//! Port registry — receptacle/facet/event connections at runtime.
 //!
-//! Spec §8.1.4: jede Component-Instance hat eine Connection-Tabelle,
-//! die Ports an konkrete Object-References bzw. Event-Streams bindet.
+//! Spec §8.1.4: each component instance has a connection table
+//! that binds ports to concrete object references or event streams.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -13,16 +13,16 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use std::sync::Mutex;
 
-/// Connection-Id — vom Container vergeben (Spec §8.1.4.5).
+/// Connection ID — assigned by the container (spec §8.1.4.5).
 pub type ConnectionId = u64;
 
-/// Event-Stream-Identifier — verbindet Source mit Sink ueber einen
-/// Push/Pull-Channel.
+/// Event-stream identifier — connects a source to a sink over a
+/// push/pull channel.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EventStream {
-    /// Stream-Name (typisch Event-Type-Repository-ID).
+    /// Stream name (typically the event-type repository ID).
     pub name: String,
-    /// Eindeutige Connection-Id.
+    /// Unique connection ID.
     pub connection_id: ConnectionId,
 }
 
@@ -33,7 +33,7 @@ struct PortRegistryInner {
     ior_by_id: BTreeMap<ConnectionId, Vec<u8>>,
 }
 
-/// Port-Registry pro Component-Instance.
+/// Port registry per component instance.
 #[derive(Debug, Default)]
 pub struct PortRegistry {
     inner: Mutex<PortRegistryInner>,
@@ -41,7 +41,7 @@ pub struct PortRegistry {
 }
 
 impl PortRegistry {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -50,8 +50,8 @@ impl PortRegistry {
         }
     }
 
-    /// `connect` — Spec §8.1.4.5. Bindet einen Receptacle an einen
-    /// Object-Reference (als opaque IOR-Bytes). Liefert die
+    /// `connect` — spec §8.1.4.5. Binds a receptacle to an
+    /// object reference (as opaque IOR bytes). Returns the
     /// `ConnectionId`.
     pub fn connect_receptacle(
         &self,
@@ -71,7 +71,7 @@ impl PortRegistry {
         id
     }
 
-    /// `disconnect` — Spec §8.1.4.6.
+    /// `disconnect` — spec §8.1.4.6.
     pub fn disconnect_receptacle(
         &self,
         instance_id: &str,
@@ -96,7 +96,7 @@ impl PortRegistry {
         removed
     }
 
-    /// `get_connections` — Liste von ConnectionIds + IOR-Bytes.
+    /// `get_connections` — list of connection IDs + IOR bytes.
     #[must_use]
     pub fn get_connections(
         &self,
@@ -117,7 +117,7 @@ impl PortRegistry {
             .collect()
     }
 
-    /// `subscribe` — Event-Sink-zu-Source-Bindung.
+    /// `subscribe` — event-sink-to-source binding.
     pub fn subscribe_event_sink(&self, source: &str, sink_name: String) -> ConnectionId {
         let id = self.seq.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut inner) = self.inner.lock() {
@@ -133,7 +133,7 @@ impl PortRegistry {
         id
     }
 
-    /// Liste aller Event-Sinks, die an einer Event-Source haengen.
+    /// List of all event sinks attached to an event source.
     #[must_use]
     pub fn list_event_sinks(&self, source: &str) -> Vec<EventStream> {
         self.inner

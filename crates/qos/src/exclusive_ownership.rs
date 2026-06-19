@@ -1,46 +1,46 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Exclusive-Ownership-Resolution (DDS 1.4 §2.2.3.23 / §2.2.2.5.5).
+//! Exclusive ownership resolution (DDS 1.4 §2.2.3.23 / §2.2.2.5.5).
 //!
-//! Wenn ein Topic mit `Exclusive`-Ownership-QoS konfiguriert ist und
-//! mehrere DataWriter die selbe Instanz schreiben, MUSS der DataReader
-//! Samples nur vom **aktuell strongest writer** ausliefern. Der "strongest
-//! writer" ist der mit dem **hoechsten ownership_strength**-Wert; bei
-//! Gleichstand entscheidet die GUID lexikografisch (Tie-Breaker).
+//! When a topic is configured with `Exclusive` ownership QoS and
+//! multiple DataWriters write the same instance, the DataReader MUST
+//! deliver samples only from the **currently strongest writer**. The
+//! "strongest writer" is the one with the **highest ownership_strength**
+//! value; on a tie the GUID decides lexicographically (tie-breaker).
 //!
-//! Dieses Modul liefert die zustandslose Resolver-Funktion. Der Caller
-//! (DataReader.take()) muss pro Instanz einen `OwnershipResolver`-State
-//! halten.
+//! This module provides the stateless resolver function. The caller
+//! (DataReader.take()) must hold an `OwnershipResolver` state per
+//! instance.
 //!
-//! WP 2.8 (C2.8 — QoS-Vollstaendigkeit).
+//! WP 2.8 (C2.8 — QoS completeness).
 
 extern crate alloc;
 
 use alloc::vec::Vec;
 
-/// 16-byte GUID-Reference (eines Writers). Wir kopieren die GUID als
-/// `[u8; 16]` rein, damit das Modul kein zerodds-rtps-Dependency braucht.
+/// 16-byte GUID reference (of a writer). We copy the GUID in as
+/// `[u8; 16]` so the module needs no zerodds-rtps dependency.
 pub type WriterGuidBytes = [u8; 16];
 
-/// Ein einzelner Kandidaten-Writer fuer Exclusive-Ownership.
+/// A single candidate writer for exclusive ownership.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OwnershipCandidate {
-    /// 16-byte Writer-GUID.
+    /// 16-byte writer GUID.
     pub guid: WriterGuidBytes,
     /// `OwnershipStrengthQosPolicy.value` (i32, default 0).
     pub strength: i32,
-    /// True wenn der Writer aktuell als ALIVE bekannt ist (Liveliness-State).
-    /// Inaktive Writer werden bei der Resolution ausgeschlossen.
+    /// True if the writer is currently known as ALIVE (liveliness state).
+    /// Inactive writers are excluded from the resolution.
     pub alive: bool,
 }
 
-/// Wählt aus einer Kandidatenliste den aktuellen "strongest writer"
-/// gemäß DDS 1.4 §2.2.3.23.4:
+/// Selects from a candidate list the current "strongest writer" per
+/// DDS 1.4 §2.2.3.23.4:
 ///
-/// 1. Filtere nicht-alive Writer.
-/// 2. Sortiere nach `strength` absteigend; bei Gleichstand nach GUID
-///    aufsteigend (Tie-Breaker).
-/// 3. Liefere den ersten Eintrag (oder `None` wenn alle gefiltert wurden).
+/// 1. Filter out non-alive writers.
+/// 2. Sort by `strength` descending; on a tie by GUID ascending
+///    (tie-breaker).
+/// 3. Return the first entry (or `None` if all were filtered out).
 #[must_use]
 pub fn resolve_strongest(candidates: &[OwnershipCandidate]) -> Option<OwnershipCandidate> {
     let mut alive: Vec<OwnershipCandidate> =
@@ -48,7 +48,7 @@ pub fn resolve_strongest(candidates: &[OwnershipCandidate]) -> Option<OwnershipC
     if alive.is_empty() {
         return None;
     }
-    // Sort: höchste strength zuerst; bei Gleichstand kleinste GUID zuerst.
+    // Sort: highest strength first; on a tie the smallest GUID first.
     alive.sort_by(|a, b| {
         b.strength
             .cmp(&a.strength)
@@ -57,28 +57,28 @@ pub fn resolve_strongest(candidates: &[OwnershipCandidate]) -> Option<OwnershipC
     alive.first().copied()
 }
 
-/// Stateful-Resolver — wird pro Instanz im DataReader gehalten und
-/// erinnert den aktuell akzeptierten Writer.
+/// Stateful resolver — held per instance in the DataReader and
+/// remembers the currently accepted writer.
 ///
-/// `accept(sample_writer)` liefert `true` wenn das Sample ausgeliefert
-/// werden soll, `false` wenn gefiltert werden soll.
+/// `accept(sample_writer)` returns `true` if the sample should be
+/// delivered, `false` if it should be filtered.
 #[derive(Debug, Clone, Default)]
 pub struct OwnershipResolver {
-    /// Bekannte Writer mit ihrem aktuellen Strength + Alive-State.
+    /// Known writers with their current strength + alive state.
     candidates: Vec<OwnershipCandidate>,
-    /// Cache des aktuell strongest Writers.
+    /// Cache of the currently strongest writer.
     current: Option<WriterGuidBytes>,
 }
 
 impl OwnershipResolver {
-    /// Neuer leerer Resolver.
+    /// New empty resolver.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Registriert einen Writer (oder aktualisiert dessen Strength/Alive).
-    /// Recomputed den aktuell strongest writer.
+    /// Registers a writer (or updates its strength/alive).
+    /// Recomputes the currently strongest writer.
     pub fn upsert(&mut self, candidate: OwnershipCandidate) {
         if let Some(existing) = self
             .candidates
@@ -92,26 +92,26 @@ impl OwnershipResolver {
         self.recompute();
     }
 
-    /// Entfernt einen Writer (z.B. nach unmatch oder lost-Liveliness).
+    /// Removes a writer (e.g. after unmatch or lost liveliness).
     pub fn remove(&mut self, guid: &WriterGuidBytes) {
         self.candidates.retain(|c| &c.guid != guid);
         self.recompute();
     }
 
-    /// True wenn der Writer aktuell der strongest ist.
+    /// True if the writer is currently the strongest.
     #[must_use]
     pub fn is_strongest(&self, guid: &WriterGuidBytes) -> bool {
         self.current.as_ref() == Some(guid)
     }
 
-    /// True wenn ein Sample dieses Writers ausgeliefert werden soll.
-    /// Convenience-Wrapper um `is_strongest`.
+    /// True if a sample of this writer should be delivered.
+    /// Convenience wrapper around `is_strongest`.
     #[must_use]
     pub fn accept(&self, writer_guid: &WriterGuidBytes) -> bool {
         self.is_strongest(writer_guid)
     }
 
-    /// Aktueller strongest Writer.
+    /// Currently strongest writer.
     #[must_use]
     pub fn current(&self) -> Option<WriterGuidBytes> {
         self.current
@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn resolve_ignores_non_alive() {
         let cs = [
-            cand(0xAA, 100, false), // hoechste strength aber nicht alive
+            cand(0xAA, 100, false), // highest strength but not alive
             cand(0xBB, 5, true),
         ];
         assert_eq!(resolve_strongest(&cs).unwrap().guid, [0xBB; 16]);
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn tie_breaker_uses_smallest_guid() {
-        // Beide haben strength=5; kleinere GUID gewinnt.
+        // Both have strength=5; the smaller GUID wins.
         let cs = [cand(0xBB, 5, true), cand(0xAA, 5, true)];
         assert_eq!(resolve_strongest(&cs).unwrap().guid, [0xAA; 16]);
     }
@@ -182,7 +182,7 @@ mod tests {
         r.upsert(cand(0xAA, 5, true));
         r.upsert(cand(0xBB, 10, true));
         assert!(r.is_strongest(&[0xBB; 16]));
-        // BB sinkt unter AA
+        // BB drops below AA
         r.upsert(cand(0xBB, 1, true));
         assert!(r.is_strongest(&[0xAA; 16]));
     }
@@ -203,7 +203,7 @@ mod tests {
         r.upsert(cand(0xAA, 10, true));
         r.upsert(cand(0xBB, 5, true));
         assert!(r.is_strongest(&[0xAA; 16]));
-        // AA wird ALIVE→NOT_ALIVE
+        // AA goes ALIVE→NOT_ALIVE
         r.upsert(cand(0xAA, 10, false));
         assert!(r.is_strongest(&[0xBB; 16]));
     }

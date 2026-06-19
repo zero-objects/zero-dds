@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Writer/Reader-QoS-Aggregates und aggregate Compatibility-Check.
+//! Writer/Reader QoS aggregates and an aggregate compatibility check.
 
 use super::data_lifecycle::{ReaderDataLifecycleQosPolicy, WriterDataLifecycleQosPolicy};
 use super::deadline::DeadlineQosPolicy;
@@ -21,9 +21,9 @@ use super::resource_limits::ResourceLimitsQosPolicy;
 use super::time_based_filter::TimeBasedFilterQosPolicy;
 use super::transport_priority::TransportPriorityQosPolicy;
 
-/// Summe aller DataWriter-QoS-Policies.
+/// Sum of all DataWriter QoS policies.
 ///
-/// Siehe DDS 1.4 §2.2.2.4.2.
+/// See DDS 1.4 §2.2.2.4.2.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriterQos {
     /// DurabilityQosPolicy.
@@ -52,9 +52,9 @@ pub struct WriterQos {
     pub ownership: OwnershipQosPolicy,
     /// OwnershipStrengthQosPolicy.
     pub ownership_strength: OwnershipStrengthQosPolicy,
-    /// PresentationQosPolicy. Spec-seitig auf Publisher-Level; hier am
-    /// WriterQos fuer Convenience (WP 2.x DCPS-API wird das korrekt
-    /// nach Publisher/Subscriber trennen).
+    /// PresentationQosPolicy. Spec-wise at the publisher level; here on
+    /// the WriterQos for convenience (the WP 2.x DCPS API will split
+    /// this correctly by publisher/subscriber).
     pub presentation: PresentationQosPolicy,
     /// PartitionQosPolicy.
     pub partition: PartitionQosPolicy,
@@ -70,8 +70,8 @@ pub struct WriterQos {
 
 impl Default for WriterQos {
     /// Writer-Defaults gem. DDS 1.4 §2.2.3.14.3 (Reliability):
-    /// Writer-Seite defaultet auf **Reliable** (Reader bleibt BestEffort).
-    /// Alle anderen Policies nutzen ihre Policy-eigenen Defaults.
+    /// Writer side defaults to **Reliable** (reader stays BestEffort).
+    /// All other policies use their policy-specific defaults.
     fn default() -> Self {
         Self {
             durability: DurabilityQosPolicy::default(),
@@ -100,9 +100,9 @@ impl Default for WriterQos {
     }
 }
 
-/// Summe aller DataReader-QoS-Policies.
+/// Sum of all DataReader QoS policies.
 ///
-/// Siehe DDS 1.4 §2.2.2.5.2.
+/// See DDS 1.4 §2.2.2.5.2.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReaderQos {
     /// DurabilityQosPolicy.
@@ -125,8 +125,8 @@ pub struct ReaderQos {
     pub ownership: OwnershipQosPolicy,
     /// TimeBasedFilterQosPolicy.
     pub time_based_filter: TimeBasedFilterQosPolicy,
-    /// PresentationQosPolicy. Spec-seitig auf Subscriber-Level; hier am
-    /// ReaderQos fuer Convenience (Re-Faktorisierung in WP 2.x DCPS).
+    /// PresentationQosPolicy. Spec-wise at the subscriber level; here on
+    /// the ReaderQos for convenience (refactoring in WP 2.x DCPS).
     pub presentation: PresentationQosPolicy,
     /// PartitionQosPolicy.
     pub partition: PartitionQosPolicy,
@@ -144,32 +144,32 @@ pub struct ReaderQos {
 // Intra-QoS-Consistency-Check
 // ============================================================================
 
-/// Intra-QoS-Konsistenz-Fehler: Policies, die fuer sich genommen nicht
-/// widersprechen duerfen.
+/// Intra-QoS consistency error: policies that, taken on their own, must
+/// not contradict each other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum InconsistentReason {
-    /// `HistoryQosPolicy` mit Kind=KeepLast und depth <= 0.
+    /// `HistoryQosPolicy` with Kind=KeepLast and depth <= 0.
     HistoryDepth,
     /// `ResourceLimitsQosPolicy`: max_samples_per_instance > max_samples.
     ResourceLimits,
     /// `TimeBasedFilterQosPolicy.minimum_separation` > `DeadlineQosPolicy.period`
     /// (DDS 1.4 §2.2.3.12.3).
     FilterVsDeadline,
-    /// `HistoryQosPolicy` Kind=KeepLast, aber `history.depth > resource_limits.max_samples_per_instance`
-    /// (DDS 1.4 §2.2.3.19.3 — KeepLast-History darf den Resource-Limit nicht überschreiten).
+    /// `HistoryQosPolicy` Kind=KeepLast, but `history.depth > resource_limits.max_samples_per_instance`
+    /// (DDS 1.4 §2.2.3.19.3 — KeepLast history must not exceed the resource limit).
     HistoryDepthExceedsResourceLimit,
-    /// `OwnershipQosPolicy.kind == Exclusive` aber `OwnershipStrengthQosPolicy.value`
-    /// nicht gesetzt (Default 0 ist erlaubt, aber nur sinnvoll, wenn explizit konfiguriert).
-    /// Marker fuer Tooling, **kein** harter Fehler.
+    /// `OwnershipQosPolicy.kind == Exclusive` but `OwnershipStrengthQosPolicy.value`
+    /// not set (default 0 is allowed, but only meaningful if explicitly configured).
+    /// A marker for tooling, **not** a hard error.
     ExclusiveOwnershipWithoutStrength,
 }
 
 impl WriterQos {
-    /// Pruefung der lokalen Konsistenz laut DDS 1.4 §2.2.3.
+    /// Checks local consistency per DDS 1.4 §2.2.3.
     ///
     /// # Errors
-    /// `InconsistentReason` bei Verletzung.
+    /// `InconsistentReason` on violation.
     pub fn check_consistency(&self) -> Result<(), InconsistentReason> {
         if matches!(self.history.kind, super::history::HistoryKind::KeepLast)
             && self.history.depth <= 0
@@ -179,8 +179,8 @@ impl WriterQos {
         if !self.resource_limits.is_consistent() {
             return Err(InconsistentReason::ResourceLimits);
         }
-        // §2.2.3.19.3: KeepLast.depth darf max_samples_per_instance nicht
-        // überschreiten (LENGTH_UNLIMITED=-1 ist immer ok).
+        // §2.2.3.19.3: KeepLast.depth must not exceed
+        // max_samples_per_instance (LENGTH_UNLIMITED=-1 is always ok).
         if matches!(self.history.kind, super::history::HistoryKind::KeepLast)
             && self.resource_limits.max_samples_per_instance >= 0
             && self.history.depth > self.resource_limits.max_samples_per_instance
@@ -192,10 +192,10 @@ impl WriterQos {
 }
 
 impl ReaderQos {
-    /// Pruefung der lokalen Konsistenz laut DDS 1.4 §2.2.3.
+    /// Checks local consistency per DDS 1.4 §2.2.3.
     ///
     /// # Errors
-    /// `InconsistentReason` bei Verletzung.
+    /// `InconsistentReason` on violation.
     pub fn check_consistency(&self) -> Result<(), InconsistentReason> {
         if matches!(self.history.kind, super::history::HistoryKind::KeepLast)
             && self.history.depth <= 0
@@ -205,13 +205,13 @@ impl ReaderQos {
         if !self.resource_limits.is_consistent() {
             return Err(InconsistentReason::ResourceLimits);
         }
-        // §2.2.3.12.3: TimeBasedFilter.minimum_separation muss <=
-        // Deadline.period sein.
+        // §2.2.3.12.3: TimeBasedFilter.minimum_separation must be <=
+        // Deadline.period.
         if self.time_based_filter.minimum_separation > self.deadline.period {
             return Err(InconsistentReason::FilterVsDeadline);
         }
-        // §2.2.3.19.3: KeepLast.depth darf max_samples_per_instance nicht
-        // überschreiten.
+        // §2.2.3.19.3: KeepLast.depth must not exceed
+        // max_samples_per_instance.
         if matches!(self.history.kind, super::history::HistoryKind::KeepLast)
             && self.resource_limits.max_samples_per_instance >= 0
             && self.history.depth > self.resource_limits.max_samples_per_instance
@@ -232,9 +232,9 @@ use crate::compatibility::{CompatibilityResult, IncompatibleReason};
 
 /// Aggregate Request/Offered-Compatibility-Check.
 ///
-/// Wendet alle Policy-spezifischen `is_compatible_with`-Regeln an und
-/// sammelt die Incompatibility-Reasons. Entspricht DDS 1.4 §2.2.3
-/// Table "QoS compatibility".
+/// Applies all policy-specific `is_compatible_with` rules and collects
+/// the incompatibility reasons. Corresponds to DDS 1.4 §2.2.3 table
+/// "QoS compatibility".
 #[must_use]
 pub fn check_compatibility(offered: &WriterQos, requested: &ReaderQos) -> CompatibilityResult {
     let mut reasons: Vec<IncompatibleReason> = Vec::new();
@@ -361,13 +361,13 @@ mod tests {
     use super::super::history::HistoryKind;
     use super::super::resource_limits::ResourceLimitsQosPolicy;
 
-    /// WriterQos default muss konsistent sein (Regression-Schutz).
+    /// The WriterQos default must be consistent (regression guard).
     #[test]
     fn writer_default_is_consistent() {
         assert!(WriterQos::default().check_consistency().is_ok());
     }
 
-    /// HistoryDepth <= 0 bei KeepLast verletzt §2.2.3.17.3.
+    /// HistoryDepth <= 0 with KeepLast violates §2.2.3.17.3.
     #[test]
     fn writer_keep_last_zero_depth_inconsistent() {
         let mut w = WriterQos::default();
@@ -378,7 +378,7 @@ mod tests {
         assert_eq!(w.check_consistency(), Err(InconsistentReason::HistoryDepth));
     }
 
-    /// KeepAll mit depth=0 ist zulaessig (depth nur fuer KeepLast relevant).
+    /// KeepAll with depth=0 is permitted (depth only relevant for KeepLast).
     #[test]
     fn writer_keep_all_depth_zero_is_ok() {
         let mut w = WriterQos::default();
@@ -406,13 +406,13 @@ mod tests {
     // Intra-QoS-Consistency — ReaderQos::check_consistency
     // ============================================================
 
-    /// ReaderQos default ist konsistent.
+    /// The ReaderQos default is consistent.
     #[test]
     fn reader_default_is_consistent() {
         assert!(ReaderQos::default().check_consistency().is_ok());
     }
 
-    /// Reader HistoryDepth-Regel identisch zu Writer.
+    /// Reader HistoryDepth rule identical to writer.
     #[test]
     fn reader_keep_last_negative_depth_inconsistent() {
         let mut r = ReaderQos::default();
@@ -421,7 +421,7 @@ mod tests {
         assert_eq!(r.check_consistency(), Err(InconsistentReason::HistoryDepth));
     }
 
-    /// Reader ResourceLimits-Regel.
+    /// Reader ResourceLimits rule.
     #[test]
     fn reader_resource_limits_inconsistent() {
         let mut r = ReaderQos::default();
@@ -449,7 +449,7 @@ mod tests {
         );
     }
 
-    /// FilterVsDeadline-Boundary: gleich gross → ok (`>`-Vergleich).
+    /// FilterVsDeadline boundary: equal size → ok (`>` comparison).
     #[test]
     fn reader_filter_eq_deadline_is_ok() {
         let mut r = ReaderQos::default();
@@ -459,7 +459,7 @@ mod tests {
     }
 
     // ============================================================
-    // Aggregate Compatibility — zusaetzliche Reason-Kombinationen
+    // Aggregate compatibility — additional reason combinations
     // ============================================================
 
     /// LatencyBudget offered.duration > requested.duration → inkompatibel.
@@ -479,7 +479,7 @@ mod tests {
     }
 
     /// Liveliness offered.lease_duration > requested.lease_duration →
-    /// inkompatibel (offered muss schneller oder gleich reagieren).
+    /// incompatible (offered must react faster or equally).
     #[test]
     fn liveliness_lease_mismatch_reported() {
         use super::super::liveliness::LivelinessKind;
@@ -566,7 +566,7 @@ mod tests {
         }
     }
 
-    /// Debug/Clone fuer Aggregate (trivial, aber Coverage: Struct-Builder).
+    /// Debug/Clone for the aggregate (trivial, but coverage: struct builder).
     #[test]
     fn writer_qos_clone_and_eq() {
         let a = WriterQos::default();

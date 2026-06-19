@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Scope-aware Symbol-Tabellen-Builder fuer den AMI4CCM-Naming-
-//! Conflict-Resolver — Spec §7.5 / §7.3.1.
+//! Scope-aware symbol-table builder for the AMI4CCM naming-conflict
+//! resolver — Spec §7.5 / §7.3.1.
 //!
-//! Der Resolver in [`crate::transform::resolve_unique_iface_name`]
-//! prueft `AMI4CCM_<Iface>` (und `…ReplyHandler`) gegen ein Set
-//! "bereits-bekannter Identifier" und schiebt `AMI_`-Prefixe vor, bis
-//! der Name eindeutig ist. Bisher wurde dieser Set vom Caller von Hand
-//! gefuettert — das Scope-blinde Verhalten war der letzte offene Punkt
-//! aus `omg-ami4ccm-1.1.open.md` §7.5.
+//! The resolver in [`crate::transform::resolve_unique_iface_name`]
+//! checks `AMI4CCM_<Iface>` (and `…ReplyHandler`) against a set of
+//! "already-known identifiers" and prepends `AMI_` prefixes until the
+//! name is unique. Until now this set was fed by hand by the caller —
+//! the scope-blind behavior was the last open item from
+//! `omg-ami4ccm-1.1.open.md` §7.5.
 //!
-//! Dieses Modul liest eine [`Specification`] und sammelt **alle**
-//! Top-Level-Identifier (Modules, Interfaces, Types, Consts, Excepts,
-//! Components, Homes, Events, Porttypes, Connectors, ValueTypes, plus
-//! deren Forward-Decls) sowie alle qualifizierten Modul-Identifier in
-//! einen [`crate::transform::TransformContext`]. Damit ist der
-//! Konflikt-Check spec-konform fuer den **gesamten** Compilation-Scope.
+//! This module reads a [`Specification`] and collects **all**
+//! top-level identifiers (modules, interfaces, types, consts, excepts,
+//! components, homes, events, porttypes, connectors, valuetypes, plus
+//! their forward decls) as well as all qualified module identifiers
+//! into a [`crate::transform::TransformContext`]. This makes the
+//! conflict check spec-compliant for the **entire** compilation scope.
 //!
-//! Spec-Hintergrund: §7.5 verlangt Eindeutigkeit "in the interface or
-//! any of the interface's base interfaces" und im Compilation-Scope.
-//! Der Symbol-Walker hier ist die fehlende dritte Quelle (modul-/
-//! repository-Scope) neben Iface-Members + base-Iface-Names.
+//! Spec background: §7.5 requires uniqueness "in the interface or
+//! any of the interface's base interfaces" and within the compilation
+//! scope. The symbol walker here is the missing third source (module-/
+//! repository-scope) alongside interface members + base-interface names.
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -33,14 +33,14 @@ use zerodds_idl::ast::{
 
 use crate::transform::TransformContext;
 
-/// Erweitert einen [`TransformContext`] um alle Top-Level-Identifier
-/// einer kompletten [`Specification`].
+/// Extends a [`TransformContext`] with all top-level identifiers of a
+/// complete [`Specification`].
 ///
-/// Nach dem Aufruf enthaelt `ctx.known_symbols` jeden `<name>` aus
-/// jedem Modul-Pfad, sowohl als bare Identifier (z.B. `Order`) als
-/// auch als vollqualifizierter Pfad (z.B. `Trading::Order`). Der
-/// Resolver matcht gegen die Bare-Form, weil die AMI4CCM-Namen ohne
-/// Modul-Prefix emittiert werden.
+/// After the call, `ctx.known_symbols` contains every `<name>` from
+/// every module path, both as a bare identifier (e.g. `Order`) and as
+/// a fully-qualified path (e.g. `Trading::Order`). The resolver matches
+/// against the bare form, because the AMI4CCM names are emitted without
+/// a module prefix.
 pub fn populate_from_specification(ctx: &mut TransformContext, spec: &Specification) {
     let mut path_prefix = String::new();
     for d in &spec.definitions {
@@ -48,8 +48,8 @@ pub fn populate_from_specification(ctx: &mut TransformContext, spec: &Specificat
     }
 }
 
-/// Bequeme Konstruktor-Variante: erzeugt einen frischen Kontext und
-/// fuellt ihn aus der `Specification`.
+/// Convenience constructor variant: creates a fresh context and fills
+/// it from the `Specification`.
 #[must_use]
 pub fn context_from_specification(spec: &Specification) -> TransformContext {
     let mut ctx = TransformContext::default();
@@ -59,9 +59,9 @@ pub fn context_from_specification(spec: &Specification) -> TransformContext {
 
 /// zerodds-lint: recursion-depth 32
 ///
-/// Indirekt rekursiv via `walk_module`. IDL-Module-Verschachtelung ist
-/// in der Praxis flach (typisch <5 Ebenen); 32 deckt selbst extreme
-/// generated-Codes ab.
+/// Indirectly recursive via `walk_module`. IDL module nesting is flat
+/// in practice (typically <5 levels); 32 covers even extreme generated
+/// code.
 fn walk_definition(ctx: &mut TransformContext, d: &Definition, scope: &mut String) {
     match d {
         Definition::Module(m) => {
@@ -85,7 +85,7 @@ fn walk_definition(ctx: &mut TransformContext, d: &Definition, scope: &mut Strin
         Definition::TemplateModuleInst(tmi) => {
             insert_with_scope(ctx, scope, &tmi.instance_name.text);
         }
-        // Aliases fuer benannte Type-IDs ohne eigenes Symbol.
+        // Aliases for named type IDs without their own symbol.
         Definition::TypeId(_) | Definition::TypePrefix(_) | Definition::Import(_) => {}
         Definition::VendorExtension(_) => {}
     }
@@ -93,8 +93,8 @@ fn walk_definition(ctx: &mut TransformContext, d: &Definition, scope: &mut Strin
 
 /// zerodds-lint: recursion-depth 32
 ///
-/// Indirekt rekursiv via `walk_definition` (Module → Module). Selbe
-/// Bound wie `walk_definition`.
+/// Indirectly recursive via `walk_definition` (module → module). Same
+/// bound as `walk_definition`.
 fn walk_module(ctx: &mut TransformContext, m: &ModuleDef, scope: &mut String) {
     let saved_len = scope.len();
     if !scope.is_empty() {
@@ -123,6 +123,8 @@ fn walk_type_decl(ctx: &mut TransformContext, t: &TypeDecl, scope: &str) {
                 insert_with_scope(ctx, scope, &decl.name().text);
             }
         }
+        // `native X;` declares exactly one type name.
+        TypeDecl::Native(n) => insert_with_scope(ctx, scope, &n.name.text),
     }
 }
 
@@ -176,18 +178,18 @@ fn walk_interface(ctx: &mut TransformContext, i: &InterfaceDcl, scope: &str) {
     insert_with_scope(ctx, scope, name);
 }
 
-/// Fuegt sowohl die bare Form (`Order`) als auch die vollqualifizierte
-/// Form (`Trading::Order`) in `ctx.known_symbols` ein. Der Resolver
-/// matcht gegen die bare Form, aber Caller, die mit qualifizierten
-/// Namen arbeiten, koennen ebenfalls treffen.
+/// Inserts both the bare form (`Order`) and the fully-qualified form
+/// (`Trading::Order`) into `ctx.known_symbols`. The resolver matches
+/// against the bare form, but callers working with qualified names can
+/// also match.
 fn insert_with_scope(ctx: &mut TransformContext, scope: &str, name: &str) {
     ctx.add_known_symbol(name);
     if !scope.is_empty() {
         ctx.add_known_symbol(&format!("{scope}::{name}"));
     }
-    // AMI4CCM_-Praefix-Variante explizit propagieren, damit der
-    // Resolver den Fall "AMI4CCM_<X> existiert bereits als
-    // user-defined Symbol" sauber abbildet.
+    // Propagate the AMI4CCM_ prefix variant explicitly, so the
+    // resolver cleanly handles the case "AMI4CCM_<X> already exists as
+    // a user-defined symbol".
     ctx.add_known_symbol(&format!("AMI4CCM_{name}"));
     if !scope.is_empty() {
         ctx.add_known_symbol(&format!("{scope}::AMI4CCM_{name}"));
@@ -252,10 +254,10 @@ mod tests {
         assert!(ctx.known_symbols.contains("Trade"));
         // Qualified form
         assert!(ctx.known_symbols.contains("Outer::Inner::Trade"));
-        // AMI4CCM-prefix form (qualifiziert + bare).
+        // AMI4CCM-prefix form (qualified + bare).
         assert!(ctx.known_symbols.contains("AMI4CCM_Trade"));
         assert!(ctx.known_symbols.contains("Outer::Inner::AMI4CCM_Trade"));
-        // Modul-Idents selbst sind ebenfalls erfasst.
+        // The module idents themselves are also captured.
         assert!(ctx.known_symbols.contains("Outer"));
         assert!(ctx.known_symbols.contains("Inner"));
     }
@@ -272,18 +274,18 @@ mod tests {
 
     #[test]
     fn full_resolver_uses_scope_for_conflict() {
-        // Integration: Spec-driven Resolver findet AMI4CCM_<Order> im
-        // Module-Scope (nicht im Iface) und prefixt mit AMI_.
+        // Integration: the spec-driven resolver finds AMI4CCM_<Order> in
+        // the module scope (not in the interface) and prefixes with AMI_.
         let spec = make_spec(alloc::vec![module_def(
             "Trading",
             alloc::vec![
                 iface_def("Order"),
-                iface_def("AMI4CCM_Order"), // user-defined Konflikt!
+                iface_def("AMI4CCM_Order"), // user-defined conflict!
             ],
         )]);
         let ctx = context_from_specification(&spec);
-        // Der Konflikt-Resolver fuer "Order" muss "AMI_AMI4CCM_Order"
-        // emittieren, weil "AMI4CCM_Order" im Scope existiert.
+        // The conflict resolver for "Order" must emit "AMI_AMI4CCM_Order",
+        // because "AMI4CCM_Order" exists in the scope.
         use crate::transform::transform_interface_in_context;
         let order = InterfaceDef {
             kind: InterfaceKind::Plain,

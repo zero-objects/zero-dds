@@ -3,30 +3,30 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-security-logging/badge.svg)](https://docs.rs/zerodds-security-logging)
 
-Security-Logging-Backends fuer den
-[ZeroDDS](https://zerodds.org)-Stack: `LoggingPlugin`-Implementationen
-fuer stderr, JSON-Lines, Syslog und FanOut. Safety classification:
+Security logging backends for the
+[ZeroDDS](https://zerodds.org) stack: `LoggingPlugin` implementations
+for stderr, JSON lines, syslog and FanOut. Safety classification:
 **SAFE**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
 | OMG DDS-Security 1.1 | §8.6 (LoggingPlugin) |
 | RFC 5424 | Syslog (UDP) |
 
-## Was ist drin
+## What's inside
 
-- **`StderrLoggingPlugin`** — Default fuer Container-Deployments mit stdout/stderr-Collector (Loki, Vector, Fluentd).
-- **`JsonLinesLoggingPlugin`** — `application/x-ndjson` in eine Datei. Rotation via `logrotate`.
-- **`SyslogLoggingPlugin`** — UDP an Syslog-Collector (Facility `LOCAL0`).
-- **`FanOutLoggingPlugin`** — fan-out an mehrere Backends parallel.
+- **`StderrLoggingPlugin`** — default for container deployments with a stdout/stderr collector (Loki, Vector, Fluentd).
+- **`JsonLinesLoggingPlugin`** — `application/x-ndjson` to a file. Rotation via `logrotate`.
+- **`SyslogLoggingPlugin`** — UDP to a syslog collector (facility `LOCAL0`).
+- **`FanOutLoggingPlugin`** — fan-out to multiple backends in parallel.
 
-Alle Backends filtern Events nach `LogLevel`; Default-Level `Warning`.
+All backends filter events by `LogLevel`; default level `Warning`.
 
-## Schichten-Position
+## Layer position
 
-Layer 4. Konsumiert `zerodds-security` (LoggingPlugin-Trait + LogLevel + SecurityError).
+Layer 4. Consumes `zerodds-security` (LoggingPlugin trait + LogLevel + SecurityError).
 
 ## Quickstart
 
@@ -43,15 +43,15 @@ let fanout: Box<dyn LoggingPlugin> = Box::new(FanOutLoggingPlugin::new(vec![
 ]));
 ```
 
-## Nicht-Ziele
+## Non-goals
 
-- Syslog-TCP (RFC 5425) und Syslog-TLS — vertrautes Segment vorausgesetzt.
-- OpenTelemetry/OTLP — abgedeckt von [`zerodds-observability-otlp`](../observability-otlp).
-- Log-Rotation im Plugin — Aufgabe von `logrotate`/`journald`.
+- Syslog TCP (RFC 5425) and syslog TLS — a trusted segment is assumed.
+- OpenTelemetry/OTLP — covered by [`zerodds-observability-otlp`](../observability-otlp).
+- Log rotation in the plugin — the job of `logrotate`/`journald`.
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1`. Public-API + JSON-Lines-Format + RFC-5424-Encoding RC1-stabil.
+`1.0.0-rc.1`. Public API + JSON-lines format + RFC-5424 encoding RC1-stable.
 
 ## Tests
 
@@ -59,8 +59,8 @@ let fanout: Box<dyn LoggingPlugin> = Box::new(FanOutLoggingPlugin::new(vec![
 cargo test -p zerodds-security-logging
 ```
 
-16 Tests grün.
+16 tests green.
 
-## Lizenz
+## License
 
 Apache-2.0.

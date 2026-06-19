@@ -1,7 +1,7 @@
 Quickstart
 ==========
 
-Installation (Dev-Setup)
+Installation (dev setup)
 ------------------------
 
 .. code-block:: bash
@@ -13,7 +13,7 @@ Installation (Dev-Setup)
    cd crates/py
    maturin develop --features extension-module
 
-Ein Minimal-Beispiel
+A minimal example
 --------------------
 
 .. code-block:: python
@@ -38,12 +38,12 @@ Ein Minimal-Beispiel
    for payload in reader.take():
        print(payload)
 
-Dependency-freier Codec-Test
+Dependency-free codec test
 -----------------------------
 
-Die reinen Python-Module ``zerodds.cdr`` und ``zerodds.idl`` laufen
-**ohne maturin-Build**. Damit koennen Unit-Tests in CI den Python-
-Layer validieren, ohne Rust-Compiler bereit zu halten.
+The pure-Python modules ``zerodds.cdr`` and ``zerodds.idl`` run
+**without a maturin build**. This lets unit tests in CI validate the
+Python layer without having a Rust compiler ready.
 
 .. code-block:: bash
 

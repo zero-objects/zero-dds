@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! gRPC-over-HTTP/2 Server-Skeleton.
+//! gRPC-over-HTTP/2 server skeleton.
 //!
-//! Verbindet [`zerodds_http2`] (RFC 7540 Framing) + [`zerodds_hpack`] (RFC
-//! 7541 Compression) + den lokalen gRPC-Wire-Codec
-//! ([`crate::frame`]) zu einem callback-getriebenen Server, der
-//! gRPC-Calls an einen Caller-Layer-Handler routet.
+//! Connects [`zerodds_http2`] (RFC 7540 framing) + [`zerodds_hpack`] (RFC
+//! 7541 compression) + the local gRPC wire codec ([`crate::frame`]) into
+//! a callback-driven server that routes gRPC calls to a caller-layer
+//! handler.
 //!
-//! # Usage-Skelett
+//! # Usage skeleton
 //!
 //! ```ignore
 //! let mut server = GrpcServer::new();
 //! server.handle(stream_id, http2_frame_payload, |req| {
-//!     // req: GrpcRequest mit method, path, body
+//!     // req: GrpcRequest with method, path, body
 //!     // returns GrpcResponse
 //! });
 //! ```
@@ -31,37 +31,37 @@ use crate::frame::{decode_message, encode_message};
 use crate::path::parse_path;
 use crate::status::Status;
 
-/// Eingehender gRPC-Request (post-HTTP/2-decode).
+/// Incoming gRPC request (post-HTTP/2-decode).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrpcRequest {
-    /// Stream-Id.
+    /// Stream id.
     pub stream_id: StreamId,
-    /// `:path` z.B. `/dds.demo.Trader/PlaceOrder`.
+    /// `:path` e.g. `/dds.demo.Trader/PlaceOrder`.
     pub path: String,
-    /// Service-Name (extrahiert aus `:path`).
+    /// Service name (extracted from `:path`).
     pub service: String,
-    /// Method-Name (extrahiert aus `:path`).
+    /// Method name (extracted from `:path`).
     pub method: String,
-    /// `grpc-encoding`-Header (`identity`/`gzip` etc.).
+    /// `grpc-encoding` header (`identity`/`gzip` etc.).
     pub encoding: Option<String>,
-    /// Length-Prefixed-Message-Bytes.
+    /// Length-Prefixed-Message bytes.
     pub body: Vec<u8>,
 }
 
-/// Outgoing gRPC-Response.
+/// Outgoing gRPC response.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrpcResponse {
-    /// Stream-Id.
+    /// Stream id.
     pub stream_id: StreamId,
-    /// gRPC-Status-Code (0 = OK).
+    /// gRPC status code (0 = OK).
     pub status: Status,
-    /// Optional Status-Message (`grpc-message`-Header).
+    /// Optional status message (`grpc-message` header).
     pub message: Option<String>,
-    /// Response-Body (Length-Prefixed-Message).
+    /// Response body (Length-Prefixed-Message).
     pub body: Vec<u8>,
 }
 
-/// Stream-Tracking-Eintrag.
+/// Stream-tracking entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct StreamSlot {
     state: StreamState,
@@ -69,7 +69,7 @@ struct StreamSlot {
     body: Vec<u8>,
 }
 
-/// gRPC-Server-Skeleton.
+/// gRPC server skeleton.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GrpcServer {
     settings: Settings,
@@ -79,19 +79,19 @@ pub struct GrpcServer {
 }
 
 impl GrpcServer {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Verarbeitet ein eingehendes HTTP/2-Frame-Bytestrom-Slice.
+    /// Processes an incoming HTTP/2 frame byte-stream slice.
     ///
-    /// Liefert eine optional dekodierte gRPC-Request, wenn der Stream
-    /// vollstaendig ist (`END_STREAM` empfangen).
+    /// Returns an optionally decoded gRPC request once the stream is
+    /// complete (`END_STREAM` received).
     ///
     /// # Errors
-    /// Static-String bei Protokoll-Verletzung.
+    /// Static string on protocol violation.
     pub fn process_frame(
         &mut self,
         input: &[u8],
@@ -167,11 +167,11 @@ impl GrpcServer {
         })
     }
 
-    /// Encodiert eine `GrpcResponse` zu einem HTTP/2-Bytestrom
-    /// (HEADERS + DATA + Trailer-HEADERS).
+    /// Encodes a `GrpcResponse` into an HTTP/2 byte stream
+    /// (HEADERS + DATA + trailer HEADERS).
     ///
     /// # Errors
-    /// Static-String bei Encode-Fehlern.
+    /// Static string on encode errors.
     pub fn encode_response(&mut self, resp: &GrpcResponse) -> Result<Vec<u8>, &'static str> {
         let mut out = Vec::new();
         // 1) HEADERS frame: :status 200, content-type application/grpc.
@@ -238,11 +238,11 @@ impl GrpcServer {
         Ok(out)
     }
 
-    /// Versucht, einen Request-Body als LPM-Frame zu dekodieren.
-    /// Convenience fuer Caller.
+    /// Attempts to decode a request body as an LPM frame.
+    /// Convenience for callers.
     ///
     /// # Errors
-    /// Static-String wenn die Length-Prefixed-Message korrupt ist.
+    /// Static string if the Length-Prefixed-Message is corrupt.
     pub fn decode_request_body(&self, req: &GrpcRequest) -> Result<Vec<u8>, &'static str> {
         let (_, msg, _) = decode_message(&req.body).map_err(|_| "lpm decode")?;
         Ok(msg)

@@ -1,32 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Tokenizer — wandelt Source-Text in einen [`TokenStream`].
+//! Tokenizer — converts source text into a [`TokenStream`].
 //!
-//! Algorithmus pro Source-Position:
+//! Algorithm per source position:
 //!
-//! 1. Skip whitespace (Space/Tab/Newline/CR).
-//! 2. Wenn Position auf Identifier-Start (alpha oder `_`):
-//!    - Scan vollstaendigen Identifier (alphanumeric oder `_`).
-//!    - Wenn der gescannte Text einem Keyword in [`TokenRules`] entspricht:
-//!      emit `Keyword(s)`. Sonst: emit `Ident`.
-//!    - Damit wird `structfoo` als ein einziger Identifier erkannt, nicht
-//!      als `Keyword("struct")` + `Ident("foo")`.
-//! 3. Wenn Position auf Digit: scan IntegerLiteral (optional Float — Phase 0
-//!    hat nur Int-Support).
-//! 4. Sonst: probiere alle Punct-Regeln in Laengen-Reihenfolge (laenger
-//!    zuerst, dank [`TokenRules`]-Sortierung). Erstes Match gewinnt.
-//! 5. Wenn nichts matcht: [`ParseError::LexerError`] mit Position.
+//! 1. Skip whitespace (space/tab/newline/CR).
+//! 2. If the position is at an identifier start (alpha or `_`):
+//!    - Scan the complete identifier (alphanumeric or `_`).
+//!    - If the scanned text matches a keyword in [`TokenRules`]:
+//!      emit `Keyword(s)`. Otherwise: emit `Ident`.
+//!    - This way `structfoo` is recognized as a single identifier, not
+//!      as `Keyword("struct")` + `Ident("foo")`.
+//! 3. If the position is at a digit: scan IntegerLiteral (optional float — phase 0
+//!    only has int support).
+//! 4. Otherwise: try all punct rules in length order (longer
+//!    first, thanks to [`TokenRules`] sorting). The first match wins.
+//! 5. If nothing matches: [`ParseError::LexerError`] with the position.
 //!
-//! Pattern-basierte Tokens (Identifier, IntegerLiteral) werden nur
-//! emittiert, wenn die jeweilige Regel in den `TokenRules` enthalten ist —
-//! sonst wuerde der Tokenizer unerwartete Tokens produzieren, die der
-//! Recognizer nicht akzeptieren wuerde.
+//! Pattern-based tokens (identifier, IntegerLiteral) are emitted only
+//! if the respective rule is contained in the `TokenRules` —
+//! otherwise the tokenizer would produce unexpected tokens that the
+//! recognizer would not accept.
 //!
-//! Whitespace und Kommentare werden gedroppt (kein Trivia-Tracking in
-//! Phase 0). Source-Preserving Output kommt mit einem Source-Map-Refactor
-//! in einer spaeteren Phase, falls Formatter benoetigt werden.
+//! Whitespace and comments are dropped (no trivia tracking in
+//! phase 0). Source-preserving output comes with a source-map refactor
+//! in a later phase, if formatters are needed.
 //!
-//! Siehe RFC 0001 §4.1 und §5.x.
+//! See RFC 0001 §4.1 and §5.x.
 
 use crate::errors::{ParseError, Span};
 use crate::grammar::{Grammar, TokenKind};
@@ -36,46 +36,46 @@ use super::token::{Token, TokenStream};
 
 /// Lexer-Frontend.
 ///
-/// Konstruktion ueber [`Tokenizer::for_grammar`] leitet die Token-Regeln
-/// einmalig aus der Grammar ab; anschliessende [`Tokenizer::tokenize`]-
-/// Aufrufe arbeiten auf dem festen Regel-Satz.
+/// Construction via [`Tokenizer::for_grammar`] derives the token rules
+/// once from the grammar; subsequent [`Tokenizer::tokenize`]
+/// calls work on the fixed rule set.
 #[derive(Debug, Clone)]
 pub struct Tokenizer {
     rules: TokenRules,
 }
 
 impl Tokenizer {
-    /// Konstruiert einen Tokenizer aus einer existierenden Regel-Menge.
+    /// Constructs a tokenizer from an existing rule set.
     #[must_use]
     pub fn new(rules: TokenRules) -> Self {
         Self { rules }
     }
 
-    /// Konstruiert einen Tokenizer durch Auto-Extraktion der Regeln aus
-    /// einer Grammar.
+    /// Constructs a tokenizer by auto-extracting the rules from
+    /// a grammar.
     #[must_use]
     pub fn for_grammar(grammar: &Grammar) -> Self {
         Self::new(TokenRules::from_grammar(grammar))
     }
 
-    /// Zugriff auf die zugrundeliegenden Regeln.
+    /// Access to the underlying rules.
     #[must_use]
     pub fn rules(&self) -> &TokenRules {
         &self.rules
     }
 
-    /// Tokenisiert den Source-Text.
+    /// Tokenizes the source text.
     ///
     /// # Errors
-    /// Liefert [`ParseError::LexerError`], wenn an einer Position kein
-    /// Token-Pattern matcht (unerwartetes Zeichen).
+    /// Returns [`ParseError::LexerError`] if no token pattern matches
+    /// at a position (unexpected character).
     pub fn tokenize<'src>(&self, source: &'src str) -> Result<TokenStream<'src>, ParseError> {
         let mut tokens = TokenStream::new();
         let bytes = source.as_bytes();
         let mut pos = 0usize;
 
         while pos < bytes.len() {
-            // 1. Trivia (Whitespace + Comments) ueberspringen.
+            // 1. Skip trivia (whitespace + comments).
             match skip_trivia(bytes, pos) {
                 Ok(after) if after > pos => {
                     pos = after;
@@ -85,7 +85,7 @@ impl Tokenizer {
                 Ok(_) => {}
             }
 
-            // 2. Wide-Literal-Disambiguator: 'L"' (WideString) oder "L'" (WideChar).
+            // 2. Wide-literal disambiguator: 'L"' (WideString) or "L'" (WideChar).
             if bytes[pos] == b'L' && pos + 1 < bytes.len() {
                 if bytes[pos + 1] == b'"' && self.has_kind(TokenKind::WideStringLiteral) {
                     let end = scan_string_literal(source, bytes, pos + 1)?;
@@ -101,7 +101,7 @@ impl Tokenizer {
                 }
             }
 
-            // 3. Identifier oder Keyword.
+            // 3. Identifier or keyword.
             if is_ident_start(bytes[pos]) {
                 let end = scan_ident(bytes, pos);
                 let text = &source[pos..end];
@@ -146,7 +146,7 @@ impl Tokenizer {
                 continue;
             }
 
-            // 8. Kein Match — Error.
+            // 8. No match — error.
             return Err(ParseError::LexerError {
                 message: format_unknown_char(source, pos),
                 span: Span::point(pos),
@@ -156,10 +156,10 @@ impl Tokenizer {
         Ok(tokens)
     }
 
-    /// Scannt eine Zahl ab Position `start`. Unterscheidet Integer (decimal,
-    /// octal `0…`, hex `0x…`), Float (mit `.` oder Exponent) und
-    /// Fixed-Point (mit Suffix `d`/`D`). Liefert `None`, wenn keine
-    /// passende Token-Kind in den Regeln ist.
+    /// Scans a number from position `start`. Distinguishes integer (decimal,
+    /// octal `0…`, hex `0x…`), float (with `.` or exponent) and
+    /// fixed-point (with suffix `d`/`D`). Returns `None` if no
+    /// matching token kind is in the rules.
     fn scan_number(&self, bytes: &[u8], start: usize) -> Option<(TokenKind, usize)> {
         // Hex
         if bytes[start] == b'0'
@@ -187,7 +187,7 @@ impl Tokenizer {
         // Optional Fraction
         let mut has_dot = false;
         if pos < bytes.len() && bytes[pos] == b'.' {
-            // `.` ist nur Float, wenn entweder Int-Part da war oder nach `.` Digits.
+            // `.` is only a float when either an int part was present or digits follow `.`.
             let next_is_digit = pos + 1 < bytes.len() && bytes[pos + 1].is_ascii_digit();
             if int_part_present || next_is_digit {
                 has_dot = true;
@@ -234,13 +234,13 @@ impl Tokenizer {
         None
     }
 
-    /// Klassifiziert einen Identifier-Text: Keyword wenn in den Regeln,
-    /// sonst Ident.
+    /// Classifies an identifier text: keyword if it is in the rules,
+    /// otherwise Ident.
     ///
-    /// §7.2.3.2 Escape-Identifier: ein Identifier mit `_`-Prefix
-    /// (`_module`, `_struct`, ...) ist *nie* ein Keyword. Der
-    /// Underscore schaltet die Keyword-Pruefung ab und erlaubt damit
-    /// die Verwendung reservierter Worte als Identifier.
+    /// §7.2.3.2 escape identifier: an identifier with a `_` prefix
+    /// (`_module`, `_struct`, ...) is *never* a keyword. The
+    /// underscore turns off the keyword check and thus allows
+    /// the use of reserved words as identifiers.
     fn classify_ident(&self, text: &str) -> TokenKind {
         if text.starts_with('_') {
             return TokenKind::Ident;
@@ -255,7 +255,7 @@ impl Tokenizer {
         TokenKind::Ident
     }
 
-    /// Versucht jede Punct-Regel in Reihenfolge (longest first dank Sort).
+    /// Tries each punct rule in order (longest first thanks to sort).
     fn match_punct(&self, source: &str, pos: usize) -> Option<(TokenKind, usize)> {
         let tail = &source[pos..];
         for rule in self.rules.iter() {
@@ -268,8 +268,7 @@ impl Tokenizer {
         None
     }
 
-    /// `true`, wenn die Regeln eine Pattern-basierte Regel fuer `kind`
-    /// enthalten.
+    /// `true` if the rules contain a pattern-based rule for `kind`.
     fn has_kind(&self, kind: TokenKind) -> bool {
         self.rules.iter().any(|r| r.kind == kind)
     }
@@ -282,8 +281,8 @@ impl Tokenizer {
 fn skip_whitespace(bytes: &[u8], start: usize) -> usize {
     // §7.2.1: "Blanks, horizontal and vertical tabs, newlines, form feeds,
     // and comments (collective, 'white space') are ignored except as they
-    // serve to separate tokens." VT (0x0B) und FF (0x0C) gehoeren laut
-    // Spec-Tab. 7-5 dazu.
+    // serve to separate tokens." VT (0x0B) and FF (0x0C) belong here per
+    // spec Tab. 7-5.
     let mut i = start;
     while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'\x0b' | b'\x0c') {
         i += 1;
@@ -291,10 +290,10 @@ fn skip_whitespace(bytes: &[u8], start: usize) -> usize {
     i
 }
 
-/// Konsumiert in einer Schleife alle Whitespace- und Comment-Sequenzen
-/// (Mehrfach-Wiederholung bis nichts mehr triviabar ist). Liefert die
-/// neue Position, oder einen [`ParseError`] bei unterminiertem Block-
-/// Comment.
+/// Consumes, in a loop, all whitespace and comment sequences
+/// (repeated until nothing more is trivializable). Returns the
+/// new position, or a [`ParseError`] on an unterminated block
+/// comment.
 fn skip_trivia(bytes: &[u8], start: usize) -> Result<usize, ParseError> {
     let mut pos = start;
     loop {
@@ -327,8 +326,8 @@ fn skip_line_comment(bytes: &[u8], start: usize) -> usize {
 }
 
 fn skip_block_comment(bytes: &[u8], start: usize) -> Result<usize, ParseError> {
-    // "/* ... */" — IDL erlaubt keine Verschachtelung; das erste "*/"
-    // beendet den Block.
+    // "/* ... */" — IDL allows no nesting; the first "*/"
+    // ends the block.
     let mut i = start + 2;
     while i + 1 < bytes.len() {
         if bytes[i] == b'*' && bytes[i + 1] == b'/' {
@@ -358,9 +357,9 @@ fn scan_ident(bytes: &[u8], start: usize) -> usize {
     i
 }
 
-/// Scannt ein String-Literal `"..."` ab Position `start`. Unterstuetzt
-/// `\`-Escape-Sequenzen (jedes Zeichen nach `\` gehoert zum String,
-/// insbesondere `\"`).
+/// Scans a string literal `"..."` from position `start`. Supports
+/// `\` escape sequences (every character after `\` belongs to the string,
+/// in particular `\"`).
 fn scan_string_literal(source: &str, bytes: &[u8], start: usize) -> Result<usize, ParseError> {
     let mut i = start + 1; // Anfangs-`"` skippen
     while i < bytes.len() {
@@ -376,7 +375,7 @@ fn scan_string_literal(source: &str, bytes: &[u8], start: usize) -> Result<usize
     })
 }
 
-/// Scannt ein Char-Literal `'x'` (oder `'\n'`, `'\xFF'`) ab Position `start`.
+/// Scans a char literal `'x'` (or `'\n'`, `'\xFF'`) from position `start`.
 fn scan_char_literal(source: &str, bytes: &[u8], start: usize) -> Result<usize, ParseError> {
     let mut i = start + 1;
     while i < bytes.len() {
@@ -392,7 +391,7 @@ fn scan_char_literal(source: &str, bytes: &[u8], start: usize) -> Result<usize, 
     })
 }
 
-/// Hilfsfunktion: Token mit Span konstruieren und an Stream anhaengen.
+/// Helper: construct a token with span and append it to the stream.
 fn push_token<'src>(
     stream: &mut TokenStream<'src>,
     kind: TokenKind,
@@ -403,9 +402,9 @@ fn push_token<'src>(
     stream.push(Token::new(kind, Span::new(start, end), &source[start..end]));
 }
 
-/// Formatiert eine Lexer-Fehlermeldung fuer ein unbekanntes Zeichen an
-/// `pos`. Sicher gegen multi-byte UTF-8 (nimmt das erste Rust-`char` ab
-/// `pos`, nimmt `'?'` als Fallback).
+/// Formats a lexer error message for an unknown character at
+/// `pos`. Safe against multi-byte UTF-8 (takes the first Rust `char` from
+/// `pos`, uses `'?'` as a fallback).
 fn format_unknown_char(source: &str, pos: usize) -> String {
     let ch = source[pos..].chars().next().unwrap_or('?');
     format!("unexpected character {ch:?} at byte offset {pos}")
@@ -413,8 +412,8 @@ fn format_unknown_char(source: &str, pos: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    // Tests duerfen panicen + .expect verwenden (Workspace-Lints sind primaer
-    // fuer Produktions-Code gedacht; assert_eq!() panickt intern auch).
+    // Tests may panic + use .expect (workspace lints are primarily
+    // intended for production code; assert_eq!() panics internally too).
     #![allow(clippy::expect_used, clippy::panic)]
 
     use super::*;
@@ -445,7 +444,7 @@ mod tests {
         }
     }
 
-    /// Grammar mit Keyword "struct", Ident, Punct "{", "}", ";".
+    /// Grammar with keyword "struct", Ident, Punct "{", "}", ";".
     const G_BASIC: Grammar = Grammar {
         name: "basic",
         version: IdlVersion::V4_2,
@@ -465,7 +464,7 @@ mod tests {
     };
 
     // -----------------------------------------------------------------
-    // Konstruktion
+    // Construction
     // -----------------------------------------------------------------
 
     #[test]
@@ -483,7 +482,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Whitespace + leerer Input
+    // Whitespace + empty input
     // -----------------------------------------------------------------
 
     #[test]
@@ -525,9 +524,9 @@ mod tests {
 
     #[test]
     fn ident_starting_with_keyword_prefix_stays_ident() {
-        // Regression: "structfoo" darf NICHT als Keyword + Ident zerlegt
-        // werden — der Lexer scannt zuerst den vollen Identifier und
-        // klassifiziert dann.
+        // Regression: "structfoo" must NOT be split into keyword + ident
+        // — the lexer first scans the full identifier and
+        // then classifies.
         let t = Tokenizer::for_grammar(&G_BASIC);
         let s = t.tokenize("structfoo").expect("must succeed");
         assert_eq!(s.len(), 1);
@@ -564,8 +563,8 @@ mod tests {
 
     #[test]
     fn longest_match_for_multichar_punct() {
-        // Grammar mit "::" und ":" — Tokenizer muss "::" als 1 Token
-        // erkennen, nicht 2x ":".
+        // Grammar with "::" and ":" — the tokenizer must recognize "::" as 1 token,
+        // not 2x ":".
         const G: Grammar = Grammar {
             name: "colons",
             version: IdlVersion::V4_2,
@@ -647,7 +646,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Integer-Literal (nur wenn Grammar es kennt)
+    // Integer literal (only if the grammar knows it)
     // -----------------------------------------------------------------
 
     #[test]
@@ -677,14 +676,14 @@ mod tests {
 
     #[test]
     fn integer_literal_skipped_when_grammar_does_not_include_it() {
-        // G_BASIC kennt IntegerLiteral nicht — "42" → Lexer-Error.
+        // G_BASIC does not know IntegerLiteral — "42" → lexer error.
         let t = Tokenizer::for_grammar(&G_BASIC);
         let result = t.tokenize("42");
         assert!(matches!(result, Err(ParseError::LexerError { .. })));
     }
 
     // -----------------------------------------------------------------
-    // Error-Pfade
+    // Error paths
     // -----------------------------------------------------------------
 
     #[test]
@@ -714,7 +713,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // E2E mit Toy-Grammar
+    // E2E with the toy grammar
     // -----------------------------------------------------------------
 
     #[test]
@@ -734,10 +733,10 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // IDL-4.2 Number-/String-/Char-Literale (T3.1)
+    // IDL-4.2 number-/string-/char literals (T3.1)
     // -----------------------------------------------------------------
 
-    /// Grammar mit allen wichtigen IDL-Literal-Klassen.
+    /// Grammar with all important IDL literal classes.
     const G_LITERALS: Grammar = Grammar {
         name: "literals",
         version: IdlVersion::V4_2,
@@ -924,7 +923,7 @@ mod tests {
     #[test]
     fn slash_in_string_is_not_comment_start() {
         let t = Tokenizer::for_grammar(&G_LITERALS);
-        // String mit "//" innen — darf nicht als Comment interpretiert werden.
+        // String with "//" inside — must not be interpreted as a comment.
         let s = t.tokenize(r#""http://example""#).expect("must succeed");
         assert_eq!(s.len(), 1);
         assert_eq!(s.tokens()[0].kind, TokenKind::StringLiteral);
@@ -932,8 +931,8 @@ mod tests {
 
     #[test]
     fn identifier_starting_with_l_is_not_wide_literal() {
-        // "Lazy" beginnt mit L, ist aber kein L"..." oder L'...'.
-        // Lexer muss als Identifier erkennen.
+        // "Lazy" begins with L, but is not L"..." or L'...'.
+        // The lexer must recognize it as an identifier.
         let t = Tokenizer::for_grammar(&G_BASIC);
         let s = t.tokenize("Lazy").expect("must succeed");
         assert_eq!(s.len(), 1);
@@ -942,17 +941,17 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // §7.2.1 — VT/FF im Source-Whitespace (Phase 1.1)
+    // §7.2.1 — VT/FF in source whitespace (Phase 1.1)
     // -----------------------------------------------------------------
 
     #[test]
     fn whitespace_includes_vt_and_ff() {
         let t = Tokenizer::for_grammar(&G_BASIC);
-        // Source mit VT (0x0B) und FF (0x0C) zwischen Tokens. Spec §7.2.1
-        // zaehlt beide zu "white space".
+        // Source with VT (0x0B) and FF (0x0C) between tokens. Spec §7.2.1
+        // counts both as "white space".
         let s = t
             .tokenize("struct\x0bA\x0c{}\x0b;")
-            .expect("VT/FF muessen Whitespace sein");
+            .expect("VT/FF must be whitespace");
         assert_eq!(
             s.kinds(),
             vec![
@@ -966,13 +965,13 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // §7.2.2 — Comment-Marker innerhalb Comments haben keine Bedeutung
+    // §7.2.2 — comment markers inside comments have no meaning
     // (Phase 1.2)
     // -----------------------------------------------------------------
 
     #[test]
     fn line_comment_contains_block_comment_start() {
-        // `//` startet Line-Comment, `/*` darin hat keine Bedeutung.
+        // `//` starts a line comment, `/*` inside it has no meaning.
         let t = Tokenizer::for_grammar(&G_BASIC);
         let s = t
             .tokenize("struct A // foo /* bar\n{};")
@@ -991,7 +990,7 @@ mod tests {
 
     #[test]
     fn block_comment_contains_line_comment_marker() {
-        // `//` und `/*` innerhalb `/* … */` haben keine Bedeutung.
+        // `//` and `/*` inside `/* … */` have no meaning.
         let t = Tokenizer::for_grammar(&G_BASIC);
         let s = t
             .tokenize("struct A /* // not a line comment\n /* nested-looking */{};")
@@ -1010,28 +1009,28 @@ mod tests {
 
     #[test]
     fn block_comment_does_not_nest() {
-        // `/* /* inner */ rest */` — der erste `*/` schliesst den Block,
-        // ` rest */` bleibt als Source. Spec §7.2.2: comments do not nest.
+        // `/* /* inner */ rest */` — the first `*/` closes the block,
+        // ` rest */` remains as source. Spec §7.2.2: comments do not nest.
         let t = Tokenizer::for_grammar(&G_BASIC);
         let result = t.tokenize("struct /* /* inner */ A {} ;");
-        // ` A ` wird Ident, dann `{} ;`. Aber "inner" wurde durch das erste
-        // `*/` abgeschlossen — daher kommt nach `*/` zunaechst der Token
-        // `A`, was Ident ist. Vor dem Test pruefen wir nur, dass nichts
-        // crasht und `A` als Ident gefunden wird.
+        // ` A ` becomes an Ident, then `{} ;`. But "inner" was closed by the first
+        // `*/` — so after `*/` the next token is
+        // `A`, which is an Ident. For the test we only check that nothing
+        // crashes and `A` is found as an Ident.
         let s = result.expect("must succeed");
         let kinds: Vec<_> = s.iter().map(|t| t.kind).collect();
         assert!(kinds.contains(&TokenKind::Ident));
     }
 
     // -----------------------------------------------------------------
-    // §7.2.4 — Vollstaendigkeitstest fuer alle 73 IDL-Keywords
+    // §7.2.4 — completeness test for all 73 IDL keywords
     // (Phase 1.3)
     // -----------------------------------------------------------------
 
     #[test]
     fn all_table_7_6_keywords_classified_as_keyword() {
         use crate::grammar::idl42::IDL_42;
-        // 73 Keywords aus Spec §7.2.4 Table 7-6.
+        // 73 keywords from spec §7.2.4 Table 7-6.
         const KEYWORDS: &[&str] = &[
             "abstract",
             "any",
@@ -1121,12 +1120,12 @@ mod tests {
         for kw in KEYWORDS {
             let s = t
                 .tokenize(kw)
-                .unwrap_or_else(|e| panic!("Keyword {kw} muss lexbar sein: {e:?}"));
-            assert_eq!(s.len(), 1, "Keyword {kw}: erwarte genau 1 Token");
+                .unwrap_or_else(|e| panic!("keyword {kw} must be lexable: {e:?}"));
+            assert_eq!(s.len(), 1, "keyword {kw}: expect exactly 1 token");
             assert_eq!(
                 s.tokens()[0].kind,
                 TokenKind::Keyword(kw),
-                "Keyword {kw}: TokenKind muss Keyword({kw}) sein, ist {:?}",
+                "keyword {kw}: TokenKind must be Keyword({kw}), is {:?}",
                 s.tokens()[0].kind
             );
         }
@@ -1138,7 +1137,7 @@ mod tests {
 
     #[test]
     fn float_no_int_part() {
-        // `.5e10` ohne integer-part vor dem Dot.
+        // `.5e10` without an integer part before the dot.
         let t = Tokenizer::for_grammar(&G_LITERALS);
         let s = t.tokenize(".5e10").expect("must succeed");
         assert_eq!(s.len(), 1);
@@ -1148,7 +1147,7 @@ mod tests {
 
     #[test]
     fn float_no_fraction_part() {
-        // `5.e10` ohne fraction-part nach dem Dot.
+        // `5.e10` without a fraction part after the dot.
         let t = Tokenizer::for_grammar(&G_LITERALS);
         let s = t.tokenize("5.e10").expect("must succeed");
         assert_eq!(s.len(), 1);
@@ -1158,7 +1157,7 @@ mod tests {
 
     #[test]
     fn float_no_decimal_point_only_exponent() {
-        // `5e10` — kein Dot, nur Exponent.
+        // `5e10` — no dot, only exponent.
         let t = Tokenizer::for_grammar(&G_LITERALS);
         let s = t.tokenize("5e10").expect("must succeed");
         assert_eq!(s.len(), 1);
@@ -1167,7 +1166,7 @@ mod tests {
 
     #[test]
     fn float_no_exponent_only_decimal_point() {
-        // `5.5` — Dot ohne Exponent.
+        // `5.5` — dot without exponent.
         let t = Tokenizer::for_grammar(&G_LITERALS);
         let s = t.tokenize("5.5").expect("must succeed");
         assert_eq!(s.len(), 1);
@@ -1176,16 +1175,16 @@ mod tests {
 
     #[test]
     fn float_dot_alone_is_punct_not_float() {
-        // `.` allein ohne Digit auf einer Seite ist Punct, kein Float.
+        // `.` alone without a digit on either side is Punct, not Float.
         // Spec §7.2.6.4: "Either the integer part or the fraction part
         // (but not both) may be missing."
         let t = Tokenizer::for_grammar(&G_BASIC);
         let result = t.tokenize(".");
-        // G_BASIC kennt keinen `.`-Punct, daher unknown-character-Error.
-        // Hauptpunkt: kein FloatLiteral.
+        // G_BASIC has no `.` punct, hence an unknown-character error.
+        // Main point: no FloatLiteral.
         assert!(
             result.is_err(),
-            "`.` allein darf nicht als FloatLiteral gelten"
+            "`.` alone must not count as a FloatLiteral"
         );
     }
 
@@ -1195,7 +1194,7 @@ mod tests {
 
     #[test]
     fn fixed_no_int_part() {
-        // `.5d` ohne integer-part.
+        // `.5d` without an integer part.
         let t = Tokenizer::for_grammar(&G_LITERALS);
         let s = t.tokenize(".5d").expect("must succeed");
         assert_eq!(s.len(), 1);
@@ -1204,7 +1203,7 @@ mod tests {
 
     #[test]
     fn fixed_no_fraction_part() {
-        // `5.d` ohne fraction-part.
+        // `5.d` without a fraction part.
         let t = Tokenizer::for_grammar(&G_LITERALS);
         let s = t.tokenize("5.d").expect("must succeed");
         assert_eq!(s.len(), 1);
@@ -1213,7 +1212,7 @@ mod tests {
 
     #[test]
     fn fixed_no_decimal_point() {
-        // `5d` — kein Dot. Spec §7.2.6.5: "the decimal point (but not the
+        // `5d` — no dot. Spec §7.2.6.5: "the decimal point (but not the
         // letter d or D) may be missing."
         let t = Tokenizer::for_grammar(&G_LITERALS);
         let s = t.tokenize("5d").expect("must succeed");
@@ -1231,7 +1230,7 @@ mod tests {
 
     #[test]
     fn fixed_without_d_is_not_fixed() {
-        // `5.5` ohne d-Suffix → FloatLiteral, nicht FixedPtLiteral.
+        // `5.5` without a d suffix → FloatLiteral, not FixedPtLiteral.
         let t = Tokenizer::for_grammar(&G_LITERALS);
         let s = t.tokenize("5.5").expect("must succeed");
         assert_eq!(s.len(), 1);

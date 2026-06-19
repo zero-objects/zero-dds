@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Cross-Cutting Daemon-Runtime fuer den gRPC-Daemon.
+//! Cross-cutting daemon runtime for the gRPC daemon.
 //!
-//! Bietet Standard-Counter (§8.2 Prometheus), `/catalog`-/`/healthz`-
-//! /`/metrics`-Endpoint (§5.2), Signal-Watcher (§9.2), OTLP-Exporter
-//! (§8.3) — alle als generische, im Binary-Mainloop wired-up
-//! Komponenten.
+//! Provides the standard counters (§8.2 Prometheus), the `/catalog` /
+//! `/healthz` / `/metrics` endpoints (§5.2), the signal watcher (§9.2),
+//! and the OTLP exporter (§8.3) — all as generic components wired up in
+//! the binary's main loop.
 
 #![allow(clippy::print_stderr)]
 
@@ -19,36 +19,36 @@ use std::time::Duration;
 use zerodds_monitor::{Counter, Gauge, Labels, Registry};
 use zerodds_observability_otlp::{OtlpConfig, OtlpExporter};
 
-/// Service-Name (verwendet im Catalog + OTel-Resource).
+/// Service name (used in the catalog + OTel resource).
 pub const SERVICE_NAME: &str = "zerodds-grpc-bridged";
-/// Crate-Version.
+/// Crate version.
 pub const SERVICE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Standard-Metric-Set fuer den gRPC-Daemon.
+/// Standard metric set for the gRPC daemon.
 #[derive(Clone)]
 pub struct BridgeMetrics {
-    /// Eingehende gRPC-Frames.
+    /// Incoming gRPC frames.
     pub frames_in_total: Arc<Counter>,
-    /// Ausgehende gRPC-Frames.
+    /// Outgoing gRPC frames.
     pub frames_out_total: Arc<Counter>,
     /// Bytes in.
     pub bytes_in_total: Arc<Counter>,
     /// Bytes out.
     pub bytes_out_total: Arc<Counter>,
-    /// Aktive Broker-Connections.
+    /// Active broker connections.
     pub connections_active: Arc<Gauge>,
-    /// Lifetime Broker-Connect-Versuche.
+    /// Lifetime broker connect attempts.
     pub connections_total: Arc<Counter>,
-    /// gRPC → DDS Samples.
+    /// gRPC → DDS samples.
     pub dds_samples_in_total: Arc<Counter>,
-    /// DDS → gRPC Samples.
+    /// DDS → gRPC samples.
     pub dds_samples_out_total: Arc<Counter>,
-    /// Wire-Errors.
+    /// Wire errors.
     pub errors_total: Arc<Counter>,
 }
 
 impl BridgeMetrics {
-    /// Registriert das Standard-Set.
+    /// Registers the standard set.
     pub fn register(registry: &Registry) -> Self {
         registry.set_help("zerodds_grpc_frames_in_total", "gRPC frames received");
         registry.set_help("zerodds_grpc_frames_out_total", "gRPC frames sent");
@@ -84,21 +84,21 @@ impl BridgeMetrics {
     }
 }
 
-/// Catalog-Topic-Eintrag — Daemon-typ-unabhaengig.
+/// Catalog topic entry — independent of the daemon type.
 #[derive(Clone, Debug)]
 pub struct CatalogTopic {
-    /// DDS-Topic-Name.
+    /// DDS topic name.
     pub dds_name: String,
-    /// gRPC-Address (queue:// / topic://).
+    /// gRPC address (queue:// / topic://).
     pub amqp_address: String,
     /// in/out/bidir.
     pub direction: String,
 }
 
-/// Catalog-Snapshot.
+/// Catalog snapshot.
 #[derive(Clone, Debug)]
 pub struct CatalogSnapshot {
-    /// Service-Name.
+    /// Service name.
     pub service: String,
     /// Version.
     pub version: String,
@@ -107,7 +107,7 @@ pub struct CatalogSnapshot {
 }
 
 impl CatalogSnapshot {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(topics: Vec<CatalogTopic>) -> Self {
         Self {
@@ -117,7 +117,7 @@ impl CatalogSnapshot {
         }
     }
 
-    /// JSON-Render fuer `/catalog`.
+    /// JSON rendering for `/catalog`.
     #[must_use]
     pub fn render_json(&self) -> String {
         let mut out = String::with_capacity(256 + self.topics.len() * 96);
@@ -160,7 +160,7 @@ fn push_json_str(out: &mut String, s: &str) {
     }
 }
 
-/// SIGTERM/SIGINT/SIGHUP-Watcher.
+/// SIGTERM/SIGINT/SIGHUP watcher.
 #[cfg(unix)]
 pub fn install_signal_watcher(
     shutdown_flag: Arc<AtomicBool>,
@@ -185,7 +185,7 @@ pub fn install_signal_watcher(
         })
 }
 
-/// Admin-HTTP-Server `/catalog`/`/healthz`/`/metrics`.
+/// Admin HTTP server `/catalog`/`/healthz`/`/metrics`.
 pub fn serve_admin_endpoints(
     addr: SocketAddr,
     catalog: Arc<CatalogSnapshot>,
@@ -276,7 +276,7 @@ fn admin_handle(
     let _ = stream.write_all(resp.as_bytes());
 }
 
-/// Endpoint-String parsen.
+/// Parse an endpoint string.
 #[must_use]
 pub fn otlp_config_from_endpoint(service_name: &str, raw: &str) -> OtlpConfig {
     let trimmed = raw
@@ -297,25 +297,24 @@ pub fn otlp_config_from_endpoint(service_name: &str, raw: &str) -> OtlpConfig {
     }
 }
 
-/// Aus ENV.
+/// From ENV.
 #[must_use]
 pub fn otlp_config_from_env(service_name: &str) -> Option<OtlpConfig> {
     let raw = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok()?;
     Some(otlp_config_from_endpoint(service_name, &raw))
 }
 
-/// Spec §7.1 — gRPC-Bridge TLS-Server-Konfiguration mit ALPN `h2`.
+/// Spec §7.1 — gRPC bridge TLS server configuration with ALPN `h2`.
 ///
-/// Liest PEM-Cert+Key direkt mit `rustls-pemfile` und baut eine
-/// `rustls::ServerConfig` mit `alpn_protocols = [b"h2"]` (HTTP/2
-/// als ALPN-Token, Standard fuer gRPC). Caller kann das resultierende
-/// `Arc<ServerConfig>` an [`zerodds_bridge_security::serve_tls_handshake`]
-/// reichen oder via [`zerodds_bridge_security::RotatingTlsConfig`]
-/// rotieren — letzteres setzt allerdings ALPN nicht; fuer gRPC muss
-/// dieser Pfad genutzt werden.
+/// Reads the PEM cert+key directly with `rustls-pemfile` and builds a
+/// `rustls::ServerConfig` with `alpn_protocols = [b"h2"]` (HTTP/2 as the
+/// ALPN token, the standard for gRPC). The caller can pass the resulting
+/// `Arc<ServerConfig>` to [`zerodds_bridge_security::serve_tls_handshake`]
+/// or rotate it via [`zerodds_bridge_security::RotatingTlsConfig`] — the
+/// latter, however, does not set ALPN; for gRPC this path must be used.
 ///
 /// # Errors
-/// String-Diagnostic bei IO/PEM/rustls-Fehlern.
+/// String diagnostic on IO/PEM/rustls errors.
 #[cfg(feature = "std")]
 pub fn build_grpc_tls_config(
     cert_path: std::path::PathBuf,
@@ -387,7 +386,7 @@ pub fn build_grpc_tls_config(
     Ok(Arc::new(sc))
 }
 
-/// Periodischer flush.
+/// Periodic flush.
 pub fn spawn_otlp_flush_loop(
     exporter: Arc<OtlpExporter>,
     stop: Arc<AtomicBool>,

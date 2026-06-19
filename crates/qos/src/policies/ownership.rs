@@ -4,8 +4,8 @@
 //!
 //! Wire-Format: u32 kind = 4 byte.
 //!
-//! Compatibility: offered.kind MUSS = requested.kind (keine Ordering-
-//! Relation; SHARED und EXCLUSIVE matchen nur identisch — §2.2.3 Table).
+//! Compatibility: offered.kind MUST = requested.kind (no ordering
+//! relation; SHARED and EXCLUSIVE match only identically — §2.2.3 Table).
 
 use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 
@@ -13,10 +13,10 @@ use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(u32)]
 pub enum OwnershipKind {
-    /// Mehrere Writer erlaubt (default).
+    /// Multiple writers allowed (default).
     #[default]
     Shared = 0,
-    /// Nur ein Writer (max Strength) liefert Samples.
+    /// Only one writer (max strength) delivers samples.
     Exclusive = 1,
 }
 
@@ -31,7 +31,7 @@ impl OwnershipKind {
         }
     }
 
-    /// Forward-kompatibler Mapper.
+    /// Forward-compatible mapper.
     #[must_use]
     pub const fn from_u32(v: u32) -> Self {
         match v {
@@ -60,7 +60,7 @@ impl OwnershipQosPolicy {
     /// Wire-Decoding (strict).
     ///
     /// # Errors
-    /// Buffer-Underflow oder unbekannter Kind-Wert.
+    /// Buffer underflow or unknown kind value.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let v = r.read_u32()?;
         let kind = OwnershipKind::try_from_u32(v).ok_or(DecodeError::InvalidEnum {
@@ -99,7 +99,7 @@ mod tests {
         }
     }
 
-    /// `try_from_u32` akzeptiert nur 0 und 1 (strict).
+    /// `try_from_u32` accepts only 0 and 1 (strict).
     #[test]
     fn try_from_u32_valid_variants() {
         assert_eq!(OwnershipKind::try_from_u32(0), Some(OwnershipKind::Shared));
@@ -109,7 +109,7 @@ mod tests {
         );
     }
 
-    /// Forward-kompatibler Mapper: unbekannt -> `Shared` (DDS 1.4 default).
+    /// Forward-compatible mapper: unknown -> `Shared` (DDS 1.4 default).
     #[test]
     fn from_u32_forward_compatible() {
         assert_eq!(OwnershipKind::from_u32(0), OwnershipKind::Shared);
@@ -118,7 +118,7 @@ mod tests {
         assert_eq!(OwnershipKind::from_u32(999), OwnershipKind::Shared);
     }
 
-    /// Decode mit unbekanntem kind-Discriminator → `InvalidEnum` Fehler.
+    /// Decode with an unknown kind discriminator → `InvalidEnum` error.
     #[test]
     fn decode_unknown_kind_errors() {
         let mut w = BufferWriter::new(Endianness::Little);
@@ -135,7 +135,7 @@ mod tests {
         ));
     }
 
-    /// Decode bei leerem Buffer → short-read.
+    /// Decode with an empty buffer → short read.
     #[test]
     fn decode_empty_buffer_errors() {
         let bytes: [u8; 0] = [];

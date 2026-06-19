@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// errors.ts — XcdrError fuer Encoder/Decoder-Faelle.
+// errors.ts — XcdrError for encoder/decoder cases.
 
-/// Exception-Klasse fuer alle Xcdr2-Schichten. Unterklasse von
-/// `Error`, sodass `instanceof Error` weiterhin trifft.
+/// Exception class for all Xcdr2 layers. Subclass of
+/// `Error`, so `instanceof Error` still matches.
 export class XcdrError extends Error {
     constructor(message: string) {
         super(message);

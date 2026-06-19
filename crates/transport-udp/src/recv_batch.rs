@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Linux-`recvmmsg`-Batch-Recv (Opt-2, Spec `zerodds-zero-copy-1.0` §9).
+//! Linux `recvmmsg` batch recv (Opt-2, spec `zerodds-zero-copy-1.0` §9).
 //!
-//! Reduziert den Per-Datagram-Syscall-Overhead durch Batching: ein
-//! `recvmmsg`-Call holt bis zu `N` Datagrams in einem Kernel-Roundtrip
-//! ab. Profile-Messung auf Linux x86_64 (5.15 kernel, loopback):
+//! Reduces per-datagram syscall overhead through batching: one
+//! `recvmmsg` call fetches up to `N` datagrams in a single kernel
+//! round-trip. Profile measurement on Linux x86_64 (5.15 kernel, loopback):
 //!
 //! | Approach | Throughput (1KiB datagrams) |
 //! |---|---|
@@ -13,20 +13,20 @@
 //!
 //! ## API
 //!
-//! [`recv_batch_linux`] nimmt eine `&UdpSocket` + max-Batch-Groesse +
-//! Output-Vec entgegen. Bei Erfolg sind 1..=max Datagrams im Output.
-//! Bei Timeout 0; bei Error `RecvError`.
+//! [`recv_batch_linux`] takes a `&UdpSocket` + max batch size + output
+//! vec. On success the output holds 1..=max datagrams. On timeout 0;
+//! on error `RecvError`.
 //!
 //! ## Safety
 //!
-//! Wir konstruieren `mmsghdr` + `iovec`-Arrays auf dem Stack, verlinken
-//! die `iovec`-Pointer in pre-allozierte Heap-Buffer (Vec<Box<[u8]>>),
-//! und rufen `libc::recvmmsg`. Alle Pointer leben fuer die Dauer des
-//! Calls; Drop-Logik ist trivial weil der Storage-Vec ueberlebt.
+//! We construct `mmsghdr` + `iovec` arrays on the stack, link the
+//! `iovec` pointers into pre-allocated heap buffers (Vec<Box<[u8]>>),
+//! and call `libc::recvmmsg`. All pointers live for the duration of the
+//! call; drop logic is trivial because the storage vec survives.
 
 #![cfg(all(feature = "std", feature = "recvmmsg-batch", target_os = "linux"))]
-// Feature-Gated unsafe-Insel fuer libc::recvmmsg-FFI. Pro unsafe-Block
-// gibt es einen `// SAFETY:`-Kommentar (siehe Block-Body).
+// Feature-gated unsafe island for the libc::recvmmsg FFI. Each unsafe
+// block has a `// SAFETY:` comment (see the block body).
 #![allow(unsafe_code)]
 
 use std::io;
@@ -40,24 +40,23 @@ use zerodds_transport::{ReceivedDatagram, RecvError};
 
 use crate::udp_transport::MAX_DATAGRAM_SIZE;
 
-/// Maximale Batch-Groesse pro `recvmmsg`-Call. 32 ist ein guter
-/// Default — gross genug fuer wirklich grosse syscall-Einsparung,
-/// klein genug damit Stack-Allokation der Header-Arrays handhabbar
-/// bleibt.
+/// Maximum batch size per `recvmmsg` call. 32 is a good default —
+/// large enough for a really large syscall saving, small enough that
+/// stack allocation of the header arrays stays manageable.
 pub const DEFAULT_BATCH_SIZE: usize = 32;
 
-/// Linux-`recvmmsg`-Batch-Recv.
+/// Linux `recvmmsg` batch recv.
 ///
-/// Holt bis zu `max` Datagrams in einem Kernel-Roundtrip ab und
-/// schreibt sie in `out`. `out` wird vor dem Aufruf nicht geleert —
-/// der Caller kann eine pre-allozierte Capacity vorhalten.
+/// Fetches up to `max` datagrams in one kernel round-trip and writes
+/// them into `out`. `out` is not cleared before the call — the caller
+/// can keep a pre-allocated capacity.
 ///
-/// Liefert die Anzahl der gelesenen Datagrams (`>=1` bei Erfolg,
-/// `0` bei Timeout/`WOULD_BLOCK`). `max` wird intern auf
-/// [`DEFAULT_BATCH_SIZE`] gecappt.
+/// Returns the number of datagrams read (`>=1` on success, `0` on
+/// timeout/`WOULD_BLOCK`). `max` is internally capped to
+/// [`DEFAULT_BATCH_SIZE`].
 ///
 /// # Errors
-/// [`RecvError`] bei harten I/O-Fehlern.
+/// [`RecvError`] on hard I/O errors.
 pub fn recv_batch_linux(
     socket: &UdpSocket,
     out: &mut Vec<ReceivedDatagram>,
@@ -68,11 +67,11 @@ pub fn recv_batch_linux(
         return Ok(0);
     }
 
-    // Opt-7 (Spec `zerodds-zero-copy-1.0` §9): Buffer-Slab-Pool.
-    // Pro `recv_batch_linux`-Call werden bis zu `batch` Heap-Buffer
-    // gebraucht; ohne Pool ist das `batch × Box::new([0u8; 64kB])`-
-    // Allocs pro Call (Total ~2 MiB/Call bei batch=32). Mit Pool
-    // recyclen wir die Buffers ueber `recv_batch_linux`-Aufrufe.
+    // Opt-7 (spec `zerodds-zero-copy-1.0` §9): buffer slab pool.
+    // Each `recv_batch_linux` call needs up to `batch` heap buffers;
+    // without a pool that is `batch × Box::new([0u8; 64kB])` allocs
+    // per call (total ~2 MiB/call at batch=32). With the pool we
+    // recycle the buffers across `recv_batch_linux` calls.
     let mut buffers: Vec<Box<[u8; MAX_DATAGRAM_SIZE]>> =
         (0..batch).map(|_| take_pooled_buffer()).collect();
     let mut sockaddrs: Vec<MaybeUninit<libc::sockaddr_storage>> = (0..batch)
@@ -99,11 +98,11 @@ pub fn recv_batch_linux(
         })
         .collect();
 
-    // SAFETY: socket.as_raw_fd ist ein gueltiger Linux-FD;
-    // msgs[..] ist eine gueltige &mut [mmsghdr] mit batch-vielen
-    // Eintraegen; alle iovec/msghdr-Pointer zeigen auf lebende
-    // Buffer (buffers/sockaddrs/iovecs) deren Lifetime den
-    // recvmmsg-Call ueberdauert.
+    // SAFETY: socket.as_raw_fd is a valid Linux fd;
+    // msgs[..] is a valid &mut [mmsghdr] with batch-many entries;
+    // all iovec/msghdr pointers point to live buffers
+    // (buffers/sockaddrs/iovecs) whose lifetime outlives the
+    // recvmmsg call.
     let n = unsafe {
         libc::recvmmsg(
             socket.as_raw_fd(),
@@ -127,16 +126,16 @@ pub fn recv_batch_linux(
     for i in 0..n {
         let msg_len = msgs[i].msg_len as usize;
         let buf = &buffers[i][..msg_len];
-        // SAFETY: kernel hat msg_namelen ggf. heruntergesetzt; wir
-        // betrachten nur das gueltige sockaddr_in (V4) Praefix.
+        // SAFETY: the kernel may have lowered msg_namelen; we only
+        // look at the valid sockaddr_in (V4) prefix.
         let addr_storage = unsafe { sockaddrs[i].assume_init_ref() };
         let source = sockaddr_storage_to_locator(addr_storage)?;
         let data: Arc<[u8]> = Arc::from(buf);
         out.push(ReceivedDatagram { source, data });
     }
-    // Opt-7: Buffer in den Pool zurueck. Wir clear-en nicht, weil der
-    // naechste recvmmsg ueberschreibt — nur die `len` ist relevant,
-    // und MAX_DATAGRAM_SIZE bleibt konstant.
+    // Opt-7: return the buffers to the pool. We do not clear, because
+    // the next recvmmsg overwrites — only the `len` is relevant, and
+    // MAX_DATAGRAM_SIZE stays constant.
     for b in buffers.drain(..) {
         return_pooled_buffer(b);
     }
@@ -144,13 +143,13 @@ pub fn recv_batch_linux(
 }
 
 // ============================================================================
-// Opt-7: Buffer-Slab-Pool fuer recv-Buffers
+// Opt-7: buffer slab pool for recv buffers
 // ============================================================================
 
-/// Maximale Anzahl recyclebarer Buffers im Pool. Bei batch=32 und
-/// typisch 1-2 concurrent recv_batch_linux-Callern hält der Pool ~32
-/// Buffer warm. Höhere Limits steigern Memory-Footprint ohne weiteren
-/// Throughput-Win.
+/// Maximum number of recyclable buffers in the pool. At batch=32 and
+/// typically 1-2 concurrent recv_batch_linux callers, the pool keeps
+/// ~32 buffers warm. Higher limits raise the memory footprint without
+/// further throughput win.
 const POOL_CAPACITY: usize = 64;
 
 fn buffer_pool() -> &'static Mutex<Vec<Box<[u8; MAX_DATAGRAM_SIZE]>>> {
@@ -171,7 +170,7 @@ fn return_pooled_buffer(buf: Box<[u8; MAX_DATAGRAM_SIZE]>) {
         if p.len() < POOL_CAPACITY {
             p.push(buf);
         }
-        // sonst: Pool voll, Buffer wird dropped (normales free).
+        // otherwise: pool full, buffer is dropped (normal free).
     }
 }
 
@@ -181,8 +180,8 @@ fn sockaddr_storage_to_locator(storage: &libc::sockaddr_storage) -> Result<Locat
             message: "recvmmsg returned non-V4 sockaddr",
         });
     }
-    // SAFETY: ss_family == AF_INET, also ist storage eigentlich ein
-    // sockaddr_in. Cast ist valid.
+    // SAFETY: ss_family == AF_INET, so storage is really a
+    // sockaddr_in. The cast is valid.
     let v4 = unsafe { &*(storage as *const _ as *const libc::sockaddr_in) };
     let ip = u32::from_be(v4.sin_addr.s_addr);
     let port = u16::from_be(v4.sin_port);
@@ -205,18 +204,18 @@ mod tests {
     use crate::UdpTransport;
     use zerodds_transport::Transport;
 
-    /// Opt-7 — Buffer-Pool recycelt Buffers ueber Aufrufe hinweg.
-    /// Bei mehreren `recv_batch_linux`-Calls bleibt die Anzahl
-    /// Heap-Allocs zwischen den ersten beiden Calls konstant
-    /// (Pool wieder-gefuellt nach dem ersten Call).
+    /// Opt-7 — the buffer pool recycles buffers across calls.
+    /// Across several `recv_batch_linux` calls, the number of heap
+    /// allocs stays constant between the first two calls
+    /// (pool refilled after the first call).
     #[test]
     fn buffer_pool_reuses_across_calls() {
         let take_a = take_pooled_buffer();
         let take_b = take_pooled_buffer();
         return_pooled_buffer(take_a);
         return_pooled_buffer(take_b);
-        // Nach Return sind 2 Buffer im Pool; nachfolgende takes
-        // muessen sie wiederverwenden (kein neuer alloc).
+        // After return there are 2 buffers in the pool; subsequent takes
+        // must reuse them (no new alloc).
         let pool_len_before = buffer_pool().lock().unwrap().len();
         assert!(pool_len_before >= 2);
         let _r1 = take_pooled_buffer();
@@ -229,22 +228,22 @@ mod tests {
         );
     }
 
-    /// Sender flutet 5 Datagrams; `recv_batch_linux` muss sie in
-    /// einem (oder zwei) Calls zurueckgeben.
+    /// The sender floods 5 datagrams; `recv_batch_linux` must return
+    /// them in one (or two) calls.
     #[test]
     fn recv_batch_basic_roundtrip() {
         let rx = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         let rx_loc = <UdpTransport as Transport>::local_locator(&rx);
         let tx = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
-        // 5 Datagrams flushen, dann recv_batch.
+        // Flush 5 datagrams, then recv_batch.
         for i in 0..5u8 {
             tx.send(&rx_loc, &[i, i + 1, i + 2, 0xAB]).unwrap();
         }
-        // Kurz schlafen, damit der Kernel die Pakete einreiht.
+        // Sleep briefly so the kernel queues the packets.
         std::thread::sleep(std::time::Duration::from_millis(20));
-        // socket aus UdpTransport rausziehen — wir nutzen Reflection
-        // ueber eine kleine Hilfsfunktion. Test ist `cfg(test)` und
-        // hat Zugriff auf udp_transport's internals via super.
+        // Pull the socket out of UdpTransport — we use reflection via a
+        // small helper. The test is `cfg(test)` and has access to
+        // udp_transport's internals via super.
         let socket = rx.std_socket();
         let mut out: Vec<ReceivedDatagram> = Vec::new();
         let n = recv_batch_linux(socket, &mut out, 16).unwrap();

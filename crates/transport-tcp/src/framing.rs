@@ -1,61 +1,59 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! TCP-Framing fuer RTPS-Messages.
+//! TCP framing for RTPS messages.
 //!
-//! TCP ist ein Stream-Protokoll — jedes RTPS-Datagramm muss seine
-//! Laenge selbst kennzeichnen, damit der Receiver Nachrichten-Grenzen
-//! rekonstruieren kann. Wir verwenden ein simples 4-byte-Big-Endian-
-//! Length-Prefix (DDS-TCP-PSM §6.2: `SubmessageFlag E` + Length-Feld
-//! im Submessage-Header sind fuer TCP irrelevant, es zaehlt nur das
-//! outer Frame).
+//! TCP is a stream protocol — every RTPS datagram must mark its own
+//! length so the receiver can reconstruct message boundaries. We use a
+//! simple 4-byte big-endian length prefix (DDS-TCP-PSM §6.2:
+//! `SubmessageFlag E` + the length field in the submessage header are
+//! irrelevant for TCP, only the outer frame counts).
 //!
-//! Wire-Format:
+//! Wire format:
 //!
 //! ```text
 //! +---------+---------+---------+---------+------- ...
-//! |            length (u32, BE)           | RTPS-Message-Bytes
+//! |            length (u32, BE)           | RTPS message bytes
 //! +---------+---------+---------+---------+------- ...
 //! ```
 //!
-//! Die Laenge begrenzt ein einzelnes Frame auf `u32::MAX` byte; DoS-
-//! Cap in [`MAX_FRAME_SIZE`] kappt tatsaechlich akzeptierte Frames auf
-//! ein vernuenftiges Max, um Speicher-Exhaustion durch boese Peers
-//! zu verhindern.
+//! The length bounds a single frame to `u32::MAX` bytes; the DoS cap
+//! in [`MAX_FRAME_SIZE`] caps actually-accepted frames at a sensible
+//! max, to prevent memory exhaustion by malicious peers.
 
 use std::io::{Read, Write};
 
-/// Maximale akzeptierte Frame-Größe (16 MiB).
+/// Maximum accepted frame size (16 MiB).
 ///
 /// # Rationale
 ///
-/// TCP als Stream-Transport kann theoretisch beliebig grosse Frames
-/// tragen (im Gegensatz zu UDP mit 64 kB Datagram-Cap). Wir cappen hier
-/// aus DoS-Schutz — ein bösartiger Peer darf uns nicht mit einer
-/// u32-grosse-announcement GB an RAM kosten.
+/// As a stream transport, TCP can in theory carry arbitrarily large
+/// frames (unlike UDP with its 64 kB datagram cap). We cap here for DoS
+/// protection — a malicious peer must not cost us GBs of RAM with a
+/// u32-sized announcement.
 ///
-/// **RTPS-Fragmentation (DDSI-RTPS §8.3.7)** arbeitet auf
-/// Submessage-Ebene: grosse Samples werden vom Writer in
-/// `DATA_FRAG`-Submessages aufgeteilt, die dann **jede** in ein
-/// TCP-Frame passen. Ein 16-MiB-Cap deckt damit Samples bis weit über
-/// typische DDS-Payloads (ROS-Pointcloud ~MB, Industriesensoren <<1 MB)
-/// ab — Reassembly macht der Reader via `FragmentAssembler`
-/// (crates/rtps/src/fragment_assembler.rs), nicht der Transport.
+/// **RTPS fragmentation (DDSI-RTPS §8.3.7)** works at the submessage
+/// level: large samples are split by the writer into `DATA_FRAG`
+/// submessages, **each** of which then fits into a TCP frame. A 16 MiB
+/// cap therefore covers samples well beyond typical DDS payloads
+/// (ROS pointcloud ~MB, industrial sensors <<1 MB) — reassembly is done
+/// by the reader via `FragmentAssembler`
+/// (crates/rtps/src/fragment_assembler.rs), not the transport.
 pub const MAX_FRAME_SIZE: u32 = 16 * 1024 * 1024;
 
-/// Laenge des Length-Prefix in Bytes.
+/// Length of the length prefix in bytes.
 pub const FRAME_HEADER_LEN: usize = 4;
 
-/// Fehler beim Framing.
+/// Framing error.
 #[derive(Debug)]
 pub enum FramingError {
-    /// I/O-Fehler beim Read/Write.
+    /// I/O error on read/write.
     Io(std::io::Error),
-    /// Frame groesser als [`MAX_FRAME_SIZE`].
+    /// Frame larger than [`MAX_FRAME_SIZE`].
     FrameTooLarge {
-        /// Angekuendigte Laenge.
+        /// Announced length.
         announced: u32,
     },
-    /// Stream lieferte 0 byte vor dem Ende des Frames (EOF/peer closed).
+    /// Stream delivered 0 bytes before the end of the frame (EOF/peer closed).
     UnexpectedEof,
 }
 
@@ -82,10 +80,10 @@ impl From<std::io::Error> for FramingError {
     }
 }
 
-/// Schreibt ein Frame (length-prefix + payload) in den Stream.
+/// Writes a frame (length prefix + payload) into the stream.
 ///
 /// # Errors
-/// I/O-Fehler; `FrameTooLarge` wenn `payload.len() > u32::MAX`.
+/// I/O error; `FrameTooLarge` if `payload.len() > u32::MAX`.
 pub fn write_frame<W: Write>(w: &mut W, payload: &[u8]) -> Result<(), FramingError> {
     let len = u32::try_from(payload.len()).map_err(|_| FramingError::FrameTooLarge {
         announced: u32::MAX,
@@ -98,13 +96,13 @@ pub fn write_frame<W: Write>(w: &mut W, payload: &[u8]) -> Result<(), FramingErr
     Ok(())
 }
 
-/// Liest ein Frame (length-prefix + payload) aus dem Stream.
+/// Reads a frame (length prefix + payload) from the stream.
 ///
-/// Blockiert bis ein komplettes Frame gelesen wurde.
+/// Blocks until a complete frame has been read.
 ///
 /// # Errors
-/// I/O-Fehler; `FrameTooLarge` wenn Peer > [`MAX_FRAME_SIZE`] ankuendigt;
-/// `UnexpectedEof` bei prematurem EOF.
+/// I/O error; `FrameTooLarge` if the peer announces > [`MAX_FRAME_SIZE`];
+/// `UnexpectedEof` on premature EOF.
 pub fn read_frame<R: Read>(r: &mut R) -> Result<alloc::vec::Vec<u8>, FramingError> {
     let mut hdr = [0u8; FRAME_HEADER_LEN];
     read_exact_or_eof(r, &mut hdr)?;
@@ -180,7 +178,7 @@ mod tests {
     fn unexpected_eof_mid_payload() {
         let mut bad = alloc::vec::Vec::new();
         bad.extend_from_slice(&10u32.to_be_bytes());
-        bad.extend_from_slice(&[1, 2, 3]); // nur 3 von 10
+        bad.extend_from_slice(&[1, 2, 3]); // only 3 of 10
         let mut cur = Cursor::new(&bad);
         let err = read_frame(&mut cur).unwrap_err();
         assert!(matches!(err, FramingError::UnexpectedEof));

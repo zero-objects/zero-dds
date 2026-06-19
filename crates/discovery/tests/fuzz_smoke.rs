@@ -1,12 +1,12 @@
-//! Stable-Rust Fuzz-Smoke-Tests fuer den SPDP-/SEDP-Discovery-Wire.
+//! Stable-Rust fuzz smoke tests for the SPDP/SEDP discovery wire.
 //!
-//! Pseudo-random Byte-Streams in `SpdpReceiver::parse_datagram`. Kein
-//! Decoder darf panicen — nur `Ok` oder `Err`. Spec-Anker:
-//! DDSI-RTPS 2.5 §8.5 (Discovery), Built-in-Endpoints und
-//! ParameterList-Decoding.
+//! Pseudo-random byte streams into `SpdpReceiver::parse_datagram`. No
+//! decoder may panic — only `Ok` or `Err`. Spec anchors:
+//! DDSI-RTPS 2.5 §8.5 (Discovery), built-in endpoints and
+//! ParameterList decoding.
 //!
-//! Fuer echtes cargo-fuzz siehe `crates/discovery/fuzz/` (Phase TS-1
-//! Folge-Welle).
+//! For real cargo-fuzz see `crates/discovery/fuzz/` (phase TS-1
+//! follow-up wave).
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 

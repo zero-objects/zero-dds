@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! OMG Persistent State Service (PSS) Stub-Layer.
+//! OMG Persistent State Service (PSS) stub layer.
 //!
-//! Spec: OMG PSS 1.2 (formal/2002-09-06). Wir liefern die
-//! Object-Mapping-Datenstrukturen + Storage-Trait als Stub-Layer
-//! fuer den CCM-Extended-Level-Java-Pfad (omg-ccm-4.0 §2 Punkt 6).
+//! Spec: OMG PSS 1.2 (formal/2002-09-06). We provide the
+//! object-mapping data structures + storage trait as a stub layer
+//! for the CCM Extended Level Java path (omg-ccm-4.0 §2 item 6).
 //!
-//! Echte Persistent-Storage-Bindung erfolgt durch Caller (z.B.
-//! SQLite / RDBMS / NoSQL-Backend).
+//! The actual persistent-storage binding is provided by the caller (e.g.
+//! a SQLite / RDBMS / NoSQL backend).
 
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -16,57 +16,57 @@ use alloc::vec::Vec;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-/// PSS-Storage-Errors.
+/// PSS storage errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PssError {
-    /// Object mit gegebener PID nicht gefunden.
+    /// Object with the given PID not found.
     NotFound,
-    /// Storage-Backend-Fehler.
+    /// Storage-backend error.
     StorageError(String),
-    /// Invalid-State (z.B. Object schon geloescht).
+    /// Invalid state (e.g. object already deleted).
     InvalidState(String),
 }
 
-/// Spec PSS §3 — `Pid` (Persistent Identifier).
+/// Spec PSS §3 — `Pid` (persistent identifier).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Pid {
-    /// Storage-Home-Identifier.
+    /// Storage-home identifier.
     pub home_id: String,
-    /// Object-spezifischer Key.
+    /// Object-specific key.
     pub key: Vec<u8>,
 }
 
-/// Spec PSS §6 — `StorageObject`-Trait.
+/// Spec PSS §6 — `StorageObject` trait.
 pub trait StorageObject: Send + Sync {
     /// Persistent ID.
     fn pid(&self) -> &Pid;
-    /// Marshal-Operation: serialisiere den Object-State.
+    /// Marshal operation: serialize the object state.
     fn marshal(&self) -> Vec<u8>;
 }
 
-/// Spec PSS §7 — `StorageHome`-Trait fuer Persistent-Object-Verwaltung.
+/// Spec PSS §7 — `StorageHome` trait for persistent-object management.
 pub trait StorageHome: Send + Sync {
     /// Spec PSS §7.2 — `create(pid, value)`.
     ///
     /// # Errors
-    /// `PssError::StorageError` bei Backend-Fehler.
+    /// `PssError::StorageError` on a backend error.
     fn create(&self, pid: Pid, value: Vec<u8>) -> Result<(), PssError>;
 
     /// Spec PSS §7.3 — `find_by_pid(pid)`.
     ///
     /// # Errors
-    /// `PssError::NotFound` wenn nicht vorhanden.
+    /// `PssError::NotFound` if not present.
     fn find_by_pid(&self, pid: &Pid) -> Result<Vec<u8>, PssError>;
 
     /// Spec PSS §7.4 — `delete(pid)`.
     ///
     /// # Errors
-    /// `PssError::NotFound` wenn nicht vorhanden.
+    /// `PssError::NotFound` if not present.
     fn delete(&self, pid: &Pid) -> Result<(), PssError>;
 }
 
-/// In-Memory-Implementation des `StorageHome`-Trait fuer Tests +
-/// Default-Stub.
+/// In-memory implementation of the `StorageHome` trait for tests +
+/// a default stub.
 #[derive(Default)]
 pub struct InMemoryStorageHome {
     storage: Mutex<BTreeMap<Pid, Vec<u8>>>,
@@ -82,18 +82,18 @@ impl core::fmt::Debug for InMemoryStorageHome {
 }
 
 impl InMemoryStorageHome {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Anzahl persistierter Objects.
+    /// Number of persisted objects.
     pub fn len(&self) -> usize {
         self.storage.lock().map_or(0, |g| g.len())
     }
 
-    /// `true` wenn keine Objects.
+    /// `true` if there are no objects.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -140,39 +140,39 @@ impl StorageHome for InMemoryStorageHome {
     }
 }
 
-/// Spec PSS §10 — Transaction-Status (Subset von
-/// `CosTransactions::Status`). Cross-Ref `corba-ccm-ejb::tx::TxStatus`
-/// — wir kopieren das Subset hier, um den Layer-Zyklus zu vermeiden.
+/// Spec PSS §10 — transaction status (subset of
+/// `CosTransactions::Status`). Cross-ref `corba-ccm-ejb::tx::TxStatus`
+/// — we copy the subset here to avoid the layer cycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PssTxStatus {
-    /// Keine aktive Transaction.
+    /// No active transaction.
     NoTransaction,
-    /// Transaction laeuft (`begin_transaction` ohne `commit`/`rollback`).
+    /// A transaction is running (`begin_transaction` without `commit`/`rollback`).
     Active,
-    /// `commit_transaction` durchgelaufen.
+    /// `commit_transaction` completed.
     Committed,
-    /// `rollback` ausgefuehrt — Pending-Buffer verworfen.
+    /// `rollback` executed — pending buffer discarded.
     RolledBack,
 }
 
-/// Tx-Handle — von `begin_transaction` zurueckgegeben.
+/// Tx handle — returned by `begin_transaction`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TxHandle(u64);
 
-/// PSS-Session — wraps StorageHome + Transaction-State + Pending-Buffer.
+/// PSS session — wraps StorageHome + transaction state + pending buffer.
 ///
-/// Spec PSS §10 — Transaktionen sind tx-aware: `store(pid, value)` und
-/// `remove(pid)` schreiben in den Pending-Buffer; `commit` wendet ihn
-/// auf die `StorageHome` an, `rollback` verwirft ihn.
+/// Spec PSS §10 — transactions are tx-aware: `store(pid, value)` and
+/// `remove(pid)` write into the pending buffer; `commit` applies it
+/// to the `StorageHome`, `rollback` discards it.
 pub struct PssSession {
     home: Arc<dyn StorageHome>,
     in_transaction: Mutex<bool>,
-    /// Pending-Buffer (Pid → Some(value)=write, None=delete) waehrend
-    /// einer Transaction.
+    /// Pending buffer (Pid → Some(value)=write, None=delete) during
+    /// a transaction.
     pending: Mutex<BTreeMap<Pid, Option<Vec<u8>>>>,
-    /// Aktueller Tx-Status.
+    /// Current tx status.
     tx_status: Mutex<PssTxStatus>,
-    /// Monoton steigender Tx-Counter.
+    /// Monotonically increasing tx counter.
     next_tx_id: Mutex<u64>,
 }
 
@@ -186,7 +186,7 @@ impl core::fmt::Debug for PssSession {
 }
 
 impl PssSession {
-    /// Konstruktor.
+    /// Constructor.
     #[must_use]
     pub fn new(home: Arc<dyn StorageHome>) -> Self {
         Self {
@@ -198,10 +198,10 @@ impl PssSession {
         }
     }
 
-    /// Spec PSS §10 — `begin_transaction`. Liefert Tx-Handle.
+    /// Spec PSS §10 — `begin_transaction`. Returns a tx handle.
     ///
     /// # Errors
-    /// `PssError::InvalidState` wenn schon in Transaction.
+    /// `PssError::InvalidState` if already in a transaction.
     pub fn begin_transaction(&self) -> Result<TxHandle, PssError> {
         let mut g = self
             .in_transaction
@@ -225,11 +225,11 @@ impl PssSession {
         Ok(TxHandle(id))
     }
 
-    /// Spec PSS §10 — `commit(tx)`. Wendet den Pending-Buffer auf die
-    /// `StorageHome` an.
+    /// Spec PSS §10 — `commit(tx)`. Applies the pending buffer to the
+    /// `StorageHome`.
     ///
     /// # Errors
-    /// `PssError::InvalidState` wenn keine aktive Transaction.
+    /// `PssError::InvalidState` if there is no active transaction.
     pub fn commit(&self, _tx: TxHandle) -> Result<(), PssError> {
         let mut g = self
             .in_transaction
@@ -238,7 +238,7 @@ impl PssSession {
         if !*g {
             return Err(PssError::InvalidState("no active transaction".into()));
         }
-        // Pending-Buffer applien.
+        // Apply the pending buffer.
         let mut pending = self
             .pending
             .lock()
@@ -249,9 +249,9 @@ impl PssSession {
                     self.home.create(pid.clone(), value.clone())?;
                 }
                 None => {
-                    // Best-Effort: Delete kann NotFound geben, wenn nie
-                    // ein vorheriger create(pid) existierte. PSS-Spec
-                    // §10.4 verlangt `silent` fuer commit-Pfad.
+                    // Best-effort: delete can return NotFound if no
+                    // prior create(pid) ever existed. PSS spec
+                    // §10.4 requires `silent` for the commit path.
                     let _ = self.home.delete(pid);
                 }
             }
@@ -266,10 +266,10 @@ impl PssSession {
         Ok(())
     }
 
-    /// Spec PSS §10 — `rollback(tx)`. Verwirft den Pending-Buffer.
+    /// Spec PSS §10 — `rollback(tx)`. Discards the pending buffer.
     ///
     /// # Errors
-    /// `PssError::InvalidState` wenn keine aktive Transaction.
+    /// `PssError::InvalidState` if there is no active transaction.
     pub fn rollback(&self, _tx: TxHandle) -> Result<(), PssError> {
         let mut g = self
             .in_transaction
@@ -292,7 +292,7 @@ impl PssSession {
         Ok(())
     }
 
-    /// Spec PSS §10 — Liefert den aktuellen Tx-Status.
+    /// Spec PSS §10 — returns the current tx status.
     #[must_use]
     pub fn tx_status(&self) -> PssTxStatus {
         self.tx_status
@@ -301,25 +301,25 @@ impl PssSession {
             .unwrap_or(PssTxStatus::NoTransaction)
     }
 
-    /// Spec PSS §10.5 — Legacy-Begin (ohne Tx-Handle, keep fuer
-    /// Rueckwaerts-Kompat).
+    /// Spec PSS §10.5 — legacy begin (without a tx handle, kept for
+    /// backwards compatibility).
     ///
     /// # Errors
-    /// `PssError::InvalidState` wenn schon in Transaction.
+    /// `PssError::InvalidState` if already in a transaction.
     pub fn begin_transaction_legacy(&self) -> Result<(), PssError> {
         self.begin_transaction().map(|_| ())
     }
 
-    /// Spec PSS §10.5 — Legacy-Commit (ohne Tx-Handle).
+    /// Spec PSS §10.5 — legacy commit (without a tx handle).
     ///
     /// # Errors
-    /// `PssError::InvalidState` wenn nicht in Transaction.
+    /// `PssError::InvalidState` if not in a transaction.
     pub fn commit_transaction(&self) -> Result<(), PssError> {
         self.commit(TxHandle(0))
     }
 
-    /// Spec PSS §6 — `store(pid, value)`. Tx-aware: schreibt im
-    /// Tx-Modus in den Pending-Buffer, sonst direkt durch.
+    /// Spec PSS §6 — `store(pid, value)`. Tx-aware: in tx mode
+    /// writes into the pending buffer, otherwise straight through.
     ///
     /// # Errors
     /// Siehe [`PssError`].
@@ -336,7 +336,7 @@ impl PssSession {
         }
     }
 
-    /// Spec PSS §6 — `remove(pid)`. Tx-aware analog zu `store`.
+    /// Spec PSS §6 — `remove(pid)`. Tx-aware, analogous to `store`.
     ///
     /// # Errors
     /// Siehe [`PssError`].
@@ -353,8 +353,8 @@ impl PssSession {
         }
     }
 
-    /// Spec PSS §6 — `flush(pid, value)`. Schreibt direkt durch zur
-    /// `StorageHome` (ohne Tx-Pending-Buffer).
+    /// Spec PSS §6 — `flush(pid, value)`. Writes straight through to the
+    /// `StorageHome` (without the tx pending buffer).
     ///
     /// # Errors
     /// Siehe [`PssError`].
@@ -362,9 +362,9 @@ impl PssSession {
         self.home.create(pid, value)
     }
 
-    /// Spec PSS §6 — `load(pid)`. Tx-aware: liest aus dem Pending-
-    /// Buffer wenn die Pid dort als `Some(value)` markiert ist; bei
-    /// `None` (Delete-Pending) liefert `NotFound`.
+    /// Spec PSS §6 — `load(pid)`. Tx-aware: reads from the pending
+    /// buffer if the Pid is marked there as `Some(value)`; on
+    /// `None` (delete pending) it returns `NotFound`.
     ///
     /// # Errors
     /// Siehe [`PssError`].
@@ -484,7 +484,7 @@ mod tests {
         );
     }
 
-    // §2 CP3 — Tx-aware-Lifecycle Wire-up.
+    // §2 CP3 — tx-aware lifecycle wire-up.
 
     #[test]
     fn pss_begin_commit_roundtrip_persists_pending_writes() {
@@ -492,10 +492,10 @@ mod tests {
         let s = PssSession::new(home.clone() as Arc<dyn StorageHome>);
         let tx = s.begin_transaction().expect("begin");
         s.store(pid("H", b"k1"), alloc::vec![0xAA]).expect("store");
-        // Vor Commit ist der Wert NICHT in der StorageHome.
+        // Before commit the value is NOT in the StorageHome.
         assert_eq!(home.find_by_pid(&pid("H", b"k1")), Err(PssError::NotFound));
         s.commit(tx).expect("commit");
-        // Nach Commit liegt er in der StorageHome.
+        // After commit it is in the StorageHome.
         assert_eq!(home.find_by_pid(&pid("H", b"k1")), Ok(alloc::vec![0xAA]));
         assert_eq!(s.tx_status(), PssTxStatus::Committed);
     }
@@ -503,18 +503,18 @@ mod tests {
     #[test]
     fn pss_rollback_restores_prev_state() {
         let home = Arc::new(InMemoryStorageHome::new());
-        // Initialer Zustand: ein Wert existiert schon.
+        // Initial state: a value already exists.
         home.create(pid("H", b"k1"), alloc::vec![0x11]).expect("ok");
         let s = PssSession::new(home.clone() as Arc<dyn StorageHome>);
         let tx = s.begin_transaction().expect("begin");
-        // Pending-Update + Pending-Delete fuer einen anderen Key.
+        // Pending update + pending delete for a different key.
         s.store(pid("H", b"k1"), alloc::vec![0x22]).expect("store");
         s.store(pid("H", b"k2"), alloc::vec![0x33]).expect("store");
-        // Innerhalb der Tx liest load() den Pending-Wert.
+        // Within the tx, load() reads the pending value.
         assert_eq!(s.load(&pid("H", b"k1")).expect("load"), alloc::vec![0x22]);
-        // Rollback verwirft die Pending-Buffer.
+        // Rollback discards the pending buffer.
         s.rollback(tx).expect("rollback");
-        // StorageHome bleibt im urspruenglichen Zustand.
+        // The StorageHome stays in its original state.
         assert_eq!(home.find_by_pid(&pid("H", b"k1")), Ok(alloc::vec![0x11]));
         assert_eq!(home.find_by_pid(&pid("H", b"k2")), Err(PssError::NotFound));
         assert_eq!(s.tx_status(), PssTxStatus::RolledBack);
@@ -527,7 +527,7 @@ mod tests {
         let _tx = s.begin_transaction().expect("begin");
         s.store(pid("H", b"k1"), alloc::vec![0x55]).expect("store");
         assert_eq!(s.load(&pid("H", b"k1")).expect("load"), alloc::vec![0x55]);
-        // Pending-Delete eines anderen Keys: load liefert NotFound.
+        // Pending delete of a different key: load returns NotFound.
         s.store(pid("H", b"k2"), alloc::vec![0x66]).expect("store");
         s.remove(&pid("H", b"k2")).expect("remove");
         assert_eq!(s.load(&pid("H", b"k2")), Err(PssError::NotFound));
@@ -542,7 +542,7 @@ mod tests {
         assert_eq!(s.tx_status(), PssTxStatus::Active);
         s.commit(tx).expect("commit");
         assert_eq!(s.tx_status(), PssTxStatus::Committed);
-        // Neuer Tx-Cycle.
+        // New tx cycle.
         let tx2 = s.begin_transaction().expect("begin2");
         assert_eq!(s.tx_status(), PssTxStatus::Active);
         s.rollback(tx2).expect("rollback");

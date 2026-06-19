@@ -1,4 +1,4 @@
-// Fixture: mehrere Top-Level-Types in einem Header.
+// Fixture: multiple top-level types in one header.
 enum Status {
     ACTIVE,
     INACTIVE

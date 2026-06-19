@@ -2,21 +2,21 @@
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
-IDL → Rust Code-Generator für **CORBA-Service-Konstrukte** (Interface-Traits + Stubs + Skeletons, Valuetypes, in Phase-2: Components, Homes, POA-Bindings).
+IDL → Rust code generator for **CORBA service constructs** (interface traits + stubs + skeletons, valuetypes; in phase 2: components, homes, POA bindings).
 
-Analog zu `zerodds-idl-cpp` / `-csharp` / `-java` — aber emittiert Rust statt C++/C#/Java. Konsumiert `zerodds-corba-codegen`-Helpers und `zerodds-idl-rust::type_map`.
+Analogous to `zerodds-idl-cpp` / `-csharp` / `-java` — but emits Rust instead of C++/C#/Java. Consumes `zerodds-corba-codegen` helpers and `zerodds-idl-rust::type_map`.
 
-## Schichten-Position
+## Layer position
 
-Layer 8 (CORBA-Stack). Build-Zeit-Tool, std-only.
+Layer 8 (CORBA stack). Build-time tool, std-only.
 
-## Was emittiert wird
+## What is emitted
 
 | IDL                           | Rust                                              |
 |-------------------------------|---------------------------------------------------|
 | `interface I { op(...); };`   | `pub trait I` + `pub struct IStub` + `dispatch_i` |
-| `attribute T x`               | trait getter + setter (wenn writable)             |
-| `oneway op(...)`              | trait method ohne Reply                           |
+| `attribute T x`               | trait getter + setter (if writable)               |
+| `oneway op(...)`              | trait method without reply                        |
 | `valuetype V { ... };`        | `pub trait V: ValueBase`                          |
 | `module M { … }`              | `pub mod M { … }`                                 |
 
@@ -35,6 +35,6 @@ let ast = zerodds_idl::parse(
 let rust_src = generate_corba_rust_module(&ast, &CorbaRustGenOptions::default()).expect("gen");
 ```
 
-## Lizenz
+## License
 
 Apache-2.0.

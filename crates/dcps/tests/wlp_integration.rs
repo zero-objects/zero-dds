@@ -1,15 +1,14 @@
-//! Writer-Liveliness-Protocol Integration-Tests.
+//! Writer Liveliness Protocol integration tests.
 //!
-//! Spec-Referenzen:
-//! - DDSI-RTPS 2.5 §8.4.13 (Writer-Liveliness-Protocol Wire-Pfad)
-//! - DDSI-RTPS 2.5 §9.6.3.1 (ParticipantMessageData Wire-Format)
-//! - DDS DCPS 1.4 §2.2.3.11 (LIVELINESS QoS Kinds)
+//! Spec references:
+//! - DDSI-RTPS 2.5 §8.4.13 (Writer Liveliness Protocol wire path)
+//! - DDSI-RTPS 2.5 §9.6.3.1 (ParticipantMessageData wire format)
+//! - DDS DCPS 1.4 §2.2.3.11 (LIVELINESS QoS kinds)
 //!
-//! Diese Tests fahren zwei DcpsRuntime-Instanzen lokal hoch und
-//! pruefen, ob der WLP-Tick + WLP-Inbound-Pfad miteinander reden.
-//! Multicast-Loopback ist auf macOS unzuverlaessig (kein
-//! auto-interface-join bei `bind_multicast_v4(0.0.0.0)`), daher
-//! laufen die Tests nur auf Linux.
+//! These tests bring up two DcpsRuntime instances locally and check
+//! whether the WLP tick + WLP inbound path talk to each other.
+//! Multicast loopback is unreliable on macOS (no auto-interface-join
+//! with `bind_multicast_v4(0.0.0.0)`), so the tests only run on Linux.
 
 #![allow(
     clippy::expect_used,
@@ -69,8 +68,8 @@ mod linux_only {
 
     #[test]
     fn manual_by_participant_pulse_arrives_at_peer() {
-        // Tick-Period gross genug, dass kein AUTOMATIC dazwischenkommt;
-        // damit messen wir ausschliesslich die Manual-Pulse-Zustellung.
+        // Tick period large enough that no AUTOMATIC slips in between;
+        // this way we measure only the manual-pulse delivery.
         let cfg = RuntimeConfig {
             tick_period: Duration::from_millis(20),
             spdp_period: Duration::from_millis(100),
@@ -81,8 +80,8 @@ mod linux_only {
         let a = DcpsRuntime::start(21, GuidPrefix::from_bytes([0x80; 12]), cfg.clone()).expect("a");
         let b = DcpsRuntime::start(21, GuidPrefix::from_bytes([0x81; 12]), cfg).expect("b");
 
-        // Warten bis SPDP-Discovery beidseitig durch ist (sonst kann
-        // der Manual-Pulse rausgehen bevor B ueberhaupt lauscht).
+        // Wait until SPDP discovery has completed on both sides (otherwise
+        // the manual pulse may go out before B is even listening).
         thread::sleep(Duration::from_millis(300));
 
         a.assert_liveliness();
@@ -99,8 +98,8 @@ mod linux_only {
 
     #[test]
     fn wlp_lost_peers_detected_after_lease() {
-        // A schickt einmal einen Pulse, dann stoppt A. B muss A nach
-        // Ablauf der Lease als verloren markieren.
+        // A sends one pulse, then A stops. B must mark A as lost after
+        // the lease expires.
         let cfg = RuntimeConfig {
             tick_period: Duration::from_millis(20),
             spdp_period: Duration::from_millis(100),
@@ -114,7 +113,7 @@ mod linux_only {
         a.assert_liveliness();
 
         let a_prefix = GuidPrefix::from_bytes([0x90; 12]);
-        // Warte auf erste Reception
+        // Wait for first reception
         let mut got_first = false;
         for _ in 0..40 {
             thread::sleep(Duration::from_millis(50));
@@ -123,15 +122,15 @@ mod linux_only {
                 break;
             }
         }
-        assert!(got_first, "B muss A's Pulse einmal empfangen haben");
+        assert!(got_first, "B must have received A's pulse once");
 
-        // Drop A — keine weiteren Pulse mehr.
+        // Drop A — no more pulses.
         drop(a);
         thread::sleep(Duration::from_millis(500));
 
-        // Im aktuellen Wiring loescht der Endpoint die Peers nicht
-        // automatisch — er meldet sie nur als "lost". Wir checken nur,
-        // dass mindestens ein Lost-Eintrag mit prefix=A existiert.
+        // In the current wiring the endpoint does not delete peers
+        // automatically — it only reports them as "lost". We just check
+        // that at least one lost entry with prefix=A exists.
         let lost_count = b
             .wlp
             .lock()
@@ -141,9 +140,9 @@ mod linux_only {
                     .count()
             })
             .unwrap_or(0);
-        // Smoke-Test: API darf nicht panicken. Konkrete Counts sind
-        // CI-Timing-abhaengig (start_instant-Drift zwischen Runtimes,
-        // Scheduler-Jitter unter Load), daher hier nur Existenz-Check.
+        // Smoke test: the API must not panic. Concrete counts are
+        // CI-timing-dependent (start_instant drift between runtimes,
+        // scheduler jitter under load), so only an existence check here.
         let _ = lost_count;
     }
 }

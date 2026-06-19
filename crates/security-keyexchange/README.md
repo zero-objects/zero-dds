@@ -3,23 +3,23 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-security-keyexchange/badge.svg)](https://docs.rs/zerodds-security-keyexchange)
 
-Ephemeral-Diffie-Hellman Key-Agreement fuer den DDS-Security
-Authentication-Handshake nach OMG DDS-Security 1.1 §8.3.2. Wrapper um
+Ephemeral Diffie-Hellman key agreement for the DDS-Security
+authentication handshake per OMG DDS-Security 1.1 §8.3.2. Wrapper around
 `ring::agreement` + `ring::hkdf`. Safety classification: **SAFE**.
 
-## Spec-Mapping
+## Spec mapping
 
-| Spec | Abschnitt |
+| Spec | Section |
 |------|-----------|
-| OMG DDS-Security 1.1 | §8.3.2 (Authentication-Handshake), §8.3.2.11 (Key-Establishment) |
+| OMG DDS-Security 1.1 | §8.3.2 (authentication handshake), §8.3.2.11 (key establishment) |
 
-## Was ist drin
+## What's inside
 
-- **`KeyExchange`** + **`Suite::X25519`** / **`Suite::P256Ecdh`** — Ephemeral-DH-Roundtrip mit `derive_shared_secret()` → 32-byte HKDF-SHA256-Output.
+- **`KeyExchange`** + **`Suite::X25519`** / **`Suite::P256Ecdh`** — ephemeral-DH roundtrip with `derive_shared_secret()` → 32-byte HKDF-SHA256 output.
 
-## Schichten-Position
+## Layer position
 
-Layer 4. Konsumiert von [`zerodds-security-pki`](../security-pki) im Authentication-Handshake-State-Machine.
+Layer 4. Consumed by [`zerodds-security-pki`](../security-pki) in the authentication-handshake state machine.
 
 ## Quickstart
 
@@ -37,20 +37,20 @@ let s2 = bob.derive_shared_secret(&a_pub).expect("bob derive");
 assert_eq!(s1, s2);
 ```
 
-## Suite-Coverage
+## Suite coverage
 
-| Suite | Use-Case |
+| Suite | Use case |
 |-------|----------|
-| `X25519` (Default) | Modern, 32-byte Public-Key |
-| `P256Ecdh` | Klassische ECDH-Alternative |
+| `X25519` (default) | Modern, 32-byte public key |
+| `P256Ecdh` | Classic ECDH alternative |
 
-## Nicht-Ziele
+## Non-goals
 
-RSA-OAEP-Key-Transport (Spec §8.3.2.11 alternative Form) ist nicht in RC1 — alle relevanten Vendoren (Cyclone DDS, FastDDS, RTI Connext) sprechen ECDH/X25519.
+RSA-OAEP key transport (spec §8.3.2.11 alternative form) is not in RC1 — all relevant vendors (Cyclone DDS, FastDDS, RTI Connext) speak ECDH/X25519.
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1`. Public-API + Wire-Format (Public-Key-Encoding) RC1-stabil.
+`1.0.0-rc.1`. Public API + wire format (public-key encoding) RC1-stable.
 
 ## Tests
 
@@ -58,13 +58,13 @@ RSA-OAEP-Key-Transport (Spec §8.3.2.11 alternative Form) ist nicht in RC1 — a
 cargo test -p zerodds-security-keyexchange
 ```
 
-11 Unit-Tests + 1 Doc-Test grün.
+11 unit tests + 1 doc test green.
 
-## Lizenz
+## License
 
 Apache-2.0.
 
-## Siehe auch
+## See also
 
 - `docs/spec-coverage/dds-security-1.2.md`.
 - [`zerodds-security-pki`](../security-pki).
