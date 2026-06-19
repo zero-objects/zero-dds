@@ -249,10 +249,10 @@ then, follow this exactly.
 cd /Users/sandrakessler/projects/zerodds
 rsync -a \
   --exclude '.git/' --exclude 'target/' --exclude 'buildroot/' \
-  --exclude 'benches/' --exclude 'ci/' --exclude 'diagrams/' \
-  --exclude 'examples/' --exclude 'website/' --exclude '.gitlab-ci.yml' \
-  --exclude '.publish-rc*' \
-  crates/ docs/ tools/ man/ packaging/ pkg/ meta-zerodds/ \
+  --exclude 'ci/' --exclude 'diagrams/' \
+  --exclude 'website/' --exclude '.gitlab-ci.yml' \
+  --exclude '.publish-rc*' --exclude '.dryrun-rc*' \
+  crates docs tools man packaging pkg meta-zerodds \
   Cargo.toml Cargo.lock README.md CHANGELOG.md LICENSE NOTICE \
   CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md deny.toml \
   rust-toolchain.toml rustfmt.toml \
@@ -261,6 +261,27 @@ rsync -a \
 
 Add-only (no `--delete`) is deliberate — never let a sync wipe mirror-curated
 files. **`crates/routing-service` is new — confirm it landed in the mirror.**
+
+> **rc.3 trap — directory sources take NO trailing slash, dest does.** Under
+> zsh an unquoted `$SRC` variable is **not** word-split (one bogus path → rsync
+> dies); pass the sources as literal args, not a variable. And `crates/`
+> (trailing slash) copies *contents* into `github/`, flattening the tree — use
+> `crates` (no slash) so it maps to `github/crates`.
+
+> **rc.3 trap — DO NOT exclude `benches/` or `examples/`.** 12 manifests declare
+> explicit `[[bench]]`/`[[example]]` targets (bench-suite's Wave-4 benches,
+> dcps examples, …). Excluding the `.rs` source makes cargo abort with
+> *"can't find bench"* before clippy/cargo-deny even start — the mirror CI goes
+> red on a manifest-parse error. These dirs are crate source shipped to
+> crates.io, not heavy fixtures (<300 KB total). After any sync, verify every
+> declared target file exists (script in C.4). Cost rc.3 a red CI + two extra
+> mirror commits.
+
+> **rc.3 trap — strip stale C# build artifacts.** The mirror had `crates/cs/
+> csharp/**/bin|obj` (DLLs/pdb, rc.2 `.nuspec`) tracked and *not* gitignored.
+> They re-stage on every `git add -A` and would ship publicly. Add
+> `crates/cs/csharp/**/bin/` + `**/obj/` to the mirror `.gitignore` and
+> `git rm --cached` them once.
 
 ### C.2 Apply the mirror patches
 
@@ -290,6 +311,28 @@ diff -q Cargo.toml github/Cargo.toml || echo "expected: only author-scrub + vers
 
 Investigate every unexpected diff. Only proceed when the mirror is a faithful
 rc.3 of root.
+
+**Also verify every declared cargo target file exists** (this is what catches
+the benches/examples exclude trap above — `cargo metadata` does *not* check
+target paths, only `clippy --all-targets` does, i.e. only the mirror CI):
+
+```bash
+cd github && python3 - <<'PY'
+import re, pathlib
+miss=[]
+for ct in list(pathlib.Path('.').glob('crates/*/Cargo.toml'))+list(pathlib.Path('.').glob('tools/*/Cargo.toml')):
+    base=ct.parent; txt=ct.read_text()
+    for m in re.finditer(r'path\s*=\s*"([^"]+\.rs)"', txt):
+        if not (base/m.group(1)).exists(): miss.append(f"{base}/{m.group(1)}")
+    for sect,sub in [('bench','benches'),('example','examples'),('bin','src/bin')]:
+        for blk in re.findall(r'\[\[%s\]\](.*?)(?=\n\[|\Z)'%sect, txt, re.S):
+            if 'path' in blk: continue
+            nm=re.search(r'name\s*=\s*"([^"]+)"', blk)
+            if nm and not (base/sub/(nm.group(1)+'.rs')).exists() and not (base/sub/nm.group(1)/'main.rs').exists():
+                miss.append(f"{base}/{sub}/{nm.group(1)}.rs (default {sect})")
+print("MISSING:\n  "+"\n  ".join(miss) if miss else "OK: all declared target files present")
+PY
+```
 
 ### C.5 Verify the staged tree builds standalone
 

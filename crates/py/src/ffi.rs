@@ -369,7 +369,7 @@ impl PyBytesWriter {
     fn write(&self, py: Python<'_>, data: &[u8]) -> PyResult<()> {
         let sample = RawBytes::new(data.to_vec());
         let writer = Arc::clone(&self.inner);
-        py.allow_threads(|| writer.write(&sample))
+        py.detach(|| writer.write(&sample))
             .map_err(dds_err_to_py)
     }
 
@@ -380,7 +380,7 @@ impl PyBytesWriter {
         timeout_secs: f64,
     ) -> PyResult<()> {
         let writer = Arc::clone(&self.inner);
-        py.allow_threads(|| {
+        py.detach(|| {
             writer.wait_for_matched_subscription(min_count, Duration::from_secs_f64(timeout_secs))
         })
         .map_err(dds_err_to_py)
@@ -428,7 +428,7 @@ impl PyBytesReader {
     /// Takes all available samples as `list[bytes]`.
     fn take<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         let reader = Arc::clone(&self.inner);
-        let samples = py.allow_threads(|| reader.take()).map_err(dds_err_to_py)?;
+        let samples = py.detach(|| reader.take()).map_err(dds_err_to_py)?;
         let list = PyList::empty(py);
         for s in samples {
             list.append(PyBytes::new(py, &s.data))?;
@@ -438,7 +438,7 @@ impl PyBytesReader {
 
     fn wait_for_data(&self, py: Python<'_>, timeout_secs: f64) -> PyResult<()> {
         let reader = Arc::clone(&self.inner);
-        py.allow_threads(|| reader.wait_for_data(Duration::from_secs_f64(timeout_secs)))
+        py.detach(|| reader.wait_for_data(Duration::from_secs_f64(timeout_secs)))
             .map_err(dds_err_to_py)
     }
 
@@ -449,7 +449,7 @@ impl PyBytesReader {
         timeout_secs: f64,
     ) -> PyResult<()> {
         let reader = Arc::clone(&self.inner);
-        py.allow_threads(|| {
+        py.detach(|| {
             reader.wait_for_matched_publication(min_count, Duration::from_secs_f64(timeout_secs))
         })
         .map_err(dds_err_to_py)
@@ -492,7 +492,7 @@ impl PyBytesReader {
 /// Python repr of a ShapeType instance. A plain dict would also be
 /// possible, but a dedicated class makes `isinstance` checks and
 /// getter/setter cleaner.
-#[pyclass(name = "Shape", module = "zerodds_py")]
+#[pyclass(name = "Shape", module = "zerodds_py", from_py_object)]
 #[derive(Clone)]
 struct PyShape {
     /// Color / instance key.
@@ -557,7 +557,7 @@ impl PyShapeWriter {
     fn write(&self, py: Python<'_>, shape: &PyShape) -> PyResult<()> {
         let sample: ShapeType = shape.into();
         let writer = Arc::clone(&self.inner);
-        py.allow_threads(|| writer.write(&sample))
+        py.detach(|| writer.write(&sample))
             .map_err(dds_err_to_py)
     }
 
@@ -566,7 +566,7 @@ impl PyShapeWriter {
     fn register_instance(&self, py: Python<'_>, shape: &PyShape) -> PyResult<u64> {
         let sample: ShapeType = shape.into();
         let writer = Arc::clone(&self.inner);
-        py.allow_threads(|| writer.register_instance(&sample))
+        py.detach(|| writer.register_instance(&sample))
             .map(|h| h.as_raw())
             .map_err(dds_err_to_py)
     }
@@ -576,7 +576,7 @@ impl PyShapeWriter {
     fn dispose(&self, py: Python<'_>, shape: &PyShape) -> PyResult<()> {
         let sample: ShapeType = shape.into();
         let writer = Arc::clone(&self.inner);
-        py.allow_threads(|| {
+        py.detach(|| {
             let handle = writer.lookup_instance(&sample);
             writer.dispose(&sample, handle)
         })
@@ -589,7 +589,7 @@ impl PyShapeWriter {
     fn unregister_instance(&self, py: Python<'_>, shape: &PyShape) -> PyResult<()> {
         let sample: ShapeType = shape.into();
         let writer = Arc::clone(&self.inner);
-        py.allow_threads(|| {
+        py.detach(|| {
             let handle = writer.lookup_instance(&sample);
             writer.unregister_instance(&sample, handle)
         })
@@ -603,7 +603,7 @@ impl PyShapeWriter {
         timeout_secs: f64,
     ) -> PyResult<()> {
         let writer = Arc::clone(&self.inner);
-        py.allow_threads(|| {
+        py.detach(|| {
             writer.wait_for_matched_subscription(min_count, Duration::from_secs_f64(timeout_secs))
         })
         .map_err(dds_err_to_py)
@@ -629,7 +629,7 @@ struct PyShapeReader {
 impl PyShapeReader {
     fn take<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         let reader = Arc::clone(&self.inner);
-        let samples = py.allow_threads(|| reader.take()).map_err(dds_err_to_py)?;
+        let samples = py.detach(|| reader.take()).map_err(dds_err_to_py)?;
         let list = PyList::empty(py);
         for s in samples {
             list.append(Py::new(py, PyShape::from(s))?)?;
@@ -639,7 +639,7 @@ impl PyShapeReader {
 
     fn wait_for_data(&self, py: Python<'_>, timeout_secs: f64) -> PyResult<()> {
         let reader = Arc::clone(&self.inner);
-        py.allow_threads(|| reader.wait_for_data(Duration::from_secs_f64(timeout_secs)))
+        py.detach(|| reader.wait_for_data(Duration::from_secs_f64(timeout_secs)))
             .map_err(dds_err_to_py)
     }
 
@@ -650,7 +650,7 @@ impl PyShapeReader {
         timeout_secs: f64,
     ) -> PyResult<()> {
         let reader = Arc::clone(&self.inner);
-        py.allow_threads(|| {
+        py.detach(|| {
             reader.wait_for_matched_publication(min_count, Duration::from_secs_f64(timeout_secs))
         })
         .map_err(dds_err_to_py)
@@ -745,7 +745,7 @@ impl PyWaitSet {
     /// Wait — returns the number of triggered conditions.
     fn wait(&self, py: Python<'_>, timeout_secs: f64) -> PyResult<usize> {
         // WaitSet is not Clone — use inner directly.
-        py.allow_threads(|| self.inner.wait(Duration::from_secs_f64(timeout_secs)))
+        py.detach(|| self.inner.wait(Duration::from_secs_f64(timeout_secs)))
             .map_err(dds_err_to_py)
             .map(|v| v.len())
     }

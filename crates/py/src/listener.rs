@@ -98,7 +98,7 @@ impl PyDataWriterListenerBridge {
         // at this point the caller frame already owns it
         // (a PyO3 method), but we acquire it explicitly to show the
         // dependency locally.
-        let snapshot = Python::with_gil(|py| {
+        let snapshot = Python::attach(|py| {
             let g = listener.slots.lock().unwrap();
             PyListenerSlots {
                 on_offered_deadline_missed: g
@@ -128,7 +128,7 @@ where
     // Call the Python callback under a GIL acquire. Exceptions are written
     // to stderr (PyErr::print) — the Rust side must not propagate a
     // listener exception.
-    Python::with_gil(|py| match build_args(py) {
+    Python::attach(|py| match build_args(py) {
         Ok(args) => {
             if let Err(e) = callback.call1(py, args) {
                 e.print(py);
@@ -231,7 +231,7 @@ pub struct PyDataReaderListenerBridge {
 
 impl PyDataReaderListenerBridge {
     pub fn from_pyclass(listener: &PyDataReaderListener) -> std::sync::Arc<Self> {
-        let snapshot = Python::with_gil(|py| {
+        let snapshot = Python::attach(|py| {
             let g = listener.slots.lock().unwrap();
             PyListenerSlots {
                 on_offered_deadline_missed: None,

@@ -44,6 +44,13 @@ ignore = [
     # Cases ok). RC3-Pickup: zenoh-bridge optional + warning im
     # /bindings/zenoh/ Page bei aktivierter RSA-Authentication.
     "RUSTSEC-2023-0071",
+    # RUSTSEC-2025-0141 (bincode 1.3.3): unmaintained — das bincode-Team
+    # hat die Entwicklung dauerhaft eingestellt (kein Safety-Bug; 1.3.3
+    # gilt als vollstaendig). Transitiv via webrtc-dtls 0.12.0 (neueste
+    # Version) -> coap-bridge + xrce. Kein direkter Hebel; webrtc-dtls
+    # pinnt bincode 1.x. Wiedervorlage wenn webrtc-dtls auf bincode 2.x
+    # oder einen Maintained-Fork migriert.
+    "RUSTSEC-2025-0141",
 ]
 
 [licenses]
@@ -182,6 +189,25 @@ skip = [
     # transitiv ohne direkten Hebel.
     { crate = "rustix" },
     { crate = "linux-raw-sys" },
+
+    # ----- rc.3 transitive-Welle: zwei inkompatible x509-Dep-Baeume -----
+    # Die x509-parser-Familie wird in ZWEI Generationen gezogen, je aus
+    # einer Fremd-Crate, die ihre Version hart pinnt — kein direkter Hebel
+    # im Workspace:
+    #   * ALT (0.16-Familie): webrtc-dtls 0.12.0 (neueste Version!) ->
+    #     coap-bridge + xrce. Pinnt x509-parser 0.16 / asn1-rs 0.6 /
+    #     der-parser 9 / oid-registry 0.7 + rcgen 0.13.
+    #   * NEU (0.18-Familie): zenoh-link-tls/-commons 1.9 -> zenoh-bridge.
+    #     Pinnt x509-parser 0.18 / asn1-rs 0.7 / der-parser 10 /
+    #     oid-registry 0.8 + rcgen 0.14.
+    # Aufloesbar erst wenn webrtc-dtls eine x509-parser-0.18-Linie
+    # veroeffentlicht (Upstream-Backlog), bis dahin gewhitelistet.
+    { crate = "asn1-rs" },
+    { crate = "asn1-rs-derive" },
+    { crate = "der-parser" },
+    { crate = "oid-registry" },
+    { crate = "rcgen" },
+    { crate = "x509-parser" },
 ]
 # Verbotene Crates. Ergaenzt durch Clippy disallowed-types in Safe-Crates.
 deny = [

@@ -74,13 +74,32 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
+      # The DuckDB lakehouse adapter (ADR 0009) links the *system* libduckdb
+      # v1.5.3 — same as ci/Dockerfile.rust on GitLab. The `bundled` source
+      # build was dropped (OOM-killed the 16 GB runner, +1h/build). amd64 only;
+      # the aarch64 cross build excludes the duckdb-dependent crates below.
+      - name: Install system libduckdb (amd64)
+        if: ${{ !matrix.cross }}
+        run: |
+          curl -fsSL -o /tmp/libduckdb.zip \
+            https://github.com/duckdb/duckdb/releases/download/v1.5.3/libduckdb-linux-amd64.zip
+          unzip -o /tmp/libduckdb.zip -d /tmp/libduckdb
+          sudo install -m644 /tmp/libduckdb/libduckdb.so /usr/local/lib/
+          sudo install -m644 /tmp/libduckdb/duckdb.h /tmp/libduckdb/duckdb.hpp /usr/local/include/
+          sudo ldconfig
+          echo "DUCKDB_LIB_DIR=/usr/local/lib" >> "$GITHUB_ENV"
+          echo "DUCKDB_INCLUDE_DIR=/usr/local/include" >> "$GITHUB_ENV"
       - name: Install cross
         if: matrix.cross
         run: cargo install cross --locked
       - name: Build
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --workspace --target ${{ matrix.target }}
+            # libduckdb is amd64-only; the aarch64 cross-compile is a sanity
+            # check, so exclude the duckdb-linking crates (mirrors .gitlab-ci.yml).
+            cross build --workspace --target ${{ matrix.target }} \
+              --exclude zerodds-durability-store-lakehouse \
+              --exclude zerodds-durability-service-bin
           else
             cargo build --workspace --target ${{ matrix.target }}
           fi
@@ -136,6 +155,17 @@ jobs:
         with:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
+      # libduckdb for the DuckDB lakehouse adapter (see build-test job).
+      - name: Install system libduckdb (amd64)
+        run: |
+          curl -fsSL -o /tmp/libduckdb.zip \
+            https://github.com/duckdb/duckdb/releases/download/v1.5.3/libduckdb-linux-amd64.zip
+          unzip -o /tmp/libduckdb.zip -d /tmp/libduckdb
+          sudo install -m644 /tmp/libduckdb/libduckdb.so /usr/local/lib/
+          sudo install -m644 /tmp/libduckdb/duckdb.h /tmp/libduckdb/duckdb.hpp /usr/local/include/
+          sudo ldconfig
+          echo "DUCKDB_LIB_DIR=/usr/local/lib" >> "$GITHUB_ENV"
+          echo "DUCKDB_INCLUDE_DIR=/usr/local/include" >> "$GITHUB_ENV"
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --version 0.6.21 --locked
       - name: Run coverage
