@@ -1,10 +1,10 @@
-"""Minimales Bytes-Pub/Sub.
+"""Minimal bytes pub/sub.
 
-Start im einem Terminal::
+Start in one terminal::
 
     python examples/01_bytes_pubsub.py publisher
 
-und in einem zweiten::
+and in a second::
 
     python examples/01_bytes_pubsub.py subscriber
 """

@@ -1,9 +1,9 @@
-//! Criterion-Benches für RTPS-Decoder-Hot-Paths.
+//! Criterion benches for RTPS decoder hot paths.
 //!
-//! Regression-Detection. Misst:
-//! * `decode_datagram` mit DATA / HEARTBEAT / mehrere Submessages
-//! * `SequenceNumberSet::read_from` (bei DATA-fragments häufig)
-//! * Submessage-Decoding einzeln (DataSubmessage::read_body etc.)
+//! Regression detection. Measures:
+//! * `decode_datagram` with DATA / HEARTBEAT / multiple submessages
+//! * `SequenceNumberSet::read_from` (frequent with DATA fragments)
+//! * Submessage decoding individually (DataSubmessage::read_body etc.)
 //!
 //! Baseline:
 //!   `cargo bench -p zerodds-rtps --bench decode_hotpaths -- --save-baseline pre`
@@ -19,11 +19,11 @@ use zerodds_rtps::submessages::{
 };
 use zerodds_rtps::wire_types::{FragmentNumber, SequenceNumber};
 
-/// Minimaler RTPS-DATA-Datagramm (32 byte Header + 24 byte DATA-body
-/// mit kleiner Payload). Wir bauen die Bytes zur Compile-Zeit nicht
-/// (zu komplex), sondern dekodieren ein bekannt-gutes Cyclone-Fixture.
-/// Fixtures committet unter `benches/fixtures/` (statt unter
-/// `fuzz/corpus/`, das per crate-`.gitignore` exkludiert ist).
+/// A minimal RTPS DATA datagram (32 byte header + 24 byte DATA body
+/// with a small payload). We do not build the bytes at compile time
+/// (too complex), but decode a known-good Cyclone fixture. Fixtures
+/// committed under `benches/fixtures/` (instead of under `fuzz/corpus/`,
+/// which is excluded via the crate `.gitignore`).
 const CYCLONE_DATA_FIXTURE: &[u8] = include_bytes!("fixtures/cyclone_data_with_cdr2_payload");
 
 const CYCLONE_HEARTBEAT_FIXTURE: &[u8] = include_bytes!("fixtures/cyclone_heartbeat");

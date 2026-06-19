@@ -1,12 +1,12 @@
-//! Criterion-Benches fuer AMQP-Decoder-Hot-Paths.
+//! Criterion benches for AMQP-decoder hot paths.
 //!
-//! Zweck: Regression-Detection. Baseline:
+//! Purpose: regression detection. Baseline:
 //!   `cargo bench -p zerodds-amqp-bridge --bench decode_hotpaths -- --save-baseline pre`
-//! Nach Refactor:
+//! After refactor:
 //!   `cargo bench -p zerodds-amqp-bridge --bench decode_hotpaths -- --baseline pre`
 //!
-//! Kein Cross-Vendor-Vergleich, kein Marketing — nur Sanity-Check
-//! dass keine Regression > 10% ungesehen durchrutscht.
+//! No cross-vendor comparison, no marketing — just a sanity check that
+//! no regression > 10% slips through unnoticed.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, missing_docs)]
 
@@ -58,7 +58,7 @@ fn bench_decode_frame_header(c: &mut Criterion) {
 }
 
 fn bench_decode_performative_garbage(c: &mut Criterion) {
-    // Random-ish bytes — Performative-Decoder muss schnell scheitern.
+    // Random-ish bytes — the performative decoder must fail fast.
     let bytes = vec![0u8; 64];
     c.bench_function("amqp_decode_performative_invalid", |b| {
         b.iter(|| {

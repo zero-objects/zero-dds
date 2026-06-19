@@ -1,4 +1,4 @@
-// C++-Smoke-Test fuer zerodds/dds.hpp.
+// C++ smoke test for zerodds/dds.hpp.
 //
 // Build:
 //   cargo build --release -p dds-c-api

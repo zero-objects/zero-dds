@@ -1,8 +1,8 @@
-//! WP 2.0a Zero-Copy-Spike — Baseline-Bench.
+//! WP 2.0a zero-copy spike — baseline bench.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, missing_docs)]
 //!
-//! Misst den Writer-Hot-Path `write()` + `tick()-with-resends`. Zahlen
-//! sind Ausgangspunkt fuer den Refactor `DataSubmessage::
+//! Measures the writer hot path `write()` + `tick()-with-resends`. The numbers
+//! are the starting point for the refactor `DataSubmessage::
 //! serialized_payload: Vec<u8>` → `Arc<[u8]>`.
 //!
 //! Run:

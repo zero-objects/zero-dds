@@ -1,22 +1,22 @@
-//! Multi-Endpoint-Soak (CI-4c Welle).
+//! Multi-endpoint soak (CI-4c wave).
 //!
-//! Erzeugt N Topics + N Writer (Mode `pub_n`) bzw. N Reader (Mode `sub_n`)
-//! in **einem** DomainParticipant. Stress-Test fuer Endpoint-Skalierung
-//! im DDS-Runtime: WriterCache, ReaderCache, SEDP-Endpoint-Liste,
-//! Discovery-Match-Loops mit N x N Match-Punkten.
+//! Creates N topics + N writers (mode `pub_n`) or N readers (mode `sub_n`)
+//! in **one** DomainParticipant. Stress test for endpoint scaling
+//! in the DDS runtime: WriterCache, ReaderCache, SEDP endpoint list,
+//! discovery match loops with N x N match points.
 //!
-//! # Modi
+//! # Modes
 //!
-//! * `pub_n <count> <runtime_secs>` — N Writer auf Topics
-//!   `MultiPerf0`..`MultiPerf{N-1}`, jeder schreibt 1 Sample/Sekunde.
-//! * `sub_n <count> <runtime_secs>` — N Reader auf den gleichen Topics,
-//!   zaehlt empfangene Samples. Output alle 60 s mit total + per-Topic-
+//! * `pub_n <count> <runtime_secs>` — N writers on topics
+//!   `MultiPerf0`..`MultiPerf{N-1}`, each writing 1 sample/second.
+//! * `sub_n <count> <runtime_secs>` — N readers on the same topics,
+//!   counting received samples. Output every 60 s with total + per-topic
 //!   delta.
 //!
-//! # Auswahl von N
+//! # Choosing N
 //!
-//! Default-CI-4c-Welle: N=100. Empirisch tragbar bei 16+ GB RAM
-//! (jeder Reader/Writer ~50-200 KB History-Cache + Discovery-State).
+//! Default CI-4c wave: N=100. Empirically sustainable with 16+ GB RAM
+//! (each reader/writer ~50-200 KB history cache + discovery state).
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
@@ -63,7 +63,7 @@ fn run_pub_n(count: usize, runtime: Duration) -> Result<(), Box<dyn std::error::
             }
         }
         tick += 1;
-        // 1 Hz pro Writer — schlaeft bis zur naechsten Sekunde
+        // 1 Hz per writer — sleeps until the next second
         if tick % 60 == 0 {
             println!(
                 "{:.3}  multi_pub tick={} writers={} total_writes={} loop_us={}",

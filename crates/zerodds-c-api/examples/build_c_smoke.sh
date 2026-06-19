@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Baut den C-Smoke-Test gegen die staticlib oder cdylib.
+# Builds the C smoke test against the staticlib or cdylib.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"

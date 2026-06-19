@@ -1,30 +1,30 @@
-//! hello_dds_publisher — minimal-DDS-Publisher, der regelmaessig
-//! Samples auf Topic "Chatter" schickt.
+//! hello_dds_publisher — minimal DDS publisher that periodically
+//! sends samples on the "Chatter" topic.
 //!
 //! # Usage
 //!
 //! ```text
 //! # Terminal 1:
 //! cargo run -p zerodds-dcps --example hello_dds_publisher
-//! # Terminal 2 (gleicher Host, anderer Prozess):
+//! # Terminal 2 (same host, different process):
 //! cargo run -p zerodds-dcps --example hello_dds_subscriber
 //! ```
 //!
-//! Der Publisher laeuft bis Ctrl-C. Jede Sekunde wird ein Sample
-//! "hello #<counter>" an alle matched Subscriber auf Domain 0 gesendet.
+//! The publisher runs until Ctrl-C. Every second one sample
+//! "hello #<counter>" is sent to all matched subscribers on domain 0.
 //!
-//! # Was hier passiert
+//! # What happens here
 //!
-//! 1. `DomainParticipantFactory::create_participant(0, ...)` startet
-//!    die `DcpsRuntime` — das sind 4 UDP-Sockets + SPDP/SEDP-Threads.
-//! 2. SPDP-Beacons werden alle 5 s auf die Multicast-Gruppe 239.255.0.1
-//!    gesendet; damit findet uns der Subscriber.
-//! 3. `create_topic("Chatter", ...)` legt die Topic-Registry-Eintrag an.
-//! 4. `create_datawriter` registriert einen User-Writer + EntityId bei
-//!    der Runtime und announced ihn via SEDP.
-//! 5. `writer.write(&sample)` encodiert den Sample und uebergibt ihn
-//!    an den internen `ReliableWriter`, der ihn an alle matched Reader
-//!    via UDP schickt.
+//! 1. `DomainParticipantFactory::create_participant(0, ...)` starts
+//!    the `DcpsRuntime` — that is 4 UDP sockets + SPDP/SEDP threads.
+//! 2. SPDP beacons are sent every 5 s to the multicast group 239.255.0.1;
+//!    this is how the subscriber finds us.
+//! 3. `create_topic("Chatter", ...)` creates the topic registry entry.
+//! 4. `create_datawriter` registers a user writer + EntityId with
+//!    the runtime and announces it via SEDP.
+//! 5. `writer.write(&sample)` encodes the sample and hands it
+//!    to the internal `ReliableWriter`, which sends it to all matched
+//!    readers via UDP.
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
@@ -45,9 +45,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("hello_dds_publisher: sending on Domain 0 Topic 'Chatter' — Ctrl-C to stop");
 
-    // Ein paar Sekunden warten, damit SPDP+SEDP Subscriber entdecken kann.
-    // Ohne Warte-Phase gehen die ersten Samples ins Leere (noch kein Reader
-    // gematched). v1.3 bringt `wait_for_matched_subscription`.
+    // Wait a few seconds so that SPDP+SEDP can discover the subscriber.
+    // Without a wait phase the first samples go nowhere (no reader
+    // matched yet). v1.3 brings `wait_for_matched_subscription`.
     thread::sleep(Duration::from_secs(3));
 
     let mut counter: u32 = 0;

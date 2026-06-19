@@ -1,9 +1,9 @@
-//! Criterion-Benches für IDL-Parser-Hot-Paths.
+//! Criterion benches for IDL-parser hot paths.
 //!
-//! Misst:
-//! * Top-Level `zerodds_idl::parse` mit kleinen + komplexen Specs
-//! * Parse von echten DDS-Builtin-Topic-Datentypen (ParticipantData,
-//!   PublicationData, SubscriptionData) als typische Real-World-Größe.
+//! Measures:
+//! * Top-level `zerodds_idl::parse` with small + complex specs
+//! * Parsing real DDS builtin topic data types (ParticipantData,
+//!   PublicationData, SubscriptionData) as a typical real-world size.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, missing_docs)]
 
@@ -104,7 +104,7 @@ fn bench_parse_real_world(c: &mut Criterion) {
 }
 
 fn bench_parse_with_50_annotations(c: &mut Criterion) {
-    // Realistisches Maximum (unter dem Cap MAX_CONSECUTIVE_ANNOTATIONS=64).
+    // Realistic maximum (below the cap MAX_CONSECUTIVE_ANNOTATIONS=64).
     let mut src = String::new();
     for _ in 0..50 {
         src.push_str("@final ");

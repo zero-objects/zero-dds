@@ -1,7 +1,7 @@
-//! Criterion-Benches für DDS-XML-Parser-Hot-Paths.
+//! Criterion benches for the DDS-XML parser hot paths.
 //!
-//! Misst typische QoS-Profile-Parses + Tree-Building.
-//! Regression-Detection.
+//! Measures typical QoS profile parses + tree building.
+//! Regression detection.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, missing_docs)]
 

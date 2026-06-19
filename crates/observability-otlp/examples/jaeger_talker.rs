@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Jaeger-Talker Demo — Pumpt echte Spans + Histogramme + Events
-//! ueber `OtlpExporter` an einen lokalen Jaeger-Backend.
+//! Jaeger talker demo — pumps real spans + histograms + events
+//! via `OtlpExporter` to a local Jaeger backend.
 //!
 //! ## Run
 //!
-//! Erst Jaeger via Docker hochfahren (siehe
+//! First bring up Jaeger via Docker (see
 //! `examples/demos/otel/jaeger-compose.yml`):
 //!
 //! ```bash
@@ -14,7 +14,7 @@
 //! docker compose -f jaeger-compose.yml up -d
 //! ```
 //!
-//! Dann den Talker laufen lassen:
+//! Then run the talker:
 //!
 //! ```bash
 //! cargo run --example jaeger_talker -p zerodds-observability-otlp
@@ -22,8 +22,8 @@
 //!
 //! Verifikation: oeffne `http://localhost:16686` (Jaeger UI),
 //! waehle Service `zerodds-talker`, klicke "Find Traces".
-//! Du solltest 50 Spans `dcps.write` und 50 Spans `dcps.read`
-//! sehen plus 1 Histogramm `dcps.write_latency_ns` mit ~50 Samples.
+//! You should see 50 `dcps.write` spans and 50 `dcps.read` spans
+//! plus 1 histogram `dcps.write_latency_ns` with ~50 samples.
 
 #![allow(clippy::print_stdout, clippy::print_stderr, clippy::expect_used)]
 
@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let exporter = OtlpExporter::new(cfg);
 
-    // 50 simulierte DCPS-write-Spans + Sub-Spans + Latenz-Histogramm.
+    // 50 simulated DCPS write spans + sub-spans + latency histogram.
     let mut hist = Histogram::new("dcps.write_latency_ns");
     for i in 0..50 {
         let trace = TraceId([i as u8; 16]);
@@ -133,7 +133,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => {
             eprintln!("FAILED: {e}");
             eprintln!(
-                "[talker] ist Jaeger gestartet? cd examples/demos/otel && docker compose -f jaeger-compose.yml up -d"
+                "[talker] is Jaeger started? cd examples/demos/otel && docker compose -f jaeger-compose.yml up -d"
             );
             Err(Box::new(e))
         }

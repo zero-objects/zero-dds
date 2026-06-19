@@ -1,4 +1,4 @@
-/* C-Smoke-Test fuer zerodds.h.
+/* C smoke test for zerodds.h.
  *
  * Build:
  *   cargo build -p dds-c-api --release
@@ -10,7 +10,7 @@
  *   ./tmp/zerodds_c_smoke
  *
  * Erwartung (Linux): "OK: <N> samples received".
- * Erwartung (macOS): kann 0 sein (Multicast-Loopback unzuverlaessig).
+ * Expectation (macOS): may be 0 (multicast loopback unreliable).
  */
 
 #include "zerodds.h"
@@ -48,7 +48,7 @@ int main(void) {
     for (int i = 0; i < 100; ++i) {
         uint8_t *buf = NULL;
         size_t len = 0;
-        if (zerodds_reader_take(r, &buf, &len) == 0 && buf && len > 0) {
+        if (zerodds_reader_take(r, &buf, &len, NULL) == 0 && buf && len > 0) {
             received++;
             zerodds_buffer_free(buf, len);
         } else {

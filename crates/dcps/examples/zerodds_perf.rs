@@ -1,18 +1,18 @@
-//! ZeroDDS Performance-Bench-Binary (CI-3b Welle).
+//! ZeroDDS performance bench binary (CI-3b wave).
 //!
-//! Drei Modi:
-//! * `zerodds_perf pub <size> <runtime_secs>` — schreibt ShapeType-Samples
-//!   so schnell wie möglich (write-best-effort), zählt total+rate.
-//! * `zerodds_perf sub <runtime_secs>` — liest und zählt empfangene Samples,
-//!   misst rate alle Sekunde.
-//! * `zerodds_perf pingpong <runtime_secs>` — Round-Trip-Time-Test:
-//!   sendet PING über Topic "PerfPing", wartet auf PONG über "PerfPong".
-//!   Misst RTT in µs (timestamp encoded in shapesize i32).
+//! Three modes:
+//! * `zerodds_perf pub <size> <runtime_secs>` — writes ShapeType samples
+//!   as fast as possible (write-best-effort), counts total+rate.
+//! * `zerodds_perf sub <runtime_secs>` — reads and counts received samples,
+//!   measures the rate every second.
+//! * `zerodds_perf pingpong <runtime_secs>` — round-trip-time test:
+//!   sends PING on topic "PerfPing", waits for PONG on "PerfPong".
+//!   Measures RTT in µs (timestamp encoded in shapesize i32).
 //!
-//! # Output-Format
+//! # Output format
 //!
-//! ddsperf-kompatible Form (dass `llvm_bench_runner.sh` denselben Regex-
-//! Parser nutzen kann):
+//! ddsperf-compatible form (so that `llvm_bench_runner.sh` can use the
+//! same regex parser):
 //! ```text
 //! 1.000  size 1024 total 1234 rate 1234.5 kS/s 9876.5 Mb/s
 //! 1.000  rtt mean 145us min 100 50% 130 90% 180 99% 250 max 500
@@ -49,10 +49,10 @@ fn run_pub(size: usize, runtime: Duration) -> Result<(), Box<dyn std::error::Err
     let publisher = participant.create_publisher(PublisherQos::default());
     let writer = publisher.create_datawriter::<ShapeType>(&topic, DataWriterQos::default())?;
 
-    // Discovery-Wait
+    // Discovery wait
     let _ = writer.wait_for_matched_subscription(1, Duration::from_secs(5));
 
-    let payload_color = "X".repeat(size.saturating_sub(4 * 4)); // size minus i32-Felder approx
+    let payload_color = "X".repeat(size.saturating_sub(4 * 4)); // size minus i32 fields, approx
     let start = Instant::now();
     let mut total = 0u64;
     let mut last_report = start;
@@ -64,7 +64,7 @@ fn run_pub(size: usize, runtime: Duration) -> Result<(), Box<dyn std::error::Err
             total += 1;
             samples_since_report += 1;
         }
-        // Report jede Sekunde
+        // Report every second
         if last_report.elapsed() >= Duration::from_secs(1) {
             let elapsed_s = last_report.elapsed().as_secs_f64();
             let rate_ks = (samples_since_report as f64 / elapsed_s) / 1000.0;
@@ -133,10 +133,10 @@ fn run_sub(runtime: Duration) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_pingpong(runtime: Duration) -> Result<(), Box<dyn std::error::Error>> {
-    // Beide Rollen in einem Prozess via zwei Topics; Pinger schreibt
-    // PerfPing (mit "send-time"-Marker als shapesize-i32-Diff), Ponger
-    // (zweiter Prozess) liest und echot auf PerfPong. Dieser Prozess
-    // ist der PINGER.
+    // Both roles in one process via two topics; the pinger writes
+    // PerfPing (with a "send-time" marker as a shapesize-i32 diff), the
+    // ponger (second process) reads and echoes onto PerfPong. This
+    // process is the PINGER.
     let factory = DomainParticipantFactory::instance();
     let participant = factory.create_participant(0, DomainParticipantQos::default())?;
     let ping_topic = participant.create_topic::<ShapeType>(PING_TOPIC, TopicQos::default())?;
@@ -155,28 +155,34 @@ fn run_pingpong(runtime: Duration) -> Result<(), Box<dyn std::error::Error>> {
     let mut seq = 0i32;
     while start.elapsed() < runtime {
         let send_us = now_micros();
-        // shapesize codiert die unteren 32 bit von send_us als pseudo-id
-        // (kollisionsanfaellig, aber nur fuer matching im Pong); echte
-        // RTT-Berechnung passiert lokal via timestamp-storage.
+        // shapesize encodes the lower 32 bits of send_us as a pseudo-id
+        // (collision-prone, but only for matching in the pong); the real
+        // RTT computation happens locally via timestamp storage.
         let _ = writer.write(&ShapeType::new("PING", 0, 0, seq));
         seq = seq.wrapping_add(1);
 
-        // Wartet bis 50ms auf Pong
+        // Waits up to 50ms for the pong. Bug-fix 2026-05-19: previously
+        // the break checked `!rtts_us.is_empty()` — always true from
+        // iter 2 onward → the inner loop bailed out immediately on the
+        // first take(), even if the PONG for THIS seq had not arrived
+        // yet. Result: only iter 1 produced an RTT, then 99% were lost.
+        // A per-iter `got` flag fixes this cleanly.
         let deadline = Instant::now() + Duration::from_millis(50);
-        while Instant::now() < deadline {
+        let mut got = false;
+        while Instant::now() < deadline && !got {
             if let Ok(samples) = reader.take() {
                 for s in samples {
                     if s.color == "PONG" && s.shapesize == seq.wrapping_sub(1) {
                         let recv_us = now_micros();
                         rtts_us.push(recv_us - send_us);
+                        got = true;
                         break;
                     }
                 }
-                if !rtts_us.is_empty() && rtts_us.last().is_some() {
-                    break;
-                }
             }
-            std::thread::sleep(Duration::from_micros(100));
+            if !got {
+                std::thread::sleep(Duration::from_micros(100));
+            }
         }
         std::thread::sleep(Duration::from_millis(100)); // 10Hz ping rate
     }
@@ -206,7 +212,7 @@ fn run_pingpong(runtime: Duration) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_pong(runtime: Duration) -> Result<(), Box<dyn std::error::Error>> {
-    // Liest PerfPing, schreibt PerfPong mit gleichem shapesize.
+    // Reads PerfPing, writes PerfPong with the same shapesize.
     let factory = DomainParticipantFactory::instance();
     let participant = factory.create_participant(0, DomainParticipantQos::default())?;
     let ping_topic = participant.create_topic::<ShapeType>(PING_TOPIC, TopicQos::default())?;

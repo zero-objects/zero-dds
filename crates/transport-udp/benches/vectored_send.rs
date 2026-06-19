@@ -1,25 +1,25 @@
-//! WP 2.0a-2 Zero-Copy-Vollendung — Bench: flat `send` vs vectored
-//! `sendmsg` auf UDP-Loopback.
+//! WP 2.0a-2 zero-copy completion — bench: flat `send` vs vectored
+//! `sendmsg` on UDP loopback.
 //!
-//! Frage an den Bench: lohnt sich der MessageBuilder-Refactor auf
-//! `Vec<IoSlice>` + `sendmsg(2)`? WP 2.0a hat gezeigt, dass die
-//! Elimination einer einzigen Payload-Kopie nur 3-7 % bringt —
-//! der Rest steckt in `MessageBuilder::try_add_submessage` (concat
-//! in flat Vec) und `Transport::send` (serialize Vec).
+//! Question to the bench: is the MessageBuilder refactor to
+//! `Vec<IoSlice>` + `sendmsg(2)` worth it? WP 2.0a showed that
+//! eliminating a single payload copy yields only 3-7 % —
+//! the rest is in `MessageBuilder::try_add_submessage` (concat
+//! into a flat Vec) and `Transport::send` (serialize Vec).
 //!
-//! Der Bench simuliert den typischen Writer-Output: RTPS-Header
-//! (20 B) + Submessage-Header (4 B) + Payload (variabel). Wir
-//! vergleichen:
+//! The bench simulates the typical writer output: RTPS header
+//! (20 B) + submessage header (4 B) + payload (variable). We
+//! compare:
 //!
-//! - **flat**: drei Slices werden in ein Vec<u8> kopiert, dann
-//!   `socket.send_to(&vec, addr)` → ein `sendto(2)` mit bereits
-//!   konkatenierten Bytes.
+//! - **flat**: three slices are copied into a Vec<u8>, then
+//!   `socket.send_to(&vec, addr)` → one `sendto(2)` with already
+//!   concatenated bytes.
 //! - **vectored**: `socket2::Socket::send_to_vectored_with_flags`
-//!   mit `[IoSlice]` — Kernel macht die scatter-gather selbst.
+//!   with `[IoSlice]` — the kernel does the scatter-gather itself.
 //!
-//! Wenn der Delta zwischen beiden < 5 %, macht der komplette
-//! MessageBuilder-Refactor fuer UDP keinen Sinn. Wenn >= 20 %,
-//! lohnt sich WP 2.0a-2 Full-Migration.
+//! If the delta between the two is < 5 %, the complete
+//! MessageBuilder refactor makes no sense for UDP. If >= 20 %,
+//! the WP 2.0a-2 full migration is worth it.
 //!
 //! Run:
 //!   cargo bench -p zerodds-transport-udp --bench vectored_send \
@@ -43,7 +43,7 @@ fn setup_pair() -> (Socket, SockAddr) {
     let rx = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
     rx.bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)))
         .unwrap();
-    // bench-relevant: rx wird nie gelesen, wir messen nur TX.
+    // bench-relevant: rx is never read, we only measure TX.
     let tx = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
     let rx_addr = rx.local_addr().unwrap();
     // keep rx alive via leak — bench lives for process lifetime.

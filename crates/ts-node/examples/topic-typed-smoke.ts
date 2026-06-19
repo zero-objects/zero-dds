@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// topic-typed-smoke.ts — Referenz-Smoke fuer zerodds-xcdr2-ts-1.0 §10.
+// topic-typed-smoke.ts — reference smoke for zerodds-xcdr2-ts-1.0 §10.
 //
-// Zeigt encode/decode-Roundtrip eines hand-implementierten
-// `DdsTopicType<Point>` (entspricht dem was idl-ts pro IDL-`struct`
-// emittieren wuerde). Kein Live-DDS — nur das XCDR2-Wire-Layer.
+// Shows the encode/decode roundtrip of a hand-implemented
+// `DdsTopicType<Point>` (matches what idl-ts would emit per IDL `struct`).
+// No live DDS — only the XCDR2 wire layer.
 //
 // Run:
 //   cd crates/ts-node

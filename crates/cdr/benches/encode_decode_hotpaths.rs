@@ -1,5 +1,5 @@
-//! Criterion-Benches fuer XCDR-Encode/Decode-Hot-Paths.
-//! Regression-Detection. Kein Cross-Vendor-Vergleich.
+//! Criterion benches for XCDR encode/decode hot paths.
+//! Regression detection. No cross-vendor comparison.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, missing_docs)]
 

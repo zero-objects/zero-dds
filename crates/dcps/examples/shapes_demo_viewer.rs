@@ -1,16 +1,16 @@
-//! ShapesDemo-Live-Viewer (Terminal).
+//! ShapesDemo live viewer (terminal).
 //!
-//! Subscribiert auf alle drei Standard-Shapes-Topics (Square / Circle /
-//! Triangle) und zeichnet die jeweils zuletzt empfangenen Sample-
-//! Positionen als Unicode-Blocks in einem ANSI-Terminal-Fenster.
+//! Subscribes to all three standard Shapes topics (Square / Circle /
+//! Triangle) and draws the most recently received sample positions as
+//! Unicode blocks in an ANSI terminal window.
 //!
-//! Interop-Test:
-//! - Starte `rtishapesdemo` (RTI 7.7.0), Cyclone- oder FastDDS-
-//!   ShapesDemo, oder den ZeroDDS-Publisher (`shapes_demo_publisher`),
-//!   und du siehst die Forme live im Terminal wandern.
-//! - Multiple Publishers (z.B. Cyclone schickt Square, ZeroDDS schickt
-//!   Circle, RTI schickt Triangle) sind moeglich — jeder publisher
-//!   landet auf seinem eigenen Topic.
+//! Interop test:
+//! - Start `rtishapesdemo` (RTI 7.7.0), the Cyclone or FastDDS
+//!   ShapesDemo, or the ZeroDDS publisher (`shapes_demo_publisher`),
+//!   and you will see the shapes moving live in the terminal.
+//! - Multiple publishers (e.g. Cyclone sends Square, ZeroDDS sends
+//!   Circle, RTI sends Triangle) are possible — each publisher lands
+//!   on its own topic.
 //!
 //! # Usage
 //!
@@ -19,14 +19,14 @@
 //! cargo run -p zerodds-dcps --example shapes_demo_viewer -- 0   # domain id
 //! ```
 //!
-//! Beenden: Ctrl-C.
+//! Quit: Ctrl-C.
 //!
 //! # Layout
 //!
-//! ShapesDemo-Canvas geht (per Cyclone/RTI/FastDDS-Default) von 0..240
-//! horizontal und 0..270 vertikal. Wir mappen das auf 80×30 Terminal-
-//! Zellen. Farbe der Forme wird via ANSI-256-Color-Code re-mapped
-//! (BLUE → Blau, RED → Rot, etc.).
+//! The ShapesDemo canvas spans (by Cyclone/RTI/FastDDS default) 0..240
+//! horizontally and 0..270 vertically. We map that onto 80×30 terminal
+//! cells. The shape's color is re-mapped via an ANSI 256-color code
+//! (BLUE → blue, RED → red, etc.).
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
@@ -48,7 +48,7 @@ const VIEW_H: usize = 30;
 const SHAPES_CANVAS_W: i32 = 240;
 const SHAPES_CANVAS_H: i32 = 270;
 
-/// ANSI-Foreground-Color-Code fuer ShapesDemo-Standard-Color-Strings.
+/// ANSI foreground color code for ShapesDemo standard color strings.
 fn ansi_color(name: &str) -> &'static str {
     match name.to_ascii_uppercase().as_str() {
         "BLUE" => "\x1B[34m",
@@ -85,7 +85,7 @@ fn map_y(y: i32) -> usize {
 }
 
 fn install_signal_handler(stop: Arc<AtomicBool>) {
-    // Best-effort: SIGINT setzt stop-flag.
+    // Best-effort: SIGINT sets the stop flag.
     let s = stop.clone();
     ctrlc_setter(move || s.store(true, Ordering::Relaxed));
 }
@@ -104,8 +104,8 @@ fn ctrlc_setter<F: Fn() + Send + Sync + 'static>(f: F) {
             }
         }
     }
-    // SAFETY: libc::signal nimmt C-ABI-Funktionspointer; `handler` ist
-    // `extern "C"` und hat exakt die erwartete Signatur (i32).
+    // SAFETY: libc::signal takes a C-ABI function pointer; `handler` is
+    // `extern "C"` and has exactly the expected signature (i32).
     unsafe {
         libc::signal(libc::SIGINT, handler as usize);
     }
@@ -134,16 +134,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     eprintln!(
-        "shapes_demo_viewer: Domain={domain_id} — subscribed to Square / Circle / Triangle. Ctrl-C beendet."
+        "shapes_demo_viewer: Domain={domain_id} — subscribed to Square / Circle / Triangle. Ctrl-C to quit."
     );
-    eprintln!("Warte auf Discovery + erste Samples...");
+    eprintln!("Waiting for discovery + first samples...");
 
     // Hide cursor + clear screen.
     print!("\x1B[?25l\x1B[2J");
     let mut stdout = std::io::stdout();
     stdout.flush().ok();
 
-    // Pro (topic, color) speichern wir die letzte Position.
+    // Per (topic, color) we store the last position.
     let mut shapes: HashMap<(String, String), (i32, i32)> = HashMap::new();
     let mut sample_count: u64 = 0;
     let mut grid: Vec<Vec<(char, &'static str)>> = vec![vec![(' ', ""); VIEW_W]; VIEW_H];
@@ -203,7 +203,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         println!("┘");
         println!(
-            "shapes={:3} samples={:6} domain={} — Ctrl-C beendet                            ",
+            "shapes={:3} samples={:6} domain={} — Ctrl-C to quit                            ",
             shapes.len(),
             sample_count,
             domain_id,
@@ -215,6 +215,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Show cursor again.
     print!("\x1B[?25h");
-    println!("[shapes_demo_viewer] beendet. Total samples empfangen: {sample_count}");
+    println!("[shapes_demo_viewer] finished. Total samples received: {sample_count}");
     Ok(())
 }

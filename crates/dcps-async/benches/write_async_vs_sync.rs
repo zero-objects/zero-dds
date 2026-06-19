@@ -1,12 +1,12 @@
-// Bench-Setup darf expect() nutzen (kein no-panic-Kontrakt) und
-// erfordert keine missing_docs auf Helper-Items.
+// The bench setup may use expect() (no no-panic contract) and
+// does not require missing_docs on helper items.
 #![allow(clippy::expect_used, missing_docs)]
 
-//! Bench: async vs sync write-Latenz.
+//! Bench: async vs sync write latency.
 //!
-//! Spec §9.1 Performance-Target: write().await ≤ 5 % Overhead gegen
-//! sync-write. Dieser Bench misst beide Varianten in einem
-//! Offline-Participant (kein UDP, also reine API-Overhead).
+//! Spec §9.1 performance target: write().await ≤ 5 % overhead versus
+//! sync write. This bench measures both variants in an
+//! offline participant (no UDP, so pure API overhead).
 //!
 //! Run: `cargo bench -p zerodds-dcps-async --bench write_async_vs_sync`
 

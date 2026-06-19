@@ -1,9 +1,9 @@
-//! Criterion-Benches für DDS-XRCE-Wire-Decoder-Hot-Paths.
+//! Criterion benches for the DDS-XRCE wire decoder hot paths.
 //!
-//! Misst:
-//! * `Message::decode` mit single + multi-Submessage Frames
+//! Measures:
+//! * `Message::decode` with single + multi-submessage frames
 //! * `SubmessageHeader::from_bytes`
-//! * Serial-frame decoders (SLIP-encoded)
+//! * Serial frame decoders (SLIP-encoded)
 
 #![allow(clippy::unwrap_used, clippy::expect_used, missing_docs)]
 

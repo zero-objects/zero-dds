@@ -1,11 +1,11 @@
-"""ShapeType-Cross-Vendor-Interop.
+"""ShapeType cross-vendor interop.
 
-Pendant zu OMG ShapesDemo (Cyclone/Fast-DDS/RTI). Start im einem
-Terminal::
+Counterpart to OMG ShapesDemo (Cyclone/Fast-DDS/RTI). Start in one
+terminal::
 
     python examples/02_shape_pubsub.py publisher
 
-und in einem anderen — egal ob zerodds, cyclonedds-python oder
+and in another — whether zerodds, cyclonedds-python or
 rticonnextdds::
 
     python examples/02_shape_pubsub.py subscriber

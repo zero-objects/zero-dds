@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Baut den C++-Smoke-Test gegen libzerodds.
+# Builds the C++ smoke test against libzerodds.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"

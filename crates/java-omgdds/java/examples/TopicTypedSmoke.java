@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// TopicTypedSmoke.java -- Referenz-Smoke fuer zerodds-xcdr2-java-1.0 §10.
+// TopicTypedSmoke.java -- reference smoke for zerodds-xcdr2-java-1.0 §10.
 //
-// Zeigt encode/decode-Roundtrip eines hand-implementierten
-// `org.zerodds.cdr.TopicTypeSupport<Point>` (entspricht dem was idl-java
-// pro IDL-`struct` emittieren wuerde). Kein Live-DDS -- nur das XCDR2-
-// Wire-Layer.
+// Shows the encode/decode roundtrip of a hand-implemented
+// `org.zerodds.cdr.TopicTypeSupport<Point>` (matches what idl-java
+// would emit per IDL `struct`). No live DDS -- only the XCDR2
+// wire layer.
 //
 // Run:
 //   cd crates/java-omgdds/java
 //   mvn compile exec:java -Dexec.mainClass=examples.TopicTypedSmoke \
 //     -Dexec.classpathScope=test
 //
-// Oder kopiere in src/main/java und rufe normal auf.
+// Or copy into src/main/java and call normally.
 
 package examples;
 

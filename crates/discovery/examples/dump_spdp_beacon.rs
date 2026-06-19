@@ -1,13 +1,13 @@
-//! Dump ein SPDP-Beacon-Datagramm als raw bytes nach stdout.
+//! Dump an SPDP beacon datagram as raw bytes to stdout.
 //!
-//! Aufruf:
+//! Invocation:
 //! ```bash
 //! cargo run --example dump_spdp_beacon -- 192.168.178.60 54321 42 > /tmp/beacon.bin
 //! ```
 //!
-//! Verwendet fuer Multicast-Sanity-Check: Binary nach llvm kopieren,
-//! dort via Python periodisch auf 239.255.0.1:17900 senden, pruefen
-//! ob Cyclone auf llvm uns als matched peer sieht.
+//! Used for a multicast sanity check: copy the binary to the test host,
+//! send it there periodically via Python to 239.255.0.1:17900, check
+//! whether Cyclone on that host sees us as a matched peer.
 
 #![allow(clippy::expect_used, clippy::print_stderr)]
 
@@ -40,13 +40,14 @@ fn main() {
         | endpoint_flag::PUBLICATIONS_DETECTOR
         | endpoint_flag::SUBSCRIPTIONS_ANNOUNCER
         | endpoint_flag::SUBSCRIPTIONS_DETECTOR;
-    // mc-port fuer Domain: 7400 + 250 * domain
+    // mc-port for the domain: 7400 + 250 * domain
     let mc_port = 7400 + 250 * domain;
 
     let data = ParticipantBuiltinTopicData {
         guid: Guid::new(GuidPrefix::from_bytes([0xEE; 12]), EntityId::PARTICIPANT),
         protocol_version: ProtocolVersion::V2_5,
         vendor_id: VendorId::ZERODDS,
+        participant_security_info: None,
         default_unicast_locator: Some(Locator::udp_v4(ip, u32::from(uc_port))),
         default_multicast_locator: Some(Locator::udp_v4([239, 255, 0, 1], mc_port)),
         metatraffic_unicast_locator: Some(Locator::udp_v4(ip, u32::from(uc_port))),

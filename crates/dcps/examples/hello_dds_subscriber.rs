@@ -1,5 +1,5 @@
-//! hello_dds_subscriber — minimal-DDS-Subscriber, der alle Samples
-//! auf Topic "Chatter" liest und druckt.
+//! hello_dds_subscriber — minimal DDS subscriber that reads and prints
+//! all samples on the "Chatter" topic.
 //!
 //! # Usage
 //!
@@ -10,10 +10,10 @@
 //! cargo run -p zerodds-dcps --example hello_dds_subscriber
 //! ```
 //!
-//! Laeuft bis Ctrl-C; nutzt `wait_for_data(1s)` als Wake-on-Sample,
-//! spart busy-polling. Der Re-Timeout von 1 s ist nur
-//! der max. Idle-Intervall — bei Sample-Traffic kommt die Schleife
-//! sofort durch.
+//! Runs until Ctrl-C; uses `wait_for_data(1s)` as wake-on-sample,
+//! avoiding busy-polling. The 1 s re-timeout is only
+//! the max idle interval — under sample traffic the loop comes
+//! through immediately.
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 

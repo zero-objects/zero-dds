@@ -1,12 +1,12 @@
-//! `spdp_demo`: ZeroDDS-Participant entdeckt SPDP-Beacons.
+//! `spdp_demo`: a ZeroDDS participant discovers SPDP beacons.
 //!
-//! Bindet einen Multicast-Receiver auf der SPDP-Default-Group
-//! (239.255.0.1:7400) und druckt jeden empfangenen Beacon.
-//! Sendet parallel periodisch eigene Beacons via Unicast (Phase-0-
-//! Limit: kein Multicast-Outbound; Phase 1 ergaenzt das mit
-//! `socket2`-Crate fuer outbound interface selection).
+//! Binds a multicast receiver on the SPDP default group
+//! (239.255.0.1:7400) and prints every received beacon.
+//! In parallel, periodically sends its own beacons via unicast (Phase-0
+//! limit: no multicast outbound; Phase 1 adds that with the
+//! `socket2` crate for outbound interface selection).
 //!
-//! Verwendung:
+//! Usage:
 //!
 //! ```bash
 //! # Terminal 1: Cyclone-Container starten
@@ -20,11 +20,11 @@
 //! cd tests/interop && docker compose down
 //! ```
 //!
-//! Alternativ ohne Docker: erwartet keinen Cyclone — laeuft als reiner
-//! Beacon-Sender, druckt eigene Datagrams.
+//! Alternatively, without Docker: expects no Cyclone — runs as a pure
+//! beacon sender, printing its own datagrams.
 //!
-//! zerodds-lint: allow no_dyn_in_safe (Example-Code; `Box<dyn Error>` ist
-//! hier die idiomatische Return-Type fuer main in Demos).
+//! zerodds-lint: allow no_dyn_in_safe (example code; `Box<dyn Error>` is
+//! the idiomatic return type for main in demos here).
 
 #![allow(clippy::expect_used, clippy::print_stdout, clippy::print_stderr)]
 
@@ -51,8 +51,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port = spdp_multicast_port(DOMAIN_ID);
     let group = Ipv4Addr::from(SPDP_DEFAULT_MULTICAST_ADDRESS);
 
-    // Interface-Selection via Env-Var (z.B. INTERFACE_IP=192.168.178.60).
-    // Default: 0.0.0.0 (alle Interfaces, in Praxis oft nur Loopback).
+    // Interface selection via env var (e.g. INTERFACE_IP=192.168.178.60).
+    // Default: 0.0.0.0 (all interfaces, in practice often only loopback).
     let interface_ip: Ipv4Addr = std::env::var("INTERFACE_IP")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -67,11 +67,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_timeout(Some(StdDuration::from_millis(500)))?;
     eprintln!("Receiver bound: {:?}", receiver.local_locator());
 
-    // Eigener Beacon-Sender (Unicast nach 239.255.0.1; Linux/macOS
-    // routet das via Multicast, wenn IGMP korrekt funktioniert).
+    // Own beacon sender (unicast to 239.255.0.1; Linux/macOS routes
+    // this via multicast if IGMP works correctly).
     let sender = UdpTransport::bind_v4(Ipv4Addr::UNSPECIFIED, 0)?.set_multicast_ttl(32)?;
 
-    // Generiere zufaelligen GuidPrefix fuer diesen Demo-Lauf
+    // Generate a random GuidPrefix for this demo run
     let prefix = GuidPrefix::from_bytes([
         0xDE,
         0xAD,
@@ -90,6 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         guid: Guid::new(prefix, EntityId::PARTICIPANT),
         protocol_version: ProtocolVersion::V2_5,
         vendor_id: VendorId::ZERODDS,
+        participant_security_info: None,
         default_unicast_locator: Some(Locator::udp_v4([127, 0, 0, 1], 7410)),
         default_multicast_locator: Some(Locator::udp_v4(SPDP_DEFAULT_MULTICAST_ADDRESS, port)),
         metatraffic_unicast_locator: None,
@@ -153,7 +154,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     Err(SpdpError::NotSpdp) => {
-                        // Nicht-SPDP-Datagrams (z.B. user-DATA) ignorieren.
+                        // Ignore non-SPDP datagrams (e.g. user DATA).
                     }
                     Err(e) => eprintln!("parse error: {e}"),
                 },
@@ -168,7 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("Listening for SPDP beacons. Press Ctrl+C to stop.");
     eprintln!();
 
-    // Demo laeuft 30 Sekunden, dann Cleanup.
+    // Demo runs for 30 seconds, then cleanup.
     thread::sleep(StdDuration::from_secs(30));
     stop.store(true, Ordering::Relaxed);
     let _ = beacon_handle.join();
