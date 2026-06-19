@@ -43,7 +43,7 @@ jobs:
             echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar" >> $GITHUB_ENV
           fi
       - name: cargo build (release)
-        run: cargo build --release --workspace --target ${{ matrix.target }}
+        run: cargo build --release --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin --target ${{ matrix.target }}
       - name: Assemble debs (per sub-package)
         run: |
           bash packaging/linux/deb/assemble-debs.sh \

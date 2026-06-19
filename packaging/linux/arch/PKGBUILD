@@ -52,12 +52,12 @@ _clis=(
 
 build() {
     cd "$pkgname-$pkgver"
-    cargo build --release --locked --workspace --bins
+    cargo build --release --locked --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin --bins
 }
 
 check() {
     cd "$pkgname-$pkgver"
-    cargo test --release --locked --workspace --bins --no-run
+    cargo test --release --locked --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin --bins --no-run
 }
 
 package() {
