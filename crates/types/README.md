@@ -76,4 +76,3 @@ All public-API items are semver-stable from `1.0.0-rc.1`.
 - Spec: [OMG XTypes 1.3](https://www.omg.org/spec/DDS-XTypes/1.3/)
 - CHANGELOG: [`CHANGELOG.md`](CHANGELOG.md)
 - Coverage doc: [`docs/spec-coverage/dds-xtypes-1.3.md`](../../docs/spec-coverage/dds-xtypes-1.3.md)
-- RFC: [`docs/rfcs/0004-xtypes-integration.md`](../../docs/rfcs/0004-xtypes-integration.md)

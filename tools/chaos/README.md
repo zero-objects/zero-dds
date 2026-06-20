@@ -21,8 +21,7 @@ reproducible: same seed → same dropped packets at the same offsets.
 ## Spec mapping
 
 This is internal tooling — no OMG spec mapping. The behaviour is
-defined by the in-tree
-[`docs/test-harness/chaos-policies.md`](../../docs/test-harness/chaos-policies.md).
+defined by the in-tree source (`src/`).
 
 ## Safety classification
 

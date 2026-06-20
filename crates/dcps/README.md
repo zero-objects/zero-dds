@@ -101,4 +101,4 @@ Apache-2.0. See [LICENSE](../../LICENSE).
 
 - [`docs/architecture/02_architecture.md`](../../docs/architecture/02_architecture.md) — layered architecture
 - [`docs/architecture/04_safety_by_architecture.md`](../../docs/architecture/04_safety_by_architecture.md) — safety classification
-- [`docs/spec-coverage/dds-1.4.md`](../../docs/spec-coverage/dds-1.4.md) — spec-coverage table
+- [`docs/spec-coverage/dds-dcps-1.4.md`](../../docs/spec-coverage/dds-dcps-1.4.md) — spec-coverage table

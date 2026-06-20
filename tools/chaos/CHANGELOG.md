@@ -10,7 +10,7 @@ Initial release materialisation.
 ### Spec references
 
 This is internal tooling — no normative OMG spec. Policy semantics
-are defined in `docs/test-harness/chaos-policies.md`.
+are defined in the tool's `src/`.
 
 ### CLI sub-commands
 
