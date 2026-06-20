@@ -12,14 +12,14 @@ documentation = "https://docs.rs/zerodds-durability-service-bin"
 readme = "README.md"
 keywords = ["dds", "durability", "daemon", "persistence"]
 categories = ["network-programming", "command-line-utilities"]
-publish = true
+# Source-only (NOT on crates.io): the durability-svc daemon transitively links
+# the *system* libduckdb (via the lakehouse adapter), so it cannot build in the
+# clean `cargo publish` verify env, cannot ship as a portable cargo-dist
+# archive, and the `bundled` source build was dropped (OOM/+1h). The DuckDB
+# lakehouse is an optional backend; build this daemon from the repo with
+# libduckdb present. The self-contained durability paths stay on crates.io.
+publish = false
 
-# The durability-svc daemon transitively links the *system* libduckdb (via the
-# lakehouse adapter), so it cannot ship as a portable cargo-dist release archive
-# — there is no self-contained libduckdb across the Linux/Windows/macOS release
-# targets, and the `bundled` source build was dropped (OOM/+1h). Stays a fully
-# published crate; only the binary-release artifact is excluded. Install via
-# `cargo install zerodds-durability-service-bin` with libduckdb present.
 [package.metadata.dist]
 dist = false
 

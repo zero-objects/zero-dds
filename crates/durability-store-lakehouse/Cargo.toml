@@ -12,7 +12,13 @@ documentation = "https://docs.rs/zerodds-durability-store-lakehouse"
 readme = "README.md"
 keywords = ["dds", "durability", "duckdb", "parquet"]
 categories = ["network-programming", "database"]
-publish = true
+# Source-only (NOT on crates.io): this adapter links the *system* libduckdb,
+# so it cannot build in the clean `cargo publish` verify env (cannot find
+# -lduckdb) — and shipping it would hand that link error to every crates.io
+# consumer. The DuckDB lakehouse is an *optional* durability backend; the
+# self-contained backends (durability-store-sqlite / -file) cover crates.io.
+# Build this one from the repo with libduckdb present.
+publish = false
 
 [lints]
 workspace = true

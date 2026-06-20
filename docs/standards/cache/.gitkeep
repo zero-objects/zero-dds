@@ -1,5 +1,0 @@
-# Dieses Verzeichnis ist fuer heruntergeladene Spec-PDFs reserviert.
-# Inhalte werden per docs/standards/fetch.sh erzeugt und per .gitignore
-# vom Versions-Tracking ausgeschlossen, um IP-Vermischung zu vermeiden.
-#
-# Siehe docs/standards/README.md fuer Details.

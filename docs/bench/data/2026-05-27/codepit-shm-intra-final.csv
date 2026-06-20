@@ -1,5 +1,0 @@
-host,transport,ping,pong,n,min,p50,p90,p99,p999,max,status
-codepit,SHM,fastdds,fastdds,30,32.782,36.89,60.535,67.297,67.297,69.562,ok
-codepit,SHM,rti,rti,30,22.493,29.556,35.848,45.106,45.106,118.995,ok
-codepit,SHM,opendds,opendds,30,147.449,160.825,248.451,283.206,283.206,331.798,ok
-codepit,SHM_iox,cyclone,cyclone,30,17.984,18.645,26.971,28.454,28.454,29.566,ok
