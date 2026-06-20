@@ -114,7 +114,7 @@ fn ffi_pub_sub_roundtrip() {
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
 fn ffi_pub_sub_roundtrip_via_take_into() {
-    let domain: u32 = 200 + (std::process::id() % 50);
+    let domain: u32 = 170 + (std::process::id() % 50);
     let topic = CString::new("CFfiSmokeTakeInto").unwrap();
     let typ = CString::new("RawBytes").unwrap();
 
