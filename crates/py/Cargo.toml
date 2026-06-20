@@ -1,6 +1,13 @@
 [package]
 name = "zerodds-py"
-version.workspace = true
+# Pinned (not workspace `version.workspace = true`) because maturin parses this
+# version into PEP 440, and the workspace SemVer `1.0.0-rc.3.1` (dotted
+# prerelease) is not PEP-440-representable. `1.0.0-rc.3` → maturin `1.0.0rc3`
+# on PyPI (rc3 was never on PyPI — natural rc2→rc3 step, carries all rc3+rc3.1
+# changes incl. the pyo3 0.29 migration). Bump in lockstep with the workspace
+# on the next PEP-440-valid release (e.g. 1.0.0-rc.4) and consider restoring
+# `version.workspace = true`.
+version = "1.0.0-rc.3"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

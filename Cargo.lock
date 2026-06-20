@@ -7746,7 +7746,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-py"
-version = "1.0.0-rc.3.1"
+version = "1.0.0-rc.3"
 dependencies = [
  "pyo3",
  "zerodds-dcps",
