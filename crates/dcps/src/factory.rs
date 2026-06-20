@@ -297,10 +297,7 @@ impl ParticipantBuilder {
     /// config — see [`RuntimeConfig::with_security_bundle`].
     #[cfg(feature = "security")]
     #[must_use]
-    pub fn with_security(
-        mut self,
-        bundle: zerodds_security_runtime::SecurityBundle,
-    ) -> Self {
+    pub fn with_security(mut self, bundle: zerodds_security_runtime::SecurityBundle) -> Self {
         let base = self.config.take().unwrap_or_default();
         self.config = Some(base.with_security_bundle(&bundle));
         self

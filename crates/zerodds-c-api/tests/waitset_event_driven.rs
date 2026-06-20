@@ -112,7 +112,10 @@ fn waitset_readcondition_wakes_on_write_event_driven() {
 
         assert_eq!(rc, 0, "waitset_wait must return Ok (condition active)");
         assert_eq!(count, 1, "exactly one condition must be active");
-        assert_eq!(buf[0], cond as *mut c_void, "the ReadCondition must be active");
+        assert_eq!(
+            buf[0], cond as *mut c_void,
+            "the ReadCondition must be active"
+        );
 
         // Event-driven proof: must wake well before the 10s budget. A busy-poll
         // would also be "fast", but the wait blocks on a condvar woken by the
@@ -144,15 +147,11 @@ fn waitset_wait_null_and_timeout_safe() {
         let mut buf: [*mut c_void; 1] = [ptr::null_mut(); 1];
 
         // NULL waitset → BadParameter, no crash.
-        let rc = zerodds_waitset_wait(
-            ptr::null_mut(),
-            buf.as_mut_ptr(),
-            1,
-            &mut count,
-            0,
-            0,
+        let rc = zerodds_waitset_wait(ptr::null_mut(), buf.as_mut_ptr(), 1, &mut count, 0, 0);
+        assert!(
+            rc < 0,
+            "NULL waitset must yield a negative status, got {rc}"
         );
-        assert!(rc < 0, "NULL waitset must yield a negative status, got {rc}");
 
         // Valid empty waitset → Timeout (returns promptly, does not hang).
         let ws = zerodds_waitset_create();
@@ -170,7 +169,10 @@ fn waitset_wait_null_and_timeout_safe() {
         // NULL out-pointer → BadParameter.
         let ws = zerodds_waitset_create();
         let rc = zerodds_waitset_wait(ws, ptr::null_mut(), 1, &mut count, 0, 0);
-        assert!(rc < 0, "NULL out_active must yield a negative status, got {rc}");
+        assert!(
+            rc < 0,
+            "NULL out_active must yield a negative status, got {rc}"
+        );
         zerodds_waitset_destroy(ws);
     }
 }

@@ -1180,6 +1180,7 @@ pub unsafe extern "C" fn zerodds_reader_take_into(
     if len > cap {
         // Sample too large for the caller buffer — it has already been
         // consumed from the queue, so free it and signal the overflow.
+        // SAFETY: `raw`/`len` are the buffer the reader take just handed us; freeing it once is the documented ownership handoff.
         unsafe { zerodds_buffer_free(raw, len) };
         return ZeroDdsStatus::OutOfResources as isize;
     }

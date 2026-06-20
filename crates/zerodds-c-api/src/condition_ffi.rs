@@ -103,6 +103,7 @@ fn data_event() -> &'static Arc<DataEvent> {
 // hand-rolled RawWaker vtable over `Arc<DataEvent>` is used. Each clone bumps
 // the Arc strong count; wake/drop release it.
 
+// SAFETY: RawWaker vtable clone — `p` is a live `Arc<DataEvent>` raw pointer; bumps the strong count without dropping the original.
 unsafe fn de_clone(p: *const ()) -> RawWaker {
     // SAFETY: `p` is an `Arc<DataEvent>` raw pointer kept alive by the slot.
     let arc = unsafe { Arc::from_raw(p as *const DataEvent) };
@@ -111,6 +112,7 @@ unsafe fn de_clone(p: *const ()) -> RawWaker {
     RawWaker::new(Arc::into_raw(cloned) as *const (), &DE_VTABLE)
 }
 
+// SAFETY: RawWaker vtable wake — `p` is a live `Arc<DataEvent>` raw pointer; consumes exactly one strong ref.
 unsafe fn de_wake(p: *const ()) {
     // SAFETY: consumes one strong ref (by-value wake).
     let arc = unsafe { Arc::from_raw(p as *const DataEvent) };
@@ -118,6 +120,7 @@ unsafe fn de_wake(p: *const ()) {
     // arc dropped here → releases this ref.
 }
 
+// SAFETY: RawWaker vtable wake-by-ref — `p` is a live `Arc<DataEvent>` raw pointer; borrows it without consuming a ref.
 unsafe fn de_wake_by_ref(p: *const ()) {
     // SAFETY: borrow without consuming the ref.
     let arc = unsafe { Arc::from_raw(p as *const DataEvent) };
@@ -125,13 +128,13 @@ unsafe fn de_wake_by_ref(p: *const ()) {
     core::mem::forget(arc);
 }
 
+// SAFETY: RawWaker vtable drop — `p` is a live `Arc<DataEvent>` raw pointer; releases exactly one strong ref.
 unsafe fn de_drop(p: *const ()) {
     // SAFETY: releases one strong ref.
     drop(unsafe { Arc::from_raw(p as *const DataEvent) });
 }
 
-static DE_VTABLE: RawWakerVTable =
-    RawWakerVTable::new(de_clone, de_wake, de_wake_by_ref, de_drop);
+static DE_VTABLE: RawWakerVTable = RawWakerVTable::new(de_clone, de_wake, de_wake_by_ref, de_drop);
 
 /// Builds a `core::task::Waker` that, when woken, signals the global
 /// [`DataEvent`]. The returned waker owns one strong ref to the event Arc.

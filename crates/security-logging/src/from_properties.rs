@@ -18,6 +18,9 @@
 //! | `dds.sec.log.syslog.app` | app name (default `zerodds`) |
 //! | `dds.sec.log.syslog.host` | hostname field (default `localhost`) |
 
+// Returns a `Box<dyn LoggingPlugin>` built at runtime from properties — the concrete sink type is unknown until the `dds.sec.log.*` values are parsed.
+// zerodds-lint: allow no_dyn_in_safe
+
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use core::fmt;

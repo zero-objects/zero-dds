@@ -197,7 +197,10 @@ mod tests {
         assert_eq!(half_ms.seconds, 0);
         assert!(half_ms.fraction > 0);
         // 500 µs == 0.5 ms; same fraction as from_millis would give for 0.5ms.
-        assert_eq!(half_ms.fraction, ((500u64 * (1u64 << 32)) / 1_000_000) as u32);
+        assert_eq!(
+            half_ms.fraction,
+            ((500u64 * (1u64 << 32)) / 1_000_000) as u32
+        );
     }
 
     #[test]

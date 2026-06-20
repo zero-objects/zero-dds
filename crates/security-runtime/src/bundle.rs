@@ -21,6 +21,9 @@
 //! assert!(bundle.has_logging());
 //! ```
 
+// The security-event logger is a runtime plug-in boundary; `Arc/Box<dyn LoggingPlugin>` is the intended heterogeneous sink type (mirrors RuntimeConfig.security_logger).
+// zerodds-lint: allow no_dyn_in_safe
+
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 
