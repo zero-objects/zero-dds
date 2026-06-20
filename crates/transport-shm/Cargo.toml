@@ -26,8 +26,8 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.3", path = "../rtps" }
-zerodds-transport = { version = "1.0.0-rc.3", path = "../transport" }
+zerodds-rtps = { version = "1.0.0-rc.3.1", path = "../rtps" }
+zerodds-transport = { version = "1.0.0-rc.3.1", path = "../transport" }
 # POSIX shared-memory segment management (shm_open/mmap + Windows
 # CreateFileMapping). We wrap only the primitives; the ring-buffer
 # protocol on top is our own. Pinning 0.12 for the stable API.

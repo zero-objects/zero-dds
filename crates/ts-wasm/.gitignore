@@ -1,3 +1,6 @@
 pkg-node/
 pkg-web/
 target/
+node_modules/
+dist/
+package-lock.json

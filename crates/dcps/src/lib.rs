@@ -89,6 +89,9 @@ pub mod instance_handle;
 pub mod instance_tracker;
 #[cfg(feature = "alloc")]
 pub mod interop;
+/// Preference-ordered multi-transport for user traffic (SHM + UDP fallback).
+#[cfg(feature = "std")]
+pub mod layered_transport;
 pub mod listener;
 #[cfg(feature = "std")]
 pub mod listener_dispatch;

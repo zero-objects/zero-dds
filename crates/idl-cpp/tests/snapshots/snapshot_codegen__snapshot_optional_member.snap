@@ -7,6 +7,7 @@ expression: cpp
 
 #include <cstdint>
 #include <optional>
+#include <utility>
 
 #include "dds/topic/TopicTraits.hpp"
 #include "dds/topic/xcdr2.hpp"
@@ -16,6 +17,8 @@ class S {
 public:
     S() = default;
     ~S() = default;
+    S(std::optional<int32_t> maybe)
+        : maybe_(std::move(maybe)) {}
 
 private:
     std::optional<int32_t> maybe_;

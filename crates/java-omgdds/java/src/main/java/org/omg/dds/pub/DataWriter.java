@@ -36,10 +36,24 @@ public final class DataWriter<T> implements Entity {
     public ReturnCode write(T data) {
         if (closed) return ReturnCode.ALREADY_DELETED;
         if (!enabled) return ReturnCode.NOT_ENABLED;
-        ByteBuffer encoder = Xcdr2Codec.encoder(256);
-        typeSupport.serialize(data, encoder);
-        InProcessBus.instance().publish(domainId, topic.getName(), Xcdr2Codec.copyToBytes(encoder));
-        return ReturnCode.OK;
+        // Grow the encode buffer on overflow so large samples (e.g. raw byte[]
+        // payloads bigger than the initial capacity) serialize without loss.
+        int capacity = 256;
+        while (true) {
+            ByteBuffer encoder = Xcdr2Codec.encoder(capacity);
+            try {
+                typeSupport.serialize(data, encoder);
+            } catch (java.nio.BufferOverflowException overflow) {
+                if (capacity >= (1 << 28)) {
+                    throw overflow; // refuse to grow past 256 MiB.
+                }
+                capacity <<= 1;
+                continue;
+            }
+            InProcessBus.instance().publish(
+                    domainId, topic.getName(), Xcdr2Codec.copyToBytes(encoder));
+            return ReturnCode.OK;
+        }
     }
 
     public Topic<T> getTopic() {

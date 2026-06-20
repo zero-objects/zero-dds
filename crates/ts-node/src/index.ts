@@ -12,9 +12,11 @@ export class ZeroDdsError extends Error {
 
 // Re-export the DDS-PSM-Cxx 1.0 conform surface
 export {
-  DomainParticipantFactory, DomainParticipant, Topic, Publisher, DataWriter,
+  DomainParticipantFactory, DomainParticipantFactoryHandle, DomainParticipant,
+  Topic, Publisher, DataWriter,
   Subscriber, DataReader, GuardCondition, WaitSet,
-  ByteSeqTraits, StringTraits, type TopicTraits,
+  ByteSeqTraits, StringTraits,
+  type TopicTraits, type TypeSupport, type Sample,
 } from "./dds.js";
 
 /// Domain runtime.

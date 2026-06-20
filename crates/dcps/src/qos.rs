@@ -12,7 +12,7 @@ pub use zerodds_qos::{
     DurabilityQosPolicy, DurabilityServiceQosPolicy, EntityFactoryQosPolicy, GroupDataQosPolicy,
     HistoryKind, HistoryQosPolicy, LatencyBudgetQosPolicy, LifespanQosPolicy, LivelinessKind,
     LivelinessQosPolicy, OwnershipKind, OwnershipQosPolicy, OwnershipStrengthQosPolicy,
-    PartitionQosPolicy, PresentationAccessScope, PresentationQosPolicy,
+    PartitionQosPolicy, PresentationAccessScope, PresentationQosPolicy, PropertyQosPolicy,
     ReaderDataLifecycleQosPolicy, ReliabilityKind, ReliabilityQosPolicy, ResourceLimitsQosPolicy,
     TimeBasedFilterQosPolicy, TopicDataQosPolicy, TransportPriorityQosPolicy, UserDataQosPolicy,
     WriterDataLifecycleQosPolicy,
@@ -225,6 +225,9 @@ pub struct DomainParticipantQos {
     pub user_data: UserDataQosPolicy,
     /// EntityFactory — auto-enable of child entities.
     pub entity_factory: EntityFactoryQosPolicy,
+    /// Property — name/value configuration carried on the participant
+    /// (DDS-Security `dds.sec.*` plugin config, incl. the security logger).
+    pub property: PropertyQosPolicy,
 }
 
 /// QoS set for the `Publisher` — Spec §2.2.2.4.1.

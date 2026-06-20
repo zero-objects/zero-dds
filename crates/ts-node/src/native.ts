@@ -76,6 +76,14 @@ function findLibrary(): string {
 
 const lib = koffi.load(findLibrary());
 
+// Status codes from `enum ZeroDdsStatus` (crates/zerodds-c-api). Only the codes
+// the binding branches on are mirrored here.
+export const ZeroDdsStatus = {
+  Ok: 0,
+  /// No sample currently available (DDS RETCODE_NO_DATA).
+  NoData: -7,
+} as const;
+
 // Opaque-Pointer-Aliase.
 export const RuntimePtr = koffi.pointer("ZeroDdsRuntime", koffi.opaque());
 export const WriterPtr = koffi.pointer("ZeroDdsWriter", koffi.opaque());
@@ -206,6 +214,35 @@ export const zerodds_sub_delete_datareader = lib.func(
 );
 export const zerodds_dr_wait_for_matched = lib.func(
   "int zerodds_dr_wait_for_matched(ZeroDdsDataReader* dr, int min, uint64_t timeout_ms)",
+);
+
+// SampleInfo mirror of `struct zerodds_ZeroDdsSampleInfo` (zerodds.h). Only the
+// subset the binding surfaces is read back; the full layout is declared so koffi
+// allocates the right size for the out-parameter.
+export const SampleInfo = koffi.struct("ZeroDdsSampleInfo", {
+  sample_state: "uint32_t",
+  view_state: "uint32_t",
+  instance_state: "uint32_t",
+  disposed_generation_count: "int32_t",
+  no_writers_generation_count: "int32_t",
+  sample_rank: "int32_t",
+  generation_rank: "int32_t",
+  absolute_generation_rank: "int32_t",
+  source_timestamp_sec: "int32_t",
+  source_timestamp_nanosec: "uint32_t",
+  instance_handle: "uint64_t",
+  publication_handle: "uint64_t",
+  valid_data: "bool",
+});
+
+// take_next_sample / read_next_sample — single-sample data path for the DCPS
+// DataReader. `take` removes the sample from the reader cache; `read` leaves it.
+// rc == 0 with *out_len == 0 means "no data available right now".
+export const zerodds_dr_take_next_sample = lib.func(
+  "int zerodds_dr_take_next_sample(ZeroDdsDataReader* dr, _Out_ void** out_buf, _Out_ size_t* out_len, _Out_ ZeroDdsSampleInfo* out_info)",
+);
+export const zerodds_dr_read_next_sample = lib.func(
+  "int zerodds_dr_read_next_sample(ZeroDdsDataReader* dr, _Out_ void** out_buf, _Out_ size_t* out_len, _Out_ ZeroDdsSampleInfo* out_info)",
 );
 
 export const zerodds_guardcondition_create = lib.func(

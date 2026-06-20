@@ -169,6 +169,14 @@ pub trait Transport {
 
     /// Local locator (where this transport receives).
     fn local_locator(&self) -> Locator;
+
+    /// All local locators this transport receives on. Defaults to the single
+    /// [`Self::local_locator`]; a multiplexing transport (e.g. a layered
+    /// SHM + UDP transport) overrides this to advertise every leg's locator
+    /// so peers can reach it over any of them.
+    fn local_locators(&self) -> alloc::vec::Vec<Locator> {
+        alloc::vec![self.local_locator()]
+    }
 }
 
 #[cfg(test)]

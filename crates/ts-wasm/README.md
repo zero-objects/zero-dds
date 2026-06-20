@@ -1,7 +1,9 @@
-# zerodds-ts-wasm — ZeroDDS WASM bindings
+# @zerodds/wasm — ZeroDDS WASM bindings
 
 WASM bindings over `zerodds-cdr` (XCDR1/XCDR2 codec) to JS/TS via
-`wasm-bindgen`, for browser and Node WASM environments.
+`wasm-bindgen`, plus a TypeScript DCPS-over-WebSocket runtime, for browser and
+Node WASM environments. Published as the `@zerodds/wasm` npm package
+(`dist/index.js` combines the wasm codec glue with the DCPS layer).
 
 ## Scope
 
@@ -13,13 +15,19 @@ WASM bindings over `zerodds-cdr` (XCDR1/XCDR2 codec) to JS/TS via
 - KeyHash computation (XTypes 1.3 §7.6.8)
 - DDS-TS 1.0 vendor-spec-conform TS PSM (see
   `documentation/specs/dds-ts-1.0/`)
+- **DDS-TS 1.0 Annex C WASM-Bindings Profile** — a browser DCPS runtime
+  (`src/dcps/`): `DomainParticipantFactory.instance()`,
+  `createParticipantWebSocket(url, domain)`, and the participant / topic /
+  publisher / subscriber / writer / reader entities, speaking the
+  `crates/websocket-bridge` JSON protocol over a WebSocket transport. Both the
+  fluent facade (`facade.ts`) and the normative flat C.2 operations
+  (`operations.ts`, signature-for-signature with the spec) are exported.
 
 **Out of scope:**
-- Live DDS pub/sub in the browser over UDP/multicast — WASM cannot do
-  that. Instead: the WebSocket bridge (`crates/websocket-bridge/`)
-  as a server-side gateway, plus this codec on the browser side for
-  CDR encode/decode. Architecture sketch in
-  [Documentation Trail Station 05 → typescript-wasm](../../documentation/05-integration/typescript-wasm.md).
+- Native UDP / multicast in the browser — WASM cannot do that; the WebSocket
+  bridge (`crates/websocket-bridge/`) is the off-host transport per Annex C.4.1
+  (browser transport SHALL be WebSocket / WebTransport / HTTP-3). The DCPS
+  layer here is the browser-side client of that bridge.
 - RTPS wire decode in the browser — theoretically possible, but without
   a UDP path rarely useful.
 
@@ -27,26 +35,34 @@ WASM bindings over `zerodds-cdr` (XCDR1/XCDR2 codec) to JS/TS via
 
 ```bash
 cd crates/ts-wasm
-# Node target (for tests + server-side):
-wasm-pack build --release --target nodejs --out-dir pkg-node
-# Web target (for the browser via ES modules):
-wasm-pack build --release --target web --out-dir pkg-web
+# 1. wasm codec (Node + Web targets):
+npm run build:wasm
+#    (= wasm-pack build --release --target web  --out-dir pkg-web
+#       wasm-pack build --release --target nodejs --out-dir pkg-node)
+# 2. TypeScript DCPS layer -> dist/:
+npm install
+npm run build        # tsc -p tsconfig.json
 ```
 
-## Smoke test
+## Tests
 
 ```bash
-node --test crates/ts-wasm/test/smoke.test.mjs
+npm test
+# = node --test test/smoke.test.mjs           (wasm codec roundtrip)
+#   node --test --import tsx test/dcps.test.ts (DCPS-over-WebSocket roundtrip,
+#                                               flat C.2 ops, handle sentinel)
 ```
 
-Verifies the encode/decode roundtrip in LE/BE, bytes blob, version.
+The codec smoke verifies the encode/decode roundtrip in LE/BE, bytes blob,
+version. The DCPS test stands up an in-process bridge and drives a full browser
+pub/sub roundtrip plus the Annex C.2 flat operations and C.5.3 handle cleanup.
 
 ## Use-case examples
 
 ### CDR validation in the browser frontend
 
 ```ts
-import init, { CdrEncoder } from "@zerodds/ts-wasm";
+import init, { CdrEncoder } from "@zerodds/wasm";
 await init();
 const enc = new CdrEncoder(0); // little-endian
 enc.writeU32(temperature);

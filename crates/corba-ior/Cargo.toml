@@ -26,6 +26,6 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr" }
-zerodds-corba-csiv2 = { version = "1.0.0-rc.3", path = "../corba-csiv2" }
-zerodds-corba-iiop = { version = "1.0.0-rc.3", path = "../corba-iiop" }
+zerodds-cdr = { version = "1.0.0-rc.3.1", path = "../cdr" }
+zerodds-corba-csiv2 = { version = "1.0.0-rc.3.1", path = "../corba-csiv2" }
+zerodds-corba-iiop = { version = "1.0.0-rc.3.1", path = "../corba-iiop" }

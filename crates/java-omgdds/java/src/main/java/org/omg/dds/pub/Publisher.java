@@ -7,6 +7,7 @@ import org.omg.dds.core.ReturnCode;
 import org.omg.dds.core.policy.QosProfile;
 import org.omg.dds.topic.Topic;
 import org.omg.dds.topic.TopicTypeSupport;
+import org.zerodds.cdr.TypeSupportResolver;
 
 import java.util.UUID;
 
@@ -22,6 +23,16 @@ public final class Publisher implements Entity {
         this.domainId = domainId;
         this.defaultDataWriterQos = defaultDataWriterQos;
         this.handle = uuidHandle();
+    }
+
+    /**
+     * Convenience overload — derives the {@link TopicTypeSupport} from the
+     * topic's data class (built-in {@code byte[]}, {@code idl-java}-generated
+     * {@code <Name>TypeSupport.INSTANCE}, or reflective XCDR2 fallback). Lets
+     * the front-page quickstart create a writer from just the topic.
+     */
+    public <T> DataWriter<T> createDataWriter(Topic<T> topic) {
+        return createDataWriter(topic, TypeSupportResolver.resolve(topic.getType()));
     }
 
     public <T> DataWriter<T> createDataWriter(Topic<T> topic, TopicTypeSupport<T> typeSupport) {

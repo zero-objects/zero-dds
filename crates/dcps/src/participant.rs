@@ -390,6 +390,15 @@ impl DomainParticipant {
         qos: DomainParticipantQos,
         config: RuntimeConfig,
     ) -> Result<Self> {
+        // DDS-Security spec-style logger wireup: if the participant QoS carries
+        // `dds.sec.log.*` properties, materialize the fan-out logger from them
+        // and wire it into the runtime (no-op when absent).
+        #[cfg(feature = "security")]
+        let config = config
+            .with_security_log_properties(&qos.property)
+            .map_err(|_| DdsError::PreconditionNotMet {
+                reason: "invalid dds.sec.log.* security logger configuration",
+            })?;
         let runtime = DcpsRuntime::start(domain_id, random_guid_prefix(), config)?;
         let builtin = Arc::new(BuiltinSubscriber::new());
         // Wire up the discovery hook: from now on the runtime pushes

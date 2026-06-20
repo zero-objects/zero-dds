@@ -27,6 +27,6 @@ alloc = []
 safety = []
 
 [dependencies]
-zerodds-xrce = { version = "1.0.0-rc.3", path = "../xrce" }
+zerodds-xrce = { version = "1.0.0-rc.3.1", path = "../xrce" }
 
 [dev-dependencies]

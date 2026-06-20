@@ -6,6 +6,7 @@ expression: cpp
 #pragma once
 
 #include <cstdint>
+#include <utility>
 
 #include "dds/topic/TopicTraits.hpp"
 #include "dds/topic/xcdr2.hpp"
@@ -15,6 +16,8 @@ class Base {
 public:
     Base() = default;
     ~Base() = default;
+    Base(int32_t base_field)
+        : base_field_(std::move(base_field)) {}
 
 private:
     int32_t base_field_;
@@ -29,6 +32,8 @@ class Child : public Base {
 public:
     Child() = default;
     ~Child() = default;
+    Child(int32_t child_field)
+        : child_field_(std::move(child_field)) {}
 
 private:
     int32_t child_field_;

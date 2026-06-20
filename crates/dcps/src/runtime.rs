@@ -585,8 +585,18 @@ pub struct RuntimeConfig {
 
     /// Transport for DCPS user traffic. `None` (default) → fall back to
     /// the env var `ZERODDS_USER_TRANSPORT`, otherwise UDPv4. Discovery
-    /// (SPDP/SEDP) remains UDPv4 multicast independently of this.
+    /// (SPDP/SEDP) remains UDPv4 multicast independently of this. Ignored when
+    /// [`Self::user_transports`] is non-empty.
     pub user_transport: Option<UserTransportKind>,
+
+    /// Preference-ordered set of transports for DCPS user traffic. When
+    /// non-empty, the runtime builds a [`LayeredUserTransport`](crate::layered_transport::LayeredUserTransport)
+    /// over all of them: each datagram is routed to the first transport whose
+    /// locator kind matches the destination (so list the fast/local transport
+    /// first — e.g. `[Shm, UdpV4]` — and the fallback last), and receives are
+    /// multiplexed from all of them. Empty (default) → single-transport via
+    /// [`Self::user_transport`].
+    pub user_transports: alloc::vec::Vec<UserTransportKind>,
 
     /// Optional security gate. Active only with the `security` feature.
     /// When set, UDP outbound messages are pulled through
@@ -1070,6 +1080,7 @@ impl Default for RuntimeConfig {
             // with this field into the effective peer list.
             initial_peers: Vec::new(),
             user_transport: None,
+            user_transports: alloc::vec::Vec::new(),
             #[cfg(feature = "security")]
             security: None,
             #[cfg(feature = "security")]
@@ -1117,6 +1128,49 @@ impl Default for RuntimeConfig {
 }
 
 impl RuntimeConfig {
+    /// Apply a [`SecurityBundle`](zerodds_security_runtime::SecurityBundle):
+    /// wires its security-event logger into [`Self::security_logger`] and, if
+    /// the bundle carries a [`SecurityProfile`](zerodds_security_runtime::SecurityProfile),
+    /// its gate into [`Self::security`]. Convenience for the common
+    /// `SecurityBundle::builder()…build()` flow so callers don't have to set
+    /// the two fields by hand.
+    #[cfg(feature = "security")]
+    #[must_use]
+    pub fn with_security_bundle(
+        mut self,
+        bundle: &zerodds_security_runtime::SecurityBundle,
+    ) -> Self {
+        if let Some(logger) = bundle.logging_plugin() {
+            self.security_logger = Some(logger);
+        }
+        if let Some(profile) = bundle.security_profile() {
+            self.security = Some(profile.gate.clone());
+        }
+        self
+    }
+
+    /// Materialize a security-event logger from `dds.sec.log.*` properties and
+    /// wire it into [`Self::security_logger`]. This is the DDS-Security
+    /// spec-style alternative to handing a logger object in directly (see
+    /// [`Self::with_security_bundle`]): the participant carries
+    /// `dds.sec.log.plugin = "stderr,jsonl"` (+ `dds.sec.log.*` parameters) on
+    /// its [`PropertyQosPolicy`](zerodds_qos::PropertyQosPolicy), and the
+    /// runtime builds the fan-out logger from them.
+    ///
+    /// No-op when `dds.sec.log.plugin` is absent. Errors if a selected sink is
+    /// misconfigured (e.g. `jsonl` without `dds.sec.log.jsonl.path`).
+    #[cfg(feature = "security")]
+    pub fn with_security_log_properties(
+        mut self,
+        property: &zerodds_qos::PropertyQosPolicy,
+    ) -> core::result::Result<Self, zerodds_security_logging::LogConfigError> {
+        let pairs: alloc::vec::Vec<(&str, &str)> = property.iter().collect();
+        if let Some(logger) = zerodds_security_logging::logging_plugin_from_properties(&pairs)? {
+            self.security_logger = Some(alloc::sync::Arc::from(logger));
+        }
+        Ok(self)
+    }
+
     /// C4: robotics-capable defaults for **out-of-the-box ROS-2 interop**.
     /// Saves the manual env tuning otherwise needed for real ROS-2 nodes.
     /// Specifically, compared to [`RuntimeConfig::default`]:
@@ -2605,12 +2659,29 @@ impl DcpsRuntime {
         // SPDP multicast stays UDPv4 — the DDSI-RTPS spec mandates
         // 239.255.0.1 for cross-vendor discovery; v6-only hosts
         // cannot discover cross-vendor (its own sprint).
-        let user_transport_kind = config
-            .user_transport
-            .or_else(parse_user_transport_env)
-            .unwrap_or(UserTransportKind::UdpV4);
-        let (user_uc, tcp_accept_handle) =
-            select_user_transport(user_transport_kind, guid_prefix, domain_id, pinned)?;
+        let (user_uc, tcp_accept_handle): (Arc<dyn Transport + Send + Sync>, _) =
+            if !config.user_transports.is_empty() {
+                // Multi-transport: build each kind and layer them. Preference =
+                // config order (first match by destination locator kind wins).
+                let mut legs: alloc::vec::Vec<Arc<dyn Transport + Send + Sync>> =
+                    alloc::vec::Vec::new();
+                let mut tcp_handle = None;
+                for kind in &config.user_transports {
+                    let (leg, tcp) = select_user_transport(*kind, guid_prefix, domain_id, pinned)?;
+                    legs.push(leg);
+                    if tcp.is_some() {
+                        tcp_handle = tcp;
+                    }
+                }
+                let layered = Arc::new(crate::layered_transport::LayeredUserTransport::new(legs));
+                (layered, tcp_handle)
+            } else {
+                let user_transport_kind = config
+                    .user_transport
+                    .or_else(parse_user_transport_env)
+                    .unwrap_or(UserTransportKind::UdpV4);
+                select_user_transport(user_transport_kind, guid_prefix, domain_id, pinned)?
+            };
 
         // Separate sender socket for the SPDP announce. Ephemeral port; with
         // interface pinning it binds to the pinned IP (egress source), otherwise

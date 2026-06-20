@@ -50,11 +50,18 @@
 extern crate alloc;
 
 mod fanout;
+#[cfg(feature = "std")]
+mod from_properties;
 mod jsonl;
 mod stderr_sink;
 mod syslog;
 
 pub use fanout::FanOutLoggingPlugin;
+#[cfg(feature = "std")]
+pub use from_properties::{
+    LogConfigError, PROP_LOG_JSONL_PATH, PROP_LOG_LEVEL, PROP_LOG_PLUGIN, PROP_LOG_SYSLOG_ADDR,
+    PROP_LOG_SYSLOG_APP, PROP_LOG_SYSLOG_HOST, logging_plugin_from_properties, parse_log_level,
+};
 pub use jsonl::JsonLinesLoggingPlugin;
 pub use stderr_sink::StderrLoggingPlugin;
 pub use syslog::SyslogLoggingPlugin;

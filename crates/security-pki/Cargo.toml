@@ -26,7 +26,7 @@ default = ["std"]
 std = []
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.3", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.3.1", path = "../security" }
 # X.509 cert DER + trust-anchor types + PEM parser (integrated since 1.9,
 # RUSTSEC-2025-0134 — rustls-pemfile is unmaintained for this). Pure Rust,
 # no-std-capable. Apache-2.0 / ISC / MIT.
@@ -34,7 +34,7 @@ rustls-pki-types = { workspace = true }
 # Chain validation + signature verification. ISC.
 rustls-webpki = { workspace = true }
 # X25519/P-256 ephemeral DH for the handshake secret.
-zerodds-security-keyexchange = { version = "1.0.0-rc.3", path = "../security-keyexchange" }
+zerodds-security-keyexchange = { version = "1.0.0-rc.3.1", path = "../security-keyexchange" }
 # Delegation-link sign/verify (ECDSA-P256/P384, RSA-PSS, Ed25519).
 ring = { workspace = true }
 # X.509 subject extraction for IdentityToken (spec §10.3.2.1 `dds.cert.sn`).

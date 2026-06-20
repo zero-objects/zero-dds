@@ -28,8 +28,8 @@ alloc = []
 tls = ["std", "dep:rustls", "dep:rustls-pemfile", "dep:rustls-pki-types"]
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr" }
-zerodds-corba-giop = { version = "1.0.0-rc.3", path = "../corba-giop" }
+zerodds-cdr = { version = "1.0.0-rc.3.1", path = "../cdr" }
+zerodds-corba-giop = { version = "1.0.0-rc.3.1", path = "../corba-giop" }
 # SSLIOP transport (feature `tls`): rustls 0.23 + PEM loader + PKI types.
 rustls = { workspace = true, optional = true }
 rustls-pemfile = { workspace = true, optional = true }
@@ -39,7 +39,7 @@ rustls-pki-types = { workspace = true, optional = true }
 # connection send/receive path. corba-ccm has no dependency on
 # corba-iiop, so this is cycle-free. The connection wire-up is std-only
 # (TCP); the default features (`std`) are sufficient.
-zerodds-corba-ccm = { version = "1.0.0-rc.3", path = "../corba-ccm" }
+zerodds-corba-ccm = { version = "1.0.0-rc.3.1", path = "../corba-ccm" }
 
 [dev-dependencies]
 # Self-signed test certs for the SSLIOP roundtrip (feature `tls`).

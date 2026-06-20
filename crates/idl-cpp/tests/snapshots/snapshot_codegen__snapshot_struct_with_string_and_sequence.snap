@@ -8,6 +8,7 @@ expression: cpp
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "dds/topic/TopicTraits.hpp"
@@ -18,6 +19,8 @@ class Bag {
 public:
     Bag() = default;
     ~Bag() = default;
+    Bag(std::string name, std::vector<int32_t> ids, std::vector<std::string> tags)
+        : name_(std::move(name)), ids_(std::move(ids)), tags_(std::move(tags)) {}
 
 private:
     std::string name_;

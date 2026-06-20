@@ -21,4 +21,7 @@
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ZeroDDS.Cdr\ZeroDDS.Cdr.csproj" />
+  </ItemGroup>
 </Project>

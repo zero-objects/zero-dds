@@ -28,10 +28,10 @@ std = []
 metrics = ["std", "dep:zerodds-monitor"]
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.3", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.3.1", path = "../security" }
 # AEAD + HMAC primitives. ISC. Already pulled transitively by
 # `zerodds-security-pki` (rustls-webpki) — no additional
 # footprint.
 ring = { workspace = true }
 # Hook points for zerodds-monitor-1.1 §2.5. Optional.
-zerodds-monitor = { version = "1.0.0-rc.3", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+zerodds-monitor = { version = "1.0.0-rc.3.1", path = "../monitor", optional = true, default-features = false, features = ["std"] }

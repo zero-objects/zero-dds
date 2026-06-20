@@ -32,10 +32,10 @@ crypto = ["dep:aes", "dep:cbc", "dep:hmac", "dep:sha2", "dep:rsa", "dep:sha1"]
 # Reuses the OPC-UA Part-6 binary codec (UaReader/UaWriter) from the PubSub
 # crate — the same encoding the Client/Server services use. (The codec may be
 # extracted to a shared `opcua-binary` crate later.)
-zerodds-opcua-pubsub = { version = "1.0.0-rc.3", path = "../opcua-pubsub", default-features = false }
+zerodds-opcua-pubsub = { version = "1.0.0-rc.3.1", path = "../opcua-pubsub", default-features = false }
 # OPC-UA type model (NodeId/ExtensionObject/Guid/…) — same types the codec
 # encodes; the Client/Server service messages reference them.
-zerodds-opcua-gateway = { version = "1.0.0-rc.3", path = "../opcua-gateway", default-features = false }
+zerodds-opcua-gateway = { version = "1.0.0-rc.3.1", path = "../opcua-gateway", default-features = false }
 
 # SecureChannel crypto (Feature `crypto`). RustCrypto, no_std + alloc.
 aes = { version = "0.8", default-features = false, optional = true }

@@ -33,7 +33,7 @@ json = ["std", "dep:serde_json", "dep:base64"]
 [dependencies]
 # Type system model (NodeId/Variant/DataValue/Guid/...) — we encode
 # exactly these types instead of maintaining a parallel model.
-zerodds-opcua-gateway = { version = "1.0.0-rc.3", path = "../opcua-gateway", default-features = false }
+zerodds-opcua-gateway = { version = "1.0.0-rc.3.1", path = "../opcua-gateway", default-features = false }
 
 # PubSub-Security-Krypto (Feature `security`). RustCrypto, no_std + alloc.
 aes = { version = "0.8", default-features = false, optional = true }

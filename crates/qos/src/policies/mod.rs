@@ -21,6 +21,7 @@ pub use self::ownership::{OwnershipKind, OwnershipQosPolicy};
 pub use self::ownership_strength::OwnershipStrengthQosPolicy;
 pub use self::partition::PartitionQosPolicy;
 pub use self::presentation::{PresentationAccessScope, PresentationQosPolicy};
+pub use self::property::PropertyQosPolicy;
 pub use self::qos_set::{InconsistentReason, ReaderQos, WriterQos, check_compatibility};
 pub use self::reliability::{ReliabilityKind, ReliabilityQosPolicy};
 pub use self::resource_limits::ResourceLimitsQosPolicy;
@@ -57,6 +58,8 @@ pub mod ownership_strength;
 pub mod partition;
 /// Presentation.
 pub mod presentation;
+/// Property (name/value pairs, DDS-Security `dds.sec.*` config).
+pub mod property;
 /// WriterQos/ReaderQos-Aggregate + Compatibility + Consistency.
 pub mod qos_set;
 /// Reliability.

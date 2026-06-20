@@ -59,6 +59,18 @@ impl Duration {
         Self { seconds, fraction }
     }
 
+    /// Creates a `Duration` from a number of microseconds. Sub-millisecond
+    /// precision is preserved via the RTPS `fraction` field (latency budgets,
+    /// deadlines, time-based filters routinely use µs). Same negative-value
+    /// convention as [`Self::from_millis`].
+    #[must_use]
+    pub const fn from_micros(us: i32) -> Self {
+        let seconds = us.div_euclid(1_000_000);
+        let remainder_us = us.rem_euclid(1_000_000) as u32; // in [0, 1_000_000)
+        let fraction = ((remainder_us as u64 * (1u64 << 32)) / 1_000_000) as u32;
+        Self { seconds, fraction }
+    }
+
     /// `true` if `self == INFINITE`.
     #[must_use]
     pub const fn is_infinite(self) -> bool {
@@ -172,6 +184,20 @@ mod tests {
         assert_eq!(d.seconds, 1);
         // 500ms -> 500/1000 * 2^32 = 2_147_483_648
         assert_eq!(d.fraction, 2_147_483_648);
+    }
+
+    #[test]
+    fn from_micros_keeps_sub_millisecond_precision() {
+        // 1.5 s expressed in µs.
+        let d = Duration::from_micros(1_500_000);
+        assert_eq!(d.seconds, 1);
+        assert_eq!(d.fraction, 2_147_483_648);
+        // 500 µs — below millisecond granularity, must not collapse to zero.
+        let half_ms = Duration::from_micros(500);
+        assert_eq!(half_ms.seconds, 0);
+        assert!(half_ms.fraction > 0);
+        // 500 µs == 0.5 ms; same fraction as from_millis would give for 0.5ms.
+        assert_eq!(half_ms.fraction, ((500u64 * (1u64 << 32)) / 1_000_000) as u32);
     }
 
     #[test]

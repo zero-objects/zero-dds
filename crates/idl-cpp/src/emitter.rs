@@ -256,6 +256,11 @@ fn collect_in_typedecl(td: &TypeDecl, inc: &mut Includes) {
     match td {
         TypeDecl::Constr(c) => match c {
             ConstrTypeDecl::Struct(StructDcl::Def(s)) => {
+                // Field-order constructor uses std::move (<utility>) when the
+                // struct has at least one member.
+                if !s.members.is_empty() {
+                    inc.add("<utility>");
+                }
                 for m in &s.members {
                     collect_in_typespec(&m.type_spec, inc);
                     for decl in &m.declarators {
@@ -492,6 +497,13 @@ fn emit_struct(out: &mut String, ctx: &mut EmitCtx<'_>, s: &StructDef) -> Result
     // Default constructor.
     writeln!(out, "{inner}{}() = default;", s.name.text).map_err(fmt_err)?;
     writeln!(out, "{inner}~{}() = default;", s.name.text).map_err(fmt_err)?;
+
+    // Field-order constructor — one parameter per member in declaration
+    // order, member-initialised (parameters passed by value + std::move so
+    // strings/sequences/nested aggregates bind cheaply; scalar move == copy).
+    // Enables brace/aggregate-style init `T t{a, b};`. Skipped for the
+    // zero-field case so it does not collide with the defaulted ctor.
+    emit_field_order_ctor(out, ctx, s, &inner)?;
     writeln!(out).map_err(fmt_err)?;
 
     // Member fields as private storage.
@@ -518,6 +530,67 @@ fn emit_struct(out: &mut String, ctx: &mut EmitCtx<'_>, s: &StructDef) -> Result
     emit_verbatim_at(out, &ind, &s.annotations, PlacementKind::AfterDeclaration)?;
 
     writeln!(out).map_err(fmt_err)?;
+    Ok(())
+}
+
+/// Storage type for a member declarator, applying `@shared` (-> shared_ptr)
+/// and `@optional` (-> std::optional) wrapping exactly as the field/accessor
+/// emitters do. Returned type matches the private `_`-suffixed member field.
+fn member_storage_type(m: &Member, decl: &Declarator) -> Result<String, CppGenError> {
+    let cpp_ty = type_for_declarator(&m.type_spec, decl)?;
+    let core_ty = if has_shared_annotation(&m.annotations) {
+        format!("std::shared_ptr<{cpp_ty}>")
+    } else {
+        cpp_ty
+    };
+    if has_optional_annotation(&m.annotations) {
+        Ok(format!("std::optional<{core_ty}>"))
+    } else {
+        Ok(core_ty)
+    }
+}
+
+/// Emit the field-order constructor: one parameter per member (in declaration
+/// order, mirroring the member list exactly, including multi-declarator
+/// members like `long a, b;`). Parameters are taken by value and moved into
+/// the corresponding `_`-suffixed field. No constructor is emitted for a
+/// zero-field struct (it would be ambiguous with the defaulted default ctor).
+fn emit_field_order_ctor(
+    out: &mut String,
+    _ctx: &EmitCtx<'_>,
+    s: &StructDef,
+    inner: &str,
+) -> Result<(), CppGenError> {
+    // Flatten members -> (storage_type, field_name) in declaration order.
+    let mut fields: Vec<(String, String)> = Vec::new();
+    for m in &s.members {
+        for decl in &m.declarators {
+            let name = decl.name();
+            check_identifier(&name.text)?;
+            fields.push((member_storage_type(m, decl)?, name.text.clone()));
+        }
+    }
+    if fields.is_empty() {
+        return Ok(());
+    }
+
+    let params = fields
+        .iter()
+        .map(|(ty, name)| format!("{ty} {name}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let inits = fields
+        .iter()
+        .map(|(_, name)| format!("{name}_(std::move({name}))"))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    writeln!(
+        out,
+        "{inner}{}({params})\n{inner}    : {inits} {{}}",
+        s.name.text
+    )
+    .map_err(fmt_err)?;
     Ok(())
 }
 

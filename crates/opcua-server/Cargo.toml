@@ -28,9 +28,9 @@ alloc = ["zerodds-opcua-uacp/alloc", "zerodds-opcua-pubsub/alloc", "zerodds-opcu
 crypto = ["zerodds-opcua-uacp/crypto"]
 
 [dependencies]
-zerodds-opcua-uacp = { version = "1.0.0-rc.3", path = "../opcua-uacp", default-features = false }
-zerodds-opcua-pubsub = { version = "1.0.0-rc.3", path = "../opcua-pubsub", default-features = false }
-zerodds-opcua-gateway = { version = "1.0.0-rc.3", path = "../opcua-gateway", default-features = false }
+zerodds-opcua-uacp = { version = "1.0.0-rc.3.1", path = "../opcua-uacp", default-features = false }
+zerodds-opcua-pubsub = { version = "1.0.0-rc.3.1", path = "../opcua-pubsub", default-features = false }
+zerodds-opcua-gateway = { version = "1.0.0-rc.3.1", path = "../opcua-gateway", default-features = false }
 
 [dev-dependencies]
 # A real OS CSPRNG for the secured-handshake end-to-end test (test only).

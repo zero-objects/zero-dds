@@ -29,9 +29,10 @@ use core::ffi::c_void;
 
 use zerodds::{
     zerodds_buffer_free, zerodds_reader_create, zerodds_reader_destroy, zerodds_reader_loan,
-    zerodds_reader_return_loan, zerodds_reader_take, zerodds_runtime_create,
-    zerodds_runtime_destroy, zerodds_runtime_wait_for_peers, zerodds_writer_create,
-    zerodds_writer_destroy, zerodds_writer_wait_for_matched, zerodds_writer_write,
+    zerodds_reader_return_loan, zerodds_reader_take, zerodds_reader_take_into,
+    zerodds_runtime_create, zerodds_runtime_destroy, zerodds_runtime_wait_for_peers,
+    zerodds_writer_create, zerodds_writer_destroy, zerodds_writer_wait_for_matched,
+    zerodds_writer_write,
 };
 
 /// Pub-sub roundtrip over the FFI with TWO participants (pub + sub).
@@ -103,6 +104,73 @@ fn ffi_pub_sub_roundtrip() {
         zerodds_runtime_destroy(rt_sub);
 
         assert!(received >= 1, "expected ≥1 sample, got {received}");
+    }
+}
+
+/// Fixed-buffer `zerodds_reader_take_into` roundtrip — the ergonomic
+/// shape used by the C/Go/Zig quickstarts. Mirrors
+/// `ffi_pub_sub_roundtrip` but consumes samples via the copy-into-buffer
+/// convenience entry point (no heap buffer / no `zerodds_buffer_free`).
+#[cfg_attr(target_os = "macos", ignore)]
+#[test]
+fn ffi_pub_sub_roundtrip_via_take_into() {
+    let domain: u32 = 200 + (std::process::id() % 50);
+    let topic = CString::new("CFfiSmokeTakeInto").unwrap();
+    let typ = CString::new("RawBytes").unwrap();
+
+    // SAFETY: valid C strings; pointers NULL-checked per each fn # Safety.
+    unsafe {
+        let rt_pub = zerodds_runtime_create(domain);
+        let rt_sub = zerodds_runtime_create(domain);
+        assert!(!rt_pub.is_null() && !rt_sub.is_null());
+
+        assert_eq!(zerodds_runtime_wait_for_peers(rt_pub, 1, 5_000), 0);
+        assert_eq!(zerodds_runtime_wait_for_peers(rt_sub, 1, 5_000), 0);
+
+        let writer = zerodds_writer_create(rt_pub, topic.as_ptr(), typ.as_ptr(), 1);
+        let reader = zerodds_reader_create(rt_sub, topic.as_ptr(), typ.as_ptr(), 1);
+        assert!(!writer.is_null() && !reader.is_null());
+
+        let _ = zerodds_writer_wait_for_matched(writer, 1, 5_000);
+
+        let payload = [0xDEu8, 0xAD, 0xBE, 0xEF];
+        for _ in 0..5u8 {
+            let rc = zerodds_writer_write(writer, payload.as_ptr(), payload.len());
+            assert_eq!(rc, 0);
+        }
+
+        let mut received = 0;
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while received < 5 && std::time::Instant::now() < deadline {
+            let mut buf = [0u8; 64];
+            let n = zerodds_reader_take_into(reader, buf.as_mut_ptr(), buf.len());
+            assert!(n >= 0, "take_into returned negative {n}");
+            if n > 0 {
+                let n = n as usize;
+                assert_eq!(&buf[..n], &payload[..], "payload mismatch");
+                received += 1;
+            } else {
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
+
+        zerodds_writer_destroy(writer);
+        zerodds_reader_destroy(reader);
+        zerodds_runtime_destroy(rt_pub);
+        zerodds_runtime_destroy(rt_sub);
+
+        assert!(received >= 1, "expected ≥1 sample, got {received}");
+    }
+}
+
+/// `zerodds_reader_take_into` is NULL-safe on the handle and returns a
+/// negative status rather than UB.
+#[test]
+fn ffi_take_into_null_safe() {
+    // SAFETY: NULL handle is explicitly handled; buf may be NULL iff cap==0.
+    unsafe {
+        let n = zerodds_reader_take_into(ptr::null_mut(), ptr::null_mut(), 0);
+        assert!(n < 0, "NULL reader must yield a negative status, got {n}");
     }
 }
 

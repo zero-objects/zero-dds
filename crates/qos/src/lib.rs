@@ -94,7 +94,7 @@ pub use policies::{
     DurabilityQosPolicy, DurabilityServiceQosPolicy, EntityFactoryQosPolicy, GroupDataQosPolicy,
     HistoryKind, HistoryQosPolicy, LatencyBudgetQosPolicy, LifespanQosPolicy, LivelinessKind,
     LivelinessQosPolicy, OwnershipKind, OwnershipQosPolicy, OwnershipStrengthQosPolicy,
-    PartitionQosPolicy, PresentationAccessScope, PresentationQosPolicy,
+    PartitionQosPolicy, PresentationAccessScope, PresentationQosPolicy, PropertyQosPolicy,
     ReaderDataLifecycleQosPolicy, ReaderQos, ReliabilityKind, ReliabilityQosPolicy,
     ResourceLimitsQosPolicy, TimeBasedFilterQosPolicy, TopicDataQosPolicy,
     TransportPriorityQosPolicy, UserDataQosPolicy, WriterDataLifecycleQosPolicy, WriterQos,

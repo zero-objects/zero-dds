@@ -22,6 +22,13 @@
 
 #include "zerodds.h"
 
+// Typed convenience writers/readers (`zerodds::TypedWriter<T>` /
+// `zerodds::TypedReader<T>`) are built on the same
+// `dds::topic::topic_type_support<T>` trait that `idlc cpp` emits for
+// every IDL struct — so an IDL-generated type drops straight in.
+#include "../dds/topic/TopicTraits.hpp"
+#include "../dds/topic/xcdr2.hpp"
+
 namespace zerodds {
 
 /// Status-code wrapper.
@@ -167,12 +174,136 @@ public:
     std::vector<uint8_t> take() {
         uint8_t *raw = nullptr;
         std::size_t len = 0;
-        int rc = zerodds_reader_take(handle_, &raw, &len);
+        // `out_repr` (XCDR1/XCDR2) is discarded here — the byte-oriented
+        // convenience Reader hands back the raw payload unchanged. Typed
+        // consumers (TypedReader<T>) capture it for decode alignment.
+        uint8_t repr = 0;
+        int rc = zerodds_reader_take(handle_, &raw, &len, &repr);
         if (rc != 0) throw StatusError(rc, "zerodds_reader_take");
         if (!raw || len == 0) return {};
         std::vector<uint8_t> out(raw, raw + len);
         zerodds_buffer_free(raw, len);
         return out;
+    }
+
+    /// Waits until `min_count` publishers have matched.
+    bool wait_for_matched(int min_count, uint64_t timeout_ms) {
+        int rc = zerodds_reader_wait_for_matched(handle_, min_count, timeout_ms);
+        return rc == 0;
+    }
+
+private:
+    zerodds_ZeroDdsReader *handle_;
+};
+
+/// Typed DataWriter — publishes an IDL-generated `T` directly.
+///
+/// `T` must have a `dds::topic::topic_type_support<T>` specialization
+/// (emitted by `idlc cpp` for every struct, or hand-written). The
+/// topic's type name defaults to `topic_type_support<T>::type_name()`,
+/// the keyed/no-keyed flag to `topic_type_support<T>::is_keyed()`.
+///
+/// On `write(value)` the sample is XCDR2-encoded via the trait's
+/// `encode()` and handed to the byte-oriented `zerodds_writer_write`.
+template <typename T>
+class TypedWriter {
+    using traits = ::dds::topic::topic_type_support<T>;
+
+public:
+    /// 2-arg ctor: type name + keyed flag derived from the type traits.
+    TypedWriter(Runtime &rt, const std::string &topic_name, bool reliable = true)
+        : handle_(zerodds_writer_create_kind(
+              rt.raw(), topic_name.c_str(), traits::type_name(),
+              reliable ? 1 : 0, traits::is_keyed() ? 1 : 0)) {
+        if (!handle_) {
+            throw StatusError(-1, "zerodds_writer_create_kind");
+        }
+    }
+    ~TypedWriter() {
+        if (handle_) zerodds_writer_destroy(handle_);
+    }
+    TypedWriter(const TypedWriter &) = delete;
+    TypedWriter &operator=(const TypedWriter &) = delete;
+    TypedWriter(TypedWriter &&o) noexcept : handle_(o.handle_) { o.handle_ = nullptr; }
+    TypedWriter &operator=(TypedWriter &&o) noexcept {
+        if (this != &o) {
+            if (handle_) zerodds_writer_destroy(handle_);
+            handle_ = o.handle_;
+            o.handle_ = nullptr;
+        }
+        return *this;
+    }
+
+    /// Publishes a typed sample (XCDR2 wire). Throws on error.
+    void write(const T &value) {
+        std::vector<uint8_t> bytes = traits::encode(value);
+        int rc = zerodds_writer_write(handle_, bytes.data(), bytes.size());
+        if (rc != 0) throw StatusError(rc, "zerodds_writer_write");
+    }
+
+    /// Waits until `min_count` subscribers have matched or timeout.
+    bool wait_for_matched(int min_count, uint64_t timeout_ms) {
+        int rc = zerodds_writer_wait_for_matched(handle_, min_count, timeout_ms);
+        return rc == 0;
+    }
+
+private:
+    zerodds_ZeroDdsWriter *handle_;
+};
+
+/// Typed DataReader — reads an IDL-generated `T` directly.
+///
+/// Mirror of `TypedWriter<T>`. `take()` returns the decoded `T` (or an
+/// empty optional-like result via the bool overload) — the wire bytes
+/// are XCDR2/XCDR1-decoded with the representation reported by the
+/// C-FFI `out_repr` out-param, so alignment matches the publisher.
+template <typename T>
+class TypedReader {
+    using traits = ::dds::topic::topic_type_support<T>;
+
+public:
+    TypedReader(Runtime &rt, const std::string &topic_name, bool reliable = true)
+        : handle_(zerodds_reader_create_kind(
+              rt.raw(), topic_name.c_str(), traits::type_name(),
+              reliable ? 1 : 0, traits::is_keyed() ? 1 : 0)) {
+        if (!handle_) {
+            throw StatusError(-1, "zerodds_reader_create_kind");
+        }
+    }
+    ~TypedReader() {
+        if (handle_) zerodds_reader_destroy(handle_);
+    }
+    TypedReader(const TypedReader &) = delete;
+    TypedReader &operator=(const TypedReader &) = delete;
+    TypedReader(TypedReader &&o) noexcept : handle_(o.handle_) { o.handle_ = nullptr; }
+    TypedReader &operator=(TypedReader &&o) noexcept {
+        if (this != &o) {
+            if (handle_) zerodds_reader_destroy(handle_);
+            handle_ = o.handle_;
+            o.handle_ = nullptr;
+        }
+        return *this;
+    }
+
+    /// Attempts to read+decode a sample. Returns `true` and fills
+    /// `out` if one was available, `false` otherwise.
+    bool take(T &out) {
+        uint8_t *raw = nullptr;
+        std::size_t len = 0;
+        uint8_t repr = 0;
+        int rc = zerodds_reader_take(handle_, &raw, &len, &repr);
+        if (rc != 0) throw StatusError(rc, "zerodds_reader_take");
+        if (!raw || len == 0) return false;
+        auto version = repr == 1 ? ::dds::topic::xcdr2::XcdrVersion::Xcdr2
+                                 : ::dds::topic::xcdr2::XcdrVersion::Xcdr1;
+        try {
+            out = traits::decode(raw, len, version);
+        } catch (...) {
+            zerodds_buffer_free(raw, len);
+            throw;
+        }
+        zerodds_buffer_free(raw, len);
+        return true;
     }
 
     /// Waits until `min_count` publishers have matched.

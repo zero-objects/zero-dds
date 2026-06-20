@@ -8,31 +8,164 @@
 //! - `ZeroDdsStatusCondition`: bound to an entity + status mask.
 //! - `ZeroDdsReadCondition`: bound to a DataReader + sample/view/instance filter.
 //! - `ZeroDdsQueryCondition`: ReadCondition + filter expression (RC1: passthrough).
-//! - `ZeroDdsWaitSet`: container of conditions, `wait()` polls every 5ms.
+//! - `ZeroDdsWaitSet`: container of conditions. `wait()` is event-driven: it
+//!   blocks on a data-availability `Condvar` that is signalled by a
+//!   `core::task::Waker` registered on the reader behind every attached
+//!   Read/Query condition (forwarded from the DCPS `async_waker` hook). No
+//!   fixed-interval poll loop on the data path. Guard/Status conditions, which
+//!   have no waker, are observed within a short wakeup cap.
 //!
 //! Triggering:
 //! - GuardCondition: `set_trigger_value`.
 //! - StatusCondition: active if `enabled_statuses & current_status_mask != 0`.
 //!   RC1 collects coarse trigger bits via reader/writer status polls (matched count
 //!   not 0, sample_lost > 0, ...).
-//! - ReadCondition: active if the DataReader has samples in the channel (rx.try_iter
-//!   peek-able -> currently: a `len()`-equivalent via `try_recv` is not possible,
-//!   we set the bit based on `user_reader_matched_count`).
-//! - QueryCondition: like ReadCondition.
+//! - ReadCondition: active if the DataReader has samples matching the
+//!   (sample_states, view_states, instance_states) mask. The channel is drained
+//!   into the read cache and the cache is evaluated; a sample arriving wakes any
+//!   WaitSet blocked on the condition via the registered data waker.
+//! - QueryCondition: like ReadCondition, plus the filter expression.
 
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ffi::c_int;
 use core::ptr;
 use core::slice;
+use core::task::{RawWaker, RawWakerVTable, Waker};
 use std::sync::{
-    Mutex,
+    Condvar, Mutex,
     atomic::{AtomicBool, AtomicU32, Ordering},
 };
 use std::time::{Duration, Instant};
 
 use crate::ZeroDdsStatus;
 use crate::entities::{ZeroDdsDataReader, ZeroDdsDataWriter};
+
+// ---------------------------------------------------------------------------
+// Event-driven data-availability signal (no busy-poll)
+// ---------------------------------------------------------------------------
+//
+// The DCPS layer already provides an event-driven hook: after every
+// `sample_tx.send` on a user reader it calls `wake_async_waker(&waker)` on the
+// reader's `async_waker` slot (see `crates/dcps/src/runtime.rs`,
+// `recv_user_data_loop` Data/HeartBeat arms). Unlike the listener path, the
+// waker fires *in addition* to the MPSC send — so the sample stays in the
+// channel for `zerodds_dr_take`/`zerodds_dr_read` (lossless) while the waker
+// signals "data arrived".
+//
+// We forward that signal into a process-global [`DataEvent`] (a `Condvar` plus
+// a monotonic generation counter). When a ReadCondition / QueryCondition (or a
+// reader-bound StatusCondition) is attached to a WaitSet, we register a
+// `core::task::Waker` on the underlying reader via
+// `DcpsRuntime::register_user_reader_waker`; waking it bumps the generation and
+// notifies the condvar. `zerodds_waitset_wait` blocks on this condvar
+// (`wait_timeout`, bounded by the caller deadline) and re-checks the condition
+// trigger values on every wake — strictly event-driven, no fixed-interval poll
+// loop.
+
+/// Process-global data-availability event. A generation counter lets a waiter
+/// detect a wake that raced ahead of its `wait_timeout` call (no lost wakeup).
+/// The single source of truth is the mutex-protected `gen`; the waiter
+/// snapshots it under the lock and only blocks if it has not moved since.
+struct DataEvent {
+    /// Lock anchor for the condvar; the protected value is the wake generation.
+    wake_gen: Mutex<u64>,
+    cvar: Condvar,
+}
+
+impl DataEvent {
+    /// Signals that data became available on some reader. Bumps the generation
+    /// and wakes every WaitSet blocked in `wait_timeout`.
+    fn signal(&self) {
+        if let Ok(mut g) = self.wake_gen.lock() {
+            *g = g.wrapping_add(1);
+        }
+        self.cvar.notify_all();
+    }
+}
+
+fn data_event() -> &'static Arc<DataEvent> {
+    use std::sync::OnceLock;
+    static EV: OnceLock<Arc<DataEvent>> = OnceLock::new();
+    EV.get_or_init(|| {
+        Arc::new(DataEvent {
+            wake_gen: Mutex::new(0),
+            cvar: Condvar::new(),
+        })
+    })
+}
+
+// --- core::task::Waker built from an Arc<DataEvent> -------------------------
+//
+// We cannot use `std::task::Wake` (would need an unstable/`Arc<dyn Wake>`
+// shape mismatch with the runtime API which wants a `core::task::Waker`), so a
+// hand-rolled RawWaker vtable over `Arc<DataEvent>` is used. Each clone bumps
+// the Arc strong count; wake/drop release it.
+
+unsafe fn de_clone(p: *const ()) -> RawWaker {
+    // SAFETY: `p` is an `Arc<DataEvent>` raw pointer kept alive by the slot.
+    let arc = unsafe { Arc::from_raw(p as *const DataEvent) };
+    let cloned = Arc::clone(&arc);
+    core::mem::forget(arc); // do not drop the original
+    RawWaker::new(Arc::into_raw(cloned) as *const (), &DE_VTABLE)
+}
+
+unsafe fn de_wake(p: *const ()) {
+    // SAFETY: consumes one strong ref (by-value wake).
+    let arc = unsafe { Arc::from_raw(p as *const DataEvent) };
+    arc.signal();
+    // arc dropped here → releases this ref.
+}
+
+unsafe fn de_wake_by_ref(p: *const ()) {
+    // SAFETY: borrow without consuming the ref.
+    let arc = unsafe { Arc::from_raw(p as *const DataEvent) };
+    arc.signal();
+    core::mem::forget(arc);
+}
+
+unsafe fn de_drop(p: *const ()) {
+    // SAFETY: releases one strong ref.
+    drop(unsafe { Arc::from_raw(p as *const DataEvent) });
+}
+
+static DE_VTABLE: RawWakerVTable =
+    RawWakerVTable::new(de_clone, de_wake, de_wake_by_ref, de_drop);
+
+/// Builds a `core::task::Waker` that, when woken, signals the global
+/// [`DataEvent`]. The returned waker owns one strong ref to the event Arc.
+fn make_data_waker() -> Waker {
+    let arc = Arc::clone(data_event());
+    let raw = RawWaker::new(Arc::into_raw(arc) as *const (), &DE_VTABLE);
+    // SAFETY: the vtable upholds the Waker contract (clone/wake/drop manage the
+    // Arc strong count correctly).
+    unsafe { Waker::from_raw(raw) }
+}
+
+/// Registers the global data-availability waker on the reader behind a
+/// Read/Query/Status condition, so that a sample arriving on that reader wakes
+/// any WaitSet blocked on it. Idempotent and NULL-tolerant.
+///
+/// # Safety
+/// `cond` is NULL or a valid box-allocated condition pointer.
+unsafe fn register_condition_data_waker(cond: *mut core::ffi::c_void) {
+    // SAFETY: condition_kind is NULL-tolerant; reader pointers come from
+    // sub_create_datareader (Box::into_raw) and stay valid until destroy.
+    unsafe {
+        let reader = match condition_kind(cond) {
+            Some(ConditionKind::Read) => (*(cond as *const ZeroDdsReadCondition)).reader,
+            Some(ConditionKind::Query) => (*(cond as *const ZeroDdsQueryCondition)).reader,
+            _ => return,
+        };
+        if reader.is_null() {
+            return;
+        }
+        let drr = &*reader;
+        drr.rt
+            .register_user_reader_waker(drr.eid, Some(make_data_waker()));
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Condition types
@@ -382,6 +515,12 @@ pub unsafe extern "C" fn zerodds_guardcondition_set_trigger_value(
     }
     // SAFETY: see fn # Safety doc — g NULL-checked above.
     unsafe { (*g).trigger.store(v, Ordering::SeqCst) };
+    // Wake any WaitSet blocked in `wait_timeout` so a guard flip (e.g. a
+    // CancellationToken trip in the C# binding) is observed immediately,
+    // event-driven, rather than at the next wakeup-cap tick.
+    if v {
+        data_event().signal();
+    }
     ZeroDdsStatus::Ok as c_int
 }
 
@@ -618,6 +757,10 @@ pub unsafe extern "C" fn zerodds_waitset_attach_condition(
                 g.push(cond);
             }
         }
+        // Wire the event-driven data-available signal: a sample arriving on the
+        // reader behind a Read/Query condition now wakes this WaitSet's wait
+        // (no busy-poll). No-op for Guard/Status conditions and reader-less ones.
+        register_condition_data_waker(cond);
     }
     ZeroDdsStatus::Ok as c_int
 }
@@ -674,7 +817,13 @@ pub unsafe extern "C" fn zerodds_waitset_wait(
     // come from attach_condition (the caller provided valid condition pointers).
     unsafe {
         let ws = &*w;
+        let ev = data_event();
         loop {
+            // Snapshot the generation BEFORE evaluating triggers, so a sample
+            // that lands between the check and the block is not lost: if the
+            // generation moved, we loop and re-check instead of blocking.
+            let seen_gen = ev.wake_gen.lock().map(|g| *g).unwrap_or(0);
+
             let conds: Vec<*mut core::ffi::c_void> =
                 ws.conditions.lock().map(|g| g.clone()).unwrap_or_default();
             let mut active: Vec<*mut core::ffi::c_void> = Vec::new();
@@ -690,11 +839,39 @@ pub unsafe extern "C" fn zerodds_waitset_wait(
                 *out_count = n;
                 return ZeroDdsStatus::Ok as c_int;
             }
-            if Instant::now() >= deadline {
+            let now = Instant::now();
+            if now >= deadline {
                 *out_count = 0;
                 return ZeroDdsStatus::Timeout as c_int;
             }
-            std::thread::sleep(Duration::from_millis(5));
+
+            // Event-driven block: wait on the data-available condvar until a
+            // reader signals new data (waker → generation bump → notify) or the
+            // remaining timeout elapses. GuardCondition / StatusCondition state
+            // is user/poll-driven and has no waker; to keep those responsive
+            // without busy-spinning, the per-iteration wait is additionally
+            // capped so a manually-tripped guard is observed within that bound.
+            // For data-availability the wakeup is immediate via the condvar.
+            let remaining = deadline.saturating_duration_since(now);
+            let only_data_conditions = conds.iter().all(|&c| {
+                matches!(
+                    condition_kind(c as *const _),
+                    Some(ConditionKind::Read) | Some(ConditionKind::Query)
+                )
+            });
+            // Data-only WaitSets block until the next data event (no poll cap).
+            // Mixed/guard sets use a short cap so guard flips are still seen.
+            let block = if only_data_conditions {
+                remaining
+            } else {
+                remaining.min(Duration::from_millis(5))
+            };
+            if let Ok(guard) = ev.wake_gen.lock() {
+                // If a signal arrived since `seen_gen`, skip the block entirely.
+                if *guard == seen_gen {
+                    let _ = ev.cvar.wait_timeout(guard, block);
+                }
+            }
         }
     }
 }

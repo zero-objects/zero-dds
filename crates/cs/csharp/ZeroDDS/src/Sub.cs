@@ -79,6 +79,27 @@ public sealed class DataReader<T> : IDisposable
     private readonly ITopicTraits<T> _traits;
     private bool _disposed;
 
+    // Samples buffered by WaitForData (see WaitForData remarks). They are
+    // logically still "unread" — Take() returns them ahead of the live reader
+    // so that wait-then-take never drops a sample.
+    private readonly object _pendingLock = new();
+    private System.Collections.Generic.Queue<Sample<T>>? _pending;
+
+    // Event-driven readiness wait state, created lazily on the first
+    // WaitForData call and reused across calls (disposed with the reader):
+    //   * a ReadCondition over NOT_READ samples (native trigger flips true when
+    //     a sample arrives, woken via the reader's data waker — no busy poll),
+    //   * a GuardCondition tripped by the CancellationToken for instant cancel,
+    //   * a WaitSet holding both.
+    private readonly object _waitLock = new();
+    private IntPtr _readCond = IntPtr.Zero;
+    private IntPtr _guardCond = IntPtr.Zero;
+    private IntPtr _waitSet = IntPtr.Zero;
+
+    // Sample-state mask for "unread" samples (matches the native read cache).
+    private const uint SampleStateNotRead = 2;
+    private const uint StateAny = 0;
+
     public DataReader(Subscriber sub, Topic<T> topic)
     {
         _subscriber = sub.Handle;
@@ -102,6 +123,33 @@ public sealed class DataReader<T> : IDisposable
 
     /// <summary>Take samples.</summary>
     public List<Sample<T>> Take(int maxSamples = 0)
+    {
+        // Drain any samples buffered by a prior WaitForData first, then top up
+        // from the live reader. This preserves at-most-once delivery across the
+        // wait/take boundary.
+        List<Sample<T>>? buffered = null;
+        lock (_pendingLock)
+        {
+            if (_pending is { Count: > 0 })
+            {
+                buffered = new List<Sample<T>>(_pending.Count);
+                while (_pending.Count > 0) buffered.Add(_pending.Dequeue());
+            }
+        }
+
+        if (buffered is null)
+            return TakeNative(maxSamples);
+
+        if (maxSamples > 0 && buffered.Count >= maxSamples)
+            return buffered.GetRange(0, maxSamples);
+
+        int remaining = maxSamples > 0 ? maxSamples - buffered.Count : 0;
+        var live = TakeNative(remaining);
+        buffered.AddRange(live);
+        return buffered;
+    }
+
+    private List<Sample<T>> TakeNative(int maxSamples)
     {
         var arr = default(Native.SampleArray);
         int rc = Native.DrTake(_handle, ref arr, (UIntPtr)maxSamples, 0, 0, 0);
@@ -151,6 +199,156 @@ public sealed class DataReader<T> : IDisposable
     public void WaitForMatched(int min, Duration timeout) =>
         StatusCheck.Check(Native.DrWaitForMatched(_handle, min, timeout.TotalMilliseconds),
             "DataReader::WaitForMatched");
+
+    /// <summary>
+    /// Blocks until unread data is available or <paramref name="timeout"/>
+    /// elapses. Returns <c>true</c> when data became available, <c>false</c>
+    /// on timeout. Any samples observed are buffered and returned by the next
+    /// <see cref="Take(int)"/>, so a wait-then-take never drops a sample.
+    /// </summary>
+    public bool WaitForData(Duration timeout) =>
+        WaitForData(timeout, System.Threading.CancellationToken.None);
+
+    /// <summary>TimeSpan overload of <see cref="WaitForData(Duration)"/>.</summary>
+    public bool WaitForData(TimeSpan timeout) =>
+        WaitForData(ZeroDDS.TimeSpanBridge.ToDuration(timeout));
+
+    /// <summary>
+    /// Cancellable wait-for-data.
+    ///
+    /// Blocks on a native WaitSet over a NOT_READ <c>ReadCondition</c>: the
+    /// reader's data-available signal wakes the wait the instant a sample
+    /// arrives (event-driven — no busy poll). The observed samples are buffered
+    /// into the reader so the subsequent <see cref="Take(int)"/> returns them,
+    /// so a wait-then-take never drops a sample. Cancellation is event-driven
+    /// too: <paramref name="ct"/> trips a GuardCondition also attached to the
+    /// WaitSet, waking the wait immediately and surfacing as
+    /// <see cref="OperationCanceledException"/>.
+    /// </summary>
+    /// <exception cref="OperationCanceledException">If <paramref name="ct"/> fires.</exception>
+    public bool WaitForData(Duration timeout, System.Threading.CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        // Already buffered from an earlier wait?
+        lock (_pendingLock)
+        {
+            if (_pending is { Count: > 0 }) return true;
+        }
+
+        EnsureWaitState();
+
+        // Reset the cancellation guard and arm the CT → guard trip (event-driven
+        // cancel; the registration is disposed at the end of the wait).
+        StatusCheck.Check(Native.GuardConditionSetTrigger(_guardCond, false),
+            "WaitForData::resetGuard");
+        using var ctReg = ct.CanBeCanceled
+            ? ct.Register(static s => Native.GuardConditionSetTrigger((IntPtr)s!, true), _guardCond)
+            : default;
+
+        bool infinite = timeout.IsInfinite;
+        long budgetMs = infinite ? long.MaxValue : (long)timeout.TotalMilliseconds;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        var buf = new IntPtr[8];
+        while (true)
+        {
+            // A sample may already be takeable before we ever block (the writer
+            // raced ahead, or a previous wake delivered it). Drain first.
+            var fresh = TakeNative(0);
+            if (fresh.Count > 0)
+            {
+                lock (_pendingLock)
+                {
+                    _pending ??= new System.Collections.Generic.Queue<Sample<T>>();
+                    foreach (var s in fresh) _pending.Enqueue(s);
+                }
+                return true;
+            }
+
+            if (ct.IsCancellationRequested)
+                throw new OperationCanceledException(ct);
+
+            long elapsed = sw.ElapsedMilliseconds;
+            if (!infinite && elapsed >= budgetMs)
+                return false;
+
+            // Remaining budget for this blocking wait.
+            Duration block;
+            if (infinite)
+            {
+                block = Duration.Infinite;
+            }
+            else
+            {
+                long left = budgetMs - elapsed;
+                if (left <= 0) return false;
+                block = Duration.FromMillis(left);
+            }
+
+            UIntPtr count;
+            int rc;
+            unsafe
+            {
+                fixed (IntPtr* p = buf)
+                {
+                    rc = Native.WaitSetWait(_waitSet, (IntPtr)p, (UIntPtr)buf.Length,
+                        out count, block.Sec, block.Nanosec);
+                }
+            }
+
+            if (rc == Native.Timeout)
+            {
+                // No condition tripped within the budget.
+                if (ct.IsCancellationRequested)
+                    throw new OperationCanceledException(ct);
+                return false;
+            }
+            StatusCheck.Check(rc, "WaitForData::WaitSetWait");
+
+            // Woken: either the read condition (data) or the guard (cancel). The
+            // loop top re-checks both via TakeNative + the CT flag, so we do not
+            // need to inspect the active-condition list here.
+            if (ct.IsCancellationRequested)
+                throw new OperationCanceledException(ct);
+        }
+    }
+
+    /// Lazily builds the reusable ReadCondition + GuardCondition + WaitSet for
+    /// the event-driven readiness wait. Idempotent; cheap after the first call.
+    private void EnsureWaitState()
+    {
+        if (_waitSet != IntPtr.Zero) return;
+        lock (_waitLock)
+        {
+            if (_waitSet != IntPtr.Zero) return;
+
+            var rcCond = Native.DrCreateReadCondition(_handle, SampleStateNotRead, StateAny, StateAny);
+            if (rcCond == IntPtr.Zero) throw new DdsError("WaitForData: ReadCondition create failed");
+
+            var guard = Native.GuardConditionCreate();
+            if (guard == IntPtr.Zero)
+            {
+                Native.DrDeleteReadCondition(_handle, rcCond);
+                throw new DdsError("WaitForData: GuardCondition create failed");
+            }
+
+            var ws = Native.WaitSetCreate();
+            if (ws == IntPtr.Zero)
+            {
+                Native.GuardConditionDestroy(guard);
+                Native.DrDeleteReadCondition(_handle, rcCond);
+                throw new DdsError("WaitForData: WaitSet create failed");
+            }
+
+            StatusCheck.Check(Native.WaitSetAttach(ws, rcCond), "WaitForData: attach ReadCondition");
+            StatusCheck.Check(Native.WaitSetAttach(ws, guard), "WaitForData: attach GuardCondition");
+
+            _readCond = rcCond;
+            _guardCond = guard;
+            _waitSet = ws;
+        }
+    }
 
     public ZeroDDS.Status.SubscriptionMatchedStatus GetSubscriptionMatchedStatus()
     {
@@ -213,6 +411,19 @@ public sealed class DataReader<T> : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        // Tear down the readiness-wait state before the reader handle: the
+        // WaitSet first (releases its references to the conditions), then the
+        // conditions themselves.
+        lock (_waitLock)
+        {
+            if (_waitSet != IntPtr.Zero) { Native.WaitSetDestroy(_waitSet); _waitSet = IntPtr.Zero; }
+            if (_guardCond != IntPtr.Zero) { Native.GuardConditionDestroy(_guardCond); _guardCond = IntPtr.Zero; }
+            if (_readCond != IntPtr.Zero && _handle != IntPtr.Zero)
+            {
+                Native.DrDeleteReadCondition(_handle, _readCond);
+                _readCond = IntPtr.Zero;
+            }
+        }
         if (_handle != IntPtr.Zero)
         {
             Native.SubDeleteDatareader(_subscriber, _handle);

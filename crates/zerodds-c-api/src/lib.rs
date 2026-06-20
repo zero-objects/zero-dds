@@ -1136,6 +1136,62 @@ pub unsafe extern "C" fn zerodds_reader_take(
     ZeroDdsStatus::Ok as c_int
 }
 
+/// Fixed-buffer `take` convenience: copies one sample's payload into a
+/// caller-supplied buffer and returns the byte count — no heap
+/// allocation, no `zerodds_buffer_free`.
+///
+/// This is the ergonomic shape for plain-C / FFI consumers that prefer a
+/// stack buffer + return-length idiom (Go/Zig/Ada/MATLAB cgo bindings,
+/// the C quickstart) over the allocate-and-out-param
+/// [`zerodds_reader_take`].
+///
+/// Returns:
+/// * `> 0`: number of payload bytes written into `buf` (one sample).
+/// * `0`: no sample available right now.
+/// * `< 0`: a negative status code (bad handle, or — if the sample is
+///   larger than `cap` — `ZeroDdsStatus::OutOfResources`, in which case
+///   the sample is consumed; use [`zerodds_reader_take`] for unbounded
+///   samples).
+///
+/// # Safety
+/// `reader` must come from `zerodds_reader_create*` or be NULL. `buf`
+/// must point to at least `cap` writable bytes (or be NULL iff
+/// `cap == 0`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_reader_take_into(
+    reader: *mut ZeroDdsReader,
+    buf: *mut u8,
+    cap: usize,
+) -> isize {
+    if reader.is_null() || (buf.is_null() && cap != 0) {
+        return ZeroDdsStatus::BadHandle as isize;
+    }
+    let mut raw: *mut u8 = ptr::null_mut();
+    let mut len: usize = 0;
+    // SAFETY: reader NULL-checked above; raw/len are valid local out-params;
+    // out_repr is NULL (representation not needed for raw byte copy).
+    let rc = unsafe { zerodds_reader_take(reader, &mut raw, &mut len, ptr::null_mut()) };
+    if rc != ZeroDdsStatus::Ok as c_int {
+        return rc as isize;
+    }
+    if raw.is_null() || len == 0 {
+        return 0;
+    }
+    if len > cap {
+        // Sample too large for the caller buffer — it has already been
+        // consumed from the queue, so free it and signal the overflow.
+        unsafe { zerodds_buffer_free(raw, len) };
+        return ZeroDdsStatus::OutOfResources as isize;
+    }
+    // SAFETY: raw points to `len` readable bytes (from zerodds_reader_take),
+    // buf points to >= cap >= len writable bytes (checked above).
+    unsafe {
+        ptr::copy_nonoverlapping(raw, buf, len);
+        zerodds_buffer_free(raw, len);
+    }
+    len as isize
+}
+
 /// Waits until at least `min_count` publications have matched.
 ///
 /// # Safety

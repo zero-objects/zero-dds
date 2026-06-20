@@ -86,6 +86,98 @@ test("dds-psm-cxx api: topic + writer/reader lifecycle", () => {
   }
 });
 
+// Fluent instance-method facade (the @zerodds/node quickstart API): factory
+// instance() -> participant.createBytesTopic/createPublisher/createSubscriber ->
+// publisher.createBytesWriter / subscriber.createBytesReader, async match waits,
+// waitForData + iterable take().
+test("fluent facade: bytes pub/sub roundtrip", async () => {
+  const participant = DomainParticipantFactory.instance().createParticipant(7);
+  try {
+    const topic = participant.createBytesTopic("FacadeChatter");
+    const writer = participant.createPublisher().createBytesWriter(topic);
+    const reader = participant.createSubscriber().createBytesReader(topic);
+
+    await writer.waitForMatchedSubscription(1, 5000);
+    await reader.waitForMatchedPublication(1, 5000);
+
+    writer.write(new TextEncoder().encode("hello"));
+    const ready = await reader.waitForData(3000);
+    assert.equal(ready, true, "waitForData timed out");
+
+    const got = [...reader.take()].map((s) => new TextDecoder().decode(s));
+    assert.ok(got.includes("hello"), `expected 'hello', got ${JSON.stringify(got)}`);
+  } finally {
+    participant.destroy();
+  }
+});
+
+// Async layer: writeAsync (Promise), takeAsync (Promise<Sample[]>),
+// streamSamples (AsyncIterable).
+test("async layer: writeAsync / takeAsync / streamSamples", async () => {
+  const participant = DomainParticipantFactory.instance().createParticipant(8);
+  try {
+    const topic = participant.createBytesTopic("AsyncChatter");
+    const writer = participant.createPublisher().createBytesWriter(topic);
+    const reader = participant.createSubscriber().createBytesReader(topic);
+
+    await writer.waitForMatchedSubscription(1, 5000);
+    await reader.waitForMatchedPublication(1, 5000);
+
+    await writer.writeAsync(new TextEncoder().encode("a1"));
+    await reader.waitForData(3000);
+    const taken = await reader.takeAsync();
+    assert.ok(taken.length >= 1, "takeAsync returned no samples");
+    assert.equal(new TextDecoder().decode(taken[0]), "a1");
+
+    await writer.writeAsync(new TextEncoder().encode("s1"));
+    let seen = 0;
+    for await (const sample of reader.streamSamples()) {
+      assert.equal(new TextDecoder().decode(sample), "s1");
+      if (++seen >= 1) break;
+    }
+    assert.equal(seen, 1, "streamSamples yielded nothing");
+  } finally {
+    participant.destroy();
+  }
+});
+
+// Typed facade: createTypedTopic + createTypedWriter with a TypeSupport.
+test("typed facade: createTypedTopic + createTypedWriter roundtrip", async () => {
+  interface Temperature { celsius: number; sensor_id: string; }
+  const TemperatureTypeSupport = {
+    typeName: "Temperature",
+    encode(s: Temperature): Uint8Array {
+      const idEnc = new TextEncoder().encode(s.sensor_id);
+      const buf = new Uint8Array(4 + idEnc.length);
+      new DataView(buf.buffer).setInt32(0, s.celsius, true);
+      buf.set(idEnc, 4);
+      return buf;
+    },
+    decode(b: Uint8Array): Temperature {
+      const celsius = new DataView(b.buffer, b.byteOffset, b.byteLength).getInt32(0, true);
+      const sensor_id = new TextDecoder().decode(b.subarray(4));
+      return { celsius, sensor_id };
+    },
+  };
+  const participant = DomainParticipantFactory.instance().createParticipant(9);
+  try {
+    const topic = participant.createTypedTopic("Temp", TemperatureTypeSupport);
+    const writer = participant.createPublisher().createTypedWriter(topic);
+    const reader = participant.createSubscriber().createTypedReader(topic);
+
+    await writer.waitForMatchedSubscription(1, 5000);
+    await reader.waitForMatchedPublication(1, 5000);
+
+    await writer.write({ celsius: 23, sensor_id: "A7" });
+    await reader.waitForData(3000);
+    const got = reader.take();
+    assert.ok(got.length >= 1, "typed take returned nothing");
+    assert.deepEqual(got[0], { celsius: 23, sensor_id: "A7" });
+  } finally {
+    participant.destroy();
+  }
+});
+
 test("dds-psm-cxx api: GuardCondition + WaitSet", () => {
   const ws = new WaitSet();
   const gc = new GuardCondition();

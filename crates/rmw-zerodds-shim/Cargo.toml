@@ -28,21 +28,21 @@ name = "zerodds-ros2-shim"
 path = "src/bin/zerodds-ros2-shim.rs"
 
 [dependencies]
-zerodds-ros2-rmw = { version = "1.0.0-rc.3", path = "../ros2-rmw" }
+zerodds-ros2-rmw = { version = "1.0.0-rc.3.1", path = "../ros2-rmw" }
 # Note: zerodds-c-api exports via `[lib] name = "zerodds"`.
 # The rmw shim uses `use zerodds::*` (`ZeroDdsRuntime`, `ZeroDdsWriter`,
 # `zerodds_runtime_create`, `zerodds_writer_*`, `zerodds_reader_*`) >40 times,
 # so the crate is referenced productively despite the `name` drift.
-zerodds-c-api = { version = "1.0.0-rc.3", path = "../zerodds-c-api" }
+zerodds-c-api = { version = "1.0.0-rc.3.1", path = "../zerodds-c-api" }
 # Service layer over zerodds-rpc topic naming (REP-2008).
-zerodds-rpc = { version = "1.0.0-rc.3", path = "../rpc" }
+zerodds-rpc = { version = "1.0.0-rc.3.1", path = "../rpc" }
 # REP-2009 type hash via SHA-256.
 sha2 = { workspace = true, features = ["std"] }
 # Diagnostics-CLI observability: catalog/metrics/OTLP for `catalog`/`metrics`/
 # `selftest` subcommands (the CLI is exempt from the SIGTERM watcher §9.2).
-zerodds-monitor = { version = "1.0.0-rc.3", path = "../monitor", default-features = false, features = ["std"] }
-zerodds-observability-otlp = { version = "1.0.0-rc.3", path = "../observability-otlp" }
-zerodds-qos = { version = "1.0.0-rc.3", path = "../qos", default-features = false, features = ["alloc"] }
+zerodds-monitor = { version = "1.0.0-rc.3.1", path = "../monitor", default-features = false, features = ["std"] }
+zerodds-observability-otlp = { version = "1.0.0-rc.3.1", path = "../observability-otlp" }
+zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos", default-features = false, features = ["alloc"] }
 
 [features]
 default = ["flatdata-loan"]

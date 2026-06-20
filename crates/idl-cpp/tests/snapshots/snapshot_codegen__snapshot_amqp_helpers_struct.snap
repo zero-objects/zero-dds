@@ -6,6 +6,7 @@ expression: cpp
 #pragma once
 
 #include <cstdint>
+#include <utility>
 
 #include "dds/topic/TopicTraits.hpp"
 #include "dds/topic/xcdr2.hpp"
@@ -15,6 +16,8 @@ class Sensor {
 public:
     Sensor() = default;
     ~Sensor() = default;
+    Sensor(int32_t id, double temp)
+        : id_(std::move(id)), temp_(std::move(temp)) {}
 
 private:
     int32_t id_;

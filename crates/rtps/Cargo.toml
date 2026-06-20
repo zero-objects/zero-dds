@@ -34,17 +34,17 @@ inspect = ["dep:zerodds-inspect-endpoint", "zerodds-inspect-endpoint/inspect"]
 metrics = ["std", "dep:zerodds-monitor"]
 
 [dependencies]
-zerodds-qos = { version = "1.0.0-rc.3", path = "../qos", default-features = false, features = ["alloc"] }
-zerodds-foundation = { version = "1.0.0-rc.3", path = "../foundation", default-features = false, features = ["alloc"] }
+zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos", default-features = false, features = ["alloc"] }
+zerodds-foundation = { version = "1.0.0-rc.3.1", path = "../foundation", default-features = false, features = ["alloc"] }
 # F-TYPES-3 wire-up: PublicationBuiltinTopicData / SubscriptionBuiltinTopicData
 # carry an optional `TypeIdentifier` (XTypes §7.3.4.2) so that
 # reader-writer matching can become XTypes-aware.
-zerodds-types = { version = "1.0.0-rc.3", path = "../types", default-features = false, features = ["alloc"] }
-zerodds-cdr = { version = "1.0.0-rc.3", path = "../cdr", default-features = false, features = ["alloc"] }
+zerodds-types = { version = "1.0.0-rc.3.1", path = "../types", default-features = false, features = ["alloc"] }
+zerodds-cdr = { version = "1.0.0-rc.3.1", path = "../cdr", default-features = false, features = ["alloc"] }
 # Inspect-endpoint tap hooks (Reality Inspector). Optional.
-zerodds-inspect-endpoint = { version = "1.0.0-rc.3", path = "../inspect-endpoint", optional = true }
+zerodds-inspect-endpoint = { version = "1.0.0-rc.3.1", path = "../inspect-endpoint", optional = true }
 # Hook points for zerodds-monitor-1.1 §2.2. Optional.
-zerodds-monitor = { version = "1.0.0-rc.3", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+zerodds-monitor = { version = "1.0.0-rc.3.1", path = "../monitor", optional = true, default-features = false, features = ["std"] }
 # portable-atomic: polyfill for 64-bit atomics on Cortex-M (thumbv7em
 # has no native AtomicI64/AtomicU64). On x86_64/aarch64 pass-through
 # to native core::sync::atomic via the `fallback` mechanism.

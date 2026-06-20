@@ -19,9 +19,9 @@ Production-grade pure-Rust implementation of the **OMG Data Distribution
 Service** with bindings for C, C++, C#, Java, Python, TypeScript and
 Flutter, plus seven protocol bridges and a complete CORBA/CCM stack.
 
-> **Status:** `1.0.0-rc.1` Release Candidate. 90/91 crates RC1-ready, all
-> bridge layers conformance-verified against Cyclone DDS, RabbitMQ,
-> mosquitto, omniORB and gRPC reflection.
+> **Status:** `1.0.0-rc.3.1` Release Candidate. 122 crates published on
+> crates.io, all bridge layers conformance-verified against Cyclone DDS,
+> RabbitMQ, mosquitto, omniORB and gRPC reflection.
 
 ## Why ZeroDDS
 
@@ -31,8 +31,8 @@ Flutter, plus seven protocol bridges and a complete CORBA/CCM stack.
   carries a `// SAFETY:` justification verified by `dds-lint`.
 - **Zero panic** in the hot path, contractual `Result`-everywhere.
 - **Zero copy** on the shared-memory transport (iceoryx2-compatible).
-- **Zero vendor lock-in** — wire-byte-identical to Cyclone DDS, OpenDDS,
-  RTI Connext on the OMG-DDSI-RTPS-2.5 wire.
+- **Zero vendor lock-in** — native OMG-DDSI-RTPS-2.5 wire, interoperable
+  with Cyclone DDS, OpenDDS and RTI Connext (see Vendor-ID note above).
 
 ## Spec Coverage
 
@@ -62,37 +62,41 @@ matrix in [`docs/spec-coverage/`](docs/spec-coverage/).
 ## Quickstart
 
 ```bash
-# Install via Cargo
-cargo add dds-dcps dds-discovery dds-rtps
+# Library, via Cargo — zerodds-dcps pulls in discovery + rtps transitively
+cargo add zerodds-dcps
 
-# Or pre-built binaries (Linux/macOS)
-brew install zero-objects/tap/zerodds      # macOS
-sudo apt install zerodds                    # Debian/Ubuntu (.deb)
-sudo dnf install zerodds                    # RHEL/Fedora (.rpm)
+# Or the CLI tools as pre-built packages
+brew install zero-objects/zerodds/zerodds   # macOS (Homebrew tap)
+sudo apt install zerodds-cli                 # Debian/Ubuntu (.deb)
+sudo dnf install zerodds-cli                 # RHEL/Fedora (.rpm)
 
-# Or via Docker
-docker pull ghcr.io/zero-objects/zerodds:1.0.0-rc.1
+# Or via Docker (one image per tool/bridge)
+docker pull ghcr.io/zero-objects/zerodds-cli:1.0.0-rc.3
 ```
 
-Hello world publisher:
+Hello world publisher (compiles + runs against the published `1.0.0-rc.3.1`
+crate — see [`examples/`](https://github.com/zero-objects/zerodds-examples)):
 
 ```rust
-use dds_dcps::{Factory, QosProfileBuilder};
+use zerodds_dcps::*;
 
-fn main() -> anyhow::Result<()> {
-    let factory = Factory::default();
-    let participant = factory.create_participant(0)?;
-    let topic = participant.create_topic::<String>("Greetings")?;
-    let publisher = participant.create_publisher()?;
-    let writer = publisher.create_writer(&topic, &QosProfileBuilder::reliable())?;
+fn main() {
+    let factory = DomainParticipantFactory::instance();
+    let participant = factory.create_participant_offline(0, DomainParticipantQos::default());
+    let topic = participant
+        .create_topic::<RawBytes>("Greetings", TopicQos::default())
+        .expect("create_topic");
+    let writer = participant
+        .create_publisher(PublisherQos::default())
+        .create_datawriter::<RawBytes>(&topic, DataWriterQos::default())
+        .expect("create_datawriter");
 
-    writer.write(&"Hello, DDS!".to_string())?;
-    Ok(())
+    writer.write(&RawBytes::new(b"Hello, DDS!".to_vec())).expect("write");
 }
 ```
 
-The matching subscriber and 14 further chapters in
-[`examples/tutorials/dds-chat/`](examples/tutorials/dds-chat/).
+A full publish→subscribe roundtrip (two participants over UDP) and 14 further
+chapters in [`examples/tutorials/dds-chat/`](examples/tutorials/dds-chat/).
 
 ## Architecture
 
@@ -186,6 +190,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 # Docs
 cargo doc --workspace --no-deps
 ```
+
+> **Note:** the `durability-store-lakehouse` adapter links the system
+> **libduckdb** (v1.5.3). Either install it (`DUCKDB_LIB_DIR`/`DUCKDB_INCLUDE_DIR`,
+> see `ci/Dockerfile.rust`) or exclude the two crates that need it:
+> `cargo build --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin`.
+> Every other crate builds with no system dependencies.
 
 `rust-toolchain.toml` pins to **1.88.0** (MSRV).
 

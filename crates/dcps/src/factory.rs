@@ -225,6 +225,100 @@ impl DomainParticipantFactory {
     pub fn get_qos(&self) -> DomainParticipantFactoryQos {
         self.factory_qos.lock().map(|q| *q).unwrap_or_default()
     }
+
+    /// Fluent entry point for creating a participant: returns a
+    /// [`ParticipantBuilder`] that collects QoS, a custom
+    /// [`RuntimeConfig`], and (with the `security` feature) a
+    /// [`SecurityBundle`](zerodds_security_runtime::SecurityBundle), then
+    /// materializes the participant on [`ParticipantBuilder::build`].
+    ///
+    /// This is a convenience facade over
+    /// [`Self::create_participant_with_config`] — `build()` resolves to
+    /// the same live runtime path. It exists so security wiring reads as
+    /// one chain:
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "security")] {
+    /// use zerodds_dcps::DomainParticipantFactory;
+    /// # let security_bundle = zerodds_security_runtime::SecurityBundle::builder().build();
+    /// let participant = DomainParticipantFactory::create(0)
+    ///     .with_security(security_bundle)
+    ///     .build()?;
+    /// # }
+    /// # Ok::<(), zerodds_dcps::error::DdsError>(())
+    /// ```
+    #[must_use]
+    pub fn create(domain_id: DomainId) -> ParticipantBuilder {
+        ParticipantBuilder::new(domain_id)
+    }
+}
+
+/// Fluent builder for a [`DomainParticipant`], returned by
+/// [`DomainParticipantFactory::create`]. Collects optional QoS, a custom
+/// [`RuntimeConfig`], and a [`SecurityBundle`](zerodds_security_runtime::SecurityBundle)
+/// (under the `security` feature) and creates the participant via the
+/// factory singleton on [`Self::build`].
+#[cfg(feature = "std")]
+#[derive(Debug)]
+pub struct ParticipantBuilder {
+    domain_id: DomainId,
+    qos: DomainParticipantQos,
+    config: Option<RuntimeConfig>,
+}
+
+#[cfg(feature = "std")]
+impl ParticipantBuilder {
+    fn new(domain_id: DomainId) -> Self {
+        Self {
+            domain_id,
+            qos: DomainParticipantQos::default(),
+            config: None,
+        }
+    }
+
+    /// Sets the participant QoS (default: [`DomainParticipantQos::default`]).
+    #[must_use]
+    pub fn with_qos(mut self, qos: DomainParticipantQos) -> Self {
+        self.qos = qos;
+        self
+    }
+
+    /// Sets an explicit [`RuntimeConfig`]. Overrides the config derived
+    /// from QoS / security wiring; subsequent [`Self::with_security`]
+    /// calls mutate this config.
+    #[must_use]
+    pub fn with_config(mut self, config: RuntimeConfig) -> Self {
+        self.config = Some(config);
+        self
+    }
+
+    /// Wires a [`SecurityBundle`](zerodds_security_runtime::SecurityBundle)
+    /// (logging plugin + security profile) into the participant's runtime
+    /// config — see [`RuntimeConfig::with_security_bundle`].
+    #[cfg(feature = "security")]
+    #[must_use]
+    pub fn with_security(
+        mut self,
+        bundle: zerodds_security_runtime::SecurityBundle,
+    ) -> Self {
+        let base = self.config.take().unwrap_or_default();
+        self.config = Some(base.with_security_bundle(&bundle));
+        self
+    }
+
+    /// Creates the live participant via the factory singleton.
+    ///
+    /// # Errors
+    /// `DdsError::TransportError` if the UDP sockets do not bind.
+    pub fn build(self) -> Result<DomainParticipant> {
+        let factory = DomainParticipantFactory::instance();
+        match self.config {
+            Some(config) => {
+                factory.create_participant_with_config(self.domain_id, self.qos, config)
+            }
+            None => factory.create_participant(self.domain_id, self.qos),
+        }
+    }
 }
 
 #[cfg(test)]

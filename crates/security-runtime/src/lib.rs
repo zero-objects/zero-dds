@@ -57,6 +57,8 @@ extern crate alloc;
 
 pub mod anti_squatter;
 pub mod builtin_topics;
+#[cfg(feature = "std")]
+pub mod bundle;
 pub mod caps;
 pub mod caps_wire;
 pub mod data_tagging;
@@ -71,6 +73,8 @@ pub mod profile;
 mod shared;
 
 pub use anti_squatter::{BindingDecision, GuidPrefixBytes, IdentityBindingCache};
+#[cfg(feature = "std")]
+pub use bundle::{SecurityBundle, SecurityBundleBuilder};
 pub use caps::{PeerCache, PeerCapabilities, Validity};
 pub use caps_wire::{advertise_security_caps, parse_peer_caps};
 pub use data_tagging::{BuiltinDataTaggingPlugin, TAG_PROPERTY_PREFIX};

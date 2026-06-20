@@ -1607,6 +1607,33 @@ int zerodds_reader_take(struct zerodds_ZeroDdsReader *reader,
                         uint8_t *out_repr);
 
 /**
+ * Fixed-buffer `take` convenience: copies one sample's payload into a
+ * caller-supplied buffer and returns the byte count — no heap
+ * allocation, no `zerodds_buffer_free`.
+ *
+ * This is the ergonomic shape for plain-C / FFI consumers that prefer a
+ * stack buffer + return-length idiom (Go/Zig/Ada/MATLAB cgo bindings,
+ * the C quickstart) over the allocate-and-out-param
+ * [`zerodds_reader_take`].
+ *
+ * Returns:
+ * * `> 0`: number of payload bytes written into `buf` (one sample).
+ * * `0`: no sample available right now.
+ * * `< 0`: a negative status code (bad handle, or — if the sample is
+ *   larger than `cap` — `ZeroDdsStatus::OutOfResources`, in which case
+ *   the sample is consumed; use [`zerodds_reader_take`] for unbounded
+ *   samples).
+ *
+ * # Safety
+ * `reader` must come from `zerodds_reader_create*` or be NULL. `buf`
+ * must point to at least `cap` writable bytes (or be NULL iff
+ * `cap == 0`).
+ */
+intptr_t zerodds_reader_take_into(struct zerodds_ZeroDdsReader *reader,
+                                  uint8_t *buf,
+                                  uintptr_t cap);
+
+/**
  * Waits until at least `min_count` publications have matched.
  *
  * # Safety

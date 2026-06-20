@@ -1042,6 +1042,7 @@ pub unsafe fn dp_qos_from_c(c: *const ZeroDdsDomainParticipantQos) -> DomainPart
                 value: slice_or_empty(q.user_data.value, q.user_data.value_len).to_vec(),
             },
             entity_factory: q.entity_factory.into(),
+            ..DomainParticipantQos::default()
         }
     }
 }

@@ -33,6 +33,9 @@ public final class Sample<T> {
     }
 
     public T data() { return data; }
+
+    /** Spec §7.7 accessor alias for {@link #data()} (JavaBean / {@code get*} form). */
+    public T getData() { return data; }
     public InstanceHandle instanceHandle() { return instanceHandle; }
     public Time sourceTimestamp() { return sourceTimestamp; }
     public SampleState sampleState() { return sampleState; }

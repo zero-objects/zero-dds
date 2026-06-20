@@ -382,6 +382,39 @@ mod tests {
     }
 
     #[test]
+    fn struct_has_field_order_constructor() {
+        // The field-order ctor enables brace-init `S t{23, "A7"};` (the
+        // website C++ snippet). Default ctor + accessors stay intact.
+        let cpp = gen_cpp("struct S { long celsius; string sensor_id; };");
+        assert!(
+            cpp.contains("S(int32_t celsius, std::string sensor_id)"),
+            "field-order ctor signature missing:\n{cpp}"
+        );
+        assert!(
+            cpp.contains(": celsius_(std::move(celsius)), sensor_id_(std::move(sensor_id)) {}"),
+            "member-init list missing:\n{cpp}"
+        );
+        // Default ctor must still be present (brace-init coexists with it).
+        assert!(cpp.contains("S() = default;"));
+    }
+
+    #[test]
+    fn zero_field_struct_has_no_field_order_constructor() {
+        // A no-member struct must NOT emit a parameterless ctor — it would be
+        // ambiguous with the defaulted default constructor.
+        let cpp = gen_cpp("struct Empty { };");
+        assert!(cpp.contains("Empty() = default;"));
+        // Only the defaulted ctor line should mention `Empty(`; no extra
+        // `Empty()` redeclaration and no `std::move`.
+        assert_eq!(
+            cpp.matches("Empty(").count(),
+            2, // `Empty() = default;` and `~Empty() = default;` (destructor)
+            "unexpected extra constructor for zero-field struct:\n{cpp}"
+        );
+        assert!(!cpp.contains("std::move"));
+    }
+
+    #[test]
     fn namespace_prefix_option_wraps_output() {
         let ast =
             zerodds_idl::parse("struct S { long x; };", &ParserConfig::default()).expect("parse");

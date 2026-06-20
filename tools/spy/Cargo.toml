@@ -26,5 +26,5 @@ name = "zerodds_spy"
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-cli-common = { version = "1.0.0-rc.3", path = "../cli-common" }
-zerodds-dcps       = { version = "1.0.0-rc.3", path = "../../crates/dcps" }
+zerodds-cli-common = { version = "1.0.0-rc.3.1", path = "../cli-common" }
+zerodds-dcps       = { version = "1.0.0-rc.3.1", path = "../../crates/dcps" }

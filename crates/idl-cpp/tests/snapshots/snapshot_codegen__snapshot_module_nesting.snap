@@ -6,6 +6,7 @@ expression: cpp
 #pragma once
 
 #include <cstdint>
+#include <utility>
 
 #include "dds/topic/TopicTraits.hpp"
 #include "dds/topic/xcdr2.hpp"
@@ -17,6 +18,8 @@ namespace Outer {
         public:
             S() = default;
             ~S() = default;
+            S(int32_t x)
+                : x_(std::move(x)) {}
 
         private:
             int32_t x_;
