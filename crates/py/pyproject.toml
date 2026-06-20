@@ -4,13 +4,18 @@ build-backend = "maturin"
 
 [project]
 name = "zerodds"
-# PyPI version is pinned here because PEP 440 cannot represent the Rust
-# SemVer prerelease `1.0.0-rc.3.1` (a dotted prerelease). `1.0.0rc3.post1`
-# is the PEP-440 equivalent of "rc.3 addendum #1" (post-release of rc3) and
-# tracks the Rust `1.0.0-rc.3.1` crate. For SemVer versions that ARE valid
-# PEP 440 (e.g. `1.0.0-rc.4` → `1.0.0rc4`), restore `dynamic = ["version"]`
-# so PyPI and the Rust crate stay auto-synced.
-version = "1.0.0rc3.post1"
+# Maturin reads the version from crates/py/Cargo.toml (= workspace
+# Cargo.toml via version.workspace = true), so that the PyPI and
+# Rust crate versions are guaranteed to be in sync.
+#
+# NOTE: this only works for SemVer versions that are also valid PEP 440.
+# `1.0.0-rc.3.1` (a *dotted* SemVer prerelease) is NOT representable in
+# PEP 440, so maturin cannot build a wheel for it — the rc.3.1 cycle skips
+# PyPI (the pyo3 0.29 migration ships on crates.io as zerodds-py 1.0.0-rc.3.1
+# and reaches PyPI with the next PEP-440-valid release, e.g. 1.0.0-rc.4 →
+# 1.0.0rc4). A static `version = "..."` here does NOT help: maturin still
+# parses the Cargo.toml version for metadata and fails before applying it.
+dynamic = ["version"]
 description = "Python bindings for ZeroDDS — pure-Rust DDS 1.4 / RTPS 2.5 / XTypes 1.3 implementation"
 readme = "README.md"
 requires-python = ">=3.8"
