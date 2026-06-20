@@ -113,6 +113,5 @@ Apache-2.0. See [LICENSE](../../LICENSE).
 
 ## See also
 
-- [`docs/release/rc1-reviews/hpack.md`](../../docs/release/rc1-reviews/hpack.md) — RC1 review.
 - [`zerodds-http2`](../http2) — HTTP/2 framing consumer.
 - [`zerodds-grpc-bridge`](../grpc-bridge) — gRPC consumer.

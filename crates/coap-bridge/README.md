@@ -98,7 +98,3 @@ cargo test -p zerodds-coap-bridge
 ## License
 
 Apache-2.0. See [LICENSE](../../LICENSE).
-
-## See Also
-
-- [`docs/release/rc1-reviews/coap-bridge.md`](../../docs/release/rc1-reviews/coap-bridge.md) — RC1 review.

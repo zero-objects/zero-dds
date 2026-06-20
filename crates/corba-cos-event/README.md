@@ -68,7 +68,3 @@ cargo test -p zerodds-corba-cos-event
 ## License
 
 Apache-2.0. See [LICENSE](../../LICENSE).
-
-## See also
-
-- [`docs/release/rc1-reviews/corba-cos-event.md`](../../docs/release/rc1-reviews/corba-cos-event.md) — RC1 review.

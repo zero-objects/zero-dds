@@ -72,5 +72,4 @@ Apache-2.0. See [LICENSE](../../LICENSE).
 
 ## See also
 
-- [`docs/release/rc1-reviews/corba-codegen.md`](../../docs/release/rc1-reviews/corba-codegen.md) — RC1 review.
 - [`zerodds-idl-cpp`](../idl-cpp), [`zerodds-idl-csharp`](../idl-csharp), [`zerodds-idl-java`](../idl-java) — consumers of the codegen helpers.

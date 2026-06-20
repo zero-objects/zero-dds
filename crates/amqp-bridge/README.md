@@ -109,5 +109,4 @@ Apache-2.0. See [LICENSE](../../LICENSE).
 
 ## See also
 
-- [`docs/release/rc1-reviews/amqp-bridge.md`](../../docs/release/rc1-reviews/amqp-bridge.md) — RC1 review.
 - [`zerodds-amqp-endpoint`](../amqp-endpoint) — DDS-AMQP-1.0 endpoint layer.

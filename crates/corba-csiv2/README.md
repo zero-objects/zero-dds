@@ -70,7 +70,3 @@ cargo test -p zerodds-corba-csiv2
 ## License
 
 Apache-2.0. See [LICENSE](../../LICENSE).
-
-## See also
-
-- [`docs/release/rc1-reviews/corba-csiv2.md`](../../docs/release/rc1-reviews/corba-csiv2.md) — RC1 review.

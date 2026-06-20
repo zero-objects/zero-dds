@@ -85,6 +85,5 @@ Apache-2.0. See [LICENSE](../../LICENSE).
 
 ## See also
 
-- [`docs/release/rc1-reviews/grpc-bridge.md`](../../docs/release/rc1-reviews/grpc-bridge.md) — RC1 review.
 - [`zerodds-http2`](../http2) — RFC 9113 HTTP/2 framing substrate.
 - [`zerodds-hpack`](../hpack) — RFC 7541 HPACK substrate.

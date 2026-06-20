@@ -91,7 +91,3 @@ cargo test -p zerodds-mqtt-bridge
 ## License
 
 Apache-2.0. See [LICENSE](../../LICENSE).
-
-## See also
-
-- [`docs/release/rc1-reviews/mqtt-bridge.md`](../../docs/release/rc1-reviews/mqtt-bridge.md) — RC1 review.

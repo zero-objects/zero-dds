@@ -111,6 +111,5 @@ Apache-2.0. See [LICENSE](../../LICENSE).
 
 ## See also
 
-- [`docs/release/rc1-reviews/http2.md`](../../docs/release/rc1-reviews/http2.md) — RC1 review.
 - [`zerodds-hpack`](../hpack) — RFC 7541 HEADERS frame-body codec.
 - [`zerodds-grpc-bridge`](../grpc-bridge) — gRPC consumer.

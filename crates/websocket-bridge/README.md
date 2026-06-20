@@ -86,7 +86,3 @@ cargo test -p zerodds-websocket-bridge
 ## License
 
 Apache-2.0. See [LICENSE](../../LICENSE).
-
-## See also
-
-- [`docs/release/rc1-reviews/websocket-bridge.md`](../../docs/release/rc1-reviews/websocket-bridge.md) — RC1 review.

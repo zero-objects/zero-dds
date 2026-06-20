@@ -124,5 +124,4 @@ Apache-2.0. Siehe [LICENSE](../../LICENSE).
 
 ## See also
 
-- [`docs/release/rc1-reviews/zenoh-bridge.md`](../../docs/release/rc1-reviews/zenoh-bridge.md) — RC1-Review.
 - [Eclipse Zenoh](https://zenoh.io/) — Upstream-Projekt.

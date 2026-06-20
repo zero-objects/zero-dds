@@ -125,6 +125,5 @@ Apache-2.0. See [LICENSE](../../LICENSE).
 
 ## See also
 
-- [`docs/release/rc1-reviews/amqp-endpoint.md`](../../docs/release/rc1-reviews/amqp-endpoint.md) — RC1 review (incl. the F-AMQP-EP-DISPOSITION-MAPPER-WIRED finding).
 - [`zerodds-amqp-bridge`](../amqp-bridge) — AMQP-1.0 wire codec.
 - [`zerodds-idl`](../idl) — IDL parser for the Annex-A roundtrip test.
